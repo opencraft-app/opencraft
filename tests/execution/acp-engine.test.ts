@@ -4,10 +4,11 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { AcpEngine, dshAcpCommand } from "../../plugins/acp-engine/src/index.js";
+import { AcpEngine, dshAcpCommand, type AcpEngineOptions } from "../../plugins/acp-engine/src/index.js";
 import { AcpGenerationHost } from "../../plugins/acp-engine/src/generations.js";
 import { codexBaseModelId, splitModelVariant } from "../../plugins/acp-engine/src/model-variant.js";
 import type { ExecutionEngineClient } from "../../packages/appserver-client/src/execution-engine.js";
+import { HostInteractions } from "@opencraft/app-host-server/interactions";
 
 const peer = resolve("tests/fixtures/acp-engine-peer.mjs");
 const client: ExecutionEngineClient = { notify() {}, async request() { throw new Error("No browser tool owner"); } };
@@ -27,13 +28,84 @@ test("native model suffix parsing handles long hostile names without backtrackin
 });
 async function fixture(t: test.TestContext, options: Record<string, any> = {}) {
   const root = await mkdtemp(join(tmpdir(), "acp-engine-test-")), trace = join(root, "trace.jsonl");
-  const engineOptions = { command: process.execPath, args: [peer], cwd: root, dataDirectory: join(root, "data"), permission: "allow-once" as const, ...options, env: { ACP_TEST_TRACE: trace, ...options.env } };
+  const engineOptions = { command: process.execPath, args: [peer], cwd: root, dataDirectory: join(root, "data"), permission: "allow-once" as const, ...options, env: { ACP_TEST_TRACE: trace, ...(options.id === "codex" ? { ACP_TEST_PERMISSIONS: "1" } : {}), ...options.env } };
   const engine = new AcpEngine(engineOptions);
   t.after(async () => { await engine.close(); await rm(root, { recursive: true, force: true }); });
   const calls = async () => { try { return (await readFile(trace, "utf8")).trim().split("\n").filter(Boolean).map(line => JSON.parse(line)); } catch { return []; } };
   return { root, engine, calls, engineOptions };
 }
 async function until(predicate: () => boolean) { const deadline = Date.now() + 4_000; while (!predicate()) { if (Date.now() >= deadline) throw new Error("ACP test condition timed out"); await delay(10); } }
+
+test("Codex ACP questions await a shared human answer and expire with their native request", async t => {
+  const interactions = new HostInteractions();
+  const requestUserInput: NonNullable<AcpEngineOptions["requestUserInput"]> = (params, signal, project) =>
+    interactions.request({ id: params.itemId, method: "item/tool/requestUserInput", params }, signal, project);
+  const f = await fixture(t, { id: "codex", requestUserInput, env: { ACP_TEST_QUESTIONS: "1", ACP_TEST_WAIT_MS: "30000" } });
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  const { turn } = await f.engine.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "wait:ask" }] }, client);
+  const session = (f.engine as any).sessions.get(thread.id);
+  const native = (f.engine as any).native(session);
+  const form = {
+    sessionId: session.nativeId, mode: "form", _meta: { codex: { delivery: "async" } },
+    requestedSchema: { type: "object", properties: {
+      question_0: { type: "string", title: "Which report format?", _meta: { codex: { isOther: true, isSecret: false } },
+        oneOf: [{ const: "Summary" }, { const: "Full report" },
+          { const: "None of the above", description: "Provide a different answer in the note field." }] },
+      question_0_note: { type: "string", _meta: { codex: { role: "user_note", questionId: "question_0", isSecret: false } } },
+    } },
+  };
+  const ask = (questionId: string, changes = {}) => native.request("fixture/ask", { questionId, form: { ...form, ...changes } });
+  const pending = () => interactions.snapshot(thread.id, true).requests;
+  const response = (id: string, answers: Record<string, unknown>, threadId = thread.id) =>
+    interactions.respond(threadId, id, "fixture-answer", { answers }, async () => assert.fail("Should reply to the ACP peer"));
+
+  await ask("unrelated", { _meta: { mcp: {} } });
+  await ask("other-session", { sessionId: "unrelated-session" });
+  assert.equal(pending().length, 0);
+  await ask("first");
+  await until(() => pending().length === 1);
+  const [first] = pending();
+  assert.equal(first.method, "item/tool/requestUserInput");
+  assert.equal(first.params.isBlocking, false);
+  assert.equal(first.params.turnId, turn.id);
+  assert.equal((await f.calls()).some(call => call.questionId === "fixture-question:first"), false);
+  await assert.rejects(response(first.id, {}, "other-thread"), /belongs to another conversation/);
+  await assert.rejects(response(first.id, { wrongQuestion: { answers: ["Summary"] } }), /Invalid question answer/);
+  assert.equal(await response(first.id, { question_0: { answers: ["Summary"] } }), "submitted");
+  assert.equal(await response(first.id, {}, thread.id), "resolved");
+
+  await ask("other", { _meta: { codex: { autoResolutionMs: null } } });
+  await until(() => pending().length === 1);
+  assert.equal(pending()[0].params.isBlocking, true);
+  assert.equal(await response(pending()[0].id, { question_0: { answers: ["Spreadsheet"] } }), "submitted");
+
+  await ask("cancelled");
+  await until(() => pending().length === 1);
+  const cancelled = pending()[0].id;
+  await native.request("fixture/cancelQuestion", { questionId: "cancelled" });
+  assert.equal(pending().length, 0);
+  assert.equal(await response(cancelled, { question_0: { answers: ["Full report"] } }), "resolved");
+
+  await ask("finished");
+  await until(() => pending().length === 1);
+  const finished = pending()[0].id;
+  await native.request("fixture/finish", { sessionId: session.nativeId });
+  await until(() => pending().length === 0);
+  assert.equal(await response(finished, {}, thread.id), "resolved");
+  await ask("late");
+  assert.equal(pending().length, 0);
+  await native.request("fixture/barrier", {});
+  const replies = (await f.calls()).filter(call => call.questionId);
+  assert.deepEqual(replies.map(({ questionId, reply }) => [questionId, reply]), [
+    ["fixture-question:unrelated", { action: "cancel" }],
+    ["fixture-question:other-session", { action: "cancel" }],
+    ["fixture-question:first", { action: "accept", content: { question_0: "Summary" } }],
+    ["fixture-question:other", { action: "accept", content: { question_0: "None of the above", question_0_note: "Spreadsheet" } }],
+    ["fixture-question:cancelled", { action: "cancel" }],
+    ["fixture-question:finished", { action: "cancel" }],
+    ["fixture-question:late", { action: "cancel" }],
+  ]);
+});
 
 const imageData = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
 test("ACP forwards text and screenshot bytes and retains the image in the accepted user message", async t => {
@@ -251,8 +323,9 @@ test("Codex splits advertised model variants into native model/reasoning and app
   const created = await f.engine.request("thread/start", { model: "codex:one[low]", serviceTier: "fast" }, client);
   assert.equal(created.thread.model, "codex:one[low]"); assert.equal(created.thread.serviceTier, "fast");
   assert.equal(created.modelProvider, "codex"); assert.equal(created.cwd, f.root);
-  assert.deepEqual(created.runtimeWorkspaceRoots, [f.root]); assert.equal(created.approvalPolicy, "never");
-  assert.deepEqual(created.sandbox, { type: "dangerFullAccess" });
+  assert.deepEqual(created.runtimeWorkspaceRoots, [f.root]); assert.equal(created.approvalPolicy, "on-request");
+  assert.equal(created.approvalsReviewer, "auto_review");
+  assert.deepEqual(created.sandbox, { type: "workspaceWrite" });
   const resumed = await f.engine.request("thread/resume", { threadId: created.thread.id }, client);
   assert.equal(resumed.modelProvider, "codex"); assert.equal(resumed.model, "codex:one[low]");
   assert.equal(resumed.serviceTier, "fast"); assert.equal(resumed.reasoningEffort, "low");
@@ -736,4 +809,176 @@ test('native resume directory uses indexed names and pagination without starting
  const f=await fixture(t,{id:'codex',history:{async directory(cursor?:string,archived?:boolean){calls.push([cursor,archived]);return {available:true,sessions:[{sessionId:'11111111-2222-4333-8444-555555555555',cwd:'/workspace',title:'Native renamed conversation',updatedAt:'2026-11-16T00:00:00Z',createdAt:'2026-10-01T00:00:00Z'}],nextCursor:'native-next'};},async read(){throw new Error('Must not read or resume transcript');}}});
  const page=await f.engine.discoverNativeSessions();assert.equal(page.sessions[0]!.title,'Native renamed conversation');assert.equal(page.sessions[0]!.createdAt,'2026-10-01T00:00:00Z');assert.equal(page.supportsArchived,true);assert.equal(page.nextCursor,'native-next');
  await f.engine.discoverNativeSessions('native-next',true);assert.deepEqual(calls,[[undefined,false],['native-next',true]]);assert.deepEqual(await f.calls(),[]);
+});
+
+test("Codex native permission catalog and applied policies agree for every built-in mode", async t => {
+  const f = await fixture(t, { id: "codex" });
+  const { thread, activePermissionProfile, approvalsReviewer } = await f.engine.request("thread/start", {}, client);
+  assert.equal(activePermissionProfile.id, "opencraft:permission-mode:auto");
+  assert.equal(approvalsReviewer, "auto_review", "the native default must not be relabeled Full access");
+  const profiles = (await f.engine.request("permissionProfile/list", { threadId: thread.id }, client)).data;
+  assert.deepEqual(profiles.map((p: any) => p.id), ["read-only", "accept-edits", "auto", "full"].map(mode => `opencraft:permission-mode:${mode}`).concat("permission-profile:team"));
+  assert.equal(profiles.at(-1).openCraftMode, undefined, "custom names never imply a built-in policy");
+  for (const [mode, native, approval, reviewer, sandbox] of [
+    ["full", "agent-full-access", "never", "user", "dangerFullAccess"],
+    ["read-only", "read-only", "on-request", "user", "readOnly"],
+    ["accept-edits", "workspace-write", "on-request", "user", "workspaceWrite"],
+    ["auto", "agent", "on-request", "auto_review", "workspaceWrite"],
+  ]) {
+    const result = await f.engine.request("turn/start", { threadId: thread.id, permissions: `opencraft:permission-mode:${mode}`, input: [{ type: "text", text: "Observe policy" }] }, client);
+    await until(() => (f.engine as any).state(thread.id).active?.status === "completed");
+    const observed = await f.engine.request("thread/resume", { threadId: thread.id }, client);
+    assert.equal(observed.activePermissionProfile.id, `opencraft:permission-mode:${mode}`);
+    assert.equal(observed.approvalPolicy, approval); assert.equal(observed.approvalsReviewer, reviewer); assert.equal(observed.sandbox.type, sandbox);
+    assert.equal((await f.calls()).filter(call => call.method === "session/prompt").at(-1).permissionMode, native);
+    assert.equal(result.turn.status, "inProgress");
+  }
+  await assert.rejects(f.engine.request("turn/start", { threadId: thread.id, permissions: "invented", input: [{ type: "text", text: "blocked" }] }, client), /does not offer/);
+  assert.equal((await f.calls()).filter(call => call.method === "session/prompt").length, 4);
+});
+
+for (const failure of ["empty", "mismatch", "reject"]) test(`Codex ${failure} permission acknowledgement never sends input or claims Full access`, async t => {
+  const f = await fixture(t, { id: "codex", env: { ACP_TEST_PERMISSION_FAILURE: failure } });
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  await assert.rejects(f.engine.request("turn/start", { threadId: thread.id, permissions: "opencraft:permission-mode:full", input: [{ type: "text", text: "must not run" }] }, client));
+  assert.equal((await f.calls()).some(call => call.method === "session/prompt"), false);
+  assert.equal((await f.engine.request("thread/read", { threadId: thread.id }, client)).thread.permissions, undefined);
+});
+
+test("Codex restores saved execution mode after native resume resets it and uses it for queued follow-ups", async t => {
+  const f = await fixture(t, { id: "codex" });
+  const { thread } = await f.engine.request("thread/start", { permissions: "opencraft:permission-mode:full" }, client);
+  assert.equal((await f.calls()).filter(call => call.method === "session/set_config_option").at(-1).value, "agent-full-access");
+  await f.engine.close();
+  const restored = new AcpEngine(f.engineOptions); t.after(() => restored.close());
+  assert.equal((await restored.request("thread/read", { threadId: thread.id }, client)).thread.permissions, undefined, "saved intent is not current execution evidence");
+  const before = (await f.calls()).length;
+  assert.equal((await restored.request("permissionProfile/list", { threadId: thread.id }, client)).data.length, 5);
+  assert.equal((await f.calls()).length, before, "saved permission catalogs stay cold");
+  await restored.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "wait:first" }] }, client);
+  await restored.request("thread/queue/add", { threadId: thread.id, clientUserMessageId: "policy-queue", input: [{ type: "text", text: "second" }] }, client);
+  await until(() => (restored as any).state(thread.id).active?.status === "completed" && (restored as any).session(thread.id).lastTurn?.clientUserMessageId === "policy-queue" && !(restored as any).session(thread.id).queue?.items.length);
+  const calls = (await f.calls()).slice(before);
+  assert.ok(calls.findIndex(call => call.method === "session/set_config_option" && call.value === "agent-full-access") < calls.findIndex(call => call.method === "session/prompt"));
+  assert.deepEqual(calls.filter(call => call.method === "session/prompt").map(call => call.permissionMode), ["agent-full-access", "agent-full-access"]);
+  await restored.close();
+});
+
+test("Codex unsupported permission negotiation fails before a prompt instead of fabricating Full access", async t => {
+  const f = await fixture(t, { id: "codex", env: { ACP_TEST_PERMISSIONS: "0" } });
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  assert.deepEqual((await f.engine.request("permissionProfile/list", { threadId: thread.id }, client)).data, []);
+  await assert.rejects(f.engine.request("turn/start", { threadId: thread.id, permissions: "opencraft:permission-mode:full", input: [{ type: "text", text: "blocked" }] }, client), /does not offer/);
+  assert.equal((await f.calls()).some(call => call.method === "session/prompt"), false);
+});
+
+
+test("Codex rejects conflicting sandbox and approval claims rather than ignoring them", async t => {
+  const f = await fixture(t, { id: "codex" });
+  await assert.rejects(f.engine.request("thread/start", { permissions: "opencraft:permission-mode:read-only", sandbox: "danger-full-access" }, client), /Inconsistent/);
+  assert.equal(f.engine.processId, null);
+  const { thread } = await f.engine.request("thread/start", { permissions: "opencraft:permission-mode:full", sandbox: "danger-full-access", approvalPolicy: "never" }, client);
+  await assert.rejects(f.engine.request("turn/start", { threadId: thread.id, permissions: "opencraft:permission-mode:full", approvalPolicy: "on-request", input: [{ type: "text", text: "blocked" }] }, client), /Inconsistent/);
+  await assert.rejects(f.engine.request("turn/start", { threadId: thread.id, permissions: "opencraft:permission-mode:full", sandboxPolicy: { type: "readOnly" }, input: [{ type: "text", text: "blocked" }] }, client), /Inconsistent/);
+  assert.equal((await f.calls()).some(call => call.method === "session/prompt"), false);
+});
+
+
+test("Codex explicit model refresh publishes a fresh durable catalog without interrupting a running task", async t => {
+  const root = await mkdtemp(join(tmpdir(), "acp-catalog-change-")), path = join(root, "models.json");
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(path, JSON.stringify([{ modelId: "old[high]", name: "Old (high)" }]));
+  const f = await fixture(t, { id: "codex", env: { ACP_TEST_MODEL_CATALOG_FILE: path } });
+  const created = await f.engine.request("thread/start", { permissions: "opencraft:permission-mode:read-only" }, client);
+  await f.engine.request("turn/start", { threadId: created.thread.id, input: [{ type: "text", text: "wait:first" }] }, client);
+  const modelBefore = (await f.engine.request("thread/read", { threadId: created.thread.id }, client)).thread.model;
+  await writeFile(path, JSON.stringify([{ modelId: "new[high]", name: "New (high)" }]));
+  await Promise.all([f.engine.request("opencraft/models/refresh", { threadId: created.thread.id }, client), f.engine.request("opencraft/models/refresh", { threadId: created.thread.id }, client)]);
+  assert.deepEqual((await f.engine.request("model/list", {}, client)).data.map((model: any) => model.id), ["codex:new[high]"], "old saved sessions cannot resurrect removed choices");
+  const observed = (await f.engine.request("thread/read", { threadId: created.thread.id }, client)).thread;
+  assert.equal(observed.model, modelBefore); assert.equal(observed.permissions, "opencraft:permission-mode:read-only");
+  const calls = await f.calls();
+  assert.equal(calls.filter(call => call.method === "session/new").length, 2, "duplicate refresh clicks share native discovery");
+  assert.equal(calls.filter(call => call.method === "session/prompt").length, 1);
+  assert.equal(calls.some(call => call.method === "session/cancel"), false);
+  await until(() => (f.engine as any).state(created.thread.id).active?.status === "completed");
+  await f.engine.request("turn/start", { threadId: created.thread.id, model: "codex:new[high]", input: [{ type: "text", text: "Use new model" }] }, client);
+  await until(() => (f.engine as any).state(created.thread.id).active?.status === "completed");
+  assert.equal((await f.calls()).filter(call => call.method === "session/set_model").at(-1).modelId, "new[high]");
+  assert.equal((await f.engine.request("thread/read", { threadId: created.thread.id }, client)).thread.model, "codex:new[high]");
+  await f.engine.close();
+  const cold = new AcpEngine(f.engineOptions);
+  try {
+    assert.deepEqual((await cold.request("model/list", {}, client)).data.map((model: any) => model.id), ["codex:new[high]"]);
+    assert.equal(cold.processId, null, "the refreshed snapshot survives restart without waking native execution");
+  } finally { await cold.close(); }
+});
+
+
+test("a failed native model refresh retains the last list and never publishes its discovery probe", async t => {
+  const root = await mkdtemp(join(tmpdir(), "acp-catalog-failure-")), path = join(root, "models.json");
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(path, JSON.stringify([{ modelId: "old[high]", name: "Old (high)" }]));
+  const f = await fixture(t, { id: "codex", env: { ACP_TEST_MODEL_CATALOG_FILE: path } });
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  await writeFile(path, "[]");
+  await assert.rejects(f.engine.request("opencraft/models/refresh", { threadId: thread.id }, client), /no model catalog/);
+  assert.deepEqual((await f.engine.request("model/list", {}, client)).data.map((model: any) => model.id), ["codex:old[high]"]);
+  assert.equal((await f.calls()).some(call => call.method === "session/prompt"), false);
+  await writeFile(path, JSON.stringify([{ modelId: "recovered[high]", name: "Recovered (high)" }]));
+  await f.engine.request("opencraft/models/refresh", { threadId: thread.id }, client);
+  assert.deepEqual((await f.engine.request("model/list", {}, client)).data.map((model: any) => model.id), ["codex:recovered[high]"]);
+});
+
+
+test("Cursor refresh discovers new native models on an isolated process, preserves active work, and reaps the probe", async t => {
+  const root = await mkdtemp(join(tmpdir(), "cursor-catalog-change-")), path = join(root, "models.json");
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(path, JSON.stringify([{ modelId: "old", name: "Old" }]));
+  const f = await fixture(t, { id: "cursor", env: { ACP_TEST_MODEL_CATALOG_FILE: path, ACP_TEST_WAIT_MS: "5000" } });
+  assert.deepEqual(f.engine.extensions["opencraft/model-catalog-refresh"], { version: 1 });
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  await f.engine.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "wait:first" }] }, client);
+  const before = (await f.engine.request("thread/read", { threadId: thread.id }, client)).thread;
+  const activePid = (f.engine as any).native((f.engine as any).session(thread.id)).pid;
+  await writeFile(path, JSON.stringify([{ modelId: "new", name: "New" }]));
+  await Promise.all([f.engine.request("opencraft/models/refresh", { threadId: thread.id }, client), f.engine.request("opencraft/models/refresh", { threadId: thread.id }, client)]);
+  const calls = await f.calls(), probe = calls.filter(call => call.method === "session/new").at(-1);
+  assert.notEqual(probe.pid, activePid);
+  assert.equal(calls.filter(call => call.method === "session/new").length, 2);
+  assert.throws(() => process.kill(probe.pid, 0), { code: "ESRCH" }, "discovery process is fully reaped");
+  process.kill(activePid, 0);
+  const after = (await f.engine.request("thread/read", { threadId: thread.id }, client)).thread;
+  assert.equal(after.model, before.model); assert.equal(after.reasoningEffort, before.reasoningEffort);
+  assert.equal(after.status.type, "active");
+  assert.equal(calls.some(call => call.method === "session/cancel"), false);
+  assert.equal(calls.some(call => call.pid === activePid && call.method === "session/set_config_option"), false);
+  assert.deepEqual((await f.engine.request("model/list", {}, client)).data.map((model: any) => model.id), ["cursor:new"]);
+  await (f.engine as any).native((f.engine as any).session(thread.id)).request("fixture/finish", { sessionId: (f.engine as any).session(thread.id).nativeId });
+  await until(() => (f.engine as any).state(thread.id).active?.status === "completed");
+  await f.engine.request("turn/start", { threadId: thread.id, model: "cursor:new", input: [{ type: "text", text: "Use refreshed model" }] }, client);
+  await until(() => (f.engine as any).state(thread.id).active?.status === "completed");
+  assert.equal((await f.engine.request("thread/read", { threadId: thread.id }, client)).thread.model, "cursor:new");
+  await f.engine.close();
+  const cold = new AcpEngine(f.engineOptions);
+  try {
+    assert.deepEqual((await cold.request("model/list", {}, client)).data.map((model: any) => model.id), ["cursor:new"]);
+    assert.equal(cold.processId, null);
+  } finally { await cold.close(); }
+});
+
+test("Cursor failed refresh keeps its last catalog and cleans up the failed discovery process", async t => {
+  const root = await mkdtemp(join(tmpdir(), "cursor-catalog-failure-")), path = join(root, "models.json");
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(path, JSON.stringify([{ modelId: "old", name: "Old" }]));
+  const f = await fixture(t, { id: "cursor", env: { ACP_TEST_MODEL_CATALOG_FILE: path } });
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  await writeFile(path, "[]");
+  await assert.rejects(f.engine.request("opencraft/models/refresh", { threadId: thread.id }, client), /no model catalog/);
+  const probe = (await f.calls()).filter(call => call.method === "session/new").at(-1);
+  assert.throws(() => process.kill(probe.pid, 0), { code: "ESRCH" });
+  assert.deepEqual((await f.engine.request("model/list", {}, client)).data.map((model: any) => model.id), ["cursor:old"]);
+  await writeFile(path, JSON.stringify([{ modelId: "recovered", name: "Recovered" }]));
+  await f.engine.request("opencraft/models/refresh", { threadId: thread.id }, client);
+  assert.deepEqual((await f.engine.request("model/list", {}, client)).data.map((model: any) => model.id), ["cursor:recovered"]);
 });

@@ -46,6 +46,27 @@ function timeline(authoritative: boolean): TimelineSnapshot {
   };
 }
 
+test("unconfirmed submissions stay in the outbox instead of being painted as sent after reload", async () => {
+  const local = storage();
+  const known = timeline(true);
+  const failed: TimelineSnapshot = { ...known, frames: known.frames.map(frame => ({
+    ...frame, blocks: frame.blocks.map(block => block.type === "user-message" ? { ...block, deliveryStatus: "unknown" } : block),
+  })) };
+  await createConversationDisplayContinuity({ namespace: "account", storage: local }).observe(failed);
+  const restored = await createConversationDisplayContinuity({ namespace: "account", storage: local }).load("host", "thread");
+  assert.ok(restored?.frames.length);
+  assert.equal(restored.frames.some(frame => frame.type === "user"), false);
+});
+
+test("mounted history survives a provisional reconnect window in the same conversation", () => {
+  const confirmed = timeline(true);
+  const retained: TimelineSnapshot = { ...confirmed, authoritative: false, phase: "painted" };
+  const partial: TimelineSnapshot = { ...retained, frames: retained.frames.slice(-1) };
+  assert.equal(selectConversationDisplay({ key: retained.key, timeline: partial, cached: null, retained }).timeline, retained);
+  assert.equal(selectConversationDisplay({ key: retained.key, timeline: confirmed, cached: null, retained }).timeline, confirmed);
+  assert.equal(selectConversationDisplay({ key: createConversationKey("another-host", "thread"), timeline: null, cached: null, retained }).timeline, null);
+});
+
 test("only authoritative text becomes a paint-only cached timeline", async () => {
   const local = storage();
   const cache = createConversationDisplayContinuity({ namespace: "account.bot", storage: local, now: () => 1_000 });

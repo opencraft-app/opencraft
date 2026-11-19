@@ -825,7 +825,7 @@ test("Conversation Runtime projects every pending request_user_input question", 
             threadId: "thread-one",
             turnId: "turn-one",
             itemId: "question-one",
-            isBlocking: true,
+            isBlocking: false,
             autoResolutionMs: null,
             questions: [
               {
@@ -863,6 +863,7 @@ test("Conversation Runtime projects every pending request_user_input question", 
       .find((candidate) => candidate.type === "question");
     assert.equal(block?.type, "question");
     if (block?.type !== "question") return;
+    assert.equal(block.isBlocking, false);
     assert.deepEqual(
       block.questions.map((question) => question.id),
       ["runtime", "detail"],
@@ -2914,19 +2915,30 @@ for (const reconnect of [false, true]) test(`an explicitly unsent online input t
   } finally { runtime.dispose(); }
 });
 
-for (const unknown of [true, false]) test(`an uncertain or permanent online failure never enters the automatic queue (${unknown})`, async () => {
+for (const unknown of [true, false]) test(`an uncertain or rejected online message survives reload without automatic replay (${unknown})`, async () => {
   const key = createConversationKey("local", "thread-one");
   let rows: readonly import("@opencraft/chat-runtime").ConversationOutboxEntry[] = [], sends = 0;
   const failure = unknown ? new SubmissionOutcomeUnknownError() : new Error("permanent rejection");
-  const runtime = createReplicaConversationRuntime({ key, replica: new FakeReplica(threadView()),
+  const open = () => createReplicaConversationRuntime({ key, replica: new FakeReplica(threadView()),
     outbox: { read: () => rows, write: (_, next) => { rows = next; }, subscribe: () => () => {} },
-    commands: commands({ async submit() { sends++; throw failure; } }), history: { async loadOlder() {} },
+    commands: commands({ async submit() {
+      assert.equal(rows[0]?.state, "sending", "save the attempt before writing to transport");
+      sends++;
+      throw failure;
+    } }), history: { async loadOlder() {} },
   });
+  const runtime = open();
   try {
     const composer = createComposerController({ type: "existing-thread", key }, { now: () => 1, createId: () => "failure-id" });
     composer.dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "keep this input" }] }] } });
     await assert.rejects(runtime.submit(composer.createSubmitIntent()), error => error === failure);
-    assert.equal(rows.length, 0); assert.equal(sends, 1);
+    const restored = open();
+    try {
+      await new Promise(resolve => setTimeout(resolve, 0));
+      assert.equal(restored.getSnapshot().queuedSubmissions[0]?.state, unknown ? "unknown" : "failed");
+      assert.equal(restored.getSnapshot().queuedSubmissions[0]?.preview, "keep this input");
+      assert.equal(sends, 1);
+    } finally { restored.dispose(); }
   } finally { runtime.dispose(); }
 });
 

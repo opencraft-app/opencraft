@@ -1099,6 +1099,8 @@ export async function createWebWorkbenchApplicationSupervisor(
   const displayListeners = new Set<() => void>();
   let displayWritesSuspended = false;
   let displayResumeAfterGeneration = -1;
+  const canObserveDisplay = () => !displayWritesSuspended
+    || coordinator.getRuntime().getSnapshot().connectionGeneration > displayResumeAfterGeneration;
   const displayContinuity: BrowserDisplayContinuity = {
     retainSubmission: (intent, receipt, sender) => currentDisplayContinuity.retainSubmission(intent, receipt, sender),
     peekSubmission: (hostId, threadId) => currentDisplayContinuity.peekSubmission(hostId, threadId),
@@ -1109,14 +1111,11 @@ export async function createWebWorkbenchApplicationSupervisor(
       return timeline;
     },
     observe(snapshot) {
-      if (displayWritesSuspended) {
-        if (coordinator.getRuntime().getSnapshot().connectionGeneration <= displayResumeAfterGeneration) {
-          return Promise.resolve();
-        }
-        displayWritesSuspended = false;
-      }
+      if (!canObserveDisplay()) return Promise.resolve();
+      displayWritesSuspended = false;
       return currentDisplayContinuity.observe(snapshot);
     },
+    canObserve: canObserveDisplay,
     getScope: () => draftCredentialScope,
     subscribe(listener) { displayListeners.add(listener); return () => displayListeners.delete(listener); },
   };
@@ -1164,6 +1163,17 @@ export async function createWebWorkbenchApplicationSupervisor(
     }));
   });
   startupRollback.push(stopDraftScope);
+  const checkpointDrafts = () => browserDraftStore.checkpoint();
+  const checkpointHiddenDrafts = () => {
+    if (document.visibilityState === "hidden") checkpointDrafts();
+  };
+  window.addEventListener("pagehide", checkpointDrafts);
+  document.addEventListener("visibilitychange", checkpointHiddenDrafts);
+  const stopDraftCheckpoints = () => {
+    window.removeEventListener("pagehide", checkpointDrafts);
+    document.removeEventListener("visibilitychange", checkpointHiddenDrafts);
+  };
+  startupRollback.push(stopDraftCheckpoints);
   const conversationActivation = createConversationActivationCoordinator(
     coordinator,
     conversationBindings,
@@ -1386,6 +1396,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       () => machineIdentityObserver.dispose(),
       stopEnvironmentRegistry,
       stopDraftScope,
+      stopDraftCheckpoints,
       () => { stopOutboxRegistry(); stopOutboxScope(); stopOutboxAccount?.(); },
       () => displayListeners.clear(),
       () => navigation.dispose(),

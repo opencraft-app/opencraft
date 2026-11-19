@@ -8,7 +8,7 @@ export interface OpenSidebarThreadMenu {
   readonly kind: SidebarThreadMenuKind | "badge" | "resources";
 }
 
-export type OpenSidebarMenu = OpenSidebarThreadMenu | { readonly kind: "filters" | "list-context" };
+export type OpenSidebarMenu = OpenSidebarThreadMenu | { readonly kind: "filters" | "list-context" | "recent-tags" };
 
 export function isSidebarThreadMenuOpen(
   current: OpenSidebarThreadMenu | null,
@@ -57,6 +57,15 @@ export class SidebarThreadMenuStore {
   setListContextOpen = (open: boolean): void => {
     if (open) this.set({ kind: "list-context" });
     else if (this.current?.kind === "list-context") this.set(null);
+  };
+
+  getRecentTagsOpen = (): boolean => this.current?.kind === "recent-tags";
+
+  subscribeRecentTags = (listener: () => void): (() => void) => this.subscribeKey("recent-tags", listener);
+
+  setRecentTagsOpen = (open: boolean): void => {
+    if (open) this.set({ kind: "recent-tags" });
+    else if (this.current?.kind === "recent-tags") this.set(null);
   };
 
   getKind(target: Pick<OpenSidebarThreadMenu, "hostId" | "threadId" | "rowId">): OpenSidebarThreadMenu["kind"] | null {

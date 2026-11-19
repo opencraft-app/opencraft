@@ -1,3 +1,4 @@
+import { MODEL_CATALOG_REFRESH_METHOD, SCOPED_MODEL_REFRESH_EXTENSION, MODEL_CATALOG_REFRESH_EXTENSION, type ModelCatalogRefreshParams } from "@opencraft/appserver-protocol";
 import { executionStatusForThread } from "@opencraft/appserver-client/transport";
 import { OPENCRAFT_STEER_EVIDENCE_EXTENSION, OPENCRAFT_STEER_EVIDENCE_NOTIFICATION, parseSteerStatusResult, parseSteerEvidenceCapability } from "@opencraft/appserver-protocol";
 import { SHARED_INTERACTIONS_EXTENSION, humanInteractionWaitReason } from "@opencraft/appserver-protocol";
@@ -5,6 +6,7 @@ import { ThreadOrchestrationResource } from "./thread-orchestration-resource";
 import { executionEngineExtension } from "@opencraft/appserver-client";
 import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
 import { ThreadRecoveryResource } from "./thread-recovery-resource";
+import { SCOPED_PERMISSION_CATALOG_EXTENSION, SCOPED_PERMISSION_CATALOG_METHOD, type ScopedPermissionProfileListParams } from "@opencraft/appserver-protocol";
 import { SCOPED_SKILL_CATALOG_EXTENSION, SCOPED_SKILL_CATALOG_METHOD, type ScopedSkillsListParams } from "@opencraft/appserver-protocol";
 import type { HostComposerCommandPort } from "./host-composer-commands";
 import { MCP_APPS_NAMESPACE } from "@opencraft/appserver-protocol/mcp-apps";
@@ -41,7 +43,6 @@ import type {
   AttachmentStagingCapability,
   ModelListParams,
   ModelListResponse,
-  PermissionProfileListParams,
   PermissionProfileListResponse,
   SkillsListResponse,
   ProjectCreateParams,
@@ -303,6 +304,8 @@ export interface AppServerThreadResourcePort {
 export interface AppServerComposerCatalogResourcePort {
   subscribeModelsChanged?(listener: () => void): () => void;
   listModels(params?: Partial<ModelListParams>): Promise<ModelListResponse>;
+  canRefreshModels?(params: ModelCatalogRefreshParams): boolean;
+  refreshModels?(params: ModelCatalogRefreshParams): Promise<void>;
   readNewThreadDefaults(cwd?: string | null): Promise<{
     readonly serviceTier?: string | null;
     readonly model: string | null;
@@ -313,7 +316,7 @@ export interface AppServerComposerCatalogResourcePort {
     readonly effort: string | null;
   }): Promise<void>;
   listPermissionProfiles(
-    params?: Partial<PermissionProfileListParams>,
+    params?: ScopedPermissionProfileListParams,
   ): Promise<PermissionProfileListResponse>;
   listSkills(params?: ScopedSkillsListParams): Promise<SkillsListResponse>;
   createFuzzyFileSearchSession(
@@ -2301,6 +2304,17 @@ export function createAppServerWorkbenchRuntime(
       },
       composerCatalog: {
         subscribeModelsChanged(listener) { modelsChangedListeners.add(listener); return () => { modelsChangedListeners.delete(listener); }; },
+        canRefreshModels(params) {
+          const extensions = client?.initializeResult?.capabilities?.extensions;
+          return (extensions?.[SCOPED_MODEL_REFRESH_EXTENSION] as { version?: unknown } | undefined)?.version === 1
+            && executionEngineExtension(extensions, params.threadId ?? params.model, MODEL_CATALOG_REFRESH_EXTENSION)?.version === 1;
+        },
+        async refreshModels(params) {
+          assertMethodAccess(MODEL_CATALOG_REFRESH_METHOD);
+          // Native discovery can inspect model-specific schemas on an isolated
+          // peer; keep that explicit operation out of the ordinary read budget.
+          await requireClient().request(MODEL_CATALOG_REFRESH_METHOD, params, { timeoutMs: 180_000, priority: "user-visible" });
+        },
         async listModels(params = {}) {
           return listSelectableModels({
             cursor: null,
@@ -2336,11 +2350,16 @@ export function createAppServerWorkbenchRuntime(
           });
         },
         async listPermissionProfiles(params = {}) {
-          return requireClient().request("permissionProfile/list", {
-            cursor: null,
-            limit: 100,
-            ...params,
-          });
+          const scoped = client?.initializeResult?.capabilities?.extensions?.[SCOPED_PERMISSION_CATALOG_EXTENSION] as { version?: unknown } | undefined;
+          if (scoped?.version === 1) {
+            assertMethodAccess(SCOPED_PERMISSION_CATALOG_METHOD);
+            return requireClient().request(SCOPED_PERMISSION_CATALOG_METHOD, params);
+          }
+          // Old Hosts keep their native wire contract. Do not show a shared
+          // engine catalog for an Agent whose enforcement is unknown.
+          if (client?.initializeResult?.capabilities?.extensions?.["opencraft/execution-engines"] !== undefined) return { data: [], nextCursor: null };
+          const { threadId: _thread, model: _model, ...native } = params;
+          return requireClient().request("permissionProfile/list", { cursor: null, limit: 100, ...native });
         },
         async listSkills(params = {}) {
           const scoped = client?.initializeResult?.capabilities?.extensions?.[SCOPED_SKILL_CATALOG_EXTENSION] as { version?: unknown } | undefined;

@@ -46,7 +46,8 @@ async function fixture(t: test.TestContext, proxy = false) {
           if (["thread/resume", "thread/read"].includes(method)) return { thread, model: "dsh", modelProvider: "dsh", cwd: "/tmp", approvalPolicy: "never", approvalsReviewer: "user", sandbox: { type: "dangerFullAccess" }, runtimeWorkspaceRoots: [] };
           if (method === "turn/start") return { turn: { id: "accepted-once", status: "inProgress", items: [] } };
           if (method === "skills/list") return { data: [{ cwd: "/tmp", skills: [{ name: "dsh-only" }], errors: [] }] };
-          if (["thread/list", "model/list", "thread/turns/list", "thread/items/list", "permissionProfile/list"].includes(method)) return { data: [], nextCursor: null };
+          if (method === "permissionProfile/list") return { data: [{ id: "dsh-policy", description: null, allowed: true }], nextCursor: null };
+          if (["thread/list", "model/list", "thread/turns/list", "thread/items/list"].includes(method)) return { data: [], nextCursor: null };
           return {};
         });
         if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ jsonrpc: "2.0", id: frame.id, result, [LOGICAL_CLIENT_FIELD]: state.clientId }));
@@ -59,9 +60,10 @@ async function fixture(t: test.TestContext, proxy = false) {
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   const target = `ws://127.0.0.1:${(server.address() as any).port}`;
   let providerClosed = 0, providerDisconnected = 0;
-  const provider: any = { id: "pi", label: "Pi", threadPrefix: "pi_", modelPrefix: "pi:", extensions: {}, ownsThread: (id: string) => id.startsWith("pi_"), ownsModel: (id: string) => id.startsWith("pi:"), subscribe: () => () => {}, disconnect() { providerDisconnected++; }, async close() { providerClosed++; }, async request(method: string) { return method === "skills/list" ? { data: [{ cwd: "/tmp", skills: [{ name: "pi-only" }], errors: [] }] } : { data: [], nextCursor: null }; } };
+  const providerRefreshes: any[] = [];
+  const provider: any = { id: "pi", label: "Pi", threadPrefix: "pi_", modelPrefix: "pi:", extensions: { "opencraft/model-catalog-refresh": { version: 1 } }, ownsThread: (id: string) => id.startsWith("pi_"), ownsModel: (id: string) => id.startsWith("pi:"), subscribe: () => () => {}, disconnect() { providerDisconnected++; }, async close() { providerClosed++; }, async request(method: string, params: any) { if (method === "opencraft/models/refresh") { providerRefreshes.push(params); return {}; } return method === "permissionProfile/list" ? { data: [{ id: "pi-policy", description: null, allowed: true }], nextCursor: null } : method === "skills/list" ? { data: [{ cwd: "/tmp", skills: [{ name: "pi-only" }], errors: [] }] } : { data: [], nextCursor: null }; } };
   let resolveTarget = async () => target;
-  const host = await startEngineHost({ providers: [provider], defaultEngine: "dsh", legacy: { id: "dsh", label: "DSH", start: async () => ({ websocketUrl: target, resolveWebsocketUrl: () => resolveTarget(), async close() {} }) } });
+  const host = await startEngineHost({ providers: [provider], defaultEngine: "dsh", legacy: { id: "dsh", label: "DSH", models: ["dsh"], start: async () => ({ websocketUrl: target, resolveWebsocketUrl: () => resolveTarget(), async close() {} }) } });
   let url = host.websocketUrl, web: any, root: string | undefined;
   if (proxy) {
     root = await mkdtemp(join(tmpdir(), "engine-host-recovery-"));
@@ -77,7 +79,7 @@ async function fixture(t: test.TestContext, proxy = false) {
   });
   runtime.subscribe(() => phases.push(runtime.getSnapshot().phase));
   t.after(async () => { await runtime.dispose(); await web?.close(); await host.close(); for (const state of connections) state.socket.terminate(); await new Promise<void>(resolve => sockets.close(() => resolve())); await new Promise<void>(resolve => server.close(() => resolve())); await lifecycle.close(); if (root) await rm(root, { recursive: true, force: true }); });
-  return { runtime, connections, calls, notifications, phases, host, thread, lifecycle, target,
+  return { providerRefreshes, runtime, connections, calls, notifications, phases, host, thread, lifecycle, target,
     get client() { return client; }, get providerClosed() { return providerClosed; }, get providerDisconnected() { return providerDisconnected; },
     beforeRequest(value: typeof beforeRequest) { beforeRequest = value; }, resolveTarget(value: typeof resolveTarget) { resolveTarget = value; },
     emit(delta: string) { for (const state of connections) if (state.socket.readyState === WebSocket.OPEN && lifecycle.receivesNotifications(state.key, thread.id)) state.socket.send(JSON.stringify({ jsonrpc: "2.0", method: "item/agentMessage/delta", params: { threadId: thread.id, turnId: "turn", itemId: "item", delta }, [LOGICAL_CLIENT_FIELD]: state.clientId })); },
@@ -316,4 +318,40 @@ test("history cancellation crosses engine routing before a Thread is opened", as
   assert.equal(typeof read.params.historyReadId, "string");
   assert.deepEqual(cancel.params, { threadId: "codex_thread", historyReadId: read.params.historyReadId });
   assert.equal(calls.some(c => ["thread/resume", "turn/start", "turn/interrupt"].includes(c.method)), false);
+});
+
+
+test("permission catalogs follow the draft Agent and immutable conversation owner", async t => {
+  const f = await fixture(t); await f.runtime.connect();
+  const profiles = async (scope: any) => (await f.runtime.resources.composerCatalog.listPermissionProfiles({ cwd: "/tmp", ...scope })).data.map(profile => profile.id);
+  assert.deepEqual(await profiles({}), ["dsh-policy"]);
+  assert.deepEqual(await profiles({ model: "pi:one" }), ["pi-policy"]);
+  assert.deepEqual(await profiles({ threadId: "pi_existing", model: "dsh" }), ["pi-policy"]);
+  assert.deepEqual(await profiles({ threadId: f.thread.id, model: "pi:one" }), ["dsh-policy"]);
+  const legacy = f.calls.filter(call => call.method === "permissionProfile/list");
+  assert.equal(legacy.length, 2);
+  for (const call of legacy) assert.deepEqual(call.params, { cwd: "/tmp" });
+  await assert.rejects(profiles({ model: 42 }), /Invalid permission catalog target/);
+  await assert.rejects(profiles({ model: "missing:model" }), /unavailable/);
+});
+
+
+test("explicit model refresh is capability-gated and routed to the immutable Agent owner", async t => {
+  const f = await fixture(t); await f.runtime.connect();
+  const catalog = f.runtime.resources.composerCatalog;
+  assert.equal(catalog.canRefreshModels?.({ model: "pi:one" }), true);
+  assert.equal(catalog.canRefreshModels?.({ model: "dsh" }), false);
+  await catalog.refreshModels?.({ threadId: "pi_existing", model: "dsh" });
+  assert.deepEqual(f.providerRefreshes, [{ threadId: "pi_existing" }]);
+  await assert.rejects(catalog.refreshModels!({ threadId: f.thread.id, model: "pi:one" }), /unavailable/);
+  await assert.rejects(catalog.refreshModels!({ model: 42 } as any), /Invalid model catalog target/);
+  assert.equal(f.providerRefreshes.length, 1, "invalid or unsupported targets never hit a different Agent");
+});
+
+
+test("cold scoped model reads need no execution activation", async t => {
+  const f = await fixture(t); await f.runtime.connect();
+  const result = await f.runtime.resources.composerCatalog.listModels({ threadId: "pi_existing" } as any);
+  assert.deepEqual(result.data, []);
+  assert.equal(f.calls.some(call => call.method === "thread/resume"), false);
 });

@@ -111,3 +111,16 @@ test("legacy unqualified model IDs are normalized only when the owning Agent dec
     assert.equal(f.forwarded.filter(call => call.method === "turn/start").at(-1)?.params.model, "other:one", "an explicit other Agent is never silently relabeled");
   } finally { f.release(); await f.host.close(); }
 });
+
+
+test("connected Agent creation forwards requested permissions without injecting Full access", async () => {
+  const f = catalogFixture();
+  try {
+    await assert.rejects(f.host.dispatch("thread/start", { model: "codex:one", permissions: "opencraft:permission-mode:read-only" }));
+    const request = f.forwarded.filter(call => call.method === "thread/start").at(-1)!;
+    assert.equal(request.params.permissions, "opencraft:permission-mode:read-only");
+    assert.equal(request.params.sandbox, undefined); assert.equal(request.params.approvalPolicy, undefined);
+    await assert.rejects(f.host.dispatch("thread/start", { model: "codex:one" }));
+    assert.equal(f.forwarded.filter(call => call.method === "thread/start").at(-1)!.params.permissions, undefined);
+  } finally { f.release(); await f.host.close(); }
+});

@@ -25,7 +25,7 @@ const historyTurns = (nativeId: string) => {
 const engine = new AcpEngine({ id: "codex", command: process.execPath, args: [resolve("tests/fixtures/acp-engine-peer.mjs")],
   cwd: root, dataDirectory: join(root, "data"), permission: "allow-once",
   history: { async read(nativeId) { return { data: historyTurns(nativeId), nextCursor: null }; }, async snapshot(nativeId) { return historyTurns(nativeId); } },
-  env: { ACP_TEST_TRACE: trace, ACP_TEST_MODELS: "1", ACP_TEST_IMAGES: "1", ACP_TEST_WAIT_MS: "30000" } });
+  env: { ACP_TEST_PERMISSIONS: "1", ACP_TEST_TRACE: trace, ACP_TEST_MODELS: "1", ACP_TEST_IMAGES: "1", ACP_TEST_WAIT_MS: "30000" } });
 engine.subscribe((method, params) => { if (method === "turn/completed") completed.set(params.threadId, [...completed.get(params.threadId) ?? [], structuredClone(params.turn)]); });
 const originalRequest = engine.request.bind(engine);
 engine.request = async (method, params, client) => {

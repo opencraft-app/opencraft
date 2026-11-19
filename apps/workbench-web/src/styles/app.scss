@@ -8981,6 +8981,10 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 .thread-composer-region {
   position: relative;
   width: 100%;
+
+  > [data-background-question] {
+    margin-block-end: calc(var(--spacing) * 2);
+  }
 }
 
 // Composer surface: the editor owns draft behavior; Thread state supplies
@@ -9033,35 +9037,6 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 :where(.opencraft-composer-footer) > * {
   position: relative;
   z-index: 1;
-}
-
-// Shared material rules keep routine loading quieter than reconnect/failure.
-.opencraft-composer-shell[data-loading]::before {
-  --recovery-start: 1%;
-  --recovery-end: 2.5%;
-  --recovery-rim: 7%;
-  --recovery-glow: 0%;
-}
-.opencraft-composer-shell:is([data-loading], [data-warning])::before {
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--color-text-danger) var(--recovery-start, 2.5%), transparent),
-      color-mix(in srgb, var(--color-text-danger) var(--recovery-end, 6.5%), transparent)
-    ),
-    var(--composer-surface-background);
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--color-text-danger) var(--recovery-rim, 17%), transparent),
-    0 6px 24px color-mix(in srgb, var(--color-text-danger) var(--recovery-glow, 4%), transparent);
-}
-
-@media (forced-colors: active) {
-  :where(:root[data-ui-density="touch"]) .opencraft-composer-shell:is([data-loading], [data-warning])::before {
-    background: Canvas;
-    box-shadow: none;
-    outline: 1px solid CanvasText;
-    outline-offset: -1px;
-  }
 }
 
 :root[data-ui-density="touch"] .opencraft-composer-shell {
@@ -9750,7 +9725,8 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 }
 
 .opencraft-composer-footer[data-footer-density="minimal"] {
-  .opencraft-composer-mode__model-label {
+  .opencraft-composer-mode__model-label,
+  .opencraft-composer-mode__chevron {
     display: none;
   }
 
@@ -9841,7 +9817,9 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 }
 
 .opencraft-composer-mode__model-icon {
+  display: inline-flex;
   flex: 0 0 auto;
+  align-items: center;
 }
 
 .opencraft-composer-mode__effort-label {
@@ -12410,6 +12388,7 @@ html[data-window-host="browser"] body {
       flex: 1 1 auto;
     }
     .opencraft-composer-chrome-header,
+    .opencraft-composer-handoff,
     .opencraft-composer-error,
     .opencraft-composer-footer { flex: 0 0 auto; }
     .opencraft-composer-input-row,
@@ -13156,10 +13135,27 @@ html[data-window-host="browser"] body {
 
 // Recent owns presentation preferences; swipe geometry and motion belong to the shared primitive.
 .sidebar-recent-row { min-width: 0; }
-.sidebar-activity-item__recent-pin { display: inline-flex; flex: 0 0 auto; color: var(--color-icon-secondary); }
+.sidebar-activity-item__recent-pin,
+.sidebar-activity-item__tag { display: inline-flex; flex: 0 0 auto; align-items: center; color: var(--color-icon-secondary); }
+.sidebar-recent-heading {
+  display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0;
+  padding-inline-end: var(--padding-sidebar-activity-row-inline);
+  > .sidebar-thread-group-heading { flex: 0 1 auto; min-width: 0; }
+}
+.conversation-tag-dot {
+  display: inline-block; width: 8px; height: 8px; flex: 0 0 auto; border-radius: var(--radius-full);
+  background: var(--tag-fg); box-shadow: 0 0 0 2px var(--tag-bg);
+}
 .sidebar-recent-feedback {
   display: flex; align-items: center; justify-content: space-between; gap: var(--gap-control-group);
   padding-inline: var(--padding-sidebar-activity-row-inline);
   @include typography.role(metadata, secondary);
   > span { min-width: 0; }
+}
+
+.opencraft-composer-model-browser__catalog-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--spacing) * 2);
 }

@@ -83,6 +83,7 @@ export interface NewThreadDraftPageProps {
   composerPresentationEnabled?: boolean;
   readonly placeholder?: string;
   readonly placeholderPending?: boolean;
+  readonly isRecovering?: boolean;
   readonly heading?: string;
   readonly setupNotice?: ReactNode;
   readonly setupBlocksSubmission?: boolean;
@@ -451,6 +452,7 @@ export function NewThreadDraftPage({
   composerPresentationEnabled = true,
   placeholder,
   placeholderPending,
+  isRecovering,
   heading,
   setupNotice,
   setupBlocksSubmission = false,
@@ -525,8 +527,8 @@ export function NewThreadDraftPage({
       : personalDefaultsPending ? intl.formatMessage({ id: "composer.preferences.loading", defaultMessage: "Loading your preferences…" }) : submissionDisabledReason}
     submissionDisabled={connectionPhase !== "ready" || personalDefaultsPending || setupBlocksSubmission}
     isStreaming={false}
-    isRecovering={placeholderPending === true}
-    isUnstable={connectionPhase === "reconnecting"}
+    isRecovering={isRecovering ?? placeholderPending === true}
+    isConnectionUnavailable={connectionPhase === "error"}
     placeholderPending={placeholderPending}
     placeholder={placeholder ?? intl.formatMessage({ id: "chat.companionPlaceholder", defaultMessage: "Share your thoughts, or ask me to help with something" })}
     onResolveAttachment={onResolveAttachment}

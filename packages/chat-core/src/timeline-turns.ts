@@ -18,12 +18,13 @@ export type AttachedInteractionTimelineBlock = ApprovalTimelineBlock | QuestionT
 /**
  * Composer-owned requests are projected into the timeline for durable identity
  * and history, but their interactive surface lives beside the Composer. Present
- * one request at a time, with the newest pending request winning.
+ * one request at a time, prioritizing requests that pause the Agent.
  */
 export function findPendingInteraction(
   timeline: Pick<TimelineSnapshot, "frames"> | null | undefined,
 ): AttachedInteractionTimelineBlock | null {
   if (timeline == null) return null;
+  let backgroundQuestion: QuestionTimelineBlock | null = null;
   for (let frameIndex = timeline.frames.length - 1; frameIndex >= 0; frameIndex -= 1) {
     const frame = timeline.frames[frameIndex];
     if (frame === undefined || frame.type !== "interaction") continue;
@@ -31,14 +32,17 @@ export function findPendingInteraction(
       const block = frame.blocks[blockIndex];
       if (block === undefined) continue;
       if (block.type === "approval" && block.state === "pending") return block;
-      if (block.type === "question" && block.state === "pending") return block;
+      if (block.type === "question" && block.state === "pending") {
+        if (block.isBlocking !== false) return block;
+        backgroundQuestion ??= block;
+      }
       if (block.type === "option-picker" && block.state === "pending") return block;
       if (block.type === "setup-step" && block.state === "pending") return block;
       if (block.type === "setup-context-picker" && block.state === "pending") return block;
       if (block.type === "elicitation" && block.state === "pending") return block;
     }
   }
-  return null;
+  return backgroundQuestion;
 }
 
 /**

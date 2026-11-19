@@ -7,7 +7,7 @@ import scss from "postcss-scss";
 import selectorParser from "postcss-selector-parser";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const protectedClass = /^(?:ui-button(?:__.*)?|ui-disclosure-button|ui-control-surface|ui-navigation-(?:list|group|item)|chrome-button|settings-control-button|sidebar-new-chat|shell-navigation__entrance)$/u;
+const protectedClass = /^(?:ui-button(?:__.*)?|ui-split-button|ui-disclosure-button|ui-control-surface|ui-navigation-(?:list|group|item)|chrome-button|settings-control-button|sidebar-new-chat|shell-navigation__entrance)$/u;
 const forbiddenPaint = /^(?:background(?:-.+)?|(?:-webkit-)?backdrop-filter|box-shadow|border(?:-.+)?|color|appearance|cursor|height|min-height|padding(?:-.+)?)$/u;
 const owner = path => path.startsWith("packages/design-system-web/src/") || path.startsWith("packages/design-system/src/");
 

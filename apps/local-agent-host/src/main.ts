@@ -1,3 +1,5 @@
+import { MODEL_CATALOG_REFRESH_METHOD, SCOPED_MODEL_REFRESH_EXTENSION } from "@opencraft/appserver-protocol";
+import { SCOPED_PERMISSION_CATALOG_EXTENSION, SCOPED_PERMISSION_CATALOG_METHOD } from "@opencraft/appserver-protocol";
 import { PersonalMachines } from "./personal-machines.js";
 import { ServerSpacesRuntime } from "@opencraft/access-control/server-spaces";
 import { SERVER_SPACES_METHOD, SERVER_SPACES_CHANGED, type ServerSpaceCommand } from "@opencraft/appserver-protocol/server-spaces";
@@ -13,6 +15,7 @@ import { ConversationSchedules, ScheduleFault } from "@opencraft/host-schedules"
 import { CONVERSATION_SCHEDULES_EXTENSION } from "@opencraft/appserver-protocol";
 import { dshScheduleExecutionPort } from "./dsh-schedules.js";
 import { dshInterruptedTurns } from "./dsh-interrupted-turns.js";
+import { exportConversationContext } from "./conversation-context-export.js";
 import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
 import { readHostMachineIdentity } from "./machine-identity.js";
 import { parseRuntimeMachineIdentity, type RuntimeMachineIdentity } from "@opencraft/appserver-protocol";
@@ -318,7 +321,10 @@ export async function startLocalAgentHost(options: {
     defaultCwd: options.bridge.claudeCode.defaultCwd ?? projectlessWorkspaceRoot ?? homedir(),
   });
   const connectedAgents = new ConnectedAgentHost(agentOnboarding, join(productDataRoot, "connected-agents"), projectlessWorkspaceRoot ?? homedir(), createOnboardingDeps(),
-    claudeBridge === undefined ? undefined : { provider: claudeBridge, engines: ["claude-code"] }, options.connectedAgentAssets);
+    claudeBridge === undefined ? undefined : { provider: claudeBridge, engines: ["claude-code"] }, options.connectedAgentAssets,
+    (params, signal, project) => adapter.interactions.shared.request({
+      id: params.itemId, method: "item/tool/requestUserInput", params,
+    }, signal, project));
   await connectedAgents.start();
   cleanup.push(() => connectedAgents.close());
   cleanup.push(connectedAgents.subscribe((method, params) => {
@@ -731,9 +737,23 @@ export async function startLocalAgentHost(options: {
       try {
         if (request.method === "opencraft/agent-session/export-context") {
           const threadId = (request.params as { threadId?: unknown } | undefined)?.threadId;
-          if (!state.initialized || typeof threadId !== "string" || !/^(codex|cursor)_/u.test(threadId)) throw new Error("Conversation context unavailable");
-          const context = await lifecycle.enqueue(threadId, () => connectedAgents.dispatch(request.method as string, { threadId }));
-          send(socket, { jsonrpc: "2.0", id: request.id, result: { ...(context as object), collaborationSpaceId: spaces.spaceFor("local", threadId) } }); return;
+          if (!state.initialized || typeof threadId !== "string" || !threadId) throw new Error("Conversation context unavailable");
+          if (connectedAgents.owns("thread/read", { threadId })) {
+            const context = await lifecycle.enqueue(threadId, () => connectedAgents.dispatch(request.method as string, { threadId }));
+            send(socket, { jsonrpc: "2.0", id: request.id, result: { ...(context as object), collaborationSpaceId: spaces.spaceFor("local", threadId) } }); return;
+          }
+          const read = await adapter.dispatchOwned("thread/read", { threadId, includeTurns: true }, owner, request.id as string | number) as {
+            thread?: { id: string; name?: string | null; cwd?: string; turns?: { id: string; items?: Record<string, any>[] }[] };
+          };
+          if (!read.thread?.cwd) throw new Error("Conversation context unavailable");
+          const context = await exportConversationContext(
+            join(productDataRoot, "connected-agents", "continuations"),
+            threadId,
+            read.thread.name ?? null,
+            read.thread.cwd,
+            read.thread.turns ?? [],
+          );
+          send(socket, { jsonrpc: "2.0", id: request.id, result: { ...context, collaborationSpaceId: spaces.spaceFor("local", threadId) } }); return;
         }
         if (request.method === "opencraft/agent-session/status" || request.method === "opencraft/agent-session/release") {
           const params = request.params as { threadId?: unknown } | undefined;
@@ -804,6 +824,15 @@ export async function startLocalAgentHost(options: {
             : request.method === "opencraft/agents/onboarding/models"
               ? { models: await connectedAgents.listAgentModels(String((request.params as { id?: string } | null)?.id ?? "")) }
             : { ...await agentOnboarding.act(request.params), historyImport: true };
+          send(socket, { jsonrpc: "2.0", id: request.id, result }); return;
+        }
+        if (request.method === MODEL_CATALOG_REFRESH_METHOD) {
+          const params = (request.params ?? {}) as Record<string, unknown>;
+          if ((params.threadId !== undefined && (typeof params.threadId !== "string" || !params.threadId))
+            || (params.model !== undefined && (typeof params.model !== "string" || !params.model))) throw new Error("Invalid model catalog target");
+          const result = connectedAgents.owns(MODEL_CATALOG_REFRESH_METHOD, params)
+            ? await connectedAgents.dispatch(MODEL_CATALOG_REFRESH_METHOD, params)
+            : await adapter.dispatchOwned(MODEL_CATALOG_REFRESH_METHOD, params, owner, request.id as string | number);
           send(socket, { jsonrpc: "2.0", id: request.id, result }); return;
         }
         if (request.method === "model/list") {
@@ -904,6 +933,14 @@ export async function startLocalAgentHost(options: {
           });
           return;
         }
+        const readPermissionProfiles = async () => {
+          const params = (request.params ?? {}) as Record<string, unknown>;
+          if ((params.threadId !== undefined && (typeof params.threadId !== "string" || !params.threadId))
+            || (params.model !== undefined && (typeof params.model !== "string" || !params.model))) throw new Error("Invalid permission catalog target");
+          return connectedAgents.owns("permissionProfile/list", params)
+            ? connectedAgents.dispatch("permissionProfile/list", params)
+            : adapter.dispatchOwned(SCOPED_PERMISSION_CATALOG_METHOD, params, owner, request.id as string | number);
+        };
         const readSkills = async () => {
           if (!capabilityLink) throw new Error("This DSH host does not expose complete Skill metadata");
           await skillRefresh.ensureFresh();
@@ -973,6 +1010,8 @@ export async function startLocalAgentHost(options: {
           ? await projects.list(request.params as import("@opencraft/appserver-protocol/generated/v2").ProjectListParams)
           : request.method === "project/create"
           ? await projects.create(request.params as import("@opencraft/appserver-protocol/generated/v2").ProjectCreateParams)
+          : request.method === SCOPED_PERMISSION_CATALOG_METHOD
+          ? await readPermissionProfiles()
           : request.method === "skills/list"
           ? await readSkills()
           : PROFILE_SKILLS_METHODS.has(request.method as ProfileSkillsMethod)
@@ -1006,6 +1045,8 @@ export async function startLocalAgentHost(options: {
               extensions: {
                 ...initialized.capabilities?.extensions,
                 [SHARED_INTERACTIONS_EXTENSION]: { version: 1 },
+                [SCOPED_MODEL_REFRESH_EXTENSION]: { version: 1 },
+                [SCOPED_PERMISSION_CATALOG_EXTENSION]: { version: 1 },
                 [OPENCRAFT_TERMINAL_RESTORE_EXTENSION]: { version: 1 },
                 [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: attachmentStaging.capability,
                 [CONVERSATION_SCHEDULES_EXTENSION]: { version: 1, target: "existing-thread", repeat: "fixed-interval", summary: true, calendar: true },
@@ -1019,7 +1060,7 @@ export async function startLocalAgentHost(options: {
                     ...(claudeBridge ? [{ id: "claude-code", label: "Claude Code", threadPrefix: claudeBridge.threadPrefix, modelPrefix: claudeBridge.modelPrefix, extensions: claudeBridge.extensions }] : []),
                   ],
                 },
-                "opencraft/agent-session": { version: 1, contextExport: ["codex", "cursor"] },
+                "opencraft/agent-session": { version: 1, contextExport: ["codex", "cursor", "pi-cli", "claude-code", "codebuddy", "codebuddy-ide", "pi", "dsh"] },
                 "opencraft/scoped-model-catalog": { version: 1 },
                 "opencraft/agent-usage": { version: 1, providers: ["codex", "cursor"] },
                 "opencraft/server-spaces": {version:1},

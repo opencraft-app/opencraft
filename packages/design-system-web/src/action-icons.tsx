@@ -10,7 +10,7 @@ export { AgentBrandIcon, type AgentBrand } from "./agent-brand-icon";
 export { RecoveryScanArtwork } from "./recovery-scan";
 export * from "./layout-icons";
 export { SidebarToggleIcon } from "./sidebar-toggle-icon";
-export { BoldIcon, ItalicIcon, ParagraphIcon, QuoteIcon, OrderedListIcon, UndoIcon, HistoryIcon, CalendarClockIcon, NewFileIcon, SearchFileIcon, AddImageIcon } from "./shared-action-icons";
+export { BoldIcon, ItalicIcon, ParagraphIcon, QuoteIcon, OrderedListIcon, UndoIcon, HistoryIcon, CalendarClockIcon, NewFileIcon, SearchFileIcon, AddImageIcon, TagIcon, AnimalCatIcon, AnimalFoxIcon, AnimalRabbitIcon, AnimalOwlIcon, AnimalWhaleIcon, AnimalBearIcon } from "./shared-action-icons";
 
 /** Input geometry remains owned by ui-composer-input-icon (including touch). */
 export function MicrophoneIcon({ off = false, ...props }: ActionIconProps & { readonly off?: boolean }) {

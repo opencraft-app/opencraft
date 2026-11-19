@@ -1,14 +1,15 @@
 import { DisclosureButton } from "@opencraft/design-system-web/button";
 import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
-import { ModelIcon, LightningIcon } from "@opencraft/design-system-web/action-icons";
+import { AgentBrandIcon, ChevronDownIcon, ModelIcon, LightningIcon, type AgentBrand } from "@opencraft/design-system-web/action-icons";
 import { useIntl } from "@opencraft/i18n/react";
 import { useRef, type ReactNode } from "react";
 import type { useInputAuxiliaryMenuFocus } from "./use-input-auxiliary-menu-focus";
 
 /** The same menu owns source browsing, model choices and supported controls. */
-export function ComposerModelPicker({ policyRestricted, label, fullLabel, effortLabel, disabled, open, onOpenChange,
+export function ComposerModelPicker({ policyRestricted, agentBrand, label, fullLabel, effortLabel, disabled, open, onOpenChange,
   portalContainer, focus, displayFast, children }: {
   readonly policyRestricted?: boolean;
+  readonly agentBrand?: AgentBrand;
   readonly label: string;
   readonly fullLabel: string;
   readonly effortLabel?: string;
@@ -33,10 +34,13 @@ export function ComposerModelPicker({ policyRestricted, label, fullLabel, effort
       <DropdownMenu.Trigger asChild>
         <DisclosureButton {...focus.triggerProps} className="opencraft-composer-mode opencraft-composer-mode--intelligence opencraft-composer-mode--depth"
           type="button" disabled={disabled} aria-label={fullLabel} title={fullLabel}>
-          <ModelIcon className="opencraft-composer-mode__model-icon" size={16} aria-hidden="true" />
+          {agentBrand
+            ? <span className="opencraft-composer-mode__model-icon" aria-hidden="true"><AgentBrandIcon agent={agentBrand} size={15} /></span>
+            : <ModelIcon className="opencraft-composer-mode__model-icon" size={16} aria-hidden="true" />}
           <span className="opencraft-composer-mode__model-label">{label}</span>
           {effortLabel ? <span className="opencraft-composer-mode__effort-label">{effortLabel}</span> : null}
           {displayFast ? <LightningIcon className="opencraft-composer-mode__fast" size={14} filled aria-label={intl.formatMessage({ id: "composer.model.fastMode", defaultMessage: "Fast mode" })} /> : null}
+          <ChevronDownIcon className="opencraft-composer-mode__chevron" size={13} aria-hidden="true" />
         </DisclosureButton>
       </DropdownMenu.Trigger>
     </div>

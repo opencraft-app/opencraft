@@ -1,3 +1,4 @@
+import { ModelCatalogRefresh } from "./model-catalog-refresh";
 import { DisclosureButton } from "@opencraft/design-system-web/button";
 import { ModelIcon as BrainCircuit, CheckIcon as Check, ChevronDownIcon as ChevronDown, EditIcon as Pencil } from "@opencraft/design-system-web/action-icons";
 import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
@@ -22,9 +23,11 @@ export function groupComposerModels(models: readonly ComposerModelOption[], grou
 }
 
 /** Model-only session choice. Host reasoning and deployment defaults remain external. */
-export function SessionModelPicker({ catalog, label, selected, disabled, open, onOpenChange, onSelect, portalContainer, focus }: {
+export function SessionModelPicker({ catalog, label, fullLabel, effortLabel, selected, disabled, open, onOpenChange, onSelect, portalContainer, focus }: {
   readonly catalog?: ComposerSelectionCatalog;
   readonly label: string;
+  readonly fullLabel?: string;
+  readonly effortLabel?: string;
   readonly selected: string | null;
   readonly disabled: boolean;
   readonly open: boolean;
@@ -53,10 +56,11 @@ export function SessionModelPicker({ catalog, label, selected, disabled, open, o
         <Tooltip.Root open={truncated && !open ? undefined : false}>
           <Tooltip.Trigger asChild><DropdownMenu.Trigger asChild>
             <DisclosureButton {...focus.triggerProps} className="opencraft-composer-mode opencraft-composer-mode--intelligence" type="button" disabled={disabled}
-              aria-label={label} title={catalog?.modelError ? failedLabel : undefined}>
+              aria-label={fullLabel ?? label} title={catalog?.modelError ? failedLabel : undefined}>
               <BrainCircuit className="opencraft-composer-mode__model-icon" size={16} aria-hidden="true" />
-              <span ref={labelRef} className="opencraft-composer-mode__model-label">{models.length === 0 && !catalog?.modelError
+              <span ref={labelRef} className="opencraft-composer-mode__model-label">{models.length === 0 && selected === null && !catalog?.modelError
                 ? <span className="opencraft-composer-mode__model-skeleton" aria-hidden="true" /> : label}</span>
+              {effortLabel ? <span className="opencraft-composer-mode__effort-label">{effortLabel}</span> : null}
               <ChevronDown className="opencraft-composer-mode__chevron" size={12} />
             </DisclosureButton>
           </DropdownMenu.Trigger></Tooltip.Trigger>
@@ -71,6 +75,7 @@ export function SessionModelPicker({ catalog, label, selected, disabled, open, o
           data-configure-models={catalog?.onConfigureModels ? "true" : undefined}
           aria-label={intl.formatMessage({ id: "chat.model", defaultMessage: "Model" })} align="start" sideOffset={6} collisionPadding={6}>
           <div className="opencraft-composer-intelligence-view"><div className="opencraft-composer-intelligence-models">
+            <ModelCatalogRefresh catalog={catalog} model={selected ?? models[0]?.value} />
             {groups.map(group => {
               const items = group.models.map(model => {
                 const isSelected = model.value === selected || model.id === selected;

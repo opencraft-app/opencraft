@@ -83,7 +83,8 @@ function projectMessages(snapshot: TimelineSnapshot): readonly DisplayMessage[] 
     const active = frame.status === "pending" || frame.status === "streaming";
     if (frame.type === "user") {
       for (const block of frame.blocks) {
-        if (block.type !== "user-message" || block.messageKind !== "user" || !block.message.trim()) continue;
+        if (block.type !== "user-message" || block.messageKind !== "user" || !block.message.trim()
+          || (block.deliveryStatus !== null && block.deliveryStatus !== "sent")) continue;
         messages.push({ id: block.id, turnId: frame.turnId, role: "user", text: block.message.slice(0, MAX_MESSAGE_CHARACTERS),
           kind: "text", phase: "final_answer", completed: true,
           sentAtMs: nonnegativeNumber(block.sentAtMs), durationMs: null, workStatus: null, sender: messageSender(block.sender) });

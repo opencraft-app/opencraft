@@ -5,7 +5,18 @@ import type { ComposerAgentModelGroup, ComposerModelOption, ComposerSelectionCat
 const brands: Record<string, { brand: AgentBrand; name: string }> = {
   codex: { brand: "codex", name: "Codex" }, cursor: { brand: "cursor", name: "Cursor" },
   "claude-code": { brand: "claude", name: "Claude Code" }, codebuddy: { brand: "codebuddy", name: "CodeBuddy" },
+  "codebuddy-ide": { brand: "codebuddy", name: "CodeBuddy IDE" },
 };
+
+export function composerAgentBrand(agentId?: string | null, modelValue?: string | null): AgentBrand | undefined {
+  if (agentId && brands[agentId]) return brands[agentId].brand;
+  if (!modelValue) return undefined;
+  if (modelValue.startsWith("codex:")) return "codex";
+  if (modelValue.startsWith("cursor:")) return "cursor";
+  if (modelValue.startsWith("claude-code:")) return "claude";
+  if (modelValue.startsWith("codebuddy:") || modelValue.startsWith("codebuddy-ide:")) return "codebuddy";
+  return undefined;
+}
 
 export interface ComposerAgentSource {
   readonly id: string;

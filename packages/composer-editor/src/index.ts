@@ -12,6 +12,11 @@ export type {
   ComposerReasoningEffortOption,
   ComposerSelectionCatalog,
 } from "./composer-editor";
+export type {
+  ComposerHandoffDeviceOption,
+  ComposerHandoffState,
+  ComposerHandoffWorkspaceOption,
+} from "./composer-handoff";
 export * from "./prosemirror-codec";
 export { resolveComposerFooterDensity } from "./responsive-footer";
 export type {

@@ -1,12 +1,15 @@
 import { DisclosureButton, IconButton } from "@opencraft/design-system-web/button";
 import { TouchContactScope } from "@opencraft/design-system-web/touch-contact";
 import { parseConversationRef, encodeConversationRef } from "@opencraft/appserver-protocol/collaboration";
+import { asHostId } from "@opencraft/chat-core";
 import { useConversationReferences } from "./conversation-references";
+import { composerAgentBrand } from "./composer-agent-sources";
 import { ComposerAgentPicker } from "./composer-agent-picker";
+import type { ComposerHandoffState } from "./composer-handoff";
 import { ComposerModelPicker } from "./composer-model-picker";
 import { ComposerModelMenu } from "./composer-model-menu";
 import { modelChoiceFamilies } from "./model-choice-families";
-import { modelEffortLabel } from "./model-choice-labels";
+import { modelEffortLabel, modelIdentifierPresentation } from "./model-choice-labels";
 import { ModelIcon as BrainCircuit, CheckIcon as Check, ChevronDownIcon as ChevronDown, AttachmentIcon as Paperclip, AddIcon as Plus, CloseIcon as X } from "@opencraft/design-system-web/action-icons";
 import { LoadingRingIcon, ResetIcon, LightningIcon, PermissionDocumentIcon, PermissionShieldIcon, StopCircleIcon } from "@opencraft/design-system-web/action-icons";
 import { SessionModelPicker } from "./session-model-picker";
@@ -51,7 +54,9 @@ import { reasoningCapability, resolveReasoningEffort, resolveModelSelection, com
 import { ArrowUpIcon as ArrowUp, AtSignIcon as AtSign, AlertIcon as CircleAlert, CodeFileIcon as FileCode2, TextFileIcon as FileText, ImageIcon as Image, SparklesIcon as Sparkles } from "@opencraft/design-system-web/action-icons";
 import {
   Fragment,
+  Suspense,
   forwardRef,
+  lazy,
   type ReactNode,
   useCallback,
   useEffect,
@@ -86,6 +91,9 @@ import {
 } from "./prosemirror-codec";
 import { canSteerQueueItem, ComposerQueueTray, type ComposerQueueSender } from "./queue-tray";
 import { useMeasuredComposerFooterLayout } from "./responsive-footer";
+
+const ComposerHandoffBanner = lazy(async () => ({ default: (await import("./composer-handoff")).ComposerHandoffBanner }));
+const ComposerHandoffSubmitButton = lazy(async () => ({ default: (await import("./composer-handoff")).ComposerHandoffSubmitButton }));
 
 type SuggestionKind = "mention" | "skill" | "command";
 
@@ -192,6 +200,8 @@ export interface ComposerSelectionCatalog {
     readonly serviceTier?: string | null;
   }) => void;
   readonly retryModels?: () => void;
+  readonly canRefreshModels?: (model: string) => boolean;
+  readonly refreshModels?: (model: string) => Promise<void>;
 }
 
 export interface ComposerEffectiveSelections {
@@ -208,12 +218,6 @@ export interface ComposerExecutionTarget {
 }
 
 type SelectionPicker = "intelligence" | "permissions" | "agent";
-
-function modelIdentifierLabel(value: string): string {
-  return value.replace(/^:/, "").split(/[-_\s]+/u).filter(Boolean)
-    .map(part => /^gpt$/iu.test(part) ? "GPT" : `${part[0]?.toUpperCase() ?? ""}${part.slice(1).toLowerCase()}`)
-    .join(" ");
-}
 
 function compactModelLabel(label: string): string {
   return label.replace(/^GPT[-\s]+/iu, "").replace(/-(?=[\p{L}])/gu, " ");
@@ -746,7 +750,7 @@ export interface OpenCraftComposerProps {
   /** Read-only projection of current conversation recovery, independent of execution. */
   isRecovering?: boolean;
   /** Read-only connection/recovery warning; independent of normal AI execution. */
-  isUnstable?: boolean;
+  isConnectionUnavailable?: boolean;
   /** Thread-owned interrupt acknowledgement; does not imply the Turn has ended. */
   isStopping?: boolean;
   disabled?: boolean;
@@ -769,12 +773,15 @@ export interface OpenCraftComposerProps {
   modelDisplayOnly?: boolean;
   effectiveSelections?: ComposerEffectiveSelections;
   executionTarget?: ComposerExecutionTarget;
+  handoff?: ComposerHandoffState | null;
+  onStartHandoff?: () => void;
   defaultFollowUpAction?: ComposerFollowUpAction;
   availableFollowUpActions?: readonly ComposerFollowUpAction[];
   /** Thread-owned queue projection. The Composer only renders this state. */
   queuedSubmissions?: readonly ComposerQueuedSubmissionPresentation[];
   /** Local custody can fail before acceptance; keep the draft until it settles. */
   awaitSubmission?: boolean;
+  editableWhileSubmitting?: boolean;
   supportsQueuedSteer?: boolean;
   onUpdateQueuedSubmission?: (
     id: string,
@@ -827,7 +834,7 @@ export const OpenCraftComposer = forwardRef<
     mentionSuggestionsEnabled = true,
     isStreaming,
     isRecovering = false,
-    isUnstable = false,
+    isConnectionUnavailable = false,
     isStopping = false,
     disabled = false,
     portalContainer,
@@ -840,10 +847,13 @@ export const OpenCraftComposer = forwardRef<
     modelDisplayOnly = false,
     effectiveSelections,
     executionTarget,
+    handoff = null,
+    onStartHandoff,
     defaultFollowUpAction: preferredFollowUpAction = "queue",
     availableFollowUpActions,
     queuedSubmissions = [],
     awaitSubmission = false,
+    editableWhileSubmitting = false,
     supportsQueuedSteer = false,
     onUpdateQueuedSubmission,
     onDeleteQueuedSubmission,
@@ -861,7 +871,9 @@ export const OpenCraftComposer = forwardRef<
   const admittedFollowUpAction = resolveComposerFollowUpAction(preferredFollowUpAction, availableFollowUpActions);
   const defaultFollowUpAction = admittedFollowUpAction ?? preferredFollowUpAction;
   const intl = useIntl();
-  const placeholder = suppliedPlaceholder ?? intl.formatMessage({ id: "chat.companionFollowupPlaceholder", defaultMessage: "Tell me what you'd like to do next", description: "Follow-up composer placeholder" });
+  const placeholder = handoff !== null
+    ? intl.formatMessage({ id: "composer.handoff.placeholder", defaultMessage: "Add instructions for the new thread (optional)" })
+    : suppliedPlaceholder ?? intl.formatMessage({ id: "chat.companionFollowupPlaceholder", defaultMessage: "Tell me what you'd like to do next", description: "Follow-up composer placeholder" });
   const placeholderPendingRef = useRef(placeholderPending);
   placeholderPendingRef.current = placeholderPending;
   const placeholderRef = useRef(placeholder);
@@ -888,6 +900,7 @@ export const OpenCraftComposer = forwardRef<
   const pendingSubmissionRef = useRef<{
     readonly controller: ComposerController;
     readonly token: symbol;
+    readonly lockEditing: boolean;
   } | null>(null);
   const pendingQueueSteerRef = useRef<{
     readonly controller: ComposerController;
@@ -1062,6 +1075,9 @@ export const OpenCraftComposer = forwardRef<
     ? imagePreview : null;
 
   const catalogModels = selectionCatalog?.models ?? [];
+  const allSelectableModels = selectionCatalog?.agentGroups?.length
+    ? selectionCatalog.agentGroups.flatMap(group => group.models)
+    : catalogModels;
   const catalogPermissions = selectionCatalog?.permissionProfiles ?? [];
   const showPermissionPicker = hasPermissionProfileChoices(catalogPermissions);
   const newThreadDefaultPermission = catalogPermissions.find(permission =>
@@ -1076,16 +1092,38 @@ export const OpenCraftComposer = forwardRef<
       patch: { permissionProfile: newThreadDefaultPermission },
     });
   }, [controller, composerSnapshot.draft.id, composerSnapshot.draft.target.type, newThreadDefaultPermission]);
+  const activeHandoff = editingQueuedSubmissionId === null ? handoff : null;
+  const handoffContextRef = activeHandoff !== null
+    ? null
+    : composerSnapshot.draft.context.find(
+        reference => reference.visible && typeof reference.metadata?.conversationSourceThreadId === "string",
+      ) ?? null;
+  const visibleNonHandoffContext = composerSnapshot.draft.context.filter(
+    reference => reference.visible && reference.id !== handoffContextRef?.id,
+  );
+  const hasHandoffBanner = activeHandoff !== null || handoffContextRef !== null;
   const catalogDefaultModel = resolveModelSelection(catalogModels, undefined);
   const existingConversation = composerSnapshot.draft.target.type !== "new-thread";
-  const selectedModelValue = modelDisplayOnly ? effectiveSelections?.model ?? null : modelSelectionPolicy === "host-default" ? catalogDefaultModel?.value ?? null :
-    composerSnapshot.draft.selections.model ??
-    effectiveSelections?.model ??
-    (existingConversation ? null : catalogDefaultModel?.value) ??
-    null;
-  const modelUnavailable = !existingConversation && selectedModelValue !== null && !catalogModels.some(model => model.value === selectedModelValue || model.id === selectedModelValue);
-  const modelSelectionBlocked = !existingConversation && selectionCatalog !== undefined && !modelDisplayOnly && modelSelectionPolicy === "user" && (selectedModelValue === null || modelUnavailable);
-  const selectedModel = selectedModelValue === null && existingConversation ? null : resolveModelSelection(catalogModels, selectedModelValue);
+  const selectedModelValue = activeHandoff !== null
+    ? activeHandoff.model
+    : modelDisplayOnly ? effectiveSelections?.model ?? null : modelSelectionPolicy === "host-default" ? catalogDefaultModel?.value ?? null :
+      composerSnapshot.draft.selections.model ??
+      effectiveSelections?.model ??
+      (existingConversation ? null : catalogDefaultModel?.value) ??
+      null;
+  const modelCatalogPool = activeHandoff !== null ? allSelectableModels : catalogModels;
+  const modelUnavailable = (!existingConversation || activeHandoff !== null)
+    && selectedModelValue !== null
+    && modelCatalogPool.length > 0
+    && !modelCatalogPool.some(model => model.value === selectedModelValue || model.id === selectedModelValue);
+  const modelSelectionBlocked = (!existingConversation || activeHandoff !== null)
+    && selectionCatalog !== undefined
+    && !modelDisplayOnly
+    && modelSelectionPolicy === "user"
+    && (selectedModelValue === null || modelUnavailable);
+  const selectedModel = selectedModelValue === null && existingConversation && activeHandoff === null
+    ? null
+    : resolveModelSelection(modelCatalogPool, selectedModelValue);
   // Execution snapshots and retained Composer intent paint without waiting for
   // the complete selectable catalog. Cached metadata cannot grant capabilities.
   const displayModel = selectedModel ?? (selectedModelValue === null ? null
@@ -1093,28 +1131,36 @@ export const OpenCraftComposer = forwardRef<
   const effectiveEffort = composerSnapshot.draft.selections.model === undefined
     || composerSnapshot.draft.selections.model === effectiveSelections?.model
     ? effectiveSelections?.effort : undefined;
-  const requestedEffort = composerSnapshot.draft.selections.effort ?? effectiveEffort;
-  const displayEffortValue = existingConversation ? requestedEffort ?? null : undefined;
-  const selectedEffortValue = selectedModel?.policyRestrictedEfforts?.includes(requestedEffort ?? selectedModel.defaultEffort ?? "") ? requestedEffort ?? selectedModel.defaultEffort : existingConversation && requestedEffort == null ? null : selectedModel ? resolveReasoningEffort(
+  const requestedEffort = activeHandoff !== null
+    ? activeHandoff.effort ?? undefined
+    : composerSnapshot.draft.selections.effort ?? effectiveEffort;
+  const displayEffortValue = existingConversation && activeHandoff === null ? requestedEffort ?? null : undefined;
+  const selectedEffortValue = selectedModel?.policyRestrictedEfforts?.includes(requestedEffort ?? selectedModel.defaultEffort ?? "") ? requestedEffort ?? selectedModel.defaultEffort : existingConversation && activeHandoff === null && requestedEffort == null ? null : selectedModel ? resolveReasoningEffort(
     reasoningCapability(selectedModel.efforts.map(e=>e.value),selectedModel.efforts.some(e=>e.value===selectedModel.defaultEffort) ? selectedModel.defaultEffort : null),
     requestedEffort,
-  ) ?? null : null;
-  const requestedServiceTier = composerSnapshot.draft.selections.serviceTier !== undefined
-    ? composerSnapshot.draft.selections.serviceTier : effectiveSelections?.serviceTier;
+  ) ?? null : activeHandoff?.effort ?? null;
+  const requestedServiceTier = activeHandoff !== null
+    ? activeHandoff.serviceTier
+    : composerSnapshot.draft.selections.serviceTier !== undefined
+      ? composerSnapshot.draft.selections.serviceTier : effectiveSelections?.serviceTier;
   const displayServiceTier = modelDisplayOnly ? effectiveSelections?.serviceTier : requestedServiceTier;
-  const displayFast = modelDisplayOnly || existingConversation
+  const displayFast = modelDisplayOnly || existingConversation || activeHandoff !== null
     ? displayServiceTier === "fast" || !!displayModel?.serviceTiers?.some(tier => tier.id === displayServiceTier && tier.name.toLowerCase() === "fast")
     : undefined;
   const selectedServiceTier = selectedModel?.serviceTiers?.some(tier => tier.id === requestedServiceTier)
-    ? requestedServiceTier ?? null : null;
+    ? requestedServiceTier ?? null : activeHandoff !== null ? activeHandoff.serviceTier : null;
   // Null means inherit, including drafts saved by the former default option.
   // Display the resolved policy without writing it back as an explicit choice.
-  const effectivePermissionValue = effectiveSelections?.permissionProfile ?? null;
+  const effectivePermissionValue = activeHandoff !== null
+    ? newThreadDefaultPermission ?? null
+    : effectiveSelections?.permissionProfile ?? null;
   const effectiveDisplayPermissionValue = effectivePermissionValue === null ? null
     : catalogPermissions.find(permission => permission.nativeProfileId === effectivePermissionValue)?.value
       ?? effectivePermissionValue;
-  const requestedPermissionValue = composerSnapshot.draft.selections.permissionProfile
-    ?? effectivePermissionValue;
+  const requestedPermissionValue = activeHandoff !== null
+    ? activeHandoff.permissionProfile ?? effectivePermissionValue
+    : composerSnapshot.draft.selections.permissionProfile
+      ?? effectivePermissionValue;
   const selectedPermissionValue = requestedPermissionValue === null ? null
     : catalogPermissions.find(permission => permission.nativeProfileId === requestedPermissionValue)?.value
       ?? requestedPermissionValue;
@@ -1129,8 +1175,21 @@ export const OpenCraftComposer = forwardRef<
       : null;
   const catalogQueryText =
     catalogQueryKind === null ? "" : (suggestionQuery?.query.trim() ?? "");
-  const catalogTargetKey = encodeComposerTarget(composerSnapshot.draft.target);
-  const catalogModel = catalogQueryKind === "skill" && !existingConversation ? selectedModelValue ?? undefined : undefined;
+  const catalogSearchTarget = activeHandoff !== null && catalogQueryKind === "skill"
+    ? {
+        type: "new-thread" as const,
+        draftId: `handoff:${composerSnapshot.draft.id}`,
+        execution: {
+          hostId: asHostId(activeHandoff.hostId),
+          workspace: {
+            cwd: activeHandoff.workspacePath ?? null,
+            runtimeWorkspaceRoots: activeHandoff.workspacePath ? [activeHandoff.workspacePath] : [],
+          },
+        },
+      }
+    : composerSnapshot.draft.target;
+  const catalogTargetKey = encodeComposerTarget(catalogSearchTarget);
+  const catalogModel = catalogQueryKind === "skill" && (!existingConversation || activeHandoff !== null) ? selectedModelValue ?? undefined : undefined;
   const catalogSearchActive = catalogQueryKind !== null && shouldSearchComposerCatalog(catalogQueryKind, catalogQueryText);
   const catalogRequestKey = JSON.stringify([catalogTargetKey, catalogModel, catalogQueryKind, catalogQueryText, catalogRetry, catalogQueryKind === "skill" ? catalogRevision : 0]);
   const currentCatalogResult = catalogResult?.key === catalogRequestKey
@@ -1181,7 +1240,7 @@ export const OpenCraftComposer = forwardRef<
         {
           kind: catalogQueryKind,
           query: catalogQueryText,
-          target: composerSnapshot.draft.target,
+          target: catalogSearchTarget,
           model: catalogModel,
           // skills/list already returns the complete directory. Do not hide
           // entries after an arbitrary first page; file search stays bounded.
@@ -1369,7 +1428,7 @@ export const OpenCraftComposer = forwardRef<
         submissionDisabled ||
         switchingAgentId !== null ||
         modelSelectionBlocked ||
-        !controller.getSnapshot().canSubmit ||
+        (activeHandoff === null ? !controller.getSnapshot().canSubmit : (activeHandoff.submitting === true || composerSnapshot.hasProcessingAssets || composerSnapshot.hasUnavailableAssets)) ||
         pendingSubmissionRef.current?.controller === controller
       )
         return;
@@ -1377,6 +1436,10 @@ export const OpenCraftComposer = forwardRef<
         type: "set-document",
         document: proseMirrorToComposerDocument(view.state.doc),
       });
+      if (activeHandoff !== null) {
+        await activeHandoff.onSubmit();
+        return;
+      }
       if (isStreaming && (admittedFollowUpAction === null
         || (followUpActionOverride !== undefined && availableFollowUpActions?.includes(followUpActionOverride) === false))) return;
       let intent: SubmitIntent;
@@ -1399,11 +1462,11 @@ export const OpenCraftComposer = forwardRef<
       } catch {
         return;
       }
-      const submittedDraftId = controller.getSnapshot().draft.id;
+      const submittedDraft = controller.getSnapshot().draft;
       let consumedDocument: ComposerDocument | null = null;
       const restoreSelectedCommand = () => {
         const draft = controller.getSnapshot().draft;
-        if (consumeSelectedCommand && draft.id === submittedDraftId
+        if (consumeSelectedCommand && draft.id === submittedDraft.id
           && encodeComposerTarget(draft.target) === encodeComposerTarget(intent.target)
           && draft.document === consumedDocument
           && draft.attachments.length === 0 && draft.context.length === 0) {
@@ -1411,8 +1474,9 @@ export const OpenCraftComposer = forwardRef<
         }
       };
       const submissionToken = Symbol("composer-submission");
-      pendingSubmissionRef.current = { controller, token: submissionToken };
-      view.setProps({ editable: () => false });
+      const lockEditing = !editableWhileSubmitting || editingQueuedSubmissionId !== null || consumeSelectedCommand;
+      pendingSubmissionRef.current = { controller, token: submissionToken, lockEditing };
+      if (lockEditing) view.setProps({ editable: () => false });
       controller.dispatch({ type: "set-lifecycle", phase: "submitting" });
       // Local commands are consumed before their async action starts. Keep the
       // immutable intent for failure recovery instead of showing a pending chip.
@@ -1462,11 +1526,14 @@ export const OpenCraftComposer = forwardRef<
         }
 
         const accepted = await submission;
+        const currentDraft = controller.getSnapshot().draft;
         if (
           accepted !== false &&
-          (!consumeSelectedCommand || (controller.getSnapshot().draft.id === submittedDraftId
-            && controller.getSnapshot().draft.document === consumedDocument)) &&
-          encodeComposerTarget(controller.getSnapshot().draft.target) ===
+          currentDraft.id === submittedDraft.id &&
+          currentDraft.document === (consumeSelectedCommand ? consumedDocument : submittedDraft.document) &&
+          currentDraft.attachments === submittedDraft.attachments &&
+          currentDraft.context === submittedDraft.context &&
+          encodeComposerTarget(currentDraft.target) ===
             encodeComposerTarget(intent.target)
         )
           clear();
@@ -1527,6 +1594,7 @@ export const OpenCraftComposer = forwardRef<
       onSubmit,
       onUpdateQueuedSubmission,
       awaitSubmission,
+      editableWhileSubmitting,
       editingQueuedSubmissionId,
       selectedModel,
       selectedModelValue,
@@ -1539,6 +1607,9 @@ export const OpenCraftComposer = forwardRef<
       modelSelectionPolicy,
       modelDisplayOnly,
       effectiveSelections?.effort,
+      activeHandoff,
+      composerSnapshot.hasProcessingAssets,
+      composerSnapshot.hasUnavailableAssets,
     ],
   );
   const submitActionRef = useRef(submit);
@@ -1792,7 +1863,7 @@ export const OpenCraftComposer = forwardRef<
       state: editorState,
       editable: () =>
         !disabledRef.current && !voiceActiveRef.current &&
-        pendingSubmissionRef.current?.controller !== controller,
+        !(pendingSubmissionRef.current?.controller === controller && pendingSubmissionRef.current.lockEditing),
       attributes: {
         "aria-label": placeholderRef.current,
         "aria-multiline": "true",
@@ -1853,7 +1924,7 @@ export const OpenCraftComposer = forwardRef<
     view.setProps({
       editable: () =>
         !disabledRef.current && !voiceActiveRef.current &&
-        pendingSubmissionRef.current?.controller !== controller,
+        !(pendingSubmissionRef.current?.controller === controller && pendingSubmissionRef.current.lockEditing),
     });
     view.dom.setAttribute("aria-readonly", String(voiceActive || disabled));
     view.dom.tabIndex = voiceActive ? -1 : 0;
@@ -2056,7 +2127,7 @@ export const OpenCraftComposer = forwardRef<
   };
 
   const selectModel = (model: ComposerModelOption) => {
-    if (modelSelectionPolicy === "session") {
+    if (modelSelectionPolicy === "session" && activeHandoff === null) {
       controller.dispatch({ type: "set-selections", patch: { model: model.value, effort: undefined } });
       return;
     }
@@ -2071,11 +2142,21 @@ export const OpenCraftComposer = forwardRef<
       supportsCurrentEffort ? selectedEffortValue : undefined,
     );
     const serviceTier = model.serviceTiers?.some(tier => tier.id === requestedServiceTier) ? requestedServiceTier ?? null : null;
+    if (activeHandoff !== null) {
+      activeHandoff.onChangeSelections({
+        model: model.value,
+        effort: effort ?? null,
+        serviceTier,
+        ...(model.agentId !== selectedModel?.agentId ? { permissionProfile: null } : {}),
+      });
+      return;
+    }
     controller.dispatch({
       type: "set-selections",
       patch: {
         model: model.value,
         effort,
+        ...(model.agentId !== selectedModel?.agentId ? { permissionProfile: undefined } : {}),
         ...(modelSelectionPolicy === "user" ? { serviceTier } : {}),
       },
     });
@@ -2087,6 +2168,13 @@ export const OpenCraftComposer = forwardRef<
   };
 
   const selectEffort = (effort: ComposerReasoningEffortOption) => {
+    if (activeHandoff !== null) {
+      activeHandoff.onChangeSelections({
+        effort: effort.value,
+        ...(selectedModel !== null ? { model: selectedModel.value, serviceTier: selectedServiceTier } : {}),
+      });
+      return;
+    }
     controller.dispatch({
       type: "set-selections",
       patch: { effort: effort.value, ...(modelSelectionPolicy === "user" && selectedModel !== null
@@ -2103,6 +2191,14 @@ export const OpenCraftComposer = forwardRef<
 
   const selectServiceTier = (serviceTier: string | null) => {
     if (selectedModel === null) return;
+    if (activeHandoff !== null) {
+      activeHandoff.onChangeSelections({
+        model: selectedModel.value,
+        effort: selectedEffortValue ?? null,
+        serviceTier,
+      });
+      return;
+    }
     controller.dispatch({ type: "set-selections", patch: {
       model: selectedModel.value, effort: selectedEffortValue ?? undefined, serviceTier,
     } });
@@ -2112,6 +2208,11 @@ export const OpenCraftComposer = forwardRef<
   };
 
   const selectPermission = (permissionProfile: string | null) => {
+    if (activeHandoff !== null) {
+      activeHandoff.onChangeSelections({ permissionProfile });
+      setOpenPicker(null);
+      return;
+    }
     controller.dispatch({
       type: "set-selections",
       patch: { permissionProfile },
@@ -2120,18 +2221,21 @@ export const OpenCraftComposer = forwardRef<
   };
 
   const agentInHeader = typeof chromeHeader === "function" && modelSelectionPolicy === "user" && !modelDisplayOnly;
-  const displayFamily = modelSelectionPolicy === "user" && displayModel ? modelChoiceFamilies([displayModel])[0] : undefined;
-  const encodedEffort = displayFamily?.variants[0]?.effort;
+  const displayFamily = displayModel ? modelChoiceFamilies([displayModel])[0] : undefined;
+  const identifierPresentation = selectedModelValue === null ? null : modelIdentifierPresentation(selectedModelValue);
+  const encodedEffort = displayFamily?.variants[0]?.effort ?? identifierPresentation?.effort;
   const modelLabel =
     displayFamily?.label ?? displayModel?.label ??
     (selectedModelValue === null
       ? intl.formatMessage({ id: "chat.model", defaultMessage: "Model" })
-      : modelIdentifierLabel(selectedModelValue));
-  const compactSelectedModelLabel = displayModel?.agentLabel && !existingConversation && !agentInHeader
-    ? `${displayModel.agentLabel} · ${compactModelLabel(modelLabel)}` : compactModelLabel(modelLabel);
+      : identifierPresentation!.label);
+  const modelAgentLabel = displayModel?.agentLabel ?? (selectedModelValue?.startsWith("codex:") ? "Codex" : null);
+  const handoffAgentBrand = activeHandoff !== null ? composerAgentBrand(displayModel?.agentId, selectedModelValue) : undefined;
+  const compactSelectedModelLabel = modelAgentLabel && ((!existingConversation && !agentInHeader) || (activeHandoff !== null && !handoffAgentBrand))
+    ? `${modelAgentLabel} · ${compactModelLabel(modelLabel)}` : compactModelLabel(modelLabel);
   const manageModels = selectionCatalog?.agentGroups?.find(group => group.active)?.manage ?? selectionCatalog?.onConfigureModels;
   const visibleEffortValue = encodedEffort ?? (modelDisplayOnly ? effectiveSelections?.effort ?? null
-    : existingConversation ? displayEffortValue : selectedEffortValue);
+    : existingConversation && activeHandoff === null ? displayEffortValue : selectedEffortValue);
   const selectedEffort = displayModel?.efforts.find(effort => effort.value === visibleEffortValue)
     ?? (visibleEffortValue == null ? null : { value: visibleEffortValue, label: formatSelectionLabel(visibleEffortValue), description: null });
   const effortLabel =
@@ -2147,7 +2251,7 @@ export const OpenCraftComposer = forwardRef<
     id: "chat.reasoning",
     defaultMessage: "Reasoning",
   });
-  const namedModelLabel = displayModel?.agentLabel && !existingConversation && !agentInHeader ? `${displayModel.agentLabel} · ${modelLabel}` : modelLabel;
+  const namedModelLabel = modelAgentLabel && !existingConversation && !agentInHeader ? `${modelAgentLabel} · ${modelLabel}` : modelLabel;
   const intelligenceLabel = visibleEffortValue != null
     ? `${namedModelLabel}, ${reasoningLabel}: ${effortLabel}`
     : namedModelLabel;
@@ -2204,16 +2308,17 @@ export const OpenCraftComposer = forwardRef<
         if (event.target === editorViewRef.current?.dom) setEditingController(controller);
       }}
       data-composer-editing={editingActive ? "true" : "false"}
-      data-composer-layout={chromeHeader != null ? "stacked" : "auto-single-line"}
-      data-composer-empty={!composerSnapshot.hasContent && !showSuggestions
+      data-composer-handoff={hasHandoffBanner ? "true" : undefined}
+      data-composer-layout={chromeHeader != null || hasHandoffBanner ? "stacked" : "auto-single-line"}
+      data-composer-empty={!hasHandoffBanner && !composerSnapshot.hasContent && !showSuggestions
         && composerSnapshot.draft.attachments.length === 0
         && composerSnapshot.draft.lifecycle.phase === "editing" ? "true" : "false"}
-      data-composer-has-header={chromeHeader != null ? "true" : "false"}
+      data-composer-has-header={chromeHeader != null || hasHandoffBanner ? "true" : "false"}
       data-composer-phase={composerSnapshot.draft.lifecycle.phase}
       data-composer-has-top-tray={
         queuedSubmissions.length > 0 ? "true" : undefined
       }
-      aria-busy={composerSnapshot.draft.lifecycle.phase === "submitting"}
+      aria-busy={composerSnapshot.draft.lifecycle.phase === "submitting" || activeHandoff?.submitting === true}
     >
       {floatingContent}
       <ComposerAttachedRail>
@@ -2249,33 +2354,60 @@ export const OpenCraftComposer = forwardRef<
         />
         {attachedContent}
       </ComposerAttachedRail>
-      <div className="opencraft-composer-shell"
-        data-loading={isRecovering && !isUnstable ? "true" : undefined}
-        data-warning={isUnstable ? "true" : undefined}>
-        <ComposerRecoveryScan active={isRecovering} />
+      <div className="opencraft-composer-shell">
+        <ComposerRecoveryScan active={isRecovering} waiting={isConnectionUnavailable} />
         {chromeHeader === undefined ? null : (
           <div className="opencraft-composer-chrome-header">{typeof chromeHeader === "function" ? chromeHeader(agentInHeader ? <ComposerAgentPicker catalog={selectionCatalog} selected={selectedModelValue} displayModel={displayModel}
               disabled={disabled} open={openPicker === "agent"} onOpenChange={changePicker("agent")} portalContainer={portalContainer} focus={agentFocus}
               onSelect={(model, group) => { if (group) void selectAgentModel(group, model); else selectModel(model); }} /> : null) : chromeHeader}</div>
         )}
-        {composerSnapshot.draft.lifecycle.phase === "failed" && (
+        {activeHandoff !== null ? (
+          <Suspense fallback={null}>
+            <ComposerHandoffBanner
+              sourceTitle={activeHandoff.sourceTitle}
+              sourceAgentLabel={activeHandoff.sourceAgentLabel}
+              workspacePath={activeHandoff.workspacePath}
+              isCrossDevice={activeHandoff.isCrossDevice}
+              switchingDevice={activeHandoff.switchingDevice}
+              devices={activeHandoff.devices}
+              onSelectDevice={activeHandoff.onSelectDevice}
+              targetWorkspacePath={activeHandoff.targetWorkspacePath}
+              targetWorkspaces={activeHandoff.targetWorkspaces}
+              onSelectTargetWorkspace={activeHandoff.onSelectTargetWorkspace}
+              onBrowseTargetWorkspace={activeHandoff.onBrowseTargetWorkspace}
+              portalContainer={portalContainer}
+              disabled={disabled || activeHandoff.submitting === true}
+              onCancel={activeHandoff.onCancel}
+            />
+          </Suspense>
+        ) : handoffContextRef !== null ? (
+          <Suspense fallback={null}>
+            <ComposerHandoffBanner
+              sourceTitle={handoffContextRef.title}
+              disabled={disabled}
+              onCancel={() => controller.dispatch({ type: "remove-context", id: handoffContextRef.id })}
+            />
+          </Suspense>
+        ) : null}
+        {(composerSnapshot.draft.lifecycle.phase === "failed" || activeHandoff?.error) && (
           <div className="opencraft-composer-error" role="alert">
             <span>
-              {composerSnapshot.draft.lifecycle.error ??
-                "Message could not be sent"}
+              {activeHandoff?.error ?? composerSnapshot.draft.lifecycle.error ??
+                intl.formatMessage({ id: "chat.sendFailed", defaultMessage: "Message could not be sent" })}
             </span>
             <button
               type="button"
-              aria-label="Dismiss send error"
-              onClick={() =>
-                controller.dispatch({ type: "set-lifecycle", phase: "editing" })
-              }
+              aria-label={intl.formatMessage({ id: "chat.dismissSendError", defaultMessage: "Dismiss send error" })}
+              onClick={() => {
+                if (activeHandoff?.error) activeHandoff.onDismissError?.();
+                else controller.dispatch({ type: "set-lifecycle", phase: "editing" });
+              }}
             >
               <X size={13} />
             </button>
           </div>
         )}
-        {(attachments.length > 0 || composerSnapshot.draft.context.some(reference => reference.visible)) && (
+        {(attachments.length > 0 || visibleNonHandoffContext.length > 0) && (
           <div className="opencraft-composer-attachments" aria-label={intl.formatMessage({ id: "composer.attachmentsAndContext", defaultMessage: "Attachments and context" })} inert={voiceActive ? true : undefined}>
             {attachments.map((attachment) => {
               const image = attachment.mimeType.startsWith("image/");
@@ -2345,7 +2477,7 @@ export const OpenCraftComposer = forwardRef<
                 </div>
               );
             })}
-            {composerSnapshot.draft.context.filter(reference => reference.visible).map(reference => <div className="opencraft-composer-context" key={`context:${reference.id}`}>
+            {visibleNonHandoffContext.map(reference => <div className="opencraft-composer-context" key={`context:${reference.id}`}>
               <span className="opencraft-composer-attachment__icon"><FileText aria-hidden="true" size={15} /></span>
               <span className="opencraft-composer-attachment__copy"><strong>{reference.title}</strong>
                 <small>{intl.formatMessage({ id: "composer.context.reference", defaultMessage: "Reference context" })}</small>
@@ -2594,22 +2726,24 @@ export const OpenCraftComposer = forwardRef<
                 {visibleEffortValue != null ? <span className="opencraft-composer-mode__effort-label">{effortLabel}</span> : null}
                 {displayFast ? <LightningIcon className="opencraft-composer-mode__fast" size={14} filled aria-label="Fast" /> : null}
               </span> : null}
-              {!modelDisplayOnly && modelSelectionPolicy === "session" ? <SessionModelPicker catalog={selectionCatalog} label={modelLabel}
+              {!modelDisplayOnly && modelSelectionPolicy === "session" ? <SessionModelPicker catalog={selectionCatalog} label={compactSelectedModelLabel} fullLabel={intelligenceLabel} effortLabel={visibleEffortValue != null ? effortLabel : undefined}
                 selected={selectedModelValue} disabled={disabled} open={openPicker === "intelligence"}
                 onOpenChange={changePicker("intelligence")} onSelect={selectModel} portalContainer={portalContainer}
                 focus={intelligenceFocus} /> : null}
               {!modelDisplayOnly && modelSelectionPolicy === "user" ? <ComposerModelPicker
                 policyRestricted={selectionCatalog?.policyRestricted}
+                agentBrand={handoffAgentBrand}
                 label={compactSelectedModelLabel} fullLabel={intelligenceLabel} effortLabel={visibleEffortValue != null ? effortLabel : undefined}
                 disabled={disabled} open={openPicker === "intelligence"} onOpenChange={changePicker("intelligence")}
                 portalContainer={portalContainer} focus={intelligenceFocus} displayFast={displayFast}>
                 <ComposerModelMenu key={draftId} agentInHeader={agentInHeader} catalog={selectionCatalog} selected={selectedModelValue}
                   switchingAgentId={switchingAgentId} agentSelectionError={agentSelectionError} onConfigure={manageModels}
+                  onStartHandoff={existingConversation && activeHandoff === null ? onStartHandoff : undefined}
                   onSelect={(model, group) => {
                     if (group) { void selectAgentModel(group, model); }
                     else selectModel(model);
                   }}
-                  effort={existingConversation ? displayEffortValue ?? null : selectedEffortValue} onEffortChange={value => {
+                  effort={existingConversation && activeHandoff === null ? displayEffortValue ?? null : selectedEffortValue} onEffortChange={value => {
                     const effort = selectedModel?.efforts.find(candidate => candidate.value === value);
                     if (effort) selectEffort(effort);
                   }} serviceTier={selectedServiceTier} onServiceTierChange={selectServiceTier} />
@@ -2736,14 +2870,28 @@ export const OpenCraftComposer = forwardRef<
                 <Paperclip size={15} />
               </IconButton>
             ) : null}
-            {isStreaming && primaryAction !== "stop" ? <IconButton size="chrome" variant="ghost"
+            {isStreaming && (activeHandoff !== null || primaryAction !== "stop") ? <IconButton size="chrome" variant="ghost"
               disabled={isStopping} aria-busy={isStopping || undefined}
               aria-label={intl.formatMessage(isStopping ? { id: "chat.stop.pending", defaultMessage: "Stopping response…" } : { id: "chat.stopResponse", defaultMessage: "Stop response" })}
               onMouseDown={event => { if (event.button === 0) event.preventDefault(); }}
               onClick={event => onCancel({ trigger: event.detail === 0 ? "keyboard" : "pointer", isTrusted: event.isTrusted, occurredAt: Date.now() })}>
               {isStopping ? <LoadingRingIcon size={17} /> : <StopCircleIcon size={17} />}
             </IconButton> : null}
-            {primaryAction === "stop" ? (
+            {activeHandoff !== null ? (
+              <Suspense fallback={null}>
+                <ComposerHandoffSubmitButton
+                  canSubmit={!disabled && !submissionDisabled && !activeHandoff.submitting && !activeHandoff.switchingDevice && switchingAgentId === null && !modelSelectionBlocked && !composerSnapshot.hasProcessingAssets && !composerSnapshot.hasUnavailableAssets}
+                  submitting={activeHandoff.submitting}
+                  disabled={disabled}
+                  blockedReason={blockedReason}
+                  canContinueInCurrentThread={activeHandoff.canContinueInCurrentThread}
+                  portalContainer={portalContainer}
+                  onSubmit={() => { void submit(); }}
+                  onContinueInCurrentThread={activeHandoff.onContinueInCurrentThread}
+                  onCancel={activeHandoff.onCancel}
+                />
+              </Suspense>
+            ) : primaryAction === "stop" ? (
               <button
                 className="opencraft-composer-submit is-stop"
                 type="button"

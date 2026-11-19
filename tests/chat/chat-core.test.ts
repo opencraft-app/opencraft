@@ -2449,6 +2449,7 @@ test("Composer request selection is newest-first and ignores settled interaction
       { id: "approved", type: "interaction:approval", payload: { requestId: "rpc-old", title: "Old", state: "accepted" } },
       { id: "question", type: "interaction:question", payload: { requestId: "rpc-question", state: "pending", questions: [{ id: "q", question: "Choose", options: [] }] } },
       { id: "elicitation", type: "interaction:elicitation", payload: { requestId: "rpc-new", state: "pending", method: "mcpServer/elicitation/request", message: "Continue", mode: "form" } },
+      { id: "async", type: "interaction:question", payload: { requestId: "rpc-async", state: "pending", isBlocking: false, questions: [{ id: "q", question: "Optional input", options: [] }] } },
     ],
   }]), createDefaultTimelineProjectorRegistry());
 
@@ -2459,6 +2460,12 @@ test("Composer request selection is newest-first and ignores settled interaction
       blocks: frame.blocks.map((block) => block.type === "elicitation" ? { ...block, state: "accepted" as const } : block),
     })),
   })?.requestId, "rpc-question");
+  assert.equal(findPendingInteraction({
+    frames: snapshot.frames.map(frame => ({
+      ...frame,
+      blocks: frame.blocks.filter(block => block.type === "question" && block.isBlocking === false),
+    })),
+  })?.requestId, "rpc-async");
 });
 
 test("request_option_picker is a distinct Composer-owned interaction", () => {

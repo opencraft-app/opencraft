@@ -18,9 +18,10 @@ export interface AcpTransportOptions {
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
   parameterizedModelPicker?: boolean;
+  formElicitation?: boolean;
   redactError?: (message: string) => string;
   onNotification(method: string, params: AcpObject): void;
-  onRequest(method: string, params: AcpObject): Promise<unknown>;
+  onRequest(method: string, params: AcpObject, signal: AbortSignal): Promise<unknown>;
   onExit?(): void;
   onUnconfirmed?(): void;
 }
@@ -31,9 +32,9 @@ export class AcpStdioTransport {
   private sequence = 0;
   private readonly pending = new Map<number, { resolve(value: any): void; reject(error: Error): void; timer?: NodeJS.Timeout }>();
   private closing = false;
-  private inboundRequests = 0;
+  private readonly inboundRequests = new Map<string | number, AbortController>();
   private unconfirmedRequests = 0;
-  get occupancy() { return { pendingNativeRequests: this.pending.size, pendingNativeCallbacks: this.inboundRequests, unconfirmedNativeRequests: this.unconfirmedRequests }; }
+  get occupancy() { return { pendingNativeRequests: this.pending.size, pendingNativeCallbacks: this.inboundRequests.size, unconfirmedNativeRequests: this.unconfirmedRequests }; }
   private initialized: Promise<AcpObject> | null = null;
   private readonly pi?: PiRpcAdapter;
   private sandboxed = false;
@@ -69,6 +70,7 @@ export class AcpStdioTransport {
         if (this.child !== child) return;
         const activeRun = this.pi?.hasActiveRun === true;
         this.child = null; lines.close();
+        for (const request of this.inboundRequests.values()) request.abort();
         this.pi?.fail(new Error("Pi engine connection closed"));
         if (!this.closing && (this.pending.size || activeRun)) { this.unconfirmedRequests += this.pending.size + (activeRun ? 1 : 0); this.options.onUnconfirmed?.(); }
         for (const call of this.pending.values()) { clearTimeout(call.timer); call.reject(new Error("ACP engine connection closed")); }
@@ -79,7 +81,10 @@ export class AcpStdioTransport {
       if (this.pi) return this.pi.initialize();
       return this.request("initialize", { protocolVersion: 1,
         clientInfo: { name: "opencraft", version: "1" },
-        clientCapabilities: this.options.parameterizedModelPicker ? { _meta: { parameterizedModelPicker: true } } : {} });
+        clientCapabilities: {
+          ...(this.options.parameterizedModelPicker ? { _meta: { parameterizedModelPicker: true } } : {}),
+          ...(this.options.formElicitation ? { elicitation: { form: {} } } : {}),
+        } });
     })();
   }
   private send(value: unknown): void {
@@ -121,11 +126,25 @@ export class AcpStdioTransport {
       return;
     }
     if (typeof frame.method === "string") {
-      if (frame.id === undefined) { this.options.onNotification(frame.method, frame.params ?? {}); return; }
-      this.inboundRequests++;
-      try { this.send({ jsonrpc: "2.0", id: frame.id, result: await this.options.onRequest(frame.method, frame.params ?? {}) }); }
-      catch { this.send({ jsonrpc: "2.0", id: frame.id, error: { code: -32603, message: "Host operation failed" } }); }
-      finally { this.inboundRequests--; }
+      if (frame.id === undefined) {
+        if (frame.method === "$/cancel_request") this.inboundRequests.get(frame.params?.requestId)?.abort();
+        else this.options.onNotification(frame.method, frame.params ?? {});
+        return;
+      }
+      if (typeof frame.id !== "string" && typeof frame.id !== "number") throw new Error("Invalid ACP request identity");
+      if (this.inboundRequests.has(frame.id) || this.inboundRequests.size >= 256) throw new Error("Invalid ACP request admission");
+      const request = new AbortController();
+      this.inboundRequests.set(frame.id, request);
+      try {
+        const result = await this.options.onRequest(frame.method, frame.params ?? {}, request.signal);
+        if (!request.signal.aborted) this.send({ jsonrpc: "2.0", id: frame.id, result });
+        else if (this.options.formElicitation && frame.method === "elicitation/create" && this.child && !this.closing) {
+          // Codex's cancellation notification still leaves the peer awaiting a response.
+          this.send({ jsonrpc: "2.0", id: frame.id, result: { action: "cancel" } });
+        }
+      } catch {
+        if (!request.signal.aborted) this.send({ jsonrpc: "2.0", id: frame.id, error: { code: -32603, message: "Host operation failed" } });
+      } finally { this.inboundRequests.delete(frame.id); }
       return;
     }
     const call = this.pending.get(frame.id);
@@ -137,6 +156,7 @@ export class AcpStdioTransport {
     if (this.closing) return;
     if (this.pi && this.child) { try { await this.pi.cancel(); } catch { /* Termination below still owns cleanup. */ } }
     this.closing = true;
+    for (const request of this.inboundRequests.values()) request.abort();
     this.pi?.fail(new Error("Pi Host closed"));
     const child = this.child;
     if (!child) return;

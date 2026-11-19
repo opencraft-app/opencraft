@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { serverAdmissionOrigin, parseServerContext, serverUrl, serverPath, serverStorageKey, serverFetch, serverEndpointNeedsRefresh } from '../../apps/workbench-web/src/runtime/server-context';
+import { serverAdmissionOrigin, parseServerContext, serverUrl, serverPath, serverStorageKey, serverFetch, serverEndpointNeedsRefresh, serverInvitationLink } from '../../apps/workbench-web/src/runtime/server-context';
 
 test('browser context scopes network and persistent state while leaving external destinations alone',async t=>{
   const originalDocument=Object.getOwnPropertyDescriptor(globalThis,'document'),originalWindow=Object.getOwnPropertyDescriptor(globalThis,'window'),originalFetch=globalThis.fetch;
@@ -65,4 +65,31 @@ test('only saved AppServer endpoints for the selected instance are refreshed', t
   assert.equal(serverEndpointNeedsRefresh('wss://entry.test/servers/stable-instance/appserver', 'wss://entry.test/appserver'), true);
   enabled = false;
   assert.equal(serverEndpointNeedsRefresh('wss://entry.test/servers/stable-instance/appserver', 'wss://entry.test/appserver'), false);
+});
+
+test('member invitations retain the public deployment route and never share a local-only entry', t => {
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  t.after(() => {
+    for (const [key, value] of [['document', originalDocument], ['window', originalWindow]] as const) {
+      if (value) Object.defineProperty(globalThis, key, value);
+      else Reflect.deleteProperty(globalThis, key);
+    }
+  });
+  let context: object | null = null;
+  Object.defineProperty(globalThis, 'document', {configurable:true,value:{getElementById:()=>context?{textContent:JSON.stringify(context)}:null}});
+  const visit=(href:string)=>Object.defineProperty(globalThis,'window',{configurable:true,value:{location:{href}}});
+  visit('https://entry.test/settings/private?chat=private&serverInvite=old#private');
+  assert.equal(serverInvitationLink('new+code'), 'https://entry.test/?serverInvite=new%2Bcode');
+  for (const prefix of ['/servers', '/__opencraft_servers']) {
+    context={id:'team',name:'Team',basePath:prefix+'/team',selectorPath:prefix,targetOrigin:'http://127.0.0.1:9000'};
+    visit('https://entry.test'+prefix+'/team/chat/private?secret=old');
+    assert.equal(serverInvitationLink('invitation'), 'https://entry.test'+prefix+'/team/?serverInvite=invitation');
+  }
+  context=null;
+  visit('http://192.168.1.2:5173/chat/private');
+  assert.equal(serverInvitationLink('invitation'),'http://192.168.1.2:5173/?serverInvite=invitation');
+  for (const href of ['http://127.0.0.1:5173/', 'http://127.8.9.10/', 'http://127.1/', 'http://localhost:5173/', 'https://localhost./', 'http://test.localhost/', 'http://[::1]:5173/', 'http://[::ffff:127.0.0.1]/', 'http://0.0.0.0:5173/', 'http://[::]:5173/', 'file:///app/index.html', 'https://user:password@entry.test/']) {
+    visit(href); assert.equal(serverInvitationLink('invitation'),null,href);
+  }
 });

@@ -1,3 +1,4 @@
+import { modelIdentifierPresentation } from "./model-choice-labels";
 import type { ComposerModelOption } from "./composer-editor";
 
 export interface ModelChoiceFamily {
@@ -33,7 +34,9 @@ export function modelChoiceFamilies(models: readonly ComposerModelOption[]): Mod
     const concrete = variant && variant.base.length > "codex:".length ? variant : null;
     const id = concrete?.base ?? model.id;
     let family = families.get(id);
-    if (!family) { family = { id, label: concrete ? familyLabel(model.label) : model.label, models: [], variants: [] }; families.set(id, family); }
+    const rawIdentifierLabel = model.value.startsWith("codex:") && (model.label === model.value || model.label === model.value.slice("codex:".length));
+    const label = rawIdentifierLabel ? modelIdentifierPresentation(model.value).label : model.label;
+    if (!family) { family = { id, label: concrete ? familyLabel(label) : label, models: [], variants: [] }; families.set(id, family); }
     family.models.push(model);
     if (concrete) family.variants.push({ effort: concrete.effort, model });
   }

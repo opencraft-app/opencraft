@@ -573,9 +573,13 @@ heights, so returning to a long reading position does not discard known geometry
 
 ### Composer connection recovery presentation
 
-Host connection recovery paints the shared Composer recovery scan independently
-of a committed Thread lease and retained history authority. Both the new-thread
-draft and retained conversation consume the same pending recovery projection;
-typed content keeps its document and remains visible during recovery. The
-Composer does not append a separate connection explanation below its shell.
-This presentation does not schedule reconnects or change input admission.
+Host recovery and cold history loading share the Composer's bottom-edge status
+line. Typed content stays editable. A warm View retains its last confirmed
+mounted frames and scroll checkpoint until authoritative history returns; the
+retained frames carry display access only. Pending outbound text is recovered
+through its outbox state. The account-scoped disk display stores acknowledged
+messages and received response text.
+
+On foreground, a usable transport keeps its attached baseline. Its supported
+idle history refresh reads in the background and applies any changed window.
+A lost transport is recovered by the existing liveness and reconnect owners.

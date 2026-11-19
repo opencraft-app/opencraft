@@ -314,14 +314,17 @@ owning Agent declares that exact native model. Loading and refresh failures reta
 existing selections; unrelated permission/default queries are not model loading.
 
 
-### Switching Agents from an imported conversation
+### Switching Agents and Handoff to a new thread
 
 A scoped native model directory validates the current Agent; it does not hide the
-other Agents from the chooser. Imported Codex/Cursor views also load the Host's
-Agent directory for browsing. Selecting a model from the same Agent updates the
-current Composer. Selecting a different Agent opens a new draft on the same Host,
-Server and working directory, retaining unsent text, ready attachments and context.
-Interrupted attachment processing is marked for re-adding in the destination.
+other Agents from the chooser. Existing conversation Views load the Host's Agent
+directory for browsing. Selecting a model from the same Agent updates the current
+Composer, while an explicit Handoff action or selecting a different Agent switches
+the current conversation's Composer inline into Handoff mode (`Handoff to new thread`
+with a `Continue from` source pill and primary `New thread` split action) while
+preserving the mounted editor, unsent text, caret and ready attachments. Submitting
+creates and opens the new conversation on the selected Agent/Host, Server and
+working directory; cancelling restores the source conversation's model selection.
 
 `opencraft/agent-session/export-context` reads the original conversation without
 resuming it. The native history Worker writes a private readable transcript and a

@@ -14,6 +14,8 @@ export interface ConversationDraftStorage {
   load(key: string): Promise<string | null>;
   save(key: string, value: string): Promise<void>;
   remove(key: string): Promise<void>;
+  /** A platform may keep pending edits across a page lifecycle interruption. */
+  stage?(key: string, value: string | null): () => void;
 }
 
 export interface ConversationDraftContinuity {
@@ -131,36 +133,55 @@ export function createConversationDraftContinuity(input: {
     const next = prior.catch(() => undefined).then(operation);
     pending.set(key, next);
     void next.finally(() => { if (pending.get(key) === next) pending.delete(key); }).catch(() => undefined);
+    return next;
   };
   const cancelTimer = (key: string) => {
     const timer = timers.get(key);
     if (timer !== undefined) clearTimeout(timer);
     timers.delete(key);
   };
-  const write = (key: string, draft: ComposerDraft) => {
-    const value = serializeConversationDraftDocument(draft.document, draft.target, draft);
-    enqueue(key, () => value === null ? input.storage.remove(key) : input.storage.save(key, value));
-  };
+  const write = (key: string, value: string | null, committed?: () => void) =>
+    enqueue(key, async () => {
+      if (value === null) await input.storage.remove(key);
+      else await input.storage.save(key, value);
+      committed?.();
+    });
   return {
     attach(viewId, controller) {
       const initial = controller.getSnapshot().draft;
       const key = keyFor(viewId, initial.target);
       let live = true;
       let hydrated = false;
+      let stagedValue = serializeConversationDraftDocument(initial.document, initial.target, initial);
+      let committed: (() => void) | undefined;
+      let scheduled: { value: string | null } | undefined;
+      const stage = (value: string | null) => {
+        if (value === stagedValue) return;
+        stagedValue = value;
+        committed = input.storage.stage?.(key, value);
+      };
       const persist = () => {
-        if (!hydrated || !live) return;
+        if (!live) return;
         const current = controller.getSnapshot().draft;
         if (keyFor(viewId, current.target) !== key) return;
-        cancelTimer(key);
         const value = serializeConversationDraftDocument(current.document, current.target, current);
-        if (value === null) {
-          enqueue(key, () => input.storage.remove(key));
-        } else if (input.delayMs === 0) {
-          enqueue(key, () => input.storage.save(key, value));
+        stage(value);
+        if (!hydrated || scheduled?.value === value) return;
+        cancelTimer(key);
+        const finish = committed;
+        const operation = { value };
+        scheduled = operation;
+        const save = () => {
+          void write(key, value, finish).catch(() => {
+            if (scheduled === operation) scheduled = undefined;
+          });
+        };
+        if (value === null || input.delayMs === 0) {
+          save();
         } else {
           timers.set(key, setTimeout(() => {
             timers.delete(key);
-            enqueue(key, () => input.storage.save(key, value));
+            save();
           }, input.delayMs ?? 180));
         }
       };
@@ -189,13 +210,17 @@ export function createConversationDraftContinuity(input: {
         unsubscribe();
         cancelTimer(key);
         const current = controller.getSnapshot().draft;
-        if (keyFor(viewId, current.target) === key && (hydrated || current.document !== initial.document)) write(key, current);
+        if (keyFor(viewId, current.target) === key && (hydrated || current.document !== initial.document)) {
+          const value = serializeConversationDraftDocument(current.document, current.target, current);
+          stage(value);
+          write(key, value, committed);
+        }
       };
     },
     discard(viewId, target) {
       const key = keyFor(viewId, target);
       cancelTimer(key);
-      enqueue(key, () => input.storage.remove(key));
+      write(key, null, input.storage.stage?.(key, null));
     },
   };
 }

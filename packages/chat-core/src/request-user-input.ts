@@ -6,12 +6,13 @@ export interface UserInputQuestionDraft {
   readonly freeformText: string;
 }
 
-/** Single-select starts on its first choice; multi-select starts empty. */
+/** Blocking single-select starts on its first choice by default. */
 export function createUserInputQuestionDrafts(
   questions: readonly UserInputQuestion[],
+  selectFirstOption = true,
 ): readonly UserInputQuestionDraft[] {
   return questions.map((question) => ({
-    selectedOptionId: question.multiSelect ? null : question.options[0]?.id ?? null,
+    selectedOptionId: !question.multiSelect && selectFirstOption ? question.options[0]?.id ?? null : null,
     ...(question.multiSelect ? { selectedOptionIds: [] } : {}),
     freeformText: "",
   }));

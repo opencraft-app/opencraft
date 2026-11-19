@@ -6,6 +6,11 @@ interface Entry {
   value: SharedInteraction;
   readonly offered: Set<string>;
   answer?: { submissionId: string; fingerprint: string };
+  local?: LocalResponse;
+}
+interface LocalResponse {
+  prepare(result: Record<string, unknown>): () => void;
+  cancel(): void;
 }
 function canonical(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
@@ -33,7 +38,7 @@ export class HostInteractions {
     const e = this.entries.get(this.nativeIds.get(JSON.stringify(id)) ?? "");
     return typeof e?.value.params.threadId === "string" ? e.value.params.threadId : null;
   }
-  capture(source: InteractionSourceRequest): string {
+  capture(source: InteractionSourceRequest, local?: LocalResponse): string {
     const key = JSON.stringify(source.id), stable = source.__opencraftInteractionKey;
     const id = stable ?? this.nativeIds.get(key) ?? `interaction:${this.epoch}:${randomUUID()}`;
     const currentNative = this.nativeIds.get(key);
@@ -41,7 +46,7 @@ export class HostInteractions {
     if (this.resolved.has(id)) throw new InteractionFault({ code: "SOURCE_RETIRED" }, "Interaction source has already retired");
     const previous = this.entries.get(id);
     if (previous) {
-      if (canonical(previous.source.params) !== canonical(source.params) || previous.source.method !== source.method)
+      if (previous.local || local || canonical(previous.source.params) !== canonical(source.params) || previous.source.method !== source.method)
         throw new InteractionFault({ code: "SOURCE_CONFLICT" }, "Interaction source identity was reused");
       this.nativeIds.delete(JSON.stringify(previous.source.id));
       previous.source = source;
@@ -53,16 +58,40 @@ export class HostInteractions {
       }
     } else {
       if (this.entries.size >= 256) throw new InteractionFault({ code: "LIMIT" }, "Too many pending interactions");
-      this.entries.set(id, { source, offered: new Set(), value: { id, method: source.method, params: source.params,
+      this.entries.set(id, { source, local, offered: new Set(), value: { id, method: source.method, params: source.params,
         state: source.__opencraftInteractionState ?? "pending", canRespond: true, receivedAtMs: Date.now() } });
     }
     this.nativeIds.set(key, id); this.publish(String(source.params.threadId)); return id;
+  }
+  /** A local protocol adapter awaits the human response on its own request. */
+  request<T>(source: InteractionSourceRequest, signal: AbortSignal, project: (result: Record<string, unknown>) => T): Promise<T> {
+    return new Promise((resolve, reject) => {
+      if (signal.aborted) { reject(signal.reason); return; }
+      const threadId = String(source.params.threadId);
+      const abort = () => this.resolveNative(source.id, threadId);
+      const local: LocalResponse = {
+        prepare: (result) => {
+          const reply = project(result);
+          return () => {
+            resolve(reply);
+            this.resolveNative(source.id, threadId);
+          };
+        },
+        cancel: () => {
+          signal.removeEventListener("abort", abort);
+          reject(signal.reason ?? new Error("Interaction closed"));
+        },
+      };
+      signal.addEventListener("abort", abort, { once: true });
+      try { this.capture(source, local); }
+      catch (error) { signal.removeEventListener("abort", abort); reject(error); }
+    });
   }
   markSourceUnavailable(threadId?: string): void {
     const changed = new Set<string>();
     for (const entry of this.entries.values()) {
       const id = String(entry.value.params.threadId);
-      if ((threadId !== undefined && threadId !== id) || entry.value.canRespond === false) continue;
+      if (entry.local || (threadId !== undefined && threadId !== id) || entry.value.canRespond === false) continue;
       entry.value = { ...entry.value, canRespond: false }; entry.offered.clear(); changed.add(id);
     }
     for (const id of changed) this.publish(id);
@@ -73,7 +102,7 @@ export class HostInteractions {
   }
   offerLegacy(threadId: string, clientId: string, send: (source: InteractionSourceRequest) => void): void {
     for (const e of [...this.entries.values()]) {
-      if (e.value.params.threadId !== threadId || e.value.canRespond === false || e.value.state !== "pending" || e.offered.has(clientId)) continue;
+      if (e.local || e.value.params.threadId !== threadId || e.value.canRespond === false || e.value.state !== "pending" || e.offered.has(clientId)) continue;
       e.offered.add(clientId); send(e.source);
     }
   }
@@ -111,7 +140,8 @@ export class HostInteractions {
     };
     const beforeValidation = admission();
     if (beforeValidation) return beforeValidation;
-    validate?.(e.source, result);
+    const writeLocal = e.local?.prepare(result);
+    if (!writeLocal) validate?.(e.source, result);
     // Validation is external code: it may retire the entry or admit a peer.
     const afterValidation = admission();
     if (afterValidation) return afterValidation;
@@ -123,7 +153,7 @@ export class HostInteractions {
     if (this.entries.get(id) !== e) return "resolved";
     if (e.answer !== answer || e.value.state !== "responding" || e.value.canRespond === false)
       throw new InteractionFault({ code: "SOURCE_CHANGED" }, "Interaction source changed during admission");
-    try { await write(e.source, result); }
+    try { if (writeLocal) writeLocal(); else await write(e.source, result); }
     catch (cause) {
       // A producer pending replay can reuse Entry while revoking this answer.
       if (this.entries.get(id) === e && e.answer === answer) { e.value = { ...e.value, state: "unconfirmed" }; this.publish(threadId); }
@@ -134,7 +164,7 @@ export class HostInteractions {
   resolveNative(id: string | number, threadId: string): void {
     const key = this.nativeIds.get(JSON.stringify(id)), e = key ? this.entries.get(key) : undefined;
     if (!key || !e || e.value.params.threadId !== threadId) return;
-    this.entries.delete(key); this.nativeIds.delete(JSON.stringify(id));
+    this.entries.delete(key); this.nativeIds.delete(JSON.stringify(id)); e.local?.cancel();
     this.resolved.set(key, threadId);
     while (this.resolved.size > 256) this.resolved.delete(this.resolved.keys().next().value!);
     this.publish(threadId);
@@ -142,7 +172,10 @@ export class HostInteractions {
   resolveTurn(threadId: string, turnId: string): void {
     for (const e of [...this.entries.values()]) if (e.source.params.threadId === threadId && e.source.params.turnId === turnId) this.resolveNative(e.source.id, threadId);
   }
-  clear(): void { this.entries.clear(); this.nativeIds.clear(); this.resolved.clear(); this.revisions.clear(); }
+  clear(): void {
+    for (const entry of this.entries.values()) entry.local?.cancel();
+    this.entries.clear(); this.nativeIds.clear(); this.resolved.clear(); this.revisions.clear();
+  }
   private publish(threadId: string): void {
     this.revisions.set(threadId, (this.revisions.get(threadId) ?? 0) + 1);
     for (const listener of [...this.listeners]) { try { listener(threadId); } catch { /* An observer cannot own native settlement. */ } }

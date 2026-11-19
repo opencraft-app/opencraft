@@ -39,7 +39,7 @@ import type {
   QueuedSubmission,
 } from "./models";
 import { createInterruptInteractionResponse } from "./interaction-lifecycle";
-import { ContinuationCommandError, SubmissionNotDispatchedError, SubmissionOutcomeUnknownError } from "./ports";
+import { ContinuationCommandError, SubmissionOutcomeUnknownError } from "./ports";
 import type {
   ConversationCommandPort,
   ConversationHistoryPort,
@@ -549,6 +549,7 @@ function interactionPayload(interaction: PendingInteraction): {
         payload: {
           requestId: interaction.requestId,
           questions,
+          isBlocking: boolean(params.isBlocking) ?? true,
           state: "pending",
           method: interaction.method,
           itemId: interaction.itemId,
@@ -1908,16 +1909,9 @@ export function createReplicaConversationRuntime(
       if (outbox && ((intent.target.type !== "steer-active-turn" && outbox.hasPending())
         || !snapshot.authoritative || config.canDispatchOutbox?.(intent) === false))
         return outbox.admit(intent);
-      try { return await submitOnline(intent); }
-      catch (error) {
-        if (!outbox || intent.target.type !== "existing-thread" || !(error instanceof SubmissionNotDispatchedError)) throw error;
-        // Persist custody before retiring the failed optimistic row. The outbox
-        // uses the same immutable message ID and queues only after readiness.
-        const receipt = await outbox.admit(intent);
-        if (pendingSubmissions.get(intent.commandId)?.error === error) pendingSubmissions.delete(intent.commandId);
-        localRevision++; publish();
-        return receipt;
-      }
+      if (outbox && intent.attachments.length === 0 && intent.context.length === 0)
+        return outbox.submitOnline(intent, () => snapshot.authoritative && snapshot.phase === "live" && config.canDispatchOutbox?.(intent) !== false);
+      return submitOnline(intent);
     },
     interrupt(turnId, provenance) {
       if (disposed) return Promise.reject(new Error("Conversation runtime is disposed"));

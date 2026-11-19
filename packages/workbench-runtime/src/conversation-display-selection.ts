@@ -81,13 +81,17 @@ export function selectConversationDisplay(input: {
   readonly key: ConversationKey | null;
   readonly timeline: TimelineSnapshot | null;
   readonly cached: TimelineSnapshot | null;
+  readonly retained?: TimelineSnapshot | null;
   readonly submission?: TimelineSnapshot | null;
 }): ConversationDisplaySelection {
   const scoped = (value: TimelineSnapshot | null | undefined) =>
     value != null && input.key !== null && sameConversation(input.key, value.key) ? value : null;
   const timeline = scoped(input.timeline);
   const cached = scoped(input.cached);
+  const retained = scoped(input.retained);
   const submission = scoped(input.submission);
+  if (!timeline?.authoritative && retained !== null && retained.frames.length > 0)
+    return { source: "cache", timeline: retained };
   if (timeline !== null && timeline.frames.length > 0) {
     if (timeline.authoritative) return { source: "history", timeline };
     const preview = selectPreviewTimeline(timeline, cached);

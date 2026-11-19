@@ -37,6 +37,10 @@ export interface AppServerTurn {
 export interface AppServerThread {
   /** Read-only history index count; absent when the source cannot establish it. */
   historyTurnCount?: number;
+  /** Optional current Host observation, used for permission presentation only.
+   * Absent when the native execution mode has not been confirmed. It never
+   * replaces execution activation or authorizes a write from history. */
+  activePermissionProfile?: { id: string; extends: string | null } | null;
   id: string;
   sessionId?: string;
   name?: string | null;

@@ -1,0 +1,199 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+@use "@opencraft/design-system/controls.web" as controls;
+
+.opencraft-composer-handoff {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 10px 0 13px;
+
+  &__header,
+  &__source {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  &__header-main {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &__targets {
+    display: inline-flex;
+    min-width: 0;
+    max-width: 100%;
+    align-items: center;
+    gap: 2px;
+  }
+
+  &__target-label {
+    max-width: 132px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__target-sep {
+    flex: 0 0 auto;
+    color: var(--color-icon-tertiary, var(--color-text-tertiary));
+  }
+
+  &__cross-device-notice {
+    @include typography.role(metadata, secondary);
+    display: flex;
+    min-width: 0;
+    align-items: flex-start;
+    gap: 6px;
+    margin-top: 4px;
+    padding: 6px 9px;
+    border: 1px solid color-mix(in srgb, var(--color-indicator-orange, var(--color-text-warning)) 26%, transparent);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--color-badge-orange-background) 85%, transparent);
+
+    > svg {
+      flex: 0 0 auto;
+      margin-top: 1px;
+      color: var(--color-indicator-orange, var(--color-text-warning));
+    }
+
+    > span { min-width: 0; }
+  }
+
+  &__title {
+    @include typography.role(control-compact, secondary);
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 7px;
+
+    > svg { flex: 0 0 auto; color: var(--color-icon-secondary); }
+    > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  }
+
+  &__from {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    align-items: center;
+    gap: 7px;
+  }
+
+  &__prefix {
+    flex: 0 0 auto;
+    color: var(--color-text);
+    font: var(--typography-composer-font);
+    letter-spacing: var(--typography-composer-tracking);
+    white-space: nowrap;
+  }
+
+  &__pill {
+    @include controls.density-target;
+    @include typography.role(control-compact, null);
+    display: inline-flex;
+    min-width: 0;
+    max-width: 100%;
+    height: 27px;
+    align-items: center;
+    gap: 6px;
+    padding: 0 11px 0 9px;
+    appearance: none;
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-full);
+    outline: none;
+    background: color-mix(in srgb, var(--color-background-secondary) 72%, transparent);
+    color: var(--color-text);
+    cursor: pointer;
+    transition:
+      background-color var(--transition-duration-basic) var(--ease-standard),
+      border-color var(--transition-duration-basic) var(--ease-standard);
+
+    > svg { flex: 0 0 auto; color: var(--color-icon-secondary); }
+
+    @include controls.hover-capable {
+      &:hover {
+        border-color: var(--color-border-strong);
+        background: var(--color-background-button-tertiary-hover);
+      }
+    }
+
+    &:active { background: var(--color-background-navigation-pressed); }
+    &:focus-visible { @include controls.focus-indicator; }
+    @media (prefers-reduced-motion: reduce) { transition: none; }
+  }
+
+  &__pill-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__chevron {
+    transition: transform var(--transition-duration-basic) var(--ease-standard);
+    &[data-open="true"] { transform: rotate(180deg); }
+    @media (prefers-reduced-motion: reduce) { transition: none; }
+  }
+
+  &__details {
+    @include typography.role(metadata, secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 4px;
+    padding: 6px 9px;
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--color-background-secondary) 56%, transparent);
+
+    > p { margin: 0; }
+  }
+
+  &__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    color: var(--color-text);
+  }
+
+  &__folder {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+}
+
+.opencraft-composer-handoff + .opencraft-composer-input-row {
+  padding-top: 7px;
+}
+
+.opencraft-composer-handoff-submit {
+  flex: 0 0 auto;
+}
+
+.opencraft-composer-stack[data-composer-handoff="true"] {
+  .opencraft-composer-picker--intelligence {
+    min-width: min(108px, 100%);
+  }
+
+  .opencraft-composer-footer[data-footer-density="minimal"] {
+    .opencraft-composer-picker--permissions {
+      display: none;
+    }
+
+    .opencraft-composer-mode__model-label {
+      display: inline;
+      max-width: 84px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+}

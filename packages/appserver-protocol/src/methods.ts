@@ -588,9 +588,17 @@ export interface AppServerMethodMap extends PersonalMachinesMethodMap, ThreadAcc
     params: ThreadArchiveParams;
     result: import("./generated/v2").ThreadUnarchiveResponse;
   };
+  "opencraft/models/refresh": {
+    params: import("./model-refresh").ModelCatalogRefreshParams;
+    result: Record<string, never>;
+  };
   "model/list": {
     params: ModelListParams;
     result: ModelListResponse;
+  };
+  "opencraft/permission-profiles/list": {
+    params: import("./permission-modes").ScopedPermissionProfileListParams;
+    result: PermissionProfileListResponse;
   };
   "permissionProfile/list": {
     params: PermissionProfileListParams;

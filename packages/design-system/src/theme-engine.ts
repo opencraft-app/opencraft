@@ -596,6 +596,9 @@ function badgeColors(mode: OpenCraftThemeMode, surface: string): ThemeCssPropert
   const foregrounds = mode === "light"
     ? { blue: "#175cd3", cyan: "#0e6e7c", red: "#b42318", indigo: "#493bc0", green: "#17603b", purple: "#7541b4", orange: "#984a08", neutral: "#515968" }
     : { blue: "#84caff", cyan: "#67e3f9", red: "#fda29b", indigo: "#bdb4fe", green: "#75e0a7", purple: "#d6bbfb", orange: "#fec084", neutral: "#c9cdd4" };
+  const indicators = mode === "light"
+    ? { blue: "#2f7cf6", cyan: "#0891b2", red: "#e5484d", indigo: "#5b5bd6", green: "#1ca664", purple: "#8e4ec6", orange: "#f76b15", neutral: "#64748b" }
+    : { blue: "#60a5fa", cyan: "#22d3ee", red: "#f87171", indigo: "#818cf8", green: "#4ade80", purple: "#c084fc", orange: "#fb923c", neutral: "#94a3b8" };
   const properties: ThemeCssProperties = {};
   for (const [tone, value] of Object.entries(foregrounds)) {
     const original = hexToRgb(value);
@@ -611,6 +614,7 @@ function badgeColors(mode: OpenCraftThemeMode, surface: string): ThemeCssPropert
     }
     properties[`--color-badge-${tone}-foreground`] = rgbToHex(foreground);
     properties[`--color-badge-${tone}-background`] = rgbToHex(background);
+    properties[`--color-indicator-${tone}`] = indicators[tone as keyof typeof indicators];
   }
   return properties;
 }

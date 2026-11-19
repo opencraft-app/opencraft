@@ -458,6 +458,7 @@ export interface QuestionTimelineBlock extends TimelineBlockBase<"question">, In
   readonly targetItemId: string | null;
   readonly method: string | null;
   readonly questions: readonly UserInputQuestion[];
+  readonly isBlocking?: boolean;
   readonly state: "pending" | "answered" | "cancelled";
 }
 

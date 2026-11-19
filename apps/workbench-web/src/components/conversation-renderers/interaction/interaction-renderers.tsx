@@ -183,19 +183,21 @@ function ApprovalBlock({ block }: { block: Extract<TimelineBlock, { type: "appro
 
 function QuestionBlock({ block }: { block: Extract<TimelineBlock, { type: "question" }> }) {
   const submission = useInteractionSubmission(block.requestId);
+  const blocking = block.isBlocking !== false;
   const reduceMotion = useReducedMotion();
   const questionsJson = JSON.stringify(block.questions);
   const questions = useMemo<readonly UserInputQuestion[]>(() => JSON.parse(questionsJson), [questionsJson]);
   const [questionIndex, setQuestionIndex] = useInteractionDraftState("questionIndex", 0);
-  const [drafts, setDrafts] = useInteractionDraftState<readonly UserInputQuestionDraft[]>("questions", () => createUserInputQuestionDrafts(questions));
+  const [drafts, setDrafts] = useInteractionDraftState<readonly UserInputQuestionDraft[]>("questions", () => createUserInputQuestionDrafts(questions, blocking));
   const cardRef = useRef<HTMLElement>(null);
   useEffect(() => {
-    cardRef.current?.focus();
-  }, [questions, block.requestId]);
+    if (blocking) cardRef.current?.focus();
+  }, [questions, block.requestId, blocking]);
 
   const question = questions[questionIndex] ?? questions[0];
   const draft = drafts[questionIndex];
   const isLastQuestion = questionIndex >= questions.length - 1;
+  const canSubmitCurrent = blocking || !isLastQuestion || Object.keys(aggregateUserInputQuestionAnswers(questions, drafts)).length > 0;
   const submitDrafts = useCallback((nextDrafts: readonly UserInputQuestionDraft[]) => {
     const answers = aggregateUserInputQuestionAnswers(questions, nextDrafts);
     if (block.method === "mcpServer/elicitation/request") {
@@ -223,7 +225,9 @@ function QuestionBlock({ block }: { block: Extract<TimelineBlock, { type: "quest
     const nextDrafts = updateDraft(selectUserInputQuestionOption(question, draft, optionId));
     if (advance && !question.multiSelect) completeCurrentQuestion(nextDrafts);
   }, [completeCurrentQuestion, draft, question, updateDraft]);
-  const submitCurrent = useCallback(() => completeCurrentQuestion(drafts), [completeCurrentQuestion, drafts]);
+  const submitCurrent = useCallback(() => {
+    if (canSubmitCurrent) completeCurrentQuestion(drafts);
+  }, [canSubmitCurrent, completeCurrentQuestion, drafts]);
   const handleKeyDown = useCallback((event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.defaultPrevented || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229 || question === undefined) return;
     const inputTarget = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement;
@@ -255,13 +259,14 @@ function QuestionBlock({ block }: { block: Extract<TimelineBlock, { type: "quest
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       if (question.options.length === 0) return;
       event.preventDefault();
-      const current = Math.max(0, question.options.findIndex((option) => option.id === draft?.selectedOptionId));
+      const current = question.options.findIndex((option) => option.id === draft?.selectedOptionId);
       const nextIndex = Math.max(0, Math.min(question.options.length - 1, current + (event.key === "ArrowDown" ? 1 : -1)));
       const option = question.options[nextIndex];
       if (option !== undefined && !question.multiSelect) selectOption(option.id, false);
       return;
     }
     if (event.key === "Enter") {
+      if (event.target instanceof HTMLButtonElement) return;
       event.preventDefault();
       submitCurrent();
     }
@@ -270,7 +275,7 @@ function QuestionBlock({ block }: { block: Extract<TimelineBlock, { type: "quest
   if (question === undefined) return null;
   return (
     <section
-      aria-label={question.header ?? question.prompt}
+      aria-label={question.header || question.prompt}
       className="thread-interaction-card thread-request-input"
       data-interaction-kind="question"
       data-state={block.state}
@@ -289,7 +294,7 @@ function QuestionBlock({ block }: { block: Extract<TimelineBlock, { type: "quest
         >
           <header className="thread-request-input__header">
             <div className="thread-interaction-card__copy">
-              <strong>{question.header ?? question.prompt}</strong>
+              <strong>{question.header || question.prompt}</strong>
             </div>
             {questions.length > 1 ? (
               <div className="thread-request-input__pagination" aria-label={`Question ${questionIndex + 1} of ${questions.length}`}>
@@ -337,7 +342,7 @@ function QuestionBlock({ block }: { block: Extract<TimelineBlock, { type: "quest
           <button className="is-ghost" disabled={submission.disabled} onClick={() => void submission.submit({ type: "cancel" })} type="button">Skip</button>
           <button
             className="is-primary"
-            disabled={submission.disabled}
+            disabled={submission.disabled || !canSubmitCurrent}
             onClick={submitCurrent}
             type="button"
           >{isLastQuestion ? "Submit" : "Continue"}<kbd>↵</kbd></button>

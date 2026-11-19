@@ -63,3 +63,18 @@ export function serverEndpointNeedsRefresh(previous: string, current: string): b
 export function serverAdmissionOrigin(): string {
   return browserServerContext()?.targetOrigin ?? window.location.origin;
 }
+
+/** Invitations use the browser's reachable entry, including its deployment
+ * route. An upstream target/transport origin is not a public sharing address.
+ * A local-only entry can share the invitation code instead of a dead link. */
+export function serverInvitationLink(code: string): string | null {
+  const page = new URL(window.location.href);
+  const hostname = page.hostname.toLowerCase().replace(/\.$/u, '');
+  if (!['http:', 'https:'].includes(page.protocol) || page.username || page.password
+    || hostname === 'localhost' || hostname.endsWith('.localhost')
+    || /^127\./u.test(hostname) || hostname === '[::1]' || /^\[::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}\]$/u.test(hostname)
+    || hostname === '0.0.0.0' || hostname === '[::]') return null;
+  const url = new URL(serverUrl('/'), page.origin);
+  url.searchParams.set('serverInvite', code);
+  return url.href;
+}

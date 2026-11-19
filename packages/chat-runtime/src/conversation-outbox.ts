@@ -150,6 +150,24 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
     }
   };
   const wake = () => { void drain(); };
+  const assertLocalIntent = (intent: SubmitIntent) => {
+    if (intent.target.type === "new-thread") throw new Error("This action requires a connection");
+    if (intent.target.key.hostId !== config.key.hostId || intent.target.key.threadId !== config.key.threadId)
+      throw new Error("Outbox target does not match this conversation");
+    // Attachment/context handles may refer to a transient resolver or Blob.
+    if (intent.attachments.length || intent.context.length)
+      throw new Error("Reconnect before sending attachments or attached context. Your draft has been kept.");
+  };
+  const admitEntry = (intent: SubmitIntent, state: "waiting" | "sending") => commit(() => {
+    const duplicate = entries.find(entry => entry.intent.commandId === intent.commandId || entry.intent.clientMessageId === intent.clientMessageId);
+    if (duplicate) {
+      if (state === "sending" || JSON.stringify(duplicate.intent) !== JSON.stringify(intent))
+        throw new Error("The queued message identity already belongs to another input");
+      return entries;
+    }
+    if (entries.length >= 50) throw new Error("The local message queue is full. Reconnect or remove a waiting message.");
+    return [...entries, { intent, state, sender: dispatch?.sender?.() }];
+  });
   const stop = config.storage.subscribe(() => {
     generation++;
     dispatch?.retire(entries.map(entry => entry.intent.commandId));
@@ -175,6 +193,8 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
     },
     get hydrated() { return hydrated; },
     hasPending: () => entries.length > 0,
+    owns: (intent: SubmitIntent) => entries.some(entry => entry.intent.commandId === intent.commandId
+      && entry.intent.clientMessageId === intent.clientMessageId),
     ready: () => hydration,
     wake,
     get error() { return storageError; },
@@ -196,30 +216,64 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
       }));
     },
     async admit(intent: SubmitIntent): Promise<SubmissionReceipt> {
+      assertLocalIntent(intent);
       const owner = generation;
       await hydration;
       if (owner !== generation) throw new Error("Conversation outbox scope changed");
       if (disposed) throw new Error("Conversation outbox is disposed");
       if (storageError) throw storageError;
-      if (intent.target.type !== "existing-thread" && intent.target.type !== "enqueue-follow-up"
-        && intent.target.type !== "steer-active-turn") throw new Error("This action requires a connection");
-      if (intent.target.key.hostId !== config.key.hostId || intent.target.key.threadId !== config.key.threadId)
-        throw new Error("Outbox target does not match this conversation");
-      // Attachment/context handles may point at a transient resolver or local
-      // Blob. Keep the original Composer draft rather than promise lost bytes.
-      if (intent.attachments.length || intent.context.length)
-        throw new Error("Reconnect before sending attachments or attached context. Your draft has been kept.");
-      await commit(() => {
-        const duplicate = entries.find(entry => entry.intent.commandId === intent.commandId || entry.intent.clientMessageId === intent.clientMessageId);
-        if (duplicate && JSON.stringify(duplicate.intent) !== JSON.stringify(intent)) throw new Error("The queued message identity already belongs to another input");
-        if (!duplicate && entries.length >= 50) throw new Error("The local message queue is full. Reconnect or remove a waiting message.");
-        return duplicate ? entries : [...entries, { intent, state: "waiting", sender: dispatch?.sender?.() }];
-      });
+      await admitEntry(intent, "waiting");
       notify();
       wake();
       return { commandId: intent.commandId, clientMessageId: intent.clientMessageId,
         hostId: config.key.hostId, threadId: config.key.threadId, turnId: null,
         acceptedAt: Date.now(), replayed: false, disposition: "local-queue" };
+    },
+    async submitOnline(intent: SubmitIntent, ready: () => boolean): Promise<SubmissionReceipt> {
+      assertLocalIntent(intent);
+      const owner = generation;
+      const port = dispatch;
+      await hydration;
+      const current = () => !disposed && owner === generation && dispatch === port;
+      if (!current() || !port) throw new Error("Conversation outbox scope changed");
+      if (storageError) throw storageError;
+      if (!ready()) return this.admit(intent);
+      await admitEntry(intent, "sending");
+      const canDispatch = () => current() && ready();
+      const settle = (state: ConversationOutboxEntry["state"] | null, error?: string) => commit(() =>
+        entries.flatMap(entry => entry.intent.commandId !== intent.commandId ? [entry]
+          : state === null ? [] : [{ ...entry, state, error }]));
+      const localReceipt: SubmissionReceipt = { commandId: intent.commandId, clientMessageId: intent.clientMessageId,
+        hostId: config.key.hostId, threadId: config.key.threadId, turnId: null,
+        acceptedAt: Date.now(), replayed: false, disposition: "local-queue" };
+      if (!current()) throw new Error("Conversation outbox scope changed");
+      let receipt: SubmissionReceipt;
+      try {
+        if (!canDispatch()) throw new SubmissionNotDispatchedError();
+        const pending = port.send(intent, { canDispatch });
+        notify();
+        receipt = await pending;
+      } catch (error) {
+        if (!current()) throw error;
+        const undispatched = error instanceof SubmissionNotDispatchedError;
+        await settle(undispatched ? "waiting" : error instanceof SubmissionOutcomeUnknownError ? "unknown" : "failed",
+          undispatched ? undefined : error instanceof Error ? error.message : String(error));
+        port.retire([intent.commandId]);
+        notify();
+        if (!undispatched) throw error;
+        if (error.retryAfterMs === undefined) wake();
+        else if (Number.isFinite(error.retryAfterMs) && error.retryAfterMs > 0 && retryTimer === null) {
+          retryTimer = setTimeout(() => { retryTimer = null; if (current()) wake(); }, Math.max(100, Math.min(10_000, error.retryAfterMs)));
+        }
+        return localReceipt;
+      }
+      if (current() && (intent.target.type !== "steer-active-turn" || receipt.disposition === "queue")) {
+        try { await settle(null); }
+        catch { /* A durable attempt can still be reconciled by its authoritative message. */ }
+        notify();
+        wake();
+      }
+      return receipt;
     },
     async remove(id: string): Promise<boolean> {
       const owner = generation;

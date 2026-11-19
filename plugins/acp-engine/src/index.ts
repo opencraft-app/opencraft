@@ -8,12 +8,16 @@ import { isAbsolute, join, resolve, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { AgentOrchestrationPort, ExecutionEngineClient, ExecutionEngineProvider } from "@opencraft/appserver-client";
 import { AppServerRpcError } from "@opencraft/appserver-client";
-import { permissionModeProfileId, type NativeConversationProject } from "@opencraft/appserver-protocol";
+import { MODEL_CATALOG_REFRESH_EXTENSION, MODEL_CATALOG_REFRESH_METHOD, OPENCRAFT_PERMISSION_MODES_EXTENSION, OPENCRAFT_PERMISSION_MODES_CAPABILITY, parsePermissionModeProfileId, permissionModeProfileId, type NativeConversationProject } from "@opencraft/appserver-protocol";
 import type { HostInputPort, HostInputReceipt } from "@opencraft/appserver-protocol/host-inputs";
+import type { ToolRequestUserInputParams } from "@opencraft/appserver-protocol/generated/v2";
 import { AcpStdioTransport, AcpProtocolError, type AcpObject as Value } from "./transport.js";
 import { codexBaseModelId, splitModelVariant } from "./model-variant.js";
 import { acpPromptContent } from "./prompt-content.js";
 import { emptyAcpQueue, validateAcpQueue, acpQueueFingerprint, acpQueueProjection, type AcpQueue } from "./queue.js";
+
+import { readCodexPermissionConfig, acpPermissionProfiles, codexAcpPermissionSettings, type AcpPermissionConfig } from "./permissions.js";
+import { parseCodexQuestionForm } from "./codex-questions.js";
 
 export interface AcpEngineOptions {
   executionEnvironment?: ExecutionEnvironmentRuntime;
@@ -29,6 +33,8 @@ export interface AcpEngineOptions {
   cwd: string;
   modelPolicyPath?: string;
   dataDirectory: string;
+  requestUserInput?(params: ToolRequestUserInputParams, signal: AbortSignal,
+    project: (result: Record<string, unknown>) => unknown): Promise<unknown>;
   /** An engine-native reader; opening history must never issue session/resume. */
   history?: {
     read(nativeSessionId: string, params: Value): Promise<{ data: any[]; nextCursor: string | null }>;
@@ -51,10 +57,13 @@ interface Session {
   preview?: string;
   nativeImport?: true;
   nativeHistoryEmpty?: true;
+  catalogProbe?: true;
   forkedFromId?: string;
   nativeProject?: NativeConversationProject;
   nameOrigin?: "input" | "agent" | "manual";
   contextUsage?: { usedTokens: number; limitTokens: number; observedAt: number };
+  permissionConfig?: AcpPermissionConfig;
+  permissionSelection?: string;
   modelConfigId?: string;
   modelConfigValues?: string[];
   legacyModelCatalog?: boolean;
@@ -72,7 +81,8 @@ interface Session {
 }
 export type AcpOrchestrationPort = AgentOrchestrationPort;
 interface Runtime {
-  owner?: ExecutionEngineClient; loaded: boolean; active?: { id: string; delegationId: string | null; inputId?: string; items: Value[]; status: string; startedAtMs?: number; planSignature?: string; error?: Value };
+  questionLifetime?: AbortController;
+  owner?: ExecutionEngineClient; loaded: boolean; permissionConfirmed?: boolean; active?: { id: string; delegationId: string | null; inputId?: string; items: Value[]; status: string; startedAtMs?: number; planSignature?: string; error?: Value };
 }
 interface Creation {
   fingerprint: string; state: "pending" | "created"; threadId?: string;
@@ -119,6 +129,8 @@ export class AcpEngine implements ExecutionEngineProvider {
   private nativeOutcomeUnknown = false;
   private started: Promise<void> | null = null;
   private capabilities: Value = {};
+  private catalogSessionId: string | null = null;
+  private catalogRefresh: Promise<Value> | null = null;
   private inputModalities: ("text" | "image")[] | null = null;
   private toolServer?: Server;
   private toolUrl = "";
@@ -146,6 +158,8 @@ export class AcpEngine implements ExecutionEngineProvider {
     this.threadPrefix = options.threadNamespace ?? (this.id === "claude-code" ? "claude_" : this.id.replaceAll("-", "_") + "_");
     this.modelPrefix = this.id + ":";
     this.baseExtensions = Object.freeze({
+      ...(["codex", "cursor"].includes(this.id) ? { [MODEL_CATALOG_REFRESH_EXTENSION]: { version: 1 } } : {}),
+      ...(this.id === "codex" ? { [OPENCRAFT_PERMISSION_MODES_EXTENSION]: OPENCRAFT_PERMISSION_MODES_CAPABILITY } : {}),
       "opencraft/thread-lifecycle": { version: 1, rename: true, archive: true, unsubscribe: true },
       "opencraft/thread-follow-up": { version: 1, queue: true, steer: false },
       "opencraft/thread-queue": { version: 2, reorder: true, atomicSteer: false, perItemPause: false },
@@ -195,14 +209,36 @@ export class AcpEngine implements ExecutionEngineProvider {
       ...(["pi-cli", "codebuddy"].includes(this.id) ? { cwd: cwd ?? this.options.cwd } : {}),
       ...(this.id === "pi-cli" ? { args: [...(this.options.args ?? []), ...(nativePath ? ["--session", nativePath] : nativeId ? ["--session-id", nativeId] : [])] } : {}),
       parameterizedModelPicker: this.id === "cursor",
+      formElicitation: this.id === "codex" && this.options.requestUserInput !== undefined,
       ...(this.id === "codebuddy" ? { sandboxOwner: "codebuddy" } : {}),
       env: environment?.apply({ ...process.env, ...this.options.env }) ?? this.options.env,
       redactError: environment ? message => environment.redact(message) : undefined,
       onNotification: (method, params) => this.update(method, params, threadId),
-      onRequest: async (method, params) => {
+      onRequest: async (method, params, signal) => {
+        if (method === "elicitation/create" && this.id === "codex" && this.options.requestUserInput) {
+          const form = parseCodexQuestionForm(params);
+          const session = [...this.sessions.values()].find(entry => entry.nativeId === params.sessionId && (!threadId || entry.id === threadId));
+          const runtime = session && this.state(session.id);
+          const active = runtime?.active;
+          if (!form || !session || !runtime || active?.status !== "inProgress") return { action: "cancel" };
+          const lifetime = runtime.questionLifetime ??= new AbortController();
+          const questionSignal = AbortSignal.any([signal, lifetime.signal]);
+          try {
+            return await this.options.requestUserInput({
+              threadId: session.id, turnId: active.id, itemId: `acp-question-${randomUUID()}`,
+              questions: form.questions, isBlocking: form.isBlocking, autoResolutionMs: null,
+            }, questionSignal, form.reply);
+          } catch (error) {
+            if (questionSignal.aborted) return { action: "cancel" };
+            throw error;
+          }
+        }
         if (method !== "session/request_permission") return fault("Unsupported ACP client request", -32601);
         const choices = Array.isArray(params.options) ? params.options : [];
-        const choice = this.options.permission === "allow-once" && choices.find((entry: Value) => entry.kind === "allow_once");
+        const session = [...this.sessions.values()].find(session => session.nativeId === params.sessionId && (!threadId || session.id === threadId));
+        const mayAllow = this.id !== "codex" || session && this.state(session.id).permissionConfirmed
+          && session.permissionConfig?.currentValue === "agent-full-access";
+        const choice = mayAllow && this.options.permission === "allow-once" && choices.find((entry: Value) => entry.kind === "allow_once");
         return { outcome: choice ? { outcome: "selected", optionId: choice.optionId } : { outcome: "cancelled" } };
       },
       onUnconfirmed: () => {
@@ -210,6 +246,7 @@ export class AcpEngine implements ExecutionEngineProvider {
         void this.persistJson(join(this.options.dataDirectory, "native-uncertainty.json"), { unknown: true }).catch(() => {});
       },
       onExit: () => {
+        for (const [id, state] of this.runtime) if (!threadId || threadId === id) { state.permissionConfirmed = false; state.loaded = false; }
         for (const [id, state] of this.runtime) if ((!threadId || threadId === id) && state.active?.status === "inProgress") {
           void this.failPrompt(this.session(id), state, "acpPromptUnconfirmed").catch(() => { this.persistenceFailed = true; });
           state.loaded = false;
@@ -276,6 +313,11 @@ export class AcpEngine implements ExecutionEngineProvider {
         }
         this.sessions.set(record.id, record);
       }
+      try {
+        const catalog = value(JSON.parse(await readFile(join(this.options.dataDirectory, "model-catalog.json"), "utf8")));
+        if (catalog.version !== 1 || !safeId(catalog.sessionId) || !this.sessions.has(catalog.sessionId)) throw new Error("Invalid ACP model catalog owner");
+        this.catalogSessionId = catalog.sessionId;
+      } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
       try { this.nativeOutcomeUnknown = JSON.parse(await readFile(join(this.options.dataDirectory, "native-uncertainty.json"), "utf8")).unknown === true; }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
       try {
@@ -379,7 +421,63 @@ export class AcpEngine implements ExecutionEngineProvider {
       preview: session.preview ?? "", turns: [], status: { type: state.active?.status === "inProgress" ? "active" : "idle" },
       source: "appServer", engineKind: this.id, path: null, ephemeral: false,
       ...(this.options.history ? { historyMode: "paginated" } : {}),
-      ...(this.options.permission === "allow-once" ? { permissions: permissionModeProfileId("full"), approvalPolicy: "never", sandbox: "danger-full-access" } : {}) };
+      ...(this.id === "codex" ? this.permissionSettings(session) : this.options.permission === "allow-once" ? { permissions: permissionModeProfileId("full"), approvalPolicy: "never", sandbox: "danger-full-access" } : {}) };
+  }
+  get hasPermissionCatalog(): boolean { return [...this.sessions.values()].some(session => !!session.permissionConfig); }
+  private permissionSettings(session: Session, response = false): Value {
+    if (!this.state(session.id).permissionConfirmed || !session.permissionConfig) return { activePermissionProfile: null };
+    const settings = codexAcpPermissionSettings(session.permissionConfig.currentValue);
+    return response ? { ...settings, ...(settings.sandbox ? { sandbox: { type: settings.sandbox === "danger-full-access" ? "dangerFullAccess" : settings.sandbox === "read-only" ? "readOnly" : "workspaceWrite" } } : {}) } : settings;
+  }
+  private validatePermissionPolicy(params: Value, selection: unknown): void {
+    if (this.id !== "codex") return;
+    const policy = params.sandboxPolicy ?? params.sandbox;
+    if (policy == null && params.approvalPolicy == null && params.approvalsReviewer == null) return;
+    const mode = typeof selection === "string" ? parsePermissionModeProfileId(selection) : null;
+    const native = mode && ({ "read-only": "read-only", "accept-edits": "workspace-write", auto: "agent", full: "agent-full-access" } as const)[mode];
+    const expected = native ? codexAcpPermissionSettings(native) : null;
+    const sandbox = typeof policy === "string" ? policy : policy?.type;
+    const expectedSandbox = expected?.sandbox === "danger-full-access" ? "dangerFullAccess" : expected?.sandbox === "read-only" ? "readOnly" : "workspaceWrite";
+    if (!expected || policy != null && ![expected.sandbox, expectedSandbox].includes(sandbox)
+      || typeof policy === "object" && policy !== null && Object.keys(policy).some(key => key !== "type")
+      || params.approvalPolicy != null && params.approvalPolicy !== expected.approvalPolicy
+      || params.approvalsReviewer != null && params.approvalsReviewer !== expected.approvalsReviewer) return fault("Inconsistent or unsupported permission settings", 403);
+  }
+  private async setPermission(session: Session, selection: unknown): Promise<void> {
+    if (typeof selection !== "string" || !selection) return fault("Invalid permission profile");
+    if (this.id !== "codex") {
+      // Legacy drivers expose only their Host callback policy. Preserve that
+      // existing contract without treating it as a native Codex mode switch.
+      if (selection === permissionModeProfileId("full") && this.options.permission === "allow-once") return;
+      return fault("This Agent does not support execution mode selection", -32601);
+    }
+    const config = session.permissionConfig;
+    const profile = acpPermissionProfiles(config).find(profile => profile.id === selection);
+    if (!config || !profile) return fault("This Agent does not offer the requested permission profile", 403);
+    const nativeId = profile.openCraftNativeProfileId ?? profile.id;
+    // Remember intent before a request that may fail. Failed/empty replies never
+    // authorize a prompt, including after restart or queued input dispatch.
+    const intentChanged = session.permissionSelection !== selection;
+    session.permissionSelection = selection;
+    if (this.state(session.id).permissionConfirmed && config.currentValue === nativeId) {
+      if (intentChanged) await this.save(session);
+      return;
+    }
+    this.state(session.id).permissionConfirmed = false;
+    await this.save(session);
+    try {
+      const result = await this.native(session).request("session/set_config_option", { sessionId: session.nativeId, configId: config.id, value: nativeId });
+      const confirmed = readCodexPermissionConfig(result);
+      if (!confirmed || confirmed.id !== config.id || confirmed.currentValue !== nativeId) return fault("The Agent did not confirm the requested permission mode", 403);
+      session.permissionConfig = confirmed; this.state(session.id).permissionConfirmed = true;
+      await this.save(session);
+      const { sandbox, ...settings } = this.permissionSettings(session, true);
+      this.notify("thread/settings/updated", { threadId: session.id, threadSettings: { ...settings, sandboxPolicy: sandbox } });
+    } catch (error) {
+      this.state(session.id).permissionConfirmed = false;
+      this.notify("thread/settings/updated", { threadId: session.id, threadSettings: { activePermissionProfile: null } });
+      throw error;
+    }
   }
   private sessionResponse(session: Session): Value {
     return { thread: this.metadata(session), model: session.model ?? `${this.modelPrefix}current`, modelProvider: this.id,
@@ -387,7 +485,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       serviceTier: session.fastConfig?.currentValue === session.fastConfig?.onValue && session.fastConfig ? "fast" : null,
       reasoningEffort: session.reasoningConfig?.currentValue ?? null, multiAgentMode: "explicitRequestOnly",
       initialTurnsPage: null, turnsBackwardsCursor: null, itemsBackwardsCursor: null, collaborationMode: null,
-      ...(this.options.permission === "allow-once" ? { approvalPolicy: "never", approvalsReviewer: "user",
+      ...(this.id === "codex" ? this.permissionSettings(session, true) : this.options.permission === "allow-once" ? { approvalPolicy: "never", approvalsReviewer: "user",
         sandbox: { type: "dangerFullAccess" }, activePermissionProfile: { id: permissionModeProfileId("full"), extends: null } } : {}),
     };
   }
@@ -399,8 +497,8 @@ export class AcpEngine implements ExecutionEngineProvider {
   }
   request(method: string, params: Value, client: ExecutionEngineClient): Promise<any> {
     if (method === "thread/queue/list") return this.serializeThread(String(params.threadId ?? ""), () => this.handle(method, params, client));
-    return method.startsWith("thread/queue/") && method !== "thread/queue/list" || ["thread/start", "thread/fork", "opencraft/agent-session/release", "thread/resume", "turn/start", "turn/interrupt", "thread/archive", "thread/unarchive", "opencraft/orchestration/prepare", "opencraft/orchestration/create"].includes(method)
-      ? this.admit(() => typeof params.threadId === "string"
+    return method.startsWith("thread/queue/") && method !== "thread/queue/list" || [MODEL_CATALOG_REFRESH_METHOD, "thread/start", "thread/fork", "opencraft/agent-session/release", "thread/resume", "turn/start", "turn/interrupt", "thread/archive", "thread/unarchive", "opencraft/orchestration/prepare", "opencraft/orchestration/create"].includes(method)
+      ? this.admit(() => typeof params.threadId === "string" && method !== MODEL_CATALOG_REFRESH_METHOD
         ? this.serializeThread(params.threadId, () => this.handle(method, params, client)) : this.handle(method, params, client))
       : this.handle(method, params, client);
   }
@@ -409,6 +507,7 @@ export class AcpEngine implements ExecutionEngineProvider {
     if (method === "opencraft/orchestration/prepare") {
       if (this.options.permission !== "allow-once") return fault("ACP Full access is not configured for this Host", 403);
       const args = value(params.arguments), source = params.sourceSettings === undefined && this.ownsThread(String(params.threadId ?? "")) ? this.metadata(this.session(params.threadId)) : value(params.sourceSettings);
+      if (this.id === "codex" && source.permissions == null && source.activePermissionProfile?.id == null) return fault("Source permission mode is unconfirmed", 403);
       if (typeof source.cwd !== "string" || !isAbsolute(source.cwd)) return fault("Source workspace is unavailable", 503);
       const base = resolve(source.cwd), cwd = args.cwd === undefined ? base : resolve(base, args.cwd);
       if (cwd !== base && !cwd.startsWith(base.endsWith(sep) ? base : base + sep)) return fault("Child workspace exceeds the source delegation", 403);
@@ -455,10 +554,11 @@ export class AcpEngine implements ExecutionEngineProvider {
     }
     if (method === "thread/start") {
       const sandbox = typeof params.sandbox === "string" ? params.sandbox : params.sandbox?.type;
-      if (params.permissions != null && params.permissions !== permissionModeProfileId("full")
+      if (this.id !== "codex" && (params.permissions != null && params.permissions !== permissionModeProfileId("full")
         || sandbox != null && !["danger-full-access", "dangerFullAccess"].includes(sandbox)
-        || params.approvalPolicy != null && params.approvalPolicy !== "never") return fault("ACP cannot preserve the requested permission profile", 403);
-      if ((params.permissions != null || sandbox != null || params.approvalPolicy != null) && this.options.permission !== "allow-once") return fault("ACP Full access is not configured for this Host", 403);
+        || params.approvalPolicy != null && params.approvalPolicy !== "never")) return fault("ACP cannot preserve the requested permission profile", 403);
+      if (this.id !== "codex" && (params.permissions != null || sandbox != null || params.approvalPolicy != null) && this.options.permission !== "allow-once") return fault("ACP Full access is not configured for this Host", 403);
+      this.validatePermissionPolicy(params, params.permissions);
       await this.start();
       const operation = params.__opencraftOrchestrationOperation;
       if (operation !== undefined && (typeof operation !== "string" || !operation || operation.length > 256)) return fault("Invalid ACP creation operation");
@@ -506,10 +606,12 @@ export class AcpEngine implements ExecutionEngineProvider {
         } finally { this.pendingMcp.delete(id); }
         const now = Math.floor(Date.now() / 1000);
         const session: Session = { schemaVersion: 1, id, nativeId: result.sessionId, cwd, model: null, name: null, createdAt: now, updatedAt: now, tools, archived: false, receipts: {},
+          ...(params.__opencraftCatalogProbe === true ? { catalogProbe: true as const } : {}),
           ...(["codex", "cursor", "pi-cli", "claude-code", "codebuddy", "codebuddy-ide"].includes(this.id) ? { nativeHistoryEmpty: true as const } : {}) };
         this.captureModels(session, result);
-        this.sessions.set(id, session); this.runtime.set(id, { loaded: true, owner: client });
+        this.sessions.set(id, session); Object.assign(this.state(id), { loaded: true, owner: client });
         await this.save(session);
+        if (params.permissions != null && this.id === "codex") await this.setPermission(session, params.permissions);
         if (params.model) await this.setModel(session, params.model);
         if (params.reasoningEffort != null || params.effort != null) await this.setReasoning(session, params.reasoningEffort ?? params.effort);
         if (Object.hasOwn(params, "serviceTier")) await this.setServiceTier(session, params.serviceTier);
@@ -525,10 +627,52 @@ export class AcpEngine implements ExecutionEngineProvider {
       const sessions = [...this.sessions.values()].filter(session => session.archived === (params.archived === true)).sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
       return { data: sessions.slice(offset, offset + limit).map(session => this.metadata(session)), nextCursor: offset + limit < sessions.length ? String(offset + limit) : null };
     }
+    if (method === MODEL_CATALOG_REFRESH_METHOD) {
+      if (!["codex", "cursor"].includes(this.id)) return fault("This Agent cannot refresh its model catalog", -32601);
+      if (this.catalogRefresh) return this.catalogRefresh;
+      const pending = (async () => {
+        const cwd = typeof params.threadId === "string" ? this.session(params.threadId).cwd : this.options.cwd;
+        const created = await this.handle("thread/start", { cwd, __opencraftCatalogProbe: true }, client);
+        const probe = this.session(created.thread.id);
+        try {
+          await this.handle("thread/archive", { threadId: probe.id }, client);
+          if (!probe.modelCatalog?.length) return fault("The Agent returned no model catalog", 503);
+          await this.discoverModelCapabilities(probe.id);
+          await this.save(probe);
+        } finally {
+          if (this.id === "cursor") {
+            // Cursor's model manager belongs to its process. Discovery owns a
+            // separate transport, which must be reaped even when discovery fails.
+            const transport = this.sessionTransports.get(probe.id);
+            if (!transport) throw new Error("Cursor discovery transport is unavailable");
+            await transport.close();
+            this.sessionTransports.delete(probe.id); this.sessionEnvironments.delete(probe.id);
+            this.state(probe.id).loaded = false;
+          }
+        }
+        // Publish the fresh snapshot only after both metadata and its owner are
+        // durable. Saved sessions cannot reintroduce removed catalog entries.
+        if (this.id === "codex" && value(this.capabilities.sessionCapabilities).close) await this.handle("opencraft/agent-session/release", { threadId: probe.id }, client);
+        await this.persistJson(join(this.options.dataDirectory, "model-catalog.json"), { version: 1, sessionId: probe.id });
+        this.catalogSessionId = probe.id;
+        this.notify("opencraft/agents/models/changed", { agentId: this.id });
+        return {};
+      })();
+      this.catalogRefresh = pending;
+      try { return await pending; } finally { if (this.catalogRefresh === pending) this.catalogRefresh = null; }
+    }
+    if (method === "permissionProfile/list") {
+      if (this.id !== "codex") return { data: [], nextCursor: null };
+      const session = params.threadId ? this.session(params.threadId) : [...this.sessions.values()].filter(session => session.permissionConfig).at(-1);
+      const catalog = acpPermissionProfiles(session?.permissionConfig ?? [...this.sessions.values()].find(session => session.permissionConfig)?.permissionConfig);
+      const offset = params.cursor == null ? 0 : Number(params.cursor), limit = params.limit ?? 100;
+      if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1) return fault("Invalid permission catalog page");
+      return { data: catalog.slice(offset, offset + Math.min(limit, 100)), nextCursor: offset + limit < catalog.length ? String(offset + limit) : null };
+    }
     if (method === "model/list") {
       // A live parameterized Cursor catalog supersedes catalogs persisted by
       // the previous variant picker. Old session records remain resumable.
-      const sessions = this.id === "pi-cli" && typeof params.threadId === "string" ? [this.session(params.threadId)] : [...this.sessions.values()];
+      const sessions = this.catalogSessionId ? [this.session(this.catalogSessionId)] : this.id === "pi-cli" && typeof params.threadId === "string" ? [this.session(params.threadId)] : [...this.sessions.values()].filter(session => !session.catalogProbe);
       const catalogSessions = this.id === "cursor" && sessions.some(session => session.parameterConfigs)
         ? sessions.filter(session => session.parameterConfigs) : sessions;
       // Prompt capabilities belong to this Agent source, not whichever saved
@@ -591,7 +735,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       if (this.id !== "codex" || !value(this.capabilities.sessionCapabilities).close) return fault("Native session release is unavailable", -32601);
       if (this.nativeOutcomeUnknown || session.queue?.items.length || runtime.active?.status === "inProgress" || runtime.active?.status === "unconfirmed") return fault("The session must finish its current work before release", -32000);
       if (runtime.loaded) await this.native(session).request("session/close", { sessionId: session.nativeId });
-      runtime.loaded = false; runtime.owner = undefined;
+      runtime.loaded = false; runtime.permissionConfirmed = false; runtime.owner = undefined;
       return { released: true };
     }
     if (method === "thread/fork") {
@@ -613,12 +757,13 @@ export class AcpEngine implements ExecutionEngineProvider {
         }
         const now = Math.floor(Date.now() / 1000);
         const child: Session = { schemaVersion: 1, id, nativeId: result.sessionId, forkedFromId: session.id,
-          cwd: session.cwd, model: null, name: session.name, nameOrigin: session.nameOrigin,
+          cwd: session.cwd, model: null, name: session.name, nameOrigin: session.nameOrigin, permissionSelection: session.permissionSelection,
           ...(session.nativeProject ? { nativeProject: session.nativeProject } : {}),
           createdAt: now, updatedAt: now, tools: session.tools, archived: false, receipts: {} };
         this.captureModels(child, result);
-        this.sessions.set(id, child); this.runtime.set(id, { loaded: true, owner: client });
+        this.sessions.set(id, child); Object.assign(this.state(id), { loaded: true, owner: client });
         await this.save(child);
+        if (child.permissionSelection) await this.setPermission(child, child.permissionSelection);
         if (params.model) await this.setModel(child, params.model);
         return this.sessionResponse(child);
       } finally { this.pendingMcp.delete(id); }
@@ -639,6 +784,8 @@ export class AcpEngine implements ExecutionEngineProvider {
       const continuing = Array.isArray(params.input) && params.input.length === 0;
       if (continuing && (this.nativeOutcomeUnknown || !["failed", "interrupted"].includes(runtime.active?.status ?? session.lastTurn?.status ?? ""))) return fault("This ACP conversation cannot be continued in its current state");
       await this.resume(session, params.clientUserMessageId);
+      this.validatePermissionPolicy(params, params.permissions ?? session.permissionSelection);
+      if (params.permissions != null) await this.setPermission(session, params.permissions);
       if (params.model) await this.setModel(session, params.model);
       if (params.effort != null || params.reasoningEffort != null) await this.setReasoning(session, params.effort ?? params.reasoningEffort);
       if (Object.hasOwn(params, "serviceTier")) await this.setServiceTier(session, params.serviceTier);
@@ -785,6 +932,13 @@ export class AcpEngine implements ExecutionEngineProvider {
     });
   }
   private captureModels(session: Session, result: Value): void {
+    if (this.id === "codex" && Array.isArray(result.configOptions)) {
+      const config = readCodexPermissionConfig(result);
+      this.state(session.id).permissionConfirmed = !!config;
+      session.permissionConfig = config ?? undefined;
+      if (config && !session.permissionSelection) session.permissionSelection = acpPermissionProfiles(config)
+        .find(profile => (profile.openCraftNativeProfileId ?? profile.id) === config.currentValue)?.id;
+    }
     const inputModalities: ("text" | "image")[] = value(this.capabilities.promptCapabilities).image === true ? ["text", "image"] : ["text"];
     if (!session.inputModalitiesObservedAt || !isDeepStrictEqual(session.inputModalities, inputModalities)) session.inputModalitiesObservedAt = Date.now();
     session.inputModalities = inputModalities;
@@ -842,12 +996,25 @@ export class AcpEngine implements ExecutionEngineProvider {
     if (!this.ownsModel(model)) return fault("Model belongs to another ACP provider");
     if (session.model === model && this.id !== "pi-cli") return;
     const requested = model.slice(this.modelPrefix.length);
+    const refreshed = this.catalogSessionId ? this.session(this.catalogSessionId) : null;
+    if (this.id === "codex" && refreshed?.modelCatalog?.some(choice => choice.id === model)
+      && !session.modelCatalog?.some(choice => choice.id === model)) {
+      const previousCatalog = session.modelCatalog;
+      session.modelCatalog = refreshed.modelCatalog;
+      try {
+        const result = await this.native(session).request("session/set_model", { sessionId: session.nativeId, modelId: requested });
+        this.captureModels(session, result);
+        if (session.model !== model) return fault("The requested model was not selected. Choose another model.");
+        await this.save(session); return;
+      } catch (error) { session.modelCatalog = previousCatalog; throw error; }
+    }
     if (this.id === "cursor") {
       // Previous catalogs stored native parameterized variants as model IDs.
       // Restore only parameters the current peer actually declares.
       const variant = splitModelVariant(requested);
       const base = variant?.base ?? requested;
-      if (!session.modelConfigValues?.includes(base)) return fault("This model option is unavailable");
+      const freshlyAdvertised = refreshed?.modelCatalog?.some(choice => choice.id === this.modelPrefix + base) === true;
+      if (!session.modelConfigValues?.includes(base) && !freshlyAdvertised) return fault("This model option is unavailable");
       this.captureModels(session, await this.native(session).request("session/set_config_option", {
         sessionId: session.nativeId, configId: session.modelConfigId ?? "model", value: base,
       }));
@@ -973,6 +1140,7 @@ export class AcpEngine implements ExecutionEngineProvider {
         throw Object.assign(new Error(error.message), { rpcCode: 409, domainData: { code: "CODEX_SESSION_BUSY", inputNotSent: true } });
       throw error;
     }
+    this.state(session.id).permissionConfirmed = false;
     this.captureModels(session, result);
     if (selection?.model) {
       await this.setModel(session, selection.model);
@@ -986,6 +1154,7 @@ export class AcpEngine implements ExecutionEngineProvider {
         }
       }
     }
+    if (this.id === "codex" && session.permissionSelection) await this.setPermission(session, session.permissionSelection);
     await this.save(session);
     runtime.loaded = true;
     if (!session.name || session.nameOrigin === "input") void this.refreshTitle(session).catch(() => {});
@@ -1015,6 +1184,10 @@ export class AcpEngine implements ExecutionEngineProvider {
       if (current.owner !== this.sessionEnvironments.get(session.id)?.owner) throw new Error("ACP session belongs to another account or project; start a new session");
     }
     if (runtime.active?.status === "inProgress") return fault("ACP thread is already running", -32000);
+    if (this.id === "codex") {
+      if (!session.permissionSelection) return fault("The Agent execution mode is unavailable", 403);
+      await this.setPermission(session, session.permissionSelection);
+    }
     runtime.active = { id: `acp-turn-${randomUUID()}`, delegationId, ...(inputId ? { inputId } : {}), items: [], status: "inProgress", startedAtMs: Date.now() };
     const active = runtime.active;
     active.items.push({ id: `${active.id}:user`, type: "userMessage", clientId: inputId ?? null,
@@ -1034,6 +1207,8 @@ export class AcpEngine implements ExecutionEngineProvider {
     void this.native(session).request("session/prompt", { sessionId: session.nativeId, prompt }, 0).then(result => this.serializeThread(session.id, async () => {
       if (runtime.active !== active || active.status !== "inProgress") return;
       active.status = result.stopReason === "cancelled" ? "interrupted" : "completed";
+      runtime.questionLifetime?.abort();
+      runtime.questionLifetime = undefined;
       session.lastTurn = { id: active.id, status: active.status, ...(active.inputId ? { clientUserMessageId: active.inputId } : {}) };
       if (active.status === "interrupted" && session.queue) session.queue.pausedReason = "user-stopped";
       await this.save(session);
@@ -1051,6 +1226,8 @@ export class AcpEngine implements ExecutionEngineProvider {
   private async failPrompt(session: Session, runtime: Runtime, code: "acpPromptFailed" | "acpPromptUnconfirmed"): Promise<void> {
     const active = runtime.active; if (!active || active.status !== "inProgress") return;
     active.status = "failed";
+    runtime.questionLifetime?.abort();
+    runtime.questionLifetime = undefined;
     if (session.queue) session.queue.pausedReason = "delivery-failed";
     active.error = { message: code, codexErrorInfo: "other", additionalDetails: null };
     const item = { id: `${active.id}:error`, type: "error", code, message: code };

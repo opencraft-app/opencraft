@@ -1,14 +1,19 @@
+import { MODEL_CATALOG_REFRESH_METHOD, SCOPED_MODEL_REFRESH_EXTENSION, MODEL_CATALOG_REFRESH_EXTENSION } from "@opencraft/appserver-protocol";
 import { ThreadCatalogPublisher } from "@opencraft/app-host-server/thread-catalog";
 import { THREAD_CATALOG_CHANGED } from "@opencraft/appserver-protocol";
 import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
 import { LocalHostResources } from "./host-resources.js";
+import { exportConversationContext } from "./conversation-context-export.js";
 import { randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { AppServerRpcError, serializeHistoryReply, type ExecutionEngineClient, type ExecutionEngineProvider } from "@opencraft/appserver-client";
-import { SCOPED_SKILL_CATALOG_EXTENSION, SCOPED_SKILL_CATALOG_METHOD, OPENCRAFT_METHOD_ACCESS_EXTENSION, parseAppServerMethodAccess } from "@opencraft/appserver-protocol";
+import { SCOPED_PERMISSION_CATALOG_EXTENSION, SCOPED_PERMISSION_CATALOG_METHOD, SCOPED_SKILL_CATALOG_EXTENSION, SCOPED_SKILL_CATALOG_METHOD, OPENCRAFT_METHOD_ACCESS_EXTENSION, parseAppServerMethodAccess } from "@opencraft/appserver-protocol";
 
 type Value = Record<string, any>;
 interface LegacyHost { websocketUrl: string; resolveWebsocketUrl?: () => Promise<string>; close(): Promise<void>; storageOutcomes?: readonly unknown[] }
@@ -23,9 +28,15 @@ export async function startEngineHost(options: {
   machine?: unknown;
   admitRequest?: <T>(method: string, operation: () => Promise<T>) => Promise<T>;
   strictClose?: boolean;
-  resources?: { projectDirectory?: string; attachmentDirectory?: string };
+  resources?: { projectDirectory?: string; attachmentDirectory?: string; continuationsDirectory?: string };
 }) {
   const resources = options.resources || !options.legacy ? new LocalHostResources(options.resources) : undefined;
+  let tempContinuations: Promise<string> | undefined;
+  const continuationsDirectory = () => options.resources?.continuationsDirectory
+    ? Promise.resolve(options.resources.continuationsDirectory)
+    : options.resources?.attachmentDirectory
+      ? Promise.resolve(join(dirname(options.resources.attachmentDirectory), "continuations"))
+      : (tempContinuations ??= mkdtemp(join(tmpdir(), "opencraft-continuations-")));
   const registry = new Map(options.providers.map(provider => [provider.id, provider]));
   if (registry.size !== options.providers.length || options.legacy && registry.has(options.legacy.id)) throw new Error("Duplicate execution engine");
   if (!registry.has(options.defaultEngine) && options.defaultEngine !== options.legacy?.id) throw new Error("Default execution engine is not enabled");
@@ -244,8 +255,11 @@ export async function startEngineHost(options: {
             if (!stopped && clients.get(clientId) === state) catalogClients.add(state.owner);
             const access = parseAppServerMethodAccess(initialized.capabilities?.extensions?.[OPENCRAFT_METHOD_ACCESS_EXTENSION]);
             reply({ ...initialized, capabilities: { ...initialized.capabilities, extensions: { ...initialized.capabilities?.extensions, ...resources?.extensions,
-              ...(access ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...access, methods: [...new Set([...access.methods, SCOPED_SKILL_CATALOG_METHOD])] } } : {}),
+              ...(access ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...access, methods: [...new Set([...access.methods, SCOPED_SKILL_CATALOG_METHOD, SCOPED_PERMISSION_CATALOG_METHOD, MODEL_CATALOG_REFRESH_METHOD, "opencraft/agent-session/export-context"])] } } : {}),
               [SCOPED_SKILL_CATALOG_EXTENSION]: { version: 1 },
+              [SCOPED_PERMISSION_CATALOG_EXTENSION]: { version: 1 },
+              [SCOPED_MODEL_REFRESH_EXTENSION]: { version: 1 },
+              "opencraft/agent-session": { version: 1, contextExport: [...(options.legacy ? [options.legacy.id] : []), ...options.providers.map(provider => provider.id)] },
               "opencraft/execution-engines": { version: 1, defaultEngine: options.defaultEngine, providers: options.providers.map(provider => ({ id: provider.id, threadPrefix: provider.threadPrefix, modelPrefix: provider.modelPrefix, extensions: provider.extensions })) },
               "opencraft/thread-pins": { version: 1 },
               "opencraft/scoped-model-catalog": { version: 1 } } } }); return;
@@ -300,6 +314,25 @@ export async function startEngineHost(options: {
               ?? (options.defaultEngine !== options.legacy?.id ? registry.get(options.defaultEngine) : undefined);
             if (target) { reply(await target.request(method, params, state.owner)); return; }
           }
+          if (method === MODEL_CATALOG_REFRESH_METHOD) {
+            if ((params.threadId !== undefined && (typeof params.threadId !== "string" || !params.threadId))
+              || (params.model !== undefined && (typeof params.model !== "string" || !params.model))) throw new Error("Invalid model catalog target");
+            const provider = params.threadId ? options.providers.find(provider => provider.ownsThread(params.threadId))
+              : params.model ? options.providers.find(provider => provider.ownsModel(params.model)) : registry.get(options.defaultEngine);
+            if (!provider || (provider.extensions?.[MODEL_CATALOG_REFRESH_EXTENSION] as { version?: unknown } | undefined)?.version !== 1) throw new Error("Model catalog refresh is unavailable");
+            reply(await provider.request(method, params.threadId ? { threadId: params.threadId } : {}, state.owner)); return;
+          }
+          if (method === SCOPED_PERMISSION_CATALOG_METHOD) {
+            if ((params.threadId !== undefined && (typeof params.threadId !== "string" || !params.threadId))
+              || (params.model !== undefined && (typeof params.model !== "string" || !params.model))) throw new Error("Invalid permission catalog target");
+            const provider = params.threadId !== undefined ? options.providers.find(provider => provider.ownsThread(params.threadId))
+              : params.model !== undefined ? options.providers.find(provider => provider.ownsModel(params.model)) : registry.get(options.defaultEngine);
+            const native = { cwd: params.cwd, cursor: params.cursor, limit: params.limit };
+            if (provider) { reply(await provider.request("permissionProfile/list", { ...native, ...(params.threadId ? { threadId: params.threadId } : {}) }, state.owner)); return; }
+            if ((params.threadId || params.model) && !(options.legacy && (params.threadId !== undefined || params.model === undefined || options.legacy.models === undefined || options.legacy.models.includes(params.model)))) throw new Error("Permission catalog execution engine is unavailable");
+            if (!options.legacy) throw new Error("Permission catalog execution engine is unavailable");
+            reply(await callLegacy("permissionProfile/list", native, clientId)); return;
+          }
           if (method === "permissionProfile/list" && !options.legacy) { reply(await registry.get(options.defaultEngine)!.request(method, params, state.owner)); return; }
           if (method === "skills/list" || method === SCOPED_SKILL_CATALOG_METHOD) {
             const scoped = method === SCOPED_SKILL_CATALOG_METHOD;
@@ -348,14 +381,39 @@ export async function startEngineHost(options: {
             });
             reply(catalog); return;
           }
+          if (method === "opencraft/agent-session/export-context") {
+            const threadId = params.threadId;
+            if (typeof threadId !== "string" || !threadId) throw new Error("Conversation context unavailable");
+            const ownerProvider = options.providers.find(candidate => candidate.ownsThread(threadId));
+            if (ownerProvider) {
+              try {
+                const exported = await ownerProvider.request(method, { threadId }, state.owner);
+                reply({ ...exported, collaborationSpaceId: exported.collaborationSpaceId ?? "myself" }); return;
+              } catch (error) {
+                if ((error as { code?: unknown })?.code !== -32601) throw error;
+              }
+              const read = await ownerProvider.request("thread/read", { threadId, includeTurns: true }, state.owner);
+              if (!read?.thread?.cwd) throw new Error("Conversation context unavailable");
+              const exported = await exportConversationContext(await continuationsDirectory(), threadId, read.thread.name ?? null, read.thread.cwd, read.thread.turns ?? []);
+              reply({ ...exported, collaborationSpaceId: "myself" }); return;
+            }
+            if (!options.legacy) throw new Error("Conversation context unavailable");
+            const read = await callLegacy("thread/read", { threadId, includeTurns: true }, clientId);
+            if (!read?.thread?.cwd) throw new Error("Conversation context unavailable");
+            const exported = await exportConversationContext(await continuationsDirectory(), threadId, read.thread.name ?? null, read.thread.cwd, read.thread.turns ?? []);
+            reply({ ...exported, collaborationSpaceId: "myself" }); return;
+          }
           if (provider) {
-            if (params.threadId && !["thread/read", "thread/history/cancel", "thread/turns/list", "thread/items/list", "thread/goal/get", "thread/queue/list", "thread/unsubscribe", "thread/resume", "opencraft/thread-pins/set", "thread/name/set", "thread/archive", "thread/unarchive", "thread/delete"].includes(method) && !method.startsWith("opencraft/schedules/") && !state.opened.has(params.threadId)) throw new Error("Open the thread before mutating it");
+            if (params.threadId && !["model/list", "thread/read", "thread/history/cancel", "thread/turns/list", "thread/items/list", "thread/goal/get", "thread/queue/list", "thread/unsubscribe", "thread/resume", "opencraft/thread-pins/set", "opencraft/agent-session/export-context", "thread/name/set", "thread/archive", "thread/unarchive", "thread/delete"].includes(method) && !method.startsWith("opencraft/schedules/") && !state.opened.has(params.threadId)) throw new Error("Open the thread before mutating it");
             const watching = method === "thread/read" && params.watch === true && typeof params.threadId === "string";
             const wasReading = state.reading.has(params.threadId);
             if (watching) state.reading.add(params.threadId);
             let result;
             try { result = await provider.request(method, params, state.owner); }
             catch (error) { if (watching && !wasReading) state.reading.delete(params.threadId); throw error; }
+            if (method === "model/list" && Array.isArray(result.data)) result = { ...result, data: result.data.map((model: Value) => ({
+              ...model, agentId: model.agentId ?? provider.id, agentLabel: model.agentLabel ?? provider.label,
+            })) };
             if (["thread/start", "thread/resume", "thread/fork"].includes(method) && result.thread?.id) state.opened.add(result.thread.id);
             if (method === "thread/unsubscribe") { state.opened.delete(params.threadId); state.reading.delete(params.threadId); }
             if (["thread/resume", "thread/start"].includes(method) && result.thread?.status?.type === "active") consumerTurns.set(result.thread.id, "unknown");
@@ -413,6 +471,7 @@ export async function startEngineHost(options: {
       await new Promise<void>(resolve => server.close(() => resolve()));
       const outcomes = await Promise.allSettled(options.providers.map(provider => provider.close()));
       await resources?.close();
+      if (tempContinuations) await rm(await tempContinuations, { recursive: true, force: true }).catch(() => undefined);
       await (await legacy?.catch(() => undefined))?.close();
       if (options.strictClose) { const failure = outcomes.find(outcome => outcome.status === "rejected"); if (failure?.status === "rejected") throw failure.reason; }
     },

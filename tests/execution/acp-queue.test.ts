@@ -17,7 +17,7 @@ async function until(predicate: () => boolean | Promise<boolean>) {
 async function fixture(t: test.TestContext) {
   const root = await mkdtemp(join(tmpdir(), "acp-queue-")), trace = join(root, "trace.jsonl");
   const options = { id: "codex" as const, command: process.execPath, args: [resolve("tests/fixtures/acp-engine-peer.mjs")], cwd: root,
-    dataDirectory: join(root, "data"), env: { ACP_TEST_TRACE: trace, ACP_TEST_IMAGES: "1" } };
+    dataDirectory: join(root, "data"), env: { ACP_TEST_PERMISSIONS: "1", ACP_TEST_TRACE: trace, ACP_TEST_IMAGES: "1" } };
   const engines: AcpEngine[] = [], open = () => { const engine = new AcpEngine(options); engines.push(engine); return engine; };
   t.after(async () => { for (const engine of engines) await engine.close(); await rm(root, { recursive: true, force: true }); });
   const engine = open(), notices: { method: string; params: any }[] = [];

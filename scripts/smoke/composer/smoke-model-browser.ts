@@ -22,6 +22,20 @@ try {
     await p.goto(base); const editor = p.locator(".opencraft-composer-editor"); await editor.fill("Keep this model selection draft");
     await editor.evaluate(el => (window as any).originalModelBrowserEditor = el);
     const trigger = p.locator(".opencraft-composer-mode--intelligence");
+    await p.evaluate(() => {
+      const f = (window as any).modelBrowserFixture;
+      f.setCatalogModels([]);
+      f.controller.dispatch({ type: "set-selections", patch: { model: "codex:gpt-6.1-sol[high]" } });
+    });
+    await p.waitForFunction(() => document.querySelector(".opencraft-composer-mode__model-label")?.textContent === "Codex · 6.1 Sol");
+    assert.doesNotMatch(await trigger.innerText(), /codex:|\[high\]/i);
+    assert.equal(await trigger.locator(".opencraft-composer-mode__effort-label").textContent(), "High");
+    await p.evaluate(() => {
+      const f = (window as any).modelBrowserFixture;
+      f.setCatalogModels([...f.models, { ...f.models[0], id: "codex:gpt-6.1-sol[high]", value: "codex:gpt-6.1-sol[high]", label: "codex:gpt-6.1-sol[high]" }]);
+    });
+    assert.equal(await trigger.locator(".opencraft-composer-mode__model-label").innerText(), "Codex · 6.1 Sol", "late catalog metadata keeps the normalized name stable");
+    await p.evaluate(() => { const f = (window as any).modelBrowserFixture; f.setCatalogModels(f.models); f.controller.dispatch({ type: "set-selections", patch: { model: "codex:one[high]" } }); });
     if (touch) await trigger.tap(); else { await trigger.focus(); await p.keyboard.press("Enter"); }
     const menu = p.locator(".opencraft-composer-model-browser-surface"); await menu.waitFor();
     if (!touch) assert.equal(await menu.getByRole("searchbox").evaluate(el => el === document.activeElement), true, "keyboard entry starts at model search");
@@ -29,6 +43,28 @@ try {
     assert.equal(await menu.getByRole("menuitem", { name: "Model One", exact: true }).count(), 1, "six concrete variants appear as one model");
     assert.equal(await menu.getByRole("button", { name: "High", exact: true }).getAttribute("aria-pressed"), "true");
     assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.remembered.length), 0, "opening writes no defaults");
+    const refresh = menu.getByRole("button", { name: "Refresh models", exact: true });
+    const refreshSelection = await p.evaluate(() => (window as any).modelBrowserFixture.selections());
+    const refreshSearch = menu.getByRole("searchbox"); await refreshSearch.fill("Model");
+    if (touch) await refresh.tap(); else { await refresh.focus(); await p.keyboard.press("Enter"); }
+    await menu.getByText("Refreshing models…", { exact: true }).waitFor();
+    assert.equal(await refresh.isDisabled(), true);
+    assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.refreshCalls.length), 1);
+    assert.deepEqual(await p.evaluate(() => (window as any).modelBrowserFixture.selections()), refreshSelection);
+    await p.evaluate(() => (window as any).modelBrowserFixture.finishRefresh());
+    await menu.getByRole("menuitem", { name: "Fresh Model", exact: true }).waitFor();
+    assert.equal(await refreshSearch.inputValue(), "Model", "refresh keeps search and the open menu");
+    assert.deepEqual(await p.evaluate(() => (window as any).modelBrowserFixture.selections()), refreshSelection, "new choices never silently change the current model");
+    if (touch) await refresh.tap(); else await refresh.click();
+    await p.evaluate(() => (window as any).modelBrowserFixture.finishRefresh(false));
+    await menu.getByRole("alert").filter({ hasText: "Couldn't refresh models" }).waitFor();
+    assert.equal(await menu.getByRole("menuitem", { name: "Fresh Model", exact: true }).count(), 1, "failed refresh keeps the last successful list");
+    assert.equal(await refresh.isEnabled(), true);
+    await refreshSearch.fill("");
+    await p.screenshot({ path: output + (touch ? "/touch-refresh.png" : "/desktop-refresh.png"), animations: "disabled" });
+    await p.keyboard.press("Escape"); await menu.waitFor({ state: "hidden" });
+    if (touch) { await editor.tap(); await trigger.tap(); } else { await editor.click(); await trigger.focus(); await p.keyboard.press("Enter"); }
+    await menu.waitFor();
     const low = menu.getByRole("button", { name: "Low", exact: true }); if (touch) await low.tap(); else await low.click();
     assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.selections().model), "codex:one[low]");
     assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.selections().effort), undefined, "variant selection adds no unsupported effort override");
@@ -42,6 +78,13 @@ try {
     assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.selections().model), "codex:one[low]");
     await search.fill("");
     await p.getByRole("tab", { name: "Cursor", exact: true }).click();
+    const cursorRefresh = menu.getByRole("button", { name: "Refresh models", exact: true });
+    if (touch) await cursorRefresh.tap(); else await cursorRefresh.click();
+    await menu.getByText("Refreshing models…", { exact: true }).waitFor();
+    assert.ok(await p.evaluate(() => (window as any).modelBrowserFixture.refreshCalls.at(-1).startsWith("cursor:")), "refresh follows the browsed Agent");
+    await p.evaluate(() => (window as any).modelBrowserFixture.finishRefresh());
+    await menu.getByRole("menuitem", { name: "Fresh Cursor Model", exact: true }).waitFor();
+    await p.screenshot({ path: output + (touch ? "/touch-cursor-refresh.png" : "/desktop-cursor-refresh.png"), animations: "disabled" });
     assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.selections().model), "codex:one[low]", "browsing another Agent cannot select it");
     await menu.getByRole("menuitem", { name: "Model One", exact: true }).click();
     assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.selections().model), "cursor:one");

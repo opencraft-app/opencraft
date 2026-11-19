@@ -64,7 +64,9 @@ try {
     else result = {};
     ws.send(JSON.stringify({ id: request.id, result }));
   }));
-  const { chromium } = await import("playwright"); browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
+  const { chromium } = await import("playwright"); browser = await chromium.launch({
+    headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE, args: ["--no-sandbox"],
+  });
   const origin = vite.resolvedUrls!.local[0]!;
   const results = [];
   for (const width of [390, 1100]) for (const theme of ["light", "dark"] as const) {

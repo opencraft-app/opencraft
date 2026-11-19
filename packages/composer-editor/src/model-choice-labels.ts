@@ -15,3 +15,18 @@ export function modelEffortLabel(intl: IntlShape, value: string, fallback: strin
   const key = value.toLowerCase() === "extra-high" ? "xhigh" : value.toLowerCase();
   return Object.hasOwn(effortMessages, key) ? intl.formatMessage(effortMessages[key as keyof typeof effortMessages]) : fallback;
 }
+
+const nativeEfforts = new Set(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
+export function modelIdentifierPresentation(value: string): { label: string; effort: string | null } {
+  const codex = value.startsWith("codex:");
+  let name = codex ? value.slice("codex:".length) : value;
+  let effort: string | null = null;
+  if (codex && name.endsWith("]")) {
+    const open = name.lastIndexOf("[");
+    const suffix = name.slice(open + 1, -1);
+    if (open > 0 && nativeEfforts.has(suffix)) { name = name.slice(0, open); effort = suffix; }
+  }
+  const label = name.replace(/^:/u, "").split(/[-_\s]+/u).filter(Boolean)
+    .map(part => /^gpt$/iu.test(part) ? "GPT" : `${part[0]?.toUpperCase() ?? ""}${part.slice(1).toLowerCase()}`).join(" ");
+  return { label, effort };
+}

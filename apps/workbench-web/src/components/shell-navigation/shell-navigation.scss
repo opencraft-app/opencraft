@@ -28,7 +28,8 @@
     // the continuous Shell plane, including selection and avatar backgrounds.
     clip-path: inset(var(--sidebar-heading-occlusion, 0px) -100% -100%);
   }
-  .sidebar-thread-group-heading {
+  .sidebar-thread-group-heading,
+  .sidebar-recent-heading {
     // The section bounds its own disclosure. Desktop scrolls the activity list;
     // mobile scrolls the outer navigation track, with no extra scroll owner.
     position: sticky;
@@ -38,6 +39,7 @@
     z-index: 1;
     background: var(--opencraft-sidebar-heading-background, var(--color-surface));
   }
+  .sidebar-recent-heading > .sidebar-thread-group-heading { position: static; margin: 0; }
   .sidebar-list-toolbar, .sidebar-new-chat, .sidebar-list-search, .sidebar-catalog-feedback { flex-shrink: 0; }
 }
 .shell-sidebar__scroll { display: contents; }

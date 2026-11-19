@@ -40,3 +40,20 @@ test("long native labels and malformed suffixes remain bounded without inventing
   assert.equal(choices[0]!.variants.length, 0);
   assert.equal(chooseFamilyModel(family, "codex:" + bracketed).value, "codex:a[high]");
 });
+
+
+import { modelIdentifierPresentation } from "../../packages/composer-editor/src/model-choice-labels";
+test("cold Codex identifiers display the same model name and one separate effort without changing identity", () => {
+  assert.deepEqual(modelIdentifierPresentation("codex:gpt-6.1-sol[high]"), { label: "GPT 6.1 Sol", effort: "high" });
+  assert.deepEqual(modelIdentifierPresentation("codex:gpt-6.1-sol"), { label: "GPT 6.1 Sol", effort: null });
+  assert.equal(modelIdentifierPresentation("codex:gpt-one[custom]").effort, null, "unknown suffixes are not invented reasoning choices");
+  assert.equal(modelIdentifierPresentation("api:model[high]").effort, null, "other providers keep their opaque suffixes");
+});
+
+
+test("raw cached Codex catalog names use the same presentation as a missing catalog", () => {
+  for (const label of ["codex:gpt-6.1-sol[high]", "gpt-6.1-sol[high]"]) {
+    assert.equal(modelChoiceFamilies([model("codex:gpt-6.1-sol[high]", label)])[0]!.label, "GPT 6.1 Sol");
+  }
+  assert.equal(modelChoiceFamilies([model("codex:gpt-6.1-sol[high]", "My model (high)")])[0]!.label, "My model");
+});

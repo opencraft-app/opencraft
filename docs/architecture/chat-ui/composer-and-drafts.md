@@ -10,17 +10,14 @@ only a fallback when no originating error exists; tool or queue preparation
 failures must not be relabeled as connection failures. Classification and retry
 delays remain independent of the displayed message.
 
-An existing online text submission can also enter this outbox after a structured
-Host tool-preparation rejection proves it was never dispatched and explicitly
-marks the reason retryable. The local owner must persist the unchanged intent
-before releasing its failed optimistic row, then transfer the same message ID
-to the Host queue. A queue-admission rejection may schedule a bounded retry while
-ready; disconnect, disposal or scope replacement fences that wakeup. Positive
-server queue custody supersedes a matching local row during acknowledgement
-handoff, so the Composer renders each input once. Unknown delivery, permanent
-configuration errors, creation and explicit steering retain their existing
-recovery policy. Unsupported attachment/context handles keep the original input
-for explicit retry rather than promise automatic persistence.
+An existing online text submission is written as a local attempt before the
+usual start, steer or queue command crosses the transport. The saved intent
+keeps its original document and message identity. A confirmed Host receipt or
+authoritative message retires the attempt. A disconnect with no acknowledgement
+leaves an unconfirmed row available after reload. A proven pre-dispatch
+connection failure returns the same input to the waiting queue. Explicit Host
+rejections remain visible for review. A bounded retry can wait for a retryable
+tool-preparation failure; disposal and account scope changes fence the wakeup.
 
 Existing Web/Electron conversations can accept text while their Host is offline
 or their Replica baseline is recovering. `ConversationRuntime` owns a local
@@ -33,13 +30,12 @@ Storage denial, capacity errors and unsupported attachment/context handles retai
 the draft. New Thread creation still requires a connection. Native/embedded
 consumers without this port retain their existing admission behavior.
 
-A ready connection alone does not consume a draft. The Web submit boundary
-checks that the same command and client message identity is already published
-in the target conversation's pending or queued submissions; otherwise it awaits
-admission, retaining the draft if identity restoration, hydration or persistence
-fails. Already owned online submissions release the editor before remote ACK.
-An unchanged failed retry keeps its delivery identity even when EditorView
-serializes an equivalent document again, while settlement uses the current draft.
+The Composer releases an existing text draft after the local outbox confirms
+custody for the same command and client message identity. It remains editable
+while that write settles and a late completion clears only the submitted
+document. An unchanged failed retry preserves delivery identity. Temporary
+attachment and context handles stay with the editor until the online send
+settles.
 
 The original immutable message and client identity survive reload. Once the
 existing recovery owner has restored an authoritative live baseline, one drain
@@ -142,7 +138,11 @@ not a second storage writer. Browser bootstrap can restore that exact client
 Draft ID and configured, enabled Host before the View hydrates its document.
 Canonical promotion aliases take precedence; old envelopes remain readable.
 Browser edits enqueue local writes immediately rather than leaving the last
-input behind a debounce window. No execution state is inferred from placement.
+input behind a debounce window. The browser also checkpoints edits awaiting that
+commit when the page is hidden or unloaded. The same tab can restore those
+account- and View-scoped edits on reload. A pending clear is checkpointed as a
+tombstone. The named document store remains the durable owner, and a confirmed
+commit clears the matching checkpoint. No execution state is inferred from placement.
 Account service disposal revokes asynchronous authority without rotating the
 persisted credential scope. Only actual identity/credential transitions rotate
 that scope; otherwise every ordinary browser refresh would orphan saved input.
@@ -721,26 +721,14 @@ Keyboard reopening checks wait for the native close-focus cleanup to restore
 the trigger before sending ArrowDown; menu disappearance alone does not signal
 that deferred native focus cleanup has finished.
 
-## Composer connection warning material
+## Composer connection indicator
 
-The shared Composer projects the host's read-only `isUnstable` state to its
-`data-warning` shell attribute. Workbench derives it from the existing active
-conversation recovery presentation and diagnostic: actual reconnection, an
-observed transport/history failure being retried, or terminal failure. Initial
-connection, ordinary history activation and cached-history refresh project the
-existing `isRecovering` state to `data-loading` while no warning is present.
-This routine loading uses a much fainter static red wash (1–2.5% semantic danger
-color, 7% inset rim, no outer glow) than reconnect/failure (2.5–6.5%, 17% rim).
-Warnings take precedence; ready conversations and new drafts stay neutral.
-Normal AI execution does not activate either recovery tint.
-Only the existing material pseudo-element receives a static low-saturation red
-tint and faint inset rim using the semantic danger token. Background opacity is
-constant: no breathing, blinking or scaling. Text, caret, controls and geometry
-stay unchanged. Recovery scan and existing diagnostic/retry controls retain their
-own lifecycle and meaning; the tint does not change admission or replay execution.
-Forced colors use a system-color outline instead of relying on red. Existing
-reduced-transparency material fallback remains in force. No timer, remount or new
-mutable connection state is introduced.
+Automatic recovery shows a restrained sweep along the bottom edge of the
+Composer. A waiting connection uses a stationary line. The shell, ordinary
+placeholder, controls and editor geometry remain stable. The line is
+non-interactive, carries an accessible status, and stays stationary when the
+user reduces motion. Incompatible clients still receive their update
+instruction.
 
 ## Composer execution material feedback
 

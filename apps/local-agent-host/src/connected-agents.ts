@@ -1,11 +1,11 @@
+import { MODEL_CATALOG_REFRESH_METHOD } from "@opencraft/appserver-protocol";
 import {CodeBuddyIdeBridge} from "./codebuddy-ide-bridge.js";
 import {fileURLToPath} from "node:url";
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { join, isAbsolute } from "node:path";
 import { homedir } from "node:os";
 import type { ExecutionEngineClient } from "@opencraft/appserver-client";
-import { permissionModeProfileId } from "@opencraft/appserver-protocol";
-import { AcpEngine } from "@opencraft/plugin-acp-engine";
+import { AcpEngine, type AcpEngineOptions } from "@opencraft/plugin-acp-engine";
 import { ConnectedAgentHistory } from "./connected-agent-history.js";
 import { AgentProviderUsageService } from "./agent-provider-usage.js";
 import type { BridgeEngineProvider } from "./bridge-engine-provider.js";
@@ -173,6 +173,7 @@ export class ConnectedAgentHost {
     private readonly deps: OnboardingDeps,
     private readonly bridge?: ConnectedAgentBridge,
     private readonly assets?: {readonly proxy:string;readonly extension:string},
+    private readonly requestUserInput?: AcpEngineOptions["requestUserInput"],
   ) { this.providerUsage = new AgentProviderUsageService(deps);
     this.ideBridge=new CodeBuddyIdeBridge(join(root,"codebuddy-ide"),deps,assets?.extension);
     onboarding.registerNative?.("codebuddy-ide",{probe:()=>this.ideBridge.snapshot(),historyProbe:()=>this.ideBridge.snapshot(true),act:action=>this.ideBridge.act(action)});
@@ -203,7 +204,7 @@ export class ConnectedAgentHost {
   private engineFor(method: string, params: Params): { engineId: EngineId | null; bridge: boolean } {
     const threadId = typeof params.threadId === "string" ? params.threadId : "";
     if (this.bridge?.provider.ownsThread(threadId)) return { engineId: null, bridge: true };
-    const engineId = method === "thread/start"
+    const engineId = method === "thread/start" || (method === "permissionProfile/list" || method === MODEL_CATALOG_REFRESH_METHOD) && !threadId
       ? connectedAgentEngineId(typeof params.model === "string" ? params.model : "")
       : connectedAgentEngineId(threadId);
     return { engineId, bridge: method === "thread/start" && engineId !== null && this.bridge?.engines.includes(engineId) === true };
@@ -347,7 +348,25 @@ export class ConnectedAgentHost {
     const engineId = owner.engineId;
     if (!engineId) throw new Error("This conversation is not owned by a connected agent");
     if (method === "thread/goal/get") return { goal: null };
+    if (method === MODEL_CATALOG_REFRESH_METHOD) {
+      const engine = await this.threadEngine(engineId, params.threadId);
+      const client: ExecutionEngineClient = { notify() {}, async request() { throw new Error("Discovery has no browser tool owner"); } };
+      await engine.request(method, params, client);
+      if (!(typeof params.threadId === "string" && params.threadId.startsWith("codex_source_"))) {
+        const catalog = await engine.request("model/list", {}, client);
+        this.discovered.set(engineId, this.projectModels(engineId, catalog.data ?? []));
+        this.modelLoads.delete(engineId);
+      }
+      return {};
+    }
     const engine = await this.threadEngine(engineId,params.threadId);
+    if (method === "permissionProfile/list" && engineId === "codex" && !engine.hasPermissionCatalog) {
+      // Explicit permission-menu discovery needs the peer's offered policies.
+      // A fresh probe creates no turn and never resumes a user's conversation.
+      const pending = this.modelLoads.get(engineId) ?? this.loadAgentModels(engineId);
+      this.modelLoads.set(engineId, pending);
+      try { await pending; } finally { if (this.modelLoads.get(engineId) === pending) this.modelLoads.delete(engineId); }
+    }
     const client: ExecutionEngineClient = {
       request: () => Promise.reject(new Error("Connected agents use their own tools")),
       notify: () => undefined,
@@ -363,9 +382,9 @@ export class ConnectedAgentHost {
       const model = typeof forwarded.model === "string" ? forwarded.model : undefined;
       return engine.request("thread/start", {
         cwd: engineId === "codebuddy-ide" && (forwarded.cwd === undefined || forwarded.cwd === this.cwd) ? await this.ideBridge.workspace() : typeof forwarded.cwd === "string" && forwarded.cwd.startsWith("/") ? forwarded.cwd : this.cwd,
-        permissions: permissionModeProfileId("full"),
-        approvalPolicy: "never",
-        sandbox: "danger-full-access",
+        ...(forwarded.permissions != null ? { permissions: forwarded.permissions } : {}),
+        ...(forwarded.approvalPolicy != null ? { approvalPolicy: forwarded.approvalPolicy } : {}),
+        ...(forwarded.sandbox != null ? { sandbox: forwarded.sandbox } : {}),
         ...(model ? { model } : {}),
         ...(forwarded.reasoningEffort != null ? { reasoningEffort: forwarded.reasoningEffort } : {}),
         ...(forwarded.effort != null ? { effort: forwarded.effort } : {}),
@@ -396,9 +415,6 @@ export class ConnectedAgentHost {
     };
     const created = await engine.request("thread/start", {
       cwd: engineId === "codebuddy-ide" ? await this.ideBridge.workspace() : this.cwd,
-      permissions: permissionModeProfileId("full"),
-      approvalPolicy: "never",
-      sandbox: "danger-full-access",
     }, client);
     await engine.request("thread/archive", { threadId: created.thread.id }, client);
     if (engineId === "codex" || engineId === "cursor") await engine.discoverModelCapabilities(created.thread.id);
@@ -453,6 +469,7 @@ export class ConnectedAgentHost {
       dataDirectory: directory,
       ...(engineId === "codebuddy-ide" ? {env:{...process.env,OPENCRAFT_CODEBUDDY_IDE_DESCRIPTOR:this.ideBridge.descriptor}} : {}),
       permission: "allow-once",
+      ...(engineId === "codex" && this.requestUserInput ? { requestUserInput: this.requestUserInput } : {}),
       timeoutMs: engineId === "codebuddy-ide" ? 330_000 : 120_000,
       ...(engineId === "pi-cli" ? { history: new ConnectedAgentHistory("pi-cli", join(directory, "native-sessions"), join(this.root, "continuations"), [join(process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent"), "sessions")]) } : {}),
       ...(engineId === "codebuddy-ide" ? { history: new ConnectedAgentHistory("codebuddy-ide", join(homedir(), process.platform === "darwin" ? "Library/Application Support" : process.platform === "win32" ? "AppData/Local" : ".local/share", "CodeBuddyExtension", "Data"), join(this.root, "continuations"), [], () => this.ideBridge.historyScope()) } : {}),

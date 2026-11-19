@@ -88,7 +88,8 @@
   .sidebar-panel { height: auto; overflow: visible; padding-inline: var(--padding-shell-sidebar-inline); }
   .sidebar-content-scroll { flex: 0 0 auto; overflow: visible; contain: none; }
   .sidebar-tasks { flex: 0 0 auto; }
-  .sidebar-thread-group-heading { margin: 0; background: var(--opencraft-sidebar-heading-background, var(--shell-mobile-sidebar-background)); }
+  .sidebar-thread-group-heading,
+  .sidebar-recent-heading { margin: 0; background: var(--opencraft-sidebar-heading-background, var(--shell-mobile-sidebar-background)); }
   .sidebar-thread-group-heading .sidebar-thread-group-toggle {
     @include typography.role(metadata, secondary);
     min-height: max(44px, var(--size-control-hit-min));

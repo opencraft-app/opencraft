@@ -2,7 +2,7 @@ import { elapsedClock, type ElapsedClock } from "@opencraft/appserver-client/clo
 import { executionEngineExtension } from "@opencraft/appserver-client";
 import { Context, Service } from "@deepseek-ai/cordis";
 import { AppServerClientError, AppServerRpcError, isRetryableAppServerRpcError, isHistoryResponseTooLargeError, type AppServerClient } from "@opencraft/appserver-client";
-import { OPENCRAFT_RESUME_HISTORY_EXTENSION, buildResumeHistoryRequest, type AppServerThread, type ThreadHistoryCheckpoint, type ThreadResumeParams, type ThreadResumeResponse, type ThreadForkResponse } from "@opencraft/appserver-protocol";
+import { OPENCRAFT_RESUME_HISTORY_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION, buildResumeHistoryRequest, type AppServerThread, type ThreadHistoryCheckpoint, type ThreadResumeParams, type ThreadResumeResponse, type ThreadForkResponse } from "@opencraft/appserver-protocol";
 
 import type { DerivedHistoryPorts, DerivedReadContext } from "./derived-history";
 import type { HydratedThreadHistory, ResumeHistoryContext } from "./history-strategies";
@@ -382,7 +382,12 @@ export class ThreadResumeCoordinatorService extends Service {
   private executionFromRead(threadId: string, generation: number, metadata: AppServerThread, current: ThreadExecutionProjection): ThreadExecutionProjection {
     if (this.activatedGenerations.get(threadId) === generation && this.ctx.threadStreamOwnership.get(threadId)?.role === "owner") return current;
     const observed = this.executionFieldRevisions.get(threadId);
+    const permissionCapability = executionEngineExtension(this.client.initializeResult?.capabilities?.extensions, threadId, OPENCRAFT_PERMISSION_MODES_EXTENSION);
+    const profile = metadata.activePermissionProfile;
+    const permissionPresentation = permissionCapability?.version === 1 && Object.hasOwn(metadata, "activePermissionProfile") && !observed?.has("activePermissionProfile")
+      ? { activePermissionProfile: isRecord(profile) && typeof profile.id === "string" ? profile : null } : {};
     return { ...current,
+      ...permissionPresentation,
       model: observed?.has("model") ? current.model : typeof metadata.model === "string" ? metadata.model : current.model,
       modelProvider: observed?.has("modelProvider") ? current.modelProvider : typeof metadata.modelProvider === "string" ? metadata.modelProvider : current.modelProvider,
       cwd: observed?.has("cwd") ? current.cwd : metadata.cwd ?? current.cwd,

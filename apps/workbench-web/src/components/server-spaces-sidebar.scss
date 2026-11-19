@@ -19,6 +19,7 @@
     input{width:100%;box-sizing:border-box;}
   }
   &__members {list-style:none; padding:0; margin:0; li{display:flex;gap:calc(var(--spacing) * 3);align-items:center;padding-block:calc(var(--spacing) * 3);span{flex:1;overflow-wrap:anywhere;}}}
+  &__invitation {display:flex;flex-direction:column;gap:calc(var(--spacing) * 3);align-items:flex-start; p{margin:0;}}
   &__notice {padding:calc(var(--spacing) * 3) var(--padding-sidebar-content-inline);@include typography.role(metadata,secondary);}
 }
 @media (prefers-reduced-motion:reduce){.server-spaces__track{transition:none;}}

@@ -132,6 +132,7 @@ type ThreadRowMenuProps = {
   activityLabelId?: string;
   target: ThreadActionTarget; capabilities: ThreadActionCapabilities; children: ReactNode;
   disabled?: boolean;
+  tagMenuContent?: ReactNode;
   contextMenuExtra?: ReactNode;
   additionalActions?: readonly { id: string; label: string; onSelect(): void; disabled?: boolean }[];
   openMenuKind: SidebarThreadMenuKind | null;
@@ -153,7 +154,7 @@ function ThreadRowMenuWithAccess(props: ThreadRowMenuProps) {
   },!props.disabled && openMenuKind !== null);
   return <ThreadRowMenuBase {...props} access={access} />;
 }
-function ThreadRowMenuBase({ activityLabelId, target, capabilities, disabled = false, children, contextMenuExtra, additionalActions = [], openMenuKind, onOpenMenuChange, onCloseAutoFocus, onPointerDown, owner, access }: ThreadRowMenuProps & {access?:ReturnType<typeof useThreadAccessAction>}) {
+function ThreadRowMenuBase({ activityLabelId, target, capabilities, disabled = false, children, tagMenuContent, contextMenuExtra, additionalActions = [], openMenuKind, onOpenMenuChange, onCloseAutoFocus, onPointerDown, owner, access }: ThreadRowMenuProps & {access?:ReturnType<typeof useThreadAccessAction>}) {
   const portalContainer = useWorkbenchPresentationRoot();
   const intl = useIntl();
   const { onFork, onArchive, onSetPinned } = owner.callbacks;
@@ -172,8 +173,9 @@ function ThreadRowMenuBase({ activityLabelId, target, capabilities, disabled = f
     capabilities.delete ? { key: "delete", icon: Trash2, label: intl.formatMessage({ id: "sidebar.thread.delete", defaultMessage: "Delete" }), onSelect: () => { modalHandoff.current = true; owner.beginDelete(target); } } : null,
   ].filter((item): item is NonNullable<typeof item> => item !== null);
   // Keep the navigation subtree mounted when a runtime loses capabilities.
-  const hasMenu = menuItems.length > 0 || !!contextMenuExtra || additionalActions.length > 0;
-  const menuDisabled = disabled && additionalActions.length === 0;
+  const hasLocalActions = additionalActions.length > 0 || Boolean(tagMenuContent);
+  const hasMenu = menuItems.length > 0 || !!contextMenuExtra || hasLocalActions;
+  const menuDisabled = disabled && !hasLocalActions;
   const onMenuCloseAutoFocus = (event: Event) => {
     onCloseAutoFocus?.(event);
     if (!modalHandoff.current) return;
@@ -181,13 +183,14 @@ function ThreadRowMenuBase({ activityLabelId, target, capabilities, disabled = f
     modalHandoff.current = false;
   };
   return <>
-    <div className="sidebar-activity-row" data-has-menu={hasMenu ? "true" : "false"} data-local-actions={additionalActions.length > 0 || undefined}>
+    <div className="sidebar-activity-row" data-has-menu={hasMenu ? "true" : "false"} data-local-actions={hasLocalActions || undefined}>
       {/* Keep the dropdown outside this trigger: portal pointer events still bubble through the React tree. */}
       <ContextMenu.Root open={!menuDisabled && hasMenu && openMenuKind === "context"} onOpenChange={open => onOpenMenuChange("context", open)}>
         <ContextMenu.Trigger asChild disabled={menuDisabled || !hasMenu} onPointerDown={onPointerDown}>
           <div className="sidebar-activity-row__target">{children}</div>
         </ContextMenu.Trigger>
         <ContextMenu.Portal container={portalContainer}><ContextMenu.Content className="workbench-context-menu" onCloseAutoFocus={onMenuCloseAutoFocus}>
+          {tagMenuContent ? <>{tagMenuContent}{(additionalActions.length > 0 || menuItems.length > 0) ? <ContextMenu.Separator /> : null}</> : null}
           {additionalActions.map(action => <ContextMenu.Item key={action.id} disabled={action.disabled} onSelect={action.onSelect}>{action.label}</ContextMenu.Item>)}
           {additionalActions.length && menuItems.length ? <ContextMenu.Separator /> : null}
           {menuItems.map(({ key, icon: Icon, label, onSelect }) => <ContextMenu.Item key={key} disabled={busy || disabled || access?.pending} onSelect={onSelect}><Icon size={16} aria-hidden="true" />{label}</ContextMenu.Item>)}
@@ -196,12 +199,13 @@ function ThreadRowMenuBase({ activityLabelId, target, capabilities, disabled = f
       </ContextMenu.Root>
       <DropdownMenu.Root open={!menuDisabled && hasMenu && openMenuKind === "dropdown"} onOpenChange={open => onOpenMenuChange("dropdown", open)}>
         {hasMenu ? <DropdownMenu.Trigger asChild>
-          <button type="button" data-swipe-ignore className="sidebar-activity-item__menu-trigger" aria-describedby={activityLabelId} aria-label={intl.formatMessage(forking ? { id: "sidebar.thread.forking", defaultMessage: "Creating branch for {title}" } : { id: "sidebar.thread.actions", defaultMessage: "Actions for {title}" }, { title: target.title })} aria-busy={forking || undefined} data-forking={forking || undefined} disabled={menuDisabled || !additionalActions.length && (busy || disabled || access?.pending)}>
+          <button type="button" data-swipe-ignore className="sidebar-activity-item__menu-trigger" aria-describedby={activityLabelId} aria-label={intl.formatMessage(forking ? { id: "sidebar.thread.forking", defaultMessage: "Creating branch for {title}" } : { id: "sidebar.thread.actions", defaultMessage: "Actions for {title}" }, { title: target.title })} aria-busy={forking || undefined} data-forking={forking || undefined} disabled={menuDisabled || !hasLocalActions && (busy || disabled || access?.pending)}>
             {forking ? <LoaderCircle size={14} aria-hidden="true" /> : <MoreHorizontal className="sidebar-activity-item__menu-dots" size={14} aria-hidden="true" />}
           </button>
         </DropdownMenu.Trigger> : null}
         <DropdownMenu.Portal container={portalContainer}>
           <DropdownMenu.Content className="workbench-context-menu" align="end" sideOffset={4} onCloseAutoFocus={onMenuCloseAutoFocus}>
+            {tagMenuContent ? <>{tagMenuContent}{(additionalActions.length > 0 || menuItems.length > 0) ? <DropdownMenu.Separator /> : null}</> : null}
             {additionalActions.map(action => <DropdownMenu.Item key={action.id} disabled={action.disabled} onSelect={action.onSelect}>{action.label}</DropdownMenu.Item>)}
             {additionalActions.length && menuItems.length ? <DropdownMenu.Separator /> : null}
             {menuItems.map(({ key, icon: Icon, label, onSelect }) => <DropdownMenu.Item key={key} disabled={busy || disabled || access?.pending} onSelect={onSelect}><Icon size={16} aria-hidden="true" />{label}</DropdownMenu.Item>)}

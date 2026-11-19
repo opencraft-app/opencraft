@@ -7,6 +7,7 @@ import { ServerIcon, PeopleIcon, AddIcon, ChevronLeftIcon, ChevronRightIcon, Che
 import { SettingsTextInput } from '@opencraft/extension-react';
 import { DEFAULT_SERVER_SPACE, type ServerSpaceMember } from '@opencraft/appserver-protocol/server-spaces';
 import type { ServerSpacesController } from '../runtime/use-server-spaces';
+import { serverInvitationLink } from '../runtime/server-context';
 import './server-spaces-sidebar.scss';
 
 type View = 'servers'|'create'|'members'|'join'|'invite';
@@ -17,7 +18,7 @@ export function ServerSpacesContent({controller,open,onSelected,onClose}:{contro
   const [memberLists,setMemberLists]=useState<Record<string,ServerSpaceMember[]>>({});
   const members=memberLists[controller.selected]??[];
   const [busy,setBusy]=useState(false),[error,setError]=useState(false),[copied,setCopied]=useState(false);
-  const [invitation,setInvitation]=useState<string|null>(null);
+  const [invitation,setInvitation]=useState<{code:string;link:string|null}|null>(null);
   const frame=useRef<HTMLDivElement>(null);
   const intent=useRef(0),mounted=useRef(true);
   const depth=view==='servers'?0:1;
@@ -42,8 +43,7 @@ export function ServerSpacesContent({controller,open,onSelected,onClose}:{contro
   const invite=()=>{go('invite');setInvitation(null);setCopied(false);void run(async current=>{
     const result=await controller.command({action:'invite',spaceId:controller.selected}) as {code:string;expiresAt:number};
     if(typeof result.code!=='string'||!Number.isFinite(result.expiresAt))throw new Error('Invalid invitation');
-    const url=new URL(window.location.href);url.search='';url.hash='';url.searchParams.set('serverInvite',result.code);
-    if(current())setInvitation(url.href);
+    if(current())setInvitation({code:result.code,link:serverInvitationLink(result.code)});
   });};
   // Invitation links are consumed by an explicitly authenticated Server RPC. They
   // never supply an Actor ID, authenticate a person, or auto-accept membership.
@@ -94,7 +94,7 @@ export function ServerSpacesContent({controller,open,onSelected,onClose}:{contro
             <Button type="submit" variant="primary" disabled={busy||!name.trim()} aria-busy={busy}>{intl.formatMessage({id:'serverSpaces.create',defaultMessage:'Create Server'})}</Button>
           </form>:null}
           {view==='members'?<><p>{space?.name}</p><ul className="server-spaces__members">{members.map(member=><li key={member.actorId}><PeopleIcon size={18}/><span>{member.displayName}<small>{intl.formatMessage(member.role==='owner'?{id:'serverSpaces.owner',defaultMessage:'Owner'}:{id:'serverSpaces.member',defaultMessage:'Member'})}</small></span>{space?.role==='owner'&&member.role!=='owner'?<Button variant="ghost" disabled={busy} onClick={()=>void run(async()=>{await controller.command({action:'remove',spaceId:controller.selected,actorId:member.actorId});const list=await controller.members(controller.selected);setMemberLists(previous=>({...previous,[controller.selected]:list}));})}>{intl.formatMessage({id:'serverSpaces.remove',defaultMessage:'Remove'})}</Button>:null}</li>)}</ul></>:null}
-          {view==='invite'?<><p>{intl.formatMessage({id:'serverSpaces.invitationDescription',defaultMessage:'Share this invitation with someone who can sign in to this deployment. It expires in 24 hours and can be accepted by one person.'})}</p><p>{intl.formatMessage({id:'serverSpaces.sharing',defaultMessage:'Members can access the Agents and shared conversations in this Server.'})}</p>{invitation?<><SettingsTextInput aria-label={intl.formatMessage({id:'serverSpaces.invitationLink',defaultMessage:'Invitation link'})} value={invitation} readOnly onFocus={event=>event.target.select()}/><Button variant="primary" onClick={()=>void run(async current=>{await navigator.clipboard.writeText(invitation);if(current())setCopied(true);})}>{intl.formatMessage(copied?{id:'serverSpaces.copied',defaultMessage:'Copied'}:{id:'serverSpaces.copy',defaultMessage:'Copy invitation'})}</Button></>:null}</>:null}
+          {view==='invite'?<><p>{intl.formatMessage({id:'serverSpaces.invitationDescription',defaultMessage:'Share this invitation with someone who can sign in to this deployment. It expires in 24 hours and can be accepted by one person.'})}</p><p>{intl.formatMessage({id:'serverSpaces.sharing',defaultMessage:'Members can access the Agents and shared conversations in this Server.'})}</p>{invitation?<div className="server-spaces__invitation">{invitation.link===null?<p>{intl.formatMessage({id:'serverSpaces.localInvitationDescription',defaultMessage:'Open this deployment at its shared address, then choose Join Server and enter this code. To copy a link, open this page using that shared address.'})}</p>:null}<SettingsTextInput aria-label={intl.formatMessage(invitation.link===null?{id:'serverSpaces.invitationCode',defaultMessage:'Invitation code'}:{id:'serverSpaces.invitationLink',defaultMessage:'Invitation link'})} value={invitation.link??invitation.code} readOnly onFocus={event=>event.target.select()}/><Button variant="primary" disabled={busy} onClick={()=>void run(async current=>{await navigator.clipboard.writeText(invitation.link??invitation.code);if(current())setCopied(true);})}>{intl.formatMessage(copied?{id:'serverSpaces.copied',defaultMessage:'Copied'}:invitation.link===null?{id:'serverSpaces.copyCode',defaultMessage:'Copy code'}:{id:'serverSpaces.copy',defaultMessage:'Copy invitation'})}</Button></div>:null}</>:null}
           {view==='join'?<form onSubmit={event=>{event.preventDefault();void join();}}><p>{intl.formatMessage({id:'serverSpaces.joinDescription',defaultMessage:'Sign in to this deployment, then enter an invitation link or code to join its Server.'})}</p><label htmlFor={`${inputId}-join`}>{intl.formatMessage({id:'serverSpaces.invitationLink',defaultMessage:'Invitation link'})}</label><SettingsTextInput id={`${inputId}-join`} value={code} onChange={event=>setCode(event.target.value)} autoComplete="off" disabled={busy}/><Button type="submit" variant="primary" disabled={busy||!code.trim()}>{intl.formatMessage({id:'serverSpaces.join',defaultMessage:'Join Server'})}</Button></form>:null}
           {busy?<p role="status">{intl.formatMessage({id:'serverSpaces.working',defaultMessage:'Working…'})}</p>:null}
           {error?<p role="alert">{intl.formatMessage({id:'serverSpaces.actionFailed',defaultMessage:'Could not complete this action. Check your access or invitation and try again.'})}</p>:null}

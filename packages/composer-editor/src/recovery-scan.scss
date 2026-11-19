@@ -1,38 +1,54 @@
+$wave-svg: "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='28'%20height='9'%20viewBox='0%200%2028%209'%3E%3Cpath%20d='M0%204.5%20Q7%200.8%2014%204.5%20T28%204.5'%20fill='none'%20stroke='black'%20stroke-width='2.6'%20stroke-linecap='round'/%3E%3C/svg%3E";
+
 .opencraft-composer-recovery {
   position: absolute;
-  inset: 0;
-  border-radius: inherit;
+  z-index: 2;
+  inset-inline: var(--radius-composer-shell);
+  inset-block-end: 0;
+  height: 1px;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 350ms ease;
+  transition: opacity 180ms ease;
 
-  &[data-active="true"] {
+  &[data-active="true"],
+  &[data-waiting] {
     opacity: 1;
-    transition-delay: 600ms;
+    transition-delay: 80ms;
   }
 }
 
-.opencraft-composer-recovery__scan {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-  fill: none;
-  stroke: color-mix(in srgb, var(--color-badge-blue-foreground) 35%, var(--color-text-tertiary));
-}
-
 .opencraft-composer-recovery__beam {
-  width: calc(100% - 1px);
-  height: calc(100% - 1px);
-  rx: max(0px, calc(var(--radius-composer-shell) - 0.5px));
-  stroke-linecap: round;
-  stroke-dashoffset: var(--scan-offset);
-  animation: composer-recovery-scan 4.8s linear infinite paused;
+  --wave-mask: url("#{$wave-svg}");
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: -3px;
+  height: 9px;
+  background-image: linear-gradient(
+    90deg,
+    #06b6d4 0%,
+    #3b82f6 18%,
+    #8b5cf6 36%,
+    #ec4899 54%,
+    #f97316 72%,
+    #10b981 88%,
+    #06b6d4 100%
+  );
+  background-size: 140% 100%;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 5%, #000 95%, transparent), var(--wave-mask);
+  mask-image: linear-gradient(90deg, transparent, #000 5%, #000 95%, transparent), var(--wave-mask);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+  -webkit-mask-repeat: no-repeat, repeat-x;
+  mask-repeat: no-repeat, repeat-x;
+  -webkit-mask-size: 100% 100%, 28px 9px;
+  mask-size: 100% 100%, 28px 9px;
+  -webkit-mask-position: 0 0, 0 50%;
+  mask-position: 0 0, 0 50%;
+  filter: drop-shadow(0 0 5px rgb(139 92 246 / 52%));
 }
 
 .opencraft-composer-recovery[data-active="true"] .opencraft-composer-recovery__beam {
-  animation-play-state: running;
+  animation: composer-recovery-scan 2.4s linear infinite;
 }
 
 .opencraft-composer-recovery__label {
@@ -45,13 +61,32 @@
 }
 
 @keyframes composer-recovery-scan {
-  to { stroke-dashoffset: calc(var(--scan-offset) - 100px); }
+  from {
+    background-position: 0% 0;
+    -webkit-mask-position: 0 0, 0px 50%;
+    mask-position: 0 0, 0px 50%;
+  }
+  to {
+    background-position: -140% 0;
+    -webkit-mask-position: 0 0, -56px 50%;
+    mask-position: 0 0, -56px 50%;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .opencraft-composer-recovery__beam { animation: none; }
+  .opencraft-composer-recovery { transition: none; }
+  .opencraft-composer-recovery[data-active="true"] .opencraft-composer-recovery__beam {
+    animation: none;
+    background-size: 100% 100%;
+  }
 }
 
 @media (forced-colors: active) {
-  .opencraft-composer-recovery__scan { stroke: Highlight; }
+  .opencraft-composer-recovery__beam {
+    background: none;
+    filter: none;
+    -webkit-mask-image: none;
+    mask-image: none;
+    border-block-end: 1px solid CanvasText;
+  }
 }

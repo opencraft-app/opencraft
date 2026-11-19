@@ -83,3 +83,14 @@ export function projectPermissionProfileCatalog(
     };
   });
 }
+
+/** Routing envelope; never forwarded to an unextended native AppServer. */
+export const SCOPED_PERMISSION_CATALOG_EXTENSION = "opencraft/scoped-permission-catalog";
+export const SCOPED_PERMISSION_CATALOG_METHOD = "opencraft/permission-profiles/list";
+export interface ScopedPermissionProfileListParams {
+  readonly threadId?: string;
+  readonly model?: string;
+  readonly cwd?: string | null;
+  readonly cursor?: string | null;
+  readonly limit?: number | null;
+}

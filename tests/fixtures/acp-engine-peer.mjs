@@ -1,12 +1,23 @@
 import { createInterface } from 'node:readline';
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 const sessions = new Map(), prompts = new Map();
 const settings = new Map();
+const nativeCatalogs = new Map(), nativeSelections = new Map();
+const readNativeCatalog = () => JSON.parse(readFileSync(process.env.ACP_TEST_MODEL_CATALOG_FILE,'utf8'));
+const catalogOptions = id => [{ id:'model',category:'model',type:'select',currentValue:(nativeSelections.get(id)??'').split('[')[0],
+  options:(nativeCatalogs.get(id)??[]).map(model=>({value:model.modelId.split('[')[0],name:model.name})) },
+  {id:'reasoning_effort',category:'thought_level',type:'select',currentValue:'high',options:[{value:'high',name:'High'}]}];
+const permissionSettings = new Map();
+let formElicitation = false;
+const permissionOptions = id => process.env.ACP_TEST_PERMISSIONS === '1' ? [{id:'execution-mode',category:'mode',type:'select',currentValue:permissionSettings.get(id) ?? 'agent',options:[
+  {value:'read-only',name:'Read Only'}, {value:'workspace-write',name:'Workspace Write'}, {value:'agent',name:'Auto Review'}, {value:'agent-full-access',name:'Full Access'},
+  {group:'custom',name:'Custom',options:[{value:'permission-profile:team',name:'Team policy'}]},
+]}] : [];
 const splitSettings = process.env.ACP_TEST_SPLIT_MODEL_CONFIG === '1';
 const parameterizedSettings = process.env.ACP_TEST_PARAMETERIZED === '1';
 let parameterizedPicker = false;
 const configOptions = (id, state = settings.get(id)) => {
-  if (parameterizedSettings) return [
+  if (parameterizedSettings) return [...permissionOptions(id),
     {id:'model',category:'model',type:'select',currentValue:state.model,options:['one','two'].map(value=>({value,name:value}))},
     ...(state.model==='one' ? [
       {id:'reasoning',category:'thought_level',type:'select',currentValue:state.effort,options:['low','high'].map(value=>({value,name:value}))},
@@ -14,7 +25,7 @@ const configOptions = (id, state = settings.get(id)) => {
       {id:'context',category:'other',type:'select',currentValue:state.context,options:['256k','1m'].map(value=>({value,name:value}))},
     ] : []),
   ];
-  return [
+  return [...permissionOptions(id),
     {id:'model',category:'model',type:'select',currentValue:state.model,options:['one','two'].map(value=>({value,name:value}))},
     {id:'reasoning_effort',category:'thought_level',type:'select',currentValue:state.effort,options:['low','high'].map(value=>({value,name:value}))},
     ...(state.model==='one'?[process.env.ACP_TEST_BOOLEAN_FAST==='1'
@@ -26,12 +37,26 @@ const setup = id => { settings.set(id,{model:'one',effort:'high',fast:false,cont
   sessionId:id,configOptions:configOptions(id),models:{currentModelId:'one[high]',availableModels:['one','two'].flatMap(model=>['low','high'].map(effort=>({modelId:`${model}[${effort}]`,name:`${model} (${effort})`})))}
 };};
 const send = frame => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...frame }) + '\n');
-const result = (id, value) => send({ id, result: value });
-const trace = frame => { if (process.env.ACP_TEST_TRACE) appendFileSync(process.env.ACP_TEST_TRACE, JSON.stringify({ method: frame.method, pid: process.pid, sessionId: frame.params?.sessionId, configId:frame.params?.configId,value:frame.params?.value,type:frame.params?.type,build: process.env.ACP_TEST_BUILD,
+const requestSessions = new Map();
+const result = (id, value) => {
+  const requestSession = requestSessions.get(id); requestSessions.delete(id);
+  if(value?.sessionId && process.env.ACP_TEST_MODEL_CATALOG_FILE) {
+    if(process.env.ACP_TEST_MODEL_CATALOG_FAILURE==='1')return send({id,error:{code:-32000,message:'Native model discovery failed'}});
+    const models=readNativeCatalog();nativeCatalogs.set(value.sessionId,models);nativeSelections.set(value.sessionId,models[0]?.modelId);
+    value={...value,models:{availableModels:models,currentModelId:models[0]?.modelId},configOptions:catalogOptions(value.sessionId)};
+  }
+  if (value && process.env.ACP_TEST_PERMISSIONS === '1' && requestSession && (value.sessionId || value.configOptions || value.models || Object.keys(value).length === 0)) {
+    value = {...value, configOptions:[...(value.configOptions ?? []).filter(option=>option.category!=='mode'), ...permissionOptions(requestSession)]};
+  }
+  send({ id, result: value });
+};
+const trace = frame => { if (process.env.ACP_TEST_TRACE) appendFileSync(process.env.ACP_TEST_TRACE, JSON.stringify({ method: frame.method, pid: process.pid, sessionId: frame.params?.sessionId, configId:frame.params?.configId,modelId:frame.params?.modelId,value:frame.params?.value,type:frame.params?.type,build: process.env.ACP_TEST_BUILD,
+  ...(process.env.ACP_TEST_QUESTIONS && typeof frame.id === 'string' && frame.id.startsWith('fixture-question:') ? { questionId: frame.id, reply: frame.result } : {}),
   ...(process.env.ACP_TEST_TRACE_CWD==='1'?{cwd:process.cwd()}:{}),
   ...(process.env.ACP_TEST_TRACE_HOME==='1'?{codexHome:process.env.CODEX_HOME}:{}),
   ...(frame.method==='initialize'?{parameterizedPicker:frame.params?.clientCapabilities?._meta?.parameterizedModelPicker}:{}),
   ...(parameterizedSettings&&frame.method==='session/prompt'?{settings:settings.get(frame.params.sessionId)}:{}),
+  ...(process.env.ACP_TEST_PERMISSIONS==='1'&&frame.method==='session/prompt'?{permissionMode:permissionSettings.get(frame.params.sessionId) ?? 'agent'}:{}),
   ...(process.env.ACP_TEST_IMAGES==='1'&&frame.method==='session/prompt'?{prompt:frame.params.prompt}:{}),
 }) + '\n'); };
 const mcp = async (server, id, method, params = {}) => {
@@ -41,7 +66,17 @@ const mcp = async (server, id, method, params = {}) => {
 };
 createInterface({ input: process.stdin }).on('line', line => {
   void (async () => {
-    const frame = JSON.parse(line); trace(frame); const params = frame.params ?? {};
+    const frame = JSON.parse(line); trace(frame); const params = frame.params ?? {}; requestSessions.set(frame.id, params.sessionId);
+    if (frame.method === 'initialize') formElicitation = params.clientCapabilities?.elicitation?.form != null;
+    if (frame.method === 'fixture/ask' && process.env.ACP_TEST_QUESTIONS) {
+      if (!formElicitation) return send({id:frame.id,error:{code:-32602,message:'Client did not advertise form elicitation'}});
+      send({ id: `fixture-question:${params.questionId}`, method: 'elicitation/create', params: params.form });
+      return result(frame.id, {});
+    }
+    if (frame.method === 'fixture/cancelQuestion' && process.env.ACP_TEST_QUESTIONS) {
+      send({ method: '$/cancel_request', params: { requestId: `fixture-question:${params.questionId}` } });
+      return result(frame.id, {});
+    }
     if (frame.method === 'initialize') { parameterizedPicker=params.clientCapabilities?._meta?.parameterizedModelPicker===true;return result(frame.id, { protocolVersion: 1, agentCapabilities: { ...(process.env.ACP_TEST_IMAGES==='1'?{promptCapabilities:{image:true}}:{}), mcpCapabilities: { http: true }, sessionCapabilities: {...(process.env.ACP_TEST_SESSION_HANDOFF ? {fork:{},close:{}} : {}),... (process.env.ACP_TEST_NO_RESUME ? {} : { resume: {} }),...((process.env.ACP_TEST_TITLE_LIST||process.env.ACP_TEST_IMPORT_SESSIONS)?{list:{}}:{})} } }); }
     if(frame.method==='session/list'&&process.env.ACP_TEST_IMPORT_SESSIONS)return result(frame.id,JSON.parse(process.env.ACP_TEST_IMPORT_SESSIONS));
     if(frame.method==='session/list')return result(frame.id,{sessions:[...sessions.keys()].map(sessionId=>({sessionId,title:process.env.ACP_TEST_TITLE_LIST}))});
@@ -50,21 +85,41 @@ createInterface({ input: process.stdin }).on('line', line => {
       return result(frame.id,{models:['one','two'].map(model=>({value:model,name:model,configOptions:configOptions(null,{model,effort:'high',fast:false,context:'1m'}).filter(option=>option.id!=='model')}))});
     }
     if (frame.method === 'session/new') {
-      const sessionId = process.env.ACP_TEST_NATIVE_ID ?? `native-${sessions.size + 1}`;
+      const sessionId = process.env.ACP_TEST_NATIVE_ID ?? `native-${sessions.size + 1}`; requestSessions.set(frame.id,sessionId); permissionSettings.set(sessionId,'agent');
       for (const server of params.mcpServers) { await mcp(server, 'init', 'initialize'); await mcp(server, 'list', 'tools/list'); }
       if(parameterizedSettings&&!parameterizedPicker)return send({id:frame.id,error:{code:-32602,message:'Parameterized picker not enabled'}});
       sessions.set(sessionId, params); if(splitSettings||parameterizedSettings)return result(frame.id,setup(sessionId));return result(frame.id, { sessionId, ...(process.env.ACP_TEST_MODELS ? {...(process.env.ACP_TEST_MODEL_CONFIG_ID ? {configOptions:[{id:process.env.ACP_TEST_MODEL_CONFIG_ID,category:'model',currentValue:'default-native',options:[{value:'default-native',name:'Default'},{value:'allowed-native',name:'Allowed'}]}]} : {}),models:{currentModelId:"default-native",availableModels:[{modelId:"default-native",name:"Default"},{modelId:"allowed-native",name:"Allowed"}]}} : {}) });
     }
     if (frame.method === 'session/fork') {
       if (!process.env.ACP_TEST_SESSION_HANDOFF) return send({id:frame.id,error:{code:-32601,message:'Unsupported'}});
-      const sessionId = `forked-${sessions.size + 1}`; sessions.set(sessionId, params);
+      const sessionId = `forked-${sessions.size + 1}`; requestSessions.set(frame.id,sessionId); permissionSettings.set(sessionId,'agent'); sessions.set(sessionId, params);
       return result(frame.id, splitSettings ? setup(sessionId) : {sessionId});
     }
     if (frame.method === 'session/close') { sessions.delete(params.sessionId); return result(frame.id, {}); }
     if (frame.method === 'session/resume') {
+      permissionSettings.set(params.sessionId,'agent');
       if(process.env.ACP_TEST_BUSY_NATIVE===params.sessionId)return send({id:frame.id,error:{code:-32600,message:'This Codex session is in use by another Codex client'}});
  sessions.set(params.sessionId, params);if(splitSettings||parameterizedSettings)return result(frame.id,setup(params.sessionId));return result(frame.id, process.env.ACP_TEST_MODELS ? {...(process.env.ACP_TEST_MODEL_CONFIG_ID ? {configOptions:[{id:process.env.ACP_TEST_MODEL_CONFIG_ID,category:'model',currentValue:'default-native',options:[{value:'default-native',name:'Default'},{value:'allowed-native',name:'Allowed'}]}]} : {}),models:{currentModelId:'default-native',availableModels:[{modelId:'default-native',name:'Default'}]}} : {}); }
+    if(frame.method==='session/set_model' && process.env.ACP_TEST_MODEL_CATALOG_FILE) {
+      const models=readNativeCatalog();
+      if(!models.some(model=>model.modelId===params.modelId))return send({id:frame.id,error:{code:-32602,message:'Unknown model'}});
+      nativeCatalogs.set(params.sessionId,models);nativeSelections.set(params.sessionId,params.modelId);
+      send({method:'session/update',params:{sessionId:params.sessionId,update:{sessionUpdate:'config_option_update',configOptions:[...catalogOptions(params.sessionId),...permissionOptions(params.sessionId)]}}});
+      return send({id:frame.id,result:{}});
+    }
     if (frame.method === 'session/set_config_option') {
+      if(process.env.ACP_TEST_MODEL_CATALOG_FILE && params.configId==='model') {
+        const models=readNativeCatalog();
+        if(!models.some(model=>model.modelId.split('[')[0]===params.value))return send({id:frame.id,error:{code:-32602,message:'Unknown model'}});
+        nativeCatalogs.set(params.sessionId,models);nativeSelections.set(params.sessionId,params.value);
+        return result(frame.id,{configOptions:catalogOptions(params.sessionId)});
+      }
+      if(process.env.ACP_TEST_PERMISSIONS === '1' && params.configId==='execution-mode') {
+        if(process.env.ACP_TEST_PERMISSION_FAILURE==='reject')return send({id:frame.id,error:{code:-32602,message:'Mode change refused'}});
+        if(process.env.ACP_TEST_PERMISSION_FAILURE==='empty')return send({id:frame.id,result:{}});
+        if(process.env.ACP_TEST_PERMISSION_FAILURE!=='mismatch')permissionSettings.set(params.sessionId,params.value);
+        return result(frame.id,{configOptions:permissionOptions(params.sessionId)});
+      }
       if(splitSettings||parameterizedSettings){
         const state=settings.get(params.sessionId),option=state&&configOptions(params.sessionId).find(option=>option.id===params.configId);
         if(!option||(option.type==='boolean'?params.type!=='boolean'||typeof params.value!=='boolean':!option.options.some(option=>option.value===params.value)))return send({id:frame.id,error:{code:-32602,message:'Invalid params'}});

@@ -1,0 +1,167 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+@use "@opencraft/design-system/controls.web" as controls;
+
+.conversation-tag-popover {
+  width: min(236px, calc(100vw - 24px));
+  padding: 8px;
+}
+
+.conversation-tag-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 2px 2px 4px;
+
+  &__header {
+    @include typography.role(metadata, tertiary);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-inline: 2px;
+  }
+
+  &__clear {
+    @include controls.density-target;
+    @include typography.role(metadata, secondary);
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    appearance: none;
+    border: 0;
+    border-radius: var(--radius-xs);
+    outline: none;
+    background: transparent;
+    cursor: pointer;
+
+    @include controls.hover-capable {
+      &:hover {
+        background: var(--color-background-button-tertiary-hover);
+        color: var(--color-text);
+      }
+    }
+
+    &:focus-visible { @include controls.focus-indicator; }
+  }
+
+  &__colors,
+  &__animals {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+  }
+
+  &__swatch {
+    @include controls.density-target;
+    display: grid;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    place-items: center;
+    appearance: none;
+    border: 1.5px solid transparent;
+    border-radius: var(--radius-full);
+    outline: none;
+    background: transparent;
+    cursor: pointer;
+
+    > .conversation-tag-dot {
+      width: 12px;
+      height: 12px;
+    }
+
+    &[aria-checked="true"] {
+      border-color: var(--color-text);
+      background: var(--color-background-button-secondary);
+    }
+
+    @include controls.hover-capable {
+      &:hover:not([aria-checked="true"]) {
+        background: var(--color-background-button-tertiary-hover);
+      }
+    }
+
+    &:focus-visible { @include controls.focus-indicator; }
+  }
+
+  &__animal {
+    @include controls.density-target;
+    display: grid;
+    width: 30px;
+    height: 28px;
+    padding: 0;
+    place-items: center;
+    appearance: none;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    outline: none;
+    background: transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+
+    &[aria-checked="true"] {
+      border-color: var(--color-border-strong);
+      background: var(--color-background-button-secondary);
+      color: var(--color-text);
+    }
+
+    @include controls.hover-capable {
+      &:hover:not([aria-checked="true"]) {
+        background: var(--color-background-button-tertiary-hover);
+        color: var(--color-text);
+      }
+    }
+
+    &:focus-visible { @include controls.focus-indicator; }
+  }
+}
+
+.sidebar-recent-tag-filters {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.sidebar-recent-tag-chip {
+  @include controls.density-target;
+  @include typography.role(metadata, secondary);
+  display: inline-flex;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 5px;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  outline: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+
+  &[aria-pressed="true"],
+  &[data-state="open"] {
+    border-color: var(--color-border-strong);
+    background: var(--color-background-button-secondary);
+    color: var(--color-text);
+  }
+
+  @include controls.hover-capable {
+    &:hover:not([aria-pressed="true"]) {
+      background: var(--color-background-button-tertiary-hover);
+      color: var(--color-text);
+    }
+  }
+
+  &:focus-visible { @include controls.focus-indicator; }
+}
+
+.sidebar-recent-tag-menu-count {
+  @include typography.role(metadata, tertiary);
+  margin-inline-start: auto;
+}

@@ -1,8 +1,9 @@
+import { ModelCatalogRefresh } from "./model-catalog-refresh";
 import { useState } from "react";
 import { composerAgentSources, type ComposerAgentSource } from "./composer-agent-sources";
 import { Button, IconButton } from "@opencraft/design-system-web/button";
 import { AgentBrandIcon } from "@opencraft/design-system-web/action-icons";
-import { CheckIcon, SearchIcon, ModelIcon, LightningIcon, AddIcon, ResetIcon } from "@opencraft/design-system-web/action-icons";
+import { CheckIcon, SearchIcon, ModelIcon, LightningIcon, AddIcon, NewMessageIcon, ResetIcon } from "@opencraft/design-system-web/action-icons";
 import * as Menu from "@opencraft/design-system-web/dropdown-menu";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import { SettingsSwitch } from "@opencraft/extension-react";
@@ -13,7 +14,7 @@ import type { ComposerAgentModelGroup, ComposerModelOption, ComposerSelectionCat
 
 /** Browsing sources/search is local. Only an explicit choice writes a model. */
 export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffortChange, serviceTier, onServiceTierChange,
-  switchingAgentId, agentSelectionError, onConfigure, agentInHeader = false }: {
+  switchingAgentId, agentSelectionError, onConfigure, onStartHandoff, agentInHeader = false }: {
   readonly agentInHeader?: boolean;
   readonly catalog?: ComposerSelectionCatalog;
   readonly selected: string | null;
@@ -25,6 +26,7 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
   readonly switchingAgentId: string | null;
   readonly agentSelectionError: { id: string; message: string } | null;
   readonly onConfigure?: () => void;
+  readonly onStartHandoff?: () => void;
 }) {
   const intl = useIntl();
   const [query, setQuery] = useState("");
@@ -49,6 +51,7 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
   const efforts = variants.length ? variants.map(variant => ({ value: variant.effort, label: variant.effort })) : current?.efforts ?? [];
   const activeEffort = variants.length ? variants.find(variant => variant.model.value === selected || variant.model.id === selected)?.effort : effort;
   const defaultEffort = variants.length ? variants.find(variant => variant.model.isDefault)?.effort ?? null : current?.defaultEffort ?? null;
+  const refreshModel = current?.value ?? source.models[0]?.value;
   const fast = current?.serviceTiers?.find(tier => tier.id === "fast" || tier.name.toLowerCase() === "fast");
   const matches = families.filter(family => `${family.label} ${family.models.map(model => model.value).join(" ")}`.toLocaleLowerCase(intl.locale).includes(query.trim().toLocaleLowerCase(intl.locale)));
   const searchLabel = intl.formatMessage({ id: "composer.model.search", defaultMessage: "Search models" });
@@ -80,7 +83,7 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
         }} />
     </label>
     <div className="opencraft-composer-model-browser__models">
-      <Menu.Label className="opencraft-composer-selection-menu__heading"><FormattedMessage id="chat.model" defaultMessage="Model" /></Menu.Label>
+      <ModelCatalogRefresh key={source.id} catalog={catalog} model={refreshModel} enabled={!!source.group.active} />
       {matches.map(family => <Menu.Item key={family.id} data-model-choice className="opencraft-composer-selection-menu__item"
         data-selected={family === selectedFamily || undefined} disabled={!!switchingAgentId || family.models.every(model => model.policyRestricted)}
         onSelect={event => { event.preventDefault(); choose(chooseFamilyModel(family, selected)); }}>
@@ -115,6 +118,10 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
       <SettingsSwitch checked={serviceTier === fast.id} disabled={!!switchingAgentId} onCheckedChange={checked => onServiceTierChange(checked ? fast.id : null)}
         label={intl.formatMessage({ id: "composer.model.fastMode", defaultMessage: "Fast mode" })} />
     </div> : null}
+    {onStartHandoff ? <Menu.Item className="opencraft-composer-selection-menu__item opencraft-composer-model-browser__handoff" onSelect={onStartHandoff}>
+      <NewMessageIcon size={16} aria-hidden="true" />
+      <FormattedMessage id="composer.handoff.action" defaultMessage="Handoff to new thread" />
+    </Menu.Item> : null}
     {!agentInHeader && catalog?.onConfigureAgents ? <Menu.Item className="opencraft-composer-selection-menu__item" onSelect={catalog.onConfigureAgents}><FormattedMessage id="composer.agent.manage" defaultMessage="Manage agents…" /></Menu.Item> : null}
     {onConfigure ? <Menu.Item className="opencraft-composer-selection-menu__item opencraft-composer-model-browser__configure" onSelect={onConfigure}>
       <AddIcon size={16} aria-hidden="true" />{groups.find(group => group.active)?.models.length === 0

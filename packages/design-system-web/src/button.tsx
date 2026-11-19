@@ -14,18 +14,20 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
   readonly density?: "default" | "compact";
   readonly surface?: ControlSurface;
   readonly contentLayout?: ButtonContentLayout;
+  readonly splitPosition?: "leading" | "trailing";
 }
 
 /** Stable DOM and focus across visual changes; operation state stays with callers. */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button({
   children, className, disabled = false, loading = false, density = "default",
   size = defaultButtonSize, variant = defaultButtonVariant, surface = "integrated",
-  contentLayout = "label", type = "button", ...props
+  contentLayout = "label", splitPosition, type = "button", ...props
 }, ref) {
   return <button {...props} ref={ref} type={type}
     className={["ui-button", className].filter(Boolean).join(" ")}
     data-size={size} data-density={density} data-variant={variant}
     data-control-surface={surface} data-content-layout={contentLayout}
+    data-split-position={splitPosition}
     data-control-loading={loading || undefined}
     aria-busy={loading || props["aria-busy"]} disabled={disabled || loading}>
     <LiquidGlassBackdrop active={surface === "floating"} />
@@ -33,6 +35,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     {contentLayout === "row" ? children : <span className="ui-button__label">{children}</span>}
   </button>;
 });
+
+/** Groups a primary action and its adjacent option trigger on one shared contour. */
+export function SplitButtonGroup({ children, className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div {...props} role={props.role ?? "group"} className={["ui-split-button", className].filter(Boolean).join(" ")}>{children}</div>;
+}
 
 export interface IconButtonProps extends Omit<ButtonProps, "contentLayout"> {
   readonly "aria-label": string;

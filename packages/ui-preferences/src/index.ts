@@ -8,6 +8,20 @@ export interface RecentConversationPreference {
   readonly dismissedAt?: number;
 }
 
+export const CONVERSATION_TAG_COLORS = ["red", "orange", "green", "cyan", "blue", "indigo", "purple"] as const;
+export type ConversationTagColor = (typeof CONVERSATION_TAG_COLORS)[number];
+export const CONVERSATION_TAG_ANIMALS = ["cat", "fox", "rabbit", "owl", "whale", "bear"] as const;
+export type ConversationTagAnimal = (typeof CONVERSATION_TAG_ANIMALS)[number];
+export type ConversationTagId = `color:${ConversationTagColor}` | `animal:${ConversationTagAnimal}`;
+
+const validConversationTagIds: ReadonlySet<string> = new Set<string>([
+  ...CONVERSATION_TAG_COLORS.map(color => `color:${color}`),
+  ...CONVERSATION_TAG_ANIMALS.map(animal => `animal:${animal}`),
+]);
+export function isConversationTagId(value: unknown): value is ConversationTagId {
+  return typeof value === "string" && validConversationTagIds.has(value);
+}
+
 export interface UiPreferenceValues {
   readonly "interface.touchFriendly": "auto" | "on" | "off";
   readonly "voice.inputProvider": "auto" | "system" | "hunyuan";
@@ -26,6 +40,7 @@ export interface UiPreferenceValues {
   readonly "sidebar.collaborationServers": Readonly<Record<string,string>>;
   readonly "sidebar.instanceNames": Readonly<Record<string,string>>;
   readonly "sidebar.recentConversations": Readonly<Record<string, RecentConversationPreference>>;
+  readonly "sidebar.conversationTags": Readonly<Record<string, ConversationTagId>>;
   readonly "sidebar.serverFilter": { readonly serverId: string; readonly label: string };
 }
 
@@ -58,6 +73,20 @@ export const uiPreferenceDefinitions = Object.freeze({
         const { pinnedAt, dismissedAt } = entry as RecentConversationPreference;
         if ([pinnedAt, dismissedAt].some(time => time !== undefined && (typeof time !== "number" || !Number.isFinite(time) || time < 0))) return null;
         result[key] = { ...(pinnedAt === undefined ? {} : { pinnedAt }), ...(dismissedAt === undefined ? {} : { dismissedAt }) };
+      }
+      return result;
+    },
+  },
+  "sidebar.conversationTags": {
+    key: "sidebar.conversationTags", scope: "installation", defaultValue: {},
+    parse: (value: unknown): UiPreferenceValues["sidebar.conversationTags"] | null => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+      const entries = Object.entries(value);
+      if (entries.length > 2000) return null;
+      const result: Record<string, ConversationTagId> = {};
+      for (const [key, tagId] of entries) {
+        if (!key || key.length > 8192 || !isConversationTagId(tagId)) return null;
+        result[key] = tagId;
       }
       return result;
     },

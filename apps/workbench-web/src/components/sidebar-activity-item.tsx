@@ -4,6 +4,7 @@ import type { WorkbenchThread } from "@opencraft/workbench-runtime";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import { PinIcon, ClockIcon as Clock, TargetIcon as Target, LoadingRingIcon } from "@opencraft/design-system-web/action-icons";
 import { AgentIdentityIcon } from "./agent-directory";
+import { ConversationTagMark, conversationTagLabel, type ConversationTagId } from "./conversation-tags";
 
 function ThreadActivity({
   id,
@@ -47,6 +48,7 @@ function ThreadActivity({
 export function SidebarActivityItem({
   activityId,
   agent,
+  tag = null,
   context,
   pinnedInRecent = false,
   active,
@@ -68,6 +70,7 @@ export function SidebarActivityItem({
 }: {
   readonly activityId?: string;
   readonly agent?: WorkbenchThread["agent"];
+  readonly tag?: ConversationTagId | null;
   readonly pinnedInRecent?: boolean;
   readonly context?: { readonly device: string; readonly folder?: string; readonly agent?: string };
   readonly schedule?: import("@opencraft/appserver-protocol").ConversationScheduleSummary;
@@ -112,7 +115,18 @@ export function SidebarActivityItem({
       title={tooltip}
     >
       <span className="sidebar-activity-item__body">
-        <span className="sidebar-activity-item__title-line"><span className="sidebar-activity-item__title" data-optical-leading-punctuation={hasFullWidthOpeningPunctuation(title) ? "true" : undefined}>{title}</span>
+        <span className="sidebar-activity-item__title-line">
+          {tag ? (
+            <span
+              className="sidebar-activity-item__tag"
+              role="img"
+              aria-label={intl.formatMessage({ id: "conversation.tag.current", defaultMessage: "Tag: {tag}" }, { tag: conversationTagLabel(intl, tag) })}
+              title={conversationTagLabel(intl, tag)}
+            >
+              <ConversationTagMark tag={tag} size={13} />
+            </span>
+          ) : null}
+          <span className="sidebar-activity-item__title" data-optical-leading-punctuation={!tag && hasFullWidthOpeningPunctuation(title) ? "true" : undefined}>{title}</span>
           {pinnedInRecent ? <span className="sidebar-activity-item__recent-pin" role="img" aria-label={intl.formatMessage({ id: "sidebar.recent.pinned", defaultMessage: "Pinned to top" })} title={intl.formatMessage({ id: "sidebar.recent.pinned", defaultMessage: "Pinned to top" })}><PinIcon size={12} aria-hidden="true" /></span> : null}
           {scheduleLabel ? <span className="sidebar-activity-item__schedule" role="img" aria-label={scheduleLabel} title={scheduleLabel}><Clock size={16} aria-hidden="true" /></span> : null}</span>
         {!titleOnly && !metadataBadge && (twoLine || project) ? <span className="sidebar-activity-item__metadata">

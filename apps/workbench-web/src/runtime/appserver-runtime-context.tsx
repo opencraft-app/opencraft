@@ -202,7 +202,7 @@ export function AppServerRuntimeProvider({
     const revalidate = () => {
       if (document.visibilityState === "hidden" || coordinator.getRuntime().getSnapshot().phase !== "ready") return;
       const lease = coordinator.getActiveThreadLease();
-      if (lease) void lease.retryRestore().catch(() => undefined);
+      if (lease?.getSnapshot().authoritative) void lease.refreshHistory().catch(() => undefined);
     };
     const visibility = () => {
       coordinator.getActiveThreadLease()?.setRecoveryVisibility(document.visibilityState !== "hidden");
@@ -308,6 +308,7 @@ export function AppServerRuntimeProvider({
     connectionProviders: connectionProviderSnapshot.providers,
     selectHost: commands.selectHost,
     continueWithAgent: commands.continueWithAgent,
+    handoffConversation: commands.handoffConversation,
     navigate: commands.navigate,
     selectConversation: commands.selectConversation,
     navigateToHome: commands.navigateToHome,
@@ -1020,6 +1021,8 @@ export interface ComposerCatalogSnapshot {
   }, hostId?: string) => void) | undefined;
   readonly onModelMenuOpen: () => void;
   readonly retryModels: () => void;
+  readonly canRefreshModels: (model: string) => boolean;
+  readonly refreshModels: (model: string) => Promise<void>;
 }
 
 function errorOrNull(error: unknown): Error | null {
@@ -1036,6 +1039,7 @@ export function useComposerCatalog(
   cwd: string | null,
   threadId: string | null = null,
   runtimeHostConfiguration = true,
+  selectedModel: string | null = null,
 ): ComposerCatalogSnapshot {
   const runtime = useAppServerRuntime();
   const snapshot = useAppServerHostSnapshot();
@@ -1105,7 +1109,17 @@ export function useComposerCatalog(
     // Personal selections never mutate shared Host configuration.
     void rememberModelSelection(preferences, { displayScope, accountScope, hostId }, next).catch(() => undefined);
   }, [runtimeHostConfiguration, threadId, accountScope, readAccountScope, displayScope, application, preferences, snapshot.hostId, personalDefaults.authoritative, personalDefaults.remember]);
+  const refreshScope = useCallback((model: string) => threadId && capabilities.data?.models.some(candidate => candidate.model === model)
+    ? { threadId } : { model }, [threadId, capabilities.data]);
   const catalogActions = useMemo(() => ({
+    canRefreshModels: (model: string) => runtime.resources.composerCatalog.canRefreshModels?.(refreshScope(model)) === true,
+    refreshModels: async (model: string) => {
+      if (!enabled || !runtime.resources.composerCatalog.refreshModels) throw new Error("Model refresh is unavailable");
+      catalogDemand.requested = true;
+      await runtime.resources.composerCatalog.refreshModels(refreshScope(model));
+      await invalidateComposerCapabilities(queryClient, snapshot.hostId);
+      await queryClient.fetchQuery({ ...options, staleTime: 0 });
+    },
     onModelMenuOpen: () => {
       if (!enabled) return;
       catalogDemand.requested = true;
@@ -1113,15 +1127,18 @@ export function useComposerCatalog(
       void queryClient.fetchQuery({ ...options, staleTime: 0 }).catch(() => undefined);
     },
     retryModels: () => { catalogDemand.requested = true; if (enabled) void queryClient.fetchQuery({ ...options, staleTime: 0 }).catch(() => undefined); },
-  }), [enabled, options, queryClient, snapshot.hostId, catalogDemand]);
+  }), [enabled, options, queryClient, snapshot.hostId, catalogDemand, runtime, refreshScope]);
+  const permissionTargetModel = selectedModel ?? rememberedSelection?.model ?? defaults.data?.model
+    ?? capabilities.data?.models.find(model => model.isDefault)?.model ?? capabilities.data?.models[0]?.model ?? null;
   const permissionProfiles = useInfiniteQuery({
-    queryKey: ["appserver", snapshot.hostId, "permission-profiles", cwd] as const,
+    queryKey: ["appserver", snapshot.hostId, "permission-profiles", connectionGeneration, threadId, permissionTargetModel, cwd] as const,
     enabled,
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) => runtime.resources.composerCatalog.listPermissionProfiles({
       cursor: pageParam,
       limit: 100,
       cwd,
+      ...(threadId ? { threadId } : permissionTargetModel ? { model: permissionTargetModel } : {}),
     }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     staleTime: 60_000,

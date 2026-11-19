@@ -19,17 +19,31 @@ const models: ComposerModelOption[] = [
   { ...model("api:thinking", "Thinking model"), defaultEffort: "medium", efforts: [{ value: "medium", label: "Medium", description: null }, { value: "high", label: "High", description: null }], serviceTiers: [{ id: "fast", name: "Fast", description: "Faster" }] },
 ];
 const sent: unknown[] = [], remembered: unknown[] = [];
+const refreshCalls: string[] = [];
+let finishRefresh: ((success: boolean) => void) | undefined;
 function Fixture() {
+  const [catalogModels, setCatalogModels] = useState(models);
+  const refreshModels = (model: string) => new Promise<void>((resolve, reject) => {
+    refreshCalls.push(model);
+    finishRefresh = success => {
+      if (!success) { reject(new Error("Synthetic discovery failure")); return; }
+      const cursor = model.startsWith("cursor:");
+      const value = cursor ? "cursor:latest" : "codex:latest[high]";
+      const template = models.find(candidate => candidate.agentId === (cursor ? "cursor" : "codex"))!;
+      setCatalogModels(current => [...current.filter(model => model.value !== value), { ...template, id: value, value, label: cursor ? "Fresh Cursor Model" : "Fresh Model (high)" }]);
+      resolve();
+    };
+  });
   const [disabledAgents, setDisabledAgents] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isFetching, setFetching] = useState(false);
-  Object.assign(window, { modelBrowserFixture: { controller, models, sent, remembered, setError, setFetching, setDisabledAgents,
+  Object.assign(window, { modelBrowserFixture: { controller, models, sent, remembered, setCatalogModels, refreshCalls, finishRefresh: (success = true) => finishRefresh?.(success), setError, setFetching, setDisabledAgents,
     setThemePreference, setAppearanceThemeId,
     selections: () => controller.getSnapshot().draft.selections,
   } });
-  return <OpenCraftComposer controller={controller} selectionCatalog={{ agentsDisabled: disabledAgents.length > 0, models: models.filter(model => !disabledAgents.includes(model.agentId!)), permissionProfiles: [], modelError: error,
+  return <OpenCraftComposer controller={controller} selectionCatalog={{ agentsDisabled: disabledAgents.length > 0, models: catalogModels.filter(model => !disabledAgents.includes(model.agentId!)), permissionProfiles: [], modelError: error,
     onConfigureAgents: () => remembered.push("agents"),
-    isFetching, retryModels: () => { setError(null); setFetching(false); }, onConfigureModels: () => remembered.push("configure"),
+    isFetching, canRefreshModels: model => model.startsWith("codex:") || model.startsWith("cursor:"), refreshModels, retryModels: () => { setError(null); setFetching(false); }, onConfigureModels: () => remembered.push("configure"),
     onRememberModelDefaults: value => remembered.push(value),
   }} onSubmit={intent => { sent.push(intent.selections); return false; }} />;
 }

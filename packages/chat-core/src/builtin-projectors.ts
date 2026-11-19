@@ -1180,6 +1180,7 @@ export function createBuiltinTimelineProjectors(): readonly TimelineItemProjecto
           targetItemId: string(source.itemId),
           method: string(source.method),
           questions,
+          isBlocking: boolean(source.isBlocking) ?? true,
           state: source.state === "answered" || source.state === "cancelled" ? source.state : "pending",
         },
         anchors: [{ type: "request", id: requestId }],

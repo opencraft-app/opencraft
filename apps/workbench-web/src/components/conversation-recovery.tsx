@@ -17,18 +17,6 @@ export function conversationRecoveryPresentation(input: {
   return `${input.hasVisibleHistory ? "warm" : "cold"}-${input.failed ? "error" : "loading"}`;
 }
 
-/** Initial connection/history loading is routine, not evidence of instability. */
-export function conversationRecoveryIsUnstable(
-  presentation: ConversationRecoveryPresentation,
-  diagnostic?: ConversationRecoveryDiagnostic,
-): boolean {
-  if (presentation === "none") return false;
-  return presentation.endsWith("-error")
-    || diagnostic?.runtime === "reconnecting"
-    || diagnostic?.recovery !== undefined
-    || diagnostic?.progress?.lastFailure !== undefined;
-}
-
 /** Intermediate errors can still belong to an active automatic retry. */
 export function conversationRecoveryIsPending(
   presentation: ConversationRecoveryPresentation,

@@ -289,6 +289,8 @@
     "test:git-identity": "tsx --test tests/identity/git-vault.test.ts tests/identity/git-identity-broker.test.ts tests/identity/git-identity-origin.test.ts",
     "typecheck:git-identity": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler --types node scripts/employee-git-vault-store.ts scripts/git-identity*.ts scripts/account-environment*.ts",
     "test:agent-drivers": "tsx --test tests/execution/pi-orchestration-driver.test.ts tests/execution/acp-engine.test.ts tests/execution/acp-queue.test.ts tests/execution/codebuddy-ide-bridge.test.ts tests/execution/codebuddy-ide-history.test.ts tests/execution/acp-host-handoff.test.ts tests/execution/full-upgrade-generation.test.ts tests/execution/independent-acp-host.test.mjs tests/execution/agent-driver-transport.test.ts tests/execution/model-usage-policy.test.ts",
+    "smoke:native-model-refresh": "tsx scripts/smoke/conversation/smoke-native-model-refresh.ts",
+    "smoke:acp-permissions": "tsx scripts/smoke/conversation/smoke-acp-permissions.ts",
     "smoke:acp-follow-up": "tsx scripts/smoke/conversation/smoke-acp-follow-up.ts",
     "check:controls": "node scripts/check-control-ownership.mjs",
     "test:controls": "node --test tests/shell/control-ownership.test.mjs && tsc -p tests/tsconfig.controls.json",

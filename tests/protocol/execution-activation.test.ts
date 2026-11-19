@@ -7,14 +7,14 @@ import { encodeJsonRpcMessage, isJsonRpcRequest, parseJsonRpcMessage } from "@op
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 const aborted = (error: unknown) => error instanceof AppServerClientError && error.code === "ABORTED";
 const turn = (tag: string) => ({ id: `turn-${tag}`, status: "completed", itemsView: "full", items: [{ id: `item-${tag}`, type: "agentMessage", text: tag }], error: null });
-async function fixture(ignoreCancellation = false) {
+async function fixture(ignoreCancellation = false, permissionObservation?: { enabled: boolean; profile: { id: string; extends: null } | null }) {
   let peer!: InMemoryAppServerPeer, reads = 0, holdReads = false;
   const actors: { reply(): void; fail(): void; params: unknown }[] = [], heldReads: (() => void)[] = [], serverResponses: unknown[] = [];
-  const thread = (name: string) => ({ id: "a", sessionId: "a", path: "/fixture/a", cwd: "/persisted", historyMode: "paginated", name, turns: [], model: "persisted-model", modelProvider: "fixture" });
+  const thread = (name: string) => ({ id: "a", sessionId: "a", path: "/fixture/a", cwd: "/persisted", historyMode: "paginated", name, turns: [], model: "persisted-model", modelProvider: "fixture", ...(permissionObservation ? { activePermissionProfile: permissionObservation.profile } : {}) });
   const transport = new MemoryTransport({ receive(frame, currentPeer) {
     peer = currentPeer; const request = parseJsonRpcMessage(frame); if (!isJsonRpcRequest(request)) { serverResponses.push(request); return; }
     const send = (result: unknown) => peer.send(encodeJsonRpcMessage({ id: request.id, result }));
-    if (request.method === "initialize") send({ codexHome: "/fixture", platformFamily: "unix", platformOs: "linux", userAgent: "activation-test", capabilities: { extensions: { "opencraft/read-history": { version: 1 }, "opencraft/resume-history": { version: 1, initialTurnsPage: true } } } });
+    if (request.method === "initialize") send({ codexHome: "/fixture", platformFamily: "unix", platformOs: "linux", userAgent: "activation-test", capabilities: { extensions: { ...(permissionObservation?.enabled ? { "opencraft/permission-modes": { version: 1 } } : {}), "opencraft/read-history": { version: 1 }, "opencraft/resume-history": { version: 1, initialTurnsPage: true } } } });
     else if (request.method === "thread/read") {
       const index = ++reads, reply = () => send({ thread: thread(`read-${index}`), initialTurnsPage: { data: [turn(`read-${index}`)], nextCursor: "older" } });
       if (holdReads) heldReads.push(reply); else reply();
@@ -158,4 +158,25 @@ test("explicit reattachment bypasses a completed activation without replacing th
     f.actors[1]!.reply(); await reattach;
     assert.equal(JSON.stringify(f.session.views.get("a")!.turns), before); assert.equal(f.reads(), 1);
   } finally { await f.close(); }
+});
+
+
+test("a verified read paints the observed permission without activating execution; live settings win over later reads", async () => {
+  const observation = { enabled: true, profile: { id: "opencraft:permission-mode:full", extends: null } };
+  const f = await fixture(false, observation);
+  try {
+    assert.equal((f.session.views.get("a")!.execution.activePermissionProfile as any).id, observation.profile.id);
+    assert.equal(f.actors.length, 0, "permission presentation never claims execution ownership");
+    f.notify("thread/settings/updated", { threadId: "a", threadSettings: { activePermissionProfile: { id: "opencraft:permission-mode:read-only", extends: null } } });
+    await until(() => (f.session.views.get("a")!.execution.activePermissionProfile as any)?.id === "opencraft:permission-mode:read-only");
+    await f.session.resume.read("a");
+    assert.equal((f.session.views.get("a")!.execution.activePermissionProfile as any).id, "opencraft:permission-mode:read-only");
+    assert.equal(f.actors.length, 0);
+  } finally { await f.close(); }
+});
+
+test("permission metadata without its capability cannot masquerade as an execution setting", async () => {
+  const f = await fixture(false, { enabled: false, profile: { id: "opencraft:permission-mode:full", extends: null } });
+  try { assert.equal(f.session.views.get("a")!.execution.activePermissionProfile, null); assert.equal(f.actors.length, 0); }
+  finally { await f.close(); }
 });

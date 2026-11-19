@@ -76,6 +76,13 @@ question index, stay visible in the Timeline, and do not replace the Composer
 or suspend the Turn. The latter use the existing blocking interaction response
 port. Device type must not select between these two protocol forms.
 
+Connected Codex sessions using ACP negotiate form elicitation with the local
+Host. The Host publishes Codex questions through shared interactions and
+returns the chosen answers to the original ACP request. An asynchronous
+question stays above the Composer without taking edit focus. Codex ACP owns
+delivery back to the running turn. Native cancellation or an ended turn
+retires the request for every subscriber.
+
 An async question's title is model-authored Markdown, not a form-control label
 string. Web renders it through the same Chat Document and resource policy as
 assistant content, so safe links are usable and unsafe targets stay inert. The

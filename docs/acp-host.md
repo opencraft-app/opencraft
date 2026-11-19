@@ -109,12 +109,68 @@ RPC Host and ACP stdio peer, exercising desktop and touch queue submissions and
 automatic completion. The external Agent and its history reader are controlled
 fixtures; this does not claim paid model access or an upgraded remote machine.
 
-The trusted generation config uses `permission: "allow-once"` when the Host
-should automatically approve native ACP permission requests and expose its Full
-access profile. The default rejects those requests and cannot prepare a child
-that requires Full access. DSH native policy is configured independently through
-its explicit generation environment and profile; the adapter does not broaden a
-restricted source delegation.
+`permission: "allow-once"` controls native ACP permission callbacks. It does not
+select an Agent's execution mode. DSH native policy remains independently
+configured through its explicit generation environment and profile.
+
+For native Codex ACP, the adapter discovers the peer's offered `mode` config and
+binds `read-only`, `workspace-write`, `agent` and `agent-full-access` to Read only,
+Accept edits, Auto review and Full access respectively. Full access is applied
+with `session/set_config_option` and must be returned as the current value before
+any input is sent. Empty, rejected or mismatched replies block input; the adapter
+never fabricates a successful mode from callback approval. Native custom profiles
+retain their identity and label without an inferred built-in policy.
+
+The selected mode is durable intent, separately from the current native
+observation. Resume reapplies and verifies that intent before sending or draining
+queued follow-ups. Cold history reads remain cold and do not claim the saved mode
+is currently active. Confirmed settings update the live conversation projection;
+read observations are presentation only, never execution activation.
+
+`opencraft/scoped-permission-catalog` routes permission discovery by immutable
+thread owner, or by the selected draft model. Connected Agent creation preserves
+the requested profile rather than replacing it with Full access. Other Agents do
+not receive a different engine's selectable profiles. Old Hosts retain their wire
+shape; a multi-engine Host without this extension offers no shared permission
+picker. `npm run smoke:acp-permissions` covers the real Workbench/RPC/stdio path in
+desktop and touch contexts with a controlled peer; native execution needs separate
+installed-Codex verification.
+
+## Explicit native model discovery
+
+Codex and Cursor ACP declare `opencraft/model-catalog-refresh`. The Host negotiates
+`opencraft/scoped-model-refresh` and routes `opencraft/models/refresh` by immutable
+conversation owner, or by the selected draft model. Both Composer menus offer
+Refresh models only for an Agent declaring this capability. Refresh keeps the
+open menu, search, draft and selected model; failures retain the last successful
+list and allow retry.
+
+The adapter creates an archived discovery session in the same Agent source/home
+and workspace. This requests a fresh native model list without resuming,
+reconfiguring, interrupting or prompting the user's session. The last successful
+snapshot has one persisted owner; incomplete probes and older saved sessions
+cannot reintroduce removed entries. Normal model reads stay cold after restart.
+Cursor discovery uses its own process and reaps that process after success or
+failure. The active conversation's process, current model and parameters remain
+untouched. The explicit request has a separate three-minute discovery budget;
+ordinary catalog reads retain their existing timeout. Older Cursor versions may
+need to inspect each offered model's schema before discovery completes. A freshly advertised Cursor model can be selected through the native
+configuration setter only after its returned configuration confirms the choice.
+A newly discovered Codex model can be selected in an existing conversation via
+the native model setter, with an observed configuration acknowledgement required
+before input. No model ID or reasoning capability is invented from a label.
+
+Cold history model captions normalize Codex's transport prefix and known effort
+suffix for presentation only. The native model value remains intact; reasoning
+appears in its existing separate status slot. Scoped `model/list` is a read,
+requires no execution activation, and retains the native Agent identity.
+
+`npm run smoke:native-model-refresh` covers the real Workbench/RPC/stdio path
+with a controlled native peer, including new model discovery and its subsequent
+use. `smoke-model-browser` covers pending/error/retry, preserved choices and draft,
+late metadata, keyboard/touch and themes. Set `OPENCRAFT_REFRESH_AGENT=cursor` to exercise the same real Workbench path for Cursor. Installed native refresh is a
+separate verification; model availability still follows the Agent's own account,
+provider and model listing.
 
 ## Prepared default activation
 

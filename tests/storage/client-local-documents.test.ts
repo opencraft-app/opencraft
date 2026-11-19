@@ -34,6 +34,33 @@ const intent = (id: string): SubmitIntent => ({ commandId: id, clientMessageId: 
   attachments: [], context: [], selections: {}, options: { autoContext: false }, createdAt: 1 });
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 
+test("a page dismissal restores an edit or clear that has not reached the document store", async () => {
+  const factory = new IDBFactory();
+  const store = await openIndexedDbClientResources("checkpoint", factory);
+  const sessionStorage = new MemoryStorage(), localStorage = new MemoryStorage();
+  const previousWindow = globalThis.window;
+  Object.assign(globalThis, { window: { localStorage, sessionStorage } });
+  const open = (scope = "account") => createBrowserConversationDraftStorage(scope,
+    new ClientLocalDocuments(Promise.resolve(store), scope, "conversation-draft"));
+  const savedKey = conversationDraftStorageKey("account", "view", target);
+  try {
+    const writer = open();
+    const original = serializeConversationDraftDocument(document("already saved"), target)!;
+    const edited = serializeConversationDraftDocument(document("typed just before reload"), target)!;
+    await writer.storage.save(savedKey, original);
+    writer.storage.stage!(savedKey, edited);
+    writer.checkpoint();
+    assert.equal(await open().loadViewId(target), "view");
+    assert.equal(await open().storage.load(savedKey), edited);
+    assert.equal(await open("other-account").loadViewId(target), null);
+    writer.storage.stage!(savedKey, null);
+    writer.checkpoint();
+    assert.equal(await open().storage.load(savedKey), null);
+    writer.revokeAndClear();
+    assert.equal(sessionStorage.length, 0);
+  } finally { Object.assign(globalThis, { window: previousWindow }); await store.close(); }
+});
+
 for (const kind of ["sqlite", "indexeddb"] as const) {
   test(`${kind}: migrate task/Bot drafts, restart, tombstones, rich draft budget and targeted revocation`, async () => {
     const root = mkdtempSync(join(tmpdir(), "oc-local-documents-"));

@@ -74,6 +74,7 @@ import {
 import { queuedSubmissionPresentation, queueSenderPresentation, visibleQueuedSubmissions } from "./queued-submission-presentation";
 import {
   OpenCraftComposer,
+  type ComposerHandoffState,
   type ComposerSelectionCatalog,
 } from "@opencraft/composer-editor";
 import { asHostId, asTurnId, deriveAsyncQuestionStates, findPendingInteraction, parseAsyncQuestionReply, renderAsyncQuestionReply, type AsyncQuestion, type TimelineSnapshot, type TurnDiffTimelineBlock } from "@opencraft/chat-core";
@@ -85,7 +86,7 @@ import type {
 } from "@opencraft/timeline-virtualizer";
 import { useStableEvent } from "@opencraft/react-runtime";
 import { nativeProjectPicker } from "./runtime/project-folder-picker";
-import { groupWorkInMachines as groupNewConversationMachines, workInAgentHosts, chooseWorkInHost, ThreadTitleWriter, legacyDirectServerProjectionFromHost } from "@opencraft/workbench-runtime";
+import { groupWorkInMachines as groupNewConversationMachines, workInAgentHosts, chooseWorkInHost, ThreadTitleWriter, legacyDirectServerProjectionFromHost, projectThreadAgent } from "@opencraft/workbench-runtime";
 import { readCachedThreadName, writeCachedThreadName } from "./runtime/thread-title-cache";
 import { AgentUsage } from "./components/agent-usage";
 import { archiveThread } from "./runtime/thread-archive";
@@ -108,7 +109,7 @@ import {
   findHostConnectionInterventionError,
   projectComposerModelChoices,
 } from "@opencraft/workbench-runtime";
-import { OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION, supportsAtomicQueuedSteer, supportsUnconfirmedSteerDiscard, type OpenCraftPermissionProfile } from "@opencraft/appserver-protocol";
+import { OPENCRAFT_THREAD_QUEUE_EXTENSION, supportsAtomicQueuedSteer, supportsUnconfirmedSteerDiscard, type OpenCraftPermissionProfile } from "@opencraft/appserver-protocol";
 import {
   lazy,
   Suspense,
@@ -150,7 +151,6 @@ import {
   ConversationUnavailableState,
   conversationRecoveryPresentation,
   conversationRecoveryIsPending,
-  conversationRecoveryIsUnstable,
 } from "./components/conversation-recovery";
 import { ConversationPendingInteractionPanel } from "./components/conversation-renderers/interaction/interaction-renderers";
 import { InteractionDraftStore } from "./components/conversation-renderers/interaction/interaction-drafts";
@@ -248,6 +248,10 @@ const SettingsContent = lazy(async () => {
 const ConversationTaskMenu = lazy(async () => {
   const module = await import("./components/conversation-task-menu");
   return { default: module.ConversationTaskMenu };
+});
+const ConversationTagHeaderAction = lazy(async () => {
+  const module = await import("./components/conversation-tags-menu");
+  return { default: module.ConversationTagHeaderAction };
 });
 const SettingsNavigation = lazy(async () => {
   const module = await import("./components/settings-page");
@@ -391,11 +395,6 @@ export function App({
   const engineExtensions = runtime.resources.host.getInitializeResult()?.capabilities?.extensions;
   const queueExtension = executionEngineExtension(engineExtensions, snapshot.activeThreadId, OPENCRAFT_THREAD_QUEUE_EXTENSION);
   const followUpCapability = executionEngineExtension(engineExtensions, snapshot.activeThreadId, "opencraft/thread-follow-up") as { queue?: boolean; steer?: boolean } | undefined;
-  const permissionModesExtension = executionEngineExtension(engineExtensions, snapshot.activeThreadId, OPENCRAFT_PERMISSION_MODES_EXTENSION);
-  const supportsPermissionModes = typeof permissionModesExtension === "object"
-    && permissionModesExtension !== null
-    && "version" in permissionModesExtension
-    && permissionModesExtension.version === 1;
   const queueAtomicSteer = supportsAtomicQueuedSteer(queueExtension);
   const queueUnconfirmedSteerDiscard = supportsUnconfirmedSteerDiscard(queueExtension);
   const queueReorderable = !(
@@ -420,7 +419,6 @@ export function App({
     cloud: machine.cloud,
     connectable: machine.hosts.some(host => host.enabled),
   })), [newConversationMachines, extensionPlatform, intl]);
-  const engineCatalog = useWorkInEngineCatalog(workInAgentHosts(activeMachine, snapshot.hostId).filter(host => draft === null || host.hideFromNewChat !== true || host.hostId === snapshot.hostId).map(host => host.hostId), snapshot.hostId, draft === null && /^(codex|cursor)_/u.test(snapshot.activeThreadId ?? ""));
   const queryClient = useQueryClient();
   const blobs = useBlobResources();
   const images = useImageProcessing();
@@ -861,14 +859,9 @@ export function App({
     runtime: snapshot.phase,
     transport: snapshot.transport,
   });
-  const conversationRecovering = activeThreadId !== null
+  const conversationRecovering = localThreadId !== null
     && conversationRecoveryIsPending(recoveryPresentation, recoveryDiagnostic, recoveryRequiresUpdate);
   const connectionRecovering = connectionRecoveryIsPending(snapshot.phase, recoveryDiagnostic, recoveryRequiresUpdate);
-  const recoveryPlaceholder = connectionRecovering
-    ? intl.formatMessage({ id: "chat.composer.reconnecting", defaultMessage: "Reconnecting…" })
-    : conversationRecovering
-      ? intl.formatMessage({ id: "chat.composer.loading", defaultMessage: "Loading…" })
-      : undefined;
   useEffect(() => {
     if (recoveryPresentation !== "cold-error" && recoveryPresentation !== "warm-error") return;
     console.info("[conversation-recovery] failed", {
@@ -881,9 +874,10 @@ export function App({
   }, [recoveryPresentation, snapshot.hostId, activeThreadId, snapshot.phase, conversationViewActivation.phase]);
   const navigationSource = activeThreadLease?.getNavigation() ?? null;
   const pendingInteraction = useMemo(
-    () => unavailableThreadReason === null ? findPendingInteraction(timeline) : null,
-    [timeline, unavailableThreadReason],
+    () => unavailableThreadReason === null && snapshot.phase === "ready" && snapshot.transport.state === "open" ? findPendingInteraction(timeline) : null,
+    [timeline, unavailableThreadReason, snapshot.phase, snapshot.transport.state],
   );
+  const backgroundQuestion = pendingInteraction?.type === "question" && pendingInteraction.isBlocking === false;
   const isStreaming =
     snapshot.conversation?.activeTurn !== null &&
     snapshot.conversation?.activeTurn !== undefined;
@@ -1057,7 +1051,7 @@ export function App({
       if (intent.target.type !== "new-thread") {
         return completeConversationComposerSubmission(submittedIntent, submission,
           activeThreadLease?.getSnapshot() ?? null,
-          () => clearLatestTurnPlacement(submittedPlacement));
+          () => clearLatestTurnPlacement(submittedPlacement), localOutbox);
       }
 
       // The Conversation Scope synchronously owns the immutable first Turn,
@@ -1314,14 +1308,92 @@ export function App({
   const activeProtocolThread = catalog.protocolThreads.find(
     (thread) => thread.id === activeThreadId,
   );
+  interface PendingThreadHandoff {
+    readonly targetHostId: string;
+    readonly targetWorkspaceCwd?: string | null;
+    readonly switchingDevice?: boolean;
+    readonly model: string;
+    readonly effort: string | null;
+    readonly serviceTier: string | null;
+    readonly permissionProfile: string | null;
+    readonly submitting: boolean;
+    readonly error: string | null;
+  }
+  const [handoffsByView, setHandoffsByView] = useState<Readonly<Record<string, PendingThreadHandoff>>>({});
+  const [handoffWorkspacePickerOpen, setHandoffWorkspacePickerOpen] = useState(false);
+  const handoffEpochRef = useRef(0);
+  const handoffScopeRef = useRef(displayScope);
+  if (handoffScopeRef.current !== displayScope) {
+    handoffScopeRef.current = displayScope;
+    handoffEpochRef.current += 1;
+  }
+  useEffect(() => {
+    setHandoffsByView({});
+    setHandoffWorkspacePickerOpen(false);
+  }, [displayScope]);
+  const handoffViewKey = draft === null && activeThreadId !== null
+    ? `${workbenchNavigationSnapshot.routeScopeId}:${snapshot.hostId}:${activeThreadId}`
+    : null;
+  const currentHandoff = handoffViewKey !== null ? handoffsByView[handoffViewKey] ?? null : null;
+  const handoffTargetMachine = currentHandoff === null
+    ? undefined
+    : newConversationMachines.find(machine => machine.hosts.some(host => host.hostId === currentHandoff.targetHostId))
+      ?? machines.find(machine => machine.hosts.some(host => host.hostId === currentHandoff.targetHostId));
+  const isCrossDeviceHandoff = Boolean(
+    currentHandoff !== null
+    && currentHandoff.targetHostId !== snapshot.hostId
+    && handoffTargetMachine?.id !== activeMachine?.id,
+  );
+  const engineCatalog = useWorkInEngineCatalog(
+    workInAgentHosts(handoffTargetMachine ?? activeMachine, currentHandoff?.targetHostId ?? snapshot.hostId)
+      .filter(host => draft === null || host.hideFromNewChat !== true || host.hostId === snapshot.hostId)
+      .map(host => host.hostId),
+    snapshot.hostId,
+    draft === null && snapshot.activeThreadId !== null && !embedded && modelSelectionPolicy === "user" && presentation.executionSelection !== "fixed",
+  );
+  useEffect(() => {
+    if (currentHandoff !== null && currentHandoff.targetHostId !== snapshot.hostId) {
+      engineCatalog.open();
+    }
+  }, [currentHandoff?.targetHostId, snapshot.hostId]);
+  const handoffTargetProjects = useQuery({
+    queryKey: ["appserver", currentHandoff?.targetHostId ?? "", "handoff-projects"],
+    enabled: isCrossDeviceHandoff && currentHandoff !== null,
+    staleTime: 60_000,
+    retry: false,
+    queryFn: async () => {
+      if (!currentHandoff) return [];
+      const page = await hostCatalog.agentRuntimes.request(currentHandoff.targetHostId, "project/list", { cursor: null, limit: 50 }).catch(() => ({ data: [] }));
+      return Array.isArray(page?.data) ? page.data as readonly { id: string; name?: string | null; roots: readonly { path: string }[] }[] : [];
+    },
+  });
+  const writeHandoffForKey = useCallback((key: string, next: PendingThreadHandoff | null | ((prev: PendingThreadHandoff | null) => PendingThreadHandoff | null)) => {
+    setHandoffsByView(previous => {
+      const resolved = typeof next === "function" ? next(previous[key] ?? null) : next;
+      if (resolved === null) {
+        if (!(key in previous)) return previous;
+        const copy = { ...previous };
+        delete copy[key];
+        return copy;
+      }
+      const entries = Object.entries(previous).filter(([entryKey]) => entryKey !== key);
+      while (entries.length >= 24) entries.shift();
+      entries.push([key, resolved]);
+      return Object.fromEntries(entries);
+    });
+  }, []);
+  const explicitSetupModel = useSyncExternalStore(composerController.subscribe,
+    () => composerController.getSnapshot().draft.selections.model,
+    () => composerController.getSnapshot().draft.selections.model);
   const composerCatalog = useComposerCatalog(
     snapshot.conversation?.execution.cwd ??
       activeProtocolThread?.cwd ??
       draft?.target.execution.workspace.cwd ??
       activeHost.workspaceBrowseRoots[0] ??
       null,
-    draft === null ? activeThreadId : null,
+    draft === null ? (currentHandoff?.targetHostId === snapshot.hostId ? null : activeThreadId) : null,
     presentation.runtimeHostConfiguration,
+    currentHandoff?.targetHostId === snapshot.hostId ? currentHandoff.model : explicitSetupModel,
   );
   const setupModelPage = resolveHostModelSettingsPage(
     settingsContributionSnapshot.settingsPages.map(({ contribution }) => contribution),
@@ -1334,9 +1406,6 @@ export function App({
   }, [activeHostConnectionPhase, snapshot.hostId]);
   const initialConnectionFailed = snapshot.error !== null && !draftConnectionObservation.current.wasReady;
   const supportsModelSetup = !embedded && presentation.runtimeHostConfiguration && setupModelPage?.modelReadiness === true;
-  const explicitSetupModel = useSyncExternalStore(composerController.subscribe,
-    () => composerController.getSnapshot().draft.selections.model,
-    () => composerController.getSnapshot().draft.selections.model);
   const setupSelectedModel = explicitSetupModel ?? composerCatalog.newThreadDefaults?.model
     ?? composerCatalog.models.find(model => model.isDefault)?.model ?? composerCatalog.models[0]?.model ?? null;
   const modelReadiness = useQuery({
@@ -1425,10 +1494,21 @@ export function App({
   const composerSuggestionCatalog = useAppServerComposerCatalog(
     composerWorkspaceRoots,
   );
-  const continuationCapability = runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/agent-session"] as { contextExport?: readonly string[] } | undefined;
-  const conversationAgent = activeThreadId?.startsWith("codex_") ? "codex" : activeThreadId?.startsWith("cursor_") ? "cursor" : null;
-  const canContinueWithAgent = !embedded && draft === null && conversationAgent !== null
-    && continuationCapability?.contextExport?.includes(conversationAgent) === true && presentation.executionSelection !== "fixed";
+  const declaredExecutionEngines = runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/execution-engines"];
+  const conversationAgentInfo = activeThreadId === null ? undefined : projectThreadAgent(activeThreadId, declaredExecutionEngines);
+  const conversationAgent = activeThreadId === null
+    ? null
+    : conversationAgentInfo?.id
+      ?? (activeThreadId.startsWith("codex_") ? "codex"
+        : activeThreadId.startsWith("cursor_") ? "cursor"
+        : activeThreadId.startsWith("picli_") ? "pi-cli"
+        : activeThreadId.startsWith("claude_") ? "claude-code"
+        : activeThreadId.startsWith("codebuddy_ide_") ? "codebuddy-ide"
+        : activeThreadId.startsWith("codebuddy_") ? "codebuddy"
+        : activeThreadId.startsWith("pi_") ? "pi"
+        : "dsh");
+  const canContinueWithAgent = !embedded && draft === null && activeThreadId !== null && conversationAgent !== null
+    && modelSelectionPolicy === "user" && presentation.executionSelection !== "fixed";
   const filterNewAgents = !embedded && draft !== null && modelSelectionPolicy === "user" && presentation.executionSelection !== "fixed";
   const projectModelChoices = useCallback((models: Parameters<typeof projectComposerModelChoices>[0]) =>
     projectComposerModelChoices(models).map(model => model.value === "codebuddy-ide:current" ? {
@@ -1445,17 +1525,20 @@ export function App({
       })(),
       policyRestricted: composerCatalog.models.some(model => model.policyRestricted),
       models: projectModelChoices(composerCatalog.models.filter(model => !filterNewAgents || agentAvailability.enabled(snapshot.hostId, model.agentId ?? "host"))),
-      displayModels: projectModelChoices(composerCatalog.displayModels),
-      permissionProfiles: composerCatalog.permissionProfiles.map((rawProfile) => {
+      displayModels: projectModelChoices([
+        ...composerCatalog.displayModels,
+        ...engineCatalog.groups.flatMap(group => group.models).filter(model => !composerCatalog.displayModels.some(existing => existing.id === model.id || existing.model === model.model)),
+      ]),
+      permissionProfiles: (currentHandoff !== null && currentHandoff.targetHostId !== snapshot.hostId ? [] : composerCatalog.permissionProfiles).map((rawProfile) => {
         const profile = rawProfile as OpenCraftPermissionProfile;
         return {
           id: profile.id,
           value: profile.id,
-          label: supportsPermissionModes ? profile.openCraftLabel ?? humanizeCatalogValue(profile.id) : humanizeCatalogValue(profile.id),
+          label: profile.openCraftLabel ?? humanizeCatalogValue(profile.id),
           description: profile.description,
           disabled: !profile.allowed,
-          mode: supportsPermissionModes ? profile.openCraftMode ?? null : null,
-          nativeProfileId: supportsPermissionModes ? profile.openCraftNativeProfileId ?? null : null,
+          mode: profile.openCraftMode ?? null,
+          nativeProfileId: profile.openCraftNativeProfileId ?? null,
         };
       }).sort((left, right) => {
         const rank = { "read-only": 0, "accept-edits": 1, auto: 2, full: 3 } as const;
@@ -1463,46 +1546,81 @@ export function App({
       }),
       isFetching: composerCatalog.isFetching,
       modelError: composerCatalog.modelError?.message ?? null,
-      onRememberModelDefaults: modelSelectionPolicy === "user" ? composerCatalog.rememberModelDefaults : undefined,
+      onRememberModelDefaults: modelSelectionPolicy === "user" && currentHandoff === null ? composerCatalog.rememberModelDefaults : undefined,
       onConfigureModels: embedded?.onConfigureModels,
-      onConfigureAgents: filterNewAgents ? () => openSettingsFromConversation(setupModelPage?.id ?? settingsContributionSnapshot.settingsPages.find(({ contribution }) => contribution.modelConfiguration)?.contribution.id ?? "chat") : undefined,
+      onConfigureAgents: filterNewAgents || canContinueWithAgent ? () => openSettingsFromConversation(setupModelPage?.id ?? settingsContributionSnapshot.settingsPages.find(({ contribution }) => contribution.modelConfiguration)?.contribution.id ?? "chat") : undefined,
       onModelMenuOpen: modelSelectionPolicy === "session" ? composerCatalog.retryModels : () => { composerCatalog.onModelMenuOpen(); engineCatalog.open(); },
-      agentGroups: !filterNewAgents && !canContinueWithAgent ? undefined : engineCatalog.groups.filter(group => !canContinueWithAgent || group.hostId === snapshot.hostId).map(group => ({
-        id: group.hostId,
-        label: hostCatalog.profiles.find(host => host.hostId === group.hostId)?.agent ?? hostCatalog.hosts.find(host => host.hostId === group.hostId)?.label ?? group.hostId,
-        active: group.hostId === snapshot.hostId,
-        models: projectModelChoices((canContinueWithAgent ? group.models.length ? group.models : composerCatalog.models : group.hostId === snapshot.hostId ? composerCatalog.models : group.models).filter(model => model.agentId === conversationAgent || agentAvailability.enabled(group.hostId, model.agentId ?? "host"))),
-        loading: canContinueWithAgent ? group.loading : group.hostId === snapshot.hostId ? composerCatalog.isFetching : group.loading,
-        error: canContinueWithAgent ? group.error : group.hostId === snapshot.hostId ? composerCatalog.modelError?.message : group.error,
-        retry: group.hostId === snapshot.hostId ? composerCatalog.retryModels : group.retry,
-        select: async (model) => {
-          if (canContinueWithAgent && model.agentId === conversationAgent) return;
-          if (canContinueWithAgent && activeThreadId && model.agentId !== conversationAgent) {
-            try {
-              await hostCatalog.continueWithAgent({ hostId: snapshot.hostId, threadId: activeThreadId, historyTitle: intl.formatMessage({ id: "composer.context.conversationHistory", defaultMessage: "Conversation history" }), model: model.value, effort: model.defaultEffort, serviceTier: null });
-            } catch (error) {
-              if ((error as { code?: unknown })?.code === "PRIVATE_CONTINUATION_UNAVAILABLE") throw new Error(intl.formatMessage({ id: "chat.continueWithAgent.privateUnavailable", defaultMessage: "This Server cannot yet preserve private visibility when continuing with another Agent. Your original conversation and draft are unchanged." }));
-              throw new Error(intl.formatMessage({ id: "chat.continueWithAgent.failed", defaultMessage: "Could not prepare the conversation for this Agent. Your original conversation and draft are unchanged. Finish any active response and try again." }));
+      agentGroups: !filterNewAgents && !canContinueWithAgent ? undefined : engineCatalog.groups.map(group => {
+        const rawModels = canContinueWithAgent && group.hostId === snapshot.hostId
+          ? [
+              ...composerCatalog.models,
+              ...group.models.filter(model => !composerCatalog.models.some(existing => existing.id === model.id || existing.model === model.model)),
+            ]
+          : group.hostId === snapshot.hostId
+            ? composerCatalog.models
+            : group.models;
+        const activeHostForPicker = currentHandoff?.targetHostId ?? snapshot.hostId;
+        return {
+          id: group.hostId,
+          label: hostCatalog.profiles.find(host => host.hostId === group.hostId)?.agent ?? hostCatalog.hosts.find(host => host.hostId === group.hostId)?.label ?? group.hostId,
+          active: group.hostId === activeHostForPicker,
+          models: projectModelChoices(rawModels.filter(model =>
+            (canContinueWithAgent && group.hostId === snapshot.hostId && (model.agentId ?? conversationAgent) === conversationAgent)
+            || agentAvailability.enabled(group.hostId, model.agentId ?? "host"))),
+          loading: canContinueWithAgent
+            ? (group.hostId === snapshot.hostId && rawModels.length === 0 ? (composerCatalog.isFetching || group.loading) : group.loading)
+            : group.hostId === snapshot.hostId ? composerCatalog.isFetching : group.loading,
+          error: canContinueWithAgent
+            ? (rawModels.length > 0 ? null : group.error ?? (group.hostId === snapshot.hostId ? composerCatalog.modelError?.message ?? null : null))
+            : group.hostId === snapshot.hostId ? composerCatalog.modelError?.message : group.error,
+          retry: group.hostId === snapshot.hostId ? () => { composerCatalog.retryModels(); group.retry(); } : group.retry,
+          select: async (model) => {
+            if (canContinueWithAgent && handoffViewKey !== null) {
+              const modelOwner = model.agentId ?? conversationAgent ?? "dsh";
+              const sameThreadAgent = group.hostId === snapshot.hostId && modelOwner === conversationAgent;
+              if (currentHandoff === null && sameThreadAgent) return;
+              const previousTier = currentHandoff !== null
+                ? currentHandoff.serviceTier
+                : composerController.getSnapshot().draft.selections.serviceTier ?? snapshot.conversation?.execution.serviceTier ?? null;
+              const nextServiceTier = model.serviceTiers?.some(tier => tier.id === previousTier) ? previousTier : null;
+              const previousEffort = currentHandoff?.effort ?? null;
+              const nextEffort = previousEffort !== null && model.efforts.some(effort => effort.value === previousEffort)
+                ? previousEffort
+                : model.defaultEffort;
+              writeHandoffForKey(handoffViewKey, previous => ({
+                targetHostId: group.hostId,
+                ...(previous && previous.targetHostId === group.hostId && previous.targetWorkspaceCwd !== undefined
+                  ? { targetWorkspaceCwd: previous.targetWorkspaceCwd }
+                  : {}),
+                model: model.value,
+                effort: nextEffort,
+                serviceTier: nextServiceTier,
+                permissionProfile: previous && previous.targetHostId === group.hostId ? previous.permissionProfile : null,
+                submitting: false,
+                error: null,
+              }));
+              return { selection: "handled" as const };
             }
-            return { selection: "handled" as const };
-          }
-          const currentTier = composerController.getSnapshot().draft.selections.serviceTier;
-          const requestedTier = currentTier !== undefined ? currentTier : composerCatalog.newThreadDefaults?.serviceTier;
-          const serviceTier = model.serviceTiers?.some(tier => tier.id === requestedTier) ? requestedTier ?? null : null;
-          await hostCatalog.selectHost(group.hostId, group.hostId === snapshot.hostId ? undefined : { model: model.value, effort: model.defaultEffort, serviceTier });
-          if (group.hostId !== snapshot.hostId) composerCatalog.rememberModelDefaults?.({ model: model.value, effort: model.defaultEffort, serviceTier }, group.hostId);
-        },
-        manage: (() => {
-          const page = resolveHostModelSettingsPage(settingsContributionSnapshot.settingsPages.map(({ contribution }) => contribution), group.hostId, extensionPlatform, internalDeveloperMode);
-          return page ? () => hostCatalog.navigation.openSettings(page.id) : undefined;
-        })(),
-      })),
+            const currentTier = composerController.getSnapshot().draft.selections.serviceTier;
+            const requestedTier = currentTier !== undefined ? currentTier : composerCatalog.newThreadDefaults?.serviceTier;
+            const serviceTier = model.serviceTiers?.some(tier => tier.id === requestedTier) ? requestedTier ?? null : null;
+            await hostCatalog.selectHost(group.hostId, group.hostId === snapshot.hostId ? undefined : { model: model.value, effort: model.defaultEffort, serviceTier });
+            if (group.hostId !== snapshot.hostId) composerCatalog.rememberModelDefaults?.({ model: model.value, effort: model.defaultEffort, serviceTier }, group.hostId);
+          },
+          manage: (() => {
+            const page = resolveHostModelSettingsPage(settingsContributionSnapshot.settingsPages.map(({ contribution }) => contribution), group.hostId, extensionPlatform, internalDeveloperMode);
+            return page ? () => hostCatalog.navigation.openSettings(page.id) : undefined;
+          })(),
+        };
+      }),
       retryModels: composerCatalog.retryModels,
+      canRefreshModels: composerCatalog.canRefreshModels,
+      refreshModels: composerCatalog.refreshModels,
       permissionProfileError:
         composerCatalog.permissionProfileError?.message ?? null,
     }),
     [
-      setupModelPage?.id, filterNewAgents, canContinueWithAgent, conversationAgent, activeThreadId, agentAvailability, openSettingsFromConversation, modelSelectionPolicy, embedded?.onConfigureModels, presentation.executionSelection, engineCatalog, draft, hostCatalog, snapshot.hostId,
+      setupModelPage?.id, filterNewAgents, canContinueWithAgent, conversationAgent, activeThreadId, handoffViewKey, currentHandoff, writeHandoffForKey, snapshot.conversation?.execution.serviceTier, agentAvailability, openSettingsFromConversation, modelSelectionPolicy, embedded?.onConfigureModels, presentation.executionSelection, engineCatalog, draft, hostCatalog, snapshot.hostId,
       settingsContributionSnapshot, extensionPlatform, internalDeveloperMode,
       composerCatalog.isFetching,
       composerCatalog.modelError,
@@ -1511,14 +1629,293 @@ export function App({
       composerCatalog.newThreadDefaults,
       composerController,
       composerCatalog.retryModels,
+      composerCatalog.canRefreshModels, composerCatalog.refreshModels,
       composerCatalog.models,
       composerCatalog.displayModels,
       composerCatalog.permissionProfileError,
       composerCatalog.permissionProfiles,
-      supportsPermissionModes,
       projectModelChoices,
     ],
   );
+  const handoffSourceTitle = useMemo(() => {
+    const titled = activeThread?.title?.trim() || activeProtocolThread?.name?.trim() || activeProtocolThread?.preview?.trim();
+    return titled || intl.formatMessage({ id: "composer.context.conversationHistory", defaultMessage: "Conversation history" });
+  }, [activeThread?.title, activeProtocolThread?.name, activeProtocolThread?.preview, intl]);
+  const startCurrentAgentHandoff = useCallback(() => {
+    if (!canContinueWithAgent || handoffViewKey === null) return;
+    const selections = composerController.getSnapshot().draft.selections;
+    const model = selections.model
+      ?? snapshot.conversation?.execution.model
+      ?? composerCatalog.models.find(candidate => candidate.isDefault)?.model
+      ?? composerCatalog.models[0]?.model
+      ?? null;
+    if (model === null) return;
+    const effort = selections.effort ?? snapshot.conversation?.execution.effort ?? null;
+    const serviceTier = selections.serviceTier !== undefined
+      ? selections.serviceTier
+      : snapshot.conversation?.execution.serviceTier ?? null;
+    writeHandoffForKey(handoffViewKey, {
+      targetHostId: snapshot.hostId,
+      model,
+      effort,
+      serviceTier,
+      permissionProfile: selections.permissionProfile ?? snapshot.conversation?.execution.permissionProfile ?? null,
+      submitting: false,
+      error: null,
+    });
+  }, [canContinueWithAgent, handoffViewKey, composerController, snapshot.conversation?.execution, composerCatalog.models, snapshot.hostId, writeHandoffForKey]);
+  const composerHandoff = useMemo<ComposerHandoffState | null>(() => {
+    if (currentHandoff === null || handoffViewKey === null || activeThreadId === null) return null;
+    const allModels = composerSelectionCatalog.agentGroups?.flatMap(group => group.models) ?? composerSelectionCatalog.models;
+    const matchedModel = allModels.find(candidate => candidate.value === currentHandoff.model || candidate.id === currentHandoff.model);
+    const modelOwner = matchedModel?.agentId
+      ?? (currentHandoff.model.startsWith("codex:") ? "codex"
+        : currentHandoff.model.startsWith("cursor:") ? "cursor"
+        : currentHandoff.model.startsWith("pi-cli:") ? "pi-cli"
+        : currentHandoff.model.startsWith("claude-code:") ? "claude-code"
+        : currentHandoff.model.startsWith("codebuddy-ide:") ? "codebuddy-ide"
+        : currentHandoff.model.startsWith("codebuddy:") ? "codebuddy"
+        : currentHandoff.model.startsWith("pi:") ? "pi"
+        : conversationAgent);
+    const canContinueInCurrentThread = currentHandoff.targetHostId === snapshot.hostId && modelOwner === conversationAgent;
+    const cwd = snapshot.conversation?.execution.cwd ?? activeProtocolThread?.cwd ?? null;
+    const targetHostProfile = hostCatalog.profiles.find(profile => profile.hostId === currentHandoff.targetHostId);
+    const targetWorkspaceOptions = (() => {
+      const seen = new Set<string>();
+      const items: { cwd: string; label: string }[] = [];
+      for (const project of handoffTargetProjects.data ?? []) {
+        const root = project.roots[0]?.path;
+        if (!root || seen.has(root)) continue;
+        seen.add(root);
+        items.push({ cwd: root, label: project.name?.trim() || root.split(/[\\/]/u).filter(Boolean).at(-1) || root });
+      }
+      for (const root of targetHostProfile?.workspaceBrowseRoots ?? []) {
+        if (!root || seen.has(root)) continue;
+        seen.add(root);
+        items.push({ cwd: root, label: root.split(/[\\/]/u).filter(Boolean).at(-1) || root });
+      }
+      if (currentHandoff.targetWorkspaceCwd && !seen.has(currentHandoff.targetWorkspaceCwd)) {
+        items.unshift({
+          cwd: currentHandoff.targetWorkspaceCwd,
+          label: currentHandoff.targetWorkspaceCwd.split(/[\\/]/u).filter(Boolean).at(-1) || currentHandoff.targetWorkspaceCwd,
+        });
+      }
+      return items;
+    })();
+    const sourceFolderName = cwd?.split(/[\\/]/u).filter(Boolean).at(-1)?.toLowerCase() ?? null;
+    const defaultTargetWorkspace = (sourceFolderName
+      ? targetWorkspaceOptions.find(item => item.cwd.split(/[\\/]/u).filter(Boolean).at(-1)?.toLowerCase() === sourceFolderName)?.cwd
+      : undefined)
+      ?? targetWorkspaceOptions[0]?.cwd
+      ?? targetHostProfile?.workspaceBrowseRoots[0]
+      ?? null;
+    const resolvedTargetWorkspaceCwd = isCrossDeviceHandoff
+      ? (currentHandoff.targetWorkspaceCwd ?? defaultTargetWorkspace)
+      : cwd;
+    const handoffDeviceOptions = composerHostOptions.length > 1
+      ? composerHostOptions.map(option => ({
+          id: option.id,
+          label: option.label,
+          role: option.role,
+          selected: option.hostIds.includes(currentHandoff.targetHostId),
+          connectable: option.connectable,
+        }))
+      : undefined;
+    return {
+      sourceTitle: handoffSourceTitle,
+      sourceAgentLabel: conversationAgentInfo?.label ?? null,
+      workspacePath: cwd,
+      hostId: currentHandoff.targetHostId,
+      model: currentHandoff.model,
+      effort: currentHandoff.effort,
+      serviceTier: currentHandoff.serviceTier,
+      permissionProfile: currentHandoff.permissionProfile,
+      isCrossDevice: isCrossDeviceHandoff,
+      switchingDevice: currentHandoff.switchingDevice === true,
+      devices: handoffDeviceOptions,
+      async onSelectDevice(deviceId) {
+        const machine = newConversationMachines.find(candidate => candidate.id === deviceId);
+        if (!machine) return;
+        const epoch = ++handoffEpochRef.current;
+        const currentAgent = hostCatalog.profiles.find(host => host.hostId === currentHandoff.targetHostId)?.agent;
+        const nextHost = chooseWorkInHost(machine, currentAgent, snapshot.hostId);
+        const returningToSourceMachine = machine.id === activeMachine?.id;
+        if (returningToSourceMachine) {
+          const fallbackModel = composerCatalog.models.some(m => m.model === currentHandoff.model || m.id === currentHandoff.model)
+            ? currentHandoff.model
+            : (composerController.getSnapshot().draft.selections.model
+              ?? snapshot.conversation?.execution.model
+              ?? composerCatalog.models.find(m => m.isDefault)?.model
+              ?? composerCatalog.models[0]?.model
+              ?? currentHandoff.model);
+          writeHandoffForKey(handoffViewKey, previous => previous === null ? null : {
+            ...previous,
+            targetHostId: nextHost.hostId,
+            targetWorkspaceCwd: undefined,
+            switchingDevice: false,
+            model: fallbackModel,
+            permissionProfile: null,
+            error: null,
+          });
+          return;
+        }
+        writeHandoffForKey(handoffViewKey, previous => previous === null ? null : {
+          ...previous,
+          targetHostId: nextHost.hostId,
+          switchingDevice: true,
+          error: null,
+        });
+        try {
+          const [modelsPage, projectsPage] = await Promise.all([
+            hostCatalog.agentRuntimes.request(nextHost.hostId, "model/list", { limit: 100 }),
+            hostCatalog.agentRuntimes.request(nextHost.hostId, "project/list", { cursor: null, limit: 50 }).catch(() => ({ data: [] })),
+          ]);
+          if (epoch !== handoffEpochRef.current) return;
+          const models = Array.isArray(modelsPage?.data) ? modelsPage.data as readonly { id: string; model?: string; isDefault?: boolean; defaultReasoningEffort?: string | null }[] : [];
+          const kept = models.find(item => (item.model ?? item.id) === currentHandoff.model || item.id === currentHandoff.model);
+          const chosenModel = kept ?? models.find(item => item.isDefault) ?? models[0];
+          const projects = Array.isArray(projectsPage?.data) ? projectsPage.data as readonly { roots: readonly { path: string }[] }[] : [];
+          const matchedFolder = sourceFolderName
+            ? projects.flatMap(p => p.roots).find(r => r.path.split(/[\\/]/u).filter(Boolean).at(-1)?.toLowerCase() === sourceFolderName)?.path
+            : undefined;
+          const nextProfile = hostCatalog.profiles.find(p => p.hostId === nextHost.hostId);
+          const chosenCwd = matchedFolder ?? projects[0]?.roots[0]?.path ?? nextProfile?.workspaceBrowseRoots[0] ?? null;
+          writeHandoffForKey(handoffViewKey, previous => previous === null ? null : {
+            ...previous,
+            targetHostId: nextHost.hostId,
+            targetWorkspaceCwd: chosenCwd,
+            switchingDevice: false,
+            model: chosenModel ? (chosenModel.model ?? chosenModel.id) : previous.model,
+            effort: chosenModel ? (chosenModel.defaultReasoningEffort ?? null) : previous.effort,
+            serviceTier: kept ? previous.serviceTier : null,
+            permissionProfile: null,
+            error: null,
+          });
+        } catch {
+          if (epoch !== handoffEpochRef.current) return;
+          writeHandoffForKey(handoffViewKey, previous => previous === null ? null : {
+            ...previous,
+            switchingDevice: false,
+            error: intl.formatMessage({ id: "welcome.agents.switchFailed", defaultMessage: "Could not switch to this agent. Your draft is kept. Try again." }),
+          });
+        }
+      },
+      targetWorkspacePath: resolvedTargetWorkspaceCwd,
+      targetWorkspaces: isCrossDeviceHandoff ? targetWorkspaceOptions.map(option => ({
+        cwd: option.cwd,
+        label: option.label,
+        selected: option.cwd === resolvedTargetWorkspaceCwd,
+      })) : undefined,
+      onSelectTargetWorkspace: isCrossDeviceHandoff ? nextCwd => {
+        writeHandoffForKey(handoffViewKey, previous => previous === null ? null : {
+          ...previous,
+          targetWorkspaceCwd: nextCwd,
+          error: null,
+        });
+      } : undefined,
+      onBrowseTargetWorkspace: isCrossDeviceHandoff ? () => setHandoffWorkspacePickerOpen(true) : undefined,
+      submitting: currentHandoff.submitting,
+      error: currentHandoff.error,
+      canContinueInCurrentThread,
+      onChangeSelections(patch) {
+        writeHandoffForKey(handoffViewKey, previous => previous === null ? null : {
+          ...previous,
+          ...(patch.model === undefined ? {} : { model: patch.model }),
+          ...(patch.effort === undefined ? {} : { effort: patch.effort }),
+          ...(patch.serviceTier === undefined ? {} : { serviceTier: patch.serviceTier }),
+          ...(patch.permissionProfile === undefined ? {} : { permissionProfile: patch.permissionProfile }),
+          error: null,
+        });
+      },
+      async onSubmit() {
+        const epoch = ++handoffEpochRef.current;
+        writeHandoffForKey(handoffViewKey, previous => previous === null ? null : { ...previous, submitting: true, error: null });
+        const fallbackTranscript = (visibleTimeline?.frames ?? []).flatMap(frame =>
+          frame.blocks.flatMap(block => {
+            if (block.type === "user-message" && block.message.trim()) return [`### User\n${block.message.trim()}`];
+            if (block.type === "text" && block.text.trim()) return [`### Assistant\n${block.text.trim()}`];
+            return [];
+          }),
+        ).join("\n\n");
+        try {
+          await hostCatalog.handoffConversation({
+            sourceHostId: snapshot.hostId,
+            sourceThreadId: activeThreadId,
+            sourceTitle: handoffSourceTitle,
+            continueFromPrefix: intl.formatMessage({ id: "composer.handoff.continueFrom", defaultMessage: "Continue from" }),
+            workspace: { cwd, runtimeWorkspaceRoots: composerWorkspaceRoots },
+            targetWorkspace: isCrossDeviceHandoff
+              ? { cwd: resolvedTargetWorkspaceCwd, runtimeWorkspaceRoots: resolvedTargetWorkspaceCwd ? [resolvedTargetWorkspaceCwd] : [] }
+              : null,
+            collaborationSpaceId: serverSpaces.hostId === snapshot.hostId ? serverSpaces.selected : undefined,
+            fallbackTranscript,
+            targetHostId: currentHandoff.targetHostId,
+            model: currentHandoff.model,
+            effort: currentHandoff.effort,
+            serviceTier: currentHandoff.serviceTier,
+            permissionProfile: currentHandoff.permissionProfile,
+            clearSource: () => writeHandoffForKey(handoffViewKey, null),
+          });
+        } catch (error) {
+          if (epoch !== handoffEpochRef.current) return;
+          const code = (error as { code?: unknown })?.code;
+          const message = code === "PRIVATE_CONTINUATION_UNAVAILABLE"
+            ? intl.formatMessage({ id: "chat.continueWithAgent.privateUnavailable", defaultMessage: "This Server cannot yet preserve private visibility when continuing with another Agent. Your original conversation and draft are unchanged." })
+            : code === "OTHER_MACHINE_ATTACHMENT"
+              ? intl.formatMessage({ id: "workIn.attachmentOtherMachine", defaultMessage: "This file is on the previous machine. Add it on this machine." })
+              : intl.formatMessage({ id: "chat.continueWithAgent.failed", defaultMessage: "Could not prepare the conversation for this Agent. Your original conversation and draft are unchanged. Finish any active response and try again." });
+          writeHandoffForKey(handoffViewKey, previous => previous === null ? null : { ...previous, submitting: false, error: message });
+        }
+      },
+      onContinueInCurrentThread: canContinueInCurrentThread ? () => {
+        ++handoffEpochRef.current;
+        composerController.dispatch({
+          type: "set-selections",
+          patch: {
+            model: currentHandoff.model,
+            effort: currentHandoff.effort ?? undefined,
+            serviceTier: currentHandoff.serviceTier,
+            ...(currentHandoff.permissionProfile ? { permissionProfile: currentHandoff.permissionProfile } : {}),
+          },
+        });
+        writeHandoffForKey(handoffViewKey, null);
+      } : undefined,
+      onDismissError() {
+        writeHandoffForKey(handoffViewKey, previous => previous === null ? null : { ...previous, error: null });
+      },
+      onCancel() {
+        ++handoffEpochRef.current;
+        writeHandoffForKey(handoffViewKey, null);
+      },
+    };
+  }, [
+    currentHandoff,
+    handoffViewKey,
+    activeThreadId,
+    composerSelectionCatalog.agentGroups,
+    composerSelectionCatalog.models,
+    conversationAgent,
+    conversationAgentInfo?.label,
+    snapshot.hostId,
+    snapshot.conversation?.execution.cwd,
+    activeProtocolThread?.cwd,
+    handoffSourceTitle,
+    writeHandoffForKey,
+    visibleTimeline?.frames,
+    hostCatalog,
+    intl,
+    composerWorkspaceRoots,
+    serverSpaces.hostId,
+    serverSpaces.selected,
+    composerController,
+    handoffTargetProjects.data,
+    isCrossDeviceHandoff,
+    composerHostOptions,
+    newConversationMachines,
+    activeMachine?.id,
+    composerCatalog.models,
+    snapshot.conversation?.execution.model,
+  ]);
   const draftWorkspaceOptions = useMemo(() => {
     return buildDraftWorkspaceOptions(projectCatalog.projects);
   }, [projectCatalog.projects]);
@@ -2014,15 +2411,20 @@ export function App({
     summaryNotePorts.set(summaryScopeKey, port);
     return port;
   }, [hostCatalog, summaryScopeKey, noteAccountKey, summaryNoteSupported, summaryNotePorts]);
+  const canTagHeaderConversation = embedded === undefined && conversationSurfaceVisible && draft === null && activeThreadId !== null;
   const conversationMenuSizing = <ConversationToolbarSizing scope={displayScope} actionIds={conversationToolbarActionIds(conversationToolbarProps)} />;
-  const conversationActionSizing = <span className="conversation-header-actions">{summary.enabled ? <ButtonPlaceholder className="chrome-button" /> : null}{conversationMenuSizing}</span>;
+  const conversationActionSizing = <span className="conversation-header-actions">{canTagHeaderConversation ? <ButtonPlaceholder className="chrome-button" /> : null}{summary.enabled ? <ButtonPlaceholder className="chrome-button" /> : null}{conversationMenuSizing}</span>;
   const header = (
     <AppShellHeader
       conversationHeader={conversationSurfaceVisible}
       subtitle={conversationContribution?.subtitle}
       navigationBrand={embedded === undefined && extensionPlatform === "web" ? <ApplicationBrand branding={branding} onHome={openConversationSidebar} /> : undefined}
       headerActionSizing={conversationActionSizing}
-      headerAction={<span className="conversation-header-actions"><ConversationSummaryButton controller={summary} />{conversationMenuAvailable ? (
+      headerAction={<span className="conversation-header-actions">{canTagHeaderConversation && activeThreadId !== null ? (
+        <Suspense fallback={<ButtonPlaceholder className="chrome-button" />}>
+          <ConversationTagHeaderAction scope={displayScope} hostId={snapshot.hostId} threadId={activeThreadId} />
+        </Suspense>
+      ) : null}<ConversationSummaryButton controller={summary} />{conversationMenuAvailable ? (
         <Suspense fallback={conversationMenuSizing}>
           <ConversationTaskMenu
             key={JSON.stringify([displayScope, snapshot.hostId, activeThreadId])}
@@ -2330,11 +2732,11 @@ export function App({
               id: "chat.companionHeading",
               defaultMessage: "What would you like to do together today?",
             }) : undefined}
-            placeholderPending={recoveryPlaceholder !== undefined}
-                        placeholder={recoveryPlaceholder ?? (embedded ? intl.formatMessage({
+            isRecovering={connectionRecovering}
+            placeholder={embedded ? intl.formatMessage({
               id: "chat.companionPlaceholder",
               defaultMessage: "Share your thoughts, or ask me to help with something",
-            }) : undefined)}
+            }) : undefined}
             selectionCatalog={composerSelectionCatalog}
             catalog={composerSuggestionCatalog}
             effectiveSelections={modelSelectionPolicy === "session" ? undefined : composerCatalog.newThreadDefaults ?? undefined}
@@ -2444,11 +2846,7 @@ export function App({
                   consumePendingLatestTurnSubmitPlacement={consumeLatestTurnPlacement}
                   navigationSource={showingDisplayCache ? null : navigationSource}
                   searchTarget={conversationSearchTarget?.hostId === snapshot.hostId && conversationSearchTarget.threadId === snapshot.activeThreadId ? conversationSearchTarget : null}
-                  initialRestoreSnapshot={
-                    activeThreadId === null
-                      ? null
-                      : routeRestoreCheckpoints.get(activeConversationRestoreKey!)
-                  }
+                  initialRestoreSnapshot={routeRestoreCheckpoints.get(activeConversationRestoreKey) ?? null}
                   onRestoreSnapshotChange={(restoreSnapshot) => {
                     if (activeConversationRestoreKey !== null)
                       routeRestoreCheckpoints.set(
@@ -2531,7 +2929,19 @@ export function App({
                     {conversationContribution?.beforeComposer}
                     <ContinuationFailureNotice scope={JSON.stringify([snapshot.hostId, activeThreadId])}
                       error={snapshot.conversation?.continuation.error} />
-                    {pendingInteraction === null ? (
+                    {pendingInteraction !== null && (
+                      <div className="opencraft-composer-stack" data-background-question={backgroundQuestion || undefined}>
+                        {!backgroundQuestion && composerChangeSummary}
+                        <ConversationPendingInteractionPanel
+                          block={pendingInteraction}
+                          draftStore={interactionDraftStore}
+                          draftScope={activeThreadId === null ? undefined : JSON.stringify([snapshot.hostId, activeThreadId, activeConversationRestoreKey])}
+                          requestTurnId={snapshot.conversation?.pendingInteractions.find(interaction => interaction.requestId === pendingInteraction.requestId)?.turnId}
+                          onRespondInteraction={respondToInteraction}
+                        />
+                      </div>
+                    )}
+                    {(pendingInteraction === null || backgroundQuestion) && (
                       <ThreadGoalSurface
                         threadId={snapshot.phase === "ready" ? activeThreadId : null}
                         goals={runtime.resources.goals}
@@ -2543,18 +2953,20 @@ export function App({
                         floatingContent={composerChangeSummary}
                         controller={composerController}
                         defaultFollowUpAction={embedded ? "queue" : defaultFollowUpAction}
-                        availableFollowUpActions={followUpCapability?.queue === false && followUpCapability?.steer === false ? [] : snapshot.phase !== "ready" || snapshot.conversation?.authoritative !== true
+                        availableFollowUpActions={snapshot.phase !== "ready" || snapshot.conversation?.authoritative !== true
                           || snapshot.conversation.queuedSubmissions.some(item => item.local && item.state === "unknown")
-                          ? ["queue"]
+                          ? localOutbox ? ["queue"] : []
                           : (["steer", "queue"] as const).filter(action => followUpCapability?.[action] !== false && runtime.resources.host.canRequest?.(action === "queue" ? "thread/queue/add" : "turn/steer") !== false)}
                         portalContainer={portalContainer}
-                        isUnstable={snapshot.phase === "reconnecting" || (activeThreadId !== null
-                          && conversationRecoveryIsUnstable(recoveryPresentation, recoveryDiagnostic))}
+                        isConnectionUnavailable={recoveryPresentation.endsWith("-error")}
                         isRecovering={connectionRecovering || conversationRecovering}
                         isStreaming={draft === null && isStreaming}
                         isStopping={snapshot.conversation?.activeTurn?.status === "interrupting"}
                         awaitSubmission
-                        submissionDisabled={draft !== null || (activeThreadLease === null && localOutbox === null)}
+                        editableWhileSubmitting
+                        submissionDisabled={draft !== null || (composerHandoff !== null ? snapshot.phase !== "ready" : (activeThreadLease === null && localOutbox === null))}
+                        handoff={composerHandoff}
+                        onStartHandoff={canContinueWithAgent ? startCurrentAgentHandoff : undefined}
                         queuedSubmissions={[
                           ...visibleQueuedSubmissions(snapshot.conversation?.queuedSubmissions ?? localQueuedSubmissions,
                             visibleTimeline).map((submission) =>
@@ -2590,11 +3002,10 @@ export function App({
                         entryActions={composerDesktopEntry}
                         endActions={composerEndActions}
                         modelSelectionPolicy={modelSelectionPolicy}
-                        placeholderPending={recoveryPlaceholder !== undefined}
-                        placeholder={recoveryPlaceholder ?? (embedded ? intl.formatMessage({
+                        placeholder={embedded ? intl.formatMessage({
                           id: "chat.companionFollowupPlaceholder",
                           defaultMessage: "Tell me what you'd like to do next",
-                        }) : undefined)}
+                        }) : undefined}
                         selectionCatalog={composerSelectionCatalog}
                         catalog={composerSuggestionCatalog}
                         mentionSuggestionsEnabled={false}
@@ -2610,18 +3021,7 @@ export function App({
                       />
                       )}</ThreadRecoveryNotice>
                       )}</ThreadGoalSurface>
-                    ) : (
-                      <div className="opencraft-composer-stack">
-                        {composerChangeSummary}
-                        <ConversationPendingInteractionPanel
-                          block={pendingInteraction}
-                          draftStore={interactionDraftStore}
-                          draftScope={activeThreadId === null ? undefined : JSON.stringify([snapshot.hostId, activeThreadId, activeConversationRestoreKey])}
-                          requestTurnId={snapshot.conversation?.pendingInteractions.find(interaction => interaction.requestId === pendingInteraction?.requestId)?.turnId}
-                          onRespondInteraction={respondToInteraction}
-                        />
-                      </div>
-                        )}
+                    )}
                     {conversationContribution?.afterComposer}
                     </div>
                     </ThreadComposerPresentation>
@@ -2669,17 +3069,42 @@ export function App({
       <WorkspaceDirectoryPicker
           open={
             !settingsOpen &&
-            workspacePickerOpen &&
-            draft !== null
+            ((workspacePickerOpen && draft !== null) || (handoffWorkspacePickerOpen && isCrossDeviceHandoff && currentHandoff !== null))
           }
-          rootPath={workspaceBrowseRoot}
-          initialPath={draft?.target.execution.workspace.cwd}
+          rootPath={
+            handoffWorkspacePickerOpen && currentHandoff !== null
+              ? (hostCatalog.profiles.find(p => p.hostId === currentHandoff.targetHostId)?.workspaceBrowseRoots[0] ?? "/")
+              : workspaceBrowseRoot
+          }
+          initialPath={
+            handoffWorkspacePickerOpen && currentHandoff !== null
+              ? (composerHandoff?.targetWorkspacePath ?? undefined)
+              : draft?.target.execution.workspace.cwd
+          }
           title="Choose a folder"
-          description={`Browse folders on ${activeHost.label}.`}
+          description={`Browse folders on ${
+            handoffWorkspacePickerOpen && currentHandoff !== null
+              ? (hostCatalog.hosts.find(h => h.hostId === currentHandoff.targetHostId)?.label ?? activeHost.label)
+              : activeHost.label
+          }.`}
           confirmLabel="Use folder"
-          onReadDirectory={readWorkspaceDirectory}
-          onCancel={() => setWorkspacePickerOpen(false)}
-          onChoose={chooseWorkspaceDirectory}
+          onReadDirectory={
+            handoffWorkspacePickerOpen && currentHandoff !== null
+              ? async path => (await hostCatalog.agentRuntimes.request(currentHandoff.targetHostId, "fs/readDirectory", { path })).entries
+              : readWorkspaceDirectory
+          }
+          onCancel={() => {
+            setWorkspacePickerOpen(false);
+            setHandoffWorkspacePickerOpen(false);
+          }}
+          onChoose={async path => {
+            if (handoffWorkspacePickerOpen && handoffViewKey !== null && currentHandoff !== null) {
+              writeHandoffForKey(handoffViewKey, previous => previous === null ? null : { ...previous, targetWorkspaceCwd: path });
+              setHandoffWorkspacePickerOpen(false);
+              return;
+            }
+            await chooseWorkspaceDirectory(path);
+          }}
         />
     </ConversationReferenceSurface>
     </ScheduledTaskCatalogContext.Provider>

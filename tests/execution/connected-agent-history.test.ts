@@ -72,7 +72,7 @@ test("Codex read-only history restores messages/tools, stable pagination and app
 for (const provider of ["codex", "cursor"] as const) test(`a new ${provider} session can be read before its first prompt; accepted input revokes the empty-history attestation`, async t => {
   const f = await fixture(t, provider);
   const options = { id: provider, command: process.execPath, args: [resolve("tests/fixtures/acp-engine-peer.mjs")], cwd: f.home,
-    dataDirectory: join(f.home, "engine"), env: { ACP_TEST_NATIVE_ID: id }, history: f.history };
+    dataDirectory: join(f.home, "engine"), env: { ACP_TEST_NATIVE_ID: id, ...(provider === "codex" ? { ACP_TEST_PERMISSIONS: "1" } : {}) }, history: f.history };
   const owner = { notify() {}, async request() {} };
   const engine = new AcpEngine(options);
   const { thread } = await engine.request("thread/start", {}, owner);

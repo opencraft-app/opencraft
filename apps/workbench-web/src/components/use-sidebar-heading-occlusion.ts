@@ -34,7 +34,7 @@ export function useSidebarHeadingOcclusion(listRef: RefObject<HTMLDivElement | n
       groups = [];
       const next = new Set<Element>([list]);
       for (const group of list.querySelectorAll<HTMLElement>(":scope > .sidebar-activity-group")) {
-        const heading = group.querySelector<HTMLElement>(":scope > .sidebar-thread-group-heading");
+        const heading = group.querySelector<HTMLElement>(":scope > :is(.sidebar-thread-group-heading, .sidebar-recent-heading)");
         const items = group.querySelector<HTMLElement>(":scope > .sidebar-activity-group__items");
         if (!heading || !items) continue;
         groups.push({ heading, items }); next.add(heading); next.add(items);
