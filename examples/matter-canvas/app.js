@@ -212,6 +212,14 @@
 
   has3d = !!(window.Office && window.Office.init($('stage'), $('labels'), pick));
   if (!has3d) $('fail').hidden = false;
+  /* 跟着手机转：只在触屏设备上出现；读不到手机方向时直说，并关掉开关 */
+  var mb = $('motion'), toastT = 0;
+  function toast(text) { var el = $('toast'); el.textContent = text; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(function () { el.hidden = true; }, 3200); }
+  if (has3d && mb && 'DeviceOrientationEvent' in window && window.matchMedia && matchMedia('(pointer: coarse)').matches) {
+    mb.hidden = false;
+    mb.addEventListener('click', function () { var on = mb.getAttribute('aria-pressed') !== 'true'; mb.setAttribute('aria-pressed', on); mb.disabled = true;
+      window.Office.motion(on).then(function (r) { mb.disabled = false; mb.setAttribute('aria-pressed', r === 'ok'); if (on) toast({ ok: '转动或倾斜手机，办公室跟着转。再点一下停止。', denied: '没有允许读取手机方向，所以没法跟着转。', none: '这里读不到手机的方向。在手机浏览器里直接打开原型可以用。' }[r]); }); });
+  }
   if (wideMq.addEventListener) wideMq.addEventListener('change', function () { draw(); });
   draw(); sync();
   window.__app = { pick: pick, go: go, db: function () { return db; } };

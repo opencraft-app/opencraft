@@ -73,11 +73,22 @@ window.Office = (function () {
      手机：单指拖动旋转，双指移动、捏合缩放、扭转旋转。电脑：左键拖动旋转，右键或按住 Shift 拖动平移，滚轮缩放。画面始终按屏幕像素重画。 */
   var view = { x: 0, y: 0, z: 0, zoom: 1, yaw: 0, pitch: 0 }, half = 4.7, resetBtn, base = { yaw: 0, pitch: .7, dist: 15 };
   function dirOf(yaw, pitch) { return new THREE.Vector3(Math.cos(pitch) * Math.sin(yaw), Math.sin(pitch), Math.cos(pitch) * Math.cos(yaw)); }
-  function pitchNow() { return Math.max(.32, Math.min(1.45, base.pitch + view.pitch)); }
-  function applyView() { var tg = new THREE.Vector3(LOOK[0] + view.x, LOOK[1] + view.y, LOOK[2] + view.z); camera.position.copy(tg).addScaledVector(dirOf(base.yaw + view.yaw, pitchNow()), base.dist); camera.lookAt(tg); camera.zoom = view.zoom; camera.updateProjectionMatrix();
+  /* 跟着手机转：打开后，以那一刻手机的朝向为准；左右转动手机就绕着办公室转，前后倾斜就改俯视角度 */
+  var tilt = { yaw: 0, pitch: 0, ty: 0, tp: 0, on: false, ref: null, seen: false };
+  function onTilt(e) { if (e.alpha == null && e.beta == null) return; tilt.seen = true; var a = (e.alpha || 0) * Math.PI / 180, b = (e.beta || 0) * Math.PI / 180;
+    if (!tilt.ref) tilt.ref = { a: a, b: b }; var da = a - tilt.ref.a; da = Math.atan2(Math.sin(da), Math.cos(da)); tilt.ty = da; tilt.tp = Math.max(-.6, Math.min(.6, (b - tilt.ref.b) * .8)); }
+  function motion(on) { /* 结果：'ok' 读到了；'denied' 没被允许；'none' 这里读不到 */
+    if (!on) { tilt.on = false; window.removeEventListener('deviceorientation', onTilt); view.yaw += tilt.yaw; view.pitch += tilt.pitch; tilt.yaw = tilt.pitch = tilt.ty = tilt.tp = 0; tilt.ref = null; applyView(); turnPets(); return Promise.resolve('off'); }
+    var ask = window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function' ? DeviceOrientationEvent.requestPermission() : Promise.resolve('granted'); /* iOS 要在点按里直接问 */
+    return ask.catch(function () { return 'denied'; }).then(function (st) {
+      if (st !== 'granted') return 'denied'; tilt.seen = false; tilt.ref = null; window.addEventListener('deviceorientation', onTilt);
+      return new Promise(function (ok) { setTimeout(function () { if (tilt.seen) { tilt.on = true; ok('ok'); } else { window.removeEventListener('deviceorientation', onTilt); ok('none'); } }, 1200); });
+    }); }
+  function pitchNow() { return Math.max(.32, Math.min(1.45, base.pitch + view.pitch + tilt.pitch)); }
+  function applyView() { var tg = new THREE.Vector3(LOOK[0] + view.x, LOOK[1] + view.y, LOOK[2] + view.z); camera.position.copy(tg).addScaledVector(dirOf(base.yaw + view.yaw + tilt.yaw, pitchNow()), base.dist); camera.lookAt(tg); camera.zoom = view.zoom; camera.updateProjectionMatrix();
     if (resetBtn) resetBtn.hidden = view.zoom < 1.05 && Math.hypot(view.x, view.y, view.z) < .3 && Math.abs(view.yaw) < .05 && Math.abs(view.pitch) < .05; }
   function home() { gsap.to(view, { x: 0, y: 0, z: 0, zoom: 1, yaw: 0, pitch: 0, duration: dur(.6), ease: 'power2.out', overwrite: true, onUpdate: applyView, onComplete: turnPets }); }
-  function turnPets() { /* 转完以后，小家伙们慢慢转身朝向你 */ var f = base.yaw + view.yaw; Object.keys(pets).forEach(function (k, i) { var p = pets[k], to = f + p.jit, cur = p.g.rotation.y; to = cur + Math.atan2(Math.sin(to - cur), Math.cos(to - cur)); gsap.to(p.g.rotation, { y: to, duration: dur(.7), delay: calm ? 0 : i * .04, ease: 'back.out(1.4)' }); }); face = f; }
+  function turnPets() { /* 转完以后，小家伙们慢慢转身朝向你 */ var f = base.yaw + view.yaw + tilt.yaw; Object.keys(pets).forEach(function (k, i) { var p = pets[k], to = f + p.jit, cur = p.g.rotation.y; to = cur + Math.atan2(Math.sin(to - cur), Math.cos(to - cur)); gsap.to(p.g.rotation, { y: to, duration: dur(.7), delay: calm ? 0 : i * .04, ease: 'back.out(1.4)' }); }); face = f; }
   function aim() { /* 选中一个人：把他和跟他有箭头的人一起框进画面，留出底部卡片的位置；保持你现在转到的方向 */
     var p = pets[selId]; if (!p) { gsap.to(view, { x: 0, y: 0, z: 0, zoom: 1, duration: dur(.6), ease: 'power2.out', overwrite: true, onUpdate: applyView }); return; }
     var ids = [selId].concat(selReach, selIn).filter(function (k) { return pets[k]; }), c = new THREE.Vector3(), q = new THREE.Vector3(), inv = new THREE.Matrix4(), L = new THREE.Vector3(LOOK[0], LOOK[1], LOOK[2]);
@@ -117,7 +128,9 @@ window.Office = (function () {
     BOUND.forEach(function (b) { [0, 2.4].forEach(function (y) { q.set(b[0], y, b[1]).applyMatrix4(inv); mx = Math.max(mx, Math.abs(q.x - c.x)); my = Math.max(my, Math.abs(q.y - c.y)); }); });
     var s = half = Math.max(my, mx / a) * 1.06; camera.left = -s * a; camera.right = s * a; camera.top = s; camera.bottom = -s; applyView(); }
   var v;
-  function frame() { requestAnimationFrame(frame); if (document.hidden) return; renderer.render(scene, camera); var w = canvas.clientWidth, h = canvas.clientHeight;
+  var settle = 0; function frame() { requestAnimationFrame(frame); if (document.hidden) return;
+    if (tilt.on) { var dy = tilt.ty - tilt.yaw, dp = tilt.tp - tilt.pitch; tilt.yaw += dy * .15; tilt.pitch += dp * .15; applyView(); if (Math.abs(dy) > .02) settle = 0; else if (++settle === 40) turnPets(); } /* 手机停稳一会儿，小家伙们转过来 */
+    renderer.render(scene, camera); var w = canvas.clientWidth, h = canvas.clientHeight;
     Object.keys(pets).forEach(function (k) { var p = pets[k]; p.g.getWorldPosition(v); v.y += p.top * p.g.scale.y + .25; v.project(camera); p.el.style.left = (v.x * .5 + .5) * w + 'px'; p.el.style.top = (-v.y * .5 + .5) * h + 'px'; }); }
   function paint() { var cs = getComputedStyle(document.documentElement); scene.background = new THREE.Color(cs.getPropertyValue('--stage').trim() || '#e4defa'); scene.userData.floor.color.set(cs.getPropertyValue('--floor').trim() || '#f3effa'); }
 
@@ -156,6 +169,7 @@ window.Office = (function () {
     },
     select: function (id, reach, incoming) { var hop = id && id !== selId; selId = id; selReach = reach || []; selIn = incoming || []; if (!moving || !moving.isActive()) drawRel(); dim(); aim();
       if (hop && pets[id]) gsap.fromTo(pets[id].sp.scale, { x: 1.25, y: .75, z: 1.25 }, { x: 1, y: 1, z: 1, duration: dur(.7), ease: 'elastic.out(1,.4)' }); },
+    motion: motion,
     resize: function () { resize(); }
   };
 })();

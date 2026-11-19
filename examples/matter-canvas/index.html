@@ -10,8 +10,8 @@
 <div id="app">
   <main id="view"></main>
   <section id="office" hidden aria-label="办公室">
-    <div class="stage"><canvas id="stage"></canvas><div id="labels"></div><button id="whole" class="btn" hidden>看全景</button><div class="turn"><button id="turnL" class="btn" aria-label="向左转"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.300-5.600"/><path d="M4 4v4h4"/></svg></button><button id="turnR" class="btn" aria-label="向右转"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.300-5.600"/><path d="M20 4v4h-4"/></svg></button></div><div id="fail" hidden>这台设备没能打开三维办公室。消息和通讯录仍然可以用。</div></div>
-    <div id="card" aria-live="polite"></div>
+    <div class="stage"><canvas id="stage"></canvas><div id="labels"></div><button id="whole" class="btn" hidden>看全景</button><div class="turn"><button id="turnL" class="btn" aria-label="向左转"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.300-5.600"/><path d="M4 4v4h4"/></svg></button><button id="turnR" class="btn" aria-label="向右转"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.300-5.600"/><path d="M20 4v4h-4"/></svg></button><button id="motion" class="btn" aria-label="跟着手机转" aria-pressed="false" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="3" width="10" height="18" rx="2.500"/><path d="M11 18h2M3 9c-1 2-1 4 0 6M21 9c1 2 1 4 0 6"/></svg></button></div><div id="fail" hidden>这台设备没能打开三维办公室。消息和通讯录仍然可以用。</div></div>
+    <p id="toast" role="status" hidden></p><div id="card" aria-live="polite"></div>
   </section>
   <nav id="tabbar" aria-label="主导航"></nav>
 </div>
