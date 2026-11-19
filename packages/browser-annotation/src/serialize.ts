@@ -25,7 +25,10 @@ export function safeAnnotationUrl(value: string): string {
     const url = new URL(value);
     url.username = ""; url.password = ""; url.search = ""; url.hash = "";
     return url.toString();
-  } catch { return value.split(/[?#]/, 1)[0]!; }
+  } catch {
+    // Unparsed values may contain userinfo; never reflect them as display evidence.
+    return "";
+  }
 }
 
 function anchorEvidence(annotation: BrowserAnnotation, anchor: BrowserAnnotationAnchor): string {

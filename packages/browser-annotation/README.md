@@ -28,6 +28,8 @@ evidence boundary. Observed styles, before-text, page metadata, and image notes
 remain quoted page evidence. Child-frame targets and regions do not advertise
 main-frame browser tool refs. Display URLs omit credentials, query, and fragment;
 these display URLs are not navigation or rebinding identities.
+Malformed inputs have no display URL rather than reflecting an unparsed value.
+The original stored anchor remains unchanged; restoration does not refresh it.
 
 Limits: 8 targets and 4 images per annotation; 8 annotations, 32 targets, and
 8 images per draft; 300 KiB per encoded image data URL; 2,000 UTF-16 code units per
