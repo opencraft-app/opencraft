@@ -58,7 +58,7 @@ window.Office = (function () {
   function clear(group) { while (group.children.length) { var o = group.children.pop(); if (o.geometry !== BOX && o.geometry !== BALL) o.geometry.dispose(); } }
   function drawRel() {
     clear(rel); clear(arcBox);
-    model.boss.forEach(function (e) { if (!pets[e[0]] || !pets[e[1]]) return; var a = pets[e[0]].g.position, b = pets[e[1]].g.position, l = part(rel, BOX, clay(0xd3c9f0), (a.x + b.x) / 2, .01, (a.z + b.z) / 2, .05, .012, Math.max(.05, (a.distanceTo(b) - 1.9) / 2)); l.rotation.y = Math.atan2(b.x - a.x, b.z - a.z); l.castShadow = false; });
+    model.boss.forEach(function (e) { if (!pets[e[0]] || !pets[e[1]] || (e[0] !== selId && e[1] !== selId)) return; /* 归谁管的线只在选中这个人时画 */ var a = pets[e[0]].g.position, b = pets[e[1]].g.position, l = part(rel, BOX, clay(0xd3c9f0), (a.x + b.x) / 2, .01, (a.z + b.z) / 2, .05, .012, Math.max(.05, (a.distanceTo(b) - 1.9) / 2)); l.rotation.y = Math.atan2(b.x - a.x, b.z - a.z); l.castShadow = false; });
     var me = pets[selId]; if (!me) return;
     selReach.forEach(function (j) { if (!pets[j]) return; var a = me.g.position.clone().setY(1.5), b = pets[j].g.position.clone().setY(1.5), mid = a.clone().add(b).multiplyScalar(.5).setY(1.9 + a.distanceTo(b) * .28), m = new THREE.MeshStandardMaterial({ color: me.arc, emissive: me.arc, emissiveIntensity: .35, roughness: .5 });
       add(arcBox, new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(a, mid, b), 32, .045, 8), m).castShadow = false; part(arcBox, BALL, m, b.x, b.y, b.z, .1).castShadow = false; });
