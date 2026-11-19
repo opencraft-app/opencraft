@@ -38,7 +38,11 @@ async function fixture(t: test.TestContext, proxy = false) {
       try {
         await beforeRequest?.(frame.method);
         const result = await lifecycle.dispatch(frame.method, frame.params ?? {}, state.key, async method => {
-          if (method === "initialize") return { userAgent: "recovery-fixture", platformFamily: "unix", platformOs: "linux" };
+          if (method === "initialize") return { userAgent: "recovery-fixture", platformFamily: "unix", platformOs: "linux",
+            capabilities: { extensions: {
+              "opencraft/message-window-history": { version: 1 },
+              "opencraft/resume-history": { version: 1, mode: "message-window" },
+            } } };
           if (["thread/resume", "thread/read"].includes(method)) return { thread, model: "dsh", modelProvider: "dsh", cwd: "/tmp", approvalPolicy: "never", approvalsReviewer: "user", sandbox: { type: "dangerFullAccess" }, runtimeWorkspaceRoots: [] };
           if (method === "turn/start") return { turn: { id: "accepted-once", status: "inProgress", items: [] } };
           if (method === "skills/list") return { data: [{ cwd: "/tmp", skills: [{ name: "dsh-only" }], errors: [] }] };
