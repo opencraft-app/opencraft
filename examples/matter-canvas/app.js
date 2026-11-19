@@ -46,11 +46,7 @@
 
   /* ---------- 角色与布局 ---------- */
   function color(id) { var b = E.botOf(W(), id), t = b && W().dsl.teams.find(function (x) { return x.id === b.team; }); return t ? t.color : '#777'; }
-  function face(id, cls) {
-    var h = 0, i; for (i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 97;
-    var mouth = ['M9 15.500q3 2.600 6 0', 'M9.500 15.500h5', 'M9 15q3 3.400 6 0'][h % 3];
-    return '<span class="face v' + (h % 3) + ' ' + (cls || '') + '" style="--tc:' + color(id) + '"><svg viewBox="0 0 24 24" fill="none" stroke="#1d1a14" stroke-width="1.700" stroke-linecap="round"><circle cx="8.500" cy="10.500" r="1.300" fill="#1d1a14" stroke="none"/><circle cx="15.500" cy="10.500" r="1.300" fill="#1d1a14" stroke="none"/><path d="' + mouth + '"/></svg></span>';
-  }
+  function face(id, cls) { return '<span class="face ' + (cls || '') + '">' + esc(N(id).slice(-1)) + '</span>'; }
   function cast(w) {
     var c = E.caseOf(w), s = w.state, set = [c.owner];
     function add(id) { if (id && id !== 'user' && id !== 'contract' && set.indexOf(id) < 0) set.push(id); }
@@ -151,7 +147,7 @@
         '<button class="tagc" data-a="bot" data-id="' + id + '">' + face(id) + '<span><b>' + esc(N(id)) + '</b><small>' + esc(roleOf(w, id)) + '</small></span></button>' +
         '<button class="pc' + (busy ? ' busy' : '') + (cp.work ? '' : ' off') + (hot.type === 'file' && hot.operator === id ? ' fresh' : '') + '" data-a="pc" data-id="' + id + '" aria-label="' + esc(N(id)) + '的电脑"><span class="scr"><span class="glass"><em>' + esc(screenText(w, id)) + '</em></span></span><span class="base">电脑<i></i></span><span class="kbd"></span></button>' +
         '<button class="ph' + (got ? ' ping' : '') + '" data-a="phone" data-id="' + id + '" aria-label="' + esc(N(id)) + '的手机">' + ic('mail') + '手机' + (unread ? '<i class="dot"></i>' : '') + (got ? '<span class="pop">' + esc((s.messages.find(function (x) { return x.id === hot.delivery; }) || {}).envelope || '新消息') + '</span>' : '') + '</button>';
-      if (id === c.owner && L.alone) dutiesOf(w, id).slice(0, 2).forEach(function (d, i) { html += '<div class="duty" style="left:' + (-164 + 160 * i) + 'px"><b>' + esc(d.name) + '</b><span>' + esc(d.text) + '</span></div>'; });
+      if (id === c.owner && L.alone) dutiesOf(w, id).slice(0, 2).forEach(function (d, i) { html += '<div class="duty" style="left:' + (-84 + 160 * i) + 'px"><b>' + esc(d.name) + '</b><span>' + esc(d.text) + '</span></div>'; });
       html += '</div>';
     });
     $('#nodes').innerHTML = html; ui.fresh = {};
@@ -184,7 +180,7 @@
     if (!L) return;
     var m = L.matter, x0 = m.x - 172, x1 = m.x + 172, y0 = m.y - 106, y1 = m.y + 110, ids = L.list;
     if (L.narrow && !all && ui.level === 'doing') { ids = focusIds(); if (ids.length > 1 && inMotion()) { x0 = 1e9; x1 = -1e9; y0 = 1e9; y1 = -1e9; } }
-    ids.forEach(function (id) { var P = L.pos[id]; x0 = Math.min(x0, P.x - (P.stage ? (L.alone ? 172 : P.flip ? 146 : 92) : 78)); x1 = Math.max(x1, P.x + (P.stage ? (L.alone ? 154 : 132) : 90)); y0 = Math.min(y0, P.y - (P.stage ? 128 : 32)); y1 = Math.max(y1, P.y + (P.stage ? (L.alone ? 176 : 86) : 32)); });
+    ids.forEach(function (id) { var P = L.pos[id]; x0 = Math.min(x0, P.x - (P.stage ? (P.flip ? 146 : 92) : 78)); x1 = Math.max(x1, P.x + (P.stage ? (L.alone ? 232 : 132) : 90)); y0 = Math.min(y0, P.y - (P.stage ? 128 : 32)); y1 = Math.max(y1, P.y + (P.stage ? (L.alone ? 162 : 62) : 32)); });
     var r = freeRect(), k = Math.max(.16, Math.min(1.1, r.w / (x1 - x0), r.h / (y1 - y0)));
     ui.view = { k: k, x: r.x + r.w / 2 - k * (x0 + x1) / 2, y: r.y + r.h / 2 - k * (y0 + y1) / 2 };
     applyView(glide);
@@ -259,7 +255,7 @@
   function between(s, a, b) { return s.messages.filter(function (m) { return (m.from === a && m.to === b) || (m.from === b && m.to === a); }); }
   function phoneFrame(inner) { return '<div class="iphone"><button class="xclose" data-a="close" aria-label="放下手机">' + ic('close') + '</button><div class="ios"><div class="island"></div><div class="stat"><span>9:41</span>' + STAT + '</div>' + inner + '<div class="home"></div></div></div>'; }
   function clock(seq) { var m = 20 + (seq || 0); return (9 + Math.floor(m / 60)) + ':' + ('0' + m % 60).slice(-2); }
-  function sq(id) { return id === 'user' ? '<span class="face sq" style="--tc:#9a9a9e"></span>' : face(id, 'sq'); }
+  function sq(id) { return id === 'user' ? '<span class="face sq me">你</span>' : face(id, 'sq'); }
   var TICK = '<svg viewBox="0 0 18 11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m1 6 3 3 6-7.500"/><path class="t2" d="m7 6 3 3 6-7.500"/></svg>';
   function pagePhone(pg) {
     var w = W(), s = w.state, c = C(), id = pg.id, o = pg.thread;
