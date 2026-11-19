@@ -113,6 +113,7 @@ test('rendered Compose separates gateway, brain and hands while preserving path 
   assert.equal(hands.mem_limit, '8589934592');
   // Some Compose versions omit false-valued bind options from JSON output.
   assert.deepEqual(service.volumes.map(v => [v.type, v.source, v.target, v.bind?.create_host_path ?? false]), [
+    ['bind', '/srv/opencraft/state/execution/git-credentials', '/var/lib/opencraft/git-credentials', false],
     ['bind', '/srv/opencraft/state', '/var/lib/opencraft', false], ['bind', '/srv/opencraft/workspaces', '/workspace', false],
     ['bind', '/srv/opencraft/logs', '/var/log/opencraft', false], ['bind', '/srv/opencraft/logs/gateway', '/var/log/opencraft/gateway', false],
   ]);
