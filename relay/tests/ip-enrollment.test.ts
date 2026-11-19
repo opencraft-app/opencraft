@@ -96,8 +96,13 @@ test('a machine joins by address, preserves explicit identity trust, reconnects 
   t.after(()=>new Promise<void>(resolve=>{target.close(()=>resolve());target.closeAllConnections();}));
   f.hub.start((new URL(f.endpoint)).port?Number(new URL(f.endpoint).port):443);f.client.start((target.address()as{port:number}).port);
   const until=async(check:()=>boolean)=>{const end=Date.now()+8000;while(!check()){if(Date.now()>end)throw Error('connection failed');await new Promise(r=>setTimeout(r,20));}};
-  await until(()=>f.hub.links.has(f.client.store.id));assert.equal(f.hub.routes()[0].service.origin,'https://fixture.example');
+  const route=()=>f.hub.routes().find(r=>r.service.hubId===f.client.store.id&&r.path[0]===f.client.store.id);
+  // The authenticated link is attached before its route advertisement arrives.
+  // Wait for the observable route, not just the control socket; keep the origin
+  // assertion separate so a wrong advertisement fails instead of timing out.
+  await until(()=>f.hub.links.has(f.client.store.id)&&!!route());assert.equal(route()!.service.origin,'https://fixture.example');
   const old=f.hub.links.get(f.client.store.id)!;old.ws.terminate();await until(()=>!!f.hub.links.get(f.client.store.id)&&f.hub.links.get(f.client.store.id)!==old);
+  await until(()=>!!route());assert.equal(route()!.service.origin,'https://fixture.example');
   assert.equal(f.hub.store.state.invitations.length,1);assert.equal(f.client.store.state.peers.length,1);
   const other=new HubNetwork(join(f.dir,'other.json'));t.after(()=>other.close());
   await assert.rejects(other.connectEndpoint(f.endpoint,{publishOrigin:'https://fixture.example',trustIdentity:true,ca:f.ca},'fixture'),/denied/);
