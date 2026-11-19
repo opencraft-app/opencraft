@@ -7,6 +7,7 @@ import {
   groupThreadsByTaskFlow,
   sidebarActivityMetadata,
   sidebarActivityDateHeadings,
+  sidebarRecentHeadings,
   type SidebarActivityThread,
 } from "../../apps/workbench-web/src/sidebar-activity";
 import {
@@ -110,12 +111,13 @@ test("taskflow precedence is unique, keeps urgent pins visible and retains full 
 
 
 test("reading cannot resolve waits or failures, and unread never creates a todo", () => {
+  const now = new Date(2026, 10, 18, 12);
   for (const unread of [false, true]) {
     const input = [
-      { ...thread("waiting", new Date()), status: "review", unread },
-      { ...thread("failed", new Date()), status: "error", unread },
-      { ...thread("completed", new Date()), status: "ready", unread },
-      { ...thread("pinned-completed", new Date()), status: "ready", pinned: true, unread },
+      { ...thread("waiting", now), status: "review", unread },
+      { ...thread("failed", now), status: "error", unread },
+      { ...thread("completed", now), status: "ready", unread },
+      { ...thread("pinned-completed", now), status: "ready", pinned: true, unread },
     ];
     const flow = groupThreadsByTaskFlow(input);
     assert.deepEqual(flow.attention.map(t => t.id), ["waiting", "failed"]);
@@ -175,16 +177,38 @@ test("urgent and pinned order is unchanged and equal native times retain cross-s
   assert.deepEqual(flow.recent.map(t => t.serverOrigin.serverId), ["local-server", "other"]);
 });
 
-test("date headings follow visible consecutive days after running prioritization", () => {
-  const now = new Date(2026, 9, 17, 12);
-  const yesterdayRun = { ...thread("run", new Date(2026, 9, 16, 12)), status: "running" };
-  const today = { ...thread("today", now), status: "ready" };
-  const yesterday = { ...thread("yesterday", new Date(2026, 9, 16, 10)), status: "ready" };
+test("Recent separates running priority from historical dates without changing row order", () => {
+  const now = new Date(2026, 10, 18, 0, 21);
+  const yesterdayRun = { ...thread("run", new Date(2026, 10, 17, 23)), status: "running" };
+  const todayRun = { ...thread("today-run", new Date(2026, 10, 18, 0, 10)), status: "running" };
+  const today = { ...thread("today", now), status: "ready", goalActive: true };
+  const yesterday = { ...thread("yesterday", new Date(2026, 10, 17, 22)), status: "ready" };
   const sameDay = { ...yesterday, id: "same-day" };
-  const visible = groupThreadsByTaskFlow([today, yesterday, sameDay, yesterdayRun]).recent;
-  const headings = sidebarActivityDateHeadings(visible, now.getTime(), "en-US");
-  assert.deepEqual(visible.map(t => headings.get(t)), ["Yesterday", "Today", "Yesterday", undefined]);
-  assert.equal(sidebarActivityDateHeadings([], now.getTime()).size, 0);
+  const visible = groupThreadsByTaskFlow([today, yesterday, sameDay, yesterdayRun, todayRun]).recent;
+  const before = [...visible];
+  const headings = sidebarRecentHeadings(visible);
+  assert.deepEqual(visible.map(t => headings.get(t)), ["running", undefined, "date", "date", undefined]);
+  assert.deepEqual(visible, before, "heading projection never changes membership or order");
+  assert.equal(sidebarRecentHeadings([]).size, 0);
+  assert.equal(sidebarRecentHeadings([todayRun, yesterdayRun]).size, 1);
+  // Goal intent without active execution stays in dated history.
+  assert.deepEqual(sidebarRecentHeadings([today]).get(today), "date");
+});
+
+test("Recent headings obey the shared page budget and end running priority on completion", () => {
+  const now = new Date(2026, 10, 18, 12);
+  const running = Array.from({ length: 11 }, (_, i) => ({ ...thread(`run-${i}`, new Date(2026, 10, 17, 10 - i)), status: "running" }));
+  const idle = { ...thread("idle", now), status: "ready" };
+  const recent = () => groupThreadsByTaskFlow([idle, ...running]).recent;
+  assert.equal(sidebarRecentHeadings(recent().slice(0, 10)).size, 1);
+  assert.deepEqual([...sidebarRecentHeadings(recent()).values()], ["running", "date"]);
+  running[0]!.status = "ready";
+  const headings = sidebarRecentHeadings(recent());
+  assert.deepEqual(headings.get(running[0]!), "date");
+  assert.equal(new Set(recent()).size, 12);
+  const dayAfter = new Date(2026, 10, 19, 0, 0).getTime();
+  assert.deepEqual(sidebarActivityDateHeadings([idle], dayAfter, "en-US").get(idle), "Yesterday");
+  assert.deepEqual(headings.get(recent()[0]!), "running");
 });
 
 
@@ -269,4 +293,24 @@ test("list filters and thread overlays share one owner without notifying unrelat
   store.setListContextOpen(true);
   store.close();
   assert.equal(contextNotifications, 4, 'released list subscriptions stay silent');
+});
+
+test("duplicate conversation rows have one exclusive menu and ignore stale close callbacks", () => {
+  const store = new SidebarThreadMenuStore();
+  const pinned = {hostId: "host", threadId: "same", rowId: "pinned", kind: "dropdown" as const};
+  const scheduled = {...pinned, rowId: "scheduled"};
+  const events: string[] = [];
+  store.subscribe(pinned, () => events.push("pinned"));
+  store.subscribe(scheduled, () => events.push("scheduled"));
+  store.update(pinned, true);
+  assert.equal(store.getKind(pinned), "dropdown");
+  assert.equal(store.getKind(scheduled), null);
+  store.update(scheduled, true);
+  assert.equal(store.getKind(pinned), null);
+  assert.equal(store.getKind(scheduled), "dropdown");
+  store.update(pinned, false);
+  assert.equal(store.getKind(scheduled), "dropdown");
+  assert.deepEqual(events, ["pinned", "pinned", "scheduled"]);
+  store.close();
+  assert.equal(store.getKind(scheduled), null);
 });

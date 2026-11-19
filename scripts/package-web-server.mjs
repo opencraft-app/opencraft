@@ -4,6 +4,7 @@ import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from
 import { packageBrowserRuntime } from './package-browser-runtime.mjs';
 import { optimizeWebImages } from './optimize-web-images.mjs';
 import { packageWebResources, copyPdfLicenses } from './package-web-resources.mjs';
+import { splitProductPluginPacks } from './web-deployment/product-plugin-packs.mjs';
 import { mkdir, readFile, writeFile, cp, rm, chmod } from 'node:fs/promises';
 import { dirname, join, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -55,6 +56,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   const web = JSON.parse(await readFile(join(webRoot, 'version.json'), 'utf8'));
   if (typeof web.buildId !== 'string') throw new Error('Build the Web release before packaging');
   await cp(webRoot, join(packageRoot, 'web'), { recursive: true, filter: source => !source.endsWith('.map') });
+  const productPlugins = await splitProductPluginPacks(join(packageRoot, 'web'), join(packageRoot, 'runtime/product-plugins'));
   for (const family of ['inter', 'jetbrains-mono']) {
     const target = join(packageRoot, 'web/licenses/fonts', family);
     await mkdir(target, { recursive: true });
@@ -69,7 +71,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   await writeFile(indexPath, html.replace('</head>', `<meta name="opencraft-web-updates" content="/__opencraft_updates">${resources ? `<meta name="opencraft-web-resources" content="${web.buildId}">` : ''}</head>`));
   manifest.version = version;
   await buildConversationCli(join(packageRoot, 'runtime/opencraft-cli.mjs'));
-  manifest.opencraftWeb = { userPlugins: 1, schemaVersion: 1, workerProtocol: 1, buildId: web.buildId, ...(resources ? { resources: { packageName: resources.packageName, version, buildId: web.buildId, integrity: resources.integrity } } : {}) };
+  manifest.opencraftWeb = { userPlugins: 1, schemaVersion: 1, workerProtocol: 1, buildId: web.buildId, ...(productPlugins ? { productPlugins } : {}), ...(resources ? { resources: { packageName: resources.packageName, version, buildId: web.buildId, integrity: resources.integrity } } : {}) };
   await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest, null, 2));
   await cp(join(repositoryRoot, 'docs/web-deployment.md'), join(packageRoot, 'README.md'));
   await cp(join(repositoryRoot, 'LICENSE'), join(packageRoot, 'LICENSE'));
@@ -93,7 +95,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   }
   // Independent relay/admin entry points travel with the same fixed-source artifact;
   // they remain inactive unless the operator configures a separate deployment.
-  for (const [entry, name] of [[resolve(relayEntry), 'relay'], ...['access-admin', 'hub-admin', 'human-account'].map(name => [join(repositoryRoot, `scripts/${name}.ts`), name])]) {
+  for (const [entry, name] of [[resolve(relayEntry), 'relay'], ...['access-admin', 'hub-admin', 'human-account', 'relay-cluster-admin'].map(name => [join(repositoryRoot, `scripts/${name}.ts`), name])]) {
     await build({ nodePaths: [join(repositoryRoot, "node_modules")], entryPoints: [entry], outfile: join(packageRoot, `runtime/${name}.mjs`), bundle: true,
       platform: 'node', format: 'esm', target: 'node24',
       define: { 'process.env.OPENCRAFT_RELAY_SOURCE_REVISION': JSON.stringify(web.sourceRevision ?? null), 'process.env.OPENCRAFT_RELAY_BUILD_ID': JSON.stringify(web.buildId) },
@@ -119,12 +121,18 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   if (execution) {
     await buildGitIdentityRuntime(join(packageRoot, 'runtime'), additionalGitRuntimeEntries);
     await mkdir(join(packageRoot, 'execution'));
+    await cp(join(repositoryRoot,'apps/personal-assistant/src/adapters/sqlite/schema.sql'),join(packageRoot,'execution/schema.sql'));
     for (const [entry, target, format] of [
       [executionProfile === 'headless' ? headlessGatewayEntry : 'scripts/server-deployment/gateway.mjs', 'gateway.mjs', 'esm'],
       ['apps/opencraft-daemon/src/bin.ts', 'daemon.cjs', 'cjs'],
+      ['scripts/remote-browser/state.worker.ts', 'browser-state-worker.mjs', 'esm'],
+      ['apps/codex-core/src/generation-registry.worker.ts', 'generation-registry-worker.mjs', 'esm'],
       ['apps/local-agent-host/src/dsh-session-routing.worker.ts', 'dsh-session-routing-worker.mjs', 'esm'],
+      ['scripts/server-deployment/dsh-consumer-receipts.worker.ts', 'dsh-consumer-receipts-worker.mjs', 'esm'],
       ['apps/opencraft-daemon/src/token-usage-query-worker.ts', 'token-usage-query-worker.mjs', 'esm'],
+      ['apps/personal-assistant/src/runtime/assistant-server.mjs', 'assistant-server.mjs', 'esm'],
       ['packages/access-control/src/orchestration-runtime.worker.ts', 'orchestration-runtime-worker.mjs', 'esm'],
+      ['packages/web-push-node/src/store.worker.ts', 'push-storage-worker.mjs', 'esm'],
       ['packages/native-history-node/src/transcript-cache-storage.worker.ts', 'transcript-cache-storage-worker.mjs', 'esm'],
       ['apps/local-agent-host/src/dsh-capability-plugin.mjs', 'dsh-capability-plugin.mjs', 'esm'],
       ['apps/local-agent-host/src/dsh-acp-execution-environment.mjs', 'dsh-acp-execution-environment.mjs', 'esm'],

@@ -128,6 +128,8 @@ export type RendererToAppHostMessage =
       readonly protocolVersion: typeof APP_HOST_PROTOCOL_VERSION;
       /** Version-1 wire name for a logical Client incarnation. */
       readonly rendererId: string;
+      /** Transport opt-in: ask the server to send connection/heartbeat frames. */
+      readonly heartbeat?: true;
     }
   | {
       readonly type: "host/connect";
@@ -157,7 +159,11 @@ export type AppHostToRendererMessage =
       readonly protocolVersion: typeof APP_HOST_PROTOCOL_VERSION;
       readonly connectionId: string;
       readonly services: readonly ["appserver"];
-      readonly capabilities?: { readonly connectionProbe?: boolean };
+      readonly capabilities?: { readonly connectionProbe?: boolean; readonly heartbeatMs?: number };
+    }
+  | {
+      /** Liveness only: proves the server-to-client path is moving. Carries no state. */
+      readonly type: "connection/heartbeat";
     }
   | {
       readonly type: "fatal";

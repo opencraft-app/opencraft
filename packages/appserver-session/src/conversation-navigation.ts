@@ -157,10 +157,6 @@ function projectTurnPrompts(turn: AppServerTurn): readonly TurnPromptPreview[] {
   }));
 }
 
-function loadedTurnMap(view: ThreadView | null): ReadonlyMap<string, AppServerTurn> {
-  return new Map((view?.turns ?? []).filter((turn) => projectTurnPrompts(turn).length > 0).map((turn) => [turn.id, turn]));
-}
-
 function navigationAnchorId(turnId: string, promptIndex: number): string {
   return `v3:${turnId}:user:${promptIndex}`;
 }
@@ -187,6 +183,20 @@ export function createV3ConversationNavigationSource(
   if (!Number.isInteger(pageSize) || pageSize < 1) throw new RangeError("pageSize must be positive");
 
   const listeners = new Set<() => void>();
+  // The rail needs only the first prompt's metadata, never assistant/tool output.
+  // ThreadView Turns are immutable; a replacement also invalidates null results.
+  type PromptAnchor = Pick<TurnPromptPreview, "itemId" | "label" | "isHeartbeat">;
+  const promptAnchors = new WeakMap<AppServerTurn, PromptAnchor | null>();
+  const firstPrompt = (turn: AppServerTurn): PromptAnchor | null => {
+    const cached = promptAnchors.get(turn);
+    if (cached !== undefined) return cached;
+    const item = turn.items?.find(isUserMessage);
+    const prompt = item ? {
+      itemId: item.id, label: itemText(item).trim(), isHeartbeat: item.type === "hookPrompt",
+    } : null;
+    promptAnchors.set(turn, prompt);
+    return prompt;
+  };
   const hydratedByTurnId = new Map<string, HydratedTurnNavigation>();
   const hydrationOperations = new Map<string, {
     readonly generation: string;
@@ -210,7 +220,11 @@ export function createV3ConversationNavigationSource(
 
   const anchors = (): readonly ConversationNavigationAnchor[] => {
     const view = config.port.getView();
-    const loaded = loadedTurnMap(view);
+    const loaded = new Map<string, PromptAnchor>();
+    for (const turn of view?.turns ?? []) {
+      const prompt = firstPrompt(turn);
+      if (prompt) loaded.set(turn.id, prompt);
+    }
     const orderedTurnIds: string[] = [];
     const seen = new Set<string>();
     for (const locator of locators) {
@@ -220,16 +234,13 @@ export function createV3ConversationNavigationSource(
       }
     }
     for (const turn of view?.turns ?? []) {
-      if (!seen.has(turn.id) && projectTurnPrompts(turn).length > 0) {
+      if (!seen.has(turn.id) && firstPrompt(turn) !== null) {
         seen.add(turn.id);
         orderedTurnIds.push(turn.id);
       }
     }
     return orderedTurnIds.map((turnId, order): ConversationNavigationAnchor => {
-      const loadedTurn = loaded.get(turnId);
-      const cached = hydratedByTurnId.get(turnId);
-      const prompts = loadedTurn === undefined ? cached?.prompts : projectTurnPrompts(loadedTurn);
-      const prompt = prompts?.[0];
+      const prompt = loaded.get(turnId) ?? hydratedByTurnId.get(turnId)?.prompts[0];
       return {
         // V3 exposes only a lightweight Turn index. Hydration may enrich this
         // anchor, but must never expand/reorder the rail within one generation.
@@ -239,7 +250,7 @@ export function createV3ConversationNavigationSource(
         itemId: prompt?.itemId ?? null,
         order,
         label: prompt?.label ?? "",
-        isLoaded: loadedTurn !== undefined,
+        isLoaded: loaded.has(turnId),
         isHeartbeat: prompt?.isHeartbeat ?? false,
       };
     });
@@ -355,7 +366,7 @@ export function createV3ConversationNavigationSource(
   ): Promise<HydratedTurnNavigation | null> => {
     if (disposed || expectedGeneration === null || generation() !== expectedGeneration) return Promise.resolve(null);
     const loaded = config.port.getView()?.turns.find((turn) => turn.id === turnId);
-    if (loaded !== undefined && projectTurnPrompts(loaded).length > 0) {
+    if (loaded !== undefined && firstPrompt(loaded) !== null) {
       return Promise.resolve({ turn: loaded, baselineTurn: loaded, turnCursor: null, prompts: projectTurnPrompts(loaded) });
     }
     const cached = hydratedByTurnId.get(turnId);

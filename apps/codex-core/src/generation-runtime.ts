@@ -1,3 +1,4 @@
+import { GenerationRegistryWorker, type GenerationRegistryPort } from "./generation-registry-worker.js";
 import { appPayloadRequest, newAppChoice, verifyAppChoice, requireCallbackObservation, type AppPayloadChoice } from "./generation-app-payload.js";
 import { CodexRouterOwner } from "./router-owner.js";
 import { canonicalGenerationPath } from "./generation-files.js";
@@ -20,7 +21,8 @@ const paused = () => new NativeGenerationError({ code: -32000, message: "Codex i
 
 /** Routing/lifecycle authority only. Native and Host remain the task/data authorities. */
 export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
-  readonly registry: CodexGenerationRegistry;
+  readonly registry: GenerationRegistryPort;
+  readonly ready: Promise<void>;
   readonly owner: CodexRouterOwner;
   private readonly starting = new Map<string, Promise<CodexAppServerHealth>>();
   private readonly cached = new Map<string, { at: number; health: CodexAppServerHealth }>();
@@ -41,15 +43,23 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     now?: () => number;
     nativeHistoryFailures?: NativeHistoryFailures;
     maintenanceFile?: string;
+    registry?: GenerationRegistryPort;
   }) {
-    this.registry = new CodexGenerationRegistry(options.directory);
-    try { this.owner = new CodexRouterOwner(this.registry, options.maintenanceFile); }
-    catch (error) { this.registry.close(); throw error; }
-    const previous = rpcRecord(this.registry.metadata("retirement-fences"));
-    if (this.owner.isOpen()) this.registry.setMetadata("retirement-fences", { epoch: Number(previous.epoch ?? 0) + 1, ids: this.registry.list().filter(g => g.state === "retiring").map(g => g.id) });
+    this.registry = options.registry ?? new CodexGenerationRegistry(options.directory);
+    this.owner = new CodexRouterOwner(this.registry, options.maintenanceFile);
+    this.ready = this.owner.ready.then(async () => {
+      const previous = rpcRecord(this.registry.metadata("retirement-fences"));
+      if (this.owner.isOpen()) await this.registry.setMetadata("retirement-fences", { epoch: Number(previous.epoch ?? 0) + 1, ids: this.registry.list().filter(g => g.state === "retiring").map(g => g.id) });
+    });
+  }
+  static async open(options: ConstructorParameters<typeof CodexGenerationRuntime>[0]): Promise<CodexGenerationRuntime> {
+    const registry = await GenerationRegistryWorker.open(options.directory);
+    try { const runtime = new CodexGenerationRuntime({...options, registry}); await runtime.ready; return runtime; }
+    catch (error) { await registry.close(); throw error; }
   }
   private now(): number { return this.options.now?.() ?? Date.now(); }
-  setRetention(value: Record<string, unknown>) {
+  async setRetention(value: Record<string, unknown>) {
+    await this.ready;
     const keys = ["id", "retained", "expectedIncarnation", "expectedEpoch", "expectedOwner", "expectedHost"];
     if (Object.keys(value).length !== keys.length || keys.some(key => !(key in value))
       || ["id", "expectedOwner", "expectedHost"].some(key => typeof value[key] !== "string" || !value[key])
@@ -61,7 +71,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       || generation.incarnation !== value.expectedIncarnation || this.registry.epoch() !== value.expectedEpoch
       || this.starting.has(id) || this.checking.has(id) || this.retiring.has(id) || this.changingPayload.has(id)) throw new Error("Generation retention identity changed");
     const receipt = { version: 1, retained: value.retained, incarnation: generation.incarnation, admissionEpoch: this.registry.epoch(), owner: this.registry.ownerEpoch, at: this.now() };
-    this.registry.setMetadata(`retention:${id}`, receipt);
+    await this.registry.selectRetention(id,generation.incarnation,this.registry.epoch(),receipt);
     return receipt;
   }
   private isRetained(id: string): boolean {
@@ -79,6 +89,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       route: route ? { threadId: threadId!, generationId: route.generationId } : null };
   }
   async prepare(definition: GenerationDefinition, legacy = false, expectedOwner?: string, expectedHost?: string): Promise<GenerationRecord> {
+    await this.ready;
     if (this.closed) throw new Error("Generation runtime is closing");
     this.verifyOwner(expectedOwner, expectedHost);
     const executionUid = this.options.executionUid ?? process.getuid!(), executionGid = this.options.executionGid ?? process.getgid!();
@@ -97,12 +108,12 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       }
     }
     this.verifyOwner(expectedOwner, expectedHost);
-    const generation = this.registry.register({ ...definition, executionUid, executionGid });
+    const generation = await this.registry.register({ ...definition, executionUid, executionGid });
     if (legacy) {
       if (await realpath(definition.runtimeDataDirectory) !== await realpath(this.options.dataDirectory)) throw new Error("Legacy generation must own the original runtime directory");
       const previous = this.registry.metadata("legacy-generation");
       if (previous !== null && previous !== definition.id) throw new Error("Legacy generation identity is already fixed");
-      this.registry.setMetadata("legacy-generation", definition.id);
+      await this.registry.setMetadata("legacy-generation", definition.id);
     }
     await this.ensure(generation.id); return this.registry.get(generation.id)!;
   }
@@ -129,9 +140,9 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       const comparison = before && after ? after.reduce((order, value, index) => order || Math.sign(value - before[index]!), 0) : null;
       const replacement = appChoice ? { ...generation, bundle: appChoice.bundle } : !preserveRetiredPayload && comparison !== null && comparison >= 0 ? active : generation;
       const receipt = await this.options.replaceRetiredHome(generation, replacement, this.registry.durableThreadIds(id), { appBundleOnly: !!appChoice, restoringSourceApp: appChoice?.restoringSourceApp });
-      this.registry.setMetadata(`cold-replacement:${id}`, { version: 1, at: this.now(), receipt });
+      await this.registry.setMetadata(`cold-replacement:${id}`, { version: 1, at: this.now(), receipt });
       if (appChoice) await verifyAppChoice(generation, appChoice);
-      generation = appChoice ? this.registry.applyAppPayload(id, appChoice) : this.registry.replaceRetired(id, { executable: replacement.executable, bundle: replacement.bundle, node: replacement.node, nativeLauncher: replacement.nativeLauncher });
+      generation = appChoice ? await this.registry.applyAppPayload(id, appChoice) : await this.registry.replaceRetired(id, { executable: replacement.executable, bundle: replacement.bundle, node: replacement.node, nativeLauncher: replacement.nativeLauncher });
     }
     appChoice = this.registry.metadata(`app-payload:${id}`) as AppPayloadChoice | null;
     const health = await this.options.supervisor.start(generation);
@@ -146,11 +157,11 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       if (generation.state === "candidate" && !appChoice.restoringSourceApp) requireCallbackObservation(health);
     }
     const previous = this.registry.metadata(`runtime:${id}`) as GenerationProcessIdentity | null;
-    if (generation.state === "candidate") this.registry.ready(id);
+    if (generation.state === "candidate") await this.registry.ready(id);
     else if (previous && JSON.stringify(previous) !== JSON.stringify(identity)) {
-      this.registry.runtimeChanged(id); this.probes.get(id)?.peer.close(); this.probes.delete(id);
+      await this.registry.runtimeChanged(id); this.probes.get(id)?.peer.close(); this.probes.delete(id);
     }
-    this.registry.setMetadata(`runtime:${id}`, identity); this.cached.set(id, { at: this.now(), health }); return health;
+    await this.registry.setMetadata(`runtime:${id}`, identity); this.cached.set(id, { at: this.now(), health }); return health;
   }
   async selectAppPayload(value: Record<string, unknown>): Promise<AppPayloadChoice> {
     const request = appPayloadRequest(value), id = request.id;
@@ -175,7 +186,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       const choice = await newAppChoice(g, identity, request, this.registry.metadata(`app-payload:${id}`) as AppPayloadChoice | null);
       verify();
       if (recovering) { await this.options.supervisor.discardUnready(g); verify(); }
-      this.registry.selectAppPayload(id, request.expectedIncarnation, request.expectedEpoch, choice, recovering);
+      await this.registry.selectAppPayload(id, request.expectedIncarnation, request.expectedEpoch, choice, recovering);
       this.cached.delete(id); return choice;
     } finally { this.changingPayload.delete(id); }
   }
@@ -205,6 +216,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       || proof.host !== this.hostIdentity() || proof.expires < this.now()) throw new Error("Generation preparation changed or expired");
   }
   async revoke(id: string, expectedEpoch: number, token: string): Promise<{ revoked: true }> {
+    await this.ready;
     if (this.retiring.has(id) || this.changingPayload.has(id) || this.starting.has(id) || this.checking.has(id)) throw paused();
     // Take the lifecycle fence before any await. No in-flight ensure can pass
     // the starting check and no later ensure/activate can race the final stop.
@@ -220,17 +232,18 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       if (!Array.isArray(loaded.data) || loaded.data.length || native.unexpectedRequests) throw new Error("Candidate has native threads or unknown work");
       if (!await this.options.supervisor.processesQuiet(this.registry.metadata(`runtime:${id}`) as GenerationProcessIdentity)) throw new Error("Candidate native processes are not quiet");
       this.verifyPreparation(id, expectedEpoch, token);
-      this.registry.beginRevoke(id, g.incarnation, expectedEpoch);
+      await this.registry.beginRevoke(id, g.incarnation, expectedEpoch);
       this.preparations.delete(token);
       const identity = this.registry.metadata(`runtime:${id}`) as GenerationProcessIdentity;
       await this.options.supervisor.stop(g, identity);
-      this.registry.finishRevoke(id, g.incarnation);
+      await this.registry.finishRevoke(id, g.incarnation);
       this.cached.delete(id); this.probes.get(id)?.peer.close(); this.probes.delete(id);
-      this.registry.setMetadata(`revocation:${id}`, { version: 1, at: this.now(), incarnation: g.incarnation, routingEpoch: this.registry.ownerEpoch });
+      await this.registry.setMetadata(`revocation:${id}`, { version: 1, at: this.now(), incarnation: g.incarnation, routingEpoch: this.registry.ownerEpoch });
       return { revoked: true };
     } finally { this.retiring.delete(id); }
   }
   async activate(id: string, expectedEpoch: number, preparation?: string, expectedOwner?: string, expectedHost?: string, operationId?: string): Promise<number> {
+    await this.ready;
     this.verifyOwner(expectedOwner, expectedHost);
     if (operationId !== undefined && !/^[a-f0-9]{64}$/u.test(operationId)) throw new Error("Invalid activation operation");
     if (this.registry.epoch() !== expectedEpoch) throw new Error("Generation admission epoch changed");
@@ -239,11 +252,12 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     if (preparation !== undefined) this.verifyPreparation(id, expectedEpoch, preparation);
     if (this.retiring.has(id) || this.changingPayload.has(id) || this.registry.get(id)?.state === "revoking") throw paused();
     this.verifyOwner(expectedOwner, expectedHost);
-    const epoch = this.registry.activate(id, expectedEpoch, operationId);
+    const epoch = await this.registry.activate(id, expectedEpoch, operationId);
     if (preparation !== undefined) this.preparations.delete(preparation);
     return epoch;
   }
   async discard(id: string): Promise<void> {
+    await this.ready;
     const generation = this.registry.get(id);
     if (this.closed || !generation || generation.state !== "candidate" || this.starting.has(id) || this.changingPayload.has(id)
       || this.checking.has(id) || this.retiring.has(id) || this.registry.metadata(`admitted:${id}`) || this.registry.durableThreadIds(id).length) throw new Error("Candidate cannot be discarded");
@@ -251,7 +265,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     try {
       await this.options.supervisor.discardUnready(generation);
       if (JSON.stringify(this.registry.get(id)) !== JSON.stringify(generation)) throw new Error("Discard candidate identity changed");
-      this.registry.discard(id);
+      await this.registry.discard(id);
     } finally { this.changingPayload.delete(id); }
   }
   admit(ticket: GenerationTicket): () => void {
@@ -261,22 +275,24 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     return () => { if (!released) { released = true; this.requests.set(id, (this.requests.get(id) ?? 1) - 1); } };
   }
   observe(_generation: GenerationRecord, _message: RpcRecord): void { /* Observations do not invent task completion. */ }
-  claimHost(instanceId: string, routingEpoch: string): { lease: string; routingEpoch: string } {
+  async claimHost(instanceId: string, routingEpoch: string): Promise<{ lease: string; routingEpoch: string }> {
+    await this.ready;
     if (routingEpoch !== this.registry.ownerEpoch || !instanceId) throw new Error("Stale routing owner epoch");
     const lease = randomUUID();
-    this.registry.setMetadata("host-usage", { version: 1, routingEpoch, instanceId, lease, sequence: 0, at: 0,
+    await this.registry.setMetadata("host-usage", { version: 1, routingEpoch, instanceId, lease, sequence: 0, at: 0,
       blockedThreadIds: [], unscopedBusy: true, discoveryComplete: false });
     return { lease, routingEpoch };
   }
-  publishHostUsage(value: GenerationHostUsage): CodexGenerationFenceState {
+  async publishHostUsage(value: GenerationHostUsage): Promise<CodexGenerationFenceState> {
+    await this.ready;
     const current = rpcRecord(this.registry.metadata("host-usage"));
     if (value.routingEpoch !== this.registry.ownerEpoch || value.lease !== current.lease || !Number.isSafeInteger(value.sequence)
       || value.sequence <= Number(current.sequence) || !Array.isArray(value.blockedThreadIds) || !value.blockedThreadIds.every(id => typeof id === "string")
       || typeof value.unscopedBusy !== "boolean" || typeof value.discoveryComplete !== "boolean" || !Number.isSafeInteger(value.acknowledgedFenceEpoch)
       || value.acknowledgedFenceEpoch < 0 || value.acknowledgedFenceEpoch > this.fences().fenceEpoch) throw new Error("Stale or invalid Host usage receipt");
     const legacy = this.registry.metadata("legacy-generation");
-    if (typeof legacy === "string") for (const id of value.blockedThreadIds) if (!this.registry.route(id)) this.registry.discover(id, legacy);
-    this.registry.setMetadata("host-usage", { ...current, ...value, at: this.now() });
+    if (typeof legacy === "string") for (const id of value.blockedThreadIds) if (!this.registry.route(id)) await this.registry.discover(id, legacy);
+    await this.registry.compareMetadata("host-usage", current, { ...current, ...value, at: this.now() });
     return this.fences(value.acknowledgedFenceEpoch !== this.fences().fenceEpoch);
   }
   fences(includeRoutes = false): CodexGenerationFenceState {
@@ -286,11 +302,11 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     return { defaultGenerationId, routingEpoch: this.registry.ownerEpoch, fenceEpoch: Number(state.epoch), fencedGenerationIds: state.ids as string[],
       legacyGenerationId: typeof legacy === "string" ? legacy : null, ...(includeRoutes ? { routes: this.registry.routes() } : {}) };
   }
-  private fenceHost(id: string, enable: boolean): number {
+  private async fenceHost(id: string, enable: boolean): Promise<number> {
     const current = this.fences(), ids = new Set(current.fencedGenerationIds);
     enable ? ids.add(id) : ids.delete(id);
     if (ids.size !== current.fencedGenerationIds.length || enable !== current.fencedGenerationIds.includes(id)) {
-      this.registry.setMetadata("retirement-fences", { epoch: current.fenceEpoch + 1, ids: [...ids] });
+      await this.registry.compareMetadata("retirement-fences", this.registry.metadata("retirement-fences"), { epoch: current.fenceEpoch + 1, ids: [...ids] });
     }
     return this.fences().fenceEpoch;
   }
@@ -322,9 +338,9 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     if (!Array.isArray(loaded.data)) throw new Error("Invalid native drain response");
     for (const threadId of loaded.data) {
       if (typeof threadId !== "string") throw new Error("Invalid native Thread identity");
-      this.registry.discover(threadId, generation.id);
+      await this.registry.discover(threadId, generation.id);
       const thread = rpcRecord(rpcRecord(await check.peer.call("thread/read", { threadId, includeTurns: false })).thread);
-      if (thread.ephemeral === true) this.registry.markNonpersistent(threadId, "ephemeral");
+      if (thread.ephemeral === true) await this.registry.markNonpersistent(threadId, "ephemeral");
       if (rpcRecord(thread.status).type !== "idle") return ["native-turn"];
       try {
         const result = await check.peer.call("thread/goal/get", { threadId });
@@ -342,10 +358,11 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
   private async finishRetirement(generation: GenerationRecord): Promise<void> {
     const id = generation.id, identity = this.registry.metadata(`runtime:${id}`) as GenerationProcessIdentity;
     await this.options.supervisor.stop(generation, identity);
-    this.registry.retire(id, generation.incarnation); this.cached.delete(id); this.probes.get(id)?.peer.close(); this.probes.delete(id);
-    this.registry.setMetadata(`retirement:${id}`, { version: 1, at: this.now(), incarnation: generation.incarnation, identity });
+    await this.registry.retire(id, generation.incarnation); this.cached.delete(id); this.probes.get(id)?.peer.close(); this.probes.delete(id);
+    await this.registry.setMetadata(`retirement:${id}`, { version: 1, at: this.now(), incarnation: generation.incarnation, identity });
   }
   async retire(id: string): Promise<{ retired: boolean; reasons: string[] }> {
+    await this.ready;
     const record = this.registry.get(id);
     if (!record || !["draining", "retiring"].includes(record.state)) return { retired: false, reasons: ["not-draining"] };
     if (this.isRetained(id)) return { retired: false, reasons: ["operator-retained"] };
@@ -364,7 +381,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       if (reasons.length) return { retired: false, reasons };
       let acknowledgedHost: string | undefined, acknowledgedFence: number | undefined;
       if (this.options.requireHostUsage) {
-        const epoch = this.fenceHost(id, true), deadline = Date.now() + 15_000;
+        const epoch = await this.fenceHost(id, true), deadline = Date.now() + 15_000;
         for (;;) {
           const usage = rpcRecord(this.registry.metadata("host-usage"));
           if (usage.routingEpoch === this.registry.ownerEpoch && usage.acknowledgedFenceEpoch === epoch) {
@@ -389,7 +406,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       const ids = this.registry.durableThreadIds(id);
       if (ids.length || expected.length) {
         const history = await readNativeHistory((await this.probe(generation, latestHealth)).peer, id, ids, expected);
-        this.registry.setMetadata(`retirement-history:${id}`, { version: 1, at: this.now(), incarnation: generation.incarnation, history });
+        await this.registry.setMetadata(`retirement-history:${id}`, { version: 1, at: this.now(), incarnation: generation.incarnation, history });
       }
       reasons = [...await this.nativeReasons(generation, latestHealth), ...this.acceptedReasons(id), ...this.hostReasons(id)];
       if (reasons.length) return { retired: false, reasons };
@@ -400,11 +417,11 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
         || fences.fenceEpoch !== acknowledgedFence || !fences.fencedGenerationIds.includes(id))) return { retired: false, reasons: ["host-fence-changed"] };
       reasons = [...this.acceptedReasons(id), ...this.hostReasons(id)];
       if (reasons.length) return { retired: false, reasons };
-      this.registry.fenceRetirement(id, generation.incarnation);
+      await this.registry.fenceRetirement(id, generation.incarnation);
       await this.finishRetirement(generation); return { retired: true, reasons: [] };
     } finally {
       this.retiring.delete(id); this.checking.delete(id);
-      if (this.registry.get(id)?.state !== "retiring") this.fenceHost(id, false);
+      if (this.registry.get(id)?.state !== "retiring") await this.fenceHost(id, false);
     }
   }
   startMonitor(intervalMs = 5_000): void {
@@ -413,8 +430,8 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       if (this.closed || this.monitoring || !this.owner.isOpen()) return;
       this.monitoring = (async () => {
         for (const g of this.registry.list().filter(value => ["draining", "retiring"].includes(value.state))) {
-          try { const result = await this.retire(g.id); this.registry.setMetadata(`drain:${g.id}`, { at: this.now(), ...result }); }
-          catch { this.registry.setMetadata(`drain:${g.id}`, { at: this.now(), retired: false, reasons: ["drain-observation-unavailable"] }); }
+          try { const result = await this.retire(g.id); await this.registry.setMetadata(`drain:${g.id}`, { at: this.now(), ...result }); }
+          catch { await this.registry.setMetadata(`drain:${g.id}`, { at: this.now(), retired: false, reasons: ["drain-observation-unavailable"] }); }
         }
       })().finally(() => { this.monitoring = undefined; });
     }, intervalMs);
@@ -442,6 +459,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     return { coverage, counts, activeCount: Object.values(counts).reduce((a, b) => a + b, 0), historicalCount: this.registry.routes().length };
   }
   async coldReadNative() {
+    await this.ready;
     const values = [];
     const failures = this.options.nativeHistoryFailures?.failures ?? [];
     if (failures.some(row => !this.registry.list().some(g => ["active", "draining", "ready"].includes(g.state) && g.id === row.generationId))) throw new Error("Historical failure generation changed");
@@ -459,10 +477,10 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     return values;
   }
   async close(): Promise<void> {
-    this.owner.dispose();
+    await this.owner.dispose();
     this.closed = true; clearInterval(this.monitor); await this.monitoring; await Promise.allSettled(this.starting.values());
     for (const { peer } of this.probes.values()) peer.close();
-    this.probes.clear(); this.registry.close();
+    this.probes.clear(); await this.owner.drain(); await this.registry.close();
     // Independently supervised generation owners deliberately stay alive.
   }
 }

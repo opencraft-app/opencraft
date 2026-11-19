@@ -121,8 +121,10 @@ export class CodexBridgeRuntime {
       case 'history/read': {
         if (p.view === 'thread') return this.owner.request('thread/read', { threadId: this.adapter.nativeSession(threadId), includeTurns: p.includeTurns === true });
         const nativeId = this.adapter.nativeSession(threadId);
-        if (p.turnId !== undefined) return this.owner.request('thread/items/list', { threadId: nativeId, turnId: identifier(p.turnId), limit: 100, cursor: p.cursor ?? null });
-        return this.owner.request('thread/turns/list', { threadId: nativeId, limit: 100, cursor: p.cursor ?? null, itemsView: 'full' });
+        if (p.turnId !== undefined) return this.owner.request('thread/items/list', { threadId: nativeId, turnId: identifier(p.turnId), limit: p.limit ?? 100, cursor: p.cursor ?? null });
+        return this.owner.request('thread/turns/list', { threadId: nativeId, limit: p.limit ?? 100, cursor: p.cursor ?? null,
+          itemsView: p.itemsView ?? 'full', ...(p.sortDirection !== undefined ? { sortDirection: p.sortDirection } : {}),
+        });
       }
       case 'interaction/resolve': {
         const key = identifier(p.interactionId), interaction = this.interactions.get(key);

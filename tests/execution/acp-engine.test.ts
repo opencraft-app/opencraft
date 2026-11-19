@@ -11,6 +11,27 @@ import type { ExecutionEngineClient } from "../../packages/appserver-client/src/
 
 const peer = resolve("tests/fixtures/acp-engine-peer.mjs");
 const client: ExecutionEngineClient = { notify() {}, async request() { throw new Error("No browser tool owner"); } };
+test("ACP callback delivers screenshot bytes through MCP and never replays malformed received output", async t => {
+  for (const malformed of [false, true]) {
+    const f = await fixture(t), notices: any[] = []; let calls = 0;
+    f.engine.subscribe((method, params) => notices.push({ method, params }));
+    const owner: ExecutionEngineClient = { notify() {}, async request(method) {
+      assert.equal(method, "item/tool/call"); calls++;
+      return { success: true, contentItems: [{ type: "inputText", text: "Screenshot" },
+        { type: "inputImage", imageUrl: malformed ? "https://example.test/private" : "data:image/png;base64,iVBORw0KGgo=" }] };
+    } };
+    const { thread } = await f.engine.request("thread/start", { dynamicTools: [{ name: "screenshot", description: "Screenshot", inputSchema: { type: "object" } }] }, owner);
+    await f.engine.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "call:screenshot" }] }, owner);
+    await until(() => notices.some(notice => notice.method === "turn/completed"));
+    assert.equal(calls, 1);
+    if (!malformed) {
+      const completed = notices.find(notice => notice.method === "item/completed" && notice.params.item.type === "dynamicToolCall");
+      assert(completed);
+      assert.match(JSON.stringify(completed.params.item.contentItems), /iVBORw0KGgo=/);
+      assert.match(JSON.stringify(completed.params.item.contentItems), /image\/png/);
+    }
+  }
+});
 test("native model suffix parsing handles long hostile names without backtracking", () => {
   assert.deepEqual(splitModelVariant("one[reasoning=high,fast=true]"), { base: "one", parameters: "reasoning=high,fast=true" });
   assert.deepEqual(splitModelVariant("one[]"), { base: "one", parameters: "" });

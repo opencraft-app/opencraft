@@ -40,7 +40,7 @@ export interface TransportFailureDiagnostic {
   readonly attemptId: string;
   readonly occurredAt: string;
   readonly phase: "connecting" | "socket-open" | "ready";
-  readonly failure: "socket-error" | "socket-close" | "handshake-timeout" | "probe-timeout" | "invalid-response";
+  readonly failure: "socket-error" | "socket-close" | "handshake-timeout" | "probe-timeout" | "liveness-timeout" | "invalid-response";
   readonly closeCode?: number;
 }
 
@@ -57,18 +57,30 @@ export interface TransportStatus {
   /** Locally generated physical connection correlation; no remote identity. */
   readonly attemptId?: string;
   /** Local connect boundary, never a claim of Host or Thread readiness. */
-  readonly connectionStage?: "admission" | "release" | "bridge" | "host";
+  readonly connectionStage?: "admission" | "release" | "retry" | "bridge" | "host";
+  /** Bounded local retry admission, not network work. */
+  readonly retryAfterMs?: number;
   state: TransportState;
   reason?: string;
   /** Omitted by legacy transports, which remain automatically recoverable. */
   failure?: TransportFailureDisposition;
 }
 
+/** Client-local queue-drain feedback. Not peer receipt or operation completion. */
+export interface TransportSendProgress { readonly loaded: number; readonly total: number; }
+export type TransportSendProgressObserver = (progress: TransportSendProgress) => void;
+
+export interface TransportSendProgressOptions {
+  readonly onProgress: TransportSendProgressObserver;
+  /** Cancels only observation, never the request or an admitted remote write. */
+  readonly signal?: AbortSignal;
+}
+
 export interface DuplexTransport {
   readonly status: TransportStatus;
   connect(signal?: AbortSignal): Promise<void>;
   /** Signal ends local request work, not an already-admitted remote Turn. */
-  send(frame: string, signal?: AbortSignal): Promise<void>;
+  send(frame: string, signal?: AbortSignal, progress?: TransportSendProgressOptions): Promise<void>;
   sendWithContext?(frame: string, context: TransportSubmissionContext, signal?: AbortSignal): Promise<void>;
   /** Capture native delivery ownership during a synchronous message callback.
    * Recheck before each forwarded observer. Native retirement invalidates this
@@ -257,9 +269,9 @@ export class DeferredDuplexTransport implements DuplexTransport {
     this.publish({ state: "connecting" });
     return promise;
   }
-  async send(frame: string, signal?: AbortSignal): Promise<void> {
+  async send(frame: string, signal?: AbortSignal, progress?: TransportSendProgressOptions): Promise<void> {
     if (!this.delegate || this.current.state !== "open") throw new Error("Transport is not connected");
-    await this.delegate.send(frame, signal);
+    await this.delegate.send(frame, signal, progress);
   }
   async sendWithContext(frame: string, context: TransportSubmissionContext, signal?: AbortSignal): Promise<void> {
     if (!this.delegate || this.current.state !== "open") throw new Error("Transport is not connected");
@@ -284,3 +296,5 @@ export class DeferredDuplexTransport implements DuplexTransport {
     return this.closing;
   }
 }
+
+export { AttachmentChunkDeadline } from "./attachment-chunk-deadline";

@@ -1,0 +1,1 @@
+ALTER TABLE `employee_cli_keys` ADD `membership_revision` integer DEFAULT 0 NOT NULL;

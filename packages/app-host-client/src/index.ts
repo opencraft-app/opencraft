@@ -1,3 +1,4 @@
+import type { TransportSendProgressOptions } from "@opencraft/appserver-client/transport";
 import {
   APP_HOST_PROTOCOL_VERSION,
   APP_HOST_SEND_NOT_ADMITTED,
@@ -10,6 +11,8 @@ import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-clie
 import { ClientObserverList, combineAbortSignals, TransportStatusObservers } from "@opencraft/appserver-client/transport";
 
 interface AppHostPort {
+  /** Optional local adapter capability, never sent over the message port. */
+  postMessageWithProgress?(message: RendererToAppHostMessage, signal: AbortSignal | undefined, progress: TransportSendProgressOptions): void;
   postMessage(message: RendererToAppHostMessage): void;
   addEventListener(type: "message", listener: (event: MessageEvent<unknown>) => void): void;
   removeEventListener(type: "message", listener: (event: MessageEvent<unknown>) => void): void;
@@ -339,8 +342,8 @@ export class MessagePortAppHostClient {
     });
   }
 
-  sendHostFrame(hostId: string, leaseId: string, generation: number, frame: string, signal?: AbortSignal): Promise<void> {
-    return this.request<void>({ type: "host/send", hostId, leaseId, generation, frame }, undefined, signal);
+  sendHostFrame(hostId: string, leaseId: string, generation: number, frame: string, signal?: AbortSignal, progress?: TransportSendProgressOptions): Promise<void> {
+    return this.request<void>({ type: "host/send", hostId, leaseId, generation, frame }, undefined, signal, undefined, undefined, false, progress);
   }
 
   disconnectHost(hostId: string, leaseId: string, generation: number): Promise<void> {
@@ -388,7 +391,7 @@ export class MessagePortAppHostClient {
   }
 
   private request<TResult>(input: AppHostRequestInput, onLateResult?: (value: unknown) => void, signal?: AbortSignal,
-    onResponse?: (value: unknown) => void, posted?: () => void, cleanup = false): Promise<TResult> {
+    onResponse?: (value: unknown) => void, posted?: () => void, cleanup = false, progress?: TransportSendProgressOptions): Promise<TResult> {
     if (signal?.aborted) return Promise.reject(abortError("App Host request was aborted"));
     if (this.closed) {
       return Promise.reject(this.terminalError ?? new Error("App Host connection is closed"));
@@ -436,7 +439,12 @@ export class MessagePortAppHostClient {
       });
       signal?.addEventListener("abort", abort, { once: true });
       try {
-        this.port.postMessage({ ...input, requestId } as RendererToAppHostMessage);
+        const message = { ...input, requestId } as RendererToAppHostMessage;
+        if (progress && this.port.postMessageWithProgress) {
+          this.port.postMessageWithProgress(message, signal, { ...progress, onProgress: value => {
+            if (requests.has(requestId) && !signal?.aborted) progress.onProgress(value);
+          } });
+        } else this.port.postMessage(message);
         posted?.();
       } catch (cause) {
         clearTimer();
@@ -652,13 +660,13 @@ class AppHostChannelTransport implements DuplexTransport {
     return operation;
   }
 
-  send(frame: string, signal?: AbortSignal): Promise<void> {
+  send(frame: string, signal?: AbortSignal, progress?: TransportSendProgressOptions): Promise<void> {
     const owner = this.lifetime;
     if (this.closed || !owner?.active || this.currentStatus.state !== "open") {
       return Promise.reject(new Error(`App Host channel ${this.hostId} is not open`));
     }
     const signals = combineAbortSignals([owner.signal, ...(signal ? [signal] : [])]);
-    return this.client.sendHostFrame(this.hostId, this.leaseId, owner.generation, frame, signals.signal)
+    return this.client.sendHostFrame(this.hostId, this.leaseId, owner.generation, frame, signals.signal, progress)
       .catch((cause: unknown) => {
         if ((cause as { code?: unknown } | null)?.code === APP_HOST_SEND_NOT_ADMITTED
           && !this.closed && this.lifetime === owner && owner.active) {

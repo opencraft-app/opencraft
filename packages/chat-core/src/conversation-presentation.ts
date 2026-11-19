@@ -5,7 +5,7 @@ import type {
   TimelineBlock,
   TodoTimelineBlock,
 } from "./timeline";
-import type { CommandExecutionTimelineBlock } from "./timeline";
+import type { CommandExecutionTimelineBlock, TimelineStatus } from "./timeline";
 import { parseSkillPath } from "./skill-path";
 
 export type ConversationDetailLevel =
@@ -63,6 +63,12 @@ export function todoSummary(block: TodoTimelineBlock): string {
 export function isAssistantAnswerContent(block: TimelineBlock): boolean {
   return block.type === "text" && block.phase !== "commentary"
     && block.delivery !== "async" && (block.asyncQuestions?.length ?? 0) === 0;
+}
+
+/** Completed-message affordances (copy, time, fork) only follow a settled Turn.
+ * A running Turn can contain an interim answer that is not its final response. */
+export function isTimelineTurnSettled(status: TimelineStatus): boolean {
+  return status === "complete" || status === "failed" || status === "interrupted";
 }
 
 /** The current response owns action eligibility, independently of Turn failure. */

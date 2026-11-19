@@ -23,7 +23,7 @@ export async function startEngineHost(options: {
   machine?: unknown;
   admitRequest?: <T>(method: string, operation: () => Promise<T>) => Promise<T>;
   strictClose?: boolean;
-  resources?: { projectDirectory?: string; attachmentDirectory?: string };
+  resources?: { projectDirectory?: string; attachmentDirectory?: string; artifactDirectory?: string };
 }) {
   const resources = options.resources || !options.legacy ? new LocalHostResources(options.resources) : undefined;
   const registry = new Map(options.providers.map(provider => [provider.id, provider]));
@@ -194,6 +194,7 @@ export async function startEngineHost(options: {
         const state = client(clientId);
         const reply = (result: unknown) => {
           catalogChanges.observeResult(frame.method, frame.params, result);
+          if (frame.method === "thread/list") result = catalogChanges.projectList(frame.params, result);
           if (!stopped && socket.readyState === WebSocket.OPEN) socket.send(serializeHistoryReply(
             { jsonrpc: "2.0", id: frame.id, result, [LOGICAL_CLIENT_FIELD]: clientId }, frame.method));
         };

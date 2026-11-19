@@ -118,14 +118,14 @@ test("Side Chat still unsubscribes when interrupt reports an already unavailable
   assert.equal(ctx.sideChats.pendingCleanup().length, 0); await fiber.dispose();
 });
 
-test("WSP-07 side chat forks an ephemeral child on the parent's host and owns a separate draft", async () => {
+test("WSP-07 side chat forks a durable child on the parent's host and owns a separate draft", async () => {
   const f = fixture(); const ctx = new Context(); const hosts: string[] = [];
   const fiber = ctx.plugin(SideChatService, { resolveHost: async (host: string) => { hosts.push(host); return f.runtime; } }); await fiber;
   const pending = ctx.sideChats.open("request", createConversationKey("remote", "parent"), "/work");
   f.resolveFork({ id: "child" }); const session = await pending;
   assert.deepEqual(hosts, ["remote"]); assert.equal(session.key.threadId, "child");
   assert.deepEqual(session.composer.getSnapshot().draft.target, { type: "existing-thread", key: session.key });
-  assert.equal((f.calls[0] as { ephemeral: boolean }).ephemeral, true);
+  assert.equal((f.calls[0] as { ephemeral: boolean }).ephemeral, false);
   session.composer.dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "child question" }] }] } });
   const intent = session.composer.createSubmitIntent();
   session.composer.dispatch({ type: "set-lifecycle", phase: "submitting" });

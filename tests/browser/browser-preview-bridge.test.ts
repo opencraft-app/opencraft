@@ -83,6 +83,7 @@ test("PreviewBridgeAdapter handshakes with exact origin and returns typed inspec
     const connect = frame.sent[0]!.message;
     assert.equal(connect.type, "platform:connect");
     host.emit(frame, "https://preview.example", childMessage(connect, readyBody));
+    assert.equal(adapter.capabilities.networkObservation, 'none', 'Legacy handshake declarations cannot invent an unimplemented observer');
 
     const inspectionPromise = adapter.inspect();
     await new Promise((resolve) => setTimeout(resolve, 0));

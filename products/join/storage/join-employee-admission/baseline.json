@@ -1,0 +1,29 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "employee-admission-policy",
+      "checksum": "6fdfa26156e3242dfcbbcfe79c7bf777ffe9703be525194378722cc1c63d4059"
+    }
+  ],
+  "tableOptions": {
+    "employee_policy": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "employee_policy_audit": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "employee_policy_identities": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "employee_policy_versions": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "88dfba30dc4c021fc7929b524b2a52f5e19c7df03b88559d4cb7c10c4d48a3f4",
+  "baselineSnapshotChecksum": "0f964f073749a9a21cd51fe7c90dcbf1aa772a7f4470d94e458db1d8c15c55e8"
+}

@@ -5,9 +5,25 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./automation-policy": {
+      "types": "./src/automation/policy.d.cts",
+      "default": "./src/automation/policy.cjs"
+    },
+    "./metadata-merge": {
+      "types": "./src/metadata-merge.d.cts",
+      "default": "./src/metadata-merge.cjs"
+    },
     "./metadata-limits": {
       "types": "./src/metadata-limits.d.cts",
       "default": "./src/metadata-limits.cjs"
+    },
+    "./presentation": {
+      "types": "./src/presentation.d.cts",
+      "default": "./src/presentation.cjs"
+    },
+    "./metadata-sync": {
+      "types": "./src/metadata-sync.d.cts",
+      "default": "./src/metadata-sync.cjs"
     }
   },
   "scripts": {

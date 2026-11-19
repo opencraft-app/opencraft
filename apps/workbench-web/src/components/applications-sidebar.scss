@@ -1,4 +1,4 @@
-@use "@opencraft/design-system/typography.web" as typography;
+@use "@opencraft/design-system/typography-mixins.web" as typography;
 
 .applications-sidebar {
   display: flex;
@@ -14,11 +14,8 @@
     padding-block: var(--padding-applications-sidebar-list-block, var(--spacing));
     flex: 1;
   }
-  &__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   &__empty {
     @include typography.role(metadata, secondary);
-    padding: var(--spacing) var(--padding-sidebar-content-inline);
-    margin: 0;
   }
 }
 

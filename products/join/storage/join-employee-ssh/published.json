@@ -1,0 +1,26 @@
+[
+  {
+    "tag": "0000_legacy_baseline",
+    "when": 1793323925034,
+    "version": 0,
+    "sqlChecksum": "2bde6f71ae7cbaa48a9e73a5d386a4fae6c28ea0f3fcc3fb2f332dd881331d3e",
+    "snapshotChecksum": "c4fb5e4161549732bf8483438e3c2576b0639b5b9728b3a18f3985a4423e692b",
+    "compiledChecksum": null
+  },
+  {
+    "tag": "0001_sour_fixer",
+    "when": 1793597139652,
+    "version": 2,
+    "sqlChecksum": "926bc0affdd950aafdde4cb35766eddf344b7d326e87c74a363d8333ca65d5e3",
+    "snapshotChecksum": "b851f8b5467601e5daf0931f0230129ba6b90a9d6a6b22c62aee301efed8b2b9",
+    "compiledChecksum": "024d9068ce604db1e07d73f2793e4a746d9a473bb5bc5d374576fdbe0e3f3477"
+  },
+  {
+    "tag": "0002_smooth_mole_man",
+    "when": 1793598030601,
+    "version": 3,
+    "sqlChecksum": "82d9c12fb8be344f9bb75599d0ecfabc5aa67d46267eefe2c6e736f51975a05f",
+    "snapshotChecksum": "d2cd1ffc0fe983b6d8b8eb2b3a82c9f85768c7c0541f4129a3589e4c7e9ad723",
+    "compiledChecksum": "82d9c12fb8be344f9bb75599d0ecfabc5aa67d46267eefe2c6e736f51975a05f"
+  }
+]

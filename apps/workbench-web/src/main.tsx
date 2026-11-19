@@ -1,3 +1,4 @@
+import { prepareStartupCode } from "./runtime/startup-code-preparation";
 import { startAfterWorkbenchPaint } from "./runtime/optional-feature-startup";
 import { serverWorkbenchExtensions } from "./runtime/server-product-extensions";
 import "./runtime/web-crypto-compat";
@@ -8,12 +9,17 @@ import { initializeAppearanceTheme, bindWindowAppearanceProjector } from "./appe
 import { RuntimeErrorBoundary } from "./components/runtime-error-boundary";
 import { HostProfileStorageNotice } from "./components/host-profile-storage-notice";
 import { LoadingSpinner } from "./components/ui/loading-spinner";
+import { recordLocalDiagnostic, isLocalDiagnosticsEnabled, subscribeLocalDiagnostics } from "./runtime/local-diagnostics";
+import { setTimelineDiagnosticObserver } from "@opencraft/timeline-host-web";
 import { startRuntimeDiagnosticCollection } from "./runtime-diagnostics";
 import { reportRuntimeError } from "./runtime-error-reporting";
+import { installStaleAssetDetection } from "./runtime/stale-assets";
+installStaleAssetDetection();
 import { clientProductOptions } from "./runtime/client-product-entry";
 import { createClientRuntime } from "./runtime/client-runtime";
 import { bindPageLifecycle } from "./runtime/page-lifecycle";
 import { bindMobileContainer, mobileContainer } from "./runtime/mobile-container";
+import { bindWorkbenchPreview, isMobileWorkbenchPreview } from "./runtime/workbench-preview";
 import { bindInteractionDensity } from "./runtime/interaction-density";
 import {
   openWorkbenchUiPreferences,
@@ -49,7 +55,11 @@ try {
   try { clientRuntime.dispose(); } catch (cleanup) { reportRuntimeError(cleanup, "application-disposal"); }
   throw error;
 }
+const releasePreview = bindWorkbenchPreview();
 startRuntimeDiagnosticCollection();
+const updateTimelineDiagnostics = () => setTimelineDiagnosticObserver(isLocalDiagnosticsEnabled() ? recordLocalDiagnostic : undefined);
+subscribeLocalDiagnostics(updateTimelineDiagnostics);
+updateTimelineDiagnostics();
 
 window.addEventListener("error", (event) => {
   reportRuntimeError(
@@ -80,6 +90,15 @@ function ApplicationBootstrap() {
   const [state, setState] = useState<BootstrapState>({ phase: "loading" });
 
   useEffect(() => {
+    const preparation = new AbortController();
+    if (clientRuntime.kind === "web" && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === "true") prepareStartupCode([
+      ...serverWorkbenchExtensions.flatMap(extension => extension.preload ? [() => extension.preload!()] : []),
+
+        () => import("@opencraft/plugin-builtin-agents"),
+        () => import("@opencraft/plugin-im"),
+        () => import("./runtime/channels-rpc"),
+        () => import("./runtime/ssh-server-catalog"),
+    ], preparation.signal);
     let disposed = false;
     let application: WebWorkbenchApplication | null = null;
     let preferences: UiPreferencesRuntime | null = null;
@@ -94,7 +113,7 @@ function ApplicationBootstrap() {
     void import("./workbench-entry?opencraft-entry=1")
       .then(async (module) => {
         preferences = await openWorkbenchUiPreferences();
-        if (!disposed) disposeDensity = bindInteractionDensity(document, preferences);
+        if (!disposed) disposeDensity = bindInteractionDensity(document, preferences, isMobileWorkbenchPreview() ? { touchFriendly: "on" } : undefined);
         locale = new WorkbenchLocaleController(preferences);
         await locale.initialize();
         if (disposed) {
@@ -133,6 +152,7 @@ function ApplicationBootstrap() {
         setState({ phase: "error", error });
       });
     return () => {
+      preparation.abort();
       disposed = true;
       mobileBinding?.dispose();
       locale?.dispose();
@@ -148,7 +168,7 @@ function ApplicationBootstrap() {
     const cancel = startAfterWorkbenchPaint(() => state.application.startOptionalFeatures(), owner.signal);
     const cancelOffline = import.meta.env.PROD && clientRuntime.kind === "web" && !mobileContainer()
       ? startAfterWorkbenchPaint(async () => {
-        try { const module = await import("./runtime/offline-shell"); if (!owner.signal.aborted) await module.prepareOfflineShell(); }
+        try { const module = await import("./runtime/offline-shell"); if (!owner.signal.aborted) await module.prepareOfflineShell(owner.signal); }
         catch (error) { reportRuntimeError(error, "offline-shell"); }
       }, owner.signal) : () => {};
     return () => { owner.abort(); cancel(); cancelOffline(); };
@@ -169,6 +189,7 @@ function ApplicationBootstrap() {
 
 const reactRoot = ReactDOM.createRoot(rootElement);
 const retirePage = bindPageLifecycle(window, () => {
+  releasePreview();
   releaseAppearanceProjector();
   try { clientRuntime.dispose(); } finally { reactRoot.unmount(); }
 });

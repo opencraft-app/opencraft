@@ -1,3 +1,4 @@
+import { capabilityResultToMcp } from "@opencraft/session-capabilities/content";
 import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 import { EXECUTION_ENVIRONMENT_FIELD, type ExecutionEnvironmentRuntime, type ExecutionEnvironmentSnapshot, type EnvironmentExecutionScope } from "../../../scripts/execution-environment.js";
 import { randomUUID, timingSafeEqual } from "node:crypto";
@@ -446,6 +447,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       return this.options.history.items(session.nativeId, this.historyParams(session, params));
     }
     if (method === "thread/resume") {
+      if (session.archived) return fault("Unarchive the thread before resuming", -32071);
       await this.resume(session); runtime.owner = client;
       const initialTurnsPage = params.initialTurnsPage && this.options.history ? await this.options.history.read(session.nativeId, this.historyParams(session, params.initialTurnsPage)) : undefined;
       const reply = this.sessionResponse(session);
@@ -453,9 +455,20 @@ export class AcpEngine implements ExecutionEngineProvider {
       return { ...reply, ...(initialTurnsPage ? { initialTurnsPage } : {}) };
     }
     if (method === "thread/name/set") { if (typeof params.name !== "string" || params.name.length > 256) return fault("Invalid ACP thread name"); await this.setTitle(session, params.name, "manual"); return {}; }
-    if (method === "thread/archive" || method === "thread/unarchive") { session.archived = method === "thread/archive"; await this.save(session); return {}; }
+    if (method === "thread/archive" || method === "thread/unarchive") {
+      if (method === "thread/archive") {
+        if (runtime.active?.status === "inProgress") return fault("Stop the active turn before archiving", -32000);
+        // Only dedicated session transports belong to this thread. Never close
+        // the shared ACP driver while another conversation is using it.
+        const dedicated = this.sessionTransports.get(session.id);
+        if (dedicated) { await dedicated.close(); this.sessionTransports.delete(session.id); this.sessionEnvironments.delete(session.id); }
+        runtime.loaded = false; runtime.owner = undefined;
+      }
+      session.archived = method === "thread/archive"; await this.save(session); return {};
+    }
     if (method === "thread/unsubscribe") { if (runtime.owner === client) runtime.owner = undefined; return {}; }
     if (method === "turn/start") {
+      if (session.archived) return fault("Unarchive the thread before executing", -32071);
       if (runtime.active?.status === "inProgress") return fault("ACP thread is already running", -32000);
       if (params.clientUserMessageId !== undefined && (typeof params.clientUserMessageId !== "string" || !params.clientUserMessageId || params.clientUserMessageId.length > 512)) return fault("Invalid ACP input identity");
       const continuing = Array.isArray(params.input) && params.input.length === 0;
@@ -862,11 +875,14 @@ export class AcpEngine implements ExecutionEngineProvider {
         const runtime = this.state(session.id), owner = runtime.owner;
         if (this.closed || runtime.active !== active || active.status !== "inProgress") throw new Error("ACP tool owner expired");
         if (owner) {
+          let reply: Value;
           try {
-            const reply = await owner.request("item/tool/call", { threadId: session.id, turnId: active.id, callId, tool: params.name, arguments: value(params.arguments),
+            reply = await owner.request("item/tool/call", { threadId: session.id, turnId: active.id, callId, tool: params.name, arguments: value(params.arguments),
               __opencraftToolCallKey: key, __opencraftCallbackIncarnation: this.incarnation, __opencraftDelegationId: active.delegationId });
-            return { content: Array.isArray(reply?.contentItems) ? reply.contentItems.map((item: Value) => ({ type: "text", text: String(item.text ?? "") })) : [{ type: "text", text: JSON.stringify(reply) }], isError: reply?.success === false };
-          } catch { if (runtime.owner === owner) runtime.owner = undefined; }
+          } catch { if (runtime.owner === owner) runtime.owner = undefined; continue; }
+          // A received result is final. Formatting failure must not replay a
+          // completed external operation or retire a healthy callback owner.
+          return capabilityResultToMcp(reply);
         }
         await delay(Math.min(backoff, Math.max(1, expires - Date.now()))); backoff = Math.min(500, backoff * 2);
       } while (Date.now() < expires);

@@ -1,4 +1,47 @@
 import type { ThreadServerOrigin } from "@opencraft/workbench-runtime";
+import { sidebarThreadIdentity, type SidebarThreadTreeNode, type SidebarTreeThread } from "./sidebar-thread-tree";
+
+interface SidebarActivityState {
+  readonly status: string;
+  readonly unread?: boolean;
+  readonly goalActive?: boolean;
+}
+
+/** The row and its group summary consume the same activity precedence. */
+export function sidebarActivityIndicator(thread: SidebarActivityState): "goal" | "running" | "attention" | "unread" | "none" {
+  if (thread.goalActive && (thread.status === "ready" || thread.status === "running")) return "goal";
+  if (thread.status === "running") return "running";
+  if (thread.status === "review" || thread.status === "error") return "attention";
+  return thread.status === "ready" && thread.unread ? "unread" : "none";
+}
+
+export interface SidebarActivitySummary {
+  readonly unread: number;
+  readonly attention: number;
+  readonly running: number;
+}
+
+/** Count the full filtered tree, independent of disclosure and pagination. */
+export function summarizeSidebarActivity<T extends SidebarTreeThread & SidebarActivityState>(
+  roots: readonly SidebarThreadTreeNode<T>[],
+  isUnread: (thread: T) => boolean = thread => Boolean(thread.unread),
+): SidebarActivitySummary {
+  const summary = { unread: 0, attention: 0, running: 0 };
+  const seen = new Set<string>();
+  const pending = [...roots];
+  for (let index = 0; index < pending.length; index++) {
+    const node = pending[index]!;
+    const key = sidebarThreadIdentity(node.thread);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (node.thread.visibility === "hidden") continue;
+    const indicator = sidebarActivityIndicator({ ...node.thread, unread: isUnread(node.thread) });
+    if (indicator === "goal" || indicator === "running") summary.running++;
+    else if (indicator !== "none") summary[indicator]++;
+    pending.push(...node.children);
+  }
+  return summary;
+}
 
 export interface SidebarActivityThread {
   readonly id: string;
@@ -82,7 +125,7 @@ export function sidebarActivityMetadata(thread: SidebarActivityThread): {
   };
 }
 
-/** Headings follow rendered runs, including when running rows precede newer days. */
+/** Headings follow consecutive local days; the consumer chooses its dated rows. */
 export function sidebarActivityDateHeadings<T extends SidebarActivityThread>(
   threads: readonly T[], nowMs = Date.now(), locale?: string,
 ): ReadonlyMap<T, string> {
@@ -96,6 +139,32 @@ export function sidebarActivityDateHeadings<T extends SidebarActivityThread>(
     previousDay = key;
   }
   return headings;
+}
+
+export type SidebarRecentHeading = "running" | "date";
+
+/** Project only the displayed Recent page. Running priority is a present state,
+ * not a historical day. Boundaries do not depend on the current calendar day. */
+export function sidebarRecentHeadings<T extends SidebarActivityThread & { readonly status: string }>(
+  threads: readonly T[],
+): ReadonlyMap<T, SidebarRecentHeading> {
+  const headings = new Map<T, SidebarRecentHeading>();
+  let running = false, previousDay: string | undefined;
+  for (const thread of threads) {
+    if (thread.status === "running") {
+      if (!running) headings.set(thread, "running");
+      running = true;
+    } else {
+      const key = localDayKey(localDayStart(thread.updatedAt * 1_000));
+      if (key !== previousDay) headings.set(thread, "date");
+      previousDay = key;
+    }
+  }
+  return headings;
+}
+
+export function sidebarActivityDateLabel(timestampMs: number, nowMs: number, locale?: string): string {
+  return activityDayLabel(localDayStart(timestampMs), localDayStart(nowMs), locale);
 }
 
 /** Running rows stay ahead; all rows use the catalog's canonical recency clock. */

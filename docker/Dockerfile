@@ -20,6 +20,8 @@ FROM scratch AS host-artifact
 COPY --from=build /out/opencraft-server/ /
 
 FROM ${RUNTIME_IMAGE} AS runtime
+ARG OPENCRAFT_UID=1000
+ARG OPENCRAFT_GID=1000
 ARG OPENCRAFT_BUILD_ID=development
 ARG OPENCRAFT_SOURCE_REVISION=unknown
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -28,7 +30,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libatspi2.0-0 libcups2 libdbus-1-3 libdrm2 libgbm1 libgtk-3-0 libnspr4 libnss3 \
     libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2 \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd --gid 1000 opencraft && useradd --uid 1000 --gid 1000 --no-create-home opencraft
+    && if ! getent group "${OPENCRAFT_GID}" >/dev/null; then groupadd --gid "${OPENCRAFT_GID}" opencraft; fi \
+    && if ! getent passwd "${OPENCRAFT_UID}" >/dev/null; then useradd --uid "${OPENCRAFT_UID}" --gid "${OPENCRAFT_GID}" --no-create-home opencraft; fi
 COPY --from=build /out/opencraft-server /opt/opencraft
 LABEL org.opencontainers.image.title="OpenCraft" \
       org.opencontainers.image.description="OpenCraft self-hosted Gateway, Brain and Hands runtime" \
@@ -40,5 +43,5 @@ RUN chown root:root /opt/opencraft/runtime/browser/electron/chrome-sandbox \
     && chmod 4755 /opt/opencraft/runtime/browser/electron/chrome-sandbox
 ENV PATH=/opt/opencraft/bin:$PATH
 WORKDIR /opt/opencraft
-USER 1000:1000
-ENTRYPOINT ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-gateway.mjs"]
+USER ${OPENCRAFT_UID}:${OPENCRAFT_GID}
+ENTRYPOINT ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "gateway"]

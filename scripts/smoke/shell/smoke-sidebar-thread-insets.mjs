@@ -3,8 +3,13 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "vite";
 
 const output = process.env.OPENCRAFT_THREAD_INSET_REPORT ?? "/tmp/opencraft-sidebar-thread-insets";
+const footerSpacingOnly = process.env.OPENCRAFT_FOOTER_SPACING_ONLY === "1";
+const usageBoundaryOnly = process.env.OPENCRAFT_USAGE_BOUNDARY_ONLY === "1";
+const sectionIconsOnly = process.env.OPENCRAFT_SECTION_ICONS_ONLY === "1";
 const source = `
 import React,{useState} from 'react';
+import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
+import {AgentUsageView} from '/apps/workbench-web/src/components/agent-usage.tsx';
 import {createIntlTestRoot} from '/tests/fixtures/intl-root.tsx';
 import {AppShell} from '/apps/workbench-web/src/components/app-shell.tsx';
 import {AppShellHeader} from '/apps/workbench-web/src/components/app-shell-header.tsx';
@@ -15,30 +20,164 @@ import {legacyDirectServerProjectionFromHost} from '@opencraft/workbench-runtime
 import {initializeAppearanceTheme,setThemePreference} from '/apps/workbench-web/src/appearance-theme.ts';
 import '/apps/workbench-web/src/styles/app.scss';
 initializeAppearanceTheme();
+const queryClient=new QueryClient();
 const layout=await SidebarLayoutStore.open({load:async()=>null,save:async(_scope,doc)=>doc});
 const threads=['Short conversation','A deliberately long synthetic conversation title that must truncate','Review result'].map((title,i)=>({id:'thread-'+i,title,project:i===1?'long-synthetic-project':'workspace',status:i===1?'running':'ready',updatedAt:Date.now()/1000-i*86400,connectionHostId:'fixture',connectionHostLabel:'Synthetic server',...legacyDirectServerProjectionFromHost({hostId:'fixture',hostKind:'remote-ssh',label:'Synthetic server'})}));
 const snapshot={settingsPages:[{contribution:{id:'example.tools.skills',title:'Skills',icon:'sparkles',viewId:'skills'}}]};
 const contributions={subscribe:()=>()=>{},getSnapshot:()=>snapshot};
 const renames=[],deletes=[],forks=[];const threadActions={onRename:async(_target,title)=>{renames.push(title);},onFork:()=>new Promise(resolve=>{forks.push(resolve);}),onArchive:async()=>{},onDelete:async(target)=>{deletes.push(target.threadId);window.fixture.remove(target.threadId);},onSetPinned:async()=>{}};
-function Demo(){const [open,setOpen]=useState(true),[selected,setSelected]=useState('thread-0'),[actionsAvailable,setActionsAvailable]=useState(true),[visibleThreads,setThreads]=useState(threads);window.fixture={resetThreads:()=>setThreads(threads),setThemePreference,setActionsAvailable,setThreads,setSelected,renames,deletes,forks,remove:id=>setThreads(rows=>rows.filter(row=>row.id!==id)),setStatus:(id,status)=>setThreads(rows=>rows.map(row=>row.id===id?{...row,status}:row))};
-const navigation={layout:'unified',account:null,onOpenSettings:()=>{},actions:[{id:'shell.start',title:'Start',icon:'start',active:true,onInvoke:()=>{}},{id:'opencraft.tasks.navigation',title:'Tasks',icon:'columns',onInvoke:()=>{}},{id:'example.workspace.navigation',title:'Collaboration',icon:'collaboration',onInvoke:()=>{}},{id:'skills',title:'Skills',icon:'sparkles',onInvoke:()=>{}}]};
-return <AppShell navigation={navigation} layoutScope='Chat' mainContentLayout='default' header={<AppShellHeader title='Synthetic workspace' project={null} sidebarOpen={open} rightPanelOpen={false} rightPanelFullWidth={false} onToggleSidebar={()=>setOpen(v=>!v)} onToggleRightPanel={()=>{}} onHome={()=>{}} canGoBack={false} canGoForward={false} onBack={()=>{}} onForward={()=>{}} navigationActions={['sidebar-toggle','back','forward']}/>} floatingSidebarHeader={()=>null}
-leftPanel={<Sidebar threads={visibleThreads} activeHostId='fixture' activeThreadId={selected} sidebarLayout={layout} showStart={false} showFooter={false} threadActions={threadActions} threadBadge={{Component:()=> <button style={{width:28,height:28,borderRadius:'50%'}} aria-label='Synthetic badge'>+1</button>}} threadCapabilities={()=>({rename:actionsAvailable,archive:actionsAvailable,fork:actionsAvailable,delete:actionsAvailable,pin:actionsAvailable})} onSelectThread={(_host,id)=>setSelected(id)} onNewTask={()=>{}} onOpenSettings={()=>{}}/>} rightPanel={null} rightPanelOpen={false} rightPanelFullWidth={false} sidebarOpen={open} sidebarWidth={frame.sidebarUnifiedDefaultWidth} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} onSidebarCollapse={()=>setOpen(false)} onSidebarExpand={()=>setOpen(true)} onSidebarResizeEnd={()=>{}} onRightPanelOpenChange={()=>{}}><p>Synthetic content only</p></AppShell>}
+function Demo(){const [sidebarWidth,setSidebarWidth]=useState(frame.sidebarUnifiedDefaultWidth);const [open,setOpen]=useState(true),[selected,setSelected]=useState('thread-0'),[actionsAvailable,setActionsAvailable]=useState(true),[visibleThreads,setThreads]=useState(threads);window.fixture={setSidebarWidth,resetThreads:()=>setThreads(threads),setThemePreference,setActionsAvailable,setThreads,setSelected,renames,deletes,forks,remove:id=>setThreads(rows=>rows.filter(row=>row.id!==id)),setStatus:(id,status)=>setThreads(rows=>rows.map(row=>row.id===id?{...row,status}:row))};
+const navigation={layout:'unified',account:${footerSpacingOnly}?{snapshot:{phase:'authenticated',name:'Synthetic employee',avatarUrl:null},onOpen:()=>{},onRefresh:async()=>{}}:null,onOpenSettings:()=>{},actions:${footerSpacingOnly}?[{id:'shell.start',title:'Home',icon:'start',active:true,onInvoke:()=>{}},{id:'shell.applications',title:'Apps',icon:'grid',onInvoke:()=>{}},{id:'shell.search',title:'Search',icon:'search',onInvoke:()=>{}},{id:'extra',title:'Extra destination',icon:'columns',onInvoke:()=>{}},{id:'extra-two',title:'Another destination',icon:'sparkles',onInvoke:()=>{}}]:[{id:'shell.start',title:'Start',icon:'start',active:true,onInvoke:()=>{}},{id:'opencraft.tasks.navigation',title:'Tasks',icon:'columns',onInvoke:()=>{}},{id:'example.workspace.navigation',title:'Collaboration',icon:'collaboration',onInvoke:()=>{}},{id:'skills',title:'Skills',icon:'sparkles',onInvoke:()=>{}}]};
+return <QueryClientProvider client={queryClient}><AppShell navigation={navigation} layoutScope='Chat' mainContentLayout='default' header={<AppShellHeader title='Synthetic workspace' project={null} sidebarOpen={open} rightPanelOpen={false} rightPanelFullWidth={false} onToggleSidebar={()=>setOpen(v=>!v)} onToggleRightPanel={()=>{}} onHome={()=>{}} canGoBack={false} canGoForward={false} onBack={()=>{}} onForward={()=>{}} navigationActions={['sidebar-toggle','back','forward']}/>} floatingSidebarHeader={()=>null}
+leftPanel={<Sidebar threads={visibleThreads} activeHostId='fixture' activeThreadId={selected} sidebarLayout={layout} showStart={false} showFooter={false} footerAccessory={${usageBoundaryOnly} ? <AgentUsageView hostId='fixture' threadId={selected} busy={false} connected={false} request={async()=>({readAt:Date.now(),providers:[],conversation:null})}/> : null} threadActions={threadActions} threadBadge={{Component:()=> <button style={{width:28,height:28,borderRadius:'50%'}} aria-label='Synthetic badge'>+1</button>}} threadCapabilities={()=>({rename:actionsAvailable,archive:actionsAvailable,fork:actionsAvailable,delete:actionsAvailable,pin:actionsAvailable})} onSelectThread={(_host,id)=>setSelected(id)} onNewTask={()=>{}} onOpenSettings={()=>{}}/>} rightPanel={null} rightPanelOpen={false} rightPanelFullWidth={false} sidebarOpen={open} sidebarWidth={sidebarWidth} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} onSidebarCollapse={()=>setOpen(false)} onSidebarExpand={()=>setOpen(true)} onSidebarResizeEnd={()=>{}} onRightPanelOpenChange={()=>{}}><p>Synthetic content only</p></AppShell></QueryClientProvider>}
 createIntlTestRoot(document.getElementById('root')).render(<Demo/>);`;
-const vite = await createServer({configFile:false,root:process.cwd(),logLevel:"error",resolve:{dedupe:["react","react-dom"]},cacheDir:"node_modules/.vite-thread-insets",esbuild:{jsx:"automatic",target:"esnext"},server:{host:"127.0.0.1",port:0,hmr:false},plugins:[{name:"thread-inset-fixture",resolveId:id=>id==="/probe.tsx"?id:null,load:id=>id==="/probe.tsx"?source:null,configureServer(server){server.middlewares.use((req,res,next)=>{if(req.url!=="/")return next();res.setHeader("content-type","text/html");res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/probe.tsx"></script>');});}}]});
+const vite = await createServer({configFile:false,root:process.cwd(),logLevel:"error",resolve:{dedupe:["react","react-dom"]},cacheDir:usageBoundaryOnly||sectionIconsOnly||footerSpacingOnly?`${output}/vite-cache`:"node_modules/.vite-thread-insets",esbuild:{jsx:"automatic",target:"esnext"},server:{host:"127.0.0.1",port:0,hmr:false},plugins:[{name:"thread-inset-fixture",resolveId:id=>id==="/probe.tsx"?id:null,load:id=>id==="/probe.tsx"?source:null,configureServer(server){server.middlewares.use((req,res,next)=>{if(req.url!=="/")return next();res.setHeader("content-type","text/html");res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/probe.tsx"></script>');});}}]});
 const {chromium}=await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE??"playwright");
 let browser;
 const results=[],errors=[];
 try {
   await mkdir(output,{recursive:true});await vite.listen();
   browser=await chromium.launch({executablePath:process.env.OPENCRAFT_CHROMIUM_EXECUTABLE,args:["--no-sandbox"]});
-  for(const width of [1280,390])for(const theme of ["light","dark"]){
-    const context=await browser.newContext({viewport:{width,height:1000},deviceScaleFactor:2,isMobile:width<640,hasTouch:width<640});
+  const cases=usageBoundaryOnly||sectionIconsOnly||footerSpacingOnly ? [{width:1280,touch:false},{width:1280,touch:true},{width:390,touch:false},{width:390,touch:true}] : [{width:1280,touch:false},{width:390,touch:true}];
+  for(const {width,touch} of cases)for(const theme of ["light","dark"]){
+    const context=await browser.newContext({viewport:{width,height:1000},deviceScaleFactor:2,isMobile:width<640,hasTouch:touch});
     const page=await context.newPage();page.on("pageerror",e=>errors.push(e.message));
     await page.goto(`http://127.0.0.1:${vite.httpServer.address().port}`);
     await page.waitForFunction(()=>Boolean(window.fixture));await page.evaluate(t=>window.fixture.setThemePreference(t),theme);
     if(!await page.locator(".sidebar-activity-item").first().isVisible())await page.locator("[data-chrome-action-id=sidebar-toggle]").first().click();
     await page.locator(".sidebar-activity-item").first().waitFor();await page.waitForTimeout(400);
+    if(footerSpacingOnly) {
+      for(const sidebarWidth of width>=640?[280,335,400]:[335]) {
+        await page.evaluate(value=>window.fixture.setSidebarWidth(value),sidebarWidth);
+        await page.waitForTimeout(100);
+        const nav=page.locator('.shell-sidebar-navigation .shell-navigation__items--applications');
+        const mobile=await page.locator('.shell-sidebar__column').getAttribute('data-navigation-layout')==='mobile';
+        if(!mobile && !touch) await nav.locator('button').nth(1).hover();
+        const measure=()=>page.evaluate(()=>{
+          const col=document.querySelector('.shell-sidebar__column'),track=col.querySelector('.shell-sidebar__navigation');
+          const nav=track.querySelector('.shell-navigation__items--applications'),rail=col.querySelector('.shell-navigation__footer--unified');
+          const box=el=>{const r=el.getBoundingClientRect();return{x:r.x,right:r.right,width:r.width,height:r.height}};
+          const buttons=[...nav.querySelectorAll(':scope > button')].map(box),trailing=[...rail.querySelectorAll(':scope > button')].map(box);
+          const gaps=items=>items.slice(1).map((b,i)=>b.x-items[i].right);
+          const css=getComputedStyle(nav);
+          return {mobile:col.dataset.navigationLayout==='mobile',gap:css.columnGap,railGap:getComputedStyle(rail).columnGap,
+            expectedGap:Math.max(parseFloat(css.getPropertyValue('--gap-application-navigation-items')),parseFloat(css.getPropertyValue('--gap-control-density-min'))),
+            gaps:gaps(buttons),trailingGaps:gaps(trailing),buttons,trailing,
+            navGutter:parseFloat(getComputedStyle(track).paddingLeft),railGutter:parseFloat(getComputedStyle(col.querySelector('.shell-sidebar__rail-footer')).paddingRight),
+            gutter:parseFloat(getComputedStyle(col.querySelector('.sidebar-panel')).paddingLeft),blockPadding:parseFloat(getComputedStyle(track).paddingTop),
+            hit:parseFloat(css.getPropertyValue('--size-control-hit-min')),scrollable:track.scrollWidth>track.clientWidth};
+        });
+        const m=await measure();
+        if(!mobile) {
+          assert.equal(parseFloat(m.gap),m.expectedGap,'Shared action gap survives narrow containers');
+          assert.equal(parseFloat(m.railGap),m.expectedGap,'Both groups share the same gap');
+          assert.ok([...m.gaps,...m.trailingGaps].every(g=>Math.abs(g-m.expectedGap)<1),'Adjacent action faces never touch');
+          assert.ok([...m.buttons,...m.trailing].every(b=>b.width>=m.hit&&b.height>=m.hit),'Do not shrink density hit targets');
+          assert.equal(m.navGutter,m.gutter);assert.equal(m.railGutter,m.gutter);
+          assert.equal(m.blockPadding,4,'Keep the compact footer block padding');
+          if(sidebarWidth===280){
+            assert.equal(m.scrollable,true,'Extra destinations overflow in their own track');
+            await nav.locator('button').last().scrollIntoViewIfNeeded();
+            await nav.locator('button').first().scrollIntoViewIfNeeded();
+          }
+          if(!touch&&sidebarWidth===280){
+            const negative=await page.addStyleTag({content:'.shell-sidebar__column:not([data-navigation-layout="mobile"]) .shell-sidebar-navigation .shell-navigation__items--applications { gap:0 !important }'});
+            assert.ok((await measure()).gaps.some(g=>g===0),'Negative control reproduces touching action faces');await negative.evaluate(el=>el.remove());
+          }
+        }
+        if(mobile) await page.locator('.shell-sidebar__rail-footer button').last().scrollIntoViewIfNeeded();
+        await page.screenshot({path:`${output}/${width}-${touch?'touch':'pointer'}-${theme}-${sidebarWidth}-footer.png`});
+        results.push({width,touch,theme,sidebarWidth,footer:m});
+      }
+      await context.close();continue;
+    }
+    if(sectionIconsOnly) {
+      await page.evaluate(()=>window.fixture.setThreads(rows=>[
+        {...rows[0],id:'attention',title:'Waiting for you',status:'review',pinned:false,accessMode:'shared'},
+        {...rows[0],id:'pinned',title:'Pinned task',status:'ready',pinned:true,accessMode:'shared'},
+        {...rows[0],id:'private',title:'Private task',status:'ready',pinned:false,accessMode:'private'},
+        {...rows[0],id:'scheduled',title:'Scheduled task',status:'ready',pinned:false,accessMode:'shared',schedule:{status:'paused',needsReview:false,nextRunAt:Date.now()+3600000}},
+        {...rows[0],id:'recent',title:'Recent task',status:'ready',pinned:false,accessMode:'shared'}
+      ]));
+      await page.locator('.sidebar-thread-group-toggle').filter({hasText:'Needs your attention'}).waitFor();
+      const sections=await page.locator('.sidebar-thread-group-toggle').evaluateAll(buttons=>buttons.map(button=>{
+        const icon=button.querySelector('.sidebar-section-icon'),label=button.querySelector('.sidebar-thread-group-label');
+        return {section:icon?.getAttribute('data-section')??null,iconX:icon?.getBoundingClientRect().x,labelX:label.getBoundingClientRect().x,hidden:icon?.getAttribute('aria-hidden')};
+      }));
+      assert.deepEqual(sections.map(s=>s.section).sort(),['attention','mine','pinned','recent','scheduled']);
+      for(const row of sections){assert.equal(row.hidden,'true');assert.ok(Math.abs(row.iconX-sections[0].iconX)<1);assert.ok(Math.abs(row.labelX-sections[0].labelX)<1,'Section labels share one text column');}
+      const attention=page.locator('.sidebar-thread-group-toggle').filter({has:page.locator('[data-section="attention"]')});
+      await attention.click();assert.equal(await attention.getAttribute('aria-expanded'),'false');
+      assert.equal(await attention.locator('svg[data-section="attention"]').isVisible(),true);
+      await attention.focus();await page.keyboard.press('Enter');assert.equal(await attention.getAttribute('aria-expanded'),'true');
+      assert.equal(await attention.locator('svg[data-section="attention"]').isVisible(),true);
+      await attention.evaluate(el=>el.blur());
+      await page.screenshot({path:`${output}/${width}-${touch?'touch':'pointer'}-${theme}-section-icons.png`});
+      results.push({width,touch,theme,sections,collapseExpandIconPreserved:true});
+      await context.close();continue;
+    }
+    // The usage separator is the list boundary, not a spacer above the footer.
+    // Exercise the actual Sidebar + usage accessory inside AppShell.
+    if(usageBoundaryOnly) {
+      await page.setViewportSize({width,height:620});
+      await page.evaluate(()=>window.fixture.setThreads(rows=>Array.from({length:40},(_,i)=>({...rows[0],id:"edge-"+i,title:"多管家群聊能力 "+i,project:"workspace",status:"ready",updatedAt:Date.now()/1000-i}))));
+      await page.locator(".sidebar-activity-item").nth(4).waitFor();
+      const boundary=async()=>page.evaluate(()=>{
+        const list=document.querySelector('.sidebar-activity-list').getBoundingClientRect();
+        const usage=document.querySelector('[data-agent-usage]'),rect=usage.getBoundingClientRect();
+        const footer=document.querySelector('.shell-sidebar__navigation').getBoundingClientRect();
+        const column=document.querySelector('.shell-sidebar__column'),columnRect=column.getBoundingClientRect();
+        const disclosure=usage.querySelector('button'),button=disclosure.getBoundingClientRect();
+        const navigation=document.querySelector('.shell-sidebar__navigation'),navRect=navigation.getBoundingClientRect();
+        const first=navigation.querySelector('button')?.getBoundingClientRect();
+        const last=document.querySelector('.shell-sidebar__rail-footer button')?.getBoundingClientRect();
+        return {gap:rect.top-list.bottom,border:getComputedStyle(usage).borderTopWidth,footerY:footer.top,
+          gutter:{left:rect.left-columnRect.left,right:columnRect.right-rect.right},
+          navigationGutter:first?first.left-columnRect.left:null,railGutter:last?columnRect.right-last.right:null,
+          focusClearance:document.querySelector('.shell-sidebar__context').getBoundingClientRect().bottom-button.bottom,focusInk:parseFloat(getComputedStyle(disclosure).outlineWidth)+parseFloat(getComputedStyle(disclosure).outlineOffset),
+          footerGap:navRect.top-rect.bottom,footerPadding:getComputedStyle(navigation).paddingTop,
+          disclosureHeight:button.height,hitMinimum:parseFloat(getComputedStyle(disclosure).getPropertyValue('--size-control-hit-min')),
+          mobile:column.dataset.navigationLayout==='mobile'};
+      });
+      const closed=await boundary();
+      assert.ok(Math.abs(closed.gap)<1,'Only the separator may sit between the list and usage: '+JSON.stringify(closed));
+      assert.ok(parseFloat(closed.border)>0 && parseFloat(closed.border)<=1,'Usage retains one hairline');
+      assert.ok(Math.abs(closed.gutter.left-16)<1 && Math.abs(closed.gutter.right-16)<1,'Usage uses the standard sidebar gutter: '+JSON.stringify(closed));
+      assert.ok(closed.disclosureHeight>=closed.hitMinimum,'Disclosure retains density hit target');
+      if(!closed.mobile) {
+        assert.ok(Math.abs(closed.navigationGutter-closed.gutter.left)<1,'Bottom navigation shares the usage leading edge');
+        assert.ok(Math.abs(closed.railGutter-closed.gutter.right)<1,'Settings/account share the trailing edge');
+        assert.ok(Math.abs(closed.footerGap-4)<1,'Only one unit of panel focus clearance');
+        assert.equal(parseFloat(closed.footerPadding),4,'Only one standard block unit around footer controls');
+      }
+      const disclosure=page.locator('[data-agent-usage] .agent-usage__disclosure');
+      await disclosure.click();await page.locator('.agent-usage__content').waitFor();
+      const expanded=await boundary();
+      assert.ok(Math.abs(expanded.gap)<1,'Expanded usage must not add a blank list strip');
+      assert.ok(Math.abs(expanded.footerY-closed.footerY)<1,'Bottom navigation remains in place');
+      await disclosure.click();await page.locator('.agent-usage__content').waitFor({state:'detached'});
+      // Keyboard and pointer keep the shared Button focus/hover owner.
+      await disclosure.focus();await page.keyboard.press('Enter');
+      assert.equal(await disclosure.getAttribute('aria-expanded'),'true');
+      // The mobile Shell owns Escape dismissal; use Space there to close just the disclosure.
+      await page.keyboard.press(width>=640?'Escape':'Space');
+      assert.equal(await disclosure.getAttribute('aria-expanded'),'false');
+      assert.equal(await disclosure.evaluate(el=>document.activeElement===el),true);
+      if(!touch && width>=640) await disclosure.hover();
+      const focused=await boundary();
+      if(!focused.mobile) assert.ok(focused.focusClearance>=focused.focusInk,'Focus ring remains unclipped');
+      results.push({width,touch,theme,usageBoundary:{closed,expanded}});
+      const viewport=page.locator(width>=640?'.sidebar-activity-list':'.shell-sidebar__scroll');
+      await viewport.evaluate(el=>{el.scrollTop=el.scrollHeight});
+      if(width<640) await page.locator('[data-agent-usage]').scrollIntoViewIfNeeded();
+      await page.screenshot({path:`${output}/${width}-${touch?"touch":"pointer"}-${theme}-usage-separator.png`});
+      // Same Sidebar, list and usage instances across the disclosure operation.
+      const final=await boundary();
+      assert.ok(Math.abs(final.gap)<1,'Scrolled rows meet the same separator');
+      assert.equal(await page.locator('[data-agent-usage] .agent-usage__disclosure').getAttribute('aria-expanded'),'false');
+      await context.close();
+      continue;
+    }
     await page.locator(".sidebar-activity-row").nth(1).hover();
     const measurement=await page.evaluate(()=>{
       const box=e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return{x:r.x,right:r.right,y:r.y,bottom:r.bottom,height:r.height,width:r.width,paddingLeft:s.paddingLeft,paddingRight:s.paddingRight,marginLeft:s.marginLeft,background:s.backgroundColor};};
@@ -65,8 +204,8 @@ try {
         await page.locator('[data-row-lines="two"]').first().screenshot({path:`${output}/1280-${theme}-two-line.png`});
         await page.locator('[data-row-lines="one"]').first().screenshot({path:`${output}/1280-${theme}-one-line.png`});
       }
-      const heights=await page.locator('.sidebar-activity-item-container').evaluateAll(rows=>rows.map(row=>({lines:row.getAttribute('data-row-lines'),height:row.getBoundingClientRect().height})));
-      assert.ok(heights.every(r=>r.lines==='one'?r.height===(width===390?44:32):r.height>=(width===390?56:48)),'row heights follow density token '+JSON.stringify(heights));
+      const heights=await page.locator('.sidebar-activity-item-container').evaluateAll(rows=>rows.map(row=>({lines:row.getAttribute('data-row-lines'),height:row.getBoundingClientRect().height,minHeight:parseFloat(getComputedStyle(row.querySelector('.sidebar-activity-item')).minHeight)})));
+      assert.ok(heights.every(r=>r.lines==='one'?r.height===r.minHeight:r.height>=r.minHeight),'row heights follow density token '+JSON.stringify(heights));
       const firstRow=measurement.rows[0];
       for(const row of measurement.rows){
         assert.ok(Math.abs(row.box.x-firstRow.box.x)<.1 && Math.abs(row.box.right-firstRow.box.right)<.1,"single/two-line row frames share list inset");
@@ -102,14 +241,14 @@ try {
     assert.equal(await densityToggles.count(),4);
     for(const toggle of await densityToggles.all())if(await toggle.getAttribute('aria-expanded')==='true')await toggle.click();
     const density=await page.evaluate(()=>{
-      const box=e=>{const r=e.getBoundingClientRect(),c=getComputedStyle(e);return{top:r.top,bottom:r.bottom,height:r.height,size:c.fontSize,lineHeight:c.lineHeight,weight:c.fontWeight}};
+      const box=e=>{const r=e.getBoundingClientRect(),c=getComputedStyle(e);return{top:r.top,bottom:r.bottom,height:r.height,minHeight:parseFloat(c.minHeight),size:c.fontSize,lineHeight:c.lineHeight,weight:c.fontWeight}};
       return {groups:[...document.querySelectorAll('.sidebar-activity-group')].map(box),buttons:[...document.querySelectorAll('.sidebar-thread-group-toggle')].map(box),more:box(document.querySelector('.sidebar-activity-more')),hidden:[...document.querySelectorAll('.sidebar-activity-group__items')].every(e=>getComputedStyle(e).display==='none')};
     });
     assert.ok(density.hidden,'Collapsed contents have no layout footprint');
     for(let i=1;i<density.groups.length;i++)assert.equal(density.groups[i].top-density.groups[i-1].bottom,4,'Folded group gaps remain compact');
     assert.equal(density.more.top-density.groups.at(-1).bottom,4,'More/less shares the compact rhythm');
     for(const button of [...density.buttons,density.more]){
-      assert.ok(button.height>=(width===390?44:30),'Hit targets survive density reduction');
+      assert.ok(button.height>=button.minHeight,'Hit targets survive density reduction');
       assert.equal(button.size,width===390?'16px':'13px');assert.equal(button.lineHeight,width===390?'22px':'18px');
     }
     await page.screenshot({path:`${output}/${width}-${theme}-collapsed-density.png`});
@@ -232,7 +371,7 @@ try {
     results.push({width,theme,scroll:scrolled,selectionRevealed:true});
     await context.close();
   }
-  assert.deepEqual(errors,[]);console.log("Real Shell navigation/date/thread/project insets passed");
+  assert.deepEqual(errors,[]);console.log(sectionIconsOnly ? "Real Shell section glyphs, alignment and disclosure passed" : usageBoundaryOnly ? "Real Shell usage separator, disclosure and fixed footer passed" : "Real Shell navigation/date/thread/project insets passed");
 } finally {
   await writeFile(`${output}/result.json`,JSON.stringify({results,errors},null,2));await browser?.close();await vite.close();
 }

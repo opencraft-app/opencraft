@@ -42,15 +42,8 @@ export interface SubmitCompilerOptions {
   readonly inputModalities?: readonly string[];
 }
 
-export class SubmitCompileError extends Error {
-  readonly code: "ASSET_NOT_READY" | "INVALID_JSON" | "EMPTY_INPUT" | "CAPABILITY_UNAVAILABLE" | "UNSUPPORTED_INPUT";
-
-  constructor(code: SubmitCompileError["code"], message: string) {
-    super(message);
-    this.name = "SubmitCompileError";
-    this.code = code;
-  }
-}
+export { SubmitCompileError } from "./compile-error";
+import { SubmitCompileError } from "./compile-error";
 
 type ProtocolJsonValue =
   | number
@@ -127,7 +120,7 @@ function appendInline(
       return;
     case "mention": {
       if (inline.mentionKind === "thread" && inline.uri) {
-        appendText(input, `[Referenced conversation: ${inline.label}](${inline.uri})`);
+        appendText(input, `[@${inline.label.replace(/[\\\[\]()`*_<>]/gu, "\\$&")}](${inline.uri})`);
         return;
       }
       const path = metadataString(inline.metadata, "path") ?? (inline.uri === undefined ? null : localPath(inline.uri));
@@ -247,6 +240,76 @@ function appendAttachment(
   appendText(input, `\nAttachment: [${attachment.name}](${attachment.uri})`);
 }
 
+/**
+ * References that carry their own message text (e.g. browser annotations)
+ * belong in the turn input, not additionalContext: they can be long, must not
+ * be truncated, and may interleave images. Grouped under one heading per
+ * inputSection, in inputOrder.
+ */
+function inlineReference(reference: ComposerContextReference): boolean {
+  return reference.visible && typeof reference.metadata?.inputText === "string";
+}
+
+/** Generic metadata.inputImages contract; order is provider-input order. */
+export interface ComposerInputImage {
+  readonly url: string;
+  readonly preface?: string;
+}
+export const COMPOSER_REFERENCE_IMAGE_LIMIT = 4;
+export const COMPOSER_INPUT_IMAGE_LIMIT = 8;
+export const COMPOSER_INPUT_IMAGE_BYTES_LIMIT = 300 * 1024;
+
+function referenceImages(reference: ComposerContextReference): readonly ComposerInputImage[] {
+  const fail = (index: number, reason: string): never => {
+    throw new SubmitCompileError("INVALID_INPUT_IMAGE", `Reference ${reference.id}, image ${index + 1}: ${reason}`);
+  };
+  const metadata = reference.metadata;
+  const raw = metadata?.inputImages;
+  const legacy = metadata?.inputImage;
+  if (raw !== undefined && legacy !== undefined) fail(0, "inputImages and inputImage cannot both be supplied");
+  const images = raw !== undefined ? raw : legacy !== undefined
+    ? [{ url: legacy, preface: metadata?.inputImagePreface }] : [];
+  if (!Array.isArray(images)) return fail(0, "inputImages must be an array");
+  if (images.length > COMPOSER_REFERENCE_IMAGE_LIMIT) return fail(COMPOSER_REFERENCE_IMAGE_LIMIT, "at most 4 images per reference");
+  return Array.from(images, (entry: unknown, index) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return fail(index, "expected an image record");
+    const descriptors = Object.getOwnPropertyDescriptors(entry);
+    if (!descriptors.url || !("value" in descriptors.url) || (descriptors.preface && !("value" in descriptors.preface))) return fail(index, "expected data properties");
+    const url: unknown = descriptors.url.value, preface: unknown = descriptors.preface?.value;
+    if (typeof url !== "string" || !url || url.length > COMPOSER_INPUT_IMAGE_BYTES_LIMIT) return fail(index, "missing or oversized image URL");
+    if (preface !== undefined && (typeof preface !== "string" || preface.length > 4096)) return fail(index, "invalid image preface");
+    if (url.startsWith("data:")) {
+      const match = /^data:image\/(?:png|jpeg|webp|gif);base64,([A-Za-z0-9+/]+={0,2})$/.exec(url);
+      if (!match || match[1]!.length % 4 !== 0) return fail(index, "invalid image data URL");
+    } else if (!/^(?:https?:\/\/|file:\/\/\/|\/)/.test(url) || /[\r\n\0]/.test(url) || url.length > 8192) return fail(index, "unsupported image URL");
+    return { url, ...(typeof preface === "string" ? { preface } : {}) };
+  });
+}
+
+function appendInlineReferences(input: UserInput[], context: readonly ComposerContextReference[]): void {
+  let imageCount = input.filter(entry => entry.type === "image" || entry.type === "localImage").length;
+  const sections = new Map<string, ComposerContextReference[]>();
+  for (const reference of context) {
+    if (!inlineReference(reference)) continue;
+    const section = metadataString(reference.metadata, "inputSection") ?? "";
+    sections.set(section, [...(sections.get(section) ?? []), reference]);
+  }
+  for (const [section, references] of sections) {
+    const ordered = [...references].sort((a, b) => Number(a.metadata?.inputOrder ?? 0) - Number(b.metadata?.inputOrder ?? 0));
+    const preamble = metadataString(ordered[0]!.metadata, "inputSectionPreamble");
+    appendText(input, (input.length > 0 ? "\n\n" : "") + [section, preamble].filter(Boolean).join("\n\n"));
+    for (const reference of ordered) {
+      appendText(input, "\n\n" + String(reference.metadata!.inputText));
+      for (const [index, image] of referenceImages(reference).entries()) {
+        if (++imageCount > COMPOSER_INPUT_IMAGE_LIMIT) throw new SubmitCompileError("INVALID_INPUT_IMAGE", `Reference ${reference.id}, image ${index + 1}: at most 8 images per submission`);
+        if (image.preface) appendText(input, "\n\n" + image.preface);
+        const path = localPath(image.url);
+        input.push(path === null ? { type: "image", url: image.url } : { type: "localImage", path });
+      }
+    }
+  }
+}
+
 function contextValue(reference: ComposerContextReference): string {
   for (const key of ["value", "content", "text"] as const) {
     const value = reference.metadata?.[key];
@@ -258,7 +321,7 @@ function contextValue(reference: ComposerContextReference): string {
 function compileContext(context: readonly ComposerContextReference[]): Record<string, AdditionalContextEntry> | null {
   const entries: Record<string, AdditionalContextEntry> = {};
   for (const reference of context) {
-    if (!reference.visible) continue;
+    if (!reference.visible || inlineReference(reference)) continue;
     const explicitKind = reference.metadata?.additionalContextKind;
     const kind = explicitKind === "application" || explicitKind === "untrusted"
       ? explicitKind
@@ -319,6 +382,7 @@ export function compileSubmitIntent(
     appendBlock(input, block, diagnostics);
   });
   for (const attachment of intent.attachments) appendAttachment(input, attachment, diagnostics);
+  appendInlineReferences(input, intent.context);
   if (options.inputModalities) {
     const unsupported = unsupportedModelInput(options.inputModalities, input);
     if (unsupported) throw new SubmitCompileError("UNSUPPORTED_INPUT", `所选模型不支持 ${unsupported} 输入，请更换模型或移除附件`);
@@ -337,7 +401,7 @@ export function compileSubmitIntent(
       sourceId: null,
     });
   }
-  if (intent.target.type === "enqueue-follow-up" && intent.context.some((reference) => reference.visible)) {
+  if (intent.target.type === "enqueue-follow-up" && intent.context.some((reference) => reference.visible && !inlineReference(reference))) {
     diagnostics.push({
       code: "TARGET_OPTION_NOT_SUPPORTED",
       message: "thread/queue/add does not accept additionalContext; the immutable SubmitIntent retains it for inspection",

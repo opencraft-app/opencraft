@@ -116,7 +116,7 @@ export class PiEngine {
   private readonly modelsRuntime: ReturnType<typeof createPiModels>;
   private resolvedModels?: Awaited<ReturnType<typeof createPiModels>>;
   private readonly transcriptCache: ReturnType<typeof createPiTranscriptCache>;
-  constructor(private readonly options: { modelPolicyPath?: string; dataDirectory?: string; directory: string; cwd: string; executionEnvironment?: ExecutionEnvironmentRuntime; modelDirectory?: string; models?: Awaited<ReturnType<typeof createPiModels>>; configuration?: PiModelConfiguration; sessionCapabilities?: SessionCapabilityPort; attachmentDirectory?: string; admission?: { open(): boolean; run<T>(operation: () => Promise<T>, reconciliation?: boolean): Promise<T> } }) {
+  constructor(private readonly options: { modelPolicyPath?: string; dataDirectory?: string; directory: string; cwd: string; executionEnvironment?: ExecutionEnvironmentRuntime; modelDirectory?: string; models?: Awaited<ReturnType<typeof createPiModels>>; configuration?: PiModelConfiguration; sessionCapabilities?: SessionCapabilityPort; attachmentDirectory?: string; prepareAttachmentInput?: (threadId: string, input: Value[]) => Promise<Value[]>; admission?: { open(): boolean; run<T>(operation: () => Promise<T>, reconciliation?: boolean): Promise<T> } }) {
     nodeObserver("pi", { processResources: false });
     this.modelsRuntime = (options.models ? Promise.resolve(options.models) : createPiModels(options.modelDirectory ?? options.directory))
       .then(models => { this.resolvedModels = models; return models; });
@@ -126,8 +126,9 @@ export class PiEngine {
       readTurns: async (id, signal) => this.readHistory(await this.session(id), signal),
     });
   }
-  private compileInput(input: Value[], additionalContext: Value | null | undefined, cwd: string, model: Value) {
-    return compilePiInput(input, additionalContext, cwd, model, { attachmentDirectory: this.options.attachmentDirectory });
+  private async compileInput(input: Value[], additionalContext: Value | null | undefined, cwd: string, model: Value, threadId: string) {
+    const prepared=this.options.prepareAttachmentInput?await this.options.prepareAttachmentInput(threadId,input):input;
+    return compilePiInput(prepared, additionalContext, cwd, model, { attachmentDirectory: this.options.attachmentDirectory });
   }
   ownsThread(id: string) { return id.startsWith("pi_"); }
   ownsModel(id: string) { return id.startsWith("pi:"); }
@@ -408,7 +409,11 @@ export class PiEngine {
       // admission state; only a committed native snapshot announces the Turn.
       session.active = { id: item.id, status: "inProgress", items: [], _queueAdmission: true };
       if (!this.admissionOpen()) throw new Error("Pi admission is fenced");
-      await native.submit(item.content, { turnId: item.id, clientId: item.clientId, input: item.input,
+      const ref=selection(session.model),model=(await this.modelsRuntime).getModel(ref.provider,ref.modelId);
+      if(!model)throw new Error('Pi model is unavailable');
+      const preparedContent=await this.compileInput(item.input,item.additionalContext,session.cwd,model,session.id);
+      if(!this.admissionOpen())throw new Error('Pi admission is fenced');
+      await native.submit(preparedContent, { turnId: item.id, clientId: item.clientId, input: item.input,
         additionalContext: item.additionalContext, createdAtMs: item.createdAtMs,
         ...(item.executionAdmission ? {executionAdmission:item.executionAdmission} : {}) }, item.id);
       await native.settleQueue(item.id);
@@ -858,6 +863,7 @@ export class PiEngine {
     if (method === "thread/archive" || method === "thread/unarchive") {
       if (session.ephemeral) throw new Error("Temporary Pi threads cannot be archived");
       if (session.active) throw new Error("Stop the Pi turn before archiving");
+      if (method === "thread/archive") { await session.native?.close(); session.native = undefined; }
       session.archived = method === "thread/archive"; await this.save(session);
       if (session.archived) await this.transcriptCache.invalidate(session.id);
       if (session.archived) this.scheduleService?.suspend(session.id); return method === "thread/unarchive" ? { thread: this.thread(session) } : {};
@@ -908,7 +914,7 @@ export class PiEngine {
         if (!model) throw new Error("Pi model is unavailable");
         if (Array.isArray(params.input)) validatePiSkillInput(params.input, session.cwd, this.options.modelDirectory ?? this.options.directory);
         const additionalContext = queued?.additionalContext ?? params.additionalContext ?? null;
-      const content = await this.compileInput(params.input, additionalContext, session.cwd, model);
+      const content = await this.compileInput(params.input, additionalContext, session.cwd, model, session.id);
         const executionAdmission = queued ? queued.executionAdmission : (typeof params.__opencraftExecutionAdmission === "string" && params.__opencraftExecutionAdmission.length <= 128 ? params.__opencraftExecutionAdmission : undefined);
         const item: PiQueuedInput = { ...(executionAdmission ? {executionAdmission} : {}), id: queued?.id ?? `${session.id}:turn:client:${clientId}`, clientId,
           input: params.input, content, additionalContext, createdAtMs: queued?.createdAtMs ?? Date.now(), state: "queued" };
@@ -964,7 +970,7 @@ export class PiEngine {
       if (!model) throw new Error("Pi model is unavailable");
       const cwd = await workspace(params, session.cwd);
       if (Array.isArray(params.input)) validatePiSkillInput(params.input, cwd, this.options.modelDirectory ?? this.options.directory);
-      const content = await this.compileInput(params.input, params.additionalContext, cwd, model);
+      const content = await this.compileInput(params.input, params.additionalContext, cwd, model, session.id);
       const { native } = await this.configure(session, params, false, true);
       const createdAtMs = Date.now();
       const turn: PiTurn = { id: turnId, items: [{ type: "userMessage", id: `${turnId}:user`, clientId, content: params.input }], itemsView: "complete", status: "inProgress", error: null,
@@ -1001,7 +1007,7 @@ export class PiEngine {
       const ref = selection(session.model), model = (await this.modelsRuntime).getModel(ref.provider, ref.modelId);
       if (!model) throw new Error("Pi model is unavailable");
       if (Array.isArray(params.input)) validatePiSkillInput(params.input, session.cwd, this.options.modelDirectory ?? this.options.directory);
-      const content = await this.compileInput(params.input, params.additionalContext, session.cwd, model);
+      const content = await this.compileInput(params.input, params.additionalContext, session.cwd, model, session.id);
       const requestId = clientId ? `${params.expectedTurnId}:steer:client:${clientId}` : `${params.expectedTurnId}:steer:${randomUUID()}`;
       await native.steer(content, { turnId: requestId, steerTurnId: params.expectedTurnId, clientId, input: params.input,
         additionalContext: params.additionalContext ?? null, createdAtMs: Date.now() }, requestId, params.expectedTurnId);

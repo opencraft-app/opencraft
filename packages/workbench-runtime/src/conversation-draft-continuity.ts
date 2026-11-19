@@ -1,5 +1,6 @@
 import {
   encodeComposerTarget,
+  assertComposerPlacement,
   isComposerDocumentEmpty,
   type ComposerController,
   type ComposerDocument,
@@ -79,6 +80,9 @@ export function parseConversationDraftTarget(value: string | null): Extract<Comp
     if (!(workspace.cwd === null || typeof workspace.cwd === "string")
       || !Array.isArray(workspace.runtimeWorkspaceRoots) || !workspace.runtimeWorkspaceRoots.every(root => typeof root === "string")
       || !(workspace.projectId === undefined || workspace.projectId === null || typeof workspace.projectId === "string")) return null;
+    assertComposerPlacement({ environment: target.execution.environment, workspace: {
+      cwd: workspace.cwd, runtimeWorkspaceRoots: workspace.runtimeWorkspaceRoots, source: workspace.source,
+    } });
     return target as unknown as Extract<ComposerTarget, { type: "new-thread" }>;
   } catch { return null; }
 }

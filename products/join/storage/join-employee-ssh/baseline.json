@@ -1,0 +1,17 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "new-employee-ssh-credentials",
+      "checksum": "03960c1b5e6e1cabf46b52f1e5503e6918daa50eb09579e0c90ee53e1a5b7cad"
+    }
+  ],
+  "tableOptions": {
+    "employee_ssh_credentials": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "2bde6f71ae7cbaa48a9e73a5d386a4fae6c28ea0f3fcc3fb2f332dd881331d3e",
+  "baselineSnapshotChecksum": "c4fb5e4161549732bf8483438e3c2576b0639b5b9728b3a18f3985a4423e692b"
+}

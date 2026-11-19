@@ -10,10 +10,10 @@ import {useAsyncNotices} from '/apps/workbench-web/src/components/async-notices.
 import {initializeAppearanceTheme} from '/apps/workbench-web/src/appearance-theme.ts';
 import '/apps/workbench-web/src/styles/app.scss';
 initializeAppearanceTheme();
-function App(){const[right,setRight]=useState(false);const notices=useAsyncNotices();window.headerFixture={setRight,notices};return <AppShell
+function App(){const[right,setRight]=useState(false);const notices=useAsyncNotices();window.headerFixture={setRight,notices};return <AppShell layoutScope="header-regression" mainContentLayout="default"
  navigation={{settingsActive:false,actions:[],account:{snapshot:{name:'Test user',phase:'ready',avatarUrl:null,planLabel:'',usageRemainingPercent:100},onOpen:()=>{},onRefresh:async()=>{},onSignOut:async()=>{}},onOpenSettings:()=>{}}}
- header={<AppShellHeader title='Conversation' project={null} headerActionCount={1}
- headerAction={<button className='chrome-button' aria-label='Conversation actions'>…</button>}
+ header={<AppShellHeader title='Conversation' project={null}
+ primaryAction={<button className='chrome-button' aria-label='Conversation actions'>…</button>}
  sidebarOpen={false} rightPanelOpen={right} rightPanelFullWidth={false}
  onToggleSidebar={()=>{}} onToggleRightPanel={()=>setRight(!right)} onHome={()=>{}}
  canGoBack={false} canGoForward={false} onBack={()=>{}} onForward={()=>{}} navigationActions={['sidebar-toggle']}/>}
@@ -31,7 +31,7 @@ try {
     const page=await browser.newPage({viewport:{width,height:844},hasTouch:width===390,isMobile:width===390});
     const errors:string[]=[];page.on('pageerror',(e:Error)=>errors.push(e.message));
     await page.addInitScript('window.__name = value => value');
-    await page.goto(vite.resolvedUrls!.local[0]!);
+    await page.goto(vite.resolvedUrls!.local[0]!,{waitUntil:'commit'});
     await page.getByRole('button',{name:'Conversation actions',exact:true}).waitFor();
     assert.equal(await page.locator('.notice-center-trigger').count(),0);
     await page.evaluate(() => document.fonts.ready);
@@ -42,8 +42,8 @@ try {
         const measure=document.querySelector('.app-shell-header__end-measure')!.getBoundingClientRect();
         const actions=document.querySelector('.app-shell-header__end-slot .app-shell-header__end-actions')!.getBoundingClientRect();
         const buttons=document.querySelectorAll('.app-shell-header__end-slot .chrome-button');
-        const menu=buttons[0]!.getBoundingClientRect(),toggle=buttons[1]!.getBoundingClientRect();
-        return Math.abs(measure.width-actions.width)<1 && buttons.length===2 && menu.width>0 && menu.right<=toggle.left+1;
+        const menu=document.querySelector('.app-shell-header__primary-actions button')!.getBoundingClientRect(),toggle=buttons[0]!.getBoundingClientRect();
+        return Math.abs(measure.width-actions.width)<1 && buttons.length===1 && menu.width>0 && menu.right<=toggle.left+1;
       });
       const toggles = await page.evaluate(() => {
         const left = document.querySelector<HTMLButtonElement>('.app-shell-header button[data-app-shell-sidebar-trigger]')!;

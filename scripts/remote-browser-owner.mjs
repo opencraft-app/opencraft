@@ -35,7 +35,9 @@ export async function connectBrowserOwner(socketPath) {
           clearTimeout(timer); reject(error); socket.destroy(); return;
         }
         if (message.type !== 'attached' || message.protocol !== owner.PROTOCOL || !Array.isArray(message.pages)) { clearTimeout(timer); reject(new Error('Browser owner unavailable')); socket.destroy(); return; }
-        attached = true; clearTimeout(timer); transport.inventory = message.pages; transport.workerPid = message.workerPid; resolve(transport);
+        attached = true; clearTimeout(timer); transport.inventory = message.pages; transport.workerPid = message.workerPid;
+        transport.automationCancellation = message.automationCancellation === 1 ? 1 : 0;
+        transport.automationNavigation = message.automationNavigation === 1 ? 1 : 0; resolve(transport);
       } else transport.emit('message', message);
     }, () => socket.destroy());
   });

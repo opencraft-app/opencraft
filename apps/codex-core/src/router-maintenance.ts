@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { constants, openSync, fstatSync, readFileSync, closeSync, lstatSync, readdirSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -241,7 +242,7 @@ export async function inspectRouterNative(options: {
   unresolvedCreations: number; supervisor: GenerationSupervisor; coreEndpoint: string; token: string; failures: NativeHistoryFailures;
 }, continuing = false, hostRestart?: { sourceBootId: string; recoveryBootId: string; sourceOwner?: string; policyArchived?: boolean }, coldUnavailable?: HostColdUnavailablePolicy, unavailableArchived = false) {
   if (hostRestart && (continuing || hostRestart.sourceBootId === hostRestart.recoveryBootId
-    || hostRestart.recoveryBootId !== readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim())) throw Error("Invalid host restart boot transition");
+    || hostRestart.recoveryBootId !== (await readFile("/proc/sys/kernel/random/boot_id", "utf8")).trim())) throw Error("Invalid host restart boot transition");
   if ((!continuing && options.unresolvedCreations) || options.generations.some(g => !["active", "ready", "draining", "discarded"].includes(g.state))) throw new RouterMaintenanceBlocked("ROUTER_LIFECYCLE_BUSY", "Router lifecycle or creation work is unresolved");
   const unavailable = coldUnavailable ? hostColdUnavailablePolicy(coldUnavailable, !!hostRestart && !hostRestart.policyArchived) : undefined;
   if (unavailable && (!hostRestart && !unavailableArchived || hostRestart && (unavailable.source.bootId !== hostRestart.sourceBootId || unavailable.source.owner !== hostRestart.sourceOwner))) throw Error("Host cold-unavailable source policy differs");

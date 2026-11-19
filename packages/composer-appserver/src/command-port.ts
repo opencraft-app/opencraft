@@ -1,3 +1,6 @@
+import { isWorkspacePlacement, type WorkspacePlacement } from '@opencraft/chat-core';
+import { assertComposerPlacement } from '@opencraft/composer-core';
+import { parseInputDeliveryReceipt } from "@opencraft/appserver-protocol";
 import { AppServerClientError, AppServerRpcError, type AppServerClient, type AppServerClientRequestOptions } from "@opencraft/appserver-client";
 import { ContinuationCommandError, SubmissionNotDispatchedError, SubmissionOutcomeUnknownError } from "@opencraft/chat-runtime";
 import type {
@@ -21,12 +24,12 @@ import type {
 } from "@opencraft/chat-runtime";
 import type { ModelSelectionPolicy, SubmissionReceipt, SubmitIntent } from "@opencraft/composer-core";
 
-import {
+import type {
   compileSubmitIntent,
-  SubmitCompileError,
-  type SubmitCompileDiagnostic,
-  type SubmitCompilerOptions,
+  SubmitCompileDiagnostic,
+  SubmitCompilerOptions,
 } from "./compiler";
+import { SubmitCompileError } from "./compile-error";
 
 export interface InteractionResponsePort {
   respond(key: ConversationKey, response: InteractionResponse): Promise<void>;
@@ -39,6 +42,8 @@ export interface AppServerConversationCommandPortConfig {
   /** Only a Host with one queue-to-active-Turn operation may consume a queued steer. */
   readonly queueAtomicSteer?: boolean;
   readonly queueUnconfirmedSteerDiscard?: boolean;
+  /** Read current authenticated Host capability; absent is unsupported. */
+  readonly supportsWorkspacePlacement?: () => boolean;
   readonly canRequest?: (method: AppServerMethod) => boolean;
   readonly compiler?: SubmitCompilerOptions;
   /** Host defaults supersede persisted Composer model and effort choices. */
@@ -62,7 +67,7 @@ export interface AppServerConversationCommandPortConfig {
 }
 
 export class AppServerConversationCommandError extends Error {
-  readonly code: "HOST_MISMATCH";
+  readonly code: "HOST_MISMATCH" | "UNSUPPORTED_PLACEMENT";
 
   constructor(
     code: AppServerConversationCommandError["code"],
@@ -146,6 +151,7 @@ export function createAppServerConversationCommandPort(
       const { serviceTier: _serviceTier, ...selections } = intent.selections;
       intent = { ...intent, selections };
     }
+    const { compileSubmitIntent } = await import("./compiler");
     return compileSubmitIntent(intent, { ...config.compiler, ...resolved });
   };
   const now = config.now ?? Date.now;
@@ -198,6 +204,23 @@ export function createAppServerConversationCommandPort(
     }
   };
 
+  const placementFor = (intent: SubmitIntent): WorkspacePlacement | undefined => {
+    if (intent.target.type !== 'new-thread') return undefined;
+    const execution = intent.target.execution;
+    assertComposerPlacement(execution);
+    if (execution.environment === undefined && execution.workspace.source === undefined) return undefined;
+    if (!config.supportsWorkspacePlacement?.() || execution.environment === undefined)
+      throw new AppServerConversationCommandError('UNSUPPORTED_PLACEMENT', '此连接尚不支持所选运行环境或资料来源');
+    const placement = {version:1 as const,intentId:String(intent.commandId),environment:execution.environment,
+      ...(execution.workspace.source === undefined ? {} : {source:execution.workspace.source})};
+    if (!isWorkspacePlacement(placement)) throw Error('Invalid workspace placement');
+    return structuredClone(placement);
+  };
+  const assertPlacementCurrent = (placement: WorkspacePlacement | undefined) => {
+    if (placement && !config.supportsWorkspacePlacement?.())
+      throw new AppServerConversationCommandError('UNSUPPORTED_PLACEMENT', '运行环境能力已变更，请重新连接后重试');
+  };
+
   const execute = async (
     intent: SubmitIntent,
     options?: { readonly canDispatch: () => boolean },
@@ -214,9 +237,11 @@ export function createAppServerConversationCommandPort(
         `SubmitIntent host ${hostId} cannot be sent through AppServer host ${config.hostId}`,
       );
     }
+    const placement = placementFor(intent);
     const compiled = await compile(intent);
-    const requestOptions = options ? { beforeSend: () => {
-      if (!options.canDispatch()) throw new SubmissionNotDispatchedError();
+    const requestOptions = options || placement ? { beforeSend: () => {
+      assertPlacementCurrent(placement);
+      if (options && !options.canDispatch()) throw new SubmissionNotDispatchedError();
       onAdmission?.();
     } } : undefined;
     if (options?.canDispatch() === false) throw new SubmissionNotDispatchedError();
@@ -226,11 +251,22 @@ export function createAppServerConversationCommandPort(
     let turnId: string | null;
     let queuedSubmissionId: string | undefined;
     let disposition: SubmissionReceipt["disposition"];
+    let sender: SubmissionReceipt["sender"];
+    let inputDelivery: SubmissionReceipt["inputDelivery"];
+    const observeSender = (response: unknown) => {
+      const proof = (response as { __opencraftSubmissionSender?: {clientMessageId?: unknown; sender?: unknown} })?.__opencraftSubmissionSender;
+      if (proof?.clientMessageId !== intent.clientMessageId) return;
+      const value = proof.sender as {kind?: unknown; loginName?: unknown} | null;
+      if (value === null) sender = null;
+      else if (value?.kind === "employee" && typeof value.loginName === "string" && /^[A-Za-z0-9._-]{1,128}$/u.test(value.loginName))
+        sender = {kind: "employee", loginName: value.loginName};
+    };
 
     switch (intent.target.type) {
       case "new-thread": {
         const started = await config.client.request("thread/start", {
           ...compiled.threadOptions,
+          ...(placement ? {workspacePlacement:placement} : {}),
           ...(config.dynamicTools === undefined
             ? {}
             : { dynamicTools: [...config.dynamicTools] }),
@@ -256,6 +292,7 @@ export function createAppServerConversationCommandPort(
             : { additionalContext: compiled.additionalContext }),
           ...compiled.turnOptions,
         });
+        observeSender(turn);
         turnId = turn.turn.id;
         break;
       }
@@ -277,6 +314,7 @@ export function createAppServerConversationCommandPort(
             : { additionalContext: compiled.additionalContext }),
           ...compiled.turnOptions,
         });
+        observeSender(turn);
         turnId = turn.turn.id;
         break;
       }
@@ -291,6 +329,7 @@ export function createAppServerConversationCommandPort(
             : { additionalContext: compiled.additionalContext }),
           ...compiled.turnOptions,
         }, requestOptions);
+        observeSender(turn);
         turnId = turn.turn.id;
         break;
       }
@@ -304,6 +343,8 @@ export function createAppServerConversationCommandPort(
           compiled.additionalContext ?? undefined,
           requestOptions,
         );
+        observeSender(turn);
+        inputDelivery = parseInputDeliveryReceipt(turn.delivery);
         disposition = turn.disposition === "queued" ? "queue" : undefined;
         turnId = disposition === "queue" ? null : turn.turnId;
         break;
@@ -317,6 +358,7 @@ export function createAppServerConversationCommandPort(
         }, requestOptions);
         // Older peers can acknowledge admission without returning queue custody.
         // Keep that success; a subsequent queue baseline supplies the exact ID.
+        observeSender(added);
         queuedSubmissionId = added.queuedSubmission?.id;
         turnId = null;
         break;
@@ -324,6 +366,8 @@ export function createAppServerConversationCommandPort(
     }
 
     const receipt: SubmissionReceipt = {
+      ...(sender === undefined ? {} : { sender }),
+      ...(inputDelivery === undefined ? {} : { inputDelivery }),
       ...(queuedSubmissionId === undefined ? {} : { queuedSubmissionId }),
       commandId: intent.commandId,
       clientMessageId: intent.clientMessageId,
@@ -348,11 +392,13 @@ export function createAppServerConversationCommandPort(
         `SubmitIntent host ${hostId} cannot be sent through AppServer host ${config.hostId}`,
       );
     }
+    const placement = placementFor(intent);
     const compiled = await compile(intent);
     for (const diagnostic of compiled.diagnostics)
       config.onDiagnostic?.(diagnostic, intent);
     const started = await config.client.request("thread/start", {
       ...compiled.threadOptions,
+      ...(placement ? {workspacePlacement:placement} : {}),
       ...(config.dynamicTools === undefined
         ? {}
         : { dynamicTools: [...config.dynamicTools] }),
@@ -365,7 +411,7 @@ export function createAppServerConversationCommandPort(
       ...(intent.target.execution.workspace.projectId == null
         ? {}
         : { projectId: intent.target.execution.workspace.projectId }),
-    });
+    }, placement ? {beforeSend:()=>assertPlacementCurrent(placement)} : undefined);
     return {
       commandId: intent.commandId,
       clientMessageId: intent.clientMessageId,

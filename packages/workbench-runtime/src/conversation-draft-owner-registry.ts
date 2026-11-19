@@ -26,8 +26,10 @@ export interface ConversationDraftOwnerRegistry {
   ensure(ownerId: ConversationDraftOwnerId, hostId: HostId, target: ComposerTarget): ConversationDraftOwner;
   get(ownerId: ConversationDraftOwnerId): ConversationDraftOwner | null;
   bindTarget(ownerId: ConversationDraftOwnerId, target: ComposerTarget): void;
-  /** Only a physical editor or interaction retains an owner; cached Views do not. */
+  /** Only an editor or interaction protects content from capacity eviction. */
   retain(ownerId: ConversationDraftOwnerId, reason: string): () => void;
+  /** Keep an empty controller for a bounded View cache, without protecting content. */
+  retainPresentation(ownerId: ConversationDraftOwnerId): () => void;
   touch(ownerId: ConversationDraftOwnerId): void;
   /** Read-only admission probe for an empty editor before it acquires content. */
   canAdmitContent(ownerId: ConversationDraftOwnerId): boolean;
@@ -59,6 +61,7 @@ interface MutableDraftOwner {
   readonly composer: ComposerController;
   readonly baseComposer: ComposerController;
   readonly retainers: Set<symbol>;
+  readonly presentations: Set<symbol>;
   readonly targets: Map<string, ComposerTarget>;
   readonly submittingDrafts: Set<string>;
   unsubscribeComposer: () => void;
@@ -181,7 +184,7 @@ export function createConversationDraftOwnerRegistry(
     pruning = true;
     try {
       for (const entry of [...entries.values()]) {
-        if (entry.hasBeenRetained && !entry.composer.hasRetainedContent() && !protectedOwner(entry)) {
+        if (entry.hasBeenRetained && entry.presentations.size === 0 && !entry.composer.hasRetainedContent() && !protectedOwner(entry)) {
           evict(entry, entry.hasHadContent);
         }
       }
@@ -287,6 +290,7 @@ export function createConversationDraftOwnerRegistry(
         composer,
         baseComposer,
         retainers: new Set(),
+        presentations: new Set(),
         targets: new Map(),
         submittingDrafts: new Set(),
         unsubscribeComposer: () => {},
@@ -340,7 +344,18 @@ export function createConversationDraftOwnerRegistry(
         if (entries.get(ownerId) !== entry) return;
         entry.retainers.delete(token);
         entry.touchedAt = ++logicalClock;
-        if (!entry.composer.hasRetainedContent() && !protectedOwner(entry)) evict(entry, entry.hasHadContent);
+        if (entry.presentations.size === 0 && !entry.composer.hasRetainedContent() && !protectedOwner(entry)) evict(entry, entry.hasHadContent);
+        prune();
+      };
+    },
+    retainPresentation(ownerId) {
+      ensureOpen();
+      const entry = read(ownerId), token = Symbol("view-presentation");
+      entry.presentations.add(token);
+      return () => {
+        if (!entry.presentations.delete(token) || entries.get(ownerId) !== entry) return;
+        if (entry.presentations.size === 0 && !entry.composer.hasRetainedContent() && !protectedOwner(entry))
+          evict(entry, entry.hasHadContent);
         prune();
       };
     },

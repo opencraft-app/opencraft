@@ -136,3 +136,36 @@ test('authorization forwarding is installed before output coalesced with an atta
   await service.dispatch('process/attach', { processHandle: 'ordered', afterSequence: 0 }, undefined, undefined, () => { accepted = true; });
   assert.deepEqual(observed, [true]);
 });
+
+test('server archive cleanup crosses human owners but not Host or Thread boundaries, fences late spawn', async t => {
+  const directory = await mkdtemp(join(tmpdir(),'pty-thread-cleanup-')), location = await terminalOwnerLocation(directory);
+  const stop = await startTerminalPtyOwner(location.directory,location.endpoint);
+  const service = new DurableHostProcessService(directory);
+  t.after(async()=>{service.close();await stop();await rm(directory,{recursive:true,force:true});});
+  const alice={...scope,account:'alice'},bob={...scope,account:'bob'},other={...scope,hostId:'other'};
+  await service.dispatch('process/spawn',spawnParams('alice'),alice);
+  await service.dispatch('process/spawn',spawnParams('bob'),bob);
+  await service.dispatch('process/spawn',spawnParams('other'),other);
+  await assert.rejects(service.dispatch('process/releaseThread',{lifecycleAuthority:true},alice));
+  await service.releaseThread('host','thread');
+  assert.equal((await service.dispatch('process/attach',{processHandle:'alice',afterSequence:0},alice) as any).phase,'exited');
+  assert.equal((await service.dispatch('process/attach',{processHandle:'bob',afterSequence:0},bob) as any).phase,'exited');
+  assert.equal((await service.dispatch('process/attach',{processHandle:'other',afterSequence:0},other) as any).phase,'running');
+  await assert.rejects(service.dispatch('process/spawn',spawnParams('late'),alice));
+  await service.releaseThread('host','thread',true);
+  await service.dispatch('process/spawn',spawnParams('new'),alice);
+});
+
+test('archive drains background jobs in the PTY session even after its shell exits', {skip:process.platform!=='linux'}, async t => {
+  const directory=await mkdtemp(join(tmpdir(),'pty-archive-jobs-')),location=await terminalOwnerLocation(directory);
+  const stop=await startTerminalPtyOwner(location.directory,location.endpoint),service=new DurableHostProcessService(directory);
+  t.after(async()=>{service.close();await stop();await rm(directory,{recursive:true,force:true});});
+  await service.dispatch('process/spawn',spawnParams('jobs',['/bin/bash','--noprofile','--norc','-c',
+    "trap '' HUP TERM; sleep 120 & printf 'JOB_PID=%s\\n' $!; wait"]),scope);
+  const snapshot=await until(()=>service.dispatch('process/attach',{processHandle:'jobs',afterSequence:0},scope),snap=>/JOB_PID=\d+/.test(decode(snap)));
+  const pid=Number(decode(snapshot).match(/JOB_PID=(\d+)/)![1]);
+  await service.releaseThread(scope.hostId,scope.threadId);
+  const {readFile}=await import('node:fs/promises');
+  try {const raw=await readFile(`/proc/${pid}/stat`,'utf8');assert.match(raw.slice(raw.lastIndexOf(')')+2),/^[ZX] /);}
+  catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+});

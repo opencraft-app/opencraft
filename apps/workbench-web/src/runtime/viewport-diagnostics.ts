@@ -1,4 +1,6 @@
-import { serverFetch } from "./server-context";
+import { isLocalDiagnosticsEnabled, getLocalDiagnosticsState } from "./local-diagnostics";
+import { recordViewportDiagnostic } from "./viewport-history";
+import { measureViewportProbes } from "./viewport-probes";
 
 /** Geometry and requested edge policy only. No content, route, account, input or user agent. */
 export function createViewportDiagnostics() {
@@ -7,14 +9,22 @@ export function createViewportDiagnostics() {
   let credits = 64;
   let creditedAt = performance.now();
   let lastMeasuredAt = -Infinity;
+  let lastSourceRevision: string | undefined;
   let lastSignature = "";
   let touchGeometry: Record<string, number> = {};
   let touchSequence = 0;
   let observations = 0;
   let editorMinTop = Infinity, editorMaxTop = -Infinity;
   let shellMinTop = Infinity, shellMaxTop = -Infinity;
-  const episode = `viewport-${Date.now().toString(36)}`;
+  let session = -1;
   return (event?: Event) => {
+    if (!isLocalDiagnosticsEnabled()) return;
+    if (session !== getLocalDiagnosticsState().session) {
+      session = getLocalDiagnosticsState().session;
+      lastMeasuredAt = -Infinity; credits = 64; creditedAt = performance.now();
+      editorMinTop = shellMinTop = Infinity; editorMaxTop = shellMaxTop = -Infinity;
+      touchGeometry = {}; observations = 0; lastSignature = "";
+    }
     if (event?.type === "touchstart") {
       const touch = (event as TouchEvent).changedTouches?.[0];
       if (touch) touchGeometry = {
@@ -31,7 +41,10 @@ export function createViewportDiagnostics() {
     const visual = window.visualViewport;
     if (!shell || !visual) return;
     const sourceRevision = document.querySelector<HTMLMetaElement>('meta[name="opencraft-source-revision"]')?.content;
-    if (!sourceRevision || !/^[a-f0-9]{40}$/.test(sourceRevision)) return;
+    if (sourceRevision !== lastSourceRevision) {
+      lastMeasuredAt = -Infinity;
+      lastSourceRevision = sourceRevision;
+    }
     const rect = shell.getBoundingClientRect();
     const active = document.activeElement;
     const editing = active instanceof HTMLElement && (active.isContentEditable || /^(INPUT|TEXTAREA)$/.test(active.tagName));
@@ -101,14 +114,12 @@ export function createViewportDiagnostics() {
       shellMinTop, shellMaxTop,
       ...touchGeometry,
     };
+    // Evidence never leaves this page.
     const signature = JSON.stringify(geometry);
     if (signature === lastSignature) return;
-    lastSignature = signature; credits--;
-    void serverFetch("/__opencraft_apphost_diagnostic", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ kind: "viewport", episode, sourceRevision, ...geometry, observedSamples: observations }),
-      keepalive: true, signal: AbortSignal.timeout(5_000),
-    }).catch(() => {});
+    lastSignature = signature;
+    recordViewportDiagnostic({ ...geometry, observedSamples: observations, ...measureViewportProbes() }, event?.type);
+    credits--;
     observations = 0;
     editorMinTop = Infinity; editorMaxTop = -Infinity;
     shellMinTop = Infinity; shellMaxTop = -Infinity;

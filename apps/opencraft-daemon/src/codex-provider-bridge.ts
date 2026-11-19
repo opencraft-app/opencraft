@@ -136,7 +136,7 @@ export class CodexProviderBridge implements DuplexTransport {
     const identity = this.clients.get(client);
     if (!identity || frame.id === undefined) throw Error('Initialized client and request ID required');
     const subscribers = this.subscriptions.get(threadId) ?? new Set<string>(); this.subscriptions.set(threadId, subscribers);
-    if (optIn || ['thread/resume', 'thread/read', 'turn/start'].includes(frame.method)) subscribers.add(client);
+    if (optIn || ['thread/resume', 'thread/read', 'thread/turns/list', 'thread/items/list', 'turn/start'].includes(frame.method)) subscribers.add(client);
     if (!subscribers.has(client)) throw Error('Conversation subscription required');
     const requestKey = optIn ? p.agentBridge?.clientRequestId : p.clientUserMessageId;
     const commandId = typeof requestKey === 'string' && requestKey ? `bridge-mutation:${createHash('sha256').update(JSON.stringify([threadId, frame.method, requestKey])).digest('hex')}` : `bridge-query:${randomUUID()}`;
@@ -159,9 +159,15 @@ export class CodexProviderBridge implements DuplexTransport {
         result = { ...object(result), disposition: 'steered' };
       } else if (frame.method === 'turn/interrupt') result = await command('turn/stop', { expectedTurnId: this.gateway.nativeTurn(threadId, p.turnId) });
       else if (frame.method === 'thread/resume') result = await command('session/resume', {});
-      else if (frame.method === 'thread/read') result = await command('history/read', { view: 'thread', includeTurns: p.includeTurns === true });
-      else if (frame.method === 'thread/turns/list') result = await command('history/read', { cursor: p.cursor ?? null });
-      else if (frame.method === 'thread/items/list') result = await command('history/read', { turnId: this.gateway.nativeTurn(threadId, p.turnId), cursor: p.cursor ?? null });
+      else if (frame.method === 'thread/read') result = await this.gateway.observe(threadId, { view: 'thread', includeTurns: p.includeTurns === true });
+      else if (frame.method === 'thread/turns/list') result = await this.gateway.observe(threadId, { cursor: p.cursor ?? null,
+        ...(p.limit !== undefined ? { limit: p.limit } : {}),
+        ...(p.sortDirection !== undefined ? { sortDirection: p.sortDirection } : {}),
+        ...(p.itemsView !== undefined ? { itemsView: p.itemsView } : {}),
+      });
+      else if (frame.method === 'thread/items/list') result = await this.gateway.observe(threadId, { turnId: this.gateway.nativeTurn(threadId, p.turnId), cursor: p.cursor ?? null,
+        ...(p.limit !== undefined ? { limit: p.limit } : {}),
+      });
       else if (frame.method === 'thread/unsubscribe') { this.revokeClient(client, threadId); result = {}; }
       else if (frame.method === 'opencraft/steer/status') result = await this.gateway.status(threadId, p.inputIds);
       else throw Object.assign(Error('Method unavailable for this bridge thread'), { code: -32601 });

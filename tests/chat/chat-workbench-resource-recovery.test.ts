@@ -390,3 +390,39 @@ test("an engine without shared approvals restores its old conversation and sends
     lease.release();
   } finally { await runtime.dispose(); }
 });
+
+for (const outcome of ['late', 'failed'] as const) test(`history becomes authoritative independently of ${outcome} shared-interaction recovery`, async () => {
+  let finish: (() => void) | undefined;
+  const calls: string[] = [];
+  const transport = new MemoryTransport({ receive(raw, peer) {
+    const request = JSON.parse(raw); if (request.id === undefined) return;
+    calls.push(request.method);
+    const send = (result: unknown) => peer.send(JSON.stringify({ id: request.id, result }));
+    if (request.method === 'initialize') send({ capabilities: { extensions: {
+      'opencraft/shared-interactions': { version: 1 },
+    } } });
+    else if (request.method === 'thread/read') send({ thread: thread('independent'), initialTurnsPage: { data: [], nextCursor: null } });
+    else if (request.method === 'opencraft/interactions/read') finish = () => outcome === 'failed'
+      ? peer.send(JSON.stringify({ id: request.id, error: { code: -32000, message: 'interaction source unavailable' } }))
+      : send({ threadId: 'independent', epoch: 'source', revision: 1, canRespond: true, requests: [] });
+    else send(request.method.endsWith('/list') ? { data: [], nextCursor: null } : {});
+  } });
+  const runtime = createAppServerWorkbenchRuntime({ hostId: 'independent', transport, autoReconnect: false, requestTimeoutMs: 60_000, onRecoveryEvent() {} });
+  try {
+    await runtime.connect();
+    const lease = await runtime.acquireThread('independent'); lease.setRecoveryVisibility(true);
+    for (let i = 0; i < 40 && (!finish || !lease.getSnapshot().authoritative); i++) await tick();
+    assert.ok(finish, 'passive approvals still recover');
+    assert.equal(lease.getSnapshot().authoritative, true, 'a stalled interaction read cannot block verified history');
+    finish(); for (let i = 0; i < 8; i++) await tick();
+    assert.equal(lease.getSnapshot().authoritative, true, 'interaction failure cannot fail the transcript');
+    assert.equal(calls.filter(method => method === 'thread/read').length, 1, 'no replacement history request');
+    assert.equal(calls.filter(method => method === 'opencraft/interactions/read').length, 1, 'no duplicate interaction request');
+    const cached = await runtime.acquireThread('independent'); cached.setRecoveryVisibility(true);
+    for (let i = 0; i < 4; i++) await tick();
+    assert.equal(cached.getSnapshot().authoritative, true);
+    assert.equal(calls.filter(method => method === 'thread/read').length, 1, 'cached acquisition does not re-read history');
+    assert.equal(calls.filter(method => method === 'opencraft/interactions/read').length, 1, 'cached acquisition does not re-sync approvals');
+    cached.release(); lease.release();
+  } finally { finish?.(); await runtime.dispose(); }
+});

@@ -1,8 +1,13 @@
 #!/usr/bin/env node
+import { observeNotificationRequest } from '../packages/web-push-node/src/diagnostics.ts';
 import { McpAppsRpcSession } from "../packages/mcp-apps/src/transport.ts";
 import { serveNotModified } from "./web-asset-cache.mjs";
+import { selectAssetEncoding } from "./web-asset-encoding.mjs";
+import { injectUserPluginBootstrap, loadUserPlugins, userPluginAsset } from './web-deployment/user-plugins.mjs';
+import { createUserPluginCatalog } from './web-deployment/craft-plugins.mjs';
 import { HtmlFilePreviews } from "./html-file-previews.mjs";
 import { APP_HOST_PROTOCOL_VERSION } from "@opencraft/app-host-protocol/version";
+import { CHANNELS_HOST_ID } from "../packages/appserver-protocol/src/channels.ts";
 
 import { createReadStream } from "node:fs";
 import { readFile, realpath, stat } from "node:fs/promises";
@@ -13,7 +18,10 @@ import { fileURLToPath } from "node:url";
 
 import WebSocket, { WebSocketServer } from "ws";
 import { createWebSocketSender } from "../packages/relay-protocol/src/websocket-sender.mjs";
+import { RESUME_ACK_DELAY_MS, isAcknowledgement, isResumeAttempt, isSequence, parseResumeAttempt } from "../packages/app-host-resume/src/index.ts";
+import { ResumeRegistry } from "../packages/app-host-resume/src/server.ts";
 import { trackSocketHeartbeat } from "./websocket-heartbeat.mjs";
+import { appHostWebSocketOptions } from "./apphost-websocket-options.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const contentTypes = new Map([
@@ -134,6 +142,10 @@ function bridgeAppServerSocket(client, request, options) {
   const querySession = options.createAppServerQuerySession?.(frame => {
     write(frame);
   });
+  const terminalSession = options.createTerminalSession?.(frame => {
+    if (client.readyState === WebSocket.OPEN && options.authorize?.() !== false) client.send(frame);
+  });
+  const terminalReady = terminalSession?.connect();
   const dshPending = new Set();
   const dshPacket = frame => {try {const value=JSON.parse(String(frame));return value && typeof value === "object" ? value : null;}catch{return null;}};
   const dshKey = packet => JSON.stringify([packet.__opencraftClient ?? "",packet.id]);
@@ -141,6 +153,12 @@ function bridgeAppServerSocket(client, request, options) {
     if (options.authorize?.() === false) { client.close(1008, 'Instance access revoked'); return; }
     if (identitySession && isBinary) { client.close(1003, "Text frames only"); return; }
     try {
+      if (terminalSession) {
+        if (isBinary) { client.close(1003, 'Text frames only'); return; }
+        await terminalReady;
+        if (clientClosed || options.authorize?.() === false) return;
+        if (await terminalSession.receive(data.toString('utf8'), options.submissionContext)) return;
+      }
       if (accessSession && isBinary) { client.close(1003,'Text frames required'); return; }
       if (accessSession && await accessSession.receive(data.toString('utf8'))) return;
       if (!isBinary && await querySession?.receive(data.toString("utf8"), options.submissionContext)) return;
@@ -194,7 +212,8 @@ function bridgeAppServerSocket(client, request, options) {
         if (identitySession && isBinary) throw new Error("Binary identity frame");
         // Identity restores rewritten request IDs before query initialization is correlated.
         const restored = identitySession ? await identitySession.observeNative(data.toString("utf8")) : data;
-        const frame = restored !== null && !isBinary && querySession ? querySession.project(String(restored)) : restored;
+        const terminalFrame = restored !== null && !isBinary && terminalSession ? terminalSession.project(String(restored)) : restored;
+        const frame = terminalFrame !== null && !isBinary && querySession ? querySession.project(String(terminalFrame)) : terminalFrame;
         if (frame !== null) write(appSession && !isBinary ? appSession.project(String(frame), options.submissionContext) : frame, isBinary);
         if (!isBinary) {
           const packet = dshPacket(data), key = packet ? dshKey(packet) : null, proof = packet?.opencraftDshReceipt;
@@ -223,6 +242,7 @@ function bridgeAppServerSocket(client, request, options) {
   client.on("close", (code, reason) => {
     clientClosed = true;
     querySession?.close();
+    terminalSession?.close();
     appSession?.close();
     identitySession?.close();
     if (upstream.readyState === WebSocket.CONNECTING) upstream.terminate();
@@ -234,6 +254,10 @@ function bridgeAppServerSocket(client, request, options) {
 }
 
 // Return bounded, allowlisted metadata only: never echo an untrusted frame value.
+export const APP_HOST_HEARTBEAT_MS = 10_000;
+const APP_HOST_HEARTBEAT_MAX_BUFFERED = 1024 * 1024;
+const APP_HOST_HEARTBEAT_FRAME = JSON.stringify({ type: "connection/heartbeat" });
+
 export function appHostFrameRejection(message) {
   if (!message || typeof message !== "object" || Array.isArray(message)) return { reason: "not-object" };
   const types = ["hello", "connection/probe", "host/connect", "host/send", "host/disconnect"];
@@ -258,7 +282,7 @@ export function appHostFrameRejection(message) {
 }
 
 const appHostAttemptPattern = /^(?:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|client-[0-9]{10,15}-[a-z0-9]{1,20})$/iu;
-const appHostFailureKinds = new Set(["socket-error", "socket-close", "handshake-timeout", "probe-timeout", "invalid-response"]);
+const appHostFailureKinds = new Set(["socket-error", "socket-close", "handshake-timeout", "probe-timeout", "liveness-timeout", "invalid-response"]);
 const appHostPhases = new Set(["connecting", "socket-open", "ready"]);
 const appHostDiagnosticNumbers = ["eventAtMs", "bufferedBytes", "lastMessageAgoMs", "probeElapsedMs", "lastProbeRttMs", "timeoutMs", "timerLateMs", "pagePauseMs", "pageResumeAgoMs", "pageHiddenForMs"];
 const appHostDiagnosticKeys = new Set(["attemptId", "failure", "phase", "readyState", "ageMs", "closeCode", "visibility", "networkState", "wasClean", ...appHostDiagnosticNumbers]);
@@ -307,107 +331,284 @@ function validAppHostDiagnostic(report) {
     && (report.closeCode === undefined || (Number.isInteger(report.closeCode) && report.closeCode >= 0 && report.closeCode <= 4999));
 }
 
-function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = () => true, submissionContext = { sender: null }) {
-  const send = createWebSocketSender(client);
-  const listeners = new Set();
-  const pendingConnects = new Set();
-  let connection = null;
-  let frameSequence = 0;
-  let probeSequence = 0;
-  let lastProbeObservedAt = -Infinity;
-  const probes = new Map();
+// A socket that died abnormally may come back within the detach window.
+// Normal closes, policy closes and server-initiated closes end the session.
+const APP_HOST_DETACHABLE_CLOSE_CODES = new Set([1001, 1005, 1006]);
+
+/**
+ * App Host WebSocket bridge. With `resume` (registry, identity, route,
+ * deadline) and a client that asks for it, the App Host connection outlives
+ * its socket for a short window and frames are numbered so a reconnecting
+ * client continues the same session. Without it, behavior is unchanged: the
+ * connection ends with its socket.
+ */
+// Mark explicit application closures only. ws also calls close() internally to
+// echo a peer's close frame; intercepting close() mistakes that echo for a
+// server-initiated policy close and destroys sessions during route replacement.
+const appHostServerClosedSockets = new WeakSet();
+function closeAppHostSocket(client, ...args) {
+  appHostServerClosedSockets.add(client);
+  client.close(...args);
+}
+
+function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = () => true, submissionContext = { sender: null }, resume = null) {
+  const wire = {
+    client, send: createWebSocketSender(client), authorize, logDiagnostic, route: resume?.route ?? null,
+    heartbeatRequested: false, heartbeatTimer: null,
+    frameSequence: 0, probeSequence: 0, lastProbeObservedAt: -Infinity, probes: new Map(),
+    session: null,
+  };
+  // A close the server initiated (revocation, expiry, policy) never leaves a resumable session,
+  // even when terminate() makes the reported code look abnormal.
   const probeDetail = probe => ({ probeSequence: probe.sequence, eventAtMs: Date.now(),
     elapsedMs: Math.max(0, performance.now() - probe.started),
-    readyState: client.readyState, bufferedBytes: client.bufferedAmount });
-  const frameContext = () => ({ frameSequence, phase: connection === null ? "awaiting-hello" : "ready" });
-  const port = {
-    postMessage(message) {
-      if (!authorize(message)) { client.close(1008, "Connection access expired"); return; }
-      if (message?.type === "response" && pendingConnects.delete(message.requestId)) {
-        logDiagnostic("host-connect", { ok: message.ok === true });
-      }
-      const probe = message?.type === "response" ? probes.get(message.requestId) : undefined;
-      if (probe) {
-        probes.delete(message.requestId);
-        const responseMs = Math.max(0, performance.now() - probe.started);
-        logDiagnostic("probe-response", { ...probeDetail(probe), responseMs, ok: message.ok === true });
-        if (client.readyState === WebSocket.OPEN) {
-          send(JSON.stringify(message), error => {
-            // A completed local write does not acknowledge browser receipt.
-            logDiagnostic("probe-written", { ...probeDetail(probe), responseMs, ok: !error });
-          });
-        }
-      } else if (client.readyState === WebSocket.OPEN) send(JSON.stringify(message));
-    },
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    start() {},
-    close() {
-      if (client.readyState === WebSocket.OPEN) client.close(1000, "App Host closed");
-    },
+    readyState: wire.client.readyState, bufferedBytes: wire.client.bufferedAmount });
+  const frameContext = () => ({ frameSequence: wire.frameSequence, phase: wire.session === null ? "awaiting-hello" : "ready" });
+  const stopHeartbeat = () => { if (wire.heartbeatTimer !== null) clearInterval(wire.heartbeatTimer); wire.heartbeatTimer = null; };
+  // Opt-in liveness: a client that asks for heartbeats judges the route by the
+  // age of its last received frame instead of a slow, foreground-only probe.
+  const startHeartbeat = () => {
+    if (wire.heartbeatTimer !== null) return;
+    wire.heartbeatTimer = setInterval(() => {
+      if (wire.client.readyState !== WebSocket.OPEN) { stopHeartbeat(); return; }
+      // A congested socket already proves nothing new; do not grow its queue.
+      if (wire.client.bufferedAmount > APP_HOST_HEARTBEAT_MAX_BUFFERED) return;
+      wire.send(APP_HOST_HEARTBEAT_FRAME);
+    }, APP_HOST_HEARTBEAT_MS);
+    wire.heartbeatTimer.unref?.();
   };
+  const protocolError = (reason) => {
+    logDiagnostic("invalid-frame", { code: 1008, ...frameContext(), reason });
+    wire.session?.resumable?.end("protocol-error");
+    closeAppHostSocket(client, 1008, "Invalid App Host request");
+  };
+
+  /** Shared state of one App Host connection; outlives sockets only when resumable. */
+  const createSession = () => {
+    const session = {
+      wire: null, connection: null, listeners: new Set(), pendingConnects: new Set(),
+      authorize, resumable: null, sequencing: false, heartbeat: false, ackTimer: null, route: resume?.route ?? null,
+      port: null,
+    };
+    const current = () => session.wire;
+    session.port = {
+      postMessage(message) {
+        const active = current();
+        if (!session.authorize(message)) {
+          if (active) closeAppHostSocket(active.client, 1008, "Connection access expired");
+          else session.resumable?.end("access-expired");
+          return;
+        }
+        if (message?.type === "ready") {
+          const capabilities = { ...message.capabilities };
+          if (active?.heartbeatRequested) { capabilities.heartbeatMs = APP_HOST_HEARTBEAT_MS; session.heartbeat = true; }
+          if (session.resumable) capabilities.resume = session.resumable.grant();
+          message = { ...message, capabilities };
+          if (session.heartbeat && active) active.startHeartbeat();
+        }
+        if (message?.type === "response" && session.pendingConnects.delete(message.requestId)) {
+          active?.logDiagnostic("host-connect", { ok: message.ok === true });
+        }
+        let frame;
+        if (session.sequencing) {
+          // Numbered and retained (as UTF-8 bytes, off the V8 heap) until acknowledged.
+          const link = session.resumable.link, seq = link.next();
+          frame = JSON.stringify({ ...message, seq });
+          const bytes = Buffer.byteLength(frame);
+          link.retain(seq, bytes > link.maxBytes ? null : Buffer.from(frame), bytes);
+        } else frame = JSON.stringify(message);
+        if (message?.type === "ready" && session.resumable) session.sequencing = true;
+        if (!active || active.client.readyState !== WebSocket.OPEN) return;
+        const probe = message?.type === "response" ? active.probes.get(message.requestId) : undefined;
+        if (probe) {
+          active.probes.delete(message.requestId);
+          const responseMs = Math.max(0, performance.now() - probe.started);
+          active.logDiagnostic("probe-response", { ...active.probeDetail(probe), responseMs, ok: message.ok === true });
+          active.send(frame, error => {
+            // A completed local write does not acknowledge browser receipt.
+            active.logDiagnostic("probe-written", { ...active.probeDetail(probe), responseMs, ok: !error });
+          });
+        } else active.send(frame);
+      },
+      subscribe(listener) {
+        session.listeners.add(listener);
+        return () => session.listeners.delete(listener);
+      },
+      start() {},
+      close() {
+        const active = current();
+        if (active && active.client.readyState === WebSocket.OPEN) closeAppHostSocket(active.client, 1000, "App Host closed");
+        session.resumable?.end("connection-closed");
+      },
+    };
+    session.end = reason => {
+      if (session.resumable) session.resumable.end(reason);
+      else session.connection?.close();
+    };
+    session.scheduleAck = () => {
+      const due = session.resumable?.link.acknowledgementDue;
+      if (!due) return;
+      const flush = () => {
+        session.ackTimer = null;
+        const active = current();
+        if (!active || active.client.readyState !== WebSocket.OPEN || session.resumable.isEnded) return;
+        active.send(JSON.stringify({ type: "connection/ack", received: session.resumable.link.acknowledged() }));
+      };
+      if (due === "now") { if (session.ackTimer !== null) clearTimeout(session.ackTimer); flush(); }
+      else if (session.ackTimer === null) { session.ackTimer = setTimeout(flush, RESUME_ACK_DELAY_MS); session.ackTimer.unref?.(); }
+    };
+    return session;
+  };
+  wire.probeDetail = probeDetail;
+  wire.startHeartbeat = startHeartbeat;
+
+  const adopt = (session, attempt, heartbeatRequested) => {
+    const replay = session.resumable.link.replay(attempt.received);
+    if (replay === null) return false;
+    const previous = session.wire;
+    if (previous) { previous.session = null; previous.client.terminate(); }
+    session.resumable.attach();
+    session.wire = wire; wire.session = session;
+    session.authorize = authorize;
+    // Authority closures of the original upgrade follow the live socket and request.
+    if (session.route && resume.route && session.route !== resume.route) Object.assign(session.route, resume.route);
+    wire.heartbeatRequested = heartbeatRequested;
+    wire.send(JSON.stringify({ type: "connection/resumed", received: session.resumable.link.received }));
+    for (const frame of replay) wire.send(frame.data.toString("utf8"));
+    if (session.heartbeat && heartbeatRequested) startHeartbeat();
+    return replay.length;
+  };
+
   client.on("message", (raw, isBinary) => {
-    frameSequence += 1;
-    if (isBinary) { logDiagnostic("invalid-frame", { code: 1003, reason: "binary", ...frameContext() }); client.close(1003, "Text frames required"); return; }
+    wire.frameSequence += 1;
+    if (isBinary) { logDiagnostic("invalid-frame", { code: 1003, reason: "binary", ...frameContext() }); closeAppHostSocket(client, 1003, "Text frames required"); return; }
     let message;
     try { message = JSON.parse(raw.toString()); }
-    catch { logDiagnostic("invalid-frame", { code: 1003, reason: "json", ...frameContext() }); client.close(1003, "Invalid App Host frame"); return; }
+    catch { logDiagnostic("invalid-frame", { code: 1003, reason: "json", ...frameContext() }); closeAppHostSocket(client, 1003, "Invalid App Host frame"); return; }
+    const session = wire.session;
+    if (message && typeof message === "object" && !Array.isArray(message)) {
+      if (message.type === "connection/ack") {
+        if (!session?.resumable || !isAcknowledgement(message.received) || !session.resumable.link.acknowledge(message.received)) protocolError("acknowledgement");
+        return;
+      }
+      if (message.type === "connection/end") {
+        if (session?.resumable) session.resumable.end("client-end");
+        closeAppHostSocket(client, 1000, "App Host session ended");
+        return;
+      }
+    }
+    let seq;
+    if (message && typeof message === "object" && "seq" in message) {
+      if (!session?.sequencing || !isSequence(message.seq)) { protocolError("sequence"); return; }
+      ({ seq, ...message } = message);
+    }
     const rejection = appHostFrameRejection(message);
     if (rejection !== null) {
       logDiagnostic("invalid-frame", { code: 1008, ...frameContext(), ...rejection });
       if (rejection.reason === "protocol-version" && client.readyState === WebSocket.OPEN) {
-        send(JSON.stringify({ type: "fatal", error: {
+        wire.send(JSON.stringify({ type: "fatal", error: {
           code: "APP_HOST_PROTOCOL_MISMATCH",
           message: "Client and server versions are incompatible. Update or reload the client to reconnect.",
           retryable: false,
-        } }), () => client.close(1008, "Invalid App Host request"));
+        } }), () => closeAppHostSocket(client, 1008, "Invalid App Host request"));
         return;
       }
-      client.close(1008, "Invalid App Host request");
+      wire.session?.resumable?.end("protocol-error");
+      closeAppHostSocket(client, 1008, "Invalid App Host request");
       return;
     }
     if (message.type === "connection/probe") {
       const started = performance.now();
-      const sequence = ++probeSequence;
+      const sequence = ++wire.probeSequence;
       // Observe normal five-second probes, bounded even for a flooding peer.
-      if (started - lastProbeObservedAt >= 1000 && probes.size < 8 && !probes.has(message.requestId)) {
-        lastProbeObservedAt = started;
+      if (started - wire.lastProbeObservedAt >= 1000 && wire.probes.size < 8 && !wire.probes.has(message.requestId)) {
+        wire.lastProbeObservedAt = started;
         const probe = { sequence, started };
-        probes.set(message.requestId, probe);
-        logDiagnostic("probe-received", { ...probeDetail(probe), frameSequence });
+        wire.probes.set(message.requestId, probe);
+        logDiagnostic("probe-received", { ...probeDetail(probe), frameSequence: wire.frameSequence });
       }
     }
     if (!authorize(message)) {
-      const probe = probes.get(message.requestId);
+      const probe = wire.probes.get(message.requestId);
       if (probe) {
-        probes.delete(message.requestId);
+        wire.probes.delete(message.requestId);
         logDiagnostic("probe-rejected", { ...probeDetail(probe), reason: "access" });
       }
-      send(JSON.stringify({ type: "response", requestId: message.requestId, ok: false,
-        error: { code: "SSH_ACCESS_REQUIRED", message: "Unlock remote connections in settings", retryable: false } }));
+      wire.send(JSON.stringify({ type: "response", requestId: message.requestId, ok: false,
+        error: submissionContext.actorContext?.credentialId
+          ? { code: "CHANNEL_SCOPE_REQUIRED", message: "This credential can only access Channels", retryable: false }
+          : { code: "SSH_ACCESS_REQUIRED", message: "Unlock remote connections in settings", retryable: false } }));
       return;
     }
-    if (connection === null) {
+    if (wire.session === null) {
       if (message?.type !== "hello" || typeof message.rendererId !== "string" || !message.rendererId) {
         logDiagnostic("hello-required", { code: 1008, ...frameContext(), messageType: message.type });
-        client.close(1008, "App Host hello required");
+        closeAppHostSocket(client, 1008, "App Host hello required");
         return;
       }
-      try { connection = appHostServer.accept(port, message.rendererId, submissionContext); }
-      catch { logDiagnostic("hello-rejected", { code: 1011 }); client.close(1011, "App Host unavailable"); return; }
-      logDiagnostic("hello-accepted", { frameSequence, receivedProtocolVersion: message.protocolVersion });
+      const heartbeatRequested = message.heartbeat === true;
+      const requested = resume && message.resume !== undefined ? parseResumeAttempt(message.resume) : null;
+      if (requested && isResumeAttempt(requested)) {
+        const found = resume.registry.find(requested, resume.identity);
+        let reason = "failure" in found ? found.failure : null, replayed = 0;
+        if (reason === null) {
+          const adopted = adopt(found.session.payload, requested, heartbeatRequested);
+          if (adopted === false) { reason = "gap"; found.session.end("gap"); }
+          else replayed = adopted;
+        }
+        if (reason !== null) {
+          logDiagnostic("resume-rejected", { reason });
+          wire.send(JSON.stringify({ type: "connection/resume-failed", reason }), () => closeAppHostSocket(client, 1000, "App Host session not resumable"));
+          return;
+        }
+        logDiagnostic("resume-accepted", { replayedFrames: replayed, ...resume.registry.stats });
+        return;
+      }
+      const session = createSession();
+      wire.session = session; session.wire = wire;
+      wire.heartbeatRequested = heartbeatRequested;
+      if (requested && resume) {
+        session.resumable = resume.registry.create(resume.identity, session, reason => {
+          if (session.ackTimer !== null) clearTimeout(session.ackTimer);
+          session.ackTimer = null;
+          session.connection?.close();
+          if (reason !== "connection-closed" && reason !== "client-end") logDiagnostic("resume-ended", { reason });
+        });
+      }
+      try { session.connection = appHostServer.accept(session.port, message.rendererId, submissionContext); }
+      catch { logDiagnostic("hello-rejected", { code: 1011 }); session.resumable?.end("accept-failed"); closeAppHostSocket(client, 1011, "App Host unavailable"); return; }
+      logDiagnostic("hello-accepted", { frameSequence: wire.frameSequence, receivedProtocolVersion: message.protocolVersion,
+        ...(session.resumable ? { resumable: 1 } : {}) });
     }
-    if (message.type === "host/connect") pendingConnects.add(message.requestId);
-    for (const listener of listeners) listener(message);
+    const active = wire.session;
+    if (seq !== undefined) {
+      const arrival = active.resumable.link.accept(seq, raw.length);
+      if (arrival === "duplicate") return;
+      if (arrival === "gap") { protocolError("sequence-gap"); return; }
+      active.scheduleAck();
+    }
+    if (message.type === "host/connect") active.pendingConnects.add(message.requestId);
+    for (const listener of active.listeners) listener(message);
   });
-  client.once("close", () => {
-    for (const probe of probes.values()) logDiagnostic("probe-abandoned", probeDetail(probe));
-    probes.clear();
-    connection?.close();
+  client.once("close", code => {
+    stopHeartbeat();
+    for (const probe of wire.probes.values()) logDiagnostic("probe-abandoned", probeDetail(probe));
+    wire.probes.clear();
+    const session = wire.session;
+    if (!session || session.wire !== wire) return;
+    session.wire = null;
+    if (session.resumable && !session.resumable.isEnded && session.sequencing && !appHostServerClosedSockets.has(client) && APP_HOST_DETACHABLE_CLOSE_CODES.has(code)) {
+      session.resumable.detach(resume.deadline ?? Infinity);
+      logDiagnostic("resume-detached", { code, ...resume.registry.stats });
+      return;
+    }
+    session.end("socket-closed");
   });
-  client.once("error", () => connection?.close());
+  client.once("error", () => {
+    // A resumable session decides on the following close; others end now.
+    const session = wire.session;
+    if (session && session.wire === wire && !session.resumable) session.connection?.close();
+  });
 }
 
 function resolveRequestPath(staticRoot, pathname) {
@@ -432,14 +633,33 @@ function isWorkbenchApplicationRoute(pathname) {
   return /^\/(?:local|settings|threads|views)\/[^/]+\/?$/u.test(pathname);
 }
 
-async function serveFile(request, response, path, pathname) {
-  const metadata = await stat(path);
+async function serveFile(request, response, path, pathname, userPlugins = null, browserBackend = null) {
+  let metadata = await stat(path);
   if (!metadata.isFile()) return false;
+  let selectedPath = path;
+  let encoding = null;
+  if (isContentHashedAsset(pathname)) {
+    response.setHeader("vary", "Accept-Encoding");
+    const selected = await selectAssetEncoding(path, request.headers["accept-encoding"]);
+    if (!selected) {
+      response.statusCode = 406;
+      response.setHeader("cache-control", "no-store");
+      response.end();
+      return true;
+    }
+    ({ metadata, encoding, path: selectedPath } = selected);
+    if (encoding) response.setHeader("content-encoding", encoding);
+  }
   response.statusCode = 200;
-  response.setHeader("content-length", metadata.size);
+  const shell = pathname === '/' || pathname === '/index.html';
+  let html = shell && (userPlugins?.length || browserBackend !== null) ? await readFile(path, 'utf8') : null;
+  if (html !== null && userPlugins?.length) html = injectUserPluginBootstrap(html,userPlugins);
+  if (html !== null && browserBackend !== null) html = html.replace(/<head(?:\s[^>]*)?>/iu,
+    head => head + '<meta name="opencraft-browser-backend" content="' + (browserBackend ? 'remote' : 'iframe') + '">');
+  response.setHeader("content-length", html === null ? metadata.size : Buffer.byteLength(html));
   response.setHeader("content-type", contentTypes.get(extname(path).toLowerCase()) || "application/octet-stream");
   response.setHeader("x-content-type-options", "nosniff");
-  response.setHeader("etag", `W/\"${metadata.size.toString(16)}-${Math.trunc(metadata.mtimeMs).toString(16)}\"`);
+  if (html === null) response.setHeader("etag", `W/\"${metadata.size.toString(16)}-${Math.trunc(metadata.mtimeMs).toString(16)}-${encoding ?? "identity"}\"`);
   if (pathname === "/" || pathname === "/index.html" || pathname === "/version.json") {
     response.setHeader("cache-control", "no-store, max-age=0");
   } else if (isContentHashedAsset(pathname)) {
@@ -452,16 +672,20 @@ async function serveFile(request, response, path, pathname) {
     response.end();
     return true;
   }
-  createReadStream(path).pipe(response);
+  if (html !== null) response.end(html);
+  else createReadStream(selectedPath).pipe(response);
   return true;
 }
 
 export async function createWorkbenchWebServer({
   root,
+  userPluginDirectory = null,
+  productPluginAssets = null,
   appServerTarget = "ws://127.0.0.1:9988/rpc",
   resolveAppServerTarget,
   appServerIdentity = null,
   createAppServerQuerySession = null,
+  createTerminalSession = null,
   hyperNodeUser = "",
   loopbackOnly = false,
   appHostServer = null,
@@ -482,14 +706,17 @@ export async function createWorkbenchWebServer({
   localAccess = null,
   accessService = null,
   actorService = null,
+  allowSessionChannels = false,
   createAppServerAccessSession = null,
   actorCollaborationService = null,
   turnPushService = null,
+  serverInformationService = null,
   authService = null,
   accountService = null,
   observability = null,
   mcpAppsService = null,
   getImService = () => null,
+  appHostResumeEnabled = process.env.OPENCRAFT_APPHOST_RESUME !== "0",
   connectorService = null,
   hubService = null,
   speechPublicAccess = process.env.OPENCRAFT_SPEECH_PUBLIC_ACCESS === "1",
@@ -502,7 +729,8 @@ export async function createWorkbenchWebServer({
   if (!["loopback", "trusted-internal"].includes(desktopAccess)) throw new Error("Invalid desktop access policy");
   if (desktopService !== null && desktopAccess === "loopback" && !loopbackOnly) throw new Error("Local desktop requires a loopback-only gateway");
   const staticRoot = await realpath(resolve(root || join(repositoryRoot, "apps/workbench-web/dist")));
-  if (sshServerDescriptors.length && !loopbackOnly && !sshManagement?.options.publicOrigin && !sshManagement?.options.publicAccess) throw new Error("SSH Server catalog requires a protected listener");
+  const userPluginCatalog = userPluginDirectory ? await createUserPluginCatalog(userPluginDirectory, loadUserPlugins) : null;
+  if (sshServerDescriptors.length && !loopbackOnly && !sshManagement?.options.publicAccess) throw new Error("SSH Server catalog requires a protected listener");
   const normalizedTarget = appServerTarget === null ? null : normalizeTarget(appServerTarget);
   const sameOrigin = (request, requireOrigin) => {
     const localOrigin = localAccess?.origin(request);
@@ -538,6 +766,7 @@ export async function createWorkbenchWebServer({
     });
   };
   const server = createServer(trackRequest(async (request, response) => {
+    observeNotificationRequest(request, response);
     if (closing) { response.writeHead(503, {connection:'close'}); response.end('{}'); return; }
     // Capture bounded error codes only, including admission failures before the
     // IM handler. Never retain request bodies, headers, identities or credentials.
@@ -566,11 +795,14 @@ export async function createWorkbenchWebServer({
       });
     }
     try {
+      const url = new URL(request.url || "/", "http://opencraft.invalid");
+      // The configured transport verifies provider signatures independently of browser origin.
+      if (url.pathname.startsWith('/__opencraft_im/')
+        && await getImService()?.handleChannelCallback?.(request, response, url.pathname)) return;
       if (loopbackOnly && !sameOrigin(request, false)) {
         sendJson(response, 403, { ok: false, error: "Matching origin required" });
         return;
       }
-      const url = new URL(request.url || "/", "http://opencraft.invalid");
       const local = !!localAccess?.origin(request);
       // These capabilities only reach a frozen report, never installation APIs.
       if (htmlPreviews && await htmlPreviews.handlePublic(request, response, sameOrigin)) return;
@@ -598,7 +830,11 @@ export async function createWorkbenchWebServer({
         if (connectorService && await connectorService.handle(request, response)) return;
         sendJson(response, 404, { error: "missing" }); return;
       }
-      if (url.pathname === '/__opencraft_push') {
+      if (url.pathname === '/__opencraft_server_information') {
+        if (serverInformationService && await serverInformationService(request, response)) return;
+        sendJson(response, 404, { error: 'missing' }); return;
+      }
+      if ((url.pathname === '/__opencraft_push' || url.pathname === '/__opencraft_notifications')) {
         if (turnPushService && await turnPushService.handle(request, response)) return;
         sendJson(response, 404, { error: 'missing' }); return;
       }
@@ -776,7 +1012,26 @@ export async function createWorkbenchWebServer({
         return;
       }
       // Unregistered API routes cannot fall through to the SPA or a static file.
-      if (url.pathname.startsWith("/__opencraft_")) {
+      const refreshPlugins = url.pathname === '/__opencraft_plugin_catalog' || url.pathname === '/' || url.pathname === '/index.html'
+        || (request.headers.accept || '').includes('text/html');
+      const pluginSnapshot = userPluginCatalog ? (refreshPlugins ? await userPluginCatalog.refresh() : userPluginCatalog.getSnapshot()) : null;
+      const userPlugins = pluginSnapshot?.plugins ?? null;
+      if (url.pathname === '/__opencraft_plugin_catalog') {
+        if (!['GET', 'HEAD'].includes(request.method)) { sendJson(response, 405, { error: 'GET or HEAD required' }); return; }
+        response.setHeader('cache-control', 'no-store');
+        sendJson(response, 200, { plugins: userPlugins ?? [], errors: pluginSnapshot?.errors ?? [] }); return;
+      }
+      if (userPlugins?.length && url.pathname.startsWith('/__opencraft_plugins/')) {
+        if (!['GET', 'HEAD'].includes(request.method)) { sendJson(response, 405, { error: 'GET or HEAD required' }); return; }
+        try {
+          const relative = decodeURIComponent(url.pathname.slice('/__opencraft_plugins/'.length));
+          if (!userPlugins.some(plugin => plugin.manifest.id === relative.split('/')[0])) throw new Error('Unknown plugin');
+          const asset = await userPluginAsset(userPluginDirectory, relative);
+          await serveFile(request, response, asset, url.pathname); return;
+        } catch { sendJson(response, 404, { error: 'User plugin asset not found' }); return; }
+      }
+      if (url.pathname.startsWith("/__opencraft_")
+        && !(productPluginAssets && url.pathname.startsWith('/__opencraft_product_plugins/'))) {
         sendJson(response, 404, { ok: false, error: "Not found" }); return;
       }
       if (request.method !== "GET" && request.method !== "HEAD") {
@@ -788,13 +1043,17 @@ export async function createWorkbenchWebServer({
         return;
       }
 
+      if (url.pathname.startsWith('/__opencraft_product_plugins/') && productPluginAssets && !productPluginAssets.has(url.pathname.slice(1))) {
+        sendJson(response, 404, { ok: false, error: 'Product plugin asset not found' }); return;
+      }
+
       const requestedPath = resolveRequestPath(staticRoot, url.pathname);
       if (requestedPath == null) {
         sendJson(response, 400, { ok: false, error: "Invalid path" });
         return;
       }
       try {
-        if (await serveFile(request, response, requestedPath, url.pathname)) return;
+        if (await serveFile(request, response, requestedPath, url.pathname, userPlugins, !!remoteBrowserService)) return;
         // Product-owned standalone documents can share the static origin without
         // booting the Workbench SPA. Admission and reserved API routing stay above.
         if (extname(url.pathname) === "" && await serveFile(request, response, join(requestedPath, "index.html"), url.pathname)) return;
@@ -802,12 +1061,19 @@ export async function createWorkbenchWebServer({
         if (error?.code !== "ENOENT") throw error;
       }
 
+      // Keep current static assets first. Retained plugin snapshots
+      // supply exclusive code and dependencies needed by older browser tabs.
+      if (productPluginAssets?.has(url.pathname.slice(1))) {
+        const asset = await productPluginAssets.resolve(url.pathname.slice(1));
+        if (await serveFile(request, response, asset, url.pathname)) return;
+      }
+
       const acceptsHtml = (request.headers.accept || "").includes("text/html");
       if (
         acceptsHtml &&
         (extname(url.pathname) === "" || isWorkbenchApplicationRoute(url.pathname))
       ) {
-        await serveFile(request, response, join(staticRoot, "index.html"), "/index.html");
+        await serveFile(request, response, join(staticRoot, "index.html"), "/index.html", userPlugins, !!remoteBrowserService);
         return;
       }
       sendJson(response, 404, { ok: false, error: "Not found" });
@@ -821,9 +1087,11 @@ export async function createWorkbenchWebServer({
   // A supported 32 MiB attachment expands to ~43 MiB in Base64, then travels
   // inside JSON-RPC and (for Codex) an AppHost envelope. Keep a bounded 48 MiB
   // message limit so valid files do not disconnect the shared Host transport.
-  const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 48 * 1024 * 1024 });
+  const websocketServer = new WebSocketServer(appHostWebSocketOptions());
   const desktopWebSockets = new WebSocketServer({ noServer: true, maxPayload: 1 << 20 });
   const activeAppHostSockets = new Set();
+  // Opt-in App Host session resumption (packages/app-host-resume). Disabled with OPENCRAFT_APPHOST_RESUME=0.
+  const appHostResume = appHostServer !== null && appHostResumeEnabled ? new ResumeRegistry() : null;
   const socketHeartbeats = new WeakMap();
   const privateSockets = new Map();
   const revokePrivateSockets = () => {
@@ -866,23 +1134,30 @@ export async function createWorkbenchWebServer({
       socket.destroy();
       return;
     }
-    if (actorService?.isSessionRequest(request)) {
-      socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n"); return;
-    }
-    let admissionStatus, submissionContext, principal;
+    const sessionRequest = actorService?.isSessionRequest(request);
+    let admissionStatus, submissionContext, principal, channelSession;
     try {
-      const local = !!localAccess?.origin(request);
-      if (!local) await accessService?.prepare?.(request);
-      admissionStatus = local ? 204 : authService?.invalidSession(request) ? 401 : accessService?.admissionStatus(request) ?? identityService?.admissionStatus(request) ?? 204;
-      submissionContext = local ? { sender: null } : identityService ? identityService.connectionContext(request) : { sender: null };
-      principal = local ? null : accessService?.authenticate(request);
-      if (principal && submissionContext) {
-        const claimed = submissionContext.executionPrincipal;
-        if (claimed && (claimed.provider !== principal.provider || claimed.subject !== principal.subject)) throw new Error("Conflicting execution principal");
-        submissionContext = { ...submissionContext,
-          executionPrincipal: { provider: principal.provider, subject: principal.subject,
-            ...(submissionContext.sender ? { loginName: submissionContext.sender.loginName } : {}) },
-          validUntil: Math.min(submissionContext.validUntil ?? Infinity, principal.expiresAt) };
+      if (sessionRequest) {
+        channelSession = allowSessionChannels && pathname === '/apphost' && appHostServer !== null ? actorService.lease(request) : null;
+        if (!channelSession?.context.credentialId) {
+          socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n"); return;
+        }
+        admissionStatus = 204;
+        submissionContext = { sender: null, validUntil: channelSession.context.expiresAt };
+      } else {
+        const local = !!localAccess?.origin(request);
+        if (!local) await accessService?.prepare?.(request);
+        admissionStatus = local ? 204 : authService?.invalidSession(request) ? 401 : accessService?.admissionStatus(request) ?? identityService?.admissionStatus(request) ?? 204;
+        submissionContext = local ? { sender: null } : identityService ? identityService.connectionContext(request) : { sender: null };
+        principal = local ? null : accessService?.authenticate(request);
+        if (principal && submissionContext) {
+          const claimed = submissionContext.executionPrincipal;
+          if (claimed && (claimed.provider !== principal.provider || claimed.subject !== principal.subject)) throw new Error("Conflicting execution principal");
+          submissionContext = { ...submissionContext,
+            executionPrincipal: { provider: principal.provider, subject: principal.subject,
+              ...(submissionContext.sender ? { loginName: submissionContext.sender.loginName } : {}) },
+            validUntil: Math.min(submissionContext.validUntil ?? Infinity, principal.expiresAt) };
+        }
       }
       if (submissionContext !== null && (typeof submissionContext !== 'object'
         || (submissionContext.validUntil !== undefined && !Number.isFinite(submissionContext.validUntil)))) throw new Error("Invalid connection identity context");
@@ -904,27 +1179,30 @@ export async function createWorkbenchWebServer({
     } catch {
       socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n"); return;
     }
+    // Authority checks read the live route: a resumed App Host session moves to
+    // the new socket and request (same identity), so its closures follow them.
+    const route = { socket, request, channelSession, principal };
     const actorAllowed = () => {
-      try { return !actorService || actorService.legacyAdmissionStatus(request) === 204; }
+      try { return route.channelSession ? route.channelSession.isCurrent() : !actorService || actorService.legacyAdmissionStatus(route.request) === 204; }
       catch { return false; }
     };
-    const actor = actorService?.authenticate(request);
+    const actor = channelSession?.context ?? actorService?.authenticate(request);
     const ownerId = actor?.actorId ?? (principal ? JSON.stringify([principal.provider, principal.subject]) : submissionContext.sender ? `employee:${submissionContext.sender.loginName}` : "local-anonymous");
     submissionContext = { ...submissionContext, tokenUsageAuthority: () => {
-      if (socket.destroyed || !actorAllowed() || (submissionContext.validUntil !== undefined && submissionContext.validUntil <= Date.now())) return null;
-      const current = actorService?.usageAuthority(request);
+      if (route.socket.destroyed || !actorAllowed() || (submissionContext.validUntil !== undefined && submissionContext.validUntil <= Date.now())) return null;
+      const current = actorService?.usageAuthority(route.request);
       return current && current.actorId === actor?.actorId ? current : null;
     }, ...(actor ? {actorContext: actor} : {}), resourceOwner: {id: ownerId, assertCurrent() {
-      if (socket.destroyed || !actorAllowed() || (actor && actorService.authenticate(request)?.actorId !== actor.actorId)
+      if (route.socket.destroyed || !actorAllowed() || (actor && actorService.authenticate(route.request)?.actorId !== actor.actorId)
         || (submissionContext.validUntil !== undefined && submissionContext.validUntil <= Date.now())
-        || (principal && !accessService.role(principal))) throw new Error("App resource authority revoked");
+        || (route.principal && !accessService.role(route.principal))) throw new Error("App resource authority revoked");
     }} };
     const admissionDeadline = Math.min(principal?.expiresAt ?? Infinity, submissionContext.validUntil ?? Infinity);
     const trackAdmittedWebSocket = (client, diagnostic) => {
       trackWebSocket(client, diagnostic);
       const retire = reason => {
         // A peer may ignore the close handshake. Stop delivery before destroying the wire.
-        client.removeAllListeners('message'); client.close(1008, reason); client.terminate();
+        client.removeAllListeners('message'); closeAppHostSocket(client, 1008, reason); client.terminate();
       };
       if (actorService) { const unwatch = actorService.watch(request, () => retire('Actor access revoked')); client.once('close', unwatch); }
       if (principal) { const unwatch = accessService.watch(principal, () => retire('Instance access revoked')); client.once('close', unwatch); }
@@ -967,6 +1245,7 @@ export async function createWorkbenchWebServer({
     }
     if ((pathname === "/apphost" || privateConnection) && appHostServer !== null) {
       websocketServer.handleUpgrade(request, socket, head, (client) => {
+        if(!sessionRequest)turnPushService?.initializeDefaultsForRequest?.(request);
         trackAdmittedWebSocket(client, logAppHost);
         activeAppHostSockets.add(client);
         if (privateConnection) privateSockets.set(client, request);
@@ -980,9 +1259,18 @@ export async function createWorkbenchWebServer({
           // The anonymous channel cannot guess a remote ID. Private sockets
           // bind the server-validated cookie, never the renderer-supplied ID.
           if (!actorAllowed() || admissionDeadline <= Date.now() || (principal && !accessService.role(principal))) return false;
+          if (channelSession) return message.hostId === undefined || message.hostId === CHANNELS_HOST_ID;
           if (privateConnection) return sshManagement.authorized(request);
           return !sshManagement || !message.hostId?.startsWith("ssh:");
-        }, submissionContext);
+        }, submissionContext, appHostResume === null ? null : {
+          registry: appHostResume,
+          // A session resumes only for exactly the same channel and identity.
+          identity: JSON.stringify([privateConnection ? "private" : "public", ownerId, actor?.actorId ?? null,
+            channelSession?.context.credentialId ?? null, principal ? [principal.provider, principal.subject] : null,
+            submissionContext.sender?.loginName ?? null]),
+          route,
+          deadline: admissionDeadline,
+        });
       });
       return;
     }
@@ -1007,6 +1295,7 @@ export async function createWorkbenchWebServer({
       socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); return;
     }
     websocketServer.handleUpgrade(request, socket, head, (client) => {
+      if(!sessionRequest)turnPushService?.initializeDefaultsForRequest?.(request);
       trackAdmittedWebSocket(client);
       bridgeAppServerSocket(client, request, {
         appServerTarget: target,
@@ -1014,6 +1303,7 @@ export async function createWorkbenchWebServer({
         hyperNodeUser,
         identity: appServerIdentity,
         createAppServerQuerySession,
+        createTerminalSession,
         createAccessSession: createAppServerAccessSession,
         submissionContext,
         authorize: () => actorAllowed() && admissionDeadline > Date.now() && (!principal || !!accessService.role(principal)),
@@ -1038,6 +1328,7 @@ export async function createWorkbenchWebServer({
     close(update = null, retireIngress = () => undefined) {
       htmlPreviews?.close();
       closing = true;
+      appHostResume?.close();
       speechService?.close();
       remoteBrowserService?.close();
       unsubscribeRevocation?.();

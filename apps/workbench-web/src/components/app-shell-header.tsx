@@ -1,9 +1,11 @@
 import { IconButton, ButtonPlaceholder } from "@opencraft/design-system-web/button";
-import { ArrowLeftIcon as ArrowLeft, ArrowRightIcon as ArrowRight, HomeIcon } from "@opencraft/design-system-web/action-icons";
+import { ChevronLeftIcon, ArrowLeftIcon as ArrowLeft, ArrowRightIcon as ArrowRight, HomeIcon } from "@opencraft/design-system-web/action-icons";
 import { ControlSurface } from "@opencraft/design-system-web/control-surface";
 import { useTouchLayout } from "../runtime/use-touch-layout";
-import { motion, useTransform } from "motion/react";
+import { useTouchBrowserLayout } from "./use-touch-browser-layout";
+import { cancelFrame, frame, motion, useTransform } from "motion/react";
 import { useIntl } from "@opencraft/i18n/react";
+import { createPortal } from "react-dom";
 import {
   useCallback,
   useLayoutEffect,
@@ -29,12 +31,15 @@ import { NavigationIcon } from "./shell-navigation/navigation-action";
 import { ToolbarDockCapacityContext } from "./toolbar-dock-state";
 import { toolbarDockCapacity } from "./toolbar-dock-model";
 
+const HEADER_BRAND_MINIMUM_MAIN_WIDTH = 640;
+
 export interface AppShellNavigationControlsProps {
   readonly brand?: ReactNode;
   readonly conversationHeader?: boolean;
   readonly hostRole: "persistent" | "transient";
   readonly sidebarOpen: boolean;
   readonly canGoBack: boolean;
+  readonly canReturn?: boolean;
   readonly canGoForward: boolean;
   readonly onToggleSidebar: () => void;
   readonly onHome: () => void;
@@ -42,11 +47,17 @@ export interface AppShellNavigationControlsProps {
   /** Explicit surface exit, independent of browser history availability. */
   readonly onForward: () => void;
   readonly actions: readonly HeaderNavigationAction[];
+  /** Page return controls do not reserve native chrome or publish Shell width. */
+  readonly scope?: "shell" | "page";
+  readonly shellOwned?: boolean;
+  /** Keep the single intrinsic measurement mounted while visible controls
+   * change physical placement at the compact/desktop boundary. */
+  readonly renderPart?: "all" | "measurement" | "controls";
 }
 
 /**
- * Unified navigation keeps its shared toggle beside the brand in the persistent
- * header in every sidebar state. Routes never supply another copy of the control.
+ * Shared navigation rendering and its single intrinsic measurement. Shell owns
+ * persistent controls; a page's semantic return is a separate local slot.
  */
 export function AppShellNavigationControls({
   brand,
@@ -54,12 +65,16 @@ export function AppShellNavigationControls({
   hostRole,
   sidebarOpen: requestedSidebarOpen,
   canGoBack,
+  canReturn = false,
   canGoForward,
   onToggleSidebar: requestedToggleSidebar,
   onHome,
   onBack,
   onForward,
   actions,
+  scope = "shell",
+  shellOwned = false,
+  renderPart = "all",
 }: AppShellNavigationControlsProps) {
   const intl = useIntl();
   const presentation = useShellPresentation();
@@ -70,7 +85,7 @@ export function AppShellNavigationControls({
   // collapsed navigation rail. Only a docked sidebar owns the expanded rail.
   const sidebarDocked = sidebarOpen && !presentation?.sidebarFloating;
   const presentedActions = useMemo<readonly HeaderNavigationAction[]>(() => {
-    const routeActions = actions;
+    const routeActions = canReturn ? actions.map(action => action === "sidebar-toggle" ? "back" as const : action) : actions;
     if (presentation?.sidebarControlsInSidebar) {
       return routeActions.filter(action => action !== "sidebar-toggle" || hostRole === "persistent");
     }
@@ -78,10 +93,23 @@ export function AppShellNavigationControls({
     return routeActions.flatMap(action => action === "sidebar-toggle"
       ? [action, "new-task" as const]
       : [action]);
-  }, [actions, hostRole, sidebarDocked, presentation?.sidebarControlsInSidebar]);
-  const { headerLeftFitWidth } = useAppShellLayoutMotion();
-  const visibleBrand = brand;
-  const applicationsAction = hostRole === "persistent" ? presentation?.applicationsAction : undefined;
+  }, [actions, canReturn, hostRole, sidebarDocked, presentation?.sidebarControlsInSidebar]);
+  const { headerLeftFitWidth, mainContentTargetWidth } = useAppShellLayoutMotion();
+  // Use the primary pane, not the window: a wide window may host a narrow chat.
+  // This width is independent of the rail's intrinsic measurement, so releasing
+  // the brand cannot make it immediately reappear at the same pane width.
+  const [brandFits, setBrandFits] = useState(() => mainContentTargetWidth.get() > HEADER_BRAND_MINIMUM_MAIN_WIDTH);
+  useLayoutEffect(() => {
+    const update = () => setBrandFits(mainContentTargetWidth.get() > HEADER_BRAND_MINIMUM_MAIN_WIDTH);
+    update();
+    const unsubscribe = mainContentTargetWidth.on("change", () => frame.read(update));
+    return () => { unsubscribe(); cancelFrame(update); };
+  }, [mainContentTargetWidth]);
+  // A sidebar owns its brand independently of the primary pane capacity.
+  // Input density changes control treatment, not the brand ownership boundary.
+  const sidebarOwnsBrand = hostRole === "transient" || sidebarDocked;
+  const visibleBrand = sidebarOwnsBrand || brandFits ? brand : null;
+  const applicationsAction = hostRole === "persistent" && scope === "shell" ? presentation?.applicationsAction : undefined;
   const hasNavigationContent = Boolean(visibleBrand) || presentedActions.length > 0 || Boolean(applicationsAction);
   const measureRef = useRef<HTMLDivElement | null>(null);
   const toggleSidebar = useCallback(() => {
@@ -91,68 +119,33 @@ export function AppShellNavigationControls({
     onToggleSidebar();
   }, [hostRole, onToggleSidebar]);
 
-  const controls = {
-    home: (
-      <IconButton
-        key="home"
-        surface={touch ? "floating" : "integrated"}
-        className="chrome-button no-drag"
-        type="button"
-        aria-label={intl.formatMessage({ id: "navigation.home", defaultMessage: "Home" })}
-        title={intl.formatMessage({ id: "navigation.home", defaultMessage: "Home" })}
-        data-chrome-action-id="home"
-        onClick={onHome}
-      >
-        <HomeIcon size={15} />
-      </IconButton>
-    ),
-    "sidebar-toggle": (
-      <SidebarToggleButton key="sidebar-toggle" className={conversationHeader ? "chrome-button no-drag app-shell-conversation-sidebar-toggle" : undefined} stationary={hostRole === "persistent" && presentation?.sidebarControlsInSidebar && !presentation.mobileSidebar} open={sidebarOpen} hostRole={hostRole} onToggle={toggleSidebar} />
-    ),
-    "new-task": (
-      <IconButton
-        key="new-task"
-        surface={touch ? "floating" : "integrated"}
-        className="chrome-button no-drag"
-        type="button"
-        aria-label={intl.formatMessage({ id: "navigation.newTask", defaultMessage: "Start new task" })}
-        data-app-shell-new-task-trigger="true"
-        onClick={onHome}
-        title={intl.formatMessage({ id: "navigation.newTask", defaultMessage: "Start new task" })}
-      >
-        <NewTaskIcon />
-      </IconButton>
-    ),
-    back: (
-      <IconButton aria-label={intl.formatMessage({ id: "navigation.back", defaultMessage: "Back" })}
-        key="back"
-        surface={touch ? "floating" : "integrated"}
-        className="chrome-button no-drag history-button"
-        type="button"
-        disabled={!canGoBack}
-        onClick={onBack}
-        title={intl.formatMessage({ id: "navigation.back", defaultMessage: "Back" })}
-      >
-        <ArrowLeft size={15} />
-      </IconButton>
-    ),
-    forward: (
-      <IconButton aria-label={intl.formatMessage({ id: "navigation.forward", defaultMessage: "Forward" })}
-        key="forward"
-        surface={touch ? "floating" : "integrated"}
-        className="chrome-button no-drag history-button"
-        type="button"
-        disabled={!canGoForward}
-        onClick={onForward}
-        title={intl.formatMessage({ id: "navigation.forward", defaultMessage: "Forward" })}
-      >
-        <ArrowRight size={15} />
-      </IconButton>
-    ),
-  } satisfies Record<HeaderNavigationAction, ReactNode>;
+  const labels = {
+    home: { id: "navigation.home", defaultMessage: "Home" },
+    "new-task": { id: "navigation.newTask", defaultMessage: "Start new task" },
+    back: { id: "navigation.back", defaultMessage: "Back" },
+    forward: { id: "navigation.forward", defaultMessage: "Forward" },
+  };
+  const renderControl = (action: HeaderNavigationAction) => {
+    if (action === "sidebar-toggle") return <SidebarToggleButton key={action}
+      className={conversationHeader ? "chrome-button no-drag app-shell-conversation-sidebar-toggle" : undefined}
+      open={sidebarOpen} hostRole={hostRole} onToggle={toggleSidebar} />;
+    const label = intl.formatMessage(labels[action]);
+    const history = action === "back" || action === "forward";
+    return <IconButton surface={touch ? "floating" : "integrated"}
+      className={"chrome-button no-drag" + (history ? " history-button" : "")}
+      type="button" aria-label={label} title={label}
+      disabled={action === "back" ? !canGoBack : action === "forward" ? !canGoForward : undefined}
+      data-chrome-action-id={action === "home" ? "home" : undefined}
+      data-app-shell-new-task-trigger={action === "new-task" || undefined}
+      onClick={action === "home" || action === "new-task" ? onHome : action === "back" ? onBack : onForward}>
+      {action === "home" ? <HomeIcon size={15} /> : action === "new-task" ? <NewTaskIcon />
+        : action === "forward" ? <ArrowRight size={15} />
+        : canReturn ? <ChevronLeftIcon size={touch ? 20 : 16} /> : <ArrowLeft size={15} />}
+    </IconButton>;
+  };
 
   useLayoutEffect(() => {
-    if (hostRole !== "persistent") return;
+    if (hostRole !== "persistent" || scope !== "shell" || renderPart === "controls") return;
     const measure = measureRef.current;
     if (measure === null) return;
     const updateWidth = (width: number) => {
@@ -168,80 +161,56 @@ export function AppShellNavigationControls({
     });
     observer.observe(measure, { box: "border-box" });
     return () => observer.disconnect();
-  }, [headerLeftFitWidth, hostRole, hasNavigationContent]);
+  }, [headerLeftFitWidth, hostRole, hasNavigationContent, scope, renderPart]);
 
-  return (
-    <>
-      <div
-        ref={measureRef}
-        inert
-        aria-hidden="true"
-        className="app-shell-header__window-controls-measure"
-      >
-        <div className="app-shell-header__window-controls-rail" data-navigation-empty={!hasNavigationContent || undefined} data-navigation-brand={visibleBrand ? true : undefined} data-sidebar-collapsed={presentation?.sidebarControlsInSidebar && !sidebarOpen || undefined}>
-          {visibleBrand}
-          {presentedActions.map((action) => (
-            <span
-              className="app-shell-header__window-action no-drag"
-              data-app-shell-window-action={action}
-              key={action}
-            >
-              <ButtonPlaceholder className="chrome-button" />
-            </span>
-          ))}
-          {applicationsAction ? <ButtonPlaceholder className="chrome-button" /> : null}
-        </div>
-      </div>
-      <div
-        className="app-shell-header__window-controls"
-        data-app-shell-header-start-slot="true"
-      >
-        <div className="app-shell-header__window-controls-rail" data-navigation-empty={!hasNavigationContent || undefined} data-navigation-brand={visibleBrand ? true : undefined} data-sidebar-collapsed={presentation?.sidebarControlsInSidebar && !sidebarOpen || undefined}>
-          {visibleBrand}
-          {presentedActions.map((action) => (
-            <span
-              className="app-shell-header__window-action no-drag"
-              data-app-shell-window-action={action}
-              key={action}
-            >
-              {controls[action]}
-            </span>
-          ))}
-          {applicationsAction ? (
-            <span className="app-shell-header__window-action no-drag">
-              <IconButton
-                surface={touch ? "floating" : "integrated"}
-                className="chrome-button app-shell-header__applications"
-                type="button"
-                data-action-id="shell.applications.header"
-                aria-label={applicationsAction.title}
-                aria-current={applicationsAction.active ? "page" : undefined}
-                title={applicationsAction.title}
-                onClick={() => {
-                  presentation?.dismissSidebarAfterSelection();
-                  applicationsAction.onInvoke();
-                }}
-              >
-                <NavigationIcon name={applicationsAction.icon} selected={applicationsAction.active} />
-              </IconButton>
-            </span>
-          ) : null}
-        </div>
-      </div>
-    </>
-  );
+  // Measurement and visible placement use the same rail composition. This is
+  // one rendering contract, not two separately maintained action layouts.
+  const rail = (measurement: boolean) => <div className="app-shell-header__window-controls-rail"
+    data-navigation-empty={!hasNavigationContent || undefined}
+    data-navigation-brand={visibleBrand ? true : undefined}
+    data-sidebar-brand={sidebarOwnsBrand || undefined}
+    data-sidebar-collapsed={presentation?.sidebarControlsInSidebar && !sidebarOpen || undefined}>
+    {visibleBrand}
+    {presentedActions.map(action => <span className="app-shell-header__window-action no-drag"
+      data-app-shell-window-action={action} data-navigation-return={canReturn && action === "back" || undefined} key={action}>
+      {measurement ? <ButtonPlaceholder className="chrome-button" /> : renderControl(action)}
+    </span>)}
+    {applicationsAction ? measurement ? <ButtonPlaceholder className="chrome-button" /> : (
+      <span className="app-shell-header__window-action no-drag">
+        <IconButton surface={touch ? "floating" : "integrated"}
+          className="chrome-button app-shell-header__applications" type="button"
+          data-action-id="shell.applications.header" aria-label={applicationsAction.title}
+          aria-current={applicationsAction.active ? "page" : undefined} title={applicationsAction.title}
+          onClick={() => { presentation?.dismissSidebarAfterSelection(); applicationsAction.onInvoke(); }}>
+          <NavigationIcon name={applicationsAction.icon} selected={applicationsAction.active} />
+        </IconButton>
+      </span>
+    ) : null}
+  </div>;
+  return <>
+    {renderPart !== "controls" ? <div ref={measureRef} inert aria-hidden="true"
+      className="app-shell-header__window-controls-measure" data-navigation-scope={scope} data-route-snapshot="exclude">
+      {rail(true)}
+    </div> : null}
+    {renderPart !== "measurement" ? <div
+      className={"app-shell-header__window-controls" + (shellOwned ? " shell-chrome" : "")}
+      data-app-shell-chrome={shellOwned ? "shell" : undefined}
+      data-pip-obstacle={shellOwned ? "app-shell-navigation" : undefined}
+      data-app-shell-conversation-header={shellOwned && conversationHeader || undefined}
+      data-navigation-scope={scope} data-app-shell-header-start-slot="true">
+      {rail(false)}
+    </div> : null}
+  </>;
 }
 
 export interface AppShellHeaderProps {
   readonly navigationBrand?: ReactNode;
   /** Opts draft and conversation routes into the touch Newera header presentation. */
   readonly conversationHeader?: boolean;
-  /** Route-owned actions immediately before the right-panel toggle. */
-  readonly headerAction?: ReactNode;
-  /** Number of chrome-button slots to reserve during panel animation. */
-  readonly headerActionCount?: number;
-  /** Inert sizing projection for route actions with intrinsic text width. */
-  readonly headerActionSizing?: ReactNode;
+  /** Actions owned by the primary route, beside its title and before the tool aperture. */
+  readonly primaryAction?: ReactNode;
+  /** Fixed buttons outside the optional dock, including its More entrance. */
+  readonly primaryActionFixedSlots?: number;
   readonly title: string | null;
   readonly project: string | null;
   readonly titleContent?: ReactNode;
@@ -252,10 +221,12 @@ export interface AppShellHeaderProps {
   readonly rightPanelOpen: boolean;
   readonly rightPanelFullWidth: boolean;
   readonly showRightPanelAction?: boolean;
+  readonly rightPanelActionInComposer?: boolean;
   readonly onToggleSidebar: () => void;
   readonly onToggleRightPanel: () => void;
   readonly onHome: () => void;
   readonly canGoBack: boolean;
+  readonly canReturn?: boolean;
   readonly canGoForward: boolean;
   readonly onBack: () => void;
   /** Explicit surface exit, independent of browser history availability. */
@@ -271,9 +242,8 @@ export interface AppShellHeaderProps {
 /** Shared titlebar projection for every route hosted by AppShell. */
 export function AppShellHeader({
   navigationBrand,
-  headerAction,
-  headerActionCount = 1,
-  headerActionSizing,
+  primaryAction,
+  primaryActionFixedSlots = 1,
   conversationHeader = false,
   title,
   project,
@@ -284,11 +254,13 @@ export function AppShellHeader({
   sidebarOpen,
   rightPanelOpen: requestedRightPanelOpen,
   rightPanelFullWidth: requestedRightPanelFullWidth,
-  showRightPanelAction = true,
+  showRightPanelAction: requestedShowRightPanelAction = true,
+  rightPanelActionInComposer = false,
   onToggleSidebar,
   onToggleRightPanel: requestedToggleRightPanel,
   onHome,
   canGoBack,
+  canReturn = false,
   canGoForward,
   onBack,
   onForward,
@@ -297,9 +269,14 @@ export function AppShellHeader({
   const intl = useIntl();
   const touch = useTouchLayout();
   const presentation = useShellPresentation();
+  const detachedNavigation = !presentation?.mobileSidebar;
   const rightPanelOpen = presentation?.rightPanelOpen ?? requestedRightPanelOpen;
   const rightPanelFullWidth = presentation?.rightPanelFullWidth ?? requestedRightPanelFullWidth;
+  const mobileComposerAction = useTouchBrowserLayout() && rightPanelActionInComposer;
+  // Keep the panel's close action reachable while it covers the composer.
+  const showRightPanelAction = requestedShowRightPanelAction && (!mobileComposerAction || rightPanelOpen);
   const onToggleRightPanel = presentation?.toggleRightPanel ?? requestedToggleRightPanel;
+  const primaryHidden = rightPanelFullWidth || presentation?.contentPresentation === "tools";
   const { headerRightWidth, isHeaderEdgeScroll, rightPanelAnimatedWidth } =
     useAppShellLayoutMotion();
   const headerRightWidthPx = useTransform(
@@ -311,10 +288,15 @@ export function AppShellHeader({
     (width) => `${Math.max(0, width)}px`,
   );
   const endActionsMeasureRef = useRef<HTMLDivElement | null>(null);
-  const contextRef = useRef<HTMLDivElement | null>(null);
-  const [dockCapacity, setDockCapacity] = useState(0);
+  const primaryRef = useRef<HTMLDivElement | null>(null);
+  const [dockMetrics, setDockMetrics] = useState({ available: 0, reserve: 0, step: 1, maximum: 0 });
+  const dockCapacity = presentation?.mobileSidebar ? 0 : toolbarDockCapacity(
+    dockMetrics.available, dockMetrics.reserve, dockMetrics.step,
+    primaryActionFixedSlots, dockMetrics.maximum,
+  );
   useLayoutEffect(() => {
-    const context = contextRef.current;
+    if (presentation?.mobileSidebar) return;
+    const context = primaryRef.current;
     const measure = endActionsMeasureRef.current;
     if (!context || !measure) return;
     const update = () => {
@@ -325,7 +307,10 @@ export function AppShellHeader({
       const reserve = parseFloat(style.getPropertyValue("--width-toolbar-dock-title-budget")) || 220;
       const maximum = parseFloat(style.getPropertyValue("--count-toolbar-dock-maximum")) || 4;
       const available = context.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-      setDockCapacity(presentation?.mobileSidebar ? 0 : toolbarDockCapacity(available, reserve, size + gap, showRightPanelAction ? 2 : 1, maximum));
+      const step = size + gap;
+      setDockMetrics(previous => previous.available === available && previous.reserve === reserve
+        && previous.step === step && previous.maximum === maximum
+        ? previous : { available, reserve, step, maximum });
     };
     update();
     const observer = new ResizeObserver(update);
@@ -334,7 +319,7 @@ export function AppShellHeader({
     const probe = context.querySelector(".toolbar-dock__capacity-probe");
     if (probe) observer.observe(probe);
     return () => observer.disconnect();
-  }, [presentation?.mobileSidebar, showRightPanelAction]);
+  }, [presentation?.mobileSidebar]);
 
   useLayoutEffect(() => {
     const endActionsMeasure = endActionsMeasureRef.current;
@@ -351,49 +336,45 @@ export function AppShellHeader({
     return () => observer.disconnect();
   }, [headerRightWidth]);
 
-  return (
+  const navigationProps = {
+    conversationHeader, hostRole: "persistent" as const, sidebarOpen,
+    canGoBack: canGoBack || canReturn, canGoForward,
+    onToggleSidebar, onHome, onBack, onForward,
+  };
+  const navigation = <AppShellNavigationControls {...navigationProps}
+    renderPart="controls" shellOwned={detachedNavigation} brand={navigationBrand} canReturn={!detachedNavigation && canReturn} actions={navigationActions} />;
+
+  return <>
+    {detachedNavigation && presentation?.navigationChromeHost
+      ? createPortal(navigation, presentation.navigationChromeHost) : null}
     <header
       className="app-shell-header"
+      data-app-shell-chrome="page"
+      data-navigation-detached={detachedNavigation || undefined}
       data-app-shell-conversation-header={conversationHeader || undefined}
       data-app-shell-header-edge-scroll={isHeaderEdgeScroll}
       data-pip-obstacle="app-shell-header"
     >
       <span className="app-shell-header__content-edge" aria-hidden="true" />
-      <AppShellNavigationControls
-        brand={navigationBrand}
-        conversationHeader={conversationHeader}
-        hostRole="persistent"
-        sidebarOpen={sidebarOpen}
-        canGoBack={canGoBack}
-        canGoForward={canGoForward}
-        onToggleSidebar={onToggleSidebar}
-        onHome={onHome}
-        onBack={onBack}
-        onForward={onForward}
-        actions={navigationActions}
-      />
+      <AppShellNavigationControls {...navigationProps} renderPart="measurement"
+        brand={navigationBrand} canReturn={!detachedNavigation && canReturn} actions={navigationActions} />
+      {detachedNavigation ? <>
+        {canReturn ? <AppShellNavigationControls {...navigationProps} renderPart="controls" scope="page" canReturn actions={["back"]} /> : null}
+      </> : navigation}
 
-      <div ref={contextRef} className="app-shell-header__context">
-        <ToolbarDockCapacityContext.Provider value={dockCapacity}>
-        <span className="toolbar-dock__capacity-probe" aria-hidden="true" />
-        <div
-          ref={endActionsMeasureRef}
-          aria-hidden="true"
-          className="app-shell-header__end-measure"
-        >
-          {showRightPanelAction || headerAction ? (
-            <div className="app-shell-header__end-actions"><ControlSurface surface={touch ? "floating" : "integrated"} className="app-shell-header__action-group">
-              {headerAction ? headerActionSizing ?? Array.from({ length: headerActionCount }, (_, index) => <ButtonPlaceholder key={index} className="chrome-button" />) : null}
-              {showRightPanelAction ? <ButtonPlaceholder className="chrome-button app-shell-header__right-panel-toggle">
-                <RightPanelToggleIcon panelOpen={rightPanelOpen} />
-              </ButtonPlaceholder> : null}
-            </ControlSurface></div>
-          ) : null}
+      <div className="app-shell-header__context">
+        <div ref={endActionsMeasureRef} aria-hidden="true" inert className="app-shell-header__end-measure">
+          {showRightPanelAction ? <div className="app-shell-header__end-actions"><ControlSurface surface={touch ? "floating" : "integrated"} className="app-shell-header__action-group">
+            <ButtonPlaceholder className="chrome-button app-shell-header__right-panel-toggle"><RightPanelToggleIcon panelOpen={rightPanelOpen} /></ButtonPlaceholder>
+          </ControlSurface></div> : null}
         </div>
         <div
+          ref={primaryRef}
           className="app-shell-header__context-surface"
-          aria-hidden={rightPanelFullWidth}
-          data-app-shell-header-context-hidden={rightPanelFullWidth}
+          data-app-shell-primary-header="true"
+          aria-hidden={primaryHidden}
+          inert={primaryHidden || undefined}
+          data-app-shell-header-context-hidden={primaryHidden}
         >
           <div
             ref={routeHeaderHostRef}
@@ -413,6 +394,12 @@ export function AppShellHeader({
               </div>
             </div>
           ) : null}
+          <ToolbarDockCapacityContext.Provider value={dockCapacity}>
+            <span className="toolbar-dock__capacity-probe" aria-hidden="true" />
+            {primaryAction ? <div className="app-shell-header__primary-actions no-drag">
+              <ControlSurface surface={touch ? "floating" : "integrated"} className="app-shell-header__action-group">{primaryAction}</ControlSurface>
+            </div> : null}
+          </ToolbarDockCapacityContext.Provider>
         </div>
         <motion.div
           className="app-shell-header__end-slot"
@@ -422,11 +409,9 @@ export function AppShellHeader({
             width: rightPanelAnimatedWidthPx,
           }}
         >
-          <div className="app-shell-header__end-actions no-drag">
+          {showRightPanelAction ? <div className="app-shell-header__end-actions no-drag">
             <ControlSurface surface={touch ? "floating" : "integrated"} className="app-shell-header__action-group">
 
-            {headerAction}
-            {showRightPanelAction ? (
               <IconButton
                 className="chrome-button app-shell-header__right-panel-toggle"
                 type="button"
@@ -439,12 +424,10 @@ export function AppShellHeader({
               >
                 <RightPanelToggleIcon panelOpen={rightPanelOpen} />
               </IconButton>
-            ) : null}
             </ControlSurface>
-          </div>
+          </div> : null}
         </motion.div>
-        </ToolbarDockCapacityContext.Provider>
       </div>
     </header>
-  );
+  </>;
 }

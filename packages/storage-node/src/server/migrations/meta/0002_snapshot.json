@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "df5000e6-9e28-4be0-be04-d79b5453d696",
+  "id": "56805fac-6fa6-4b69-99ed-15a95324a58a",
   "prevId": "cd1d4137-e413-4fcc-93e8-7c92be5dbdce",
   "tables": {
     "access_audit": {
@@ -297,6 +297,287 @@
           "onUpdate": "no action"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "actor_channel_changes": {
+      "name": "actor_channel_changes",
+      "columns": {
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "channel_id": {
+          "name": "channel_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "actor_channel_changes_message_id_unique": {
+          "name": "actor_channel_changes_message_id_unique",
+          "columns": [
+            "message_id"
+          ],
+          "isUnique": true
+        },
+        "actor_channel_changes_by_channel": {
+          "name": "actor_channel_changes_by_channel",
+          "columns": [
+            "channel_id",
+            "revision"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "actor_channel_changes_message_id_actor_messages_id_fk": {
+          "name": "actor_channel_changes_message_id_actor_messages_id_fk",
+          "tableFrom": "actor_channel_changes",
+          "tableTo": "actor_messages",
+          "columnsFrom": [
+            "message_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "actor_channel_execution_membership": {
+      "name": "actor_channel_execution_membership",
+      "columns": {
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "channel_id": {
+          "name": "channel_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "requester_epoch": {
+          "name": "requester_epoch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "target_epoch": {
+          "name": "target_epoch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "actor_channel_execution_membership_request_id_actor_execution_requests_id_fk": {
+          "name": "actor_channel_execution_membership_request_id_actor_execution_requests_id_fk",
+          "tableFrom": "actor_channel_execution_membership",
+          "tableTo": "actor_execution_requests",
+          "columnsFrom": [
+            "request_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "actor_channel_execution_membership_channel_id_actor_channels_id_fk": {
+          "name": "actor_channel_execution_membership_channel_id_actor_channels_id_fk",
+          "tableFrom": "actor_channel_execution_membership",
+          "tableTo": "actor_channels",
+          "columnsFrom": [
+            "channel_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "actor_channel_execution_membership_request_id_channel_id_pk": {
+          "columns": [
+            "request_id",
+            "channel_id"
+          ],
+          "name": "actor_channel_execution_membership_request_id_channel_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "actor_channel_identity": {
+      "name": "actor_channel_identity",
+      "columns": {
+        "epoch": {
+          "name": "epoch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "actor_channel_members": {
+      "name": "actor_channel_members",
+      "columns": {
+        "channel_id": {
+          "name": "channel_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "epoch": {
+          "name": "epoch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "actor_channel_members_actor": {
+          "name": "actor_channel_members_actor",
+          "columns": [
+            "actor_id",
+            "channel_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "actor_channel_members_channel_id_actor_channels_id_fk": {
+          "name": "actor_channel_members_channel_id_actor_channels_id_fk",
+          "tableFrom": "actor_channel_members",
+          "tableTo": "actor_channels",
+          "columnsFrom": [
+            "channel_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "actor_channel_members_channel_id_actor_id_pk": {
+          "columns": [
+            "channel_id",
+            "actor_id"
+          ],
+          "name": "actor_channel_members_channel_id_actor_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "actor_channels": {
+      "name": "actor_channels",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "peer_id": {
+          "name": "peer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "create_key": {
+          "name": "create_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "create_fingerprint": {
+          "name": "create_fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "actor_channels_owner_id_create_key_unique": {
+          "name": "actor_channels_owner_id_create_key_unique",
+          "columns": [
+            "owner_id",
+            "create_key"
+          ],
+          "isUnique": true
+        },
+        "actor_channels_peer": {
+          "name": "actor_channels_peer",
+          "columns": [
+            "peer_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
@@ -930,6 +1211,13 @@
         },
         "delegation_id": {
           "name": "delegation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "author_display_name": {
+          "name": "author_display_name",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -2599,184 +2887,6 @@
           "value": "state IN ('active','satisfied','expired','cancelled')"
         }
       }
-    },
-    "thread_access": {
-      "name": "thread_access",
-      "columns": {
-        "server_id": {
-          "name": "server_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "creator_actor_id": {
-          "name": "creator_actor_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "access_mode": {
-          "name": "access_mode",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "revision": {
-          "name": "revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "thread_access_server_id_thread_id_pk": {
-          "columns": [
-            "server_id",
-            "thread_id"
-          ],
-          "name": "thread_access_server_id_thread_id_pk"
-        }
-      },
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "thread_access_mode": {
-          "name": "thread_access_mode",
-          "value": "access_mode IN ('shared','private')"
-        },
-        "thread_access_revision": {
-          "name": "thread_access_revision",
-          "value": "revision>=1"
-        },
-        "thread_access_creator": {
-          "name": "thread_access_creator",
-          "value": "access_mode!='private' OR creator_actor_id IS NOT NULL"
-        }
-      }
-    },
-    "thread_access_audit": {
-      "name": "thread_access_audit",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "server_id": {
-          "name": "server_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "actor_id": {
-          "name": "actor_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "access_mode": {
-          "name": "access_mode",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "revision": {
-          "name": "revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "at": {
-          "name": "at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "thread_notes": {
-      "name": "thread_notes",
-      "columns": {
-        "server_id": {
-          "name": "server_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "state": {
-          "name": "state",
-          "type": "blob",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "thread_notes_server_id_thread_id_pk": {
-          "columns": [
-            "server_id",
-            "thread_id"
-          ],
-          "name": "thread_notes_server_id_thread_id_pk"
-        }
-      },
-      "uniqueConstraints": {},
-      "checkConstraints": {}
     }
   },
   "views": {},

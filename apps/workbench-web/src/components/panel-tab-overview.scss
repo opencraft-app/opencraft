@@ -1,0 +1,126 @@
+@use '@opencraft/design-system/overview.web' as overview;
+@use '@opencraft/design-system/typography-mixins.web' as typography;
+@use '@opencraft/design-system/material.web' as material;
+
+.modal-surface.panel-mobile-sheet--tabs {
+  color: var(--color-text); display: flex; flex-direction: column; padding: 0;
+  .panel-overview-host__body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  &:not([data-presentation='fullscreen']) { height: 92dvh; }
+}
+// Both hosts allocate a bounded scene; content length never places the exit action.
+.right-panel-view:has(> .panel-overview-inline) { display: flex; flex-direction: column; overflow: hidden; }
+.panel-overview-inline { flex: 1; min-height: 0; display: flex; }
+.panel-overview-layout { @include overview.layout; }
+.panel-overview__filters { display: flex; flex: none; gap: var(--gap-tool-overview-heading); overflow-x: auto; }
+.panel-overview__scroll { @include overview.scroll; }
+.panel-overview__grid { @include overview.grid; }
+.panel-overview-card { @include overview.card; }
+// Scene material is invariant across grid, native top layer and handback.
+// Only the creation controls use frosted material; real views own their paint.
+.panel-overview-create { @include material.surface(tool-overview); box-shadow: var(--shadow-tool-overview-card); }
+[data-overview-card-layout='scene'] {
+  --overview-frame-border-color: var(--color-tool-overview-border);
+  position: relative; padding: 0; border: 0;
+  background: var(--color-background-surface);
+  &[data-active='true'] { --overview-frame-border-color: var(--color-tool-overview-current-border); }
+  &::after {
+    content: ''; position: absolute; inset: 0; z-index: 2; box-sizing: border-box;
+    border: var(--width-tool-overview-border) solid var(--overview-frame-border-color);
+    border-radius: inherit; pointer-events: none;
+    opacity: var(--overview-frame-border-opacity, 1);
+  }
+  > .panel-overview-card__heading { padding: var(--padding-tool-overview-card); }
+  > .panel-overview-card__preview { border-radius: 0 0 var(--radius-tool-overview-card) var(--radius-tool-overview-card); }
+}
+.panel-overview-card__heading {
+  display: flex; flex: none; align-items: center; min-width: 0; gap: var(--gap-tool-overview-heading); height: var(--height-tool-overview-heading); min-height: var(--height-tool-overview-heading);
+  > svg { flex: none; }
+  > .ui-object-title-button { flex: 1; min-width: 0; }
+  > .ui-icon-button { flex: none; }
+  h2 { margin: 0; min-width: 0; white-space: nowrap; @include typography.role(preview-title); }
+}
+.panel-overview-card__preview {
+  flex: 1; min-height: 0; overflow: hidden; border-radius: var(--radius-tool-overview-preview); background: var(--color-background-surface);
+  > img { display: block; width: 100%; height: auto; }
+  > pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; padding: var(--padding-tool-overview-card); @include typography.role(metadata); }
+}
+.panel-overview-card__preview:has(> .retained-view-preview) { display: flex; }
+.panel-overview-card__placeholder { height: 100%; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--gap-tool-overview-grid); padding: var(--padding-tool-overview-card); text-align: center; overflow-wrap: anywhere; color: var(--color-text-secondary); @include typography.role(metadata); }
+.panel-overview-primary, .panel-overview-create { height: var(--height-tool-overview-entry); }
+.panel-overview-primary__messages { min-height: 0; overflow: hidden; flex: 1; padding-block: var(--spacing); display: flex; flex-direction: column; gap: var(--gap-tool-overview-heading); }
+.panel-overview-primary__message {
+  display: flex; align-items: start; gap: var(--gap-tool-overview-heading); min-height: 0; flex-shrink: 0;
+  > svg { flex: none; margin-top: var(--spacing); }
+  p { margin: 0; padding: var(--padding-tool-overview-card); min-width: 0; border-radius: var(--radius-tool-overview-preview); background: var(--color-tool-overview-message); @include typography.role(metadata); }
+  p > span { overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: var(--lines-tool-overview-message); -webkit-box-orient: vertical; overflow: hidden; }
+}
+.panel-overview-create__actions { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior-y: auto; display: flex; flex-direction: column; scrollbar-width: thin; gap: 0; > .ui-button { flex-shrink: 0; } }
+.panel-overview__footer { @include overview.footer; }
+.panel-overview__dock-spacer { flex: 1; }
+.panel-overview__empty { text-align: center; padding: var(--gap-tool-overview-grid); }
+.panel-overview__empty { @include typography.role(metadata, secondary); }
+.modal-surface.panel-mobile-sheet--tabs[data-presentation] {
+  // The scene transaction owns this backdrop. Never animate the containing box:
+  // its coordinates are also the basis for native retained-view projection.
+  background: transparent; animation: none; transition: none;
+  // A fullscreen canvas has no floating-panel edge. Opaque material resets
+  // blur/background but intentionally retains the general dialog elevation.
+  &[data-presentation='fullscreen'] { box-shadow: none; }
+  &::before {
+    content: ''; position: absolute; inset: 0; z-index: -1;
+    border-radius: inherit; pointer-events: none;
+    background: var(--background-tool-overview-canvas);
+    opacity: var(--overview-surface-opacity, 1);
+  }
+}
+
+.panel-overview-card__favicon { width: 1em; height: 1em; object-fit: contain; flex: none; }
+
+// Native viewers retain their own paint, typography and screen grid.
+.panel-overview-create__label { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.panel-overview-create__chevron { flex: none; color: var(--color-text-tertiary); }
+
+.panel-overview-card__title-scroll {
+  flex: 1; min-width: 0; overflow-x: auto; overflow-y: hidden;
+  overscroll-behavior-x: contain; scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+  > .ui-object-title-button { width: max-content; max-width: none; }
+}
+.panel-overview-primary__message[data-role='user'] p > span { -webkit-line-clamp: var(--lines-tool-overview-user); }
+
+.panel-overview-card__preview[data-preview-kind='conversation'] { display: flex; background: transparent; }
+
+// Presentation-only top layer: no cloned view, no second resource owner.
+[data-overview-flight] {
+  position: fixed; inset: auto; margin: 0; padding: 0; border: 0;
+  max-width: none; max-height: none; box-sizing: border-box;
+  overflow: clip; pointer-events: none;
+}
+
+// One Shell clock owns chrome paint, including the destination side-chat title.
+// Keep this membership aligned with scene-chrome-inert.ts. Apply alpha only at
+// outer paint boundaries: a floating composer containing a footer must not fade
+// twice. Nested Shells start with their own presentation rather than inheriting it.
+$scene-chrome: '.panel-mobile-dock, .thread-scroll-footer, :is(.app-shell-header-motion-host,.shell-chrome-host) > *, [data-retained-preview-chrome], .thread-composer-overlay-host';
+.app-shell-root { --scene-chrome-opacity: 1; }
+.app-shell-root :is(#{$scene-chrome}):not(:is(#{$scene-chrome}) *) {
+  opacity: var(--scene-chrome-opacity, 1);
+}
+
+// The placement lease transfers decoration, never duplicates it. Its native
+// plane paints above the borrowed content and cannot acquire input or a scrim.
+.panel-overview-card[data-overview-decoration-owner='external'] {
+  box-shadow: none;
+  &::after { visibility: hidden; }
+}
+.retained-preview-decoration {
+  position: fixed; inset: auto; margin: 0; padding: 0; border: 0;
+  max-width: none; max-height: none; box-sizing: border-box;
+  background: transparent; outline: none; pointer-events: none;
+  &::after {
+    content: ''; position: absolute; inset: 0; box-sizing: border-box;
+    border: var(--width-tool-overview-border) solid var(--overview-frame-border-color);
+    border-radius: inherit; opacity: var(--overview-frame-border-opacity, 1);
+  }
+  &::backdrop { background: transparent; pointer-events: none; }
+}

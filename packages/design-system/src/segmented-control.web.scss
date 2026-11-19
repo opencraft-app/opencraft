@@ -1,0 +1,152 @@
+@use "./interaction-mixins.web" as controls;
+
+.segmented-control {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--gap-segmented);
+
+  button {
+    display: inline-flex;
+    height: var(--height-toolbar-control);
+    min-width: 0;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: var(--radius-lg);
+    padding: 0 var(--padding-segmented-inline);
+    background: transparent;
+    color: var(--color-text-secondary);
+    font: inherit;
+    font-size: var(--font-text-sm-size);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--typography-chat-line-height);
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+      background-color var(--transition-duration-basic) var(--ease-standard),
+      color var(--transition-duration-basic) var(--ease-standard);
+
+    @include controls.hover-capable {
+      &:hover:not(:disabled) {
+        background: var(--segmented-hover, var(--color-background-button-tertiary-hover));
+        color: var(--color-text);
+      }
+    }
+
+    &[aria-checked="true"] {
+      background: var(--segmented-selected, var(--color-background-button-secondary));
+      color: var(--color-text);
+    }
+
+
+    &:disabled {
+      opacity: var(--opacity-control-disabled);
+      cursor: default;
+    }
+  }
+}
+
+.segmented-control[data-appearance="inset"] {
+  --segmented-hover: transparent;
+  --segmented-selected: transparent;
+  position: relative;
+  isolation: isolate;
+  display: inline-grid;
+  align-items: stretch;
+  width: max-content;
+  max-width: 100%;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  border: 0.5px solid transparent;
+  border-radius: var(--radius-lg);
+  padding: var(--spacing);
+
+  // Paint stays compact; the real buttons retain the shared touch-hit floor.
+  &::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset-inline: -0.5px;
+    top: 50%;
+    height: calc(var(--height-segmented-face) + var(--inset-segmented-track));
+    transform: translateY(-50%);
+    box-sizing: border-box;
+    border: 0.5px solid var(--border-segmented-track);
+    border-radius: inherit;
+    background: var(--surface-segmented-track);
+    pointer-events: none;
+  }
+
+  button {
+    position: relative;
+    isolation: isolate;
+    min-height: max(var(--height-segmented-face), var(--size-control-hit-min));
+    height: auto;
+    border-radius: var(--radius-md);
+    padding: var(--spacing) var(--padding-segmented-inline);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font: var(--typography-control-compact-font);
+
+
+    &::before {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      inset-inline: 0;
+      top: 50%;
+      height: var(--height-segmented-face);
+      transform: translateY(-50%);
+      border-radius: inherit;
+      pointer-events: none;
+      transition:
+        background-color var(--transition-duration-basic) var(--ease-standard),
+        box-shadow var(--transition-duration-basic) var(--ease-standard);
+    }
+
+    &[aria-checked="true"] {
+      font-weight: var(--typography-primary-action-weight);
+      &::before {
+        background: var(--color-background-elevated-primary-opaque);
+        box-shadow: var(--shadow-segmented-selected);
+      }
+    }
+
+
+    letter-spacing: var(--typography-control-compact-tracking)
+
+  }
+}
+
+
+.segmented-control[data-width="fill"] { inline-size: 100%; > button { flex: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .segmented-control button, .segmented-control button::before { transition: none; }
+}
+@media (forced-colors: active) {
+  .segmented-control button[aria-checked="true"] { outline: 1px solid Highlight; outline-offset: -1px; }
+}
+
+// Quiet collection categories retain the shared radio keyboard/focus contract.
+.segmented-control[data-appearance="underline"] {
+  align-items: stretch;
+  gap: calc(4 * var(--spacing));
+  button {
+    position: relative;
+    min-block-size: max(var(--height-token-settings-control), var(--size-control-hit-min));
+    block-size: auto;
+    padding: calc(2 * var(--spacing)) var(--spacing);
+    font: var(--typography-body-font);
+    letter-spacing: var(--typography-body-tracking);
+    &[aria-checked="true"] {
+      background: transparent;
+      font-weight: var(--font-weight-medium);
+      &::after {
+        content: ""; position: absolute; inset-inline: var(--spacing); inset-block-end: 0;
+        block-size: var(--width-collection-selection); background: currentColor;
+      }
+    }
+  }
+}

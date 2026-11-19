@@ -4,10 +4,11 @@ import { TranscriptCacheWorker } from "./transcript-cache-worker.js";
 import { resolveCacheDataDirectory } from "./cache-directory.js";
 import { join } from "node:path";
 import type {DatabaseOutcome} from "@opencraft/sqlite-node";
-import type { AppServerThread, AppServerTurn, ThreadTurnsListResponse } from "@opencraft/appserver-protocol";
+import type { AppServerThread, AppServerTurn, HistoryImageResource, ThreadTurnsListResponse } from "@opencraft/appserver-protocol";
 import { canonicalRolloutPath, readRolloutIncrement, type NativeRolloutSource } from "./codex-rollout-reader.js";
 
 export const TRANSCRIPT_PROJECTION_SCHEMA = 2;
+export const TRANSCRIPT_IMAGE_RESOURCE_SCHEMA = 3;
 export class NativeItemPaginationUnsupported extends Error {}
 const DEFAULT_TRANSCRIPT_READ_TIMEOUT_MS = 30_000;
 export { TRANSCRIPT_CACHE_MIGRATIONS } from "./transcript-cache-schema.js";
@@ -151,6 +152,8 @@ export class NativeItemReadScheduler {
 }
 
 export interface NativeTranscriptPort {
+  /** Optional trusted artifact preparation; never changes native Items or full reads. */
+  prepareImageResources?(threadId: string, turns: readonly AppServerTurn[], signal?: AbortSignal): Promise<Record<string, HistoryImageResource>>;
   nativeHome?: string;
   resolveSource?(threadId: string, path: string): Promise<NativeRolloutSource>;
   observeSnapshotSource?(threadId: string): Promise<NativeTranscriptSnapshotSource | null>;
@@ -210,7 +213,7 @@ export class TranscriptReadCache {
     options: { projectionSchema?: number; itemReadScheduler?: NativeItemReadScheduler; measured?(event: { kind: "hit" | "rebuild" | "increment"; ms: number; nativeBytes: number }): void } = {}) {
     const cacheData = resolveCacheDataDirectory(dataDirectory);
     this.directory = join(cacheData, "cache", "transcripts");
-    this.schema = options.projectionSchema ?? TRANSCRIPT_PROJECTION_SCHEMA;
+    this.schema = options.projectionSchema ?? (port.prepareImageResources ? TRANSCRIPT_IMAGE_RESOURCE_SCHEMA : TRANSCRIPT_PROJECTION_SCHEMA);
     this.storage = new TranscriptCacheWorker(cacheData, this.schema);
     this.itemReadScheduler = options.itemReadScheduler ?? new NativeItemReadScheduler();
     this.measured = options.measured;
@@ -242,7 +245,7 @@ export class TranscriptReadCache {
   }
 
   /** Native metadata stays live; it is never served from this cache. */
-  async read(threadId: string, limit = 10, onValidated?: () => void, itemsView: "full" | "notLoaded" | "presentation" = "full", signal?: AbortSignal, observer?: HistoryReadObserver): Promise<{ thread: AppServerThread; initialTurnsPage: ThreadTurnsListResponse }> {
+  async read(threadId: string, limit = 10, onValidated?: () => void, itemsView: "full" | "notLoaded" | "presentation" = "full", signal?: AbortSignal, observer?: HistoryReadObserver, imageResources = false): Promise<{ thread: AppServerThread; initialTurnsPage: ThreadTurnsListResponse }> {
     if(this.closed)throw new Error("Transcript cache closed");
     const effectiveSignal = signal ?? AbortSignal.timeout(DEFAULT_TRANSCRIPT_READ_TIMEOUT_MS);
     const revision = this.revisions.get(threadId) ?? 0;
@@ -257,10 +260,10 @@ export class TranscriptReadCache {
     if (this.closed || revision !== (this.revisions.get(threadId) ?? 0)) throw new Error("Transcript read invalidated");
     if (thread.id !== threadId) throw new Error("Native reader returned another Thread");
     onValidated?.();
-    const initialTurnsPage = await this.page(threadId, null, limit, thread, itemsView, "desc", effectiveSignal, observer);
+    const initialTurnsPage = await this.page(threadId, null, limit, thread, itemsView, "desc", effectiveSignal, observer, undefined, imageResources);
     return { thread: { ...thread, historyTurnCount: initialTurnsPage.totalTurnCount }, initialTurnsPage };
   }
-  async page(threadId: string, cursor: string | null, limit = 10, metadata?: AppServerThread, itemsView: "full" | "notLoaded" | "presentation" = "full", sortDirection: "asc" | "desc" = "desc", signal?: AbortSignal, observer?: HistoryReadObserver, detailItemId?: string): Promise<ThreadTurnsListResponse> {
+  async page(threadId: string, cursor: string | null, limit = 10, metadata?: AppServerThread, itemsView: "full" | "notLoaded" | "presentation" = "full", sortDirection: "asc" | "desc" = "desc", signal?: AbortSignal, observer?: HistoryReadObserver, detailItemId?: string, imageResources = false): Promise<ThreadTurnsListResponse> {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) return Promise.reject(new Error("Invalid transcript page size"));
     if (sortDirection !== "asc" && sortDirection !== "desc") return Promise.reject(new Error("Invalid transcript sort direction"));
     if(this.closed)throw new Error("Transcript cache closed");
@@ -353,7 +356,7 @@ export class TranscriptReadCache {
         try {
         let page: ThreadTurnsListResponse;
         try {
-          page = await this.storage.readPage(threadId, cursor, limit, itemsView, sortDirection, detailItemId);
+          page = await this.storage.readPage(threadId, cursor, limit, itemsView, sortDirection, detailItemId, imageResources);
         }
         catch (error) {
           if (object(error).code === "TRANSCRIPT_CURSOR_EXPIRED" || attempt === 1) throw error;
@@ -364,27 +367,38 @@ export class TranscriptReadCache {
           if (hydrationTurns.length) observeContext(observer, { itemHydrationPath: "cache-page",
             turnCountBucket: historyTurnCountBucket(typeof page.totalTurnCount === "number" ? page.totalTurnCount : Number.NaN),
             lengthBucket: historyLengthBucket(typeof thread.path === "string" ? await fileLength(thread.path) : -1) });
-          const hydrated = await Promise.allSettled(hydrationTurns.map(async turn => {
-          const items = await this.itemReadScheduler.run(threadId, effectiveSignal, () => awaitWithAbort(
-              this.port.listTurnItems!(threadId, turn.id, effectiveSignal, "cache-page"), effectiveSignal),
-              ms => observeContext(observer, { itemQueueMs: ms }));
+          // Bound completed native bodies as well as active reads. Waiting for the
+          // entire page retains every large Turn even after its read slot is free.
+          // Persist each small batch before admitting the next; publish only once
+          // the requested page is complete. This is not a client paging boundary.
+          const batchSize = Math.min(4, this.itemReadScheduler.concurrency);
+          for (let offset = 0; offset < hydrationTurns.length; offset += batchSize) {
             ensureCurrent();
-            return { turn, items };
-          }));
-          const rejected = hydrated.find((result): result is PromiseRejectedResult => result.status === "rejected");
-          if (rejected) {
-            const error = rejected.reason;
-            if (!(error instanceof NativeItemPaginationUnsupported)) throw error;
+            const hydrated = await Promise.allSettled(hydrationTurns.slice(offset, offset + batchSize).map(async turn => {
+            const items = await this.itemReadScheduler.run(threadId, effectiveSignal, () => awaitWithAbort(
+                this.port.listTurnItems!(threadId, turn.id, effectiveSignal, "cache-page"), effectiveSignal),
+                ms => observeContext(observer, { itemQueueMs: ms }));
+              ensureCurrent();
+              return { turn, items };
+            }));
+            const rejected = hydrated.find((result): result is PromiseRejectedResult => result.status === "rejected");
+            if (rejected) {
+              const error = rejected.reason;
+              if (!(error instanceof NativeItemPaginationUnsupported)) throw error;
+              ensureCurrent();
+              // Some native protocols have Turn headers but no Item paginator.
+              // Reconstruct full native Turns instead of publishing empty bodies.
+              this.headerPagesSupported = false; await this.storage.drop(threadId);
+              attempt--; continue readAttempts;
+            }
             ensureCurrent();
-            // Some native protocols have Turn headers but no Item paginator.
-            // Reconstruct full native Turns instead of publishing empty bodies.
-            this.headerPagesSupported = false; await this.storage.drop(threadId);
-            attempt--; continue readAttempts;
+            const materialized = hydrated.flatMap(result=>result.status==="fulfilled"?[{...result.value.turn,items:result.value.items,itemsView:"full" as const}]:[]);
+            const resources = await this.prepareImages(threadId, materialized, effectiveSignal);
+            ensureCurrent();
+            await this.storage.hydrate(threadId, materialized, resources);
+            ensureCurrent();
           }
-          ensureCurrent();
-          await this.storage.hydrate(threadId, hydrated.flatMap(result=>result.status==="fulfilled"?[{...result.value.turn,items:result.value.items,itemsView:"full" as const}]:[]));
-          ensureCurrent();
-          if (hydrationTurns.length) page = await this.storage.readPage(threadId, cursor, limit, itemsView, sortDirection, detailItemId);
+          if (hydrationTurns.length) page = await this.storage.readPage(threadId, cursor, limit, itemsView, sortDirection, detailItemId, imageResources);
         }
         await awaitWithAbort((snapshotSource ?? source)!.validate(), effectiveSignal); ensureCurrent();
         this.measured?.({ ...observed, ms: performance.now() - started });
@@ -393,6 +407,12 @@ export class TranscriptReadCache {
       }
       throw new Error("Transcript rebuild failed");
     }, effectiveSignal, ms => { try { observer?.("queue", ms); } catch { /* Diagnostics never own read settlement. */ } });
+  }
+  private async prepareImages(threadId: string, turns: readonly AppServerTurn[], signal?: AbortSignal): Promise<Record<string, HistoryImageResource>> {
+    throwIfAborted(signal);
+    const resources = await this.port.prepareImageResources?.(threadId, turns, signal) ?? {};
+    throwIfAborted(signal);
+    return resources;
   }
   private async nativePage(threadId: string, cursor: string | null, signal?: AbortSignal, initialLimit = 100): Promise<NativePage> {
     for (let limit = initialLimit; ; limit = Math.max(1, Math.floor(limit / 2))) {
@@ -430,7 +450,8 @@ export class TranscriptReadCache {
       turns.push(...page.data); cursor = page.nextCursor;
     } while (cursor !== null);
     throwIfAborted(signal);
-    return this.storage.snapshot(threadId,turns,{position:source.position,identity:source.identity,path:source.path},watermark,meta,rebuild);
+    const resources = await this.prepareImages(threadId, turns, signal);
+    return this.storage.snapshot(threadId,turns,{position:source.position,identity:source.identity,path:source.path},watermark,meta,rebuild,resources);
   }
   private async reconcile(threadId: string, path: string, source: NativeRolloutSource | undefined, snapshotSource?: NativeTranscriptSnapshotSource, signal?: AbortSignal, observer?: HistoryReadObserver): Promise<{ kind: "hit" | "rebuild" | "increment"; nativeBytes: number }> {
     throwIfAborted(signal);
@@ -503,7 +524,7 @@ export class TranscriptReadCache {
       // A full hundred-Turn page can rehydrate megabytes of unchanged tool output.
       // Continue paging until the same dirty boundary; rebuilds still read all Turns.
       const page = await this.indexPage(threadId, nativeCursor, signal, rebuild ? 100 : 10);
-      if(rebuild) await this.storage.batch(threadId,page.data.map(turn=>({turn,seq:-descendingSeq++})));
+      if(rebuild) await this.storage.batch(threadId,page.data.map(turn=>({turn,seq:-descendingSeq++})),await this.prepareImages(threadId,page.data,signal));
       else for(const turn of page.data) {
         fresh.push(turn);
         const row=await this.storage.turn(threadId,turn.id);
@@ -515,7 +536,8 @@ export class TranscriptReadCache {
       // A missing boundary implies a native rewrite. Start fresh next read and
       // never publish this suffix against stale older rows.
       if (max.seq !== null && !reachedBoundary) { await this.storage.drop(threadId); return this.reconcile(threadId, path, source, snapshotSource, signal, observer); }
-      await this.storage.append(threadId,fresh.reverse(),Number(max.seq??-1)+1);
+      const resources = await this.prepareImages(threadId, fresh, signal);
+      await this.storage.append(threadId,fresh.reverse(),Number(max.seq??-1)+1,resources);
     }
     await this.storage.finish(threadId,native.watermark,cursor,native.identity,path,meta?.epoch??randomUUID());
     return { kind: rebuild ? "rebuild" : "increment", nativeBytes: bytes };

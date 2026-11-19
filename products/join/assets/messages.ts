@@ -1,0 +1,185 @@
+export const labels = {
+  libraries: "Libraries",
+  libraryConfigured:
+    "Configured \u00b7 attached by compatible E2B environments",
+  libraryUnavailable: "Unavailable \u00b7 operator verification required",
+  libraryEmpty: "No verified NFS library is configured.",
+  libraryBoundary:
+    "Files are stored independently of compute instances. Selecting an environment does not migrate data or mount this library on the current server.",
+  libraryDetails: "Connection details",
+  libraryManaged:
+    "Existing NFS storage, mounted by E2B at /shared. No new volume is created here.",
+  libraryCompatible: "Compatible environments",
+  libraryVerified: "Last operator verification (not live health)",
+  libraryScope:
+    "Currently available to assistants running in the listed E2B environments. Ordinary local conversations do not use this mount.",
+
+  catalogAbout:
+    "Manage environments and connections available to your assistants.",
+  personalEnvironments: "My environments",
+  viewAssistants: "View assistants",
+  catalogReadFailed:
+    "Cloud environments and E2B connections could not be loaded. Refresh to try again.",
+  basicInfo: "Basic information",
+  accountInfo: "Account information",
+  accessCredentials: "Access credentials",
+  environmentSetup: "Environment setup",
+  addAccount: "Add an account",
+  createEnvironment: "Add a cloud environment",
+  clearFilters: "Clear filters",
+  connectionSaveHint:
+    "Saving stores this configuration; it does not check whether E2B is reachable.",
+
+  codeAccountShort: "Code accounts currently work on this server.",
+  codeAccessRole: "Access code services",
+  provisioningRole: "Create cloud environments",
+  codeAccountHint:
+    "Gongfeng and GitHub connections currently support code access on this server. Binding these accounts to cloud environments is not available yet.",
+  creationConnectionHint:
+    "Used to create the cloud environment and bill its usage, not to choose a code repository account.",
+  chooseAssistant: "Choose an assistant",
+  environmentUseHint:
+    "After adding an environment, choose it in assistant settings.",
+  connectionQuestion: "Which account should your assistant use?",
+  environmentQuestion: "Where should your assistant work?",
+  dataQuestion: "What should your assistant remember?",
+  source: "Source",
+  personal: "Mine",
+  platform: "Platform provided",
+  publicationTitle: "Make this available to all members?",
+  publicationAbout:
+    "All admitted members can use platform environments. Usage is billed to this connection. Changing templates or replacing a key may interrupt active execution; affected assistants must reselect their environment. Names and environment settings are shared, but the saved key is not shown to members.",
+  confirmPublication: "Save for everyone",
+  platformRemoval:
+    "This affects all members using this configuration and may interrupt active execution.",
+  administrator_required:
+    "Only administrators can manage platform-provided items. Your platform draft has been cleared; refresh to see your current permissions.",
+
+  title: "Assets",
+  moreSettings: "More settings",
+  usageNotes: "Before you use this environment",
+  environmentSaveHint:
+    "Save, then choose this environment in assistant settings. Saving does not start it.",
+  rotationTitle: "Replace the saved API key?",
+  rotationAbout:
+    "Replacing this key may interrupt associated execution. Reselect and save the updated environment in assistant settings before running again. History and memory are retained.",
+  confirmRotation: "Replace key",
+  about: "Memory, workplaces and accounts: you decide.",
+  data: "Data",
+  environments: "Environments",
+  connections: "Connections",
+  memory: "Assistant memory",
+  memoryAbout:
+    "Keep what your assistant remembers, even when its environment changes.",
+  openMemory: "Manage assistant memories",
+  dataAbout: "Choose an assistant to view and organize its memory.",
+  dataBoundary:
+    "Persistent volumes are another data type. Creating or mounting volumes is not available here yet.",
+  local: "Current server",
+  default: "Available by default",
+  localAbout: "Your assistant works on the platform server.",
+  environmentAbout:
+    "Choose a workplace: this server or an independent cloud environment.",
+  addEnvironment: "Add environment",
+  addConnection: "Add connection",
+  manage: "Manage",
+  back: "Back to list",
+  e2bAbout:
+    "Use an E2B connection to create cloud workspaces for your assistant.",
+  gongfeng: "Gongfeng",
+  gongfengAbout: "Work with your code repositories and Gongfeng tools.",
+  githubAbout: "Work with your code repositories and record code changes.",
+  chooseProvider: "Choose a service",
+  providerAbout: "Choose Gongfeng, GitHub or E2B to add an account.",
+  choose: "Choose",
+  capabilityEnvironments: "Cloud workspace",
+  capabilityGit: "Code repositories",
+  capabilityTools: "Tools",
+  accountConnection: "Account connection",
+  configured: "Added",
+  notConfigured: "Not added",
+  unknown: "Status unavailable",
+  connectionAbout:
+    "Manage code service accounts and E2B connections for creating cloud environments.",
+  emptyConnections: "No connections added yet.",
+  emptyEnvironment: "No cloud environments yet.",
+  newConnection: "Add E2B connection",
+  newEnvironment: "Add cloud environment",
+  editConnection: "Manage connection",
+  editEnvironment: "Manage environment",
+  name: "Name",
+  template: "Environment template",
+  connection: "E2B connection",
+  chooseConnection: "Choose an E2B connection",
+  createConnection: "Create an E2B connection",
+  returnEnvironment: "Save and return to environment",
+  connectionNeeded:
+    "This environment needs an E2B connection. Create one here without losing your draft.",
+  apiUrl: "API address",
+  sandboxUrl: "Sandbox domain",
+  apiKey: "Access key",
+  savedKey: "Saved. Leave blank to keep the key.",
+  endpointSettings: "Advanced settings",
+  customHint:
+    "Custom HTTPS root addresses require an instance administrator. Saved addresses cannot be changed; create another connection instead.",
+  officialEndpoints: "Using official E2B service addresses.",
+  secretsHint:
+    "The API key is encrypted on save and is never returned to this page.",
+  connectionUsage: "Used by environments",
+  notUsed: "No environments reference this connection.",
+  inUse:
+    "Remove or change these environment references before removing the connection.",
+  runtimeHint:
+    "Templates must include Python 3 at /usr/bin/python3. The current execution lease is temporary (at most one hour). Changing configuration or rotating a key can stop affected execution; reselect and save the updated environment in assistant settings. History and memory are retained.",
+  save: "Save",
+  cancel: "Cancel",
+  refresh: "Refresh",
+  loading: "Loading…",
+  saving: "Saving…",
+  saved: "Saved.",
+  remove: "Remove",
+  removeEnvironment: "Remove environment",
+  removeConnection: "Remove connection",
+  deleteTitle: "Remove this configuration?",
+  deleteEnvironment:
+    "Only the saved environment configuration is removed, not its E2B template, history or memory. Active execution may be interrupted.",
+  deleteConnection:
+    "Only the saved connection and its local credential are removed. This does not revoke the key at the provider.",
+  confirmDelete: "Confirm removal",
+  identity: "Sign in to manage your assets.",
+  failed:
+    "Could not confirm the result. Your draft is kept; refresh and review before trying again. Changes are not retried automatically.",
+  conflict:
+    "Configuration changed, or the previous save may already have succeeded. Review the refreshed list and reopen the editor; the original draft has not been reapplied.",
+  invalid: "Check the required fields and advanced settings.",
+  key_required: "Enter an API key.",
+  credential_in_use:
+    "This connection is referenced by an environment. Remove or change that reference first.",
+  credential_missing:
+    "The selected connection is no longer available. Choose another connection.",
+  custom_endpoint_admin:
+    "Only instance administrators can configure custom E2B service addresses.",
+  audience_changed:
+    "Create another connection to use different service addresses. Saved keys cannot be redirected.",
+  limit: "The configuration limit has been reached.",
+  missing: "This configuration no longer exists. Refresh the list.",
+  envVariables: "Variables",
+  envVariablesAbout: "Settings used by your assistant.",
+  openVariables: "Manage variables",
+  continueEditing: "Continue editing",
+  draftRetained: "An unsaved draft is kept on this page.",
+  discardTitle: "Discard your changes?",
+  discardAbout:
+    "Your unsaved input will be cleared. Nothing will be saved or sent to the provider.",
+  discard: "Discard changes",
+  keepEditing: "Keep editing",
+  search: "Find by name",
+  noResults: "No matching items.",
+  filter: "Service",
+  allProviders: "All services",
+  updatedEnvironment:
+    "Connection saved. Your environment draft is restored; save it when ready.",
+  createHint:
+    "You can create multiple named E2B connections. Git account connections reuse your existing account settings.",
+} as const;
+export type AssetMessage = keyof typeof labels;

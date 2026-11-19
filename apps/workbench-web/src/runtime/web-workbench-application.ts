@@ -1,8 +1,8 @@
 import { ThreadSummaryPlugin } from "@opencraft/plugin-thread-summary";
 import { browserMetadataKeys, readBrowserMetadataValue } from "@opencraft/workbench-runtime/browser-metadata-identity";
-import { RemoteBrowserStorage } from '../browser/remote-browser-storage';
-import { discoverRemoteBrowser, discoverRemoteBrowserForStartup, isOfflineShellStartup } from '../browser/remote-browser-capabilities';
-import { supportsH264MediaSource } from '../browser/h264-media-source';
+import { declaredBrowserBackend, waitForRemoteBrowser } from '../browser/remote-browser-capabilities';
+import { supportsH264MediaSource } from '../browser/browser-media-capabilities';
+import { subscribeBrowserMetadata } from '../browser/browser-metadata-sync';
 import { RemoteBrowserSurfaceHost } from '../browser/remote-browser-surface-host';
 import type { ConversationPresentationProvider } from "./conversation-presentation";
 import { serverFetch, serverStorageKey, serverUrl } from "./server-context";
@@ -31,11 +31,12 @@ import { BrowserPresentationCoordinator } from "../browser/browser-presentation-
 import { BrowserWorkbenchCoordinator } from "../browser/browser-workbench-coordinator";
 import { WebBrowserPageRuntime, type BrowserNavigationPolicy } from "../browser/web-browser-runtime";
 import { WebIframeSurfaceHost, type BrowserSurfaceHost } from "../browser/web-browser-surface-host";
-import { ElectronBrowserSurfaceHost } from "../browser/electron-browser-surface-host";
 import { createDesktopBrowserStorage, type BrowserMetadataStorage } from "../browser/desktop-browser-storage";
 import { WebBrowserDynamicToolHost } from "../browser/web-browser-tool-host";
 import { WebHostProxyBroker } from "../browser/web-host-proxy-broker";
 import { BuiltinWorkbenchPanelPlugin } from "../panels/builtin-panel-plugin";
+import { WorkbenchResourceSync } from "./workbench-resource-sync";
+import { createSideChatPersistence, createSynchronizedSideChatPersistence } from "./side-chat-persistence";
 import { createSideChatPanelPlugin } from "../panels/side-chat-panel-plugin";
 import { BuiltinTimelineRendererPlugin } from "../components/conversation-renderers/builtin-timeline-renderer-plugin";
 import {
@@ -117,33 +118,41 @@ export async function createWebWorkbenchApplication(
     platform: desktop ? "electron" : "web",
     hostProfileMode: options.hostProfileMode,
   });
-  const remoteBrowser = !desktop && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === 'true'
+  // Electron-only guest machinery (including annotation injection) is not
+  // a Web startup dependency. Load before allocating application owners.
+  const ElectronBrowserSurfaceHost = desktop
+    ? (await import("../browser/electron-browser-surface-host")).ElectronBrowserSurfaceHost : null;
+  startupSignal?.throwIfAborted();
+  const remoteMetadata = !desktop && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === "true" && declaredBrowserBackend() !== false;
+  const remoteBrowser = remoteMetadata && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === 'true'
     && (typeof VideoDecoder !== 'undefined' || supportsH264MediaSource())
-    && await discoverRemoteBrowserForStartup(startupSignal);
-  const deferredBrowser = remoteBrowser && isOfflineShellStartup();
+    && declaredBrowserBackend() !== false;
   const browserAdmission = new AbortController();
   const abortBrowserAdmission = () => browserAdmission.abort(startupSignal?.reason);
-  if (deferredBrowser) startupSignal?.addEventListener("abort", abortBrowserAdmission, { once: true });
+  if (remoteMetadata) startupSignal?.addEventListener("abort", abortBrowserAdmission, { once: true });
   const releaseBrowserAdmission = () => { browserAdmission.abort(); startupSignal?.removeEventListener("abort", abortBrowserAdmission); };
-  const remoteStorage = remoteBrowser && !options.browserMetadataStorage ? await RemoteBrowserStorage.create(startupSignal, deferredBrowser ? async () => {
-    if (!await discoverRemoteBrowser(browserAdmission.signal)) throw new Error('Browser backend changed; reload OpenCraft');
-  } : undefined) : null;
-  const browserStorage = options.browserMetadataStorage ?? remoteStorage ?? (desktop ? await createDesktopBrowserStorage() : null);
+  const remoteStorage = remoteMetadata && !options.browserMetadataStorage ? await (await import('../browser/remote-browser-storage')).RemoteBrowserStorage.create(startupSignal, async () => { browserAdmission.signal.throwIfAborted(); }) : null;
+  const browserStorage = options.browserMetadataStorage ?? (remoteBrowser ? remoteStorage : null) ?? (desktop ? await createDesktopBrowserStorage() : null);
   // Desktop account restoration is independent of local Host startup. The
   // local Host and its environment configuration must remain usable meanwhile.
   const cordis = new Context();
   const optionalFeatures = options.deferOptionalFeatures ? new OptionalFeatureStartup() : null;
+  // Conversation aliases and resource metadata do not depend on video decoding.
+  const bindingStorage = remoteStorage ?? browserStorage ?? window.localStorage;
   const conversationBindings = createConversationBindingStore({
     persistence: {
-      load: () => loadConversationBindings(browserStorage ?? window.localStorage),
+      load: () => loadConversationBindings(bindingStorage),
       save(bindings) {
         try {
-          (browserStorage ?? window.localStorage).setItem(CONVERSATION_BINDINGS_STORAGE_KEY, JSON.stringify(bindings));
+          bindingStorage.setItem(CONVERSATION_BINDINGS_STORAGE_KEY, JSON.stringify(bindings));
         } catch {
           // Client aliases are a startup optimization, not authoritative data.
         }
       },
     },
+  });
+  const releaseBindingMetadata = (bindingStorage as BrowserMetadataStorage).onMetadataChanged?.(field => {
+    if (field === "bindings" || field === "*") conversationBindings.restore();
   });
   let supervisor: WebWorkbenchApplicationSupervisor;
   let resolveTerminalRuntime: ((hostId: string) => AppServerWorkbenchRuntime) | null = null;
@@ -156,12 +165,14 @@ export async function createWebWorkbenchApplication(
     const runtime = await supervisor.registry.ensureConnected(hostId);
     return runtime.resources.host.fetchLoopback(targetUrl, init);
   });
-  const browserSurfaces = desktop ? new ElectronBrowserSurfaceHost(browserStorage!)
-    : remoteBrowser ? new RemoteBrowserSurfaceHost(browserStorage ?? undefined, remoteStorage ? 'opencraft.remote-browser-storage.v1' : undefined, () => !remoteStorage || remoteStorage.isReady, () => remoteStorage?.whenReady() ?? Promise.resolve()) : new WebIframeSurfaceHost();
-  const releaseStorageErrors = remoteStorage?.onError(error => { if (browserSurfaces instanceof RemoteBrowserSurfaceHost) browserSurfaces.fail(error); });
+  const browserSurfaces = ElectronBrowserSurfaceHost ? new ElectronBrowserSurfaceHost(browserStorage!)
+    : remoteBrowser ? new RemoteBrowserSurfaceHost(browserStorage ?? undefined, remoteStorage ? 'opencraft.remote-browser-storage.v1' : undefined, () => !remoteStorage || remoteStorage.isReady, () => Promise.all([remoteStorage?.whenReady(), waitForRemoteBrowser(browserAdmission.signal)]).then(() => {})) : new WebIframeSurfaceHost();
+  const resourceSync = remoteStorage ? new WorkbenchResourceSync(remoteStorage) : null;
+  const releaseResourceSync = () => resourceSync?.dispose();
+  const releaseStorageErrors = remoteStorage?.onError(error => { if (!remoteStorage.isReady && browserSurfaces instanceof RemoteBrowserSurfaceHost) browserSurfaces.fail(error); });
   const browserPages = new WebBrowserPageRuntime(
     browserSurfaces,
-    remoteBrowser ? null : hostProxy,
+    remoteBrowser || desktop ? null : hostProxy,
     (ownerId) => conversationBindings.resolve(
       ownerId as Parameters<typeof conversationBindings.resolve>[0],
     )?.hostId ?? null,
@@ -174,7 +185,8 @@ export async function createWebWorkbenchApplication(
   try {
     chatRenderRuntime = await createWebChatRenderRuntime(cordis, options.chatRenderExtensions);
   } catch (error) {
-    releaseBrowserAdmission();
+    releaseBindingMetadata?.();
+    releaseBrowserAdmission(); releaseResourceSync();
     browserPresentations.dispose();
     browserPages.dispose();
     browserSurfaces.dispose(); releaseStorageErrors?.(); remoteStorage?.dispose();
@@ -183,6 +195,7 @@ export async function createWebWorkbenchApplication(
     throw error;
   }
   let browserWorkbench: BrowserWorkbenchCoordinator;
+  let releaseBrowserMetadata: (() => void) | undefined;
   let terminalSessions: ConversationTerminalSessionRegistry | null = null;
   const terminalHostObservers = new Map<string, () => void>();
   const releaseTerminalRecovery = () => { for (const remove of terminalHostObservers.values()) remove(); terminalHostObservers.clear(); };
@@ -197,7 +210,10 @@ export async function createWebWorkbenchApplication(
       panelRuntime.panels,
       conversationBindings,
       browserStorage,
+      (tabId, views) => browserPresentations.isTabVisible(tabId, views),
     );
+    if (remoteStorage && browserSurfaces instanceof RemoteBrowserSurfaceHost)
+      releaseBrowserMetadata = subscribeBrowserMetadata(remoteStorage, conversationBindings, browserSurfaces, browserPages, browserWorkbench);
     await panelRuntime.install(createBrowserWorkbenchPanelPlugin(
       browserWorkbench,
       (context) => browserWorkbench.open(context.resourceOwnerId, {
@@ -207,13 +223,15 @@ export async function createWebWorkbenchApplication(
     const browserToolHost = new WebBrowserDynamicToolHost(
       browserPages,
       browserWorkbench,
+      browserStorage && 'effectReceipts' in browserStorage ? browserStorage.effectReceipts : undefined,
     );
     terminalSessions = new ConversationTerminalSessionRegistry((hostId) => {
       if (resolveTerminalRuntime === null) {
         throw new Error("Terminal Host is unavailable without an active AppServer runtime");
       }
       return resolveTerminalRuntime(hostId);
-    });
+    }, undefined, hostId => { void resourceSync?.notify("terminal", hostId).catch(() => console.warn("Terminal directory notification pending; authoritative refresh remains available")); });
+    resourceSync?.register("terminal", () => terminalSessions?.refreshDirectories() ?? Promise.resolve());
     const terminalToolHost = new RegistryConversationTerminalToolHost(
       terminalSessions,
       ({ hostId, threadId }) => conversationBindings.findScope(
@@ -266,7 +284,7 @@ export async function createWebWorkbenchApplication(
         changed();
       };
       resolveTerminalRuntime = (hostId) => activeSupervisor.registry.getRuntime(hostId);
-      await panelRuntime.install(SideChatService, { resolveHost: (hostId: string) => activeSupervisor.registry.ensureConnected(hostId) });
+      await panelRuntime.install(SideChatService, { persistence: remoteStorage ? createSynchronizedSideChatPersistence(remoteStorage, window.localStorage) : createSideChatPersistence(window.localStorage), resolveHost: (hostId: string) => activeSupervisor.registry.ensureConnected(hostId) });
       await panelRuntime.install(createSideChatPanelPlugin(panelRuntime.context.sideChats, conversationBindings, hostId => activeSupervisor.registry.getRuntime(hostId)));
       const desktopKind = (
         globalThis as typeof globalThis & { readonly opencraftDesktop?: { readonly kind?: string } }
@@ -292,21 +310,30 @@ export async function createWebWorkbenchApplication(
         await panelRuntime.install(createTerminalWorkbenchPanelPlugin(sessions,
           ownerId => ({ threadId: conversationBindings.resolve(ownerId as Parameters<typeof conversationBindings.resolve>[0])?.conversationKey?.threadId ?? null }),
           async ownerId => {
-            if (remoteStorage) { await remoteStorage.whenReady(); conversationBindings.restore(); }
+            // Terminal recovery must not wait for the independent browser
+            // backend. Late aliases trigger another resource refresh below.
+            if (remoteStorage?.isReady) conversationBindings.restore();
             const binding = conversationBindings.resolve(ownerId as Parameters<typeof conversationBindings.resolve>[0]);
             if (!binding) return;
             observeTerminalHost(binding.hostId);
             await activeSupervisor.registry.ensureConnected(binding.hostId);
             if (conversationBindings.resolve(binding.scopeId) !== binding) return;
-            await sessions.restore(binding.hostId, ownerId, { threadId: binding.conversationKey?.threadId ?? null });
+            const aliases = binding.conversationKey === null ? [] : conversationBindings.getSnapshot().bindings
+              .filter(candidate => candidate.hostId === binding.hostId && candidate.conversationKey?.threadId === binding.conversationKey?.threadId)
+              .map(candidate => candidate.scopeId);
+            await sessions.restore(binding.hostId, ownerId, { threadId: binding.conversationKey?.threadId ?? null }, aliases);
           }));
       };
       if (optionalFeatures === null) await installTerminal();
       else optionalFeatures.add("terminal-presentation", installTerminal);
       browserWorkbench.restorePersistedTabs();
-      if (deferredBrowser && remoteStorage) void remoteStorage.whenReady().then(() => {
+      if (remoteStorage) void remoteStorage.whenReady().then(() => {
         if (browserAdmission.signal.aborted) return;
-        conversationBindings.restore(); browserPages.restore();
+        conversationBindings.restore();
+        for (const binding of conversationBindings.getSnapshot().bindings)
+          panelRuntime.panels.refreshOwnerResources(binding.scopeId);
+        if (!remoteBrowser) return;
+        browserPages.restore();
         if (browserSurfaces instanceof RemoteBrowserSurfaceHost) browserSurfaces.restoreStorage();
         browserWorkbench.restoreTabs(); browserWorkbench.restorePersistedTabs();
       }).catch(error => {
@@ -314,7 +341,8 @@ export async function createWebWorkbenchApplication(
       });
     }
   } catch (error) {
-    releaseBrowserAdmission();
+    releaseBrowserAdmission(); releaseResourceSync();
+    releaseBrowserMetadata?.(); releaseBindingMetadata?.();
     await optionalFeatures?.dispose();
     hostDesktop?.dispose();
     hostProxy.dispose();
@@ -343,7 +371,9 @@ export async function createWebWorkbenchApplication(
     supervisor,
     terminalSessions,
     dispose: createApplicationDisposer([
+      releaseResourceSync,
       releaseBrowserAdmission,
+      () => releaseBrowserMetadata?.(),
       () => optionalFeatures?.dispose(),
       // Retire consumers before their Host transport provider.
       () => hostProxy.dispose(),
@@ -352,11 +382,12 @@ export async function createWebWorkbenchApplication(
       () => panelRuntime.dispose(),
       () => hostDesktop?.dispose(),
       () => chatRenderRuntime.dispose(),
+      () => releaseBindingMetadata?.(),
       () => browserWorkbench.dispose(),
       () => browserPresentations.dispose(),
       () => browserPages.dispose(),
       () => browserSurfaces.dispose(),
-      async () => { releaseStorageErrors?.(); try { await remoteStorage?.flush(); } finally { remoteStorage?.dispose(); } },
+      async () => { releaseStorageErrors?.(); await remoteStorage?.flushAndDispose(); },
       () => supervisor.dispose(),
     ], "Failed to dispose Web Workbench application"),
   };

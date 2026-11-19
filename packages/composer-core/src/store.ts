@@ -67,6 +67,9 @@ export interface ComposerDraftStorage {
 export interface ComposerStoreSnapshot {
   readonly revision: number;
   readonly draft: ComposerDraft;
+  /** Input being edited. In-flight content stays in draft for recovery, but is
+   * no longer presented as editable input beside its optimistic message. */
+  readonly input: ComposerSavedContent;
   readonly hasContent: boolean;
   /** Provisional View text participates in sendability before entering history. */
   readonly hasTransientText: boolean;
@@ -75,8 +78,16 @@ export interface ComposerStoreSnapshot {
   readonly hasUnavailableAssets: boolean;
 }
 
+export interface ComposerSubmissionAcceptance {
+  readonly status: "accepted";
+  /** Omitted consumes the whole intent; present acknowledges only these submitted attachments. */
+  readonly attachmentIds?: readonly string[];
+  /** Acknowledge the submitted document independently; never clear newer edits. */
+  readonly documentAccepted?: boolean;
+}
+
 export type ComposerSubmissionSettlement =
-  | { readonly status: "accepted" }
+  | ComposerSubmissionAcceptance
   | { readonly status: "rejected" }
   | { readonly status: "failed"; readonly error: string };
 
@@ -190,6 +201,22 @@ function updateDraft(
   return { ...draft, ...patch, updatedAt: services.now() };
 }
 
+// Draft content is immutable plain data. Editor/IME serialization and resource
+// refreshes may replace objects without creating a new user input. Custody must
+// compare their values, while Draft identity/target still fence late receipts.
+function sameSubmissionContent(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (left === null || right === null || typeof left !== "object" || typeof right !== "object") return false;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) && left.length === right.length
+      && left.every((value, index) => sameSubmissionContent(value, right[index]));
+  }
+  const a = left as Record<string, unknown>, b = right as Record<string, unknown>;
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length
+    && keys.every(key => Object.prototype.hasOwnProperty.call(b, key) && sameSubmissionContent(a[key], b[key]));
+}
+
 function reduce(
   draft: ComposerDraft,
   action: ComposerAction,
@@ -274,6 +301,8 @@ function draftHasContent(draft: ComposerDraft): boolean {
     || draft.context.length > 0;
 }
 
+const pendingInput: ComposerSavedContent = { document: createEmptyComposerDocument(), attachments: [], context: [] };
+
 function snapshot(
   revision: number,
   draft: ComposerDraft,
@@ -292,6 +321,7 @@ function snapshot(
   return {
     revision,
     draft,
+    input: draft.lifecycle.phase === "submitting" ? pendingInput : draft,
     hasContent,
     hasTransientText,
     canSubmit:
@@ -555,8 +585,10 @@ export function createComposerController(
         && (previous.target.type !== "new-thread" || draft.target.type === "new-thread"
           && previous.target.execution.hostId === draft.target.execution.hostId
           && JSON.stringify([previous.target.execution.workspace.cwd, previous.target.execution.workspace.projectId ?? null,
-            previous.target.execution.workspace.runtimeWorkspaceRoots]) === JSON.stringify([draft.target.execution.workspace.cwd,
-            draft.target.execution.workspace.projectId ?? null, draft.target.execution.workspace.runtimeWorkspaceRoots]))
+            previous.target.execution.workspace.runtimeWorkspaceRoots, previous.target.execution.environment,
+            previous.target.execution.workspace.source]) === JSON.stringify([draft.target.execution.workspace.cwd,
+            draft.target.execution.workspace.projectId ?? null, draft.target.execution.workspace.runtimeWorkspaceRoots,
+            draft.target.execution.environment, draft.target.execution.workspace.source]))
         && (previous.document === draft.document || JSON.stringify(previous.document) === JSON.stringify(draft.document))
         && previous.attachments === draft.attachments
         && previous.context === draft.context && previous.selections === draft.selections
@@ -594,11 +626,20 @@ export function createComposerController(
       const owner = active ? draft : cachedEntry?.[1];
       if (!owner || owner.lifecycle.phase !== "submitting"
         || encodeComposerTarget(owner.target) !== encodeComposerTarget(intent.target)) return false;
-      const sameContent = owner.document === intent.document
-        && owner.attachments === intent.attachments
-        && owner.context === intent.context;
+      const sameContent = sameSubmissionContent(owner.document, intent.document)
+        && sameSubmissionContent(owner.attachments, intent.attachments)
+        && sameSubmissionContent(owner.context, intent.context);
       if (result.status !== "failed" || !sameContent) submissionIntents.delete(draftId);
-      const next = result.status === "accepted" && sameContent
+      const partial = result.status === "accepted" && result.attachmentIds !== undefined;
+      const acceptedIds = partial ? new Set(result.attachmentIds) : null;
+      const next = partial
+        ? updateDraft(owner, services, {
+          ...(result.documentAccepted && sameSubmissionContent(owner.document,intent.document) ? { document:createEmptyComposerDocument(), context:owner.context.filter(reference=>!intent.context.some(sent=>sameSubmissionContent(sent,reference))) } : {}),
+          attachments: owner.attachments.filter(attachment => !acceptedIds!.has(attachment.id)
+            || !intent.attachments.some(sent => sent.id === attachment.id && sameSubmissionContent(sent, attachment))),
+          lifecycle: { phase: "editing", error: null },
+        })
+        : result.status === "accepted" && sameContent
         ? reduce(owner, { type: "clear" }, services)
         : reduce(owner, {
           type: "set-lifecycle",
@@ -606,7 +647,7 @@ export function createComposerController(
           error: result.status === "failed" ? result.error : null,
         }, services);
       if (active) {
-        if (result.status === "accepted" && sameContent) {
+        if (result.status === "accepted" && (sameContent || partial)) {
           contentEpoch++;
           if (transient !== null) finalizeTransient(transient, "cancel", "draft-reset");
           draftCache.delete(encodeComposerTarget(owner.target));

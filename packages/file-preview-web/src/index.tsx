@@ -1,4 +1,4 @@
-import "./preview.web.scss";
+import { builtinPreviewAdapters } from "./builtin-adapters";
 import { Service, type Context } from "@deepseek-ai/cordis";
 import { FilePreviewError, MAX_FILE_PREVIEW_BYTES, PreviewSessionPool, type PreviewLease } from "@opencraft/file-preview-core";
 import { createContext, useContext, useEffect, useState, useRef, useSyncExternalStore, useCallback, useMemo, type ReactNode } from "react";
@@ -13,6 +13,8 @@ export type FilePreviewIntl = Pick<IntlShape, "formatMessage" | "formatNumber">;
 
 export interface WebPreviewDocument {
   readonly element: HTMLElement;
+  readonly styles?: string;
+  render?(props: {active:boolean;dark:boolean;intl:FilePreviewIntl;download:boolean}): ReactNode;
   setActive?(active: boolean): void;
   setTheme?(dark: boolean): void;
   setOpenLink?(open: ((url: string) => void) | undefined): void;
@@ -62,6 +64,7 @@ export class FilePreviewService extends Service {
   }
   constructor(ctx: Context) {
     super(ctx, "filePreviews");
+    for (const adapter of builtinPreviewAdapters) this.register(adapter);
     ctx.effect(() => () => { this.pool.dispose(); this.adapters.clear(); this.notifyAdapters(); this.adapterListeners.clear(); });
   }
   register(adapter: FilePreviewAdapter): () => void {
@@ -94,7 +97,12 @@ export class FilePreviewService extends Service {
   }
 }
 
-const PreviewContext = createContext<FilePreviewService | null>(null);
+export const PreviewContext = createContext<FilePreviewService | null>(null);
+const PreviewThemeContext=createContext(false);
+export function useFilePreviewDark(){return useContext(PreviewThemeContext);}
+const noPrepare = async (_signal?:AbortSignal):Promise<void> => {};
+const PrepareContext = createContext<(signal?:AbortSignal)=>Promise<void>>(noPrepare);
+export function usePrepareFilePreview() { return useContext(PrepareContext); }
 const noSubscribe = (): (() => void) => () => undefined;
 const noRevision = (): number => 0;
 export function useFilePreviewAvailable(name: string): boolean {
@@ -102,62 +110,7 @@ export function useFilePreviewAvailable(name: string): boolean {
   useSyncExternalStore(service?.subscribeAdapters ?? noSubscribe, service?.getAdapterRevision ?? noRevision, noRevision);
   return service?.supports(name) ?? false;
 }
-export function FilePreviewProvider({ service, children }: { service: FilePreviewService | null; children: ReactNode }) {
-  return <PreviewContext.Provider value={service}>{children}</PreviewContext.Provider>;
+export function FilePreviewProvider({ service, children, prepare, dark = false }: { service: FilePreviewService | null; children: ReactNode; prepare?:(signal?:AbortSignal)=>Promise<void>;dark?:boolean }) {
+  return <PreviewContext.Provider value={service}><PrepareContext.Provider value={prepare ?? noPrepare}><PreviewThemeContext.Provider value={dark}>{children}</PreviewThemeContext.Provider></PrepareContext.Provider></PreviewContext.Provider>;
 }
-export function FilePreviewView(props: FilePreviewInput & { active?: boolean; dark: boolean; onOpenLink?(url: string): void; prepare(signal?: AbortSignal): Promise<void> }) {
-  const service = useContext(PreviewContext);
-  const intl = useIntl();
-  const [attempt, setAttempt] = useState(0);
-  const [result, setResult] = useState<{ request: object; lease?: PreviewLease<WebPreviewDocument>; failure?: unknown } | null>(null);
-  const root = useRef<HTMLDivElement>(null);
-  const { ownerId, tabId, resource, blob, name, prepare } = props;
-  const request = useMemo(() => ({}), [service, ownerId, tabId, resource, blob, name, attempt, prepare]);
-  const lease = result?.request === request ? result.lease ?? null : null;
-  const failed = result?.request === request && result.failure;
-  useEffect(() => {
-    let active = true;
-    let acquired: PreviewLease<WebPreviewDocument> | undefined;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 45_000);
-    void prepare(controller.signal).then(() => {
-      if (!active) return;
-      acquired = service?.acquire({ ownerId, tabId, resource, blob, name }, attempt);
-      if (!acquired) throw new Error("Preview service unavailable");
-      setResult({ request, lease: acquired });
-    }).catch(error => { if (active) setResult({ request, failure: controller.signal.aborted ? new FilePreviewError("timeout") : error }); }).finally(() => clearTimeout(timeout));
-    return () => { active = false; clearTimeout(timeout); controller.abort(); acquired?.release(); };
-  }, [service, ownerId, tabId, resource, blob, name, attempt, prepare, request]);
-  const subscribe = useCallback((listener: () => void) => lease?.subscribe(listener) ?? (() => {}), [lease]);
-  const getSnapshot = useCallback(() => lease?.getSnapshot() ?? null, [lease]);
-  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-  const document = snapshot?.phase === "ready" ? snapshot.document : null;
-  useEffect(() => {
-    if (!document || !root.current) return;
-    const container = root.current;
-    container.replaceChildren(document.element);
-    return () => { document.setActive?.(false); document.element.remove(); };
-  }, [document]);
-  useEffect(() => { document?.setActive?.(props.active !== false); }, [document, props.active]);
-  useEffect(() => { document?.setTheme?.(props.dark); }, [document, props.dark]);
-  useEffect(() => { document?.setIntl?.(intl); }, [document, intl]);
-  useEffect(() => { document?.setOpenLink?.(props.onOpenLink); return () => document?.setOpenLink?.(undefined); }, [document, props.onOpenLink]);
-  const reason = snapshot?.phase === "failed" ? snapshot.error : failed;
-  const error = failed || snapshot?.phase === "failed" || snapshot?.phase === "released";
-  const errorMessage = reason instanceof FilePreviewError ? {
-    "too-large": { id: "preview.tooLarge", defaultMessage: "This file is too large to preview (25 MB limit). Download it to view." },
-    encrypted: { id: "preview.encrypted", defaultMessage: "Password-protected files cannot be previewed. Download it to open with its password." },
-    invalid: { id: "preview.invalid", defaultMessage: "This file is damaged or its contents do not match the format. Download the original to check it." },
-    timeout: { id: "preview.timeout", defaultMessage: "Opening took too long. Try again or download the original file." },
-    busy: { id: "preview.busy", defaultMessage: "Close another document preview, then try again." },
-  }[reason.code] : { id: "office.failed", defaultMessage: "This document could not be displayed. You can download the original file." };
-  return <div className="file-preview" data-file-preview-phase={document ? "ready" : error ? "failed" : "opening"}>
-    <div ref={root} className="file-preview__document" hidden={!document} />
-    {!document ? <div className="workspace-file-viewer__state" role="status">
-      <span>{error
-        ? intl.formatMessage(errorMessage)
-        : intl.formatMessage({ id: "office.loading", defaultMessage: "Opening document…" })}</span>
-      {error ? <button type="button" onClick={() => setAttempt(value => value + 1)}>{intl.formatMessage({ id: "common.retry", defaultMessage: "Try again" })}</button> : null}
-    </div> : null}
-  </div>;
-}
+export { FilePreviewView } from "./file-preview";

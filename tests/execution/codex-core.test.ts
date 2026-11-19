@@ -813,8 +813,8 @@ test('Actor collaboration survives Headless overlay restart while native Core re
     await headless.close(); headless = await startHeadlessServer(options);
     assert.deepEqual(await f.control.health(), healthBefore);
     await inspector.rpc('inspect', 'fixture/complete', { threadId: thread.id });
-    for (let i = 0; i < 150; i++) { request = (await (await call('requests?id=' + sent.requestId)).json() as any).request; if (request.state === 'submitted') break; await delay(20); }
-    assert.equal(request.state, 'submitted');
+    for (let i = 0; i < 150; i++) { request = (await (await call('requests?id=' + sent.requestId)).json() as any).request; if (request.state === 'injected') break; await delay(20); }
+    assert.equal(request.state, 'injected');
     const history = await inspector.rpc('inspect', 'thread/read', { threadId: thread.id, includeTurns: true });
     assert.equal(history.thread.turns.length, 2); assert.equal(history.thread.turns[1].items[0].clientId, 'actor-input:' + sent.requestId);
   } finally { await headless?.close(); await f.close(); }
@@ -1100,4 +1100,63 @@ for (const state of ["created", "active-peer", "persisted", "attempted", "unload
       if (state === "persisted") assert.equal(store.get("new")?.phase, "persisted");
     }
   } finally { store.close(); await rm(root, {recursive:true,force:true}); }
+});
+
+for (const [optIn,delivery] of [[false,true],[true,false],[true,true]]) test(`history image resources require candidate opt-in and delivery (${optIn},${delivery})`, async () => {
+  const f = await fixture();
+  try {
+    const a = await f.adapter(true,()=>{}, { historyImageResources:optIn,
+      ...(delivery ? { prepareArtifact:async artifact=>artifact } : {}) });
+    const initialized = await a.rpc("reader","initialize");
+    assert.equal(initialized.capabilities.extensions["opencraft/read-history"].imageResources,optIn&&delivery);
+  } finally { await f.close(); }
+});
+
+
+test("physical workspace admission uses trusted per-request context, never renderer identity", async () => {
+ const f = await fixture();
+ const captures: import("../../apps/opencraft-daemon/src/codex-engine-adapter.js").CodexNativeRequestAdmission[] = [];
+ const seen: string[] = [], physicalIds: unknown[] = [];
+ let lookup!: (id:string|number)=>import("../../apps/opencraft-daemon/src/codex-engine-adapter.js").CodexNativeRequestAdmission|null;
+ try {
+  const a = await f.adapter(true,()=>{}, { decorateNativeTransport(native, admission) {
+   lookup=admission;
+   return {get status(){return native.status},connect:s=>native.connect(s),close:()=>native.close(),
+    subscribeMessage:l=>native.subscribeMessage(l),subscribeStatus:l=>native.subscribeStatus(l),
+    async send(frame,signal,progress){const m=JSON.parse(frame);
+     if(m.method==='thread/start'){
+      const trusted=admission(m.id);assert.ok(trusted);assert.equal(trusted.method,m.method);
+      seen.push(trusted.context().actorContext!.actorId);captures.push(trusted);physicalIds.push(m.id);
+      assert.equal(trusted.context().executionPrincipal?.subject,'verified-'+trusted.context().actorContext!.actorId);
+     }
+     return native.send(frame,signal,progress);
+    }};
+  }});
+  await a.rpc('alice','initialize');await a.rpc('bob','initialize');
+  const context=(id:string)=>({sender:null,validUntil:Date.now()+60000,executionPrincipal:{provider:'fixture',subject:'verified-'+id},
+   actorContext:{actorId:id,generation:1,credentialId:null,expiresAt:Date.now()+60000}});
+  await Promise.all(['alice','bob'].map(id=>a.rpc(id,'thread/start',{actorId:'forged-admin',executionPrincipal:{subject:'forged'},environments:[]},context(id))));
+  assert.deepEqual([...seen].sort(),['alice','bob']);assert.notEqual(physicalIds[0],physicalIds[1]);
+  for(const admission of captures)assert.throws(()=>admission.context(),/expired/);
+  for(const id of physicalIds)assert.equal(lookup(id as string),null);
+  assert.equal(lookup('unknown-request'),null);
+ }finally{await f.close()}
+});
+
+test("physical workspace admission rechecks revoked resource authority after asynchronous preparation", async()=>{
+ const f=await fixture();let current=true,entered!:()=>void,release!:()=>void,forwarded=false;
+ const ready=new Promise<void>(r=>entered=r),gate=new Promise<void>(r=>release=r);
+ try{
+  const a=await f.adapter(true,()=>{},{decorateNativeTransport(native,admission){return {
+   get status(){return native.status},connect:s=>native.connect(s),close:()=>native.close(),
+   subscribeMessage:l=>native.subscribeMessage(l),subscribeStatus:l=>native.subscribeStatus(l),
+   async send(frame,signal,progress){const m=JSON.parse(frame);
+    if(m.method==='thread/start'){const trusted=admission(m.id);assert.ok(trusted);trusted.context();entered();await gate;trusted.context();forwarded=true;}
+    return native.send(frame,signal,progress);
+   }};
+  }});
+  await a.rpc('view','initialize');
+  const request=a.rpc('view','thread/start',{}, {sender:null,resourceOwner:{id:'verified-owner',assertCurrent(){if(!current)throw Error('resource revoked')}}});
+  const rejected=assert.rejects(request,/resource revoked/);await ready;current=false;release();await rejected;assert.equal(forwarded,false);
+ }finally{release?.();await f.close()}
 });

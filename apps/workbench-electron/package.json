@@ -12,6 +12,7 @@
   "type": "module",
   "main": "dist-host/main.cjs",
   "dependencies": {
+    "@opencraft/browser-cdp": "0.1.0",
     "@opencraft/i18n": "0.1.0",
     "@opencraft/design-system": "0.1.0",
     "@opencraft/document-storage": "0.1.0",
@@ -27,16 +28,16 @@
     "build:host": "node build-tray.mjs && node build-native-speech.mjs && npm run build --workspace @opencraft/opencraft-daemon && node build-host.mjs",
     "typecheck": "tsc --noEmit",
     "start": "npm run build:host && node ../../scripts/start-electron.mjs",
-    "package:mac:arm64:zip": "electron-builder --mac zip --arm64",
+    "package:mac:arm64:zip": "node ../../scripts/package-electron-desktop.mjs --mac zip --arm64",
     "package:mac:arm64:preview": "node ../../scripts/package-macos-preview.mjs arm64",
-    "package:mac:arm64:dmg": "electron-builder --mac dmg --arm64",
-    "package:mac:x64:zip": "electron-builder --mac zip --x64",
+    "package:mac:arm64:dmg": "node ../../scripts/package-electron-desktop.mjs --mac dmg --arm64",
+    "package:mac:x64:zip": "node ../../scripts/package-electron-desktop.mjs --mac zip --x64",
     "package:mac:x64:preview": "node ../../scripts/package-macos-preview.mjs x64",
-    "package:mac:x64:dmg": "electron-builder --mac dmg --x64",
-    "package:linux:x64:appimage": "electron-builder --linux AppImage --x64",
-    "package:linux:x64:rpm": "electron-builder --linux rpm --x64",
-    "package:linux:x64:deb": "electron-builder --linux deb --x64",
-    "package:linux:x64": "electron-builder --linux AppImage rpm deb --x64"
+    "package:mac:x64:dmg": "node ../../scripts/package-electron-desktop.mjs --mac dmg --x64",
+    "package:linux:x64:appimage": "node ../../scripts/package-electron-desktop.mjs --linux AppImage --x64",
+    "package:linux:x64:rpm": "node ../../scripts/package-electron-desktop.mjs --linux rpm --x64",
+    "package:linux:x64:deb": "node ../../scripts/package-electron-desktop.mjs --linux deb --x64",
+    "package:linux:x64": "node ../../scripts/package-electron-desktop.mjs --linux AppImage rpm deb --x64"
   },
   "devDependencies": {
     "@electron/notarize": "2.5.0",
@@ -65,6 +66,8 @@
       "package.json"
     ],
     "extraResources": [
+      { "from": "../opencraft-daemon/dist/assistant-server.mjs", "to": "runtime/assistant-server.mjs" },
+      { "from": "../opencraft-daemon/dist/schema.sql", "to": "runtime/schema.sql" },
       { "from": "build/native", "to": "native", "filter": ["opencraft-speech-helper"] },
       { "from": "build/dsh-capability-plugin.mjs", "to": "runtime/dsh/opencraft-capability-plugin.mjs" },
       { "from": "../local-agent-host/src/dsh-execution-environment.mjs", "to": "runtime/dsh/dsh-execution-environment.mjs" },
@@ -89,6 +92,7 @@
           "**/*"
         ]
       },
+      { "from": "../opencraft-daemon/dist/orchestration-runtime-worker.mjs", "to": "runtime/orchestration-runtime-worker.mjs" },
       { "from": "../opencraft-daemon/dist/terminal-pty-owner.mjs", "to": "runtime/terminal-pty-owner.mjs" },
       { "from": "../opencraft-daemon/dist/dsh-session-routing-worker.mjs", "to": "runtime/dsh-session-routing-worker.mjs" },
       {

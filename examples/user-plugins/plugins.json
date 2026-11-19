@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "plugins": [
+    {
+      "manifest": {
+        "manifestVersion": 1,
+        "id": "user.hello",
+        "name": "Hello user plugin",
+        "version": "1.0.0",
+        "apiVersion": 1,
+        "trust": "trusted",
+        "platforms": [
+          "web"
+        ],
+        "activationEvents": [
+          "onStartupFinished"
+        ]
+      },
+      "entry": "user.hello/plugin.mjs",
+      "sha256": "71d6ee1f119eab9f1959787c125683347822f5e308b1204d786190c9d9660a06",
+      "replaces": []
+    }
+  ]
+}

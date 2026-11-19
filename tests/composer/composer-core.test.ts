@@ -737,3 +737,104 @@ test("selection quotes cannot mutate a submitting, transient or detached compose
   controller.dispose();
   assert.equal(controller.appendQuote("selected"), false);
 });
+
+test("acceptance consumes equivalent editor serialization and attachment refresh", () => {
+  const controller = createComposerController(existing("serialized-send"), services());
+  controller.dispatch({ type: "set-document", document: richDocument });
+  controller.dispatch({ type: "add-attachment", attachment: {
+    id: "sent-image", name: "image.png", mimeType: "image/png", size: 3,
+    uri: "data:image/png;base64,AQID", lifecycle: "ready", error: null,
+  } });
+  const draftId = controller.getSnapshot().draft.id;
+  const intent = controller.createSubmitIntent();
+  controller.dispatch({ type: "set-lifecycle", phase: "submitting" });
+  // IME/EditorView can serialize the same document into new objects. A late
+  // resource projection can likewise refresh an already-ready attachment.
+  controller.dispatch({ type: "set-document", document: structuredClone(intent.document) });
+  controller.updateDraftAttachment(draftId, "sent-image", { lifecycle: "ready", error: null });
+  assert.equal(controller.settleSubmission(draftId, intent, { status: "accepted" }), true);
+  assert.equal(controller.getSnapshot().hasContent, false);
+  controller.dispose();
+});
+
+test("acceptance preserves genuinely replaced attachment content", () => {
+  const controller = createComposerController(existing("changed-image"), services());
+  controller.dispatch({ type: "add-attachment", attachment: {
+    id: "image", name: "image.png", mimeType: "image/png", size: 3,
+    uri: "data:image/png;base64,AQID", lifecycle: "ready", error: null,
+  } });
+  const draftId = controller.getSnapshot().draft.id;
+  const intent = controller.createSubmitIntent();
+  controller.dispatch({ type: "set-lifecycle", phase: "submitting" });
+  controller.updateDraftAttachment(draftId, "image", { uri: "data:image/png;base64,BAUG" });
+  controller.settleSubmission(draftId, intent, { status: "accepted" });
+  assert.equal(controller.getSnapshot().draft.attachments[0]?.uri, "data:image/png;base64,BAUG");
+  assert.equal(controller.getSnapshot().draft.lifecycle.phase, "editing");
+  controller.dispose();
+});
+
+test("an attachment receipt consumes only the submitted assets, preserving text and later input", () => {
+  const controller = createComposerController(existing("partial-send"), services());
+  controller.dispatch({ type: "set-document", document: richDocument });
+  const image = { id: "photo", name: "photo.png", mimeType: "image/png", size: 3,
+    uri: "data:image/png;base64,AQID", lifecycle: "ready" as const, error: null };
+  controller.dispatch({ type: "add-attachment", attachment: image });
+  controller.dispatch({ type: "add-attachment", attachment: { ...image, id: "next" } });
+  const original = controller.getSnapshot().draft;
+  const intent = controller.createSubmitIntent();
+  controller.dispatch({ type: "set-lifecycle", phase: "submitting" });
+  controller.dispatch({ type: "switch-target", target: existing("elsewhere") });
+  controller.dispatch({ type: "set-document", document: richDocument });
+  assert.equal(controller.settleSubmission(original.id, intent, { status: "accepted", attachmentIds: ["photo", "not-submitted"] }), true);
+  assert.equal(controller.getSnapshot().draft.document, richDocument);
+  controller.dispatch({ type: "switch-target", target: intent.target });
+  assert.equal(controller.getSnapshot().draft.document, original.document);
+  assert.deepEqual(controller.getSnapshot().input.attachments.map(a => a.id), ["next"]);
+  assert.equal(controller.getSnapshot().draft.lifecycle.phase, "editing");
+  assert.equal(controller.settleSubmission(original.id, intent, { status: "accepted", attachmentIds: ["next"] }), false);
+  const next = controller.createSubmitIntent();
+  controller.dispatch({ type: "set-lifecycle", phase: "submitting" });
+  controller.dispatch({ type: "update-attachment", id: "next", patch: { uri: "changed" } });
+  controller.settleSubmission(original.id, next, { status: "accepted", attachmentIds: ["next"] });
+  assert.equal(controller.getSnapshot().input.attachments[0]?.uri, "changed");
+  controller.dispose();
+});
+
+test("in-flight input leaves the editor projection while retaining exact recovery content", () => {
+  const controller = createComposerController(existing("input-handoff"), services());
+  controller.dispatch({ type: "set-document", document: richDocument });
+  controller.dispatch({ type: "add-attachment", attachment: {
+    id: "photo", name: "photo.png", mimeType: "image/png", size: 3,
+    uri: "data:image/png;base64,AQID", lifecycle: "ready", error: null,
+  } });
+  const original = controller.getSnapshot().draft;
+  assert.equal(controller.getSnapshot().input.document, original.document);
+  const intent = controller.createSubmitIntent();
+  controller.dispatch({ type: "set-lifecycle", phase: "submitting" });
+  assert.equal(composerDocumentToPlainText(controller.getSnapshot().input.document), "");
+  assert.equal(controller.getSnapshot().input.attachments.length, 0);
+  assert.equal(controller.getSnapshot().draft.document, original.document);
+  assert.equal(controller.getSnapshot().draft.attachments, original.attachments);
+  assert.equal(controller.hasRetainedContent(), true);
+  controller.settleSubmission(original.id, intent, { status: "failed", error: "Rejected" });
+  assert.equal(controller.getSnapshot().input.document, original.document);
+  assert.equal(controller.getSnapshot().input.attachments, original.attachments);
+  controller.dispose();
+});
+
+test('document and attachment receipts consume their snapshot independently of newer edits',()=>{
+  for(const editText of [false,true]){
+    const controller=createComposerController(existing('file-caption'),services());
+    controller.dispatch({type:'set-document',document:richDocument});
+    const image={id:'file',name:'notes.txt',mimeType:'text/plain',size:3,uri:'blob:original',lifecycle:'ready' as const,error:null};
+    controller.dispatch({type:'add-attachment',attachment:image});
+    const draft=controller.getSnapshot().draft,intent=controller.createSubmitIntent();
+    controller.dispatch({type:'set-lifecycle',phase:'submitting'});
+    if(editText)controller.dispatch({type:'set-document',document:legacyContentBlocksToComposer([{type:'text',text:'new text'}]).document});
+    controller.dispatch({type:'add-attachment',attachment:{...image,id:'new-file'}});
+    controller.settleSubmission(draft.id,intent,{status:'accepted',attachmentIds:['file'],documentAccepted:true});
+    assert.deepEqual(controller.getSnapshot().draft.attachments.map(a=>a.id),['new-file']);
+    assert.equal(composerDocumentToPlainText(controller.getSnapshot().draft.document),editText?'new text':'');
+    controller.dispose();
+  }
+});

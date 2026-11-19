@@ -23,6 +23,8 @@ export interface ConversationActivationCoordinator<TRuntime extends WorkbenchAct
   scopeIdFor(location: WorkbenchLocation): ConversationScopeId;
   /** Publishes only local Scope/View identity; it never starts a Host. */
   mountInitial(location: WorkbenchLocation, viewId: string): void;
+  /** Restore a saved editor slot after bootstrap without replacing its draft. */
+  mountRestored(location: WorkbenchLocation, viewId: string): void;
   /** Publishes a New-chat Draft and View locally before Host preparation. */
   presentLocalDraft(location: WorkbenchDraftLocation, viewId: string): void;
   /**
@@ -225,6 +227,14 @@ export function createConversationActivationCoordinator<
       else scopes.deactivateDraft();
       coordinator.presentInitial(location, viewId);
       commitActiveView(scopeId, viewId);
+    },
+    mountRestored(location, viewId) {
+      ensureOpen();
+      const scopeId = ensureLocationScope(location);
+      commitActiveView(scopeId, viewId);
+      if (location.kind === "draft") scopes.activateDraft(location.draftId);
+      else scopes.deactivateDraft();
+      coordinator.presentLocalView(location, viewId);
     },
     presentLocalDraft(location, viewId) {
       ensureOpen();

@@ -38,9 +38,9 @@ export async function packageFullRuntime({ repositoryRoot, packageRoot, sourceRe
   const bundledPackages = new Map();
   if (enabled.has('codex')) {
     await mkdir(join(full, 'core'), { recursive: true });
-    for (const [source, name] of [['bin', 'main'], ['app-server-bin', 'app-server'], ['generation-bin', 'generations']]) {
-      const bundle = await build({ metafile: true, absWorkingDir: repositoryRoot, entryPoints: [join(repositoryRoot, 'apps/codex-core/src', source + '.ts')], outfile: join(full, 'core', name + '.cjs'),
-        bundle: true, platform: 'node', format: 'cjs', target: 'node26', external: ['bufferutil', 'utf-8-validate', 'node-pty'] });
+    for (const [source, name, format] of [['bin', 'main', 'cjs'], ['app-server-bin', 'app-server', 'cjs'], ['generation-bin', 'generations', 'cjs'], ['generation-registry.worker', 'generation-registry-worker', 'esm']]) {
+      const bundle = await build({ metafile: true, absWorkingDir: repositoryRoot, entryPoints: [join(repositoryRoot, 'apps/codex-core/src', source + '.ts')], outfile: join(full, 'core', name + (format === 'esm' ? '.mjs' : '.cjs')),
+        bundle: true, platform: 'node', format, banner: format === 'esm' ? { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } : undefined, target: 'node26', external: ['bufferutil', 'utf-8-validate', 'node-pty'] });
       for (const input of Object.keys(bundle.metafile.inputs)) {
         if (!input.includes('node_modules/')) continue;
         let directory = dirname(resolve(repositoryRoot, input));

@@ -1,3 +1,5 @@
+import { projectThreadMessageResult } from "../../apps/opencraft-daemon/src/thread-message-projection";
+import { projectThreadAttachmentResult } from "../../apps/opencraft-daemon/src/thread-message-attachment-projection";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -55,4 +57,16 @@ test("Turn-scoped identity reconciliation finds recent summaries and stops at th
   assert.equal(calls.length, 1);
   assert.equal(calls[0].sortDirection, "desc");
   await assert.rejects(readThreadMessageIds(async () => ({ data: [{ id: "t", items: [], itemsView: "notLoaded" }], nextCursor: null }), "t"), /summary/);
+});
+
+test("submission attribution comes from exact persisted identity rather than a forged native field", () => {
+  const project = (thread: string, input: string, value: Record<string, unknown>) => ({...value, sender: thread === "t" && input === "message" ? employee("skipzhang") : null});
+  for (const method of ["turn/start", "turn/steer", "thread/queue/add"]) {
+    const result = projectThreadMessageResult(project, method, {threadId: "t", clientUserMessageId: "message", sender: employee("forged")}, {__opencraftSubmissionSender: {clientMessageId: "message", sender: employee("forged")}}) as any;
+    assert.deepEqual(result.__opencraftSubmissionSender, {clientMessageId: "message", sender: employee("skipzhang")});
+    const enriched = projectThreadAttachmentResult({list: () => []}, method, {threadId: "t", clientUserMessageId: "message"}, result) as any;
+    assert.deepEqual(enriched.__opencraftSubmissionSender, result.__opencraftSubmissionSender, "attachment projection must not erase verified identity");
+  }
+  const result = projectThreadMessageResult(project, "turn/start", {threadId: "t", clientUserMessageId: "unknown"}, {}) as any;
+  assert.equal(result.__opencraftSubmissionSender.sender, null);
 });

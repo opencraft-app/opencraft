@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { loadUserPlugins, userPluginAsset } from './web-deployment/user-plugins.mjs';
+import { createUserPluginCatalog } from './web-deployment/craft-plugins.mjs';
 import { selectAssetEncoding } from "./web-asset-encoding.mjs";
 import { serveNotModified } from "./web-asset-cache.mjs";
 
@@ -162,8 +163,9 @@ export function injectWebsiteDeploymentConfig(html, config) {
   // Escape '<' so a deployment value can never close the inert JSON script.
   const json = JSON.stringify(config).replaceAll("<", "\\u003c");
   if (!/<head(?:\s[^>]*)?>/iu.test(html)) throw new Error("Website HTML has no head element");
+  if (config.browserBackend === 'remote' || config.browserBackend === 'iframe') html = html.replace(/<head(?:\s[^>]*)?>/iu, head => head + '<meta name="opencraft-browser-backend" content="' + config.browserBackend + '">');
   const brands = config.userPlugins?.filter(plugin => plugin.branding) ?? [];
-  if (brands.length > 1) throw new Error('Multiple installed branding plugins');
+  // Conflicting optional brands fall back to core presentation, never fail the page.
   if (brands.length === 1) {
     const brand = brands[0].branding;
     const escape = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
@@ -222,6 +224,7 @@ export async function createWorkbenchWebServer({
   optionalResources = null,
   machineDisplayNames = null,
   userPluginDirectory = null,
+  productPluginAssets = null,
 } = {}) {
   const staticRoot = await realpath(resolve(root || join(repositoryRoot, "apps/workbench-web/dist")));
   const normalizedTarget = appServerTarget === null ? null : normalizeTarget(appServerTarget);
@@ -231,8 +234,8 @@ export async function createWorkbenchWebServer({
     executionLocation: "This server", url: "/appserver", workspaceBrowseRoots: ["/"] }], builtinAgents: true, hypernode: false, fileDownloads: true, htmlPreviews: true } : websiteDeploymentConfig({
     appServerTarget: normalizedTarget, codexServerTarget: normalizedCodexTarget, hyperNodeUser,
   });
-  const userPlugins = userPluginDirectory ? await loadUserPlugins(userPluginDirectory) : null;
-  if (userPlugins?.length) deploymentConfig.userPlugins = userPlugins;
+  const userPluginCatalog = userPluginDirectory ? await createUserPluginCatalog(userPluginDirectory, loadUserPlugins) : null;
+  deploymentConfig.browserBackend = headlessServer ? 'remote' : 'iframe';
   if (machineDisplayNames !== null) {
     if (typeof machineDisplayNames !== 'object' || Array.isArray(machineDisplayNames)
       || Object.entries(machineDisplayNames).some(([id, name]) => !id || typeof name !== 'string' || !name.trim() || name.trim().length > 64 || /\p{Cc}/u.test(name))) throw new Error('Invalid machine display names');
@@ -293,12 +296,27 @@ export async function createWorkbenchWebServer({
         return;
       }
 
-      if (userPlugins?.length && url.pathname.startsWith('/__opencraft_plugins/')) {
+      if (url.pathname.startsWith('/__opencraft_product_plugins/') && productPluginAssets && !productPluginAssets.has(url.pathname.slice(1))) {
+        sendJson(response, 404, { ok: false, error: 'Product plugin asset not found' }); return;
+      }
+      const refreshPlugins = url.pathname === '/__opencraft_plugin_catalog' || url.pathname === '/' || url.pathname === '/index.html'
+        || (request.headers.accept || '').includes('text/html');
+      const pluginSnapshot = userPluginCatalog ? (refreshPlugins ? await userPluginCatalog.refresh() : userPluginCatalog.getSnapshot()) : null;
+      const userPlugins = pluginSnapshot?.plugins ?? null;
+      const currentDeploymentConfig = { ...deploymentConfig, ...(userPlugins?.length ? { userPlugins } : {}) };
+      if (url.pathname === '/__opencraft_plugin_catalog') {
+        if (!['GET', 'HEAD'].includes(request.method)) { sendJson(response, 405, { error: 'GET or HEAD required' }); return; }
+        response.setHeader('cache-control', 'no-store');
+        sendJson(response, 200, { plugins: userPlugins ?? [], errors: pluginSnapshot?.errors ?? [] }); return;
+      }
+      if (url.pathname.startsWith('/__opencraft_plugins/')) {
+        if (!['GET', 'HEAD'].includes(request.method)) { sendJson(response, 405, { error: 'GET or HEAD required' }); return; }
         try {
           const relative = decodeURIComponent(url.pathname.slice('/__opencraft_plugins/'.length));
+          if (!userPlugins?.some(plugin => plugin.manifest.id === relative.split('/')[0])) throw new Error('Unknown plugin');
           if (!userPlugins.some(plugin => relative.startsWith(plugin.manifest.id + '/'))) throw new Error('Unknown plugin');
           const asset = await userPluginAsset(userPluginDirectory, relative);
-          await serveFile(request, response, asset, url.pathname, deploymentConfig);
+          await serveFile(request, response, asset, url.pathname, currentDeploymentConfig);
         } catch { sendJson(response, 404, { ok: false, error: 'Plugin asset not found' }); }
         return;
       }
@@ -310,16 +328,24 @@ export async function createWorkbenchWebServer({
         return;
       }
       try {
-        if (await serveFile(request, response, requestedPath, resourcePath, deploymentConfig)) return;
-        if (extname(url.pathname) === "" && await serveFile(request, response, join(requestedPath, "index.html"), url.pathname, deploymentConfig)) return;
+        if (await serveFile(request, response, requestedPath, resourcePath, currentDeploymentConfig)) return;
+        if (extname(url.pathname) === "" && await serveFile(request, response, join(requestedPath, "index.html"), url.pathname, currentDeploymentConfig)) return;
       } catch (error) {
         if (error?.code !== "ENOENT") throw error;
+      }
+
+      // Prefer current Web files and their compression variants. The immutable
+      // plugin cache supplies exclusive files and old shared dependencies.
+      if (productPluginAssets?.has(url.pathname.slice(1))) {
+        const asset = await productPluginAssets.resolve(url.pathname.slice(1));
+        await serveFile(request, response, asset, url.pathname, currentDeploymentConfig);
+        return;
       }
 
       if (optionalResources) {
         try {
           const optional = await optionalResources.resolveFile(resourcePath);
-          if (optional && await serveFile(request, response, optional, resourcePath, deploymentConfig)) return;
+          if (optional && await serveFile(request, response, optional, resourcePath, currentDeploymentConfig)) return;
         } catch { sendJson(response, 503, { ok: false, error: "Optional resources are unavailable; retry later" }); return; }
       }
 
@@ -328,7 +354,7 @@ export async function createWorkbenchWebServer({
         acceptsHtml &&
         (extname(url.pathname) === "" || isWorkbenchApplicationRoute(url.pathname))
       ) {
-        await serveFile(request, response, join(staticRoot, "index.html"), "/index.html", deploymentConfig);
+        await serveFile(request, response, join(staticRoot, "index.html"), "/index.html", currentDeploymentConfig);
         return;
       }
       sendJson(response, 404, { ok: false, error: "Not found" });

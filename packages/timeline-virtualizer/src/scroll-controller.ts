@@ -9,13 +9,14 @@ import {
   createPreservedScrollLayout,
   normalizeInitialScrollDistance,
   restoredDistanceAfterLayout,
+  rebasePreservedScrollLayout,
   scrollToBottomDistanceAtTime,
   type PreservedScrollLayout,
 } from "./scroll";
 
 export interface TurnScrollControllerHost {
   getMetrics(): TurnViewportMetrics;
-  writeDistanceFromBottomPx(distanceFromBottomPx: number, behavior: TurnScrollBehavior): void;
+  writeDistanceFromBottomPx(distanceFromBottomPx: number, behavior: TurnScrollBehavior, reason?: string): void;
   now(): number;
   requestFrame(callback: (nowMs: number) => void): number;
   cancelFrame(handle: number): void;
@@ -145,12 +146,13 @@ export class TurnScrollController {
     distanceFromBottomPx: number,
     behavior: TurnScrollBehavior,
     origin: TurnScrollOrigin = "system",
+    reason = "scroll-command",
   ): void {
     const distance = Math.max(0, distanceFromBottomPx);
     const previous = this.#distanceFromBottomPx;
     this.#cancelPendingLayoutPreservation();
     if (distance > OPENCRAFT_SCROLL_NEAR_BOTTOM_PX) this.cancelScrollAnimation();
-    this.#host.writeDistanceFromBottomPx(distance, behavior);
+    this.#host.writeDistanceFromBottomPx(distance, behavior, reason);
     this.#distanceFromBottomPx = Math.max(0, this.#host.getMetrics().distanceFromBottomPx);
     this.#publish();
     if (origin === "user" && previous !== this.#distanceFromBottomPx) {
@@ -160,7 +162,27 @@ export class TurnScrollController {
 
   compensateScrollToDistanceFromBottomPx(distanceFromBottomPx: number): void {
     if (this.#animationFrame !== null) return;
-    this.scrollToDistanceFromBottomPx(distanceFromBottomPx, "instant");
+    if (Math.abs(this.#host.getMetrics().distanceFromBottomPx - distanceFromBottomPx) <= 0.5) {
+      this.#cancelPendingLayoutPreservation();
+      return;
+    }
+    this.scrollToDistanceFromBottomPx(distanceFromBottomPx, "instant", "system", "reading-anchor-compensation");
+  }
+
+  /**
+   * Apply a layout correction computed from `baseDistanceFromBottomPx` (the
+   * confirmed distance the transaction read) onto the live platform position.
+   * The platform may already have moved past its last delivered scroll event
+   * (touch-to-stop, momentum); that movement belongs to the user and is kept.
+   * Returns whether a write was issued; a zero correction writes nothing.
+   */
+  compensateLayoutToDistanceFromBottomPx(distanceFromBottomPx: number, baseDistanceFromBottomPx: number): boolean {
+    if (this.#animationFrame !== null) return false;
+    const correction = distanceFromBottomPx - baseDistanceFromBottomPx;
+    if (Math.abs(correction) <= 0.5) return false;
+    const physical = Math.max(0, this.#host.getMetrics().distanceFromBottomPx);
+    this.scrollToDistanceFromBottomPx(physical + correction, "instant", "system", "layout-compensation");
+    return true;
   }
 
   scrollToBottom(): void {
@@ -174,7 +196,7 @@ export class TurnScrollController {
     // origin when the browser has moved before delivering its scroll event.
     const initialDistance = Math.max(0, this.#host.getMetrics().distanceFromBottomPx);
     if (initialDistance <= OPENCRAFT_SCROLL_NEAR_BOTTOM_PX) {
-      this.#host.writeDistanceFromBottomPx(0, "instant");
+      this.#host.writeDistanceFromBottomPx(0, "instant", "bottom-animation");
       this.#distanceFromBottomPx = 0;
       this.cancelScrollAnimation();
       this.#publish();
@@ -185,7 +207,7 @@ export class TurnScrollController {
     const step = (nowMs: number) => {
       if (this.#disposed) return;
       const distance = scrollToBottomDistanceAtTime(initialDistance, nowMs - startedAtMs);
-      this.#host.writeDistanceFromBottomPx(distance, "instant");
+      this.#host.writeDistanceFromBottomPx(distance, "instant", "bottom-animation");
       this.#distanceFromBottomPx = Math.max(0, this.#host.getMetrics().distanceFromBottomPx);
       this.#publish();
       if (distance > 0 && this.#distanceFromBottomPx > OPENCRAFT_SCROLL_NEAR_BOTTOM_PX) {
@@ -193,7 +215,7 @@ export class TurnScrollController {
         return;
       }
       this.#animationFrame = null;
-      this.#host.writeDistanceFromBottomPx(0, "instant");
+      this.#host.writeDistanceFromBottomPx(0, "instant", "bottom-animation");
       this.#distanceFromBottomPx = 0;
       this.#publish();
     };
@@ -204,7 +226,7 @@ export class TurnScrollController {
     if (this.#animationFrame !== null || this.#preservedLayout !== null) return;
     const metrics = this.#host.getMetrics();
     const snapshot = createPreservedScrollLayout(
-      this.#distanceFromBottomPx,
+      Math.max(0, metrics.distanceFromBottomPx),
       metrics.scrollHeightPx,
     );
     this.#preservedLayout = snapshot;
@@ -217,7 +239,7 @@ export class TurnScrollController {
         preservedLayout,
         this.#host.getMetrics().scrollHeightPx,
       );
-      if (restored !== null) this.scrollToDistanceFromBottomPx(restored, "instant");
+      if (restored !== null) this.scrollToDistanceFromBottomPx(restored, "instant", "system", "preserved-layout");
     });
   }
 
@@ -263,16 +285,20 @@ export class TurnScrollController {
 
   #restorePendingLayoutBeforeScrollEvent(): void {
     const preserved = this.#preservedLayout;
-    if (
-      preserved === null
-      || this.#host.getMetrics().scrollHeightPx === preserved.scrollHeightPx
-    ) return;
+    if (preserved === null) return;
+    const metrics = this.#host.getMetrics();
+    if (metrics.scrollHeightPx === preserved.scrollHeightPx) {
+      // Layout has not changed yet, so this movement is the user's (touch,
+      // momentum or wheel). Rebase on it instead of rewinding it later.
+      this.#preservedLayout = rebasePreservedScrollLayout(preserved, Math.max(0, metrics.distanceFromBottomPx));
+      return;
+    }
     this.#cancelPendingLayoutPreservation();
     const distance = Math.max(
       0,
       preserved.distanceFromBottomPx + preserved.wheelDistanceFromBottomPx,
     );
-    this.#host.writeDistanceFromBottomPx(distance, "instant");
+    this.#host.writeDistanceFromBottomPx(distance, "instant", "preserved-layout-before-scroll");
   }
 
   #cancelPendingLayoutPreservation(): void {

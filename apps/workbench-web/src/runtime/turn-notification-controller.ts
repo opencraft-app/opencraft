@@ -1,3 +1,4 @@
+import { NotificationDestinationsController } from './notification-destinations';
 import type { UiPreferencesRuntime } from '@opencraft/ui-preferences';
 import type { TurnCompletion } from '@opencraft/workbench-runtime';
 import { BrowserTurnNotifications } from './browser-turn-notifications';
@@ -18,6 +19,7 @@ export interface TurnNotificationSnapshot {
 type Preferences = Pick<UiPreferencesRuntime, 'get' | 'set' | 'subscribe'>;
 
 export class TurnNotificationController {
+  readonly destinations=new NotificationDestinationsController();
   private readonly page: BrowserTurnNotifications;
   private readonly push: PwaTurnPushController | null;
   private readonly listeners = new Set<() => void>();
@@ -73,10 +75,10 @@ export class TurnNotificationController {
     if (this.snapshot.enabled) this.page.prepare();
     return () => { stop(); if (this.preferences === preferences) this.preferences = null; };
   }
-  configure(locale: string, messages: PushMessages) { this.push?.configure(locale, messages); }
+  configure(locale: string, messages: PushMessages) { this.push?.configure(locale, messages); this.destinations.configure(locale,messages); }
   refresh = async () => {
     this.page.refresh();
-    await this.push?.refresh();
+    await Promise.all([this.push?.refresh(),this.destinations.refresh()]);
     this.publish();
   };
   /** No await before permission/subscribe: iOS needs the original click activation. */
@@ -113,15 +115,17 @@ export class TurnNotificationController {
   }
   test() { return this.push?.test(); }
   async beforeSignOut() {
+    this.destinations.reset();
     this.signedOut = true; this.operation = false; ++this.generation; this.publish();
     await this.push?.beforeSignOut();
   }
   show(completion: TurnCompletion, title: string, body: string, onClick: () => void) {
-    if (!this.snapshot.enabled || this.signedOut || this.push?.handles(completion.hostId)) return Promise.resolve();
-    return this.page.show(completion, title, body, () => this.snapshot.enabled && !this.signedOut && !this.push?.handles(completion.hostId), onClick);
+    if (this.destinations.getSnapshot().configuration?.enabled===false || !this.snapshot.enabled || this.signedOut || this.push?.handles(completion.hostId)) return Promise.resolve();
+    return this.page.show(completion, title, body, () => this.destinations.getSnapshot().configuration?.enabled!==false && this.snapshot.enabled && !this.signedOut && !this.push?.handles(completion.hostId), onClick);
   }
   observeClicks(onClick: (completion: TurnCompletion) => void) { return this.page.observeClicks(onClick); }
   dispose() {
+    this.destinations.dispose();
     this.disposed = true; ++this.generation;
     this.stops.forEach(stop => stop()); this.listeners.clear(); this.push?.dispose(); this.page.dispose();
   }

@@ -1,3 +1,4 @@
+import { threadCatalogStatus } from "@opencraft/appserver-protocol";
 import type { DatabaseSync } from "node:sqlite";
 import type { ThreadCatalogMetadata, ThreadListResponse } from "@opencraft/appserver-protocol";
 import type { Thread, ThreadListParams } from "@opencraft/appserver-protocol/generated/v2";
@@ -17,6 +18,9 @@ type Sync = { last_success_ms: number | null; watermark: number | null; last_ful
 /** One Hub-owned projection per existing stable Server directory. Native history/execution remains remote. */
 export class DurableThreadCatalog {
   #closed = false;
+  #connection = 0;
+  // Execution facts belong to this connection, never the durable directory.
+  #execution = new Map<string, { status: Thread["status"]; turnId?: string; event: boolean }>();
   #revision: number;
   #timer?: ReturnType<typeof setTimeout>;
   #job: Promise<void> | null = null;
@@ -63,7 +67,7 @@ export class DurableThreadCatalog {
       ORDER BY updated_at DESC,thread_id ASC LIMIT ?`).all(archived, ...(anchor ? [anchor.updatedAt, anchor.updatedAt, anchor.id] : []), limit + 1);
     const more = rows.length > limit; rows.length = Math.min(rows.length, limit);
     const last = rows.at(-1);
-    return { data: rows.map(row => JSON.parse(String(row.metadata_json)) as Thread),
+    return { data: rows.map(row => { const thread = JSON.parse(String(row.metadata_json)) as Thread; return { ...thread, status: this.#execution.get(thread.id)?.status ?? { type: "notLoaded" as const } }; }),
       nextCursor: more && last ? cursorPrefix + JSON.stringify([archived, last.updated_at, last.thread_id]) : null,
       backwardsCursor: null, catalog: { lastSuccessAt: sync?.last_success_ms ?? null, state: sync?.state ?? "syncing",
         coverage: sync?.state === "error" ? "partial" : sync?.last_success_ms == null ? "unknown" : "complete" } };
@@ -82,6 +86,7 @@ export class DurableThreadCatalog {
     return job;
   }
   async #refresh(): Promise<void> {
+    const connection = this.#connection;
     let failed = false;
     for (const archived of [0, 1]) {
       if (this.#closed) return;
@@ -96,7 +101,7 @@ export class DurableThreadCatalog {
         for (let page = 0; page < 1000; page++) {
           const response = object(await this.port.list({ archived: archived === 1, limit: 200,
             sortKey: "updated_at", sortDirection: "desc", useStateDbOnly: true, cursor }, this.#abort.signal));
-          if (this.#closed) return;
+          if (this.#closed || connection !== this.#connection) return;
           const coverage = object(response.catalog);
           partial ||= coverage.coverage === "partial" || coverage.coverage === "unknown"
             || coverage.state === "error" || coverage.state === "warming" || Array.isArray(response.unavailableEngines) && response.unavailableEngines.length > 0;
@@ -129,7 +134,7 @@ export class DurableThreadCatalog {
         } catch (error) { this.database.exec("ROLLBACK TO catalog_sync; RELEASE catalog_sync"); throw error; }
         this.port.observed?.(this.database.prepare("SELECT thread_id FROM opencraft_thread_catalog WHERE deleted=0").all().map(row => String(row.thread_id)));
       } catch {
-        if (this.#closed) return;
+        if (this.#closed || connection !== this.#connection) return;
         this.database.prepare("UPDATE opencraft_catalog_sync SET state='error' WHERE archived=?").run(archived); failed = true;
       }
     }
@@ -139,13 +144,32 @@ export class DurableThreadCatalog {
   #put(row: Thread, archived: number, fence?: number): void {
     const old = this.database.prepare("SELECT revision FROM opencraft_thread_catalog WHERE thread_id=?").get(row.id);
     if (fence !== undefined && old && Number(old.revision) > fence) return;
+    if (!this.#execution.has(row.id) || fence !== undefined && !this.#execution.get(row.id)?.event) {
+      const status = threadCatalogStatus(row.status);
+      if (status) this.#execution.set(row.id, { status, event: false });
+    }
     this.database.prepare(`INSERT INTO opencraft_thread_catalog VALUES(?,?,?,?,?,?,0) ON CONFLICT(thread_id) DO UPDATE SET
       metadata_json=excluded.metadata_json,updated_at=excluded.updated_at,archived=excluded.archived,
       observed_at_ms=excluded.observed_at_ms,revision=excluded.revision,deleted=0`)
-      .run(row.id, JSON.stringify(row), row.recencyAt ?? row.updatedAt, archived, this.now(), ++this.#revision);
+      .run(row.id, JSON.stringify({ ...row, status: { type: "notLoaded" } }), row.recencyAt ?? row.updatedAt, archived, this.now(), ++this.#revision);
   }
   observe(method: string, params: unknown, result?: unknown): void {
     if (this.#closed) return;
+    const eventInput = object(params), eventId = eventInput.threadId;
+    if (typeof eventId === "string" && eventId) {
+      const previous = this.#execution.get(eventId), turnId = object(eventInput.turn).id;
+      let status = method === "thread/status/changed" ? threadCatalogStatus(eventInput.status) : null;
+      if (method === "turn/started" && typeof turnId === "string") status = { type: "active", activeFlags: [] };
+      if (method === "turn/completed" && typeof turnId === "string" && (previous?.turnId === undefined || previous.turnId === turnId)) status = { type: "idle" };
+      if (method === "thread/closed" || method === "thread/unloaded") status = { type: "notLoaded" };
+      if (status) {
+        // Protect this row from an older in-flight metadata refresh, including deletion.
+        this.database.prepare("UPDATE opencraft_thread_catalog SET revision=? WHERE thread_id=?").run(++this.#revision, eventId);
+        this.#execution.set(eventId, { status, event: true,
+          ...(status.type === "active" ? { turnId: method === "turn/started" ? String(turnId) : previous?.turnId } : {}) });
+        this.port.changed();
+      }
+    }
     // Read/resume results have no event revision. An old read must not overwrite
     // a newer title/status; only the fenced synchronizer imports read metadata.
     if (!["thread/start", "thread/started", "thread/fork", "thread/archive", "thread/archived", "thread/unarchive", "thread/unarchived", "thread/delete", "thread/deleted", "thread/name/set", "thread/name/updated", "thread/status/changed"].includes(method)) return;
@@ -159,6 +183,7 @@ export class DurableThreadCatalog {
     if (typeof id !== "string" || !id) return;
     const stored = this.database.prepare("SELECT metadata_json,archived FROM opencraft_thread_catalog WHERE thread_id=?").get(id);
     if (method === "thread/delete" || method === "thread/deleted") {
+      this.#execution.delete(id);
       this.database.prepare(`INSERT INTO opencraft_thread_catalog VALUES(?,'{}',0,0,?,?,1)
         ON CONFLICT(thread_id) DO UPDATE SET deleted=1,revision=excluded.revision`).run(id, this.now(), ++this.#revision);
       this.port.changed();
@@ -175,5 +200,6 @@ export class DurableThreadCatalog {
     this.#put(current, archived);
     if (["thread/start", "thread/started", "thread/fork", "thread/archive", "thread/archived", "thread/unarchive", "thread/unarchived", "thread/name/set", "thread/name/updated", "thread/status/changed"].includes(method)) this.port.changed();
   }
-  close(): void { this.#closed = true; clearTimeout(this.#timer); this.#abort.abort(); }
+  resetExecution(): void { if (this.#closed) return; ++this.#connection; this.#execution.clear(); this.#lastAttempt = -Infinity; this.port.changed(); }
+  close(): void { this.#execution.clear(); this.#closed = true; clearTimeout(this.#timer); this.#abort.abort(); }
 }

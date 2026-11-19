@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, mkdir, writeFile, appendFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, appendFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
@@ -260,4 +260,24 @@ test("v6 cache upgrades its recency index without discarding ready projections o
  assert.deepEqual(d.database.prepare('SELECT * FROM schema_migrations WHERE version<=6 ORDER BY version').all(),history);
  assert.equal(d.database.prepare('SELECT max(version) AS version FROM schema_migrations').get()!.version,7);
  assert.deepEqual(values(d),expected);await drain(d);assert.deepEqual(values(d),expected);
+}));
+
+test("an unchanged complete rollout is not re-resolved through Codex Core on every pass",()=>fixture(async f=>{
+ await writeFile(f.path,start()+count("5","5")+line("event_msg",{type:"task_complete",turn_id:turn},2));
+ let resolves=0;
+ const storage=new CodexNativeStorage(null,()=>f.home);
+ const derived=new RolloutDerivedTokenUsage({databasePath:join(f.directory,"token-usage.sqlite"),nativeHome:f.home,serverId:"server",
+  nativeHomes:()=>storage.homes(),resolveSource:(id,path)=>{resolves++;return storage.resolve(id,path,true);}});
+ try{
+  await derived.discover();await drain(derived);const before=snapshot(derived).summary.tokens;assert.notEqual(before,"0");
+  const settled=resolves;
+  for(let i=0;i<5;i++){await derived.discover();await drain(derived);}
+  assert.equal(resolves,settled,"complete unchanged file skipped without resolving its source");
+  await appendFile(f.path,count("7","7",3));
+  await derived.discover();await drain(derived);
+  assert.ok(resolves>settled,"growth is read");
+  const retained=new DatabaseSync(join(f.directory,"token-usage-retained.sqlite"),{readOnly:true});
+  try{assert.equal(Number(retained.prepare("SELECT cursor FROM usage_files").get()!.cursor),(await stat(f.path)).size,"appended bytes are read");}finally{retained.close();}
+  assert.ok(BigInt(snapshot(derived).summary.tokens)>=BigInt(before));
+ }finally{derived.close();}
 }));

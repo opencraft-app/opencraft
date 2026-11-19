@@ -48,7 +48,7 @@ test("opening details uses only GET; confirmed redemption binds exact account, c
     assert.equal(init?.redirect, "error");
     if (method === "GET") return Response.json(details());
     assert.equal(String(url), "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume");
-    return Response.json({ outcome: "reset" });
+    return Response.json({ code: "reset", windows_reset: 1 });
   }, async () => { refreshes++; });
   try {
     await fixture.service.list("a");
@@ -87,7 +87,7 @@ test("unknown transport outcome is not retried automatically; explicit retry ret
     if (init?.method !== "POST") return Response.json(details());
     bodies.push(JSON.parse(String(init.body)));
     if (bodies.length === 1) throw new TypeError("synthetic connection lost after commit");
-    return Response.json({ outcome: "already_redeemed" });
+    return Response.json({ code: "already_redeemed" });
   });
   try {
     assert.equal((await fixture.service.consume(request)).outcome, "unknown");
@@ -98,7 +98,7 @@ test("unknown transport outcome is not retried automatically; explicit retry ret
 });
 
 test("unrecognized/failed POST never reports success; failure to refresh does not repeat a successful reset", async () => {
-  for (const response of [Response.json({ outcome: "future_value" }), new Response("error", { status: 503 }), new Response("not json")]) {
+  for (const response of [Response.json({ code: "future_value" }), new Response("error", { status: 503 }), new Response("not json")]) {
     let posts = 0;
     const fixture = await setup(async (_url, init) => {
       if (init?.method !== "POST") return Response.json(details());
@@ -165,7 +165,7 @@ test("independent account owner exposes capability and both RPCs with synthetic 
   let posts = 0;
   const owner = await CodexAccountService.start({ executable: process.execPath, dataDirectory: root,
     nativeCodexHomeDirectory: join(root, "native"), fetch: async (url, init) => {
-      if (init?.method === "POST") { posts++; return Response.json({ outcome: "nothing_to_reset" }); }
+      if (init?.method === "POST") { posts++; return Response.json({ code: "nothing_to_reset" }); }
       return Response.json(String(url).endsWith("/usage") ? { rate_limit_reset_credits: { available_count: 2 } } : details([unexpiredCredit]));
     } });
   try {

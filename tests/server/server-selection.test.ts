@@ -126,7 +126,7 @@ test('relay SSH discovery requires explicit public ingress and reuses its origin
   const disabled=await selectorFixture({sshPublicAccess:false});
   try {
     const cookie=await disabled.login('alice');
-    assert.equal((await disabled.get('/servers/lighthouse/__opencraft_ssh/session',{cookie})).status,403);
+    assert.equal((await disabled.get('/servers/lighthouse/__opencraft_ssh/session',{cookie})).status,404);
   } finally {await disabled.close();}
   const f=await selectorFixture({sshPublicAccess:true});t.after(()=>f.close());
   const cookie=await f.login('alice'),origin='http://lighthouse.selection.test:'+new URL(f.origin).port;

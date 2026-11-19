@@ -82,7 +82,7 @@ export function NavigationContent({ config, surface, compact = false, includeSet
 }) {
   const intl = useIntl();
   const mobile = useShellPresentation()?.mobileSidebar ?? false;
-  return surface === "applications" ? <Tooltip.Provider delayDuration={350} disableHoverableContent><NavigationList compact={compact && !mobile} label={intl.formatMessage({ id: "navigation.applications", defaultMessage: "Applications" })} className="shell-navigation__items shell-navigation__items--applications">
+  return surface === "applications" ? <Tooltip.Provider delayDuration={350} disableHoverableContent><NavigationList compact={compact && !mobile} inset={mobile ? "sidebar" : "default"} label={intl.formatMessage({ id: "navigation.applications", defaultMessage: "Applications" })} className="shell-navigation__items shell-navigation__items--applications">
     {config.actions.filter(action => !(mobile && config.layout === "unified" && config.applicationsInSidebar && (action.id === "shell.home" || action.id === "shell.applications"))).map(action => {
       const { full: title, short } = shellNavigationLabels(action, intl);
       const badge = action.badge === undefined ? null : <small className="shell-navigation__beta">{action.badge}</small>;

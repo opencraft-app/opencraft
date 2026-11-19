@@ -1,3 +1,6 @@
+import { usePanelComposerChrome } from './panel-composer-chrome';
+import { usePresentationCompletion } from './use-presentation-completion';
+import { usePanelOverviewPresentation } from './panel-overview-presentation';
 import { Button, IconButton } from '@opencraft/design-system-web/button';
 import { ChevronDownIcon as ChevronDown, AddIcon as Plus } from "@opencraft/design-system-web/action-icons";
 import {
@@ -20,8 +23,6 @@ import {
   groupTimelineFramesByTurn,
   type TimelineSnapshot,
 } from "@opencraft/chat-core";
-import { WebConversationContentWindow } from "@opencraft/timeline-host-web";
-import { ConversationContentWindowContext } from "./conversation/content-window";
 import type { ComposerController } from "@opencraft/composer-core";
 import type { BrowserTabId } from "@opencraft/browser-core";
 import { useOptionalBrowserRuntime } from "../browser/browser-runtime-context";
@@ -29,7 +30,9 @@ import { useShellPresentation } from "./shell-presentation";
 import { useTouchBrowserLayout } from './use-touch-browser-layout';
 import { useIntl } from '@opencraft/i18n/react';
 import {
-  ConversationTurn,
+  Conversation,
+  type ConversationProps,
+  type ConversationRestoreSnapshot,
   type ConversationDocumentContextValue,
 } from "./conversation";
 import { ConversationDocumentContext } from "./conversation/document-context";
@@ -112,21 +115,8 @@ function windowIsFocused() {
   return (window as any).opencraftDesktop?.getWindowFocused?.() ?? document.hasFocus();
 }
 
-/** The portalled reply has a different DOM scroll root from its Conversation. */
-function LatestTurnReadingSurface({ children }: { children: ReactNode }) {
-  const [contentWindow] = useState(() => new WebConversationContentWindow());
-  const attach = useCallback((element: HTMLDivElement | null) => {
-    contentWindow.attach(element);
-  }, [contentWindow]);
-  useEffect(() => () => contentWindow.dispose(), [contentWindow]);
-  return (
-    <div className="thread-composer-overlay__response" ref={attach}>
-      <ConversationContentWindowContext.Provider value={contentWindow}>
-        {children}
-      </ConversationContentWindowContext.Provider>
-    </div>
-  );
-}
+export type OverlayConversationProps = Omit<ConversationProps,
+  'active' | 'scrollPolicy' | 'timeline' | 'footer' | 'initialRestoreSnapshot' | 'onRestoreSnapshotChange'>;
 
 export function ThreadComposerPresentation({
   children,
@@ -136,6 +126,7 @@ export function ThreadComposerPresentation({
   enabled,
   timeline,
   documentContext,
+  conversationProps,
   forceExpanded = false,
 }: {
   children: ReactNode;
@@ -145,6 +136,7 @@ export function ThreadComposerPresentation({
   enabled: boolean;
   timeline: TimelineSnapshot | null;
   documentContext?: ConversationDocumentContextValue;
+  conversationProps?: OverlayConversationProps;
   forceExpanded?: boolean;
 }) {
   const intl = useIntl();
@@ -165,6 +157,7 @@ export function ThreadComposerPresentation({
   const reduced = Boolean(useReducedMotion());
   const overlay =
     enabled &&
+    (!newera || activeTabId !== null) &&
     shouldPresentMainComposerOverlay(
       Boolean(shell?.rightPanelOpen && shell.rightPanelFullWidth),
       activeTabId
@@ -217,10 +210,35 @@ export function ThreadComposerPresentation({
     onDemand: mobilePanel,
     presentation: mobilePanel ? "touch" : "pointer",
   });
+  const integratedBrowser = mobilePanel && browserTabId !== null;
+  const composerChrome = usePanelComposerChrome();
+  const publishChrome = composerChrome?.publish;
+  const [chromeSwitcher, setChromeSwitcher] = useState<HTMLDivElement | null>(null);
+  const [chromeHeader, setChromeHeader] = useState<HTMLDivElement | null>(null);
+  const overviewPresentation = usePanelOverviewPresentation();
+  const presentComposer = overviewPresentation?.presentComposer;
+  const composerToken = useMemo(() => Symbol('tool-composer'), [routeScope]);
+  useLayoutEffect(() => {
+    presentComposer?.(composerToken, mobilePanel && view.interactive);
+    return () => presentComposer?.(composerToken, false);
+  }, [presentComposer, composerToken, mobilePanel, view.interactive]);
+  const browserTransition = useMemo(() => ({
+    open: state.enabled && activeTabId !== null && !state.collapsedTabs.has(activeTabId),
+    complete: () => store.completePresentation(state),
+  }), [store, state, activeTabId]);
+  const browserPresented = integratedBrowser && view.phase !== 'hidden';
+  useLayoutEffect(() => {
+    if (integratedBrowser && activeTabId && chromeHeader && chromeSwitcher && browserPresented)
+      publishChrome?.(composerToken, activeTabId, chromeHeader, chromeSwitcher, browserTransition);
+    else publishChrome?.(composerToken, activeTabId ?? '', null);
+  }, [publishChrome, composerToken, activeTabId, chromeHeader, chromeSwitcher, integratedBrowser, browserPresented, browserTransition]);
+  useLayoutEffect(() => () => publishChrome?.(composerToken, activeTabId ?? '', null),
+    [publishChrome, composerToken, activeTabId]);
   const [expanded, setExpanded] = useState(false);
   useEffect(() => { if (mobilePanel && view.interactive) setExpanded(true); }, [mobilePanel, view.interactive]);
-  const [collapsed, setCollapsed] = useState<Readonly<Record<string, boolean>>>(
-    {}
+  const inheritedDocumentContext = useContext(ConversationDocumentContext);
+  const readingRestore = useMemo<{ snapshot: ConversationRestoreSnapshot | null }>(
+    () => ({ snapshot: null }), [scopeId, timeline?.key.hostId, timeline?.key.threadId],
   );
   const [nearBottom, setNearBottom] = useState(false);
   const [overHandle, setOverHandle] = useState(false);
@@ -240,6 +258,9 @@ export function ThreadComposerPresentation({
     latestSurface = useRef<HTMLDivElement>(null),
     preview = useRef<HTMLDivElement>(null),
     overlaySlot = useRef<HTMLDivElement>(null);
+  const finishPresentation = useCallback(() => store.completePresentation(state), [store, state]);
+  usePresentationCompletion(host, !integratedBrowser && (view.phase === 'entering' || view.phase === 'exiting'),
+    state, finishPresentation, true);
   const frame = useRef<number | null>(null);
   const handoffTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined
@@ -306,7 +327,11 @@ export function ThreadComposerPresentation({
       const rect = element.getBoundingClientRect();
       // Ordinary tools are CSS-local to the Shell; measure bottom occlusion.
       // Content excludes both the bottom inset and the absolute latest-turn card.
-      const contentRect = content.current?.getBoundingClientRect();
+      const contentElement = content.current;
+      const contentRect = contentElement?.getBoundingClientRect();
+      const bottomInset = contentElement?.parentElement
+        ? Number.parseFloat(getComputedStyle(contentElement.parentElement).paddingBottom) || 0
+        : 0;
       const latestElement = latestSurface.current?.getClientRects().length
         ? latestSurface.current
         : null;
@@ -314,7 +339,7 @@ export function ThreadComposerPresentation({
       const previewHeight = preview.current?.getBoundingClientRect().height ?? 0;
       // Expanded history scrolls within the remaining tool area. Layout-viewport
       // vh alone still includes the space now occupied by the software keyboard.
-      const previewSpace = Math.max(
+      const previewSpace = integratedBrowser ? Math.max(0, rect.height - (chromeHeader?.getBoundingClientRect().height ?? 0) - (overlaySlot.current?.getBoundingClientRect().height ?? 0) - bottomInset) : Math.max(
         0,
         (previousLatest?.top ?? contentRect?.top ?? rect.bottom) -
           rect.top + previewHeight
@@ -360,7 +385,7 @@ export function ThreadComposerPresentation({
       element.style.removeProperty("--right-panel-composer-overlay-height");
       element.style.removeProperty("--right-panel-composer-overlay-reserve");
     };
-  }, [overlay, shellAnchor, floating, mobilePanel, view.mounted, view.handles, Boolean(latest && documentContext)]);
+  }, [overlay, shellAnchor, floating, mobilePanel, integratedBrowser, chromeHeader, view.mounted, view.handles, Boolean(latest && documentContext)]);
   useEffect(() => {
     if (!overlay || !view.peeked || !page) return;
     return browser?.surfaces.trackPointerNearBottom?.(
@@ -538,6 +563,7 @@ export function ThreadComposerPresentation({
               ref={host}
               className="thread-composer-overlay-host"
               data-mobile-panel={mobilePanel || undefined}
+              data-integrated-browser={integratedBrowser || undefined}
               data-anchor="shell"
               data-testid="right-panel-composer-overlay-host"
             >
@@ -557,7 +583,7 @@ export function ThreadComposerPresentation({
                     data-density={view.density}
                     data-animate={animateTab && !reduced}
                     data-expanding={expanding}
-                    data-peeked={view.peeked}
+                    data-peeked={view.peeked && !integratedBrowser}
                     onTransitionEnd={(event) => {
                       if (
                         event.target === event.currentTarget &&
@@ -568,8 +594,8 @@ export function ThreadComposerPresentation({
                   >
                     <div
                       className="thread-composer-overlay__interactive"
-                      inert={!view.interactive || undefined}
-                      aria-hidden={!view.interactive || undefined}
+                      inert={(!view.interactive && !browserPresented) || undefined}
+                      aria-hidden={(!view.interactive && !browserPresented) || undefined}
                       onFocusCapture={onFocus}
                       onBlurCapture={(event) => blur(event.relatedTarget)}
                       onPointerDownCapture={(event) => {
@@ -581,6 +607,7 @@ export function ThreadComposerPresentation({
                           event.preventDefault();
                       }}
                     >
+                      {integratedBrowser ? <div ref={setChromeHeader} className="thread-composer-overlay__browser-controls" /> : null}
                       {latest && documentContext ? (
                         <div
                           ref={latestSurface}
@@ -597,7 +624,7 @@ export function ThreadComposerPresentation({
                             undefined
                           }
                         >
-                          <Button variant="ghost" size="navigation" contentLayout="row"
+                          <Button hidden={integratedBrowser} variant="ghost" size="navigation" contentLayout="row"
                             className="thread-composer-overlay__summary"
                             aria-expanded={expanded}
                             aria-controls={previewId}
@@ -615,55 +642,53 @@ export function ThreadComposerPresentation({
                             <span className="thread-composer-overlay__summary-label">
                               {latest.status === "streaming"
                                 ? intl.formatMessage({ id: 'chat.working', defaultMessage: 'Working' })
-                                : intl.formatMessage({ id: 'chat.latestTurn', defaultMessage: 'Latest turn' })}
+                                : intl.formatMessage({ id: 'chat.conversationHistory', defaultMessage: 'Conversation' })}
                             </span>
                             <ChevronDown size={14} aria-hidden="true" />
                           </Button>
                           <AnimatePresence initial={false}>
-                            {expanded ? (
+                            {(integratedBrowser || expanded) ? (
                               <motion.div
-                                key="latest"
+                                key="conversation"
                                 id={previewId}
                                 ref={preview}
                                 className="thread-composer-overlay__response-motion"
-                                initial={{ maxHeight: 0, opacity: 0 }}
+                                initial={integratedBrowser ? false : { maxHeight: 0, opacity: 0 }}
                                 animate={{ maxHeight: "22.5rem", opacity: 1 }}
                                 exit={{
                                   maxHeight: 0,
                                   opacity: 0,
                                   pointerEvents: "none",
                                 }}
-                                transition={{ duration: reduced ? 0 : 0.15 }}
+                                transition={{ duration: reduced || integratedBrowser ? 0 : 0.15 }}
                               >
-                                <LatestTurnReadingSurface key={latest.turnKey}>
-                                  <ConversationDocumentContext.Provider
-                                    value={documentContext}
-                                  >
-                                    <ConversationTurn
-                                      turn={latest}
-                                      startAfterTurnIntro
-                                      isMostRecentTurn
-                                      threadDetailLevel="STEPS_COMMANDS"
-                                      activityCollapsedById={collapsed}
-                                      onActivityCollapsedChange={(id, value) =>
-                                        setCollapsed((previous) => ({
-                                          ...previous,
-                                          [id]: value,
-                                        }))
-                                      }
-                                    />
-                                  </ConversationDocumentContext.Provider>
-                                </LatestTurnReadingSurface>
+                                <div className="thread-composer-overlay__response">
+                                  <Conversation
+                                    {...conversationProps}
+                                    key={JSON.stringify([scopeId, timeline?.key.hostId, timeline?.key.threadId])}
+                                    scrollPolicy="natural"
+                                    active={view.interactive && (mobilePanel || !floating || view.density === 'expanded')}
+                                    timeline={timeline}
+                                    documentContext={{ ...inheritedDocumentContext, ...documentContext, ...conversationProps?.documentContext }}
+                                    initialRestoreSnapshot={readingRestore.snapshot}
+                                    onRestoreSnapshotChange={snapshot => { readingRestore.snapshot = snapshot; }}
+                                    footer={<></>}
+                                  />
+                                </div>
                               </motion.div>
                             ) : null}
                           </AnimatePresence>
                         </div>
                       ) : null}
+                      <div className="thread-composer-overlay__editor-row">
                       <div
                         ref={overlaySlot}
+                        inert={!view.interactive || undefined}
                         className="thread-composer-overlay__editor-slot"
                       />
+                      </div>
                     </div>
+                    {integratedBrowser ? <div ref={setChromeSwitcher} className="thread-composer-overlay__switcher-slot" /> : null}
                     {view.handles && !mobilePanel ? (
                       <button
                         type="button"

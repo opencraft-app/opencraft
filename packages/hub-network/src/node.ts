@@ -1,15 +1,16 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHmac, createPublicKey } from 'node:crypto';
 import { Duplex } from 'node:stream';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import WebSocket, { WebSocketServer } from 'ws';
-import { relayDuplex } from '../../relay-protocol/src/node.js';
+import { bridgeRelayDuplex, relayDuplex, relayIdleDeadline } from '../../relay-protocol/src/node.js';
 import { AssertionProvider, type IdentityProvider, type IdentityRequest } from '../../identity-core/src/node.js';
 import { MAX_STREAMS } from '../../relay-protocol/src/index.js';
 import { HUB_CONTROL_PATH, HUB_DATA_PATH, HUB_PROTOCOL, MAX_HOPS, publicOrigin, transportEndpoint, validHubId,
   type HubNetworkSnapshot, type HubRoute, type IdentityAuthority } from './contract.js';
-import { HubStore, authority, digest, hubId, parseInvitation, random, signed, verified, type Invitation, type InvitePayload, type Peer } from './store.js';
+import { HubStore, authority, digest, hubId, parseInvitation, random, signed, verified, type Invitation, type InvitePayload, type Peer, type State, type HubStateOwner } from './store.js';
 import { HubRouting } from './routing.js';
 import { createLocalIngress } from './local-ingress.js';
+import { requestHubEnrollment } from './enrollment.js';
 
 interface Link {
   id: string; publicKey: string; ws: WebSocket; outgoing: Peer | null; invitation: Invitation | null;
@@ -29,7 +30,7 @@ export async function readCommand(req: IncomingMessage): Promise<Record<string, 
   const input = JSON.parse(body); if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid command'); return input;
 }
 export class HubNetwork implements IdentityProvider {
-  readonly store: HubStore;
+  readonly store: HubStateOwner;
   readonly routing: HubRouting;
   readonly links = new Map<string, Link>();
   readonly #controls = new WebSocketServer({ noServer: true, maxPayload: 262_144, perMessageDeflate: false });
@@ -40,14 +41,18 @@ export class HubNetwork implements IdentityProvider {
   readonly #handshakes = new Set<WebSocket>();
   readonly #connecting = new Map<WebSocket, Link>();
   readonly #streams = new Set<Duplex>();
+  readonly #detachedLinks = new Set<Link>();
   readonly #heartbeat: ReturnType<typeof setInterval>;
   #targetPort = 0;
   #closed = false;
   #provider: AssertionProvider | null = null;
   #providerScope = '';
+  #mutations: Promise<unknown> = Promise.resolve();
+  readonly #enrollments = new Set<AbortController>();
   readonly #local = createLocalIngress(() => ({ port: this.#targetPort, origin: this.store.state.origin }));
-  constructor(path: string, readonly options: { ca?: string; authority?: IdentityAuthority; onRoutes?: () => void; localService?: boolean } = {}) {
-    this.store = new HubStore(path); this.routing = new HubRouting(this.store.id);
+  constructor(path: string | HubStateOwner, readonly options: { ca?: string; authority?: IdentityAuthority; onRoutes?: () => void; localService?: boolean;
+    persist?: (state: Readonly<State>) => Promise<void> } = {}) {
+    this.store = typeof path === 'string' ? new HubStore(path) : path; this.routing = new HubRouting(this.store.id);
     try {
       if (options.authority) {
         const a = authority(options.authority);
@@ -79,14 +84,35 @@ export class HubNetwork implements IdentityProvider {
       routes: this.routes().map(r => ({ hubId: r.service.hubId, origin: r.service.origin, path: [this.store.id, ...r.path], nextHop: r.path[0]! })), audit: [...s.audit].reverse() };
   }
   routes(): HubRoute[] { return this.routing.all().filter(r => r.service.origin !== this.store.state.origin && this.links.has(r.path[0]!)); }
+  activeStreams() { return this.#streams.size + this.#pending.size + this.#dials.size + this.#connecting.size; }
   command(input: Record<string, unknown>, operator: string) {
+    if (this.options.persist) throw new Error('Shared Hub changes require durableCommand');
+    return this.#transaction(input, operator);
+  }
+  /** A shared owner acknowledges changes only after its fenced durable write succeeds. */
+  durableCommand(input: Record<string, unknown>, operator: string) {
+    return this.#serialize(async () => {
+      const result = this.#transaction(input, operator);
+      if (!('conflict' in result)) await this.#persist();
+      if (this.#closed) throw new Error('Hub owner retired');
+      this.#syncClients(); this.#announce(); return result;
+    });
+  }
+  #serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.#mutations.then(operation); this.#mutations = next.catch(() => {}); return next;
+  }
+  async #persist() {
+    try { await this.options.persist?.(structuredClone(this.store.state)); }
+    catch (error) { this.close(); throw error; }
+  }
+  #transaction(input: Record<string, unknown>, operator: string) {
     const before = structuredClone(this.store.state);
     try { return this.#command(input, operator); }
     catch (error) {
       if (JSON.stringify(this.store.state) === JSON.stringify(before)) throw error;
       Object.assign(this.store.state, before);
       // Rebind live policy references after restoring a failed private-state transaction.
-      for (const link of [...this.links.values()]) this.#retire(link);
+      for (const link of [...this.links.values(), ...this.#detachedLinks]) this.#retire(link);
       for (const client of this.#clients.values()) { client.stopped = true; clearTimeout(client.timer); client.ws?.terminate(); }
       this.#clients.clear(); this.#syncClients(); throw error;
     }
@@ -120,9 +146,32 @@ export class HubNetwork implements IdentityProvider {
       const payload: InvitePayload = { version: 1, endpoint: s.endpoint, hubId: this.store.id, publicKey: s.publicKey, name: s.name, id, credential,
         expiresAt, allowTransit: input.allowTransit, origins, authority: s.authority, ...(this.options.ca ? { ca: this.options.ca } : {}) };
       invitation = Buffer.from(JSON.stringify({ payload, signature: signed(payload, s.privateKey) })).toString('base64url');
+    } else if (action === 'enroll') {
+      const peer=input.peer as {hubId?:unknown;publicKey?:unknown;name?:unknown};
+      const origin=input.origin===''?'':publicOrigin(input.origin);
+      if(!s.accepting||!s.endpoint||!validHubId(peer?.hubId)||peer.hubId===this.store.id||typeof peer.publicKey!=='string'||peer.publicKey.length>4096
+        ||createPublicKey(peer.publicKey).asymmetricKeyType!=='ed25519'||hubId(peer.publicKey)!==peer.hubId
+        ||(peer.name!==undefined&&(typeof peer.name!=='string'||peer.name.length>128)))throw Error('Invalid enrollment');
+      const existing=s.invitations.find(i=>i.hubId===peer.hubId);
+      if((existing&&existing.publicKey!==peer.publicKey)||s.peers.some(p=>p.hubId===peer.hubId))throw Error('Enrollment conflict');
+      if(origin&&(origin===s.origin||s.peers.some(p=>p.origins.includes(origin))||s.invitations.some(i=>i!==existing&&i.origins.includes(origin))))throw Error('Origin already enrolled');
+      if(existing&&origin&&!existing.origins.includes(origin))throw Error('Enrollment scope conflict');
+      if(!existing&&s.invitations.length>=128)throw Error('Hub is not accepting nodes');
+      const id=existing?.id??randomUUID();
+      // Stable private derivation lets a verified machine retry a lost response
+      // without adding registrations or retaining plaintext incoming credentials.
+      const credential=createHmac('sha256',s.privateKey).update(JSON.stringify(['hub-enrollment-v1',id,peer.hubId])).digest('base64url');
+      const entry=existing??{id,hash:'',expiresAt:0,allowTransit:false,origins:origin?[origin]:[],hubId:peer.hubId,publicKey:peer.publicKey};
+      entry.hash=digest(credential);entry.expiresAt=Date.now()+24*3600_000;
+      if(typeof peer.name==='string')entry.name=peer.name;
+      if(!existing)s.invitations.push(entry);
+      const payload:InvitePayload={version:1,endpoint:s.endpoint,hubId:this.store.id,publicKey:s.publicKey,name:s.name,id,credential,
+        expiresAt:entry.expiresAt,allowTransit:entry.allowTransit,origins:entry.origins,authority:s.authority,...(this.options.ca?{ca:this.options.ca}:{})};
+      invitation=Buffer.from(JSON.stringify({payload,signature:signed(payload,s.privateKey)})).toString('base64url');
     } else if (action === 'connect') {
       const invite = parseInvitation(input.invitation);
-      if (invite.hubId === this.store.id || s.peers.length >= 32 || s.peers.some(p => p.hubId === invite.hubId) || s.invitations.some(i => i.hubId === invite.hubId)) throw new Error('Duplicate or own Hub');
+      const existing=s.peers.find(p=>p.hubId===invite.hubId);
+      if (invite.hubId === this.store.id || (!existing&&s.peers.length>=32) || (existing&&(input.refresh!==true||existing.publicKey!==invite.publicKey||existing.endpoint!==invite.endpoint)) || s.invitations.some(i=>i.hubId===invite.hubId)) throw new Error('Duplicate or own Hub');
       // Explicit acceptance is separate from tunnel enrollment. The settings preview shows this authority.
       if (invite.authority && input.trustIdentity !== true) throw new Error('Identity authority must be explicitly accepted');
       if (invite.authority && s.authority && JSON.stringify(s.authority) !== JSON.stringify(invite.authority)) throw new Error('Identity authority conflicts with existing configuration');
@@ -130,8 +179,12 @@ export class HubNetwork implements IdentityProvider {
       if (input.publishOrigin && this.options.localService === false) throw new Error('This Hub provides relay only');
       if (invite.authority && !s.authority) s.authority = authority(invite.authority);
       if (input.publishOrigin) s.origin = publicOrigin(input.publishOrigin);
-      s.peers.push({ id: invite.id, hubId: invite.hubId, name: invite.name, publicKey: invite.publicKey, endpoint: invite.endpoint, credential: invite.credential,
-        allowTransit: invite.allowTransit, origins: invite.origins, ...(invite.ca ? { ca: invite.ca } : {}) });
+      const next={id:invite.id,hubId:invite.hubId,name:existing?.name??invite.name,publicKey:invite.publicKey,endpoint:invite.endpoint,credential:invite.credential,
+        allowTransit:invite.allowTransit,origins:invite.origins,...(invite.ca?{ca:invite.ca}:{})};
+      if(existing){
+        if(JSON.stringify([existing.allowTransit,existing.origins])!==JSON.stringify([next.allowTransit,next.origins])){const link=this.links.get(existing.hubId);if(link)this.#retire(link);}
+        Object.assign(existing,next);
+      }else s.peers.push(next);
     } else if (action === 'untrust') {
       if (this.options.authority) throw new Error('Identity authority is operator managed');
       s.authority = null; s.origin = '';
@@ -145,12 +198,24 @@ export class HubNetwork implements IdentityProvider {
     if (priorPolicy !== JSON.stringify([s.origin, s.accepting, s.forwarding, s.authority])) {
       for (const stream of this.#streams) stream.destroy();
     }
-    for (const link of [...this.links.values()]) {
+    for (const link of [...this.links.values(), ...this.#detachedLinks]) {
       if ((!link.outgoing && (!s.accepting || !s.invitations.includes(link.invitation!)))
         || (link.outgoing && !s.peers.includes(link.outgoing))) this.#retire(link);
     }
-    this.#syncClients(); this.#announce();
+    if (!this.options.persist) { this.#syncClients(); this.#announce(); }
     return { snapshot: this.snapshot(), ...(invitation ? { invitation } : {}) };
+  }
+  /** Machine owner requests admission by address; personal/business authority
+   * still requires the existing explicit trust decision and origin grant. */
+  async connectEndpoint(endpoint: string, input: { publishOrigin?: string; trustIdentity?: boolean; ca?: string; authorize?: () => boolean }, operator: string) {
+    if(this.#closed)throw Error('Hub owner retired');
+    const revision=this.store.state.revision,abort=new AbortController();this.#enrollments.add(abort);
+    try {
+      const invitation=await requestHubEnrollment(this.store,endpoint,input.publishOrigin??'',input.ca??this.store.state.peers.find(peer=>peer.endpoint===endpoint)?.ca,abort.signal);
+      if(this.#closed||input.authorize?.()===false)throw Error('Hub owner retired');
+      const command={action:'connect',refresh:true,revision,invitation,publishOrigin:input.publishOrigin??'',trustIdentity:input.trustIdentity};
+      return this.options.persist?await this.durableCommand(command,operator):this.command(command,operator);
+    }finally{this.#enrollments.delete(abort);}
   }
   handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): boolean {
     if (![HUB_CONTROL_PATH, HUB_DATA_PATH].includes(req.url ?? '')) return false;
@@ -170,8 +235,9 @@ export class HubNetwork implements IdentityProvider {
       ws.once('close', () => { clearTimeout(timer); this.#handshakes.delete(ws); });
       ws.send(JSON.stringify({ type: 'challenge', challenge, hubId: this.store.id, publicKey: this.store.state.publicKey,
         signature: signed({ challenge, audience: 'hub-peer' }, this.store.state.privateKey) }));
-      ws.once('message', raw => {
+      ws.once('message', raw => { void this.#serialize(async () => {
         try {
+          if (this.#closed) throw new Error('Hub owner retired');
           const hello = JSON.parse(raw.toString());
           if (Buffer.byteLength(raw.toString()) > 16_384 || hello.type !== 'hello' || !validHubId(hello.hubId) || hello.hubId === this.store.id || hubId(hello.publicKey) !== hello.hubId
             || !verified({ challenge, audience: this.store.id }, hello.signature, hello.publicKey)
@@ -189,11 +255,14 @@ export class HubNetwork implements IdentityProvider {
               throw error;
             }
           }
+          await this.#persist();
+          if (this.#closed || ws.readyState !== WebSocket.OPEN || !this.store.state.accepting || !this.store.state.invitations.includes(invitation)) throw new Error('Hub owner retired');
           clearTimeout(timer); this.#handshakes.delete(ws);
           const link = this.#attach(hello.hubId, hello.publicKey, ws, null, invitation);
           ws.send(JSON.stringify({ type: 'ready' })); this.#announce(); this.options.onRoutes?.();
           if (this.links.get(link.id) !== link) ws.terminate();
         } catch { ws.terminate(); }
+      }).catch(() => ws.terminate());
       });
     }); return true;
   }
@@ -204,11 +273,13 @@ export class HubNetwork implements IdentityProvider {
     ws.on('message', raw => {
       try { if (this.links.get(id) !== link || Buffer.byteLength(raw.toString()) > 262_144) throw new Error('Retired connection'); this.#message(link, JSON.parse(raw.toString())); }
       catch { this.#retire(link); }
-    }); ws.once('close', () => this.#retire(link)); return link;
+    }); ws.once('close', code => this.#retire(link, code === 1006 && !this.#closed)); return link;
   }
-  #retire(link: Link) {
+  #retire(link: Link, preserveStreams = false) {
     if (this.links.get(link.id) === link) { this.links.delete(link.id); this.routing.remove(link.id); this.#announce(); this.options.onRoutes?.(); }
-    for (const stream of link.streams) stream.destroy(); link.streams.clear(); link.ws.terminate();
+    if (preserveStreams && link.streams.size) this.#detachedLinks.add(link);
+    else { this.#detachedLinks.delete(link); for (const stream of link.streams) stream.destroy(); link.streams.clear(); }
+    link.ws.terminate();
     for (const [ws, owner] of this.#connecting) if (owner === link) { this.#connecting.delete(ws); ws.terminate(); }
     for (const [id, p] of this.#pending) if (p.link === link) { this.#pending.delete(id); p.reject(new Error('Hub disconnected')); }
     for (const [id, p] of this.#dials) if (p.link === link) { this.#dials.delete(id); p.reject(new Error('Hub disconnected')); }
@@ -270,10 +341,11 @@ export class HubNetwork implements IdentityProvider {
   }
   #stream(ws: WebSocket, link: Link): Duplex {
     if (link.streams.size >= MAX_STREAMS || this.#streams.size >= 1024) { ws.terminate(); throw new Error('Stream capacity'); }
+    // Same idle bound as Relay data streams: no fixed lifetime for a live chat route.
+    const idle = relayIdleDeadline(ws, () => stream.destroy());
     const stream = relayDuplex(ws); link.streams.add(stream); this.#streams.add(stream);
     stream.on('error', () => {});
-    const timer = setTimeout(() => stream.destroy(), 3600_000); timer.unref();
-    stream.once('close', () => { clearTimeout(timer); link.streams.delete(stream); this.#streams.delete(stream); ws.terminate(); }); return stream;
+    stream.once('close', () => { idle(); link.streams.delete(stream); if (!link.streams.size) this.#detachedLinks.delete(link); this.#streams.delete(stream); ws.terminate(); }); return stream;
   }
   #reserve(link: Link, id: string, accept: (stream: Duplex) => void, reject: (error: Error) => void) {
     if (this.#pending.has(id) || this.#pending.size >= 1024 || link.streams.size >= MAX_STREAMS) throw new Error('Stream capacity');
@@ -288,7 +360,7 @@ export class HubNetwork implements IdentityProvider {
       next = await this.open(target, [...path, this.store.id]);
       if (this.links.get(link.id) !== link || stream.destroyed) { next.destroy(); stream.destroy(); return; }
       next.on('error', () => stream.destroy()); stream.on('error', () => next?.destroy());
-      next.once('close', () => stream.destroy()); stream.once('close', () => next?.destroy()); stream.pipe(next); next.pipe(stream);
+      bridgeRelayDuplex(stream, next);
     } catch { next?.destroy(); stream.destroy(); }
   }
   async open(target: string, path = [this.store.id], signal?: AbortSignal): Promise<Duplex> {
@@ -347,10 +419,11 @@ export class HubNetwork implements IdentityProvider {
   }
   close() {
     if (this.#closed) return; this.#closed = true; clearInterval(this.#heartbeat);
+    for(const abort of this.#enrollments)abort.abort();this.#enrollments.clear();
     for (const client of this.#clients.values()) { client.stopped = true; clearTimeout(client.timer); client.ws?.terminate(); } this.#clients.clear();
     for (const ws of this.#handshakes) ws.terminate(); this.#handshakes.clear();
     for (const ws of this.#connecting.keys()) ws.terminate(); this.#connecting.clear();
-    for (const link of this.links.values()) this.#retire(link); for (const stream of this.#streams) stream.destroy();
+    for (const link of [...this.links.values(), ...this.#detachedLinks]) this.#retire(link); for (const stream of this.#streams) stream.destroy();
     this.#controls.close(); this.#data.close(); this.#local.close(); this.store.close();
   }
 }

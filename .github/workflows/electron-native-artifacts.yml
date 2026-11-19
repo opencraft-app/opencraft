@@ -126,6 +126,19 @@ jobs:
           shutil.copy2(Path(os.environ['BUILD_ROOT']) / 'src/out/OpenCraft/dist.zip', out / 'dist.zip')
           shutil.copy2(Path(os.environ['DISTRIBUTION']) / 'opencraft-electron-desktop-artifact.json', out)
           PY
+      - name: Probe the Linux server browser distribution
+        if: matrix.id == 'linux-x64'
+        run: |
+          python3 - <<'PY'
+          import os, runpy
+          from pathlib import Path
+          extract = runpy.run_path('vendor/electron/prepare-desktop-artifact.py')['extract_archive']
+          extract(Path(os.environ['BUILD_ROOT']) / 'src/out/OpenCraft/dist.zip', Path(os.environ['DISTRIBUTION'] + '-browser'))
+          PY
+          python3 vendor/electron/prepare-artifact.py \
+            --distribution "$DISTRIBUTION-browser" --source-root "$BUILD_ROOT" \
+            --evidence "$EVIDENCE/browser"
+          cp "$DISTRIBUTION-browser/opencraft-electron-artifact.json" "$EVIDENCE/"
       - name: Build and package OpenCraft with the verified fork
         run: |
           npm run prepare:dsh-runtime

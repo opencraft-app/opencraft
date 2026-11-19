@@ -224,6 +224,8 @@
   width: auto;
   padding-inline: var(--padding-floating-navigation-inline);
   &[data-content-layout="icon"] {
+    justify-content: center;
+    > .ui-button__label > svg { width: var(--size-chrome-icon); height: var(--size-chrome-icon); }
     min-width: var(--size-material-liquid-control);
     width: var(--size-material-liquid-control);
     height: var(--size-material-liquid-control);
@@ -237,14 +239,24 @@
     background: color-mix(in srgb, var(--color-text-danger) 8%, transparent);
   }
 }
-.ui-button:active:not(:disabled) { background: var(--color-background-navigation-pressed); }
-.ui-button[data-variant="ghost"]:active:not(:disabled) {
+.ui-button:active:not(:disabled):not([data-touch-press="false"]) { background: var(--color-background-navigation-pressed); }
+.ui-button[data-variant="ghost"]:active:not(:disabled):not([data-touch-press="false"]) {
   background: var(--color-background-navigation-pressed);
   color: var(--color-text);
 }
-.ui-button[data-variant="primary"]:active:not(:disabled),
-.ui-button[data-variant="hero"]:active:not(:disabled) {
+.ui-button[data-variant="primary"]:active:not(:disabled):not([data-touch-press="false"]),
+.ui-button[data-variant="hero"]:active:not(:disabled):not([data-touch-press="false"]) {
   background: var(--color-background-button-primary-active);
+}
+
+// Floating placement owns geometry/material; primary intent retains its contrast.
+.ui-button[data-control-surface="floating"][data-variant="primary"] {
+  > .ui-liquid-glass { display: none; }
+  background: var(--color-background-button-primary, var(--color-text));
+  color: var(--color-text-button-primary, var(--color-background-surface));
+  @include controls.hover-capable {
+    &:hover:not(:disabled):not(:active) { background: var(--color-background-button-primary-hover); }
+  }
 }
 
 // Object headings keep document typography, a neutral surface and the shared input target.
@@ -278,3 +290,42 @@
 }
 
 .ui-button.ui-object-title-button[data-object-prominence="reading"] { @include typography.role(panel-title); }
+
+.ui-button.ui-object-title-button[data-object-prominence="preview"] { @include typography.role(preview-title); white-space: nowrap; overflow-wrap: normal; }
+
+// Object streams are one action per row. Hover stays quiet; native focus and
+// pressed feedback belong to the complete row rather than a separate title.
+.ui-button.ui-object-row-button {
+  @include typography.role(body, primary);
+  width: 100%;
+  min-width: 0;
+  min-height: var(--size-control-hit-min);
+  padding: 0;
+  justify-content: flex-start;
+  text-align: start;
+  white-space: normal;
+  background: transparent;
+  @include controls.hover-capable {
+    &:hover:not(:disabled):not(:active) { background: transparent; color: var(--color-text); }
+  }
+}
+
+// Sentence actions share the surrounding type and retain an adaptive hit target.
+.ui-button.ui-inline-action {
+  display: inline;
+  min-width: 0;
+  min-height: var(--size-control-hit-min);
+  padding: 0;
+  border-radius: var(--radius-xs);
+  font: inherit;
+  letter-spacing: inherit;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: baseline;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+// Touch collection feedback has its own intent delay. A cancelled pan must not
+// leave a fading rectangle following the finger; mouse transitions stay intact.
+:root[data-touch-interaction] .ui-button.ui-object-row-button[data-touch-press] { transition: none; }

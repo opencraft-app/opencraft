@@ -1,4 +1,5 @@
 import test from "node:test";
+import { request as httpRequest } from "node:http";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { SessionCapabilities } from "../../packages/session-capabilities/src/index.js";
@@ -6,6 +7,22 @@ import { SessionCapabilityMcp } from "../../packages/session-capabilities/src/mc
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 const tool = {name:"reply",description:"Reply",inputSchema:{type:"object",properties:{text:{type:"string"}},required:["text"]}};
+test('independent MCP clients sharing an execution never reuse an invocation identity', async () => {
+ const service=new SessionCapabilities(),seen:any[]=[];
+ service.register({id:'identity',tools:()=>[tool],async call(session){seen.push(session.execution);return 'ok';}});
+ const mcp=new SessionCapabilityMcp(service,randomBytes(32)),clients:Client[]=[];await mcp.listen();
+ const session={serverId:'server',threadId:'thread',execution:{inputId:'input',turnId:'turn',callId:'native-call'}},config=mcp.config(session) as any;
+ try {
+  for(let i=0;i<2;i++){
+   const client=new Client({name:'independent',version:'1'});clients.push(client);
+   await client.connect(new StreamableHTTPClientTransport(new URL(config.url),{requestInit:{headers:config.http_headers}}));
+   await client.callTool({name:'reply',arguments:{text:'call-'+i}});
+  }
+  assert.notEqual(seen[0].callId,seen[1].callId);
+  for(const execution of seen){const [parent,id]=JSON.parse(execution.callId);assert.equal(parent,'native-call');assert.match(id,/^[0-9a-f-]{36}$/);assert.equal(execution.inputId,'input');assert.equal(execution.turnId,'turn');}
+  assert.equal(session.execution.callId,'native-call');
+ }finally{await Promise.all(clients.map(client=>client.close()));await mcp.close();}
+});
 test("native and MCP share session policy; calls recheck revocation",async t=>{
  const service=new SessionCapabilities();let enabled=true,calls=0;
  service.register({id:"fixture",tools:s=>enabled&&s.serverId==="server"&&s.threadId==="one"?[tool]:[],async call(s,_n,args){assert.equal(s.threadId,"one");calls++;return args;}});
@@ -83,7 +100,10 @@ test("creation MCP waits for one execution binding and never authorizes a staged
   assert.deepEqual((await listing).tools.map(tool => tool.name), ["reply"]);
   assert.throws(() => reservation.bind({ ...session, execution: { inputId: "second", executionId: "execution-second" } }), /already bound/);
   assert.equal((await client.callTool({ name: "reply", arguments: {} })).isError, false);
-  assert.deepEqual(seen, [session.execution]);
+  assert.equal((await client.callTool({ name: "reply", arguments: {} })).isError, false);
+  assert.deepEqual(seen.map(value => { const { callId, ...execution } = value as any; assert.equal(typeof callId, 'string'); return execution; }), [session.execution, session.execution]);
+  assert.notEqual((seen[0] as any).callId, (seen[1] as any).callId);
+  assert.equal(Object.hasOwn(session.execution, 'callId'), false);
   reservation.cancel();
   await assert.rejects(client.listTools());
 });
@@ -162,4 +182,99 @@ test('bridge memory reservations never touch persistent bindings, including call
   reservation.bind({...scope,execution:{inputId:'replacement-before-start',executionId:'replacement-before-start'}});
   assert.equal((await client.callTool({name:'reply',arguments:{}})).isError,false);assert.equal(calls,2);
   reservation.cancel();await assert.rejects(client.listTools());assert.equal(calls,2);
+});
+
+test('retiring an execution credential aborts only its pending providers and retains physical reply custody', async t => {
+  const service = new SessionCapabilities(); let release!: () => void, started!: () => void, signal!: AbortSignal;
+  const gate = new Promise<void>(resolve => { release = resolve; }), entered = new Promise<void>(resolve => { started = resolve; });
+  service.register({ id: 'retirement', tools: () => [tool], async call(_session, _name, args, current) {
+    if (args.text === 'other') return 'other remains live';
+    signal = current; started(); await gate; current.throwIfAborted(); return 'late';
+  } });
+  const mcp = new SessionCapabilityMcp(service, randomBytes(32)); await mcp.listen();
+  const reservation = mcp.prepareExecution({ memoryOnly: true });
+  reservation.bind({ serverId: 'server', threadId: 'cancelled', execution: { inputId: 'input', executionId: 'execution' } });
+  const first = new Client({ name: 'cancelled-owner', version: '1' }), second = new Client({ name: 'other-owner', version: '1' });
+  t.after(async () => { release(); await first.close(); await second.close(); await mcp.close(); });
+  const config = reservation.configuration as any, other = mcp.config({ serverId: 'server', threadId: 'other' }) as any;
+  await first.connect(new StreamableHTTPClientTransport(new URL(config.url), { requestInit: { headers: config.http_headers } }));
+  await second.connect(new StreamableHTTPClientTransport(new URL(other.url), { requestInit: { headers: other.http_headers } }));
+  let completed = false;
+  const calling = first.callTool({ name: 'reply', arguments: { text: 'wait' } });
+  const rejected = assert.rejects(calling, /cancelled/).then(() => { completed = true; });
+  void rejected.catch(() => {});
+  await entered; reservation.cancel();
+  for (let index = 0; !signal.aborted && index < 100; index++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(signal.aborted, true);
+  await new Promise(resolve => setTimeout(resolve, 30)); assert.equal(completed, false);
+  assert.equal((await second.callTool({ name: 'reply', arguments: { text: 'other' } })).isError, false);
+  release(); await rejected;
+});
+
+for (const initialized of [false, true]) test(`retired execution cannot dispatch a slow HTTP body (${initialized ? 'initialized' : 'stateless'})`, async t => {
+  const service = new SessionCapabilities(); let calls = 0;
+  service.register({ id: 'slow-retirement', tools: () => [tool], async call() { calls++; return 'unexpected'; } });
+  const mcp = new SessionCapabilityMcp(service, randomBytes(32)); await mcp.listen();
+  const reservation = mcp.prepareExecution({ memoryOnly: true });
+  reservation.bind({ serverId: 'server', threadId: 'thread', execution: { inputId: 'input', executionId: 'execution' } });
+  const config = reservation.configuration as any, client = new Client({ name: 'slow-body', version: '1' });
+  const transport = new StreamableHTTPClientTransport(new URL(config.url), { requestInit: { headers: config.http_headers } });
+  t.after(async () => { await client.close(); await mcp.close(); });
+  if (initialized) await client.connect(transport);
+  const body = JSON.stringify({ jsonrpc: '2.0', id: 'slow', method: 'tools/call', params: { name: 'reply', arguments: { text: 'old input' } } });
+  const entered = new Promise<void>(resolve => (mcp as any).server.once('request', () => resolve()));
+  let finish!: () => void;
+  const result = new Promise<number>((resolve, reject) => {
+    const req = httpRequest(config.url, { method: 'POST', headers: { ...config.http_headers,
+      ...(transport.sessionId ? { 'mcp-session-id': transport.sessionId } : {}), 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } }, res => {
+      res.resume(); res.once('end', () => resolve(res.statusCode!));
+    });
+    req.once('error', reject); t.after(() => req.destroy()); req.write(body.slice(0, -1)); finish = () => req.end(body.slice(-1));
+  });
+  await entered; reservation.cancel(); finish();
+  assert.equal(await result, 401); assert.equal(calls, 0);
+});
+
+test('retiring a credential cancels an admitted stateless provider without releasing its physical reply early', async t => {
+  const service = new SessionCapabilities(); let release!: () => void, entered!: () => void, signal!: AbortSignal;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  service.register({ id: 'stateless-retirement', tools: () => [tool], async call(_session, _name, _args, current) {
+    signal = current; entered(); await gate; current.throwIfAborted(); return 'late';
+  } });
+  const mcp = new SessionCapabilityMcp(service, randomBytes(32)); await mcp.listen();
+  const reservation = mcp.prepareExecution({ memoryOnly: true });
+  reservation.bind({ serverId: 'server', threadId: 'stateless', execution: { inputId: 'input', executionId: 'execution' } });
+  t.after(async () => { release(); await mcp.close(); });
+  const config = reservation.configuration as any;
+  let completed = false;
+  const calling = fetch(config.url, { method: 'POST', headers: { ...config.http_headers,
+    'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 'stateless', method: 'tools/call', params: { name: 'reply', arguments: {} } })
+  }).then(async response => { const body = await response.json() as any; completed = true; return body; });
+  await started; reservation.cancel();
+  assert.equal(signal.aborted, true);
+  await new Promise(resolve => setTimeout(resolve, 30)); assert.equal(completed, false);
+  release(); const reply = await calling;
+  assert.equal(reply.result.isError, true);
+  assert.equal(reply.id, 'stateless');
+  assert.equal((mcp as any).credentialInvocations.size, 0);
+});
+
+
+test('MCP failures correlate their safe phase without logging arguments or exception text', async t => {
+ const service=new SessionCapabilities();service.register({id:'diagnostic',tools:()=>[tool],async call(){throw Error('private-url-and-credential')}});
+ const mcp=new SessionCapabilityMcp(service,randomBytes(32));await mcp.listen();
+ const config=mcp.config({serverId:'private-server',threadId:'private-thread'}) as any;
+ const client=new Client({name:'diagnostic',version:'1'});const records:string[]=[];
+ t.mock.method(console,'warn',(...args:any[])=>{records.push(args.join(' '))});
+ try {
+  await client.connect(new StreamableHTTPClientTransport(new URL(config.url),{requestInit:{headers:config.http_headers}}));
+  const result=await client.callTool({name:'reply',arguments:{text:'private-input'}});
+  assert.equal(result.isError,true);const log=JSON.parse(records.find(row=>row.startsWith('[session-capability]'))!.slice('[session-capability] '.length));
+  assert.equal(log.stage,'dispatch');assert.match(log.diagnosticId,/^[a-f0-9-]{36}$/);
+  assert(JSON.stringify(result).includes(log.diagnosticId));
+  for(const privateValue of ['private-url-and-credential','private-input','private-server','private-thread'])assert(!records.join('').includes(privateValue));
+  for(let i=0;i<110;i++)(mcp as any).diagnoseFailure('dispatch');assert.equal(records.length,100);
+ }finally{await client.close();await mcp.close()}
 });

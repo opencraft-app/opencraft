@@ -1,6 +1,7 @@
+import { noteRuntimeFailure } from "./runtime/stale-assets";
 import { pageUrlWithoutSearchAndHash } from "./internal-developer-mode";
 import { recordRuntimeDiagnosticError } from "./runtime-diagnostics";
-import { serverFetch } from "./runtime/server-context";
+import { isLocalDiagnosticsEnabled } from "./runtime/local-diagnostics";
 import { BrowserStorageError, type BrowserStorageDiagnostics } from "./runtime/browser-storage-error";
 
 export interface RuntimeErrorReport {
@@ -74,6 +75,8 @@ export function reportRuntimeError(
   componentStack?: string,
   resourceUrl?: string,
 ): void {
+  noteRuntimeFailure(error);
+  if (!isLocalDiagnosticsEnabled()) return;
   const description = describeUnknown(error);
   if (isResizeObserverDeliveryWarning(description.message)) return;
   const userAgent = currentUserAgent();
@@ -93,12 +96,7 @@ export function reportRuntimeError(
 
   recordRuntimeDiagnosticError(report);
 
-  void serverFetch("/__opencraft_runtime_error", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(report),
-    keepalive: true,
-  }).catch(() => undefined);
+
 }
 
 export function bindSidebarLayoutPersistReporting(store: {

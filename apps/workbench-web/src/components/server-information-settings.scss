@@ -1,0 +1,6 @@
+.server-information-form {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--gap-token-settings-sections);
+}

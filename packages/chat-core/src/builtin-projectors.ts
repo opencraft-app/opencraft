@@ -1,3 +1,4 @@
+import { parseInputDeliveryReceipt } from "@opencraft/appserver-protocol";
 import { userInputQuestionExtensions } from "./request-user-input";
 import { appEnvelope, MCP_APPS_NAMESPACE } from "@opencraft/appserver-protocol/mcp-apps";
 import { asItemId } from "./identity";
@@ -343,6 +344,7 @@ function userMessageMetadata(
     ...(record(source.sender).kind === "employee" && typeof record(source.sender).loginName === "string"
       ? { sender: { kind: "employee" as const, loginName: record(source.sender).loginName as string } } : {}),
     sentAtMs: explicitSentAtMs ?? (leadingUserMessage ? context.turn.startedAtMs ?? null : null),
+    ...(parseInputDeliveryReceipt(source.inputDelivery) ? { inputDelivery: parseInputDeliveryReceipt(source.inputDelivery)! } : {}),
     deliveryStatus: userMessageDeliveryStatus(source.deliveryStatus) ?? (hookBlocked ? "not-sent" as const : null),
     referencesPriorConversation: boolean(source.referencesPriorConversation) ?? semantics.referencesPriorConversation,
     reviewMode: boolean(source.reviewMode) ?? semantics.reviewMode,
@@ -352,7 +354,7 @@ function userMessageMetadata(
     hookFeedback: boolean(source.hookFeedback) ?? false,
     commentCount: Math.max(0, Math.trunc(
       number(source.commentCount)
-        ?? Math.max(comments, attachments.filter((attachment) => attachment.type === "comment").length),
+        ?? Math.max(comments, semantics.commentCount, attachments.filter((attachment) => attachment.type === "comment").length),
     )),
     hasExternalAttachments: content.some((part) => part.type !== "text")
       || attachments.length > 0,
@@ -396,6 +398,12 @@ function executionStatus(value: unknown): TimelineExecutionStatus {
   }
 }
 
+function generatedImageDimensions(source: Readonly<Record<string, unknown>>): { dimensions?: { width: number; height: number } } {
+  const value = record(source.imageDimensions), width = value.width, height = value.height;
+  return typeof width === "number" && Number.isSafeInteger(width) && width > 0 && width <= 32768
+    && typeof height === "number" && Number.isSafeInteger(height) && height > 0 && height <= 32768
+    && width * height <= 64 * 1024 * 1024 ? { dimensions: { width, height } } : {};
+}
 function generatedImageUri(source: Readonly<Record<string, unknown>>): string | null {
   const explicit = string(source.src) ?? string(source.uri) ?? string(source.url);
   if (explicit !== null && explicit.length > 0) return explicit;
@@ -605,14 +613,36 @@ function automaticApprovalReviews(
   });
 }
 
-function fileChanges(value: unknown): readonly FileChange[] {
+/** Match split("\n") line-prefix semantics without allocating line/filter arrays. */
+function diffLineCounts(diff: string): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  let start = 0;
+  while (start < diff.length) {
+    const prefix = diff[start];
+    if ((prefix === "+" || prefix === "-")
+      && !(diff[start + 1] === prefix && diff[start + 2] === prefix)) {
+      if (prefix === "+") additions += 1;
+      else deletions += 1;
+    }
+    const newline = diff.indexOf("\n", start);
+    if (newline < 0) break;
+    start = newline + 1;
+  }
+  return { additions, deletions };
+}
+
+function fileChanges(value: unknown, cache: WeakMap<object, readonly FileChange[]>): readonly FileChange[] {
   if (!Array.isArray(value)) return [];
-  return value.map((entry): FileChange => {
+  const cached = cache.get(value);
+  if (cached !== undefined) return cached;
+  const changes = value.map((entry): FileChange => {
     const source = record(entry);
     const rawKind = string(source.kind) ?? string(source.type) ?? string(source.status);
     const diff = string(source.diff) ?? string(source.unifiedDiff) ?? string(source.unified_diff);
-    const additions = diff === null ? number(source.additions) : diff.split("\n").filter((line) => line.startsWith("+") && !line.startsWith("+++")).length;
-    const deletions = diff === null ? number(source.deletions) : diff.split("\n").filter((line) => line.startsWith("-") && !line.startsWith("---")).length;
+    const counts = diff === null ? null : diffLineCounts(diff);
+    const additions = counts?.additions ?? number(source.additions);
+    const deletions = counts?.deletions ?? number(source.deletions);
     const kind = rawKind === "add" || rawKind === "added" ? "add"
       : rawKind === "modify" || rawKind === "modified" || rawKind === "update" || rawKind === "updated" ? "modify"
       : rawKind === "delete" || rawKind === "deleted" ? "delete"
@@ -626,6 +656,8 @@ function fileChanges(value: unknown): readonly FileChange[] {
       movePath: string(source.movePath) ?? string(source.move_path),
     };
   });
+  cache.set(value, changes);
+  return changes;
 }
 
 function todoEntries(value: unknown): readonly TodoEntry[] {
@@ -787,6 +819,9 @@ function orchestrationSubagent(item: TimelineSourceItem, source: RecordValue, co
 }
 
 export function createBuiltinTimelineProjectors(): readonly TimelineItemProjector[] {
+  // Timeline source payloads are immutable. Retain only pure file metadata,
+  // weakly and per registry; status, approvals and context must still be fresh.
+  const fileChangeCache = new WeakMap<object, readonly FileChange[]>();
   return [
     simpleProjector("user-message", ["userMessage"], (item, source, context) => {
       const rawContent = source.content ?? source.input ?? source.text ?? source.message;
@@ -924,7 +959,7 @@ export function createBuiltinTimelineProjectors(): readonly TimelineItemProjecto
       block: {
         ...blockBase(item, "patch"),
         title: string(source.title) ?? "Changed files",
-        changes: fileChanges(source.changes),
+        changes: fileChanges(source.changes, fileChangeCache),
         automaticApprovalReviews: automaticApprovalReviews(source.automaticApprovalReviews, context),
         status: executionStatus(source.status),
       },
@@ -1123,7 +1158,7 @@ export function createBuiltinTimelineProjectors(): readonly TimelineItemProjecto
         model: string(source.model),
         reasoningEffort: string(source.reasoningEffort),
         agentStates: source.agentsStates ?? null,
-        activityKind: source.kind === "started" || source.kind === "interacted" || source.kind === "interrupted" ? source.kind : null,
+        activityKind: source.kind === "started" || source.kind === "interacted" || source.kind === "interrupted" || source.kind === "completed" ? source.kind : null,
         agentPath: string(source.agentPath),
         status: item.type === "subAgentActivity"
           ? source.kind === "interrupted" ? "interrupted" : "complete"
@@ -1290,6 +1325,7 @@ export function createBuiltinTimelineProjectors(): readonly TimelineItemProjecto
       lane: "assistant",
       block: {
         ...blockBase(item, "image"),
+        ...generatedImageDimensions(source),
         uri: generatedImageUri(source),
         alt: string(source.alt) ?? string(source.title) ?? string(source.revisedPrompt),
         generated: true,

@@ -1,0 +1,16 @@
+// Native group and direct conversations share a reading axis and a compact, bottom-aligned input.
+:root {
+  --width-channel-chat-reading: 42rem;
+  --size-channel-chat-avatar: 32px;
+  --gap-channel-chat-message: calc(6 * var(--spacing));
+  --gap-channel-chat-avatar: calc(3 * var(--spacing));
+  --padding-channel-chat-inline: clamp(16px, 4cqi, 28px);
+  --padding-channel-chat-block: calc(5 * var(--spacing));
+  --radius-channel-chat-bubble: var(--radius-xl);
+  --color-channel-chat-bubble: color-mix(in srgb, var(--color-text-accent) 12%, var(--color-background-surface));
+  --color-channel-chat-card: color-mix(in srgb, var(--color-background-panel) 65%, var(--color-background-surface));
+  --height-message-composer: 52px;
+  --padding-message-composer: calc(2 * var(--spacing));
+  --size-message-composer-submit: 34px;
+  --height-message-composer-editor-max: 8lh;
+}

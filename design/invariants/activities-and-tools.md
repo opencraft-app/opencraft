@@ -1,5 +1,12 @@
 # Workbench invariants: Activities and tools
 
+Grouped activity rows use the same keyed content boundary below and above the
+windowing threshold. The boundary carries activity semantics for compact spacing;
+search anchors remain inside it. Crossing the threshold must preserve DOM identity,
+disclosure choices and row spacing. Commentary and other content retain prose gaps.
+Regression: `scripts/smoke/conversation/smoke-activity-spacing.ts` measures grouped
+rows and the 79 → 80 → 79 transition, including an expanded command.
+
 [Invariant index](../invariants.md) · [Design index](../README.md)
 
 ### Asynchronous operation feedback

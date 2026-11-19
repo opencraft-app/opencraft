@@ -86,10 +86,10 @@ export function projectWorkspaceTree(
   return rows;
 }
 
-export function workspaceTreeWindow(count: number, scrollTop: number, viewportHeight: number) {
-  const height = Math.max(WORKSPACE_TREE_ROW_HEIGHT, viewportHeight);
-  const top = Math.max(0, Math.min(scrollTop, count * WORKSPACE_TREE_ROW_HEIGHT - height));
-  const start = Math.max(0, Math.floor(top / WORKSPACE_TREE_ROW_HEIGHT) - 8);
-  const end = Math.min(count, Math.ceil((top + height) / WORKSPACE_TREE_ROW_HEIGHT) + 8);
-  return { start, end, height: count * WORKSPACE_TREE_ROW_HEIGHT };
+export function workspaceTreeWindow(count: number, scrollTop: number, viewportHeight: number, rowHeight = WORKSPACE_TREE_ROW_HEIGHT) {
+  const height = Math.max(rowHeight, viewportHeight);
+  const top = Math.max(0, Math.min(scrollTop, count * rowHeight - height));
+  const start = Math.max(0, Math.floor(top / rowHeight) - 8);
+  const end = Math.min(count, Math.ceil((top + height) / rowHeight) + 8);
+  return { start, end, height: count * rowHeight };
 }

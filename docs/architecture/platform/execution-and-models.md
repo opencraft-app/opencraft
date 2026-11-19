@@ -2,6 +2,16 @@
 
 [Architecture index](../../platform-architecture.md) · [Documentation index](../../README.md)
 
+### Human model admission and personal/team credentials
+
+The optional [human model gateway](../../model-gateway.md) adds explicit key
+contributions (personal by default, team sharing by explicit consent), bounded
+Human task authorization with actual executor identity, transactional token reservations and
+receipt-based settlement to the existing Codex/assistant proxies. Its budget
+ledger does not replace participant-allocation analytics or upstream account
+quota observations. Enablement, currently supported engines and accounting limits
+are documented separately; it is not an unconditional deployment-wide billing cap.
+
 ### Host-side provider account pooling
 
 In server Web deployments, the Server Connections extension
@@ -262,45 +272,6 @@ The transport packages are peers. Replay is not a wrapper around WebSocket and
 Memory is not a fake method surface: all three carry the same JSON-RPC text
 frames through the same `DuplexTransport` contract. `RecordingTransport` is the
 only decorator; it can wrap any physical transport and produces Replay input.
-
-### Bot management ownership
-
-Applications exposes a persistent Bots management View. It consumes the
-AppServer Bot directory and explicit Host connection command; selecting a
-management target does not change the active chat Host. Create/clone/rename/delete
-are gated by Host `botManagement` and per-Bot `management` operations. Dialogs
-own only user intent and draft text; Radix owns focus, Escape and delete confirmation.
-The same creation entry is used from the Bot sidebar and management page.
-
-Trusted `ClientProductSession.botManagement` declares optional provider eligibility
-and empty-state copy. Core defaults to all enabled profiles; an explicit empty
-allowlist selects none. Assembly snapshots and freezes the policy. The management
-view prefers a unique eligible Host with directory-reported Bot management;
-otherwise only a sole eligible profile may connect. Ambiguous candidates never
-select an arbitrary Host. Product eligibility grants no capability or authority:
-Host and per-Bot operations remain the mutation gates. Existing persisted View IDs
-remain compatible. Selection-scoped reads discard late group results and feedback;
-a pending request cannot block refresh for a new target. Operation drafts retain
-their captured Host rather than following selection changes.
-
-
-Hermes transports own one control-plane mutation port per account/instance,
-surviving replaceable bridge generations. The port maps blank creation and
-template-based cloning to the existing instance Bot API; it never constructs a
-native profile from the display name. Root profile deletion is prohibited.
-Creation receipts retain success or failure for a command ID; uncertain writes
-are not retried automatically. Semantic revisions increase within the Host port;
-fresh-read revision checks and serialized writes are not a desktop service cross-client CAS.
-Deleted Bot events invalidate open conversation snapshots and block later sends.
-Only current Host generations may publish mutation receipts into the directory.
-
-Downstream products own their Bot identity/lifecycle libraries and generated HTTP
-repositories. These are product dependencies, not public OpenCraft packages. The
-shared lifecycle contract stays independent of renderers, storage, authentication
-transport, i18n and analytics; OpenCraft consumes it through explicit AppServer/Host
-adapters. Downstream Web validates its product behavior before that adapter contract
-is adopted. A generated HTTP repository remains a compatibility consumer, never
-a second source of product policy.
 
 - Protocol, content models, session state, restore/replica logic, commands,
   deterministic tests, routing identifiers, and design tokens: 100% shared.
@@ -755,6 +726,11 @@ missing/archived classification, recovery retryability and rejected-input semant
 they do not authorize automatic replay.
 
 ### Recovering definitely unsent session inputs
+
+Native unsubscribe acknowledgement is not unload completion. Tool-only preparation
+reconciles native `notLoaded` for up to one second before returning a retryable
+refusal; environment handoff retains its existing 90-second budget. Neither path
+resumes the old runtime to poll it, and connection generation fences every read.
 
 Tool preparation marks only controlled transient reasons (busy Thread, retired or
 closed connection, preparation timeout and retirement pending) as retryable. The

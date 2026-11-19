@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChatNodeRendererProps, ChatResourcePolicyService } from "@opencraft/chat-render-react";
 import { visualizationDocument } from "./sandbox";
 import "./visualization.scss";
+import { ChatMediaLayoutBoundary } from "../../media-layout";
 
 const aliases: Record<string, string> = {
   background: "--color-background-surface", foreground: "--color-text",
@@ -23,6 +24,7 @@ export function Visualization({ node, context, resources }: ChatNodeRendererProp
     const frame = useRef<HTMLIFrameElement>(null);
     const [result, setResult] = useState<{ key: string; html?: string; error?: string } | null>(null);
     const [height, setHeight] = useState(260);
+    const [measuredKey, setMeasuredKey] = useState<string | null>(null);
     const [attempt, setAttempt] = useState(0);
     const [navigated, setNavigated] = useState(false);
     const loads = useRef(0);
@@ -71,14 +73,15 @@ export function Visualization({ node, context, resources }: ChatNodeRendererProp
           || event.data?.type !== "opencraft:visualization-size" || typeof event.data.height !== "number"
           || !Number.isFinite(event.data.height)) return;
         setHeight(Math.max(80, Math.min(1600, event.data.height)));
+        setMeasuredKey(key);
         current.current.requestMeasurement?.({ reason: "resource-resolve", geometryChanged: true });
       };
       window.addEventListener("message", receive);
       return () => window.removeEventListener("message", receive);
-    }, []);
+    }, [key]);
     const loaded = result?.key === key ? result : null;
     const title = node.kind === "directive" && node.attributes.title ? node.attributes.title : intl.formatMessage({ id: "chat.visualization.title", defaultMessage: "Visualization" });
-    return <section ref={root} className="chat-visualization" data-wide-block={context.allowWideBlocks && node.kind === "directive" && node.attributes.mode === "wide" ? "true" : undefined} aria-label={title}>
+    return <ChatMediaLayoutBoundary resourceKey={key} settled={measuredKey === key || unavailable || !!loaded?.error || navigated}><section ref={root} className="chat-visualization" data-wide-block={context.allowWideBlocks && node.kind === "directive" && node.attributes.mode === "wide" ? "true" : undefined} aria-label={title}>
       {unavailable || loaded?.error || navigated ? <div role="status">
         {navigated ? intl.formatMessage({ id: "chat.visualization.navigationBlocked", defaultMessage: "Visualization navigation is not allowed" }) : intl.formatMessage({ id: "chat.visualization.unavailable", defaultMessage: "Inline visualization unavailable" })}
         {!unavailable && <button type="button" onClick={() => setAttempt(value => value + 1)}>{intl.formatMessage({ id: "common.retry", defaultMessage: "Try again" })}</button>}
@@ -86,5 +89,5 @@ export function Visualization({ node, context, resources }: ChatNodeRendererProp
       </div> : loaded?.html ? <iframe ref={frame} title={title} srcDoc={loaded.html} sandbox="allow-scripts" referrerPolicy="no-referrer"
         allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'"
         style={{ height }} onLoad={() => { if (++loads.current > 1) setNavigated(true); else updateTheme(); }} /> : <div role="status">{intl.formatMessage({ id: "chat.visualization.loading", defaultMessage: "Loading visualization…" })}</div>}
-    </section>;
+    </section></ChatMediaLayoutBoundary>;
 }

@@ -90,7 +90,8 @@ def main():
     focus_result = json.loads(focus.stdout)
     focus_cases = focus_result.get('cases', [])
     if (focus_result.get('passed') is not True or focus_result.get('readOnlyFocusQueryProved') is not True
-            or focus_result.get('mouseDownPhaseProved') is not True or len(focus_cases) != 20
+            or focus_result.get('mouseDownPhaseProved') is not True
+            or focus_result.get('inputFocusSynchronizationProved') is not True or len(focus_cases) != 21
             or not all(case.get('passed') is True for case in focus_cases)):
         raise ValueError('Native IME focus identity probe did not pass')
     files = []

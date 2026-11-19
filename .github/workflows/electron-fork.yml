@@ -4,6 +4,11 @@ on:
   pull_request:
     paths:
       - vendor/electron/**
+      - scripts/remote-browser/focus.cjs
+      - scripts/electron-distribution.mjs
+      - scripts/remote-browser-artifact.mjs
+      - .github/actions/owned-electron/**
+      - docker/electron-builder.Dockerfile*
       - .github/workflows/electron-fork.yml
       - .github/workflows/electron-native-artifacts.yml
       - .gitattributes
@@ -11,6 +16,11 @@ on:
     branches: [main]
     paths:
       - vendor/electron/**
+      - scripts/remote-browser/focus.cjs
+      - scripts/electron-distribution.mjs
+      - scripts/remote-browser-artifact.mjs
+      - .github/actions/owned-electron/**
+      - docker/electron-builder.Dockerfile*
       - .github/workflows/electron-fork.yml
       - .github/workflows/electron-native-artifacts.yml
       - .gitattributes

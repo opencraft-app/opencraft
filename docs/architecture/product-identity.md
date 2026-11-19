@@ -31,6 +31,17 @@ The launch directory is not the product data root.
 | Project workspace | Explicit Project/Thread cwd | Project catalog / Thread | User-owned files |
 | Projectless workspace | `<product-home>/workspaces/<stable-id>` | Conversation creation transaction | Durable until explicitly removed |
 
+The three-service Linux container deployment uses explicit platform roots:
+`/opt/opencraft` for the immutable runtime, `/var/lib/opencraft` for private
+state, `/workspace` for user files and `/var/log/opencraft` for service logs.
+Projectless conversations use `/workspace/sessions/<engine>/<stable-id>` so the
+execution and conversation owners share the same cwd. Browser/executor state is
+under `/var/lib/opencraft/execution`; it is not a workspace. Hands can read the
+shared logs while only writing its own service log directory. Existing deployments
+pin their old path identities before upgrading; no runtime silently moves or
+rewrites persisted session paths. Configuration, permissions and the explicit
+adoption procedure are owned by [Docker deployment](../../docker/README.md).
+
 Installation IDs are owned by each build configuration:
 
 | Host/profile | Identifier | Authority |
@@ -151,12 +162,8 @@ specs advertise `opencraft_app.open_in_opencraft` and `opencraft_browser`.
 The handler accepts exact former tool pairs for already-issued calls, without
 advertising them or accepting mixed former/current namespace/function pairs.
 
-Bot capability declarations use `opencraft/bot-conversations`; clients read the
-exact former identifier only when the current declaration is absent. These owned
-Browser and Bot policies supersede the former blanket name-stability rule.
-The Bot payload version and domain schema remain unchanged. Generic
-`thread/*`, `turn/*`, and `bot/*` methods are
-unchanged. Native deep links now use `opencraft:`.
+The legacy Bot conversation protocol and built-in client have been removed.
+Group chat uses `opencraft/channels`. Native deep links use `opencraft:`.
 
 ## Conversation selection preferences
 

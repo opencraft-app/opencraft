@@ -35,6 +35,6 @@ export function NavigationIcon({ name, size, selected = false }: {
     fill: "none",
     strokeWidth: workbenchIconMetrics.coreNavigation.stroke,
   };
-  if (name === "settings") return <SettingsGearIcon size={props.size} data-navigation-glyph-variant={selected ? "selected" : "outline"} />;
+  if (name === "settings") return <SettingsGearIcon {...props} />;
   return createElement(icon, props);
 }

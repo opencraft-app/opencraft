@@ -12,13 +12,6 @@ import {
 
 import { resolveWorkbenchProductId } from "../../apps/workbench-web/src/workbench-product.ts";
 
-import { botConversationResourceUri, parseBotConversationViewResource } from "../../packages/bot-conversation/src/view-resource.ts";
-
-import { createConversationKey } from "@opencraft/chat-core";
-
-import { OPENCRAFT_BOT_CONVERSATIONS_EXTENSION } from "../../packages/appserver-protocol/src/bot-conversations.ts";
-
-
 const root = new URL("../../", import.meta.url);
 
 const read = (path: string) => readFileSync(new URL(path, root), "utf8");
@@ -37,7 +30,6 @@ test("all workspace packages use the OpenCraft scope", () => {
     }
   }
 });
-
 
 test("three public hosts agree on OpenCraft branding and identity", () => {
   const electron = json("apps/workbench-electron/package.json");
@@ -69,20 +61,10 @@ test("three public hosts agree on OpenCraft branding and identity", () => {
   assert.match(main, /resolveDesktopProduct\(executableName\)/u);
 });
 
-
 test("web product identity is normalized once for product-owned policies", () => {
   assert.equal(resolveWorkbenchProductId(undefined), "opencraft");
   assert.equal(
     resolveWorkbenchProductId({ VITE_OPENCRAFT_PRODUCT_ID: " example-web " }),
     "example-web",
   );
-});
-
-
-test("owned Bot resources preserve canonical conversation identity", () => {
-  const key = createConversationKey("opaque-host", "stored-conversation");
-  const uri = "opencraft-bot:conversation?hostId=opaque-host&conversationId=stored-conversation";
-  assert.equal(botConversationResourceUri(key), uri);
-  assert.deepEqual(parseBotConversationViewResource(uri), { kind: "conversation", key });
-  assert.equal(OPENCRAFT_BOT_CONVERSATIONS_EXTENSION, "opencraft/bot-conversations");
 });

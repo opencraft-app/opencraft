@@ -1,0 +1,29 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {ModelGatewaySettingsTransport} from '../../apps/local-agent-host/src/model-gateway-settings-transport';
+import {ModelGatewayStore} from '../../packages/account-pool-host/src/model-gateway-store';
+import {ModelConfigurationRepository} from '../../apps/local-agent-host/src/model-config/repository';
+
+test('gateway settings guard closes legacy mutation/probe routes and redacts model catalogs per current caller',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'gateway-settings-')),path=join(root,'gateway.sqlite'),directory=join(root,'models');
+ const store=new ModelGatewayStore(path);store.prepareContribution('private','alice','approved');store.contributionState('private','alice','shared');
+ await new ModelConfigurationRepository(directory).initialize({schemaVersion:1,revision:0,defaultModel:null,providers:[{id:'private',name:'Alice secret label',catalogId:'opencraft-human-contribution',baseUrl:'https://provider.invalid',protocol:'openai-responses',credentialRef:'ALICE_SECRET_REF',enabled:true,models:[{id:'m',enabled:true}]}]});
+ let listener:(frame:string)=>void=()=>{},current=true;const sent:any[]=[],replies:any[]=[];
+ const inner:any={status:{state:'open'},subscribeMessage:(fn:any)=>{listener=fn;return()=>{};},subscribeStatus:()=>()=>{},sendWithContext:async(frame:string)=>{sent.push(JSON.parse(frame));},close:async()=>{}};
+ const transport=new ModelGatewaySettingsTransport(inner,path,directory,c=>current?{actor:c.actorContext!.actorId,administrator:c.actorContext!.actorId==='admin'}:null);
+ transport.subscribeMessage(f=>replies.push(JSON.parse(f)));
+ t.after(async()=>{await transport.close();store.close();await rm(root,{recursive:true,force:true});});
+ let id=0;const send=async(actor:string,method:string,params:unknown={})=>{const n=++id;await transport.sendWithContext(JSON.stringify({id:n,method,params}),{sender:null,actorContext:{actorId:actor,generation:1,credentialId:null,expiresAt:Date.now()+60000}});return n;};
+ await send('bob','runtime/providers/apply',{target:{kind:'create',id:'forged'}});assert.equal(sent.length,0);assert.equal(replies.at(-1).error.code,-32003);
+ await send('admin','runtime/models/check',{provider:'private',model:'m'});assert.equal(sent.length,0);
+ await send('admin','runtime/credentials/unset',{ref:'ALICE_SECRET_REF'});assert.equal(sent.length,0);
+ await send('admin','runtime/providers/apply',{target:{kind:'update',id:'private'}});assert.equal(sent.length,0);
+ await send('admin','runtime/providers/apply',{target:{kind:'create',id:'platform'}});assert.equal(sent.length,1);
+ const list=await send('bob','model/list');listener(JSON.stringify({id:list,result:{data:[{id:'configured/private/m',displayName:'Alice secret label'},{id:'platform-model'}],nextCursor:null}}));
+ await new Promise(r=>setTimeout(r,50));assert.deepEqual(replies.at(-1).result.data,[{id:'platform-model'}]);
+ const own=await send('alice','model/list');listener(JSON.stringify({id:own,result:{data:[{id:'configured/private/m'}]}}));await new Promise(r=>setTimeout(r,50));assert.equal(replies.at(-1).result.data.length,1);
+ const pending=await send('alice','runtime/providers/list');current=false;listener(JSON.stringify({id:pending,result:{providers:[{provider:'private',displayName:'Alice secret label'}]}}));await new Promise(r=>setTimeout(r,50));assert.equal(replies.at(-1).error.code,-32003);
+});

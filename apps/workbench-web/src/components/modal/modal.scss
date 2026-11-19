@@ -1,10 +1,32 @@
 @use "../../styles/settings-panel";
-@use "@opencraft/design-system/interaction-mixins.web" as controls;
+@use "@opencraft/design-system/controls.web" as controls;
 @use "./announcement-dialog";
 @use "@opencraft/design-system/material.web" as material;
+@use "@opencraft/design-system/typography-mixins.web" as typography;
 
 .modal-surface.modal-confirmation { display: flex; flex-direction: column; overflow-y: auto; }
-.modal-confirmation__actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 24px 24px; }
+.modal-confirmation__body {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 24px;
+  overflow-wrap: anywhere;
+  @include typography.role(body);
+  > p { margin: 0; }
+}
+.modal-confirmation__actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 24px 24px;
+  > .ui-button { flex: 0 0 auto; max-width: 100%; white-space: normal; }
+}
+// Manual popovers provide paint order only. Radix retains focus and dismissal.
+.modal-surface.modal-confirmation[popover] { margin: 0; right: auto; bottom: auto; }
+.modal-surface__scrim[popover] { margin: 0; padding: 0; border: 0; width: auto; height: auto; }
+.modal-surface.modal-confirmation[popover]::backdrop,
+.modal-surface__scrim[popover]::backdrop { background: transparent; pointer-events: none; }
 // Utility panels presented inside modals align footer actions to the right,
 // matching modal-confirmation__actions (settings pages keep their own layout).
 .modal-surface .settings-panel__footer { justify-content: flex-end; }
@@ -66,7 +88,7 @@
   max-height: min(720px, calc(100dvh - 48px));
   border-radius: 12px;
   box-shadow: var(--elevation-dialog-utility);
-  .modal-surface__close { top: 12px; right: 16px; width: 28px; height: 28px; border-radius: 6px; }
+  .modal-surface__close { @include controls.density-target(28px, 28px); top: calc((52px - max(28px, var(--size-control-hit-min))) / 2); right: 16px; width: 28px; height: 28px; border-radius: 6px; }
 }
 
 .modal-surface[data-presentation="sheet"] {
@@ -122,6 +144,7 @@
 }
 
 .modal-surface__close {
+  @include controls.density-target(34px, 34px);
   position: absolute;
   z-index: 2;
   top: 17px;

@@ -18,7 +18,9 @@ export async function createHubController(file: string, localState: string) {
       if (req.method === 'GET') { send(res, 200, node.snapshot()); return true; }
       if (req.method !== 'POST' || !sameOriginJson(req)) { send(res, 403, { error: 'same_origin_json_required' }); return true; }
       try { const input = await readCommand(req); const current = operator(); if (!current) { send(res, 403, { error: 'administrator_required' }); return true; }
-        const result = node.command(input, current); send(res, 'conflict' in result ? 409 : 200, result); } catch { send(res, 400, { error: 'invalid_hub_change' }); } return true;
+        const result = input.action==='connect'&&typeof input.relay==='string'
+          ? await node.connectEndpoint(input.relay,{publishOrigin:typeof input.publishOrigin==='string'?input.publishOrigin:undefined,trustIdentity:input.trustIdentity===true,authorize:()=>operator()===current},current)
+          : node.command(input, current); send(res, 'conflict' in result ? 409 : 200, result); } catch { send(res, 400, { error: 'invalid_hub_change' }); } return true;
     }, close: () => node.close() };
   }
   const config = await readPrivateJson(file) as { schemaVersion: number; endpoint: string; credential: string };

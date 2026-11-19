@@ -368,8 +368,11 @@ export class DshAppServerAdapter {
   }): void { this.workspaceResolver = resolver; }
   private skillInvocationValidator?: (threadId: string, skills: readonly ExplicitSkillReference[]) => Promise<void>;
   setSkillInvocationValidator(validate: (threadId: string, skills: readonly ExplicitSkillReference[]) => Promise<void>): void { this.skillInvocationValidator = validate; }
-  private promptContent(threadId: string, input: unknown) {
-    return promptContent(input, this.skillInvocationValidator ? refs => this.skillInvocationValidator!(threadId, refs) : undefined);
+  private attachmentInput?: (threadId: string, input: RecordValue[]) => Promise<RecordValue[]>;
+  setAttachmentInputPreparer(prepare: (threadId: string, input: RecordValue[]) => Promise<RecordValue[]>) {this.attachmentInput=prepare;}
+  private async promptContent(threadId: string, input: unknown) {
+    const prepared=this.attachmentInput && Array.isArray(input)?await this.attachmentInput(threadId,input):input;
+    return promptContent(prepared, this.skillInvocationValidator ? refs => this.skillInvocationValidator!(threadId, refs) : undefined);
   }
   setModelInfoReader(reader: RuntimeModelInfoReader): void { this.providers.setModelInfoReader(reader); }
   private threadEngine: DshThreadEnginePort | null = null;

@@ -1,3 +1,4 @@
+import type { TransportSendProgressOptions } from "@opencraft/appserver-client/transport";
 import type {
   DuplexTransport,
   TransportStatus,
@@ -54,9 +55,9 @@ export class RecordingTransport implements DuplexTransport {
     await this.transport.connect(signal);
   }
 
-  async send(frame: string, signal?: AbortSignal): Promise<void> {
+  async send(frame: string, signal?: AbortSignal, progress?: TransportSendProgressOptions): Promise<void> {
     this.record("client-to-server", frame);
-    await this.transport.send(frame, signal);
+    await this.transport.send(frame, signal, progress);
   }
 
   captureMessageScope(): () => boolean {

@@ -1,0 +1,6 @@
+// Recovery changes authority, not readability. Status/actions own pending feedback;
+// never dim the entire retained reading surface while the Host reconnects.
+.conversation-history-status { display: flex; justify-content: center; align-items: center; }
+// Ordinary Chat owns loading paint in the Composer, never a central spinner.
+.conversation-history-status[data-pending] { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
+.conversation-history-status:empty:not([data-pending]) { display: none; }

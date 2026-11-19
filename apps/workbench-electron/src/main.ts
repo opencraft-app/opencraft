@@ -23,6 +23,7 @@ import { DesktopLifecycle } from "./desktop-lifecycle.js";
 import { createDesktopTray } from "./desktop-tray.js";
 import { createDesktopLocaleRuntime, requireDesktopLocale } from "./desktop-locale.js";
 import { installBrowserGuests } from "./browser-guests.js";
+import { installBrowserAutomationIpc } from './browser-automation-ipc.js';
 import { installRemoteBrowserMenu } from './remote-browser-menu.js';
 import { createFilePrivateStorage } from "./private-storage.js";
 import { BrowserPermissionPolicy } from "./browser-permissions.js";
@@ -338,6 +339,7 @@ ipcMain.handle("opencraft:browser-state-write", (event, key: unknown, value: unk
   JSON.parse(value);
   createFilePrivateStorage(join(app.getPath("userData"), "browser-metadata")).write("state", JSON.stringify({ ...readBrowserMetadata(), [key]: value }));
 });
+installBrowserAutomationIpc(ipcMain, { trusted: trustedLoginCaller, guests: () => browserGuests });
 ipcMain.handle("opencraft:browser-track-pointer", (event, guestId: unknown, trackingId: unknown, enabled: unknown) => {
   if (!trustedLoginCaller(event) || !Number.isSafeInteger(guestId) || typeof trackingId !== "string" || trackingId.length > 100 || typeof enabled !== "boolean") throw new Error("Invalid browser pointer tracking request");
   browserGuests?.trackPointer(guestId as number, trackingId, enabled);
@@ -581,7 +583,7 @@ async function ensureLoopbackHost(): Promise<string> {
     return rendererOrigin;
   } catch (error) {
     await loopbackHost?.close().catch(() => {}); loopbackHost = null;
-    localAccountHost.close(); localAccountHost = null; rendererOrigin = null;
+    await localAccountHost.close(); localAccountHost = null; rendererOrigin = null;
     throw error;
   }
 }
@@ -645,6 +647,11 @@ async function createMainWindow(): Promise<void> {
     },
   });
   const webContents = window.webContents;
+  // AppKit's delta is counter-clockwise in degrees; the shared preview owns
+  // direction conversion and applies it only to the viewport under the cursor.
+  window.on("rotate-gesture", (_event, degrees) => {
+    if (!webContents.isDestroyed() && Number.isFinite(degrees)) webContents.send("opencraft:trackpad-rotate", degrees);
+  });
   webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
     if (isMainFrame && !isInPlace) desktopProductSession?.cancelInteractions();
   });
@@ -741,7 +748,7 @@ const lifecycle = new DesktopLifecycle({
     loopbackHost = null;
     rendererOrigin = null;
     const results = await Promise.allSettled([daemon?.shutdown(), loopback?.close()]);
-    try { localAccountHost?.close(); } catch (error) { productErrors.push(error); }
+    try { await localAccountHost?.close(); } catch (error) { productErrors.push(error); }
     localAccountHost = null;
     const errors = results.filter(result => result.status === "rejected");
     if (errors.length || productErrors.length) throw new AggregateError([...productErrors, ...errors.map(result => result.reason)], "Desktop shutdown failed");

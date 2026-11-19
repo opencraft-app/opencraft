@@ -1,0 +1,18 @@
+// First-frame waits cannot cover the panel's actionable loading/error state.
+// Geometry, visibility and decoding continue while this surface is transparent.
+.web-browser-surface[data-browser-painted="false"] {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+.browser-panel__presentation-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--spacing) * 2);
+  background: var(--color-background-panel);
+  color: var(--color-text-secondary);
+  font: var(--typography-body-font);
+}
+

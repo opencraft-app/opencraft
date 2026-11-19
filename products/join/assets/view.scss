@@ -1,0 +1,83 @@
+// Shell owns the viewport; this document owns one inset reading/scrolling axis.
+.join-assets__sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-collection-sections);
+  min-inline-size: 0;
+}
+.join-assets__field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--gap-control-group);
+  min-inline-size: 0;
+  inline-size: 100%;
+}
+.join-assets__subtle {
+  margin: 0;
+  font: var(--typography-metadata-font);
+  letter-spacing: var(--typography-metadata-tracking);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+.join-assets__feedback {
+  color: var(--color-text-secondary);
+  font: var(--typography-metadata-font);
+}
+.join-assets__feedback:empty {
+  display: none;
+}
+.join-assets [hidden] {
+  display: none;
+}
+.join-assets .settings-control-list-item__copy {
+  overflow-wrap: anywhere;
+}
+.join-assets > * {
+  flex-shrink: 0;
+}
+.join-assets form {
+  display: flex;
+  flex-direction: column;
+  gap: calc(4 * var(--spacing));
+}
+
+.join-assets__collection {
+  display: flex;
+  flex-direction: column;
+  gap: calc(3 * var(--spacing));
+  min-inline-size: 0;
+}
+.join-assets__sections > .settings-control-section,
+.join-assets__sections > .join-asset-details {
+  min-inline-size: 0;
+}
+.join-assets .settings-control-list-item__icon > svg {
+  inline-size: var(--size-application-navigation-icon);
+  block-size: var(--size-application-navigation-icon);
+}
+
+.join-assets__editor {
+  gap: calc(2 * var(--spacing));
+}
+
+.join-assets__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(2 * var(--spacing));
+  padding: var(--padding-token-settings-panel);
+  text-align: center;
+  color: var(--color-text-secondary);
+  font: var(--typography-body-font);
+  letter-spacing: var(--typography-body-tracking);
+  p {
+    margin: 0;
+  }
+}
+.join-assets__provider-groups {
+  display: flex;
+  flex-direction: column;
+  gap: calc(5 * var(--spacing));
+  padding-block-start: calc(4 * var(--spacing));
+}

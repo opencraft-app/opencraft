@@ -203,6 +203,70 @@ export const longingThemePalette: Record<OpenCraftThemeMode, OpenCraftThemeDefin
   },
 };
 
+/** Porcelain: neutral whites with Longing's translucent glass and soft elevation. */
+export const porcelainThemePalette: Record<OpenCraftThemeMode, OpenCraftThemeDefinition> = {
+  light: {
+    ...longingThemePalette.light,
+    accent: "#006acb",
+    ink: "#303030",
+    surface: "#ffffff",
+    surfaces: { window: "#f7f7f7", panel: "#ffffff", input: "#f3f3f3", popover: "#ffffff" },
+    shellMaterial: {
+      ...longingThemePalette.light.shellMaterial!,
+      sidebarBackground: "rgb(247 247 247 / 82%)",
+      windowHighlight: "radial-gradient(ellipse at 8% 0%, rgb(255 255 255 / 60%), transparent 65%)",
+      windowMaterial: "#f7f7f7",
+    },
+  },
+  dark: {
+    ...longingThemePalette.dark,
+    accent: "#70b2f2",
+    ink: "#ededed",
+    surface: "#202020",
+    surfaces: { window: "#181818", panel: "#242424", input: "#2b2b2b", popover: "#292929" },
+    shellMaterial: {
+      ...longingThemePalette.dark.shellMaterial!,
+      sidebarBackground: "rgb(24 24 24 / 82%)",
+      windowHighlight: "radial-gradient(ellipse at 8% 0%, rgb(255 255 255 / 5%), transparent 65%)",
+      windowMaterial: "#181818",
+    },
+  },
+};
+
+/** See: sky fading into warm light, projected through the existing shell material. */
+export const seeThemePalette: Record<OpenCraftThemeMode, OpenCraftThemeDefinition> = {
+  light: {
+    ...longingThemePalette.light,
+    material: { finish: "frosted" },
+    accent: "#426c88", ink: "#263640", surface: "#f5f6f7", contrast: 46,
+    surfaces: { window: "#dce5ed", panel: "#f5f6f7", input: "#f5f2ec" },
+    shellMaterial: {
+      ...longingThemePalette.light.shellMaterial!,
+      sidebarBackground: "rgb(241 247 251 / 28%)",
+      sidebarFilter: "blur(28px) saturate(115%)",
+      recessedHeaderBackground: "transparent",
+      windowHighlight: "linear-gradient(180deg, #adcee9 0%, #d3e1ee 48%, #e8e8ee 72%, #f8dfc2 100%)",
+      windowMaterial: "#dce5ed",
+    },
+    semanticColors: { diffAdded: "#24764b", diffRemoved: "#bd4150", skill: "#7860a3", warning: "#90601e", error: "#b43545", success: "#24764b" },
+  },
+  dark: {
+    ...longingThemePalette.dark,
+    material: { finish: "frosted" },
+    accent: "#a3c9df", ink: "#edf1f3", surface: "#222a34", contrast: 57,
+    surfaces: { window: "#182330", panel: "#27313d", input: "#303239" },
+    shellMaterial: {
+      ...longingThemePalette.dark.shellMaterial!,
+      sidebarBackground: "rgb(34 45 59 / 28%)",
+      sidebarFilter: "blur(28px) saturate(115%)",
+      recessedHeaderBackground: "transparent",
+      windowHighlight: "linear-gradient(180deg, #18334b 0%, #232f43 48%, #34313e 72%, #49382f 100%)",
+      windowMaterial: "#182330",
+    },
+    semanticColors: { diffAdded: "#7bc69c", diffRemoved: "#f397a0", skill: "#c3addf", warning: "#e0bd82", error: "#f397a0", success: "#7bc69c" },
+  },
+};
+
 /**
  * A restrained lavender language projected through the shared
  * Workbench theme contract. The palette changes color and material only;
@@ -594,8 +658,8 @@ function darkSemanticColors(theme: ThemeVariant): SemanticThemeColors {
 // Resolve opaque pairs together so extension surfaces cannot erase the label.
 function badgeColors(mode: OpenCraftThemeMode, surface: string): ThemeCssProperties {
   const foregrounds = mode === "light"
-    ? { blue: "#175cd3", cyan: "#0e6e7c", red: "#b42318", indigo: "#493bc0", green: "#17603b", purple: "#7541b4", orange: "#984a08", neutral: "#515968" }
-    : { blue: "#84caff", cyan: "#67e3f9", red: "#fda29b", indigo: "#bdb4fe", green: "#75e0a7", purple: "#d6bbfb", orange: "#fec084", neutral: "#c9cdd4" };
+    ? { blue: "#175cd3", cyan: "#0e6e7c", red: "#b42318", indigo: "#493bc0", green: "#17603b", purple: "#7541b4", orange: "#984a08", yellow: "#806400", pink: "#a82a6a", neutral: "#515968" }
+    : { blue: "#84caff", cyan: "#67e3f9", red: "#fda29b", indigo: "#bdb4fe", green: "#75e0a7", purple: "#d6bbfb", orange: "#fec084", yellow: "#f2d45c", pink: "#f3a9d0", neutral: "#c9cdd4" };
   const properties: ThemeCssProperties = {};
   for (const [tone, value] of Object.entries(foregrounds)) {
     const original = hexToRgb(value);
@@ -643,16 +707,43 @@ export function buildOpenCraftThemeCssProperties(
   // Native macOS vibrancy is already the translucent paint plane. A second
   // Sidebar veil would compound opacity and split the otherwise shared titlebar.
   const nativeSidebar = !opaque && surfaces.sidebar === undefined;
+  const frosted = definition.material?.finish === "frosted";
+  const veil = mode === "light" ? "rgb(255 255 255 / 24%)" : "rgb(15 22 32 / 22%)";
+  const rim = mode === "light" ? "rgb(255 255 255 / 60%)" : "rgb(235 244 255 / 18%)";
+  const cardShadow = mode === "light"
+    ? "inset 0 1px 0 rgb(255 255 255 / 55%), 0 8px 24px -12px rgb(47 61 76 / 18%)"
+    : "inset 0 1px 0 rgb(255 255 255 / 10%), 0 8px 28px -10px rgb(0 0 0 / 32%)";
 
   return {
     ...badgeColors(mode, definition.surfaces?.panel ?? definition.surface),
+    // Theme intent projects to optical roles. Components never branch on theme IDs.
+    // The moving mobile page remains opaque; only its reading veil is translucent.
+    "--material-optics-canvas": frosted ? `${shell.windowHighlight}, ${shell.windowMaterial}` : "var(--color-surface)",
+    "--material-optics-main": frosted ? "transparent" : "var(--color-surface)",
+    "--material-optics-reading": frosted ? veil : "var(--color-surface)",
+    "--material-optics-card": frosted ? "var(--material-glass-panel)" : "var(--color-background-elevated-primary)",
+    "--material-optics-settings": frosted ? "var(--material-glass-panel)" : "var(--color-background-panel)",
+    "--material-optics-composer-touch": "var(--color-background-composer-filled)",
+    "--material-optics-card-filter": frosted ? "var(--material-glass-filter)" : "none",
+    "--material-optics-card-border": frosted ? rim : "color-mix(in srgb, var(--color-border-default) 64%, transparent)",
+    "--material-optics-card-shadow": frosted ? cardShadow : "0 10px 34px rgb(0 0 0 / 11%), 0 1px 3px rgb(0 0 0 / 7%)",
+    "--material-optics-composer": frosted ? "var(--color-background-composer-filled)" : "var(--color-background-elevated-primary-opaque)",
+    "--material-optics-composer-filter": frosted ? "blur(var(--blur-composer-surface)) saturate(var(--saturation-composer-surface))" : "none",
+    "--material-optics-contact": frosted
+      ? `linear-gradient(155deg, ${rim}, transparent 65%), var(--material-glass-panel)`
+      : "linear-gradient(155deg, color-mix(in srgb, var(--color-text) 5%, var(--color-background-surface)), color-mix(in srgb, var(--color-text) 10%, var(--color-background-surface)))",
+    "--material-optics-contact-pressed": `inset 0 2px 6px ${mode === "light" ? "rgb(35 51 65 / 20%)" : "rgb(0 0 0 / 45%)"}, inset 0 0 0 1px ${rim}`,
+
     // Floating surfaces are neutral by default. An explicit popover surface is
     // authoritative and remains opaque instead of being silently diluted.
-    "--material-glass-base": surfaces.popover ?? (mode === "light" ? "#ffffff" : "#181818"),
-    "--material-glass-floating": surfaces.popover ?? "color-mix(in srgb, var(--material-glass-base) 32%, transparent)",
-    "--material-glass-panel": surfaces.popover ?? `color-mix(in srgb, var(--material-glass-base) ${mode === "light" ? 64 : 62}%, transparent)`,
+    "--material-glass-base": surfaces.popover ?? (frosted ? (mode === "light" ? "#f8fafc" : "#263442") : (mode === "light" ? "#ffffff" : "#181818")),
+    "--material-glass-floating": surfaces.popover ?? `color-mix(in srgb, var(--material-glass-base) ${frosted ? 48 : 32}%, transparent)`,
+    "--material-glass-panel": surfaces.popover ?? `color-mix(in srgb, var(--material-glass-base) ${frosted ? (mode === "light" ? 40 : 58) : (mode === "light" ? 64 : 62)}%, transparent)`,
+    "--material-glass-tool-overview": surfaces.popover ?? (mode === "light"
+      ? "linear-gradient(145deg, rgb(255 255 255 / 36%), transparent 65%), var(--material-glass-panel)"
+      : "linear-gradient(145deg, rgb(255 255 255 / 8%), transparent 65%), color-mix(in srgb, var(--color-background-surface) 84%, var(--color-text) 16%)"),
     "--material-glass-menu": surfaces.popover ?? "color-mix(in srgb, var(--material-glass-base) 82%, transparent)",
-    "--material-glass-filter": "blur(32px) saturate(1.06)",
+    "--material-glass-filter": frosted ? "blur(24px) saturate(1.18)" : "blur(32px) saturate(1.06)",
     "--material-glass-shadow": mode === "light"
       ? "0 24px 80px rgb(0 0 0 / 15%), inset 0 1px rgb(255 255 255 / 40%)"
       : "0 28px 90px rgb(0 0 0 / 40%), inset 0 1px rgb(255 255 255 / 9%)",
@@ -669,6 +760,11 @@ export function buildOpenCraftThemeCssProperties(
     "--opencraft-panel-divider-top": definition.shellMaterial?.recessedHeaderBackground ? "var(--height-toolbar)" : "0px",
     "--opencraft-panel-divider-clip": definition.shellMaterial?.recessedHeaderBackground ? "inset(0 -100% -100% -100%)" : "none",
     "--opencraft-sidebar-heading-background": definition.shellMaterial?.sidebarHeadingBackground ?? "initial",
+    // Sticky labels must cover moving rows even on translucent Shells. Flatten
+    // the theme's Sidebar tint over its own Window material, not Chat's surface;
+    // opacity remains local to the label and does not flatten native vibrancy.
+    "--opencraft-sidebar-sticky-background": surfaces.sidebar
+      ?? `linear-gradient(${shell.sidebarBackground}, ${shell.sidebarBackground}), ${shell.windowMaterial}`,
     "--opencraft-content-corner-radius": definition.shellMaterial?.contentCornerRadius ?? "0px",
     "--opencraft-sidebar-context-background": definition.shellMaterial?.sidebarContextBackground ?? "var(--color-surface)",
     "--opencraft-native-sidecar-background": nativeSidebar ? "transparent" : shell.sidebarBackground,

@@ -9,13 +9,20 @@
     "./runtime": "./src/runtime.ts",
     "./command": "./src/command.ts",
     "./engine": "./src/engine.ts",
-    "./hands-unix": "./src/hands-unix.ts"
+    "./hands-unix": "./src/hands-unix.ts",
+    "./json-rpc-bridge": "./src/json-rpc-bridge.ts",
+    "./execution-runtime-bootstrap": "./src/execution-runtime-bootstrap.ts",
+    "./workspace-execution-channel": "./src/workspace-execution-channel.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@opencraft/sandbox": "0.1.0",
-    "node-pty": "1.1.0"
+    "node-pty": "1.1.0",
+    "ws": "^8.22.1"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.2"
   }
 }

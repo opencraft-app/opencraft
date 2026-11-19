@@ -1,3 +1,4 @@
+import { readModelPolicy } from "./model-policy-client";
 import type { ModelListResponse } from '@opencraft/appserver-protocol';
 import { useEffect, useRef, useState } from 'react';
 import { useIntl } from '@opencraft/i18n/react';
@@ -6,7 +7,7 @@ import type { HostProtocolRequest } from './local-agent-settings-service';
 type Rule={engine:string;model?:string;effort?:string};
 type Document={canManage:boolean;revision:number;rules:Rule[]};
 const path='/__opencraft_model_policy';
-export async function readModelPolicy(fetcher:typeof fetch=globalThis.fetch) {const response=await fetcher(path,{credentials:'same-origin',cache:'no-store'});if(!response.ok)throw Error('Unable to load model restrictions');return await response.json() as Document;}
+export { readModelPolicy } from "./model-policy-client";
 const engine=(id:string)=>id.startsWith('pi:')?'pi':id.startsWith('dsh-model:')?'dsh':id.startsWith('dsh-acp:')?'dsh-acp':id.startsWith('acp:')?'acp':'codex';
 async function modelCatalog(request:HostProtocolRequest,hostId:string) {
  const models:any[]=[];let cursor:string|null=null;const seen=new Set<string>();

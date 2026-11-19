@@ -1,0 +1,26 @@
+[
+  {
+    "question_id": "synthetic-memory-smoke",
+    "question_type": "single-session-user",
+    "question": "你好",
+    "answer": "EVALUATOR_ONLY_GOLD_SENTINEL",
+    "question_date": "2024/01/03 (Wed) 10:00",
+    "haystack_session_ids": ["s1", "s2"],
+    "haystack_dates": ["2024/01/01 (Mon) 10:00", "2024/01/02 (Tue) 10:00"],
+    "haystack_sessions": [
+      [
+        {
+          "role": "user",
+          "content": "顺便说一下，我喜欢简短回答",
+          "has_answer": true
+        },
+        { "role": "assistant", "content": "好的，我知道了。" }
+      ],
+      [
+        { "role": "user", "content": "你好" },
+        { "role": "assistant", "content": "你好，有什么需要我帮忙的？" }
+      ]
+    ],
+    "answer_session_ids": ["s1"]
+  }
+]

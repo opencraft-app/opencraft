@@ -1,3 +1,4 @@
+import { bindRemoteBrowserInput } from '../../apps/workbench-web/src/browser/remote-browser-input-runtime';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RemoteBrowserService } from '../../scripts/remote-browser-service.mjs';
@@ -35,7 +36,7 @@ function clientFixture(t:any) {
   const host:any=Object.create(RemoteBrowserSurfaceHost.prototype), errors:string[]=[], calls:any[]=[];
   host.root={};host.inputFailed=false;host.controlListeners=new Set();host.keyboardListeners=new Set();host.retireMenu=()=>{};
   const p:any={closed:false,visible:true,opened:true,control:{epoch:1,controller:true,kind:'human',token:'human'},controlGeneration:0,
-    gestureActive:false,resizing:false,resizeTimer:null,connection:1,sentViewport:'',viewport:{width:390,height:600,deviceProfile:'iphone'},
+    gestureActive:false,resizing:false,viewportMeasured:true,resizeTimer:null,connection:1,sentViewport:'',viewport:{width:390,height:600,deviceProfile:'iphone'},
     resetPointers(){},resetInput(){},events:{onError:(e:string)=>errors.push(e)}};
   host.call=async(_p:any,method:string,input:any)=>{calls.push({method,input});};
   return {host,p,errors,calls};
@@ -69,10 +70,10 @@ test('real input binding hides the viewer, retires late human grants, and foregr
   const doc=documentFixture(t), {host,p}=clientFixture(t), commands:any[]=[];
   const canvas:any=new EventTarget();canvas.hasPointerCapture=()=>false;
   const receiver:any=new EventTarget();Object.assign(receiver,{value:'',blur(){},setAttribute(){}});
-  Object.assign(p,{canvas,receiver,watching:true,container:{style:{pointerEvents:'auto'}},editor:null});
+  Object.assign(p,{canvas,receiver,watching:true,container:{dataset:{},style:{pointerEvents:'auto'}},editor:null});
   host.pages=new Map([['page',p]]);host.localMenu={retire(){}};host.run=(_p:any,method:string,input:any)=>commands.push({method,input});
   host.rawCall=async(_p:any,method:string,input:any)=>{commands.push({method,input});return {epoch:2,active:false,controller:false,kind:null};};
-  const dispose=host.bindInput(p);doc.hidden=true;doc.dispatchEvent(new Event('visibilitychange'));await tick();
+  const dispose=bindRemoteBrowserInput(host,p);doc.hidden=true;doc.dispatchEvent(new Event('visibilitychange'));await tick();
   assert.equal(host.acceptsInput(p),false);assert.equal(p.control.controller,false);
   assert(commands.some(c=>c.method==='visible'&&!c.input.visible));assert(commands.some(c=>c.method==='control'&&c.input.action==='release'));
   doc.hidden=false;doc.dispatchEvent(new Event('visibilitychange'));await tick();assert.equal(p.control.controller,false);
@@ -85,7 +86,7 @@ test('real input binding hides the viewer, retires late human grants, and foregr
 });
 test('background lifecycle preserves Agent control and pointer geometry waits for a complete frame',t=>{
   const doc=documentFixture(t), {host,p}=clientFixture(t);let released=0;
-  Object.assign(p,{watching:true,control:{epoch:1,controller:true,kind:'agent',token:'agent'},container:{style:{pointerEvents:'auto'}},
+  Object.assign(p,{hasPaint:false,paintWaiters:new Set(),watching:true,control:{epoch:1,controller:true,kind:'agent',token:'agent'},container:{dataset:{},style:{pointerEvents:'auto'}},
     receiver:{blur(){},value:'',setAttribute(){}},canvas:{width:1280,height:720,getContext:()=>({drawImage(){}})}});
   host.run=()=>{};host.rawCall=()=>{released++;return Promise.resolve();};host.syncVisibility(p);
   doc.hidden=true;host.syncVisibility(p);assert.equal(p.control.token,'agent');assert.equal(released,0);
@@ -93,4 +94,62 @@ test('background lifecycle preserves Agent control and pointer geometry waits fo
   p.awaitingFrame=true;assert.equal(host.acceptsPointer(p),false);p.width=390;p.height=600;
   host.paintFrame(p,{},1280,720);assert.equal(host.acceptsPointer(p),false);
   host.paintFrame(p,{},390,600);assert.equal(host.acceptsPointer(p),true);
+});
+
+
+test('presentation waits for a drawable frame; abort retires only its own waiter', async () => {
+  const host: any = Object.create(RemoteBrowserSurfaceHost.prototype);
+  const page: any = {hasPaint:false,paintWaiters:new Set(),ready:Promise.resolve(),closed:false,
+    container:{dataset:{}},canvas:{width:390,height:600,getContext:()=>({drawImage(){}})},width:390,height:600};
+  host.require=()=>page;
+  const port=host.presentationPort('page');
+  const first=new AbortController(),second=new AbortController();
+  let usable=false;
+  const cancelled=port.whenPainted(first.signal);
+  const live=port.whenPainted(second.signal).then(()=>{usable=true;});
+  await page.ready; await Promise.resolve();
+  assert.equal(usable,false,'connection readiness cannot stand in for a decoded frame');
+  assert.equal(page.paintWaiters.size,2);
+  first.abort();await cancelled;assert.equal(page.paintWaiters.size,1);
+  assert.equal(usable,false);
+  host.paintFrame(page,{},390,600);await live;
+  assert.equal(usable,true);assert.equal(page.paintWaiters.size,0);
+  assert.equal(page.container.dataset.browserPainted,"true");
+  await port.whenPainted(new AbortController().signal);
+  assert.equal(page.paintWaiters.size,0,'an existing painted backing needs no second wait');
+});
+
+
+test('idle AI presentation resizes without taking input control and deferral cannot poll', async t => {
+  const {host,p,calls}=clientFixture(t);
+  Object.assign(p,{layoutViewport:true,control:{epoch:1,active:false,controller:false,kind:null}});
+  host.acquireControl=()=>assert.fail('presentation cannot acquire input control');
+  host.call=async(_p:any,method:string,input:any)=>{calls.push({method,input});return {deferred:true};};
+  host.queueViewport(p);t.mock.timers.tick(100);await tick();
+  assert.equal(calls[0].method,'layoutViewport');assert.equal(p.viewportDeferred,true);
+  t.mock.timers.tick(10000);await tick();assert.equal(calls.length,1,'a nonleader waits for a real state change');
+  host.call=async(_p:any,method:string,input:any)=>{calls.push({method,input});return {deferred:false};};
+  host.setControl(p,{epoch:1,active:false,controller:false,kind:null});
+  t.mock.timers.tick(100);await tick();assert.equal(calls.length,2);assert.equal(p.sentViewport,JSON.stringify(p.viewport));
+});
+
+test('AI execution freezes layout and its release applies the measured panel height', async t => {
+  const {host,p,calls}=clientFixture(t);
+  Object.assign(p,{layoutViewport:true,control:{epoch:2,active:true,controller:false,kind:'agent'},viewport:{width:1280,height:1040,deviceProfile:'desktop'}});
+  host.queueViewport(p);t.mock.timers.tick(1000);await tick();assert.equal(calls.length,0);
+  host.setControl(p,{epoch:3,active:false,controller:false,kind:null});
+  t.mock.timers.tick(100);await tick();assert.equal(calls[0].method,'layoutViewport');assert.equal(calls[0].input.height,1040);
+});
+
+test('a control change during a queued resize cannot strand the idle viewport', async t => {
+  const {host,p,calls}=clientFixture(t);p.layoutViewport=true;
+  host.queueViewport(p);
+  p.control={epoch:2,active:false,controller:false,kind:null};
+  t.mock.timers.tick(100);await tick();t.mock.timers.tick(100);await tick();
+  assert.equal(calls.length,1);assert.equal(calls[0].method,'layoutViewport');
+});
+
+test('old gateways do not receive idle layout commands', async t => {
+  const {host,p,calls}=clientFixture(t);p.control={epoch:0,active:false,controller:false,kind:null};
+  host.queueViewport(p);t.mock.timers.tick(1000);await tick();assert.equal(calls.length,0);
 });

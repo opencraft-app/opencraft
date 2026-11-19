@@ -211,7 +211,7 @@ test("standalone Codex rejects unrelated processes and routing health", async ()
   await assert.rejects(observeStandaloneCodexExecution({pid:process.pid,codexPid:process.pid,routingEpoch:"routed"}));
 });
 
-test("split Core attests the independent runtime's direct native child", async () => {
+test("split Core attests the independent runtime's direct native child", { skip: process.platform !== "linux" ? "Requires Linux /proc process incarnation evidence" : false }, async () => {
   const child = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], { stdio: "ignore" });
   try {
     const native = await observeStandaloneCodexExecution({ pid: process.ppid, appServerPid: process.pid, codexPid: child.pid! });

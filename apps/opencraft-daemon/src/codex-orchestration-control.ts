@@ -13,9 +13,11 @@ export interface CodexOrchestrationControlPort {
   incarnation?():string|null;
   routed?():boolean;
   request(method:string,params:Record<string,unknown>,admit?:()=>boolean):Promise<unknown>;
+  materialize?(threadId:string):Promise<void>;
   read(threadId:string,limit:number):Promise<{thread:AppServerThread}>;
   recovery(threadId:string):Readonly<RecoveryTurn>|null;
-  pendingInput(threadId:string):'pending'|'unknown'|false;
+  /** 'paused': the queue head needs a human Resume (non-retryable); 'abandoned': every input was discarded and none delivered. */
+  pendingInput(threadId:string):'pending'|'unknown'|'paused'|'abandoned'|false;
 }
 /** Trusted Hub lane; independent of logical clients and their per-thread locks. */
 export class CodexOrchestrationControl {
@@ -30,20 +32,46 @@ export class CodexOrchestrationControl {
     if(method==='opencraft/orchestration/inspect')return {entries:await this.preview(threadId,Number(params.limit??1))};
     if(!this.port.supported()&&!this.port.routed?.())throw new OrchestrationControlError(503,'The independent Engine Host does not support callback replay');
     if(method==='opencraft/orchestration/prepare')return this.prepare(threadId,object(params.arguments),text(params.callbackIncarnation),params.sourceSettings===undefined?undefined:object(params.sourceSettings),params.sourceOnly===true);
+    if(method==='opencraft/orchestration/publish'){
+      const result=object(await this.port.request(method,{operationId,creationOperationId:operationId}));
+      if(result.published!==true)throw new OrchestrationControlError(503,'Thread ownership publication is unconfirmed');
+      return result;
+    }
+    if(method==='opencraft/orchestration/finalize'){
+      if(!threadId)throw new OrchestrationControlError(400,'Created Thread identity required');
+      await this.port.materialize?.(threadId);
+      if(!admit())throw new OrchestrationControlError(403,'Orchestration delegation was revoked');
+      const settings=object(params.settings);
+      await this.name(operationId,threadId,{...settings,orchestrationRoot:true},admit);
+      return {finalized:true};
+    }
+    if(method==='opencraft/orchestration/interrupt'){
+      const turnId=text(params.turnId);
+      if(!threadId || !turnId)throw new OrchestrationControlError(400,'Exact Thread and Turn identity required');
+      return this.port.request('turn/interrupt',{threadId,turnId},admit);
+    }
     if(method==='opencraft/orchestration/ack'){
       let acknowledged=true;for(const id of [operationId,operationId+':title']){const reply=object(await this.port.request(method,{operationId:id,creationOperationId:operationId}));acknowledged=acknowledged&&reply.acknowledged===true;}
       return {acknowledged};
     }
     if(method!=='opencraft/orchestration/create')throw new OrchestrationControlError(400,'Unknown orchestration operation');
-    const settings=object(params.settings),{orchestrationTitle,orchestrationHostIncarnation,orchestrationSourceThreadId,orchestrationCrossDriver,orchestrationDriver:_driver,driver:_kind,...start}=settings;
+    const settings=object(params.settings),{orchestrationRoot,orchestrationTitle,orchestrationHostIncarnation,orchestrationSourceThreadId,orchestrationCrossDriver,orchestrationDriver:_driver,driver:_kind,...start}=settings;
+    if(orchestrationRoot && object(await this.port.request('opencraft/orchestration/private-capability',{})).version!==1)throw new OrchestrationControlError(503,'Engine Host cannot defer private Thread publication');
     const fingerprint=createHash('sha256').update(JSON.stringify(settings)).digest('hex');
     let result:Record<string,unknown>;
-    try{result=object(await this.port.request('thread/start',{...start,__opencraftOrchestrationOperation:operationId,...(orchestrationCrossDriver?{}:{__opencraftOrchestrationSourceThreadId:orchestrationSourceThreadId??threadId}),__opencraftOrchestrationFingerprint:fingerprint,...(orchestrationHostIncarnation?{__opencraftOrchestrationIncarnation:orchestrationHostIncarnation}:{})},admit));}
+    try{result=object(await this.port.request('thread/start',{...start,...(orchestrationRoot?{__opencraftDeferPublication:true}:{}),__opencraftOrchestrationOperation:operationId,...(orchestrationRoot||orchestrationCrossDriver?{}:{__opencraftOrchestrationSourceThreadId:orchestrationSourceThreadId??threadId}),__opencraftOrchestrationFingerprint:fingerprint,...(orchestrationHostIncarnation?{__opencraftOrchestrationIncarnation:orchestrationHostIncarnation}:{})},admit));}
     catch(error){if(object(object(error).data).orchestrationRejected===true)return {rejected:{status:Number(object(error).code)||503}};throw error;}
     const thread=object(result.thread),childId=text(thread.id);
     if(!childId)throw new OrchestrationControlError(502,'Native child creation has no stable identity');
-    if(orchestrationTitle)try{await this.port.request('thread/name/set',{threadId:childId,name:orchestrationTitle,__opencraftOrchestrationOperation:operationId+':title',__opencraftOrchestrationFingerprint:fingerprint,...(orchestrationHostIncarnation?{__opencraftOrchestrationIncarnation:orchestrationHostIncarnation}:{})},admit);}catch(error){if(object(object(error).data).orchestrationRejected!==true)throw error;}
+    if(!orchestrationRoot)await this.name(operationId,childId,settings,admit);
     return {threadId:childId,durability:'pending_first_turn'};
+  }
+  private async name(operationId:string,threadId:string,settings:Record<string,unknown>,admit:()=>boolean):Promise<void>{
+    const {orchestrationTitle,orchestrationHostIncarnation}=settings;
+    if(!orchestrationTitle)return;
+    const fingerprint=createHash('sha256').update(JSON.stringify(settings)).digest('hex');
+    try{await this.port.request('thread/name/set',{threadId,name:orchestrationTitle,__opencraftOrchestrationOperation:operationId+':title',__opencraftOrchestrationFingerprint:fingerprint,...(orchestrationHostIncarnation?{__opencraftOrchestrationIncarnation:orchestrationHostIncarnation}:{})},admit);}
+    catch(error){if(object(object(error).data).orchestrationRejected!==true)throw error;}
   }
   private async prepare(threadId:string,args:Record<string,unknown>,callbackIncarnation:string,sourceSettings?:Record<string,unknown>,sourceOnly=false):Promise<Record<string,unknown>>{
     // The source is already executing this tool. Resume without overrides reads
@@ -110,6 +138,11 @@ export class CodexOrchestrationControl {
     const {thread}=await this.port.read(threadId,1),turn=thread.turns.at(-1),status=object(thread.status);
     const input=this.port.pendingInput(threadId);
     if(input==='unknown')return {...base,state:'unconfirmed'};
+    // A hidden child has no human to press Resume, and discarded input never comes back:
+    // report the failure so the parent wait settles instead of seeing "starting" forever.
+    const running=recovery?.state==='running'||status.type==='active'||turn?.status==='inProgress';
+    if(input==='paused'&&!running)return {threadId,turnId:turn?.id??base.turnId,rootTurnId:base.rootTurnId??turn?.id??null,state:'failed',summary:'The message to this conversation was not sent: its session tools could not be prepared. It stays paused until someone resumes it.'};
+    if(input==='abandoned'&&!turn)return {...base,state:'failed',summary:'This conversation never started: its queued input was discarded before delivery.'};
     if(input==='pending')return {...base,state:'starting'};
     if(recovery?.state==='running'||status.type==='active')return {...base,state:'active'};
     const current={threadId,turnId:turn?.id??base.turnId,rootTurnId:recovery?.rootTurnId??turn?.id??null};

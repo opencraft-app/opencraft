@@ -38,3 +38,14 @@ test("optional built-in has an enable control but no URL update or removal", asy
   assert.equal(rows[0].enabled, false);
   await supervisor.dispose();
 });
+
+test('host-installed user code is installed even when its loader uses the managed builtin path', async () => {
+  const supervisor = new ExtensionSupervisor({ platform: 'web' });
+  try {
+    const [row] = projectExtensionCatalog(supervisor.getSnapshot(), { revision: 1, installationLoadErrors: [], discoveryErrors: [], extensions: [{
+      origin: 'user', installation: { extensionId: 'example.local', source: { kind: 'builtin' }, enabled: false, installedAt: 1, updatedAt: 1 }, status: 'disabled',
+    }] }, supervisor.contributions.getSnapshot());
+    assert.equal(row.source, 'installed'); assert.equal(row.canManage, true);
+    assert.equal(row.canRemove, false); assert.equal(row.canReload, false);
+  } finally { await supervisor.dispose(); }
+});

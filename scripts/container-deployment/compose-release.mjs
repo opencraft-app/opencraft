@@ -6,6 +6,7 @@ import { cpus, hostname, totalmem } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { handsResources } from './resources.mjs';
+import { hostLayout, inspectPrivateDirectory, inspectWorkspaceDirectory, SERVICES } from './layout.mjs';
 
 export const OWNER_ORDER = Object.freeze(['hands', 'brain', 'gateway']);
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -60,13 +61,6 @@ export function assertImageReference(image, allowMutable = false) {
   if (mutable && !allowMutable) throw new Error('Refusing a mutable image; use a digest/version tag or --allow-mutable-image');
 }
 
-async function inspectDirectory(path, identity) {
-  const info = await stat(path);
-  if (!info.isDirectory()) throw new Error(`${path} is not a directory`);
-  if (info.uid !== identity.uid || info.gid !== identity.gid) throw new Error(`${path} is not owned by ${identity.uid}:${identity.gid}`);
-  if ((info.mode & 0o077) !== 0) throw new Error(`${path} must not be accessible by group or others`);
-}
-
 export async function doctor(environment, { allowOversubscription = false } = {}) {
   const required = ['OPENCRAFT_HOST_DATA_DIR', 'OPENCRAFT_DATA_DIR', 'OPENCRAFT_HOST_WORKSPACE_DIR', 'OPENCRAFT_WORKSPACE_DIR', 'OPENCRAFT_UID', 'OPENCRAFT_GID'];
   for (const name of required) if (!environment[name]) throw new Error(`Missing ${name}`);
@@ -74,7 +68,10 @@ export async function doctor(environment, { allowOversubscription = false } = {}
   const identity = deploymentIdentity(environment);
   if (process.getuid?.() !== identity.uid || process.getgid?.() !== identity.gid)
     throw new Error(`Run this tool as the deployment identity ${identity.uid}:${identity.gid}`);
-  await Promise.all([inspectDirectory(environment.OPENCRAFT_HOST_DATA_DIR, identity), inspectDirectory(environment.OPENCRAFT_HOST_WORKSPACE_DIR, identity)]);
+  const layout = hostLayout(environment);
+  await inspectWorkspaceDirectory(layout.workspace, identity, environment);
+  await Promise.all([layout.state, layout.execution, layout.logs, ...SERVICES.map(service => join(layout.logs, service))]
+    .map(path => inspectPrivateDirectory(path, identity)));
   const resources = handsResources(environment);
   const requiredMemory = resources.memoryBytes + 2 * 1024 ** 3;
   if (!allowOversubscription && totalmem() < requiredMemory)

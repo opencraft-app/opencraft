@@ -884,7 +884,7 @@ export class AppHostServerConnection {
     if (current?.generation === generation) return current.session;
     current?.session.close();
     const session = this.createRpcAccessSession(hostId, this.submissionContext, frame => {
-      if (!this.closed && this.leases.get(key)?.generation === generation) this.port.postMessage({type:'host/frame',hostId,leaseId,generation,frame});
+      if (!this.closed && this.leases.get(key)?.generation === generation) this.deliver(() => this.port.postMessage({type:'host/frame',hostId,leaseId,generation,frame}));
     });
     this.accessSessions.set(key,{hostId,leaseId,generation,session});
     return session;
@@ -900,8 +900,6 @@ export class AppHostServerConnection {
     try {
       if (!this.closed) {
         this.closed = true;
-        for (const entry of this.accessSessions.values()) entry.session.close();
-        this.accessSessions.clear();
         this.earlyMessages.length = 0;
         this.server.removeConnection(this);
       }
@@ -914,8 +912,6 @@ export class AppHostServerConnection {
     this.retiring = true;
     try {
       this.closed = true;
-      for (const entry of this.accessSessions.values()) entry.session.close();
-      this.accessSessions.clear();
       this.earlyMessages.length = 0;
       this.leases.clear();
       this.logicalClients.clear();
@@ -929,6 +925,12 @@ export class AppHostServerConnection {
     this.server.trackConnectionCleanup(this, true);
     const errors: unknown[] = [];
     try {
+      // Retire admission first, then attempt every cleanup even if one owner fails.
+      // Failed handles stay registered for the existing explicit shutdown retry.
+      for (const [key, entry] of this.accessSessions) {
+        try { entry.session.close(); this.accessSessions.delete(key); }
+        catch (cause) { errors.push(cause); }
+      }
       if (this.unsubscribePort !== null) {
         try { this.unsubscribePort(); this.unsubscribePort = null; }
         catch (cause) { errors.push(cause); }
@@ -942,17 +944,29 @@ export class AppHostServerConnection {
     } finally { this.cleaningPort = false; }
   }
 
-  post(message: AppHostToRendererMessage): void {
+  /** Projection and wire failures belong to one connection, not the shared Host. */
+  private deliver(write: () => void): void {
     if (this.closed) return;
-    if (message.type === 'host/frame' && this.createRpcAccessSession) {
-      const leases = [...this.leases.values()].filter(lease => lease.hostId === message.hostId && lease.generation === message.generation && (message.leaseId === undefined || lease.leaseId === message.leaseId));
-      for (const lease of leases) {
-        const frame = this.accessSession(lease.hostId,lease.leaseId,lease.generation)!.project(message.frame);
-        if (frame !== null) this.port.postMessage({...message,leaseId:lease.leaseId,frame});
-      }
-      return;
+    try { write(); }
+    catch {
+      try { this.close(); }
+      catch { /* Failed cleanup handles remain owned by the server for shutdown retry. */ }
     }
-    this.port.postMessage(message);
+  }
+
+  post(message: AppHostToRendererMessage): void {
+    this.deliver(() => {
+      if (message.type === 'host/frame' && this.createRpcAccessSession) {
+        const leases = [...this.leases.values()].filter(lease => lease.hostId === message.hostId && lease.generation === message.generation && (message.leaseId === undefined || lease.leaseId === message.leaseId));
+        for (const lease of leases) {
+          if (this.closed) return;
+          const frame = this.accessSession(lease.hostId,lease.leaseId,lease.generation)!.project(message.frame);
+          if (!this.closed && frame !== null) this.port.postMessage({...message,leaseId:lease.leaseId,frame});
+        }
+        return;
+      }
+      this.port.postMessage(message);
+    });
   }
 
   rememberLease(hostId: string, leaseId: string, generation: number): void {

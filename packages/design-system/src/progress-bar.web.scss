@@ -1,0 +1,27 @@
+:root {
+  --width-progress-track: 100%;
+  --height-progress-track: 4px;
+}
+
+.ui-progress-indicator[data-variant="bar"] {
+  width: var(--width-progress-track);
+  height: var(--height-progress-track);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, currentColor 15%, transparent);
+  justify-content: flex-start;
+  overflow: hidden;
+  animation: none;
+  .ui-progress-indicator__fill {
+    display: block;
+    height: 100%;
+    width: 35%;
+    border-radius: inherit;
+    background: currentColor;
+  }
+  &:not([data-determinate]) .ui-progress-indicator__fill {
+    @media (prefers-reduced-motion: no-preference) {
+      animation: ui-progress-travel var(--duration-progress-cycle) var(--timing-progress-cycle) infinite alternate;
+    }
+  }
+}
+@keyframes ui-progress-travel { from { transform: translateX(0); } to { transform: translateX(185%); } }

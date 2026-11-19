@@ -1,0 +1,3 @@
+.message-timeline-plane { position: relative; min-block-size: 0; min-inline-size: 0; block-size: 100%; }
+.message-timeline-plane > [data-message-timeline] { block-size: 100%; box-sizing: border-box; }
+.message-timeline-plane > .message-timeline-dock { position: absolute; inset-inline: 0; bottom: 0; }

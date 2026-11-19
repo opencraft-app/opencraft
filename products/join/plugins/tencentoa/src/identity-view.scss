@@ -1,0 +1,6 @@
+.employee-identity__content {
+  display: flex;
+  flex-direction: column;
+  gap: calc(5 * var(--spacing));
+  min-inline-size: 0;
+}

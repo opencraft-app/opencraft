@@ -1657,3 +1657,22 @@ test("steering never becomes a queued retry after a tool rejection", async () =>
       error => error === cause);
   } finally { await h.close(); }
 });
+
+test("submission receipts retain exact Host sender proof and ignore a different message", async () => {
+  const h = await harness();
+  const original = h.client.request.bind(h.client);
+  let proofId = "message-1", sender: unknown = {kind: "employee", loginName: "skipzhang"};
+  h.client.request = (async (method: any, params: any, options: any) => {
+    const result = await original(method, params, options);
+    return ["turn/start", "turn/steer", "thread/queue/add"].includes(method)
+      ? {...result as object, __opencraftSubmissionSender: {clientMessageId: proofId, sender}} : result;
+  }) as typeof h.client.request;
+  const port = commandPort(h);
+  for (const target of [{type: "existing-thread", key: existingKey}, {type: "steer-active-turn", key: existingKey, turnId: asTurnId("turn-active")}, {type: "enqueue-follow-up", key: existingKey}] as const)
+    assert.deepEqual((await port.submit(intent(target))).sender, sender);
+  proofId = "different-message";
+  assert.equal((await port.submit(intent({type: "existing-thread", key: existingKey}))).sender, undefined);
+  proofId = "message-1"; sender = null;
+  assert.equal((await port.submit(intent({type: "existing-thread", key: existingKey}))).sender, null);
+  await h.close();
+});

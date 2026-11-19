@@ -16,6 +16,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: build-matrix-${{ github.event.pull_request.number || github.ref }}
@@ -145,10 +146,14 @@ jobs:
       - run: npm run prepare:dsh-runtime
       - run: npm run smoke:local-agent
       - run: npm run build:electron:release
+      - uses: ./.github/actions/owned-electron
+        with:
+          run-id: ${{ vars.OPENCRAFT_ELECTRON_ARTIFACT_RUN_ID }}
+          target: macos-arm64
       - name: Package an ad-hoc signed CI DMG
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npm exec --workspace @opencraft/workbench-electron -- electron-builder --mac dmg --config.mac.identity=- --config.forceCodeSigning=true
+        run: node scripts/package-electron-desktop.mjs --mac dmg --config.mac.identity=- --config.forceCodeSigning=true
       - name: Verify and launch the app from the final DMG
         env:
           OPENCRAFT_SMOKE_OUTPUT: ${{ runner.temp }}/opencraft-macos-smoke
@@ -183,6 +188,12 @@ jobs:
       - name: DSH routing Worker persistence and network liveness
         run: npx tsx --test tests/execution/dsh-session-routing-worker.test.ts
       - run: npm run test:headless-server
+      - uses: ./.github/actions/owned-electron
+        if: needs.plan.outputs.headless-package == 'true'
+        with:
+          run-id: ${{ vars.OPENCRAFT_ELECTRON_ARTIFACT_RUN_ID }}
+          target: linux-x64
+          kind: browser
       - name: Protected full-target pin copy and installer regressions
         run: sudo "$(command -v node)" --test tests/execution/full-parent.test.mjs tests/execution/full-install-parent.test.mjs
       - run: npm run matrix:build -- headless-linux-amd64-tar

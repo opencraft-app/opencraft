@@ -3,6 +3,7 @@ import type {
   UserMessageContentPart,
   UserMessageTimelineBlock,
 } from "@opencraft/chat-core";
+import { chatMediaKind } from "@opencraft/chat-render-react";
 
 export type UserMessageImagePart = Extract<UserMessageContentPart, { type: "image" | "local-image" }>;
 export type UserMessageAudioPart = Extract<UserMessageContentPart, { type: "audio" | "local-audio" }>;
@@ -51,8 +52,25 @@ export function deriveUserMessageWebLayout(block: UserMessageTimelineBlock): Use
       case "mention": if (!fileTargets.has(part.path)) contexts.push(part); break;
     }
   }
+  // History can supply file metadata before the engine's image content. Start
+  // loading from that locator immediately, through the same Host media boundary.
+  const imageSources = new Set(images.map(part => part.source));
+  const imageFiles = new Set<UserMessageFileAttachment>();
+  for (const file of files) {
+    if (file.target === null || file.startLine !== null || file.endLine !== null) continue;
+    const mime = file.mimeType?.split(";", 1)[0]?.trim().toLowerCase();
+    const image = mime && mime !== "application/octet-stream"
+      ? mime.startsWith("image/")
+      : chatMediaKind(file.target) === "image" || chatMediaKind(file.name) === "image";
+    if (!image) continue;
+    imageFiles.add(file);
+    if (imageSources.has(file.target)) continue;
+    imageSources.add(file.target);
+    images.push({ type: "local-image", source: file.target, detail: null });
+  }
+  const visibleFiles = files.filter(file => !imageFiles.has(file));
   const hasText = block.message.trim().length > 0;
-  const hasStatus = block.steerEvidence !== undefined || block.goal || block.hookFeedback || block.reviewMode
+  const hasStatus = (block.inputDelivery !== undefined && block.inputDelivery.context === 'unobserved') || block.steerEvidence !== undefined || block.goal || block.hookFeedback || block.reviewMode
     || block.pullRequestFixMode || block.autoResolveSync || block.commentCount > 0
     || block.deliveryStatus === "not-sent" || block.deliveryStatus === "failed"
     || block.deliveryStatus === "unknown";
@@ -61,6 +79,6 @@ export function deriveUserMessageWebLayout(block: UserMessageTimelineBlock): Use
     || block.commentCount > 0 || images.length + audio.length + contexts.length
       + files.length + comments.length + mcpContexts.length > 0;
   const showBubble = hasText || !standalone;
-  return { images, audio, contexts, files, comments, mcpContexts, hasText,
+  return { images, audio, contexts, files: visibleFiles, comments, mcpContexts, hasText,
     hasStatus, showBubble, showBody: showBubble || hasStatus };
 }

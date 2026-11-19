@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@opencraft/browser-core": "0.1.0",
     "@opencraft/appserver-client": "0.1.0",
     "@opencraft/appserver-protocol": "0.1.0"
   }

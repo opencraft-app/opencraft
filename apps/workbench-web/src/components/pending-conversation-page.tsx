@@ -62,7 +62,7 @@ export function PendingConversationPage({
       data-pending-conversation-phase={conversation.phase}>
       <main className="pending-conversation-scroll thread-scroll" aria-label="Conversation">
         <div className="thread-scroll-surface">
-          <div className="thread-content thread-layout-width">{content}</div>
+          <div className="thread-content thread-layout-width" data-thread-follow-tail-layout>{content}</div>
         </div>
       </main>
     </div>

@@ -1,0 +1,12 @@
+[
+  {
+    "id": "join-employee-admission",
+    "owner": "plugins/tencentoa/src/admission-policy.ts",
+    "index": 0
+  },
+  {
+    "id": "join-employee-ssh",
+    "owner": "plugins/tencentoa/src/ssh-credentials.ts",
+    "index": 0
+  }
+]

@@ -33,7 +33,7 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
   const [query, setQuery] = useState("");
   const apiLabel = intl.formatMessage({ id: "composer.model.api", defaultMessage: "API models" });
   const groups = catalog?.agentGroups?.length ? catalog.agentGroups : [{ id: "active", label: "", active: true,
-    models: catalog?.models ?? [], loading: catalog?.isFetching, error: catalog?.modelError, retry: catalog?.retryModels }];
+    models: catalog?.models ?? [], loading: catalog?.isFetching, error: catalog?.modelError, errorKind: catalog?.modelErrorKind, retry: catalog?.retryModels }];
   type Source = { id: string; label: string; brand?: AgentBrand; group: typeof groups[number]; models: ComposerModelOption[] };
   const sources: Source[] = [];
   for (const group of groups) {
@@ -106,13 +106,19 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
         {family === selectedFamily ? <CheckIcon size={16} aria-hidden="true" /> : null}
       </Menu.Item>)}
       {query.trim() && !matches.length && families.length ? <div className="opencraft-composer-selection-menu__status"><FormattedMessage id="composer.model.noResults" defaultMessage="No models match your search." /></div> : null}
-      {source.group.loading || source.group.error || source.models.length === 0 ? <ModelCatalogStatus loading={source.group.loading} error={!!source.group.error} retry={source.group.retry} /> : null}
+      {source.group.loading || source.group.error || source.models.length === 0 ? <ModelCatalogStatus loading={source.group.loading} error={!!source.group.error} errorKind={source.group.errorKind} retry={source.group.retry} /> : null}
       {switchingAgentId === source.group.id ? <div className="opencraft-composer-selection-menu__status" role="status"><FormattedMessage id="workIn.switchingAgent" defaultMessage="Switching Agent…" /></div> : null}
       {agentSelectionError?.id === source.group.id ? <div className="opencraft-composer-selection-menu__status is-error" role="alert">{agentSelectionError.message}</div> : null}
       {selected !== null && !groups.some(group => group.active && group.models.some(model => model.value === selected || model.id === selected)) ? <div className="opencraft-composer-selection-menu__status is-error"><FormattedMessage id="composer.model.unavailable" defaultMessage="The selected model is unavailable. Choose another model." /></div> : null}
     </div>
     {efforts.length ? <div className="opencraft-composer-model-browser__reasoning" role="group" aria-label={intl.formatMessage({ id: "chat.reasoning", defaultMessage: "Reasoning" })}>
       <div className="opencraft-composer-model-browser__section-label"><FormattedMessage id="chat.reasoning" defaultMessage="Reasoning" />
+      </div>
+      <div className="opencraft-composer-model-browser__efforts">{efforts.map(option => <Button key={option.value} size="sm" density="compact" variant={activeEffort === option.value ? "secondary" : "ghost"}
+        aria-pressed={activeEffort === option.value} disabled={!!switchingAgentId || current?.policyRestrictedEfforts?.includes(option.value)}
+        onClick={() => { const variant = variants.find(variant => variant.effort === option.value); if (variant) choose(variant.model); else onEffortChange(option.value); }}>
+        {modelEffortLabel(intl, option.value, option.label)}
+      </Button>)}
         {defaultEffort && efforts.some(option => option.value === defaultEffort) ? <IconButton size="accessory" variant="ghost"
           aria-label={intl.formatMessage({ id: "composer.resetEffort", defaultMessage: "Reset reasoning to model default" })}
           disabled={!!switchingAgentId || defaultEffort === activeEffort || current?.policyRestrictedEfforts?.includes(defaultEffort)}
@@ -120,11 +126,6 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
           <ResetIcon size={14} aria-hidden="true" />
         </IconButton> : null}
       </div>
-      <div className="opencraft-composer-model-browser__efforts">{efforts.map(option => <Button key={option.value} size="sm" density="compact" variant={activeEffort === option.value ? "secondary" : "ghost"}
-        aria-pressed={activeEffort === option.value} disabled={!!switchingAgentId || current?.policyRestrictedEfforts?.includes(option.value)}
-        onClick={() => { const variant = variants.find(variant => variant.effort === option.value); if (variant) choose(variant.model); else onEffortChange(option.value); }}>
-        {modelEffortLabel(intl, option.value, option.label)}
-      </Button>)}</div>
     </div> : null}
     {fast ? <div className="opencraft-composer-model-browser__fast">
       <LightningIcon size={16} aria-hidden="true" /><span><FormattedMessage id="composer.model.fastMode" defaultMessage="Fast mode" /></span>

@@ -1,3 +1,4 @@
+export type { AttachmentResolver, AttachmentProgress, ComposerImageEditSession } from "./attachment-preview-session";
 export { ComposerAttachedRail } from "./attached-rail";
 export { OpenCraftComposer, composerSchema } from "./composer-editor";
 export type {

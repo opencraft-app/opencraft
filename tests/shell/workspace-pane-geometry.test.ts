@@ -49,3 +49,15 @@ test("small workspaces retain readable chat width and translate rather than refl
   assert.equal(workspacePaneGeometry(1280, 600, 1, 0, 480).frameX, 0,
     "ordinary desktop split does not shift when it fits");
 });
+
+test("ordinary split reaches the shared 352px floor without shifting chat", () => {
+  for (const width of [672, 800, 1280, 1920]) {
+    const geometry = workspacePaneGeometry(width, width - 352, 1, 0, 352);
+    assert.equal(geometry.viewportWidth, 352);
+    assert.equal(geometry.frameWidth, 352);
+    assert.equal(geometry.frameX, 0);
+  }
+  const minimumWindow = workspacePaneGeometry(352, 0, 0, 0, 352);
+  assert.equal(minimumWindow.frameWidth, 352);
+  assert.equal(minimumWindow.viewportWidth, 352);
+});

@@ -5,6 +5,20 @@ const { createControls } = createRequire(import.meta.url)('../../scripts/remote-
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const input = (type, x = 0, page = 'a') => ({ page, method: 'input', input: { type, x } });
 
+test('queued automation is bound to its admitted document and does not block navigation', async () => {
+  let release, document = 'old'; const seen = [];
+  const gate = new Promise(resolve => { release = resolve; });
+  const dispatch = createControls(async message => {
+    seen.push(message.method);
+    if (message.method === 'control') await gate;
+    if (message.method === 'navigate') document = 'new';
+  }, () => document);
+  const first = dispatch({ page: 'a', method: 'control' }); await tick();
+  const stale = assert.rejects(dispatch({ page: 'a', method: 'automation', control: 'token', input: { method: 'fill' } }), { code: 'DOCUMENT_CHANGED' });
+  await dispatch({ page: 'a', method: 'navigate' }); release(); await Promise.all([first, stale]);
+  assert.deepEqual(seen, ['control', 'navigate']);
+});
+
 test('slow native touch coalesces positions while preserving release, resize and every reply', async () => {
   let release;
   const gate = new Promise(resolve => { release = resolve; }), seen = [];

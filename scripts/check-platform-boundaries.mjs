@@ -105,6 +105,13 @@ function checkFiles(label, directory, rules) {
   }
 }
 
+for (const directory of ["packages/browser-core/src", "packages/browser-cdp/src"]) {
+  checkFiles("harness-neutral browser implementation", directory, [{
+    pattern: /(?:from\s*|import\s*|require\(\s*)["'](?:electron(?:\/|["'])|node:|@opencraft\/(?:browser-appserver|appserver[^/"']*|plugin-[^/"']*|agent-bridge[^/"']*)(?:\/|["']))/m,
+    message: "must use neutral contracts and host ports; native engine/protocol dependencies belong in adapters",
+  }]);
+}
+
 const purePackageRules = [
   {
     pattern: /(?:from\s*|import\s*)["'](?:react(?:-dom|-native)?|expo(?:\/|["'])|expo-router|prosemirror-|lucide-react)/m,

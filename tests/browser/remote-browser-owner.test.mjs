@@ -16,8 +16,9 @@ import { RemoteBrowserService } from '../../scripts/remote-browser-service.mjs';
 const { createBrowserOwner, installOwnerSignals } = createRequire(import.meta.url)('../../scripts/remote-browser/owner.cjs');
 
 const worker = `
-const pages=new Map();process.send({type:'ready'});
+const pages=new Map(),automation=new Map();process.send({type:'ready'});
 process.on('message',async m=>{let value;try{
+ if(m.method==='cancelAutomation'){const job=automation.get(m.input.requestId);if(job?.page===m.page)job.cancel();return;}
  if(m.method==='inventory')value=[...pages.values()];
  else if(m.method==='create'){value={id:m.page,document:'same-native-document',width:430,height:720,deviceProfile:'iphone',navigation:{url:'https://example.test/',isLoading:false},form:'',scroll:0};pages.set(m.page,value)}
  else {const p=pages.get(m.page);if(!p)throw Error('missing');
@@ -25,15 +26,16 @@ process.on('message',async m=>{let value;try{
   if(m.method==='control')p.token=m.input.token;
   if(m.method==='visible')p.visible=m.input.visible;
   if(m.method==='text'){await new Promise(r=>setTimeout(r,80));p.form=m.input.text;p.scroll=300}
+  if(m.method==='automation'){await new Promise(resolve=>automation.set(m.id,{page:m.page,cancel(){p.cancelled=true;automation.delete(m.id);resolve();}}))}
   if(m.method==='close')pages.delete(m.page);
   value={...p};
  }
  process.send({type:'result',id:m.id,value});
 }catch(e){process.send({type:'result',id:m.id,error:{message:e.message}})}});
 `;
-async function fixture(t) {
+async function fixture(t, automationNavigation) {
   const directory = await mkdtemp(join(tmpdir(), 'browser-owner-')); const workerPath = join(directory, 'worker.cjs');
-  await writeFile(workerPath, worker); const socketPath = join(directory, 'owner.sock');
+  await writeFile(workerPath, automationNavigation === undefined ? worker : worker.replace("{type:'ready'}", `{type:'ready',automationNavigation:${JSON.stringify(automationNavigation)}}`)); const socketPath = join(directory, 'owner.sock');
   const owner = await createBrowserOwner({ socketPath, spawnWorker: () => spawn(process.execPath, [workerPath], { stdio: ['ignore','ignore','pipe','ipc'] }) });
   t.after(async () => { await owner.close(); await rm(directory, { recursive: true, force: true }); });
   const service = () => {
@@ -66,8 +68,37 @@ test('health probes validate the worker without taking over the Gateway attachme
   try {
     assert.deepEqual(await probe(f.socketPath), { type: 'healthy', protocol: 1, workerPid: f.owner.child.pid });
     assert.equal(client.workerPid, f.owner.child.pid);
+    assert.equal(client.automationNavigation, 0, 'new Owner cannot invent capabilities for an older Worker');
     assert.deepEqual(client.inventory, []);
   } finally { client.kill(); }
+});
+
+test('navigation feature handshake comes from the Worker, including empty owners', async t => {
+  const f = await fixture(t, 1), client = await connectBrowserOwner(f.socketPath);
+  try { assert.equal(client.automationNavigation, 1); assert.deepEqual(client.inventory, []); }
+  finally { client.kill(); }
+});
+
+test('private owner maps cancellation to native request identity and cancels departed Gateway work', async t => {
+  const f = await fixture(t), service = f.service(); await service.start();
+  try {
+    assert.equal(service.child.automationCancellation, 1);
+    await service.request('page', 'create');
+    const controller = new AbortController();
+    const pending = service.request('page', 'automation', { method: 'wait', input: { timeoutMs: 60000 } }, undefined, undefined, { signal: controller.signal });
+    const rejection = assert.rejects(pending, { code: 'CDP_ABORTED', outcome: 'unknown' });
+    await new Promise(resolve => setTimeout(resolve, 20)); controller.abort(); await rejection;
+    for (let attempt = 0; attempt < 30; attempt++) {
+      const [page] = await service.request(undefined, 'inventory'); if (page.cancelled) break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.equal((await service.request(undefined, 'inventory'))[0].cancelled, true);
+    const old = service.request('page', 'automation', { method: 'wait', input: { timeoutMs: 60000 } });
+    const oldRejected = assert.rejects(old);
+    await new Promise(resolve => setTimeout(resolve, 20)); service.child.kill(); await oldRejected;
+    const started = Date.now(), replacement = await connectBrowserOwner(f.socketPath);
+    assert(Date.now() - started < 3000); replacement.kill();
+  } finally { service.close(); await service.persistence; }
 });
 
 test('a replacement Gateway adopts the same native document/form/scroll and retires old input control', async t => {
@@ -179,4 +210,154 @@ test('native-only runtime changes keep live owners but replace an empty stale ow
     await symlink(join(previous, 'electron/electron'), join(candidate, 'external'));
     await assert.rejects(browserRuntimeIdentity(candidate), /regular files/);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+for (const boundary of ['publish', 'orphan']) test(`owner disconnect during inventory ${boundary} retains uncertain capacity`, async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'browser-inventory-fence-'));
+  const peer = Object.assign(new EventEmitter(), { inventory: boundary === 'orphan' ? [{ id: 'orphan-one' }, { id: 'orphan-two' }] : [], kill() {} });
+  const service = new RemoteBrowserService({ root: directory, dataDirectory: directory, ownerConnector: async () => peer });
+  service.available = async () => true;
+  t.after(async () => { service.close(); await service.persistence; await rm(directory, { recursive: true, force: true }); });
+  await service.load();
+  const key = JSON.stringify(['owner', 'browser-uncertain']), id = createHash('sha256').update(key).digest('hex');
+  await service.commit(draft => { draft.pages.push({ id, key, ownerId: 'owner', lifecycle: 'open', zoom: 100,
+    runtime: { kind: 'unknown', generation: 1 } }); });
+  service.pages.set(key, { id, key, ownerId: 'owner', zoom: 100, live: false });
+  const commit = service.commit.bind(service); let disconnect = true;
+  service.commit = reduce => commit(draft => {
+    if (disconnect && boundary === 'publish') { disconnect = false; peer.emit('exit'); }
+    return reduce(draft);
+  });
+  let closes = 0;
+  if (boundary === 'orphan') service.request = async () => { closes++; peer.emit('exit'); };
+  await assert.rejects(service.start(), { code: 'BROWSER_UNAVAILABLE' });
+  assert.equal(closes, boundary === 'orphan' ? 1 : 0);
+  await service.store.tail;
+  assert.equal(service.store.current.pages[0].runtime.kind, 'unknown');
+  assert.equal((await service.catalog('owner', () => {})).capacity.accountUsed, 1);
+});
+
+for (const failure of ['orphan', 'commit']) test(`failed owner recovery releases its transport after ${failure} error`, async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'browser-owner-start-failure-'));
+  const key = JSON.stringify(['owner', 'browser-kept']), id = createHash('sha256').update(key).digest('hex');
+  const config = { id, document: 'kept-native-document', width: 800, height: 600, navigation: { url: 'https://example.test/' } };
+  let released = 0, connections = 0;
+  const first = Object.assign(new EventEmitter(), { inventory: [config, ...failure === 'orphan' ? [{ id: 'orphan' }] : []], kill() { released++; } });
+  const second = Object.assign(new EventEmitter(), { inventory: [config], kill() {} });
+  const service = new RemoteBrowserService({ root: directory, dataDirectory: directory, ownerConnector: async () => ++connections === 1 ? first : second });
+  service.available = async () => true;
+  t.after(async () => { service.close(); await service.persistence; await rm(directory, { recursive: true, force: true }); });
+  await service.load(); await service.commit(draft => { draft.pages.push({ id, key, ownerId: 'owner', lifecycle: 'open', zoom: 100,
+    runtime: { kind: 'unknown', generation: 1 } }); });
+  service.pages.set(key, { id, key, ownerId: 'owner', zoom: 100, live: false });
+  if (failure === 'orphan') service.request = async () => { throw Error('orphan cleanup failed'); };
+  else {
+    const commit = service.commit.bind(service); let fail = true;
+    service.commit = reduce => {
+      if (fail) { fail = false; return Promise.reject(Error('inventory publish failed')); }
+      return commit(reduce);
+    };
+  }
+  await assert.rejects(service.start(), /failed/);
+  assert.equal(released, 1); assert.equal(service.child, null); assert.equal(service.pages.get(key).live, false);
+  await service.store.tail; assert.equal(service.store.current.pages[0].runtime.kind, 'unknown');
+  await service.start(); assert.equal(service.child, second); assert.equal(connections, 2);
+  assert.equal(service.pages.get(key).live, true);
+});
+
+test('service close during runtime availability check prevents late Electron spawn', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'browser-late-spawn-'));
+  let checked, release;
+  const entered = new Promise(resolve => { checked = resolve; }), gate = new Promise(resolve => { release = resolve; });
+  let spawned = 0;
+  const service = new RemoteBrowserService({ root: directory, dataDirectory: directory, ownerConnector: null, allowNoSandbox: true,
+    spawnImpl() {
+      spawned++; const child = Object.assign(new EventEmitter(), { kill() {}, connected: false });
+      queueMicrotask(() => child.emit('message', { type: 'ready' })); return child;
+    } });
+  service.available = async () => { checked(); await gate; return true; };
+  t.after(async () => { release(); service.close(); await service.persistence; await rm(directory, { recursive: true, force: true }); });
+  const starting = service.start(), rejected = assert.rejects(starting, /closed/);
+  await entered; service.close(); await service.persistence;
+  release(); await rejected;
+  assert.equal(spawned, 0); assert.equal(service.child, undefined);
+});
+
+for (const outcome of ['success', 'failure', 'replacement']) test(`concurrent direct startup shares durable reconciliation ${outcome}`, async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'browser-start-barrier-'));
+  const children = []; let entered, release;
+  const waiting = new Promise(resolve => { entered = resolve; }), gate = new Promise(resolve => { release = resolve; });
+  const service = new RemoteBrowserService({ root: directory, dataDirectory: directory, ownerConnector: null, allowNoSandbox: true,
+    spawnImpl() {
+      const child = Object.assign(new EventEmitter(), { connected: true, kill() {}, disconnect() { this.connected = false; } });
+      children.push(child); queueMicrotask(() => child.emit('message', { type: 'ready' })); return child;
+    } });
+  service.available = async () => true;
+  let first, second;
+  t.after(async () => { release(); await Promise.allSettled([first, second]); service.close(); await service.persistence; await rm(directory, { recursive: true, force: true }); });
+  await service.load(); const commit = service.commit.bind(service); let held = false;
+  service.commit = async reduce => {
+    if (!held) {
+      held = true; entered(); await gate;
+      if (outcome === 'failure') throw Error('reconciliation failed');
+      if (outcome === 'replacement') children[0].emit('exit');
+    }
+    return commit(reduce);
+  };
+  first = service.start(); await waiting;
+  let settled = false;
+  second = service.start(); void second.then(() => { settled = true; }, () => { settled = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, false); assert.equal(children.length, 1);
+  const completed = Promise.allSettled([first, second]); release(); const results = await completed;
+  assert.deepEqual(results.map(result => result.status), outcome === 'success' ? ['fulfilled', 'fulfilled'] : ['rejected', 'rejected']);
+  if (outcome === 'success') assert.equal(service.nativeReconciled, true);
+  else {
+    assert.equal(service.nativeReconciled, false); assert.equal(service.child, null);
+    await service.start(); assert.equal(children.length, 2); assert.equal(service.nativeReconciled, true);
+  }
+});
+
+for (const boundary of ['timeout', 'close']) test(`direct startup ${boundary} retires a child without an exit callback`, async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const directory = await mkdtemp(join(tmpdir(), 'browser-start-retire-'));
+  let spawned, disconnected = 0, killed = 0;
+  const children = [], entered = new Promise(resolve => { spawned = resolve; });
+  const service = new RemoteBrowserService({ root: directory, dataDirectory: directory, ownerConnector: null, allowNoSandbox: true,
+    spawnImpl() {
+      const child = Object.assign(new EventEmitter(), { connected: true, kill() { killed++; }, disconnect() { this.connected = false; disconnected++; } });
+      children.push(child); spawned();
+      if (children.length > 1) queueMicrotask(() => child.emit('message', { type: 'ready' }));
+      return child;
+    } });
+  service.available = async () => true;
+  t.after(async () => { service.close(); await service.persistence; await rm(directory, { recursive: true, force: true }); });
+  const pending = service.start(), rejected = assert.rejects(pending, boundary === 'timeout' ? /timed out/ : /closed/);
+  await entered; await new Promise(resolve => setImmediate(resolve));
+  if (boundary === 'timeout') t.mock.timers.tick(15000); else service.close();
+  await rejected;
+  assert.equal(service.child, null); assert.equal(disconnected, 1); assert.equal(killed, 1);
+  children[0].emit('message', { type: 'ready' }); children[0].emit('exit');
+  assert.equal(service.nativeReconciled, false);
+  if (boundary === 'timeout') {
+    await service.start(); assert.equal(children.length, 2); assert.equal(service.nativeReconciled, true);
+    children[0].emit('error', Error('late retired-child error'));
+    assert.equal(service.child, children[1]);
+  }
+});
+
+test('a closed cold service cannot reacquire the state writer through a late read', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'browser-closed-load-'));
+  const service = new RemoteBrowserService({ root: directory, dataDirectory: directory, ownerConnector: null });
+  const replacement = new RemoteBrowserService({ root: directory, dataDirectory: directory, ownerConnector: null });
+  t.after(async () => {
+    service.close(); replacement.close(); await Promise.all([service.persistence, replacement.persistence]);
+    await rm(directory, { recursive: true, force: true });
+  });
+  service.close(); await service.persistence;
+  await assert.rejects(service.metadata('owner', undefined, () => {}), /closed/);
+  await assert.rejects(service.catalog('owner', () => {}), /closed/);
+  await assert.rejects(service.load(), /closed/);
+  await replacement.load(); assert.equal(replacement.loaded, true);
+  assert.equal(service.releaseWriter, undefined); assert.equal(service.loading, undefined);
 });

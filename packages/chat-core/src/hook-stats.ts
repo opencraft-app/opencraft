@@ -38,6 +38,8 @@ export interface HookStatsRun {
 }
 
 export interface HookStats {
+  /** Indicator shape retained without Hook details during display recovery. */
+  readonly contentAvailable?: boolean;
   readonly count: number;
   readonly blockedCount: number;
   readonly blockedMessages: readonly string[];

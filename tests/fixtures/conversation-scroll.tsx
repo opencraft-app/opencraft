@@ -21,6 +21,7 @@ const resultVisible = (turnId: string) => { probe.reads.push(turnId); };
 probe.placementReads = 0;
 probe.pendingPlacement = null;
 const submissionMode = new URLSearchParams(location.search).has("submissions");
+const demandMode = new URLSearchParams(location.search).has("historyDemand");
 const historyMode = new URLSearchParams(location.search).has("history");
 const longHistoryMode = new URLSearchParams(location.search).has("longHistory");
 const naturalMode = new URLSearchParams(location.search).has("natural");
@@ -52,17 +53,21 @@ function Demo() {
   const [mounted, setMounted] = useState(true);
   const [hidden, setHidden] = useState(false);
   probe.setHidden = setHidden;
+  const [historyReady, setHistoryReady] = useState(!demandMode);
+  probe.setHistoryReady = setHistoryReady;
   const [loadingOlder, setLoadingOlder] = useState(false);
   probe.setHistoryLoading = setLoadingOlder;
-  const [state, setState] = useState({ revision: 0, heights: longHistoryMode ? [...Array.from({ length: 29 }, () => 600), 200] : [600, 600, 600, 600, 600, 200], active: !submissionMode && !historyMode, phase: "final_answer", lifetime: 0 });
+  const [state, setState] = useState({ revision: 0, heights: demandMode ? [20, 20] : longHistoryMode ? [...Array.from({ length: 29 }, () => 600), 200] : [600, 600, 600, 600, 600, 200], active: !submissionMode && !historyMode, phase: "final_answer", lifetime: 0 });
   const [authorityIndices, setAuthorityIndices] = useState<readonly number[]>([]);
   const turnId = (index: number) => authorityIndices.includes(index) ? `authority-${index}` : `turn-${index}`;
   probe.acknowledge = () => setAuthorityIndices((current) => [...current, state.heights.length - 1]);
   probe.shrinkHistory = () => setState((current) => ({ ...current, revision: current.revision + 1, heights: [20, 20] }));
   const loadHistory = () => {
     probe.historyLoads++;
-    setState((current) => ({ ...current, revision: current.revision + 1, heights: [1200, ...current.heights] }));
-    return "stop" as const;
+    if (probe.stallHistory) return;
+    setState((current) => ({ ...current, revision: current.revision + 1,
+      heights: [demandMode && current.heights.length < 4 ? 20 : 1200, ...current.heights] }));
+    if (!demandMode) return "stop" as const;
   };
   probe.submit = ({ local = true, shrinkPreviousTo, phase = "idle", height = 60 }: { local?: boolean; shrinkPreviousTo?: number; phase?: string; height?: number } = {}) => {
     probe.pendingPlacement = local ? probe.api.captureLatestTurnSubmitPlacement() : null;
@@ -100,12 +105,14 @@ function Demo() {
       blocks: index === state.heights.length - 1 && state.phase === "idle" ? [] : [{ id: `text-${index}`, type: "text", text: String(height), sourceItemIds: [], streaming: index === state.heights.length - 1 && state.active, phase: index === state.heights.length - 1 ? state.phase : "final_answer" }],
     }]),
   } as any;
-  return <div hidden={hidden} style={{ height: 700, width: 1000 }}>
+  return <div hidden={hidden} style={{ height: 700, width: "min(1000px, 100vw)" }}>
     <TimelineBlockRendererProvider registry={ctx.timelineBlockRenderers}>
       {mounted && <Conversation key={state.lifetime} timeline={timeline} scrollPolicy={naturalMode ? "natural" : "response-placement"}
         onTerminalResultVisible={resultVisible}
-        onLoadOlder={historyMode ? loadHistory : undefined}
-        loadingOlder={loadingOlder}
+        onLoadOlder={historyMode && historyReady ? loadHistory : undefined}
+        history={{ cursor: String(state.heights.length), hasOlder: historyMode && historyReady && (!demandMode || state.heights.length < 5), loading: loadingOlder }}
+        active={!hidden}
+        onHistoryViewportDiagnostic={(event) => { (probe.historyEvents ??= []).push(event); }}
         initialRestoreSnapshot={probe.initialRestoreSnapshot ?? null}
         consumePendingLatestTurnSubmitPlacement={() => { probe.placementReads++; const value = probe.pendingPlacement; probe.pendingPlacement = null; return value; }}
         onRestoreSnapshotChange={(snapshot) => { probe.restoreSnapshot = snapshot; }}

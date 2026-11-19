@@ -2,46 +2,138 @@
 
 [Architecture index](../../platform-architecture.md) · [Documentation index](../../README.md)
 
+### Overview scene handoff
+
+Conversation routing and panel selection remain semantic owners. Overview motion
+uses a local `SceneTransitionOwner` to lease the Shell's temporary allocation;
+it does not own a second tab directory, chat runtime or terminal process.
+Each lease identifies the owner, target and transition, and progresses through
+preparing, ready, committing and committed (or cancelled).
+
+Preparation requires both a measured nonempty home allocation and content
+readiness. The mounted primary chat acknowledges content with its allocation,
+without waiting for authoritative history. Tools acknowledge through their
+renderer when required, otherwise through their mounted layout. A readiness
+promise resolving does not make a lease permanent: its cancellation signal and
+owner identity remain valid through the eventual selection commit.
+
+The Shell derives staged foreground and panel content from the lease while
+selection remains unchanged. Pane animation suppresses independent motion while
+the lease owns allocation, including its final release; no handoff revision
+counter is used. Responsive space still controls single-pane versus split
+presentation and never changes resource ownership or persisted selection.
+
+The same handoff contract applies to primary chat (including a new-thread draft),
+Side Chat, terminal, files and browser raster covers. Shell owns the final home
+rectangle and semantic safe-area context. A selected retained source prepares
+its existing DOM at that allocation before expansion, not at the thumbnail's
+aperture; the flight owns only projection, clipping and compositing. After
+readiness, motion reads the prepared destination again rather than trusting a
+parked pane's old rectangle. Window, safe-area and renderer/dock allocation
+changes rebase that same flight through the active lease; layout notifications stop on cancel/commit. Handback
+synchronously rechecks that home and prepares a borrowed source before painting
+the endpoint, so a resize delivered after readiness cannot wait until release.
+It releases the projection and input exclusion, not a second content layout.
+Allocation flags and dock reservations apply during preparation, even though
+controls remain noninteractive; lazy toolbar loading does not define capacity.
+A retained preview is a live cover only after its source is physically borrowed,
+not merely because its wrapper exists.
+
+Borrowing cannot remove the home reading allocation. The content owner declares
+`primaryReading`; Shell retains and projects that semantic independently of DOM
+placement. A draft must not acquire transcript-only bottom bleed, including when
+a resident Side Chat has its own reader. The generic retained source does not
+detect conversations or manage Shell reading flags. Insets consumed inside a
+retained view follow its inherited layout context, not a physical Shell ancestor.
+This does not move chat/terminal/file resource ownership into the scene owner.
+
+The existing Motion driver performs geometry and clipping. Its completion must
+commit through the same lease. Physical frame cleanup, selection and modal
+dismissal execute within that handoff; cleanup aborts cannot revoke allocation
+halfway through a successful commit. Superseding selection, owner release,
+missing targets and cancellation revoke preparation and prevent late commits.
+Acquisition validates the caller before revoking another lease; already aborted
+or obsolete owners cannot cancel a current preparation. It then reserves its
+intent before cancelling the previous lease. Cancellation
+notifies synchronous consumers, which may issue a newer request or dismiss the
+overview. When the interrupted acquisition resumes, it must not overwrite that
+newer intent, even if no lease is currently published.
+Retiring visual flights may finish returning to their cards but own no selection.
+The retained DOM registry still owns attachment, scroll and selection restoration;
+the provider still carries the same animation's chrome tail across modal unmount.
+
+Evidence: `tests/shell/scene-transition.test.ts` and the motion/lease modes of
+`scripts/smoke/shell/smoke-tab-overview.ts`. They test interrupted preparation,
+post-ready owner replacement, responsive retargeting and actual retained views.
+`smoke-overview-scene-handoff.ts` compares the real flight endpoint, home,
+retained DOM and global content coordinates across synchronous handback and later
+frames (including draft, cancellation and viewport changes before/during flight).
+`smoke-overview-tool-handoff.ts` covers actual tool destinations, renderer readiness
+and resource continuity. These contracts do not claim every animation on every
+physical device is verified.
+
 ### Workspace file Explorer ownership
 
-File-tree visibility is panel-local presentation state. The file header toggles
-the tree without changing the selected resource or remounting its editor/preview.
-PDF files default to a collapsed tree; other resources default to an open tree.
-An explicit header toggle overrides that default for the current panel lifetime,
-so switching files does not override the user's manual visibility choice.
-The hidden tree stays mounted to retain expansion, search and scroll position;
-the content fills the available width. Read-only embedded previews remain
-tree-free and do not expose this toggle.
+The resource tab identifies a browser session by its stable entry resource. Its
+current location is a separate navigation receipt in durableRoute.params.location;
+title and recovery location are updated together without changing the logical
+resource or releasing the tab. Reopening the entry preserves this receipt and
+any dirty/preview guard. Tree, search and Markdown links use one open-location
+intent. Source locations reach the editor. Breadcrumbs and copying paths use
+Host paths, never client-local directory access.
 
-The tree presentation owns expansion, active keyboard path and scroll, scoped to
-one panel and Host. Existing directory Query records remain the only directory
-data authority; a stable Query select sorts each data revision with a shared
-numeric collator. A pure model projects loaded, expanded directories into flat
-file/directory/loading/error rows. One fixed-height viewport mounts only visible
-rows plus overscan and the active accessibility descendant. It observes queries
-only for expanded paths whose ancestors are open; collapsed descendants retain
-their expansion choices. Background refresh errors retain cached entries.
-The tree receives explicit Host identity, roots and a stable selection action;
-directory rows do not subscribe to the Host or conversation snapshot. Shell
-animation and transcript changes cannot sort unchanged directory data. The
-viewport owns Arrow/Home/End/Enter keyboard navigation and reveals selection;
-hiding/searching preserves the tree model and its last visible scroll geometry.
+WorkspaceSessions belongs to the built-in panel plugin. Browser state is scoped by
+Conversation owner, Host and tab: location, query, tree visibility, expansion,
+keyboard activity, scroll and per-file editing mode. All file previews start
+with the tree collapsed; explicit toggles survive navigation. Hiding/searching
+keeps the tree mounted. Embedded read-only previews own a private session, remain
+tree-free and expose no search, watches or writes.
 
-Workbench Web's workspace resource panel owns the selected Host/path, the
-filesystem query, and unsaved drafts. A query result is only a server snapshot:
-refreshing or switching files must not replace a dirty draft. Draft identity is
-Host plus path; saving captures that identity and submitted text before the
-asynchronous write, and a changed server snapshot blocks saving until the user
-reconciles the draft. The extension registry in the resource model supplies
-both file-type cues and the CodeMirror language choice. The code editor owns
-only its document view and edit events; it does not write files or own drafts.
-Binary and oversized files remain outside the text-editor path.
-The file-preview header provides a download action for every successfully read
-file, including empty or non-previewable binary files. It exports the original
-Host-scoped Blob with the selected basename rather than editor text or rendered
-HTML. Read-only embedded previews retain download without allowing Host writes.
-The preview owns its Blob URL lease; Host/path/runtime generation changes remove
-the old download target before exposing the next resource.
+Documents are shared by owner/Host/path, independently of connection generation.
+A document owns its observed baseline, draft, save transaction and conflict state.
+Views never write files directly. Switching files preserves drafts; each browser
+retains up to 16 recently used CodeMirror states, including selection, scroll and
+undo history. Inactive clean document baselines are bounded to 16 per scope;
+dirty, saving and currently viewed documents are never evicted by that bound.
+Closing a browser with dirty or saving documents is disabled and its preview tab
+is pinned. The Unsaved action opens the list of affected files; save or discard
+re-enables closing. Browser unload warns when drafts exist. Logical owner release
+is final teardown; drafts are memory-only and are not claimed to survive a process
+restart. Late completions cannot recreate a released owner.
+
+Saving captures the file identity and submitted text. A preflight read refuses
+an already changed disk baseline; edits made while saving remain dirty against
+the acknowledged text. A connection generation change during preflight rejects
+the write. The current fs/writeFile protocol has no revision precondition:
+preflight is not atomic compare-and-swap and an external write can still race it.
+Write acknowledgement and cache refresh are separate outcomes. Save failures keep
+the draft; cached read failures keep the viewer mounted and offer retry.
+
+Query remains the only directory/read-snapshot cache. Both directory and content
+queries include the runtime/Host/connection read scope already used by Blob
+resources. Watches are reference-counted within the QueryClient owner, released
+by their final consumer (including late acquisitions), and invalidate only the
+matching generation's affected resource, parent listing or changed subtree.
+Manual refresh remains available when watches are unsupported or fail.
+
+A pure tree model sorts each data revision and projects expanded directories into
+flat rows. Only visible rows, overscan and the accessibility descendant mount.
+Row height is measured from the shared density hit-target token and used by both
+row placement and viewport calculations. Search uses a cancellable lease per
+query intent, so late results/completion from A -> B -> A cannot overwrite the
+current search. Opening results retains the query; clear-search restores the tree.
+Search and directory failures have explicit retry paths.
+
+Blob URL ownership, read-only download, Markdown/HTML isolation and the existing
+Office/PDF/media renderers remain at their established owners. Download exports
+the original file, never an unsaved draft. No new filesystem mutation or conditional
+write capability is advertised by this client refactor.
+
+Evidence: tests/shell/workspace-sessions.test.ts, workbench-panels.test.ts,
+workbench-resource-readonly.test.mjs and scripts/smoke/resources/smoke-workspace-file-tree.ts.
+Chromium smoke covers real AppShell/panel/editor components with a synthetic file
+port, desktop and touch contexts, light/dark themes and 5,004 directory entries.
+It is not physical-device or deployed-Host verification.
 
 ### Embedded Workbench Shell
 
@@ -367,6 +459,58 @@ resumes readiness in the background; a newer intent or disposal fences and
 releases late preparations. Selecting the current sidebar conversation from
 Settings uses this same return operation, not a new View or a network-gated
 selection. Submission ownership guards remain in force.
+Navigation intent, committed route and physical activation readiness are separate
+projections. `getPendingLocation`/`subscribePendingLocation` publish the accepted
+target before asynchronous View lookup; Sidebar selection consumes that target,
+then the committed route identity, never the connection coordinator's pending
+resource. Failure, leaving and account reset clear only the current intent.
+Confirmed retained Views can return locally from a different conversation;
+preferred-history membership alone cannot authorize that fast path.
+
+Navigation publishes an attempt identity, destination and preparing/committed/
+presented/failed/cancelled phase. Destination identity is not request identity;
+a stale result or paint callback cannot advance a newer attempt, even when both
+point to the same conversation. Legacy pending-location projection remains for
+row selection only; its disappearance is not proof of visible content.
+
+Shell starts the existing 500ms mobile drawer travel with accepted intent. It
+registers one optional departure driver using the shared Motion engine: the
+existing content and its page overlays consume actual mobile drawer progress,
+reaching zero alpha when the drawer closes. Docked layouts use a visual-only fade.
+As soon as target preparation completes, departure is interrupted and commit
+proceeds without waiting for any animation duration. Matching target paint starts
+an arrival from the outgoing opacity, with duration proportional to the remaining
+alpha (up to 80ms); a fully visible cached handoff is already complete. The
+ready-to-visible target is 100ms including final paint: 20ms is reserved for
+ordinary frame scheduling, not added as a delay. This is a presentation budget,
+not a guarantee against browser/OS long tasks or a wait for data readiness. This
+visual feedback does not block input. Motion-owned body and page overlays disable
+CSS transitions in every phase, so global reduced-motion duration overrides
+cannot add a second opacity transition at handback. Preparation latency
+and animation clocks are independent; no minimum dwell is imposed. No loading cover, DOM clone, new
+resource owner or independent content slide is used. Committed target content
+stays transparent/inert until a matching View/attempt visible-content callback;
+empty/error and local Draft states acknowledge their own rendered presentation.
+The acknowledgement remains functional if telemetry observation was aborted
+in the background. Hidden documents and reduced motion do not wait for a visual
+animation; detaching the presentation driver releases its outstanding gate.
+
+A failed attempt fades the retained original view back in and shows an inline
+retry notice. Cancellation and newer attempts revoke old callbacks. Reopening
+a mobile drawer during the same preparation does not make a stale completion
+close it. Docked desktop/tablet sidebars stay open; no editor focus is requested.
+Focus routing includes the Shell page-overlay host as well as root/sidebar hosts.
+
+History traversal consumes the same explicit retention-owner proof as selection:
+restore a retained View locally, then acquire physical readiness in the background.
+Router alone owns POP indices and rollback; local restoration never pushes a new
+history entry. Cold/invalid targets still prepare and fail with the existing
+ownership fences. Evidence: navigation-presentation.test.ts,
+sidebar-navigation-intent.test.ts, workbench-navigation-router.test.ts and
+smoke-sidebar-selection-handoff.ts cover concurrent preparation/departure, matching
+paint, failures, history traversal, supersession, touch/desktop, reduced motion,
+real opacity frames and manual reopen.
+
 Sidebar and other selection adapters express only `selectConversation`; they do
 not decide whether a Thread is already selected, whether pending hydration should
 be deduplicated, or whether Settings requires Chat return. The transaction owns
@@ -550,3 +694,17 @@ available above Chat and general Settings context, so it never requires opening
 the wallpaper desktop first. Board is an application contribution; products
 register their own applications through the same extension contract. The global
 right header, floating drawer header and footer do not duplicate this entrance.
+
+### File search index lifetime
+
+Opening a file browser acquires only a local search handle. The shared AppServer
+controller starts remote indexing on its first non-empty query, stops the native
+session when the query is cleared, and starts it again only for a later query.
+Controller disposal stops every owned native session, including starts acknowledged
+after disposal. Late query failures cannot recreate a released session.
+
+File searches require a project directory. The controller rejects filesystem roots,
+broad machine storage roots and Linux kernel/device trees before submitting an RPC.
+This lexical check is a client resource guard, not server-side canonical path
+confinement or a bound on the upstream index size. Normal project paths and the
+older one-shot AppServer protocol remain supported.

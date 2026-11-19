@@ -300,3 +300,94 @@ test('spawn defaults to a hidden subagent and preserves explicit visible convers
  assert.equal(f.service.orchestration.relation(visible.threadId)?.visibility,'visible');
  assert.equal(f.service.orchestration.relation(hidden.threadId)?.visibility,'hidden');
 });
+
+test('timer sweeps back off unchanged children, slow stale starting ones, and still settle waits',async t=>{
+ const f=await fixture(t);f.states.set('peer',{threadId:'peer',turnId:null,rootTurnId:null,state:'starting'});
+ const waited=await f.invoke('paced-wait','thread_wait',{threadIds:['peer'],timeoutMs:1});assert.equal(waited.settled,false);
+ const read=f.execution.snapshot;let reads=0;f.execution.snapshot=async id=>{if(id==='peer')reads++;return read(id);};
+ const tick=async(count:number,step=500)=>{for(let i=0;i<count;i++){f.advance(step);await f.broker.reconcile(true);}};
+ // 10 s of 500 ms timer ticks: 500 ms x4, 1 s x4, then 2 s -> about half the fixed-rate reads.
+ await tick(20);assert.ok(reads>=8&&reads<=12,`unchanged child read ${reads} times in 10 s`);
+ // Unchanged reads are capped at one per 5 s.
+ reads=0;await tick(20,500*10);assert.ok(reads>=18&&reads<=20,`capped child read ${reads} times in 100 s`);
+ // Still "starting" (no first turn) after 10 minutes: one read per 15 s.
+ await tick(100,5000);reads=0;await tick(120);assert.ok(reads>=3&&reads<=5,`stale starting child read ${reads} times in 60 s`);
+ // An explicit reconcile reads every target immediately.
+ reads=0;await f.broker.reconcile();assert.equal(reads,1);
+ // A settled child is still observed and wakes its waiter within one stale interval.
+ f.states.set('peer',{threadId:'peer',turnId:'peer-turn',rootTurnId:'peer-root',state:'completed',summary:'Done'});
+ await tick(32);f.advance(2100);await f.broker.reconcile(true);await f.service.pump();
+ assert.equal(f.service.orchestration.wait(waited.waitTicketId)?.state,'satisfied');assert.equal(f.inputs.filter(input=>input.threadId==='parent').length,1);
+});
+
+test('a direct operation on a child makes the next timer sweep read it again',async t=>{
+ const f=await fixture(t);f.service.authorizeExecution(f.b,'recipient','human-b');f.service.executionStarted('recipient','human-b','recipient-original');
+ f.states.set('recipient',{threadId:'recipient',turnId:'r',rootTurnId:'r',state:'active'});
+ const waited=await f.invoke('recipient-wait','thread_wait',{threadIds:['recipient'],timeoutMs:1});assert.equal(waited.settled,false);
+ const read=f.execution.snapshot;let reads=0;f.execution.snapshot=async id=>{if(id==='recipient')reads++;return read(id);};
+ for(let i=0;i<40;i++){f.advance(500);await f.broker.reconcile(true);}
+ const before=reads;f.advance(10);await f.broker.reconcile(true);assert.equal(reads,before,'not due yet');
+ await f.invoke('recipient-tell','thread_tell',{threadId:'recipient',message:'Please inspect'});
+ const afterTell=reads;f.advance(10);await f.broker.reconcile(true);assert.equal(reads,afterTell+1,'tell clears the backoff');
+});
+
+test('timer pumps back off an engine receipt that stays queued; explicit pumps and changes read at once',async t=>{
+ const f=await fixture(t);
+ await f.invoke('tell-paced','thread_tell',{threadId:'parent',message:'Queued behind a paused head'}).catch(()=>{});
+ f.service.authorizeExecution(f.b,'recipient','human-b');f.service.executionStarted('recipient','human-b','recipient-original');
+ await f.invoke('recipient-tell','thread_tell',{threadId:'recipient',message:'Please inspect'});await f.service.pump();
+ const request=f.service.database.prepare("SELECT id FROM actor_execution_requests WHERE thread_id='recipient' AND state='queued'").get() as {id:string}|undefined;
+ assert.ok(request,'the recipient input is queued in the engine');
+ const native=f.native as any,receipt=native.receipt;let reads=0;native.receipt=async(binding:any,id:string)=>{if(id===request!.id)reads++;return receipt(binding,id);};
+ for(let i=0;i<20;i++){f.advance(500);await f.service.pump(true);}
+ assert.ok(reads>=8&&reads<=12,`unchanged queued receipt read ${reads} times in 10 s`);
+ for(let i=0;i<60;i++){f.advance(500);await f.service.pump(true);}
+ reads=0;for(let i=0;i<40;i++){f.advance(500);await f.service.pump(true);}assert.ok(reads>=3&&reads<=5,`capped at one per 5 s, read ${reads} in 20 s`);
+ reads=0;await f.service.pump();assert.equal(reads,1,'explicit pump reads immediately');
+});
+
+test('an unconfirmed handoff stays unknown for review and is re-read at most every 30 s by timer pumps',async t=>{
+ const f=await fixture(t);f.service.authorizeExecution(f.b,'recipient','human-b');f.service.executionStarted('recipient','human-b','recipient-original');
+ const native=f.native as any;native.add=async()=>{throw Error('Engine restarted during reconciliation');};
+ await f.invoke('recipient-tell','thread_tell',{threadId:'recipient',message:'Please inspect'});await f.service.pump();
+ const request=f.service.database.prepare("SELECT id,state FROM actor_execution_requests WHERE thread_id='recipient'").get() as {id:string;state:string};
+ assert.equal(request.state,'unknown');
+ const receipt=native.receipt;let reads=0;native.receipt=async(binding:any,id:string)=>{if(id===request.id)reads++;return receipt(binding,id);};
+ for(let i=0;i<400;i++){f.advance(500);await f.service.pump(true);}
+ reads=0;for(let i=0;i<240;i++){f.advance(500);await f.service.pump(true);}
+ assert.ok(reads>=3&&reads<=5,`unknown handoff read ${reads} times in 120 s`);
+ assert.equal((f.service.database.prepare('SELECT state FROM actor_execution_requests WHERE id=?').get(request.id) as {state:string}).state,'unknown');
+ reads=0;await f.service.pump();assert.equal(reads,1,'explicit pump reads immediately');
+});
+
+test('a request whose receipt read keeps throwing is backed off as well',async t=>{
+ const f=await fixture(t);f.service.authorizeExecution(f.b,'recipient','human-b');f.service.executionStarted('recipient','human-b','recipient-original');
+ const native=f.native as any;native.add=async()=>{throw Error('Engine restarted during reconciliation');};
+ await f.invoke('recipient-tell','thread_tell',{threadId:'recipient',message:'Please inspect'});await f.service.pump();
+ const request=f.service.database.prepare("SELECT id,state,reason FROM actor_execution_requests WHERE thread_id='recipient'").get() as {id:string;state:string;reason:string};
+ assert.equal(request.state,'unknown');
+ let reads=0;native.receipt=async(_binding:any,id:string)=>{if(id===request.id)reads++;throw Error('Receipt lane unavailable');};
+ for(let i=0;i<400;i++){f.advance(500);await f.service.pump(true);}
+ reads=0;for(let i=0;i<240;i++){f.advance(500);await f.service.pump(true);}
+ assert.ok(reads>=3&&reads<=5,`throwing receipt read ${reads} times in 120 s`);
+ const after=f.service.database.prepare('SELECT state,reason FROM actor_execution_requests WHERE id=?').get(request.id) as {state:string;reason:string};
+ assert.deepEqual({...after},{state:'unknown',reason:request.reason});
+});
+
+
+test('concurrent waits share one status read and reuse unchanged snapshots',async t=>{
+ const f=await fixture(t);let reads=0;
+ f.execution.snapshot=async id=>{reads++;await new Promise(resolve=>setTimeout(resolve,20));return {threadId:id,state:'active',turnId:'turn',rootTurnId:'turn'};};
+ const results=await Promise.all([f.invoke('wait-one','thread_wait',{threadIds:['peer'],timeoutMs:650}),f.invoke('wait-two','thread_wait',{threadIds:['peer'],timeoutMs:650})]);
+ assert.equal(reads,1);assert.ok(results.every(result=>result.settled===false));
+});
+
+test('failed status reads back off rather than retrying on every timer tick',async t=>{
+ const f=await fixture(t);let reads=0;f.execution.snapshot=async()=>{reads++;throw Error('Host unavailable');};
+ await f.invoke('failed-wait','thread_wait',{threadIds:['peer'],timeoutMs:1});
+ for(let i=0;i<240;i++){f.advance(500);await f.broker.reconcile(true);}
+ assert.ok(reads<15,`failure backoff made ${reads} calls in 120 seconds`);
+ const before=reads;await f.broker.reconcile();assert.equal(reads,before+1,'explicit reconcile can revalidate immediately');
+ f.execution.snapshot=async id=>({threadId:id,state:'completed',turnId:'done',rootTurnId:'done'});
+ await f.broker.reconcile();assert.equal(f.service.orchestration.wait((f.service.orchestration.operation('parent:parent-turn:failed-wait')!.result as any).waitTicketId)?.state,'satisfied');
+});

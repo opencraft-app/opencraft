@@ -10,6 +10,7 @@ import type { TransportStatus } from "@opencraft/appserver-client";
 import { LocalAttachmentStagingService } from "../../apps/local-agent-host/src/attachments/local-attachment-staging.js";
 import { AppHostServer } from "../../packages/app-host-server/src/index.js";
 import { createWorkbenchWebServer } from "../../scripts/serve-workbench-web.mjs";
+import { AttachmentChunkDeadline } from "../../packages/workbench-runtime/src/attachment-upload.js";
 
 test("Web AppHost uploads binary files through the advertised 32 MiB staging limit", { timeout: 30_000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-web-upload-"));
@@ -100,4 +101,62 @@ test("Web AppHost uploads binary files through the advertised 32 MiB staging lim
     await appHost.close();
     await rm(root, { recursive: true, force: true });
   }
+});
+
+function deadlineClock() {
+  let now = 0, sequence = 0;
+  const timers = new Map<number, { at: number; run: () => void }>();
+  return {
+    setTimeout(run: () => void, ms: number) { const id = ++sequence; timers.set(id, { at: now + ms, run }); return id; },
+    clearTimeout(id: unknown) { timers.delete(id as number); },
+    advance(ms: number) {
+      now += ms;
+      for (const [id, timer] of [...timers].sort((a, b) => a[1].at - b[1].at)) {
+        if (timer.at > now || !timers.has(id)) continue;
+        timers.delete(id); timer.run();
+      }
+    },
+  };
+}
+
+test("weak uplink: a chunk deadline follows send progress instead of a fixed thirty seconds", () => {
+  const chunkFrameBytes = Math.ceil(1024 * 1024 / 3) * 4;
+  const clock = deadlineClock();
+  const deadline = new AttachmentChunkDeadline(chunkFrameBytes, false, clock);
+  deadline.observe({ loaded: 0, total: chunkFrameBytes });
+  // A 300 kbit/s uplink needs about 37 seconds for one encoded megabyte.
+  clock.advance(37_000);
+  deadline.observe({ loaded: chunkFrameBytes / 2, total: chunkFrameBytes });
+  clock.advance(37_000);
+  assert.equal(deadline.signal.aborted, false, "a slow but progressing upload is not cancelled");
+  deadline.observe({ loaded: chunkFrameBytes, total: chunkFrameBytes });
+  clock.advance(29_000);
+  assert.equal(deadline.signal.aborted, false);
+  clock.advance(2_000);
+  assert.equal(deadline.signal.aborted, true, "a missing Host acknowledgement remains bounded");
+  assert.match(deadline.message, /did not acknowledge/u);
+  deadline.dispose();
+});
+
+test("weak uplink: transports without progress reports get a size-proportional deadline", () => {
+  const chunkFrameBytes = Math.ceil(1024 * 1024 / 3) * 4;
+  const clock = deadlineClock();
+  const deadline = new AttachmentChunkDeadline(chunkFrameBytes, false, clock);
+  clock.advance(100_000);
+  assert.equal(deadline.signal.aborted, false, "one encoded megabyte has more than thirty seconds at a weak floor rate");
+  clock.advance(60_000);
+  assert.equal(deadline.signal.aborted, true);
+  deadline.dispose();
+});
+
+test("weak uplink: a stalled transport is still bounded after progress starts", () => {
+  const clock = deadlineClock();
+  const deadline = new AttachmentChunkDeadline(1_000, true, clock);
+  deadline.observe({ loaded: 0, total: 1_000 });
+  clock.advance(10 * 60_000 - 1);
+  assert.equal(deadline.signal.aborted, false);
+  clock.advance(1);
+  assert.equal(deadline.signal.aborted, true);
+  assert.match(deadline.message, /too little network progress/u);
+  deadline.dispose();
 });

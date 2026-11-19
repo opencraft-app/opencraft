@@ -51,6 +51,7 @@ import { OPENCRAFT_ATTACHMENT_STAGING_EXTENSION } from "@opencraft/appserver-pro
 import { AgentOnboardingService, createOnboardingDeps } from "./agent-onboarding.js";
 import { ConnectedAgentHost } from "./connected-agents.js";
 import { LocalAttachmentStagingService } from "./attachments/local-attachment-staging.js";
+import { HostArtifactCapture, generatedFileRootsFromEnvironment } from "./artifacts/host-capture.js";
 import { LocalWorkspaceResolver } from "./projectless-workspace.js";
 
 export { acquireLocalAgentStorageOwner } from "./storage/daemon-storage-owner.js";
@@ -72,7 +73,8 @@ const PROFILE_SKILLS_METHODS = new Set<ProfileSkillsMethod>([
   "skills/action/read",
 ]);
 const replyClient = new AsyncLocalStorage<string>();
-const ownerReply = new AsyncLocalStorage<(packet:Record<string,unknown>) => {id:string;receipt:string}>();
+type OwnerReply = (packet:Record<string,unknown>) => {id:string;receipt:string} | Promise<{id:string;receipt:string}>;
+const ownerReply = new AsyncLocalStorage<OwnerReply>();
 interface LogicalClient {
   readonly key: string;
   readonly clientId: string;
@@ -106,9 +108,17 @@ function send(socket: WebSocket, value: unknown, method = ""): void {
   if (socket.readyState !== WebSocket.OPEN) return;
   let packet = value as Record<string, unknown>;
   const client = replyClient.getStore(), finish = ownerReply.getStore();
-  if (packet && "id" in packet && !("method" in packet) && finish) packet = {...packet,opencraftDshReceipt:finish(packet)};
-  socket.send(serializeHistoryReply(client && packet && "id" in packet && !(LOGICAL_CLIENT_FIELD in packet)
-    ? { ...packet, [LOGICAL_CLIENT_FIELD]: client } : packet, method));
+  const deliver = (reply: Record<string, unknown>) => {
+    if (socket.readyState !== WebSocket.OPEN) return;
+    socket.send(serializeHistoryReply(client && reply && "id" in reply && !(LOGICAL_CLIENT_FIELD in reply)
+      ? { ...reply, [LOGICAL_CLIENT_FIELD]: client } : reply, method));
+  };
+  if (packet && "id" in packet && !("method" in packet) && finish) {
+    // A response never overtakes its committed custody record. Losing the
+    // connection preserves that record for the existing reconciliation lane.
+    void Promise.resolve(finish(packet)).then(receipt=>deliver({...packet,opencraftDshReceipt:receipt}))
+      .catch(()=>socket.close(1011,"DSH receipt persistence unavailable"));
+  } else deliver(packet);
 }
 function sendClient(socket: WebSocket, clientId: string, packet: Record<string, unknown>): void {
   send(socket, { ...packet, [LOGICAL_CLIENT_FIELD]: clientId || undefined });
@@ -120,8 +130,8 @@ export async function startLocalAgentHost(options: {
     open(): boolean;
     nativeLost(): Promise<void>;
     recoverNative(restart: () => Promise<void>): Promise<void>;
-    beginReceipt(request:unknown): (packet:Record<string,unknown>) => {id:string;receipt:string};
-    acknowledgeReceipt(input:unknown): void;
+    beginReceipt(request:unknown): OwnerReply | Promise<OwnerReply>;
+    acknowledgeReceipt(input:unknown): void | Promise<void>;
     run<T>(operation: () => Promise<T>, reconciliation?: boolean): Promise<T>;
     control(action: string, input: any): Promise<unknown>;
   };
@@ -139,6 +149,8 @@ export async function startLocalAgentHost(options: {
   readonly dshCapabilityPlugin?: string;
   readonly modelPolicyPath?: string;
   readonly dataDirectory?: string;
+  readonly artifactDirectory?: string;
+  readonly prepareArtifact?: (artifact: import("./artifacts/catalog.js").Artifact, owner: string, signal?: AbortSignal) => Promise<import("./artifacts/catalog.js").Artifact>;
   readonly environmentDataDirectory?: string;
   readonly storage?: LocalAgentStorage;
   readonly machineIdentity?: RuntimeMachineIdentity;
@@ -177,7 +189,7 @@ export async function startLocalAgentHost(options: {
   const persistentSkillsRoot = resolve(options.skillsDirectory ?? join(homedir(), ".opencraft", "skills"));
   const productDataRoot = resolve(options.dataDirectory ?? join(homedir(), ".opencraft"));
   const attachmentStaging = new LocalAttachmentStagingService(
-    join(productDataRoot, "attachments"),
+    join(productDataRoot, "attachments"), options.artifactDirectory,
   );
   cleanup.push(() => attachmentStaging.close());
   let bridgeUrl: string | undefined;
@@ -288,6 +300,7 @@ export async function startLocalAgentHost(options: {
       return capabilityLink.permissions(threadId, preset);
     },
   } : undefined, options.speechModelManagement === true);
+  adapter.setAttachmentInputPreparer((threadId,input)=>attachmentStaging.prepareInput(input,threadId,options.prepareArtifact));
   const projectlessWorkspaceRoot = (
     options.projectlessWorkspaceDirectory
     ?? process.env.OPENCRAFT_PROJECTLESS_WORKSPACE_DIRECTORY
@@ -306,6 +319,12 @@ export async function startLocalAgentHost(options: {
     }
   }));
   cleanup.push(() => adapter.close());
+  // Every engine in this host delivers tool outputs through one capture, independent of viewers.
+  const artifactCapture = new HostArtifactCapture(() => attachmentStaging.catalog, {
+    roots: () => [...(projectlessWorkspaceRoot ? [projectlessWorkspaceRoot] : []), ...generatedFileRootsFromEnvironment()],
+    diagnostic: entry => console.warn("[local-agent-host]", JSON.stringify(entry)),
+  }).observe(listener => adapter.subscribe(listener)).observe(listener => connectedAgents.subscribe(listener));
+  cleanup.push(() => artifactCapture.close());
   cleanup.push(adapter.subscribe((method, params) => {
     const value = params as { threadId?: string };
     // Creation belongs to the committed lifecycle transaction, including ephemeral policy.
@@ -418,6 +437,7 @@ export async function startLocalAgentHost(options: {
     release: params => capabilityLink!.thread("release", { ...params, sessionId: routing.native(String(params.sessionId)) }),
   });
   const prepareThreadExecution = async (threadId: string, inputId?: string) => {
+    if (lifecycle.catalog.isArchived(threadId)) throw new Error("Unarchive the thread before preparing execution");
     await adapter.activateThread(threadId);
     await skillRefresh.ensureFresh();
     const current = authority.table.get(threadId);
@@ -646,7 +666,7 @@ export async function startLocalAgentHost(options: {
       if (clientId.length > 4096) { socket.close(1008, "Invalid logical client"); return; }
       const state = logicalClient(clientId), { owner, offered, openedThreads } = state;
       if (request.method === "opencraft/owner/receipt" && options.ownerHandoff) {
-        try { options.ownerHandoff.acknowledgeReceipt(request.params); } catch { socket.close(1008,"DSH receipt rejected"); }
+        try { await options.ownerHandoff.acknowledgeReceipt(request.params); } catch { socket.close(1008,"DSH receipt rejected"); }
         return;
       }
       const dispatchRequest = async () => {
@@ -713,11 +733,11 @@ export async function startLocalAgentHost(options: {
           const paging = (request.params ?? {}) as { cursor?: unknown; limit?: unknown };
           const size = typeof paging.limit === "number" ? Math.min(200, Math.max(1, Math.floor(paging.limit))) : 50;
           const connectedCursor = typeof paging.cursor === "string" ? /^opencraft-connected-models:(\d+)$/u.exec(paging.cursor) : null;
+          const extras = await connectedAgents.models();
           const listed = connectedCursor ? { data: [], nextCursor: null } : await adapter.dispatchOwned(request.method, request.params, owner, request.id as string | number) as { data?: unknown[]; nextCursor?: string | null };
           const data = [...(listed.data ?? [])];
           let nextCursor = listed.nextCursor ?? null;
           if (nextCursor === null) {
-            const extras = await connectedAgents.models();
             const offset = connectedCursor ? Number(connectedCursor[1]) : 0;
             const remaining = Math.max(0, size - data.length);
             data.push(...extras.slice(offset, offset + remaining));
@@ -868,6 +888,7 @@ export async function startLocalAgentHost(options: {
             dispatchThread)
           : await adapter.dispatchOwned(request.method, request.params, owner, request.id as string | number);
         if (request.method === "thread/delete" || request.method === "thread/list") catalogChanges.observeResult(request.method, request.params, result);
+        if (request.method === "thread/list") result = catalogChanges.projectList(request.params, result);
         if (request.method === "initialize") {
           state.initialized = true;
           state.sharedInteractions = !!(request.params as { capabilities?: { extensions?: Record<string, unknown> } } | undefined)?.capabilities?.extensions?.[SHARED_INTERACTIONS_EXTENSION];
@@ -917,9 +938,9 @@ export async function startLocalAgentHost(options: {
       };
       try {
         await replyClient.run(clientId, () => options.ownerHandoff
-          ? options.ownerHandoff.run(() => {
+          ? options.ownerHandoff.run(async () => {
             if (!("id" in request) || !("method" in request)) return dispatchRequest();
-            return ownerReply.run(options.ownerHandoff!.beginReceipt(request), dispatchRequest);
+            return ownerReply.run(await options.ownerHandoff!.beginReceipt(request), dispatchRequest);
           }, dshHandoffReconciliation(request)) : dispatchRequest());
       } catch { sendClient(socket, clientId, {jsonrpc:"2.0",id:request.id,error:{code:-32001,message:"DSH admission fenced"}}); }
     });

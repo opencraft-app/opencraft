@@ -22,12 +22,12 @@ export class MembershipStore {
   readonly #readCache: PermissionReadCache;
   readonly outcome: DatabaseOutcome;
   readonly #closeDatabase: () => void;
-  constructor(path: ServerDatabaseSource) {
-    this.permissionProjectionEnabled = typeof path !== "string";
+  constructor(path: ServerDatabaseSource, options: {permissionProjection?: boolean} = {}) {
+    this.permissionProjectionEnabled = typeof path !== "string" && options.permissionProjection !== false;
     const managed = openServerRepository(path, "memberships");
     this.#closeDatabase = managed.close;
     this.#db = managed.database; this.outcome = managed.outcome;
-    this.#readCache = new PermissionReadCache(() => this.#permissionRows(), { enabled: typeof path !== "string", owner: typeof path === "string" ? this.#db : path.database });
+    this.#readCache = new PermissionReadCache(() => this.#permissionRows(), { enabled: this.permissionProjectionEnabled, owner: typeof path === "string" ? this.#db : path.database });
   }
   *#permissionRows(): Iterable<readonly [string, unknown]> {
     for (const row of this.#db.prepare('SELECT binding,role,enabled FROM members').iterate()) yield [JSON.stringify(["member", row.binding]), row];
@@ -64,6 +64,12 @@ export class MembershipStore {
   actorMembership(actorId: string): { role: MemberRole; enabled: boolean } | null {
     const row = this.#readCache.get(JSON.stringify(['actor-member',actorId]), () => this.#db.prepare('SELECT role,enabled FROM actor_members WHERE actor_id=?').get(actorId));
     return row ? { role: row.role as MemberRole, enabled: row.enabled === 1 } : null;
+  }
+  /** A disable/enable cycle retires employee credentials even between polls. */
+  revocationRevision(actorId: string, bindings: readonly Pick<Principal, 'provider' | 'subject'>[]): number {
+    return Math.max(0, ...[actorId, ...bindings.map(principalKey)].map(key =>
+      Number(this.#db.prepare(`SELECT COALESCE(MAX(id),0) AS revision FROM access_audit WHERE binding=?
+        AND CASE WHEN json_valid(action) THEN json_extract(action,'$.enabled') END = 0`).get(key)!.revision)));
   }
   importActorMembership(actorId: string, role: MemberRole) {
     this.#transaction(() => {

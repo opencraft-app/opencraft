@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "status": "source-recovery-only",
+  "mono2Revision": "25d32f9dd8b7d99d639369d1f48f69e7402255ed",
+  "files": [
+    {
+      "path": "recovery/mono2/products/join/grasp-proxy.ts",
+      "sourcePath": "products/join/grasp-proxy.ts",
+      "sourceRevision": "25d32f9dd8b7d99d639369d1f48f69e7402255ed",
+      "sha256": "44714e95e346ef3612209ca0abb35d8a1332a4b024b0fcb3c29e9a2b4a3a7c60"
+    },
+    {
+      "path": "recovery/mono2/products/join/grasp-rewrite-worker.ts",
+      "sourcePath": "products/join/grasp-rewrite-worker.ts",
+      "sourceRevision": "25d32f9dd8b7d99d639369d1f48f69e7402255ed",
+      "sha256": "32c4e8e9c15dbbbc85e738ad0e10fa6c5bc004ebcef6bfcac1d7fb8ec6f4d752"
+    },
+    {
+      "path": "recovery/mono2/products/join/grasp-rewrite.ts",
+      "sourcePath": "products/join/grasp-rewrite.ts",
+      "sourceRevision": "25d32f9dd8b7d99d639369d1f48f69e7402255ed",
+      "sha256": "e1d041d3e43f765693fd4030b4957edcda461bea84b54ea37c083691af493361"
+    },
+    {
+      "path": "recovery/mono2/products/join/mobile-preview.ts",
+      "sourcePath": "products/join/mobile-preview.ts",
+      "sourceRevision": "25d32f9dd8b7d99d639369d1f48f69e7402255ed",
+      "sha256": "5790fb0145ea26fb2b75df95cfbff0213591c2161fbebdf0873ef7105c5d611a"
+    },
+    {
+      "path": "recovery/mono2/products/join/package-relay.mjs",
+      "sourcePath": "products/join/package-relay.mjs",
+      "sourceRevision": "25d32f9dd8b7d99d639369d1f48f69e7402255ed",
+      "sha256": "b85eb8cdee82eed927c92c28f2d258945056ccb611c887ff5e6880d1a4a7fa84"
+    },
+    {
+      "path": "recovery/mono2/products/join/relay-canonical-redirect.ts",
+      "sourcePath": "products/join/relay-canonical-redirect.ts",
+      "sourceRevision": "25d32f9dd8b7d99d639369d1f48f69e7402255ed",
+      "sha256": "c0977063dc9b113f88f4b2da008f389e16be87717afbd85e3a092e150fed115e"
+    },
+    {
+      "path": "recovery/mono2/products/join/relay-composition.ts",
+      "sourcePath": "products/join/relay-composition.ts",
+      "sourceRevision": "25d32f9dd8b7d99d639369d1f48f69e7402255ed",
+      "sha256": "a8cb4ca8383d0eaa656fbcf646254e0a3dd4043f816f37719c87cb96cc790fe6"
+    },
+    {
+      "path": "recovery/mono2/products/join/relay-entry-aliases.ts",
+      "sourcePath": "products/join/relay-entry-aliases.ts",
+      "sourceRevision": "25d32f9dd8b7d99d639369d1f48f69e7402255ed",
+      "sha256": "dc2e1e5c79152f3b4a7fad7273b4211a20feefebc401dc3aa437d96ec5ea673c"
+    },
+    {
+      "path": "recovery/mono2/products/join/relay-main.ts",
+      "sourcePath": "products/join/relay-main.ts",
+      "sourceRevision": "25d32f9dd8b7d99d639369d1f48f69e7402255ed",
+      "sha256": "aea9243b1620e1de9a2914c44bd151d8d11f5054a8d9af0b3ab9a0081d44871e"
+    },
+    {
+      "path": "recovery/mono2/products/join/scripts/ioa/smoke-relay-browser.ts",
+      "sourcePath": "products/join/scripts/ioa/smoke-relay-browser.ts",
+      "sourceRevision": "25d32f9dd8b7d99d639369d1f48f69e7402255ed",
+      "sha256": "301580e264cdc4f037362fed88b09b2f7287706d40bb8fb77085285bfbf3dbd1"
+    },
+    {
+      "path": "recovery/mono2/products/join/share-thumbnail.ts",
+      "sourcePath": "products/join/share-thumbnail.ts",
+      "sourceRevision": "25d32f9dd8b7d99d639369d1f48f69e7402255ed",
+      "sha256": "af1356d275c563082dd4022baa2402e903bb9affaac85b57757a2f1310f6cb27"
+    },
+    {
+      "path": "recovery/mono2/products/join/tests/grasp-proxy.test.ts",
+      "sourcePath": "products/join/tests/grasp-proxy.test.ts",
+      "sourceRevision": "25d32f9dd8b7d99d639369d1f48f69e7402255ed",
+      "sha256": "69aa13f1844b752e748800718d626f6ef802f38fde83481753f59657fef9f0a5"
+    },
+    {
+      "path": "recovery/mono2/products/join/tests/ioa/relay-access.test.ts",
+      "sourcePath": "products/join/tests/ioa/relay-access.test.ts",
+      "sourceRevision": "25d32f9dd8b7d99d639369d1f48f69e7402255ed",
+      "sha256": "538799da7fc2f703865363ea7769d971f552568272949d56e11bec4e0b6c9bb4"
+    },
+    {
+      "path": "recovery/mono2/products/join/tests/mobile-preview.test.ts",
+      "sourcePath": "products/join/tests/mobile-preview.test.ts",
+      "sourceRevision": "25d32f9dd8b7d99d639369d1f48f69e7402255ed",
+      "sha256": "c2d885e89115de3956187f3c000698e1c4e40634ceb32851f14d84578432d96e"
+    },
+    {
+      "path": "recovery/mono2/products/join/tests/relay-canonical-redirect.test.ts",
+      "sourcePath": "products/join/tests/relay-canonical-redirect.test.ts",
+      "sourceRevision": "25d32f9dd8b7d99d639369d1f48f69e7402255ed",
+      "sha256": "c8d4a26ada383f5cd5a2053945b6f889ca8690ade11511ff442814a1a6138796"
+    },
+    {
+      "path": "recovery/mono2/products/join/tests/relay-composition.test.ts",
+      "sourcePath": "products/join/tests/relay-composition.test.ts",
+      "sourceRevision": "25d32f9dd8b7d99d639369d1f48f69e7402255ed",
+      "sha256": "d8cff9b9c296948e41b1d4b5393c44d860292dfd4cbebdc48e4f886f63500de6"
+    },
+    {
+      "path": "recovery/mono2/products/join/tests/relay-entry-aliases.test.ts",
+      "sourcePath": "products/join/tests/relay-entry-aliases.test.ts",
+      "sourceRevision": "25d32f9dd8b7d99d639369d1f48f69e7402255ed",
+      "sha256": "c7cb4a6e3532638b35ead5d99d3fb6e9e5b2ae04f5fc1005ee689481e96900fc"
+    },
+    {
+      "path": "recovery/mono2/products/join/tests/share-thumbnail.test.ts",
+      "sourcePath": "products/join/tests/share-thumbnail.test.ts",
+      "sourceRevision": "25d32f9dd8b7d99d639369d1f48f69e7402255ed",
+      "sha256": "c7b1d9dee3e8f0ab4123a58998a821f814f19de8ebcf9aa37ed056c707435d06"
+    }
+  ],
+  "runtime": {
+    "image": "csighub.tencentyun.com/skipzhang/opencraft-relay@sha256:0ad949737bfb585e5fcc274c380975c9b91eab07785f98876e4df322acc432a1",
+    "bundleSha256": "f9d46657dfb81624f2dda01bf0c5293b9dfc06e1f2f2b3addbebeb7b6ef049a6",
+    "coreSnapshot": "5fa760696e79539e326a54602fa02ca38020e771",
+    "streamDrainAnnotation": "a2be30b7bed3829e23f52faa560b5fb480fd5af2",
+    "originalCoreSourceRecovered": false
+  }
+}

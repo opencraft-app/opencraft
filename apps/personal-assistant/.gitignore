@@ -1,0 +1,10 @@
+node_modules/
+profiles/
+evidence/
+*.log
+
+evaluation/validation/
+evaluation/runs/
+evaluation/datasets/
+__pycache__/
+*.pyc

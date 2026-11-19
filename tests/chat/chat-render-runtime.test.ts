@@ -232,6 +232,8 @@ test("Chat URLs distinguish navigation, workspace files, external links and unsa
     "external",
   );
   assert.equal(resolveStandardChatResource("#result", context).kind, "anchor");
+  const conversation = "opencraft://conversation/v1/server/thread";
+  assert.deepEqual(resolveStandardChatResource(conversation, context), { allowed: true, kind: "app-route", target: conversation });
   assert.equal(
     resolveStandardChatResource("app://settings", context).kind,
     "app-route",
@@ -405,6 +407,26 @@ test("Chat enhancement service bounds concurrency and deduplicates cached work",
   assert.equal(await first, 1);
   assert.equal(await second, 1);
   assert.equal(calls, 1);
+  assert.equal(cordis.chatEnhancements.peek("same-highlight"), 1, "a warm renderer can use the result in its first render");
+  assert.equal(cordis.chatEnhancements.peek("different-source-or-theme"), undefined);
+  const service = cordis.chatEnhancements;
+  await fiber.dispose();
+  assert.equal(service.peek("same-highlight"), undefined, "disposed runtime cannot publish cached output");
+});
+
+test("presentation cache never exposes pending or evicted enhancement output", async () => {
+  const cordis = new Context();
+  const fiber = cordis.plugin(ChatEnhancementService);
+  await fiber;
+  let resolve!: (value: string) => void;
+  const first = cordis.chatEnhancements.run({ cacheKey: "first", lane: "highlight", run: () => new Promise<string>(yes => { resolve = yes; }) });
+  assert.equal(cordis.chatEnhancements.peek("first"), undefined);
+  resolve("ready");
+  await first;
+  assert.equal(cordis.chatEnhancements.peek("first"), "ready");
+  for (let i = 0; i < 100; i++) await cordis.chatEnhancements.run({ cacheKey: String(i), lane: "highlight", run: async () => String(i) });
+  assert.equal(cordis.chatEnhancements.peek("first"), undefined);
+  assert.equal(cordis.chatEnhancements.peek("99"), "99");
   await fiber.dispose();
 });
 
@@ -645,14 +667,15 @@ test("the Markdown root owns capture-phase semantic copy", () => {
 
 test("fade timeline caps cumulative waiting and does not replay delay on remount", () => {
   const timeline = new ChatFadeTimeline();
-  const delays = Array.from({ length: 8 }, (_, index) =>
+  const delays = Array.from({ length: 12 }, (_, index) =>
     timeline.delayFor(`segment-${index}`, 100),
   );
-  assert.deepEqual(delays, [0, 16, 32, 48, 64, 80, 96, 96]);
-  for (let index = 8; index < 5_000; index++) assert.ok(timeline.delayFor(`segment-${index}`, 100) <= 96);
-  assert.equal(timeline.delayFor("segment-4", 150), 14);
+  assert.deepEqual(delays, [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 300]);
+  for (let index = 12; index < 5_000; index++) assert.ok(timeline.delayFor(`segment-${index}`, 100) <= 300);
+  assert.equal(timeline.delayFor("segment-4", 150), 70);
   assert.equal(timeline.delayFor("segment-4", 999), 0);
-  assert.equal(timeline.isSettled("segment-4999", 346), true);
+  assert.equal(timeline.isSettled("segment-4999", 679), false);
+  assert.equal(timeline.isSettled("segment-4999", 680), true);
   timeline.settle("segment-4");
   assert.equal(timeline.isSettled("segment-4"), true);
   assert.equal(timeline.delayFor("after-idle-gap", 1_000), 0);

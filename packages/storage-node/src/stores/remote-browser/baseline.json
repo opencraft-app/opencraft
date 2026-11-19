@@ -1,0 +1,33 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "browser-resources-metadata-retirements",
+      "checksum": "19082d0ae6d55a390ddb1b0cef256fe2bbbcf9acff970b29676769641ac1d800"
+    }
+  ],
+  "tableOptions": {
+    "browser_meta": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "browser_pages": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "browser_metadata": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "browser_receipts": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "browser_retirements": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "8e1fc78fab1b6c387b81e42e9b0782a777c548e0d89f103fbb9a7d1f01db8a88",
+  "baselineSnapshotChecksum": "21eee53caf541bd1c3f4f9e3a885325dd9e580333f27061f6a910ec4e84757a7"
+}

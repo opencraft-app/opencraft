@@ -1,3 +1,8 @@
+import { useTouchLayout } from '../runtime/use-touch-layout';
+import { PanelOverviewButton, usePanelOverviewPresentation } from './panel-overview-presentation';
+import { PanelOverviewHost } from './panel-overview-host';
+import { PanelPreviewCache } from "@opencraft/workbench-panels";
+import { RetainedPreviewSource, panelViewKey, isPrimaryChatViewKey } from './retained-view-preview';
 import { Button, IconButton } from "@opencraft/design-system-web/button";
 import { AddIcon as Plus, TerminalIcon as TerminalSquare, CloseIcon as X, CheckIcon as Check, ChevronDownIcon as ChevronDown } from "@opencraft/design-system-web/action-icons";
 import { useWorkbenchPresentationActive } from "./workbench-presentation-activity";
@@ -37,7 +42,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { motion, useTransform } from "motion/react";
 import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
 import { createPortal } from "react-dom";
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useAppShellLayoutMotion } from "./app-shell";
 import { useShellPresentation } from "./shell-presentation";
@@ -51,6 +56,7 @@ import {
 } from "./right-panel-tab-drag";
 
 const PanelMobileToolbar = lazy(() => import('./panel-mobile-toolbar').then(module => ({ default: module.PanelMobileToolbar })));
+const PanelTabOverview = lazy(() => import('./panel-tab-overview').then(module => ({ default: module.PanelTabOverview })));
 
 function panelTitle(tab: PanelTabDescriptor, intl: IntlShape): string {
   if (tab.kind === "cloud-desktop") return intl.formatMessage({ id: "panel.desktopEntry", defaultMessage: "Cloud computer" });
@@ -189,7 +195,7 @@ function PanelCreationMenu({
                     }}>
                     <span className="app-shell-toolbar-menu__item-content"><PanelIcon tab={tab} /><span>{panelTitle(tab, intl)}</span></span>
                     {tabs.filter(other => other.title === tab.title).length > 1 ? <span className="right-panel-tab-menu__ordinal">{index + 1}</span> : null}
-                    <DropdownMenu.ItemIndicator><Check size={14} aria-hidden="true" /></DropdownMenu.ItemIndicator>
+                    <DropdownMenu.ItemIndicator><Check className="app-shell-toolbar-menu__check" aria-hidden="true" /></DropdownMenu.ItemIndicator>
                   </DropdownMenu.RadioItem>
                 ))}
               </DropdownMenu.RadioGroup>
@@ -355,11 +361,16 @@ export function RightPanel({
   const intl = useIntl();
   const region = "right" as const;
   const regionState = state[region];
+  const previews = useMemo(() => new PanelPreviewCache(state.ownerId), [state.ownerId]);
+  useEffect(() => () => previews.clear(), [previews, renderers]);
+  useEffect(() => { previews.retain(regionState.tabs); }, [previews, regionState.tabs]);
   const presentation = useShellPresentation();
   const newera = useTouchBrowserLayout();
+  const touch = useTouchLayout();
   const fullWidth = hostPresentationActive === undefined
     ? presentation?.rightPanelFullWidth ?? state.rightPanelFullWidth
     : state.rightPanelFullWidth;
+  const touchFullWidth = newera && fullWidth;
   const autoFullWidth = fullWidth && !state.rightPanelFullWidth;
   const { headerRightWidth, rightPanelTabBarLeftInset, rightPanelPresentationActive: shellPanelActive } =
     useAppShellLayoutMotion();
@@ -397,7 +408,10 @@ export function RightPanel({
     });
   }, [previewTabIds, regionState.tabs]);
   const draggedTabId = draggedTab?.id ?? null;
+  const overviewPresentation = usePanelOverviewPresentation();
+  const preparedScene = region === 'right' && overviewPresentation?.preparedScene?.ownerId === state.ownerId ? overviewPresentation.preparedScene : null;
   const activeTab =
+    regionState.tabs.find(tab => preparedScene?.key === panelViewKey(state.ownerId, tab.id)) ??
     regionState.tabs.find((tab) => tab.id === regionState.activeTabId) ?? null;
   const creationActions = toolbarActions.filter(
     (action) =>
@@ -405,6 +419,9 @@ export function RightPanel({
       action.creationLabel !== undefined &&
       (action.isAvailable?.(toolbarActionContext) ?? true),
   );
+  const activateTab = (tabId: string) => {
+    onAction({ type: "activate-tab", region, tabId });
+  };
   const ActivePanel =
     activeTab === null
       ? null
@@ -412,13 +429,25 @@ export function RightPanel({
           ?.Component ?? null);
   const activeRegistration = renderers.find(renderer => renderer.kind === activeTab?.kind);
   const presentationActive = useWorkbenchPresentationActive();
+  const preparedHere = activeTab && preparedScene?.key === panelViewKey(state.ownerId, activeTab.id);
+  const onPresentationReady = preparedHere ? preparedScene.contentReady : undefined;
+  useLayoutEffect(() => {
+    if (preparedScene && !isPrimaryChatViewKey(preparedScene.key) && !preparedHere) { preparedScene.unavailable(); return; }
+    if (activeRegistration?.presentationReadiness !== 'renderer') onPresentationReady?.();
+  }, [activeRegistration, onPresentationReady, preparedScene, preparedHere]);
   const interactive = presentationActive && (hostPresentationActive ?? presentation?.rightPanelOpen ?? regionState.open);
+  // Allocation belongs to the prepared scene before input is handed back.
+  const allocated = interactive || Boolean(preparedHere);
   const residentTabs = regionState.tabs.flatMap(tab => {
     const registration = renderers.find(renderer => renderer.kind === tab.kind);
-    return registration?.residency === "while-tab-open" ? [{ tab, Component: registration.Component }] : [];
+    return registration?.residency === "while-tab-open" ? [{ tab, Component: registration.Component, retainedPreview: registration.previewPresentation === "retained-view", legacyReparent: registration.previewFallback === "reparent-safe", previewAnchor: registration.previewAnchor }] : [];
   });
   const closeTab = (tab: PanelTabDescriptor) => {
     onCloseTab(tab);
+  };
+  const openPrimaryChat = () => {
+    if (presentation?.selectPrimary) presentation.selectPrimary();
+    else onAction({ type: 'set-region-open', region: 'right', open: false });
   };
 
   useEffect(() => {
@@ -513,11 +542,14 @@ export function RightPanel({
   return (
     <PanelPresentationContext.Provider value={{ region, active: rightPanelPresentationActive }}>
     <PanelNavigationContext.Provider value={{
+      ownerId: state.ownerId, previews, renderers,
       tabs: regionState.tabs, activeTabId: regionState.activeTabId,
-      activate: tabId => onAction({ type: 'activate-tab', region, tabId }),
+      openPrimaryChat,
+      activate: activateTab,
       close: onCloseTab,
       creationActions: creationActions.map(action => ({ id: action.id, label: action.label, icon: action.icon, run: () => action.run(toolbarActionContext) })),
     }}>
+    <PanelOverviewHost enabled={touch} />
     <DndContext
       sensors={sensors}
       collisionDetection={panelTabCollisionDetection}
@@ -527,9 +559,11 @@ export function RightPanel({
       onDragEnd={finishDrag}
     >
       <div className="right-panel-content" data-app-shell-tabs="true" data-panel-region={region}
-        data-mobile-panel={newera && fullWidth && interactive || undefined}
-        data-mobile-browser={newera && fullWidth && activeTab?.kind === 'browser' && interactive || undefined}>
-        <header className="right-panel-toolbar">
+        data-mobile-panel={touchFullWidth && allocated || undefined}
+        data-mobile-conversation={touchFullWidth && activeTab?.kind === 'sidechat' || undefined}
+        data-tool-overview={touchFullWidth && activeTab === null || undefined}
+        data-mobile-browser={touchFullWidth && activeTab?.kind === 'browser' && allocated || undefined}>
+        {!touchFullWidth ? <header className="right-panel-toolbar">
           <motion.div
             aria-hidden="true"
             className="right-panel-header-start-spacer"
@@ -561,13 +595,7 @@ export function RightPanel({
                     active={active}
                     dragging={draggedTabId === tab.id}
                     dragActive={draggedTabId !== null}
-                    onActivate={() =>
-                      onAction({
-                        type: "activate-tab",
-                        region,
-                        tabId: tab.id,
-                      })
-                    }
+                    onActivate={() => activateTab(tab.id)}
                     onClose={() => closeTab(tab)}
                   />
                 );
@@ -584,15 +612,15 @@ export function RightPanel({
                 portalContainer={portalContainer}
               />
             ) : null}
-            <PanelCreationMenu
+            {touch ? <PanelOverviewButton placement="toolbar" /> : <PanelCreationMenu
               key={`${state.ownerId}:tabs`}
               actions={creationActions}
               context={toolbarActionContext}
               tabs={regionState.tabs}
               activeTabId={regionState.activeTabId}
-              onActivateTab={tabId => onAction({ type: "activate-tab", region, tabId })}
+              onActivateTab={activateTab}
               portalContainer={portalContainer}
-            />
+            />}
           </div>
           <div className="right-panel-toolbar__actions">
             {toolbarActions
@@ -634,7 +662,7 @@ export function RightPanel({
               style={{ width: hostPresentationActive === undefined ? headerRightWidthPx : 0 }}
             />
           </div>
-        </header>
+        </header> : null}
 
         <div
           className="right-panel-view"
@@ -644,7 +672,9 @@ export function RightPanel({
           }
           role="tabpanel"
         >
-          {activeTab === null ? (
+          {activeTab === null && touchFullWidth ? <Suspense fallback={null}>
+            <div className="panel-overview-inline"><PanelTabOverview key={state.ownerId} active={interactive && !overviewPresentation?.open} onDismiss={openPrimaryChat} onOpen={() => {}} /></div>
+          </Suspense> : activeTab === null ? (
             <div
               className="right-panel-launcher"
               role="group"
@@ -676,20 +706,23 @@ export function RightPanel({
               ownerId={state.ownerId}
               presentationId={presentationId}
               active={interactive}
-              touchToolbar={newera && fullWidth}
+              touchToolbar={touchFullWidth}
               toolbarContainer={toolbarContainer}
+              onPresentationReady={onPresentationReady}
             />
           )}
-          {residentTabs.map(({ tab, Component }) => <div key={`${state.ownerId}:${tab.id}`}
+          {residentTabs.map(({ tab, Component, retainedPreview, legacyReparent, previewAnchor }) => <div key={`${state.ownerId}:${tab.id}`}
             className="right-panel-resident" hidden={tab.id !== activeTab?.id}
             inert={!interactive || tab.id !== activeTab?.id || undefined}>
-            <Component tab={tab} ownerId={state.ownerId} presentationId={presentationId}
-              active={interactive && tab.id === activeTab?.id}
-              touchToolbar={newera && fullWidth}
-              toolbarContainer={tab.id === activeTab?.id ? toolbarContainer : null} />
+            {retainedPreview ? <RetainedPreviewSource viewKey={panelViewKey(state.ownerId, tab.id)} allowLegacyMove={legacyReparent} previewAnchor={previewAnchor} preparing={tab.id === activeTab?.id && Boolean(preparedHere)}>{(previewing, overviewActive) => <Component tab={tab} ownerId={state.ownerId} presentationId={presentationId}
+              active={!overviewActive && !previewing && interactive && tab.id === activeTab?.id}
+              overviewPreview={previewing}
+              onPresentationReady={tab.id === activeTab?.id ? onPresentationReady : undefined}
+              touchToolbar={touchFullWidth}
+              toolbarContainer={(!previewing || preparedHere) && tab.id === activeTab?.id ? toolbarContainer : null} />}</RetainedPreviewSource> : <Component tab={tab} ownerId={state.ownerId} presentationId={presentationId} active={interactive && tab.id === activeTab?.id} onPresentationReady={tab.id === activeTab?.id ? onPresentationReady : undefined} touchToolbar={touchFullWidth} toolbarContainer={tab.id === activeTab?.id ? toolbarContainer : null} />}
           </div>)}
         </div>
-        {newera && fullWidth && interactive && activeTab?.kind !== 'browser' ? <Suspense fallback={null}><PanelMobileToolbar panelTabId={regionState.activeTabId ?? ''}
+        {touchFullWidth && allocated && activeTab && activeTab.kind !== 'browser' && activeTab.kind !== 'sidechat' ? <Suspense fallback={null}><PanelMobileToolbar panelTabId={activeTab.id}
           actions={<div className="panel-mobile-dock__plugin-actions" ref={setToolbarContainer} />}
           moreLabel={intl.formatMessage({ id: 'panel.more', defaultMessage: 'More panel actions' })}
           renderMore={toolbarActions.some(action => action.region === region && action.creationLabel === undefined && (action.isAvailable?.(toolbarActionContext) ?? true))

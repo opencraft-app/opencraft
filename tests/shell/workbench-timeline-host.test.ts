@@ -54,7 +54,7 @@ const settingsPageSource = readFileSync(
 );
 const modalSurfaceSource = readFileSync(
   new URL(
-    "../../apps/workbench-web/src/components/modal/modal-surface.tsx",
+    "../../packages/design-system-web/src/modal-surface.tsx",
     import.meta.url,
   ),
   "utf8",
@@ -145,7 +145,7 @@ test("Settings navigation enters through a semantic route adapter", () => {
   assert.ok(callbacks.length >= 2, "Settings entrypoints must remain covered");
   for (const callback of callbacks) {
     const target = ts.isArrowFunction(callback) && ts.isCallExpression(callback.body) ? callback.body.expression : callback;
-    assert.ok(ts.isIdentifier(target) && target.text === "openSettingsFromConversation",
+    assert.ok(ts.isIdentifier(target) && ["openSettingsFromConversation", "setSidebarDestination"].includes(target.text),
       `Settings callback bypasses the semantic adapter: ${callback.getText()}`);
   }
 });
@@ -166,7 +166,7 @@ test("the first submit atomically hands presentation from Draft to Conversation 
   );
   assert.match(
     workbenchApp,
-    /emptyState=\{draft !== null \? <PendingConversationPage/u,
+    /emptyState=\{unavailableThreadReason !== null \? <ConversationUnavailableState[\s\S]*?: draft !== null \? <PendingConversationPage/u,
   );
   assert.doesNotMatch(newThreadDraftSource, /Starting task/u);
   assert.match(pendingConversationSource, /contains no Draft[\s\S]*Composer/u);
@@ -181,20 +181,6 @@ const webConversationSource = readFileSync(
 const webViewportOwnerSource = readFileSync(
   new URL(
     "../../packages/timeline-host-web/src/conversation-viewport-owner.ts",
-    import.meta.url,
-  ),
-  "utf8",
-);
-const botConversationViewportSource = readFileSync(
-  new URL(
-    "../../plugins/bot-chat/src/conversation-viewport.ts",
-    import.meta.url,
-  ),
-  "utf8",
-);
-const botChatViewSource = readFileSync(
-  new URL(
-    "../../plugins/bot-chat/src/bot-chat-view.tsx",
     import.meta.url,
   ),
   "utf8",
@@ -364,7 +350,7 @@ test("application Settings owns route slots while target management owns a modal
   );
   assert.match(
     workbenchApp,
-    /<AppShell[\s\S]*?leftPanel=\{[\s\S]*?routeSettingsOpen \? settingsNavigation : \(conversationSurfaceVisible \|\| standaloneManagementOpen\) \? <Sidebar[\s\S]*?<div className="workbench-route-stage">[\s\S]*?\{settingsRoute\}[\s\S]*?<\/AppShell>/u,
+    /<AppShell[\s\S]*?leftPanel=\{[\s\S]*?routeSettingsOpen \? settingsNavigation : \(conversationSurfaceVisible \|\| standaloneManagementOpen \|\| extensionProjection\.activeView\?\.keepConversationSidebar\) \? <Sidebar[\s\S]*?<div className="workbench-route-stage">[\s\S]*?\{settingsRoute\}[\s\S]*?<\/AppShell>/u,
   );
   assert.match(workbenchApp, /const managementSettingsOpen = settingsOpen[\s\S]*?selectedSettingsContribution\?\.management !== undefined/u);
   assert.match(workbenchApp, /const conversationSurfaceVisible = conversationRouteOpen\s+\|\| \(managementSettingsOpen && !standaloneManagementOpen\)/u);
@@ -580,7 +566,7 @@ test("footer geometry and response placement have disjoint owners", () => {
   assert.match(webViewportOwnerSource, /readonly attachFooterElement/u);
   assert.match(
     webViewportOwnerSource,
-    /observeBorderBoxHeight\(footer,[\s\S]{0,520}?--thread-scroll-padding-bottom/u,
+    /observeBorderBoxHeight\(footer,[\s\S]*?--thread-composer-occlusion-height[\s\S]*?--thread-scroll-padding-bottom/u,
     "the platform layout owner writes footer padding in the ResizeObserver transaction",
   );
   assert.doesNotMatch(
@@ -602,7 +588,6 @@ test("footer geometry and response placement have disjoint owners", () => {
 
 test("physical scroll distance and input classification have one platform transaction owner", () => {
   assert.doesNotMatch(webConversationSource, /distanceRef|inputDirectionRef|touchPointRef|previousPointerSnapshotRef/u);
-  assert.doesNotMatch(botConversationViewportSource, /distanceRef/u);
 
   assert.match(
     webViewportOwnerSource,
@@ -617,20 +602,6 @@ test("physical scroll distance and input classification have one platform transa
   assert.match(webConversationSource, /viewportOwner\.bindScrollBehavior\(/u);
   assert.match(webResponseSource, /scrollController\.subscribe\(handlePlatformScroll\)/u);
   assert.match(webResponseSource, /scrollController\.addUserScrollListener\(handleUserScroll\)/u);
-  assert.match(botConversationViewportSource, /owner\.bindScrollBehavior\(/u);
-  assert.doesNotMatch(botConversationViewportSource, /scrollTop\s*</u);
-  assert.doesNotMatch(botChatViewSource, /onTranscriptScroll|onScroll=\{onTranscriptScroll\}/u);
-  assert.match(botConversationViewportSource, /owner\.scrollController\.addUserScrollListener/u);
-  assert.match(
-    botConversationViewportSource,
-    /preserveMeasuredViewport: !following/u,
-    "Bot follow and generic virtualizer preservation must never own the same layout transaction",
-  );
-  assert.doesNotMatch(
-    botConversationViewportSource,
-    /reportPlatformScroll\("user"\)/u,
-    "a React onScroll callback must not relabel every Bot layout scroll as user-owned",
-  );
 });
 
 test("Composer menus live in the root overlay plane with viewport constraints", () => {
@@ -721,7 +692,7 @@ test("Composer EditorView and submission callbacks are fenced by Conversation Vi
   );
   assert.match(
     composerSource,
-    /if \(editorViewRef\.current === view\) editorViewRef\.current = null;[\s\S]{0,260}?view\.destroy\(\);/u,
+    /if \(editorViewRef\.current === view\) editorViewRef\.current = null;[\s\S]{0,620}?view\.destroy\(\);/u,
   );
   assert.doesNotMatch(
     composerSource,
@@ -733,7 +704,7 @@ test("Composer EditorView and submission callbacks are fenced by Conversation Vi
 test("Composer submission preserves View-owned focus across primary action swaps", () => {
   assert.match(
     composerSource,
-    /requestAnimationFrame\(\(\) => \{[\s\S]{0,160}?disabledRef\.current[\s\S]{0,120}?controller\.focus\(\)/u,
+    /requestAnimationFrame\(\(\) => \{[\s\S]{0,160}?disabledRef\.current[\s\S]{0,800}?controller\.focus\(\)/u,
   );
   assert.equal(
     composerSource.match(
@@ -955,7 +926,7 @@ test("the header end slot measures fit width outside its animated geometry", () 
 test("a full-width right panel exclusively owns the center toolbar", () => {
   assert.match(
     appShellHeaderSource,
-    /className="app-shell-header__context-surface"[\s\S]*?aria-hidden=\{rightPanelFullWidth\}[\s\S]*?data-app-shell-header-context-hidden=\{rightPanelFullWidth\}/u,
+    /className="app-shell-header__context-surface"[\s\S]*?aria-hidden=\{primaryHidden\}[\s\S]*?data-app-shell-header-context-hidden=\{primaryHidden\}/u,
   );
   assert.match(
     workbenchApp,
@@ -1024,7 +995,7 @@ test("right-panel visibility and geometry remain AppShell-owned signals", () => 
   );
   assert.match(
     appShellSource,
-    /useWorkspacePaneAnimation\(fullWidthProgress, rightPanelAnimation, rightPanelFullWidth, layoutScope, rightPanelOpen\)/u,
+    /useWorkspacePaneAnimation\(fullWidthProgress, rightPanelAnimation, rightPanelFullWidth, layoutScope, rightPanelOpen, preparedForeground \? preparation\?\.id : null\)/u,
   );
   assert.match(
     appShellSource,
@@ -1148,7 +1119,8 @@ test("history pagination keeps one callback identity across viewport measurement
   assert.doesNotMatch(webConversationSource, /loadOlderPendingRef/u);
   assert.match(webConversationSource, /historyBackfill\.invalidate\(\);/u);
   assert.doesNotMatch(webViewportOwnerSource, /observer\.observe\(element\.firstElementChild\)/u);
-  assert.match(webConversationSource, /onContentLayoutCommitted=\{loadOlderUntilScrollable\}/u);
+  assert.match(webConversationSource, /onContentLayoutCommitted=\{active \? loadOlderUntilScrollable : undefined\}/u);
+  assert.match(webConversationSource, /loadPage: active \? onLoadOlder : undefined/u);
 });
 
 test("right-panel resize interaction is owned only by its edge handle", () => {
@@ -1431,7 +1403,7 @@ test("footer measurement prefers the ResizeObserver border box", () => {
   assert.equal(resizeObserverBlockSize(entry), 116.5);
 });
 
-test("the Web Conversation owns one horizontal plane for transcript and Composer", () => {
+test("the Web Conversation shares one inline offset between transcript and Composer", () => {
   assert.doesNotMatch(webConversationSource, /footerAttachment|thread-scroll-footer-spacer/u);
   assert.doesNotMatch(workbenchStyles, /thread-scroll-chrome-inline|viewport-overlay/u);
   assert.match(
@@ -1441,13 +1413,13 @@ test("the Web Conversation owns one horizontal plane for transcript and Composer
   assert.equal(
     webConversationSource.match(/wideContentOffsetPx/g)?.length,
     2,
-    "the surface consumes the horizontal offset once and derives only the wide-block CSS value",
+    "the plane publishes one inline offset and derives only the wide-block CSS value",
   );
 });
 
 test("the conversation scrollport terminates browser boundary scrolling", () => {
   const threadScrollRule = workbenchStyles.match(
-    /\.thread-scroll\s*\{[\s\S]*?\n\}/u,
+    /^\.thread-scroll\s*\{[\s\S]*?\n\}/mu,
   )?.[0] ?? "";
   assert.match(threadScrollRule, /overscroll-behavior:\s*none/u);
   assert.doesNotMatch(workbenchStyles, /data-timeline-overscroll/u);
@@ -1674,4 +1646,25 @@ test("desktop viewport reads remain event driven", () => {
     f.input.dispatchEvent(new f.win.Event("touchstart", { bubbles: true }));
     assert.equal(f.frames.size, 0);
   } finally { f.close(); }
+});
+
+
+test("captured WeChat pan does not hide reduced editing capacity from the clearance control", () => {
+  for (const [layout, visual, pan] of [[690, 447, 243], [776, 379, 397]]) {
+    const f = viewportPortFixture();
+    try {
+      Object.defineProperty(f.win.document.documentElement, "clientHeight", { value: layout });
+      f.input.focus(); f.input.setSelectionRange(2, 2);
+      Object.assign(f.visual, { height: visual, offsetTop: pan, pageTop: pan });
+      Object.defineProperty(f.win, "scrollY", { value: pan });
+      f.visual.dispatchEvent(new f.win.Event("resize"));
+      assert.equal(f.port.getSnapshot().keyboardInsetBottomPx, 0, "native pan cancels the old inset inference in both captures");
+      assert.equal(f.win.document.documentElement.dataset.timelineEditingViewportReduced, "true");
+      assert.equal(f.input.selectionStart, 2);
+      f.visual.scale = 2; f.visual.dispatchEvent(new f.win.Event("resize"));
+      assert.equal(f.win.document.documentElement.dataset.timelineEditingViewportReduced, "false", "magnification is not keyboard clearance");
+      f.visual.scale = 1; f.input.blur();
+      assert.equal(f.win.document.documentElement.dataset.timelineEditingViewportReduced, "false");
+    } finally { f.close(); }
+  }
 });

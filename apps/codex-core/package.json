@@ -4,11 +4,12 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "esbuild src/bin.ts --bundle --external:node-pty --platform=node --format=cjs --outfile=dist/main.cjs && esbuild src/app-server-bin.ts --bundle --external:node-pty --platform=node --format=cjs --outfile=dist/app-server.cjs && esbuild src/generation-bin.ts --bundle --external:node-pty --platform=node --format=cjs --outfile=dist/generations.cjs",
+    "build": "esbuild src/bin.ts --bundle --external:node-pty --platform=node --format=cjs --outfile=dist/main.cjs && esbuild src/app-server-bin.ts --bundle --external:node-pty --platform=node --format=cjs --outfile=dist/app-server.cjs && esbuild src/generation-bin.ts --bundle --external:node-pty --platform=node --format=cjs --outfile=dist/generations.cjs && esbuild src/generation-registry.worker.ts --bundle --platform=node --format=esm --outfile=dist/generation-registry-worker.mjs --banner:js=\"import {createRequire as __createRequire} from 'node:module'; const require = __createRequire(import.meta.url);\"",
     "start": "tsx src/bin.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@opencraft/local-agent-host": "0.1.0",
     "@opencraft/account-pool-host": "0.1.0",
     "ws": "^8.22.1",
     "@opencraft/sqlite-node": "0.1.0",

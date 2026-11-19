@@ -15,8 +15,14 @@ export function createNavigationRestorationSession(options: {
   router?: ApplicationRouterOptions;
 } = {}) {
   let connectCalls = 0;
+  let connecting: Promise<void> | null = null;
   const runtime = {
-    async connect() { connectCalls++; await options.connect?.(); },
+    connect() {
+      if (connecting) return connecting;
+      connectCalls++;
+      connecting = Promise.resolve().then(() => options.connect?.()).finally(() => { connecting = null; });
+      return connecting;
+    },
     async dispose() {},
     async acquireThread(threadId: string) { return { threadId, release() {} }; },
   };

@@ -1,0 +1,21 @@
+{
+  "name": "@join/opencraft-distribution",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build:web": "node build-web.mjs",
+    "build:gateway": "node build-gateway.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test tests/*.test.ts tests/ioa/*.test.ts",
+    "test:wecom": "tsx --test tests/wecom/*.test.mjs tests/wecom/*.test.ts",
+    "check:storage": "node --import tsx scripts/storage-migrations.mjs check"
+  },
+  "dependencies": {
+    "@opencraft/plugin-tencentoa": "0.1.0",
+    "marked": "18.1.2",
+    "redis": "^5.12.1",
+    "saxes": "^6.0.0",
+    "undici": "7.30.1"
+  }
+}

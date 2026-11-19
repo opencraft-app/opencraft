@@ -13,6 +13,31 @@ function createController() {
   });
 }
 
+test('an image identified after preparation gets a typed, draft-owned preview and releases it on removal', async () => {
+  const composer = createController(), session = attachmentPreviewSession(composer);
+  session.addFiles([new File(['jpeg bytes'], 'photo.jpg')], async (_file, pending) => ({ ...pending, mimeType: 'image/jpeg', lifecycle: 'ready', uri: 'file:///photo.jpg' }));
+  const { draft } = composer.getSnapshot(), attachment = draft.attachments[0]!;
+  assert.equal(session.previewUrl(draft.id, attachment.id), null);
+  await new Promise(resolve => setImmediate(resolve));
+  const source = session.previewUrl(draft.id, attachment.id)!;
+  assert.match(source, /^blob:/u); assert.equal((await (await fetch(source)).blob()).type, 'image/jpeg');
+  composer.dispatch({ type: 'remove-attachment', id: attachment.id });
+  assert.equal(session.previewUrl(draft.id, attachment.id), null); await assert.rejects(fetch(source));
+  composer.dispose();
+});
+
+test('an image discovered after its attachment was removed cannot create a late preview', async () => {
+  const composer = createController(), session = attachmentPreviewSession(composer);
+  let complete!: (value: ComposerAttachment) => void;
+  session.addFiles([new File(['jpeg bytes'], 'photo.jpg')], () => new Promise(resolve => { complete = resolve; }));
+  const { draft } = composer.getSnapshot(), pending = draft.attachments[0]!;
+  await Promise.resolve(); composer.dispatch({ type: 'remove-attachment', id: pending.id });
+  complete({ ...pending, mimeType: 'image/jpeg', lifecycle: 'ready', uri: 'file:///photo.jpg' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(session.previewUrl(draft.id, pending.id), null); assert.equal(composer.getSnapshot().draft.attachments.length, 0);
+  composer.dispose();
+});
+
 test("edited pixels replace one attachment in place, retire old upload and reject stale/different draft results", async () => {
   const composer = createController(), session = attachmentPreviewSession(composer);
   let oldComplete!: (value: ComposerAttachment) => void;
@@ -162,4 +187,72 @@ test("refused content admission releases the unowned image preview without start
   assert.equal(resolutions, 0);
   await assert.rejects(fetch(preview));
   base.dispose();
+});
+
+test("transfer progress belongs to the current attempt, survives view changes and rejects stale callbacks", async () => {
+  const composer = createController(), session = attachmentPreviewSession(composer);
+  type Report = (progress: { loaded: number; total: number } | null) => void;
+  const reports: Report[] = [];
+  const finish: Array<() => void> = [];
+  const resolver = (_file: File, pending: ComposerAttachment, _signal?: AbortSignal, report?: Report) => {
+    reports.push(report!);
+    return new Promise<ComposerAttachment>(resolve => finish.push(() => resolve({ ...pending, lifecycle: "ready", uri: "file:///done" })));
+  };
+  session.addFiles([new File(["data"], "notes.txt")], resolver);
+  await Promise.resolve();
+  const { draft } = composer.getSnapshot(), id = draft.attachments[0]!.id;
+  reports[0]!({ loaded: 2, total: 4 });
+  assert.deepEqual(session.progress(draft.id, id), { loaded: 2, total: 4 });
+  assert.equal(attachmentPreviewSession(composer), session);
+  for (const invalid of [{ loaded: NaN, total: 4 }, { loaded: 9, total: 4 }, { loaded: 0, total: 0 }]) reports[0]!(invalid);
+  assert.deepEqual(session.progress(draft.id, id), { loaded: 2, total: 4 });
+  session.retry(draft.id, id, resolver);
+  assert.equal(session.progress(draft.id, id), null);
+  await Promise.resolve();
+  reports[0]!({ loaded: 4, total: 4 }); finish[0]!();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(session.progress(draft.id, id), null);
+  reports[1]!({ loaded: 1, total: 4 });
+  reports[1]!(null); // reconnect / new transport attempt
+  assert.equal(session.progress(draft.id, id), null);
+  reports[1]!({ loaded: 3, total: 4 });
+  finish[1]!();
+  await new Promise(resolve => setImmediate(resolve));
+  reports[1]!({ loaded: 4, total: 4 });
+  assert.equal(session.progress(draft.id, id), null);
+  assert.equal(composer.getSnapshot().draft.attachments[0]!.lifecycle, "ready");
+  session.retry(draft.id, id, resolver);
+  await Promise.resolve();
+  session.remove(draft.id, id);
+  reports[2]!({ loaded: 4, total: 4 });
+  assert.equal(session.progress(draft.id, id), null);
+  composer.dispose();
+});
+
+test("history image edits append through the upload owner and reject stale destinations", async () => {
+  const composer = createController(), session = attachmentPreviewSession(composer);
+  session.addFiles([new File(["notes"], "notes.txt", { type: "text/plain" })], async (_file, pending) => ({ ...pending, lifecycle: "ready", uri: "file:///notes.txt" }));
+  await new Promise(resolve => setImmediate(resolve));
+  const before = composer.getSnapshot().draft;
+  const edited = new File(["pixels"], "edited.png", { type: "image/png" });
+  assert.equal(session.addImageToDraft(before.id, edited, undefined), false);
+  assert.equal(session.addImageToDraft(before.id, new File(["text"], "bad.txt", { type: "text/plain" }), async (_, pending) => pending), false);
+  assert.equal(session.addImageToDraft(before.id, edited, async () => { throw new Error("offline"); }), true);
+  await new Promise(resolve => setImmediate(resolve));
+  const after = composer.getSnapshot().draft;
+  assert.deepEqual(after.document, before.document);
+  assert.deepEqual(after.attachments[0], before.attachments[0]);
+  const image = after.attachments[1]!;
+  assert.equal(image.lifecycle, "failed");
+  assert.match(session.previewUrl(after.id, image.id)!, /^blob:/u);
+  assert.equal(session.retry(after.id, image.id, async (file, pending) => {
+    assert.equal(file, edited); return { ...pending, lifecycle: "ready", error: null, uri: "file:///edited.png" };
+  }), true);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(composer.getSnapshot().draft.attachments[1]?.lifecycle, "ready");
+  composer.dispatch({ type: "switch-target", target: { type: "existing-thread", key: createConversationKey("local", "other") } });
+  assert.equal(session.addImageToDraft(before.id, edited, async (_, pending) => pending), false);
+  assert.equal(composer.getSnapshot().draft.attachments.length, 0);
+  composer.dispose();
+  assert.equal(session.addImageToDraft(before.id, edited, async (_, pending) => pending), false);
 });

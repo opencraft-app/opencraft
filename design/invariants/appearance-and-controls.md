@@ -258,3 +258,16 @@ changes model selection, conversation identity, Composer node or draft.
 Quota windows and conversation token/context observations are separate groups.
 Team spend is labeled as team spend. Missing counts remain unreported, and a
 refresh retains existing same-scope content and the observation time on failure.
+
+
+## Settings content and action capacity
+
+Quiet text actions retain label layout; the ghost settings preset is reserved for
+icons. Settings headings and utility panel titles wrap long resource identifiers
+inside their available track, keeping trailing actions and modal dismissal visible.
+The utility header reserves the close target plus its inset and separation.
+
+Legacy settings accessory actions and shared modal close controls consume the
+shared input-density target floor at every viewport width. Touch size follows
+input density rather than a phone-width breakpoint; compact desktop presentation
+retains its existing geometry. Adaptive sheets inherit the same target floor.

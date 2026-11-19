@@ -2,7 +2,8 @@
 .agent-usage {
   flex: 0 1 auto;
   min-height: 0;
-  margin-block-start: calc(var(--spacing) * 2);
+  // The hairline is the list boundary; do not reserve a blank strip above it.
+  margin-block-start: 0;
   border-top: .5px solid var(--color-border-default);
   color: var(--color-text-secondary);
   @include typography.role(metadata, secondary);

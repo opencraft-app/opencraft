@@ -8,6 +8,21 @@ Host 拥有的资源执行原语、默认 4 vCPU / 8 GiB 预算、Linux 后端�
 
 身份与协作的上位原则见[原生主体与 Hub 协作设计纲领](architecture/actor-collaboration.md)：人类与持久 Agent/Bot/Session 都是主体，权限大小不决定主体性。本文继续规定执行对象、连接与租约的所有权；Runtime 的执行所有权不替代 Session 的主体身份。目标设计中的身份准入、Channel 与跨 Hub 授权仍待实现。
 
+## Generation Router 的存储与提交边界
+
+Generation Router 的生产服务通过 `CodexGenerationRuntime.open()` 启动独立
+Registry Worker。SQLite 连接、写入者锁和事务只由该 Worker 持有；网络线程只读
+已提交投影。租约受理、发送前证据、路由发现和释放均等待持久化确认，不能用
+投影更新或排队成功代替提交。Worker 退出或提交结果不明时关闭准入，拒绝等待者，
+不回退到主线程 SQLite，也不重放可能已发送的原生操作。
+
+投影以连续 revision 确认元数据增量；纯租约提交复用路由索引，不扫描或传输全部
+历史记录。历史责任校验只在历史键或引用变化时重算，并仍逐次检查当前责任约束。
+删除、事务回滚和外部 SQLite 提交会使相应缓存失效；缓存不能授予写入权。
+冷数据库检查和维护进程身份检查也在 Worker 内进行。关闭先停止请求生产者、
+结清已受理责任，再关闭存储。队列有上限，过载明确拒绝；无变化的元数据不产生
+重复 WAL 写入。该边界只覆盖 Generation Router，不能据此宣称所有服务均无同步 I/O。
+
 ## Client / Hub / Server 拓扑
 
 当前连接与执行契约的协议参与者是 Client、Hub 与 Server，不是 Renderer、Host 与引擎；此拓扑不要求在产品主体模型中再建立一个“逻辑协作 Server”：
@@ -1035,3 +1050,16 @@ tools; the existing engine's PTY path is unchanged. Real local acceptance and
 the explicit gaps (no real unconsumed-race reproduction; no real-model Host
 round trip) are recorded in
 [`plugins/pi-bridge/VALIDATION.md`](../plugins/pi-bridge/VALIDATION.md).
+
+## DSH consumer receipt persistence
+
+`DshConsumerReceipts` 通过异步端口调用专属 Worker；`DshConsumerReceiptStore` 在 Worker
+内持有 `dsh-consumer-receipts` managed SQLite owner 和唯一 writer 锁。
+begin 必须先提交未知责任，再派发业务；finish 提交准确响应摘要后才向消费者发布响应；
+ACK 必须匹配 id/receipt，并在删除提交后才完成。失败关闭、队列有界，不同步降级。
+热观察使用已提交计数并计入待提交操作，不能把持久化中的责任报告为空闲。
+
+旧 `consumer-receipts.json` 的每条原记录（包括 unknown 与额外字段）一次事务导入，
+原文件保留且不重写。导入来源摘要提交在同一数据库，重启不复活已确认记录；旧来源
+发生变化拒绝启动，避免旧/新 writer 分叉。升级恢复必须继续选择能打开当前存储的
+程序；不能恢复旧数据覆盖后续 ACK。持久化不等于消费者确认，断线不自动退休责任。

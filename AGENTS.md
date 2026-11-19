@@ -1,3 +1,19 @@
+# 内部发行版补充
+
+本 checkout 是 `git.woa.com/join/opencraft` 内部发行版。核心规则继续适用；
+产品装配归 `products/join`，本机源码集成/发布分支采用 `env/local` 并跟踪
+`origin/env/local`，替代本地旧 `dev/local` 发布约定。同步与贡献边界见
+[内部发行版](docs/internal-distribution/README.md)。GitHub upstream 仅拉取；
+不得将内部产品历史直接推入公共上游。
+
+内部提交与发布须遵守以下约定，操作步骤见[内部集成与发布](docs/internal-distribution/README.md#内部集成与发布)：
+
+- 推送前刷新 `origin/env/local`，从干净工作树整理明确范围；本地 `env/local` 可能含其他会话的待发布改动，不直接整条推送或部署。构建固定已提交、已集成的完整 SHA。
+- 工蜂校验新增历史中的 committer 是否属于认证账户。使用该账户已绑定且获授权的身份，以命令级 `git -c user.name=… -c user.email=…` 设置，不修改全局身份。当前校验记录见发行版文档，不能把一次授权当作永久邮箱偏好。
+- 祖先提交被拒绝时，从最新远端分支以 `cherry-pick -x` 整理所需提交，保留原 Author、来源 SHA 和原分支；只改最后一条提交无效。不 force-push、不改写已发布历史，不用 `merge -s ours` 跳过差异。
+- 推送明确准备好的提交到内部 `env/local`；远端推进后重新核对集成。共享分支合入与服务切换分别使用既有集成锁、部署锁，不能修改其他会话的工作树或覆盖其改动。
+- 分别记录远端 SHA、构建源 SHA/buildId 和运行镜像。整理历史后 SHA 不同，只有完整源码树一致才能复用原产物；保留原构建版本，不重标 SHA。每次发布新建产物目录，再采集现网基线，不能覆盖旧发布记录。仅文档更新无需重启服务。
+
 # OpenCraft Agent 入口
 
 本文件是OpenCraft服务根入口，独立GitHub checkout也必须能直接使用。独立仓库不要求不存在的父级脚本或内部文档。正式事实以当前源码、测试、生成契约和下列专题文档为准。
@@ -48,12 +64,14 @@ GitHub `opencraft-app/opencraft` 是目标核心上游，产品身份来源、�
 |---|---|
 | 新增功能含 UI，或界面、设置页、列表、表单、弹窗的实现/改版/评审 | [维护 Skill 的 UI 路径](.agents/skills/opencraft-maintenance/SKILL.md#ui-任务先进入设计路径) → [设计入口](design.md)；按需读取专项，不等用户另外提出设计要求 |
 | 平台、AppServer、Chat Runtime、Workbench、扩展 | [platform-architecture](docs/platform-architecture.md) 与命中的专题文档 |
+| Browser 自动化、PreviewBridge、Electron CDP 与 harness 工具适配 | [自动化迁移清单](docs/architecture/browser/automation-migration.md)；实现 TODO 见 [browser-cdp](packages/browser-cdp/AGENTS.md) |
 | 工作区、工具面板、浮动聊天、Side Chat | [design](design/README.md)；实现变更通过 `design/invariants.md` 索引维护对应专题 |
 | OpenCraft 架构、交互、布局、平台适配或预览 | [opencraft-maintenance](.agents/skills/opencraft-maintenance/SKILL.md)，按任务读取其验证清单 |
 | iPhone 通过 Cloudflare Tunnel 打开 Expo Go 开发预览 | [opencraft-expo-cf-preview](.agents/skills/opencraft-expo-cf-preview/SKILL.md)；先轻量核对 Metro、隧道与外网 iOS manifest，再给完整明文 `exps://` 链接，提醒用 Safari 打开；不为日常预览下载完整 bundle。手机操作见 [Expo README](apps/mobile/README.md#iphone-真机快速体验) |
 | Android 内测、正式 APK，或 iOS 测试 IPA | 先读 [手机端路线](apps/mobile/README.md#手机端路线) 和 [构建矩阵](docs/build-matrix.md)；按目标选择签名、包名及验证步骤 |
 | Android 备案资料或临时局域网下载 | [Android 正式 APK](apps/mobile/README.md#android-release-apk)；从最终 APK 核对包名、签名证书和文件摘要，只开放 APK 下载路径 |
 | 承载当前代理的 headless 预览服务切换或重启 | [opencraft-self-hosted-preview](.agents/skills/opencraft-self-hosted-preview/SKILL.md)；由独立服务完成切换与回退，重连后核对实际进程 |
+| 已部署 OpenCraft 的小范围快速变更、局部构建与单服务更新 | [opencraft-fast-change](.agents/skills/opencraft-fast-change/SKILL.md)；以运行产物为基线，构建候选并验证实际行为，依赖/迁移/跨服务变化转正式流程 |
 | 下游产品 Agent Console 共享实现 | [历史与消费契约](docs/upstream-history.md)；同步边界由下游产品工作区维护 |
 | Web、Expo、Electron 构建与交付 | [build-matrix](docs/build-matrix.md) |
 | 公共 npm 发布、Web 更新部署 | [Web 发布与部署](docs/web-deployment.md#公共-npm-发布流程)，含包名、Trusted Publisher、精确归档与验收约定 |
@@ -177,7 +195,7 @@ UI 任务按需读取 [UI 专题索引](design/ui/README.md)，字体任务继�
 |---|---|
 | 单 workspace | `npm run typecheck --workspace <package>` + 相关聚焦测试 |
 | 跨包 contract | 两端 typecheck/test + `npm run check:boundaries` |
-| Bot/Host | `npm run test:bot-management`，再按风险补 adapter/runtime 测试 |
+| Host | `npm run test:host-connection`，再按风险补 adapter/runtime 测试 |
 | Agent Console 同步（仅下游产品） | 在下游产品目录运行该产品的同步与只读漂移检查；公开核心不提供私有转调 |
 | 广泛共享或交付矩阵 | `npm run gate` |
 

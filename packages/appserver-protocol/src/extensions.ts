@@ -6,6 +6,18 @@ export const OPENCRAFT_THREAD_QUEUE_EXTENSION = "opencraft/thread-queue";
 /** Thread Goal operations actually implemented by this Server. */
 export const OPENCRAFT_THREAD_GOAL_EXTENSION = "opencraft/thread-goal";
 
+/** A narrow control intent, not an authorization grant. Mixed edits keep normal
+ * execution admission. Native still owns capability, version and state checks. */
+export function isThreadGoalPauseRequest(method: unknown, params: unknown): boolean {
+  if (method !== "thread/goal/set" || params === null || typeof params !== "object" || Array.isArray(params)) return false;
+  const value = params as Record<string, unknown>;
+  if (typeof value.threadId !== "string" || value.threadId.length === 0 || value.threadId.length > 512
+    || value.status !== "paused" || Object.keys(value).some(key => !["threadId", "status", "expectedVersion"].includes(key))) return false;
+  if (!("expectedVersion" in value)) return true;
+  return typeof value.expectedVersion === "string" && /^(0|[1-9][0-9]{0,18})$/.test(value.expectedVersion)
+    && BigInt(value.expectedVersion) <= 9223372036854775807n;
+}
+
 export interface OpenCraftThreadGoalCapability {
   readonly version: 1;
   readonly read: true;
@@ -68,6 +80,8 @@ export interface OpenCraftThreadLifecycleCapability {
   readonly ephemeralFork?: boolean;
   readonly ephemeral?: boolean;
   readonly injectItems?: boolean;
+  /** Persistent fork supports applying a side-chat policy through thread/settings/update. */
+  readonly sideChatSettings?: boolean;
   readonly unsubscribe?: boolean;
   readonly rename?: boolean;
   readonly archive?: boolean;
@@ -84,6 +98,7 @@ export function parseThreadLifecycleCapability(value: unknown): OpenCraftThreadL
     ephemeralFork: capability.ephemeralFork === true,
     ephemeral: capability.ephemeral === true,
     injectItems: capability.injectItems === true,
+    sideChatSettings: capability.sideChatSettings === true,
     unsubscribe: capability.unsubscribe === true,
     rename: capability.rename === true,
     archive: capability.archive === true,

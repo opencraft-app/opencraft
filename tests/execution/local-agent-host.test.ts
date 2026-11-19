@@ -1,3 +1,5 @@
+import { startTerminalPtyOwner } from "../../apps/local-agent-host/src/terminal-pty-owner.js";
+import { terminalOwnerLocation } from "../../apps/local-agent-host/src/terminal-owner-runtime.js";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
@@ -490,8 +492,12 @@ test("DSH questions cross the real mux and AppServer WebSocket, survive reconnec
   } finally { preflight.close(); socket.close(); await host.close(); await dsh.close(); }
 });
 
-test("process RPC survives WebSocket replacement without contacting the Agent harness", async () => {
-  const host = await startLocalAgentHost({ dshUrl: "http://127.0.0.1:1", token: "process-test" });
+test("process RPC survives WebSocket replacement without contacting the Agent harness", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "process-rpc-isolated-"));
+  const location = await terminalOwnerLocation(directory);
+  const stopOwner = await startTerminalPtyOwner(location.directory, location.endpoint);
+  t.after(async () => { await stopOwner(); await rm(directory, { recursive: true, force: true }); });
+  const host = await startLocalAgentHost({ dshUrl: "http://127.0.0.1:1", token: "process-test", dataDirectory: directory });
   let socket = await connect(host.websocketUrl);
   try {
     await request(socket, 1, "process/spawn", {
@@ -532,6 +538,11 @@ test("local Agent Host authenticates and projects DSH history into stable AppSer
       assert.equal(models.data[0].isDefault, true);
       const firstPage = await request(socket, 41, "model/list", { limit: 1 });
       assert.equal(firstPage.data.length, 1);
+      if (firstPage.nextCursor !== null) {
+        const nextPage = await request(socket, 42, "model/list", { limit: 1, cursor: firstPage.nextCursor });
+        assert.equal(nextPage.data.length, 1);
+        assert.notEqual(nextPage.data[0].model, firstPage.data[0].model);
+      }
       const resumed = await request(socket, 3, "thread/resume", { threadId: "s1" });
       assert.equal(resumed.thread.turns.length, 1);
       assert.deepEqual(resumed.thread.turns[0].items.map((item: { type: string }) => item.type), ["userMessage", "reasoning", "agentMessage"]);

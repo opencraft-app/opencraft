@@ -7,12 +7,13 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { once } from 'node:events';
+import { prepareLayout } from '../../container-deployment/layout.mjs';
 
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
 const image = process.env.OPENCRAFT_IMAGE ?? 'opencraft:local';
 const name = `opencraft-smoke-${randomBytes(5).toString('hex')}`;
 const directory = await mkdtemp(join(tmpdir(), name));
-const data = join(directory, 'data'), workspace = join(directory, 'workspaces');
+const data = join(directory, 'state'), workspace = join(directory, 'workspaces'), logs = join(directory, 'logs');
 // Chromium deliberately keeps its sandbox enabled, so a root CI runner uses
 // the image's unprivileged account unless the smoke caller selects another ID.
 const deploymentUid = Number(process.env.OPENCRAFT_SMOKE_UID ?? (process.getuid() === 0 ? 1000 : process.getuid()));
@@ -21,13 +22,19 @@ if (![deploymentUid, deploymentGid].every(Number.isInteger)) throw new Error('Sm
 const architecture = execFileSync('docker', ['image', 'inspect', image, '--format', '{{.Architecture}}'], { encoding: 'utf8' }).trim();
 const env = { ...process.env, OPENCRAFT_IMAGE: image, OPENCRAFT_DATA_DIR: data,
   OPENCRAFT_HOST_DATA_DIR: data, OPENCRAFT_HOST_WORKSPACE_DIR: workspace,
+  OPENCRAFT_HOST_LOG_DIR: logs, OPENCRAFT_LOG_DIR: '/var/log/opencraft',
+  OPENCRAFT_HOST_EXECUTION_DIR: join(data, 'execution'), OPENCRAFT_EXECUTION_DIR: join(data, 'execution'),
+  OPENCRAFT_BROWSER_DATA_DIR: join(data, 'execution', 'browser'),
+  OPENCRAFT_CODEX_PROJECTLESS_DIR: join(workspace, 'sessions', 'codex'),
+  OPENCRAFT_DSH_PROJECTLESS_DIR: join(workspace, 'sessions', 'dsh'),
+  OPENCRAFT_GATEWAY_HOME: join(data, 'home', 'gateway'),
   OPENCRAFT_WORKSPACE_DIR: workspace, OPENCRAFT_UID: String(deploymentUid), OPENCRAFT_GID: String(deploymentGid),
   OPENCRAFT_PLATFORM: `linux/${architecture}` };
 function docker(args, options = {}) {
   return (execFileSync('docker', args, { cwd: root, env, encoding: 'utf8', timeout: 600_000,
-    stdio: ['ignore', 'pipe', 'pipe'], ...options }) ?? '').trim();
+    stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], ...options }) ?? '').trim();
 }
-const compose = args => docker(['compose', '-f', join(root, 'docker/compose.yaml'), '-p', name, ...args]);
+const compose = args => docker(['compose', '--env-file', '/dev/null', '-f', join(root, 'docker/compose.yaml'), '-p', name, ...args]);
 async function waitFor(read, predicate, description) {
   let last;
   for (let attempt = 0; attempt < 240; attempt++) {
@@ -50,8 +57,8 @@ const topIncludesNativeExecServer = service => {
 
 let passed = false, origin;
 try {
-  await mkdir(data, { mode: 0o700 }); await mkdir(join(data, 'hands'), { mode: 0o700 }); await mkdir(workspace, { mode: 0o700 });
-  if (process.getuid() === 0) for (const path of [directory, data, join(data, 'hands'), workspace]) await chown(path, deploymentUid, deploymentGid);
+  const layout = await prepareLayout(env, { uid: process.getuid(), gid: process.getgid() });
+  if (process.getuid() === 0) for (const path of [directory, layout.state, layout.execution, layout.workspace, layout.logs, ...['brain', 'gateway', 'hands'].map(service => join(logs, service))]) await chown(path, deploymentUid, deploymentGid);
   const listener = createServer(); listener.listen(0, '127.0.0.1'); await once(listener, 'listening');
   env.OPENCRAFT_PORT = String(listener.address().port); await new Promise(resolve => listener.close(resolve));
   origin = `http://127.0.0.1:${env.OPENCRAFT_PORT}`;
@@ -62,6 +69,18 @@ try {
   };
   const ready = () => waitFor(health, value => value.status === 200 && value.body.ok && value.body.hosts?.['local-codex']?.state === 'ready', 'three-owner readiness');
   const first = await ready();
+  const terminalProbe = await readFile(join(root, 'scripts/smoke/server/hands-terminal-probe.mjs'), 'utf8');
+  const gatewayContainer = compose(['ps', '-q', 'gateway']);
+  const terminal = JSON.parse(docker(['exec', '-i', gatewayContainer, '/opt/opencraft/bin/node', '--input-type=module', '-', 'start', workspace], { input: terminalProbe }));
+  assert.ok(terminal.output.includes(compose(['ps', '-q', 'hands'])), 'PTY must belong to the Hands cgroup, not Brain or Gateway');
+  for (const service of ['brain', 'gateway', 'hands']) {
+    const records = (await readFile(join(logs, service, 'service.log'), 'utf8')).trim().split('\n').map(JSON.parse);
+    assert.ok(records.length > 0 && records.every(record => record.time && record.stream));
+  }
+  const handsContainer = compose(['ps', '-q', 'hands']);
+  assert.ok(docker(['exec', handsContainer, 'cat', '/var/log/opencraft/brain/service.log']).length > 0);
+  const denied = spawnSync('docker', ['exec', handsContainer, 'sh', '-c', 'echo forbidden >> /var/log/opencraft/brain/service.log'], { encoding: 'utf8' });
+  assert.notEqual(denied.status, 0, 'Hands must not modify Brain logs');
   const brain = {
     core: first.body.core.pid, codex: first.body.core.codexPid,
     engine: first.body.engineHost.pid, dsh: first.body.dsh.enginePid,
@@ -79,6 +98,8 @@ try {
   // Recreate only the stateless attachment. Both resource owners must survive.
   compose(['up', '-d', '--no-deps', '--force-recreate', 'gateway']);
   const second = await ready();
+  const resumedTerminal = JSON.parse(docker(['exec', '-i', compose(['ps', '-q', 'gateway']), '/opt/opencraft/bin/node', '--input-type=module', '-', 'resume', workspace, JSON.stringify(terminal)], { input: terminalProbe }));
+  assert.equal(resumedTerminal.preserved, true);
   assert.deepEqual({ core: second.body.core.pid, codex: second.body.core.codexPid,
     engine: second.body.engineHost.pid, dsh: second.body.dsh.enginePid }, brain);
   assert.deepEqual({ owner: topPid('hands', 'owner.cjs'), worker: topPid('hands', 'worker.cjs'),
@@ -101,7 +122,7 @@ try {
   console.log(JSON.stringify({ ok: true, origin, persistence: true,
     gatewayRestartKeepsBrain: true, gatewayRestartKeepsHands: true, brainUnavailable: 503, brainRecovery: true }));
 } catch (error) {
-  const logs = spawnSync('docker', ['compose', '-f', join(root, 'docker/compose.yaml'), '-p', name, 'logs', '--tail=100'],
+  const logs = spawnSync('docker', ['compose', '--env-file', '/dev/null', '-f', join(root, 'docker/compose.yaml'), '-p', name, 'logs', '--tail=100'],
     { cwd: root, env, encoding: 'utf8' });
   process.stderr.write((logs.stdout ?? '') + (logs.stderr ?? ''));
   throw error;

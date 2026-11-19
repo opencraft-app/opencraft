@@ -1,0 +1,18 @@
+.conversation-appearance-color {
+  &[data-color="default"] { color: var(--color-text); }
+  &[data-color="red"] { color: var(--color-badge-red-foreground); }
+  &[data-color="orange"] { color: var(--color-badge-orange-foreground); }
+  &[data-color="yellow"] { color: var(--color-badge-yellow-foreground); }
+  &[data-color="green"] { color: var(--color-badge-green-foreground); }
+  &[data-color="blue"] { color: var(--color-badge-blue-foreground); }
+  &[data-color="purple"] { color: var(--color-badge-purple-foreground); }
+  &[data-color="pink"] { color: var(--color-badge-pink-foreground); }
+}
+.conversation-appearance-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.conversation-appearance-trigger { flex: 0 0 auto; }
+.conversation-appearance-heading { display: flex; align-items: center; gap: calc(var(--spacing) * 2); min-width: 0; }

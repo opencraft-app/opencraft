@@ -1,3 +1,4 @@
+import type { ChannelSearchRegistry } from './channel-search-contribution';
 import { beginObservedOperation } from "./observability";
 import { ThreadPinWriter } from "./thread-pin-writer";
 import type { HostScheduleCatalog } from "./scheduled-task-catalog-context";
@@ -29,7 +30,7 @@ import {
   assertSkillDiscoveryAvailable,
   searchAppServerSkills,
   type FuzzyFileSearchSession,
-} from "@opencraft/composer-appserver";
+} from "@opencraft/composer-appserver/runtime";
 import {
   shouldSearchComposerCatalog,
   type ComposerCatalog,
@@ -111,6 +112,7 @@ interface AppServerApplicationContextValue extends AppServerHostCatalog {
   readonly platformViewRenderers: PlatformViewRendererRegistry;
   readonly platformAccounts: PlatformAccountContributionRegistry;
   readonly applicationBranding: ApplicationBrandingRegistry;
+  readonly channelSearch: ChannelSearchRegistry;
   readonly threadBadges: ThreadBadgeContributionRegistry;
   readonly threadListGrouping: ThreadListGroupingContributionRegistry;
   readonly identityAvatars: IdentityAvatarContributionRegistry;
@@ -168,11 +170,11 @@ export function AppServerRuntimeProvider({
     platformAccounts,
     applicationBranding,
     threadBadges,
+    channelSearch,
     threadListGrouping,
     identityAvatars,
     composerActionRenderers,
     imageEditors,
-    botDirectory,
     sidebarLayout,
   } = supervisor;
   const registrySnapshot = useSyncExternalStore(
@@ -289,11 +291,11 @@ export function AppServerRuntimeProvider({
     platformAccounts,
     applicationBranding,
     threadBadges,
+    channelSearch,
     threadListGrouping,
     identityAvatars,
     composerActionRenderers,
     imageEditors,
-    botDirectory,
     sidebarLayout,
     registry,
     navigation,
@@ -986,6 +988,7 @@ export interface ComposerCatalogSnapshot {
   readonly permissionProfiles: readonly PermissionProfileSummary[];
   readonly isFetching: boolean;
   readonly modelError: Error | null;
+  readonly modelErrorKind?: 'catalog' | 'preferences';
   readonly permissionProfileError: Error | null;
   readonly newThreadDefaults: {
     readonly model: string | null;
@@ -1084,8 +1087,12 @@ export function useComposerCatalog(
       // Recheck server restrictions whenever a user opens the selector.
       void queryClient.fetchQuery({ ...options, staleTime: 0 }).catch(() => undefined);
     },
-    retryModels: () => { if (enabled) void queryClient.fetchQuery({ ...options, staleTime: 0 }).catch(() => undefined); },
-  }), [enabled, options, queryClient, snapshot.hostId]);
+    retryModels: () => {
+      if (!enabled) return;
+      void queryClient.fetchQuery({ ...options, staleTime: 0 }).catch(() => undefined);
+      personalDefaults.retry();
+    },
+  }), [enabled, options, queryClient, snapshot.hostId, personalDefaults.retry]);
   const permissionProfiles = useInfiniteQuery({
     queryKey: ["appserver", snapshot.hostId, "permission-profiles", cwd] as const,
     enabled,
@@ -1131,6 +1138,7 @@ export function useComposerCatalog(
     permissionProfiles: permissionProfileData,
     isFetching: capabilities.isFetching || permissionProfiles.isFetching || personalDefaults.isFetching,
     modelError: personalDefaults.error ? errorOrNull(personalDefaults.error) : capabilities.error ? new Error(`${capabilities.data ? "能力目录刷新失败，当前显示上次结果" : "能力目录加载失败"}：${errorOrNull(capabilities.error)!.message}`) : null,
+    modelErrorKind: personalDefaults.error ? 'preferences' : capabilities.error ? 'catalog' : undefined,
     permissionProfileError: errorOrNull(permissionProfiles.error),
     newThreadDefaults: rememberedSelection ? { ...rememberedSelection, serviceTier: rememberedSelection.serviceTier !== undefined ? rememberedSelection.serviceTier : defaults.data?.supported === true ? defaults.data.serviceTier : undefined } : (defaults.data?.supported === true
       ? { model: defaults.data.model, effort: defaults.data.effort, serviceTier: defaults.data.serviceTier }

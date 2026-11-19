@@ -231,3 +231,61 @@ change its initial effort merely because another probe returned first.
 图片请求携带原生 turn ID；网关只接受已通过自定义 Responses 请求登记的回合，并校验原聊天模型仍启用、同一图像配置/凭据绑定仍有效。未知回合、订阅回合、停用或配置更改均拒绝。图像请求不传历史对话，只传本次提示词和显式参考图；每次使用独立 session，避免服务端残留历史串线。原生固定的图片模型值在适配器映射为配置 deployment ID。
 
 混元适配器当前支持普通背景、单张内联 PNG/JPEG/WebP 参考图、PNG 结果。未验证的透明背景、尺寸/质量控制、多参考图及 file_id 显式拒绝。返回 JSON 的 choices[].delta.image.url 被下载并转换为原生 created/data[].b64_json；下载不带凭据、拒绝重定向，仅接受此协议已验证的 HTTPS 腾讯 COS 来源，结果上限32MiB。配置保存不自动发起生图或证明能力。原生负责图片事件、保存路径与展示；失败不自动换服务或重试付费请求。
+
+
+## Anthropic continuation compatibility
+
+Responses input contains previous output, not an assistant-prefix completion
+contract. When the converted history ends with visible assistant output, the
+Messages adapter appends a transport-only user-role continuation cue. It keeps
+the preceding answer intact, requests continuation without repeating completed
+work, and explicitly grants no new authorization. The cue is not written to the
+caller's input or persisted transcript. This rule is protocol-based, not a model
+name allowlist (configured deployment names can be aliases).
+
+User/tool-result tails are unchanged. Missing tool results still fail local
+validation; no synthetic tool result or error-driven retry is introduced. The
+existing thinking-signature fallback retains the same single cue. OpenAI
+Responses pass-through is unaffected. See tests/execution/codex-anthropic.test.ts.
+
+## Structured output dialect compatibility
+
+The configured Anthropic Messages route projects Responses output schemas onto
+Messages' supported constraint subset. It removes unsupported numeric/length/count
+bounds from the wire schema and preserves them in descriptions, while leaving the
+caller's original schema unchanged. Only schema positions are visited: properties
+whose names happen to match schema keywords and enum/const/example data are not
+rewritten. Responses pass-through and ordinary callable tool schemas are unchanged.
+
+This projection guides generation; it does not enforce semantic bounds. The caller
+must validate output against its original contract before performing any effect.
+The assistant keeps its one-to-four routing limit (one for targeted/system input)
+and validates query integer bounds locally. Provider rejection is observed as a
+safe category and allowlisted keyword, never a copy of the provider's response body.
+No automatic model fallback or paid-request retry is introduced.
+
+See tests/execution/anthropic-output-schema.test.ts and
+https://platform.claude.com/docs/en/build-with-claude/structured-outputs .
+
+Managed personal assistants use a shared installation-local admission gateway for
+both Responses and Anthropic connections. Provider credentials remain in the model
+source and are resolved per attempt; native processes receive only scoped loopback
+credentials. HTTP 429 retries belong to this gateway, not to protocol translation,
+the native harness or business command execution. See the assistant's
+`docs/reception-lifecycle.md` for quota grouping, deadlines, cancellation and
+background postponement. Standalone explicit-endpoint profiles and unrelated
+execution-engine connections do not automatically join this limiter.
+
+## Assistant reasoning projection
+
+Assistant model listing and execution use the same reasoning projection. An explicit
+installation default is preserved; otherwise a model with declared reasoning levels
+uses the first supported native level in `medium`, `low`, `minimal`, `high`, `xhigh`,
+`off` order (`off` becomes native `none`). Non-thinking models use `none`. This does
+not rewrite model settings or select another model. A restriction on an unrelated
+level must not hide every declared model merely because its default was unspecified.
+
+Both the model ID and configured-provider model ID still pass the current usage
+policy. A denied or unsupported explicit default is not silently replaced. Missing
+reasoning metadata remains unspecified and therefore fails closed when the policy
+requires a concrete level; max-only declarations cannot be projected to native Codex.

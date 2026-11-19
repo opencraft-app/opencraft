@@ -12,28 +12,89 @@ const brandingAliases = new Map(Array.isArray(FILES) ? FILES
   .filter(name => name === "opencraft-icon.svg" || name.startsWith("plugin-assets/"))
   .map(name => [new URL("/" + name, scope).href, url(name)]) : []);
 const configurationUrl = url("opencraft-offline-configuration");
+const installationUrl = url("opencraft-offline-installation");
+const installationState = value => new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
 
 self.addEventListener("install", event => {
   event.waitUntil((async () => {
     if (!Array.isArray(FILES)) throw new Error("Offline shell requires a production build");
     const cache = await caches.open(cacheName);
+    const createdAt = Date.now();
+    await cache.put(installationUrl, installationState({ complete: false, active: false, createdAt }));
     try {
-      let index = 0;
-      await Promise.all(Array.from({ length: 4 }, async () => {
-        while (index < FILES.length) {
+      let previous = (await caches.keys()).filter(name => name.startsWith(prefix) && name !== cacheName);
+      const partial = [];
+      for (const name of previous) {
+        const status = await (await caches.open(name)).match(installationUrl);
+        if (!status) continue;
+        try { const value = await status.json(); if (value.complete === false || value.active === false) partial.push({ name, at: value.createdAt ?? 0 }); }
+        catch { /* A legacy complete build has no installation metadata. */ }
+      }
+      // Bound failed-build storage while retaining the active complete build.
+      const retired = partial.sort((a, b) => b.at - a.at).slice(1).map(value => value.name);
+      for (const name of retired) await caches.delete(name);
+      previous = previous.filter(name => !retired.includes(name));
+      let index = 0, failure;
+      const active = new Set();
+      const stop = error => {
+        failure ??= error;
+        for (const controller of active) controller.abort();
+      };
+      const results = await Promise.allSettled(Array.from({ length: 2 }, async () => {
+        while (!failure && index < FILES.length) {
           const name = FILES[index++];
-          const response = await fetch(url(name), { credentials: "omit", cache: "reload", redirect: "error" });
-          if (!response.ok || (name !== "opencraft-offline.html" && response.headers.get("content-type")?.includes("text/html"))) throw new Error("Offline resource unavailable");
-          await cache.put(url(name), response);
+          let response;
+          if (/^assets\/.+-[a-zA-Z0-9_-]{6,}\.[^/]+$/.test(name)) {
+            for (const oldName of [cacheName, ...previous]) {
+              response = await (await caches.open(oldName)).match(url(name));
+              if (response?.ok && !response.headers.get("content-type")?.includes("text/html")) break;
+              response = null;
+            }
+          }
+          if (failure) return;
+          if (response) { await cache.put(url(name), response); continue; }
+          for (let attempt = 0; ; attempt++) {
+            const controller = new AbortController();
+            active.add(controller);
+            const timer = setTimeout(() => controller.abort(), 30_000);
+            try {
+              response = await fetch(url(name), { credentials: "same-origin", cache: "default", priority: "low", redirect: "error", signal: controller.signal });
+              if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
+                const error = new Error("Offline resource denied: " + response.status);
+                stop(error); throw error;
+              }
+              if (!response.ok || (name !== "opencraft-offline.html" && response.headers.get("content-type")?.includes("text/html"))) throw new Error("Offline resource unavailable");
+              // The bound includes body download and the atomic cache write.
+              await cache.put(url(name), response);
+              break;
+            } catch (error) {
+              if (failure || attempt >= 2 || error?.name === "QuotaExceededError") { stop(error); throw failure; }
+              // Only transient failures retry, with bounded pacing rather than a hot loop.
+              await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+              if (failure) throw failure;
+            } finally { clearTimeout(timer); active.delete(controller); }
+          }
         }
       }));
-    } catch (error) { await caches.delete(cacheName); throw error; }
+      const failed = results.find(result => result.status === "rejected");
+      if (failure || failed) throw failure ?? failed.reason;
+      await cache.put(installationUrl, installationState({ complete: true, active: false, createdAt }));
+    } catch (error) {
+      // This is staging until the browser accepts installation. Keep successful
+      // immutable entries for the next attempt; failed installation never activates.
+      throw error;
+    }
     // No skipWaiting: existing documents retain their complete build until closed.
   })());
 });
 self.addEventListener("activate", event => {
   event.waitUntil((async () => {
     const current = await caches.open(cacheName);
+    const installed = await current.match(installationUrl);
+    if (!installed) throw new Error("Offline build is incomplete");
+    const installation = await installed.json();
+    if (installation.complete !== true) throw new Error("Offline build is incomplete");
+    await current.put(installationUrl, installationState({ ...installation, active: true }));
     const previous = (await caches.keys()).filter(name => name.startsWith(prefix) && name !== cacheName).sort().reverse();
     // A waiting update may activate on the first offline navigation, before a
     // document can configure it. Carry only the sanitized public recipe forward.
@@ -53,6 +114,7 @@ self.addEventListener("activate", event => {
 
 function publicConfiguration(value) {
   const result = {};
+  if (value.browserBackend === "remote" || value.browserBackend === "iframe") result.browserBackend = value.browserBackend;
   if (value.deployment) {
     const input = value.deployment;
     if (!Array.isArray(input.hosts) || input.hosts.length > 64) throw new Error("Invalid offline configuration");
@@ -105,10 +167,48 @@ async function offlineDocument() {
   const inert = (id, value) => value ? `<script id="${id}" type="application/json">${JSON.stringify(value).replaceAll("<", "\\u003c")}</script>` : "";
   const body = (await template.text()).replace(/<head(?:\s[^>]*)?>/i, head => head
     + `<meta name="opencraft-offline-build" content="${BUILD.replaceAll('"', '&quot;')}">`
+    + (configuration.browserBackend ? `<meta name="opencraft-browser-backend" content="${configuration.browserBackend}">` : "")
     + `<base href="${scope.href.replaceAll('"', '&quot;')}">`
     + inert("opencraft-deployment-config", configuration.deployment)
     + inert("opencraft-server-context", configuration.server));
   return new Response(body, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-opencraft-offline-build": BUILD } });
+}
+async function navigationResponse(request) {
+  let timer;
+  // A fetch resolves at headers. Keep the navigation budget until a bounded
+  // complete HTML document is available; streamed partial HTML is not a shell.
+  const controller = new AbortController();
+  const network = fetch(request, { signal: controller.signal }).then(async response => {
+    if (response.status === 401 || response.status === 403) return response;
+    if (response.status >= 500) return offlineDocument();
+    if (response.redirected || !response.ok || !response.headers.get('content-type')?.includes('text/html') || !response.body) return response;
+    const reader = response.body.getReader(), chunks = []; let size = 0;
+    try {
+      for (;;) {
+        const next = await reader.read(); if (next.done) break;
+        size += next.value.byteLength;
+        if (size > 2 * 1024 * 1024) throw new Error('Navigation HTML exceeds shell limit');
+        chunks.push(next.value);
+      }
+      const body = new Uint8Array(size); let offset = 0;
+      for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
+      const headers = new Headers(response.headers);
+      headers.delete('content-length'); headers.delete('content-encoding');
+      return new Response(body, {status:response.status,statusText:response.statusText,headers});
+    } catch (error) { void reader.cancel().catch(() => {}); throw error; }
+    finally { reader.releaseLock(); }
+  }).catch(offlineDocument);
+  const fallback = new Promise(resolve => {
+    timer = setTimeout(async () => {
+      try {
+        const cached = await offlineDocument();
+        if (cached.type === "error") resolve(network);
+        else { controller.abort(); resolve(cached); }
+      } catch { resolve(network); }
+    }, 8_000);
+  });
+  try { return await Promise.race([network, fallback]); }
+  finally { clearTimeout(timer); }
 }
 self.addEventListener("fetch", event => {
   const request = event.request;
@@ -122,6 +222,6 @@ self.addEventListener("fetch", event => {
   if (!target.pathname.startsWith(scope.pathname)) return;
   const relative = target.pathname.slice(scope.pathname.length);
   if (request.mode === "navigate" && (relative === "" || relative === "index.html" || /^(?:local|overhome|environments|views|settings|apps|threads|tasks)(?:\/|$)/.test(relative))) {
-    event.respondWith(fetch(request).then(response => response.status >= 500 ? offlineDocument() : response, offlineDocument));
+    event.respondWith(navigationResponse(request));
   }
 });

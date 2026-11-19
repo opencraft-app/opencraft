@@ -16,8 +16,10 @@ administrator-managed recipes, pinned trust and encrypted credentials.
 Settings drafts are transient; a live read-only profile
 overlay never duplicates these recipes in IndexedDB. A separate installation-owner
 HttpOnly session gates management and `/ssh-apphost`, with exact Origin and
-frame-level revocation checks. Public access requires explicit fixed-HTTPS-origin
-or changing-address opt-in; sessions stay bound to their admission Origin.
+frame-level revocation checks. Management accepts valid HTTP/HTTPS origins by
+default without a configured domain, independently of the backend listener Host;
+sessions stay bound to their admission Origin. There is no fixed-domain restriction. Public listener exposure and instance
+admission remain separately configured; forwarded headers grant no authority.
 Default shared installation access bootstraps this session automatically without
 an additional key, including after expiry/restart. Every permitted entry visitor
 can use saved SSH credentials in this mode; it is not a member ACL. Operators
@@ -294,6 +296,18 @@ Cloud resources remain visible but unselectable while not connectable.
 Manage models links are exposed only for the matching registered Settings owner
 (`local` Model Services / `local-codex` Codex Accounts).
 
+Hosts advertising `opencraft/workspace-placement` expose configured environments and
+library references in the existing New chat context toolbar. Host runtime owns
+`workspace/catalog/read`; its query is scoped to Host, runtime instance and connection
+generation. Disconnects and replaced readers cancel publication; menus refresh the
+catalog without replacing the editor. Configured does not mean provisioned or running.
+Environment and source selections retarget the same Draft/Scope/controller. Logical
+placement has `cwd: null` and no native runtime roots. A library choice sends its ID
+and relative path, never a client-invented mount path or permission policy. Incompatible
+selections remain visible and block the change; only the explicit empty-workspace
+choice discards the source. Switching Host with logical placement requires an explicit
+return to an empty Host workspace so Host-local catalog IDs cannot leak across Hosts.
+
 Changing Host creates a new Host-owned Draft/View through the application Router,
 transferring its current document, attachments, context, options and selections
 after activation. Inline images and same-machine staged files remain usable;
@@ -546,3 +560,15 @@ Relay duplex retains stream backpressure and splits outgoing byte writes into
 a huge inner message. This does not reorder inner bytes. Standalone relay builds
 need separate managed activation; package installation alone does not update them.
 The independent relay connection lifetime and all admission checks are unchanged.
+
+### AppHost public WebSocket compression
+
+The public Workbench ingress negotiates `permessage-deflate` when supported by
+its peer. Frames below 1 KiB bypass compression. Both directions require no
+context takeover: messages from different logical clients do not share a
+compression dictionary. The ingress caps the compression window at 12 bits,
+uses four concurrent zlib jobs and retains the 48 MiB decoded message limit.
+Peers without the extension continue using ordinary WebSocket frames. Internal
+engine links and desktop media transport retain their own transport policy.
+Compression does not acknowledge a request, cancel a mutation or establish
+application reachability; those remain owned by RPC receipts and route probes.

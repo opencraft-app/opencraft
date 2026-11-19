@@ -1,0 +1,351 @@
+{
+  "schemaVersion": 1,
+  "core": {
+    "localRevision": "b0b491a7c672b7ca4d1d5fba011a8261dd94a8cb",
+    "historicalUpstreamBase": "cab595b4c84f3c6683cf95992073a218cf780db6",
+    "originalSnapshot": "45ad05230f710f65a564a4bd32eed9b3d7c97270",
+    "ancestryBridge": "df55dbfb816e0c317222d8a6866c38f9346f7801"
+  },
+  "enterprisePlugin": {
+    "repository": "https://git.woa.com/wisp/mono2",
+    "revision": "3300a07be7b2702a7c1eb3dd186cce7d7e3d91b2"
+  },
+  "deployedGateway": {
+    "revision": "d7f4045c971df131cf73141d08466d327a7d9070"
+  },
+  "sourceFiles": [
+    {
+      "path": "products/join/AGENTS.md",
+      "sha256": "91b3a7235d27f51208aac038a25cdebe472d6b57068b296ac5844f28df156903"
+    },
+    {
+      "path": "products/join/README.md",
+      "sha256": "9d6b9be601bec92d129d815482495b51970e91e694820c697e15f7a0108efd46"
+    },
+    {
+      "path": "products/join/build-gateway.mjs",
+      "sha256": "6c4058acf830bf904cacfeab2b205629dbe1aa468bca41d41ccffc2e5d3aa889"
+    },
+    {
+      "path": "products/join/build-web.mjs",
+      "sha256": "1deb974e619f8954413d0d07565226de3520b1c276244ceb76f7f3dec7f7ee7c"
+    },
+    {
+      "path": "products/join/gateway.mjs",
+      "sha256": "da305a85526f3ac695837b58311c9f1a619a10fdc97875b0fcc497630e8373c8"
+    },
+    {
+      "path": "products/join/gongfeng-mcp.ts",
+      "sha256": "11db36f5141cd1996a97bdfb5909477621626a90a09e1113435ee1e4e6e3746c"
+    },
+    {
+      "path": "products/join/identity.mjs",
+      "sha256": "3e654a9263dc574c3b6c1f856fce082eb1ce1159804ec511af059cc5a94cdecd"
+    },
+    {
+      "path": "products/join/package.json",
+      "sha256": "f54e454177437a936defe5bbe1f2dadd5596540f5a5c0b68fb7dfa1ce72a32f1"
+    },
+    {
+      "path": "products/join/plugins/support-review/src/server.ts",
+      "sha256": "9d871de3b4f274c7b3c23c7652bfb039116395b6dca58cd739e9edde81479d26"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/package.json",
+      "sha256": "22fd8c628bb2eb86d4b7de3a273d793e6f4a07b4d4896d24379c7ff6fafd47bb"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/access-policy.ts",
+      "sha256": "204aa9366ecea1bb0092518eab43c36134c3c61f5ce23bde491a6562750c9d84"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/account.ts",
+      "sha256": "431e4493f31c64d69463ac772b0a2e3f1c23d6cbb1794c00f3482b928bb4b444"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/admission-contract.ts",
+      "sha256": "22744f547dd62f7402c3cf957b7885953e4299041397b4f6ba9014452d6e0651"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/admission-controller.ts",
+      "sha256": "99539baee6da32a19d4b783a22d5b03d13993c3d5535c2ed754ebdae06ceaf77"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/admission-policy.ts",
+      "sha256": "6e1a3428b50596afa8ce06953fd13467af2a9f475a3dde1c57026b417462ec1f"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/admission-view.tsx",
+      "sha256": "78222fa82de3d3227c23161ef6f1dfdfc7137728213d624d2542f9f16a08c4d2"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/admission.scss",
+      "sha256": "b8af317f0240c8ebb65b049d535f5dc02fac3a712a42dfab6a052246e3c5665c"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/cli-key-operator.ts",
+      "sha256": "83d72309aaa4d98e3ea329e06fad195dad4e80c962520ccb76cc873fcac22259"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/cli-keys.ts",
+      "sha256": "00166202987be61ca93d573a2cbb13b1e5266139108ba626df1924371c259f6c"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/contract.ts",
+      "sha256": "71bac57369f8951f51ce1b5a04a67784696cb0ae90ae58b118df4092b8d50cb2"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/controller.ts",
+      "sha256": "4b0cbfb248498941258d7d8afd24ad2d81b23df3bfd20fb69707b88eafcc18a2"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/creator-grouping.ts",
+      "sha256": "692b15280455f0219d198881476f4be9c0b7e93021ee314832f8ce54708f7452"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/environment-variables-view.tsx",
+      "sha256": "ff03d5c084288beb3e09b06ec7e9a29ed0263c680fdda812b55832449c71a006"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/git-credentials-contract.ts",
+      "sha256": "1bf7eb3064061abd8122a59d2be4d08609e0f65f7e40403ea8b584c540f19062"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/git-credentials-server.ts",
+      "sha256": "261558c27a89d0873ca8cc9002ee18e4015de20b56508a7b7efbfac62f91818b"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/git-credentials-view.tsx",
+      "sha256": "6a0a54053805c7153213dd0a6e7e14d07f6257acee5c8d2278634b8f108c546e"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/git-credentials.scss",
+      "sha256": "8ce1aaa374059a4a9c51ad2add10d1aed10cf83e59b3de614fb8ac9b5a57dd89"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/index.ts",
+      "sha256": "eede5e6e2e44ea53362d2a05426cf4a743d26781e868edc6e11ff4e803b03075"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/locales.ts",
+      "sha256": "46f646aedb428ab56427f7f007e3e6b5f2f3920cb3b1ef7281e8c35a2d969035"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/locales/en-US.json",
+      "sha256": "6afad66d048189dbb6b129c06b349c5d4b74bf45771e98b817ff0aff53929f15"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/locales/ms-MY.json",
+      "sha256": "6916eb5ac822dfaa8bf096f6b34f30fc3a2113abb9f98f5dc848348e91fa715c"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/locales/th-TH.json",
+      "sha256": "0e13fd29aca87b26648722c75e737f4ef788c1d5907a54d3f7c97ad672158f4c"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/locales/zh-CN.json",
+      "sha256": "da94e9155dc13ce47944595d416dfe860380e28f9fe7f12f3b3c257d4f0336dd"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/model-defaults.ts",
+      "sha256": "b0b951b1b44c45343b30a7d0df61b909f26adbf0ad8b0ea90d35ad5f8f9e53f1"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/participants-controller.ts",
+      "sha256": "fb3b5820d51e75fa7c22e09e9063df154d319d8f81afb53938329a09a853e9af"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/participants-response.ts",
+      "sha256": "e8fc0796ca1e5a1e00eda87a559de19b302858f7ad22a0548713759ca04ca0d7"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/participants-server.ts",
+      "sha256": "8068801f86ef498abc8c3ef4736488b634cb9fe10ec0524f116f5ba9d8738121"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/participants-view.tsx",
+      "sha256": "fedeaaeec259ceb1200c81f4b058140e647b3763a1ea820ef955ad15bd5024f7"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/participants.scss",
+      "sha256": "ebec1508da092e55bd7dd8b1df9e74c301998a1a95de79d66f06d51934c53a9a"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/participation-overview.ts",
+      "sha256": "bd3c00bf24de15a6a661f18b4f6e28373f0c390edfeeac9f01b27585dde5289c"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/photo.ts",
+      "sha256": "e4029f240b2adc1cb2113d62c68374c81ea0e89dd0c79ab15d25fc0d9df153e2"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/read-receipts.ts",
+      "sha256": "f25564ab4fc2235bfcec19f47b68e62c7991aaf6b60992d762b1d750fc1f956f"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/server.ts",
+      "sha256": "bf87da22eb11b7ac20c88c265e39d414b5d9a34033649b80ca439583d378b8ce"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/ssh-credentials.ts",
+      "sha256": "d6d569684fef54fc183e905dd42fdb315f3cc7f8187fc4b908f196a74a204b6b"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/styles.d.ts",
+      "sha256": "b207040b881c36c7e2b9e8dd900e859a475376a4a325e991ebe733f69a6f7121"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/src/view.tsx",
+      "sha256": "8ec6f3ad765df2112ad2a987b4a596432d46fb0ea01f8699858c7b946cfe6c6e"
+    },
+    {
+      "path": "products/join/plugins/tencentoa/tsconfig.json",
+      "sha256": "83837c8654d2f0f6b53ad7442dab03b99089c7c09e079d9027600a93186d7d8d"
+    },
+    {
+      "path": "products/join/plugins/wecom/shadow-transport.mjs",
+      "sha256": "bfeb4f2b7615aca55b3f2a8594e4e03a731ae013a4d29b7f9f1827f6bc35ab94"
+    },
+    {
+      "path": "products/join/scripts/storage-migration-tools.mjs",
+      "sha256": "68396425c8344808d7792e1030c18c15a4015216fa21082427775edebd9b7f8a"
+    },
+    {
+      "path": "products/join/scripts/storage-migrations.mjs",
+      "sha256": "4d4d0f8b03869b64efe83198b0846d08804c9059a5730931d742dd1d77686698"
+    },
+    {
+      "path": "products/join/scripts/storage-owner-source.mjs",
+      "sha256": "130e7bbf8aa57af4592bd223734997b4cfbf4c1157e2ed68fc31478868ad8c6f"
+    },
+    {
+      "path": "products/join/storage/README.md",
+      "sha256": "7229cd27c8230864c19b1f465e2afd63fb1c6ba237ce633aa6e3915b971aa425"
+    },
+    {
+      "path": "products/join/storage/join-employee-admission/baseline.json",
+      "sha256": "e0eb5f0a39faa106e06258c79a72a4e818735b73b33a01bcdec529aa3c3493be"
+    },
+    {
+      "path": "products/join/storage/join-employee-admission/drizzle.config.ts",
+      "sha256": "5005bf83fdf85bfde00220edc1629d44a0e4bcc9b34e63400993278aebaa6034"
+    },
+    {
+      "path": "products/join/storage/join-employee-admission/migrations/0000_legacy_baseline.sql",
+      "sha256": "88dfba30dc4c021fc7929b524b2a52f5e19c7df03b88559d4cb7c10c4d48a3f4"
+    },
+    {
+      "path": "products/join/storage/join-employee-admission/migrations/meta/0000_snapshot.json",
+      "sha256": "0f964f073749a9a21cd51fe7c90dcbf1aa772a7f4470d94e458db1d8c15c55e8"
+    },
+    {
+      "path": "products/join/storage/join-employee-admission/migrations/meta/_journal.json",
+      "sha256": "7b064fc6cbf374dd011d74274b4c8153ea84f4626efc94279a57ddbdcc9de95d"
+    },
+    {
+      "path": "products/join/storage/join-employee-admission/published.json",
+      "sha256": "f9202d38f061c23aff97d6199dd717a24fcaa305ef8e4a0a6fed0ad5506ebbc0"
+    },
+    {
+      "path": "products/join/storage/join-employee-admission/schema.ts",
+      "sha256": "5a34ec2cf054f80af0f41d98e2d19903bc6882dfcf34782a08864e134c9bf548"
+    },
+    {
+      "path": "products/join/storage/join-employee-ssh/baseline.json",
+      "sha256": "24b5fcfe7e5ba015eef1714133355388a5d95a4c360ebfcaef991e637259bb6a"
+    },
+    {
+      "path": "products/join/storage/join-employee-ssh/drizzle.config.ts",
+      "sha256": "3d1239611e774d8ee7aa1d024d0a6892c39bec3799bd04cd6929cf5ffa258a25"
+    },
+    {
+      "path": "products/join/storage/join-employee-ssh/migrations/0000_legacy_baseline.sql",
+      "sha256": "2bde6f71ae7cbaa48a9e73a5d386a4fae6c28ea0f3fcc3fb2f332dd881331d3e"
+    },
+    {
+      "path": "products/join/storage/join-employee-ssh/migrations/0001_sour_fixer.sql",
+      "sha256": "926bc0affdd950aafdde4cb35766eddf344b7d326e87c74a363d8333ca65d5e3"
+    },
+    {
+      "path": "products/join/storage/join-employee-ssh/migrations/0002_smooth_mole_man.sql",
+      "sha256": "82d9c12fb8be344f9bb75599d0ecfabc5aa67d46267eefe2c6e736f51975a05f"
+    },
+    {
+      "path": "products/join/storage/join-employee-ssh/migrations/meta/0000_snapshot.json",
+      "sha256": "c4fb5e4161549732bf8483438e3c2576b0639b5b9728b3a18f3985a4423e692b"
+    },
+    {
+      "path": "products/join/storage/join-employee-ssh/migrations/meta/0001_snapshot.json",
+      "sha256": "b851f8b5467601e5daf0931f0230129ba6b90a9d6a6b22c62aee301efed8b2b9"
+    },
+    {
+      "path": "products/join/storage/join-employee-ssh/migrations/meta/0002_snapshot.json",
+      "sha256": "d2cd1ffc0fe983b6d8b8eb2b3a82c9f85768c7c0541f4129a3589e4c7e9ad723"
+    },
+    {
+      "path": "products/join/storage/join-employee-ssh/migrations/meta/_journal.json",
+      "sha256": "b409e6d1d4ca4699c574024e39491cdfdd4f87afb8ce2835ad2239269480c805"
+    },
+    {
+      "path": "products/join/storage/join-employee-ssh/published.json",
+      "sha256": "6d78d6f434ac06b5f390f199d281e8c60facb88ed0ab6136bfcde8ccb44c0a76"
+    },
+    {
+      "path": "products/join/storage/join-employee-ssh/schema.ts",
+      "sha256": "be1073bda62c9ca6d94b72b7a96ebb180fe82158de3c6cc806a09d6b74f42369"
+    },
+    {
+      "path": "products/join/storage/migrations.generated.ts",
+      "sha256": "31cfa4664830645c2acbac8d415089b487c1684a1ac9fc1a31e87f41df5b928b"
+    },
+    {
+      "path": "products/join/storage/stores.json",
+      "sha256": "b3781917229886e2c1e3f0de8e45bf97e9cd52fd942a83dcc630908aa8061874"
+    },
+    {
+      "path": "products/join/tests/ioa/account-model-defaults.test.ts",
+      "sha256": "1354d6c3ae3082f46015a81561057c3e99a5cabf882e6acadaf157ffe9464bce"
+    },
+    {
+      "path": "products/join/tests/ioa/core-contracts.test.ts",
+      "sha256": "3a71faf0c0e35c7e7aa4d6ea006ea5e0af6ad3da99a9416a44b8e1f38fa5ada7"
+    },
+    {
+      "path": "products/join/tests/ioa/participation-overview.test.ts",
+      "sha256": "8d881e4f60774d1c69a24e2daeff70a2c22e396418a7972daedd2a6663a02775"
+    },
+    {
+      "path": "products/join/tests/ioa/session-fallback.test.ts",
+      "sha256": "e89232d557c2370d3280cae695e9a3dc911b8cd9bd3bce8eb3fca0308350b86e"
+    },
+    {
+      "path": "products/join/tests/ioa/tencentoa-creator-grouping.test.ts",
+      "sha256": "bd9a1f22be7965262bec6b0605a7721ca7747528433eb2b291393f663c797283"
+    },
+    {
+      "path": "products/join/tests/ioa/thread-read-receipt-port.test.ts",
+      "sha256": "0304070f45e939f5961cd6d7e15843702b28fdd3097c7431c16eff899146fbdb"
+    },
+    {
+      "path": "products/join/tsconfig.json",
+      "sha256": "68bfbbb67842dd9a2c6a1c2e948ab1d17911e436ca8577773da90baefbc269a6"
+    },
+    {
+      "path": "products/join/vite.config.mjs",
+      "sha256": "451b3734cb3c6d3241a9ef2395cb2adb336e30e8ae7e3462f51d1bafa7d5bf35"
+    },
+    {
+      "path": "products/join/web.ts",
+      "sha256": "7469e5b8072fa8ca20a5c09ae375a9bbfd71bd1b0484c3f57a55ba65f34252c4"
+    }
+  ],
+  "compatibility": {
+    "sharedCore": [
+      "Gateway lifecycle composition entry",
+      "SQLite migration contract and stable read guard",
+      "membership revocation fence"
+    ],
+    "dependencies": "Use existing core workspace versions and root package-lock.json",
+    "productStorage": "Preserve published private schemas and generated migration SQL; migration generation remains product-owned"
+  }
+}

@@ -840,3 +840,43 @@ unsupported, preserve the original size error so the existing reader can reduce
 the Turn page size. An unsupported Item RPC must not erase that size boundary.
 
 Conversation access and shared notes use the same Server owner. An installation with the original six import receipts imports only the two newly introduced sources, then commits their rows and receipts atomically. Existing receipts and retired-source digests remain mandatory and unchanged. Missing new sources receive explicit absence receipts. Production repositories borrow the core connection; isolated legacy paths are supported only before consolidation.
+
+
+### Remote browser resources
+
+`remote-browser` owns `remote-browser/state.sqlite` through
+`scripts/remote-browser/state.worker.ts`. The existing directory writer fence
+covers both legacy JSON and SQLite owners; shutdown drains the service queue,
+closes the Worker, then releases that fence. The registered schema stores active
+resources, account metadata/CAS and retry receipts, close receipts, and permanent
+retirement facts. All dependent changes share one `FULL` synchronous transaction.
+Only changed rows cross the Worker boundary. A process-local retirement index
+avoids copying permanent history for ordinary commits. No-change reducers do not
+write. Health exposes the managed database outcome only for a live opened owner.
+
+On first open, validated `tabs.json` records, a source digest and an import receipt
+commit atomically. After commit the source becomes `tabs.imported.json` and the directory is synced.
+This optional archive is never a read fallback and is not re-read on healthy
+startup. A reappearing `tabs.json` refuses activation. An interrupted import can
+verify and finish archiving a matching original source; missing old JSON is
+allowed after successful migration. A durable `state.sqlite.identity` shares the
+database's installation UUID; a missing/replaced database with that marker cannot
+reimport stale JSON. Back up the SQLite database with its identity; do not restore
+an older JSON writer over an admitted installation. Migration and SQL errors
+refuse readiness. Worker failure closes the browser service; an unacknowledged
+commit has unknown outcome and is reconciled from SQLite by a replacement owner.
+
+Validation includes partial import rollback and retry, frozen-source drift,
+missing-database fencing, same-transaction retirement, a failure in the final
+written table, lost commit acknowledgement, Worker loss/handover, queue draining,
+main-thread SQL refusal in a source-loader-free packaged service, a busy writer
+with responsive timers, and 20,000 retirement facts with bounded write messages.
+Migration v2 appends a normalized identity index and backfills old facts without
+changing v1 checksums. Startup no longer fetches all historical facts. Reducers
+prefetch declared keys and relevant metadata identities into query-scoped exact
+facts/absence proofs; unknown keys cannot pass. New metadata clients query only
+referenced identities and hold unknown drafts until authoritative admission.
+Legacy clients explicitly retain full-history reads. Tests cover bounded cold
+startup and real cold-client responses with 20,000 facts, indexed query plans,
+owner isolation, offline drafts, and v1 backfill. Global active/account projection
+cost remains separate; permanent anti-resurrection facts are never expired.

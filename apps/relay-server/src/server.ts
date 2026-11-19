@@ -3,14 +3,19 @@ import type { Duplex } from "node:stream";
 import { createGunzip, createBrotliDecompress, createInflate } from 'node:zlib';
 import { randomBytes, randomUUID, createHash, timingSafeEqual } from "node:crypto";
 import WebSocket, { WebSocketServer } from "ws";
-import { relayDuplex } from '@opencraft/relay-protocol/node';
+import { relayDuplex, relayIdleDeadline } from '@opencraft/relay-protocol/node';
 import { AssertionSigner, ASSERTION_HEADER, type IdentityProvider } from "@opencraft/identity-core/node";
-import { CONTROL_PATH, DATA_PATH, STREAM_HEADER, RELAY_PROTOCOL, MAX_RELAY_STREAMS, relayPathAllowed } from "@opencraft/relay-protocol";
+import { CONTROL_PATH, DATA_PATH, STREAM_HEADER, RELAY_PROTOCOL, MAX_RELAY_STREAMS, relayPathAllowed, DRAIN_HEADER, DRAIN_CAPABILITY } from "@opencraft/relay-protocol";
 import { RelayAuthentication, type EntryOriginResolver } from './authentication.js';
-import type { HubNetwork } from '../../../packages/hub-network/src/node.js';
+import type { RelayClusterPort, RelayHub } from './cluster-port.js';
 import { SERVERS_PATH, LEGACY_SERVERS_PATH, isServerPath, selectedPath, serverBase, selectorPage, scopedHtml, targetCookies, scopedCookies, selectionDefault, parseServerPaths, type ServerPaths } from './selection.js';
 import type { Principal } from '@opencraft/identity-core';
 import type { HubService } from '../../../packages/hub-network/src/contract.js';
+import { HUB_CONTROL_PATH, HUB_DATA_PATH } from '../../../packages/hub-network/src/contract.js';
+
+export interface RelayEntryIdentity { principal: Principal; origin: string; }
+export interface RelayServerDirectory { servers: { id: string; name: string; route: string }[]; pending: boolean; }
+export interface RelayIngress { (request: IncomingMessage, response: ServerResponse): boolean; close?: () => Promise<void>; }
 
 export interface RelayRoute {
   readonly instanceId: string;
@@ -21,7 +26,7 @@ export interface RelayRoute {
   readonly identityProvider: IdentityProvider;
   readonly hubId?: string;
 }
-interface Connection { socket: WebSocket; streams: Set<Duplex>; alive: boolean; }
+interface Connection { instanceId: string; claim?: string; socket: WebSocket; streams: Set<Duplex>; alive: boolean; preservesStreams: boolean; detached: boolean; releaseRetained?: () => void; }
 interface Pending { connection: Connection; token: string; accept: (socket: WebSocket) => void; reject: (error: Error) => void; }
 function equal(a: string, b: string) { return timingSafeEqual(createHash('sha256').update(a).digest(), createHash('sha256').update(b).digest()); }
 function bearer(req: IncomingMessage) { const value = req.headers.authorization; return typeof value === 'string' && /^Bearer [A-Za-z0-9_-]{43}$/u.test(value) ? value.slice(7) : ''; }
@@ -32,7 +37,8 @@ function failure(response: ServerResponse, status: number) {
 function reject(socket: Duplex, code: number) { socket.end(`HTTP/1.1 ${code} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); }
 const identityHeaders = new Set(['timestamp', 'signature', 'x-rio-seq', 'staffid', 'staffname', 'x-ext-data', 'x-tai-identity']);
 export function createRelayServer(routes: readonly RelayRoute[], options: { authentication?: { origin: string; provider: IdentityProvider }; entryOrigin?: EntryOriginResolver; build?: { sourceRevision: string | null; buildId: string | null };
-  hub?: HubNetwork; networkRoute?: (service: HubService) => RelayRoute | null; operator?: { credential: string }; serverSelection?: boolean; selectionDefaults?: ReadonlyMap<string, string>; serverPaths?: ServerPaths } = {}) {
+  ingress?: RelayIngress;
+  hub?: RelayHub; cluster?: RelayClusterPort; networkRoute?: (service: HubService) => RelayRoute | null; operator?: { credential: string }; serverSelection?: boolean; selectionDefaults?: ReadonlyMap<string, string>; serverPaths?: ServerPaths } = {}) {
   if ((!routes.length && !options.hub) || routes.length > 1000) throw new Error('Relay requires explicit routes');
   const byHost = new Map<string, RelayRoute>(), byId = new Map<string, RelayRoute>();
   for (const route of routes) {
@@ -56,13 +62,16 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
     return matches.length === 1 ? matches[0] : undefined;
   };
   const connections = new Map<string, Connection>(), pending = new Map<string, Pending>();
+  const allConnections = new Set<Connection>();
+  const responses = new Set<ServerResponse>(), upgraded = new Set<Duplex>();
+  const businessUpgrades = new Set<Duplex>();
   const availableRoutes = () => [...routes, ...(options.hub?.routes() ?? []).flatMap(r => {
     const route = options.networkRoute?.(r.service); return route && !byHost.has(new URL(route.origin).host) && !byId.has(route.instanceId)
       && (!options.authentication || new URL(route.origin).host !== new URL(options.authentication.origin).host) ? [route] : [];
   })];
   const names = () => new Map((options.hub?.snapshot().peers ?? []).filter(p => p.hubId).map(p => [p.hubId!, p.name]));
   const selected = new WeakMap<IncomingMessage, { route: RelayRoute; principal: Principal; base: string; name: string; canonicalPath?: string }>();
-  const authentication = options.authentication ? new RelayAuthentication(options.authentication.origin, options.authentication.provider, availableRoutes, options.entryOrigin) : null;
+  const authentication = options.authentication ? new RelayAuthentication(options.authentication.origin, options.authentication.provider, availableRoutes, options.entryOrigin, options.cluster?.sessions) : null;
   const findRoute = (request: IncomingMessage) => {
     const host = request.headers.host ?? '';
     const route = availableRoutes().find(r => new URL(r.origin).host === host);
@@ -73,39 +82,92 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
     return entry ? { ...entry, origin } : undefined;
   };
   const controls = new WebSocketServer({ noServer: true, maxPayload: 4096, perMessageDeflate: false });
+  controls.on('headers', (headers, req) => {
+    if (req.headers[DRAIN_HEADER] === DRAIN_CAPABILITY) headers.push(`${DRAIN_HEADER}: ${DRAIN_CAPABILITY}`);
+  });
   const data = new WebSocketServer({ noServer: true, maxPayload: 65_536, perMessageDeflate: false });
-  let closing = false;
+  let closing = false, draining = false, accepting = true, upgrading = 0;
+  const forget = (connection: Connection) => {
+    if (connection.detached && connection.streams.size === 0) { allConnections.delete(connection); connection.releaseRetained?.(); }
+  };
+  const detach = (connection: Connection) => {
+    connection.detached = true;
+    if (connections.get(connection.instanceId) === connection) connections.delete(connection.instanceId);
+    const claim = connection.claim; connection.claim = undefined;
+    if (claim) void options.cluster?.releaseConnection(connection.instanceId, claim).catch(() => retire(connection));
+    for (const [id, p] of pending) if (p.connection === connection) { pending.delete(id); p.reject(new Error('Relay disconnected')); }
+    forget(connection);
+  };
+  let rejectedInstance = 0, rejectedGlobal = 0, openTimeouts = 0, peakSlots = 0, peakInstanceSlots = 0;
+  const capacity = () => {
+    const reservations = new Map<string, number>();
+    for (const p of pending.values()) reservations.set(p.connection.instanceId, (reservations.get(p.connection.instanceId) ?? 0) + 1);
+    let activeStreams = 0;
+    for (const c of allConnections) {
+      activeStreams += c.streams.size;
+      reservations.set(c.instanceId, (reservations.get(c.instanceId) ?? 0) + c.streams.size);
+    }
+    const maxInstanceSlots = Math.max(0, ...reservations.values());
+    const slots = activeStreams + pending.size;
+    peakSlots = Math.max(peakSlots, slots); peakInstanceSlots = Math.max(peakInstanceSlots, maxInstanceSlots);
+    return { relayCapturedAt: Date.now(), relayActiveStreams: activeStreams, relayPendingStreams: pending.size,
+      relayControlConnections: connections.size, relayMaxInstanceSlots: maxInstanceSlots,
+      relayPeakSlots: peakSlots, relayPeakInstanceSlots: peakInstanceSlots,
+      relayInstanceLimit: MAX_RELAY_STREAMS, relayGlobalLimit: 4096,
+      relayRejectedInstance: rejectedInstance, relayRejectedGlobal: rejectedGlobal, relayOpenTimeouts: openTimeouts };
+  };
   const retire = (connection: Connection) => {
+    detach(connection);
     connection.socket.terminate();
     for (const stream of connection.streams) stream.destroy();
-    for (const [id, p] of pending) if (p.connection === connection) { pending.delete(id); p.reject(new Error('Relay disconnected')); }
   };
   async function channel(route: RelayRoute, signal: AbortSignal): Promise<Duplex> {
     if (route.hubId && options.hub) return options.hub.open(route.hubId, undefined, signal);
-    const connection = connections.get(route.instanceId);
-    if (!connection || connection.socket.readyState !== WebSocket.OPEN || connection.streams.size + [...pending.values()].filter(p => p.connection === connection).length >= MAX_RELAY_STREAMS || pending.size + [...connections.values()].reduce((sum,c)=>sum+c.streams.size,0) >= 4096 || closing) throw new Error('Instance unavailable or busy');
+    return options.cluster ? options.cluster.open(route.instanceId, signal) : localChannel(route.instanceId, signal);
+  }
+  async function localChannel(instanceId: string, signal: AbortSignal, claim?: string): Promise<Duplex> {
+    const connection = connections.get(instanceId);
+    if (claim && connection?.claim !== claim) throw new Error('Retired relay owner');
+    if (!connection || connection.detached || connection.socket.readyState !== WebSocket.OPEN || closing) throw new Error('Instance unavailable or busy');
+    const current = capacity();
+    let instanceSlots = 0;
+    for (const live of allConnections) if (live.instanceId === instanceId) instanceSlots += live.streams.size;
+    for (const reservation of pending.values()) if (reservation.connection.instanceId === instanceId) instanceSlots++;
+    if (instanceSlots >= MAX_RELAY_STREAMS) {
+      rejectedInstance++; throw new Error('Instance unavailable or busy');
+    }
+    if (current.relayActiveStreams + current.relayPendingStreams >= current.relayGlobalLimit) {
+      rejectedGlobal++; throw new Error('Instance unavailable or busy');
+    }
     const id = randomUUID(), token = randomBytes(32).toString('base64url');
     return new Promise((resolve, rejectPromise) => {
-      const cleanup = () => { clearTimeout(timer); signal.removeEventListener('abort', abort); pending.delete(id); };
+      const cleanup = () => { clearTimeout(timer); signal.removeEventListener('abort', abort); pending.delete(id);
+        void options.cluster?.releasePending(id).catch(() => {}); };
       const abort = () => { cleanup(); rejectPromise(new Error('Client disconnected')); };
-      const timer = setTimeout(() => { cleanup(); rejectPromise(new Error('Relay connection timeout')); }, 10_000); timer.unref();
+      const timer = setTimeout(() => { openTimeouts++; cleanup(); rejectPromise(new Error('Relay connection timeout')); }, 10_000); timer.unref();
       if (signal.aborted) { abort(); return; }
       signal.addEventListener('abort', abort, { once: true });
       pending.set(id, { connection, token, reject: error => { cleanup(); rejectPromise(error); }, accept: ws => {
-        cleanup(); const stream = relayDuplex(ws);
+        cleanup(); const idle = relayIdleDeadline(ws, () => stream.destroy()); const stream = relayDuplex(ws);
         stream.on('error', () => {}); connection.streams.add(stream);
-        const lifetime = setTimeout(() => stream.destroy(), 3_600_000); lifetime.unref();
-        stream.once('close', () => { clearTimeout(lifetime); connection.streams.delete(stream); ws.terminate(); }); resolve(stream);
+        stream.once('close', () => { idle(); connection.streams.delete(stream); forget(connection); ws.terminate(); }); resolve(stream);
       } });
-      connection.socket.send(JSON.stringify({ type: 'open', id, token }));
+      // Capture peaks at admission, including channels gone before the next sample.
+      peakSlots = Math.max(peakSlots, current.relayActiveStreams + current.relayPendingStreams + 1);
+      peakInstanceSlots = Math.max(peakInstanceSlots, instanceSlots + 1);
+      void (async () => {
+        await options.cluster?.registerPending(id);
+        if (!pending.has(id) || signal.aborted || connection.socket.readyState !== WebSocket.OPEN) { cleanup(); rejectPromise(new Error('Relay disconnected')); return; }
+        connection.socket.send(JSON.stringify({ type: 'open', id, token }));
+      })().catch(() => { cleanup(); rejectPromise(new Error('Relay shared state is unavailable')); });
     });
   }
-  function authorize(req: IncomingMessage) {
+  async function authorize(req: IncomingMessage) {
     const context = selected.get(req);
     if (context) return { route: context.route, principal: context.principal };
     const route = findRoute(req);
     if (!route || !relayPathAllowed(req.url ?? '/') || (req.headers.origin !== undefined && req.headers.origin !== route.origin)) return { status: 403 as const };
-    const principal = authentication ? authentication.authenticate(req, route) : route.identityProvider.authenticate(req);
+    const principal = authentication ? await authentication.authenticate(req, route) : route.identityProvider.authenticate(req);
     if (!principal || principal.expiresAt <= Date.now()) return { status: 401 as const };
     return { route, principal };
   }
@@ -129,7 +191,7 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
     if (upgrade) result.upgrade = 'websocket';
     return result;
   }
-  function prepareSelection(req: IncomingMessage): number {
+  async function prepareSelection(req: IncomingMessage): Promise<number> {
     const path = req.url ?? '/';
     if (!options.serverSelection) return 0;
     const entry = findRoute(req);
@@ -140,7 +202,7 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
     if (!target || !entry || !relayPathAllowed(target.path) || isServerPath(target.path)) return 403;
     if (req.headers.origin !== undefined && req.headers.origin !== entry.origin) return 403;
     const route = resolveRoute(target.id); if (!route) return 404;
-    const principal = authentication ? authentication.authenticate(req, entry) : entry.identityProvider.authenticate(req);
+    const principal = authentication ? await authentication.authenticate(req, entry) : entry.identityProvider.authenticate(req);
     if (!principal || principal.expiresAt <= Date.now()) return 401;
     const document = req.method === 'GET' && req.headers.accept?.includes('text/html');
     const base = document && paths ? canonicalBase(route.instanceId) : target.base;
@@ -164,21 +226,25 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
     if(cookies)req.headers.cookie=cookies;else delete req.headers.cookie;
     return 0;
   }
-  async function admitted(route: RelayRoute, principal: Principal): Promise<boolean> {
+  async function admitted(route: RelayRoute, principal: Principal): Promise<'admitted' | 'denied' | 'unavailable'> {
     const abort = new AbortController(), timer = setTimeout(() => abort.abort(), 4000); let stream: Duplex | undefined;
     const path = '/__opencraft_access/session';
     try {
       stream = await channel(route, abort.signal);
-      return await new Promise<boolean>(resolve => {
+      return await new Promise<'admitted' | 'denied' | 'unavailable'>(resolve => {
         const upstream = httpRequest({ method: 'GET', path, createConnection: () => stream!, headers: { host: new URL(route.origin).host,
           [ASSERTION_HEADER]: route.signer.issue(principal, 'GET', path), connection: 'close' } }, response => {
           let body = ''; response.on('data', chunk => { body += String(chunk); if (body.length > 16384) upstream.destroy(); });
-          response.on('end', () => { try { const value = JSON.parse(body); resolve(response.statusCode === 200 && ['member','admin'].includes(value.role)); } catch { resolve(false); } });
-          response.on('error', () => resolve(false));
+          response.on('end', () => {
+            if (response.statusCode === 401 || response.statusCode === 403) { resolve('denied'); return; }
+            try { const value = JSON.parse(body); resolve(response.statusCode === 200 && ['member','admin'].includes(value.role) ? 'admitted' : 'unavailable'); } catch { resolve('unavailable'); }
+          });
+          response.on('error', () => resolve('unavailable'));
+          response.on('aborted', () => resolve('unavailable'));
         });
-        abort.signal.addEventListener('abort', () => upstream.destroy(), { once: true }); upstream.on('error', () => resolve(false)); upstream.end();
+        abort.signal.addEventListener('abort', () => upstream.destroy(), { once: true }); upstream.on('error', () => resolve('unavailable')); upstream.end();
       });
-    } catch { return false; } finally { clearTimeout(timer); stream?.destroy(); }
+    } catch { return 'unavailable'; } finally { clearTimeout(timer); stream?.destroy(); }
   }
   async function handleSelector(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
     if (!options.serverSelection) return false;
@@ -194,17 +260,28 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
     }
     if (req.method !== 'GET' || !((url.pathname === '/' && req.headers.accept?.includes('text/html') && (!paths?.defaultServer || !url.search)) || url.pathname === SERVERS_PATH)) return false;
     if (req.headers.origin !== undefined && req.headers.origin !== entry.origin) { failure(res,403); return true; }
-    const principal = authentication.authenticate(req, entry);
-    if (!principal || principal.expiresAt <= Date.now()) { authentication.begin(req,res,entry); return true; }
-    const candidates = availableRoutes().slice(0,128), visible: { id: string; name: string; route?: string }[] = [], labels = names();
+    const principal = await authentication.authenticate(req, entry);
+    if (!principal || principal.expiresAt <= Date.now()) { await authentication.begin(req,res,entry); return true; }
+    const {servers:visible,pending}=await listServers(principal);
+    res.writeHead(200, {'content-type':'text/html; charset=utf-8','cache-control':'private, no-store','referrer-policy':'no-referrer','x-frame-options':'DENY'});
+    res.end(selectorPage(principal,visible,url.pathname === '/',selectionDefault(principal,options.selectionDefaults) ?? paths?.defaultServer, pending)); return true;
+  }
+  /** Trusted composition port. Every query checks current target admission. */
+  async function listServers(principal: Principal): Promise<RelayServerDirectory> {
+    if (principal.expiresAt <= Date.now()) throw Error('authentication_required');
+    let pending = false;
+    const candidates = availableRoutes().slice(0,128), visible: RelayServerDirectory['servers'] = [], labels = names();
     for (let i=0; i<candidates.length; i+=8) {
       const group = candidates.slice(i,i+8), access = await Promise.all(group.map(route => admitted(route,principal)));
-      for (let j=0; j<group.length; j++) if (access[j]) { const route=group[j]!; visible.push({id:route.instanceId,route:routeLabel(route.instanceId),name:route.name ?? (labels.get(route.hubId ?? '')?.trim() || new URL(route.origin).hostname)}); }
+      pending ||= access.includes('unavailable');
+      for (let j=0; j<group.length; j++) if (access[j] === 'admitted') { const route=group[j]!; visible.push({id:route.instanceId,route:routeLabel(route.instanceId),name:route.name ?? (labels.get(route.hubId ?? '')?.trim() || new URL(route.origin).hostname)}); }
     }
-    res.writeHead(200, {'content-type':'text/html; charset=utf-8','cache-control':'private, no-store','referrer-policy':'no-referrer','x-frame-options':'DENY'});
-    res.end(selectorPage(principal,visible,url.pathname === '/',selectionDefault(principal,options.selectionDefaults) ?? paths?.defaultServer)); return true;
+    return {servers:visible,pending};
   }
-  const server = createServer(async (req, res) => {
+  const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
+    if (req.url === '/__opencraft_relay/live' && req.method === 'GET') { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end('{"ok":true}'); return; }
+    if ((draining && req.url === '/__opencraft_relay/health') || !accepting) { res.setHeader('connection', 'close'); failure(res, 503); return; }
+    await options.cluster?.prepare();
     if (req.url === '/__opencraft_hub/operator') {
       if (!options.hub || !options.operator || !['127.0.0.1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? '') || !equal(bearer(req), options.operator.credential)) { failure(res, 403); return; }
       if (req.method === 'GET') { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(options.hub.snapshot())); return; }
@@ -212,23 +289,24 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
       try {
         const { readCommand } = await import('../../../packages/hub-network/src/node.js'); const input = await readCommand(req);
         const operator = typeof req.headers['x-opencraft-hub-operator'] === 'string' ? Buffer.from(req.headers['x-opencraft-hub-operator'], 'base64url').toString('utf8') : 'local-operator';
-        const result = options.hub.command(input, operator); res.writeHead('conflict' in result ? 409 : 200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(result));
+        const result = await options.hub.command(input, operator); res.writeHead('conflict' in result ? 409 : 200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(result));
       } catch { res.writeHead(400, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end('{"error":"invalid_hub_change"}'); } return;
     }
     if (req.url === '/__opencraft_relay/health' && req.method === 'GET') { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify({ok:true,protocol:1,...options.build})); return; }
-    if (authentication?.handle(req, res)) return;
+    if (options.ingress?.(req, res)) return;
+    if (authentication && await authentication.handle(req, res)) return;
     if (await handleSelector(req,res)) return;
-    const selectionStatus = prepareSelection(req);
+    const selectionStatus = await prepareSelection(req);
     if (selectionStatus) {
       const entry = findRoute(req);
-      if (selectionStatus===401 && authentication && entry && req.method==='GET' && req.headers.accept?.includes('text/html')) authentication.begin(req,res,entry);
+      if (selectionStatus===401 && authentication && entry && req.method==='GET' && req.headers.accept?.includes('text/html')) await authentication.begin(req,res,entry);
       else if (selectionStatus === 404 && req.method === 'GET' && req.headers.accept?.includes('text/html')) { res.writeHead(303,{location:SERVERS_PATH,'cache-control':'no-store'});res.end(); }
       else failure(res,selectionStatus); return;
     }
-    const auth = authorize(req);
+    const auth = await authorize(req);
     if ('status' in auth) {
       const route = findRoute(req);
-      if (auth.status === 401 && authentication && route && req.method === 'GET' && req.headers.accept?.includes('text/html')) authentication.begin(req, res, route);
+      if (auth.status === 401 && authentication && route && req.method === 'GET' && req.headers.accept?.includes('text/html')) await authentication.begin(req, res, route);
       else failure(res, auth.status!);
       return;
     }
@@ -278,23 +356,44 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
       upstream.on('error', () => failure(res, 502));
       res.once('close', () => { upstream.destroy(); stream?.destroy(); }); req.on('aborted', () => upstream.destroy()); req.pipe(upstream);
     } catch { stream?.destroy(); if (selected.has(req) && req.method === 'GET' && req.headers.accept?.includes('text/html')) { res.writeHead(303,{location:SERVERS_PATH,'cache-control':'no-store'});res.end(); } else failure(res, 503); }
+  };
+  const server = createServer((req, res) => {
+    responses.add(res); const done = () => responses.delete(res); res.once('finish', done); res.once('close', done);
+    void handleRequest(req, res).catch(() => failure(res, 503));
   });
   server.maxConnections = 16_384;
   server.headersTimeout = 15_000;
   server.requestTimeout = 600_000;
   server.maxRequestsPerSocket = 1000;
-  server.on('upgrade', (req, socket, head) => {
+  const handleUpgrade = async (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     socket.on('error', () => {});
+    upgraded.add(socket); socket.once('close', () => upgraded.delete(socket));
+    // Pending data upgrades and Hub links remain available while consumers drain.
+    if ((!accepting && ![DATA_PATH, HUB_CONTROL_PATH, HUB_DATA_PATH].includes(req.url ?? '')) || closing) { reject(socket, 503); return; }
+    await options.cluster?.prepare();
+    if (await options.cluster?.forwardUpgrade(req, socket, head)) return;
     if (options.hub?.handleUpgrade(req, socket, head)) return;
     if (req.url === CONTROL_PATH) {
       const token = bearer(req), route = [...byId.values()].find(r => token && equal(r.credential, token));
       if (!route || req.headers['sec-websocket-protocol'] !== RELAY_PROTOCOL || req.headers.origin) { reject(socket, 401); return; }
       controls.handleUpgrade(req, socket, head, ws => {
-        const previous = connections.get(route.instanceId); if (previous) retire(previous);
-        const connection: Connection = { socket: ws, streams: new Set(), alive: true }; connections.set(route.instanceId, connection);
+        const connection: Connection = { instanceId: route.instanceId, socket: ws, streams: new Set(), alive: true, preservesStreams: req.headers[DRAIN_HEADER] === DRAIN_CAPABILITY, detached: false };
+        allConnections.add(connection);
+        connection.releaseRetained = options.cluster?.retainStreams(() => retire(connection));
         ws.on('pong', () => { connection.alive = true; }); ws.on('error', () => {});
         ws.on('message', () => ws.close(1008, 'Unexpected control message'));
-        ws.once('close', () => { if (connections.get(route.instanceId) === connection) connections.delete(route.instanceId); retire(connection); });
+        ws.once('close', code => {
+          if (connection.preservesStreams && !closing && [1006, 1012].includes(code)) detach(connection);
+          else retire(connection);
+        });
+        void (async () => {
+          connection.claim = await options.cluster?.claimConnection(route.instanceId, () => retire(connection));
+          if (ws.readyState !== WebSocket.OPEN) {
+            if (connection.claim) await options.cluster?.releaseConnection(route.instanceId, connection.claim); retire(connection); return;
+          }
+          const previous = connections.get(route.instanceId); if (previous) retire(previous);
+          connections.set(route.instanceId, connection);
+        })().catch(() => retire(connection));
       }); return;
     }
     if (req.url === DATA_PATH) {
@@ -302,10 +401,11 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
       if (!p || !equal(bearer(req), p.token) || req.headers.origin || req.headers['sec-websocket-protocol'] !== RELAY_PROTOCOL) { reject(socket, 401); return; }
       pending.delete(String(id)); data.handleUpgrade(req, socket, head, ws => p.accept(ws)); return;
     }
-    const selectionStatus = prepareSelection(req); if (selectionStatus) { reject(socket,selectionStatus); return; }
-    const auth = authorize(req); if ('status' in auth) { reject(socket, auth.status!); return; }
+    const selectionStatus = await prepareSelection(req); if (selectionStatus) { reject(socket,selectionStatus); return; }
+    const auth = await authorize(req); if ('status' in auth) { reject(socket, auth.status!); return; }
     if (req.method !== 'GET' || req.headers.upgrade?.toLowerCase() !== 'websocket' || req.headers['transfer-encoding'] !== undefined || ![undefined, '0'].includes(req.headers['content-length'])) { reject(socket, 400); return; }
     const abort = new AbortController(); socket.once('close', () => abort.abort());
+    businessUpgrades.add(socket); socket.once('close', () => businessUpgrades.delete(socket));
     void (async () => {
       let stream: Duplex | undefined;
       try {
@@ -325,12 +425,41 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
         upstream.once('upgrade', () => clearTimeout(upgradeTimer)); upstream.once('close', () => clearTimeout(upgradeTimer)); upstream.end();
       } catch { stream?.destroy(); reject(socket, 503); }
     })();
+  };
+  server.on('upgrade', (req, socket, head) => {
+    upgrading++;
+    void handleUpgrade(req, socket, head).catch(() => reject(socket, 503)).finally(() => { upgrading--; });
   });
+  options.cluster?.bind({ channel: localChannel, upgrade: (req, socket, head) => { server.emit('upgrade', req, socket, head); } });
   const heartbeat = setInterval(() => { for (const connection of connections.values()) {
     if (!connection.alive) retire(connection); else { connection.alive = false; connection.socket.ping(); }
   } }, 15_000); heartbeat.unref();
-  return { server, connected: (id: string) => connections.has(id), async close() {
-    closing = true; clearInterval(heartbeat); for (const connection of connections.values()) retire(connection);
+  return { server, capacity, listServers, async beginEntryAuthentication(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const route = findRoute(req);
+    if (!authentication || !route || route.origin !== authentication.originFor(req) || req.method !== 'GET') {
+      failure(res, 403); return;
+    }
+    await authentication.begin(req, res, route);
+  }, async authenticateEntryRequest(req: IncomingMessage): Promise<RelayEntryIdentity | null> {
+    const route = findRoute(req);
+    if (!authentication || !route || route.origin !== authentication.originFor(req)) return null;
+    const principal = await authentication.authenticate(req, route);
+    return principal && principal.expiresAt > Date.now() ? { principal, origin: route.origin } : null;
+  }, connected: (id: string) => connections.has(id),
+    beginDrain() { draining = true; },
+    stopAdmission() { draining = true; accepting = false; },
+    activeRequests: () => responses.size,
+    activeStreams: () => upgrading + pending.size + businessUpgrades.size + [...allConnections].reduce((sum, c) => sum + c.streams.size, 0),
+    handoffControls() {
+      if (responses.size || pending.size) return;
+      for (const connection of connections.values()) {
+        if (!connection.preservesStreams) continue;
+        detach(connection); connection.socket.close(1012, 'Relay restarting');
+      }
+    },
+    async close() {
+    closing = true; accepting = false; clearInterval(heartbeat); for (const connection of allConnections) retire(connection);
+    for (const socket of upgraded) socket.destroy();
     await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); }); controls.close(); data.close();
   } };
 }

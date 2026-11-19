@@ -29,7 +29,7 @@ function fixture(send?: (i: SubmitIntent) => Promise<void>) {
   const sent: SubmitIntent[] = [];
   const create = () => createConversationOutbox({ key, storage, ready: () => ready, blocked: () => false, publish() {}, retire() {},
     async send(i) { sent.push(i); await send?.(i); return { commandId: i.commandId, clientMessageId: i.clientMessageId, hostId: key.hostId, threadId: key.threadId, turnId: null, acceptedAt: 1, replayed: false }; } });
-  return { create, sent, rows: () => rows, ready: () => { ready = true; }, fail: () => { fail = true; },
+  return { create, sent, rows: () => rows, ready: () => { ready = true; }, pause: () => { ready = false; }, fail: () => { fail = true; },
     changeScope: () => { rows = []; for (const listener of listeners) listener(); } };
 }
 
@@ -232,4 +232,103 @@ for (const retire of [false, true]) test(`a positively rejected queue admission 
   await new Promise(resolve => setTimeout(resolve, 180));
   assert.equal(f.sent.length, retire ? 1 : 2);
   if (!retire) { assert.equal(f.rows().length, 0); assert.equal(f.sent[0]!.clientMessageId, f.sent[1]!.clientMessageId); box.dispose(); }
+});
+
+test("replica wakeups cannot bypass a server retry deadline", async () => {
+  const f = fixture(async () => { throw new SubmissionNotDispatchedError(1000); });
+  const box = f.create();
+  try {
+    await box.admit(intent("bounded")); f.ready(); box.wake(); await settle();
+    for (let i = 0; i < 5; i++) { box.wake(); await settle(); }
+    assert.equal(f.sent.length, 1);
+  } finally { box.dispose(); }
+});
+
+test("definitive failure does not block independent waiting inputs; explicit retry joins the tail", async () => {
+  let rejectFirst = true;
+  const f = fixture(async i => { if (i.commandId === "one" && rejectFirst) throw new Error("rejected"); });
+  const box = f.create();
+  await box.admit(intent("one")); await box.admit(intent("two"));
+  f.ready(); box.wake(); await settle();
+  assert.deepEqual(f.sent.map(i => i.commandId), ["one", "two"]);
+  assert.equal(box.project()[0]?.state, "failed");
+  box.wake(); await settle(); assert.equal(f.sent.length, 2, "failed inputs never retry on a wake");
+  box.dispose(); f.pause();
+  const restored = f.create();
+  await restored.admit(intent("three"));
+  rejectFirst = false;
+  assert.equal(await restored.retry("one"), true);
+  assert.deepEqual(f.rows().map(row => row.intent.commandId), ["three", "one"]);
+  f.ready(); restored.wake(); await settle();
+  assert.deepEqual(f.sent.map(i => i.commandId), ["one", "two", "three", "one"]);
+  assert.equal(f.rows().length, 0);
+  restored.dispose();
+});
+
+test("unknown cannot be retried or casually removed; explicit abandonment never resends it", async () => {
+  const f = fixture(async i => { if (i.commandId === "one") throw new SubmissionOutcomeUnknownError(); });
+  const box = f.create();
+  await box.admit(intent("one")); await box.admit(intent("two"));
+  f.ready(); box.wake(); await settle();
+  assert.equal(await box.retry("one"), false);
+  await assert.rejects(box.remove("one"), /Explicitly abandon/);
+  assert.equal(f.sent.length, 1);
+  await box.abandon("one"); await settle();
+  await assert.rejects(box.admit(intent("one")), SubmissionOutcomeUnknownError);
+  assert.deepEqual(f.sent.map(i => i.commandId), ["one", "two"]);
+  assert.equal(f.rows().length, 0);
+  box.dispose();
+});
+
+test("abandonment persistence failure retains unknown custody and the delivery fence", async () => {
+  const f = fixture(async () => { throw new SubmissionOutcomeUnknownError(); });
+  const box = f.create();
+  await box.admit(intent("one")); await box.admit(intent("two"));
+  f.ready(); box.wake(); await settle(); f.fail();
+  await assert.rejects(box.abandon("one"), /Quota/);
+  box.wake(); await settle();
+  assert.equal(box.project()[0]?.state, "unknown");
+  assert.equal(f.rows()[0]?.state, "unknown");
+  assert.equal(f.sent.length, 1);
+  box.dispose();
+});
+
+const microtasks = async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); };
+
+test('known non-dispatch without a hint uses bounded backoff and preserves FIFO and message identity', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  let restored = false;
+  const f = fixture(async i => { if (i.commandId === 'one' && !restored) throw new SubmissionNotDispatchedError(); });
+  const box = f.create(); t.after(() => box.dispose());
+  await box.admit(intent('one')); await box.admit(intent('two')); f.ready(); box.wake(); await microtasks();
+  assert.deepEqual(f.sent.map(i => i.commandId), ['one']);
+  for (const delay of [500, 1000, 2000, 4000, 8000, 10000, 10000]) {
+    const before = f.sent.length;
+    box.wake(); box.wake(); await microtasks();
+    t.mock.timers.tick(delay - 1); await microtasks(); assert.equal(f.sent.length, before);
+    t.mock.timers.tick(1); await microtasks(); assert.equal(f.sent.length, before + 1);
+  }
+  restored = true; t.mock.timers.tick(10000); await microtasks();
+  assert.deepEqual(f.sent.slice(-2).map(i => i.commandId), ['one', 'two']);
+  assert.equal(new Set(f.sent.filter(i => i.commandId === 'one').map(i => i.clientMessageId)).size, 1);
+  assert.equal(f.rows().length, 0);
+});
+
+for (const outcome of ['unknown', 'failed'] as const) test(`fallback retry never resends ${outcome} delivery`, async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const f = fixture(async () => { throw outcome === 'unknown' ? new SubmissionOutcomeUnknownError() : new Error('rejected'); });
+  const box = f.create(); t.after(() => box.dispose());
+  await box.admit(intent('one')); f.ready(); box.wake(); await microtasks();
+  for (let i = 0; i < 10; i++) { t.mock.timers.tick(10000); box.wake(); await microtasks(); }
+  assert.equal(f.sent.length, 1); assert.equal(f.rows()[0]?.state, outcome);
+});
+
+for (const changed of ['dispose', 'scope', 'readiness'] as const) test(`fallback retry respects ${changed} revocation`, async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const f = fixture(async () => { throw new SubmissionNotDispatchedError(); });
+  const box = f.create(); t.after(() => box.dispose());
+  await box.admit(intent('one')); f.ready(); box.wake(); await microtasks();
+  if (changed === 'dispose') box.dispose(); else if (changed === 'scope') f.changeScope(); else f.pause();
+  t.mock.timers.tick(10000); await microtasks();
+  assert.equal(f.sent.length, 1, 'old custody must not send after authority is revoked');
 });

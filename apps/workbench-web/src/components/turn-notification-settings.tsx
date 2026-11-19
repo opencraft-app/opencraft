@@ -1,3 +1,4 @@
+import { NotificationDestinationSettings } from './notification-destination-settings';
 import { useEffect, useSyncExternalStore } from 'react';
 import { useIntl } from '@opencraft/i18n/react';
 import { SettingsGroup, SettingsRow, SettingsSwitch, SettingsButton } from '@opencraft/extension-react';
@@ -9,12 +10,15 @@ const unavailable: TurnNotificationSnapshot = { supported: false, permission: 'd
   busy: false, delivery: 'page', backgroundAvailable: false, testSent: false, error: null };
 const noSubscription = () => () => undefined;
 const getUnavailable = () => unavailable;
+const unavailableDestinations = {phase:'unavailable' as const,configuration:null,busy:null};
+const getUnavailableDestinations = () => unavailableDestinations;
 
 /** One settings feature. Delivery adapters and consent coordination stay in its owner. */
-export function TurnNotificationSettings() {
+export function TurnNotificationSettings({onOpenImSettings}: {onOpenImSettings?:()=>void} = {}) {
   const intl = useIntl(), notices = useAsyncNotices(), controller = useTurnNotifications();
   const state = useSyncExternalStore(controller?.subscribe ?? noSubscription,
     controller?.getSnapshot ?? getUnavailable, controller?.getSnapshot ?? getUnavailable);
+  useSyncExternalStore(controller?.destinations.subscribe ?? noSubscription, controller?.destinations.getSnapshot ?? getUnavailableDestinations, controller?.destinations.getSnapshot ?? getUnavailableDestinations);
   useEffect(() => { void controller?.refresh(); }, [controller]);
   const label = intl.formatMessage({ id: 'settings.chat.turnNotifications', defaultMessage: 'Notify when a response ends' });
   useEffect(() => {
@@ -40,6 +44,7 @@ export function TurnNotificationSettings() {
     : background
     ? intl.formatMessage({ id: 'settings.chat.turnNotifications.background', defaultMessage: 'Receive notifications when responses on this server complete, fail or stop, even after closing this app. Other servers require this page to remain open.' })
     : intl.formatMessage({ id: 'settings.chat.turnNotifications.description', defaultMessage: 'Receive a browser notification after each response completes, fails or stops, including while viewing this page. The page must remain open.' });
+  if (controller && controller.destinations.getSnapshot().configuration) return <NotificationDestinationSettings controller={controller} onOpenImSettings={onOpenImSettings} local={state} localDescription={description}/>;
   return <SettingsGroup>
     <SettingsRow label={label} description={description} controlWidth="compact">
       <SettingsSwitch label={label} checked={state.enabled}

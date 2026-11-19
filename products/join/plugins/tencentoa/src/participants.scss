@@ -1,0 +1,77 @@
+@use "@opencraft/design-system/interaction-mixins.web" as controls;
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+@use "@opencraft/design-system/menu.web" as menu;
+
+$participant-size: 20px;
+
+// Fixed-size artwork keeps the title accessory stable while loading.
+.ioa-participants__avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 $participant-size;
+  width: $participant-size;
+  height: $participant-size;
+  overflow: hidden;
+  border: 1px solid var(--color-background);
+  border-radius: 50%;
+  color: var(--color-text-secondary);
+  background: var(--color-background-control-opaque);
+  img { width: 100%; height: 100%; object-fit: cover; }
+}
+// The Shell owns the title and action lanes; the badge owns only its artwork.
+.ioa-participants__badge {
+  display: inline-flex;
+  column-gap: 0;
+  align-items: center;
+  @include typography.role(metadata, secondary);
+  min-width: 0;
+  max-width: 100%;
+  width: max-content;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  cursor: pointer;
+  &[data-state="open"] { background: var(--color-background-button-tertiary-hover); }
+  @include controls.hover-capable { &:hover { background: var(--color-background-button-tertiary-hover); } }
+  &:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
+}
+.ioa-participants__stack {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  isolation: isolate;
+  .ioa-participants__avatar { margin-inline-start: 0; z-index: 4; }
+  .ioa-participants__avatar[data-overlap] { margin-inline-start: -6px; z-index: 1; }
+  .ioa-participants__avatar:nth-child(2) { z-index: 3; }
+  .ioa-participants__avatar:nth-child(3) { z-index: 2; }
+}
+.ioa-participants__total {
+  @include typography.role(count-badge, tertiary);
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 $participant-size;
+  box-sizing: border-box;
+  width: $participant-size;
+  height: $participant-size;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-background-control-opaque);
+  line-height: 1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ioa-participants__popover {
+  @include menu.material;
+  @include typography.role(body, primary);
+  z-index: 100;
+  min-width: 180px;
+  max-width: min(300px, calc(100vw - 24px));
+  padding: 12px;
+  .ioa-participants__heading { @include typography.role(navigation-title, primary); }
+  ul { margin: 0; padding: 0; list-style: none; max-height: 260px; overflow-y: auto; }
+  li, .ioa-participants__creator { display: flex; align-items: center; gap: 8px; padding: 5px 0; overflow-wrap: anywhere; }
+  .ioa-participants__creator-section { margin-block-end: 6px; padding-block-end: 10px; border-block-end: 1px solid var(--color-border); }
+  .ioa-participants__notice { @include typography.role(metadata, secondary); }
+}

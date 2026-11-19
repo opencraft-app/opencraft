@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": [
+      "node",
+      "react"
+    ]
+  },
+  "include": [
+    "web.ts",
+    "plugins/tencentoa/src",
+    "plugins/support-review/src"
+  ]
+}

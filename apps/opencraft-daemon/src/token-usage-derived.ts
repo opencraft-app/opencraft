@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { readdir } from "node:fs/promises";
+import { readdir, stat as stat8 } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { openManagedDatabase, createSchemaValidator, SqliteLifecycleError } from "@opencraft/sqlite-node";
 import { TOKEN_USAGE_STATE_MIGRATIONS, TOKEN_USAGE_RECENCY_INDEX } from "./token-usage-state-database.js";
@@ -317,6 +317,17 @@ export class RolloutDerivedTokenUsage {
       if (!file) { this.fileAfter = "";const more=this.roundProgress||this.dirty.size>0||!!this.statement(this.database,"SELECT 1 FROM usage_reproject LIMIT 1").get();this.roundProgress=false;if(!more){this.clearGap("building");this.clearGap("refresh-failed");}return more; }
       const thread = String(file.thread_id); this.fileAfter = thread;
       try {
+        // A complete file whose bytes and owner are unchanged has nothing to read.
+        // Paths are re-resolved per read, which asks Codex Core for its directory
+        // (and health without generations), so polling every file each second was
+        // a steady request loop. Shrinking or replaced files still take the full path.
+        if (file.complete === 1 && file.error === null && file.identity !== null) {
+          const current = await stat8(String(file.path)).catch(() => null);
+          if (current && current.size === Number(file.cursor) && `${current.dev}:${current.ino}` === file.identity) {
+            this.clearGap(`file:${thread}`);
+            return true;
+          }
+        }
         const source = await this.options.resolveSource?.(thread, String(file.path));
         const result = await readUsageIncrement({ path: String(file.path), nativeHome: this.options.nativeHome, source, threadId: thread, cursor: Number(file.cursor), identity: file.identity as string | null });
         if (this.closed) return false;

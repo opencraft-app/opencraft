@@ -1,3 +1,4 @@
+import type { ChannelSearchRegistry } from './channel-search-contribution';
 import { readSelectionPreference, writeSelectionPreference } from "./selection-preferences";
 import type { ClientResources } from "@opencraft/document-storage/client-resources";
 import { serverStorageKey, serverUrl, serverEndpointNeedsRefresh } from "./server-context";
@@ -19,9 +20,6 @@ import {
   type TasksRequestPort
 } from "@opencraft/appserver-protocol";
 import { BlobResourceService } from "@opencraft/blob-resources";
-import {
-  AppServerBotDirectory
-} from "@opencraft/bot-conversation-appserver";
 import {
   asHostId,
   createConversationKey,
@@ -129,12 +127,12 @@ export interface AppServerHostCatalog {
   readonly platformAccounts: PlatformAccountContributionRegistry;
   readonly threadAttention: BrowserThreadAttention;
   readonly applicationBranding: ApplicationBrandingRegistry;
+  readonly channelSearch: ChannelSearchRegistry;
   readonly threadBadges: ThreadBadgeContributionRegistry;
   readonly threadListGrouping: ThreadListGroupingContributionRegistry;
   readonly identityAvatars: IdentityAvatarContributionRegistry;
   readonly imageEditors?: import("./image-editor-contributions").ImageEditorContributionRegistry;
   readonly composerActionRenderers: ComposerActionRendererRegistry;
-  readonly botDirectory: AppServerBotDirectory;
   readonly sidebarLayout: SidebarLayoutStore;
   /**
    * Navigation intent being hydrated. The presented Conversation remains the
@@ -447,12 +445,12 @@ export interface WebWorkbenchApplicationBase {
   readonly platformViewRenderers: PlatformViewRendererRegistry;
   readonly platformAccounts: PlatformAccountContributionRegistry;
   readonly applicationBranding: ApplicationBrandingRegistry;
+  readonly channelSearch: ChannelSearchRegistry;
   readonly threadBadges: ThreadBadgeContributionRegistry;
   readonly threadListGrouping: ThreadListGroupingContributionRegistry;
   readonly identityAvatars: IdentityAvatarContributionRegistry;
   readonly imageEditors?: import("./image-editor-contributions").ImageEditorContributionRegistry;
   readonly composerActionRenderers: ComposerActionRendererRegistry;
-  readonly botDirectory: AppServerBotDirectory;
   readonly sidebarLayout: SidebarLayoutStore;
   readonly hostProfiles: HostConnectionProfileStore;
   readonly hostProfileStorageError?: BrowserStorageError | null;
@@ -715,6 +713,10 @@ export function createWebWorkbenchCommands(input: {
       const activeDraft = input.scopes.getActiveDraft();
       if (activeDraft !== null && draftSubmissionOwnsNavigation(activeDraft.phase)) {
         throw new Error("The execution node cannot change while the first turn is being submitted");
+      }
+      if (activeDraft && activeDraft.target.execution.hostId !== hostId
+        && (activeDraft.target.execution.environment || activeDraft.target.execution.workspace.source)) {
+        throw new Error("Choose an empty Host workspace before changing Host. Your current environment and source have been retained.");
       }
       let runtime: AppServerWorkbenchRuntime;
       try { runtime = await input.registry.ensureConnected(hostId); }

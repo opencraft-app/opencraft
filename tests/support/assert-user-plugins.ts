@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { Context } from '@deepseek-ai/cordis';
-import { ExtensionManager, ExtensionSupervisor, MemoryExtensionInstallationPersistence, provideExtensionInstallationRepository } from '@opencraft/extension-runtime';
+import { ExtensionManager, ExtensionSupervisor, MemoryExtensionInstallationPersistence, provideExtensionInstallationRepository, projectExtensionCatalog } from '@opencraft/extension-runtime';
 import { parseWebDeploymentConfig } from '../../apps/workbench-web/src/runtime/web-deployment-config';
-import { serverInstalledBuiltins } from '../../apps/workbench-web/src/runtime/server-installed-extensions';
+import { serverInstalledBuiltins, parseServerInstalledExtensions } from '../../apps/workbench-web/src/runtime/server-installed-extensions';
 import { ApplicationBrandingRegistry } from '../../apps/workbench-web/src/runtime/application-branding';
 
 // Exercise the same parser, integrity loader, registry and lifecycle as the Web
@@ -10,8 +10,9 @@ import { ApplicationBrandingRegistry } from '../../apps/workbench-web/src/runtim
 // artifact is promoted into this operator-only trust path.
 export async function assertInstalledPlugins(base: string) {
   const html = await (await fetch(base + '/')).text();
-  const config = parseWebDeploymentConfig(html.match(/<script id="opencraft-deployment-config" type="application\/json">(.*?)<\/script>/s)?.[1] ?? null)!;
-  const plugins = config.userPlugins!;
+  const bootstrap = html.match(/<script id="opencraft-user-plugins" type="application\/json">(.*?)<\/script>/s)?.[1];
+  const plugins = bootstrap ? parseServerInstalledExtensions(JSON.parse(bootstrap))
+    : parseWebDeploymentConfig(html.match(/<script id="opencraft-deployment-config" type="application\/json">(.*?)<\/script>/s)?.[1] ?? null)!.userPlugins!;
   const registry = new ApplicationBrandingRegistry();
   const supervisor = new ExtensionSupervisor({ platform: 'web', internalContributions: { applicationBranding: registry.createAdapter() } });
   const context = new Context();
@@ -34,5 +35,15 @@ export async function assertInstalledPlugins(base: string) {
     assert.equal(registry.getSnapshot().contribution?.name, 'User brand');
     assert.equal(manager.getSnapshot().extensions.find(item => item.installation.extensionId === 'user.example')?.status, 'active');
     assert.equal(manager.getSnapshot().extensions.some(item => item.installation.extensionId === 'fixture.default'), false);
+    const item = projectExtensionCatalog(supervisor.getSnapshot(), manager.getSnapshot(), supervisor.contributions.getSnapshot())
+      .find(item => item.id === 'user.example')!;
+    assert.equal(item.source, 'installed');
+    assert.equal(item.canManage, true);
+    // The browser owns activation intent; only the operator owns host files.
+    assert.equal(item.canRemove, false);
+    await manager.setEnabled('user.example', false);
+    assert.equal(registry.getSnapshot().contribution, null);
+    await manager.setEnabled('user.example', true);
+    assert.equal(registry.getSnapshot().contribution?.name, 'User brand');
   } finally { await manager.dispose(); await supervisor.dispose(); await fiber.dispose(); }
 }

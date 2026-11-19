@@ -138,3 +138,16 @@ still applies to authentication sockets and encrypted storage.
 
 
 Deployments can restrict bearer-token delivery with `httpsCredentialHosts`. Hosts outside that allowlist never receive an HTTPS credential, including while an old token is being retired. An explicit `sshAuth: null` record can retain identity metadata before an SSH key is generated; it does not contain an authentication token or generate a key.
+
+
+## Execution-attested personal Git protocol
+
+The execution-owned protocol-2 deployment is described in
+[Personal Git execution credentials](personal-git-execution.md). Its sealed
+lease-generation attestation, issuer/execution/status roles and verified replica
+discovery are distinct from the older PID-origin broker described above. It does
+not install or revive the legacy systemd broker, does not recover protocol-1
+in-memory grants after owner loss, and does not enable server-account fallback.
+Binding inspection alone is not a Git command-path health check. Rollout needs
+matched Gateway, execution owner and wrapper builds; source tests alone do not
+establish production deployment or remote Git availability.

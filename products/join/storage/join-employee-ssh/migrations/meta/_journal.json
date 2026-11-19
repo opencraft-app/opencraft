@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1793323925034,
+      "tag": "0000_legacy_baseline",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1793597139652,
+      "tag": "0001_sour_fixer",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793598030601,
+      "tag": "0002_smooth_mole_man",
+      "breakpoints": true
+    }
+  ]
+}

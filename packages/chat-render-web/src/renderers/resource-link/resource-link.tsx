@@ -1,4 +1,5 @@
 import { DocumentIcon } from "@opencraft/design-system-web/action-icons";
+import { parseConversationRef } from "@opencraft/appserver-protocol/collaboration";
 import { CopyIcon as Copy } from "@opencraft/design-system-web/action-icons";
 import { chatFileCitationPresentation, chatReferenceTarget, useSettledResourceTarget, type ChatNodeRendererProps, type ChatResourcePolicyService } from "@opencraft/chat-render-react";
 import type { ChatResourceDecision, ChatResourceOpenIntent } from "@opencraft/chat-render-react";
@@ -6,7 +7,7 @@ import { FormattedMessage } from "@opencraft/i18n/react";
 import * as ContextMenu from "@opencraft/design-system-web/context-menu";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { ExternalLinkIcon as ExternalLink, GlobeIcon as Globe2 } from "@opencraft/design-system-web/action-icons";
-import { createContext, useContext, useEffect, useMemo, useState, type CSSProperties, type MouseEvent } from "react";
+import { createContext, useContext, useMemo, useState, type CSSProperties, type MouseEvent } from "react";
 
 import { writeTextToClipboard } from "../../clipboard";
 import { ProseRenderer } from "../prose/prose-renderer";
@@ -19,18 +20,21 @@ import "./resource-link.scss";
 
 function ExternalLinkGlyph({ target }: { readonly target: string | null }) {
   const sources = useMemo(() => target === null ? [] : faviconSources(target), [target]);
-  const [loaded, setLoaded] = useState<string | null>(null);
-  useEffect(() => setLoaded(null), [target]);
+  // This keyed link instance owns availability and the sole visible glyph.
+  // Keep the first successful candidate stable while other requests settle.
+  const [readySources, setReadySources] = useState<readonly string[]>([]);
+  const loaded = readySources[0] ?? null;
   return (
     <span aria-hidden="true" className="chat-external-link__icon" data-markdown-copy="exclude">
-      <span className="chat-external-link__icon-fallback"><Globe2 /></span>
+      {loaded === null ? <span className="chat-external-link__icon-fallback"><Globe2 /></span> : null}
       {sources.map((source) => (
         <img
           alt=""
           className={loaded === source ? "is-loaded" : undefined}
           decoding="async"
           key={source}
-          onLoad={() => setLoaded((current) => current !== null && sources.includes(current) ? current : source)}
+          onLoad={() => setReadySources((current) => current.includes(source) ? current : [...current, source])}
+          onError={() => setReadySources((current) => current.filter((ready) => ready !== source))}
           referrerPolicy="no-referrer"
           src={source}
         />
@@ -82,7 +86,7 @@ export function ExternalUrlLink({
       rel="noopener noreferrer"
       target={context.openResource === undefined ? "_blank" : undefined}
     >
-      <ExternalLinkGlyph target={target} />
+      <ExternalLinkGlyph key={target} target={target} />
       <span className="chat-external-link__label">{label}</span>
     </a>
   );
@@ -223,17 +227,26 @@ export function createFileCitationRenderer(resources: ChatResourcePolicyService)
   };
 }
 
+function linkLabelText(nodes: Extract<ChatNodeRendererProps["node"], { kind: "link" }>["children"]): string {
+  return nodes.map(child => child.kind === "text" ? child.text : child.kind === "inline-code" ? child.code
+    : "children" in child ? linkLabelText(child.children) : "").join("");
+}
+
 export function createLinkRenderer(resources: ChatResourcePolicyService) {
   return function LinkRenderer({ node, context, renderNodes }: ChatNodeRendererProps) {
     if (node.kind !== "link") return null;
     const decision = resources.resolve(node.href, context);
+    const conversation = context.dialect === "user-message" && parseConversationRef(node.href) !== null;
+    // Old native history retains the model-facing label. Project it at the
+    // resource boundary without rewriting history or code examples.
+    const mentionLabel = conversation ? "@" + linkLabelText(node.children).replace(/^(?:Referenced conversation: |@)/u, "") : null;
     const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
       if (!decision.allowed || decision.target === null || context.openResource !== undefined) {
         event.preventDefault();
       }
       if (decision.allowed && decision.target !== null) context.openResource?.(decision.target, decision);
     };
-    const external = decision.kind === "external" || decision.kind === "mail";
+    const external = !conversation && (decision.kind === "external" || decision.kind === "mail");
     if (decision.kind === "external" && /^https?:/iu.test(decision.target ?? node.href)) {
       return (
         <ExternalUrlLink
@@ -247,6 +260,7 @@ export function createLinkRenderer(resources: ChatResourcePolicyService) {
     return (
       <a
         aria-disabled={!decision.allowed || undefined}
+        className={conversation ? "chat-conversation-mention" : undefined}
         data-chat-resource-kind={decision.kind ?? "resource"}
         data-markdown-raw-link-label={node.children.map((child) => child.kind === "text" ? child.text : "").join("")}
         href={decision.target ?? undefined}
@@ -254,7 +268,7 @@ export function createLinkRenderer(resources: ChatResourcePolicyService) {
         rel={external ? "noopener noreferrer" : undefined}
         target={external ? "_blank" : undefined}
         title={node.title ?? decision.reason ?? node.href}
-      ><ResourceLinkLabel.Provider value>{renderNodes(node.children)}</ResourceLinkLabel.Provider></a>
+      ><ResourceLinkLabel.Provider value>{mentionLabel ?? renderNodes(node.children)}</ResourceLinkLabel.Provider></a>
     );
   };
 }

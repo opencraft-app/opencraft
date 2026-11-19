@@ -34,8 +34,16 @@ export function projectThreadMessageResult(
   const thread = object(result.thread);
   const threadId = string(thread.id) || string(requestParams.threadId);
   if (!threadId) return resultValue;
+  const inputId = string(requestParams.clientUserMessageId);
+  // Only the Host's stored attribution is trusted, never a renderer field.
+  const attribution = inputId && ["turn/start", "turn/steer", "thread/queue/add"].includes(method)
+    ? project(threadId, inputId, {}) : null;
+  // Attachment enrichment uses the same walker and must preserve this proof.
+  const submission = attribution && Object.hasOwn(attribution, "sender")
+    ? { clientMessageId: inputId, sender: attribution.sender ?? null } : null;
   return {
     ...result,
+    ...(submission ? { __opencraftSubmissionSender: submission } : {}),
     ...(result.initialTurnsPage && Array.isArray(object(result.initialTurnsPage).data) ? {
       initialTurnsPage: { ...object(result.initialTurnsPage),
         data: (object(result.initialTurnsPage).data as unknown[]).map(turn => projectTurn(project, threadId, turn)) },

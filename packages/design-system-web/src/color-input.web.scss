@@ -1,0 +1,19 @@
+@use "@opencraft/design-system/controls.web" as controls;
+
+.ui-color-input {
+  @include controls.density-target;
+  width: var(--size-color-input);
+  height: var(--size-color-input);
+  padding: var(--spacing);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-background-input);
+  cursor: pointer;
+  &::-webkit-color-swatch-wrapper { padding: 0; }
+  &::-webkit-color-swatch { border: 0; border-radius: var(--radius-sm); }
+  &::-moz-color-swatch { border: 0; border-radius: var(--radius-sm); }
+  &:disabled { @include controls.disabled-feedback; }
+}
+@media (forced-colors: active) {
+  .ui-color-input { border-color: ButtonText; }
+}

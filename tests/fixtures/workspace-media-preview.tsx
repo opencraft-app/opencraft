@@ -1,3 +1,4 @@
+import { FilePreviewProvider, FilePreviewService } from "@opencraft/file-preview-web";
 import React, { useState } from "react";
 import { Context } from "@deepseek-ai/cordis";
 import { BlobResourceService } from "@opencraft/blob-resources";
@@ -10,6 +11,7 @@ import "../../apps/workbench-web/src/styles/app.scss";
 
 const context = new Context();
 await context.plugin(BlobResourceService);
+await context.plugin(FilePreviewService);
 setMediaFixtureBlobs(context.blobResources);
 (window as unknown as { fixtureReads: typeof mediaFixtureReads }).fixtureReads = mediaFixtureReads;
 Object.assign(window, { fixtureSearches: mediaFixtureSearches, releaseFixtureSearch: releaseMediaFixtureSearch });
@@ -34,4 +36,4 @@ function Fixture() {
     </div>}
   </QueryClientProvider>;
 }
-createIntlTestRoot(document.getElementById("host")!).render(<Fixture />);
+createIntlTestRoot(document.getElementById("host")!).render(<FilePreviewProvider service={context.filePreviews}><Fixture /></FilePreviewProvider>);

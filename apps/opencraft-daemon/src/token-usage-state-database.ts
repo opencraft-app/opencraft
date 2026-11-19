@@ -24,10 +24,21 @@ CREATE INDEX token_usage_turns_thread_query ON token_usage_turns(server_id,threa
 export const TOKEN_USAGE_RECENCY_INDEX = `
 CREATE INDEX token_usage_sources_observed_query ON token_usage_sources(server_id,observed_ms);
 `;
+// Open gaps are looked up by thread on every successful replay. Without this
+// partial index each lookup scanned every historical gap on the Host thread.
+// Closed gaps are not read by statistics (only open gaps mark coverage), so the
+// one-time cleanup removes the accumulated per-incident history.
+const OPEN_GAP_THREAD_INDEX = `
+CREATE INDEX token_usage_gaps_open_thread ON token_usage_gaps(server_id,thread_id) WHERE ends_ms IS NULL;
+`;
+const OPEN_GAP_MIGRATION = OPEN_GAP_THREAD_INDEX + `
+DELETE FROM token_usage_gaps WHERE ends_ms IS NOT NULL;
+`;
 export const TOKEN_USAGE_STATE_MIGRATIONS = [
   { version: 1, name: "isolated-token-usage", sql: SCHEMA },
   { version: 2, name: "token-usage-thread-query-index", sql: THREAD_QUERY_INDEX },
   { version: 3, name: "token-usage-source-recency-index", sql: TOKEN_USAGE_RECENCY_INDEX },
+  { version: 4, name: "token-usage-open-gap-thread-index", sql: OPEN_GAP_MIGRATION },
 ] as const;
 
 /** One physical metering store per Host, independent of queue/identity locks.
@@ -40,7 +51,7 @@ export class TokenUsageStateDatabase {
   readonly outcome: DatabaseOutcome;
   constructor(directory: string, legacyPath?: string) {
     const managed = openManagedDatabase({ path: join(directory, "token-usage.sqlite"),
-      legacyPolicy: "reject-unknown", migrations: TOKEN_USAGE_STATE_MIGRATIONS, validateSchema: createSchemaValidator(SCHEMA + THREAD_QUERY_INDEX + TOKEN_USAGE_RECENCY_INDEX) });
+      legacyPolicy: "reject-unknown", migrations: TOKEN_USAGE_STATE_MIGRATIONS, validateSchema: createSchemaValidator(SCHEMA + THREAD_QUERY_INDEX + TOKEN_USAGE_RECENCY_INDEX + OPEN_GAP_THREAD_INDEX) });
     this.database = managed.database;
     this.outcome = managed.outcome;
     try { if (legacyPath) this.importLegacy(legacyPath); }

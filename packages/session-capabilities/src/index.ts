@@ -10,7 +10,10 @@ export interface CapabilityTool {
   /** Trusted domain consent already covers this bounded invocation; never model supplied. */
   readonly approval?: "preauthorized";
 }
-export interface CapabilityResult { success: boolean; contentItems: { type: "inputText"; text: string }[] }
+export type CapabilityContentItem =
+  | { type: "inputText"; text: string }
+  | { type: "inputImage"; imageUrl: string };
+export interface CapabilityResult { success: boolean; contentItems: CapabilityContentItem[] }
 export interface SessionCapabilityProvider {
   readonly id: string;
   refresh?(session: CapabilitySession): Promise<void>;
@@ -19,7 +22,7 @@ export interface SessionCapabilityProvider {
   call(session: CapabilitySession, name: string, args: unknown, signal: AbortSignal): Promise<unknown>;
 }
 export interface SessionCapabilityPort {
-  refresh?(threadId: string, execution?: CapabilityExecution): Promise<void>;
+  refresh?(threadId: string, execution?: CapabilityExecution, signal?: AbortSignal): Promise<void>;
   tools(threadId: string): readonly CapabilityTool[];
   call(threadId: string, name: string, args: unknown, signal: AbortSignal, execution?: CapabilityExecution): Promise<CapabilityResult>;
 }
@@ -51,6 +54,7 @@ export class SessionCapabilities {
     const entry = this.catalog(session).get(name);
     if (!entry) throw new Error("Capability is not authorized for this session");
     const value = await entry.provider.call(Object.freeze({ ...session, ...(session.execution ? { execution: Object.freeze({ ...session.execution }) } : {}) }), name, args, signal);
+    signal.throwIfAborted();
     if (entry.provider.formatResult) return entry.provider.formatResult(value);
     return { success: true, contentItems: [{ type: "inputText", text: JSON.stringify(value) ?? "null" }] };
   }

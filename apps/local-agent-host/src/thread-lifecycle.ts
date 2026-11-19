@@ -50,6 +50,12 @@ export class ThreadLifecycle {
     if (method === "thread/archive" || method === "thread/unarchive") {
       await this.known(params.threadId, delegate);
       const archived = method === "thread/archive", changed = this.catalog.isArchived(params.threadId) !== archived;
+      if (archived) {
+        // The native owner must release execution before an archive is reported.
+        // A busy/refusing owner leaves metadata unchanged, so the caller can stop and retry.
+        if (!(await this.release(params.threadId)).released) throw new Error("Stop the active turn before archiving this thread");
+        this.attachments.close(params.threadId); this.cancelTimer(params.threadId);
+      }
       const thread = this.catalog.archive(params.threadId, archived);
       if (changed) this.notify(archived ? "thread/archived" : "thread/unarchived", { threadId: params.threadId });
       return archived ? {} : this.decorate({ thread });
@@ -87,6 +93,9 @@ export class ThreadLifecycle {
       }
       return { status: read && status !== "unsubscribed" ? "unsubscribed" : status };
     }
+    if (typeof params.threadId === 'string' && this.catalog.isArchived(params.threadId)
+      && ['thread/resume', 'turn/start', 'turn/steer', 'thread/queue/add', 'thread/queue/start'].includes(method))
+      throw new Error("Unarchive the thread before allocating execution");
     const savedModel = ["thread/resume", "thread/fork", "turn/start"].includes(method)
       ? this.catalog.configuration(params.threadId).model : undefined;
     const effectiveParams = params.model == null && typeof savedModel === "string" && savedModel !== "" && savedModel !== "dsh"

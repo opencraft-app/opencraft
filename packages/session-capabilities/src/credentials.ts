@@ -21,6 +21,14 @@ export function sessionCapabilityToken(key: Buffer, session: CapabilitySession):
   return payload + "." + createHmac("sha256", key).update(payload).digest("base64url");
 }
 
+/** Host-only, single native tool invocation audience. A CLI session token must
+ * never gain retry identity merely by choosing a JSON-RPC request id. */
+export function nativeToolCapabilityToken(key: Buffer, session: CapabilitySession): string {
+  if (!session.execution?.callId) throw new Error('Native capability requires a tool call identity');
+  const payload = Buffer.from(JSON.stringify(['native-tool', session.serverId, session.threadId, session.execution])).toString('base64url');
+  return payload + '.' + createHmac('sha256', key).update(payload).digest('base64url');
+}
+
 /** Dedicated execution admission audience; MCP credentials retain their existing audience. */
 export function executionCliSourceToken(key:Buffer,session:CapabilitySession):string {
   if(!session.execution?.inputId||!session.execution.executionId)throw Error('cliUnavailable');

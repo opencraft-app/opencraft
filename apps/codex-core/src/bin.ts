@@ -2,7 +2,8 @@
 import { readFile } from "node:fs/promises";
 import { startCodexCore, type CodexCoreOptions } from "./main.js";
 import { AccountCoreOwner, sealLegacyAccountMaintenance, sealFencedAccountMaintenance, sealExportedAccountMaintenance, inspectRetainedAccountExport } from "./account-owner.js";
-import { isAbsolute } from "node:path";
+import { isAbsolute, dirname, join } from "node:path";
+import { createConfiguredCodexResponses } from "./configured-responses.js";
 
 function argument(name: string): string {
   const index = process.argv.indexOf(name);
@@ -17,6 +18,8 @@ async function main() {
   const token = (await readFile(argument("--token-file"), "utf8")).trim();
   let shutdown: ((code: number) => Promise<void>) | undefined;
   const options: CodexCoreOptions = {
+    configuredResponses: createConfiguredCodexResponses(optional("--model-storage-directory")
+      ?? process.env.OPENCRAFT_MODEL_STORAGE_DIRECTORY ?? join(dirname(argument("--data-directory")), "models")),
     endpoint: argument("--endpoint"), authToken: token,
     executable: argument("--codex-executable"), runtimeDirectory: argument("--runtime-directory"),
     dataDirectory: argument("--data-directory"), nativeCodexHomeDirectory: argument("--native-codex-home-directory"),

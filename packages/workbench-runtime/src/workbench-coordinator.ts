@@ -9,6 +9,8 @@ import {
 
 export interface WorkbenchActivatableRuntime extends HostRuntimeLifecycle {
   acquireThread(threadId: string): Promise<WorkbenchThreadLease>;
+  /** Local borrowing never waits for Host recovery or changes execution ownership. */
+  tryAcquireThread?(threadId: string): WorkbenchThreadLease | null;
   /** Optional readiness observation for initial-route recovery. */
   getSnapshot?(): { readonly phase: string; readonly connectionGeneration?: number };
   subscribe?(listener: () => void): () => void;
@@ -54,6 +56,8 @@ export interface WorkbenchCoordinator<TRuntime extends WorkbenchActivatableRunti
    * View.
    */
   presentInitial(location: WorkbenchLocation, viewId: string): void;
+  /** Present a validated restored View; remote readiness follows independently. */
+  presentLocalView(location: WorkbenchLocation, viewId: string): void;
   /**
    * Commits a locally owned New-chat Draft as the visible Home route without
    * waiting for its physical Host. Remote readiness continues via prepare().
@@ -271,15 +275,19 @@ export function createWorkbenchCoordinator<TRuntime extends WorkbenchActivatable
       error = null;
       publish();
     },
-    presentLocalDraft(nextLocation, nextViewId) {
+    presentLocalView(nextLocation, nextViewId) {
       ensureOpen();
       if (nextViewId.trim().length === 0) {
         throw new RangeError("Workbench View ID must not be empty");
       }
+      cancelPreparation?.();
       generation += 1;
       const previousLease = activeThreadLease;
-      activeRuntime = registry.getRuntime(nextLocation.hostId);
-      activeThreadLease = null;
+      activeRuntime = registry.getRuntime(workbenchLocationHostId(nextLocation));
+      activeThreadLease = nextLocation.kind === "thread"
+        ? (activeRuntime.tryAcquireThread?.(nextLocation.key.threadId) as RuntimeThreadLease<TRuntime> | undefined) ?? null
+        : null;
+      activeThreadLease?.setRecoveryVisibility?.(true);
       previousLease?.release();
       location = nextLocation;
       viewId = nextViewId;
@@ -287,6 +295,9 @@ export function createWorkbenchCoordinator<TRuntime extends WorkbenchActivatable
       phase = "resolving";
       error = null;
       publish();
+    },
+    presentLocalDraft(nextLocation, nextViewId) {
+      this.presentLocalView(nextLocation, nextViewId);
     },
     prepare,
     async activate(nextLocation) {

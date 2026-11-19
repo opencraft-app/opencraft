@@ -1,3 +1,5 @@
+import { createHostFileSystem } from '../host-filesystem.ts';
+import { LocalAttachmentStagingService } from '@opencraft/local-agent-host/attachments/local-staging';
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { ExecutionEnvironmentRuntime } from "../execution-environment.ts";
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
@@ -52,6 +54,8 @@ export async function startIndependentEngineHost(options) {
   const bootId = await bootIdentity();
   const handoff = new PiOwnerHandoff(dataDirectory, runtime, inspectOwnerCgroup);
   let host, pi, server, closed, executionEnvironment;
+  const artifactFiles=options.fileSystemOwner?createHostFileSystem(options.fileSystemOwner):null;
+  const artifactInputs=new LocalAttachmentStagingService(join(dataDirectory,"agent","attachments"),join(dataDirectory,"artifacts"));
   const temporary = `${descriptorPath}.${randomUUID()}.tmp`,
     token = randomUUID();
   try {
@@ -62,9 +66,10 @@ export async function startIndependentEngineHost(options) {
     const scope = `server:${machine.machineId}:pi`;
     const capabilities = new RemoteSessionCapabilities(dataDirectory, scope);
     pi = new PiEngine({
+      prepareAttachmentInput:(threadId,input)=>artifactInputs.prepareInput(input,threadId,artifactFiles?(artifact,owner,signal)=>artifactFiles.prepareArtifact(artifact,owner,signal):undefined),
       ...(await createPiModelConfiguration(join(dataDirectory, 'models'), join(dataDirectory, 'pi'))),
       modelPolicyPath: join(dataDirectory, "model-usage-policy.sqlite"),
-      executionEnvironment: executionEnvironment = ExecutionEnvironmentRuntime.open(dataDirectory), admission: handoff, dataDirectory, directory: join(dataDirectory, 'pi'),
+      executionEnvironment: executionEnvironment = ExecutionEnvironmentRuntime.open(dataDirectory, { create: true }), admission: handoff, dataDirectory, directory: join(dataDirectory, 'pi'),
       attachmentDirectory: join(dataDirectory, 'agent', 'attachments'),
       cwd: runtimeDirectory,
       sessionCapabilities: capabilities,
@@ -96,6 +101,7 @@ export async function startIndependentEngineHost(options) {
       resources: {
         projectDirectory: join(dataDirectory, 'projects'),
         attachmentDirectory: join(dataDirectory, 'agent', 'attachments'),
+        artifactDirectory:join(dataDirectory,'artifacts'),
       },
       ...(engines.includes('dsh')
         ? {
@@ -202,6 +208,7 @@ export async function startIndependentEngineHost(options) {
           await new Promise((accept) => server.close(accept));
           if (!handoff.released) await host.close();
           await rm(descriptorPath, { force: true });
+          await artifactInputs.close(); artifactFiles?.close();
           executionEnvironment?.close(); await release(); await releaseKernel();
         })());
       },
@@ -212,6 +219,7 @@ export async function startIndependentEngineHost(options) {
     if (host) await host.close();
     else await pi?.close();
     await rm(temporary, { force: true });
+    await artifactInputs.close(); artifactFiles?.close();
     executionEnvironment?.close(); await release(); await releaseKernel();
     throw error;
   }

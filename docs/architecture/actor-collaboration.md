@@ -192,6 +192,10 @@ Session 何时需要回应，由显式注意力与唤醒策略决定，例如定
 
 自动协作须保存关联链和因果来源，定义唤醒资格、去重、链路预算及终止条件；普通回执、重复通知和状态广播不默认唤醒模型。A/B 互相回复也须受明确预算和策略约束，不能仅以单条消息合法推导整条自动协作链可以无限继续。
 
+## 以 Human 为中心的工作台
+
+一个工作台作用域围绕一个当前 Human 身份展开；连接多个 Hub、加入多个团队和访问不同 Runtime 不改变主体身份。Portal 是个人网络与资源入口，租户不是单人桌面或手机客户端的前置条件。远端仍须验证身份信任与目标资源授权，不能从界面统一推导身份联合已实现。具体呈现边界、切换语义和最小演进闭环见[Human 工作台与 Portal](human-workbench.md)。
+
 ## 多租户是这一模型的局部落地
 
 个人本地协作、团队协作、Agent 之间协作、多 Hub 和多租户共用上述四个概念。租户是需要隔离的管理与资源作用域，不替代主体身份，也不对应某个固定 Hub 或 Endpoint；主体加入多个租户也不获得跨租户隐式访问权。
@@ -257,12 +261,39 @@ Actor 资源记录授权，不能代其他 Hub、工作区或引擎授予权限�
 本地管理能力的兼容启动入口，不因此获得其他业务资源权限。管理请求读完正文后再次
 检查准入、过期、主体代次和授权，撤权不能被慢请求绕过。
 
+少数安装级能力取决于主体身份而非单项授权：读取无 owner 记录的历史共享会话、列出会话
+服务器、搜索会话、记录为新会话创建者、授权编排执行、经协作 HTTP 接口管理自动化，以及
+创建原生群、搜索邀请对象、浏览人员目录、在群里唤醒 Session、把群消息转交给 Session 执行。
+这些判断统一经 `ActorStore.allows(context, capability, resource?)`（已接纳的持久工作用
+`allowsAdmitted` 复核主体代次）由 `ActorPolicy` 决定。默认 `humanActorPolicy` 保持原有
+规则：仅限已准入的自然人。嵌入方可在构造 `ActorStore` 时注入策略函数，接入宿主已有的
+组织或业务关系；策略只决定这些具名能力，不替代精确授权，也不参与凭据验证。上下文过期、
+主体禁用或代次变化时先行拒绝，策略抛错或返回 `true` 以外的值同样拒绝。身份映射（外部 IM
+绑定、外部发送者展示、个人助理的认领人）和用量来源归属仍按主体类型判断；存储 Worker 内的
+自动化与空间账本直接读取主体行，仍仅限自然人，接入同一策略需要可序列化的预设。
+
 这是持久主体与接入基础，不是完整多租户或可互相控制的 Bot 网络。旧共享执行接口尚未
 接入资源级 Actor 授权，新 Session bearer 被明确拒绝进入这些 HTTP / WebSocket 接口；
 不能以新身份接口存在宣称历史会话、文件、模型凭据或执行资源已隔离。自然人的原有实例
 准入仍由既有成员策略决定，不因创建主体库自动启用门禁。执行适配、资源控制 API、
 领取队列时的权限重检与撤销 fencing 继续按前述纲领分步落地。
 
+### Shadow ownership boundary
+
+An external IM group and an OpenCraft group each retain their own owner and
+membership authority. Shadow is a best-effort relationship, not a declaration that
+external membership is the local source of truth. Explicit membership-sync policy
+may process external changes; provider failures or identity unlink alone do not
+remove independently granted local group membership. Server administration does
+not confer group-history access.
+
+The current shadow service can explicitly delegate access to a native group via
+`ShadowGroupBinding.localChannelId`, consuming `NativeChannels` membership and
+change notifications. It stores no second member roster. Legacy bindings remain
+unchanged until explicitly associated. This is an authorization bridge, not a
+migration of the shadow timeline into the native timeline or completion of a
+durable bidirectional message bridge. Join configuration and current limitations
+are documented in [WeCom shadow ownership](../../products/join/plugins/wecom/README.md).
 ### Private conversation catalog categories
 
 The authenticated Hub projects `accessMode` on authorized catalog rows and full-thread upserts. The native provider cannot select that value. A private row is returned only to its creator; the shared Runtime preserves that read-only field through catalog projection and cached restoration. The Sidebar's Mine category selects private rows; Shared selects the remaining visible rows. Category selection is presentation only and never grants access. Existing participation filters keep their meaning for shared rows; authorized private rows do not depend on loading product participation metadata. Access-change invalidation reconciles both categories without rebuilding the active conversation.

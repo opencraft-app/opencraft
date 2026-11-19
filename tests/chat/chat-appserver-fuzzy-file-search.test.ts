@@ -123,3 +123,79 @@ test("fuzzy file search detects old AppServers once and falls back to one-shot s
   assert.equal(updates[0], "README.md");
   controller.dispose();
 });
+
+test("opening or clearing an empty search does not build a file index", async () => {
+  const requests: RecordedRequest[] = [];
+  const { client } = createClient(async (method, params) => {
+    requests.push({ method, params });
+    return {};
+  });
+  const controller = new AppServerFuzzyFileSearchController(client);
+  const session = await controller.createSession({ roots: ["/repo"] });
+  await session.update(" ");
+  assert.equal(requests.length, 0);
+  await session.update("file");
+  await session.update("");
+  assert.deepEqual(requests.map(r => r.method), [
+    "fuzzyFileSearch/sessionStart", "fuzzyFileSearch/sessionUpdate", "fuzzyFileSearch/sessionStop",
+  ]);
+  await session.update("again");
+  assert.equal(requests[3]?.method, "fuzzyFileSearch/sessionStart");
+  controller.dispose();
+});
+
+test("whole-machine and kernel search roots are rejected before an RPC", async () => {
+  const requests: RecordedRequest[] = [];
+  const { client } = createClient(async (method, params) => {
+    requests.push({ method, params });
+    return {};
+  });
+  const controller = new AppServerFuzzyFileSearchController(client);
+  for (const root of ["/", "/data", "/sys/devices", "/proc", "/dev", "/repo/../", ".", "C:\\", "C:\\repo\\..", "//server/share"]) {
+    await assert.rejects(controller.createSession({ roots: [root] }), /project directory/u, root);
+  }
+  assert.equal(requests.length, 0);
+  controller.dispose();
+});
+
+test("disposing a controller stops every started search and prevents later updates", async () => {
+  const requests: RecordedRequest[] = [];
+  const { client } = createClient(async (method, params) => {
+    requests.push({ method, params });
+    return {};
+  });
+  const controller = new AppServerFuzzyFileSearchController(client);
+  const first = await controller.createSession({ roots: ["/repo"] });
+  const second = await controller.createSession({ roots: ["/other"] });
+  await first.update("one");
+  await second.update("two");
+  controller.dispose();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(requests.filter(r => r.method === "fuzzyFileSearch/sessionStop").length, 2);
+  const count = requests.length;
+  await first.update("late");
+  await second.stop();
+  assert.equal(requests.length, count);
+});
+
+test("a search starting after disposal is stopped without sending its query", async () => {
+  const requests: RecordedRequest[] = [];
+  let acknowledge!: () => void;
+  const pending = new Promise<void>(resolve => { acknowledge = resolve; });
+  const { client } = createClient(async (method, params) => {
+    requests.push({ method, params });
+    if (method === "fuzzyFileSearch/sessionStart") await pending;
+    return {};
+  });
+  const controller = new AppServerFuzzyFileSearchController(client);
+  const session = await controller.createSession({ roots: ["/repo"] });
+  const updating = session.update("file");
+  await Promise.resolve();
+  controller.dispose();
+  acknowledge();
+  await updating;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(requests.map(r => r.method), [
+    "fuzzyFileSearch/sessionStart", "fuzzyFileSearch/sessionStop",
+  ]);
+});

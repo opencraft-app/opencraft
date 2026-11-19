@@ -1,8 +1,10 @@
+import { accountFailureFromRpc } from "./diagnostics.js";
 import type {
   AppServerMethod,
   AppServerMethodParams,
   AppServerMethodResult,
   CodexAccountView,
+  CodexAccountFailure,
   CodexDeviceLoginPollView,
   CodexDeviceLoginView,
   CodexResetCreditsView,
@@ -15,9 +17,23 @@ export interface CodexAccountsSnapshot {
   readonly accounts: readonly CodexAccountView[];
   readonly login: CodexDeviceLoginView | null;
   readonly error: string | null;
+  readonly errorDiagnostic?: CodexAccountFailure | null;
 }
 
 const INITIAL: CodexAccountsSnapshot = Object.freeze({ phase: "idle", accounts: [], login: null, error: null });
+
+/** Snapshot error marker: the Server only lets administrators manage the shared Codex account pool. */
+export const CODEX_ACCOUNTS_ADMIN_REQUIRED = "codex-accounts-admin-required";
+const AUTHORIZATION_REQUIRED_CODE = -32003;
+
+export function isCodexAccountsAdminRequired(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { readonly code?: unknown }).code === AUTHORIZATION_REQUIRED_CODE;
+}
+
+function failureText(error: unknown): string {
+  if (isCodexAccountsAdminRequired(error)) return CODEX_ACCOUNTS_ADMIN_REQUIRED;
+  return error instanceof Error ? error.message : String(error);
+}
 
 export class CodexAccountsService {
   private snapshot: CodexAccountsSnapshot = INITIAL;
@@ -43,7 +59,7 @@ export class CodexAccountsService {
       this.publish({ ...this.snapshot, phase: "ready", accounts: result.accounts, error: null });
     } catch (error) {
       if (this.disposed || generation !== this.generation) return;
-      this.publish({ ...this.snapshot, phase: "error", error: error instanceof Error ? error.message : String(error) });
+      this.publish({ ...this.snapshot, phase: "error", error: failureText(error), errorDiagnostic: accountFailureFromRpc(error) });
     }
   }
 
@@ -98,7 +114,7 @@ export class CodexAccountsService {
         error: null,
       });
     } catch (error) {
-      this.publish({ ...this.snapshot, error: "local-codex-login-unavailable" });
+      this.publish({ ...this.snapshot, error: "local-codex-login-unavailable", errorDiagnostic: null });
       throw error;
     }
   }
@@ -108,7 +124,7 @@ export class CodexAccountsService {
       const login = await this.request("opencraft/codex/accounts/deviceLogin/start", {});
       this.publish({ ...this.snapshot, login, error: null });
     } catch (error) {
-      this.publish({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) });
+      this.publish({ ...this.snapshot, error: failureText(error), errorDiagnostic: accountFailureFromRpc(error) });
       throw error;
     }
   }
@@ -156,7 +172,7 @@ export class CodexAccountsService {
       if (this.snapshot.login?.sessionId === login.sessionId) this.publish({ ...this.snapshot, login: null });
       await this.refresh();
     } catch (error) {
-      this.publish({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) });
+      this.publish({ ...this.snapshot, error: failureText(error), errorDiagnostic: accountFailureFromRpc(error) });
       throw error;
     }
   }
@@ -184,7 +200,7 @@ export class CodexAccountsService {
 
   private publish(snapshot: CodexAccountsSnapshot): void {
     if (this.disposed) return;
-    this.snapshot = Object.freeze(snapshot);
+    this.snapshot = Object.freeze({ ...snapshot, ...(snapshot.error === null ? { errorDiagnostic: null } : {}) });
     for (const listener of this.listeners) listener();
   }
 }

@@ -6,7 +6,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { MoreIcon, EditIcon, AddIcon, MinusIcon, GripIcon } from "@opencraft/design-system-web/action-icons";
 import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
 import { SettingsButton, SettingsNotice, SettingsPanel } from "@opencraft/extension-react";
-import { useRef, useState, type ReactNode } from "react";
+import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ModalSurface } from "./modal";
 import { useWorkbenchPresentationRoot } from "./workbench-presentation-root";
@@ -19,6 +19,8 @@ import "../styles/toolbar-dock.scss";
 export interface ToolbarDockAction {
   readonly id: string;
   readonly label: string;
+  /** Optional content grouping; never changes the saved action order. */
+  readonly section?: string;
   readonly icon: ReactNode;
   readonly disabled?: boolean;
   readonly pending?: boolean;
@@ -53,8 +55,9 @@ function DropZone({ id, label, children }: { id: string; label: string; children
   </section>;
 }
 
-export function ToolbarDock({ scope, dockId, actions, label, defaultActions = [], onActionTrigger, returnFocus }: {
+export function ToolbarDock({ scope, dockId, actions, label, defaultActions = [], presented = true, onActionTrigger, returnFocus }: {
   scope: string; dockId: string; defaultActions?: readonly string[]; actions: readonly ToolbarDockAction[]; label: string;
+  presented?: boolean;
   onActionTrigger(element: HTMLElement): void; returnFocus(): HTMLElement | null;
 }) {
   const intl = useIntl();
@@ -65,6 +68,7 @@ export function ToolbarDock({ scope, dockId, actions, label, defaultActions = []
   const overflow = useRef<HTMLButtonElement | null>(null);
   const handoff = useRef(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  useLayoutEffect(() => { if (!presented) setMenuOpen(false); }, [presented]);
   const [draft, setDraft] = useState<readonly string[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
@@ -73,6 +77,7 @@ export function ToolbarDock({ scope, dockId, actions, label, defaultActions = []
     useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const byId = new Map(actions.map(action => [action.id, action]));
+  const menuActions = state.projection.overflow.flatMap(({ id }) => byId.has(id) ? [byId.get(id)!] : []);
   const docked = state.projection.docked.flatMap(({ id }) => byId.has(id) ? [byId.get(id)!] : []);
   const invoke = (action: ToolbarDockAction, element: HTMLElement) => {
     onActionTrigger(element); handoff.current = action.dialog === true; setMenuOpen(false); action.invoke();
@@ -100,12 +105,15 @@ export function ToolbarDock({ scope, dockId, actions, label, defaultActions = []
         </SortableContext>
       </div>
     </DndContext>
-    <DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
+    <DropdownMenu.Root open={presented && menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenu.Trigger asChild><IconButton ref={overflow} type="button" className="chrome-button" aria-label={label} title={label}><MoreIcon size={16} aria-hidden="true" /></IconButton></DropdownMenu.Trigger>
       <DropdownMenu.Portal container={portal}><DropdownMenu.Content className="workbench-context-menu" align="end" sideOffset={4}
-        onCloseAutoFocus={event => { if (handoff.current) { event.preventDefault(); handoff.current = false; } }}>
-        {state.projection.overflow.map(({ id }) => byId.get(id)!).map(action => <DropdownMenu.Item key={action.id} disabled={action.disabled}
-          aria-busy={action.pending || undefined} onSelect={() => invoke(action, overflow.current!)}>{action.icon}{action.label}</DropdownMenu.Item>)}
+        onCloseAutoFocus={event => { if (!presented || handoff.current) { event.preventDefault(); handoff.current = false; } }}>
+        {menuActions.map((action, index) => <Fragment key={action.id}>
+          {index > 0 && action.section !== menuActions[index - 1]!.section ? <DropdownMenu.Separator /> : null}
+          <DropdownMenu.Item disabled={action.disabled} aria-busy={action.pending || undefined}
+            onSelect={() => invoke(action, overflow.current!)}>{action.icon}{action.label}</DropdownMenu.Item>
+        </Fragment>)}
         <DropdownMenu.Separator />
         <DropdownMenu.Item onSelect={() => { handoff.current = true; setSaveError(false); setDraft([...state.order]); }}><EditIcon size={16} aria-hidden="true" />{message("toolbarDock.customize", "Customize toolbar")}</DropdownMenu.Item>
       </DropdownMenu.Content></DropdownMenu.Portal>

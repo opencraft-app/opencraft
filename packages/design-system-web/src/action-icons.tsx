@@ -135,7 +135,19 @@ export function ReplayIcon(props: ActionIconProps) {
 /** A tab count is one glyph, so grouped buttons never reach into label DOM. */
 export function TabCountIcon({ count, ...props }: ActionIconProps & { readonly count: number }) {
   return <ActionGlyph {...props} kind="tab-count">
-    <rect x="4.5" y="4.5" width="15" height="15" rx="2.75" />
-    <text x="12" y="12.5" textAnchor="middle" dominantBaseline="central" fill="currentColor" stroke="none" fontSize={count > 99 ? 7 : 10} fontWeight="600">{count > 99 ? '99+' : count}</text>
+    <path d="M7.5 3H18a3 3 0 0 1 3 3v10.5" />
+    <rect x="3" y="6" width="15" height="15" rx="2.75" />
+    <text x="10.5" y="14" textAnchor="middle" dominantBaseline="central" fill="currentColor" stroke="none" fontSize={count > 99 ? 7 : 10} fontWeight="600">{count > 99 ? '99+' : count}</text>
+  </ActionGlyph>;
+}
+
+export { FileFolderArtwork } from "./file-folder-artwork";
+
+/** A scheduled input: twin bells and a clock face, drawn in the shared glyph style. */
+export function AlarmClockIcon(props: ActionIconProps) {
+  return <ActionGlyph {...props} kind="alarm-clock">
+    <circle cx="12" cy="13" r="7" />
+    <path d="M12 9.5V13l2.5 1.5M6.75 18.5 5 21m12.25-2.5L19 21" />
+    <path d="M3.1 7.2C1.6 5.4 2.5 3.4 4.4 2.9c1.5-.4 2.7.2 3.5 1.4m13 2.9c1.5-1.8.6-3.8-1.3-4.3-1.5-.4-2.7.2-3.5 1.4" />
   </ActionGlyph>;
 }

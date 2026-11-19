@@ -158,7 +158,7 @@ test("static host applies release cache invariants and SPA fallback", async (con
   assert.equal(routeResponse.status, 200);
   assert.match(await routeResponse.text(), /build-one/u);
 
-  const namespacedViewResponse = await fetch(`${origin}/views/opencraft.bot-chat.view`, {
+  const namespacedViewResponse = await fetch(`${origin}/views/example.chat.view`, {
     headers: { accept: "text/html" },
   });
   assert.equal(namespacedViewResponse.status, 200);

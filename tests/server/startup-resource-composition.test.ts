@@ -30,3 +30,16 @@ test("trusted composition adds a deferred provider root and gates its static clo
     requiredModules, demandOnlyModules: [/\/sample-provider\/settings\//],
   }), /Demand-only startup module/);
 });
+
+test("startup leaf consolidation excludes optional implementations and recursive dependencies", async () => {
+  const { startupLeafGroups } = await import("../../apps/workbench-web/startup-leaf-groups.vite");
+  const matches = (path: string) => startupLeafGroups.some(group => group.test.test("/fixture/node_modules/" + path));
+  for (const path of ["framer-motion/dist/es/context/PresenceContext.mjs",
+    "framer-motion/dist/es/utils/reduced-motion/use-reduced-motion.mjs", "aria-hidden/dist/es2015/index.js",
+    "react-use-event-hook/dist/esm/useEvent.js", "tslib/tslib.es6.mjs", "w3c-keyname/index.js"]) assert.ok(matches(path), path);
+  for (const path of ["framer-motion/dist/es/index.mjs", "motion-dom/dist/es/animation/animate.mjs",
+    "react-dom/server.browser.js", "mermaid/dist/mermaid.js"]) assert.equal(matches(path), false, path);
+  assert.ok(startupLeafGroups.every(group => group.includeDependenciesRecursively === false));
+  assert.ok(startupLeafGroups.some(group => group.test.test("/fixture/apps/workbench-web/src/runtime/mobile-container.ts")));
+  assert.equal(startupLeafGroups.some(group => group.test.test("/fixture/apps/workbench-web/src/components/conversation-search-dialog.tsx")), false);
+});

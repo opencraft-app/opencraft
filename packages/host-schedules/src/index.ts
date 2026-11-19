@@ -13,7 +13,7 @@ export interface ScheduleExecutionPort {
   validate(threadId: string): Promise<void>;
   permissionProfiles?(threadId: string): Promise<OpenCraftPermissionProfile[]>;
   submit(run: ConversationScheduleRun, prompt: string, canAdmit: () => boolean): Promise<{ state: "waiting" | "running" | "completed" | "failed" | "unknown"; turnId?: string }>;
-  inspect(run: ConversationScheduleRun): Promise<{ state: "running" | "completed" | "failed" | "unknown" }>;
+  inspect(run: ConversationScheduleRun): Promise<{ state: "running" | "completed" | "failed" | "unknown"; turnId?: string }>;
 }
 const schema = `
 CREATE TABLE schedules (thread_id TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
@@ -166,6 +166,7 @@ export class ConversationSchedules {
         this.writeSchedule(value);
       }
     });
+    if (method.endsWith("/save") || p.action === "review" || p.action === "resume") this.retries.delete(threadId);
     return { ...this.read(threadId), ...(permissionProfiles ? { permissionProfiles } : {}) };
   }
   suspend(threadId: string) {
@@ -219,7 +220,6 @@ export class ConversationSchedules {
       if (this.flights.has(snapshot.threadId) || (this.retries.get(snapshot.threadId)?.at ?? 0) > this.now()) continue;
       const run = this.runs(snapshot.threadId).find(run => unfinished.has(run.state));
       if (!run && !(snapshot.status === "active" && snapshot.nextRunAt <= this.now())) continue;
-      if (run?.state === "unknown" && !this.observed(run)) continue;
       const operation = Promise.resolve().then(() => this.advancePlan(snapshot))
         .catch(() => {
           this.retries.set(snapshot.threadId, { at: this.now() + 30000, failed: true });
@@ -251,7 +251,7 @@ export class ConversationSchedules {
       this.writeRun(run);
     }
     if (run?.state === "waiting" && plan.status !== "active") { this.writeRun({ ...run, state: "failed", updatedAt: this.now() }); return; }
-    if (!run || run.state === "unknown" && !this.observed(run)) return;
+    if (!run) return;
     if (run.state === "waiting" || run.state === "submitting") {
       // Persist intent before crossing the engine boundary. Re-entry uses the SAME ID.
       if (run.state === "waiting") { run = { ...run, state: "submitting", updatedAt: this.now() }; this.writeRun(run); }
@@ -261,6 +261,7 @@ export class ConversationSchedules {
         const current = this.schedule(occurrence.threadId);
         return !this.stopped && current?.id === occurrence.scheduleId && current.status === "active";
       });
+      if (result.turnId && run.turnId && result.turnId !== run.turnId) throw new Error("Scheduled execution Turn binding changed");
       run = { ...run, state: result.state, turnId: result.turnId ?? run.turnId, updatedAt: this.now() };
       const observed = this.observed(run);
       if (run.state === "running" && observed) run = { ...run, ...observed };
@@ -270,8 +271,11 @@ export class ConversationSchedules {
         try { result = await this.port.inspect(run); }
         catch (error) { result = this.observed(run); if (!result) throw error; }
       }
-      run = { ...run, state: result.state, updatedAt: this.now() };
+      if (result.turnId && run.turnId && result.turnId !== run.turnId) throw new Error("Scheduled execution Turn binding changed");
+      run = { ...run, state: result.state, turnId: result.turnId ?? run.turnId, updatedAt: this.now() };
     }
+    // A human review may retire an unknown occurrence while inspection is in flight.
+    if (this.runs(run.threadId).find(value => value.id === run!.id)?.state === "reviewed") return;
     // A native completion can arrive while inspection is awaiting its reply.
     const observation = this.observed(run);
     if (observation && (run.state === "running" || run.state === "unknown")) run = { ...run, ...observation };
@@ -288,7 +292,8 @@ export class ConversationSchedules {
           revision: plan.revision + 1, updatedAt: this.now() });
       }
     });
-    if (run.state === "waiting" || run.state === "running") this.retries.set(run.threadId, { at: this.now() + (run.state === "waiting" ? 5000 : this.port.subscribe ? 60000 : 15000), failed: false });
+    if (run.state === "unknown" && !this.retries.has(run.threadId)) this.diagnostic({ event: "schedule-needs-review", scheduleId: plan.id });
+    if (run.state === "waiting" || run.state === "running" || run.state === "unknown") this.retries.set(run.threadId, { at: this.now() + (run.state === "waiting" ? 5000 : run.state === "unknown" || this.port.subscribe ? 60000 : 15000), failed: false });
     else { this.retries.delete(run.threadId); this.observations.delete(run.id); }
   }
 

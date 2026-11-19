@@ -968,3 +968,20 @@ test("default cache timers preserve the browser global receiver", async t => {
     assert.ok(receivers.length >= 2, "both timer setup and cleanup use the native global receiver");
   } finally { replica.dispose(); }
 });
+
+test("resuming a partial window preserves an existing body until the canonical source replaces it", async () => {
+  const replica = client(new MemoryReplicaStorage());
+  try {
+    await replica.synchronize(ownedSource("known", []));
+    const known = replica.getSnapshot().entities.get("row");
+    replica.reportSyncStarted();
+    replica.reportPreview("row", "partial", {preserveExisting: true});
+    assert.equal(replica.getSnapshot().entities.get("row"), known);
+    assert.equal(replica.getSnapshot().authoritative, false);
+    await replica.synchronize(ownedSource("corrected", []));
+    assert.equal(replica.getSnapshot().entities.get("row"), "corrected");
+    replica.reportSyncStarted();
+    replica.reportPreview("new", "first paint", {preserveExisting: true});
+    assert.equal(replica.getSnapshot().entities.get("new"), "first paint");
+  } finally { replica.dispose(); }
+});

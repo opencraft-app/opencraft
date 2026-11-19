@@ -4,7 +4,7 @@ import { transform } from "lightningcss";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { validateThemeOptions } from "@opencraft/design-system/theme-options";
-import { buildOpenCraftThemeCssProperties as build, opencraftNeutralThemePalette, opencraftCanvasThemePalette, frostThemePalette, longingThemePalette } from "@opencraft/design-system/theme-engine";
+import { buildOpenCraftThemeCssProperties as build, opencraftNeutralThemePalette, opencraftCanvasThemePalette, frostThemePalette, longingThemePalette, seeThemePalette } from "@opencraft/design-system/theme-engine";
 import { ExtensionSupervisor } from "@opencraft/extension-runtime";
 import { isWindowAppearanceMessage, resolveWindowAppearance } from "../../apps/workbench-electron/src/window-appearance";
 
@@ -57,7 +57,7 @@ test("optional theme surfaces override only named semantic roles and reset to de
 
 test("theme options reject arbitrary CSS and unknown configuration", () => {
   for (const surfaces of [null, [], {panel:"url(https://example.test)"}, {input:"red"}, {selector:"#ffffff"}, {panel:123}]) assert.throws(()=>validateThemeOptions(surfaces,undefined));
-  for (const material of [null, [], {window:"blur(20px)"}, {elevation:"huge"}, {css:"none"}]) assert.throws(()=>validateThemeOptions(undefined,material));
+  for (const material of [null, [], {window:"blur(20px)"}, {elevation:"huge"}, {css:"none"}, {finish:"url(x)"}]) assert.throws(()=>validateThemeOptions(undefined,material));
 });
 
 test("native Sidebar shares vibrancy while opaque themes and explicit Sidebar surfaces stay authoritative", () => {
@@ -122,4 +122,67 @@ test("release material preserves standard blur and opacity overrides after minif
   assert.match(surface, /-webkit-backdrop-filter:var\(--material-backdrop-filter\)/u);
   const opaque = css.match(/\.opaque-material\{([^}]+)\}/u)?.[1] ?? "";
   assert.match(opaque, /(?:^|;)backdrop-filter:none/u);
+});
+
+test("frosted finish is reusable intent and switching themes resets every material role", () => {
+  for (const mode of ["light", "dark"] as const) {
+    const base = opencraftNeutralThemePalette[mode];
+    const standard = build(mode, base);
+    const frosted = build(mode, { ...base, material: { finish: "frosted" } });
+    const see = build(mode, seeThemePalette[mode]);
+    for (const key of Object.keys(see).filter(key => key.startsWith("--material-optics-"))) {
+      assert.ok(standard[key as keyof typeof standard], key + " must reset on theme switch");
+    }
+    assert.equal(frosted["--material-optics-main"], "transparent");
+    assert.equal(see["--material-optics-main"], frosted["--material-optics-main"]);
+    assert.equal(standard["--material-optics-main"], "var(--color-surface)");
+    const override = build(mode, { ...base, surfaces: { popover: "#454545" }, material: { finish: "frosted" } });
+    assert.equal(override["--material-glass-panel"], "#454545");
+    assert.deepEqual(build(mode, { ...base, material: { finish: "standard" } }), standard);
+  }
+});
+
+
+test("Composer material stays filled and independent of general frosted panel optics",()=>{
+ for(const mode of ["light","dark"] as const)for(const palette of [opencraftNeutralThemePalette,frostThemePalette,longingThemePalette,seeThemePalette]){
+  const css=build(mode,palette[mode]);
+  assert.equal(css["--material-optics-composer-touch"],"var(--color-background-composer-filled)");
+  assert.notEqual(css["--material-optics-composer"],"var(--material-glass-panel)");
+  assert.notEqual(css["--material-optics-composer-filter"],"var(--material-glass-filter)");
+  if(palette[mode].material?.finish==="frosted"){
+   assert.equal(css["--material-optics-composer"],"var(--color-background-composer-filled)");
+   assert.equal(css["--material-optics-composer-filter"],"blur(var(--blur-composer-surface)) saturate(var(--saturation-composer-surface))");
+  }
+ }
+ const tokens=readFileSync(new URL("../../packages/design-system/src/tokens.web.scss",import.meta.url),"utf8");
+ assert.match(tokens,/--opacity-composer-surface:\s*98%/u);
+ assert.match(tokens,/--blur-composer-surface:\s*6px/u);
+ const styles=readFileSync(new URL("../../apps/workbench-web/src/styles/app.scss",import.meta.url),"utf8");
+ assert.doesNotMatch(styles,/--thread-reading-mask/u);
+});
+
+
+test("sticky Sidebar labels flatten only their theme material, preserving explicit Sidebar surfaces", () => {
+  for (const mode of ["light", "dark"] as const) {
+    for (const palette of [opencraftNeutralThemePalette, frostThemePalette, longingThemePalette, opencraftCanvasThemePalette]) {
+      const css = build(mode, palette[mode]);
+      assert.equal(css["--opencraft-sidebar-sticky-background"],
+        `linear-gradient(${css["--opencraft-sidebar-material-background"]}, ${css["--opencraft-sidebar-material-background"]}), ${css["--opencraft-window-material"]}`);
+    }
+    const css = build(mode, { ...longingThemePalette[mode], surfaces: { sidebar: "#234567" } });
+    assert.equal(css["--opencraft-sidebar-sticky-background"], "#234567");
+  }
+});
+
+
+test("sticky backing leaves explicit legacy context and heading paints authoritative", () => {
+  for (const mode of ["light", "dark"] as const) {
+    const css = build(mode, { ...longingThemePalette[mode], shellMaterial: {
+      ...longingThemePalette[mode].shellMaterial!,
+      sidebarContextBackground: "#315171", sidebarHeadingBackground: "#154365",
+    } });
+    assert.equal(css["--opencraft-sidebar-context-background"], "#315171");
+    assert.equal(css["--opencraft-sidebar-heading-background"], "#154365");
+    assert.notEqual(css["--opencraft-sidebar-sticky-background"], "transparent");
+  }
 });

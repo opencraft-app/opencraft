@@ -1,3 +1,23 @@
+/** Safe account-maintenance diagnostics; no tokens, provider bodies or local paths. */
+export type CodexAccountFailureCode = "authorization-rejected" | "credential-unavailable" | "credential-expired" | "renewal-incomplete" | "renewal-failed"
+  | "upstream-unavailable" | "request-timeout" | "service-unavailable" | "admission-fenced" | "invalid-request" | "operation-failed";
+export interface CodexAccountFailure {
+  readonly code: CodexAccountFailureCode;
+  readonly stage: "renewal" | "usage" | "operation";
+  /** Whether an explicit retry is useful; never permission to replay a mutation. */
+  readonly retryable: boolean;
+  readonly occurredAt: number;
+  readonly diagnosticId: string;
+  readonly httpStatus?: number;
+  readonly reason?: "dns" | "connection-refused" | "connection-reset" | "tls" | "connection-timeout" | "native-exit" | "invalid-response";
+}
+export interface CodexAccountMaintenanceView {
+  readonly state: "checking" | "unverified" | "ok" | "error";
+  readonly checkedAt: number;
+  readonly lastSuccessAt: number | null;
+  readonly failure?: CodexAccountFailure;
+}
+
 export interface CodexAccountLimitWindowView {
   readonly slot: "primary" | "secondary";
   readonly windowMinutes: number | null;
@@ -21,8 +41,12 @@ export interface CodexAccountView {
   readonly rateLimitTier: string | null;
   /** Absent on older Hosts; null when the service has not reported a count. */
   readonly resetCredits?: { readonly availableCount: number; readonly observedAt: number } | null;
+  /** Absent on older Hosts; null until the service reports extra credit status. balance is the service's raw text. */
+  readonly credits?: { readonly available: boolean; readonly unlimited: boolean; readonly balance: string | null; readonly observedAt: number } | null;
   /** Only present when the account owner implements both explicit credit methods. */
   readonly resetCreditActions?: boolean;
+  /** Absent on older Hosts. Latest maintenance observation, not an execution grant. */
+  readonly maintenance?: CodexAccountMaintenanceView;
   readonly status: "disabled" | "ready" | "held" | "exhausted" | "error";
   readonly observedAt: number | null;
   readonly heldUntil: number | null;

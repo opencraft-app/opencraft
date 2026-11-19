@@ -179,8 +179,10 @@ class Fork:
             raise ValueError('existing .gclient differs; it was not overwritten')
         if not path.exists():
             path.write_text(config)
-        run([gclient, 'sync', '--no-history', '--with_branch_heads', '--with_tags'],
-            cwd=self.root)
+        # DEPS selects the required revisions, including individual release
+        # tags. Fetching every tag and branch head adds unrelated history to
+        # each sync and is unnecessary for a fixed native build.
+        run([gclient, 'sync', '--no-history'], cwd=self.root)
         return self.verify()
 
     def build(self, jobs):
@@ -200,8 +202,15 @@ class Fork:
                 raise ValueError(f'{name} missing; sync the pinned Chromium tools first')
         out = 'out/OpenCraft'
         gn_args = (self.directory / 'args.gn').read_text()
-        run([tools['gn'], 'gen', out, '--args=' + gn_args], cwd=self.root / 'src')
-        run([tools['ninja'], '-C', out, '-j', str(jobs), *build_targets()], cwd=self.root / 'src')
+        # Build actions also spawn GN by name (for example Node's config.gypi
+        # generator). They must resolve the same synced tool as the parent.
+        environment = dict(os.environ)
+        environment['PATH'] = os.pathsep.join([
+            *(str(Path(tools[name]).parent) for name in ('gn', 'ninja')),
+            environment.get('PATH', ''),
+        ])
+        run([tools['gn'], 'gen', out, '--args=' + gn_args], cwd=self.root / 'src', env=environment)
+        run([tools['ninja'], '-C', out, '-j', str(jobs), *build_targets()], cwd=self.root / 'src', env=environment)
         executable = native_executable(self.root, platform_name)
         if not executable.is_file():
             raise ValueError('native Electron build did not produce ' + str(executable))

@@ -23,6 +23,7 @@ test("UI preference defaults keep Applications unpinned", async () => {
   assert.equal(runtime.get("chat.defaultFollowUpAction"), "queue");
   assert.equal(runtime.get("chat.turnNotifications"), false);
   assert.equal(runtime.get("interface.touchFriendly"), "auto");
+  assert.equal(runtime.get("interface.keyboardClearance"), false);
   assert.equal(runtime.get("shell.accountPinned"), false);
   assert.equal(runtime.get("shell.navigationDetent"), "expanded");
   assert.equal(runtime.get("shell.navigationWidth"), 137);
@@ -42,9 +43,11 @@ test("IndexedDB installation preferences survive runtime recreation", async () =
     first.set("shell.applicationsPinned", true),
     first.set("chat.defaultFollowUpAction", "queue"),
     first.set("chat.turnNotifications", true),
+    first.set("interface.keyboardClearance", true),
     first.set("shell.navigationDetent", "compact"),
     first.set("shell.navigationWidth", 132),
     first.set("shell.contextSidebarWidth", 360),
+    first.set("shell.rightPanelWidth", {ratio: 0.75}),
     first.set("sidebar.serverFilter", { serverId: "ssh:fixture", label: "Remote fixture" }),
   ]);
   await first.close();
@@ -58,9 +61,11 @@ test("IndexedDB installation preferences survive runtime recreation", async () =
   assert.equal(second.get("shell.applicationsPinned"), true);
   assert.equal(second.get("chat.defaultFollowUpAction"), "queue");
   assert.equal(second.get("chat.turnNotifications"), true);
+  assert.equal(second.get("interface.keyboardClearance"), true);
   assert.equal(second.get("shell.navigationDetent"), "compact");
   assert.equal(second.get("shell.navigationWidth"), 132);
   assert.equal(second.get("shell.contextSidebarWidth"), 360);
+  assert.deepEqual(second.get("shell.rightPanelWidth"), {ratio: 0.75});
   assert.deepEqual(second.get("sidebar.serverFilter"), { serverId: "ssh:fixture", label: "Remote fixture" });
   assert.equal(second.storedRevision("shell.applicationsPinned"), 1);
   await second.close();
@@ -225,4 +230,32 @@ test("model memory isolates account, display and target Host through production 
   }
   assert.deepEqual(read(restored, scope), choice, "invalid input preserves the last valid selection");
   await restored.close();
+});
+
+test("tool pane default is distinct from a saved position and can be restored", async () => {
+  const runtime = await UiPreferencesRuntime.open({ installation: new MemoryUiPreferenceStore() });
+  assert.deepEqual(runtime.get("shell.rightPanelWidth"), {ratio: null});
+  for (const ratio of [-1, 1.1, NaN, Infinity]) {
+    await assert.rejects(runtime.set("shell.rightPanelWidth", {ratio}), TypeError);
+  }
+  await runtime.set("shell.rightPanelWidth", {ratio: 0});
+  assert.deepEqual(runtime.get("shell.rightPanelWidth"), {ratio: 0});
+  await runtime.set("shell.rightPanelWidth", {ratio: null});
+  assert.deepEqual(runtime.get("shell.rightPanelWidth"), {ratio: null});
+  await runtime.close();
+});
+
+test("scheduled section starts collapsed and remembers either client choice across reopen", async () => {
+  const installation = new MemoryUiPreferenceStore();
+  let runtime = await UiPreferencesRuntime.open({ installation });
+  assert.equal(runtime.get("sidebar.scheduledCollapsed"), true);
+  await runtime.set("sidebar.scheduledCollapsed", false);
+  await runtime.close();
+  runtime = await UiPreferencesRuntime.open({ installation });
+  assert.equal(runtime.get("sidebar.scheduledCollapsed"), false);
+  await runtime.set("sidebar.scheduledCollapsed", true);
+  await runtime.close();
+  runtime = await UiPreferencesRuntime.open({ installation });
+  assert.equal(runtime.get("sidebar.scheduledCollapsed"), true);
+  await runtime.close();
 });

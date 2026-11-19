@@ -8,13 +8,87 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
-import { AccountPoolStore } from "@opencraft/account-pool-host";
+import { AccountPoolStore, ModelGatewayStore } from "@opencraft/account-pool-host";
 import { OPENCRAFT_ATTACHMENT_STAGING_EXTENSION, OPENCRAFT_THREAD_LIFECYCLE_EXTENSION, OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_THREAD_START_DURABILITY_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION } from "@opencraft/appserver-protocol";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter.js";
 import { InterruptedTurnRecovery } from "@opencraft/host-recovery";
 import { OpenCraftHostQueue } from "../../apps/opencraft-daemon/src/opencraft-host-queue.js";
 import { LocalDesktopService } from "../../apps/local-agent-host/src/desktop/local-desktop-service.js";
 import { OPENCRAFT_DESKTOP_ATTACH, OPENCRAFT_DESKTOP_RELEASE, OPENCRAFT_DESKTOP_EXTENSION } from "@opencraft/appserver-protocol/desktop";
+
+
+for (const outcome of ["completed", "failed"] as const) test(`collaboration exact-Turn completion ${outcome} survives Host restart and newer Turn`, async () => {
+  const root=await mkdtemp(join(tmpdir(),"codex-input-completion-")),frames:Array<Record<string,unknown>>=[];
+  let adapter=createRoutingAdapter(root,frames);
+  let sequence=0;
+  const request=async(method:string,params:Record<string,unknown>,trusted=false)=>{
+    const id="input-completion:"+(++sequence);
+    await adapter.sendWithContext(JSON.stringify({id,method,params,[LOGICAL_CLIENT_FIELD]:"reader"}),
+      {sender:null,...(trusted?{collaborationRequestId:"owned-request"}:{})});
+    return await waitFor(frames,f=>f.id===id) as any;
+  };
+  try {
+    await adapter.connect();await initializeClient(adapter,frames,"reader");
+    const threadId=(await request("thread/start",{testNoServerRequest:true})).result.thread.id;
+    const seed=()=>request("test/setHistory",{threadId,turns:[
+      {id:"owned-turn",status:outcome,items:[{id:"owned-result",type:"agentMessage",text:"result for the owned input"}]},
+      {id:"newer-turn",status:outcome === "completed" ? "failed" : "completed",items:[{id:"foreign-result",type:"agentMessage",text:"unrelated newer output"}]},
+    ]});
+    await seed();
+    const queue=(adapter as any).queueStore() as OpenCraftHostQueue;
+    const row=queue.add(threadId,"actor-input:owned-request",[{type:"text",text:"owned intent"}]);
+    queue.claim(threadId,row.id,"owned-turn");queue.settle(threadId,row.id,"delivered");
+    const legacy=(await request("thread/queue/collaborationReceipt",{threadId},true)).result.receipt;
+    assert.deepEqual(legacy,{id:row.id,state:"delivered",targetTurnId:"owned-turn"});
+    const denied=await request("thread/queue/collaborationReceipt",{threadId,includeCompletion:true});assert.ok(denied.error);
+    const response=await request("thread/queue/collaborationReceipt",{threadId,includeCompletion:true},true);
+    assert.ok(response.result,JSON.stringify(response.error));
+    assert.deepEqual(response.result.receipt.completion,{version:1,turnId:"owned-turn",status:outcome,text:"result for the owned input",truncated:false});
+    assert.equal(queue.findByClientId(threadId,"actor-input:owned-request")?.delivery?.execution,outcome);
+    await adapter.close();frames.length=0;
+    adapter=createRoutingAdapter(root,frames);await adapter.connect();await initializeClient(adapter,frames,"reader");await seed();
+    const reopened=await request("thread/queue/collaborationReceipt",{threadId,includeCompletion:true},true);
+    assert.ok(reopened.result,JSON.stringify(reopened.error));
+    assert.deepEqual(reopened.result.receipt.completion,response.result.receipt.completion);
+  } finally {await adapter.close();await rm(root,{recursive:true,force:true});}
+});
+
+test("human model gateway binds trusted admission before native execution and rejects an anonymous payer",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"codex-budget-admission-")),frames:Array<Record<string,unknown>>=[];
+ const previous=process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE,path=join(root,"budget","gateway.sqlite");
+ process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE=path;
+ const store=new ModelGatewayStore(path);
+ store.configure("human-a",{monthlyTokens:1000,requestTokens:100,concurrency:2},0,"admin");
+ const adapter=createRoutingAdapter(root,frames,0,undefined,undefined,undefined,false,{serverId:"fixture",actor:c=>({id:c.actorId,kind:"human"})});
+ let sequence=0;
+ const request=async(method:string,params:Record<string,unknown>,human: boolean | string=false)=>{
+  const id="gateway-admission:"+(++sequence),frame=JSON.stringify({id,method,params,[LOGICAL_CLIENT_FIELD]:"viewer"});
+  if(human)await adapter.sendWithContext(frame,{sender:null,actorContext:{actorId:typeof human === "string" ? human : "human-a",generation:1,credentialId:null,expiresAt:Date.now()+60000}});
+  else await adapter.send(frame);
+  return await waitFor(frames,f=>f.id===id) as any;
+ };
+ try{
+  await adapter.connect();await initializeClient(adapter,frames,"viewer");
+  const threadId=(await request("thread/start",{testNoServerRequest:true})).result.thread.id;
+  store.prepareContribution("private", "human-a", "approved"); store.contributionState("private", "human-a", "shared");
+  const denied=await request("turn/start",{threadId,input:[{type:"text",text:"synthetic"}],clientUserMessageId:"untrusted",actorId:"human-a",model:"configured/private/model"});
+  assert.ok(denied.error);assert.equal(store.sponsor(threadId),null);
+  const before=await request("test/readAcceptedInputs",{});assert.equal(before.result.data.length,0);
+  const accepted=await request("turn/start",{threadId,input:[{type:"text",text:"synthetic"}],clientUserMessageId:"trusted",model:"configured/private/model"},true);
+  assert.ok(accepted.result,JSON.stringify(accepted.error));assert.equal(store.execution(threadId)?.authorizer,"human-a");
+  assert.equal((await request("test/readAcceptedInputs",{})).result.data.length,1);
+  const reservation=store.reserve(threadId,"configured/private/model");store.dispatched(reservation.id,"configured/private/model");store.finish(reservation.id,1);
+  for(const method of ["turn/start","turn/steer"]) {
+    const foreign=await request(method,{threadId,input:[{type:"text",text:"foreign"}],clientUserMessageId:"foreign-"+method},"human-b");
+    assert.ok(foreign.error);
+  }
+  assert.equal((await request("test/readAcceptedInputs",{})).result.data.length,1);
+
+ }finally{
+  await adapter.close();store.close();if(previous===undefined)delete process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE;else process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE=previous;
+  await rm(root,{recursive:true,force:true});
+ }
+});
 
 for (const outcome of ["ready", "failed", "disconnected"] as const) test(`reopening during execution tool preparation waits for its existing owner (${outcome})`, async () => {
   const root = await mkdtemp(join(tmpdir(), "codex-resume-preflight-")), frames: Array<Record<string, unknown>> = [];
@@ -24,7 +98,7 @@ for (const outcome of ["ready", "failed", "disconnected"] as const) test(`reopen
   try {
     await adapter.connect(); await initializeClient(adapter, frames, "viewer");
     const threadId = "fixture-thread-1", internals = adapter as any;
-    internals.sessionMcpRetirements.set(threadId, { model: "preserved" });
+    internals.sessionMcpRetirements.set(threadId, { settings: { model: "preserved" }, phase: "retiring" });
     const preparation = gate.then(() => {
       internals.sessionMcpRefreshes.delete(threadId);
       if (outcome === "failed") throw new Error("synthetic preparation failure");
@@ -67,7 +141,7 @@ function waitFor(frames: Array<Record<string, unknown>>, predicate: (frame: Reco
   });
 }
 
-function createRoutingAdapter(root: string, frames: Array<Record<string, unknown>>, nativeQueueSteerVersion: 0 | 1 | 2 = 0, steerResponse?: string, nativeSubscriptionGraceMs?: number, desktop?: LocalDesktopService, autoTitles = false, tokenUsage?:ConstructorParameters<typeof CodexEngineAdapter>[0]["tokenUsage"], sessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["sessionMcp"], createSessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["createSessionMcp"], diagnostic?: (event: Record<string, unknown>) => void, resourceMetadata?: ConstructorParameters<typeof CodexEngineAdapter>[0]["historyResourceMetadata"]): CodexEngineAdapter {
+function createRoutingAdapter(root: string, frames: Array<Record<string, unknown>>, nativeQueueSteerVersion: 0 | 1 | 2 = 0, steerResponse?: string, nativeSubscriptionGraceMs?: number, desktop?: LocalDesktopService, autoTitles = false, tokenUsage?:ConstructorParameters<typeof CodexEngineAdapter>[0]["tokenUsage"], sessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["sessionMcp"], createSessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["createSessionMcp"], diagnostic?: (event: Record<string, unknown>) => void, resourceMetadata?: ConstructorParameters<typeof CodexEngineAdapter>[0]["historyResourceMetadata"], finalizeNativeCreation?: ConstructorParameters<typeof CodexEngineAdapter>[0]["finalizeNativeCreation"]): CodexEngineAdapter {
   const adapter = new CodexEngineAdapter({
     executable: process.execPath,
     runtimeDirectory: root,
@@ -83,6 +157,7 @@ function createRoutingAdapter(root: string, frames: Array<Record<string, unknown
     sessionMcp,
     createSessionMcp,
     historyResourceMetadata: resourceMetadata,
+    finalizeNativeCreation,
     desktop,
   });
   adapter.subscribeMessage(frame => frames.push(JSON.parse(frame)));
@@ -426,7 +501,7 @@ test("Codex Host stages ordinary files for its native process without forwarding
     await initializeClient(adapter, frames, clientId);
     const initialized = await waitFor(frames, frame => frame.id === `${clientId}:init`);
     assert.deepEqual((initialized.result as any).capabilities.extensions[OPENCRAFT_ATTACHMENT_STAGING_EXTENSION], {
-      version: 1, chunkBytes: 1024 * 1024, sources: ["client-bytes"], locations: ["host-file"], maxBytes: 1024 * 1024 * 1024,
+      version: 1, chunkBytes: 64 * 1024, uploadRetry: "last-chunk-v1", sources: ["client-bytes"], locations: ["host-file"], maxBytes: 1024 * 1024 * 1024,
     });
     const upload = { uploadId: crypto.randomUUID(), clientAttachmentId: "chunked-notes", name: "chunked.md", mimeType: "text/markdown", size: 6 };
     const chunk = async (id: string, offset: number, text: string) => {
@@ -465,7 +540,9 @@ test("Codex Host stages ordinary files for its native process without forwarding
     const content = items.data[0].item.content;
     assert.equal(content[0].text, "What is in this file?");
     assert.match(content[1].text, /notes\.md/);
-    assert.ok(content[1].text.includes(path));
+    const executionPath=JSON.parse(/readable path on this Host is (".*?")\. Read/.exec(content[1].text)![1]!);
+    assert.notEqual(executionPath,path);
+    assert.equal(await readFile(executionPath,'utf8'),'hello world');
     assert.equal(content[1].text_elements[0].placeholder, "opencraft:staged-file:v1");
     assert.deepEqual(content[2], { type: "mention", name: "notes.md", path });
     assert.deepEqual(items.data[0].item.attachments, [{
@@ -483,7 +560,7 @@ test("Codex Host stages ordinary files for its native process without forwarding
     assert.ok((await waitFor(frames, frame => frame.id === "queue-steer")).result);
     await adapter.send(JSON.stringify({ id: "items-2", method: "thread/items/list", params: { threadId: actualThreadId }, [LOGICAL_CLIENT_FIELD]: clientId }));
     const steeredItems = (await waitFor(frames, frame => frame.id === "items-2")).result as any;
-    assert.ok(steeredItems.data[1].item.content[0].text.includes(path));
+    assert.ok(steeredItems.data[1].item.content[0].text.includes(executionPath));
     assert.deepEqual(steeredItems.data[1].item.content[1], { type: "mention", name: "notes.md", path });
     assert.deepEqual(steeredItems.data[1].item.attachments, items.data[0].item.attachments);
     await adapter.send(JSON.stringify({ id: "remove-1", method: "attachment/remove", params: { id: request.clientAttachmentId }, [LOGICAL_CLIENT_FIELD]: clientId }));
@@ -603,7 +680,7 @@ test("Codex Engine shares one physical initialize and restores logical client ro
     );
     assert.deepEqual(
       (first.result as any).capabilities.extensions[OPENCRAFT_THREAD_LIFECYCLE_EXTENSION],
-      { version: 1, fork: true, ephemeral: true, injectItems: true, rename: true, archive: true, unsubscribe: true },
+      { version: 1, fork: true, ephemeral: true, injectItems: false, sideChatSettings: true, rename: true, archive: true, unsubscribe: true },
     );
     assert.deepEqual((first.result as any).capabilities.extensions[OPENCRAFT_THREAD_QUEUE_EXTENSION],
       { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false });
@@ -635,6 +712,10 @@ test("Codex Engine shares one physical initialize and restores logical client ro
     await waitFor(frames, frame => frame.id === "a:resume");
     assert.ok(diagnostics.some(event => event.event === "thread-resume-start" && event.clientId === "client-a" && event.threadId === "fixture-thread-1"));
     assert.ok(diagnostics.some(event => event.event === "thread-resume-finish" && event.clientId === "client-a" && event.threadId === "fixture-thread-1" && event.outcome === "succeeded"));
+    const resumeRequestId = diagnostics.find(event => event.event === "thread-resume-start")?.requestId;
+    const resumeEvents = diagnostics.filter(event => event.requestId === resumeRequestId);
+    assert.ok(resumeEvents.some(event => event.event === "thread-resume-stage" && event.stage === "native-dispatch" && event.outcome === "written"));
+    assert.ok(resumeEvents.some(event => event.event === "thread-resume-finish" && event.outcome === "succeeded"));
 
     await adapter.send(JSON.stringify({ id: "b:accounts", method: "opencraft/codex/accounts/list", params: {}, [LOGICAL_CLIENT_FIELD]: "client-b" }));
     const accounts = await waitFor(frames, frame => frame.id === "b:accounts");
@@ -984,14 +1065,15 @@ test("Host-owned Codex queue admits a second steer before the first appears in h
     const steered = await request("steer", "thread/queue/steer", {
       threadId: "fixture-thread-1", queuedSubmissionId: queuedId, expectedTurnId: activeTurnId,
     });
-    assert.deepEqual(steered.result, { turnId: activeTurnId });
+    assert.equal((steered.result as any).turnId,activeTurnId);
+    assert.equal((steered.result as any).delivery.custody,"accepted");
     const afterSteer = await request("list-2", "thread/queue/list", { threadId: "fixture-thread-1" });
     assert.equal((afterSteer.result as any).data[0].id, secondQueuedId);
     assert.equal((afterSteer.result as any).steering[0].clientUserMessageId, "queued-1");
     const secondSteer = await request("steer-2", "thread/queue/steer", {
       threadId: "fixture-thread-1", queuedSubmissionId: secondQueuedId, expectedTurnId: activeTurnId,
     });
-    assert.deepEqual(secondSteer.result, { turnId: activeTurnId });
+    assert.equal((secondSteer.result as any).turnId,activeTurnId);
     const afterSecondSteer = await request("list-3", "thread/queue/list", { threadId: "fixture-thread-1" });
     assert.deepEqual((afterSecondSteer.result as any).data, []);
     assert.deepEqual((afterSecondSteer.result as any).steering.map((item: any) => item.clientUserMessageId), ["queued-1", "queued-2"]);
@@ -1009,7 +1091,7 @@ test("Host-owned Codex queue admits a second steer before the first appears in h
   }
 });
 
-test("ambiguous Codex queue steer stays claimed until explicit history-checked discard", async () => {
+test("ambiguous admission blocks only its live attempt; terminal receipt releases later input without replay", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-codex-host-unknown-"));
   const frames: Array<Record<string, unknown>> = [];
   const adapter = createRoutingAdapter(root, frames, 0, "ambiguous");
@@ -1046,13 +1128,16 @@ test("ambiguous Codex queue steer stays claimed until explicit history-checked d
     const stillQueued = await request("still-queued", "thread/queue/list", { threadId: "fixture-thread-1" });
     assert.equal((stillQueued.result as any).data[0].clientUserMessageId, "next-1");
     await request("complete", "test/completeTurn", { threadId: "fixture-thread-1" });
-    const deleted = await request("discard", "thread/queue/delete", {
-      threadId: "fixture-thread-1", queuedSubmissionId: queuedId,
-      expectedTurnId: targetTurnId, acknowledgeUnknownDelivery: true,
-    });
-    assert.deepEqual(deleted.result, { deleted: true });
     const settled = await request("settled", "thread/queue/list", { threadId: "fixture-thread-1" });
-    assert.deepEqual((settled.result as any).steering, []);
+    const receipt=(settled.result as any).steering.find((r:any)=>r.id===queuedId);
+    assert.equal(receipt.delivery.custody,"accepted");
+    assert.equal(receipt.delivery.nativeAdmission,"unknown");
+    assert.equal(receipt.delivery.context,"unobserved");
+    assert.equal(receipt.delivery.execution,"completed");
+    assert.equal(receipt.pausedReason,null);
+    const later=await request("later", "thread/read", {threadId:"fixture-thread-1",includeTurns:true});
+    assert.equal((later.result as any).thread.turns.length,2,"later queued input proceeds once, without replaying the old attempt");
+
   } finally {
     await adapter.close();
     await rm(root, { recursive: true, force: true });
@@ -1665,7 +1750,7 @@ test("usage attempts follow the actual queue dispatcher and retain definitive re
   const queued=(await request("A","thread/queue/add",{threadId,clientUserMessageId:"queued-A",input:[{type:"text",text:"synthetic"}]})).result.queuedSubmission;
   assert.ok((await request("B","thread/queue/steer",{threadId,queuedSubmissionId:queued.id,expectedTurnId:turnId})).result);
   const rejected=await request("B","turn/steer",{threadId,clientUserMessageId:"rejected-B",expectedTurnId:"different-turn",input:[{type:"text",text:"synthetic"}]});
-  assert.ok(rejected.error);
+  assert.equal(rejected.result.disposition,"queued","definitive stale-Turn rejection retains Host custody for a fresh Turn");
   const db=new DatabaseSync(join(root,"data","token-usage.sqlite"),{readOnly:true});
   try{
    // Native ACK presentation and the ordered metadata commit are asynchronous.
@@ -1679,6 +1764,10 @@ test("usage attempts follow the actual queue dispatcher and retain definitive re
    assert.equal(db.prepare("SELECT count(*) AS n FROM token_usage_admissions WHERE input_id='rejected-B'").get()!.n,0);
    const fallback=(await request("A","thread/queue/add",{threadId,clientUserMessageId:"queued-fallback",input:[{type:"text",text:"synthetic"}]})).result.queuedSubmission;
    assert.ok((await request("B","thread/queue/steer",{threadId,queuedSubmissionId:fallback.id,expectedTurnId:"different-turn"})).error);
+   await request("A","test/completeTurn",{threadId});
+   await waitFor(frames,f=>f.method==='turn/started'&&(f.params as any)?.turn?.id!==turnId);
+   // The stale direct steer is now retained as an earlier queued intention.
+   // Finish that newly admitted Turn before the later fallback can run.
    await request("A","test/completeTurn",{threadId});
    const deadline=Date.now()+3000;
    while(Date.now()<deadline&&!db.prepare("SELECT 1 FROM token_usage_attempts WHERE input_id='queued-fallback' AND outcome='accepted'").get())await new Promise(resolve=>setTimeout(resolve,10));
@@ -1989,11 +2078,90 @@ for (const [method, stage] of [["thread/read", "read-thread"], ["thread/unsubscr
       const error = internals.sessionMcpFailure(failure);
       assert.equal(error.data.stage, stage); assert.equal(error.data.reason, "native-rpc-failed");
       assert.equal(error.data.nativeCode, -32005); assert.equal(error.data.submissionOutcome, "rejected");
-      assert.equal(diagnostics[0]!.diagnosticId, error.data.diagnosticId);
+      const diagnostic = diagnostics.find(event => event.event === "session-mcp-preparation-failed")!;
+      assert.equal(diagnostic.diagnosticId, error.data.diagnosticId);
+      assert.equal(diagnostic.rpcMethod, method);
+      assert.equal(diagnostic.rpcTransport, "child-stdio");
+      assert.equal(diagnostic.connectionGeneration, 0);
+      assert.equal(diagnostic.nativeErrorHint, "redacted");
+      assert.ok(Number.isSafeInteger(diagnostic.rpcElapsedMs) && Number(diagnostic.rpcElapsedMs) >= 0);
+      assert.equal(error.data.rpcMethod, undefined, "extra diagnostic context is server-only");
       assert.equal(JSON.stringify({ error, diagnostics }).includes("fixture-secret"), false);
       assert.equal(JSON.stringify({ error, diagnostics }).includes("/private/path"), false);
     } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
   });
+
+for (const [message, expectedHint] of [
+  ["list_turns is not supported yet", "turn-history-unsupported"],
+  ["Method not found", "method-not-found"],
+  ["Unknown method: thread/resume", "method-not-found"],
+  ["No client handler for account/chatgptAuthTokens/refresh", "client-handler-missing"],
+  ["experimental API is not enabled", "experimental-api-unavailable"],
+  ["Bearer fixture-secret /private/path\nrequest payload fixture-prompt", "redacted"],
+  ["list_turns is not supported yet: Bearer fixture-secret", "redacted"],
+] as const) test(`capture-settings RPC logs only a safe hint: ${expectedHint} (${message.slice(0, 18)})`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-tools-capture-diagnostics-"));
+  const diagnostics: Array<Record<string, unknown>> = [], calls: string[] = [];
+  const adapter = createRoutingAdapter(root, [], 0, undefined, undefined, undefined, false, undefined,
+    async () => ({ url: "http://fixture/mcp", http_headers: { Authorization: "Bearer fixture-secret" } }),
+    undefined, event => diagnostics.push(event));
+  const internals = adapter as any;
+  const nativeError = Object.assign(new Error(message), { code: -32601,
+    data: { credential: "fixture-secret", cwd: "/private/path", input: "fixture-prompt" } });
+  internals.requestPhysical = async (method: string, params: any) => {
+    calls.push(method);
+    if (method === "thread/read") return { thread: { status: { type: "idle" } } };
+    assert.equal(method, "thread/resume");
+    assert.equal(params.config, undefined, "failure is settings capture, before tool application");
+    throw nativeError;
+  };
+  try {
+    let failure: any;
+    try { await internals.prepareSessionMcp("thread", "input", "execution"); } catch (cause) { failure = cause; }
+    assert.ok(failure); assert.equal(failure.cause, nativeError, "logging preserves the original cause");
+    const error = internals.sessionMcpFailure(failure);
+    assert.equal(error.data.stage, "capture-settings");
+    assert.equal(error.data.reason, "native-rpc-failed");
+    assert.equal(error.data.nativeCode, -32601);
+    assert.equal(error.data.submissionOutcome, "rejected");
+    assert.deepEqual(calls, ["thread/read", "thread/resume"], "no replay, unsubscribe or input dispatch");
+    const events = diagnostics.filter(event => event.event === "session-mcp-preparation-failed");
+    assert.equal(events.length, 1, "reuse the existing failure event rather than adding success traffic");
+    const event = events[0];
+    assert.equal(event.diagnosticId, error.data.diagnosticId);
+    assert.equal(event.threadId, "thread"); assert.equal(event.inputId, "input");
+    assert.equal(event.nativeStatus, "idle");
+    assert.equal(event.rpcMethod, "thread/resume");
+    assert.equal(event.nativeErrorHint, expectedHint);
+    assert.ok(Number.isSafeInteger(event.rpcElapsedMs) && Number(event.rpcElapsedMs) >= 0);
+    assert.equal(error.data.nativeErrorHint, undefined, "native hint is not sent to the browser");
+    assert.doesNotMatch(JSON.stringify({ error, diagnostics }), /fixture-secret|fixture-prompt|private\/path|Authorization|credential|stack/);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("session tool preparation waits for asynchronous native retirement without an environment provider", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-tools-delayed-retirement-"));
+  const adapter = createRoutingAdapter(root, [], 0, undefined, undefined, undefined, false, undefined,
+    async () => ({ url: "http://fixture/mcp" }));
+  const internals = adapter as any;
+  let retired = false, readsAfterRetirement = 0, applied = 0, unsubscribes = 0;
+  internals.requestPhysical = async (method: string, params: any) => {
+    if (method === "thread/read") return { thread: { status: { type:
+      retired && ++readsAfterRetirement >= 2 ? "notLoaded" : "idle" } } };
+    if (method === "thread/unsubscribe") { retired = true; unsubscribes++; return {}; }
+    if (method === "thread/resume" && params.config) {
+      assert.ok(readsAfterRetirement >= 2, "must observe native unload before applying tools");
+      applied++;
+    }
+    return { model: "fixture-model" };
+  };
+  try {
+    await internals.prepareSessionMcp("thread", "input", "execution");
+    assert.equal(unsubscribes, 1);
+    assert.equal(applied, 1);
+    assert.equal(internals.sessionMcpRetirements.has("thread"), false);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
 
 for (const state of ["not-found", "archived", "recovering"] as const)
   test(`session tool diagnostic wrapping preserves ${state} classification`, async () => {
@@ -2093,5 +2261,519 @@ test("a queued native send with a lost acknowledgement remains unknown and never
     await waitFor(frames, f => f.method === "thread/queue/changed" &&
       (adapter as any).queueStore().find(threadId, queued.queuedSubmission.id)?.state === "unknown");
     assert.equal(sends, 1); assert.equal((adapter as any).queuePreparationRetries.size, 0);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("tool reconfiguration retains original settings until restoration succeeds", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-settings-custody-"));
+  const adapter = createRoutingAdapter(root, [], 0, undefined, undefined, undefined, false, undefined,
+    async () => ({ url: "http://fixture/mcp" }));
+  const a = adapter as any;
+  let status = "idle", fail = true, unsubscribes = 0, applies = 0;
+  let live: Record<string, unknown> = { model: "fixture", reasoningEffort: "high", collaborationMode: { mode: "plan" } };
+  const settings: any[] = [];
+  a.requestPhysical = async (method: string, params: any) => {
+    if (method === "thread/read") return { thread: { status: { type: status } } };
+    if (method === "thread/unsubscribe") { unsubscribes++; status = "notLoaded"; return {}; }
+    if (method === "thread/resume") {
+      if (params.config) { applies++; status = "idle"; live = { model: "fixture" }; }
+      return structuredClone(live);
+    }
+    if (method === "thread/settings/update") {
+      settings.push(structuredClone(params));
+      if (fail) { fail = false; throw new Error("fixture settings failure"); }
+    }
+    return {};
+  };
+  try {
+    await assert.rejects(a.prepareSessionMcp("thread", "input", "execution"));
+    assert.equal(a.sessionMcpRetirements.has("thread"), true);
+    await a.prepareSessionMcp("thread", "input", "execution");
+    assert.deepEqual(settings[1], settings[0]);
+    assert.equal(settings[1].effort, "high");
+    assert.equal(unsubscribes, 1); assert.equal(applies, 1);
+    assert.equal(a.sessionMcpRetirements.has("thread"), false);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+
+test('internal orchestration creation persists an unowned environment before its first input',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'codex-internal-environment-')),frames:Array<Record<string,unknown>>=[];
+ const {EmployeeGitVaultStore}=await import('../../scripts/employee-git-vault-store.js');
+ const {ExecutionEnvironmentRuntime}=await import('../../scripts/execution-environment.js');
+ const {AccountEnvironment}=await import('../../scripts/account-environment.js');
+ const vault=new EmployeeGitVaultStore(root),runtime=new ExecutionEnvironmentRuntime(root,vault),adapter=createRoutingAdapter(root,frames),internal=adapter as any;
+ internal.options.executionEnvironment=runtime;
+ internal.options.spawnAppServer=({cwd,env}:any)=>spawn(process.execPath,[new URL('../fixtures/fake-codex-stdio-appserver.mjs',import.meta.url).pathname],{cwd,env:{...env,OPENCRAFT_TEST_UNLOAD_ON_UNSUBSCRIBE:'1'},stdio:['pipe','pipe','pipe']});
+ new AccountEnvironment(vault).replace('employee:alice',{projectId:null},0,[{name:'SERVICE_KEY',value:'synthetic-parent-secret',secret:true}]);
+ try{
+  await adapter.connect();await initializeClient(adapter,frames,'viewer');
+  const created=await internal.requestPhysical('thread/start',{cwd:root,projectId:'delegated-project',testNoServerRequest:true}),threadId=created.thread.id;
+  assert.equal(runtime.project('local-codex',threadId),'delegated-project');
+  assert.deepEqual(runtime.creator('local-codex',threadId),{account:null});
+  assert.ok(internal.provisionalThreads.get(threadId).environmentOwner);
+  internal.initialEnvironmentThreads.clear();internal.executionEnvironments.clear();
+  await internal.prepareSessionMcp(threadId,'first-input','execution');
+  assert.equal(runtime.scope({sender:null,executionPrincipal:{provider:'employee',subject:'alice'},validUntil:Date.now()+60_000},'local-codex',{threadId}).account,'employee:alice');
+  assert.deepEqual(runtime.creator('local-codex',threadId),{account:null});
+  assert.deepEqual(runtime.snapshot(runtime.execution('local-codex',threadId)).overlay(),{});
+  await adapter.send(JSON.stringify({id:'first-input',method:'turn/start',params:{threadId,input:[{type:'text',text:'synthetic delegated work'}],clientUserMessageId:'first-input'},[LOGICAL_CLIENT_FIELD]:'viewer'}));
+  const reply=await waitFor(frames,frame=>frame.id==='first-input');assert.ok(reply.result,JSON.stringify(reply.error));
+ }finally{await adapter.close();runtime.close();vault.close();await rm(root,{recursive:true,force:true});}
+});
+
+for (const lostTerminal of [false,true]) test(`stopped deferred follow-up keeps custody and unobserved context; next intention starts once (lost event=${lostTerminal})`, async()=>{
+  const root=await mkdtemp(join(tmpdir(),'codex-input-lifecycle-')),frames:Array<Record<string,unknown>>=[];
+  const adapter=createRoutingAdapter(root,frames,0,'defer-history');
+  const request=async(id:string,method:string,params:Record<string,unknown>)=>{
+    await adapter.send(JSON.stringify({id,method,params,[LOGICAL_CLIENT_FIELD]:'lifecycle-client'}));
+    return waitFor(frames,f=>f.id===id);
+  };
+  try {
+    await adapter.connect();await initializeClient(adapter,frames,'lifecycle-client');
+    await request('thread','thread/start',{cwd:root});
+    const started=await request('start','turn/start',{threadId:'fixture-thread-1',clientUserMessageId:'first',input:[{type:'text',text:'first'}]});
+    const turnId=(started.result as any).turn.id;
+    const ack=await request('follow','turn/steer',{threadId:'fixture-thread-1',expectedTurnId:turnId,clientUserMessageId:'follow',input:[{type:'text',text:'continue'}]});
+    assert.equal((ack.result as any).turnId,turnId);
+    await request('stop','test/completeTurn',{threadId:'fixture-thread-1',status:'interrupted',dropDeferredInput:true,suppressNotification:lostTerminal});
+    const listed=await request('list','thread/queue/list',{threadId:'fixture-thread-1',receiptTurnIds:[turnId]});
+    const received=(listed.result as any).steering.find((x:any)=>x.clientUserMessageId==='follow');
+    assert.equal(received.delivery.nativeAdmission,'accepted');
+    assert.equal(received.delivery.context,'unobserved');
+    assert.equal(received.delivery.execution,'interrupted');
+    assert.equal(received.pausedReason,null);
+    const later=await request('new-intention',lostTerminal?'turn/steer':'thread/queue/add',{threadId:'fixture-thread-1',expectedTurnId:turnId,clientUserMessageId:'next',input:[{type:'text',text:'continue now'}]});
+    if(lostTerminal)assert.equal((later.result as any).disposition,'queued','an exact closed target queues the new intention without native dispatch');
+    await waitFor(frames,f=>f.method==='turn/started' && (f.params as any)?.turn?.id!==turnId);
+    const turns=await request('turns','thread/turns/list',{threadId:'fixture-thread-1',itemsView:'full'});
+    assert.equal((turns.result as any).data.length,2,'one new Turn, never an automatic replay of the old follow-up');
+    const duplicate=await request('duplicate','turn/steer',{threadId:'fixture-thread-1',expectedTurnId:turnId,clientUserMessageId:'follow',input:[{type:'text',text:'continue'}]});
+    assert.equal((duplicate.result as any).delivery.execution,'interrupted','same delivery identity returns its closed receipt');
+    const scoped=await request('scope','thread/queue/list',{threadId:'fixture-thread-1',receiptTurnIds:[]});
+    assert.equal((scoped.result as any).steering.some((x:any)=>x.clientUserMessageId==='follow'),false);
+  } finally {await adapter.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('completed MCP media outputs enter the shared artifact catalog through engine notifications', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'codex-artifact-output-')), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, 'viewer');
+    const item = { type: 'mcpToolCall', id: 'media-output', status: 'completed', result: { content: [
+      { type: 'audio', mimeType: 'audio/wav', data: Buffer.from('audio').toString('base64') },
+      { type: 'resource', resource: { mimeType: 'video/mp4', blob: Buffer.from('video').toString('base64') } },
+      { type: 'resource', resource: { mimeType: 'application/pdf', blob: Buffer.from('document').toString('base64') } },
+    ] } };
+    const internals = adapter as any;
+    internals.receivePhysicalLine(JSON.stringify({ method: 'item/completed', params: { threadId: 'fixture-thread-1', turnId: 'turn', item } }));
+    await Promise.all([...internals.artifactOutputs]);
+    const catalog = internals.attachmentStaging.catalog;
+    for (const [index, bytes] of ['audio', 'video', 'document'].entries()) {
+      const artifact = catalog.get(catalog.id({ scope: 'codex-generated', key: JSON.stringify(['generation', 'fixture-thread-1', item.id, `content:${index}`]) }));
+      assert.ok(artifact); assert.equal(await readFile(artifact.path, 'utf8'), bytes);
+    }
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test('paginated history recovers generated documents without a new generation notification', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'codex-artifact-history-')), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  const request = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: 'reader' }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, 'reader');
+    const threadId = ((await request('create-artifact-history', 'thread/start', { cwd: root, testNoServerRequest: true })).result as any).thread.id;
+    const item = { id: 'historical-document', type: 'mcpToolCall', status: 'completed', server: 'fixture', tool: 'document', arguments: {}, result: { content: [{ type: 'resource', resource: { mimeType: 'application/pdf', blob: Buffer.from('history document').toString('base64') } }] } };
+    await request('seed-artifact-history', 'test/setHistory', { threadId, legacyItems: true, turns: [{ id: 'history-turn', status: 'completed', items: [item] }] });
+    const reply = await request('read-artifact-history', 'thread/read', { threadId, initialTurnsPage: { limit: 1 } });
+    assert.equal(reply.error, undefined);
+    const internals = adapter as any;
+    await Promise.all([...internals.artifactOutputs]);
+    const catalog = internals.attachmentStaging.catalog;
+    const artifact = catalog.get(catalog.id({ scope: 'codex-generated', key: JSON.stringify(['generation', threadId, item.id, 'content:0']) }));
+    assert.ok(artifact); assert.equal(await readFile(artifact.path, 'utf8'), 'history document');
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+for (const [nativeMessage, reason, hint] of [
+  ["failed to load rules: /private/fixture-secret/.codex/rules: Permission denied (os error 13)", "workspace-access-denied", /Restore workspace permissions/],
+  ["exec-server /private/fixture-secret: No such file or directory (os error 2)", "execution-start-unavailable", /workspace mounts/],
+] as const) test(`session tools classify ${reason} without exposing native paths or suggesting reconnect`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-tools-filesystem-"));
+  const diagnostics: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, [], 0, undefined, undefined, undefined, false, undefined,
+    async () => ({ url: "http://fixture/mcp" }), undefined, event => diagnostics.push(event));
+  const internals = adapter as any;
+  let unloaded = false;
+  internals.requestPhysical = async (method: string, params: any) => {
+    if (method === "thread/resume" && params.config) throw Object.assign(new Error(nativeMessage), { code: -32000 });
+    if (method === "thread/read") return { thread: { status: { type: unloaded ? "notLoaded" : "idle" } } };
+    if (method === "thread/unsubscribe") { unloaded = true; return {}; }
+    return { model: "fixture-model" };
+  };
+  try {
+    let failure: unknown;
+    try { await internals.prepareSessionMcp("thread", "input", "execution"); } catch (cause) { failure = cause; }
+    assert.ok(failure);
+    const error = internals.sessionMcpFailure(failure);
+    assert.equal(error.data.stage, "apply-tools"); assert.equal(error.data.reason, reason);
+    assert.equal(error.data.submissionOutcome, "rejected"); assert.equal(error.data.retryable, false);
+    assert.match(error.message, hint); assert.doesNotMatch(error.message, /Reconnect/);
+    assert.equal(JSON.stringify({ error, diagnostics }).includes("fixture-secret"), false);
+    assert.equal(JSON.stringify({ error, diagnostics }).includes("/private/"), false);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+async function sharedCredentialAdapter(t: test.TestContext, withMcp = false) {
+  const root = await mkdtemp(join(tmpdir(), 'codex-shared-credentials-')), frames: Array<Record<string, unknown>> = [];
+  const { EmployeeGitVaultStore } = await import('../../scripts/employee-git-vault-store.js');
+  const { ExecutionEnvironmentRuntime } = await import('../../scripts/execution-environment.js');
+  const { AccountEnvironment } = await import('../../scripts/account-environment.js');
+  const vault = new EmployeeGitVaultStore(root), runtime = new ExecutionEnvironmentRuntime(root, vault);
+  for (const user of ['alice', 'bob']) new AccountEnvironment(vault).replace('employee:' + user, { projectId: null }, 0, [{ name: 'SERVICE_KEY', value: 'synthetic-' + user, secret: true }]);
+  const reservations = { bound: 0, cancelled: 0 };
+  const reservation = { configuration: { url: 'http://fixture/creation' }, bind() { reservations.bound++; }, cancel() { reservations.cancelled = 1; } };
+  const adapter = createRoutingAdapter(root, frames, 2, undefined, undefined, undefined, false, undefined,
+    withMcp ? async (threadId, inputId) => ({ url: 'http://fixture/' + runtime.execution('local-codex', threadId, inputId).account }) : undefined,
+    withMcp ? () => reservation : undefined), internal = adapter as any, writes: any[] = [];
+  internal.options.executionEnvironment = runtime; internal.options.sharedTurnInput = true; internal.options.dataDirectory = join(root, 'codex');
+  internal.options.spawnAppServer = ({ cwd, env }: any) => spawn(process.execPath,
+    [new URL('../fixtures/fake-codex-stdio-appserver.mjs', import.meta.url).pathname],
+    { cwd, env: { ...env, OPENCRAFT_TEST_NATIVE_QUEUE_STEER: '2', OPENCRAFT_TEST_UNLOAD_ON_UNSUBSCRIBE: '1' }, stdio: ['pipe', 'pipe', 'pipe'] });
+  const write = internal.writePhysical.bind(internal);
+  internal.writePhysical = async (message: any, ...args: any[]) => { writes.push(structuredClone(message)); return write(message, ...args); };
+  let sequence = 0;
+  const request = async (method: string, params: Record<string, unknown>, user: string | null = null) => {
+    const id = 'credential-case:' + ++sequence;
+    await adapter.sendWithContext(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: 'viewer' }),
+      { sender: null, ...(user ? { executionPrincipal: { provider: 'employee', subject: user }, validUntil: Date.now() + 60_000 } : {}) });
+    return await waitFor(frames, row => row.id === id) as any;
+  };
+  await adapter.connect(); await initializeClient(adapter, frames, 'viewer');
+  t.after(async () => { await adapter.close(); runtime.close(); vault.close(); await rm(root, { recursive: true, force: true }); });
+  return { request, runtime, writes, internal, root, frames, reservations, reservation };
+}
+
+for (const creator of ['alice', null]) for (const restored of [false, true])
+  test(`shared participant safely replaces creation environment before first input (creator=${creator}, restored=${restored})`, async t => {
+    const f = await sharedCredentialAdapter(t, true);
+    const threadId = (await f.request('thread/start', { cwd: f.root, testNoServerRequest: true }, creator)).result.thread.id;
+    if (restored) { f.internal.initialEnvironmentThreads.clear(); f.internal.executionEnvironments.clear(); f.internal.sessionMcpInitial.clear(); f.internal.options.restoreSessionMcp = () => f.reservations.cancelled ? null : f.reservation; }
+    const first = await f.request('turn/start', { threadId, input: [{ type: 'text', text: 'synthetic first input' }], clientUserMessageId: 'bob-first' }, 'bob');
+    assert.ok(first.result, JSON.stringify(first.error));
+    const config = f.writes.filter(row => row.method === 'thread/resume' && row.params.config).at(-1)?.params.config;
+    assert.deepEqual(config?.['shell_environment_policy.set'], { SERVICE_KEY: 'synthetic-bob' });
+    assert.equal(config?.['mcp_servers.opencraft_session']?.url, 'http://fixture/employee:bob');
+    assert.equal(f.reservations.bound, 0); assert.equal(f.reservations.cancelled, 1);
+    assert.deepEqual(f.runtime.creator('local-codex', threadId), { account: creator ? 'employee:' + creator : null });
+    assert.equal(f.internal.executionLeases.getSubmission(threadId, 'bob-first').principal.subject, 'bob');
+  });
+
+test('shared participants steer and edit queued input without changing execution ownership', async t => {
+  const f = await sharedCredentialAdapter(t);
+  const threadId = (await f.request('thread/start', { cwd: f.root, testNoServerRequest: true }, 'alice')).result.thread.id;
+  const started = await f.request('turn/start', { threadId, input: [{ type: 'text', text: 'synthetic alice work' }], clientUserMessageId: 'alice-start' }, 'alice');
+  assert.ok(started.result, JSON.stringify(started.error));
+  const before = f.writes.filter(row => row.method === 'turn/steer').length;
+  const environmentBefore = f.internal.executionEnvironments.get(threadId);
+  const configurationsBefore = f.writes.filter(row => row.method === 'thread/resume' && row.params.config).length;
+  const steered = await f.request('turn/steer', { threadId, expectedTurnId: started.result.turn.id, input: [{ type: 'text', text: 'synthetic bob steer' }], clientUserMessageId: 'bob-steer' }, 'bob');
+  assert.ok(steered.result, JSON.stringify(steered.error));
+  assert.equal(f.writes.filter(row => row.method === 'turn/steer').length, before + 1);
+  assert.equal(f.internal.executionEnvironments.get(threadId), environmentBefore);
+  assert.equal(environmentBefore.account, 'employee:alice');
+  assert.equal(f.writes.filter(row => row.method === 'thread/resume' && row.params.config).length, configurationsBefore);
+
+  const shell = await f.request('thread/shellCommand', { threadId, command: 'synthetic-command' }, 'bob');
+  assert.equal(shell.error?.data?.submissionOutcome, 'rejected');
+  assert.equal(f.writes.some(row => row.method === 'thread/shellCommand'), false);
+  const queued = await f.request('thread/queue/add', { threadId, input: [{ type: 'text', text: 'synthetic bob queued work' }], clientUserMessageId: 'bob-queued' }, 'bob');
+  assert.ok(queued.result, JSON.stringify(queued.error));
+  const id = queued.result.queuedSubmission.id;
+  const changed = await f.request('thread/queue/update', { threadId, queuedSubmissionId: id, input: [{ type: 'text', text: 'synthetic alice replacement' }] }, 'alice');
+  assert.ok(changed.result, JSON.stringify(changed.error));
+  const preserved = f.internal.queueStore().find(threadId, id);
+  assert.equal(preserved.input[0].text, 'synthetic alice replacement');
+  assert.equal(preserved.executionSubmission.principal.subject, 'bob');
+  await f.request('test/completeTurn', { threadId });
+  const next = await waitFor(f.frames, row => row.method === 'turn/started' && (row.params as any)?.threadId === threadId
+    && (row.params as any)?.turn?.id !== started.result.turn.id) as any;
+  const configuration = f.writes.filter(row => row.method === 'thread/resume' && row.params.config).at(-1)?.params.config;
+  assert.deepEqual(configuration?.['shell_environment_policy.set'], { SERVICE_KEY: 'synthetic-bob' });
+  assert.equal(f.writes.filter(row => row.method === 'turn/start').at(-1).params.input[0].text, 'synthetic alice replacement');
+  const formerOwner = await f.request('turn/steer', { threadId, expectedTurnId: next.params.turn.id,
+    input: [{ type: 'text', text: 'synthetic alice steer' }], clientUserMessageId: 'alice-steer-bob' }, 'alice');
+  assert.ok(formerOwner.result, JSON.stringify(formerOwner.error));
+  assert.equal(f.internal.executionEnvironments.get(threadId).account, 'employee:bob');
+  const sameOwner = await f.request('turn/steer', { threadId, expectedTurnId: next.params.turn.id,
+    input: [{ type: 'text', text: 'synthetic bob continuation' }], clientUserMessageId: 'bob-own-steer' }, 'bob');
+  assert.ok(sameOwner.result, JSON.stringify(sameOwner.error));
+  const peerQueued = await f.request('thread/queue/add', { threadId, input: [{ type: 'text', text: 'shared queued steer' }], clientUserMessageId: 'alice-queued-steer' }, 'alice');
+  const queuedSteer = await f.request('thread/queue/steer', { threadId, queuedSubmissionId: peerQueued.result.queuedSubmission.id, expectedTurnId: next.params.turn.id }, 'alice');
+  assert.ok(queuedSteer.result, JSON.stringify(queuedSteer.error));
+  assert.equal(f.internal.executionEnvironments.get(threadId).account, 'employee:bob');
+  const stale = await f.request('turn/steer', { threadId, expectedTurnId: 'stale-turn', input: [{ type: 'text', text: 'stale' }], clientUserMessageId: 'alice-stale' }, 'alice');
+  assert.equal(stale.result?.disposition, 'queued', 'exact native rejection retains input without retargeting another Turn');
+  assert.equal(f.writes.filter(row => row.method === 'turn/steer').at(-1).params.expectedTurnId, 'stale-turn');
+  assert.equal(f.internal.executionEnvironments.get(threadId).account, 'employee:bob');
+});
+
+for (const reconnected of [false, true]) test(`a failed first-input handoff never restores creator credentials by assumption (reconnected=${reconnected})`, async t => {
+  const f = await sharedCredentialAdapter(t);
+  const threadId = (await f.request('thread/start', { cwd: f.root, testNoServerRequest: true }, 'alice')).result.thread.id;
+  const write = f.internal.writePhysical.bind(f.internal); let failed = false;
+  f.internal.writePhysical = async (message: any, ...args: any[]) => {
+    if (!failed && message.method === 'thread/settings/update') { failed = true; throw Error('synthetic handoff interruption'); }
+    return write(message, ...args);
+  };
+  const first = await f.request('turn/start', { threadId, input: [{ type: 'text', text: 'synthetic bob work' }], clientUserMessageId: 'bob-failed' }, 'bob');
+  assert.equal(first.error?.data?.submissionOutcome, 'rejected');
+  assert.equal(f.writes.some(row => row.method === 'turn/start'), false);
+  assert.equal(f.writes.filter(row => row.params?.config?.['shell_environment_policy.set']).at(-1)?.params.config['shell_environment_policy.set'].SERVICE_KEY, 'synthetic-bob');
+  if (reconnected) { f.internal.executionEnvironments.clear(); f.internal.initialEnvironmentThreads.clear(); f.internal.sessionMcpRetirements.clear(); }
+  const second = await f.request('turn/start', { threadId, input: [{ type: 'text', text: 'synthetic alice work' }], clientUserMessageId: 'alice-after-failure' }, 'alice');
+  assert.ok(second.result, JSON.stringify(second.error));
+  assert.equal(f.writes.filter(row => row.params?.config?.['shell_environment_policy.set']).at(-1)?.params.config['shell_environment_policy.set'].SERVICE_KEY, 'synthetic-alice');
+  assert.deepEqual(f.runtime.creator('local-codex', threadId), { account: 'employee:alice' });
+});
+
+test('failed environment switching on an existing conversation revokes the previous owner until complete restoration', async t => {
+  const f = await sharedCredentialAdapter(t);
+  const threadId = (await f.request('thread/start', { cwd: f.root, testNoServerRequest: true }, 'alice')).result.thread.id;
+  assert.ok((await f.request('turn/start', { threadId, input: [{ type: 'text', text: 'synthetic alice work' }], clientUserMessageId: 'alice-established' }, 'alice')).result);
+  await f.request('test/completeTurn', { threadId });
+  const write = f.internal.writePhysical.bind(f.internal); let failed = false;
+  f.internal.writePhysical = async (message: any, ...args: any[]) => {
+    if (!failed && message.method === 'thread/settings/update') { failed = true; throw Error('synthetic restore interruption'); }
+    return write(message, ...args);
+  };
+  const interrupted = await f.request('turn/start', { threadId, input: [{ type: 'text', text: 'synthetic bob work' }], clientUserMessageId: 'bob-interrupted' }, 'bob');
+  assert.equal(interrupted.error?.data?.submissionOutcome, 'rejected');
+  assert.equal(f.writes.filter(row => row.params?.config?.['shell_environment_policy.set']).at(-1)?.params.config['shell_environment_policy.set'].SERVICE_KEY, 'synthetic-bob');
+  const stale = await f.request('thread/shellCommand', { threadId, command: 'synthetic-command' }, 'alice');
+  assert.equal(stale.error?.data?.submissionOutcome, 'rejected');
+  assert.equal(f.writes.some(row => row.method === 'thread/shellCommand'), false);
+  const steerBefore = f.writes.filter(row => row.method === 'turn/steer').length;
+  const unfenced = await f.request('turn/steer', { threadId, expectedTurnId: 'unconfirmed-turn', input: [{ type: 'text', text: 'unconfirmed' }], clientUserMessageId: 'unconfirmed-steer' }, 'alice');
+  assert.equal(unfenced.error?.data?.submissionOutcome, 'rejected');
+  assert.equal(f.writes.filter(row => row.method === 'turn/steer').length, steerBefore);
+  const retried = await f.request('turn/start', { threadId, input: [{ type: 'text', text: 'synthetic bob retry' }], clientUserMessageId: 'bob-restored' }, 'bob');
+  assert.ok(retried.result, JSON.stringify(retried.error));
+  assert.equal(f.internal.executionEnvironments.get(threadId).account, 'employee:bob');
+  assert.deepEqual(f.runtime.creator('local-codex', threadId), { account: 'employee:alice' });
+});
+
+
+test('shared steer retains the active model sponsor and refuses a changed execution at physical admission', async t => {
+  const f = await sharedCredentialAdapter(t);
+  const threadId = (await f.request('thread/start', { cwd: f.root, testNoServerRequest: true }, 'alice')).result.thread.id;
+  const started = await f.request('turn/start', { threadId, input: [{ type: 'text', text: 'alice work' }], clientUserMessageId: 'sponsored-alice' }, 'alice');
+  assert.ok(started.result);
+  const { ModelGatewayStore } = await import('../../packages/account-pool-host/src/model-gateway-store.js');
+  const path = join(f.root, 'model-gateway.sqlite'), store = new ModelGatewayStore(path);
+  const prior = process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE;
+  process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE = path;
+  t.after(() => { if (prior === undefined) delete process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE; else process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE = prior; store.close(); });
+  f.internal.options.collaboration = { started() {}, modelExecutionAuthority: () => ({ authorizer: 'human-bob', executor: null, expiresAt: Date.now() + 60_000 }) };
+  store.beginExecution(threadId, { id: 'active-alice', authorizer: 'human-alice', executor: null, model: 'fixture-model', expiresAt: Date.now() + 60_000 });
+  const before = store.execution(threadId);
+  f.internal.executionEnvironments.clear();
+  const reply = await f.request('turn/steer', { threadId, expectedTurnId: started.result.turn.id, input: [{ type: 'text', text: 'bob follow-up' }], clientUserMessageId: 'sponsored-bob' }, 'bob');
+  assert.ok(reply.result, JSON.stringify(reply.error));
+  assert.deepEqual(store.execution(threadId), before);
+  assert.equal(f.internal.executionEnvironments.size, 0);
+  await f.internal.admitModelExecution('steer', { threadId, clientUserMessageId: 'pending-steer' });
+  const check = f.internal.gatewayChecks.get(JSON.stringify([threadId, 'pending-steer']));
+  store.endExecution(threadId, 'active-alice');
+  store.beginExecution(threadId, { id: 'later-bob', authorizer: 'human-bob', executor: null, model: 'fixture-model', expiresAt: Date.now() + 60_000 });
+  assert.throws(check, /execution_changed/);
+  assert.equal(store.execution(threadId).id, 'later-bob');
+});
+
+test('deferred private allocation does not hydrate before Core can receive its stable identity',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'codex-private-bootstrap-')),frames:Array<Record<string,unknown>>=[];
+ const adapter=createRoutingAdapter(root,frames),internal=adapter as any;
+ const original=internal.provisionalThreads;
+ let reads=0;
+ internal.provisionalThreads={get:()=>({phase:'created'})};
+ internal.requestPhysical=async(method:string)=>{reads++;assert.equal(method,'thread/read');throw Error('Conversation not found or unavailable');};
+ const result={thread:{id:'private-child',path:join(root,'not-persisted.jsonl')}};
+ try{
+   await internal.materializeCreation(result,{__opencraftDeferPublication:true});
+   assert.equal(reads,0,'private creation must return its identity without an ordinary read');
+   await assert.rejects(internal.materializeCreation(result,{}),/Conversation not found/);
+   assert.equal(reads,1,'ordinary materialization still verifies native persistence');
+ }finally{internal.provisionalThreads=original;await adapter.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('native allocation replay restores its original capability instead of rebinding a new credential',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'codex-creation-mcp-replay-')),adapter=createRoutingAdapter(root,[]),internal=adapter as any;
+ let cancelled=0,bindings=0,lookups=0;
+ const restored={configuration:{mcpServers:{original:{}}},bind(){},cancel(){throw Error('must retain original credential');}};
+ const fresh={configuration:{mcpServers:{fresh:{}}},bind(){},bindThread(){bindings++;throw Error('duplicate Thread capability');},cancel(){cancelled++;}};
+ internal.options.restoreSessionMcp=async(id:string)=>{assert.equal(id,'original-thread');lookups++;return restored;};
+ try{
+   await internal.adoptCreationMcp('original-thread',fresh,true);
+   assert.equal(bindings,0);assert.equal(cancelled,1);assert.equal(lookups,1);
+   assert.equal(internal.sessionMcpInitial.get('original-thread').reservation,restored);
+ }finally{internal.sessionMcpInitial.clear();await adapter.close();await rm(root,{recursive:true,force:true});}
+});
+
+for(const fail of ['bind','restore'] as const)test(`creation capability ${fail} failure rejects the original request as unknown without throwing from the native callback`,async()=>{
+ const root=await mkdtemp(join(tmpdir(),'codex-creation-mcp-failure-')),adapter=createRoutingAdapter(root,[]),internal=adapter as any;
+ let cancelled=0;
+ const creation={configuration:{},bind(){},bindThread(){if(fail==='bind')throw Error('synthetic SQL binding conflict');},cancel(){cancelled++;}};
+ internal.options.restoreSessionMcp=async()=>{if(fail==='restore')throw Error('synthetic storage failure');return null;};
+ let resolve!: (v:unknown)=>void,reject!: (e:unknown)=>void;
+ const result=new Promise((a,b)=>{resolve=a;reject=b;});
+ // Register the same in-flight response state used by the physical transport.
+ const id='capability-response';
+ internal.internalRequests.set(id,{method:'thread/start',params:{__opencraftOrchestrationOperation:'original-operation',__opencraftDeferPublication:true},threadId:'',resolve,reject,timer:setTimeout(()=>reject(Error('fixture timeout')),3000)});
+ internal.sessionMcpCreations.set(id,creation);
+ try{
+   assert.doesNotThrow(()=>internal.receivePhysicalLine(JSON.stringify({id,result:{thread:{id:'original-thread'}}})));
+   await assert.rejects(result,(error:any)=>error.code===-32000&&error.data.resultUnknown===true);
+   assert.equal(cancelled,0,'uncertain native credentials are not revoked as cleanup');
+   assert.equal(internal.internalRequests.has(id),false);
+   assert.equal(internal.sessionMcpInitial.has('original-thread'),false);
+ }finally{await adapter.close();await rm(root,{recursive:true,force:true});}
+});
+
+
+for (const available of [true, false]) test(`first admitted input awaits Git readiness, not a creation grant (ready=${available})`, async t => {
+  const f = await sharedCredentialAdapter(t);
+  const { ExecutionEnvironmentSnapshot } = await import('../../scripts/execution-environment.js');
+  const snapshot = f.runtime.snapshot.bind(f.runtime);
+  let resolve!: () => void, reject!: (error: Error) => void, waiting = false;
+  const ready = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+  void ready.catch(() => {});
+  const seen: any[] = [];
+  f.runtime.snapshot = (scope: any, options?: any) => {
+    const original = snapshot(scope, options);
+    if (options?.creation) return new ExecutionEnvironmentSnapshot(scope, original.overlay(), undefined, true);
+    seen.push(scope);
+    return new ExecutionEnvironmentSnapshot(scope, original.overlay(), {
+      get ready() { waiting = true; return ready; },
+      environment: { OPENCRAFT_GIT_CAPABILITY: 'synthetic-execution-grant' },
+      bindThread() {}, bindExecution() {},
+    });
+  };
+  const threadId = (await f.request('thread/start', { cwd: f.root, testNoServerRequest: true }, 'alice')).result.thread.id;
+  assert.equal(f.internal.executionEnvironments.get(threadId)?.needsGitAdmission, true);
+  assert.equal(f.writes.some(row => row.params?.config?.['shell_environment_policy.set']?.OPENCRAFT_GIT_CAPABILITY), false);
+  const first = f.request('turn/start', { threadId, input: [{ type: 'text', text: 'first admitted input' }], clientUserMessageId: 'git-first' }, 'alice');
+  for (let i = 0; !waiting && i < 200; i++) await new Promise(r => setTimeout(r, 5));
+  assert.equal(waiting, true);
+  assert.equal(f.writes.some(row => row.method === 'turn/start'), false);
+  assert.equal(f.writes.some(row => row.method === 'thread/resume' && row.params.config), false);
+  assert.equal(seen.at(-1).inputId, 'git-first');
+  assert.equal(seen.at(-1).account, 'employee:alice');
+  assert.ok(seen.at(-1).executionId);
+  assert.ok(seen.at(-1).leaseGeneration > 0);
+  if (available) resolve(); else reject(Error('synthetic broker not ready'));
+  const reply = await first;
+  if (available) {
+    assert.ok(reply.result, JSON.stringify(reply.error));
+    const config = f.writes.filter(row => row.method === 'thread/resume' && row.params.config).at(-1)?.params.config;
+    assert.equal(config?.['shell_environment_policy.set']?.OPENCRAFT_GIT_CAPABILITY, 'synthetic-execution-grant');
+  } else {
+    assert.equal(reply.error?.data?.submissionOutcome, 'rejected');
+    assert.equal(f.writes.some(row => row.method === 'turn/start'), false);
+  }
+});
+
+for (const outcome of ["confirmed", "rejected", "closed"] as const) test(`workspace creation publication waits for durable owner (${outcome})`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-workspace-publication-")), frames: Array<Record<string, unknown>> = [];
+  let release!: () => void, entered!: () => void, calls = 0;
+  let nativeResult: unknown;
+  const gate = new Promise<void>(resolve => release = resolve), ready = new Promise<void>(resolve => entered = resolve);
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, false,
+    undefined, undefined, undefined, undefined, undefined, async input => {
+      calls++; nativeResult = input.result;
+      assert.equal((input.result as any).thread.id, "fixture-thread-1");
+      assert.equal(input.params.testNoServerRequest, true);
+      assert.equal(input.context.sender, null);
+      entered(); await gate;
+      if (outcome === "rejected") throw Error("private storage or credential failure must not leak");
+    });
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    await adapter.send(JSON.stringify({ id: "workspace-create", method: "thread/start", params: { testNoServerRequest: true }, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    await Promise.race([ready, new Promise((_, reject) => { const timer = setTimeout(() => reject(Error("publication hook not reached")), 2000); timer.unref(); })]);
+    const physical = [...(adapter as any).pending.entries()].find(([, value]: any) => value.originalId === "workspace-create")?.[0];
+    assert.ok(physical);
+    (adapter as any).receivePhysicalLine(JSON.stringify({ id: physical, result: nativeResult }));
+    assert.equal(calls, 1);
+    // Force a later Native event and wait for its RPC reply, not an arbitrary delay.
+    await adapter.send(JSON.stringify({ id: "before-confirmation", method: "test/emitThreadNotification", params: { threadId: "fixture-thread-1" }, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    await waitFor(frames, f => f.id === "before-confirmation");
+    assert.equal(frames.some(f => f.id === "workspace-create"), false);
+    assert.equal(frames.some(f => f.method === "thread/started" || f.method === "thread/status/changed"), false);
+    if (outcome === "closed") await adapter.close();
+    release();
+    if (outcome === "closed") {
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(frames.some(f => f.id === "workspace-create" && "result" in f), false);
+    } else {
+      const reply = await waitFor(frames, f => f.id === "workspace-create");
+      if (outcome === "rejected") {
+        assert.equal((reply.error as any).data.resultUnknown, true);
+        assert.equal((reply.error as any).data.threadId, "fixture-thread-1");
+        assert.equal(JSON.stringify(reply).includes("private storage"), false);
+      } else assert.equal((reply.result as any).thread.id, "fixture-thread-1");
+      await adapter.send(JSON.stringify({ id: "after-confirmation", method: "test/emitThreadNotification", params: { threadId: "fixture-thread-1" }, [LOGICAL_CLIENT_FIELD]: "writer" }));
+      await waitFor(frames, f => f.id === "after-confirmation");
+      if (outcome === "confirmed") await waitFor(frames, f => f.method === "thread/status/changed");
+      else assert.equal(frames.some(f => f.method === "thread/status/changed"), false);
+    }
+    assert.equal(calls, 1);
+  } finally { release(); await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+for (const cleanup of ["confirmed", "uncertain"] as const) test(`workspace Native rejection waits for cleanup (${cleanup})`, async () => {
+ const root=await mkdtemp(join(tmpdir(),"codex-creation-reject-")),frames:Array<Record<string,unknown>>=[];
+ let entered!:()=>void,release!:()=>void;const ready=new Promise<void>(r=>entered=r),gate=new Promise<void>(r=>release=r);
+ const adapter=createRoutingAdapter(root,frames,0,undefined,undefined,undefined,false,undefined,undefined,undefined,undefined,undefined,async input=>{
+  assert.equal(typeof input.requestId,"string");assert.equal(input.result,undefined);assert.equal((input.error as any).code,-32602);
+  entered();await gate;if(cleanup==="uncertain")throw Error("private cleanup failure");
+ });
+ try{
+  await adapter.connect();await initializeClient(adapter,frames,"view");
+  await adapter.send(JSON.stringify({id:"rejected",method:"thread/start",params:{testRejectCreation:true},[LOGICAL_CLIENT_FIELD]:"view"}));
+  await ready;assert.equal(frames.some(f=>f.id==="rejected"),false);release();
+  const reply=await waitFor(frames,f=>f.id==="rejected");
+  if(cleanup==="confirmed")assert.equal((reply.error as any).code,-32602);
+  else{assert.equal((reply.error as any).data.resultUnknown,true);assert.equal(JSON.stringify(reply).includes("private cleanup"),false)}
+  assert.equal(frames.some(f=>f.method==="thread/started"),false);
+ }finally{release();await adapter.close();await rm(root,{recursive:true,force:true})}
+});
+
+
+test("scheduled lost acknowledgement recovers only an exact native client ID without dispatch", async () => {
+  const root = await mkdtemp(join(tmpdir(), "schedule-exact-recovery-"));
+  const adapter = createRoutingAdapter(root, []), a = adapter as any;
+  try {
+    await adapter.connect();
+    const queue = a.queueStore();
+    const run = { id: "schedule:plan:123", threadId: "schedule-thread", state: "unknown", turnId: null };
+    const row = queue.add(run.threadId, run.id, [{ type: "text", text: "scheduled" }]);
+    queue.claim(run.threadId, row.id, "unknown"); queue.settle(run.threadId, row.id, "unknown", "steer-delivery-unconfirmed");
+    let match = false, turnReads = 0;
+    a.requestPhysical = async (method: string) => {
+      if (method === "thread/items/list") return { data: [{ turnId: "exact-turn", item: { type: "userMessage", clientId: match ? run.id : "different-input" } }], nextCursor: null };
+      if (method === "thread/turns/list") { turnReads++; return { data: [{ id: "exact-turn", status: "completed" }], nextCursor: null }; }
+      throw new Error(`Unexpected recovery mutation: ${method}`);
+    };
+    assert.deepEqual(await a.inspectScheduledRun(run), { state: "unknown" });
+    assert.equal(turnReads, 0); assert.equal(queue.find(run.threadId, row.id).state, "unknown");
+    match = true;
+    assert.deepEqual(await a.inspectScheduledRun({ ...run, turnId: "conflicting-turn" }), { state: "unknown" });
+    match = true;
+    assert.deepEqual(await a.inspectScheduledRun(run), { state: "completed", turnId: "exact-turn" });
+    assert.equal(queue.find(run.threadId, row.id).state, "delivered");
+    assert.equal(queue.find(run.threadId, row.id).targetTurnId, "exact-turn");
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });

@@ -64,8 +64,7 @@ export class SshManagement {
   private activeScans = 0;
   constructor(readonly options: {
     directory: string;
-    publicOrigin?: string;
-    /** Explicit operator opt-in: no installation-wide origin pin; sessions still bind their unlock origin. */
+    /** Legacy explicit alias for the default domain-independent admission policy. */
     publicAccess?: boolean;
     accessFile?: string;
     /** Shared installation access by default; operators may require an additional key. */
@@ -77,14 +76,9 @@ export class SshManagement {
     connectionState?: (serverId: string) => string;
     legacyServers?: readonly SshServerDescriptor[];
   }) {
-    if (options.publicAccess && options.publicOrigin) throw new Error("Choose either SSH public access or a fixed origin");
     this.accessMode = options.accessMode ?? (options.accessFile ? "access-key" : "shared");
     if (this.accessMode !== "shared" && this.accessMode !== "access-key") throw new Error("Invalid SSH management access mode");
     if (this.accessMode === "shared" && options.accessFile) throw new Error("SSH access file requires access-key mode");
-    if (options.publicOrigin) {
-      const url = new URL(options.publicOrigin);
-      if (url.protocol !== "https:" || url.origin !== options.publicOrigin) throw new Error("SSH public access requires a fixed HTTPS origin");
-    }
     this.store = new SshConnectionStore(options.directory);
     this.accessHash = null;
     if (this.accessMode === "shared") return;
@@ -101,18 +95,14 @@ export class SshManagement {
   }
   sameOrigin(request: IncomingMessage, requireOrigin: boolean): boolean {
     if (request.headers["sec-fetch-site"] === "cross-site") return false;
-    if (this.options.publicAccess) {
-      if (request.headers.origin === undefined) return !requireOrigin;
-      try {
-        const url = new URL(request.headers.origin);
-        return ["http:", "https:"].includes(url.protocol) && url.origin === request.headers.origin;
-      } catch { return false; }
-    }
-    const expected = this.options.publicOrigin ?? `http://${request.headers.host}`;
-    if (!this.options.publicOrigin) {
-      try { if (!["localhost", "127.0.0.1"].includes(new URL(expected).hostname)) return false; } catch { return false; }
-    }
-    return request.headers.origin === expected || (!requireOrigin && request.headers.origin === undefined);
+    // The management session belongs to the browser's admission origin, not
+    // the backend listener hostname. Reverse proxies may change Host/scheme.
+    // Installation admission remains the responsibility of the HTTP/WS entry.
+    if (request.headers.origin === undefined) return !requireOrigin;
+    try {
+      const url = new URL(request.headers.origin);
+      return ["http:", "https:"].includes(url.protocol) && url.origin === request.headers.origin;
+    } catch { return false; }
   }
   private requestOrigin(request: IncomingMessage): string | null {
     if (request.headers.origin !== undefined) return request.headers.origin;

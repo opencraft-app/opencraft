@@ -39,6 +39,7 @@ export function createCodexAccountPoolLaunch(input: {
       "-c", 'model_provider="opencraft-account-pool"',
       "-c", 'model_providers.opencraft-account-pool.name="OpenAI"',
       "-c", `model_providers.opencraft-account-pool.base_url=${JSON.stringify(baseUrl)}`,
+      "-c", `model_providers.opencraft-account-pool.model_catalog_url=${JSON.stringify(baseUrl + "/models")}`,
       "-c", 'model_providers.opencraft-account-pool.wire_api="responses"',
       "-c", "model_providers.opencraft-account-pool.requires_openai_auth=true",
       "-c", "model_providers.opencraft-account-pool.supports_websockets=false",

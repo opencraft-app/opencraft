@@ -1,0 +1,32 @@
+// Shell owns the frame and capacity. Feature content owns its own scrollports.
+.app-shell-master-detail {
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr);
+  inline-size: 100%; block-size: 100%; min-inline-size: 0; min-block-size: 0; overflow: hidden;
+  &[data-presentation="split"] { grid-template-columns: var(--master-detail-navigation-width) minmax(0, 1fr); }
+  > * { min-inline-size: 0; min-block-size: 0; outline: none; }
+  &[data-presentation="split"] > .app-shell-master-detail__master { border-inline-end: 1px solid var(--color-border-subtle); }
+  // Keep layout/scroll checkpoints and the exact editor DOM while inaccessible.
+  // Unlike display:none, the retained plane still has a measured aperture.
+  > [data-visible="false"] { position: absolute; inset: 0; visibility: hidden; pointer-events: none; }
+  > .app-shell-master-detail__master[data-visible="false"] { inline-size: min(100%, var(--master-detail-navigation-width)); }
+}
+
+.app-shell-master-detail__resize {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(var(--master-detail-navigation-width) - 5px);
+  inline-size: 10px;
+  z-index: 2;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  &:hover::after, &:focus-visible::after, &:active::after {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 4px;
+    inline-size: 2px;
+    background: currentColor;
+    opacity: 0.5;
+  }
+}

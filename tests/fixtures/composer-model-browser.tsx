@@ -16,6 +16,10 @@ const models: ComposerModelOption[] = [
   ...["one", "two", "three", ...Array.from({ length: 15 }, (_, i) => `extra-${i}`)].flatMap(name => ["low", "medium", "high", "xhigh", "max", "ultra"].map(effort => model(`codex:${name}[${effort}]`, `${name === "one" ? "Model One" : name === "two" ? "Model Two" : name} (${effort})`))),
   model("cursor:one", "Model One"), model("api:plain", "Plain model"),
   { ...model("cursor:thinking", "Cursor Thinking"), defaultEffort: "high", efforts: [{ value: "low", label: "Low", description: null }, { value: "high", label: "High", description: null }], serviceTiers: [{ id: "fast", name: "Fast", description: "" }] },
+  ...Array.from({ length: 10 }, (_, i) => model(`api:extra-${i}`, `API model ${i + 1}`)),
+  { ...model("api:dense", "Six-level thinking"), defaultEffort: "medium",
+    efforts: ["low", "medium", "high", "xhigh", "max", "ultra"].map(value => ({ value, label: value, description: null })),
+    serviceTiers: [{ id: "fast", name: "Fast", description: "Faster" }] },
   { ...model("api:thinking", "Thinking model"), defaultEffort: "medium", efforts: [{ value: "medium", label: "Medium", description: null }, { value: "high", label: "High", description: null }], serviceTiers: [{ id: "fast", name: "Fast", description: "Faster" }] },
 ];
 const sent: unknown[] = [], remembered: unknown[] = [];

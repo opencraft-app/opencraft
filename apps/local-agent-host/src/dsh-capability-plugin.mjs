@@ -65,7 +65,7 @@ export async function apply(ctx, config) {
   if (checkpoints) for (const checkpoint of await checkpoints.list()) {
     generations.set(checkpoint.sourceSessionId, { logicalSessionId: checkpoint.logicalSessionId, generation: checkpoint.generation });
   }
-  const environmentRuntime = config.environmentDataDirectory ? ExecutionEnvironmentRuntime.open(config.environmentDataDirectory) : undefined;
+  const environmentRuntime = config.environmentDataDirectory ? ExecutionEnvironmentRuntime.open(config.environmentDataDirectory, { create: true }) : undefined;
   ctx.on("dispose", () => environmentRuntime?.close());
   registerDshExecutionEnvironment(ctx, nativeId => generations.get(nativeId)?.logicalSessionId ?? nativeId, environmentRuntime);
   ctx.on("session/event", (session, event) => {

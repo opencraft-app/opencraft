@@ -1,5 +1,7 @@
+import { setLocalDiagnosticsEnabled } from "../../apps/workbench-web/src/runtime/local-diagnostics";
 import assert from "node:assert/strict";
 import test from "node:test";
+test.beforeEach(() => { setLocalDiagnosticsEnabled(false); setLocalDiagnosticsEnabled(true); });
 
 import {
   advanceInternalDeveloperModeTitleTaps,
@@ -17,14 +19,13 @@ import {
   clearRuntimeDiagnostics,
   getRuntimeDiagnosticErrors,
   getRuntimeDiagnosticNetwork,
-  parseAppleVersions,
-  probeCssSupports,
   recordRuntimeDiagnosticConsole,
   recordRuntimeDiagnosticError,
   recordRuntimeDiagnosticNetwork,
   RUNTIME_DIAGNOSTIC_ERROR_LIMIT,
   RUNTIME_DIAGNOSTIC_NETWORK_LIMIT,
 } from "../../apps/workbench-web/src/runtime-diagnostics.ts";
+import { parseAppleVersions, probeCssSupports } from "../../apps/workbench-web/src/runtime-diagnostic-snapshot";
 import {
   bindSidebarLayoutPersistReporting,
   reportRuntimeError,
@@ -113,7 +114,7 @@ test("error and network rings drop the oldest entries past their limits", () => 
   assert.equal(getRuntimeDiagnosticNetwork().length, 0);
 });
 
-test("runtime error reports add device fields, strip the page URL, and accept new sources", async () => {
+test("runtime errors remain local and accept new sources", async () => {
   const posts: unknown[] = [];
   const previousFetch = globalThis.fetch;
   const previousWindow = (globalThis as { window?: unknown }).window;
@@ -150,13 +151,10 @@ test("runtime error reports add device fields, strip the page URL, and accept ne
   try {
     reportRuntimeError(new Error("catalog down"), "thread-catalog-load");
     await new Promise((resolve) => setImmediate(resolve));
-    const body = (posts[0] as { body: Record<string, unknown> }).body;
+    const body = getRuntimeDiagnosticErrors().at(-1)!;
     assert.equal(body.source, "thread-catalog-load");
-    assert.equal(body.url, "https://join.example/app");
-    assert.match(String(body.userAgent), /iPad/);
-    assert.deepEqual(body.viewport, { width: 1024, height: 768 });
-    assert.equal(body.sourceRevision, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-    assert.equal(JSON.stringify(body).includes("secret=1"), false);
+    assert.equal(body.message, "catalog down");
+    assert.equal(posts.length, 0);
 
     const listeners = new Set<() => void>();
     let snapshot = { phase: "ready", error: null as string | null };
@@ -170,7 +168,8 @@ test("runtime error reports add device fields, strip the page URL, and accept ne
     snapshot = { phase: "error", error: "disk full" };
     for (const listener of listeners) listener();
     await new Promise((resolve) => setImmediate(resolve));
-    assert.equal((posts.at(-1) as { body: { source: string } }).body.source, "sidebar-layout-persist");
+    assert.equal(getRuntimeDiagnosticErrors().at(-1)!.source, "sidebar-layout-persist");
+    assert.equal(posts.length, 0);
   } finally {
     globalThis.fetch = previousFetch;
     if (previousWindow === undefined) delete (globalThis as { window?: unknown }).window;

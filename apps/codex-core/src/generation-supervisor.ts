@@ -5,7 +5,7 @@ import { execFile } from "node:child_process";
 import { readFile, readlink, stat, readdir, realpath } from "node:fs/promises";
 import { promisify } from "node:util";
 import { CodexCoreControlClient, type CodexAppServerHealth } from "@opencraft/account-pool-host";
-import { generationDirectory } from "./generation-files.js";
+import { routerStorageTask } from "./generation-registry-worker.js";
 import { generationArtifactDigest } from "./generation-artifact-digest.js";
 import type { GenerationRecord } from "./generation-registry.js";
 
@@ -77,7 +77,10 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
   }
   async inspect(g: GenerationRecord): Promise<CodexAppServerHealth> { return this.health(g); }
   private async health(g: GenerationRecord): Promise<CodexAppServerHealth> {
-    return new CodexCoreControlClient(g.endpoint, this.options.token).appServerHealth();
+    const health = await new CodexCoreControlClient(g.endpoint, this.options.token).appServerHealth();
+    if (process.env.OPENCRAFT_WORKSPACE_AUTHORITY_SOCKET !== undefined && health.workspaceExecutionVersion !== 1)
+      throw new Error("Generation does not support configured private workspace authority");
+    return health;
   }
   async start(g: GenerationRecord, validation?: { homeCopy: string }): Promise<CodexAppServerHealth> {
     try { return await this.health(g); } catch { /* Readiness below never signals an existing unit. */ }
@@ -92,10 +95,15 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
       const managed = new Set(["NOTIFY_SOCKET", "LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES", "INVOCATION_ID", "MANAGERPID", "JOURNAL_STREAM", "SYSTEMD_EXEC_PID", "WATCHDOG_PID", "WATCHDOG_USEC"]);
       const identity = { uid: g.executionUid ?? process.getuid!(), gid: g.executionGid ?? process.getgid!() };
       const sameUser = identity.uid === process.getuid!();
+      // Cross-user generations intentionally inherit only public environment.
+      // Dropping strict workspace routing would silently restore local execution.
+      // A separately owned authority/socket handoff is required for that topology.
+      if (!sameUser && process.env.OPENCRAFT_WORKSPACE_AUTHORITY_SOCKET !== undefined)
+        throw new Error("Private workspace authority requires a same-user generation");
       const publicEnvironment = new Set(["PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TZ"]);
       const environment = Object.keys(process.env).filter(name => /^[A-Za-z_][A-Za-z0-9_]*$/u.test(name) && !managed.has(name)
         && (sameUser || publicEnvironment.has(name))).map(name => `--setenv=${name}`);
-      const temporary = `${g.runtimeDataDirectory}/tmp`; generationDirectory(temporary, identity.uid, identity.gid);
+      const temporary = `${g.runtimeDataDirectory}/tmp`; await routerStorageTask<void>("create-directory", [temporary, identity.uid, identity.gid]);
       // NAME without '=value' copies the private process environment; no secret is an argv value.
       const sandboxConfig = await engineSandboxConfiguration();
       const sandboxProperties = sandboxConfig ? systemdExecutionOwnerProperties(await readSandboxRuntimeConfiguration(sandboxConfig)) : [];

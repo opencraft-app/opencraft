@@ -1,4 +1,4 @@
-import { createContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useState, type ReactNode } from "react";
 
 export const IDENTITY_AVATAR_CHANNEL = "identityAvatar";
 /** Products resolve identity photos; the Shell owns layout and fallback rendering. */
@@ -8,22 +8,32 @@ export interface IdentityAvatarContribution {
 }
 export const IdentityAvatarContext = createContext<IdentityAvatarContribution | null>(null);
 
-/** Keep the caller's fallback until the current photo has actually loaded. */
+/** Missing/failed photos use the caller's fallback, not photos still loading. */
 export function AvatarImage({ src, fallback }: { src: string | null; fallback: ReactNode }) {
-  return src ? <AvatarPhoto key={src} src={src} fallback={fallback} /> : <>{fallback}</>;
+  return src ? <AvatarPhoto key={src} src={src} fallback={fallback} /> : fallback;
 }
 
 function AvatarPhoto({ src, fallback }: { src: string; fallback: ReactNode }) {
-  const [phase, setPhase] = useState<"loading" | "loaded" | "failed">("loading");
-  return <>
-    {phase !== "loaded" ? fallback : null}
-    {phase !== "failed" ? <img
-      src={src}
-      alt=""
-      referrerPolicy="no-referrer"
-      style={phase === "loaded" ? undefined : { display: "none" }}
-      onLoad={event => setPhase(event.currentTarget.naturalWidth > 0 ? "loaded" : "failed")}
-      onError={() => setPhase("failed")}
-    /> : null}
-  </>;
+  const [ready, setReady] = useState<boolean | null>(false);
+  const settle = useCallback((image: HTMLImageElement | null) => {
+    // Cached photos may already be complete before React attaches onLoad.
+    if (!image?.complete) return;
+    if (image.naturalWidth > 0) {
+      setReady(true);
+    } else {
+      setReady(null);
+    }
+  }, [src]);
+  if (ready === null) return fallback;
+  return <img
+    ref={settle}
+    src={src}
+    alt=""
+    referrerPolicy="no-referrer"
+    // Keep the image's normal geometry without briefly impersonating a missing
+    // portrait. The caller's existing avatar surface is the loading placeholder.
+    style={ready ? undefined : { visibility: "hidden" }}
+    onLoad={event => settle(event.currentTarget)}
+    onError={event => settle(event.currentTarget)}
+  />;
 }

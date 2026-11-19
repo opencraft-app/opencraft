@@ -28,13 +28,13 @@ export class ThreadAccessStore {
   private readonly readPolicy: ReturnType<DatabaseSync["prepare"]>;
   readonly outcome;
   private readonly listeners = new Set<(policy: ThreadAccessPolicy) => void>();
-  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, options: { permissionOwner?: object } = {}) {
+  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, options: { permissionOwner?: object; projection?: boolean } = {}) {
     const managed = openServerRepository(path, "thread-access");
     this.closeRepository = managed.close;
     this.db = managed.database; this.outcome = managed.outcome;
     this.readCache = new PermissionReadCache(function* (this: ThreadAccessStore) {
       for (const row of this.db.prepare('SELECT * FROM thread_access').iterate()) yield [JSON.stringify([row.server_id,row.thread_id]),row] as const;
-    }.bind(this), { enabled: true, owner: options.permissionOwner ?? this });
+    }.bind(this), { enabled: options.projection !== false, owner: options.permissionOwner ?? this });
     this.readPolicy = this.db.prepare('SELECT * FROM thread_access WHERE server_id=? AND thread_id=?');
   }
   read(serverId: string, threadId: string): ThreadAccessPolicy {
@@ -43,11 +43,14 @@ export class ThreadAccessStore {
     return {serverId,threadId,creatorActorId:row?.creator_actor_id as string | null ?? null,
       accessMode:row?.access_mode as 'shared' | 'private' ?? 'shared',revision:Number(row?.revision ?? 0)};
   }
-  created(serverId: string, threadId: string, context?: ActorContext): void {
+  created(serverId: string, threadId: string, context?: ActorContext, mode: 'shared'|'private' = 'shared'): void {
     this.read(serverId,threadId);
     // Null is durable too: a later viewer cannot claim an anonymous creation.
-    const creator = context && this.actors.isCurrent(context) && this.actors.get(context.actorId)?.kind === 'human' ? context.actorId : null;
-    withPermissionWrite(() => this.db.prepare("INSERT OR IGNORE INTO thread_access VALUES(?,?,?,'shared',1,?)").run(serverId,threadId,creator,Date.now()), this.readCache);
+    const creator = context && this.actors.allows(context, 'conversation.create') ? context.actorId : null;
+    withPermissionWrite(() => this.db.prepare("INSERT OR IGNORE INTO thread_access VALUES(?,?,?,?,1,?)").run(serverId,threadId,creator,mode,Date.now()), this.readCache);
+  }
+  acceptCreated(policy:ThreadAccessPolicy):void {
+    this.readCache.seedMissing(JSON.stringify([policy.serverId,policy.threadId]),{server_id:policy.serverId,thread_id:policy.threadId,creator_actor_id:policy.creatorActorId,access_mode:policy.accessMode,revision:policy.revision});
   }
   readablePolicy(serverId: string, threadId: string, context?: ActorContext): ThreadAccessPolicy | null {
     const policy = this.read(serverId,threadId);
@@ -215,6 +218,12 @@ export class ThreadAccessSession {
         policies.clear();
       }
     }
+    const projectViewer = (target: Value, id: string, serverId?: string) => {
+      // Never trust an engine or a different reader's cached relationship.
+      delete target.createdByViewer;
+      const policy = policyFor(id,serverId);
+      if (policy?.creatorActorId && this.context) target.createdByViewer = policy.creatorActorId === this.context.actorId;
+    };
     const result = object(packet.result);
     if (pending?.method === 'initialize' && !packet.error) {
       const capabilities = object(result.capabilities), extensions = object(capabilities.extensions);
@@ -245,6 +254,7 @@ export class ThreadAccessSession {
           if (typeof value !== 'string') {
             const target = validId(object(row.thread).id) ? object(row.thread) : row;
             target.accessMode = policyFor(id)!.accessMode;
+            projectViewer(target,id);
           }
           track(id); return true;
         });
@@ -262,6 +272,7 @@ export class ThreadAccessSession {
       if (validId(row.id) && typeof row.cwd === 'string' && typeof row.updatedAt === 'number') {
         if (!allowed(row.id,serverId)) return undefined;
         row.accessMode = policyFor(row.id,serverId)!.accessMode;
+        projectViewer(row,row.id,serverId);
       }
       const own = [row.threadId,row.thread_id,object(row.thread).id].filter(validId);
       if (own.some(id => !allowed(id,serverId))) return undefined;

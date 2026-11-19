@@ -1,8 +1,8 @@
 import { requireCallbackObservation } from "./generation-app-payload.js";
 import { randomUUID } from "node:crypto";
-import { cp, mkdir, mkdtemp, readdir, realpath, rm, writeFile, readFile, open, rename } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, realpath, rm, writeFile, readFile, open, rename } from "node:fs/promises";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { routerStorageTask } from "./generation-registry-worker.js";
 import type { GenerationColdReplacement } from "./generation-runtime.js";
 import type { GenerationRecord } from "./generation-registry.js";
 import { GenerationPeer, rpcRecord } from "./generation-peer.js";
@@ -10,20 +10,6 @@ import { generationCopyOwner } from "./generation-files.js";
 import type { GenerationSupervisor } from "./generation-supervisor.js";
 import { nativeHistoryFailures, readNativeHistory, type NativeHistoryFailures } from "./native-history-read.js";
 
-async function checkDatabases(directory: string): Promise<number> {
-  let count = 0;
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) count += await checkDatabases(path);
-    else if (entry.isFile() && /\.sqlite(?:3)?$/u.test(entry.name)) {
-      const database = new DatabaseSync(path, { readOnly: true });
-      try { if (!database.prepare("PRAGMA quick_check").all().every(row => Object.values(row).every(value => value === "ok"))) throw new Error("Native HOME database check failed"); }
-      finally { database.close(); }
-      count++;
-    }
-  }
-  return count;
-}
 
 /** Validate a retired HOME under its original absolute pathname in a private mount namespace.
  * Native DBs/rollouts contain absolute paths, so opening a plain relocated copy is insufficient. */
@@ -59,7 +45,7 @@ export function coldHomeValidator(options: { directory: string; socketParentDire
     // BindPaths' separator syntax is deliberately rejected for these deployment paths.
     if ([originalHome, validation].some(path => /[\s:\\]/u.test(path))) throw new Error("Cold HOME validation requires systemd paths without whitespace, colon or backslash");
     await timed("backupCopyMs", () => cp(originalHome, backup, { recursive: true, dereference: false, verbatimSymlinks: true, preserveTimestamps: true }));
-    const backupDatabases = await timed("backupIntegrityMs", () => checkDatabases(backup));
+    const backupDatabases = await timed("backupIntegrityMs", () => routerStorageTask<number>("check-databases", [backup]));
     await timed("validationCopyMs", () => cp(backup, validation, { recursive: true, dereference: false, verbatimSymlinks: true, preserveTimestamps: true }));
     // The configured routing socket parent is stable across TMPDIR changes.
     await timed("validationOwnershipMs", () => generationCopyOwner(validation, old.executionUid ?? process.getuid!(), old.executionGid ?? process.getgid!()));
@@ -91,7 +77,7 @@ export function coldHomeValidator(options: { directory: string; socketParentDire
       const identity = await options.supervisor.identify(candidate, health);
       await options.supervisor.stop(candidate, identity);
       timings.nativeValidationMs = Date.now() - nativeStartedAt;
-      const migratedDatabases = await timed("validatedIntegrityMs", () => checkDatabases(validation));
+      const migratedDatabases = await timed("validatedIntegrityMs", () => routerStorageTask<number>("check-databases", [validation]));
       timings.copyMs = timings.backupCopyMs! + timings.validationCopyMs!;
       timings.validationMs = timings.backupIntegrityMs! + timings.validationOwnershipMs! + timings.nativeValidationMs! + timings.validatedIntegrityMs!;
       timings.totalMs = Date.now() - startedAt;

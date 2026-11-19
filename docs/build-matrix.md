@@ -26,6 +26,11 @@ so each surface is an explicit matrix target with its own artifact contract.
 
 ## Local source development
 
+For Linux machines with a dedicated build disk, use the opt-in
+[build workspace entry](build-workspace.md) to keep isolated source worktrees,
+tool caches, temporary files and build logs on that mounted filesystem. It
+refuses an absent volume and does not change production data storage.
+
 `npm run dev` aliases `dev:local`: the existing pinned engine preparation,
 Local Agent Host, and Vite run together, with a same-origin `/appserver` proxy.
 The private Host URL stays in the Node process; proxy upgrades require the
@@ -44,10 +49,18 @@ asynchronous cleanup finishes; repeated stop signals join the same cleanup.
 baseline, checksummed patch series and explicit source/sync/build commands. Its
 initial native patch exposes observation-only editing metadata and caret bounds;
 source verification is separate from compilation and real native input testing.
-Normal desktop and browser-runtime packages continue using their existing pinned
-distribution until a compiled custom artifact is explicitly integrated and
-validated. The fork's initial build entry targets Linux; macOS/Windows builds and
-physical input-method validation remain separate work.
+All distributed desktop and browser-runtime packages require a compiled,
+probe-verified repository-owned Electron distribution. Missing, stale or
+incomplete artifacts fail packaging; there is no stock Electron fallback.
+Desktop packages use `OPENCRAFT_ELECTRON_DISTRIBUTION_<PLATFORM>_<ARCH>` or
+`OPENCRAFT_ELECTRON_DISTRIBUTION`; headless packages use
+`OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION`. The default Dockerfile consumes the
+browser distribution through its `owned-electron` named context, also supplied
+by Compose. See [native build and Docker delivery](../vendor/electron/CONTAINER.md).
+CI consumes a successful native build selected by repository variable
+`OPENCRAFT_ELECTRON_ARTIFACT_RUN_ID`; browser and desktop proofs remain separate.
+Linux x64 is verified; other native builds and physical input-method validation
+remain separate work.
 
 ## Developer diagnostics and browser evidence
 
@@ -443,7 +456,9 @@ AppServer process. The package smoke checks the Host queue capability rather
 than a native patch marker.
 
 Build on a native Linux amd64 machine with the checked-in Node version and
-installed dependencies. `release/OpenCraft-server-0.1.0-linux-amd64.tar.gz`
+installed dependencies. Set `OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION` to the
+verified owned Linux browser distribution before invoking the package command.
+`release/OpenCraft-server-0.1.0-linux-amd64.tar.gz`
 must pass `npm run smoke:headless:linux` for both DSH and Codex initialization
 before distribution. GitHub's portable
 matrix produces and smoke-tests this archive as an Actions artifact; a PR build

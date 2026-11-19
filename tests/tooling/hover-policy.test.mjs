@@ -65,3 +65,8 @@ test("entry handlers distinguish mouse while portal dismissal continuity remains
   assert.deepEqual(inspectHoverHandlers('<button onPointerEnter={event => {if(event.pointerType !== "mouse")return;setOpen(true)}}/>', 'fixture.tsx'), []);
   assert.deepEqual(inspectHoverHandlers('<Menu.Content onMouseEnter={cancelDismiss}/>', 'fixture.tsx'), []);
 });
+
+test("JSX style resource expressions are not parsed as CSS; literal expressions are checked",()=>{
+  assert.deepEqual(inspectHoverSource('const view=<style>{previewStyles}</style>',"fixture.tsx"),[]);
+  assert.equal(inspectHoverSource('const view=<style>{"a:hover{color:red}"}</style>',"fixture.tsx").length,1);
+});

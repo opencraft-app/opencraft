@@ -171,7 +171,7 @@ test("session model choices never write Host defaults through the catalog port",
 
 test("personal speed selection preserves Fast and explicit standard through new and existing requests", async () => {
   for (const serviceTier of ["priority", null, undefined]) for (const existing of [false, true]) {
-    const harness = createHarness();
+    const harness = createHarness(false, false, [], false, [{ id: "fixture-model", model: "fixture-model", isDefault: true, inputModalities: ["text"], supportedReasoningEfforts: [], defaultReasoningEffort: null, additionalSpeedTiers: ["priority"] }]);
     const runtime = createAppServerWorkbenchRuntime({ hostId: "local", transport: harness.transport, autoReconnect: false });
     try {
       await runtime.connect();

@@ -1,39 +1,4 @@
-import { open, rename, unlink, realpath } from 'node:fs/promises';
-import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
-
-/** One managed Gateway owns this file. Every writer (including checkpoints)
- * uses the same queue; native work never holds it. Publish only after fsync and
- * atomic replacement. A failed draft cannot leak into another writer's commit. */
-export class BrowserStateFile {
-  constructor(directory, saved) {
-    this.directory = directory;
-    this.current = saved ?? { schemaVersion: 1, pages: [], retired: [], states: [] };
-    this.tail = Promise.resolve();
-  }
-  transact(reduce) {
-    const operation = this.tail.then(async () => {
-      const draft = structuredClone(this.current);
-      const result = reduce(draft);
-      if (result && typeof result.then === 'function') throw new Error('Browser state reducer must be synchronous');
-      const temporary = join(this.directory, 'tabs-' + randomUUID() + '.tmp');
-      let file;
-      try {
-        file = await open(temporary, 'wx', 0o600);
-        await file.writeFile(JSON.stringify(draft)); await file.sync(); await file.close(); file = null;
-        await rename(temporary, join(this.directory, 'tabs.json'));
-        // Rename has committed: never publish an older snapshot after this point.
-        this.current = draft;
-        const directory = await open(this.directory, 'r');
-        try { await directory.sync(); } finally { await directory.close(); }
-      } finally { await file?.close(); await unlink(temporary).catch(() => {}); }
-      return result;
-    });
-    this.tail = operation.catch(() => {});
-    return operation;
-  }
-}
-
+import { realpath } from 'node:fs/promises';
 export const sessionError = (code, message, retryable = false) => Object.assign(new Error(message), { code, retryable });
 export function sessionLink(state, lease) {
   try {
@@ -44,6 +9,15 @@ export function sessionLink(state, lease) {
     if (page && tab && page.ownerId === tab.ownerId) return { pageId, tabId: tab.id, scopeId: page.ownerId, hostId: page.hostId ?? null };
   } catch {}
   return null;
+}
+export function conversationScopes(state, hostId, threadId) {
+  const scopes = new Set(['conversation:' + JSON.stringify([hostId, threadId])]);
+  try {
+    const bindings = JSON.parse(state?.values.bindings ?? '[]');
+    if (Array.isArray(bindings)) for (const binding of bindings)
+      if (binding?.hostId === hostId && binding.threadId === threadId && typeof binding.scopeId === 'string') scopes.add(binding.scopeId);
+  } catch {}
+  return scopes;
 }
 export const occupied = record => record.runtime?.kind !== 'absent' && record.lifecycle !== 'closed';
 
@@ -59,16 +33,62 @@ export async function acquireBrowserStateWriter(directory) {
   return () => new Promise(resolve => server.close(resolve));
 }
 
-export function linkedSessions(ownerId, state) {
+/** Operation-local index. Never cache mutable reducer drafts across calls. */
+export function sessionLinkIndex(state) {
+  const result = new Map();
   try {
-    const values = JSON.parse(state.values.storage ?? '{}');
-    if (!values || typeof values !== 'object' || Array.isArray(values)) return [];
-    return [...new Set(Object.values(values))].flatMap(value => {
-      if (typeof value !== 'string' || !/^browser[:-][a-zA-Z0-9-]+$/.test(value)) return [];
-      const lease = value.replace(':', '-'), link = sessionLink(state, lease);
-      if (!link) return [];
-      const page = JSON.parse(state.values.pages).find(p => p.id === link.pageId);
-      return [{ key: JSON.stringify([ownerId, lease]), link, url: page.entries?.[page.index]?.url ?? null }];
-    });
-  } catch { return []; }
+    const storage = JSON.parse(state?.values.storage ?? '{}');
+    const pages = JSON.parse(state?.values.pages ?? '[]'), tabs = JSON.parse(state?.values.tabs ?? '[]');
+    if (!storage || typeof storage !== 'object' || Array.isArray(storage) || !Array.isArray(pages) || !Array.isArray(tabs)) return result;
+    const byPage = new Map(), byTabPage = new Map(), leases = new Set();
+    // Preserve first-match behavior. A null record stops the old find callback;
+    // records after it must not become new authorization through this index.
+    for (const page of pages) { if (page === null) break; if (!byPage.has(page.id)) byPage.set(page.id, page); }
+    for (const tab of tabs) { if (tab === null) break; if (!byTabPage.has(tab.pageId)) byTabPage.set(tab.pageId, tab); }
+    for (const [pageId, value] of Object.entries(storage)) {
+      if (typeof value !== 'string') continue;
+      const lease = value.replace(':', '-');
+      if (leases.has(lease)) continue;
+      leases.add(lease);
+      const page = byPage.get(pageId), tab = byTabPage.get(pageId);
+      if (!page || !tab || page.ownerId !== tab.ownerId) continue;
+      result.set(lease, { link: { pageId, tabId: tab.id, scopeId: page.ownerId, hostId: page.hostId ?? null },
+        url: page.entries?.[page.index]?.url ?? null });
+    }
+  } catch { return new Map(); }
+  return result;
+}
+export function linkedSessions(ownerId, state, index = sessionLinkIndex(state)) {
+  return [...index].flatMap(([lease, entry]) => /^browser-[a-zA-Z0-9-]+$/.test(lease)
+    ? [{ key: JSON.stringify([ownerId, lease]), ...entry }] : []);
+}
+
+/** Resolve canonical IDs and persisted draft aliases without parsing delimiters. */
+export function browserConversation(state, link) {
+  if (!link?.scopeId) return null;
+  try {
+    if (link.scopeId.startsWith('conversation:')) {
+      const pair = JSON.parse(link.scopeId.slice('conversation:'.length));
+      if (Array.isArray(pair) && pair.length === 2 && pair.every(v => typeof v === 'string' && v.length))
+        return { hostId: pair[0], threadId: pair[1] };
+    }
+    const bindings = JSON.parse(state?.values.bindings ?? '[]');
+    const binding = bindings.find(b => b.scopeId === link.scopeId);
+    if (typeof binding?.hostId === 'string' && typeof binding?.threadId === 'string' && binding.threadId)
+      return { hostId: binding.hostId, threadId: binding.threadId };
+  } catch {}
+  return null;
+}
+
+export function conversationResourceLinks(ownerId, state) {
+  const links = new Map();
+  for (const page of linkedSessions(ownerId, state ?? {values:{}})) {
+    const owner = browserConversation(state, page.link);
+    if (owner) links.set('page:' + page.key, owner);
+  }
+  try { for (const binding of JSON.parse(state?.values.bindings ?? '[]')) {
+    if (typeof binding.scopeId === 'string' && typeof binding.hostId === 'string' && typeof binding.threadId === 'string' && binding.threadId)
+      links.set('scope:' + binding.scopeId, {hostId:binding.hostId,threadId:binding.threadId});
+  } } catch {}
+  return links;
 }

@@ -13,6 +13,7 @@ import { useWebChatRenderRuntime } from "./runtime-context";
 import { handleMarkdownCopy } from "./markdown-copy";
 
 export interface WebChatDocumentProps {
+  readonly renderText?: ChatRenderContext["renderText"];
   readonly documentId: string;
   readonly source: string;
   readonly streaming?: boolean;
@@ -29,6 +30,7 @@ export interface WebChatDocumentProps {
   readonly onMediaDiagnostic?: (event: ChatMediaDiagnostic) => void;
   readonly onMeasurementRequest?: (event: ChatMeasurementEvent) => void;
   readonly dialect?: ChatDocumentDialect;
+  readonly literalSpans?: readonly import("@opencraft/chat-document").ChatDocumentSourceRange[];
 }
 
 function RawDocument({ source }: { readonly source: string }) {
@@ -55,6 +57,7 @@ function ResolvedWebChatDocument(props: WebChatDocumentProps) {
     return () => ownerDocument.removeEventListener("copy", listener, { capture: true });
   }, []);
   const context = useMemo<Omit<ChatRenderContext, "documentId" | "streaming">>(() => ({
+    renderText: props.renderText,
     theme: props.theme ?? "light",
     externalResourcePolicy: props.externalResourcePolicy ?? "allow",
     conversationId: props.conversationId ?? null,
@@ -81,6 +84,7 @@ function ResolvedWebChatDocument(props: WebChatDocumentProps) {
           generation: documentGeneration,
         }),
   }), [
+    props.renderText,
     props.allowWideBlocks,
     props.conversationId,
     props.cwd,
@@ -109,6 +113,7 @@ function ResolvedWebChatDocument(props: WebChatDocumentProps) {
       <ChatDocumentSessionView
         context={context}
         dialect={props.dialect}
+        literalSpans={props.literalSpans}
         documentId={props.documentId}
         fallback={({ source, retry }) => (
           <div className="opencraft-chat-document-error">

@@ -30,11 +30,11 @@ export function bindMobileContainer(
   if (!identity) return { active: () => true, dispose() {} };
   let active = true;
   const send = (message: MobileContainerRequest) => (target as MobileWindow).ReactNativeWebView!.postMessage(JSON.stringify(message));
-  const publishNavigation = () => send({ ...identity, type: "navigation", canGoBack: navigation.getSnapshot().canGoBack });
+  const publishNavigation = () => send({ ...identity, type: "navigation", canGoBack: navigation.getSnapshot().canReturn || navigation.getSnapshot().canGoBack });
   const receive = (event: Event) => {
     const value: unknown = (event as CustomEvent).detail;
     if (!isMobileContainerEvent(value, identity.runtimeId)) return;
-    if (value.type === "back") navigation.back();
+    if (value.type === "back") { if (navigation.getSnapshot().canReturn) navigation.returnToParent(); else navigation.back(); }
     else {
       active = value.active;
       // Existing foreground probes listen to visibility/online events; they

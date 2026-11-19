@@ -7,7 +7,13 @@
     ".": "./src/index.ts",
     "./clipboard": "./src/clipboard.ts",
     "./mermaid": "./src/extensions/mermaid/mermaid-svg.ts",
-    "./zoomable-image": "./src/zoomable-image.tsx"
+    "./image-preview": "./src/image-preview.tsx",
+    "./zoomable-image": "./src/zoomable-image.tsx",
+    "./message-timeline": "./src/message-timeline.tsx",
+    "./scroll-to-bottom-button": "./src/scroll-to-bottom-button.tsx",
+    "./message-timeline.web": "./src/message-timeline.web.scss",
+    "./timeline-dock.web": "./src/timeline-dock.web.scss",
+    "./history-presentation": "./src/history-presentation.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -15,6 +21,7 @@
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.5",
     "@mermaid-js/layout-elk": "0.2.3",
+    "@opencraft/appserver-protocol": "0.1.0",
     "@opencraft/chat-document": "0.1.0",
     "@opencraft/chat-render-react": "0.1.0",
     "@opencraft/design-system": "0.1.0",
@@ -25,7 +32,9 @@
     "katex": "^0.19.1",
     "mermaid": "11.17.2",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "@opencraft/timeline-host-web": "0.1.0",
+    "@opencraft/timeline-virtualizer": "0.1.0"
   },
   "devDependencies": {
     "@types/react": "~19.3.0",

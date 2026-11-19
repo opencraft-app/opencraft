@@ -153,7 +153,12 @@ export function deriveTimelineLatestTurnPhase(
 export function groupTimelineFramesByTurn(
   timeline: Pick<TimelineSnapshot, "frames" | "interactionWait">,
 ): readonly TimelineTurnView[] {
-  const turns: TimelineTurnView[] = [];
+  // These builders belong only to this invocation; input frames remain immutable.
+  // Appending avoids copying the same Turn prefix for each interleaved frame.
+  const turns: (Omit<TimelineTurnView, "frames" | "status"> & {
+    frames: TimelineFrame[];
+    status: TimelineStatus;
+  })[] = [];
   const indexByTurnId = new Map<TurnId, number>();
   for (const frame of timeline.frames) {
     const existingIndex = indexByTurnId.get(frame.turnId);
@@ -171,11 +176,8 @@ export function groupTimelineFramesByTurn(
     }
     const existing = turns[existingIndex];
     if (existing === undefined) continue;
-    turns[existingIndex] = {
-      ...existing,
-      status: frame.status,
-      frames: [...existing.frames, frame],
-    };
+    existing.status = frame.status;
+    existing.frames.push(frame);
   }
   return turns;
 }
@@ -195,5 +197,39 @@ export function createOlderHistoryGap(
     estimatedHeightPx,
     direction: "older",
     cursor,
+  };
+}
+
+
+/** View-owned identity cache. Retains only the latest projection, never a
+ * cross-conversation archive. Immutable frames are the invalidation boundary. */
+export function createTimelineTurnGrouper(): (
+  timeline: Pick<TimelineSnapshot, "key" | "frames" | "interactionWait"> | null,
+) => readonly TimelineTurnView[] {
+  let previous: readonly TimelineTurnView[] = [];
+  let hostId: string | null = null;
+  let threadId: string | null = null;
+  return (timeline) => {
+    if (timeline === null) {
+      hostId = threadId = null;
+      previous = [];
+      return previous;
+    }
+    const sameConversation = hostId === timeline.key.hostId && threadId === timeline.key.threadId;
+    const byId = new Map(sameConversation ? previous.map(turn => [turn.turnId, turn] as const) : []);
+    const next = groupTimelineFramesByTurn(timeline).map(turn => {
+      const old = byId.get(turn.turnId);
+      const wait = turn.interactionWait, oldWait = old?.interactionWait;
+      const sameWait = wait === oldWait || (wait !== undefined && oldWait !== undefined
+        && wait.turnId === oldWait.turnId && wait.reason === oldWait.reason && wait.recovery === oldWait.recovery);
+      return old !== undefined && old.status === turn.status
+        && sameWait
+        && old.frames.length === turn.frames.length
+        && old.frames.every((frame, index) => frame === turn.frames[index]) ? old : turn;
+    });
+    hostId = timeline.key.hostId;
+    threadId = timeline.key.threadId;
+    if (next.length !== previous.length || next.some((turn, index) => turn !== previous[index])) previous = next;
+    return previous;
   };
 }

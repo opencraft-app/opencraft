@@ -7,13 +7,31 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { CapabilityBindings } from "./bindings.js";
 import { SessionCapabilities, type CapabilitySession, type CapabilityTool } from "./index.js";
+import { capabilityResultToMcp } from "./content.js";
 
 export { capabilitySigningKey, sessionCapabilityToken } from "./credentials.js";
 import { sessionCapabilityToken,executionCliSourceSession } from "./credentials.js";
+interface McpClientSession {
+  credential: string; server: Server; transport: StreamableHTTPServerTransport;
+  authenticate(request: IncomingMessage): void; touched: number; active: number;
+  requests: Map<string, { closed: boolean; settled: boolean }>;
+}
 export class SessionCapabilityMcp {
   private url: string | undefined;
+  private failureWindow = { at: 0, count: 0 };
+  private diagnoseFailure(stage: string) {
+    const now = Date.now();
+    if (now - this.failureWindow.at >= 60_000) this.failureWindow = { at: now, count: 0 };
+    if (this.failureWindow.count++ >= 100) return null;
+    const diagnosticId = randomUUID();
+    // No tool arguments, credentials, private identity or exception text.
+    console.warn('[session-capability]', JSON.stringify({ event: 'call-failed', diagnosticId, stage }));
+    return diagnosticId;
+  }
   private readonly server;
   private readonly calls = new Set<Server>();
+  private readonly clients = new Map<string, McpClientSession>();
+  private readonly credentialInvocations = new Map<string, Set<AbortController>>();
   private readonly pending = new Map<string, { tools: readonly CapabilityTool[]; expiresAt: number }>();
   private readonly memoryBindings = new Map<string, CapabilitySession>();
   private readonly executionReservations = new Map<string, {
@@ -42,7 +60,7 @@ export class SessionCapabilityMcp {
   }
   token(session: CapabilitySession): string { return sessionCapabilityToken(this.key, session); }
   private bindingToken(id: string): string { return this.sign(["binding", id]); }
-  private authenticate(request: IncomingMessage): { session: CapabilitySession | null; tools?: readonly CapabilityTool[]; reservationId?: string; executionReservation?: Promise<CapabilitySession> } | null {
+  private authenticate(request: IncomingMessage): { session: CapabilitySession | null; tools?: readonly CapabilityTool[]; reservationId?: string; executionReservation?: Promise<CapabilitySession>; nativeTool?: boolean } | null {
     const auth = request.headers.authorization;
     if (typeof auth !== "string" || auth.length > 4096 || !auth.startsWith("Bearer ")) return null;
     const parts = auth.slice(7).split(".");
@@ -55,14 +73,15 @@ export class SessionCapabilityMcp {
       const cliRoute=request.url==='/thread-cli'||request.url==='/execution-admission';
       if(pair[0]==='execution-cli')return cliRoute?{session:executionCliSourceSession(this.key,auth.slice(7))}:null;
       if(cliRoute)return null;
-      if (pair[0] === "execution" && pair.length === 4) {
+      if ((pair[0] === "execution" || pair[0] === 'native-tool') && pair.length === 4) {
         const [_, serverId, threadId, execution] = pair;
         if (![serverId, threadId].every(v => typeof v === "string" && v && v.length <= 512)
           || !execution || typeof execution !== "object" || Array.isArray(execution)
           || Object.keys(execution).some(k => !["executionId", "inputId", "turnId", "incarnation", "callId"].includes(k))
           || Object.values(execution).some(v => typeof v !== "string" || !v || v.length > 512)
           || !execution.inputId && !execution.turnId) return null;
-        return { session: Object.freeze({ serverId, threadId, execution: Object.freeze(execution) }) };
+        if (pair[0] === 'native-tool' && (request.url !== '/mcp' || !execution.callId)) return null;
+        return { session: Object.freeze({ serverId, threadId, execution: Object.freeze(execution) }), nativeTool: pair[0] === 'native-tool' };
       }
       if (pair.some(v => typeof v !== "string" || !v || v.length > 512)) return null;
       if ((pair[0] === "execution-binding"||pair[0] === "execution-memory-binding") && pair.length === 2) {
@@ -148,8 +167,16 @@ export class SessionCapabilityMcp {
     this.executionReservations.set(id, reservation);
     return reservation;
   }
+  private cancelCredential(token: string): void {
+    const credential = this.signature(`Bearer ${token}`).toString('hex');
+    for (const controller of this.credentialInvocations.get(credential) ?? []) controller.abort();
+    for (const client of this.clients.values()) if (client.credential === credential)
+      for (const key of client.requests.keys()) client.transport.onmessage?.({ jsonrpc: '2.0', method: 'notifications/cancelled',
+        params: { requestId: JSON.parse(key), reason: 'Execution capability retired' } });
+  }
   private executionHandle(id: string, reservation: NonNullable<ReturnType<SessionCapabilityMcp["executionReservation"]>>, tools:readonly CapabilityTool[] = []) {
-    return { configuration: this.configuration(this.sign([reservation.memoryOnly?"execution-memory-binding":"execution-binding", id]), tools),
+    const token = this.sign([reservation.memoryOnly?"execution-memory-binding":"execution-binding", id]);
+    return { configuration: this.configuration(token, tools),
       bindThread: (scope: CapabilitySession) => {
         if (this.executionReservations.get(id) !== reservation || reservation.scope
           || reservation.expiresAt <= Date.now()) throw new Error("Execution capability reservation is unavailable");
@@ -173,7 +200,10 @@ export class SessionCapabilityMcp {
         reservation.session=undefined;
         reservation.bound=new Promise<CapabilitySession>(resolve=>{reservation.resolve=resolve;});
       },
-      cancel: () => { if(!reservation.memoryOnly)this.bindings?.removeExecution(id); this.executionReservations.delete(id); },
+      cancel: () => {
+        try { if(!reservation.memoryOnly)this.bindings?.removeExecution(id); }
+        finally { this.executionReservations.delete(id); this.cancelCredential(token); }
+      },
     };
   }
   prepareExecution(options:{memoryOnly?:boolean;scope?:CapabilitySession}={}) {
@@ -201,8 +231,16 @@ export class SessionCapabilityMcp {
     // browser cookies or an untrusted callerSessionId in tool arguments.
     if (!["/mcp", "/execution-admission", "/admission", "/orchestration", "/thread-cli"].includes(request.url ?? "")) { response.writeHead(404); response.end(); return; }
     if (request.headers.origin !== undefined) { response.writeHead(403); response.end(); return; }
-    const authenticated = this.authenticate(request);
+    let authenticated = this.authenticate(request);
     if (!authenticated) { response.writeHead(401); response.end(); return; }
+    const clientId = request.url === '/mcp' ? request.headers['mcp-session-id'] : undefined;
+    const clientSession = typeof clientId === 'string' ? this.clients.get(clientId) : undefined;
+    if (clientId !== undefined) {
+      if (!clientSession) { response.writeHead(404); response.end(); return; }
+      if (clientSession.credential !== this.signature(request.headers.authorization!).toString('hex')) { response.writeHead(403); response.end(); return; }
+      clientSession.authenticate(request); clientSession.touched = Date.now();
+      if (request.method !== 'POST') { await clientSession.transport.handleRequest(request, response); return; }
+    }
     if (request.method !== "POST") { response.writeHead(405); response.end(); return; }
     const length = Number(request.headers["content-length"] ?? 0);
     if (!Number.isFinite(length) || length > 64 * 1024) { response.writeHead(413); response.end(); return; }
@@ -215,6 +253,14 @@ export class SessionCapabilityMcp {
     let body: unknown;
     try { body = JSON.parse(Buffer.concat(chunks).toString()); }
     catch { response.writeHead(400); response.end(); return; }
+    const current = this.authenticate(request);
+    const incoming = (Array.isArray(body) ? body : [body]) as ({ method?: unknown } | null)[];
+    const invokes = request.url !== '/mcp' || incoming.some(frame => frame?.method === 'tools/call');
+    if (!current || invokes && JSON.stringify(current.session) !== JSON.stringify(authenticated.session)) {
+      response.writeHead(401); response.end(); return;
+    }
+    authenticated = current;
+    if (clientSession) clientSession.authenticate(request);
     if (request.url === "/orchestration" || request.url === "/thread-cli") {
       const callback=request.url==='/thread-cli'?this.options.threadCli:this.options.orchestration;
       if (!authenticated.session || !callback || request.url==='/thread-cli'&&!authenticated.session.execution) { response.writeHead(403); response.end(); return; }
@@ -244,8 +290,61 @@ export class SessionCapabilityMcp {
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ allowed: this.options.authorizeInput?.(authenticated.session, inputId) === true })); return;
     }
+    if (clientSession) {
+      const frames = (Array.isArray(body) ? body : [body]) as ({ method?: unknown; id?: unknown } | null)[];
+      const admitted = new Set<string>();
+      // Admit the entire batch before dispatching any member. IDs of completed
+      // members remain reserved until their shared HTTP response has settled.
+      for (const frame of frames) if (typeof frame?.method === 'string' && (typeof frame.id === 'string' || typeof frame.id === 'number')) {
+        const key = JSON.stringify(frame.id);
+        if (admitted.has(key) || clientSession.requests.has(key)) { response.writeHead(409); response.end(); return; }
+        admitted.add(key);
+      }
+      if (clientSession.requests.size + admitted.size > 256) { response.writeHead(429); response.end(); return; }
+      const lifetimes: { requestId: string | number; key: string; lifetime: { closed: boolean; settled: boolean } }[] = [];
+      for (const frame of frames) if (typeof frame?.method === 'string' && (typeof frame.id === 'string' || typeof frame.id === 'number')) {
+        const requestId = frame.id, key = JSON.stringify(requestId), lifetime = { closed: false, settled: false };
+        clientSession.requests.set(key, lifetime);
+        lifetimes.push({ requestId, key, lifetime });
+      }
+      response.once('close', () => {
+        for (const { requestId, key, lifetime } of lifetimes) {
+          if (clientSession.requests.get(key) !== lifetime) continue;
+          lifetime.closed = true;
+          if (!response.writableEnded) clientSession.transport.onmessage?.({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId, reason: 'Caller disconnected' } });
+          if (response.writableEnded || lifetime.settled) clientSession.requests.delete(key);
+        }
+      });
+      await clientSession.transport.handleRequest(request, response, body); return;
+    }
+    const initializes = !!body && typeof body === 'object' && !Array.isArray(body) && (body as { method?: unknown }).method === 'initialize';
+    if (initializes) {
+      for (const [id, client] of this.clients) if (!client.active && Date.now() - client.touched > 15 * 60_000) {
+        this.clients.delete(id); await client.server.close();
+      }
+      if (this.calls.size >= 256) { response.writeHead(503); response.end(); return; }
+    } else if ((body as { method?: unknown } | null)?.method === 'notifications/cancelled') {
+      // JSON-RPC IDs are client-local, including clients sharing credentials.
+      response.writeHead(400); response.end(); return;
+    }
+    let currentAuthentication = authenticated, record: McpClientSession | undefined;
+    const finishInvocation = async (signal: AbortSignal, requestId: string | number) => {
+      // The SDK suppresses ordinary replies after cancellation. Its JSON HTTP
+      // transport still needs a terminal envelope to release that request's
+      // response promise/correlations; wait for the provider to settle first.
+      if (record && signal.aborted) await record.transport.send({ jsonrpc: '2.0', id: requestId,
+        error: { code: -32800, message: 'Capability call cancelled; inspect any uncertain external effect before retrying.' } }).catch(() => {});
+      if (record) { record.active--; record.touched = Date.now(); }
+      const key = JSON.stringify(requestId), lifetime = record?.requests.get(key);
+      if (lifetime) { lifetime.settled = true; if (lifetime.closed) record!.requests.delete(key); }
+    };
+    const credential = this.signature(request.headers.authorization!).toString('hex');
+    const authenticateInvocation = () => this.authenticate(request);
     const mcp = new Server({ name: "opencraft-session", version: "1.0.0" }, { capabilities: { tools: {} } });
     mcp.setRequestHandler(ListToolsRequestSchema, async (_request, extra) => {
+      const authenticated = currentAuthentication;
+      if (record) record.active++;
+      try {
       let session = authenticated.session;
       if (!session && authenticated.executionReservation) {
         session = await new Promise<CapabilitySession>((resolve, reject) => {
@@ -263,17 +362,56 @@ export class SessionCapabilityMcp {
       if (tools.length && authenticated.reservationId) this.pending.delete(authenticated.reservationId);
       const visible = tools.length ? tools : staged && staged.expiresAt > Date.now() ? staged.tools : [];
       return { tools: visible.map(({ approval: _approval, ...tool }) => tool) };
+      } finally { await finishInvocation(extra.signal, extra.requestId); }
     });
     mcp.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+      const authenticated = currentAuthentication;
+      if (record) record.active++;
+      const controller = new AbortController();
+      const signal = AbortSignal.any([extra.signal, controller.signal]);
+      let active = this.credentialInvocations.get(credential);
+      if (!active) this.credentialInvocations.set(credential, active = new Set());
+      active.add(controller);
+      let stage = 'authentication';
       try {
+        const current = authenticateInvocation();
+        if (!current || JSON.stringify(current.session) !== JSON.stringify(authenticated.session)) throw new Error("Session capability retired or changed");
+        stage = 'binding';
         if (!authenticated.session) throw new Error("Session is not bound");
-        const result = await this.capabilities.call(authenticated.session, request.params.name, request.params.arguments ?? {}, extra.signal);
-        return { content: result.contentItems.map(item => ({ type: "text" as const, text: item.text })), isError: !result.success };
-      } catch { return { content: [{ type: "text", text: "Capability denied or failed; do not retry an uncertain external effect." }], isError: true }; }
+        const session = authenticated.session;
+        // JSON-RPC IDs are local to a client, including clients sharing this
+        // execution credential. General MCP invocations get distinct identities;
+        // the separate signed native-tool audience already binds one native call.
+        // Request IDs and model arguments cannot select that audience.
+        const invocation = session.execution && !authenticated.nativeTool ? { ...session, execution: { ...session.execution,
+          callId: JSON.stringify([session.execution.callId ?? null, randomUUID()]) } } : session;
+        stage = 'dispatch';
+        const result = await this.capabilities.call(invocation, request.params.name, request.params.arguments ?? {}, signal);
+        stage = 'result';
+        return capabilityResultToMcp(result);
+      } catch {
+        const diagnosticId = this.diagnoseFailure(stage);
+        return { content: [{ type: "text", text: "Capability denied or failed; do not retry an uncertain external effect."
+          + (diagnosticId ? ` Diagnostic: ${diagnosticId}` : '') }], isError: true };
+      }
+      finally {
+        active.delete(controller);
+        if (!active.size) this.credentialInvocations.delete(credential);
+        await finishInvocation(signal, extra.requestId);
+      }
     });
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: initializes ? randomUUID : undefined, enableJsonResponse: true,
+      onsessioninitialized: id => { this.clients.set(id, record!); },
+    });
+    if (initializes) {
+      record = { credential: this.signature(request.headers.authorization!).toString('hex'), server: mcp, transport,
+        authenticate: request => { currentAuthentication = this.authenticate(request)!; }, touched: Date.now(), active: 0, requests: new Map() };
+      mcp.onclose = () => { if (transport.sessionId) this.clients.delete(transport.sessionId); this.calls.delete(mcp); };
+    }
     this.calls.add(mcp);
-    response.once("close", () => { this.calls.delete(mcp); void mcp.close(); });
+    response.once("close", () => {
+      if (!initializes || !transport.sessionId) { this.calls.delete(mcp); void mcp.close(); }
+    });
     await mcp.connect(transport);
     await transport.handleRequest(request, response, body);
   }
@@ -284,6 +422,7 @@ export class SessionCapabilityMcp {
     }
     this.url = undefined;
     this.executionReservations.clear();
+    this.clients.clear();
     await Promise.allSettled([...this.calls].map(server => server.close()));
     await new Promise<void>(resolve => { this.server.close(() => resolve()); this.server.closeAllConnections(); });
   }

@@ -3,8 +3,10 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 spec = importlib.util.spec_from_file_location('electron_fork', Path(__file__).parents[1] / 'manage.py')
@@ -55,11 +57,59 @@ class ForkSourceTests(unittest.TestCase):
         self.assertEqual(self.native.read_text(), 'native state available\n')
         self.assertTrue(first['sourceVerified'])
 
+    def test_sync_keeps_pinned_source_and_does_not_request_all_remote_refs(self):
+        fork = self.fork()
+        before = fork.checkout()
+        original_run = module.run
+        calls = []
+
+        def run(args, **kwargs):
+            if str(args[0]) == '/fixture/gclient':
+                calls.append(args)
+                self.assertEqual(kwargs['cwd'], self.root)
+                self.assertTrue((self.root / '.gclient').is_file())
+                return ''
+            return original_run(args, **kwargs)
+
+        with patch.object(module.shutil, 'which', return_value='/fixture/gclient'), patch.object(module, 'run', run):
+            after = fork.sync()
+        self.assertEqual(before, after)
+        self.assertEqual(len(calls), 1)
+        self.assertIn('--no-history', calls[0])
+        self.assertNotIn('--with_tags', calls[0])
+        self.assertNotIn('--with_branch_heads', calls[0])
+
     def test_dirty_source_is_preserved_and_rejected(self):
         self.native.write_text('local investigation\n', newline='\n')
         with self.assertRaisesRegex(ValueError, 'dirty'):
             self.fork().checkout()
         self.assertEqual(self.native.read_text(), 'local investigation\n')
+
+    @unittest.skipUnless(sys.platform.startswith('linux'), 'Linux container tool resolution')
+    def test_build_children_use_synced_gn_instead_of_depot_wrapper(self):
+        fork = self.fork()
+        fork.checkout()
+        (self.root / 'src/DEPS').write_text('# synchronized fixture\n')
+        (self.directory / 'args.gn').write_text('# fixture\n')
+        gn = self.root / 'src/buildtools/linux64/gn'
+        ninja = self.root / 'src/third_party/ninja/ninja'
+        shadow = Path(self.temp.name) / 'depot-wrapper/gn'
+        scripts = {
+            gn: 'import sys\nif sys.argv[1] != "gen": print("synced-gn")\n',
+            shadow: 'raise SystemExit("uninitialized depot wrapper selected")\n',
+            ninja: ('import subprocess\nfrom pathlib import Path\n'
+                    'assert subprocess.check_output(["gn", "args"], text=True).strip() == "synced-gn"\n'
+                    'out = Path("out/OpenCraft")\nout.mkdir(parents=True, exist_ok=True)\n'
+                    '(out / "electron").write_bytes(b"fixture executable")\n'
+                    '(out / "dist.zip").write_bytes(b"fixture distribution")\n'),
+        }
+        for path, body in scripts.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('#!' + sys.executable + '\n' + body)
+            path.chmod(0o755)
+        with patch.dict(module.os.environ, {'PATH': str(shadow.parent) + module.os.pathsep + module.os.environ.get('PATH', '')}):
+            result = fork.build(6)
+        self.assertTrue(result['compiled'])
 
     def test_clean_unregistered_change_is_rejected(self):
         fork = self.fork()

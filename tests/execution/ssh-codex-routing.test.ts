@@ -200,7 +200,12 @@ test("native fork preserves the caller's no-fixed-deadline contract", async cont
   const f = setup();
   try {
     await f.initialize();
-    await f.send("a", 77, "thread/fork", { threadId: "source" });
+    const sending = f.send("a", 77, "thread/fork", { threadId: "source" });
+    await new Promise<void>(resolve => setImmediate(resolve));
+    const sourceSettings = f.physical.sent.findLast(frame => frame.method === "thread/resume");
+    assert.ok(sourceSettings, "fork reads the source execution settings before dispatch");
+    f.physical.receive({ id: sourceSettings.id, result: { thread: { id: "source", turns: [] } } });
+    await sending;
     const request = f.physical.sent.at(-1);
     context.mock.timers.tick(180_000);
     assert.equal(f.frames.length, 0);
