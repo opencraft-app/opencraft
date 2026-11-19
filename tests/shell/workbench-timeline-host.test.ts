@@ -122,6 +122,10 @@ const newThreadDraftSource = readFileSync(
   ),
   "utf8",
 );
+const draftExecutionUtilitySource = readFileSync(
+  new URL("../../apps/workbench-web/src/components/draft-execution-utility-bar.tsx", import.meta.url),
+  "utf8",
+);
 
 function settingsCallbacks(source: string): ts.Expression[] {
   const callbacks: ts.Expression[] = [];
@@ -418,7 +422,7 @@ test("application Settings owns route slots while target management owns a modal
   );
 });
 
-test("the platform resolves modal identity and Expo adapts the same semantic contract", () => {
+test("the platform resolves modal identity and tool surfaces delegate dialog ownership", () => {
   const dismiss = () => undefined;
   const stack = resolveModalStack([
     { id: "settings", label: "Settings", content: null, onDismiss: dismiss },
@@ -431,7 +435,22 @@ test("the platform resolves modal identity and Expo adapts the same semantic con
   ]);
   assert.match(workspaceDirectoryPickerSource, /<ModalSurface/u);
   assert.doesNotMatch(workspaceDirectoryPickerSource, /createPortal|event\.key|addEventListener/u);
-  assert.equal(Array.from(toolRenderersSource.matchAll(/<ModalSurface/gu)).length, 2);
+  // Raw output remains a utility modal; images now use the shared preview owner.
+  assert.match(toolRenderersSource,
+    /function RawToolOutput\b[\s\S]*?<ModalSurface label=\{title\} size="wide" layer="nested" onDismiss=\{\(\) => setOpen\(false\)\}/u);
+  assert.match(toolRenderersSource,
+    /imageEdit\.editor \?\? <ImagePreview image=\{\{ id: block\.id, source: media\.source, alt \}\} onClose=\{\(\) => setOpen\(false\)\}/u);
+  const imagePreview = readFileSync(new URL("../../packages/chat-render-web/src/image-preview.tsx", import.meta.url), "utf8");
+  const imagePreviewView = readFileSync(new URL("../../packages/chat-render-web/src/image-preview-view.tsx", import.meta.url), "utf8");
+  const previewSurface = readFileSync(new URL("../../packages/design-system-web/src/preview-surface.tsx", import.meta.url), "utf8");
+  assert.match(imagePreview, /import\("\.\/image-preview-view"\)/u);
+  assert.match(imagePreview, /<LazyImagePreview \{\.\.\.props\}/u);
+  assert.match(imagePreviewView, /<PreviewSurface\b[^>]*onClose=\{onClose\}[^>]*returnFocus=\{returnFocus\}/u);
+  assert.match(previewSurface, /element\.showModal\(\)/u);
+  assert.match(previewSurface, /onCancel=\{event => \{[^}]*close\(\)/u);
+  assert.match(previewSurface, /event\.nativeEvent\.isComposing \|\| event\.keyCode === 229/u);
+  assert.match(previewSurface, /latest\.current\.returnFocus\?\.\(\) \?\? origin/u);
+  assert.match(previewSurface, /target\.focus\(\{\s*preventScroll:\s*true\s*\}\)/u);
   assert.doesNotMatch(toolRenderersSource, /createPortal|event\.key\s*===\s*"Escape"/u);
 });
 
@@ -448,9 +467,14 @@ test("Draft menus consume one design-system rhythm and stay out of the hero titl
     listMaximumHeight: 250,
   });
   assert.match(
-    newThreadDraftSource,
+    draftExecutionUtilitySource,
     /className="new-thread-project-menu new-thread-host-menu"[\s\S]*?align="start"[\s\S]*?sideOffset=\{menuGeometry\.rootSideOffset\}[\s\S]*?collisionPadding=\{menuGeometry\.collisionPadding\}/u,
   );
+  assert.match(newThreadDraftSource, /import\('\.\/draft-execution-utility-bar'\)/u);
+  assert.match(newThreadDraftSource, /chromeHeader=\{showExecutionControls \? \(\s*<Suspense fallback=\{null\}><ExecutionUtilityBar/u);
+  const hero = newThreadDraftSource.match(/<section className="new-thread-draft-hero"[\s\S]*?<\/section>/u)?.[0];
+  assert.ok(hero, "Draft retains its hero title");
+  assert.doesNotMatch(hero, /ExecutionUtilityBar|DropdownMenu/u);
   assert.match(
     workbenchStyles,
     /\.new-thread-project-menu__items\s*\{[^}]*display:\s*grid;[^}]*gap:\s*var\(--menu-item-gap\)/u,
@@ -627,7 +651,13 @@ test("Composer menus live in the root overlay plane with viewport constraints", 
   assert.match(menuStyles, /--radix-dropdown-menu-content-available-width/);
   assert.match(menuStyles, /--radix-dropdown-menu-content-available-height/);
   assert.match(menuStyles, /prefers-reduced-motion: no-preference/);
-  assert.match(menuStyles, /font: var\(--typography-control-compact-font\)/);
+  // Menus consume density-aware typography; desktop and touch retain their roles.
+  assert.match(menuStyles, /font: var\(--menu-item-font\)/u);
+  assert.match(menuStyles, /letter-spacing: var\(--menu-item-tracking\)/u);
+  const menuTokens = readFileSync(new URL("../../packages/design-system/src/tokens.web.scss", import.meta.url), "utf8");
+  assert.match(menuTokens, /--menu-item-font: var\(--typography-control-compact-font\);/u);
+  assert.match(menuTokens, /--menu-item-tracking: var\(--typography-control-compact-tracking\);/u);
+  assert.match(menuTokens, /@mixin touch-density-tokens\s*\{[^}]*--menu-item-font: var\(--typography-menu-font\);[^}]*--menu-item-tracking: var\(--typography-menu-tracking\);/u);
   assert.doesNotMatch(
     workbenchStyles,
     /\.opencraft-composer-selection-menu\s*\{[^}]*position:\s*absolute/u,
@@ -791,16 +821,20 @@ test("response observation follows the controller boundary, not button visibilit
 
 test("a new-thread workspace is an optional execution override, not Composer ownership", () => {
   assert.match(
-    newThreadDraftSource,
+    draftExecutionUtilitySource,
     /const executionLocked = draftSubmissionOwnsNavigation\(draft\.phase\);/u,
   );
   assert.match(
-    newThreadDraftSource,
+    draftExecutionUtilitySource,
     /disabled=\{executionLocked\}/u,
   );
-  assert.doesNotMatch(newThreadDraftSource, /workspaceReady/u);
+  assert.match(newThreadDraftSource, /disabled=\{goalBusy \|\| draftSubmissionOwnsNavigation\(draft\.phase\)\}/u);
+  assert.match(newThreadDraftSource, /submissionDisabled=\{connectionPhase !== "ready" \|\| personalDefaultsPending \|\| setupBlocksSubmission\}/u);
+  assert.match(draftExecutionUtilitySource, /<WorkspacePlacementPicker\b[^>]*execution=\{draft\.target\.execution\} locked=\{executionLocked\}/u);
+  const draftSources = newThreadDraftSource + draftExecutionUtilitySource;
+  assert.doesNotMatch(draftSources, /workspaceReady/u);
   assert.doesNotMatch(
-    newThreadDraftSource,
+    draftSources,
     /runtimeWorkspaceRoots[\s\S]{0,160}?disabled/u,
   );
 });
@@ -900,7 +934,7 @@ test("Electron titlebar subtracts only real controls from its native drag surfac
   );
   assert.doesNotMatch(appShellHeaderSource, /className="thread-header-title no-drag"/u);
   assert.match(appShellHeaderSource, /className="thread-header-title"/u);
-  assert.match(appShellHeaderSource, /className="chrome-button no-drag/u);
+  assert.match(appShellHeaderSource, /className=(?:"chrome-button no-drag|\{"chrome-button no-drag")/u);
   assert.match(
     appShellHeaderSource,
     /className="app-shell-header__window-action no-drag"/u,
@@ -1315,12 +1349,16 @@ test("thread edge-scroll is one measured AppShell state", () => {
 });
 
 test("scroll-to-bottom action stays mounted in the Composer zero-height overlay", () => {
+  const timelineDockStyles = readFileSync(new URL("../../packages/chat-render-web/src/timeline-dock.web.scss", import.meta.url), "utf8");
+  assert.match(workbenchStyles, /@use "@opencraft\/chat-render-web\/timeline-dock\.web";/u);
+  assert.match(webConversationSource,
+    /<div className="thread-scroll-to-bottom-anchor">\s*<ScrollToBottomButton\b[^>]*show=\{showScrollToBottom\}/u);
   assert.match(
-    workbenchStyles,
+    timelineDockStyles,
     /\.thread-scroll-to-bottom-anchor\s*\{[\s\S]*?position:\s*relative;[\s\S]*?height:\s*0;[\s\S]*?\}/u,
   );
   assert.match(
-    workbenchStyles,
+    timelineDockStyles,
     /\.thread-scroll-to-bottom-button\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?bottom:\s*calc\(100% \+ 6 \* var\(--spacing\)\);[\s\S]*?opacity:\s*0;[\s\S]*?pointer-events:\s*none;/u,
   );
 
