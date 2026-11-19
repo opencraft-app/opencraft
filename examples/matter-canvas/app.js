@@ -46,7 +46,11 @@
 
   /* ---------- 角色与布局 ---------- */
   function color(id) { var b = E.botOf(W(), id), t = b && W().dsl.teams.find(function (x) { return x.id === b.team; }); return t ? t.color : '#777'; }
-  function face(id, cls) { return '<span class="face ' + (cls || '') + '">' + esc(N(id).slice(-1)) + '</span>'; }
+  function face(id, cls) {
+    var h = 0, i; for (i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 97;
+    var mouth = ['M9 15.500q3 2.600 6 0', 'M9.500 15.500h5', 'M9 15q3 3.400 6 0'][h % 3];
+    return '<span class="face v' + (h % 3) + ' ' + (cls || '') + '" style="--tc:' + color(id) + '"><svg viewBox="0 0 24 24" fill="none" stroke="#1d1a14" stroke-width="1.700" stroke-linecap="round"><circle cx="8.500" cy="10.500" r="1.300" fill="#1d1a14" stroke="none"/><circle cx="15.500" cy="10.500" r="1.300" fill="#1d1a14" stroke="none"/><path d="' + mouth + '"/></svg></span>';
+  }
   function cast(w) {
     var c = E.caseOf(w), s = w.state, set = [c.owner];
     function add(id) { if (id && id !== 'user' && id !== 'contract' && set.indexOf(id) < 0) set.push(id); }
@@ -101,7 +105,7 @@
     list.forEach(function (id) { var P = pos[id]; if (P.stage && id !== c.owner && P.x > pos[c.owner].x) P.flip = true; });
     return { pos: pos, list: list, matter: matter, teams: teams, cast: ids, narrow: nar, alone: ids.length === 1 && ui.level === 'doing' };
   }
-  function phoneAt(id) { var P = L.pos[id]; return P.stage ? { x: P.x + (P.flip ? -114 : 100), y: P.y + 34 } : { x: P.x, y: P.y }; }
+  function phoneAt(id) { var P = L.pos[id]; return P.stage ? { x: P.x + (P.flip ? -117 : 105), y: P.y + 34 } : { x: P.x, y: P.y }; }
 
   var L = null;
   function screenText(w, id) {
@@ -117,8 +121,8 @@
     var html = '', paths = '';
     function seg(a, b, cls) { return '<path class="' + cls + '" d="M' + a.x + ' ' + a.y + 'L' + b.x + ' ' + b.y + '"/>'; }
     var own = L.pos[c.owner], m = L.matter;
-    if (L.narrow) paths += '<path class="owns" d="M' + (m.x - 110) + ' ' + (m.y + 96) + 'C' + (m.x - 110) + ' ' + (m.y + 130) + ' ' + (own.x - 30) + ' ' + (own.y - 170) + ' ' + (own.x - 30) + ' ' + (own.y - 122) + '"/>';
-    else paths += '<path class="owns" d="M' + (m.x + 165) + ' ' + (m.y + 30) + 'C' + (m.x + 250) + ' ' + (m.y + 30) + ' ' + (own.x - 190) + ' ' + (own.y - 92) + ' ' + (own.x - 86) + ' ' + (own.y - 92) + '"/>';
+    var s0 = L.narrow ? [m.x - 110, m.y + 100] : [m.x + 150, m.y + 30], s1 = L.narrow ? [own.x - 62, own.y - 124] : [own.x - 92, own.y - 104];
+    paths += '<path class="owns" d="M' + s0 + 'C' + (L.narrow ? [s0[0], s0[1] + 60, s1[0], s1[1] - 70] : [s0[0] + 130, s0[1] + 40, s1[0] - 130, s1[1] - 30]) + ' ' + s1 + '"/><circle class="pin" cx="' + s0[0] + '" cy="' + s0[1] + '" r="5"/><circle class="pin" cx="' + s1[0] + '" cy="' + s1[1] + '" r="5"/>';
     L.list.forEach(function (a) { L.list.forEach(function (b) {
       if (a >= b) return; var A = L.pos[a], B = L.pos[b];
       var commission = s.hired && E.pairKey(a, b) === E.pairKey(c.owner, s.hired), kn = E.knows(w, a, b);
@@ -146,8 +150,8 @@
       html += '<div class="nd bot' + (id === c.owner ? ' owner' : '') + (P.flip ? ' flip' : '') + enter + '" style="left:' + P.x + 'px;top:' + P.y + 'px">' +
         '<button class="tagc" data-a="bot" data-id="' + id + '">' + face(id) + '<span><b>' + esc(N(id)) + '</b><small>' + esc(roleOf(w, id)) + '</small></span></button>' +
         '<button class="pc' + (busy ? ' busy' : '') + (cp.work ? '' : ' off') + (hot.type === 'file' && hot.operator === id ? ' fresh' : '') + '" data-a="pc" data-id="' + id + '" aria-label="' + esc(N(id)) + '的电脑"><span class="scr"><span class="glass"><em>' + esc(screenText(w, id)) + '</em></span></span><span class="base">电脑<i></i></span><span class="kbd"></span></button>' +
-        '<button class="ph' + (got ? ' ping' : '') + '" data-a="phone" data-id="' + id + '" aria-label="' + esc(N(id)) + '的手机">' + ic('mail') + '手机' + (unread ? '<i class="dot"></i>' : '') + (got ? '<span class="pop">' + esc((s.messages.find(function (x) { return x.id === hot.delivery; }) || {}).envelope || '新消息') + '</span>' : '') + '</button>';
-      if (id === c.owner && L.alone) dutiesOf(w, id).slice(0, 2).forEach(function (d, i) { html += '<div class="duty" style="left:' + (-84 + 160 * i) + 'px"><b>' + esc(d.name) + '</b><span>' + esc(d.text) + '</span></div>'; });
+        '<button class="ph' + (got ? ' ping' : '') + '" data-a="phone" data-id="' + id + '" aria-label="' + esc(N(id)) + '的手机">' + ic('mail') + '<span class="lbl">手机</span>' + (unread ? '<i class="dot"></i>' : '') + (got ? '<span class="pop">' + esc((s.messages.find(function (x) { return x.id === hot.delivery; }) || {}).envelope || '新消息') + '</span>' : '') + '</button>';
+      if (id === c.owner && L.alone) dutiesOf(w, id).slice(0, 2).forEach(function (d, i) { html += '<div class="duty" style="left:' + (-164 + 160 * i) + 'px"><b>' + esc(d.name) + '</b><span>' + esc(d.text) + '</span></div>'; });
       html += '</div>';
     });
     $('#nodes').innerHTML = html; ui.fresh = {};
@@ -178,9 +182,9 @@
   }
   function fit(glide, all) {
     if (!L) return;
-    var m = L.matter, x0 = m.x - 172, x1 = m.x + 172, y0 = m.y - 106, y1 = m.y + 110, ids = L.list;
+    var m = L.matter, x0 = m.x - 186, x1 = m.x + 190, y0 = m.y - 150, y1 = m.y + 130, ids = L.list;
     if (L.narrow && !all && ui.level === 'doing') { ids = focusIds(); if (ids.length > 1 && inMotion()) { x0 = 1e9; x1 = -1e9; y0 = 1e9; y1 = -1e9; } }
-    ids.forEach(function (id) { var P = L.pos[id]; x0 = Math.min(x0, P.x - (P.stage ? (P.flip ? 146 : 92) : 78)); x1 = Math.max(x1, P.x + (P.stage ? (L.alone ? 232 : 132) : 90)); y0 = Math.min(y0, P.y - (P.stage ? 128 : 32)); y1 = Math.max(y1, P.y + (P.stage ? (L.alone ? 162 : 62) : 32)); });
+    ids.forEach(function (id) { var P = L.pos[id]; x0 = Math.min(x0, P.x - (P.stage ? (L.alone ? 172 : P.flip ? 150 : 94) : 82)); x1 = Math.max(x1, P.x + (P.stage ? (L.alone ? 154 : 132) : 90)); y0 = Math.min(y0, P.y - (P.stage ? 150 : 32)); y1 = Math.max(y1, P.y + (P.stage ? (L.alone ? 196 : 92) : 32)); });
     var r = freeRect(), k = Math.max(.16, Math.min(1.1, r.w / (x1 - x0), r.h / (y1 - y0)));
     ui.view = { k: k, x: r.x + r.w / 2 - k * (x0 + x1) / 2, y: r.y + r.h / 2 - k * (y0 + y1) / 2 };
     applyView(glide);
@@ -255,7 +259,7 @@
   function between(s, a, b) { return s.messages.filter(function (m) { return (m.from === a && m.to === b) || (m.from === b && m.to === a); }); }
   function phoneFrame(inner) { return '<div class="iphone"><button class="xclose" data-a="close" aria-label="放下手机">' + ic('close') + '</button><div class="ios"><div class="island"></div><div class="stat"><span>9:41</span>' + STAT + '</div>' + inner + '<div class="home"></div></div></div>'; }
   function clock(seq) { var m = 20 + (seq || 0); return (9 + Math.floor(m / 60)) + ':' + ('0' + m % 60).slice(-2); }
-  function sq(id) { return id === 'user' ? '<span class="face sq me">你</span>' : face(id, 'sq'); }
+  function sq(id) { return id === 'user' ? '<span class="face sq" style="--tc:#9a9a9e"></span>' : face(id, 'sq'); }
   var TICK = '<svg viewBox="0 0 18 11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m1 6 3 3 6-7.500"/><path class="t2" d="m7 6 3 3 6-7.500"/></svg>';
   function pagePhone(pg) {
     var w = W(), s = w.state, c = C(), id = pg.id, o = pg.thread;
