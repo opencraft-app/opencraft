@@ -17,7 +17,7 @@ export class RouterOperatorLease {
   private readonly pending=new Map<number,{resolve(value:any):void;reject(error:Error):void}>();
   private constructor(private readonly worker:Worker,claim:OperatorLeaseClaim){
     this.claim=claim;
-    worker.on("error",error=>this.fail(error));worker.on("exit",()=>this.fail(new Error("Router operator Worker exited")));
+    worker.on("error",error=>this.fail(error instanceof Error ? error : new Error(String(error))));worker.on("exit",()=>this.fail(new Error("Router operator Worker exited")));
     worker.on("message",message=>{
       if(message.ended){this.endedReason=message.ended;void Promise.resolve(this.expire?.(message.ended)).catch(()=>this.failed?.());return;}
       const call=this.pending.get(message.id);if(!call)return;this.pending.delete(message.id);

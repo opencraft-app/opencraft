@@ -38,7 +38,7 @@ export class GenerationRegistryWorker {
     const port = new GenerationRegistryWorker();
     const ownFile = typeof __filename === "string" ? __filename : fileURLToPath(import.meta.url);
     port.worker = new Worker(join(dirname(ownFile), "generation-registry-worker.mjs"), { workerData: { directory }, execArgv: [] });
-    port.worker.on("error", error => port.fail(error));
+    port.worker.on("error", error => port.fail(error instanceof Error ? error : new Error(String(error))));
     port.worker.on("exit", code => port.fail(new Error(`Generation storage Worker exited (${code})`)));
     port.worker.on("message", (message: { id: number; projection?: RegistryProjectionMessage; result?: unknown; fatal?: boolean; error?: {message: string; code?: string} }) => {
       if (message.fatal) { port.fail(Object.assign(new Error(message.error?.message ?? "Generation storage effect is unknown"), {code:message.error?.code})); return; }
