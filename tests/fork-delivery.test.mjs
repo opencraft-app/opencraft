@@ -135,3 +135,20 @@ test('CI and native entrypoints parse as Bash without running external operation
     }
   }
 });
+
+test('consumer sync retains exact source ancestry and rejects mismatched source receipts', t => {
+  const f = fixture(t);
+  const sync = { consumerRevision: 'd'.repeat(40), consumerTree: 'e'.repeat(40),
+    sourceRevision: f.provenance.materializedRevision, sourceTree: f.provenance.originalSourceTree,
+    upstreamRevision: f.provenance.upstreamBaseline, patchCount: 611 };
+  const write = value => { writeFileSync(join(f.root, '.ci/fork-provenance.json'), JSON.stringify({ ...f.provenance, consumerSync: value })); f.commit(); };
+  write(sync);
+  assert.deepEqual(sourceIdentity(f.root).provenance.consumerSync, sync);
+  write({ ...sync, sourceTree: 'f'.repeat(40) });
+  assert.throws(() => sourceIdentity(f.root), /Consumer sync tree mismatch/);
+  write({ ...sync, patchCount: -1 });
+  assert.throws(() => sourceIdentity(f.root), /historical patch count/);
+  const foreign = f.git('commit-tree', f.provenance.originalSourceTree, '-m', 'unrelated source tree');
+  write({ ...sync, sourceRevision: foreign });
+  assert.throws(() => sourceIdentity(f.root));
+});

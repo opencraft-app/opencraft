@@ -21,6 +21,17 @@ export function sourceIdentity(root = repository) {
   assert.equal(git('rev-parse', `${provenance.materializedRevision}^{tree}`), provenance.originalSourceTree, 'Materialized business tree mismatch');
   assert.equal(git('rev-parse', `${provenance.materializedRevision}^`), provenance.upstreamBaseline, 'Upstream baseline mismatch');
   git('merge-base', '--is-ancestor', provenance.materializedRevision, sourceRevision);
+  if (provenance.consumerSync !== undefined) {
+    const sync = provenance.consumerSync;
+    assert(sync && typeof sync === 'object', 'Invalid consumer sync provenance');
+    for (const key of ['consumerRevision', 'consumerTree', 'sourceRevision', 'sourceTree', 'upstreamRevision'])
+      assert.match(sync[key] ?? '', /^[a-f0-9]{40}$/, `Invalid consumer sync ${key}`);
+    assert(Number.isSafeInteger(sync.patchCount) && sync.patchCount >= 0, 'Invalid historical patch count');
+    assert.equal(git('rev-parse', `${sync.sourceRevision}^{tree}`), sync.sourceTree, 'Consumer sync tree mismatch');
+    git('merge-base', '--is-ancestor', provenance.materializedRevision, sync.sourceRevision);
+    git('merge-base', '--is-ancestor', sync.upstreamRevision, sync.sourceRevision);
+    git('merge-base', '--is-ancestor', sync.sourceRevision, sourceRevision);
+  }
   return { schemaVersion: 1, sourceRevision, sourceTree, buildId: `git-${sourceRevision}-join-ci`, provenance };
 }
 export function verifySnapshot(snapshot, root = repository) {

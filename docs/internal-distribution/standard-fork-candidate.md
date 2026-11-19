@@ -45,3 +45,20 @@ base。详见 [Join Docker 入口](../../docker/README.join.md)。部署模板�
 
 完整 CI、Web/四角色镜像构建、自有 Electron 编译与运行、镜像内 Python/CA、
 真实 cold recovery、登录、模型与外部服务均不能由轻量测试替代。独立 Gateway 基线已完成真实 592 提交导入与同机冷恢复；证据由父迁移任务保存，不等于异机容灾。本轮只允许授权的 gateway-test/* 测试分支，未更改生产、源 consumer 或正式 master。
+
+## 追平 master 的增量演练
+
+已固定消费 master `90c8866ebb7933abf4561c7a574f3ce17963923b`，611 个历史补丁，
+精确业务 tree `691abb622d1fdfa978db50462c053ad5d30df433`。
+`consumer-sync` 分支保存精确业务树，从旧物化提交正常演进；候选 master 通过真实三方
+merge 保留交付工具。本次自动合并无冲突，未丢弃 Join、Relay 或核心改动。
+`consumerSync` 回执与最初迁移来源分开保留，并检查 exact tree 与祖先关系。
+这只是在旧 consumer 仍被开发期间的追平步骤；正式切换后直接在 fork 上开发，不再生成补丁队列。
+
+### 源码测试子进程环境
+
+`npm run ci:test:runtime -- join|relay|wecom|core-anthropic|core` 在短路径、0700 私有临时目录
+运行套件，独立创建 HOME/data/workspace，不继承生产凭据、SSH agent 或现有部署路径。
+NODE_OPTIONS 明确传递锁定依赖的 tsx loader，让原始 Node 子进程也能运行未打包源码。
+退出及失败均清理临时测试目录，保留真实退出码；不跳过业务断言或把测试失败视为成功。
+这修复测试装配，不修改实际打包运行时的加载行为。`ci:verify` 使用该入口，并补齐 WeCom 回归。

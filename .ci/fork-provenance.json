@@ -7,5 +7,13 @@
   "originalConsumerTree": "af45637b27750fe06de76f70e623eaf236900689",
   "originalSourceTree": "1f4a65402e56c9f9d1b35c89be75d9c25260405f",
   "upstreamBaseline": "3a813f9a49c60656b3a103ec5f0d74dd5365d3ef",
-  "materializedRevision": "ab86ae2b7ae2084818333752c5ecf4797497413b"
+  "materializedRevision": "ab86ae2b7ae2084818333752c5ecf4797497413b",
+  "consumerSync": {
+    "consumerRevision": "90c8866ebb7933abf4561c7a574f3ce17963923b",
+    "consumerTree": "16c459edb77a3774a1c3c40083227657a24b4c3b",
+    "sourceRevision": "4d28f8d58e5196dc3e35fe715768d7266392d8c6",
+    "sourceTree": "691abb622d1fdfa978db50462c053ad5d30df433",
+    "upstreamRevision": "3a813f9a49c60656b3a103ec5f0d74dd5365d3ef",
+    "patchCount": 611
+  }
 }

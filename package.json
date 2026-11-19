@@ -331,7 +331,8 @@
     "ci:verify": "bash scripts/ci/verify.sh",
     "ci:build": "bash scripts/ci/build.sh",
     "ci:build:image": "bash scripts/ci/build-image.sh",
-    "ci:test:delivery": "node --test --test-concurrency=1 tests/fork-delivery.test.mjs tests/portable-deployment.test.mjs tests/workspace-preflight.test.mjs tests/package-inventory.test.mjs tests/browser-container-flags.test.mjs tests/browser-control-validation.test.mjs tests/csighub-upload.test.mjs"
+    "ci:test:delivery": "node --test --test-concurrency=1 tests/fork-delivery.test.mjs tests/portable-deployment.test.mjs tests/workspace-preflight.test.mjs tests/package-inventory.test.mjs tests/browser-container-flags.test.mjs tests/browser-control-validation.test.mjs tests/csighub-upload.test.mjs tests/ci-test-environment.test.mjs",
+    "ci:test:runtime": "node scripts/ci/test-environment.mjs"
   },
   "dependencies": {
     "deepmerge": "file:vendor/deepmerge",

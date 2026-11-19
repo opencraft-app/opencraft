@@ -22,8 +22,7 @@ npm ci --no-audit --no-fund
 for workspace in @opencraft/account-pool-host @opencraft/codex-core @join/opencraft-distribution; do
   npm run typecheck --workspace "$workspace"
 done
-npm run test:codex-anthropic
-npm run test:codex-core
-npm run join:test
-npm run join:test:relay
+for suite in core-anthropic core join relay wecom; do
+  node scripts/ci/test-environment.mjs "$suite"
+done
 node scripts/ci/source-identity.mjs --check "$ci_snapshot"
