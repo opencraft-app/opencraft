@@ -237,6 +237,12 @@ export class ThreadAccessSession {
         policies.clear();
       }
     }
+    const projectViewer = (target: Value, id: string, serverId?: string) => {
+      // Never trust an engine or a different reader's cached relationship.
+      delete target.createdByViewer;
+      const policy = policyFor(id,serverId);
+      if (policy?.creatorActorId && this.context) target.createdByViewer = policy.creatorActorId === this.context.actorId;
+    };
     const result = object(packet.result);
     if (pending?.method === 'initialize' && !packet.error) {
       const capabilities = object(result.capabilities), extensions = object(capabilities.extensions);
@@ -267,6 +273,7 @@ export class ThreadAccessSession {
           if (typeof value !== 'string') {
             const target = validId(object(row.thread).id) ? object(row.thread) : row;
             target.accessMode = policyFor(id)!.accessMode;
+            projectViewer(target,id);
           }
           track(id); return true;
         });
@@ -284,6 +291,7 @@ export class ThreadAccessSession {
       if (validId(row.id) && typeof row.cwd === 'string' && typeof row.updatedAt === 'number') {
         if (!allowed(row.id,serverId)) return undefined;
         row.accessMode = policyFor(row.id,serverId)!.accessMode;
+        projectViewer(row,row.id,serverId);
       }
       const own = [row.threadId,row.thread_id,object(row.thread).id].filter(validId);
       if (own.some(id => !allowed(id,serverId))) return undefined;

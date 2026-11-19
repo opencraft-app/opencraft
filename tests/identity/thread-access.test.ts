@@ -167,3 +167,58 @@ test('handoff rechecks the source at receipt delivery and never copies source co
   assert.equal(JSON.stringify(bob.out).includes('secret'),false);
   assert.equal((await alice.request('thread/start',{handoffSource:{threadId:'source',serverId:'foreign'}},3)).consumed,true);
 });
+
+test("directory creation relation is per authenticated reader and overrides provider claims", async (t) => {
+  const f = await fixture(t),
+    alice = f.lane(f.alice),
+    bob = f.lane(f.bob),
+    anonymous = f.lane(undefined);
+  f.store.created("server", "new", f.alice);
+  const row = {
+    id: "new",
+    cwd: "/synthetic",
+    updatedAt: 2,
+    createdAt: 1,
+    createdByViewer: true,
+  };
+  for (const [lane, expected] of [
+    [alice, true],
+    [bob, false],
+    [anonymous, undefined],
+  ] as const) {
+    await lane.request("thread/list");
+    assert.equal(
+      lane.result(1, { data: [row], nextCursor: null }).result.data[0]
+        .createdByViewer,
+      expected,
+    );
+    const notification = lane.session.project(
+      JSON.stringify({
+        method: "opencraft/thread-catalog/changed",
+        params: { change: { type: "upsert", thread: row } },
+      }),
+    );
+    assert.equal(
+      JSON.parse(notification!).params.change.thread.createdByViewer,
+      expected,
+    );
+  }
+  await alice.request("thread/list");
+  assert.equal(
+    alice.result(1, { data: [{ ...row, id: "unknown" }], nextCursor: null })
+      .result.data[0].createdByViewer,
+    undefined,
+    "absence is unknown, never a provider assertion",
+  );
+  f.store.set("server", "new", "private", 1, f.alice);
+  assert.equal(
+    bob.session.project(
+      JSON.stringify({
+        method: "opencraft/thread-catalog/changed",
+        params: { change: { type: "upsert", thread: row } },
+      }),
+    ),
+    null,
+    "relationship never grants access",
+  );
+});

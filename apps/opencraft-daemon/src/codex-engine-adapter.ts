@@ -504,7 +504,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     const metadata = topology && change.type === "upsert"
       ? { ...params, change: { ...change, thread: { ...change.thread, ...topology } } } : params;
     for (const clientId of this.initializedClients) this.emit({ method, params: metadata }, clientId);
-  }, true);
+  }, true, () => this.provisionalThreads?.catalog, () => this.diagnostic({ event: "thread-catalog-observation-failed" }));
   private durableCatalog: DurableThreadCatalog | null = null;
   private metadataRequests = 0;
   private messageAttachments: OpenCraftMessageAttachments | null = null;

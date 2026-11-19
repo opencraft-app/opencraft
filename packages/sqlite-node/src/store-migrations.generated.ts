@@ -431,7 +431,13 @@ export const STORE_MIGRATIONS = {
         "checksum": "bedae82d9fe833746c3594a596e038d3abd52c598c3a916da4062c85edc9350a"
       }
     ],
-    "migrations": []
+    "migrations": [
+      {
+        "version": 3,
+        "name": "0001_creation_catalog_evidence",
+        "sql": "ALTER TABLE `thread_creations` ADD COLUMN `catalog_state` text CHECK(catalog_state IN ('pending','retired'));\n--> statement-breakpoint\nALTER TABLE `thread_creations` ADD COLUMN `catalog_only` integer NOT NULL DEFAULT 0 CHECK(catalog_only IN (0,1));\n"
+      }
+    ]
   },
   "token-usage-state-database": {
     "baseline": [

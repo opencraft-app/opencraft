@@ -1,10 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-const worker = readFileSync(
-  new URL("../../scripts/remote-browser/worker.cjs", import.meta.url),
-  "utf8",
-);
+const worker = readFileSync(new URL("../../scripts/remote-browser/worker.cjs", import.meta.url), "utf8");
 // Execute the actual worker command and both automation paths. Only native
 // Electron/renderer boundaries are fixtures; no control logic is reimplemented.
 const implementation = worker.slice(
@@ -49,13 +46,7 @@ function fixture(installed = true, sourceText = implementation) {
       },
     },
   };
-  const command = new Function(
-    "pages",
-    "resetInput",
-    "activity",
-    "bridge",
-    `${sourceText}\nreturn command;`,
-  )(
+  const command = new Function("pages", "resetInput", "activity", "bridge", `${sourceText}\nreturn command;`)(
     new Map([[p.id, p]]),
     async () => {
       events.push("reset");
@@ -103,16 +94,7 @@ test("installed bridge cleanup permits grant, click and release in order", async
   assert.equal(await f.automate(), "clicked");
   await f.control(null, { control: token });
   assert.equal(f.p.controlToken, null);
-  assert.deepEqual(f.events, [
-    "reset",
-    "retire",
-    "cleanup",
-    "clear",
-    "reset",
-    "retire",
-    "cleanup",
-    "clear",
-  ]);
+  assert.deepEqual(f.events, ["reset", "retire", "cleanup", "clear", "reset", "retire", "cleanup", "clear"]);
 });
 test("negative control reproduces exact original validate failure", async () => {
   const original = implementation.replace(
@@ -127,12 +109,7 @@ test("negative control reproduces exact original validate failure", async () => 
   });
   assert.equal(f.p.controlToken, null);
 });
-for (const interruption of [
-  "navigation",
-  "close",
-  "failure",
-  "reset-navigation",
-]) {
+for (const interruption of ["navigation", "close", "failure", "reset-navigation"]) {
   test(`cleanup ${interruption} prevents control transfer`, async () => {
     const f = fixture();
     if (interruption === "navigation")
@@ -163,10 +140,7 @@ test("external preview still requires current document and control", async () =>
     code: "CONTROL_LOST",
   });
   await f.control();
-  await assert.rejects(
-    f.automate("annotateClearPreview", { document: undefined }),
-    { code: "CONTROL_LOST" },
-  );
+  await assert.rejects(f.automate("annotateClearPreview", { document: undefined }), { code: "CONTROL_LOST" });
   await assert.rejects(f.control(null, { document: "stale" }), {
     code: "DOCUMENT_CHANGED",
   });

@@ -153,7 +153,7 @@ const RECENT_PAGE_SIZE = 10;
 
 function sidebarUnread(thread: SidebarThread, grouping: ThreadListGroupingContribution | null) {
   return Boolean(thread.unread) && (grouping?.isParticipant?.({
-    hostId: thread.connectionHostId, threadId: thread.id, updatedAt: thread.updatedAt, pinned: thread.pinned,
+    hostId: thread.connectionHostId, threadId: thread.id, updatedAt: thread.updatedAt, pinned: thread.pinned, createdByViewer: thread.createdByViewer,
   }) ?? true);
 }
 
@@ -305,7 +305,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     dismiss?.();
   });
   const references = useMemo(() => threads.filter(thread => thread.visibility !== "hidden").map(thread => ({
-    hostId: thread.connectionHostId, threadId: thread.id, updatedAt: thread.updatedAt, pinned: thread.pinned,
+    hostId: thread.connectionHostId, threadId: thread.id, updatedAt: thread.updatedAt, pinned: thread.pinned, createdByViewer: thread.createdByViewer,
   })), [threads]);
   const groupingWatch = useRef<(() => void) | undefined>(undefined);
   useEffect(() => {

@@ -882,3 +882,35 @@ calendar timer refreshes labels at the next local midnight (calendar/DST-aware),
 pauses in hidden documents and reconciles on focus/visibility. It never requests
 catalog data, sorts rows or changes selection. Stable row/tree/menu owners and
 scroll tracks survive label updates; intra-day focus retains the same day value.
+
+### Creation evidence and viewer relationship
+
+A creation receipt and native creation notification feed the same catalog
+acceptance model. Metadata alone is not first-Turn acceptance; an accepted Turn
+without metadata cannot fabricate a row. When both facts exist, publish the row
+without waiting for the native discovery index, title generation or full
+participant details. Duplicate receipts and reordered notifications do not
+create another row; late metadata cannot undo a known removal or repaint a
+completed pending Turn as running. Native list evidence retires the temporary
+projection; its existing read-acknowledgement and recency rules still apply.
+
+The Codex adapter reuses its creation journal, but distinguishes catalog-only
+observations from recovery receipts: notifications cannot prove empty history or
+bind an execution environment. A later receipt enriches that partial record once.
+Input IDs are confirmed only by a receipt for the same accepted Turn. On restart,
+durable acceptance alone cannot resurrect possibly archived rows; fresh native
+metadata is required. Catalog failure invalidates the projection and never asks
+the caller to replay an already accepted native mutation.
+
+`createdByViewer` is optional authenticated reader metadata, recomputed by the
+access owner after authorization. `true` is positive creation relationship
+for personal filtering; `false` does not disprove later participation, and
+absence means unknown/unsupported. It is neither an access grant nor a complete
+participant list. The shared offline catalog does not persist this per-reader
+proof. Product adapters may use it without waiting for legacy membership batches;
+unknown rows keep their previous filtering semantics. Actor/Host isolation,
+permission revocation, explicit filters, expansion and draft continuity remain
+owned by their existing layers.
+
+Evidence: thread-creation-evidence and thread-access tests; downstream sidebar
+creation regression and desktop/touch browser fixture.
