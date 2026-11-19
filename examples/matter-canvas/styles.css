@@ -54,3 +54,10 @@ button.cell:active { background: var(--press); }
 .act { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
 .go { min-height: 48px; border-radius: 8px; background: var(--green); color: #fff; font-weight: 600; text-align: center; } .go.alt { background: var(--cell); color: var(--ink); }
 textarea { display: block; width: 100%; min-height: 180px; padding: 14px 16px; border: 0; background: var(--cell); color: var(--ink); font: inherit; line-height: 1.6; resize: vertical; } textarea:focus { outline: none; }
+.sw { cursor: pointer; } .sw input { appearance: none; -webkit-appearance: none; width: 50px; height: 30px; border-radius: 15px; background: var(--line); position: relative; flex: none; margin: 0; cursor: pointer; transition: background .15s; }
+.sw input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 26px; height: 26px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .15s; }
+.sw input:checked { background: var(--green); } .sw input:checked::after { transform: translateX(20px); }
+.field { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 0 16px; background: var(--cell); position: relative; } .field + .field::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; height: 1px; background: var(--line); }
+.field label { width: 4em; flex: none; } .field input { flex: 1; min-width: 0; height: 54px; border: 0; background: none; font: inherit; color: var(--ink); } .field input:focus { outline: none; }
+.warn { color: var(--red); } .cell.c b { text-align: center; } .cell.c { justify-content: center; }
+.go.red { background: var(--red); }
