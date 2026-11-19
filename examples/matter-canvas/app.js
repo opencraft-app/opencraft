@@ -104,8 +104,8 @@
       return nav(par ? '子事情' : '事情', open(t) && t.owner ? { p: 'tmore', t: t.id } : null) + '<div class="body"><div class="cells"><div class="cell text"><small><span class="st ' + st[1] + '">' + st[0] + '</span></small><b style="font-size:20px">' + esc(t.title) + '</b></div></div>' + look + (act ? '<div class="act">' + act + '</div>' : '<div class="gap"></div>') +
         '<div class="cells">' + (t.owner ? '<button class="cell a"' + go({ p: 'one', id: t.owner }) + '>' + av(t.owner) + '<span class="t"><b>' + esc(N(t.owner)) + '</b><span>负责人</span></span><span class="r">' + GO + '</span></button>' : '') +
         (par ? cell({ p: 'thing', t: par.id }, '', par.title, '属于这件事 · ' + N(t.from) + '派的，由' + N(t.from) + '验收', '') : '') + '</div>' +
-        (par ? '' : '<div class="sec">子事情</div>' + (kids.length ? '<div class="cells">' + kids.map(todo).join('') + '</div>' : empty('还没有子事情', (t.owner ? esc(N(t.owner)) : '负责人') + '把一部分交给别人办时，会出现在这里，由他自己验收。'))) +
-        '<div class="sec">经过</div>' + (log.length ? '<div class="cells">' + log.map(logRow).join('') + '</div>' : empty('还没有经过', '有人说了什么、交出了什么，会按时间出现在这里。')) + '<div class="gap"></div></div>';
+        (par || (!t.owner && !kids.length) ? '' : '<div class="sec">子事情</div>' + (kids.length ? '<div class="cells">' + kids.map(todo).join('') + '</div>' : empty('还没有子事情', (t.owner ? esc(N(t.owner)) : '负责人') + '把一部分交给别人办时，会出现在这里，由他自己验收。'))) +
+        (!t.owner && log.length < 2 ? '<p class="foot">这件事还没有人负责。分配之后，负责人说了什么、交给了谁、交出了什么，都会出现在这一页。</p>' : '<div class="sec">经过</div>' + (log.length ? '<div class="cells">' + log.map(logRow).join('') + '</div>' : empty('还没有经过', '有人说了什么、交出了什么，会按时间出现在这里。'))) + '<div class="gap"></div></div>';
     },
     file: function (g) {
       var f = F(g.f), t = T(f.t);
