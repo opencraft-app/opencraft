@@ -1,0 +1,14 @@
+[Unit]
+Description=Upload verified OpenCraft releases to CSIGHub
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+ConditionPathExists=/opt/opencraft-docker/csighub-upload/.env
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/bin/bash /opt/opencraft-docker/csighub-upload/run.sh
+TimeoutStartSec=2h
+Nice=10
+IOSchedulingClass=idle

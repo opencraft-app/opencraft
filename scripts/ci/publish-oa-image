@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+# Prevent the parent Runner's shell trace from exposing credential handling.
+set +x
+ci_revision="$(git rev-parse HEAD)"
+ci_repo="csighub.tencentyun.com/join/opencraft"
+case "${1:-single}" in
+  hands) ci_roles=(hands) ;;
+  gateway-brain|control) ci_roles=(gateway brain proxy) ;;
+  roles) ci_roles=(gateway brain hands proxy) ;;
+  single) ci_roles=(single) ;;
+  *) echo 'Usage: publish-oa-image [control|gateway-brain|hands|roles|single]' >&2; exit 2 ;;
+esac
+ci_ids=()
+ci_targets=()
+for role in "${ci_roles[@]}"; do
+  if [[ "$role" == single ]]; then
+    tag="$ci_revision"
+    receipt=".local/ci/$ci_revision.iid"
+    id="${CI_IMAGE_ID:-}"
+  else
+    tag="$role-$ci_revision"
+    receipt=".local/ci/$ci_revision-$role.iid"
+    id=""
+  fi
+  if [[ -z "$id" ]]; then
+    [[ -f "$receipt" ]] || { echo "Missing $receipt; run ci:build:image first" >&2; exit 1; }
+    id="$(cat "$receipt")"
+  fi
+  [[ "$id" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo 'Expected an immutable image ID' >&2; exit 1; }
+  identity="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}} {{index .Config.Labels "app.opencraft.distribution"}}' "$id")"
+  [[ "$identity" == "$ci_revision join" ]] || { echo "Wrong Join revision for $tag" >&2; exit 1; }
+  if [[ "$role" != single ]]; then
+    actual_role="$(docker image inspect --format '{{index .Config.Labels "org.opencraft.role"}} {{join .Config.Entrypoint " "}}' "$id")"
+    [[ "$actual_role" == "$role /opt/opencraft/bin/node /opt/opencraft/runtime/container-service.mjs $role" ]] || { echo "Wrong role for $tag" >&2; exit 1; }
+  fi
+  ci_ids+=("$id")
+  ci_targets+=("$ci_repo:$tag")
+done
+if [[ -n "${REGISTRY_PASSWORD:-}" ]]; then
+  ci_config_directory="$(mktemp -d)"
+  chmod 700 "$ci_config_directory"
+  trap 'rm -rf -- "$ci_config_directory"' EXIT
+  # Docker contexts can include TLS material; retain their normal resolution.
+  ci_context="$(docker context show)"
+  if [[ "$ci_context" != default ]]; then
+    docker context export "$ci_context" "$ci_config_directory/context.tar" >/dev/null
+    docker --config "$ci_config_directory" context import "$ci_context" "$ci_config_directory/context.tar" >/dev/null
+    export DOCKER_CONTEXT="$ci_context"
+  fi
+  export DOCKER_CONFIG="$ci_config_directory"
+  printf '%s' "$REGISTRY_PASSWORD" | docker login csighub.tencentyun.com --username "${REGISTRY_USERNAME:-skipzhang}" --password-stdin
+  unset REGISTRY_PASSWORD
+fi
+mkdir -p .local/ci
+ci_refs=()
+for i in "${!ci_ids[@]}"; do
+  target="${ci_targets[$i]}"
+  docker tag "${ci_ids[$i]}" "$target"
+  docker push "$target"
+  digest="$(docker buildx imagetools inspect "$target" | awk '$1 == "Digest:" && !digest { digest=$2 } END { print digest }')"
+  [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "Missing remote digest for $target" >&2; exit 1; }
+  ref="$ci_repo@$digest"
+  docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$target" | grep -Fx "$ref" >/dev/null
+  if [[ ${1:-single} == hands ]]; then
+    docker pull --platform linux/amd64 "$ref"
+    [[ "$(docker image inspect --format '{{.Id}}' "$ref")" == "${ci_ids[$i]}" ]]
+  fi
+  echo "$target -> $ref"
+  ci_refs+=("$ref")
+done
+node --input-type=module - "${1:-single}" "$ci_revision" "${ci_refs[@]}" <<'JS'
+import { writeFileSync, renameSync } from 'node:fs';
+const [mode, revision, ...refs] = process.argv.slice(2);
+const roles = { hands: ['hands'], control: ['gateway', 'brain', 'proxy'], 'gateway-brain': ['gateway', 'brain', 'proxy'], roles: ['gateway', 'brain', 'hands', 'proxy'] }[mode];
+const multi = mode !== 'single';
+const group = mode === 'roles' ? 'role' : mode;
+const path = multi ? `.local/ci/${revision}-${group}-digests.json` : '.local/ci/image-digests.json';
+const result = multi ? Object.fromEntries(roles.map((role, i) => [role, refs[i]])) : refs;
+const tmp = path + '.' + process.pid;
+writeFileSync(tmp, JSON.stringify(result, null, 2) + '\n');
+renameSync(tmp, path);
+JS

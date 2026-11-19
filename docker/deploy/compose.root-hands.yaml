@@ -1,0 +1,29 @@
+# Standard Join profile: OPENCRAFT_HANDS_ROOT=1. Other roles keep OPENCRAFT_UID:GID.
+# The common mount is essential: publishing sockets across separate binds is EXDEV.
+services:
+  hands:
+    user: "0:0"
+    cap_drop: [ALL]
+    cap_add: [SYS_ADMIN, SETUID, SETGID, SYS_CHROOT, DAC_OVERRIDE, CHOWN, FOWNER, KILL]
+    environment:
+      OPENCRAFT_HANDS_BROWSER_NAME: ${OPENCRAFT_HANDS_BROWSER_NAME:-browser}
+      OPENCRAFT_HANDS_BROWSER_DIRECTORY: ${OPENCRAFT_HANDS_BROWSER_DIRECTORY:-}
+      OPENCRAFT_HANDS_CLIENT_UID: ${OPENCRAFT_UID:?Set client UID}
+      OPENCRAFT_HANDS_CLIENT_GID: ${OPENCRAFT_GID:?Set client GID}
+      OPENCRAFT_HANDS_CLIENT_DIRECTORY: ${OPENCRAFT_HANDS_PUBLIC_CLIENT_DIRECTORY:-${OPENCRAFT_EXECUTION_DIR:-/var/lib/opencraft/execution}}
+      OPENCRAFT_ROOT_HANDS_SERVER_DIRECTORY: /run/opencraft-hands/${OPENCRAFT_HANDS_SERVER_NAME:-server}
+      OPENCRAFT_ROOT_HANDS_CLIENT_DIRECTORY: /run/opencraft-hands/${OPENCRAFT_HANDS_CLIENT_NAME:-client}
+      OPENCRAFT_EXECUTION_DIR: /run/opencraft-hands/${OPENCRAFT_HANDS_SERVER_NAME:-server}
+      OPENCRAFT_BROWSER_DATA_DIR: /run/opencraft-hands/${OPENCRAFT_HANDS_SERVER_NAME:-server}/browser
+      OPENCRAFT_HANDS_EXECUTION_SOCKET: /run/opencraft-hands/${OPENCRAFT_HANDS_SERVER_NAME:-server}/exec-owner.sock
+      OPENCRAFT_HANDS_EXECUTION_TOKEN: /run/opencraft-hands/${OPENCRAFT_HANDS_SERVER_NAME:-server}/exec-owner.token
+      HOME: /run/opencraft-hands/${OPENCRAFT_HANDS_SERVER_NAME:-server}
+    volumes:
+      - type: bind
+        source: ${OPENCRAFT_HOST_HANDS_ROOT_DIR:?Set common root/client IPC parent}
+        target: /run/opencraft-hands
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${OPENCRAFT_HOST_EXECUTION_DIR:?Set client IPC directory}
+        target: ${OPENCRAFT_HANDS_PUBLIC_CLIENT_DIRECTORY:-${OPENCRAFT_EXECUTION_DIR:-/var/lib/opencraft/execution}}
+        bind: {create_host_path: false}

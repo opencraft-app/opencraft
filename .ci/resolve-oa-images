@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Write one release's role digests as a Compose --env-file.
+set -euo pipefail
+if [[ $# != 2 ]] || [[ ! $1 =~ ^[0-9a-f]{40}$ ]]; then
+  echo 'Usage: resolve-oa-images FULL_FORK_SHA IMAGE_ENV_FILE' >&2
+  exit 2
+fi
+revision=$1
+output=$2
+[[ ! -d "$output" && ! -L "$output" ]] || { echo "Expected a regular output file: $output" >&2; exit 2; }
+repo=csighub.tencentyun.com/join/opencraft
+stage=$(mktemp "${output}.XXXXXXXX")
+trap 'rm -f -- "$stage"' EXIT
+for role in gateway brain hands proxy; do
+  tag="$repo:$role-$revision"
+  digest=$(docker buildx imagetools inspect "$tag" |
+    awk '$1 == "Digest:" && !digest { digest=$2 } END { print digest }')
+  [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "Missing manifest digest for $tag" >&2; exit 1; }
+  key=$(printf '%s' "$role" | tr '[:lower:]' '[:upper:]')
+  printf 'OPENCRAFT_%s_IMAGE=%s@%s\n' "$key" "$repo" "$digest" >> "$stage"
+done
+if ! ln "$stage" "$output" 2>/dev/null; then
+  cmp -s "$stage" "$output" || { echo "Cannot record release digests in $output" >&2; exit 1; }
+fi

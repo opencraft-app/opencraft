@@ -327,7 +327,11 @@
     "smoke:remote-browser-owner-automation": "OPENCRAFT_SMOKE_AUTOMATION_ONLY=1 OPENCRAFT_SMOKE_PRIVATE_OWNER=1 node --import tsx scripts/smoke/browser/smoke-remote-browser.ts",
     "smoke:browser-codex-cli": "OPENCRAFT_SMOKE_AUTOMATION_ONLY=1 OPENCRAFT_SMOKE_PRIVATE_OWNER=1 OPENCRAFT_SMOKE_CODEX_CLI=1 node --import tsx scripts/smoke/browser/smoke-remote-browser.ts",
     "typecheck:browser-state": "tsc --noEmit -p scripts/remote-browser/tsconfig.json",
-    "test:browser-service": "node --import tsx --test tests/browser/browser-state-store.test.mjs tests/browser/remote-browser-session.test.mjs tests/browser/remote-browser-owner.test.mjs tests/browser/remote-browser-automation-requests.test.mjs tests/browser/browser-capabilities.test.ts tests/browser/browser-metadata-merge.test.ts tests/browser/remote-browser-metadata-sync.test.ts tests/browser/offline-remote-storage.test.ts tests/browser/remote-browser-metadata-limits.test.ts tests/browser/browser-execution-grant.test.ts tests/identity/browser-execution-context.test.ts tests/execution/session-capabilities.test.ts tests/execution/capability-content.test.ts tests/execution/dsh-capability-output.test.mjs"
+    "test:browser-service": "node --import tsx --test tests/browser/browser-state-store.test.mjs tests/browser/remote-browser-session.test.mjs tests/browser/remote-browser-owner.test.mjs tests/browser/remote-browser-automation-requests.test.mjs tests/browser/browser-capabilities.test.ts tests/browser/browser-metadata-merge.test.ts tests/browser/remote-browser-metadata-sync.test.ts tests/browser/offline-remote-storage.test.ts tests/browser/remote-browser-metadata-limits.test.ts tests/browser/browser-execution-grant.test.ts tests/identity/browser-execution-context.test.ts tests/execution/session-capabilities.test.ts tests/execution/capability-content.test.ts tests/execution/dsh-capability-output.test.mjs",
+    "ci:verify": "bash scripts/ci/verify.sh",
+    "ci:build": "bash scripts/ci/build.sh",
+    "ci:build:image": "bash scripts/ci/build-image.sh",
+    "ci:test:delivery": "node --test --test-concurrency=1 tests/fork-delivery.test.mjs tests/portable-deployment.test.mjs tests/workspace-preflight.test.mjs tests/package-inventory.test.mjs tests/browser-container-flags.test.mjs tests/browser-control-validation.test.mjs tests/csighub-upload.test.mjs"
   },
   "dependencies": {
     "deepmerge": "file:vendor/deepmerge",

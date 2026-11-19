@@ -1,18 +1,17 @@
-# 内部发行版补充
+# 内部标准 fork 候选
 
-本 checkout 是 `git.woa.com/join/opencraft` 内部发行版。核心规则继续适用；
-产品装配归 `products/join`，本机源码集成/发布分支采用 `env/local` 并跟踪
-`origin/env/local`，替代本地旧 `dev/local` 发布约定。同步与贡献边界见
-[内部发行版](docs/internal-distribution/README.md)。GitHub upstream 仅拉取；
-不得将内部产品历史直接推入公共上游。
+本 checkout 是 `git.woa.com/join/opencraft` 的隔离标准 fork 候选，尚未切换内部
+`master` 或生产。源码直接位于根目录；`products/join` 与 `relay` 持有内部产品装配。
+新的标准 fork 入口取代旧 submodule、补丁装配和 `env/local` 主集成约定。
+核心规则继续适用，迁移事实与交付入口见
+[标准 fork 候选交付](docs/internal-distribution/standard-fork-candidate.md)。
 
-内部提交与发布须遵守以下约定，操作步骤见[内部集成与发布](docs/internal-distribution/README.md#内部集成与发布)：
-
-- 推送前刷新 `origin/env/local`，从干净工作树整理明确范围；本地 `env/local` 可能含其他会话的待发布改动，不直接整条推送或部署。构建固定已提交、已集成的完整 SHA。
-- 工蜂校验新增历史中的 committer 是否属于认证账户。使用该账户已绑定且获授权的身份，以命令级 `git -c user.name=… -c user.email=…` 设置，不修改全局身份。当前校验记录见发行版文档，不能把一次授权当作永久邮箱偏好。
-- 祖先提交被拒绝时，从最新远端分支以 `cherry-pick -x` 整理所需提交，保留原 Author、来源 SHA 和原分支；只改最后一条提交无效。不 force-push、不改写已发布历史，不用 `merge -s ours` 跳过差异。
-- 推送明确准备好的提交到内部 `env/local`；远端推进后重新核对集成。共享分支合入与服务切换分别使用既有集成锁、部署锁，不能修改其他会话的工作树或覆盖其改动。
-- 分别记录远端 SHA、构建源 SHA/buildId 和运行镜像。整理历史后 SHA 不同，只有完整源码树一致才能复用原产物；保留原构建版本，不重标 SHA。每次发布新建产物目录，再采集现网基线，不能覆盖旧发布记录。仅文档更新无需重启服务。
+- 最终内部集成目标是 `master` / `origin/master`；`env/local` 仅是环境分支，不是完成集成的替代。本轮只做隔离候选与授权 `gateway-test/*` 网关试跑，不改正式 master，不发布、不部署。依赖安装、测试和构建仅在独立验证 checkout 执行。
+- GitHub upstream 仅拉取。私有 fork、内部产品历史、配置与本候选不得公开；公共贡献须在独立公共分支整理。
+- 后续获得集成授权时，先刷新 `origin/master` 与相关环境分支，从干净工作树整理明确范围，使用公共 Git 目录的 `codex-integration.lock`；服务切换另用任务部署锁。不得修改其他会话工作树、整条推送夹带改动或 force-push。
+- 网关入口持有原始 Git 历史；工蜂后端只持有 committer 适配后的投影历史。只通过网关写后端，不能直接工蜂 MR/网页编辑或把投影历史合并回原始 fork。身份与后端漂移拒绝必须调查，不以改写公共祖先、强推或 `merge -s ours` 绕过。专用身份授权不等于永久邮箱偏好，不修改全局 Git 配置。
+- 构建固定、已提交的完整 SHA。原 consumer revision/tree、原业务 tree、物化提交、公开 upstream baseline 与当前 fork revision/tree 分开记录；物化 SHA 不得冒充原始 SHA。完整树不同不得复用旧产物或重标版本，每次构建新建回执目录。
+- 源码候选、构建产物和运行服务分别验收。迁移通过不等于发布授权；保留旧历史、产物与数据回退路径，文档更新无需重启服务。
 
 # OpenCraft Agent 入口
 
