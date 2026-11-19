@@ -17,7 +17,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 #office { flex: 1; min-height: 0; position: relative; }
 .stage { position: absolute; inset: 0; background: var(--stage); overflow: hidden; }
 #stage { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
-#whole { position: absolute; left: 50%; top: calc(14px + env(safe-area-inset-top, 0px)); background: var(--card); border-radius: 18px; transform: translateX(-50%); box-shadow: 0 4px 16px rgba(80, 60, 160, .16); }
+#whole { z-index: 1; position: absolute; left: 50%; top: calc(14px + env(safe-area-inset-top, 0px)); background: var(--card); border-radius: 18px; transform: translateX(-50%); box-shadow: 0 4px 16px rgba(80, 60, 160, .16); }
+.turn { position: absolute; right: 12px; top: calc(14px + env(safe-area-inset-top, 0px)); display: flex; gap: 8px; z-index: 1; }
+.turn .btn { width: 40px; height: 40px; min-height: 0; padding: 0; display: grid; place-items: center; border-radius: 20px; background: var(--card); color: var(--ink); box-shadow: 0 4px 16px rgba(80, 60, 160, .16); } .turn svg { width: 20px; height: 20px; }
 #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 #labels span { position: absolute; transform: translate(-50%, -100%); padding: 2px 9px; border-radius: 11px; background: rgba(255, 255, 255, .92); color: #241f3a; font-size: 12px; font-weight: 700; white-space: nowrap; box-shadow: 0 2px 8px rgba(80, 60, 160, .12); transition: opacity .3s; }
 #labels span.me { background: #241f3a; color: #fff; }

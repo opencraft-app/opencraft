@@ -69,36 +69,49 @@ window.Office = (function () {
   }
   function dim() { Object.keys(pets).forEach(function (k) { var on = !selId || !pets[selId] || k === selId || selReach.indexOf(k) >= 0 || selIn.indexOf(k) >= 0; pets[k].mats.forEach(function (m) { gsap.to(m, { opacity: on ? 1 : .28, duration: dur(.3) }); }); pets[k].el.classList.toggle('dim', !on); }); }
   /* 视角：off 是镜头在自己平面里的偏移，zoom 是放大倍数。选人时镜头靠过去；手指拖动和双指缩放直接改它。画面始终按屏幕像素重画，所以放大不糊。 */
-  var view = { x: 0, y: 0, z: 0, zoom: 1 }, half = 4.7, resetBtn;
-  function applyView() { camera.position.set(CAM[0] + view.x, CAM[1] + view.y, CAM[2] + view.z); camera.zoom = view.zoom; camera.updateProjectionMatrix(); if (resetBtn) resetBtn.hidden = view.zoom < 1.05 && Math.hypot(view.x, view.y, view.z) < .3; }
-  function aim() { /* 选中一个人：把他和跟他有箭头的人一起框进画面，留出底部卡片的位置 */
+  /* 视角：镜头绕着一个目标点转。x/y/z 是目标点的平移，zoom 是放大，yaw/pitch 是在默认方向上多转的水平和俯仰角。
+     手机：单指拖动旋转，双指移动、捏合缩放、扭转旋转。电脑：左键拖动旋转，右键或按住 Shift 拖动平移，滚轮缩放。画面始终按屏幕像素重画。 */
+  var view = { x: 0, y: 0, z: 0, zoom: 1, yaw: 0, pitch: 0 }, half = 4.7, resetBtn, base = { yaw: 0, pitch: .7, dist: 15 };
+  function dirOf(yaw, pitch) { return new THREE.Vector3(Math.cos(pitch) * Math.sin(yaw), Math.sin(pitch), Math.cos(pitch) * Math.cos(yaw)); }
+  function pitchNow() { return Math.max(.32, Math.min(1.45, base.pitch + view.pitch)); }
+  function applyView() { var tg = new THREE.Vector3(LOOK[0] + view.x, LOOK[1] + view.y, LOOK[2] + view.z); camera.position.copy(tg).addScaledVector(dirOf(base.yaw + view.yaw, pitchNow()), base.dist); camera.lookAt(tg); camera.zoom = view.zoom; camera.updateProjectionMatrix();
+    if (resetBtn) resetBtn.hidden = view.zoom < 1.05 && Math.hypot(view.x, view.y, view.z) < .3 && Math.abs(view.yaw) < .05 && Math.abs(view.pitch) < .05; }
+  function home() { gsap.to(view, { x: 0, y: 0, z: 0, zoom: 1, yaw: 0, pitch: 0, duration: dur(.6), ease: 'power2.out', overwrite: true, onUpdate: applyView, onComplete: turnPets }); }
+  function turnPets() { /* 转完以后，小家伙们慢慢转身朝向你 */ var f = base.yaw + view.yaw; Object.keys(pets).forEach(function (k, i) { var p = pets[k], to = f + p.jit, cur = p.g.rotation.y; to = cur + Math.atan2(Math.sin(to - cur), Math.cos(to - cur)); gsap.to(p.g.rotation, { y: to, duration: dur(.7), delay: calm ? 0 : i * .04, ease: 'back.out(1.4)' }); }); face = f; }
+  function aim() { /* 选中一个人：把他和跟他有箭头的人一起框进画面，留出底部卡片的位置；保持你现在转到的方向 */
     var p = pets[selId]; if (!p) { gsap.to(view, { x: 0, y: 0, z: 0, zoom: 1, duration: dur(.6), ease: 'power2.out', overwrite: true, onUpdate: applyView }); return; }
-    var ids = [selId].concat(selReach, selIn).filter(function (k) { return pets[k]; }), c = new THREE.Vector3(), q = new THREE.Vector3(), inv = new THREE.Matrix4();
+    var ids = [selId].concat(selReach, selIn).filter(function (k) { return pets[k]; }), c = new THREE.Vector3(), q = new THREE.Vector3(), inv = new THREE.Matrix4(), L = new THREE.Vector3(LOOK[0], LOOK[1], LOOK[2]);
     ids.forEach(function (k) { c.add(pets[k].g.position); }); c.multiplyScalar(1 / ids.length); c.y = 1;
-    var base = camera.clone(); base.position.set(CAM[0], CAM[1], CAM[2]); base.lookAt(LOOK[0], LOOK[1], LOOK[2]); base.updateMatrixWorld(); inv.copy(base.matrixWorldInverse);
+    var cam0 = camera.clone(); cam0.position.copy(L).addScaledVector(dirOf(base.yaw + view.yaw, pitchNow()), base.dist); cam0.lookAt(L); cam0.updateMatrixWorld(); inv.copy(cam0.matrixWorldInverse);
     var cc = c.clone().applyMatrix4(inv), mx = 1.2, my = 1.2; ids.forEach(function (k) { [0, 2.6].forEach(function (y) { q.copy(pets[k].g.position).setY(y).applyMatrix4(inv); mx = Math.max(mx, Math.abs(q.x - cc.x) + 1.1); my = Math.max(my, Math.abs(q.y - cc.y) + .5); }); }); /* 加上人和桌子本身的宽度 */
     var a = canvas.clientWidth / canvas.clientHeight, cardEl = document.getElementById('card'), cardFrac = cardEl ? Math.min(.4, (cardEl.offsetHeight + 24) / canvas.clientHeight) : 0,
-      zoom = Math.max(1, Math.min(2.4, Math.min(half * a / (mx * 1.15), half * (1 - cardFrac) / (my * 1.15)))), up = new THREE.Vector3(0, 1, 0).applyQuaternion(base.quaternion), d = c.clone().sub(new THREE.Vector3(LOOK[0], LOOK[1], LOOK[2])).addScaledVector(up, -cardFrac * half / zoom);
+      zoom = Math.max(1, Math.min(2.4, Math.min(half * a / (mx * 1.15), half * (1 - cardFrac) / (my * 1.15)))), up = new THREE.Vector3(0, 1, 0).applyQuaternion(cam0.quaternion), d = c.clone().sub(L).addScaledVector(up, -cardFrac * half / zoom);
     gsap.to(view, { x: d.x, y: d.y, z: d.z, zoom: zoom, duration: dur(.7), ease: 'power2.out', overwrite: true, onUpdate: applyView }); }
-  function nudge(dx, dy, k) { /* 手指移动 dx,dy 像素；k 是缩放倍率 */
+  function nudge(dx, dy, k) { /* 平移 dx,dy 像素；k 是缩放倍率 */
     gsap.killTweensOf(view); var per = 2 * half / canvas.clientHeight / view.zoom, r = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion), u = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
     view.x += (-dx * r.x + dy * u.x) * per; view.y += (-dx * r.y + dy * u.y) * per; view.z += (-dx * r.z + dy * u.z) * per; var l = Math.hypot(view.x, view.y, view.z); if (l > 8) { view.x *= 8 / l; view.y *= 8 / l; view.z *= 8 / l; }
     view.zoom = Math.max(.8, Math.min(5, view.zoom * k)); applyView(); }
+  function spin(dyaw, dpitch) { gsap.killTweensOf(view); view.yaw += dyaw; view.pitch = Math.max(.32 - base.pitch, Math.min(1.45 - base.pitch, view.pitch + dpitch)); applyView(); }
   function gestures() {
-    var pts = {}, moved = 0, last = null;
-    function mid() { var k = Object.keys(pts), a = pts[k[0]], b = pts[k[1]] || a; return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) }; }
-    canvas.addEventListener('pointerdown', function (e) { pts[e.pointerId] = { x: e.clientX, y: e.clientY }; if (Object.keys(pts).length === 1) moved = 0; last = mid(); try { canvas.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ } });
-    canvas.addEventListener('pointermove', function (e) { if (!pts[e.pointerId]) return; pts[e.pointerId] = { x: e.clientX, y: e.clientY }; var m = mid(), dx = m.x - last.x, dy = m.y - last.y; moved += Math.abs(dx) + Math.abs(dy); if (moved < 8) return; nudge(dx, dy, last.d > 20 && m.d > 20 ? m.d / last.d : 1); last = m; });
-    function up(e) { delete pts[e.pointerId]; if (Object.keys(pts).length) last = mid(); } canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+    var pts = {}, moved = 0, last = null, pan = false, turned = false;
+    function mid() { var k = Object.keys(pts), a = pts[k[0]], b = pts[k[1]] || a; return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y), ang: Math.atan2(b.y - a.y, b.x - a.x), n: k.length }; }
+    canvas.addEventListener('pointerdown', function (e) { pts[e.pointerId] = { x: e.clientX, y: e.clientY }; if (Object.keys(pts).length === 1) { moved = 0; pan = e.pointerType === 'mouse' && (e.button === 2 || e.shiftKey); } last = mid(); try { canvas.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ } });
+    canvas.addEventListener('pointermove', function (e) { if (!pts[e.pointerId]) return; pts[e.pointerId] = { x: e.clientX, y: e.clientY }; var m = mid(), dx = m.x - last.x, dy = m.y - last.y; moved += Math.abs(dx) + Math.abs(dy); if (moved < 8) { if (m.n === last.n) return; }
+      if (m.n >= 2 && last.n >= 2) { var da = m.ang - last.ang; da = Math.atan2(Math.sin(da), Math.cos(da)); nudge(dx, dy, last.d > 20 && m.d > 20 ? m.d / last.d : 1); if (Math.abs(da) > .002) { spin(-da, 0); turned = true; } }
+      else if (m.n === 1 && last.n === 1) { if (pan) nudge(dx, dy, 1); else { spin(-dx * .008, dy * .005); turned = true; } }
+      last = m; });
+    function up(e) { delete pts[e.pointerId]; if (Object.keys(pts).length) last = mid(); else if (turned) { turned = false; turnPets(); } } canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+    canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
     canvas.addEventListener('wheel', function (e) { e.preventDefault(); if (e.ctrlKey || !e.shiftKey) nudge(0, 0, Math.exp(-e.deltaY * (e.ctrlKey ? .01 : .0015))); else nudge(-e.deltaY, 0, 1); }, { passive: false });
     ['gesturestart', 'gesturechange'].forEach(function (n) { document.addEventListener(n, function (e) { e.preventDefault(); }); });
     return function () { return moved >= 8; };
   }
+  function turnBy(d) { gsap.to(view, { yaw: view.yaw + d, duration: dur(.5), ease: 'power2.inOut', overwrite: 'auto', onUpdate: applyView, onComplete: turnPets }); }
 
   /* 取景：按画面比例选镜头方向（竖屏时把办公室长的一边竖过来），再按办公室的实际外框算缩放，让它铺满可用空间 */
   var BOUND = [[-6, -4.7], [4.8, -4.7], [7.6, -3.8], [7.6, 0.6], [4.8, 4.7], [-6, 4.7]];
   function resize() { var w = canvas.clientWidth, h = canvas.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); var a = w / h;
-    var off = a < .9 ? [-9, 11, 3.5] : [6.2, 8.5, 10]; face = Math.atan2(off[0], off[2]); Object.keys(pets).forEach(function (k) { pets[k].g.rotation.y = face + pets[k].jit; }); /* 人都朝着镜头 */ CAM = [LOOK[0] + off[0], LOOK[1] + off[1], LOOK[2] + off[2]];
+    var off = a < .9 ? [-9, 11, 3.5] : [6.2, 8.5, 10], dist = Math.hypot(off[0], off[1], off[2]); base = { yaw: Math.atan2(off[0], off[2]), pitch: Math.asin(off[1] / dist), dist: dist }; face = base.yaw + view.yaw; Object.keys(pets).forEach(function (k) { pets[k].g.rotation.y = face + pets[k].jit; }); /* 人都朝着镜头 */ CAM = [LOOK[0] + off[0], LOOK[1] + off[1], LOOK[2] + off[2]];
     camera.position.set(CAM[0], CAM[1], CAM[2]); camera.lookAt(LOOK[0], LOOK[1], LOOK[2]); camera.updateMatrixWorld();
     var inv = camera.matrixWorldInverse, mx = 0, my = 0, q = new THREE.Vector3(), c = new THREE.Vector3(LOOK[0], LOOK[1], LOOK[2]).applyMatrix4(inv);
     BOUND.forEach(function (b) { [0, 2.4].forEach(function (y) { q.set(b[0], y, b[1]).applyMatrix4(inv); mx = Math.max(mx, Math.abs(q.x - c.x)); my = Math.max(my, Math.abs(q.y - c.y)); }); });
@@ -122,7 +135,8 @@ window.Office = (function () {
       add(scene, new THREE.TorusGeometry(1.15, .11, 14, 40, Math.PI), clay(0xfbe39c), 4.75, 0, -1.6).rotation.y = Math.PI / 2;
       rel = new THREE.Group(); arcBox = new THREE.Group(); scene.add(rel); scene.add(arcBox); paint();
       if (window.matchMedia) { var mq = matchMedia('(prefers-color-scheme: dark)'); if (mq.addEventListener) mq.addEventListener('change', paint); }
-      var ray = new THREE.Raycaster(), dragged = gestures(); resetBtn = document.getElementById('whole'); if (resetBtn) resetBtn.addEventListener('click', function () { gsap.to(view, { x: 0, y: 0, z: 0, zoom: 1, duration: dur(.5), ease: 'power2.out', overwrite: true, onUpdate: applyView }); });
+      var ray = new THREE.Raycaster(), dragged = gestures(); resetBtn = document.getElementById('whole'); if (resetBtn) resetBtn.addEventListener('click', home);
+      [['turnL', -Math.PI / 4], ['turnR', Math.PI / 4]].forEach(function (b) { var el = document.getElementById(b[0]); if (el) el.addEventListener('click', function () { turnBy(b[1]); }); });
       canvas.addEventListener('click', function (e) { if (dragged()) return; var r = canvas.getBoundingClientRect(); ray.setFromCamera({ x: (e.clientX - r.left) / r.width * 2 - 1, y: -(e.clientY - r.top) / r.height * 2 + 1 }, camera);
         var hit = ray.intersectObjects(Object.keys(pets).map(function (k) { return pets[k].hit; }))[0]; onPick(hit ? hit.object.userData.id : null); });
       window.addEventListener('resize', resize); if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
