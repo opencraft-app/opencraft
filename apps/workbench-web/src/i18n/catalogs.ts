@@ -1,5 +1,4 @@
 import type { LocaleCatalog } from "@opencraft/i18n";
-import companionMessages from "./embedded-companion-messages.json";
 import { serverWorkbenchExtensions } from "../runtime/server-product-extensions";
 import { withProductCatalogs } from "./product-catalogs";
 
@@ -19,9 +18,11 @@ export const embeddedLocaleCatalogs: readonly LocaleCatalog[] = Object.freeze(wi
   ...coreLocaleCatalogs,
   { locale: "ms-MY", label: "Bahasa Melayu", load: async () => (await import("./locales/ms-MY.json")).default },
   { locale: "th-TH", label: "ไทย", load: async () => (await import("./locales/th-TH.json")).default },
-  ...Object.entries(companionMessages).map(([locale, messages]) => ({
+  // Catalog metadata is cheap; translation payloads load through the same
+  // async LocaleCatalog contract as the main locales, only when selected.
+  ...(["zh-Hant", "id-ID", "es", "ja-JP", "ko-KR"] as const).map(locale => ({
     locale,
     label: locale,
-    load: async () => messages,
+    load: async () => (await import("./embedded-companion-messages.json")).default[locale],
   })),
 ], productCatalogs));

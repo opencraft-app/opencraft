@@ -181,7 +181,7 @@ import { ThreadRecoveryNotice } from "./components/thread-recovery-notice";
 const TurnDiffReviewDialog = lazy(() => import("./components/conversation/turn-diff-review-dialog").then((module) => ({ default: module.TurnDiffReviewDialog })));
 import { ComposerTurnChangeSummary } from "./components/conversation/turn-diff-resource";
 import { Button } from "./components/ui/button";
-import { HostAgentOnboarding } from "./components/agent-management";
+const HostAgentOnboarding = createDeferredView(async () => (await import("./components/agent-management")).HostAgentOnboarding);
 import { DraftSetupNotice } from "./components/draft-setup-notice";
 import { NewThreadDraftPage } from "./components/new-thread-draft-page";
 import { isWorkbenchToolPage } from "./runtime/workbench-tool-pages";

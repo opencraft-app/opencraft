@@ -523,6 +523,13 @@ export function createWorkbenchWebConfig(
           // Isolate stable third-party runtime from application/plugin hash churn.
           codeSplitting: { groups: [
             ...startupLeafGroups,
+            // The reasoning control belongs to opened model menus/onboarding, not the
+            // always-mounted composer trigger or the mandatory popup/focus runtime.
+            {
+              name: "model-menu-controls",
+              includeDependenciesRecursively: false,
+              test: /(?:\/packages\/(?:composer-editor\/src\/composer-model-menu|design-system-web\/src\/discrete-slider)\.tsx|\/node_modules\/@radix-ui\/react-slider\/)/,
+            },
             { name: "side-chat-policy", test: /\/packages\/workbench-runtime\/src\/side-chat\/policy\.ts$/, includeDependenciesRecursively: false },
             // Submission validation is loaded on send, not on every cold open.
             { name: "submit-compiler", test: /\/packages\/composer-appserver\/src\/compiler\.ts$/, includeDependenciesRecursively: false },

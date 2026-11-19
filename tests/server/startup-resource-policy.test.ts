@@ -91,3 +91,25 @@ test('startup sidebar consumers use typography mixins without re-emitting global
     assert.doesNotMatch(source, /typography\.web/);
   }
 });
+
+test("desktop media, onboarding, model menu and translated payloads activate on demand", () => {
+  for (const module of [
+    "/repo/plugins/cloud-desktop/src/session-wire.ts",
+    "/repo/plugins/cloud-desktop/src/rfb.ts", "/repo/plugins/cloud-desktop/src/rfb-client.ts",
+    "/repo/plugins/cloud-desktop/src/pointer-input.ts", "/repo/plugins/cloud-desktop/src/text-input.ts",
+    "/repo/plugins/cloud-desktop/src/clipboard-input.ts", "/repo/plugins/cloud-desktop/src/trackpad-input.ts",
+    "/repo/plugins/cloud-desktop/src/frame-preview.ts",
+    "/repo/apps/workbench-web/src/components/archived-threads-settings.tsx",
+    "/repo/apps/workbench-web/src/components/agent-onboarding.tsx",
+    "/repo/apps/workbench-web/src/components/agent-onboarding.scss",
+    "/repo/apps/workbench-web/src/components/agent-management.tsx",
+    "/repo/apps/workbench-web/src/components/agent-directory.tsx",
+    "/repo/apps/workbench-web/src/components/agent-history-import.tsx",
+    "/repo/apps/workbench-web/src/i18n/embedded-companion-messages.json",
+    "/repo/packages/composer-editor/src/composer-model-menu.tsx",
+    "/repo/packages/design-system-web/src/discrete-slider.tsx",
+  ]) {
+    assert.match(startupResourceViolations(report(module)).join("\n"), /Demand-only/, module);
+    assert.deepEqual(startupResourceViolations(report(module, false)), [], module);
+  }
+});

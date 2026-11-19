@@ -64,6 +64,12 @@ export interface StartupResourcePolicy {
   readonly demandOnlyModules?: readonly RegExp[];
 }
 const demandOnlyPatterns = [
+  /\/apps\/workbench-web\/src\/components\/archived-threads-settings\.tsx$/,
+  /\/plugins\/cloud-desktop\/src\/(?:session-wire|rfb|rfb-client|pointer-input|text-input|clipboard-input|trackpad-input|frame-preview)\.ts$/,
+  /\/apps\/workbench-web\/src\/components\/agent-(?:onboarding\.(?:tsx|scss)|management\.tsx|directory\.tsx|history-import\.tsx)$/,
+  /\/apps\/workbench-web\/src\/i18n\/embedded-companion-messages\.json$/,
+  /\/packages\/composer-editor\/src\/composer-model-menu\.tsx$/,
+  /\/packages\/design-system-web\/src\/discrete-slider\.tsx$/,
   /\/packages\/workbench-runtime\/src\/side-chat\/policy\.ts$/,
   /\/packages\/timeline-host-web\/src\/scroll-frame-diagnostics\.ts$/,
   /\/apps\/workbench-web\/src\/runtime-diagnostic-snapshot\.ts$/,

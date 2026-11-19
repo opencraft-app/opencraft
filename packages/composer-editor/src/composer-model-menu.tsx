@@ -109,7 +109,10 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
     const node = root.current;
     if (!node) return;
     const active = node.ownerDocument.activeElement;
-    if (!(active instanceof Node) || !node.contains(active)) return;
+    // The popup can receive focus before this optional module arrives. Move
+    // that same focus lease to its first control, never steal editor/touch or
+    // another surface's focus after a late import.
+    if (!(active instanceof Node) || (!node.contains(active) && active !== node.closest('[role="menu"]'))) return;
     node.querySelector<HTMLElement>(view === "effort" ? '[role="slider"]' : 'input[type="search"]')?.focus({ preventScroll: true });
   }, [view]);
   const sourceIcon = (brand: AgentBrand | undefined) => brand

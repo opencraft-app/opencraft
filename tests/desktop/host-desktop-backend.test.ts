@@ -79,7 +79,7 @@ test("parent cancellation stays attached to the wire session after media.connect
   } finally { await f.close(); }
 });
 
-test("real Host backend, wire and controller retain one viewer across multiple five-minute deadlines", async t => {
+test("real Host backend, wire and controller retain one viewer across multiple five-minute deadlines", { timeout: 5000 }, async t => {
   t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 1_000_000 });
   const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
   let renewals = 0, mounts = 0, closes = 0, enabled = 0;
@@ -118,7 +118,13 @@ test("real Host backend, wire and controller retain one viewer across multiple f
     attachmentId: "x".repeat(22), ticket: "x".repeat(43), expiresAt: Date.now() + 300_000 }));
   const controller = new DesktopViewController(f.backend, media.surfaces, "view-scope", {} as HTMLElement);
   try {
-    controller.start(); await flush(); assert.equal(controller.getSnapshot().phase, "ready");
+    // A transport import is real async I/O, not a fixed number of microtasks.
+    const ready = new Promise<void>(resolve => {
+      const remove = controller.subscribe(() => {
+        if (controller.getSnapshot().phase === "ready") { remove(); resolve(); }
+      });
+    });
+    controller.start(); await ready; assert.equal(controller.getSnapshot().phase, "ready");
     for (let i = 1; i <= 12; i++) {
       t.mock.timers.tick(270_000); await flush();
       assert.equal(renewals, i);
@@ -182,4 +188,24 @@ test("backend credential for another Thread is rejected and retired", async () =
     await assert.rejects(f.backend.prepare(f.backend.resolveTarget("view-scope")!, new AbortController().signal));
     assert.equal(f.calls.length, 2);
   } finally { await f.close(); }
+});
+
+test("transport import cannot connect a cancelled or successor-Client attachment", async () => {
+  for (const retire of [false, true]) {
+    let connects = 0;
+    const media: RfbDesktopAdapter = {
+      surfaces: { mount() { throw new Error("not mounted"); } },
+      async connect() { connects++; throw new Error("late media admission"); },
+    };
+    const f = fixture(undefined, undefined, undefined, { media });
+    try {
+      const attachment = await f.backend.prepare(f.backend.resolveTarget("view-scope")!, new AbortController().signal);
+      const signal = new AbortController();
+      const opening = attachment.connect(signal.signal);
+      if (retire) f.retire(); else signal.abort();
+      await assert.rejects(opening);
+      assert.equal(connects, 0, "recheck authority after the transport import before media admission");
+      attachment.release();
+    } finally { await f.close(); }
+  }
 });

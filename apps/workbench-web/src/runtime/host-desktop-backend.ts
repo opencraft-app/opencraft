@@ -3,8 +3,8 @@ import { OPENCRAFT_DESKTOP_ATTACH, OPENCRAFT_DESKTOP_RELEASE, OPENCRAFT_DESKTOP_
 import { asConversationScopeId, type ConversationBindingStore, type HostRuntimeRegistry,
   type AppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
 import { desktopTargetKey, type DesktopAttachment, type DesktopBackend, type DesktopTarget } from "@opencraft/plugin-cloud-desktop/contract";
-import { createRfbDesktopAdapter, type RfbDesktopAdapter } from "@opencraft/plugin-cloud-desktop/rfb";
-import { createDesktopWireSession } from "@opencraft/plugin-cloud-desktop/session-wire";
+import type { RfbDesktopAdapter } from "@opencraft/plugin-cloud-desktop/rfb";
+import { createDeferredRfbDesktopAdapter } from "@opencraft/plugin-cloud-desktop/deferred-rfb";
 import { combineAbortSignals } from "@opencraft/appserver-client/transport";
 
 const unavailable = () => new Error("Desktop is unavailable");
@@ -29,7 +29,7 @@ export class HostDesktopBackend implements DesktopBackend {
     readonly media?: RfbDesktopAdapter;
     readonly openSocket?: (url: string) => WebSocket;
   }) {
-    this.media = options.media ?? createRfbDesktopAdapter();
+    this.media = options.media ?? createDeferredRfbDesktopAdapter();
     this.surfaces = this.media.surfaces;
     this.unsubscribers.push(options.bindings.subscribe(() => this.changed()));
     this.unsubscribers.push(options.registry.subscribe(() => this.watchRuntimes()));
@@ -122,24 +122,30 @@ export class HostDesktopBackend implements DesktopBackend {
           // lifetime, not just media.connect(); release disposes it.
           linked = combineAbortSignals([openSignal, lifetime.signal]);
           linked.signal.throwIfAborted();
-          const endpoint = `${this.options.origin.replace(/^http:/, "ws:").replace(/^https:/, "wss:")}/desktop/connect`;
-          const session = createDesktopWireSession({ attachmentId: credential.attachmentId, signal: linked.signal,
-            ...(authority.renewable ? { renewal: { expiresAt: credential.expiresAt, confirmed: (expiresAt: number) => {
-              if (released || !linked || linked.signal.aborted || !current()) { attachment.release(); return; }
-              clearTimeout(timer); timer = setTimeout(() => attachment.release(), expiresAt - Date.now());
-            } } } : {}),
-            openSocket: () => {
-              if (!current() || released) throw unavailable();
-              return this.options.openSocket?.(endpoint) ?? new WebSocket(endpoint);
-            },
-            authenticate: send => {
-              if (!current() || !ticket) throw unavailable();
-              const scoped = ticket; ticket = "";
-              send({ event: "desktop/attach", version: 1, attachmentId: credential.attachmentId, ticket: scoped });
-            },
-          });
-          try { return await this.media.connect(session, linked.signal); }
-          catch { attachment.release(); throw unavailable(); }
+          try {
+            const { createDesktopWireSession } = await import("@opencraft/plugin-cloud-desktop/session-wire");
+            // Importing optional transport is an async boundary: a deadline,
+            // cancellation or successor Client must not create a late session.
+            if (released || !current() || !linked) throw unavailable();
+            linked.signal.throwIfAborted();
+            const endpoint = `${this.options.origin.replace(/^http:/, "ws:").replace(/^https:/, "wss:")}/desktop/connect`;
+            const session = createDesktopWireSession({ attachmentId: credential.attachmentId, signal: linked.signal,
+              ...(authority.renewable ? { renewal: { expiresAt: credential.expiresAt, confirmed: (expiresAt: number) => {
+                if (released || !linked || linked.signal.aborted || !current()) { attachment.release(); return; }
+                clearTimeout(timer); timer = setTimeout(() => attachment.release(), expiresAt - Date.now());
+              } } } : {}),
+              openSocket: () => {
+                if (!current() || released) throw unavailable();
+                return this.options.openSocket?.(endpoint) ?? new WebSocket(endpoint);
+              },
+              authenticate: send => {
+                if (!current() || !ticket) throw unavailable();
+                const scoped = ticket; ticket = "";
+                send({ event: "desktop/attach", version: 1, attachmentId: credential.attachmentId, ticket: scoped });
+              },
+            });
+            return await this.media.connect(session, linked.signal);
+          } catch { attachment.release(); throw unavailable(); }
         },
         release: () => {
           if (released) return;

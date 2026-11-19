@@ -8,6 +8,7 @@
     "./panel.web": "./src/panel.web.scss",
     "./contract": "./src/contract.ts",
     "./rfb": "./src/rfb.ts",
+    "./deferred-rfb": "./src/deferred-rfb.ts",
     "./session-wire": "./src/session-wire.ts"
   },
   "scripts": {

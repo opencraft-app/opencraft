@@ -51,7 +51,7 @@ import { DesktopWelcome } from "./desktop-welcome";
 import {
   ArchivedThreadsSettings,
   type ArchivedThreadsSettingsProps,
-} from "./thread-management";
+} from "./archived-threads-settings";
 
 export type SettingsSection = "appearance" | "laboratory" | "plugins" | string;
 
