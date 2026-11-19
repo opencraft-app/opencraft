@@ -37,7 +37,7 @@ h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -.01em; text
 </head>
 <body>
 <main>
-  <h1 id="title">下一代视觉：五个方案的草图</h1>
+  <h1 id="title">下一代视觉：方案草图</h1>
   <p class="lead" id="lead"></p>
   <div class="tabs" id="tabs" role="group" aria-label="方案"></div>
   <div class="frame"><canvas id="stage"></canvas><div id="labels"></div><div id="cap" aria-live="polite"></div><div id="fail" hidden>这台设备没能打开三维画面。换一个浏览器再试，或者看下面的文字说明。</div></div>
@@ -55,8 +55,8 @@ h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -.01em; text
   try { renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true }); } catch (e) { $('fail').hidden = false; return; }
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   var calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var scene, camera, tl, extra = [], tags = [];
-  var HUE = { me: 0x2b2d33, a: 0x4c7868, y: 0x8471ac, z: 0xb5793f, c: 0x5a8397 }, NAME = { me: '你', a: '阿岚', y: '言禾', z: '小折', c: '沐川' };
+  var scene, camera, tl, extra = [], tags = [], pick = null;
+  var HUE = { me: 0x2b2d33, a: 0x4c7868, y: 0x8471ac, z: 0xb5793f, c: 0x5a8397, ext: 0x9aa0a8 }, NAME = { me: '你', a: '阿岚', y: '言禾', z: '小折', c: '沐川', ext: '客户周姐' };
   var V = function (x, y, z) { return new THREE.Vector3(x, y, z); };
 
   function mat(c, o) { return new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: .9, metalness: 0 }, o || {})); }
@@ -101,6 +101,29 @@ h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -.01em; text
   }
 
   var SCENES = [
+    { name: '新 松散办公室', lead: '小家伙们散着办公，不排队形。地上的细线是「归谁管」，空中的弧线是「能联系谁」，两件事分开画。点任何一个小家伙，看他能联系谁。',
+      n: ['每个小家伙一张小桌一台电脑，手里一部手机。门外站着的是公司外面的人，比如客户。', '归谁管和能联系谁是两套关系：言禾和沐川互相能联系，但谁也不管谁；阿岚能联系门外的客户，小折不能。选中一个，够不着的人会变淡。', '弧线只在选中时出现，否则人一多就成一团线。「正在联系」要不要常驻显示，还没定。'],
+      build: function () {
+        base(); ortho(5.3, V(7, 9, 10), V(.3, .4, 0)); box(scene, 10.5, .2, 9, 0xd3cfc5, -.6, -.1, 0); box(scene, 2.6, .2, 3, 0xbdb8ac, 6, -.1, -1.6); box(scene, .16, 1.7, .16, 0x8a8f9c, 4.7, .85, -.5); box(scene, .16, 1.7, .16, 0x8a8f9c, 4.7, .85, -2.7); box(scene, .16, .16, 2.36, 0x8a8f9c, 4.7, 1.7, -1.6);
+        function pet(who, x, z, rot, noDesk) {
+          var g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = rot; scene.add(g); var sc = null;
+          if (!noDesk) { box(g, 1.1, .1, .6, 0xd8c7a8, 0, .4, -.75); box(g, .56, .38, .05, 0x23262c, 0, .7, -.85); sc = box(g, .5, .32, .02, 0x15181c, 0, .7, -.82, { emissive: 0x000000 }).material; }
+          var sp = new THREE.Group(); g.add(sp); var m = mat(HUE[who], { transparent: true }), body = add(sp, new THREE.SphereGeometry(.42, 24, 16), m, 0, .38, 0); body.scale.y = .85; body.userData.k = who;
+          add(sp, new THREE.ConeGeometry(.12, .28, 12), m, -.22, .78, 0); add(sp, new THREE.ConeGeometry(.12, .28, 12), m, .22, .78, 0); ball(sp, .055, 0x15181c, -.02, .46, .4); ball(sp, .055, 0x15181c, .26, .46, .31);
+          var phone = box(sp, .17, .3, .04, 0x3b3070, .52, .42, .12, { emissive: 0x000000 }); tag(NAME[who], body, .78, who === 'me' ? 'me' : '');
+          extra.push(gsap.to(sp.position, { y: .1, duration: .7 + (x * x + z * z) % 1 * .5, ease: 'sine.inOut', yoyo: true, repeat: -1 })); return { g: g, sp: sp, m: m, body: body, phone: phone, screen: sc };
+        }
+        var P = { me: pet('me', .2, 3, .1), a: pet('a', -3.4, .5, .35), y: pet('y', -.5, -.9, -.2), c: pet('c', 2.5, .7, -.4), z: pet('z', -2.5, -3, .15), ext: pet('ext', 6, -1.6, -.6, true) };
+        var R = { me: ['a', 'y', 'c'], a: ['me', 'z', 'y', 'ext'], y: ['a', 'c'], c: ['me', 'y'], z: ['a'], ext: ['a'] }, arcs = {};
+        [['me', 'a'], ['me', 'y'], ['me', 'c'], ['a', 'z']].forEach(function (e) { var a = P[e[0]].g.position, b = P[e[1]].g.position, m = box(scene, .08, .02, a.distanceTo(b) - 1.3, 0xa7a297, (a.x + b.x) / 2, .01, (a.z + b.z) / 2); m.rotation.y = Math.atan2(b.x - a.x, b.z - a.z); });
+        Object.keys(R).forEach(function (k) { var g = new THREE.Group(); g.visible = false; scene.add(g); arcs[k] = g; R[k].forEach(function (j) { var a = P[k].g.position.clone().setY(.9), b = P[j].g.position.clone().setY(.9), mid = a.clone().add(b).multiplyScalar(.5).setY(1.3 + a.distanceTo(b) * .28);
+          add(g, new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(a, mid, b), 28, .035, 6), mat(HUE[k], { emissive: HUE[k], emissiveIntensity: .5 })); }); });
+        function sel(k) { Object.keys(P).forEach(function (j) { arcs[j].visible = j === k; gsap.to(P[j].m, { opacity: j === k || R[k].indexOf(j) >= 0 ? 1 : .2, duration: .3 }); });
+          gsap.fromTo(P[k].sp.scale, { x: 1.25, y: .75, z: 1.25 }, { x: 1, y: 1, z: 1, duration: .7, ease: 'elastic.out(1,.4)' }); $('cap').textContent = NAME[k] + '能联系：' + R[k].map(function (j) { return NAME[j]; }).join('、'); }
+        ['a', 'y', 'c', 'z', 'me'].forEach(function (k, i) { tl.call(sel, [k], i * 2.8); }); tl.to({}, { duration: 2.8 }, 11.2); sel('a');
+        var d = spark(scene); fly(d, local(P.a.phone, scene, .3), local(P.ext.phone, scene, .3), .7, 1.2); glow(P.a.screen, true, .3); glow(P.a.screen, false, 2.6);
+        pick = { objs: Object.keys(P).map(function (k) { return P[k].body; }), fn: function (k) { tl.pause(); sel(k); } };
+      } },
     { name: '1 办公室', lead: '一间俯视的小办公室。公司就是办公室，谁坐哪、谁归谁管，摆出来就是答案。',
       n: ['每人一张工位，桌上一台电脑一部手机。你的桌子在最前，直属下属一排，他们的下属在身后。', '消息是手机之间的一道光；干活是屏幕亮起；交到你手上是一张纸滑进你桌上的文件盘。三件事一眼分清。', '要做模型和摆位；人一多得分区或分层。'],
       build: function () {
@@ -174,7 +197,7 @@ h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -.01em; text
     camera.updateProjectionMatrix();
   }
   function show(i) {
-    if (tl) tl.kill(); extra.forEach(function (t) { t.kill(); }); extra = []; tags = []; $('labels').innerHTML = ''; $('cap').textContent = '';
+    if (tl) tl.kill(); extra.forEach(function (t) { t.kill(); }); extra = []; tags = []; pick = null; $('labels').innerHTML = ''; $('cap').textContent = '';
     var s = SCENES[i]; tl = gsap.timeline({ repeat: -1, repeatDelay: 1.2 }); s.build(); if (camera.isPerspectiveCamera) camera.userData.fov = camera.fov; resize();
     if (calm) { extra.forEach(function (t) { t.pause(); }); tl.pause(); tl.time(Math.min(tl.duration(), 6.9)); }
     $('lead').textContent = s.lead; $('n1').textContent = s.n[0]; $('n2').textContent = s.n[1]; $('n3').textContent = s.n[2];
@@ -188,6 +211,11 @@ h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -.01em; text
     renderer.render(scene, camera); var w = canvas.clientWidth, h = canvas.clientHeight;
     tags.forEach(function (t) { t.obj.getWorldPosition(v); v.y += t.dy; v.project(camera); t.el.style.left = (v.x * .5 + .5) * w + 'px'; t.el.style.top = (-v.y * .5 + .5) * h + 'px'; });
   }
+  var ray = new THREE.Raycaster();
+  canvas.addEventListener('click', function (e) {
+    if (!pick) return; var r = canvas.getBoundingClientRect(); ray.setFromCamera({ x: (e.clientX - r.left) / r.width * 2 - 1, y: -(e.clientY - r.top) / r.height * 2 + 1 }, camera);
+    var hit = ray.intersectObjects(pick.objs)[0]; if (hit) pick.fn(hit.object.userData.k);
+  });
   window.addEventListener('resize', resize);
   show(0); frame();
 })();
