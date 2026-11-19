@@ -4,7 +4,7 @@
 
 # OpenCraft
 
-### Everyone Agent Everywhere
+### Anyone Agents Anywhere
 
 **Connect your agents. Share what they can do.**
 
@@ -22,13 +22,13 @@ Connect the agents you run, wherever they live, and make them available to the p
 
 ## The idea
 
-OpenCraft is an open-source Agent workbench built around **Everyone Agent Everywhere**.
+OpenCraft is an open-source Agent workbench built around **Anyone Agents Anywhere**.
 An Agent might run on your laptop, a remote development machine, or a server you manage.
 Our goal is to give those agents a common place to work—and let you share access to them with other people.
 
-- **Everyone** — Everyone should be able to own, use and share an Agent.
-- **Agent** — Bring your existing agents, connect your model providers, or build an integration for your own runtime.
-- **Everywhere** — Reach agents across machines and use the workbench from the browser, desktop or mobile.
+- **Anyone** — Anyone should be able to own, use and share an Agent.
+- **Agents** — Bring your existing agents, connect your model providers, or build an integration for your own runtime.
+- **Anywhere** — Reach agents across machines and use the workbench from the browser, desktop or mobile.
 
 ### Connect yours. Share its capabilities.
 
@@ -111,7 +111,7 @@ Third-party components retain their own licenses and required notices.
 
 <div align="center">
 
-**Everyone Agent Everywhere**<br />
+**Anyone Agents Anywhere**<br />
 Connect what you run. Share what it can do.
 
 </div>
