@@ -30,6 +30,17 @@ test("SSH broker uploads, sends model-readable remote refs, persists history/for
       attachmentHistoryDirectory: history, attachments: { directory: join(history, "attachments"), namespace: "b".repeat(64), files: fixtureFiles() },
     });
   };
+  // The fixture reports upstream frames over IPC but replies over stdout, so a
+  // reply can arrive before the report of the request it answers.
+  const recorded = async (method: string) => {
+    const deadline = Date.now() + 5000;
+    for (;;) {
+      const frame = calls.find(value => value.method === method);
+      if (frame) return frame;
+      if (Date.now() > deadline) throw new Error(`Upstream never recorded ${method}`);
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+  };
   const rpc = async (method: string, params: unknown = {}, clientId = "client-a") => {
     const id = `request-${++sequence}`;
     const reply = new Promise<any>((resolve, reject) => {
@@ -63,7 +74,7 @@ test("SSH broker uploads, sends model-readable remote refs, persists history/for
   await rpc("thread/start");
   const sent = await rpc("turn/start", { threadId: "attachment-thread", clientUserMessageId: "message-with-file", input: [{ type: "mention", name: input.name, path }] });
   assert.equal(sent.error, undefined);
-  const physical = calls.find(frame => frame.method === "turn/start");
+  const physical = await recorded("turn/start");
   assert.ok(physical.params.input[0].text.includes(path));
   assert.equal(physical.params.input[0].text_elements[0].placeholder, "opencraft:staged-file:v1");
   assert.ok(!calls.some(frame => frame.method.startsWith("attachment/")), "Extensions terminate at our broker");
