@@ -89,13 +89,15 @@ em { font-style: normal; font-size: 12px; color: var(--ink-2); margin-left: 6px;
 .sec h3 { margin: 0; padding: 16px 16px 6px; font-size: 13px; font-weight: 400; color: var(--ink-2); }
 .grp { display: flex; flex-direction: column; background: var(--card); }
 .grp > .none, .grp > .cap, .grp > .doing, .grp > .chips, .grp > .inl, .grp > .fld { margin: 0; padding: 12px 16px; }
-.grp > .cap { padding-top: 0; }
+.grp > .cap { padding-top: 0; } .grp > .cap:first-child { padding-top: 12px; }
+.empty .btn { margin-top: 16px; min-height: 44px; padding: 0 24px; }
+.empty p { margin: 0; }
 .none { margin: 0; color: var(--ink-2); font-size: 15px; }
 .cap { margin: 0; color: var(--ink-2); font-size: 13px; }
 .foot { padding: 16px; color: var(--ink-2); font-size: 13px; text-align: center; background: var(--bg); }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 12px; border-radius: 6px; border: 0; background: var(--btn2); color: var(--ink); font-size: 15px; cursor: pointer; }
-.chip.ck:has(input:checked) { background: var(--accent); color: var(--on-accent); }
+.chip.on, .chip.ck:has(input:checked) { background: var(--accent); color: var(--on-accent); }
 .chip.ck input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .chip.ck:has(input:focus-visible) { outline: 2px solid var(--ink-2); outline-offset: 2px; }
 .sw { position: relative; display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 16px; background: var(--card); cursor: pointer; font-size: 17px; }

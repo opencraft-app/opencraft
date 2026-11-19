@@ -6,7 +6,10 @@
   'use strict';
   var KEY = 'opencraft.matter-canvas.v7', $ = function (id) { return document.getElementById(id); };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
-  var KIND = { pc: ['电脑', '例如：办公室的 Mac mini'], env: ['云环境', '例如：测试环境'], conn: ['连接器', '例如：飞书、邮箱'] };
+  var KIND = { pc: ['电脑', '台', '他在哪台机器上干活', '添加一台，例如：办公室的 Mac mini'], env: ['云环境', '个', '给他一个单独的环境，试东西不会碰到正式的', '添加一个，例如：测试环境'], conn: ['连接器', '个', '他能用的账号，比如飞书、邮箱、网盘', '添加一个，例如：飞书'] };
+  /* 招募时的常见岗位：点一下就填好岗位和一段岗位提示，不用从空白写起 */
+  var ROLES = [['客服', '你负责回答客户的问题。答不了的记下来，转给{boss}。'], ['采购', '你负责买东西、订场地。超过预算先问{boss}。'], ['对账', '你核对每一笔账和发票是否对得上，对不上的列出来交给{boss}。'], ['文档核对', '你只做核对：版本、页码、签章。核完写清楚看的是哪一份、结论是什么。'], ['行政', '你负责开账号、订会议室、收报销单。办完告诉交办的人。']];
+  var NAMES = ['青柚', '白榆', '半夏', '南星', '远山', '知秋', '云杉', '松果', '小满', '若木'];
   var TABS = [['talk', '对话'], ['phone', '手机'], ['pc', '电脑'], ['role', '岗位']];
 
   function blank() { return { people: [], outs: [], msgs: [], res: { pc: [], env: [], conn: [] }, n: 0, sample: false }; }
@@ -71,11 +74,11 @@
   function sec(cls, title, body) { return '<section class="sec ' + cls + '"><h3>' + title + '</h3><div class="grp">' + body + '</div></section>'; }
   function none(t) { return '<p class="none">' + t + '</p>'; }
   function cell(page, id, title, sub, right, n) { return '<button class="cell" data-go=\'' + esc(JSON.stringify(page)) + '\'>' + av(id, n) + '<span class="t"><b>' + title + '</b>' + (sub ? '<span>' + sub + '</span>' : '') + '</span>' + (right ? '<span class="rt">' + right + '</span>' : '') + '</button>'; }
-  function bubble(m, self) { var mine = m.who === self;
+  function bubble(m, self) { if (m.sys) return '<p class="when">' + esc(m.text) + '</p>'; var mine = m.who === self;
     return '<div class="msg' + (mine ? ' out' : '') + '">' + av(m.who) + '<div class="mb">' + (!mine && self !== 'me' ? '<span class="nm">' + esc(N(m.who)) + '</span>' : '') + '<div class="bub">' + esc(m.text) + '</div>' +
       (m.file ? '<details class="file"><summary><span><b>' + esc(m.file) + '</b><i>文件 · 点开看内容</i></span><span class="fi" aria-hidden="true"></span></summary><pre>' + esc(m.body) + '</pre></details>' : '') +
       (m.ask === 'open' && self === 'me' ? '<div class="ask"><button class="btn ok" data-do="accept" data-id="' + m.id + '">可以</button><button class="btn" data-do="reject" data-id="' + m.id + '">不行，退回</button></div>' : m.ask && self === 'me' ? '<div class="asked">' + (m.ask === 'ok' ? '你说了可以' : '你退回了') + '</div>' : '') + '</div></div>'; }
-  function bubbles(list, self) { var prev = 0; return list.map(function (m) { var gap = m.ts - prev > 5 * 60000; prev = m.ts; return (gap ? '<p class="when">' + hhmm(m.ts) + '</p>' : '') + bubble(m, self); }).join(''); }
+  function bubbles(list, self) { var prev = 0; return list.map(function (m) { var gap = m.ts - prev > 5 * 60000; prev = m.ts; return (gap && !m.sys ? '<p class="when">' + hhmm(m.ts) + '</p>' : '') + bubble(m, self); }).join(''); }
 
   /* 标签一：消息。老板自己的手机，只有直接归你管的人 */
   function chats() {
@@ -83,14 +86,14 @@
     function last(p) { var l = thread('me', p.id).pop(); return l ? l.ts : 0; }
     mine.sort(function (a, b) { return (asks(b.id).length - asks(a.id).length) || (last(b) - last(a)); });
     return '<header class="nav top"><span class="r"></span><h1>消息' + (asks().length ? '(' + asks().length + ')' : '') + '</h1><span class="r"><button class="ic" data-go=\'{"k":"recruit"}\' aria-label="招募">' + ICON.plus + '</button></span></header><div class="body list">' + (mine.length ? mine.map(function (p) { var l = thread('me', p.id).pop(), n = asks(p.id).length;
-      return cell({ k: 'chat', id: p.id }, p.id, esc(p.name) + '<em>' + esc(p.boss === 'me' ? p.role || '未填岗位' : '归' + N(p.boss) + '管') + '</em>', esc(l ? (l.who === 'me' ? '你：' : '') + l.text : '还没有说过话'), l ? hhmm(l.ts) : '', n); }).join('') : '<p class="empty">手机里还没有人。点右上角 ⊕ 招募第一位员工。</p>') +
+      return cell({ k: 'chat', id: p.id }, p.id, esc(p.name) + '<em>' + esc(p.boss === 'me' ? p.role || '未填岗位' : '归' + N(p.boss) + '管') + '</em>', esc(l ? (l.who === 'me' && !l.sys ? '你：' : '') + l.text : '还没有说过话'), l ? hhmm(l.ts) : '', n); }).join('') : '<div class="empty"><p>手机里还没有人。</p><button class="btn ok" data-go=\'{"k":"recruit"}\'>招募第一位员工</button></div>') +
       '<p class="foot">这是原型，没有接真实的 Bot，你发出去的话不会有人回。<button class="lk" data-do="' + (db.sample ? 'clear">清空示例' : 'sample">放回示例') + '</button></p></div>';
   }
   /* 标签二：通讯录。所有人都在，管理从这里进 */
   function people() {
     var mine = db.people.filter(function (p) { return p.boss === 'me'; }), rest = db.people.filter(function (p) { return p.boss !== 'me'; });
     function rows(list) { return list.map(function (p) { return cell({ k: 'profile', id: p.id, tab: 'phone' }, p.id, esc(p.name), esc(p.role || '未填岗位'), p.boss === 'me' ? '' : '归' + esc(N(p.boss)) + '管'); }).join(''); }
-    return '<header class="nav top"><span class="r"></span><h1>通讯录</h1><span class="r"></span></header><div class="body list"><button class="cell" data-go=\'{"k":"recruit"}\'><span class="av plus">+</span><span class="t"><b>招募新员工</b><span>给个名字和岗位，他就入职</span></span></button>' +
+    return '<header class="nav top"><span class="r"></span><h1>通讯录</h1><span class="r"></span></header><div class="body list"><button class="cell" data-go=\'{"k":"recruit"}\'><span class="av plus">+</span><span class="t"><b>招募</b><span>选个岗位，他就入职</span></span></button>' +
       (mine.length ? '<h4>直接归你管</h4>' + rows(mine) : '') + (rest.length ? '<h4>其他员工</h4>' + rows(rest) : '') + (db.outs.length ? '<h4>公司外的人</h4>' + db.outs.map(function (o) { return cell({ k: 'out', id: o.id }, o.id, esc(o.name), '公司外'); }).join('') : '') + (db.people.length ? '' : '<p class="empty">通讯录还是空的。</p>') + '</div>';
   }
   /* 标签三：办公室。三维画面在 .stage 里，这里只出底部那张卡片 */
@@ -115,24 +118,32 @@
     if (ui.sub) { var t = thread(p.id, ui.sub); return '<div class="body chat"><button class="lk" data-do="sub" data-id="">‹ 回到他的手机</button><p class="cap">' + esc(p.name) + ' 和 ' + esc(N(ui.sub)) + ' 的聊天记录（只读）</p>' + bubbles(t, p.id) + '</div>'; }
     var ps = partners(p.id), k = kin(p.id), all = db.people.filter(function (x) { return x.id !== p.id && k.indexOf(x.id) < 0; }).concat(db.outs);
     function tagOf(j) { return j === p.boss ? '<em>他的上级</em>' : k.indexOf(j) >= 0 ? '<em>他的下属</em>' : O(j) ? '<em>公司外</em>' : ''; }
-    return '<div class="body">' + sec('mint', '他在联系谁', ps.length ? ps.map(function (j) { var l = thread(p.id, j).pop(); return '<button class="cell" data-do="sub" data-id="' + j + '">' + av(j) + '<span class="t"><b>' + esc(N(j)) + tagOf(j) + (canTalk(p.id, j) ? '' : '<em>现在不能联系</em>') + '</b><span>' + esc((l.who === p.id ? '他：' : '') + l.text) + '</span></span><span class="rt">' + hhmm(l.ts) + '</span></button>'; }).join('') : none('他还没有联系过别人。')) +
+    return '<div class="body">' + sec('mint', '他在联系谁', ps.length ? ps.map(function (j) { var l = thread(p.id, j).pop(); return '<button class="cell" data-do="sub" data-id="' + j + '">' + av(j) + '<span class="t"><b>' + esc(N(j)) + tagOf(j) + (canTalk(p.id, j) ? '' : '<em>现在不能联系</em>') + '</b><span>' + esc((l.who === p.id && !l.sys ? '他：' : '') + l.text) + '</span></span><span class="rt">' + hhmm(l.ts) + '</span></button>'; }).join('') : none('他还没有联系过别人。')) +
       sec('mint', '他能联系谁', k.map(function (j) { return '<div class="sw fixed"><input type="checkbox" checked disabled><span>' + esc(N(j)) + tagOf(j) + '</span></div>'; }).join('') + (k.length ? '<p class="cap">上级和下属总能互相联系，不用勾。</p>' : '') + (all.length ? all.map(function (x) { return '<label class="sw"><input type="checkbox" data-sw="reach" data-id="' + x.id + '"' + (p.reach.indexOf(x.id) >= 0 ? ' checked' : '') + '><span>' + esc(x.name) + (O(x.id) ? '<em>公司外</em>' : '') + '</span></label>'; }).join('') : none('还没有别人可以联系。')) +
         '<form class="inl" data-do="out"><input id="out" autocomplete="off" placeholder="加一位公司外的人，例如：客户周姐" aria-label="公司外的人"><button class="btn">添加</button></form><p class="cap">勾选后，办公室里他会自己挪到这些人附近。</p>') + '</div>';
   }
   function pc(p) {
-    function one(k) { return '<label class="fld"><span>' + KIND[k][0] + '</span><select data-sw="' + k + '"><option value="">不分配</option>' + db.res[k].map(function (r) { return '<option value="' + r.id + '"' + (p[k] === r.id ? ' selected' : '') + '>' + esc(r.name) + '</option>'; }).join('') + '</select></label>'; }
-    return '<div class="body">' + sec('sky', '他在做什么', p.doing ? '<div class="doing"><i></i>' + esc(p.doing) + '</div><p class="cap">用的是：' + esc([R('pc', p.pc), R('env', p.env)].filter(Boolean).map(function (r) { return r.name; }).join('、') || '还没有分配电脑') + '</p>' : none('他的电脑现在空着。')) +
-      sec('sky', '他能做什么', one('pc') + one('env') + '<div class="fld"><span>连接器</span><div class="chips">' + (db.res.conn.map(function (r) { return '<label class="chip ck"><input type="checkbox" data-sw="conn" data-id="' + r.id + '"' + (p.conn.indexOf(r.id) >= 0 ? ' checked' : '') + '>' + esc(r.name) + '</label>'; }).join('') || '<span class="none">还没有登记连接器。</span>') + '</div></div>' +
-        '<form class="inl" data-do="res"><select id="resk" aria-label="类型">' + Object.keys(KIND).map(function (k) { return '<option value="' + k + '">' + KIND[k][0] + '</option>'; }).join('') + '</select><input id="resn" autocomplete="off" placeholder="登记一个新的给他" aria-label="名称"><button class="btn">登记</button></form>') + '</div>';
+    var has = R('pc', p.pc) || R('env', p.env);
+    function add(k) { return '<form class="inl" data-do="res" data-k="' + k + '"><input autocomplete="off" placeholder="' + KIND[k][3] + '" aria-label="添加' + KIND[k][0] + '"><button class="btn">添加</button></form>'; }
+    function one(k) { return '<p class="cap">' + KIND[k][2] + '</p>' + (db.res[k].length ? '<label class="fld"><span>给他</span><select data-sw="' + k + '"><option value="">不给</option>' + db.res[k].map(function (r) { return '<option value="' + r.id + '"' + (p[k] === r.id ? ' selected' : '') + '>' + esc(r.name) + '</option>'; }).join('') + '</select></label>' : '') + add(k); }
+    return '<div class="body">' + sec('', '他在做什么', p.doing ? '<div class="doing"><i></i>' + esc(p.doing) + '</div><p class="cap">用的是：' + esc([R('pc', p.pc), R('env', p.env)].filter(Boolean).map(function (r) { return r.name; }).join('、')) + '</p>' : none(has ? '他的电脑现在空着。' : '他还没有电脑，也没有云环境，现在只能用手机联系人。')) +
+      sec('', '电脑', one('pc')) + sec('', '云环境', one('env')) +
+      sec('', '连接器', '<p class="cap">' + KIND.conn[2] + '</p>' + (db.res.conn.length ? '<div class="chips">' + db.res.conn.map(function (r) { return '<label class="chip ck"><input type="checkbox" data-sw="conn" data-id="' + r.id + '"' + (p.conn.indexOf(r.id) >= 0 ? ' checked' : '') + '>' + esc(r.name) + '</label>'; }).join('') + '</div>' : '') + add('conn')) + '</div>';
   }
   function role(p) {
     return '<form class="body" data-do="role"><label class="fld"><span>名字</span><input id="rname" value="' + esc(p.name) + '" autocomplete="off"></label><label class="fld"><span>岗位</span><input id="rrole" value="' + esc(p.role) + '" autocomplete="off" placeholder="例如：项目交付"></label><label class="fld"><span>归谁管</span><select id="rboss"><option value="me">你</option>' +
       db.people.filter(function (x) { return x.id !== p.id && below(p.id).indexOf(x.id) < 0; }).map(function (x) { return '<option value="' + x.id + '"' + (p.boss === x.id ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') + '</select></label><label class="fld col"><span>岗位提示</span><textarea id="rprompt" rows="5" placeholder="告诉他这个岗位该怎么做事">' + esc(p.prompt) + '</textarea></label><div class="acts"><button class="btn ok wide">保存</button></div><button type="button" class="lrow danger" data-do="drop">移出办公室</button></form>';
   }
   function outside(o) { var who = db.people.filter(function (p) { return p.reach.indexOf(o.id) >= 0; });
-    return nav('') + '<div class="who">' + av(o.id) + '<span class="t"><b>' + esc(o.name) + '</b><span>公司外的人</span></span></div><div class="body">' + sec('mint', '谁能联系他', who.length ? who.map(function (p) { return cell({ k: 'profile', id: p.id, tab: 'phone' }, p.id, esc(p.name), esc(p.role || '未填岗位')); }).join('') : none('现在没有人能联系他。')) + '<button class="lrow danger" data-do="dropout" data-id="' + o.id + '">从门外移走</button></div>'; }
-  function recruit() { return nav('招募新员工') + '<form class="body" data-do="add"><p class="cap">先给个名字和岗位。入职后他会出现在办公室里，其余的进去再配。</p><label class="fld"><span>名字</span><input id="nname" autocomplete="off" placeholder="例如：青柚"></label><label class="fld"><span>岗位</span><input id="nrole" autocomplete="off" placeholder="例如：客服"></label><label class="fld"><span>归谁管</span><select id="nboss"><option value="me">你</option>' + db.people.map(function (x) { return '<option value="' + x.id + '">' + esc(x.name) + '</option>'; }).join('') + '</select></label><div class="acts"><button class="btn ok wide">让他入职</button></div></form>'; }
-
+    return nav('') + '<div class="who">' + av(o.id) + '<span class="t"><b>' + esc(o.name) + '</b><span>公司外的人</span></span></div><div class="body">' + sec('mint', '谁能联系他', who.length ? who.map(function (p) { return cell({ k: 'profile', id: p.id, tab: 'phone' }, p.id, esc(p.name), esc(p.role || '未填岗位')); }).join('') : none('现在没有人能联系他。')) + '<button class="lrow danger" data-do="dropout" data-id="' + o.id + '">从通讯录移走</button></div>'; }
+  function recruit() {
+    var used = db.people.map(function (x) { return x.name; }), free = NAMES.filter(function (n) { return used.indexOf(n) < 0; })[0] || '新同事';
+    return nav('招募') + '<form class="body" data-do="add"><p class="cap">选一个岗位就能招，名字和岗位提示都可以以后再改。</p>' +
+      sec('', '岗位', '<div class="chips">' + ROLES.map(function (r, i) { return '<button type="button" class="chip" data-do="preset" data-id="' + i + '">' + r[0] + '</button>'; }).join('') + '</div><label class="fld"><span>岗位</span><input id="nrole" autocomplete="off" placeholder="选上面的，或者自己写"></label>') +
+      sec('', '他是谁', '<label class="fld"><span>名字</span><input id="nname" autocomplete="off" value="' + esc(free) + '"></label><label class="fld"><span>归谁管</span><select id="nboss"><option value="me">你</option>' + db.people.map(function (x) { return '<option value="' + x.id + '">' + esc(x.name) + '</option>'; }).join('') + '</select></label>') +
+      sec('', '岗位提示', '<label class="fld col"><textarea id="nprompt" rows="4" aria-label="岗位提示" placeholder="告诉他这个岗位该怎么做事。不填就按岗位给一段最基本的。"></textarea></label>') +
+      '<div class="acts"><button class="btn ok wide">招募</button></div></form>';
+  }
   function draw() {
     var t = top(), view = $('view'), b = view.querySelector('.body'), keep = b ? b.scrollTop : 0, key = JSON.stringify(t || ui.tab) + ui.sub, same = view.getAttribute('data-key') === key;
     while (t && ((t.k === 'chat' || t.k === 'profile') && !P(t.id) || t.k === 'out' && !O(t.id))) { ui.stack.pop(); t = top(); }
@@ -153,11 +164,16 @@
     accept: function (el) { answer(el.getAttribute('data-id'), 'ok', '可以，就这样。'); },
     reject: function (el) { answer(el.getAttribute('data-id'), 'no', '不行，退回，再看看。'); },
     out: function () { var v = $('out').value.trim(), p = cur(); if (!v || !p) return; var o = { id: uid('o'), name: v }; db.outs.push(o); p.reach.push(o.id); save(); sync(); draw(); },
-    res: function () { var v = $('resn').value.trim(), k = $('resk').value, p = cur(); if (!v) return; var r = { id: uid('r'), name: v }; db.res[k].push(r); if (p) { if (k === 'conn') p.conn.push(r.id); else p[k] = r.id; } save(); sync(); draw(); },
+    res: function (f) { var v = f.querySelector('input').value.trim(), k = f.getAttribute('data-k'), p = cur(); if (!v) return; var r = { id: uid('r'), name: v }; db.res[k].push(r); if (p) { if (k === 'conn') p.conn.push(r.id); else p[k] = r.id; } save(); sync(); draw(); },
     role: function () { var p = cur(); if (!p) return; p.name = $('rname').value.trim() || p.name; p.role = $('rrole').value.trim(); p.prompt = $('rprompt').value.trim(); p.boss = $('rboss').value; save(); sync(); draw(); },
-    drop: function () { var p = cur(); if (!p || !window.confirm('把' + p.name + '移出办公室？他的聊天记录也会一起删掉。')) return; var id = p.id; db.people = db.people.filter(function (x) { return x.id !== id; }); db.people.forEach(function (x) { if (x.boss === id) x.boss = p.boss; x.reach = x.reach.filter(function (j) { return j !== id; }); }); db.msgs = db.msgs.filter(function (m) { return m.who !== id && m.to !== id; }); if (ui.sel === id) ui.sel = null; ui.stack = []; ui.tab = 'people'; save(); sync(); draw(); },
+    drop: function () { var p = cur(); if (!p || !window.confirm('把' + p.name + '移出办公室？他的聊天记录会一起删掉' + (db.people.some(function (x) { return x.boss === p.id; }) ? '，他的下属改归' + N(p.boss) + '管' : '') + '。')) return; var id = p.id; db.people = db.people.filter(function (x) { return x.id !== id; }); db.people.forEach(function (x) { if (x.boss === id) x.boss = p.boss; x.reach = x.reach.filter(function (j) { return j !== id; }); }); db.msgs = db.msgs.filter(function (m) { return m.who !== id && m.to !== id; }); if (ui.sel === id) ui.sel = null; ui.stack = []; ui.tab = 'people'; save(); sync(); draw(); },
     dropout: function (el) { var id = el.getAttribute('data-id'); db.outs = db.outs.filter(function (x) { return x.id !== id; }); db.people.forEach(function (x) { x.reach = x.reach.filter(function (j) { return j !== id; }); }); db.msgs = db.msgs.filter(function (m) { return m.who !== id && m.to !== id; }); if (ui.sel === id) ui.sel = null; ui.stack = []; save(); sync(); draw(); },
-    add: function () { var v = $('nname').value.trim(); if (!v) { $('nname').focus(); return; } var p = { id: uid('p'), name: v, role: $('nrole').value.trim(), boss: $('nboss').value, prompt: '', pc: null, env: null, conn: [], reach: [], doing: '', look: db.n }; db.people.push(p); ui.stack = [{ k: 'profile', id: p.id, tab: 'role' }]; ui.tab = 'people'; save(); sync(); draw(); },
+    preset: function (el) { Array.prototype.forEach.call(el.parentNode.children, function (b) { b.classList.toggle('on', b === el); }); var r = ROLES[+el.getAttribute('data-id')]; $('nrole').value = r[0]; $('nprompt').value = r[1].replace('{boss}', N($('nboss').value)); },
+    add: function () { var name = $('nname').value.trim() || $('nname').defaultValue, role = $('nrole').value.trim(), boss = $('nboss').value, prompt = $('nprompt').value.trim();
+      if (!prompt && role) prompt = '你负责' + role + '。拿不准的先问' + N(boss) + '，办完告诉交办的人。';
+      var p = { id: uid('p'), name: name, role: role, boss: boss, prompt: prompt, pc: null, env: null, conn: [], reach: [], doing: '', look: db.n }; db.people.push(p);
+      db.msgs.push({ id: uid('m'), ts: Date.now(), who: boss, to: p.id, sys: true, text: name + '入职了，归' + N(boss) + '管。' + (boss === 'me' ? '现在可以对他说要办什么。' : '') });
+      ui.stack = [boss === 'me' ? { k: 'chat', id: p.id } : { k: 'profile', id: p.id, tab: 'phone' }]; ui.tab = boss === 'me' ? 'chats' : 'people'; save(); sync(); draw(); },
     clear: function () { if (!window.confirm('清空示例？办公室会变成空的。')) return; db = blank(); ui.sel = null; save(); sync(); draw(); },
     sample: function () { db = sample(); ui.sel = null; save(); sync(); draw(); }
   };
