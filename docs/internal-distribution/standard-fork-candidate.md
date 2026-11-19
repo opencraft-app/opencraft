@@ -1,3 +1,7 @@
+> 源码开发入口已于 2026-11-19 切到标准 fork，见 [当前工作流](fork-workflow.md)。
+> 本文保留早期候选的迁移来源和验收范围；`.ci/fork-provenance.json` 的 candidate status
+> 是来源回执版本标记，仍由校验器验证，不作为当前部署状态。
+
 # 私有标准 fork 候选交付
 
 此目录是隔离迁移候选，未推送 `master`、未公开 GitHub、未发布 npm、未部署。

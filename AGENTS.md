@@ -1,17 +1,18 @@
-# 内部标准 fork 候选
+# 内部标准 fork
 
-本 checkout 是 `git.woa.com/join/opencraft` 的隔离标准 fork 候选，尚未切换内部
-`master` 或生产。源码直接位于根目录；`products/join` 与 `relay` 持有内部产品装配。
-新的标准 fork 入口取代旧 submodule、补丁装配和 `env/local` 主集成约定。
-核心规则继续适用，迁移事实与交付入口见
-[标准 fork 候选交付](docs/internal-distribution/standard-fork-candidate.md)。
+本 checkout 直接维护内部标准 fork：核心源码位于根目录，`products/join` 与
+`relay` 持有内部产品装配。日常集成分支为 `master` / `origin/master`，origin
+指向本机身份网关；工蜂独立前缀保存 committer 适配后的投影。旧 consumer 的
+submodule 和补丁队列只保留为历史与回退资料，不再作为新 master 的集成入口。
+工作流程见 [标准 fork 开发](docs/internal-distribution/fork-workflow.md)，原迁移
+来源与交付检查见 [迁移记录](docs/internal-distribution/standard-fork-candidate.md)。
 
-- 最终内部集成目标是 `master` / `origin/master`；`env/local` 仅是环境分支，不是完成集成的替代。本轮只做隔离候选与授权 `gateway-test/*` 网关试跑，不改正式 master，不发布、不部署。依赖安装、测试和构建仅在独立验证 checkout 执行。
-- GitHub upstream 仅拉取。私有 fork、内部产品历史、配置与本候选不得公开；公共贡献须在独立公共分支整理。
-- 后续获得集成授权时，先刷新 `origin/master` 与相关环境分支，从干净工作树整理明确范围，使用公共 Git 目录的 `codex-integration.lock`；服务切换另用任务部署锁。不得修改其他会话工作树、整条推送夹带改动或 force-push。
-- 网关入口持有原始 Git 历史；工蜂后端只持有 committer 适配后的投影历史。只通过网关写后端，不能直接工蜂 MR/网页编辑或把投影历史合并回原始 fork。身份与后端漂移拒绝必须调查，不以改写公共祖先、强推或 `merge -s ours` 绕过。专用身份授权不等于永久邮箱偏好，不修改全局 Git 配置。
-- 构建固定、已提交的完整 SHA。原 consumer revision/tree、原业务 tree、物化提交、公开 upstream baseline 与当前 fork revision/tree 分开记录；物化 SHA 不得冒充原始 SHA。完整树不同不得复用旧产物或重标版本，每次构建新建回执目录。
-- 源码候选、构建产物和运行服务分别验收。迁移通过不等于发布授权；保留旧历史、产物与数据回退路径，文档更新无需重启服务。
+- 开发与 CI 从网关获取原始提交；公共 upstream 只 fetch。公共贡献从干净公共祖先单独整理，不发布私有历史、IOA、企业微信或内部配置。
+- 集成前 fetch origin，核对 master 和干净工作树，使用公共 Git 目录的 `codex-integration.lock`。服务切换另用部署锁，不修改其他会话工作树或强推。
+- 只通过网关写工蜂投影前缀；不要用工蜂网页/MR/直接推送改写投影，也不能把投影图 merge 回原始 fork。后端漂移时停写调查。
+- 原工蜂物理 master 保留 consumer 历史，不能强推新图覆盖。已有 feature 工作目录和未提交改动应逐项迁移；本次切换不授权丢弃它们。
+- 构建固定已提交 SHA，分别记录原始 revision/tree、consumer 来源和投影 SHA；不把旧产物改标为新版本。依赖安装和构建在独立验证 checkout 执行。
+- Git 源码入口切换与运行服务发布分别验收。保留历史、产物和数据回退路径；文档更新无需重启产品服务。
 
 # OpenCraft Agent 入口
 
