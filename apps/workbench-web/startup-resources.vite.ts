@@ -5,6 +5,19 @@ import { basename, dirname, join, resolve } from "node:path";
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";
 import type { Plugin } from "vite";
 
+/** Smaller wire bytes, not a normalized estimate: the gate counts this sidecar.
+ * Keep the former level-9 result as a ceiling. A bounded sequential search over
+ * two smaller hash tables can compress JS/CSS better without changing assets.
+ */
+export function gzipAsset(raw: Uint8Array): Buffer {
+  let best = gzipSync(raw, { level: 9 });
+  for (const memLevel of [6, 7]) {
+    const candidate = gzipSync(raw, { level: 9, memLevel });
+    if (candidate.length < best.length) best = candidate;
+  }
+  return best;
+}
+
 /** Build graph evidence stays outside the distributable, with module identities. */
 export function startupResources(policy: StartupResourcePolicy = {}): Plugin {
   return {
@@ -37,7 +50,7 @@ export function startupResources(policy: StartupResourcePolicy = {}): Plugin {
       for (const file of Object.keys(bundle)) {
         if (!/^assets\/.+\.(?:js|css|svg|json)$/.test(file)) continue;
         const raw = await readFile(join(root, file));
-        const gzip = gzipSync(raw, { level: 9 });
+        const gzip = gzipAsset(raw);
         const brotli = brotliCompressSync(raw, { params: { [constants.BROTLI_PARAM_QUALITY]: 5 } });
         if (critical.has(file)) {
           if (file.endsWith(".js")) report.totals.javascript += raw.length;
