@@ -9,8 +9,14 @@ import { fileURLToPath } from "node:url";
 // Keep npm's pinned decoder, encodings and render queue. Never infer first paint
 // from canvas size/colour, arbitrary delay, or an independently parsed RFB stream.
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const packageRoot = dirname(createRequire(resolve(root, "plugins/cloud-desktop/package.json"))
-  .resolve("@novnc/novnc/package.json"));
+// Search the plugin's node_modules paths directly: a noVNC release with an
+// "exports" map refuses require.resolve("@novnc/novnc/package.json"), and the
+// version check below must still be the error an upgrade attempt sees.
+const packageRoot = (createRequire(resolve(root, "plugins/cloud-desktop/package.json"))
+  .resolve.paths("@novnc/novnc") ?? [])
+  .map(directory => resolve(directory, "@novnc/novnc"))
+  .find(directory => existsSyncEntry(resolve(directory, "package.json")));
+if (!packageRoot) throw new Error("@novnc/novnc is not installed for plugins/cloud-desktop");
 const originalHash = "690d5506d161d6b8c536f9b1a5b018fcd510c72b4fcf8124d037005d18cff098";
 const hash = source => createHash("sha256").update(source).digest("hex");
 const mediaAndPointerEdits = [

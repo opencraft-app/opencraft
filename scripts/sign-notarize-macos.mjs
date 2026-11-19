@@ -4,15 +4,17 @@ import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from
 import { execFile } from "node:child_process";
 import { access } from "node:fs/promises";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { promisify } from "node:util";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { notarize } from "@electron/notarize";
 import gracefulFs from "graceful-fs";
 import { stapleAndValidateMacos } from "./staple-macos.mjs";
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const desktopRequire = createRequire(new URL("../apps/desktop/package.json", import.meta.url));
 
 function requiredEnvironment(environment, name) {
   const value = environment[name]?.trim();
@@ -25,7 +27,11 @@ export async function loadMacosSigner() {
   // detector captures fs.open at import time, so install the EMFILE queue first.
   // This patch is confined to the standalone signing process.
   gracefulFs.gracefulify(fs);
-  return import("@electron/osx-sign");
+  // Resolve the desktop's declared version, not a hoisted transitive signer.
+  const signer = await import(pathToFileURL(desktopRequire.resolve("@electron/osx-sign")).href);
+  const signAsync = signer.sign ?? signer.signAsync;
+  if (typeof signAsync !== "function") throw new Error("The desktop signer does not export a signing function");
+  return { ...signer, signAsync };
 }
 
 export async function signAndNotarizeMacos(appPath, environment = process.env, {

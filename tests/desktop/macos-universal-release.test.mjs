@@ -3,6 +3,8 @@ import { execFile } from "node:child_process";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
 import { promisify } from "node:util";
 import {
@@ -10,7 +12,7 @@ import {
   synchronizeRendererFiles,
   synchronizeRuntimeFiles,
 } from "../../scripts/merge-macos-universal.mjs";
-import { signAndNotarizeMacos } from "../../scripts/sign-notarize-macos.mjs";
+import { loadMacosSigner, signAndNotarizeMacos } from "../../scripts/sign-notarize-macos.mjs";
 import { notarizeMacosDmg, runXcrun } from "../../scripts/notarize-macos-dmg.mjs";
 import { stapleAndValidateMacos } from "../../scripts/staple-macos.mjs";
 
@@ -89,6 +91,14 @@ test("signing fails before filesystem or Apple access when credentials are absen
   await assert.rejects(signAndNotarizeMacos("missing.app", {}), /CSC_NAME/u);
 });
 
+test("standalone signing uses the desktop's declared signer and normalizes its public signing API", async () => {
+  const signer = await loadMacosSigner();
+  const desktopRequire = createRequire(new URL("../../apps/desktop/package.json", import.meta.url));
+  const declared = await import(pathToFileURL(desktopRequire.resolve("@electron/osx-sign")).href);
+  assert.equal(typeof signer.signAsync, "function");
+  assert.strictEqual(signer.signAsync, declared.sign ?? declared.signAsync);
+});
+
 test("signer's real resource walker tolerates a low file descriptor limit", { skip: process.platform === "win32" }, async t => {
   const directory = await mkdtemp(join(tmpdir(), "opencraft-signing-files-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -99,10 +109,11 @@ test("signer's real resource walker tolerates a low file descriptor limit", { sk
   const script = `
     import { createRequire } from "node:module";
     import { loadMacosSigner } from ${JSON.stringify(new URL("../../scripts/sign-notarize-macos.mjs", import.meta.url).href)};
-    await loadMacosSigner();
-    const require = createRequire(import.meta.url);
-    const { walkAsync } = require("@electron/osx-sign/dist/cjs/util.js");
-    const paths = await walkAsync(process.argv[1]);
+    const signer = await loadMacosSigner();
+    const require = createRequire(${JSON.stringify(new URL("../../apps/desktop/package.json", import.meta.url).href)});
+    // v2 exports its walker; v1 only exposes the legacy internal helper.
+    const walk = signer.walk ?? require("@electron/osx-sign/dist/cjs/util.js").walkAsync;
+    const paths = await walk(process.argv[1]);
     if (paths.length !== 512) throw new Error("Incomplete binary inspection");
   `;
   await promisify(execFile)("bash", ["-c", 'ulimit -n 64; exec "$@"', "signer-stress",

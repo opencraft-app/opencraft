@@ -4,10 +4,25 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 2
+    open-pull-requests-limit: 4
+    ignore:
+      # Pinned: scripts/patch-novnc-desktop-events.mjs patches this exact release
+      # (checked by hash). Upgrade it by hand together with that patch and a
+      # cloud-desktop check, never as part of a grouped bump.
+      - dependency-name: "@novnc/novnc"
     groups:
+      # Pi releases break the engine API within a minor version (1.5 removed
+      # watchEvents and changed tool schemas and Storage.commit), so the pi
+      # packages move together in their own PR alongside a plugins/pi-engine migration.
+      pi:
+        patterns: ["@earendil-works/*"]
+      # 0.x office viewers: one minor bump grew the bundled WASM enough to break
+      # the 64 MiB offline shell budget, so these get a PR of their own.
+      office-preview:
+        patterns: ["@extend-ai/*"]
       compatible:
         patterns: ["*"]
+        exclude-patterns: ["@earendil-works/*", "@extend-ai/*"]
         update-types: [minor, patch]
   - package-ecosystem: npm
     directory: /runtime/dsh
