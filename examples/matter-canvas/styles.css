@@ -138,9 +138,10 @@ form.body > .cap { padding: 12px 16px; }
 .file { width: 240px; max-width: 100%; border-radius: 6px; background: var(--theirs); color: var(--ink); }
 .file summary { display: flex; align-items: center; gap: 10px; padding: 12px; cursor: pointer; list-style: none; } .file summary::-webkit-details-marker { display: none; }
 .file summary > span:first-child { flex: 1; min-width: 0; display: flex; flex-direction: column; } .file b { font-weight: 400; font-size: 15px; } .file i { font-style: normal; font-size: 12px; color: var(--ink-2); }
-.fi { flex: none; width: 34px; height: 40px; border-radius: 3px; background: linear-gradient(225deg, transparent 8px, #4c8bf5 0); }
+.fi { flex: none; width: 36px; height: 36px; border-radius: 8px; display: grid; place-items: center; background: var(--accent); color: #fff; font-size: 16px; font-weight: 600; }
 .file pre { margin: 0; padding: 10px 12px 12px; border-top: 1px solid var(--line); white-space: pre-wrap; font: 14px/1.6 var(--font); }
-.ask { display: flex; gap: 8px; } .asked { font-size: 12px; color: var(--ink-2); }
+.fs { display: flex; align-items: center; gap: 10px; padding: 12px; } .fs > span:first-child { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.fxrow { display: flex; gap: 12px; align-items: flex-start; padding: 8px 16px; } .fxrow time { flex: none; width: 3em; padding-top: 12px; font-size: 13px; color: var(--ink-2); } .fxrow .file { flex: 1; width: auto; background: var(--soft); }
 .say { display: flex; align-items: center; gap: 8px; flex: none; margin: 0; padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px)); background: var(--soft); border-top: 1px solid var(--line); }
 .say input { padding: 8px 10px; border-radius: 6px; background: var(--card); font-size: 16px; }
 p.say { padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)); text-align: center; }

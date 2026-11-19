@@ -4,7 +4,7 @@
    这是结构原型，没有接真实的 Bot：你发出去的话不会有人回。示例内容是一份静态快照，清空后各处如实显示为空。 */
 (function () {
   'use strict';
-  var KEY = 'opencraft.matter-canvas.v8', $ = function (id) { return document.getElementById(id); };
+  var KEY = 'opencraft.matter-canvas.v9', $ = function (id) { return document.getElementById(id); };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
   var KIND = { pc: ['电脑', '台', '他在哪台机器上干活', '添加一台，例如：办公室的 Mac mini'], env: ['云环境', '个', '给他一个单独的环境，试东西不会碰到正式的', '添加一个，例如：测试环境'], conn: ['连接器', '个', '他能用的账号，比如飞书、邮箱、网盘', '添加一个，例如：飞书'] };
   /* 招募时的常见岗位：点一下就填好岗位和一段岗位提示，不用从空白写起 */
@@ -12,7 +12,7 @@
   var NAMES = ['青柚', '白榆', '半夏', '南星', '远山', '知秋', '云杉', '松果', '小满', '若木'];
   var TABS = [['talk', '对话'], ['phone', '手机'], ['pc', '电脑'], ['role', '岗位']];
 
-  function blank() { return { people: [], outs: [], msgs: [], res: { pc: [], env: [], conn: [] }, n: 0, sample: false }; }
+  function blank() { return { people: [], outs: [], msgs: [], fx: [], res: { pc: [], env: [], conn: [] }, n: 0, sample: false }; }
   function sample() { /* 一家小工作室老板眼里的某个下午 */
     var d = blank(), now = Date.now(), look = 0;
     [['pc', 'r1', '办公室的 Mac mini'], ['pc', 'r2', '机房的 Linux 主机'], ['env', 'r3', '测试环境'], ['env', 'r4', '客户演示环境'], ['conn', 'r5', '飞书'], ['conn', 'r6', '企业邮箱'], ['conn', 'r7', 'GitHub'], ['conn', 'r8', '公司网盘']].forEach(function (r) { d.res[r[0]].push({ id: r[1], name: r[2] }); });
@@ -24,20 +24,29 @@
     person('z', '小折', '文档核对', 'a', '你只做核对：版本、页码、签章。核完写清楚看的是哪一份、结论是什么。', 'r2', 'r3', ['r8'], [], '');
     person('t', '秋池', '对账', 'c', '你核对每一笔报销和发票是否对得上，对不上的列出来交给沐川。', null, null, ['r6'], [], '');
     person('n', '北野', '采购', 'c', '你负责买办公用品和订场地。超过预算先问沐川。', null, null, [], ['t'], '');
-    function msg(min, from, to, text, more) { d.msgs.push(Object.assign({ id: 'm' + d.msgs.length, ts: now - min * 60000, who: from, to: to, text: text }, more || {})); }
-    msg(200, 'me', 'c', '周三下午客户来访，订个大会议室，要能投影。'); msg(170, 'c', 'me', '周三下午 2 点到 4 点的大会议室订好了，投影也借了。');
+    function msg(min, from, to, text, more) { d.msgs.push(Object.assign({ id: 'm' + d.msgs.length, ts: now - min * 60000, who: from, to: to, text: text, read: true }, more || {})); }
+    /* 副作用：他用电脑、云环境或连接器在外面留下的改动。不是交给谁的东西，只是做事留下的痕迹 */
+    function fx(id, min, who, via, what, name, body) { d.fx.push({ id: id, ts: now - min * 60000, who: who, via: via, what: what, name: name, body: body || '' }); }
+    fx('e1', 172, 'c', 'r5', '订了会议室', '周三 14:00–16:00 大会议室，借了投影');
+    fx('e2', 62, 'y', 'r8', '共享了文件', '验收签字页（两份附件），共享给阿岚');
+    fx('e3', 31, 'z', 'r8', '新建了文件', '签字页核对记录', '看了两份附件。\n第 2 页那份没有盖章，是草稿。\n第 3 页那份有客户公章，版本号 2.3。');
+    fx('e4', 24, 'c', 'r6', '开了账号', '新同事的邮箱');
+    fx('e5', 23, 'c', 'r5', '开了账号', '新同事的飞书');
+    fx('e6', 18, 'a', 'r8', '新建了文件', '2.3 版本签字页核对单', '盖章的是第 3 页那一份。\n版本号 2.3，和交付清单一致。\n核对人：小折。\n交付包里的三样都齐了：安装包、测试回执、验收签字页。');
+    fx('e7', 4, 'c', 'r8', '改了表格', '10 月报销登记表：新增 23 行');
+    msg(200, 'me', 'c', '周三下午客户来访，订个大会议室，要能投影。'); msg(170, 'c', 'me', '周三下午 2 点到 4 点的大会议室订好了，投影也借了。', { fx: ['e1'] });
     msg(94, 'me', 'a', '周五要把 2.3 版本交给客户，你来负责。缺什么自己找人。');
-    msg(80, 'a', 'y', '言禾，客户盖章的验收签字页在你那吗？周五交付要用。'); msg(62, 'y', 'a', '在，发你了。有两个附件页码不一样，盖章的是其中一份，你最好找人核一下。');
-    msg(55, 'a', 'z', '帮我核一下这两份签字页：哪份是盖章的，版本对不对。'); msg(30, 'z', 'a', '核完了。盖章的是第 3 页那份，版本 2.3，和交付清单一致。');
+    msg(80, 'a', 'y', '言禾，客户盖章的验收签字页在你那吗？周五交付要用。'); msg(62, 'y', 'a', '在，共享给你了。有两个附件页码不一样，盖章的是其中一份，你最好找人核一下。', { fx: ['e2'] });
+    msg(55, 'a', 'z', '帮我核一下这两份签字页：哪份是盖章的，版本对不对。'); msg(30, 'z', 'a', '核完了。盖章的是第 3 页那份，版本 2.3，和交付清单一致。记录放网盘了。', { fx: ['e3'] });
     msg(26, 'a', 'o1', '周姐，2.3 版本周五上午发您，签字页我们已经核对过了。');
-    msg(49, 'me', 'c', '下周一有新同事入职，账号提前开好。'); msg(22, 'c', 'me', '邮箱和飞书开好了。GitHub 要等他把用户名发我，我已经问了。');
-    msg(17, 'a', 'me', '签字页核对好了，交付包齐了。你看一眼核对单，没问题我就发给客户。', { ask: 'open', file: '2.3 版本签字页核对单', body: '盖章的是第 3 页那一份。\n版本号 2.3，和交付清单一致。\n核对人：小折。\n交付包里的三样都齐了：安装包、测试回执、验收签字页。' });
+    msg(49, 'me', 'c', '下周一有新同事入职，账号提前开好。'); msg(22, 'c', 'me', '邮箱和飞书开好了。GitHub 要等他把用户名发我，我已经问了。', { fx: ['e4', 'e5'] });
+    msg(17, 'a', 'me', '签字页核对好了，交付包齐了，核对单放在网盘。你没意见的话，我周五上午发给客户。', { fx: ['e6'], read: false });
     msg(40, 'me', 'c', '把 10 月的报销单整理一下，周五前给我。'); msg(12, 'c', 't', '10 月的报销我登记到一半，登完发你对账。');
     d.n = 100; d.sample = true; return d;
   }
   var db = sample();
-  try { var raw = JSON.parse(localStorage.getItem(KEY)); if (raw && raw.people && raw.msgs && raw.v === 3) db = raw; } catch (e) { /* 没有存储也能用 */ }
-  function save() { db.v = 3; try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { /* ignore */ } }
+  try { var raw = JSON.parse(localStorage.getItem(KEY)); if (raw && raw.people && raw.msgs && raw.v === 4) db = raw; } catch (e) { /* 没有存储也能用 */ }
+  function save() { db.v = 4; try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { /* ignore */ } }
   function uid(p) { db.n += 1; return p + db.n; }
   function P(id) { return db.people.filter(function (x) { return x.id === id; })[0]; }
   function O(id) { return db.outs.filter(function (x) { return x.id === id; })[0]; }
@@ -49,7 +58,9 @@
   function below(id) { var o = []; db.people.forEach(function (x) { if (x.boss === id) o.push(x.id); }); o.slice().forEach(function (j) { o = o.concat(below(j)); }); return o; }
   function reachers(id) { var o = kin(id); db.people.forEach(function (x) { if (x.id !== id && x.reach.indexOf(id) >= 0 && o.indexOf(x.id) < 0) o.push(x.id); }); return o; } /* 谁能主动找他 */
   function canTalk(id, j) { return kin(id).indexOf(j) >= 0 || ((P(id) || {}).reach || []).indexOf(j) >= 0; }
-  function asks(id) { return db.msgs.filter(function (x) { return x.to === 'me' && x.ask === 'open' && (!id || x.who === id); }); }
+  function unread(id) { return db.msgs.filter(function (x) { return x.to === 'me' && !x.read && (!id || x.who === id); }); } /* 红点就是没看过的消息，和微信一样 */
+  function markRead(id) { var n = 0; db.msgs.forEach(function (x) { if (x.to === 'me' && x.who === id && !x.read) { x.read = true; n++; } }); if (n) { save(); sync(); } }
+  function F(id) { return (db.fx || []).filter(function (x) { return x.id === id; })[0]; }
   function hhmm(ts) { var d = new Date(ts); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
 
   /* ---------- 界面：微信的结构。三个标签（消息、通讯录、办公室），点进去是整页，左上角返回。 ---------- */
@@ -60,8 +71,8 @@
   function cur() { var t = top(); return t && (t.k === 'chat' || t.k === 'profile') ? P(t.id) : null; }
   function reachOf(id) { var p = P(id), o = kin(id); if (p) p.reach.forEach(function (j) { if (o.indexOf(j) < 0) o.push(j); }); return o; }
   function toScene() {
-    var nodes = [{ id: 'me', name: '你', kind: 'me', pc: true }], links = [], boss = [];
-    db.people.forEach(function (p) { nodes.push({ id: p.id, name: p.name, kind: 'bot', look: p.look, badge: asks(p.id).length, busy: !!p.doing, pc: !!(p.pc || p.env) }); boss.push([p.boss, p.id]); links.push([p.boss, p.id]); p.reach.forEach(function (j) { if (P(j) || O(j)) links.push([p.id, j]); }); });
+    var nodes = [{ id: 'me', name: '你', kind: 'me' }], links = [], boss = [];
+    db.people.forEach(function (p) { nodes.push({ id: p.id, name: p.name, kind: 'bot', look: p.look, badge: unread(p.id).length, busy: !!p.doing, pc: !!(p.pc || p.env) }); boss.push([p.boss, p.id]); links.push([p.boss, p.id]); p.reach.forEach(function (j) { if (P(j) || O(j)) links.push([p.id, j]); }); });
     db.outs.forEach(function (o) { nodes.push({ id: o.id, name: o.name, kind: 'out' }); });
     return { nodes: nodes, links: links, boss: boss };
   }
@@ -77,16 +88,17 @@
   function cell(page, id, title, sub, right, n) { return '<button class="cell" data-go=\'' + esc(JSON.stringify(page)) + '\'>' + av(id, n) + '<span class="t"><b>' + title + '</b>' + (sub ? '<span>' + sub + '</span>' : '') + '</span>' + (right ? '<span class="rt">' + right + '</span>' : '') + '</button>'; }
   function bubble(m, self) { if (m.sys) return '<p class="when">' + esc(m.text) + '</p>'; var mine = m.who === self;
     return '<div class="msg' + (mine ? ' out' : '') + '">' + av(m.who) + '<div class="mb">' + (!mine && self !== 'me' ? '<span class="nm">' + esc(N(m.who)) + '</span>' : '') + '<div class="bub">' + esc(m.text) + '</div>' +
-      (m.file ? '<details class="file"><summary><span><b>' + esc(m.file) + '</b><i>文件 · 点开看内容</i></span><span class="fi" aria-hidden="true"></span></summary><pre>' + esc(m.body) + '</pre></details>' : '') +
-      (m.ask === 'open' && self === 'me' ? '<div class="ask"><button class="btn ok" data-do="accept" data-id="' + m.id + '">可以</button><button class="btn" data-do="reject" data-id="' + m.id + '">不行，退回</button></div>' : m.ask && self === 'me' ? '<div class="asked">' + (m.ask === 'ok' ? '你说了可以' : '你退回了') + '</div>' : '') + '</div></div>'; }
+      (m.fx || []).map(function (id) { var e = F(id); return e ? fxCard(e) : ''; }).join('') + '</div></div>'; }
+  function fxCard(e) { var r = R('pc', e.via) || R('env', e.via) || R('conn', e.via);
+    return (e.body ? '<details class="file">' : '<div class="file">') + '<' + (e.body ? 'summary' : 'div class="fs"') + '><span><b>' + esc(e.name) + '</b><i>' + esc(N(e.who) + (r ? '在' + r.name : '') + e.what) + '</i></span><span class="fi" aria-hidden="true">' + esc(r ? r.name.slice(0, 1) : '改') + '</span></' + (e.body ? 'summary' : 'div') + '>' + (e.body ? '<pre>' + esc(e.body) + '</pre></details>' : '</div>'); }
   function bubbles(list, self) { var prev = 0; return list.map(function (m) { var gap = m.ts - prev > 5 * 60000; prev = m.ts; return (gap && !m.sys ? '<p class="when">' + hhmm(m.ts) + '</p>' : '') + bubble(m, self); }).join(''); }
 
   /* 标签一：消息。老板自己的手机，只有直接归你管的人 */
   function chats() {
     var mine = db.people.filter(function (p) { return p.boss === 'me' || thread('me', p.id).length; });
     function last(p) { var l = thread('me', p.id).pop(); return l ? l.ts : 0; }
-    mine.sort(function (a, b) { return (asks(b.id).length - asks(a.id).length) || (last(b) - last(a)); });
-    return '<header class="nav top"><span class="r"></span><h1>消息' + (asks().length ? '(' + asks().length + ')' : '') + '</h1><span class="r"><button class="ic" data-go=\'{"k":"recruit"}\' aria-label="招募">' + ICON.plus + '</button></span></header><div class="body list">' + (mine.length ? mine.map(function (p) { var l = thread('me', p.id).pop(), n = asks(p.id).length;
+    mine.sort(function (a, b) { return (unread(b.id).length - unread(a.id).length) || (last(b) - last(a)); });
+    return '<header class="nav top"><span class="r"></span><h1>消息' + (unread().length ? '(' + unread().length + ')' : '') + '</h1><span class="r"><button class="ic" data-go=\'{"k":"recruit"}\' aria-label="招募">' + ICON.plus + '</button></span></header><div class="body list">' + (mine.length ? mine.map(function (p) { var l = thread('me', p.id).pop(), n = unread(p.id).length;
       return cell({ k: 'chat', id: p.id }, p.id, esc(p.name) + '<em>' + esc(p.boss === 'me' ? p.role || '未填岗位' : '归' + N(p.boss) + '管') + '</em>', esc(l ? (l.who === 'me' && !l.sys ? '你：' : '') + l.text : '还没有说过话'), l ? hhmm(l.ts) : '', n); }).join('') : '<div class="empty"><p>手机里还没有人。</p><button class="btn ok" data-go=\'{"k":"recruit"}\'>招募第一位员工</button></div>') +
       '<p class="foot">这是原型，没有接真实的 Bot，你发出去的话不会有人回。<button class="lk" data-do="' + (db.sample ? 'clear">清空示例' : 'sample">放回示例') + '</button></p></div>';
   }
@@ -101,7 +113,7 @@
   function card() {
     var id = ui.sel, p = P(id), o = O(id);
     if (!id) return '<p class="hint">点一个小家伙：彩色箭头是他能主动找的人，灰色箭头是能主动找他的人。</p>';
-    if (id === 'me') return '<div class="pcard">' + av('me') + '<span class="t"><b>你</b><span>这间办公室的老板</span></span><button class="btn ok" data-do="tab" data-id="chats">看消息</button></div>';
+    if (id === 'me') return '<div class="pcard">' + av('me') + '<span class="t"><b>你</b><span>老板，不是员工，所以没有工位</span></span><button class="btn ok" data-do="tab" data-id="chats">看消息</button></div>';
     if (o) return '<div class="pcard">' + av(o.id) + '<span class="t"><b>' + esc(o.name) + '</b><span>公司外的人</span></span><button class="btn" data-go=\'' + esc(JSON.stringify({ k: 'out', id: o.id })) + '\'>查看</button></div>';
     return '<div class="pcard">' + av(p.id) + '<span class="t"><b>' + esc(p.name) + '</b><span>' + esc(p.role || '未填岗位') + ' · 归' + esc(N(p.boss)) + '管</span></span>' + (p.boss === 'me' ? '<button class="btn ok" data-go=\'' + esc(JSON.stringify({ k: 'chat', id: p.id })) + '\'>对话</button>' : '') + '<button class="btn" data-go=\'' + esc(JSON.stringify({ k: 'profile', id: p.id, tab: 'phone' })) + '\'>手机和电脑</button></div>';
   }
@@ -128,6 +140,7 @@
     function add(k) { return '<form class="inl" data-do="res" data-k="' + k + '"><input autocomplete="off" placeholder="' + KIND[k][3] + '" aria-label="添加' + KIND[k][0] + '"><button class="btn">添加</button></form>'; }
     function one(k) { return '<p class="cap">' + KIND[k][2] + '</p>' + (db.res[k].length ? '<label class="fld"><span>给他</span><select data-sw="' + k + '"><option value="">不给</option>' + db.res[k].map(function (r) { return '<option value="' + r.id + '"' + (p[k] === r.id ? ' selected' : '') + '>' + esc(r.name) + '</option>'; }).join('') + '</select></label>' : '') + add(k); }
     return '<div class="body">' + sec('', '他在做什么', p.doing ? '<div class="doing"><i></i>' + esc(p.doing) + '</div><p class="cap">用的是：' + esc([R('pc', p.pc), R('env', p.env)].filter(Boolean).map(function (r) { return r.name; }).join('、')) + '</p>' : none(has ? '他的电脑现在空着。' : '他还没有电脑，也没有云环境，现在只能用手机联系人。')) +
+      sec('', '他留下的改动', (function () { var list = (db.fx || []).filter(function (e) { return e.who === p.id; }).sort(function (a, b) { return b.ts - a.ts; }); return list.length ? '<p class="cap">他用电脑和连接器做事时在外面留下的痕迹，不一定是交给谁的。</p>' + list.map(function (e) { return '<div class="fxrow"><time>' + hhmm(e.ts) + '</time>' + fxCard(e) + '</div>'; }).join('') : none('他还没有在外面动过什么。'); })()) +
       sec('', '电脑', one('pc')) + sec('', '云环境', one('env')) +
       sec('', '连接器', '<p class="cap">' + KIND.conn[2] + '</p>' + (db.res.conn.length ? '<div class="chips">' + db.res.conn.map(function (r) { return '<label class="chip ck"><input type="checkbox" data-sw="conn" data-id="' + r.id + '"' + (p.conn.indexOf(r.id) >= 0 ? ' checked' : '') + '>' + esc(r.name) + '</label>'; }).join('') + '</div>' : '') + add('conn')) + '</div>';
   }
@@ -147,11 +160,12 @@
   }
   function draw() {
     var t = top(), view = $('view'), b = view.querySelector('.body'), keep = b ? b.scrollTop : 0, key = JSON.stringify(t || ui.tab) + ui.sub, same = view.getAttribute('data-key') === key;
+    if (t && t.k === 'chat') markRead(t.id);
     while (t && ((t.k === 'chat' || t.k === 'profile') && !P(t.id) || t.k === 'out' && !O(t.id))) { ui.stack.pop(); t = top(); }
     var office = !t && ui.tab === 'office';
     view.innerHTML = t ? (t.k === 'chat' ? chat(P(t.id)) : t.k === 'profile' ? profile(P(t.id), t) : t.k === 'out' ? outside(O(t.id)) : recruit()) : ui.tab === 'chats' ? chats() : ui.tab === 'people' ? people() : '';
     view.setAttribute('data-key', key); view.hidden = office; $('office').hidden = !office; $('card').innerHTML = office ? card() : '';
-    var n = asks().length; $('tabbar').hidden = !!t; $('tabbar').innerHTML = TABBAR.map(function (x) { return '<button data-do="tab" data-id="' + x[0] + '" aria-current="' + (ui.tab === x[0] ? 'page' : 'false') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + x[2] + '</svg>' + x[1] + (x[0] === 'chats' && n ? '<i class="badge">' + n + '</i>' : '') + '</button>'; }).join('');
+    var n = unread().length; $('tabbar').hidden = !!t; $('tabbar').innerHTML = TABBAR.map(function (x) { return '<button data-do="tab" data-id="' + x[0] + '" aria-current="' + (ui.tab === x[0] ? 'page' : 'false') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + x[2] + '</svg>' + x[1] + (x[0] === 'chats' && n ? '<i class="badge">' + n + '</i>' : '') + '</button>'; }).join('');
     var nb = view.querySelector('.body'); if (nb && same) nb.scrollTop = keep; var c = $('chat'); if (c && !same) c.scrollTop = c.scrollHeight;
     if (office && has3d) window.Office.resize();
   }
@@ -162,8 +176,6 @@
     see: function (el) { ui.stack = []; ui.tab = 'office'; draw(); pick(el.getAttribute('data-id')); },
     sub: function (el) { ui.sub = el.getAttribute('data-id') || null; draw(); },
     say: function () { var v = $('say').value.trim(), p = cur(); if (!v || !p || p.boss !== 'me') return; db.msgs.push({ id: uid('m'), ts: Date.now(), who: 'me', to: p.id, text: v }); save(); $('view').removeAttribute('data-key'); draw(); $('say').focus(); },
-    accept: function (el) { answer(el.getAttribute('data-id'), 'ok', '可以，就这样。'); },
-    reject: function (el) { answer(el.getAttribute('data-id'), 'no', '不行，退回，再看看。'); },
     out: function () { var v = $('out').value.trim(), p = cur(); if (!v || !p) return; var o = { id: uid('o'), name: v }; db.outs.push(o); p.reach.push(o.id); save(); sync(); draw(); },
     res: function (f) { var v = f.querySelector('input').value.trim(), k = f.getAttribute('data-k'), p = cur(); if (!v) return; var r = { id: uid('r'), name: v }; db.res[k].push(r); if (p) { if (k === 'conn') p.conn.push(r.id); else p[k] = r.id; } save(); sync(); draw(); },
     role: function () { var p = cur(); if (!p) return; p.name = $('rname').value.trim() || p.name; p.role = $('rrole').value.trim(); p.prompt = $('rprompt').value.trim(); p.boss = $('rboss').value; save(); sync(); draw(); },
@@ -178,7 +190,6 @@
     clear: function () { if (!window.confirm('清空示例？办公室会变成空的。')) return; db = blank(); ui.sel = null; save(); sync(); draw(); },
     sample: function () { db = sample(); ui.sel = null; save(); sync(); draw(); }
   };
-  function answer(id, state, text) { var m = db.msgs.filter(function (x) { return x.id === id; })[0]; if (!m) return; m.ask = state; db.msgs.push({ id: uid('m'), ts: Date.now(), who: 'me', to: m.who, text: text }); save(); sync(); $('view').removeAttribute('data-key'); draw(); }
   var SW = {
     reach: function (el, p) { var id = el.getAttribute('data-id'); p.reach = p.reach.filter(function (j) { return j !== id; }); if (el.checked) p.reach.push(id); sync(); draw(); },
     conn: function (el, p) { var id = el.getAttribute('data-id'); p.conn = p.conn.filter(function (j) { return j !== id; }); if (el.checked) p.conn.push(id); },
