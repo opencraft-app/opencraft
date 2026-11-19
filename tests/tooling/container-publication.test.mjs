@@ -74,12 +74,14 @@ test('identical SHA rerun does not overwrite the SHA tag', async t => {
   const r = await simulate(t, { EXISTING: 'same' }); assert.equal(r.status, 0, r.stderr);
   assert.doesNotMatch(r.commands, /create --tag .*:sha-/);
 });
-test('distribution logs out before pull and runs digest-pinned smoke', async t => {
+test('distribution verifies a fresh registry pull of the private package and runs digest-pinned smoke', async t => {
   const r = await simulate(t, {}, 'distribute'); assert.equal(r.status, 0, r.stderr);
-  assert.ok(r.commands.indexOf('logout') < r.commands.indexOf('pull '));
+  const removed = r.commands.indexOf('image rm '), pulled = r.commands.indexOf('pull ');
+  assert.ok(r.commands.indexOf('push ') < removed && removed < pulled, 'local copies are removed between push and pull');
+  assert.doesNotMatch(r.commands, /logout/, 'the private package is pulled with the CI credential');
   assert.match(r.commands, /smoke/);
 });
-test('private package fails anonymous verification', async t => {
+test('a failed registry pull fails closed before smoke', async t => {
   const r = await simulate(t, { FAIL_PULL: '1' }, 'distribute'); assert.notEqual(r.status, 0);
   assert.doesNotMatch(r.commands, /smoke/);
 });
