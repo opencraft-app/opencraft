@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 /** Build the pinned, self-contained Pi provider bridge artifact the Host launches. */
 export async function buildPiBridge(output) {
-  const outfile = resolve(output ?? process.env.PI_BRIDGE_OUT ?? 'plugins/pi-bridge/dist/main.mjs');
+  const outfile = resolve(output ?? process.env.PI_BRIDGE_OUT ?? fileURLToPath(new URL('../plugins/pi-bridge/dist/main.mjs', import.meta.url)));
   await mkdir(dirname(outfile), { recursive: true });
   await build({
     entryPoints: [fileURLToPath(new URL('../plugins/pi-bridge/src/main.ts', import.meta.url))],
