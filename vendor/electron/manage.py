@@ -84,11 +84,11 @@ class Fork:
     def git(self, *args, capture=True, env=None):
         return run(['git', '-c', 'core.autocrlf=false', '-C', self.source, *args], capture=capture, env=env)
 
-    def expected_tree(self):
+    def expected_tree(self, patches=None):
         with tempfile.TemporaryDirectory(prefix='opencraft-electron-index-') as tmp:
             env = dict(os.environ, GIT_INDEX_FILE=str(Path(tmp) / 'index'))
             self.git('read-tree', self.lock['revision'], env=env)
-            for patch in self.patches:
+            for patch in self.patches if patches is None else patches:
                 self.git('apply', '--cached', '--whitespace=error', patch, env=env)
             tree = self.git('write-tree', env=env).strip()
             # An outer Electron patch can be valid while the Chromium patch it
@@ -138,14 +138,28 @@ class Fork:
             if self.git('rev-parse', 'HEAD').strip() != self.lock['revision']:
                 raise ValueError('upstream tag no longer matches the pinned revision')
             self.git('checkout', '--detach', self.lock['revision'], capture=False)
-        if self.git('rev-parse', 'HEAD').strip() != self.lock['revision']:
-            return self.verify()
+        if Path(self.git('rev-parse', '--show-toplevel').strip()).resolve() != self.source:
+            raise ValueError('source is not its own Git checkout')
         if self.git('status', '--porcelain', '--untracked-files=all').strip():
             raise ValueError('source checkout is dirty; no files were reset')
-        # Validate the entire series before changing the source branch.
+        self.git('merge-base', '--is-ancestor', self.lock['revision'], 'HEAD')
+        # Validate the whole new series (including nested Chromium patches)
+        # before mutating a persistent runner's source. Only an exact prefix
+        # may advance in place; never reset an unknown or locally modified tree.
         expected = self.expected_tree()
-        branch = 'opencraft/' + self.lock['tag']
-        self.git('switch', '-c', branch, capture=False)
+        current = self.git('rev-parse', 'HEAD^{tree}').strip()
+        if current == expected:
+            return self.verify()
+        applied = None
+        for count in range(len(self.patches) - 1, -1, -1):
+            if current == self.expected_tree(self.patches[:count]):
+                applied = count
+                break
+        if applied is None:
+            raise ValueError('source tree differs from the pinned upstream + patches; no files were reset')
+        if self.git('rev-parse', 'HEAD').strip() == self.lock['revision']:
+            branch = 'opencraft/' + self.lock['tag']
+            self.git('switch', '-c', branch, capture=False)
         identity = {
             'GIT_AUTHOR_NAME': 'OpenCraft Electron',
             'GIT_AUTHOR_EMAIL': 'electron-build@localhost',
@@ -155,7 +169,7 @@ class Fork:
             'GIT_COMMITTER_DATE': self.lock['patchDate'],
         }
         env = dict(os.environ, **identity)
-        for patch in self.patches:
+        for patch in self.patches[applied:]:
             self.git('apply', '--index', '--whitespace=error', patch, capture=False)
             self.git('-c', 'commit.gpgsign=false', 'commit', '-m',
                      'OpenCraft Electron: ' + patch.stem, capture=False, env=env)

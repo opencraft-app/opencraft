@@ -9,7 +9,11 @@ separate Electron fork repository or manually maintained source copy is needed.
 The initial baseline is Electron **44.8.0**, commit
 `60169b45c12488c6fda237af7f6425526a7ce5f0`, with Chromium **152.0.7977.167**.
 `fork.json` is authoritative. Generated sources, dependencies and build outputs
-are ignored; local changes are rejected rather than reset or overwritten.
+are ignored; local changes are rejected rather than reset or overwritten. A clean
+persistent checkout may advance by appending missing patches only when its tree
+exactly matches a prefix of the current pinned series. The complete new series
+is validated before any commit is made; changed, removed or reordered patches
+that do not match that prefix are rejected without resetting the checkout.
 
 ## GitHub Actions native build capacity
 

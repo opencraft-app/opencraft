@@ -58,6 +58,57 @@ class ForkSourceTests(unittest.TestCase):
         self.assertEqual(self.native.read_text(), 'native state available\n')
         self.assertTrue(first['sourceVerified'])
 
+    def append_patch(self):
+        self.native.write_text('native state fenced\n', newline='\n')
+        path = self.directory / 'patches/electron/fence.patch'
+        path.write_text(self.git('diff'), newline='\n')
+        self.git('restore', '--', 'native.cc')
+        self.lock['patches'].append({'path': 'patches/electron/fence.patch',
+                                    'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
+        self.lock_path.write_text(json.dumps(self.lock), newline='\n')
+
+    def test_persistent_source_advances_only_from_exact_patch_prefix(self):
+        before = self.fork().checkout()
+        self.append_patch()
+        fork = self.fork()
+        after = fork.checkout()
+        self.assertEqual(after['patchCount'], 2)
+        self.assertEqual(self.native.read_text(), 'native state fenced\n')
+        self.git('merge-base', '--is-ancestor', before['forkRevision'], after['forkRevision'])
+        self.assertEqual(self.git('rev-list', '--count', before['forkRevision'] + '..HEAD').strip(), '1')
+        self.assertEqual(after, fork.checkout())
+        # A fresh build produces precisely the same commits and tree.
+        fresh = Path(self.temp.name) / 'fresh'
+        (fresh / 'src').mkdir(parents=True)
+        subprocess.run(['git', 'clone', '--no-local', str(self.source),
+                        str(fresh / 'src/electron')], check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(fresh / 'src/electron'), 'checkout',
+                        '--detach', self.lock['revision']], check=True, capture_output=True)
+        # The fixture clone already contains the branch; remove only that fixture ref.
+        subprocess.run(['git', '-C', str(fresh / 'src/electron'), 'branch', '-D',
+                        'opencraft/' + self.lock['tag']], check=True, capture_output=True)
+        self.assertEqual(after, module.Fork(self.directory, fresh).checkout())
+
+    def test_persistent_source_does_not_remove_registered_patches(self):
+        self.fork().checkout()
+        self.append_patch()
+        before = self.fork().checkout()
+        self.lock['patches'].pop()
+        self.lock_path.write_text(json.dumps(self.lock), newline='\n')
+        with self.assertRaisesRegex(ValueError, 'source tree differs'):
+            self.fork().checkout()
+        self.assertEqual(self.git('rev-parse', 'HEAD').strip(), before['forkRevision'])
+        self.assertEqual(self.native.read_text(), 'native state fenced\n')
+
+    def test_dirty_persistent_source_is_not_reset_for_new_patch(self):
+        before = self.fork().checkout()
+        self.append_patch()
+        self.native.write_text('local investigation\n', newline='\n')
+        with self.assertRaisesRegex(ValueError, 'dirty'):
+            self.fork().checkout()
+        self.assertEqual(self.git('rev-parse', 'HEAD').strip(), before['forkRevision'])
+        self.assertEqual(self.native.read_text(), 'local investigation\n')
+
     def test_sync_keeps_pinned_source_and_does_not_request_all_remote_refs(self):
         fork = self.fork()
         before = fork.checkout()
@@ -120,6 +171,10 @@ class ForkSourceTests(unittest.TestCase):
         self.git('-c', 'commit.gpgsign=false', 'commit', '-qm', 'unregistered')
         with self.assertRaisesRegex(ValueError, 'source tree differs'):
             fork.verify()
+        before = self.git('rev-parse', 'HEAD')
+        with self.assertRaisesRegex(ValueError, 'source tree differs'):
+            fork.checkout()
+        self.assertEqual(self.git('rev-parse', 'HEAD'), before)
 
     def test_corrupt_patch_fails_before_source_mutation(self):
         (self.directory / 'patches/electron/native.patch').write_text('tampered\n', newline='\n')
