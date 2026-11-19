@@ -10,7 +10,7 @@ import { RemoteBrowserEditInput } from "./remote-browser-edit-input";
 export interface RemoteBrowserInputOwner {
   acceptsInput(p: Page): boolean;
   acceptsPointer(p: Page): boolean;
-  call(p: Page, method: string, input?: unknown, expected?: string, document?: string): Promise<any>;
+  call(p: Page, method: string, input?: unknown, expected?: string, document?: string): Promise<unknown>;
   inputError(p: Page, kind: BrowserInputFailureKind, message: string): void;
   acquireControl(p: Page, kind: "human"): Promise<string>;
   retireMenu(p: Page): void;
@@ -24,7 +24,11 @@ export function bindRemoteBrowserInput(host: RemoteBrowserInputOwner, p: Page): 
   const canvas = p.canvas,
     receiver = p.receiver,
     cleanup: (() => void)[] = [];
-  const listen = (name: string, handler: (event: any) => void, options?: AddEventListenerOptions) => {
+  const listen = <K extends keyof HTMLElementEventMap>(
+    name: K,
+    handler: (event: HTMLElementEventMap[K]) => void,
+    options?: AddEventListenerOptions,
+  ) => {
     canvas.addEventListener(name, handler, options);
     cleanup.push(() => canvas.removeEventListener(name, handler, options));
   };
@@ -67,13 +71,13 @@ export function bindRemoteBrowserInput(host: RemoteBrowserInputOwner, p: Page): 
     },
     () => (p.adaptiveInput ? p.inputPolicy.limit : 2),
   ));
-  const send = (input: any) => {
+  const send = (input: Record<string, unknown>) => {
     if (host.acceptsInput(p) && ((p.control.controller && p.control.kind === "human") || p.acquiring?.kind === "human"))
       inputQueue.push({ ...input, document: p.document });
   };
   let move: PointerEvent | null = null,
     raf = 0,
-    touchMotion: any = null;
+    touchMotion: ReturnType<typeof touchFrame<"touchMove">> | null = null;
   const captured = new Set<number>();
   const contacts = new Map<
     number,
@@ -90,7 +94,7 @@ export function bindRemoteBrowserInput(host: RemoteBrowserInputOwner, p: Page): 
       force: event.pressure,
     };
   };
-  const touchFrame = (type: string, event: PointerEvent) => ({
+  const touchFrame = <T extends string>(type: T, event: PointerEvent) => ({
     type,
     time: event.timeStamp,
     touchPoints: [...contacts.values()],
@@ -274,7 +278,10 @@ export function bindRemoteBrowserInput(host: RemoteBrowserInputOwner, p: Page): 
     },
     () => p.editor,
   ));
-  const textListen = (name: string, handler: (event: any) => void) => {
+  const textListen = <K extends keyof HTMLElementEventMap>(
+    name: K,
+    handler: (event: HTMLElementEventMap[K]) => void,
+  ) => {
     receiver.addEventListener(name, handler);
     cleanup.push(() => receiver.removeEventListener(name, handler));
   };
@@ -308,7 +315,8 @@ export function bindRemoteBrowserInput(host: RemoteBrowserInputOwner, p: Page): 
   textListen("compositionupdate", (event: CompositionEvent) => ime.update(event.data));
   textListen("compositionend", (event: CompositionEvent) => ime.end(event.data));
   textListen("beforeinput", (event: InputEvent) => editing.beforeInput(event));
-  textListen("input", (event: InputEvent) => editing.input(event));
+  // DOM typings declare `input` as Event; text inputs dispatch InputEvent.
+  textListen("input", (event) => editing.input(event as InputEvent));
   textListen("paste", (event: ClipboardEvent) => {
     event.preventDefault();
     const text = event.clipboardData?.getData("text/plain");

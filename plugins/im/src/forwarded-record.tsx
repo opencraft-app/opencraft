@@ -2,7 +2,7 @@ import { ChannelPicture } from "./channel-picture";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ModalContent } from "@opencraft/design-system-web/modal-content";
-import { Button, IconButton } from "@opencraft/design-system-web/button";
+import { Button, IconButton, ObjectActionSurface, ObjectTitleButton } from "@opencraft/design-system-web/button";
 import { CloseIcon, ChevronRightIcon } from "@opencraft/design-system-web/action-icons";
 import { downloadBlob } from "@opencraft/design-system-web/download";
 import { WebChatDocument } from "@opencraft/chat-render-web";
@@ -268,22 +268,19 @@ export function ForwardedRecordCard({
   }, [open, active, typed, record, pictures, group, message.sequence, retry]);
   return (
     <Dialog.Root open={open && active} onOpenChange={setOpen}>
-      <Dialog.Trigger asChild>
-        <Button
-          variant="ghost"
-          contentLayout="row"
-          className="im-record-card"
-          disabled={!active}
-          aria-label={title || intl.formatMessage(labels.record)}
-        >
-          <span className="im-record-card__title">{title || intl.formatMessage(labels.record)}</span>
-          <span className="im-record-card__preview">{preview.join("\n")}</span>
-          <span className="im-record-card__footer">
-            {intl.formatMessage(labels.record)}
-            <ChevronRightIcon />
-          </span>
-        </Button>
-      </Dialog.Trigger>
+      {/* The card is an object surface: its title is the one native trigger and keyboard stop. */}
+      <ObjectActionSurface className="im-record-card" disabled={!active} onOpen={() => setOpen(true)}>
+        <Dialog.Trigger asChild>
+          <ObjectTitleButton className="im-record-card__trigger" disabled={!active}>
+            <span className="im-record-card__title">{title || intl.formatMessage(labels.record)}</span>
+          </ObjectTitleButton>
+        </Dialog.Trigger>
+        <span className="im-record-card__preview">{preview.join("\n")}</span>
+        <span className="im-record-card__footer">
+          {intl.formatMessage(labels.record)}
+          <ChevronRightIcon />
+        </span>
+      </ObjectActionSurface>
       {open && active && (
         <ModalContent
           className="modal-surface im-record"

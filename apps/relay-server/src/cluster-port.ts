@@ -1,6 +1,6 @@
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import type { HubNetwork } from "../../../packages/hub-network/src/node.js";
+import type { HubNetwork } from "@opencraft/hub-network/node";
 import type { RelaySessionStore } from "./session-store.js";
 
 export type RelayHub = Pick<HubNetwork, "snapshot" | "routes" | "open" | "handleUpgrade"> & {

@@ -20,7 +20,7 @@ export interface CommunicationResult {
   retiredCredentials?: string[];
   result: unknown;
   changes: NativeChannelChange[];
-  personalReadGuard?: { epoch: string; groups: { id: string; epoch: string }[] };
+  personalReadGuard?: { epoch: string; groups: { id: string; epoch: string | null }[] };
   createdActors?: Actor[];
   createdCredential?: { id: string; actor_id: string; generation: number; expires_at: number; enabled: 1 };
 }
@@ -278,8 +278,9 @@ export function communicationCommand(
           throw Error("method_not_found");
       }
     });
-    const retiredCredentials = (result as any)?.retiredCredentials as string[] | undefined;
-    if (retiredCredentials) delete (result as any).retiredCredentials;
+    const carrier = result as { retiredCredentials?: string[] } | null | undefined;
+    const retiredCredentials = carrier?.retiredCredentials;
+    if (retiredCredentials) delete carrier.retiredCredentials;
     return { result, changes, createdActors, createdCredential, personalReadGuard, retiredCredentials };
   } finally {
     unwatch();

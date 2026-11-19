@@ -1,4 +1,4 @@
-import { NavigationEmpty } from "@opencraft/design-system-web/navigation";
+import { NavigationEmpty, NavigationItem } from "@opencraft/design-system-web/navigation";
 import { ShellNavigationButton } from "./shell-navigation/navigation-button";
 import { createPortal } from "react-dom";
 import { SidebarContentPortal } from "./shared-sidebar-content";
@@ -651,12 +651,14 @@ function SidebarNewChatButton({ onNewTask }: { onNewTask(): void }) {
   const shell = useShellPresentation();
   const touch = useTouchLayout();
   const floating = !!shell?.mobileSidebar && touch;
-  const button = <ShellNavigationButton type="button" contentLayout="row"
-    aria-label={intl.formatMessage({ id: "sidebar.newChat", defaultMessage: "New chat" })}
-    surface={floating ? "floating" : "integrated"}
-    className={`sidebar-new-chat${floating ? " shell-sidebar-primary-action" : ""}`} title={`${intl.formatMessage({ id: "sidebar.newChat", defaultMessage: "New chat" })} (${shortcutLabel("newChat")})`} aria-keyshortcuts={shortcutAria("newChat")} onClick={() => {
-    onNewTask();
-    shell?.dismissSidebarAfterSelection();
-  }}><SquarePen size={16} aria-hidden="true" /><span data-navigation-label="">{intl.formatMessage({ id: "sidebar.newChat", defaultMessage: "New chat" })}</span></ShellNavigationButton>;
-  return floating ? shell?.sidebarActionHost ? createPortal(button, shell.sidebarActionHost) : null : button;
+  const label = intl.formatMessage({ id: "sidebar.newChat", defaultMessage: "New chat" });
+  const action = {
+    type: "button" as const, "aria-label": label, title: `${label} (${shortcutLabel("newChat")})`, "aria-keyshortcuts": shortcutAria("newChat"),
+    onClick: () => { onNewTask(); shell?.dismissSidebarAfterSelection(); },
+  };
+  const content = <><SquarePen size={16} aria-hidden="true" /><span data-navigation-label="">{label}</span></>;
+  // Floating creation stays a Shell action; the in-list entry is a sidebar navigation row.
+  if (floating) return shell?.sidebarActionHost ? createPortal(<ShellNavigationButton {...action} contentLayout="row" surface="floating"
+    className="sidebar-new-chat shell-sidebar-primary-action">{content}</ShellNavigationButton>, shell.sidebarActionHost) : null;
+  return <NavigationItem {...action} className="sidebar-new-chat">{content}</NavigationItem>;
 }

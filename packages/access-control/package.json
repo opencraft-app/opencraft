@@ -13,7 +13,11 @@
     "./actor-policy": "./src/actor-policy.ts",
     "./server-spaces": "./src/server-spaces-runtime.ts",
     "./server-spaces-session": "./src/server-spaces-session.ts",
-    "./collaboration": "./src/collaboration.ts"
+    "./collaboration": "./src/collaboration.ts",
+    "./assistant-thread-commands": "./src/assistant-thread-commands.ts",
+    "./thread-access": "./src/thread-access.ts",
+    "./conversation-failure-diagnostics": "./src/conversation-failure-diagnostics.mjs",
+    "./native-channels": "./src/native-channels.ts"
   },
   "dependencies": {
     "@opencraft/identity-core": "*",

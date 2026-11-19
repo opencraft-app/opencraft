@@ -68,7 +68,7 @@ export function annotationData(value: unknown): unknown {
   }
 }
 
-function record(value: unknown): value is Record<string, any> {
+function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 function string(value: unknown, max = 2048): value is string {
@@ -86,12 +86,22 @@ function id(value: unknown): value is string {
 function rect(value: unknown): boolean {
   return (
     record(value) &&
-    [value.x, value.y, value.width, value.height].every(
-      (n) => typeof n === "number" && Number.isFinite(n) && Math.abs(n) <= 1e9,
-    ) &&
+    coordinate(value.x) &&
+    coordinate(value.y) &&
+    coordinate(value.width) &&
+    coordinate(value.height) &&
     value.width >= 0 &&
     value.height >= 0
   );
+}
+function coordinate(n: unknown): n is number {
+  return typeof n === "number" && Number.isFinite(n) && Math.abs(n) <= 1e9;
+}
+function member(value: unknown, options: readonly string[]): boolean {
+  return typeof value === "string" && options.includes(value);
+}
+function optionalList(value: unknown): value is unknown[] | undefined {
+  return value === undefined || Array.isArray(value);
 }
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
@@ -114,8 +124,8 @@ export function validAnnotationImage(value: unknown): value is string {
 function validAnchor(a: unknown): a is BrowserAnnotationAnchor {
   if (
     !record(a) ||
-    !["element", "region", "text"].includes(a.kind) ||
-    !["main", "child"].includes(a.frame) ||
+    !member(a.kind, ["element", "region", "text"]) ||
+    !member(a.frame, ["main", "child"]) ||
     ![a.url, a.title, a.ref, a.tag, a.elementPath].every((v) => string(v)) ||
     ![a.selector, a.role, a.name, a.text, a.nearbyText, a.source].every((v) => nullable(v)) ||
     !integer(a.revision) ||
@@ -215,7 +225,7 @@ export function validateBrowserAnnotation(value: unknown): BrowserAnnotation | n
     a.selections.length > BROWSER_ANNOTATION_SELECTION_LIMIT
   )
     return null;
-  const ids = new Set<string>(),
+  const ids = new Set<unknown>(),
     labels = new Set<string>();
   for (const s of a.selections) {
     if (
@@ -233,21 +243,21 @@ export function validateBrowserAnnotation(value: unknown): BrowserAnnotation | n
   }
   // The first selection remains the V1-compatible primary anchor.
   if (canonical(a.anchor) !== canonical(a.selections[0].anchor)) return null;
-  for (const key of ["styleIntents", "textReplacements", "evidence"])
-    if (a[key] !== undefined && !Array.isArray(a[key])) return null;
+  const { styleIntents, textReplacements, evidence } = a;
+  if (!optionalList(styleIntents) || !optionalList(textReplacements) || !optionalList(evidence)) return null;
   if (
-    (a.styleIntents?.length ?? 0) > 64 ||
-    (a.textReplacements?.length ?? 0) > BROWSER_ANNOTATION_SELECTION_LIMIT ||
-    (a.evidence?.length ?? 0) + (a.screenshot ? 1 : 0) > BROWSER_ANNOTATION_IMAGE_LIMIT
+    (styleIntents?.length ?? 0) > 64 ||
+    (textReplacements?.length ?? 0) > BROWSER_ANNOTATION_SELECTION_LIMIT ||
+    (evidence?.length ?? 0) + (a.screenshot ? 1 : 0) > BROWSER_ANNOTATION_IMAGE_LIMIT
   )
     return null;
   const styles = new Set<string>(),
-    texts = new Set<string>();
-  for (const s of a.styleIntents ?? []) {
+    texts = new Set<unknown>();
+  for (const s of styleIntents ?? []) {
     if (
       !record(s) ||
       !ids.has(s.selectionId) ||
-      !BROWSER_ANNOTATION_STYLE_PROPERTIES.includes(s.property) ||
+      !member(s.property, BROWSER_ANNOTATION_STYLE_PROPERTIES) ||
       !string(s.observedComputedValue, 256) ||
       !string(s.requestedValue, 256) ||
       !s.requestedValue.trim() ||
@@ -258,7 +268,7 @@ export function validateBrowserAnnotation(value: unknown): BrowserAnnotation | n
     if (styles.has(key)) return null;
     styles.add(key);
   }
-  for (const t of a.textReplacements ?? []) {
+  for (const t of textReplacements ?? []) {
     if (
       !record(t) ||
       !ids.has(t.selectionId) ||
@@ -270,12 +280,12 @@ export function validateBrowserAnnotation(value: unknown): BrowserAnnotation | n
     texts.add(t.selectionId);
   }
   const images = new Set<string>();
-  for (const e of a.evidence ?? []) {
+  for (const e of evidence ?? []) {
     if (
       !record(e) ||
       !id(e.id) ||
       images.has(e.id) ||
-      !["target", "context"].includes(e.kind) ||
+      !member(e.kind, ["target", "context"]) ||
       !validAnnotationImage(e.dataUrl) ||
       (e.preface !== undefined && !string(e.preface, 1000)) ||
       !Array.isArray(e.selectionIds) ||

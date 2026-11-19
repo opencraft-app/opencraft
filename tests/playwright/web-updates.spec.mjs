@@ -108,8 +108,13 @@ test.afterAll(async () => { await fixture?.close(); if (directory) await rm(dire
 test('first-visit setup stays pending without blocking management routes', async ({ page }) => {
   expect(await page.evaluate(() => localStorage.getItem('opencraft.onboarding.completedAt'))).toBeNull();
   await page.goto(base);
-  await expect(page.locator('.agent-onboard-gate')).toBeVisible();
+  // A first visit is not blocked by the agent setup gate; the Draft offers setup as a next step.
+  const nextStep = page.getByRole('region', { name: 'Next step' });
+  await expect(nextStep.getByRole('button', { name: 'Open agent setup' })).toBeVisible();
+  await expect(page.locator('.agent-onboard-gate')).toHaveCount(0);
   await page.screenshot({ path: test.info().outputPath('first-visit-chat.png') });
+  await nextStep.getByRole('button', { name: 'Open agent setup' }).click();
+  await expect(page.locator('.agent-onboard-gate')).toBeVisible();
   await page.goto(`${base}/settings/updates`);
   await expect(page.locator('.agent-onboard-gate')).toHaveCount(0);
   await expect(button(page, 'check')).toBeVisible();
@@ -123,7 +128,7 @@ test('generic release discovers runtime Codex Host and built-in settings before 
     expect(JSON.parse(config)).toEqual({ hosts: [
       { hostId: 'local', label: 'Server', kind: 'remote-control', url: '/appserver' },
       { hostId: 'local-codex', label: 'Server', kind: 'remote-control', url: '/codex-appserver' },
-    ], builtinAgents: true, hypernode: false });
+    ], browserBackend: 'iframe', builtinAgents: true, hypernode: false });
     const profiles = await page.evaluate(async () => {
       const db = await new Promise((accept, reject) => {
         const request = indexedDB.open('opencraft-host-connections');

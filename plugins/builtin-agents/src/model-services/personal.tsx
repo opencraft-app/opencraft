@@ -206,6 +206,19 @@ class PersonalModelsError extends Error {
     super(descriptor.defaultMessage);
   }
 }
+type SubscriptionLogin = {
+  sessionId: string;
+  verificationUrl: string;
+  userCode: string;
+  expiresAt: number;
+};
+/** Body returned by a personal-models POST; `providerId` is present on connected results. */
+type PersonalModelsWriteResult = {
+  error?: string;
+  status?: string;
+  providerId: string;
+  login?: SubscriptionLogin;
+};
 export async function readPersonalModels(fetcher: typeof fetch = globalThis.fetch): Promise<PersonalModelsDocument> {
   const response = await fetcher(path, { credentials: "same-origin", cache: "no-store" });
   if (!response.ok) throw new PersonalModelsError(readFailed);
@@ -238,12 +251,7 @@ export function createPersonalModelServicesView(
       [scope, setScope] = useState<"personal" | "team">("personal"),
       [consent, setConsent] = useState(false);
     const [connectionType, setConnectionType] = useState("api-key");
-    const [login, setLogin] = useState<{
-      sessionId: string;
-      verificationUrl: string;
-      userCode: string;
-      expiresAt: number;
-    } | null>(null);
+    const [login, setLogin] = useState<SubscriptionLogin | null>(null);
     const [limitDraft, setLimitDraft] = useState(""),
       [limitOpen, setLimitOpen] = useState(false);
     const lifetime = useRef(0),
@@ -280,7 +288,7 @@ export function createPersonalModelServicesView(
         lifetime.current++;
       };
     }, []);
-    const write = async (body: Record<string, unknown>, success?: (result: any) => void) => {
+    const write = async (body: Record<string, unknown>, success?: (result: PersonalModelsWriteResult) => void) => {
       if (pending.current) return;
       pending.current = true;
       setBusy(true);
@@ -295,8 +303,8 @@ export function createPersonalModelServicesView(
           headers: { "content-type": "application/json" },
           body: JSON.stringify(body),
         });
-        const result = await response.json();
-        if (!response.ok) throw new PersonalModelsError(errors[result.error] ?? saveFailed);
+        const result: PersonalModelsWriteResult = await response.json();
+        if (!response.ok) throw new PersonalModelsError(errors[String(result.error)] ?? saveFailed);
         const next = await readPersonalModels(fetcher);
         if (epoch !== lifetime.current) return;
         apply(next);
@@ -321,7 +329,7 @@ export function createPersonalModelServicesView(
         if (epoch === lifetime.current) setBusy(false);
       }
     };
-    const subscriptionResult = (result: any) => {
+    const subscriptionResult = (result: PersonalModelsWriteResult) => {
       if (result.status === "complete") {
         setLogin(null);
         setSelected(result.providerId);

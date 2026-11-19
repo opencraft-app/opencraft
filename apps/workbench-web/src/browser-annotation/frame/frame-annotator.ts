@@ -170,7 +170,7 @@ export function createAgentAnnotator(channel: AgentChannel): BrowserAnnotator & 
       document: AnnotatedDocument;
       generation: number;
       decode(value: unknown, document: AnnotatedDocument): unknown;
-      resolve(value: any): void;
+      resolve(value: unknown): void;
       reject(error: Error): void;
       timer: ReturnType<typeof setTimeout>;
     }

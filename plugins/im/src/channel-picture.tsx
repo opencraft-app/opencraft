@@ -1,5 +1,4 @@
 import { useRef, useState } from "react";
-import { Button } from "@opencraft/design-system-web/button";
 import { useIntl } from "@opencraft/i18n/react";
 import { useChannelPicture, type ChannelPictures, type ChannelPictureTarget } from "./channel-pictures";
 import { useChannelResourceVisible } from "./channel-resources";
@@ -40,21 +39,22 @@ export function ChannelPicture({
   return (
     <div className="im-channel-chat__attachment im-channel-chat__picture-frame" ref={host}>
       {source && !failed ? (
-        <Button
+        // The picture is media that opens the gallery, not a labelled control.
+        <button
           ref={trigger}
+          type="button"
           className="im-channel-chat__picture"
-          variant="ghost"
-          contentLayout="row"
           aria-label={name}
           onClick={() => {
             if (target && trigger.current) gallery?.(target, trigger.current);
           }}
         >
           <img src={source} alt="" onError={() => setBroken(source)} />
-        </Button>
+        </button>
       ) : (
-        <Button
-          variant="ghost"
+        // The placeholder keeps the picture's slot; when failed, the slot retries.
+        <button
+          type="button"
           className="im-channel-chat__picture-placeholder"
           disabled={!failed || !target || snapshot.isFetching}
           onClick={() => void retry()}
@@ -66,7 +66,7 @@ export function ChannelPicture({
                 : { id: "im.shadow.imagePending", defaultMessage: "Loading image…" },
             )}
           </small>
-        </Button>
+        </button>
       )}
     </div>
   );

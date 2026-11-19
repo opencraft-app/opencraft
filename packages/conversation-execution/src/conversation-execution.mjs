@@ -1,0 +1,277 @@
+import { conversationFailure } from '@opencraft/access-control/conversation-failure-diagnostics';
+import { randomUUID, createHash } from 'node:crypto';
+import { normalize } from 'node:path';
+import { APP_HOST_PROTOCOL_VERSION } from '@opencraft/app-host-protocol/version';
+import { projectConversationMetadata, readConversationPage } from './conversation-projections.mjs';
+import { parseTurnRecoveryNotice } from '@opencraft/appserver-protocol';
+import { executionEngineExtension } from '@opencraft/appserver-client/execution-engine';
+
+/** Resource identity is broader than delegated execution support. The Host is
+ * selected by the trusted transport, never by a model-supplied thread ID. */
+export function conversationAccessServer(execution, machineId, hostId, threadId) {
+  return hostId === 'local-codex' || hostId === 'opencraft-server'
+    ? execution.serverForHost(hostId, threadId)
+    : `server:${machineId}:remote:${createHash('sha256').update(hostId).digest('hex')}`;
+}
+
+/** Narrow internal logical-client lane; no client-supplied RPC method or Host is forwarded. */
+export function callConversationHost(appHost, binding, requestId, method, params, submissionContext, timeoutMs = 35_000, selectRequest) {
+  const clientId = `actor-service:${randomUUID()}`, leaseId = randomUUID();
+  const controls = new Set(['prepare','create','publish','finalize','ack','status','inspect','interrupt'].map(
+      (name) =>'opencraft/orchestration/'+name));
+  // Only a server-created, operation-bound admission may use the existing service
+  // lane. A null Human sender is not an anonymous browser or a new Thread grant.
+  const trustedOrchestration = controls.has(method) && submissionContext?.orchestrationOperationId === requestId
+    && params?.operationId === requestId && typeof submissionContext?.orchestrationCanAdmit === 'function';
+  return new Promise((resolve, reject) => {
+    let connection, receive, generation, finished = false, stage = 'connect', engineMessage;
+    const finish = (error, result) => {
+      if (finished) return; finished = true; clearTimeout(timer);
+      if (error) { try { error.conversationDiagnostic = conversationFailure(error, stage, engineMessage); } catch { /* Diagnostics never change the rejection. */ } }
+      if (error && method.startsWith('opencraft/orchestration/')) {
+        console.error('[thread-orchestration]', JSON.stringify({event:'host-request-failed',method,operationId:requestId,
+          status:error.status ?? 503,rpcCode:typeof error.code==='number'?error.code:null,
+          outcome:error.status===undefined?'unknown':'rejected'}));
+      }
+      try { connection?.close(); } catch { /* Lease cleanup cannot rewrite the engine result. */ }
+      error ? reject(error) : resolve(result);
+    };
+    const timer = setTimeout(() => finish(new Error('Actor execution outcome unknown')), timeoutMs); timer.unref();
+    const send = (id, operation, arguments_) => receive?.({ type: 'host/send', requestId: `send-${id}`, hostId: binding.hostId, leaseId, generation,
+      frame: JSON.stringify({ id, method: operation, params: arguments_ }) });
+    try {
+      if(trustedOrchestration && submissionContext.orchestrationCanAdmit()!==true)throw Object.assign(new Error('Orchestration delegation was revoked'),{code:403,status:403});
+      connection = appHost.accept({
+        subscribe(listener) { receive = listener; return () => { receive = undefined; }; }, start() {}, close() {},
+        postMessage(message) {
+          if (finished) return;
+          if (message.type === 'ready') receive?.({ type: 'host/connect', requestId: 'connect', hostId: binding.hostId, leaseId });
+          else if (message.type === 'response' && message.requestId === 'connect') {
+            if (!message.ok || !Number.isSafeInteger(message.result?.generation)) return finish(new Error('Actor Host unavailable'));
+            generation = message.result.generation; stage = 'initialize';
+            send('init', 'initialize', { clientInfo: { name: 'opencraft-actor-service', version: '1' }, capabilities: { experimentalApi: true } });
+          } else if (message.type === 'response' && !message.ok) finish(new Error('Actor Host admission failed'));
+          else if (message.type === 'host/frame' && message.hostId === binding.hostId && message.generation === generation) {
+            try {
+              const frame = JSON.parse(message.frame);
+              if (frame.method || !['init', 'operation'].includes(frame.id)) return;
+              if (frame.error) { engineMessage = frame.error.message; return finish(Object.assign(new Error('Actor engine request rejected'), {
+                code: frame.error.code,
+                ...(['thread/read','thread/items/list', "thread/turns/list"].includes(method) && frame.error.code === -32072 && frame.error.data?.code === 'HISTORY_RESPONSE_TOO_LARGE'
+                  ? {code: 'HISTORY_RESPONSE_TOO_LARGE', status: 413, retryable: false} : {}),
+                // Creation may already have happened (for example a lost stable ID
+                // or a replaced Host). Only the Broker's committed rejection
+                // receipt can declare that mutation rejected.
+                ...(method!=='opencraft/orchestration/create' && frame.error.data?.resultUnknown!==true
+                  ? typeof frame.error.code==='number' && frame.error.code>=400 && frame.error.code<=599
+                          ? {status:frame.error.code}
+                    : [-32600,-32601,-32602].includes(frame.error.code) ? {status:400} : {}
+                  : {}) })); }
+              if (frame.id === 'init') {
+                const selected = selectRequest?.(frame.result) ?? { method, params };
+                stage = 'request';
+                send('operation', selected.method, { ...selected.params, ...(binding.threadId ? {threadId: binding.threadId} : {}) });
+              }
+              // A successful allocation is custody evidence, not permission for further work.
+              // Core must retain its identity even if the grant was revoked in flight.
+              else if(trustedOrchestration && method!=='opencraft/orchestration/create' && submissionContext.orchestrationCanAdmit()!==true)
+                finish(Object.assign(new Error('Orchestration delegation was revoked'),{code:403,...(method==='opencraft/orchestration/create'?{}:{status:403})}));
+              else finish(null, frame.result);
+            } catch (error) { finish(error); }
+          } else if (message.type === 'fatal' ||
+              (message.type === 'host/status' && ['failed', 'closed'].includes(message.status.state))) finish(new Error('Actor Host closed'));
+        },
+      }, clientId, submissionContext ?? { sender: null, collaborationRequestId: requestId }, submissionContext === undefined || trustedOrchestration);
+      receive?.({ type: 'hello', protocolVersion: APP_HOST_PROTOCOL_VERSION, rendererId: clientId });
+    } catch (error) { finish(error); }
+  });
+}
+
+/** Negotiate the read with this exact logical connection; never fall back from
+ * an unavailable/unconfirmed current fact to potentially stale history. */
+export async function readConversationCurrentTurn(appHost, binding, submissionContext, timeoutMs = 2000) {
+  let projection = false;
+  const result = await callConversationHost(appHost, binding, 'browser-execution-inspect', 'opencraft/execution/current',
+    { threadId: binding.threadId }, submissionContext, timeoutMs,
+    (initialized) => {
+      projection = executionEngineExtension(initialized?.capabilities?.extensions, binding.threadId, 'opencraft/execution-current')?.version === 1;
+      return projection ? { method: 'opencraft/execution/current', params: {} }
+        : { method: 'thread/turns/list', params: { limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' } };
+    });
+  if (!projection && (!Array.isArray(result?.data) || result.data.length > 1)) throw Error('Invalid latest execution page');
+  if (projection && (!result || !Object.hasOwn(result, 'turn'))) throw Error('Invalid current execution projection');
+  const turn = projection ? result.turn : (result.data[0] ?? null);
+  if (turn === null) return null;
+  if (!turn || typeof turn.id !== 'string' || !turn.id || turn.id.length > 1024
+    || typeof turn.status !== 'string' || !turn.status || turn.status.length > 128) throw Error('Invalid current execution identity');
+  return { id: turn.id, status: turn.status };
+}
+export function createConversationExecution(getAppHost, {serverId, hostId, engine}) {
+  if (typeof hostId !== 'string' || !hostId.trim() || hostId.length > 256 || /[\x00-\x1f]/u.test(hostId)) throw new Error('Conversation execution Host required');
+  const invoke = (binding, id, method, params, timeoutMs) => {
+    if (binding.hostId !== hostId) throw new Error('Unsupported Actor execution Host');
+    const host = getAppHost(); if (!host) throw new Error('Actor Host unavailable');
+    return callConversationHost(host, binding, id, method, params, undefined, timeoutMs);
+  };
+  const binding = (threadId) => ({hostId, threadId});
+  return {
+    serverId, hostId,
+    async metadata(ref) {
+      if (ref.serverId !== serverId) throw Object.assign(new Error('Unknown conversation server'), {status:404,code:'conversation_unavailable'});
+      const { thread } = await invoke(binding(ref.threadId), 'metadata', 'thread/read', { includeTurns: false });
+      if (thread?.id !== ref.threadId) throw Object.assign(new Error('Conversation unavailable'), {status:404,code:'conversation_unavailable'});
+      let recovery = null;
+      if (!engine) {
+        try { recovery = parseTurnRecoveryNotice((await invoke(binding(ref.threadId), 'metadata-recovery', 'opencraft/turn-recovery/read', {}, 1000)).recovery); }
+        catch { /* Missing or unavailable recovery metadata does not invalidate native thread metadata. */ }
+      }
+      return projectConversationMetadata(serverId, thread, false, recovery);
+    },
+    async discoverMetadata(options) {
+      const result = await invoke(binding(''), 'catalog-metadata', 'thread/list', {
+        limit:30, archived:false, useStateDbOnly:true, cursor:options.cursor ?? null,
+        ...(options.projectId === undefined ? {} : { projectId: options.projectId }), ...(options.cwd === undefined ? {} : { cwd: normalize(options.cwd) }),
+      });
+      return { conversations: result.data.map((thread) => projectConversationMetadata(serverId, thread, options.includeTitle)), nextCursor:result.nextCursor ?? null };
+    },
+    async discover(search, cursor, suggestions) {
+      const result = await invoke(binding(''), 'catalog', 'thread/list', {limit:suggestions?.limit ?? 30, searchTerm:search.trim() || null, archived:false, cursor,
+        ...(suggestions ? {useStateDbOnly:true, sortKey:'updated_at', sortDirection:'desc'} : {})});
+      const rows = suggestions ? result.data.slice(0,suggestions.limit) : result.data;
+      return {conversations:rows.map((t) =>({ref:{serverId,threadId:t.id},title:String(t.name || t.preview || t.id).slice(0,240),
+        ...(suggestions ? {cwd:typeof t.cwd==='string'?t.cwd.slice(0,1024):null,updatedAt:t.updatedAt} : {})})),nextCursor:suggestions ? null : (result.nextCursor ?? null),
+      };
+    },
+    async read(ref, cursor) {
+      if(ref.serverId !== serverId) throw new Error('Unknown conversation server');
+      const result = await invoke(binding(ref.threadId), 'history', 'thread/read', {includeTurns:true});
+      const thread = result.thread;
+      if(thread?.id !== ref.threadId) throw new Error('Conversation is unavailable');
+      const entries=[];
+      for(const turn of thread.turns ?? []) for(const item of turn.items ?? []) {
+        if(!['userMessage','agentMessage'].includes(item.type)) continue;
+        const content=item.type==='agentMessage' ? item.text : (item.content ?? []).filter((p) => p.type === "text")
+                  .map((p) =>p.text).join('\n');
+        if(typeof content !== 'string') continue;
+        // A bounded page also handles one very long native message without losing its tail.
+        const chunks=Array.from(content); for(let offset=0;offset<chunks.length;offset+=2000)
+          entries.push({turnId:turn.id,itemId:item.id,role:item.type==='userMessage'?'user':'assistant',offset,text:chunks.slice(offset,offset+2000).join('')});
+      }
+      const watermark=createHash('sha256').update(JSON.stringify(entries)).digest('hex');
+      let offset=0;
+      if(cursor) {const c=JSON.parse(Buffer.from(cursor,'base64url').toString('utf8')); if(c.watermark!==watermark || !Number.isSafeInteger(c.offset) || c.offset<0 || c.offset>entries.length) throw new Error('History changed; read again without cursor');offset=c.offset;}
+      const page=[]; let bytes=0;
+      while(offset<entries.length && page.length<30) {const entry=entries[offset], size=Buffer.byteLength(JSON.stringify(entry));if(bytes+size>24000 && page.length) break;page.push(entry);bytes+=size;offset++;}
+      return {entries:page,watermark,latestTurnId:thread.turns?.at(-1)?.id ?? null,truncated:offset<entries.length,nextCursor:offset<entries.length?Buffer.from(JSON.stringify({watermark,offset})).toString('base64url'):null};
+    },
+    async readBounded(ref, cursor) {
+      if(ref.serverId !== serverId) throw new Error('Unknown conversation server');
+      return readConversationPage((method, params) => invoke(binding(ref.threadId), 'history', method, params), ref, cursor);
+    },
+    async validate(binding) {
+      const result = await invoke(binding, 'binding-validation', 'thread/read', { includeTurns: false });
+      if (result?.thread?.id !== binding.threadId || result.thread.ephemeral === true) throw new Error('Durable Thread required');
+    },
+    async receipt(binding, id, options) { return (await invoke(binding, id, 'thread/queue/collaborationReceipt', options?.includeCompletion ? {includeCompletion:true} : {})).receipt; },
+    async add(binding, id, input) {
+      const result = await invoke(binding, id, 'thread/queue/add', { clientUserMessageId: `actor-input:${id}`, input: [{ type: 'text', text: input }] });
+      return { id: result.queuedSubmission.id, state: 'queued', targetTurnId: null };
+    },
+    async steer(binding, id, queueId, expectedTurnId) { await invoke(binding, id, 'thread/queue/steer', { queuedSubmissionId: queueId, expectedTurnId }); },
+    async cancel(binding, id, queueId) { return (await invoke(binding, id, 'thread/queue/delete', { queuedSubmissionId: queueId })).deleted === true; },
+  };
+}
+
+/** Full conversation identity selects the native engine. Actor run bindings and
+ * delegation stay on the default Codex authority until explicitly extended. */
+export function createRoutedConversationExecution(getAppHost, { machineId, engines, getInputs, agentHostId = 'opencraft-server', connectedAgentsOwner }) {
+  const agentEngine = (threadId) => threadId.startsWith('dsh_acp_') ? 'dsh-acp' : threadId.startsWith('pi_') ? 'pi'
+    : threadId.startsWith('claude_') ? 'claude-code' : threadId.startsWith('acp_') ? 'acp' : 'dsh';
+  const descriptors = [{ serverId: `server:${machineId}:codex`, hostId: 'local-codex', label:'Codex' },
+    ...engines.map((engine) => ({ serverId: `server:${machineId}:${engine}`, hostId: agentHostId, engine, label:engine==='pi'?'Pi':'DSH' }))];
+  const ports = new Map(descriptors.map((server) => [server.serverId, createConversationExecution(getAppHost, server)]));
+  const primary = ports.get(descriptors[0].serverId);
+  // Routing refusals happen before any engine call, so they prove the input was not dispatched.
+  const reject = () => { throw Object.assign(new Error('Unsupported conversation execution'), {code:-32602, dispatched:false}); };
+  const serverForHost = (hostId, threadId) => {
+    if (hostId === 'local-codex') return descriptors[0].serverId;
+    if (hostId !== agentHostId) return reject();
+    const requested = agentEngine(threadId);
+    const connected = /^(?:codex_|cursor_|codebuddy_|claude_|pi_)/u.test(threadId);
+    const owner = engines.includes(requested) ? requested : connected ? connectedAgentsOwner : undefined;
+    return descriptors.find((server) => server.engine === (owner ?? requested))?.serverId ?? reject();
+  };
+  const select = (binding) => {
+    const serverId = binding.serverId ?? primary.serverId, port = ports.get(serverId);
+    if (!port || binding.hostId !== port.hostId || serverForHost(port.hostId, binding.threadId) !== serverId) return reject();
+    return {port, engine: descriptors.find((server) =>server.serverId===serverId).engine};
+  };
+  const native = async (binding,id,operation,input,canAdmit) => {
+    const {port,engine} = select(binding);
+    if (!engine) return port[operation](binding,id,input,canAdmit);
+    if (operation === 'add' && binding.mode === 'steer') return reject();
+    const inputs = await getInputs(engine);
+    if (!inputs) throw new Error('Native Host input unavailable');
+    const inputId = `actor-input:${id}`;
+    const receipt = operation === 'receipt' ? await inputs.receipt(binding.threadId,inputId)
+      : await inputs.submit(binding.threadId,inputId,input,canAdmit ?? (()=>false));
+    return receipt ? { id: inputId, state:receipt.state, targetTurnId:receipt.turnId } : null;
+  };
+  return { ...primary, servers:descriptors, owns: (serverId) =>ports.has(serverId), serverForHost,
+    directory: () => ({instanceId:machineId, servers:descriptors.map((server) => ({serverId:server.serverId,label:server.label,
+      engine:server.engine ?? 'codex', connectionState: ['recovering','unavailable'].includes(getAppHost()?.hostExecutionState?.(server.hostId))
+        ? 'unavailable' : getAppHost()?.hostState(server.hostId) === 'open' ? 'ready' : 'unknown',
+      capabilities:{metadata:true,read:!server.engine,boundedRead:!server.engine,queue:true,steer:!server.engine,discoverFilters:!server.engine}}))}),
+    metadata(ref) { const hostId = ports.get(ref.serverId)?.hostId ?? reject(); return select({...ref,hostId}).port.metadata(ref); },
+    async discoverMetadata(options) {
+      const port = ports.get(options.serverId); if (!port) return reject();
+      if (descriptors.find((row) => row.serverId === options.serverId)?.engine && (options.projectId !== undefined || options.cwd !== undefined))
+        throw Object.assign(new Error('unsupported_capability'), {status:409,code:'unsupported_capability'});
+      const result = await port.discoverMetadata(options);
+      return {...result,conversations:result.conversations.filter(
+          (row) => serverForHost(port.hostId,row.ref.threadId) === options.serverId)};
+    },
+    serverForThread: (threadId) => /^(?:pi_|dsh_acp_|claude_|acp_|codex_|cursor_|codebuddy_)/u.test(threadId) ? serverForHost(agentHostId, threadId) : primary.serverId,
+    hostForServer: (serverId) => ports.get(serverId)?.hostId ?? reject(),
+    async discover(search,cursor,suggestions) {
+      if (suggestions) {
+        // A composer browses one execution namespace, never every engine/Host.
+        const server = suggestions.sourceThreadId ? this.serverForThread(suggestions.sourceThreadId) : primary.serverId;
+        const port = ports.get(server); if (!port) return reject();
+        const result = await port.discover(search,null,suggestions);
+        return {...result,conversations:result.conversations.filter((row) =>serverForHost(port.hostId,row.ref.threadId)===server)};
+      }
+      const positions = cursor ? JSON.parse(Buffer.from(cursor,'base64url').toString()) : { codex:null, agent:engines.length ? null : false };
+      if (!positions || typeof positions !== 'object' || Array.isArray(positions)
+        || Object.keys(positions).some((key) =>!['codex','agent'].includes(key))
+        || !['codex','agent'].every(
+          (key) =>positions[key]===null || positions[key]===false || typeof positions[key]==='string')
+        ||
+        (!engines.length && positions.agent !== false)
+      ) throw new Error('Invalid conversation cursor');
+      // Both catalogs contribute to the first page; Pi/DSH must not be hidden
+      // behind every page of a large Codex history.
+      const [codex,agent] = await Promise.all([
+        positions.codex===false ? null : primary.discover(search,positions.codex),
+        positions.agent===false ? null : callConversationHost(getAppHost(),{hostId:agentHostId,threadId:''},'catalog','thread/list',
+          {limit:30,searchTerm:search.trim()||null,archived:false,cursor:positions.agent}),
+      ]);
+      const conversations = [...(codex?.conversations ?? []), ...(agent?.data ?? []).map((thread) =>({
+        ref:{serverId:serverForHost(agentHostId,thread.id),threadId:thread.id},title:thread.name||thread.preview||thread.id,
+      }))];
+      const following={codex:codex?.nextCursor ?? false,agent:agent?.nextCursor ?? false};
+      return {conversations,nextCursor:Object.values(following).some((value) =>value!==false)?Buffer.from(JSON.stringify(following)).toString('base64url'):null};
+    },
+    read(ref,cursor) { const hostId=ports.get(ref.serverId)?.hostId ?? reject(); return select({...ref,hostId}).port.read(ref,cursor); },
+    readBounded(ref,cursor) {
+      const hostId=ports.get(ref.serverId)?.hostId ?? reject(), selected=select({...ref,hostId});
+      if(selected.engine) throw Object.assign(new Error('unsupported_capability'), {status:409,code:'unsupported_capability'});
+      return selected.port.readBounded(ref,cursor);
+    },
+    validate(binding) { return select(binding).port.validate(binding); },
+    receipt:(binding,id,options)=>native(binding,id,'receipt',options),
+    add:(binding,id,input,canAdmit)=>native(binding,id,'add',input,canAdmit),
+    steer(binding,...args) { const {port,engine}=select(binding); if(engine) return reject(); return port.steer(binding,...args); },
+    cancel(binding,...args) { const {port,engine}=select(binding); return engine?Promise.resolve(false):port.cancel(binding,...args); },
+  };
+}

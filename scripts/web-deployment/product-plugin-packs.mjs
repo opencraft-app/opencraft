@@ -207,10 +207,15 @@ export async function prepareProductPluginPacks({
   const temporary = join(cacheDirectory, ".prepare-" + randomUUID());
   try {
     const directories = new Set([temporary]);
+    // Packs may share a file (for example a compressed sidecar); copy each path once,
+    // because the first copy is made read-only.
+    const copied = new Set();
     for (const pack of inventory.packages)
       for (const record of pack.files) {
         const source = await checked(join(sourceDirectory, "public"), record),
           target = join(temporary, "public", record.path);
+        if (copied.has(target)) continue;
+        copied.add(target);
         await mkdir(dirname(target), { recursive: true, mode: 0o700 });
         await copyFile(source, target);
         await chmod(target, 0o444);

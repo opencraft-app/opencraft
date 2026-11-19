@@ -99,6 +99,15 @@ export class ProvisionalThreads {
         }
       : null;
   }
+  /** A handoff away from the creation environment has begun: the creation
+   * owner no longer attests what native has configured, including after restart. */
+  retireEnvironmentOwner(threadId: string): void {
+    this.managed.database
+      .prepare(
+        "UPDATE thread_creations SET environment_owner=NULL WHERE thread_id=? AND phase='created'",
+      )
+      .run(threadId);
+  }
   attempted(threadId: string, inputId: string): void {
     this.managed.database
       .prepare(

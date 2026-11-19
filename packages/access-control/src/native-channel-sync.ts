@@ -1,11 +1,11 @@
 import { readChannelMentions } from "./channel-mentions.js";
 import { communicationExtension } from "./communication-extension.js";
 import { createHash, randomUUID } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync, SQLOutputValue } from "node:sqlite";
 import { sqliteTransaction } from "@opencraft/sqlite-node";
 import type { Collaboration } from "./collaboration.js";
 import type { NativeChannelChange } from "./native-channels.js";
-import type { ActorContext } from "@opencraft/identity-core/actors";
+import type { Actor, ActorContext } from "@opencraft/identity-core/actors";
 
 import { channelImageType, type ChannelImage, type ChannelMessagePresentation } from "@opencraft/appserver-protocol";
 export { channelImageType, type ChannelImage };
@@ -23,23 +23,66 @@ export interface ChannelArrival {
   mediaId?: string;
   mediaIdentity?: string;
 }
-export interface ChannelSyncCommand {
-  method: string;
-  params: Record<string, any>;
+/** Results of the core sync methods, keyed by method; each owning case is checked
+ * against its entry. Methods owned by an installed extension (or not listed) answer
+ * `unknown`, so callers narrow those themselves. */
+export interface ChannelSyncResults {
+  reserveHuman: Actor;
+  retireSource: null;
+  mirrorSources: { source: SQLOutputValue; channelId: SQLOutputValue }[];
+  mirrorBind: { source: string; channelId: SQLOutputValue };
+  addSource: null;
+  configure: null;
+  deactivate: null;
+  externalHistory: Record<string, SQLOutputValue>[];
+  received: { messageId: SQLOutputValue; text: SQLOutputValue } | null;
+  ingest: { messageId: SQLOutputValue };
+  attachmentChunk: { name: string; type: string; size: number; bytes: SQLOutputValue; nextOffset: number };
+  check: null;
+  settle: null;
+  attribution: null;
+  pendingImage: Record<string, SQLOutputValue> | null;
+  imageReady: { ready: boolean };
 }
-export interface ChannelSyncResult {
-  result: any;
+export type ChannelSyncMethod = keyof ChannelSyncResults;
+export type ChannelSyncReply<M extends string> = M extends ChannelSyncMethod ? ChannelSyncResults[M] : unknown;
+/** Trusted transport frame, discriminated by `method`. The set stays open because an
+ * installation extension may own further methods. `params` is unvalidated input that
+ * the owning method narrows field by field. */
+export interface ChannelSyncCommand<M extends string = string> {
+  method: M;
+  params: Record<string, unknown>;
+}
+export interface ChannelSyncResult<M extends string = string> {
+  result: ChannelSyncReply<M>;
   changes: NativeChannelChange[];
+}
+/** Narrows a packet by the method of the command that produced it (the packet itself
+ * carries no method, so only its type is refined). */
+export function isChannelSyncResult<M extends ChannelSyncMethod>(
+  command: ChannelSyncCommand,
+  method: M,
+  _packet: ChannelSyncResult,
+): _packet is ChannelSyncResult<M> {
+  return command.method === method;
 }
 const text = (v: unknown, max = 512): string => {
   if (typeof v !== "string" || !v.trim() || v.length > max || /[\0]/u.test(v)) throw Error("invalid_input");
   return v;
 };
+/** Object-valued wire field, or undefined; members still need their own validation. */
+const fields = (v: unknown): Record<string, unknown> | undefined =>
+  v !== null && typeof v === "object" ? (v as Record<string, unknown>) : undefined;
 const digest = (v: unknown) => createHash("sha256").update(JSON.stringify(v)).digest("hex");
 const conflict = () => Object.assign(Error("idempotency_conflict"), { code: "idempotency_conflict" });
 
 /** Native message owner. Called only by trusted transport composition through the
  * storage Worker, never dispatched from client supplied method/context frames. */
+export function channelSyncCommand<M extends string>(
+  service: Collaboration,
+  db: DatabaseSync,
+  command: ChannelSyncCommand<M>,
+): ChannelSyncResult<M>;
 export function channelSyncCommand(
   service: Collaboration,
   db: DatabaseSync,
@@ -85,7 +128,7 @@ export function channelSyncCommand(
         `SELECT o.*,m.channel_id,m.author_id FROM actor_channel_outbox o JOIN actor_messages m ON m.id=o.message_id
       WHERE o.message_id=? AND o.source=? AND o.source_epoch=? AND o.attempt_id=? AND o.state='sending'`,
       )
-      .get(text(p.messageId), p.source, s.epoch, text(p.attemptId));
+      .get(text(p.messageId), text(p.source), s.epoch, text(p.attemptId));
     if (!row) throw Error("channel_attempt_retired");
     return row;
   };
@@ -97,26 +140,30 @@ export function channelSyncCommand(
     }
     switch (method) {
       case "reserveHuman":
-        return service.actors.reserveHuman(p.reservation);
+        // The Actor owner validates every reservation field before writing.
+        return service.actors.reserveHuman(
+          p.reservation as Parameters<Collaboration["actors"]["reserveHuman"]>[0],
+        ) satisfies ChannelSyncResults["reserveHuman"];
       case "retireSource": {
-        const s = db.prepare("SELECT * FROM actor_channel_sources WHERE source=?").get(text(p.source));
+        const sourceId = text(p.source);
+        const s = db.prepare("SELECT * FROM actor_channel_sources WHERE source=?").get(sourceId);
         if (!s) return null;
         if (p.incarnation !== undefined && s.incarnation !== p.incarnation) throw Error("channel_source_retired");
         db.prepare(
           "UPDATE actor_channel_outbox SET state='rejected' WHERE source=? AND state IN ('queued','sending')",
-        ).run(p.source);
+        ).run(sourceId);
         if (p.messageId !== undefined)
           db.prepare(
             "UPDATE actor_channel_outbox SET state='delivered' WHERE message_id=? AND source=? AND source_epoch=?",
-          ).run(text(p.messageId), p.source, s.epoch);
+          ).run(text(p.messageId), sourceId, s.epoch);
         if (service.channels.isActive(String(s.channel_id)))
-          db.prepare("DELETE FROM actor_channel_sources WHERE source=?").run(p.source);
-        else db.prepare("UPDATE actor_channel_sources SET active=0 WHERE source=?").run(p.source);
+          db.prepare("DELETE FROM actor_channel_sources WHERE source=?").run(sourceId);
+        else db.prepare("UPDATE actor_channel_sources SET active=0 WHERE source=?").run(sourceId);
         changed(String(s.channel_id));
         return null;
       }
       case "mirrorSources": {
-        const bindings = [];
+        const bindings: ChannelSyncResults["mirrorSources"] = [];
         for (const row of db.prepare("SELECT source,channel_id FROM actor_channel_sources ORDER BY source").all()) {
           let parts;
           try {
@@ -136,8 +183,8 @@ export function channelSyncCommand(
         return bindings;
       }
       case "mirrorBind": {
-        const b = p.binding,
-          source = text(b?.source),
+        const b = fields(p.binding) ?? {},
+          source = text(b.source),
           parts = JSON.parse(source);
         if (
           !Array.isArray(parts) ||
@@ -162,7 +209,7 @@ export function channelSyncCommand(
         const prior = db.prepare("SELECT channel_id FROM actor_channel_sources WHERE source=?").get(source);
         if (prior) {
           if (!service.channels.isMember(String(prior.channel_id), actor.id)) throw Error("channel_denied");
-          return { source, channelId: prior.channel_id };
+          return { source, channelId: prior.channel_id } satisfies ChannelSyncResults["mirrorBind"];
         }
         const context = {
           actorId: actor.id,
@@ -173,42 +220,44 @@ export function channelSyncCommand(
         const key = "wecom-mirror:" + createHash("sha256").update(source).digest("hex");
         const group = service.channels.createGroup(context, text(b.title, 128), [], key);
         changed(group.id);
-        return { source, channelId: group.id };
+        return { source, channelId: group.id } satisfies ChannelSyncResults["mirrorBind"];
       }
       case "addSource": {
-        const binding = p.binding;
-        text(binding?.source);
-        text(binding?.channelId);
-        text(p.incarnation);
-        if (!db.prepare("SELECT 1 FROM actor_channels WHERE id=? AND peer_id IS NULL").get(binding.channelId))
+        const binding = fields(p.binding) ?? {};
+        const sourceId = text(binding.source),
+          channelId = text(binding.channelId),
+          incarnation = text(p.incarnation);
+        if (!db.prepare("SELECT 1 FROM actor_channels WHERE id=? AND peer_id IS NULL").get(channelId))
           throw Error("invalid_channel_binding");
-        if (!service.channels.isActive(binding.channelId)) throw Error("channel_dissolved");
-        const old = db.prepare("SELECT channel_id FROM actor_channel_sources WHERE source=?").get(binding.source);
-        if (old && old.channel_id !== binding.channelId) throw Error("channel_binding_conflict");
+        if (!service.channels.isActive(channelId)) throw Error("channel_dissolved");
+        const old = db.prepare("SELECT channel_id FROM actor_channel_sources WHERE source=?").get(sourceId);
+        if (old && old.channel_id !== channelId) throw Error("channel_binding_conflict");
         db.prepare(
           `INSERT INTO actor_channel_sources VALUES(?,?,?,?,1,?) ON CONFLICT(source) DO UPDATE SET active=1,incarnation=excluded.incarnation,images=excluded.images`,
-        ).run(binding.source, binding.channelId, randomUUID(), p.incarnation, p.images === true ? 1 : 0);
+        ).run(sourceId, channelId, randomUUID(), incarnation, p.images === true ? 1 : 0);
         return null;
       }
       case "configure": {
-        text(p.incarnation);
+        const incarnation = text(p.incarnation);
         if (!Array.isArray(p.bindings) || p.bindings.length > 256) throw Error("invalid_input");
-        const sources = new Set(),
-          channels = new Set();
-        for (const b of p.bindings) {
-          text(b.source);
-          text(b.channelId);
+        const requested: Record<string, unknown>[] = p.bindings,
+          bindings: ChannelSourceBinding[] = [];
+        const sources = new Set<string>(),
+          channels = new Set<string>();
+        for (const b of requested) {
+          const binding = { source: text(b.source), channelId: text(b.channelId) };
           if (
-            sources.has(b.source) ||
-            channels.has(b.channelId) ||
-            !db.prepare("SELECT 1 FROM actor_channels WHERE id=? AND peer_id IS NULL").get(b.channelId)
+            sources.has(binding.source) ||
+            channels.has(binding.channelId) ||
+            !db.prepare("SELECT 1 FROM actor_channels WHERE id=? AND peer_id IS NULL").get(binding.channelId)
           )
             throw Error("invalid_channel_binding");
-          sources.add(b.source);
-          channels.add(b.channelId);
-          const old = db.prepare("SELECT channel_id FROM actor_channel_sources WHERE source=?").get(b.source);
+          sources.add(binding.source);
+          channels.add(binding.channelId);
+          const old = db.prepare("SELECT channel_id FROM actor_channel_sources WHERE source=?").get(binding.source);
           // Retargeting an established source requires explicit administration, not config replay.
-          if (old && old.channel_id !== b.channelId) throw Error("channel_binding_conflict");
+          if (old && old.channel_id !== binding.channelId) throw Error("channel_binding_conflict");
+          bindings.push(binding);
         }
         const pending = db
           .prepare("SELECT message_id FROM actor_channel_outbox WHERE state IN ('sending','queued')")
@@ -216,12 +265,12 @@ export function channelSyncCommand(
         db.prepare("UPDATE actor_channel_outbox SET state='unknown' WHERE state='sending'").run();
         db.prepare("UPDATE actor_channel_images SET attribution='unknown' WHERE attribution='sending'").run();
         db.prepare("UPDATE actor_channel_sources SET active=0").run();
-        for (const b of p.bindings)
+        for (const b of bindings)
           if (service.channels.isActive(b.channelId))
             db.prepare(
               `INSERT INTO actor_channel_sources VALUES(?,?,?,?,1,?)
           ON CONFLICT(source) DO UPDATE SET active=1,incarnation=excluded.incarnation,images=excluded.images`,
-            ).run(b.source, b.channelId, randomUUID(), p.incarnation, p.images === true ? 1 : 0);
+            ).run(b.source, b.channelId, randomUUID(), incarnation, p.images === true ? 1 : 0);
         db.prepare(
           "UPDATE actor_channel_outbox SET state='rejected' WHERE state='queued' AND source NOT IN (SELECT source FROM actor_channel_sources WHERE active=1)",
         ).run();
@@ -233,14 +282,16 @@ export function channelSyncCommand(
         return null;
       case "externalHistory": {
         // Bounded, read-only migration projection for a trusted channel transport.
-        const s = db.prepare("SELECT 1 FROM actor_channel_sources WHERE source=? AND active=1").get(text(p.source));
-        if (!s || !Number.isSafeInteger(p.after) || p.after < 0) throw Error("invalid_input");
-        text(p.query, 256);
+        const sourceId = text(p.source),
+          after = p.after;
+        const s = db.prepare("SELECT 1 FROM actor_channel_sources WHERE source=? AND active=1").get(sourceId);
+        if (!s || typeof after !== "number" || !Number.isSafeInteger(after) || after < 0) throw Error("invalid_input");
+        const query = text(p.query, 256);
         return db
           .prepare(
             "SELECT e.external_id AS externalId,m.id AS messageId,m.content,m.seq FROM actor_channel_external_messages e JOIN actor_messages m ON m.id=e.message_id WHERE e.source=? AND m.seq>? AND instr(m.content,?)>0 ORDER BY m.seq LIMIT 32",
           )
-          .all(p.source, p.after, p.query);
+          .all(sourceId, after, query) satisfies ChannelSyncResults["externalHistory"];
       }
       case "received": {
         // Trusted transport recovery only, not a client RPC. Reuse the accepted derived
@@ -275,7 +326,7 @@ export function channelSyncCommand(
           ...(communicationExtension()?.fingerprint?.(a) ?? []),
         ]);
         if (prior.fingerprint !== fingerprint) throw conflict();
-        return { messageId: prior.message_id, text: prior.content };
+        return { messageId: prior.message_id, text: prior.content } satisfies ChannelSyncResults["received"];
       }
       case "ingest": {
         const s = source(),
@@ -311,7 +362,7 @@ export function channelSyncCommand(
           .get(p.source, a.id);
         if (prior) {
           if (prior.fingerprint !== fingerprint) throw conflict();
-          return { messageId: prior.message_id };
+          return { messageId: prior.message_id } satisfies ChannelSyncResults["ingest"];
         }
         const messageId = randomUUID(),
           author = "external:" + digest([p.source, sender.id]);
@@ -334,10 +385,10 @@ export function channelSyncCommand(
           );
         communicationExtension()?.arrival?.(service, db, a, s, messageId);
         changed(String(s.channel_id));
-        return { messageId };
+        return { messageId } satisfies ChannelSyncResults["ingest"];
       }
       case "claim": {
-        text(p.incarnation);
+        const incarnation = text(p.incarnation);
         for (let i = 0; i < 32; i++) {
           const row = db
             .prepare(
@@ -345,7 +396,7 @@ export function channelSyncCommand(
             i.mime,i.bytes,a.name AS attachment_name,a.mime AS attachment_type,length(a.bytes) AS attachment_size FROM actor_channel_outbox o JOIN actor_messages m ON m.id=o.message_id JOIN actor_channel_sources s ON s.source=o.source
             LEFT JOIN actor_channel_images i ON i.message_id=m.id LEFT JOIN actor_channel_attachments a ON a.message_id=m.id WHERE o.state='queued' AND s.incarnation=? ORDER BY m.seq LIMIT 1`,
             )
-            .get(p.incarnation);
+            .get(incarnation);
           if (!row) return null;
           if (!row.active || row.epoch !== row.source_epoch || !authorized(row)) {
             db.prepare("UPDATE actor_channel_outbox SET state='rejected' WHERE message_id=?").run(row.message_id!);
@@ -404,20 +455,21 @@ export function channelSyncCommand(
       case "attachmentChunk": {
         const row = attempt();
         if (!authorized(row)) throw Error("channel_denied");
-        if (!Number.isSafeInteger(p.offset) || p.offset < 0) throw Error("invalid_input");
+        const offset = p.offset;
+        if (typeof offset !== "number" || !Number.isSafeInteger(offset) || offset < 0) throw Error("invalid_input");
         const file = db
           .prepare(
             "SELECT name,mime,length(bytes) AS size,substr(bytes,?,65536) AS bytes FROM actor_channel_attachments WHERE message_id=?",
           )
-          .get(p.offset + 1, row.message_id!);
-        if (!file || p.offset > Number(file.size)) throw Error("channel_attachment_unavailable");
+          .get(offset + 1, row.message_id!);
+        if (!file || offset > Number(file.size)) throw Error("channel_attachment_unavailable");
         return {
           name: String(file.name),
           type: String(file.mime),
           size: Number(file.size),
           bytes: file.bytes,
-          nextOffset: p.offset + (file.bytes as Uint8Array).length,
-        };
+          nextOffset: offset + (file.bytes as Uint8Array).length,
+        } satisfies ChannelSyncResults["attachmentChunk"];
       }
       case "check": {
         const row = attempt();
@@ -426,47 +478,52 @@ export function channelSyncCommand(
       }
       case "settle": {
         const row = attempt();
-        if (!["delivered", "rejected", "unknown"].includes(p.status)) throw Error("invalid_input");
-        db.prepare("UPDATE actor_channel_outbox SET state=? WHERE message_id=?").run(p.status, row.message_id!);
+        const status = p.status;
+        if (typeof status !== "string" || !["delivered", "rejected", "unknown"].includes(status))
+          throw Error("invalid_input");
+        db.prepare("UPDATE actor_channel_outbox SET state=? WHERE message_id=?").run(status, row.message_id!);
         touch(String(row.message_id));
         return null;
       }
       case "attribution": {
         const row = attempt();
-        if (!["sending", "delivered", "rejected", "unknown"].includes(p.status)) throw Error("invalid_input");
-        db.prepare("UPDATE actor_channel_images SET attribution=? WHERE message_id=?").run(p.status, row.message_id!);
+        const status = p.status;
+        if (typeof status !== "string" || !["sending", "delivered", "rejected", "unknown"].includes(status))
+          throw Error("invalid_input");
+        db.prepare("UPDATE actor_channel_images SET attribution=? WHERE message_id=?").run(status, row.message_id!);
         touch(String(row.message_id));
         return null;
       }
       case "pendingImage":
-        return (
-          db
-            .prepare(
-              `SELECT i.message_id AS messageId,i.media_id AS mediaId,i.source FROM actor_channel_images i
+        return (db
+          .prepare(
+            `SELECT i.message_id AS messageId,i.media_id AS mediaId,i.source FROM actor_channel_images i
           JOIN actor_channel_sources s ON s.source=i.source WHERE i.state='pending' AND s.active=1 AND s.images=1 AND s.incarnation=? LIMIT 1`,
-            )
-            .get(text(p.incarnation)) ?? null
-        );
+          )
+          .get(text(p.incarnation)) ?? null) satisfies ChannelSyncResults["pendingImage"];
       case "imageReady": {
         source();
-        const type = p.bytes && channelImageType(p.bytes);
+        const sourceId = text(p.source);
+        const bytes = p.bytes instanceof Uint8Array ? p.bytes : undefined,
+          type = bytes && channelImageType(bytes);
+        const messageId = text(p.messageId);
         const row = db
           .prepare("SELECT state FROM actor_channel_images WHERE message_id=? AND source=?")
-          .get(text(p.messageId), p.source);
-        if (!row) return { ready: false };
-        if (row.state === "ready") return { ready: true };
+          .get(messageId, sourceId);
+        if (!row) return { ready: false } satisfies ChannelSyncResults["imageReady"];
+        if (row.state === "ready") return { ready: true } satisfies ChannelSyncResults["imageReady"];
         // Redelivery may repair a transient download failure; a late failure
         // cannot overwrite bytes that have already been committed.
         if (row.state === "pending" || type) {
           db.prepare("UPDATE actor_channel_images SET state=?,mime=?,bytes=?,media_id=NULL WHERE message_id=?").run(
             type ? "ready" : "unavailable",
             type ?? null,
-            type ? p.bytes : null,
-            p.messageId,
+            type ? bytes : null,
+            messageId,
           );
-          touch(p.messageId);
+          touch(messageId);
         }
-        return { ready: !!type };
+        return { ready: !!type } satisfies ChannelSyncResults["imageReady"];
       }
       default:
         throw Error("unsupported_channel_sync_command");

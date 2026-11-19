@@ -122,6 +122,14 @@ const newThreadDraftSource = readFileSync(
   ),
   "utf8",
 );
+// Draft host/workspace selection moved from the Draft page into its execution utility bar.
+const draftExecutionSource = readFileSync(
+  new URL(
+    "../../apps/workbench-web/src/components/draft-execution-utility-bar.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
 
 function settingsCallbacks(source: string): ts.Expression[] {
   const callbacks: ts.Expression[] = [];
@@ -152,6 +160,7 @@ test("Settings navigation enters through a semantic route adapter", () => {
     const target = ts.isArrowFunction(callback) && ts.isCallExpression(callback.body) ? callback.body.expression : callback;
     assert.ok(ts.isIdentifier(target) && ["openSettingsFromConversation", "setSidebarDestination"].includes(target.text),
       `Settings callback bypasses the semantic adapter: ${callback.getText()}`);
+    if (target.text === "openSettingsFromConversation") routeEntries += 1;
   }
   assert.ok(routeEntries >= 1, "A Settings route entrypoint must remain covered");
 });
@@ -172,7 +181,8 @@ test("the first submit atomically hands presentation from Draft to Conversation 
   );
   assert.match(
     workbenchApp,
-    /emptyState=\{unavailableThreadReason !== null \? <ConversationUnavailableState[\s\S]*?: draft !== null \? <PendingConversationPage/u,
+    // Unavailable/archived presentation wins; otherwise a pending Draft owns the empty state.
+    /emptyState=\{\s*[^{}]{0,120}\?\s*\(?\s*<ConversationUnavailableState[\s\S]{0,600}?\/>\s*\)?\s*:\s*draft !== null \?\s*\(?\s*<PendingConversationPage/u,
   );
   assert.doesNotMatch(newThreadDraftSource, /Starting task/u);
   assert.match(pendingConversationSource, /contains no Draft[\s\S]*Composer/u);
@@ -356,10 +366,10 @@ test("application Settings owns route slots while target management owns a modal
   );
   assert.match(
     workbenchApp,
-    /<AppShell[\s\S]*?leftPanel=\{[\s\S]*?routeSettingsOpen \? settingsNavigation : \(conversationSurfaceVisible \|\| standaloneManagementOpen \|\| extensionProjection\.activeView\?\.keepConversationSidebar\) \? <Sidebar[\s\S]*?<div className="workbench-route-stage">[\s\S]*?\{settingsRoute\}[\s\S]*?<\/AppShell>/u,
+    /<AppShell[\s\S]*?leftPanel=\{[\s\S]*?routeSettingsOpen \?\s*\(?\s*settingsNavigation\s*\)?\s*:\s*\(?conversationSurfaceVisible \|\|\s*standaloneManagementOpen \|\|\s*extensionProjection\.activeView\?\.keepConversationSidebar\)? \?\s*\(?\s*<Sidebar[\s\S]*?<div className="workbench-route-stage">[\s\S]*?\{settingsRoute\}[\s\S]*?<\/AppShell>/u,
   );
   assert.match(workbenchApp, /const managementSettingsOpen = settingsOpen[\s\S]*?selectedSettingsContribution\?\.management !== undefined/u);
-  assert.match(workbenchApp, /const conversationSurfaceVisible = conversationRouteOpen\s+\|\| \(managementSettingsOpen && !standaloneManagementOpen\)/u);
+  assert.match(workbenchApp, /const conversationSurfaceVisible =\s*conversationRouteOpen\s+\|\| \(managementSettingsOpen && !standaloneManagementOpen\)/u);
   assert.match(workbenchApp, /hidden=\{!conversationSurfaceVisible\}/u);
   assert.match(workbenchApp, /inert=\{!conversationRouteOpen \|\| undefined\}/u);
   assert.match(workbenchApp, /<ManagementSettingsContent[\s\S]*?navigation=\{settingsNavigation\}/u);
@@ -437,7 +447,9 @@ test("the platform resolves modal identity and Expo adapts the same semantic con
   ]);
   assert.match(workspaceDirectoryPickerSource, /<ModalSurface/u);
   assert.doesNotMatch(workspaceDirectoryPickerSource, /createPortal|event\.key|addEventListener/u);
-  assert.equal(Array.from(toolRenderersSource.matchAll(/<ModalSurface/gu)).length, 2);
+  // Tool details use ModalSurface directly; the generated-image lightbox uses the shared ImagePreview.
+  assert.equal(Array.from(toolRenderersSource.matchAll(/<ModalSurface/gu)).length, 1);
+  assert.match(toolRenderersSource, /<ImagePreview image=\{/u);
   assert.doesNotMatch(toolRenderersSource, /createPortal|event\.key\s*===\s*"Escape"/u);
 });
 
@@ -454,7 +466,7 @@ test("Draft menus consume one design-system rhythm and stay out of the hero titl
     listMaximumHeight: 250,
   });
   assert.match(
-    newThreadDraftSource,
+    draftExecutionSource,
     /className="new-thread-project-menu new-thread-host-menu"[\s\S]*?align="start"[\s\S]*?sideOffset=\{menuGeometry\.rootSideOffset\}[\s\S]*?collisionPadding=\{menuGeometry\.collisionPadding\}/u,
   );
   assert.match(
@@ -633,7 +645,12 @@ test("Composer menus live in the root overlay plane with viewport constraints", 
   assert.match(menuStyles, /--radix-dropdown-menu-content-available-width/);
   assert.match(menuStyles, /--radix-dropdown-menu-content-available-height/);
   assert.match(menuStyles, /prefers-reduced-motion: no-preference/);
-  assert.match(menuStyles, /font: var\(--typography-control-compact-font\)/);
+  // Menus read their font through a token whose default is the compact control font.
+  assert.match(menuStyles, /font: var\(--menu-item-font\)/);
+  assert.match(
+    readFileSync(new URL("../../packages/design-system/src/tokens.web.scss", import.meta.url), "utf8"),
+    /--menu-item-font: var\(--typography-control-compact-font\);/u,
+  );
   assert.doesNotMatch(
     workbenchStyles,
     /\.opencraft-composer-selection-menu\s*\{[^}]*position:\s*absolute/u,
@@ -799,18 +816,20 @@ test("response observation follows the controller boundary, not button visibilit
 
 test("a new-thread workspace is an optional execution override, not Composer ownership", () => {
   assert.match(
-    newThreadDraftSource,
+    draftExecutionSource,
     /const executionLocked = draftSubmissionOwnsNavigation\(draft\.phase\);/u,
   );
   assert.match(
-    newThreadDraftSource,
+    draftExecutionSource,
     /disabled=\{executionLocked\}/u,
   );
-  assert.doesNotMatch(newThreadDraftSource, /workspaceReady/u);
-  assert.doesNotMatch(
-    newThreadDraftSource,
-    /runtimeWorkspaceRoots[\s\S]{0,160}?disabled/u,
-  );
+  for (const source of [newThreadDraftSource, draftExecutionSource]) {
+    assert.doesNotMatch(source, /workspaceReady/u);
+    assert.doesNotMatch(
+      source,
+      /runtimeWorkspaceRoots[\s\S]{0,160}?disabled/u,
+    );
+  }
 });
 
 test("user messages preserve the authored-message width invariant", () => {
@@ -908,7 +927,7 @@ test("Electron titlebar subtracts only real controls from its native drag surfac
   );
   assert.doesNotMatch(appShellHeaderSource, /className="thread-header-title no-drag"/u);
   assert.match(appShellHeaderSource, /className="thread-header-title"/u);
-  assert.match(appShellHeaderSource, /className="chrome-button no-drag/u);
+  assert.match(appShellHeaderSource, /className=\{?"chrome-button no-drag/u);
   assert.match(
     appShellHeaderSource,
     /className="app-shell-header__window-action no-drag"/u,
@@ -1323,12 +1342,15 @@ test("thread edge-scroll is one measured AppShell state", () => {
 });
 
 test("scroll-to-bottom action stays mounted in the Composer zero-height overlay", () => {
+  // The timeline dock styles are owned by chat-render-web and loaded by the Workbench stylesheet.
+  const dockStyles = readFileSync(new URL("../../packages/chat-render-web/src/timeline-dock.web.scss", import.meta.url), "utf8");
+  assert.match(workbenchStyles, /@use "@opencraft\/chat-render-web\/timeline-dock\.web";/u);
   assert.match(
-    workbenchStyles,
+    dockStyles,
     /\.thread-scroll-to-bottom-anchor\s*\{[\s\S]*?position:\s*relative;[\s\S]*?height:\s*0;[\s\S]*?\}/u,
   );
   assert.match(
-    workbenchStyles,
+    dockStyles,
     /\.thread-scroll-to-bottom-button\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?bottom:\s*calc\(100% \+ 6 \* var\(--spacing\)\);[\s\S]*?opacity:\s*0;[\s\S]*?pointer-events:\s*none;/u,
   );
 
@@ -1677,22 +1699,6 @@ test("captured WeChat pan does not hide reduced editing capacity from the cleara
   }
 });
 
-
-const botConversationViewportSource = readFileSync(
-  new URL(
-    "../../plugins/bot-chat/src/conversation-viewport.ts",
-    import.meta.url,
-  ),
-  "utf8",
-);
-
-const botChatViewSource = readFileSync(
-  new URL(
-    "../../plugins/bot-chat/src/bot-chat-view.tsx",
-    import.meta.url,
-  ),
-  "utf8",
-);
 
 
 test("the Web Conversation owns one horizontal plane for transcript and Composer", () => {

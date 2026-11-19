@@ -16,9 +16,14 @@ import {
   type ReadyAccountMetadataStorage,
 } from "./account-metadata-storage";
 
+/** Device-local Storage writes complete (or throw) synchronously. */
+export type LocalSideChatPersistence = Omit<SideChatPersistence, "put" | "remove"> & {
+  put(record: SideChatRecord): void;
+  remove(id: string, binding?: SideChatRecord): void;
+};
 /** Page recovery references, not a history cache or an authorization source.
  * Per-entity writes prevent one window from overwriting another's children. */
-export function createSideChatPersistence(storage: Storage): SideChatPersistence {
+export function createSideChatPersistence(storage: Storage): LocalSideChatPersistence {
   const prefix = serverStorageKey("opencraft.side-chat.v1:");
   const key = (id: string) => prefix + encodeURIComponent(id);
   function read(value: string | null): SideChatDirectoryRow | null {

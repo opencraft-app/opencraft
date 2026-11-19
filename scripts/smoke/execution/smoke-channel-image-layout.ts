@@ -293,7 +293,7 @@ try {
         if (kind === "portrait" && !self) {
           const old = await page.addStyleTag({
             content:
-              ".im-channel-chat__picture-frame{block-size:8rem}.im-channel-chat__picture.ui-button img{inline-size:12rem;block-size:8rem;object-fit:contain}",
+              ".im-channel-chat__picture-frame{block-size:8rem}.im-channel-chat__picture img{inline-size:12rem;block-size:8rem;object-fit:contain}",
           });
           const bad = await measure();
           assert.ok(Math.abs(bad.w / bad.h - w / h) > 0.1, "old style must violate ratio assertion");

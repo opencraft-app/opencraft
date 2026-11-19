@@ -8423,14 +8423,6 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     }
   }
 
-  &__name.ui-button {
-    min-height: 0;
-    padding: 0;
-    white-space: normal;
-    text-align: start;
-    overflow-wrap: anywhere;
-  }
-
   &__message {
     color: var(--color-text-tertiary);
   }
@@ -8835,12 +8827,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   display: block;
   flex: 1 1 auto;
   overflow: hidden;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
   font: inherit;
-  cursor: pointer;
 }
 
 .opencraft-composer-queue-item__preview {
@@ -10684,16 +10671,6 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   &:focus-visible { background: var(--color-background-button-tertiary-hover); }
   @include controls.hover-capable { &:hover { background: var(--color-background-button-tertiary-hover); } }
 }
-.browser-device-toolbar .ui-button[data-size="toolbar"] {
-  display: grid; place-items: center; width: max(var(--size-browser-device-control), var(--size-control-hit-min)); height: max(var(--size-browser-device-control), var(--size-control-hit-min)); min-width: max(var(--size-browser-device-control), var(--size-control-hit-min)); min-height: max(var(--size-browser-device-control), var(--size-control-hit-min)); flex: none;
-  color: var(--color-text-secondary);
-  background: transparent;
-  border: 0;
-  border-radius: 6px; padding: 0;
-  cursor: pointer;
-  &:focus-visible { color: var(--color-text); background: var(--color-background-button-tertiary-hover); }
-  @include controls.hover-capable { &:hover { color: var(--color-text); background: var(--color-background-button-tertiary-hover); } }
-}
 .browser-device-toolbar .browser-device-toolbar__zoom { min-width: 58px; max-width: 74px; flex: none; }
 .browser-device-toolbar__select { position: relative; display: inline-flex; min-width: 0; flex: none;
   > svg { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--color-text-secondary); }
@@ -11266,32 +11243,20 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   max-width: min(320px, calc(100vw - 24px));
 }
 .sidebar-activity-item__state-label { flex: 0 0 auto; }
-// Standalone creation shares row metrics, but floating creation remains an action.
-.ui-button.sidebar-new-chat:not(.shell-sidebar-primary-action)[data-content-layout="row"] {
-  display: grid;
-  grid-template-columns: var(--size-sidebar-navigation-leading-slot) minmax(0, 1fr) auto;
-  align-items: center;
-  min-height: max(var(--height-sidebar-navigation-row), var(--size-control-hit-min));
-  column-gap: var(--gap-sidebar-navigation-icon-label);
-  padding-inline: var(--padding-sidebar-navigation-row-inline);
-  padding-block: 0;
-  justify-content: stretch;
-  text-align: start;
+// Standalone creation is a NavigationItem in sidebar row metrics; floating
+// creation remains a Shell action. NavigationItem owns geometry and paint.
+.sidebar-new-chat.ui-navigation-item {
+  --height-navigation-row: var(--height-sidebar-navigation-row);
+  --padding-navigation-row-inline: var(--padding-sidebar-navigation-row-inline);
+  --gap-navigation-row-content: var(--gap-sidebar-navigation-icon-label);
+  --size-navigation-leading-slot: var(--size-sidebar-navigation-leading-slot);
+  --size-icon-navigation: var(--size-sidebar-navigation-icon);
+  --stroke-icon-navigation: var(--stroke-sidebar-navigation-icon);
+  // The glyph fills its sidebar slot, as in NavigationList's sidebar inset.
+  --space-icon-leading-inset: 0px;
   margin: var(--gap-sidebar-navigation-rows) 0 var(--gap-sidebar-navigation-heading-after);
-  > svg, > .ui-button__label > svg {
-    width: var(--size-sidebar-navigation-icon);
-    height: var(--size-sidebar-navigation-icon);
-    color: var(--color-sidebar-navigation-icon);
-    stroke-width: var(--stroke-sidebar-navigation-icon);
-  }
-  > .ui-button__label { display: contents; }
-  [data-navigation-label] {
-    grid-column: 2;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  text-align: start;
+  > svg { color: var(--color-sidebar-navigation-icon); }
 }
 .sidebar-list-search {
   display: flex; align-items: center; gap: 6px; min-width: 0; margin: 4px 0 6px; padding: 6px 8px;

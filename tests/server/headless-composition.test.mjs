@@ -63,7 +63,7 @@ test('public Headless artifact has no enterprise implementation and its CLI reje
   } }); t.after(() => app.close());
   const health = await fetch(app.url + '/__opencraft_health').then(response => response.json());
   const storage = health.storage.find(row => row.name === 'remote-browser');
-  assert.equal(storage.appliedVersion, 4);
+  assert.equal(storage.appliedVersion, 3); // the three remote-browser migrations in store-migrations.generated.ts
   assert.equal(storage.movedAside, false);
   assert.equal((await fetch(app.url)).status, 200);
   assert.equal((await fetch(app.url + '/__opencraft_actors/me')).status, 401);

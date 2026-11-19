@@ -219,7 +219,8 @@ function UserMessageImageViewer({
 
 function UserMessageImageNeighbor({ source, local, documentId }: { source: string; local: boolean; documentId: string }) {
   const context = useContext(ConversationDocumentContext);
-  const media = useConversationMediaSource(source, documentId, local ? context.resolveImageSource : undefined);
+  // Neighbor planes are speculative swipe previews: never a new Host read.
+  const media = useConversationMediaSource(source, documentId, local ? context.resolveImageSource : undefined, { sharedOnly: true });
   return media.source ? <img alt="" draggable={false} src={media.source} /> : null;
 }
 

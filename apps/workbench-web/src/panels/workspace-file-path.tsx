@@ -45,7 +45,7 @@ export function WorkspaceFilePath({ path, onSelect }: { path: string; onSelect(p
           {index > 0 ? (
             <ChevronRightIcon className="workspace-file-path__separator" size={12} aria-hidden="true" />
           ) : null}
-          <Button variant="ghost" size="sm" title={part.path} onClick={() => onSelect(part.path)}>
+          <Button variant="ghost" size="accessory" title={part.path} onClick={() => onSelect(part.path)}>
             {part.label}
           </Button>
         </Fragment>

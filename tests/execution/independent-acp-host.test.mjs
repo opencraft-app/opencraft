@@ -8,6 +8,10 @@ import { WebSocket } from 'ws';
 import { startIndependentAcpHost } from '../../scripts/server-deployment/acp-host.mjs';
 import { attachEngineHost } from '../../scripts/server-deployment/engine-host-client.mjs';
 
+// An owner with an execution environment runs each Thread in its own native
+// process; the generation snapshot pid is the shared driver, not that process.
+const nativePids = (host, generationId) => host.provider.providers.get(generationId).processIds;
+
 async function connect(url) {
   const socket = new WebSocket(url), calls = new Map(); let sequence = 0;
   socket.on('message', bytes => { const frame = JSON.parse(String(bytes)); const pending = calls.get(frame.id); if (!pending || frame.method) return; calls.delete(frame.id); frame.error ? pending.reject(new Error(frame.error.message)) : pending.resolve(frame.result); });
@@ -33,15 +37,18 @@ test('independent Claude ACP Host retains native PID and turn when a gateway att
   const before = host.provider.snapshot().generations[0];
   assert.equal(before.occupancy.activeTurns, 1);
   const observed=await attachment.getExecutionIdentity(created.thread.id);
-  assert.equal(observed.pid,before.pid);assert.equal(observed.turn.id,started.turn.id);assert.equal(observed.turn.status,"inProgress");
-  assert.notEqual(before.pid,process.pid);
+  assert.ok(nativePids(host, 'one').includes(observed.pid), 'execution identity names a native process of the binding generation');
+  assert.equal(observed.turn.id,started.turn.id);assert.equal(observed.turn.status,"inProgress");
+  assert.notEqual(before.pid,process.pid); assert.notEqual(observed.pid,process.pid);
   await assert.rejects(attachment.getExecutionIdentity("claude_unknown"));
   gateway.socket.close(); await attachment.close();
   const deadline = Date.now() + 3000;
   while (host.provider.snapshot().generations[0].occupancy.activeTurns && Date.now() < deadline) await delay(20);
   const after = host.provider.snapshot().generations[0];
   assert.equal(after.pid, before.pid); assert.equal(after.occupancy.activeTurns, 0);
-  const successor = await connect((await attachEngineHost(options.descriptorPath, options.dataDirectory, descriptor.machineId, ['claude-code'], 'claude-code')).websocketUrl);
+  const successorAttachment = await attachEngineHost(options.descriptorPath, options.dataDirectory, descriptor.machineId, ['claude-code'], 'claude-code');
+  assert.equal((await successorAttachment.getExecutionIdentity(created.thread.id)).pid, observed.pid, 'the Thread native process survives the gateway attachment');
+  const successor = await connect(successorAttachment.websocketUrl);
   t.after(() => successor.socket.close());
   const read = await successor.request('thread/read', { threadId: created.thread.id });
   assert.equal(read.thread.id, created.thread.id);
@@ -52,8 +59,10 @@ test('independent Claude ACP Host retains native PID and turn when a gateway att
   await host.provider.manage('add',{id:'two',configPath});
   await host.provider.manage('activate',{id:'two',expectedCurrent:'one'});
   const second=await successor.request('thread/start',{});
-  assert.equal((await attachment.getExecutionIdentity(created.thread.id)).pid,before.pid,'existing Thread retains the original native generation');
-  assert.notEqual((await attachment.getExecutionIdentity(second.thread.id)).pid,before.pid,'new Thread uses the new native root');
+  assert.equal((await attachment.getExecutionIdentity(created.thread.id)).pid,observed.pid,'existing Thread retains the original native generation');
+  const secondPid=(await attachment.getExecutionIdentity(second.thread.id)).pid;
+  assert.notEqual(secondPid,observed.pid,'new Thread uses the new native root');
+  assert.ok(nativePids(host, 'two').includes(secondPid) && !nativePids(host, 'one').includes(secondPid));
 
 });
 
@@ -117,21 +126,24 @@ test('production multi-engine entry aggregates Pi and two independently rooted A
     assert.ok(created.thread.id.startsWith(owner.id === 'acp' ? 'acp_' : 'claude_'));
     const inputId = `actor-input:${owner.id}-accepted`;
     const receipt = await attachment.inputs.submit(created.thread.id, inputId, 'wait', () => true);
-    assert.equal(receipt.state, 'delivered'); owner.turnId = receipt.turnId; owner.nativePid = owner.host.provider.snapshot().generations[0].pid;
+    assert.equal(receipt.state, 'delivered'); owner.turnId = receipt.turnId; owner.driverPid = owner.host.provider.snapshot().generations[0].pid;
     assert.deepEqual(await attachment.inputs.receipt(created.thread.id, inputId), receipt);
     assert.equal(owner.host.provider.snapshot().generations[0].occupancy.activeTurns, 1);
-    assert.equal((await attachment.getExecutionIdentity(owner.threadId)).pid,owner.nativePid);
+    owner.nativePid = (await attachment.getExecutionIdentity(owner.threadId)).pid;
+    assert.ok(nativePids(owner.host, 'one').includes(owner.nativePid));
   }
   assert.equal(new Set(owners.map(owner => owner.nativePid)).size, 2);
   await aggregate.close();
   const deadline = Date.now() + 3000;
   while (owners.some(owner => owner.host.provider.snapshot().generations[0].occupancy.activeTurns) && Date.now() < deadline) await delay(20);
   for (const owner of owners) {
-    assert.equal(owner.host.provider.snapshot().generations[0].pid, owner.nativePid);
+    assert.equal(owner.host.provider.snapshot().generations[0].pid, owner.driverPid);
+    assert.ok(nativePids(owner.host, 'one').includes(owner.nativePid), 'closing the aggregate preserves the running native process');
     const status = await owner.host.provider.request('opencraft/orchestration/status', { threadId: owner.threadId }, { notify() {}, async request() {} });
     assert.equal(status.turnId, owner.turnId); assert.equal(status.state, 'completed');
     const remote = await attachEngineHost(owner.descriptorPath, owner.dataDirectory, machine.machineId, [owner.id], owner.id);
     assert.equal((await remote.getIdentity()).pid, process.pid);
+    assert.equal((await remote.getExecutionIdentity(owner.threadId)).pid, owner.nativePid);
     const admitted = authorizations.filter(call => call.threadId === owner.threadId);
     assert.ok(admitted.length > 0);
     assert.ok(admitted.every(call => call.serverId === `server:${machine.machineId}:${owner.id}` && call.inputId === `actor-input:${owner.id}-accepted`));

@@ -106,14 +106,13 @@ test("Slack rechecks the identity lease after resolving the DM and before sendin
 test("connection-owned notification methods join the existing personal port without creating chats or allowing other recipients", async () => {
   const service = Object.create(ImChannelService.prototype),
     calls: any[] = [];
-  let linked = true,
-    port: any;
+  let linked = true;
   service.dependencies = {
     actors: { get: (id: string) => ({ id, enabled: true, kind: "human" }) },
     admittedActor: () => true,
   };
   service.adapters = new Map();
-  port = {
+  const port = {
     targets: (actorId: string) =>
       linked && actorId === "human-a"
         ? [

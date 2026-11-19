@@ -80,7 +80,7 @@ function parseRegions(value: unknown): readonly TimelinePresentationRegion[] | u
   });
 }
 
-/** Descriptors and messages form one bounded display document. An omitted
+/** Descriptors and messages form one bounded display document; an omitted
  * anchor retires its region, rather than relocating it to another response.
  * Apply the same normalization before memory paint and after storage parsing. */
 function retainMessageRegions(messages: readonly DisplayMessage[]): DisplayMessage[] {

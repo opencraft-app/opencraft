@@ -18,13 +18,14 @@ type Session = {
   bytes: number;
   output: ProcessOutput[];
 };
-const object = (value: unknown): Record<string, any> => {
+const object = (value: unknown): Record<string, unknown> => {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw Error("Invalid process parameters");
-  return value;
+  return value as Record<string, unknown>;
 };
 const size = (value: unknown) => {
   const p = object(value);
-  if (![p.cols, p.rows].every((v) => Number.isInteger(v) && v > 0 && v <= 1000)) throw Error("Invalid PTY size");
+  if (![p.cols, p.rows].every((v) => typeof v === "number" && Number.isInteger(v) && v > 0 && v <= 1000))
+    throw Error("Invalid PTY size");
   return { cols: p.cols as number, rows: p.rows as number };
 };
 /** Existing Web process protocol over one authorized remote binding. No local PTY,
@@ -73,7 +74,8 @@ export class SandboxProcessService {
       onAccepted?.();
     } catch (error) {
       if (method === "process/spawn") {
-        const child = this.sessions.get(object(params).processHandle)?.child;
+        const handle = object(params).processHandle;
+        const child = typeof handle === "string" ? this.sessions.get(handle)?.child : undefined;
         try {
           await child?.terminate();
         } catch {
@@ -87,7 +89,7 @@ export class SandboxProcessService {
     // first, then replay the bounded ring without another asynchronous gap.
     if (method === "process/spawn") {
       const id = object(params).processHandle,
-        session = this.sessions.get(id);
+        session = typeof id === "string" ? this.sessions.get(id) : undefined;
       if (session?.ready) {
         for (const chunk of session.output) this.emit("process/outputDelta", { ...chunk });
         if (session.phase === "exited") this.emit("process/exited", { processHandle: id, exitCode: session.exitCode });
@@ -153,6 +155,7 @@ export class SandboxProcessService {
         p.command.some((v: unknown) => typeof v !== "string" || v.includes("\0"))
       )
         throw Error("Expected a PTY command array");
+      const command: string[] = p.command;
       // Only the bound cwd is supported until directory admission is implemented.
       if (p.cwd != null && (typeof p.cwd !== "string" || posix.normalize(p.cwd) !== this.options.cwd))
         throw Error("Process cwd is outside binding");
@@ -172,7 +175,7 @@ export class SandboxProcessService {
       }
       const session: Session = {
         ready: false,
-        context: { ...this.options.context, cwd: this.options.cwd, shell: p.command[0] },
+        context: { ...this.options.context, cwd: this.options.cwd, shell: command[0] },
         phase: "running",
         exitCode: null,
         sequence: 0,
@@ -184,7 +187,7 @@ export class SandboxProcessService {
         let child: SandboxProcess | undefined;
         try {
           child = await this.options.sandbox.spawn(
-            { command: [...p.command], cwd: this.options.cwd, env, terminal: dimensions },
+            { command: [...command], cwd: this.options.cwd, env, terminal: dimensions },
             (event) => {
               if (this.closed) return;
               const data = Buffer.from(event.data);
@@ -243,9 +246,10 @@ export class SandboxProcessService {
     const s = this.sessions.get(id);
     if (!s?.ready || !s.child) throw Error("Process session not found");
     if (method === "process/attach") {
-      if (!Number.isSafeInteger(p.afterSequence) || p.afterSequence < 0 || p.afterSequence > s.sequence)
+      const after = p.afterSequence;
+      if (typeof after !== "number" || !Number.isSafeInteger(after) || after < 0 || after > s.sequence)
         throw Error("Invalid output cursor");
-      return this.snapshot(id, s, p.afterSequence);
+      return this.snapshot(id, s, after);
     }
     if (method === "process/kill") {
       if (s.phase === "running") await s.child.terminate();

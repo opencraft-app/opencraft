@@ -65,8 +65,34 @@ export interface ChannelSyncTransport {
   subscribeWithReceipt?(receive: (arrival: ChannelArrival) => Promise<{ messageId: string }>): () => void;
   callback?: { path: string; handle(request: IncomingMessage, response: ServerResponse): Promise<void> };
 }
+type ChannelMention = { start: number; end: number; recipient: string };
+/** Native channel Worker results consumed by this transport (owned by `channelSyncCommand`). */
+interface ChannelSyncReplies {
+  configure: unknown;
+  addSource: null;
+  ingest: { messageId?: unknown } | null;
+  imageReady: { ready: boolean };
+  claim: {
+    messageId: string;
+    source: string;
+    attemptId: string;
+    text: string;
+    author: string;
+    presentation?: ChannelMessagePresentation;
+    mentions?: ChannelMention[];
+    replyTo?: string;
+    attachment?: { name: string; type: string; size: number };
+    image?: ChannelImage;
+  } | null;
+  check: null;
+  attribution: null;
+  attachmentChunk: { name: string; type: string; size: number; bytes: Uint8Array; nextOffset: number };
+  settle: null;
+  pendingImage: { messageId: string; mediaId: string; source: string } | null;
+  deactivate: unknown;
+}
 export interface NativeChannelSyncPort {
-  synchronizeChannels(command: { method: string; params: Record<string, unknown> }): Promise<any>;
+  synchronizeChannels(command: { method: string; params: Record<string, unknown> }): Promise<unknown>;
   channels: { onChange(listener: () => void): () => void };
 }
 /** Only transport work lives here. The native channel owner admits messages,
@@ -112,8 +138,13 @@ export class ChannelSync {
       throw error;
     }
   }
-  private call(method: string, params: Record<string, unknown> = {}) {
-    return this.port.synchronizeChannels({ method, params: { ...params, incarnation: this.incarnation } });
+  private call<M extends keyof ChannelSyncReplies>(
+    method: M,
+    params: Record<string, unknown> = {},
+  ): Promise<ChannelSyncReplies[M]> {
+    return this.port.synchronizeChannels({ method, params: { ...params, incarnation: this.incarnation } }) as Promise<
+      ChannelSyncReplies[M]
+    >;
   }
   private track<T>(promise: Promise<T>): Promise<T> {
     this.pending.add(promise);

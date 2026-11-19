@@ -93,7 +93,7 @@ test("Codex account row shares touch-safe hover and a reachable actions target",
   assert.match(tokens, /@mixin touch-density-tokens\s*\{[\s\S]*?--size-chrome-action: var\(--size-shell-header-action-mobile\)/u);
   assert.match(interaction, /@mixin hover-capable\s*\{\s*@media \(any-hover: hover\) and \(any-pointer: fine\)[\s\S]*?:root:not\(\[data-touch-interaction\]\) &/u);
   assert.match(menu, /@include controls\.hover-capable/u);
-  assert.match(menu, /@include controls\.density-target\(0px, 28px\)/u);
+  assert.match(menu, /@include controls\.density-target\(0px, var\(--height-menu-item\)\)/u);
   assert.match(controls, /min-height: max\(#\{\$height\}, var\(--size-control-hit-min\)\)/u);
 });
 

@@ -16,30 +16,40 @@
   max-inline-size: min(20rem, 100%);
 }
 
+// Pictures and their placeholders are media slots, not shared controls. The
+// shared focus fallback draws the keyboard ring; touch never shows it.
+.im-channel-chat__picture,
+.im-channel-chat__picture-placeholder {
+  min-inline-size: var(--size-control-hit-min);
+  min-block-size: var(--size-control-hit-min);
+  appearance: none;
+  border: 0;
+  border-radius: var(--radius-channel-chat-bubble);
+  font: inherit;
+}
+
 .im-channel-chat__picture-placeholder {
   display: grid;
   place-items: center;
   inline-size: 12rem;
   max-inline-size: 100%;
   block-size: 8rem;
-  padding-inline: calc(2 * var(--spacing));
-  border-radius: var(--radius-channel-chat-bubble);
+  padding: 0 calc(2 * var(--spacing));
   background: var(--color-channel-chat-bubble);
   color: var(--color-text-secondary);
   text-align: center;
+  cursor: pointer;
+
+  &:disabled { cursor: default; }
+  @include interaction.hover-capable { &:hover:not(:disabled) { color: var(--color-text); } }
 }
 
-.im-channel-chat__picture.ui-button {
+.im-channel-chat__picture {
   display: grid;
   place-items: center;
   inline-size: fit-content;
-  min-inline-size: var(--size-control-hit-min);
-  min-block-size: var(--size-control-hit-min);
-  block-size: auto;
   max-inline-size: 100%;
   padding: 0;
-  border: 0;
-  border-radius: var(--radius-channel-chat-bubble);
   overflow: hidden;
   background: transparent;
   cursor: zoom-in;
@@ -53,8 +63,6 @@
     border-radius: inherit;
   }
 }
-
-
 
 .im-channel-status {
   padding-inline: calc(3 * var(--spacing));

@@ -263,17 +263,19 @@ export class PersonalAssistants {
     this.audit(c, r, String(p.operation), p.source === undefined ? null : bounded(p.source));
     return null;
   }
-  groupGuard(c: ActorContext, method: string, p: Record<string, unknown>, result: any) {
+  groupGuard(c: ActorContext, method: string, p: Record<string, unknown>, result: unknown) {
     if (!method.startsWith(prefix + "groups/")) return undefined;
     const r = this.row(c),
       owner = String(r.owner_human_id);
-    const ids = method.endsWith("/list") ? result.groups.map((g: { id: string }) => g.id) : [String(p.channelId)];
+    const ids = method.endsWith("/list")
+      ? (result as { groups: { id: string }[] }).groups.map((g) => g.id)
+      : [String(p.channelId)];
     return {
       epoch: String(r.epoch),
       groups: ids.map((id: string) => ({ id, epoch: this.service.channels.memberEpoch(id, owner) })),
     };
   }
-  checkGroups(c: ActorContext, guard: { epoch: string; groups: { id: string; epoch: string }[] }) {
+  checkGroups(c: ActorContext, guard: { epoch: string; groups: { id: string; epoch: string | null }[] }) {
     const r = this.row(c);
     if (
       r.epoch !== guard.epoch ||

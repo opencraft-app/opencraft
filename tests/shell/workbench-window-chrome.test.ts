@@ -46,9 +46,9 @@ test("management modal preserves panel geometry while launchers follow conversat
   assert.match(app, /toolbarActions=\{conversationRouteOpen \? panelToolbarActions : \[\]\}/);
   assert.match(
     app,
-    /const conversationSurfaceVisible = conversationRouteOpen\s+\|\| \(managementSettingsOpen && !standaloneManagementOpen\);/,
+    /const conversationSurfaceVisible =\s*conversationRouteOpen\s+\|\| \(managementSettingsOpen && !standaloneManagementOpen\);/,
   );
-  assert.match(app, /const conversationRightPanelAvailable = conversationSurfaceVisible\s+&& \(embedded === undefined \|\| \(draft === null && activeThreadId !== null\)\);/);
+  assert.match(app, /const conversationRightPanelAvailable =\s*conversationSurfaceVisible\s+&& \(embedded === undefined \|\| \(draft === null && activeThreadId !== null\)\);/);
   assert.match(app, /rightPanelOpen=\{conversationRightPanelAvailable && presentedRightPanelOpen\}/);
 });
 

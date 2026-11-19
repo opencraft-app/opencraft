@@ -6,7 +6,7 @@ import { communicationExtension } from './communication-extension.js';
 import { AssistantThreadStore } from './assistant-thread-store.js';
 import { PersonalAssistants } from './personal-assistants.js';
 import { PERSONAL_ASSISTANT_METHODS, type PersonalAssistantAccess, type PersonalAssistantRuntimeState } from '@opencraft/appserver-protocol';
-import { channelSyncCommand, enqueueChannelDelivery, channelImageType, type ChannelImage, type ChannelSyncCommand } from "./native-channel-sync.js";
+import { channelSyncCommand, enqueueChannelDelivery, channelImageType, isChannelSyncResult, type ChannelImage, type ChannelSyncCommand, type ChannelSyncReply } from "./native-channel-sync.js";
 import type { ProjectAutomations } from './automation-runtime.js';
 import { AutomationError } from './automation.js';
 import { OrchestrationRuntimeWorker } from './orchestration-runtime-store.js';
@@ -982,7 +982,8 @@ export class Collaboration {
     return packet.result;
   }
   /** Trusted installation transport port; not reachable from communicate/RPC. */
-  async synchronizeChannels(command: ChannelSyncCommand): Promise<any> {
+  synchronizeChannels<M extends string>(command: ChannelSyncCommand<M>): Promise<ChannelSyncReply<M>>;
+  async synchronizeChannels(command: ChannelSyncCommand): Promise<unknown> {
     if(this.#closed)throw Error('channel_sync_closed');
     if(command.method==='mirrorDirectory') {
       const corpId=command.params.corpId,humans:Record<string,string>={};
@@ -997,13 +998,13 @@ export class Collaboration {
       return humans;
     }
     if(command.method==='mirrorBind') {
-      const actorId=command.params.binding?.actorId;
+      const binding=command.params.binding,actorId=typeof binding==='object'&&binding!==null&&'actorId' in binding?binding.actorId:undefined;
       if(typeof actorId!=='string'||!this.admittedActor(actorId))throw Error('channel_denied');
     }
     // Identity mutations stay with the Actor owner so its permission projection
     // is published together with the committed binding.
     if(command.method==='mirrorLink') {
-      const p=command.params,actor=this.actors.get(p.actorId);
+      const p=command.params,actor=typeof p.actorId==='string'?this.actors.get(p.actorId):null;
       if(!actor?.enabled||actor.kind!=='human'||actor.generation!==p.generation||!this.admittedActor(actor.id)
         ||typeof p.corpId!=='string'||!/^wx[a-z0-9]+$/iu.test(p.corpId)||typeof p.userId!=='string'||!p.userId||p.userId.length>256)throw Error('channel_denied');
       const context={actorId:actor.id,generation:actor.generation,credentialId:null,expiresAt:Date.now()+60000};
@@ -1016,7 +1017,7 @@ export class Collaboration {
       this.communicationStorage ??= new OrchestrationRuntimeWorker(path);
       packet=await this.communicationStorage.synchronizeChannels(command);
     }else packet=channelSyncCommand(this,this.database,command);
-    if(command.method==='reserveHuman')this.actors.acceptReservedHuman(packet.result);
+    if(isChannelSyncResult(command,'reserveHuman',packet))this.actors.acceptReservedHuman(packet.result);
     for(const change of packet.changes)this.channels.changed(change);
     return packet.result;
   }
@@ -1290,8 +1291,12 @@ export class Collaboration {
             if (receipt && !['queued', 'discarded'].includes(receipt.state)) {
               await update(id, ['delivered','steering'].includes(receipt.state) ? this.#deliveredState(snapshot, receipt) : 'unknown', 'engine_outcome_unknown', receipt); continue;
             }
-            // No receipt is not proof of non-execution. A queued input may also
-            // be claimed between observation and cancellation; require its acknowledgment.
+            // No receipt is not proof of non-execution, unless the execution port refused
+            // before dispatching. A queued input may also be claimed between observation
+            // and cancellation; require its acknowledgment.
+            if (!receipt && (error as { dispatched?: unknown }).dispatched === false) {
+              await update(id, 'rejected', 'execution_rejected'); continue;
+            }
             if (receipt?.state === 'discarded' || receipt?.state === 'queued'
                 && await this.execution.cancel(binding!, id, receipt.id)) {
               if (this.#closed) return;

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useIntl } from "@opencraft/i18n/react";
-import { LiquidGlassBackdrop } from "@opencraft/design-system-web/liquid-glass";
+import { ControlSurface } from "@opencraft/design-system-web/control-surface";
 import { Button } from "../ui/button";
 import { useAppearanceTheme } from "../../appearance-theme";
 import type { AnnouncementDialogContentProps } from "./announcement-dialog";
@@ -44,8 +44,7 @@ export function AnnouncementExperience({ announcement, onAction }: AnnouncementD
   }, []);
   return (
     <article className="announcement-experience">
-      <section className="announcement-experience__details">
-        <LiquidGlassBackdrop shape="rounded-rectangle" />
+      <ControlSurface surface="floating" shape="panel" className="announcement-experience__details">
         <header>
           <span className="announcement-experience__eyebrow">{text("showCode", "Scan on phone")}</span>
           <h2>{title}</h2>
@@ -72,9 +71,14 @@ export function AnnouncementExperience({ announcement, onAction }: AnnouncementD
             </Button>
           ) : null}
         </div>
-      </section>
-      <section className="announcement-experience__stage" aria-label={text("backToPreview", "Phone preview")}>
-        <LiquidGlassBackdrop shape="rounded-rectangle" />
+      </ControlSurface>
+      <ControlSurface
+        surface="floating"
+        shape="panel"
+        className="announcement-experience__stage"
+        role="region"
+        aria-label={text("backToPreview", "Phone preview")}
+      >
         <header className="announcement-experience__preview-heading">
           <span>{text("backToPreview", "Phone preview")}</span>
           <p>{text("gestureHint", "Drag left or right to use the sidebar.")}</p>
@@ -101,7 +105,7 @@ export function AnnouncementExperience({ announcement, onAction }: AnnouncementD
         <p className="announcement-experience__caption">
           {text("previewHint", "Try the mobile layout here. Actions affect your current workspace.")}
         </p>
-      </section>
+      </ControlSurface>
     </article>
   );
 }

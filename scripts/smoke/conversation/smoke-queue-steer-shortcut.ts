@@ -105,8 +105,21 @@ try {
       await press();
       assert.deepEqual(await actions(page), [], JSON.stringify(patch));
     }
+    // Delivery fence: while any claim into the unresolved Turn is unconfirmed,
+    // the shortcut obeys the same admission as the head row's Send button and
+    // sends nothing; the ordinary head stays queued and reorderable.
     await reset();
     await page.evaluate(() => { const f=(window as any).fixture; f.replaceRows([f.item('top','Ordinary head'),{...f.item('claim','Delivery unknown'),unconfirmedTargetTurnId:'turn'}]); });
+    await page.waitForTimeout(30);
+    const fencedHead = page.locator(".opencraft-composer-queue-item").first();
+    assert.equal(await fencedHead.getByRole("button", { name: "Steer with queued message", exact: true }).isDisabled(), true);
+    assert.equal(await fencedHead.getByRole("button", { name: "Reorder queued message", exact: true }).isDisabled(), false);
+    await press();
+    assert.deepEqual(await actions(page), []);
+    assert.equal(await page.locator(".opencraft-composer-queue-item").count(), 2);
+    assert.equal(await editor.textContent(), "");
+    // Once the claim resolves, the same press consumes exactly the visible head.
+    await page.evaluate(() => { const f=(window as any).fixture; f.replaceRows([f.item('top','Ordinary head')]); });
     await page.waitForTimeout(30);
     await press();
     assert.deepEqual(await actions(page), [{ type: "queue-steer", id: "top" }]);

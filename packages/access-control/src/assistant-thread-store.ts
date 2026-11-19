@@ -1,6 +1,6 @@
 import { parseConversationRef } from "@opencraft/appserver-protocol/collaboration";
 import { createHash, randomUUID } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import type { ActorContext } from "@opencraft/identity-core/actors";
 import { PersonalAssistants } from "./personal-assistants.js";
 import type { Collaboration } from "./collaboration.js";
@@ -14,6 +14,8 @@ export const threadText = (v: unknown, max = 256): string => {
     fail("invalid_thread_argument", 400);
   return v;
 };
+/** Send payload accepted by the collaboration owner after the frozen operation matched. */
+type AssistantThreadSend = Parameters<Collaboration["sendAssistantThread"]>[1];
 export interface AssistantThreadAllocation {
   id: string;
   actor: ActorContext;
@@ -114,14 +116,19 @@ export class AssistantThreadStore {
     this.db.prepare("UPDATE assistant_thread_operations SET reference=? WHERE id=?").run(p.reference, r.id);
     return this.db.prepare("SELECT * FROM assistant_thread_operations WHERE id=?").get(r.id)!;
   }
-  command(c: ActorContext, op: string, p: Record<string, any>): any {
+  command(c: ActorContext, op: string, p: Record<string, unknown>): unknown {
     if (op === "profile-save" || op === "profile-revoke") {
       const a = this.human(c, p.botId),
         id = threadText(p.id, 80);
       const old = this.db
         .prepare("SELECT * FROM assistant_thread_profiles WHERE bot_id=? AND id=?")
         .get(a.assistant.binding.botId, id);
-      if (!Number.isSafeInteger(p.expectedRevision) || (old?.revision ?? 0) !== p.expectedRevision)
+      const expectedRevision = p.expectedRevision;
+      if (
+        typeof expectedRevision !== "number" ||
+        !Number.isSafeInteger(expectedRevision) ||
+        (old?.revision ?? 0) !== expectedRevision
+      )
         fail("assistant_thread_profile_conflict", 409);
       if (p.epoch !== a.epoch) fail();
       if (op === "profile-revoke") {
@@ -130,19 +137,20 @@ export class AssistantThreadStore {
           .prepare("UPDATE assistant_thread_profiles SET enabled=0,revision=revision+1 WHERE bot_id=? AND id=?")
           .run(a.assistant.binding.botId, id);
       } else {
-        const source = parseConversationRef(String(p.reference));
+        const reference = String(p.reference);
+        const source = parseConversationRef(reference);
         if (!source || !this.service.conversationAllowed(c, source, "execution.delegate"))
           fail("assistant_thread_source_unavailable");
         this.db
           .prepare(
             "INSERT INTO assistant_thread_profiles VALUES(?,?,?,?,?,?,1) ON CONFLICT(bot_id,id) DO UPDATE SET epoch=excluded.epoch,revision=excluded.revision,source=excluded.source,settings=excluded.settings,enabled=1",
           )
-          .run(a.assistant.binding.botId, id, a.epoch, p.expectedRevision + 1, p.reference, JSON.stringify(p.settings));
+          .run(a.assistant.binding.botId, id, a.epoch, expectedRevision + 1, reference, JSON.stringify(p.settings));
       }
       this.audit(c, op, id);
       return {
         id,
-        revision: p.expectedRevision + 1,
+        revision: expectedRevision + 1,
         enabled: op === "profile-save",
       };
     }
@@ -182,13 +190,18 @@ export class AssistantThreadStore {
     }
     if (op === "guard")
       return {
-        ...this.guard(c, p.profile, p.revision, p.epoch),
-        takenOver: p.threadId ? (this.service.orchestration.relation(p.threadId)?.hasDirectUserInput ?? false) : false,
+        ...this.guard(c, p.profile as string, p.revision as number | undefined, p.epoch as string | undefined),
+        takenOver: p.threadId
+          ? (this.service.orchestration.relation(String(p.threadId))?.hasDirectUserInput ?? false)
+          : false,
       };
     if (op === "send") {
       const r = this.own(c, threadText(p.id)),
         args = JSON.parse(String(r.args));
-      const reference = typeof p.reference === "object" && p.reference ? p.reference : null;
+      const reference =
+        typeof p.reference === "object" && p.reference
+          ? (p.reference as { serverId?: unknown; threadId?: unknown })
+          : null;
       const frozen = parseConversationRef(String(r.reference ?? args.reference));
       if (
         p.profile !== r.profile_id ||
@@ -210,7 +223,7 @@ export class AssistantThreadStore {
               expectedTurnId: threadText(args.expectedTurnId, 256),
             }
           : { mode: "queue" as const };
-      return this.service.sendAssistantThread(c, { ...p, execution } as any);
+      return this.service.sendAssistantThread(c, { ...p, execution } as AssistantThreadSend);
     }
     if (op === "accept") {
       const a = this.authority(c),
@@ -225,18 +238,20 @@ export class AssistantThreadStore {
         if (prior.fingerprint !== fingerprint) fail("assistant_thread_key_reused", 409);
         return prior;
       }
-      let profileId = p.args.profile;
+      const args = p.args as Record<string, unknown>;
+      let profileId = args.profile;
       if (p.command === "tell") {
         const origin = this.db
           .prepare(
             "SELECT * FROM assistant_thread_operations WHERE bot_id=? AND epoch=? AND reference=? AND command='start' AND state='submitted'",
           )
-          .get(a.binding.botId, a.epoch, p.args.reference);
+          .get(a.binding.botId, a.epoch, args.reference as SQLInputValue);
         if (!origin) fail();
         profileId = origin.profile_id;
-        this.guard(c, profileId, Number(origin.profile_revision));
+        this.guard(c, String(profileId), Number(origin.profile_revision));
       }
-      const g = this.guard(c, threadText(profileId, 80));
+      const profile = threadText(profileId, 80);
+      const g = this.guard(c, profile);
       const id = randomUUID();
       this.db
         .prepare("INSERT INTO assistant_thread_operations VALUES(?,?,?,?,?,?,?,?,?,?,'accepted',NULL,NULL,?)")
@@ -246,14 +261,14 @@ export class AssistantThreadStore {
           a.epoch,
           key,
           fingerprint,
-          p.command,
+          p.command as SQLInputValue,
           JSON.stringify(p.args),
-          p.workId ?? null,
-          profileId,
+          (p.workId ?? null) as SQLInputValue,
+          profile,
           g.profile.revision,
           this.service.now(),
         );
-      this.audit(c, p.command, id);
+      this.audit(c, String(p.command), id);
       return this.own(c, id);
     }
     if (op === "delivery") {
@@ -276,7 +291,7 @@ export class AssistantThreadStore {
         .prepare(
           "SELECT id,reference,work_id,state,result FROM assistant_thread_operations WHERE bot_id=? AND epoch=? AND command='start' AND id>? ORDER BY id LIMIT ?",
         )
-        .all(a.binding.botId, a.epoch, after, p.limit + 1);
+        .all(a.binding.botId, a.epoch, after, (p.limit as number) + 1);
     }
     if (op === "target") {
       const a = this.authority(c),
@@ -284,7 +299,7 @@ export class AssistantThreadStore {
           .prepare(
             "SELECT * FROM assistant_thread_operations WHERE bot_id=? AND epoch=? AND reference=? AND command='start'",
           )
-          .get(a.binding.botId, a.epoch, p.reference);
+          .get(a.binding.botId, a.epoch, p.reference as SQLInputValue);
       if (!r) fail();
       return r;
     }
@@ -293,7 +308,7 @@ export class AssistantThreadStore {
       if (r.state === "submitted" || r.state === "rejected") return r;
       this.db
         .prepare("UPDATE assistant_thread_operations SET state=?,reference=COALESCE(?,reference),result=? WHERE id=?")
-        .run(p.state, p.reference ?? null, JSON.stringify(p.result), r.id);
+        .run(p.state as SQLInputValue, (p.reference ?? null) as SQLInputValue, JSON.stringify(p.result), r.id);
       return this.own(c, String(r.id));
     }
     fail("unknown_assistant_thread_storage_operation", 400);

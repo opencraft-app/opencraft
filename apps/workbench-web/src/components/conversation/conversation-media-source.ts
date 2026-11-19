@@ -29,6 +29,12 @@ export function useConversationMediaSource(
   source: string,
   documentId: string,
   resolveDirect: ConversationDocumentContextValue["resolveImageSource"],
+  /**
+   * Speculative surfaces (gallery neighbor planes) only reuse an application
+   * shared media snapshot. A per-consumer loader would start one more Host
+   * read for bytes another consumer already owns, so they stay empty instead.
+   */
+  options?: { readonly sharedOnly?: boolean },
 ): {
   readonly requestMeasurement: (reason: ChatMeasurementReason) => void;
   readonly source: string | null;
@@ -50,10 +56,12 @@ export function useConversationMediaSource(
     () => resolveConversationMediaSource(source, context.cwd, resolveDirect, context.loadMediaSource !== undefined),
     [context.cwd, context.loadMediaSource, resolveDirect, source],
   );
-  const request = useMemo(() => !resolution.loadThroughHost || !resolution.decision.target || !resolution.decision.kind ? null : ({
+  const sharedLoader = context.loadMediaSource?.getSnapshot !== undefined && context.loadMediaSource.subscribe !== undefined;
+  const allowHostRead = options?.sharedOnly !== true || sharedLoader;
+  const request = useMemo(() => !allowHostRead || !resolution.loadThroughHost || !resolution.decision.target || !resolution.decision.kind ? null : ({
     source, resolvedTarget: resolution.decision.target, resourceKind: resolution.decision.kind,
     documentId, conversationId: context.conversationId, hostId: context.hostId, cwd: context.cwd,
-  }), [resolution.loadThroughHost, resolution.decision.target, resolution.decision.kind, source, documentId, context.conversationId, context.hostId, context.cwd]);
+  }), [allowHostRead, resolution.loadThroughHost, resolution.decision.target, resolution.decision.kind, source, documentId, context.conversationId, context.hostId, context.cwd]);
   const loaded = useChatMediaSource(context.loadMediaSource, request);
   useEffect(() => {
     if (request && loaded.status !== "loading") context.onMeasurementRequest?.({
@@ -61,6 +69,6 @@ export function useConversationMediaSource(
     });
   }, [request, loaded, context.onMeasurementRequest, documentId, generation]);
   if (resolution.directSource !== null) return { requestMeasurement, source: resolution.directSource, status: "ready" };
-  if (!resolution.loadThroughHost) return { requestMeasurement, source: null, status: "unavailable" };
+  if (!resolution.loadThroughHost || !allowHostRead) return { requestMeasurement, source: null, status: "unavailable" };
   return { requestMeasurement, source: loaded.value?.source ?? null, status: loaded.status };
 }

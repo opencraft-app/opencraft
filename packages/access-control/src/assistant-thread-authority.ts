@@ -1,25 +1,37 @@
 import type { ActorContext } from "@opencraft/identity-core/actors";
 import { encodeConversationRef, parseConversationRef } from "@opencraft/appserver-protocol/collaboration";
 import { Collaboration, CollaborationError } from "./collaboration.js";
-import { threadText as text } from "./assistant-thread-store.js";
+import { threadText as text, type AssistantThreadStore } from "./assistant-thread-store.js";
+import type { OrchestrationMessageOrigin } from "./orchestration-authority.js";
 import type { ThreadAccessStore } from "./thread-access.js";
 const ref = (v: unknown) => {
   const r = parseConversationRef(text(v, 2048));
   if (!r) throw new CollaborationError(400, "invalid_reference");
   return r;
 };
+type AssistantGrant = NonNullable<OrchestrationMessageOrigin["assistantGrant"]>;
+/** Profile guard as returned by the `assistant-thread/guard` storage command. */
+type AssistantThreadGuard = ReturnType<AssistantThreadStore["guard"]> & { takenOver: boolean };
+/** Minimal source projection shared by profile guards and `source-authority`. */
+interface AssistantSourceAuthority {
+  context: ActorContext;
+  profile: { source?: unknown };
+  sourceOwner?: string | null;
+}
+/** Durable `assistant_thread_operations` row as returned by the storage commands. */
+type AssistantThreadOperationRow = Record<string, unknown>;
 /** Bot claim/profile admission adapter for the shared Thread command owner.
  * No native execution port, command lifecycle, allocation or queue is owned here. */
 export class AssistantThreadAuthority {
   private closed = false;
-  private admissions = new Map<string, { grant: any; authority: any; threadId: string }>();
+  private admissions = new Map<string, { grant: AssistantGrant; authority: AssistantThreadGuard; threadId: string }>();
   private refreshes = new Set<{
     threadId: string;
     invalidated: boolean;
     owners: Set<string>;
     bots: Set<string>;
   }>();
-  sourceAllowed(g: any) {
+  sourceAllowed(g: AssistantSourceAuthority) {
     const source = ref(g.profile.source);
     return (
       this.service.actors.isCurrent(g.context) &&
@@ -34,7 +46,7 @@ export class AssistantThreadAuthority {
     for (const [key, row] of this.admissions)
       if (row.authority.expiresAt <= this.service.now()) this.admissions.delete(key);
   }
-  private inputKey(grant: any, threadId: string) {
+  private inputKey(grant: AssistantGrant, threadId: string) {
     return JSON.stringify([grant.actor, grant.profile, grant.revision, grant.epoch, threadId]);
   }
   invalidate(threadId?: string, ownerActorId?: string, botId?: string) {
@@ -58,7 +70,7 @@ export class AssistantThreadAuthority {
     for (const row of await this.service.assistantAdmissions())
       if (!row.takenOver) this.admissions.set(this.inputKey(row.grant, row.threadId), row);
   }
-  async refreshInput(grant: any, threadId: string) {
+  async refreshInput(grant: AssistantGrant, threadId: string) {
     this.prune();
     const pending = { threadId, invalidated: false, owners: new Set<string>(), bots: new Set<string>() };
     this.refreshes.add(pending);
@@ -79,7 +91,7 @@ export class AssistantThreadAuthority {
         else this.admissions.delete(key);
       }
     } catch (error) {
-      if ([401, 403, 409].includes(Number((error as any).status))) this.admissions.delete(key);
+      if ([401, 403, 409].includes(Number((error as { status?: unknown }).status))) this.admissions.delete(key);
       else
         throw Object.assign(Error("assistant_authority_unavailable"), {
           cause: error,
@@ -89,7 +101,7 @@ export class AssistantThreadAuthority {
       this.refreshes.delete(pending);
     }
   }
-  allowsInput(grant: any, threadId: string) {
+  allowsInput(grant: AssistantGrant, threadId: string) {
     const row = this.admissions.get(this.inputKey(grant, threadId));
     return (
       !!row &&
@@ -120,7 +132,7 @@ export class AssistantThreadAuthority {
     if (!this.sourceAllowed(g)) throw new CollaborationError(403, "assistant_thread_source_unavailable");
     return g;
   }
-  current(c: ActorContext, r: any, threadId?: string) {
+  current(c: ActorContext, r: AssistantThreadOperationRow, threadId?: string) {
     if (!threadId) return this.check(c, String(r.profile_id), Number(r.profile_revision), String(r.epoch));
     return this.store(c, "guard", {
       profile: r.profile_id,
@@ -131,19 +143,19 @@ export class AssistantThreadAuthority {
       if (this.closed || !this.sourceAllowed(g))
         throw new CollaborationError(403, "assistant_thread_source_unavailable");
       if (g.takenOver) throw new CollaborationError(403, "assistant_thread_user_control");
-      const target = parseConversationRef(String(r.reference ?? JSON.parse(r.args).reference));
+      const target = parseConversationRef(String(r.reference ?? JSON.parse(String(r.args)).reference));
       if (!target || !this.service.conversationAllowed(g.context, target, "conversation.read"))
         throw new CollaborationError(403, "conversation_action_denied");
       return g;
     });
   }
-  receipt(r: any) {
+  receipt(r: AssistantThreadOperationRow) {
     return {
       operationId: r.id,
       state: r.state,
       reference: r.reference,
       workId: r.work_id,
-      ...(r.result ? JSON.parse(r.result) : {}),
+      ...(r.result ? JSON.parse(String(r.result)) : {}),
     };
   }
 }

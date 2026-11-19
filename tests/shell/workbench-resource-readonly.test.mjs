@@ -28,6 +28,9 @@ const { outputFiles } = await build({
       "./workspace-code-editor": `export const WorkspaceCodeEditor=()=>{throw new Error("editor unavailable")};`,
       "./workspace-file-icon": `export const WorkspaceFileIcon=()=>null;`,
     };
+    // Vite asset URLs (the PDF worker) have no esbuild loader; the panel only needs a string.
+    builder.onResolve({filter:/\?url$/}, args => ({path:args.path,namespace:"asset-url"}));
+    builder.onLoad({filter:/.*/,namespace:"asset-url"}, () => ({contents:`export default "about:blank";`,loader:"js"}));
     builder.onResolve({filter:/.*/}, args => args.path in modules ? {path:args.path,namespace:"boundary"} : undefined);
     builder.onLoad({filter:/.*/,namespace:"boundary"}, args => ({contents:modules[args.path],loader:"js",resolveDir:new URL("../..", import.meta.url).pathname}));
   }}],
@@ -67,9 +70,9 @@ test("Markdown preview and source switch without loading the editor", async () =
   const { createRoot } = require("react-dom/client");
   const { act } = require("react");
   const dom = new JSDOM('<div id="app"></div>', {url:"http://localhost"});
-  const keys = ["window", "document", "IS_REACT_ACT_ENVIRONMENT"];
+  const keys = ["window", "document", "getComputedStyle", "IS_REACT_ACT_ENVIRONMENT"];
   const previous = Object.fromEntries(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
-  Object.assign(globalThis, {window:dom.window, document:dom.window.document, IS_REACT_ACT_ENVIRONMENT:true});
+  Object.assign(globalThis, {window:dom.window, document:dom.window.document, getComputedStyle:dom.window.getComputedStyle.bind(dom.window), IS_REACT_ACT_ENVIRONMENT:true});
   globalThis.__panelTest = { runtime:{resources:{host:{canRequest:()=>false},fileSystem:{}}}, blobs:{} };
   const root = createRoot(document.getElementById("app"));
   try {
@@ -100,9 +103,9 @@ test("read-only preview downloads the original Blob and retires the previous Hos
   const { createRoot } = require("react-dom/client");
   const { act } = require("react");
   const dom = new JSDOM('<div id="app"></div>', {url:"http://localhost"});
-  const keys = ["window", "document", "IS_REACT_ACT_ENVIRONMENT"];
+  const keys = ["window", "document", "getComputedStyle", "IS_REACT_ACT_ENVIRONMENT"];
   const previous = Object.fromEntries(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
-  Object.assign(globalThis, {window:dom.window, document:dom.window.document, IS_REACT_ACT_ENVIRONMENT:true});
+  Object.assign(globalThis, {window:dom.window, document:dom.window.document, getComputedStyle:dom.window.getComputedStyle.bind(dom.window), IS_REACT_ACT_ENVIRONMENT:true});
   const bytes = Uint8Array.from([239, 187, 191, 35, 32, 65, 13, 10]);
   const loaded = blob => ({data:{blob,text:"# A",isFile:true,isDirectory:false}});
   globalThis.__panelTest = {
@@ -153,9 +156,9 @@ test("HTML preview renders in an isolated frame and retains source access", asyn
   const { createRoot } = require("react-dom/client");
   const { act } = require("react");
   const dom = new JSDOM('<div id="app"></div>', {url:"http://localhost"});
-  const keys = ["window", "document", "IS_REACT_ACT_ENVIRONMENT"];
+  const keys = ["window", "document", "getComputedStyle", "IS_REACT_ACT_ENVIRONMENT"];
   const previous = Object.fromEntries(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
-  Object.assign(globalThis, {window:dom.window, document:dom.window.document, IS_REACT_ACT_ENVIRONMENT:true});
+  Object.assign(globalThis, {window:dom.window, document:dom.window.document, getComputedStyle:dom.window.getComputedStyle.bind(dom.window), IS_REACT_ACT_ENVIRONMENT:true});
   const html = '<!doctype html><html><head><meta http-equiv="refresh" content="0;url=https://example.com/"><style>h1{color:red}</style></head><body><h1>Report</h1><a href="https://example.com/" ping="https://example.com/ping">External report</a><map><area href="https://example.com/area"></map><svg xmlns:xlink="http://www.w3.org/1999/xlink"><a xlink:href="https://example.com/svg"><set attributeName="href" to="https://example.com/animated" begin="0s"/>SVG report</a></svg><script>window.parent.bad = true</script></body></html>';
   globalThis.__panelTest = {
     runtime:{resources:{host:{canRequest:()=>false},fileSystem:{}}},
@@ -169,7 +172,8 @@ test("HTML preview renders in an isolated frame and retains source access", asyn
     assert.ok(frame);
     assert.equal(frame.getAttribute("sandbox"), "allow-scripts");
     assert.equal(frame.getAttribute("referrerpolicy"), "no-referrer");
-    assert.match(frame.getAttribute("srcdoc"), /^<!doctype html><meta http-equiv="Content-Security-Policy"/iu);
+    // The policy is the first element of <head>, ahead of the injected annotation agent and the document.
+    assert.match(frame.getAttribute("srcdoc"), /^<!doctype html><html><head><meta http-equiv="Content-Security-Policy"/iu);
     assert.match(frame.getAttribute("srcdoc"), /script-src 'unsafe-inline'/u);
     assert.match(frame.getAttribute("srcdoc"), /<h1>Report<\/h1>/u);
     assert.doesNotMatch(frame.getAttribute("srcdoc"), /http-equiv="refresh"|\bhref=|\bping=|<set\b/iu);

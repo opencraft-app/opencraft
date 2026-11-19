@@ -42,7 +42,7 @@ export function BrowserDeviceToolbar({mode,onChange,onClose,zoom,onZoom}:{
         <span aria-hidden="true">×</span>
         <DimensionInput label="Viewport height" value={mode.height} min={160} onChange={value => editDimension("height", value)}/>
       </div>
-      <IconButton size="toolbar" type="button" aria-label="Rotate viewport" title="Rotate viewport" onClick={() => {
+      <IconButton size="accessory" type="button" aria-label="Rotate viewport" title="Rotate viewport" onClick={() => {
         onChange({...mode, width: mode.height, height: mode.width});
       }}><RotateCcw size={16}/></IconButton>
       {onZoom ? <span className="browser-device-toolbar__select browser-device-toolbar__zoom"><select aria-label="Browser zoom" value={zoom} onChange={event => {
@@ -51,7 +51,7 @@ export function BrowserDeviceToolbar({mode,onChange,onClose,zoom,onZoom}:{
       }}>
         {[50,75,100,125,150,200].map(percent => <option key={percent} value={percent}>{percent}%</option>)}
       </select><ChevronDownIcon size={14} /></span> : null}
-      <IconButton size="toolbar" type="button" className="browser-device-toolbar__close" aria-label="Close device toolbar" title="Close device toolbar" onClick={onClose}><X size={14}/></IconButton>
+      <IconButton size="accessory" type="button" className="browser-device-toolbar__close" aria-label="Close device toolbar" title="Close device toolbar" onClick={onClose}><X size={14}/></IconButton>
     </div>
   );
 }

@@ -2840,7 +2840,8 @@ export class CodexEngineAdapter implements DuplexTransport {
         const inputId = string(item.clientId) || string(item.clientUserMessageId) || string(item.client_id);
         if (inputId) {
           this.executionLeases?.observedInput(threadId, string(p.turnId), inputId);
-          if (this.queueStore().findByClientId(threadId,inputId)) this.queueStore().deliveries.recorded(threadId,inputId);
+          // Remote Hosts own no queue; native observation then has no delivery ledger.
+          if (this.queue?.findByClientId(threadId,inputId)) this.queue.deliveries.recorded(threadId,inputId);
         }
       }
     }
@@ -2866,7 +2867,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       const turn = record(record(message.params).turn);
       const endedId = string(turn.id);
       if (this.activeTurns.get(threadId) === endedId) this.activeTurns.delete(threadId);
-      if (this.queueStore().deliveries.finish(threadId,endedId,string(turn.status))) this.emitQueueChanged(threadId);
+      if (this.queue?.deliveries.finish(threadId,endedId,string(turn.status))) this.emitQueueChanged(threadId);
       const gatewayPath=configuredModelGatewayPath();
       if(gatewayPath) {const ledger=new ModelGatewayStore(gatewayPath);try {if(string(turn.id))ledger.finishedExecution(threadId,string(turn.id));}finally{ledger.close();}}
       if (['completed', 'failed', 'interrupted'].includes(string(turn.status))) this.cancelTurnTools(threadId, string(turn.id));
@@ -4843,8 +4844,22 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (reservation) { initial = { reservation }; this.sessionMcpInitial.set(threadId, initial); }
     }
     // A durable creation record identifies provenance, not what an independent
-    // native owner currently has configured. After reconnect or a failed handoff,
-    // refresh before dispatch instead of assuming the creation environment survived.
+    // native owner currently has configured. Native cannot resume a Thread before
+    // its first Turn, so after reconnect the creation environment is kept only
+    // while its recorded owner still attests it; a begun handoff retires that
+    // record. Otherwise a shared participant refreshes before dispatch and any
+    // other unverified scope is refused without touching native.
+    if (!keepInitialEnvironment && this.options.executionEnvironment && inputId && creation?.phase === "created"
+      && (initial || !this.options.sessionMcp) && !this.executionEnvironments.has(threadId)) {
+      const owner = executionEnvironmentOwner(this.options.executionEnvironment.execution('local-codex', threadId, inputId));
+      if (creation.environmentOwner !== null && creation.environmentOwner === owner) {
+        this.executionEnvironments.set(threadId, { owner: creation.environmentOwner });
+        this.initialEnvironmentThreads.add(threadId);
+        keepInitialEnvironment = true;
+      } else if (!this.options.sharedTurnInput) {
+        throw new Error("Environment belongs to another account or project; start a new session");
+      } else this.provisionalThreads?.retireEnvironmentOwner(threadId);
+    }
     if (keepInitialEnvironment) {
       const runtime = this.options.executionEnvironment!;
       const currentScope = runtime.execution('local-codex', threadId, inputId);
@@ -4855,6 +4870,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         // Keep the durable creation record and cancel its reservation only once
         // the normal refresh has installed the new sender's configuration.
         keepInitialEnvironment = false;
+        if (creation?.phase === "created") this.provisionalThreads?.retireEnvironmentOwner(threadId);
         this.initialEnvironmentThreads.delete(threadId);
         this.executionEnvironments.delete(threadId);
         initial = undefined;

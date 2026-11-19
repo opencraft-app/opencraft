@@ -62,7 +62,7 @@ export class OrchestrationRuntimeWorker implements OrchestrationRuntimeStorage {
   executionAuthority(threadId:string,execution:{inputId?:string;turnId?:string}):Promise<Record<string,unknown>|null>{return this.request('executionAuthority',{threadId,execution});}
   updateExecution(value:ExecutionRequestState):Promise<void>{return this.request('updateExecution',value);}
   personalAssistantAssignments(after:string):Promise<ReturnType<import('./personal-assistants.js').PersonalAssistants['assignments']>>{return this.request('personalAssistantAssignments',{after});}
-  synchronizeChannels(command:ChannelSyncCommand):Promise<ChannelSyncResult>{return this.request('channelSync',command);}
+  synchronizeChannels<M extends string>(command:ChannelSyncCommand<M>):Promise<ChannelSyncResult<M>>{return this.request('channelSync',command);}
   communicate(command: CommunicationCommand): Promise<CommunicationResult> { return this.request('communication',command); }
   close():Promise<void>{
     return this.closing??=(async()=>{

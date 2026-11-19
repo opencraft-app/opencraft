@@ -206,6 +206,11 @@
   transform: translateY(-50%);
 }
 .ui-control-surface[data-control-surface="floating"] > .ui-liquid-glass { height: 100%; }
+// Panel lenses keep the rounded-rectangle optical field; the lens map reads
+// these real corners, which a layout owner may join to an adjacent pane.
+.ui-control-surface[data-control-surface="floating"][data-surface-shape="panel"] {
+  border-radius: var(--radius-control-surface-panel, var(--radius-xl));
+}
 
 .ui-button:is([data-variant="ghost"], [data-size="navigation"])[aria-current="page"] {
   background: var(--color-background-navigation-current);

@@ -127,7 +127,7 @@
   .browser-annotation-modes { flex: 1; min-width: 0; > button { flex: 1; min-width: 0; padding-inline: var(--spacing); } }
   .browser-annotation-bar { box-sizing: border-box; }
   .browser-annotation-bar__hint { white-space: normal; text-align: center; }
-  .browser-annotation-editor__collapse { align-self: flex-end; margin: var(--spacing) calc(var(--spacing) * 2) 0; gap: var(--spacing); color: var(--color-text-secondary); }
+  .browser-annotation-editor__collapse { align-self: flex-end; margin: var(--spacing) calc(var(--spacing) * 2) 0; gap: var(--spacing); }
   .browser-annotation-editor__header { padding-top: 0; }
   .browser-annotation-editor__actions { gap: calc(var(--spacing) * 3); padding: calc(var(--spacing) * 2.5) calc(var(--spacing) * 3); > :first-child { flex: none; min-width: 64px; } > :last-child { flex: 1; } }
 }
