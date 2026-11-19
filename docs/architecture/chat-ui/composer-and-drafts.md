@@ -1045,7 +1045,10 @@ A created Thread, an attempted first input, a native acceptance receipt and a
 persisted transcript are distinct facts. The local Codex Host records positive
 creation evidence before returning its acknowledgement. A replacement Host may
 restore that exact empty creation only while no first input was attempted, the
-native process still lists the same loaded identity, and no rollout exists.
+native process still lists the same loaded identity, and no rollout exists or
+the native-written rollout contains only that identity’s allocation metadata.
+Paginated allocations must also confirm their Native-owned empty index; metadata
+file existence alone is not index readiness.
 Legacy or missing evidence, an uncertain send and accepted/persisted history do
 not qualify for an empty-history fallback. The existing generation route remains
 bound to the original native identity. Recovery also requires the original
@@ -1057,8 +1060,13 @@ applies; only created/attempted input protects the provisional context.
 
 Creation-time MCP credentials retain their original endpoint and persistent
 Thread binding across a managed listener replacement. They bind once to the
-first attested execution; listing or recovering a creation never authorizes a
-tool call. A first-Turn dispatch retires empty-history eligibility before the
+first attested execution only while the live installed creation environment is
+still confirmed. For managed execution environments, after Host replacement or
+an uncertain configuration handoff,
+creation provenance cannot restore that confirmation: the current admitted
+execution must safely refresh its environment and tools, or preparation rejects
+without dispatch. Listing or recovering a creation never authorizes a tool call.
+A first-Turn dispatch retires empty-history eligibility before the
 native write. The Composer keeps its Draft until native acceptance; unknown
 outcomes still require positive message acknowledgement rather than replay.
 

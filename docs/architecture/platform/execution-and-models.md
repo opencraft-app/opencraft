@@ -592,9 +592,26 @@ Deployment restrictions belong to the server, independently of personal model de
 ### Creation-time execution tools
 
 The Host installs a single-use execution-bound MCP reservation when it creates
-an empty Thread. Before the first native Turn, its attested execution binds the
-reservation without attempting to resume missing rollout history. Preparation
-failures are classified separately from a physical native send: only positive
+an empty Thread. While the same live Host still has positive confirmation of the
+installed creation environment, the first attested execution binds the reservation
+without attempting to resume missing rollout history. With an execution-environment
+provider, a saved creator identity or restored MCP reservation alone is not that
+confirmation after Host reconnect or a
+partially failed configuration handoff. In those cases the Host refreshes the
+current execution environment and tools before dispatch, retaining sandbox and
+permission settings; it must not recover installed-configuration caches from
+creation provenance. An admitted shared participant may differ from the creator.
+
+For paginated Native history, creation confirms the Native-owned empty index
+before publication. Persisting session metadata alone does not confirm that index.
+Once confirmed, empty history can support normal resume and configuration refresh
+without inventing a Turn. Index readiness is not execution authorization or proof
+of installed credentials. A legacy owner that cannot resume empty history must
+reject preparation when the required fresh configuration cannot be confirmed;
+it must not dispatch with assumed credentials. This limitation is distinct from
+recovering the empty conversation for viewing.
+
+Preparation failures are classified separately from a physical native send: only positive
 not-submitted evidence permits a new attempt. Unknown outcomes retain their
 input identity and require reconciliation. Failed or disconnected preparation
 retires only its own reservation; an accepted native execution is never replayed

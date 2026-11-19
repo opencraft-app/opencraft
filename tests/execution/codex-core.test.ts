@@ -16,7 +16,8 @@ import { startCodexAppServer } from "../../apps/codex-core/src/app-server.js";
 import { OPENCRAFT_HOST_STATE_MIGRATIONS } from "../../apps/opencraft-daemon/src/opencraft-host-state-database.js";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter.js";
 import { DatabaseSync } from "node:sqlite";
-import { ExecutionEnvironmentRuntime } from "../../scripts/execution-environment.js";
+import { ExecutionEnvironmentRuntime, environmentProjectId } from "../../scripts/execution-environment.js";
+import { AccountEnvironment } from "../../scripts/account-environment.js";
 import { EmployeeGitVaultStore } from "../../scripts/employee-git-vault-store.js";
 import { observeNativeExecutionProcess } from "../../apps/opencraft-daemon/src/native-execution-origin.js";
 
@@ -983,7 +984,7 @@ test("a lost first-Turn acknowledgement never turns attempted input into an empt
 });
 
 
-for (const scopeChange of ["none", "account", "project", "unknown", "no-mcp"] as const) test(`an empty environment provider restores MCP without a history resume (scope=${scopeChange})`, async () => {
+for (const scopeChange of ["none", "account", "project", "unknown", "no-mcp"] as const) test(`legacy empty history refuses input when fresh environment installation is unavailable (scope=${scopeChange})`, async () => {
   const f = await fixture(async options => ({ ...options, appServerEndpoint: join(options.runtimeDirectory, "execution/control.sock"),
     spawnAppServer: ({ args, cwd, env }) => spawn(process.execPath,
       [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
@@ -1007,43 +1008,182 @@ for (const scopeChange of ["none", "account", "project", "unknown", "no-mcp"] as
     const b = await f.adapter(true, () => {}, options); hosts.push(b.engine); await b.rpc("browser", "initialize", {}, context);
     await b.rpc("browser", "thread/resume", { threadId: thread.id, excludeTurns: true }, context);
     methods.length = 0;
-    if (scopeChange !== "none" && scopeChange !== "no-mcp") {
+    if (scopeChange === "project") runtime.bind("local-codex", thread.id, "another-project");
+    if (scopeChange === "unknown") {
+      const db = new DatabaseSync(join(options.dataDirectory, "thread-creations.sqlite"));
+      try { db.prepare("UPDATE thread_creations SET environment_owner=NULL WHERE thread_id=?").run(thread.id); } finally { db.close(); }
+    }
+    const changedContext = scopeChange === "account" ? { ...context,
+      sender: { kind: "employee" as const, loginName: "bob" }, executionPrincipal: { provider: "employee", subject: "bob" } } : context;
+    const rejectInput = async (inputId: string, submissionContext = context) => {
+      await assert.rejects(b.rpc("browser", "turn/start", { threadId: thread.id, clientUserMessageId: inputId,
+        input: [{ type: "text", text: "must not reach native" }] }, submissionContext), /input was not sent/);
+      const failure = b.frames.filter(frame => frame.error?.data?.submissionOutcome === "rejected").at(-1);
+      assert.ok(failure, "preparation must positively reject the input");
+      assert.equal(bound.size, 0, "creation provenance cannot authorize binding stale credentials");
+      assert.equal(methods.includes("turn/start"), false);
+      assert.deepEqual((await b.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true }, context)).thread.turns, []);
+    };
+    await rejectInput("legacy-fresh-install-failed", changedContext);
+    if (scopeChange === "project") runtime.bind("local-codex", thread.id, null);
+    // Returning to the creator (or repeating its own attempt) cannot certify
+    // what Native has installed after an incomplete configuration handoff.
+    await rejectInput("legacy-same-owner-retry");
+    assert.equal(restored, scopeChange === "no-mcp" ? 0 : 1);
+  } finally { await Promise.all(hosts.map(host => host.close())); runtime.close(); vault.close(); await f.close(); }
+});
+
+
+test("paginated Native requires materialized metadata and same-project index confirmation before empty resume", async () => {
+  const f = await fixture(async options => ({ ...options,
+    spawnAppServer: ({ args, cwd, env }) => spawn(process.execPath,
+      [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
+      { cwd, env: { ...env, FAKE_PAGINATED_EMPTY_INDEX: "1", FAKE_REQUIRE_DURABLE_RESUME: "1" }, stdio: ["pipe", "pipe", "pipe"] }),
+  }));
+  let socket: WebSocket | undefined;
+  try {
+    socket = new WebSocket(`ws+unix://${(await f.control.health()).nativeSocket}:/`);
+    await new Promise<void>((resolve, reject) => { socket!.once("open", resolve); socket!.once("error", reject); });
+    let sequence = 0;
+    const rpc = async (method: string, params: object = {}) => {
+      const reply = new Promise<any>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error(`Native fixture timed out: ${method}`)), 3_000);
+        socket!.once("message", raw => { clearTimeout(timeout); resolve(JSON.parse(String(raw))); });
+      });
+      socket!.send(JSON.stringify({ id: ++sequence, method, params }));
+      return reply;
+    };
+    assert.ok((await rpc("initialize")).result);
+    const { thread } = (await rpc("thread/start", { ephemeral: false, projectId: "synthetic-project" })).result;
+    assert.equal(thread.historyMode, "paginated");
+    assert.equal(existsSync(thread.path), false);
+    assert.equal((await rpc("thread/resume", { threadId: thread.id })).error.code, -32600);
+    assert.equal((await rpc("thread/turns/list", { threadId: thread.id })).error.code, -32600);
+    assert.ok((await rpc("thread/metadata/update", { threadId: thread.id, projectId: thread.projectId })).error,
+      "metadata update cannot confirm an unmaterialized allocation");
+    assert.equal((await rpc("thread/read", { threadId: thread.id, includeTurns: true })).error.code, -32601);
+    assert.equal(JSON.parse(readFileSync(thread.path, "utf8").trim()).type, "session_meta");
+    for (const method of ["thread/turns/list", "thread/resume"]) {
+      const reply = await rpc(method, { threadId: thread.id });
+      assert.equal(reply.error.code, -32601); assert.equal(reply.error.message, "list_turns is not supported yet");
+    }
+    assert.equal((await rpc("thread/read", { threadId: thread.id, includeTurns: false })).result.thread.projectId, thread.projectId);
+    assert.ok((await rpc("thread/metadata/update", { threadId: thread.id, projectId: "different-project" })).error);
+    assert.equal((await rpc("fixture/nativeState", { threadId: thread.id })).result.indexConfirmed, false);
+    assert.equal((await rpc("thread/turns/list", { threadId: thread.id })).error.code, -32601);
+    assert.equal((await rpc("thread/resume", { threadId: thread.id })).error.code, -32601);
+    assert.ok((await rpc("thread/metadata/update", { threadId: thread.id, projectId: thread.projectId })).result);
+    assert.deepEqual((await rpc("thread/turns/list", { threadId: thread.id })).result.data, []);
+    assert.deepEqual((await rpc("thread/resume", { threadId: thread.id, excludeTurns: true })).result.thread.turns, []);
+    assert.equal((await rpc("thread/resume", { threadId: "missing-history" })).error.code, -32600);
+    const state = (await rpc("fixture/nativeState", { threadId: thread.id })).result;
+    assert.equal(state.indexConfirmed, true);
+    assert.equal(state.events.some((event: any) => event.method === "turn/start"), false);
+  } finally { socket?.terminate(); await f.close(); }
+});
+
+for (const scopeChange of ["none", "account", "project", "unknown", "no-mcp"] as const)
+  test(`indexed empty recovery installs current execution configuration before the first input (scope=${scopeChange})`, async () => {
+    const f = await fixture(async options => ({ ...options, appServerEndpoint: join(options.runtimeDirectory, "execution/control.sock"),
+      spawnAppServer: ({ args, cwd, env }) => spawn(process.execPath,
+        [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
+        { cwd, env: { ...env, FAKE_PAGINATED_EMPTY_INDEX: "1", FAKE_REQUIRE_DURABLE_RESUME: "1", FAKE_UNLOAD_ON_UNSUBSCRIBE: "1" }, stdio: ["pipe", "pipe", "pipe"] }),
+    }));
+    const vault = new EmployeeGitVaultStore(f.root), runtime = new ExecutionEnvironmentRuntime(f.root, vault);
+    const environment = new AccountEnvironment(vault);
+    const hosts: CodexEngineAdapter[] = [], writes: any[] = [], restored: Array<{ bound: number; cancelled: number }> = [];
+    const context = (user: string) => ({ sender: { kind: "employee" as const, loginName: user },
+      executionPrincipal: { provider: "employee", subject: user }, validUntil: Date.now() + 60_000 });
+    const reservation = (state = { bound: 0, cancelled: 0 }) => ({ configuration: { url: "http://fixture/stale-creation" },
+      bindThread() {}, bind() { state.bound++; }, cancel() { state.cancelled++; } });
+    const options = { dataDirectory: join(f.root, "codex"), executionEnvironment: runtime, sharedTurnInput: true,
+      ...(scopeChange === "no-mcp" ? {} : { createSessionMcp: () => reservation(),
+        restoreSessionMcp: () => { const state = { bound: 0, cancelled: 0 }; restored.push(state); return reservation(state); },
+        sessionMcp: (threadId: string, inputId?: string) => ({ url: `http://fixture/${runtime.execution("local-codex", threadId, inputId).account}/${inputId}` }) }),
+      decorateNativeTransport(transport: import("../../apps/opencraft-daemon/src/codex-native-core-transport.js").CodexNativeCoreTransport) {
+        const send = transport.send.bind(transport); transport.send = frame => { writes.push(JSON.parse(frame)); return send(frame); }; return transport;
+      },
+    };
+    try {
+      for (const user of ["alice", "bob"]) environment.replace(`employee:${user}`, { projectId: null }, 0,
+        [{ name: "SERVICE_KEY", value: `synthetic-${user}`, secret: true }]);
+      const projectScope = { projectId: environmentProjectId("local-codex", "another-project") };
+      environment.replace("employee:alice", projectScope, 0, [{ name: "SERVICE_KEY", value: "synthetic-project", secret: true }]);
+      const a = await f.adapter(true, () => {}, options); hosts.push(a.engine);
+      const creator = scopeChange === "unknown" ? { sender: null } : context("alice");
+      await a.rpc("browser", "initialize", {}, creator);
+      const { thread } = await a.rpc("browser", "thread/start", { cwd: f.root, ephemeral: false }, creator);
+      const sandboxPolicy = { type: "workspaceWrite", writableRoots: [f.root], networkAccess: false, excludeTmpdirEnvVar: true, excludeSlashTmp: true };
+      const savedSettings = { model: "fixture-selected-model", serviceTier: "fast", approvalPolicy: "on-request", approvalsReviewer: "user",
+        effort: "high", collaborationMode: { mode: "default", settings: { model: "fixture-selected-model", reasoning_effort: "high", developer_instructions: "synthetic instructions" } },
+        ...(scopeChange === "no-mcp" ? { permissions: "fixture-restricted-profile" }
+          : { sandboxPolicy }) };
+      await a.rpc("browser", "thread/settings/update", { threadId: thread.id, ...savedSettings }, creator);
+      const initial = await a.rpc("browser", "fixture/nativeState", { threadId: thread.id });
+      assert.equal(initial.metadataMaterialized, true); assert.equal(initial.indexConfirmed, true);
+      assert.equal(initial.settings.model, savedSettings.model);
+      assert.equal(initial.settings.serviceTier, savedSettings.serviceTier);
+      assert.equal(initial.settings.approvalPolicy, savedSettings.approvalPolicy);
+      assert.equal(initial.settings.reasoningEffort, savedSettings.effort);
+      assert.deepEqual(initial.settings.collaborationMode, savedSettings.collaborationMode);
+      if (scopeChange === "no-mcp") assert.deepEqual(initial.settings.activePermissionProfile, { id: "fixture-restricted-profile" });
+      else assert.deepEqual(initial.settings.sandbox, sandboxPolicy);
+      assert.deepEqual((await a.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true })).thread.turns, []);
+      await a.engine.close();
       if (scopeChange === "project") runtime.bind("local-codex", thread.id, "another-project");
       if (scopeChange === "unknown") {
         const db = new DatabaseSync(join(options.dataDirectory, "thread-creations.sqlite"));
         try { db.prepare("UPDATE thread_creations SET environment_owner=NULL WHERE thread_id=?").run(thread.id); } finally { db.close(); }
       }
-      const changedContext = scopeChange === "account" ? { ...context,
-        sender: { kind: "employee" as const, loginName: "bob" }, executionPrincipal: { provider: "employee", subject: "bob" } } : context;
-      await assert.rejects(b.rpc("browser", "turn/start", { threadId: thread.id, clientUserMessageId: "changed-scope", input: [{ type: "text", text: "must not reach native" }] }, changedContext), /input was not sent/);
-      assert.equal(bound.size, 0, "unverified environment ownership cannot bind the credential");
-      assert.equal(methods.includes("turn/start"), false);
-      assert.equal(methods.includes("thread/resume"), false);
-      if (scopeChange === "unknown") return;
-      if (scopeChange === "project") runtime.bind("local-codex", thread.id, null);
-    }
-    const ack = await b.rpc("browser", "turn/start", { threadId: thread.id, clientUserMessageId: "env-restored-first", input: [{ type: "text", text: "one synthetic input" }] }, context);
-    assert.ok(ack.turn.id);
-    assert.equal(restored, scopeChange === "no-mcp" ? 0 : 1); assert.equal(bound.size, scopeChange === "no-mcp" ? 0 : 1);
-    assert.equal(methods.includes("thread/resume"), false, "the first input cannot require nonexistent native history");
-    assert.equal(methods.filter(method => method === "turn/start").length, 1);
-    const read = await b.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true }, context);
-    assert.equal(read.thread.turns.length, 1);
-    await b.rpc("browser", "fixture/publish", { threadId: thread.id, delta: "restored-with-environment" });
-    await b.rpc("browser", "fixture/complete", { threadId: thread.id });
-    assert.ok(b.frames.some(frame => frame.method === "item/agentMessage/delta" && frame.params.delta === "restored-with-environment"));
-    assert.ok(b.frames.some(frame => frame.method === "turn/completed" && frame.params.turn.id === ack.turn.id));
-    methods.length = 0;
-    const second = await b.rpc("browser", "turn/start", { threadId: thread.id, clientUserMessageId: "env-next", input: [{ type: "text", text: "next synthetic input" }] }, context);
-    assert.notEqual(second.turn.id, ack.turn.id);
-    assert.ok(methods.includes("thread/resume"), "a later execution refreshes the native environment after the preserved first snapshot");
-    assert.equal(methods.filter(method => method === "turn/start").length, 1);
-    const final = await b.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true }, context);
-    assert.deepEqual(final.thread.turns.map((turn: any) => turn.items[0].clientId), ["env-restored-first", "env-next"]);
-    await b.rpc("browser", "fixture/complete", { threadId: thread.id });
-  } finally { await Promise.all(hosts.map(host => host.close())); runtime.close(); vault.close(); await f.close(); }
-});
-
+      const b = await f.adapter(true, () => {}, options); hosts.push(b.engine);
+      const user = scopeChange === "account" ? "bob" : "alice", current = context(user);
+      await b.rpc("browser", "initialize", {}, current);
+      const catalog = await b.rpc("browser", "thread/list", {}, current);
+      assert.ok(catalog.data.some((entry: any) => entry.id === thread.id), "indexed empty history is a normal persisted Native entry");
+      assert.equal((b.engine as any).provisionalThreads.get(thread.id).phase, "persisted");
+      await b.rpc("browser", "thread/resume", { threadId: thread.id, excludeTurns: true }, current);
+      writes.length = 0;
+      const firstId = "indexed-first", secondId = "indexed-second";
+      const first = await b.rpc("browser", "turn/start", { threadId: thread.id, clientUserMessageId: firstId,
+        input: [{ type: "text", text: "one synthetic input" }] }, current);
+      assert.ok(first.turn.id);
+      const checkInstallation = async (inputId: string, expectedValue: string) => {
+        const state = await b.rpc("browser", "fixture/nativeState", { threadId: thread.id });
+        const executions = state.events.filter((event: any) => event.method === "turn/start" && event.inputId === inputId);
+        assert.equal(executions.length, 1, "exactly one native acceptance per explicit input");
+        const execution = executions[0];
+        assert.deepEqual(execution.configuration["shell_environment_policy.set"], { SERVICE_KEY: expectedValue });
+        assert.deepEqual(execution.configuration["mcp_servers.opencraft_session"], scopeChange === "no-mcp"
+          ? { enabled: false, url: "http://127.0.0.1:1/mcp" } : { url: `http://fixture/employee:${user}/${inputId}` });
+        assert.deepEqual(execution.settings, initial.settings, "all native settings and permissions survive unload/configure/restore");
+        const acceptedAt = state.events.indexOf(execution);
+        const installedAt = state.events.findLastIndex((event: any, index: number) => index < acceptedAt && event.method === "thread/resume");
+        const restoredAt = state.events.findLastIndex((event: any, index: number) => index < acceptedAt && event.method === "thread/settings/update");
+        assert.ok(installedAt >= initial.events.length && restoredAt > installedAt && acceptedAt > restoredAt,
+          "fresh installation and full settings restoration must precede dispatch");
+        assert.equal(writes.filter(row => row.method === "turn/start" && row.params.clientUserMessageId === inputId).length, 1);
+      };
+      await checkInstallation(firstId, scopeChange === "project" ? "synthetic-project" : `synthetic-${user}`);
+      assert.deepEqual(restored, [], "catalog-confirmed history must refresh tools, not restore or bind a stale creation reservation");
+      assert.deepEqual(runtime.creator("local-codex", thread.id), { account: scopeChange === "unknown" ? null : "employee:alice" });
+      const submission = (b.engine as any).executionLeases.getSubmission(thread.id, firstId);
+      assert.equal(submission.principal.subject, user, "the admitted executor owns this input independently of creation provenance");
+      await b.rpc("browser", "fixture/publish", { threadId: thread.id, delta: "indexed-recovery" });
+      await b.rpc("browser", "fixture/complete", { threadId: thread.id });
+      assert.ok(b.frames.some(frame => frame.method === "item/agentMessage/delta" && frame.params.delta === "indexed-recovery"));
+      assert.ok(b.frames.some(frame => frame.method === "turn/completed" && frame.params.turn.id === first.turn.id));
+      environment.replace(`employee:${user}`, scopeChange === "project" ? projectScope : { projectId: null }, 1,
+        [{ name: "SERVICE_KEY", value: "synthetic-next", secret: true }]);
+      const second = await b.rpc("browser", "turn/start", { threadId: thread.id, clientUserMessageId: secondId,
+        input: [{ type: "text", text: "next synthetic input" }] }, current);
+      assert.notEqual(second.turn.id, first.turn.id);
+      await checkInstallation(secondId, "synthetic-next");
+      const history = await b.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true }, current);
+      assert.deepEqual(history.thread.turns.map((turn: any) => turn.items[0].clientId), [firstId, secondId]);
+      assert.equal(writes.filter(row => row.method === "turn/start").length, 2);
+      await b.rpc("browser", "fixture/complete", { threadId: thread.id });
+    } finally { await Promise.all(hosts.map(host => host.close())); runtime.close(); vault.close(); await f.close(); }
+  });
 
 test("creation storage upgrades v1 without inventing an environment owner", async () => {
   const root = await mkdtemp(join(temporaryDirectory, "oc-creation-v1-"));
