@@ -116,7 +116,7 @@
   /* 标签三：办公室。三维画面在 .stage 里，这里只出底部那张卡片 */
   function card() {
     var id = ui.sel, p = P(id), o = O(id);
-    if (!id) return '<p class="hint">点人看他能找谁、谁能找他；绿方块是他最近一小时动过的工具。拖动旋转，双指缩放。</p>';
+    if (!id) return '<p class="hint">点人看他能找谁、谁能找他；绿方块是他最近一小时动过的工具。单指移动，双指旋转和缩放。</p>';
     if (id === 'me') return '<div class="pcard">' + av('me') + '<span class="t"><b>你</b><span>老板，不是员工，所以没有工位</span></span><button class="btn ok" data-do="tab" data-id="chats">看消息</button></div>';
     if (o) return '<div class="pcard">' + av(o.id) + '<span class="t"><b>' + esc(o.name) + '</b><span>公司外的人</span></span><button class="btn" data-go=\'' + esc(JSON.stringify({ k: 'out', id: o.id })) + '\'>查看</button></div>';
     return '<div class="pcard">' + av(p.id) + '<span class="t"><b>' + esc(p.name) + '</b><span>' + esc(p.role || '未填岗位') + ' · 归' + esc(N(p.boss)) + '管</span>' + (lastFx(p.id) ? '<button class="lastfx" data-go=\'' + esc(JSON.stringify({ k: 'profile', id: p.id, tab: 'pc' })) + '\'>' + esc(fxLine(lastFx(p.id))) + '</button>' : '') + '</span>' + (p.boss === 'me' ? '<button class="btn ok" data-go=\'' + esc(JSON.stringify({ k: 'chat', id: p.id })) + '\'>对话</button>' : '') + '<button class="btn" data-go=\'' + esc(JSON.stringify({ k: 'profile', id: p.id, tab: 'phone' })) + '\'>手机和电脑</button></div>';
@@ -212,14 +212,6 @@
 
   has3d = !!(window.Office && window.Office.init($('stage'), $('labels'), pick));
   if (!has3d) $('fail').hidden = false;
-  /* 跟着手机转：只在触屏设备上出现；读不到手机方向时直说，并关掉开关 */
-  var mb = $('motion'), toastT = 0;
-  function toast(text) { var el = $('toast'); el.textContent = text; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(function () { el.hidden = true; }, 3200); }
-  if (has3d && mb && 'DeviceOrientationEvent' in window && window.matchMedia && matchMedia('(pointer: coarse)').matches) {
-    mb.hidden = false;
-    mb.addEventListener('click', function () { var on = mb.getAttribute('aria-pressed') !== 'true'; mb.setAttribute('aria-pressed', on); mb.disabled = true;
-      window.Office.motion(on).then(function (r) { mb.disabled = false; mb.setAttribute('aria-pressed', r === 'ok'); if (on) toast({ ok: '转动或倾斜手机，办公室跟着转。再点一下停止。', denied: '没有允许读取手机方向，所以没法跟着转。', none: '这里读不到手机的方向。在手机浏览器里直接打开原型可以用。' }[r]); }); });
-  }
   if (wideMq.addEventListener) wideMq.addEventListener('change', function () { draw(); });
   draw(); sync();
   window.__app = { pick: pick, go: go, db: function () { return db; } };
