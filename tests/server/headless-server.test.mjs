@@ -281,7 +281,11 @@ test("bundled headless help exits without starting the imported static gateway",
   context.after(() => rm(directory, { recursive: true, force: true }));
   const entry = join(directory, "server.mjs");
   await buildHeadlessBundle(entry);
-  const output = execFileSync(process.execPath, [entry, "--help"], { encoding: "utf8", timeout: 5000 });
+  // Exercise the built artifact like an installed CLI, not through the source-test
+  // tsx loader (which otherwise retransforms the bundle and delays process exit).
+  const artifactEnvironment = { ...process.env };
+  delete artifactEnvironment.NODE_OPTIONS;
+  const output = execFileSync(process.execPath, [entry, "--help"], { encoding: "utf8", timeout: 5000, env: artifactEnvironment });
   assert.match(output, /Usage: opencraft-server/u);
   assert.doesNotMatch(output, /opencraft static|appserver/u);
 });
