@@ -7,29 +7,32 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>
 /* 布局：上面五个方案的切换，中间一块会动的三维草图，下面三句话说明它是什么、多说明了什么、风险在哪。 */
-:root { --bg: #f4f3ef; --card: #ffffff; --ink: #1b1b1f; --ink-2: #6a6b74; --line: #e2e0d8; --stage: #e6e3db; --accent: #3657d9;
+:root { --bg: #ece7fb; --card: #ffffff; --ink: #241f3a; --ink-2: #6b6585; --line: #dcd4f3; --stage: #e6e3db; --accent: #6a4fd8;
   --font: "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #131417; --card: #1c1d22; --ink: #f0f0f3; --ink-2: #9a9ca8; --line: #2c2e36; --stage: #25272e; --accent: #8ea3ff; color-scheme: dark; } }
 :root[data-theme="dark"] { --bg: #131417; --card: #1c1d22; --ink: #f0f0f3; --ink-2: #9a9ca8; --line: #2c2e36; --stage: #25272e; --accent: #8ea3ff; color-scheme: dark; }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 var(--font); -webkit-text-size-adjust: 100%; }
 main { max-width: 920px; margin: 0 auto; padding-block: 20px 36px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 14px; }
-h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -.01em; text-wrap: balance; }
+h1 { margin: 0; font-size: 26px; font-weight: 800; line-height: 1.25; letter-spacing: -.01em; text-wrap: balance; }
 .lead { margin: 0; color: var(--ink-2); max-width: 60ch; }
 .tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
 .tabs button { flex: none; font: inherit; color: var(--ink-2); cursor: pointer; min-height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid var(--line); background: var(--card); white-space: nowrap; }
-.tabs button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 600; }
+.tabs button[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
 .tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.frame { position: relative; border-radius: 18px; overflow: hidden; border: 1px solid var(--line); background: var(--stage); aspect-ratio: 4 / 3; max-width: 100%; }
+.frame { position: relative; border-radius: 26px; overflow: hidden; border: 1px solid var(--line); background: var(--stage); aspect-ratio: 4 / 3; max-width: 100%; }
 #stage { display: block; width: 100%; height: 100%; }
 #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 #labels span { position: absolute; transform: translate(-50%, -100%); padding: 1px 7px; border-radius: 9px; background: rgba(255, 255, 255, .88); color: #1b1b1f; font-size: 12px; font-weight: 600; white-space: nowrap; }
 #labels span.me { background: #1b1b1f; color: #fff; }
-#cap { position: absolute; left: 12px; right: 12px; bottom: 12px; padding: 9px 14px; border-radius: 12px; background: rgba(20, 21, 26, .82); color: #fff; font-size: 14px; text-align: center; }
+#cap { position: absolute; left: 12px; right: 12px; bottom: 12px; padding: 10px 16px; border-radius: 18px; background: rgba(255, 255, 255, .9); color: #241f3a; font-size: 14px; font-weight: 600; text-align: center; box-shadow: 0 4px 16px rgba(80, 60, 160, .14); }
 #fail { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--ink-2); }
 .notes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.notes div { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; min-width: 0; }
-.notes b { display: block; font-size: 12px; color: var(--ink-2); letter-spacing: .08em; margin-bottom: 4px; }
+.notes div { border-radius: 22px; padding: 14px 16px; min-width: 0; color: #241f3a; background: linear-gradient(150deg, #c9f1df, #a3e0c8); }
+.notes div:nth-child(2) { background: linear-gradient(150deg, #ffeeb5, #ffd879); }
+.notes div:nth-child(3) { background: linear-gradient(150deg, #cdeffc, #a0d8f2); }
+.notes b { display: inline-block; font-size: 12px; font-weight: 800; letter-spacing: .08em; margin-bottom: 8px; padding: 2px 10px; border-radius: 10px; background: rgba(255, 255, 255, .6); }
+.notes span { display: block; }
 .foot { color: var(--ink-2); font-size: 13px; margin: 0; }
 [hidden] { display: none !important; }
 @media (max-width: 640px) { .frame { aspect-ratio: 1 / 1; } .notes { grid-template-columns: 1fr; } h1 { font-size: 21px; } }
@@ -53,7 +56,7 @@ h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -.01em; text
   if (!window.THREE || !window.gsap) { $('fail').hidden = false; return; }
   var canvas = $('stage'), renderer;
   try { renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true }); } catch (e) { $('fail').hidden = false; return; }
-  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   var calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   var scene, camera, tl, extra = [], tags = [], pick = null;
   var HUE = { me: 0x2b2d33, a: 0x4c7868, y: 0x8471ac, z: 0xb5793f, c: 0x5a8397, ext: 0x9aa0a8 }, NAME = { me: '你', a: '阿岚', y: '言禾', z: '小折', c: '沐川', ext: '客户周姐' };
@@ -101,27 +104,46 @@ h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -.01em; text
   }
 
   var SCENES = [
-    { name: '新 松散办公室', lead: '小家伙们散着办公，不排队形。地上的细线是「归谁管」，空中的弧线是「能联系谁」，两件事分开画。点任何一个小家伙，看他能联系谁。',
-      n: ['每个小家伙一张小桌一台电脑，手里一部手机。门外站着的是公司外面的人，比如客户。', '归谁管和能联系谁是两套关系：言禾和沐川互相能联系，但谁也不管谁；阿岚能联系门外的客户，小折不能。选中一个，够不着的人会变淡。', '弧线只在选中时出现，否则人一多就成一团线。「正在联系」要不要常驻显示，还没定。'],
+    { name: '新 松散办公室', lead: '软陶质感的小家伙们散着办公，不排队形。地上的细线是「归谁管」，空中的弧线是「能联系谁」。点任何一个小家伙，看他能联系谁。',
+      n: ['每个小家伙一张小桌一台电脑，手里一部手机。拱门外站着的是公司外面的人，比如客户。', '归谁管和能联系谁是两套关系：言禾和沐川互相能联系，但谁也不管谁；阿岚能联系门外的客户，小折不能。选中一个，够不着的人会变淡。', '弧线只在选中时出现，否则人一多就成一团线。角色现在是几何体拼的，正式版需要专门设计和建模。'],
       build: function () {
-        base(); ortho(5.3, V(7, 9, 10), V(.3, .4, 0)); box(scene, 10.5, .2, 9, 0xd3cfc5, -.6, -.1, 0); box(scene, 2.6, .2, 3, 0xbdb8ac, 6, -.1, -1.6); box(scene, .16, 1.7, .16, 0x8a8f9c, 4.7, .85, -.5); box(scene, .16, 1.7, .16, 0x8a8f9c, 4.7, .85, -2.7); box(scene, .16, .16, 2.36, 0x8a8f9c, 4.7, 1.7, -1.6);
-        function pet(who, x, z, rot, noDesk) {
-          var g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = rot; scene.add(g); var sc = null;
-          if (!noDesk) { box(g, 1.1, .1, .6, 0xd8c7a8, 0, .4, -.75); box(g, .56, .38, .05, 0x23262c, 0, .7, -.85); sc = box(g, .5, .32, .02, 0x15181c, 0, .7, -.82, { emissive: 0x000000 }).material; }
-          var sp = new THREE.Group(); g.add(sp); var m = mat(HUE[who], { transparent: true }), body = add(sp, new THREE.SphereGeometry(.42, 24, 16), m, 0, .38, 0); body.scale.y = .85; body.userData.k = who;
-          add(sp, new THREE.ConeGeometry(.12, .28, 12), m, -.22, .78, 0); add(sp, new THREE.ConeGeometry(.12, .28, 12), m, .22, .78, 0); ball(sp, .055, 0x15181c, -.02, .46, .4); ball(sp, .055, 0x15181c, .26, .46, .31);
-          var phone = box(sp, .17, .3, .04, 0x3b3070, .52, .42, .12, { emissive: 0x000000 }); tag(NAME[who], body, .78, who === 'me' ? 'me' : '');
-          extra.push(gsap.to(sp.position, { y: .1, duration: .7 + (x * x + z * z) % 1 * .5, ease: 'sine.inOut', yoyo: true, repeat: -1 })); return { g: g, sp: sp, m: m, body: body, phone: phone, screen: sc };
+        base('#e4defa'); var hemi = scene.children[0], sun = scene.children[1]; hemi.intensity = .68; hemi.groundColor.set(0xd9d0f0); sun.intensity = .36; sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024); sun.shadow.radius = 5; sun.shadow.bias = -.0006;
+        var sc = sun.shadow.camera; sc.left = -10; sc.right = 10; sc.top = 10; sc.bottom = -10; sc.near = .5; sc.far = 40; ortho(4.9, V(7, 9, 10), V(.8, .5, 0));
+        var PC = { me: 0xf4f1f6, a: 0xa9dcc9, y: 0xc3b5ee, c: 0xa9c8f2, z: 0xfbe39c, ext: 0xf6c1c7 }, AC = { me: 0x8f86a8, a: 0x58b596, y: 0x8a73d9, c: 0x5b93df, z: 0xe0b63a, ext: 0xe58a97 }, CREAM = 0xf7efe2, LILAC = 0xb9a8ee;
+        function clay(c, o) { return mat(c, Object.assign({ roughness: .6, transparent: true }, o || {})); }
+        function soft(e) { var g = new THREE.SphereGeometry(1, 32, 24), a = g.attributes.position, f = function (v) { return Math.sign(v) * Math.pow(Math.abs(v), e); }; for (var q = 0; q < a.count; q++) a.setXYZ(q, f(a.getX(q)), f(a.getY(q)), f(a.getZ(q))); g.computeVertexNormals(); return g; }
+        var BOX = soft(.3), CUBE = soft(.5), BALL = new THREE.SphereGeometry(1, 32, 24);
+        function part(parent, geo, m, x, y, z, sx, sy, sz) { var o = add(parent, geo, m, x, y, z); o.scale.set(sx, sy === undefined ? sx : sy, sz === undefined ? sx : sz); return o; }
+        var floor = part(scene, BOX, clay(0xf3effa), -.6, -.2, 0, 5.4, .2, 4.7), out = part(scene, BOX, clay(0xfde8ec), 6.1, -.2, -1.6, 1.5, .2, 1.7), arch = add(scene, new THREE.TorusGeometry(1.15, .11, 14, 40, Math.PI), clay(0xfbe39c), 4.75, 0, -1.6); arch.rotation.y = Math.PI / 2;
+        function pet(who, x, z, rot, shape, noDesk) {
+          var g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = .5 + rot; g.scale.setScalar(1.4); scene.add(g); var screen = null, m = clay(PC[who]), dark = clay(0x1d1b26, { roughness: .15 }), white = clay(0xffffff, { roughness: .2 }), acc = clay(who === 'y' ? CREAM : LILAC), mats = [m, dark, white, acc];
+          if (!noDesk) { part(g, BOX, clay(CREAM), 0, .42, -.85, .6, .07, .34); add(g, new THREE.CylinderGeometry(.09, .16, .4, 20), clay(0xe9dfcd), 0, .2, -.85); part(g, BOX, clay(0xf4f1f6), 0, .78, -.95, .34, .24, .05); screen = part(g, BOX, clay(LILAC, { emissive: 0x000000 }), 0, .78, -.9, .27, .17, .015).material; add(g, new THREE.CylinderGeometry(.04, .04, .14, 12), clay(0xf4f1f6), 0, .54, -.95); }
+          var sp = new THREE.Group(), top = .82, front = .4, body; g.add(sp);
+          if (shape === 'cube') { body = part(sp, CUBE, m, 0, .4, 0, .4, .4, .38); front = .4; }
+          else if (shape === 'drop') { body = add(sp, new THREE.LatheGeometry(new THREE.SplineCurve([[0, 0], [.3, .03], [.43, .22], [.4, .44], [.26, .68], [.1, .86], [0, .9]].map(function (p) { return new THREE.Vector2(p[0], p[1]); })).getPoints(28), 36), m, 0, 0, 0); top = .9; front = .42; }
+          else { body = part(sp, BALL, m, 0, .4, 0, .43, .4, .43); front = .42; if (shape === 'cloud') { part(sp, BALL, m, -.2, .7, 0, .2); part(sp, BALL, m, .2, .7, 0, .2); part(sp, BALL, m, 0, .78, 0, .22); top = .98; } }
+          body.userData.k = who;
+          add(sp, new THREE.CylinderGeometry(.025, .03, .22, 10), m, .08, top + .08, 0).rotation.z = -.15; part(sp, BALL, m, .1, top + .25, 0, .09);
+          [-.15, .15].forEach(function (ex) { part(sp, BALL, dark, ex, .46, front - .03, .065, .09, .04); part(sp, BALL, white, ex - .02, .5, front + .005, .02); });
+          var smile = add(sp, new THREE.TorusGeometry(.045, .012, 8, 16, Math.PI), dark, 0, .37, front); smile.rotation.z = Math.PI;
+          part(sp, BALL, m, -.2, .06, .18, .14, .09, .16); part(sp, BALL, m, .2, .06, .18, .14, .09, .16); part(sp, BALL, m, .42, .34, .2, .11);
+          var phone = part(sp, BOX, clay(CREAM, { emissive: 0x000000 }), .47, .42, .3, .09, .15, .02);
+          if (who === 'me') add(sp, new THREE.TorusGeometry(.36, .075, 12, 32), acc, 0, .2, 0).rotation.x = Math.PI / 2;
+          if (who === 'y') add(sp, new THREE.SphereGeometry(.45, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2.4), acc, 0, .44, 0);
+          if (who === 'c') [-.15, .15].forEach(function (ex) { add(sp, new THREE.TorusGeometry(.1, .018, 8, 24), acc, ex, .46, front + .01); });
+          tag(NAME[who], body, shape === 'cloud' || shape === 'drop' ? 1.5 : 1.3, who === 'me' ? 'me' : '');
+          extra.push(gsap.to(sp.position, { y: .1, duration: .7 + (x * x + z * z) % 1 * .5, ease: 'sine.inOut', yoyo: true, repeat: -1 })); return { g: g, sp: sp, mats: mats, body: body, phone: phone, screen: screen };
         }
-        var P = { me: pet('me', .2, 3, .1), a: pet('a', -3.4, .5, .35), y: pet('y', -.5, -.9, -.2), c: pet('c', 2.5, .7, -.4), z: pet('z', -2.5, -3, .15), ext: pet('ext', 6, -1.6, -.6, true) };
+        var P = { me: pet('me', .2, 3, -.3, 'round'), a: pet('a', -3.4, .5, .1, 'cube'), y: pet('y', -.5, -.9, -.4, 'round'), c: pet('c', 2.5, .7, -.6, 'drop'), z: pet('z', -2.5, -3, 0, 'cloud'), ext: pet('ext', 6.1, -1.6, -.9, 'round', true) };
         var R = { me: ['a', 'y', 'c'], a: ['me', 'z', 'y', 'ext'], y: ['a', 'c'], c: ['me', 'y'], z: ['a'], ext: ['a'] }, arcs = {};
-        [['me', 'a'], ['me', 'y'], ['me', 'c'], ['a', 'z']].forEach(function (e) { var a = P[e[0]].g.position, b = P[e[1]].g.position, m = box(scene, .08, .02, a.distanceTo(b) - 1.3, 0xa7a297, (a.x + b.x) / 2, .01, (a.z + b.z) / 2); m.rotation.y = Math.atan2(b.x - a.x, b.z - a.z); });
-        Object.keys(R).forEach(function (k) { var g = new THREE.Group(); g.visible = false; scene.add(g); arcs[k] = g; R[k].forEach(function (j) { var a = P[k].g.position.clone().setY(.9), b = P[j].g.position.clone().setY(.9), mid = a.clone().add(b).multiplyScalar(.5).setY(1.3 + a.distanceTo(b) * .28);
-          add(g, new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(a, mid, b), 28, .035, 6), mat(HUE[k], { emissive: HUE[k], emissiveIntensity: .5 })); }); });
-        function sel(k) { Object.keys(P).forEach(function (j) { arcs[j].visible = j === k; gsap.to(P[j].m, { opacity: j === k || R[k].indexOf(j) >= 0 ? 1 : .2, duration: .3 }); });
+        [['me', 'a'], ['me', 'y'], ['me', 'c'], ['a', 'z']].forEach(function (e) { var a = P[e[0]].g.position, b = P[e[1]].g.position, l = part(scene, BOX, clay(0xd3c9f0), (a.x + b.x) / 2, .01, (a.z + b.z) / 2, .05, .012, (a.distanceTo(b) - 1.9) / 2); l.rotation.y = Math.atan2(b.x - a.x, b.z - a.z); l.userData.flat = true; });
+        scene.traverse(function (o) { if (o.isMesh) { o.castShadow = !o.userData.flat; } }); floor.castShadow = out.castShadow = false; floor.receiveShadow = out.receiveShadow = true;
+        Object.keys(R).forEach(function (k) { var g = new THREE.Group(); g.visible = false; scene.add(g); arcs[k] = g; R[k].forEach(function (j) { var a = P[k].g.position.clone().setY(1.5), b = P[j].g.position.clone().setY(1.5), mid = a.clone().add(b).multiplyScalar(.5).setY(1.9 + a.distanceTo(b) * .28);
+          add(g, new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(a, mid, b), 32, .045, 8), mat(AC[k], { emissive: AC[k], emissiveIntensity: .35, roughness: .5 })); part(g, BALL, mat(AC[k], { emissive: AC[k], emissiveIntensity: .35 }), b.x, b.y, b.z, .1); }); });
+        function sel(k) { Object.keys(P).forEach(function (j) { arcs[j].visible = j === k; var on = j === k || R[k].indexOf(j) >= 0; P[j].mats.forEach(function (m) { gsap.to(m, { opacity: on ? 1 : .28, duration: .3 }); }); });
           gsap.fromTo(P[k].sp.scale, { x: 1.25, y: .75, z: 1.25 }, { x: 1, y: 1, z: 1, duration: .7, ease: 'elastic.out(1,.4)' }); $('cap').textContent = NAME[k] + '能联系：' + R[k].map(function (j) { return NAME[j]; }).join('、'); }
         ['a', 'y', 'c', 'z', 'me'].forEach(function (k, i) { tl.call(sel, [k], i * 2.8); }); tl.to({}, { duration: 2.8 }, 11.2); sel('a');
-        var d = spark(scene); fly(d, local(P.a.phone, scene, .3), local(P.ext.phone, scene, .3), .7, 1.2); glow(P.a.screen, true, .3); glow(P.a.screen, false, 2.6);
+        var d = spark(scene, 0xffb347); fly(d, local(P.a.phone, scene, .3), local(P.ext.phone, scene, .3), .7, 1.2); tl.to(P.a.screen.emissive, { r: .35, g: .3, b: .6, duration: .3 }, .3); tl.to(P.a.screen.emissive, { r: 0, g: 0, b: 0, duration: .3 }, 2.6);
         pick = { objs: Object.keys(P).map(function (k) { return P[k].body; }), fn: function (k) { tl.pause(); sel(k); } };
       } },
     { name: '1 办公室', lead: '一间俯视的小办公室。公司就是办公室，谁坐哪、谁归谁管，摆出来就是答案。',
