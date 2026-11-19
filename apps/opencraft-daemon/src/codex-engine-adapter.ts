@@ -4340,6 +4340,8 @@ export class CodexEngineAdapter implements DuplexTransport {
       : reason === "thread-busy" ? "The previous turn is still active; input was not sent. Wait for it to finish and retry."
       : reason === "workspace-access-denied" ? "Session tools cannot access workspace configuration; input was not sent. Restore workspace permissions and retry."
       : reason === "execution-start-unavailable" ? "Session tools could not start; input was not sent. Check execution installation and workspace mounts."
+      : reason === "sandbox-unsupported" ? "Session permissions cannot be verified; input was not sent. Start a new session or contact the host administrator."
+      : reason === "environment-handoff-required" ? "This execution owner cannot safely install the current environment; input was not sent. Contact the host administrator."
       : "Session tools are unavailable; input was not sent. Reconnect and retry.";
     return { code: unavailable === "archived" ? -32071 : unavailable ? -32600 : -32000,
       message: `${message} [${stage}/${reason}; ref ${diagnosticId}]`,

@@ -2153,6 +2153,7 @@ for (const configured of [false, true]) test(`session refresh refuses unsupporte
     const error = internals.sessionMcpFailure(failure);
     assert.equal(error.data.stage, "resolve-environment");
     assert.equal(error.data.reason, "environment-handoff-required");
+    assert.match(error.message, /contact the host administrator/i);
     assert.equal(error.data.submissionOutcome, "rejected");
     assert.deepEqual(calls, []);
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
@@ -2175,6 +2176,8 @@ for (const scenario of ["unloaded", "missing", "null"] as const) test(`session r
     assert.ok(failure, "unknown original permission must reject before configuration can change");
     const error = internals.sessionMcpFailure(failure);
     assert.equal(error.data.stage, "preserve-permissions");
+    assert.match(error.message, /permissions cannot be verified/i);
+    assert.equal(error.data.retryable, false);
     assert.equal(error.data.submissionOutcome, "rejected");
     assert.deepEqual(calls, scenario === "unloaded" ? ["thread/read"] : ["thread/read", "thread/resume"]);
     assert.equal(internals.sessionMcpConfigurations.has("thread"), false);
