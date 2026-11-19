@@ -218,14 +218,10 @@ details summary { cursor: pointer; min-height: var(--hit); display: flex; align-
 .sys { align-self: center; max-width: 86%; text-align: center; font-size: 12px; color: var(--i-2); background: rgba(0,0,0,.05); padding: 3px 9px; border-radius: 6px; }
 .sys.bad { color: #e5534b; background: none; align-self: flex-end; padding: 0 46px 0 0; margin-top: -8px; } .sys.r { background: none; align-self: flex-end; padding: 0 46px 0 0; margin-top: -10px; } .sys.r button { color: #576b95; min-height: 24px; }
 .sys .lnk { color: #576b95; text-decoration: none; }
-.wbar { flex: none; display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; background: var(--i-bg); border-top: 1px solid var(--i-line); }
-.winput { flex: 1; min-height: 38px; border-radius: 8px; background: var(--i-card); color: var(--i-2); font-size: 14px; display: flex; align-items: center; padding: 0 12px; }
-.wplus { width: 30px; height: 30px; border-radius: 50%; border: 1.6px solid var(--i-ink); display: grid; place-items: center; opacity: .75; } .wplus svg { width: 18px; height: 18px; }
-.wbar.no .winput { color: #e5534b; justify-content: center; font-weight: 600; }
-.wtabs { flex: none; display: flex; background: var(--i-bg); border-top: 1px solid var(--i-line); }
-.wtabs button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 7px 0 2px; font-size: 11px; color: var(--i-ink); } .wtabs svg { width: 24px; height: 24px; }
-.wtabs button[aria-pressed="true"] { color: var(--i-green); font-weight: 600; }
-.home { flex: none; height: 24px; display: grid; place-items: center; background: var(--i-bg); } .home::after { content: ""; width: 128px; height: 5px; border-radius: 3px; background: var(--i-ink); opacity: .85; }
+.wbar { flex: none; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 8px 14px 8px 18px; background: var(--i-card); border-top: 1px solid var(--i-line); font-size: 15px; }
+.wbar span { flex: 1; } .wbar.sw input[type="checkbox"]:checked { background: var(--i-green); }
+.wnav .inote { display: block; width: 100%; text-align: center; font-size: 11px; min-height: 18px; }
+.home { flex: none; height: 24px; display: grid; place-items: center; background: var(--i-card); } .home::after { content: ""; width: 128px; height: 5px; border-radius: 3px; background: var(--i-ink); opacity: .85; }
 .xclose { position: absolute; top: -6px; right: -6px; width: 40px; height: 40px; border-radius: 50%; background: var(--surface); color: var(--ink); display: grid; place-items: center; box-shadow: var(--shadow); z-index: 5; } .xclose svg { width: 18px; height: 18px; }
 #toast { position: absolute; z-index: 12; left: 50%; top: calc(62px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 20px; background: var(--ink); color: var(--bg); box-shadow: var(--shadow); text-align: center; font-weight: 600; }
 

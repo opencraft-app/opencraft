@@ -260,23 +260,11 @@
   function phoneFrame(inner) { return '<div class="iphone"><button class="xclose" data-a="close" aria-label="放下手机">' + ic('close') + '</button><div class="ios"><div class="island"></div><div class="stat"><span>9:41</span>' + STAT + '</div>' + inner + '<div class="home"></div></div></div>'; }
   function clock(seq) { var m = 20 + (seq || 0); return (9 + Math.floor(m / 60)) + ':' + ('0' + m % 60).slice(-2); }
   function sq(id) { return id === 'user' ? '<span class="face sq" style="--tc:#9a9a9e"></span>' : face(id, 'sq'); }
-  function shown(w, id, o) { return (o !== 'user' && w.book.notes[id + '>' + o]) || N(o); }
   var TICK = '<svg viewBox="0 0 18 11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m1 6 3 3 6-7.500"/><path class="t2" d="m7 6 3 3 6-7.500"/></svg>';
   function pagePhone(pg) {
     var w = W(), s = w.state, c = C(), id = pg.id, o = pg.thread;
-    var kn = o && o !== 'user' && E.knows(w, id, o), com = o && o !== 'user' && s.hired && E.pairKey(id, o) === E.pairKey(c.owner, s.hired);
-    function nav(title, sub, right) { return '<div class="wnav"><button class="bk" data-a="back" aria-label="返回">' + ic('back') + '</button><div class="ttl"><b>' + title + '</b>' + (sub ? '<small>' + sub + '</small>' : '') + '</div>' + (right || '<span class="bk"></span>') + '</div>'; }
-    if (o && pg.info) {
-      return phoneFrame(nav('聊天信息') + '<div class="iscroll">' +
-        '<div class="igroup"><div class="irow">' + sq(o) + '<span class="t"><b>' + esc(N(o)) + '</b><span>' + esc(E.skillsOf(w, o)) + '</span></span></div></div>' +
-        '<div class="igroup">' + (kn ? '<label class="irow"><span class="t"><b>备注</b></span><input class="inote" id="n-' + id + '-' + o + '" data-c="note" data-id="' + id + '" data-b="' + o + '" placeholder="添加备注" value="' + esc(w.book.notes[id + '>' + o] || '') + '"' + dis() + '></label>' : '') +
-        '<div class="irow"><span class="t"><b>联系方式</b></span><span class="r">' + (kn ? '已互留' : '仅本次委托') + '</span></div></div>' +
-        '<div class="igroup">' + (kn ? '<label class="irow sw"><span class="t"><b>允许发消息给' + esc(N(o)) + '</b></span><input type="checkbox" id="g-' + id + '-' + o + '" data-c="grant" data-id="' + id + '" data-b="' + o + '"' + (E.granted(w, id, o) ? ' checked' : '') + dis() + '></label>' : '') +
-        '<div class="irow"><span class="t"><b>' + esc(N(o)) + '能发给我</b></span><span class="r' + (E.granted(w, o, id) || com ? '' : ' no') + '">' + (E.granted(w, o, id) ? '可以' : com ? '只回传委托结果' : '不可以') + '</span></div></div>' +
-        '<div class="ilabel">' + (locked() ? '演示中只能看，不能改。' : kn ? '有联系方式不等于能发消息；关掉许可，联系方式还在。两个方向各自决定。' : '这次委托只够交办和回传结果。想长期联系，办完后点「留下」。') + '</div></div>');
-    }
     if (o) {
-      var msgs = between(s, id, o), body = '';
+      var kn = o !== 'user' && E.knows(w, id, o), com = o !== 'user' && s.hired && E.pairKey(id, o) === E.pairKey(c.owner, s.hired), msgs = between(s, id, o), body = '';
       s.log.forEach(function (ev) {
         if (ev.type === 'blocked' && ev.from === id && ev.to === o) body += '<div class="wrow me"><span class="bang">!</span><div class="msg fail">' + esc(c.steps[ev.step].message) + '</div>' + sq(id) + '</div><div class="sys bad">没发出去 · ' + (ev.reason === 'grant' ? '没有发送许可' : ev.reason === 'device' ? '电脑关了对外发消息' : '没有联系方式') + '</div>';
         if (ev.type !== 'sent') return;
@@ -284,36 +272,26 @@
         var f = s.files.find(function (x) { return x.step === m.step && x.kind !== 'submission'; }), st = c.steps[m.step], me = m.from === id;
         var bubble = '<div class="msg">' + esc(m.text) + '<i class="tk' + (m.state === 'delivered' ? ' read' : ' one') + '">' + clock(ev.seq) + (me ? TICK : '') + '</i></div>';
         body += '<div class="wrow' + (me ? ' me' : '') + '">' + (me ? bubble + sq(id) : sq(o) + bubble) + '</div>';
-        if (me && id !== 'user' && !locked()) body += '<div class="sys r"><button data-a="redeliver" data-id="' + esc(m.id) + '">重新投递</button></div>';
-        if (m.state === 'delivered') body += '<div class="sys">' + esc(N(E.resolve(s, st.desktop.operator))) + '的电脑随后' + esc(st.reaction) + (f ? '，产出 <button class="lnk" data-a="file" data-id="' + esc(f.id) + '">' + esc(f.name) + '</button>' : '（还没做完）') + '</div>';
+        if (m.state === 'delivered') body += '<div class="sys">' + esc(N(E.resolve(s, st.desktop.operator))) + '接着' + esc(st.reaction) + (f ? ' · <button class="lnk" data-a="file" data-id="' + esc(f.id) + '">' + esc(f.name) + '</button>' : '') + '</div>';
       });
-      var bar = o === 'user' ? '' : !kn ? '<div class="wbar"><span class="winput">' + (com ? '本次委托：只用来交办和回传结果' : '没有对方的联系方式') + '</span></div>'
-        : E.granted(w, id, o) ? '<div class="wbar"><span class="winput">' + esc(N(id)) + '需要时会在这里发消息</span><span class="wplus">' + ic('plus') + '</span></div>'
-        : '<button class="wbar no" data-a="info" data-id="' + id + '" data-b="' + o + '"><span class="winput">未获准向' + esc(N(o)) + '发消息 · 去设置</span></button>';
-      var note = o !== 'user' && w.book.notes[id + '>' + o];
-      return phoneFrame(nav(esc(shown(w, id, o)), note ? esc(N(o)) : '', o === 'user' ? '' : '<button class="bk" data-a="info" data-id="' + id + '" data-b="' + o + '" aria-label="聊天信息"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.800"/><circle cx="12" cy="12" r="1.800"/><circle cx="19" cy="12" r="1.800"/></svg></button>') +
-        '<div class="iscroll chat"><div class="sys">' + esc(c.title) + '</div>' + (body || '<div class="sys">这件事里，两人还没有发过消息。</div>') + '</div>' + bar);
+      var bar = kn ? '<label class="wbar sw"><span>允许发消息给' + esc(N(o)) + '</span><input type="checkbox" id="g-' + id + '-' + o + '" data-c="grant" data-id="' + id + '" data-b="' + o + '"' + (E.granted(w, id, o) ? ' checked' : '') + dis() + '></label>'
+        : com ? '<div class="wbar"><span>本次委托，只用来交办和回传结果</span></div>' : '';
+      return phoneFrame('<div class="wnav"><button class="bk" data-a="back" aria-label="返回">' + ic('back') + '</button><div class="ttl"><b>' + esc(N(o)) + '</b>' +
+        (kn ? '<input class="inote" id="n-' + id + '-' + o + '" data-c="note" data-id="' + id + '" data-b="' + o + '" placeholder="添加备注" aria-label="备注" value="' + esc(w.book.notes[id + '>' + o] || '') + '"' + dis() + '>' : '') + '</div><span class="bk"></span></div>' +
+        '<div class="iscroll chat">' + (body || '<div class="sys">这件事里还没有发过消息</div>') + '</div>' + bar);
     }
     var list = E.contactsOf(w, id), pt = s.hired && (id === c.owner ? s.hired : id === s.hired ? c.owner : null), rows = '';
     if (pt && list.indexOf(pt) < 0) list.unshift(pt);
     if (id === c.owner && s.messages.some(function (m) { return m.from === 'user'; })) list.unshift('user');
-    var chats = list.filter(function (x) { return between(s, id, x).length; }), tab = pg.tab || (chats.length ? 'chats' : 'contacts');
-    if (tab === 'chats') {
-      chats.sort(function (a, b) { return between(s, id, b).pop().seq - between(s, id, a).pop().seq; });
-      chats.forEach(function (x) {
-        var n = between(s, id, x), lm = n[n.length - 1], unread = lm.to === id && lm.step === s.idx;
-        rows += '<button class="irow" data-a="thread" data-id="' + id + '" data-b="' + x + '">' + sq(x) + (unread ? '<i class="badge">1</i>' : '') + '<span class="t"><b>' + esc(shown(w, id, x)) + '</b><span>' + (lm.from === id ? '' : '') + esc(lm.text) + '</span></span><span class="r top">' + clock(lm.seq) + '</span></button>';
-      });
-      rows = rows || '<div class="empty">这件事里还没有消息。<br>去通讯录看看认识谁。</div>';
-    } else {
-      list.filter(function (x) { return x !== 'user'; }).forEach(function (x) {
-        var k = E.knows(w, id, x), note = w.book.notes[id + '>' + x];
-        rows += '<button class="irow" data-a="thread" data-id="' + id + '" data-b="' + x + '">' + sq(x) + '<span class="t"><b>' + esc(N(x)) + '</b><span>' + esc(note ? '备注：' + note : E.skillsOf(w, x)) + '</span></span><span class="r' + (k && !E.granted(w, id, x) ? ' no' : '') + '">' + (!k ? '本次委托' : E.granted(w, id, x) ? '可发消息' : '未获准') + '</span></button>';
-      });
-      rows = rows || '<div class="empty">通讯录还是空的。</div>';
-    }
-    function tb(k, label, icon) { return '<button data-a="ptab" data-id="' + k + '" aria-pressed="' + (tab === k) + '">' + ic(icon) + label + '</button>'; }
-    return phoneFrame('<div class="wnav"><span class="bk"></span><div class="ttl"><b>' + (tab === 'chats' ? '聊天' : '通讯录') + '</b><small>' + esc(N(id)) + '的手机</small></div><span class="bk"></span></div><div class="iscroll list">' + rows + '</div><div class="wtabs">' + tb('chats', '聊天', 'chat') + tb('contacts', '通讯录', 'people') + '</div>');
+    function lastSeq(x) { var n = between(s, id, x); return n.length ? n[n.length - 1].seq : 0; }
+    list.sort(function (a, b) { return lastSeq(b) - lastSeq(a); });
+    list.forEach(function (x) {
+      var n = between(s, id, x), lm = n[n.length - 1], k = x !== 'user' && E.knows(w, id, x), note = x !== 'user' && w.book.notes[id + '>' + x];
+      var flag = x === 'user' || (k && E.granted(w, id, x)) ? '' : k ? '未获准' : '本次委托';
+      rows += '<button class="irow" data-a="thread" data-id="' + id + '" data-b="' + x + '">' + sq(x) + (lm && lm.to === id && lm.step === s.idx ? '<i class="badge">1</i>' : '') +
+        '<span class="t"><b>' + esc(N(x)) + '</b><span>' + esc(lm ? lm.text : note || (x === 'user' ? '' : E.skillsOf(w, x))) + '</span></span><span class="r top' + (flag === '未获准' ? ' no' : '') + '">' + (flag || (lm ? clock(lm.seq) : '')) + '</span></button>';
+    });
+    return phoneFrame('<div class="wnav"><span class="bk"></span><div class="ttl"><b>' + esc(N(id)) + '的手机</b></div><span class="bk"></span></div><div class="iscroll list">' + (rows || '<div class="empty">还没有联系人。</div>') + '</div>');
   }
   function pagePc(pg) {
     var w = W(), s = w.state, c = C(), id = pg.id, cp = E.comp(w, id), busy = s.working && s.working.operator === id;
@@ -425,7 +403,7 @@
     var sc = el.querySelector('.sh-body, .iscroll'), top = !force && sc ? sc.scrollTop : null;
     el.className = pg.t === 'phone' ? 'device' : '';
     el.innerHTML = PAGES[pg.t](pg);
-    sc = el.querySelector('.sh-body, .iscroll'); if (sc) sc.scrollTop = top == null ? (pg.t === 'phone' && pg.thread && !pg.info ? 1e6 : 0) : top;
+    sc = el.querySelector('.sh-body, .iscroll'); if (sc) sc.scrollTop = top == null ? (pg.t === 'phone' && pg.thread ? 1e6 : 0) : top;
   }
   function render() { renderTop(); renderDock(); renderCanvas(); renderSheet(false); }
   var toastT;
@@ -460,8 +438,6 @@
     bot: function (d) { open({ t: 'bot', id: d.id }); },
     phone: function (d) { if ((ui.sheet[ui.sheet.length - 1] || {}).t === 'bot') ui.sheet.pop(); open({ t: 'phone', id: d.id }); },
     pc: function (d) { if ((ui.sheet[ui.sheet.length - 1] || {}).t === 'bot') ui.sheet.pop(); open({ t: 'pc', id: d.id }); },
-    info: function (d) { open({ t: 'phone', id: d.id, thread: d.b, info: true }); },
-    ptab: function (d) { ui.sheet[ui.sheet.length - 1].tab = d.id; renderSheet(true); },
     thread: function (d) { var topPg = ui.sheet[ui.sheet.length - 1]; if (!topPg || topPg.t !== 'phone' || topPg.id !== d.id) ui.sheet.push({ t: 'phone', id: d.id }); open({ t: 'phone', id: d.id, thread: d.b }); },
     file: function (d) { open({ t: 'file', id: d.id }); },
     basis: function () { open(W().state.files.some(function (f) { return f.kind === 'artifact'; }) ? { t: 'file', id: 'artifact' } : { t: 'log' }); },
@@ -470,7 +446,6 @@
     hire: function (d) { closeSheet(); fired(E.act(W(), { bot: d.id })); },
     back: function () { ui.sheet.pop(); renderSheet(true); }, close: closeSheet,
     level: function (d) { ui.level = d.id; closeSheet(); render(); }, fit: function () { fit(true, true); }, zin: function () { zoomBy(1.25); }, zout: function () { zoomBy(.8); },
-    redeliver: function (d) { var ev = E.redeliver(real, d.id); save(); render(); toast(ev && ev.type === 'dedup' ? '同一次投递，没有生成第二份收件。' : '已重投。'); },
     keep: function () { var s = real.state, note = $('#keepnote').value.trim(); if (E.keep(real, s.hired, note)) { save(); render(); toast('已留下' + N(s.hired) + '。能不能自由发消息，在手机里单独决定。'); } },
     newrun: function (d) { var n = data.runs.filter(function (r) { return r.caseId === d.id; }).length + 1, run = E.newRun(dsl, d.id, n); data.runs.push(run); A['switch']({ id: run.id }); },
     'switch': function (d) { var run = data.runs.find(function (r) { return r.id === d.id; }); real = E.makeWorld(dsl, data.book, run, 'real'); ui.clock = 0; ui.hot = null; ui.paused = false; ui.sheet = []; ui.viewKey = ''; ui.level = 'doing'; save(); render(); },
