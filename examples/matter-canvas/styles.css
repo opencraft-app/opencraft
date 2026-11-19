@@ -107,3 +107,9 @@ button.stamp { align-self: center; font-size: 12px; color: var(--ink-3); padding
 .chatrow time { align-self: flex-start; padding-top: 4px; }
 
 .tk em.doing { color: #d4611c; }
+
+.tcard { align-self: center; display: flex; align-items: center; gap: 8px; max-width: 92%; padding: 8px 10px 8px 14px; border-radius: 8px; background: var(--cell); font-size: 14px; }
+.tcard b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .tcard svg { width: 14px; height: 14px; opacity: .5; flex: none; } .tcard .st { flex: none; }
+.chatrow b small { font-weight: 400; } .chatrow time { text-align: right; line-height: 1.5; }
+.dotr { position: absolute; left: 60px; top: 8px; width: 12px; height: 12px; border-radius: 50%; background: var(--red); border: 2px solid var(--cell); }
+.av.q.x { font-size: 24px; }

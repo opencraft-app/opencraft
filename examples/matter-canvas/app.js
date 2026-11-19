@@ -7,13 +7,13 @@
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
   function svg(d) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>'; }
   var BACK = svg('<path d="m14.500 5-7 7 7 7"/>'), GO = svg('<path d="m9.500 5 7 7-7 7"/>'), DOTS = '<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22" aria-hidden="true"><circle cx="5" cy="12" r="1.700"/><circle cx="12" cy="12" r="1.700"/><circle cx="19" cy="12" r="1.700"/></svg>';
-  var TABS = [['things', '事情', svg('<rect x="4.500" y="4" width="15" height="16" rx="2.500"/><path d="m8 9.500 1.500 1.500L12 8.500M8 15l1.500 1.500L12 14M14.500 10h2M14.500 15.500h2"/>')],
-    ['staff', '员工', svg('<path d="M12 4.500c-4.700 0-8.500 3.100-8.500 7 0 2.200 1.200 4.100 3.100 5.400L6 20l3.400-1.600c.8.200 1.700.300 2.600.300 4.700 0 8.500-3.100 8.500-7s-3.800-7.200-8.500-7.200z"/>')],
+  var TABS = [['staff', '员工', svg('<path d="M12 4.500c-4.700 0-8.500 3.100-8.500 7 0 2.200 1.200 4.100 3.100 5.400L6 20l3.400-1.600c.8.200 1.700.300 2.600.300 4.700 0 8.500-3.100 8.500-7s-3.800-7.200-8.500-7.200z"/>')],
+    ['things', '事情', svg('<rect x="4.500" y="4" width="15" height="16" rx="2.500"/><path d="m8 9.500 1.500 1.500L12 8.500M8 15l1.500 1.500L12 14M14.500 10h2M14.500 15.500h2"/>')],
     ['feed', '动态', svg('<circle cx="12" cy="12" r="8.500"/><path d="m15.500 8.500-2 5-5 2 2-5z"/>')]];
   var KIND = { pc: ['电脑', '台', '例如：办公室的 Mac mini'], env: ['云环境', '个', '例如：测试环境沙盒'], conn: ['连接器', '个', '例如：飞书、邮箱、GitHub'] };
   var HUES = ['#4c7868', '#8471ac', '#ac734e', '#5a8397', '#b58239', '#7a6f9b', '#5f8a5a', '#a35d6a'];
 
-  function blank() { return { people: [], things: [], notes: [], files: [], res: { pc: [], env: [], conn: [] }, tab: 'things', n: 0, sample: false }; }
+  function blank() { return { people: [], things: [], notes: [], files: [], res: { pc: [], env: [], conn: [] }, tab: 'staff', n: 0, sample: false }; }
   function sample() { /* 一家小工作室老板眼里的某个下午 */
     var d = blank(), now = Date.now(), m = function (min) { return now - min * 60000; };
     function res(k, id, name) { d.res[k].push({ id: id, name: name }); }
@@ -30,7 +30,7 @@
     thing('t3', '核对签字页的版本和页码', 'z', 'a', 'done', { parent: 't1' });
     thing('t4', '给下周入职的新同事开好账号', 'c', 'me', 'open');
     thing('t5', '等新同事发来 GitHub 用户名', 'c', 'c', 'open', { parent: 't4' });
-    thing('t6', '整理 10 月的报销单', null, 'me', 'open');
+    thing('t6', '整理 10 月的报销单', 'c', 'me', 'open');
     thing('t7', '订周三客户来访的会议室', 'c', 'me', 'done');
     d.files.push({ id: 'f1', name: '2.3 版本签字页核对单', owner: 'a', t: 't1', ts: m(18), body: '盖章的是第 3 页那一份。\n版本号 2.3，和交付清单一致。\n核对人：小折。\n交付包里的三样都齐了：安装包、测试回执、验收签字页。' });
     d.files.push({ id: 'f2', name: '签字页核对记录', owner: 'z', t: 't3', ts: m(31), body: '看了两份附件。\n第 2 页那份没有盖章，是草稿。\n第 3 页那份有客户公章，版本号 2.3。' });
@@ -42,12 +42,12 @@
     msg(55, 't3', 'a', 'z', '帮我核一下这两份签字页：哪份是盖章的，版本对不对。'); log(31, 't3', 'z', '交出「签字页核对记录」', 'f2'); msg(30, 't3', 'z', 'a', '核完了。盖章的是第 3 页那份，版本 2.3，和交付清单一致。'); log(28, 't3', 'a', '收下了，这件子事情办完');
     log(18, 't1', 'a', '交出「2.3 版本签字页核对单」', 'f1'); msg(17, 't1', 'a', 'me', '签字页核对好了，交付包齐了。你看一眼核对单，没问题我就发给客户。');
     log(50, 't4', 'me', '把这件事交给了沐川'); msg(49, 't4', 'me', 'c', '下周一有新同事入职，账号提前开好。'); msg(22, 't4', 'c', 'me', '邮箱和飞书开好了。GitHub 要等他把用户名发我，我已经问了。');
-    log(8, 't6', 'me', '加了一件事');
+    msg(8, 't6', 'me', 'c', '把 10 月的报销单整理一下，周五前给我。');
     d.n = 100; d.sample = true; return d;
   }
   var db = sample();
-  try { var raw = JSON.parse(localStorage.getItem(KEY)); if (raw && raw.people && raw.files) db = raw; } catch (e) { /* 没有存储也能用 */ }
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { /* ignore */ } }
+  try { var raw = JSON.parse(localStorage.getItem(KEY)); if (raw && raw.people && raw.files && raw.v === 2) db = raw; } catch (e) { /* 没有存储也能用 */ }
+  function save() { db.v = 2; try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { /* ignore */ } }
   function uid(p) { db.n += 1; return p + db.n; }
   function P(id) { return db.people.filter(function (x) { return x.id === id; })[0]; }
   function T(id) { return db.things.filter(function (x) { return x.id === id; })[0]; }
@@ -62,6 +62,7 @@
   function status(t) { return t.state === 'done' ? ['已办完', 'ok'] : t.state === 'cancel' ? ['已取消', 'ok'] : !t.owner ? ['待分配负责人', 'you'] : t.wait ? (t.from === 'me' ? ['等你验收', 'you'] : ['等' + N(t.from) + '验收', '']) : ['在办', '']; }
   function F(id) { return db.files.filter(function (x) { return x.id === id; })[0]; }
   function msgs(a, b) { return db.notes.filter(function (x) { return x.k === 'msg' && ((x.who === a && x.to === b) || (x.who === b && x.to === a)); }).sort(function (x, y) { return x.ts - y.ts; }); }
+  function lastTs(id) { var l = msgs('me', id).pop(); return l ? l.ts : 0; }
   function chats(id) { var o = []; db.notes.forEach(function (x) { if (x.k !== 'msg') return; var p = x.who === id ? x.to : x.to === id ? x.who : null; if (p && o.indexOf(p) < 0) o.push(p); }); return o; }
   function canLine(p) { var a = []; if (p.pc) a.push('电脑'); if (p.env) a.push('云环境'); if (p.conn.length) a.push(p.conn.length + ' 个连接器'); return a.join(' · ') || '还没有分配'; }
   function hhmm(ts) { var d = new Date(ts); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
@@ -86,8 +87,8 @@
   var PAGE = {
     things: function () {
       var all = tops(), me = all.filter(mine), out = all.filter(function (t) { return open(t) && !mine(t); }), ended = all.filter(function (t) { return !open(t); });
-      return nav('事情') + '<div class="body"><div class="newt"><input id="nt" placeholder="添加一件事…" aria-label="添加一件事"><button data-do="newthing">添加</button></div>' +
-        (!all.length ? empty('还没有事情', '在上面写下一件要办的事，再交给一位员工负责。') :
+      return nav('事情') + '<div class="body">' +
+        (!all.length ? empty('还没有事情', '事情是从人开始的：去「员工」里选一位，对他说要办什么，这里就会多一件。', '<button class="go" data-tab="staff">去选人</button>') :
           (me.length ? '<div class="sec">要我出手的 ' + me.length + '</div><div class="cells">' + me.map(todo).join('') + '</div>' : '') +
           (out.length ? '<div class="sec">别人在办的 ' + out.length + '</div><div class="cells">' + out.map(todo).join('') + '</div>' : '') +
           (!me.length && !out.length ? empty('没有在办的事', '都结束了。') : '') +
@@ -120,12 +121,23 @@
       return nav('分配负责人') + '<div class="body"><div class="sec">' + esc(t.title) + '</div>' + (list.length ? '<div class="cells">' + list.map(function (p) { return '<button class="cell a" data-do="assign" data-t="' + t.id + '" data-id="' + p.id + '">' + av(p.id) + '<span class="t"><b>' + esc(p.name) + '</b><span>' + esc(p.role) + '</span></span>' + (p.pc ? '' : '<span class="st">没有电脑</span>') + '</button>'; }).join('') + '</div>' :
         empty('还没有员工', '先新增一位员工，才能把事情交出去。', '<button class="go"' + go({ p: 'add' }) + '>新增员工</button>')) + '</div>';
     },
-    staff: function (g) {
-      var list = staff(), busy = list.filter(function (p) { return owned(p.id).length; });
-      if (!list.length) return nav('员工') + '<div class="body">' + empty('还没有员工', '员工是替你办事的 Bot。每位有一个岗位、一部手机和一台电脑。', '<button class="go"' + go({ p: 'add' }) + '>新增员工</button><button class="go alt" data-do="sample">填入示例内容</button>') + '</div>';
-      if (g && g.all) return nav('全部员工') + '<div class="body"><div class="cells">' + cell({ p: 'add' }, '<span class="av q">+</span>', '新增员工', '', '') + list.map(function (p) { return personRow(p); }).join('') + '</div><div class="gap"></div></div>';
-      return nav('员工') + '<div class="body"><div class="sec">手上有事</div>' + (busy.length ? '<div class="cells">' + busy.map(function (p) { return personRow(p, '在办：' + owned(p.id).map(function (t) { return t.title; }).join('、')); }).join('') + '</div>' : empty('现在没有人手上有事', '把一件事交给某位员工后，他会出现在这里。')) +
-        '<div class="gap"></div><div class="cells">' + cell({ p: 'staff', all: 1 }, '', '全部员工', '', list.length + ' 位') + '</div></div>';
+    staff: function () {
+      var list = staff().slice().sort(function (a, b) { return lastTs(b.id) - lastTs(a.id); });
+      if (!list.length) return nav('员工') + '<div class="body">' + empty('还没有员工', '员工是替你办事的 Bot。先有人，才能对他说要办什么。', '<button class="go"' + go({ p: 'add' }) + '>新增员工</button><button class="go alt" data-do="sample">填入示例内容</button>') + '</div>';
+      return nav('员工') + '<div class="body"><div class="cells">' + list.map(function (p) {
+        var last = msgs('me', p.id).pop(), n = owned(p.id).length, wait = owned(p.id).filter(function (t) { return t.wait && t.from === 'me'; }).length;
+        return '<button class="cell chatrow"' + go({ p: 'talk', id: p.id }) + '>' + av(p.id, 'x') + (wait ? '<i class="dotr"></i>' : '') + '<span class="t"><b>' + esc(p.name) + ' <small>' + esc(p.role) + '</small></b><span>' + esc(last ? (last.who === 'me' ? '你：' : '') + last.text : '还没有对他说过什么') + '</span></span><time>' + (last ? hhmm(last.ts) : '') + (n ? '<br>' + n + ' 件在办' : '') + '</time></button>';
+      }).join('') + cell({ p: 'add' }, '<span class="av q x">+</span>', '新增员工', '', '') + '</div>' + (db.sample ? '<p class="foot">现在看到的是示例内容。<button class="lk" data-do="clear">清空，从头开始</button></p>' : '') + '</div>';
+    },
+    talk: function (g) { /* 选了人，对他说要办什么：说出去的每一句就是一件交给他的事 */
+      var p = P(g.id), h = '', lastT = null;
+      msgs('me', p.id).forEach(function (x) {
+        var t = x.t && T(x.t);
+        if (t && lastT !== t.id) { var st = status(t); h += '<button class="tcard"' + go({ p: 'thing', t: t.id }) + '><b>' + esc(t.title) + '</b><span class="st ' + st[1] + '">' + st[0] + '</span>' + GO + '</button>'; lastT = t.id; }
+        h += '<div class="line' + (x.who === 'me' ? ' me' : '') + '">' + av(x.who) + '<div class="msg">' + esc(x.text) + '</div></div>';
+      });
+      return nav(p.name, { p: 'one', id: p.id }) + '<div class="body"><div class="chat">' + (h || '') + '</div>' + (h ? '' : empty('还没有对' + esc(p.name) + '说过什么', '在下面写一件要办的事，发出去就交给他了。')) + '</div>' +
+        '<div class="composer"><input id="say" placeholder="对' + esc(p.name) + '说要办什么…" aria-label="要办什么"><button data-do="say" data-id="' + p.id + '" aria-label="发送">↑</button></div>';
     },
     one: function (g) {
       var p = P(g.id), own = owned(p.id), reach = staff().filter(function (o) { return o.id !== p.id && p.reach.indexOf(o.id) >= 0; }).length;
@@ -153,9 +165,9 @@
     pc: function (g) {
       var p = P(g.id), own = owned(p.id);
       return nav(p.name + '在做什么') + '<div class="body codex">' + (p.pc ? '<div class="sec">' + esc(resName('pc', p.pc)) + '</div>' : '<button class="cell"' + go({ p: 'res', id: p.id, k: 'pc' }) + '><span class="t"><b class="warn">还没有分配电脑</b><span>没有电脑，他接到事情也没法开工</span></span><span class="r">去分配' + GO + '</span></button>') +
-        (own.length ? '<div class="sec">手上的</div>' + own.map(function (t) { return '<button class="tk"' + go({ p: 'thing', t: t.id }) + '><span class="t"><b>' + esc(t.title) + '</b><span>' + esc(t.parent ? '子事情 · ' + T(t.parent).title : '') + '</span></span><em' + (t.wait ? '' : ' class="doing"') + '>' + status(t)[0] + '</em></button>'; }).join('') : empty('手上没有事', '把一件事交给' + esc(p.name) + '，或者在下面直接写。')) +
+        (own.length ? '<div class="sec">手上的</div>' + own.map(function (t) { return '<button class="tk"' + go({ p: 'thing', t: t.id }) + '><span class="t"><b>' + esc(t.title) + '</b><span>' + esc(t.parent ? '子事情 · ' + T(t.parent).title : '') + '</span></span><em' + (t.wait ? '' : ' class="doing"') + '>' + status(t)[0] + '</em></button>'; }).join('') : empty('手上没有事', '回到和' + esc(p.name) + '的对话里，对他说要办什么。')) +
         (function () { var fs = db.files.filter(function (f) { return f.owner === p.id; }); return fs.length ? '<div class="sec">交出过的东西</div>' + fs.map(function (f) { return '<button class="tk"' + go({ p: 'file', f: f.id }) + '><span class="t"><b>' + esc(f.name) + '</b><span>' + esc((T(f.t) || {}).title || '') + '</span></span><em>' + hhmm(f.ts) + '</em></button>'; }).join('') : ''; })() +
-        '</div><div class="composer"><input id="task" placeholder="交给' + esc(p.name) + '一件事…" aria-label="派一件事"><button data-do="task" data-id="' + p.id + '" aria-label="发送">↑</button></div>';
+        '</div>';
     },
     can: function (g) {
       var p = P(g.id);
@@ -184,15 +196,14 @@
   function resName(k, id) { var r = db.res[k].filter(function (x) { return x.id === id; })[0]; return r ? r.name : '已删除'; }
 
   var DO = {
-    newthing: function () { var el = document.getElementById('nt'), v = el.value.trim(); if (!v) { el.focus(); return; } var t = { id: uid('t'), title: v, owner: null, from: 'me', state: 'open' }; db.things.push(t); note('me', '加了一件事', t.id); },
-    task: function (d) { var el = document.getElementById('task'), v = el.value.trim(); if (!v) { el.focus(); return; } var t = { id: uid('t'), title: v, owner: d.id, from: 'me', state: 'open' }; db.things.push(t); note('me', '交给' + N(d.id) + '一件事', t.id); },
+    say: function (d) { var el = document.getElementById('say'), v = el.value.trim(); if (!v) { el.focus(); return; } var t = { id: uid('t'), title: v, owner: d.id, from: 'me', state: 'open' }; db.things.push(t); db.notes.push({ ts: Date.now(), who: 'me', to: d.id, text: v, t: t.id, k: 'msg' }); },
     assign: function (d) { var t = T(d.t), prev = t.owner; t.owner = d.id; note('me', prev && prev !== d.id ? '把这件事从' + N(prev) + '换给了' + N(d.id) : '把这件事交给了' + N(d.id), t.id); while (stack.length && stack[stack.length - 1].p !== 'thing') stack.pop(); if (!stack.length) stack.push({ p: 'thing', t: t.id }); },
     tick: function (d) { var t = T(d.t); if (t.state === 'open') { t.state = 'done'; t.wait = false; note('me', '把这件事标为办完', t.id); } else { t.state = 'open'; note('me', '重新打开了这件事', t.id); } if (d.back) stack.pop(); },
     accept: function (d) { var t = T(d.t); t.state = 'done'; t.wait = false; note('me', '看过了，确认办完', t.id); },
     reject: function (d) { var t = T(d.t); t.wait = false; db.notes.push({ ts: Date.now(), who: 'me', to: t.owner, text: '这次不行，退回重做。', t: t.id, k: 'msg' }); },
     clear: function () { db = blank(); stack = []; },
     cancel: function (d) { T(d.t).state = 'cancel'; note('me', '取消了这件事', d.t); stack.pop(); stack.pop(); },
-    add: function () { var n = document.getElementById('f0').value.trim(), r = document.getElementById('f1').value.trim(); if (!n || !r) return; var p = { id: uid('p'), name: n, role: r, prompt: '', reach: [], pc: null, env: null, conn: [] }; db.people.push(p); note('me', '新增了员工' + n + '（' + r + '）'); stack.pop(); stack.push({ p: 'one', id: p.id }); },
+    add: function () { var n = document.getElementById('f0').value.trim(), r = document.getElementById('f1').value.trim(); if (!n || !r) return; var p = { id: uid('p'), name: n, role: r, prompt: '', reach: [], pc: null, env: null, conn: [] }; db.people.push(p); note('me', '新增了员工' + n + '（' + r + '）'); stack.pop(); stack.push({ p: 'talk', id: p.id }); },
     sample: function () { db = sample(); stack = []; },
     drop: function (d) { P(d.id).gone = true; note('me', '把' + N(d.id) + '移出了团队'); stack = []; },
     role: function (d) { var p = P(d.id), r = document.getElementById('f1').value.trim(); if (r) p.role = r; p.prompt = document.getElementById('pt').value.trim(); note('me', '改了' + p.name + '的岗位和提示'); stack.pop(); },
@@ -202,17 +213,18 @@
     var g = stack[stack.length - 1], h = g ? PAGE[g.p](g) : PAGE[db.tab]();
     if (!g) { var n = tops().filter(mine).length; h += '<div class="tabs">' + TABS.map(function (t) { return '<button data-tab="' + t[0] + '" aria-current="' + (t[0] === db.tab) + '">' + t[2] + t[1] + (t[0] === 'things' && n ? '<em>' + n + '</em>' : '') + '</button>'; }).join('') + '</div>'; }
     document.getElementById('app').innerHTML = h;
+    var bd = document.querySelector('.body'); if (bd && g && (g.p === 'talk' || g.p === 'chat')) bd.scrollTop = 1e6;
   }
   document.addEventListener('click', function (e) {
     var el = e.target.closest('[data-go],[data-tab],[data-do]'); if (!el) return;
     if (el.dataset.do) DO[el.dataset.do](el.dataset);
-    else if (el.dataset.tab) db.tab = el.dataset.tab;
+    else if (el.dataset.tab) { db.tab = el.dataset.tab; stack = []; }
     else if (el.dataset.go === 'back') stack.pop();
     else stack.push(JSON.parse(el.dataset.go));
     save(); draw();
   });
   document.addEventListener('keydown', function (e) {
-    if (e.key !== 'Enter') return; var m = { nt: 'newthing', rn: 'addres', task: 'task' }[e.target.id]; if (!m) return;
+    if (e.key !== 'Enter') return; var m = { say: 'say', rn: 'addres' }[e.target.id]; if (!m) return;
     var b = document.querySelector('[data-do=' + m + ']'); if (b) b.click();
   });
   document.addEventListener('change', function (e) {
