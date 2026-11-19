@@ -624,6 +624,11 @@ test("ordinary Core cold boot tolerates a missing external credential and recove
     assert.deepEqual((await restarted.adapter.snapshot()).handoff.uncertain, unknown);
     assert.equal(await readFile(join(f.data, "secrets/account-a.json"), "utf8"), reference);
     await writeFile(auth, contents, { mode: 0o600 });
+    // Restoring a file is not provider validation. The authorization rejection
+    // remains latched until the existing subscription refresh verifies it.
+    const unvalidated = await f.model(); assert.equal(unvalidated.status, 401); await unvalidated.text();
+    assert.equal(f.modelCalls(), 0);
+    assert.equal((await f.accountRpc("refresh", { accountId: "a" })).status, 200);
     const available = await f.model(); assert.equal(available.status, 200); await available.text();
     assert.equal(f.modelCalls(), 1);
     assert.deepEqual((await restarted.adapter.snapshot()).handoff.uncertain, unknown);
