@@ -1,4 +1,4 @@
-/* 老板的三个标签：事情（一张待办清单，每件事可以分配负责人）、员工（可以管理）、动态（谁刚做了什么）。版式照聊天应用。 */
+/* 老板的三个标签：事情（一张待办清单，每件事可以分配负责人）、员工（可以管理）、动态（谁刚做了什么）。员工自己推进事情，老板只分配、验收、管许可。版式照聊天应用。 */
 (function () {
   'use strict';
   var E = window.MatterEngine, dsl = E.validate(E.clone(window.MATTER_DSL)), KEY = 'opencraft.matter-canvas.v4';
@@ -56,6 +56,7 @@
   function did(c, f) { var sb = E.nodeOf(c, 'sandbox'); return f.kind === 'submission' ? (sb ? sb.text.replace(/。$/, '') : f.name) : c.steps[f.step].reaction; }
   function ownsOf(id) { return dsl.cases.filter(function (c) { return ownerOf(c) === id; }); }
   function onDuty(id) { return E.comp(W0, id).work; }
+  function doing(id) { var o = []; each(function (c, w, s) { if (s.working && s.working.operator === id) o.push({ c: c, text: s.working.reaction }); }); return o; }
   function matesOf(id) { var o = []; each(function (c, w, st) { if (c.steps[st.idx].kind === 'done') return; var x = st.hired === id ? ownerOf(c) : ownerOf(c) === id ? st.hired : null; if (x && o.indexOf(x) < 0 && !E.knows(W0, id, x)) o.push(x); }); return o; }
   var ALLOW = [['work', '处理文件', '关掉后，他收到消息也不会开工'], ['send', '对外发消息', '关掉后，他做完也发不出去'], ['hire', '找帮手', '关掉后，他不能请临时帮手'], ['web', '用浏览器', '打开网页查资料'], ['cloud', '用云电脑', '在云端桌面里操作软件']];
   function allowed(id, k) { var c = E.comp(W0, id); return k in c ? !!c[k] : k === 'web'; }
@@ -64,7 +65,7 @@
     var w = worlds[c.id], st = c.steps[w.state.idx];
     if (!ownerOf(c)) return ['待分配负责人', 'you'];
     if (st.kind === 'done') return ['已完成', 'ok'];
-    if (st.kind === 'confirm') return ['等你验收', 'you'];
+    if (st.kind === 'confirm') return w.state.cur.accepted ? ['归档中', ''] : ['等你验收', 'you'];
     if (w.state.halt) return ['卡住了', 'you'];
     return [w.state.log.length ? st.status : '待开始', ''];
   }
@@ -109,29 +110,28 @@
       }
       function sec(title, list, none) { return '<div class="sec">' + title + ' ' + list.length + '</div><div class="cells">' + (list.map(row).join('') || '<p class="none" style="padding:20px 16px">' + none + '</p>') + '</div>'; }
       return nav('事情') + '<div class="body"><div class="newt"><input id="nt" placeholder="添加一件事…" aria-label="添加一件事"><button data-do="newthing">添加</button></div>' +
-        sec('我负责的', mine, '现在没有要你出手的事') + sec('我派出去的', out, '没有在办的事') + (done.length ? sec('已完成', done, '') : '') + '</div>';
+        sec('要我出手的', mine, '现在没有要你出手的事') + sec('别人在办的', out, '没有在办的事') + (done.length ? sec('已完成', done, '') : '') + '</div>';
     },
     thing: function (g) {
-      var c = dsl.cases.find(function (x) { return x.id === g.c; }), w = worlds[c.id], s = w.state, st = c.steps[s.idx], o = ownerOf(c), sta = status(c), fresh = !s.log.length, act = '';
-      var files = s.files.filter(function (f) { return f.kind !== 'submission'; });
+      var c = dsl.cases.find(function (x) { return x.id === g.c; }), w = worlds[c.id], s = w.state, st = c.steps[s.idx], o = ownerOf(c), sta = status(c), act = '', look = '';
+      var files = s.files.filter(function (f) { return f.kind !== 'submission'; }), art = files.filter(function (f) { return f.kind === 'artifact'; }).pop() || files[files.length - 1], subs = subsOf(c);
+      var log = feed().filter(function (x) { return x.c === c.id; });
       if (!o) act = '<button class="go"' + go({ p: 'pick', c: c.id }) + '>分配负责人</button>';
-      else if (st.kind === 'confirm') act = '<button class="go" data-do="next" data-c="' + c.id + '">' + esc(st.action) + '</button>';
-      else if (st.kind !== 'done') act = '<button class="go alt" data-do="next" data-c="' + c.id + '">' + (s.halt ? '再试一次' : '推进一步：' + esc(s.cur.submitted ? N(o) + '验收' + N(s.hired) + '交回的结果' : st.kind === 'hire' ? N(o) + '把一件子事情派给' + N(c.market[0]) : st.action)) + '</button>';
-      return nav(c.title) + '<div class="body"><div class="cells"><div class="cell text"><small>' + esc(c.tag) + ' · <span class="st ' + sta[1] + '">' + sta[0] + '</span></small><b style="font-size:20px">' + esc(st.kind === 'done' ? '办完了' : c.headline) + '</b><p>' + esc(st.summary) + '</p>' + (s.halt && o ? '<p class="warn">' + esc(E.describe(w, s.halt)) + '</p>' : '') + '</div></div>' + (act ? '<div class="act">' + act + '</div>' : '<div class="gap"></div>') +
-        '<div class="cells">' + (o ? '<button class="cell a"' + go({ p: 'one', id: o }) + '>' + av(o) + '<span class="t"><b>' + esc(N(o)) + '</b><span>负责人 · ' + esc(job(o)) + '</span></span><span class="r">' + GO + '</span></button>' : '<div class="cell a">' + av(null) + '<span class="t"><b>还没有负责人</b><span>分配后这件事才会开始</span></span></div>') +
+      else if (sta[0] === '等你验收') { look = art ? '<div class="sec">先看一眼他交出的东西</div><div class="cells">' + cell({ p: 'job', c: c.id, f: art.id, t: 'file' }, '', art.name, N(art.owner) + '交出', '') + '</div>' : ''; act = '<button class="go" data-do="accept" data-c="' + c.id + '">' + esc(st.action) + '</button>'; }
+      else if (s.halt) act = '<button class="go alt" data-do="retry" data-c="' + c.id + '">再试一次</button>';
+      return nav(c.title) + '<div class="body"><div class="cells"><div class="cell text"><small><span class="st ' + sta[1] + '">' + sta[0] + '</span></small><b style="font-size:20px">' + esc(st.kind === 'done' ? '办完了' : c.headline) + '</b><p>' + esc(o ? st.summary : '还没有人负责，分配后才会开始。') + '</p>' + (s.halt && o ? '<p class="warn">' + esc(E.describe(w, s.halt)) + '</p>' : '') + '</div></div>' + look + (act ? '<div class="act">' + act + '</div>' : '<div class="gap"></div>') +
+        '<div class="cells">' + (o ? '<button class="cell a"' + go({ p: 'one', id: o }) + '>' + av(o) + '<span class="t"><b>' + esc(N(o)) + '</b><span>负责人 · ' + esc(job(o)) + '</span></span><span class="r">' + GO + '</span></button>' : '') +
         (o && st.kind !== 'done' ? cell({ p: 'pick', c: c.id }, '', '换一位负责人', '', '') : '') + '</div>' +
-        '<div class="sec">进度</div><div class="cells">' + c.steps.map(function (x, i) { var k = i < s.idx || x.kind === 'done' && i === s.idx ? 'd' : i === s.idx && o ? 'n' : 'w'; return '<div class="cell step ' + k + '"><i>' + (k === 'd' ? '✓' : '') + '</i><span class="t"><b>' + esc(x.status) + '</b>' + (k === 'n' ? '<span>' + esc(x.summary) + '</span>' : '') + '</span></div>'; }).join('') + '</div>' +
-        (subsOf(c).length ? '<div class="sec">子事情 · 谁派的谁验收</div><div class="cells">' + subsOf(c).map(function (x) { var ss = subState(x); return '<button class="cell todo' + (ss[1] === 'ok' ? ' done' : '') + '"' + go({ p: 'sub', c: c.id, i: x.i }) + '><span class="box">' + (ss[1] === 'ok' ? '✓' : '') + '</span><span class="t"><b>' + esc(x.title) + '</b><span>' + ss[0] + '</span></span><span class="who">' + esc(N(x.owner)) + av(x.owner) + '</span></button>'; }).join('') + '</div>' : '') +
-        (castOf(c).length > 1 ? '<div class="sec">参与的人</div><div class="cells">' + castOf(c).map(function (id) { return '<button class="cell a"' + go({ p: 'one', id: id }) + '>' + av(id) + '<span class="t"><b>' + esc(N(id)) + '</b><span>' + esc(id === o ? '负责人' : id === s.hired ? '临时帮手' : job(id)) + '</span></span><span class="r">' + GO + '</span></button>'; }).join('') + '</div>' : '') +
-        (files.length ? '<div class="sec">材料</div><div class="cells">' + files.map(function (f) { return cell({ p: 'job', c: c.id, f: f.id }, '', f.name, N(f.owner) + ' · ' + c.steps[f.step].reaction, ''); }).join('') + '</div>' : '') +
-        '<div class="gap"></div></div>';
+        (subs.length ? '<div class="sec">子事情 · 谁派的谁验收</div><div class="cells">' + subs.map(function (x) { var ss = subState(x); return '<button class="cell todo' + (ss[1] === 'ok' ? ' done' : '') + '"' + go({ p: 'sub', c: c.id, i: x.i }) + '><span class="box">' + (ss[1] === 'ok' ? '✓' : '') + '</span><span class="t"><b>' + esc(x.title) + '</b><span>' + ss[0] + '</span></span><span class="who">' + esc(N(x.owner)) + av(x.owner) + '</span></button>'; }).join('') + '</div>' : '') +
+        (files.length ? '<div class="sec">交出的材料</div><div class="cells">' + files.map(function (f) { return cell({ p: 'job', c: c.id, f: f.id, t: 'file' }, '', f.name, N(f.owner), ''); }).join('') + '</div>' : '') +
+        (log.length ? '<div class="sec">经过 · 最新的在上</div><div class="cells">' + log.map(function (x) { return '<div class="cell a">' + av(x.who) + '<span class="t"><b>' + esc(N(x.who)) + '</b><span class="wrap' + (x.bad ? ' warn' : '') + '">' + esc(x.text) + '</span></span><time>' + hhmm(x.ts) + '</time></div>'; }).join('') + '</div>' : '') + '<div class="gap"></div></div>';
     },
     sub: function (g) {
       var c = dsl.cases.find(function (x) { return x.id === g.c; }), x = subsOf(c).filter(function (k) { return k.i === g.i; })[0], ss = subState(x);
       return nav(x.title) + '<div class="body"><div class="cells"><div class="cell text"><small>子事情 · <span class="st ' + ss[1] + '">' + ss[0] + '</span></small><b style="font-size:20px">' + esc(x.title) + '</b><p>' + esc(x.ask) + '</p></div></div><div class="gap"></div>' +
         '<div class="cells">' + cell({ p: 'one', id: x.owner }, av(x.owner), N(x.owner), '负责人 · ' + job(x.owner), '') + cell({ p: 'one', id: x.from }, av(x.from), N(x.from), '派的人，也由他验收', '') + cell({ p: 'thing', c: c.id }, '', c.title, '属于这件事', '') + '</div>' +
         (x.f ? '<div class="sec">交回的材料</div><div class="cells">' + cell({ p: 'job', c: c.id, f: x.f.id }, '', x.f.name, N(x.f.owner) + '的电脑', '') + '</div>' : '') +
-        '<p class="foot">这件子事情不是你派的，所以不用你验收。' + (x.state === 'ok' ? '' : '想推进它，回到「' + esc(c.title) + '」。') + '</p></div>';
+        '<p class="foot">这件子事情不是你派的，所以不用你验收。</p></div>';
     },
     pick: function (g) {
       var c = dsl.cases.find(function (x) { return x.id === g.c; });
@@ -141,7 +141,7 @@
     },
     staff: function () {
       var busy = []; dsl.cases.forEach(function (c) { if (status(c)[1] !== 'ok') castOf(c).forEach(function (id) { if (busy.indexOf(id) < 0) busy.push(id); }); });
-      function row(id) { var own = ownsOf(id).filter(function (c) { return status(c)[1] !== 'ok'; }); return '<button class="cell a"' + go({ p: 'one', id: id }) + '>' + av(id) + '<span class="t"><b>' + esc(N(id)) + '</b><span>' + esc(own.length ? '负责：' + own.map(function (c) { return c.title; }).join('、') : job(id)) + (onDuty(id) ? '' : ' · 已停工') + '</span></span></button>'; }
+      function row(id) { var own = ownsOf(id).filter(function (c) { return status(c)[1] !== 'ok'; }); return '<button class="cell a"' + go({ p: 'one', id: id }) + '>' + av(id) + '<span class="t"><b>' + esc(N(id)) + '</b><span>' + (doing(id).length ? '<span class="run">正在' + esc(doing(id)[0].text) + '</span>' : esc(own.length ? '负责：' + own.map(function (c) { return c.title; }).join('、') : job(id)) + (onDuty(id) ? '' : ' · 已停工')) + '</span></span></button>'; }
       return nav('员工') + '<div class="body"><div class="cells">' + cell({ p: 'add' }, '<span class="av q">+</span>', '新增员工', '', '') + '</div>' +
         (busy.length ? '<div class="sec">手上有事</div><div class="cells">' + busy.map(row).join('') + '</div>' : '') +
         dsl.teams.map(function (t) { var m = dsl.bots.filter(function (b) { return b.team === t.id && busy.indexOf(b.id) < 0; }); return m.length ? '<div class="sec">' + esc(t.name) + '</div><div class="cells">' + m.map(function (b) { return row(b.id); }).join('') + '</div>' : ''; }).join('') + '<p class="foot">' + dsl.bots.length + ' 位员工</p></div>';
@@ -158,7 +158,7 @@
       return nav('') + '<div class="body"><div class="cells"><div class="cell big a">' + av(g.id, 'l') + '<span class="t"><b>' + esc(N(g.id)) + '</b><span>' + (on ? '' : '已停工 · ') + esc(job(g.id)) + '</span></span></div></div>' +
         (own.length ? '<div class="sec">负责的事</div><div class="cells">' + own.map(function (c) { var st = status(c); return cell({ p: 'thing', c: c.id }, '', c.title, '', st[0]); }).join('') + '</div>' : '') +
         '<div class="sec">手机</div><div class="cells">' + cell({ p: 'phone', id: g.id }, '', '他在联系谁', '', chatsOf(g.id).length + ' 个聊天') + cell({ p: 'reach', id: g.id }, '', '他能联系谁', '', (E.contactsOf(W0, g.id).filter(function (o) { return E.granted(W0, g.id, o); }).length + matesOf(g.id).length) + ' 人') + '</div>' +
-        '<div class="sec">电脑</div><div class="cells">' + cell({ p: 'pc', id: g.id }, '', '他在做什么', '', jobsOf(g.id).length + ' 个任务') + cell({ p: 'allow', id: g.id }, '', '允许他做什么', '', ALLOW.filter(function (x) { return allowed(g.id, x[0]); }).length + ' / ' + ALLOW.length + ' 项') + '</div>' +
+        '<div class="sec">电脑</div><div class="cells">' + cell({ p: 'pc', id: g.id }, '', '他在做什么', '', doing(g.id).length ? '正在干活' : jobsOf(g.id).length + ' 个任务') + cell({ p: 'allow', id: g.id }, '', '允许他做什么', '', ALLOW.filter(function (x) { return allowed(g.id, x[0]); }).length + ' / ' + ALLOW.length + ' 项') + '</div>' +
         '<div class="sec">岗位</div><div class="cells">' + cell({ p: 'role', id: g.id }, '', '岗位', '', job(g.id)) +
         '<button class="cell text"' + go({ p: 'prompt', id: g.id }) + '><small>岗位提示 · 点开修改</small><p>' + esc(promptOf(g.id)) + '</p></button></div>' +
         (busyIn(g.id) ? '' : '<div class="gap"></div><div class="cells"><button class="cell c warn"' + go({ p: 'drop', id: g.id }) + '><b>移出团队</b></button></div>') + '<div class="gap"></div></div>';
@@ -196,9 +196,10 @@
       return nav(N(g.o)) + '<div class="body"><div class="chat">' + msgsOf(g.id, g.o).map(function (m) { return '<div class="line' + (m.from === g.id ? ' me' : '') + '">' + av(m.from) + '<div class="msg">' + esc(m.text) + '</div></div>'; }).join('') + '</div><p class="foot">这是' + esc(N(g.id)) + '的手机，绿色是' + esc(N(g.id)) + '发的。</p></div>';
     },
     pc: function (g) { /* Codex 式：任务列表 + 底部派任务 */
-      var list = jobsOf(g.id);
-      return nav(N(g.id) + '的电脑') + '<div class="body codex"><div class="sec mono">Codex · ' + list.length + ' 个任务</div>' +
-        (list.length ? list.slice().reverse().map(function (j) { return '<button class="tk"' + go({ p: 'job', c: j.c.id, f: j.f.id }) + '><span class="t"><b>' + esc(did(j.c, j.f)) + '</b><span>' + esc(j.c.title) + '</span></span><em>✓ 完成</em></button>'; }).join('') : '<p class="none">这台电脑还没有接到任务</p>') +
+      var list = jobsOf(g.id), now = doing(g.id);
+      return nav(N(g.id) + '的电脑') + '<div class="body codex"><div class="sec mono">Codex · ' + (list.length + now.length) + ' 个任务</div>' +
+        now.map(function (x) { return '<button class="tk"' + go({ p: 'thing', c: x.c.id }) + '><span class="t"><b>' + esc(x.text) + '</b><span>' + esc(x.c.title) + '</span></span><em class="go">运行中…</em></button>'; }).join('') +
+        (list.length || now.length ? list.slice().reverse().map(function (j) { return '<button class="tk"' + go({ p: 'job', c: j.c.id, f: j.f.id }) + '><span class="t"><b>' + esc(did(j.c, j.f)) + '</b><span>' + esc(j.c.title) + '</span></span><em>✓ 完成</em></button>'; }).join('') : '<p class="none">这台电脑还没有接到任务</p>') +
         '</div><div class="composer"><input id="task" placeholder="交给' + esc(N(g.id)) + '一件事…" aria-label="派一个任务"><button data-do="task" data-id="' + g.id + '" aria-label="发送">↑</button></div>';
     },
     job: function (g) { /* 一个任务：对话、文件、浏览器、云电脑 */
@@ -217,17 +218,20 @@
         '<div class="cells" style="margin-top:auto;border-top:1px solid var(--line)">' + cell({ p: 'thing', c: c.id }, '', c.title, '这件事', '') + '</div></div>';
     }
   };
-  function draw() {
+  function draw(keep) {
+    var old = document.querySelector('.body'), top = keep && old ? old.scrollTop : 0;
     var g = stack[stack.length - 1], h = g ? PAGE[g.p](g) : PAGE[tab]();
     if (!g) { var n = dsl.cases.filter(function (c) { return status(c)[1] === 'you'; }).length; h += '<div class="tabs">' + TABS.map(function (t) { return '<button data-tab="' + t[0] + '" aria-current="' + (t[0] === tab) + '">' + t[2] + t[1] + (t[0] === 'things' && n ? '<em>' + n + '</em>' : '') + '</button>'; }).join('') + '</div>'; }
     document.getElementById('app').innerHTML = h;
+    var body = document.querySelector('.body'); if (body) body.scrollTop = g && (g.p === 'chat') && !keep ? 1e6 : top;
   }
   var DO = {
-    next: function (d) { var w = worlds[d.c], c = E.caseOf(w), k = c.steps[w.state.idx].kind, p = E.plan(w), ev; if (p && p.user) E.act(w, { bot: c.market[0] }); while ((ev = E.advance(w)) && ev.type !== 'submitted'); stamp(w); if (k === 'confirm' && !w.state.halt) note('user', '验收了这件事', c.id); },
+    accept: function (d) { var w = worlds[d.c]; E.act(w); stamp(w); note('user', '验收了这件事', d.c); },
+    retry: function (d) { var w = worlds[d.c], c = E.caseOf(w); E.act(w, { bot: c.market[0] }); stamp(w); },
     assign: function (d) { var c = dsl.cases.find(function (x) { return x.id === d.c; }); reassign(c, d.id); owners[c.id] = d.id; note('user', '把这件事交给了' + N(d.id), c.id); stack.pop(); },
     task: function (d) {
       var el = document.getElementById('task'), title = el.value.trim(); if (!title) { el.focus(); return; }
-      var x = { id: 't' + Date.now().toString(36), title: title }; custom.push(x); var c = makeCase(x.id, x.title); dsl.cases.push(c); boot(c, 9); reassign(c, d.id); owners[c.id] = d.id; note('user', '交给' + N(d.id) + '一件事', c.id); DO.next({ c: c.id });
+      var x = { id: 't' + Date.now().toString(36), title: title }; custom.push(x); var c = makeCase(x.id, x.title); dsl.cases.push(c); boot(c, 9); reassign(c, d.id); owners[c.id] = d.id; note('user', '交给' + N(d.id) + '一件事', c.id);
     },
     newthing: function () {
       var el = document.getElementById('nt'), title = el.value.trim(); if (!title) { el.focus(); return; }
@@ -257,8 +261,23 @@
     var d = e.target.dataset; if (!d.sw) return;
     if (d.sw === 'grant') { book.grants[d.id + '>' + d.b] = e.target.checked; notes.push({ ts: Date.now() + (tick++), who: d.id, text: (e.target.checked ? '被允许' : '不再被允许') + '主动联系' + N(d.b) }); }
     else { var o = book.comp[d.id] = book.comp[d.id] || {}; o[d.b] = e.target.checked; var lab = ALLOW.filter(function (x) { return x[0] === d.b; })[0]; notes.push({ ts: Date.now() + (tick++), who: d.id, text: (e.target.checked ? '被允许' : '不再被允许') + lab[1] }); }
+    dsl.cases.forEach(function (c) { var w = worlds[c.id]; if (w.state.halt && ownerOf(c)) { E.act(w, { bot: c.market[0] }); stamp(w); } });
     save(); draw();
   });
+  /* 员工自己干活：每隔一会儿，每件有负责人的事往前走一小步；轮到老板或卡住时停下 */
+  function tickOne(c) {
+    var w = worlds[c.id], s = w.state, p = E.plan(w);
+    if (!ownerOf(c) || !p || s.halt) return false;
+    if (p.user) { if (c.steps[s.idx].kind === 'confirm' && !s.cur.accepted) return false; E.act(w, { bot: c.market[0] }); }
+    else E.advance(w);
+    stamp(w); return true;
+  }
+  function step() {
+    var moved = false; dsl.cases.forEach(function (c) { if (tickOne(c)) moved = true; });
+    if (!moved) return;
+    save(); var a = document.activeElement; if (!(a && /INPUT|TEXTAREA/.test(a.tagName) && a.type !== 'checkbox')) draw(true);
+  }
+  var timer = setInterval(function () { if (!window.__matter.paused) step(); }, 1300);
   draw();
-  window.__matter = { worlds: worlds, owners: owners };
+  window.__matter = { worlds: worlds, owners: owners, paused: false, tick: step, settle: function (id) { var c = dsl.cases.find(function (x) { return x.id === id || x.title === id; }), n = 0; while (tickOne(c) && n++ < 200); save(); draw(true); } };
 })();
