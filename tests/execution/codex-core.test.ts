@@ -70,9 +70,11 @@ test("stock Native restart preserves a never-dispatched creation for its first i
     replacement = await startCodexCore(f.options);
     assert.notEqual((await f.control.health()).codexPid, oldNative);
     const b = await f.adapter(true); await b.rpc("browser", "initialize", initialization);
-    const restored = await b.rpc("browser", "thread/resume", { threadId: thread.id, excludeTurns: true });
+    // This isolated fixture has no online model catalog. Keep its explicitly
+    // selected synthetic-upstream model rather than relying on catalog defaults.
+    const restored = await b.rpc("browser", "thread/resume", { threadId: thread.id, excludeTurns: true, model: "gpt-5.3-codex" });
     assert.equal(restored.thread.id, thread.id);
-    const started = await b.rpc("browser", "turn/start", { threadId: thread.id, clientUserMessageId: "stock-first-after-restart",
+    const started = await b.rpc("browser", "turn/start", { threadId: thread.id, model: "gpt-5.3-codex", clientUserMessageId: "stock-first-after-restart",
       input: [{ type: "text", text: "synthetic first input" }] });
     assert.equal(typeof started.turn.id, "string");
     for (let n = 0; n < 500 && !b.frames.some(frame => frame.method === "turn/completed" && frame.params.turn.id === started.turn.id); n++) await delay(10);
