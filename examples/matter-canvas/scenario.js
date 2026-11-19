@@ -9,7 +9,7 @@ window.MATTER_DSL = {
   {"id":"market","name":"临时工市场","color":"#b58239"}
  ],
  "bots": [
-  {"id":"alan","name":"阿岚","team":"studio","skills":"盯交付、管交接","available":false,"devices":{"phone":true,"computer":{"work":true,"send":true,"hire":true,"review":""}}},
+  {"id":"alan","name":"阿岚","team":"studio","skills":"盯交付、管交接","duties":[{"name":"盯交付","text":"确认周五版本的签字和清单都齐"},{"name":"管交接","text":"把交付物交到验收人手里"}],"available":false,"devices":{"phone":true,"computer":{"work":true,"send":true,"hire":true,"review":""}}},
   {"id":"yan","name":"言禾","team":"studio","skills":"验收签字","available":false,"devices":{"phone":true,"computer":{"work":true,"send":true,"hire":true,"review":""}}},
   {"id":"yu","name":"余白","team":"studio","skills":"交付清单","available":false,"devices":{"phone":true,"computer":{"work":true,"send":true,"hire":true,"review":""}}},
   {"id":"su","name":"苏木","team":"studio","skills":"版本发布","available":false,"devices":{"phone":true,"computer":{"work":true,"send":true,"hire":true,"review":""}}},
@@ -17,7 +17,7 @@ window.MATTER_DSL = {
   {"id":"lu","name":"陆乔","team":"studio","skills":"需求归档","available":false,"devices":{"phone":true,"computer":{"work":true,"send":true,"hire":true,"review":""}}},
   {"id":"mu","name":"沐川","team":"studio","skills":"客户沟通","available":false,"devices":{"phone":true,"computer":{"work":true,"send":true,"hire":true,"review":""}}},
   {"id":"jing","name":"景行","team":"studio","skills":"合同核对","available":false,"devices":{"phone":true,"computer":{"work":true,"send":true,"hire":true,"review":""}}},
-  {"id":"xi","name":"小汐","team":"game","skills":"客户端实现","available":false,"devices":{"phone":true,"computer":{"work":true,"send":true,"hire":true,"review":""}}},
+  {"id":"xi","name":"小汐","team":"game","skills":"客户端实现","duties":[{"name":"写客户端","text":"把领奖按钮接上正式协议"},{"name":"盯联调","text":"复测通过再安排真机"}],"available":false,"devices":{"phone":true,"computer":{"work":true,"send":true,"hire":true,"review":""}}},
   {"id":"he","name":"何川","team":"game","skills":"领奖协议","available":false,"devices":{"phone":true,"computer":{"work":true,"send":true,"hire":true,"review":""}}},
   {"id":"mi","name":"米粒","team":"game","skills":"活动策划","available":false,"devices":{"phone":true,"computer":{"work":true,"send":true,"hire":true,"review":""}}},
   {"id":"ding","name":"丁一","team":"game","skills":"界面蓝图","available":false,"devices":{"phone":true,"computer":{"work":true,"send":true,"hire":true,"review":""}}},
@@ -25,7 +25,7 @@ window.MATTER_DSL = {
   {"id":"lei","name":"雷鸣","team":"game","skills":"引擎工具","available":false,"devices":{"phone":true,"computer":{"work":true,"send":true,"hire":true,"review":""}}},
   {"id":"tian","name":"田野","team":"game","skills":"活动文案","available":false,"devices":{"phone":true,"computer":{"work":true,"send":true,"hire":true,"review":""}}},
   {"id":"lin","name":"林夕","team":"game","skills":"玩家反馈","available":false,"devices":{"phone":true,"computer":{"work":true,"send":true,"hire":true,"review":""}}},
-  {"id":"tang","name":"阿棠","team":"show","skills":"现场统筹","available":false,"devices":{"phone":true,"computer":{"work":true,"send":true,"hire":true,"review":""}}},
+  {"id":"tang","name":"阿棠","team":"show","skills":"现场统筹","duties":[{"name":"管现场","text":"场地一变就重排人手"},{"name":"发通知","text":"把最新入场表发给两组"}],"available":false,"devices":{"phone":true,"computer":{"work":true,"send":true,"hire":true,"review":""}}},
   {"id":"shan","name":"山竹","team":"show","skills":"场馆排期","available":false,"devices":{"phone":true,"computer":{"work":true,"send":true,"hire":true,"review":""}}},
   {"id":"qi","name":"祁安","team":"show","skills":"志愿者排班","available":false,"devices":{"phone":true,"computer":{"work":true,"send":true,"hire":true,"review":""}}},
   {"id":"lan","name":"蓝桥","team":"show","skills":"设备协调","available":false,"devices":{"phone":true,"computer":{"work":true,"send":true,"hire":true,"review":""}}},
