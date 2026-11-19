@@ -64,10 +64,27 @@ window.Office = (function () {
       add(arcBox, new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(a, mid, b), 32, .045, 8), m).castShadow = false; part(arcBox, BALL, m, b.x, b.y, b.z, .1).castShadow = false; });
   }
   function dim() { Object.keys(pets).forEach(function (k) { var on = !selId || !pets[selId] || k === selId || selReach.indexOf(k) >= 0; pets[k].mats.forEach(function (m) { gsap.to(m, { opacity: on ? 1 : .28, duration: dur(.3) }); }); pets[k].el.classList.toggle('dim', !on); }); }
+  /* 视角：off 是镜头在自己平面里的偏移，zoom 是放大倍数。选人时镜头靠过去；手指拖动和双指缩放直接改它。画面始终按屏幕像素重画，所以放大不糊。 */
+  var view = { x: 0, y: 0, z: 0, zoom: 1 }, half = 4.7, resetBtn;
+  function applyView() { camera.position.set(CAM[0] + view.x, CAM[1] + view.y, CAM[2] + view.z); camera.zoom = view.zoom; camera.updateProjectionMatrix(); if (resetBtn) resetBtn.hidden = view.zoom < 1.05 && Math.hypot(view.x, view.y, view.z) < .3; }
   function aim() { var p = pets[selId], x = p ? (p.g.position.x - LOOK[0]) * .55 : 0, z = p ? p.g.position.z * .55 : 0;
-    gsap.to(camera.position, { x: CAM[0] + x, z: CAM[2] + z, duration: dur(.6), ease: 'power2.out', overwrite: true }); gsap.to(camera, { zoom: p ? 1.22 : 1, duration: dur(.6), ease: 'power2.out', overwrite: true, onUpdate: function () { camera.updateProjectionMatrix(); } }); }
+    gsap.to(view, { x: x, y: 0, z: z, zoom: p ? Math.max(view.zoom, 1.22) : 1, duration: dur(.6), ease: 'power2.out', overwrite: true, onUpdate: applyView }); }
+  function nudge(dx, dy, k) { /* 手指移动 dx,dy 像素；k 是缩放倍率 */
+    gsap.killTweensOf(view); var per = 2 * half / canvas.clientHeight / view.zoom, r = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion), u = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+    view.x += (-dx * r.x + dy * u.x) * per; view.y += (-dx * r.y + dy * u.y) * per; view.z += (-dx * r.z + dy * u.z) * per; var l = Math.hypot(view.x, view.y, view.z); if (l > 8) { view.x *= 8 / l; view.y *= 8 / l; view.z *= 8 / l; }
+    view.zoom = Math.max(.8, Math.min(5, view.zoom * k)); applyView(); }
+  function gestures() {
+    var pts = {}, moved = 0, last = null;
+    function mid() { var k = Object.keys(pts), a = pts[k[0]], b = pts[k[1]] || a; return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) }; }
+    canvas.addEventListener('pointerdown', function (e) { pts[e.pointerId] = { x: e.clientX, y: e.clientY }; if (Object.keys(pts).length === 1) moved = 0; last = mid(); try { canvas.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ } });
+    canvas.addEventListener('pointermove', function (e) { if (!pts[e.pointerId]) return; pts[e.pointerId] = { x: e.clientX, y: e.clientY }; var m = mid(), dx = m.x - last.x, dy = m.y - last.y; moved += Math.abs(dx) + Math.abs(dy); if (moved < 8) return; nudge(dx, dy, last.d > 20 && m.d > 20 ? m.d / last.d : 1); last = m; });
+    function up(e) { delete pts[e.pointerId]; if (Object.keys(pts).length) last = mid(); } canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+    canvas.addEventListener('wheel', function (e) { e.preventDefault(); if (e.ctrlKey || !e.shiftKey) nudge(0, 0, Math.exp(-e.deltaY * (e.ctrlKey ? .01 : .0015))); else nudge(-e.deltaY, 0, 1); }, { passive: false });
+    ['gesturestart', 'gesturechange'].forEach(function (n) { document.addEventListener(n, function (e) { e.preventDefault(); }); });
+    return function () { return moved >= 8; };
+  }
 
-  function resize() { var w = canvas.clientWidth, h = canvas.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); var a = w / h, s = Math.max(4.7, 8.2 / a); camera.left = -s * a; camera.right = s * a; camera.top = s; camera.bottom = -s; camera.updateProjectionMatrix(); }
+  function resize() { var w = canvas.clientWidth, h = canvas.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); var a = w / h, s = half = Math.max(4.7, 8.2 / a); camera.left = -s * a; camera.right = s * a; camera.top = s; camera.bottom = -s; camera.updateProjectionMatrix(); }
   var v;
   function frame() { requestAnimationFrame(frame); if (document.hidden) return; renderer.render(scene, camera); var w = canvas.clientWidth, h = canvas.clientHeight;
     Object.keys(pets).forEach(function (k) { var p = pets[k]; p.g.getWorldPosition(v); v.y += p.top * p.g.scale.y + .25; v.project(camera); p.el.style.left = (v.x * .5 + .5) * w + 'px'; p.el.style.top = (-v.y * .5 + .5) * h + 'px'; }); }
@@ -78,7 +95,7 @@ window.Office = (function () {
       if (!THREE || !gsap) return false; canvas = cv; labelBox = lb; onPick = pick;
       try { renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true }); } catch (e) { return false; }
       calm = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
-      renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.setPixelRatio(Math.min(3, window.devicePixelRatio || 1)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       BOX = soft(.3); CUBE = soft(.5); BALL = new THREE.SphereGeometry(1, 32, 24); v = new THREE.Vector3();
       scene = new THREE.Scene(); scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d0f0, .68));
       var sun = new THREE.DirectionalLight(0xffffff, .36); sun.position.set(4, 9, 6); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024); sun.shadow.radius = 5; sun.shadow.bias = -.0006; var sc = sun.shadow.camera; sc.left = -10; sc.right = 10; sc.top = 10; sc.bottom = -10; sc.near = .5; sc.far = 40; scene.add(sun);
@@ -87,8 +104,8 @@ window.Office = (function () {
       add(scene, new THREE.TorusGeometry(1.15, .11, 14, 40, Math.PI), clay(0xfbe39c), 4.75, 0, -1.6).rotation.y = Math.PI / 2;
       rel = new THREE.Group(); arcBox = new THREE.Group(); scene.add(rel); scene.add(arcBox); paint();
       if (window.matchMedia) { var mq = matchMedia('(prefers-color-scheme: dark)'); if (mq.addEventListener) mq.addEventListener('change', paint); }
-      var ray = new THREE.Raycaster();
-      canvas.addEventListener('click', function (e) { var r = canvas.getBoundingClientRect(); ray.setFromCamera({ x: (e.clientX - r.left) / r.width * 2 - 1, y: -(e.clientY - r.top) / r.height * 2 + 1 }, camera);
+      var ray = new THREE.Raycaster(), dragged = gestures(); resetBtn = document.getElementById('whole'); if (resetBtn) resetBtn.addEventListener('click', function () { gsap.to(view, { x: 0, y: 0, z: 0, zoom: 1, duration: dur(.5), ease: 'power2.out', overwrite: true, onUpdate: applyView }); });
+      canvas.addEventListener('click', function (e) { if (dragged()) return; var r = canvas.getBoundingClientRect(); ray.setFromCamera({ x: (e.clientX - r.left) / r.width * 2 - 1, y: -(e.clientY - r.top) / r.height * 2 + 1 }, camera);
         var hit = ray.intersectObjects(Object.keys(pets).map(function (k) { return pets[k].hit; }))[0]; onPick(hit ? hit.object.userData.id : null); });
       window.addEventListener('resize', resize); if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
       resize(); frame(); return true;
