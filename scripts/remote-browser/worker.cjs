@@ -450,7 +450,9 @@ async function command(message) {
     if (input.token !== null && (typeof input.token !== 'string' || !/^[a-zA-Z0-9-]{20,100}$/.test(input.token))) throw new Error('Invalid control token');
     await resetInput(p); p.clipboard.retire();
     // Restore temporary DOM writes before handing control to another viewer.
-    if (p.bridgeInstalled) await automation(p, 'annotateClearPreview');
+    // Internal cleanup uses the annotation adapter's document/lifecycle fences;
+    // external automation requires its own admitted control validation callback.
+    if (p.bridgeInstalled) await annotationAutomation(p, 'annotateClearPreview');
     checkDocument(); p.controlToken = input.token;
     wc.send('opencraft:annotation', { type: 'clear' }); return;
   }
