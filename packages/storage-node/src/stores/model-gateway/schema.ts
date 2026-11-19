@@ -1,17 +1,4 @@
-import {
-  sqliteTable,
-  text,
-  integer,
-  real,
-  blob,
-  numeric,
-  primaryKey,
-  unique,
-  index,
-  uniqueIndex,
-  foreignKey,
-  check,
-} from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, primaryKey, index, check } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 export const table_gateway_audit = sqliteTable(
   "gateway_audit",

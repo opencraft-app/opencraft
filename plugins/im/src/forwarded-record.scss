@@ -117,14 +117,12 @@
   &__text,
   &__legacy {
     @include typography.role(body);
-    font-weight: 400;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     margin: var(--spacing) 0 0;
   }
   &__legacy {
     font-family: inherit;
-    line-height: 1.7;
   }
   &__url {
     color: var(--color-text-secondary);

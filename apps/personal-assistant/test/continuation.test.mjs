@@ -7,7 +7,7 @@ import { createLocalDomain } from "../src/runtime/create-local-domain.mjs";
 import { LocalRunner } from "../src/runtime/local-runner.mjs";
 import { ReceptionCoordinator } from "../src/runtime/reception-coordinator.mjs";
 import { Runner, request } from "../src/runner.mjs";
-import { CompletionContract } from "../src/domain/completion-contract.mjs";
+
 import { DirectoryKnowledgeSource } from "../src/adapters/filesystem/knowledge-source.mjs";
 import { profileFor, until, completed, childRunner, files, nativeEntries, publishTestNote } from "./helpers.mjs";
 

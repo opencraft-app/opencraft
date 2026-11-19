@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { ChannelRuntime } from "./channel-runtime";
-import type { PersonalAssistantStatus, PersonalAssistantRuntimeState } from "@opencraft/appserver-protocol";
+import type { PersonalAssistantRuntimeState } from "@opencraft/appserver-protocol";
 import { useIntl } from "@opencraft/i18n/react";
 import { CompanionAvatar } from "@opencraft/design-system-web/companion-avatar";
 import type { CompanionActivity } from "@opencraft/design-system/companion-motion";

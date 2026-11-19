@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { sidebarToggleGlyphs } from "@opencraft/design-system/sidebar-toggle-glyphs";
-import { mkdir, writeFile } from "node:fs/promises";
+
+import { mkdir } from "node:fs/promises";
 import { createServer } from "vite";
 const playwright = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const browserName = process.env.OPENCRAFT_SMOKE_BROWSER ?? "chromium";

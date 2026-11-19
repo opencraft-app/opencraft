@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 
-function fixture({ scope = 'https://example.test/', failAsset = false, files = ['assets/a.js', 'opencraft-icon.svg', 'opencraft-offline.html'] } = {}) {
+function fixture({ timers: clock, navigation, scope = 'https://example.test/', failAsset = false, files = ['assets/a.js', 'opencraft-icon.svg', 'opencraft-offline.html'] } = {}) {
   const cachesByName = new Map(), handlers = new Map(), fetched = [];
   const timers = new Map();
   let timerId = 0, delayed = null;
@@ -17,6 +17,7 @@ function fixture({ scope = 'https://example.test/', failAsset = false, files = [
   const fetcher = async (request, options) => {
     const url = typeof request === 'string' ? request : request.url;
     fetched.push({ url, options });
+    if (navigation && !options?.credentials) return navigation(request, options);
     if (delayed && !options?.credentials) return delayed;
     if (!network || (failure && url.endsWith('a.js'))) throw new Error('offline');
     return new Response(url.endsWith('.html') ? '<html><head></head><body>Application shell</body></html>' : 'static', { status: responseStatus,
@@ -27,8 +28,8 @@ function fixture({ scope = 'https://example.test/', failAsset = false, files = [
   const source = readFileSync(new URL('../../apps/workbench-web/offline-shell-worker.js', import.meta.url), 'utf8')
     .replace('"__OPENCRAFT_BUILD__"', '"new"').replace('"__OPENCRAFT_FILES__"', JSON.stringify(files));
   runInNewContext(source, { self, caches: cacheApi, fetch: fetcher, URL, Response, Headers, Set, Promise, Error, AbortController,
-    setTimeout: (callback, ms) => { const id = ++timerId; if (ms === 500 || ms === 1000) { setTimeout(callback, 10); return id; } timers.set(id, { callback, ms }); return id; },
-    clearTimeout: id => timers.delete(id) });
+    setTimeout: (callback, ms) => { if (clock) return clock.set(callback); const id = ++timerId; if (ms === 500 || ms === 1000) { setTimeout(callback, 10); return id; } timers.set(id, { callback, ms }); return id; },
+    clearTimeout: id => clock ? clock.delete(id) : timers.delete(id) });
   const emit = async (type, event = {}) => {
     let pending; handlers.get(type)({ ...event, waitUntil: value => { pending = value; } }); await pending;
   };
@@ -99,7 +100,7 @@ test('reuse cannot cross deployment boundaries or turn an incomplete update into
 
 test('offline shell caches public build files and sanitized configuration; API/auth never receive navigation fallback', async () => {
   const f = fixture(); await f.emit('install');
-  assert.ok(f.fetched.every(row => row.options.credentials === 'same-origin' && row.options.redirect === 'error'));
+  assert.ok(f.fetched.every(row => row.options.credentials === 'omit' && row.options.redirect === 'error'));
   const ack = await f.configure({ deployment: { hosts: [{ hostId: 'host', label: 'Host', kind: 'durable', url: '/appserver', token: 'must-not-cache' }], builtinAgents: true, hypernode: false, credential: 'must-not-cache' } });
   assert.equal(ack.ok, true); f.offline();
   const response = await f.request('local/thread?hostId=host');
@@ -184,9 +185,9 @@ test('headers with stalled HTML body still fall back to the installed shell', as
 });
 
 
-test('background preparation uses authenticated low-priority HTTP-cache-aware requests', async () => {
+test('public shell preparation omits credentials and uses low-priority HTTP-cache-aware requests', async () => {
   const f = fixture(); await f.emit('install');
-  assert.ok(f.fetched.every(row => row.options.credentials === 'same-origin' && row.options.cache === 'default' && row.options.priority === 'low'));
+  assert.ok(f.fetched.every(row => row.options.credentials === 'omit' && row.options.cache === 'default' && row.options.priority === 'low'));
 });
 for (const status of [401, 403, 404]) test('permanent denial stops the entire install without per-file retry: ' + status, async () => {
   const f = fixture({ files: Array.from({ length: 50 }, (_, i) => 'assets/chunk-' + i + '.js') });

@@ -157,22 +157,22 @@ test("server rendering without browser globals does not invoke a client command"
   assert.equal(result.status, 0, result.stderr);
 });
 
-test("history backfill uses the updated committed loader without replacing its observer command", async t => {
+test("explicit history retry uses the updated committed loader without replacing its command", async t => {
   const view = fixture(t);
   const loads: number[] = [];
   const commands: Array<() => Promise<void>> = [];
   function Consumer({ version }: { version: number }) {
     const history = useTurnHistoryBackfill({
       historyKey: "same-conversation",
+      pagination: { hasOlder: true, cursor: "older", loading: false },
       loadPage: async () => { loads.push(version); return "stop"; },
       readMetrics: () => ({ viewportHeight: 500, contentHeight: 100, scrollTop: 0 }),
       afterLayout: async () => {},
     });
-    useLayoutEffect(() => { commands.push(history.request); });
+    useLayoutEffect(() => { commands.push(history.retry); });
     return null;
   }
   await view.render(<Consumer version={1} />);
-  await commands[0]();
   await view.render(<Consumer version={2} />);
   await commands[0]();
   assert.equal(commands[0], commands[1]);

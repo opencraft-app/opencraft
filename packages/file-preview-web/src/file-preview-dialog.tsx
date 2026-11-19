@@ -1,5 +1,5 @@
 import { PendingPreview } from "@opencraft/design-system-web/preview-activation";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense } from "react";
 export interface FilePreviewDialogProps {
   readonly resource: string;
   readonly name: string;

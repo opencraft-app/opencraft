@@ -56,8 +56,8 @@ test("ordinary chat remains a conversation and does not create a work item", asy
 
 test("reception delegates real local reading and final result returns to the original conversation once", async (t) => {
   const inputId = "x".repeat(160);
-  let profile = profileFor(t),
-    directory = join(profile.path, "materials");
+  let profile = profileFor(t);
+  const directory = join(profile.path, "materials");
   mkdirSync(directory);
   writeFileSync(join(directory, "project.md"), "项目事实：接待与执行分离。下周完成权限接口核对。");
   writeFileSync(join(profile.path, "profile.json"), JSON.stringify({ ...profile.config, workspace: directory }));

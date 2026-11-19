@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createLocalDomain } from "../src/runtime/create-local-domain.mjs";
-import { profileFor, running, until, completed } from "./helpers.mjs";
+import { profileFor, running, until } from "./helpers.mjs";
 import { ReceptionDecision } from "../src/domain/conversation.mjs";
 
 function domain(t) {
@@ -560,8 +560,8 @@ test("bounded goal queries page all plan members without leaking resource grants
     });
   d.app.reception.accept("pages", { text: "inspect goals" });
   const turn = d.app.reception.turn("pages");
-  let after,
-    ids = [];
+  let after;
+  const ids = [];
   do {
     const response = d.app.receptionQueries.open(turn).execute({
       kind: "query",

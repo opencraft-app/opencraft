@@ -29,15 +29,6 @@
       "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
     },
     {
-      "file": "apps/workbench-web/src/styles/app.scss",
-      "selector": "@media (max-width: 767px) and (any-pointer: coarse) :is(\n    input:not([type=\"checkbox\"]):not([type=\"radio\"]):not([type=\"range\"]),\n    select,\n    textarea:not(.xterm-helper-textarea),\n    [contenteditable=\"true\"]\n  )",
-      "property": "font-size",
-      "value": "max(var(--typography-mobile-input-size), 1rem)",
-      "owner": "Web mobile editor",
-      "reason": "Minimum 16 CSS px prevents touch input focus zoom; retain user rem size when larger.",
-      "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
-    },
-    {
       "file": "packages/chat-render-web/src/renderers/prose/prose.scss",
       "selector": ".opencraft-chat-document",
       "property": "font-size",
@@ -58,26 +49,8 @@
     {
       "file": "packages/design-system/src/typography-mixins.web.scss",
       "selector": "@mixin role($name, $tone: primary)",
-      "property": "font-size",
-      "value": "var(--typography-#{$name}-size)",
-      "owner": "design-system adapter",
-      "reason": "The sole SCSS projection interpolates validated registry role names; feature consumers cannot use this exception.",
-      "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
-    },
-    {
-      "file": "packages/design-system/src/typography-mixins.web.scss",
-      "selector": "@mixin role($name, $tone: primary)",
       "property": "font-weight",
       "value": "var(--typography-#{$name}-weight)",
-      "owner": "design-system adapter",
-      "reason": "The sole SCSS projection interpolates validated registry role names; feature consumers cannot use this exception.",
-      "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
-    },
-    {
-      "file": "packages/design-system/src/typography-mixins.web.scss",
-      "selector": "@mixin role($name, $tone: primary)",
-      "property": "line-height",
-      "value": "var(--typography-#{$name}-line-height)",
       "owner": "design-system adapter",
       "reason": "The sole SCSS projection interpolates validated registry role names; feature consumers cannot use this exception.",
       "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
@@ -108,6 +81,78 @@
       "owner": "chat document",
       "reason": "Document line height follows scoped user reading size plus the registered chat leading; inherited root calculations cannot preserve scoped preferences.",
       "reviewWhen": "When reading preference projection or prose ownership changes; remove stale entries automatically."
+    },
+    {
+      "file": "packages/design-system/src/typography-mixins.web.scss",
+      "selector": "@mixin role($name, $tone: primary) @if list.index(generated.$typography-editable-role-names, $name) != null",
+      "property": "font-size",
+      "value": "var(--typography-#{$name}-editable-size)",
+      "owner": "design-system adapter",
+      "reason": "The sole SCSS projection interpolates validated registry role names; feature consumers cannot use this exception.",
+      "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
+    },
+    {
+      "file": "packages/design-system/src/typography-mixins.web.scss",
+      "selector": "@mixin role($name, $tone: primary) @else",
+      "property": "font-size",
+      "value": "var(--typography-#{$name}-size)",
+      "owner": "design-system adapter",
+      "reason": "The sole SCSS projection interpolates validated registry role names; feature consumers cannot use this exception.",
+      "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
+    },
+    {
+      "file": "packages/design-system/src/typography-mixins.web.scss",
+      "selector": "@mixin role($name, $tone: primary) @if list.index(generated.$typography-editable-role-names, $name) != null",
+      "property": "line-height",
+      "value": "var(--typography-#{$name}-editable-line-height)",
+      "owner": "design-system adapter",
+      "reason": "The sole SCSS projection interpolates validated registry role names; feature consumers cannot use this exception.",
+      "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
+    },
+    {
+      "file": "packages/design-system/src/typography-mixins.web.scss",
+      "selector": "@mixin role($name, $tone: primary) @else",
+      "property": "line-height",
+      "value": "var(--typography-#{$name}-line-height)",
+      "owner": "design-system adapter",
+      "reason": "The sole SCSS projection interpolates validated registry role names; feature consumers cannot use this exception.",
+      "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
+    },
+    {
+      "file": "apps/workbench-web/src/styles/app.scss",
+      "selector": "@media (max-width: 767px) and (any-pointer: coarse) :where(\n    input:not([type=\"checkbox\"]):not([type=\"radio\"]):not([type=\"range\"]),\n    select,\n    textarea:not(.xterm-helper-textarea),\n    [contenteditable=\"true\"]\n  )",
+      "property": "font-size",
+      "value": "max(1em, var(--size-editable-font-min))",
+      "owner": "Web mobile editor",
+      "reason": "Platform editing minimum composes inherited readable text with the design-system touch-input minimum; neither browser zoom nor larger inherited text may be reduced.",
+      "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
+    },
+    {
+      "file": "apps/workbench-web/src/styles/app.scss",
+      "selector": "@media (max-width: 767px) and (any-pointer: coarse) :where(\n    input:not([type=\"checkbox\"]):not([type=\"radio\"]):not([type=\"range\"]),\n    select,\n    textarea:not(.xterm-helper-textarea),\n    [contenteditable=\"true\"]\n  )",
+      "property": "line-height",
+      "value": "max(1.2em, var(--height-editable-line-min))",
+      "owner": "Web mobile editor",
+      "reason": "Platform editing minimum composes inherited readable text with the design-system touch-input minimum; neither browser zoom nor larger inherited text may be reduced.",
+      "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
+    },
+    {
+      "file": "plugins/im/src/channel-chat.scss",
+      "selector": ".im-member-grid__tile > .im-channel-chat__person",
+      "property": "font-size",
+      "value": "calc(var(--size-token-member-tile) * .38)",
+      "owner": "IM companion avatar glyph",
+      "reason": "The single initial is an avatar glyph fitted to its token-owned tile, not UI reading copy or a typography scale.",
+      "reviewWhen": "When companion avatar rendering moves to its shared glyph owner or member tile geometry changes."
+    },
+    {
+      "file": "plugins/im/src/channel-chat.scss",
+      "selector": ".im-channel-chat__group-avatar > .im-channel-chat__person, > .ui-companion-avatar",
+      "property": "font-size",
+      "value": ".6em",
+      "owner": "IM companion avatar glyph",
+      "reason": "A group mosaic scales each single-initial avatar glyph within its parent avatar; this is image geometry, not UI reading text.",
+      "reviewWhen": "When group mosaics use the shared companion avatar glyph projection."
     }
   ]
 }

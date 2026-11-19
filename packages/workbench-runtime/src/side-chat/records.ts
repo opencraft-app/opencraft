@@ -1,4 +1,4 @@
-import { createConversationKey, equalConversationKey, type ConversationKey } from "@opencraft/chat-core";
+import { createConversationKey, equalConversationKey, type ConversationKey } from "@opencraft/chat-core/identity";
 
 export interface SideChatRecord {
   readonly id: string;

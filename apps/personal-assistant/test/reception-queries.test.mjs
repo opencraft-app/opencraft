@@ -8,7 +8,7 @@ import { DirectoryKnowledgeSource } from "../src/adapters/filesystem/knowledge-s
 import { SqliteReceptionReadModel } from "../src/adapters/sqlite/reception-read-model.mjs";
 import { ReceptionPlanner } from "../src/application/reception/planner.mjs";
 import { ReceptionQueries } from "../src/application/reception/query-service.mjs";
-import { ReceptionQuery, RECEPTION_LIMITS } from "../src/domain/reception-query.mjs";
+import { ReceptionQuery } from "../src/domain/reception-query.mjs";
 import { ReceptionDecision } from "../src/domain/conversation.mjs";
 import { digest } from "../src/domain/values.mjs";
 import { Runner, request } from "../src/runner.mjs";

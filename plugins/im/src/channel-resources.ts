@@ -116,8 +116,8 @@ export function createChannelResources({
       signal.throwIfAborted();
       const r = resource(t);
       return new Promise((resolve, reject) => {
-        let release: (() => void) | undefined,
-          settled = false;
+        let release: (() => void) | undefined;
+        let settled = false;
         const finish = (error?: unknown, value?: ChannelResourceValue) => {
           if (settled) return;
           settled = true;
@@ -162,7 +162,6 @@ export function useChannelResource(
   active: boolean,
 ): ChannelResourceSnapshot {
   const key = target && channelTargetKey(target);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- key includes all target fields.
   const resource = useMemo(() => (target ? resources.resource(target) : null), [resources, key]);
   const subscribe = useCallback(
     (fn: () => void) => (active && resource ? resources.subscribe(resource, fn) : () => {}),

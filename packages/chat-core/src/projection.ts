@@ -255,13 +255,19 @@ function projectTurnFrames(
     // Compatibility Items are lowered once here, not allowed to participate
     // in transcript topology. Empty native aggregates recover from durable patches;
     // an explicit Turn value still suppresses stale compatibility Items.
-    const legacyDiff = turn.items.filter(item => item.type === "turnDiff").at(-1);
+    const nativeSummary = createTurnChangeSummary(turn.id, turn.status, turn.unifiedDiff ?? null);
+    const legacyDiff = nativeSummary === null && turn.unifiedDiff === undefined
+      ? turn.items.filter(item => item.type === "turnDiff").at(-1) : undefined;
     const legacyBlock = legacyDiff === undefined ? null
       : registry.project(legacyDiff, { turn, itemIndex: turn.items.indexOf(legacyDiff) }).block;
-    const changeSummary = createTurnChangeSummary(turn.id, turn.status, turn.unifiedDiff ?? null)
-      ?? (turn.unifiedDiff === undefined && legacyBlock?.type === "turn-diff"
+    // Native aggregate updates never reparse patch bodies. Durable hunk content
+    // outranks compatibility Items; metadata-only patches may still use them.
+    const recoveredSummary = nativeSummary === null ? recoverTurnChangeSummary(turn) : null;
+    const durablePatchContent = recoveredSummary?.unifiedDiff.split("\n").some(line => line.startsWith("@@ ")) ?? false;
+    const changeSummary = nativeSummary
+      ?? (turn.unifiedDiff === undefined && !durablePatchContent && legacyBlock?.type === "turn-diff"
         ? { ...legacyBlock, id: `${turn.id}:turn-diff`, sourceItemIds: [] } : null)
-      ?? recoverTurnChangeSummary(turn);
+      ?? recoveredSummary;
     const initialFrameCount = frames.length;
     let pendingLane: TimelineLane | null = null;
     let pendingBlocks: TimelineBlock[] = [];

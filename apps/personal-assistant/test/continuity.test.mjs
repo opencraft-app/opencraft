@@ -11,7 +11,7 @@ import { LocalRunner } from "../src/runtime/local-runner.mjs";
 import { ReceptionDecision } from "../src/domain/conversation.mjs";
 import { profileFor, root, until, completed } from "./helpers.mjs";
 import { request } from "../src/adapters/local/unix-socket.mjs";
-import { execFileSync } from "node:child_process";
+
 const ms = Date.parse;
 const calendar = (extra = {}) => ({
   kind: "calendar",

@@ -348,8 +348,8 @@ try {
   await page.addInitScript(() => {
     window.flashFrames = [];
     window.flashSampling = true;
-    let nodes = new WeakMap(),
-      seq = 0;
+    const nodes = new WeakMap();
+    let seq = 0;
     const id = (n) => {
       if (!n) return null;
       if (!nodes.has(n)) nodes.set(n, ++seq);

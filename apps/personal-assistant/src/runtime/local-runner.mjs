@@ -1,4 +1,3 @@
-import { LocalAttachmentStore } from "../adapters/filesystem/attachment-store.mjs";
 import { withRequestDeadline } from "../adapters/local/request-deadline.mjs";
 import { BotAuthority } from "./bot-authority.mjs";
 import { PlatformChannels } from "../application/platform-channels.mjs";

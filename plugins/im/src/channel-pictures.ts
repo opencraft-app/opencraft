@@ -145,7 +145,6 @@ export function useChannelPicture(
   nearViewport: boolean,
 ): ChannelPictureSnapshot {
   const key = target && channelTargetKey(target);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- the key fully identifies target.
   const resource = useMemo(() => (target ? pictures.resource(target) : null), [pictures, key]);
   const cachedReady = resource !== null && pictures.getSnapshot(resource).status === "ready";
   const active = resource !== null && (nearViewport || cachedReady);

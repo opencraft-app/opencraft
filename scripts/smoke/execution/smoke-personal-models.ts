@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { createServer } from "vite";
 import { ModelGatewayStore, modelGatewayHttp } from "../../../packages/account-pool-host/src/index";
 import { gatewayContributions } from "../../../apps/local-agent-host/src/model-config/gateway-contributions";

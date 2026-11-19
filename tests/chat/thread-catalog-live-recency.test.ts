@@ -7,10 +7,7 @@ import type { Thread, ThreadListResponse } from "@opencraft/appserver-protocol/g
 import { projectAppServerThread } from "@opencraft/workbench-runtime";
 import { threadServerOrigin } from "@opencraft/workbench-runtime";
 import { bindThreadCatalogNotifications } from "../../apps/workbench-web/src/runtime/thread-catalog-notifications";
-import {
-  ThreadCatalogUpdates,
-  threadCatalogUpdates,
-} from "../../apps/workbench-web/src/runtime/thread-catalog-updates";
+import { threadCatalogUpdates } from "../../apps/workbench-web/src/runtime/thread-catalog-updates";
 import { turnStartedRecency } from "../../apps/workbench-web/src/runtime/thread-catalog-recency";
 import { groupThreadsByTaskFlow, sidebarActivityDateHeadings } from "../../apps/workbench-web/src/sidebar-activity";
 

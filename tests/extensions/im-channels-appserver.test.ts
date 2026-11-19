@@ -8,12 +8,7 @@ import test from "node:test";
 import WebSocket from "ws";
 import { AppHostServer } from "@opencraft/app-host-server";
 import { JsonRpcAppServerClient } from "@opencraft/appserver-client";
-import {
-  CHANNELS_CHANGED,
-  CHANNELS_EXTENSION,
-  CHANNELS_HOST_ID,
-  type ChannelsMethodMap,
-} from "@opencraft/appserver-protocol";
+import { CHANNELS_CHANGED, CHANNELS_EXTENSION, CHANNELS_HOST_ID } from "@opencraft/appserver-protocol";
 import { ActorAccess } from "../../packages/access-control/src/actor-access";
 import { ActorStore } from "../../packages/access-control/src/actors";
 import {
@@ -25,7 +20,7 @@ import {
 import { parsePrincipal } from "../../packages/identity-core/src/index";
 import { connectWebSocketAppHost } from "../../apps/workbench-web/src/runtime/websocket-app-host";
 import { createWorkbenchWebServer } from "../../scripts/serve-workbench-web.mjs";
-import { ImChannelService } from "../../scripts/im-channel-service.mjs";
+
 import { ImChannelsAppServer } from "../../scripts/im-channels-appserver.mjs";
 
 test(

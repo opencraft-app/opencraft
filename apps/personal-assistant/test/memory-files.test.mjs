@@ -8,8 +8,8 @@ import { promisify } from "node:util";
 import { Store } from "../src/store.mjs";
 import { MemoryFileTransaction } from "../src/adapters/memory/file-transaction.mjs";
 import { MemoryFileStore } from "../src/adapters/memory/file-store.mjs";
-import { profileFor, root, running, until, childRunner } from "./helpers.mjs";
-import { initProfile } from "../src/profile.mjs";
+import { profileFor, root, running } from "./helpers.mjs";
+
 const execute = promisify(execFile);
 
 test("new shard metadata is initialized under the existing root write lock", (t) => {

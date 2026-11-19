@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createServer } from "vite";
-import { chromium, type Page, type BrowserContext } from "playwright";
+import { chromium, type Page } from "playwright";
 import { navigationLifecycleFixture } from "../fixtures/navigation-lifecycle";
 
 // Actual Shell, Router, IM renderer and shared route-family retention. Only the

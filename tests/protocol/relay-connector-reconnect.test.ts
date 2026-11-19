@@ -3,21 +3,16 @@ import test from "node:test";
 import { createServer, request, type Server, type IncomingHttpHeaders } from "node:http";
 import { createServer as createTcpServer, type AddressInfo, type Socket } from "node:net";
 import { once } from "node:events";
-import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import WebSocket, { WebSocketServer } from "ws";
 import { connectRelay } from "../../plugins/relay-connect/src/server.js";
-import { createRelayServer } from "../../apps/relay-server/src/server.js";
-import { AssertionSigner } from "../../packages/identity-core/src/node.js";
+
 import {
   CONTROL_PATH,
-  DATA_PATH,
   STREAM_HEADER,
-  RELAY_PROTOCOL,
   DRAIN_HEADER,
   DRAIN_CAPABILITY,
 } from "../../packages/relay-protocol/src/index.js";
-import { relayDuplex, bridgeRelayDuplex } from "../../packages/relay-protocol/src/node.js";
-import { createConnection } from "node:net";
 
 const token = () => randomBytes(32).toString("base64url");
 const port = (server: Server | ReturnType<typeof createTcpServer>) => (server.address() as AddressInfo).port;

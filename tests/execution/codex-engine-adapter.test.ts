@@ -1093,7 +1093,7 @@ test("Host-owned Codex queue admits a second steer before the first appears in h
 test("ambiguous admission blocks only its live attempt; terminal receipt releases later input without replay", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-codex-host-unknown-"));
   const frames: Array<Record<string, unknown>> = [];
-  const adapter = createRoutingAdapter(root, frames, 0, lateReceipt ? "defer-history" : "ambiguous");
+  const adapter = createRoutingAdapter(root, frames, 0, "ambiguous");
   const request = async (id: string, method: string, params: Record<string, unknown>) => {
     await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "client-a" }));
     return waitFor(frames, frame => frame.id === id);
@@ -1117,7 +1117,8 @@ test("ambiguous admission blocks only its live attempt; terminal receipt release
     const blocked = await request("blocked", "thread/queue/steer", {
       threadId: "fixture-thread-1", queuedSubmissionId: (next.result as any).queuedSubmission.id, expectedTurnId: targetTurnId,
     });
-    assert.match((blocked.error as any).message, /Earlier delivery is unconfirmed/);
+    assert.equal((blocked.error as {code:number}).code, -32600);
+    assert.match((blocked.error as {message:string}).message, /delivery is .*unconfirmed/);
     const stillQueued = await request("still-queued", "thread/queue/list", { threadId: "fixture-thread-1" });
     assert.equal((stillQueued.result as any).data[0].clientUserMessageId, "next-1");
     await request("complete", "test/completeTurn", { threadId: "fixture-thread-1" });

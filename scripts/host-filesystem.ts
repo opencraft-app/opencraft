@@ -234,8 +234,8 @@ export async function startHostFileSystem(options: FileSystemEndpoint & { concur
     const key = await realpath(path).catch(async (error) => {
       if (error.code !== "ENOENT") throw error;
       // Resolve the deepest existing ancestor, preserving paths created recursively.
-      let ancestor = resolve(path),
-        suffix: string[] = [];
+      let ancestor = resolve(path);
+      const suffix: string[] = [];
       for (;;) {
         try {
           return resolve(await realpath(ancestor), ...suffix);

@@ -12,15 +12,15 @@ const logger = {
   warn: (m) => console.error(m),
   error: (m) => console.error(m),
 };
-let opts,
-  store,
-  embedding,
-  cfg,
-  l1,
-  l2,
-  l3,
-  cursor = 0,
-  scopes = new Set();
+let opts;
+let store;
+let embedding;
+let cfg;
+let l1;
+let l2;
+let l3;
+const cursor = 0;
+const scopes = new Set();
 async function init(r) {
   opts = r;
   await mkdir(r.directory, { recursive: true });

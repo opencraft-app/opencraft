@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { Store } from "../src/store.mjs";
 import { Runner } from "../src/runner.mjs";
 import { loadProfile } from "../src/profile.mjs";
-import { profileFor, running, until, completed, publishTestNote } from "./helpers.mjs";
+import { profileFor, running, until, completed } from "./helpers.mjs";
 
 const add = (app, notify = "always", id = "rule") =>
   app.triggers.add(id, {

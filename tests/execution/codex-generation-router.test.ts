@@ -481,7 +481,7 @@ test("a held retained directory cannot block fresh active rows or erase its prio
   } finally { await f.close(); }
 });
 
-test("a retained directory taking longer than two seconds remains in the complete view", async () => {
+test("a retained directory exceeding the bounded read returns partial coverage and recovers on a fresh view", async () => {
   const f = await fixture();
   try {
     const old = (await f.rpc("thread/start")).thread;
@@ -493,9 +493,12 @@ test("a retained directory taking longer than two seconds remains in the complet
     await new Promise(resolve => setTimeout(resolve, 2200));
     held.release();
     const page = await listing;
-    assert.equal(page.catalog, undefined);
-    assert.deepEqual(page.data.map((row: any) => row.id), [fresh.id, old.id]);
+    assert.deepEqual(page.catalog, { state: "error", coverage: "partial" });
+    assert.deepEqual(page.data.map((row: { id: string }) => row.id), [fresh.id]);
     assert.equal(page.nextCursor, null);
+    const recovered = await f.rpc("thread/list", { limit: 10 });
+    assert.equal(recovered.catalog, undefined);
+    assert.deepEqual(recovered.data.map((row: { id: string }) => row.id), [fresh.id, old.id]);
   } finally { await f.close(); }
 });
 

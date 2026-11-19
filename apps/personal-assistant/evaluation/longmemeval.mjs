@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { open, readFile, mkdir, appendFile, writeFile } from "node:fs/promises";
+import { open, mkdir, appendFile, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { resolve, join } from "node:path";
 import { fork } from "node:child_process";

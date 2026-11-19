@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir, readdir, appendFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
-import { createHash } from "node:crypto";
+
 import { execFileSync } from "node:child_process";
 import {
   parseCsv,

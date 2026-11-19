@@ -100,8 +100,8 @@ test("open pagination/search and closed history are explicit, bounded, and do no
   }).workId;
   const turn = accept(app, "list");
   assert.equal(app.reception.context(turn).workOverview.attentionTruncated, true);
-  let after,
-    ids = [];
+  let after;
+  const ids = [];
   do {
     const response = read(app, turn, "works.list", {
       state: "open",

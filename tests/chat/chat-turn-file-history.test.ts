@@ -113,6 +113,17 @@ test("live aggregate wins once; null/empty history recovers but never resurrects
   assert.equal(summaries(turn(items.slice(1), { unifiedDiff: null })).length, 0);
 });
 
+test("durable patch content wins over a complete but stale compatibility aggregate", () => {
+  const source = turn([
+    patch("persisted", [change("actual.ts", "update", hunk)]),
+    { id: "stale", type: "turnDiff", payload: { diff: "diff --git a/other.ts b/other.ts\n@@ -1 +1 @@\n-old\n+stale" } },
+  ]);
+  assert.deepEqual(
+    summaries(source)[0]!.files.map((file) => file.path),
+    ["/work/actual.ts"],
+  );
+});
+
 test("two independent tabs and a fresh projector rebuild identical 14-file history without an aggregate", () => {
   const source = turn([
     patch(

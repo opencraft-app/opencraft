@@ -173,7 +173,8 @@ test(
     }[] = [];
     const monitor = await RelayRedis.connect(configuration);
     let connector: ReturnType<typeof connectRelay> | undefined;
-    let peer: HubNetwork | undefined, peerServer: Server | undefined;
+    let peer: HubNetwork | undefined;
+    let peerServer: Server | undefined;
     const loadBalancer = createServer();
     let cursor = 0;
     const drainingReplicas = new Set<string>();

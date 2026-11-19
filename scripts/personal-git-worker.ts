@@ -8,7 +8,6 @@ import { parentPort, workerData } from "node:worker_threads";
 import { DatabaseSync } from "node:sqlite";
 import { createMemoryGitAuthenticator, createMemoryGitSigner } from "./git-identity-signer.js";
 import type { GitVaultCredential } from "./employee-git-vault-store.js";
-import type { PersonalGitScope } from "./personal-git.js";
 
 const { directory, privateDirectory, hosts } = workerData as {
   directory: string;

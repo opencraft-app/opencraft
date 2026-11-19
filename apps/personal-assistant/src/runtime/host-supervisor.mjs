@@ -38,12 +38,12 @@ export async function createPersonalAssistantHost({
 }) {
   const root = privateDirectory(await realpath(directory)),
     entries = new Map();
-  let stopping = false,
-    busy,
-    release,
-    detach,
-    timer,
-    closing;
+  let stopping = false;
+  let busy;
+  let release;
+  let detach;
+  let timer;
+  let closing;
   const providersFor = async (context) => ({
     ...environmentProviders,
     ...((await environmentProvidersFor?.(context)) ?? {}),

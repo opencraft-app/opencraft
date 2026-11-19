@@ -1,17 +1,4 @@
-import {
-  sqliteTable,
-  text,
-  integer,
-  real,
-  blob,
-  numeric,
-  primaryKey,
-  unique,
-  index,
-  uniqueIndex,
-  foreignKey,
-  check,
-} from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, primaryKey, unique, index, foreignKey } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 export const table_artifact_ingestions = sqliteTable(
   "artifact_ingestions",

@@ -62,7 +62,10 @@ function HookStatsDetails({ stats }: { readonly stats: HookStats }) {
               <span>
                 {formatHookSource(run.source)}
                 {run.count > 1
-                  ? intl.formatMessage({ id: "chat.hookStats.runs", defaultMessage: " · {count} runs" }, { count: String(run.count) })
+                  ? intl.formatMessage(
+                      { id: "chat.hookStats.runs", defaultMessage: " · {count} runs" },
+                      { count: String(run.count) },
+                    )
                   : ""}
               </span>
               {run.statusMessage === null ? null : <span>{run.statusMessage}</span>}

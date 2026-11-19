@@ -1,5 +1,5 @@
 import { createMemoryBrowserView } from "./memory-browser-view.mjs";
-import { memoryView, projectGrantId } from "../domain/memory-spaces.mjs";
+
 import { memoryKey, memoryKind, recallOptions, memoryDocument } from "../domain/memory-recall.mjs";
 import {
   MemorySynthesisPolicy,

@@ -3,7 +3,7 @@ import { getChannelRuntime, type ChannelRuntime, type ChannelRead, type ChannelR
 import { combineAbortSignals } from "@opencraft/appserver-client/transport";
 import { AssistantMemory } from "./assistant-memory";
 import { AssistantThreadSettings } from "./assistant-thread-settings";
-import { PeopleIcon, AgentIcon, SettingsGearIcon } from "@opencraft/design-system-web/action-icons";
+import { AgentIcon, SettingsGearIcon } from "@opencraft/design-system-web/action-icons";
 import { useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type {
   ChannelPerson,

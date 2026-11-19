@@ -1,5 +1,5 @@
 import { readFile, writeFile, mkdir, rename, stat, chmod, chown } from "node:fs/promises";
-import { resolve, dirname, isAbsolute } from "node:path";
+import { resolve, isAbsolute } from "node:path";
 import { spawnSync } from "node:child_process";
 import { isDeepStrictEqual } from "node:util";
 import { createHash } from "node:crypto";

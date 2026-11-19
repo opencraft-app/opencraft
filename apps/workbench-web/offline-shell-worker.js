@@ -15,9 +15,6 @@ const configurationUrl = url("opencraft-offline-configuration");
 const installationUrl = url("opencraft-offline-installation");
 const installationState = value => new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
 
-const installationUrl = url("opencraft-offline-installation");
-const installationState = value => new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
-
 // Cache.put is atomic but cannot itself be cancelled. Fence the install result
 // even if a browser cache write fails to settle after its response is aborted.
 async function withResourceDeadline(work, active) {

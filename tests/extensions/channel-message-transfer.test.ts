@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   forwardChannelMessage,
-  messageFile,
   canForwardMessage,
   copyChannelImage,
 } from "../../plugins/im/src/channel-message-transfer";

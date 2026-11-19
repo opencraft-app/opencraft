@@ -2,7 +2,7 @@ import { provisionBotProfile } from "../src/adapters/local/bot-profile.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { mkdtempSync, existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,7 +10,7 @@ import { LocalRunner } from "../src/runtime/local-runner.mjs";
 import { initProfile, loadProfile } from "../src/adapters/local/profile.mjs";
 import { request } from "../src/adapters/local/unix-socket.mjs";
 import { Store } from "../src/store.mjs";
-import { completed, until, childRunner, root } from "./helpers.mjs";
+import { completed, until, childRunner } from "./helpers.mjs";
 const binary =
   process.env.SUPERAPP_TEST_CODEX_BINARY ??
   "/opt/opencraft/runtime/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex";
@@ -293,10 +293,10 @@ test(
       ),
     );
     let p = profile(server.config, {
-        harnesses: { assistant: "pi", execution: "pi", codex: server.config },
-      }),
-      store = new Store(p),
-      runner;
+      harnesses: { assistant: "pi", execution: "pi", codex: server.config },
+    });
+    const store = new Store(p);
+    let runner;
     const old = store.submit("old", { text: "old Pi note" }).workId;
     store.close();
     p.config.harnesses.execution = "codex";

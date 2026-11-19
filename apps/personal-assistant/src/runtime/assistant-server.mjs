@@ -2,10 +2,10 @@ import { createStdioPeer } from "../adapters/local/stdio-peer.mjs";
 import { createAssistantSession } from "./assistant-session.mjs";
 /** stdout is protocol-only; diagnostics use stderr. EOF retires this runtime. */
 export function serveAssistant() {
-  let session,
-    closing,
-    timer,
-    accepting = true;
+  let session;
+  let closing;
+  let timer;
+  let accepting = true;
   const done = () => {
     clearTimeout(timer);
     peer.close();

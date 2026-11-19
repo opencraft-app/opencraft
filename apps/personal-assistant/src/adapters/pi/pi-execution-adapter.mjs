@@ -3,7 +3,7 @@ import { workInstruction } from "../work-tools/instruction.mjs";
 import { RunPolicy } from "../../domain/run-policy.mjs";
 import { PiRunGuard } from "./run-guard.mjs";
 import { readNativeUsage } from "./native-usage.mjs";
-import { join } from "node:path";
+
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import {
   hook,

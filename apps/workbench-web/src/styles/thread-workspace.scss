@@ -1,3 +1,4 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
 @use '@opencraft/design-system/material.web' as material;
 @use "@opencraft/design-system/interaction-mixins.web" as controls;
 
@@ -310,7 +311,7 @@ html:root[data-ui-density="touch"] {
   :is(.side-chat-header__copy, .app-shell-header[data-app-shell-conversation-header="true"] .thread-header-copy) {
     strong {
       display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-      font-size: 17px; line-height: 22px; font-weight: 600; color: var(--color-text);
+      @include typography.role(navigation-title);
     }
     small {
       display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -357,7 +358,6 @@ html:root[data-ui-density="touch"] {
     background: color-mix(in srgb, var(--color-accent-blue) 14%, transparent);
     color: var(--color-text-accent, var(--color-accent-blue));
     font: var(--typography-metadata-font);
-    font-weight: 600;
     letter-spacing: var(--typography-metadata-tracking);
     white-space: nowrap;
   }

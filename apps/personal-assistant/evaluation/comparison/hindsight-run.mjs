@@ -1,16 +1,8 @@
 import { readFile, writeFile, mkdir, readdir, appendFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
-import { createHash } from "node:crypto";
+
 import { execFileSync } from "node:child_process";
-import {
-  parseCsv,
-  parseContexts,
-  validateQuestions,
-  selectQuestions,
-  projectGroup,
-  scoreOption,
-  hash,
-} from "../personamem-data.mjs";
+import { parseContexts, projectGroup, scoreOption, hash } from "../personamem-data.mjs";
 import { runMemoryGroup } from "../memory-system.mjs";
 import { foreignSession } from "./foreign-session.mjs";
 import { service } from "./processes.mjs";

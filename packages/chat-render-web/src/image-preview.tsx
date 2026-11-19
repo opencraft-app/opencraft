@@ -1,5 +1,5 @@
 import { PendingPreview } from "@opencraft/design-system-web/preview-activation";
-import { lazy, Suspense, useEffect, type ReactNode } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 
 /** Display-only resources. Their caller retains authorization and URL lifetime. */
 export interface ImagePreviewMedia {

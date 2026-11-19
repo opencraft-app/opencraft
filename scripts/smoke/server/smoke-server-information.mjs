@@ -11,12 +11,12 @@ import { ServerInformationStore, serverInformationHttp } from "../../server-info
 const directory = await mkdtemp(join(tmpdir(), "server-information-browser-"));
 const artifacts = process.env.OPENCRAFT_SERVER_INFORMATION_ARTIFACTS ?? join(directory, "screenshots");
 await mkdir(artifacts, { recursive: true });
-let store,
-  actorId = "fixture-admin",
-  administrator = true,
-  expired = false,
-  failRead = false,
-  delayRead = 0;
+let store;
+const actorId = "fixture-admin";
+let administrator = true;
+let expired = false;
+let failRead = false;
+const delayRead = 0;
 let publicOrigin;
 const server = await createServer({
   configFile: false,

@@ -1,7 +1,6 @@
 import type { AppServerClientRequestOptions } from "@opencraft/appserver-client";
 import { AttachmentChunkDeadline, combineAbortSignals } from "@opencraft/appserver-client/transport";
 import type {
-  ChannelHistoryPage,
   ChannelMessage,
   ChannelSyncPage,
   ChannelsMethodMap,

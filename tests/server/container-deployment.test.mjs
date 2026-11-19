@@ -92,6 +92,7 @@ test('rendered Compose separates gateway, brain and hands while preserving path 
   assert.deepEqual([...hands.cap_add].sort(), ['SETGID', 'SETUID', 'SYS_ADMIN', 'SYS_CHROOT']);
   assert.equal(hands.environment.HOME, '/var/lib/opencraft/execution');
   assert.deepEqual(hands.volumes.map(v => [v.source, v.target]), [
+    ['/srv/opencraft/state/execution/git-credentials', '/var/lib/opencraft/git-credentials'],
     ['/srv/opencraft/state/execution', '/var/lib/opencraft/execution'],
     ['/srv/opencraft/workspaces', '/workspace'],
     ['/srv/opencraft/logs', '/var/log/opencraft'],

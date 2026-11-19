@@ -2,7 +2,7 @@ import { nativeTurnFailure, enrichModelFailure } from "./turn-failure.mjs";
 import { codexSessionRoot } from "../local/profile-layout.mjs";
 import { workInstruction } from "../work-tools/instruction.mjs";
 import { join } from "node:path";
-import { digest, stable } from "../../domain/values.mjs";
+import { digest } from "../../domain/values.mjs";
 import { RunPolicy, RunLimitError } from "../../domain/run-policy.mjs";
 import { NativeCodexSession, nativeUsage } from "./native-session.mjs";
 import { assistantTools } from "../work-tools/assistant-tools.mjs";

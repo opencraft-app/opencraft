@@ -16,6 +16,13 @@ test("source parser catches the historical model-menu override and equivalent sh
   assert.equal(inspectStyle('.x { --typography-local-size:12px; }').length, 1);
 });
 
+test("menu aliases remain registry-owned rather than arbitrary local typography", () => {
+  assert.equal(inspectStyle('.x { font: var(--menu-item-font); letter-spacing: var(--menu-item-tracking); }').length, 0);
+  assert.equal(inspectStyle('.x { --menu-item-font: 12px Arial; }').length, 1);
+  assert.equal(inspectStyle('.x { font: var(--menu-item-invented); }').length, 1);
+  assert.equal(inspectStyle(':root { --menu-item-font: var(--typography-menu-font); }', 'packages/design-system/src/tokens.web.scss').length, 0);
+});
+
 test("inline, conditional and utility forms cannot bypass the same policy", () => {
   assert.equal(inspectTypescript('const s={fontSize:12,"fontWeight":"600"}').length, 2);
   assert.equal(inspectTypescript('const s={fontWeight: selected ? "600" : "400"}').length, 1);

@@ -1,6 +1,6 @@
 import { AssistantThreadCommands } from "../../../packages/access-control/src/assistant-thread-commands";
 import { ThreadAccessStore } from "../../../packages/access-control/src/thread-access";
-import { createAssistantModelSource } from "../../../apps/local-agent-host/src/model-config/assistant";
+
 import { ModelConfigurationRepository } from "../../../apps/local-agent-host/src/model-config/repository";
 import { createPersonalAssistantHost } from "../../../apps/personal-assistant/src/runtime/host-supervisor.mjs";
 import { ImChannelService } from "../../im-channel-service.mjs";

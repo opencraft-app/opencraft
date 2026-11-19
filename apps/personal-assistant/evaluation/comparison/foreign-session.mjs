@@ -82,8 +82,8 @@ export async function foreignSession(
         startedPrep = performance.now();
       while (cursor < query.end) {
         const messages = [];
-        let exchanges = 0,
-          begin = cursor;
+        let exchanges = 0;
+        const begin = cursor;
         while (cursor < query.end) {
           const m = input.history[cursor];
           if (m.role === "user" && exchanges === 12) break;
