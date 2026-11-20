@@ -11,7 +11,7 @@
     "@opencraft/identity-core": "*",
     "@opencraft/relay-protocol": "*",
     "ioredis": "^6.0.0",
-    "ws": "^8.22.1",
+    "ws": "^8.23.0",
     "@opencraft/hub-network": "0.1.0"
   },
   "scripts": {
