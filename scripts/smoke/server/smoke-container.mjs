@@ -72,9 +72,9 @@ try {
   const terminalProbe = await readFile(join(root, 'scripts/smoke/server/hands-terminal-probe.mjs'), 'utf8');
   const gatewayContainer = compose(['ps', '-q', 'gateway']);
   const terminal = JSON.parse(docker(['exec', '-i', gatewayContainer, '/opt/opencraft/bin/node', '--input-type=module', '-', 'start', workspace], { input: terminalProbe }));
-  const containerId = service => docker(['inspect', '--format', '{{.Id}}', compose(['ps', '-q', service])]).trim();
-  assert.ok(terminal.host.length >= 12 && containerId('hands').startsWith(terminal.host), 'PTY must run in the Hands container');
-  for (const service of ['brain', 'gateway']) assert.ok(!containerId(service).startsWith(terminal.host), `PTY must not run in ${service}`);
+  const cgroupNamespace = service => compose(['exec', '-T', service, '/opt/opencraft/bin/node', '-p', "require('node:fs').readlinkSync('/proc/self/ns/cgroup')"]);
+  assert.equal(terminal.cgroupNamespace, cgroupNamespace('hands'), 'PTY must run in the Hands container');
+  for (const service of ['brain', 'gateway']) assert.notEqual(terminal.cgroupNamespace, cgroupNamespace(service), `PTY must not run in ${service}`);
   for (const service of ['brain', 'gateway', 'hands']) {
     const records = (await readFile(join(logs, service, 'service.log'), 'utf8')).trim().split('\n').map(JSON.parse);
     assert.ok(records.length > 0 && records.every(record => record.time && record.stream));
