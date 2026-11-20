@@ -58,8 +58,9 @@ Who on the chain is actually asked, and whether that member can decide, is the r
 | Method | Who | Effect |
 | --- | --- | --- |
 | `opencraft/server-spaces` `{action:'contact',spaceId,open}` | space owner | switch open contact |
-| `opencraft/server-spaces` `{action:'addBot',spaceId,actorId}` | space owner | add an enabled Session Actor as a member; it may not belong to another space |
-| `opencraft/crew/phonebook/list` `{botId}` | members of the Bot's space | phonebook entries |
+| `opencraft/server-spaces` `{action:'addBot',spaceId,actorId}` | space owner | add one of the owner's own Bots as a member; it may not belong to another space |
+| `opencraft/server-spaces` `{action:'bots',spaceId}` | space owner | the owner's additional assistants that are not yet in any space |
+| `opencraft/crew/phonebook/list` `{botId}` | members of the Bot's space | entries, the space members that could be entries, and whether the caller may edit |
 | `opencraft/crew/phonebook/set` `{botId,actorId,present}` | space owner | add or remove an entry; adding requires a member of the space |
 | `opencraft/crew/work/dispatch` `{targetActorId,content,idempotencyKey,parentWorkId?}` | members; Bots under open work | send and open work |
 | `opencraft/crew/work/message` `{workId,targetActorId,content,idempotencyKey}` | the work's assignee | message someone on its chain |
@@ -87,11 +88,15 @@ Removing a Bot uses the existing `remove` action.
 | Cancelling unstarted work of someone who left | implemented in the runtime: closed before intake without a reply |
 | Stopping started work after the current step when its dispatcher leaves | not yet; replies already move up the chain |
 | Bots dispatching to their phonebook, routine work | core only; no runtime tool yet |
-| Crew UI | not yet |
-| Crew UI | not yet |
+| Crew UI: space members | implemented in the Server panel: Agents are labelled, the owner switches open contact and adds their own assistants (`bots`, `addBot`) |
+| Crew UI: phonebook | implemented in the assistant settings dialog: one switch per space member; members read it, only the owner edits |
+| Crew UI: dispatching from the Inbox, work and chain views, desk | not yet |
+| Crew UI: space members | implemented in the Server panel: Agents are labelled, the owner switches open contact and adds their own assistants (`bots`, `addBot`) |
+| Crew UI: phonebook | implemented in the assistant settings dialog: one switch per space member; members read it, only the owner edits |
+| Crew UI: dispatching from the Inbox, work and chain views, desk | not yet |
 
 Runtime: `apps/personal-assistant/src/runtime/crew-intake.mjs`. Its only local fact is which runner
 conversation belongs to which dispatcher, stored in the runner `meta` table.
 
 Verification: `tests/identity/crew-contact.test.ts`, `tests/identity/server-spaces.test.ts`,
-`apps/personal-assistant/test/crew-intake.test.mjs`. Not verified against a running server, a real model or a client.
+`apps/personal-assistant/test/crew-intake.test.mjs`, `tests/shell/server-spaces-crew.test.tsx`, `tests/shell/crew-phonebook.test.tsx`. Not verified against a running server, a real model or a client.

@@ -2217,5 +2217,19 @@
   "workspacePlacement.openFolder": "เปิดโฟลเดอร์…",
   "workspacePlacement.search": "ค้นหาพื้นที่ทำงาน",
   "workspacePlacement.selectionFailed": "ไม่สามารถเลือกพื้นที่ทำงานนี้ได้ โปรดรีเฟรชแล้วลองอีกครั้ง",
-  "workspacePlacement.temporary": "พื้นที่ทำงานชั่วคราว"
+  "workspacePlacement.temporary": "พื้นที่ทำงานชั่วคราว",
+  "serverSpaces.addAgent": "เพิ่มเอเจนต์",
+  "serverSpaces.openContact": "สมาชิกติดต่อกันได้โดยตรง",
+  "serverSpaces.openContactDescription": "ทุกคนในเซิร์ฟเวอร์นี้ส่งข้อความถึงสมาชิกคนใดก็ได้ เอเจนต์ยังติดต่อได้เฉพาะคนในรายชื่อติดต่อของตน",
+  "serverSpaces.agent": "เอเจนต์",
+  "serverSpaces.addAgentDescription": "เอเจนต์เข้าร่วมเซิร์ฟเวอร์หนึ่งในฐานะสมาชิก สมาชิกมอบงานให้ได้ และเอเจนต์จะติดต่อเฉพาะคนในรายชื่อติดต่อของตน",
+  "serverSpaces.noAgents": "ผู้ช่วยทั้งหมดของคุณอยู่ในเซิร์ฟเวอร์แล้ว สร้างผู้ช่วยใหม่ในการตั้งค่าก่อน",
+  "serverSpaces.add": "เพิ่ม",
+  "crew.phonebook.title": "รายชื่อติดต่อ",
+  "crew.phonebook.about": "คนและเอเจนต์ในเซิร์ฟเวอร์ที่ผู้ช่วยนี้ติดต่อเองได้ ผู้ที่มอบงานให้จะได้รับคำตอบเสมอ",
+  "crew.phonebook.readOnly": "เฉพาะเจ้าของเซิร์ฟเวอร์เท่านั้นที่เปลี่ยนรายชื่อติดต่อได้",
+  "crew.phonebook.agent": "เอเจนต์",
+  "crew.phonebook.member": "สมาชิก",
+  "crew.phonebook.empty": "ยังไม่มีใครอื่นในเซิร์ฟเวอร์นี้",
+  "crew.phonebook.error": "ไม่ได้บันทึกรายชื่อติดต่อ ลองอีกครั้ง"
 }

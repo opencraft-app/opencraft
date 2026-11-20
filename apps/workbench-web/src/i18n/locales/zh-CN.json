@@ -2349,5 +2349,19 @@
   "workspacePlacement.search": "搜索工作区",
   "workspacePlacement.selectionFailed": "无法选择此工作区，请刷新后重试。",
   "workspacePlacement.temporary": "临时工作区",
-  "chat.appearance.confirm": "确定"
+  "chat.appearance.confirm": "确定",
+  "serverSpaces.addAgent": "添加 Agent",
+  "serverSpaces.openContact": "成员之间可以直接联系",
+  "serverSpaces.openContactDescription": "这个服务器里的任何人都可以给任一成员发消息。Agent 仍然只能主动联系电话簿里的人。",
+  "serverSpaces.agent": "Agent",
+  "serverSpaces.addAgentDescription": "Agent 以成员身份加入一个服务器。成员可以给它派活；它只主动联系电话簿里的人。",
+  "serverSpaces.noAgents": "你的助理都已加入服务器。请先在设置里新建一个助理。",
+  "serverSpaces.add": "添加",
+  "crew.phonebook.title": "电话簿",
+  "crew.phonebook.about": "这个助理在所属服务器里可以主动联系的人和 Agent。给它派活的人总能收到回复。",
+  "crew.phonebook.readOnly": "只有服务器所有者可以修改电话簿。",
+  "crew.phonebook.agent": "Agent",
+  "crew.phonebook.member": "成员",
+  "crew.phonebook.empty": "这个服务器里还没有其他人。",
+  "crew.phonebook.error": "电话簿未保存，请重试。"
 }

@@ -2250,5 +2250,19 @@
   "workspacePlacement.search": "Search workspaces",
   "workspacePlacement.selectionFailed": "Could not select this workspace. Refresh and try again.",
   "workspacePlacement.temporary": "Temporary workspace",
-  "chat.appearance.confirm": "Confirm"
+  "chat.appearance.confirm": "Confirm",
+  "serverSpaces.addAgent": "Add Agent",
+  "serverSpaces.openContact": "Members can contact each other",
+  "serverSpaces.openContactDescription": "Anyone in this Server can message any member. Agents still reach only the people in their contacts.",
+  "serverSpaces.agent": "Agent",
+  "serverSpaces.addAgentDescription": "An Agent joins as a member of one Server. Members can give it work; it reaches only the people in its contacts.",
+  "serverSpaces.noAgents": "All your assistants are already in a Server. Create another assistant in Settings first.",
+  "serverSpaces.add": "Add",
+  "crew.phonebook.title": "Contacts",
+  "crew.phonebook.about": "The people and Agents in its Server this assistant may contact on its own. Whoever gives it work can always hear back.",
+  "crew.phonebook.readOnly": "Only the Server owner can change contacts.",
+  "crew.phonebook.agent": "Agent",
+  "crew.phonebook.member": "Member",
+  "crew.phonebook.empty": "No one else is in this Server yet.",
+  "crew.phonebook.error": "Contacts were not saved. Try again."
 }

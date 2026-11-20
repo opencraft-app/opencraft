@@ -2217,5 +2217,19 @@
   "workspacePlacement.openFolder": "Buka folder…",
   "workspacePlacement.search": "Cari ruang kerja",
   "workspacePlacement.selectionFailed": "Tidak dapat memilih ruang kerja ini. Muat semula dan cuba lagi.",
-  "workspacePlacement.temporary": "Ruang kerja sementara"
+  "workspacePlacement.temporary": "Ruang kerja sementara",
+  "serverSpaces.addAgent": "Tambah Ejen",
+  "serverSpaces.openContact": "Ahli boleh menghubungi satu sama lain",
+  "serverSpaces.openContactDescription": "Sesiapa dalam Pelayan ini boleh menghantar mesej kepada mana-mana ahli. Ejen masih hanya boleh menghubungi orang dalam kenalannya.",
+  "serverSpaces.agent": "Ejen",
+  "serverSpaces.addAgentDescription": "Ejen menyertai satu Pelayan sebagai ahli. Ahli boleh memberinya kerja; ia hanya menghubungi orang dalam kenalannya.",
+  "serverSpaces.noAgents": "Semua pembantu anda sudah berada dalam Pelayan. Cipta pembantu lain dalam Tetapan dahulu.",
+  "serverSpaces.add": "Tambah",
+  "crew.phonebook.title": "Kenalan",
+  "crew.phonebook.about": "Orang dan Ejen dalam Pelayannya yang boleh dihubungi sendiri oleh pembantu ini. Sesiapa yang memberinya kerja sentiasa boleh menerima balasan.",
+  "crew.phonebook.readOnly": "Hanya pemilik Pelayan boleh menukar kenalan.",
+  "crew.phonebook.agent": "Ejen",
+  "crew.phonebook.member": "Ahli",
+  "crew.phonebook.empty": "Belum ada orang lain dalam Pelayan ini.",
+  "crew.phonebook.error": "Kenalan tidak disimpan. Cuba lagi."
 }
