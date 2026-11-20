@@ -4,7 +4,7 @@
    这是结构原型，没有接真实的 Bot：你发出去的话不会有人回。示例内容是一份静态快照，清空后各处如实显示为空。 */
 (function () {
   'use strict';
-  var KEY = 'opencraft.office.v3', $ = function (id) { return document.getElementById(id); };
+  var KEY = 'opencraft.office.v4', $ = function (id) { return document.getElementById(id); };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
   var ENV = { pc: '电脑', cloud: '云环境' };
   var ROLES = [['客服', '你负责回答客户的问题。答不了的记下来，转给你。'], ['采购', '你负责买东西、订场地。超过预算先问你。'], ['对账', '你核对每一笔账和发票是否对得上，对不上的列出来交给你。'], ['文档核对', '你只做核对：版本、页码、签章。核完写清楚看的是哪一份、结论是什么。'], ['行政', '你负责开账号、订会议室、收报销单。办完告诉交办的人。']];
@@ -47,8 +47,8 @@
     d.n = 100; d.sample = true; return d;
   }
   var db = sample();
-  try { var raw = JSON.parse(localStorage.getItem(KEY)); if (raw && raw.people && raw.grants && raw.v === 3) db = raw; } catch (e) { /* 没有存储也能用 */ }
-  function save() { db.v = 3; try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { /* ignore */ } }
+  try { var raw = JSON.parse(localStorage.getItem(KEY)); if (raw && raw.people && raw.grants && raw.v === 4) db = raw; } catch (e) { /* 没有存储也能用 */ }
+  function save() { db.v = 4; try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { /* ignore */ } }
   function uid(p) { db.n += 1; return p + db.n; }
 
   /* ---------- 模型 ---------- */
@@ -60,7 +60,11 @@
   function granted(a, b, can) { return db.grants.some(function (g) { return g.from === a && g.to === b && g.can === can; }); }
   function setGrant(a, b, can, on) { db.grants = db.grants.filter(function (g) { return !(g.from === a && g.to === b && g.can === can); }); if (on) db.grants.push({ from: a, to: b, can: can }); }
   /* 能找：公司里的人看权限；公司外的人看有没有他用的账号 */
-  function canTalk(a, b) { var x = P(a), y = P(b); if (!x || !y || a === b || x.kind === 'outside') return false; return granted(a, b, 'talk'); }
+  function grantOf(a, b) { return db.grants.filter(function (g) { return g.from === a && g.to === b && g.can === 'talk'; })[0]; }
+  function inBook(a, b) { return !!grantOf(a, b); } /* 在 a 的通讯录里 */
+  function isOff(a, b) { var g = grantOf(a, b); return !!(g && g.off); } /* 在通讯录里，但被禁用了 */
+  function setOff(a, b, off) { var g = grantOf(a, b); if (g) g.off = off || undefined; }
+  function canTalk(a, b) { var x = P(a), y = P(b); if (!x || !y || a === b || x.kind === 'outside') return false; return inBook(a, b) && !isOff(a, b); }
   function talkTargets(id) { return db.people.filter(function (x) { return canTalk(id, x.id); }).map(function (x) { return x.id; }); }
   function thread(a, b) { return db.msgs.filter(function (x) { return (x.who === a && x.to === b) || (x.who === b && x.to === a); }).sort(function (x, y) { return x.ts - y.ts; }); }
   function partners(id) { var o = []; db.msgs.slice().sort(function (x, y) { return y.ts - x.ts; }).forEach(function (x) { var p = x.who === id ? x.to : x.to === id ? x.who : null; if (p && o.indexOf(p) < 0) o.push(p); }); return o; }
@@ -76,8 +80,8 @@
   /* ---------- 界面：微信的结构。三个标签（消息、通讯录、办公室），点进去是整页，左上角返回。 ---------- */
   var TABBAR = [['chats', '消息', '<path d="M12 4.500c-4.700 0-8.500 3.100-8.500 7 0 2.200 1.200 4.100 3.100 5.400L6 20l3.400-1.600c.8.200 1.700.300 2.600.300 4.700 0 8.500-3.100 8.500-7s-3.800-7.200-8.500-7.200z"/>'], ['people', '通讯录', '<circle cx="9" cy="9" r="3.200"/><path d="M3.500 19c.6-3 2.800-4.800 5.500-4.800s4.900 1.800 5.500 4.800M16 6.500a2.800 2.800 0 0 1 0 5.400M17.500 14.600c1.600.7 2.700 2.200 3 4.400"/>'], ['office', '办公室', '<path d="M12 3.500 4 8v8l8 4.500 8-4.500V8z"/><path d="M4 8l8 4.500L20 8M12 12.500v8"/>']];
   var AVC = ['#e9e6f0', '#a9dcc9', '#c3b5ee', '#a9c8f2', '#fbe39c', '#f9cdb0', '#bfe3ee', '#d9e8a6'];
-  var ICON = { plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>', more: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>', back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14.500 5-7 7 7 7"/></svg>' };
-  var ui = { tab: 'chats', stack: [], sel: null }, has3d = false;
+  var ICON = { compose: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.500 5H6.500A2 2 0 0 0 4.500 7v10.500a2 2 0 0 0 2 2H17a2 2 0 0 0 2-2V10.500"/><path d="M17.800 3.700a1.600 1.600 0 0 1 2.300 2.300L12 14.100l-3 .8.800-3z"/></svg>', send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.400" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5.500M5.800 11.500 12 5.300l6.200 6.200"/></svg>', plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>', more: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>', back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14.500 5-7 7 7 7"/></svg>' };
+  var ui = { tab: 'chats', stack: [], sel: null, edit: false }, has3d = false;
   var wideMq = window.matchMedia ? matchMedia('(min-width: 900px)') : { matches: false }; function wide() { return wideMq.matches && ui.tab !== 'office'; }
   function top() { return ui.stack[ui.stack.length - 1]; }
   function cur() { var t = top(); return t && t.id ? P(t.id) : null; }
@@ -91,7 +95,7 @@
   }
   function sync() { if (has3d) { window.Office.sync(toScene()); window.Office.select(ui.sel, ui.sel ? talkTargets(ui.sel) : [], []); } }
   function pick(id) { if (id && !P(id)) id = null; ui.sel = id; draw(); if (has3d) window.Office.select(id, id ? talkTargets(id) : [], []); }
-  function go(page) { var prev = ui.stack[ui.stack.length - 2]; if (prev && prev.id === page.id && prev.k === page.k) ui.stack.pop(); else ui.stack.push(page); draw(); }
+  function go(page) { ui.edit = false; var prev = ui.stack[ui.stack.length - 2]; if (prev && prev.id === page.id && prev.k === page.k) ui.stack.pop(); else ui.stack.push(page); draw(); }
 
   function av(id, n) { var p = P(id); return '<span class="av" style="--c:' + (p && p.kind === 'outside' ? '#f6c1c7' : AVC[((p || {}).look || 0) % AVC.length]) + '">' + (n ? '<i class="badge">' + n + '</i>' : '') + '</span>'; }
   function nav(title, right) { return '<header class="nav"><button class="back" data-do="back" aria-label="返回">' + ICON.back + '</button><h1>' + esc(title) + '</h1><span class="r">' + (right || '') + '</span></header>'; }
@@ -113,14 +117,14 @@
     var list = db.people.filter(function (p) { return p.id !== 'me' && (thread('me', p.id).length || canTalk('me', p.id)); });
     function last(p) { var l = thread('me', p.id).pop(); return l ? l.ts : 0; }
     list.sort(function (a, b) { return (unread(b.id).length - unread(a.id).length) || (last(b) - last(a)); });
-    return '<header class="nav top"><span class="r"></span><h1>消息' + (unread().length ? '(' + unread().length + ')' : '') + '</h1><span class="r"><button class="ic"' + link({ k: 'recruit' }) + ' aria-label="招募">' + ICON.plus + '</button></span></header><div class="body list">' +
+    return '<header class="nav top"><span class="r"></span><h1></h1><span class="r"><button class="ic"' + link({ k: 'recruit' }) + ' aria-label="招募">' + ICON.compose + '</button></span></header><div class="body list"><h2 class="large">消息' + (unread().length ? '<i>' + unread().length + ' 条未读</i>' : '') + '</h2>' +
       (list.length ? list.map(function (p) { var l = thread('me', p.id).pop();
         return cell({ k: 'chat', id: p.id }, p.id, esc(p.name) + '<em>' + esc(p.role || '') + '</em>', esc(l ? (l.who === 'me' && !l.sys ? '你：' : '') + l.text : '还没有说过话'), l ? hhmm(l.ts) : '', unread(p.id).length); }).join('') : '<div class="empty"><p>手机里还没有人。</p><button class="btn ok"' + link({ k: 'recruit' }) + '>招募第一位员工</button></div>') +
       '<p class="foot">这是原型，没有接真实的 Bot，你发出去的话不会有人回。<button class="lk" data-do="' + (db.sample ? 'clear" data-confirm="再点一次，清空所有示例">清空示例' : 'sample">放回示例') + '</button></p></div>';
   }
   /* 标签二：通讯录。你、员工、公司外的人，三种人点进去是同一种资料页 */
   function people() {
-    return '<header class="nav top"><span class="r"></span><h1>通讯录</h1><span class="r"></span></header><div class="body list">' +
+    return '<header class="nav top"><span class="r"></span><h1></h1><span class="r"></span></header><div class="body list"><h2 class="large">通讯录</h2>' +
       '<button class="cell"' + link({ k: 'recruit' }) + '><span class="av plus">+</span><span class="t"><b>招募</b><span>选个岗位，他就入职</span></span></button>' +
       '<button class="cell"' + link({ k: 'newout' }) + '><span class="av plus">+</span><span class="t"><b>添加公司外的人</b><span>客户、供应商</span></span></button>' +
       cell(person('me'), 'me', '你', '老板') +
@@ -139,7 +143,7 @@
   /* 整页：对话 */
   function chat(p) { var t = thread('me', p.id), ok = canTalk('me', p.id);
     return nav(p.name, '<button class="ic" aria-label="他的手机"' + link(person(p.id)) + '>' + ICON.more + '</button>') + '<div class="body chat" id="chat">' + (t.length ? bubbles(t, 'me') : none('还没有对话。对他说第一件要办的事。')) + '</div>' +
-      (ok ? '<form class="say" data-do="say"><input id="say" autocomplete="off" enterkeyhint="send" placeholder="对' + esc(p.name) + '说要办什么" aria-label="对' + esc(p.name) + '说"><button class="btn ok">发送</button></form>'
+      (ok ? '<form class="say" data-do="say"><input id="say" autocomplete="off" enterkeyhint="send" placeholder="对' + esc(p.name) + '说要办什么" aria-label="对' + esc(p.name) + '说"><button class="send" aria-label="发送">' + ICON.send + '</button></form>'
         : '<p class="say cap">你现在不能联系' + esc(p.name) + '。在你的通讯录里添加他就可以。<button class="lk"' + link(person('me')) + '>打开你的通讯录</button></p>'); }
 
   /* 点一个员工，整屏切进他的手机。进去只管两件事，底部两个标签：通讯录（管理他的通讯录，在联系谁也在这里）、电脑（管理他的电脑）。
@@ -152,7 +156,7 @@
   }
   function phone(p, page) {
     var self = p.id === 'me', tab = self ? 'contacts' : page.tab === 'pc' ? 'pc' : 'contacts', title = tab === 'pc' ? '电脑' : '通讯录';
-    var right = (tab === 'contacts' ? '<button class="ic" aria-label="添加联系人"' + link({ k: 'padd', id: p.id }) + '>' + ICON.plus + '</button>' : '') +
+    var right = (tab === 'contacts' ? '<button class="tx" data-do="edit">' + (ui.edit ? '完成' : '编辑') + '</button><button class="ic" aria-label="添加联系人"' + link({ k: 'padd', id: p.id }) + '>' + ICON.plus + '</button>' : '') +
       (!self && canTalk('me', p.id) ? '<button class="ic" aria-label="给他发消息"' + link({ k: 'chat', id: p.id }) + '>' + ICHAT + '</button>' : '');
     return '<div class="phone">' + phoneTop(p, title, right) + (tab === 'pc' ? pPc(p) : pContacts(p)) +
       (self ? '' : '<nav class="phtabs" style="--tint:' + tint(p.id) + '" aria-label="' + esc(p.name) + '的手机">' + PTABS.map(function (t) { return '<button data-tab="' + t[0] + '" aria-current="' + (tab === t[0] ? 'page' : 'false') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + t[2] + '</svg>' + t[1] + '</button>'; }).join('') + '</nav>') + '</div>';
@@ -161,14 +165,19 @@
   /* 消息：他在联系谁，只读 */
   function pool(p) { return db.people.filter(function (x) { return x.id !== p.id && !(p.kind === 'human' && x.kind === 'outside'); }); }
   /* 通讯录：他能联系谁，按最近聊天排在前面；在联系谁就是每个人下面那句最后的话 */
+  /* 通讯录：他能联系谁，按最近聊天排在前面；在联系谁就是每个人下面那句最后的话。
+     左滑一行露出「禁用/启用」和「删除」；禁用的人还在通讯录里，只是暂时联系不上 */
   function pContacts(p) {
     var he = p.id === 'me' ? '你' : '他', last = function (j) { var l = thread(p.id, j).pop(); return l ? l.ts : 0; };
-    var list = pool(p).filter(function (x) { return canTalk(p.id, x.id); }).sort(function (a, b) { return last(b.id) - last(a.id); }),
-      gone = partners(p.id).filter(function (j) { return P(j) && !canTalk(p.id, j); });
-    function row(x) { var l = thread(p.id, x.id).pop(); return cell({ k: 'pcard', id: p.id, w: x.id }, x.id, esc(x.name) + (x.kind === 'outside' ? '<em>公司外</em>' : ''), l ? esc((l.who === p.id && !l.sys ? he + '：' : '') + l.text) : '<span class="quiet">还没聊过 · ' + who(x) + '</span>', l ? hhmm(l.ts) : ''); }
-    return '<div class="body list"><p class="count">' + list.length + ' 位联系人' + (list.length ? '，最近聊过的在前' : '') + '</p>' + (list.length ? list.map(row).join('') : '<p class="empty">通讯录是空的。点右上角 ⊕ 添加联系人。</p>') +
-      (gone.length ? '<p class="count">聊过，但不在通讯录里了</p>' + gone.map(function (j) { return row(P(j)); }).join('') : '') +
-      '<p class="foot">' + he + '的通讯录里有谁，' + he + '就能联系谁。这是单向的：' + he + '能联系对方，不代表对方能联系' + he + '。</p></div>';
+    var list = pool(p).filter(function (x) { return inBook(p.id, x.id); }).sort(function (a, b) { return last(b.id) - last(a.id); }),
+      gone = partners(p.id).filter(function (j) { return P(j) && !inBook(p.id, j); }), off = list.filter(function (x) { return isOff(p.id, x.id); }).length;
+    function line(x) { var l = thread(p.id, x.id).pop(); return l ? esc((l.who === p.id && !l.sys ? he + '：' : '') + l.text) : '还没聊过 · ' + who(x); }
+    function row(x) { var l = thread(p.id, x.id).pop(), o = isOff(p.id, x.id);
+      return '<div class="swipe' + (o ? ' off' : '') + '"><div class="swipe-act"><button class="sa ' + (o ? 'on' : 'pause') + '" data-do="phoff" data-id="' + x.id + '">' + (o ? '启用' : '禁用') + '</button><button class="sa del" data-do="phdel" data-id="' + x.id + '">删除</button></div>' +
+        cell({ k: 'pcard', id: p.id, w: x.id }, x.id, esc(x.name) + (x.kind === 'outside' ? '<em>公司外</em>' : '') + (o ? '<em class="offtag">已禁用</em>' : ''), line(x), l ? hhmm(l.ts) : '') + '</div>'; }
+    return '<div class="body list' + (ui.edit ? ' editing' : '') + '"><p class="count">' + list.length + ' 位联系人' + (off ? '，' + off + ' 位已禁用' : '') + (list.length ? ' · 左滑可以禁用或删除' : '') + '</p>' + (list.length ? list.map(row).join('') : '<p class="empty">通讯录是空的。点右上角 ⊕ 添加联系人。</p>') +
+      (gone.length ? '<p class="count">聊过，但不在通讯录里了</p>' + gone.map(function (j) { var x = P(j), l = thread(p.id, j).pop(); return cell({ k: 'pcard', id: p.id, w: j }, j, esc(x.name), line(x), l ? hhmm(l.ts) : ''); }).join('') : '') +
+      '<p class="foot">' + he + '的通讯录里有谁，' + he + '就能联系谁；禁用了就暂时联系不上。这是单向的：' + he + '能联系对方，不代表对方能联系' + he + '。</p></div>';
   }
   function pPc(p) {
     var w = running(p.id), envT = T(p.env), list = db.changes.filter(function (e) { return e.who === p.id; }).sort(function (a, b) { return b.ts - a.ts; });
@@ -184,12 +193,14 @@
   }
   /* 我：他是谁、做事说明 */
   /* 联系人：你们俩的聊天记录（只读），底下管他在不在通讯录里 */
-  function pCard(p, w) { var x = P(w), he = p.id === 'me' ? '你' : '他', inside = canTalk(p.id, w), tr = thread(p.id, w);
-    return '<div class="phone">' + phoneTop(p, x.name) + '<div class="body chat" id="chat"><div class="mini">' + av(w) + '<span><b>' + esc(x.name) + '</b><i>' + who(x) + ' · ' + (inside ? '在' + he + '的通讯录里' : '不在' + he + '的通讯录里') + '</i></span></div>' +
-      (tr.length ? bubbles(tr, p.id) : '<p class="when">还没聊过</p>') + '</div>' +
-      '<div class="say act">' + (p.id === 'me' && inside ? '<button class="btn ok"' + link({ k: 'chat', id: w }) + '>发消息</button>' : '') + (inside ? '<button class="btn danger" data-do="phdel" data-id="' + w + '">删除联系人</button>' : '<button class="btn ok" data-do="phadd" data-id="' + w + '">添加到通讯录</button>') + '</div>' +
-      (p.id === 'me' ? '' : '<p class="say cap">聊天记录只能看，不能替他回。</p>') + '</div>'; }
-  function pAdd(p) { var he = p.id === 'me' ? '你' : '他', list = pool(p).filter(function (x) { return !canTalk(p.id, x.id); });
+  /* 联系人：顶部名片，中间你们俩的聊天记录（只读），底部一组 iOS 设置：允许联系的开关、删除 */
+  function pCard(p, w) { var x = P(w), he = p.id === 'me' ? '你' : '他', book = inBook(p.id, w), on = book && !isOff(p.id, w), tr = thread(p.id, w);
+    return '<div class="phone">' + phoneTop(p, x.name) + '<div class="body chat" id="chat"><div class="mini">' + av(w) + '<span><b>' + esc(x.name) + '</b><i>' + who(x) + ' · ' + (!book ? '不在' + he + '的通讯录里' : on ? '在' + he + '的通讯录里' : '在' + he + '的通讯录里，已禁用') + '</i></span></div>' +
+      (tr.length ? bubbles(tr, p.id) : '<p class="when">还没聊过</p>') + (p.id === 'me' ? '' : '<p class="when">聊天记录只能看，不能替他回</p>') + '</div>' +
+      '<div class="actsheet">' + (book ? '<label class="row-sw"><span>允许' + he + '联系' + esc(x.name) + '</span><span class="switch"><input type="checkbox" role="switch" data-sw="off" data-a="' + p.id + '" data-b="' + w + '"' + (on ? ' checked' : '') + '><i></i></span></label>' +
+          (p.id === 'me' && on ? '<button class="row-btn"' + link({ k: 'chat', id: w }) + '>发消息</button>' : '') + '<button class="row-btn danger" data-do="phdel" data-id="' + w + '">删除联系人</button>'
+        : '<button class="row-btn" data-do="phadd" data-id="' + w + '">添加到通讯录</button>') + '</div></div>'; }
+  function pAdd(p) { var he = p.id === 'me' ? '你' : '他', list = pool(p).filter(function (x) { return !inBook(p.id, x.id); });
     return '<div class="phone">' + phoneTop(p, '添加联系人') + '<div class="body list">' + (list.length ? list.map(function (x) { return '<div class="cell">' + av(x.id) + '<span class="t"><b>' + esc(x.name) + '</b><span>' + who(x) + '</span></span><button class="btn ok sm" data-do="phadd" data-id="' + x.id + '">添加</button></div>'; }).join('') : '<p class="empty">公司里的人都已经在' + he + '的通讯录里了。</p>') + '</div></div>'; }
   function outside(o) { return nav('') + '<div class="who">' + av(o.id) + '<span class="t"><b>' + esc(o.name) + '</b><span>公司外的人</span></span></div>' + outsideBody(o); }
   function outsideBody(o) {
@@ -226,10 +237,12 @@
 
   var DO = {
     tab: function (el) { ui.tab = el.getAttribute('data-id'); ui.stack = []; draw(); },
-    back: function () { ui.stack.pop(); draw(); },
+    back: function () { ui.stack.pop(); ui.edit = false; draw(); },
     see: function (el) { ui.stack = []; ui.tab = 'office'; draw(); pick(el.getAttribute('data-id')); },
     phadd: function (el) { var p = cur(); if (!p) return; setGrant(p.id, el.getAttribute('data-id'), 'talk', true); changed(); },
     phdel: function (el) { var p = cur(); if (!p) return; setGrant(p.id, el.getAttribute('data-id'), 'talk', false); changed(); },
+    phoff: function (el) { var p = cur(), w = el.getAttribute('data-id'); if (!p) return; setOff(p.id, w, !isOff(p.id, w)); changed(); },
+    edit: function () { ui.edit = !ui.edit; draw(); },
     say: function () { var v = $('say').value.trim(), p = cur(); if (!v || !p || !canTalk('me', p.id)) return; db.msgs.push({ id: uid('m'), ts: Date.now(), who: 'me', to: p.id, text: v }); changed(); $('say').focus(); },
     stop: function (el) { var w = db.work.filter(function (x) { return x.id === el.getAttribute('data-id'); })[0], p = cur(); if (!w || !p) return; w.state = 'stopped'; db.msgs.push({ id: uid('m'), ts: Date.now(), who: 'me', to: w.who, sys: true, text: '你让' + N(w.who) + '停下了：' + w.text + '。已经做了的改动还在。' }); changed(); },
     tool: function (f) { var p = cur(), v = f.querySelector('input').value.trim(), k = f.getAttribute('data-k'); if (!v || !p) return; var kind = k === 'env' ? f.querySelector('select').value : 'account', t = { id: uid('t'), kind: kind, name: v }; db.tools.push(t); if (k === 'env') p.env = t.id; else p.accounts.push(t.id); changed(); },
@@ -249,18 +262,29 @@
   function remove(id) { db.people = db.people.filter(function (x) { return x.id !== id; }); db.grants = db.grants.filter(function (g) { return g.from !== id && g.to !== id; }); db.msgs = db.msgs.filter(function (m) { return m.who !== id && m.to !== id; }); db.work = db.work.filter(function (w) { return w.who !== id; }); if (ui.sel === id) ui.sel = null; ui.stack = []; }
   var SW = {
     reach: function (el) { setGrant(el.getAttribute('data-a'), el.getAttribute('data-b'), 'talk', el.checked); changed(); },
+    off: function (el) { setOff(el.getAttribute('data-a'), el.getAttribute('data-b'), !el.checked); changed(); },
     acc: function (el, p) { var id = el.getAttribute('data-id'); p.accounts = p.accounts.filter(function (j) { return j !== id; }); if (el.checked) p.accounts.push(id); changed(); },
     env: function (el, p) { p.env = el.value || null; changed(); }
   };
 
   document.addEventListener('click', function (e) {
-    var t = e.target.closest('[data-tab]'); if (t && top()) { top().tab = t.getAttribute('data-tab'); draw(); return; }
+    if (swallow) { swallow = false; e.preventDefault(); return; }
+    var opened = document.querySelector('.swipe.open'); if (opened && !e.target.closest('.swipe-act')) { opened.classList.remove('open'); e.preventDefault(); return; } /* 有一行滑开着：先收起来 */
+    var t = e.target.closest('[data-tab]'); if (t && top()) { top().tab = t.getAttribute('data-tab'); ui.edit = false; draw(); return; }
     var g = e.target.closest('[data-go]'); if (g) { if (wide() && g.closest('.pane.l')) ui.stack = []; go(JSON.parse(g.getAttribute('data-go'))); return; }
     var d = e.target.closest('button[data-do]'); if (!d) return; e.preventDefault();
     /* 删除、停下这类做了就收不回的操作：在原位点两下确认，不弹窗 */
     if (d.hasAttribute('data-confirm') && !d.hasAttribute('data-armed')) { d.setAttribute('data-armed', d.textContent); d.textContent = d.getAttribute('data-confirm'); d.classList.add('armed'); setTimeout(function () { if (d.isConnected && d.hasAttribute('data-armed')) { d.textContent = d.getAttribute('data-armed'); d.removeAttribute('data-armed'); d.classList.remove('armed'); } }, 4000); return; }
     DO[d.getAttribute('data-do')](d);
   });
+  /* 左滑：手指或鼠标横着拖一行，松手超过一半就停在打开的位置；竖着拖照常滚动 */
+  var sw = null, swallow = false, OPEN = 160;
+  document.addEventListener('pointerdown', function (e) { var c = e.target.closest('.swipe > .cell'); if (!c || e.button > 0) return; sw = { row: c.parentNode, cell: c, x: e.clientX, y: e.clientY, base: c.parentNode.classList.contains('open') ? -OPEN : 0, dx: 0, on: false }; });
+  document.addEventListener('pointermove', function (e) { if (!sw) return; var dx = e.clientX - sw.x, dy = e.clientY - sw.y;
+    if (!sw.on) { if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { sw = null; return; } if (Math.abs(dx) < 8) return; sw.on = true; sw.row.classList.add('drag'); Array.prototype.forEach.call(document.querySelectorAll('.swipe.open'), function (r) { if (r !== sw.row) r.classList.remove('open'); }); }
+    sw.dx = dx; sw.cell.style.transform = 'translateX(' + Math.max(-OPEN - 40, Math.min(0, sw.base + dx)) + 'px)'; });
+  function swEnd() { if (!sw) return; if (sw.on) { sw.row.classList.remove('drag'); sw.cell.style.transform = ''; sw.row.classList.toggle('open', sw.base + sw.dx < -OPEN / 2); swallow = true; setTimeout(function () { swallow = false; }, 350); } sw = null; }
+  document.addEventListener('pointerup', swEnd); document.addEventListener('pointercancel', swEnd);
   document.addEventListener('submit', function (e) { var f = e.target.closest('form[data-do]'); if (f) { e.preventDefault(); DO[f.getAttribute('data-do')](f); } });
   document.addEventListener('change', function (e) { var el = e.target.closest('[data-sw]'), p = cur(); if (!el) return; var k = el.getAttribute('data-sw'); if (k !== 'reach' && !p) return; SW[k](el, p); });
 
@@ -268,5 +292,5 @@
   if (!has3d) $('fail').hidden = false;
   if (wideMq.addEventListener) wideMq.addEventListener('change', function () { draw(); });
   draw(); sync();
-  window.__app = { pick: pick, go: go, db: function () { return db; }, canTalk: canTalk };
+  window.__app = { pick: pick, go: go, db: function () { return db; }, canTalk: canTalk, inBook: inBook };
 })();
