@@ -1,5 +1,5 @@
 /* 三维办公室：只负责把「谁在、谁能找谁」画出来，并告诉外面点了谁。
-   长相和列表里的头像对得上：颜色相同；Bot 头上有天线、面前有桌子和电脑，人没有；公司外的人站在右边的小台子上。
+   长相和列表里的头像对得上：颜色相同；Bot 是一个对话气泡，面前有桌子和电脑，人是圆的；公司外的人站在右边的小台子上。
    座位不是摆的：能互相联系的人被拉近，其余互相推开，算到稳定为止。数据和操作都在 app.js。 */
 window.Office = (function () {
   'use strict';
@@ -26,6 +26,9 @@ window.Office = (function () {
     var mon = null, L = look(node), g = new THREE.Group(), sp = new THREE.Group(), m = clay(L.c), dark = clay(0x1d1b26, { roughness: .15 }), white = clay(0xffffff, { roughness: .2 }), acc = clay(L.extra === 'beanie' ? CREAM : INK), mats = [m, dark, white, acc], screen = null, top = .82, front = .42;
     var jit = ((x * 7 + z * 13) % 1) * .5 - .4; g.position.set(x, 0, z); g.rotation.y = face + jit; scene.add(g); g.add(sp);
     if (node.kind === 'bot') { part(g, BOX, clay(CREAM), 0, .42, -.85, .6, .07, .34); add(g, new THREE.CylinderGeometry(.09, .16, .4, 20), clay(0xe9dfcd), 0, .2, -.85); mon = new THREE.Group(); g.add(mon); part(mon, BOX, clay(0xf4f1f6), 0, .78, -.95, .34, .24, .05); add(mon, new THREE.CylinderGeometry(.04, .04, .14, 12), clay(0xf4f1f6), 0, .54, -.95); screen = part(mon, BOX, clay(SCREEN, { emissive: 0x000000 }), 0, .78, -.9, .27, .17, .015).material; mon.visible = !!node.pc; } /* 没分配电脑或云环境，桌上就没有电脑 */
+    var faces = null;
+    if (node.kind === 'bot') { faces = bubbleBody(sp, m, dark, mats); top = 1.35; } /* Bot：对话气泡 */
+    else {
     if (L.shape === 'cube') { part(sp, CUBE, m, 0, .4, 0, .4, .4, .38); front = .4; }
     else if (L.shape === 'drop') { add(sp, new THREE.LatheGeometry(new THREE.SplineCurve([[0, 0], [.3, .03], [.43, .22], [.4, .44], [.26, .68], [.1, .86], [0, .9]].map(function (p) { return new THREE.Vector2(p[0], p[1]); })).getPoints(28), 36), m, 0, 0, 0); top = .9; }
     else { part(sp, BALL, m, 0, .4, 0, .43, .4, .43); if (L.shape === 'cloud') { part(sp, BALL, m, -.2, .7, 0, .2); part(sp, BALL, m, .2, .7, 0, .2); part(sp, BALL, m, 0, .78, 0, .22); top = .98; } }
@@ -37,12 +40,24 @@ window.Office = (function () {
     if (L.extra === 'scarf') add(sp, new THREE.TorusGeometry(.36, .075, 12, 32), acc, 0, .2, 0).rotation.x = Math.PI / 2;
     if (L.extra === 'beanie') add(sp, new THREE.SphereGeometry(.45, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2.4), acc, 0, .44, 0);
     if (L.extra === 'glasses') [-.15, .15].forEach(function (ex) { add(sp, new THREE.TorusGeometry(.1, .018, 8, 24), acc, ex, .46, front + .01); });
+    }
     var hit = part(g, BALL, new THREE.MeshBasicMaterial({ visible: false }), 0, .5, 0, .8); hit.castShadow = false; hit.userData.id = node.id;
     var el = document.createElement('span'); labelBox.appendChild(el);
     var bob = calm ? null : gsap.to(sp.position, { y: .1, duration: .7 + Math.abs(x * 3 + z) % 1 * .5, ease: 'sine.inOut', yoyo: true, repeat: -1 });
     g.scale.setScalar(.01); gsap.to(g.scale, { x: 1.4, y: 1.4, z: 1.4, duration: dur(.5), ease: 'back.out(1.6)' });
-    return { jit: jit, g: g, mon: mon, sp: sp, mats: mats, hit: hit, phone: phone, screen: screen, el: el, bob: bob, top: (top > .85 ? 1.5 : 1.3) - (L.antenna ? 0 : .2), glow: null };
+    return { jit: jit, g: g, mon: mon, sp: sp, mats: mats, hit: hit, phone: phone, screen: screen, el: el, bob: bob, faces: faces, top: (top > .85 ? 1.5 : 1.3) - (L.antenna ? 0 : .2), glow: null };
   }
+  /* 气泡身体：和列表头像同一个轮廓（圆角矩形加左下角的尾巴），挤出成软软的一块；正面两只眼睛，正在做事时换成三个绿点 */
+  var BUBBLE = null;
+  function bubbleGeo() { if (BUBBLE) return BUBBLE; var s = new THREE.Shape(), r = .36, w = .62, h = .44;
+    s.moveTo(-w + r, -h); s.lineTo(-.18, -h); s.lineTo(-.42, -h - .3); s.lineTo(-.34, -h); s.lineTo(-w + r, -h);
+    s.moveTo(-w + r, -h); s.lineTo(w - r, -h); s.quadraticCurveTo(w, -h, w, -h + r); s.lineTo(w, h - r); s.quadraticCurveTo(w, h, w - r, h); s.lineTo(-w + r, h); s.quadraticCurveTo(-w, h, -w, h - r); s.lineTo(-w, -h + r); s.quadraticCurveTo(-w, -h, -w + r, -h);
+    BUBBLE = new THREE.ExtrudeGeometry(s, { depth: .5, bevelEnabled: true, bevelThickness: .12, bevelSize: .1, bevelSegments: 6, curveSegments: 24 }); BUBBLE.translate(0, 0, -.25); return BUBBLE; }
+  function bubbleBody(sp, m, dark, mats) { var k = .8, body = add(sp, bubbleGeo(), m, 0, .74, 0); body.scale.setScalar(k);
+    var eyes = new THREE.Group(), dots = new THREE.Group(), z = .38 * k, ok = clay(0x2fbf71, { emissive: 0x2fbf71, emissiveIntensity: .6, roughness: .4 }); mats.push(ok); sp.add(eyes); sp.add(dots);
+    [-.15, .15].forEach(function (x) { part(eyes, BALL, dark, x * k, .78, z, .07 * k, .085 * k, .03); });
+    [-.22, 0, .22].forEach(function (x) { part(dots, BALL, ok, x * k, .78, z, .07 * k, .07 * k, .03); }); dots.visible = false;
+    return { eyes: eyes, dots: dots }; }
   function dropPet(id) { var p = pets[id]; delete pets[id]; p.el.remove(); if (p.bob) p.bob.kill(); if (p.glow) p.glow.kill(); gsap.to(p.g.scale, { x: .01, y: .01, z: .01, duration: dur(.3), onComplete: function () { scene.remove(p.g); } }); }
 
   function solve() {
@@ -152,6 +167,7 @@ window.Office = (function () {
       m.nodes.forEach(function (n, i) { ids[n.id] = 1; if (!pets[n.id]) { var t = i * 2.4; pets[n.id] = makePet(n, n.kind === 'me' ? .2 : -.8 + Math.cos(t) * 2.6, n.kind === 'me' ? 2.6 : Math.sin(t) * 2.6); }
         var p = pets[n.id]; p.el.textContent = n.name; if (n.fx) { var chip = document.createElement('b'); chip.className = 'fx'; chip.textContent = n.fx.mark; p.el.appendChild(chip); if (p.fxKey && p.fxKey !== n.fx.id && !calm) gsap.fromTo(p.sp.scale, { x: 1.3, y: .7, z: 1.3 }, { x: 1, y: 1, z: 1, duration: .8, ease: 'elastic.out(1,.35)' }); } p.fxKey = n.fx ? n.fx.id : null; p.el.className = (n.kind === 'me' ? 'me' : '') + (n.busy ? ' busy' : '') + (n.kind === 'out' ? ' out' : '') + (n.badge ? ' wait' : ''); if (n.badge) p.el.setAttribute('data-n', n.badge); else p.el.removeAttribute('data-n');
         if (p.mon) p.mon.visible = !!n.pc;
+        if (p.faces) { p.faces.eyes.visible = !n.busy; p.faces.dots.visible = !!n.busy; } /* 正在做事：眼睛换成三个绿点，和列表头像一样 */
         if (p.screen) { if (p.glow) { p.glow.kill(); p.glow = null; } p.screen.emissive.setRGB(n.busy ? .05 : 0, n.busy ? .42 : 0, n.busy ? .2 : 0); } /* 正在做事：屏幕亮绿色，和列表里的“正在”一样；不闪 */ });
       Object.keys(pets).forEach(function (k) { if (!ids[k]) dropPet(k); });
       var pos = solve(), d = first ? 0 : dur(.9); if (moving) moving.kill(); rel.visible = arcBox.visible = false;

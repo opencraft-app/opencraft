@@ -119,8 +119,13 @@
   /* 头像：Bot 是带眼睛的圆角方块，人是圆的剪影（你是深色的），群是成员头像拼成的格子 */
   function av(id, cls) { var p = P(id); if (!p) return ''; var c = ' style="--c:' + COLORS[(p.look || 0) % COLORS.length] + '"', k = cls ? ' ' + cls : '';
     if (p.kind === 'group') { var m = finders(id).slice(0, 4); return '<span class="av grp' + k + (m.length > 1 ? '' : ' one') + '" aria-hidden="true">' + m.map(function (x) { return av(x.id, 'mini'); }).join('') + '</span>'; }
-    if (p.kind === 'bot') return '<span class="av' + k + '"' + c + ' aria-hidden="true"></span>';
+    if (p.kind === 'bot') return '<span class="av bot' + k + '" aria-hidden="true">' + bubble(COLORS[(p.look || 0) % COLORS.length], !!db.doing[p.id], /mini/.test(k)) + '</span>';
     return '<span class="av hu' + (p.kind === 'me' ? ' me' : '') + k + '"' + c + ' aria-hidden="true">' + esc(p.mono || p.name.slice(0, 1)) + '</span>'; } /* 人：圆形，写名字的第一个字 */
+  /* Bot 的样子：一个对话气泡，带一条小尾巴；正在做事时两只眼睛变成“正在输入”的三个绿点。最小的格子里去掉尾巴 */
+  function bubble(c, busy, tiny) { var cy = tiny ? 24 : 20.500;
+    var face = busy ? [14.500, 24, 33.500].map(function (x) { return '<circle cx="' + x + '" cy="' + cy + '" r="3.200" fill="#2fbf71"/>'; }).join('')
+      : '<circle cx="18.500" cy="' + cy + '" r="3.200" fill="#1d1f23"/><circle cx="29.500" cy="' + cy + '" r="3.200" fill="#1d1f23"/>';
+    return '<svg viewBox="0 0 48 48">' + (tiny ? '<rect x="2" y="7" width="44" height="34" rx="15" fill="' + c + '"/>' : '<path d="M16 4h16c7.200 0 13 5.800 13 13v4c0 7.200-5.800 13-13 13H21l-9 9v-9.600C6.900 32.100 3 27.900 3 21v-4C3 9.800 8.800 4 16 4Z" fill="' + c + '"/>') + face + '</svg>'; }
   function go(page) { return ' data-go=\'' + esc(JSON.stringify(page)) + '\''; }
   function tag(x) { return x.kind === 'out' ? '<em>公司外</em>' : ''; }
   function status(b) { var d = db.doing[b.id]; return d ? '<span class="status busy">正在' + esc(d.text) + '</span>' : '<span class="status">空闲</span>'; }
@@ -153,7 +158,7 @@
   function chatsTab() {
     var rows = convos().map(function (it) { var x = P(it.id), l = it.last, page = convoPage(it.id);
       var sub = l ? esc((l.from === 'me' ? '你：' : x.kind === 'group' ? N(l.from) + '：' : '') + l.text) : '<span class="status">还没说过话</span>';
-      var busy = db.doing[x.id] ? '<i class="busydot" title="正在做事"></i>' : '';
+      var busy = ''; /* 正在做事已经画在头像上（三个绿点），名字旁不再重复 */
       var n = unread(x.id);
       return irow(page, x.id, esc(x.name) + busy + tag(x), sub, '<span class="rt">' + (l ? when(l.ts) : '') + (n ? '<i class="badge" aria-label="' + n + ' 条未读">' + n + '</i>' : '') + '</span>', x.name).replace('class="row', n ? 'class="row unread' : 'class="row'); }).join('');
     var others = bots().filter(function (b) { return !canFind('me', b.id); }).length;
@@ -262,7 +267,7 @@
   function pick(id) { if (id && !P(id)) id = null; ui.sel = id; draw(); if (has3d) window.Office.select(id, reachOf(id), incomingOf(id)); }
   /* 办公室底部：没选人时是图例；选了人是一张卡片，说事实，给出能做的事 */
   function card() { var p = P(ui.sel);
-    if (!p) return '<div class="ofhint"><span class="lg"><i class="lg-arc"></i>他能找的人</span><span class="lg"><i class="lg-arc in"></i>能找他的人</span><span class="lg-t">点一个人看看。头上有天线的是 Bot，右边台子上是公司外的人。</span></div>';
+    if (!p) return '<div class="ofhint"><span class="lg"><i class="lg-arc"></i>他能找的人</span><span class="lg"><i class="lg-arc in"></i>能找他的人</span><span class="lg-t">点一个人看看。对话气泡是 Bot，圆的是人，右边台子上是公司外的人。</span></div>';
     var he = p.kind === 'me' ? '你' : '他', out = reachOf(p.id).length, grp = (p.phone || []).filter(isGroup).length, inn = incomingOf(p.id).length;
     var facts = p.kind === 'out' ? ['没有自己的手机', inn ? inn + ' 个人能找他' : '谁也找不到他']
       : [he + '能找 ' + out + ' 个人' + (grp ? '，在 ' + grp + ' 个群里' : ''), p.kind === 'bot' ? '能用 ' + (p.pc || []).length + ' 样东西' : '', inn + ' 个人能找' + he].filter(Boolean);
