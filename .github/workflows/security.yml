@@ -38,6 +38,10 @@ jobs:
           curl --fail --silent --show-error --location --output checksums.txt "$release/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
           awk -v archive="$archive" '$2 == archive { print; found=1 } END { if (!found) exit 1 }' checksums.txt | sha256sum --check --status
           tar -xzf "$archive" gitleaks
+      - name: Test downstream contribution boundary
+        env:
+          GITLEAKS_TEST_BIN: ${{ runner.temp }}/gitleaks
+        run: python3 -B -m unittest discover -s scripts/tests -p test_contribute_upstream.py
       - name: Scan source
         run: '"${{ runner.temp }}/gitleaks" dir . --redact --no-banner --config .gitleaks.toml'
       - name: Scan reachable commit history
