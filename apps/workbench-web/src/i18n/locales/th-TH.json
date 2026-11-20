@@ -2205,5 +2205,7 @@
   "modelServices.local.availableTo": "ผู้ที่ใช้ได้",
   "modelServices.local.privateDescription": "จัดเก็บไว้ในอุปกรณ์นี้สำหรับคุณและผู้ช่วยของคุณ",
   "modelServices.local.onlyMe": "เฉพาะฉัน",
-  "settings.serverInformation.effectsHint": "ลิงก์การแจ้งเตือนภายนอกใช้ที่อยู่ที่บันทึกไว้เมื่อส่ง รวมถึงปลายทางที่ลงทะเบียนไว้ก่อนหน้านี้"
+  "settings.serverInformation.effectsHint": "ลิงก์การแจ้งเตือนภายนอกใช้ที่อยู่ที่บันทึกไว้เมื่อส่ง รวมถึงปลายทางที่ลงทะเบียนไว้ก่อนหน้านี้",
+  "chat.resource.conversation": "การสนทนา",
+  "chat.resource.application": "แอปพลิเคชัน"
 }

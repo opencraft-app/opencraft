@@ -523,6 +523,9 @@ export function createWorkbenchWebConfig(
           // Isolate stable third-party runtime from application/plugin hash churn.
           codeSplitting: { groups: [
             ...startupLeafGroups,
+            // Keep file artwork and link menus on their demand-only paths;
+            // small-chunk merging must not hoist them back into bootstrap.
+            { name: "chat-link-presentations", test: /(?:\/packages\/chat-render-web\/src\/renderers\/resource-link\/(?:resource-chip|external-url-link)\.(?:tsx|scss)(?:\?.*)?$|\/packages\/chat-render-react\/src\/file-resource-presentation\.ts$)/, includeDependenciesRecursively: false },
             // These already-required control/context leaves otherwise become
             // many sub-1KB requests whose raw-byte accounting and import headers
             // exceed their content. Share one stable chunk; do not add lazy UI.

@@ -6,6 +6,8 @@ import { ExternalUrlLink } from "../../packages/chat-render-web/src/renderers/re
 import { BrowserWorkbenchCoordinator } from "../../apps/workbench-web/src/browser/browser-workbench-coordinator";
 import { WebBrowserPageRuntime, type BrowserNavigationPolicy } from "../../apps/workbench-web/src/browser/web-browser-runtime";
 import { WebIframeSurfaceHost } from "../../apps/workbench-web/src/browser/web-browser-surface-host";
+import { chatLinkOpensExternally } from "../../apps/workbench-web/src/browser/web-browser-runtime";
+import type { ChatResourceOpenIntent } from "@opencraft/chat-render-react";
 
 // Real link renderer, resource coordinator, Page runtime and iframe host. The
 // panel chrome and remote pages are fixtures; no account or live Host is used.
@@ -20,7 +22,8 @@ const navigationPolicy: BrowserNavigationPolicy = {
   },
   openExternal(url) { window.open(url, "_blank", "noopener,noreferrer"); },
 };
-const pages = new WebBrowserPageRuntime(surfaces, null, () => null, null, navigationPolicy);
+const pages = new WebBrowserPageRuntime(surfaces, null, () => null, null,
+  new URL(location.href).searchParams.has("standalone") ? null : navigationPolicy);
 const panelOpens: string[] = [];
 const coordinator = new BrowserWorkbenchCoordinator(pages, {
   open(owner: string) { panelOpens.push(owner); return { id: `panel-${panelOpens.length}` }; }, dispatch() {}, close() {},
@@ -35,8 +38,10 @@ const targets = {
 let currentPage: Parameters<typeof pages.navigate>[0] | undefined;
 const context = {
   streaming: false,
-  openResource(target: string, _decision: unknown, intent?: { target?: string }) {
-    if (intent?.target === "external-browser") { window.open(target, "_blank", "noopener,noreferrer"); return; }
+  openResource(target: string, _decision: unknown, intent?: ChatResourceOpenIntent) {
+    if (chatLinkOpensExternally("web", intent, pages.isRecognizedInternalUrl(target))) {
+      window.open(target, "_blank", "noopener,noreferrer"); return;
+    }
     const opened = coordinator.open("conversation-fixture", { initialUrl: target, background: true });
     if (opened) currentPage = opened.pageId;
   },

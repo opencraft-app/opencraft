@@ -10,7 +10,7 @@ export const startupLeafGroups = [
   {
     name: "motion-context-leaves",
     includeDependenciesRecursively: false,
-    test: /\/node_modules\/(?:framer-motion\/dist\/es\/(?:context\/(?:LayoutGroupContext|MotionConfigContext|PresenceContext)|utils\/(?:use-constant|is-browser|use-isomorphic-effect|reduced-motion\/use-reduced-motion)|components\/AnimatePresence\/use-presence)|motion-dom\/dist\/es\/utils\/is-html-element|motion-utils\/dist\/es\/is-object)\.mjs$/,
+    test: /\/node_modules\/(?:framer-motion\/dist\/es\/(?:context\/(?:LayoutGroupContext|MotionConfigContext|PresenceContext)|utils\/(?:use-constant|is-browser|use-isomorphic-effect|reduced-motion\/use-reduced-motion)|components\/AnimatePresence\/use-presence)|motion-dom\/dist\/es\/utils\/is-html-element|motion-utils\/dist\/es\/is-object)\.mjs$|__vite-optional-peer-dep:@emotion\/is-prop-valid:framer-motion$/,
   },
   {
     name: "startup-dom-leaves",

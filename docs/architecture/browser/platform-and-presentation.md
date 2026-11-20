@@ -145,6 +145,15 @@ Workbench locale without changing a navigated page's content.
 
 ## Web product navigation
 
+Ordinary HTTP(S) links in Web conversations open a separate browser tab with
+`noopener,noreferrer`, preserving the current conversation and draft. Only a
+destination explicitly recognized by trusted `BrowserNavigationPolicy.canEmbed`
+defaults to an in-app preview; same-origin, localhost and private-network URLs
+are not implicitly recognized. Application routes, conversation references and
+workspace resources retain their existing resource handlers. Explicit in-app
+browser commands and Electron's defaults remain available; product navigation
+restrictions still apply to them.
+
 The application composition root may supply a `BrowserNavigationPolicy`. The browser
 coordinator routes an external destination before creating a Page, logical Tab or
 panel. Address-bar navigation uses the same policy before changing Page history;

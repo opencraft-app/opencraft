@@ -1,5 +1,12 @@
 import type { ChatDocumentDirectiveNode, ChatDocumentReferenceNode } from "@opencraft/chat-document";
 
+/** Raw URLs use their site identity; authored titles keep their meaning. */
+export function chatWebLinkLabel(target: string, label: string): string {
+  if (label.trim() !== target.trim() && !/^https?:\/\//iu.test(label.trim())) return label;
+  try { return new URL(target.startsWith("//") ? `https:${target}` : target).hostname; }
+  catch { return label; }
+}
+
 function basename(path: string): string {
   return path.replaceAll("\\", "/").split("/").filter(Boolean).at(-1) ?? path;
 }

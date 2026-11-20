@@ -2,6 +2,19 @@
 
 [Invariant index](../invariants.md) · [Design index](../README.md)
 
+## Compact resource references
+
+Resource references display the object rather than its transport address. Files
+use a type icon and authored name or basename, with source line locations retained.
+Inline references remain compact; a file link standing alone can use a small card.
+Code, image, spreadsheet, archive, audio, video, folder and document appearances
+come from shared file presentation metadata and existing icon primitives.
+Full targets remain available through hints and copy actions, and navigation still
+uses the admitted original target. Equal basenames do not become equal resources.
+Meaningful authored web titles remain; bare URLs display the site hostname.
+Application and conversation references keep their own identity and handler.
+Code blocks, commands and ordinary unlinked inline code remain literal content.
+
 ## Image preview gestures
 
 Web image previews share a bounded local pinch/rotate/pan viewport. Scaling spans 0.2–5× the fitted size;

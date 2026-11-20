@@ -2237,5 +2237,7 @@
   "codexAccounts.diagnostic.httpStatus": " · HTTP {status}",
   "modelServices.local.availableTo": "Available to",
   "modelServices.local.privateDescription": "Stored on this device for you and your assistants.",
-  "modelServices.local.onlyMe": "Only me"
+  "modelServices.local.onlyMe": "Only me",
+  "chat.resource.conversation": "Conversation",
+  "chat.resource.application": "Application"
 }

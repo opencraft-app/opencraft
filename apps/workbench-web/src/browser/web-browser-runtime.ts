@@ -13,6 +13,7 @@ import {
   type BrowserUrl,
 } from "@opencraft/browser-core";
 import type { PreviewBridgeChildMessage } from "@opencraft/browser-preview-bridge";
+import type { ChatResourceOpenIntent } from "@opencraft/chat-render-react";
 import type { BrowserMetadataStorage } from "./desktop-browser-storage";
 import { browserMetadataKeys, readBrowserMetadataValue } from "@opencraft/workbench-runtime/browser-metadata-identity";
 
@@ -24,6 +25,11 @@ import {
 } from "./web-browser-surface-host";
 
 const STORAGE_KEY = browserMetadataKeys.pages;
+
+/** Default link routing is independent of explicit browser commands. */
+export function chatLinkOpensExternally(platform: "web" | "electron", intent: ChatResourceOpenIntent | undefined, recognized: boolean): boolean {
+  return intent?.target === "external-browser" || (platform === "web" && intent?.target !== "in-app-browser" && !recognized);
+}
 
 interface StoredBrowserPage {
   readonly id: string;
@@ -259,6 +265,12 @@ export class WebBrowserPageRuntime {
       : this.load(record, current.url);
     if (started && current !== null && !record.snapshot.navigation.isLoading)
       this.publish(record, { isLoading: true, error: null });
+  }
+
+  /** Only trusted application composition can recognize an HTTP(S) preview. */
+  isRecognizedInternalUrl(input: string): boolean {
+    try { return this.navigationPolicy?.canEmbed(parseBrowserUrl(input)) ?? false; }
+    catch { return false; }
   }
 
   /** Route before creating a Page, panel, history entry or physical surface. */

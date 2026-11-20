@@ -2205,5 +2205,7 @@
   "modelServices.local.availableTo": "Boleh digunakan oleh",
   "modelServices.local.privateDescription": "Disimpan pada peranti ini untuk anda dan pembantu anda.",
   "modelServices.local.onlyMe": "Saya sahaja",
-  "settings.serverInformation.effectsHint": "Pautan pemberitahuan luaran menggunakan alamat yang disimpan semasa penghantaran, termasuk destinasi yang didaftarkan sebelum ini."
+  "settings.serverInformation.effectsHint": "Pautan pemberitahuan luaran menggunakan alamat yang disimpan semasa penghantaran, termasuk destinasi yang didaftarkan sebelum ini.",
+  "chat.resource.conversation": "Perbualan",
+  "chat.resource.application": "Aplikasi"
 }

@@ -313,6 +313,10 @@ export class BrowserWorkbenchCoordinator {
     return { tab, page };
   }
 
+  isRecognizedInternalUrl(input: string): boolean {
+    return this.pages.isRecognizedInternalUrl(input);
+  }
+
   open(ownerId: string, options: {
     readonly initialUrl?: string;
     readonly storageId?: string;

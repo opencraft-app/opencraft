@@ -2336,5 +2336,7 @@
   "codexAccounts.diagnostic.httpStatus": " · HTTP {status}",
   "modelServices.local.availableTo": "可供使用",
   "modelServices.local.privateDescription": "保存在本机，供你和帮你办事的助手使用。",
-  "modelServices.local.onlyMe": "仅自己"
+  "modelServices.local.onlyMe": "仅自己",
+  "chat.resource.conversation": "会话",
+  "chat.resource.application": "应用"
 }

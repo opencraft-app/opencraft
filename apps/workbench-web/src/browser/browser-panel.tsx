@@ -1,6 +1,6 @@
 import "./browser-panel.scss";
 import { cancelFrame, frame } from "motion/react";
-import { Button } from "@opencraft/design-system-web/button";
+import { IconButton } from "@opencraft/design-system-web/button";
 import { LoadingRingIcon as LoaderCircle, CloseIcon as X } from "@opencraft/design-system-web/action-icons";
 import type {
   BrowserPageId,
@@ -180,6 +180,9 @@ export default function BrowserPanel({ tab: panelTab, presentationId, onPresenta
     }
   };
   const currentUrl = page.navigation.currentUrl;
+  const presentationFailed = presentationState === "failed" || Boolean(page.error);
+  const presentationShowsFailure = presentationState !== "ready" && presentationFailed;
+  const noticeMessage = inputError ?? (presentationShowsFailure ? null : page.error);
 
   return (
     <section className="browser-panel" data-mobile-browser={mobile || undefined} data-viewport-mode={tab.viewportMode.type} aria-label={page.title}>
@@ -241,23 +244,38 @@ export default function BrowserPanel({ tab: panelTab, presentationId, onPresenta
         onChange={mode=>workbench.setViewportMode(tab.id,mode)}
         onClose={()=>workbench.setViewportMode(tab.id,{type:"responsive"})}
         zoom={zoom} onZoom={pages.supportsZoom?value=>{pages.setZoom(page.id,value);setZoom(value);}:undefined}/>:null}
-      {inputError ?? page.error ? (
+      {noticeMessage ? (
         <div className="browser-panel__notice" role="status">
-          <span>{inputError ?? page.error}</span>
-          <button type="button" onClick={() => { pages.reload(page.id); setInputError(null); }}>{intl.formatMessage({ id: "browser.reload", defaultMessage: "Reload" })}</button>
-          {currentUrl !== null ? <button type="button"
-            onClick={() => window.open(currentUrl, "_blank", "noopener,noreferrer")}>{intl.formatMessage({ id: "browser.external", defaultMessage: "Open in external browser" })}</button> : null}
+          <span>{noticeMessage}</span>
+          {!presentationShowsFailure ? <div className="browser-panel__notice-actions">
+            <IconButton size="sm"
+              aria-label={intl.formatMessage({ id: "browser.reload", defaultMessage: "Reload" })}
+              title={intl.formatMessage({ id: "browser.reload", defaultMessage: "Reload" })}
+              onClick={() => { pages.reload(page.id); setInputError(null); }}><RotateCw size={16} aria-hidden="true" /></IconButton>
+            {currentUrl !== null ? <IconButton size="sm"
+              aria-label={intl.formatMessage({ id: "browser.external", defaultMessage: "Open in external browser" })}
+              title={intl.formatMessage({ id: "browser.external", defaultMessage: "Open in external browser" })}
+              onClick={() => window.open(currentUrl, "_blank", "noopener,noreferrer")}><ExternalLink size={16} aria-hidden="true" /></IconButton> : null}
+          </div> : null}
         </div>
       ) : null}
       <div ref={slotRef} className="browser-viewport-slot"
         data-viewport-mode={tab.viewportMode.type}>
-        {presentationState !== "ready" ? <div className="browser-panel__presentation-status" role="status">
-          <span>{intl.formatMessage(presentationState === "failed" || page.error
+        {presentationState !== "ready" ? <div className="browser-panel__presentation-status">
+          <div className="browser-panel__presentation-message" role="status">
+            {presentationFailed
+              ? <Globe2 size={20} aria-hidden="true" />
+              : <LoaderCircle size={20} aria-hidden="true" className="browser-panel__presentation-spinner" />}
+            <span>{intl.formatMessage(presentationFailed
             ? { id: "browser.presentation.failed", defaultMessage: "Unable to display this page" }
             : { id: "browser.presentation.loading", defaultMessage: "Opening page…" })}</span>
-          <Button type="button" variant="secondary" onClick={() => {
+          </div>
+          {presentationFailed ? <IconButton type="button" size="sm"
+            aria-label={intl.formatMessage({ id: "browser.reload", defaultMessage: "Reload" })}
+            title={intl.formatMessage({ id: "browser.reload", defaultMessage: "Reload" })}
+            onClick={() => {
             pages.reload(page.id); setInputError(null); setPresentationAttempt(value => value + 1);
-          }}>{intl.formatMessage({ id: "browser.reload", defaultMessage: "Reload" })}</Button>
+          }}><RotateCw size={16} aria-hidden="true" /></IconButton> : null}
         </div> : null}
         {tab.viewportMode.type!=="responsive"?<BrowserDeviceHandles mode={tab.viewportMode} slot={slotRef}
           onChange={mode=>workbench.setViewportMode(tab.id,mode)}/>:null}

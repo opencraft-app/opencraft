@@ -138,6 +138,7 @@ import {
 import {
   useBrowserWorkbench,
 } from "./browser/browser-runtime-context";
+import { chatLinkOpensExternally } from "./browser/web-browser-runtime";
 import {
   AppShell,
 } from "./components/app-shell";
@@ -1375,15 +1376,12 @@ export function App({
         return;
       }
       if (decision.kind === "external") {
-        if (intent?.target === "external-browser") {
+        if (chatLinkOpensExternally(extensionPlatform, intent, browserWorkbench.isRecognizedInternalUrl(target))) {
           window.open(target, "_blank", "noopener,noreferrer");
           return;
         }
-        try {
-          openBrowserTab(target, intent?.disposition === "new-tab");
-        } catch {
-          window.open(target, "_blank", "noopener,noreferrer");
-        }
+        try { openBrowserTab(target, intent?.disposition === "new-tab"); }
+        catch { window.open(target, "_blank", "noopener,noreferrer"); }
         return;
       }
       if (decision.kind === "anchor") {
@@ -1394,7 +1392,7 @@ export function App({
       }
       panelRuntime.panels.open(panelOwnerId, "resource", { resource: target, workspaceFileThreadId });
     },
-    [openBrowserTab, panelRuntime.panels, panelOwnerId, workspaceFileThreadId],
+    [openBrowserTab, browserWorkbench, extensionPlatform, panelRuntime.panels, panelOwnerId, workspaceFileThreadId],
   );
   const loadItemDetails = useStableEvent((ids: readonly string[], signal: AbortSignal) => activeThreadLease?.loadItemDetails(ids, signal) ?? Promise.resolve());
   const loadOlderConversation = useStableEvent(

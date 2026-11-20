@@ -1,0 +1,42 @@
+@use "@opencraft/design-system/interaction-mixins.web" as controls;
+
+.opencraft-chat-document a.chat-resource-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 1px 4px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--color-background-primary-ghost-hover);
+  color: var(--color-text, var(--text-primary));
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  vertical-align: middle;
+  text-decoration: none;
+
+  > svg { flex: 0 0 auto; color: var(--color-text-secondary); transform: none; }
+  &:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 2px; }
+}
+
+.chat-resource-chip__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-resource-chip__location { flex: 0 0 auto; color: var(--color-text-secondary); font: var(--typography-caption-font); }
+
+.opencraft-chat-document p > a.chat-resource-chip:only-child {
+  padding: 8px 12px;
+  gap: 9px;
+  border: 1px solid var(--color-border-default, var(--border-default));
+  border-radius: 8px;
+  background: transparent;
+  > svg { width: 16px; height: 16px; }
+}
+
+@include controls.hover-capable {
+  .opencraft-chat-document a.chat-resource-chip:hover {
+    background: var(--color-background-primary-ghost-hover);
+    text-decoration: none;
+  }
+}
