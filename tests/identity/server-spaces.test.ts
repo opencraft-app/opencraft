@@ -107,7 +107,8 @@ test('previous Server schema upgrades without losing data and rejects modified m
 test('upgrade keeps existing spaces and their members, with contact closed',async t=>{
   const root=mkdtempSync(join(tmpdir(),'opencraft-space-contact-upgrade-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
   const path=join(root,'database.sqlite');
-  const previous=openManagedDatabase({path,migrations:SERVER_MIGRATIONS.slice(0,-1),legacyPolicy:'reject'});
+  const before=SERVER_MIGRATIONS.findIndex(m=>m.name==='0019_space_open_contact');assert(before>0);
+  const previous=openManagedDatabase({path,migrations:SERVER_MIGRATIONS.slice(0,before),legacyPolicy:'reject'});
   assert.equal(previous.database.prepare("SELECT COUNT(*) AS n FROM pragma_table_info('collaboration_spaces') WHERE name='open_contact'").get()?.n,0);
   previous.database.prepare("INSERT INTO collaboration_spaces VALUES('legacy','Legacy','owner-1',1)").run();
   previous.database.prepare("INSERT INTO collaboration_space_members VALUES('legacy','owner-1','owner',1)").run();
@@ -116,6 +117,7 @@ test('upgrade keeps existing spaces and their members, with contact closed',asyn
   assert.deepEqual({...updated.database.prepare("SELECT id,name,owner_actor_id,created_at,open_contact FROM collaboration_spaces").get()},
     {id:'legacy',name:'Legacy',owner_actor_id:'owner-1',created_at:1,open_contact:0});
   assert.equal(updated.database.prepare("SELECT role FROM collaboration_space_members WHERE space_id='legacy'").get()?.role,'owner');
+  assert.equal(updated.database.prepare('SELECT COUNT(*) AS n FROM crew_work').get()?.n,0,'crew work starts empty after upgrade');
 });
 
 test('new spaces open contact, the default space does not, and only the owner switches it',async t=>{

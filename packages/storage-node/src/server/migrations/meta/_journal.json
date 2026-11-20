@@ -141,6 +141,13 @@
       "when": 1795187275481,
       "tag": "0019_space_open_contact",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1795188250828,
+      "tag": "0020_crew_work",
+      "breakpoints": true
     }
   ]
 }

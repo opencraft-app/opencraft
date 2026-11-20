@@ -89,3 +89,68 @@ test('a Bot outside every space keeps the existing per-target grant rule', async
   f.actors.setGrant(f.loner.id, f.carol.actorId, 'message.send', true, 'fixture');
   await f.open(f.loner.context, f.carol.actorId);
 });
+
+const dispatch = (f: Awaited<ReturnType<typeof fixture>>, from: { actorId: string } | { context: unknown }, target: string, key: string, parentWorkId?: string) =>
+  f.call(('context' in from ? from.context : from) as never, 'opencraft/crew/work/dispatch',
+    { targetActorId: target, content: key, idempotencyKey: key, ...(parentWorkId ? { parentWorkId } : {}) }) as Promise<{ workId: string; work: { chain: { actorId: string }[]; budget: { used: number; limit: number } } }>;
+const say = (f: Awaited<ReturnType<typeof fixture>>, bot: { context: unknown }, workId: string, target: string, key: string) =>
+  f.call(bot.context as never, 'opencraft/crew/work/message', { workId, targetActorId: target, content: key, idempotencyKey: key });
+
+test('work opened by a member lets its Bot reach that member and the owner, whatever its phonebook', async t => {
+  const f = await fixture(t);
+  const work = await dispatch(f, f.bob, f.alan.id, 'tidy the release');
+  assert.deepEqual(work.work.chain.map(p => p.actorId), [f.bob.actorId, f.alice.actorId]);
+  await say(f, f.alan, work.workId, f.bob.actorId, 'which branch?');
+  await say(f, f.alan, work.workId, f.alice.actorId, 'heads up');
+  await assert.rejects(say(f, f.alan, work.workId, f.zhe.id, 'not on the chain'), /actor_action_denied/);
+  await assert.rejects(say(f, f.zhe, work.workId, f.bob.actorId, 'not my work'), /crew_work_denied/);
+  const replay = await dispatch(f, f.bob, f.alan.id, 'tidy the release');
+  assert.equal(replay.workId, work.workId, 'a retried dispatch reuses its work');
+  await f.call(f.alan.context, 'opencraft/crew/work/finish', { workId: work.workId });
+  await assert.rejects(say(f, f.alan, work.workId, f.bob.actorId, 'after finishing'), /crew_work_denied/, 'the pass ends with the work');
+  await assert.rejects(dispatch(f, f.carol, f.alan.id, 'outsider'), /actor_action_denied/);
+});
+
+test('Bot hand-offs follow the phonebook, reach the whole chain, and stop at the root budget', async t => {
+  const f = await fixture(t);
+  const root = await dispatch(f, f.bob, f.alan.id, 'ship 2.3');
+  await assert.rejects(dispatch(f, f.alan, f.zhe.id, 'no phonebook', root.workId), /actor_action_denied/);
+  await f.call(f.alice, 'opencraft/crew/phonebook/set', { botId: f.alan.id, actorId: f.zhe.id, present: true });
+  await assert.rejects(dispatch(f, f.alan, f.zhe.id, 'no parent'), /crew_parent_required/);
+  const child = await dispatch(f, f.alan, f.zhe.id, 'check the signatures', root.workId);
+  assert.deepEqual(child.work.chain.map(p => p.actorId), [f.alan.id, f.bob.actorId, f.alice.actorId], 'nearest first, owner last');
+  await say(f, f.zhe, child.workId, f.bob.actorId, 'needs you: 2.3 or 2.3.1?');
+  for (let i = 2; i <= 8; i++) await dispatch(f, f.alan, f.zhe.id, 'step ' + i, root.workId);
+  const view = await f.call(f.bob, 'opencraft/crew/work/get', { workId: root.workId }) as { work: { budget: { used: number; limit: number } } };
+  assert.deepEqual(view.work.budget, { used: 8, limit: 8 });
+  await assert.rejects(dispatch(f, f.alan, f.zhe.id, 'one too many', root.workId), /crew_budget_exhausted/);
+  // The rejected hand-off left no message behind.
+  const left = f.storage.database.prepare("SELECT COUNT(*) AS n FROM actor_messages WHERE content='one too many'").get()!.n;
+  assert.equal(left, 0);
+  await assert.rejects(f.call(f.carol, 'opencraft/crew/work/get', { workId: root.workId }), /crew_work_denied/);
+});
+
+test('work a Bot starts on its own answers to the space owner', async t => {
+  const f = await fixture(t);
+  const started = await f.call(f.alan.context, 'opencraft/crew/work/start', {}) as { work: { id: string; origin: string; chain: { actorId: string }[] } };
+  assert.equal(started.work.origin, 'routine');
+  assert.deepEqual(started.work.chain.map(p => p.actorId), [f.alice.actorId]);
+  await say(f, f.alan, started.work.id, f.alice.actorId, 'nightly check found a gap');
+  await assert.rejects(say(f, f.alan, started.work.id, f.bob.actorId, 'not on the chain'), /actor_action_denied/);
+  await assert.rejects(f.call(f.alice, 'opencraft/crew/work/start', {}), /crew_work_denied/, 'only space Bots start work');
+  const listed = await f.call(f.alan.context, 'opencraft/crew/work/list', {}) as { works: { id: string }[] };
+  assert.deepEqual(listed.works.map(w => w.id), [started.work.id]);
+});
+
+test('members who leave are skipped on the chain, and a removed Bot holds no work', async t => {
+  const f = await fixture(t);
+  const work = await dispatch(f, f.bob, f.alan.id, 'before leaving');
+  f.ledger.command(f.alice, { action: 'remove', spaceId: f.team, actorId: f.bob.actorId });
+  const view = await f.call(f.alan.context, 'opencraft/crew/work/get', { workId: work.workId }) as { work: { chain: { actorId: string }[] } };
+  assert.deepEqual(view.work.chain.map(p => p.actorId), [f.alice.actorId], 'the departed requester is skipped; escalation goes on up');
+  await assert.rejects(say(f, f.alan, work.workId, f.bob.actorId, 'gone'), /actor_action_denied/);
+  await say(f, f.alan, work.workId, f.alice.actorId, 'Bob left; your call');
+  f.ledger.command(f.alice, { action: 'remove', spaceId: f.team, actorId: f.alan.id });
+  await assert.rejects(say(f, f.alan, work.workId, f.alice.actorId, 'removed'), /crew_work_denied/);
+  assert.deepEqual((await f.call(f.alan.context, 'opencraft/crew/work/list', {}) as { works: unknown[] }).works, []);
+});

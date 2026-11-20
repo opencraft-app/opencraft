@@ -30,6 +30,29 @@ projections (`canSend`, `canMessage`). It reads spaces and grants inside the cal
 transaction and writes nothing itself. In a standalone collaboration repository without
 space tables it stands aside and the existing grant rule applies.
 
+## Work and its chain
+
+Every hand-off to a space Bot is a piece of **work** in the `crew_work` ledger (migration
+`0020_crew_work`), written only by `Collaboration` inside the communication transaction, so a
+message and the work it opens commit or roll back together. Work records its assignee, who
+handed it over, the work it was split from and its root. `origin` is `member` (a person asked),
+`bot` (another Bot handed it on) or `routine` (a Bot started it on its own).
+
+- **Dispatch.** Members dispatch to a Bot of their space; Bots dispatch only to their phonebook,
+  and only under open work they hold (`parentWorkId`).
+- **Chain pass.** While work is open, its assignee may message everyone the work answers to:
+  each requester up the tree, nearest first, then the space owner. This ignores the phonebook,
+  covers messages only, and ends when the assignee calls `finish`. Routine work answers to
+  the owner only.
+- **Budget.** A root allows 8 Bot-to-Bot hand-offs in its whole tree
+  (`CREW_DISPATCH_BUDGET`). The next one is rejected with `crew_budget_exhausted`; the Bot
+  escalates instead. A rejected hand-off leaves no message.
+- **Departures.** A member who left the space is skipped on the chain. A Bot removed from its
+  space (or disabled) no longer holds any work, so its pass ends at once.
+
+The core does not decide when work is done: the assignee's runtime reports it with `finish`.
+Who on the chain is actually asked, and whether that member can decide, is the runtime's job.
+
 ## Protocol
 
 | Method | Who | Effect |
@@ -38,6 +61,13 @@ space tables it stands aside and the existing grant rule applies.
 | `opencraft/server-spaces` `{action:'addBot',spaceId,actorId}` | space owner | add an enabled Session Actor as a member; it may not belong to another space |
 | `opencraft/crew/phonebook/list` `{botId}` | members of the Bot's space | phonebook entries |
 | `opencraft/crew/phonebook/set` `{botId,actorId,present}` | space owner | add or remove an entry; adding requires a member of the space |
+
+| `opencraft/crew/work/dispatch` `{targetActorId,content,idempotencyKey,parentWorkId?}` | members; Bots under open work | send and open work |
+| `opencraft/crew/work/message` `{workId,targetActorId,content,idempotencyKey}` | the work's assignee | message someone on its chain |
+| `opencraft/crew/work/start` `{}` | space Bots | open routine work |
+| `opencraft/crew/work/finish` `{workId}` | the work's assignee | close it; the chain pass ends |
+| `opencraft/crew/work/get` `{workId}` | assignee, requester, chain | the work with its chain and budget |
+| `opencraft/crew/work/list` `{}` | a Bot | its open work |
 
 Removing a Bot uses the existing `remove` action.
 
@@ -49,9 +79,11 @@ Removing a Bot uses the existing `remove` action.
 | Same-space humans reach any member, with a per-space switch | implemented; migration `0019_space_open_contact` adds `open_contact` (existing rows 0) |
 | Space Bots limited to their phonebook inside their space | implemented for direct messages and `execution.queue` |
 | Owner-managed phonebook | implemented |
-| Chain pass: a Bot reaches everyone on its dispatch chain and the owner for that work | not yet; needs the dispatch chain from the work runtime |
-| Delegation budget between Bots | not yet |
-| Leaving members, paused Bots and escalation routing | not yet |
+| Work ledger, chain pass, owner for routine work | implemented in core |
+| Budget of 8 Bot-to-Bot hand-offs per root | implemented in core |
+| Departed members skipped, removed Bots hold no work | implemented in core |
+| Cancelling unstarted work of someone who left; stopping after the current step | not yet; runtime |
+| Choosing whom to ask and deciding on the Bot's own judgment | not yet; runtime |
 | Bot runtime sending as itself (superapp peer port) | not yet; the personal assistant runtime still talks only to its owner |
 | Crew UI | not yet |
 

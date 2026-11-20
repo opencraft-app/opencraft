@@ -99,6 +99,11 @@ export const SERVER_MIGRATIONS = [
     "version": 20,
     "name": "0019_space_open_contact",
     "sql": "ALTER TABLE `collaboration_spaces` ADD `open_contact` integer DEFAULT 0 NOT NULL;"
+  },
+  {
+    "version": 21,
+    "name": "0020_crew_work",
+    "sql": "CREATE TABLE `crew_work` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`space_id` text NOT NULL,\n\t`assignee_id` text NOT NULL,\n\t`requester_id` text NOT NULL,\n\t`parent_id` text,\n\t`root_id` text NOT NULL,\n\t`origin` text NOT NULL,\n\t`message_id` text,\n\t`state` text NOT NULL,\n\t`dispatches` integer DEFAULT 0 NOT NULL,\n\t`created_at` integer NOT NULL,\n\t`closed_at` integer,\n\tCONSTRAINT \"crew_work_origin\" CHECK(origin IN ('member','bot','routine')),\n\tCONSTRAINT \"crew_work_state\" CHECK(state IN ('open','closed'))\n) STRICT;\n--> statement-breakpoint\nCREATE INDEX `crew_work_assignee` ON `crew_work` (`assignee_id`,`state`);--> statement-breakpoint\nCREATE INDEX `crew_work_root` ON `crew_work` (`root_id`);"
   }
 ] as const;
 export const SERVER_ALTERNATE_MIGRATIONS = [
@@ -204,9 +209,14 @@ export const SERVER_ALTERNATE_MIGRATIONS = [
         "version": 20,
         "name": "converge_0019_space_open_contact",
         "sql": SERVER_MIGRATIONS[19].sql
+      },
+      {
+        "version": 21,
+        "name": "converge_0020_crew_work",
+        "sql": SERVER_MIGRATIONS[20].sql
       }
     ]
   }
 ] as const;
-export const SERVER_MIGRATION_CONTRACT_HASH = "5ed24e8ebd277de2b5a77bf3755306c1f7fe4d6f397703ec6609de1d64b4d333" as const;
+export const SERVER_MIGRATION_CONTRACT_HASH = "f1460a91638fa3afa26f5dbb5b9b079379328daf02cb181009092246cc3c80ea" as const;
 export const OPENCRAFT_VERSION = "0.1.0" as const;

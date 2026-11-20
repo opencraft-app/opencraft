@@ -120,6 +120,12 @@
       "name": "0019_space_open_contact",
       "checksum": "f24d3a7376e87f596d08ddfd11075bae3585e10ca5238bb376610d9759ae073d",
       "snapshotChecksum": "563ec8b947cd8c542f5237ea1a2149f31f0094c987405023311ba64a10e8c145"
+    },
+    {
+      "version": 21,
+      "name": "0020_crew_work",
+      "checksum": "402048a73f9d3a5377595de00ddee96ff30a34a2fb66301399b37d49b67110aa",
+      "snapshotChecksum": "64738e315b1d5b3883548231ce7043eb08eaa9b7660e9e39fa76024f2d5eb24a"
     }
   ],
   "alternates": [
@@ -292,6 +298,11 @@
           "version": 20,
           "name": "converge_0019_space_open_contact",
           "checksum": "f24d3a7376e87f596d08ddfd11075bae3585e10ca5238bb376610d9759ae073d"
+        },
+        {
+          "version": 21,
+          "name": "converge_0020_crew_work",
+          "checksum": "402048a73f9d3a5377595de00ddee96ff30a34a2fb66301399b37d49b67110aa"
         }
       ]
     }

@@ -1,4 +1,5 @@
 import { CrewContact } from './crew-contact.js';
+import { CrewWork, type CrewPass } from './crew-work.js';
 import type { InputCompletion } from "@opencraft/appserver-protocol";
 import { ReceiptReconciliation } from './receipt-reconciliation.js';
 import { ConversationFailureDiagnostics } from './conversation-failure-diagnostics.mjs';
@@ -128,6 +129,8 @@ export class Collaboration {
   // costs one engine logical client every 500 ms for as long as it stays.
   /** Crew contact rules over spaces and phonebook grants; it decides, it does not own either. */
   readonly crew: CrewContact;
+  /** Crew work and its dispatch chain; Collaboration is the ledger's only writer. */
+  readonly crewWork: CrewWork;
   readonly #receiptPacing = new Map<string, { key: string; unchanged: number; dueAt: number }>();
   #operations: Promise<unknown> = Promise.resolve();
   #timer: ReturnType<typeof setInterval> | null = null;
@@ -140,6 +143,7 @@ export class Collaboration {
     this.database = managed.database; this.outcome = managed.outcome;
     this.orchestration = new ThreadOrchestrationLedger(this.database, now);
     this.crew = new CrewContact(this.database, actors);
+    this.crewWork = new CrewWork(this.database, actors, this.crew, now);
     this.channels = new NativeChannels(this.database, actors, actorId => !this.#closed && admittedActor(actorId),
       (c,target)=>this.#allows(c,target,'message.send'));
     this.channels.groupDisplayTitle = id => communicationExtension()?.groupDisplayTitle?.(this,this.database,id) ?? null;
@@ -679,11 +683,14 @@ export class Collaboration {
     if (action === 'cancel') { fields(args,['requestId']); await this.cancel(context,text(args.requestId),()=>{if(!this.actors.isCurrent(context)) throw new CollaborationError(401,'actor_authentication_required');}); return {cancelled:true}; }
     throw new CollaborationError(400,'unknown_collaboration_action');
   }
-  send(context: ActorContext, body: Record<string, unknown>, attachment?: ChannelAttachment) {
+  send(context: ActorContext, body: Record<string, unknown>, attachment?: ChannelAttachment, pass?: CrewPass) {
     fields(body, ['targetActorId', 'content', 'replyTo', 'idempotencyKey', 'execution']);
     if(attachment&&!validChannelAttachment(attachment))throw Error('invalid_input');
     const target = text(body.targetActorId), content = text(body.content, 16_384), reply = body.replyTo === undefined ? null : text(body.replyTo);
-    this.#require(context, target, 'message.send');
+    // A crew pass reaches the people an open piece of work answers to; everything else needs the usual permission.
+    if (pass?.allows(target, 'message.send')) {
+      if (this.#closed || !this.actors.isCurrent(context) || !this.actors.get(target)?.enabled) throw new CollaborationError(403, 'actor_action_denied');
+    } else this.#require(context, target, 'message.send');
     const intent = body.execution === undefined ? null : executionIntent(body.execution);
     if (intent) this.#require(context, target, 'execution.' + intent.mode);
     const channelId = actorChannelId(context.actorId, target);
@@ -701,6 +708,21 @@ export class Collaboration {
     });
     if (!result.replayed) this.channels.changed({ channelId, directory: created });
     return result;
+  }
+  /** Hands work to a space Bot: one message, and the work it opens, in one transaction. */
+  crewDispatch(context: ActorContext, body: Record<string, unknown>) {
+    fields(body, ['targetActorId', 'content', 'idempotencyKey', 'parentWorkId']);
+    const target = text(body.targetActorId);
+    const sent = this.send(context, { targetActorId: target, content: body.content, idempotencyKey: body.idempotencyKey });
+    const workId = this.crewWork.forMessage(String(sent.messageId)) ?? this.crewWork.open(context, target, String(sent.messageId), body.parentWorkId);
+    return { messageId: sent.messageId, workId, work: this.crewWork.view(context, workId) };
+  }
+  /** Lets the assignee of open work reach anyone that work answers to, whatever its phonebook. */
+  crewMessage(context: ActorContext, body: Record<string, unknown>) {
+    fields(body, ['workId', 'targetActorId', 'content', 'idempotencyKey']);
+    const pass = this.crewWork.pass(context, body.workId);
+    const sent = this.send(context, { targetActorId: body.targetActorId, content: body.content, idempotencyKey: body.idempotencyKey }, undefined, pass);
+    return { messageId: sent.messageId };
   }
   openChannelDirect(context: ActorContext, targetActorId: unknown) {
     const target = text(targetActorId);

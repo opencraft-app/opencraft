@@ -132,6 +132,12 @@ export interface ChannelChanged {
 export interface ChannelPerson { actorId: string; displayName: string; kind: 'human' | 'bot'; canMessage: boolean; avatar?: ChannelIdentityAvatar }
 /** Someone a space Bot may proactively reach (one-way); `session` entries are Bots. */
 export interface CrewPhonebookEntry { actorId: string; displayName: string; kind: 'human' | 'session' }
+/** One piece of crew work and the people it answers to, nearest first, the space owner last. */
+export interface CrewWorkView {
+  id: string; state: 'open' | 'closed'; origin: 'member' | 'bot' | 'routine';
+  assigneeId: string; requesterId: string; parentId: string | null; rootId: string; messageId: string | null;
+  chain: CrewPhonebookEntry[]; budget: { used: number; limit: number };
+}
 export interface ChannelsMethodMap {
   'opencraft/channels/group/get': {params:{channelId:string};result:ChannelSummary};
   'opencraft/channels/group/list-state/set': {params:{channelId:string;hidden:boolean;clientRequestId:string};result:ChannelSummary};
@@ -155,6 +161,14 @@ export interface ChannelsMethodMap {
   /** Readable by members of the Bot's space; only the space owner edits it, with members of that space. */
   "opencraft/crew/phonebook/list": { params: { botId: string }; result: { entries: CrewPhonebookEntry[] } };
   "opencraft/crew/phonebook/set": { params: { botId: string; actorId: string; present: boolean }; result: { entries: CrewPhonebookEntry[] } };
+  /** Members (same space) or Bots (phonebook, under an open parent) hand work to a space Bot. */
+  "opencraft/crew/work/dispatch": { params: { targetActorId: string; content: string; idempotencyKey: string; parentWorkId?: string }; result: { messageId: string; workId: string; work: CrewWorkView } };
+  /** The assignee of open work reaches anyone on its chain, or the space owner. */
+  "opencraft/crew/work/message": { params: { workId: string; targetActorId: string; content: string; idempotencyKey: string }; result: { messageId: string } };
+  "opencraft/crew/work/start": { params: Record<string, never>; result: { work: CrewWorkView } };
+  "opencraft/crew/work/finish": { params: { workId: string }; result: { work: CrewWorkView } };
+  "opencraft/crew/work/get": { params: { workId: string }; result: { work: CrewWorkView } };
+  "opencraft/crew/work/list": { params: Record<string, never>; result: { works: CrewWorkView[] } };
   "opencraft/channels/group/create": {
     params: { title: string; memberActorIds: string[]; clientRequestId: string };
     result: ChannelSummary;

@@ -59,6 +59,12 @@ export function communicationCommand(service: Collaboration, db: DatabaseSync, c
         case 'opencraft/channels/direct/open': fields(p,['actorId']);return service.openChannelDirect(c,p.actorId);
         case 'opencraft/crew/phonebook/list':fields(p,['botId']);return {entries:service.crew.phonebook(c,p.botId)};
         case 'opencraft/crew/phonebook/set':fields(p,['botId','actorId','present']);return {entries:service.crew.setPhonebook(c,p.botId,p.actorId,p.present)};
+        case 'opencraft/crew/work/dispatch':return service.crewDispatch(c,p);
+        case 'opencraft/crew/work/message':return service.crewMessage(c,p);
+        case 'opencraft/crew/work/start':fields(p,[]);return {work:service.crewWork.start(c)};
+        case 'opencraft/crew/work/finish':fields(p,['workId']);return {work:service.crewWork.finish(c,p.workId)};
+        case 'opencraft/crew/work/get':fields(p,['workId']);return {work:service.crewWork.view(c,p.workId)};
+        case 'opencraft/crew/work/list':fields(p,[]);return {works:service.crewWork.list(c)};
         case 'opencraft/channels/group/get':fields(p,['channelId']);return service.channels.getGroup(c,text(p.channelId));
         case 'opencraft/channels/group/list-state/set':fields(p,['channelId','hidden','clientRequestId']);return service.setChannelListHidden(c,text(p.channelId),p.hidden,p.clientRequestId);
         case 'opencraft/channels/group/leave':fields(p,['channelId','clientRequestId']);service.leaveChannelGroup(c,text(p.channelId),p.clientRequestId);return null;

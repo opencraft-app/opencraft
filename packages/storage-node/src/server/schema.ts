@@ -706,3 +706,16 @@ export const collaborationSpaceThreads = sqliteTable("collaboration_space_thread
   engineServerId: text("engine_server_id").notNull(), threadId: text("thread_id").notNull(), spaceId: text("space_id").notNull(),
 }, table => [primaryKey({columns:[table.engineServerId,table.threadId]}),
   foreignKey({columns:[table.spaceId],foreignColumns:[collaborationSpaces.id]})]);
+/**
+ * One piece of crew work: who it is assigned to, who handed it over, the work it was split from,
+ * and its root. Written only by Collaboration's crew work ledger. A root carries the Bot-to-Bot
+ * dispatch count for its whole tree. `origin` is 'member' for a member's request, 'bot' for a
+ * Bot's dispatch and 'routine' for work a Bot started on its own.
+ */
+export const crewWork = sqliteTable("crew_work", {
+  id: text("id").primaryKey(), spaceId: text("space_id").notNull(), assigneeId: text("assignee_id").notNull(),
+  requesterId: text("requester_id").notNull(), parentId: text("parent_id"), rootId: text("root_id").notNull(),
+  origin: text("origin").notNull(), messageId: text("message_id"), state: text("state").notNull(),
+  dispatches: integer("dispatches").notNull().default(0), createdAt: integer("created_at").notNull(), closedAt: integer("closed_at"),
+}, table => [index("crew_work_assignee").on(table.assigneeId, table.state), index("crew_work_root").on(table.rootId),
+  check("crew_work_origin", sql.raw("origin IN ('member','bot','routine')")), check("crew_work_state", sql.raw("state IN ('open','closed')"))]);
