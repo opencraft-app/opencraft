@@ -9,6 +9,15 @@ import subprocess
 import sys
 
 
+
+def require_success(completed, name):
+    """Fail with the probe's own output: evidence files stay on the runner."""
+    if completed.returncode != 0:
+        for label, text in (('stdout', completed.stdout), ('stderr', completed.stderr)):
+            tail = (text or '')[-6000:]
+            print(f'--- {name} {label} (last {len(tail)} chars) ---\n{tail}', file=sys.stderr)
+    completed.check_returncode()
+
 def sha(path):
     result = hashlib.sha256()
     with path.open('rb') as source:
@@ -65,7 +74,7 @@ def main():
     args.evidence.mkdir(parents=True, exist_ok=True)
     (args.evidence / 'native-copy.stdout.log').write_text(probe.stdout)
     (args.evidence / 'native-copy.stderr.log').write_text(probe.stderr)
-    probe.check_returncode()
+    require_success(probe, 'native-copy probe')
     result = json.loads(probe.stdout)
     if result.get('nativeCopyProbePassed') is not True or not result.get('cases') or not all(case.get('passed') is True for case in result['cases']):
         raise ValueError('Native copy probe did not pass')
@@ -76,7 +85,7 @@ def main():
                             text=True, capture_output=True, timeout=150)
     (args.evidence / 'native-input-causality.stdout.log').write_text(causal.stdout)
     (args.evidence / 'native-input-causality.stderr.log').write_text(causal.stderr)
-    causal.check_returncode()
+    require_success(causal, 'native-input-causality probe')
     causal_result = json.loads(causal.stdout)
     cases = causal_result.get('cases', [])
     if causal_result.get('passed') is not True or len(cases) < 27 or not all(case.get('passed') is True for case in cases):
@@ -86,7 +95,7 @@ def main():
                            text=True, capture_output=True, timeout=150)
     (args.evidence / 'native-ime-focus-identity.stdout.log').write_text(focus.stdout)
     (args.evidence / 'native-ime-focus-identity.stderr.log').write_text(focus.stderr)
-    focus.check_returncode()
+    require_success(focus, 'native-ime-focus-identity probe')
     focus_result = json.loads(focus.stdout)
     focus_cases = focus_result.get('cases', [])
     if (focus_result.get('passed') is not True or focus_result.get('readOnlyFocusQueryProved') is not True
