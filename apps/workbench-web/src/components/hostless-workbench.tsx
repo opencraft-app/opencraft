@@ -1,3 +1,4 @@
+import { AppShellStandardPage } from "./app-shell-standard-page";
 import { DEFAULT_APPLICATION_BRANDING } from "@opencraft/extension-contract";
 import { ApplicationBrand } from "./application-brand";
 import { browserServerContext } from "../runtime/server-context";
@@ -415,7 +416,7 @@ export function HostlessWorkbench({
         onSidebarResizeEnd={commitSidebarWidth}
         onRightPanelOpenChange={() => undefined}
       >
-        <div
+        <AppShellStandardPage
           className={
             routeSettingsOpen
               ? "hostless-workbench__main settings-page__main"
@@ -454,7 +455,7 @@ export function HostlessWorkbench({
               </div>
             )}
             </ApplicationRouteMotion>
-        </div>
+        </AppShellStandardPage>
         <ConversationSearch enabled={!!nativeSearch} open={searchOpen} onOpenChange={setSearchOpen} threads={[]} loading={false} sources={searchSources} onSelectThread={()=>{}} onSelectView={openExtensionView}/>
       </AppShell>
       </AppShellRouteRegionsProvider>

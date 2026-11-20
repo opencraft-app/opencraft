@@ -342,3 +342,5 @@
   box-sizing: border-box; text-align: center; color: var(--color-text-secondary);
   p { margin: 0; @include typography.role(body, secondary); }
 }
+
+.people-page__description { margin: 0; color: var(--color-text-secondary); }

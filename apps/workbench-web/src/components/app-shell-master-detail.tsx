@@ -1,9 +1,10 @@
 import { createContext, useContext, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import type { PlatformMasterDetailProps } from "@opencraft/extension-react";
+import { StandardPageTitle, type PlatformMasterDetailProps } from "@opencraft/extension-react";
 import { resolveShellSpace } from "@opencraft/workbench-runtime";
 import { frame } from "@opencraft/design-system/tokens";
 import { AppShellRouteHeaderRegion } from "./app-shell-route-regions";
 import "./app-shell-master-detail.scss";
+import { AppShellPageHeaderContext } from "./app-shell-standard-page";
 import { RouteStackFocusContext } from "./route-stack-motion";
 
 const widthKey = "opencraft.inbox.listWidth";
@@ -17,7 +18,7 @@ function readWidth() {
 const SplitContext = createContext(false);
 /** Only Header chrome changes owner: the conversation/editor subtree never moves. */
 function MasterDetailHeader({ children }: { readonly children: ReactNode }) {
-  return useContext(SplitContext) ? <header>{children}</header> : <AppShellRouteHeaderRegion>{children}</AppShellRouteHeaderRegion>;
+  return <AppShellRouteHeaderRegion suppressReturn={useContext(SplitContext)}>{children}</AppShellRouteHeaderRegion>;
 }
 
 /** Collection composition over the existing Shell capacity engine. Width is the
@@ -69,10 +70,10 @@ export function AppShellMasterDetailRegion({ master, masterLabel, detailSelected
       if (requestFocus) requestFocus(target); else target.focus({ preventScroll: true });
     }
   }, [masterVisible, detailVisible, requestFocus]);
-  return <SplitContext.Provider value={split}>{split ? <AppShellRouteHeaderRegion suppressReturn>{null}</AppShellRouteHeaderRegion> : null}<div ref={root} className="app-shell-master-detail" data-presentation={mode} data-route-stack-presentation={split ? "in-place" : "page"}
+  return <SplitContext.Provider value={split}>{!detailSelected ? <AppShellRouteHeaderRegion suppressReturn={split}><StandardPageTitle>{masterLabel}</StandardPageTitle></AppShellRouteHeaderRegion> : null}<div ref={root} className="app-shell-master-detail" data-presentation={mode} data-route-stack-presentation={split ? "in-place" : "page"}
     style={{ "--master-detail-navigation-width": `${listWidth}px` } as CSSProperties}>
     <aside onFocusCapture={event => { focusedPane.current = "master"; lastMasterFocus.current = event.target as HTMLElement; }} ref={masterRef} className="app-shell-master-detail__master" aria-label={masterLabel} tabIndex={-1}
-      data-visible={masterVisible} inert={!masterVisible} aria-hidden={!masterVisible || undefined}>{master}</aside>
+      data-visible={masterVisible} inert={!masterVisible} aria-hidden={!masterVisible || undefined}><AppShellPageHeaderContext.Provider value={false}>{master}</AppShellPageHeaderContext.Provider></aside>
     {split && <div className="app-shell-master-detail__resize" role="separator" aria-orientation="vertical"
       aria-label={masterLabel} aria-valuemin={minList} aria-valuemax={limit} aria-valuenow={listWidth} tabIndex={0}
       onDoubleClick={() => save(null)}

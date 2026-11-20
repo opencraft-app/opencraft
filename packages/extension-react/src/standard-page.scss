@@ -1,0 +1,10 @@
+.standard-page-title {
+  margin: 0;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--typography-panel-title-font);
+  letter-spacing: var(--typography-panel-title-tracking);
+  color: var(--color-text);
+}

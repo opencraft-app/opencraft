@@ -1,3 +1,4 @@
+import { AppShellStandardPage } from "./components/app-shell-standard-page";
 import {ConversationArchivedBadge, ConversationUnavailableState} from "./components/conversation-archived";
 import { recordQueueError } from "./runtime/queue-error-history";
 import { routeStackPresentation } from "./components/route-stack-motion";
@@ -2468,7 +2469,7 @@ export function App({
           rightPanel={panelHost ? null : rightPanelView}
         >
         {panelHost ? createPortal(rightPanelView, panelHost.target) : null}
-        <div className="workbench-route-stage">
+        <AppShellStandardPage className="workbench-route-stage">
           {!embedded && visibleOnboardingOverlay !== null ? <Suspense fallback={
             <div className="hostless-workbench__empty-stage" role="dialog" aria-modal={visibleOnboardingOverlay === "gate"}
               aria-label={intl.formatMessage({ id: "common.loading", defaultMessage: "Loading…" })}>
@@ -2889,7 +2890,7 @@ export function App({
             </RouteViewStack>
           ) : null}
           </ApplicationRouteMotion>
-        </div>
+        </AppShellStandardPage>
         {shortcutHelpOpen ? <WorkbenchShortcutHelp onClose={() => setShortcutHelpOpen(false)} /> : null}
         <ConversationSearch enabled={presentation.shellNavigation} open={conversationSearchOpen} onOpenChange={setConversationSearchOpen}
           sources={searchSources} onSelectView={workbenchNavigation.openExtensionView}

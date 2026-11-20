@@ -10,7 +10,7 @@ import type { ChannelPerson, PersonalAssistantStatus, PersonalAssistantModelCata
 import { CompanionAvatar } from '@opencraft/design-system-web/companion-avatar';
 import { ObjectRowButton } from '@opencraft/design-system-web/button';
 import { NavigationList, NavigationItem } from '@opencraft/design-system-web/navigation';
-import { AvatarImage, IdentityAvatarContext, SettingsButton, SettingsIconButton, SegmentedControl, SettingsChoiceSelect, SettingsPageHeader, SettingsSection, SettingsGroup, SettingsRow, SettingsTextInput, type ExtensionSettingsViewProps } from '@opencraft/extension-react';
+import { AvatarImage, StandardPage, StandardPageTitle, IdentityAvatarContext, SettingsButton, SettingsIconButton, SegmentedControl, SettingsChoiceSelect, SettingsSection, SettingsGroup, SettingsRow, SettingsTextInput, type ExtensionSettingsViewProps } from '@opencraft/extension-react';
 import { useIntl } from '@opencraft/i18n/react';
 import type { ChannelRpc } from './channel-client';
 import { CreateGroupButton } from './channel-group-controls';
@@ -132,7 +132,7 @@ export function createPeopleViews(transport:ChannelRpc, activation:AbortSignal, 
       <EntryGlyph kind="assistant"/><span data-navigation-label="" className="people-entry-label">{intl.formatMessage(agentsTitle)}</span>
     </NavigationItem></NavigationList>;
   }
-  function DirectoryPage({host,reportError,mode}:ExtensionSettingsViewProps & {mode:'inbox'|'agents'}) {
+  function DirectoryPage({host,reportError,regions,mode}:ExtensionSettingsViewProps & {mode:'inbox'|'agents'}) {
     const intl=useIntl(),f=(key:keyof typeof messages)=>intl.formatMessage(messages[key]);
     const [tab,setTab]=useState('groups'),[details,setDetails]=useState(false),[confirmStop,setConfirmStop]=useState(false),[listRetry,setListRetry]=useState(0);
     const groupsState=useResource(groupsResource,0),statusState=useResource(statusResource,0);
@@ -204,8 +204,8 @@ export function createPeopleViews(transport:ChannelRpc, activation:AbortSignal, 
     const visibleGroups=groups.filter(group=>group.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
     const selectedChannel = host.activeView?.viewId === chatViewId ? parseChannelResource(host.activeView.resourceUri)?.id : undefined;
     const phaseText=status?.assistant?.state==='claimed'?f(status.runtime.phase):f('stopped');
-    return <div className={"people-page"+(mode==='inbox'?' people-page--inbox':'')+(memoryOpen&&claimed?' people-page--memory':'')}>
-      <SettingsPageHeader title={intl.formatMessage(mode==='agents'?agentsTitle:title)} description={mode==='agents'?f('agentsAbout'):undefined}/>
+    return <StandardPage regions={regions} header={<StandardPageTitle>{intl.formatMessage(mode==='agents'?agentsTitle:title)}</StandardPageTitle>} className={"people-page"+(mode==='inbox'?' people-page--inbox':'')+(memoryOpen&&claimed?' people-page--memory':'')}>
+      {mode==='agents'?<p className="people-page__description">{f('agentsAbout')}</p>:null}
       {mode==='inbox'?<div className="people-toolbar">
         <div className="people-toolbar-search"><SettingsTextInput aria-label={f('searchAll')} placeholder={f('searchAll')} value={query} onChange={e=>setQuery(e.target.value)} maxLength={128}/>
         <CreateGroupButton client={runtime.client} reportError={reportError} onCreated={group=>{void groupsResource.refresh();host.openView(chatViewId,'opencraft-channel:'+group.id);}}/></div>
@@ -273,7 +273,7 @@ export function createPeopleViews(transport:ChannelRpc, activation:AbortSignal, 
           }).catch(()=>{if(!controller.signal.aborted)warn();}).finally(()=>{if(!controller.signal.aborted&&epoch===listEpoch.current)setListing(false);});
         }}>{f('more')}</SettingsButton>:null}
       </section>}
-    </div>;
+    </StandardPage>;
   }
   function Scoped({children}:{children:import('react').ReactNode}) { const active=useSyncExternalStore(runtime.subscribeScope,runtime.getScope,runtime.getScope);return active?children:null; }
   function Page(props:ExtensionSettingsViewProps){return <Scoped><DirectoryPage {...props} mode="inbox"/></Scoped>;}

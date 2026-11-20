@@ -24,6 +24,7 @@ import type { ComponentProps } from "react";
 
 import { AppShellToolbarSelect } from "./app-shell-toolbar-select";
 import { AppShellNestedNavigation } from "./app-shell-nested-navigation";
+import { AppShellStandardPage } from "./app-shell-standard-page";
 import { AppShellMasterDetailRegion } from "./app-shell-master-detail";
 
 interface RouteHeaderEntry {
@@ -124,6 +125,7 @@ export function useAppShellViewRegions(registry: ComponentProps<typeof ComposerE
 }
 
 export const appShellPlatformViewRegions: PlatformViewRegions = Object.freeze({
+  Page: AppShellStandardPage,
   Header: AppShellRouteHeaderRegion,
   MasterDetail: AppShellMasterDetailRegion,
   NavigationStack: AppShellNestedNavigation,

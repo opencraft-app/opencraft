@@ -6,6 +6,7 @@ import type { HostConnectionProfile, ProvisionHostInput, ThreadReadReceiptPort, 
 export * from "./composer-actions";
 export * from "./image-editor";
 export * from "./settings-controls";
+export * from "./standard-page";
 export * from "./settings-panel";
 export * from "./adaptive-panel";
 export * from "./settings-search-select";
@@ -59,7 +60,15 @@ export interface PlatformNavigationStackProps {
   readonly children: ReactNode;
 }
 
+/** Standard page chrome; the feature retains its content, scrollports and state. */
+export interface PlatformStandardPageProps {
+  readonly header?: ReactNode;
+  readonly children: ReactNode;
+  readonly className?: string;
+}
+
 export interface PlatformViewRegions {
+  readonly Page?: ComponentType<PlatformStandardPageProps>;
   readonly NavigationStack?: ComponentType<PlatformNavigationStackProps>;
   /** Same mounted collection/detail slots across capacity changes. No navigation or resource ownership. */
   readonly MasterDetail?: ComponentType<PlatformMasterDetailProps>;
