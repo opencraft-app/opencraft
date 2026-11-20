@@ -54,10 +54,14 @@ window.Office = (function () {
     s.moveTo(-w + r, -h); s.lineTo(w - r, -h); s.quadraticCurveTo(w, -h, w, -h + r); s.lineTo(w, h - r); s.quadraticCurveTo(w, h, w - r, h); s.lineTo(-w + r, h); s.quadraticCurveTo(-w, h, -w, h - r); s.lineTo(-w, -h + r); s.quadraticCurveTo(-w, -h, -w + r, -h);
     BUBBLE = new THREE.ExtrudeGeometry(s, { depth: .5, bevelEnabled: true, bevelThickness: .12, bevelSize: .1, bevelSegments: 6, curveSegments: 24 }); BUBBLE.translate(0, 0, -.25); return BUBBLE; }
   function bubbleBody(sp, m, dark, mats) { var k = .8, body = add(sp, bubbleGeo(), m, 0, .74, 0); body.scale.setScalar(k);
-    var eyes = new THREE.Group(), down = new THREE.Group(), z = .38 * k, amber = clay(0xf0a63a, { emissive: 0xf0a63a, emissiveIntensity: .5, roughness: .4 }); mats.push(amber); sp.add(eyes); sp.add(down);
+    var eyes = new THREE.Group(), down = new THREE.Group(), z = .38 * k, amber = clay(0xe8800c, { emissive: 0xe8800c, emissiveIntensity: .18, roughness: .45 }); mats.push(amber); sp.add(eyes); sp.add(down);
     [-.12, .12].forEach(function (x) { part(eyes, BALL, dark, x * k, .8, z, .045 * k * 1.4, .1 * k * 1.4, .03); part(down, BALL, dark, x * k, .72, z, .045 * k * 1.4, .055 * k * 1.4, .03); }); /* 胶囊眼睛；正在做事时往下看 */
-    down.visible = false; var ask = part(sp, BALL, amber, .5, 1.1, .1, .07); ask.visible = false; /* 需要你：右上角一个琥珀色的点 */
-    part(sp, BOX, clay(0xf3efe8), -.56, .45, .22, .09, .15, .02); /* 手里的手机 */
+    down.visible = false;
+    /* 需要你：右上角一颗琥珀色的球，外面一圈白边，从哪个角度都看得见 */
+    var ask = new THREE.Group(); ask.position.set(.5, 1.2, .12); sp.add(ask); part(ask, BALL, clay(0xffffff, { roughness: .3 }), 0, 0, 0, .13); part(ask, BALL, amber, 0, 0, .03, .11); ask.visible = false;
+    /* 手里的手机：竖着拿在身体左前方，深色屏幕朝外 */
+    var ph = new THREE.Group(); ph.position.set(-.6, .5, .26); ph.rotation.set(-.15, .35, .12); sp.add(ph);
+    var pm = clay(0xf3efe8), ps = clay(0x23262b, { roughness: .2 }); mats.push(pm, ps); part(ph, BOX, pm, 0, 0, 0, .12, .2, .035); part(ph, BOX, ps, 0, .01, .03, .095, .16, .01);
     return { eyes: eyes, dots: down, ask: ask }; }
   function dropPet(id) { var p = pets[id]; delete pets[id]; p.el.remove(); if (p.bob) p.bob.kill(); if (p.glow) p.glow.kill(); gsap.to(p.g.scale, { x: .01, y: .01, z: .01, duration: dur(.3), onComplete: function () { scene.remove(p.g); } }); }
 
