@@ -47,7 +47,7 @@ test('standalone Expo config keeps the public identity and requests no unused pe
 
 // Real public shell entry with only native SDK/Expo subprocesses replaced.
 // Stop before generating a native project, signing or invoking Gradle/Xcode.
-function capturePrebuild(script, release) {
+function capturePrebuild(script, release, { throughGradle = false, env: extraEnv = {} } = {}) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'opencraft-native-build-'));
   try {
     // Standalone source fixture without a generated native project.
@@ -64,6 +64,12 @@ function capturePrebuild(script, release) {
       const args = process.argv.slice(2);
       if (args[0] === '-e') {
         require('node:child_process').execFileSync(process.execPath, args, { stdio: 'inherit' });
+      } else if (process.env.NATIVE_TEST_THROUGH_GRADLE === '1') {
+        // Stand in for the generated Android project: its Gradle wrapper
+        // records the arguments the build script passes and stops there.
+        const fs = require('node:fs');
+        fs.mkdirSync('android', { recursive: true });
+        fs.writeFileSync('android/gradlew', ['#!/bin/sh', 'for arg in "$@"; do echo "$arg"; done > "$NATIVE_TEST_RESULT"', 'exit 42', ''].join(String.fromCharCode(10)), { mode: 0o755 });
       } else {
         require('node:fs').writeFileSync(process.env.NATIVE_TEST_RESULT, JSON.stringify({args,
           cwd: process.cwd(), release: process.env.OPENCRAFT_ANDROID_RELEASE }));
@@ -77,9 +83,13 @@ function capturePrebuild(script, release) {
     const env = { ...process.env, PATH: bin + path.delimiter + process.env.PATH,
       APPLE_TEAM_ID: 'fixture-team', ANDROID_HOME: temp, OPENCRAFT_IOS_RELEASE: release ? '1' : '0',
       OPENCRAFT_ANDROID_RELEASE_KEYSTORE: key, OPENCRAFT_ANDROID_RELEASE_PASSWORD_FILE: key,
-      OPENCRAFT_ANDROID_RELEASE_KEY_ALIAS: 'fixture', NATIVE_TEST_RESULT: result };
+      OPENCRAFT_ANDROID_RELEASE_KEY_ALIAS: 'fixture', NATIVE_TEST_RESULT: result,
+      NATIVE_TEST_THROUGH_GRADLE: throughGradle ? '1' : '0', ...extraEnv };
+    delete env.OPENCRAFT_ANDROID_ARCHITECTURES;
+    Object.assign(env, extraEnv);
     const execution = spawnSync('bash', [path.join(standalone, 'scripts', script)], { env, encoding: 'utf8' });
     assert.equal(execution.status, 42, execution.stderr);
+    if (throughGradle) return fs.readFileSync(result, 'utf8').trim().split(/\r?\n/u);
     const selected = JSON.parse(fs.readFileSync(result, 'utf8'));
     assert.equal(fs.realpathSync(selected.cwd), fs.realpathSync(standalone), 'prebuild runs in the same checkout across filesystem aliases');
     return selected;
@@ -101,4 +111,13 @@ for (const [script, platform, clean] of [
 test('iOS release keeps a clean prebuild', { skip: process.platform === 'win32' }, () => {
   const selected = capturePrebuild('build-ios-ipa.sh', true);
   assert.equal(selected.args.at(-1), '--clean');
+});
+
+test('Android APKs carry only arm64 native libraries unless other ABIs are requested', { skip: process.platform === 'win32' }, () => {
+  const gradle = capturePrebuild('build-android-apk.sh', false, { throughGradle: true });
+  assert.ok(gradle.includes(':app:assembleRelease'));
+  assert.ok(gradle.includes('-PreactNativeArchitectures=arm64-v8a'));
+  const both = capturePrebuild('build-android-apk.sh', false, { throughGradle: true, env: { OPENCRAFT_ANDROID_ARCHITECTURES: 'arm64-v8a,armeabi-v7a' } });
+  assert.ok(both.includes('-PreactNativeArchitectures=arm64-v8a,armeabi-v7a'));
+  assert.throws(() => capturePrebuild('build-android-apk.sh', false, { throughGradle: true, env: { OPENCRAFT_ANDROID_ARCHITECTURES: 'arm64-v8a;rm -rf' } }));
 });

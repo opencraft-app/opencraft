@@ -159,6 +159,11 @@ On a network where Maven Central is rate limited, set
 selects the checked-in Aliyun/Tencent Gradle repository configuration; CI uses
 the default repositories.
 
+The APK carries arm64-v8a native libraries only, which covers current phones;
+set `OPENCRAFT_ANDROID_ARCHITECTURES` to a comma-separated ABI list (for
+example `arm64-v8a,armeabi-v7a`, or add `x86_64` for an emulator) to build
+others. The release APK script reads the same variable.
+
 The build generates or updates the ignored `android/` directory, bundles the
 JavaScript into a standalone release APK, verifies its signature, and writes
 `release/OpenCraft-android-internal.apk` with a SHA-256 file. The application
