@@ -116,7 +116,7 @@ OpenCraft 所有自有客户端及内置插件的用户界面遵循[全项目国
 
 ## 界面图标禁止 Lucide
 
-OpenCraft 界面图标禁止使用 Lucide，包括 `lucide-react`、其他平台适配包及直接搬用其 SVG 路径。新增、替换与维护图标统一使用项目共享自绘组件（Web 为 `@opencraft/design-system-web/action-icons`，Native 为 `@opencraft/design-system-native/action-icons`，通用图形几何由 `@opencraft/design-system/action-artwork` 持有），缺少语义时在共享图标 owner 补齐，业务插件不另造一份。此要求覆盖此前允许 Lucide 的决定；既有残留应明确记录并迁移，不能以规则更新宣称已经全仓清除。
+OpenCraft 界面图标禁止使用 Lucide，包括 `lucide-react`、其他平台适配包及直接搬用其 SVG 路径。新增、替换与维护图标统一使用项目共享自绘组件（Web 为 `@opencraft/design-system-web/action-icons`，通用图形几何由 `@opencraft/design-system/action-artwork` 持有），缺少语义时在共享图标 owner 补齐，业务插件不另造一份。此要求覆盖此前允许 Lucide 的决定；既有残留应明确记录并迁移，不能以规则更新宣称已经全仓清除。
 
 ## UI 与设计系统
 

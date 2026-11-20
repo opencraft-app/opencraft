@@ -2218,48 +2218,6 @@
       "count": 1
     },
     {
-      "file": "packages/chat-render-native/src/renderers/code.tsx",
-      "kind": "accessibilityLabel",
-      "text": "Disable word wrap",
-      "count": 1
-    },
-    {
-      "file": "packages/chat-render-native/src/renderers/code.tsx",
-      "kind": "accessibilityLabel",
-      "text": "Enable word wrap",
-      "count": 1
-    },
-    {
-      "file": "packages/chat-render-native/src/renderers/code.tsx",
-      "kind": "accessibilityLabel",
-      "text": "Copied code",
-      "count": 1
-    },
-    {
-      "file": "packages/chat-render-native/src/renderers/code.tsx",
-      "kind": "accessibilityLabel",
-      "text": "Copy code",
-      "count": 1
-    },
-    {
-      "file": "packages/chat-render-native/src/renderers/prose.tsx",
-      "kind": "accessibilityLabel",
-      "text": "Color ${…}",
-      "count": 1
-    },
-    {
-      "file": "packages/chat-render-native/src/renderers/resource.tsx",
-      "kind": "accessibilityLabel",
-      "text": "Image loading",
-      "count": 2
-    },
-    {
-      "file": "packages/chat-render-native/src/renderers/resource.tsx",
-      "kind": "jsx-expression",
-      "text": "Image unavailable",
-      "count": 1
-    },
-    {
       "file": "packages/chat-render-web/src/extensions/mermaid/mermaid-diagram.tsx",
       "kind": "aria-label",
       "text": "Download Mermaid diagram",

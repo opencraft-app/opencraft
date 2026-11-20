@@ -199,21 +199,6 @@ checkFiles("Web design system adapter", "packages/design-system-web/src", [
   },
 ]);
 
-checkFiles("Native chat renderer", "packages/chat-render-native/src", [
-  {
-    pattern: /(?:from\s*|import\s*)["'](?:react-dom|shiki|katex|mermaid)/m,
-    message: "must not import DOM or Web-only heavy renderers",
-  },
-  {
-    pattern: /(?:from\s*|import\s*)["'][^"']+\.s?css["']/m,
-    message: "must not import Web styles",
-  },
-  {
-    pattern: /(?:(?<![\w.])(?:window|document|localStorage)\s*(?:\.|\[)|\btypeof\s+(?:window|document|localStorage)\b|\b(?:HTMLElement|HTMLInputElement)\b)/,
-    message: "must not reference browser globals",
-  },
-]);
-
 for (const directory of [
   "packages/appserver-client/src",
   "packages/appserver-replica/src",

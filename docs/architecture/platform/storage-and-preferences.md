@@ -264,7 +264,6 @@ protocol adaptations are tracked there rather than implied by a successful build
 | `appserver-replica` | V4 authority/client, journal replay, snapshot replacement and Cordis registry | none |
 | `appserver-replica-storage-node` | atomic JSON persistence for servers and Lab | Node filesystem |
 | `appserver-replica-storage-web` | transactional client cache | IndexedDB |
-| `appserver-replica-storage-expo` | transactional native client cache | Expo SQLite |
 | `appserver-session` | AppServer Resume/View hydration and V3 compatibility reader adapter | none |
 | `appserver-transport-websocket` | browser, React Native and direct daemon WebSocket | WebSocket only |
 | `appserver-transport-memory` | deterministic in-process AppServer | none |
