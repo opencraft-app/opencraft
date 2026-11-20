@@ -386,3 +386,11 @@ body.office-wide #ofback { display: none; }
 .av.bot { background: none; border-radius: 0; overflow: visible; }
 .av.bot::before, .av.bot::after { content: none; }
 .av.bot svg { display: block; width: 100%; height: 100%; }
+
+/* 需要你：琥珀色，和“正在做事”的绿色并列，形状也不同（角点 + 文字标签） */
+.status.ask { color: var(--color-text-warning); }
+.needs { display: inline-block; padding: 0 6px; border-radius: 999px; background: var(--color-badge-orange-background); color: var(--color-badge-orange-foreground); font: 600 11px/18px var(--font-sans); font-style: normal; }
+.msg.ask .bub { border-color: #f0a63a; box-shadow: 0 0 0 1px #f0a63a; }
+.ask-tag { font: 500 11px/16px var(--font-sans); color: var(--color-text-warning); padding-left: 4px; }
+.msg.noav { margin-left: 0; }
+#labels span.ask::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: #f0a63a; vertical-align: 1px; }

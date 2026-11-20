@@ -6,7 +6,7 @@
    这是原型，没有接真实的 Bot：你发出去的话不会有人回。 */
 (function () {
   'use strict';
-  var KEY = 'opencraft.bots.v4', $ = function (id) { return document.getElementById(id); };
+  var KEY = 'opencraft.bots.v5', $ = function (id) { return document.getElementById(id); };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
   var COLORS = ['#e9e6f0', '#a9dcc9', '#a9c8f2', '#fbe39c', '#c3b5ee', '#f9cdb0', '#bfe3ee'];
   var NAMES = ['青柚', '白榆', '半夏', '南星', '远山', '知秋'];
@@ -41,10 +41,12 @@
         { from: 'h2', to: 'c', text: '10 月的发票我放网盘了。', ts: ago(35) },
         { from: 'c', to: 'h2', text: '收到，登记完给你看。', ts: ago(33) },
         { from: 'c', to: 'me', text: '在登记了，周五前给你。', ts: ago(30) },
-        { from: 'z', to: 'g1', text: '页码核完了，就差版本号。', ts: ago(20) }
+        { from: 'z', to: 'g1', text: '页码核完了，就差版本号。', ts: ago(20) },
+        { from: 'z', to: 'g1', text: '签字页写的是 2.3，交付包里是 2.3.1。用哪一版？', ts: ago(5) }
       ],
       read: { a: ago(45), c: ago(36), g1: ago(30) },
-      doing: { z: { text: '核对签字页的版本和页码', tool: 'drive', ts: ago(8) }, c: { text: '登记 10 月的报销', tool: 'mail', ts: ago(12) } },
+      asks: [{ who: 'z', where: 'g1', text: '签字页用 2.3 还是 2.3.1', ts: ago(5) }], /* 卡住了，等你拍板。他只能在找得到你的地方问：这里是群 */
+      doing: { c: { text: '登记 10 月的报销', tool: 'mail', ts: ago(12) } },
       log: [
         { who: 'c', tool: 'drive', text: '改了「10 月报销表」', ts: ago(20) },
         { who: 'z', tool: 'drive', text: '新建了「签字页核对记录」', ts: ago(15) },
@@ -54,8 +56,8 @@
     };
   }
   var db = sample();
-  try { var raw = JSON.parse(localStorage.getItem(KEY)); if (raw && raw.people && raw.v === 4) db = raw; } catch (e) { /* 没有存储也能用 */ }
-  function save() { db.v = 4; try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { /* ignore */ } }
+  try { var raw = JSON.parse(localStorage.getItem(KEY)); if (raw && raw.people && raw.v === 5) db = raw; } catch (e) { /* 没有存储也能用 */ }
+  function save() { db.v = 5; try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { /* ignore */ } }
 
   function P(id) { return db.people.filter(function (x) { return x.id === id; })[0]; }
   function T(id) { return db.tools.filter(function (x) { return x.id === id; })[0]; }
@@ -105,8 +107,8 @@
   var SVG = function (d) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>'; };
   var ICON = { back: SVG('<path d="m15 6-6 6 6 6"/>'), send: SVG('<path d="M12 19.500v-15m-5 5 5-5 5 5"/>'), x: SVG('<path d="m6 6 12 12M6 18 18 6"/>'), chev: SVG('<path d="m9 6 6 6-6 6"/>'),
     plus: SVG('<path d="M12 5v14M5 12h14"/>'), search: SVG('<path d="M17.500 10.750a6.750 6.750 0 1 1-13.500 0 6.750 6.750 0 0 1 13.500 0ZM15.500 15.500l5 5"/>'),
-    chat: SVG('<path d="M7.500 4.500h9A3.500 3.500 0 0 1 20 8v6.500a3.500 3.500 0 0 1-3.500 3.500H9l-5 3V8a3.500 3.500 0 0 1 3.500-3.500Z"/>'),
-    bot: SVG('<rect x="4" y="6.500" width="16" height="13" rx="3"/><path d="M12 3.500v3M9.500 15.500h5"/><circle cx="8.500" cy="11.500" r=".750" fill="currentColor" stroke="none"/><circle cx="15.500" cy="11.500" r=".750" fill="currentColor" stroke="none"/>'),
+    chat: SVG('<path d="M20.500 3.500 3.500 10.500l7 2.500 2.500 7 7.500-16.500ZM10.500 13 15 8.500"/>'), /* 发消息：纸飞机，不和 Bot 的气泡同形 */
+    bot: SVG('<path d="M8.500 4.500h7A5.500 5.500 0 0 1 21 10v1.500a5.500 5.500 0 0 1-3 4.900V20l-3.800-3H8.500A5.500 5.500 0 0 1 3 11.500V10a5.500 5.500 0 0 1 5.500-5.500Z"/><path d="M9.500 9.500v2.500M14.500 9.500v2.500"/>'), /* Bot：气泡轮廓加两只眼睛，和头像同一个样子 */
     pc: SVG('<rect x="4" y="4.500" width="16" height="12" rx="2.750"/><path d="M12 16.500V20m-3.500 0h7"/>'), cloud: SVG('<path d="M7 18.500a4.500 4.500 0 0 1-1.200-8.800 6 6 0 0 1 11.600-1.400A5.200 5.200 0 0 1 17 18.500H7Z"/>'),
     tool: SVG('<path d="M14 4a5.600 5.600 0 0 0-6.400 7.500l-3.500 3.600a2.800 2.800 0 0 0 4 4l3.500-3.600A5.600 5.600 0 0 0 19 9l-3.500 3-3.200-3.200L15 5.500 14 4Z"/>'),
     mail: SVG('<rect x="3.500" y="5.500" width="17" height="13" rx="2.750"/><path d="m4.500 7.500 7.500 5.500 7.500-5.500"/>'), phone: SVG('<rect x="7" y="3.500" width="10" height="17" rx="2.500"/><path d="M11 17.500h2"/>'),
@@ -119,24 +121,32 @@
   /* 头像：Bot 是带眼睛的圆角方块，人是圆的剪影（你是深色的），群是成员头像拼成的格子 */
   function av(id, cls) { var p = P(id); if (!p) return ''; var c = ' style="--c:' + COLORS[(p.look || 0) % COLORS.length] + '"', k = cls ? ' ' + cls : '';
     if (p.kind === 'group') { var m = finders(id).slice(0, 4); return '<span class="av grp' + k + (m.length > 1 ? '' : ' one') + '" aria-hidden="true">' + m.map(function (x) { return av(x.id, 'mini'); }).join('') + '</span>'; }
-    if (p.kind === 'bot') return '<span class="av bot' + k + '" aria-hidden="true">' + bubble(COLORS[(p.look || 0) % COLORS.length], !!db.doing[p.id], /mini/.test(k)) + '</span>';
+    if (p.kind === 'bot') return '<span class="av bot' + k + '" aria-hidden="true">' + bubble(COLORS[(p.look || 0) % COLORS.length], mood(p.id), /mini/.test(k)) + '</span>';
     return '<span class="av hu' + (p.kind === 'me' ? ' me' : '') + k + '"' + c + ' aria-hidden="true">' + esc(p.mono || p.name.slice(0, 1)) + '</span>'; } /* 人：圆形，写名字的第一个字 */
-  /* Bot 的样子：一个对话气泡，带一条小尾巴；正在做事时两只眼睛变成“正在输入”的三个绿点。最小的格子里去掉尾巴 */
-  function bubble(c, busy, tiny) { var cy = tiny ? 24 : 20.500;
-    var face = busy ? [14.500, 24, 33.500].map(function (x) { return '<circle cx="' + x + '" cy="' + cy + '" r="3.200" fill="#2fbf71"/>'; }).join('')
-      : '<circle cx="18.500" cy="' + cy + '" r="3.200" fill="#1d1f23"/><circle cx="29.500" cy="' + cy + '" r="3.200" fill="#1d1f23"/>';
-    return '<svg viewBox="0 0 48 48">' + (tiny ? '<rect x="2" y="7" width="44" height="34" rx="15" fill="' + c + '"/>' : '<path d="M16 4h16c7.200 0 13 5.800 13 13v4c0 7.200-5.800 13-13 13H21l-9 9v-9.600C6.900 32.100 3 27.900 3 21v-4C3 9.800 8.800 4 16 4Z" fill="' + c + '"/>') + face + '</svg>'; }
+  /* Bot 的样子：一个对话气泡，尾巴在右下，朝着他自己说的话；眼睛是两条竖的胶囊（OpenCraft 的记号）。
+     正在做事：眼睛往下看（看桌上的电脑），右上角一个绿点；需要你：眼睛看着你，右上角一个琥珀色点。
+     整体往下挪 2，让眼睛和圆形头像的中心对齐；最小的格子里去掉尾巴和角点。 */
+  function bubble(c, state, tiny) {
+    var eyeY = state === 'busy' ? 22.500 : 17.500, eyeH = state === 'busy' ? 5 : 9, ink = '#1d1f23';
+    var eyes = [16.300, 27.300].map(function (x) { return '<rect x="' + x + '" y="' + (tiny ? eyeY + 2.500 : eyeY) + '" width="4.400" height="' + eyeH + '" rx="2.200" fill="' + ink + '"/>'; }).join('');
+    var body = tiny ? '<rect x="2" y="7" width="44" height="34" rx="15" fill="' + c + '"/>' : '<path transform="matrix(-1 0 0 1 48 0)" d="M16 4h16c7.200 0 13 5.800 13 13v4c0 7.200-5.800 13-13 13H21l-9 9v-9.600C6.900 32.100 3 27.900 3 21v-4C3 9.800 8.800 4 16 4Z" fill="' + c + '"/>';
+    var dot = tiny || state === 'idle' ? '' : '<circle cx="40.500" cy="7.500" r="5.500" fill="' + (state === 'busy' ? '#2fbf71' : '#f0a63a') + '" style="stroke:var(--color-background-surface)" stroke-width="2.500"/>';
+    return '<svg viewBox="0 0 48 48"><g transform="translate(0 ' + (tiny ? 0 : 2) + ')">' + body + eyes + '</g>' + dot + '</svg>'; }
   function go(page) { return ' data-go=\'' + esc(JSON.stringify(page)) + '\''; }
   function tag(x) { return x.kind === 'out' ? '<em>公司外</em>' : ''; }
-  function status(b) { var d = db.doing[b.id]; return d ? '<span class="status busy">正在' + esc(d.text) + '</span>' : '<span class="status">空闲</span>'; }
+  function askOf(id) { return (db.asks || []).filter(function (a) { return a.who === id; })[0]; } /* 他在等你回答的问题 */
+  function asksIn(where) { return (db.asks || []).filter(function (a) { return a.where === where; }); }
+  function mood(id) { return askOf(id) ? 'ask' : db.doing[id] ? 'busy' : 'idle'; }
+  function status(b) { var a = askOf(b.id), d = db.doing[b.id];
+    return a ? '<span class="status ask">需要你：' + esc(a.text) + '</span>' : d ? '<span class="status busy">正在' + esc(d.text) + '</span>' : '<span class="status">空闲</span>'; }
   function backBtn() { return wide() && ui.stack.length <= 1 ? '' : '<button class="ic" data-do="back" aria-label="返回">' + ICON.back + '</button>'; } /* 宽屏右边那一层是默认打开的，不需要返回 */
   function head(title, sub, right) { return '<header class="head">' + backBtn() + '<div class="ht"><h1>' + title + '</h1>' + (sub ? '<p>' + sub + '</p>' : '') + '</div>' + (right || '') + '</header>'; }
-  function line(m, self, named) { var mine = m.from === self;
-    return '<div class="msg' + (mine ? ' out' : '') + '">' + (mine ? '' : av(m.from, 'sm')) + '<div class="mb">' + (!mine && named ? '<span class="nm">' + esc(N(m.from)) + '</span>' : '') + '<div class="bub">' + esc(m.text) + '</div></div></div>'; }
+  function line(m, self, named, noAv) { var mine = m.from === self, ask = (db.asks || []).some(function (a) { return a.who === m.from && a.ts === m.ts; });
+    return '<div class="msg' + (mine ? ' out' : '') + (ask ? ' ask' : '') + (noAv ? ' noav' : '') + '">' + (mine || noAv ? '' : av(m.from, 'sm')) + '<div class="mb">' + (!mine && named ? '<span class="nm">' + esc(N(m.from)) + '</span>' : '') + '<div class="bub">' + esc(m.text) + '</div>' + (ask ? '<span class="ask-tag">等你回复</span>' : '') + '</div></div>'; }
   /* 一串消息：隔了二十分钟以上插一个时间；连续同一个人的消息合在一起 */
-  function lines(list, self, named) { var out = '', prev = null;
+  function lines(list, self, named, noAv) { var out = '', prev = null;
     list.forEach(function (m) { if (!prev || m.ts - prev.ts > 20 * 60000) out += '<p class="when">' + stamp(m.ts) + '</p>';
-      out += line(m, self, named && !(prev && prev.from === m.from && m.ts - prev.ts <= 20 * 60000)).replace('class="msg', prev && prev.from === m.from && m.ts - prev.ts <= 20 * 60000 ? 'class="msg cont' : 'class="msg'); prev = m; });
+      out += line(m, self, named && !(prev && prev.from === m.from && m.ts - prev.ts <= 20 * 60000), noAv).replace('class="msg', prev && prev.from === m.from && m.ts - prev.ts <= 20 * 60000 ? 'class="msg cont' : 'class="msg'); prev = m; });
     return out; }
   function opens(id) { var x = P(id); return x.kind === 'group' ? { k: 'group', id: id } : x.kind === 'bot' ? { k: 'bot', id: id } : { k: 'who', id: id }; }
   function isOn(page) { var t = top(); return !!t && t.k === page.k && (t.id || t.t) === (page.id || page.t); }
@@ -153,14 +163,15 @@
     return '<div class="row' + (isOn(page) ? ' on' : '') + '" data-q="' + esc(q) + '"><button class="row-main"' + go(page) + '>' + av(id, 'lg') + '<span class="t"><b>' + title + '</b><span>' + sub + '</span></span>' + (chev ? ICON.chev : '') + '</button>' + (chev ? '' : right || '') + '</div>'; }
   /* 对话：你手机里的人、Bot 和群，按最近一句排 */
   function convos() { return (P('me').phone || []).filter(P).map(function (id) { var t = thread('me', id); return { id: id, last: t[t.length - 1] }; })
-    .sort(function (x, y) { return (y.last ? y.last.ts : 0) - (x.last ? x.last.ts : 0); }); }
+    .sort(function (x, y) { return (asksIn(y.id).length ? 1 : 0) - (asksIn(x.id).length ? 1 : 0) || (y.last ? y.last.ts : 0) - (x.last ? x.last.ts : 0); }); } /* 等你拍板的排最前 */
   function convoPage(id) { return isGroup(id) ? { k: 'group', id: id } : { k: 'chat', id: id }; }
   function chatsTab() {
     var rows = convos().map(function (it) { var x = P(it.id), l = it.last, page = convoPage(it.id);
       var sub = l ? esc((l.from === 'me' ? '你：' : x.kind === 'group' ? N(l.from) + '：' : '') + l.text) : '<span class="status">还没说过话</span>';
-      var busy = ''; /* 正在做事已经画在头像上（三个绿点），名字旁不再重复 */
-      var n = unread(x.id);
-      return irow(page, x.id, esc(x.name) + busy + tag(x), sub, '<span class="rt">' + (l ? when(l.ts) : '') + (n ? '<i class="badge" aria-label="' + n + ' 条未读">' + n + '</i>' : '') + '</span>', x.name).replace('class="row', n ? 'class="row unread' : 'class="row'); }).join('');
+      var busy = ''; /* 状态画在头像右上角，名字旁不再重复 */
+      var n = unread(x.id), q = asksIn(x.id)[0];
+      if (q) sub = '<span class="status ask">' + esc(N(q.who)) + '需要你：' + esc(q.text) + '</span>';
+      return irow(page, x.id, esc(x.name) + busy + tag(x), sub, '<span class="rt">' + (l ? when(l.ts) : '') + (q ? '<i class="needs">需要你</i>' : n ? '<i class="badge" aria-label="' + n + ' 条未读">' + n + '</i>' : '') + '</span>', x.name).replace('class="row', n || q ? 'class="row unread' : 'class="row'); }).join('');
     var others = bots().filter(function (b) { return !canFind('me', b.id); }).length;
     return '<div class="flat">' + (rows || '<div class="empty"><b>你的手机里还没有人</b><span>在「成员」里把 Bot 加进来，就能和他说话。</span></div>') +
       (others ? '<button class="row more-row" data-do="tab" data-id="people"><span class="t"><span>还有 ' + others + ' 个 Bot 不在你手机里</span></span>' + ICON.chev + '</button>' : '') + '</div>';
@@ -227,7 +238,7 @@
   /* 你和一个人或 Bot 的对话 */
   function composer(id, name) { return '<form class="say" data-do="say"><input id="say" autocomplete="off" enterkeyhint="send" placeholder="对' + esc(name) + '说" aria-label="对' + esc(name) + '说"><button class="send" aria-label="发送" disabled>' + ICON.send + '</button></form>'; }
   function chat(b) { var ok = canFind('me', b.id), right = b.kind === 'bot' ? '<button class="btn sm"' + go({ k: 'bot', id: b.id }) + '>' + ICON.bot + '手机和电脑</button>' : '';
-    return '<div class="page">' + head(av(b.id, 'hd') + esc(b.name), b.kind === 'bot' ? status(b) : esc(b.role || ''), right) + '<div class="body chat" id="chat">' + (lines(thread('me', b.id), 'me') || '<div class="empty center">' + av(b.id, 'xl') + '<b>和' + esc(b.name) + '还没说过话</b><span>对' + esc(b.name) + '说第一件要办的事。</span></div>') + '</div>' +
+    return '<div class="page">' + head(av(b.id, 'hd') + esc(b.name), b.kind === 'bot' ? status(b) : esc(b.role || ''), right) + '<div class="body chat" id="chat">' + (lines(thread('me', b.id), 'me', false, true) || '<div class="empty center">' + av(b.id, 'xl') + '<b>和' + esc(b.name) + '还没说过话</b><span>对' + esc(b.name) + '说第一件要办的事。</span></div>') + '</div>' +
       (ok ? composer(b.id, b.name) : '<div class="say off"><span>你找不到' + esc(b.name) + '：他不在你手机里。</span><button class="btn sm" data-do="mein" data-id="' + b.id + '">加到我的手机</button></div>') + '</div>'; }
   /* 群聊：谁的手机里有这个群，谁就在群里 */
   function group(g) { var ok = canFind('me', g.id), m = finders(g.id);
@@ -257,7 +268,7 @@
 
   /* ---------- 办公室：同一批人换一种看法。箭头是他手机里的人（群不画） ---------- */
   function toScene() {
-    var nodes = db.people.filter(function (p) { return p.kind !== 'group'; }).map(function (p) { return { id: p.id, name: p.name, kind: p.kind, look: p.look, color: COLORS[(p.look || 0) % COLORS.length], busy: !!db.doing[p.id], pc: p.kind === 'bot' && (p.pc || []).length > 0 }; }), links = []; /* 颜色和列表头像一样 */
+    var nodes = db.people.filter(function (p) { return p.kind !== 'group'; }).map(function (p) { return { id: p.id, name: p.name, kind: p.kind, look: p.look, color: COLORS[(p.look || 0) % COLORS.length], busy: !!db.doing[p.id] && !askOf(p.id), ask: !!askOf(p.id), pc: p.kind === 'bot' && (p.pc || []).length > 0 }; }), links = []; /* 颜色和列表头像一样 */
     db.people.forEach(function (p) { (p.phone || []).forEach(function (j) { if (P(j) && !isGroup(j)) links.push([p.id, j]); }); });
     return { nodes: nodes, links: links, boss: [] };
   }
@@ -314,7 +325,7 @@
     open: function (el) { ui.view = 'list'; ui.stack = [{ k: 'bot', id: el.getAttribute('data-id') }]; draw(); },
     undo: undo,
     reset: function () { change('已恢复示例', function () { db = sample(); ui.stack = []; ui.sel = null; }); },
-    say: function () { var v = $('say').value.trim(), b = cur(); if (!v || !b || !canFind('me', b.id)) return; db.msgs.push({ from: 'me', to: b.id, text: v, ts: Date.now() }); save(); refresh(); $('say').focus(); },
+    say: function () { var v = $('say').value.trim(), b = cur(); if (!v || !b || !canFind('me', b.id)) return; db.msgs.push({ from: 'me', to: b.id, text: v, ts: Date.now() }); db.asks = (db.asks || []).filter(function (a) { return a.where !== b.id && !(a.who === b.id && !isGroup(b.id)); }); /* 你在那里回了话，他的问题就算答了 */ save(); refresh(); $('say').focus(); },
     mein: function (el) { var id = el.getAttribute('data-id'); change(findText('me', id, true), function () { var me = P('me'); me.phone = without(me.phone, id).concat(id); }); },
     meout: function (el) { var id = el.getAttribute('data-id'); change(findText('me', id, false), function () { var me = P('me'); me.phone = without(me.phone, id); }); },
     friend: function (el) { var b = cur(), id = el.getAttribute('data-id'); if (el.hasAttribute('data-pop')) ui.stack.pop(); change(findText(b.id, id, true), function () { b.phone = without(b.phone, id).concat(id); }); },

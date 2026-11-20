@@ -1,5 +1,5 @@
 /* 三维办公室：只负责把「谁在、谁能找谁」画出来，并告诉外面点了谁。
-   长相和列表里的头像对得上：颜色相同；Bot 是一个对话气泡，面前有桌子和电脑，人是圆的；公司外的人站在右边的小台子上。
+   长相和列表里的头像对得上：颜色相同；Bot 是一个对话气泡（尾巴在右下、胶囊眼睛、手里拿着手机），面前有桌子和电脑，人是圆的；公司外的人站在右边的小台子上。
    座位不是摆的：能互相联系的人被拉近，其余互相推开，算到稳定为止。数据和操作都在 app.js。 */
 window.Office = (function () {
   'use strict';
@@ -50,14 +50,15 @@ window.Office = (function () {
   /* 气泡身体：和列表头像同一个轮廓（圆角矩形加左下角的尾巴），挤出成软软的一块；正面两只眼睛，正在做事时换成三个绿点 */
   var BUBBLE = null;
   function bubbleGeo() { if (BUBBLE) return BUBBLE; var s = new THREE.Shape(), r = .36, w = .62, h = .44;
-    s.moveTo(-w + r, -h); s.lineTo(-.18, -h); s.lineTo(-.42, -h - .3); s.lineTo(-.34, -h); s.lineTo(-w + r, -h);
+    s.moveTo(w - r, -h); s.lineTo(.18, -h); s.lineTo(.42, -h - .3); s.lineTo(.34, -h); s.lineTo(w - r, -h); /* 尾巴在右下，和头像一样 */
     s.moveTo(-w + r, -h); s.lineTo(w - r, -h); s.quadraticCurveTo(w, -h, w, -h + r); s.lineTo(w, h - r); s.quadraticCurveTo(w, h, w - r, h); s.lineTo(-w + r, h); s.quadraticCurveTo(-w, h, -w, h - r); s.lineTo(-w, -h + r); s.quadraticCurveTo(-w, -h, -w + r, -h);
     BUBBLE = new THREE.ExtrudeGeometry(s, { depth: .5, bevelEnabled: true, bevelThickness: .12, bevelSize: .1, bevelSegments: 6, curveSegments: 24 }); BUBBLE.translate(0, 0, -.25); return BUBBLE; }
   function bubbleBody(sp, m, dark, mats) { var k = .8, body = add(sp, bubbleGeo(), m, 0, .74, 0); body.scale.setScalar(k);
-    var eyes = new THREE.Group(), dots = new THREE.Group(), z = .38 * k, ok = clay(0x2fbf71, { emissive: 0x2fbf71, emissiveIntensity: .6, roughness: .4 }); mats.push(ok); sp.add(eyes); sp.add(dots);
-    [-.15, .15].forEach(function (x) { part(eyes, BALL, dark, x * k, .78, z, .07 * k, .085 * k, .03); });
-    [-.22, 0, .22].forEach(function (x) { part(dots, BALL, ok, x * k, .78, z, .07 * k, .07 * k, .03); }); dots.visible = false;
-    return { eyes: eyes, dots: dots }; }
+    var eyes = new THREE.Group(), down = new THREE.Group(), z = .38 * k, amber = clay(0xf0a63a, { emissive: 0xf0a63a, emissiveIntensity: .5, roughness: .4 }); mats.push(amber); sp.add(eyes); sp.add(down);
+    [-.12, .12].forEach(function (x) { part(eyes, BALL, dark, x * k, .8, z, .045 * k * 1.4, .1 * k * 1.4, .03); part(down, BALL, dark, x * k, .72, z, .045 * k * 1.4, .055 * k * 1.4, .03); }); /* 胶囊眼睛；正在做事时往下看 */
+    down.visible = false; var ask = part(sp, BALL, amber, .5, 1.1, .1, .07); ask.visible = false; /* 需要你：右上角一个琥珀色的点 */
+    part(sp, BOX, clay(0xf3efe8), -.56, .45, .22, .09, .15, .02); /* 手里的手机 */
+    return { eyes: eyes, dots: down, ask: ask }; }
   function dropPet(id) { var p = pets[id]; delete pets[id]; p.el.remove(); if (p.bob) p.bob.kill(); if (p.glow) p.glow.kill(); gsap.to(p.g.scale, { x: .01, y: .01, z: .01, duration: dur(.3), onComplete: function () { scene.remove(p.g); } }); }
 
   function solve() {
@@ -165,9 +166,9 @@ window.Office = (function () {
     sync: function (m) {
       var first = !Object.keys(pets).length, ids = {}; model = m;
       m.nodes.forEach(function (n, i) { ids[n.id] = 1; if (!pets[n.id]) { var t = i * 2.4; pets[n.id] = makePet(n, n.kind === 'me' ? .2 : -.8 + Math.cos(t) * 2.6, n.kind === 'me' ? 2.6 : Math.sin(t) * 2.6); }
-        var p = pets[n.id]; p.el.textContent = n.name; if (n.fx) { var chip = document.createElement('b'); chip.className = 'fx'; chip.textContent = n.fx.mark; p.el.appendChild(chip); if (p.fxKey && p.fxKey !== n.fx.id && !calm) gsap.fromTo(p.sp.scale, { x: 1.3, y: .7, z: 1.3 }, { x: 1, y: 1, z: 1, duration: .8, ease: 'elastic.out(1,.35)' }); } p.fxKey = n.fx ? n.fx.id : null; p.el.className = (n.kind === 'me' ? 'me' : '') + (n.busy ? ' busy' : '') + (n.kind === 'out' ? ' out' : '') + (n.badge ? ' wait' : ''); if (n.badge) p.el.setAttribute('data-n', n.badge); else p.el.removeAttribute('data-n');
+        var p = pets[n.id]; p.el.textContent = n.name; if (n.fx) { var chip = document.createElement('b'); chip.className = 'fx'; chip.textContent = n.fx.mark; p.el.appendChild(chip); if (p.fxKey && p.fxKey !== n.fx.id && !calm) gsap.fromTo(p.sp.scale, { x: 1.3, y: .7, z: 1.3 }, { x: 1, y: 1, z: 1, duration: .8, ease: 'elastic.out(1,.35)' }); } p.fxKey = n.fx ? n.fx.id : null; p.el.className = (n.kind === 'me' ? 'me' : '') + (n.busy ? ' busy' : '') + (n.ask ? ' ask' : '') + (n.kind === 'out' ? ' out' : '') + (n.badge ? ' wait' : ''); if (n.badge) p.el.setAttribute('data-n', n.badge); else p.el.removeAttribute('data-n');
         if (p.mon) p.mon.visible = !!n.pc;
-        if (p.faces) { p.faces.eyes.visible = !n.busy; p.faces.dots.visible = !!n.busy; } /* 正在做事：眼睛换成三个绿点，和列表头像一样 */
+        if (p.faces) { p.faces.eyes.visible = !n.busy; p.faces.dots.visible = !!n.busy; p.faces.ask.visible = !!n.ask; } /* 和列表头像一样：正在做事往下看，需要你亮琥珀色的点 */
         if (p.screen) { if (p.glow) { p.glow.kill(); p.glow = null; } p.screen.emissive.setRGB(n.busy ? .05 : 0, n.busy ? .42 : 0, n.busy ? .2 : 0); } /* 正在做事：屏幕亮绿色，和列表里的“正在”一样；不闪 */ });
       Object.keys(pets).forEach(function (k) { if (!ids[k]) dropPet(k); });
       var pos = solve(), d = first ? 0 : dur(.9); if (moving) moving.kill(); rel.visible = arcBox.visible = false;
