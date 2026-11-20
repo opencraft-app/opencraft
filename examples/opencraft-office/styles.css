@@ -72,7 +72,7 @@ button, input, select, textarea { font: inherit; color: inherit; letter-spacing:
 
 /* 列表行：分隔线从文字开始，右边时间和小箭头 */
 .cell { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 76px; padding: 10px 16px; border: 0; border-radius: 0; background: var(--card); color: var(--ink); text-align: left; cursor: pointer; }
-.cell + .cell::before, .swipe + .swipe > .cell::before { content: ""; position: absolute; top: 0; left: 76px; right: 0; border-top: .5px solid var(--line); }
+.cell + .cell::before { content: ""; position: absolute; top: 0; left: 76px; right: 0; border-top: .5px solid var(--line); }
 .cell:active { background: var(--fill); }
 .t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; align-self: stretch; justify-content: center; }
 .t b { font-size: 17px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -82,23 +82,20 @@ button.cell .rt::after, button.cell[data-go]:not(:has(.rt))::after { content: "�
 em { font-style: normal; font-size: 13px; font-weight: 400; color: var(--ink-2); margin-left: 6px; }
 em.offtag { color: var(--orange); }
 
-/* 左滑操作：禁用（橙）/启用（绿）和删除（红） */
-.swipe { position: relative; overflow: hidden; background: var(--card); }
-.swipe > .cell { position: relative; z-index: 1; transition: transform .28s cubic-bezier(.2, .8, .2, 1); touch-action: pan-y; }
-.swipe.drag > .cell { transition: none; }
-.swipe.open > .cell { transform: translateX(-160px); }
-/* 编辑：名字不动，每行右边排出两个小按钮（鼠标、键盘也能用） */
-.editing .swipe { display: flex; align-items: center; padding-right: 12px; }
-.editing .swipe > .cell { flex: 1; min-width: 0; transform: none !important; }
-.editing .swipe > .cell .rt { display: none; }
-.editing .swipe-act { position: static; order: 2; gap: 6px; }
-.editing .sa { width: auto; min-height: 30px; padding: 0 12px; border-radius: 15px; font-size: 14px; }
-.swipe-act { position: absolute; top: 0; right: 0; bottom: 0; display: flex; }
-.swipe:not(.open):not(.drag) .swipe-act { visibility: hidden; } .editing .swipe:not(.open):not(.drag) .swipe-act { visibility: visible; }
-.sa { width: 80px; border: 0; color: #fff; font-size: 15px; font-weight: 500; cursor: pointer; }
+/* 每行右边直接排出两个小按钮：禁用（橙）/启用（绿）和删除（红）。通讯录和电脑共用 */
+.rowa { position: relative; display: flex; align-items: center; padding-right: 12px; background: var(--card); }
+.rowa > .cell { flex: 1; min-width: 0; padding-right: 8px; }
+.rowa > .cell .rt::after { content: none; }
+.rowa + .rowa > .cell::before { content: ""; position: absolute; top: 0; left: 76px; right: 0; border-top: .5px solid var(--line); }
+.acts2 { flex: none; display: flex; gap: 6px; }
+.sa { min-height: 30px; padding: 0 12px; border: 0; border-radius: 15px; color: #fff; font-size: 14px; font-weight: 500; cursor: pointer; white-space: nowrap; }
 .sa.pause { background: var(--orange); } .sa.on { background: var(--green); } .sa.del { background: var(--warn); }
-.swipe.off .av, .swipe.off .t b { opacity: .45; }
-
+.rowa.off .av, .rowa.off .tic, .rowa.off .t b { opacity: .45; }
+/* 电脑里的一样东西：圆角方图标，颜色按种类分 */
+.tic { flex: none; width: 48px; height: 48px; border-radius: 12px; display: grid; place-items: center; color: #fff; font-size: 20px; font-weight: 600; background: #8e8e93; }
+.tic.k-pc { background: #5e6b7d; } .tic.k-cloud { background: #32ade6; } .tic.k-account { background: var(--accent); }
+.mini .tic { width: 64px; height: 64px; border-radius: 16px; font-size: 26px; }
+.live { color: var(--green); }
 /* 资料页（公司外的人）：头像和名字 */
 .who { display: flex; align-items: center; gap: 16px; padding: 16px 20px 24px; background: var(--bg); } .who .av { width: 64px; height: 64px; } .who b { font-size: 22px; font-weight: 600; } .who .t { gap: 4px; }
 .links { display: flex; flex-direction: column; margin: 0 16px 8px; border-radius: 12px; overflow: hidden; background: var(--card); }
@@ -184,7 +181,8 @@ p.say { padding: 12px 16px; text-align: center; display: block; }
 .phtop .back, .phtop .ic { flex: none; width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 0; background: none; color: var(--accent); cursor: pointer; }
 .phtop svg { width: 26px; height: 26px; }
 .phtop .r { flex: none; display: flex; align-items: center; justify-content: flex-end; min-width: 44px; }
-.phwho { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; }
+.phwho { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 0; border: 0; background: none; color: inherit; text-align: left; font: inherit; }
+button.phwho { cursor: pointer; border-radius: 10px; } button.phwho:active { opacity: .6; }
 .phwho .av { width: 36px; height: 36px; box-shadow: 0 0 0 2px var(--card); }
 .phwho > span { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
 .phwho i { font-style: normal; font-size: 12px; color: var(--ink-2); }
@@ -224,3 +222,6 @@ p.say { padding: 12px 16px; text-align: center; display: block; }
 .split .pane.l .cell.on { background: var(--accent); color: #fff; } .split .pane.l .cell.on .t > span, .split .pane.l .cell.on .rt, .split .pane.l .cell.on em { color: rgba(255, 255, 255, .8); }
 .blank { margin: auto; color: var(--ink-2); font-size: 15px; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+/* 关于他：大头像、名字、岗位 */
+.hero { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 24px 16px 6px; }
+.hero .av { width: 88px; height: 88px; margin-bottom: 8px; } .hero b { font-size: 24px; font-weight: 600; } .hero span { color: var(--ink-2); font-size: 15px; }

@@ -4,9 +4,9 @@
    这是结构原型，没有接真实的 Bot：你发出去的话不会有人回。示例内容是一份静态快照，清空后各处如实显示为空。 */
 (function () {
   'use strict';
-  var KEY = 'opencraft.office.v4', $ = function (id) { return document.getElementById(id); };
+  var KEY = 'opencraft.office.v5', $ = function (id) { return document.getElementById(id); };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
-  var ENV = { pc: '电脑', cloud: '云环境' };
+  var KINDS = { pc: '电脑', cloud: '云环境', account: '账号' };
   var ROLES = [['客服', '你负责回答客户的问题。答不了的记下来，转给你。'], ['采购', '你负责买东西、订场地。超过预算先问你。'], ['对账', '你核对每一笔账和发票是否对得上，对不上的列出来交给你。'], ['文档核对', '你只做核对：版本、页码、签章。核完写清楚看的是哪一份、结论是什么。'], ['行政', '你负责开账号、订会议室、收报销单。办完告诉交办的人。']];
   var NAMES = ['青柚', '白榆', '半夏', '南星', '远山', '知秋', '云杉', '松果', '小满', '若木'];
 
@@ -16,10 +16,10 @@
   function sample() { /* 一家小工作室老板眼里的某个下午 */
     var d = blank(), now = Date.now(), look = 1, ago = function (min) { return now - min * 60000; };
     [['t1', 'pc', '办公室的 Mac mini'], ['t2', 'pc', '机房的 Linux 主机'], ['t3', 'cloud', '测试环境'], ['t4', 'cloud', '客户演示环境'], ['a5', 'account', '飞书'], ['a6', 'account', '企业邮箱'], ['a7', 'account', 'GitHub'], ['a8', 'account', '公司网盘']].forEach(function (t) { d.tools.push({ id: t[0], kind: t[1], name: t[2] }); });
-    function bot(id, name, role, howto, env, accounts) { d.people.push({ id: id, kind: 'bot', name: name, role: role, howto: howto, env: env, accounts: accounts, look: look++ }); }
+    function bot(id, name, role, howto, env, accounts) { d.people.push({ id: id, kind: 'bot', name: name, role: role, howto: howto, tools: (env ? [env] : []).concat(accounts).map(function (t) { return { id: t }; }), look: look++ }); }
     bot('a', '阿岚', '项目交付', '你负责把版本按时交到客户手里。缺什么材料自己找同事要，拿不准的事先问老板。交付前一定让人核对签字页。', 't1', ['a5', 'a6', 'a8']);
     bot('y', '言禾', '合同与验收', '你保管合同和验收文件。别人来要文件，先确认是哪个版本，再给盖章的那一份。', 't1', ['a5', 'a8']);
-    bot('c', '沐川', '行政与账号', '你负责开账号、订会议室、收报销单。办完告诉交办的人。', 't2', ['a5', 'a6', 'a7']);
+    bot('c', '沐川', '行政与账号', '你负责开账号、订会议室、收报销单。办完告诉交办的人。', 't2', ['a5', 'a6', 'a7', 'a8']);
     bot('z', '小折', '文档核对', '你只做核对：版本、页码、签章。核完写清楚看的是哪一份、结论是什么。', 't3', ['a8']);
     bot('t', '秋池', '对账', '你核对每一笔报销和发票是否对得上，对不上的列出来交给沐川。', null, ['a6']);
     bot('n', '北野', '采购', '你负责买办公用品和订场地。超过预算先问沐川。', null, []);
@@ -43,12 +43,12 @@
     msg(49, 'me', 'c', '下周一有新同事入职，账号提前开好。'); msg(22, 'c', 'me', '邮箱和飞书开好了。GitHub 要等他把用户名发我，我已经问了。', { ch: ['e4', 'e5'] });
     msg(17, 'a', 'me', '签字页核对好了，交付包齐了，核对单放在网盘。你没意见的话，我周五上午发给客户。', { ch: ['e6'], read: false });
     msg(40, 'me', 'c', '把 10 月的报销单整理一下，周五前给我。'); msg(12, 'c', 't', '10 月的报销我登记到一半，登完发你对账。');
-    d.work.push({ id: 'w1', who: 'c', text: '在企业邮箱里翻 10 月的报销邮件，一封封登记到表里', ts: ago(10), state: 'running' });
+    d.work.push({ id: 'w1', who: 'c', on: 't2', text: '在企业邮箱里翻 10 月的报销邮件，一封封登记到表里', ts: ago(10), state: 'running' });
     d.n = 100; d.sample = true; return d;
   }
   var db = sample();
-  try { var raw = JSON.parse(localStorage.getItem(KEY)); if (raw && raw.people && raw.grants && raw.v === 4) db = raw; } catch (e) { /* 没有存储也能用 */ }
-  function save() { db.v = 4; try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { /* ignore */ } }
+  try { var raw = JSON.parse(localStorage.getItem(KEY)); if (raw && raw.people && raw.grants && raw.v === 5) db = raw; } catch (e) { /* 没有存储也能用 */ }
+  function save() { db.v = 5; try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { /* ignore */ } }
   function uid(p) { db.n += 1; return p + db.n; }
 
   /* ---------- 模型 ---------- */
@@ -70,6 +70,9 @@
   function partners(id) { var o = []; db.msgs.slice().sort(function (x, y) { return y.ts - x.ts; }).forEach(function (x) { var p = x.who === id ? x.to : x.to === id ? x.who : null; if (p && o.indexOf(p) < 0) o.push(p); }); return o; }
   function unread(id) { return db.msgs.filter(function (x) { return x.to === 'me' && !x.read && (!id || x.who === id); }); } /* 红点就是没看过的消息 */
   function markRead(id) { var n = 0; db.msgs.forEach(function (x) { if (x.to === 'me' && x.who === id && !x.read) { x.read = true; n++; } }); if (n) { save(); sync(); } }
+  function toolOf(p, tid) { return (p.tools || []).filter(function (x) { return x.id === tid; })[0]; }
+  function canUse(p, tid) { var x = toolOf(p, tid); return !!x && !x.off; }
+  function hasPc(p) { return (p.tools || []).some(function (x) { var t = T(x.id); return !x.off && t && t.kind !== 'account'; }); }
   function running(id) { return db.work.filter(function (w) { return w.who === id && w.state === 'running'; })[0]; }
   function C(id) { return db.changes.filter(function (x) { return x.id === id; })[0]; }
   function lastChange(id) { return db.changes.filter(function (e) { return e.who === id && Date.now() - e.ts < 3600000; }).sort(function (a, b) { return b.ts - a.ts; })[0]; } /* 最近一小时里他在外面做的最后一件事 */
@@ -81,21 +84,21 @@
   var TABBAR = [['chats', '消息', '<path d="M12 4.500c-4.700 0-8.500 3.100-8.500 7 0 2.200 1.200 4.100 3.100 5.400L6 20l3.400-1.600c.8.200 1.700.300 2.600.300 4.700 0 8.500-3.100 8.500-7s-3.800-7.200-8.500-7.200z"/>'], ['people', '通讯录', '<circle cx="9" cy="9" r="3.200"/><path d="M3.500 19c.6-3 2.800-4.800 5.500-4.800s4.900 1.800 5.500 4.800M16 6.500a2.800 2.800 0 0 1 0 5.400M17.500 14.600c1.600.7 2.700 2.200 3 4.400"/>'], ['office', '办公室', '<path d="M12 3.500 4 8v8l8 4.500 8-4.500V8z"/><path d="M4 8l8 4.500L20 8M12 12.500v8"/>']];
   var AVC = ['#e9e6f0', '#a9dcc9', '#c3b5ee', '#a9c8f2', '#fbe39c', '#f9cdb0', '#bfe3ee', '#d9e8a6'];
   var ICON = { compose: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.500 5H6.500A2 2 0 0 0 4.500 7v10.500a2 2 0 0 0 2 2H17a2 2 0 0 0 2-2V10.500"/><path d="M17.800 3.700a1.600 1.600 0 0 1 2.300 2.300L12 14.100l-3 .8.800-3z"/></svg>', send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.400" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5.500M5.800 11.500 12 5.300l6.200 6.200"/></svg>', plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>', more: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>', back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14.500 5-7 7 7 7"/></svg>' };
-  var ui = { tab: 'chats', stack: [], sel: null, edit: false }, has3d = false;
+  var ui = { tab: 'chats', stack: [], sel: null }, has3d = false;
   var wideMq = window.matchMedia ? matchMedia('(min-width: 900px)') : { matches: false }; function wide() { return wideMq.matches && ui.tab !== 'office'; }
   function top() { return ui.stack[ui.stack.length - 1]; }
   function cur() { var t = top(); return t && t.id ? P(t.id) : null; }
   function toScene() {
     var nodes = [], links = [], boss = [];
     db.people.forEach(function (p) { var e = p.kind === 'bot' && lastChange(p.id), t = e && T(e.via);
-      nodes.push({ id: p.id, name: p.name, kind: p.kind === 'human' ? 'me' : p.kind === 'outside' ? 'out' : 'bot', look: p.look, badge: unread(p.id).length, busy: !!running(p.id), pc: !!p.env, fx: e ? { id: e.id, mark: t ? t.name.slice(0, 1) : '改' } : null });
+      nodes.push({ id: p.id, name: p.name, kind: p.kind === 'human' ? 'me' : p.kind === 'outside' ? 'out' : 'bot', look: p.look, badge: unread(p.id).length, busy: !!running(p.id), pc: p.kind === 'bot' && hasPc(p), fx: e ? { id: e.id, mark: t ? t.name.slice(0, 1) : '改' } : null });
     });
     db.people.forEach(function (a) { talkTargets(a.id).forEach(function (b) { links.push([a.id, b]); }); });
     return { nodes: nodes, links: links, boss: boss };
   }
   function sync() { if (has3d) { window.Office.sync(toScene()); window.Office.select(ui.sel, ui.sel ? talkTargets(ui.sel) : [], []); } }
   function pick(id) { if (id && !P(id)) id = null; ui.sel = id; draw(); if (has3d) window.Office.select(id, id ? talkTargets(id) : [], []); }
-  function go(page) { ui.edit = false; var prev = ui.stack[ui.stack.length - 2]; if (prev && prev.id === page.id && prev.k === page.k) ui.stack.pop(); else ui.stack.push(page); draw(); }
+  function go(page) { var prev = ui.stack[ui.stack.length - 2]; if (prev && prev.id === page.id && prev.k === page.k) ui.stack.pop(); else ui.stack.push(page); draw(); }
 
   function av(id, n) { var p = P(id); return '<span class="av" style="--c:' + (p && p.kind === 'outside' ? '#f6c1c7' : AVC[((p || {}).look || 0) % AVC.length]) + '">' + (n ? '<i class="badge">' + n + '</i>' : '') + '</span>'; }
   function nav(title, right) { return '<header class="nav"><button class="back" data-do="back" aria-label="返回">' + ICON.back + '</button><h1>' + esc(title) + '</h1><span class="r">' + (right || '') + '</span></header>'; }
@@ -152,11 +155,11 @@
   var ICHAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4.500c-4.700 0-8.500 3.100-8.500 7 0 2.200 1.200 4.100 3.100 5.400L6 20l3.400-1.600c.8.200 1.700.300 2.600.300 4.700 0 8.500-3.100 8.500-7s-3.800-7.200-8.500-7.200z"/></svg>';
   function tint(id) { var p = P(id); return p && p.kind === 'bot' ? AVC[(p.look || 0) % AVC.length] : AVC[0]; }
   function phoneTop(p, title, right) {
-    return '<header class="phtop" style="--tint:' + tint(p.id) + '"><button class="back" data-do="back" aria-label="返回">' + ICON.back + '</button><span class="phwho">' + av(p.id) + '<span><i>' + esc(p.id === 'me' ? '你的手机' : p.name + '的手机') + '</i><b>' + esc(title) + '</b></span></span><span class="r">' + (right || '') + '</span></header>';
+    return '<header class="phtop" style="--tint:' + tint(p.id) + '"><button class="back" data-do="back" aria-label="返回">' + ICON.back + '</button>' + (p.kind === 'bot' ? '<button class="phwho"' + link({ k: 'pabout', id: p.id }) + ' aria-label="关于' + esc(p.name) + '">' : '<span class="phwho">') + av(p.id) + '<span><i>' + esc(p.id === 'me' ? '你的手机' : p.name + '的手机') + (p.kind === 'bot' ? ' ›' : '') + '</i><b>' + esc(title) + '</b></span>' + (p.kind === 'bot' ? '</button>' : '</span>') + '<span class="r">' + (right || '') + '</span></header>';
   }
   function phone(p, page) {
     var self = p.id === 'me', tab = self ? 'contacts' : page.tab === 'pc' ? 'pc' : 'contacts', title = tab === 'pc' ? '电脑' : '通讯录';
-    var right = (tab === 'contacts' ? '<button class="tx" data-do="edit">' + (ui.edit ? '完成' : '编辑') + '</button><button class="ic" aria-label="添加联系人"' + link({ k: 'padd', id: p.id }) + '>' + ICON.plus + '</button>' : '') +
+    var right = '<button class="ic" aria-label="' + (tab === 'pc' ? '给他添加电脑或账号' : '添加联系人') + '"' + link({ k: tab === 'pc' ? 'paddtool' : 'padd', id: p.id }) + '>' + ICON.plus + '</button>' +
       (!self && canTalk('me', p.id) ? '<button class="ic" aria-label="给他发消息"' + link({ k: 'chat', id: p.id }) + '>' + ICHAT + '</button>' : '');
     return '<div class="phone">' + phoneTop(p, title, right) + (tab === 'pc' ? pPc(p) : pContacts(p)) +
       (self ? '' : '<nav class="phtabs" style="--tint:' + tint(p.id) + '" aria-label="' + esc(p.name) + '的手机">' + PTABS.map(function (t) { return '<button data-tab="' + t[0] + '" aria-current="' + (tab === t[0] ? 'page' : 'false') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + t[2] + '</svg>' + t[1] + '</button>'; }).join('') + '</nav>') + '</div>';
@@ -165,35 +168,54 @@
   /* 消息：他在联系谁，只读 */
   function pool(p) { return db.people.filter(function (x) { return x.id !== p.id && !(p.kind === 'human' && x.kind === 'outside'); }); }
   /* 通讯录：他能联系谁，按最近聊天排在前面；在联系谁就是每个人下面那句最后的话 */
+  /* 一行加右边两个按钮：禁用/启用、删除。通讯录和电脑都用它 */
+  function actRow(inner, off, offDo, delDo, id) { return '<div class="rowa' + (off ? ' off' : '') + '">' + inner + '<span class="acts2"><button class="sa ' + (off ? 'on' : 'pause') + '" data-do="' + offDo + '" data-id="' + id + '">' + (off ? '启用' : '禁用') + '</button><button class="sa del" data-do="' + delDo + '" data-id="' + id + '" data-confirm="确定删除">删除</button></span></div>'; }
   /* 通讯录：他能联系谁，按最近聊天排在前面；在联系谁就是每个人下面那句最后的话。
-     左滑一行露出「禁用/启用」和「删除」；禁用的人还在通讯录里，只是暂时联系不上 */
+     每行右边直接有「禁用/启用」和「删除」；禁用的人还在通讯录里，只是暂时联系不上 */
   function pContacts(p) {
     var he = p.id === 'me' ? '你' : '他', last = function (j) { var l = thread(p.id, j).pop(); return l ? l.ts : 0; };
     var list = pool(p).filter(function (x) { return inBook(p.id, x.id); }).sort(function (a, b) { return last(b.id) - last(a.id); }),
       gone = partners(p.id).filter(function (j) { return P(j) && !inBook(p.id, j); }), off = list.filter(function (x) { return isOff(p.id, x.id); }).length;
     function line(x) { var l = thread(p.id, x.id).pop(); return l ? esc((l.who === p.id && !l.sys ? he + '：' : '') + l.text) : '还没聊过 · ' + who(x); }
     function row(x) { var l = thread(p.id, x.id).pop(), o = isOff(p.id, x.id);
-      return '<div class="swipe' + (o ? ' off' : '') + '"><div class="swipe-act"><button class="sa ' + (o ? 'on' : 'pause') + '" data-do="phoff" data-id="' + x.id + '">' + (o ? '启用' : '禁用') + '</button><button class="sa del" data-do="phdel" data-id="' + x.id + '">删除</button></div>' +
-        cell({ k: 'pcard', id: p.id, w: x.id }, x.id, esc(x.name) + (x.kind === 'outside' ? '<em>公司外</em>' : '') + (o ? '<em class="offtag">已禁用</em>' : ''), line(x), l ? hhmm(l.ts) : '') + '</div>'; }
-    return '<div class="body list' + (ui.edit ? ' editing' : '') + '"><p class="count">' + list.length + ' 位联系人' + (off ? '，' + off + ' 位已禁用' : '') + (list.length ? ' · 左滑可以禁用或删除' : '') + '</p>' + (list.length ? list.map(row).join('') : '<p class="empty">通讯录是空的。点右上角 ⊕ 添加联系人。</p>') +
+      return actRow(cell({ k: 'pcard', id: p.id, w: x.id }, x.id, esc(x.name) + (x.kind === 'outside' ? '<em>公司外</em>' : '') + (o ? '<em class="offtag">已禁用</em>' : ''), line(x), l ? hhmm(l.ts) : ''), o, 'phoff', 'phdel', x.id); }
+    return '<div class="body list"><p class="count">' + list.length + ' 位联系人' + (off ? '，' + off + ' 位已禁用' : '') + '</p>' + (list.length ? list.map(row).join('') : '<p class="empty">通讯录是空的。点右上角 ⊕ 添加联系人。</p>') +
       (gone.length ? '<p class="count">聊过，但不在通讯录里了</p>' + gone.map(function (j) { var x = P(j), l = thread(p.id, j).pop(); return cell({ k: 'pcard', id: p.id, w: j }, j, esc(x.name), line(x), l ? hhmm(l.ts) : ''); }).join('') : '') +
       '<p class="foot">' + he + '的通讯录里有谁，' + he + '就能联系谁；禁用了就暂时联系不上。这是单向的：' + he + '能联系对方，不代表对方能联系' + he + '。</p></div>';
   }
+  /* 电脑：他能用的东西（电脑、云环境、账号），和通讯录一样一行一样，右边禁用/删除。
+     正在用的那样下面写“正在：……”；点进去看他用它做过的改动，正在做的事可以让他停下 */
+  function tIcon(t) { return '<span class="tic k-' + t.kind + '" aria-hidden="true">' + esc(t.name.slice(0, 1)) + '</span>'; }
+  function tLine(p, t) { var w = running(p.id), e = db.changes.filter(function (c) { return c.who === p.id && c.via === t.id; }).sort(function (a, b) { return b.ts - a.ts; })[0];
+    return w && w.on === t.id ? '<span class="live">正在：' + esc(w.text) + '</span>' : e ? esc(ago(e.ts) + e.what + '：' + e.name) : KINDS[t.kind] + ' · 还没用它做过事'; }
   function pPc(p) {
-    var w = running(p.id), envT = T(p.env), list = db.changes.filter(function (e) { return e.who === p.id; }).sort(function (a, b) { return b.ts - a.ts; });
-    var envs = db.tools.filter(function (t) { return t.kind !== 'account'; }), accs = db.tools.filter(function (t) { return t.kind === 'account'; });
-    return '<div class="body">' +
-      sec('在做什么', w ? '<div class="doing"><i></i>' + esc(w.text) + '</div><p class="cap">' + esc(ago(w.ts)) + '开始' + (envT ? '，在' + esc(envT.name) + '上' : '') + '</p><div class="inl"><button class="btn danger" data-do="stop" data-id="' + w.id + '" data-confirm="再点一次，让他停下">让他停下</button></div>' : none(envT ? '他现在没在做事。' : '他还没有电脑，现在只能发消息。')) +
-      sec('做过的改动', list.length ? list.map(function (e) { return '<div class="fxrow"><time>' + hhmm(e.ts) + '</time>' + changeCard(e) + '</div>'; }).join('') : none('他还没有在外面做过什么。'), list.length ? '他用工具在外面做的事。做了就是做了，不能撤回。' : '') +
-      '<form data-do="role">' + sec('岗位', '<label class="fld"><span>名字</span><input id="rname" value="' + esc(p.name) + '" autocomplete="off"></label><label class="fld"><span>岗位</span><input id="rrole" value="' + esc(p.role) + '" autocomplete="off" placeholder="例如：项目交付"></label><label class="fld col"><span>做事说明</span><textarea id="rhowto" rows="4" aria-label="做事说明" placeholder="告诉他这个岗位该怎么做事">' + esc(p.howto) + '</textarea></label><div class="inl"><button class="btn ok">保存</button></div>', '他按这个做事。') + '</form>' +
-      sec('他用哪台电脑', '<label class="fld"><span>用</span><select data-sw="env"><option value="">没有</option>' + ['pc', 'cloud'].map(function (k) { return '<optgroup label="' + ENV[k] + '">' + envs.filter(function (t) { return t.kind === k; }).map(function (t) { return '<option value="' + t.id + '"' + (p.env === t.id ? ' selected' : '') + '>' + esc(t.name) + '</option>'; }).join('') + '</optgroup>'; }).join('') + '</select></label>' +
-        '<form class="inl" data-do="tool" data-k="env"><select aria-label="哪种"><option value="pc">电脑</option><option value="cloud">云环境</option></select><input autocomplete="off" placeholder="添加一个新的给他" aria-label="名字"><button class="btn">添加</button></form>', '他在哪儿干活：一台电脑，或者一个云环境。') +
-      sec('他能用的账号', (accs.length ? '<div class="chips">' + accs.map(function (t) { return '<label class="chip ck"><input type="checkbox" data-sw="acc" data-id="' + t.id + '"' + (p.accounts.indexOf(t.id) >= 0 ? ' checked' : '') + '>' + esc(t.name) + '</label>'; }).join('') + '</div>' : '') +
-        '<form class="inl" data-do="tool" data-k="account"><input autocomplete="off" placeholder="添加一个账号给他，例如：飞书" aria-label="账号名"><button class="btn">添加</button></form>', '飞书、邮箱、网盘这些。') + '<button type="button" class="lrow danger" data-do="drop" data-confirm="再点一次，确定让他离开">让他离开</button></div>';
+    var list = (p.tools || []).map(function (x) { return T(x.id); }).filter(Boolean), off = (p.tools || []).filter(function (x) { return x.off; }).length,
+      order = ['pc', 'cloud', 'account'], w = running(p.id);
+    list.sort(function (a, b) { return (w && b.id === w.on) - (w && a.id === w.on) || order.indexOf(a.kind) - order.indexOf(b.kind); });
+    return '<div class="body list"><p class="count">' + list.length + ' 样能用' + (off ? '，' + off + ' 样已禁用' : '') + '</p>' +
+      (list.length ? list.map(function (t) { var o = !canUse(p, t.id);
+        return actRow('<button class="cell"' + link({ k: 'ptool', id: p.id, w: t.id }) + '>' + tIcon(t) + '<span class="t"><b>' + esc(t.name) + (o ? '<em class="offtag">已禁用</em>' : '') + '</b><span>' + tLine(p, t) + '</span></span></button>', o, 'toff', 'tdel', t.id); }).join('')
+        : '<p class="empty">他还没有能用的电脑和账号，现在只能发消息。点右上角 ⊕ 给他一样。</p>') +
+      '<p class="foot">他能用什么，就能做什么。电脑和云环境是他干活的地方，账号是飞书、邮箱、网盘这些。</p></div>';
   }
-  /* 我：他是谁、做事说明 */
-  /* 联系人：你们俩的聊天记录（只读），底下管他在不在通讯录里 */
-  /* 联系人：顶部名片，中间你们俩的聊天记录（只读），底部一组 iOS 设置：允许联系的开关、删除 */
+  /* 一样东西：他用它做过的改动，正在做的事可以让他停下；底部允许使用的开关和删除 */
+  function pTool(p, tid) { var t = T(tid), has = !!toolOf(p, tid), on = canUse(p, tid), w = running(p.id), list = db.changes.filter(function (e) { return e.who === p.id && e.via === tid; }).sort(function (a, b) { return b.ts - a.ts; });
+    return '<div class="phone">' + phoneTop(p, t.name) + '<div class="body"><div class="mini">' + tIcon(t) + '<span><b>' + esc(t.name) + '</b><i>' + KINDS[t.kind] + ' · ' + (!has ? '他不能用' : on ? '他能用' : '他能用，已禁用') + '</i></span></div>' +
+      (w && w.on === tid ? sec('正在做', '<div class="doing"><i></i>' + esc(w.text) + '</div><p class="cap">' + esc(ago(w.ts)) + '开始</p><div class="inl"><button class="btn danger" data-do="stop" data-id="' + w.id + '" data-confirm="再点一次，让他停下">让他停下</button></div>') : '') +
+      sec('他用它做过的改动', list.length ? list.map(function (e) { return '<div class="fxrow"><time>' + hhmm(e.ts) + '</time>' + changeCard(e) + '</div>'; }).join('') : none('还没有。'), list.length ? '做了就是做了，不能撤回。' : '') + '</div>' +
+      '<div class="actsheet">' + (has ? '<label class="row-sw"><span>允许他用' + esc(t.name) + '</span><span class="switch"><input type="checkbox" role="switch" data-sw="toff" data-id="' + tid + '"' + (on ? ' checked' : '') + '><i></i></span></label><button class="row-btn danger" data-do="tdel" data-id="' + tid + '" data-confirm="再点一次，确定不让他用">不让他用了</button>'
+        : '<button class="row-btn" data-do="tadd" data-id="' + tid + '">给他用</button>') + '</div></div>'; }
+  function pAddTool(p) { var list = db.tools.filter(function (t) { return !toolOf(p, t.id); });
+    return '<div class="phone">' + phoneTop(p, '添加') + '<div class="body">' + sec('公司已有的', list.length ? list.map(function (t) { return '<div class="cell">' + tIcon(t) + '<span class="t"><b>' + esc(t.name) + '</b><span>' + KINDS[t.kind] + '</span></span><button class="btn ok sm" data-do="tadd" data-id="' + t.id + '">添加</button></div>'; }).join('') : none('公司里的都已经给他了。')) +
+      '<form data-do="tool">' + sec('登记一样新的', '<label class="fld"><span>哪种</span><select id="tkind"><option value="pc">电脑</option><option value="cloud">云环境</option><option value="account">账号</option></select></label><label class="fld"><span>名字</span><input id="tname" autocomplete="off" placeholder="例如：财务的 Windows 电脑、钉钉"></label><div class="inl"><button class="btn ok">登记并给他</button></div>') + '</form></div></div>'; }
+  /* 关于他：岗位、做事说明、让他离开 */
+  function pAbout(p) {
+    return '<div class="phone">' + phoneTop(p, '关于' + p.name) + '<form class="body" data-do="role"><div class="hero">' + av(p.id) + '<b>' + esc(p.name) + '</b><span>' + esc(p.role || '未填岗位') + '</span></div>' +
+      sec('他是谁', '<label class="fld"><span>名字</span><input id="rname" value="' + esc(p.name) + '" autocomplete="off"></label><label class="fld"><span>岗位</span><input id="rrole" value="' + esc(p.role) + '" autocomplete="off" placeholder="例如：项目交付"></label>') +
+      sec('做事说明', '<label class="fld col"><textarea id="rhowto" rows="5" aria-label="做事说明" placeholder="告诉他这个岗位该怎么做事">' + esc(p.howto) + '</textarea></label>', '他按这个做事。') +
+      '<div class="acts"><button class="btn ok wide">保存</button></div><button type="button" class="lrow danger" data-do="drop" data-confirm="再点一次，确定让他离开">让他离开</button></form></div>';
+  }
+  /* 联系人：顶部名片，中间两人的聊天记录（只读），底部允许联系的开关和删除 */
   function pCard(p, w) { var x = P(w), he = p.id === 'me' ? '你' : '他', book = inBook(p.id, w), on = book && !isOff(p.id, w), tr = thread(p.id, w);
     return '<div class="phone">' + phoneTop(p, x.name) + '<div class="body chat" id="chat"><div class="mini">' + av(w) + '<span><b>' + esc(x.name) + '</b><i>' + who(x) + ' · ' + (!book ? '不在' + he + '的通讯录里' : on ? '在' + he + '的通讯录里' : '在' + he + '的通讯录里，已禁用') + '</i></span></div>' +
       (tr.length ? bubbles(tr, p.id) : '<p class="when">还没聊过</p>') + (p.id === 'me' ? '' : '<p class="when">聊天记录只能看，不能替他回</p>') + '</div>' +
@@ -222,8 +244,8 @@
   function draw() {
     var t = top(), view = $('view'), b = view.querySelector('.pane.r .body') || view.querySelector('.body'), keep = b ? b.scrollTop : 0, key = JSON.stringify(t || ui.tab), same = view.getAttribute('data-key') === key;
     if (t && t.k === 'chat') markRead(t.id);
-    while (t && ((t.id && !P(t.id)) || (t.w && !P(t.w)))) { ui.stack.pop(); t = top(); }
-    var tp = t && P(t.id), office = !t && ui.tab === 'office', page = !t ? '' : t.k === 'chat' ? chat(tp) : t.k === 'person' ? (tp.kind === 'outside' ? outside(tp) : phone(tp, t)) : t.k === 'pcard' ? pCard(tp, t.w) : t.k === 'padd' ? pAdd(tp) : t.k === 'newout' ? newOut() : recruit(), root = ui.tab === 'chats' ? chats() : ui.tab === 'people' ? people() : '';
+    while (t && ((t.id && !P(t.id)) || (t.w && !P(t.w) && !T(t.w)))) { ui.stack.pop(); t = top(); }
+    var tp = t && P(t.id), office = !t && ui.tab === 'office', page = !t ? '' : t.k === 'chat' ? chat(tp) : t.k === 'person' ? (tp.kind === 'outside' ? outside(tp) : phone(tp, t)) : t.k === 'pcard' ? pCard(tp, t.w) : t.k === 'padd' ? pAdd(tp) : t.k === 'ptool' ? pTool(tp, t.w) : t.k === 'paddtool' ? pAddTool(tp) : t.k === 'pabout' ? pAbout(tp) : t.k === 'newout' ? newOut() : recruit(), root = ui.tab === 'chats' ? chats() : ui.tab === 'people' ? people() : '';
     view.classList.toggle('split', wide());
     view.innerHTML = wide() ? '<div class="pane l">' + root + '</div><div class="pane r">' + (page || '<p class="blank">选一个人</p>') + '</div>' : t ? page : root;
     if (wide() && t) Array.prototype.forEach.call(view.querySelectorAll('.pane.l [data-go]'), function (el) { var g = JSON.parse(el.getAttribute('data-go')); el.classList.toggle('on', !!g.id && g.id === t.id); });
@@ -237,22 +259,24 @@
 
   var DO = {
     tab: function (el) { ui.tab = el.getAttribute('data-id'); ui.stack = []; draw(); },
-    back: function () { ui.stack.pop(); ui.edit = false; draw(); },
+    back: function () { ui.stack.pop(); draw(); },
     see: function (el) { ui.stack = []; ui.tab = 'office'; draw(); pick(el.getAttribute('data-id')); },
     phadd: function (el) { var p = cur(); if (!p) return; setGrant(p.id, el.getAttribute('data-id'), 'talk', true); changed(); },
     phdel: function (el) { var p = cur(); if (!p) return; setGrant(p.id, el.getAttribute('data-id'), 'talk', false); changed(); },
     phoff: function (el) { var p = cur(), w = el.getAttribute('data-id'); if (!p) return; setOff(p.id, w, !isOff(p.id, w)); changed(); },
-    edit: function () { ui.edit = !ui.edit; draw(); },
     say: function () { var v = $('say').value.trim(), p = cur(); if (!v || !p || !canTalk('me', p.id)) return; db.msgs.push({ id: uid('m'), ts: Date.now(), who: 'me', to: p.id, text: v }); changed(); $('say').focus(); },
     stop: function (el) { var w = db.work.filter(function (x) { return x.id === el.getAttribute('data-id'); })[0], p = cur(); if (!w || !p) return; w.state = 'stopped'; db.msgs.push({ id: uid('m'), ts: Date.now(), who: 'me', to: w.who, sys: true, text: '你让' + N(w.who) + '停下了：' + w.text + '。已经做了的改动还在。' }); changed(); },
-    tool: function (f) { var p = cur(), v = f.querySelector('input').value.trim(), k = f.getAttribute('data-k'); if (!v || !p) return; var kind = k === 'env' ? f.querySelector('select').value : 'account', t = { id: uid('t'), kind: kind, name: v }; db.tools.push(t); if (k === 'env') p.env = t.id; else p.accounts.push(t.id); changed(); },
+    tool: function () { var p = cur(), v = $('tname').value.trim(); if (!v || !p) { $('tname').focus(); return; } var t = { id: uid('t'), kind: $('tkind').value, name: v }; db.tools.push(t); p.tools.push({ id: t.id }); ui.stack.pop(); changed(); },
+    tadd: function (el) { var p = cur(), id = el.getAttribute('data-id'); if (!p || toolOf(p, id)) return; p.tools.push({ id: id }); changed(); },
+    tdel: function (el) { var p = cur(), id = el.getAttribute('data-id'); if (!p) return; p.tools = p.tools.filter(function (x) { return x.id !== id; }); db.work.forEach(function (w) { if (w.who === p.id && w.on === id && w.state === 'running') w.state = 'stopped'; }); changed(); },
+    toff: function (el) { var p = cur(), x = p && toolOf(p, el.getAttribute('data-id')); if (!x) return; x.off = !x.off || undefined; changed(); },
     role: function () { var p = cur(); if (!p) return; p.name = $('rname').value.trim() || p.name; p.role = $('rrole').value.trim(); p.howto = $('rhowto').value.trim(); changed(); },
     drop: function () { var p = cur(); if (!p) return; remove(p.id); ui.tab = 'people'; changed(); },
     dropout: function (el) { remove(el.getAttribute('data-id')); changed(); },
     preset: function (el) { Array.prototype.forEach.call(el.parentNode.children, function (b) { b.classList.toggle('on', b === el); }); var r = ROLES[+el.getAttribute('data-id')]; $('nrole').value = r[0]; $('nhowto').value = r[1]; },
     add: function () { var name = $('nname').value.trim() || $('nname').defaultValue, role = $('nrole').value.trim(), howto = $('nhowto').value.trim();
       if (!howto && role) howto = '你负责' + role + '。拿不准的先问老板，办完告诉交办的人。';
-      var p = { id: uid('p'), kind: 'bot', name: name, role: role, howto: howto, env: null, accounts: [], look: db.n }; db.people.push(p); defaults(db, p.id);
+      var p = { id: uid('p'), kind: 'bot', name: name, role: role, howto: howto, tools: [], look: db.n }; db.people.push(p); defaults(db, p.id);
       db.msgs.push({ id: uid('m'), ts: Date.now(), who: 'me', to: p.id, sys: true, text: name + '入职了。现在可以对他说要办什么。' });
       ui.stack = [canTalk('me', p.id) ? { k: 'chat', id: p.id } : person(p.id)]; ui.tab = canTalk('me', p.id) ? 'chats' : 'people'; changed(); },
     addout: function () { var name = $('oname').value.trim(); if (!name) { $('oname').focus(); return; } var o = { id: uid('o'), kind: 'outside', name: name, look: 0 }; db.people.push(o); ui.stack = [person(o.id)]; changed(); },
@@ -263,28 +287,17 @@
   var SW = {
     reach: function (el) { setGrant(el.getAttribute('data-a'), el.getAttribute('data-b'), 'talk', el.checked); changed(); },
     off: function (el) { setOff(el.getAttribute('data-a'), el.getAttribute('data-b'), !el.checked); changed(); },
-    acc: function (el, p) { var id = el.getAttribute('data-id'); p.accounts = p.accounts.filter(function (j) { return j !== id; }); if (el.checked) p.accounts.push(id); changed(); },
-    env: function (el, p) { p.env = el.value || null; changed(); }
+    toff: function (el, p) { var x = toolOf(p, el.getAttribute('data-id')); if (x) { x.off = !el.checked || undefined; changed(); } }
   };
 
   document.addEventListener('click', function (e) {
-    if (swallow) { swallow = false; e.preventDefault(); return; }
-    var opened = document.querySelector('.swipe.open'); if (opened && !e.target.closest('.swipe-act')) { opened.classList.remove('open'); e.preventDefault(); return; } /* 有一行滑开着：先收起来 */
-    var t = e.target.closest('[data-tab]'); if (t && top()) { top().tab = t.getAttribute('data-tab'); ui.edit = false; draw(); return; }
+    var t = e.target.closest('[data-tab]'); if (t && top()) { top().tab = t.getAttribute('data-tab'); draw(); return; }
     var g = e.target.closest('[data-go]'); if (g) { if (wide() && g.closest('.pane.l')) ui.stack = []; go(JSON.parse(g.getAttribute('data-go'))); return; }
     var d = e.target.closest('button[data-do]'); if (!d) return; e.preventDefault();
     /* 删除、停下这类做了就收不回的操作：在原位点两下确认，不弹窗 */
     if (d.hasAttribute('data-confirm') && !d.hasAttribute('data-armed')) { d.setAttribute('data-armed', d.textContent); d.textContent = d.getAttribute('data-confirm'); d.classList.add('armed'); setTimeout(function () { if (d.isConnected && d.hasAttribute('data-armed')) { d.textContent = d.getAttribute('data-armed'); d.removeAttribute('data-armed'); d.classList.remove('armed'); } }, 4000); return; }
     DO[d.getAttribute('data-do')](d);
   });
-  /* 左滑：手指或鼠标横着拖一行，松手超过一半就停在打开的位置；竖着拖照常滚动 */
-  var sw = null, swallow = false, OPEN = 160;
-  document.addEventListener('pointerdown', function (e) { var c = e.target.closest('.swipe > .cell'); if (!c || e.button > 0) return; sw = { row: c.parentNode, cell: c, x: e.clientX, y: e.clientY, base: c.parentNode.classList.contains('open') ? -OPEN : 0, dx: 0, on: false }; });
-  document.addEventListener('pointermove', function (e) { if (!sw) return; var dx = e.clientX - sw.x, dy = e.clientY - sw.y;
-    if (!sw.on) { if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { sw = null; return; } if (Math.abs(dx) < 8) return; sw.on = true; sw.row.classList.add('drag'); Array.prototype.forEach.call(document.querySelectorAll('.swipe.open'), function (r) { if (r !== sw.row) r.classList.remove('open'); }); }
-    sw.dx = dx; sw.cell.style.transform = 'translateX(' + Math.max(-OPEN - 40, Math.min(0, sw.base + dx)) + 'px)'; });
-  function swEnd() { if (!sw) return; if (sw.on) { sw.row.classList.remove('drag'); sw.cell.style.transform = ''; sw.row.classList.toggle('open', sw.base + sw.dx < -OPEN / 2); swallow = true; setTimeout(function () { swallow = false; }, 350); } sw = null; }
-  document.addEventListener('pointerup', swEnd); document.addEventListener('pointercancel', swEnd);
   document.addEventListener('submit', function (e) { var f = e.target.closest('form[data-do]'); if (f) { e.preventDefault(); DO[f.getAttribute('data-do')](f); } });
   document.addEventListener('change', function (e) { var el = e.target.closest('[data-sw]'), p = cur(); if (!el) return; var k = el.getAttribute('data-sw'); if (k !== 'reach' && !p) return; SW[k](el, p); });
 
