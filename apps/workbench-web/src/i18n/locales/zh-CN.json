@@ -32,6 +32,7 @@
   "composer.handoff.browseFolder": "浏览文件夹…",
   "composer.handoff.crossDeviceNotice": "执行机器与系统环境已改变：跨设备移交仅同步对话上下文（含 JSONL 记录），不会同步原机器文件夹与未提交改动，任务可能受环境差异影响而无法如期执行。",
   "composer.model.machineSection": "执行机器",
+  "composer.model.agentsOnMachine": "{machine} 上的 Agent",
   "composer.model.currentMachine": "当前",
   "composer.model.currentLocalMachine": "当前 · 本机",
   "composer.model.localMachine": "本机",

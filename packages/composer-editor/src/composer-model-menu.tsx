@@ -6,7 +6,7 @@ import { AgentBrandIcon, CloudIcon, LaptopIcon, ServerIcon, WarningIcon } from "
 import { CheckIcon, SearchIcon, ModelIcon, LightningIcon, AddIcon, NewMessageIcon, ResetIcon } from "@opencraft/design-system-web/action-icons";
 import * as Menu from "@opencraft/design-system-web/dropdown-menu";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
-import { SegmentedControl, SettingsSwitch } from "@opencraft/extension-react";
+import { SettingsSwitch } from "@opencraft/extension-react";
 import { modelChoiceFamilies, chooseFamilyModel } from "./model-choice-families";
 import { modelEffortLabel } from "./model-choice-labels";
 import { ModelCatalogStatus } from "./model-catalog-status";
@@ -15,7 +15,7 @@ import "./composer-model-menu.scss";
 
 function MachineGlyph({ role, isLocal }: { readonly role?: "local" | "server" | "cloud"; readonly isLocal?: boolean }) {
   const Icon = isLocal || role === "local" ? LaptopIcon : role === "cloud" ? CloudIcon : ServerIcon;
-  return <Icon size={14} aria-hidden="true" />;
+  return <Icon size={15} aria-hidden="true" />;
 }
 
 /** Browsing sources/search is local. Only an explicit choice writes a model. */
@@ -131,6 +131,17 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
     onSelect(model, catalog?.agentGroups?.length ? source.group as ComposerAgentModelGroup : undefined);
     if (forceClose || switchingAcrossMachines) onRequestClose?.();
   };
+  const moveMachineFocus = (currentKey: string, key: string, groupNode: HTMLElement | null) => {
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(key)) return false;
+    const index = machineSections.findIndex(entry => entry.key === currentKey);
+    if (index < 0) return false;
+    const previous = key === "ArrowLeft" || key === "ArrowUp";
+    const next = key === "Home" ? 0 : key === "End" ? machineSections.length - 1
+      : (index + (previous ? -1 : 1) + machineSections.length) % machineSections.length;
+    selectMachineSection(machineSections[next]!);
+    groupNode?.querySelectorAll<HTMLButtonElement>('button[role="radio"]')[next]?.focus();
+    return true;
+  };
   const moveAgentFocus = (currentId: string, key: string, tablist: HTMLElement | null) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(key)) return false;
     const index = visibleSources.findIndex(entry => entry.id === currentId);
@@ -145,65 +156,88 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
       <div className="opencraft-composer-model-browser__machines-label">
         <FormattedMessage id="composer.model.machineSection" defaultMessage="Execution machine" />
       </div>
-      <SegmentedControl
-        appearance="inset"
-        className="opencraft-composer-model-browser__machine-segmented"
-        label={intl.formatMessage({ id: "composer.model.machineSection", defaultMessage: "Execution machine" })}
-        value={selectedMachineSection?.key ?? machineSections[0]!.key}
-        onValueChange={nextKey => {
-          const found = machineSections.find(section => section.key === nextKey);
-          if (found) selectMachineSection(found);
-        }}
-        options={machineSections.map(section => {
+      <div
+        className="opencraft-composer-model-browser__machine-cards"
+        role="radiogroup"
+        aria-label={intl.formatMessage({ id: "composer.model.machineSection", defaultMessage: "Execution machine" })}
+      >
+        {machineSections.map(section => {
           const isSelectedMachine = selectedMachineSection?.key === section.key;
-          const badgeTone = section.isActiveTarget && isSelectedMachine ? "current" : "neutral";
-          return {
-            value: section.key,
-            label: (
-              <span
-                className="opencraft-composer-model-browser__machine-option"
-                data-current-machine={section.isOrigin ? "true" : undefined}
-                data-active-target={section.isActiveTarget ? "true" : undefined}
-              >
-                <MachineGlyph role={section.role} isLocal={section.isLocal} />
-                <span className="opencraft-composer-model-browser__machine-name" title={section.label}>{section.label}</span>
-                <span className="opencraft-composer-model-browser__machine-badge" data-tone={badgeTone}>
-                  {section.isActiveTarget && section.isOrigin
-                    ? (section.isLocal
-                        ? <FormattedMessage id="composer.model.currentLocalMachine" defaultMessage="Current · Local" />
-                        : <FormattedMessage id="composer.model.currentMachine" defaultMessage="Current" />)
-                    : section.isActiveTarget
-                      ? (section.isLocal
-                          ? <FormattedMessage id="composer.model.switchedLocalMachine" defaultMessage="Switched · Local" />
-                          : <FormattedMessage id="composer.model.switchedMachine" defaultMessage="Switched" />)
-                      : section.isOrigin
-                        ? <FormattedMessage id="composer.model.originMachine" defaultMessage="Original" />
-                        : section.isLocal
-                          ? <FormattedMessage id="composer.model.localMachine" defaultMessage="Local" />
-                          : <FormattedMessage id="settings.agents.remote" defaultMessage="Remote" />}
-                </span>
+          const badgeTone = isSelectedMachine ? "current" : "neutral";
+          return (
+            <button
+              key={section.key}
+              type="button"
+              role="radio"
+              aria-checked={isSelectedMachine}
+              data-value={section.key}
+              data-current-machine={section.isOrigin ? "true" : undefined}
+              data-active-target={section.isActiveTarget ? "true" : undefined}
+              tabIndex={isSelectedMachine ? 0 : -1}
+              className="opencraft-composer-model-browser__machine-card"
+              onMouseDown={event => { if (event.button === 0) event.preventDefault(); }}
+              onClick={() => selectMachineSection(section)}
+              onKeyDown={event => {
+                if (!moveMachineFocus(section.key, event.key, event.currentTarget.parentElement)) return;
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+            >
+              <span className="opencraft-composer-model-browser__machine-check" aria-hidden="true">
+                {isSelectedMachine ? <CheckIcon size={11} aria-hidden="true" /> : null}
               </span>
-            ),
-          };
+              <span className="opencraft-composer-model-browser__machine-icon" aria-hidden="true">
+                <MachineGlyph role={section.role} isLocal={section.isLocal} />
+              </span>
+              <span className="opencraft-composer-model-browser__machine-name" title={section.label}>{section.label}</span>
+              <span className="opencraft-composer-model-browser__machine-badge" data-tone={badgeTone}>
+                {isSelectedMachine && section.isActiveTarget && section.isOrigin
+                  ? (section.isLocal
+                      ? <FormattedMessage id="composer.model.currentLocalMachine" defaultMessage="Current · Local" />
+                      : <FormattedMessage id="composer.model.currentMachine" defaultMessage="Current" />)
+                  : isSelectedMachine && section.isActiveTarget
+                    ? (section.isLocal
+                        ? <FormattedMessage id="composer.model.switchedLocalMachine" defaultMessage="Switched · Local" />
+                        : <FormattedMessage id="composer.model.switchedMachine" defaultMessage="Switched" />)
+                    : anyCrossDeviceActive && section.isOrigin
+                      ? <FormattedMessage id="composer.model.originMachine" defaultMessage="Original" />
+                      : section.isLocal
+                        ? <FormattedMessage id="composer.model.localMachine" defaultMessage="Local" />
+                        : <FormattedMessage id="settings.agents.remote" defaultMessage="Remote" />}
+              </span>
+            </button>
+          );
         })}
-      />
+      </div>
     </div> : null}
-    {!agentInHeader ? <div className="opencraft-composer-model-browser__sources" role="tablist" aria-label={intl.formatMessage({ id: "composer.agent.label", defaultMessage: "Agent" })}>
-      {visibleSources.map(item => {
-        const accessibleLabel = showMachineSections && selectedMachineSection?.label
-          ? `${item.agentLabel} · ${selectedMachineSection.label}`
-          : item.label;
-        return <Button key={item.id} size="sm" variant={source.id === item.id ? "secondary" : "ghost"}
-          onMouseDown={event => { if (event.button === 0) event.preventDefault(); }}
-          role="tab" aria-selected={source.id === item.id} aria-label={accessibleLabel} title={accessibleLabel} tabIndex={source.id === item.id ? 0 : -1}
-          onClick={() => { browse(item); setQuery(""); }} onKeyDown={event => {
-            if (!moveAgentFocus(item.id, event.key, event.currentTarget.parentElement)) return;
-            event.preventDefault(); event.stopPropagation();
-          }}>
-          {item.brand ? <AgentBrandIcon agent={item.brand} /> : <ModelIcon size={18} aria-hidden="true" />}
-          {showMachineSections ? item.agentLabel : item.label}
-        </Button>;
-      })}
+    {!agentInHeader ? <div className="opencraft-composer-model-browser__sources-section">
+      {showMachineSections && selectedMachineSection?.label ? (
+        <div className="opencraft-composer-model-browser__sources-label">
+          <FormattedMessage
+            id="composer.model.agentsOnMachine"
+            defaultMessage="Agents on {machine}"
+            values={{ machine: selectedMachineSection.label }}
+          />
+        </div>
+      ) : null}
+      <div className="opencraft-composer-model-browser__sources" role="tablist" aria-label={intl.formatMessage({ id: "composer.agent.label", defaultMessage: "Agent" })}>
+        {visibleSources.map(item => {
+          const isSelectedAgent = source.id === item.id;
+          const accessibleLabel = showMachineSections && selectedMachineSection?.label
+            ? `${item.agentLabel} · ${selectedMachineSection.label}`
+            : item.label;
+          return <Button key={item.id} size="sm" variant={isSelectedAgent ? "secondary" : "ghost"}
+            onMouseDown={event => { if (event.button === 0) event.preventDefault(); }}
+            role="tab" aria-selected={isSelectedAgent} aria-label={accessibleLabel} title={accessibleLabel} tabIndex={isSelectedAgent ? 0 : -1}
+            onClick={() => { browse(item); setQuery(""); }} onKeyDown={event => {
+              if (!moveAgentFocus(item.id, event.key, event.currentTarget.parentElement)) return;
+              event.preventDefault(); event.stopPropagation();
+            }}>
+            {item.brand ? <AgentBrandIcon agent={item.brand} /> : <ModelIcon size={18} aria-hidden="true" />}
+            {showMachineSections ? item.agentLabel : item.label}
+          </Button>;
+        })}
+      </div>
     </div> : null}
     {source.group.crossDevice && !selectedMachineSection?.isActiveTarget ? <div className="opencraft-composer-model-browser__cross-device-notice" role="note">
       <div className="opencraft-composer-model-browser__cross-device-head">

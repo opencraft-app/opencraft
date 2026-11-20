@@ -32,6 +32,7 @@
   "composer.handoff.browseFolder": "Browse folder…",
   "composer.handoff.crossDeviceNotice": "Execution machine and system environment changed: cross-device handoff only syncs conversation context (including JSONL history), not folders or uncommitted changes, so tasks may not run identically.",
   "composer.model.machineSection": "Execution machine",
+  "composer.model.agentsOnMachine": "Agents on {machine}",
   "composer.model.currentMachine": "Current",
   "composer.model.currentLocalMachine": "Current · Local",
   "composer.model.localMachine": "Local",

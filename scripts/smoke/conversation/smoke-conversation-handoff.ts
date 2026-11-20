@@ -348,7 +348,7 @@ try {
     // 2. Cross-agent model selection enters Handoff to new thread inline!
     await activate(modelTrigger);
     await menu.waitFor();
-    assert.equal(await menu.locator('.opencraft-composer-model-browser__machine-segmented button[role="radio"]').count(), 2, "both machines appear as clickable machine segments");
+    assert.equal(await menu.locator('.opencraft-composer-model-browser__machine-cards button[role="radio"]').count(), 2, "both machines appear as clickable machine cards");
     assert.equal(await menu.getByRole("tab", { name: "Codex · Devcloud", exact: true }).count(), 0, "other machine's agents stay tucked away until its machine tab is selected");
     await activate(menu.getByRole("tab", { name: "Cursor · 本地Mac", exact: true }));
     await activate(menu.getByRole("menuitem", { name: "Gemini 4 Carbon", exact: true }));
@@ -398,7 +398,7 @@ try {
     assert.equal(await page.locator(".opencraft-composer-handoff__cross-device-notice").count(), 0);
     await activate(modelTrigger);
     await menu.waitFor();
-    await activate(menu.locator('.opencraft-composer-model-browser__machine-segmented button[data-value="devcloud"]'));
+    await activate(menu.locator('.opencraft-composer-model-browser__machine-cards button[data-value="devcloud"]'));
     assert.equal(await menu.getByRole("tab", { name: "Codex · Devcloud", exact: true }).getAttribute("aria-selected"), "true");
     const menuCrossNotice = menu.locator(".opencraft-composer-model-browser__cross-device-notice");
     await menuCrossNotice.waitFor();

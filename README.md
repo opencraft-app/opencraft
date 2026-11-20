@@ -149,10 +149,10 @@ OpenCraft 是一个开源 Agent 工作台，围绕 **Anyone Agents Anywhere** �
 **Apple Silicon Mac + Node.js 24 LTS** 可直接用下面的命令安装。npx 会从 GitHub Release 下载完整包。
 
 ```sh
-npx --yes --package=https://github.com/sliverp/opencraft/releases/download/v0.1.19-local.1/opencraft-0.1.19-local.1-darwin-arm64-node24.tgz -- opencraft start
+npx --yes --package=https://github.com/sliverp/opencraft/releases/download/v1.0.0/opencraft-1.0.0-darwin-arm64-node24.tgz -- opencraft start
 ```
 
-[发布说明和 SHA-256 校验文件](https://github.com/sliverp/opencraft/releases/tag/v0.1.19-local.1)。其他平台或 Node 主版本可按 [Web 安装与更新](docs/web-deployment.md#npx-本地完整服务引导) 构建对应归档。
+[发布说明和 SHA-256 校验文件](https://github.com/sliverp/opencraft/releases/tag/v1.0.0)。其他平台或 Node 主版本可按 [Web 安装与更新](docs/web-deployment.md#npx-本地完整服务引导) 构建对应归档。
 
 命令启动本地执行服务和 Web 客户端，并自动打开浏览器。在引导页接入已安装并登录的 Agent，或配置模型服务。无桌面环境时可加 `--no-open`，再使用终端打印的地址。关闭浏览器后服务继续运行，按 Ctrl+C 停止服务。
 

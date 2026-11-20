@@ -1,4 +1,5 @@
 @use "@opencraft/design-system/typography-mixins.web" as typography;
+@use "@opencraft/design-system/controls.web" as controls;
 
 .opencraft-composer-model-browser {
   display: flex;
@@ -9,34 +10,98 @@
     display: flex;
     flex-direction: column;
     flex: none;
-    gap: var(--spacing);
-    padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 2) calc(var(--spacing) * 2);
+    gap: calc(var(--spacing) * 1.25);
+    padding: calc(var(--spacing) * 2);
     border-bottom: .5px solid var(--color-border-subtle);
   }
 
-  &__machines-label {
+  &__machines-label,
+  &__sources-label {
     padding: 0 var(--spacing);
-    @include typography.role(metadata, tertiary);
+    @include typography.role(metadata, secondary);
   }
 
-  & &__machine-segmented.segmented-control[data-appearance="inset"] {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
+  &__machine-cards {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--spacing) * 1.25);
     width: 100%;
+  }
 
-    > button[role="radio"] {
-      width: 100%;
-      min-width: 0;
-      justify-content: space-between;
+  &__machine-card {
+    @include typography.role(control, secondary);
+    display: flex;
+    width: 100%;
+    min-height: max(36px, var(--size-control-hit-min));
+    align-items: center;
+    gap: calc(var(--spacing) * 1.75);
+    padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 2.5);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--color-text-secondary);
+    text-align: left;
+    cursor: pointer;
+    transition:
+      background-color var(--transition-duration-basic) var(--ease-standard),
+      border-color var(--transition-duration-basic) var(--ease-standard),
+      color var(--transition-duration-basic) var(--ease-standard),
+      box-shadow var(--transition-duration-basic) var(--ease-standard);
+
+    @include controls.hover-capable {
+      &:hover:not(:disabled):not([aria-checked="true"]) {
+        background: var(--color-background-navigation-hover);
+        border-color: var(--color-border-default);
+        color: var(--color-text);
+      }
+    }
+
+    &[aria-checked="true"] {
+      border: 1.5px solid var(--color-background-button-primary);
+      background: var(--color-background-button-primary);
+      color: var(--color-text-button-primary);
+      font-weight: var(--typography-primary-action-weight);
+      box-shadow: 0 2px 6px rgb(0 0 0 / 12%);
+
+      .opencraft-composer-model-browser__machine-check {
+        border-color: var(--color-text-button-primary);
+        background: var(--color-text-button-primary);
+        color: var(--color-background-button-primary);
+      }
+
+      .opencraft-composer-model-browser__machine-icon {
+        color: var(--color-text-button-primary);
+      }
+
+      .opencraft-composer-model-browser__machine-badge {
+        background: color-mix(in srgb, var(--color-text-button-primary) 18%, transparent);
+        color: var(--color-text-button-primary);
+      }
     }
   }
 
-  &__machine-option {
-    display: flex;
-    width: 100%;
+  &__machine-check {
+    display: inline-flex;
+    flex: none;
+    width: 16px;
+    height: 16px;
     align-items: center;
-    gap: calc(var(--spacing) * 1.5);
-    min-width: 0;
+    justify-content: center;
+    border: 1.5px solid var(--color-border-default);
+    border-radius: var(--radius-full, 999px);
+    background: transparent;
+    color: transparent;
+    transition:
+      background-color var(--transition-duration-basic) var(--ease-standard),
+      border-color var(--transition-duration-basic) var(--ease-standard),
+      color var(--transition-duration-basic) var(--ease-standard);
+  }
+
+  &__machine-icon {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    color: var(--color-text-tertiary);
   }
 
   &__machine-name {
@@ -50,7 +115,7 @@
 
   &__machine-badge {
     flex: none;
-    padding: 1px calc(var(--spacing) * 1.25);
+    padding: 1px calc(var(--spacing) * 1.5);
     border-radius: var(--radius-sm);
     @include typography.role(metadata, secondary);
     background: var(--color-badge-neutral-background);
@@ -62,15 +127,22 @@
     }
   }
 
+  &__sources-section {
+    display: flex;
+    flex-direction: column;
+    flex: none;
+    gap: calc(var(--spacing) * 1.25);
+    padding: calc(var(--spacing) * 2);
+    border-bottom: .5px solid var(--color-border-subtle);
+  }
+
   &__sources {
     display: flex;
     flex-wrap: wrap;
     flex: none;
     align-items: center;
     gap: var(--spacing);
-    padding: calc(var(--spacing) * 2);
     overflow-x: auto;
-    border-bottom: .5px solid var(--color-border-subtle);
   }
 
   &__cross-device-notice {

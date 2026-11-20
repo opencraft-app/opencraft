@@ -32,6 +32,7 @@
   "composer.handoff.browseFolder": "Semak imbas folder…",
   "composer.handoff.crossDeviceNotice": "Mesin pelaksanaan dan persekitaran sistem telah berubah: penyerahan merentas peranti hanya menyegerakkan konteks perbualan (termasuk sejarah JSONL), bukan folder atau perubahan setempat, jadi tugas mungkin tidak berjalan seperti sebelumnya.",
   "composer.model.machineSection": "Mesin pelaksanaan",
+  "composer.model.agentsOnMachine": "Ejen pada {machine}",
   "composer.model.currentMachine": "Semasa",
   "composer.model.currentLocalMachine": "Semasa · Setempat",
   "composer.model.localMachine": "Setempat",

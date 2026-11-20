@@ -150,10 +150,10 @@ remain development goals. See the [implemented collaboration API](docs/actor-col
 On an **Apple Silicon Mac with Node.js 24 LTS**, run the following command. npx downloads the complete package from GitHub Releases.
 
 ```sh
-npx --yes --package=https://github.com/sliverp/opencraft/releases/download/v0.1.19-local.1/opencraft-0.1.19-local.1-darwin-arm64-node24.tgz -- opencraft start
+npx --yes --package=https://github.com/sliverp/opencraft/releases/download/v1.0.0/opencraft-1.0.0-darwin-arm64-node24.tgz -- opencraft start
 ```
 
-[Release notes and SHA-256 checksums](https://github.com/sliverp/opencraft/releases/tag/v0.1.19-local.1). For other platforms or Node major versions, build a matching archive using the [local installation guide](docs/web-deployment.md#npx-本地完整服务引导).
+[Release notes and SHA-256 checksums](https://github.com/sliverp/opencraft/releases/tag/v1.0.0). For other platforms or Node major versions, build a matching archive using the [local installation guide](docs/web-deployment.md#npx-本地完整服务引导).
 
 The command starts the local execution service and opens Workbench in your browser. Connect an installed, signed-in Agent or configure a model provider. On a machine without a desktop, pass `--no-open` and use the address printed in the terminal. Closing the browser leaves the service running. Press Ctrl+C to stop it.
 

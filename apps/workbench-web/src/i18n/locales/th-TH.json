@@ -32,6 +32,7 @@
   "composer.handoff.browseFolder": "เรียกดูโฟลเดอร์…",
   "composer.handoff.crossDeviceNotice": "เครื่องที่รันและสภาพแวดล้อมระบบเปลี่ยนไป: การส่งต่อข้ามอุปกรณ์จะซิงก์เฉพาะบริบทการสนทนา (รวมถึงประวัติ JSONL) ไม่ซิงก์โฟลเดอร์หรือการแก้ไขในเครื่อง งานจึงอาจไม่ทำงานเหมือนเดิม",
   "composer.model.machineSection": "เครื่องรันงาน",
+  "composer.model.agentsOnMachine": "Agent บน {machine}",
   "composer.model.currentMachine": "ปัจจุบัน",
   "composer.model.currentLocalMachine": "ปัจจุบัน · เครื่องนี้",
   "composer.model.localMachine": "เครื่องนี้",
