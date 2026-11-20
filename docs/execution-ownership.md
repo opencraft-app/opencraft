@@ -762,6 +762,14 @@ Finished executions cannot lend their identity to later Turns; internal schedule
 and anonymous starts have no employee authority. Historical queue records without a
 principal remain unknown instead of borrowing one from chat history.
 
+A queued message consumed inside an already running native goal Turn is still
+steering input, even when Native history omits the steering marker. Its sender
+cannot resolve the Turn's unknown launch identity. Queue-origin reconciliation
+requires an independent execution lease admitted before that Turn was observed.
+Refreshing personal Git authority therefore requires a new admitted Turn after
+the current execution ends; inserting another message into it does not refresh
+its environment or revive an earlier Turn's grant.
+
 `ExecutionLeaseReader` borrows a read-only Host connection. Exact execution ID plus
 optional generation can query a lease; thread ID alone is insufficient. The job-origin
 port additionally requires a trusted native incarnation and tool-root process birth time
