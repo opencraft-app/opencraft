@@ -137,6 +137,8 @@ export interface CrewWorkView {
   id: string; state: 'open' | 'closed'; origin: 'member' | 'bot' | 'routine';
   assigneeId: string; requesterId: string; parentId: string | null; rootId: string; messageId: string | null;
   chain: CrewPhonebookEntry[]; budget: { used: number; limit: number };
+  /** Dispatch text, visible to the assignee and the requester only; null otherwise or for routine work. */
+  request: string | null;
 }
 export interface ChannelsMethodMap {
   'opencraft/channels/group/get': {params:{channelId:string};result:ChannelSummary};

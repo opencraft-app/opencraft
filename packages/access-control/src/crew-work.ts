@@ -20,6 +20,8 @@ export interface CrewWorkView {
   /** Who this work answers to, nearest first; members who left the space are skipped; the owner is last. */
   chain: CrewWorkPerson[];
   budget: { used: number; limit: number };
+  /** The dispatch message text; shown only to the assignee and the requester, null for routine work. */
+  request: string | null;
 }
 
 type Row = Record<string, unknown>;
@@ -119,10 +121,13 @@ export class CrewWork {
       return { actorId, displayName: actor.displayName, kind: actor.kind === 'human' ? 'human' : 'session' };
     };
     const root = this.#row(row.root_id);
+    const message = row.message_id === null || ![row.assignee_id, row.requester_id].includes(context.actorId) ? undefined
+      : this.db.prepare('SELECT content FROM actor_messages WHERE id=?').get(String(row.message_id));
     return { id: String(row.id), state: row.state as CrewWorkView['state'], origin: row.origin as CrewWorkView['origin'],
       assigneeId: String(row.assignee_id), requesterId: String(row.requester_id), parentId: row.parent_id === null ? null : String(row.parent_id),
       rootId: String(row.root_id), messageId: row.message_id === null ? null : String(row.message_id),
-      chain: chain.map(person), budget: { used: Number(root.dispatches), limit: CREW_DISPATCH_BUDGET } };
+      chain: chain.map(person), budget: { used: Number(root.dispatches), limit: CREW_DISPATCH_BUDGET },
+      request: message ? String(message.content) : null };
   }
 
   /** The caller's open work, oldest first. */

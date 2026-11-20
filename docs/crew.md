@@ -61,12 +61,11 @@ Who on the chain is actually asked, and whether that member can decide, is the r
 | `opencraft/server-spaces` `{action:'addBot',spaceId,actorId}` | space owner | add an enabled Session Actor as a member; it may not belong to another space |
 | `opencraft/crew/phonebook/list` `{botId}` | members of the Bot's space | phonebook entries |
 | `opencraft/crew/phonebook/set` `{botId,actorId,present}` | space owner | add or remove an entry; adding requires a member of the space |
-
 | `opencraft/crew/work/dispatch` `{targetActorId,content,idempotencyKey,parentWorkId?}` | members; Bots under open work | send and open work |
 | `opencraft/crew/work/message` `{workId,targetActorId,content,idempotencyKey}` | the work's assignee | message someone on its chain |
 | `opencraft/crew/work/start` `{}` | space Bots | open routine work |
 | `opencraft/crew/work/finish` `{workId}` | the work's assignee | close it; the chain pass ends |
-| `opencraft/crew/work/get` `{workId}` | assignee, requester, chain | the work with its chain and budget |
+| `opencraft/crew/work/get` `{workId}` | assignee, requester, chain | the work with its chain and budget; `request` (the dispatch text) only for the assignee and requester |
 | `opencraft/crew/work/list` `{}` | a Bot | its open work |
 
 Removing a Bot uses the existing `remove` action.
@@ -82,9 +81,17 @@ Removing a Bot uses the existing `remove` action.
 | Work ledger, chain pass, owner for routine work | implemented in core |
 | Budget of 8 Bot-to-Bot hand-offs per root | implemented in core |
 | Departed members skipped, removed Bots hold no work | implemented in core |
-| Cancelling unstarted work of someone who left; stopping after the current step | not yet; runtime |
-| Choosing whom to ask and deciding on the Bot's own judgment | not yet; runtime |
-| Bot runtime sending as itself (superapp peer port) | not yet; the personal assistant runtime still talks only to its owner |
+| Managed Bot runtime takes crew work | implemented: the Host forwards `crew/work/list`, `get`, `message` and `finish` as the Bot; each dispatcher gets one runner conversation; replies go to the nearest person left on the chain |
+| Asking upward on the Bot's own judgment | implemented by the same path: a question goes to the immediate dispatcher, which decides or asks its own dispatcher |
+| Finishing work | the runtime closes work once its turn settled, no Work linked to that conversation is active and its outbox is empty; a blocked turn stays open |
+| Cancelling unstarted work of someone who left | implemented in the runtime: closed before intake without a reply |
+| Stopping started work after the current step when its dispatcher leaves | not yet; replies already move up the chain |
+| Bots dispatching to their phonebook, routine work | core only; no runtime tool yet |
+| Crew UI | not yet |
 | Crew UI | not yet |
 
-Verification: `tests/identity/crew-contact.test.ts`, `tests/identity/server-spaces.test.ts`.
+Runtime: `apps/personal-assistant/src/runtime/crew-intake.mjs`. Its only local fact is which runner
+conversation belongs to which dispatcher, stored in the runner `meta` table.
+
+Verification: `tests/identity/crew-contact.test.ts`, `tests/identity/server-spaces.test.ts`,
+`apps/personal-assistant/test/crew-intake.test.mjs`. Not verified against a running server, a real model or a client.

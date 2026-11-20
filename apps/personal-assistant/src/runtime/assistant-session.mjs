@@ -8,10 +8,11 @@ import { startPersonalAssistant } from "./personal-assistant.mjs";
 import { LocalRunner } from "./local-runner.mjs";
 import { loadProfile } from "../adapters/local/profile.mjs";
 import { platformAssistantPort } from "../adapters/local/platform-assistant-port.mjs";
+import { createCrewIntake } from "./crew-intake.mjs";
 
 /** One runtime lifetime; transport and platform authorization remain separate owners. */
 export function createAssistantSession(peer, onStopped) {
-  let auxiliary, runner, memoryBrowser,
+  let auxiliary, runner, memoryBrowser, crew,
     stopping = false,
     timer,
     work,
@@ -127,11 +128,10 @@ export function createAssistantSession(peer, onStopped) {
                     message.body.content ?? message.body.question?.prompt;
                   if (typeof text !== "string" || !text.trim())
                     throw Error("No native text representation");
-                  const receipt = await request(
-                    "reply",
-                    { id: message.id, text },
-                    signal,
-                  );
+                  // A dispatcher's conversation answers that dispatcher; everything else answers the owner.
+                  const receipt = crew?.isPeerConversation(message.conversationId)
+                    ? await crew.deliver(message, text, signal)
+                    : await request("reply", { id: message.id, text }, signal);
                   return {
                     messageId: message.id,
                     channel: message.body.channel,
@@ -142,6 +142,7 @@ export function createAssistantSession(peer, onStopped) {
               },
             },
           });
+      if(!config.profile)crew=createCrewIntake({runner,request});
       if(!config.profile)memoryBrowser=createMemoryBrowser({memory:runner.app.memory,history:runner.app.history,transact:f=>runner.uow.transaction(f),authorize:()=>request('opencraft/personal-assistant/authorize',{})});
       if (stopping) {
         await runner.close();
@@ -203,6 +204,13 @@ export function createAssistantSession(peer, onStopped) {
                   .run(cursorKey, String(row.seq)),
               );
             }
+          }
+          try {
+            await crew?.poll(() => stopping);
+          } catch (error) {
+            // Crew intake is idempotent by work ID; keep going and retry it on the next poll.
+            if (error instanceof MemoryFilesChangedError || runner.stopping) throw error;
+            peer.notify("activity-unavailable");
           }
           await auxiliary?.poll();
           peer.notify("activity", await observe());

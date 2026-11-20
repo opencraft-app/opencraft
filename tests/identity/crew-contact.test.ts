@@ -100,6 +100,10 @@ test('work opened by a member lets its Bot reach that member and the owner, what
   const f = await fixture(t);
   const work = await dispatch(f, f.bob, f.alan.id, 'tidy the release');
   assert.deepEqual(work.work.chain.map(p => p.actorId), [f.bob.actorId, f.alice.actorId]);
+  const seen = async (who: object) => (await f.call(('context' in who ? who.context : who) as never, 'opencraft/crew/work/get', { workId: work.workId }) as { work: { request: string | null } }).work.request;
+  assert.equal(await seen(f.alan), 'tidy the release', 'the Bot reads what it was asked');
+  assert.equal(await seen(f.bob), 'tidy the release');
+  assert.equal(await seen(f.alice), null, 'the rest of the chain sees the work, not the dispatch text');
   await say(f, f.alan, work.workId, f.bob.actorId, 'which branch?');
   await say(f, f.alan, work.workId, f.alice.actorId, 'heads up');
   await assert.rejects(say(f, f.alan, work.workId, f.zhe.id, 'not on the chain'), /actor_action_denied/);
