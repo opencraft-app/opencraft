@@ -96,11 +96,21 @@
   function wide() { return wideMq.matches && ui.view === 'list'; }
   function top() { return ui.stack[ui.stack.length - 1]; }
   function cur() { var t = top(); return t && P(t.id); }
-  var SVG = function (d, w) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + (w || 1.8) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>'; };
-  var ICON = { back: SVG('<path d="m14.500 5-7 7 7 7"/>', 2), send: SVG('<path d="M12 19V5.500M5.800 11.500 12 5.300l6.200 6.200"/>', 2.2), x: SVG('<path d="M7 7l10 10M17 7 7 17"/>', 2.2),
-    phone: SVG('<rect x="7" y="3" width="10" height="18" rx="2.500"/><path d="M11 18h2"/>'), pc: SVG('<rect x="3.500" y="4.500" width="17" height="11.500" rx="1.800"/><path d="M8.500 20h7M12 16v4"/>'), chat: SVG('<path d="M12 4.500c-4.700 0-8.500 3.100-8.500 7 0 2.200 1.200 4.100 3.100 5.400L6 20l3.400-1.600c.8.200 1.700.300 2.600.300 4.700 0 8.500-3.100 8.500-7s-3.800-7.200-8.500-7.200z"/>'),
-    plus: SVG('<path d="M12 5.500v13M5.500 12h13"/>', 1.8), search: SVG('<circle cx="11" cy="11" r="6.500"/><path d="m16 16 4 4"/>'), people: SVG('<circle cx="9" cy="8.500" r="3.200"/><path d="M3.500 19c.6-3.300 2.700-5.200 5.500-5.200s4.900 1.900 5.500 5.200M15.500 5.600a3.200 3.200 0 0 1 0 6M17 13.900c2 .5 3.200 2.200 3.600 5.100"/>'),
-    bot: SVG('<rect x="4.500" y="6.500" width="15" height="12" rx="4"/><path d="M12 6.500V4M9.500 12v1M14.500 12v1"/>') };
+  /* 图标几何取自 @opencraft/design-system 的 action-artwork；邮箱、手机、群、办公室是这里补的 */
+  var SVG = function (d) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>'; };
+  var ICON = { back: SVG('<path d="m15 6-6 6 6 6"/>'), send: SVG('<path d="M12 19.500v-15m-5 5 5-5 5 5"/>'), x: SVG('<path d="m6 6 12 12M6 18 18 6"/>'), chev: SVG('<path d="m9 6 6 6-6 6"/>'),
+    plus: SVG('<path d="M12 5v14M5 12h14"/>'), search: SVG('<path d="M17.500 10.750a6.750 6.750 0 1 1-13.500 0 6.750 6.750 0 0 1 13.500 0ZM15.500 15.500l5 5"/>'),
+    chat: SVG('<path d="M7.500 4.500h9A3.500 3.500 0 0 1 20 8v6.500a3.500 3.500 0 0 1-3.500 3.500H9l-5 3V8a3.500 3.500 0 0 1 3.500-3.500Z"/>'),
+    bot: SVG('<rect x="4" y="6.500" width="16" height="13" rx="3"/><path d="M12 3.500v3M9.500 15.500h5"/><circle cx="8.500" cy="11.500" r=".750" fill="currentColor" stroke="none"/><circle cx="15.500" cy="11.500" r=".750" fill="currentColor" stroke="none"/>'),
+    pc: SVG('<rect x="4" y="4.500" width="16" height="12" rx="2.750"/><path d="M12 16.500V20m-3.500 0h7"/>'), cloud: SVG('<path d="M7 18.500a4.500 4.500 0 0 1-1.200-8.800 6 6 0 0 1 11.600-1.400A5.200 5.200 0 0 1 17 18.500H7Z"/>'),
+    tool: SVG('<path d="M14 4a5.600 5.600 0 0 0-6.400 7.500l-3.500 3.600a2.800 2.800 0 0 0 4 4l3.500-3.600A5.600 5.600 0 0 0 19 9l-3.500 3-3.200-3.200L15 5.500 14 4Z"/>'),
+    mail: SVG('<rect x="3.500" y="5.500" width="17" height="13" rx="2.750"/><path d="m4.500 7.500 7.500 5.500 7.500-5.500"/>'), phone: SVG('<rect x="7" y="3.500" width="10" height="17" rx="2.500"/><path d="M11 17.500h2"/>'),
+    people: SVG('<circle cx="9" cy="8.500" r="3.250"/><path d="M3.500 19.500c.5-3.300 2.600-5.300 5.500-5.300s5 2 5.500 5.300M15.500 5.500a3.250 3.250 0 0 1 0 6.200M17.200 14.300c1.900.6 3 2.300 3.300 5.200"/>'),
+    cube: SVG('<path d="M12 3.500 19.500 7.750v8.500L12 20.500l-7.500-4.250v-8.500L12 3.500ZM4.500 7.750 12 12l7.500-4.250M12 12v8.500"/>'),
+    info: SVG('<circle cx="12" cy="12" r="8"/><path d="M12 11v5"/><circle cx="12" cy="8" r=".700" fill="currentColor" stroke="none"/>') };
+  /* 东西的图标：按名字认出常见的几类，认不出用工具图标 */
+  function toolIcon(t) { var n = t.name; return /mac|电脑|主机|windows/i.test(n) ? ICON.pc : /邮/.test(n) ? ICON.mail : /盘|drive|文档/i.test(n) ? ICON.cloud : ICON.tool; }
+  function tic(t, cls) { return '<span class="tic' + (cls ? ' ' + cls : '') + '" aria-hidden="true">' + toolIcon(t) + '</span>'; }
   var PERSON = '<svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="15.500" r="7"/><path d="M5.500 41c.8-8.500 6.800-13.500 14.500-13.500S33.700 32.500 34.500 41z"/></svg>';
   /* 头像：Bot 是带眼睛的圆角方块，人是圆的剪影（你是深色的），群是成员头像拼成的格子 */
   function av(id, cls) { var p = P(id); if (!p) return ''; var c = ' style="--c:' + COLORS[(p.look || 0) % COLORS.length] + '"', k = cls ? ' ' + cls : '';
@@ -112,17 +122,23 @@
   function status(b) { var d = db.doing[b.id]; return d ? '<span class="status busy">正在' + esc(d.text) + '</span>' : '<span class="status">空闲</span>'; }
   function backBtn() { return wide() && ui.stack.length <= 1 ? '' : '<button class="ic" data-do="back" aria-label="返回">' + ICON.back + '</button>'; } /* 宽屏右边那一层是默认打开的，不需要返回 */
   function head(title, sub, right) { return '<header class="head">' + backBtn() + '<div class="ht"><h1>' + title + '</h1>' + (sub ? '<p>' + sub + '</p>' : '') + '</div>' + (right || '') + '</header>'; }
-  function line(m, self) { var mine = m.from === self; return '<div class="msg' + (mine ? ' out' : '') + '">' + (mine ? '' : '<span class="nm">' + esc(N(m.from)) + '</span>') + '<div class="bub">' + esc(m.text) + '</div></div>'; }
+  function line(m, self, named) { var mine = m.from === self;
+    return '<div class="msg' + (mine ? ' out' : '') + '">' + (mine ? '' : av(m.from, 'sm')) + '<div class="mb">' + (!mine && named ? '<span class="nm">' + esc(N(m.from)) + '</span>' : '') + '<div class="bub">' + esc(m.text) + '</div></div></div>'; }
+  /* 一串消息：隔了二十分钟以上插一个时间；连续同一个人的消息合在一起 */
+  function lines(list, self, named) { var out = '', prev = null;
+    list.forEach(function (m) { if (!prev || m.ts - prev.ts > 20 * 60000) out += '<p class="when">' + hhmm(m.ts) + '</p>';
+      out += line(m, self, named && !(prev && prev.from === m.from && m.ts - prev.ts <= 20 * 60000)).replace('class="msg', prev && prev.from === m.from && m.ts - prev.ts <= 20 * 60000 ? 'class="msg cont' : 'class="msg'); prev = m; });
+    return out; }
   function opens(id) { var x = P(id); return x.kind === 'group' ? { k: 'group', id: id } : x.kind === 'bot' ? { k: 'bot', id: id } : { k: 'who', id: id }; }
   function isOn(page) { var t = top(); return !!t && t.k === page.k && (t.id || t.t) === (page.id || page.t); }
 
   /* ---------- 首页：你的 Inbox。搜索、加号，「对话 / 成员」两个小标签 ---------- */
   function home() {
     var tabs = [['chats', '对话'], ['people', '成员']];
-    return '<div class="page"><header class="inbox-h"><h1>Inbox</h1><div class="seg" role="tablist" aria-label="看法"><button role="tab" data-do="view" data-id="list" aria-selected="' + (ui.view === 'list') + '">列表</button><button role="tab" data-do="view" data-id="office" aria-selected="' + (ui.view === 'office') + '">办公室</button></div></header>' +
+    return '<div class="page"><header class="inbox-h"><h1>Inbox</h1><button class="ic" data-do="view" data-id="office" aria-label="办公室全景" title="办公室全景">' + ICON.cube + '</button></header>' +
       '<div class="searchbar"><label class="search">' + ICON.search + '<input id="q" type="search" autocomplete="off" placeholder="搜索群聊、成员或 Bot" aria-label="搜索" value="' + esc(ui.q) + '"></label><button class="ic plus" aria-label="新建"' + go({ k: 'new' }) + '>' + ICON.plus + '</button></div>' +
-      '<div class="pills" role="tablist">' + tabs.map(function (t) { return '<button role="tab" data-do="tab" data-id="' + t[0] + '" aria-selected="' + (ui.tab === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>' +
-      '<div class="body inbox">' + (ui.tab === 'people' ? peopleTab() : chatsTab()) + '<p class="none pad" id="noresult" hidden>' + (ui.tab === 'people' ? '没有找到。' : '你手机里没有这个人。去<button class="lk in" data-do="tab" data-id="people">成员</button>里找找。') + '</p>' + '<p class="foot">这是原型，没有接真实的 Bot，你发出去的话不会有人回。<button class="lk" data-do="reset">恢复示例</button></p></div></div>';
+      '<div class="pills" role="tablist" aria-label="Inbox">' + tabs.map(function (t) { return '<button role="tab" data-do="tab" data-id="' + t[0] + '" aria-selected="' + (ui.tab === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>' +
+      '<div class="body inbox">' + (ui.tab === 'people' ? peopleTab() : chatsTab()) + '<p class="none pad" id="noresult" hidden>' + (ui.tab === 'people' ? '没有找到。' : '你手机里没有这个人。去<button class="lk in" data-do="tab" data-id="people">成员</button>里找找。') + '</p>' + (ui.tab === 'people' ? '<p class="foot">示例数据，Bot 不会真的回复。<button class="lk" data-do="reset">恢复示例</button></p>' : '') + '</div></div>';
   }
   function irow(page, id, title, sub, right, q) { return '<div class="row' + (isOn(page) ? ' on' : '') + '" data-q="' + esc(q) + '"><button class="row-main"' + go(page) + '>' + av(id, 'lg') + '<span class="t"><b>' + title + '</b><span>' + sub + '</span></span></button>' + (right || '') + '</div>'; }
   /* 对话：你手机里的人、Bot 和群，按最近一句排 */
@@ -135,8 +151,8 @@
       var busy = db.doing[x.id] ? '<i class="busydot" title="正在做事"></i>' : '';
       return irow(page, x.id, esc(x.name) + busy + tag(x), sub, '<span class="rt">' + (l ? hhmm(l.ts) : '') + '</span>', x.name); }).join('');
     var others = bots().filter(function (b) { return !canFind('me', b.id); }).length;
-    return '<div class="flat">' + (rows || '<p class="none pad">你的手机里还没有人，你现在谁也找不到。</p>') + '</div>' +
-      '<p class="cap">这里是你手机里的人、Bot 和群。' + (others ? '还有 ' + others + ' 个 Bot 你找不到，在<button class="lk in" data-do="tab" data-id="people">成员</button>里。' : '') + '</p>';
+    return '<div class="flat">' + (rows || '<div class="empty"><b>你的手机里还没有人</b><span>在「成员」里把 Bot 加进来，就能和他说话。</span></div>') +
+      (others ? '<button class="row more-row" data-do="tab" data-id="people"><span class="t"><span>还有 ' + others + ' 个 Bot 不在你手机里</span></span>' + ICON.chev + '</button>' : '') + '</div>';
   }
   /* 成员：所有 Bot 和人，能直接加进你的手机；也能反过来看谁能找到他、谁能用什么 */
   function peopleTab() {
@@ -146,8 +162,8 @@
     var hum = of('human').map(function (x) { return irow({ k: 'who', id: x.id }, x.id, esc(x.name) + '<i>' + esc(x.role) + '</i>', reachLine(x.id), '<span class="rt">成员</span>', x.name + x.role); }).join('');
     var outs = of('out').map(function (x) { return irow({ k: 'who', id: x.id }, x.id, esc(x.name), reachLine(x.id), '<span class="rt">公司外</span>', x.name); }).join('');
     var tools = db.tools.map(function (x) { var u = users(x.id), page = { k: 'use', t: x.id };
-      return '<div class="row' + (isOn(page) ? ' on' : '') + '" data-q="' + esc(x.name) + '"><button class="row-main"' + go(page) + '><span class="tic" aria-hidden="true">' + esc(x.name.slice(0, 1)) + '</span><span class="t"><b>' + esc(x.name) + '</b><span>' + (u.length ? esc(names(u)) + ' 能用' : '谁也用不了') + '</span></span></button><span class="rt">东西</span></div>'; }).join('');
-    return '<p class="rules"><b>手机</b>里有谁，就能找谁；<b>电脑</b>上有什么，就能用什么。人和 Bot 都一样。</p>' +
+      return '<div class="row' + (isOn(page) ? ' on' : '') + '" data-q="' + esc(x.name) + '"><button class="row-main"' + go(page) + '>' + tic(x) + '<span class="t"><b>' + esc(x.name) + '</b><span>' + (u.length ? esc(names(u)) + ' 能用' : '谁也用不了') + '</span></span>' + ICON.chev + '</button></div>'; }).join('');
+    return '<p class="rules">' + ICON.info + '<span><b>手机</b>里有谁，就能找谁；<b>电脑</b>上有什么，就能用什么。人和 Bot 都一样。</span></p>' +
       '<h2 class="group">Bot <i>' + bots().length + '</i></h2><div class="flat">' + botRows + '</div>' +
       '<button class="newbot"' + go({ k: 'newbot' }) + '>' + ICON.plus + '新 Bot</button>' +
       (hum ? '<h2 class="group">成员 <i>' + of('human').length + '</i></h2><div class="flat">' + hum + '</div>' : '') +
@@ -181,16 +197,16 @@
       (mine ? '<button class="btn ok"' + go({ k: 'chat', id: b.id }) + '>' + ICON.chat + '发消息</button>' : '<button class="btn" data-do="mein" data-id="' + b.id + '">加到我的手机</button>') + '</header>';
     var chat = '<button class="card convo"' + go({ k: 'chat', id: b.id }) + '><span class="convo-h">和你的对话' + (mine ? '' : '<em>你找不到他，只能看</em>') + '</span>' +
       (t.length ? t.slice(-2).map(function (m) { return line(m, 'me'); }).join('') : '<p class="none">还没说过话。</p>') + '<span class="more">打开对话 ›</span></button>';
-    var phone = '<section class="card panel"><div class="panel-h"><span class="pi">' + ICON.phone + '</span><div><h2>他的手机</h2><p>手机里有谁、有哪个群，他就能找谁、在哪个群里说话。</p></div><i>' + (b.phone || []).length + '</i></div><div class="tiles">' +
+    var phone = '<section class="card panel"><div class="panel-h"><span class="pi">' + ICON.phone + '</span><div><h2>他的手机</h2><p>里面的人和群，他都能找</p></div><i>' + (b.phone || []).length + '</i></div><div class="tiles">' +
       mineFirst(b.phone).map(function (j) { var x = P(j); if (!x) return '';
         var page = j === 'me' ? { k: 'chat', id: b.id } : x.kind === 'group' ? { k: 'group', id: j } : { k: 'peek', id: b.id, w: j };
         return '<div class="tile"><button class="tile-main"' + go(page) + '>' + av(j, 'lg') + '<span>' + esc(N(j)) + '</span>' + tag(x) + '</button><button class="tile-x" data-do="unfriend" data-id="' + j + '" aria-label="从' + esc(b.name) + '的手机里移除' + esc(N(j)) + '">' + ICON.x + '</button></div>'; }).join('') +
       '<button class="tile addtile"' + go({ k: 'add', id: b.id }) + '><span class="plusbox">' + ICON.plus + '</span><span>添加</span></button></div>' +
       ((b.phone || []).length ? '' : '<p class="empty-note">手机里没有人，他谁也找不到。</p>') +
       '<p class="recent">反过来，' + (finders(b.id).length ? esc(names(finders(b.id))) + '能找他。' : '谁也找不到他。') + '</p></section>';
-    var pc = '<section class="card panel"><div class="panel-h"><span class="pi">' + ICON.pc + '</span><div><h2>他的电脑</h2><p>电脑上有什么，他就能用什么。</p></div><i>' + (b.pc || []).length + '</i></div>' +
+    var pc = '<section class="card panel"><div class="panel-h"><span class="pi">' + ICON.pc + '</span><div><h2>他的电脑</h2><p>上面的东西，他都能用</p></div><i>' + (b.pc || []).length + '</i></div>' +
       (d ? '<div class="doing"><span class="dot" aria-hidden="true"></span><span class="t"><b>正在' + esc(d.text) + '</b><span>' + esc(ago(d.ts)) + '开始 · 用' + esc((T(d.tool) || {}).name || '') + '</span></span><button class="btn sm danger" data-do="stop">停下</button></div>' : '') +
-      '<div class="tools">' + (b.pc || []).map(function (id) { var x = T(id); return x ? '<div class="tool"><button class="tool-main"' + go({ k: 'use', t: id }) + '><span class="tic" aria-hidden="true">' + esc(x.name.slice(0, 1)) + '</span><span class="t"><b>' + esc(x.name) + '</b><span>' + esc(users(id).length > 1 ? '还有 ' + (users(id).length - 1) + ' 个 Bot 能用' : '只有他能用') + '</span></span></button><button class="btn sm ghost" data-do="untool" data-id="' + id + '">移除</button></div>' : ''; }).join('') +
+      '<div class="tools">' + (b.pc || []).map(function (id) { var x = T(id); return x ? '<div class="tool"><button class="tool-main"' + go({ k: 'use', t: id }) + '>' + tic(x) + '<span class="t"><b>' + esc(x.name) + '</b><span>' + esc(users(id).length > 1 ? '还有 ' + (users(id).length - 1) + ' 个 Bot 能用' : '只有他能用') + '</span></span></button><button class="btn sm ghost" data-do="untool" data-id="' + id + '">移除</button></div>' : ''; }).join('') +
       '<button class="tool add"' + go({ k: 'tools', id: b.id }) + '><span class="tic plusbox" aria-hidden="true">' + ICON.plus + '</span><span class="t"><b>添加</b></span></button></div>' +
       ((b.pc || []).length ? '' : '<p class="empty-note">电脑上什么都没有，他现在只能聊天。</p>') +
       (recent.length ? '<p class="recent">最近：' + recent.map(function (r) { return esc(ago(r.ts) + '用' + ((T(r.tool) || {}).name || '') + r.text); }).join('；') + '</p>' : '') + '</section>';
@@ -200,24 +216,23 @@
   /* 你和一个人或 Bot 的对话 */
   function composer(id, name) { return '<form class="say" data-do="say"><input id="say" autocomplete="off" enterkeyhint="send" placeholder="对' + esc(name) + '说" aria-label="对' + esc(name) + '说"><button class="send" aria-label="发送">' + ICON.send + '</button></form>'; }
   function chat(b) { var ok = canFind('me', b.id), right = b.kind === 'bot' ? '<button class="btn sm"' + go({ k: 'bot', id: b.id }) + '>' + ICON.bot + '手机和电脑</button>' : '';
-    return '<div class="page">' + head(av(b.id, 'hd') + esc(b.name), b.kind === 'bot' ? status(b) : esc(b.role || ''), right) + '<div class="body chat" id="chat">' + (thread('me', b.id).map(function (m) { return line(m, 'me'); }).join('') || '<p class="none center">还没说过话。对' + esc(b.name) + '说第一件要办的事。</p>') + '</div>' +
+    return '<div class="page">' + head(av(b.id, 'hd') + esc(b.name), b.kind === 'bot' ? status(b) : esc(b.role || ''), right) + '<div class="body chat" id="chat">' + (lines(thread('me', b.id), 'me') || '<div class="empty center">' + av(b.id, 'xl') + '<b>和' + esc(b.name) + '还没说过话</b><span>对' + esc(b.name) + '说第一件要办的事。</span></div>') + '</div>' +
       (ok ? composer(b.id, b.name) : '<div class="say off"><span>你找不到' + esc(b.name) + '：他不在你手机里。</span><button class="btn sm" data-do="mein" data-id="' + b.id + '">加到我的手机</button></div>') + '</div>'; }
   /* 群聊：谁的手机里有这个群，谁就在群里 */
   function group(g) { var ok = canFind('me', g.id), m = finders(g.id);
-    return '<div class="page">' + head(av(g.id, 'hd') + esc(g.name), esc(names(m))) + '<div class="body chat" id="chat">' + (thread('me', g.id).map(function (x) { return line(x, 'me'); }).join('') || '<p class="none center">群里还没人说话。</p>') + '</div>' +
-      '<div class="gbar"><button class="btn sm"' + go({ k: 'who', id: g.id }) + '>' + ICON.people + '群成员 ' + m.length + '</button></div>' +
+    return '<div class="page">' + head(av(g.id, 'hd') + esc(g.name), esc(names(m)), '<button class="btn sm"' + go({ k: 'who', id: g.id }) + '>' + ICON.people + '群成员 ' + m.length + '</button>') + '<div class="body chat" id="chat">' + (lines(thread('me', g.id), 'me', true) || '<div class="empty center">' + av(g.id, 'xl') + '<b>群里还没人说话</b><span>说第一句吧。</span></div>') + '</div>' +
       (ok ? composer(g.id, g.name) : '<div class="say off"><span>你不在这个群里，只能看。</span><button class="btn sm" data-do="mein" data-id="' + g.id + '">加入群聊</button></div>') + '</div>'; }
   /* 看他和某人的聊天（只读）；底部说清楚两个方向，也能在这里移除 */
   function peek(b, w) { var x = P(w), t = thread(b.id, w), there = canFind(b.id, w);
     var fwd = b.name + (there ? '能找' : '找不到') + x.name + '。';
     var rev = x.kind === 'out' ? x.name + '是公司外的人，没有这部手机。' : x.name + (canFind(w, b.id) ? '能找' : '找不到') + b.name + '。';
-    return '<div class="page">' + head(esc(b.name) + ' 和 ' + esc(x.name), '只能看，不能替他回') + '<div class="body chat">' + (t.map(function (m) { return line(m, b.id); }).join('') || '<p class="none center">他们还没聊过。</p>') + '</div>' +
+    return '<div class="page">' + head(esc(b.name) + ' 和 ' + esc(x.name), '只能看，不能替他回') + '<div class="body chat">' + (lines(t, b.id, true) || '<div class="empty center"><b>他们还没聊过</b></div>') + '</div>' +
       '<div class="say off two"><span><b>' + esc(fwd) + '</b><br>' + esc(rev) + ' <button class="lk"' + go({ k: 'who', id: w }) + '>谁能找' + esc(x.name) + ' ›</button></span>' + (there ? '<button class="btn sm danger" data-do="unfriend" data-id="' + w + '">从' + esc(b.name) + '手机里移除</button>' : '<button class="btn sm" data-do="friend" data-id="' + w + '">加回去</button>') + '</div></div>'; }
   function addContact(b) { var list = db.people.filter(function (x) { return x.id !== b.id && (b.phone || []).indexOf(x.id) < 0; });
     return '<div class="page">' + head('加到' + esc(b.name) + '的手机', '加进去，' + esc(b.name) + '就能找这个人，或在这个群里说话') + '<div class="body"><div class="card">' + (list.length ? list.map(function (x) { return '<div class="row"><span class="row-main static">' + av(x.id) + '<span class="t"><b>' + esc(N(x.id)) + tag(x) + '</b><span>' + esc(x.kind === 'group' ? '群聊' : x.kind === 'bot' ? 'Bot · ' + x.role : x.kind === 'human' ? '成员 · ' + x.role : x.kind === 'me' ? '老板' : '公司外的人') + '</span></span></span><button class="btn sm" data-do="friend" data-id="' + x.id + '" data-pop="1">添加</button></div>'; }).join('') : '<p class="none pad">大家都已经在他手机里了。</p>') + '</div>' +
       '<form class="inl" data-do="newout"><input id="outname" autocomplete="off" placeholder="公司外的人，例如：供应商老秦" aria-label="公司外的人"><button class="btn">添加</button></form></div></div>'; }
   function addTool(b) { var list = db.tools.filter(function (t) { return (b.pc || []).indexOf(t.id) < 0; });
-    return '<div class="page">' + head('放到' + esc(b.name) + '的电脑上', '放上去，' + esc(b.name) + '就能用') + '<div class="body"><div class="card">' + (list.length ? list.map(function (t) { return '<div class="row"><span class="row-main static"><span class="tic" aria-hidden="true">' + esc(t.name.slice(0, 1)) + '</span><span class="t"><b>' + esc(t.name) + '</b></span></span><button class="btn sm" data-do="tool" data-id="' + t.id + '">添加</button></div>'; }).join('') : '<p class="none pad">公司里的都已经给他了。</p>') + '</div>' +
+    return '<div class="page">' + head('放到' + esc(b.name) + '的电脑上', '放上去，' + esc(b.name) + '就能用') + '<div class="body"><div class="card">' + (list.length ? list.map(function (t) { return '<div class="row"><span class="row-main static">' + tic(t) + '<span class="t"><b>' + esc(t.name) + '</b></span></span><button class="btn sm" data-do="tool" data-id="' + t.id + '">添加</button></div>'; }).join('') : '<p class="none pad">公司里的都已经给他了。</p>') + '</div>' +
       '<form class="inl" data-do="newtool"><input id="toolname" autocomplete="off" placeholder="新的，例如：钉钉、云测试环境" aria-label="新的东西"><button class="btn">添加</button></form></div></div>'; }
   /* 加号：新 Bot 或新群聊 */
   function newAny() { return '<div class="page">' + head('新建') + '<div class="body"><div class="card">' +
@@ -260,6 +275,8 @@
     view.classList.toggle('split', wide());
     view.innerHTML = wide() ? '<div class="pane l">' + home() + '</div><div class="pane r">' + (page || '<p class="blank">还没有人</p>') + '</div>' : page || home();
     view.setAttribute('data-key', key);
+    if (!same && !wide() && ui.lastDepth != null && ui.stack.length !== ui.lastDepth) { var pg = view.querySelector('.page'); if (pg) pg.classList.add(ui.stack.length > ui.lastDepth ? 'enter-push' : 'enter-pop'); }
+    ui.lastDepth = ui.stack.length;
     var nb = view.querySelector('.pane.r .body') || view.querySelector('.body'); if (nb && same) nb.scrollTop = keep; var c = $('chat'); if (c) c.scrollTop = c.scrollHeight;
     filter(); if (focusQ && $('q')) { $('q').focus(); $('q').setSelectionRange(ui.q.length, ui.q.length); }
     $('card').innerHTML = office ? card() : '';
@@ -305,6 +322,11 @@
   });
   document.addEventListener('submit', function (e) { var f = e.target.closest('form[data-do]'); if (f) { e.preventDefault(); DO[f.getAttribute('data-do')](f); } });
   document.addEventListener('input', function (e) { if (e.target.id === 'q') { ui.q = e.target.value; filter(); } }); /* 搜索只隐藏行，不重画，输入法和光标都不受影响 */
+
+  /* 输入方式：触摸后不画焦点环，按 Tab 后恢复 */
+  var root = document.documentElement;
+  document.addEventListener('pointerdown', function (e) { if (e.pointerType === 'touch' || e.pointerType === 'pen') root.setAttribute('data-touch-interaction', ''); else root.removeAttribute('data-touch-interaction'); root.setAttribute('data-pointer-focus', ''); }, true);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Tab') { root.removeAttribute('data-touch-interaction'); root.removeAttribute('data-pointer-focus'); } }, true);
 
   has3d = !!(window.Office && window.Office.init($('stage'), $('labels'), pick));
   if (!has3d) $('fail').hidden = false;
