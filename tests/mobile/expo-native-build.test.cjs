@@ -37,7 +37,9 @@ test('standalone Expo config keeps the public identity and requests no unused pe
   // Retain legacy IDs; changing an installed app's identity is a separate decision.
   assert.equal(config.ios.bundleIdentifier, 'dev.opencraft.workbench');
   assert.equal(config.android.package, 'dev.opencraft.workbench');
-  assert.deepEqual(config.plugins, ['expo-sqlite', 'expo-secure-store']);
+  // Secure storage holds settings, not biometric-gated secrets: no Face ID prompt.
+  assert.deepEqual(config.plugins, ['expo-sqlite', ['expo-secure-store', { faceIDPermission: false }]]);
+  assert.equal(config.icon, './assets/icon.png');
   // The container asks for no camera, photo or microphone access.
   assert.deepEqual(Object.keys(config.ios.infoPlist ?? {}).filter(key => key.endsWith('UsageDescription')), []);
   assert.deepEqual(config.android.permissions ?? [], []);

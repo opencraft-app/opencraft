@@ -4,6 +4,7 @@ assets/mobile-bot-runtime.html
 assets/mobile-chat-mermaid.html
 assets/mobile-chat-math.html
 android/
+ios/
 release/
 node_modules/
 

@@ -6,6 +6,7 @@
     "scheme": "opencraft",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "dev.opencraft.workbench"
@@ -17,7 +18,12 @@
     },
     "plugins": [
       "expo-sqlite",
-      "expo-secure-store"
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": false
+        }
+      ]
     ],
     "web": {
       "bundler": "metro",
