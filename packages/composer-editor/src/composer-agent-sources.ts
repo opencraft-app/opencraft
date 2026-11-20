@@ -4,7 +4,8 @@ import type { ComposerAgentModelGroup, ComposerModelOption, ComposerSelectionCat
 
 const brands: Record<string, { brand: AgentBrand; name: string }> = {
   codex: { brand: "codex", name: "Codex" }, cursor: { brand: "cursor", name: "Cursor" },
-  "claude-code": { brand: "claude", name: "Claude Code" }, codebuddy: { brand: "codebuddy", name: "CodeBuddy" },
+  "claude-code": { brand: "claude", name: "Claude Code" }, gemini: { brand: "gemini", name: "Gemini" },
+  codebuddy: { brand: "codebuddy", name: "CodeBuddy" },
   "codebuddy-ide": { brand: "codebuddy", name: "CodeBuddy IDE" },
 };
 
@@ -14,6 +15,7 @@ export function composerAgentBrand(agentId?: string | null, modelValue?: string 
   if (modelValue.startsWith("codex:")) return "codex";
   if (modelValue.startsWith("cursor:")) return "cursor";
   if (modelValue.startsWith("claude-code:")) return "claude";
+  if (modelValue.startsWith("gemini:")) return "gemini";
   if (modelValue.startsWith("codebuddy:") || modelValue.startsWith("codebuddy-ide:")) return "codebuddy";
   return undefined;
 }
@@ -68,12 +70,12 @@ export function composerAgentSources(catalog: ComposerSelectionCatalog | undefin
       sources.push({ id: `${group.id}:api`, agentLabel: apiLabel, label: fallbackLabel, group, models: [] });
     }
   }
-  const brandOrder: Record<string, number> = { codex: 0, claude: 1, cursor: 2, codebuddy: 3 };
+  const brandOrder: Record<string, number> = { codex: 0, claude: 1, gemini: 2, cursor: 3, codebuddy: 4 };
   sources.sort((left, right) => {
     const leftMachine = machineOrder.get(left.group.machineId ?? left.group.id) ?? 0;
     const rightMachine = machineOrder.get(right.group.machineId ?? right.group.id) ?? 0;
     if (leftMachine !== rightMachine) return leftMachine - rightMachine;
-    return (brandOrder[left.brand ?? ""] ?? 4) - (brandOrder[right.brand ?? ""] ?? 4);
+    return (brandOrder[left.brand ?? ""] ?? 5) - (brandOrder[right.brand ?? ""] ?? 5);
   });
   return sources;
 }

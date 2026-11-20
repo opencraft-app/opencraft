@@ -6,7 +6,7 @@ import { useEffect, useId, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppServerMethodParams, AppServerMethodResult, OnboardingAgentSnapshot, OnboardingSnapshot } from "@opencraft/appserver-protocol";
 import { useIntl } from "@opencraft/i18n/react";
-import { SettingsListItem, SettingsSection, SettingsSwitch } from "@opencraft/extension-react";
+import { SettingsListItem, SettingsSection, SettingsSwitch, SettingsTextInput } from "@opencraft/extension-react";
 import { CheckIcon } from "@opencraft/design-system-web/action-icons";
 import { ResetIcon } from "@opencraft/design-system-web/action-icons";
 import { IconButton } from "@opencraft/design-system-web/button";
@@ -21,6 +21,7 @@ const AGENT_NAMES: Record<string, { id: string; defaultMessage: string }> = {
   codex: { id: "onboard.agent.codex", defaultMessage: "Codex" },
   cursor: { id: "onboard.agent.cursor", defaultMessage: "Cursor" },
   claude: { id: "onboard.agent.claude", defaultMessage: "Claude Code" },
+  gemini: { id: "onboard.agent.gemini", defaultMessage: "Gemini" },
   codebuddy: { id: "onboard.agent.codebuddy", defaultMessage: "CodeBuddy" },
   pi: { id: "onboard.agent.pi", defaultMessage: "Pi" },
   dsh: { id: "onboard.agent.dsh", defaultMessage: "DSH" },
@@ -63,6 +64,7 @@ function AgentOnboardingContent({ hostId, identityScope = "local", request, requ
   const continueHintId = useId();
   const queryKey = ["agent-onboarding", hostId, identityScope] as const;
   const [copied, setCopied] = useState<string | null>(null);
+  const [authCodes, setAuthCodes] = useState<Record<string, string>>({});
   const [actionFailed, setActionFailed] = useState<{ id: string; goal: "install" | "connect" | "trust" | "authenticate" | "cancel" } | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [requestedStep, setStep] = useState<"agent" | "start">("agent");
@@ -95,13 +97,14 @@ function AgentOnboardingContent({ hostId, identityScope = "local", request, requ
     if (actionRecovered) setActionFailed(current => current === actionFailed ? null : current);
   }, [actionRecovered, actionFailed]);
   const nameOf = (id: string) => intl.formatMessage(AGENT_NAMES[id] ?? { id: "onboard.agent.unknownName", defaultMessage: "Agent" });
-  const run = async (id: string, action: "sign-in" | "install" | "cancel") => {
+  const run = async (id: string, action: "sign-in" | "install" | "cancel" | "submit-code", code?: string) => {
     const agent = status.data?.agents.find(agent => agent.id === id);
     const goal = action === "install" ? "install" : action === "cancel" ? "cancel"
       : agent?.workspaceTrusted === false ? "trust" : agent?.connectionRequired ? "connect" : "authenticate";
     setPendingId(id); setActionFailed(null);
     try {
-      const result = await request("opencraft/agents/onboarding/act", { id, action });
+      const result = await request("opencraft/agents/onboarding/act", { id, action, ...(code === undefined ? {} : { code }) });
+      if (action === "submit-code") setAuthCodes(previous => ({ ...previous, [id]: "" }));
       if (isSnapshot(result)) queryClient.setQueryData(queryKey, result);
     } catch { setActionFailed({ id, goal }); } finally { setPendingId(null); }
   };
@@ -264,6 +267,23 @@ function AgentOnboardingContent({ hostId, identityScope = "local", request, requ
                   : intl.formatMessage({ id: "onboard.agent.copyCode", defaultMessage: "Copy code" })}
               </button>
             </span> : null}
+            {activity.awaitingCode && agent ? <form className="agent-onboard__code-form" onSubmit={event => {
+              event.preventDefault();
+              const submittedCode = (authCodes[agent.id] ?? "").trim();
+              if (submittedCode) void run(agent.id, "submit-code", submittedCode);
+            }}>
+              <SettingsTextInput
+                aria-label={intl.formatMessage({ id: "onboard.agent.authCodePlaceholder", defaultMessage: "Paste authorization code or callback URL" })}
+                placeholder={intl.formatMessage({ id: "onboard.agent.authCodePlaceholder", defaultMessage: "Paste authorization code or callback URL" })}
+                value={authCodes[agent.id] ?? ""}
+                onChange={event => setAuthCodes(previous => ({ ...previous, [agent.id]: event.currentTarget.value }))}
+                autoComplete="off"
+                disabled={pendingId === agent.id}
+              />
+              <Button size="sm" type="submit" disabled={pendingId === agent.id || !(authCodes[agent.id] ?? "").trim()}>
+                {intl.formatMessage({ id: "onboard.agent.submitCode", defaultMessage: "Submit code" })}
+              </Button>
+            </form> : null}
             {activity.log ? <details>
               <summary className="ui-native-disclosure">{intl.formatMessage({ id: "onboard.agent.viewLog", defaultMessage: "View log" })}</summary>
               <pre>{activity.log}</pre>

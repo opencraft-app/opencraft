@@ -20,7 +20,7 @@ import {
 
 type HistoryAgent = OnboardingAgentId;
 const historyEngineId = (id: HistoryAgent): EngineId => ENGINE_BY_AGENT[id];
-type EngineId = "codex" | "cursor" | "claude-code" | "codebuddy" | "codebuddy-ide" | "pi-cli" | "dsh-acp";
+type EngineId = "codex" | "cursor" | "claude-code" | "gemini" | "codebuddy" | "codebuddy-ide" | "pi-cli" | "dsh-acp";
 const ENGINE_IDS = Object.values(ENGINE_BY_AGENT);
 type Params = Record<string, unknown>;
 interface ConnectedAgentModel {
@@ -41,6 +41,7 @@ export function connectedAgentModelId(agentId: OnboardingAgentId): string {
 export function connectedAgentEngineId(modelOrThread: string): EngineId | null {
   if (modelOrThread.startsWith("dsh-acp:") || modelOrThread.startsWith("dsh_acp_")) return "dsh-acp";
   if (modelOrThread.startsWith("pi-cli:") || modelOrThread.startsWith("picli_")) return "pi-cli";
+  if (modelOrThread.startsWith("gemini:") || modelOrThread.startsWith("gemini_")) return "gemini";
   if (modelOrThread.startsWith("claude-code:") || modelOrThread.startsWith("claude_")) return "claude-code";
   if (modelOrThread.startsWith("cursor:") || modelOrThread.startsWith("cursor_")) return "cursor";
   if (modelOrThread.startsWith("codebuddy-ide:") || modelOrThread.startsWith("codebuddy_ide_")) return "codebuddy-ide";
@@ -53,6 +54,7 @@ const LABELS: Record<EngineId, string> = {
   codex: "Codex",
   cursor: "Cursor",
   "claude-code": "Claude Code",
+  gemini: "Gemini",
   codebuddy: "CodeBuddy CLI",
   "codebuddy-ide": "CodeBuddy IDE",
   "pi-cli": "Pi",
@@ -503,6 +505,12 @@ export class ConnectedAgentHost {
       const command = await resolveExecutable(["cursor-agent"], this.deps);
       if (!command) throw new Error("Cursor is not installed");
       return { engineId, command, args: ["acp"] };
+    }
+    if (engineId === "gemini") {
+      const command = await resolveExecutable(["agy", "gemini"], this.deps);
+      if (!command) throw new Error("Gemini is not installed");
+      const isAgy = /(?:^|[\\/])agy(?:\.exe)?$/iu.test(command);
+      return { engineId, command, args: isAgy ? ["acp"] : ["--experimental-acp"] };
     }
     if (engineId === "codebuddy") {
       const command = await resolveExecutable(["codebuddy", "cbc"], this.deps);

@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { isAbsolute } from 'node:path';
 
 export const POLICY_PATH = '/__opencraft_model_policy';
-export const engines = ['codex', 'pi', 'dsh', 'acp', 'dsh-acp', 'claude-code'];
+export const engines = ['codex', 'pi', 'dsh', 'acp', 'dsh-acp', 'claude-code', 'gemini'];
 export function parseRules(value) {
   if (!Array.isArray(value) || value.length > 1000) throw Error('invalid_model_policy');
   const seen = new Set();

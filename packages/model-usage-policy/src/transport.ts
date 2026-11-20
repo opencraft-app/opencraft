@@ -5,7 +5,7 @@ import { assertModelPolicy, projectModels, readPolicy, resolvePolicySelection } 
 type V=Record<string,any>;
 export function modelEngine(model:unknown,fallback='codex'):string {
   const id=String(model ?? '');
-  return id.startsWith('pi:')?'pi':id.startsWith('dsh-model:')?'dsh':id.startsWith('dsh-acp:')?'dsh-acp':id.startsWith('acp:')?'acp':id.startsWith('claude-code:')?'claude-code':fallback;
+  return id.startsWith('pi:')?'pi':id.startsWith('dsh-model:')?'dsh':id.startsWith('dsh-acp:')?'dsh-acp':id.startsWith('acp:')?'acp':id.startsWith('claude-code:')?'claude-code':id.startsWith('gemini:')?'gemini':fallback;
 }
 /** Gateway enforcement also protects old independent owners until handoff. */
 export class ModelPolicyTransport implements DuplexTransport {

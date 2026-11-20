@@ -6,7 +6,7 @@ import { homedir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const ONBOARDING_AGENT_ENGINES = { codex: "codex", cursor: "cursor", claude: "claude-code", codebuddy: "codebuddy", "codebuddy-ide": "codebuddy-ide", pi: "pi-cli", dsh: "dsh-acp" } as const;
+export const ONBOARDING_AGENT_ENGINES = { codex: "codex", cursor: "cursor", claude: "claude-code", gemini: "gemini", codebuddy: "codebuddy", "codebuddy-ide": "codebuddy-ide", pi: "pi-cli", dsh: "dsh-acp" } as const;
 
 /** Local CLIs the first-run agent step can see. Commands and packages are fixed. */
 export const ONBOARDING_AGENTS = [
@@ -44,6 +44,17 @@ export const ONBOARDING_AGENTS = [
     installUrl: "https://code.claude.com/docs/en/setup",
   },
   {
+    id: "gemini",
+    name: "Gemini",
+    commands: ["agy", "gemini"],
+    versionArgs: ["--version"],
+    statusArgs: ["models"],
+    signInArgs: ["acp", "--login"],
+    signInEnv: { BROWSER: "/usr/bin/true" },
+    installPackage: "@google/gemini-cli",
+    installUrl: "https://gemini.google.com/macos",
+  },
+  {
     id: "codebuddy",
     name: "CodeBuddy CLI",
     commands: ["codebuddy", "cbc"],
@@ -71,6 +82,7 @@ interface CommandResult {
 
 export interface ManagedProcess {
   kill(): void;
+  write?(input: string): void;
   readonly exited: Promise<{ code: number | null }>;
   onOutput(listener: (chunk: string) => void): void;
 }
@@ -130,6 +142,11 @@ export function interpretAuth(id: OnboardingAgentId, stdout: string, stderr: str
       } catch { /* Status text is not JSON. */ }
     }
   }
+  if (id === "gemini") {
+    if (/please sign in|not (?:logged|signed) in|sign in required/iu.test(text)) return { authenticated: false, account: null };
+    if (code === 0 && text.length > 0) return { authenticated: true, account: EMAIL.exec(text)?.[0] ?? null };
+    return { authenticated: false, account: null };
+  }
   if (!text) return { authenticated: null, account: null };
   const account = EMAIL.exec(text)?.[0] ?? null;
   if (/not (?:logged|signed) in|logged out|sign in required/iu.test(text)) return { authenticated: false, account: null };
@@ -153,6 +170,14 @@ export async function resolveExecutable(commands: readonly string[], deps: Pick<
       const resolvedDir = resolve(dir);
       if ((command === "pi" || command === "dsh") && (resolvedDir === bundledNodeBin || resolvedDir === bundledDshBin)) continue;
       const candidate = join(dir, command);
+      if (await deps.exists(candidate)) return candidate;
+    }
+  }
+  if (commands.includes("agy")) {
+    for (const candidate of [
+      "/Applications/Gemini.app/Contents/Helpers/agy",
+      join(deps.homedir, "Applications", "Gemini.app", "Contents", "Helpers", "agy"),
+    ]) {
       if (await deps.exists(candidate)) return candidate;
     }
   }
@@ -191,12 +216,14 @@ interface LiveTask {
 function activityOf(task: LiveTask | undefined): OnboardingActivity | null {
   if (!task) return null;
   const guide = task.kind === "sign-in" ? parseSignInOutput(task.log) : { url: null, userCode: null };
+  const awaitingCode = task.kind === "sign-in" && task.phase === "running" && /paste the authorization code/iu.test(stripTerminal(task.log));
   return {
     kind: task.kind,
     phase: task.phase,
     message: task.message,
     url: guide.url,
     userCode: guide.userCode,
+    ...(awaitingCode ? { awaitingCode: true } : {}),
     log: tail(task.log),
   };
 }
@@ -217,7 +244,7 @@ export class AgentOnboardingService {
       return { id: agent.id, engineId: ONBOARDING_AGENT_ENGINES[agent.id], displayName: agent.name,
         installed: !!await resolveExecutable(agent.commands, this.deps), version: null, authenticated: null,
         account: null, activity: null, installUrl: agent.installUrl, canInstallPackage: agent.installPackage !== null,
-        historyImport: agent.id !== "codebuddy-ide" && agent.id !== "dsh" };
+        historyImport: agent.id !== "codebuddy-ide" && agent.id !== "dsh" && agent.id !== "gemini" };
     })) };
   }
 
@@ -229,7 +256,7 @@ export class AgentOnboardingService {
 
   async act(input: unknown): Promise<OnboardingSnapshot> {
     if (this.closed) throw new Error("Agent onboarding is closed");
-    const params = input && typeof input === "object" ? input as { id?: unknown; action?: unknown } : {};
+    const params = input && typeof input === "object" ? input as { id?: unknown; action?: unknown; code?: unknown } : {};
     const agent = definition(typeof params.id === "string" ? params.id : "");
     if (!agent) throw new Error("Unknown agent");
     const native = this.native.get(agent.id);
@@ -238,6 +265,14 @@ export class AgentOnboardingService {
     if (action === "cancel") this.clear(agent.id);
     else if (action === "sign-in") await this.start(agent, "sign-in");
     else if (action === "install") await this.start(agent, "install");
+    else if (action === "submit-code") {
+      const code = typeof params.code === "string" ? params.code.trim() : "";
+      if (!code || code.length > 4096 || /[\r\n]/u.test(code)) throw new Error("Invalid authorization code");
+      const task = this.tasks.get(agent.id);
+      if (!task || task.phase !== "running" || !task.process?.write) throw new Error("No active sign-in is waiting for a code");
+      task.process.write(`${code}\n`);
+      await Promise.race([task.process.exited, new Promise(resolvePromise => setTimeout(resolvePromise, 4000))]);
+    }
     else throw new Error("Unknown onboarding action");
     return this.status();
   }
@@ -296,13 +331,14 @@ export class AgentOnboardingService {
   private async probe(agent: (typeof ONBOARDING_AGENTS)[number]): Promise<OnboardingAgentSnapshot> {
     const native=this.native.get(agent.id);if(native)return native.probe();
     const executable = await resolveExecutable(agent.commands, this.deps);
+    const isStandaloneGeminiCli = agent.id === "gemini" && executable !== null && !/(?:^|[\\/])agy(?:\.exe)?$/iu.test(executable);
     const base = {
       id: agent.id,
-      engineId: ONBOARDING_AGENT_ENGINES[agent.id], historyImport: agent.id !== "codebuddy-ide" && agent.id !== "dsh",
+      engineId: ONBOARDING_AGENT_ENGINES[agent.id], historyImport: agent.id !== "codebuddy-ide" && agent.id !== "dsh" && agent.id !== "gemini",
       displayName: agent.name,
       installUrl: agent.installUrl,
       canInstallPackage: agent.installPackage !== null,
-      ...(agent.id === "pi" ? { setupCommand: "pi" } : agent.id === "dsh" ? { setupCommand: "dsh web" } : {}),
+      ...(agent.id === "pi" ? { setupCommand: "pi" } : agent.id === "dsh" ? { setupCommand: "dsh web" } : isStandaloneGeminiCli ? { setupCommand: "gemini" } : {}),
       activity: activityOf(this.tasks.get(agent.id)),
     };
     if (!executable) {
@@ -313,9 +349,10 @@ export class AgentOnboardingService {
       return { ...base, installed: true, version: null, authenticated: null, account: null };
     }
     const env = { ...this.deps.env, PATH: augmentedPath(this.deps.env, this.deps.homedir) };
+    const statusTimeout = agent.id === "gemini" ? 16_000 : STATUS_TIMEOUT_MS;
     const [version, status] = await Promise.all([
       this.deps.exec(executable, agent.versionArgs, STATUS_TIMEOUT_MS, env).catch(() => ({ stdout: "", stderr: "", code: 1 })),
-      agent.statusArgs.length ? this.deps.exec(executable, agent.statusArgs, STATUS_TIMEOUT_MS, env).catch(() => ({ stdout: "", stderr: "", code: 1 })) : Promise.resolve({stdout:"",stderr:"",code:0}),
+      agent.statusArgs.length && !isStandaloneGeminiCli ? this.deps.exec(executable, agent.statusArgs, statusTimeout, env).catch(() => ({ stdout: "", stderr: "", code: 1 })) : Promise.resolve({stdout:"",stderr:"",code:0}),
     ]);
     const auth = agent.id === "dsh"
       ? {
@@ -324,7 +361,15 @@ export class AgentOnboardingService {
             : Boolean(this.deps.env.DEEPSEEK_API_KEY?.trim()) || await this.deps.exists(this.deps.env.DSH_HOME?.trim() || join(this.deps.homedir, ".dsh")),
           account: null,
         }
-      : interpretAuth(agent.id, status.stdout, status.stderr, status.code);
+      : isStandaloneGeminiCli
+        ? {
+            authenticated: version.code !== 0
+              ? null
+              : Boolean(this.deps.env.GEMINI_API_KEY?.trim() || this.deps.env.GOOGLE_API_KEY?.trim())
+                || await access(join(this.deps.homedir, ".gemini", "oauth_creds.json"), constants.R_OK).then(() => true, () => false),
+            account: null,
+          }
+        : interpretAuth(agent.id, status.stdout, status.stderr, status.code);
     return {
       ...base,
       installed: true,
@@ -366,7 +411,7 @@ export function createOnboardingDeps(env: NodeJS.ProcessEnv = process.env): Onbo
       });
     },
     spawn(command, args, commandEnv) {
-      const child: ChildProcess = spawn(command, args, { env: commandEnv, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+      const child: ChildProcess = spawn(command, args, { env: commandEnv, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
       const listeners = new Set<(chunk: string) => void>();
       let exit: { code: number | null } | null = null;
       let resolveExit: (result: { code: number | null }) => void = () => undefined;
@@ -374,10 +419,12 @@ export function createOnboardingDeps(env: NodeJS.ProcessEnv = process.env): Onbo
       const emit = (chunk: Buffer) => { const text = chunk.toString("utf8"); for (const listener of listeners) listener(text); };
       child.stdout?.on("data", emit);
       child.stderr?.on("data", emit);
+      child.stdin?.on("error", () => {});
       child.once("error", () => { if (!exit) { exit = { code: 1 }; resolveExit(exit); } });
       child.once("exit", code => { if (!exit) { exit = { code }; resolveExit(exit); } });
       return {
         kill() { if (child.exitCode === null && !child.killed) child.kill("SIGTERM"); },
+        write(input: string) { if (child.exitCode === null && !child.killed) child.stdin?.write(input); },
         exited,
         onOutput(listener) { listeners.add(listener); },
       };

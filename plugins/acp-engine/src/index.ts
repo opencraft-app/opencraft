@@ -21,7 +21,7 @@ import { parseCodexQuestionForm } from "./codex-questions.js";
 
 export interface AcpEngineOptions {
   executionEnvironment?: ExecutionEnvironmentRuntime;
-  id?: "acp" | "dsh-acp" | "claude-code" | "cursor" | "codebuddy" | "codebuddy-ide" | "codex" | "pi-cli";
+  id?: "acp" | "dsh-acp" | "claude-code" | "cursor" | "gemini" | "codebuddy" | "codebuddy-ide" | "codex" | "pi-cli";
   protocol?: "acp" | "pi-rpc";
   /** Stable storage namespace for separate native data homes of the same provider. */
   threadNamespace?: string;
@@ -97,7 +97,7 @@ const safeId = (id: unknown): id is string => typeof id === "string" && /^[a-zA-
  * downloaded, and no engine is started inside the execution gateway.
  */
 export class AcpEngine implements ExecutionEngineProvider {
-  readonly id: "acp" | "dsh-acp" | "claude-code" | "cursor" | "codebuddy" | "codebuddy-ide" | "codex" | "pi-cli";
+  readonly id: "acp" | "dsh-acp" | "claude-code" | "cursor" | "gemini" | "codebuddy" | "codebuddy-ide" | "codex" | "pi-cli";
   readonly label: string;
   readonly threadPrefix: string;
   readonly modelPrefix: string;
@@ -153,12 +153,12 @@ export class AcpEngine implements ExecutionEngineProvider {
   constructor(private readonly options: AcpEngineOptions) {
     if (!isAbsolute(options.cwd) || !isAbsolute(options.dataDirectory) || !options.command.trim()) throw new Error("ACP requires explicit absolute workspace and data paths and an installed command");
     this.id = options.id ?? "acp";
-    this.label = options.label ?? (this.id === "claude-code" ? "Claude Code" : this.id === "dsh-acp" ? "DSH" : this.id === "cursor" ? "Cursor" : this.id === "codebuddy-ide" ? "CodeBuddy IDE" : this.id === "codebuddy" ? "CodeBuddy CLI" : this.id === "codex" ? "Codex" : "Agent");
+    this.label = options.label ?? (this.id === "claude-code" ? "Claude Code" : this.id === "gemini" ? "Gemini" : this.id === "dsh-acp" ? "DSH" : this.id === "cursor" ? "Cursor" : this.id === "codebuddy-ide" ? "CodeBuddy IDE" : this.id === "codebuddy" ? "CodeBuddy CLI" : this.id === "codex" ? "Codex" : "Agent");
     if (options.threadNamespace && !/^[a-z0-9_]+$/u.test(options.threadNamespace)) throw new Error("Invalid thread namespace");
     this.threadPrefix = options.threadNamespace ?? (this.id === "claude-code" ? "claude_" : this.id.replaceAll("-", "_") + "_");
     this.modelPrefix = this.id + ":";
     this.baseExtensions = Object.freeze({
-      ...(["codex", "cursor"].includes(this.id) ? { [MODEL_CATALOG_REFRESH_EXTENSION]: { version: 1 } } : {}),
+      ...(["codex", "cursor", "gemini"].includes(this.id) ? { [MODEL_CATALOG_REFRESH_EXTENSION]: { version: 1 } } : {}),
       ...(this.id === "codex" ? { [OPENCRAFT_PERMISSION_MODES_EXTENSION]: OPENCRAFT_PERMISSION_MODES_CAPABILITY } : {}),
       "opencraft/thread-lifecycle": { version: 1, rename: true, archive: true, unsubscribe: true },
       "opencraft/thread-follow-up": { version: 1, queue: true, steer: false },

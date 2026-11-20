@@ -135,6 +135,55 @@ test("a signed-in agent becomes a selectable model and owns its later threads", 
   assert.equal(connectedAgentModelId("dsh"), "dsh-acp:current");
   assert.equal(connectedAgentEngineId("dsh-acp:deepseek-v4"), "dsh-acp");
   assert.equal(connectedAgentEngineId("dsh_acp_native"), "dsh-acp");
+  assert.equal(connectedAgentModelId("gemini"), "gemini:current");
+  assert.equal(connectedAgentEngineId("gemini:gemini-2.5-pro"), "gemini");
+  assert.equal(connectedAgentEngineId("gemini_native_session"), "gemini");
+});
+
+test("Gemini macOS app helper agy is discovered and supports interactive OAuth code submission", async () => {
+  const agyPath = "/Applications/Gemini.app/Contents/Helpers/agy";
+  const files = new Set([agyPath]);
+  const deps = { env: { PATH: "/usr/bin" }, homedir: "/Users/me", exists: async (file: string) => files.has(file), cursorVersions: async () => [] };
+  assert.equal(await resolveExecutable(["agy", "gemini"], deps), agyPath);
+  assert.deepEqual(interpretAuth("gemini", "", "Error: Please sign in to view available models.", 1), { authenticated: false, account: null });
+  assert.deepEqual(interpretAuth("gemini", "gemini-2.5-pro\ngemini-2.5-flash\n", "", 0), { authenticated: true, account: null });
+
+  let written = "";
+  let finishExit: (res: { code: number | null }) => void = () => {};
+  const onboardingDeps: OnboardingDeps = {
+    ...deps,
+    async exec(_cmd, args) {
+      if (args[0] === "--version") return { stdout: "1.5.5\n", stderr: "", code: 0 };
+      return written ? { stdout: "gemini-2.5-pro\n", stderr: "", code: 0 } : { stdout: "", stderr: "Error: Please sign in to view available models.", code: 1 };
+    },
+    spawn() {
+      return {
+        kill() {},
+        write(input: string) { written += input; finishExit({ code: 0 }); },
+        exited: new Promise(resolvePromise => { finishExit = resolvePromise; }),
+        onOutput(listener) {
+          listener("Open this link in a browser to log in with Google:\n  https://accounts.google.com/o/oauth2/auth?client_id=test\nThen paste the authorization code, or the full URL of the page you land on, and press Enter:\n");
+        },
+      };
+    },
+  };
+  const service = new AgentOnboardingService(onboardingDeps);
+  try {
+    const initial = (await service.status()).agents.find(a => a.id === "gemini")!;
+    assert.equal(initial.installed, true);
+    assert.equal(initial.version, "1.5.5");
+    assert.equal(initial.authenticated, false);
+
+    const signingIn = (await service.act({ id: "gemini", action: "sign-in" })).agents.find(a => a.id === "gemini")!;
+    assert.equal(signingIn.activity?.awaitingCode, true);
+    assert.equal(signingIn.activity?.url, "https://accounts.google.com/o/oauth2/auth?client_id=test");
+
+    const completed = (await service.act({ id: "gemini", action: "submit-code", code: "4/0AdTestAuthCode" })).agents.find(a => a.id === "gemini")!;
+    assert.equal(written, "4/0AdTestAuthCode\n");
+    assert.equal(completed.authenticated, true);
+  } finally {
+    service.close();
+  }
 });
 
 test("Pi native readiness and terminal setup are identical for local and Bash-enrolled Hosts", async () => {

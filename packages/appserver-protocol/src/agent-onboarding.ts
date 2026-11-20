@@ -1,5 +1,5 @@
 import type { NativeConversationProject } from "./native-conversation-project";
-export type OnboardingAgentId = "codex" | "cursor" | "claude" | "codebuddy" | "codebuddy-ide" | "pi" | "dsh";
+export type OnboardingAgentId = "codex" | "cursor" | "claude" | "gemini" | "codebuddy" | "codebuddy-ide" | "pi" | "dsh";
 
 export type HistoryImportAgentId = OnboardingAgentId;
 
@@ -9,6 +9,7 @@ export interface OnboardingActivity {
   readonly message: string | null;
   readonly url: string | null;
   readonly userCode: string | null;
+  readonly awaitingCode?: boolean;
   readonly log: string;
 }
 
@@ -98,7 +99,7 @@ export interface AgentOnboardingMethodMap {
   };
   "opencraft/agents/onboarding/status": { params: Record<string, never>; result: OnboardingSnapshot };
   "opencraft/agents/onboarding/act": {
-    params: { id: string; action: "sign-in" | "install" | "cancel" };
+    params: { id: string; action: "sign-in" | "install" | "cancel" | "submit-code"; code?: string };
     result: OnboardingSnapshot;
   };
   "opencraft/agents/onboarding/models": {
