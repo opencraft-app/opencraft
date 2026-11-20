@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { localBuildInputs, resolveElectronArtifactRun } from "../../scripts/ci/resolve-electron-artifact-run.mjs";
 
 const repository = "owner/repo";
@@ -107,4 +108,13 @@ test("local build inputs are the checkout's Git blob IDs", () => {
   const inputs = localBuildInputs();
   assert.deepEqual(Object.keys(inputs), ["vendor/electron/fork.json", "vendor/electron/args.gn"]);
   for (const id of Object.values(inputs)) assert.match(id, /^[0-9a-f]{40}$/u);
+});
+
+test("the native build exports no TARGET variable, which Chromium bindgen rejects", () => {
+  const workflow = readFileSync(
+    new URL("../../.github/workflows/electron-native-artifacts.yml", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(workflow, /^\s+TARGET:/mu);
+  assert.match(workflow, /^\s+NATIVE_TARGET: \$\{\{ matrix\.id \}\}/mu);
 });
