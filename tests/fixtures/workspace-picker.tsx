@@ -2,6 +2,7 @@ import React from "react";
 import { MicrophoneIcon } from "@opencraft/design-system-web/action-icons";
 import { createComposerController, type ComposerExecutionTarget } from "@opencraft/composer-core";
 import { createConversationScopeRegistry } from "@opencraft/workbench-runtime";
+import { WorkspaceDirectoryPicker } from "../../apps/workbench-web/src/components/workspace-directory-picker";
 import { AppShell } from "../../apps/workbench-web/src/components/app-shell";
 import { AppShellHeader } from "../../apps/workbench-web/src/components/app-shell-header";
 import { NewThreadDraftPage } from "../../apps/workbench-web/src/components/new-thread-draft-page";
@@ -27,6 +28,19 @@ const noop = () => {};
 const environment = {version:1,configurationId:'e2b',templateId:'general'} as const;
 const catalog = {version:1 as const,environments:[environment,{...environment,configurationId:'other'}].map(target=>({target,name:target.configurationId,status:'configured' as const,resources:{cpuMillis:4000,memoryBytes:8589934592}})),libraries:[{id:'shared',name:'Shared library',status:'configured' as const,environmentIds:['e2b']}]};
 function App() {
+  const [directoryOpen, setDirectoryOpen] = React.useState(false);
+  const [directoryRevision, reloadDirectory] = React.useReducer(value => value + 1, 0);
+  const pendingDirectory = React.useRef<(() => void) | null>(null);
+  const holdDirectory = React.useRef(false);
+  const readDirectory = React.useCallback(async () => {
+    void directoryRevision;
+    if (holdDirectory.current) await new Promise<void>(resolve => { pendingDirectory.current = resolve; });
+    return Array.from({ length: 20 }, (_, index) => ({ fileName: `folder-${String(index).padStart(2, '0')}`, isDirectory: true, isFile: false }));
+  }, [directoryRevision]);
+  Object.assign(window, { directory: {
+    refresh: () => { holdDirectory.current = true; reloadDirectory(); },
+    finish: () => { holdDirectory.current = false; pendingDirectory.current?.(); },
+  } });
   const [draft,setDraft] = React.useState(initialDraft);
   const [available,setAvailable] = React.useState(true);
   const [loading,setLoading] = React.useState(false);
@@ -47,8 +61,10 @@ function App() {
       modelSelectionPolicy={params.get("policy") === "session" ? "session" : params.get("policy") === "host-default" ? "host-default" : "user"}
       composerEndActions={toolbar ? <button className="opencraft-composer-icon-button" aria-label="Microphone"><MicrophoneIcon size={16} /></button> : undefined}
       catalog={{ search: async () => [] }} workspaceOptions={[{ cwd: '/home/demo/opencraft', runtimeWorkspaceRoots: ['/home/demo/opencraft'], projectId: 'project', label: 'opencraft', rootLabel: 'opencraft', branch: 'main' }]} activeHostId="fixture" hostOptions={[{ id: 'fixture', hostIds: ['fixture'], label: 'GitHub-Demo', platform: 'linux', resource: null, cloud: false, role: 'server', connectable: true }]}
-      placeholderPending={recovering} connectionPhase={recovering ? "reconnecting" : "ready"} onSelectHost={noop} onSelectWorkspace={workspace => placement.select({ hostId: 'fixture', workspace: { cwd: workspace.cwd, runtimeWorkspaceRoots: workspace.runtimeWorkspaceRoots, projectId: workspace.projectId } })} onBrowseWorkspace={() => placement.select({ hostId: 'fixture', workspace: { cwd: '/opened-folder', runtimeWorkspaceRoots: ['/opened-folder'] } })}
+      placeholderPending={recovering} connectionPhase={recovering ? "reconnecting" : "ready"} onSelectHost={noop} onSelectWorkspace={workspace => placement.select({ hostId: 'fixture', workspace: { cwd: workspace.cwd, runtimeWorkspaceRoots: workspace.runtimeWorkspaceRoots, projectId: workspace.projectId } })} onBrowseWorkspace={() => params.has("directory") ? setDirectoryOpen(true) : placement.select({ hostId: 'fixture', workspace: { cwd: '/opened-folder', runtimeWorkspaceRoots: ['/opened-folder'] } })}
       onSubmit={() => false} heading="要做点什么？" placeholder="聊聊你的想法，或交给我一件事" />
+    {directoryOpen ? <WorkspaceDirectoryPicker open rootPath="/workspace" title="Open folder" confirmLabel="Use folder"
+      onReadDirectory={readDirectory} onCancel={() => setDirectoryOpen(false)} onChoose={async () => setDirectoryOpen(false)} /> : null}
   </AppShell>;
 }
 createIntlTestRoot(document.getElementById("root")!, undefined, params.get("locale") ?? "en-US").render(<App />);

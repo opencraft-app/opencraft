@@ -86,6 +86,26 @@ try {
     assert.equal((await execution()).workspace.cwd, '/opened-folder');
     assert.equal(await editor.innerText(), 'Keep this workspace draft');
     assert.equal(await editor.evaluate(element => element === (window as any).keptEditor), true);
+    await page.goto(`${vite.resolvedUrls!.local[0]}?toolbar&directory&theme=${theme}${touch ? '' : '&desktop'}`, { waitUntil: 'domcontentloaded' });
+    await open(); await select('Open folder');
+    const folders = page.getByRole('group', { name: 'Folders in /workspace', exact: true });
+    await folders.locator('.workspace-picker-row').first().waitFor();
+    await page.waitForFunction(() => document.querySelector('.workspace-picker-list')?.getAttribute('aria-busy') === 'false');
+    const geometry = () => folders.evaluate(element => ({
+      firstRow: element.querySelector('button')!.getBoundingClientRect().toJSON(),
+      list: element.getBoundingClientRect().toJSON(), scrollHeight: element.scrollHeight,
+    }));
+    const folderGeometry = await geometry();
+    await page.evaluate(() => (window as any).directory.refresh());
+    await page.waitForFunction(() => document.querySelector('.workspace-picker-list')?.getAttribute('aria-busy') === 'true');
+    assert.deepEqual(await geometry(), folderGeometry, 'Directory loading must not insert a row or shift the folder list');
+    assert.equal(await page.getByText('Loading folders…', { exact: true }).count(), 0);
+    await page.screenshot({ path: `/tmp/quiet-folder-${touch ? 'touch' : 'desktop'}-${theme}.png` });
+    await page.evaluate(() => (window as any).directory.finish());
+    await page.waitForFunction(() => document.querySelector('.workspace-picker-list')?.getAttribute('aria-busy') === 'false');
+    assert.deepEqual(await geometry(), folderGeometry);
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    assert.equal(await page.getByRole('dialog').count(), 0);
     assert.deepEqual(errors, []);
     console.log(`Unified workspace picker ${touch ? 'touch' : 'desktop'} ${theme} passed`);
     await context.close();
