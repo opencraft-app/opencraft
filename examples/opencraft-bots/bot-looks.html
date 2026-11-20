@@ -1,0 +1,211 @@
+<title>Bot 形象方案</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+/* 布局：一列方案卡片，每张上面一条三维舞台，下面两栏是同一个形象的二维图标和放进列表的样子；最后是对比表和建议 */
+:root {
+  --bg: #f6f6f7; --panel: #ffffff; --fg: #1a1c1f; --fg-2: rgba(26, 28, 31, .7); --fg-3: rgba(26, 28, 31, .48);
+  --line: rgba(26, 28, 31, .08); --chip: rgba(26, 28, 31, .05); --stage: #f1f1f3;
+  --ok: #18743b; --ok-bg: #eaf1ed; --warn: #a84808; --warn-bg: #f6efe9;
+  --font: "Inter", ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121212; --panel: #1c1c1c; --fg: #ececec; --fg-2: rgba(236, 236, 236, .72); --fg-3: rgba(236, 236, 236, .48);
+  --line: rgba(255, 255, 255, .08); --chip: rgba(255, 255, 255, .06); --stage: #181818; --ok: #75e0a7; --ok-bg: #293c32; --warn: #fec084; --warn-bg: #41362b; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #121212; --panel: #1c1c1c; --fg: #ececec; --fg-2: rgba(236, 236, 236, .72); --fg-3: rgba(236, 236, 236, .48);
+  --line: rgba(255, 255, 255, .08); --chip: rgba(255, 255, 255, .06); --stage: #181818; --ok: #75e0a7; --ok-bg: #293c32; --warn: #fec084; --warn-bg: #41362b; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 400 14px/22px var(--font); -webkit-font-smoothing: antialiased; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 64px; }
+main { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+h1 { margin: 0; font: 700 28px/34px var(--font); letter-spacing: -.01em; text-wrap: balance; }
+h2 { margin: 0; font: 600 20px/28px var(--font); text-wrap: balance; }
+h3 { margin: 0; font: 600 12px/18px var(--font); letter-spacing: .04em; color: var(--fg-3); }
+p { margin: 0; }
+.lead { max-width: 64ch; color: var(--fg-2); }
+.lead b { color: var(--fg); font-weight: 600; }
+
+.look { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); overflow: hidden; }
+.stage { position: relative; height: clamp(220px, 32vw, 320px); background: var(--stage); }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.stage .tag { position: absolute; left: 12px; top: 12px; padding: 2px 8px; border-radius: 999px; background: var(--panel); color: var(--fg-2); font: 500 11px/18px var(--font); box-shadow: 0 0 0 1px var(--line); }
+.stage .legend { position: absolute; left: 0; right: 0; bottom: 10px; display: flex; justify-content: center; gap: 28px; font: 500 12px/16px var(--font); color: var(--fg-2); pointer-events: none; }
+.side { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 28px; padding: 20px 22px 22px; }
+@media (max-width: 760px) { .side { grid-template-columns: 1fr; } }
+.col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.head .no { font: 600 12px/18px var(--font); color: var(--fg-3); }
+.idea { color: var(--fg-2); }
+.block { display: flex; flex-direction: column; gap: 8px; }
+.ladder { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
+.ladder figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.ladder figcaption { font: 400 11px/14px var(--font); color: var(--fg-3); font-variant-numeric: tabular-nums; }
+.states { display: flex; gap: 18px; flex-wrap: wrap; }
+.states figure { margin: 0; display: flex; align-items: center; gap: 8px; }
+.states figcaption { font: 500 12px/16px var(--font); color: var(--fg-2); }
+/* 放进真实界面：一行对话列表，旁边是同事的头像 */
+.rows { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
+.row + .row { border-top: 1px solid var(--line); }
+.row .t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.row b { font: 500 14px/20px var(--font); } .row b i { font-style: normal; font: 400 12px/18px var(--font); color: var(--fg-3); margin-left: 6px; }
+.row span { font: 400 12px/18px var(--font); color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row span.ok { color: var(--ok); } .row span.warn { color: var(--warn); }
+.row time { font: 400 12px/18px var(--font); color: var(--fg-3); align-self: flex-start; font-variant-numeric: tabular-nums; }
+.human { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: #c3b5ee; color: rgba(26, 28, 31, .72); font: 600 15px/1 var(--font); }
+.grp { flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 3px; width: 40px; height: 40px; border-radius: 12px; background: var(--chip); box-shadow: inset 0 0 0 1px var(--line); }
+.grp > * { width: 100%; height: 100%; }
+.grp .human { width: 100%; height: 100%; font-size: 8px; }
+.pc { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 420px) { .pc { grid-template-columns: 1fr; } }
+.pc ul { margin: 0; padding-left: 18px; color: var(--fg-2); font-size: 13px; line-height: 20px; }
+.pc li + li { margin-top: 2px; }
+
+.compare { border: 1px solid var(--line); border-radius: 16px; background: var(--panel); overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; min-width: 640px; }
+th, td { padding: 12px 14px; text-align: left; vertical-align: top; border-top: 1px solid var(--line); font-size: 13px; line-height: 20px; }
+thead th { border-top: 0; font: 600 12px/18px var(--font); color: var(--fg-3); }
+tbody th { font-weight: 600; white-space: nowrap; }
+td .s { display: inline-block; min-width: 2.2em; padding: 0 6px; margin-right: 6px; border-radius: 999px; font: 600 11px/18px var(--font); text-align: center; }
+.s.hi { background: var(--ok-bg); color: var(--ok); } .s.mid { background: var(--chip); color: var(--fg-2); } .s.lo { background: var(--warn-bg); color: var(--warn); }
+.rec { display: flex; flex-direction: column; gap: 8px; padding: 18px 20px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); }
+.rec p { color: var(--fg-2); max-width: 70ch; } .rec p b { color: var(--fg); }
+svg { display: block; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<main>
+  <header style="display:flex;flex-direction:column;gap:8px">
+    <h1>Bot 形象方案</h1>
+    <p class="lead">现在的列表头像是“方块加两只眼睛”，三维里却是圆滚滚的小宠物，<b>同一个 Bot 在两处长得不一样</b>；也没有一个地方能看出他的状态。下面四个方向，每个都同时给出<b>三维</b>和<b>二维图标</b>，用同一套几何，颜色和列表一致。每个方向都要回答三件事：小到 20px 还认得出吗？一眼和人（圆形首字母头像）分得开吗？能不能直接显示空闲、正在做事、需要你？</p>
+  </header>
+  <div id="looks"></div>
+  <section class="compare" aria-label="对比">
+    <table>
+      <thead><tr><th></th><th>小尺寸辨认</th><th>和人分得开</th><th>表达状态</th><th>和“手机、电脑”的说法</th><th>三维和二维一致</th></tr></thead>
+      <tbody id="cmp"></tbody>
+    </table>
+  </section>
+  <section class="rec">
+    <h2>建议：屏幕脸</h2>
+    <p><b>Bot 本身就是一台小设备，脸长在屏幕上。</b>这和“他有一台电脑”的说法直接对上；屏幕给了状态一个天然的位置：空闲是两只竖眼睛，正在做事眼睛变成绿色的专注横线，需要你时变成看着你的琥珀色圆点。它是圆角方形，和人的圆形首字母头像一眼分开，缩到 20px 仍然是“一块深色屏幕加两点光”。</p>
+    <p>积木和品牌名最贴，可以作为节日或空状态的插画风格保留；卵石最克制，但状态只有一个光点，小尺寸时信息太少；气泡和“对话”贴得紧，但 Bot 不只是聊天，长期看会窄。</p>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  /* ---------- 共用：三个 Bot 的颜色（和列表头像一样）、状态色 ---------- */
+  var BOTS = [{ name: '阿岚', role: '项目交付', c: '#a9dcc9', st: 'idle', line: '签字页让小折在核，周五上午我发给客户。' },
+    { name: '沐川', role: '行政', c: '#a9c8f2', st: 'busy', line: '正在登记 10 月的报销' },
+    { name: '小折', role: '文档核对', c: '#fbe39c', st: 'wait', line: '版本号对不上，需要你确认' }];
+  var OK = '#2fbf71', WAIT = '#f0a63a', SCREEN = '#23262b', INKC = '#1d1f23';
+  var STATES = [['idle', '空闲'], ['busy', '正在做事'], ['wait', '需要你']];
+  function shade(hex, k) { var n = parseInt(hex.slice(1), 16), r = n >> 16, g = n >> 8 & 255, b = n & 255; k = 1 - k; return 'rgb(' + Math.round(r * k) + ',' + Math.round(g * k) + ',' + Math.round(b * k) + ')'; }
+  function svg(inner, size) { return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 48 48" aria-hidden="true">' + inner + '</svg>'; }
+
+  /* ---------- 四个方向：二维图标和三维模型用同一套比例 ---------- */
+  var LOOKS = [
+    { key: 'screen', name: '屏幕脸', idea: 'Bot 是一台圆角的小设备，脸长在屏幕上。眼睛就是屏幕上的两点光，状态直接显示在屏幕里。',
+      pros: ['和“他有一台电脑”直接对上', '状态有天然的位置：屏幕', '圆角方形，和圆形的人一眼分开', '20px 仍是“深色屏幕加两点光”'],
+      cons: ['比现在的小宠物更“硬”，可爱少一点', '屏幕深色，在深色主题里要靠外壳颜色撑'],
+      score: [['hi', '好'], ['hi', '好'], ['hi', '好'], ['hi', '直接'], ['hi', '高']],
+      icon: function (c, st) { var e = st === 'busy' ? '<rect x="14.500" y="21.500" width="8" height="3.200" rx="1.600" fill="' + OK + '"/><rect x="25.500" y="21.500" width="8" height="3.200" rx="1.600" fill="' + OK + '"/>'
+          : st === 'wait' ? '<circle cx="19" cy="23" r="3.200" fill="' + WAIT + '"/><circle cx="29" cy="23" r="3.200" fill="' + WAIT + '"/>'
+          : '<rect x="16.800" y="18" width="4.400" height="10" rx="2.200" fill="#eef3f1"/><rect x="26.800" y="18" width="4.400" height="10" rx="2.200" fill="#eef3f1"/>';
+        return '<rect x="12" y="40" width="8" height="5" rx="2.500" fill="' + shade(c, .22) + '"/><rect x="28" y="40" width="8" height="5" rx="2.500" fill="' + shade(c, .22) + '"/>' +
+          '<rect x="3" y="5" width="42" height="37" rx="13" fill="' + c + '"/><rect x="9" y="11.500" width="30" height="23" rx="8" fill="' + SCREEN + '"/>' + e; } },
+    { key: 'bubble', name: '对话气泡', idea: '身体就是一个对话气泡，带一条小尾巴。正在做事时眼睛变成“正在输入”的三个点。',
+      pros: ['和 Inbox、对话的样子最贴', '“正在输入”大家都认得', '形状独特，列表里很好找'],
+      cons: ['Bot 不只是聊天，用电脑做事时说不通', '尾巴在小尺寸里会糊成一个角', '群聊头像拼格子时尾巴被裁掉'],
+      score: [['mid', '一般'], ['hi', '好'], ['mid', '一般'], ['lo', '只对上手机'], ['hi', '高']],
+      icon: function (c, st) { var e = st === 'busy' ? [15, 24, 33].map(function (x) { return '<circle cx="' + x + '" cy="21" r="3" fill="' + OK + '"/>'; }).join('')
+          : '<circle cx="18.500" cy="21" r="3" fill="' + INKC + '"/><circle cx="29.500" cy="21" r="3" fill="' + INKC + '"/>' + (st === 'wait' ? '<circle cx="40" cy="8" r="5.500" fill="' + WAIT + '" stroke="var(--panel)" stroke-width="2"/>' : '');
+        return '<path d="M16 4h16c7.200 0 13 5.800 13 13v4c0 7.200-5.800 13-13 13H21l-9 9v-9.600C6.900 32.100 3 27.900 3 21v-4C3 9.800 8.800 4 16 4Z" fill="' + c + '"/>' + e; } },
+    { key: 'pebble', name: '卵石', idea: '一块光滑的卵石，没有五官，只有一个状态灯。最安静，最像硬件产品。',
+      pros: ['最克制、最“高级”', '状态灯很直接：灰、绿、琥珀', '三维里质感最好'],
+      cons: ['没有脸，很难把他当成同事', '只有一个点，20px 时几乎看不出状态', '几个 Bot 只能靠颜色区分'],
+      score: [['mid', '一般'], ['mid', '一般'], ['mid', '只有一个点'], ['mid', '间接'], ['hi', '高']],
+      icon: function (c, st) { var dot = st === 'busy' ? OK : st === 'wait' ? WAIT : '#ffffff';
+        return '<rect x="4" y="6" width="40" height="36" rx="18" fill="' + c + '"/><ellipse cx="16" cy="14" rx="7" ry="3.200" fill="#fff" opacity=".35"/>' +
+          (st === 'idle' ? '' : '<circle cx="24" cy="26" r="7.500" fill="none" stroke="' + dot + '" stroke-opacity=".35" stroke-width="2.500"/>') + '<circle cx="24" cy="26" r="3.600" fill="' + dot + '" stroke="' + INKC + '" stroke-opacity="' + (st === 'idle' ? '.25' : '0') + '" stroke-width="1"/>'; } },
+    { key: 'block', name: '积木', idea: '用方块搭出来的小机器人：方头、像素眼睛、一根天线。天线顶上的方块就是状态灯。和 OpenCraft 的名字最呼应。',
+      pros: ['和品牌名 Craft 最贴', '像素眼睛在小尺寸下最清楚', '天线顶灯表达状态，不占脸'],
+      cons: ['像游戏角色，和工作台的中性风格有距离', '天线在 20px 时只剩一个点', '方头和圆角卡片放在一起略生硬'],
+      score: [['hi', '好'], ['hi', '好'], ['mid', '靠天线灯'], ['mid', '间接'], ['hi', '高']],
+      icon: function (c, st) { var lamp = st === 'busy' ? OK : st === 'wait' ? WAIT : shade(c, .25);
+        return '<rect x="22.500" y="4" width="3" height="7" fill="' + shade(c, .3) + '"/><rect x="19.500" y="1" width="9" height="6" rx="1.500" fill="' + lamp + '"/>' +
+          '<rect x="6" y="10" width="36" height="31" rx="6" fill="' + c + '"/><rect x="6" y="35" width="36" height="6" rx="0" fill="' + shade(c, .12) + '"/><rect x="6" y="35" width="36" height="6" rx="6" fill="' + shade(c, .12) + '"/>' +
+          '<rect x="14" y="19" width="7" height="7" rx="1" fill="' + INKC + '"/><rect x="27" y="19" width="7" height="7" rx="1" fill="' + INKC + '"/><rect x="20.500" y="30" width="7" height="2.200" rx="1" fill="' + INKC + '" opacity=".7"/>' +
+          '<rect x="12" y="42" width="8" height="5" rx="1.500" fill="' + shade(c, .22) + '"/><rect x="28" y="42" width="8" height="5" rx="1.500" fill="' + shade(c, .22) + '"/>'; } }
+  ];
+
+  /* ---------- 页面 ---------- */
+  var human = function (ch, c, size) { return '<span class="human" style="background:' + (c || '#c3b5ee') + (size ? ';width:' + size + 'px;height:' + size + 'px' : '') + '">' + ch + '</span>'; };
+  document.getElementById('looks').innerHTML = LOOKS.map(function (L, i) {
+    var b = BOTS[0];
+    return '<section class="look" aria-labelledby="h-' + L.key + '"><div class="stage"><canvas data-look="' + L.key + '" aria-label="' + L.name + '的三维样子：三个 Bot，分别空闲、正在做事、需要你"></canvas><span class="tag">三维</span><div class="legend">' + BOTS.map(function (x) { return '<span>' + x.name + '</span>'; }).join('') + '</div></div>' +
+      '<div class="side"><div class="col"><div class="head"><span class="no">方向 ' + (i + 1) + '</span><h2 id="h-' + L.key + '">' + L.name + '</h2></div><p class="idea">' + L.idea + '</p>' +
+      '<div class="block"><h3>尺寸</h3><div class="ladder">' + [64, 40, 28, 20].map(function (s) { return '<figure>' + svg(L.icon(b.c, 'idle'), s) + '<figcaption>' + s + '</figcaption></figure>'; }).join('') + '</div></div>' +
+      '<div class="block"><h3>状态</h3><div class="states">' + STATES.map(function (s, k) { return '<figure>' + svg(L.icon(BOTS[k].c, s[0]), 40) + '<figcaption>' + s[1] + '</figcaption></figure>'; }).join('') + '</div></div>' +
+      '<div class="pc"><div class="block"><h3>好在</h3><ul>' + L.pros.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</ul></div><div class="block"><h3>代价</h3><ul>' + L.cons.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</ul></div></div></div>' +
+      '<div class="col"><div class="block"><h3>放进对话列表，旁边是同事和群</h3><div class="rows">' +
+        BOTS.map(function (x, k) { return '<div class="row">' + svg(L.icon(x.c, x.st), 40) + '<span class="t"><b>' + x.name + '<i>' + x.role + '</i></b><span class="' + (x.st === 'busy' ? 'ok' : x.st === 'wait' ? 'warn' : '') + '">' + x.line + '</span></span><time>' + ['02:29', '02:49', '02:58'][k] + '</time></div>'; }).join('') +
+        '<div class="row">' + human('林') + '<span class="t"><b>林舟<i>产品经理</i></b><span>交付包里加一份变更说明。</span></span><time>昨天</time></div>' +
+        '<div class="row"><span class="grp">' + svg(L.icon(BOTS[0].c, 'idle'), 17) + svg(L.icon(BOTS[2].c, 'idle'), 17) + human('林', '#c3b5ee', 17) + human('你', '#1a1c1f', 17).replace('color:', '') + '</span><span class="t"><b>2.3 交付</b><span>小折：页码核完了，就差版本号。</span></span><time>02:46</time></div></div></div></div></div></section>';
+  }).join('');
+  document.querySelectorAll('.grp .human').forEach(function (el) { if (el.textContent === '你') el.style.color = '#fff'; });
+  document.getElementById('cmp').innerHTML = LOOKS.map(function (L) { return '<tr><th>' + L.name + '</th>' + L.score.map(function (s) { return '<td><span class="s ' + s[0] + '">' + s[1] + '</span></td>'; }).join('') + '</tr>'; }).join('');
+  document.getElementById('looks').style.cssText = 'display:flex;flex-direction:column;gap:20px';
+
+  /* ---------- 三维：每个方向一个小舞台，三个 Bot 并排，分别是三种状态 ---------- */
+  var THREE = window.THREE; if (!THREE) return;
+  var calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function soft(e) { var g = new THREE.SphereGeometry(1, 40, 28), a = g.attributes.position, f = function (v) { return Math.sign(v) * Math.pow(Math.abs(v), e); }; for (var q = 0; q < a.count; q++) a.setXYZ(q, f(a.getX(q)), f(a.getY(q)), f(a.getZ(q))); g.computeVertexNormals(); return g; }
+  var RBOX = soft(.28), RBOX2 = soft(.12), BALL = new THREE.SphereGeometry(1, 32, 24);
+  function mat(c, o) { return new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: .55, metalness: 0 }, o || {})); }
+  function glow(c) { return new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: .9, roughness: .4 }); }
+  function put(parent, geo, m, x, y, z, sx, sy, sz) { var o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.scale.set(sx, sy === undefined ? sx : sy, sz === undefined ? sx : sz); o.castShadow = true; parent.add(o); return o; }
+  function col(hex, k) { return new THREE.Color(hex).multiplyScalar(1 - (k || 0)); }
+  var BUILD = {
+    screen: function (g, c, st) { var m = mat(c), d = mat(col(c, .22));
+      put(g, RBOX, m, 0, .62, 0, .62, .55, .5); put(g, RBOX, mat(SCREEN, { roughness: .18, metalness: .1 }), 0, .66, .43, .46, .34, .09);
+      if (st === 'busy') { [-.15, .15].forEach(function (x) { put(g, RBOX, glow(OK), x, .66, .52, .1, .035, .02); }); }
+      else if (st === 'wait') { [-.12, .12].forEach(function (x) { put(g, BALL, glow(WAIT), x, .67, .52, .05, .05, .02); }); }
+      else { [-.12, .12].forEach(function (x) { put(g, RBOX, glow('#eef3f1'), x, .67, .52, .045, .1, .02); }); }
+      [-.24, .24].forEach(function (x) { put(g, RBOX, d, x, .06, .05, .13, .07, .16); }); },
+    bubble: function (g, c, st) { var s = new THREE.Shape(), r = .36, w = .62, h = .44;
+      s.moveTo(-w + r, -h); s.lineTo(-.18, -h); s.lineTo(-.42, -h - .3); s.lineTo(-.34, -h); s.lineTo(-w + r, -h); /* 尾巴 */
+      s.moveTo(-w + r, -h); s.lineTo(w - r, -h); s.quadraticCurveTo(w, -h, w, -h + r); s.lineTo(w, h - r); s.quadraticCurveTo(w, h, w - r, h); s.lineTo(-w + r, h); s.quadraticCurveTo(-w, h, -w, h - r); s.lineTo(-w, -h + r); s.quadraticCurveTo(-w, -h, -w + r, -h);
+      var geo = new THREE.ExtrudeGeometry(s, { depth: .5, bevelEnabled: true, bevelThickness: .12, bevelSize: .1, bevelSegments: 6, curveSegments: 24 }); geo.translate(0, 0, -.25);
+      put(g, geo, mat(c), 0, .82, 0, 1);
+      if (st === 'busy') [-.22, 0, .22].forEach(function (x) { put(g, BALL, glow(OK), x, .86, .38, .07, .07, .03); });
+      else { [-.15, .15].forEach(function (x) { put(g, BALL, mat(INKC, { roughness: .2 }), x, .86, .38, .07, .085, .03); }); if (st === 'wait') put(g, BALL, glow(WAIT), .62, 1.3, .1, .11); } },
+    pebble: function (g, c, st) { put(g, BALL, mat(c, { roughness: .35 }), 0, .5, 0, .62, .48, .55);
+      var dc = st === 'busy' ? OK : st === 'wait' ? WAIT : '#ffffff'; put(g, BALL, st === 'idle' ? mat('#ffffff', { roughness: .2 }) : glow(dc), 0, .52, .52, .07, .07, .03);
+      if (st !== 'idle') { var ring = new THREE.Mesh(new THREE.TorusGeometry(.14, .012, 10, 40), new THREE.MeshBasicMaterial({ color: dc, transparent: true, opacity: .5 })); ring.position.set(0, .52, .535); g.add(ring); } },
+    block: function (g, c, st) { var m = mat(c), d = mat(col(c, .2)), ink = mat(INKC, { roughness: .3 }), lamp = st === 'busy' ? glow(OK) : st === 'wait' ? glow(WAIT) : mat(col(c, .25));
+      put(g, RBOX2, d, 0, .28, 0, .38, .2, .3); put(g, RBOX2, m, 0, .82, 0, .52, .42, .45);
+      [-.17, .17].forEach(function (x) { put(g, RBOX2, ink, x, .88, .45, .07, .07, .02); }); put(g, RBOX2, ink, 0, .7, .45, .07, .02, .02);
+      put(g, new THREE.BoxGeometry(1, 1, 1), d, 0, 1.38, 0, .04, .2, .04); put(g, RBOX2, lamp, 0, 1.52, 0, .09, .08, .09);
+      [-.22, .22].forEach(function (x) { put(g, RBOX2, d, x, .06, .05, .1, .06, .12); }); }
+  };
+  function stage(cv) {
+    var key = cv.getAttribute('data-look'), r = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true }); r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
+    var sc = new THREE.Scene(), cam = new THREE.PerspectiveCamera(26, 1, .1, 50); cam.position.set(0, 2.4, 7.2); cam.lookAt(0, .62, 0);
+    sc.add(new THREE.HemisphereLight(0xffffff, 0xdedee3, .75)); var sun = new THREE.DirectionalLight(0xffffff, .5); sun.position.set(2.5, 6, 4); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024); sun.shadow.radius = 6; sun.shadow.camera.left = -4; sun.shadow.camera.right = 4; sun.shadow.camera.top = 4; sun.shadow.camera.bottom = -4; sc.add(sun);
+    var floor = new THREE.Mesh(new THREE.PlaneGeometry(14, 8), new THREE.ShadowMaterial({ opacity: .14 })); floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; sc.add(floor);
+    var groups = BOTS.map(function (b, i) { var g = new THREE.Group(); g.position.x = (i - 1) * 1.7; BUILD[key](g, b.c, b.st); sc.add(g); return g; });
+    function size() { var w = cv.clientWidth, h = cv.clientHeight; if (!w || !h) return; r.setSize(w, h, false); cam.aspect = w / h; var a = w / h; cam.position.set(0, 2.4, Math.max(7.2, 3.2 / (Math.tan(13 * Math.PI / 180) * a))); cam.lookAt(0, .62, 0); /* 窄的时候退远一点，三个都放得下 */ cam.updateProjectionMatrix(); }
+    var on = false, t0 = performance.now();
+    function frame(t) { if (!on) return; requestAnimationFrame(frame); var s = (t - t0) / 1000;
+      groups.forEach(function (g, i) { g.rotation.y = calm ? -.25 : Math.sin(s * .5 + i * .9) * .35 - .1; g.position.y = calm ? 0 : Math.max(0, Math.sin(s * 1.6 + i)) * .03; }); r.render(sc, cam); }
+    if (window.ResizeObserver) new ResizeObserver(function () { size(); if (calm || !on) r.render(sc, cam); }).observe(cv); size();
+    /* 只在看得见时动，省电；减少动态效果时只画一帧 */
+    new IntersectionObserver(function (es) { var vis = es[0].isIntersecting; if (calm) { if (vis) { groups.forEach(function (g) { g.rotation.y = -.25; }); r.render(sc, cam); } return; } if (vis && !on) { on = true; requestAnimationFrame(frame); } else if (!vis) on = false; }).observe(cv);
+  }
+  document.querySelectorAll('canvas[data-look]').forEach(function (cv) { try { stage(cv); } catch (e) { cv.parentNode.querySelector('.tag').textContent = '这台设备打不开三维画面'; } });
+})();
+</script>
