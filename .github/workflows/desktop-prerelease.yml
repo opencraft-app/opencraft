@@ -104,7 +104,7 @@ jobs:
         # Package scripts set variables POSIX-style (NAME=value command),
         # which cmd.exe, npm's default Windows script shell, cannot run.
         if: runner.os == 'Windows'
-        run: echo 'npm_config_script_shell=C:\Program Files\Git\bin\bash.exe' >> "$GITHUB_ENV"
+        run: echo 'npm_config_script_shell=C:/Program Files/Git/bin/bash.exe' >> "$GITHUB_ENV"
       - run: npm ci --no-audit --no-fund
       - run: npm run prepare:dsh-runtime
       - run: npm run build:electron:release
