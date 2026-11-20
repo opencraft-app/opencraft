@@ -1,3 +1,4 @@
+import { installationManifests } from "./installation-manifests.mjs";
 import { parseArgs } from "node:util";
 import { createHash } from "node:crypto";
 import {
@@ -159,7 +160,7 @@ export function validateRecovery(previous, identity, sourceFiles) {
     throw new Error("Recovery model/dataset/selection/protocol differs");
   const product = (files) =>
     files.filter(
-      (f) => f.file.startsWith("src/") || f.file === "package-lock.json",
+      (f) => f.file.startsWith("src/") || f.file === "package-lock.json" || f.kind === "dependency",
     );
   if (
     JSON.stringify(product(previous.sourceFiles)) !==
@@ -169,7 +170,7 @@ export function validateRecovery(previous, identity, sourceFiles) {
   return { oldHarness, newHarness, productSourceUnchanged: true };
 }
 
-async function sourceFingerprint(root) {
+export async function sourceFingerprint(root) {
   const files = [];
   async function walk(dir) {
     for (const item of await readdir(join(root, dir), {
@@ -183,8 +184,7 @@ async function sourceFingerprint(root) {
   await walk("src");
   for (const name of await readdir(join(root, "evaluation")))
     if (name.endsWith(".mjs")) files.push(join("evaluation", name));
-  files.push("package-lock.json");
-  const manifest = [];
+  const manifest = await installationManifests(root);
   for (const file of files.sort())
     manifest.push({ file, sha256: sha(await readFile(join(root, file))) });
   return { sha256: sha(JSON.stringify(manifest)), files: manifest };

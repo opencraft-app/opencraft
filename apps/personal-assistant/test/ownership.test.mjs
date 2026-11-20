@@ -28,6 +28,27 @@ function modules(directory) {
   );
 }
 
+// Shared argv parsing is a pure protocol contract, not a Host/provider adapter.
+// Keep this an exact leaf; accepting the package root would expose other owners.
+function allowedApplicationDependency(id) {
+  return id === "node:crypto" ||
+    id === "@opencraft/appserver-protocol/thread-command" ||
+    (id.startsWith(".") && !/adapters|runtime|interfaces/.test(id));
+}
+
+test("application import boundary permits only the exact shared protocol leaf", () => {
+  for (const id of ["node:crypto", "../domain/values.mjs", "@opencraft/appserver-protocol/thread-command"])
+    assert.equal(allowedApplicationDependency(id), true, id);
+  for (const id of ["node:fs", "node:child_process", "@opencraft/appserver-protocol", "@opencraft/appserver-protocol/host", "@opencraft/sandbox-e2b", "../adapters/local/profile.mjs", "../runtime/local-runner.mjs", "../interfaces/request.mjs"])
+    assert.equal(allowedApplicationDependency(id), false, id);
+});
+
+test("shared thread command leaf remains dependency-free without provider or process I/O", () => {
+  const source = readFileSync(new URL(import.meta.resolve("@opencraft/appserver-protocol/thread-command")), "utf8");
+  assert.doesNotMatch(source, /\bimport\s*(?:\(|["'{*])|\bexport\b[^;]*\bfrom\s*["']/);
+  assert.doesNotMatch(source, /\b(?:fetch|require|eval)\s*\(|\b(?:process|globalThis)\s*\./);
+});
+
 test("domain/application dependencies and SQL ownership stay within their declared layers", () => {
   for (const layer of ["domain", "application", "ports"])
     for (const file of modules(join(root, "src", layer))) {
@@ -36,13 +57,10 @@ test("domain/application dependencies and SQL ownership stay within their declar
         ...source.matchAll(/(?:from\s*|import\s*\()\s*['"]([^'"]+)['"]/g),
       ].map((match) => match[1]);
       for (const id of imports) {
-        if (id.startsWith("node:"))
-          assert.equal(id, "node:crypto", `${file} imports IO ${id}`);
-        else
-          assert.ok(
-            id.startsWith(".") && !/adapters|runtime|interfaces/.test(id),
-            `${file} imports concrete ${id}`,
-          );
+        assert.ok(
+          allowedApplicationDependency(id),
+          `${file} imports concrete or undeclared dependency ${id}`,
+        );
       }
       assert.doesNotMatch(
         source,

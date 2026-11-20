@@ -292,3 +292,14 @@ test("bounded pool awaits all tasks and never exceeds its concurrency", async ()
   assert.equal(max, 2);
   assert.deepEqual(done.sort(), [1, 2, 3, 4, 5]);
 });
+
+
+test("workspace dependency changes cannot reuse a previous benchmark answer", () => {
+  const identity = { selectedIds: ["synthetic"], sourceCodeSha256: "old" };
+  const source = { file: "src/runtime.mjs", sha256: "same-source" };
+  const dependency = { file: "installation/package-lock.json", kind: "dependency", sha256: "old-lock" };
+  const previous = { identity, sourceFiles: [source, dependency] };
+  for (const files of [[source], [source, { ...dependency, sha256: "new-lock" }], [source, { ...dependency, file: "installation/package.json" }]])
+    assert.throws(() => validateRecovery(previous, { ...identity, sourceCodeSha256: "new-harness" }, files), /product source differs/);
+  assert.equal(validateRecovery(previous, { ...identity, sourceCodeSha256: "new-harness" }, [source, dependency]).productSourceUnchanged, true);
+});

@@ -1,3 +1,4 @@
+import { installationManifests } from "./installation-manifests.mjs";
 import { parseArgs } from "node:util";
 import { fork, execFileSync } from "node:child_process";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
@@ -98,6 +99,8 @@ export async function runSuite({
   const fingerprints = {};
   for (const path of [...new Set(files)].sort())
     fingerprints[path] = hash(await readFile(join(root, path)));
+  for (const entry of await installationManifests(root))
+    fingerprints[entry.file] = entry.sha256;
   const plan = {
     suite: "synthetic-butler-v5",
     group: only ? "single" : (group ?? "all"),

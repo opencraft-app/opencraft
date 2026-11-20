@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -103,9 +104,10 @@ test("shared Host activation validates a claimed binding, model can query groups
 });
 test("HTTP Bot adapter is pinned to its origin, refuses redirects/write methods and does not send Human credentials", async () => {
   const calls = [];
+  const syntheticBotToken = `oc_actor_v1.${randomUUID()}`;
   const port = httpPlatformAssistantPort({
     origin: "http://127.0.0.1:1234",
-    token: "oc_actor_v1.synthetic",
+    token: syntheticBotToken,
     fetch: async (url, options) => {
       calls.push({ url: String(url), options });
       return new Response(
@@ -122,11 +124,12 @@ test("HTTP Bot adapter is pinned to its origin, refuses redirects/write methods 
   assert.match(calls[0].url, /personal-assistant\/authorize$/);
   assert.equal(calls[0].options.redirect, "error");
   assert.equal(calls[0].options.credentials, "omit");
+  assert.equal(calls[0].options.headers.authorization, `Bearer ${syntheticBotToken}`);
   assert.throws(
     () =>
       httpPlatformAssistantPort({
         origin: "http://remote.example",
-        token: "oc_actor_v1.synthetic",
+        token: syntheticBotToken,
       }),
     /HTTPS/,
   );

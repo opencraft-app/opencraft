@@ -1,3 +1,4 @@
+import { installationManifests } from "./installation-manifests.mjs";
 import { parseArgs } from "node:util";
 import { fork } from "node:child_process";
 import {
@@ -131,22 +132,21 @@ export function summarizeCalls(calls) {
     }, {}),
   };
 }
-async function fingerprint() {
+export async function fingerprint(root = ROOT) {
   const files = [];
   const walk = async (dir) => {
-    for (const e of await readdir(join(ROOT, dir), { withFileTypes: true })) {
+    for (const e of await readdir(join(root, dir), { withFileTypes: true })) {
       const rel = join(dir, e.name);
       if (e.isDirectory()) await walk(rel);
-      else if (e.isFile() && e.name.endsWith(".mjs")) files.push(rel);
+      else if (e.isFile()) files.push(rel);
     }
   };
   await walk("src");
-  for (const f of await readdir(join(ROOT, "evaluation")))
+  for (const f of await readdir(join(root, "evaluation")))
     if (f.endsWith(".mjs")) files.push(join("evaluation", f));
-  files.push("package.json", "package-lock.json");
-  const manifest = [];
+  const manifest = await installationManifests(root);
   for (const file of files.sort())
-    manifest.push({ file, sha256: hash(await readFile(join(ROOT, file))) });
+    manifest.push({ file, sha256: hash(await readFile(join(root, file))) });
   return { sha256: hash(JSON.stringify(manifest)), files: manifest };
 }
 export async function runMemoryGroup(
@@ -397,10 +397,10 @@ async function main() {
     flag: "wx",
     mode: 0o600,
   });
-  for (const { file } of source.files) {
+  for (const { file, sourceFile = file } of source.files) {
     const target = join(directory, "source", file);
     await mkdir(dirname(target), { recursive: true, mode: 0o700 });
-    await copyFile(join(ROOT, file), target);
+    await copyFile(join(ROOT, sourceFile), target);
   }
   for (const file of ["source.json", "official-inference.py"])
     await copyFile(join(dataset, file), join(directory, file));
