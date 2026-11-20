@@ -42,6 +42,7 @@
   "common.apply": "Gunakan",
   "chat.appearance.icons": "Ikon",
   "chat.appearance.reset": "Pulihkan lalai",
+  "chat.appearance.confirm": "Sahkan",
   "im.channels.reply": "Balas",
   "im.channels.replyTo": "Balas kepada {name}",
   "im.channels.cancelReply": "Batalkan balasan",

@@ -31,6 +31,13 @@ $text-tones: (
   letter-spacing: var(--typography-#{$name}-tracking);
 }
 
+// Inline sentence content (an action inside running text) takes the
+// surrounding role instead of projecting its own metrics.
+@mixin inherit-surrounding {
+  font: inherit;
+  letter-spacing: inherit;
+}
+
 // Rasterization is a platform rendering policy, not part of an individual
 // semantic text role. `auto` follows the browser/OS default and keeps macOS
 // desktop chrome from being globally thinned by grayscale antialiasing.

@@ -45,6 +45,13 @@ const composerModelCatalogSource = readFileSync(
   ),
   "utf8",
 );
+const appShellStandardPageSource = readFileSync(
+  new URL(
+    "../../apps/workbench-web/src/components/app-shell-standard-page.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const settingsPageSource = readFileSync(
   new URL(
     "../../apps/workbench-web/src/components/settings-page.tsx",
@@ -362,8 +369,11 @@ test("application Settings owns route slots while target management owns a modal
   );
   assert.match(
     workbenchApp,
-    /<AppShell[\s\S]*?leftPanel=\{[\s\S]*?routeSettingsOpen \? settingsNavigation : \(conversationSurfaceVisible \|\| standaloneManagementOpen \|\| extensionProjection\.activeView\?\.keepConversationSidebar\) \? <Sidebar[\s\S]*?<div className="workbench-route-stage">[\s\S]*?\{settingsRoute\}[\s\S]*?<\/AppShell>/u,
+    /<AppShell[\s\S]*?leftPanel=\{[\s\S]*?routeSettingsOpen \? settingsNavigation : \(conversationSurfaceVisible \|\| standaloneManagementOpen \|\| extensionProjection\.activeView\?\.keepConversationSidebar\) \? <Sidebar[\s\S]*?<AppShellStandardPage>[\s\S]*?\{settingsRoute\}[\s\S]*?<\/AppShellStandardPage>[\s\S]*?<\/AppShell>/u,
   );
+  // The standard page frame is the single owner of the route stage element.
+  assert.match(appShellStandardPageSource, /export function AppShellStandardPage[\s\S]*?<div className=\{className \? `workbench-route-stage \$\{className\}` : "workbench-route-stage"\}>[\s\S]*?\{children\}/u);
+  assert.doesNotMatch(workbenchApp, /className="workbench-route-stage"/u);
   assert.match(workbenchApp, /const managementSettingsOpen = settingsOpen[\s\S]*?selectedSettingsContribution\?\.management !== undefined/u);
   assert.match(workbenchApp, /const conversationSurfaceVisible = conversationRouteOpen\s+\|\| \(managementSettingsOpen && !standaloneManagementOpen\)/u);
   assert.match(workbenchApp, /hidden=\{!conversationSurfaceVisible\}/u);

@@ -187,8 +187,15 @@ export class ExecutionLeaseStore extends ExecutionLeaseReader {
     // launcher. Mid-turn queue delivery has no new execution admission. Only a
     // lease admitted before Native observed this Turn may resolve its origin.
     if (this.inputKind(threadId, inputId) === "queue") {
-      if (!target) return;
-      if (placeholder) {
+      if (!target) {
+        // An independently owned engine queue starts its next Turn itself, so
+        // no OpenCraft lease precedes it. Only a submission carrying that
+        // engine's own admission nonce, recorded before Native observed this
+        // Turn (insertion order, not a clock), may resolve the placeholder; a
+        // managed queue message delivered into a running Turn never does.
+        if (!placeholder || !this.nativeQueueAdmittedBefore(threadId, inputId, existing!)) return;
+        target = existing;
+      } else if (placeholder) {
         const observed = existing!;
         // The persisted per-thread generation also proves ordering when both
         // clocks tie (or realtime moves backward). A later lease cannot launch it.
@@ -222,6 +229,14 @@ export class ExecutionLeaseStore extends ExecutionLeaseReader {
       .run(Date.now(), clock?.at ?? null, threadId, target.execution_id!);
     this.db.prepare("UPDATE execution_leases SET input_id=?,turn_id=?,engine_incarnation=COALESCE(engine_incarnation,?),state=?,ended_at_ms=?,ended_at_boot_ms=? WHERE execution_id=?")
       .run(inputId, turnId, incarnation ?? null, endedAt === null ? "active" : "ended", endedAt, existing?.ended_at_boot_ms ?? null, target.execution_id!);
+  }
+  private nativeQueueAdmittedBefore(threadId: string, inputId: string, observed: Record<string, unknown>): boolean {
+    // Submissions are append-only, so rowid order proves the queue admission
+    // was recorded before the placeholder observation even when clocks tie.
+    const row = this.db.prepare(`SELECT q.admission AS admission FROM execution_submissions q JOIN execution_submissions o
+      ON o.thread_id=q.thread_id AND o.input_id=? WHERE q.thread_id=? AND q.input_id=? AND q.input_kind='queue'
+      AND q.admission_token IS NOT NULL AND q.rowid<o.rowid`).get(String(observed.input_id), threadId, inputId);
+    return row !== undefined && row.admission !== "unknown";
   }
   queueAdmissionToken(threadId:string,inputId:string):string|null {
     const row=this.db.prepare("SELECT admission_token FROM execution_submissions WHERE thread_id=? AND input_id=?").get(threadId,inputId);

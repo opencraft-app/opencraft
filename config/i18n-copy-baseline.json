@@ -2154,12 +2154,6 @@
     {
       "file": "apps/workbench-web/src/components/workspace-directory-picker.tsx",
       "kind": "jsx-text",
-      "text": "Loading folders…",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/workspace-directory-picker.tsx",
-      "kind": "jsx-text",
       "text": "This folder has no subfolders.",
       "count": 1
     },

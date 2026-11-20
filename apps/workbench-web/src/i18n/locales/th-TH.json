@@ -42,6 +42,7 @@
   "common.apply": "นำไปใช้",
   "chat.appearance.icons": "ไอคอน",
   "chat.appearance.reset": "คืนค่าเริ่มต้น",
+  "chat.appearance.confirm": "ยืนยัน",
   "im.channels.reply": "ตอบกลับ",
   "im.channels.replyTo": "ตอบกลับ {name}",
   "im.channels.cancelReply": "ยกเลิกการตอบกลับ",
