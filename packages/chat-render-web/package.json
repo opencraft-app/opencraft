@@ -19,7 +19,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/cordis": "4.1.0",
     "@mermaid-js/layout-elk": "0.2.3",
     "@opencraft/appserver-protocol": "0.1.0",
     "@opencraft/chat-document": "0.1.0",
@@ -38,6 +38,6 @@
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
-    "sass": "^1.107.1"
+    "sass": "^1.108.2"
   }
 }
