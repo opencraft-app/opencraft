@@ -16,7 +16,7 @@
   --font-sans: "Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
   --typography-settings-title: 600 20px/28px var(--font-sans); --typography-body: 400 14px/20px var(--font-sans); --typography-body-strong: 500 14px/20px var(--font-sans);
   --typography-metadata: 400 12px/18px var(--font-sans); --typography-navigation-label: 500 13px/18px var(--font-sans); --typography-chat: 400 14px/22px var(--font-sans);
-  --stage: #ecebf2; --floor: #f7f6fa; }
+  --stage: #f1f1f3; --floor: #ffffff; --guest: #f6efe9; --gate: #d9d7dd; --arc: #2f3237; --arc-in: #b9bbc0; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --color-text: #ececec; --color-text-secondary: rgba(255, 255, 255, .71); --color-text-tertiary: rgba(255, 255, 255, .498);
   --color-background-surface: #181818; --color-background-panel: #232323; --color-background-input: #282828; --color-background-elevated-primary-opaque: #363636; --color-background-sidebar: #121212;
@@ -28,7 +28,7 @@
   --color-text-accent: #83c3ff; --color-text-warning: #ffb579; --color-text-danger: #ff8f87; --color-status-success: #79d99b;
   --color-badge-orange-foreground: #fec084; --color-badge-orange-background: #41362b; --color-badge-neutral-foreground: #c9cdd4; --color-badge-neutral-background: #38393a; --color-badge-green-foreground: #75e0a7; --color-badge-green-background: #293c32;
   --elevation-prominent: 0 0 0 .5px rgb(255 255 255 / 10%), 0 6px 18px rgb(0 0 0 / 40%);
-  --stage: #1d1c22; --floor: #34323c; color-scheme: dark; } }
+  --stage: #141414; --floor: #262626; --guest: #3a322b; --gate: #4a484f; --arc: #ececec; --arc-in: #5f6166; color-scheme: dark; } }
 :root[data-theme="dark"] {
   --color-text: #ececec; --color-text-secondary: rgba(255, 255, 255, .71); --color-text-tertiary: rgba(255, 255, 255, .498);
   --color-background-surface: #181818; --color-background-panel: #232323; --color-background-input: #282828; --color-background-elevated-primary-opaque: #363636; --color-background-sidebar: #121212;
@@ -40,7 +40,7 @@
   --color-text-accent: #83c3ff; --color-text-warning: #ffb579; --color-text-danger: #ff8f87; --color-status-success: #79d99b;
   --color-badge-orange-foreground: #fec084; --color-badge-orange-background: #41362b; --color-badge-neutral-foreground: #c9cdd4; --color-badge-neutral-background: #38393a; --color-badge-green-foreground: #75e0a7; --color-badge-green-background: #293c32;
   --elevation-prominent: 0 0 0 .5px rgb(255 255 255 / 10%), 0 6px 18px rgb(0 0 0 / 40%);
-  --stage: #1d1c22; --floor: #34323c; color-scheme: dark; }
+  --stage: #141414; --floor: #262626; --guest: #3a322b; --gate: #4a484f; --arc: #ececec; --arc-in: #5f6166; color-scheme: dark; }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
 /* 安全区只在最外层留一次：发布外壳在 :root 上留的是同一个值，不会叠加；直接打开文件时靠这里 */
@@ -349,3 +349,35 @@ input:not([type]):focus { border-color: var(--color-border-strong); outline: non
   .tile:hover .tile-x, .tile:focus-within .tile-x { opacity: 1; }
 }
 .row-main > svg:last-child { margin-left: auto; }
+
+/* ---------- 办公室：和其他页面同一套页头、卡片和名牌 ---------- */
+#app { position: relative; }
+#office { display: flex; flex-direction: column; }
+#office[hidden] { display: none !important; }
+body.office-wide #office { position: absolute; top: 0; right: 0; bottom: 0; left: 380px; z-index: 1; }
+body.office-wide #ofback { display: none; }
+.ofbar { position: absolute; z-index: 2; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 8px 16px 18px; background: linear-gradient(var(--stage) 62%, transparent); pointer-events: none; }
+.ofbar > * { pointer-events: auto; }
+.ofbar .ht h1 { font: 600 17px/24px var(--font-sans); }
+#whole { position: static; transform: none; box-shadow: var(--elevation-prominent); background: var(--color-background-elevated-primary-opaque); }
+.inbox-h .ic.on { background: var(--color-background-button-secondary); color: var(--color-text); }
+#labels span { padding: 3px 9px; border-radius: var(--radius-full); background: var(--color-background-elevated-primary-opaque); color: var(--color-text); font: 500 12px/16px var(--font-sans); box-shadow: var(--elevation-prominent); transition: opacity .2s; }
+#labels span.me { background: var(--color-text); color: var(--color-background-surface); }
+#labels span.out { color: var(--color-text-secondary); }
+#labels span.busy::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: var(--color-status-success); vertical-align: 1px; }
+#labels span.dim { opacity: .35; }
+#fail { flex-direction: column; gap: 6px; color: var(--color-text-secondary); } #fail:not([hidden]) { display: flex; align-items: center; justify-content: center; } #fail b { color: var(--color-text); font: var(--typography-body-strong); } #fail span { font: var(--typography-metadata); }
+#card { left: 16px; right: 16px; bottom: 16px; }
+#card > * { width: 100%; max-width: 480px; }
+.ofhint { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 10px 14px; border-radius: var(--radius-2xl); background: var(--color-background-elevated-primary-opaque); box-shadow: var(--elevation-prominent); font: var(--typography-metadata); color: var(--color-text-secondary); }
+.lg { display: inline-flex; align-items: center; gap: 6px; color: var(--color-text); }
+.lg-arc { display: inline-block; width: 18px; height: 2px; border-radius: 1px; background: var(--arc); position: relative; }
+.lg-arc::after { content: ""; position: absolute; right: -2px; top: -3px; border: 4px solid transparent; border-left: 6px solid var(--arc); border-right: 0; }
+.lg-arc.in { background: var(--arc-in); } .lg-arc.in::after { border-left-color: var(--arc-in); }
+.lg-t { flex-basis: 100%; color: var(--color-text-tertiary); }
+.pcard { display: flex; flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 12px 12px 14px; border-radius: var(--radius-2xl); background: var(--color-background-elevated-primary-opaque); box-shadow: var(--elevation-prominent); animation: card-in .2s ease-out; }
+@keyframes card-in { from { opacity: 0; transform: translateY(8px); } }
+.pc-h { display: flex; align-items: center; gap: 12px; } .pc-h .ic { margin: -4px -4px 0 0; align-self: flex-start; }
+.pc-f { margin: 0; font: var(--typography-metadata); color: var(--color-text-secondary); } .pc-f i { font-style: normal; margin: 0 6px; color: var(--color-text-tertiary); }
+.pc-a { display: flex; gap: 8px; justify-content: flex-end; }
+.pcard .t b i { font-style: normal; font: var(--typography-metadata); color: var(--color-text-tertiary); margin-left: 6px; }
