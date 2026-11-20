@@ -34,12 +34,13 @@ const call = (method, params) => new Promise((resolve, reject) => {
 });
 const decode = result => result.output.map(chunk => Buffer.from(chunk.deltaBase64, 'base64').toString()).join('');
 const wait = async (id, after, pattern) => {
+  let seen = '';
   for (let attempt = 0; attempt < 100; attempt++) {
     const value = await call('process/attach', { processHandle: id, afterSequence: after });
-    if (pattern.test(decode(value))) return value;
+    seen = decode(value); if (pattern.test(seen)) return value;
     await new Promise(resolve => setTimeout(resolve, 30));
   }
-  throw new Error('Terminal output marker missing');
+  throw new Error(`Terminal output marker missing; last output: ${JSON.stringify(seen.slice(-2000))}`);
 };
 try {
   await admitted;
@@ -47,10 +48,13 @@ try {
   const id = previous?.id ?? 'container-smoke:' + randomUUID();
   if (!previous) {
     await call('process/spawn', { processHandle: id, command: ['/bin/bash', '--noprofile', '--norc'], cwd: process.argv[3], tty: true, size: { cols: 80, rows: 24 } });
-    await call('process/writeStdin', { processHandle: id, deltaBase64: Buffer.from("export PTY_SMOKE=preserved; printf 'OWNER_PID=%s\\n' $$; cat /proc/self/cgroup\n").toString('base64') });
-    const result = await wait(id, 0, /OWNER_PID=\d+[\s\S]*docker/), text = decode(result);
-    assert.match(text, /docker/);
-    console.log(JSON.stringify({ id, pid: text.match(/OWNER_PID=(\d+)/)[1], cursor: result.nextSequence, output: text }));
+    // A cgroup v2 container has a private cgroup namespace (/proc/self/cgroup is
+    // "0::/"), so identify the owning container by its default hostname, the
+    // container ID prefix, instead.
+    await call('process/writeStdin', { processHandle: id, deltaBase64: Buffer.from("export PTY_SMOKE=preserved; printf 'OWNER_PID=%s OWNER_HOST=%s\\n' $$ \"$(cat /etc/hostname)\"\n").toString('base64') });
+    const result = await wait(id, 0, /OWNER_PID=\d+ OWNER_HOST=[0-9a-f]+\r?\n/), text = decode(result);
+    const [, pid, host] = text.match(/OWNER_PID=(\d+) OWNER_HOST=([0-9a-f]+)/);
+    console.log(JSON.stringify({ id, pid, host, cursor: result.nextSequence, output: text }));
   } else {
     const listed = await call('process/list', {}); assert.ok(listed.processes.some(process => process.processHandle === id));
     await call('process/resizePty', { processHandle: id, size: { cols: 103, rows: 31 } });
