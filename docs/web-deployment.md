@@ -61,7 +61,7 @@ npx --yes --package="@opencraft-app/opencraft@${OPENCRAFT_LOCAL_VERSION:?设置�
 ```sh
 npm ci
 npm run prepare:dsh-runtime
-OPENCRAFT_RELEASE_VERSION=1.0.0 npm run package:web:local
+OPENCRAFT_RELEASE_VERSION=1.0.1 npm run package:web:local
 ```
 
 打包输出会打印 `archive` 字段，使用该路径即可通过上面的 npx 命令安装。本地安装默认建议选择 Node.js 24 LTS。目前在 Apple Silicon 上验证过 Node.js 24.22.3 和 22.23.5 各自构建的完整包。Node 22 更早的补丁版本及其他平台需要单独验证。

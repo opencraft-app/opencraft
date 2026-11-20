@@ -2,99 +2,95 @@
 @use "@opencraft/design-system/controls.web" as controls;
 
 .opencraft-composer-model-browser {
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   min-height: 0;
 
-  &__machines {
-    display: flex;
-    flex-direction: column;
+  &__machine-well {
+    position: relative;
     flex: none;
-    gap: calc(var(--spacing) * 1.25);
-    padding: calc(var(--spacing) * 2);
-    border-bottom: .5px solid var(--color-border-subtle);
+    padding: 9px 10px 0;
+    background: color-mix(in srgb, var(--color-text) 20%, var(--color-background-elevated-primary-opaque));
+    box-shadow: inset 0 2px 6px rgb(0 0 0 / 11%);
   }
 
-  &__machines-label,
-  &__sources-label {
-    padding: 0 var(--spacing);
-    @include typography.role(metadata, secondary);
-  }
-
-  &__machine-cards {
+  &__machine-tabs {
+    position: relative;
     display: flex;
-    flex-direction: column;
-    gap: calc(var(--spacing) * 1.25);
+    align-items: flex-end;
     width: 100%;
+    overflow: visible;
   }
 
-  &__machine-card {
-    @include typography.role(control, secondary);
-    display: flex;
-    width: 100%;
-    min-height: max(36px, var(--size-control-hit-min));
+  &__machine-tab {
+    @include typography.role(control-small, secondary);
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: max(33px, var(--size-control-hit-min));
+    margin-top: 6px;
     align-items: center;
-    gap: calc(var(--spacing) * 1.75);
-    padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 2.5);
-    border: 1px solid var(--color-border-subtle);
-    border-radius: var(--radius-md);
-    background: transparent;
-    color: var(--color-text-secondary);
-    text-align: left;
+    justify-content: center;
+    gap: calc(var(--spacing) * 1.25);
+    padding: calc(var(--spacing) * 1.25) calc(var(--spacing) * 2.5) calc(var(--spacing) * 1.5);
+    border: 1px solid color-mix(in srgb, var(--color-text) 16%, var(--color-border-default));
+    border-bottom: 0;
+    border-radius: 13px 13px 0 0;
+    background: color-mix(in srgb, var(--color-text) 13.5%, var(--color-background-elevated-primary-opaque));
+    color: color-mix(in srgb, var(--color-text-secondary) 86%, transparent);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 22%),
+      inset 0 -6px 10px rgb(0 0 0 / 12%);
     cursor: pointer;
     transition:
       background-color var(--transition-duration-basic) var(--ease-standard),
-      border-color var(--transition-duration-basic) var(--ease-standard),
       color var(--transition-duration-basic) var(--ease-standard),
       box-shadow var(--transition-duration-basic) var(--ease-standard);
 
+    & + & {
+      margin-left: -16px;
+    }
+
     @include controls.hover-capable {
-      &:hover:not(:disabled):not([aria-checked="true"]) {
-        background: var(--color-background-navigation-hover);
-        border-color: var(--color-border-default);
+      &:hover:not(:disabled):not([aria-selected="true"]) {
+        z-index: 2;
+        background: color-mix(in srgb, var(--color-text) 9%, var(--color-background-elevated-primary-opaque));
         color: var(--color-text);
       }
     }
 
-    &[aria-checked="true"] {
-      border: 1.5px solid var(--color-background-button-primary);
-      background: var(--color-background-button-primary);
-      color: var(--color-text-button-primary);
+    &[aria-selected="true"] {
+      z-index: 5;
+      min-height: max(40px, var(--size-control-hit-min));
+      margin-top: 0;
+      padding-bottom: calc(var(--spacing) * 1.75);
+      border-color: color-mix(in srgb, var(--color-text) 14%, var(--color-border-default));
+      background: var(--color-background-elevated-primary-opaque);
+      color: var(--color-text);
       font-weight: var(--typography-primary-action-weight);
-      box-shadow: 0 2px 6px rgb(0 0 0 / 12%);
+      box-shadow:
+        0 -2px 8px rgb(0 0 0 / 10%),
+        8px 2px 16px -2px rgb(0 0 0 / 20%),
+        -8px 2px 16px -2px rgb(0 0 0 / 20%);
 
-      .opencraft-composer-model-browser__machine-check {
-        border-color: var(--color-text-button-primary);
-        background: var(--color-text-button-primary);
-        color: var(--color-background-button-primary);
+      // Bridge cleanly over the foreground sheet's top border & upward shadow.
+      &::after {
+        content: "";
+        position: absolute;
+        inset-inline: 0;
+        bottom: -5px;
+        height: 7px;
+        background: var(--color-background-elevated-primary-opaque);
+        pointer-events: none;
       }
 
       .opencraft-composer-model-browser__machine-icon {
-        color: var(--color-text-button-primary);
-      }
-
-      .opencraft-composer-model-browser__machine-badge {
-        background: color-mix(in srgb, var(--color-text-button-primary) 18%, transparent);
-        color: var(--color-text-button-primary);
+        color: var(--color-text);
       }
     }
-  }
-
-  &__machine-check {
-    display: inline-flex;
-    flex: none;
-    width: 16px;
-    height: 16px;
-    align-items: center;
-    justify-content: center;
-    border: 1.5px solid var(--color-border-default);
-    border-radius: var(--radius-full, 999px);
-    background: transparent;
-    color: transparent;
-    transition:
-      background-color var(--transition-duration-basic) var(--ease-standard),
-      border-color var(--transition-duration-basic) var(--ease-standard),
-      color var(--transition-duration-basic) var(--ease-standard);
   }
 
   &__machine-icon {
@@ -106,8 +102,6 @@
 
   &__machine-name {
     min-width: 0;
-    flex: 1;
-    text-align: left;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -115,11 +109,11 @@
 
   &__machine-badge {
     flex: none;
-    padding: 1px calc(var(--spacing) * 1.5);
+    padding: 1px calc(var(--spacing) * 1.25);
     border-radius: var(--radius-sm);
     @include typography.role(metadata, secondary);
-    background: var(--color-badge-neutral-background);
-    color: var(--color-badge-neutral-foreground);
+    background: color-mix(in srgb, var(--color-text) 7%, transparent);
+    color: var(--color-text-secondary);
 
     &[data-tone="current"] {
       background: var(--color-badge-blue-background);
@@ -128,12 +122,19 @@
   }
 
   &__sources-section {
+    position: relative;
+    z-index: 3;
     display: flex;
     flex-direction: column;
     flex: none;
-    gap: calc(var(--spacing) * 1.25);
-    padding: calc(var(--spacing) * 2);
+    padding: calc(var(--spacing) * 2.25) calc(var(--spacing) * 2) calc(var(--spacing) * 2);
+    background: var(--color-background-elevated-primary-opaque);
     border-bottom: .5px solid var(--color-border-subtle);
+  }
+
+  &[data-multi-machine="true"] &__sources-section {
+    border-top: 1px solid color-mix(in srgb, var(--color-text) 14%, var(--color-border-default));
+    box-shadow: 0 -3px 8px rgb(0 0 0 / 7%);
   }
 
   &__sources {

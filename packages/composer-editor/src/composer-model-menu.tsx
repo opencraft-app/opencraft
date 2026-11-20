@@ -132,14 +132,14 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
     if (forceClose || switchingAcrossMachines) onRequestClose?.();
   };
   const moveMachineFocus = (currentKey: string, key: string, groupNode: HTMLElement | null) => {
-    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(key)) return false;
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(key)) return false;
     const index = machineSections.findIndex(entry => entry.key === currentKey);
     if (index < 0) return false;
-    const previous = key === "ArrowLeft" || key === "ArrowUp";
+    const previous = key === "ArrowLeft";
     const next = key === "Home" ? 0 : key === "End" ? machineSections.length - 1
       : (index + (previous ? -1 : 1) + machineSections.length) % machineSections.length;
     selectMachineSection(machineSections[next]!);
-    groupNode?.querySelectorAll<HTMLButtonElement>('button[role="radio"]')[next]?.focus();
+    groupNode?.querySelectorAll<HTMLButtonElement>('[data-machine-tab]')[next]?.focus();
     return true;
   };
   const moveAgentFocus = (currentId: string, key: string, tablist: HTMLElement | null) => {
@@ -151,30 +151,29 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
     tablist?.querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus();
     return true;
   };
-  return <div className="opencraft-composer-model-browser">
-    {!agentInHeader && showMachineSections ? <div className="opencraft-composer-model-browser__machines">
-      <div className="opencraft-composer-model-browser__machines-label">
-        <FormattedMessage id="composer.model.machineSection" defaultMessage="Execution machine" />
-      </div>
+  return <div className="opencraft-composer-model-browser" data-multi-machine={showMachineSections ? "true" : undefined}>
+    {!agentInHeader && showMachineSections ? <div className="opencraft-composer-model-browser__machine-well">
       <div
-        className="opencraft-composer-model-browser__machine-cards"
-        role="radiogroup"
+        className="opencraft-composer-model-browser__machine-tabs"
+        role="tablist"
         aria-label={intl.formatMessage({ id: "composer.model.machineSection", defaultMessage: "Execution machine" })}
       >
         {machineSections.map(section => {
           const isSelectedMachine = selectedMachineSection?.key === section.key;
-          const badgeTone = isSelectedMachine ? "current" : "neutral";
+          const badgeTone = isSelectedMachine && section.isActiveTarget ? "current" : "neutral";
           return (
             <button
               key={section.key}
               type="button"
-              role="radio"
-              aria-checked={isSelectedMachine}
+              role="tab"
+              aria-selected={isSelectedMachine}
+              data-machine-tab={section.key}
               data-value={section.key}
               data-current-machine={section.isOrigin ? "true" : undefined}
               data-active-target={section.isActiveTarget ? "true" : undefined}
               tabIndex={isSelectedMachine ? 0 : -1}
-              className="opencraft-composer-model-browser__machine-card"
+              title={section.label}
+              className="opencraft-composer-model-browser__machine-tab"
               onMouseDown={event => { if (event.button === 0) event.preventDefault(); }}
               onClick={() => selectMachineSection(section)}
               onKeyDown={event => {
@@ -183,27 +182,14 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
                 event.stopPropagation();
               }}
             >
-              <span className="opencraft-composer-model-browser__machine-check" aria-hidden="true">
-                {isSelectedMachine ? <CheckIcon size={11} aria-hidden="true" /> : null}
-              </span>
               <span className="opencraft-composer-model-browser__machine-icon" aria-hidden="true">
                 <MachineGlyph role={section.role} isLocal={section.isLocal} />
               </span>
-              <span className="opencraft-composer-model-browser__machine-name" title={section.label}>{section.label}</span>
+              <span className="opencraft-composer-model-browser__machine-name">{section.label}</span>
               <span className="opencraft-composer-model-browser__machine-badge" data-tone={badgeTone}>
-                {isSelectedMachine && section.isActiveTarget && section.isOrigin
-                  ? (section.isLocal
-                      ? <FormattedMessage id="composer.model.currentLocalMachine" defaultMessage="Current · Local" />
-                      : <FormattedMessage id="composer.model.currentMachine" defaultMessage="Current" />)
-                  : isSelectedMachine && section.isActiveTarget
-                    ? (section.isLocal
-                        ? <FormattedMessage id="composer.model.switchedLocalMachine" defaultMessage="Switched · Local" />
-                        : <FormattedMessage id="composer.model.switchedMachine" defaultMessage="Switched" />)
-                    : anyCrossDeviceActive && section.isOrigin
-                      ? <FormattedMessage id="composer.model.originMachine" defaultMessage="Original" />
-                      : section.isLocal
-                        ? <FormattedMessage id="composer.model.localMachine" defaultMessage="Local" />
-                        : <FormattedMessage id="settings.agents.remote" defaultMessage="Remote" />}
+                {section.isLocal
+                  ? <FormattedMessage id="composer.model.localMachine" defaultMessage="Local" />
+                  : <FormattedMessage id="settings.agents.remote" defaultMessage="Remote" />}
               </span>
             </button>
           );
@@ -211,15 +197,6 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
       </div>
     </div> : null}
     {!agentInHeader ? <div className="opencraft-composer-model-browser__sources-section">
-      {showMachineSections && selectedMachineSection?.label ? (
-        <div className="opencraft-composer-model-browser__sources-label">
-          <FormattedMessage
-            id="composer.model.agentsOnMachine"
-            defaultMessage="Agents on {machine}"
-            values={{ machine: selectedMachineSection.label }}
-          />
-        </div>
-      ) : null}
       <div className="opencraft-composer-model-browser__sources" role="tablist" aria-label={intl.formatMessage({ id: "composer.agent.label", defaultMessage: "Agent" })}>
         {visibleSources.map(item => {
           const isSelectedAgent = source.id === item.id;

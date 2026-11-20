@@ -12940,7 +12940,7 @@ html[data-window-host="browser"] body {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  width: min(360px, calc(100vw - 24px));
+  width: min(416px, calc(100vw - 24px));
   max-height: min(600px, var(--radix-dropdown-menu-content-available-height), calc(100dvh - 24px));
   padding: 0;
   overflow: hidden;
