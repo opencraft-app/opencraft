@@ -766,6 +766,8 @@ A queued message consumed inside an already running native goal Turn is still
 steering input, even when Native history omits the steering marker. Its sender
 cannot resolve the Turn's unknown launch identity. Queue-origin reconciliation
 requires an independent execution lease admitted before that Turn was observed.
+Persisted per-thread admission generations disambiguate equal clock timestamps;
+a later generation cannot claim an earlier observed Turn.
 Refreshing personal Git authority therefore requires a new admitted Turn after
 the current execution ends; inserting another message into it does not refresh
 its environment or revive an earlier Turn's grant.

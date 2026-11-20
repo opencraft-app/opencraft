@@ -94,6 +94,28 @@ test("a later queue admission cannot claim a native turn that was already runnin
   f.store.started("t", "new-turn", "queued-human", "engine");
   assert.equal(f.store.resolve({ threadId: "t", executionId: id }).status, "active", "the queued input can still start its own turn");
 });
+test("a later queue admission with tied clocks cannot claim an already observed native turn", t => {
+  const f=fixture(t),queue=new OpenCraftHostQueue(f.directory,f.owner.database);
+  f.store.observedStart("t","existing-goal","engine");
+  queue.add("t","later-input",[{type:"text",text:"next turn only"}],A);
+  const id=f.store.begin("t","later-input","engine");
+  f.owner.database.prepare("UPDATE execution_leases SET boot_id='same-boot',admitted_at_ms=1000,admitted_at_boot_ms=1000 WHERE thread_id='t'").run();
+  f.store.observedInput("t","existing-goal","later-input");
+  assert.equal(f.store.resolve({threadId:"t",executionId:id}).status,"unknown");
+  assert.equal(f.owner.database.prepare("SELECT input_id FROM execution_leases WHERE turn_id=?").get("existing-goal")?.input_id,"native:existing-goal");
+  f.store.started("t","legitimate-next-turn","later-input","engine");
+  assert.equal(f.store.resolve({threadId:"t",executionId:id}).status,"active","the next real execution can still claim its own admission");
+});
+test("an earlier admitted queued execution remains valid when clock samples tie", t => {
+  const f=fixture(t),queue=new OpenCraftHostQueue(f.directory,f.owner.database);
+  queue.add("t","first-input",[{type:"text",text:"start my turn"}],A);
+  const id=f.store.begin("t","first-input","engine");
+  f.store.observedStart("t","own-turn","engine");
+  f.owner.database.prepare("UPDATE execution_leases SET boot_id='same-boot',admitted_at_ms=1000,admitted_at_boot_ms=1000 WHERE thread_id='t'").run();
+  f.store.observedInput("t","own-turn","first-input");
+  const result=f.store.resolve({threadId:"t",executionId:id});assert.equal(result.status,"active");
+  if(result.status==="active")assert.deepEqual(result.lease.principal,A.principal);
+});
 test("attested job birth rejects boundaries and incarnation mismatch, never follows next employee", t => {
   const f = fixture(t); f.store.capture("t", "a", A); const a = f.store.begin("t", "a"); f.store.started("t", "a", "a", "engine");
   f.owner.database.prepare("UPDATE execution_leases SET admitted_at_ms=1000 WHERE execution_id=?").run(a);

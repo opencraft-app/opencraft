@@ -190,6 +190,12 @@ export class ExecutionLeaseStore extends ExecutionLeaseReader {
       if (!target) return;
       if (placeholder) {
         const observed = existing!;
+        // The persisted per-thread generation also proves ordering when both
+        // clocks tie (or realtime moves backward). A later lease cannot launch it.
+        const admittedGeneration = Number(target.generation), observedGeneration = Number(observed.generation);
+        if (!Number.isSafeInteger(admittedGeneration) || admittedGeneration < 1
+          || !Number.isSafeInteger(observedGeneration) || observedGeneration < 1
+          || admittedGeneration >= observedGeneration) return;
         const sameBoot = target.boot_id !== null && target.boot_id === observed.boot_id
           && target.admitted_at_boot_ms !== null && observed.admitted_at_boot_ms !== null;
         if (sameBoot ? Number(target.admitted_at_boot_ms) > Number(observed.admitted_at_boot_ms)
