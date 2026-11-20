@@ -1,7 +1,8 @@
 /* OpenCraft Bot 手机：最小 demo。整个页面只讲一句话：
    你有几个 Bot。每个 Bot 有一部手机和一台电脑：手机里有谁，他就能找谁；电脑上有什么，他就能用什么。你也一样，只能找你手机里的 Bot。
    首页就是你的手机：在你手机里的 Bot 和不在的分两组；点开一个 Bot 是一页：他的名片、和你的对话、他的手机、他的电脑。
-   所有改动一点就生效，底部给一次撤销的机会，不弹确认。这是原型，没有接真实的 Bot：你发出去的话不会有人回。 */
+   所有说法都是「谁 能找 谁」「谁 能用 什么」，主语在前。改动一点就生效，底部用同一句式说出结果，并给一次撤销，不弹确认。
+   也能反过来看：公司外的人和每样东西，都能点开看谁能找到他、谁能用它。这是原型，没有接真实的 Bot：你发出去的话不会有人回。 */
 (function () {
   'use strict';
   var KEY = 'opencraft.bots.v2', $ = function (id) { return document.getElementById(id); };
@@ -54,6 +55,9 @@
   function canFind(a, b) { var x = P(a); return !!x && (x.phone || []).indexOf(b) >= 0; }
   function canUse(a, t) { var x = P(a); return !!x && (x.pc || []).indexOf(t) >= 0; }
 
+  function finders(id) { return bots().concat(P('me')).filter(function (x) { return x.id !== id && canFind(x.id, id); }); } /* 谁的手机里有他 */
+  function users(t) { return bots().filter(function (x) { return canUse(x.id, t); }); }
+  function names(list) { return list.map(function (x) { return x.name; }).join('、'); }
   function thread(a, b) { return db.msgs.filter(function (m) { return (m.from === a && m.to === b) || (m.from === b && m.to === a); }); }
   function hhmm(ts) { var d = new Date(ts); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
   function ago(ts) { var m = Math.round((Date.now() - ts) / 60000); return m < 1 ? '刚刚' : m < 60 ? m + ' 分钟前' : hhmm(ts); }
@@ -92,14 +96,37 @@
     function row(b, inside) { return '<div class="row' + (t && t.id === b.id ? ' on' : '') + '"><button class="row-main"' + go({ k: 'bot', id: b.id }) + '>' + av(b.id) + '<span class="t"><b>' + esc(b.name) + '<i>' + esc(b.role) + '</i></b>' + status(b) + '</span></button>' +
       (inside ? '<button class="btn sm ghost" data-do="meout" data-id="' + b.id + '">移出</button>' : '<button class="btn sm" data-do="mein" data-id="' + b.id + '">加入</button>') + '</div>'; }
     return '<div class="page">' + '<header class="head home"><div class="ht"><h1>我的 Bot</h1></div><div class="seg" role="tablist" aria-label="看法"><button role="tab" data-do="view" data-id="list" aria-selected="' + (ui.view === 'list') + '">列表</button><button role="tab" data-do="view" data-id="office" aria-selected="' + (ui.view === 'office') + '">办公室</button></div></header>' +
-      '<div class="body"><ol class="rules"><li><b>手机</b>里有谁，他就能找谁。</li><li><b>电脑</b>上有什么，他就能用什么。</li><li>你也一样，只能找<b>你手机里</b>的 Bot。</li></ol>' +
-      '<h2 class="group">在你手机里 <i>' + inMine.length + '</i></h2><div class="card">' + (inMine.length ? inMine.map(function (b) { return row(b, true); }).join('') : '<p class="none pad">你的手机里还没有 Bot，你现在谁也找不到。</p>') + '</div>' +
-      (outMine.length ? '<h2 class="group">不在你手机里 <i>' + outMine.length + '</i></h2><p class="cap">他们照常干活，但你找不到他们。</p><div class="card">' + outMine.map(function (b) { return row(b, false); }).join('') + '</div>' : '') +
+      '<div class="body"><p class="rules"><b>手机</b>里有谁，就能找谁；<b>电脑</b>上有什么，就能用什么。你也一样。</p>' +
+      '<h2 class="group">你能找的 <i>' + inMine.length + '</i></h2><p class="cap">在你手机里</p><div class="card">' + (inMine.length ? inMine.map(function (b) { return row(b, true); }).join('') : '<p class="none pad">你的手机里还没有 Bot，你现在谁也找不到。</p>') + '</div>' +
+      (outMine.length ? '<h2 class="group">你找不到的 <i>' + outMine.length + '</i></h2><p class="cap">不在你手机里。他们照常干活，只是你找不到。</p><div class="card">' + outMine.map(function (b) { return row(b, false); }).join('') + '</div>' : '') +
+      reverse() +
       '<button class="newbot"' + go({ k: 'new' }) + '>' + ICON.plus + '新 Bot</button>' +
       '<p class="foot">这是原型，没有接真实的 Bot，你发出去的话不会有人回。<button class="lk" data-do="reset">恢复示例</button></p></div></div>';
   }
 
+  /* 反过来看：公司外的人被谁找得到，每样东西被谁用着 */
+  function reverse() {
+    var t = top(), outs = db.people.filter(function (x) { return x.kind === 'out'; });
+    function row(page, icon, name, n, verb) { var on = t && t.k === page.k && (t.id || t.t) === (page.id || page.t);
+      return '<div class="row' + (on ? ' on' : '') + '"><button class="row-main"' + go(page) + '>' + icon + '<span class="t"><b>' + esc(name) + '</b><span class="status">' + (n.length ? esc(names(n)) + ' ' + verb : verb === '能找' ? '谁也找不到' : '谁也用不了') + '</span></span><span class="chev" aria-hidden="true">›</span></button></div>'; }
+    return '<h2 class="group">反过来看</h2><p class="cap">谁能找到公司外的人，谁能用公司的东西</p><div class="card">' +
+      outs.map(function (x) { return row({ k: 'who', id: x.id }, av(x.id), x.name, finders(x.id), '能找'); }).join('') +
+      db.tools.map(function (x) { return row({ k: 'use', t: x.id }, '<span class="tic" aria-hidden="true">' + esc(x.name.slice(0, 1)) + '</span>', x.name, users(x.id), '能用'); }).join('') + '</div>';
+  }
+  /* 一个人或一样东西：分「能」和「不能」两组，和首页同一个样子，每行直接加入或移出 */
+  function reach(kind, id) {
+    var isTool = kind === 'use', name = isTool ? T(id).name : P(id).name, verb = isTool ? '用' : '找', has = function (b) { return isTool ? canUse(b.id, id) : canFind(b.id, id); };
+    var yes = bots().filter(has), no = bots().filter(function (b) { return !has(b); });
+    function row(b, inside) { return '<div class="row"><button class="row-main"' + go({ k: 'bot', id: b.id }) + '>' + av(b.id) + '<span class="t"><b>' + esc(b.name) + '<i>' + esc(b.role) + '</i></b><span class="status">' + (inside ? '能' : '不能') + verb + esc(name) + '</span></span></button>' +
+      (inside ? '<button class="btn sm ghost" data-do="revoke" data-id="' + b.id + '">移除</button>' : '<button class="btn sm" data-do="grant" data-id="' + b.id + '">给他</button>') + '</div>'; }
+    var where = isTool ? '电脑上' : '手机里';
+    return '<div class="page">' + head(esc(name), isTool ? '公司的东西' : '公司外的人') + '<div class="body">' +
+      '<h2 class="group">能' + verb + esc(name) + '的 <i>' + yes.length + '</i></h2><p class="cap">' + where + '有' + esc(name) + '</p><div class="card">' + (yes.length ? yes.map(function (b) { return row(b, true); }).join('') : '<p class="none pad">现在谁也' + (isTool ? '用不了' : '找不到') + esc(name) + '。</p>') + '</div>' +
+      (no.length ? '<h2 class="group">' + (isTool ? '用不了' : '找不到') + '的 <i>' + no.length + '</i></h2><div class="card">' + no.map(function (b) { return row(b, false); }).join('') + '</div>' : '') + '</div></div>';
+  }
+
   /* ---------- 一个 Bot：名片、和你的对话、他的手机、他的电脑 ---------- */
+  function mineFirst(list) { list = list || []; return list.indexOf('me') >= 0 ? ['me'].concat(without(list, 'me')) : list; } /* “你”永远排第一个 */
   function bot(b) {
     var mine = canFind('me', b.id), t = thread('me', b.id), d = db.doing[b.id], recent = db.log.filter(function (r) { return r.who === b.id; }).sort(function (x, y) { return y.ts - x.ts; }).slice(0, 2);
     var hero = '<header class="hero">' + backBtn() + av(b.id, 'xl') + '<div class="ht"><h1>' + esc(b.name) + '<i>' + esc(b.role) + '</i></h1><p>' + status(b) + '</p></div>' +
@@ -107,13 +134,14 @@
     var chat = '<button class="card convo"' + go({ k: 'chat', id: b.id }) + '><span class="convo-h">和你的对话' + (mine ? '' : '<em>他不在你手机里，只能看</em>') + '</span>' +
       (t.length ? t.slice(-2).map(function (m) { return line(m, 'me'); }).join('') : '<p class="none">还没说过话。</p>') + '<span class="more">打开对话 ›</span></button>';
     var phone = '<section class="card panel"><div class="panel-h"><span class="pi">' + ICON.phone + '</span><div><h2>他的手机</h2><p>手机里有谁，他就能找谁。</p></div><i>' + (b.phone || []).length + ' 人</i></div><div class="tiles">' +
-      (b.phone || []).map(function (j) { var x = P(j); if (!x) return '';
+      mineFirst(b.phone).map(function (j) { var x = P(j); if (!x) return '';
         return '<div class="tile"><button class="tile-main"' + go(j === 'me' ? { k: 'chat', id: b.id } : { k: 'peek', id: b.id, w: j }) + '>' + av(j, 'lg') + '<span>' + esc(x.name) + '</span>' + tag(x) + '</button><button class="tile-x" data-do="unfriend" data-id="' + j + '" aria-label="从' + esc(b.name) + '的手机里移除' + esc(x.name) + '">' + ICON.x + '</button></div>'; }).join('') +
       '<button class="tile addtile"' + go({ k: 'add', id: b.id }) + '><span class="plusbox">' + ICON.plus + '</span><span>添加</span></button></div>' +
-      ((b.phone || []).length ? '' : '<p class="empty-note">手机里没有人，他谁也找不到。</p>') + '</section>';
+      ((b.phone || []).length ? '' : '<p class="empty-note">手机里没有人，他谁也找不到。</p>') +
+      '<p class="recent">反过来，' + (finders(b.id).length ? esc(names(finders(b.id))) + '能找他。' : '谁也找不到他。') + '</p></section>';
     var pc = '<section class="card panel"><div class="panel-h"><span class="pi">' + ICON.pc + '</span><div><h2>他的电脑</h2><p>电脑上有什么，他就能用什么。</p></div><i>' + (b.pc || []).length + ' 样</i></div>' +
       (d ? '<div class="doing"><span class="dot" aria-hidden="true"></span><span class="t"><b>正在' + esc(d.text) + '</b><span>' + esc(ago(d.ts)) + '开始 · 用' + esc((T(d.tool) || {}).name || '') + '</span></span><button class="btn sm danger" data-do="stop">停下</button></div>' : '') +
-      '<div class="tools">' + (b.pc || []).map(function (id) { var x = T(id); return x ? '<div class="tool"><span class="tic" aria-hidden="true">' + esc(x.name.slice(0, 1)) + '</span><span class="t"><b>' + esc(x.name) + '</b></span><button class="btn sm ghost" data-do="untool" data-id="' + id + '">移除</button></div>' : ''; }).join('') +
+      '<div class="tools">' + (b.pc || []).map(function (id) { var x = T(id); return x ? '<div class="tool"><button class="tool-main"' + go({ k: 'use', t: id }) + '><span class="tic" aria-hidden="true">' + esc(x.name.slice(0, 1)) + '</span><span class="t"><b>' + esc(x.name) + '</b><span>' + esc(users(id).length > 1 ? '还有 ' + (users(id).length - 1) + ' 个 Bot 能用' : '只有他能用') + '</span></span></button><button class="btn sm ghost" data-do="untool" data-id="' + id + '">移除</button></div>' : ''; }).join('') +
       '<button class="tool add"' + go({ k: 'tools', id: b.id }) + '><span class="tic plusbox" aria-hidden="true">' + ICON.plus + '</span><span class="t"><b>添加</b></span></button></div>' +
       ((b.pc || []).length ? '' : '<p class="empty-note">电脑上什么都没有，他现在只能聊天。</p>') +
       (recent.length ? '<p class="recent">最近：' + recent.map(function (r) { return esc(ago(r.ts) + '用' + ((T(r.tool) || {}).name || '') + r.text); }).join('；') + '</p>' : '') + '</section>';
@@ -123,13 +151,13 @@
   function chat(b) { var ok = canFind('me', b.id);
     return '<div class="page">' + head(av(b.id, 'hd') + esc(b.name), esc(b.role)) + '<div class="body chat" id="chat">' + (thread('me', b.id).map(function (m) { return line(m, 'me'); }).join('') || '<p class="none center">还没说过话。对他说第一件要办的事。</p>') + '</div>' +
       (ok ? '<form class="say" data-do="say"><input id="say" autocomplete="off" enterkeyhint="send" placeholder="对' + esc(b.name) + '说要办什么" aria-label="对' + esc(b.name) + '说"><button class="send" aria-label="发送">' + ICON.send + '</button></form>'
-        : '<div class="say off"><span>你的手机里没有' + esc(b.name) + '，所以找不到他。</span><button class="btn sm" data-do="mein" data-id="' + b.id + '">加到我的手机</button></div>') + '</div>'; }
+        : '<div class="say off"><span>你找不到' + esc(b.name) + '：他不在你手机里。</span><button class="btn sm" data-do="mein" data-id="' + b.id + '">加到我的手机</button></div>') + '</div>'; }
   /* 看他和某人的聊天（只读）；底部说清楚两个方向，也能在这里移除 */
   function peek(b, w) { var x = P(w), t = thread(b.id, w), there = canFind(b.id, w), back = x.kind === 'out' ? null : canFind(w, b.id);
-    var fwd = there ? x.name + '在' + b.name + '的手机里，' + b.name + '能找' + x.name + '。' : x.name + '不在' + b.name + '的手机里了，' + b.name + '找不到' + x.name + '。';
-    var rev = back === null ? '' : back ? x.name + '的手机里也有' + b.name + '。' : x.name + '的手机里没有' + b.name + '，' + x.name + '找不到' + b.name + '。';
+    var fwd = b.name + (there ? '能找' : '找不到') + x.name + '。';
+    var rev = back === null ? x.name + '是公司外的人，没有这部手机。' : x.name + (back ? '能找' : '找不到') + b.name + '。';
     return '<div class="page">' + head(esc(b.name) + ' 和 ' + esc(x.name), '只能看，不能替他回') + '<div class="body chat">' + (t.map(function (m) { return line(m, b.id); }).join('') || '<p class="none center">他们还没聊过。</p>') + '</div>' +
-      '<div class="say off two"><span><b>' + esc(fwd) + '</b>' + (rev ? '<br>' + esc(rev) : '') + '</span>' + (there ? '<button class="btn sm danger" data-do="unfriend" data-id="' + w + '">从' + esc(b.name) + '手机里移除</button>' : '<button class="btn sm" data-do="friend" data-id="' + w + '">加回去</button>') + '</div></div>'; }
+      '<div class="say off two"><span><b>' + esc(fwd) + '</b><br>' + esc(rev) + (x.kind === 'out' ? ' <button class="lk"' + go({ k: 'who', id: w }) + '>谁能找' + esc(x.name) + ' ›</button>' : '') + '</span>' + (there ? '<button class="btn sm danger" data-do="unfriend" data-id="' + w + '">从' + esc(b.name) + '手机里移除</button>' : '<button class="btn sm" data-do="friend" data-id="' + w + '">加回去</button>') + '</div></div>'; }
   function addContact(b) { var list = db.people.filter(function (x) { return x.id !== b.id && (b.phone || []).indexOf(x.id) < 0; });
     return '<div class="page">' + head('加到' + esc(b.name) + '的手机', '加进去，' + esc(b.name) + '就能找这个人') + '<div class="body"><div class="card">' + (list.length ? list.map(function (x) { return '<div class="row"><span class="row-main static">' + av(x.id) + '<span class="t"><b>' + esc(x.name) + tag(x) + '</b></span></span><button class="btn sm" data-do="friend" data-id="' + x.id + '" data-pop="1">添加</button></div>'; }).join('') : '<p class="none pad">大家都已经在他手机里了。</p>') + '</div>' +
       '<form class="inl" data-do="newout"><input id="outname" autocomplete="off" placeholder="公司外的人，例如：供应商老秦" aria-label="公司外的人"><button class="btn">添加</button></form></div></div>'; }
@@ -157,9 +185,9 @@
   function draw() {
     var view = $('view'), t;
     if (wide() && !ui.stack.length) { var first = bots().filter(function (b) { return canFind('me', b.id); })[0] || bots()[0]; if (first) ui.stack = [{ k: 'bot', id: first.id }]; } /* 宽屏默认打开第一个 Bot */
-    t = top(); while (t && ((t.id && !P(t.id)) || (t.w && !P(t.w)))) { ui.stack.pop(); t = top(); }
+    t = top(); while (t && ((t.id && !P(t.id)) || (t.w && !P(t.w)) || (t.t && !T(t.t)))) { ui.stack.pop(); t = top(); }
     var key = JSON.stringify(t || ''), same = view.getAttribute('data-key') === key, b0 = view.querySelector('.pane.r .body') || view.querySelector('.body'), keep = b0 ? b0.scrollTop : 0;
-    var page = !t ? '' : t.k === 'peek' ? peek(P(t.id), t.w) : t.k === 'new' ? newBot() : PAGES[t.k](P(t.id)), office = ui.view === 'office';
+    var page = !t ? '' : t.k === 'peek' ? peek(P(t.id), t.w) : t.k === 'new' ? newBot() : t.k === 'who' ? reach('who', t.id) : t.k === 'use' ? reach('use', t.t) : PAGES[t.k](P(t.id)), office = ui.view === 'office';
     view.hidden = office; $('office').hidden = !office;
     view.classList.toggle('split', wide());
     view.innerHTML = wide() ? '<div class="pane l">' + home() + '</div><div class="pane r">' + (page || '<p class="blank">还没有 Bot</p>') + '</div>' : page || home();
@@ -178,19 +206,25 @@
     undo: undo,
     reset: function () { change('已恢复示例', function () { db = sample(); ui.stack = []; ui.sel = null; }); },
     say: function () { var v = $('say').value.trim(), b = cur(); if (!v || !b || !canFind('me', b.id)) return; db.msgs.push({ from: 'me', to: b.id, text: v, ts: Date.now() }); save(); refresh(); $('say').focus(); },
-    mein: function (el) { var id = el.getAttribute('data-id'); change('已把' + N(id) + '加到你的手机', function () { var me = P('me'); me.phone = without(me.phone, id).concat(id); }); },
-    meout: function (el) { var id = el.getAttribute('data-id'); change('已把' + N(id) + '移出你的手机，你找不到他了', function () { var me = P('me'); me.phone = without(me.phone, id); }); },
-    friend: function (el) { var b = cur(), id = el.getAttribute('data-id'); if (el.hasAttribute('data-pop')) ui.stack.pop(); change('已把' + N(id) + '加到' + b.name + '的手机', function () { b.phone = without(b.phone, id).concat(id); }); },
-    unfriend: function (el) { var b = cur(), id = el.getAttribute('data-id'); change('已从' + b.name + '的手机里移除' + N(id), function () { b.phone = without(b.phone, id); }); },
-    tool: function (el) { var b = cur(), id = el.getAttribute('data-id'); ui.stack.pop(); change('已把' + T(id).name + '放到' + b.name + '的电脑上', function () { b.pc = without(b.pc, id).concat(id); }); },
+    mein: function (el) { var id = el.getAttribute('data-id'); change('你现在能找' + N(id) + '了', function () { var me = P('me'); me.phone = without(me.phone, id).concat(id); }); },
+    meout: function (el) { var id = el.getAttribute('data-id'); change('你现在找不到' + N(id) + '了', function () { var me = P('me'); me.phone = without(me.phone, id); }); },
+    friend: function (el) { var b = cur(), id = el.getAttribute('data-id'); if (el.hasAttribute('data-pop')) ui.stack.pop(); change(b.name + '现在能找' + N(id) + '了', function () { b.phone = without(b.phone, id).concat(id); }); },
+    unfriend: function (el) { var b = cur(), id = el.getAttribute('data-id'); change(b.name + '现在找不到' + N(id) + '了', function () { b.phone = without(b.phone, id); }); },
+    tool: function (el) { var b = cur(), id = el.getAttribute('data-id'); ui.stack.pop(); change(b.name + '现在能用' + T(id).name + '了', function () { b.pc = without(b.pc, id).concat(id); }); },
     untool: function (el) { var b = cur(), id = el.getAttribute('data-id'), d = db.doing[b.id];
-      change('已从' + b.name + '的电脑上移除' + T(id).name + (d && d.tool === id ? '，他手上的事也停了' : ''), function () { b.pc = without(b.pc, id); if (d && d.tool === id) delete db.doing[b.id]; }); }, /* 拿走正在用的东西，手上的事也就停了 */
-    stop: function () { var b = cur(); change('已让' + b.name + '停下', function () { delete db.doing[b.id]; }); },
-    fire: function () { var b = cur(); ui.stack = []; change('已删掉' + b.name, function () { db.people = db.people.filter(function (x) { return x.id !== b.id; }); db.people.forEach(function (x) { x.phone = without(x.phone, b.id); }); db.msgs = db.msgs.filter(function (m) { return m.from !== b.id && m.to !== b.id; }); delete db.doing[b.id]; }); },
-    newout: function () { var v = $('outname').value.trim(), b = cur(); if (!v) { $('outname').focus(); return; } ui.stack.pop(); change('已把' + v + '加到' + b.name + '的手机', function () { var o = { id: 'o' + (++db.n), kind: 'out', name: v, look: 5 }; db.people.push(o); b.phone.push(o.id); }); },
-    newtool: function () { var v = $('toolname').value.trim(), b = cur(); if (!v) { $('toolname').focus(); return; } ui.stack.pop(); change('已把' + v + '放到' + b.name + '的电脑上', function () { var t = { id: 't' + (++db.n), name: v }; db.tools.push(t); b.pc.push(t.id); }); },
+      change(b.name + '现在用不了' + T(id).name + '了' + (d && d.tool === id ? '，手上的事也停了' : ''), function () { b.pc = without(b.pc, id); if (d && d.tool === id) delete db.doing[b.id]; }); }, /* 拿走正在用的东西，手上的事也就停了 */
+    grant: function (el) { var t = top(), b = P(el.getAttribute('data-id'));
+      if (t.k === 'use') change(b.name + '现在能用' + T(t.t).name + '了', function () { b.pc = without(b.pc, t.t).concat(t.t); });
+      else change(b.name + '现在能找' + N(t.id) + '了', function () { b.phone = without(b.phone, t.id).concat(t.id); }); },
+    revoke: function (el) { var t = top(), b = P(el.getAttribute('data-id')), d = db.doing[b.id];
+      if (t.k === 'use') change(b.name + '现在用不了' + T(t.t).name + '了' + (d && d.tool === t.t ? '，手上的事也停了' : ''), function () { b.pc = without(b.pc, t.t); if (d && d.tool === t.t) delete db.doing[b.id]; });
+      else change(b.name + '现在找不到' + N(t.id) + '了', function () { b.phone = without(b.phone, t.id); }); },
+    stop: function () { var b = cur(); change(b.name + '停下了，现在空闲', function () { delete db.doing[b.id]; }); },
+    fire: function () { var b = cur(); ui.stack = []; change('已删掉' + b.name + '，谁也找不到他了', function () { db.people = db.people.filter(function (x) { return x.id !== b.id; }); db.people.forEach(function (x) { x.phone = without(x.phone, b.id); }); db.msgs = db.msgs.filter(function (m) { return m.from !== b.id && m.to !== b.id; }); delete db.doing[b.id]; }); },
+    newout: function () { var v = $('outname').value.trim(), b = cur(); if (!v) { $('outname').focus(); return; } ui.stack.pop(); change(b.name + '现在能找' + v + '了', function () { var o = { id: 'o' + (++db.n), kind: 'out', name: v, look: 5 }; db.people.push(o); b.phone.push(o.id); }); },
+    newtool: function () { var v = $('toolname').value.trim(), b = cur(); if (!v) { $('toolname').focus(); return; } ui.stack.pop(); change(b.name + '现在能用' + v + '了', function () { var t = { id: 't' + (++db.n), name: v }; db.tools.push(t); b.pc.push(t.id); }); },
     hire: function () { var name = $('bname').value.trim() || $('bname').defaultValue, role = $('brole').value.trim() || '未填岗位', id = 'b' + (db.n + 1);
-      ui.stack = [{ k: 'bot', id: id }]; change('已创建' + name, function () { db.n++; db.people.push({ id: id, kind: 'bot', name: name, role: role, look: 1 + db.n % 6, phone: ['me'], pc: [] }); P('me').phone.push(id); }); }
+      ui.stack = [{ k: 'bot', id: id }]; change(name + '来了：你能找他，他也能找你', function () { db.n++; db.people.push({ id: id, kind: 'bot', name: name, role: role, look: 1 + db.n % 6, phone: ['me'], pc: [] }); P('me').phone.push(id); }); }
   };
   document.addEventListener('click', function (e) {
     var g = e.target.closest('[data-go]'); if (g) { var page = JSON.parse(g.getAttribute('data-go')); if (wide() && g.closest('.pane.l')) ui.stack = []; ui.stack.push(page); draw(); return; }
