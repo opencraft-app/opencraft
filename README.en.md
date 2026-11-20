@@ -16,7 +16,77 @@ Connect the agents you run, wherever they live, and make them available to the p
 
 [![AI Agents](https://img.shields.io/badge/AI_Agents-18181b)](https://github.com/topics/ai-agents) [![ACP](https://img.shields.io/badge/ACP-18181b)](plugins/acp-engine/README.md) [![MCP](https://img.shields.io/badge/MCP-18181b)](docs/session-capabilities.md) [![Self Hosted](https://img.shields.io/badge/Self_Hosted-18181b)](docker/README.md) [![Collaboration](https://img.shields.io/badge/Collaboration-18181b)](docs/actor-collaboration-api.md)
 
-[Highlights](#highlights) · [Who it's for](#who-its-for) · [Get started](#get-started) · [Documentation](#documentation) · [Contribute](CONTRIBUTING.md)
+[Highlights](#highlights) · [Supported Agents](#supported-agents--model-providers) · [Who it's for](#who-its-for) · [Get started](#get-started) · [Documentation](#documentation) · [Contribute](CONTRIBUTING.md)
+
+<br />
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/images/hero-architecture-en-dark.svg" />
+  <source media="(prefers-color-scheme: light)" srcset=".github/images/hero-architecture-en-light.svg" />
+  <img src=".github/images/hero-architecture-en-light.svg" width="100%" alt="OpenCraft topology: connect agents across laptops, remote devboxes, and cloud servers into one unified workbench" />
+</picture>
+
+</div>
+
+## Supported Agents & Model Providers
+
+Connect the CLI agents, IDE bridges, custom API endpoints, and local models already installed across your machines into one workspace:
+
+<div align="center">
+
+<table>
+  <tr>
+    <td align="center" width="33%">
+      <img src=".github/images/agents/codex.svg" width="44" height="44" alt="Codex" /><br />
+      <strong>Codex</strong><br />
+      <sub>Native CLI · Reasoning tiers & Fast · History & usage</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src=".github/images/agents/claude-code.svg" width="44" height="44" alt="Claude Code" /><br />
+      <strong>Claude Code</strong><br />
+      <sub>Native CLI bridge · Session history sync</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src=".github/images/agents/cursor.svg" width="44" height="44" alt="Cursor" /><br />
+      <strong>Cursor</strong><br />
+      <sub>Cursor Agent integration · Native model discovery</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="33%">
+      <img src=".github/images/agents/codebuddy.svg" width="44" height="44" alt="CodeBuddy" /><br />
+      <strong>CodeBuddy (CLI & IDE)</strong><br />
+      <sub>CLI agent & live IDE active-model bridge</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src=".github/images/agents/pi.svg" width="44" height="44" alt="Pi" /><br />
+      <strong>Pi</strong><br />
+      <sub>Built-in runtime & external Pi CLI support</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src=".github/images/agents/dsh.svg" width="44" height="44" alt="DSH (ACP)" /><br />
+      <strong>DSH (ACP)</strong><br />
+      <sub>External ACP execution engine integration</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="33%">
+      <img src=".github/images/agents/openai-protocol.svg" width="44" height="44" alt="OpenAI Protocol" /><br />
+      <strong>OpenAI Protocol APIs</strong><br />
+      <sub>Any OpenAI-compatible endpoint · Per-model toggles</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src=".github/images/agents/anthropic-protocol.svg" width="44" height="44" alt="Anthropic Protocol" /><br />
+      <strong>Anthropic Protocol APIs</strong><br />
+      <sub>Any Anthropic-compatible endpoint · Capability probing</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src=".github/images/agents/ollama.svg" width="44" height="44" alt="Ollama" /><br />
+      <strong>Ollama Local & Cloud</strong><br />
+      <sub>Local open-weight models & Ollama Cloud discovery</sub>
+    </td>
+  </tr>
+</table>
 
 </div>
 
@@ -80,10 +150,10 @@ remain development goals. See the [implemented collaboration API](docs/actor-col
 On an **Apple Silicon Mac with Node.js 24 LTS**, run the following command. npx downloads the complete package from GitHub Releases.
 
 ```sh
-npx --yes --package=https://github.com/sliverp/opencraft/releases/download/v0.1.18-local.1/opencraft-0.1.18-local.1-darwin-arm64-node24.tgz -- opencraft start
+npx --yes --package=https://github.com/sliverp/opencraft/releases/download/v0.1.19-local.1/opencraft-0.1.19-local.1-darwin-arm64-node24.tgz -- opencraft start
 ```
 
-[Release notes and SHA-256 checksums](https://github.com/sliverp/opencraft/releases/tag/v0.1.18-local.1). For other platforms or Node major versions, build a matching archive using the [local installation guide](docs/web-deployment.md#npx-本地完整服务引导).
+[Release notes and SHA-256 checksums](https://github.com/sliverp/opencraft/releases/tag/v0.1.19-local.1). For other platforms or Node major versions, build a matching archive using the [local installation guide](docs/web-deployment.md#npx-本地完整服务引导).
 
 The command starts the local execution service and opens Workbench in your browser. Connect an installed, signed-in Agent or configure a model provider. On a machine without a desktop, pass `--no-open` and use the address printed in the terminal. Closing the browser leaves the service running. Press Ctrl+C to stop it.
 

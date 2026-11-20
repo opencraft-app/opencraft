@@ -16,7 +16,77 @@
 
 [![AI Agents](https://img.shields.io/badge/AI_Agents-18181b)](https://github.com/topics/ai-agents) [![ACP](https://img.shields.io/badge/ACP-18181b)](plugins/acp-engine/README.md) [![MCP](https://img.shields.io/badge/MCP-18181b)](docs/session-capabilities.md) [![自主部署](https://img.shields.io/badge/Self_Hosted-18181b)](docker/README.md) [![协作](https://img.shields.io/badge/Collaboration-18181b)](docs/actor-collaboration-api.md)
 
-[核心亮点](#核心亮点) · [适合谁用](#适合谁用) · [快速开始](#快速开始) · [文档导航](#文档导航) · [参与贡献](CONTRIBUTING.md)
+[核心亮点](#核心亮点) · [已支持的 Agent](#已支持的-agent-与模型生态) · [适合谁用](#适合谁用) · [快速开始](#快速开始) · [文档导航](#文档导航) · [参与贡献](CONTRIBUTING.md)
+
+<br />
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/images/hero-architecture-zh-dark.svg" />
+  <source media="(prefers-color-scheme: light)" srcset=".github/images/hero-architecture-zh-light.svg" />
+  <img src=".github/images/hero-architecture-zh-light.svg" width="100%" alt="OpenCraft 架构示意：连接多台机器上的各种 Agent，在一个工作台统一调度与跨设备接力" />
+</picture>
+
+</div>
+
+## 已支持的 Agent 与模型生态
+
+把各台机器上已经安装登录好的 CLI Agent、IDE 桥接、自有模型 API 与本地大模型全部接进同一个工作台：
+
+<div align="center">
+
+<table>
+  <tr>
+    <td align="center" width="33%">
+      <img src=".github/images/agents/codex.svg" width="44" height="44" alt="Codex" /><br />
+      <strong>Codex</strong><br />
+      <sub>原生 CLI · 推理档位与 Fast · 历史与用量</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src=".github/images/agents/claude-code.svg" width="44" height="44" alt="Claude Code" /><br />
+      <strong>Claude Code</strong><br />
+      <sub>原生 CLI 接入 · 原生会话历史恢复</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src=".github/images/agents/cursor.svg" width="44" height="44" alt="Cursor" /><br />
+      <strong>Cursor</strong><br />
+      <sub>Cursor Agent 接入 · 原生模型发现与续聊</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="33%">
+      <img src=".github/images/agents/codebuddy.svg" width="44" height="44" alt="CodeBuddy" /><br />
+      <strong>CodeBuddy (CLI & IDE)</strong><br />
+      <sub>命令行与 IDE 当前模型双向联动</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src=".github/images/agents/pi.svg" width="44" height="44" alt="Pi" /><br />
+      <strong>Pi</strong><br />
+      <sub>内置引擎与外置 Pi CLI 双模式</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src=".github/images/agents/dsh.svg" width="44" height="44" alt="DSH (ACP)" /><br />
+      <strong>DSH (ACP)</strong><br />
+      <sub>外置 ACP 协议执行引擎接入</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="33%">
+      <img src=".github/images/agents/openai-protocol.svg" width="44" height="44" alt="OpenAI 协议" /><br />
+      <strong>OpenAI 协议 API</strong><br />
+      <sub>任意 OpenAI 兼容端点 · 按模型独立开关</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src=".github/images/agents/anthropic-protocol.svg" width="44" height="44" alt="Anthropic 协议" /><br />
+      <strong>Anthropic 协议 API</strong><br />
+      <sub>任意 Anthropic 兼容端点 · 推理与多模态探测</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src=".github/images/agents/ollama.svg" width="44" height="44" alt="Ollama" /><br />
+      <strong>Ollama 本地与云端</strong><br />
+      <sub>本机开源大模型与 Ollama Cloud 自动发现</sub>
+    </td>
+  </tr>
+</table>
 
 </div>
 
@@ -79,10 +149,10 @@ OpenCraft 是一个开源 Agent 工作台，围绕 **Anyone Agents Anywhere** �
 **Apple Silicon Mac + Node.js 24 LTS** 可直接用下面的命令安装。npx 会从 GitHub Release 下载完整包。
 
 ```sh
-npx --yes --package=https://github.com/sliverp/opencraft/releases/download/v0.1.18-local.1/opencraft-0.1.18-local.1-darwin-arm64-node24.tgz -- opencraft start
+npx --yes --package=https://github.com/sliverp/opencraft/releases/download/v0.1.19-local.1/opencraft-0.1.19-local.1-darwin-arm64-node24.tgz -- opencraft start
 ```
 
-[发布说明和 SHA-256 校验文件](https://github.com/sliverp/opencraft/releases/tag/v0.1.18-local.1)。其他平台或 Node 主版本可按 [Web 安装与更新](docs/web-deployment.md#npx-本地完整服务引导) 构建对应归档。
+[发布说明和 SHA-256 校验文件](https://github.com/sliverp/opencraft/releases/tag/v0.1.19-local.1)。其他平台或 Node 主版本可按 [Web 安装与更新](docs/web-deployment.md#npx-本地完整服务引导) 构建对应归档。
 
 命令启动本地执行服务和 Web 客户端，并自动打开浏览器。在引导页接入已安装并登录的 Agent，或配置模型服务。无桌面环境时可加 `--no-open`，再使用终端打印的地址。关闭浏览器后服务继续运行，按 Ctrl+C 停止服务。
 
