@@ -441,16 +441,18 @@ test('legacy storage removal shares retirement and removes the remaining logical
   } finally { await f.close(); }
 });
 
-test('Agent close automatically retires human control', async () => {
+test('Agent close refuses to retire live human control', async () => {
   const f = await fixture();
   try {
     const binding = await dormantServiceTab(f.service); f.service.echoAutomation = true;
     await f.service.invokeAutomation(binding, 'inspect', {});
     const human = await f.connect('owner');
     await human.call('open', { lease: binding.lease, multiView: true, visible: true });
-    await human.call('control', { action: 'human' });
-    assert.equal((await f.service.closeTab(binding, { tabId: 'service-tab' })).closed, true);
-    assert.equal(f.service.pages.size, 0); assert.equal(f.service.physical.size, 0);
+    const grant = await human.call('control', { action: 'human' });
+    await assert.rejects(f.service.closeTab(binding, { tabId: 'service-tab' }), { code: 'CONTROL_BUSY' });
+    assert.equal(f.service.pages.size, 1); assert.equal(f.service.physical.size, 1);
+    assert.equal([...f.service.pages.values()][0].controlToken, grant.token);
+    assert.equal(f.service.commands.filter(command => command.method === 'close').length, 0);
     await human.detach();
   } finally { await f.close(); }
 });
@@ -599,8 +601,7 @@ test('service navigation accepts its own document replacement and retains contro
     f.service.ownerConnector = null; f.service.child = undefined;
     const viewer = await f.connect('owner'); await viewer.call('open', { lease: binding.lease, multiView: true, visible: true });
     await viewer.call('control', { action: 'human' });
-    assert.equal((await f.service.invokeAutomation(binding, 'reload', {})).method, 'reload');
-    assert.equal(page.controller, null, 'human navigation does not block the next Agent action');
+    await assert.rejects(f.service.invokeAutomation(binding, 'reload', {}), { code: 'CONTROL_BUSY' });
     await viewer.detach();
     const controller = new AbortController(); controller.abort();
     await assert.rejects(f.service.invokeAutomation(binding, 'stop', {}, { signal: controller.signal }), { name: 'AbortError' });
@@ -631,14 +632,13 @@ test('service automation needs no viewer and retains account, host, scope and co
     assert.equal(page.controller, null); assert.equal(f.service.viewers(page).size, 0);
     assert.equal(f.service.commands.filter(command => command.method === 'create').length, 1);
     assert.equal(f.service.commands.at(-1).input.token, null);
-    const human = await f.connect('owner'); await human.call('open', { lease, multiView: true, visible: true });
+    const human = await f.connect('owner'); await human.call('open', { lease, multiView: true, visible: true, inputAcknowledgements: true });
     const grant = await human.call('control', { action: 'human' });
     const readWhileHuman = await f.service.invokeAutomation(binding, 'inspect', {});
     assert.equal(readWhileHuman.control, undefined); assert.equal(page.controlToken, grant.token);
-    const taken = await f.service.invokeAutomation(binding, 'click', { ref: 'fixture' });
-    assert(taken.control); assert.notEqual(taken.control, grant.token);
-    assert.equal(page.controller, null, 'Agent automatically takes human control and releases after completion');
-    await assert.rejects(human.call('input', { type: 'keyDown', key: 'x' }, grant.token), { code: 'CONTROL_LOST' });
+    await assert.rejects(f.service.invokeAutomation(binding, 'click', { ref: 'fixture' }), { code: 'CONTROL_BUSY' });
+    assert.equal(page.controlToken, grant.token);
+    await human.call('input', { type: 'keyDown', key: 'x' }, grant.token);
     await human.call('control', { action: 'release', token: grant.token });
     const request = f.service.request.bind(f.service);
     let started;
@@ -752,7 +752,7 @@ test('modern viewers share one document/stream, keep viewport authority and aggr
   } finally { await f.close(); }
 });
 
-test('control generations fence writes, Agent preempts a human, and only controller receives private events', async () => {
+test('control generations fence writes, Agent never preempts a human, and only controller receives private events', async () => {
   const f=await fixture();
   try {
     const lease=randomUUID(),a=await f.connect('owner'),b=await f.connect('owner');
@@ -762,9 +762,8 @@ test('control generations fence writes, Agent preempts a human, and only control
     await assert.rejects(b.call('annotation-overlay',{type:'clear'},one.token),{code:'CONTROL_LOST'});
     await a.call('annotation-overlay',{type:'boxes',boxes:[]},one.token);
     assert.equal(f.service.commands.at(-1).control,one.token);
-    const preempted=await b.call('control',{action:'agent'}); assert.equal(preempted.kind,'agent');
-    assert.notEqual(preempted.token,one.token);
-    await a.call('control',{action:'release',token:one.token}); assert.equal(page.controlToken,preempted.token);
+    await assert.rejects(b.call('control',{action:'agent'}),{code:'CONTROL_BUSY'});
+    assert.equal(page.controlToken,one.token);
     const two=await b.call('control',{action:'human',takeover:true}); assert(two.epoch>one.epoch); assert.notEqual(two.token,one.token);
     await assert.rejects(a.call('navigate',{url:'https://example.test/stale'},one.token),{code:'CONTROL_LOST'});
     await a.call('control',{action:'release',token:one.token}); assert.equal(page.controlToken,two.token,'late release cannot revoke new controller');

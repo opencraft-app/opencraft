@@ -520,10 +520,9 @@ export class RemoteBrowserService {
       const release = input.action === 'release';
       if (release && (page.controller !== participant || input.token !== page.controlToken)) return this.controlState(page, participant);
       if (!release && page.controller === participant && page.controlKind === input.action) return this.controlState(page, participant);
-      // Agent work automatically retires human input. Another Agent keeps its
-      // admitted operation until completion; do not make concurrent agents fight.
-      const agentTakesHuman = input.action === 'agent' && page.controlKind === 'human';
-      if (!release && page.controller && !agentTakesHuman && (input.action === 'agent' || input.takeover !== true))
+      // Agent admission never overrides a live human controller. A human may
+      // explicitly take over; concurrent Agent work keeps its own control fence.
+      if (!release && page.controller && (input.action === 'agent' || input.takeover !== true))
         throw Object.assign(new Error('Browser is controlled by another operation'), { code: 'CONTROL_BUSY', retryable: true });
       const previousToken = page.controlToken;
       page.controller = null; page.controlToken = null; page.controlKind = null;
