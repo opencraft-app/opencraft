@@ -142,53 +142,53 @@
       (ok ? '<form class="say" data-do="say"><input id="say" autocomplete="off" enterkeyhint="send" placeholder="对' + esc(p.name) + '说要办什么" aria-label="对' + esc(p.name) + '说"><button class="btn ok">发送</button></form>'
         : '<p class="say cap">你现在不能联系' + esc(p.name) + '。在你的通讯录里添加他就可以。<button class="lk"' + link(person('me')) + '>打开你的通讯录</button></p>'); }
 
-  /* 点一个员工，整屏切进他的手机。底部是他手机自己的标签：消息（在联系谁）、通讯录（能联系谁）、电脑（在做什么、能做什么）、我（岗位）。
+  /* 点一个员工，整屏切进他的手机。进去只管两件事，底部两个标签：通讯录（管理他的通讯录，在联系谁也在这里）、电脑（管理他的电脑）。
      手机里再点进去的聊天、联系人、添加联系人都是一层层推进去的整页；最外一层返回就退出他的手机。顶栏是他的颜色，一眼看出在操作谁的手机。 */
-  var PTABS = [['chats', '消息', '<path d="M12 4.500c-4.700 0-8.500 3.100-8.500 7 0 2.200 1.200 4.100 3.100 5.400L6 20l3.400-1.600c.8.200 1.700.300 2.600.300 4.700 0 8.500-3.100 8.500-7s-3.800-7.200-8.500-7.200z"/>'], ['contacts', '通讯录', '<circle cx="9" cy="9" r="3.200"/><path d="M3.500 19c.6-3 2.800-4.800 5.500-4.800s4.900 1.800 5.500 4.800M16 6.500a2.800 2.800 0 0 1 0 5.400M17.500 14.600c1.600.7 2.700 2.200 3 4.400"/>'], ['pc', '电脑', '<rect x="3.500" y="4.500" width="17" height="11.500" rx="1.800"/><path d="M8.500 20h7M12 16v4"/>'], ['me', '我', '<circle cx="12" cy="8.500" r="3.500"/><path d="M5 20c.8-3.600 3.600-5.500 7-5.500s6.200 1.900 7 5.500"/>']];
+  var PTABS = [['contacts', '通讯录', '<circle cx="9" cy="9" r="3.200"/><path d="M3.500 19c.6-3 2.800-4.800 5.500-4.800s4.900 1.800 5.500 4.800M16 6.500a2.800 2.800 0 0 1 0 5.400M17.500 14.600c1.600.7 2.700 2.200 3 4.400"/>'], ['pc', '电脑', '<rect x="3.500" y="4.500" width="17" height="11.500" rx="1.800"/><path d="M8.500 20h7M12 16v4"/>']];
+  var ICHAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4.500c-4.700 0-8.500 3.100-8.500 7 0 2.200 1.200 4.100 3.100 5.400L6 20l3.400-1.600c.8.200 1.700.300 2.600.300 4.700 0 8.500-3.100 8.500-7s-3.800-7.200-8.500-7.200z"/></svg>';
   function tint(id) { var p = P(id); return p && p.kind === 'bot' ? AVC[(p.look || 0) % AVC.length] : AVC[0]; }
   function phoneTop(p, title, right) {
     return '<header class="phtop" style="--tint:' + tint(p.id) + '"><button class="back" data-do="back" aria-label="返回">' + ICON.back + '</button><span class="phwho">' + av(p.id) + '<span><i>' + esc(p.id === 'me' ? '你的手机' : p.name + '的手机') + '</i><b>' + esc(title) + '</b></span></span><span class="r">' + (right || '') + '</span></header>';
   }
   function phone(p, page) {
-    var self = p.id === 'me', tab = self ? 'contacts' : page.tab || 'chats', title = { chats: '消息', contacts: '通讯录', pc: '电脑', me: '我' }[tab];
-    var right = tab === 'contacts' ? '<button class="ic" aria-label="添加联系人"' + link({ k: 'padd', id: p.id }) + '>' + ICON.plus + '</button>' : '';
-    return '<div class="phone">' + phoneTop(p, title, right) + ({ chats: pChats, contacts: pContacts, pc: pPc, me: pMe })[tab](p) +
+    var self = p.id === 'me', tab = self ? 'contacts' : page.tab === 'pc' ? 'pc' : 'contacts', title = tab === 'pc' ? '电脑' : '通讯录';
+    var right = (tab === 'contacts' ? '<button class="ic" aria-label="添加联系人"' + link({ k: 'padd', id: p.id }) + '>' + ICON.plus + '</button>' : '') +
+      (!self && canTalk('me', p.id) ? '<button class="ic" aria-label="给他发消息"' + link({ k: 'chat', id: p.id }) + '>' + ICHAT + '</button>' : '');
+    return '<div class="phone">' + phoneTop(p, title, right) + (tab === 'pc' ? pPc(p) : pContacts(p)) +
       (self ? '' : '<nav class="phtabs" style="--tint:' + tint(p.id) + '" aria-label="' + esc(p.name) + '的手机">' + PTABS.map(function (t) { return '<button data-tab="' + t[0] + '" aria-current="' + (tab === t[0] ? 'page' : 'false') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + t[2] + '</svg>' + t[1] + '</button>'; }).join('') + '</nav>') + '</div>';
   }
   function who(x) { return x.kind === 'outside' ? '公司外' : x.kind === 'human' ? '老板' : esc(x.role || ''); }
   /* 消息：他在联系谁，只读 */
-  function pChats(p) { var ps = partners(p.id);
-    return '<div class="body list">' + (ps.length ? ps.map(function (j) { var l = thread(p.id, j).pop(); return cell({ k: 'pchat', id: p.id, w: j }, j, esc(N(j)) + (P(j).kind === 'outside' ? '<em>公司外</em>' : ''), esc((l.who === p.id && !l.sys ? '他：' : '') + l.text), hhmm(l.ts)); }).join('') + '<p class="foot">他手机里的消息，只能看，不能替他回。</p>' : '<p class="empty">他手机里还没有消息。</p>') + '</div>'; }
-  /* 通讯录：他能联系谁。通讯录里有谁，他就能联系谁 */
   function pool(p) { return db.people.filter(function (x) { return x.id !== p.id && !(p.kind === 'human' && x.kind === 'outside'); }); }
-  function pContacts(p) { var he = p.id === 'me' ? '你' : '他', list = pool(p).filter(function (x) { return canTalk(p.id, x.id); });
-    return '<div class="body list"><p class="count">' + list.length + ' 位联系人</p>' + (list.length ? list.map(function (x) { return cell({ k: 'pcard', id: p.id, w: x.id }, x.id, esc(x.name), who(x)); }).join('') : '<p class="empty">通讯录是空的。点右上角 ⊕ 添加联系人。</p>') +
-      '<p class="foot">' + he + '的通讯录里有谁，' + he + '就能联系谁。这是单向的：' + he + '能联系对方，不代表对方能联系' + he + '。' + (p.id === 'me' ? '你和谁聊过，在「消息」里。' : '') + '</p></div>'; }
-  /* 电脑：在做什么、做过的改动（看），用哪台电脑、能用的账号（设） */
+  /* 通讯录：他能联系谁，按最近聊天排在前面；在联系谁就是每个人下面那句最后的话 */
+  function pContacts(p) {
+    var he = p.id === 'me' ? '你' : '他', last = function (j) { var l = thread(p.id, j).pop(); return l ? l.ts : 0; };
+    var list = pool(p).filter(function (x) { return canTalk(p.id, x.id); }).sort(function (a, b) { return last(b.id) - last(a.id); }),
+      gone = partners(p.id).filter(function (j) { return P(j) && !canTalk(p.id, j); });
+    function row(x) { var l = thread(p.id, x.id).pop(); return cell({ k: 'pcard', id: p.id, w: x.id }, x.id, esc(x.name) + (x.kind === 'outside' ? '<em>公司外</em>' : ''), l ? esc((l.who === p.id && !l.sys ? he + '：' : '') + l.text) : '<span class="quiet">还没聊过 · ' + who(x) + '</span>', l ? hhmm(l.ts) : ''); }
+    return '<div class="body list"><p class="count">' + list.length + ' 位联系人' + (list.length ? '，最近聊过的在前' : '') + '</p>' + (list.length ? list.map(row).join('') : '<p class="empty">通讯录是空的。点右上角 ⊕ 添加联系人。</p>') +
+      (gone.length ? '<p class="count">聊过，但不在通讯录里了</p>' + gone.map(function (j) { return row(P(j)); }).join('') : '') +
+      '<p class="foot">' + he + '的通讯录里有谁，' + he + '就能联系谁。这是单向的：' + he + '能联系对方，不代表对方能联系' + he + '。</p></div>';
+  }
   function pPc(p) {
     var w = running(p.id), envT = T(p.env), list = db.changes.filter(function (e) { return e.who === p.id; }).sort(function (a, b) { return b.ts - a.ts; });
     var envs = db.tools.filter(function (t) { return t.kind !== 'account'; }), accs = db.tools.filter(function (t) { return t.kind === 'account'; });
     return '<div class="body">' +
       sec('在做什么', w ? '<div class="doing"><i></i>' + esc(w.text) + '</div><p class="cap">' + esc(ago(w.ts)) + '开始' + (envT ? '，在' + esc(envT.name) + '上' : '') + '</p><div class="inl"><button class="btn danger" data-do="stop" data-id="' + w.id + '" data-confirm="再点一次，让他停下">让他停下</button></div>' : none(envT ? '他现在没在做事。' : '他还没有电脑，现在只能发消息。')) +
       sec('做过的改动', list.length ? list.map(function (e) { return '<div class="fxrow"><time>' + hhmm(e.ts) + '</time>' + changeCard(e) + '</div>'; }).join('') : none('他还没有在外面做过什么。'), list.length ? '他用工具在外面做的事。做了就是做了，不能撤回。' : '') +
+      '<form data-do="role">' + sec('岗位', '<label class="fld"><span>名字</span><input id="rname" value="' + esc(p.name) + '" autocomplete="off"></label><label class="fld"><span>岗位</span><input id="rrole" value="' + esc(p.role) + '" autocomplete="off" placeholder="例如：项目交付"></label><label class="fld col"><span>做事说明</span><textarea id="rhowto" rows="4" aria-label="做事说明" placeholder="告诉他这个岗位该怎么做事">' + esc(p.howto) + '</textarea></label><div class="inl"><button class="btn ok">保存</button></div>', '他按这个做事。') + '</form>' +
       sec('他用哪台电脑', '<label class="fld"><span>用</span><select data-sw="env"><option value="">没有</option>' + ['pc', 'cloud'].map(function (k) { return '<optgroup label="' + ENV[k] + '">' + envs.filter(function (t) { return t.kind === k; }).map(function (t) { return '<option value="' + t.id + '"' + (p.env === t.id ? ' selected' : '') + '>' + esc(t.name) + '</option>'; }).join('') + '</optgroup>'; }).join('') + '</select></label>' +
         '<form class="inl" data-do="tool" data-k="env"><select aria-label="哪种"><option value="pc">电脑</option><option value="cloud">云环境</option></select><input autocomplete="off" placeholder="添加一个新的给他" aria-label="名字"><button class="btn">添加</button></form>', '他在哪儿干活：一台电脑，或者一个云环境。') +
       sec('他能用的账号', (accs.length ? '<div class="chips">' + accs.map(function (t) { return '<label class="chip ck"><input type="checkbox" data-sw="acc" data-id="' + t.id + '"' + (p.accounts.indexOf(t.id) >= 0 ? ' checked' : '') + '>' + esc(t.name) + '</label>'; }).join('') + '</div>' : '') +
-        '<form class="inl" data-do="tool" data-k="account"><input autocomplete="off" placeholder="添加一个账号给他，例如：飞书" aria-label="账号名"><button class="btn">添加</button></form>', '飞书、邮箱、网盘这些。') + '</div>';
+        '<form class="inl" data-do="tool" data-k="account"><input autocomplete="off" placeholder="添加一个账号给他，例如：飞书" aria-label="账号名"><button class="btn">添加</button></form>', '飞书、邮箱、网盘这些。') + '<button type="button" class="lrow danger" data-do="drop" data-confirm="再点一次，确定让他离开">让他离开</button></div>';
   }
   /* 我：他是谁、做事说明 */
-  function pMe(p) {
-    return '<form class="body" data-do="role"><div class="hero">' + av(p.id) + '<b>' + esc(p.name) + '</b><span>' + esc(p.role || '未填岗位') + '</span></div>' +
-      '<div class="links">' + (canTalk('me', p.id) || thread('me', p.id).length ? '<button type="button" class="lrow"' + link({ k: 'chat', id: p.id }) + '>' + (canTalk('me', p.id) ? '给他发消息' : '看你们以前的对话') + '</button>' : '') + '<button type="button" class="lrow" data-do="see" data-id="' + p.id + '">在办公室里看他</button></div>' +
-      sec('他是谁', '<label class="fld"><span>名字</span><input id="rname" value="' + esc(p.name) + '" autocomplete="off"></label><label class="fld"><span>岗位</span><input id="rrole" value="' + esc(p.role) + '" autocomplete="off" placeholder="例如：项目交付"></label>') +
-      sec('做事说明', '<label class="fld col"><textarea id="rhowto" rows="5" aria-label="做事说明" placeholder="告诉他这个岗位该怎么做事">' + esc(p.howto) + '</textarea></label>') +
-      '<div class="acts"><button class="btn ok wide">保存</button></div><button type="button" class="lrow danger" data-do="drop" data-confirm="再点一次，确定让他离开">让他离开</button></form>';
-  }
-  /* 手机里推进去的整页 */
-  function pChat(p, w) { return '<div class="phone">' + phoneTop(p, N(w)) + '<div class="body chat" id="chat">' + bubbles(thread(p.id, w), p.id) + '</div><p class="say cap">这是' + esc(p.name) + '手机上的聊天记录，只能看，不能替他回。</p></div>'; }
-  function pCard(p, w) { var x = P(w), he = p.id === 'me' ? '你' : '他', inside = canTalk(p.id, w);
-    return '<div class="phone">' + phoneTop(p, '联系人') + '<div class="body"><div class="contact">' + av(w) + '<b>' + esc(x.name) + '</b><span>' + who(x) + '</span>' +
-      (inside ? '<p>' + esc(x.name) + '在' + he + '的通讯录里，' + he + '能联系' + (w === 'me' ? '你' : '对方') + '。</p><button class="btn danger wide" data-do="phdel" data-id="' + w + '">删除联系人</button>' : '<p>' + esc(x.name) + '不在' + he + '的通讯录里。</p><button class="btn ok wide" data-do="phadd" data-id="' + w + '">添加到通讯录</button>') + '</div></div></div>'; }
+  /* 联系人：你们俩的聊天记录（只读），底下管他在不在通讯录里 */
+  function pCard(p, w) { var x = P(w), he = p.id === 'me' ? '你' : '他', inside = canTalk(p.id, w), tr = thread(p.id, w);
+    return '<div class="phone">' + phoneTop(p, x.name) + '<div class="body chat" id="chat"><div class="mini">' + av(w) + '<span><b>' + esc(x.name) + '</b><i>' + who(x) + ' · ' + (inside ? '在' + he + '的通讯录里' : '不在' + he + '的通讯录里') + '</i></span></div>' +
+      (tr.length ? bubbles(tr, p.id) : '<p class="when">还没聊过</p>') + '</div>' +
+      '<div class="say act">' + (p.id === 'me' && inside ? '<button class="btn ok"' + link({ k: 'chat', id: w }) + '>发消息</button>' : '') + (inside ? '<button class="btn danger" data-do="phdel" data-id="' + w + '">删除联系人</button>' : '<button class="btn ok" data-do="phadd" data-id="' + w + '">添加到通讯录</button>') + '</div>' +
+      (p.id === 'me' ? '' : '<p class="say cap">聊天记录只能看，不能替他回。</p>') + '</div>'; }
   function pAdd(p) { var he = p.id === 'me' ? '你' : '他', list = pool(p).filter(function (x) { return !canTalk(p.id, x.id); });
     return '<div class="phone">' + phoneTop(p, '添加联系人') + '<div class="body list">' + (list.length ? list.map(function (x) { return '<div class="cell">' + av(x.id) + '<span class="t"><b>' + esc(x.name) + '</b><span>' + who(x) + '</span></span><button class="btn ok sm" data-do="phadd" data-id="' + x.id + '">添加</button></div>'; }).join('') : '<p class="empty">公司里的人都已经在' + he + '的通讯录里了。</p>') + '</div></div>'; }
   function outside(o) { return nav('') + '<div class="who">' + av(o.id) + '<span class="t"><b>' + esc(o.name) + '</b><span>公司外的人</span></span></div>' + outsideBody(o); }
@@ -212,7 +212,7 @@
     var t = top(), view = $('view'), b = view.querySelector('.pane.r .body') || view.querySelector('.body'), keep = b ? b.scrollTop : 0, key = JSON.stringify(t || ui.tab), same = view.getAttribute('data-key') === key;
     if (t && t.k === 'chat') markRead(t.id);
     while (t && ((t.id && !P(t.id)) || (t.w && !P(t.w)))) { ui.stack.pop(); t = top(); }
-    var tp = t && P(t.id), office = !t && ui.tab === 'office', page = !t ? '' : t.k === 'chat' ? chat(tp) : t.k === 'person' ? (tp.kind === 'outside' ? outside(tp) : phone(tp, t)) : t.k === 'pchat' ? pChat(tp, t.w) : t.k === 'pcard' ? pCard(tp, t.w) : t.k === 'padd' ? pAdd(tp) : t.k === 'newout' ? newOut() : recruit(), root = ui.tab === 'chats' ? chats() : ui.tab === 'people' ? people() : '';
+    var tp = t && P(t.id), office = !t && ui.tab === 'office', page = !t ? '' : t.k === 'chat' ? chat(tp) : t.k === 'person' ? (tp.kind === 'outside' ? outside(tp) : phone(tp, t)) : t.k === 'pcard' ? pCard(tp, t.w) : t.k === 'padd' ? pAdd(tp) : t.k === 'newout' ? newOut() : recruit(), root = ui.tab === 'chats' ? chats() : ui.tab === 'people' ? people() : '';
     view.classList.toggle('split', wide());
     view.innerHTML = wide() ? '<div class="pane l">' + root + '</div><div class="pane r">' + (page || '<p class="blank">选一个人</p>') + '</div>' : t ? page : root;
     if (wide() && t) Array.prototype.forEach.call(view.querySelectorAll('.pane.l [data-go]'), function (el) { var g = JSON.parse(el.getAttribute('data-go')); el.classList.toggle('on', !!g.id && g.id === t.id); });
@@ -228,8 +228,8 @@
     tab: function (el) { ui.tab = el.getAttribute('data-id'); ui.stack = []; draw(); },
     back: function () { ui.stack.pop(); draw(); },
     see: function (el) { ui.stack = []; ui.tab = 'office'; draw(); pick(el.getAttribute('data-id')); },
-    phadd: function (el) { var p = cur(); if (!p) return; setGrant(p.id, el.getAttribute('data-id'), 'talk', true); if (top().k === 'pcard') ui.stack.pop(); changed(); },
-    phdel: function (el) { var p = cur(); if (!p) return; setGrant(p.id, el.getAttribute('data-id'), 'talk', false); ui.stack.pop(); changed(); },
+    phadd: function (el) { var p = cur(); if (!p) return; setGrant(p.id, el.getAttribute('data-id'), 'talk', true); changed(); },
+    phdel: function (el) { var p = cur(); if (!p) return; setGrant(p.id, el.getAttribute('data-id'), 'talk', false); changed(); },
     say: function () { var v = $('say').value.trim(), p = cur(); if (!v || !p || !canTalk('me', p.id)) return; db.msgs.push({ id: uid('m'), ts: Date.now(), who: 'me', to: p.id, text: v }); changed(); $('say').focus(); },
     stop: function (el) { var w = db.work.filter(function (x) { return x.id === el.getAttribute('data-id'); })[0], p = cur(); if (!w || !p) return; w.state = 'stopped'; db.msgs.push({ id: uid('m'), ts: Date.now(), who: 'me', to: w.who, sys: true, text: '你让' + N(w.who) + '停下了：' + w.text + '。已经做了的改动还在。' }); changed(); },
     tool: function (f) { var p = cur(), v = f.querySelector('input').value.trim(), k = f.getAttribute('data-k'); if (!v || !p) return; var kind = k === 'env' ? f.querySelector('select').value : 'account', t = { id: uid('t'), kind: kind, name: v }; db.tools.push(t); if (k === 'env') p.env = t.id; else p.accounts.push(t.id); changed(); },
