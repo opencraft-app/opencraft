@@ -94,6 +94,11 @@ export const SERVER_MIGRATIONS = [
     "version": 19,
     "name": "0018_native_group_lifecycle",
     "sql": "CREATE TABLE `actor_channel_departures` (\n\t`channel_id` text NOT NULL,\n\t`actor_id` text NOT NULL,\n\t`member_epoch` text NOT NULL,\n\t`left_at` integer NOT NULL,\n\tPRIMARY KEY(`channel_id`, `actor_id`),\n\tFOREIGN KEY (`channel_id`) REFERENCES `actor_channels`(`id`) ON UPDATE no action ON DELETE no action\n) STRICT;\n--> statement-breakpoint\nCREATE TABLE `actor_channel_lifecycles` (\n\t`channel_id` text PRIMARY KEY NOT NULL,\n\t`revision` integer DEFAULT 1 NOT NULL,\n\t`dissolved_at` integer,\n\t`dissolved_by` text,\n\tFOREIGN KEY (`channel_id`) REFERENCES `actor_channels`(`id`) ON UPDATE no action ON DELETE no action,\n\tCONSTRAINT \"actor_channel_lifecycles_revision\" CHECK(\"actor_channel_lifecycles\".\"revision\" >= 1)\n) STRICT;\n--> statement-breakpoint\nCREATE TABLE `actor_channel_list_states` (\n\t`channel_id` text NOT NULL,\n\t`actor_id` text NOT NULL,\n\t`hidden` integer DEFAULT 0 NOT NULL,\n\tPRIMARY KEY(`channel_id`, `actor_id`),\n\tFOREIGN KEY (`channel_id`) REFERENCES `actor_channels`(`id`) ON UPDATE no action ON DELETE no action,\n\tCONSTRAINT \"actor_channel_list_hidden\" CHECK(\"actor_channel_list_states\".\"hidden\" IN (0,1))\n) STRICT;\n"
+  },
+  {
+    "version": 20,
+    "name": "0019_space_open_contact",
+    "sql": "ALTER TABLE `collaboration_spaces` ADD `open_contact` integer DEFAULT 0 NOT NULL;"
   }
 ] as const;
 export const SERVER_ALTERNATE_MIGRATIONS = [
@@ -194,9 +199,14 @@ export const SERVER_ALTERNATE_MIGRATIONS = [
         "version": 19,
         "name": "converge_0018_native_group_lifecycle",
         "sql": SERVER_MIGRATIONS[18].sql
+      },
+      {
+        "version": 20,
+        "name": "converge_0019_space_open_contact",
+        "sql": SERVER_MIGRATIONS[19].sql
       }
     ]
   }
 ] as const;
-export const SERVER_MIGRATION_CONTRACT_HASH = "e8d9070f6e6d9dc974c3e8fb7f750a676af95756b8e43125c44437a75dfa7cc6" as const;
+export const SERVER_MIGRATION_CONTRACT_HASH = "5ed24e8ebd277de2b5a77bf3755306c1f7fe4d6f397703ec6609de1d64b4d333" as const;
 export const OPENCRAFT_VERSION = "0.1.0" as const;

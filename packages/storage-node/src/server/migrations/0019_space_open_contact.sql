@@ -1,0 +1,1 @@
+ALTER TABLE `collaboration_spaces` ADD `open_contact` integer DEFAULT 0 NOT NULL;

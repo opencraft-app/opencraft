@@ -1,3 +1,4 @@
+import { CrewContact } from './crew-contact.js';
 import type { InputCompletion } from "@opencraft/appserver-protocol";
 import { ReceiptReconciliation } from './receipt-reconciliation.js';
 import { ConversationFailureDiagnostics } from './conversation-failure-diagnostics.mjs';
@@ -125,6 +126,8 @@ export class Collaboration {
   // Timer pumps re-read an unchanged receipt with backoff: "queued" 500 ms -> 5 s, "unknown"
   // (awaits human review) 500 ms -> 30 s. A paused queue head or an unconfirmed handoff otherwise
   // costs one engine logical client every 500 ms for as long as it stays.
+  /** Crew contact rules over spaces and phonebook grants; it decides, it does not own either. */
+  readonly crew: CrewContact;
   readonly #receiptPacing = new Map<string, { key: string; unchanged: number; dueAt: number }>();
   #operations: Promise<unknown> = Promise.resolve();
   #timer: ReturnType<typeof setInterval> | null = null;
@@ -136,8 +139,9 @@ export class Collaboration {
     this.#closeDatabase = managed.close;
     this.database = managed.database; this.outcome = managed.outcome;
     this.orchestration = new ThreadOrchestrationLedger(this.database, now);
+    this.crew = new CrewContact(this.database, actors);
     this.channels = new NativeChannels(this.database, actors, actorId => !this.#closed && admittedActor(actorId),
-      (c,target)=>new PersonalAssistants(this,this.database).canMessage(c,target));
+      (c,target)=>this.#allows(c,target,'message.send'));
     this.channels.groupDisplayTitle = id => communicationExtension()?.groupDisplayTitle?.(this,this.database,id) ?? null;
     this.channels.avatarForSender = (subject,scope) => communicationExtension()?.avatar?.(this,this.database,subject,scope) ?? null;
     this.channels.humanForExternalSender = (subject,scope) => communicationExtension()?.senderHuman?.(this,this.database,subject,scope) ?? null;
@@ -186,8 +190,14 @@ export class Collaboration {
   }
   #request(id: string): Row | null { return this.database.prepare('SELECT * FROM actor_execution_requests WHERE id=?').get(id) ?? null; }
   #message(id: string): Row | null { return this.database.prepare('SELECT * FROM actor_messages WHERE id=?').get(id) ?? null; }
+  /** Crew rules decide first; outside them the exact grant (or a personal assistant pair) applies. */
+  #allows(context: ActorContext, target: string, action: string): boolean {
+    const crew = this.crew.decide(context, target, action);
+    if (crew !== null) return crew;
+    return this.actors.can(context, target, action) || (action === 'message.send' && new PersonalAssistants(this,this.database).canMessage(context,target));
+  }
   #require(context: ActorContext, target: string, action: string) {
-    if (this.#closed || !this.actors.isCurrent(context) || !this.actors.get(target)?.enabled || !(this.actors.can(context, target, action) || (action === 'message.send' && new PersonalAssistants(this,this.database).canMessage(context,target)))) throw new CollaborationError(403, 'actor_action_denied');
+    if (this.#closed || !this.actors.isCurrent(context) || !this.actors.get(target)?.enabled || !this.#allows(context, target, action)) throw new CollaborationError(403, 'actor_action_denied');
   }
   #createRequest(context: ActorContext, target: string, messageIds: string[], execution: unknown): string {
     const intent = record(execution); fields(intent, ['mode', 'expectedTurnId']);

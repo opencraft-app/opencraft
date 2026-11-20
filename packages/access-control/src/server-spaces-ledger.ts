@@ -14,7 +14,7 @@ const deny = () => { throw new ServerSpaceError('unavailable'); };
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 const valid = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 4096;
 export interface SpaceProjection {
-  spaces: {id:string;name:string;ownerActorId:string;createdAt:number}[];
+  spaces: {id:string;name:string;ownerActorId:string;createdAt:number;openContact:boolean}[];
   members: {spaceId:string;actorId:string;role:'owner'|'member'}[];
   assignments: {engineServerId:string;threadId:string;spaceId:string}[];
 }
@@ -41,7 +41,8 @@ export class ServerSpacesLedger {
     const actor = this.db.prepare('SELECT * FROM actors WHERE id=?').get(ownerActorId);
     if (!actor || actor.kind !== 'human' || actor.enabled !== 1) deny();
     sqliteTransaction(this.db, () => {
-      this.db.prepare("INSERT INTO collaboration_spaces VALUES('myself','myself',?,?)").run(ownerActorId,this.now());
+      // The historical default space keeps per-target grants; only new spaces open contact by default.
+      this.db.prepare("INSERT INTO collaboration_spaces(id,name,owner_actor_id,created_at,open_contact) VALUES('myself','myself',?,?,0)").run(ownerActorId,this.now());
       const insert = this.db.prepare("INSERT OR IGNORE INTO collaboration_space_members VALUES('myself',?,?,?)");
       insert.run(ownerActorId,'owner',this.now());
       this.db.prepare("INSERT OR IGNORE INTO collaboration_space_threads SELECT server_id,thread_id,'myself' FROM thread_access").run();
@@ -53,7 +54,8 @@ export class ServerSpacesLedger {
   }
   projection(): SpaceProjection {
     return {
-      spaces: this.db.prepare('SELECT id,name,owner_actor_id AS ownerActorId,created_at AS createdAt FROM collaboration_spaces ORDER BY created_at,id').all() as unknown as SpaceProjection['spaces'],
+      spaces: this.db.prepare('SELECT id,name,owner_actor_id AS ownerActorId,created_at AS createdAt,open_contact AS openContact FROM collaboration_spaces ORDER BY created_at,id').all()
+        .map(row=>({...row,openContact:row.openContact===1})) as unknown as SpaceProjection['spaces'],
       members: this.db.prepare('SELECT space_id AS spaceId,actor_id AS actorId,role FROM collaboration_space_members').all() as unknown as SpaceProjection['members'],
       assignments: this.db.prepare('SELECT engine_server_id AS engineServerId,thread_id AS threadId,space_id AS spaceId FROM collaboration_space_threads').all() as unknown as SpaceProjection['assignments'],
     };
@@ -62,12 +64,12 @@ export class ServerSpacesLedger {
     this.actor(context); const projection = this.projection();
     const memberships = new Map(projection.members.filter(m => m.actorId === context.actorId).map(m => [m.spaceId,m.role]));
     return {actorId:context.actorId, spaces:projection.spaces.filter(s => memberships.has(s.id)).map(s => ({id:s.id,name:s.name,
-      role:memberships.get(s.id)!,memberCount:projection.members.filter(m => m.spaceId === s.id).length})),
+      role:memberships.get(s.id)!,memberCount:projection.members.filter(m => m.spaceId === s.id).length,openContact:s.openContact})),
       assignments:projection.assignments.filter(a => memberships.has(a.spaceId))};
   }
   members(context: ActorContext, spaceId: string): ServerSpaceMember[] {
     this.member(spaceId,context);
-    return this.db.prepare(`SELECT m.actor_id AS actorId,a.display_name AS displayName,m.role FROM collaboration_space_members m
+    return this.db.prepare(`SELECT m.actor_id AS actorId,a.display_name AS displayName,m.role,a.kind FROM collaboration_space_members m
       JOIN actors a ON a.id=m.actor_id WHERE m.space_id=? ORDER BY m.joined_at,m.actor_id`).all(spaceId) as unknown as ServerSpaceMember[];
   }
   adoptLegacy(context:ActorContext,engineServerId:string,threads:readonly {id:string;createdAt:number}[]) {
@@ -110,7 +112,8 @@ export class ServerSpacesLedger {
   command(context: ActorContext, input: ServerSpaceCommand): unknown {
     this.actor(context);
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ServerSpaceError('invalid', -32602);
-    const fields:Record<string,readonly string[]>={list:['action'],create:['action','name'],select:['action','spaceId'],members:['action','spaceId'],invite:['action','spaceId'],join:['action','code'],remove:['action','spaceId','actorId']};
+    const fields:Record<string,readonly string[]>={list:['action'],create:['action','name'],select:['action','spaceId'],members:['action','spaceId'],invite:['action','spaceId'],join:['action','code'],remove:['action','spaceId','actorId'],
+      contact:['action','spaceId','open'],addBot:['action','spaceId','actorId']};
     if(!fields[input.action]||Object.keys(input).some(key=>!fields[input.action]!.includes(key)))throw new ServerSpaceError('invalid',-32602);
     switch (input.action) {
       case 'list': return this.directory(context);
@@ -121,7 +124,7 @@ export class ServerSpacesLedger {
         if (Number(this.db.prepare('SELECT COUNT(*) AS n FROM collaboration_spaces WHERE owner_actor_id=?').get(context.actorId)?.n) >= 100) throw new ServerSpaceError('invalid', -32602);
         const id = randomUUID();
         sqliteTransaction(this.db, () => {
-          this.db.prepare('INSERT INTO collaboration_spaces VALUES(?,?,?,?)').run(id,input.name.trim(),context.actorId,this.now());
+          this.db.prepare('INSERT INTO collaboration_spaces(id,name,owner_actor_id,created_at,open_contact) VALUES(?,?,?,?,1)').run(id,input.name.trim(),context.actorId,this.now());
           this.db.prepare("INSERT INTO collaboration_space_members VALUES(?,?,'owner',?)").run(id,context.actorId,this.now());
         });
         return {spaceId:id,directory:this.directory(context)};
@@ -147,6 +150,24 @@ export class ServerSpacesLedger {
           this.db.prepare('UPDATE collaboration_space_invitations SET used_by=? WHERE digest=?').run(context.actorId,digest(input.code));
           return {spaceId:String(row.space_id),directory:this.directory(context)};
         });
+      }
+      case 'contact': {
+        this.member(input.spaceId,context,true);
+        if (typeof input.open !== 'boolean') throw new ServerSpaceError('invalid', -32602);
+        this.db.prepare('UPDATE collaboration_spaces SET open_contact=? WHERE id=?').run(input.open ? 1 : 0,input.spaceId);
+        return this.directory(context);
+      }
+      case 'addBot': {
+        // A Bot joins as a peer member. It cannot accept an invitation, so the owner adds it,
+        // and it belongs to exactly one space so its phonebook has one boundary.
+        this.member(input.spaceId,context,true);
+        if (!valid(input.actorId)) throw new ServerSpaceError('invalid', -32602);
+        const bot = this.db.prepare('SELECT kind,enabled FROM actors WHERE id=?').get(input.actorId);
+        if (!bot || bot.kind !== 'session' || bot.enabled !== 1) throw new ServerSpaceError('invalid', -32602);
+        const elsewhere = this.db.prepare('SELECT space_id FROM collaboration_space_members WHERE actor_id=?').get(input.actorId);
+        if (elsewhere && elsewhere.space_id !== input.spaceId) deny();
+        this.db.prepare("INSERT OR IGNORE INTO collaboration_space_members VALUES(?,?,'member',?)").run(input.spaceId,input.actorId,this.now());
+        return {members:this.members(context,input.spaceId)};
       }
       case 'remove': {
         this.member(input.spaceId,context,true);

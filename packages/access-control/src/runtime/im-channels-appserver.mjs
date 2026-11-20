@@ -135,6 +135,11 @@ export class ImChannelsAppServer {
     }
     if (request.method.startsWith('opencraft/personal-assistant/'))
       return native.personalAssistant(actorContext,request.method,params);
+    // Crew phonebooks are grants over Actors, decided by the same native communication authority.
+    if (request.method.startsWith('opencraft/crew/')) {
+      if (!native) throw Error('channel_denied');
+      return native.communicate(actorContext,request.method,params);
+    }
     const nativeCommand = request.method.startsWith('opencraft/channels/')
       && !['opencraft/channels/subscribe','opencraft/channels/unsubscribe'].includes(request.method)
       && (params.channelId === undefined || nativeChannelId(params.channelId));

@@ -114,6 +114,12 @@
       "name": "0018_native_group_lifecycle",
       "checksum": "0c322591d0f760d46eb10adecad67adcebf8f9b504effebcbf9a28b6e48f6814",
       "snapshotChecksum": "b78f630e193dd3075a1c9683dc7f14d25dded18cccd988dbcb58e4a0dc8d6db7"
+    },
+    {
+      "version": 20,
+      "name": "0019_space_open_contact",
+      "checksum": "f24d3a7376e87f596d08ddfd11075bae3585e10ca5238bb376610d9759ae073d",
+      "snapshotChecksum": "563ec8b947cd8c542f5237ea1a2149f31f0094c987405023311ba64a10e8c145"
     }
   ],
   "alternates": [
@@ -281,6 +287,11 @@
           "version": 19,
           "name": "converge_0018_native_group_lifecycle",
           "checksum": "0c322591d0f760d46eb10adecad67adcebf8f9b504effebcbf9a28b6e48f6814"
+        },
+        {
+          "version": 20,
+          "name": "converge_0019_space_open_contact",
+          "checksum": "f24d3a7376e87f596d08ddfd11075bae3585e10ca5238bb376610d9759ae073d"
         }
       ]
     }

@@ -31,7 +31,8 @@ export class NativeChannels {
   readonly #listeners = new Set<(change: NativeChannelChange) => void>();
   constructor(private readonly db: DatabaseSync, private readonly actors: ActorStore,
     private readonly admitted: (actorId: string) => boolean,
-    private readonly personalCanSend: (c: ActorContext, target: string) => boolean = () => false) {}
+    /** The owner's complete direct-message decision; projections never re-derive it. */
+    private readonly canMessage: (c: ActorContext, target: string) => boolean = (c, target) => actors.can(c, target, 'message.send')) {}
 
   onChange(listener: (change: NativeChannelChange) => void) {
     this.#listeners.add(listener);
@@ -151,7 +152,7 @@ export class NativeChannels {
     const peer = this.actors.get(peerId);
     return { id: String(row.id), title: peer?.displayName ?? peerId, kind: 'direct',
       participants: peer ? [project(peer)] : [],
-      canSend: !!peer?.enabled && this.admitted(peerId) && (this.actors.can(context, peerId, 'message.send') || this.personalCanSend(context,peerId)) };
+      canSend: !!peer?.enabled && this.admitted(peerId) && this.canMessage(context, peerId) };
   }
 
   private peer(context: ActorContext, row: Row): string | null {
@@ -189,7 +190,7 @@ export class NativeChannels {
     return {people:rows.filter(r=>this.admitted(String(r.id))&&(!r.personal_owner_id||this.admitted(String(r.personal_owner_id)))).map(r=>{
       const avatar=this.avatar({actorId:String(r.id)},scope);
       return {actorId:String(r.id),displayName:String(r.display_name),kind:r.kind==='human'?'human' as const:'bot' as const,
-      ...(avatar?{avatar}:{}),canMessage:r.id!==context.actorId&&(this.actors.can(context,String(r.id),'message.send')||this.personalCanSend(context,String(r.id)))};}),
+      ...(avatar?{avatar}:{}),canMessage:r.id!==context.actorId&&this.canMessage(context,String(r.id))};}),
       next:rows.length===100?String(rows.at(-1)!.id):null};
   }
   inviteCandidates(context: ActorContext, query: string, channelId?: string): ChannelInviteCandidate[] {

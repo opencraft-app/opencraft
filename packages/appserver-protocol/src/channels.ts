@@ -130,6 +130,8 @@ export interface ChannelChanged {
 }
 
 export interface ChannelPerson { actorId: string; displayName: string; kind: 'human' | 'bot'; canMessage: boolean; avatar?: ChannelIdentityAvatar }
+/** Someone a space Bot may proactively reach (one-way); `session` entries are Bots. */
+export interface CrewPhonebookEntry { actorId: string; displayName: string; kind: 'human' | 'session' }
 export interface ChannelsMethodMap {
   'opencraft/channels/group/get': {params:{channelId:string};result:ChannelSummary};
   'opencraft/channels/group/list-state/set': {params:{channelId:string;hidden:boolean;clientRequestId:string};result:ChannelSummary};
@@ -150,6 +152,9 @@ export interface ChannelsMethodMap {
   "opencraft/channels/read": {params:{channelId:string;throughSequence:number};result:null};
   "opencraft/channels/list": { params: Record<string, never>; result: { groups: ChannelSummary[] } };
   "opencraft/channels/direct/open": { params: { actorId: string }; result: ChannelSummary };
+  /** Readable by members of the Bot's space; only the space owner edits it, with members of that space. */
+  "opencraft/crew/phonebook/list": { params: { botId: string }; result: { entries: CrewPhonebookEntry[] } };
+  "opencraft/crew/phonebook/set": { params: { botId: string; actorId: string; present: boolean }; result: { entries: CrewPhonebookEntry[] } };
   "opencraft/channels/group/create": {
     params: { title: string; memberActorIds: string[]; clientRequestId: string };
     result: ChannelSummary;

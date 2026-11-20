@@ -4,8 +4,11 @@ export const SERVER_SPACES_CHANGED = 'opencraft/server-spaces/changed';
 export const DEFAULT_SERVER_SPACE = 'myself';
 export interface ServerSpace {
   id: string; name: string; role: 'owner' | 'member'; memberCount: number;
+  /** Humans in this space may message any member without a per-target grant. */
+  openContact: boolean;
 }
-export interface ServerSpaceMember { actorId: string; displayName: string; role: 'owner' | 'member' }
+/** `session` members are Bots: peers of human members, added only by the space owner. */
+export interface ServerSpaceMember { actorId: string; displayName: string; role: 'owner' | 'member'; kind: 'human' | 'session' }
 export interface ServerSpaceDirectory {
   spaces: ServerSpace[];
   assignments: {engineServerId: string; threadId: string; spaceId: string}[];
@@ -18,4 +21,6 @@ export type ServerSpaceCommand =
   | { action: 'members'; spaceId: string }
   | { action: 'invite'; spaceId: string }
   | { action: 'join'; code: string }
-  | { action: 'remove'; spaceId: string; actorId: string };
+  | { action: 'remove'; spaceId: string; actorId: string }
+  | { action: 'contact'; spaceId: string; open: boolean }
+  | { action: 'addBot'; spaceId: string; actorId: string };

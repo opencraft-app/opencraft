@@ -687,6 +687,10 @@ export const actorHumanReservations = sqliteTable("actor_human_reservations", {
 export const collaborationSpaces = sqliteTable("collaboration_spaces", {
   id: text("id").primaryKey(), name: text("name").notNull(), ownerActorId: text("owner_actor_id").notNull(),
   createdAt: integer("created_at").notNull(),
+  // 1: Humans in this space may message any other member without a per-target grant.
+  // Existing rows (including the historical default space) keep the per-grant rule.
+  // Written only by ServerSpacesLedger as 0 or 1; a plain column keeps the upgrade an in-place ADD COLUMN.
+  openContact: integer("open_contact").notNull().default(0),
 });
 export const collaborationSpaceMembers = sqliteTable("collaboration_space_members", {
   spaceId: text("space_id").notNull(), actorId: text("actor_id").notNull(), role: text("role").notNull(),
