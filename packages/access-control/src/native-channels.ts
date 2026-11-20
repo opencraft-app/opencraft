@@ -315,7 +315,16 @@ export class NativeChannels {
   private authorName(messageId: string, row: Row): string {
     const stored = row.author_display_name;
     if (stored != null) {
-      return String(stored);
+      const name = String(stored);
+      const external = this.db.prepare('SELECT source,sender_id FROM actor_channel_external_messages WHERE message_id=?').get(messageId);
+      // Only an unresolved raw identity may borrow its verified human's current
+      // display name. A provider-resolved label remains immutable history.
+      if (external && external.sender_id === 'external:' + createHash('sha256').update(JSON.stringify([String(external.source), name])).digest('hex')) {
+        const id = this.linkedHuman({source: String(external.source), senderId: String(external.sender_id)}, new Map());
+        const actor = id ? this.actors.get(id) : null;
+        if (actor) return actor.displayName;
+      }
+      return name;
     }
     return String(this.actors.get(String(row.author_id))?.displayName ?? row.author_id);
   }
