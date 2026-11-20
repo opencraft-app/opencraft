@@ -1,0 +1,29 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "artifact-catalog",
+      "checksum": "fabf66789a75b443bdc31cd7d31108de15162999ec3de1bab4f33a6be4d02370"
+    }
+  ],
+  "tableOptions": {
+    "artifacts": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "artifact_references": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "artifact_ingestions": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "artifact_leases": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "dd8369ad0a08343d3ba545e2a1ced119cfa1fa9c6f2a5e8a2faca73dd33b7f4d",
+  "baselineSnapshotChecksum": "3ec23519d829a4d6d6632dd48d2cb5ff0f1ee5c616fe6fa0929b2fbb2734b1a2"
+}

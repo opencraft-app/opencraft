@@ -1,3 +1,4 @@
+import { accountFailure, classifyAccountFailure, logAccountFailure } from "./account-diagnostics.js";
 import type { AccountCredentialRefreshReason } from "./oauth-refresh.js";
 import { creditBalanceText } from "./store.js";
 import type {
@@ -128,8 +129,21 @@ export class CodexSubscriptionService {
   refreshAccount(accountId: string): Promise<void> {
     const existing = this.flights.get(accountId);
     if (existing !== undefined) return existing;
+    const startedAt = (this.options.now ?? Date.now)();
+    const lastSuccessAt = this.options.store.accountMaintenance(accountId)?.lastSuccessAt ?? null;
+    try { this.options.store.observeAccountMaintenance(accountId, { state: "checking", checkedAt: startedAt, lastSuccessAt }); }
+    catch { return Promise.reject(accountFailure("invalid-request", "operation", false)); }
     let operation!: Promise<void>;
-    operation = this.performRefresh(accountId).finally(() => {
+    operation = this.performRefresh(accountId).catch(error => {
+      const failure = classifyAccountFailure(error, "usage");
+      // A concurrent removal owns its tombstone; a late read must not revive it.
+      if (this.options.store.listAccounts().some(account => account.id === accountId)) {
+        this.options.store.observeAccountMaintenance(accountId, { state: "error", checkedAt: (this.options.now ?? Date.now)(),
+          lastSuccessAt: this.options.store.accountMaintenance(accountId)?.lastSuccessAt ?? lastSuccessAt, failure: failure.diagnostic });
+      }
+      logAccountFailure(failure, { accountId, operation: "refresh", durationMs: (this.options.now ?? Date.now)() - startedAt });
+      throw failure;
+    }).finally(() => {
       if (this.flights.get(accountId) === operation) this.flights.delete(accountId);
     });
     this.flights.set(accountId, operation);
@@ -148,16 +162,30 @@ export class CodexSubscriptionService {
     }
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      throw new Error(`Codex usage refresh failed (HTTP ${response.status})`);
+      throw accountFailure(response.status === 401 || response.status === 403 ? "authorization-rejected" : "upstream-unavailable",
+        "usage", response.status !== 401 && response.status !== 403, response.status);
+    }
+    if (this.options.store.readCredential(account.id).accessToken !== secret.accessToken) {
+      await response.body?.cancel().catch(() => undefined);
+      throw accountFailure("service-unavailable", "usage", true);
     }
     const now = (this.options.now ?? Date.now)();
-    const usage = parseCodexUsage(await response.json(), now);
+    let usage: ParsedCodexUsage;
+    try { usage = parseCodexUsage(await response.json(), now); }
+    catch { throw accountFailure("upstream-unavailable", "usage", true, response.status, "invalid-response"); }
     this.options.store.updateSubscriptionMetadata(account.id, {
       subscriptionType: usage.subscriptionType,
       resetCredits: usage.resetCreditCount === null ? null : { availableCount: usage.resetCreditCount, observedAt: now },
     });
     if (usage.limitWindows.length === 0) {
-      if (secret.external) this.options.store.clearExternalAuthorizationError(account.id);
+      // Preserve the existing managed-pool contract: an empty payload must not
+      // erase a previous authorization failure or retained quota facts.
+      if (secret.external || this.options.store.listAccountStates().find(state => state.accountId === account.id)?.error == null) {
+        this.options.store.clearAuthorizationError(account.id);
+      } else {
+        this.options.store.observeAccountMaintenance(account.id, { state: "unverified", checkedAt: now,
+          lastSuccessAt: this.options.store.accountMaintenance(account.id)?.lastSuccessAt ?? null });
+      }
       return;
     }
     const utilization = usage.limitWindows.reduce<number | null>(
@@ -173,6 +201,7 @@ export class CodexSubscriptionService {
       resetAt,
       limitWindows: usage.limitWindows,
     });
+    this.options.store.clearAuthorizationError(account.id);
   }
 
   private fetchUsage(account: AccountPoolAccount, secret: AccountPoolSecret): Promise<Response> {

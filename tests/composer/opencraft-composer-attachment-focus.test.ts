@@ -7,7 +7,7 @@ const sessionSource = readFileSync(new URL("../../packages/composer-editor/src/a
 const append = source.slice(source.indexOf("  const appendFiles ="), source.indexOf("  const openAttachmentPicker ="));
 
 test("attachment input restores editor focus synchronously, never on upload settlement", () => {
-  const asyncStart = append.indexOf("attachmentSession.addFiles(files, onResolveAttachment)");
+  const asyncStart = append.indexOf("attachmentSession.addFiles(files, onResolveAttachmentRef.current)");
   const asyncEnd = append.indexOf("// Focus belongs to the initiating interaction");
   assert.ok(asyncStart > 0 && asyncEnd > asyncStart);
   assert.doesNotMatch(append.slice(asyncStart, asyncEnd), /\.focus\(/);

@@ -13,7 +13,7 @@ export class DshOwnerHandoff {
   }
   open = () => this.authority.snapshot().phase === 'open' && this.authority.snapshot().persistence === 'ready';
   run = (operation, reconciliation = false) => this.authority.run(operation,reconciliation);
-  async load() { await this.authority.load();this.receipts = new DshConsumerReceipts(this.authorityDirectory); }
+  async load() { await this.authority.load();this.receipts = await DshConsumerReceipts.open(this.authorityDirectory); }
   beginReceipt = request => this.receipts.begin(request);
   acknowledgeReceipt = input => this.receipts.acknowledge(input);
   attach(host) { this.host = host; }

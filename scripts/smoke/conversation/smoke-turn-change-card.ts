@@ -98,7 +98,7 @@ try {
     assert.equal(await live.locator(".thread-turn-diff__digit > span").first().evaluate((node: Element) => getComputedStyle(node).transitionDuration), "0.2s");
     await page.emulateMedia({ reducedMotion: "reduce" });
     assert(parseFloat(await live.locator(".thread-turn-diff__digit > span").first().evaluate((node: Element) => getComputedStyle(node).transitionDuration)) <= 0.00001,
-      "reduced motion disables perceptible counter animation, including the global 0.01ms accessibility override");
+      "reduced motion disables counter transitions");
     await page.locator("#clear").click(); assert.equal(await page.locator(".thread-turn-diff-live").count(), 0);
     await page.locator("#clear").click();
     await page.mouse.move(0, 0);

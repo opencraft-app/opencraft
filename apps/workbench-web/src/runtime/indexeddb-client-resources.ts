@@ -1,3 +1,4 @@
+import { traceBrowserStorage } from "./browser-storage-diagnostics";
 import { REMOTE_RESOURCE_LIMIT, resourceKey, validateResourceRecord,
   type ClientResourceKey, type ClientResourceRecord, type ClientResourcePersistence } from "@opencraft/document-storage/client-resources";
 
@@ -24,22 +25,30 @@ export async function openIndexedDbClientResources(name: string, factory: IDBFac
       resolve(request.result);
     };
   });
-  function transaction<T>(mode: IDBTransactionMode, operation: (store: IDBObjectStore, result: (value: T) => void) => void): Promise<T> {
+  function transaction<T>(mode: IDBTransactionMode, method: string, domain: string | undefined,
+    operation: (store: IDBObjectStore, result: (value: T) => void, firstCallback: () => void) => void): Promise<T> {
     return new Promise((resolve, reject) => {
-      const tx = database.transaction("resources", mode);
+      const trace = traceBrowserStorage(method, "awaiting-first-callback", { mode, store: "resources",
+        domain: domain === "conversation-draft" ? "conversation-draft" : "other" });
+      let tx: IDBTransaction;
+      try { tx = database.transaction("resources", mode); }
+      catch (error) { trace?.finish("error"); throw error; }
       let value: T;
-      tx.oncomplete = () => resolve(value);
-      tx.onabort = tx.onerror = () => reject(tx.error ?? new Error("Client resource transaction failed"));
-      try { operation(tx.objectStore("resources"), result => { value = result; }); }
+      tx.oncomplete = () => { trace?.finish("complete"); resolve(value); };
+      const rejectTransaction = () => reject(tx.error ?? new Error("Client resource transaction failed"));
+      tx.onerror = () => { trace?.finish("error"); rejectTransaction(); };
+      tx.onabort = () => { trace?.finish("abort"); rejectTransaction(); };
+      try { operation(tx.objectStore("resources"), result => { value = result; }, () => trace?.phase("first-callback-delivered")); }
       catch (error) { tx.abort(); reject(error); }
     });
   }
   return {
     async read(key) {
       const identity = resourceKey(key);
-      return transaction<ClientResourceRecord | null>("readonly", (store, result) => {
+      return transaction<ClientResourceRecord | null>("readonly", "read", key.name, (store, result, firstCallback) => {
         const request = store.get(identity);
         request.onsuccess = () => {
+          firstCallback();
           try {
             const row = request.result as Stored | undefined;
             if (!row) { result(null); return; }
@@ -52,9 +61,10 @@ export async function openIndexedDbClientResources(name: string, factory: IDBFac
     async compareAndSet(key: ClientResourceKey, revision: number, record: Omit<ClientResourceRecord, "revision">) {
       const identity = resourceKey(key);
       validateResourceRecord(record, revision, key.authority);
-      return transaction<boolean>("readwrite", (store, result) => {
+      return transaction<boolean>("readwrite", "compare-and-set", key.name, (store, result, firstCallback) => {
         const request = store.get(identity);
         request.onsuccess = () => {
+          firstCallback();
           const current = request.result as Stored | undefined;
           if ((current?.revision ?? 0) !== revision) { result(false); return; }
           if (current && current.version > record.version) { store.transaction.abort(); return; }
@@ -69,9 +79,10 @@ export async function openIndexedDbClientResources(name: string, factory: IDBFac
       });
     },
     async clearRemoteNamespace(namespace) {
-      return transaction<void>("readwrite", (store, result) => {
+      return transaction<void>("readwrite", "clear-remote", undefined, (store, result, firstCallback) => {
         const cursor = store.index("namespace").openCursor(namespace);
         cursor.onsuccess = () => {
+          firstCallback();
           const row = cursor.result;
           if (!row) { result(); return; }
           if ((row.value as Stored).authority === "remote") row.delete();
@@ -81,10 +92,11 @@ export async function openIndexedDbClientResources(name: string, factory: IDBFac
     },
     async listLocalKeys(namespace, name) {
       resourceKey({ namespace, name, id: "namespace", authority: "local" });
-      return transaction<readonly ClientResourceKey[]>("readonly", (store, result) => {
+      return transaction<readonly ClientResourceKey[]>("readonly", "list-local", name, (store, result, firstCallback) => {
         const keys: { key: ClientResourceKey; savedAt: number; identity: string }[] = [];
         const cursor = store.index("namespace").openCursor(namespace);
         cursor.onsuccess = () => {
+          firstCallback();
           const row = cursor.result;
           if (!row) { result(keys.sort((a, b) => b.savedAt - a.savedAt || a.identity.localeCompare(b.identity)).map(row => row.key)); return; }
           const [scope, domain, id, authority] = JSON.parse(String(row.primaryKey));
@@ -95,9 +107,10 @@ export async function openIndexedDbClientResources(name: string, factory: IDBFac
     },
     async clearLocalResource(namespace, name) {
       resourceKey({ namespace, name, id: "namespace", authority: "local" });
-      return transaction<void>("readwrite", (store, result) => {
+      return transaction<void>("readwrite", "clear-local", name, (store, result, firstCallback) => {
         const cursor = store.index("namespace").openCursor(namespace);
         cursor.onsuccess = () => {
+          firstCallback();
           const row = cursor.result;
           if (!row) { result(); return; }
           const [, domain, , authority] = JSON.parse(String(row.primaryKey));

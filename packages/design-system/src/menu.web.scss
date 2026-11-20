@@ -5,7 +5,7 @@
 // Popovers must not consume translucent page/sidebar background tokens.
 %floating-menu-material {
   border: 0.5px solid var(--color-border-default);
-  border-radius: 12px;
+  border-radius: var(--menu-surface-radius);
   @include frost.surface(menu);
 }
 
@@ -13,14 +13,23 @@
 // once per stylesheet instead of expanding them into every feature selector.
 @mixin material { @extend %floating-menu-material; }
 
-// Shared menu geometry and interaction surface. Feature menus own only content
-// and width; typography must not inherit from the surrounding page or portal.
-%floating-menu-surface {
-  max-width: min(var(--radix-dropdown-menu-content-available-width), calc(100vw - 16px));
-  max-height: min(376px, var(--radix-dropdown-menu-content-available-height), calc(100vh - 16px));
+// Geometry can be reused without extending every optical/animation selector.
+@mixin geometry {
+  box-sizing: border-box;
+  // Portal width must not trigger WebKit text inflation; page zoom is unchanged.
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  max-width: min(var(--radix-dropdown-menu-content-available-width, var(--radix-context-menu-content-available-width, calc(100vw - 16px))), calc(100vw - 16px));
+  max-height: min(var(--height-menu-surface-max), var(--radix-dropdown-menu-content-available-height, var(--radix-context-menu-content-available-height, calc(100vh - 16px))), calc(100vh - 16px));
   padding: var(--menu-surface-padding);
   overflow: hidden auto;
   overscroll-behavior: contain;
+}
+
+// Shared menu geometry and interaction surface. Feature menus own only content
+// and width; typography must not inherit from the surrounding page or portal.
+%floating-menu-surface {
+  @include geometry;
   @include material;
   color: var(--color-text);
   outline: none;
@@ -33,9 +42,9 @@
     &[data-state="closed"] { animation: menu-surface-exit 80ms ease-in; }
   }
 
-  font: var(--typography-control-compact-font);
+  font: var(--menu-item-font);
 
-  letter-spacing: var(--typography-control-compact-tracking);
+  letter-spacing: var(--menu-item-tracking);
 }
 
 @mixin surface { @extend %floating-menu-surface; }
@@ -52,10 +61,10 @@
 @mixin item {
   display: flex;
   width: 100%;
-  min-height: 28px;
+  min-height: var(--height-menu-item);
   align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
+  gap: var(--gap-menu-item-content);
+  padding: var(--padding-menu-item-block) var(--padding-menu-item-inline);
   border: 0;
   border-radius: var(--menu-item-radius);
   background: transparent;
@@ -73,10 +82,10 @@
   }
   &[data-highlighted] { background: var(--color-background-primary-ghost-hover); }
   &[data-disabled] { opacity: 0.42; pointer-events: none; }
-  > svg { flex: 0 0 14px; width: 14px; height: 14px; color: var(--color-text-secondary); }
-  @include controls.density-target(0px, 28px);
-  font: var(--typography-control-compact-font);
-  letter-spacing: var(--typography-control-compact-tracking);
+  > svg { flex: 0 0 var(--size-menu-item-icon); width: var(--size-menu-item-icon); height: var(--size-menu-item-icon); color: var(--color-text-secondary); }
+  @include controls.density-target(0px, var(--height-menu-item));
+  font: var(--menu-item-font);
+  letter-spacing: var(--menu-item-tracking);
 }
 
 @keyframes menu-surface-enter {
@@ -86,4 +95,24 @@
 @keyframes menu-surface-exit {
   from { opacity: 1; transform: scale(1); }
   to { opacity: 0; transform: scale(0.98); }
+}
+
+@mixin separator {
+  height: var(--size-menu-separator);
+  margin: var(--margin-menu-separator-block) var(--margin-menu-separator-inline);
+  background: var(--color-border-subtle);
+}
+
+// A check/radio marker occupies the same leading slot as a regular menu glyph.
+@mixin indicated-item {
+  position: relative;
+  padding-inline-start: var(--padding-menu-indicated-item-inline);
+  > span[data-state] {
+    position: absolute;
+    inset-inline-start: var(--padding-menu-item-inline);
+    top: 50%; transform: translateY(-50%);
+    width: var(--size-menu-item-icon); height: var(--size-menu-item-icon);
+    display: grid; place-items: center;
+    > svg { width: var(--size-menu-item-icon); height: var(--size-menu-item-icon); margin: 0; }
+  }
 }

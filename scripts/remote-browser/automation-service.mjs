@@ -10,7 +10,7 @@ const denied = () => Object.assign(sessionError('TAB_ACCESS_DENIED', 'Browser ta
  * Missing native pages recover through the same lifecycle as viewer attachment.
  * No viewer, media subscription or second native owner is created.
  */
-export async function invokeRemoteAutomation(service, binding, method, input, { signal } = {}) {
+export async function invokeRemoteAutomation(service, binding, method, input, { signal, requirePresentation = false } = {}) {
   if (!methods.has(method)) throw sessionError('INVALID_ARGUMENT', 'Unsupported browser automation method');
   if (method === 'navigate') {
     let url; try { url = new URL(input?.url); } catch {}
@@ -29,7 +29,11 @@ export async function invokeRemoteAutomation(service, binding, method, input, { 
     if (service.closed || !link || link.scopeId !== scopeId || link.hostId !== hostId) throw denied();
     if (binding.threadId !== undefined && !conversationScopes(state, hostId, binding.threadId).has(scopeId)) throw denied();
   };
-  checkScope(); await service.start(); checkScope(); signal?.throwIfAborted();
+  const checkPresentation = () => {
+    if (requirePresentation && !service.presentationAvailable(ownerId))
+      throw Object.assign(sessionError('PRESENTATION_UNAVAILABLE', 'No connected workbench can present this browser tab'), { outcome: 'not-dispatched' });
+  };
+  checkScope(); checkPresentation(); await service.start(); checkScope(); signal?.throwIfAborted();
   if (service.ownerConnector && service.child?.automationCancellation !== 1)
     throw Object.assign(sessionError('BROWSER_OWNER_INCOMPATIBLE', 'Close retained browser tabs before upgrading their owner for service automation'), { outcome: 'not-dispatched' });
   if (navigation.has(method) && service.ownerConnector && service.child?.automationNavigation !== 1)
@@ -51,7 +55,7 @@ export async function invokeRemoteAutomation(service, binding, method, input, { 
   if (method === 'activate') return { active: true };
   const document = page.document, epoch = page.runtimeEpoch ?? 0, native = service.child;
   const controller = new AbortController(), participant = Object.freeze({ kind: 'service-agent' });
-  let token, finished = false;
+  let token, finished = false, dispatched = false;
   const current = () => !finished && !controller.signal.aborted && !service.closed && !page.closing && page.live
     && service.pages.get(key) === page && service.child === native && (page.runtimeEpoch ?? 0) === epoch
     && (navigation.has(method) || page.document === document)
@@ -67,10 +71,15 @@ export async function invokeRemoteAutomation(service, binding, method, input, { 
       const grant = await service.changeControl(page, participant, { action: 'agent' }, validate, current);
       token = grant.token; validate();
     }
+    checkPresentation();
+    dispatched = true;
     const result = await service.request(page.id, 'automation', { method, input }, token, document, { signal: controller.signal });
     validate();
     if (token && (page.controller !== participant || page.controlToken !== token)) throw sessionError('CONTROL_LOST', 'Browser control changed');
     return result;
+  } catch (error) {
+    if (!dispatched && error.outcome === undefined) Object.assign(error, { outcome: 'not-dispatched' });
+    throw error;
   } finally {
     clearInterval(watcher); signal?.removeEventListener('abort', abort); finished = true;
     if (token && page.controller === participant && page.controlToken === token)

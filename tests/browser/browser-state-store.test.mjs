@@ -207,7 +207,7 @@ test('v1 SQL upgrades its historical identity index without changing the publish
   database.prepare('INSERT INTO browser_retirements VALUES (?,?,?)').run(key, 'owner', JSON.stringify(fact));
   const set = database.prepare('INSERT INTO browser_meta VALUES (?,?)'); set.run('import-complete', '1'); set.run('legacy-digest', 'absent'); set.run('installation', 'upgrade-fixture');
   const before = database.prepare('SELECT checksum FROM schema_migrations WHERE version=1').get().checksum; database.close();
-  const upgraded = await f.open(); assert.equal(upgraded.outcome.appliedVersion, 2); assert(await upgraded.hasRetirement(key));
+  const upgraded = await f.open(); assert.equal(upgraded.outcome.appliedVersion, 4); assert(await upgraded.hasRetirement(key));
   const matched = await upgraded.readRetirements('owner', { pages: ['historical-page'], tabs: ['historical-tab'], leases: [fact.lease] });
   assert.deepEqual(matched.references.pages, fact.pageIds); assert.deepEqual(matched.references.tabs, fact.tabIds);
   await upgraded.close(); const after = new DatabaseSync(join(f.directory, 'state.sqlite'), { readOnly: true });

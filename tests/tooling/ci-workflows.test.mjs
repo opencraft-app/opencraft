@@ -257,3 +257,16 @@ test('workflow-lint checks every workflow change with pinned actionlint and zizm
   assert.match(lint, /run: go run github\.com\/rhysd\/actionlint\/cmd\/actionlint@v\d+\.\d+\.\d+ -pyflakes=\n/);
   assert.match(lint, /run: pipx run zizmor==\d+\.\d+\.\d+ --offline --min-severity low --config \.github\/zizmor\.yml \.github\/workflows\/\n/);
 });
+
+
+test('generic convergence and assistant runtime remain mandatory gate steps', () => {
+  for (const name of ['test:assistant-runtime', 'test:convergence']) {
+    assert.ok(job('gate-tests').includes('run: npm run ' + name));
+    assert.ok(!GATE_ONLY_EXCEPTIONS.has(name));
+  }
+});
+
+test('container browser-owner regressions use the TypeScript workspace loader', () => {
+  const container = readFileSync(new URL('../../.github/workflows/container.yml', import.meta.url), 'utf8');
+  assert.match(container, /node --import tsx --test tests\/server\/container-deployment.test.mjs tests\/browser\/remote-browser-owner.test.mjs/);
+});

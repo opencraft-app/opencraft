@@ -4,6 +4,7 @@ import { browserServerContext, serverUrl } from "./server-context";
 /** Called after the usable Shell paint. Static preparation grants no account authority. */
 export async function prepareOfflineShell(signal: AbortSignal): Promise<void> {
   if (!("serviceWorker" in navigator) || !globalThis.isSecureContext) return;
+  // Full-build offline preparation is optional, not part of the opening waterfall.
   await waitForOfflinePreparation(signal);
   const buildId = document.querySelector<HTMLMetaElement>('meta[name="opencraft-build-id"]')?.content;
   if (!buildId) return;

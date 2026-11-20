@@ -178,3 +178,17 @@ test("unanswered probes are reported on close with bounded observations during f
   assert.ok(events[1].elapsedMs >= 0);
   assert.doesNotMatch(JSON.stringify(events), /secret/);
 });
+
+test("heartbeat capability is granted only to clients that opt in", async t => {
+  const { url } = await fixture(t);
+  for (const [frame, expected] of [[{ ...hello, heartbeat: true }, 10_000], [hello, undefined]]) {
+    const socket = new WebSocket(`${url}/apphost`);
+    await once(socket, "open");
+    const ready = once(socket, "message");
+    socket.send(JSON.stringify(frame));
+    const message = JSON.parse(String((await ready)[0]));
+    assert.equal(message.type, "ready");
+    assert.equal(message.capabilities?.heartbeatMs, expected);
+    const closed = once(socket, "close"); socket.close(); await closed;
+  }
+});

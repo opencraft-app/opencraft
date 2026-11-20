@@ -156,3 +156,39 @@ test("retiring the last history slot cancels its shared probe so a successor can
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("warm history directory reads probe health once but revalidate every route and owner", async t => {
+  const root = await mkdtemp(join(tmpdir(), "oc-history-directory-budget-"));
+  const path = join(root, "control.sock");
+  let healthCalls = 0, directoryCalls = 0, incarnation = 1, epoch = "owner-1";
+  const server = createServer((request, response) => {
+    response.setHeader("content-type", "application/json");
+    if (request.url === "/health") {
+      healthCalls++;
+      response.end(JSON.stringify({ protocolVersion: 1, pid: process.ppid, codexPid: process.pid,
+        nativeSocket: join(root, "native.sock"), routingEpoch: epoch }));
+    } else {
+      directoryCalls++;
+      response.end(JSON.stringify({ protocolVersion: 1, routingEpoch: epoch, admissionEpoch: 1,
+        homes: [{ generationId: "retained", codexHome: root, incarnation }],
+        route: { threadId: "thread", generationId: "retained" } }));
+    }
+  });
+  await new Promise<void>(resolve => server.listen(path, resolve));
+  t.after(async () => { server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); await rm(root, { recursive: true, force: true }); });
+  const client = new CodexCoreControlClient(path, "synthetic-service-token");
+  await client.generationDirectory("thread");
+  for (let page = 0; page < 5; page++) {
+    incarnation++;
+    assert.equal((await client.generationDirectory("thread"))!.homes[0]!.incarnation, incarnation,
+      "a health optimization cannot cache route or incarnation authority");
+  }
+  assert.equal(healthCalls, 1, "six directory checks must not repeat six recursive health probes");
+  assert.equal(directoryCalls, 6, "each read still obtains a live directory snapshot");
+  epoch = "owner-2";
+  await assert.rejects(client.generationDirectory("thread"), /owner changed/,
+    "a pinned identity cannot authorize a replacement owner's result");
+  assert.equal((await client.generationDirectory("thread"))!.routingEpoch, "owner-2",
+    "the next attempt establishes the successor's identity without a permanent block");
+  assert.equal(healthCalls, 2);
+});

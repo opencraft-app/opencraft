@@ -5,13 +5,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openManagedDatabase, SqliteLifecycleError } from "@opencraft/sqlite-node";
-import { OpenCraftHostStateDatabase, OPENCRAFT_HOST_STATE_MIGRATIONS } from "../../apps/opencraft-daemon/src/opencraft-host-state-database";
+import { OpenCraftHostStateDatabase, OPENCRAFT_HOST_STATE_MIGRATIONS, OPENCRAFT_HOST_STATE_CURRENT_MIGRATIONS } from "../../apps/opencraft-daemon/src/opencraft-host-state-database";
 import { OpenCraftMessageAttachments, OPENCRAFT_MESSAGE_ATTACHMENTS_MIGRATIONS } from "../../apps/opencraft-daemon/src/opencraft-message-attachments";
 
 const owners = [
   {
     name: "Host state", file: "codex-host-queue.sqlite", previousVersion: 12,
-    migrations: OPENCRAFT_HOST_STATE_MIGRATIONS,
+    migrations: OPENCRAFT_HOST_STATE_MIGRATIONS, currentVersion: OPENCRAFT_HOST_STATE_CURRENT_MIGRATIONS.at(-1)!.version,
     open: (root: string) => new OpenCraftHostStateDatabase(root),
     tables: ["codex_host_queue", "codex_thread_catalog", "codex_catalog_sync", "codex_bot_rooms", "codex_bot_commands", "codex_bot_message_slots"],
     seed: (db: DatabaseSync) => db.exec(`
@@ -53,7 +53,7 @@ for (const spec of owners) {
     const owner = spec.open(root);
     const outcome = owner.outcome;
     assert.equal(outcome.status, "migrated");
-    assert.equal(outcome.appliedVersion, spec.migrations.at(-1)!.version);
+    assert.equal(outcome.appliedVersion, "currentVersion" in spec ? spec.currentVersion : spec.migrations.at(-1)!.version);
     assert.deepEqual(outcome.movedAsidePaths, []);
     assert.ok(outcome.backupPath);
     owner.close();

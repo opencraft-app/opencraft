@@ -1,3 +1,5 @@
+import type { BrowserDraftRecovery } from "./browser-draft-recovery";
+import type { ChannelSearchRegistry } from './channel-search-contribution';
 import { parseConversationRef } from "@opencraft/appserver-protocol/collaboration";
 import { continueNativeSessionInBranch, nativeSessionBusyBeforeInput } from "./native-session-recovery";
 import { readSelectionPreference, writeSelectionPreference } from "./selection-preferences";
@@ -21,9 +23,6 @@ import {
   type TasksRequestPort
 } from "@opencraft/appserver-protocol";
 import { BlobResourceService } from "@opencraft/blob-resources";
-import {
-  AppServerBotDirectory
-} from "@opencraft/bot-conversation-appserver";
 import {
   asHostId,
   createConversationKey,
@@ -84,7 +83,6 @@ import {
 } from "@tanstack/react-query";
 import type { BrowserStorageError } from "./browser-storage-error";
 import { type OptionalFeatureStartup } from "./optional-feature-startup";
-import { resolveWorkInWorkspace } from "./work-in-workspace";
 import { type ApplicationNavigation } from "./workbench-navigation";
 
 import { type ManagedHostCatalogSource } from "./host-thread-catalog";
@@ -98,6 +96,7 @@ import {
 
 // The Context object itself is part of the renderer's hot-reload state.
 export interface AppServerHostCatalog {
+  readonly draftRecovery: Pick<BrowserDraftRecovery, "isPending" | "subscribe">;
   readonly clientResources: ClientResources;
   readonly setConversationPresentationActive?: (active: boolean) => void;
   readonly tasks: TasksRequestPort | null;
@@ -131,12 +130,12 @@ export interface AppServerHostCatalog {
   readonly platformAccounts: PlatformAccountContributionRegistry;
   readonly threadAttention: BrowserThreadAttention;
   readonly applicationBranding: ApplicationBrandingRegistry;
+  readonly channelSearch: ChannelSearchRegistry;
   readonly threadBadges: ThreadBadgeContributionRegistry;
   readonly threadListGrouping: ThreadListGroupingContributionRegistry;
   readonly identityAvatars: IdentityAvatarContributionRegistry;
   readonly imageEditors?: import("./image-editor-contributions").ImageEditorContributionRegistry;
   readonly composerActionRenderers: ComposerActionRendererRegistry;
-  readonly botDirectory: AppServerBotDirectory;
   readonly sidebarLayout: SidebarLayoutStore;
   /**
    * Navigation intent being hydrated. The presented Conversation remains the
@@ -451,12 +450,12 @@ export interface WebWorkbenchApplicationBase {
   readonly platformViewRenderers: PlatformViewRendererRegistry;
   readonly platformAccounts: PlatformAccountContributionRegistry;
   readonly applicationBranding: ApplicationBrandingRegistry;
+  readonly channelSearch: ChannelSearchRegistry;
   readonly threadBadges: ThreadBadgeContributionRegistry;
   readonly threadListGrouping: ThreadListGroupingContributionRegistry;
   readonly identityAvatars: IdentityAvatarContributionRegistry;
   readonly imageEditors?: import("./image-editor-contributions").ImageEditorContributionRegistry;
   readonly composerActionRenderers: ComposerActionRendererRegistry;
-  readonly botDirectory: AppServerBotDirectory;
   readonly sidebarLayout: SidebarLayoutStore;
   readonly hostProfiles: HostConnectionProfileStore;
   readonly hostProfileStorageError?: BrowserStorageError | null;
@@ -482,6 +481,7 @@ export interface HostlessWebWorkbenchApplicationSupervisor extends WebWorkbenchA
 }
 
 export interface ActiveWebWorkbenchApplicationSupervisor extends WebWorkbenchApplicationBase {
+  readonly draftRecovery: Pick<BrowserDraftRecovery, "isPending" | "subscribe">;
   readonly tasks: TasksRequestPort | null;
   readonly displayContinuity: BrowserDisplayContinuity;
   readonly mode: "active";
@@ -620,6 +620,7 @@ export function provisionWebSocketHost(
 }
 
 export function createWebWorkbenchCommands(input: {
+  readonly isDraftRecovering?: () => boolean;
   readonly displayContinuity: BrowserDisplayContinuity;
   readonly presentation?: WorkbenchPresentationPolicy;
   readonly threadMemoryScope?: () => string;
@@ -639,6 +640,7 @@ export function createWebWorkbenchCommands(input: {
   readonly onThreadCreated?: (intent: SubmitIntent, receipt: SubmissionReceipt) => Promise<void>;
 }): WebWorkbenchCommands {
   const presentation = input.presentation ?? FULL_WORKBENCH_PRESENTATION;
+  const requireRestoredDraft = () => { if (input.isDraftRecovering?.()) throw new Error("Local draft recovery is pending"); };
   const assertSelectable = () => { if (presentation.executionSelection === "fixed") throw new Error("The embedding product owns execution selection"); };
   const assertHostConfiguration = () => { if (!presentation.runtimeHostConfiguration) throw new Error("The embedding product owns Host configuration"); };
   const assertTarget = (hostId: string) => {
@@ -649,13 +651,21 @@ export function createWebWorkbenchCommands(input: {
   let submissionPipeline: ReturnType<typeof createWorkbenchSubmissionPipeline>;
   const nativeTransfers = new Map<string, Promise<SubmissionReceipt>>();
   let hostSelectionEpoch = 0;
+  // Application-owned selection memory is isolated by account/space scope and Host.
+  const workspaceMemory = new Map<string, ComposerExecutionTarget>();
+  let workspaceMemoryScope = input.threadMemoryScope?.();
+  const locationMemory = () => {
+    const scope = input.threadMemoryScope?.();
+    if (scope !== workspaceMemoryScope) { workspaceMemory.clear(); workspaceMemoryScope = scope; }
+    return workspaceMemory;
+  };
   const navigateAndRemember = async (location: WorkbenchLocation, action: () => Promise<boolean>) => {
     assertTarget(location.kind === "thread" ? location.key.hostId : location.hostId);
     const epoch = ++hostSelectionEpoch;
     const memoryScope = input.threadMemoryScope?.();
     const activated = await action();
     if (location.kind === "thread" && memoryScope === input.threadMemoryScope?.()
-      && input.registry.peekRuntime(location.key.hostId)?.resources.threads.getUnavailableReason?.(location.key.threadId)) {
+      && input.registry.peekRuntime(location.key.hostId)?.resources.threads.getUnavailableReason?.(location.key.threadId) === "not-found") {
       commands.forgetThread(location.key.hostId, location.key.threadId);
       return false;
     }
@@ -703,6 +713,7 @@ export function createWebWorkbenchCommands(input: {
       else if (surface.kind === "extension-view") input.navigation.openExtensionView(surface.viewId, surface.resourceUri);
     },
     createGoal(intent, objective) {
+      requireRestoredDraft();
       if (intent.target.type !== "new-thread") throw new Error("Expected a new conversation");
       assertTarget(intent.target.execution.hostId);
       const target = intent.target;
@@ -739,32 +750,32 @@ export function createWebWorkbenchCommands(input: {
       if (activeDraft !== null && draftSubmissionOwnsNavigation(activeDraft.phase)) {
         throw new Error("The execution node cannot change while the first turn is being submitted");
       }
-      let runtime: AppServerWorkbenchRuntime;
-      try { runtime = await input.registry.ensureConnected(hostId); }
+      const memoryScope = input.threadMemoryScope?.();
+      const memory = locationMemory();
+      try { await input.registry.ensureConnected(hostId); }
       catch (error) { if (epoch !== hostSelectionEpoch) return; throw error; }
       const profiles = input.hostProfiles.getSnapshot().profiles;
       const sameMachine = activeDraft !== null && sameWorkInMachine(
         profiles.find(profile => profile.hostId === activeDraft.target.execution.hostId),
         profiles.find(profile => profile.hostId === hostId), input.environmentDirectory?.getSnapshot().entries);
-      let workspace = activeDraft?.target.execution.workspace ?? { cwd: null, runtimeWorkspaceRoots: [] };
-      if (!sameMachine && workspace.cwd !== null) {
-        const resolved = await resolveWorkInWorkspace(workspace, runtime.resources, () => epoch === hostSelectionEpoch
-          && origin === input.navigation.getSnapshot().revision && input.scopes.getActiveDraft()?.target === activeDraft?.target);
-        if (resolved === null) return;
-        workspace = resolved;
-      }
+      const remembered = memory.get(hostId);
+      const current = activeDraft?.target.execution;
+      const execution: ComposerExecutionTarget = {
+        ...(remembered ?? (sameMachine ? current : undefined)),
+        hostId: asHostId(hostId),
+        ...(current?.collaborationSpaceId ? { collaborationSpaceId: current.collaborationSpaceId } : {}),
+        workspace: remembered?.workspace ?? (sameMachine ? current?.workspace : undefined) ?? { cwd: null, runtimeWorkspaceRoots: [] },
+      };
+      const workspace = execution.workspace;
       if (!input.hostProfiles.getSnapshot().profiles.some(profile => profile.hostId === hostId && isNewConversationHost(profile))) return;
-      if (epoch !== hostSelectionEpoch || origin !== input.navigation.getSnapshot().revision
+      if (memoryScope !== input.threadMemoryScope?.() || epoch !== hostSelectionEpoch || origin !== input.navigation.getSnapshot().revision
         || input.scopes.getActiveDraft()?.id !== activeDraft?.id
         || input.scopes.getActiveDraft()?.target !== activeDraft?.target) return;
       if (activeDraft !== null && activeDraft.target.execution.hostId !== hostId) {
         const nextDraft = input.scopes.openDraft({
           activate: false,
           entrypoint: activeDraft.entrypoint,
-          execution: {
-            hostId: asHostId(hostId),
-            workspace,
-          },
+          execution,
         });
         const previousViewId = input.coordinator.getSnapshot().viewId;
         const previousComposer = previousViewId === null ? null : input.views.get(previousViewId)?.composer;
@@ -791,6 +802,10 @@ export function createWebWorkbenchCommands(input: {
             nextComposer.dispatch({ type: "set-selections", patch: { ...previous.selections, cwd: workspace.cwd ?? undefined } });
             nextComposer.dispatch({ type: "set-options", patch: previous.options });
             if (selection) nextComposer.dispatch({ type: "set-selections", patch: { model: selection.model, effort: selection.effort ?? undefined, ...(selection.serviceTier === undefined ? {} : { serviceTier: selection.serviceTier }) } });
+          }
+          if (memoryScope === input.threadMemoryScope?.()) {
+            memory.set(activeDraft.target.execution.hostId, activeDraft.target.execution);
+            memory.set(hostId, execution);
           }
           input.scopes.dismissDraft(activeDraft.id);
         } catch (error) {
@@ -856,12 +871,15 @@ export function createWebWorkbenchCommands(input: {
       return location;
     },
     retargetDraft(draftId, execution) {
+      requireRestoredDraft();
       assertSelectable();
       ++hostSelectionEpoch;
       input.activation.cancelPending();
       input.activation.retargetDraft(draftId, execution);
+      locationMemory().set(execution.hostId, execution);
     },
     async submit(intent) {
+      requireRestoredDraft();
       assertTarget(intent.target.type === "new-thread" ? intent.target.execution.hostId : intent.target.key.hostId);
       if (intent.handoff && intent.target.type !== "new-thread") {
         if (intent.target.key.threadId !== intent.handoff.sourceThreadId) throw new Error("Handoff source changed");

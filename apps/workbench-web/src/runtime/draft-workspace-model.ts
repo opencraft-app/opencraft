@@ -6,7 +6,7 @@ export interface DraftWorkspaceOption {
   readonly runtimeWorkspaceRoots: readonly string[];
   readonly label: string;
   readonly rootLabel: string;
-  readonly projectId: string;
+  readonly projectId?: string;
   readonly branch?: string | null;
 }
 

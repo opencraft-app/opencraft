@@ -119,3 +119,50 @@ test("gap restart deduplication restores open gaps and does not insert duplicate
  state.close();
  await rm(path,{recursive:true,force:true});
 });
+
+test("unloaded usage gaps wait for native activity while transport failures remain retryable", async t => {
+  t.mock.timers.enable({ apis: ["setInterval", "Date"], now: 1000 });
+  const dir = await mkdtemp(join(tmpdir(), "oc-usage-unloaded-"));
+  const state = new TokenUsageStateDatabase(dir);
+  const ledger = new OpenCraftTokenUsageLedger(state, "server", () => Date.now());
+  const attempts: Record<string, number> = {};
+  const reasons: string[] = [];
+  const runtime = new CodexTokenUsageRuntime(ledger, {
+    diagnostic: reason => reasons.push(reason),
+    request: async (_method, { threadId }) => {
+      const id = String(threadId);
+      attempts[id] = (attempts[id] ?? 0) + 1;
+      if (id === "cold") throw Object.assign(new Error("thread not loaded: cold"), { code: -32600 });
+      throw new Error("connection timed out");
+    }
+  });
+  const flush = async () => { for (let i = 0; i < 8; i++) await new Promise<void>(r => setImmediate(r)); };
+  try {
+    runtime.initialize({ codexHome: dir });
+    runtime.notification("turn/started", { threadId: "cold" });
+    runtime.notification("turn/started", { threadId: "transient" });
+    await flush();
+    assert.deepEqual(attempts, { cold: 1, transient: 1 });
+    assert.ok(reasons.includes("thread-not-loaded"));
+    assert.equal(ledger.gaps().find(g => g.threadId === "cold")?.reason, "thread-not-loaded");
+    for (let i = 0; i < 3; i++) {
+      t.mock.timers.tick(2000);
+      await flush();
+    }
+    assert.deepEqual(attempts, { cold: 1, transient: 3 });
+    runtime.notification("thread/status/changed", { threadId: "cold", status: { type: "notLoaded" } });
+    await flush();
+    assert.equal(attempts.cold, 1);
+    runtime.notification("thread/status/changed", { threadId: "cold", status: { type: "idle" } });
+    await flush();
+    assert.equal(attempts.cold, 2);
+    assert.equal(ledger.gaps().filter(g => g.threadId === "cold").length, 1);
+    runtime.notification("thread/tokenUsage/updated", { threadId: "cold" });
+    await flush();
+    assert.equal(attempts.cold, 3);
+  } finally {
+    runtime.close();
+    state.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

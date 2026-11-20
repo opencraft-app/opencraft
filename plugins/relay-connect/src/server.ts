@@ -1,10 +1,10 @@
 import { createConnection } from "node:net";
 import WebSocket from "ws";
-import { closeWhenDone, relayDuplex } from '@opencraft/relay-protocol/node';
+import { bridgeRelayDuplex, relayDuplex, relayIdleDeadline } from '@opencraft/relay-protocol/node';
 import { AssertionProvider, readPrivateJson, type AssertionProviderOptions } from '@opencraft/identity-core/node';
 import { readFile } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
-import { CONTROL_PATH, DATA_PATH, STREAM_HEADER, RELAY_PROTOCOL, MAX_RELAY_STREAMS, parseOpen } from "@opencraft/relay-protocol";
+import { CONTROL_PATH, DATA_PATH, STREAM_HEADER, RELAY_PROTOCOL, MAX_RELAY_STREAMS, parseOpen, DRAIN_HEADER, DRAIN_CAPABILITY } from "@opencraft/relay-protocol";
 export interface RelayConnectOptions { readonly relay: string; readonly credential: string; readonly targetPort: number; readonly allowLoopbackInsecure?: boolean; readonly ca?: string; }
 export async function loadRelayConnection(path: string, assertionOptions: AssertionProviderOptions = {}) {
   const input = await readPrivateJson(path) as Record<string, unknown>;
@@ -31,7 +31,14 @@ export function connectRelay(options: RelayConnectOptions) {
   let lastPong = Date.now();
   const open = () => {
     if (stopped) return;
-    const ws = new WebSocket(base + CONTROL_PATH, RELAY_PROTOCOL, { ca: options.ca, headers: { authorization: `Bearer ${options.credential}` }, perMessageDeflate: false, maxPayload: 4096, handshakeTimeout: 10_000 }); control = ws;
+    const owned = new Set<WebSocket>();
+    let preservesStreams = false;
+    const ws = new WebSocket(base + CONTROL_PATH, RELAY_PROTOCOL, { ca: options.ca, headers: { authorization: `Bearer ${options.credential}`, [DRAIN_HEADER]: DRAIN_CAPABILITY }, perMessageDeflate: false, maxPayload: 4096, handshakeTimeout: 10_000 }); control = ws;
+    ws.once('upgrade', response => { preservesStreams = response.headers[DRAIN_HEADER] === DRAIN_CAPABILITY; });
+    ws.on('unexpected-response', (_request, response) => {
+      if (control === ws && [401, 403].includes(response.statusCode ?? 0)) for (const stream of streams) stream.terminate();
+      response.resume(); ws.terminate();
+    });
     ws.on('open', () => { attempts = 0; lastPong = Date.now(); }); ws.on('error', () => {}); ws.on('pong', () => { lastPong = Date.now(); });
     ws.on('message', raw => {
       try {
@@ -42,18 +49,21 @@ export function connectRelay(options: RelayConnectOptions) {
         // Capacity pressure must not revoke the control link and every live stream.
         if (streams.size >= MAX_RELAY_STREAMS) return;
         const data = new WebSocket(base + DATA_PATH, RELAY_PROTOCOL, { ca: options.ca, headers: { authorization: `Bearer ${frame.token}`, [STREAM_HEADER]: frame.id }, perMessageDeflate: false, maxPayload: 65_536, handshakeTimeout: 10_000 });
-        streams.add(data); data.on('error', () => {}); data.once('close', () => streams.delete(data));
+        const idle = relayIdleDeadline(data, () => data.terminate());
+        streams.add(data); owned.add(data); data.on('error', () => {}); data.once('close', () => { idle(); streams.delete(data); owned.delete(data); });
         data.once('open', () => {
-          if (stopped || control !== ws) { data.terminate(); return; }
+          if (stopped || (!preservesStreams && control !== ws)) { data.terminate(); return; }
           const stream = relayDuplex(data); const target = createConnection({ host: '127.0.0.1', port: options.targetPort });
-          stream.on('error', () => target.destroy()); target.on('error', () => stream.destroy());
-          stream.once('close', () => data.terminate()); closeWhenDone(stream, target); closeWhenDone(target, stream);
-          stream.pipe(target); target.pipe(stream);
+          bridgeRelayDuplex(stream, target);
         });
-      } catch { ws.close(1008, 'Invalid relay control message'); }
+      } catch { preservesStreams = false; ws.close(1008, 'Invalid relay control message'); }
     });
-    ws.once('close', () => {
-      for (const stream of streams) stream.terminate(); streams.clear();
+    ws.once('close', code => {
+      // Policy/protocol rejection and explicit stop never retain data channels.
+      // Each generation owns its own cleanup, including late close callbacks.
+      if (stopped || !preservesStreams || ![1006, 1012].includes(code)) {
+        for (const stream of control === ws && code === 1008 ? streams : owned) stream.terminate();
+      }
       if (!stopped && control === ws) { attempts++; timer = setTimeout(open, Math.min(30_000, 250 * 2 ** Math.min(attempts, 7)) + Math.floor(Math.random() * 250)); timer.unref(); }
     });
   };

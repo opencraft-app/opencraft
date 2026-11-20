@@ -15,7 +15,7 @@
 | 界面部分 | 去哪里确认 | 需要判断的结果 |
 |---|---|---|
 | 页面与列表 | `apps/workbench-web/src/components/settings-page.tsx`、`packages/extension-react/src/settings-controls.tsx` 及当前路由样式 | 内容宽度、页边距、章节节奏由谁投影；标题、说明和操作在窄容器如何排列。单个 Header/Row 不拥有整页布局 |
-| 工具弹窗与表单 | `packages/extension-react/src/settings-panel.tsx`、`apps/workbench-web/src/components/modal/modal-surface.tsx` 及其样式；可参考 `apps/workbench-web/src/components/bot-management.tsx` 的实际消费 | Radix 管行为，宿主 modal surface 管呈现，SettingsPanel 管内容组合；表单 label、输入和校验槽的关系及密度应适合容器 |
+| 工具弹窗与表单 | `packages/extension-react/src/settings-panel.tsx`、`apps/workbench-web/src/components/modal/modal-surface.tsx` 及其样式 | Radix 管行为，宿主 modal surface 管呈现，SettingsPanel 管内容组合；表单 label、输入和校验槽的关系及密度应适合容器 |
 | 空态及辅助文字 | `design/ui/typography.md`、当前共享排版和容器 | 语义层级与章节一致，heading/p 的浏览器 margin 不叠加出意外空白；提示和次动作不会压过主任务 |
 | 状态、主题与平台输入 | `design/ui/README.md` 命中的主题、当前共享控件 | 原位反馈、文本/背景配对、触控与键盘状态、草稿和焦点连续性 |
 
@@ -24,6 +24,10 @@
 复用零件后仍要检查组合：例如 `SettingsRow.description` 是说明槽，不是任意表单错误占位；Radix Dialog 负责交互，不自动提供项目的视觉壳。不要为了“统一”把所有局部布局搬到 Shell，也不把功能样式复制成第二套共享规范。
 
 ## 用真实使用状态复核
+
+### 页面加载与重试的视觉表达
+
+OpenCraft 的页面加载与失败反馈保持轻量。失败也不把“重新加载”做成醒目的大按钮或主操作区；用共享重试图标表达可恢复动作，配合简短状态文字，保持安静、稳定的布局。图标入口保留可访问名称、悬停提示、键盘操作和足够的触控命中区域。加载中不把重试提前作为主操作；失败后的图像化表达仍须让用户能识别并执行重试。
 
 选择与改动有关的路径。新建管理页从没有数据的首次入口走到添加表单，再看提交中、校验或失败反馈；小修只覆盖受影响状态及相关共享消费者。编辑器、只读目录或已有数据的页面按其真实任务选状态，不强造创建流程。
 

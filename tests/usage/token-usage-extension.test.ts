@@ -11,6 +11,13 @@ import { tokenUsageBuiltin } from "../../apps/workbench-web/src/runtime/token-us
 import { TokenUsageStateDatabase } from "../../apps/opencraft-daemon/src/token-usage-state-database";
 import { OpenCraftTokenUsageLedger } from "../../apps/opencraft-daemon/src/token-usage-ledger";
 
+test("builtin installation and demand-loaded implementation share stable manifest identity", async () => {
+  const definition = await tokenUsageBuiltin.load();
+  assert.equal(definition.manifest, tokenUsageBuiltin.manifest);
+  assert.deepEqual(definition.manifest.activationEvents, ["onStartupFinished"]);
+  assert.equal(tokenUsageBuiltin.defaultEnabled, true);
+});
+
 for (const platform of ["web", "electron"] as const) test(`F-14/NF-11: ${platform} view retires 20 times while Host meters`, async () => {
   const directory = await mkdtemp(join(tmpdir(), "oc-token-extension-"));
   const state = new TokenUsageStateDatabase(directory);

@@ -21,17 +21,20 @@ const SYNTHETIC_TAG = '0001_synthetic_rollout_note';
 async function withSyntheticTail(id: StorageSchemaId, parent: string): Promise<string> {
   const source = join(root, 'packages/storage-node/src/stores', id), fixture = join(parent, id);
   cpSync(source, fixture, { recursive: true });
-  const previous = JSON.parse(readFileSync(join(fixture, 'migrations/meta/0000_snapshot.json'), 'utf8'));
+  const journal = readJournal(join(source, 'migrations'));
+  const index = journal.entries.length;
+  const stem = String(index).padStart(4, '0');
+  const tag = `${stem}_synthetic_rollout_note`;
+  const previous = JSON.parse(readFileSync(join(fixture, `migrations/meta/${String(index-1).padStart(4,'0')}_snapshot.json`), 'utf8'));
   const declared = await import(pathToFileURL(join(source, 'schema.ts')).href);
   const note = declareTable('synthetic_rollout_notes', { id: declareText('id').primaryKey(), body: declareText('body').notNull() });
   const next = await generateSQLiteDrizzleJson({ ...declared, note }, previous.id);
   const sql = (await generateSQLiteMigration(previous, next)).join('\n');
   assert.match(sql, /CREATE TABLE `synthetic_rollout_notes`/);
   assert.doesNotMatch(sql, /DROP|ALTER/, 'the declared schema must equal the frozen baseline');
-  writeFileSync(join(fixture, 'migrations', SYNTHETIC_TAG + '.sql'), sql);
-  writeFileSync(join(fixture, 'migrations/meta/0001_snapshot.json'), JSON.stringify(next));
-  const journal = readJournal(join(source, 'migrations'));
-  journal.entries.push({ idx: 1, version: '6', when: journal.entries[0].when + 1, tag: SYNTHETIC_TAG, breakpoints: true });
+  writeFileSync(join(fixture, 'migrations', tag + '.sql'), sql);
+  writeFileSync(join(fixture, `migrations/meta/${stem}_snapshot.json`), JSON.stringify(next));
+  journal.entries.push({ idx: index, version: '6', when: journal.entries.at(-1)!.when + 1, tag, breakpoints: true });
   writeFileSync(join(fixture, 'migrations/meta/_journal.json'), JSON.stringify(journal));
   return fixture;
 }

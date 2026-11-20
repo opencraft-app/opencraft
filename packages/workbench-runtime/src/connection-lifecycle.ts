@@ -1,5 +1,6 @@
 import type { RecoveryClock } from "./recovery-policy";
 import { recoveryNow } from "./recovery-clock";
+import { retryDelayMs, wasEstablished } from "./retry-schedule";
 
 export type ConnectionPhase = "idle" | "attempting" | "usable" | "backoff" | "blocked" | "disposed";
 export interface ConnectionState<T> {
@@ -13,6 +14,7 @@ export interface ConnectionAttempt {
   assertCurrent(): void;
   /** Only a new, completed boundary renews the stage budget; never the total budget. */
   progress(stage: string, timeoutMs?: number): void;
+  waitForRetry(delayMs: number): void;
 }
 interface Attempt {
   controller: AbortController;
@@ -21,12 +23,12 @@ interface Attempt {
   reject(error: unknown): void;
   timer: unknown;
   ticket: number;
-  readonly deadline: number;
+  deadline: number;
+  retryAllowance: number;
   stageDeadline: number;
   stage: string;
   readonly stages: Set<string>;
 }
-const delays = [500, 1_000, 2_000, 5_000, 15_000, 30_000, 60_000];
 
 /** One writer for connection admission, revocation, readiness and retry timers.
  * Resource owners retain their own demand, data and source identities. */
@@ -39,6 +41,8 @@ export class ConnectionLifecycleOwner<T> {
   private stableTimer: unknown = null;
   private stableTicket = 0;
   private failures = 0;
+  /** When the current binding became usable; a lost established route does not escalate. */
+  private usableSince: number | null = null;
   private plannedRestartUntil = Number.NEGATIVE_INFINITY;
   private pendingWake = false;
   private lastHintAt = Number.NEGATIVE_INFINITY;
@@ -109,7 +113,7 @@ export class ConnectionLifecycleOwner<T> {
     this.pendingWake = false;
     const now = this.now();
     const attempt: Attempt = { controller: new AbortController(), promise, resolve, reject, timer: null,
-      ticket: 0, deadline: now + (this.input.timeoutMs ?? 60_000),
+      ticket: 0, retryAllowance: 0, deadline: now + (this.input.timeoutMs ?? 60_000),
       stageDeadline: now + (this.input.stageTimeoutMs ?? 30_000), stage: "start", stages: new Set(["start"]) };
     this.attempt = attempt;
     this.state = { phase: "attempting", binding: null, error: null, recovering };
@@ -125,6 +129,17 @@ export class ConnectionLifecycleOwner<T> {
     void Promise.resolve().then(async () => {
       assertCurrent();
       const binding = await this.input.run({ signal: attempt.controller.signal, assertCurrent,
+        waitForRetry: delayMs => {
+          assertCurrent();
+          // One bounded allowance for shared cooldown; repeated notifications
+          // cannot renew the network budget indefinitely.
+          const allowance = Math.min(75_000, Math.max(0, Number.isFinite(delayMs) ? delayMs : 0));
+          const extra = Math.max(0, allowance - attempt.retryAllowance);
+          attempt.retryAllowance += extra;
+          attempt.deadline += extra;
+          attempt.stageDeadline += extra;
+          this.armDeadline(attempt);
+        },
         progress: (stage, timeoutMs = this.input.stageTimeoutMs ?? 30_000) => {
           assertCurrent();
           if (attempt.stages.has(stage)) return;
@@ -140,6 +155,7 @@ export class ConnectionLifecycleOwner<T> {
       this.attempt = null;
       this.pendingWake = false;
       this.state = { phase: "usable", binding, error: null, recovering };
+      this.usableSince = this.now();
       const ticket = ++this.stableTicket;
       if (this.input.autoReconnect !== false) this.stableTimer = this.input.clock.setTimeout(() => {
         if (ticket !== this.stableTicket || this.state.binding !== binding || this.state.phase !== "usable") return;
@@ -161,6 +177,10 @@ export class ConnectionLifecycleOwner<T> {
     if (plannedRestart && !manual && this.plannedRestartUntil <= this.now()) this.plannedRestartUntil = this.now() + 30_000;
     if (this.state.phase === "backoff" && !manual) return;
     const error = cause instanceof Error ? cause : new Error("Connection is unavailable");
+    // Losing a route that had been working is not a refusal: restart the
+    // schedule. Repeated failures to (re)establish still escalate.
+    if (!manual && this.state.phase === "usable" && wasEstablished(this.usableSince, this.now())) this.failures = 0;
+    this.usableSince = null;
     this.cancelRetry();
     this.cancelStability();
     const blocked = manual || this.input.autoReconnect === false;
@@ -169,9 +189,7 @@ export class ConnectionLifecycleOwner<T> {
     if (blocked) this.pendingWake = false;
     let delayMs = 0;
     if (!blocked) {
-      const schedule = this.input.delaysMs;
-      const base = (schedule ?? delays)[Math.min(this.failures++, (schedule ?? delays).length - 1)] ?? 60_000;
-      delayMs = this.jitteredDelay(base, schedule === undefined);
+      delayMs = retryDelayMs(this.failures++, { schedule: this.input.delaysMs, jitter: this.input.jitter, random: this.input.random });
       // A known service update gets a bounded, responsive retry period. A
       // prolonged outage returns to the existing exponential schedule.
       if (this.now() < this.plannedRestartUntil) delayMs = Math.min(delayMs, 2_000);
@@ -187,11 +205,6 @@ export class ConnectionLifecycleOwner<T> {
     // Recheck after observers: they may have disposed, blocked or started a retry.
     if (this.state.phase === "backoff" && this.pendingWake && this.now() - this.lastHintAt >= 5_000)
       void this.connect(true).catch(() => undefined);
-  }
-  private jitteredDelay(delayMs: number, useDefaultSchedule: boolean): number {
-    if (!useDefaultSchedule || this.input.jitter === false) return delayMs;
-    const random = Math.min(1, Math.max(0, this.input.random?.() ?? Math.random()));
-    return Math.max(1, Math.round(delayMs * (0.8 + random * 0.4)));
   }
   private scheduleRetry(delayMs: number): void {
     this.cancelRetry();

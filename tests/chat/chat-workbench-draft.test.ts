@@ -35,8 +35,12 @@ test("Workbench exposes Fork and Side Chat only for explicitly declared lifecycl
     { declared: undefined, fork: false, sideChat: false },
     { declared: { version: 2, fork: true, ephemeral: true, injectItems: true, unsubscribe: true }, fork: false, sideChat: false },
     { declared: { version: 1, fork: true }, fork: true, sideChat: false },
-    { declared: { version: 1, fork: false, ephemeralFork: true, ephemeral: true, injectItems: true, unsubscribe: true }, fork: false, sideChat: true },
+    { declared: { version: 1, fork: false, ephemeralFork: true, ephemeral: true, injectItems: true, unsubscribe: true }, fork: false, sideChat: false },
     { declared: { version: 1, fork: true, ephemeral: true, injectItems: true, unsubscribe: true }, fork: true, sideChat: true },
+    { declared: { version: 1, fork: true, injectItems: true, unsubscribe: true }, fork: true, sideChat: true },
+    { declared: { version: 1, fork: true, sideChatSettings: true, unsubscribe: true }, fork: true, sideChat: true },
+    { declared: { version: 1, fork: true, sideChatSettings: "true", unsubscribe: true }, fork: true, sideChat: false },
+    { declared: { version: 1, fork: true, sideChatSettings: true }, fork: true, sideChat: false },
   ];
   for (const item of cases) {
     const harness = createHarness(false, false, [], false, undefined, false, false, false, false, item.declared);
@@ -82,6 +86,40 @@ test("an acknowledged durable Fork stays in the default catalog until the Host l
   } finally { await runtime.dispose(); }
 });
 
+
+test("owned durable forks do not get synthesized into the ordinary catalog and remain recoverable", async () => {
+  const harness = createHarness(false, false, [], false, undefined, false, false, false, false, { version: 1, fork: true });
+  const runtime = createAppServerWorkbenchRuntime({ hostId: 'local', transport: harness.transport, autoReconnect: false });
+  try {
+    await runtime.connect();
+    const child = await runtime.resources.threads.fork!({ threadId: 'thread-created', excludeTurns: true },
+      { ownership: { kind: 'side-chat', owner: createConversationKey('local', 'thread-created') } });
+    assert.equal(child.id, 'thread-fork');
+    assert.deepEqual((await runtime.resources.threads.list()).data.map(thread => thread.id), ['thread-created']);
+    const lease = await runtime.acquireThread(child.id);
+    lease.release();
+    assert.equal(harness.requests.filter(request => request.method === 'thread/fork').length, 1);
+    assert.equal('ownership' in (harness.requests.find(request => request.method === 'thread/fork')!.params as object), false,
+      'Product ownership is not passed as an unsupported native engine parameter');
+    await assert.rejects(runtime.resources.threads.fork!({ threadId: 'thread-created' },
+      { ownership: { kind: 'side-chat', owner: createConversationKey('other-host', 'thread-created') } }), /this Host/);
+    assert.equal(harness.requests.filter(request => request.method === 'thread/fork').length, 1);
+  } finally { await runtime.dispose(); }
+});
+
+test("identical native fork parameters with different ownership are not deduplicated together", async () => {
+  const harness = createHarness(false, false, [], false, undefined, false, false, false, false, { version: 1, fork: true });
+  const runtime = createAppServerWorkbenchRuntime({ hostId: 'local', transport: harness.transport, autoReconnect: false });
+  try {
+    await runtime.connect();
+    const params = { threadId: 'thread-created', excludeTurns: true };
+    await Promise.all([
+      runtime.resources.threads.fork!(params),
+      runtime.resources.threads.fork!(params, { ownership: { kind: 'side-chat', owner: createConversationKey('local', 'thread-created') } }),
+    ]);
+    assert.equal(harness.requests.filter(request => request.method === 'thread/fork').length, 2);
+  } finally { await runtime.dispose(); }
+});
 
 test("a durable Fork can outlive the generic request deadline without a second native request", async () => {
   const harness = createHarness(false, false, [], false, undefined, false, false, false, false, { version: 1, fork: true });

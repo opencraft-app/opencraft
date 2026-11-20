@@ -118,8 +118,7 @@
   pointer-events: auto;
 }
 
-.chat-table-actions button,
-.chat-table-preview__toolbar button {
+.chat-table-actions button {
   display: inline-flex;
   width: 28px;
   height: 28px;
@@ -134,28 +133,9 @@
 }
 
 @include controls.hover-capable {
-  .chat-table-actions button:hover,
-  .chat-table-preview__toolbar button:hover { color: var(--text-primary); background: var(--alpha-06); }
+  .chat-table-actions button:hover { color: var(--text-primary); background: var(--alpha-06); }
 }
-.chat-table-actions svg,
-.chat-table-preview__toolbar svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
-
-.chat-table-preview {
-  width: min(920px, calc(100vw - 48px));
-  max-width: none;
-  max-height: min(760px, calc(100vh - 48px));
-  padding: 0;
-  border: 1px solid var(--border-default);
-  border-radius: 12px;
-  color: var(--text-primary);
-  background: var(--surface-raised);
-  box-shadow: var(--shadow-300);
-}
-
-.chat-table-preview::backdrop { background: rgb(0 0 0 / 28%); backdrop-filter: blur(2px); }
-.chat-table-preview__toolbar { display: flex; height: 44px; padding-inline: 14px 8px; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-soft); font-weight: var(--typography-primary-action-weight); }
-.chat-table-preview__content { max-height: calc(100vh - 96px); padding: 24px; overflow: auto; }
-.chat-table-preview__content table { min-width: 100%; }
+.chat-table-actions svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
 
 // Anchor each toolbar to its own table, including multiple tables in one
 // message. Keep actions inside the scrollport when the content is wider.

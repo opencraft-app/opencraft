@@ -219,6 +219,11 @@ gap and edge inset. With a full spare gutter the card occupies that gutter witho
 the conversation; with room for both columns it reserves only the inspector's footprint;
 otherwise its toolbar action opens a Radix popover. Input capability and the shared touch
 preference own hit targets and modality, independently of these three space budgets.
+Visibility is explicit user intent: every conversation scope starts closed at all
+widths. Container growth, loaded history and file/activity updates do not open the
+card. Resizing preserves an explicit open/closed choice within the same scope;
+changing account/Host/thread scope resets it to closed. The toolbar info action
+opens the existing presentation on demand.
 The same compact card owns its title and grouped plan/files/background activity rows.
 Its raised surface and content inset share the design-system utility-card contract with
 pending MCP prompts; feature styles do not duplicate the card's radius, border or shadow.

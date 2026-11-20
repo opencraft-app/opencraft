@@ -7,6 +7,7 @@ export function validateHeadlessIdentity(identity) {
     || (identity.service != null && ['admissionStatus', 'connectionContext', 'handle'].some(method => typeof identity.service[method] !== 'function'))
     || (identity.capabilityProviders !== undefined && (!Array.isArray(identity.capabilityProviders)
       || identity.capabilityProviders.some(p => !p || typeof p.id !== 'string' || typeof p.tools !== 'function' || typeof p.call !== 'function')))
+    || (identity.notificationDefaultTarget !== undefined && typeof identity.notificationDefaultTarget !== 'function')
     || (identity.createThreadMetadata !== undefined && typeof identity.createThreadMetadata !== 'function')
     || (identity.getStorageOutcomes !== undefined && typeof identity.getStorageOutcomes !== 'function')
     || (identity.sshAccess !== undefined && (!identity.sshAccess

@@ -1,8 +1,24 @@
+import { AppServerClientError, AppServerRpcError } from "@opencraft/appserver-client";
 import type { ThreadGoal } from "@opencraft/appserver-protocol/generated/v2";
 import type { OpenCraftThreadGoalCapability } from "@opencraft/appserver-protocol";
 
+/** Stable public classification; raw transport diagnostics are not user copy. */
+export class GoalMutationError extends Error {
+  /** Only typed codes enter UI copy. The unmodified error/data remain in cause. */
+  readonly diagnosticCode: string | null;
+
+  constructor(readonly code: "conflict" | "atomicReplacementRequired" | "requestRejected" | "serverError" | "outcomeUnknown" | "versionRequired", options?: ErrorOptions) {
+    super(code === "conflict" ? "The Goal changed or an unfinished Goal already exists" : code === "atomicReplacementRequired" ? "Atomic Goal replacement is not supported by this Host" : code === "versionRequired" ? "A fresh Goal version is required" : code === "requestRejected" ? "Goal request was not accepted" : code === "serverError" ? "Goal request returned a server error" : "Goal write outcome unknown", options);
+    this.name = "GoalMutationError";
+    this.diagnosticCode = options?.cause instanceof AppServerRpcError && Number.isSafeInteger(options.cause.code)
+      ? `RPC ${options.cause.code}`
+      : options?.cause instanceof AppServerClientError ? options.cause.code : null;
+  }
+}
+
 export interface ThreadGoalSnapshot {
   readonly goal: ThreadGoal | null;
+  readonly version?: string | null;
   /** Last observed completion, for review after a confirmed replacement clears it. */
   readonly completedGoal: ThreadGoal | null;
   readonly phase: "idle" | "loading" | "ready" | "error";
@@ -11,9 +27,9 @@ export interface ThreadGoalSnapshot {
 }
 
 export interface ThreadGoalClient {
-  get(threadId: string): Promise<{ goal: ThreadGoal | null }>;
-  set(threadId: string, change: { objective?: string; status?: ThreadGoal["status"]; tokenBudget?: number | null }): Promise<{ goal: ThreadGoal }>;
-  clear(threadId: string): Promise<{ cleared: boolean }>;
+  get(threadId: string): Promise<{ goal: ThreadGoal | null; version?: string }>;
+  set(threadId: string, change: { objective?: string; status?: ThreadGoal["status"]; tokenBudget?: number | null; expectedVersion?: string }): Promise<{ goal: ThreadGoal }>;
+  clear(threadId: string, change?: { expectedVersion?: string }): Promise<{ cleared: boolean }>;
   capability(threadId?: string): OpenCraftThreadGoalCapability | null;
 }
 
@@ -27,7 +43,8 @@ export class ThreadGoalResource {
   private readonly reads = new Map<string, Promise<void>>();
   private readonly revisions = new Map<string, number>();
   private readonly writes = new Set<string>();
-  private readonly pendingCreates = new Map<string, { objective: string }>();
+  private readonly conditionalThreads = new Set<string>();
+  private readonly unavailableVersions = new Set<string>();
   private generation = 0;
 
   constructor(private readonly client: ThreadGoalClient) {}
@@ -61,7 +78,8 @@ export class ThreadGoalResource {
   reset(): void {
     this.generation++;
     this.reads.clear();
-    this.pendingCreates.clear();
+    this.conditionalThreads.clear();
+    this.unavailableVersions.clear();
     this.snapshots.clear();
     for (const threadId of this.listeners.keys()) {
       this.publish(threadId, INITIAL);
@@ -70,9 +88,49 @@ export class ThreadGoalResource {
     for (const listener of this.catalogListeners) listener();
   }
 
-  observe(threadId: string, goal: ThreadGoal | null): void {
+  private readVersion(threadId: string, value: unknown): string | undefined {
+    if (value === undefined && !this.conditionalThreads.has(threadId)) return undefined;
+    this.conditionalThreads.add(threadId);
+    if (typeof value !== "string" || value.length > 19 || !/^(0|[1-9][0-9]*)$/.test(value) || BigInt(value) > 9223372036854775807n) {
+      this.unavailableVersions.add(threadId);
+      throw new GoalMutationError("versionRequired");
+    }
+    this.unavailableVersions.delete(threadId);
+    return value;
+  }
+
+  private hydrateLater(threadId: string): void {
+    const generation = this.generation;
+    queueMicrotask(() => {
+      if (generation !== this.generation || this.writes.has(threadId)) return;
+      const pending = this.reads.get(threadId);
+      if (pending) {
+        void pending.catch(() => undefined).then(() => {
+          if (generation === this.generation && !this.writes.has(threadId) && !this.reads.has(threadId)) void this.refresh(threadId, true).catch(() => undefined);
+        });
+      } else void this.refresh(threadId, true).catch(() => undefined);
+    });
+  }
+
+  observe(threadId: string, goal: ThreadGoal | null, version?: string): void {
+    const previous = this.getSnapshot(threadId);
+    const sameSemanticGoal = goal !== null && previous.goal !== null
+      && goal.objective === previous.goal.objective && goal.status === previous.goal.status
+      && goal.tokenBudget === previous.goal.tokenBudget && goal.createdAt === previous.goal.createdAt;
+    const token = version ?? (sameSemanticGoal ? previous.version : null);
     this.revisions.set(threadId, (this.revisions.get(threadId) ?? 0) + 1);
-    this.publish(threadId, { goal, completedGoal: goal?.status === "complete" ? goal : this.getSnapshot(threadId).completedGoal, phase: "ready", busy: this.writes.has(threadId), error: null });
+    this.publish(threadId, { goal, version: token, completedGoal: goal?.status === "complete" ? goal : previous.completedGoal, phase: "ready", busy: this.writes.has(threadId), error: null });
+    if (token == null && this.conditionalThreads.has(threadId)) this.hydrateLater(threadId);
+  }
+
+  private precondition(threadId: string, requested?: string | null): { expectedVersion?: string } {
+    if (!this.conditionalThreads.has(threadId)) {
+      if (requested != null) throw new GoalMutationError("versionRequired");
+      return {};
+    }
+    const version = requested === undefined ? this.getSnapshot(threadId).version : requested;
+    if (this.unavailableVersions.has(threadId) || typeof version !== "string" || version.length > 19 || !/^(0|[1-9][0-9]*)$/.test(version) || BigInt(version) > 9223372036854775807n) throw new GoalMutationError("versionRequired");
+    return { expectedVersion: version };
   }
 
   async refresh(threadId: string, force = false): Promise<void> {
@@ -84,8 +142,11 @@ export class ThreadGoalResource {
     const revision = this.revisions.get(threadId) ?? 0;
     const previous = this.getSnapshot(threadId);
     this.publish(threadId, { ...previous, phase: previous.phase === "idle" ? "loading" : previous.phase, error: null });
-    const operation = this.client.get(threadId).then(({ goal }) => {
-      if (this.generation === generation && (this.revisions.get(threadId) ?? 0) === revision) this.observe(threadId, goal);
+    const operation = this.client.get(threadId).then(({ goal, version: rawVersion }) => {
+      if (this.generation !== generation) return;
+      const version = this.readVersion(threadId, rawVersion);
+      if ((this.revisions.get(threadId) ?? 0) === revision) this.observe(threadId, goal, version);
+      else if (this.conditionalThreads.has(threadId)) this.hydrateLater(threadId);
     }).catch((cause: unknown) => {
       if (this.generation === generation && (this.revisions.get(threadId) ?? 0) === revision) {
         this.publish(threadId, { ...this.getSnapshot(threadId), phase: "error", error: cause instanceof Error ? cause : new Error("Goal could not be loaded") });
@@ -98,71 +159,108 @@ export class ThreadGoalResource {
     return operation;
   }
 
-  private async mutate(threadId: string, command: () => Promise<unknown>): Promise<void> {
+  private async mutate(threadId: string, command: () => Promise<ThreadGoal | null>): Promise<void> {
     if (!this.capability(threadId)?.write) throw new Error("This Host cannot change goals");
     if (this.writes.has(threadId)) throw new Error("A goal change is already in progress");
     const generation = this.generation;
     this.writes.add(threadId);
     this.publish(threadId, { ...this.getSnapshot(threadId), busy: true, error: null });
+    let reconciledFailure = false;
     try {
-      await command();
-      if (generation !== this.generation) throw new Error("The Goal connection changed");
-      await this.refresh(threadId, true);
+      const revision = this.revisions.get(threadId) ?? 0;
+      const goal = await command();
+      // The write response is the commit acknowledgement. A subsequent read is
+      // not part of that commit; a reconnect must not turn it into a failure.
+      // A notification received during the command may be newer than its ACK.
+      if (generation === this.generation && (this.revisions.get(threadId) ?? 0) === revision) this.observe(threadId, goal);
     } catch (cause) {
+      // Reconcile once while still single-flight; never replay the mutation.
+      // A matching state is not a receipt proving this command committed.
+      if (generation === this.generation && (!(cause instanceof GoalMutationError) || cause.cause !== undefined)) {
+        reconciledFailure = true;
+        await this.refresh(threadId, true).catch(() => undefined);
+      }
       if (generation === this.generation) this.publish(threadId, { ...this.getSnapshot(threadId), error: cause instanceof Error ? cause : new Error("Goal could not be changed") });
       throw cause;
     } finally {
       this.writes.delete(threadId);
-      if (generation === this.generation) this.publish(threadId, { ...this.getSnapshot(threadId), busy: false });
+      if (generation === this.generation) {
+        this.publish(threadId, { ...this.getSnapshot(threadId), busy: false });
+        if (!reconciledFailure && this.conditionalThreads.has(threadId)) this.hydrateLater(threadId);
+      }
     }
   }
 
-  set(threadId: string, change: { objective?: string; status?: ThreadGoal["status"]; tokenBudget?: number | null }): Promise<void> {
-    return this.mutate(threadId, () => this.client.set(threadId, change));
+  private async write(threadId: string, command: () => Promise<ThreadGoal | null>): Promise<ThreadGoal | null> {
+    const generation = this.generation;
+    try { return await command(); }
+    catch (cause) {
+      // Without a durable native operation receipt, a transport rejection does
+      // not prove non-execution. Never automatically replay this mutation.
+      if (cause && typeof cause === "object" && "code" in cause && cause.code === -32010
+        && "data" in cause && cause.data && typeof cause.data === "object" && "reason" in cause.data
+        && cause.data.reason === "goal_version_required") {
+        if (generation === this.generation) {
+          this.conditionalThreads.add(threadId);
+          this.unavailableVersions.add(threadId);
+        }
+        throw new GoalMutationError("versionRequired", { cause });
+      }
+      if (cause && typeof cause === "object" && "code" in cause && cause.code === -32009
+        && "data" in cause && cause.data && typeof cause.data === "object" && "reason" in cause.data
+        && cause.data.reason === "goal_version_conflict") throw new GoalMutationError("conflict", { cause });
+      if (cause instanceof GoalMutationError) throw cause;
+      // Only client pre-dispatch failures and standard RPC admission errors
+      // prove non-admission. Other server errors may follow a commit.
+      const code = cause instanceof AppServerClientError
+        && ["CLOSED", "NOT_CONNECTED", "NOT_DISPATCHED", "QUEUE_FULL"].includes(cause.code)
+        ? "requestRejected"
+        : cause instanceof AppServerRpcError
+          ? [-32700, -32600, -32601, -32602].includes(cause.code) ? "requestRejected" : "serverError"
+          : "outcomeUnknown";
+      throw new GoalMutationError(code, { cause });
+    }
   }
 
-  /** Explicit new objective: native set edits an existing Goal and retains its usage. */
-  create(threadId: string, objective: string): Promise<void> {
-    objective = objective.trim();
-    if (!objective) return Promise.reject(new Error("A Goal objective is required"));
-    const generation = this.generation;
-    const assertCurrent = () => {
-      if (generation !== this.generation || !this.capability(threadId)?.write) throw new Error("The Goal connection changed");
-    };
-    return this.mutate(threadId, async () => {
-      const { goal } = await this.client.get(threadId);
-      assertCurrent();
-      this.observe(threadId, goal);
-      const pending = this.pendingCreates.get(threadId);
-      if (pending && goal?.objective === pending.objective) {
-        if (objective !== pending.objective) throw new Error("Confirm the previous Goal creation first");
-        return; // A lost write/confirmation already created this Goal, even if complete.
-      }
-      if (goal !== null) {
-        if (goal.status !== "complete") throw new Error("An unfinished Goal already exists");
-        await this.client.clear(threadId);
-        assertCurrent();
-        const confirmed = await this.client.get(threadId);
-        assertCurrent();
-        this.observe(threadId, confirmed.goal);
-        if (confirmed.goal !== null) throw new Error("Goal removal was not confirmed");
-      }
-      assertCurrent();
-      // No background completion handler clears goals: a late completion cannot
-      // delete this new objective. The completed summary is presentation only.
-      this.pendingCreates.set(threadId, { objective });
-      await this.client.set(threadId, { objective, status: "active", tokenBudget: null });
-    }).then(() => {
-      assertCurrent();
-      if (this.getSnapshot(threadId).goal?.objective !== objective) throw new Error("Goal creation was not confirmed");
-      this.pendingCreates.delete(threadId);
+  set(threadId: string, change: { objective?: string; status?: ThreadGoal["status"]; tokenBudget?: number | null; expectedVersion?: string | null }): Promise<void> {
+    return this.mutate(threadId, () => {
+      const { expectedVersion, ...payload } = change;
+      const guard = this.precondition(threadId, expectedVersion);
+      return this.write(threadId, async () => (await this.client.set(threadId, { ...payload, ...guard })).goal);
     });
   }
 
-  async clear(threadId: string): Promise<void> {
-    await this.mutate(threadId, async () => { await this.client.clear(threadId); });
-    if (this.getSnapshot(threadId).goal !== null) throw new Error("Goal removal was not confirmed");
-    this.pendingCreates.delete(threadId);
-    this.publish(threadId, { ...this.getSnapshot(threadId), completedGoal: null });
+  /** Native set is an upsert, NOT an atomic create/replace operation. */
+  create(threadId: string, objective: string, expectedVersion?: string | null, canCommit: () => boolean = () => true): Promise<void> {
+    objective = objective.trim();
+    if (!objective) return Promise.reject(new Error("A Goal objective is required"));
+    const generation = this.generation;
+    return this.mutate(threadId, async () => {
+      const { goal, version: rawVersion } = await this.client.get(threadId);
+      if (generation !== this.generation || !this.capability(threadId)?.write) throw new Error("The Goal connection changed");
+      if (!canCommit()) throw new Error("The new conversation changed before its Goal was started");
+      const version = this.readVersion(threadId, rawVersion);
+      const guard = this.precondition(threadId, expectedVersion === undefined ? version : expectedVersion);
+      if (goal !== null) {
+        this.observe(threadId, goal, version);
+        if (goal.status !== "complete") throw new GoalMutationError("conflict");
+        // No clear-then-set fallback: it could delete another writer's Goal.
+        throw new GoalMutationError("atomicReplacementRequired");
+      }
+      // Legacy empty creation still has a cross-writer upsert race. Native
+      // expected-version + operation receipts are required to close it fully.
+      return this.write(threadId, async () => (await this.client.set(threadId, { objective, status: "active", tokenBudget: null, ...guard })).goal);
+    });
+  }
+
+  async clear(threadId: string, expectedVersion?: string | null): Promise<void> {
+    const generation = this.generation;
+    await this.mutate(threadId, () => {
+      const guard = this.precondition(threadId, expectedVersion);
+      return this.write(threadId, async () => { await this.client.clear(threadId, guard); return null; });
+    });
+    if (generation === this.generation && this.getSnapshot(threadId).goal === null) {
+      this.publish(threadId, { ...this.getSnapshot(threadId), completedGoal: null });
+    }
   }
 }

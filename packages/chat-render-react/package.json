@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./file-resource-presentation": "./src/file-resource-presentation.ts",
     "./code-highlight": "./src/code-highlight-engine.ts",
     "./code-highlight-themes": "./src/code-highlight-themes.ts"
   },

@@ -1,125 +1,34 @@
 import { DocumentIcon } from "@opencraft/design-system-web/action-icons";
-import { CopyIcon as Copy } from "@opencraft/design-system-web/action-icons";
-import { chatFileCitationPresentation, chatReferenceTarget, useSettledResourceTarget, type ChatNodeRendererProps, type ChatResourcePolicyService } from "@opencraft/chat-render-react";
-import type { ChatResourceDecision, ChatResourceOpenIntent } from "@opencraft/chat-render-react";
-import { FormattedMessage } from "@opencraft/i18n/react";
-import * as ContextMenu from "@opencraft/design-system-web/context-menu";
-import * as Tooltip from "@radix-ui/react-tooltip";
-import { ExternalLinkIcon as ExternalLink, GlobeIcon as Globe2 } from "@opencraft/design-system-web/action-icons";
-import { createContext, useContext, useEffect, useMemo, useState, type CSSProperties, type MouseEvent } from "react";
+import { parseConversationRef } from "@opencraft/appserver-protocol/collaboration";
+import { chatFileCitationPresentation, chatWebLinkLabel, chatReferenceTarget, type ChatNodeRendererProps, type ChatResourcePolicyService } from "@opencraft/chat-render-react";
+import type { ChatResourceDecision } from "@opencraft/chat-render-react";
+import { createContext, useContext, lazy, Suspense, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 
-import { writeTextToClipboard } from "../../clipboard";
 import { ProseRenderer } from "../prose/prose-renderer";
 import {
-  externalLinkMenuIntent,
   externalLinkPointerIntent,
-  faviconSources,
 } from "./external-link-model";
 import "./resource-link.scss";
 
-function ExternalLinkGlyph({ target }: { readonly target: string | null }) {
-  const sources = useMemo(() => target === null ? [] : faviconSources(target), [target]);
-  const [loaded, setLoaded] = useState<string | null>(null);
-  useEffect(() => setLoaded(null), [target]);
-  return (
-    <span aria-hidden="true" className="chat-external-link__icon" data-markdown-copy="exclude">
-      <span className="chat-external-link__icon-fallback"><Globe2 /></span>
-      {sources.map((source) => (
-        <img
-          alt=""
-          className={loaded === source ? "is-loaded" : undefined}
-          decoding="async"
-          key={source}
-          onLoad={() => setLoaded((current) => current !== null && sources.includes(current) ? current : source)}
-          referrerPolicy="no-referrer"
-          src={source}
-        />
-      ))}
-    </span>
-  );
-}
-
-export function ExternalUrlLink({
-  context,
-  decision,
-  label,
-  title,
-}: {
+const ExternalUrlPresentation = lazy(() => import("./external-url-link").then(module => ({ default: module.ExternalUrlLink })));
+export function ExternalUrlLink(props: {
   readonly context: ChatNodeRendererProps["context"];
   readonly decision: ChatResourceDecision;
   readonly label: ReturnType<ChatNodeRendererProps["renderNodes"]>;
   readonly title: string | null;
 }) {
-  const target = useSettledResourceTarget(decision.allowed ? decision.target : null, context.streaming);
-  const pending = decision.allowed && decision.target !== null && target === null;
-  const invoke = (intent: ChatResourceOpenIntent) => {
-    if (target === null) return;
-    if (context.openResource !== undefined) context.openResource(target, decision, intent);
-    else window.open(target, "_blank", "noopener,noreferrer");
-  };
-  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (target === null || context.openResource !== undefined) event.preventDefault();
-    if (target === null || context.openResource === undefined) return;
+  const { context, decision, label, title } = props;
+  const target = decision.allowed && !context.streaming ? decision.target : null;
+  const activate = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!target || context.openResource) event.preventDefault();
     const intent = externalLinkPointerIntent(event);
-    if (intent !== null) invoke(intent);
+    if (target && intent) context.openResource?.(target, decision, intent);
   };
-  const handleAuxClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (event.button !== 1) return;
-    if (target === null || context.openResource !== undefined) event.preventDefault();
-    const intent = externalLinkPointerIntent(event);
-    if (target !== null && context.openResource !== undefined && intent !== null) invoke(intent);
-  };
-  const anchor = (
-    <a
-      aria-busy={pending || undefined}
-      aria-disabled={target === null || undefined}
-      className="chat-external-link"
-      data-chat-resource-kind="external"
-      data-markdown-raw-link-label={title ?? ""}
-      href={target ?? undefined}
-      onAuxClick={handleAuxClick}
-      onClick={handleClick}
-      rel="noopener noreferrer"
-      target={context.openResource === undefined ? "_blank" : undefined}
-    >
-      <ExternalLinkGlyph target={target} />
-      <span className="chat-external-link__label">{label}</span>
-    </a>
-  );
-  return (
-    <Tooltip.Provider delayDuration={450}>
-      <ContextMenu.Root>
-        <Tooltip.Root>
-          <Tooltip.Trigger asChild>
-            <ContextMenu.Trigger asChild>{anchor}</ContextMenu.Trigger>
-          </Tooltip.Trigger>
-          {target === null ? null : (
-            <Tooltip.Portal>
-              <Tooltip.Content className="chat-external-link-tooltip" sideOffset={5}>
-                {target}<Tooltip.Arrow className="chat-external-link-tooltip__arrow" />
-              </Tooltip.Content>
-            </Tooltip.Portal>
-          )}
-        </Tooltip.Root>
-        {target === null ? null : (
-          <ContextMenu.Portal>
-            <ContextMenu.Content className="chat-external-link-menu">
-              <ContextMenu.Item onSelect={() => invoke(externalLinkMenuIntent("in-app-browser"))}>
-                <Globe2 aria-hidden="true" /><FormattedMessage id="chat.link.openInBrowser" defaultMessage="Open in browser" />
-              </ContextMenu.Item>
-              <ContextMenu.Item onSelect={() => invoke(externalLinkMenuIntent("external-browser"))}>
-                <ExternalLink aria-hidden="true" /><FormattedMessage id="chat.link.openExternal" defaultMessage="Open in external browser" />
-              </ContextMenu.Item>
-              <ContextMenu.Separator />
-              <ContextMenu.Item onSelect={() => void writeTextToClipboard(target)}>
-                <Copy aria-hidden="true" /><FormattedMessage id="chat.link.copy" defaultMessage="Copy link" />
-              </ContextMenu.Item>
-            </ContextMenu.Content>
-          </ContextMenu.Portal>
-        )}
-      </ContextMenu.Root>
-    </Tooltip.Provider>
-  );
+  return <Suspense fallback={<a className="chat-external-link" href={target ?? undefined}
+    aria-disabled={!target || undefined} rel="noopener noreferrer" target="_blank"
+    onClick={activate} onAuxClick={event => { if (event.button === 1) activate(event); }} title={target ?? undefined}>
+    {target && title ? chatWebLinkLabel(target, title) : label}
+  </a>}><ExternalUrlPresentation {...props} /></Suspense>;
 }
 
 // An inline code label inside an explicit Markdown link belongs to that link.
@@ -145,6 +54,18 @@ export function mediaFilePath(value: string): string | null {
   return path;
 }
 
+function externalMediaLink(path: string, target: string, decision: ChatResourceDecision, context: ChatNodeRendererProps["context"], content: ReactNode) {
+  return <a href={target} title={path} data-chat-resource-kind="external"
+    onClick={event => { event.preventDefault(); context.openResource?.(target, decision); }}>
+    {content}
+  </a>;
+}
+
+function localMediaLink(target: string, decision: ChatResourceDecision, context: ChatNodeRendererProps["context"]) {
+  return <FileResourceLink target={target} kind={decision.kind ?? "file"}
+    onClick={event => { event.preventDefault(); context.openResource?.(target, decision); }} />;
+}
+
 export function createMediaFileRenderer(resources: ChatResourcePolicyService) {
   return function MediaFileRenderer(props: ChatNodeRendererProps) {
     const { node, context } = props;
@@ -157,15 +78,8 @@ export function createMediaFileRenderer(resources: ChatResourcePolicyService) {
     const decision = resources.resolve(path, context);
     if (!decision.allowed || decision.target === null
       || (decision.kind !== "file" && decision.kind !== "workspace-file" && decision.kind !== "external")) return <ProseRenderer {...props} />;
-    return <a
-      href={decision.target}
-      title={path}
-      data-chat-resource-kind={decision.kind}
-      onClick={(event) => {
-        event.preventDefault();
-        context.openResource?.(decision.target!, decision);
-      }}
-    ><code className="chat-inline-code">{path}</code></a>;
+    if (decision.kind !== "external") return localMediaLink(decision.target, decision, context);
+    return externalMediaLink(path, decision.target, decision, context, <code className="chat-inline-code">{path}</code>);
   };
 }
 
@@ -182,20 +96,24 @@ export function createInlineMarkdownFileRenderer(resources: ChatResourcePolicySe
     const decision = resources.resolve(path, context);
     if (!decision.allowed || decision.target === null
       || (decision.kind !== "file" && decision.kind !== "workspace-file" && decision.kind !== "external")) return code;
-    return <a
-      href={decision.target}
-      title={path}
-      data-chat-resource-kind={decision.kind}
-      onClick={(event) => {
-        event.preventDefault();
-        context.openResource?.(decision.target!, decision);
-      }}
-    >{code}</a>;
+    if (decision.kind !== "external") return localMediaLink(decision.target, decision, context);
+    return externalMediaLink(path, decision.target, decision, context, code);
   };
 }
 
 function FileGlyph() {
-  return <DocumentIcon size={16} className="chat-file-citation__icon" />;
+  return <DocumentIcon size={16} aria-hidden="true" className="chat-file-citation__icon" />;
+}
+
+const FileResourceChip = lazy(() => import("./resource-chip").then(module => ({ default: module.FileResourceChip })));
+function FileResourceLink(props: {
+  readonly target: string; readonly label?: string; readonly kind: string;
+  readonly onClick: (event: MouseEvent<HTMLAnchorElement>) => void;
+}) {
+  return <Suspense fallback={<a className="chat-file-citation" href={props.target} title={props.target}
+    onClick={props.onClick} aria-busy="true"><FileGlyph />{props.label ?? props.target.split(/[\\/]/u).at(-1)}</a>}>
+    <FileResourceChip {...props} />
+  </Suspense>;
 }
 
 export function createFileCitationRenderer(resources: ChatResourcePolicyService) {
@@ -209,31 +127,35 @@ export function createFileCitationRenderer(resources: ChatResourcePolicyService)
       return <span className="chat-file-citation" title={node.attributes.path}><FileGlyph />{label}</span>;
     }
     return (
-      <a
-        className="chat-file-citation"
-        data-chat-resource-kind={decision.kind ?? "workspace-file"}
-        href={decision.target}
+      <FileResourceLink target={decision.target} kind={decision.kind ?? "workspace-file"}
         onClick={(event) => {
           if (context.openResource !== undefined) event.preventDefault();
           context.openResource?.(decision.target!, decision);
-        }}
-        title={node.attributes.path}
-      ><FileGlyph />{label}</a>
+        }} />
     );
   };
+}
+
+function linkLabelText(nodes: Extract<ChatNodeRendererProps["node"], { kind: "link" }>["children"]): string {
+  return nodes.map(child => child.kind === "text" ? child.text : child.kind === "inline-code" ? child.code
+    : "children" in child ? linkLabelText(child.children) : "").join("");
 }
 
 export function createLinkRenderer(resources: ChatResourcePolicyService) {
   return function LinkRenderer({ node, context, renderNodes }: ChatNodeRendererProps) {
     if (node.kind !== "link") return null;
     const decision = resources.resolve(node.href, context);
+    const conversation = context.dialect === "user-message" && parseConversationRef(node.href) !== null;
+    // Old native history retains the model-facing label. Project it at the
+    // resource boundary without rewriting history or code examples.
+    const mentionLabel = conversation ? "@" + linkLabelText(node.children).replace(/^(?:Referenced conversation: |@)/u, "") : null;
     const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
       if (!decision.allowed || decision.target === null || context.openResource !== undefined) {
         event.preventDefault();
       }
       if (decision.allowed && decision.target !== null) context.openResource?.(decision.target, decision);
     };
-    const external = decision.kind === "external" || decision.kind === "mail";
+    const external = !conversation && (decision.kind === "external" || decision.kind === "mail");
     if (decision.kind === "external" && /^https?:/iu.test(decision.target ?? node.href)) {
       return (
         <ExternalUrlLink
@@ -244,9 +166,18 @@ export function createLinkRenderer(resources: ChatResourcePolicyService) {
         />
       );
     }
+    if (decision.allowed && decision.target !== null && (decision.kind === "file" || decision.kind === "workspace-file" || decision.kind === "resource")) {
+      return <FileResourceLink target={decision.target} kind={decision.kind}
+        label={linkLabelText(node.children)} onClick={handleClick} />;
+    }
+    if (decision.allowed && decision.target !== null && decision.kind === "app-route") {
+      return <FileResourceLink target={decision.target} kind={decision.kind}
+        label={mentionLabel ?? linkLabelText(node.children)} onClick={handleClick} />;
+    }
     return (
       <a
         aria-disabled={!decision.allowed || undefined}
+        className={conversation ? "chat-conversation-mention" : undefined}
         data-chat-resource-kind={decision.kind ?? "resource"}
         data-markdown-raw-link-label={node.children.map((child) => child.kind === "text" ? child.text : "").join("")}
         href={decision.target ?? undefined}
@@ -254,7 +185,7 @@ export function createLinkRenderer(resources: ChatResourcePolicyService) {
         rel={external ? "noopener noreferrer" : undefined}
         target={external ? "_blank" : undefined}
         title={node.title ?? decision.reason ?? node.href}
-      ><ResourceLinkLabel.Provider value>{renderNodes(node.children)}</ResourceLinkLabel.Provider></a>
+      ><ResourceLinkLabel.Provider value>{mentionLabel ?? renderNodes(node.children)}</ResourceLinkLabel.Provider></a>
     );
   };
 }
@@ -285,6 +216,12 @@ export function createReferenceRenderer(resources: ChatResourcePolicyService) {
     ));
     if (decision === null || !decision.allowed || decision.target === null) {
       return <span className="chat-inline-code" data-markdown-copy="inline-code" dir="ltr">{contents}</span>;
+    }
+    if (decision.kind === "file" || decision.kind === "workspace-file") {
+      return <FileResourceLink target={decision.target} kind={decision.kind} onClick={event => {
+        if (context.openResource !== undefined) event.preventDefault();
+        context.openResource?.(decision.target!, decision);
+      }} />;
     }
     return (
       <a

@@ -4,6 +4,17 @@
 
 ## Employee account entrance
 
+- Browser Host recovery distinguishes a confirmed HTTP 401 from network failure
+  and permission denial (403). Manual admission failures stop automatic socket
+  retries and explain the required action beside the current composer, including
+  new-chat drafts; they do not masquerade as model setup or keep “Reconnecting”.
+  A confirmed 401 automatically reloads the current browser entry once per tab
+  and selected server, after queued local document writes finish, allowing the
+  gateway to reauthenticate. A sessionStorage fence survives reload and is cleared
+  only by confirmed 204 admission. Blocked storage, failed persistence or repeated
+  401 retains the explicit sign-in/retry fallback. A 403 never navigates. Recovery
+  never replays a user write or extends identity validity locally.
+
 - The 企业身份 plugin owns stable browser-loaded `directory.example.com/photo/150` URLs for
   employee photos. The account menu/footer and each verified message sender use
   the same directory lookup; sender identity never follows the footer account.
@@ -66,8 +77,8 @@
 - 机器分组只由 daemon 上报的 machineId 决定，不按 URL、域名、名称或 hostKind 推断；分组只影响呈现，不改变 Host 与 `(hostId, threadId)` 身份。机器显示名可由部署 `--machine-name` 设置，改名不改变 machineId。
 - 运行位置和机器设置优先展示部署自有 local/durable 执行端 机器，其后为 SSH、WebSocket 等外部连接，最后为云资源；各层保持原有相对顺序。排序不依赖显示名、连接状态或选中项，不改分组与选择偏好。
 - 读取机器身份不初始化引擎；未连接 Agent 的模型目录只在用户打开模型菜单时加载，加载与失败在菜单内原位反馈。
-- 新的机器、Agent、项目选择撤销旧准备；晚到结果不得覆盖较新的意图。切换机器或 Agent 只读：目录在目标 Host 存在才保留，不创建项目记录。
-- 切换运行位置保留草稿内容；暂不可用的附件原位标注，不静默删除。
+- 新的机器、Agent、工作区选择撤销旧准备；晚到结果不得覆盖较新的意图。节点与工作区是两个入口，工作区一次确定环境与目录/来源，项目归属可选。同一应用与账号范围内按 Host 记住完整工作区；切到未选择过的另一台机器从临时工作区开始，不继承同名目录或项目。相同机器的 Agent 可保留当前位置，不创建项目记录。
+- 切换运行位置保留草稿内容；暂不可用的附件原位标注，不静默删除。工作区列表按名称、环境与路径搜索；临时工作区在同一菜单内再选择运行环境，资源配置不占 Composer 入口。验证：`tests/shell/workspace-picker.test.ts`、`tests/chat/work-in-draft.test.ts`、`scripts/smoke/composer/smoke-workspace-picker.ts`（真实 Shell/Composer，键盘/触控模拟、浅/深主题）。
 - Web 不显示「这台…」；只有桌面端本机 daemon 所在机器显示「这台 Mac / 这台电脑」。云端资源生命周期与连接状态分开呈现。
 - 设置的「运行 › 机器」使用同一 `groupWorkInMachines` / `workInMachineName` 投影：一台机器一行，未知身份 Host 独立成行，云端独立成组。机器内按 Agent 呈现目标 Host 的设置与连接，不在侧栏重复列 Host；旧 `execution-<hostId>` 以及身份晚到前的未知机器路由由 Router REPLACE 纠正。「运行」分组依次提供一级入口「模型服务」「Codex 账户」「机器」；前两项直达现有固定 targetHostId 的插件页，仅高亮对应入口，并以「用于」标签呈现机器归属。机器内入口与返回机器行为保留；idle 表示尚未启动，连接地址单行省略并提供完整 title。模型服务与 Codex 账户仍归各自 Host，不提供服务端统一中转或多机器选择器。
 - 验证：`tests/shell/settings-machines.test.tsx`、`tests/shell/settings-machine-navigation.test.ts`、`tests/work-in-*.test.ts`、`tests/execution/opencraft-daemon.test.ts`；Web 与 Linux Electron 实测，macOS 窗口、真实多机器与下游产品云端链路尚未实测。

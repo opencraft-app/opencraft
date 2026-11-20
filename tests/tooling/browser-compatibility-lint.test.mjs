@@ -25,6 +25,7 @@ for (const [name, code, rule] of [
   ["Promise.withResolvers", "Promise.withResolvers();", "es-x/no-promise-withresolvers"],
   ["Set methods", "new Set().union(new Set());", "es-x/no-set-prototype-union"],
   ["native Popover", "document.createElement('div').showPopover();", "no-restricted-properties"],
+  ["unguarded atomic DOM move", "document.body.moveBefore(document.createElement('div'), null);", "no-restricted-properties"],
   ["AbortSignal.any", "const request = new AbortController(); const options: RequestInit = { signal: AbortSignal.any([request.signal, AbortSignal.timeout(10_000)]) };", "no-restricted-properties"],
   ["computed AbortSignal['any']", "const request = new AbortController(); AbortSignal['any']([request.signal]);", "no-restricted-properties"],
   ["employee identity RequestInit", "class EmployeeIdentity { request = new AbortController(); options(): RequestInit { return { credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal: AbortSignal.any([this.request.signal, AbortSignal.timeout(10_000)]) }; } }", "no-restricted-properties"],

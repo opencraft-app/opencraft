@@ -1,10 +1,10 @@
 import { useSyncExternalStore } from "react";
 
-const query = "(prefers-reduced-motion: reduce)";
-const snapshot = () => typeof window !== "undefined" && window.matchMedia(query).matches;
+export const motionReductionQuery = "(prefers-reduced-motion: reduce)";
+const snapshot = () => typeof window !== "undefined" && window.matchMedia(motionReductionQuery).matches;
 const serverSnapshot = () => false;
 function subscribe(change: () => void) {
-  const preference = window.matchMedia(query);
+  const preference = window.matchMedia(motionReductionQuery);
   preference.addEventListener("change", change);
   return () => preference.removeEventListener("change", change);
 }

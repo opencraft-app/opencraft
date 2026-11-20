@@ -6,9 +6,15 @@
   "exports": {
     ".": "./src/index.ts",
     "./window-metrics": "./src/window-metrics.ts",
+    "./retry-schedule": "./src/retry-schedule.ts",
+    "./side-chat-records": "./src/side-chat/records.ts",
+    "./resource-directory-signals": "./src/resource-directory-signals.ts",
+    "./resource-directory-reconciler": "./src/resource-directory-reconciler.ts",
     "./browser-metadata-identity": "./src/browser-metadata-identity.ts",
     "./connectors/configuration": "./src/connectors/configuration.ts",
-    "./retry-schedule": "./src/retry-schedule.ts"
+    "./conversation-display-cache": "./src/conversation-display-cache.ts",
+    "./conversation-scope-lease": "./src/conversation-scope-lease.ts",
+    "./conversation-binding": "./src/conversation-binding.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

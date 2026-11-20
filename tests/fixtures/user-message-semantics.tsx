@@ -1,6 +1,9 @@
 import React, { useSyncExternalStore } from "react";
 import { createConversationDisplayContinuity, createConversationScopeRegistry, submittedMessageDisplay } from "@opencraft/workbench-runtime";
-import type { SubmitIntent } from "@opencraft/composer-core";
+import { createComposerController, type SubmitIntent } from "@opencraft/composer-core";
+import { compileSubmitIntent } from "@opencraft/composer-appserver";
+import { OpenCraftComposer } from "@opencraft/composer-editor";
+import { buildOpenCraftThemeCssProperties, lavenderThemePalette } from "@opencraft/design-system/theme-engine";
 import { deriveUserMessageSemantics, type UserMessageTimelineBlock } from "@opencraft/chat-core";
 import { UserMessageBlock } from "../../apps/workbench-web/src/components/conversation/user-message";
 import { ConversationDocumentContext } from "../../apps/workbench-web/src/components/conversation/document-context";
@@ -10,13 +13,15 @@ import { createIntlTestRoot } from "./intl-root";
 import styles from "../../apps/workbench-web/src/styles/app.scss?inline";
 
 const dark = new URLSearchParams(location.search).has("dark");
+const custom = new URLSearchParams(location.search).has("custom");
+for (const [key, value] of Object.entries(buildOpenCraftThemeCssProperties(dark ? "dark" : "light", custom ? lavenderThemePalette.light : undefined))) document.documentElement.style.setProperty(key, value);
 const root = document.getElementById("root")!;
 const style = document.createElement("style");
 style.textContent = styles;
 document.head.append(style);
 document.body.style.margin = "0";
 root.className = "opencraft-embedded-workbench-root";
-root.style.cssText = `padding:16px;max-width:860px;margin:auto;background:${dark ? "#17191c" : "white"};color:${dark ? "#eee" : "#21272b"};--color-text:${dark ? "#eee" : "#21272b"};--color-text-tertiary:#77818a;--color-background-surface:${dark ? "#17191c" : "white"};--opencraft-chat-font-size:15px;display:flex;flex-direction:column;gap:20px`;
+root.style.cssText = `padding:16px;max-width:860px;margin:auto;background:${dark ? "#17191c" : "white"};color:${dark ? "#eee" : "#21272b"};--color-text:${dark ? "#eee" : "#21272b"};--color-text-tertiary:#77818a;--color-background-surface:${dark ? "#17191c" : "white"};--opencraft-chat-font-size:15px;display:flex;flex-direction:column;gap:20px;height:100dvh;overflow:auto;box-sizing:border-box`;
 const base: UserMessageTimelineBlock = { type: "user-message", id: "base", sourceItemIds: [], message: "", content: [], attachments: [],
   messageKind: "user", clientId: null, steeringStatus: null, sentAtMs: null, deliveryStatus: null,
   referencesPriorConversation: false, reviewMode: false, pullRequestFixMode: false, autoResolveSync: false, goal: false,
@@ -46,6 +51,23 @@ const cases: [string, Partial<UserMessageTimelineBlock>][] = [
   ["comment", { commentCount: 1, attachments: [{ type: "comment", id: "c", label: "note", target: null, body: "fix", line: null }] }],
   ["audio", { content: [{ type: "audio", source: "data:audio/wav;base64,UklGRg==" }] }],
 ];
+const conversationUri = "opencraft://conversation/v1/server/thread";
+const mentionIntent: SubmitIntent = { commandId: "mention-command", clientMessageId: "mention-message",
+  target: { type: "new-thread", draftId: "mention-draft", execution: { hostId: "fixture", workspace: { cwd: "/workspace", runtimeWorkspaceRoots: [] } } },
+  document: { version: 1, blocks: [{ type: "paragraph", children: [
+    { type: "text", text: "你问问 " },
+    { type: "mention", id: "conversation", mentionKind: "thread", label: "修复会话存档报错 [复查] `版本` 👋", uri: conversationUri },
+  ] }] }, attachments: [], context: [], selections: {}, options: { autoContext: false }, createdAt: 1_700_000_000_000 };
+const compiledMention = compileSubmitIntent(mentionIntent).input.flatMap(part => part.type === "text" ? [part.text] : []).join("");
+const mentionComposer = createComposerController(mentionIntent.target, { now: () => Date.now(), createId: () => crypto.randomUUID() });
+mentionComposer.dispatch({ type: "set-document", document: mentionIntent.document });
+cases.push(
+  ["mention-pending", submittedMessageDisplay(mentionIntent)],
+  ["mention-restored", { message: compiledMention }],
+  ["mention-legacy", { message: `你问问 [Referenced conversation: 修复会话存档报错](${conversationUri})` }],
+  ["mention-code", { message: `\`[Referenced conversation: 原样代码](${conversationUri})\`` }],
+  ["ordinary-link", { message: "[Referenced conversation: 普通网站](https://example.com/)" }],
+);
 const context = { conversationId: "fixture", cwd: "/workspace", hostId: "fixture", theme: dark ? "dark" as const : "light" as const };
 let account = "alice";
 const scopes = createConversationScopeRegistry({ getSubmissionSender: () => ({ kind: "employee", loginName: account }) });
@@ -84,5 +106,6 @@ createIntlTestRoot(root, undefined, new URLSearchParams(location.search).get("lo
   <ConversationDocumentContext.Provider value={{ conversationId: "fixture", cwd: "/workspace", hostId: "fixture", theme: dark ? "dark" : "light", onOpenResource: target => { document.documentElement.dataset.opened = target; } }}>
     <FirstSubmission />
     {cases.map(([id, overrides]) => <section key={id} data-case={id}><UserMessageBlock block={{ ...base, ...overrides, id }} /></section>)}
+    <section data-case="mention-composer"><OpenCraftComposer controller={mentionComposer} onSubmit={() => false} onCancel={() => {}} mentionSuggestionsEnabled={false} /></section>
   </ConversationDocumentContext.Provider>
 </WorkbenchPresentationRootProvider>);

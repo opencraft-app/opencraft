@@ -1,0 +1,21 @@
+# One matched protocol across issuer, execution owner and command bridge.
+# No SSH key, token, server-account fallback or copied machine identity here.
+x-git-environment: &git-environment
+  OPENCRAFT_GIT_RUNTIME_DIRECTORY: ${OPENCRAFT_GIT_RUNTIME_DIRECTORY:-/var/lib/opencraft/git-credentials}
+  OPENCRAFT_GIT_HOSTS: ${OPENCRAFT_GIT_HOSTS:?Set explicit allowed Git hosts}
+  OPENCRAFT_GIT_WORKER_FILE: /opt/opencraft/runtime/personal-git-worker.mjs
+x-git-runtime: &git-runtime
+  type: bind
+  source: ${OPENCRAFT_HOST_GIT_RUNTIME_DIR:?Set private personal Git IPC directory}
+  target: ${OPENCRAFT_GIT_RUNTIME_DIRECTORY:-/var/lib/opencraft/git-credentials}
+  bind: {create_host_path: false}
+services:
+  gateway:
+    environment: *git-environment
+    volumes: [*git-runtime]
+  brain:
+    environment: *git-environment
+    volumes: [*git-runtime]
+  hands:
+    environment: *git-environment
+    volumes: [*git-runtime]

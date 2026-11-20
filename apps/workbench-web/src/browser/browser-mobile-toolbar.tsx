@@ -1,7 +1,9 @@
-import { useRef, type FormEvent } from 'react';
+import './browser-mobile-toolbar.scss';
+import { usePanelComposerChrome } from '../components/panel-composer-chrome';
+import { useRef, type FormEvent, type ReactNode } from 'react';
 import type { BrowserPageSnapshot, BrowserTabSnapshot } from '@opencraft/browser-core';
 import { ChevronLeftIcon, CloseIcon, ExternalLinkIcon, RefreshIcon } from '@opencraft/design-system-web/action-icons';
-import { Button } from '@opencraft/design-system-web/button';
+import { Button, IconButton } from '@opencraft/design-system-web/button';
 import { useIntl } from '@opencraft/i18n/react';
 import { PanelMobileToolbar } from '../components/panel-mobile-toolbar';
 import { useFloatingComposerControls } from '../components/thread-composer-presentation';
@@ -15,23 +17,26 @@ function domain(url: string | null) {
 }
 
 /** Browser-specific slots inside the shared touch panel chrome. */
-export function BrowserMobileToolbar({ page, tab, panelTabId, address, setAddress, editing, setEditing, submit, toggleDevice }: {
+export function BrowserMobileToolbar({ page, tab, panelTabId, address, setAddress, editing, setEditing, submit, toggleDevice, annotation }: {
   page: BrowserPageSnapshot; tab: BrowserTabSnapshot; panelTabId: string;
   address: string; setAddress(value: string): void;
   editing: boolean; setEditing(value: boolean): void;
   submit(event: FormEvent): boolean;
   toggleDevice(): void;
+  /** Annotation toggle, owned by the browser-annotation feature. */
+  annotation?: ReactNode;
 }) {
   const intl = useIntl();
   const runtime = useOptionalBrowserRuntime();
   const pages = useWebBrowserPageRuntime();
   const workbench = useBrowserWorkbench();
-  const { store } = useFloatingComposerControls(panelTabId);
+  const integrated = usePanelComposerChrome()?.slot?.tabId === panelTabId;
+  const { store, shown } = useFloatingComposerControls(panelTabId);
   const input = useRef<HTMLInputElement>(null);
   const text = (descriptor: { id: string; defaultMessage: string }) => intl.formatMessage(descriptor);
   const hideAgent = () => { store.hide(panelTabId, true); store.focus(null); };
   return <PanelMobileToolbar panelTabId={panelTabId} editing={editing}
-    actions={<BrowserKeyboardButton touchChrome surfaces={runtime?.surfaces} pageId={page.id} beforeShow={hideAgent} />}
+    actions={<>{shown || integrated ? <IconButton type="button" className="panel-mobile-dock__button" aria-label={text(page.navigation.isLoading ? { id: 'browser.stop', defaultMessage: 'Stop' } : { id: 'browser.reload', defaultMessage: 'Reload' })} onClick={() => page.navigation.isLoading ? pages.stop(page.id) : pages.reload(page.id)}>{page.navigation.isLoading ? <CloseIcon /> : <RefreshIcon />}</IconButton> : null}<BrowserKeyboardButton touchChrome surfaces={runtime?.surfaces} pageId={page.id} beforeShow={hideAgent} />{annotation}</>}
     moreLabel={text({ id: 'browser.mobile.more', defaultMessage: 'More browser actions' })}
     renderMore={(run, dismiss) => <div className="panel-mobile-sheet__utilities">
         <Button variant="secondary" contentLayout="row" disabled={!page.navigation.canGoBack} onClick={() => run(() => pages.goBack(page.id))}><ChevronLeftIcon />{text({ id: 'navigation.back', defaultMessage: 'Back' })}</Button>
@@ -58,7 +63,7 @@ export function BrowserMobileToolbar({ page, tab, panelTabId, address, setAddres
       <input ref={input} aria-label={text({ id: 'browser.address', defaultMessage: 'Web address' })} autoCapitalize="none" autoCorrect="off"
         spellCheck={false} inputMode="url" enterKeyHint="go" value={editing ? address : domain(page.navigation.currentUrl)}
         placeholder={text({ id: 'browser.address.placeholder', defaultMessage: 'Enter a web address' })}
-        onFocus={event => { hideAgent(); setEditing(true); event.currentTarget.value = address; event.currentTarget.select(); }}
+        onFocus={event => { if (!integrated) hideAgent(); setEditing(true); event.currentTarget.value = address; event.currentTarget.select(); }}
         onBlur={() => setEditing(false)} onChange={event => setAddress(event.currentTarget.value)}
         onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); input.current?.blur(); } }} />
     </form>

@@ -17,9 +17,9 @@ export class ChatFadeTimeline {
   private readonly animationDurationMs: number;
 
   constructor(options: ChatFadeTimelineOptions = {}) {
-    this.segmentDelayMs = options.segmentDelayMs ?? 16;
-    this.maximumDelayMs = options.maximumDelayMs === undefined ? 96 : options.maximumDelayMs;
-    this.animationDurationMs = options.animationDurationMs ?? 150;
+    this.segmentDelayMs = options.segmentDelayMs ?? 30;
+    this.maximumDelayMs = options.maximumDelayMs === undefined ? 300 : options.maximumDelayMs;
+    this.animationDurationMs = options.animationDurationMs ?? 280;
   }
 
   delayFor(key: string, nowMs: number): number {

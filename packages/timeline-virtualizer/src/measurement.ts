@@ -45,6 +45,8 @@ export interface CreateTurnMeasurementTransactionOptions<TEntry extends Virtuali
   readonly currentDistanceFromBottomPx: number;
   readonly bottomPaddingPx: number;
   readonly preserveMeasuredTurnViewport: boolean;
+  /** Mounted rows contribute their live height directly to platform layout. */
+  readonly measuredContentFlowsNaturally?: boolean;
   /** Stable delegation to the latest-Turn owner. Presence survives restoration. */
   readonly getPendingRestoreScrollDistanceFromBottomPx: (() => number | null) | null;
   readonly previousPendingTransaction?: TurnMeasurementTransaction | null;
@@ -175,7 +177,8 @@ export function createTurnMeasurementTransaction<TEntry extends VirtualizedTurnE
     table[measurement.turnKey] = height;
     const delta = height - layout.heightsPx[index]!;
     layoutDelta += delta;
-    if (layout.bottomOffsetsPx[index]! <= distance
+    if ((layout.bottomOffsetsPx[index]!
+      + (options.measuredContentFlowsNaturally ? layout.heightsPx[index]! : 0)) <= distance
       && (preserveMeasuredTurnViewport || (getPendingRestoreScrollDistanceFromBottomPx !== null
         && measurement.turnKey !== latestKey))) {
       positionDelta += delta;
@@ -206,7 +209,10 @@ export function createTurnMeasurementTransaction<TEntry extends VirtualizedTurnE
     if (positionDelta !== 0) scroll = position + positionDelta;
     preservePlatform = false;
   } else if (preserveMeasuredTurnViewport && layoutDelta !== 0) {
-    preservePlatform = true;
+    // In bottom-origin natural flow, changes above the reader extend upward.
+    // Reapplying an absolute distance would steal unreported touch momentum.
+    // Synthetic-height hosts still need their existing platform preservation.
+    preservePlatform = !options.measuredContentFlowsNaturally;
   }
 
   const nextDistance = restoreTarget ?? (scroll === null

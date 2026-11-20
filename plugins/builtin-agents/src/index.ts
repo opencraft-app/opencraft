@@ -62,7 +62,7 @@ export function createHeadlessModelServicesExtension(options: {
     async activate(api) {
       let active=true;
       api.subscriptions.add(()=>{active=false;});
-      await import('./model-policy-view').then(async module=>{
+      await import('./model-policy-client').then(async module=>{
         // Keep this optional authorization probe inside the fulfilled import.
         // Vite reports rejections returned from a preload callback as
         // `vite:preloadError`; allowing a 401/403/404/transport failure to
@@ -72,13 +72,20 @@ export function createHeadlessModelServicesExtension(options: {
         if(!active || !document?.canManage)return;
         api.views.register({id:'opencraft.headless-model-services.policy.view',title:'Model usage restrictions',viewType:'opencraft.headless-model-services.policy',platforms:['web']});
         api.settings.registerPage({id:'opencraft.headless-model-services.policy',title:'Model usage restrictions',titleMessage:{id:'modelPolicy.title',defaultMessage:'Model usage restrictions'},viewId:'opencraft.headless-model-services.policy.view',group:'Server',groupMessage:{id:'settings.groups.server',defaultMessage:'Server'},icon:'brain',platforms:['web']});
-        api.internal.register('platformViewRenderer',{viewType:'opencraft.headless-model-services.policy',Component:module.createModelPolicyView(options.requestHost,options.hostId,options.fetcher)});
+        api.internal.register('platformViewRenderer',{viewType:'opencraft.headless-model-services.policy',Component:createDeferredView(async () => (await import('./model-policy-view')).createModelPolicyView(options.requestHost,options.hostId,options.fetcher))});
       }).catch(()=>{});
       const service = new LocalAgentSettingsService(options.requestHost, options.hostId);
       const controller = new ModelServicesController(service);
       api.views.register({ id: "opencraft.headless-model-services.view", title: "模型服务", viewType: "opencraft.headless-model-services", platforms: ["web"] });
       api.settings.registerPage({ id: "opencraft.headless-model-services", title: "Model services", titleMessage: { id: "settings.contributions.modelServices", defaultMessage: "Model services" }, viewId: "opencraft.headless-model-services.view", layout: "master-detail", targetHostId: options.hostId, modelConfiguration: true, modelReadiness: true, group: "Server", groupMessage: { id: "settings.groups.server", defaultMessage: "Server" }, icon: "brain", platforms: ["web"] });
-      api.internal.register("platformViewRenderer", { viewType: "opencraft.headless-model-services", Component: createDeferredView(async () => (await import("./model-services/view")).createModelServicesView(controller)) });
+      api.internal.register("platformViewRenderer", { viewType: "opencraft.headless-model-services", Component: createDeferredView(async () => {
+          api.signal.throwIfAborted();
+          const personal = await import('./model-services/personal');
+          const personalEnabled = await personal.readPersonalModels(options.fetcher).then(() => true, () => false);
+          api.signal.throwIfAborted();
+          const fallback = createDeferredView(async () => (await import('./model-services/view')).createModelServicesView(controller));
+          return personalEnabled ? personal.createPersonalModelServicesView(options.fetcher, fallback) : (await import('./model-services/view')).createModelServicesView(controller);
+        }) });
       api.subscriptions.add(() => { controller.dispose(); service.dispose(); });
     },
   };

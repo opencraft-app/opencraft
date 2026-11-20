@@ -93,7 +93,8 @@ try {
       });
       assert.equal(order.material, 0, "material stays in the nonnegative background plane");
       assert(order.front.every(item => item.position !== "static" && item.z > order.material), "editable and command boxes have an independent foreground, including flattened footer items");
-      assert(order.filter.includes("blur("));
+      assert(order.filter === "none" || order.filter.includes("blur(6px)"), "only the independent editing backdrop may use its small blur");
+      if(newera === "on")assert(order.filter.includes("blur(6px)"));
       assert(order.rect.y >= -1 && order.rect.bottom <= height + top + 1, JSON.stringify(order));
     }
     // Pixel evidence for BOTH input and commands, without relying on DOM

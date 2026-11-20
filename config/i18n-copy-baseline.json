@@ -17,24 +17,6 @@
     },
     {
       "file": "apps/workbench-web/src/app.tsx",
-      "kind": "jsx-text",
-      "text": "This temporary conversation will be discarded. It cannot be recovered.",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/app.tsx",
-      "kind": "jsx-text",
-      "text": "Keep chatting",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/app.tsx",
-      "kind": "jsx-text",
-      "text": "Close side chat",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/app.tsx",
       "kind": "aria-label",
       "text": "Account management",
       "count": 1
@@ -145,258 +127,6 @@
       "file": "apps/workbench-web/src/components/app-shell.tsx",
       "kind": "label",
       "text": "Resize applications",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "label",
-      "text": "新建群聊",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "title",
-      "text": "新建群聊",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-text",
-      "text": "取消",
-      "count": 4
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-expression",
-      "text": "创建中…",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-expression",
-      "text": "创建",
-      "count": 2
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-text",
-      "text": "群聊名称",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "placeholder",
-      "text": "可选",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-text",
-      "text": "选择 2–6 个 Bots",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-text",
-      "text": "至少需要两个可用 Bot。",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-expression",
-      "text": "删除中…",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-expression",
-      "text": "删除",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-text",
-      "text": "删除“",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-text",
-      "text": "”及其配置和会话数据？此操作无法撤销。",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-expression",
-      "text": "处理中…",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-expression",
-      "text": "保存",
-      "count": 2
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-text",
-      "text": "”创建独立副本。",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-text",
-      "text": "Bot 名称",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-text",
-      "text": "名称最多 60 个字符。",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "label",
-      "text": "${…} 模型设置",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "title",
-      "text": "模型设置",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "aria-label",
-      "text": "正在读取模型配置",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "label",
-      "text": "重试读取可用模型",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-expression",
-      "text": "保存中…",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-expression",
-      "text": "确认并保存",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-text",
-      "text": "设置“",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-text",
-      "text": "”后续会话与群聊执行使用的默认模型。",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-text",
-      "text": "模型服务",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-text",
-      "text": "选择模型服务",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "placeholder",
-      "text": "provider",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-text",
-      "text": "模型",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-text",
-      "text": "选择模型",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "placeholder",
-      "text": "model",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "aria-label",
-      "text": "Bot 管理",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "title",
-      "text": "Bots",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "label",
-      "text": "刷新 Bot",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-text",
-      "text": "新建群聊",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-text",
-      "text": "新建 Bot",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-expression",
-      "text": "正在读取 Bots…",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-expression",
-      "text": "还没有 Bot，创建一个开始使用。",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-expression",
-      "text": "暂时无法读取 Bot 列表，请刷新重试。",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "label",
-      "text": "${…} 的操作",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/bot-management.tsx",
-      "kind": "jsx-text",
-      "text": "群聊",
       "count": 1
     },
     {
@@ -880,37 +610,37 @@
       "count": 1
     },
     {
-      "file": "apps/workbench-web/src/components/conversation-renderers/activity/agent-activity-renderers.tsx",
+      "file": "apps/workbench-web/src/components/conversation-renderers/activity/hook-stats-content.tsx",
       "kind": "jsx-text",
       "text": "Hooks summary",
       "count": 1
     },
     {
-      "file": "apps/workbench-web/src/components/conversation-renderers/activity/agent-activity-renderers.tsx",
+      "file": "apps/workbench-web/src/components/conversation-renderers/activity/hook-stats-content.tsx",
       "kind": "jsx-text",
       "text": "Ran",
       "count": 1
     },
     {
-      "file": "apps/workbench-web/src/components/conversation-renderers/activity/agent-activity-renderers.tsx",
+      "file": "apps/workbench-web/src/components/conversation-renderers/activity/hook-stats-content.tsx",
       "kind": "jsx-text",
       "text": "Blocked",
       "count": 1
     },
     {
-      "file": "apps/workbench-web/src/components/conversation-renderers/activity/agent-activity-renderers.tsx",
+      "file": "apps/workbench-web/src/components/conversation-renderers/activity/hook-stats-content.tsx",
       "kind": "jsx-text",
       "text": "Errors",
       "count": 1
     },
     {
-      "file": "apps/workbench-web/src/components/conversation-renderers/activity/agent-activity-renderers.tsx",
+      "file": "apps/workbench-web/src/components/conversation-renderers/activity/hook-stats-content.tsx",
       "kind": "jsx-text",
       "text": "Hooks",
       "count": 1
     },
     {
-      "file": "apps/workbench-web/src/components/conversation-renderers/activity/agent-activity-renderers.tsx",
+      "file": "apps/workbench-web/src/components/conversation-renderers/activity/hook-stats-content.tsx",
       "kind": "jsx-expression",
       "text": "· ${…} runs",
       "count": 1
@@ -1492,12 +1222,6 @@
       "count": 1
     },
     {
-      "file": "apps/workbench-web/src/components/conversation-renderers/tool/tool-renderers.tsx",
-      "kind": "aria-label",
-      "text": "Close generated image 1",
-      "count": 1
-    },
-    {
       "file": "apps/workbench-web/src/components/conversation-renderers/unified-diff-preview.tsx",
       "kind": "aria-label",
       "text": "File changes",
@@ -1561,12 +1285,6 @@
       "file": "apps/workbench-web/src/components/conversation.tsx",
       "kind": "jsx-text",
       "text": "Unsupported AppServer item:",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/conversation.tsx",
-      "kind": "label",
-      "text": "Scroll to bottom",
       "count": 1
     },
     {
@@ -1822,7 +1540,7 @@
       "count": 1
     },
     {
-      "file": "apps/workbench-web/src/components/modal/modal-surface.tsx",
+      "file": "packages/design-system-web/src/modal-surface.tsx",
       "kind": "aria-label",
       "text": "Close ${…}",
       "count": 1
@@ -1951,12 +1669,6 @@
       "file": "apps/workbench-web/src/components/settings-page.tsx",
       "kind": "jsx-text",
       "text": "Manage",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/settings-page.tsx",
-      "kind": "jsx-text",
-      "text": "Search agent settings",
       "count": 1
     },
     {
@@ -2488,12 +2200,6 @@
       "count": 1
     },
     {
-      "file": "apps/workbench-web/src/panels/side-chat-panel-plugin.tsx",
-      "kind": "jsx-text",
-      "text": "Side chat · temporary",
-      "count": 1
-    },
-    {
       "file": "apps/workbench-web/src/panels/workspace-file-icon.tsx",
       "kind": "jsx-expression",
       "text": "CSS",
@@ -2512,111 +2218,9 @@
       "count": 1
     },
     {
-      "file": "apps/workbench-web/src/panels/workspace-file-tree.tsx",
-      "kind": "aria-label",
-      "text": "Workspace files",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/panels/workspace-file-tree.tsx",
-      "kind": "jsx-expression",
-      "text": "Directory unavailable",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/panels/workspace-file-tree.tsx",
-      "kind": "jsx-text",
-      "text": "Loading…",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/panels/workspace-resource-panel.tsx",
-      "kind": "aria-label",
-      "text": "Search workspace files",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/panels/workspace-resource-panel.tsx",
-      "kind": "placeholder",
-      "text": "Search files",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/panels/workspace-resource-panel.tsx",
-      "kind": "jsx-text",
-      "text": "No matching files",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/panels/workspace-resource-panel.tsx",
-      "kind": "title",
-      "text": "Save file",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/panels/workspace-resource-panel.tsx",
-      "kind": "jsx-text",
-      "text": "Save",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/panels/workspace-resource-panel.tsx",
-      "kind": "title",
-      "text": "Revert unsaved changes",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/panels/workspace-resource-panel.tsx",
-      "kind": "title",
-      "text": "Edit file",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/panels/workspace-resource-panel.tsx",
-      "kind": "jsx-text",
-      "text": "Edit",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/panels/workspace-resource-panel.tsx",
-      "kind": "jsx-expression",
-      "text": "Checking file…",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/panels/workspace-resource-panel.tsx",
-      "kind": "jsx-expression",
-      "text": "Queued for download…",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/panels/workspace-resource-panel.tsx",
-      "kind": "jsx-expression",
-      "text": "Checking cache…",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/panels/workspace-resource-panel.tsx",
-      "kind": "jsx-expression",
-      "text": "Reading file…",
-      "count": 1
-    },
-    {
       "file": "apps/workbench-web/src/panels/workspace-resource-panel.tsx",
       "kind": "jsx-text",
       "text": "bytes",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/panels/workspace-resource-panel.tsx",
-      "kind": "jsx-text",
-      "text": "Loading editor…",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/panels/workspace-resource-panel.tsx",
-      "kind": "jsx-text",
-      "text": "File changed on disk. Revert your draft before saving.",
       "count": 1
     },
     {
@@ -2659,12 +2263,6 @@
       "file": "packages/chat-render-native/src/renderers/resource.tsx",
       "kind": "jsx-expression",
       "text": "Image unavailable",
-      "count": 1
-    },
-    {
-      "file": "packages/chat-render-web/src/extensions/mermaid/mermaid-diagram.tsx",
-      "kind": "aria-label",
-      "text": "Mermaid diagram preview",
       "count": 1
     },
     {
@@ -2790,12 +2388,6 @@
     {
       "file": "packages/composer-editor/src/composer-editor.tsx",
       "kind": "aria-label",
-      "text": "Preparing ${…}",
-      "count": 1
-    },
-    {
-      "file": "packages/composer-editor/src/composer-editor.tsx",
-      "kind": "aria-label",
       "text": "Retry ${…}: ${…}",
       "count": 1
     },
@@ -2839,30 +2431,6 @@
       "file": "packages/composer-editor/src/composer-editor.tsx",
       "kind": "jsx-expression",
       "text": "Commands",
-      "count": 1
-    },
-    {
-      "file": "packages/composer-editor/src/composer-editor.tsx",
-      "kind": "jsx-expression",
-      "text": "Files and context",
-      "count": 1
-    },
-    {
-      "file": "packages/composer-editor/src/composer-editor.tsx",
-      "kind": "jsx-text",
-      "text": "Type to search for files",
-      "count": 1
-    },
-    {
-      "file": "packages/composer-editor/src/composer-editor.tsx",
-      "kind": "jsx-expression",
-      "text": "Searching files…",
-      "count": 1
-    },
-    {
-      "file": "packages/composer-editor/src/composer-editor.tsx",
-      "kind": "jsx-expression",
-      "text": "File search unavailable",
       "count": 1
     },
     {
@@ -2959,174 +2527,6 @@
       "file": "packages/extension-react/src/settings-search-select.tsx",
       "kind": "jsx-expression",
       "text": "No options available",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-activity-indicator.tsx",
-      "kind": "aria-label",
-      "text": "Interact with ${…}",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "aria-label",
-      "text": "Writing",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "jsx-text",
-      "text": "Sending…",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "jsx-text",
-      "text": "Not sent",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "jsx-text",
-      "text": "Approval needed",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "jsx-text",
-      "text": "OpenCraft wants to open the deployment checklist.",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "jsx-text",
-      "text": "Allow",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "jsx-text",
-      "text": "Choose…",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "jsx-text",
-      "text": "Respond",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "jsx-expression",
-      "text": "Opening Bot conversation…",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "jsx-expression",
-      "text": "Could not open Bot chat",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "jsx-text",
-      "text": "Try again",
-      "count": 3
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "jsx-expression",
-      "text": "${…} members",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "jsx-expression",
-      "text": "Direct chat",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "aria-label",
-      "text": "Pause conversation replay",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "aria-label",
-      "text": "Replay conversation",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "title",
-      "text": "Pause replay",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "title",
-      "text": "Replay conversation",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "jsx-text",
-      "text": "Loading conversation…",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "jsx-text",
-      "text": "Loading earlier messages…",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "jsx-text",
-      "text": "Load earlier messages",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "jsx-text",
-      "text": "Could not restore this Bot conversation",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "jsx-text",
-      "text": "What should we work on?",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "jsx-text",
-      "text": "Send a message to OpenCraft, or replay a short multi-Bot collaboration.",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "jsx-text",
-      "text": "Latest message",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "jsx-text",
-      "text": "This historical group is read-only because a member no longer exists.",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/bot-chat-view.tsx",
-      "kind": "placeholder",
-      "text": "Message ${…}",
-      "count": 1
-    },
-    {
-      "file": "plugins/bot-chat/src/execution-error.tsx",
-      "kind": "jsx-text",
-      "text": "couldn't reply",
       "count": 1
     },
     {
@@ -5137,18 +4537,6 @@
       "file": "plugins/terminal/src/index.tsx",
       "kind": "jsx-text",
       "text": "This PTY belongs to an earlier AppServer connection.",
-      "count": 1
-    },
-    {
-      "file": "plugins/terminal/src/index.tsx",
-      "kind": "jsx-text",
-      "text": "Process exited with code",
-      "count": 1
-    },
-    {
-      "file": "plugins/terminal/src/index.tsx",
-      "kind": "jsx-expression",
-      "text": "unknown",
       "count": 1
     },
     {

@@ -1,3 +1,4 @@
+import { parseInputDeliveryReceipt } from "@opencraft/appserver-protocol";
 import { userInputQuestionExtensions } from "./request-user-input";
 import { appEnvelope, MCP_APPS_NAMESPACE } from "@opencraft/appserver-protocol/mcp-apps";
 import { asItemId } from "./identity";
@@ -343,6 +344,7 @@ function userMessageMetadata(
     ...(record(source.sender).kind === "employee" && typeof record(source.sender).loginName === "string"
       ? { sender: { kind: "employee" as const, loginName: record(source.sender).loginName as string } } : {}),
     sentAtMs: explicitSentAtMs ?? (leadingUserMessage ? context.turn.startedAtMs ?? null : null),
+    ...(parseInputDeliveryReceipt(source.inputDelivery) ? { inputDelivery: parseInputDeliveryReceipt(source.inputDelivery)! } : {}),
     deliveryStatus: userMessageDeliveryStatus(source.deliveryStatus) ?? (hookBlocked ? "not-sent" as const : null),
     referencesPriorConversation: boolean(source.referencesPriorConversation) ?? semantics.referencesPriorConversation,
     reviewMode: boolean(source.reviewMode) ?? semantics.reviewMode,
@@ -352,7 +354,7 @@ function userMessageMetadata(
     hookFeedback: boolean(source.hookFeedback) ?? false,
     commentCount: Math.max(0, Math.trunc(
       number(source.commentCount)
-        ?? Math.max(comments, attachments.filter((attachment) => attachment.type === "comment").length),
+        ?? Math.max(comments, semantics.commentCount, attachments.filter((attachment) => attachment.type === "comment").length),
     )),
     hasExternalAttachments: content.some((part) => part.type !== "text")
       || attachments.length > 0,
@@ -396,6 +398,12 @@ function executionStatus(value: unknown): TimelineExecutionStatus {
   }
 }
 
+function generatedImageDimensions(source: Readonly<Record<string, unknown>>): { dimensions?: { width: number; height: number } } {
+  const value = record(source.imageDimensions), width = value.width, height = value.height;
+  return typeof width === "number" && Number.isSafeInteger(width) && width > 0 && width <= 32768
+    && typeof height === "number" && Number.isSafeInteger(height) && height > 0 && height <= 32768
+    && width * height <= 64 * 1024 * 1024 ? { dimensions: { width, height } } : {};
+}
 function generatedImageUri(source: Readonly<Record<string, unknown>>): string | null {
   const explicit = string(source.src) ?? string(source.uri) ?? string(source.url);
   if (explicit !== null && explicit.length > 0) return explicit;
@@ -1150,7 +1158,7 @@ export function createBuiltinTimelineProjectors(): readonly TimelineItemProjecto
         model: string(source.model),
         reasoningEffort: string(source.reasoningEffort),
         agentStates: source.agentsStates ?? null,
-        activityKind: source.kind === "started" || source.kind === "interacted" || source.kind === "interrupted" ? source.kind : null,
+        activityKind: source.kind === "started" || source.kind === "interacted" || source.kind === "interrupted" || source.kind === "completed" ? source.kind : null,
         agentPath: string(source.agentPath),
         status: item.type === "subAgentActivity"
           ? source.kind === "interrupted" ? "interrupted" : "complete"
@@ -1317,6 +1325,7 @@ export function createBuiltinTimelineProjectors(): readonly TimelineItemProjecto
       lane: "assistant",
       block: {
         ...blockBase(item, "image"),
+        ...generatedImageDimensions(source),
         uri: generatedImageUri(source),
         alt: string(source.alt) ?? string(source.title) ?? string(source.revisedPrompt),
         generated: true,

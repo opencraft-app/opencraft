@@ -1407,6 +1407,48 @@ its own baseline. Synthetic observation controls and immutable old/new factory
 comparisons are separate; no SUT private state, prototypes or source are patched.
 
 
+## Browser WebSocket resume / full-reconnect chaos
+
+The `websocket` suite extends the same seeded runner and delta-debugging artifact
+format to the browser's physical route. It uses an ephemeral **loopback TCP / real
+WebSocket** server with production `bridgeAppHostSocket` / `ResumeRegistry`, browser
+`connectWebSocketAppHost`, logical leases, `AppServerClient`, Workbench recovery
+owner and the plain-text ConversationOutbox. Only the engine responses, browser
+lifecycle signals and controllable network boundary are synthetic. Two factories
+represent independent tabs of the same Host; they do not share a resume ticket.
+
+```sh
+node --import tsx scripts/recovery-chaos.ts --suite websocket --seed 0 --cases 100 --steps 120 --output .local/websocket-chaos
+node --import tsx scripts/recovery-chaos.ts --replay .local/websocket-chaos/failure-minimal.json --output .local/websocket-replay
+node --import tsx --test tests/protocol/websocket-recovery-chaos.test.ts
+```
+
+Faults include abnormal close, denied dials, bidirectional silent blackholes,
+hidden/foreground hints, lost server-side sessions, withheld ready/resume/native
+initialization/write replies and callbacks delivered after physical retirement.
+Virtual Date/timers make 30-second resume expiry and longer retry budgets cheap;
+loopback I/O remains real and drains between timer steps. Cases must run serially
+within one isolate because each owns/restores globals. Seeds reproduce the fault
+schedule, not OS packet timing or a frozen iPhone's WebKit scheduler.
+
+Oracles require healed connections to become ready and complete an independent
+read-only RPC within a bounded budget, output to remain ordered/nonduplicated,
+tab identities to remain isolated, and every admitted input to be either applied
+at most once or retained in Outbox custody. An ambiguous write is **not** retried
+like a read-only probe. Retained unknown/failed rows are not reported as successful
+delivery. Explicit scenarios check transparent resume without native reinitialize,
+unknown-session fallback, handshake expiry and late initialization results.
+
+Failures save the seed, exact/minimized events, source hashes and bounded synthetic
+connection/queue observations. `--mutant replay-input` validates the native wire
+admission oracle with an actual duplicate request; `--mutant stuck-route` withholds
+probe replies to validate the usable-route deadline. Replay negative controls with
+the same explicit `--mutant`; without it the reduced duplicate-write trace passes.
+These are detector controls, not bugs claimed in deployed code. This suite does
+not exercise production auth, Relay/WeChat networking, real inference, the UI
+Composer's draft persistence, attachments or physical-device suspension. A passing
+campaign therefore cannot establish the cause of a particular phone incident.
+
 ## Rejected send admission and stale Host recovery
 
 A reachable Hub does not prove that a logical Host lease is still writable.

@@ -3,6 +3,7 @@ import type {
   AppServerServerRequestParams,
   ReplicaJsonValue,
   MessageSender,
+  QueuedSubmissionActions,
 } from "@opencraft/appserver-protocol";
 import type {
   ConversationKey,
@@ -32,6 +33,8 @@ export type PendingInteraction = {
 }[AppServerServerMethod];
 
 export interface QueuedSubmission {
+  readonly delivery?: import("@opencraft/appserver-protocol").InputDeliveryReceipt;
+  readonly actions?: QueuedSubmissionActions;
   /** Browser-owned, never accepted by the Host yet. */
   readonly local?: boolean;
   /** Runtime can accept a promotion while normal queue admission is in flight. */

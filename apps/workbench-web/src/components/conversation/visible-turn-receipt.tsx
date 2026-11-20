@@ -39,5 +39,5 @@ export function VisibleTurnReceipt({ turnId }: { readonly turnId: string }) {
       document.removeEventListener("visibilitychange", schedule); document.removeEventListener("pointerup", schedule);
     };
   }, [turnId, callback]);
-  return <span ref={ref} aria-hidden="true" data-terminal-turn-receipt={turnId} style={{ display: "block", height: 1 }} />;
+  return <span ref={ref} aria-hidden="true" data-terminal-turn-receipt={turnId} style={{ position: "absolute", insetInline: 0, bottom: 0, height: 1 }} />;
 }

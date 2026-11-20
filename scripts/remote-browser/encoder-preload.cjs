@@ -1,4 +1,19 @@
 const { ipcRenderer } = require('electron');
+// Decode only bounded image bytes in the sandbox, never a remote document.
+ipcRenderer.on('decode-icon', async (_event, { id, bytes, mime }) => {
+  let url;
+  try {
+    if (!bytes || bytes.length > 262144) throw new Error('Icon too large');
+    url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+    const image = new Image(); image.src = url; await image.decode();
+    if (!image.naturalWidth || !image.naturalHeight || image.naturalWidth > 4096 || image.naturalHeight > 4096) throw new Error('Icon dimensions');
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 32;
+    canvas.getContext('2d').drawImage(image, 0, 0, 32, 32);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    ipcRenderer.send('decoded-icon', { id, bytes: new Uint8Array(await blob.arrayBuffer()) });
+  } catch { ipcRenderer.send('decoded-icon', { id, bytes: null }); }
+  finally { if (url) URL.revokeObjectURL(url); }
+});
 (async () => {
   const config = { codec: 'avc1.42E028', width: 1280, height: 720, bitrate: 2500000, framerate: 30,
     hardwareAcceleration: 'prefer-software', latencyMode: 'realtime', contentHint: 'text', avc: { format: 'annexb' } };

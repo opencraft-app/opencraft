@@ -158,5 +158,17 @@
     "id": "remote-browser",
     "owner": "scripts/remote-browser/state.worker.ts",
     "index": 0
+  },
+  {
+    "id": "artifact-catalog",
+    "owner": "apps/local-agent-host/src/artifacts/catalog.ts"
+  },
+  {
+    "id": "model-gateway",
+    "owner": "packages/account-pool-host/src/model-gateway-store.ts"
+  },
+  {
+    "id": "dsh-consumer-receipts",
+    "owner": "scripts/server-deployment/dsh-consumer-receipts-store.ts"
   }
 ]

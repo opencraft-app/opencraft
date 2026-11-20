@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@opencraft/appserver-client": "0.1.0",
-    "@opencraft/bot-conversation-appserver": "0.1.0",
     "@opencraft/extension-runtime": "0.1.0",
     "@opencraft/profile-skills-appserver": "0.1.0",
     "@opencraft/workbench-runtime": "0.1.0"

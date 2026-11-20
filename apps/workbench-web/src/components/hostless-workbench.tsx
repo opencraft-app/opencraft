@@ -1,10 +1,18 @@
+import { AppShellStandardPage } from "./app-shell-standard-page";
+import { DEFAULT_APPLICATION_BRANDING } from "@opencraft/extension-contract";
+import { ApplicationBrand } from "./application-brand";
+import { browserServerContext } from "../runtime/server-context";
+import { routeStackPresentation } from "./route-stack-motion";
+import { RouteViewStack } from "./route-view-stack";
+import { ConversationSearch } from './conversation-search';
+import { channelSearchSource } from '../runtime/channel-search-contribution';
 import { useTurnNotifications } from "../runtime/turn-notifications-context";
 import { projectMiniApps, OVERHOME_VIEW_ID } from "../runtime/mini-apps";
 import { ApplicationRouteMotion, useApplicationDesktopBackdrop } from "./application-desktop-motion";
 import { ScheduledTaskCatalogContext, type ScheduledTaskCatalog } from "../runtime/scheduled-task-catalog-context";
 import { useIntl } from "@opencraft/i18n/react";
 import { mobileContainer, reloadMobileWorkbench } from "../runtime/mobile-container";
-import { mobileConnectionMessages } from "./mobile-connection-settings";
+import { mobileConnectionMessages } from "./mobile-connection-messages";
 import { groupWorkInMachines } from "../runtime/work-in-presentation";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { PlatformViewHost } from "@opencraft/extension-react";
@@ -46,6 +54,7 @@ import {
 import {
   AppShellRouteRegionsProvider,
   appShellPlatformViewRegions,
+  useAppShellViewRegions,
   useAppShellRouteHeader,
 } from "./app-shell-route-regions";
 import { Sidebar } from "./sidebar";
@@ -76,6 +85,9 @@ export function HostlessWorkbench({
   readonly supervisor: HostlessWebWorkbenchApplicationSupervisor;
 }) {
   const intl = useIntl();
+  const [searchOpen,setSearchOpen]=useState(false);
+  const nativeSearch=useSyncExternalStore(supervisor.channelSearch.subscribe,supervisor.channelSearch.getSnapshot).contribution;
+  const searchSources=useMemo(()=>nativeSearch?[channelSearchSource(nativeSearch,intl.formatMessage({id:'im.search.source',defaultMessage:'Group messages'}))]:[],[nativeSearch,intl]);
   const internalDeveloperMode = useInternalDeveloperMode();
   const [sidebarDestination, setSidebarDestination] = useState<"context" | "applications" | "settings">("context");
   const applicationsSelected = sidebarDestination === "applications";
@@ -148,15 +160,17 @@ export function HostlessWorkbench({
     removeHost: supervisor.removeHost,
     openView: openExtensionView,
     openSettings: (section: string) => { setAccountOpen(false); navigation.openSettings(section); },
+    registerNavigationGuard: navigation.registerNavigationGuard,
     pushViewResource: pushExtensionViewResource,
     replaceViewResource: replaceExtensionViewResource,
     prepareImageUpload: async (blob) => (await supervisor.images.compress(blob)).blob,
   }), [applicationRoute, profileSnapshot.profiles, supervisor]);
+  const extensionViewRegions = useAppShellViewRegions(supervisor.composerActionRenderers, "all", extensionHost);
   const extensionProjection = useExtensionWorkbenchProjection({
+    regions: extensionViewRegions,
     contributions: supervisor.extensions.contributions,
     renderers: supervisor.platformViewRenderers,
     accounts: supervisor.platformAccounts,
-    botDirectory: supervisor.botDirectory,
     host: extensionHost,
     applicationRoute,
     internalDeveloperMode,
@@ -180,16 +194,21 @@ export function HostlessWorkbench({
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((open) => !open);
   }, [setSidebarOpen]);
-  const navigateBack = navigation.back;
+  const canReturn = navigationSnapshot.canReturn === true && !routeHeader.suppressReturn;
+  const navigateBack = canReturn ? navigation.returnToParent : navigation.back;
   const navigateForward = navigation.forward;
   const applicationDesktopOpen = applicationRoute.kind === "extension-view" && applicationRoute.viewId === OVERHOME_VIEW_ID;
   const headerNavigationActions = chromePolicy.leadingNavigationActions.map(action =>
     applicationDesktopOpen && action === "sidebar-toggle" ? "home" as const : action);
+  const viewTitleMessage = extensionProjection.activeView?.titleMessage;
+  const viewTitle = viewTitleMessage ? intl.formatMessage(viewTitleMessage) : extensionProjection.activeView?.title;
+  const branding = useSyncExternalStore(supervisor.applicationBranding.subscribe, supervisor.applicationBranding.getSnapshot).contribution ?? DEFAULT_APPLICATION_BRANDING;
   const header = (
     <AppShellHeader
+      navigationBrand={browserServerContext() ? <ApplicationBrand branding={branding} onHome={openConversationSidebar} /> : undefined}
       title={
         applicationRoute.kind === "extension-view"
-          ? (extensionProjection.activeView?.title ?? null)
+          ? (viewTitle ?? null)
           : null
       }
       project={null}
@@ -200,7 +219,8 @@ export function HostlessWorkbench({
       onToggleSidebar={toggleSidebar}
       onToggleRightPanel={() => undefined}
       onHome={openConversationSidebar}
-      canGoBack={canGoBack}
+      canGoBack={canReturn || canGoBack}
+            canReturn={canReturn}
       canGoForward={canGoForward}
       onBack={navigateBack}
 
@@ -242,7 +262,6 @@ export function HostlessWorkbench({
       catalogs={extensionProjection.catalogs}
       bots={extensionProjection.bots}
       sidebarLayout={supervisor.sidebarLayout}
-      botCreation={extensionProjection.botCreation}
       onNewTask={closeApplicationRoute}
       onOpenSettings={() => openSettings()}
       onSelectThread={() => undefined}
@@ -328,6 +347,8 @@ export function HostlessWorkbench({
         target={routeHeader.target}
       >
       <AppShell
+        routeStack={routeStackPresentation(navigationSnapshot, JSON.stringify([extensionProjection.account?.provider.id ?? null, extensionProjection.account?.snapshot.readStateScope ?? extensionProjection.account?.snapshot.identity?.id ?? null]), extensionProjection.routeFamilies)}
+          navigationReturn={canReturn ? { key: navigationSnapshot.navigationPath?.at(-1)?.historyKey ?? navigationSnapshot.url, invoke: navigation.returnToParent } : undefined}
         surface={desktopBackdrop ? "application-desktop" : "default"}
         navigation={{
           applicationsInSidebar: true,
@@ -339,6 +360,7 @@ export function HostlessWorkbench({
             { id: "shell.applications", title: intl.formatMessage({ id: "navigation.applications", defaultMessage: "Applications" }),
               icon: "grid", active: applicationsSelected,
               onInvoke: () => setSidebarDestination("applications") },
+            ...(nativeSearch?[{id:'shell.search',title:intl.formatMessage({id:'sidebar.search',defaultMessage:'Search conversations'}),icon:'search' as const,onInvoke:()=>setSearchOpen(true)}]:[]),
             ...extensionProjection.footerActions,
           ],
           account: extensionProjection.account === null ? null : {
@@ -364,9 +386,11 @@ export function HostlessWorkbench({
         header={header}
         floatingSidebarHeader={(onDock) => (
           <AppShellNavigationControls
+            brand={browserServerContext() ? <ApplicationBrand branding={branding} onHome={openConversationSidebar} /> : undefined}
             hostRole="transient"
             sidebarOpen={false}
-            canGoBack={canGoBack}
+            canGoBack={canReturn || canGoBack}
+            canReturn={canReturn}
             canGoForward={canGoForward}
             onToggleSidebar={onDock}
             onHome={openConversationSidebar}
@@ -378,7 +402,7 @@ export function HostlessWorkbench({
         )}
         leftPanel={<ApplicationsSidebarFrame settingsContent={sidebarDestination === "settings" ? settingsNavigation : null} onReturnToChat={openConversationSidebar} selected={applicationsSelected} actions={extensionProjection.primaryActions} contributions={supervisor.extensions.contributions}
           renderers={supervisor.platformViewRenderers} host={extensionHost} route={applicationRoute}>
-          {routeSettingsOpen || applicationRoute.kind === "conversation" || managementSettingsOpen ? leftPanel : null}
+          {routeSettingsOpen || applicationRoute.kind === "conversation" || managementSettingsOpen || extensionProjection.activeView?.keepConversationSidebar ? leftPanel : null}
         </ApplicationsSidebarFrame>}
         rightPanel={null}
         rightPanelOpen={false}
@@ -392,7 +416,7 @@ export function HostlessWorkbench({
         onSidebarResizeEnd={commitSidebarWidth}
         onRightPanelOpenChange={() => undefined}
       >
-        <div
+        <AppShellStandardPage
           className={
             routeSettingsOpen
               ? "hostless-workbench__main settings-page__main"
@@ -409,9 +433,9 @@ export function HostlessWorkbench({
                 {settingsContent}
               </section>
             ) : applicationRoute.kind === "extension-view" ? (
-              <section className="extension-view-route" aria-label={extensionProjection.activeView?.title}>
+              <RouteViewStack key={JSON.stringify([extensionProjection.account?.provider.id ?? null, extensionProjection.account?.snapshot.readStateScope ?? extensionProjection.account?.snapshot.identity?.id ?? null])} navigation={navigationSnapshot} routeFamilies={extensionProjection.routeFamilies}>
                 {extensionProjection.activeViewNode}
-              </section>
+              </RouteViewStack>
             ) : (
               <div className={!mobileContainer() && !extensionProjection.emptyWorkbenchNode ? "web-first-use-stage" : "hostless-workbench__empty-stage"}>
                 {extensionProjection.emptyWorkbenchNode ?? <section className={mobileContainer() ? "hostless-empty-view" : "web-first-use-view"}>
@@ -431,7 +455,8 @@ export function HostlessWorkbench({
               </div>
             )}
             </ApplicationRouteMotion>
-        </div>
+        </AppShellStandardPage>
+        <ConversationSearch enabled={!!nativeSearch} open={searchOpen} onOpenChange={setSearchOpen} threads={[]} loading={false} sources={searchSources} onSelectThread={()=>{}} onSelectView={openExtensionView}/>
       </AppShell>
       </AppShellRouteRegionsProvider>
       <ModalHost requests={modalRequests} />

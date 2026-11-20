@@ -7,6 +7,19 @@ x-runtime: &runtime
   restart: unless-stopped
   user: "${OPENCRAFT_UID:?Set the deployment user UID}:${OPENCRAFT_GID:?Set the deployment user group GID}"
   network_mode: host
+  logging:
+    driver: local
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-build: &build
+  context: ..
+  dockerfile: docker/Dockerfile
+  target: runtime
+  args:
+    OPENCRAFT_UID: ${OPENCRAFT_UID:?Set the deployment user UID}
+    OPENCRAFT_GID: ${OPENCRAFT_GID:?Set the deployment user group GID}
 
 x-data-volume: &data-volume
   type: bind
@@ -24,30 +37,56 @@ x-workspace-volume: &workspace-volume
 
 x-hands-volume: &hands-volume
   type: bind
-  source: ${OPENCRAFT_HOST_DATA_DIR}/hands
-  target: ${OPENCRAFT_DATA_DIR}/hands
+  source: ${OPENCRAFT_HOST_EXECUTION_DIR:-${OPENCRAFT_HOST_DATA_DIR}/execution}
+  target: ${OPENCRAFT_EXECUTION_DIR:-${OPENCRAFT_DATA_DIR}/execution}
   bind:
     create_host_path: false
+
+x-git-volume: &git-volume
+  type: bind
+  source: ${OPENCRAFT_HOST_EXECUTION_DIR:-${OPENCRAFT_HOST_DATA_DIR}/execution}/git-credentials
+  target: /var/lib/opencraft/git-credentials
+  bind:
+    create_host_path: false
+
+x-log-volume: &log-volume
+  type: bind
+  source: ${OPENCRAFT_HOST_LOG_DIR:-${OPENCRAFT_HOST_DATA_DIR}/logs}
+  target: ${OPENCRAFT_LOG_DIR:-/var/log/opencraft}
+  read_only: true
+  bind:
+    create_host_path: false
+
+x-environment: &environment
+  OPENCRAFT_GIT_RUNTIME_DIRECTORY: /var/lib/opencraft/git-credentials
+  OPENCRAFT_DATA_DIR: ${OPENCRAFT_DATA_DIR}
+  OPENCRAFT_WORKSPACE_DIR: ${OPENCRAFT_WORKSPACE_DIR}
+  OPENCRAFT_EXECUTION_DIR: ${OPENCRAFT_EXECUTION_DIR:-${OPENCRAFT_DATA_DIR}/execution}
+  OPENCRAFT_BROWSER_DATA_DIR: ${OPENCRAFT_BROWSER_DATA_DIR:-${OPENCRAFT_EXECUTION_DIR:-${OPENCRAFT_DATA_DIR}/execution}/browser}
+  OPENCRAFT_CODEX_PROJECTLESS_DIR: ${OPENCRAFT_CODEX_PROJECTLESS_DIR:-${OPENCRAFT_WORKSPACE_DIR}/sessions/codex}
+  OPENCRAFT_DSH_PROJECTLESS_DIR: ${OPENCRAFT_DSH_PROJECTLESS_DIR:-${OPENCRAFT_WORKSPACE_DIR}/sessions/dsh}
+  OPENCRAFT_LOG_DIR: ${OPENCRAFT_LOG_DIR:-/var/log/opencraft}
+  OPENCRAFT_GATEWAY_HOME: ${OPENCRAFT_GATEWAY_HOME:-${OPENCRAFT_DATA_DIR}/home/gateway}
 
 services:
   # Brain owns task and engine lifetime. Recreating Gateway must not stop it.
   brain:
     <<: *runtime
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      target: runtime
-      args:
-        OPENCRAFT_UID: ${OPENCRAFT_UID:?Set the deployment user UID}
-        OPENCRAFT_GID: ${OPENCRAFT_GID:?Set the deployment user group GID}
+    build: *build
     pid: host
-    entrypoint: ["/opt/opencraft/bin/opencraft-host"]
+    entrypoint: ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "brain"]
     environment:
-      OPENCRAFT_DATA_DIR: ${OPENCRAFT_DATA_DIR}
-      OPENCRAFT_WORKSPACE_DIR: ${OPENCRAFT_WORKSPACE_DIR}
+      <<: *environment
     volumes:
+      - *git-volume
       - *data-volume
       - *workspace-volume
+      - *log-volume
+      - type: bind
+        source: ${OPENCRAFT_HOST_LOG_DIR:-${OPENCRAFT_HOST_DATA_DIR}/logs}/brain
+        target: ${OPENCRAFT_LOG_DIR:-/var/log/opencraft}/brain
+        bind:
+          create_host_path: false
     depends_on:
       hands:
         condition: service_healthy
@@ -65,31 +104,31 @@ services:
     cpus: ${OPENCRAFT_HANDS_CPUS:-4.0}
     mem_limit: ${OPENCRAFT_HANDS_MEMORY_BYTES:-8589934592}
     pids_limit: 4096
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      target: runtime
-      args:
-        OPENCRAFT_UID: ${OPENCRAFT_UID:?Set the deployment user UID}
-        OPENCRAFT_GID: ${OPENCRAFT_GID:?Set the deployment user group GID}
-    entrypoint: ["/opt/opencraft/bin/opencraft-hands"]
+    build: *build
+    entrypoint: ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "hands"]
     environment:
-      OPENCRAFT_BROWSER_DATA_DIR: ${OPENCRAFT_DATA_DIR}/hands
-      OPENCRAFT_HANDS_EXECUTION_SOCKET: ${OPENCRAFT_DATA_DIR}/hands/exec-owner.sock
-      OPENCRAFT_HANDS_EXECUTION_TOKEN: ${OPENCRAFT_DATA_DIR}/hands/exec-owner.token
+      <<: *environment
+      OPENCRAFT_HANDS_EXECUTION_SOCKET: ${OPENCRAFT_EXECUTION_DIR:-${OPENCRAFT_DATA_DIR}/execution}/exec-owner.sock
+      OPENCRAFT_HANDS_EXECUTION_TOKEN: ${OPENCRAFT_EXECUTION_DIR:-${OPENCRAFT_DATA_DIR}/execution}/exec-owner.token
       OPENCRAFT_CODEX_EXECUTABLE: /opt/opencraft/runtime/codex/bin/codex
-      OPENCRAFT_WORKSPACE_DIR: ${OPENCRAFT_WORKSPACE_DIR}
       OPENCRAFT_HANDS_CPUS: ${OPENCRAFT_HANDS_CPUS:-4.0}
       OPENCRAFT_HANDS_MEMORY_BYTES: ${OPENCRAFT_HANDS_MEMORY_BYTES:-8589934592}
-      HOME: ${OPENCRAFT_DATA_DIR}/hands
+      HOME: ${OPENCRAFT_EXECUTION_DIR:-${OPENCRAFT_DATA_DIR}/execution}
     # Chromium creates its own PID/network sandbox namespaces. Docker's
     # default capability set cannot do that; keep only the capabilities the
     # sandbox helper needs instead of disabling Chromium's sandbox.
     cap_drop: [ALL]
     cap_add: [SYS_ADMIN, SETUID, SETGID, SYS_CHROOT]
     volumes:
+      - *git-volume
       - *hands-volume
       - *workspace-volume
+      - *log-volume
+      - type: bind
+        source: ${OPENCRAFT_HOST_LOG_DIR:-${OPENCRAFT_HOST_DATA_DIR}/logs}/hands
+        target: ${OPENCRAFT_LOG_DIR:-/var/log/opencraft}/hands
+        bind:
+          create_host_path: false
     healthcheck:
       test: ["CMD", "/opt/opencraft/bin/opencraft-health", "hands"]
       interval: 10s
@@ -101,22 +140,24 @@ services:
   # Gateway owns admission and protocol translation, never task or tab lifetime.
   gateway:
     <<: *runtime
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      target: runtime
-      args:
-        OPENCRAFT_UID: ${OPENCRAFT_UID:?Set the deployment user UID}
-        OPENCRAFT_GID: ${OPENCRAFT_GID:?Set the deployment user group GID}
+    build: *build
     pid: host
+    entrypoint: ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "gateway"]
     environment:
-      OPENCRAFT_DATA_DIR: ${OPENCRAFT_DATA_DIR}
-      OPENCRAFT_WORKSPACE_DIR: ${OPENCRAFT_WORKSPACE_DIR}
-      OPENCRAFT_BROWSER_OWNER_SOCKET: ${OPENCRAFT_DATA_DIR}/hands/owner.sock
+      <<: *environment
+      OPENCRAFT_BROWSER_OWNER_SOCKET: ${OPENCRAFT_BROWSER_DATA_DIR:-${OPENCRAFT_EXECUTION_DIR:-${OPENCRAFT_DATA_DIR}/execution}/browser}/owner.sock
+      OPENCRAFT_USER_PLUGIN_DIRECTORY: ${OPENCRAFT_USER_PLUGIN_DIRECTORY:-${OPENCRAFT_DATA_DIR}/user-plugins}
     command: ["--host", "127.0.0.1", "--port", "${OPENCRAFT_PORT:-10000}", "--data-dir", "${OPENCRAFT_DATA_DIR}", "--engines", "dsh,pi", "--default-engine", "pi"]
     volumes:
+      - *git-volume
       - *data-volume
       - *workspace-volume
+      - *log-volume
+      - type: bind
+        source: ${OPENCRAFT_HOST_LOG_DIR:-${OPENCRAFT_HOST_DATA_DIR}/logs}/gateway
+        target: ${OPENCRAFT_LOG_DIR:-/var/log/opencraft}/gateway
+        bind:
+          create_host_path: false
     depends_on:
       brain:
         condition: service_healthy
@@ -127,5 +168,6 @@ services:
       interval: 30s
       timeout: 12s
       start_period: 30s
+      start_interval: 2s
       retries: 3
     stop_grace_period: 30s

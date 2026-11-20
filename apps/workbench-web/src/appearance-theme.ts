@@ -19,6 +19,7 @@ export const coreThemeId = builtinThemeIds.neutral;
 export const canvasThemeId = builtinThemeIds.canvas;
 export const frostThemeId = builtinThemeIds.frost;
 export const lavenderThemeId = builtinThemeIds.lavender;
+export const porcelainThemeId = builtinThemeIds.porcelain;
 export const longingThemeId = builtinThemeIds.longing;
 export const mistThemeId = builtinThemeIds.mist;
 export const graphiteThemeId = builtinThemeIds.graphite;
@@ -58,7 +59,7 @@ let disconnectSource: (() => void) | undefined;
 export function defaultAppearanceThemeId(
   presentation: Pick<WorkbenchPresentation, "defaultThemeId"> = workbenchPresentation,
 ): string {
-  return normalizeBuiltinThemeId(presentation.defaultThemeId ?? coreThemeId);
+  return normalizeBuiltinThemeId(presentation.defaultThemeId ?? porcelainThemeId);
 }
 
 function readPreference(key: string): string | null | undefined {

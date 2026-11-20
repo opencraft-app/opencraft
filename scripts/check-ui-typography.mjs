@@ -14,6 +14,7 @@ const knownVariables = new Set([
   ...Object.keys(registry.weights).map(name => `--font-weight-${name}`),
   ...Object.keys(registry.tracking).map(name => `--font-tracking-${name}`),
   ...["lg", "md", "sm", "xs", "2xs"].flatMap(name => ["size", "line-height"].map(part => `--font-text-${name}-${part}`)),
+  "--menu-item-font", "--menu-item-tracking",
   "--opencraft-chat-font-size", "--opencraft-chat-code-font-size", "--opencraft-chat-line-height",
   "--opencraft-sidebar-font-size", "--opencraft-sidebar-line-height", "--opencraft-sidebar-meta-font-size", "--opencraft-sidebar-meta-line-height",
 ]);
@@ -25,14 +26,14 @@ export function inspectStyle(source, file = "fixture.scss") {
   const findings = [];
   const tree = scss.parse(source, { from: file });
   tree.walkDecls(d => {
-    const reservedDefinition = /^--(?:typography-|font-(?:family|size|weight|tracking|text|toolbar)|opencraft-chat-)/.test(d.prop);
+    const reservedDefinition = /^--(?:typography-|font-(?:family|size|weight|tracking|text|toolbar)|opencraft-chat-|menu-item-(?:font|tracking)$)/.test(d.prop);
     if (reservedDefinition && file !== "packages/design-system/src/tokens.web.scss") {
       findings.push({file, line:d.source.start.line, selector:"custom-property", property:d.prop, value:d.value}); return;
     }
     if (!properties.has(d.prop) || inherited.test(d.value)) return;
     // Refer only to the existing semantic owner; dimensions are not typography.
-    const refs = d.value.match(/var\(--(?:typography-[\w-]+|font-(?:family|weight|tracking|text)[\w-]*|opencraft-(?:chat|sidebar)[\w-]*)\)/g);
-    const rest = refs ? d.value.replace(/var\(--(?:typography-[\w-]+|font-(?:family|weight|tracking|text)[\w-]*|opencraft-(?:chat|sidebar)[\w-]*)\)/g, "").trim() : d.value;
+    const refs = d.value.match(/var\(--(?:typography-[\w-]+|font-(?:family|weight|tracking|text)[\w-]*|opencraft-(?:chat|sidebar)[\w-]*|menu-item-(?:font|tracking))\)/g);
+    const rest = refs ? d.value.replace(/var\(--(?:typography-[\w-]+|font-(?:family|weight|tracking|text)[\w-]*|opencraft-(?:chat|sidebar)[\w-]*|menu-item-(?:font|tracking))\)/g, "").trim() : d.value;
     const invalidRole = [...d.value.matchAll(/var\((--[\w-]+)\)/g)].some(match => !knownVariables.has(match[1]));
     if (refs && (!rest || /^[\s/]+$/.test(rest)) && !invalidRole) return;
     let selector = "";

@@ -1,6 +1,7 @@
 import { connect, type Socket } from 'node:net';
 import type { ExecutionEnvironmentRuntime, EnvironmentExecutionScope } from '../../../scripts/execution-environment.js';
-import { prepareProcessIdentity, TerminalCapacityError } from './process-service.js';
+import { prepareProcessIdentity, TerminalCapacityError, type PreparedProcessIdentity } from './process-service.js';
+import { lstat, readFile } from 'node:fs/promises';
 import { launchTerminalOwner, terminalOwnerLocation } from './terminal-owner-runtime.js';
 import { readOwnerFrames, sendOwnerFrame, TERMINAL_OWNER_PROTOCOL } from './terminal-owner-wire.js';
 
@@ -13,8 +14,11 @@ export class DurableHostProcessService {
   private closed = false;
   private next = 0;
   private readonly pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>();
-  constructor(private readonly directory: string, private readonly environment?: ExecutionEnvironmentRuntime) {}
+  constructor(private readonly directory: string, private readonly environment?: ExecutionEnvironmentRuntime,
+    private readonly external?: { endpoint: string; tokenFile: string;
+      prepare(method: string, params: unknown, scope?: EnvironmentExecutionScope): PreparedProcessIdentity }) {}
   subscribe(listener: (method: string, params: unknown) => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
+  async probe(): Promise<void> { await this.connection(); }
   private async connection(): Promise<Socket> {
     if (this.closed) throw new Error('Process service is closed');
     if (this.socket && !this.socket.destroyed) return this.socket;
@@ -24,6 +28,13 @@ export class DurableHostProcessService {
     return this.connecting;
   }
   private async establish() {
+    if (this.external) {
+      const info = await lstat(this.external.tokenFile);
+      if (!info.isFile() || info.isSymbolicLink() || info.uid !== process.getuid?.() || (info.mode & 0o077)) throw new Error('Invalid terminal owner token file');
+      const token = (await readFile(this.external.tokenFile, 'utf8')).trim();
+      if (token.length < 32 || token.length > 512) throw new Error('Invalid terminal owner token');
+      return this.attach(this.external.endpoint, token);
+    }
     const location = await terminalOwnerLocation(this.directory);
     const until = Date.now() + 15_000;
     let started = false;
@@ -38,7 +49,7 @@ export class DurableHostProcessService {
     } while (Date.now() < until);
     throw new Error('Terminal owner unavailable');
   }
-  private attach(endpoint: string): Promise<Socket> {
+  private attach(endpoint: string, token?: string): Promise<Socket> {
     return new Promise((resolve, reject) => {
       const socket = connect(endpoint);
       let attached = false;
@@ -52,7 +63,7 @@ export class DurableHostProcessService {
         for (const request of this.pending.values()) { clearTimeout(request.timer); request.reject(new Error('Terminal owner disconnected; operation outcome may be unknown')); }
         this.pending.clear();
       });
-      socket.once('connect', () => sendOwnerFrame(socket, { type: 'attach', protocol: TERMINAL_OWNER_PROTOCOL }));
+      socket.once('connect', () => sendOwnerFrame(socket, { type: 'attach', protocol: TERMINAL_OWNER_PROTOCOL, ...(token ? { token } : {}) }));
       readOwnerFrames(socket, message => {
         if (!attached) {
           if (message?.type !== 'attached' || message.protocol !== TERMINAL_OWNER_PROTOCOL || this.closed) {
@@ -73,8 +84,29 @@ export class DurableHostProcessService {
       });
     });
   }
+  async threadScopes(): Promise<{hostId: string; threadId: string}[]> {
+    return await this.dispatchIdentity('process/threadScopes', {}, { quotaOwner: 'server-lifecycle', lifecycleAuthority: true }) as {hostId: string; threadId: string}[];
+  }
+  /** Trusted composition only; not in the public method catalog. */
+  async releaseThread(hostId: string, threadId: string, activate = false, aliases: readonly {owner: string; resourceOwnerId: string}[] = []): Promise<void> {
+    const deadline = Date.now() + 5000;
+    const identity: PreparedProcessIdentity = { quotaOwner: 'server-lifecycle', lifecycleAuthority: true,
+      scope: { hostId, threadId, account: null, projectId: null } };
+    for (;;) {
+      const result = await this.dispatchIdentity('process/releaseThread', { aliases }, identity) as { pending: number };
+      if (result.pending === 0) {
+        if (activate) await this.dispatchIdentity('process/releaseThread', { activate: true, aliases }, identity);
+        return;
+      }
+      if (Date.now() >= deadline) throw new Error('Conversation terminal cleanup pending');
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
   async dispatch(method: string, params: unknown, scope?: EnvironmentExecutionScope, assertCurrent?: () => void, onAccepted?: () => void): Promise<unknown> {
-    const identity = prepareProcessIdentity(this.environment, scope, method, params);
+    const identity = this.external ? this.external.prepare(method, params, scope) : prepareProcessIdentity(this.environment, scope, method, params);
+    return this.dispatchIdentity(method, params, identity, assertCurrent, onAccepted);
+  }
+  private async dispatchIdentity(method: string, params: unknown, identity: PreparedProcessIdentity, assertCurrent?: () => void, onAccepted?: () => void): Promise<unknown> {
     const socket = await this.connection();
     if (this.closed || socket.destroyed) throw new Error('Process service is closed');
     assertCurrent?.();

@@ -5,12 +5,15 @@ import {
   parseBrowserUrl,
   reduceBrowserHistory,
   type BrowserAutomation,
+  type BrowserAutomationCallOptions,
+  BrowserAutomationError,
   type BrowserHistoryState,
   type BrowserPageId,
   type BrowserPageSnapshot,
   type BrowserUrl,
 } from "@opencraft/browser-core";
 import type { PreviewBridgeChildMessage } from "@opencraft/browser-preview-bridge";
+import type { ChatResourceOpenIntent } from "@opencraft/chat-render-react";
 import type { BrowserMetadataStorage } from "./desktop-browser-storage";
 import { browserMetadataKeys, readBrowserMetadataValue } from "@opencraft/workbench-runtime/browser-metadata-identity";
 
@@ -22,6 +25,11 @@ import {
 } from "./web-browser-surface-host";
 
 const STORAGE_KEY = browserMetadataKeys.pages;
+
+/** Default link routing is independent of explicit browser commands. */
+export function chatLinkOpensExternally(platform: "web" | "electron", intent: ChatResourceOpenIntent | undefined, recognized: boolean): boolean {
+  return intent?.target === "external-browser" || (platform === "web" && intent?.target !== "in-app-browser" && !recognized);
+}
 
 interface StoredBrowserPage {
   readonly id: string;
@@ -135,6 +143,9 @@ export class WebBrowserPageRuntime {
   private readonly zoom = new Map<BrowserPageId, number>();
   bindStorage(pageId: BrowserPageId, storageId: string) { this.surfaces.bindStorageId?.(pageId, storageId); }
   storageId(pageId: BrowserPageId) { return this.surfaces.existingStorageId?.(pageId) ?? null; }
+  /** Page-side annotation support, or null on hosts without it (web iframe). */
+  annotator(pageId: BrowserPageId) { return this.pages.has(pageId) ? this.surfaces.annotate?.(pageId) ?? null : null; }
+  get supportsAnnotation() { return !!this.surfaces.annotate; }
   get supportsZoom() { return !!this.surfaces.setZoom; }
   getZoom(pageId:BrowserPageId) { return this.zoom.get(pageId)??100; }
   setZoom(pageId:BrowserPageId,percent:number) {
@@ -156,6 +167,12 @@ export class WebBrowserPageRuntime {
     if (!this.surfaces.clearClosedData) throw new Error("清理仅在桌面浏览器可用");
     await this.surfaces.clearClosedData();
   }
+  readPresentation(pageId: BrowserPageId) { return this.surfaces.readPresentation?.(pageId) ?? Promise.resolve(null); }
+  onPresentationChanged(pageId: BrowserPageId, listener: () => void) { return this.surfaces.onPresentationChanged?.(pageId, listener) ?? (() => {}); }
+  capturePreview(pageId: BrowserPageId) {
+    if (!this.pages.has(pageId)) return null;
+    return this.surfaces.capturePreview?.(pageId) ?? null;
+  }
   async capturePage(pageId: BrowserPageId): Promise<string> {
     if (!this.surfaces.capture) throw new Error("截图仅在桌面浏览器可用");
     this.prepareSurface(pageId);
@@ -168,6 +185,8 @@ export class WebBrowserPageRuntime {
   private readonly navigationGenerations = new Map<BrowserPageId, number>();
   private readonly pendingNavigations = new Map<BrowserPageId, { url: BrowserUrl; generation: number; operation: Promise<void> }>();
 
+  private readonly releaseMetadata: () => void = () => {};
+
   constructor(
     private readonly surfaces: BrowserSurfaceHost = new WebIframeSurfaceHost(),
     private readonly navigationMapper: BrowserNavigationUrlMapper | null = null,
@@ -176,7 +195,14 @@ export class WebBrowserPageRuntime {
     private readonly navigationPolicy: BrowserNavigationPolicy | null = null,
   ) {
     this.restore();
+    // Another device opening, renaming or closing a page must reach this view
+    // without a reload. Rows are merged by id; local surfaces are untouched.
+    this.releaseMetadata = storage?.onMetadataChanged?.(field => {
+      if (field === "pages" || field === "*") this.reconcileStoredPages();
+    }) ?? (() => {});
   }
+
+  disposeMetadata(): void { this.releaseMetadata(); }
 
   create(input: CreateWebBrowserPageInput): BrowserPageId {
     const id = createPageId();
@@ -241,6 +267,12 @@ export class WebBrowserPageRuntime {
       this.publish(record, { isLoading: true, error: null });
   }
 
+  /** Only trusted application composition can recognize an HTTP(S) preview. */
+  isRecognizedInternalUrl(input: string): boolean {
+    try { return this.navigationPolicy?.canEmbed(parseBrowserUrl(input)) ?? false; }
+    catch { return false; }
+  }
+
   /** Route before creating a Page, panel, history entry or physical surface. */
   openExternalIfRequired(input: string): boolean {
     const url = parseBrowserUrl(input);
@@ -290,34 +322,34 @@ export class WebBrowserPageRuntime {
   async readPageContext(pageId: BrowserPageId, options: {
     readonly includeSelection?: boolean;
     readonly maxInlineChars?: number;
-  } = {}): Promise<WebBrowserPageContext> {
-    const page = await this.withAutomation(pageId, automation => automation.readContext(options));
+  } = {}, invocation?: BrowserAutomationCallOptions): Promise<WebBrowserPageContext> {
+    const page = await this.withAutomation(pageId, automation => automation.readContext(options, invocation), invocation);
     return { pageId, ...page };
   }
 
-  async inspectPage(pageId: BrowserPageId): Promise<WebBrowserInspection> {
-    const inspection = await this.withAutomation(pageId, automation => automation.inspect());
+  async inspectPage(pageId: BrowserPageId, invocation?: BrowserAutomationCallOptions): Promise<WebBrowserInspection> {
+    const inspection = await this.withAutomation(pageId, automation => automation.inspect(invocation), invocation);
     return { pageId, ...inspection };
   }
 
-  async clickElement(pageId: BrowserPageId, ref: string, expectedRevision: number): Promise<void> {
-    await this.withAutomation(pageId, automation => automation.click({ ref, expectedRevision }));
+  async clickElement(pageId: BrowserPageId, ref: string, expectedRevision: number, invocation?: BrowserAutomationCallOptions): Promise<void> {
+    await this.withAutomation(pageId, automation => automation.click({ ref, expectedRevision }, invocation), invocation);
   }
 
-  async fillElement(pageId: BrowserPageId, ref: string, expectedRevision: number, value: string): Promise<void> {
-    await this.withAutomation(pageId, automation => automation.fill({ ref, expectedRevision, value }));
+  async fillElement(pageId: BrowserPageId, ref: string, expectedRevision: number, value: string, invocation?: BrowserAutomationCallOptions): Promise<void> {
+    await this.withAutomation(pageId, automation => automation.fill({ ref, expectedRevision, value }, invocation), invocation);
   }
 
-  async pressKey(pageId: BrowserPageId, key: string): Promise<void> {
-    await this.withAutomation(pageId, automation => automation.press({ key }));
+  async pressKey(pageId: BrowserPageId, key: string, invocation?: BrowserAutomationCallOptions): Promise<void> {
+    await this.withAutomation(pageId, automation => automation.press({ key }, invocation), invocation);
   }
 
-  async scrollPage(pageId: BrowserPageId, x: number, y: number): Promise<void> {
-    await this.withAutomation(pageId, automation => automation.scroll({ x, y }));
+  async scrollPage(pageId: BrowserPageId, x: number, y: number, invocation?: BrowserAutomationCallOptions): Promise<void> {
+    await this.withAutomation(pageId, automation => automation.scroll({ x, y }, invocation), invocation);
   }
 
-  async waitForText(pageId: BrowserPageId, text: string, timeoutMs: number): Promise<void> {
-    await this.withAutomation(pageId, automation => automation.wait({ text, timeoutMs }));
+  async waitForText(pageId: BrowserPageId, text: string, timeoutMs: number, invocation?: BrowserAutomationCallOptions): Promise<void> {
+    await this.withAutomation(pageId, automation => automation.wait({ text, timeoutMs }, invocation), invocation);
   }
 
   close(pageId: BrowserPageId): void {
@@ -334,6 +366,7 @@ export class WebBrowserPageRuntime {
     if (record === undefined) return;
     this.invalidateNavigation(pageId);
     if (retired) { this.pages.delete(pageId); (this.surfaces.retire ?? this.surfaces.close).call(this.surfaces, pageId); }
+    else if (this.applyingRemote) this.surfaces.detach?.(pageId);
     else { this.surfaces.close(pageId); this.surfaces.forget?.(pageId); }
     this.pages.delete(pageId);
     this.navigationGenerations.delete(pageId);
@@ -342,6 +375,7 @@ export class WebBrowserPageRuntime {
   }
 
   dispose(): void {
+    this.releaseMetadata();
     this.sessionClosedHandler = null;
     this.inputErrorListeners.clear();
     for (const record of this.pages.values()) record.listeners.clear();
@@ -516,13 +550,18 @@ export class WebBrowserPageRuntime {
     }
     return automation;
   }
-  private async withAutomation<T>(pageId: BrowserPageId, call: (automation: BrowserAutomation) => Promise<T>): Promise<T> {
+  private async withAutomation<T>(pageId: BrowserPageId, call: (automation: BrowserAutomation) => Promise<T>, invocation?: BrowserAutomationCallOptions): Promise<T> {
+    const check = (outcome: "not-dispatched" | "unknown") => { if (invocation?.signal?.aborted) throw new BrowserAutomationError("CDP_ABORTED", "Browser invocation cancelled", false, outcome); };
+    check("not-dispatched");
     this.prepareSurface(pageId);
     await this.waitForNavigation(pageId);
+    check("not-dispatched");
     const release = this.surfaces.acquireUse?.(pageId) ?? (() => {});
     try {
       await this.surfaces.waitUntilReady?.(pageId);
-      return await call(this.requireAutomation(pageId));
+      check("not-dispatched");
+      const result = await call(this.requireAutomation(pageId));
+      check("unknown"); return result;
     } finally { release(); }
   }
 
@@ -561,7 +600,10 @@ export class WebBrowserPageRuntime {
     for (const listener of record.listeners) listener();
   }
 
+  /** A remote directory is already durable; writing it back would echo. */
+  private applyingRemote = false;
   private persist(): void {
+    if (this.applyingRemote) return;
     const stored: StoredBrowserPage[] = [...this.pages.values()].map((record) => ({
       id: record.id,
       ownerId: record.ownerId,
@@ -577,14 +619,15 @@ export class WebBrowserPageRuntime {
     }
   }
 
-  restore(): void {
+  private storedPages(): StoredBrowserPage[] {
     let parsed: unknown;
     try {
       parsed = JSON.parse(readBrowserMetadataValue(this.storage ?? window.localStorage, STORAGE_KEY) ?? "[]");
     } catch {
-      return;
+      return [];
     }
-    if (!Array.isArray(parsed)) return;
+    if (!Array.isArray(parsed)) return [];
+    const stored: StoredBrowserPage[] = [];
     for (const candidate of parsed) {
       if (typeof candidate !== "object" || candidate === null) continue;
       const row = candidate as Partial<StoredBrowserPage>;
@@ -602,9 +645,47 @@ export class WebBrowserPageRuntime {
         }
       });
       const index = entries.length === 0 ? -1 : Math.max(0, Math.min(Number(row.index) || 0, entries.length - 1));
+      stored.push({ id: row.id, ownerId: row.ownerId, hostId: typeof row.hostId === "string" ? row.hostId : null, createdAt: row.createdAt, entries, index });
+    }
+    return stored;
+  }
+
+  /** Apply a pushed page directory. Existing live pages keep their surface and
+   * navigation generation; only the stored revision is adopted. */
+  reconcileStoredPages(): void {
+    this.applyingRemote = true;
+    try { this.applyStoredPages(); } finally { this.applyingRemote = false; }
+  }
+  private applyStoredPages(): void {
+    const stored = this.storedPages();
+    if (stored.length === 0 && (this.storage?.getItem(STORAGE_KEY) ?? null) === null) return;
+    const present = new Set(stored.map(row => row.id));
+    for (const id of [...this.pages.keys()]) if (!present.has(id)) this.close(id as BrowserPageId);
+    for (const row of stored) {
+      const id = row.id as BrowserPageId, record = this.pages.get(id);
+      const entries = row.entries.flatMap((entry) => {
+        try { const url = parseBrowserUrl(entry.url); return [{ url, title: entry.title || browserUrlTitle(url) }]; }
+        catch { return []; }
+      });
+      const history = { entries, index: entries.length === 0 ? -1 : Math.max(0, Math.min(Number(row.index) || 0, entries.length - 1)) } satisfies BrowserHistoryState;
+      if (record === undefined) { this.restore(); continue; }
+      if (record.history.index === history.index && record.history.entries.length === history.entries.length
+        && record.history.entries.every((entry, at) => entry.url === history.entries[at]!.url && entry.title === history.entries[at]!.title)) continue;
+      record.history = history;
+      record.snapshot = createSnapshot({ id, ownerId: record.ownerId, createdAt: record.createdAt, history });
+      this.notify(record);
+    }
+  }
+
+  restore(): void {
+    for (const row of this.storedPages()) {
       const id = row.id as BrowserPageId;
       if (this.pages.has(id)) continue;
-      const history = { entries, index } satisfies BrowserHistoryState;
+      const entries = row.entries.flatMap((entry) => {
+        try { return [{ url: parseBrowserUrl(entry.url), title: entry.title || browserUrlTitle(parseBrowserUrl(entry.url)) }]; }
+        catch { return []; }
+      });
+      const history = { entries, index: entries.length === 0 ? -1 : Math.max(0, Math.min(Number(row.index) || 0, entries.length - 1)) } satisfies BrowserHistoryState;
       this.pages.set(id, {
         id,
         ownerId: row.ownerId,

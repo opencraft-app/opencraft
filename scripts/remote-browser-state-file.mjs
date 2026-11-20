@@ -62,3 +62,33 @@ export function linkedSessions(ownerId, state, index = sessionLinkIndex(state)) 
   return [...index].flatMap(([lease, entry]) => /^browser-[a-zA-Z0-9-]+$/.test(lease)
     ? [{ key: JSON.stringify([ownerId, lease]), ...entry }] : []);
 }
+
+/** Resolve canonical IDs and persisted draft aliases without parsing delimiters. */
+export function browserConversation(state, link) {
+  if (!link?.scopeId) return null;
+  try {
+    if (link.scopeId.startsWith('conversation:')) {
+      const pair = JSON.parse(link.scopeId.slice('conversation:'.length));
+      if (Array.isArray(pair) && pair.length === 2 && pair.every(v => typeof v === 'string' && v.length))
+        return { hostId: pair[0], threadId: pair[1] };
+    }
+    const bindings = JSON.parse(state?.values.bindings ?? '[]');
+    const binding = bindings.find(b => b.scopeId === link.scopeId);
+    if (typeof binding?.hostId === 'string' && typeof binding?.threadId === 'string' && binding.threadId)
+      return { hostId: binding.hostId, threadId: binding.threadId };
+  } catch {}
+  return null;
+}
+
+export function conversationResourceLinks(ownerId, state) {
+  const links = new Map();
+  for (const page of linkedSessions(ownerId, state ?? {values:{}})) {
+    const owner = browserConversation(state, page.link);
+    if (owner) links.set('page:' + page.key, owner);
+  }
+  try { for (const binding of JSON.parse(state?.values.bindings ?? '[]')) {
+    if (typeof binding.scopeId === 'string' && typeof binding.hostId === 'string' && typeof binding.threadId === 'string' && binding.threadId)
+      links.set('scope:' + binding.scopeId, {hostId:binding.hostId,threadId:binding.threadId});
+  } } catch {}
+  return links;
+}

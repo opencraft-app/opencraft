@@ -180,10 +180,12 @@ test("context sidebar actions share one stable leading slot after account moves 
     designTokens,
     /--size-navigation-leading-slot:\s*28px;/u,
   );
-  assert.match(
-    workbenchStyles,
-    /\.sidebar-navigation-item__icon\s*\{[\s\S]*?width:\s*var\(--size-navigation-leading-slot\);[\s\S]*?place-items:\s*center;/u,
-  );
+  const navigationStyles=readFileSync(new URL("../../packages/design-system-web/src/navigation.web.scss",import.meta.url),"utf8");
+  const navigationItem=readFileSync(new URL("../../apps/workbench-web/src/components/sidebar-navigation-item.tsx",import.meta.url),"utf8");
+  assert.match(navigationItem,/<NavigationItem/u);
+  assert.match(navigationItem,/className="sidebar-navigation-item__icon" data-navigation-leading=""/u);
+  assert.match(navigationStyles,/\.ui-button\.ui-navigation-item > \[data-navigation-leading\]\s*\{[^}]*width: var\(--size-navigation-leading-slot\);[^}]*height: var\(--size-navigation-leading-slot\);[^}]*flex-basis: var\(--size-navigation-leading-slot\);/u);
+  assert.match(navigationStyles,/grid-template-columns: var\(--size-sidebar-navigation-leading-slot\) minmax\(0, 1fr\) auto;/u);
   assert.doesNotMatch(sidebarSource, /sidebar-account__trigger/u);
 });
 

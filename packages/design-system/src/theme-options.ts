@@ -4,6 +4,8 @@ export type ThemeSurfaceOverrides = Readonly<Partial<Record<typeof themeSurfaceN
 export interface ThemeMaterialOptions {
   readonly window?: "translucent" | "opaque";
   readonly elevation?: "soft" | "flat";
+  /** Optical treatment; renderers own paint, geometry and accessibility fallbacks. */
+  readonly finish?: "standard" | "frosted";
 }
 
 /** Narrow renderer -> desktop appearance intent; optional fields accept old clients. */
@@ -31,7 +33,8 @@ export function validateThemeOptions(surfaces: unknown, material: unknown): void
     if (!material || typeof material !== "object" || Array.isArray(material)) throw new TypeError("Theme material must be an object");
     for (const [name, value] of Object.entries(material)) {
       if (!(name === "window" && (value === "translucent" || value === "opaque"))
-        && !(name === "elevation" && (value === "soft" || value === "flat"))) throw new TypeError(`Invalid theme material: ${name}`);
+        && !(name === "elevation" && (value === "soft" || value === "flat"))
+        && !(name === "finish" && (value === "standard" || value === "frosted"))) throw new TypeError(`Invalid theme material: ${name}`);
     }
   }
 }

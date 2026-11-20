@@ -36,6 +36,104 @@
       "when": 1794541268671,
       "tag": "0004_magenta_aqueduct",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1794541268672,
+      "tag": "0005_native_channels",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1794541268673,
+      "tag": "0006_actor_inbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1794541268674,
+      "tag": "0007_native_channel_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1794541268675,
+      "tag": "0008_personal_assistants",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1794541268676,
+      "tag": "0009_personal_assistant_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1794541268677,
+      "tag": "0010_assistant_model_selection",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1794541268678,
+      "tag": "0011_eminent_mathemanic",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1794541268679,
+      "tag": "0012_dear_wild_pack",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1794541268680,
+      "tag": "0013_channel_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1794671015795,
+      "tag": "0014_native_channel_mentions",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1794698676812,
+      "tag": "0015_visible_mention_reads",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1794700800000,
+      "tag": "0016_human_reservations",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1794794634845,
+      "tag": "0017_multi_bot_assignments",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1794813097063,
+      "tag": "0018_native_group_lifecycle",
+      "breakpoints": true
     }
   ]
 }

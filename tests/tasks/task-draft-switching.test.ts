@@ -64,6 +64,7 @@ function createSession() {
     async select(thread: string) {
       assert.equal(await navigation.selectConversation(location(thread)), true);
       assert.deepEqual(navigation.getSnapshot().location, location(thread));
+      await flush(); // Restored local Views paint before the independent Host preparation.
       assert.equal(coordinator.getSnapshot().phase, "ready");
       return this.current();
     },

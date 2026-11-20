@@ -19,7 +19,7 @@ async function connect(url) {
 
 test('independent Claude ACP Host retains native PID and turn when a gateway attachment closes', async t => {
   const root = await mkdtemp(join(tmpdir(), 'independent-acp-host-test-')), configPath = join(root, 'generation.json');
-  await writeFile(configPath, JSON.stringify({ command: process.execPath, args: [resolve('tests/fixtures/acp-engine-peer.mjs')], cwd: root }), { mode: 0o600 });
+  await writeFile(configPath, JSON.stringify({ command: process.execPath, args: [resolve('tests/fixtures/acp-engine-peer.mjs')], cwd: root, env: { ACP_TEST_TRACE: join(root, 'native-trace.jsonl') } }), { mode: 0o600 });
   const options = { id: 'claude-code', descriptorPath: join(root, 'host.json'), dataDirectory: join(root, 'data'), runtimeDirectory: root,
     initialGeneration: { id: 'one', configPath } };
   const host = await startIndependentAcpHost(options);
@@ -33,7 +33,10 @@ test('independent Claude ACP Host retains native PID and turn when a gateway att
   const before = host.provider.snapshot().generations[0];
   assert.equal(before.occupancy.activeTurns, 1);
   const observed=await attachment.getExecutionIdentity(created.thread.id);
-  assert.equal(observed.pid,before.pid);assert.equal(observed.turn.id,started.turn.id);assert.equal(observed.turn.status,"inProgress");
+  assert.ok(Number.isInteger(observed.pid) && observed.pid > 0);
+  const prompts=(await readFile(join(root,'native-trace.jsonl'),'utf8')).trim().split('\n').map(line=>JSON.parse(line)).filter(frame=>frame.method==='session/prompt');
+  assert.equal(prompts.length,1);assert.equal(observed.pid,prompts[0].pid,'observe the actual session process, not the generation catalog process');
+  assert.equal(observed.turn.id,started.turn.id);assert.equal(observed.turn.status,"inProgress");
   assert.notEqual(before.pid,process.pid);
   await assert.rejects(attachment.getExecutionIdentity("claude_unknown"));
   gateway.socket.close(); await attachment.close();
@@ -41,6 +44,7 @@ test('independent Claude ACP Host retains native PID and turn when a gateway att
   while (host.provider.snapshot().generations[0].occupancy.activeTurns && Date.now() < deadline) await delay(20);
   const after = host.provider.snapshot().generations[0];
   assert.equal(after.pid, before.pid); assert.equal(after.occupancy.activeTurns, 0);
+  assert.equal(host.provider.executionObservation(created.thread.id).pid,observed.pid);process.kill(observed.pid,0);
   const successor = await connect((await attachEngineHost(options.descriptorPath, options.dataDirectory, descriptor.machineId, ['claude-code'], 'claude-code')).websocketUrl);
   t.after(() => successor.socket.close());
   const read = await successor.request('thread/read', { threadId: created.thread.id });
@@ -52,8 +56,8 @@ test('independent Claude ACP Host retains native PID and turn when a gateway att
   await host.provider.manage('add',{id:'two',configPath});
   await host.provider.manage('activate',{id:'two',expectedCurrent:'one'});
   const second=await successor.request('thread/start',{});
-  assert.equal((await attachment.getExecutionIdentity(created.thread.id)).pid,before.pid,'existing Thread retains the original native generation');
-  assert.notEqual((await attachment.getExecutionIdentity(second.thread.id)).pid,before.pid,'new Thread uses the new native root');
+  assert.equal((await attachment.getExecutionIdentity(created.thread.id)).pid,observed.pid,'existing Thread retains the original native generation');
+  assert.notEqual((await attachment.getExecutionIdentity(second.thread.id)).pid,observed.pid,'new Thread uses the new native root');
 
 });
 
@@ -99,7 +103,7 @@ test('production multi-engine entry aggregates Pi and two independently rooted A
   await new ModelConfigurationRepository(join(piRoot, 'models')).initialize({ schemaVersion: 1, revision: 0, providers: [], defaultModel: null });
   for (const id of ['acp', 'claude-code']) {
     const configPath = join(root, `${id}-generation.json`), dataDirectory = join(root, id);
-    await writeFile(configPath, JSON.stringify({ command: process.execPath, args: [resolve('tests/fixtures/acp-engine-peer.mjs')], cwd: root, permission: 'allow-once' }), { mode: 0o600 });
+    await writeFile(configPath, JSON.stringify({ command: process.execPath, args: [resolve('tests/fixtures/acp-engine-peer.mjs')], cwd: root, permission: 'allow-once', env: { ACP_TEST_TRACE: join(root, `${id}-native-trace.jsonl`) } }), { mode: 0o600 });
     const descriptorPath = join(root, `${id}-host.json`);
     const host = await startIndependentAcpHost({ id, descriptorPath, dataDirectory, runtimeDirectory: root, machineIdentityDirectory: piRoot,
       sessionCapabilitiesDirectory: piRoot, initialGeneration: { id: 'one', configPath } });
@@ -117,7 +121,11 @@ test('production multi-engine entry aggregates Pi and two independently rooted A
     assert.ok(created.thread.id.startsWith(owner.id === 'acp' ? 'acp_' : 'claude_'));
     const inputId = `actor-input:${owner.id}-accepted`;
     const receipt = await attachment.inputs.submit(created.thread.id, inputId, 'wait', () => true);
-    assert.equal(receipt.state, 'delivered'); owner.turnId = receipt.turnId; owner.nativePid = owner.host.provider.snapshot().generations[0].pid;
+    assert.equal(receipt.state, 'delivered'); owner.turnId = receipt.turnId; owner.catalogPid = owner.host.provider.snapshot().generations[0].pid;
+    const observed=await attachment.getExecutionIdentity(owner.threadId);owner.nativePid=observed.pid;
+    assert.equal(observed.turn.id,owner.turnId);assert.equal(observed.turn.status,'inProgress');
+    const prompts=(await readFile(join(root,`${owner.id}-native-trace.jsonl`),'utf8')).trim().split('\n').map(line=>JSON.parse(line)).filter(frame=>frame.method==='session/prompt');
+    assert.equal(prompts.length,1);assert.equal(owner.nativePid,prompts[0].pid);
     assert.deepEqual(await attachment.inputs.receipt(created.thread.id, inputId), receipt);
     assert.equal(owner.host.provider.snapshot().generations[0].occupancy.activeTurns, 1);
     assert.equal((await attachment.getExecutionIdentity(owner.threadId)).pid,owner.nativePid);
@@ -127,7 +135,8 @@ test('production multi-engine entry aggregates Pi and two independently rooted A
   const deadline = Date.now() + 3000;
   while (owners.some(owner => owner.host.provider.snapshot().generations[0].occupancy.activeTurns) && Date.now() < deadline) await delay(20);
   for (const owner of owners) {
-    assert.equal(owner.host.provider.snapshot().generations[0].pid, owner.nativePid);
+    assert.equal(owner.host.provider.snapshot().generations[0].pid, owner.catalogPid);
+    assert.equal(owner.host.provider.executionObservation(owner.threadId).pid,owner.nativePid);process.kill(owner.nativePid,0);
     const status = await owner.host.provider.request('opencraft/orchestration/status', { threadId: owner.threadId }, { notify() {}, async request() {} });
     assert.equal(status.turnId, owner.turnId); assert.equal(status.state, 'completed');
     const remote = await attachEngineHost(owner.descriptorPath, owner.dataDirectory, machine.machineId, [owner.id], owner.id);

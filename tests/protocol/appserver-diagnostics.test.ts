@@ -1,5 +1,7 @@
+import { setLocalDiagnosticsEnabled } from "../../apps/workbench-web/src/runtime/local-diagnostics";
 import assert from "node:assert/strict";
 import test from "node:test";
+test.beforeEach(() => { setLocalDiagnosticsEnabled(false); setLocalDiagnosticsEnabled(true); });
 import type { AppServerRequestLifecycleEvent } from "@opencraft/appserver-client";
 import { installAppServerDiagnostics } from "../../apps/workbench-web/src/runtime/appserver-diagnostics";
 

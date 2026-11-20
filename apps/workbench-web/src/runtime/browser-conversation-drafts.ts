@@ -1,4 +1,4 @@
-import { encodeComposerTarget, type ComposerTarget } from "@opencraft/composer-core";
+import type { ComposerTarget } from "@opencraft/composer-core";
 import { reportDisplayEvent } from "./recovery-diagnostics";
 import { displayStorageFailure, storedDisplayTimingCounts } from "./display-timing-diagnostics";
 import type { ClientLocalDocuments } from "@opencraft/document-storage/client-local-documents";
@@ -6,8 +6,6 @@ import { readMigratingLocalDocument } from "./local-document-migration";
 import {
   conversationDraftStoragePrefix,
   conversationDisplayStoragePrefix,
-  parseConversationDraftTarget,
-  parseConversationDraftDocument,
   type ConversationDraftStorage,
   type ConversationDisplayStorage,
 } from "@opencraft/workbench-runtime";
@@ -16,8 +14,7 @@ import {
 export function createBrowserConversationDraftStorage(scope: string, documents?: ClientLocalDocuments): {
   readonly storage: ConversationDraftStorage;
   readonly displayStorage: ConversationDisplayStorage;
-  loadViewId(target: ComposerTarget): Promise<string | null>;
-  loadNewTarget(draftId: string): Promise<ReturnType<typeof parseConversationDraftTarget>>;
+  loadViewId(target: ComposerTarget, preferred?: string): Promise<string | null>;
   revokeAndClear(): void;
 } {
   const prefix = conversationDraftStoragePrefix(scope);
@@ -41,43 +38,10 @@ export function createBrowserConversationDraftStorage(scope: string, documents?:
   };
   return {
     storage,
-    async loadViewId(target) {
+    async loadViewId(target, preferred) {
       if (revoked) return null;
-      try {
-        const keys = documents ? [...await documents.keys()] : [];
-        for (let index = window.localStorage.length - 1; index >= 0; index--) {
-          const key = window.localStorage.key(index);
-          if (key?.startsWith(prefix) && !keys.includes(key)) keys.push(key);
-        }
-        const encoded = encodeComposerTarget(target);
-        for (const key of keys) {
-          if (revoked) return null;
-          if (!key.startsWith(prefix)) continue;
-          let slot: unknown;
-          try { slot = JSON.parse(key.slice(prefix.length)); } catch { continue; }
-          if (!Array.isArray(slot) || slot.length !== 2 || typeof slot[0] !== "string" || !slot[0] || slot[1] !== encoded) continue;
-          const raw = documents ? await readMigratingLocalDocument(documents, key, window.localStorage) : window.localStorage.getItem(key);
-          if (!revoked && parseConversationDraftDocument(raw) !== null) return slot[0];
-        }
-      } catch { /* Missing storage does not block a new editor slot. */ }
-      return null;
-    },
-    async loadNewTarget(draftId) {
-      if (revoked) return null;
-      try {
-        if (documents) for (const key of await documents.keys()) {
-          if (revoked) return null;
-          const target = parseConversationDraftTarget((await documents.read(key)) ?? null);
-          if (target?.draftId === draftId) return target;
-        }
-        for (let index = 0; index < window.localStorage.length; index++) {
-          const key = window.localStorage.key(index);
-          if (!key?.startsWith(prefix)) continue;
-          const target = parseConversationDraftTarget(documents ? await readMigratingLocalDocument(documents, key, window.localStorage) : window.localStorage.getItem(key));
-          if (target?.draftId === draftId) return target;
-        }
-      } catch { /* Storage denial must not prevent startup. */ }
-      return null;
+      const { findSavedDraftView } = await import("./browser-draft-slot");
+      return findSavedDraftView(target, preferred, scope, prefix, documents, storage, () => revoked);
     },
     displayStorage: {
       async load(key) {

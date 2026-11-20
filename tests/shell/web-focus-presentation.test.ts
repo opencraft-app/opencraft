@@ -4,7 +4,11 @@ import { readFileSync } from "node:fs";
 
 import { test } from "node:test";
 
-import { compile } from "sass";
+import { compile as compileSass } from "sass";
+import {createRequire} from "node:module";
+import {pathToFileURL} from "node:url";
+const require=createRequire(import.meta.url);
+const compile=(file:string)=>compileSass(file,{importers:[{findFileUrl(spec:string){try{return pathToFileURL(require.resolve(spec));}catch{return null;}}}]});
 
 
 const focusSource = new URL("../../packages/design-system/src/focus.web.scss", import.meta.url);
@@ -55,11 +59,18 @@ test("pointer-opened native previews share focus origin until keyboard navigatio
   assert.match(origin, /event\.detail > 0 \|\| pointerActivation\.current/u);
   assert.match(origin, /if \(event\.key === "Tab"\) setOpenedByPointer\(false\)/u);
   assert.match(css, /dialog\[data-opened-by-pointer=true\] :focus-visible\s*\{[^}]*outline:\s*none !important;[^}]*box-shadow:\s*none !important/u);
+  const surface=readFileSync(new URL("../../packages/design-system-web/src/preview-surface.tsx",import.meta.url),"utf8");
+  assert.match(surface,/data-opened-by-pointer=\{openedByPointer \|\| undefined\}/u);
+  const tablePreview=readFileSync(new URL("../../packages/chat-render-web/src/renderers/table/table-preview.tsx",import.meta.url),"utf8");
+  assert.match(tablePreview,/<PreviewSurface[^>]*openedByPointer=\{openedByPointer\}/u);
+  const imageView=readFileSync(new URL("../../packages/chat-render-web/src/image-preview-view.tsx",import.meta.url),"utf8");
+  assert.match(imageView,/openedByPointer=\{openedByPointer && !keyboardFocus\}/u);
+  assert.match(imageView,/if \(event\.key === "Tab"\) setKeyboardFocus\(true\)/u);
   for (const preview of [table, image, mermaid]) {
     assert.match(preview, /usePreviewFocusOrigin\(\)/u);
-    assert.match(preview, /data-opened-by-pointer=/u);
+    assert.match(preview, /openedByPointer=\{previewFocus\.openedByPointer\}/u);
     assert.match(preview, /onPointerDown=/u);
-    assert.match(preview, /onPreviewKeyDown/u);
+    if(preview!==image)assert.match(preview, /onPreviewKeyDown/u);
   }
 });
 

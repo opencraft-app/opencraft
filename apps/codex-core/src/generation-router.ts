@@ -51,8 +51,8 @@ class RoutingSession {
   private readonly lifetime = new AbortController();
   private readonly operations = new Set<Promise<unknown>>();
   private readonly epoch = randomUUID();
-  private readonly peers = new Map<string, { incarnation: number; operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }> }>();
-  private readonly serverRequests = new Map<string, { operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }>; nativeId: unknown; ticket: GenerationTicket; answered: boolean; release?: RouterLease; completion?: { threadId: string; turnId: string; callId: string } }>();
+  private readonly peers = new Map<string, { incarnation: number; operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean; supportsWorkspaceExecution?:boolean }> }>();
+  private readonly serverRequests = new Map<string, { operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean; supportsWorkspaceExecution?:boolean }>; nativeId: unknown; ticket: GenerationTicket; answered: boolean; release?: RouterLease; completion?: { threadId: string; turnId: string; callId: string } }>();
   private readonly pendingStarts = new Map<string, { forward: () => Promise<void>; context: RouterLeaseContext }>();
   private readonly commands = new Map<string, { ticket: GenerationTicket; active: boolean; release?: RouterLease }>();
   private readonly processes = new Map<string, { ticket: GenerationTicket; active: boolean; pending: boolean; release?: RouterLease }>();
@@ -89,7 +89,7 @@ class RoutingSession {
   }
   private get registry() { return this.router.runtime.registry; }
   private emit(message: RpcRecord): void { if (!this.closed && this.socket.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message)); }
-  private async peer(id: string, readOnly = false): Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }> {
+  private async peer(id: string, readOnly = false): Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean; supportsWorkspaceExecution?:boolean }> {
     const health = await (readOnly && this.router.runtime.readHealth ? this.router.runtime.readHealth(id) : this.router.runtime.ensure(id)), generation = this.registry.get(id)!;
     if (this.closed) throw error("Routing connection is closed");
     const existing = this.peers.get(id);
@@ -181,7 +181,7 @@ class RoutingSession {
         }
         this.generationLost(id, incarnation, connectionEpoch, incarnation);
       },
-    }, health.callbackProtocolVersion === 1 ? this.callbackLaneId : undefined, this.lifetime.signal).then(value=>({...value,supportsOrchestration:health.callbackProtocolVersion===1}));
+    }, health.callbackProtocolVersion === 1 ? this.callbackLaneId : undefined, this.lifetime.signal).then(value=>({...value,supportsOrchestration:health.callbackProtocolVersion===1,supportsWorkspaceExecution:health.workspaceExecutionVersion===1}));
     void operation.then(value => { connectionEpoch = value.peer.connectionEpoch; }).catch(() => {});
     this.peers.set(id, { incarnation, operation });
     try { const value = await operation; if (this.closed) { value.peer.close(); throw error("Routing connection is closed"); } return value; }
@@ -244,7 +244,10 @@ class RoutingSession {
       if (this.registry.valid(pending.ticket)) { pending.answered = true; const peer = (await pending.operation).peer; await lease?.sent(); peer.notify({ ...message, id: pending.nativeId }); }
       return;
     }
-    if (method === "opencraft/orchestration/ack") {
+    if (method === "opencraft/orchestration/private-capability") {
+      const {peer}=await this.peer(this.registry.current().generation.id);this.emit({id,result:await peer.call(method,params)});return;
+    }
+    if (method === "opencraft/orchestration/ack" || method === "opencraft/orchestration/publish") {
       const operationId = text(params.operationId), creationId = text(params.creationOperationId) || operationId;
       if (operationId !== creationId && operationId !== `${creationId}:title`) throw error("Invalid orchestration acknowledgement");
       let ticket:GenerationTicket|null;try{ticket = this.registry.creationTicket(creationId,true);}catch{this.emit({id,result:{acknowledged:true}});return;}
@@ -298,7 +301,9 @@ class RoutingSession {
     let release: (() => void) | undefined, sent = false;
     try {
       const readOnly = historyReadMethods.has(method);
-      const { peer, supportsOrchestration } = await this.peer(ticket.generationId, readOnly);
+      const { peer, supportsOrchestration, supportsWorkspaceExecution } = await this.peer(ticket.generationId, readOnly);
+      if (Object.hasOwn(params, "__opencraftWorkspaceGrant") && !supportsWorkspaceExecution)
+        throw error("This Native generation does not support private workspace execution admission");
       if(!supportsOrchestration){
         if(params.__opencraftOrchestrationOperation)throw error('This Engine Host does not support orchestration replay');
         delete params.__opencraftDelegationId;
@@ -360,9 +365,9 @@ class RoutingSession {
     const view = state;
     const limit = params.limit === undefined ? 100 : Number(params.limit);
     if (!Number.isInteger(limit) || limit < 1) throw error("Invalid directory page size");
-    // One page must fit inside the enclosing history RPC's eight-second
+    // Leave five seconds inside the enclosing directory RPC's 30-second
     // deadline. A late read cannot publish into this completed cursor view.
-    const deadline = performance.now() + 2000;
+    const deadline = performance.now() + 25_000;
     const bounded = async <T>(read: () => Promise<T>): Promise<T> => {
       const remaining = deadline - performance.now();
       if (remaining <= 0) throw error("Directory source read budget exhausted", true);

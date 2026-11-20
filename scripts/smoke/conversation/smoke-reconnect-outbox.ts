@@ -10,6 +10,8 @@ const calls: { method: string; params: any }[] = [];
 let online = true;
 let holdAck = false;
 let rejectTools = false;
+let holdRejection = false;
+let rejectHeld: (() => void) | null = null;
 let preparationQueue = false;
 let rows: any[] = [];
 const thread = { id: "thread-one", name: "Outbox fixture", cwd: "/fixture", status: { type: "active" },
@@ -20,7 +22,7 @@ const vite = await createServer({ root: process.cwd(), configFile: false, logLev
   optimizeDeps: { entries: ["tests/fixtures/reconnect-outbox-browser.tsx"] }, esbuild: { jsx: "automatic", target: "esnext" },
   server: { host: "127.0.0.1", port: 0, hmr: false }, plugins: [{ name: "outbox-fixture", configureServer(server) {
     server.middlewares.use((req, res, next) => {
-      if (req.url !== "/") return next(); res.setHeader("content-type", "text/html");
+      if (req.url?.split("?")[0] !== "/") return next(); res.setHeader("content-type", "text/html");
       res.end('<meta name="viewport" content="width=device-width, initial-scale=1"><div id="root"></div><script type="module" src="/tests/fixtures/reconnect-outbox-browser.tsx"></script>');
     });
   } }],
@@ -39,6 +41,13 @@ try {
     const request = JSON.parse(frame.toString()); if (request.id === undefined) return;
     calls.push(request);
     const { method, params } = request;
+    if (holdRejection && (method === "turn/start" || method === "thread/queue/add")) {
+      rejectHeld = () => ws.send(JSON.stringify({ id: request.id, error: {
+        code: -32000, message: "Session tools are temporarily recovering",
+        data: { code: "SESSION_TOOLS_UNAVAILABLE", submissionOutcome: "rejected", retryable: true },
+      } }));
+      return;
+    }
     let result: any;
     if (method === "initialize") result = { userAgent: "fixture", codexHome: "/fixture", platformFamily: "unix", platformOs: "linux", capabilities: { extensions: { "opencraft/thread-queue": { version: 2, atomicSteer: true } } } };
     else if (method === "thread/resume" || method === "thread/read") result = { thread, model: "fixture", modelProvider: "fixture", cwd: "/fixture", approvalPolicy: "on-request", approvalsReviewer: "user", sandbox: { type: "readOnly" },
@@ -48,6 +57,11 @@ try {
     else if (method === "thread/items/list") result = { data: [], nextCursor: null };
     else if (method === "thread/queue/list") result = { data: rows, nextCursor: null };
     else if (method === "thread/queue/add") {
+      if (rejectTools) {
+        rejectTools = false;
+        ws.send(JSON.stringify({ id: request.id, error: { code: -32000, message: "Session tools are temporarily recovering",
+          data: { code: "SESSION_TOOLS_RECOVERING", submissionOutcome: "rejected", retryable: true } } })); return;
+      }
       const entry = { id: `server-${params.clientUserMessageId}`, clientUserMessageId: params.clientUserMessageId,
         input: params.input, createdAt: Date.now(), pausedReason: preparationQueue ? "session-tools-recovering" : null };
       if (!rows.some(row => row.clientUserMessageId === entry.clientUserMessageId)) rows.push(entry);
@@ -58,8 +72,9 @@ try {
       rejectTools = false;
       ws.send(JSON.stringify({ id: request.id, error: { code: -32000, message: "Session tools are temporarily recovering",
         data: { code: "SESSION_TOOLS_UNAVAILABLE", submissionOutcome: "rejected", retryable: true } } })); return;
-    } else if (method === "turn/start") result = { turn: { id: "identity-turn", items: [], status: "inProgress", error: null } };
-    else if (method === "model/list") result = { data: [{ id: "fixture", model: "fixture", displayName: "Fixture", description: "Synthetic", hidden: false, isDefault: true, supportedReasoningEfforts: [], defaultReasoningEffort: "medium", inputModalities: ["text"], supportsPersonality: false, additionalSpeedTiers: [], serviceTiers: [] }], nextCursor: null };
+    } else if (method === "turn/start" && holdAck) { online = false; ws.close(1012, "ack lost"); return; }
+    else if (method === "turn/start") result = { turn: { id: "identity-turn", items: [], status: "inProgress", error: null } };
+    else if (method === "model/list") result = { data: [{ id: "fixture", model: "fixture", displayName: "Fixture", description: "Synthetic", hidden: false, isDefault: true, supportedReasoningEfforts: [], defaultReasoningEffort: "medium", inputModalities: ["text", "image"], supportsPersonality: false, additionalSpeedTiers: [], serviceTiers: [] }], nextCursor: null };
     else if (method === "thread/dynamicTools/register") result = { registered: 0 };
     else result = {};
     ws.send(JSON.stringify({ id: request.id, result }));
@@ -157,17 +172,45 @@ try {
   await page.waitForFunction(() => (window as any).fixture.snapshot().queuedSubmissions.every((row: any) => !row.local));
   assert.equal(calls.filter(call => call.method === "thread/queue/add").length, before + 2);
   await page.close();
+  // An optimistic row cannot take custody of attachment handles. Hold the
+  // actual RPC after projection, then reject before native dispatch.
+  thread.status.type = "idle"; thread.turns = [];
+  for (const width of [390, 1100]) {
+    online = true; rows = []; holdAck = false; holdRejection = true; rejectHeld = null;
+    const p = await browser.newPage({ viewport: { width, height: 840 }, hasTouch: width === 390, isMobile: width === 390 });
+    activePage = p; await p.addInitScript("window.__name = value => value"); await p.goto(origin);
+    await p.waitForSelector('[data-authoritative="true"]');
+    await p.locator(".opencraft-composer-editor").fill("keep my image and text");
+    await p.evaluate(() => (window as any).fixture.addAttachment());
+    await p.locator("[data-composer-primary-action]").click();
+    await p.waitForFunction(() => (window as any).fixture.snapshot().pendingSubmissions.length > 0);
+    assert.equal((await p.locator(".opencraft-composer-editor").innerText()).trim(), "", "pending handoff hides the retained draft");
+    assert.equal(await p.evaluate(() => (window as any).fixture.draft().attachments.length), 1);
+    const until = Date.now() + 1500;
+    while (!rejectHeld && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.ok(rejectHeld, "actual RPC reached the held server boundary");
+    (rejectHeld as () => void)(); holdRejection = false;
+    await p.waitForFunction(() => (window as any).fixture.draft().lifecycle.phase === "failed");
+    assert.equal(await p.locator(".opencraft-composer-editor").innerText(), "keep my image and text", "safe rejection restores editable input");
+    assert.equal(await p.locator(".opencraft-composer-editor").innerText(), "keep my image and text");
+    assert.equal(await p.evaluate(() => (window as any).fixture.draft().attachments[0].id), "kept-image");
+    await p.screenshot({ path: output + "/" + width + "-attachment-custody.png" });
+    await p.close();
+  }
   // The View still looks idle while native tool preparation rejects this
   // start. A single safe rejection transfers the same input to the Host queue.
   thread.status.type = "idle"; thread.turns = [];
   const preparationResults = [];
+  for (const initialTarget of ["turn/start", "thread/queue/add"]) {
+  thread.status.type = initialTarget === "turn/start" ? "idle" : "active";
+  thread.turns = initialTarget === "turn/start" ? [] : [{ id: "active", status: "inProgress", items: [], params: { input: [] } }];
   for (const width of [390, 1100]) for (const theme of ["light", "dark"] as const) {
     online = true; rows = []; holdAck = false; rejectTools = true; preparationQueue = true;
     const p = await browser.newPage({ viewport: { width, height: 840 }, hasTouch: width === 390, isMobile: width === 390 });
     activePage = p;
     const errors: string[] = []; p.on("pageerror", error => errors.push(error.message));
     p.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
-    await p.addInitScript("window.__name = value => value"); await p.goto(origin);
+    await p.addInitScript("window.__name = value => value"); await p.goto(origin + (initialTarget === "thread/queue/add" ? "?target=queue" : ""));
     await p.waitForSelector('[data-authoritative="true"]');
     await p.evaluate(theme => (window as any).fixture.setThemePreference(theme), theme);
     const before = calls.length;
@@ -175,7 +218,7 @@ try {
     await p.locator("[data-composer-primary-action]").click();
     await p.waitForFunction(() => (window as any).fixture.snapshot().queuedSubmissions.some((row: any) => !row.local && row.state === "queued" && row.pausedReason === "session-tools-recovering"));
     const submitted = calls.slice(before).filter(call => ["turn/start", "thread/queue/add"].includes(call.method));
-    assert.deepEqual(submitted.map(call => call.method), ["turn/start", "thread/queue/add"]);
+    assert.deepEqual(submitted.map(call => call.method), [initialTarget, "thread/queue/add"]);
     assert.equal(submitted[0]!.params.clientUserMessageId, submitted[1]!.params.clientUserMessageId);
     assert.deepEqual(submitted[0]!.params.input, submitted[1]!.params.input);
     assert.equal(await p.locator(".opencraft-composer-queue-item").count(), 1);
@@ -183,11 +226,92 @@ try {
     assert.equal((await p.locator(".opencraft-composer-editor").innerText()).trim(), "");
     assert.equal(await p.evaluate(() => (window as any).fixture.snapshot().pendingSubmissions.length), 0);
     assert.deepEqual(errors, []);
-    await p.screenshot({ path: `${output}/${width}-${theme}-tools-recovery.png` });
-    preparationResults.push({ width, theme, safeRejectionQueuedOnce: true, sameInputIdentity: true });
+    await p.screenshot({ path: `${output}/${width}-${theme}-${initialTarget === "turn/start" ? "start" : "enqueue"}-tools-recovery.png` });
+    preparationResults.push({ width, theme, initialTarget, safeRejectionQueuedOnce: true, sameInputIdentity: true });
     await p.close();
   }
-  await writeFile(`${output}/results.json`, JSON.stringify({ results, preparationResults, identityRejectionKeepsDraft: true, lostAckReconciled: true, actualEngine: false }, null, 2));
+  }
+  // A missing receipt cannot be resolved from empty history. The explicit local
+  // action releases the fence without replaying the old operation identity.
+  for (const width of [390, 1100]) {
+    online = true; rows = []; holdAck = false; preparationQueue = false;
+    const p = await browser.newPage({ viewport: { width, height: 840 }, hasTouch: width === 390 });
+    activePage = p; await p.addInitScript("window.__name = value => value"); await p.goto(origin + '?target=queue');
+    await p.waitForSelector('[data-authoritative="true"]');
+    online = false; for (const ws of sockets.clients) ws.close(1012, 'offline');
+    await p.waitForSelector('[data-authoritative="false"]');
+    await p.locator('.opencraft-composer-editor').fill('uncertain original ' + width);
+    await p.locator('[data-composer-primary-action]').click();
+    const before = calls.filter(call => call.method === 'thread/queue/add').length;
+    holdAck = true; online = true;
+    const status = p.getByRole('button', { name: 'Delivery unconfirmed', exact: true });
+    await status.waitFor();
+    assert.equal(await p.locator('.draft-setup-notice').count(), 0);
+    if (width === 390) await status.tap(); else await status.click();
+    await p.getByRole('button', { name: 'Stop waiting', exact: true }).waitFor();
+    rows = []; // No authoritative positive receipt is available.
+    await p.getByText('This message may still arrive. Stop waiting to send new messages; this does not cancel or resend the original.', { exact: true }).waitFor();
+    await p.screenshot({ path: output + '/' + width + '-unconfirmed-action.png' });
+    const abandon = p.getByRole('button', { name: 'Stop waiting', exact: true });
+    if (width === 390) await abandon.tap(); else await abandon.click();
+    await abandon.waitFor({ state: 'hidden' });
+    assert.equal(calls.filter(call => call.method === 'thread/queue/add').length, before + 1);
+    holdAck = false; online = true;
+    await p.waitForSelector('[data-authoritative="true"]');
+    await p.locator('.opencraft-composer-editor').fill('independent new message ' + width);
+    await p.locator('[data-composer-primary-action]').click();
+    await p.waitForFunction(() => (window as any).fixture.snapshot().queuedSubmissions.some((row: any) => !row.local));
+    assert.deepEqual(calls.filter(call => call.method === 'thread/queue/add').slice(before).map(call => call.params.input[0].text), ['uncertain original ' + width, 'independent new message ' + width]);
+    await p.close();
+  }
+  // Direct sends with lost acknowledgements reproduce the reported composition:
+  // one original message, one inline status, preserved draft, no red raw error.
+  const presentationResults = [];
+  for (const {width, theme, locale} of [
+    {width:390, theme:'light', locale:'zh-CN'}, {width:1100, theme:'dark', locale:'en-US'},
+  ]) {
+    online = true; holdAck = true; rows = []; thread.turns = [];
+    const p = await browser.newPage({viewport:{width,height:840}, hasTouch:width===390, isMobile:width===390});
+    activePage = p;
+    const errors: string[] = []; p.on('pageerror', error => errors.push(error.message));
+    await p.addInitScript('window.__name = value => value');
+    await p.goto(origin + '?locale=' + locale);
+    await p.waitForSelector('[data-authoritative="true"]');
+    await p.evaluate(theme => (window as any).fixture.setThemePreference(theme), theme);
+    const text = '企业微信可能产生事实，因为可能是我们的群聊';
+    const editor = p.locator('.opencraft-composer-editor');
+    await editor.fill(text);
+    const before = calls.filter(call => call.method === 'turn/start').length;
+    await p.locator('[data-composer-primary-action]').click();
+    const status = p.locator('.thread-user-message .submission-recovery-trigger');
+    await status.waitFor();
+    await p.waitForFunction(() => (window as any).fixture.draft().lifecycle.phase === 'editing');
+    assert.equal(await status.count(), 1);
+    assert.equal(await p.locator('.submission-recovery-detached').count(), 0);
+    assert.equal(await p.locator('.draft-setup-notice').count(), 0);
+    assert.equal(await p.getByRole('alert').count(), 0);
+    assert.equal(await editor.innerText(), text);
+    assert.equal(await p.locator('.thread-user-message__bubble').count(), 1);
+    assert.equal(await p.locator('.submission-recovery-popover').count(), 0);
+    assert.equal(calls.filter(call => call.method === 'turn/start').length, before + 1);
+    await p.screenshot({path: output + '/' + width + '-' + theme + '-quiet-delivery.png'});
+    if (width===390) await status.tap(); else { await status.focus(); await p.keyboard.press('Enter'); }
+    const popover = p.getByRole('dialog'); await popover.waitFor();
+    const box = await popover.boundingBox();
+    assert.ok(box && box.x >= 0 && box.x + box.width <= width + 1 && box.y >= 0 && box.y + box.height <= 841);
+    await p.screenshot({path: output + '/' + width + '-' + theme + '-delivery-details.png'});
+    await p.keyboard.press('Escape'); await popover.waitFor({state:'hidden'});
+    assert.equal(await status.evaluate(el => el === document.activeElement), true);
+    if (width===390) await status.tap(); else await status.click();
+    await p.getByRole('button',{name:locale==='zh-CN'?'停止等待':'Stop waiting',exact:true}).click();
+    await status.waitFor({state:'hidden'});
+    assert.equal(calls.filter(call => call.method === 'turn/start').length, before + 1, 'stop waiting never replays');
+    assert.equal(await editor.innerText(), text, 'recovery does not discard unsaved draft');
+    assert.deepEqual(errors, []);
+    presentationResults.push({width,theme,locale,inlineStatus:true,quietComposer:true,retainedDraft:true,noReplay:true});
+    await p.close();
+  }
+  await writeFile(`${output}/results.json`, JSON.stringify({ results, preparationResults, presentationResults, attachmentRejectionKeepsDraft: true, identityRejectionKeepsDraft: true, lostAckReconciled: true, actualEngine: false }, null, 2));
   console.log(JSON.stringify({ results, lostAckReconciled: true }));
 } catch (error) { console.error(JSON.stringify({ snapshot: await activePage?.evaluate(() => ({ text: document.body.innerText, message: (window as any).fixture?.snapshot().error?.message, queueErrors: (window as any).fixture?.snapshot().queuedSubmissions.map((row: any) => row.error?.message), state: (window as any).fixture?.snapshot(), host: (window as any).fixture?.runtime() })).catch(() => null), error: String(error), methods: calls.map(call => call.method) })); throw error; }
 finally { await browser?.close(); for (const ws of sockets.clients) ws.terminate(); await new Promise<void>(resolve => sockets.close(() => resolve())); await vite.close(); }

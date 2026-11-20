@@ -2,6 +2,26 @@
 
 [Invariant index](../invariants.md) · [Design index](../README.md)
 
+## Terminal touch selection and copy
+
+The terminal adapts the shared ContextMenu long press to public xterm buffer-cell
+selection. It does not enable native selection on virtualized renderer rows or
+introduce another gesture timer. The opening touch's compatibility mousedown
+cannot refocus xterm's hidden input and dismiss the menu. Existing selected ranges
+are preserved when pressed inside them; wide/combined glyphs use cell coordinates.
+Copy reads the xterm selection, never sends PTY input, and exposes its action in
+the existing touch toolbar. TUI mouse reporting retains native contact priority.
+
+Select text opens a shared Radix utility dialog containing a readonly native
+textarea. Its public-buffer snapshot joins soft wraps and contains no ANSI bytes;
+incoming output cannot replace its native range. The control's mounted lifetime
+owns selection listeners, including portal-delayed mounts. Clipboard denial offers
+the same native selectable text with stable feedback space. Late clipboard errors
+cannot reopen a dismissed reader, replace an existing range or cross a terminal
+owner. Closing the reader preserves the same live terminal and input state.
+The reader and its styles load on demand as a sibling of the retained terminal,
+so neither first-paint CSS nor the terminal's DOM lifetime depends on that window.
+
 ## Native touch contact retirement
 
 A native accepted trigger click is not rejected merely because an ancestor
@@ -25,14 +45,19 @@ Existing conversation model and effort labels reflect its own execution or expli
 ## Composer input action icons
 
 The shared voice action consumes the design-system composer input icon role:
-20px at regular density and 24px at touch density, including the unavailable/error
-glyph. Density changes the vector canvas only; the existing centered button,
-44px touch target, Composer height and dictation lifecycle retain their owners.
+20px at both regular and touch density, including the unavailable/error
+glyph. Composer footer actions use centered 20px glyphs inside 32px buttons across
+input densities. Composer height and dictation lifecycle retain their owners.
 Home and Conversation consume the same action. Real-component verification
 covers narrow/wide, light/dark/custom themes and recording transitions; browser
 emulation does not establish iPhone microphone or recognition acceptance.
 
 ## Queued-message authors
+
+The Composer assigns independent grid rows to floating content, the attached
+queue rail and the editor. Navigation occupies only the editor's trailing column;
+adding a queue cannot auto-place the file-change summary beside it or reduce the
+input width. Empty slots collapse without replacing the editor or its draft.
 
 Each queue entry displays its own submitter photo in a fixed 20px slot beside
 an independent drag handle, with a neutral fallback. The handle remains visible;
@@ -177,10 +202,10 @@ decoder tests include nonzero hotspots and shape changes, not just visibility.
 | ID | 不变量 | 责任/验证 |
 |---|---|---|
 | FCO-01 | Shell 的路由注册表持有显隐意图；各浏览器标签的 manual/auto-collapse 原因互不覆盖，自动策略不得改写用户手动选择 | floating-composer-state.ts；确定性状态测试、原生标签切换 |
-| FCO-02 | 紧凑/聚焦展开、peek、最近轮次展开和显隐阶段分别派生；退出和 peek 内容不可交互 | ThreadComposerPresentation；焦点/键盘/动画回归 |
+| FCO-02 | 紧凑/聚焦展开、peek、会话历史展开和显隐阶段分别派生；退出和 peek 内容不可交互 | ThreadComposerPresentation；焦点/键盘/动画回归 |
 | FCO-03 | inline/overlay 共用同一 portal destination 和编辑器 DOM；草稿、附件、撤销、提交目标不随位置重建 | Stable editor host；native smoke 的 DOM identity、草稿和 WebContents identity |
 | FCO-04 | 收起把手绝对定位，不增加 Composer 内容高度；唤回把手有独立 Shell 锚定宿主，背景区域不截获网页操作 | thread-workspace.scss；native pointer/hit area smoke |
-| FCO-05 | 最近轮次预览不重复用户 intro；滚动只由预览视口拥有，Composer 手势排除预览内容和惯性事件 | ConversationTurn.startAfterTurnIntro、ComposerWheelSwipeController；真实组件长回复测试 |
+| FCO-05 | 增强聊天浮层复用完整 Conversation，按顺序呈现用户输入和各轮回复；当前可见阅读区负责历史分页。主区和浮层独立保留阅读锚点，最新轮次变化不重建浮层。滚动由各自时间线视口拥有，Composer 手势排除历史内容和惯性事件 | Conversation、ThreadComposerPresentation、ComposerWheelSwipeController；真实组件长会话、分页与收起恢复测试 |
 | FCO-06 | 菜单/对话框属于 Composer 焦点边界；窗口失焦和布局迁移不误解释为用户离开；隐藏后的入口支持键盘 | focusin/focusout adapters、Radix popup recognition；native keyboard/menu checks |
 | FCO-07 | 原生底边追踪由 Main 持有已登记 guest；事件按 guestId+trackingId 过滤；旧订阅清理不能撤销新的 tracking | browser-guests / ElectronBrowserSurfaceHost；真实 webview pointer smoke |
 
@@ -403,20 +428,41 @@ The selection-paint smoke checks actual input/command pixels and selection/draft
 continuity across projected viewport transitions; this is not a physical iOS
 callout/compositor reproduction.
 
-Desktop Web keeps the editor opaque while touch editors use glass; queue/goal
-rails use their own theme glass on both, independent of the Newera switch. The
-separate live file pill uses an opaque theme elevated surface.
-The footer must not put an opaque gradient between rails and scrolling content.
-Desktop covers a rectangular band through the bottom safe-area gutter, starting
-at the shell's lower corner arcs. Its height combines the existing safe-area
-inset and shell-radius token. The straight upper edge spans the footer width;
-transcript paint must not leak through the lower corner cutouts.
-Touch keeps the Composer floating; transcript paint remains visible around the
-shell and below it in the safe area. Neither mode paints an exterior contour.
-The shell's own radius, glass, shadow and attached surfaces remain unchanged.
-`scripts/smoke/composer/smoke-composer-bottom-corners.ts` compares actual exterior and gutter
-pixels while changing transcript paint, including a live density switch that
-preserves the same editor, draft and focus.
+The Composer is a substantially filled editing surface, including touch and
+frosted themes: `--color-background-composer-filled` has its own opacity role and
+`--blur-composer-surface` is a small background-only blur. It must not inherit the
+general glass-panel veil/filter, which is intended for less text-critical chrome.
+Ordinary desktop themes remain opaque. Reduced transparency, unsupported backdrop
+filters and forced colors retain the existing opaque fallbacks. Queue/goal rails
+keep their independent themed surface; a live file pill stays opaque.
+
+Neither pointer nor touch presentation fades, clips or covers the whole reading
+viewport at the editor's top edge. Transcript paint continues above the editor,
+around its upper rounded corners and through the inline gutters above its lower
+arc. At the editor's lower arc, transcript paint stops: neither lower corners nor
+the dock/safe-area strip below the editor may expose another line of transcript.
+The existing viewport/footer observation projects `--thread-reading-bottom-inset`
+from the actual editor bottom and computed lower radius, not from floating pills
+or attached rails. A bottom-only geometric clip preserves physical native
+scrollbar gutters; it never paints a page-colored cover or fades the upper edge.
+The shell and its radius-inheriting material-only pseudo-element own the actual
+rounded contour. No exterior white slabs, opaque gradients or compensating alpha
+masks manufacture corners. A plain reading-plane stacking context keeps transcript
+controls below the dock without filtering or masking that text.
+
+The existing footer observation still publishes
+`--thread-composer-occlusion-height` from `[data-composer-occlusion-surface]` and
+`--thread-footer-height` reserves the complete dock. A floating file/status pill
+changes only that reservation; an attached queue can change the physical dock
+surface. Neither manufactures a full-width reading fade. The shared shell radius,
+draft/selection, scrollbar insets, rail attachment geometry and existing shadows
+remain stable; editable text and command layers stay outside every filter.
+`scripts/smoke/composer/smoke-composer-bottom-corners.ts` checks actual exterior,
+upper-corner, filled-interior and quiet lower-corner/below-editor pixels under
+changing transcript paint.
+The reading-material fixture also covers main/side chat, themes, pointer/touch,
+queue/files and draft/focus continuity; selection-paint covers native input and
+command pixels without remounting the editor.
 
 Entry defaults are runtime fallbacks, never startup writes. Existing valid choices
 win; reset/invalid-record fallback use that entry default. Explicitly choosing the
@@ -595,6 +641,14 @@ in the child. Closing releases the child without changing parent history or draf
 
 An existing conversation’s Composer advertises `/side` alongside its Host shortcuts. Selecting the standalone `/side` suggestion with Enter or a pointer immediately invokes the same Side Chat panel action as the toolbar, with the current conversation owner and working directory. It never sends or queues model input, including during an active turn. A stale owner, unavailable action or failed fork retains the command draft and reports failure. Arguments, attachments, context and code remain ordinary prompt content. New-thread composers do not advertise a fork command.
 
+Side chats are owned conversations, not ordinary catalog entries. The ordinary sidebar
+and conversation picker exclude known side-chat bindings, including retained close
+tombstones, while independent forks remain visible regardless of title or native
+fork provenance. Parent/child identity includes the Host; filtering never deletes
+native resources or grants access. Acknowledged children are classified while their
+boundary is being installed. Recovering catalog ownership does not start or resume
+the child engine. See the platform [lifecycle contract](../../docs/architecture/platform/lifecycle-and-resources.md#thread-lifecycle-ownership).
+
 ### Inline command discovery
 
 Composer commands are discovered directly from slash suggestions in the editor. A non-empty shortcut catalog must not introduce a command-library button or separate footer menu. Selecting a suggestion inserts editable text by default; explicit submission owns execution. The local `/side` action opts into immediate submission on selection when it is the entire draft without attachments or context. It consumes the command before the asynchronous action starts, without ever inserting a pending command token. Failure restores the command only to the same unmodified draft. It opens the side chat directly without a second Send gesture; other commands retain editable insertion.
@@ -605,6 +659,8 @@ Opening or activating a visible Side Chat panel transfers input focus to its Com
 Side chat displays its fork’s current execution model as compact, non-interactive Composer metadata. It offers no model menu and submits no model, effort or service-tier override; the child conversation retains execution ownership. Main conversation model controls are unchanged.
 
 Side Chat inherited metadata groups the catalog model name, known reasoning effort and actual Fast state, using compact shared typography without interactive affordances. Identifier fallback uses readable words; missing settings do not invent defaults.
+
+Side Chat also consumes the main conversation's `WorkbenchComposer` capability wiring, with its own controller and lease. In a touch full-width scene its Conversation footer owns the only input row and tab-overview entry; no generic tool dock or dock-height reservation is added. Composer styling does not imply primary-scene navigation: the side chat opens overview from its tools view. Hidden or non-authoritative side chat disables extension input and submission; no unsupported queue action is advertised. Coverage: `scripts/smoke/shell/smoke-sidechat-composer.ts` (real Shell/RightPanel/Conversation/Composer and voice action, synthetic Host/speech boundaries); physical-device validation is separate.
 
 ### Message continuity and dictation motion preference
 
@@ -628,9 +684,9 @@ Longing unified pane depth begins below the toolbar. Its paint-only Shell projec
 
 Longing right-panel chrome consumes the same single Shell-root blue as the titlebar. Chassis layers and toolbar are transparent, divider colors are transparent without changing border geometry, and the vertical divider shadow starts below the toolbar. Panel body keeps its opaque reading surface and diffuse upper lip; tabs, resident tools, apertures, resize and controls retain their existing owners.
 
-Longing reading-plane upper-left radius and shadow geometry share the theme's content corner token. Body depth is a paint-only sibling driven directly by the same current Sidecar width, never root's saved-width CSS fallback; held resize, collapse, reversal and reduced-motion snaps preserve the visible boundary without toolbar stripes. Sticky Pinned/Recent headings consume theme-owned transparent blur over the shared sidebar material, not the opaque reading-surface fill. Keep disclosure hit/focus behavior, scroll ownership and mounted drafts.
+Longing reading-plane upper-left radius and shadow geometry share the theme's content corner token. Body depth is a paint-only sibling driven directly by the same current Sidecar width, never root's saved-width CSS fallback; held resize, collapse, reversal and reduced-motion snaps preserve the visible boundary without toolbar stripes. Sticky Pinned/Recent headings consume the theme-owned Sidebar-over-Window occlusion surface without a local blur, not the reading-surface fill. Keep disclosure hit/focus behavior, scroll ownership and mounted drafts.
 
-Sticky Sidebar section labels are part of the Shell plane, not floating glass surfaces. Longing uses transparent label backgrounds with no local backdrop filter. The existing Sidebar list projects each group's actual heading/row overlap into row clipping, observing the current dock or mobile viewport without creating another scroll owner. Rows, selected backgrounds and avatars cannot tint or show through the label; retain disclosure, row identity, focus/menu portals and pagination. This replaces the earlier local-blur heading treatment only.
+Sticky Sidebar section labels use the theme-owned Sidebar-over-Window occlusion surface, not floating glass or the Chat surface. They have no local backdrop filter or per-scroll group clipping. Existing native dock/mobile scrollports and CSS sticky own the boundary. Rows, selected backgrounds and avatars cannot tint or show through the label; retain disclosure, row identity, focus/menu portals and pagination. See navigation-and-sidebar.md for the shared scroll/paint model and rendered regression coverage.
 
 ### New conversation follow-up input
 
@@ -688,6 +744,12 @@ A locally submitted follow-up paints immediately in the existing attached rail.
 The same client message retains its DOM and avatar across server queue admission;
 authoritative queue IDs still own actions. Superseded reads and late RPC receipts
 cannot clear or resurrect that row during handoff.
+Queue message text is an independent native button using the existing queue
+tooltip: tap/click or keyboard activation reveals the complete message and any
+error detail; repeated activation, outside input and Escape dismiss it. Desktop
+hover remains available. Long text wraps in a bounded native scrollport, and
+opening/scrolling it never steers, edits, reorders or submits the message. The
+Composer draft and queue row identity remain stable.
 The task-link action uses two interlocking rounded links in its shared semantic glyph. Toolbar, overflow and customization consume the same artwork and localized accessible name; artwork changes do not change action identity, geometry, preferences or task transactions.
 
 ## Skill candidate ownership
@@ -714,3 +776,77 @@ origin plus Shell-local anchor geometry. Client rectangles must not be assigned
 directly as fixed insets while the browser pans its native fixed plane. Keyboard
 open capacity and pan preserve visible editor and send actions above the dock,
 even when the layout viewport size remains unchanged.
+
+## Mobile panel entry
+
+Narrow touch conversation layouts host the Shell right-panel toggle before Add
+in the Composer. Input actions use 20px glyphs within 32px buttons. Pointer
+layouts and wide touch layouts retain the header entry; routes without a
+Composer retain their existing entry. Opening tools and returning through
+their mobile dock preserve the mounted draft and editor.
+
+## Change summary in tools
+
+The live changed-files summary belongs to the chat Composer. Suppress it when
+the Shell presents a full-width tool panel, including the enhanced chat overlay.
+Returning to chat or using a split panel restores the current summary. This
+presentation change does not clear the diff resource, draft or tool session.
+
+## Saved conversation navigation
+
+A durable editor View is restored through the ordinary local presentation path,
+never through the bootstrap-only initializer. Switching A → saved B → A keeps
+each editor and unsent draft independent while readiness follows asynchronously.
+A failed destination leaves the working conversation intact and reports a
+nonblocking notice rather than silently closing the sidebar without feedback.
+
+### Queue mutation authority
+
+Queue presence is not permission to mutate an input. Hosts may project per-item
+`actions` for edit, delete, start and reorder; clients retain them across refresh,
+keep cancellation independent of editability, and apply them to buttons and
+keyboard/programmatic commands. Hosts without this optional projection retain
+the previous ordinary queue behavior. A managed item that forbids reorder also
+prevents reordering the surrounding authoritative queue.
+
+Incoming collaboration inputs remain immutable. Deletion by an authenticated
+viewer invokes the collaboration cancellation owner, which checks the sender or
+the receiving conversation's `execution.cancel` authority, rechecks it after
+awaiting the queue receipt, and refuses already claimed or uncertain delivery.
+Historical shared conversations retain their existing shared scope; owned
+conversations require their owner or an explicit cancellation grant. Merely
+reading a conversation grants no cancellation right. The ordinary queue store
+must not bypass this protocol or cancel only its local replica.
+
+Queue action failures use the Workbench notice owner, outside the queue layout.
+The callback still rejects so an editor preserves its draft and a queue operation
+can restore its row. A swallowed event-handler rejection is not user feedback.
+
+## Queue preview row geometry
+
+Queue rows own their compact accessory height through `height-composer-queue-row`.
+The message preview is a row-sized link that stretches within that height; it
+does not consume a square chrome action size. Shared chrome sizing must not
+inflate the queue or its scroll budget. Drag handles, sender/image slots and
+independent actions retain their geometry, while full text stays in the bounded
+preview popup. Touch and compact density use the same row ownership.
+
+## Shared image preview boundary
+
+`chat-render-web/image-preview` owns the fullscreen image dialog, keyboard/focus,
+loading/decode feedback and gallery controls; ZoomableImage retains zoom, pan,
+pinch and page motion. Markdown, sent user images and IM group/assistant images
+consume this same view. Callers retain image authorization, async source ownership,
+URL disposal and gallery membership. Optional resolved neighbor content and action
+slots do not give the viewer Host or directory access. Draft editing retains its
+editor-specific lifecycle and consumes the same ZoomableImage gesture owner.
+
+The viewer carries its own scoped styles, including in ShadowRoot hosts. Its
+image gesture viewport mounts after native fullscreen admission. Page motion
+transfers the painted offset to a new contact, and resynchronizes allocation
+before settling after a resize; an internal animation value is not a visual receipt.
+
+Queue identity and message content have separate spacing owners. The message
+group owns separation from the sender and the smaller gap between attachment
+thumbnails and text. Do not add text margins on top of the shared Button gap:
+the preview Button hosts one message group in both image and text-only rows.

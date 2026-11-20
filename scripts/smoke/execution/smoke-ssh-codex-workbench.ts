@@ -82,13 +82,13 @@ try {
     await editor.fill("Draft survives target discovery");
     await target.click(); await page.keyboard.press("Escape");
     assert.equal(await editor.innerText(), "Draft survives target discovery");
-    await page.getByRole("button", { name: "Choose project folder" }).click();
-    await page.getByRole("menuitem", { name: /^Add project/ }).click();
+    await page.getByRole("button", { name: "Choose workspace" }).click();
+    await page.getByRole("menuitem", { name: /^Open folder/ }).click();
     const directory = page.getByRole("dialog", { name: "Choose a folder", exact: true });
     await directory.getByRole("button", { name: "project", exact: true }).click();
     await directory.getByRole("button", { name: "Use folder", exact: true }).click();
     await directory.waitFor({ state: "hidden" });
-    assert.match(await page.getByRole("button", { name: "Choose project folder" }).innerText(), /project/iu);
+    assert.match(await page.getByRole("button", { name: "Choose workspace" }).innerText(), /project/iu);
     assert.equal(await editor.innerText(), "Draft survives target discovery");
     await page.reload(); await target.waitFor();
     await page.waitForFunction(() => document.querySelector('[aria-label="Work in"]')?.textContent?.includes("Remote UI fixture"), undefined, { timeout: 30_000 });

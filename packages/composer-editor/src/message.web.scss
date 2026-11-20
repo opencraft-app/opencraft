@@ -1,0 +1,47 @@
+@use "@opencraft/design-system/channel-chat.web";
+
+// Composer owns its message variant; consumers only choose presentation and slots.
+:root .opencraft-composer-stack[data-composer-presentation="message"] {
+  --composer-primary-size: var(--size-message-composer-submit);
+  --radius-composer-shell: calc(var(--height-message-composer) / 2);
+  .opencraft-composer-shell {
+    --newera-input-row: 3;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 0 var(--gap-composer-newera);
+    min-height: var(--height-message-composer);
+    padding: var(--padding-message-composer);
+  }
+  .opencraft-composer-chrome-header { grid-column: 1 / -1; grid-row: 1; }
+  .opencraft-composer-attachments { grid-column: 1 / -1; grid-row: 2; }
+  .opencraft-composer-context-chips { grid-column: 1 / -1; grid-row: 2; }
+  // Both rows present: attachments move below the chips, the input below both.
+  .opencraft-composer-shell:has(> .opencraft-composer-context-chips):has(> .opencraft-composer-attachments) {
+    --newera-input-row: 4;
+    > .opencraft-composer-attachments { grid-row: 3; }
+  }
+  .opencraft-composer-input-row {
+    grid-column: 2; grid-row: var(--newera-input-row);
+    min-width: 0; padding: var(--spacing) 0;
+  }
+  .opencraft-composer-editor {
+    min-height: 1lh;
+    max-height: var(--height-message-composer-editor-max);
+    overflow: auto;
+    text-align: start;
+  }
+  .opencraft-composer-footer { display: contents; --composer-primary-size: max(var(--size-message-composer-submit), var(--size-control-hit-min)); }
+  .opencraft-composer-submit { border-radius: var(--radius-full); }
+  .opencraft-composer-error { grid-column: 1 / -1; grid-row: 1; }
+  .opencraft-composer-footer__controls { display: none; }
+  .opencraft-composer-footer__attachment { grid-column: 1; grid-row: var(--newera-input-row); }
+  .opencraft-composer-footer__end { grid-column: 3; grid-row: var(--newera-input-row); }
+  .opencraft-composer-icon-button--attachment { display: none; }
+  &:has(.opencraft-composer-footer[data-input-mode="dictation"]) {
+    .opencraft-composer-input-row { opacity: 0; pointer-events: none; }
+    .opencraft-composer-footer { display: grid; grid-column: 1 / -1; grid-row: var(--newera-input-row); min-height: var(--size-control-hit-min); padding: 0; }
+    .opencraft-composer-footer__attachment, .opencraft-composer-footer__end { display: none; }
+    .opencraft-composer-voice-footer { position: relative; inset: auto; grid-column: 1 / -1; }
+  }
+}

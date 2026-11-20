@@ -1,4 +1,4 @@
-@use "./typography.web" as typography;
+@use "./typography-mixins.web" as typography;
 
 // Compact panel feedback, shared geometry rather than feature-local pixels.
 @mixin compact {

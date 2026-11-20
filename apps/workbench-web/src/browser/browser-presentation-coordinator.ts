@@ -9,6 +9,8 @@ import { createOpenCraftBrowserManager } from "./opencraft-browser-manager";
 import { OpenCraftPresentationHost } from "./opencraft-presentation-host";
 
 export interface BrowserPresentationHandle {
+  /** Backing is attached and has a drawable frame. Never gates panel navigation. */
+  readonly ready: Promise<void>;
   measure(): void;
   updateViewportMode(mode: BrowserViewportMode): void;
   dispose(): void;
@@ -33,6 +35,8 @@ interface PresentationRecord {
   observer: ResizeObserver;
   removeEvents(): void;
   disposed: boolean;
+  painted: boolean;
+  lifetime: AbortController;
 }
 const presentationIdFor = (input: PresentBrowserPageInput) =>
   `${input.viewId}\0${input.surface}\0${input.tabId}`;
@@ -96,6 +100,18 @@ export class BrowserPresentationCoordinator {
         { this.manager.removeTab(host.getConversationId(), pageId); this.manager.disposeWebviewHost(host.getConversationId(), pageId, key, "closed"); }
     }) ?? (() => {});
   }
+  isTabVisible(tabId: BrowserTabId, viewIds: readonly string[]): boolean {
+    for (const record of this.records.values()) {
+      if (record.disposed || !record.painted || record.snapshot.tabId !== tabId || !viewIds.includes(record.snapshot.viewId) || !record.host.isPainted() || !record.slot.isConnected) continue;
+      if (record.slot.ownerDocument.visibilityState !== 'visible') continue;
+      const bounds = record.slot.getBoundingClientRect();
+      const viewport = record.slot.ownerDocument.defaultView;
+      if (bounds.width <= 0 || bounds.height <= 0 || !viewport || bounds.right <= 0 || bounds.bottom <= 0 || bounds.left >= viewport.innerWidth || bounds.top >= viewport.innerHeight) continue;
+      if (typeof record.slot.checkVisibility === 'function' && !record.slot.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) continue;
+      return true;
+    }
+    return false;
+  }
   getSnapshot(id: string): BrowserPresentationSnapshot | null {
     const record = this.records.get(id);
     return record ? { ...record.snapshot, phase: record.host.isPainted() ? "visible" : "parked" } : null;
@@ -130,7 +146,7 @@ export class BrowserPresentationCoordinator {
     const observer = new ResizeObserver(measure);
     const aperture = input.slot.closest<HTMLElement>("[data-browser-presentation-aperture], .app-shell-right-panel__clip") ?? input.slot;
     record = { snapshot, slot: input.slot, aperture, host, owner, reference: {},
-      viewportMode: input.viewportMode, lastLayoutKey: "", observer, disposed: false,
+      viewportMode: input.viewportMode, lastLayoutKey: "", observer, disposed: false, painted: false, lifetime: new AbortController(),
       removeEvents: () => { window.removeEventListener("resize", measure); window.removeEventListener("scroll", measure, true); } };
     this.records.set(id, record);
     observer.observe(input.slot);
@@ -138,11 +154,15 @@ export class BrowserPresentationCoordinator {
     window.addEventListener("resize", measure);
     window.addEventListener("scroll", measure, true);
     this.measureRecord(record);
-    void host.whenReady().then(() => {
-      if (this.records.get(id) === record && !record.disposed)
-        this.manager.markWebviewAttached(owner, input.pageId, generation);
+    const ready = host.whenReady().then(() => {
+      if (this.records.get(id) !== record || record.disposed) return;
+      this.manager.markWebviewAttached(owner, input.pageId, generation);
+      return host.whenPresented(record.lifetime.signal);
+    }).then(() => {
+      if (this.records.get(id) === record && !record.disposed) record.painted = true;
     });
     return {
+      ready,
       measure,
       updateViewportMode: mode => { if (!record.disposed) { record.viewportMode = mode; record.lastLayoutKey = ""; measure(); } },
       dispose: () => this.disposeRecord(record),
@@ -190,6 +210,7 @@ export class BrowserPresentationCoordinator {
   private disposeRecord(record: PresentationRecord | undefined): void {
     if (!record || record.disposed) return;
     record.disposed = true;
+    record.lifetime.abort();
     record.observer.disconnect();
     record.removeEvents();
     this.records.delete(record.snapshot.id);

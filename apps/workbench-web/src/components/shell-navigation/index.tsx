@@ -1,5 +1,6 @@
+import { NavigationStrip } from "./navigation-strip";
 import { shellNavigationLabels } from "./navigation-labels";
-import { Button } from "@opencraft/design-system-web/button";
+import { ShellNavigationButton } from "./navigation-button";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Popover from "@radix-ui/react-popover";
 import { useWorkbenchPresentationRoot } from "../workbench-presentation-root";
@@ -200,7 +201,9 @@ export function ShellNavigationDock({ config, controller, expandedWidth, frameWi
   const compact = !transient && controller.projection.railDetent === "compact";
   if (config.layout === "unified") return <div className="shell-sidebar-navigation">
     {leadingControl}
-    <NavigationContent config={config} surface="applications" compact includeSettings={false} tooltipSide="top" onInvoke={onInvoke} />
+    <NavigationStrip>
+      <NavigationContent config={config} surface="applications" compact includeSettings={false} tooltipSide="top" onInvoke={onInvoke} />
+    </NavigationStrip>
   </div>;
   const anonymousAccount = isAnonymousShellAccount(config.account);
   const content = surfaces.filter((surface) => {
@@ -231,18 +234,18 @@ export function ShellNavigationFooter({ config, controller, visible = true, mobi
   const { projection, state, dispatch } = controller;
   const wasVisible = useRef(visible);
   useEffect(() => {
-    if (state.peek && ((wasVisible.current && !visible) || (mobile && config.layout === "unified" && state.peek === "account"))) {
+    if (state.peek && wasVisible.current && !visible) {
       dispatch({ type: "dismiss", surface: state.peek });
     }
     wasVisible.current = visible;
-  }, [visible, mobile, config.layout, state.peek, dispatch]);
+  }, [visible, state.peek, dispatch]);
   const anonymousAccount = isAnonymousShellAccount(config.account);
   const intl = useIntl();
   const accountLabel = shellAccountEntranceLabel(config.account, intl);
   const unified = config.layout === "unified";
   const mobileApplications = unified && mobile && config.applicationsInSidebar
     ? config.actions.find(action => action.id === "shell.applications") : undefined;
-  const availableSurfaces = unified && mobile ? [] : surfaces.filter((surface) => surface === "applications" ? !unified && !config.applicationsInSidebar : accountLabel !== null);
+  const availableSurfaces = surfaces.filter((surface) => surface === "applications" ? !unified && !config.applicationsInSidebar : accountLabel !== null);
   // Only the managed website exposes a release feed. Mount the update
   // entrance, and with it the query runtime it reads, only there; other
   // shells must stay runnable without a query provider.
@@ -253,15 +256,15 @@ export function ShellNavigationFooter({ config, controller, visible = true, mobi
   return <div ref={root} className={`shell-navigation__footer${unified ? " shell-navigation__footer--unified" : ""}`} aria-label="Application entrances">
     {unified ? <>
       {managedUpdateEntrance}
-      {mobileApplications ? <Button size="navigation" variant="ghost" contentLayout="icon" surface="floating"
+      {mobileApplications ? <ShellNavigationButton contentLayout="icon" surface="floating"
         type="button" className="shell-navigation__entrance" data-surface="applications" data-action-id="shell.applications"
         aria-label={shellNavigationLabels(mobileApplications, intl).full}
         title={shellNavigationLabels(mobileApplications, intl).full}
         aria-expanded={mobileApplications.expanded} aria-current={mobileApplications.active ? "page" : undefined}
         onClick={() => onInvoke(mobileApplications.onInvoke)}>
         <NavigationIcon name={mobileApplications.icon} selected={mobileApplications.active} />
-      </Button> : null}
-      <Button size="navigation" variant="ghost" contentLayout={unified || mobile ? "icon" : "row"} surface={mobile ? "floating" : "integrated"} type="button" className="shell-navigation__entrance" data-surface="settings"
+      </ShellNavigationButton> : null}
+      <ShellNavigationButton contentLayout={unified || mobile ? "icon" : "row"} surface={mobile ? "floating" : "integrated"} type="button" className="shell-navigation__entrance" data-surface="settings"
         aria-label={intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}
         title={intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}
         aria-current={config.settingsActive ? "page" : undefined} onClick={() => {
@@ -270,15 +273,15 @@ export function ShellNavigationFooter({ config, controller, visible = true, mobi
           onInvoke(config.onOpenSettings);
         }}>
         <NavigationIcon name="settings" selected={config.settingsActive} />
-      </Button>
+      </ShellNavigationButton>
     </> : null}
     {availableSurfaces.map(surface => {
       const surfaceLabel = surface === "account" ? accountLabel! : intl.formatMessage(labels.applications);
       const directSignIn = surface === "account" && anonymousAccount;
       const applicationAction = surface === "applications" ? config.actions.find(action => action.id === "shell.applications") : undefined;
-      if (applicationAction) return <Button size="navigation" variant="ghost" contentLayout={unified || mobile ? "icon" : "row"} surface={mobile ? "floating" : "integrated"} key={surface} id={`${entranceId}-${surface}`} type="button" className="shell-navigation__entrance" data-surface={surface} aria-label={surfaceLabel}
+      if (applicationAction) return <ShellNavigationButton contentLayout={unified || mobile ? "icon" : "row"} surface={mobile ? "floating" : "integrated"} key={surface} id={`${entranceId}-${surface}`} type="button" className="shell-navigation__entrance" data-surface={surface} aria-label={surfaceLabel}
         aria-current={applicationAction.active ? "page" : undefined} title={surfaceLabel}
-        onClick={() => onInvoke(applicationAction.onInvoke)}><NavigationIcon name="grid" selected={applicationAction.active} /></Button>;
+        onClick={() => onInvoke(applicationAction.onInvoke)}><NavigationIcon name="grid" selected={applicationAction.active} /></ShellNavigationButton>;
       if (directSignIn && config.account?.signIn) return <AccountSignInMenu key={surface}
         account={config.account} signIn={config.account.signIn} id={`${entranceId}-${surface}`}
         floating={mobile} visible={visible} container={presentationRoot} onOpenSettings={() => onInvoke(config.onOpenSettings)} />;
@@ -289,11 +292,11 @@ export function ShellNavigationFooter({ config, controller, visible = true, mobi
           else dispatch({ type: open ? "toggle" : "dismiss", surface, dockAvailable: projection.dockAvailable && projection.footerVisible });
         }}>
         <Popover.Trigger asChild>
-          <Button size="navigation" variant="ghost" contentLayout={unified || mobile ? "icon" : "row"}
+          <ShellNavigationButton contentLayout={unified || mobile ? "icon" : "row"}
             surface={mobile ? "floating" : "integrated"} id={`${entranceId}-${surface}`} type="button"
             className="shell-navigation__entrance" aria-label={surfaceLabel} title={surfaceLabel} data-surface={surface}>
             <AccountLeadingVisual account={config.account} /><span className="shell-navigation__name">{surfaceLabel}</span>
-          </Button>
+          </ShellNavigationButton>
         </Popover.Trigger>
         <Popover.Portal container={presentationRoot}>
           <Popover.Content className="shell-navigation__peek" aria-label={intl.formatMessage(labels.account)}
@@ -321,7 +324,7 @@ export function ShellNavigationFooter({ config, controller, visible = true, mobi
         else dispatch({ type: "dismiss", surface });
       }}>
       <Dialog.Trigger asChild>
-        <Button size="navigation" variant="ghost" contentLayout={unified || mobile ? "icon" : "row"} surface={mobile ? "floating" : "integrated"} id={`${entranceId}-${surface}`} type="button" className="shell-navigation__entrance" aria-label={surfaceLabel}
+        <ShellNavigationButton contentLayout={unified || mobile ? "icon" : "row"} surface={mobile ? "floating" : "integrated"} id={`${entranceId}-${surface}`} type="button" className="shell-navigation__entrance" aria-label={surfaceLabel}
           data-surface={surface}
           aria-pressed={surface === "applications" ? projection.docked.applications || projection.peek === "applications" : directSignIn ? false : state.pinned[surface]}
           aria-expanded={surface === "applications" ? projection.docked.applications || projection.peek === "applications" : undefined}
@@ -329,7 +332,7 @@ export function ShellNavigationFooter({ config, controller, visible = true, mobi
           title={surface === "applications" && projection.primaryNavigation ? intl.formatMessage(labels.applications) : `${surfaceLabel}${!directSignIn && state.pinned[surface] ? ` · ${intl.formatMessage({ id: "navigation.pinned", defaultMessage: "Pinned" })}` : ""}`}>
 
           <NavigationIcon name="applications" selected={projection.docked.applications || projection.peek === "applications"} />
-        </Button>
+        </ShellNavigationButton>
       </Dialog.Trigger>
       <Dialog.Portal container={root.current}>
         <Dialog.Content className={surface === "applications" ? "shell-navigation__drawer" : "shell-navigation__peek"} aria-describedby={undefined}>
@@ -368,7 +371,7 @@ function ShellManagedUpdateEntrance({ selected, onInvoke = action => action(), o
         { version: notice.latestVersion ?? "" },
       )
     : intl.formatMessage({ id: "webUpdates.noticeRefreshAction", defaultMessage: "Refresh update" });
-  return <Button size="navigation" variant="ghost" contentLayout={mobile ? "icon" : "row"} surface={mobile ? "floating" : "integrated"} type="button" className="shell-navigation__entrance shell-navigation__entrance--update"
+  return <ShellNavigationButton contentLayout={mobile ? "icon" : "row"} surface={mobile ? "floating" : "integrated"} type="button" className="shell-navigation__entrance shell-navigation__entrance--update"
     data-surface="updates"
     data-update-version={notice.latestVersion ?? undefined}
     aria-label={updateTitle}
@@ -384,5 +387,5 @@ function ShellManagedUpdateEntrance({ selected, onInvoke = action => action(), o
       <span className="shell-navigation__update-dot" aria-hidden="true" />
     </span>
     <span className="shell-navigation__name">{updateActionText}</span>
-  </Button>;
+  </ShellNavigationButton>;
 }

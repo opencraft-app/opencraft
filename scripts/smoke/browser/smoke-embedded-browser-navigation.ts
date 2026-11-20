@@ -72,6 +72,20 @@ try {
   await checkDraft();
   assert.deepEqual(errors, []);
   console.log("PASS embedded real link clicks (normal/Ctrl/middle/context menu), lookalike domains, two allowed iframe destinations, address navigation, opener isolation and retained draft");
+  const standalone = await context.newPage();
+  await standalone.goto(`${origin}/?standalone`);
+  const standalonePopupEvent = context.waitForEvent("page");
+  await standalone.getByRole("link", { name: "allowed", exact: true }).click();
+  const standalonePopup = await standalonePopupEvent;
+  await standalonePopup.waitForLoadState();
+  assert.equal(standalonePopup.url(), "https://workbench.example/preview");
+  assert.equal(await standalonePopup.evaluate(() => window.opener === null), true);
+  assert.equal(await standalone.locator("iframe").count(), 0);
+  assert.deepEqual(await standalone.evaluate(() => (window as any).__browserFixture.snapshot().panelOpens), []);
+  assert.equal(await standalone.getByRole("textbox", { name: "Conversation draft" }).inputValue(), "Keep my unsent draft");
+  await standalonePopup.close();
+  await standalone.close();
+  console.log("PASS standalone Web without a trusted policy opens links externally without a Page or panel");
   // Current Page/Tab metadata is seeded. Real owners must restore it,
   // retain IDs across reload, and keep closed resources closed.
   const restored = await context.newPage();

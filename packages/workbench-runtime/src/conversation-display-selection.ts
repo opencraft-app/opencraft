@@ -7,7 +7,27 @@ type ConversationKey = TimelineSnapshot["key"];
 /** Display provenance is not a command grant. Execution still requires its live lease. */
 export type ConversationDisplaySelection =
   | { readonly source: "empty"; readonly timeline: null }
-  | { readonly source: "history" | "preview" | "cache" | "submission"; readonly timeline: TimelineSnapshot };
+  | { readonly source: "history" | "preview" | "cache" | "submission"; readonly timeline: TimelineSnapshot }
+  | { readonly source: "mixed"; readonly timeline: TimelineSnapshot; readonly cachedTurnIds: ReadonlySet<string> };
+
+/** A shared oldest Turn proves the order of a cached prefix. Missing Turns
+ * inside the returned range are authoritative deletions, not retained cache.
+ * Disjoint windows and complete baselines cannot inherit an unproven prefix. */
+function selectHistoryTimeline(timeline: TimelineSnapshot, cached: TimelineSnapshot | null,
+  hasOlder: boolean | undefined): ConversationDisplaySelection {
+  const boundary = timeline.frames[0]?.turnId;
+  const index = hasOlder === true && boundary !== undefined
+    ? cached?.frames.findIndex(frame => frame.turnId === boundary) ?? -1 : -1;
+  if (index <= 0 || cached === null) return { source: "history", timeline };
+  const liveTurns = new Set(timeline.frames.map(frame => frame.turnId));
+  const prefix = cached.frames.slice(0, index).filter(frame => !liveTurns.has(frame.turnId));
+  if (prefix.length === 0) return { source: "history", timeline };
+  return {
+    source: "mixed",
+    cachedTurnIds: new Set(prefix.map(frame => frame.turnId)),
+    timeline: { ...timeline, authoritative: false, frames: [...prefix, ...timeline.frames] },
+  };
+}
 
 function sameConversation(a: ConversationKey, b: ConversationKey): boolean {
   return a.hostId === b.hostId && a.threadId === b.threadId;
@@ -62,9 +82,23 @@ function selectPreviewTimeline(timeline: TimelineSnapshot, display: TimelineSnap
   const preview = retainPreviewMetadata(timeline, display);
   const messages = indexMessages(preview);
   for (const frame of display.frames) for (const block of frame.blocks) {
-    if (block.type !== "text" && block.type !== "user-message") continue;
+    if (block.type !== "text" && block.type !== "user-message" && block.type !== "reasoning"
+      && !("displayPreview" in block && block.displayPreview)) continue;
     const incoming = messages.get(messageKey(frame, block));
-    if (block.sentAtMs != null && (!incoming || !("sentAtMs" in incoming.block) || incoming.block.sentAtMs == null)) return display;
+    // A provisional window cannot delete already visible messages. Canonical
+    // history, including confirmed deletion or empty history, bypasses this guard.
+    if (!incoming) return display;
+    // Metadata here determines grouping, not decoration: losing async delivery
+    // turns a question into an answer; losing steering content removes its reply.
+    if (block.type === "text" && incoming.block.type === "text"
+      && ((block.delivery ?? null) !== (incoming.block.delivery ?? null)
+        || JSON.stringify(block.asyncQuestions ?? []) !== JSON.stringify(incoming.block.asyncQuestions ?? [])
+        || (block.hasStructuredOutput ?? false) !== (incoming.block.hasStructuredOutput ?? false))) return display;
+    if (block.type === "user-message" && incoming.block.type === "user-message"
+      && (block.messageKind !== incoming.block.messageKind
+        || JSON.stringify(block.content) !== JSON.stringify(incoming.block.content)
+        || JSON.stringify(block.attachments) !== JSON.stringify(incoming.block.attachments))) return display;
+    if ("sentAtMs" in block && block.sentAtMs != null && (!("sentAtMs" in incoming.block) || incoming.block.sentAtMs == null)) return display;
     if (block.type === "user-message" && block.sender != null
       && (!incoming || incoming.block.type !== "user-message" || incoming.block.sender === undefined)) return display;
     if (frame.type === "assistant" && (frame.durationMs != null || endedWork(frame.workStatus) !== null)
@@ -82,6 +116,8 @@ export function selectConversationDisplay(input: {
   readonly timeline: TimelineSnapshot | null;
   readonly cached: TimelineSnapshot | null;
   readonly submission?: TimelineSnapshot | null;
+  /** Coverage of the canonical history window, independent of its authority. */
+  readonly historyHasOlder?: boolean;
 }): ConversationDisplaySelection {
   const scoped = (value: TimelineSnapshot | null | undefined) =>
     value != null && input.key !== null && sameConversation(input.key, value.key) ? value : null;
@@ -89,7 +125,7 @@ export function selectConversationDisplay(input: {
   const cached = scoped(input.cached);
   const submission = scoped(input.submission);
   if (timeline !== null && timeline.frames.length > 0) {
-    if (timeline.authoritative) return { source: "history", timeline };
+    if (timeline.authoritative) return selectHistoryTimeline(timeline, cached, input.historyHasOlder);
     const preview = selectPreviewTimeline(timeline, cached);
     return { source: preview === cached ? "cache" : "preview", timeline: preview };
   }

@@ -1,0 +1,20 @@
+.browser-annotation-toggle {
+  position: relative;
+}
+
+.browser-annotation-count {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    border-radius: 7px;
+    background: var(--color-text-accent);
+    color: var(--color-text-on-accent);
+    font: var(--typography-label-font);
+    display: grid;
+    place-items: center;
+    text-align: center;
+}
+

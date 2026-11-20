@@ -147,7 +147,7 @@ test("actual SSH transport + shared broker + Runtime restores paginated items, o
   try {
     await runtime.connect();
     assert.equal(runtime.resources.host.canRequest?.("thread/search"), true);
-    assert.deepEqual(await runtime.resources.terminal.list(), { processes: [] });
+    await assert.rejects(runtime.resources.terminal.list(), /Terminal directory is unavailable for this Host/);
     assert.ok(!calls.includes("process/list"), "terminal hydration must not send OpenCraft extensions to native Codex");
     const body = await runtime.resources.protocol.request("thread/search", { searchTerm: "Historical", limit: 1 });
     assert.equal(body.data[0]?.snippet, "Historical remote answer");

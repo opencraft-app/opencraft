@@ -583,7 +583,7 @@ async function ensureLoopbackHost(): Promise<string> {
     return rendererOrigin;
   } catch (error) {
     await loopbackHost?.close().catch(() => {}); loopbackHost = null;
-    localAccountHost.close(); localAccountHost = null; rendererOrigin = null;
+    await localAccountHost.close(); localAccountHost = null; rendererOrigin = null;
     throw error;
   }
 }
@@ -647,6 +647,11 @@ async function createMainWindow(): Promise<void> {
     },
   });
   const webContents = window.webContents;
+  // AppKit's delta is counter-clockwise in degrees; the shared preview owns
+  // direction conversion and applies it only to the viewport under the cursor.
+  window.on("rotate-gesture", (_event, degrees) => {
+    if (!webContents.isDestroyed() && Number.isFinite(degrees)) webContents.send("opencraft:trackpad-rotate", degrees);
+  });
   webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
     if (isMainFrame && !isInPlace) desktopProductSession?.cancelInteractions();
   });
@@ -743,7 +748,7 @@ const lifecycle = new DesktopLifecycle({
     loopbackHost = null;
     rendererOrigin = null;
     const results = await Promise.allSettled([daemon?.shutdown(), loopback?.close()]);
-    try { localAccountHost?.close(); } catch (error) { productErrors.push(error); }
+    try { await localAccountHost?.close(); } catch (error) { productErrors.push(error); }
     localAccountHost = null;
     const errors = results.filter(result => result.status === "rejected");
     if (errors.length || productErrors.length) throw new AggregateError([...productErrors, ...errors.map(result => result.reason)], "Desktop shutdown failed");

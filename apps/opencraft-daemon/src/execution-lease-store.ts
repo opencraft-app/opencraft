@@ -183,6 +183,25 @@ export class ExecutionLeaseStore extends ExecutionLeaseReader {
     const pending = this.db.prepare("SELECT * FROM execution_leases WHERE thread_id=? AND input_id=? AND turn_id IS NULL AND ended_at_ms IS NULL AND state IN ('pending','unknown') ORDER BY generation").all(threadId, inputId);
     if (pending.length > 1) return; // No guess between uncertain attempts.
     let target: (typeof pending)[number] | undefined = pending[0];
+    // Queue provenance identifies the message sender, not the running Turn's
+    // launcher. Mid-turn queue delivery has no new execution admission. Only a
+    // lease admitted before Native observed this Turn may resolve its origin.
+    if (this.inputKind(threadId, inputId) === "queue") {
+      if (!target) return;
+      if (placeholder) {
+        const observed = existing!;
+        // The persisted per-thread generation also proves ordering when both
+        // clocks tie (or realtime moves backward). A later lease cannot launch it.
+        const admittedGeneration = Number(target.generation), observedGeneration = Number(observed.generation);
+        if (!Number.isSafeInteger(admittedGeneration) || admittedGeneration < 1
+          || !Number.isSafeInteger(observedGeneration) || observedGeneration < 1
+          || admittedGeneration >= observedGeneration) return;
+        const sameBoot = target.boot_id !== null && target.boot_id === observed.boot_id
+          && target.admitted_at_boot_ms !== null && observed.admitted_at_boot_ms !== null;
+        if (sameBoot ? Number(target.admitted_at_boot_ms) > Number(observed.admitted_at_boot_ms)
+          : Number(target.admitted_at_ms) > Number(observed.admitted_at_ms)) return;
+      }
+    }
     if (!target) {
       if (!placeholder) {
         const id = this.begin(threadId, inputId, incarnation);

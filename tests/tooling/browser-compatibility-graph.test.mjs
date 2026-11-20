@@ -79,7 +79,7 @@ test("real product graph and CLI retain typed checks outside the core workspace"
     assert.match(safe.stdout, /6 runtime source files, 0 issues/);
     assert.ok(!captured.includes("../external product/server.ts"), "the type-only server may use the same API without entering the browser runtime graph");
     // A lookalike downstream path does not inherit the core replay-clock exception.
-    const lookalike = path.join(product, "plugins/bot-chat/src");
+    const lookalike = path.join(product, "plugins/example-chat/src");
     await mkdir(lookalike, { recursive: true });
     const file = path.join(lookalike, "motion-replay.ts");
     await writeFile(file, "window.scheduler.postTask(() => {});");

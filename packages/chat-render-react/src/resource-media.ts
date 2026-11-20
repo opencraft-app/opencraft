@@ -34,6 +34,8 @@ const mimeByExtension: Readonly<Record<string, string>> = Object.freeze({
   m4a: "audio/mp4",
   aac: "audio/aac",
   mp4: "video/mp4",
+  m4v: "video/mp4",
+  ogv: "video/ogg",
   webm: "video/webm",
   mov: "video/quicktime",
   mkv: "video/x-matroska",

@@ -54,7 +54,7 @@ export function FullUpgradeSettings({ authenticated }: { authenticated: boolean 
         <SettingsRow label={<FormattedMessage id="fullUpgrade.release" defaultMessage="Target release" />} description={plan.channel ?? undefined}>{plan.releaseId ? <SettingsIdentifier value={plan.releaseId} /> : '—'}</SettingsRow>
         <SettingsRow label={<FormattedMessage id="fullUpgrade.status" defaultMessage="Status" />}>{stateText(plan.status)}</SettingsRow>
       </SettingsGroup>
-      <details className="full-upgrade-details"><summary><FormattedMessage id="fullUpgrade.details" defaultMessage="View details" /></summary>
+      <details className="full-upgrade-details"><summary className="ui-native-disclosure"><FormattedMessage id="fullUpgrade.details" defaultMessage="View details" /></summary>
         <p className="full-upgrade-revision">{plan.sourceRevision}</p>
         {plan.blockedReasons.map(reason => <p className="full-upgrade-revision" key={reason}>{reason}</p>)}
         {plan.components.length > 0 && <SettingsGroup>{plan.components.map(c => <SettingsRow key={c.componentId} label={c.role} description={stateText(c.state)}>
@@ -69,7 +69,7 @@ export function FullUpgradeSettings({ authenticated }: { authenticated: boolean 
     {!plan?.executable && <SettingsNotice id="full-upgrade-blocked"><FormattedMessage id="fullUpgrade.blocked" defaultMessage="Upgrade requirements not met" /></SettingsNotice>}
     {data?.jobs.map(job => <SettingsGroup key={job.jobId}>
       <SettingsRow label={<FormattedMessage id="fullUpgrade.status" defaultMessage="Status" />} description={job.jobId}>{stateText(job.state)}</SettingsRow>
-      <details className="full-upgrade-details"><summary><FormattedMessage id="fullUpgrade.details" defaultMessage="View details" /></summary>
+      <details className="full-upgrade-details"><summary className="ui-native-disclosure"><FormattedMessage id="fullUpgrade.details" defaultMessage="View details" /></summary>
       <p className="full-upgrade-revision">{job.releaseId ?? job.targetVersion}</p>
       {job.components.length > 0 && <SettingsGroup>{job.components.map((c, i) => <SettingsRow key={`${c.componentId}-${i}`} label={c.componentId}>{stateText(c.state)}{c.childJobId && <code>{c.childJobId}</code>}</SettingsRow>)}</SettingsGroup>}
       </details>

@@ -11,23 +11,24 @@ import { DshConsumerReceipts } from '../../scripts/server-deployment/dsh-consume
 test('direct initialize/list, error and late response ACK every consumed receipt', async t => {
   const root = await mkdtemp(join(tmpdir(), 'owner-probe-'));
   await mkdir(join(root, 'ledger'));
-  const receipts = new DshConsumerReceipts(join(root, 'ledger'));
+  const receipts = await DshConsumerReceipts.open(join(root, 'ledger'));
   const server = new WebSocketServer({ port: 0, host: '127.0.0.1' });
   await once(server, 'listening');
-  t.after(async () => { server.close(); await rm(root, { recursive: true, force: true }); });
+  t.after(async () => { server.close(); await receipts.close(); await rm(root, { recursive: true, force: true }); });
   let acknowledgments = 0, sendLate;
   server.on('connection', peer => {
     // A response for a request this consumer never issued cannot retire custody.
     peer.send(JSON.stringify({id:999,result:{},opencraftDshReceipt:{id:'foreign',receipt:'foreign'}}));
-    peer.on('message', raw => {
+    peer.on('message', async raw => {
     const request = JSON.parse(String(raw));
     if (request.method === 'opencraft/owner/receipt') {
-      receipts.acknowledge(request.params); acknowledgments++; return;
+      await receipts.acknowledge(request.params); acknowledgments++; return;
     }
-    const finish = receipts.begin(request);
+    const finish = await receipts.begin(request);
     const packet = request.method === 'error' ? { id: request.id, error: { code: -1 } }
       : { id: request.id, result: { data: [] } };
-    const send = () => peer.send(JSON.stringify({ ...packet, opencraftDshReceipt: finish(packet) }));
+    const proof = await finish(packet);
+    const send = () => peer.send(JSON.stringify({ ...packet, opencraftDshReceipt: proof }));
     if (request.method === 'late') sendLate = send; else send();
     });
   });

@@ -1,3 +1,4 @@
+import { parseThreadCommand } from '@opencraft/appserver-protocol/thread-command';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, writeFile, rename, rm, lstat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -16,7 +17,7 @@ async function namespace(root:string,id:string) {
     finally{await rm(temporary,{force:true});}
   };
   try {
-    await write('opencraft',`#!${process.execPath}\n(${threadCli.toString()})(process.argv.slice(2)).catch(() => {process.stdout.write(JSON.stringify({error:'thread_cli_outcome_unknown'})+'\\n');process.exitCode=1;});\n`,0o700);
+    await write('opencraft',`#!${process.execPath}\n(${threadCli.toString()})(process.argv.slice(2), ${parseThreadCommand.toString()}).catch(() => {process.stdout.write(JSON.stringify({error:'thread_cli_outcome_unknown'})+'\\n');process.exitCode=1;});\n`,0o700);
   }catch(error){await rm(directory,{recursive:true,force:true});throw error;}
   return {launcher:entry,connectionFile:join(directory,'connection.json'),
     environment:{OPENCRAFT_THREAD_CLI:entry,PATH:directory+':'+(process.env.PATH??'')},

@@ -5,6 +5,7 @@ export interface BrowserToolContext {
   /** Platform execution identity, mapped by the harness adapter. */
   readonly turnId: string;
   readonly callId: string;
+  readonly signal?: AbortSignal;
 }
 
 export interface BrowserToolHost {

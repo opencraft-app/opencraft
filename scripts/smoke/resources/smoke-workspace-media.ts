@@ -73,7 +73,7 @@ try {
   await open("small.pdf"); await page.locator('[data-pdf-ready="true"]').waitFor();
   await page.getByRole("button", { name: "Next page", exact: true }).click(); await page.getByText("2 / 2", { exact: true }).waitFor(); await page.locator('[data-pdf-ready="true"]').waitFor();
   assert.equal(await page.locator(".workspace-pdf-preview__page canvas").count(), 1, "render only the selected page");
-  await open("broken.pdf"); await page.getByText("This PDF could not be displayed. Download it to open in another reader.", { exact: true }).waitFor();
+  await open("broken.pdf"); await page.getByText("This file is damaged or its contents do not match the format. Download the original to check it.", { exact: true }).waitFor();
   await open("voice.wav"); await page.locator("audio").waitFor(); await page.waitForFunction(() => (document.querySelector("audio")?.readyState ?? 0) >= 1);
   video = Buffer.from(await page.evaluate(async () => {
     const canvas = document.createElement("canvas"); canvas.width = 32; canvas.height = 32;
@@ -149,8 +149,11 @@ try {
   assert.equal(await page.locator(".workspace-file-search .is-spinning").count(), 0);
   assert.deepEqual((await searches())[2]!.queries, [], "clearing before readiness cancels the pending query");
   await cleared.fill("ordinary");
+  await pendingDebounce();
+  await releaseSearch(3);
   await page.getByRole("button", { name: /report\.html/u }).waitFor();
-  assert.deepEqual((await searches())[2]!.queries, ["ordinary"], "ready sessions retain the original query debounce");
+  assert.deepEqual((await searches())[2]!.queries, [], "cleared intent stays cancelled");
+  assert.deepEqual((await searches())[3]!.queries, ["ordinary"], "a new query owns a new search lease");
   await page.getByRole("button", { name: "Close", exact: true }).click();
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ status: "passed", builtFixture: Boolean(fixtureBuild), pdfBytes: pdf.length, inkPixels: pixels, mediaEntry: true, zoom: true, pagination: true, download: true, phone: true, invalidFile: true, audio: true, video: true, unknownFile: true, htmlPreview: true, unmount: true, searchStartupLatestQuery: true, searchLateClose: true, searchClearedQuery: true }));

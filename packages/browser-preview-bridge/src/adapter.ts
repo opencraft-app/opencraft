@@ -1,6 +1,11 @@
 import {
   BrowserAutomationError,
   type BrowserAutomation,
+  type BrowserAnnotationPick,
+  type BrowserAnnotationAnchor,
+  type BrowserAnnotationDragRequest,
+  type BrowserAnnotationPreviewRequest,
+  type BrowserAnnotationPickRequest,
   type BrowserAutomationInspection,
   type BrowserAutomationPageContext,
 } from "@opencraft/browser-core";
@@ -57,7 +62,7 @@ export class PreviewBridgeAdapter implements BrowserAutomation {
     domInspection: true,
     semanticInput: true,
     trustedInput: false,
-    networkObservation: "fetch-xhr" as const,
+    networkObservation: "none" as const,
     screenshot: false,
     deviceEmulation: "viewport-only" as const,
   });
@@ -129,6 +134,17 @@ export class PreviewBridgeAdapter implements BrowserAutomation {
     );
   }
 
+  /** Page-side annotation picker. Highlight boxes are drawn by the surface host's overlay. */
+  annotatePick(input: BrowserAnnotationPickRequest): Promise<BrowserAnnotationPick> {
+    return this.call("annotate-pick", input);
+  }
+
+  annotateRegion(input: BrowserAnnotationDragRequest): Promise<BrowserAnnotationPick> { return this.call("annotate-region", input); }
+  annotateText(input: BrowserAnnotationDragRequest): Promise<BrowserAnnotationPick> { return this.call("annotate-text", input); }
+  annotateStyles(anchor: BrowserAnnotationAnchor): Promise<Readonly<Record<string, string>>> { return this.call("annotate-styles", { anchor }); }
+  async annotatePreview(input: BrowserAnnotationPreviewRequest): Promise<void> { await this.call("annotate-preview", input); }
+  async annotateClearPreview(): Promise<void> { await this.call("annotate-clear-preview", {}); }
+
   dispose(): void {
     if (this.readyState === "disposed") return;
     const wasConnecting = this.readyState === "connecting";
@@ -166,7 +182,7 @@ export class PreviewBridgeAdapter implements BrowserAutomation {
       }, timeoutMs);
       this.pending.set(callId, { resolve, reject, timeout });
     });
-    this.post({ type: "platform:call", callId, method, params });
+    this.post({ type: "platform:call", callId, method, params: { ...params } });
     return result as Promise<PreviewBridgeCallMap[M]["result"]>;
   }
 

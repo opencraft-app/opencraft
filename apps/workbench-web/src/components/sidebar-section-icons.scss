@@ -1,0 +1,43 @@
+// Quiet neutral glyphs: one soft gray for every sidebar icon, a faint same-tone
+// fill, and a slightly lighter tone in dark mode.
+:root {
+  --sidebar-icon-tone: var(--color-sidebar-navigation-icon);
+  --sidebar-icon-empty: #c4c8ce;
+  --sidebar-icon-fill: 7%;
+}
+:root[data-theme="dark"], :root.electron-dark {
+  --sidebar-icon-tone: var(--color-sidebar-navigation-icon);
+  --sidebar-icon-empty: #5f646c;
+  --sidebar-icon-fill: 10%;
+}
+.sidebar-section-icon {
+  --tone: var(--sidebar-icon-tone);
+  flex: 0 0 auto;
+  width: var(--size-sidebar-navigation-icon);
+  height: var(--size-sidebar-navigation-icon);
+  fill: none;
+  stroke: var(--tone);
+  stroke-width: var(--stroke-sidebar-navigation-icon);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  .f { fill: color-mix(in srgb, var(--tone) var(--sidebar-icon-fill), transparent); }
+  .dot, .eye { fill: var(--tone); stroke: none; }
+  circle:not(.f):not(.dot):not(.eye) { fill: none; }
+  &[data-section="empty"] { --tone: var(--sidebar-icon-empty); }
+}
+// One icon column and one text column for every sidebar row, on touch and
+// pointer alike: 12px inner inset, 20px icon, 12px gap. Entry rows, New chat,
+// section headings and the empty state share both lines; conversation rows and
+// date headings sit on the icon line so dense lists keep their full width.
+:root {
+  --sidebar-align-inset: var(--padding-sidebar-navigation-row-inline);
+  --sidebar-align-gap: var(--gap-sidebar-navigation-icon-label);
+  --sidebar-align-icon: var(--size-sidebar-navigation-icon);
+  --sidebar-align-row-gap: var(--gap-sidebar-navigation-rows);
+}
+.sidebar-activity-group__heading,
+.sidebar-activity-item {
+  padding-inline-start: var(--sidebar-align-inset) !important;
+}
+
+

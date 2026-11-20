@@ -69,8 +69,15 @@ Refresh preparation is single-flight per thread and physical connection. Callers
 resolve the current provider configuration after waiting; they cannot reinstall
 an older captured value. The applied snapshot uses structural equality, so JSON
 key order alone does not trigger native work. Provider values are cloned before
-native awaits. Configuration is confirmed only after settings restoration;
-the previous confirmation is invalidated before native configuration changes;
+native awaits. Configuration is confirmed only after settings restoration.
+The preparation record retains the original settings through both retirement and
+restoration. A failed settings update retries that stage directly when the same
+tools/environment are still loaded; changed configuration or an unloaded native
+thread reapplies tools using those saved settings. Only successful restoration
+releases the record. Thus retries cannot capture temporary native defaults as
+the user's chosen effort or collaboration mode.
+
+The previous confirmation is invalidated before native configuration changes;
 failed or retired preparations cannot publish success, send a turn, or continue
 native mutations into a later connection. A blocked thread does not serialize
 other threads. Both resume calls exclude turns and status reads exclude history.

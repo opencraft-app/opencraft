@@ -18,6 +18,7 @@ export function ChoiceSelect<Value extends string>({ id, label, value, options, 
   readonly onValueChange: (value: Value) => void;
   readonly disabled?: boolean;
   readonly placeholder?: string;
+  /** Keep nested choices inside their modal focus scope. */
   readonly portalContainer?: HTMLElement | null;
 }) {
   const [open, setOpen] = useState(false);

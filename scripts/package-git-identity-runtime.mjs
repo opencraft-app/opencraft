@@ -1,12 +1,12 @@
-import { cp, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { cp, mkdir, writeFile, chmod } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 export async function buildGitIdentityRuntime(directory, additionalEntries = []) {
   await mkdir(directory, { recursive: true });
-  const entries = [{ entry: join(root, 'scripts/git-identity-wrapper.ts'), name: 'git-identity-wrapper.mjs' }, ...additionalEntries];
+  const entries = [{ entry: join(root, 'scripts/git-identity-wrapper.ts'), name: 'git-identity-wrapper.mjs' }, { entry: join(root, 'scripts/personal-git-worker.ts'), name: 'personal-git-worker.mjs' }, ...additionalEntries];
   const seen = new Set();
   for (const { entry, name } of entries) {
     if (!/^[a-z0-9][a-z0-9-]*\.mjs$/u.test(name) || seen.has(name)) throw new Error('Invalid Git runtime entry name');
@@ -17,4 +17,7 @@ export async function buildGitIdentityRuntime(directory, additionalEntries = [])
   }
   await cp(join(root, 'scripts/git-identity-peer-bridge.py'), join(directory, 'git-identity-peer-bridge.py'));
   await cp(join(root, 'scripts/git-identity-shell-env.sh'), join(directory, 'git-identity-shell-env.sh'));
+  const bin = join(dirname(directory), 'bin'); await mkdir(bin, { recursive: true });
+  await writeFile(join(bin, 'git'), '#!/bin/sh\nexport OPENCRAFT_GIT_NATIVE=/usr/bin/git\nexec "$(dirname "$0")/node" "$(dirname "$0")/../runtime/git-identity-wrapper.mjs" \"$@\"\n', { mode: 0o755 });
+  await chmod(join(bin, 'git'), 0o755);
 }

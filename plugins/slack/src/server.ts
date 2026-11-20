@@ -215,6 +215,18 @@ export class SlackPlugin {
       unfurl_media: false,
     });
   }
+  async sendDirect(userId: string, text: string, requestId: string, assertCurrent: () => void = () => {}) {
+    assertCurrent();
+    if(this.stopped || this.phase!=='ready' || !/^[UW][A-Z0-9]+$/u.test(userId) || !text.trim() || Buffer.byteLength(text)>20000)throw Error('Slack notification unavailable');
+    let opened:Record<string,unknown>;
+    try { opened=await this.api(this.options.botToken,'conversations.open',{users:userId}); }
+    catch {throw Object.assign(Error('Slack notification unavailable'),{deliveryState:'not_sent'});}
+    const channel=record(opened.channel);
+    if(typeof channel?.id!=='string' || this.stopped)throw Error('Slack notification unavailable');
+    assertCurrent();
+    const receipt=await this.api(this.options.botToken,'chat.postMessage',{channel:channel.id,text,unfurl_links:false,unfurl_media:false});
+    return {delivered:true,receiptId:typeof receipt.ts==='string'?receipt.ts:requestId};
+  }
   close() {
     if (this.stopped) return;
     this.stopped = true;

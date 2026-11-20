@@ -1,0 +1,20 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+
+.conversation-appearance-picker {
+  display: flex; flex-direction: column; gap: calc(var(--spacing) * 4);
+  width: 100%; padding: var(--padding-token-settings-panel); min-width: 0; overflow-y: auto; overscroll-behavior: contain;
+  &__heading { display: flex; align-items: center; gap: calc(var(--spacing) * 2); padding-inline-end: calc(var(--spacing) * 8); }
+  h2 { @include typography.role(panel-title); margin: 0; }
+  fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+  legend { @include typography.role(metadata, secondary); margin-block-end: calc(var(--spacing) * 2); padding: 0; }
+  &__grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--spacing); justify-items: center; }
+  &__custom, &__actions { display: flex; align-items: center; justify-content: space-between; gap: calc(var(--spacing) * 2); }
+  &__custom { margin-block-start: calc(var(--spacing) * 2); }
+  &__custom label { @include typography.role(control); display: flex; align-items: center; gap: calc(var(--spacing) * 3); }
+}
+.conversation-appearance-swatch {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--size-color-swatch); height: var(--size-color-swatch); border-radius: var(--radius-full);
+  background: currentColor;
+  svg { color: var(--color-background-surface); }
+}

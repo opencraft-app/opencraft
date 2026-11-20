@@ -8,7 +8,8 @@
 .ui-choice-select__value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ui-choice-select__menu {
   @include menu.surface;
-  width: var(--radix-dropdown-menu-trigger-width);
+  width: max-content;
+  min-width: min(var(--radix-dropdown-menu-trigger-width), var(--radix-dropdown-menu-content-available-width));
   z-index: var(--layer-floating-control);
   scrollbar-width: thin;
 }
@@ -17,4 +18,4 @@
   > span:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 }
 .ui-choice-select__list { @include menu.list; }
-.ui-choice-select__check { display: flex; align-items: center; justify-content: center; width: 16px; flex: 0 0 16px; color: var(--color-text-secondary); }
+.ui-choice-select__check { display: flex; align-items: center; justify-content: center; width: var(--size-menu-item-icon); flex: 0 0 var(--size-menu-item-icon); color: var(--color-text-secondary); > span > svg { width: var(--size-menu-item-icon); height: var(--size-menu-item-icon); } }

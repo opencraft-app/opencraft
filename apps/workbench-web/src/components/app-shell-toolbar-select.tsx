@@ -50,13 +50,13 @@ export function AppShellToolbarSelect({
           sideOffset={1}
         >
           <DropdownMenu.Label className="app-shell-toolbar-menu__title">{title}</DropdownMenu.Label>
-          <DropdownMenu.Group className="app-shell-toolbar-menu__section">
+          <DropdownMenu.RadioGroup className="app-shell-toolbar-menu__section" value={value ?? undefined} onValueChange={onValueChange}>
             {options.map((option) => (
-              <DropdownMenu.Item
+              <DropdownMenu.RadioItem
                 className="app-shell-toolbar-menu__item"
                 disabled={option.disabled}
                 key={option.value}
-                onSelect={() => onValueChange(option.value)}
+                value={option.value}
                 textValue={option.textValue}
               >
                 <span className="app-shell-toolbar-menu__item-content">
@@ -66,9 +66,9 @@ export function AppShellToolbarSelect({
                 {option.value === value ? (
                   <Check aria-hidden="true" className="app-shell-toolbar-menu__check" />
                 ) : null}
-              </DropdownMenu.Item>
+              </DropdownMenu.RadioItem>
             ))}
-          </DropdownMenu.Group>
+          </DropdownMenu.RadioGroup>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

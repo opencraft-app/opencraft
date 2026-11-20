@@ -71,6 +71,17 @@ WantedBy=multi-user.target
 
 使用 `OpenCraftDaemonClientManager` 的网关设置 `codexCoreEndpoint`，其余 daemon 参数不变；daemon 从既有 `OPENCRAFT_DAEMON_AUTH_TOKEN` 取得相同 token。首次启动前 token 文件必须已存在，保持 0600。不更改 Caddy、Nginx 或页面认证。
 
+## 容器部署中的独立模型代理（proxy）
+
+容器部署默认仍由 Brain 的 native-host 启动拆分形态的账号 Core（`codex-core.cjs`），即模型代理与 Brain 同生命周期。叠加 `docker/compose.proxy.yaml` 后，账号 Core 改由独立的 `proxy` 服务运行：
+
+- `proxy` 使用同一镜像，入口 `container-service.mjs proxy`，以固定 `OPENCRAFT_PROXY_PORT`（默认 45071）启动账号 Core；参数与 Brain 内嵌时完全一致（`scripts/container-deployment/proxy-core.mjs` 单一定义）。健康检查只看账号 owner 处于 `open`（`GET /owner-handoff`），不依赖 Brain 的 APP Server，因此可先于 Brain 启动。
+- Brain 设置 `OPENCRAFT_PROXY_MODE=external` 与相同端口：只等待 proxy 就绪，不再启动或停止账号 Core；APP Server 继续通过控制 socket 取得代理地址与 Host token。
+- 结果：Brain 发布不重启代理与账号存储；proxy 发布只排空代理已接收的请求（`stop_grace_period` 150s），不重启引擎。代理重启期间新的模型请求会失败，按既有重试边界处理，不重放结果未知的 mutation。
+- 未设置 external 时启动流程与之前等价（仅当显式设置 `OPENCRAFT_PROXY_PORT` 时内嵌模式也使用该固定端口）。
+
+既有部署切换到独立 proxy 属于维护操作：账号 writer 锁由内嵌 Core 持有，必须先停止 Brain（会中断其中的活动轮次），再启动 proxy，最后以 external 模式启动 Brain。回退为逆序：停止 Brain 与 proxy，去掉叠加文件后启动 Brain。数据目录与 schema 不变。
+
 ## 切换、升级与回退
 
 首次切换在隔离验收通过后进行：确认部署工作区空闲、旧 Codex 无加载/活动会话；备份执行网关、daemon bundle、unit 与私有 Codex 数据。停止旧 writer 后，核心服务才能打开原目录。切换执行网关参数并启动独立 unit，核对两条 `runtime/machine/read`、模型菜单两组及健康状态。再次重启执行侧，比较 core、wrapper 和 native PID，并在页面重连后检查 Codex 可用。
@@ -571,3 +582,43 @@ source-exit, full retained/schema, storage/configuration/CLI checks still run
 before writing, and load verifies current sealed storage again. Repeating the
 command on an already sealed operation performs a fresh inspection. Existing
 legacy and empty-retained entry points retain their original reads.
+
+## Account maintenance diagnostics
+
+Account health and an individual Settings operation are different resources. The
+account owner may project optional `maintenance` observations on account/list:
+`checking` is an active check, `unverified` is a locally renewed credential awaiting
+provider confirmation, `error` is a classified failed check, and `ok` requires a
+provider-accepted observation. `checkedAt` and `lastSuccessAt` are owner timestamps.
+These bounded, per-account observations are in memory, reset with that owner, and
+are neither a credential database nor handoff/execution authority. Older Hosts
+omit them; absence never proves a failed operation succeeded.
+
+Failures contain an allowlisted code, stage (`renewal`, `usage`, `operation`), time,
+retryability and generated diagnostic ID, optionally an HTTP status and a safe
+transport-reason enum. Background maintenance, Account Core control replies and
+Host RPC errors carry the same projection. Logs emit `account-operation-failed`
+and transition-only `account-check-recovered` with a hashed local account reference.
+They never contain raw exceptions/stacks, provider response bodies, emails, tokens,
+request parameters, URLs or credential paths. Core rejection distinguishes invalid
+input, maintenance admission, timeout, terminal authorization and temporary service
+failure. An accepted operation is not relabelled fenced just because admission
+closed while it ran. Structured retryability is guidance for an explicit user
+retry; it does not authorize automatic replay of a mutation or an unknown outcome.
+
+Managed renewal rejects a still-expired result or an unchanged credential after
+an authorization rejection. A delayed renewal cannot overwrite a newer credential.
+Writing a renewed file preserves existing authorization failure; successful usage
+or an accepted inference authorization confirms recovery. An empty managed usage
+payload retains the prior authorization/quota contract rather than erasing a
+failure. Transient renewal failure does not mark the account terminally unauthorized.
+External references remain read-only; there is no cross-store token copying or
+implicit change of credential-renewal owner.
+
+Settings presents transient checks separately from authentication rejection,
+provides localized recovery guidance, check times and a copyable diagnostic ID.
+A newer successful check can retire a failed refresh notice; it cannot erase a
+failed enable/remove/reorder or other mutation. Such feedback explicitly describes
+the previous operation, can be dismissed, and never displays an arbitrary upstream
+exception. The existing Settings components, input-density targets and responsive
+account row remain in use.

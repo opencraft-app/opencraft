@@ -20,7 +20,28 @@
     box-shadow: var(--material-liquid-rim);
   }
 }
+// Larger lenses need a legible bevel rather than the hairline of a toolbar.
+// The same optical highlights work over either theme; content is never filtered.
+@media (forced-colors: none) {
+.ui-liquid-glass[data-shape="rounded-rectangle"] {
+  &::before {
+    box-shadow: inset 1px 1px 1px rgb(255 255 255 / 58%),
+      inset -1px -1px 1px rgb(255 255 255 / 16%),
+      inset 0 0 0 2px rgb(255 255 255 / 5%), var(--material-liquid-rim);
+  }
+}
+}
 .ui-liquid-glass__filters { position: absolute; pointer-events: none; }
+
+// Stable from first paint, including while an ancestor is moving/portalling.
+// Keep the shared reflection, rim and shadow; no delayed backdrop acquisition.
+.ui-liquid-glass[data-material="solid"] {
+  background: var(--color-background-elevated-primary-opaque);
+  &::before { -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@media (forced-colors: active) {
+  .ui-liquid-glass[data-material="solid"] { background: Canvas; }
+}
 
 @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
   .ui-liquid-glass::before {

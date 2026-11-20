@@ -124,6 +124,13 @@ contextBridge.exposeInMainWorld("opencraftDesktop", composeDesktopBridge({
     },
   }),
   platform: process.platform,
+  onTrackpadRotate(listener: (degrees: number) => void) {
+    const receive = (_event: Electron.IpcRendererEvent, degrees: unknown) => {
+      if (typeof degrees === "number" && Number.isFinite(degrees)) listener(degrees);
+    };
+    ipcRenderer.on("opencraft:trackpad-rotate", receive);
+    return () => ipcRenderer.off("opencraft:trackpad-rotate", receive);
+  },
   versions: Object.freeze({ electron: process.versions.electron }),
   getWindowFullscreen(): boolean {
     return ipcRenderer.sendSync("opencraft:get-window-fullscreen") === true;

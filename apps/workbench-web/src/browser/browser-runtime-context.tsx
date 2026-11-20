@@ -19,7 +19,23 @@ import { BrowserPresentationCoordinator } from "./browser-presentation-coordinat
 import { BrowserWorkbenchCoordinator } from "./browser-workbench-coordinator";
 import { WebBrowserPageRuntime } from "./web-browser-runtime";
 import type { BrowserSurfaceHost } from "./web-browser-surface-host";
-import { BrowserLocalMenu } from './browser-local-menu-view';
+import type { BrowserLocalMenuController } from './browser-local-menu';
+import { createDeferredView } from '@opencraft/extension-react';
+
+const BrowserLocalMenu = createDeferredView(async () => (await import('./browser-local-menu-view')).BrowserLocalMenu);
+
+/** Keep labels and clipboard lifetime owned by the persistent host, not the
+ * lazily mounted menu. Closing a menu must not cancel its pending copy intent. */
+function BrowserLocalMenuHost({ controller }: { readonly controller: BrowserLocalMenuController }) {
+  const intl = useIntl();
+  const menu = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
+  useLayoutEffect(() => { controller.setLabels({
+    copy: intl.formatMessage({ id: 'browser.menu.copy', defaultMessage: 'Copy' }),
+    copyLink: intl.formatMessage({ id: 'browser.menu.copyLink', defaultMessage: 'Copy link address' }),
+  }); }, [intl, controller]);
+  useLayoutEffect(() => () => controller.retire(), [controller]);
+  return menu ? <BrowserLocalMenu controller={controller} /> : null;
+}
 
 interface BrowserRuntimeContextValue {
   readonly pages: WebBrowserPageRuntime;
@@ -104,5 +120,5 @@ export function BrowserPresentationRoot() {
     return () => surfaces.setRoot(null);
   }, [surfaces]);
   return <><div ref={rootRef} className="web-browser-presentation-root" />
-    {surfaces.localMenu && <BrowserLocalMenu controller={surfaces.localMenu} />}</>;
+    {surfaces.localMenu && <BrowserLocalMenuHost controller={surfaces.localMenu} />}</>;
 }

@@ -34,6 +34,51 @@ checks must activate the real optional plugin branch through the production
 registry and verify activation, contributions and unload; rendering a component
 directly cannot detect an activation transaction rolling back.
 
+## Operator-owned product packages
+
+A trusted product may build its existing `ServerWorkbenchExtension` factory as
+an external package through `apps/workbench-web/product-plugin-packs.vite.ts`.
+The product explicitly supplies a registration module, entry, ID, version and
+locale descriptors. Source development keeps the original factory; release
+builds replace that one registration with `createProductPluginExtension`.
+This channel retains internal product composition access and does not change
+the public module-URL Extension ABI or its single-file limits.
+
+The application and package use one build graph. React, React DOM and react-intl
+are deduplicated; shared chunks retain their original URL/module identity.
+`product-plugins.json` records the package dependency closure and the files
+owned exclusively by the package. CSS URL resources are included. Packaging
+moves exclusive files out of `web/`, while copying shared dependencies, into
+`runtime/product-plugins`. This tree is covered by the existing release seal.
+
+Before listening, the managed Web worker verifies the selected release's shared
+dependencies and prepares a durable code snapshot under the deployment data
+directory's `product-plugin-packs/<inventory-sha256>`. The original deployment
+`current` remains the activation authority. The cache is derived code, not a
+plugin database or another writable installation preference. File reads use the
+local asynchronous filesystem adapter; no general remote VFS is implemented.
+
+The reader serves only listed, hash-verified files. Old snapshots remain
+available for old browser tabs, including their shared dependencies. An existing
+URL cannot change bytes. This initial implementation deliberately retains old
+snapshots; it provides no automatic garbage collection. Persistent code must be
+mounted separately from a replaceable container root; the selected Web worker
+needs preparation access before listening and serves the resulting files
+read-only. No per-plugin container or process isolation is implied.
+
+The factory receives the existing `fetcher/getClient` context. Locale catalogs
+use the original initialization path through same-build message data projected
+into the registration; language initialization never downloads plugin code.
+The canonical product catalogs still own those messages. Activation waits for styles, then enters
+the original Supervisor transaction; abort/failure/unload releases owned style
+links and contributions. Plugin ID and version are checked before activation.
+Unavailable or incompatible packages are errors, not a silent fallback to a
+second embedded implementation. The public installation manager is unchanged.
+
+Product packages may remain tightly coupled to a matching application build.
+This first Web implementation supports trusted client factories, not external
+server identity factories, hot replacement or an independently versioned SDK.
+
 ## Build and run the first extension
 
 Use the pinned Node version in `.nvmrc` and run these commands from your own clone:

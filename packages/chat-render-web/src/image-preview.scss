@@ -1,0 +1,54 @@
+.opencraft-image-preview {
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.opencraft-image-preview::backdrop { background: rgb(0 0 0 / 54%); backdrop-filter: blur(4px); }
+.opencraft-image-preview > .opencraft-zoomable-image { width: 100%; height: 100%; max-height: none; }
+.opencraft-image-preview .opencraft-zoomable-image img { max-width: calc(100vw - 48px); max-height: calc(100dvh - 48px); border-radius: 10px; box-shadow: var(--shadow-300); }
+.opencraft-image-preview__close,
+.opencraft-image-preview__previous,
+.opencraft-image-preview__next { display: inline-flex; width: 44px; height: 44px; padding: 0; align-items: center; justify-content: center; border: 0; border-radius: 9999px; color: #fff; background: rgb(0 0 0 / 54%); cursor: pointer; }
+.opencraft-image-preview__close { position: absolute; z-index: 1; inset-block-start: max(12px, env(safe-area-inset-top)); inset-inline-end: max(12px, env(safe-area-inset-right)); }
+.opencraft-image-preview__navigation { position: absolute; z-index: 1; inset-block-end: max(12px, env(safe-area-inset-bottom)); inset-inline-start: 50%; transform: translateX(-50%); display: grid; grid-template-columns: 44px minmax(40px, auto) 44px; align-items: center; gap: 8px; color: white; }
+.opencraft-image-preview__previous { grid-column: 1; grid-row: 1; }
+.opencraft-image-preview__position { grid-column: 2; grid-row: 1; text-align: center; }
+.opencraft-image-preview__next { grid-column: 3; grid-row: 1; }
+.opencraft-image-preview :is(button) svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
+
+
+.opencraft-image-preview__status { position: absolute; inset: 0; display: grid; place-items: center; color: white; pointer-events: none; }
+
+.thread-generated-image-lightbox__toolbar {
+  position: absolute;
+  z-index: 1;
+  inset-inline-end: max(64px, calc(env(safe-area-inset-right) + 56px));
+  top: max(12px, env(safe-area-inset-top));
+  display: flex;
+  gap: 6px;
+}
+.thread-generated-image-lightbox__toolbar button,
+.thread-generated-image-lightbox__toolbar a {
+  display: inline-flex;
+  min-width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.48);
+  text-decoration: none;
+}
+

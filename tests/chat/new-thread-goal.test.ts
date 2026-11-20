@@ -16,13 +16,15 @@ const receipt: SubmissionReceipt = { commandId: "command", clientMessageId: "mes
 function fixture() {
   let goal: ThreadGoal | null = null;
   const calls: string[] = [];
-  const state = { current: true, readonly: false, failWrite: false, failRead: false, failOpen: false };
+  const state = { current: true, readonly: false, failWrite: false, rejectWrite: false, lostAck: false, failReadAfterSet: false, failRead: false, failOpen: false };
   const goals = new ThreadGoalResource({
     capability: () => ({ version: 1, read: true, write: !state.readonly }),
     get: async () => { calls.push("get"); if (state.failRead) throw new Error("confirmation failed"); return { goal }; },
     set: async (threadId, change) => {
-      calls.push("set"); if (state.failWrite) throw new Error("write failed");
+      calls.push("set"); if (state.rejectWrite) throw { code: -32009, data: { reason: "goal_version_conflict" } }; if (state.failWrite) throw new Error("write failed");
       goal = { threadId, objective: change.objective!, status: change.status!, tokenBudget: null, tokensUsed: 0, timeUsedSeconds: 0, createdAt: 1, updatedAt: 1 };
+      if (state.lostAck) throw new Error("lost acknowledgement");
+      if (state.failReadAfterSet) state.failRead = true;
       return { goal };
     },
     clear: async () => ({ cleared: true }),
@@ -38,7 +40,7 @@ function fixture() {
 test("a new conversation starts a native Goal without sending a user Turn", async () => {
   const f = fixture();
   assert.equal(await f.flow(intent(), "objective", f.isCurrent), receipt);
-  assert.deepEqual(f.calls, ["create", "set", "get", "open"]);
+  assert.deepEqual(f.calls, ["create", "get", "set", "open"]);
   assert.equal(f.goals.getSnapshot("new").goal?.status, "active");
 });
 test("concurrent confirmation is single-flight", async () => {
@@ -52,20 +54,28 @@ test("concurrent confirmation is single-flight", async () => {
 });
 test("a rejected Goal write retries against the same newly created Thread", async () => {
   const f = fixture(), command = intent();
-  f.state.failWrite = true;
-  await assert.rejects(f.flow(command, "objective", f.isCurrent), /write failed/);
-  f.state.failWrite = false;
+  f.state.rejectWrite = true;
+  await assert.rejects(f.flow(command, "objective", f.isCurrent), { code: "conflict" });
+  f.state.rejectWrite = false;
   await f.flow({ ...command, commandId: "retry" }, "objective", f.isCurrent);
   assert.equal(f.calls.filter(call => call === "create").length, 1);
 });
-test("a lost confirmation reads the durable Goal without reactivating a completed Goal", async () => {
+test("an acknowledged Goal does not require a readback before navigation", async () => {
   const f = fixture(), command = intent();
-  f.state.failRead = true;
-  await assert.rejects(f.flow(command, "objective", f.isCurrent), /confirmation failed/);
-  f.complete(); f.state.failRead = false;
+  f.state.failReadAfterSet = true;
   await f.flow(command, "objective", f.isCurrent);
-  assert.equal(f.goals.getSnapshot("new").goal?.status, "complete");
-  assert.equal(f.calls.filter(call => call === "set").length, 1);
+  assert.equal(f.goals.getSnapshot("new").goal?.objective, "objective");
+  assert.deepEqual(f.calls, ["create", "get", "set", "open"]);
+});
+test("unknown Goal writes cannot be confirmed by objective text or blindly replayed", async () => {
+  const f = fixture(), command = intent();
+  f.state.lostAck = true;
+  await assert.rejects(f.flow(command, "objective", f.isCurrent), { code: "outcomeUnknown" });
+  f.complete(); f.state.lostAck = false;
+  const calls = [...f.calls];
+  await assert.rejects(f.flow({ ...command, commandId: "retry" }, "objective", f.isCurrent), { code: "outcomeUnknown" });
+  assert.deepEqual(f.calls, calls);
+  assert.equal(f.calls.includes("open"), false);
 });
 test("navigation failure retries neither Thread creation nor Goal activation", async () => {
   const f = fixture(), command = intent();
@@ -113,4 +123,17 @@ test("an unknown thread/start outcome is never blindly replayed", async () => {
   await assert.rejects(flow(command, "objective", f.isCurrent), /结果尚未确认/);
   await assert.rejects(flow(command, "objective", f.isCurrent), /结果尚未确认/);
   assert.equal(creates, 1);
+});
+
+test("leaving a draft during Goal preflight cannot dispatch its mutation", async () => {
+  let current = true, sets = 0, opens = 0;
+  let resolve!: (value: { goal: ThreadGoal | null; version: string }) => void;
+  const read = new Promise<{ goal: ThreadGoal | null; version: string }>(done => { resolve = done; });
+  const goals = new ThreadGoalResource({ capability: () => ({ version: 1, read: true, write: true }), get: () => read, set: async () => { sets++; throw new Error("must not write"); }, clear: async () => ({ cleared: true }) });
+  const flow = createNewThreadGoalFlow({ createThread: async () => receipt, goals: () => goals, openThread: async () => { opens++; } });
+  const pending = flow(intent(), "objective", () => current);
+  await new Promise(done => setImmediate(done));
+  current = false; resolve({ goal: null, version: "0" });
+  await assert.rejects(pending, /changed before/);
+  assert.equal(sets, 0); assert.equal(opens, 0);
 });

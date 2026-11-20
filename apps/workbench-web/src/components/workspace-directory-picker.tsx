@@ -142,7 +142,6 @@ export function WorkspaceDirectoryPicker({
               <span>Parent folder</span>
             </button>
           ) : null}
-          {phase === "loading" ? <p className="workspace-picker-state">Loading folders…</p> : null}
           {phase !== "loading" && entries.length === 0 && error === null ? (
             <p className="workspace-picker-state">This folder has no subfolders.</p>
           ) : null}

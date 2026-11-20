@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { COLLABORATION_METHOD } from "@opencraft/appserver-protocol/collaboration";
+import { isThreadGoalPauseRequest } from "@opencraft/appserver-protocol";
 
 export const CODEX_MAINTENANCE_READ = "opencraft/codex/maintenance/read";
 export const CODEX_MAINTENANCE_EXTENSION = "opencraft.codex-maintenance";
@@ -9,8 +10,9 @@ export const CODEX_ADMISSION_PAUSE_FILE = "codex-admission.paused";
 const admissions = new Set(["thread/start", "thread/fork", "turn/start", "thread/queue/add", "thread/goal/set", "command/exec", "process/spawn", "thread/shellCommand", COLLABORATION_METHOD]);
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 export function isCodexAdmission(method: unknown, params?: unknown): boolean {
+  if (isThreadGoalPauseRequest(method, params)) return false;
   const body = record(params);
-  if (method === "thread/goal/set" && (body.status === "paused" || body.status === "complete")
+  if (method === "thread/goal/set" && body.status === "complete"
     && Object.keys(body).every(key => key === "threadId" || key === "status")) return false;
   return typeof method === "string" && admissions.has(method);
 }

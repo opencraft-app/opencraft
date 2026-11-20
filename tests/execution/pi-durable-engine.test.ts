@@ -648,7 +648,7 @@ test("temporary Pi fork inherits committed context, stays memory-only and closes
   await assert.rejects(f.engine.request("thread/fork", { threadId: parent.thread.id }, noTools), /temporary forks/);
 });
 
-test("Pi side chat opens through the shared service over the actual Engine Host", async t => {
+test("Pi ephemeral-only Host rejects recoverable side chats before allocating a child", async t => {
   const { Context } = await import("@deepseek-ai/cordis");
   const { createConversationKey } = await import("@opencraft/chat-core");
   const { SideChatService } = await import("../../packages/workbench-runtime/src/side-chat/service.js");
@@ -664,22 +664,12 @@ test("Pi side chat opens through the shared service over the actual Engine Host"
   t.after(() => runtime.dispose()); await runtime.connect();
   const parent = await runtime.resources.threads.start({ model: piModel("faux", "faux-1"), cwd: f.directory });
   assert.equal(runtime.resources.threads.capabilities(parent.id).fork, false);
-  assert.equal(runtime.resources.threads.supportsSideChat!(parent.id), true);
+  assert.equal(runtime.resources.threads.supportsSideChat!(parent.id), false);
   const service = new SideChatService(new Context(), { resolveHost: async () => runtime });
-  t.after(() => service.close("side-one"));
-  const child = await service.open("side-one", createConversationKey("pi-side", parent.id), f.directory);
-  for (let i = 0; i < 100 && !child.lease.getSnapshot().authoritative; i++) await new Promise(resolve => setTimeout(resolve, 10));
-  assert.equal(child.lease.getSnapshot().authoritative, true);
-  const done = completed(f.engine);
-  await service.submit("side-one", { commandId: "side-command", clientMessageId: "side-client", target: { type: "existing-thread", key: child.key },
-    document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "shared child question" }] }] },
-    attachments: [], context: [], selections: { model: null, permissionProfile: null }, options: { autoContext: true }, createdAt: Date.now() }, null);
-  assert.equal((await done).status, "completed");
-  assert.equal(sent.filter(method => method === "thread/fork").length, 1);
-  assert.ok(sent.includes("thread/inject_items")); assert.ok(sent.includes("turn/start"));
-  assert.equal(sent.filter(method => method === "thread/resume").length, 0);
-  await service.close("side-one");
-  await assert.rejects(f.engine.request("thread/read", { threadId: child.key.threadId }, noTools), /not found/);
+  await assert.rejects(service.open("side-one", createConversationKey("pi-side", parent.id), f.directory), /does not support recoverable side chats/);
+  assert.equal(sent.filter(method => method === "thread/fork").length, 0);
+  assert.equal(sent.filter(method => method === "thread/inject_items").length, 0);
+  assert.equal(service.get("side-one"), null);
 });
 
 test("Pi temporary fork validates before allocation and does not survive engine restart", async t => {
@@ -1366,10 +1356,13 @@ test('queued Pi input restores its original execution CLI after reopening; edits
     async threadCli(session){reads.push(session.execution!.inputId!);return {originalInput:session.execution!.inputId};},
   });await mcp.listen();
   const cli=await localExecutionCli({directory:join(directory,'cli'),endpoint:mcp.cliEndpoint,key});
+  let callbackFailure:Error|undefined;
   const {models}=fixtureModels([async context=>{
+    try {
     const launcher=/OpenCraft execution-scoped thread CLI: '([^']+)'/.exec(JSON.stringify(context))?.[1];assert.ok(launcher);
     const result=JSON.parse((await promisify(execFile)(launcher,['context'])).stdout);
     assert.equal(result.originalInput,'original-input');return fauxAssistantMessage('read original source');
+    } catch(error) { callbackFailure=error as Error; throw error; }
   }]);
   let engine=new PiEngine({directory,cwd:directory,models,executionCli:cli});
   t.after(async()=>{await engine.close();await cli.close();await mcp.close();await rm(directory,{recursive:true,force:true});});
@@ -1383,6 +1376,6 @@ test('queued Pi input restores its original execution CLI after reopening; edits
   const listing=await engine.request('thread/queue/list',{threadId:thread.id},noTools);assert.ok(!JSON.stringify(listing).includes(credential));
   const done=completed(engine);
   await engine.request('thread/queue/start',{threadId:thread.id,queuedSubmissionId:queued.queuedSubmission.id,__opencraftExecutionCli:'forged-by-starter'},noTools);
-  assert.equal((await done).status,'completed');assert.deepEqual(reads,['original-input']);
+  const finalTurn=await done;assert.equal(finalTurn.status,'completed',callbackFailure?.message ?? JSON.stringify(finalTurn.error??{types:finalTurn.items?.map((item:any)=>item.type)}));assert.deepEqual(reads,['original-input']);
   const history=await engine.request('thread/read',{threadId:thread.id,includeTurns:true},noTools);assert.ok(!JSON.stringify(history).includes(credential));
 });

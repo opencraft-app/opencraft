@@ -5,12 +5,12 @@ export const startupLeafGroups = [
   {
     name: "startup-presentation-leaves",
     includeDependenciesRecursively: false,
-    test: /\/apps\/workbench-web\/src\/(?:runtime\/(?:mini-apps|mobile-container|edge-gesture-bridge|workbench-preview|token-usage-builtin|conversation-content-search)|components\/(?:use-presentation-completion|modal\/confirmation-top-layer)|browser\/browser-presentation-geometry|mcp-apps\/contract)\.tsx?$/,
+    test: /\/apps\/workbench-web\/src\/(?:runtime\/(?:mini-apps|mobile-container|edge-gesture-bridge|workbench-preview|conversation-content-search)|components\/(?:use-presentation-completion|modal\/confirmation-top-layer)|browser\/browser-presentation-geometry|mcp-apps\/contract)\.tsx?$/,
   },
   {
     name: "motion-context-leaves",
     includeDependenciesRecursively: false,
-    test: /\/node_modules\/(?:framer-motion\/dist\/es\/(?:context\/(?:LayoutGroupContext|MotionConfigContext|PresenceContext)|utils\/(?:use-constant|is-browser|use-isomorphic-effect|reduced-motion\/use-reduced-motion)|components\/AnimatePresence\/use-presence)|motion-dom\/dist\/es\/utils\/is-html-element|motion-utils\/dist\/es\/is-object)\.mjs$/,
+    test: /\/node_modules\/(?:framer-motion\/dist\/es\/(?:context\/(?:LayoutGroupContext|MotionConfigContext|PresenceContext)|utils\/(?:use-constant|is-browser|use-isomorphic-effect|reduced-motion\/use-reduced-motion)|components\/AnimatePresence\/use-presence)|motion-dom\/dist\/es\/utils\/is-html-element|motion-utils\/dist\/es\/is-object)\.mjs$|__vite-optional-peer-dep:@emotion\/is-prop-valid:framer-motion$/,
   },
   {
     name: "startup-dom-leaves",

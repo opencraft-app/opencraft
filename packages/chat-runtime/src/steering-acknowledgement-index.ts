@@ -1,6 +1,7 @@
 import { userMessageCompareKey, type TimelineSourceItem, type TimelineSourceTurn } from "@opencraft/chat-core";
 
 interface SteeringIdentity {
+  readonly delivery?: import("@opencraft/appserver-protocol").InputDeliveryReceipt;
   readonly clientMessageId: string;
   readonly input: unknown;
 }
@@ -55,6 +56,7 @@ export function createSteeringAcknowledgementResolver(): SteeringAcknowledgement
       indices.set(turn.items, index);
     }
     const explicit = index.byClientId.get(state.clientMessageId);
+    if (state.delivery) return explicit ?? -1; // Custody-backed inputs require exact identity, never equal text.
     if (!index.byInput.size) return explicit ?? -1;
     const key = userMessageCompareKey(state.input);
     const reconstructed = index.byInput.get(key.rawText)?.get(key.imageCount);

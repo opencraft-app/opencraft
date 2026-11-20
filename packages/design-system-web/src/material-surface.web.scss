@@ -1,0 +1,7 @@
+@use "@opencraft/design-system/material.web" as material;
+
+// Content panels share the optical owner, without inheriting control geometry.
+.ui-material-surface {
+  position: relative;
+  @include material.liquid;
+}

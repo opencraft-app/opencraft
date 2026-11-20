@@ -81,7 +81,7 @@ test("native terminal disconnect preserves output without unsupported RPCs or au
     assert.equal(session.getSnapshot().phase, "failed");
     assert.ok(session.getSnapshot().error instanceof TerminalRestoreUnavailableError);
     assert.deepEqual(session.getSnapshot().output, output);
-    assert.deepEqual(await f.controller.list(), { processes: [] });
+    await assert.rejects(f.controller.list(), TerminalRestoreUnavailableError);
     await assert.rejects(session.write(Buffer.from("echo unsafe\n").toString("base64")), TerminalRestoreUnavailableError);
     f.disconnect();
     await f.reconnect();

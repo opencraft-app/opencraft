@@ -3,12 +3,12 @@ import test from "node:test";
 import { build } from "esbuild";
 import { createRequire } from "node:module";
 
-// Render the real panel and capture its mutation at the Query boundary. This
-// exercises a direct save attempt even though the preview hides its buttons.
+// Render the real panel across the Query/Host boundary. Also exercise the
+// read-only write helper directly; browser smoke covers editable save transactions.
 const require = createRequire(import.meta.url);
 const { outputFiles } = await build({
   stdin: {
-    contents: `export { WorkspaceResourcePreviewPanel, WorkspaceResourcePanel } from './apps/workbench-web/src/panels/workspace-resource-panel';`,
+    contents: `export { writeWorkspaceResource } from './apps/workbench-web/src/panels/workspace-resource-model'; export { WorkspaceResourcePreviewPanel, WorkspaceResourcePanel } from './apps/workbench-web/src/panels/workspace-resource-panel';`,
     resolveDir: new URL("../..", import.meta.url).pathname,
   },
   bundle: true, write: false, platform: "node", format: "cjs", jsx: "automatic",
@@ -19,7 +19,7 @@ const { outputFiles } = await build({
     const modules = {
       "@tanstack/react-query": `export const useQueries = () => []; export const useQuery = () => globalThis.__panelTest.query ?? ({data:globalThis.__panelTest.resourceData ?? {text:'# Hello',blob:null}}); export const useQueryClient = () => ({invalidateQueries:async()=>{}}); export const useMutation = options => {globalThis.__panelTest.mutation=options.mutationFn;return {}};`,
       "../runtime/appserver-runtime-context": `export const useAppServerRuntime=()=>globalThis.__panelTest.runtime;export const useAppServerSnapshot=()=>({hostId:globalThis.__panelTest.hostId??'bot-a',conversation:null});export const useBlobResources=()=>globalThis.__panelTest.blobs;`,
-      "../runtime/blob-files": `import {BlobUrlManager} from '${new URL("../../packages/blob-resources/src/browser.ts", import.meta.url).pathname}';export const fileBlobResource=(_runtime,hostId,path)=>({scope:hostId,path});export const fileBlobUrls=new BlobUrlManager();export const acquireFileBlob=()=>{};export const fileDownloadUrl=()=>null;export const fileDownloadSize=()=>Promise.resolve(0);`,
+      "../runtime/blob-files": `import {BlobUrlManager} from '${new URL("../../packages/blob-resources/src/browser.ts", import.meta.url).pathname}';export const fileBlobResource=(_runtime,hostId,path)=>({scope:hostId,path});export const fileBlobUrls=new BlobUrlManager();export const acquireFileBlob=()=>{};export const fileDownloadUrl=()=>null;export const fileDownloadSize=async()=>0;`,
       "../appearance-theme": `export const useAppearanceTheme=()=>({resolvedTheme:'light'});`,
       "../runtime/appserver-media-loader": `export const createAppServerMediaSourceLoader=()=>()=>{};`,
       "@opencraft/i18n/react": `export const useIntl=()=>({formatMessage:m=>m.defaultMessage});`,
@@ -28,6 +28,10 @@ const { outputFiles } = await build({
       "./workspace-code-editor": `export const WorkspaceCodeEditor=()=>{throw new Error("editor unavailable")};`,
       "./workspace-file-icon": `export const WorkspaceFileIcon=()=>null;`,
     };
+    // Vite URL imports are assets, not executable worker modules in this Node
+    // semantics harness. Preserve the real panel and preview adapters otherwise.
+    builder.onResolve({filter:/\?url$/}, args => ({path:args.path,namespace:"fixture-asset-url"}));
+    builder.onLoad({filter:/.*/,namespace:"fixture-asset-url"}, args => ({contents:`export default ${JSON.stringify('/synthetic-asset/'+args.path.split('/').at(-1))}`,loader:"js"}));
     builder.onResolve({filter:/.*/}, args => args.path in modules ? {path:args.path,namespace:"boundary"} : undefined);
     builder.onLoad({filter:/.*/,namespace:"boundary"}, args => ({contents:modules[args.path],loader:"js",resolveDir:new URL("../..", import.meta.url).pathname}));
   }}],
@@ -50,12 +54,12 @@ test("preview rejects direct writes; editable panel saves the captured target", 
     const html = renderToString(createElement(exports.WorkspaceResourcePreviewPanel, props));
     assert.doesNotMatch(html, /Save file|Edit file|Search workspace files/);
     const target = {hostId:"bot-a",path:"/workspace/original.md",key:"original",text:"你好"};
-    await assert.rejects(globalThis.__panelTest.mutation(target), /read-only/);
+    await assert.rejects(exports.writeWorkspaceResource(true, target, globalThis.__panelTest.runtime.resources.fileSystem.writeFile, async()=>{}), /read-only/);
     assert.deepEqual(writes, []);
     assert.deepEqual(invalidations, []);
     const editableHtml = renderToString(createElement(exports.WorkspaceResourcePanel, props));
     assert.match(editableHtml, /aria-label="Search workspace files" disabled=""/);
-    await globalThis.__panelTest.mutation(target);
+    await exports.writeWorkspaceResource(false, target, globalThis.__panelTest.runtime.resources.fileSystem.writeFile, async(hostId,path)=>globalThis.__panelTest.blobs.refresh({scope:hostId,path}));
     assert.deepEqual(writes, [[target.path, Buffer.from(target.text).toString("base64")]]);
     assert.deepEqual(invalidations, [{scope:"bot-a",path:target.path}]);
   } finally { delete globalThis.__panelTest; }
@@ -67,9 +71,9 @@ test("Markdown preview and source switch without loading the editor", async () =
   const { createRoot } = require("react-dom/client");
   const { act } = require("react");
   const dom = new JSDOM('<div id="app"></div>', {url:"http://localhost"});
-  const keys = ["window", "document", "IS_REACT_ACT_ENVIRONMENT"];
+  const keys = ["window", "document", "getComputedStyle", "IS_REACT_ACT_ENVIRONMENT"];
   const previous = Object.fromEntries(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
-  Object.assign(globalThis, {window:dom.window, document:dom.window.document, IS_REACT_ACT_ENVIRONMENT:true});
+  Object.assign(globalThis, {window:dom.window, document:dom.window.document, getComputedStyle:dom.window.getComputedStyle.bind(dom.window), IS_REACT_ACT_ENVIRONMENT:true});
   globalThis.__panelTest = { runtime:{resources:{host:{canRequest:()=>false},fileSystem:{}}}, blobs:{} };
   const root = createRoot(document.getElementById("app"));
   try {
@@ -100,9 +104,9 @@ test("read-only preview downloads the original Blob and retires the previous Hos
   const { createRoot } = require("react-dom/client");
   const { act } = require("react");
   const dom = new JSDOM('<div id="app"></div>', {url:"http://localhost"});
-  const keys = ["window", "document", "IS_REACT_ACT_ENVIRONMENT"];
+  const keys = ["window", "document", "getComputedStyle", "IS_REACT_ACT_ENVIRONMENT"];
   const previous = Object.fromEntries(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
-  Object.assign(globalThis, {window:dom.window, document:dom.window.document, IS_REACT_ACT_ENVIRONMENT:true});
+  Object.assign(globalThis, {window:dom.window, document:dom.window.document, getComputedStyle:dom.window.getComputedStyle.bind(dom.window), IS_REACT_ACT_ENVIRONMENT:true});
   const bytes = Uint8Array.from([239, 187, 191, 35, 32, 65, 13, 10]);
   const loaded = blob => ({data:{blob,text:"# A",isFile:true,isDirectory:false}});
   globalThis.__panelTest = {
@@ -153,9 +157,9 @@ test("HTML preview renders in an isolated frame and retains source access", asyn
   const { createRoot } = require("react-dom/client");
   const { act } = require("react");
   const dom = new JSDOM('<div id="app"></div>', {url:"http://localhost"});
-  const keys = ["window", "document", "IS_REACT_ACT_ENVIRONMENT"];
+  const keys = ["window", "document", "getComputedStyle", "IS_REACT_ACT_ENVIRONMENT"];
   const previous = Object.fromEntries(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
-  Object.assign(globalThis, {window:dom.window, document:dom.window.document, IS_REACT_ACT_ENVIRONMENT:true});
+  Object.assign(globalThis, {window:dom.window, document:dom.window.document, getComputedStyle:dom.window.getComputedStyle.bind(dom.window), IS_REACT_ACT_ENVIRONMENT:true});
   const html = '<!doctype html><html><head><meta http-equiv="refresh" content="0;url=https://example.com/"><style>h1{color:red}</style></head><body><h1>Report</h1><a href="https://example.com/" ping="https://example.com/ping">External report</a><map><area href="https://example.com/area"></map><svg xmlns:xlink="http://www.w3.org/1999/xlink"><a xlink:href="https://example.com/svg"><set attributeName="href" to="https://example.com/animated" begin="0s"/>SVG report</a></svg><script>window.parent.bad = true</script></body></html>';
   globalThis.__panelTest = {
     runtime:{resources:{host:{canRequest:()=>false},fileSystem:{}}},
@@ -169,12 +173,19 @@ test("HTML preview renders in an isolated frame and retains source access", asyn
     assert.ok(frame);
     assert.equal(frame.getAttribute("sandbox"), "allow-scripts");
     assert.equal(frame.getAttribute("referrerpolicy"), "no-referrer");
-    assert.match(frame.getAttribute("srcdoc"), /^<!doctype html><meta http-equiv="Content-Security-Policy"/iu);
+    assert.match(frame.getAttribute("srcdoc"), /^<!doctype html>/iu);
     assert.match(frame.getAttribute("srcdoc"), /script-src 'unsafe-inline'/u);
     assert.match(frame.getAttribute("srcdoc"), /<h1>Report<\/h1>/u);
     assert.doesNotMatch(frame.getAttribute("srcdoc"), /http-equiv="refresh"|\bhref=|\bping=|<set\b/iu);
     const preview = new JSDOM(frame.getAttribute("srcdoc"));
     assert.equal(preview.window.document.compatMode, "CSS1Compat");
+    const policy = preview.window.document.head.firstElementChild;
+    assert.equal(policy?.tagName, "META", "CSP precedes every executable preview script");
+    assert.equal(policy?.getAttribute("http-equiv"), "Content-Security-Policy");
+    assert.match(policy?.getAttribute("content"), /connect-src 'none'/);
+    assert.match(policy?.getAttribute("content"), /frame-src 'none'/);
+    assert.equal(preview.window.document.querySelector('meta[http-equiv="refresh"],a[href],a[ping],area[href],set'), null);
+    assert.equal([...preview.window.document.scripts].some(script => script.textContent.includes('window.parent.bad')), false);
     assert.equal(preview.window.getComputedStyle(preview.window.document.querySelector("h1")).color, "rgb(255, 0, 0)");
     preview.window.close();
     const button = name => Array.from(document.querySelectorAll("button")).find(node => node.textContent === name);

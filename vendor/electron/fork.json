@@ -82,6 +82,10 @@
     {
       "path": "patches/electron/0019-native-ime-focus-identity.patch",
       "sha256": "f148d1ef473a2eee32d4ff572ff6bc11bc6ea208347bfeb6bb859c5400a9120f"
+    },
+    {
+      "path": "patches/electron/0020-native-input-focus-fence.patch",
+      "sha256": "099a43a09a7b4dffeb229343145122ac9378cb547d3ec5ea5d3260e81a4790ff"
     }
   ]
 }

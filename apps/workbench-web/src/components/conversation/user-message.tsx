@@ -1,8 +1,9 @@
-import { CheckIcon as Check, ChevronLeftIcon as ChevronLeft, ChevronDownIcon as ChevronDown, ChevronRightIcon as ChevronRight, CopyIcon as Copy, LoadingRingIcon as LoaderCircle } from "@opencraft/design-system-web/action-icons";
-import { AvatarImage, IdentityAvatarContext } from "@opencraft/extension-react";
+import { MediaPlayer } from "@opencraft/file-preview-web/media-player";
+import { AlarmClockIcon, CheckIcon as Check, ChevronDownIcon as ChevronDown, CopyIcon as Copy, LoadingRingIcon as LoaderCircle } from "@opencraft/design-system-web/action-icons";
+import { AvatarImage, IdentityAvatarContext, createDeferredView } from "@opencraft/extension-react";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import type { UserMessageTimelineBlock } from "@opencraft/chat-core";
-import { ZoomableImage, WebUserMessageDocument, resolveStandardChatResource, writeTextToClipboard } from "@opencraft/chat-render-web";
+import { ImagePreview, WebUserMessageDocument, resolveStandardChatResource, writeTextToClipboard } from "@opencraft/chat-render-web";
 import { AlertIcon as AlertCircle, CircleIcon as Circle, TextFileIcon as FileText, ImageIcon, MessageIcon as MessageSquare, ToolIcon as Wrench, PersonIcon as UserRound } from "@opencraft/design-system-web/action-icons";
 import {
   type ReactNode,
@@ -13,11 +14,20 @@ import {
 } from "react";
 
 import { useConversationMediaSource } from "./conversation-media-source";
+import { usePreviewImageEdit } from "./use-preview-image-edit";
 import { MessageTimestamp } from "./message-timestamp";
 import { ConversationDocumentContext } from "./document-context";
-import { ModalSurface } from "../modal/modal-surface";
 import { deriveUserMessageWebLayout } from "./user-message-layout";
 import { useWebUserMessageCollapse } from "./use-web-user-message-collapse";
+const SubmissionRecoveryNotice = createDeferredView(async () => (await import('../submission-recovery-notice')).SubmissionRecoveryNotice);
+
+import "./scheduled-user-message.scss";
+import { useLayoutEffect } from "react";
+import { ConversationEntryMotionContext } from "./entry-motion";
+// Kept out of the startup bundle; a message sent before it loads simply
+// appears without the flight.
+let sendFlight: typeof import("./send-flight") | null = null;
+if (typeof window !== "undefined") void import("./send-flight").then(module => { module.installSendFlight(); sendFlight = module; }).catch(() => undefined);
 
 const USER_MESSAGE_COLLAPSED_LINE_COUNT = 20;
 const USER_MESSAGE_INTERACTIVE_SELECTOR = "a[href], area[href], button, input, select, textarea, summary, audio[controls], video[controls], iframe, [contenteditable]:not([contenteditable='false']), [tabindex]:not([tabindex='-1'])";
@@ -34,6 +44,11 @@ function setInteractiveVisibility(element: HTMLElement, visible: boolean, previo
 }
 
 function CollapsibleUserMessageText({ block }: { readonly block: UserMessageTimelineBlock }) {
+  const intl = useIntl();
+  // Existing engines persist this exact leading line; keep the stored/copy text intact.
+  const scheduledPrefix = /^\[Scheduled task\]\r?\n/u.exec(block.message);
+  const message = scheduledPrefix ? block.message.slice(scheduledPrefix[0].length) : block.message;
+  const scheduledLabel = intl.formatMessage({ id: "schedules.title", defaultMessage: "Scheduled task" });
   const documentContext = useContext(ConversationDocumentContext);
   const {
     clipRef,
@@ -95,6 +110,9 @@ function CollapsibleUserMessageText({ block }: { readonly block: UserMessageTime
         style={collapsed && collapsedMaxHeight !== null ? { maxHeight: `${collapsedMaxHeight}px` } : undefined}
       >
         <div ref={contentRef}>
+          {scheduledPrefix ? <div className="thread-user-message__scheduled" title={scheduledLabel}>
+            <AlarmClockIcon size={18} aria-label={scheduledLabel} />
+          </div> : null}
           <WebUserMessageDocument
             conversationId={documentContext.conversationId}
             cwd={documentContext.cwd}
@@ -102,7 +120,7 @@ function CollapsibleUserMessageText({ block }: { readonly block: UserMessageTime
             hostId={documentContext.hostId}
             onMeasurementRequest={documentContext.onMeasurementRequest}
             onOpenResource={documentContext.onOpenResource}
-            source={block.message}
+            source={message}
             theme={documentContext.theme}
           />
         </div>
@@ -172,6 +190,8 @@ function UserMessageImageViewer({
   onPrevious,
   returnFocus,
   source,
+  previous,
+  next,
 }: {
   readonly documentId: string;
   readonly imageCount: number;
@@ -182,34 +202,25 @@ function UserMessageImageViewer({
   readonly onPrevious: () => void;
   readonly returnFocus: () => HTMLElement | null;
   readonly source: string;
+  readonly previous?: { source: string; local: boolean };
+  readonly next?: { source: string; local: boolean };
 }) {
   const intl = useIntl();
   const documentContext = useContext(ConversationDocumentContext);
   const media = useConversationMediaSource(source, documentId, local ? documentContext.resolveImageSource : undefined);
-  const [failedSource, setFailedSource] = useState<string | null>(null);
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "ArrowLeft" && imageCount > 1) { event.preventDefault(); onPrevious(); }
-      if (event.key === "ArrowRight" && imageCount > 1) { event.preventDefault(); onNext(); }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [imageCount, onNext, onPrevious]);
+  const imageEdit = usePreviewImageEdit(media.source, "image.png", onClose);
   const label = intl.formatMessage({ id: "chat.image.position", defaultMessage: "Attached image {index} of {count}" }, { index: index + 1, count: imageCount });
-  return (
-    <ModalSurface className="thread-user-image-lightbox" presentation="fullscreen" label={label} layer="nested" onDismiss={onClose} returnFocus={returnFocus} size="workspace">
-      {media.source !== null && failedSource !== media.source
-        ? <ZoomableImage onBackgroundClick={onClose} key={documentId} alt={label} onError={() => setFailedSource(media.source)} src={media.source} />
-        : <div className="thread-user-image-lightbox__unavailable" role="status">{media.status === "loading" ? <FormattedMessage id="chat.image.loading" defaultMessage="Loading image…" /> : <FormattedMessage id="chat.image.unavailable" defaultMessage="Image unavailable" />}</div>}
-      {imageCount > 1 ? (
-        <div className="thread-user-image-lightbox__navigation">
-          <button aria-label={intl.formatMessage({ id: "chat.image.previous", defaultMessage: "Previous image" })} onClick={onPrevious} type="button"><ChevronLeft aria-hidden="true" size={20} /></button>
-          <span aria-hidden="true">{index + 1} / {imageCount}</span>
-          <button aria-label={intl.formatMessage({ id: "chat.image.next", defaultMessage: "Next image" })} onClick={onNext} type="button"><ChevronRight aria-hidden="true" size={20} /></button>
-        </div>
-      ) : null}
-    </ModalSurface>
-  );
+  if (imageEdit.editor) return imageEdit.editor;
+  return <ImagePreview className="thread-user-image-lightbox" image={{ id: documentId, source: media.source, alt: label, status: media.status === "loading" ? "loading" : "unavailable" }}
+    onClose={onClose} returnFocus={returnFocus} actions={imageEdit.action} position={{ index, count: imageCount }}
+    previous={imageCount > 1 ? { onSelect: onPrevious, content: previous ? <UserMessageImageNeighbor {...previous} documentId={`${documentId}:previous`} /> : undefined } : undefined}
+    next={imageCount > 1 ? { onSelect: onNext, content: next ? <UserMessageImageNeighbor {...next} documentId={`${documentId}:next`} /> : undefined } : undefined} />;
+}
+
+function UserMessageImageNeighbor({ source, local, documentId }: { source: string; local: boolean; documentId: string }) {
+  const context = useContext(ConversationDocumentContext);
+  const media = useConversationMediaSource(source, documentId, local ? context.resolveImageSource : undefined);
+  return media.source ? <img alt="" draggable={false} src={media.source} /> : null;
 }
 
 function UserMessageAttachmentRows({ block }: { readonly block: UserMessageTimelineBlock }) {
@@ -262,6 +273,8 @@ function UserMessageAttachmentRows({ block }: { readonly block: UserMessageTimel
           onPrevious={previousImage}
           returnFocus={() => imageTriggerRef.current}
           source={images[expandedImageIndex].source}
+          previous={images.length > 1 ? { source: images[(expandedImageIndex + images.length - 1) % images.length]!.source, local: images[(expandedImageIndex + images.length - 1) % images.length]!.type === "local-image" } : undefined}
+          next={images.length > 1 ? { source: images[(expandedImageIndex + 1) % images.length]!.source, local: images[(expandedImageIndex + 1) % images.length]!.type === "local-image" } : undefined}
         />
       )}
       {audio.length === 0 && files.length === 0 ? null : (
@@ -270,7 +283,7 @@ function UserMessageAttachmentRows({ block }: { readonly block: UserMessageTimel
             const source = part.type === "local-audio" ? documentContext.resolveImageSource?.(part.source) ?? null : part.source;
             return source === null
               ? <button className="thread-user-message__chip" key={`${part.type}:${part.source}:${index}`} onClick={() => openPath(part.source)} type="button"><FormattedMessage id="chat.attachment.audio" defaultMessage="Audio" /></button>
-              : <audio controls key={`${part.type}:${part.source}:${index}`} preload="metadata" src={source} />;
+              : <MediaPlayer kind="audio" key={`${part.type}:${part.source}:${index}`} source={source} />;
           })}
           {files.map((attachment) => (
             <button
@@ -321,8 +334,21 @@ function UserMessageStatusRow({ block, hookStatsAccessory }: {
   readonly hookStatsAccessory?: ReactNode;
 }) {
   const chips: ReactNode[] = [];
+  const recovery = useContext(ConversationDocumentContext).submissionRecovery;
+  const submission = block.clientId === null ? undefined : recovery?.byClientId.get(block.clientId);
   const input = block.steerEvidence;
-  if (input) {
+  if (submission && recovery) {
+    chips.push(<SubmissionRecoveryNotice key={submission.commandId} submission={submission}
+      onAbandon={recovery.onAbandon} onRetry={recovery.onRetry} />);
+  } else if (block.inputDelivery && block.inputDelivery.context === 'unobserved') {
+    chips.push(<span data-status-kind="execution-ended" key="input-ended"><Check aria-hidden="true" size={11} />
+      {block.inputDelivery.execution === 'running' || block.inputDelivery.execution === 'unbound'
+        ? <FormattedMessage id="chat.message.received" defaultMessage="Received" />
+        : block.inputDelivery.execution === 'interrupted'
+        ? <FormattedMessage id="chat.message.turnStopped" defaultMessage="Received; turn stopped" />
+        : <FormattedMessage id="chat.message.turnEnded" defaultMessage="Received; turn ended" />}
+    </span>);
+  } else if (input) {
     const confirmed = input.evidence.value === 'context-confirmed';
     chips.push(<span data-status-kind={confirmed ? 'context-confirmed' : input.admission.value} key="input-evidence">
       {confirmed ? <Check aria-hidden="true" size={11} /> : <Circle aria-hidden="true" size={8} />}
@@ -332,9 +358,9 @@ function UserMessageStatusRow({ block, hookStatsAccessory }: {
         : <FormattedMessage id="chat.steerEvidence.unconfirmed" defaultMessage="Delivery unconfirmed" />}
     </span>);
   }
-  if (!input && block.deliveryStatus === "not-sent") chips.push(<span data-status-kind="hook-blocked" key="hook-blocked"><AlertCircle aria-hidden="true" size={11} /><FormattedMessage id="chat.message.hookBlocked" defaultMessage="Hook blocked this message" /></span>);
-  else if (!input && block.deliveryStatus === "failed") chips.push(<span data-status-kind="failed" key="failed"><AlertCircle aria-hidden="true" size={11} /><FormattedMessage id="chat.message.notSent" defaultMessage="Not sent" /></span>);
-  else if (!input && block.deliveryStatus === "unknown") chips.push(<span data-status-kind="unknown" key="unknown"><AlertCircle aria-hidden="true" size={11} /><FormattedMessage id="chat.message.unconfirmed" defaultMessage="Delivery unconfirmed" /></span>);
+  if (!submission && !input && !block.inputDelivery && block.deliveryStatus === "not-sent") chips.push(<span data-status-kind="hook-blocked" key="hook-blocked"><AlertCircle aria-hidden="true" size={11} /><FormattedMessage id="chat.message.hookBlocked" defaultMessage="Hook blocked this message" /></span>);
+  else if (!submission && !input && !block.inputDelivery && block.deliveryStatus === "failed") chips.push(<span data-status-kind="failed" key="failed"><AlertCircle aria-hidden="true" size={11} /><FormattedMessage id="chat.message.notSent" defaultMessage="Not sent" /></span>);
+  else if (!submission && !input && !block.inputDelivery && block.deliveryStatus === "unknown") chips.push(<span data-status-kind="unknown" key="unknown"><Circle aria-hidden="true" size={8} /><FormattedMessage id="chat.message.unconfirmed" defaultMessage="Delivery unconfirmed" /></span>);
   else if (block.goal) chips.push(<span data-status-kind="goal" key="goal"><Circle aria-hidden="true" size={8} /><FormattedMessage id="chat.message.goal" defaultMessage="Sent as goal" /></span>);
   else if (block.hookFeedback) chips.push(<span data-status-kind="hook-feedback" key="hook-feedback"><Wrench aria-hidden="true" size={11} /><FormattedMessage id="chat.message.hookFeedback" defaultMessage="Hook feedback" /></span>);
   if (block.reviewMode) chips.push(<span key="review"><FormattedMessage id="chat.message.reviewMode" defaultMessage="Review mode" /></span>);
@@ -352,6 +378,14 @@ export function UserMessageBlock({ block, hookStatsAccessory }: {
   const intl = useIntl();
   const avatars = useContext(IdentityAvatarContext);
   const layout = deriveUserMessageWebLayout(block);
+  const allowEntryMotion = useContext(ConversationEntryMotionContext);
+  const bubbleRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    // Only live insertions move; history, reconnect and remounts stay still.
+    if (!allowEntryMotion || !bubbleRef.current || !sendFlight) return;
+    sendFlight.playSendFlight(bubbleRef.current, sendFlight.takeSendOrigin(block.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef<number | null>(null);
   useEffect(() => () => {
@@ -366,6 +400,7 @@ export function UserMessageBlock({ block, hookStatsAccessory }: {
   };
   return (
     <div
+      ref={bubbleRef}
       className="thread-user-message"
       data-message-kind={block.messageKind}
       tabIndex={layout.hasText ? -1 : undefined}

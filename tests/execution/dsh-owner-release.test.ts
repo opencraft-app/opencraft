@@ -8,7 +8,7 @@ test('native reconciliation cannot enter between release observation and writer 
  const root=await mkdtemp('/tmp/dsh-release-');t.after(()=>rm(root,{recursive:true,force:true}));
  const native=createDshNativeOwner({settings:{describe:()=>[]},jobs:{list:()=>[]},agents:{list:()=>[],get:()=>null},sessions:{flush:async()=>{}},sessionPersistence:{list:async()=>[]}},root);
  native.resume();await mkdir(root+'/owner-handoff');let attempted=false,closed=false;
- const owner=new DshOwnerHandoff(root,{},()=>({coverage:'complete',activeCount:0}));await owner.load();
+ const owner=new DshOwnerHandoff(root,{},()=>({coverage:'complete',activeCount:0}));await owner.load();t.after(()=>owner.receipts.close());
  owner.attach({engineProcessId:process.pid,nativeOwner:async(action:string)=>{
    if(action==='fence')native.fence();if(action==='seal-release')native.sealRelease();if(action==='abort-release')native.abortRelease();return native.inspect();
  },handoffObservation:async()=>{
@@ -26,11 +26,11 @@ test('sealed unknown responsibility survives a successor; exact mismatch and new
  let list=[one],active=1,closed=false;
  const host={engineProcessId:process.pid,nativeOwner:async()=>({pid:process.pid,owner:'native',configuration:'settings',coverage:'complete',activeCount:active,records:[{transferableUnknown:list}]}),
   handoffObservation:async()=>({coverage:'complete',activeCount:0}),coldReadResources:async()=>({}),close:async()=>{closed=true;},resumeBackground:()=>{}};
- const make=async()=>{const owner=new DshOwnerHandoff(root,{},()=>({coverage:'complete',activeCount:0}));await owner.load();owner.attach(host);return owner;};
+ const make=async()=>{const owner=new DshOwnerHandoff(root,{},()=>({coverage:'complete',activeCount:0}));await owner.load();t.after(()=>owner.receipts.close());owner.attach(host);return owner;};
  const exp=(owner:any)=>({expectedOwner:owner.authority.owner,expectedEpoch:owner.authority.snapshot().epoch,operationId:'carry',fence:'carry'});
  let owner=await make();await owner.control('fence',exp(owner));
  const released=await owner.control('release',exp(owner));assert.equal(closed,true);assert.deepEqual(released.carriedUnknown,[one]);
- owner=await make();let ready=await owner.control('cold-ready',exp(owner));assert.equal(ready.occupancy.activeCount,0);assert.deepEqual(ready.occupancy.carriedUnknown,[one]);
+ await owner.receipts.close();owner=await make();let ready=await owner.control('cold-ready',exp(owner));assert.equal(ready.occupancy.activeCount,0);assert.deepEqual(ready.occupancy.carriedUnknown,[one]);
  for(const changed of [[{...one,storedDigest:'changed'}],[],[one,{...one,resultSeq:9}]]){
    list=changed;active=list.length;
    await assert.rejects(owner.control('cold-ready',exp(owner)));
@@ -48,7 +48,7 @@ test('sealed unknown responsibility survives a successor; exact mismatch and new
  list=[{...one,storedDigest:'changed-after-fence'}];assert.equal((await owner.inspect()).activeCount,1);
  list=[one];assert.equal((await owner.inspect()).activeCount,0);
  const again=await owner.control('release',exp(owner));assert.deepEqual(again.carriedUnknown,[one]);
- owner=await make();ready=await owner.control('cold-ready',exp(owner));
+ await owner.receipts.close();owner=await make();ready=await owner.control('cold-ready',exp(owner));
  await owner.control('resume',{...exp(owner),identity:ready.handoff.ready.identity});
  assert.deepEqual((await owner.inspect()).carriedUnknown,[one]);
 });

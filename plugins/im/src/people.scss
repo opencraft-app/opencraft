@@ -1,0 +1,346 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+@use "@opencraft/design-system/interaction-mixins.web" as interaction;
+
+.people-page {
+  display: flex;
+  flex-direction: column;
+  gap: calc(6 * var(--spacing));
+  > * { flex-shrink: 0; }
+  inline-size: 100%;
+  max-inline-size: var(--thread-content-max-width);
+  margin-inline: auto;
+  padding: calc(5 * var(--spacing));
+  box-sizing: border-box;
+  overflow: auto;
+  block-size: 100%;
+}
+.people-entry-label { flex: 1; text-align: start; }
+.people-human-avatar {
+  display: grid;
+  place-items: center;
+  inline-size: 32px;
+  block-size: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--surface-message-user);
+  color: var(--color-text);
+}
+.people-human-avatar > img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+.people-assistant-title, .people-actions { display: flex; align-items: center; gap: calc(2 * var(--spacing)); flex-wrap: wrap; }
+.people-members { margin-block: calc(3 * var(--spacing)); }
+.people-member {
+  display: flex;
+  align-items: center;
+  gap: calc(3 * var(--spacing));
+  padding-block: calc(3 * var(--spacing));
+  border-block-end: 1px solid var(--color-border-subtle);
+}
+.people-member-copy { flex: 1; min-inline-size: 0; display: grid; gap: var(--spacing); overflow-wrap: anywhere; }
+.people-member-copy small { color: var(--color-text-secondary); font: inherit; }
+
+// The route owns scrolling. The collection keeps one bounded reading axis.
+.people-toolbar { display: grid; gap: calc(3 * var(--spacing)); }
+.people-assistant {
+  padding: calc(4 * var(--spacing));
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-background-panel);
+}
+.people-assistant-summary {
+  display: flex; align-items: center; gap: calc(3 * var(--spacing));
+  > .ui-companion-avatar, > svg { inline-size: 40px; block-size: 40px; flex-shrink: 0; }
+  .people-member-copy small { @include typography.role(metadata, secondary); }
+  .settings-control-button { flex-shrink: 0; }
+}
+.people-assistant-details { margin-block-start: calc(4 * var(--spacing)); }
+.people-assistant-details > .people-actions { margin-block-start: calc(3 * var(--spacing)); }
+.people-page .people-group.ui-object-row-button {
+  inline-size: 100%; min-inline-size: 0; block-size: auto;
+  text-align: start;
+  padding-inline: var(--padding-navigation-row-inline);
+}
+.people-group-entry { border-block-end: 1px solid var(--color-border-subtle); }
+.people-group-content {
+  display: flex; align-items: center; inline-size: 100%; min-inline-size: 0;
+  gap: calc(3 * var(--spacing)); padding-block: calc(4 * var(--spacing));
+}
+.people-group .people-member-copy { gap: calc(2 * var(--spacing)); }
+.people-group .people-member-copy > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.people-group-meta { display: flex; flex-direction: column; align-items: end; gap: calc(2 * var(--spacing)); color: var(--color-text-secondary); @include typography.role(metadata, secondary); flex-shrink: 0; }
+.people-unread { background: var(--color-badge-red-background); color: var(--color-badge-red-foreground); border-radius: var(--radius-full); min-inline-size: calc(5 * var(--spacing)); padding-inline: var(--spacing); text-align: center; }
+.people-group-avatar {
+  display: grid; grid-template-columns: repeat(2,1fr); gap: calc(var(--spacing) / 2);
+  inline-size: calc(11 * var(--spacing)); block-size: calc(11 * var(--spacing)); padding: calc(var(--spacing) / 2); border-radius: var(--radius-md);
+  flex-shrink: 0; overflow: hidden; background: var(--surface-message-user);
+  .people-human-avatar, .ui-companion-avatar { inline-size: 100%; block-size: 100%; min-block-size: 0; border-radius: 0; }
+  > svg:only-child { grid-column: 1/-1; grid-row: 1/-1; align-self: center; justify-self: center; }
+}
+.people-kind { color: var(--color-text-secondary); @include typography.role(metadata, secondary); }
+.people-page .people-members { margin-block: 0; }
+
+@media (max-width: 520px) {
+  .people-assistant-summary { flex-wrap: wrap; }
+  .people-assistant-summary .people-member-copy { flex-basis: calc(100% - 60px); }
+}
+
+.agents-intro { margin: 0; color: var(--color-text-secondary); @include typography.role(body, secondary); }
+
+// Loading keeps the final geometry. Placeholders stay transparent for a grace
+// period, so warm or fast reads swap in place instead of flashing text.
+@keyframes people-skeleton-reveal { from { opacity: 0; } to { opacity: 1; } }
+.people-skeleton {
+  display: inline-block;
+  border-radius: var(--radius-full);
+  background: var(--color-border-subtle);
+  animation: people-skeleton-reveal var(--transition-duration-basic, 150ms) ease-out 400ms backwards;
+}
+.people-skeleton-line { block-size: 0.75em; max-inline-size: 100%; vertical-align: middle; }
+.people-skeleton-avatar { inline-size: 32px; block-size: 32px; flex-shrink: 0; }
+.people-assistant-summary > .people-skeleton-avatar { inline-size: 40px; block-size: 40px; }
+.people-skeleton-row { display: flex; align-items: center; gap: calc(3 * var(--spacing)); }
+.people-skeleton-copy { flex: 1; min-inline-size: 0; display: grid; gap: calc(2 * var(--spacing)); }
+.people-skeleton-rows--group .people-skeleton-row {
+  padding: calc(4 * var(--spacing)) calc(2 * var(--spacing));
+  border-block-end: 1px solid var(--color-border-subtle);
+  .people-skeleton-avatar { inline-size: calc(11 * var(--spacing)); block-size: calc(11 * var(--spacing)); border-radius: var(--radius-md); }
+}
+.people-skeleton-rows--member .people-skeleton-row { padding-block: calc(3 * var(--spacing)); border-block-end: 1px solid var(--color-border-subtle); }
+.people-skeleton-rows--card .people-skeleton-row {
+  padding: calc(4 * var(--spacing));
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  .people-skeleton-avatar { inline-size: 40px; block-size: 40px; }
+}
+.people-status:empty { display: none; }
+.people-status { color: var(--color-text-secondary); @include typography.role(body, secondary); padding-block: calc(3 * var(--spacing)); }
+@media (prefers-reduced-motion: reduce) { .people-skeleton { animation-duration: 1ms; } }
+
+.people-page--inbox { gap: calc(3 * var(--spacing)); max-inline-size: 960px; }
+.people-toolbar { gap: calc(2 * var(--spacing)); }
+.people-stream { min-inline-size: 0; }
+.people-stream .people-group > .ui-companion-avatar { inline-size: calc(11 * var(--spacing)); block-size: calc(11 * var(--spacing)); flex-shrink: 0; }
+.people-stream .people-member-copy strong { font-weight: var(--font-weight-medium); }
+.people-stream .people-group-content > .ui-companion-avatar { inline-size: calc(11 * var(--spacing)); block-size: calc(11 * var(--spacing)); flex-shrink: 0; }
+
+// A hireable template is a catalogue entry, not a persona: it gets a neutral glyph,
+// and the hired assistant receives its own companion identity.
+.agents-template-glyph {
+  display: grid; place-items: center; flex-shrink: 0;
+  inline-size: 40px; block-size: 40px; border-radius: var(--radius-lg);
+  background: var(--surface-message-user); color: var(--color-text-secondary);
+  > svg { inline-size: 22px; block-size: 22px; }
+}
+.people-assistant-details > .people-actions,
+.people-assistant-details > .people-confirm { margin-block-start: calc(3 * var(--spacing)); }
+.people-confirm {
+  display: grid; gap: calc(3 * var(--spacing));
+  padding: calc(3 * var(--spacing));
+  border-radius: var(--radius-md);
+  background: var(--surface-message-user);
+  > p { margin: 0; @include typography.role(body, secondary); color: var(--color-text-secondary); }
+  > .people-actions { justify-content: end; }
+}
+.people-status .settings-control-button { margin-inline-start: var(--spacing); }
+
+// Memory is a content surface, not a settings form. The surrounding route owns scroll.
+.people-page--memory > .settings-control-page-header,
+.people-memory-section > .settings-control-section__heading {
+  position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.people-assistant { container: assistant-card / inline-size; }
+.people-assistant--memory {
+  padding: 0;
+  > .people-assistant-summary {
+    display: grid; grid-template-columns: 32px minmax(0, 1fr) auto auto auto;
+    padding: 12px 16px; gap: 8px;
+    > .ui-companion-avatar { inline-size: 32px; block-size: 32px; }
+    .people-member-copy { @include typography.role(body); }
+    .people-member-copy small { display: none; }
+  }
+}
+.assistant-memory {
+  min-inline-size: 0; padding: 20px; border-block-start: 1px solid var(--color-border-subtle);
+  display: flex; flex-direction: column;
+  @include typography.role(body);
+  h3, h4, p { margin: 0; overflow-wrap: anywhere; }
+  h3 { @include typography.role(settings-title); }
+  h4 { @include typography.role(body); font-weight: var(--font-weight-semibold); }
+  button, input, select, textarea { min-inline-size: 0; }
+  button:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--color-text-accent); outline-offset: 3px; }
+  .assistant-memory-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-block-end: 12px; }
+  .assistant-memory-heading { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .assistant-memory-private { display: inline-flex; align-items: center; gap: 4px; @include typography.role(metadata, secondary); }
+  .assistant-memory-private svg { inline-size: 13px; block-size: 13px; align-self: center; }
+  .assistant-memory-tabs {
+    display: flex; gap: 24px; border-block-end: 1px solid var(--color-border-subtle); margin-block-end: 16px;
+    > button {
+      appearance: none; border: 0; border-block-end: 2px solid transparent; border-radius: 0;
+      color: var(--color-text-secondary); background: transparent; font: inherit; cursor: pointer;
+      padding: 10px 0; min-block-size: 44px; margin-block-end: -1px;
+      &[aria-pressed="true"] { color: var(--color-text); border-block-end-color: currentColor; font-weight: var(--font-weight-semibold); }
+      &:disabled { opacity: .5; cursor: default; }
+    }
+  }
+  .assistant-memory-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(110px, auto); gap: 10px; margin-block-end: 14px; }
+  .assistant-memory-search {
+    display: flex; align-items: center; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); padding-inline-end: 3px;
+    background: var(--color-background-panel);
+    &:focus-within { border-color: var(--color-text-accent); }
+    > input { inline-size: 100%; flex: 1; box-shadow: none; border: none; background: transparent; outline: none; }
+    > button { flex-shrink: 0; }
+  }
+  select, textarea { font: inherit; color: inherit; background: var(--color-background-panel); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); padding: 10px; }
+  select { max-inline-size: 160px; min-block-size: 44px; }
+  .assistant-memory-count { display: flex; justify-content: space-between; gap: 12px; margin-block: 0 8px; @include typography.role(metadata, secondary); }
+  .assistant-memory-about { order: 2; margin-block-start: 20px; @include typography.role(metadata, secondary); }
+  .assistant-memory-about summary { cursor: pointer; padding-block: 10px; inline-size: fit-content; }
+  .assistant-memory-about p { margin-block: 6px; line-height: var(--typography-chat-line-height); }
+  .assistant-memory-layout { display: grid; grid-template-columns: minmax(0, 1fr); min-inline-size: 0; }
+  &[data-detail] .assistant-memory-layout { grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 24px; }
+  .assistant-memory-empty { display: grid; justify-items: center; gap: 12px; padding: 44px 12px; text-align: center; color: var(--color-text-secondary); }
+  .assistant-memory-empty svg { inline-size: 24px; block-size: 24px; }
+  .assistant-memory-list { min-inline-size: 0; display: flex; flex-direction: column; }
+  &[data-detail] .assistant-memory-list { max-block-size: min(68dvh, 700px); overflow-y: auto; padding-inline-end: 4px; }
+  .assistant-memory-item {
+    position: relative; text-align: start; font: inherit; color: inherit; cursor: pointer;
+    background: transparent; border: 0; border-block-end: 1px solid var(--color-border-subtle); border-radius: 0;
+    padding: 18px 28px 18px 12px; min-inline-size: 0; overflow-wrap: anywhere; display: grid; gap: 8px;
+    &:last-of-type { border-block-end: 0; }
+    &[aria-pressed="true"] { background: var(--color-bg-hover); border-radius: var(--radius-md); }
+    &:disabled { cursor: default; opacity: .65; }
+    &:focus-visible { outline-offset: -2px; }
+  }
+  .assistant-memory-row-kind { display: flex; align-items: center; gap: 6px; @include typography.role(metadata, secondary); }
+  .assistant-memory-row-kind svg { inline-size: 16px; block-size: 16px; }
+  .assistant-memory-row-value { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; line-height: var(--typography-chat-line-height); }
+  .assistant-memory-row-arrow { position: absolute; inset-inline-end: 6px; inset-block-start: 50%; inline-size: 16px; block-size: 16px; color: var(--color-text-secondary); transform: translateY(-50%); }
+  small { display: block; overflow-wrap: anywhere; @include typography.role(metadata, secondary); }
+  .assistant-memory-item small { opacity: .85; }
+  .assistant-memory-detail { min-inline-size: 0; border-inline-start: 1px solid var(--color-border-subtle); padding-inline-start: 24px; outline: none; }
+  .assistant-memory-detail > * + * { margin-block-start: 16px; }
+  .assistant-memory-detail-nav { display: flex; justify-content: start; margin-block-end: 16px; }
+  .assistant-memory-detail-value { line-height: var(--typography-chat-line-height); white-space: pre-wrap; }
+  .assistant-memory-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-block: 16px; }
+  .assistant-memory-actions svg { inline-size: 16px; block-size: 16px; }
+  .assistant-memory-edit { padding-block-start: 8px; }
+  .assistant-memory-edit label { display: grid; gap: 8px; }
+  textarea { display: block; inline-size: 100%; box-sizing: border-box; min-block-size: 160px; resize: vertical; @include typography.role(composer); }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; max-block-size: 50dvh; overflow: auto; padding: 16px; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); @include typography.role(code); }
+  blockquote { margin-inline: 0; padding-inline-start: 12px; border-inline-start: 2px solid var(--color-border-subtle); }
+  .assistant-memory-hint, [role="status"], [role="alert"] { margin-block: 8px; @include typography.role(metadata, secondary); line-height: var(--typography-chat-line-height); }
+  [role="alert"] { color: var(--color-status-danger); }
+  .assistant-memory-latest { padding: 16px; border: 1px solid var(--color-border-default); border-radius: var(--radius-md); margin-block: 12px; }
+}
+@include interaction.hover-capable { .assistant-memory-item:not(:disabled):hover { background: var(--color-bg-hover); border-radius: var(--radius-md); } }
+// Container size controls allocation, not touch capability. Shared controls own hit targets.
+@container assistant-card (max-width: 660px) {
+  .people-assistant--memory > .people-assistant-summary { padding: 12px; gap: 4px; grid-template-columns: 28px minmax(0, 1fr) auto auto auto; }
+  .people-assistant--memory > .people-assistant-summary > .ui-companion-avatar { inline-size: 28px; block-size: 28px; }
+  .assistant-memory {
+    padding: 16px 12px;
+    &[data-detail] .assistant-memory-layout { grid-template-columns: minmax(0, 1fr); }
+    &[data-detail] .assistant-memory-list, &[data-detail] .assistant-memory-toolbar, &[data-detail] .assistant-memory-count { display: none; }
+    .assistant-memory-detail { padding-inline-start: 0; border-inline-start: 0; }
+    .assistant-memory-toolbar { gap: 8px; grid-template-columns: minmax(0, 1fr) 112px; }
+    .assistant-memory-item { padding-inline-start: 4px; }
+    input, textarea, select { @include typography.role(mobile-input); }
+    select { inline-size: 100%; padding-inline: 8px; }
+  }
+}
+
+// Inbox list, message-app rhythm: compact two-line rows, an adaptive member
+// mosaic with the unread count on its corner, time on the title line and a
+// hairline that starts at the text column.
+.people-page--inbox .people-stream {
+  --inbox-avatar: 48px;
+  --inbox-gap: calc(3 * var(--spacing));
+  .people-group-entry { position: relative; border-block-end: 0; }
+  .people-group-entry::after {
+    content: ""; position: absolute; inset-block-end: 0; inset-inline-end: 0;
+    inset-inline-start: calc(var(--padding-navigation-row-inline) + var(--inbox-avatar) + var(--inbox-gap));
+    block-size: 1px; background: var(--color-border-subtle); pointer-events: none;
+  }
+  .people-group-entry:last-of-type::after { display: none; }
+  .people-group.ui-object-row-button { border-radius: var(--radius-md); }
+  .people-group-content { gap: var(--inbox-gap); padding-block: calc(3 * var(--spacing)); }
+  .people-member-copy { gap: 3px; }
+  .people-member-copy strong {
+    @include typography.role(control-large, primary);
+  }
+  .people-member-copy small { @include typography.role(body, tertiary); }
+  .people-mention { color: var(--color-badge-red-foreground, #e5484d); }
+  .people-group-meta {
+    align-self: flex-start; padding-block-start: 2px;
+    @include typography.role(metadata, tertiary);
+  }
+  .people-group-badge-anchor { position: relative; flex-shrink: 0; display: grid; }
+  .people-group-badge-anchor > .ui-companion-avatar { inline-size: var(--inbox-avatar); block-size: var(--inbox-avatar); }
+  .people-unread {
+    position: absolute; inset-block-start: -6px; inset-inline-end: -6px; z-index: 1;
+    min-inline-size: var(--size-count-badge); block-size: var(--size-count-badge); padding-inline: var(--padding-count-badge-inline); box-sizing: border-box;
+    display: grid; place-items: center; border-radius: var(--radius-full);
+    background: var(--color-badge-red-solid, #f5484d); color: #fff;
+    @include typography.role(count-badge, null); font-variant-numeric: tabular-nums;
+    box-shadow: 0 0 0 2px var(--color-background-surface);
+  }
+  // Member mosaic: fill the tile for 1, halves for 2, a centred top for 3, 2x2 for 4.
+  .people-group-avatar {
+    inline-size: var(--inbox-avatar); block-size: var(--inbox-avatar);
+    padding: 2px; gap: 2px; border-radius: 10px;
+    background: color-mix(in srgb, var(--color-text) 6%, var(--color-background-surface));
+    grid-template-columns: repeat(2, 1fr); grid-auto-rows: 1fr; align-content: center;
+    .people-human-avatar, .ui-companion-avatar { aspect-ratio: 1; border-radius: 3px; }
+    .people-human-avatar > img { border-radius: 3px; }
+  }
+  .people-group-avatar[data-count="1"] {
+    padding: 0; grid-template-columns: 1fr;
+    .people-human-avatar, .ui-companion-avatar, .people-human-avatar > img { border-radius: 10px; }
+  }
+  .people-group-avatar[data-count="2"] { grid-auto-rows: auto; }
+  .people-group-avatar[data-count="3"] > :first-child { grid-column: 1 / -1; justify-self: center; inline-size: 50%; }
+}
+@include interaction.hover-capable {
+  .people-page--inbox .people-stream .people-group.ui-object-row-button:hover { background: var(--color-background-navigation-hover); }
+}
+.people-page--inbox .people-stream .people-group.ui-object-row-button:active:not([data-touch-press="false"]) { background: var(--color-background-navigation-pressed); }
+// Default face when no external avatar resolves; it fills its cell like a photo.
+.people-default-face { display: block; inline-size: 100%; block-size: 100%; border-radius: inherit; }
+.people-human-avatar:has(> .people-default-face) { overflow: hidden; }
+// 5-9 members: three per row on a six-track grid, the short top row centred.
+.people-page--inbox .people-stream .people-group-avatar:is([data-count="5"],[data-count="6"],[data-count="7"],[data-count="8"],[data-count="9"]) {
+  grid-template-columns: repeat(6, 1fr); gap: 1.5px; padding: 2px;
+  > * { grid-column: span 2; border-radius: 2px; }
+  .people-human-avatar > img, .people-default-face { border-radius: 2px; }
+}
+.people-page--inbox .people-stream .people-group-avatar[data-count="5"] > :first-child,
+.people-page--inbox .people-stream .people-group-avatar[data-count="8"] > :first-child { grid-column: 2 / span 2; }
+.people-page--inbox .people-stream .people-group-avatar[data-count="7"] > :first-child { grid-column: 3 / span 2; }
+.people-page--inbox .people-stream .people-group-avatar[data-count="7"] > :nth-child(2) { grid-column: 1 / span 2; }
+.people-toolbar-search { display: flex; align-items: center; gap: calc(2 * var(--spacing)); > :first-child { flex: 1; min-inline-size: 0; } }
+
+// The Inbox uses the host's actual collection slot; it does not allocate columns.
+.people-page--inbox {
+  display: grid; grid-template-rows: auto auto minmax(0, 1fr); overflow: hidden;
+  > .people-stream { min-block-size: 0; overflow: auto; overscroll-behavior: contain; }
+  max-inline-size: none; margin: 0; padding: calc(3 * var(--spacing)); gap: calc(4 * var(--spacing));
+  .people-toolbar-search { align-items: center; }
+  // ObjectRowButton's quiet hover has :not(:disabled):not(:active) specificity.
+  // Keep route selection above that shared reset, even when lazy CSS loads later.
+  .people-stream .people-group.ui-object-row-button[aria-current="page"] {
+    & { background: var(--color-background-navigation-current); }
+    @include interaction.hover-capable { &:hover:not(:disabled):not(:active) { background: var(--color-background-navigation-current); } }
+    &:active:not(:disabled):not([data-touch-press="false"]) { background: var(--color-background-navigation-pressed); }
+  }
+}
+.im-inbox-empty {
+  display: grid; place-content: center; min-inline-size: 0; block-size: 100%; padding: calc(6 * var(--spacing));
+  box-sizing: border-box; text-align: center; color: var(--color-text-secondary);
+  p { margin: 0; @include typography.role(body, secondary); }
+}
+
+.people-page__description { margin: 0; color: var(--color-text-secondary); }

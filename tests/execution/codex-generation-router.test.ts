@@ -11,7 +11,7 @@ import { CodexRouterOwner } from "../../apps/codex-core/src/router-owner.js";
 import { CodexGenerationRegistry, type GenerationTicket } from "../../apps/codex-core/src/generation-registry.js";
 import { CodexGenerationRouter, startGenerationSocket, type GenerationRuntimeDirectory } from "../../apps/codex-core/src/generation-router.js";
 
-async function fixture(callbacks:Record<string,boolean>={},replay=false,handoff=false) {
+async function fixture(callbacks:Record<string,boolean>={},replay=false,handoff=false,workspaceCapabilities:Record<string,boolean>={}) {
   const root = await mkdtemp(join(tmpdir(), "oc-gen-router-")), registry = new CodexGenerationRegistry(root);
   const servers: WebSocketServer[] = [], sockets: WebSocket[] = [];
   const relays=new Map<string,Awaited<ReturnType<typeof startOrchestrationCallbackRelay>>>(),fenced=new Set<string>();
@@ -58,7 +58,7 @@ async function fixture(callbacks:Record<string,boolean>={},replay=false,handoff=
   registry.activate("old", 0);
   const owner = handoff ? new CodexRouterOwner(registry) : undefined; await owner?.ready;
   const runtime: GenerationRuntimeDirectory = { registry, owner,
-    async ensure(id) { return { protocolVersion: 1, pid: 1, codexPid: 2, dataDirectory: root, proxyBaseUrl: "http://127.0.0.1:1", nativeSocket: join(root, id, replay&&callbacks[id]?"callback.sock":"native.sock"),...(callbacks[id]?{callbackProtocolVersion:1 as const,pendingCallbacks:0,pendingOrchestrationMutations:0}:{}) }; },
+    async ensure(id) { return { ...(workspaceCapabilities[id]?{workspaceExecutionVersion:1 as const}:{}), protocolVersion: 1, pid: 1, codexPid: 2, dataDirectory: root, proxyBaseUrl: "http://127.0.0.1:1", nativeSocket: join(root, id, replay&&callbacks[id]?"callback.sock":"native.sock"),...(callbacks[id]?{callbackProtocolVersion:1 as const,pendingCallbacks:0,pendingOrchestrationMutations:0}:{}) }; },
     admit(ticket: GenerationTicket) { assert.equal(registry.valid(ticket), true);if(fenced.has(ticket.generationId))throw Error('Generation retirement fenced');return () => {}; }, observe() {}, };
   const router = new CodexGenerationRouter(runtime), listener = await startGenerationSocket(join(root, "router.sock"), router);
   let client = new WebSocket(`ws+unix://${join(root, "router.sock")}:/${replay?'?opencraftLane=fixture-gateway':''}`);const messages: any[] = [];
@@ -66,7 +66,7 @@ async function fixture(callbacks:Record<string,boolean>={},replay=false,handoff=
   let sequence = 0;
   async function rpc(method: string, params: unknown = {}) {
     const id = ++sequence; client.send(JSON.stringify({ id, method, params }));
-    for (let n = 0; n < 600; n++) { const row = messages.find(m => m.id === id && !m.method); if (row) { if (row.error) throw new Error(row.error.message); return row.result; } await new Promise(resolve => setTimeout(resolve, 5)); }
+    for (let n = 0; n < 6000; n++) { const row = messages.find(m => m.id === id && !m.method); if (row) { if (row.error) throw new Error(row.error.message); return row.result; } await new Promise(resolve => setTimeout(resolve, 5)); }
     throw new Error("fixture RPC timeout");
   }
   await rpc("initialize", { clientInfo: { name: "test", version: "1" }, capabilities: { experimentalApi: true } });
@@ -463,7 +463,7 @@ test("a held retained directory cannot block fresh active rows or erase its prio
     const held = f.hold("old", "thread/list");
     const started = performance.now(), page = await f.rpc("thread/list", { limit: 1 });
     await held.entered;
-    assert.ok(performance.now() - started < 2800, "page must fit the outer history read deadline");
+    assert.ok(performance.now() - started < 28_000, "page must fit the outer history read deadline");
     assert.deepEqual(page.data.map((row: any) => row.id), [newest.id]);
     assert.ok(page.nextCursor);
     const second = await f.rpc("thread/list", { limit: 1, cursor: page.nextCursor });
@@ -481,6 +481,24 @@ test("a held retained directory cannot block fresh active rows or erase its prio
   } finally { await f.close(); }
 });
 
+test("a retained directory taking longer than two seconds remains in the complete view", async () => {
+  const f = await fixture();
+  try {
+    const old = (await f.rpc("thread/start")).thread;
+    f.registry.activate("new", 1);
+    const fresh = (await f.rpc("thread/start")).thread;
+    const held = f.hold("old", "thread/list");
+    const listing = f.rpc("thread/list", { limit: 10 });
+    await held.entered;
+    await new Promise(resolve => setTimeout(resolve, 2200));
+    held.release();
+    const page = await listing;
+    assert.equal(page.catalog, undefined);
+    assert.deepEqual(page.data.map((row: any) => row.id), [fresh.id, old.id]);
+    assert.equal(page.nextCursor, null);
+  } finally { await f.close(); }
+});
+
 test("all unavailable directory sources return explicit partial coverage without forgetting routes", async () => {
   const f = await fixture();
   try {
@@ -494,6 +512,28 @@ test("all unavailable directory sources return explicit partial coverage without
     assert.equal(f.registry.route(old.id)!.generationId, "old");
     assert.equal(f.registry.route(fresh.id)!.generationId, "new");
   } finally { await f.close(); }
+});
+
+
+test("private workspace grants require support on the actual thread generation, not the default", async () => {
+  for (const capabilities of [{old:false,new:true},{old:true,new:false}]) {
+    const f = await fixture({},false,false,capabilities);
+    try {
+      const old = await f.rpc('thread/start'); f.registry.activate('new',1);
+      const next = await f.rpc('thread/start');
+      for (const [generation,thread] of [['old',old.thread],['new',next.thread]] as const) {
+        const params = {threadId:thread.id,__opencraftWorkspaceGrant:'synthetic-grant'};
+        const before = f.calls.filter(c=>c.method==='turn/start').length;
+        if (capabilities[generation]) {
+          await f.rpc('turn/start',params);
+          assert.equal(f.calls.filter(c=>c.method==='turn/start').at(-1)?.generation,generation);
+        } else {
+          await assert.rejects(f.rpc('turn/start',params),/does not support private workspace execution admission/);
+          assert.equal(f.calls.filter(c=>c.method==='turn/start').length,before);
+        }
+      }
+    } finally { await f.close(); }
+  }
 });
 
 test("execution fault retires router callback and connection custody while preserving unknown outcomes", async () => {

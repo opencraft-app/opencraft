@@ -12,6 +12,7 @@ import {
   previewBuilderArguments,
 } from "../../scripts/package-macos-preview.mjs";
 import { signMacosPreview } from "../../scripts/sign-macos-preview.mjs";
+import { ownedDesktopFixture } from '../fixtures/owned-electron.mjs';
 const beforePack = createRequire(import.meta.url)("../../scripts/check-desktop-target.cjs");
 
 test("packaging rejects a bundle and installer with different identities", async t => {
@@ -25,8 +26,18 @@ test("packaging rejects a bundle and installer with different identities", async
     mainSha256: createHash("sha256").update("synthetic main").digest("hex"),
   }));
   const context = { arch: process.arch === "arm64" ? 3 : 1, electronPlatformName: process.platform,
-    packager: { info: { appDir: root }, appInfo: { productName: "OpenCraft", id: "app.opencraft.desktop" } } };
+    packager: { config: { electronDist: await ownedDesktopFixture(t),
+      electronVersion: JSON.parse(await readFile(new URL('../../vendor/electron/fork.json', import.meta.url), 'utf8')).version },
+    info: { appDir: root }, appInfo: { productName: "OpenCraft", id: "app.opencraft.desktop" } } };
   await beforePack(context);
+  const distribution = context.packager.config.electronDist;
+  delete context.packager.config.electronDist;
+  await assert.rejects(beforePack(context), /absolute path/);
+  context.packager.config.electronDist = distribution;
+  const version = context.packager.config.electronVersion;
+  context.packager.config.electronVersion = '0.0.0';
+  await assert.rejects(beforePack(context), /version differs/);
+  context.packager.config.electronVersion = version;
   context.packager.appInfo.id = "com.example.other-product";
   await assert.rejects(beforePack(context), /identity mismatch/u);
   await writeFile(join(root, "dist-host/main.cjs"), "different main");

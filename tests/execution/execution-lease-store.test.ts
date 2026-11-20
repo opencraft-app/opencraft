@@ -55,6 +55,67 @@ test("pre-ACK native tools bind pending origin; late ACK cannot revive completed
   f.store.started("t", "turn", undefined, "engine"); f.store.finished("t", "turn"); f.store.started("t", "turn", "in", "engine");
   assert.equal(f.store.resolve({ threadId: "t", executionId: id }).status, "expired");
 });
+test("queued input inserted into a native goal turn cannot become its execution origin", t => {
+  const f = fixture(t), queue = new OpenCraftHostQueue(f.directory, f.owner.database);
+  f.store.observedStart("t", "goal-turn", "engine");
+  const original = f.owner.database.prepare("SELECT execution_id FROM execution_leases WHERE turn_id=?").get("goal-turn")!;
+  queue.add("t", "queued-human", [{ type: "text", text: "try Git again" }], A);
+  f.store.observedInput("t", "goal-turn", "queued-human");
+  const lease = f.owner.database.prepare("SELECT input_id,state FROM execution_leases WHERE execution_id=?").get(original.execution_id!);
+  assert.equal(lease?.input_id, "native:goal-turn", "a message inside the turn cannot attest its launch");
+  assert.equal(f.store.resolve({ threadId: "t", executionId: String(original.execution_id) }).status, "unknown");
+  assert.deepEqual(f.store.getSubmission("t", "queued-human"), A, "the message retains its authenticated sender");
+  f.restart();
+  f.store.reconcile("t", [{ id: "goal-turn", status: "inProgress", items: [
+    { type: "userMessage", clientId: "queued-human" },
+  ] }], "engine");
+  assert.equal(f.store.resolve({ threadId: "t", executionId: String(original.execution_id) }).status, "unknown");
+});
+test("a queued input with its own admitted execution still binds before the native acknowledgement", t => {
+  const f = fixture(t), queue = new OpenCraftHostQueue(f.directory, f.owner.database);
+  queue.add("t", "queued-human", [{ type: "text", text: "start a new reply" }], A);
+  const id = f.store.begin("t", "queued-human", "engine");
+  f.store.observedStart("t", "new-turn", "engine");
+  f.store.observedInput("t", "new-turn", "queued-human");
+  const result = f.store.resolve({ threadId: "t", executionId: id });
+  assert.equal(result.status, "active");
+  if (result.status === "active") assert.deepEqual(result.lease.principal, A.principal);
+});
+test("a later queue admission cannot claim a native turn that was already running", t => {
+  const f = fixture(t), queue = new OpenCraftHostQueue(f.directory, f.owner.database);
+  f.store.observedStart("t", "goal-turn", "engine");
+  f.owner.database.prepare("UPDATE execution_leases SET boot_id='boot',admitted_at_ms=1000,admitted_at_boot_ms=1000 WHERE turn_id=?").run("goal-turn");
+  queue.add("t", "queued-human", [{ type: "text", text: "next reply" }], A);
+  const id = f.store.begin("t", "queued-human", "engine");
+  f.owner.database.prepare("UPDATE execution_leases SET boot_id='boot',admitted_at_ms=500,admitted_at_boot_ms=2000 WHERE execution_id=?").run(id);
+  f.store.observedInput("t", "goal-turn", "queued-human");
+  assert.equal(f.store.resolve({ threadId: "t", executionId: id }).status, "unknown");
+  assert.equal(f.owner.database.prepare("SELECT input_id FROM execution_leases WHERE turn_id=?").get("goal-turn")?.input_id, "native:goal-turn");
+  f.store.started("t", "new-turn", "queued-human", "engine");
+  assert.equal(f.store.resolve({ threadId: "t", executionId: id }).status, "active", "the queued input can still start its own turn");
+});
+test("a later queue admission with tied clocks cannot claim an already observed native turn", t => {
+  const f=fixture(t),queue=new OpenCraftHostQueue(f.directory,f.owner.database);
+  f.store.observedStart("t","existing-goal","engine");
+  queue.add("t","later-input",[{type:"text",text:"next turn only"}],A);
+  const id=f.store.begin("t","later-input","engine");
+  f.owner.database.prepare("UPDATE execution_leases SET boot_id='same-boot',admitted_at_ms=1000,admitted_at_boot_ms=1000 WHERE thread_id='t'").run();
+  f.store.observedInput("t","existing-goal","later-input");
+  assert.equal(f.store.resolve({threadId:"t",executionId:id}).status,"unknown");
+  assert.equal(f.owner.database.prepare("SELECT input_id FROM execution_leases WHERE turn_id=?").get("existing-goal")?.input_id,"native:existing-goal");
+  f.store.started("t","legitimate-next-turn","later-input","engine");
+  assert.equal(f.store.resolve({threadId:"t",executionId:id}).status,"active","the next real execution can still claim its own admission");
+});
+test("an earlier admitted queued execution remains valid when clock samples tie", t => {
+  const f=fixture(t),queue=new OpenCraftHostQueue(f.directory,f.owner.database);
+  queue.add("t","first-input",[{type:"text",text:"start my turn"}],A);
+  const id=f.store.begin("t","first-input","engine");
+  f.store.observedStart("t","own-turn","engine");
+  f.owner.database.prepare("UPDATE execution_leases SET boot_id='same-boot',admitted_at_ms=1000,admitted_at_boot_ms=1000 WHERE thread_id='t'").run();
+  f.store.observedInput("t","own-turn","first-input");
+  const result=f.store.resolve({threadId:"t",executionId:id});assert.equal(result.status,"active");
+  if(result.status==="active")assert.deepEqual(result.lease.principal,A.principal);
+});
 test("attested job birth rejects boundaries and incarnation mismatch, never follows next employee", t => {
   const f = fixture(t); f.store.capture("t", "a", A); const a = f.store.begin("t", "a"); f.store.started("t", "a", "a", "engine");
   f.owner.database.prepare("UPDATE execution_leases SET admitted_at_ms=1000 WHERE execution_id=?").run(a);
@@ -144,7 +205,7 @@ test('published v15 upgrades append-only and leaves old execution clock unknown'
   prior.database.exec("INSERT INTO execution_leases(execution_id,thread_id,input_id,generation,turn_id,engine_incarnation,state,admitted_at_ms) VALUES('old','t','A',1,'one','engine','active',1000);");
   const original=prior.database.prepare('SELECT * FROM schema_migrations WHERE version=15').get();prior.database.close();
   const next=new OpenCraftHostStateDatabase(dir);try{
-    assert.equal(next.outcome.appliedVersion,16);assert.deepEqual(next.database.prepare('SELECT * FROM schema_migrations WHERE version=15').get(),original);
+    assert.equal(next.outcome.appliedVersion,17);assert.deepEqual(next.database.prepare('SELECT * FROM schema_migrations WHERE version=15').get(),original);
     const reader=new ExecutionLeaseReader(next.database);
     assert.equal(reader.resolveJobOrigin({threadId:'t',engineIncarnation:'engine',startedAtMs:1100,uncertaintyMs:20,bootId:'boot',startedAtBootMs:1100}).status,'unknown');
   }finally{next.close();}

@@ -27,22 +27,31 @@ const service = new RemoteBrowserService({root:directory,dataDirectory:directory
  ],{env:options.env,stdio:['pipe','pipe','pipe']});children.push(child);return child;
 }});
 let closed=0;
+// The launcher above substitutes an owned Node child, not systemd. Open the
+// private SQLite owner with the real UID, then select only the isolated line
+// transport branch. This exercises real EPIPE without privileged operations.
+await service.load();
+const startIsolated = async () => {
+ const descriptor=Object.getOwnPropertyDescriptor(process,'getuid');
+ Object.defineProperty(process,'getuid',{configurable:true,value:()=>0});
+ try { await service.start(); } finally { Object.defineProperty(process,'getuid',descriptor); }
+};
 try {
- await service.start();
+ await startIsolated();
  const old=service.child;
  old.stderr.emit('data',Buffer.from('[1:1:FATAL:ui/events/bitset_32.h:27] DCHECK failed: private-secret\n#0 0x123 ui::VelocityTracker::AddMovement()\n'));
  const viewer=()=>({close(code){assert.equal(code,1011);closed++}});const a=viewer(),b=viewer();
  const page={live:true,controller:a,viewers:new Map([[a,{}],[b,{}]])};service.pages.set('synthetic',page);
  await assert.rejects(service.request('page','capture'),error=>{
   assert.match(error.message,/disconnected|exited/);
-  assert.equal(error.code,'BROWSER_UNAVAILABLE');assert.equal(error.retryable,true);return true;
+  assert.equal(error.code,'BROWSER_UNAVAILABLE');assert.equal(error.retryable,false);assert.equal(error.outcome,'unknown');return true;
  });
  await new Promise(r=>setTimeout(r,50));
  assert.equal(service.child,null);assert.equal(service.requests.size,0);assert.equal(page.live,false);assert.equal(closed,2);
  assert.equal(service.lastBrowserFailure.native.fatal.file,'bitset_32.h');
  assert.equal(service.lastBrowserFailure.native.frames[0].symbol,'ui::VelocityTracker::AddMovement');
  assert(!JSON.stringify(service.lastBrowserFailure).includes('private-secret'));
- await service.start();const replacement=service.child;
+ await startIsolated();const replacement=service.child;
  assert.notEqual(old,replacement);
  old.emit('message',{type:'error',page:'page',message:'late'});
  old.stdin.emit('error',Object.assign(new Error('late'),{code:'EPIPE'}));
@@ -59,8 +68,10 @@ try {
  await service.persistence;await rm(directory,{recursive:true,force:true});
 }
 `;
-test('isolated browser EPIPE retires only its generation and Gateway survives/reconnects', {skip:process.getuid?.()!==0}, () => {
-  const result=spawnSync(process.execPath,['--input-type=module','-e',probe],{encoding:'utf8',timeout:10000});
+test('isolated browser EPIPE retires only its generation and Gateway survives/reconnects', {skip:process.platform!=='linux'}, () => {
+  // Node's syntax detection handles this ESM probe; --input-type=module would
+  // be inherited by its file-backed SQLite Worker and reject that entry point.
+  const result=spawnSync(process.execPath,['--import','tsx','-e',probe],{encoding:'utf8',timeout:10000});
   assert.equal(result.status,0,result.stderr||result.error?.message);
   assert.match(result.stdout,/gateway-survived-and-recovered/);
   assert.doesNotMatch(result.stderr,/private-secret/);

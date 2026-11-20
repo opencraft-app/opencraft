@@ -1,3 +1,4 @@
+import { preventPagePinchZoom } from "./page-pinch-zoom";
 import { bindTouchInteractionMode } from "./pointer-modality";
 import { bindHttpResourcePrefetch } from "./http-resource-prefetch";
 import { bindPwaEdgeNavigation } from "./pwa-edge-navigation";
@@ -40,6 +41,7 @@ export class WebRuntime implements ClientRuntime {
   protected own(dispose: (() => void) | undefined): void { if (dispose) this.cleanups.push(dispose); }
   protected onStart(): void {
     this.own(bindTouchInteractionMode(this.document));
+    this.own(preventPagePinchZoom(this.document));
     if (this.kind !== "electron") this.own(bindHttpResourcePrefetch(this.document));
   }
   start(): void {

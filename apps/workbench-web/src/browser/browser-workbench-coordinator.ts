@@ -1,3 +1,5 @@
+import { combineAbortSignals } from '@opencraft/appserver-client/transport';
+import { waitForBrowserPaint } from './browser-paint';
 import { BrowserToolError, type BrowserDynamicToolContext } from "@opencraft/browser-appserver";
 import {
   DEFAULT_BROWSER_VIEWPORT_MODE,
@@ -22,6 +24,7 @@ import { browserMetadataKeys, readBrowserMetadataValue } from "@opencraft/workbe
 const STORAGE_KEY = browserMetadataKeys.tabs;
 
 interface StoredBrowserTab {
+  readonly panelAttached?: boolean;
   readonly id: string;
   readonly pageId: string;
   readonly ownerId: string;
@@ -54,24 +57,41 @@ export class BrowserWorkbenchCoordinator {
   private readonly tabListeners = new Map<BrowserTabId, Set<() => void>>();
   private readonly pageSubscriptions = new Map<BrowserTabId, () => void>();
   /** Panel projections are cache entries. Browser tabs remain application-owned. */
+  // Logical attachment survives projection eviction; hidden background pages have none.
+  private readonly attachedTabs = new Set<BrowserTabId>();
+  private readonly attachmentListeners = new Map<string, Set<() => void>>();
   private readonly panelOwners = new Map<BrowserTabId, Set<string>>();
+  private readonly presentationListeners = new Set<() => void>();
+  private readonly presentationLifetime = new AbortController();
   private readonly scopeByView = new Map<string, ConversationScopeId>();
+  private readonly activePresentationViews = new Set<string>();
   private readonly closingTabs = new Set<BrowserTabId>();
   private readonly resourceListeners = new Map<string, Set<() => void>>();
   private readonly resourceSnapshots = new Map<string, readonly BrowserConversationTab[]>();
   private readonly unsubscribeBindings: () => void;
+  private readonly releaseMetadata: () => void = () => {};
+  private applyingRemote = false;
 
   constructor(
     private readonly pages: WebBrowserPageRuntime,
     private readonly panels: WorkbenchPanelService,
     private readonly bindings: ConversationBindingStore,
     private readonly storage: BrowserMetadataStorage | null = null,
+    private readonly isPhysicalPresentationVisible?: (tabId: BrowserTabId, viewIds: readonly string[]) => boolean,
   ) {
     this.restoreTabs();
+    // Server-pushed tab changes from another device. Rows merge by id; the
+    // storage layer already preserved tabs edited locally but not yet sent.
+    this.releaseMetadata = storage?.onMetadataChanged?.(field => {
+      if (field === "tabs" || field === "pages" || field === "*") this.reconcileStoredTabs();
+    }) ?? (() => {});
     this.pages.setSessionClosedHandler(pageId => {
       for (const tab of [...this.tabs.values()]) if (tab.pageId === pageId) this.close(tab.ownerId, tab.id);
     });
     this.unsubscribeBindings = bindings.subscribe(() => {
+      for (const listener of this.presentationListeners) listener();
+      // Aliases may arrive after the panel directory was first read.
+      for (const listeners of this.attachmentListeners.values()) for (const listener of listeners) listener();
       for (const key of this.resourceListeners.keys()) {
         const [hostId, threadId] = JSON.parse(key);
         this.publishResources(hostId, threadId);
@@ -105,19 +125,47 @@ export class BrowserWorkbenchCoordinator {
     this.persistTabs();
   }
 
+  readPresentation(tabId: BrowserTabId) { const tab = this.tabs.get(tabId); return tab ? this.pages.readPresentation(tab.pageId) : Promise.resolve(null); }
+  onPresentationChanged(tabId: BrowserTabId, listener: () => void) { const tab = this.tabs.get(tabId); return tab ? this.pages.onPresentationChanged(tab.pageId, listener) : () => {}; }
+  capturePreview(tabId: BrowserTabId) {
+    const tab = this.tabs.get(tabId); return tab ? this.pages.capturePreview(tab.pageId) : null;
+  }
   pageForTab(tabId: BrowserTabId): BrowserPageSnapshot | null {
     const tab = this.tabs.get(tabId);
     return tab === undefined ? null : this.pages.getSnapshot(tab.pageId);
   }
 
+  /** A recovered Draft alias and its canonical scope name the same resource
+   * owner only when the binding store proves both Host and Thread identity. */
+  private sameOwner(left: string, right: string): boolean {
+    if (left === right) return true;
+    const a = this.bindings.resolve(left as ConversationScopeId)?.conversationKey;
+    const b = this.bindings.resolve(right as ConversationScopeId)?.conversationKey;
+    return a != null && b != null && a.hostId === b.hostId && a.threadId === b.threadId;
+  }
+
   listForOwner(ownerId: string): readonly BrowserTabWithPage[] {
     return [...this.tabs.values()]
-      .filter((tab) => tab.ownerId === ownerId)
+      .filter((tab) => this.sameOwner(tab.ownerId, ownerId))
       .sort((left, right) => left.createdAt - right.createdAt)
       .flatMap((tab) => {
         const page = this.pages.getSnapshot(tab.pageId);
         return page === null ? [] : [{ tab, page }];
       });
+  }
+
+  listPanelTabs(ownerId: string): readonly BrowserTabWithPage[] {
+    return this.listForOwner(ownerId).filter(({ tab }) => this.attachedTabs.has(tab.id));
+  }
+
+  subscribePanelTabs(ownerId: string, listener: () => void): () => void {
+    const listeners = this.attachmentListeners.get(ownerId) ?? new Set<() => void>();
+    listeners.add(listener);
+    this.attachmentListeners.set(ownerId, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (!listeners.size) this.attachmentListeners.delete(ownerId);
+    };
   }
 
   /** Metadata only: listing a row must never initialize a browser surface. */
@@ -151,24 +199,79 @@ export class BrowserWorkbenchCoordinator {
   }
 
   private publishOwnerResources(ownerId: string): void {
+    for (const [candidate, listeners] of this.attachmentListeners)
+      if (this.sameOwner(candidate, ownerId)) for (const listener of listeners) listener();
     const key = this.bindings.resolve(ownerId as ConversationScopeId)?.conversationKey;
     if (key) this.publishResources(key.hostId, key.threadId);
   }
 
-  bindView(scopeId: ConversationScopeId, viewId: string): void {
+  bindView(scopeId: ConversationScopeId, viewId: string, active = true): void {
     const currentScope = this.scopeByView.get(viewId);
     if (currentScope !== undefined && currentScope !== scopeId)
       throw new Error(`Browser View ${viewId} already belongs to Scope ${currentScope}`);
     this.scopeByView.set(viewId, scopeId);
+    if (active) this.activePresentationViews.add(viewId); else this.activePresentationViews.delete(viewId);
     // Panel definitions reconstruct their cache from this resource directory.
     // Binding a physical View must not activate, reorder, or reopen a tab.
     this.panels.ensureOwner(scopeId);
-    for (const { tab } of this.listForOwner(scopeId)) {
+    for (const listener of this.presentationListeners) listener();
+    for (const { tab } of this.listPanelTabs(scopeId)) {
       const owners = this.panelOwners.get(tab.id) ?? new Set<string>();
       owners.add(scopeId);
       this.panelOwners.set(tab.id, owners);
       this.observeTab(tab.id);
     }
+  }
+
+  setViewPresentationActive(viewId: string, active: boolean): void {
+    if (!this.scopeByView.has(viewId) || this.activePresentationViews.has(viewId) === active) return;
+    if (active) this.activePresentationViews.add(viewId); else this.activePresentationViews.delete(viewId);
+    for (const listener of this.presentationListeners) listener();
+  }
+  subscribePresentationReadiness(listener: () => void): () => void {
+    this.presentationListeners.add(listener); return () => this.presentationListeners.delete(listener);
+  }
+  private activeViewsFor(owner: string) {
+    return [...this.scopeByView].filter(([view, scope]) => this.sameOwner(scope, owner) && this.activePresentationViews.has(view));
+  }
+  presentationBlockReason(request: { hostId: string; threadId: string; tabId: string }) {
+    const scope = this.bindings.findScope(createConversationKey(request.hostId, request.threadId));
+    if (scope === null) return 'conversation-unbound' as const;
+    if (!this.activeViewsFor(scope).length) return 'view-inactive' as const;
+    const tab = this.tabs.get(request.tabId as BrowserTabId);
+    if (!tab) return 'tab-unavailable' as const;
+    return this.sameOwner(tab.ownerId, scope) ? null : 'owner-mismatch' as const;
+  }
+  canPresentConversation(request: { hostId: string; threadId: string }): boolean {
+    const scope = this.bindings.findScope(createConversationKey(request.hostId, request.threadId));
+    return scope !== null && this.activeViewsFor(scope).length > 0;
+  }
+  waitForConversationPresentation(request: { hostId: string; threadId: string; tabId: string }, signal?: AbortSignal, expiresAt = Date.now() + 10_000): Promise<boolean> {
+    const owner = this.bindings.findScope(createConversationKey(request.hostId, request.threadId));
+    const linked = signal ? combineAbortSignals([signal, this.presentationLifetime.signal]) : null;
+    return waitForBrowserPaint(() => this.isConversationTabPresented(request) && this.isPhysicalPresentationVisible?.(
+      request.tabId as BrowserTabId, owner === null ? [] : this.activeViewsFor(owner).map(([view]) => view)) === true, {
+      expiresAt: Math.min(expiresAt, Date.now() + 10_000),
+      signal: linked?.signal ?? this.presentationLifetime.signal,
+      current: () => owner !== null && this.bindings.findScope(createConversationKey(request.hostId, request.threadId)) === owner && this.canPresentConversationTab(request) && this.isConversationTabPresented(request),
+    }).finally(() => linked?.dispose());
+  }
+  canPresentConversationTab(request: { hostId: string; threadId: string; tabId: string }): boolean {
+    return this.presentationBlockReason(request) === null;
+  }
+  presentConversationTab(request: { hostId: string; threadId: string; tabId: string }): boolean {
+    if (!this.canPresentConversationTab(request)) return false;
+    const tab = this.requireTab(request.tabId as BrowserTabId);
+    const owner = this.activeViewsFor(tab.ownerId)[0]![1];
+    this.open(owner, { tabId: tab.id, visible: true }); return true;
+  }
+  isConversationTabPresented(request: { hostId: string; threadId: string; tabId: string }): boolean {
+    if (!this.canPresentConversationTab(request)) return false;
+    const tab = this.requireTab(request.tabId as BrowserTabId);
+    return this.activeViewsFor(tab.ownerId).some(([, owner]) => {
+      const state = this.panels.getOwnerSnapshot(owner).right;
+      return state.open && state.tabs.some(panel => panel.id === state.activeTabId && panel.kind === 'browser' && panel.id === `browser:${tab.id}`);
+    });
   }
 
   releasePanel(ownerId: string, tabId: BrowserTabId, closeResource = false): void {
@@ -179,7 +282,7 @@ export class BrowserWorkbenchCoordinator {
   }
 
   releaseView(viewId: string): void {
-    this.scopeByView.delete(viewId);
+    this.scopeByView.delete(viewId); this.activePresentationViews.delete(viewId);
   }
 
   scopeForThread(context: BrowserDynamicToolContext): ConversationScopeId {
@@ -198,7 +301,7 @@ export class BrowserWorkbenchCoordinator {
     const tab = this.tabs.get(tabId);
     if (tab === undefined)
       throw new BrowserToolError("TAB_NOT_FOUND", `Browser tab ${tabId} is unavailable`);
-    if (tab.ownerId !== ownerId) {
+    if (!this.sameOwner(tab.ownerId, ownerId)) {
       throw new BrowserToolError(
         "TAB_ACCESS_DENIED",
         `Browser tab ${tabId} belongs to another Conversation Scope`,
@@ -208,6 +311,10 @@ export class BrowserWorkbenchCoordinator {
     if (page === null)
       throw new BrowserToolError("TAB_NOT_FOUND", `Browser page ${tab.pageId} is unavailable`);
     return { tab, page };
+  }
+
+  isRecognizedInternalUrl(input: string): boolean {
+    return this.pages.isRecognizedInternalUrl(input);
   }
 
   open(ownerId: string, options: {
@@ -250,6 +357,8 @@ export class BrowserWorkbenchCoordinator {
     }
     try {
       const panelOwnerId = options.panelOwnerId ?? ownerId;
+      if (existingTab && options.visible === true && this.panels.getOwnerSnapshot(panelOwnerId).bottom.tabs.some(panel => panel.id === `browser:${tab.id}`))
+        this.panels.dispatch(panelOwnerId, { type: 'transfer-tab', region: 'bottom', targetRegion: 'right', tabId: `browser:${tab.id}` });
       const panelTab = options.visible === false ? null : this.presentTab(panelOwnerId, tab.id, !options.background);
       this.observeTab(tab.id);
       if (options.background || options.visible === false) this.pages.prepareSurface(tab.pageId);
@@ -312,12 +421,17 @@ export class BrowserWorkbenchCoordinator {
   }
 
   dispose(): void {
+    this.releaseMetadata();
+    this.presentationLifetime.abort();
+    this.presentationListeners.clear();
     this.pages.setSessionClosedHandler(null);
     this.unsubscribeBindings(); this.resourceListeners.clear(); this.resourceSnapshots.clear();
     this.pages.setNewWindowHandler(null);
     for (const tabId of [...this.tabs.keys()]) this.stopObserving(tabId);
     this.panelOwners.clear();
-    this.scopeByView.clear();
+    this.attachedTabs.clear();
+    this.attachmentListeners.clear();
+    this.scopeByView.clear(); this.activePresentationViews.clear();
     this.tabListeners.clear();
   }
 
@@ -360,9 +474,10 @@ export class BrowserWorkbenchCoordinator {
     this.stopObserving(tabId);
     this.panelOwners.delete(tabId);
     this.tabs.delete(tabId);
+    this.attachedTabs.delete(tabId);
     this.tabListeners.get(tabId)?.clear();
     this.tabListeners.delete(tabId);
-    if (![...this.tabs.values()].some((candidate) => candidate.pageId === tab.pageId)) {
+    if (!this.applyingRemote && ![...this.tabs.values()].some((candidate) => candidate.pageId === tab.pageId)) {
       if (retired) this.pages.retire(tab.pageId); else this.pages.close(tab.pageId);
     }
     if (!retired) this.persistTabs();
@@ -371,7 +486,7 @@ export class BrowserWorkbenchCoordinator {
 
   private presentTab(panelOwnerId: string, tabId: BrowserTabId, activate: boolean) {
     const tab = this.requireTab(tabId);
-    if (tab.ownerId !== panelOwnerId)
+    if (!this.sameOwner(tab.ownerId, panelOwnerId))
       throw new Error(`Browser tab ${tabId} does not belong to panel owner ${panelOwnerId}`);
     const panelTab = this.panels.open(
       panelOwnerId,
@@ -382,6 +497,9 @@ export class BrowserWorkbenchCoordinator {
     const owners = this.panelOwners.get(tabId) ?? new Set<string>();
     owners.add(panelOwnerId);
     this.panelOwners.set(tabId, owners);
+    this.attachedTabs.add(tabId);
+    this.persistTabs();
+    this.publishOwnerResources(panelOwnerId);
     return panelTab;
   }
 
@@ -389,8 +507,35 @@ export class BrowserWorkbenchCoordinator {
     for (const listener of this.tabListeners.get(tabId) ?? []) listener();
   }
 
+  /** Adopt a pushed tab directory without echoing it back. */
+  reconcileStoredTabs(): void {
+    this.applyingRemote = true;
+    try {
+      const stored = this.storedTabs();
+      const present = new Set(stored.map(row => row.id));
+      for (const tab of [...this.tabs.values()]) if (!present.has(tab.id as string)) this.destroyTab(tab.id);
+      for (const row of stored) {
+        const tab = this.tabs.get(row.id as BrowserTabId);
+        if (tab === undefined) continue;
+        const viewportMode = normalizeBrowserViewportMode(row.viewportMode);
+        if (tab.viewportMode !== viewportMode) { this.tabs.set(tab.id, { ...tab, viewportMode }); this.notifyTab(tab.id); }
+        if (row.panelAttached !== false) this.attachedTabs.add(tab.id); else this.attachedTabs.delete(tab.id);
+      }
+      this.restoreTabs();
+      for (const tab of this.tabs.values()) if (this.pages.getSnapshot(tab.pageId)) this.observeTab(tab.id);
+      // Owners that just lost their last tab have no record left to derive
+      // from, so notify every subscribed conversation rather than tab owners.
+      for (const ownerId of this.attachmentListeners.keys()) for (const listener of this.attachmentListeners.get(ownerId) ?? []) listener();
+      for (const key of this.resourceListeners.keys()) {
+        const [hostId, threadId] = JSON.parse(key) as [string, string];
+        this.publishResources(hostId, threadId);
+      }
+    } finally { this.applyingRemote = false; }
+  }
+
   private persistTabs(): void {
-    const stored: StoredBrowserTab[] = [...this.tabs.values()];
+    if (this.applyingRemote) return;
+    const stored: StoredBrowserTab[] = [...this.tabs.values()].map(tab => ({ ...tab, panelAttached: this.attachedTabs.has(tab.id) }));
     try {
       (this.storage ?? window.localStorage).setItem(STORAGE_KEY, JSON.stringify(stored));
     } catch {
@@ -398,17 +543,28 @@ export class BrowserWorkbenchCoordinator {
     }
   }
 
-  restoreTabs(): void {
+  private storedTabs(): StoredBrowserTab[] {
     let parsed: unknown;
     try {
       parsed = JSON.parse(readBrowserMetadataValue(this.storage ?? window.localStorage, STORAGE_KEY) ?? "[]");
     } catch {
-      return;
+      return [];
     }
-    if (!Array.isArray(parsed)) return;
+    if (!Array.isArray(parsed)) return [];
+    const stored: StoredBrowserTab[] = [];
     for (const candidate of parsed) {
       if (typeof candidate !== "object" || candidate === null) continue;
       const row = candidate as Partial<StoredBrowserTab>;
+      if (typeof row.id !== "string" || typeof row.pageId !== "string"
+        || typeof row.ownerId !== "string" || typeof row.createdAt !== "number") continue;
+      stored.push({ id: row.id, pageId: row.pageId, ownerId: row.ownerId, createdAt: row.createdAt,
+        viewportMode: row.viewportMode, panelAttached: row.panelAttached });
+    }
+    return stored;
+  }
+
+  restoreTabs(): void {
+    for (const row of this.storedTabs()) {
       if (typeof row.id !== "string" || typeof row.pageId !== "string"
         || typeof row.ownerId !== "string" || typeof row.createdAt !== "number") continue;
       const tab: BrowserTabSnapshot = {
@@ -418,7 +574,11 @@ export class BrowserWorkbenchCoordinator {
         createdAt: row.createdAt,
         viewportMode: normalizeBrowserViewportMode(row.viewportMode),
       };
-      if (!this.tabs.has(tab.id)) this.tabs.set(tab.id, tab);
+      if (!this.tabs.has(tab.id)) {
+        this.tabs.set(tab.id, tab);
+        // Legacy records represented visible tabs; explicit false preserves hidden resources.
+        if (row.panelAttached !== false) this.attachedTabs.add(tab.id);
+      }
     }
   }
 }

@@ -65,3 +65,9 @@ test("held motion follows both directions and release projects from the current 
     assert.equal(isHostPanelGesture({ ...gesture, ...change }), false);
   }
 });
+
+test("host default pane stays compact while explicit widths remain available", () => {
+  const state = {available: true, open: true, fullWidth: false};
+  assert.equal(resolveHostPanelGeometry(2400, state, 54).panelWidth, 640);
+  assert.equal(resolveHostPanelGeometry(2400, state, 54, 1000).panelWidth, 1000);
+});

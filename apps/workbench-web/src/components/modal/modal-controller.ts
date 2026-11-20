@@ -2,12 +2,15 @@ import type { ModalDescriptor, ModalDismissReason } from "@opencraft/design-syst
 import type { ReactNode } from "react";
 
 export interface ModalRequest extends ModalDescriptor {
-  readonly confirmation?: { readonly confirmLabel: string; readonly cancelLabel?: string; readonly onConfirm: () => void };
+  readonly confirmation?: { readonly confirmLabel: string; readonly cancelLabel?: string; readonly confirmVariant?: "primary" | "destructive"; readonly onConfirm: () => void };
   readonly id: string;
   readonly content: ReactNode;
   readonly className?: string;
+  /** Content may own exterior dimming when its material must sample the page. */
+  readonly dimBackground?: boolean;
   readonly onDismiss: (reason: ModalDismissReason) => void;
   readonly returnFocus?: () => HTMLElement | null;
+  readonly anchorNavigationId?: string;
 }
 
 export interface ModalStackEntry extends ModalRequest {

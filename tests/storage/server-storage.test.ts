@@ -1,7 +1,9 @@
+import { SERVER_ALTERNATE_MIGRATIONS } from "../../packages/storage-node/src/server/migrations.generated.js";
+import {assertServerDeclaredSchema} from "../support/assert-server-declared-schema.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync, existsSync, readdirSync, readFileSync, writeFileSync, copyFileSync, unlinkSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readdirSync, readFileSync, writeFileSync, copyFileSync, unlinkSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -59,15 +61,25 @@ async function seed(root: string) {
 }
 
 test("Drizzle schema and recorded snapshot have no ungenerated structural changes", async () => {
-  const previous = JSON.parse(readFileSync(new URL("../../packages/storage-node/src/server/migrations/meta/0004_snapshot.json", import.meta.url), "utf8"));
-  const next = await generateSQLiteDrizzleJson(schema, previous.id);
+  const journal = JSON.parse(readFileSync(new URL("../../packages/storage-node/src/server/migrations/meta/_journal.json", import.meta.url), "utf8"));
+  const version = String(journal.entries.at(-1).idx).padStart(4, "0");
+  const previous = JSON.parse(readFileSync(new URL(`../../packages/storage-node/src/server/migrations/meta/${version}_snapshot.json`, import.meta.url), "utf8"));
+  const config=(await import("../../packages/storage-node/drizzle.config.js")).default;
+  const configured:Record<string,unknown>={};
+  for(const file of Array.isArray(config.schema)?config.schema:[config.schema])Object.assign(configured,await import(new URL(file,new URL("../../packages/storage-node/",import.meta.url)).href));
+  const next = await generateSQLiteDrizzleJson(configured, previous.id);
   assert.deepEqual(await generateSQLiteMigration(previous, next), []);
   const empty = await generateSQLiteDrizzleJson({});
   const statements = await generateSQLiteMigration(empty, next);
   const expectedSql = statements.map(statement => /^\s*CREATE TABLE\b/i.test(statement)
     ? statement.replace(/\);\s*$/, ") STRICT;") : statement).join("\n");
   const current = openManagedDatabase({ path: ":memory:", migrations: SERVER_MIGRATIONS });
-  try { createSchemaValidator(expectedSql)(current.database); } finally { current.database.close(); }
+  const channelMigrations = SERVER_MIGRATIONS.filter(migration => migration.name.endsWith("_native_channels"));
+  assert.equal(channelMigrations.length, 1);
+  const channelMigration = channelMigrations[0]!.sql;
+  assert.notEqual(channelMigration.indexOf("CREATE TRIGGER"), -1);
+  const triggers = channelMigration.slice(channelMigration.indexOf("CREATE TRIGGER"));
+  try { assertServerDeclaredSchema(current.database,expectedSql + "\n" + triggers); } finally { current.database.close(); }
 });
 
 test("published source SQL retains all migration identities and checksums", () => {
@@ -273,18 +285,66 @@ test("the published capability v1 upgrades only its working copy", async t => {
   } finally { await current.close(); }
 });
 
-async function consolidatedBaseline(root: string) {
-  const before = await seed(root);
+test("Server contract v2 upgrades existing actor messages and refuses a changed migration checksum", async t => {
+  const root = fixture(t), path = join(root, "opencraft-server.sqlite");
+  const previous = openManagedDatabase({ path, migrations: SERVER_MIGRATIONS.slice(0, 2) });
+  importServerData(previous.database, root, { productVersion: "0.1.0", hash: "previous-contract" });
+  previous.database.exec(`INSERT INTO actor_messages(id,seq,channel_id,author_id,target_id,content,created_at)
+    VALUES('existing-message',1,'dm:retained','alice','bob','retained message',42)`);
+  const history = previous.database.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
+  previous.database.close();
+  const current = await openServerDatabase(root);
+  try {
+    assert.equal(current.outcome.appliedVersion, SERVER_MIGRATIONS.length);
+    assert.deepEqual(current.database.prepare("SELECT * FROM schema_migrations WHERE version<=2 ORDER BY version").all(), history);
+    assert.equal(current.database.prepare("SELECT content FROM actor_messages WHERE id='existing-message'").get()?.content, "retained message");
+    assert.equal(current.database.prepare("SELECT peer_id FROM actor_channels WHERE id='dm:retained'").get()?.peer_id, "bob");
+    assert.equal(current.database.prepare("SELECT count(*) n FROM actor_channel_changes").get()?.n, 1);
+  } finally { await current.close(); }
+  const tampered = new DatabaseSync(path);
+  tampered.exec("UPDATE schema_migrations SET checksum='changed' WHERE version=3");
+  tampered.close();
+  await assert.rejects(openServerDatabase(root), { kind: "history-mismatch" });
+});
+
+/** Build an actual frozen database. Dropping a few tables from today's schema
+ * would leave later columns/indexes behind and cannot represent deployed v8/v13. */
+async function reconstructConsolidatedBaseline(root: string, version: number) {
+  const lineage = SERVER_ALTERNATE_MIGRATIONS.find(entry => entry.id === "generic-legacy-v13");
+  assert.ok(lineage, "published pre-product generic history is declared");
+  const historicalMigrations = lineage.migrations.slice(0, version);
   const owner = await openServerDatabase(root);
   const receipts = owner.database.prepare("SELECT * FROM opencraft_server_imports WHERE source NOT IN ('thread-access','thread-notes') ORDER BY source").all();
-  // Reconstruct the published v2 database, with its original six receipts.
-  owner.database.exec("DROP TABLE collaboration_space_threads; DROP TABLE collaboration_space_invitations; DROP TABLE collaboration_space_members; DROP TABLE collaboration_spaces; DROP TABLE automation_delegations; DROP TABLE automation_mutations; DROP TABLE automation_runs; DROP TABLE project_automations; DROP TABLE automation_grants; DROP TABLE thread_access; DROP TABLE thread_access_audit; DROP TABLE thread_notes; DELETE FROM schema_migrations WHERE version>=3; DELETE FROM opencraft_server_imports WHERE source IN ('thread-access','thread-notes')");
-  owner.database.prepare("UPDATE opencraft_server_installation SET contract_hash=?").run(createHash("sha256").update(JSON.stringify(SERVER_MIGRATIONS.slice(0, 2))).digest("hex"));
-  await owner.close();
-  return { before, receipts };
+  const historicalPath=join(root,"historical-fixture.sqlite");
+  const old=openManagedDatabase({path:historicalPath,migrations:historicalMigrations,legacyPolicy:"reject"});
+  const quote=(name:string)=>'"'+name.replaceAll('"','""')+'"';
+  try {
+    const triggers=old.database.prepare("SELECT name,sql FROM sqlite_master WHERE type='trigger'").all();
+    old.database.exec("BEGIN IMMEDIATE; PRAGMA defer_foreign_keys=ON");
+    try {
+      for(const trigger of triggers)old.database.exec("DROP TRIGGER "+quote(String(trigger.name)));
+      const tables=old.database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name!='schema_migrations'").all();
+      for(const {name} of tables) {
+        const table=String(name),columns=old.database.prepare("PRAGMA table_info("+quote(table)+")").all().map(c=>String(c.name));
+        const fields=columns.map(quote).join(',');
+        const rows=owner.database.prepare("SELECT "+fields+" FROM "+quote(table)+(table==="opencraft_server_imports"?" WHERE source NOT IN ('thread-access','thread-notes')":"")).all();
+        const insert=old.database.prepare("INSERT INTO "+quote(table)+" ("+fields+") VALUES("+columns.map(()=>'?').join(',')+")");
+        for(const row of rows)insert.run(...columns.map(column=>row[column] as any));
+      }
+      for(const trigger of triggers)old.database.exec(String(trigger.sql));
+      old.database.prepare("UPDATE opencraft_server_installation SET contract_hash=?").run(createHash("sha256").update(JSON.stringify(historicalMigrations)).digest("hex"));
+      old.database.exec("COMMIT");
+    } catch(error) { old.database.exec("ROLLBACK"); throw error; }
+  } finally {old.database.close();await owner.close();}
+  renameSync(historicalPath,join(root,"opencraft-server.sqlite"));
+  return receipts;
+}
+async function consolidatedBaseline(root: string) {
+  const before=await seed(root),receipts=await reconstructConsolidatedBaseline(root,8);
+  return {before,receipts};
 }
 
-test("a consolidated v2 installation imports new access/note sources without replaying its six receipts", async t => {
+test("a deployed downstream v8 installation imports access/note sources without replaying prior receipts", async t => {
   const root = fixture(t), { before, receipts } = await consolidatedBaseline(root);
   const owner = await openServerDatabase(root);
   try {
@@ -314,6 +374,23 @@ test("failed additive import preserves prior authority and receipts without comm
 test("a current installation cannot silently recreate a deleted access import receipt", async t => {
   const root = fixture(t), owner = await openServerDatabase(root);
   owner.database.exec("DELETE FROM opencraft_server_imports WHERE source='thread-access'");
+  await owner.close();
+  await assert.rejects(openServerDatabase(root), /Incomplete Server import receipts/);
+});
+
+
+test("published v13 six-store receipts acquire absent empty domains atomically and reopen", async t => {
+  const root = fixture(t), receipts = await reconstructConsolidatedBaseline(root,13);
+  const upgraded = await openServerDatabase(root);
+  assert.deepEqual(upgraded.database.prepare("SELECT * FROM opencraft_server_imports WHERE source NOT IN ('thread-access','thread-notes') ORDER BY source").all(), receipts);
+  assert.equal(upgraded.database.prepare("SELECT count(*) n FROM opencraft_server_imports").get()?.n, 8);
+  await upgraded.close();
+  const reopened = await openServerDatabase(root); await reopened.close();
+});
+
+test("missing domain receipts cannot reimport over existing canonical policy", async t => {
+  const root = fixture(t), owner = await openServerDatabase(root);
+  owner.database.exec("DELETE FROM opencraft_server_imports WHERE source IN ('thread-access','thread-notes'); INSERT INTO thread_access VALUES('server','retained',NULL,'shared',1,1)");
   await owner.close();
   await assert.rejects(openServerDatabase(root), /Incomplete Server import receipts/);
 });

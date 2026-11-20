@@ -208,7 +208,7 @@
 
 .opencraft-chat-document[data-markdown-animated] :is(.chat-stream-fade-in, hr, li, tr, blockquote) {
   opacity: 0;
-  animation: opencraft-chat-fade-in var(--duration, var(--transition-duration-basic, 150ms)) cubic-bezier(0.37, 0.55, 0.86, 0.88) forwards;
+  animation: opencraft-chat-fade-in var(--duration, 280ms) cubic-bezier(0.37, 0.55, 0.86, 0.88) forwards;
   animation-delay: var(--fade-delay, 0ms);
 }
 
@@ -221,6 +221,17 @@
 @keyframes opencraft-chat-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+// Streamed words resolve from a soft blur. Only the entering spans carry the
+// filter, and it is gone once each span settles.
+.opencraft-chat-document[data-markdown-animated] span.chat-stream-fade-in {
+  animation-name: opencraft-chat-text-resolve;
+}
+@keyframes opencraft-chat-text-resolve {
+  from { opacity: 0; filter: blur(4px); }
+  60% { filter: blur(0.5px); }
+  to { opacity: 1; filter: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

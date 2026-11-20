@@ -149,9 +149,10 @@ export const table_opencraft_host_queue = sqliteTable("opencraft_host_queue", {
 }, table => [
   primaryKey({ columns: [table["id"]] }),
   index("opencraft_host_queue_state").on(table["state"], table["thread_id"]),
+  index("opencraft_host_queue_turn").on(table["thread_id"], table["target_turn_id"], table["state"]),
   index("opencraft_host_queue_order").on(table["thread_id"], table["position"], table["created_at_ms"]),
   unique("legacy_unique_opencraft_host_queue_2").on(table["thread_id"], table["client_id"]),
-  check("opencraft_host_queue_check_0", sql`state IN ('queued','dispatching','steering','unknown','delivered','discarded')`),
+  check("opencraft_host_queue_check_0", sql`state IN ('queued','dispatching','steering','unknown','delivered','discarded','closed')`),
 ]);
 
 export const table_opencraft_thread_catalog = sqliteTable("opencraft_thread_catalog", {
@@ -454,4 +455,26 @@ export const table_token_usage_turns = sqliteTable("token_usage_turns", {
   check("token_usage_turns_check_5", sql`frozen IN (0,1)`),
   check("token_usage_turns_check_6", sql`allocation_state IN ('settled','provisional','pending','system','unknown')`),
   check("token_usage_turns_check_7", sql`unknown_model IN (0,1)`),
+]);
+
+export const table_opencraft_input_delivery = sqliteTable("opencraft_input_delivery", {
+  "thread_id": text("thread_id").notNull(),
+  "client_id": text("client_id").notNull(),
+  "native_admission": text("native_admission").notNull(),
+  "context_state": text("context_state").notNull(),
+  "revision": integer("revision").notNull(),
+}, table => [
+  primaryKey({ columns: [table.thread_id, table.client_id] }),
+  foreignKey({ columns: [table.thread_id, table.client_id], foreignColumns: [table_opencraft_host_queue.thread_id, table_opencraft_host_queue.client_id] }),
+  check("opencraft_input_delivery_check_0", sql`native_admission IN ('pending','accepted','unknown','rejected')`),
+  check("opencraft_input_delivery_check_1", sql`context_state IN ('unobserved','recorded')`),
+]);
+export const table_opencraft_turn_delivery = sqliteTable("opencraft_turn_delivery", {
+  "thread_id": text("thread_id").notNull(),
+  "turn_id": text("turn_id").notNull(),
+  "outcome": text("outcome").notNull(),
+  "observed_at_ms": integer("observed_at_ms").notNull(),
+}, table => [
+  primaryKey({ columns: [table.thread_id, table.turn_id] }),
+  check("opencraft_turn_delivery_check_0", sql`outcome IN ('completed','interrupted','failed')`),
 ]);

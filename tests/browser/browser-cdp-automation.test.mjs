@@ -5,6 +5,24 @@ const require = createRequire(import.meta.url);
 const { parseRequest } = require('../../packages/browser-cdp/src/automation/request.cjs');
 const { press } = require('../../packages/browser-cdp/src/automation/keyboard.cjs');
 const { createCdpAutomation } = require('../../packages/browser-cdp/src/automation/index.cjs');
+const { createFrames } = require('../../packages/browser-cdp/src/automation/frames.cjs');
+
+test('native document identities persist across observations and change after context or loader replacement', async () => {
+  let event, contextId = 0;
+  const frames = createFrames({ subscribe(listener) { event = listener; return () => {}; } }, () => [], 'test-instance');
+  const frame = { id: 'main-frame', loaderId: 'loader-1', session: '' };
+  const call = { async send(method) { assert.equal(method, 'Page.createIsolatedWorld'); return { executionContextId: ++contextId }; } };
+  const first = await frames.world(frame, call);
+  assert.equal(await frames.world(frame, call), first);
+  event({ method: 'Runtime.executionContextDestroyed', params: { executionContextId: first.contextId } });
+  assert.throws(() => frames.assert(first), { code: 'STALE_REF' });
+  const replacement = await frames.world(frame, call);
+  assert.notEqual(replacement.documentId, first.documentId);
+  const navigated = await frames.world({ ...frame, loaderId: 'loader-2' }, call);
+  assert.notEqual(navigated.documentId, replacement.documentId);
+  assert.equal(navigated.id, first.id);
+  frames.dispose();
+});
 
 test('native API rejects unbounded and arbitrary commands before drawing or dispatch', async () => {
   const automation = createCdpAutomation({ instanceId: 'test', sessions: () => [],

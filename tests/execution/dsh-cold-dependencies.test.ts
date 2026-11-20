@@ -26,23 +26,24 @@ test('GC after declaration preserves handoff and old-owner recovery with pinned 
   };
   const make = async () => {
     const owner = new DshOwnerHandoff(root, { version: 'old' }, () => ({ coverage: 'complete', activeCount: 0 }));
-    await owner.load(); owner.attach(host); return owner;
+    await owner.load();t.after(()=>owner.receipts.close()); owner.attach(host); return owner;
   };
   const expected = (owner: any) => ({ expectedOwner: owner.authority.owner, expectedEpoch: owner.authority.snapshot().epoch, operationId: 'gc', fence: 'gc' });
   let owner = await make();
   await owner.control('fence', expected(owner)); await owner.control('release', expected(owner));
   await rm(release, { recursive: true });
   assert.deepEqual(await readDshColdResources(resources), before);
-  owner = await make();
+  await owner.receipts.close();owner = await make();
   let ready = await owner.control('cold-ready', expected(owner));
   await owner.control('resume', { ...expected(owner), identity: ready.handoff.ready.identity });
   assert.equal(owner.open(), true);
   await owner.control('fence', expected(owner)); await owner.control('release', expected(owner));
   // Candidate fails after cold-ready. The previous code/config acquires a
   // fresh proof against current data; no snapshot is restored.
+  await owner.receipts.close();
   const candidate = await make();
-  await candidate.control('cold-ready', expected(candidate));
-  owner = await make();
+  await candidate.control('cold-ready', expected(candidate));await candidate.receipts.close();
+  await owner.receipts.close();owner = await make();
   ready = await owner.control('cold-ready', expected(owner));
   await owner.control('resume', { ...expected(owner), identity: ready.handoff.ready.identity });
   assert.equal(owner.open(), true);

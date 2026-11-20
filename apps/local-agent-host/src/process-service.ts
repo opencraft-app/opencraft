@@ -1,3 +1,4 @@
+import { terminalProcessSession, drainTerminalProcessSessions, type TerminalProcessSession } from './terminal-process-session.js';
 import { homedir } from "node:os";
 import { spawn, type IPty } from "node-pty";
 import { TERMINAL_RESOURCE_LIMITS, type ProcessContext, type ProcessOutput, type ProcessSnapshot } from "@opencraft/appserver-protocol";
@@ -12,6 +13,8 @@ export interface PreparedProcessIdentity {
   quotaOwner: string;
   scope?: EnvironmentExecutionScope;
   env?: Record<string, string>;
+  /** Private owner IPC; never accepted from a public process request. */
+  lifecycleAuthority?: boolean;
 }
 
 export function prepareProcessIdentity(environment: ExecutionEnvironmentRuntime | undefined, scope: EnvironmentExecutionScope | undefined, method: string, raw: unknown): PreparedProcessIdentity {
@@ -40,6 +43,8 @@ interface Session {
   scope?: EnvironmentExecutionScope;
   pty: IPty;
   killTimer?: ReturnType<typeof setTimeout>;
+  processSession?: TerminalProcessSession;
+  archiveStopAt?: number;
   phase: "running" | "exited";
   exitCode: number | null;
   sequence: number;
@@ -60,6 +65,8 @@ function size(value: unknown) {
 /** PTY core owned by the independent terminal owner, never by a client socket. */
 export class HostProcessService {
   constructor(private readonly environment?: ExecutionEnvironmentRuntime) {}
+  private readonly retiredAliases = new Set<string>();
+  private readonly retiredThreads = new Set<string>();
   private readonly sessions = new Map<string, Session>();
   private readonly listeners = new Set<(method: string, params: unknown) => void>();
   private closed = false;
@@ -79,13 +86,41 @@ export class HostProcessService {
     if (this.closed) throw new Error("Process service is closed");
     const p = object(raw ?? {});
     const { scope, owner, quotaOwner } = identity;
-    if (method === "process/list") return { processes: [...this.sessions].filter(([, s]) => s.owner === owner).map(([id, s]) => {
+    const matchesScope = (session: Session) => (!scope?.threadId || session.context.threadId === scope.threadId)
+      && (!scope?.projectId || session.context.projectId === scope.projectId);
+    if (method === "process/threadScopes") {
+      if (identity.lifecycleAuthority !== true) throw new Error("Thread inventory requires server authority");
+      return [...new Map([...this.sessions.values()].filter(s => s.scope?.hostId && s.context.threadId)
+        .map(s => [JSON.stringify([s.scope!.hostId, s.context.threadId]), {hostId:s.scope!.hostId,threadId:s.context.threadId!}])).values()];
+    }
+    if (method === "process/releaseThread") {
+      if (identity.lifecycleAuthority !== true || !scope?.hostId || !scope.threadId) throw new Error("Thread cleanup requires server authority");
+      const key = JSON.stringify([scope.hostId, scope.threadId]);
+      const aliases = p.aliases ?? [];
+      if (!Array.isArray(aliases) || aliases.length > 10000 || aliases.some(a => !a || typeof a.owner !== 'string' || typeof a.resourceOwnerId !== 'string')) throw new Error("Invalid resource aliases");
+      const aliasKeys = aliases.map(a => JSON.stringify([scope.hostId, a.owner, a.resourceOwnerId]));
+      if (p.activate === true) { this.retiredThreads.delete(key); for (const alias of aliasKeys) this.retiredAliases.delete(alias); return { pending: 0 }; }
+      for (const alias of aliasKeys) this.retiredAliases.add(alias);
+      this.retiredThreads.add(key);
+      const owned = [...this.sessions.values()].filter(session => session.scope?.hostId === scope.hostId && (session.context.threadId === scope.threadId
+        || !session.context.threadId && aliasKeys.includes(JSON.stringify([scope.hostId, session.owner, session.context.resourceOwnerId]))));
+      for (const session of owned) {
+        session.archiveStopAt ??= Date.now();
+        if (session.phase === "running") this.terminate(session);
+      }
+      const descendants = drainTerminalProcessSessions(owned.flatMap(session => session.processSession
+        ? [{ session: session.processSession, force: Date.now() - session.archiveStopAt! >= 1000 }] : []));
+      return { pending: descendants + owned.filter(session => session.phase === "running").length };
+    }
+    if (method === "process/list") return { processes: [...this.sessions].filter(([, s]) => s.owner === owner && matchesScope(s)).map(([id, s]) => {
       const { output: _, ...metadata } = this.snapshot(id, s, s.sequence);
       return metadata;
     }) };
     if (typeof p.processHandle !== "string" || p.processHandle.length === 0 || p.processHandle.length > 256) throw new Error("Invalid process handle");
     const id = p.processHandle;
     if (method === "process/spawn") {
+      if (scope?.threadId && this.retiredThreads.has(JSON.stringify([scope.hostId, scope.threadId]))) throw new Error("Conversation is archived");
+      if (scope && this.retiredAliases.has(JSON.stringify([scope.hostId, owner, p.resourceOwnerId]))) throw new Error("Conversation is archived");
       if (this.sessions.has(id)) throw new Error("Process handle already exists");
       // Quotas are checked by the PTY owner, independently of UI connections.
       const running = [...this.sessions.values()].filter(s => s.phase === "running");
@@ -111,7 +146,7 @@ export class HostProcessService {
         projectId: scope ? scope.projectId : (typeof p.projectId === "string" ? p.projectId : null),
         cwd: typeof p.cwd === "string" ? p.cwd : homedir(), shell: p.command[0] as string,
       };
-      const session: Session = { context, quotaOwner, pty, scope, owner, phase: "running", exitCode: null, sequence: 0, bytes: 0, output: [] };
+      const session: Session = { context, quotaOwner, pty, scope, owner, processSession: terminalProcessSession(pty.pid), phase: "running", exitCode: null, sequence: 0, bytes: 0, output: [] };
       this.sessions.set(id, session);
       pty.onData(data => {
         // Individual chunks are bounded as well as the whole replay ring.
@@ -133,7 +168,7 @@ export class HostProcessService {
       return { processHandle: id };
     }
     const session = this.sessions.get(id);
-    if (!session || session.owner !== owner) throw new Error("Process session not found");
+    if (!session || session.owner !== owner || !matchesScope(session)) throw new Error("Process session not found");
     if (method === "process/attach") {
       if (!Number.isSafeInteger(p.afterSequence) || Number(p.afterSequence) < 0 || Number(p.afterSequence) > session.sequence) throw new Error("Invalid output cursor");
       return this.snapshot(id, session, Number(p.afterSequence));
@@ -171,8 +206,11 @@ export class HostProcessService {
   async shutdown() {
     const sessions = [...this.sessions.values()];
     this.close();
-    const deadline = Date.now() + 3000;
-    while (sessions.some(session => session.phase === "running")) {
+    const started = Date.now(), deadline = started + 3000;
+    for (;;) {
+      const descendants = drainTerminalProcessSessions(sessions.flatMap(session => session.processSession
+        ? [{ session: session.processSession, force: Date.now() - started >= 1000 }] : []));
+      if (!descendants && !sessions.some(session => session.phase === "running")) return;
       if (Date.now() > deadline) throw new Error("Terminal owner could not drain PTYs");
       await new Promise(resolve => setTimeout(resolve, 10));
     }

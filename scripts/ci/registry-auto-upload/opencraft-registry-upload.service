@@ -1,0 +1,14 @@
+[Unit]
+Description=Upload verified OpenCraft releases to the configured registry
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+ConditionPathExists=/opt/opencraft-docker/registry-upload/.env
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/bin/bash /opt/opencraft-docker/registry-upload/run.sh
+TimeoutStartSec=2h
+Nice=10
+IOSchedulingClass=idle

@@ -5,6 +5,14 @@ does not change AppServer semantics, Composer layout or input-direction attribut
 
 ## Ownership
 
+An active disclosure lease is the sole local reflow compensator. Before a row
+measurement commits, the Web viewport synchronizes that anchor and supplies its
+post-layout physical distance. The same transaction commits the new height table
+and render window at that distance, with no generic scroll correction or queued
+platform preservation. Suppressing only the final scroll write is insufficient:
+an incorrectly selected window can already unmount the interacted row. Normal
+measurement/text-anchor compensation resumes after settlement or user cancellation.
+
 | Fact / decision | Owner |
 | --- | --- |
 | DOM registrations, ResizeObserver samples, footer geometry | `WebConversationViewportOwner` |
@@ -68,6 +76,28 @@ refs. The DOM owner and controller remain the only platform resource / scroll
 write owners. This separation improves portability without adding a new generic
 policy. Expo still has a combined native host: shared pure rules are reusable,
 but this Web split is **not** an implemented Expo lifecycle port.
+
+## Natural-flow measurement during user scrolling
+
+In the Web bottom-origin natural flow, an estimated historical row growing above
+the reading position extends the content upward. Its measurement updates the
+height table and render window without scheduling absolute position preservation.
+Synthetic-height hosts keep their existing preservation path.
+
+A text anchor's screen displacement includes both reflow and native scrolling.
+Before deriving a correction, subtract physical scroll movement since the anchor
+sample, including movement whose scroll event has not yet reached JavaScript.
+The DOM owner returns the physical base together with the corrected target; the
+measurement commit applies only their difference onto the latest physical position.
+Already-satisfied layout targets issue no platform write, so they cannot interrupt
+touch momentum. Explicit positioning and return-to-bottom commands retain their
+existing ownership.
+
+`smoke-conversation-momentum.ts` exercises the real Conversation and measurement
+owners with several newly mounted rows far taller than the 280px estimate, under
+controlled unreported movement. It checks that upward hydration produces no
+scroll writes and does not rewind the requested movement. This controlled browser
+sequence is separate from physical iPhone/WeChat momentum acceptance.
 
 ## Long Turns are not a separate follow policy
 

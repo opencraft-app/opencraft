@@ -13,6 +13,14 @@ import type {
   ToolRequestUserInputResponse,
 } from "./generated/v2";
 
+/** Request cancellation without claiming the handler has stopped or answered. */
+export const SERVER_REQUEST_CANCEL = 'opencraft/server-request/cancel';
+export const SERVER_REQUEST_CANCELLATION_EXTENSION = 'opencraft/server-request-cancellation';
+export interface ServerRequestCancelParams {
+  readonly requestId: string | number;
+  readonly threadId: string;
+}
+
 export interface OptionPickerRequestOption {
   readonly label: string;
   readonly description?: string | null;

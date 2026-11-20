@@ -5,6 +5,7 @@
 | 专题 | 范围 |
 | --- | --- |
 | [Architecture and acceptance](architecture/chat-ui/architecture-and-acceptance.md) | 架构边界、包归属、迁移状态与验收证据 |
+| [Input delivery lifecycle](architecture/chat-ui/input-delivery-lifecycle.md) | 消息接收、执行采用、停止处置与回执恢复 |
 | [Composer and drafts](architecture/chat-ui/composer-and-drafts.md) | 输入草稿、发送交接、移动输入与附件编辑 |
 | [History and recovery](architecture/chat-ui/history-and-recovery.md) | 历史分页、恢复、会话连续性与持有的视口 |
 | [Navigation and catalog](architecture/chat-ui/navigation-and-catalog.md) | 侧栏目录、会话行、导航与筛选状态 |

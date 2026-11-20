@@ -4,6 +4,34 @@
 
 入口为 `/__opencraft_auth/`，提供登录、退出、绑定本地账号或 OIDC、解绑。已有身份必须从当前账号中主动绑定；如果目标身份已经属于另一 Actor，会拒绝操作，不能借绑定迁移资源。增加绑定和解绑要求最近十分钟内的登录证明；OIDC 绑定同时要求身份平台重新认证。解绑使该 Actor 的旧登录上下文失效，需要用保留的方式重新登录。最后一种登录身份不能解绑。
 
+## Browser reconnect after admission expires
+
+The headless Web Workbench checks the existing, selected-server-scoped
+`GET /__opencraft_access/admission` before public and SSH AppHost connections.
+The read is bounded to five seconds and coalesced only while in flight. It does
+not extend sessions or cache an authorization grant. A 401 becomes
+`APP_HOST_AUTH_REQUIRED`; a 403 becomes `APP_HOST_ACCESS_DENIED`. Both retain
+the existing lifecycle owner's manual-recovery disposition, so foreground hints
+cannot keep opening sockets. Network/5xx failures remain automatically retryable;
+404 retains compatibility with older servers. Transparent resume retains its
+existing bounded budget before full reconnect reaches this check.
+
+The existing conversation recovery surface explains the failure. On confirmed 401 the browser shell
+waits for queued local document writes, then reloads its current URL once so the
+gateway can run authentication. A per-tab, selected-server sessionStorage fence
+survives reload and resets only on confirmed 204 admission. No redirect URL is
+accepted from the response and no user write is replayed. Repeated 401, unavailable
+tab storage or failed flushing leaves the existing explicit sign-in/retry actions. Permission denial instead asks for administrator access. Session TTLs and
+identity scopes are unchanged. Browser popup restrictions and real enterprise
+SSO remain platform/external-provider boundaries, not a successful fake login.
+
+`tests/protocol/websocket-app-host-admission.test.ts` covers real Relay cookie
+issuance/expiry, the real HTTP/WS gate and relay-connect tunnel, then the actual
+browser transport and Workbench owner. The native engine and enterprise provider
+are synthetic. Removing the admission hook reproduces ongoing `reconnecting`.
+`smoke-auth-expiry.ts` exercises the full Workbench/Composer in a browser with
+controlled HTTP and wire responses, including in-place draft/editor preservation.
+
 ## Trusted registration and SSH credential adapters
 
 Compiled identity adapters may subscribe to `ActorStore.onHumanRegistered`.

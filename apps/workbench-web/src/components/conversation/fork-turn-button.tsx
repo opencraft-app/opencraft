@@ -4,16 +4,16 @@ import { ProgressIndicator } from "@opencraft/design-system-web/progress";
 import { useIntl } from "@opencraft/i18n/react";
 
 /** A fork is a mutation with a possibly unknown outcome; never retry it automatically. */
-export function ForkTurnButton({ fork }: { readonly fork: () => Promise<void> }) {
+export function ForkTurnButton({ fork }: { readonly fork?: () => Promise<void> }) {
   const intl = useIntl();
   const pending = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const label = intl.formatMessage({ id: "conversation.forkFromTurn", defaultMessage: "Branch from here" });
   return <>
-    <button data-turn-fork="" type="button" title={label} aria-label={label} aria-busy={busy || undefined} disabled={busy}
+    <button data-turn-fork="" type="button" title={label} aria-label={label} aria-busy={busy || undefined} disabled={busy || fork === undefined}
       onClick={() => {
-        if (pending.current) return;
+        if (pending.current || fork === undefined) return;
         pending.current = true;
         setBusy(true);
         setError(null);

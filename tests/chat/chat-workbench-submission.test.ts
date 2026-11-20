@@ -290,3 +290,29 @@ test("a different input during first-Turn promotion receives its own queue recei
     assert.deepEqual(queued, [{ ...followUp, target: { type: "enqueue-follow-up", key: { hostId: "local", threadId: "thread-one" } } }]);
   } finally { release(); scopes.dispose(); }
 });
+
+for (const mode of ["pending", "reject", "throw"] as const) {
+  test(`accepted input custody does not wait for or fail with projection refresh: ${mode}`, async () => {
+    const scopes = createConversationScopeRegistry();
+    let calls = 0;
+    let refreshStarted = false;
+    const pipeline = createWorkbenchSubmissionPipeline({ scopes,
+      submitNewThread: async () => receipt,
+      submitExistingThread: async () => { calls++; return receipt; },
+      submitFirstTurn: async () => receipt,
+      promoteDraft: async () => {},
+      afterAccepted: () => {
+        refreshStarted = true;
+        if (mode === "throw") throw new Error("read failed");
+        return mode === "reject" ? Promise.reject(new Error("read failed")) : new Promise<void>(() => {});
+      },
+    });
+    const intent = { ...createIntent("unused"), target: { type: "existing-thread" as const,
+      key: { hostId: receipt.hostId, threadId: receipt.threadId } } } as SubmitIntent;
+    const result = await Promise.race([pipeline.submit(intent),
+      new Promise<never>((_, reject) => { const timer = setTimeout(() => reject(new Error("receipt blocked on read")), 100); timer.unref(); })]);
+    assert.equal(result, receipt);
+    assert.equal(refreshStarted, true);
+    assert.equal(calls, 1);
+  });
+}

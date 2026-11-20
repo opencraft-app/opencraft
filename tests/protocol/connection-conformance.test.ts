@@ -10,6 +10,8 @@ import { ConnectionLifecycleOwner } from "../../packages/workbench-runtime/src/c
 type Event = "connect" | "ack" | "loss" | "manual" | "retry" | "deadline" | "stable" | "late" | "freeze" | "dispose";
 class Specification {
   phase = "idle"; failures = 0; error = false; stable = false; expired = false;
+  /** Time spent usable: losing an established route (>=10s) restarts backoff. */
+  usableMs = 0;
   constructor(private readonly stageMs = 30_000) {}
   step(event: Event) {
     if (this.phase === "disposed") return;
@@ -19,15 +21,17 @@ class Specification {
       if (this.phase === "attempting" && this.expired) { this.failures++; this.expired = false; }
       if (this.phase !== "usable" && this.phase !== "attempting") { this.phase = "attempting"; this.error = false; this.expired = false; }
     } else if (event === "freeze" && this.phase === "attempting") this.expired = true;
+    else if (event === "freeze" && this.phase === "usable") this.usableMs += 300_000;
     else if (event === "ack" && this.phase === "attempting") {
       if (this.expired) { this.phase = "backoff"; this.error = true; this.failures++; }
-      else { this.phase = "usable"; this.error = false; this.stable = true; }
+      else { this.phase = "usable"; this.error = false; this.stable = true; this.usableMs = 0; }
     }
     else if (event === "manual" && ["attempting", "usable"].includes(this.phase)) { this.phase = "blocked"; this.error = true; }
     else if ((event === "loss" && ["attempting", "usable"].includes(this.phase)) || event === "deadline") {
+      if (this.phase === "usable" && this.usableMs >= 10_000) this.failures = 0;
       this.phase = "backoff"; this.error = true; this.failures++;
     } else if (event === "retry") { this.phase = "attempting"; this.error = false; this.expired = false; }
-    else if (event === "stable") { this.failures = 0; this.stable = false; }
+    else if (event === "stable") { this.failures = 0; this.stable = false; this.usableMs += 7_000; }
   }
   timers() {
     return this.phase === "attempting" ? [this.stageMs] : this.phase === "usable" ? this.stable ? [7_000] : []

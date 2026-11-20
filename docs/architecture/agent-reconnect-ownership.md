@@ -49,7 +49,51 @@ ownership even on a previously read-only lane. Unknown methods conservatively pi
 queue does not prove that native execution ended. There is a 32-lane/owner admission cap; unacknowledged
 or uncertain receipts are never evicted just to admit more work.
 
-This change does not introduce deferred/private Thread publication, Hub ownership policy, sender admission
-receipts, upload retry behavior or transparent turn retransmission. Those owners require their own coordinated
-protocol and persistence changes. It also does not add an idle timeout that guesses when a used execution
-lane can be discarded.
+## Private creation publication
+
+Private creation publication remains separate from receipt delivery: successful
+allocation does not publish a conversation before ownership commit. An uncertain
+creation keeps its publication barrier closed. A known preparation rejection
+releases its barrier without creating or publishing a conversation.
+
+## Native connection replacement
+
+A stable lane key selects a relay-owned operation owner. Receipts and the
+private-publication identity belong to that owner, not either WebSocket.
+Native socket loss retires transport correlation and callbacks, but preserves
+confirmed receipts and publication rights. Reattaching the same lane can replay
+a confirmed result and publish it after Hub ownership commit. An acknowledgement
+does not remove an outstanding private-publication owner.
+
+A request still preparing when the native channel dies is a confirmed rejection:
+it was never forwarded, its unused publication barrier is released, and a late
+policy completion cannot send it. The unresolved policy promise still consumes
+the owner's admission capacity until it settles, including across reconnects.
+
+A forwarded request without a confirmed result becomes resultUnknown. Replaying
+its operation returns uncertainty; it cannot be acknowledged or executed again.
+Without an authoritative native operation lookup this layer cannot reconstruct
+a lost creation result. Its private barrier remains fail-closed and unknown IDs
+may remain unavailable until authoritative reconciliation or native process
+replacement. A reconnect or timeout alone is never evidence of rejection or
+permission to publish. This is bounded in-memory fencing, not crash durability.
+
+The relay bounds live lanes and retained owners to 32 each. Detached owners with
+no receipts, publication allocations or preparing promises can be collected;
+uncertain owners cannot be evicted to admit work. Native correlation IDs include
+a connection nonce, preventing reuse when a lane's transport is replaced.
+
+## Human interaction routes
+
+The stable producer interaction key identifies an approval; its native wire ID
+only selects the current route. Source loss suspends responses without resolving
+the approval. A different stable key may reuse that suspended wire ID, but cannot
+replace a live route. Old Turn completion retires only its own stable entries.
+Modern Host adapters carry the stable key on responses; the facade rejects a key
+from a replaced native connection and strips this metadata before native delivery.
+Legacy unkeyed responses remain compatible and cannot provide that same identity
+fence. Suspended interactions remain bounded by the existing 256-entry limit;
+only authoritative native resolution/Turn completion retires them. No timeout
+invents a human answer or claims an uncertain request was resolved.
+
+Callback receipt handling does not replace Host sender admission, upload retry, or durable input-delivery owners. None of these contracts authorizes transparent retransmission of an uncertain Turn.

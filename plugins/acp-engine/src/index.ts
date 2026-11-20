@@ -612,6 +612,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       } finally { this.pendingMcp.delete(id); }
     }
     if (method === "thread/resume") {
+      if (session.archived) return fault("Unarchive the thread before resuming", -32071);
       await this.resume(session);
       if (this.id === "codex" && (this.codexFullAccessRequested(params) || session.codexFullAccess)) await this.selectCodexFullAccess(session);
       runtime.owner = client;
@@ -621,9 +622,20 @@ export class AcpEngine implements ExecutionEngineProvider {
       return { ...reply, ...(initialTurnsPage ? { initialTurnsPage } : {}) };
     }
     if (method === "thread/name/set") { if (typeof params.name !== "string" || params.name.length > 256) return fault("Invalid ACP thread name"); await this.setTitle(session, params.name, "manual"); return {}; }
-    if (method === "thread/archive" || method === "thread/unarchive") { session.archived = method === "thread/archive"; await this.save(session); return {}; }
+    if (method === "thread/archive" || method === "thread/unarchive") {
+      if (method === "thread/archive") {
+        if (runtime.active?.status === "inProgress") return fault("Stop the active turn before archiving", -32000);
+        // Only dedicated session transports belong to this thread. Never close
+        // the shared ACP driver while another conversation is using it.
+        const dedicated = this.sessionTransports.get(session.id);
+        if (dedicated) { await dedicated.close(); this.sessionTransports.delete(session.id); this.sessionEnvironments.delete(session.id); }
+        runtime.loaded = false; runtime.owner = undefined;
+      }
+      session.archived = method === "thread/archive"; await this.save(session); return {};
+    }
     if (method === "thread/unsubscribe") { if (runtime.owner === client) runtime.owner = undefined; return {}; }
     if (method === "turn/start") {
+      if (session.archived) return fault("Unarchive the thread before executing", -32071);
       if (runtime.active?.status === "inProgress") return fault("ACP thread is already running", -32000);
       if (params.clientUserMessageId !== undefined && (typeof params.clientUserMessageId !== "string" || !params.clientUserMessageId || params.clientUserMessageId.length > 512)) return fault("Invalid ACP input identity");
       const continuing = Array.isArray(params.input) && params.input.length === 0;

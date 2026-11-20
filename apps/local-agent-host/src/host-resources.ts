@@ -40,9 +40,9 @@ export async function fileRequest(method: string, params: unknown): Promise<unkn
 export class LocalHostResources {
   private readonly projects: ProjectRepository;
   private readonly attachments?: LocalAttachmentStagingService;
-  constructor(options: { projectDirectory?: string; attachmentDirectory?: string } = {}) {
+  constructor(options: { projectDirectory?: string; attachmentDirectory?: string; artifactDirectory?: string } = {}) {
     this.projects = new ProjectRepository(options.projectDirectory);
-    if (options.attachmentDirectory) this.attachments = new LocalAttachmentStagingService(options.attachmentDirectory);
+    if (options.attachmentDirectory) this.attachments = new LocalAttachmentStagingService(options.attachmentDirectory,options.artifactDirectory);
   }
   get extensions() { return this.attachments ? { [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: this.attachments.capability } : {}; }
   handles(method: string) { return method === "project/list" || method === "project/create" || method.startsWith("fs/") || !!this.attachments && method.startsWith("attachment/"); }

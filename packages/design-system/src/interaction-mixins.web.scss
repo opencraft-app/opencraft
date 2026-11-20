@@ -24,3 +24,10 @@
     :root[data-touch-interaction] { @content; }
   }
 }
+
+// Resolved installation preference owns presentation. Current pointer contacts
+// still own hover/press behavior; container width only allocates space.
+@mixin touch-presentation {
+  @if & { :root[data-ui-density="touch"] & { @content; } }
+  @else { :root[data-ui-density="touch"] { @content; } }
+}

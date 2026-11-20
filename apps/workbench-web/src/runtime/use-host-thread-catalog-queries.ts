@@ -70,7 +70,7 @@ export function useHostThreadCatalogQueries(inputs: readonly CatalogQuery[]) {
         if (page.nextCursor != null && (page.nextCursor === pageParam || prefix.includes(page.nextCursor))) {
           throw new Error("Repeated thread catalog cursor");
         }
-        return updates.markRead(page, startedAt);
+        return updates.markRead(updates.reconcileRecency(page, pageParam === null), startedAt);
       },
       getNextPageParam: last => last.nextCursor ?? null,
       select: projectPages, staleTime: 30_000, retry: retryHostThreadCatalogQuery,
@@ -87,13 +87,13 @@ export function useHostThreadCatalogQueries(inputs: readonly CatalogQuery[]) {
     optimistic.forEach((result, index) => {
       if (result.isFetching || !result.isSuccess) return;
       const update = updates[index]!;
-      if (!result.hasNextPage) update.acknowledge(result.data);
+      const raw = client.getQueryData<InfiniteData<ThreadListResponse, string | null>>(inputs[index]!.queryKey);
+      update.acknowledge(raw);
       if (!update.hasPending) return;
       // Fold the tail into the same query cache after its old read settles.
       // Keep page cursors/identities, and retain no second long-lived directory.
-      const revision = update.getSnapshot();
-      client.setQueryData<InfiniteData<ThreadListResponse, string | null>>(inputs[index]!.queryKey, data => update.materialize(data));
-      update.acknowledge(update.markRead(result.data!, revision));
+      const materialized = update.materialize(raw);
+      if (materialized !== raw) client.setQueryData(inputs[index]!.queryKey, materialized);
     });
   });
   const store = useMemo(() => {

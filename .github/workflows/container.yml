@@ -6,6 +6,7 @@ on:
   pull_request:
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: container-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -17,8 +18,6 @@ jobs:
         include:
           - architecture: amd64
             runner: ubuntu-24.04
-          - architecture: arm64
-            runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     steps:
@@ -30,12 +29,19 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - run: node --test tests/server/container-deployment.test.mjs tests/browser/remote-browser-owner.test.mjs
+      - run: node --import tsx --test tests/server/container-deployment.test.mjs tests/browser/remote-browser-owner.test.mjs
+      - run: node --test tests/browser/remote-browser-artifact.test.mjs tests/browser/install-owned-browser-runtime.test.mjs tests/browser/owned-electron-packaging.test.mjs
       - run: node --import tsx --test tests/execution/hands-unix-sandbox.test.ts
+      - uses: ./.github/actions/owned-electron
+        with:
+          run-id: ${{ vars.OPENCRAFT_ELECTRON_ARTIFACT_RUN_ID }}
+          target: linux-x64
+          kind: browser
       - name: Build identified container candidate
         run: |
           source_date_epoch="$(git show -s --format=%ct HEAD)"
-          docker buildx build -f docker/Dockerfile \
+          docker buildx build -f docker/Dockerfile.owned-electron \
+            --build-context "owned-electron=$OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION" \
             --platform "linux/${{ matrix.architecture }}" \
             --build-arg "OPENCRAFT_BUILD_ID=github-${GITHUB_SHA}" \
             --build-arg "OPENCRAFT_SOURCE_REVISION=${GITHUB_SHA}" \

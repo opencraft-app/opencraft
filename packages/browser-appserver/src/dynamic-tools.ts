@@ -27,19 +27,23 @@ export function installBrowserDynamicToolHandler(
   host: BrowserToolHost,
   options: { readonly hostId: string },
 ): () => void {
-  return client.interceptServerRequest(async (request, next) => {
+  return client.interceptServerRequest(async (request, next, responseContext) => {
     if (request.method !== "item/tool/call") return next();
     const params = request.params as DynamicToolCallParams;
+    const flat = params.namespace == null ? BROWSER_TOOL_CATALOG.flatMap(namespace => namespace.tools.map(tool => ({
+      namespace: namespace.name, name: tool.name, wireName: `${namespace.name}_${tool.name}`,
+    }))).find(tool => tool.wireName === params.tool) : undefined;
     const result = await executeBrowserTool(host, {
       hostId: options.hostId,
       threadId: params.threadId,
       turnId: params.turnId,
       callId: params.callId,
+      ...(responseContext?.signal ? { signal: responseContext.signal } : {}),
     }, {
       namespace: params.namespace === "vela_app" ? "opencraft_app"
-        : params.namespace === "vela_browser" ? "opencraft_browser" : params.namespace ?? null,
+        : params.namespace === "vela_browser" ? "opencraft_browser" : params.namespace ?? flat?.namespace ?? null,
       name: params.namespace === "vela_app" && params.tool === "open_in_vela"
-        ? "open_in_opencraft" : params.tool,
+        ? "open_in_opencraft" : flat?.name ?? params.tool,
     }, params.arguments);
     if (result === null) return next();
     const response: DynamicToolCallResponse = {

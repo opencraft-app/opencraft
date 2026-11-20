@@ -23,6 +23,9 @@ async function main() {
   const runner = existsSync(packagedRunner) ? packagedRunner : join(dirname(ownFile), "../../../scripts/server-deployment/sandbox-command.mjs");
   const runtime = await startCodexAppServer({
     executionSandbox: configuration ? { configuration, runner } : undefined,
+    // Deployment-private channel, never a renderer/provider setting. No default:
+    // paired Gateway admission must be installed before enabling strict APP mode.
+    workspaceAuthoritySocket: process.env.OPENCRAFT_WORKSPACE_AUTHORITY_SOCKET,
     projectlessWorkspaceDirectory: process.env.OPENCRAFT_CODEX_PROJECTLESS_DIR,
     endpoint: argument("--endpoint"), coreEndpoint: argument("--core-endpoint"),
     authToken: (await readFile(argument("--token-file"), "utf8")).trim(),

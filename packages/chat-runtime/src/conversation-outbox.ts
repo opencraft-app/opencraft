@@ -37,6 +37,8 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
   let revision = 0;
   const listeners = new Set<() => void>();
   let entries: readonly ConversationOutboxEntry[] = [];
+  const abandonedCommands = new Set<string>();
+  const abandonedClientIds = new Set<string>();
   let storageError: Error | null = null;
   let generation = 0;
   let disposed = false;
@@ -90,7 +92,7 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
   const drain = async () => {
     if (disposed || !dispatch?.ready() || (dispatch?.blocked() ?? true)) return;
     if (draining) { pendingWake = true; return; }
-    if (retryCommandId === entries[0]?.intent.commandId && Date.now() < retryNotBefore) {
+    if (retryCommandId === entries.find(entry => entry.state !== "failed")?.intent.commandId && Date.now() < retryNotBefore) {
       // Timers can fire before the deadline (or the wall clock can move).
       if (retryTimer === null) {
         const owner = generation;
@@ -109,7 +111,7 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
       await hydration;
       if (storageError) return;
       while (!disposed && owner === generation && dispatch?.ready() && !(dispatch?.blocked() ?? true)) {
-        const head = entries[0];
+        const head = entries.find(entry => entry.state !== "failed");
         if (!head || head.state !== "waiting") break;
         // Persist the attempt before crossing the transport boundary. A reload
         // here loses automatic retry, never duplicates an uncertain execution.
@@ -161,6 +163,7 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
               if (!disposed && owner === generation) wake();
             }, delayMs);
           }
+          if (state === "failed") continue;
           break;
         }
       }
@@ -178,7 +181,7 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
       // Readiness can recover while the undispatched head is being persisted
       // as waiting. Recheck once without bypassing a requested retry delay.
       if (owner !== generation || (wakeAfterDrain && retryTimer === null
-        && !storageError && entries[0]?.state === "waiting")) wake();
+        && !storageError && entries.find(entry => entry.state !== "failed")?.state === "waiting")) wake();
     }
   };
   const wake = () => { void drain(); };
@@ -233,6 +236,8 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
       if (owner !== generation) throw new Error("Conversation outbox scope changed");
       if (disposed) throw new Error("Conversation outbox is disposed");
       if (storageError) throw storageError;
+      if (abandonedCommands.has(intent.commandId) || abandonedClientIds.has(intent.clientMessageId))
+        throw new SubmissionOutcomeUnknownError();
       if (intent.target.type !== "existing-thread" && intent.target.type !== "enqueue-follow-up"
         && intent.target.type !== "steer-active-turn") throw new Error("This action requires a connection");
       if (intent.target.key.hostId !== config.key.hostId || intent.target.key.threadId !== config.key.threadId)
@@ -253,15 +258,42 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
         hostId: config.key.hostId, threadId: config.key.threadId, turnId: null,
         acceptedAt: Date.now(), replayed: false, disposition: "local-queue" };
     },
+    async abandon(id: string): Promise<void> {
+      let clientMessageId: string | undefined;
+      await commit(() => {
+        const entry = entries.find(entry => entry.intent.commandId === id);
+        if (entry?.state !== "unknown")
+          throw new Error("Only an unconfirmed local submission can be abandoned");
+        clientMessageId = entry.intent.clientMessageId;
+        return entries.filter(entry => entry.intent.commandId !== id);
+      });
+      abandonedCommands.add(id);
+      abandonedClientIds.add(clientMessageId!);
+      dispatch?.retire([id]);
+      notify(); wake();
+    },
+    async retry(id: string): Promise<boolean> {
+      let retried = false;
+      await commit(() => {
+        const entry = entries.find(entry => entry.intent.commandId === id);
+        if (entry?.state !== "failed") return entries;
+        retried = true;
+        return [...entries.filter(item => item !== entry), { ...entry, state: "waiting" as const, error: undefined }];
+      });
+      if (retried) { dispatch?.retire([id]); notify(); wake(); }
+      return retried;
+    },
     async remove(id: string): Promise<boolean> {
       const owner = generation;
       await hydration;
       if (disposed || owner !== generation) throw new Error("Conversation outbox scope changed");
       const entry = entries.find(item => item.intent.commandId === id);
       if (!entry) return false;
+      if (entry.state === "unknown") throw new Error("Explicitly abandon this unconfirmed delivery; it may still arrive");
       if (entry.state === "sending") throw new Error("Wait for this message's delivery result before removing it");
       await commit(() => {
         const current = entries.find(item => item.intent.commandId === id);
+        if (current?.state === "unknown") throw new Error("Explicitly abandon this unconfirmed delivery; it may still arrive");
         if (current?.state === "sending") throw new Error("Wait for this message's delivery result before removing it");
         return entries.filter(item => item.intent.commandId !== id);
       });

@@ -43,7 +43,11 @@ export function ownerSchemaSignature(database: DatabaseSync) {
       const keys = database.prepare(`PRAGMA index_xinfo(${JSON.stringify(index.name)})`).all().filter(key => key.key).map(key => ({
         name: key.name, descending: key.desc, collation: key.coll,
       }));
-      return { name: (String(index.name).startsWith('sqlite_autoindex_') || String(index.name).startsWith('legacy_unique_')) ? 'unique' : index.name,
+      return { name: (String(index.name).startsWith('sqlite_autoindex_') || String(index.name).startsWith('legacy_unique_')
+        // One reviewed equivalent UNIQUE declaration: baseline has an anonymous
+        // constraint, Drizzle emits this named index. Keys/collation/WHERE and
+        // multiplicity still compare exactly; other index names stay strict.
+        || table.name === 'artifacts' && index.name === 'artifacts_scope_source_key_unique' && index.unique === 1) ? 'unique' : index.name,
         unique: index.unique, keys, where: expression(where) };
     }).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
     const foreignKeys = database.prepare(`PRAGMA foreign_key_list(${quoted})`).all().map(({ id: _id, ...key }) => key)

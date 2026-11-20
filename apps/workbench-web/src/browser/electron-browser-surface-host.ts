@@ -5,6 +5,7 @@ import { createElectronBrowserAutomation } from "./electron-browser-automation";
 import type { BrowserAutomation } from "@opencraft/browser-core";
 import type { BrowserMetadataStorage } from "./desktop-browser-storage";
 import type { PresentationHostPort } from "./opencraft-presentation-host";
+import { createDeferredGuestAnnotator as createGuestAnnotator } from "../browser-annotation/frame/deferred-guest-annotator";
 
 interface Guest extends HTMLElement {
   setZoomFactor(factor: number): void;
@@ -34,6 +35,7 @@ interface Page {
   layout?: BrowserViewportLayout;
   phase?: "staged" | "visible" | "parked";
   automation?: BrowserAutomation;
+  annotator?: ReturnType<typeof createGuestAnnotator>;
   readyPromise: Promise<void>;
   resolveReady(): void;
   cover?: HTMLDivElement;
@@ -64,6 +66,18 @@ export class ElectronBrowserSurfaceHost implements BrowserSurfaceHost {
   private useFactory: ((id: BrowserPageId) => () => void) | null = null;
   setUseFactory(factory: ((id: BrowserPageId) => () => void) | null) { this.useFactory = factory; }
   acquireUse(id: BrowserPageId) { return this.useFactory?.(id) ?? (() => {}); }
+  async capturePreview(id: BrowserPageId): Promise<string | null> {
+    const page = this.pages.get(id); if (!page?.ready) return null;
+    const src = await this.capture(id);
+    const image = new Image(); image.src = src; await image.decode();
+    if (this.pages.get(id) !== page) return null;
+    const canvas = document.createElement('canvas'); canvas.width = Math.min(360, image.naturalWidth);
+    canvas.height = Math.min(450, Math.round(image.naturalHeight * canvas.width / image.naturalWidth));
+    try { const context = canvas.getContext('2d'); if (!context) return null;
+      context.drawImage(image, 0, 0, image.naturalWidth, canvas.height * image.naturalWidth / canvas.width, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/jpeg', 0.72);
+    } finally { canvas.width = canvas.height = 0; }
+  }
   async capture(id: BrowserPageId) {
     const page = this.pages.get(id);
     if (!page?.ready) throw new Error("Browser page is not ready");
@@ -214,6 +228,12 @@ export class ElectronBrowserSurfaceHost implements BrowserSurfaceHost {
   goForward(id: BrowserPageId) { const p = this.pages.get(id); if (p?.ready && p.guest.canGoForward()) p.guest.goForward(); }
   stop(id: BrowserPageId) { const p = this.pages.get(id); if (p?.ready) p.guest.stop(); }
   automation(id: BrowserPageId) { return this.pages.get(id)?.automation ?? null; }
+  annotate(id: BrowserPageId) {
+    const page = this.pages.get(id);
+    if (!page) return null;
+    page.annotator ??= createGuestAnnotator(page.guest as unknown as Parameters<typeof createGuestAnnotator>[0]);
+    return page.annotator;
+  }
   commit(id: BrowserPageId, layout: BrowserViewportLayout, phase: "staged" | "visible") {
     const p = this.pages.get(id);
     if (!p) return;
@@ -253,6 +273,7 @@ export class ElectronBrowserSurfaceHost implements BrowserSurfaceHost {
     p.resolveReady();
     p.cover?.remove();
     p.automation?.dispose();
+    p.annotator?.dispose();
     p.container.remove();
     for (const listener of this.closeListeners) listener(id);
   }
@@ -303,6 +324,7 @@ export class ElectronBrowserSurfaceHost implements BrowserSurfaceHost {
       page.automation?.dispose();
       page.automation = guest.getURL().startsWith("http")
         ? createElectronBrowserAutomation(guest, (window as any).opencraftDesktop.browser) : undefined;
+      page.annotator?.refresh();
       sync();
     });
     guest.addEventListener("did-start-navigation", event => {

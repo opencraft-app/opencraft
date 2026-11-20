@@ -1,0 +1,16 @@
+// A sidebar-only vertical rhythm. Typography, icon sizes, horizontal alignment,
+// conversation rows and the global control-density policy remain unchanged.
+.shell-sidebar__column {
+  --gap-navigation-sections: var(--gap-sidebar-navigation-sections);
+  --gap-navigation-groups: var(--gap-sidebar-navigation-groups);
+  --gap-sidebar-activity-groups: var(--gap-sidebar-navigation-rows);
+  --gap-sidebar-activity-expanded-groups: var(--gap-sidebar-navigation-heading-after);
+
+  // Inbox, Assistant and product entries can arrive through separate catalogs.
+  // Their outer margins must use the same rhythm as rows in a single catalog.
+  .sidebar-extension-catalog[data-catalog-presentation="entry"] {
+    margin-block-start: var(--gap-sidebar-activity-groups);
+  }
+
+  .sidebar-list-toolbar { padding-block: var(--gap-sidebar-activity-groups); }
+}
