@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./window-metrics": "./src/window-metrics.ts",
+    "./conversation-return-probe": "./src/conversation-return-probe.ts",
     "./retry-schedule": "./src/retry-schedule.ts",
     "./side-chat-records": "./src/side-chat/records.ts",
     "./resource-directory-signals": "./src/resource-directory-signals.ts",
