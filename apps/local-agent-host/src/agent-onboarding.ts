@@ -1,9 +1,9 @@
 import type { OnboardingActivity, OnboardingAgentId, OnboardingAgentSnapshot, OnboardingSnapshot } from "@opencraft/appserver-protocol";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { constants } from "node:fs";
-import { access, readdir } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { delimiter, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const ONBOARDING_AGENT_ENGINES = { codex: "codex", cursor: "cursor", claude: "claude-code", gemini: "gemini", codebuddy: "codebuddy", "codebuddy-ide": "codebuddy-ide", pi: "pi-cli", dsh: "dsh-acp" } as const;
@@ -17,7 +17,7 @@ export const ONBOARDING_AGENTS = [
     versionArgs: ["--version"],
     statusArgs: ["login", "status"],
     signInArgs: ["login"],
-    signInEnv: {},
+    signInEnv: { BROWSER: "/usr/bin/true" },
     installPackage: "@openai/codex",
     installUrl: "https://developers.openai.com/codex/cli",
   },
@@ -39,7 +39,7 @@ export const ONBOARDING_AGENTS = [
     versionArgs: ["--version"],
     statusArgs: ["auth", "status"],
     signInArgs: ["auth", "login"],
-    signInEnv: {},
+    signInEnv: { BROWSER: "/usr/bin/true" },
     installPackage: null,
     installUrl: "https://code.claude.com/docs/en/setup",
   },
@@ -149,9 +149,112 @@ export function interpretAuth(id: OnboardingAgentId, stdout: string, stderr: str
   }
   if (!text) return { authenticated: null, account: null };
   const account = EMAIL.exec(text)?.[0] ?? null;
-  if (/not (?:logged|signed) in|logged out|sign in required/iu.test(text)) return { authenticated: false, account: null };
+  if (/not (?:logged|signed) in|logged out|sign in required|authentication required/iu.test(text)) return { authenticated: false, account: null };
   if (/(?:^|[^a-z])(?:logged|signed) in/iu.test(text)) return { authenticated: true, account };
-  return { authenticated: code === 0 ? null : false, account: null };
+  return { authenticated: null, account: null };
+}
+
+function decodeJwtEmail(token: unknown): string | null {
+  if (typeof token !== "string") return null;
+  const parts = token.split(".");
+  if (parts.length < 2) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1]!, "base64url").toString("utf8")) as { email?: unknown };
+    return typeof payload?.email === "string" && EMAIL.test(payload.email) ? payload.email : null;
+  } catch {
+    return null;
+  }
+}
+
+async function readLocalCodexAuth(env: NodeJS.ProcessEnv, home: string): Promise<{ authenticated: true; account: string | null } | null> {
+  if (env.OPENAI_API_KEY?.trim()) return { authenticated: true, account: null };
+  const codexHome = env.CODEX_HOME?.trim() || join(home, ".codex");
+  try {
+    const parsed = JSON.parse(await readFile(join(codexHome, "auth.json"), "utf8")) as {
+      OPENAI_API_KEY?: unknown;
+      tokens?: { access_token?: unknown; refresh_token?: unknown; id_token?: unknown };
+    };
+    const apiKey = typeof parsed?.OPENAI_API_KEY === "string" && parsed.OPENAI_API_KEY.trim().length > 0;
+    const accessToken = typeof parsed?.tokens?.access_token === "string" && parsed.tokens.access_token.trim().length > 0;
+    const refreshToken = typeof parsed?.tokens?.refresh_token === "string" && parsed.tokens.refresh_token.trim().length > 0;
+    if (apiKey || accessToken || refreshToken) {
+      return {
+        authenticated: true,
+        account: decodeJwtEmail(parsed?.tokens?.id_token) ?? decodeJwtEmail(parsed?.tokens?.access_token),
+      };
+    }
+  } catch {
+    /* Fall back to CLI status probe (for example macOS Keychain-only storage). */
+  }
+  return null;
+}
+
+async function readLocalCursorAuth(env: NodeJS.ProcessEnv, home: string): Promise<{ authenticated: true; account: string | null } | null> {
+  for (const candidate of [
+    join(env.XDG_CONFIG_HOME?.trim() || join(home, ".config"), "cursor", "auth.json"),
+    join(env.CURSOR_CONFIG_DIR?.trim() || join(home, ".cursor"), "cli-config.json"),
+  ]) {
+    try {
+      const parsed = JSON.parse(await readFile(candidate, "utf8")) as Record<string, any>;
+      if (typeof parsed?.accessToken === "string" && parsed.accessToken.trim()) {
+        return { authenticated: true, account: typeof parsed.email === "string" ? parsed.email : null };
+      }
+      const authInfo = parsed?.authInfo;
+      if (authInfo && typeof authInfo === "object" && (typeof authInfo.accessToken === "string" && authInfo.accessToken.trim() || typeof authInfo.email === "string" && authInfo.email.trim())) {
+        return { authenticated: true, account: typeof authInfo.email === "string" ? authInfo.email : null };
+      }
+    } catch {
+      /* Ignore missing or unreadable local config. */
+    }
+  }
+  return null;
+}
+
+const codeBuddyAuthCache = new Map<string, { at: number; authenticated: boolean }>();
+async function probeCodeBuddyAcpAuth(executable: string, env: NodeJS.ProcessEnv): Promise<boolean | null> {
+  if (env.CODEBUDDY_API_KEY?.trim()) return true;
+  const cached = codeBuddyAuthCache.get(executable);
+  if (cached && Date.now() - cached.at < 30_000) return cached.authenticated;
+  return new Promise(resolvePromise => {
+    let settled = false;
+    const finish = (value: boolean | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (typeof value === "boolean") codeBuddyAuthCache.set(executable, { at: Date.now(), authenticated: value });
+      try { child.kill("SIGTERM"); } catch {}
+      resolvePromise(value);
+    };
+    const child = spawn(executable, ["--acp"], { env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+    const timer = setTimeout(() => finish(null), 5000);
+    timer.unref();
+    let buffer = "";
+    let sentSession = false;
+    child.once("error", () => finish(null));
+    child.once("exit", () => finish(null));
+    child.stdin.on("error", () => {});
+    child.stderr.resume();
+    child.stdout.on("data", chunk => {
+      buffer += chunk.toString("utf8");
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const msg = JSON.parse(line) as Record<string, any>;
+          if (msg.id === 1 && msg.result && !sentSession) {
+            sentSession = true;
+            child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "session/new", params: { cwd: homedir(), mcpServers: [] } }) + "\n");
+          } else if (msg.id === 2) {
+            if (msg.result?.sessionId) finish(true);
+            else if (msg.error && (/auth/iu.test(String(msg.error.message ?? "")) || msg.error.data?.category === "auth")) finish(false);
+            else finish(null);
+          }
+        } catch {}
+      }
+    });
+    child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: "opencraft", version: "1" } } }) + "\n");
+  });
 }
 
 export function firstVersionLine(stdout: string): string | null {
@@ -162,7 +265,14 @@ export function firstVersionLine(stdout: string): string | null {
 export async function resolveExecutable(commands: readonly string[], deps: Pick<OnboardingDeps, "env" | "homedir" | "exists" | "cursorVersions">): Promise<string | null> {
   const bundledNodeBin = fileURLToPath(new globalThis.URL("../../../node_modules/.bin", import.meta.url));
   const bundledDshBin = fileURLToPath(new globalThis.URL("../../../runtime/dsh/node_modules/.bin", import.meta.url));
-  const dirs = [...new Set([...(deps.env.PATH ?? "").split(delimiter), join(deps.homedir, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin"].filter(Boolean))];
+  const dirs = [...new Set([
+    ...(deps.env.PATH ?? "").split(delimiter),
+    dirname(process.execPath),
+    join(deps.homedir, ".local", "bin"),
+    join(deps.homedir, ".codebuddy", "bin"),
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+  ].filter(Boolean))];
   for (const command of commands) {
     for (const dir of dirs) {
       // The bundled Pi SDK and internal DSH runtime also expose bins. npm-run PATH injection
@@ -208,7 +318,7 @@ interface LiveTask {
 function activityOf(task: LiveTask | undefined): OnboardingActivity | null {
   if (!task) return null;
   const guide = task.kind === "sign-in" ? parseSignInOutput(task.log) : { url: null, userCode: null };
-  const awaitingCode = task.kind === "sign-in" && task.phase === "running" && /paste the authorization code/iu.test(stripTerminal(task.log));
+  const awaitingCode = task.kind === "sign-in" && task.phase === "running" && /paste (?:the authorization )?code/iu.test(stripTerminal(task.log));
   return {
     kind: task.kind,
     phase: task.phase,
@@ -292,7 +402,12 @@ export class AgentOnboardingService {
       : await resolveExecutable(agent.commands, this.deps);
     if (!executable) throw new Error(kind === "install" ? "npm is not available" : "Agent is not installed");
     if (kind === "sign-in" && agent.signInArgs.length === 0) throw new Error("Sign in from the native agent client before connecting");
-    const args = kind === "install" ? ["install", "-g", agent.installPackage!] : agent.signInArgs;
+    const headlessLinuxCodex = kind === "sign-in" && agent.id === "codex" && process.platform === "linux" && !this.deps.env.DISPLAY && !this.deps.env.WAYLAND_DISPLAY;
+    const args = kind === "install"
+      ? ["install", "-g", agent.installPackage!]
+      : headlessLinuxCodex
+        ? [...agent.signInArgs, "--device-auth"]
+        : agent.signInArgs;
     const env = { ...this.deps.env, ...agent.signInEnv, PATH: augmentedPath(this.deps.env, this.deps.homedir) };
     const child = this.deps.spawn(executable, args, env);
     const task: LiveTask = { kind, phase: "running", message: null, log: `$ ${args.join(" ")}\n`, process: child, timer: null };
@@ -330,7 +445,7 @@ export class AgentOnboardingService {
       displayName: agent.name,
       installUrl: agent.installUrl,
       canInstallPackage: agent.installPackage !== null,
-      ...(agent.id === "pi" ? { setupCommand: "pi" } : agent.id === "dsh" ? { setupCommand: "dsh web" } : isStandaloneGeminiCli ? { setupCommand: "gemini" } : {}),
+      ...(agent.id === "pi" ? { setupCommand: "pi" } : agent.id === "dsh" ? { setupCommand: "dsh web" } : agent.id === "codebuddy" ? { setupCommand: "codebuddy" } : isStandaloneGeminiCli ? { setupCommand: "gemini" } : {}),
       activity: activityOf(this.tasks.get(agent.id)),
     };
     if (!executable) {
@@ -340,28 +455,47 @@ export class AgentOnboardingService {
     if (runningSignIn?.phase === "running" && runningSignIn.kind === "sign-in") {
       return { ...base, installed: true, version: null, authenticated: null, account: null };
     }
+    const isRealLocalDeps = this.deps.homedir === homedir();
+    const localFastCodex = agent.id === "codex" && isRealLocalDeps ? await readLocalCodexAuth(this.deps.env, this.deps.homedir) : null;
+    const localFastCursor = agent.id === "cursor" && isRealLocalDeps ? await readLocalCursorAuth(this.deps.env, this.deps.homedir) : null;
     const env = { ...this.deps.env, PATH: augmentedPath(this.deps.env, this.deps.homedir) };
-    const statusTimeout = agent.id === "gemini" ? 16_000 : STATUS_TIMEOUT_MS;
+    const statusTimeout = 15_000;
+    const skipStatusProcess = isStandaloneGeminiCli || Boolean(localFastCodex);
     const [version, status] = await Promise.all([
-      this.deps.exec(executable, agent.versionArgs, STATUS_TIMEOUT_MS, env).catch(() => ({ stdout: "", stderr: "", code: 1 })),
-      agent.statusArgs.length && !isStandaloneGeminiCli ? this.deps.exec(executable, agent.statusArgs, statusTimeout, env).catch(() => ({ stdout: "", stderr: "", code: 1 })) : Promise.resolve({stdout:"",stderr:"",code:0}),
+      this.deps.exec(executable, agent.versionArgs, statusTimeout, env).catch(() => ({ stdout: "", stderr: "", code: 1 })),
+      agent.statusArgs.length && !skipStatusProcess ? this.deps.exec(executable, agent.statusArgs, statusTimeout, env).catch(() => ({ stdout: "", stderr: "", code: 1 })) : Promise.resolve({stdout:"",stderr:"",code:0}),
     ]);
-    const auth = agent.id === "dsh"
-      ? {
-          authenticated: version.code !== 0
-            ? null
-            : Boolean(this.deps.env.DEEPSEEK_API_KEY?.trim()) || await this.deps.exists(this.deps.env.DSH_HOME?.trim() || join(this.deps.homedir, ".dsh")),
-          account: null,
-        }
-      : isStandaloneGeminiCli
+    const auth = localFastCodex
+      ? localFastCodex
+      : agent.id === "dsh"
         ? {
             authenticated: version.code !== 0
               ? null
-              : Boolean(this.deps.env.GEMINI_API_KEY?.trim() || this.deps.env.GOOGLE_API_KEY?.trim())
-                || await access(join(this.deps.homedir, ".gemini", "oauth_creds.json"), constants.R_OK).then(() => true, () => false),
+              : Boolean(this.deps.env.DEEPSEEK_API_KEY?.trim()) || await this.deps.exists(this.deps.env.DSH_HOME?.trim() || join(this.deps.homedir, ".dsh")),
             account: null,
           }
-        : interpretAuth(agent.id, status.stdout, status.stderr, status.code);
+        : isStandaloneGeminiCli
+          ? {
+              authenticated: version.code !== 0
+                ? null
+                : Boolean(this.deps.env.GEMINI_API_KEY?.trim() || this.deps.env.GOOGLE_API_KEY?.trim())
+                  || await access(join(this.deps.homedir, ".gemini", "oauth_creds.json"), constants.R_OK).then(() => true, () => false),
+              account: null,
+            }
+          : agent.id === "codebuddy"
+            ? {
+                authenticated: version.code !== 0
+                  ? null
+                  : isRealLocalDeps
+                    ? await probeCodeBuddyAcpAuth(executable, env)
+                    : interpretAuth(agent.id, status.stdout, status.stderr, status.code).authenticated,
+                account: null,
+              }
+            : (() => {
+                const interpreted = interpretAuth(agent.id, status.stdout, status.stderr, status.code);
+                if (interpreted.authenticated === null && localFastCursor) return localFastCursor;
+                return interpreted;
+              })();
     return {
       ...base,
       installed: true,
@@ -372,12 +506,19 @@ export class AgentOnboardingService {
   }
 }
 
-function augmentedPath(env: NodeJS.ProcessEnv, home: string): string {
-  const extras = [join(home, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin"];
+export function augmentedAgentPath(env: NodeJS.ProcessEnv = process.env, home: string = homedir()): string {
+  const extras = [
+    dirname(process.execPath),
+    join(home, ".local", "bin"),
+    join(home, ".codebuddy", "bin"),
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+  ];
   const parts = (env.PATH ?? "").split(delimiter).filter(Boolean);
-  for (const extra of extras) if (!parts.includes(extra)) parts.unshift(extra);
+  for (const extra of extras) if (extra && !parts.includes(extra)) parts.unshift(extra);
   return parts.join(delimiter);
 }
+const augmentedPath = augmentedAgentPath;
 
 export function createOnboardingDeps(env: NodeJS.ProcessEnv = process.env): OnboardingDeps {
   const home = homedir();

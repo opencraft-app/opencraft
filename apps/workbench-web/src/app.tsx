@@ -1460,6 +1460,13 @@ export function App({
   useEffect(() => {
     setOnboardingOverlay(current => current === "gate" ? current : null);
   }, [workbenchNavigationSnapshot.revision]);
+  useEffect(() => {
+    if (onboardingOverlay !== "gate") return;
+    if (!composerCatalog.modelsReady || composerCatalog.models.length === 0 || noUsableModels) return;
+    try { localStorage.setItem("opencraft.onboarding.completedAt", new Date().toISOString()); }
+    catch { /* Ignore storage restrictions. */ }
+    setOnboardingOverlay(null);
+  }, [onboardingOverlay, composerCatalog.modelsReady, composerCatalog.models.length, noUsableModels]);
   const finishOnboarding = async (modelId?: string) => {
     const epoch = ++onboardingFinishEpoch.current;
     if (modelId) {

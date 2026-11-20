@@ -1,4 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { homedir } from "node:os";
+import { delimiter, dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { PiRpcAdapter } from "./pi-rpc.js";
 import { fileURLToPath } from "node:url";
@@ -46,7 +48,12 @@ export class AcpStdioTransport {
     return this.initialized ??= (async () => {
       if (this.closing) throw new Error("ACP Host closed");
       const configuration = (this.pi || this.options.sandboxOwner) ? await engineSandboxConfiguration() : undefined;
-      const env = { ...process.env, ...this.options.env };
+      const rawEnv = { ...process.env, ...this.options.env };
+      const home = rawEnv.HOME || homedir();
+      const extraDirs = [dirname(process.execPath), join(home, ".local", "bin"), join(home, ".codebuddy", "bin"), "/opt/homebrew/bin", "/usr/local/bin"];
+      const pathParts = (rawEnv.PATH ?? "").split(delimiter).filter(Boolean);
+      for (const extra of extraDirs) if (extra && !pathParts.includes(extra)) pathParts.unshift(extra);
+      const env = { ...rawEnv, PATH: pathParts.join(delimiter) };
       const bundledRunner = new URL("./sandbox-command.mjs", import.meta.url);
       const runner = configuration ? fileURLToPath(await sandboxFileExists(bundledRunner) ? bundledRunner : new URL("../../../scripts/server-deployment/sandbox-command.mjs", import.meta.url)) : undefined;
       const invocation = configuration ? prepareSandboxInvocation({ runner: runner!, configuration, owner: this.options.sandboxOwner ?? "pi-cli", cwd: this.options.cwd,
