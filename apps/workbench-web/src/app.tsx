@@ -491,9 +491,8 @@ export function App({
   [rawMultiHostCatalog.threads, threadPinWriter, pinRevision]) };
   const projectCatalog = useProjectCatalog();
   const workspaceCatalog = useWorkspaceCatalog();
-  const selectedPlacementProblem = draft && (draft.target.execution.environment || draft.target.execution.workspace.source)
-    ? (!workspaceCatalog.selectable ? "Workspace choices must be refreshed before sending. Your draft is retained."
-      : placementProblem(draft.target.execution, workspaceCatalog.data)) : null;
+  const placementBlocksSubmission = Boolean(draft && (draft.target.execution.environment || draft.target.execution.workspace.source)
+    && (!workspaceCatalog.selectable || placementProblem(draft.target.execution, workspaceCatalog.data)));
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
   const { sidebarOpen, setSidebarOpen } = useResponsiveSidebarDock();
   const { width: sidebarWidth, commit: commitSidebarWidth } = usePersistedSidebarWidth(presentation.shellNavigation);
@@ -2497,9 +2496,9 @@ export function App({
         ) : draft !== null && draft.submission === null ? (
           draftRecoveryNotice ?? <NewThreadDraftPage
             key={draft.id}
-            setupNotice={<>{selectedPlacementProblem ? <div className="thread-layout-width new-thread-draft-composer-width" role="alert">{selectedPlacementProblem}</div> : null}{recoveryAccessFailure !== null ? <div className="thread-layout-width new-thread-draft-composer-width"><ConversationRecoveryNotice
-              failed accessFailure={recoveryAccessFailure} onRetry={retryConnectionAdmission} /></div> : draftSetupNotice}</>}
-            setupBlocksSubmission={selectedPlacementProblem !== null || recoveryAccessFailure !== null || draftSetupKind === "models" || (draftSetupKind === "catalog-error" && composerCatalog.models.length === 0) || (supportsModelSetup && modelReadiness.isPending)}
+            setupNotice={recoveryAccessFailure !== null ? <div className="thread-layout-width new-thread-draft-composer-width"><ConversationRecoveryNotice
+              failed accessFailure={recoveryAccessFailure} onRetry={retryConnectionAdmission} /></div> : draftSetupNotice}
+            setupBlocksSubmission={placementBlocksSubmission || recoveryAccessFailure !== null || draftSetupKind === "models" || (draftSetupKind === "catalog-error" && composerCatalog.models.length === 0) || (supportsModelSetup && modelReadiness.isPending)}
             activeTabId={presentation.rightPanel ? panelState.right.activeTabId : null}
             composerPresentationEnabled={conversationRouteOpen}
             draft={draft}
@@ -2522,7 +2521,7 @@ export function App({
             personalDefaultsPending={composerCatalog.personalDefaultsPending}
             placement={{
               catalog: workspaceCatalog.data, available: workspaceCatalog.available, selectable: workspaceCatalog.selectable,
-              loading: workspaceCatalog.loading, error: workspaceCatalog.error, problem: selectedPlacementProblem,
+              loading: workspaceCatalog.loading, error: workspaceCatalog.error,
               refresh: workspaceCatalog.refresh,
               select: execution => hostCatalog.retargetDraft(draft.id, execution),
             }}

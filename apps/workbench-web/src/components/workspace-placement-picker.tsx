@@ -16,7 +16,6 @@ export interface WorkspacePlacementControl {
   readonly selectable: boolean;
   readonly loading: boolean;
   readonly error: Error | null;
-  readonly problem: string | null;
   refresh(): void;
   select(execution: ComposerExecutionTarget): void;
 }
@@ -126,7 +125,6 @@ export function WorkspacePlacementPicker({ control, execution, locked, portalCon
             <FolderIcon size={15} /><span><strong>{choice.label}</strong><small>{choice.environment ? choice.detail : `${host} · ${choice.detail}`}</small></span>
             {workspaceChoiceSelected(choice, execution) ? <CheckIcon size={15} /> : null}
           </Menu.Item>)}
-          {workspaceOptionsLoading || control?.loading ? <div role="status" className="new-thread-project-menu__state"><FormattedMessage id="workspacePlacement.loading" defaultMessage="Refreshing workspaces…" /></div> : null}
           {!matches.length && !retainedVisible && !workspaceOptionsLoading && !control?.loading ? <div className="new-thread-project-menu__state"><FormattedMessage id="workspacePlacement.noMatches" defaultMessage="No matching workspaces" /></div> : null}
         </div>
         <Menu.Separator className="new-thread-project-menu__separator" />

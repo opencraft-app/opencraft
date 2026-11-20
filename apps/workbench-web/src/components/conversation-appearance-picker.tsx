@@ -30,7 +30,8 @@ const colorMessages = {
 export default function AppearancePicker({ target, returnFocus, onDismiss }: { target: Target; returnFocus(): HTMLElement | null; onDismiss(): void }) {
   const context = useConversationAppearanceActions()!;
   const appearance = useAppearance(target);
-  const current = appearance ?? fallback;
+  const [draft, setDraft] = useState<ConversationAppearance | null>(appearance);
+  const current = draft ?? fallback;
   const intl = useIntl();
   const notices = useAsyncNotices();
   const [pending, setPending] = useState(false);
@@ -49,33 +50,33 @@ export default function AppearancePicker({ target, returnFocus, onDismiss }: { t
         return next;
       });
       notices.dismiss(`appearance:${key}`);
+      if (mounted.current) onDismiss();
     } catch {
       if (mounted.current) notices.error({ key: `appearance:${key}`, detail: target.title,
         message: intl.formatMessage({ id: "chat.appearance.failed", defaultMessage: "Could not save the icon. Try again." }) });
     } finally { inFlight.current = false; if (mounted.current) setPending(false); }
   };
   const label = intl.formatMessage({ id: "chat.appearance.title", defaultMessage: "Conversation icon" });
-  return <ModalSurface label={label} size="compact" appearance="utility" className="conversation-appearance-dialog" returnFocus={returnFocus} onDismiss={onDismiss}>
+  return <ModalSurface label={label} size="compact" appearance="utility" className="conversation-appearance-dialog" returnFocus={returnFocus} onDismiss={() => { if (!inFlight.current) onDismiss(); }}>
     <div className="conversation-appearance-picker" aria-busy={pending}>
       <div className="conversation-appearance-picker__heading"><Artwork appearance={current} size={workbenchIconMetrics.overview.heading} /><h2>{label}</h2></div>
       <fieldset disabled={pending}><legend>{intl.formatMessage({ id: "chat.appearance.colors", defaultMessage: "Color" })}</legend>
         <div className="conversation-appearance-picker__grid">{conversationColorNames.map(color => <IconButton key={color} aria-label={intl.formatMessage(colorMessages[color])}
-          variant={current.color === color ? "secondary" : "ghost"} aria-pressed={current.color === color} onClick={() => void save({ ...current, color })}>
+          variant={current.color === color ? "secondary" : "ghost"} aria-pressed={current.color === color} onClick={() => setDraft({ ...current, color })}>
           <span className="conversation-appearance-swatch conversation-appearance-color" data-color={color} aria-hidden="true">{current.color === color ? <CheckIcon size={workbenchIconMetrics.core.settings} /> : null}</span>
         </IconButton>)}</div>
         <div className="conversation-appearance-picker__custom"><label>
           {intl.formatMessage({ id: "chat.appearance.custom", defaultMessage: "Custom color" })}
-          <ColorInput value={custom} onChange={event => setCustom(event.target.value)} />
-        </label><Button size="sm" variant="ghost" onClick={() => void save({ ...current, color: custom })}>
-          {intl.formatMessage({ id: "common.apply", defaultMessage: "Apply" })}</Button></div>
+          <ColorInput value={custom} onChange={event => { setCustom(event.target.value); setDraft({ ...current, color: event.target.value }); }} />
+        </label></div>
       </fieldset>
       <fieldset disabled={pending}><legend>{intl.formatMessage({ id: "chat.appearance.icons", defaultMessage: "Icon" })}</legend>
         <div className="conversation-appearance-picker__grid">{conversationIconNames.map(icon => <IconButton key={icon} aria-label={intl.formatMessage(iconMessages[icon])}
-          variant={current.icon === icon ? "secondary" : "ghost"} aria-pressed={current.icon === icon} onClick={() => void save({ ...current, icon })}><Artwork appearance={{ icon, color: current.color }} size={workbenchIconMetrics.overview.heading} /></IconButton>)}</div>
+          variant={current.icon === icon ? "secondary" : "ghost"} aria-pressed={current.icon === icon} onClick={() => setDraft({ ...current, icon })}><Artwork appearance={{ icon, color: current.color }} size={workbenchIconMetrics.overview.heading} /></IconButton>)}</div>
       </fieldset>
-      <div className="conversation-appearance-picker__actions"><Button size="sm" variant="ghost" disabled={!appearance || pending} onClick={() => void save(null)}>
+      <div className="conversation-appearance-picker__actions"><Button size="sm" variant="ghost" disabled={!draft || pending} onClick={() => setDraft(null)}>
         <ResetIcon size={workbenchIconMetrics.core.settings} aria-hidden="true" />{intl.formatMessage({ id: "chat.appearance.reset", defaultMessage: "Restore default" })}</Button>
-        <Button size="sm" variant="secondary" onClick={onDismiss}>{intl.formatMessage({ id: "common.done", defaultMessage: "Done" })}</Button></div>
+        <Button size="sm" variant="secondary" disabled={pending} onClick={() => void save(draft)}>{intl.formatMessage({ id: "chat.appearance.confirm", defaultMessage: "Confirm" })}</Button></div>
     </div>
   </ModalSurface>;
 }

@@ -2249,5 +2249,6 @@
   "workspacePlacement.openFolder": "Open folder…",
   "workspacePlacement.search": "Search workspaces",
   "workspacePlacement.selectionFailed": "Could not select this workspace. Refresh and try again.",
-  "workspacePlacement.temporary": "Temporary workspace"
+  "workspacePlacement.temporary": "Temporary workspace",
+  "chat.appearance.confirm": "Confirm"
 }

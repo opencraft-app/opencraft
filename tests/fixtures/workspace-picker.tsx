@@ -29,8 +29,9 @@ const catalog = {version:1 as const,environments:[environment,{...environment,co
 function App() {
   const [draft,setDraft] = React.useState(initialDraft);
   const [available,setAvailable] = React.useState(true);
-  const placement = {catalog, available,selectable:available,loading:false,error:null,problem:null,refresh:()=>{},select:(execution:ComposerExecutionTarget)=>{const next=scopes.retargetDraft(draft.id,execution);controller.dispatch({type:'switch-target',target:next.target,preserveDraft:true});setDraft(next)}};
-  Object.assign(window, {picker:{setAvailable,execution:()=>controller.getSnapshot().draft.target}});
+  const [loading,setLoading] = React.useState(false);
+  const placement = {catalog, available,selectable:available && !loading,loading,error:null,refresh:()=>{},select:(execution:ComposerExecutionTarget)=>{const next=scopes.retargetDraft(draft.id,execution);controller.dispatch({type:'switch-target',target:next.target,preserveDraft:true});setDraft(next)}};
+  Object.assign(window, {picker:{setAvailable,setLoading,execution:()=>controller.getSnapshot().draft.target}});
   useTimelineViewportHost(chrome);
   const [recovering, setRecovering] = React.useState(params.has("recovering"));
   Object.assign(window, { fixture: { controller, setRecovering } });

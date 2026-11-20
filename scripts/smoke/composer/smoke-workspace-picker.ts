@@ -47,6 +47,17 @@ try {
     assert.equal((await execution()).workspace.projectId, 'project');
     await open();
     await page.screenshot({ path: `/tmp/workspace-picker-${touch ? 'touch' : 'desktop'}-${theme}.png` });
+    const menu = page.getByRole('menu');
+    const beforeRefresh = await menu.boundingBox();
+    const beforeEditor = await editor.boundingBox();
+    await page.evaluate(() => (window as any).picker.setLoading(true));
+    await page.getByRole('menuitem').filter({ hasText: 'Refresh workspaces' }).evaluate(element => {
+      if (!element.hasAttribute('data-disabled')) throw Error('Refresh did not enter its pending state');
+    });
+    assert.deepEqual(await menu.boundingBox(), beforeRefresh, 'Background refresh must not add a row or move the menu');
+    assert.deepEqual(await editor.boundingBox(), beforeEditor, 'Background refresh must not move the editor');
+    assert.equal(await page.getByText('Refreshing workspaces…', { exact: true }).count(), 0);
+    await page.evaluate(() => (window as any).picker.setLoading(false));
     await select('Shared library');
     let target = await execution();
     assert.equal(target.environment.configurationId, 'e2b');

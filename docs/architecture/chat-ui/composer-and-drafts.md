@@ -21,6 +21,12 @@ submission, superseded navigation, edited drafts and account changes fence late
 selection results. The workspace catalog remains a declaration of configured
 environments and sources, not a registry of allocated session directories.
 
+Workspace discovery and refresh do not render temporary banners above the
+Composer or insert loading rows into its location menu. The existing refresh
+control reflects pending state in place; selection validation still gates
+submission. Actionable setup/authentication failures retain their existing
+recovery UI, and asynchronous operation failures use the Workbench notice owner.
+
 ## Browser reconnect outbox
 
 Delivery uncertainty is owned by the conversation runtime, not by connection

@@ -2348,5 +2348,6 @@
   "workspacePlacement.openFolder": "打开文件夹…",
   "workspacePlacement.search": "搜索工作区",
   "workspacePlacement.selectionFailed": "无法选择此工作区，请刷新后重试。",
-  "workspacePlacement.temporary": "临时工作区"
+  "workspacePlacement.temporary": "临时工作区",
+  "chat.appearance.confirm": "确定"
 }
