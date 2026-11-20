@@ -1,6 +1,15 @@
 import { MODEL_CATALOG_REFRESH_METHOD, SCOPED_MODEL_REFRESH_EXTENSION } from "@opencraft/appserver-protocol";
 import { SCOPED_PERMISSION_CATALOG_EXTENSION, SCOPED_PERMISSION_CATALOG_METHOD } from "@opencraft/appserver-protocol";
 import { PersonalMachines } from "./personal-machines.js";
+import {
+  HostedSpaceRelay,
+  JoinedSpaceRelay,
+  encodeRelaySpaceInvite,
+  isRelaySpaceInvite,
+  isRemoteJoinedSpaceId,
+  parseRemoteSpaceThreadId,
+  type AttachedGuestSession,
+} from "./space-relay.js";
 import { ServerSpacesRuntime } from "@opencraft/access-control/server-spaces";
 import { SERVER_SPACES_METHOD, SERVER_SPACES_CHANGED, type ServerSpaceCommand } from "@opencraft/appserver-protocol/server-spaces";
 import { OPENCRAFT_TERMINAL_RESTORE_EXTENSION, OPENCRAFT_STEER_EVIDENCE_EXTENSION, SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND } from "@opencraft/appserver-protocol";
@@ -265,9 +274,16 @@ export async function startLocalAgentHost(options: {
   const routing = storage.routing;
   const client = new DshRoutedClient(dshUrl, routing, options.ownerHandoff ? bridgeToken : undefined);
   const socketClients = new Map<WebSocket, Map<string, LogicalClient>>();
+  const guestSocketScopes = new WeakMap<WebSocket, AttachedGuestSession>();
   const catalogChanges = new ThreadCatalogPublisher((method, params) => {
-    for (const [socket, clients] of socketClients) for (const state of clients.values()) {
-      if (state.initialized) sendClient(socket, state.clientId, { jsonrpc: "2.0", method, params });
+    const id = (params as { threadId?: string; thread?: { id?: string } } | undefined)?.threadId
+      ?? (params as { thread?: { id?: string } } | undefined)?.thread?.id;
+    for (const [socket, clients] of socketClients) {
+      const gScope = guestSocketScopes.get(socket);
+      if (gScope && id && spaces.spaceFor("local", id) !== gScope.spaceId) continue;
+      for (const state of clients.values()) {
+        if (state.initialized) sendClient(socket, state.clientId, { jsonrpc: "2.0", method, params });
+      }
     }
   });
   cleanup.push(() => catalogChanges.clear());
@@ -279,10 +295,14 @@ export async function startLocalAgentHost(options: {
       return result;
     }, (method, params) => {
       catalogChanges.observeNotification(method, params);
-      for (const [socket, clients] of socketClients) for (const state of clients.values()) {
+      for (const [socket, clients] of socketClients) {
         const id = params.threadId ?? params.thread?.id;
+        const gScope = guestSocketScopes.get(socket);
+        if (gScope && (!id || spaces.spaceFor("local", id) !== gScope.spaceId)) continue;
         const global = ["thread/name/updated", "thread/archived", "thread/unarchived", "thread/closed"].includes(method);
-        if (global || !id || lifecycle.attachments.has(state.key, id)) sendClient(socket, state.clientId, { jsonrpc: "2.0", method, params });
+        for (const state of clients.values()) {
+          if (global || !id || lifecycle.attachments.has(state.key, id)) sendClient(socket, state.clientId, { jsonrpc: "2.0", method, params });
+        }
       }
     });
   drainThreads = () => lifecycle.close();
@@ -586,9 +606,40 @@ export async function startLocalAgentHost(options: {
   cleanup.push(() => tasks.close());
   const projects = new ProjectRepository(options.projectStorageDirectory ?? options.modelStorageDirectory ?? options.dataDirectory);
   const token = options.token ?? randomBytes(24).toString("base64url");
+  const collaborationDir = resolve(options.dataDirectory ?? join(homedir(), ".opencraft"), "collaboration");
+  const hostedSpaceRelay = new HostedSpaceRelay(collaborationDir, spaces);
+  cleanup.push(() => hostedSpaceRelay.close());
+  await hostedSpaceRelay.ready();
+  const joinedSpaceRelay = new JoinedSpaceRelay(
+    collaborationDir,
+    (method, params) => {
+      for (const [socket, clients] of socketClients) {
+        if (guestSocketScopes.has(socket)) continue;
+        for (const state of clients.values()) {
+          if (state.initialized) sendClient(socket, state.clientId, { jsonrpc: "2.0", method, params });
+        }
+      }
+    },
+    () => {
+      for (const [socket, clients] of socketClients) {
+        if (guestSocketScopes.has(socket)) continue;
+        for (const state of clients.values()) sendClient(socket, state.clientId, { method: SERVER_SPACES_CHANGED, params: {} });
+      }
+    },
+    {
+      allowLoopbackInsecure: process.env.OPENCRAFT_SPACE_RELAY_ALLOW_LOOPBACK === "1",
+      localDisplayName: machineIdentity?.name ?? undefined,
+    },
+  );
+  cleanup.push(() => joinedSpaceRelay.close());
+  await joinedSpaceRelay.ready();
   const personalMachines = options.personalMachines ? new PersonalMachines({directory:productDataRoot,ownerActorId:spaces.context().actorId,ownerToken:token,...options.personalMachines}) : undefined;
   if(personalMachines){cleanup.push(()=>personalMachines.close());await personalMachines.ready();}
   const server = createServer((request, response) => {
+    if ((request.url ?? "").startsWith("/__opencraft_machines/enroll") && (request.url ?? "").includes("kind=space-invite")) {
+      void hostedSpaceRelay.tryHandleHttp(request, response);
+      return;
+    }
     if(personalMachines && (request.url??'').startsWith('/__opencraft_machines')){void personalMachines.http(request,response);return;}
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     response.setHeader("cache-control", "no-store");
@@ -607,12 +658,18 @@ export async function startLocalAgentHost(options: {
   const websocketServer = new WebSocketServer({ noServer: true });
   stopAccepting = async () => {
     closing = true;
+    await hostedSpaceRelay.close();
+    await joinedSpaceRelay.close();
     await personalMachines?.close();
     for (const client of websocketServer.clients) client.close(1001, "OpenCraft is quitting");
     websocketServer.close();
     if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()));
   };
   server.on("upgrade", (request, socket, head) => {
+    if (hostedSpaceRelay.tryHandleUpgrade(request, socket, head, (ws, guestSession) => {
+      guestSocketScopes.set(ws, guestSession);
+      websocketServer.emit("connection", ws, request);
+    })) return;
     if(personalMachines?.upgrade(request,socket,head))return;
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     if (url.pathname !== "/rpc" || url.searchParams.get("token") !== token) {
@@ -623,6 +680,7 @@ export async function startLocalAgentHost(options: {
     websocketServer.handleUpgrade(request, socket, head, (client) => websocketServer.emit("connection", client, request));
   });
   websocketServer.on("connection", (socket) => {
+    const guestScope = guestSocketScopes.get(socket);
     const httpRequests = new Map<string, AbortController>();
     const physicalId = randomUUID(), clients = new Map<string, LogicalClient>();
     socketClients.set(socket, clients);
@@ -630,7 +688,19 @@ export async function startLocalAgentHost(options: {
       let state = clients.get(clientId);
       if (!state) {
         const key = physicalId + ":" + clientId + ":" + randomUUID();
-        state = { key, clientId, owner: { connectionId: key, identity: { id: "local-user", username: "local" } }, offered: new Set(), openedThreads: new Set() };
+        state = {
+          key,
+          clientId,
+          owner: {
+            connectionId: key,
+            identity: guestScope
+              ? { id: guestScope.actorContext.actorId, username: `guest:${guestScope.guestId}` }
+              : { id: "local-user", username: "local" },
+          },
+          offered: new Set(),
+          openedThreads: new Set(),
+          ...(guestScope ? { selectedSpaceId: guestScope.spaceId } : {}),
+        };
         clients.set(clientId, state);
       }
       return state;
@@ -650,6 +720,7 @@ export async function startLocalAgentHost(options: {
     const deliver = (method: string, params: unknown) => {
       const value = params as { threadId?: string; thread?: { id: string }; requestId?: unknown };
       const id = value?.threadId ?? value?.thread?.id;
+      if (guestScope && (!id || spaces.spaceFor("local", id) !== guestScope.spaceId)) return;
       if (id) lifecycle.touch(id);
       for (const state of clients.values()) {
         if (method === "serverRequest/resolved") state.offered.delete(String(value.requestId));
@@ -659,6 +730,7 @@ export async function startLocalAgentHost(options: {
     const unsubscribe = adapter.subscribe(deliver);
     const unsubscribeAgents = connectedAgents.subscribe((method, params) => { if (method !== "thread/name/updated") deliver(method, params); });
     const publishShared = (threadId: string, state: LogicalClient) => {
+      if (guestScope && spaces.spaceFor("local", threadId) !== guestScope.spaceId) return;
       if (!state.sharedInteractions || !state.initialized || !(state.openedThreads.has(threadId) || lifecycle.receivesNotifications(state.key, threadId))) return;
       sendClient(socket, state.clientId, { jsonrpc: "2.0", method: SHARED_INTERACTIONS_CHANGED,
         params: adapter.interactions.shared.snapshot(threadId, true) });
@@ -666,13 +738,19 @@ export async function startLocalAgentHost(options: {
     const unsubscribeShared = adapter.interactions.shared.subscribe(threadId => {
       for (const state of clients.values()) publishShared(threadId, state);
     });
-    const unsubscribeProcesses = processes.subscribe((method, params) => send(socket, { jsonrpc: "2.0", method, params }));
-    const connectorChanged = (id: string) => { for (const state of clients.values()) sendClient(socket, state.clientId, { jsonrpc: "2.0", method: "connectors/managed/changed", params: { id } }); };
-    connectorListeners.add(connectorChanged);
-    const unsubscribeDocuments = hostDocuments.subscribe(params => {
+    const unsubscribeProcesses = guestScope ? () => {} : processes.subscribe((method, params) => send(socket, { jsonrpc: "2.0", method, params }));
+    const connectorChanged = (id: string) => { if (guestScope) return; for (const state of clients.values()) sendClient(socket, state.clientId, { jsonrpc: "2.0", method: "connectors/managed/changed", params: { id } }); };
+    if (!guestScope) connectorListeners.add(connectorChanged);
+    const unsubscribeDocuments = guestScope ? () => {} : hostDocuments.subscribe(params => {
       for (const state of clients.values()) sendClient(socket, state.clientId, { jsonrpc: "2.0", method: HOST_STORAGE.changed, params });
     });
-    const unsubscribeSpaces=spaces.subscribe(()=>{for(const state of clients.values())sendClient(socket,state.clientId,{method:SERVER_SPACES_CHANGED,params:{}});});
+    const unsubscribeSpaces=spaces.subscribe(()=>{
+      if (guestScope && !spaces.hasMember(guestScope.actorContext.actorId, guestScope.spaceId)) {
+        socket.close(1008, "Space membership revoked");
+        return;
+      }
+      for(const state of clients.values())sendClient(socket,state.clientId,{method:SERVER_SPACES_CHANGED,params:{}});
+    });
     socket.once("close",unsubscribeSpaces);
     socket.on("message", async (data, isBinary) => {
       if (isBinary) { socket.close(1003, "Text frames only"); return; }
@@ -687,17 +765,109 @@ export async function startLocalAgentHost(options: {
         return;
       }
       const dispatchRequest = async () => {
+      if (guestScope) {
+        if (!spaces.hasMember(guestScope.actorContext.actorId, guestScope.spaceId)) {
+          if ("id" in request) send(socket, { id: request.id, error: { code: -32004, message: "Server action unavailable" } });
+          socket.close(1008, "Space membership revoked");
+          return;
+        }
+        const allowedGuestMethods = new Set<string>([
+          "initialize",
+          "initialized",
+          "runtime/client/disconnect",
+          "model/list",
+          "permissionProfile/list",
+          SCOPED_PERMISSION_CATALOG_METHOD,
+          SERVER_SPACES_METHOD,
+          "thread/list",
+          "thread/read",
+          "thread/resume",
+          "thread/start",
+          "thread/name/set",
+          "turn/start",
+          "turn/steer",
+          "turn/interrupt",
+          SHARED_INTERACTIONS_READ,
+          SHARED_INTERACTIONS_RESPOND,
+        ]);
+        if (typeof request.method === "string" && !allowedGuestMethods.has(request.method)) {
+          if ("id" in request) send(socket, { id: request.id, error: { code: -32004, message: "Server action unavailable" } });
+          return;
+        }
+        const guestThreadId = (request.params as { threadId?: unknown } | null)?.threadId;
+        if (typeof guestThreadId === "string" && spaces.spaceFor("local", guestThreadId) !== guestScope.spaceId) {
+          if ("id" in request) send(socket, { id: request.id, error: { code: -32004, message: "Conversation unavailable" } });
+          return;
+        }
+      }
       const spaceParam=(request.params as {collaborationSpaceId?:unknown}|undefined)?.collaborationSpaceId;
       if(request.method==='thread/start'&&spaceParam!==undefined&&typeof spaceParam!=='string'){send(socket,{id:request.id,error:{code:-32602,message:'Invalid Server'}});return;}
-      const creationSpaceId=request.method==='thread/start'&&typeof spaceParam==='string'?spaceParam:state.selectedSpaceId??'myself';
+      const creationSpaceId = guestScope
+        ? guestScope.spaceId
+        : (request.method==='thread/start'&&typeof spaceParam==='string'?spaceParam:state.selectedSpaceId??'myself');
+      if (!guestScope && request.method === "thread/start" && isRemoteJoinedSpaceId(creationSpaceId) && "id" in request) {
+        try {
+          const { collaborationSpaceId: _unused, cwd: _localCwd, ...forwardParams } = (request.params ?? {}) as Record<string, unknown>;
+          const remoteStarted = await joinedSpaceRelay.forwardSpaceRequest(creationSpaceId, "thread/start", forwardParams);
+          send(socket, { jsonrpc: "2.0", id: request.id, result: remoteStarted }, request.method);
+        } catch (error) {
+          send(socket, { jsonrpc: "2.0", id: request.id, error: rpcError(error) });
+        }
+        return;
+      }
       if(request.method==='thread/start'&&request.params&&typeof request.params==='object') {
-        if(!spaces.hasMember(spaces.context().actorId,creationSpaceId)) {send(socket,{id:request.id,error:{code:-32004,message:'Server unavailable'}});return;}
-        const {collaborationSpaceId:unused,...nativeParams}=request.params as Record<string,unknown>;request={...request,params:nativeParams};
+        const actorForSpace = guestScope ? guestScope.actorContext.actorId : spaces.context().actorId;
+        if(!spaces.hasMember(actorForSpace,creationSpaceId)) {send(socket,{id:request.id,error:{code:-32004,message:'Server unavailable'}});return;}
+        const {collaborationSpaceId:unused,...nativeParams}=request.params as Record<string,unknown>;
+        const safeParams = guestScope
+          ? { ...nativeParams, cwd: options.projectlessWorkspaceDirectory ?? join(productDataRoot, "workspace") }
+          : nativeParams;
+        request={...request,params:safeParams};
       }
       if (request.method === SERVER_SPACES_METHOD && "id" in request) {
         try {
           const command=request.params as ServerSpaceCommand;
-          const result=await spaces.command(undefined,command);
+          if (guestScope) {
+            if (!["list", "select", "members"].includes(command.action)
+              || ("spaceId" in command && command.spaceId !== guestScope.spaceId)) {
+              throw Object.assign(new Error("Server action unavailable"), { rpcCode: -32004 });
+            }
+            const guestResult = await spaces.command(guestScope.actorContext, command);
+            if (command.action === "select") state.selectedSpaceId = guestScope.spaceId;
+            send(socket, { id: request.id, result: guestResult });
+            return;
+          }
+          if (command.action === "join" && isRelaySpaceInvite(command.code)) {
+            const joined = await joinedSpaceRelay.join(command.code, machineIdentity?.name ?? undefined);
+            send(socket, { id: request.id, result: { spaceId: joined.spaceId, directory: joinedSpaceRelay.mergeDirectory(spaces.directory()) } });
+            return;
+          }
+          if (command.action === "select" && isRemoteJoinedSpaceId(command.spaceId)) {
+            if (!joinedSpaceRelay.hasSpace(command.spaceId)) throw Object.assign(new Error("Server unavailable"), { rpcCode: -32004 });
+            state.selectedSpaceId = command.spaceId;
+            send(socket, { id: request.id, result: joinedSpaceRelay.mergeDirectory(spaces.directory()) });
+            return;
+          }
+          if (command.action === "members" && isRemoteJoinedSpaceId(command.spaceId)) {
+            send(socket, { id: request.id, result: await joinedSpaceRelay.members(command.spaceId) });
+            return;
+          }
+          let result=await spaces.command(undefined,command) as any;
+          if (command.action === "invite" && result && typeof result.code === "string" && options.personalMachines?.enrollmentOrigin) {
+            result = {
+              ...result,
+              code: encodeRelaySpaceInvite({
+                origin: options.personalMachines.enrollmentOrigin,
+                code: result.code,
+                ...(options.personalMachines.enrollmentCa ? { ca: options.personalMachines.enrollmentCa } : {}),
+              }),
+            };
+          }
+          if (result && Array.isArray(result.spaces) && Array.isArray(result.assignments)) {
+            result = joinedSpaceRelay.mergeDirectory(result);
+          } else if (result?.directory && Array.isArray(result.directory.spaces)) {
+            result = { ...result, directory: joinedSpaceRelay.mergeDirectory(result.directory) };
+          }
           if(command.action==='select')state.selectedSpaceId=command.spaceId;
           send(socket,{id:request.id,result});
         } catch(error) {send(socket,{id:request.id,error:rpcError(error)});}
@@ -735,6 +905,19 @@ export async function startLocalAgentHost(options: {
         return;
       }
       try {
+        const maybeRemoteThreadId = (request.params as { threadId?: unknown } | null)?.threadId;
+        if (!guestScope && typeof maybeRemoteThreadId === "string" && parseRemoteSpaceThreadId(maybeRemoteThreadId)) {
+          if (["model/list", "permissionProfile/list", SCOPED_PERMISSION_CATALOG_METHOD, "thread/read", "thread/resume", "thread/name/set", "turn/start", "turn/steer", "turn/interrupt", SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND].includes(request.method)) {
+            const forwarded = await joinedSpaceRelay.forwardThreadRequest(maybeRemoteThreadId, request.method, request.params);
+            send(socket, { jsonrpc: "2.0", id: request.id, result: forwarded }, request.method);
+            return;
+          }
+        }
+        if (!guestScope && isRemoteJoinedSpaceId(state.selectedSpaceId) && ["model/list", "permissionProfile/list", SCOPED_PERMISSION_CATALOG_METHOD].includes(request.method)) {
+          const forwarded = await joinedSpaceRelay.forwardSpaceRequest(state.selectedSpaceId, request.method, request.params);
+          send(socket, { jsonrpc: "2.0", id: request.id, result: forwarded }, request.method);
+          return;
+        }
         if (request.method === "opencraft/agent-session/export-context") {
           const threadId = (request.params as { threadId?: unknown } | undefined)?.threadId;
           if (!state.initialized || typeof threadId !== "string" || !threadId) throw new Error("Conversation context unavailable");
@@ -975,7 +1158,16 @@ export async function startLocalAgentHost(options: {
           }
           if (method === "thread/list" && params.cursor == null) {
             const reply = await adapter.dispatchOwned(method, params, owner, request.id as string | number) as { data: unknown[] };
-            return { ...reply, data: [...reply.data, ...await connectedAgents.threads()] };
+            const combined = [...reply.data, ...await connectedAgents.threads()];
+            if (guestScope) {
+              return {
+                ...reply,
+                data: combined.filter(row => typeof (row as { id?: unknown })?.id === "string" && spaces.spaceFor("local", String((row as { id: string }).id)) === guestScope.spaceId),
+                nextCursor: null,
+              };
+            }
+            const remoteThreads = await joinedSpaceRelay.listAllRemoteThreads();
+            return { ...reply, data: [...combined, ...remoteThreads] };
           }
           lifecycle.assertClient(state.key);
           await prepareExecution();
@@ -1028,8 +1220,10 @@ export async function startLocalAgentHost(options: {
           const created=(result as {thread?:{id?:string}})?.thread?.id;
           if(created) {
             const source=(request.params as {threadId?:string})?.threadId;
-            const targetSpace=request.method==='thread/fork' && source ? spaces.spaceFor('local',source) : creationSpaceId;
-            try {await spaces.assign(undefined,'local',created,targetSpace);}
+            const targetSpace=guestScope
+              ? guestScope.spaceId
+              : (request.method==='thread/fork' && source ? spaces.spaceFor('local',source) : creationSpaceId);
+            try {await spaces.assign(guestScope?.actorContext,'local',created,targetSpace);}
             catch {throw Object.assign(new Error('Conversation could not be confirmed'),{rpcCode:-32000,domainData:{resultUnknown:true}});}
           }
         }

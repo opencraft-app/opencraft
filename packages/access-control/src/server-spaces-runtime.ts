@@ -69,6 +69,12 @@ export class ServerSpacesRuntime {
   }
   inherit(parent:{serverId:string;threadId:string},child:{serverId:string;threadId:string}):Promise<void>{return this.call({method:"inherit",parent,child});}
   adoptLegacy(context:ActorContext|undefined,engineServerId:string,threads:readonly {id:string;createdAt:number}[]):Promise<void> {return this.call({method:'legacy',context:this.context(context),engineServerId,threads});}
+  redeemGuestInvite(input:{code:string;subject:string;displayName:string}):Promise<{actorContext:ActorContext;spaceId:string;spaceName:string}> {
+    return this.call({method:'redeemGuestInvite',...input});
+  }
+  resolveGuestActor(input:{subject:string;displayName:string}):Promise<ActorContext> {
+    return this.call({method:'resolveGuestActor',...input});
+  }
   hasAssignment(engineServerId:string,threadId:string):boolean{return this.assignments.has(JSON.stringify([engineServerId,threadId]));}
   spaceFor(engineServerId:string,threadId:string):string {
     return this.assignments.get(JSON.stringify([engineServerId,threadId])) ?? 'myself';

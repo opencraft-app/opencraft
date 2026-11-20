@@ -7,6 +7,9 @@ import {mkdir,readFile} from 'node:fs/promises';
 import {atomicJson} from '../full-upgrade/durable.mjs';
 import {createManagedWebServer} from './server.mjs';
 import {assertLocalServiceRuntime} from './local-service-profile.mjs';
+import {connectRelay} from '../../plugins/relay-connect/src/server.ts';
+import {createLocalIngress} from '../../packages/hub-network/src/local-ingress.ts';
+import {MACHINE_ENROLLMENT_PATHS} from '../../packages/relay-protocol/src/index.ts';
 
 export function localStartOptions(argv,env=process.env,home=homedir()) {
   const options={dataDirectory:resolve(env.OPENCRAFT_HOME||join(home,'.opencraft')),port:Number(env.OPENCRAFT_WEB_PORT||10000),open:true};
@@ -39,7 +42,7 @@ export async function startLocalService({releaseRoot,dataDirectory,port=10000,op
   const manifest=JSON.parse(await readFile(join(initial,'package.json'),'utf8'));
   if(manifest.opencraftLocalService?.schemaVersion!==1)throw new Error('This package contains the website only. Install the complete local-service distribution.');
   assertLocalServiceRuntime(manifest);
-  let host,releaseStorage,activeRoot,app,closing;
+  let host,releaseStorage,activeRoot,app,closing,machineRelay,relayIngress;
   const owner={
     async start(release) {
       const pinPath=join(state,'local-runtime.json');
@@ -59,15 +62,29 @@ export async function startLocalService({releaseRoot,dataDirectory,port=10000,op
         await atomicJson(pinPath,{schemaVersion:1,releaseRoot:runtimeRoot,version:installed.version,buildId:installed.opencraftWeb.buildId});
       }
       const workspace=join(data,'workspaces');await mkdir(workspace,{recursive:true});
-      host=await runtime.startLocalAgentHost({dataDirectory:data,modelStorageDirectory:join(data,'models'),runtimeDirectory:runtimeRoot,projectlessWorkspaceDirectory:workspace,
+      let relayConfig;
+      try {
+        const input=JSON.parse(await readFile(join(data,'machine-relay.json'),'utf8'));
+        if(input&&input.schemaVersion===1&&typeof input.origin==='string'&&new URL(input.origin).protocol==='https:'&&new URL(input.origin).origin===input.origin&&typeof input.credential==='string'&&/^[A-Za-z0-9_-]{43}$/u.test(input.credential)){
+          relayConfig=input;
+        }
+      } catch(error) {if(error.code!=='ENOENT')throw error;}
+      host=await runtime.startLocalAgentHost({
+        ...(relayConfig?{personalMachines:{enrollmentOrigin:relayConfig.origin,enrollmentCa:relayConfig.ca,archive:join(runtimeRoot,'README.md'),digest:'0'.repeat(64),installer:join(runtimeRoot,'README.md')}} : {}),
+        dataDirectory:data,modelStorageDirectory:join(data,'models'),runtimeDirectory:runtimeRoot,projectlessWorkspaceDirectory:workspace,
         dshExecutable:join(runtimeRoot,'local-runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'),
         dshCapabilityPlugin:join(runtimeRoot,'execution/dsh-capability-plugin.mjs'),
         connectedAgentAssets:{proxy:join(runtimeRoot,'runtime/codebuddy-ide/acp-proxy.mjs'),extension:join(runtimeRoot,'runtime/codebuddy-ide/bridge.vsix')}});
+      if(relayConfig){
+        relayIngress=createLocalIngress(()=>({port:Number(new URL(host.websocketUrl).port),origin:relayConfig.origin}),MACHINE_ENROLLMENT_PATHS);
+        machineRelay=connectRelay({relay:relayConfig.origin,credential:relayConfig.credential,ca:relayConfig.ca,machineGateway:true,acceptStream:stream=>relayIngress.accept(stream)});
+      }
       activeRoot=runtimeRoot;return host.websocketUrl;
     },
     referencedRoots(){return activeRoot?[activeRoot]:[];},
   };
   const close=()=>closing??=(async()=>{
+    machineRelay?.close();relayIngress?.close();
     let failure;try{await app?.close();}catch(error){failure=error;}
     // Do not release the storage claim when Host cleanup is unconfirmed.
     await host?.close();await releaseStorage?.();if(failure)throw failure;

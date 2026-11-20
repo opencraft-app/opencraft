@@ -1,10 +1,11 @@
 import { sqliteTransaction } from '@opencraft/sqlite-node';
+import { createHash } from 'node:crypto';
 import { parentPort, workerData } from 'node:worker_threads';
 import { statSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { openServerDatabase } from '@opencraft/storage-node/server';
 import { ActorStore } from './actors.js';
-import { ServerSpacesLedger } from './server-spaces-ledger.js';
+import { ServerSpaceError, ServerSpacesLedger } from './server-spaces-ledger.js';
 import type { ActorContext } from '@opencraft/identity-core/actors';
 
 if (!parentPort) throw new Error('Server space storage needs a Worker');
@@ -38,6 +39,35 @@ port.on('message', request => {
         actors?.close();
         if (owner) await owner.close(); else db.close();
         port.postMessage({id:request.id,result:null}); port.close(); return;
+      }
+      if (request.method === 'resolveGuestActor') {
+        if (!actors || typeof request.subject !== 'string' || !/^[0-9a-f-]{36}$/u.test(request.subject)) throw new ServerSpaceError('authentication', -32001);
+        const safeName = typeof request.displayName === 'string' && request.displayName.trim() ? request.displayName.trim().slice(0, 80).replace(/[\x00-\x1f\x7f]/gu, '') : 'Invited member';
+        const guest = actors.resolveHuman({ provider: 'space-relay', subject: request.subject, displayName: safeName || 'Invited member', expiresAt: Number.MAX_SAFE_INTEGER });
+        if (!guest) throw new ServerSpaceError('authentication', -32001);
+        port.postMessage({ id: request.id, result: guest });
+        return;
+      }
+      if (request.method === 'redeemGuestInvite') {
+        if (!actors || typeof request.code !== 'string' || !/^[A-Za-z0-9_-]{43}$/u.test(request.code) || typeof request.subject !== 'string' || !/^[0-9a-f-]{36}$/u.test(request.subject)) {
+          throw new ServerSpaceError('invitation');
+        }
+        const codeDigest = createHash('sha256').update(request.code).digest('hex');
+        const inviteRow = db.prepare('SELECT * FROM collaboration_space_invitations WHERE digest=?').get(codeDigest);
+        if (!inviteRow || Number(inviteRow.expires_at) <= Date.now() || inviteRow.used_by !== null) {
+          throw new ServerSpaceError('invitation');
+        }
+        const safeName = typeof request.displayName === 'string' && request.displayName.trim() ? request.displayName.trim().slice(0, 80).replace(/[\x00-\x1f\x7f]/gu, '') : 'Invited member';
+        const guestContext = actors.resolveHuman({ provider: 'space-relay', subject: request.subject, displayName: safeName || 'Invited member', expiresAt: Number.MAX_SAFE_INTEGER });
+        if (!guestContext) throw new ServerSpaceError('authentication', -32001);
+        const joined = sqliteTransaction(db, () => ledger.command(guestContext, { action: 'join', code: request.code }) as { spaceId: string });
+        const spaceRow = db.prepare('SELECT name FROM collaboration_spaces WHERE id=?').get(joined.spaceId);
+        port.postMessage({
+          id: request.id,
+          result: { actorContext: guestContext, spaceId: joined.spaceId, spaceName: String(spaceRow?.name ?? joined.spaceId) },
+          projection: ledger.projection(),
+        });
+        return;
       }
       const context = localContext ?? request.context;
       const execute = () => request.method === 'inherit' ? ledger.inherit(request.parent.serverId,request.parent.threadId,request.child.serverId,request.child.threadId) : request.method === 'bootstrap' ? ledger.bootstrap(request.ownerActorId,request.members ?? []) : request.method==='legacy' ? ledger.adoptLegacy(context,request.engineServerId,request.threads) : request.method === 'assign'

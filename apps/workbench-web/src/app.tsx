@@ -1550,7 +1550,7 @@ export function App({
         return declared.length > 0 && declared.every(({ hostId, model }) => !agentAvailability.enabled(hostId, model.agentId ?? "host"));
       })(),
       policyRestricted: composerCatalog.models.some(model => model.policyRestricted),
-      models: projectModelChoices(composerCatalog.models.filter(model => !filterNewAgents || agentAvailability.enabled(snapshot.hostId, model.agentId ?? "host"))),
+      models: projectModelChoices(composerCatalog.models.filter(model => !filterNewAgents || serverSpaces.selected.startsWith("rspace:") || agentAvailability.enabled(snapshot.hostId, model.agentId ?? "host"))),
       displayModels: projectModelChoices([
         ...composerCatalog.displayModels,
         ...engineCatalog.groups.flatMap(group => group.models).filter(model => !composerCatalog.displayModels.some(existing => existing.id === model.id || existing.model === model.model)),
@@ -1609,6 +1609,7 @@ export function App({
           crossDevice: canContinueWithAgent && Boolean(activeMachine && groupMachine && groupMachine.id !== activeMachine.id),
           models: projectModelChoices(rawModels.filter(model =>
             (canContinueWithAgent && group.hostId === snapshot.hostId && (model.agentId ?? conversationAgent) === conversationAgent)
+            || serverSpaces.selected.startsWith("rspace:")
             || agentAvailability.enabled(group.hostId, model.agentId ?? "host"))),
           loading: canContinueWithAgent
             ? (group.hostId === snapshot.hostId && rawModels.length === 0 ? (composerCatalog.isFetching || group.loading) : group.loading)

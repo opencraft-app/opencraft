@@ -38,8 +38,9 @@ export function useServerSpaces(hostId:string) {
     await request({action:'select',spaceId});
     if(host.current!==ownerKey||generation.current!==intent)return false;
     setSelection({hostId,scope,spaceId});
+    void queryClient.invalidateQueries({queryKey:['appserver',hostId]});
     void preferences.update("sidebar.collaborationServers",current=>current[preferenceKey]===spaceId?current:({...current,[preferenceKey]:spaceId})).catch(()=>{});return true;
-  },[hostId,scope,ownerKey,request,preferences,preferenceKey]);
+  },[hostId,scope,ownerKey,request,preferences,preferenceKey,queryClient]);
   useEffect(()=>{
     if(phase==='ready'&&query.data?.spaces.some(s=>s.id===selected))void request({action:'select',spaceId:selected}).catch(()=>{});
   },[phase,hostId,selected,request,Boolean(query.data)]);
