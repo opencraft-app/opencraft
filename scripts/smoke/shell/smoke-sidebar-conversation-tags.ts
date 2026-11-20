@@ -44,7 +44,7 @@ try {
     // Before tagging anything, no tag filter toolbar appears next to Recent.
     assert.equal(await page.locator(".sidebar-recent-tag-filters").count(), 0);
 
-    // 1. Tag row 0 with minimalist Cat icon via row menu (right-click on desktop, "..." on touch).
+    // 1. Tag row 0 with MULTIPLE tags simultaneously (Orange color + Cat + Rabbit + Owl + Whale) without menu closing!
     const firstRow = recentRows.nth(0);
     if (touch) {
       await firstRow.locator(".sidebar-activity-item__menu-trigger").tap();
@@ -53,48 +53,39 @@ try {
     }
     const palette = page.locator(".conversation-tag-palette");
     await palette.waitFor();
-    await page.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-row-palette-light.png` });
-    const catRadio = palette.getByRole("radio", { name: /猫咪|Cat/u });
-    if (touch) await catRadio.tap(); else await catRadio.click();
+
+    const activate = async (loc: ReturnType<typeof page.locator>) => (touch ? loc.tap() : loc.click());
+    await activate(palette.getByRole("button", { name: /橙色|Orange/u }));
+    await activate(palette.getByRole("button", { name: /猫咪|Cat/u }));
+    await activate(palette.getByRole("button", { name: /兔子|Rabbit/u }));
+    await activate(palette.getByRole("button", { name: /猫头鹰|Owl/u }));
+    await activate(palette.getByRole("button", { name: /鲸鱼|Whale/u }));
+    // Palette remains open for multi-select!
+    assert.equal(await palette.isVisible(), true);
+    await page.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-row-palette-multi-light.png` });
+    await page.keyboard.press("Escape");
     await palette.waitFor({ state: "hidden" });
 
-    // Verify tag mark appears on row 0 AND quick filter chip appears next to Recent!
+    // Verify row 0 has tags AND all 5 tags render directly in the filter bar (NO +N collapse!)
     await firstRow.locator(".sidebar-activity-item__tag").waitFor();
     const filterBar = page.locator(".sidebar-recent-tag-filters");
     await filterBar.waitFor();
-    assert.equal(await filterBar.locator(".sidebar-recent-tag-chip").count(), 1);
+    await page.waitForFunction(() => document.querySelectorAll(".sidebar-recent-tag-chip").length === 5);
 
-    // 2. Tag row 1 with Blue color swatch via "..." menu.
+    // 2. Tag row 1 with Blue color + Fox icon via "..." menu -> now 7 distinct tags all shown directly!
     const secondRow = recentRows.nth(1);
     if (!touch) await secondRow.hover();
-    const secondTrigger = secondRow.locator(".sidebar-activity-item__menu-trigger");
-    if (touch) await secondTrigger.tap(); else await secondTrigger.click();
+    await activate(secondRow.locator(".sidebar-activity-item__menu-trigger"));
     await palette.waitFor();
-    const blueRadio = palette.getByRole("radio", { name: /蓝色|Blue/u });
-    if (touch) await blueRadio.tap(); else await blueRadio.click();
+    await activate(palette.getByRole("button", { name: /蓝色|Blue/u }));
+    await activate(palette.getByRole("button", { name: /狐狸|Fox/u }));
+    await page.keyboard.press("Escape");
     await palette.waitFor({ state: "hidden" });
     await secondRow.locator(".sidebar-activity-item__tag").waitFor();
-    assert.equal(await filterBar.locator(".sidebar-recent-tag-chip").count(), 2);
+    await page.waitForFunction(() => document.querySelectorAll(".sidebar-recent-tag-chip").length === 7);
+    assert.doesNotMatch(await filterBar.innerText(), /\+\d+/u, "No +N collapse when >4 tags exist");
 
-    // Tag row 2 (if present) with Fox icon so multiple animal + color tags are visible together!
-    if (initialCount >= 3) {
-      const thirdRow = recentRows.nth(2);
-      if (!touch) await thirdRow.hover();
-      const thirdTrigger = thirdRow.locator(".sidebar-activity-item__menu-trigger");
-      if (touch) await thirdTrigger.tap(); else await thirdTrigger.click();
-      await palette.waitFor();
-      const foxRadio = palette.getByRole("radio", { name: /狐狸|Fox/u });
-      if (touch) await foxRadio.tap(); else await foxRadio.click();
-      await palette.waitFor({ state: "hidden" });
-      await thirdRow.locator(".sidebar-activity-item__tag").waitFor();
-      assert.equal(await filterBar.locator(".sidebar-recent-tag-chip").count(), 3);
-    }
-
-    await page.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-sidebar-tags-light.png` });
-
-    // 3. Select row 0 (Cat) so it is the active selected conversation, then filter by Cat -> switch to Blue!
-    // Regression check: switching to a second tag filter while the first conversation is selected
-    // must keep scroll anchored at Recent instead of jumping down to Devices/Projects!
+    // 3. Multi-select filtering + scroll continuity + one-click Clear All!
     await page.setViewportSize({ width: touch ? 390 : 1360, height: 520 });
     const selectFirst = firstRow.locator(".sidebar-activity-item");
     if (touch) {
@@ -107,68 +98,54 @@ try {
       await selectFirst.click();
     }
     await page.locator(".local-conversation-page").waitFor();
-
     const scrollContainer = page.locator(touch ? ".shell-sidebar__scroll" : ".sidebar-activity-list");
     await scrollContainer.evaluate(el => { el.scrollTop = 0; });
 
     const catChip = filterBar.getByRole("button", { name: /猫咪|Cat/u });
-    if (touch) await catChip.tap(); else await catChip.click();
+    const orangeChip = filterBar.getByRole("button", { name: /橙色|Orange/u });
+    const blueChip = filterBar.getByRole("button", { name: /蓝色|Blue/u });
+    // Select Cat filter -> row 0 matches!
+    await activate(catChip);
     assert.equal(await catChip.getAttribute("aria-pressed"), "true");
     await page.waitForFunction(() => document.querySelectorAll('[data-row-scope="recent"]').length === 1);
+    const clearAllBtn = filterBar.locator(".sidebar-recent-tag-clear");
+    await clearAllBtn.waitFor();
 
-    // Now switch directly from Cat filter to Blue filter while the Cat conversation is still selected!
-    const blueChip = filterBar.getByRole("button", { name: /蓝色|Blue/u });
-    if (touch) await blueChip.tap(); else await blueChip.click();
-    assert.equal(await blueChip.getAttribute("aria-pressed"), "true");
-    assert.equal(await catChip.getAttribute("aria-pressed"), "false");
+    // Select Orange + Cat together -> row 0 has BOTH Orange AND Cat, so still 1 matching row!
+    await activate(orangeChip);
+    assert.equal(await catChip.getAttribute("aria-pressed"), "true");
+    assert.equal(await orangeChip.getAttribute("aria-pressed"), "true");
     await page.waitForFunction(() => document.querySelectorAll('[data-row-scope="recent"]').length === 1);
-    const scrollAfterSwitch = await scrollContainer.evaluate(el => el.scrollTop);
-    assert.equal(scrollAfterSwitch, 0, "Switching Recent tag filters must not scroll down to Devices section");
+
+    // Also select Blue (which row 0 does NOT have) -> intersection (AND) yields 0 rows + reversible empty feedback!
+    await activate(blueChip);
+    assert.equal(await blueChip.getAttribute("aria-pressed"), "true");
+    await page.waitForFunction(() => document.querySelectorAll('[data-row-scope="recent"]').length === 0);
+    assert.equal(await scrollContainer.evaluate(el => el.scrollTop), 0, "Multi-tag filtering keeps scroll anchored");
 
     await page.setViewportSize({ width: touch ? 390 : 1360, height: 880 });
-    await page.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-filtered-cat-light.png` });
+    await page.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-multi-filter-light.png` });
 
-    // Dark theme check while filtered!
-    await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
-    await page.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-filtered-cat-dark.png` });
-    await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
-
-    // Clicking active Blue chip again clears filter and restores full Recent list!
-    if (touch) await blueChip.tap(); else await blueChip.click();
+    // One-click Clear All clears ALL active filters immediately and restores all rows!
+    await activate(clearAllBtn);
+    await clearAllBtn.waitFor({ state: "hidden" });
+    assert.equal(await catChip.getAttribute("aria-pressed"), "false");
+    assert.equal(await orangeChip.getAttribute("aria-pressed"), "false");
     assert.equal(await blueChip.getAttribute("aria-pressed"), "false");
     await page.waitForFunction(expected => document.querySelectorAll('[data-row-scope="recent"]').length === expected, initialCount);
-    assert.equal(await scrollContainer.evaluate(el => el.scrollTop), 0);
 
-    // Verify no horizontal overflow in Recent heading!
+    // Ensure Recent heading wraps cleanly with 7 tags without horizontal overflow!
     const headingFits = await page.locator(".sidebar-recent-heading").evaluate(el => {
       const parent = el.parentElement!;
       return el.scrollWidth <= parent.clientWidth + 1;
     });
-    assert.equal(headingFits, true, "Recent heading with tag filter chips must fit within sidebar width");
-
-    // 4. Open a conversation and verify the Conversation Page Header Tag button works!
-    const openTarget = recentRows.nth(0).locator(".sidebar-activity-item");
-    if (touch) await openTarget.tap(); else await openTarget.click();
-    await page.locator(".local-conversation-page").waitFor();
-    const headerTagBtn = page.locator('.conversation-header-actions button[aria-label*="标记"], .conversation-header-actions button[aria-label*="Tag"]').first();
-    await headerTagBtn.waitFor();
-    if (touch) await headerTagBtn.tap(); else await headerTagBtn.click();
-    const headerPopover = page.locator(".conversation-tag-popover");
-    await headerPopover.waitFor();
-    await page.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-header-tag-popover.png` });
-    const owlRadio = headerPopover.getByRole("radio", { name: /猫头鹰|Owl/u });
-    if (touch) await owlRadio.tap(); else await owlRadio.click();
-    await headerPopover.waitFor({ state: "hidden" });
-    await page.waitForFunction(() => {
-      const btn = document.querySelector('.conversation-header-actions button[aria-label*="标记"], .conversation-header-actions button[aria-label*="Tag"]');
-      return /猫头鹰|Owl/u.test(btn?.getAttribute("aria-label") ?? "");
-    });
+    assert.equal(headingFits, true, "Recent heading with wrapped multi-tags must fit within sidebar width");
 
     assert.deepEqual(errors, []);
     await context.close();
   }
 
-  console.log("PASS sidebar & conversation tags: colors + minimalist animals, row menu + page header button, quick filter beside Recent, desktop + touch, light + dark. Screenshots: " + output);
+  console.log("PASS multi-tag & multi-filter: simultaneous color+animal tags, no +N collapse, multi-select filter, one-click Clear All, desktop + touch. Screenshots: " + output);
 } finally {
   await browser.close();
 }

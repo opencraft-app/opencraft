@@ -20,6 +20,9 @@ export interface AgentDirectoryEntry {
 export function projectAgentDirectory(models: readonly AgentCatalogModel[], native: readonly OnboardingAgentSnapshot[], fallbackName: (id: string) => string): AgentDirectoryEntry[] {
   const entries = new Map<string, AgentDirectoryEntry>();
   for (const model of models) {
+    // Internal built-in API-model harness (`dsh`) is configured under Model Configuration,
+    // never exposed as a standalone client Agent. External local DSH uses `dsh-acp`.
+    if (model.agentId === "dsh") continue;
     const entry = entries.get(model.agentId);
     entries.set(model.agentId, { id: model.agentId, label: model.agentLabel || fallbackName(model.agentId),
       models: [...(entry?.models ?? []), model], ready: true });

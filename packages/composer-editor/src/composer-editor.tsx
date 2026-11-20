@@ -7,7 +7,7 @@ import { composerAgentBrand } from "./composer-agent-sources";
 import { ComposerAgentPicker } from "./composer-agent-picker";
 import type { ComposerHandoffState } from "./composer-handoff";
 import { ComposerModelPicker } from "./composer-model-picker";
-import { ComposerModelMenu } from "./composer-model-menu";
+import type { ComposerModelMenu as ComposerModelMenuComponent } from "./composer-model-menu";
 import { modelChoiceFamilies } from "./model-choice-families";
 import { modelEffortLabel, modelIdentifierPresentation } from "./model-choice-labels";
 import { ModelIcon as BrainCircuit, CheckIcon as Check, ChevronDownIcon as ChevronDown, AttachmentIcon as Paperclip, AddIcon as Plus, CloseIcon as X } from "@opencraft/design-system-web/action-icons";
@@ -94,6 +94,16 @@ import { useMeasuredComposerFooterLayout } from "./responsive-footer";
 
 const ComposerHandoffBanner = lazy(async () => ({ default: (await import("./composer-handoff")).ComposerHandoffBanner }));
 const ComposerHandoffSubmitButton = lazy(async () => ({ default: (await import("./composer-handoff")).ComposerHandoffSubmitButton }));
+let resolvedComposerModelMenu: typeof ComposerModelMenuComponent | null = null;
+let composerModelMenuPromise: Promise<typeof ComposerModelMenuComponent> | null = null;
+function loadComposerModelMenu(): Promise<typeof ComposerModelMenuComponent> {
+  composerModelMenuPromise ??= import("./composer-model-menu").then(module => {
+    resolvedComposerModelMenu = module.ComposerModelMenu;
+    return module.ComposerModelMenu;
+  });
+  return composerModelMenuPromise;
+}
+const LazyComposerModelMenu = lazy(async () => ({ default: await loadComposerModelMenu() }));
 
 type SuggestionKind = "mention" | "skill" | "command";
 
@@ -171,6 +181,12 @@ export interface ComposerAgentModelGroup {
   readonly id: string;
   readonly label: string;
   readonly active: boolean;
+  readonly machineId?: string;
+  readonly machineLabel?: string;
+  readonly machineRole?: "local" | "server" | "cloud";
+  readonly isLocalMachine?: boolean;
+  readonly isConversationMachine?: boolean;
+  readonly crossDevice?: boolean;
   readonly models: readonly ComposerModelOption[];
   readonly loading?: boolean;
   readonly error?: string | null;
@@ -963,6 +979,9 @@ export const OpenCraftComposer = forwardRef<
   const [switchingAgentId, setSwitchingAgentId] = useState<string | null>(null);
   const [agentSelectionError, setAgentSelectionError] = useState<{ id: string; message: string } | null>(null);
   useEffect(() => {
+    if (!modelDisplayOnly && modelSelectionPolicy === "user") void loadComposerModelMenu();
+  }, [modelDisplayOnly, modelSelectionPolicy]);
+  useEffect(() => {
     setSwitchingAgentId(null);
     setAgentSelectionError(null);
     return () => { agentSelectionEpoch.current += 1; };
@@ -1111,7 +1130,10 @@ export const OpenCraftComposer = forwardRef<
       effectiveSelections?.model ??
       (existingConversation ? null : catalogDefaultModel?.value) ??
       null;
-  const modelCatalogPool = activeHandoff !== null ? allSelectableModels : catalogModels;
+  const activeGroupModels = selectionCatalog?.agentGroups?.find(group => group.active)?.models;
+  const modelCatalogPool = activeHandoff !== null
+    ? (activeGroupModels?.length ? activeGroupModels : allSelectableModels)
+    : catalogModels;
   const modelUnavailable = (!existingConversation || activeHandoff !== null)
     && selectedModelValue !== null
     && modelCatalogPool.length > 0
@@ -2231,8 +2253,16 @@ export const OpenCraftComposer = forwardRef<
       : identifierPresentation!.label);
   const modelAgentLabel = displayModel?.agentLabel ?? (selectedModelValue?.startsWith("codex:") ? "Codex" : null);
   const handoffAgentBrand = activeHandoff !== null ? composerAgentBrand(displayModel?.agentId, selectedModelValue) : undefined;
-  const compactSelectedModelLabel = modelAgentLabel && ((!existingConversation && !agentInHeader) || (activeHandoff !== null && !handoffAgentBrand))
+  const crossDeviceTargetLabel = activeHandoff?.isCrossDevice
+    ? (activeHandoff.devices?.find(device => device.selected)?.label
+        ?? selectionCatalog?.agentGroups?.find(group => group.active)?.machineLabel
+        ?? null)
+    : null;
+  const baseCompactModelLabel = modelAgentLabel && ((!existingConversation && !agentInHeader) || (activeHandoff !== null && !handoffAgentBrand))
     ? `${modelAgentLabel} · ${compactModelLabel(modelLabel)}` : compactModelLabel(modelLabel);
+  const compactSelectedModelLabel = crossDeviceTargetLabel
+    ? `${crossDeviceTargetLabel} · ${baseCompactModelLabel}`
+    : baseCompactModelLabel;
   const manageModels = selectionCatalog?.agentGroups?.find(group => group.active)?.manage ?? selectionCatalog?.onConfigureModels;
   const visibleEffortValue = encodedEffort ?? (modelDisplayOnly ? effectiveSelections?.effort ?? null
     : existingConversation && activeHandoff === null ? displayEffortValue : selectedEffortValue);
@@ -2736,17 +2766,22 @@ export const OpenCraftComposer = forwardRef<
                 label={compactSelectedModelLabel} fullLabel={intelligenceLabel} effortLabel={visibleEffortValue != null ? effortLabel : undefined}
                 disabled={disabled} open={openPicker === "intelligence"} onOpenChange={changePicker("intelligence")}
                 portalContainer={portalContainer} focus={intelligenceFocus} displayFast={displayFast}>
-                <ComposerModelMenu key={draftId} agentInHeader={agentInHeader} catalog={selectionCatalog} selected={selectedModelValue}
-                  switchingAgentId={switchingAgentId} agentSelectionError={agentSelectionError} onConfigure={manageModels}
-                  onStartHandoff={existingConversation && activeHandoff === null ? onStartHandoff : undefined}
-                  onSelect={(model, group) => {
-                    if (group) { void selectAgentModel(group, model); }
-                    else selectModel(model);
-                  }}
-                  effort={existingConversation && activeHandoff === null ? displayEffortValue ?? null : selectedEffortValue} onEffortChange={value => {
-                    const effort = selectedModel?.efforts.find(candidate => candidate.value === value);
-                    if (effort) selectEffort(effort);
-                  }} serviceTier={selectedServiceTier} onServiceTierChange={selectServiceTier} />
+                {(() => {
+                  const MenuComponent = resolvedComposerModelMenu ?? LazyComposerModelMenu;
+                  const menuElement = <MenuComponent key={draftId} agentInHeader={agentInHeader} catalog={selectionCatalog} selected={selectedModelValue}
+                    switchingAgentId={switchingAgentId} agentSelectionError={agentSelectionError} onConfigure={manageModels}
+                    onStartHandoff={existingConversation && activeHandoff === null ? onStartHandoff : undefined}
+                    onRequestClose={() => changePicker("intelligence")(false)}
+                    onSelect={(model, group) => {
+                      if (group) { void selectAgentModel(group, model); }
+                      else selectModel(model);
+                    }}
+                    effort={existingConversation && activeHandoff === null ? displayEffortValue ?? null : selectedEffortValue} onEffortChange={value => {
+                      const effort = selectedModel?.efforts.find(candidate => candidate.value === value);
+                      if (effort) selectEffort(effort);
+                    }} serviceTier={selectedServiceTier} onServiceTierChange={selectServiceTier} />;
+                  return resolvedComposerModelMenu ? menuElement : <Suspense fallback={null}>{menuElement}</Suspense>;
+                })()}
               </ComposerModelPicker> : null}
 
               {showPermissionPicker ? <DropdownMenu.Root

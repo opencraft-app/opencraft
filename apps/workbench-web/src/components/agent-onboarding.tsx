@@ -23,6 +23,7 @@ const AGENT_NAMES: Record<string, { id: string; defaultMessage: string }> = {
   claude: { id: "onboard.agent.claude", defaultMessage: "Claude Code" },
   codebuddy: { id: "onboard.agent.codebuddy", defaultMessage: "CodeBuddy" },
   pi: { id: "onboard.agent.pi", defaultMessage: "Pi" },
+  dsh: { id: "onboard.agent.dsh", defaultMessage: "DSH" },
 };
 
 function isSnapshot(value: unknown): value is OnboardingSnapshot {
@@ -37,6 +38,7 @@ export interface AgentOnboardingProps {
   readonly presentation: "gate" | "sheet" | "settings" | "history" | "remote";
   readonly onFinish?: (modelId: string) => void | Promise<void>;
   readonly onUseModels?: () => void;
+  readonly onConfigureModels?: () => void;
   readonly onClose?: () => void;
   readonly onSelectMachine?: (id:string)=>void|Promise<void>;
   readonly onImported?: () => void | Promise<void>;
@@ -55,7 +57,7 @@ export function AgentOnboarding(props: AgentOnboardingProps) {
   return <AgentOnboardingContent key={`${props.hostId}:${props.identityScope ?? "local"}`} {...props} />;
 }
 
-function AgentOnboardingContent({ hostId, identityScope = "local", request, requestPersonalMachines, presentation, onFinish, onUseModels, onClose, onImported, onSelectMachine, agentPreferences, catalogModels, onRefreshModels, catalogError, showRemoteEntry = true, selectedAgentId, enabled = true, onBusyChange, onStatusChange }: AgentOnboardingProps) {
+function AgentOnboardingContent({ hostId, identityScope = "local", request, requestPersonalMachines, presentation, onFinish, onUseModels, onConfigureModels, onClose, onImported, onSelectMachine, agentPreferences, catalogModels, onRefreshModels, catalogError, showRemoteEntry = true, selectedAgentId, enabled = true, onBusyChange, onStatusChange }: AgentOnboardingProps) {
   const intl = useIntl();
   const queryClient = useQueryClient();
   const continueHintId = useId();
@@ -279,7 +281,10 @@ function AgentOnboardingContent({ hostId, identityScope = "local", request, requ
       <AgentHistoryPicker key={hostId} hostId={hostId} identityScope={identityScope} enabled={step === "start"} request={request} onBusyChange={changeHistoryBusy} onImported={onImported} />
     </div> : null}
     {!management ? <div className="agent-onboard__footer">
-      {step === "start" ? <Button variant="ghost" disabled={finishing || historyBusy} onClick={() => setStep("agent")}>{intl.formatMessage({ id: "onboard.agent.back", defaultMessage: "Back" })}</Button> : <Button variant="ghost" disabled={finishing || historyBusy} onClick={onUseModels}>{intl.formatMessage({ id: "onboard.agent.useModels", defaultMessage: "Skip for now" })}</Button>}
+      {step === "start" ? <Button variant="ghost" disabled={finishing || historyBusy} onClick={() => setStep("agent")}>{intl.formatMessage({ id: "onboard.agent.back", defaultMessage: "Back" })}</Button> : <>
+        <Button variant="ghost" disabled={finishing || historyBusy} onClick={onUseModels}>{intl.formatMessage({ id: "onboard.agent.useModels", defaultMessage: "Skip for now" })}</Button>
+        {onConfigureModels ? <Button variant="outline" disabled={finishing || historyBusy} onClick={onConfigureModels}>{intl.formatMessage({ id: "onboard.agent.configure", defaultMessage: "Configure models" })}</Button> : null}
+      </>}
       <div className="agent-onboard__continue">
       {step === "agent" ? <Button aria-describedby={!selectedModel ? continueHintId : undefined} disabled={!selectedModel || agentPreferences?.saving || finishing || historyBusy} onClick={() => setStep("start")}>{intl.formatMessage({ id: "onboard.agent.continue", defaultMessage: "Continue" })}</Button> : <Button disabled={!selectedModel || agentPreferences?.saving || finishing || historyBusy} onClick={() => {
         if (!selectedModel || !expandedReady) return;

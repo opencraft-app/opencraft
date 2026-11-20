@@ -88,7 +88,7 @@ export class LocalAgentSettingsService {
     return {
       baseURL: typeof profile.baseURL === "string" ? profile.baseURL : !provider.configured && provider.configuration?.modelDeclarations ? provider.configuration.defaultBaseURL ?? "" : "",
       displayName: typeof profile.displayName === "string" ? profile.displayName : provider.displayName,
-      api: profile.api === "openai-completions" || profile.api === "openai-responses" || profile.api === "hunyuan-asr" || profile.api === "hunyuan-image-v35" ? profile.api : !provider.configured && provider.configuration?.modelDeclarations ? provider.configuration.defaultApi : undefined,
+      api: profile.api === "openai-completions" || profile.api === "openai-responses" || profile.api === "anthropic-messages" || profile.api === "hunyuan-asr" || profile.api === "hunyuan-image-v35" ? profile.api : !provider.configured && provider.configuration?.modelDeclarations ? provider.configuration.defaultApi : undefined,
       // DSH materializes an omitted optional modality array as []. The public
       // command uses omission for inherited capabilities and rejects explicit
       // empty declarations. Normalize the read projection, not the stored data.
@@ -119,7 +119,7 @@ export class LocalAgentSettingsService {
   }
 
   async probeModel(input: SaveRuntimeProviderInput, model: string): Promise<RuntimeModelProbeResponse> {
-    if ((input.api !== "openai-completions" && input.api !== "openai-responses") || !input.baseURL.trim()) throw new Error("此连接不支持文本连通性检查");
+    if ((input.api !== "openai-completions" && input.api !== "openai-responses" && input.api !== "anthropic-messages") || !input.baseURL.trim()) throw new Error("此连接不支持文本连通性检查");
     if (input.credential.kind === "replace" && !input.credential.value.trim()) throw new Error("Enter the test key before testing");
     if (input.credential.kind !== "replace" && input.credential.kind !== "none") throw new Error("Enter a test key explicitly. Saved credentials are not used for draft endpoint tests.");
     return this.requestHost(this.hostId, "runtime/models/probe", {

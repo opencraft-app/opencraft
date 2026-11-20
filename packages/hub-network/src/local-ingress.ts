@@ -1,6 +1,5 @@
 import { createServer, request } from 'node:http';
-import { createConnection, createServer as createTcpServer, type Socket } from 'node:net';
-import { isPrivateIpv4Address } from '../../relay-protocol/src/index.js';
+import { createConnection } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { relayPathAllowed } from '../../relay-protocol/src/index.js';
 
@@ -35,16 +34,4 @@ export function createLocalIngress(target: () => { port: number; origin: string;
     });
   });
   return { accept(stream: Duplex) { server.emit('connection', stream); }, close() { server.close(); server.closeAllConnections(); } };
-}
-
-/** An explicitly selected intranet interface, never a wildcard/public listener. */
-export async function listenIntranetIngress(targetPort:number,paths:readonly string[],host:string,port:number){
-  if(!isPrivateIpv4Address(host)||!Number.isInteger(targetPort)||targetPort<1||targetPort>65535||!Number.isInteger(port)||port<1||port>65535)throw new Error('An explicit intranet interface and port are required');
-  const sockets=new Set<Socket>();
-  const ingress=createLocalIngress(()=>({port:targetPort,origin:`http://${host}:${port}`}),paths);
-  const server=createTcpServer(socket=>{sockets.add(socket);socket.once('close',()=>sockets.delete(socket));ingress.accept(socket);});
-  try{await new Promise<void>((resolve,reject)=>{const fail=(error:Error)=>reject(error);server.once('error',fail);server.listen(port,host,()=>{server.off('error',fail);resolve();});});}
-  catch(error){ingress.close();throw error;}
-  let closed:Promise<void>|undefined;
-  return {close(){return closed??=(async()=>{for(const socket of sockets)socket.destroy();ingress.close();await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));})();}};
 }

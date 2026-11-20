@@ -6,7 +6,7 @@ import { homedir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const ONBOARDING_AGENT_ENGINES = { codex: "codex", cursor: "cursor", claude: "claude-code", codebuddy: "codebuddy", "codebuddy-ide": "codebuddy-ide", pi: "pi-cli" } as const;
+export const ONBOARDING_AGENT_ENGINES = { codex: "codex", cursor: "cursor", claude: "claude-code", codebuddy: "codebuddy", "codebuddy-ide": "codebuddy-ide", pi: "pi-cli", dsh: "dsh-acp" } as const;
 
 /** Local CLIs the first-run agent step can see. Commands and packages are fixed. */
 export const ONBOARDING_AGENTS = [
@@ -57,6 +57,8 @@ export const ONBOARDING_AGENTS = [
   {id:"codebuddy-ide",name:"CodeBuddy IDE",commands:[],versionArgs:[],statusArgs:[],signInArgs:[],signInEnv:{},installPackage:null,installUrl:"https://www.codebuddy.cn/ide/"},
   { id: "pi", name: "Pi", commands: ["pi"], versionArgs: ["--version"], statusArgs: ["--list-models", "--offline"],
     signInArgs: [], signInEnv: {}, installPackage: "@earendil-works/pi-coding-agent", installUrl: "https://pi.dev" },
+  { id: "dsh", name: "DSH", commands: ["dsh"], versionArgs: ["--version"], statusArgs: [],
+    signInArgs: [], signInEnv: {}, installPackage: "@deepseek-ai/dsh", installUrl: "https://github.com/deepseek-ai/deepseek-harness" },
 ] as const;
 
 export type { OnboardingActivity, OnboardingAgentId, OnboardingAgentSnapshot, OnboardingSnapshot };
@@ -141,12 +143,15 @@ export function firstVersionLine(stdout: string): string | null {
 }
 
 export async function resolveExecutable(commands: readonly string[], deps: Pick<OnboardingDeps, "env" | "homedir" | "exists" | "cursorVersions">): Promise<string | null> {
+  const bundledNodeBin = fileURLToPath(new globalThis.URL("../../../node_modules/.bin", import.meta.url));
+  const bundledDshBin = fileURLToPath(new globalThis.URL("../../../runtime/dsh/node_modules/.bin", import.meta.url));
   const dirs = [...new Set([...(deps.env.PATH ?? "").split(delimiter), join(deps.homedir, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin"].filter(Boolean))];
   for (const command of commands) {
     for (const dir of dirs) {
-      // The bundled Pi SDK also exposes a bin. npm-run PATH injection must
-      // not masquerade as the user's installed native CLI or shadow its version.
-      if (command === "pi" && resolve(dir) === fileURLToPath(new globalThis.URL("../../../node_modules/.bin", import.meta.url))) continue;
+      // The bundled Pi SDK and internal DSH runtime also expose bins. npm-run PATH injection
+      // must not masquerade as the user's installed native CLI or shadow its version.
+      const resolvedDir = resolve(dir);
+      if ((command === "pi" || command === "dsh") && (resolvedDir === bundledNodeBin || resolvedDir === bundledDshBin)) continue;
       const candidate = join(dir, command);
       if (await deps.exists(candidate)) return candidate;
     }
@@ -212,7 +217,7 @@ export class AgentOnboardingService {
       return { id: agent.id, engineId: ONBOARDING_AGENT_ENGINES[agent.id], displayName: agent.name,
         installed: !!await resolveExecutable(agent.commands, this.deps), version: null, authenticated: null,
         account: null, activity: null, installUrl: agent.installUrl, canInstallPackage: agent.installPackage !== null,
-        historyImport: agent.id !== "codebuddy-ide" };
+        historyImport: agent.id !== "codebuddy-ide" && agent.id !== "dsh" };
     })) };
   }
 
@@ -293,11 +298,11 @@ export class AgentOnboardingService {
     const executable = await resolveExecutable(agent.commands, this.deps);
     const base = {
       id: agent.id,
-      engineId: ONBOARDING_AGENT_ENGINES[agent.id], historyImport: agent.id !== "codebuddy-ide",
+      engineId: ONBOARDING_AGENT_ENGINES[agent.id], historyImport: agent.id !== "codebuddy-ide" && agent.id !== "dsh",
       displayName: agent.name,
       installUrl: agent.installUrl,
       canInstallPackage: agent.installPackage !== null,
-      ...(agent.id === "pi" ? { setupCommand: "pi" } : {}),
+      ...(agent.id === "pi" ? { setupCommand: "pi" } : agent.id === "dsh" ? { setupCommand: "dsh web" } : {}),
       activity: activityOf(this.tasks.get(agent.id)),
     };
     if (!executable) {
@@ -312,7 +317,14 @@ export class AgentOnboardingService {
       this.deps.exec(executable, agent.versionArgs, STATUS_TIMEOUT_MS, env).catch(() => ({ stdout: "", stderr: "", code: 1 })),
       agent.statusArgs.length ? this.deps.exec(executable, agent.statusArgs, STATUS_TIMEOUT_MS, env).catch(() => ({ stdout: "", stderr: "", code: 1 })) : Promise.resolve({stdout:"",stderr:"",code:0}),
     ]);
-    const auth = interpretAuth(agent.id, status.stdout, status.stderr, status.code);
+    const auth = agent.id === "dsh"
+      ? {
+          authenticated: version.code !== 0
+            ? null
+            : Boolean(this.deps.env.DEEPSEEK_API_KEY?.trim()) || await this.deps.exists(this.deps.env.DSH_HOME?.trim() || join(this.deps.homedir, ".dsh")),
+          account: null,
+        }
+      : interpretAuth(agent.id, status.stdout, status.stderr, status.code);
     return {
       ...base,
       installed: true,

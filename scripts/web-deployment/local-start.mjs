@@ -59,7 +59,7 @@ export async function startLocalService({releaseRoot,dataDirectory,port=10000,op
         await atomicJson(pinPath,{schemaVersion:1,releaseRoot:runtimeRoot,version:installed.version,buildId:installed.opencraftWeb.buildId});
       }
       const workspace=join(data,'workspaces');await mkdir(workspace,{recursive:true});
-      host=await runtime.startLocalAgentHost({dataDirectory:data,runtimeDirectory:runtimeRoot,projectlessWorkspaceDirectory:workspace,
+      host=await runtime.startLocalAgentHost({dataDirectory:data,modelStorageDirectory:join(data,'models'),runtimeDirectory:runtimeRoot,projectlessWorkspaceDirectory:workspace,
         dshExecutable:join(runtimeRoot,'local-runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'),
         dshCapabilityPlugin:join(runtimeRoot,'execution/dsh-capability-plugin.mjs'),
         connectedAgentAssets:{proxy:join(runtimeRoot,'runtime/codebuddy-ide/acp-proxy.mjs'),extension:join(runtimeRoot,'runtime/codebuddy-ide/bridge.vsix')}});

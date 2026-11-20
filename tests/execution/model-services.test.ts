@@ -44,8 +44,11 @@ test("configured connections collapse without claiming a successful probe; dirty
   assert.match(render(), /连接已配置 · 已启用/);
   f.provider.enabled = false;
   f.provider.configuration = { ...f.provider.configuration, canToggle: true } as typeof f.provider.configuration;
-  assert.match(render(), /连接已配置 · 未启用/);
-  assert.match(render(), /aria-label="启用提供商"/);
+  const disabledProviderMarkup = render();
+  assert.match(disabledProviderMarkup, /连接已配置 · 未启用/);
+  assert.match(disabledProviderMarkup, /aria-label="启用提供商"/);
+  assert.match(disabledProviderMarkup, /<details open="">[\s\S]*未启用模型[\s\S]*Test model/u);
+  assert.doesNotMatch(disabledProviderMarkup, /aria-label="启用 Test model"[^>]*aria-checked="true"/u);
   f.provider.enabled = true;
   assert.match(render(), /id="model-service-connection" hidden/);
   assert.doesNotMatch(render(), /model-services__tabs|已收到文本响应/);

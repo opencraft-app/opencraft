@@ -42,7 +42,7 @@ test('interrupted activation keeps a recoverable journal and blocks a new update
 test('invalid downloaded candidate never stops or replaces the current runtime',async t=>{
  const f=await fixture(t),config=JSON.parse(f.text),bytes=Buffer.from('not a gzip archive');let requests=0;
  const server=createServer((req,res)=>{requests++;assert.equal(req.headers.authorization,'Bearer '+config.credential);if(req.url?.includes('/bootstrap?'))res.end(JSON.stringify({schemaVersion:1,id:config.id,hubId:config.hubId,origin:config.origin,digest:hash(bytes)}));else res.end(bytes);});await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise<void>(r=>server.close(()=>r())));config.origin='http://127.0.0.1:'+(server.address() as any).port;await writeFile(join(f.state,'connection.json'),JSON.stringify(config),{mode:0o600});
- await assert.rejects(runUpdate(f.state));assert.equal(requests,2);assert.equal(await readFile(join(f.state,'runtime','old'),'utf8'),'original runtime');await assert.rejects(readFile(join(f.state,'update-pending.json')),/ENOENT/);
+ await assert.rejects(runUpdate(f.state,'--update',{nodeVersion:'26.7.0'}));assert.equal(requests,2);assert.equal(await readFile(join(f.state,'runtime','old'),'utf8'),'original runtime');await assert.rejects(readFile(join(f.state,'update-pending.json')),/ENOENT/);
 });
 
 test('recovery refuses a live updater and reclaims a recorded exited owner',async t=>{
@@ -58,4 +58,22 @@ test('retry can restore interrupted files without attempting to start the previo
  await recover(f.state,{stop:async()=>{},start:async()=>{started=true;throw new Error('old runtime is broken')}},false);
  assert.equal(started,false);assert.equal(await readFile(join(f.state,'runtime','old'),'utf8'),'original runtime');
  await assert.rejects(readFile(join(f.state,'update-pending.json')),/ENOENT/);
+});
+
+test('download rejects intranet HTTP origins and runUpdate delegates build preparation to unpacked prepare.mjs',async t=>{
+ await assert.rejects(download({origin:'http://10.42.0.8:15473',credential:'x'.repeat(43)},'/update'),/HTTPS/);
+ const f=await fixture(t),config=JSON.parse(f.text),pack=await directory(t);
+ await mkdir(join(pack,'scripts','personal-machine'),{recursive:true});
+ await writeFile(join(pack,'scripts','personal-machine','prepare.mjs'),"import {writeFileSync} from 'node:fs';import {join} from 'node:path';writeFileSync(join(process.cwd(),'prepared.marker'),'ok');\n");
+ const tgz=join(pack,'candidate.tgz');
+ execFileSync('tar',['-czf',tgz,'-C',pack,'scripts']);
+ const bytes=await readFile(tgz),digest=hash(bytes);
+ const server=createServer((req,res)=>{if(req.url?.includes('/bootstrap?')){res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({schemaVersion:1,id:config.id,hubId:config.hubId,origin:config.origin,digest}));}else{res.writeHead(200);res.end(bytes);}});
+ await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise<void>(r=>server.close(()=>r())));
+ config.origin='http://127.0.0.1:'+(server.address() as any).port;
+ await writeFile(join(f.state,'connection.json'),JSON.stringify(config),{mode:0o600});
+ await assert.rejects(runUpdate(f.state,'--update',{nodeVersion:'24.0.0'}),/26\.7\.0/);
+ await runUpdate(f.state,'--update',{stop:async()=>{},start:async()=>{},nodeVersion:'26.7.0'});
+ assert.equal(await readFile(join(f.state,'runtime','prepared.marker'),'utf8'),'ok');
+ assert.equal(JSON.parse(await readFile(join(f.state,'update-version.json'),'utf8')).version,digest);
 });

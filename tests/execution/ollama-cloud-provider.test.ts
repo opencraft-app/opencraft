@@ -10,8 +10,8 @@ import { ModelConfigurationService } from "../../apps/local-agent-host/src/model
 import { RuntimeProviderService } from "../../apps/local-agent-host/src/runtime-provider-service.js";
 import { LocalAgentSettingsService, type HostProtocolRequest } from "../../plugins/builtin-agents/src/local-agent-settings-service.js";
 
-test("Ollama Cloud is offered with a working default connection and persists through the normal provider path", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "opencraft-ollama-cloud-"));
+test("Model directory exposes only OpenAI and Anthropic protocol slots instead of commercial vendor duplicates", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "opencraft-protocol-providers-"));
   try {
     const repository = new ModelConfigurationRepository(directory);
     const credentials = new ModelCredentialRepository(directory);
@@ -22,10 +22,12 @@ test("Ollama Cloud is offered with a working default connection and persists thr
         { ns: "llm-deepseek", revision: 0, schema: {}, base: {}, user: {}, value: {}, secrets: [], applies: "live" },
         { ns: "agent-default-model", revision: 0, schema: {}, base: {}, user: {}, value: {}, secrets: [], applies: "live" },
       ] } as T;
-      if (method === "llm.providers") return { providers: projected ? [{
-        provider: "ollama-cloud", displayName: "Ollama Cloud", declared: true,
-        settingsNs: "llm-pi-ai", settingsPath: ["providers", "ollama-cloud"], active: true,
-      }] : [] } as T;
+      if (method === "llm.providers") return { providers: [
+        { provider: "deepseek-official", displayName: "DeepSeek", declared: false, settingsNs: "llm-deepseek", settingsPath: [], active: true },
+        { provider: "deepseek", displayName: "deepseek", declared: false, settingsNs: "llm-pi-ai", settingsPath: ["providers", "deepseek"], active: false },
+        { provider: "groq", displayName: "groq", declared: false, settingsNs: "llm-pi-ai", settingsPath: ["providers", "groq"], active: false },
+        ...(projected ? [{ provider: "anthropic-compatible", displayName: "Anthropic 协议", declared: true, settingsNs: "llm-pi-ai", settingsPath: ["providers", "anthropic-compatible"], active: true }] : []),
+      ] } as T;
       if (method === "llm.models") return { groups: [], failures: [] } as T;
       throw new Error(`Unexpected DSH request: ${method}`);
     } };
@@ -33,12 +35,18 @@ test("Ollama Cloud is offered with a working default connection and persists thr
     const bridge = new DshModelConfigurationBridge(dsh, config);
     await bridge.initialize();
     const providers = new RuntimeProviderService(bridge);
-    const initial = (await providers.list()).providers.find(provider => provider.provider === "ollama-cloud");
-    assert.equal(initial?.configured, false);
-    assert.equal(initial?.declared, false);
-    assert.equal(initial?.configuration?.defaultBaseURL, "https://ollama.com/v1");
-    assert.equal(initial?.configuration?.defaultApi, "openai-completions");
-    assert.equal(initial?.configuration?.defaultCredentialRef, "OLLAMA_API_KEY");
+    const initialList = (await providers.list()).providers;
+    assert.deepEqual(initialList.map(provider => provider.provider), ["openai-compatible", "anthropic-compatible"]);
+    const openai = initialList.find(provider => provider.provider === "openai-compatible")!;
+    const anthropic = initialList.find(provider => provider.provider === "anthropic-compatible")!;
+    assert.equal(openai.displayName, "OpenAI 协议");
+    assert.equal(openai.declared, false);
+    assert.equal(openai.configuration?.defaultApi, "openai-completions");
+    assert.equal(openai.configuration?.canUseWithoutAuthentication, true);
+    assert.equal(anthropic.displayName, "Anthropic 协议");
+    assert.equal(anthropic.declared, false);
+    assert.equal(anthropic.configuration?.defaultApi, "anthropic-messages");
+    assert.equal(anthropic.configuration?.canUseWithoutAuthentication, false);
 
     const request = (async (_host, method) => {
       if (method === "runtime/status/read") return {};
@@ -49,28 +57,34 @@ test("Ollama Cloud is offered with a working default connection and persists thr
     }) as HostProtocolRequest;
     const client = new LocalAgentSettingsService(request, "local");
     await client.refresh();
-    const draft = client.providerConfiguration(initial!);
-    assert.equal(draft.baseURL, "https://ollama.com/v1");
-    assert.equal(draft.api, "openai-completions");
-    assert.equal(draft.credentialRef, "OLLAMA_API_KEY");
+    const draft = client.providerConfiguration(anthropic);
+    assert.equal(draft.baseURL, "");
+    assert.equal(draft.api, "anthropic-messages");
+    assert.equal(draft.credentialRef, "ANTHROPIC_API_KEY");
 
-    await providers.apply({ target: { kind: "update", id: "ollama-cloud" }, expectedRevision: 0,
-      baseURL: draft.baseURL, api: draft.api, models: [{ id: "gpt-oss:20b" }],
+    await assert.rejects(providers.apply({ target: { kind: "update", id: "anthropic-compatible" }, expectedRevision: 0,
+      baseURL: "https://api.anthropic.com/v1", api: "anthropic-messages", models: [{ id: "claude-sonnet-4-5" }],
+      credential: { kind: "keep" }, enabled: false,
+    }), /移除末尾 \/v1/);
+
+    await providers.apply({ target: { kind: "update", id: "anthropic-compatible" }, expectedRevision: 0,
+      baseURL: "https://api.anthropic.com", api: "anthropic-messages", models: [{ id: "claude-sonnet-4-5" }],
       credential: { kind: "keep" }, enabled: false,
     });
     const saved = (await repository.read()).providers[0];
-    assert.equal(saved?.id, "ollama-cloud");
-    assert.equal(saved?.catalogId, "ollama-cloud");
-    assert.equal(saved?.baseUrl, "https://ollama.com/v1");
-    assert.equal(saved?.protocol, "openai-completions");
-    assert.equal(saved?.credentialRef, "OLLAMA_API_KEY");
-    assert.equal(saved?.models[0]?.id, "gpt-oss:20b");
-    await providers.apply({ target: { kind: "update", id: "ollama-cloud" }, expectedRevision: 1,
-      baseURL: draft.baseURL, credential: { kind: "replace", value: "synthetic-ollama-key" },
+    assert.equal(saved?.id, "anthropic-compatible");
+    assert.equal(saved?.catalogId, "anthropic-compatible");
+    assert.equal(saved?.name, "Anthropic 协议");
+    assert.equal(saved?.baseUrl, "https://api.anthropic.com");
+    assert.equal(saved?.protocol, "anthropic-messages");
+    assert.equal(saved?.credentialRef, "ANTHROPIC_API_KEY");
+    assert.equal(saved?.models[0]?.id, "claude-sonnet-4-5");
+    await providers.apply({ target: { kind: "update", id: "anthropic-compatible" }, expectedRevision: 1,
+      baseURL: "https://api.anthropic.com", credential: { kind: "replace", value: "synthetic-anthropic-key" },
     });
-    assert.notEqual((await repository.read()).providers[0]?.credentialRef, "OLLAMA_API_KEY");
-    assert.doesNotMatch(await readFile(repository.path, "utf8"), /synthetic-ollama-key/);
-    assert.equal((await providers.list()).providers.find(provider => provider.provider === "ollama-cloud")?.declared, false);
+    assert.notEqual((await repository.read()).providers[0]?.credentialRef, "ANTHROPIC_API_KEY");
+    assert.doesNotMatch(await readFile(repository.path, "utf8"), /synthetic-anthropic-key/);
+    assert.equal((await providers.list()).providers.find(provider => provider.provider === "anthropic-compatible")?.declared, false);
     client.dispose();
   } finally {
     await rm(directory, { recursive: true, force: true });

@@ -1,5 +1,5 @@
 import type { NativeConversationProject } from "./native-conversation-project";
-export type OnboardingAgentId = "codex" | "cursor" | "claude" | "codebuddy" | "codebuddy-ide" | "pi";
+export type OnboardingAgentId = "codex" | "cursor" | "claude" | "codebuddy" | "codebuddy-ide" | "pi" | "dsh";
 
 export type HistoryImportAgentId = OnboardingAgentId;
 

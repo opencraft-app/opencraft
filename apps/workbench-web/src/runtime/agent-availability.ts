@@ -8,6 +8,7 @@ export function agentAvailabilityScope(display: string, account: string, hostId:
 }
 
 export function isAgentEnabled(values: Availability, scope: string, agentId: string): boolean {
+  if (agentId === "dsh" || agentId === "host") return true;
   return values[scope]?.[agentId] !== false;
 }
 

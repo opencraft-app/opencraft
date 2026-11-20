@@ -16,7 +16,9 @@ import { HUNYUAN_SPEECH, isHunyuanSpeechEndpoint } from "./model-config/speech.j
 
 const CUSTOM_NS = "llm-pi-ai";
 const supportsProviderLifecycle = (ns: string) => ns === CUSTOM_NS || ns === "llm-deepseek";
-const APIS = ["openai-completions", "openai-responses"] as const;
+const OPENAI_APIS = ["openai-completions", "openai-responses"] as const;
+const APIS = ["openai-completions", "openai-responses", "anthropic-messages"] as const;
+const PROTOCOL_SLOTS = new Set(["ollama-cloud", "openai-compatible", "anthropic-compatible"]);
 export type RuntimeModelInfoReader = (provider: string, model: string) => Promise<{
   input?: readonly ("text" | "image")[] | null;
   reasoning?: import("@opencraft/appserver-protocol").RuntimeModelView["reasoning"] | null;
@@ -25,12 +27,12 @@ const object = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const at = (value: unknown, path: readonly string[]): unknown => path.reduce((node, key) => object(node)[key], value);
 
-function endpoint(value: string, validateOperation = true): string {
+function endpoint(value: string, validateOperation = true, api?: string): string {
   const url = new URL(value);
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
     throw new Error("Endpoint must be an HTTP(S) base URL without credentials, query or fragment");
   }
-  const issue = validateOperation ? modelBaseUrlError(value) : null; if (issue) throw new Error(issue);
+  const issue = validateOperation ? modelBaseUrlError(value, api) : null; if (issue) throw new Error(issue);
   return url.toString().replace(/\/+$/, "");
 }
 
@@ -154,7 +156,7 @@ export class RuntimeProviderService {
       const provider = directory.providers.find(entry => entry.provider === group.id && entry.active) ?? directory.providers.find(entry => entry.provider === group.id);
       const declared = object(object(config.providers)[group.id]).models;
       const builtin = object(object(config.providers)[group.id]).api !== HUNYUAN_SPEECH.api && provider?.settingsNs === CUSTOM_NS && Array.isArray(declared) && declared.length
-        ? provider.declared || provider.provider === "ollama-cloud" ? new Set<string>() : new Set((await this.client.call<RuntimeModelsDiscoverResponse>("llm.discoverModels", { settingsNs: CUSTOM_NS, provider: group.id })).models.map(model => model.id))
+        ? provider.declared || PROTOCOL_SLOTS.has(provider.provider) ? new Set<string>() : new Set((await this.client.call<RuntimeModelsDiscoverResponse>("llm.discoverModels", { settingsNs: CUSTOM_NS, provider: group.id })).models.map(model => model.id))
         : null;
       const disabled = new Set(Array.isArray(policy[group.id]) ? policy[group.id] as string[] : []);
       return { ...group, models: (await Promise.all(group.models.map(async model => {
@@ -181,27 +183,73 @@ export class RuntimeProviderService {
     if (!settings.writable || !namespace) throw new Error("Model settings are unavailable");
     if (namespace.revision !== input.expectedRevision) throw new DshClientError("settings-conflict", "Models changed; refresh before retrying");
     const catalog = await this.models(true);
-    const model = catalog.groups.find(group => group.id === input.provider)?.models.find(model => model.id === input.model);
+    const group = catalog.groups.find(entry => entry.id === input.provider);
+    const model = group?.models.find(entry => entry.id === input.model);
     if (!model) throw new Error("Model no longer exists or provider is unavailable");
     const defaults = object(settings.namespaces.find(entry => entry.ns === "agent-default-model")?.value);
-    if (enabled !== true && defaults.provider === input.provider && defaults.model === input.model) throw new Error("Select another default model first");
+    if (!settings.hasDocument && enabled !== true && defaults.provider === input.provider && defaults.model === input.model) throw new Error("Select another default model first");
     const config = object(namespace.value);
+    const providers = object(config.providers);
+    const hasCustomProvider = Object.hasOwn(providers, input.provider);
+    const provider = object(providers[input.provider]);
     const previous = object(config.modelSelection)[input.provider];
     const disabled = new Set(Array.isArray(previous) ? previous as string[] : []);
     const ops: RuntimeSettingsPathOperation[] = [];
     if (enabled === undefined) {
       if (model.source !== "custom") throw new Error("Built-in models can be disabled, not deleted");
-      const provider = object(object(config.providers)[input.provider]);
       if (!Array.isArray(provider.models)) throw new Error("Model has no custom configuration");
       const remaining = provider.models.filter(entry => object(entry).id !== input.model);
-      if (remaining.length === 0 && provider.enabled !== false) throw new Error("Disable this provider before deleting its last model");
+      if (!settings.hasDocument && remaining.length === 0 && provider.enabled !== false) throw new Error("Disable this provider before deleting its last model");
       ops.push({ op: "set", path: ["providers", input.provider, "models"], value: remaining });
       disabled.delete(input.model);
-    } else if (enabled) disabled.delete(input.model);
-    else disabled.add(input.model);
+      if (settings.hasDocument && hasCustomProvider && provider.enabled !== false && !remaining.some(entry => {
+        const id = object(entry).id;
+        return typeof id === "string" && Boolean(id) && !disabled.has(id);
+      })) {
+        ops.push({ op: "set", path: ["providers", input.provider, "enabled"], value: false });
+      }
+    } else if (enabled) {
+      if (hasCustomProvider && provider.enabled === false) {
+        const autoEnable = await this.canAutoEnableCustomProvider(input.provider, provider);
+        if (autoEnable.ok) {
+          for (const candidate of group?.models ?? []) {
+            if (candidate.id !== input.model) disabled.add(candidate.id);
+          }
+          if (autoEnable.credentialRef) {
+            ops.push({ op: "set", path: ["providers", input.provider, "apiKeyEnv"], value: autoEnable.credentialRef });
+          }
+          ops.push({ op: "set", path: ["providers", input.provider, "enabled"], value: true });
+        }
+      }
+      disabled.delete(input.model);
+    } else {
+      disabled.add(input.model);
+      if (hasCustomProvider && provider.enabled !== false && !(group?.models ?? []).some(candidate => !disabled.has(candidate.id))) {
+        ops.push({ op: "set", path: ["providers", input.provider, "enabled"], value: false });
+      }
+    }
     ops.push({ op: "set", path: ["modelSelection", input.provider], value: [...disabled] });
     const saved = await this.client.call<RuntimeSettingsNamespaceView>("settings.mutate", { ns: CUSTOM_NS, expectedRevision: input.expectedRevision, ops });
     return { provider: input.provider, revision: saved.revision, saved: true };
+  }
+
+  private async canAutoEnableCustomProvider(id: string, provider: Record<string, unknown>): Promise<{ ok: boolean; credentialRef?: string }> {
+    if (id === "openai-codex") return { ok: false };
+    const speech = provider.api === HUNYUAN_SPEECH.api;
+    const api = typeof provider.api === "string" ? provider.api : id === "anthropic-compatible" ? "anthropic-messages" : "openai-completions";
+    const baseURL = typeof provider.baseURL === "string" ? provider.baseURL.trim() : "";
+    const effectiveBaseURL = baseURL || (id === "ollama-cloud" ? "https://ollama.com/v1" : speech ? HUNYUAN_SPEECH.baseURL : "");
+    if (!effectiveBaseURL || modelBaseUrlError(effectiveBaseURL, api)) return { ok: false };
+    if (!speech && provider.authentication === "none") return { ok: true };
+    const explicitRef = typeof provider.apiKeyEnv === "string" ? provider.apiKeyEnv : "";
+    const ref = explicitRef || (id === "anthropic-compatible" ? "ANTHROPIC_API_KEY" : id === "openai-compatible" ? "OPENAI_API_KEY" : id === "ollama-cloud" ? "OLLAMA_API_KEY" : "");
+    if (!ref || ref.startsWith("OPENCRAFT_UNBOUND_")) return { ok: false };
+    const credentials = await this.client.call<{ credentials: Record<string, { configured: boolean }> }>(
+      "credentials.describe",
+      { refs: [ref], ...(speech ? { storedOnly: true } : {}) },
+    );
+    if (!credentials.credentials[ref]?.configured) return { ok: false };
+    return { ok: true, ...(!explicitRef ? { credentialRef: ref } : {}) };
   }
 
   async list(): Promise<RuntimeProvidersListResponse> {
@@ -215,10 +263,13 @@ export class RuntimeProviderService {
       const value = at(section?.value, provider.settingsPath);
       const configured = value !== undefined;
       const speech = object(value).api === HUNYUAN_SPEECH.api;
+      const anthropic = provider.provider === "anthropic-compatible" || object(value).api === "anthropic-messages";
       return { ...provider, configured, enabled: configured && object(value).enabled !== false,
-        ...(provider.settingsNs === CUSTOM_NS ? { configuration: { modelDeclarations: true, apis: speech ? [HUNYUAN_SPEECH.api] : APIS,
-          modelType: speech ? "asr" as const : "chat" as const, canToggle: true, canProbe: !speech, canUseWithoutAuthentication: !speech && provider.provider !== "openai-codex",
+        ...(provider.settingsNs === CUSTOM_NS ? { configuration: { modelDeclarations: true, apis: speech ? [HUNYUAN_SPEECH.api] : anthropic ? ["anthropic-messages" as const] : OPENAI_APIS,
+          modelType: speech ? "asr" as const : "chat" as const, canToggle: true, canProbe: !speech, canUseWithoutAuthentication: !speech && !anthropic && provider.provider !== "openai-codex",
           ...(!speech && provider.provider === "ollama-cloud" ? { defaultBaseURL: "https://ollama.com/v1", defaultApi: "openai-completions" as const, defaultCredentialRef: "OLLAMA_API_KEY" } : {}),
+          ...(!speech && provider.provider === "openai-compatible" ? { defaultApi: "openai-completions" as const, defaultCredentialRef: "OPENAI_API_KEY" } : {}),
+          ...(!speech && anthropic ? { defaultApi: "anthropic-messages" as const, ...(provider.provider === "anthropic-compatible" ? { defaultCredentialRef: "ANTHROPIC_API_KEY" } : {}) } : {}),
         } } : {}),
         // The pinned native DeepSeek adapter speaks Chat Completions. These are
         // public draft-probe defaults, never a readback of credentials or env overrides.
@@ -257,8 +308,8 @@ export class RuntimeProviderService {
     if (namespace.revision !== input.expectedRevision) throw new DshClientError("settings-conflict", "Provider settings changed; refresh before saving");
     if (create && at(namespace.value, path) !== undefined) throw new Error("Provider ID already exists");
     const current = object(at(namespace.value, path));
-    const baseURL = input.baseURL.trim() ? endpoint(input.baseURL.trim()) : "";
     const api = input.api ?? current.api;
+    const baseURL = input.baseURL.trim() ? endpoint(input.baseURL.trim(), true, typeof api === "string" ? api : undefined) : "";
     const speech = api === HUNYUAN_SPEECH.api;
     if (speech && (!this.applicationModels || !isHunyuanSpeechEndpoint(baseURL))) throw new Error("语音连接请使用混元转写服务地址");
     if (!create && input.api !== undefined && (current.api === HUNYUAN_SPEECH.api) !== speech) throw new Error("连接用途不能更改，请创建新连接");
@@ -335,9 +386,11 @@ export class RuntimeProviderService {
       case "keep": {
         const oldEndpoint = typeof current.baseURL === "string" ? endpoint(current.baseURL, false) : "";
         if (!create && current.authentication !== "none" && baseURL !== oldEndpoint && !input.credential.allowEndpointChange
-          && !(id === "ollama-cloud" && typeof current.apiKeyEnv !== "string")) throw new Error("Changing the endpoint requires confirmation before reusing its credential");
+          && !(PROTOCOL_SLOTS.has(id) && typeof current.apiKeyEnv !== "string")) throw new Error("Changing the endpoint requires confirmation before reusing its credential");
         if (create) set("apiKeyEnv", `OPENCRAFT_UNBOUND_${randomUUID().replaceAll("-", "_")}`);
-        else if (id === "ollama-cloud" && typeof current.apiKeyEnv !== "string") set("apiKeyEnv", "OLLAMA_API_KEY");
+        else if (PROTOCOL_SLOTS.has(id) && typeof current.apiKeyEnv !== "string") {
+          set("apiKeyEnv", id === "anthropic-compatible" ? "ANTHROPIC_API_KEY" : id === "openai-compatible" ? "OPENAI_API_KEY" : "OLLAMA_API_KEY");
+        }
         break;
       }
       case "replace":
@@ -354,7 +407,7 @@ export class RuntimeProviderService {
         set("apiKeyEnv", `OPENCRAFT_UNBOUND_${randomUUID().replaceAll("-", "_")}`);
         break;
       case "unauthenticated":
-        if (ns !== CUSTOM_NS || speech || id === "openai-codex" || !baseURL || !APIS.includes((input.api ?? current.api) as typeof APIS[number])) {
+        if (ns !== CUSTOM_NS || speech || id === "openai-codex" || !baseURL || !OPENAI_APIS.includes((input.api ?? current.api) as typeof OPENAI_APIS[number])) {
           throw new Error("Explicit unauthenticated mode requires an OpenAI-compatible endpoint");
         }
         set("authentication", "none");
@@ -378,7 +431,13 @@ export class RuntimeProviderService {
       const disabled = new Set(Array.isArray(object(policy)[id]) ? object(policy)[id] as string[] : []);
       if (!declared.some(model => !disabled.has(model.id)
         && !(input.disableNewModels === true && !previousIds.has(model.id)))) {
-        throw new Error("请先获取模型，并启用至少一个模型，再启用提供商");
+        const singleModelId = declared.length === 1 && !input.disableNewModels ? object(declared[0]).id : undefined;
+        if (typeof singleModelId === "string" && singleModelId) {
+          disabled.delete(singleModelId);
+          ops.push({ op: "set", path: ["modelSelection", id], value: [...disabled] });
+        } else {
+          throw new Error("请先获取模型，并启用至少一个模型，再启用提供商");
+        }
       }
     }
     if (stagedRef && input.credential.kind === "replace") {
@@ -418,6 +477,7 @@ export class RuntimeProviderService {
   private async assertEnabledChange(provider: string, enabled: boolean): Promise<void> {
     if (enabled) return; // DSH validates serviceability on the enabling CAS write.
     const settings = await this.client.call<RuntimeSettingsDescribeResponse>("settings.describe");
+    if (settings.hasDocument) return;
     const defaults = object(settings.namespaces.find((entry) => entry.ns === "agent-default-model")?.value);
     if (defaults.provider === provider) throw new Error("Select another default model before disabling this provider");
   }
@@ -445,11 +505,16 @@ export class RuntimeProviderService {
     if (input.source !== "endpoint" || !input.baseURL || !APIS.includes(input.api as typeof APIS[number])) throw new Error("Endpoint discovery requires a supported protocol and base URL");
     if (input.apiKey !== undefined && (typeof input.apiKey !== "string" || /[\r\n\0]/.test(input.apiKey))) throw new Error("Invalid discovery credential");
     // Explicit draft credentials only. Never send a stored provider secret to a new endpoint implicitly.
-    const baseURL = endpoint(input.baseURL);
-    const url = `${baseURL}/models`;
+    const anthropic = input.api === "anthropic-messages";
+    const baseURL = endpoint(input.baseURL, true, input.api);
+    const url = anthropic ? `${baseURL}/v1/models` : `${baseURL}/models`;
     const response = await fetch(url, {
       redirect: "error", signal: AbortSignal.timeout(10_000),
-      headers: { accept: "application/json", ...(input.apiKey?.trim() ? { authorization: `Bearer ${input.apiKey.trim()}` } : {}) },
+      headers: {
+        accept: "application/json",
+        ...(anthropic ? { "anthropic-version": "2023-06-01", ...(input.apiKey?.trim() ? { "x-api-key": input.apiKey.trim() } : {}) }
+          : input.apiKey?.trim() ? { authorization: `Bearer ${input.apiKey.trim()}` } : {}),
+      },
     });
     if (!response.ok) { await response.body?.cancel(); throw new Error(`Model discovery returned HTTP ${response.status}`); }
     const reader = response.body?.getReader();
@@ -472,7 +537,8 @@ export class RuntimeProviderService {
       const model = object(entry);
       if (typeof model.id !== "string" || !model.id.trim() || ids.has(model.id.trim())) return [];
       ids.add(model.id.trim());
-      return [{ id: model.id.trim(), ...(typeof model.name === "string" ? { name: model.name } : {}) }];
+      const displayName = typeof model.name === "string" && model.name.trim() ? model.name : typeof model.display_name === "string" && model.display_name.trim() ? model.display_name : undefined;
+      return [{ id: model.id.trim(), ...(displayName ? { name: displayName } : {}) }];
     });
     if (input.provider !== "ollama-cloud") return { models };
     const metadata = await ollamaModelMetadata(baseURL, models);

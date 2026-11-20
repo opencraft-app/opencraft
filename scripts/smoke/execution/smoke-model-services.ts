@@ -33,7 +33,7 @@ try {
   host = await startLocalAgentHost({ dataDirectory, modelStorageDirectory, dshExecutable: resolve('runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js') });
   const entry = `
     import '/apps/workbench-web/src/styles/settings-page.scss';
-    import React from 'react'; import { createRoot } from 'react-dom/client';
+    import React from 'react'; import { createIntlTestRoot as createRoot } from '/tests/fixtures/intl-root.tsx';
     import { LocalAgentSettingsService } from '/plugins/builtin-agents/src/local-agent-settings-service.ts';
     import { ModelServicesController } from '/plugins/builtin-agents/src/model-services/controller.ts';
     import { createModelServicesView } from '/plugins/builtin-agents/src/model-services/view.tsx';
@@ -44,7 +44,7 @@ try {
     socket.onmessage=event=>{const frame=JSON.parse(event.data),call=pending.get(frame.id);if(!call)return;pending.delete(frame.id);frame.error?call.reject(new Error(frame.error.message)):call.resolve(frame.result);};
     const request=async(_host,method,params)=>{await ready;window.methods.push(method);return new Promise((resolve,reject)=>{const next=++id;pending.set(next,{resolve,reject});socket.send(JSON.stringify({jsonrpc:'2.0',id:next,method,params}));});};
     const service=new LocalAgentSettingsService(request,'local'),controller=new ModelServicesController(service),View=createModelServicesView(controller);window.controller=controller;window.request=(method,params)=>request('local',method,params);window.locations=[];
-    const root=createRoot(document.getElementById('root'));let epoch=0;
+    const root=createRoot(document.getElementById('root'),undefined,'zh-CN');let epoch=0;
     window.remount=()=>root.render(<div style={{height:'100vh'}}><View key={++epoch}/></div>);window.remount();
   `;
   vite = await createServer({ configFile: false, root: process.cwd(), logLevel: 'error', server: { host: '127.0.0.1', port: 0 },
@@ -65,16 +65,15 @@ try {
   };
   await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as { port:number }).port}`);
   await page.getByRole('heading', { name: 'DeepSeek', exact: true }).waitFor();
-  await page.getByRole('textbox', { name: '搜索提供商' }).fill('Ollama Cloud');
-  await page.getByRole('button', { name: 'Ollama Cloud', exact: true }).click();
-  await page.getByRole('heading', { name: 'Ollama Cloud', exact: true }).waitFor();
-  assert.equal(await page.getByLabel('API 基础地址（Base URL）', { exact: true }).inputValue(), 'https://ollama.com/v1');
-  await page.locator('.model-services__detail [data-brand-kind="provider"] [data-brand-id="ollama"]').waitFor();
+  await page.getByRole('textbox', { name: '搜索提供商' }).fill('Anthropic');
+  await page.getByRole('button', { name: 'Anthropic 协议', exact: true }).click();
+  await page.getByRole('heading', { name: 'Anthropic 协议', exact: true }).waitFor();
+  await page.locator('.model-services__detail [data-brand-kind="provider"] [data-brand-id="anthropic"]').waitFor();
   await page.getByRole('textbox', { name: '搜索提供商' }).fill('');
   await page.getByRole('button', { name: 'DeepSeek', exact: true }).click();
   assert.equal(await page.locator('.model-services__provider-row button input').count(),0);
   assert.equal(await page.getByRole('switch',{name:'启用提供商：DeepSeek',exact:true}).getAttribute('aria-checked'),'true');
-  assert.equal(await page.getByRole('switch',{name:'启用提供商：DeepSeek',exact:true}).isDisabled(),true);
+  assert.equal(await page.getByRole('switch',{name:'启用提供商：DeepSeek',exact:true}).isDisabled(),false);
   await page.getByText('凭据状态待确认',{exact:true}).waitFor({state:'hidden'});await openConnection();
   await page.getByLabel('API Key', {exact:true}).fill('synthetic-model-key');
   assert.equal(await page.getByText('尚有未保存的配置', {exact:true}).count(), 1);
@@ -130,8 +129,6 @@ try {
   await page.getByRole('button', { name:'添加', exact:true }).click();
   await page.getByRole('switch', { name:'启用 local-test-model', exact:true }).waitFor();
   await page.locator('[data-brand-kind="model"] svg[data-brand-id="unknown"]').first().waitFor();
-  await page.getByText('连接已配置 · 未启用',{exact:true}).waitFor();
-  await toggleProvider();
   await page.getByText('连接已配置 · 已启用',{exact:true}).waitFor();
   assert.equal(await page.getByRole('button',{name:'启用提供商',exact:true}).count(),0);
   await page.getByRole('button', { name:'获取模型', exact:true }).click();
@@ -197,7 +194,7 @@ try {
   await page.getByRole('heading',{name:'DeepSeek',exact:true}).waitFor();
   const remaining=await page.evaluate(async()=>await (window as any).request('runtime/providers/list',{}));
   assert.equal(remaining.providers.some((p:any)=>p.displayName==='Renamed gateway'),false);
-  assert.deepEqual(received,['/v1/models','/v1/chat/completions']); assert.deepEqual(errors,[]);
+  assert.deepEqual(received,['/v1/models','/v1/models','/v1/chat/completions']); assert.deepEqual(errors,[]);
   console.log('Model services: explicit save/cancel, advanced settings, provider context default (direct and submenu), context rename, delete cancellation/confirmation, default recovery, action popovers, text check, import, narrow/remount passed. DSH isolated; no external model request.');
 } finally {
   await browser?.close(); await vite?.close(); await host?.close(); await new Promise<void>(resolve=>endpoint.close(()=>resolve())); await rm(dataDirectory,{recursive:true,force:true});

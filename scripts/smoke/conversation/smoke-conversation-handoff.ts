@@ -115,12 +115,43 @@ function App() {
       {
         id: "local",
         label: "Local",
-        active: true,
+        active: (handoff?.hostId ?? "local") === "local",
+        machineId: "local",
+        machineLabel: "本地Mac",
+        machineRole: "local",
+        isLocalMachine: true,
+        isConversationMachine: true,
+        crossDevice: false,
         models,
         select(model) {
           const sameAgent = model.agentId === "codex";
           if (!handoff && sameAgent) return;
           setHandoff(prev => ({
+            hostId: "local",
+            targetWorkspacePath: null,
+            model: model.value,
+            effort: model.defaultEffort,
+            serviceTier: prev?.serviceTier && model.serviceTiers?.some(t => t.id === prev.serviceTier) ? prev.serviceTier : null,
+            permissionProfile: prev?.permissionProfile ?? "full",
+          }));
+          return { selection: "handled" };
+        },
+      },
+      {
+        id: "devcloud",
+        label: "Devcloud",
+        active: handoff?.hostId === "devcloud",
+        machineId: "devcloud",
+        machineLabel: "Devcloud",
+        machineRole: "server",
+        isLocalMachine: false,
+        isConversationMachine: false,
+        crossDevice: true,
+        models: models.filter(m => m.agentId === "codex"),
+        select(model) {
+          setHandoff(prev => ({
+            hostId: "devcloud",
+            targetWorkspacePath: prev?.hostId === "devcloud" ? prev.targetWorkspacePath : "/root/lighthouse_workspace",
             model: model.value,
             effort: model.defaultEffort,
             serviceTier: prev?.serviceTier && model.serviceTiers?.some(t => t.id === prev.serviceTier) ? prev.serviceTier : null,
@@ -317,7 +348,9 @@ try {
     // 2. Cross-agent model selection enters Handoff to new thread inline!
     await activate(modelTrigger);
     await menu.waitFor();
-    await activate(menu.getByRole("tab", { name: "Cursor", exact: true }));
+    assert.equal(await menu.locator('.opencraft-composer-model-browser__machine-segmented button[role="radio"]').count(), 2, "both machines appear as clickable machine segments");
+    assert.equal(await menu.getByRole("tab", { name: "Codex · Devcloud", exact: true }).count(), 0, "other machine's agents stay tucked away until its machine tab is selected");
+    await activate(menu.getByRole("tab", { name: "Cursor · 本地Mac", exact: true }));
     await activate(menu.getByRole("menuitem", { name: "Gemini 4 Carbon", exact: true }));
     await page.keyboard.press("Escape");
     await menu.waitFor({ state: "hidden" });
@@ -361,16 +394,24 @@ try {
     await page.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-zh-filled-lavender.png` });
     await page.evaluate(() => (window as any).__setTheme("light", false));
 
-    // 4b. Switch target device to Devcloud -> verify cross-device warning notice & target folder picker!
+    // 4b. Switch directly to Devcloud's Codex from the model menu -> verify machine switcher, inline CTA & auto-close into cross-device handoff!
     assert.equal(await page.locator(".opencraft-composer-handoff__cross-device-notice").count(), 0);
-    await activate(page.getByRole("button", { name: /目标设备：本地Mac/u }));
-    const deviceMenu = page.locator('[role="menu"]');
-    await deviceMenu.waitFor();
-    await activate(deviceMenu.getByRole("menuitem", { name: "Devcloud", exact: true }));
+    await activate(modelTrigger);
+    await menu.waitFor();
+    await activate(menu.locator('.opencraft-composer-model-browser__machine-segmented button[data-value="devcloud"]'));
+    assert.equal(await menu.getByRole("tab", { name: "Codex · Devcloud", exact: true }).getAttribute("aria-selected"), "true");
+    const menuCrossNotice = menu.locator(".opencraft-composer-model-browser__cross-device-notice");
+    await menuCrossNotice.waitFor();
+    assert.match(await menuCrossNotice.innerText(), /JSONL/u);
+    await page.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-cross-device-menu-light.png` });
+    await activate(menu.getByRole("button", { name: "切换到 Devcloud · Codex", exact: true }));
+    await menu.waitFor({ state: "hidden" });
+    assert.match(await page.locator(".opencraft-composer-mode__model-label").innerText(), /^Devcloud · /u);
     const crossNotice = page.locator(".opencraft-composer-handoff__cross-device-notice");
     await crossNotice.waitFor();
-    assert.match(await crossNotice.innerText(), /跨设备移交仅同步对话上下文，不会同步本地文件夹与代码改动/u);
+    assert.match(await crossNotice.innerText(), /执行机器与系统环境已改变.*JSONL/u);
     await activate(page.getByRole("button", { name: /目标文件夹：lighthouse_workspace/u }));
+    const deviceMenu = page.locator('[role="menu"]');
     await deviceMenu.waitFor();
     await activate(deviceMenu.getByRole("menuitem", { name: "opencraft", exact: true }));
     assert.equal(await page.getByRole("button", { name: /目标文件夹：opencraft/u }).count(), 1);
@@ -401,7 +442,7 @@ try {
     // 7. Re-select Pi agent and submit handoff!
     await activate(modelTrigger);
     await menu.waitFor();
-    await activate(menu.getByRole("tab", { name: "Pi", exact: true }));
+    await activate(menu.getByRole("tab", { name: "Pi · 本地Mac", exact: true }));
     await activate(menu.getByRole("menuitem", { name: "Claude Sonnet 4.5", exact: true }));
     await page.keyboard.press("Escape");
     await menu.waitFor({ state: "hidden" });

@@ -39,11 +39,14 @@ test("executable lookup uses PATH, then known install locations", async () => {
   assert.equal(await resolveExecutable(["cursor-agent"], deps), "/Users/me/.local/share/cursor-agent/versions/2026.11.05/cursor-agent");
   assert.equal(await resolveExecutable(["missing"], deps), null);
 });
-test("npm-run's bundled Pi SDK bin cannot shadow the installed native Pi CLI", async () => {
-  const bundled = resolve("node_modules/.bin"), files = new Set([`${bundled}/pi`, "/Users/me/.local/bin/pi"]);
-  const deps = { env: { PATH: `${bundled}:/bin` }, homedir: "/Users/me", exists: async (file: string) => files.has(file), cursorVersions: async () => [] };
+test("npm-run's bundled Pi SDK and internal DSH runtime bins cannot shadow installed native CLIs", async () => {
+  const bundled = resolve("node_modules/.bin"), bundledDsh = resolve("runtime/dsh/node_modules/.bin");
+  const files = new Set([`${bundled}/pi`, `${bundledDsh}/dsh`, "/Users/me/.local/bin/pi", "/opt/homebrew/bin/dsh"]);
+  const deps = { env: { PATH: `${bundled}:${bundledDsh}:/bin` }, homedir: "/Users/me", exists: async (file: string) => files.has(file), cursorVersions: async () => [] };
   assert.equal(await resolveExecutable(["pi"], deps), "/Users/me/.local/bin/pi");
+  assert.equal(await resolveExecutable(["dsh"], deps), "/opt/homebrew/bin/dsh");
   files.delete("/Users/me/.local/bin/pi"); assert.equal(await resolveExecutable(["pi"], deps), null);
+  files.delete("/opt/homebrew/bin/dsh"); assert.equal(await resolveExecutable(["dsh"], deps), null);
 });
 
 function fakeDeps(files: Set<string>, replies: Map<string, { stdout?: string; stderr?: string; code?: number }>): OnboardingDeps & { spawned: string[][] } {
@@ -129,6 +132,9 @@ test("a signed-in agent becomes a selectable model and owns its later threads", 
   assert.equal(connectedAgentEngineId("pi-cli:provider:model"), "pi-cli");
   assert.equal(connectedAgentEngineId("picli_native"), "pi-cli");
   assert.equal(connectedAgentEngineId("pi_existing_durable"), null, "native CLI routing cannot take over the existing durable Pi engine");
+  assert.equal(connectedAgentModelId("dsh"), "dsh-acp:current");
+  assert.equal(connectedAgentEngineId("dsh-acp:deepseek-v4"), "dsh-acp");
+  assert.equal(connectedAgentEngineId("dsh_acp_native"), "dsh-acp");
 });
 
 test("Pi native readiness and terminal setup are identical for local and Bash-enrolled Hosts", async () => {

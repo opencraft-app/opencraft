@@ -18,8 +18,8 @@ export async function withSavedModel<Result>(input:RuntimeSavedModelCheckParams,
   if(!provider)throw new Error('请先保存提供商配置');
   if(!provider.models.some(m=>m.id===input.model))throw new Error('所选模型不在已保存的连接中');
   const api=provider.protocol;
-  if(api!=='openai-completions'&&api!=='openai-responses')throw new Error('当前协议暂不支持连接检查');
-  const issue=modelBaseUrlError(provider.baseUrl);if(issue||!provider.baseUrl.trim())throw new Error(issue??'请先保存 API 基础地址');
+  if(api!=='openai-completions'&&api!=='openai-responses'&&api!=='anthropic-messages')throw new Error('当前协议暂不支持连接检查');
+  const issue=modelBaseUrlError(provider.baseUrl,api);if(issue||!provider.baseUrl.trim())throw new Error(issue??'请先保存 API 基础地址');
   const apiKey=provider.authentication!=="none"&&provider.credentialRef?await source.credential(provider.credentialRef):undefined;
   if(!apiKey&&provider.authentication!=='none')throw new Error('此连接没有可用的 API Key，请先保存密钥');
   const latest=await source.read();

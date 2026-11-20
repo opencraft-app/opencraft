@@ -837,7 +837,7 @@ export async function startLocalAgentHost(options: {
         }
         if (request.method === "model/list") {
           const nativeScope = (request.params as { threadId?: unknown } | undefined)?.threadId;
-          if (typeof nativeScope === "string" && /^(codex|cursor|claude|codebuddy|picli)_/u.test(nativeScope) && connectedAgents.owns("thread/read", { threadId: nativeScope })) {
+          if (typeof nativeScope === "string" && /^(codex|cursor|claude|codebuddy|picli|dsh_acp)_/u.test(nativeScope) && connectedAgents.owns("thread/read", { threadId: nativeScope })) {
             const extras = await connectedAgents.models(nativeScope);
             send(socket, { jsonrpc: "2.0", id: request.id, result: { data: extras, nextCursor: null } }, request.method); return;
           }
@@ -847,7 +847,7 @@ export async function startLocalAgentHost(options: {
           const listed = connectedCursor ? { data: [], nextCursor: null } : await adapter.dispatchOwned(request.method, request.params, owner, request.id as string | number) as { data?: unknown[]; nextCursor?: string | null };
           const data = (listed.data ?? []).map(value => {
             const model = value as Record<string, unknown>;
-            return { ...model, agentId: model.agentId ?? "dsh", agentLabel: model.agentLabel ?? "DSH" };
+            return { ...model, agentId: model.agentId ?? "dsh" };
           });
           let nextCursor = listed.nextCursor ?? null;
           if (nextCursor === null) {
@@ -1060,7 +1060,7 @@ export async function startLocalAgentHost(options: {
                     ...(claudeBridge ? [{ id: "claude-code", label: "Claude Code", threadPrefix: claudeBridge.threadPrefix, modelPrefix: claudeBridge.modelPrefix, extensions: claudeBridge.extensions }] : []),
                   ],
                 },
-                "opencraft/agent-session": { version: 1, contextExport: ["codex", "cursor", "pi-cli", "claude-code", "codebuddy", "codebuddy-ide", "pi", "dsh"] },
+                "opencraft/agent-session": { version: 1, contextExport: ["codex", "cursor", "pi-cli", "claude-code", "codebuddy", "codebuddy-ide", "dsh-acp", "pi", "dsh"] },
                 "opencraft/scoped-model-catalog": { version: 1 },
                 "opencraft/agent-usage": { version: 1, providers: ["codex", "cursor"] },
                 "opencraft/server-spaces": {version:1},

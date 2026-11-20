@@ -91,23 +91,30 @@ export class ModelServicesController {
     try { await action(); } catch (error) { this.error = error instanceof Error ? error.message : String(error); }
     finally { this.busy = false; if (selected !== this.selected) { this.error = null; this.message = null; } if (!this.disposed) this.notify(); }
   }
-  private async commit(provider: RuntimeProviderView, disableNewModels = false) {
+  private async commit(provider: RuntimeProviderView, disableNewModels = false, enabled?: boolean) {
     this.cancelSave(provider);
     const draft = this.draft(provider);
     if (!draft.dirty) return;
-    await this.service.saveProvider(provider, { ...this.input(provider), ...(disableNewModels ? { disableNewModels: true } : {}) }, draft.revision);
+    await this.service.saveProvider(provider, {
+      ...this.input(provider),
+      ...(disableNewModels ? { disableNewModels: true } : {}),
+      ...(enabled !== undefined ? { enabled } : {}),
+    }, draft.revision);
     draft.revision = this.revision(provider); draft.config = this.service.providerConfiguration(provider); draft.dirty = false; draft.modelsTouched = false;
     if (draft.key) draft.credentialSet = true;
     if (this.selected !== provider.provider) draft.key = "";
     this.message = "配置已保存";
   }
   save(provider: RuntimeProviderView) { if (this.busy) { this.scheduleSave(provider); return Promise.resolve(); } return this.run(() => this.commit(provider)); }
-  toggle(provider: RuntimeProviderView, enabled: boolean) { return this.run(async () => {
-    await this.commit(provider);
-    const fresh = this.service.getSnapshot().providers?.providers.find(p => p.provider === provider.provider);
-    if (!fresh) throw new Error("提供商已不可用");
-    await this.service.setEnabled(fresh, enabled, this.revision(fresh));
-  }); }
+  toggle(provider: RuntimeProviderView, enabled: boolean) {
+    if (enabled && this.selected !== provider.provider) this.selected = provider.provider;
+    return this.run(async () => {
+      await this.commit(provider);
+      const fresh = this.service.getSnapshot().providers?.providers.find(p => p.provider === provider.provider);
+      if (!fresh) throw new Error("提供商已不可用");
+      await this.service.setEnabled(fresh, enabled, this.revision(fresh));
+    });
+  }
   test(provider: RuntimeProviderView, model: string) { return this.run(async () => {
     const draft = this.draft(provider); draft.probe = null;
     if(draft.dirty)throw new Error("请先保存配置，再检查连接");
@@ -166,7 +173,10 @@ export class ModelServicesController {
     const draft = this.draft(provider);
     if (draft.config.models.some(m => m.id === model.id)) throw new Error("此模型已存在");
     this.edit(provider, { models: [...draft.config.models, provider.configuration?.modelType && provider.configuration.modelType !== "chat" ? { ...model, type: provider.configuration.modelType } : model] });
-    await this.commit(provider);
+    const hasEndpoint = Boolean(draft.config.baseURL.trim() || provider.configuration?.defaultBaseURL);
+    const hasCredential = draft.config.authentication === "none" || Boolean(draft.key.trim()) || draft.credentialSet === true;
+    const autoEnable = provider.configuration?.canToggle === true && !provider.enabled && hasEndpoint && hasCredential;
+    await this.commit(provider, false, autoEnable ? true : undefined);
   }); }
   private async updateModelCapabilities(provider: RuntimeProviderView, modelId: string,
     update: (model: RuntimeDiscoveredModelView) => RuntimeDiscoveredModelView, message: string) {
@@ -212,21 +222,21 @@ export class ModelServicesController {
       return { ...model, reasoningEfforts: Object.keys(next).length ? next : false };
     }, enabled ? "已添加思考档位" : "已移除思考档位");
   }
-  create(name: string, type: "chat" | "asr" | "image" = "chat") { return this.run(async () => {
+  create(name: string, type: "chat" | "anthropic" | "asr" | "image" = "chat") { return this.run(async () => {
     const creationKey = JSON.stringify([type, name]);
     const speech = this.service.getSnapshot().providers?.creation?.speech;
     const image = this.service.getSnapshot().providers?.creation?.image;
     if (type === "image" && !image) throw new Error("此服务器暂不支持图像模型管理");
     if (type === "asr" && !speech) throw new Error("此服务器暂不支持语音模型管理");
     const previous = this.creationIds.get(creationKey);
-    const id = previous ?? `${type === "image" ? "image" : "custom"}-${crypto.randomUUID()}`;
+    const id = previous ?? `${type === "image" ? "image" : type === "anthropic" ? "anthropic" : "custom"}-${crypto.randomUUID()}`;
     this.creationIds.set(creationKey, id);
     if (previous) {
       await this.service.refresh();
       if (this.service.getSnapshot().providers?.providers.some(provider => provider.provider === id)) { this.select(id); this.creationIds.delete(creationKey); return; }
     }
     await this.service.createProvider(id, { displayName: name, baseURL: type === "image" ? image!.baseURL : type === "asr" ? speech!.baseURL : "",
-      api: type === "image" ? image!.api : type === "asr" ? speech!.api : "openai-completions", models: type === "image" ? (image!.model ? [{ id: image!.model, type: "image" }] : []) : type === "asr" ? [{ id: speech!.model, type: "asr" }] : [], credential: { kind: "keep" }, enabled: false }, type === "image" ? image!.revision : undefined);
+      api: type === "image" ? image!.api : type === "asr" ? speech!.api : type === "anthropic" ? "anthropic-messages" : "openai-completions", models: type === "image" ? (image!.model ? [{ id: image!.model, type: "image" }] : []) : type === "asr" ? [{ id: speech!.model, type: "asr" }] : [], credential: { kind: "keep" }, enabled: false }, type === "image" ? image!.revision : undefined);
     this.select(id); this.creationIds.delete(creationKey);
   }); }
   changeModel(provider: RuntimeProviderView, model: string, enabled: boolean) { return this.run(async () => {

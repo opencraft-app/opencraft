@@ -1,6 +1,30 @@
-$wave-svg: "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='28'%20height='9'%20viewBox='0%200%2028%209'%3E%3Cpath%20d='M0%204.5%20Q7%200.8%2014%204.5%20T28%204.5'%20fill='none'%20stroke='black'%20stroke-width='2.6'%20stroke-linecap='round'/%3E%3C/svg%3E";
+:is(.opencraft-composer-shell, :root[data-ui-density] .opencraft-composer-stack .opencraft-composer-shell):has(> .opencraft-composer-recovery[data-active="true"], > .opencraft-composer-recovery[data-waiting]) {
+  border-color: transparent;
+  box-shadow: 0 14px 30px -20px rgb(0 0 0 / 20%);
+
+  &::before {
+    inset: -0.5px;
+    box-sizing: border-box;
+    border: 0.5px solid color-mix(in srgb, var(--color-border-default) 88%, transparent);
+    clip-path: polygon(
+      -20px -20px,
+      calc(100% + 20px) -20px,
+      calc(100% + 20px) calc(100% + 20px),
+      calc(100% - var(--radius-composer-shell)) calc(100% + 20px),
+      calc(100% - var(--radius-composer-shell)) calc(100% - 2.5px),
+      var(--radius-composer-shell) calc(100% - 2.5px),
+      var(--radius-composer-shell) calc(100% + 20px),
+      -20px calc(100% + 20px)
+    );
+  }
+}
 
 .opencraft-composer-recovery {
+  --cw0: color-mix(in srgb, var(--color-border-default) 88%, transparent);
+  --cw1: rgb(120 186 212 / 28%);
+  --cw2: rgb(138 168 218 / 28%);
+  --cw3: rgb(136 196 178 / 26%);
+  --cw4: rgb(218 178 148 / 26%);
   position: absolute;
   z-index: 2;
   inset-inline: var(--radius-composer-shell);
@@ -17,38 +41,35 @@ $wave-svg: "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20wid
   }
 }
 
-.opencraft-composer-recovery__beam {
-  --wave-mask: url("#{$wave-svg}");
+.opencraft-composer-recovery__wave {
   position: absolute;
   inset-inline: 0;
-  inset-block-end: -3px;
+  top: -3px;
+  width: 100%;
   height: 9px;
-  background-image: linear-gradient(
-    90deg,
-    #06b6d4 0%,
-    #3b82f6 18%,
-    #8b5cf6 36%,
-    #ec4899 54%,
-    #f97316 72%,
-    #10b981 88%,
-    #06b6d4 100%
-  );
-  background-size: 140% 100%;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 5%, #000 95%, transparent), var(--wave-mask);
-  mask-image: linear-gradient(90deg, transparent, #000 5%, #000 95%, transparent), var(--wave-mask);
-  -webkit-mask-composite: source-in;
-  mask-composite: intersect;
-  -webkit-mask-repeat: no-repeat, repeat-x;
-  mask-repeat: no-repeat, repeat-x;
-  -webkit-mask-size: 100% 100%, 28px 9px;
-  mask-size: 100% 100%, 28px 9px;
-  -webkit-mask-position: 0 0, 0 50%;
-  mask-position: 0 0, 0 50%;
-  filter: drop-shadow(0 0 5px rgb(139 92 246 / 52%));
+  display: block;
+  overflow: visible;
+}
+
+.opencraft-composer-recovery__fill {
+  fill: var(--composer-surface-background, var(--color-background-elevated-primary-opaque));
+}
+
+.opencraft-composer-recovery__stroke {
+  fill: none;
+  stroke-width: 1px;
+  stroke-linecap: round;
+}
+
+.opencraft-composer-recovery__beam {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: linear-gradient(90deg, transparent, var(--color-border-default), transparent) no-repeat 0 0 / 50% 100%;
 }
 
 .opencraft-composer-recovery[data-active="true"] .opencraft-composer-recovery__beam {
-  animation: composer-recovery-scan 2.4s linear infinite;
+  animation: composer-recovery-scan 2.4s ease-in-out infinite alternate;
 }
 
 .opencraft-composer-recovery__label {
@@ -61,16 +82,7 @@ $wave-svg: "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20wid
 }
 
 @keyframes composer-recovery-scan {
-  from {
-    background-position: 0% 0;
-    -webkit-mask-position: 0 0, 0px 50%;
-    mask-position: 0 0, 0px 50%;
-  }
-  to {
-    background-position: -140% 0;
-    -webkit-mask-position: 0 0, -56px 50%;
-    mask-position: 0 0, -56px 50%;
-  }
+  to { background-position: 100% 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -82,11 +94,10 @@ $wave-svg: "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20wid
 }
 
 @media (forced-colors: active) {
+  .opencraft-composer-recovery__wave { display: none; }
   .opencraft-composer-recovery__beam {
+    opacity: 1;
     background: none;
-    filter: none;
-    -webkit-mask-image: none;
-    mask-image: none;
     border-block-end: 1px solid CanvasText;
   }
 }

@@ -56,14 +56,21 @@ export function directoryModelCapabilities(data: Json, baseURL: string, model: s
 
 // Diagnostic asset created for this project: red block on the left, blue block on the right.
 const imageData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAABACAIAAABdtOgoAAAAu0lEQVR4nO3cMQqAQAwAQSP+/8vnCwRtHMSdNk1gSXHNzVpri7PrBf6uAFgBsAJgBcAKgBUAOy4nMy+ucc+TJ8tX1u8CsAJgBcAKgBUAKwBWAKwAWAGwAmAFwAqAFQArAFYArABYAbACYAXACoAVACsAVgCsAFgBsAJgBcAKgBUAKwBWAKwAWAGwAmAFwAqAFQArAFYArABYAbACYAXACoAVACsAVgCsANj0cavVBWAFwAqAFQArAFYA7ATsyAp7o+nPawAAAABJRU5ErkJggg==';
-const outputText = (body: Json, responses: boolean): string => responses
-  ? (Array.isArray(body.output) ? body.output : []).filter((i: Json) => i.type === 'message').flatMap((i: Json) => i.content ?? []).filter((p: Json) => p.type === 'output_text').map((p: Json) => p.text ?? '').join(' ')
-  : body.choices?.[0]?.message?.content ?? '';
+const outputText = (body: Json, api: 'openai-responses' | 'openai-completions' | 'anthropic-messages'): string => api === 'anthropic-messages'
+  ? (Array.isArray(body.content) ? body.content : []).filter((p: Json) => p?.type === 'text').map((p: Json) => p.text ?? '').join(' ')
+  : api === 'openai-responses'
+    ? (Array.isArray(body.output) ? body.output : []).filter((i: Json) => i.type === 'message').flatMap((i: Json) => i.content ?? []).filter((p: Json) => p.type === 'output_text').map((p: Json) => p.text ?? '').join(' ')
+    : body.choices?.[0]?.message?.content ?? '';
 
-export async function inspectModelTransport(input: { baseURL: string; model: string; api: 'openai-responses' | 'openai-completions'; apiKey?: string },
+export async function inspectModelTransport(input: { baseURL: string; model: string; api: 'openai-responses' | 'openai-completions' | 'anthropic-messages'; apiKey?: string },
   verify: boolean, fetcher: typeof fetch = fetch): Promise<RuntimeModelInspectionResponse> {
   const result: RuntimeModelInspectionResponse = { model: input.model, checkedAt: new Date().toISOString(), capabilities: {}, sources: {}, checks: [], notes: [] };
-  const headers = { 'content-type': 'application/json', ...(input.apiKey ? { authorization: `Bearer ${input.apiKey}` } : {}) };
+  const anthropic = input.api === 'anthropic-messages';
+  const headers = {
+    'content-type': 'application/json',
+    ...(anthropic ? { 'anthropic-version': '2023-06-01', ...(input.apiKey ? { 'x-api-key': input.apiKey } : {}) }
+      : input.apiKey ? { authorization: `Bearer ${input.apiKey}` } : {}),
+  };
   const base = input.baseURL.replace(/\/+$/, '');
   const merge = (caps: Omit<RuntimeDiscoveredModelView, 'id'>, source: string) => {
     for (const field of ['contextWindow', 'maxTokens', 'input', 'reasoningEfforts'] as const) {
@@ -74,7 +81,7 @@ export async function inspectModelTransport(input: { baseURL: string; model: str
   };
   const probeDeadline = AbortSignal.timeout(25_000);
   const [supplier, known] = await Promise.allSettled([
-    fetcher(base + '/models', { headers, redirect: 'error', signal: AbortSignal.any([probeDeadline, AbortSignal.timeout(10_000)]) }).then(r => jsonResponse(r, 4 * 1024 * 1024)),
+    fetcher(base + (anthropic ? '/v1/models' : '/models'), { headers, redirect: 'error', signal: AbortSignal.any([probeDeadline, AbortSignal.timeout(10_000)]) }).then(r => jsonResponse(r, 4 * 1024 * 1024)),
     publicDirectory(fetcher),
   ]);
   if (supplier.status === 'fulfilled') {
@@ -89,18 +96,25 @@ export async function inspectModelTransport(input: { baseURL: string; model: str
   if (!verify) return result;
   const responses = input.api === 'openai-responses';
   async function probe(kind: 'text' | 'image' | 'reasoning', effort?: string) {
+    if (anthropic && kind === 'reasoning') return;
     const prompt = kind === 'image' ? 'Name the color of the left block, then the right block. Reply only color names separated by a comma.' : 'What is 17 times 19? Reply only the number.';
-    const content = kind === 'image' ? responses
-      ? [{ type: 'input_text', text: prompt }, { type: 'input_image', image_url: imageData }]
-      : [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: imageData } }] : prompt;
-    const body = { model: input.model, stream: false, ...(responses
-      ? { input: [{ role: 'user', content }], max_output_tokens: 256, ...(effort ? { reasoning: { effort } } : {}) }
-      : { messages: [{ role: 'user', content }], max_tokens: 256, ...(effort ? { reasoning_effort: effort } : {}) }) };
+    const content = kind === 'image'
+      ? anthropic
+        ? [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: imageData.replace(/^data:image\/png;base64,/, '') } }, { type: 'text', text: prompt }]
+        : responses
+          ? [{ type: 'input_text', text: prompt }, { type: 'input_image', image_url: imageData }]
+          : [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: imageData } }]
+      : prompt;
+    const body = anthropic
+      ? { model: input.model, stream: false, max_tokens: 256, messages: [{ role: 'user', content }] }
+      : { model: input.model, stream: false, ...(responses
+        ? { input: [{ role: 'user', content }], max_output_tokens: 256, ...(effort ? { reasoning: { effort } } : {}) }
+        : { messages: [{ role: 'user', content }], max_tokens: 256, ...(effort ? { reasoning_effort: effort } : {}) }) };
     if (probeDeadline.aborted) { result.checks.push({ kind, ...(effort ? { effort } : {}), status: 'unknown', detail: '检查时间已到；未继续发送请求' }); return; }
     try {
-      const response = await fetcher(base + (responses ? '/responses' : '/chat/completions'), { method: 'POST', headers, body: JSON.stringify(body), redirect: 'error', signal: AbortSignal.any([probeDeadline, AbortSignal.timeout(10_000)]) });
+      const response = await fetcher(base + (anthropic ? '/v1/messages' : responses ? '/responses' : '/chat/completions'), { method: 'POST', headers, body: JSON.stringify(body), redirect: 'error', signal: AbortSignal.any([probeDeadline, AbortSignal.timeout(10_000)]) });
       if (!response.ok) { await response.body?.cancel(); result.checks.push({ kind, ...(effort ? { effort } : {}), status: 'unknown', detail: `HTTP ${response.status}；未据此判定不支持` }); return; }
-      const data = await jsonResponse(response, 256 * 1024); const text = outputText(data, responses);
+      const data = await jsonResponse(response, 256 * 1024); const text = outputText(data, input.api);
       const good = !data.error && !['failed', 'incomplete', 'cancelled'].includes(data.status) && (kind === 'image' ? /red\s*[,，]\s*blue/i.test(text) : text.trim() === '323');
       const reasoningTokens = positive(data.usage?.output_tokens_details?.reasoning_tokens) ?? positive(data.usage?.completion_tokens_details?.reasoning_tokens) ?? 0;
       result.checks.push({ kind, ...(effort ? { effort } : {}), status: good ? kind === 'reasoning' ? 'accepted' : 'verified' : 'unknown', detail: good ? kind === 'reasoning' ? `参数被接受；返回思考 token ${reasoningTokens}，不证明档位强度差异` : '合成测试通过' : '未得到预期测试结果，能力仍未知' });

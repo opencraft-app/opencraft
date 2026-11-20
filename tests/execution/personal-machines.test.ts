@@ -97,12 +97,12 @@ test('generated Bash command preserves installer and download failures',{skip:pr
  assert.notEqual(await run(),0,'a failed script download cannot become an empty successful Bash invocation');
 });
 
-test('Server owns a deployment-owned enrollment address and rejects browser-origin overrides',async t=>{
+test('Server owns a deployment-owned HTTPS enrollment address and rejects loopback, intranet HTTP and browser-origin overrides',async t=>{
  const f=await fixture(t);
- assert.equal(personalMachineEnrollmentOrigin('http://10.42.0.8:15473'),'http://10.42.0.8:15473');
+ assert.equal(personalMachineEnrollmentOrigin('https://relay.example.test'),'https://relay.example.test');
  assert.equal(f.bootstrap.origin,f.enrollmentOrigin);assert.equal(f.service.directory().enrollmentOrigin,f.enrollmentOrigin);
  await assert.rejects(f.service.command({action:'create',origin:'http://127.0.0.1:5173'} as any));
- for(const origin of ['http://127.0.0.1:5173','https://127.0.0.1','https://127.2.3.4','https://localhost','https://localhost.','https://sub.localhost','https://[::1]','https://[::ffff:127.0.0.1]','https://0.0.0.0','http://8.8.8.8','http://192.168.1.2.example'])assert.throws(()=>personalMachineEnrollmentOrigin(origin));
+ for(const origin of ['http://10.42.0.8:15473','http://192.168.1.2:15473','http://172.16.0.1:15473','http://127.0.0.1:5173','https://127.0.0.1','https://127.2.3.4','https://localhost','https://localhost.','https://sub.localhost','https://[::1]','https://[::ffff:127.0.0.1]','https://0.0.0.0','http://8.8.8.8','http://192.168.1.2.example'])assert.throws(()=>personalMachineEnrollmentOrigin(origin));
  const unavailable=new PersonalMachines({directory:join(f.root,'no-origin'),ownerActorId:'human:owner',ownerToken:f.token,archive:join(f.root,'source.tgz'),digest:hash('source'),installer:join(f.root,'install.sh')});
  try{await unavailable.ready();assert.equal(unavailable.directory().enrollmentOrigin,null);await assert.rejects(unavailable.command({action:'create'}));assert.equal(unavailable.directory().machines.length,0);}finally{await unavailable.close();}
 });
@@ -112,9 +112,41 @@ test('a login page, wrong Server or unavailable public entrance cannot mint a co
  await assert.rejects(f.service.command({action:'create'}));assert.equal(f.service.directory().machines.length,count);
 });
 
-test('intranet listeners reject wildcard, loopback and public interfaces before opening a socket',async()=>{
- const {listenIntranetIngress}=await import('../../packages/hub-network/src/local-ingress');
- for(const host of ['0.0.0.0','127.0.0.1','::','8.8.8.8','192.168.1.2.example'])await assert.rejects(listenIntranetIngress(12345,['/__opencraft_machines/install.sh'],host,15473));
+test('directory reports connected machine runtime version, update availability and one-line update command',async t=>{
+ const f=await fixture(t);assert.equal((await f.claim()).status,200);
+ const outdated=connectRelay({relay:f.origin,credential:f.credential,headers:{'x-opencraft-machine-version':'0'.repeat(64)},allowLoopbackInsecure:true,acceptStream:s=>s.destroy()});
+ t.after(()=>outdated.close());
+ await wait(()=>f.service.directory().machines[0]?.connected===true);
+ const before=f.service.directory().machines[0]!;
+ assert.equal(before.version,'0'.repeat(64));
+ assert.equal(before.updateAvailable,true);
+ assert.match(before.updateCommand??'',/--update /);
+ outdated.close();
+
+ const current=connectRelay({relay:f.origin,credential:f.credential,headers:{'x-opencraft-machine-version':hash('source')},allowLoopbackInsecure:true,acceptStream:s=>s.destroy()});
+ t.after(()=>current.close());
+ await wait(()=>f.service.directory().machines[0]?.version===hash('source'));
+ assert.equal(f.service.directory().machines[0]?.updateAvailable,false);
+});
+
+test('packagePersonalMachine snapshots unstaged tracked edits without touching git index or archiving untracked files',async t=>{
+ const {execFileSync}=await import('node:child_process');
+ const {packagePersonalMachine}=await import('../../scripts/package-personal-machine.mjs');
+ const repo=await mkdtemp(join(tmpdir(),'oc-pkg-machine-')),out=join(repo,'out');
+ t.after(()=>rm(repo,{recursive:true,force:true}));
+ execFileSync('git',['init'],{cwd:repo,stdio:'ignore'});
+ execFileSync('git',['config','user.email','test@example.invalid'],{cwd:repo});
+ execFileSync('git',['config','user.name','Test'],{cwd:repo});
+ await writeFile(join(repo,'tracked.txt'),'v1\n');
+ execFileSync('git',['add','tracked.txt'],{cwd:repo});
+ execFileSync('git',['commit','-m','init'],{cwd:repo,stdio:'ignore'});
+ await writeFile(join(repo,'tracked.txt'),'v2-unstaged\n');
+ await writeFile(join(repo,'1.txt'),'private-untracked-note\n');
+ const result=await packagePersonalMachine(repo,out);
+ const entries=execFileSync('tar',['-tzf',result.path]).toString().trim().split('\n');
+ assert.deepEqual(entries,['tracked.txt']);
+ assert.equal(execFileSync('tar',['-xzOf',result.path,'tracked.txt']).toString(),'v2-unstaged\n');
+ assert.equal(execFileSync('git',['diff','--cached','--name-only'],{cwd:repo}).toString().trim(),'','real git index remains untouched');
 });
 
  test('short key configuration is private and disappears after use or revocation',async t=>{

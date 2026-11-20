@@ -56,6 +56,8 @@ test("thread Agent identity follows the declaring Host and most specific executi
   assert.equal(projectThreadAgent("codebuddy_ide_native", engines)?.id, "codebuddy-ide");
   assert.equal(projectThreadAgent("picli_native", engines)?.label, "Pi");
   assert.equal(projectThreadAgent("native-uuid", engines)?.id, "dsh");
+  assert.equal(projectThreadAgent("native-uuid", engines)?.label, undefined);
+  assert.equal(projectThreadAgent("dsh_acp_native", { ...engines, providers: [...engines.providers, { id: "dsh-acp", threadPrefix: "dsh_acp_" }] })?.label, "DSH");
   assert.equal(projectThreadAgent("native-uuid", { defaultEngine: "codex" })?.id, "codex");
   assert.equal(projectAppServerThread(thread({ modelProvider: "openai" })).agent, undefined);
   assert.equal(projectThreadAgent("codex_native", { providers: [{ id: null, threadPrefix: "codex_" }] }), undefined);

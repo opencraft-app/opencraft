@@ -3623,20 +3623,8 @@
     },
     {
       "file": "plugins/builtin-agents/src/model-services/view.tsx",
-      "kind": "jsx-text",
-      "text": "用途",
-      "count": 1
-    },
-    {
-      "file": "plugins/builtin-agents/src/model-services/view.tsx",
       "kind": "aria-label",
       "text": "提供商用途",
-      "count": 1
-    },
-    {
-      "file": "plugins/builtin-agents/src/model-services/view.tsx",
-      "kind": "jsx-text",
-      "text": "聊天",
       "count": 1
     },
     {
@@ -3901,12 +3889,6 @@
       "file": "plugins/builtin-agents/src/model-services/view.tsx",
       "kind": "jsx-expression",
       "text": "例如 https://example.com/v1，不含 /chat/completions 或 /responses；留空使用默认地址",
-      "count": 1
-    },
-    {
-      "file": "plugins/builtin-agents/src/model-services/view.tsx",
-      "kind": "placeholder",
-      "text": "https://example.com/v1",
       "count": 1
     },
     {

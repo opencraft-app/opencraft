@@ -297,7 +297,7 @@ export function ComposerHandoffBanner({
           <span>
             <FormattedMessage
               id="composer.handoff.crossDeviceNotice"
-              defaultMessage="Cross-device handoff only syncs conversation context, not folders or local changes. Agent work may be affected by workspace differences."
+              defaultMessage="Execution machine and system environment changed: cross-device handoff only syncs conversation context (including JSONL history), not folders or uncommitted changes, so tasks may not run identically."
             />
           </span>
         </div>

@@ -1344,10 +1344,35 @@ export function App({
     && currentHandoff.targetHostId !== snapshot.hostId
     && handoffTargetMachine?.id !== activeMachine?.id,
   );
+  const candidateConversationMachines = useMemo(() => {
+    if (draft !== null) return activeMachine ? [activeMachine] : [];
+    const ordered: typeof machines[number][] = [];
+    if (activeMachine) ordered.push(activeMachine);
+    if (handoffTargetMachine && !ordered.some(item => item.id === handoffTargetMachine.id)) ordered.push(handoffTargetMachine);
+    for (const machine of newConversationMachines) {
+      if (ordered.some(item => item.id === machine.id)) continue;
+      if (!machine.hosts.some(host => host.enabled)) continue;
+      if (machine.hosts.every(host => host.machinePresence === "offline")) continue;
+      ordered.push(machine);
+    }
+    return ordered;
+  }, [draft, activeMachine, handoffTargetMachine, newConversationMachines]);
+  const engineCatalogHostIds = useMemo(
+    () => candidateConversationMachines.flatMap(machine =>
+      workInAgentHosts(
+        machine,
+        machine.id === (handoffTargetMachine ?? activeMachine)?.id
+          ? (currentHandoff?.targetHostId ?? snapshot.hostId)
+          : snapshot.hostId,
+      ).filter(host =>
+        (draft === null || host.hideFromNewChat !== true || host.hostId === snapshot.hostId)
+        && (host.hostId === snapshot.hostId || host.machinePresence !== "offline"),
+      ).map(host => host.hostId),
+    ),
+    [candidateConversationMachines, handoffTargetMachine, activeMachine, currentHandoff?.targetHostId, snapshot.hostId, draft],
+  );
   const engineCatalog = useWorkInEngineCatalog(
-    workInAgentHosts(handoffTargetMachine ?? activeMachine, currentHandoff?.targetHostId ?? snapshot.hostId)
-      .filter(host => draft === null || host.hideFromNewChat !== true || host.hostId === snapshot.hostId)
-      .map(host => host.hostId),
+    engineCatalogHostIds,
     snapshot.hostId,
     draft === null && snapshot.activeThreadId !== null && !embedded && modelSelectionPolicy === "user" && presentation.executionSelection !== "fixed",
   );
@@ -1505,6 +1530,7 @@ export function App({
         : activeThreadId.startsWith("claude_") ? "claude-code"
         : activeThreadId.startsWith("codebuddy_ide_") ? "codebuddy-ide"
         : activeThreadId.startsWith("codebuddy_") ? "codebuddy"
+        : activeThreadId.startsWith("dsh_acp_") ? "dsh-acp"
         : activeThreadId.startsWith("pi_") ? "pi"
         : "dsh");
   const canContinueWithAgent = !embedded && draft === null && activeThreadId !== null && conversationAgent !== null
@@ -1548,7 +1574,11 @@ export function App({
       modelError: composerCatalog.modelError?.message ?? null,
       onRememberModelDefaults: modelSelectionPolicy === "user" && currentHandoff === null ? composerCatalog.rememberModelDefaults : undefined,
       onConfigureModels: embedded?.onConfigureModels,
-      onConfigureAgents: filterNewAgents || canContinueWithAgent ? () => openSettingsFromConversation(setupModelPage?.id ?? settingsContributionSnapshot.settingsPages.find(({ contribution }) => contribution.modelConfiguration)?.contribution.id ?? "chat") : undefined,
+      onConfigureAgents: filterNewAgents || canContinueWithAgent ? () => {
+        try { sessionStorage.setItem("opencraft.settings.modelConfigurationTab", "agents"); } catch { /* Ignore storage restrictions. */ }
+        window.dispatchEvent(new CustomEvent("opencraft:model-configuration-tab", { detail: { tab: "agents" } }));
+        openSettingsFromConversation(setupModelPage?.id ?? settingsContributionSnapshot.settingsPages.find(({ contribution }) => contribution.modelConfiguration)?.contribution.id ?? "chat");
+      } : undefined,
       onModelMenuOpen: modelSelectionPolicy === "session" ? composerCatalog.retryModels : () => { composerCatalog.onModelMenuOpen(); engineCatalog.open(); },
       agentGroups: !filterNewAgents && !canContinueWithAgent ? undefined : engineCatalog.groups.map(group => {
         const rawModels = canContinueWithAgent && group.hostId === snapshot.hostId
@@ -1560,10 +1590,23 @@ export function App({
             ? composerCatalog.models
             : group.models;
         const activeHostForPicker = currentHandoff?.targetHostId ?? snapshot.hostId;
+        const groupMachine = machines.find(machine => machine.hosts.some(host => host.hostId === group.hostId));
+        const isLocalMachine = Boolean(groupMachine?.hosts.some(host => host.hostKind === "local"));
+        const resolvedMachineLabel = groupMachine
+          ? (groupMachine.identity === null && isLocalMachine
+              ? (groupMachine.hosts[0]?.displayName?.trim() || machineName(groupMachine, extensionPlatform, intl))
+              : machineName(groupMachine, extensionPlatform, intl))
+          : (hostCatalog.hosts.find(host => host.hostId === group.hostId)?.label ?? group.hostId);
         return {
           id: group.hostId,
           label: hostCatalog.profiles.find(host => host.hostId === group.hostId)?.agent ?? hostCatalog.hosts.find(host => host.hostId === group.hostId)?.label ?? group.hostId,
           active: group.hostId === activeHostForPicker,
+          machineId: groupMachine?.id ?? group.hostId,
+          machineLabel: resolvedMachineLabel,
+          machineRole: groupMachine ? machineRole(groupMachine, extensionPlatform) : "server",
+          isLocalMachine,
+          isConversationMachine: canContinueWithAgent && Boolean(activeMachine && groupMachine?.id === activeMachine.id),
+          crossDevice: canContinueWithAgent && Boolean(activeMachine && groupMachine && groupMachine.id !== activeMachine.id),
           models: projectModelChoices(rawModels.filter(model =>
             (canContinueWithAgent && group.hostId === snapshot.hostId && (model.agentId ?? conversationAgent) === conversationAgent)
             || agentAvailability.enabled(group.hostId, model.agentId ?? "host"))),
@@ -1578,7 +1621,13 @@ export function App({
             if (canContinueWithAgent && handoffViewKey !== null) {
               const modelOwner = model.agentId ?? conversationAgent ?? "dsh";
               const sameThreadAgent = group.hostId === snapshot.hostId && modelOwner === conversationAgent;
-              if (currentHandoff === null && sameThreadAgent) return;
+              if (sameThreadAgent) {
+                if (currentHandoff !== null && currentHandoff.targetHostId !== snapshot.hostId) {
+                  writeHandoffForKey(handoffViewKey, null);
+                  return;
+                }
+                if (currentHandoff === null) return;
+              }
               const previousTier = currentHandoff !== null
                 ? currentHandoff.serviceTier
                 : composerController.getSnapshot().draft.selections.serviceTier ?? snapshot.conversation?.execution.serviceTier ?? null;
@@ -1609,7 +1658,11 @@ export function App({
           },
           manage: (() => {
             const page = resolveHostModelSettingsPage(settingsContributionSnapshot.settingsPages.map(({ contribution }) => contribution), group.hostId, extensionPlatform, internalDeveloperMode);
-            return page ? () => hostCatalog.navigation.openSettings(page.id) : undefined;
+            return page ? () => {
+              try { sessionStorage.setItem("opencraft.settings.modelConfigurationTab", "models"); } catch { /* Ignore storage restrictions. */ }
+              window.dispatchEvent(new CustomEvent("opencraft:model-configuration-tab", { detail: { tab: "models" } }));
+              hostCatalog.navigation.openSettings(page.id);
+            } : undefined;
           })(),
         };
       }),
@@ -1620,7 +1673,7 @@ export function App({
         composerCatalog.permissionProfileError?.message ?? null,
     }),
     [
-      setupModelPage?.id, filterNewAgents, canContinueWithAgent, conversationAgent, activeThreadId, handoffViewKey, currentHandoff, writeHandoffForKey, snapshot.conversation?.execution.serviceTier, agentAvailability, openSettingsFromConversation, modelSelectionPolicy, embedded?.onConfigureModels, presentation.executionSelection, engineCatalog, draft, hostCatalog, snapshot.hostId,
+      setupModelPage?.id, filterNewAgents, canContinueWithAgent, conversationAgent, activeThreadId, handoffViewKey, currentHandoff, writeHandoffForKey, snapshot.conversation?.execution.serviceTier, agentAvailability, openSettingsFromConversation, modelSelectionPolicy, embedded?.onConfigureModels, presentation.executionSelection, engineCatalog, draft, hostCatalog, snapshot.hostId, machines, activeMachine, intl,
       settingsContributionSnapshot, extensionPlatform, internalDeveloperMode,
       composerCatalog.isFetching,
       composerCatalog.modelError,
@@ -1713,13 +1766,20 @@ export function App({
       ? (currentHandoff.targetWorkspaceCwd ?? defaultTargetWorkspace)
       : cwd;
     const handoffDeviceOptions = composerHostOptions.length > 1
-      ? composerHostOptions.map(option => ({
-          id: option.id,
-          label: option.label,
-          role: option.role,
-          selected: option.hostIds.includes(currentHandoff.targetHostId),
-          connectable: option.connectable,
-        }))
+      ? composerHostOptions.map(option => {
+          const matchedMachine = newConversationMachines.find(machine => machine.id === option.id);
+          const isLocal = Boolean(matchedMachine?.hosts.some(host => host.hostKind === "local"));
+          const label = matchedMachine && matchedMachine.identity === null && isLocal
+            ? (matchedMachine.hosts[0]?.displayName?.trim() || option.label)
+            : option.label;
+          return {
+            id: option.id,
+            label,
+            role: option.role,
+            selected: option.hostIds.includes(currentHandoff.targetHostId),
+            connectable: option.connectable,
+          };
+        })
       : undefined;
     return {
       sourceTitle: handoffSourceTitle,
@@ -2703,6 +2763,15 @@ export function App({
             onImported={async () => { await serverSpaces.select("myself"); }}
             onFinish={finishOnboarding}
             onUseModels={() => finishOnboarding()}
+            onConfigureModels={() => {
+              void finishOnboarding().then(() => {
+                const pageId = setupModelPage?.id ?? settingsContributionSnapshot.settingsPages.find(({ contribution }) => contribution.modelConfiguration)?.contribution.id;
+                if (!pageId) return;
+                try { sessionStorage.setItem("opencraft.settings.modelConfigurationTab", "models"); } catch { /* Ignore storage restrictions. */ }
+                window.dispatchEvent(new CustomEvent("opencraft:model-configuration-tab", { detail: { tab: "models" } }));
+                openSettingsFromConversation(pageId);
+              });
+            }}
             onClose={() => { onboardingFinishEpoch.current += 1; setOnboardingOverlay(null); }}
           /></Suspense> : null}
           <WorkbenchPresentationActivityProvider active={conversationRouteOpen}>

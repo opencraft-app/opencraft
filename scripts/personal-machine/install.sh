@@ -58,8 +58,8 @@ if [ -z "${OPENCRAFT_MACHINE_BOOTSTRAP:-}" ]; then
   OPENCRAFT_MACHINE_BOOTSTRAP="$("$node_bin" --input-type=module - <<'BOOTSTRAP'
 const origin=process.env.OPENCRAFT_MACHINE_ORIGIN,key=process.env.OPENCRAFT_MACHINE_KEY;
 if(!/^[A-Za-z0-9_-]{43}$/.test(key??''))throw new Error('Invalid connection key');
-const url=new URL(origin);const parts=url.hostname.split('.').map(Number);const privateIp=parts.length===4&&parts.every(p=>Number.isInteger(p)&&p>=0&&p<=255)&&(parts[0]===10||parts[0]===172&&parts[1]>=16&&parts[1]<=31||parts[0]===192&&parts[1]===168);
-if(url.origin!==origin||url.username||url.password||url.protocol!=='https:'&&!(url.protocol==='http:'&&privateIp))throw new Error('Invalid connection address');
+const url=new URL(origin);
+if(url.origin!==origin||url.username||url.password||url.protocol!=='https:')throw new Error('Remote enrollment requires an HTTPS connection address');
 const response=await fetch(origin+'/__opencraft_machines/bootstrap',{headers:{authorization:'Bearer '+key},redirect:'error',signal:AbortSignal.timeout(30000)});
 if(!response.ok)throw new Error('Connection key expired or unavailable');
 const body=await response.text();if(body.length>16384)throw new Error('Invalid connection configuration');
@@ -76,8 +76,8 @@ import {get as httpsGet} from 'node:https';
 import {mkdir,readFile,writeFile,rename} from 'node:fs/promises';import {join} from 'node:path';import {homedir} from 'node:os';import {createHash,randomBytes} from 'node:crypto';
 let b;try{b=JSON.parse(process.env.OPENCRAFT_MACHINE_BOOTSTRAP);}catch{throw new Error('Invalid machine command');}
 if(b.schemaVersion!==1||!/^[-a-f0-9]{36}$/.test(b.id)||!/^[a-f0-9]{64}$/.test(b.digest))throw new Error('Invalid machine command');
-const url=new URL(b.origin),parts=url.hostname.split('.').map(Number),privateIp=/^\d+\.\d+\.\d+\.\d+$/.test(url.hostname)&&parts.every(p=>p>=0&&p<=255)&&(parts[0]===10||parts[0]===172&&parts[1]>=16&&parts[1]<=31||parts[0]===192&&parts[1]===168);
-if(url.origin!==b.origin||url.username||url.password||url.protocol!=='https:'&&!(url.protocol==='http:'&&privateIp)||url.hostname==='localhost'||url.hostname.endsWith('.localhost')||url.hostname==='[::1]'||url.hostname.startsWith('127.'))throw new Error('Use the Server-provided intranet or HTTPS connection command');
+const url=new URL(b.origin);
+if(url.origin!==b.origin||url.username||url.password||url.protocol!=='https:'||url.hostname==='localhost'||url.hostname.endsWith('.localhost')||url.hostname==='[::1]'||url.hostname.startsWith('127.'))throw new Error('Use the Server-provided HTTPS connection command');
 const state=join(homedir(),'.opencraft','machines',b.id);await mkdir(state,{recursive:true,mode:0o700});const config=join(state,'connection.json');
 let old;try{old=JSON.parse(await readFile(config,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}
 if(old&&(old.hubId!==b.hubId||old.id!==b.id||old.origin!==b.origin))throw new Error('Refusing a different machine identity');
@@ -87,14 +87,14 @@ if(b.ca!==undefined&&(typeof b.ca!=='string'||b.ca.length>262144||!b.ca.includes
 const bytes=b.ca?await new Promise((resolve,reject)=>{const r=httpsGet(sourceUrl,{ca:b.ca,headers:{authorization:'Bearer '+b.secret},timeout:120000},res=>{if(res.statusCode!==200){res.resume();reject(new Error('Pairing expired or unavailable'));return;}const chunks=[];let size=0;res.on('data',c=>{size+=c.length;if(size>268435456){res.destroy(new Error('Machine archive too large'));return;}chunks.push(c);});res.on('error',reject);res.on('end',()=>resolve(Buffer.concat(chunks)));});r.on('error',reject);r.on('timeout',()=>r.destroy(new Error('Download timeout')));}):await (async()=>{const r=await fetch(sourceUrl,{headers:{authorization:'Bearer '+b.secret},signal:AbortSignal.timeout(120000)});if(!r.ok)throw new Error('Pairing expired or unavailable');return Buffer.from(await r.arrayBuffer());})();
 if(createHash('sha256').update(bytes).digest('hex')!==b.digest)throw new Error('Machine source checksum mismatch');
 await writeFile(join(state,'source.tgz'),bytes,{mode:0o600});
-await writeFile(config+'.tmp',JSON.stringify({...b,credential:old?.credential??randomBytes(32).toString('base64url'),phase:'pending',nativeEnvironment:{PATH:process.env.PATH,CODEX_HOME:process.env.CODEX_HOME,CURSOR_CONFIG_DIR:process.env.CURSOR_CONFIG_DIR}}),{mode:0o600});await rename(config+'.tmp',config);console.log(state);
+await writeFile(config+'.tmp',JSON.stringify({...b,credential:old?.credential??randomBytes(32).toString('base64url'),phase:'pending',nativeEnvironment:{PATH:process.env.PATH,CODEX_HOME:process.env.CODEX_HOME,CURSOR_CONFIG_DIR:process.env.CURSOR_CONFIG_DIR,CLAUDE_CONFIG_DIR:process.env.CLAUDE_CONFIG_DIR,CODEBUDDY_CONFIG_DIR:process.env.CODEBUDDY_CONFIG_DIR,PI_CODING_AGENT_DIR:process.env.PI_CODING_AGENT_DIR}}),{mode:0o600});await rename(config+'.tmp',config);console.log(state);
 JS
 )"
 unset OPENCRAFT_MACHINE_BOOTSTRAP
 mkdir -p "$state/runtime"
 if [ -f "$state/source.tgz" ]; then
   tar -xzf "$state/source.tgz" -C "$state/runtime"
-  (cd "$state/runtime"; npm ci --no-audit --no-fund; npm run prepare:dsh-runtime; npm run build:preview-bridge)
+  "$node_bin" "$state/runtime/scripts/personal-machine/prepare.mjs"
   rm "$state/source.tgz"
   "$node_bin" -e 'const fs=require("node:fs"),p=require("node:path");const s=process.argv[1];fs.writeFileSync(p.join(s,"runtime/.machine-version"),JSON.parse(fs.readFileSync(p.join(s,"connection.json"))).digest+"\n",{mode:0o600});' "$state"
 fi

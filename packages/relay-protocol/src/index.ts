@@ -22,14 +22,6 @@ export function relayPathAllowed(path: string): boolean {
   } catch { return false; }
 }
 
-/** Literal RFC 1918 IPv4 only; a hostname is not proof of private-network scope. */
-export function isPrivateIpv4Address(host:string):boolean {
-  const parts=host.split('.');
-  if(parts.length!==4||parts.some(part=>!/^\d{1,3}$/.test(part)||String(Number(part))!==part||Number(part)>255))return false;
-  const [a=0,b=0]=parts.map(Number);
-  return a===10||a===172&&b>=16&&b<=31||a===192&&b===168;
-}
-
 /** Dedicated owner publication; distinct from enrolled machine control/data. */
 export const MACHINE_GATEWAY_CONTROL_PATH = '/__opencraft_machine_gateway/control';
 export const MACHINE_GATEWAY_DATA_PATH = '/__opencraft_machine_gateway/data';

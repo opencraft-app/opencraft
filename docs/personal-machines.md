@@ -20,12 +20,11 @@ Pi 同样通过这台机器的标准 Host 接入：在远端安装并运行 `pi`
 机器离线会显示离线，恢复连接不会重放发送过的消息。
 「撤销接入」会先持久撤销凭据，再关闭现有连接；不会删除远端原生会话。
 
-安装器会验证源码归档的 SHA-256，复用现有的依赖安装、DSH 准备和 bridge 构建。
+安装器会验证源码归档的 SHA-256，执行与 `--update` 完全共享的 `scripts/personal-machine/prepare.mjs`（依赖安装、DSH 准备和 bridge 构建），并为远端 Host 启用独立的 `models` 配置目录（支持旧 DSH 模型自动迁移、OpenAI / Anthropic 双协议目录、模型能力检查和连接检查）及全量原生 CLI Agent 发现（Codex、Cursor、Claude Code、CodeBuddy CLI/IDE、Pi 与外置 `dsh` ACP）。
 需要时会下载并校验固定的私有 Node 26.7.0，不替换系统 Node。
-安装可能需要几分钟，依赖网络和构建环境。源码包由本地部署的 Git index 快照生成，
-不是 npm/GitHub 正式发行版；开发改动须先进入 index，重启 `npm run dev:local` 后才能进入安装归档。
+源码包通过临时 Git index 快照自动包含当前工作区所有已跟踪代码改动（排除任何未跟踪私有文件），重启 `npm run dev:local` 即自动刷新归档。
 
-伴随进程主动连接 OpenCraft，远端不需要开放公网端口。
+伴随进程仅通过受信任的 HTTPS Relay 主动反向连接 OpenCraft，不走 SSH、不打隧道、也不开放内网 HTTP 直连端口。
 Linux 优先使用 systemd user service；不可用时及 macOS 使用后台进程，安装器明确报告
 未配置重启后自动启动。远端安装完成会打印该机器专属 `opencraft-machine` 路径，
 支持 `--status`、`--stop` 和 `--install`（重新启动）。本地控制经 owner-only Unix socket，
@@ -64,7 +63,7 @@ Workbench、owner status/RPC、Hub 管理或更新路径。请求原有配对/�
 
 ## 短命令
 
-受信任 HTTPS（或明确内网）入口生成「安装脚本 URL + 43 字符配对 key」命令。
+受信任 HTTPS 入口生成「安装脚本 URL + 43 字符配对 key」命令；不使用 SSH、隧道或内网明文 HTTP 直连。
 安装器通过 Authorization bearer 领取 Server 保存的 hub ID、机器 ID 与源码摘要；
 不把 key 放到 URL、访问日志或公开安装脚本。配置领取端点同样检查未认领、未过期、
 未撤销状态。私有 CA 部署保留显式证书命令作为兼容路径，不能靠关闭 TLS 验证缩短。

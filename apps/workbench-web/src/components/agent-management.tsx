@@ -4,7 +4,7 @@ import { useAppServerHosts, useAppServerHostSnapshot, useComposerCatalog } from 
 import { useAgentAvailability } from "../runtime/use-agent-availability";
 import { AgentOnboarding, type AgentOnboardingProps } from "./agent-onboarding";
 
-export function HostAgentOnboarding(props: Pick<AgentOnboardingProps, "presentation" | "onFinish" | "onClose" | "onUseModels" | "onImported">) {
+export function HostAgentOnboarding(props: Pick<AgentOnboardingProps, "presentation" | "onFinish" | "onClose" | "onUseModels" | "onConfigureModels" | "onImported">) {
   const { hostId } = useAppServerHostSnapshot();
   const hosts = useAppServerHosts();
   const query = useQueryClient();

@@ -1,7 +1,7 @@
 import { useState, useSyncExternalStore } from "react";
 import { IconButton } from "@opencraft/design-system-web/button";
 import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
-import { CheckIcon, CloseIcon, TagIcon } from "@opencraft/design-system-web/action-icons";
+import { CloseIcon, TagIcon } from "@opencraft/design-system-web/action-icons";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import { recentConversationKey } from "../sidebar-activity";
 import { useUiPreferencesRuntime } from "../runtime/ui-preferences-runtime";
@@ -11,19 +11,23 @@ import {
   CONVERSATION_TAG_ANIMALS,
   CONVERSATION_TAG_COLORS,
   ConversationTagMark,
+  ConversationTagMarks,
   conversationTagLabel,
+  normalizeConversationTags,
+  toggleConversationTag,
   type ConversationTagId,
   type ExistingConversationTag,
 } from "./conversation-tags";
-import type { SidebarThreadMenuStore } from "./sidebar-thread-menu-state";
 import "./conversation-tags.scss";
 
 export function ConversationTagPalette({
-  value,
-  onSelect,
+  values,
+  onToggle,
+  onClear,
 }: {
-  readonly value: ConversationTagId | null;
-  readonly onSelect: (next: ConversationTagId | null) => void;
+  readonly values: readonly ConversationTagId[];
+  readonly onToggle: (tag: ConversationTagId) => void;
+  readonly onClear: () => void;
 }) {
   const intl = useIntl();
   const groupLabel = intl.formatMessage({ id: "conversation.tag.label", defaultMessage: "Tag" });
@@ -31,7 +35,7 @@ export function ConversationTagPalette({
   return (
     <div
       className="conversation-tag-palette"
-      role="radiogroup"
+      role="group"
       aria-label={groupLabel}
       onKeyDown={event => {
         if (["ArrowLeft", "ArrowRight"].includes(event.key)) event.stopPropagation();
@@ -39,11 +43,11 @@ export function ConversationTagPalette({
     >
       <div className="conversation-tag-palette__header">
         <span>{groupLabel}</span>
-        {value !== null ? (
+        {values.length > 0 ? (
           <button
             type="button"
             className="conversation-tag-palette__clear"
-            onClick={() => onSelect(null)}
+            onClick={onClear}
           >
             <CloseIcon size={12} aria-hidden="true" />
             <FormattedMessage id="conversation.tag.clear" defaultMessage="Clear" />
@@ -53,18 +57,17 @@ export function ConversationTagPalette({
       <div className="conversation-tag-palette__colors">
         {CONVERSATION_TAG_COLORS.map(color => {
           const id: ConversationTagId = `color:${color}`;
-          const checked = value === id;
+          const checked = values.includes(id);
           const label = conversationTagLabel(intl, id);
           return (
             <button
               key={id}
               type="button"
-              role="radio"
-              aria-checked={checked}
+              aria-pressed={checked}
               aria-label={label}
               title={label}
               className="conversation-tag-palette__swatch"
-              onClick={() => onSelect(checked ? null : id)}
+              onClick={() => onToggle(id)}
             >
               <ConversationTagMark tag={id} />
             </button>
@@ -74,18 +77,17 @@ export function ConversationTagPalette({
       <div className="conversation-tag-palette__animals">
         {CONVERSATION_TAG_ANIMALS.map(animal => {
           const id: ConversationTagId = `animal:${animal}`;
-          const checked = value === id;
+          const checked = values.includes(id);
           const label = conversationTagLabel(intl, id);
           return (
             <button
               key={id}
               type="button"
-              role="radio"
-              aria-checked={checked}
+              aria-pressed={checked}
               aria-label={label}
               title={label}
               className="conversation-tag-palette__animal"
-              onClick={() => onSelect(checked ? null : id)}
+              onClick={() => onToggle(id)}
             >
               <ConversationTagMark tag={id} size={16} />
             </button>
@@ -97,20 +99,22 @@ export function ConversationTagPalette({
 }
 
 export function ConversationTagHeaderButton({
-  value,
-  onSelect,
+  values,
+  onToggle,
+  onClear,
   portalContainer,
 }: {
-  readonly value: ConversationTagId | null;
-  readonly onSelect: (next: ConversationTagId | null) => void;
+  readonly values: readonly ConversationTagId[];
+  readonly onToggle: (tag: ConversationTagId) => void;
+  readonly onClear: () => void;
   readonly portalContainer?: HTMLElement | null;
 }) {
   const intl = useIntl();
   const [open, setOpen] = useState(false);
-  const label = value
+  const label = values.length > 0
     ? intl.formatMessage(
         { id: "conversation.tag.current", defaultMessage: "Tag: {tag}" },
-        { tag: conversationTagLabel(intl, value) },
+        { tag: values.map(item => conversationTagLabel(intl, item)).join(", ") },
       )
     : intl.formatMessage({ id: "conversation.tag.action", defaultMessage: "Tag conversation" });
 
@@ -124,7 +128,13 @@ export function ConversationTagHeaderButton({
           aria-label={label}
           title={label}
         >
-          {value ? <ConversationTagMark tag={value} size={16} /> : <TagIcon size={17} aria-hidden="true" />}
+          {values.length > 0 ? (
+            <span className="conversation-tag-header-marks">
+              <ConversationTagMarks tags={values} size={14} maxVisible={2} />
+            </span>
+          ) : (
+            <TagIcon size={17} aria-hidden="true" />
+          )}
         </IconButton>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal container={portalContainer ?? undefined}>
@@ -135,9 +145,10 @@ export function ConversationTagHeaderButton({
           collisionPadding={12}
         >
           <ConversationTagPalette
-            value={value}
-            onSelect={next => {
-              onSelect(next);
+            values={values}
+            onToggle={onToggle}
+            onClear={() => {
+              onClear();
               setOpen(false);
             }}
           />
@@ -166,62 +177,60 @@ export function ConversationTagHeaderAction({
     preferences.getSnapshot,
   );
   const key = recentConversationKey(scope, hostId, threadId);
-  const value = preferenceSnapshot.values["sidebar.conversationTags"][key] ?? null;
+  const values = normalizeConversationTags(preferenceSnapshot.values["sidebar.conversationTags"][key]);
+
+  const reportError = () => {
+    notices.error({
+      key: `conversation-tag:${key}`,
+      message: intl.formatMessage({ id: "conversation.tag.saveFailed", defaultMessage: "Could not update tag. Try again." }),
+    });
+  };
 
   return (
     <ConversationTagHeaderButton
-      value={value}
+      values={values}
       portalContainer={portalContainer}
-      onSelect={next => {
+      onToggle={tag => {
+        void preferences.update("sidebar.conversationTags", current => {
+          const next = toggleConversationTag(current[key], tag);
+          const { [key]: _removed, ...rest } = current;
+          return next.length === 0 ? rest : { ...rest, [key]: next };
+        }).catch(reportError);
+      }}
+      onClear={() => {
         void preferences.update("sidebar.conversationTags", current => {
           const { [key]: _removed, ...rest } = current;
-          return next === null ? rest : { ...rest, [key]: next };
-        }).catch(() => {
-          notices.error({
-            key: `conversation-tag:${key}`,
-            message: intl.formatMessage({ id: "conversation.tag.saveFailed", defaultMessage: "Could not update tag. Try again." }),
-          });
-        });
+          return rest;
+        }).catch(reportError);
       }}
     />
   );
 }
 
-const MAX_INLINE_TAGS = 4;
-
 export function SidebarRecentTagFilterBar({
   tags,
-  selectedTag,
-  onSelectTag,
-  store,
-  portalContainer,
+  selectedTags,
+  onToggleTag,
+  onClearAll,
 }: {
   readonly tags: readonly ExistingConversationTag[];
-  readonly selectedTag: ConversationTagId | null;
-  readonly onSelectTag: (tag: ConversationTagId | null) => void;
-  readonly store: SidebarThreadMenuStore;
-  readonly portalContainer: HTMLElement | null;
+  readonly selectedTags: readonly ConversationTagId[];
+  readonly onToggleTag: (tag: ConversationTagId) => void;
+  readonly onClearAll: () => void;
 }) {
   const intl = useIntl();
-  const menuOpen = useSyncExternalStore(
-    store.subscribeRecentTags,
-    store.getRecentTagsOpen,
-    store.getRecentTagsOpen,
-  );
 
-  const allEntries: ExistingConversationTag[] = selectedTag && !tags.some(entry => entry.id === selectedTag)
-    ? [{ id: selectedTag, count: 0 }, ...tags]
-    : [...tags];
+  const missingSelected: ExistingConversationTag[] = selectedTags
+    .filter(selected => !tags.some(entry => entry.id === selected))
+    .map(id => ({ id, count: 0 }));
+  const allEntries: ExistingConversationTag[] = [...missingSelected, ...tags];
 
   if (allEntries.length === 0) return null;
 
-  const hasOverflow = allEntries.length > MAX_INLINE_TAGS;
-  let inlineEntries = hasOverflow ? allEntries.slice(0, MAX_INLINE_TAGS - 1) : allEntries;
-  if (hasOverflow && selectedTag && !inlineEntries.some(entry => entry.id === selectedTag)) {
-    const selectedEntry = allEntries.find(entry => entry.id === selectedTag)!;
-    inlineEntries = [...inlineEntries.slice(0, MAX_INLINE_TAGS - 2), selectedEntry];
-  }
-  const hiddenCount = allEntries.length - inlineEntries.length;
+  const clearLabel = intl.formatMessage({
+    id: "sidebar.recent.clearTagFiltersAria",
+    defaultMessage: "Clear all tag filters",
+  });
 
   return (
     <div
@@ -229,8 +238,8 @@ export function SidebarRecentTagFilterBar({
       role="toolbar"
       aria-label={intl.formatMessage({ id: "sidebar.recent.tagFilter", defaultMessage: "Filter Recent by tag" })}
     >
-      {inlineEntries.map(entry => {
-        const active = selectedTag === entry.id;
+      {allEntries.map(entry => {
+        const active = selectedTags.includes(entry.id);
         const name = conversationTagLabel(intl, entry.id);
         const title = intl.formatMessage(
           { id: "sidebar.recent.filterByTag", defaultMessage: "Filter by {tag}" },
@@ -244,63 +253,25 @@ export function SidebarRecentTagFilterBar({
             aria-pressed={active}
             aria-label={title}
             title={title}
-            onClick={() => onSelectTag(active ? null : entry.id)}
+            onClick={() => onToggleTag(entry.id)}
           >
             <ConversationTagMark tag={entry.id} size={13} />
           </button>
         );
       })}
-      {hasOverflow ? (
-        <DropdownMenu.Root open={menuOpen} onOpenChange={store.setRecentTagsOpen}>
-          <DropdownMenu.Trigger asChild>
-            <button
-              type="button"
-              className="sidebar-recent-tag-chip"
-              aria-label={intl.formatMessage({ id: "sidebar.recent.moreTags", defaultMessage: "More tags" })}
-              title={intl.formatMessage({ id: "sidebar.recent.moreTags", defaultMessage: "More tags" })}
-            >
-              +{hiddenCount}
-            </button>
-          </DropdownMenu.Trigger>
-          <DropdownMenu.Portal container={portalContainer}>
-            <DropdownMenu.Content
-              className="workbench-context-menu"
-              align="end"
-              sideOffset={4}
-              onCloseAutoFocus={event => {
-                if (store.getSnapshot() !== null) event.preventDefault();
-              }}
-            >
-              <DropdownMenu.Item
-                onSelect={() => {
-                  onSelectTag(null);
-                  store.setRecentTagsOpen(false);
-                }}
-              >
-                <FormattedMessage id="sidebar.recent.allTags" defaultMessage="All recent" />
-                {selectedTag === null ? <CheckIcon size={14} aria-hidden="true" /> : null}
-              </DropdownMenu.Item>
-              <DropdownMenu.Separator />
-              {allEntries.map(entry => {
-                const active = selectedTag === entry.id;
-                return (
-                  <DropdownMenu.Item
-                    key={entry.id}
-                    onSelect={() => {
-                      onSelectTag(active ? null : entry.id);
-                      store.setRecentTagsOpen(false);
-                    }}
-                  >
-                    <ConversationTagMark tag={entry.id} size={14} />
-                    <span>{conversationTagLabel(intl, entry.id)}</span>
-                    <span className="sidebar-recent-tag-menu-count">{entry.count}</span>
-                    {active ? <CheckIcon size={14} aria-hidden="true" /> : null}
-                  </DropdownMenu.Item>
-                );
-              })}
-            </DropdownMenu.Content>
-          </DropdownMenu.Portal>
-        </DropdownMenu.Root>
+      {selectedTags.length > 0 ? (
+        <button
+          type="button"
+          className="sidebar-recent-tag-clear"
+          aria-label={clearLabel}
+          title={clearLabel}
+          onClick={onClearAll}
+        >
+          <CloseIcon size={11} aria-hidden="true" />
+          <span>
+            <FormattedMessage id="sidebar.recent.clearTagFilters" defaultMessage="Clear" />
+          </span>
+        </button>
       ) : null}
     </div>
   );

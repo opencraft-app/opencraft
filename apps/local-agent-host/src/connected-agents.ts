@@ -20,7 +20,7 @@ import {
 
 type HistoryAgent = OnboardingAgentId;
 const historyEngineId = (id: HistoryAgent): EngineId => ENGINE_BY_AGENT[id];
-type EngineId = "codex" | "cursor" | "claude-code" | "codebuddy" | "codebuddy-ide" | "pi-cli";
+type EngineId = "codex" | "cursor" | "claude-code" | "codebuddy" | "codebuddy-ide" | "pi-cli" | "dsh-acp";
 const ENGINE_IDS = Object.values(ENGINE_BY_AGENT);
 type Params = Record<string, unknown>;
 interface ConnectedAgentModel {
@@ -39,6 +39,7 @@ export function connectedAgentModelId(agentId: OnboardingAgentId): string {
 }
 
 export function connectedAgentEngineId(modelOrThread: string): EngineId | null {
+  if (modelOrThread.startsWith("dsh-acp:") || modelOrThread.startsWith("dsh_acp_")) return "dsh-acp";
   if (modelOrThread.startsWith("pi-cli:") || modelOrThread.startsWith("picli_")) return "pi-cli";
   if (modelOrThread.startsWith("claude-code:") || modelOrThread.startsWith("claude_")) return "claude-code";
   if (modelOrThread.startsWith("cursor:") || modelOrThread.startsWith("cursor_")) return "cursor";
@@ -55,6 +56,7 @@ const LABELS: Record<EngineId, string> = {
   codebuddy: "CodeBuddy CLI",
   "codebuddy-ide": "CodeBuddy IDE",
   "pi-cli": "Pi",
+  "dsh-acp": "DSH",
 };
 
 export function connectedAgentCatalogEntry(engineId: EngineId) {
@@ -486,6 +488,11 @@ export class ConnectedAgentHost {
   }
 
   private async launch(engineId: EngineId): Promise<Launch> {
+    if (engineId === "dsh-acp") {
+      const command = await resolveExecutable(["dsh"], this.deps);
+      if (!command) throw new Error("DSH is not installed");
+      return { engineId, command, args: ["--profile", "acp"] };
+    }
     if (engineId === "pi-cli") {
       const command = await resolveExecutable(["pi"], this.deps);
       if (!command) throw new Error("Pi is not installed");

@@ -16,19 +16,20 @@ export async function migrateDshModels(repository:ModelConfigurationRepository,c
   const legacy=await yaml(join(legacyHome,'settings.yaml'));
   const doc=emptyModelDocument();
   if(!legacy){await repository.initialize(doc);return {migrated:false,count:0};}
+  const oldCredentials=await yaml(join(legacyHome,'.credentials.yaml'));
+  const refs=object(oldCredentials?.refs);
   const pi=object(legacy['llm-pi-ai']);
   for(const [id,p] of Object.entries(object(pi.providers)))doc.providers.push(fromDshProfile(id,p,object(pi.modelSelection)[id]));
   const defaultValue=object(legacy['agent-default-model']);
-  if(legacy['llm-deepseek']||defaultValue.provider==='deepseek-official'){
-    const baseline=object(base?.namespaces.find(n=>n.ns==='llm-deepseek')?.base);
-    const p={...baseline,...object(legacy['llm-deepseek'])};
-    if(!Array.isArray(p.models))throw new Error('旧原生模型配置需要引擎目录辅助迁移，未覆盖文件');
-    doc.providers.push(fromDshProfile('deepseek-official',p,object(pi.modelSelection)['deepseek-official'],'deepseek'));
+  const baseline=object(base?.namespaces.find(n=>n.ns==='llm-deepseek')?.base);
+  const deepseekMerged={...baseline,...object(legacy['llm-deepseek'])};
+  const deepseekKeyRef=typeof deepseekMerged.apiKeyEnv==='string'?deepseekMerged.apiKeyEnv:'DEEPSEEK_API_KEY';
+  if(legacy['llm-deepseek']||(defaultValue.provider==='deepseek-official'&&typeof refs[deepseekKeyRef]==='string')){
+    if(!Array.isArray(deepseekMerged.models))throw new Error('旧原生模型配置需要引擎目录辅助迁移，未覆盖文件');
+    doc.providers.push(fromDshProfile('deepseek-official',deepseekMerged,object(pi.modelSelection)['deepseek-official'],'deepseek'));
   }
-  if(defaultValue.provider&&defaultValue.model)doc.defaultModel={providerId:defaultValue.provider,modelId:defaultValue.model,...(defaultValue.reasoningEffort?{reasoningEffort:defaultValue.reasoningEffort}:{})};
+  if(defaultValue.provider&&defaultValue.model&&doc.providers.some(p=>p.id===defaultValue.provider&&p.enabled&&p.models.some(m=>m.id===defaultValue.model&&m.enabled)))doc.defaultModel={providerId:defaultValue.provider,modelId:defaultValue.model,...(defaultValue.reasoningEffort?{reasoningEffort:defaultValue.reasoningEffort}:{})};
   validateModelDocument(doc);
-  const oldCredentials=await yaml(join(legacyHome,'.credentials.yaml'));
-  const refs=object(oldCredentials?.refs);
   for(const p of doc.providers)if(p.credentialRef&&typeof refs[p.credentialRef]==='string'){
     const existing=await credentials.resolve(p.credentialRef);
     if(existing!==undefined&&existing!==refs[p.credentialRef])throw new Error('凭据引用冲突，未覆盖现有凭据');

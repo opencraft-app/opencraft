@@ -4,7 +4,7 @@ import type { Thread } from "@opencraft/appserver-protocol/generated/v2";
 import type { WorkbenchThread } from "./models";
 
 const agentLabels: Readonly<Record<string, string>> = { codex: "Codex", cursor: "Cursor", "claude-code": "Claude Code",
-  codebuddy: "CodeBuddy CLI", "codebuddy-ide": "CodeBuddy IDE", pi: "Pi", "pi-cli": "Pi", "pi-bridge": "Pi", "codex-bridge": "Codex", dsh: "DSH", "dsh-acp": "DSH" };
+  codebuddy: "CodeBuddy CLI", "codebuddy-ide": "CodeBuddy IDE", pi: "Pi", "pi-cli": "Pi", "pi-bridge": "Pi", "codex-bridge": "Codex", "dsh-acp": "DSH" };
 
 /** Resolve only declared ownership. A model provider is not an Agent identity. */
 export function projectThreadAgent(threadId: string, declaration: unknown): WorkbenchThread["agent"] {

@@ -6,6 +6,16 @@
   padding: 8px;
 }
 
+.conversation-tag-header-marks {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.conversation-tag-extra {
+  @include typography.role(metadata, tertiary);
+}
+
 .conversation-tag-palette {
   display: flex;
   flex-direction: column;
@@ -72,13 +82,13 @@
       height: 12px;
     }
 
-    &[aria-checked="true"] {
+    &[aria-pressed="true"] {
       border-color: var(--color-text);
       background: var(--color-background-button-secondary);
     }
 
     @include controls.hover-capable {
-      &:hover:not([aria-checked="true"]) {
+      &:hover:not([aria-pressed="true"]) {
         background: var(--color-background-button-tertiary-hover);
       }
     }
@@ -101,14 +111,14 @@
     color: var(--color-text-secondary);
     cursor: pointer;
 
-    &[aria-checked="true"] {
+    &[aria-pressed="true"] {
       border-color: var(--color-border-strong);
       background: var(--color-background-button-secondary);
       color: var(--color-text);
     }
 
     @include controls.hover-capable {
-      &:hover:not([aria-checked="true"]) {
+      &:hover:not([aria-pressed="true"]) {
         background: var(--color-background-button-tertiary-hover);
         color: var(--color-text);
       }
@@ -121,9 +131,12 @@
 .sidebar-recent-tag-filters {
   display: inline-flex;
   min-width: 0;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 2px;
+  justify-content: flex-end;
+  gap: 3px;
+  padding-block: 2px;
 }
 
 .sidebar-recent-tag-chip {
@@ -144,8 +157,7 @@
   color: var(--color-text-secondary);
   cursor: pointer;
 
-  &[aria-pressed="true"],
-  &[data-state="open"] {
+  &[aria-pressed="true"] {
     border-color: var(--color-border-strong);
     background: var(--color-background-button-secondary);
     color: var(--color-text);
@@ -161,7 +173,28 @@
   &:focus-visible { @include controls.focus-indicator; }
 }
 
-.sidebar-recent-tag-menu-count {
-  @include typography.role(metadata, tertiary);
-  margin-inline-start: auto;
+.sidebar-recent-tag-clear {
+  @include controls.density-target;
+  @include typography.role(metadata, secondary);
+  display: inline-flex;
+  height: 22px;
+  padding: 0 7px 0 5px;
+  align-items: center;
+  gap: 2px;
+  appearance: none;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-full);
+  outline: none;
+  background: var(--color-background-button-secondary);
+  color: var(--color-text);
+  white-space: nowrap;
+  cursor: pointer;
+
+  @include controls.hover-capable {
+    &:hover {
+      background: var(--color-background-button-secondary-hover, var(--color-background-button-tertiary-hover));
+    }
+  }
+
+  &:focus-visible { @include controls.focus-indicator; }
 }

@@ -31,5 +31,6 @@ test('installed companion starts its real Host from an unrelated working directo
  const status=await new Promise<any>((done,fail)=>{const r=request({socketPath:join(state,'control.sock'),path:'/status'},res=>{let data='';res.on('data',c=>data+=c);res.on('end',()=>done(JSON.parse(data)));});r.on('error',fail);r.end();});
  assert.equal(status.connected,true);
  assert.equal(typeof status.machine.machineId,'string');
+ await access(join(state,'data','models'));
  assert.equal(child.exitCode,null);
 });

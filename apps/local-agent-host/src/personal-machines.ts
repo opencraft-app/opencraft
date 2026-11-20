@@ -6,7 +6,7 @@ import type {IncomingMessage,ServerResponse} from 'node:http';
 import type {Duplex} from 'node:stream';
 import {WebSocketServer,WebSocket} from 'ws';
 import {relayDuplex} from '@opencraft/relay-protocol/node';
-import {CONTROL_PATH,DATA_PATH,STREAM_HEADER,RELAY_PROTOCOL,isPrivateIpv4Address} from '@opencraft/relay-protocol';
+import {CONTROL_PATH,DATA_PATH,STREAM_HEADER,RELAY_PROTOCOL} from '@opencraft/relay-protocol';
 import {PersonalMachineStore} from './personal-machines-store.js';
 import type {PersonalMachineCommand,PersonalMachinesDirectory} from '@opencraft/appserver-protocol/personal-machines';
 const prefix='/__opencraft_machines';
@@ -15,17 +15,17 @@ const bearer=(r:IncomingMessage)=>/^Bearer ([A-Za-z0-9_-]{32,64})$/.exec(r.heade
 const quote=(v:string)=>"'"+v.replace(/'/g,"'\\''")+"'";
 export function personalMachineOrigin(value:unknown){
   if(typeof value!=='string')throw new Error('Remote machine requires an origin');const u=new URL(value);
-  if(u.origin!==value||u.username||u.password||u.protocol!=='https:'&&!(u.protocol==='http:'&&(['127.0.0.1','localhost'].includes(u.hostname)||isPrivateIpv4Address(u.hostname))))throw new Error('Remote machine requires HTTPS');return u.origin;
+  if(u.origin!==value||u.username||u.password||u.protocol!=='https:'&&!(u.protocol==='http:'&&['127.0.0.1','localhost'].includes(u.hostname)))throw new Error('Remote machine requires HTTPS');return u.origin;
 }
-/** Deployment-owned callback address; never derive it from a browser's loopback URL. */
+/** Deployment-owned HTTPS callback address; never derive it from loopback, intranet HTTP or SSH tunnels. */
 export function personalMachineEnrollmentOrigin(value:unknown){
   const origin=personalMachineOrigin(value),url=new URL(origin),host=url.hostname.toLowerCase().replace(/\.$/,'');
-  if(host==='localhost'||host.endsWith('.localhost')||host==='0.0.0.0'||host==='[::]'||host==='[::1]'||/^127\./.test(host)||host.startsWith('[::ffff:'))throw new Error('Remote enrollment requires a reachable Server origin');
+  if(url.protocol!=='https:'||host==='localhost'||host.endsWith('.localhost')||host==='0.0.0.0'||host==='[::]'||host==='[::1]'||/^127\./.test(host)||host.startsWith('[::ffff:'))throw new Error('Remote enrollment requires an HTTPS Server origin');
   return origin;
 }
 const json=(r:ServerResponse,status:number,value:unknown)=>{r.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});r.end(JSON.stringify(value));};
 const body=async(r:IncomingMessage)=>{let text='';for await(const c of r){text+=c;if(Buffer.byteLength(text)>16384)throw new Error('Request too large');}return JSON.parse(text);};
-interface Connection {socket:WebSocket;streams:Set<Duplex>}
+interface Connection {socket:WebSocket;streams:Set<Duplex>;version:string|null}
 export class PersonalMachines {
   readonly store:PersonalMachineStore;
   private sockets=new WebSocketServer({noServer:true,maxPayload:65536,perMessageDeflate:false});
@@ -37,7 +37,12 @@ export class PersonalMachines {
     this.store=new PersonalMachineStore(options.directory,options.ownerActorId,()=>{this.closed=true;for(const[id,c]of this.connections)this.retire(id,c);});
   }
   async ready(){await this.store.ready;}
-  directory():PersonalMachinesDirectory{return {hubId:this.store.state.hubId,ownerActorId:this.store.state.ownerActorId,enrollmentOrigin:this.options.enrollmentOrigin??null,machines:this.store.state.machines.filter(r=>r.credentialHash||r.expiresAt>Date.now()).map(r=>({id:r.id,name:r.machine?.name??'',machine:r.machine,connected:this.connections.has(r.id),phase:r.credentialHash?'enrolled':'pending',expiresAt:r.credentialHash?null:r.expiresAt}))};}
+  private buildUpdateCommand(id:string):string|null{
+    const origin=this.options.enrollmentOrigin;if(!origin)return null;
+    if(!this.options.enrollmentCa)return `bash -o pipefail -c ${quote('curl -fsS '+origin+prefix+'/install.sh | bash -s -- --update '+id)}`;
+    return `OPENCRAFT_MACHINE_ORIGIN=${quote(origin)} bash -c ${quote('set -euo pipefail; curl --fail --silent --show-error --location --max-redirs 0 --cacert <(printf %s '+quote(Buffer.from(this.options.enrollmentCa).toString('base64'))+' | base64 -d) '+quote(origin+prefix+'/install.sh')+' | bash -s -- --update '+id)}`;
+  }
+  directory():PersonalMachinesDirectory{return {hubId:this.store.state.hubId,ownerActorId:this.store.state.ownerActorId,enrollmentOrigin:this.options.enrollmentOrigin??null,digest:this.options.digest,machines:this.store.state.machines.filter(r=>r.credentialHash||r.expiresAt>Date.now()).map(r=>{const live=this.connections.get(r.id);const enrolled=Boolean(r.credentialHash);return {id:r.id,name:r.machine?.name??'',machine:r.machine,connected:Boolean(live),phase:enrolled?'enrolled':'pending',expiresAt:enrolled?null:r.expiresAt,version:live?.version??null,updateAvailable:live?live.version!==this.options.digest:null,updateCommand:enrolled?this.buildUpdateCommand(r.id):null};})};}
   async command(input:PersonalMachineCommand){
     if(!input||typeof input!=='object'||(this.closed||!this.store.available))throw new Error('Machine service unavailable');
     if(input.action==='list')return this.directory();
@@ -106,7 +111,9 @@ export class PersonalMachines {
       if(!row||this.closed||!this.store.available||req.headers.origin||req.headers['sec-websocket-protocol']!==RELAY_PROTOCOL){reject();return true;}
       this.sockets.handleUpgrade(req,socket,head,ws=>{
         const previous=this.connections.get(row.id);if(previous)this.retire(row.id,previous);
-        const c={socket:ws,streams:new Set<Duplex>()};this.connections.set(row.id,c);
+        const rawVersion=req.headers['x-opencraft-machine-version'];
+        const version=typeof rawVersion==='string'&&/^(?:[a-f0-9]{64}|legacy)$/.test(rawVersion)?rawVersion:null;
+        const c:Connection={socket:ws,streams:new Set<Duplex>(),version};this.connections.set(row.id,c);
         const heartbeat=setInterval(()=>{if(ws.readyState===WebSocket.OPEN)ws.ping();},15000);heartbeat.unref();let pong=Date.now();ws.on('pong',()=>{pong=Date.now();});
         const expire=setInterval(()=>{if(Date.now()-pong>45000)ws.terminate();},15000);expire.unref();
         ws.on('error',()=>{});ws.once('close',()=>{clearInterval(heartbeat);clearInterval(expire);this.retire(row.id,c);});

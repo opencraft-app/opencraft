@@ -71,11 +71,12 @@ export interface RuntimeProviderView {
 export interface RuntimeProvidersListResponse {
   readonly application?: { readonly state: "pending" | "applied" | "failed"; readonly revision: number; readonly error?: string };
   readonly providers: readonly RuntimeProviderView[];
-  readonly creation?: { readonly kind: "openai-compatible"; readonly revision: number; readonly apis: readonly RuntimeOpenAIProtocol[]; readonly image?: { readonly api: "hunyuan-image-v35"; readonly baseURL: string; readonly model: string; readonly revision: number }; readonly speech?: { readonly api: "hunyuan-asr"; readonly baseURL: string; readonly model: string }; readonly canProbe?: boolean; readonly canEnableOnCreate?: boolean };
+  readonly creation?: { readonly kind: "openai-compatible"; readonly revision: number; readonly apis: readonly RuntimeChatProtocol[]; readonly image?: { readonly api: "hunyuan-image-v35"; readonly baseURL: string; readonly model: string; readonly revision: number }; readonly speech?: { readonly api: "hunyuan-asr"; readonly baseURL: string; readonly model: string }; readonly canProbe?: boolean; readonly canEnableOnCreate?: boolean };
 }
 
 export type RuntimeOpenAIProtocol = "openai-completions" | "openai-responses";
-export type RuntimeProviderProtocol = RuntimeOpenAIProtocol | "hunyuan-asr" | "hunyuan-image-v35";
+export type RuntimeChatProtocol = RuntimeOpenAIProtocol | "anthropic-messages";
+export type RuntimeProviderProtocol = RuntimeChatProtocol | "hunyuan-asr" | "hunyuan-image-v35";
 
 /** Host application command: credentials and settings are coordinated behind this boundary. */
 export interface RuntimeProviderApplyParams {
@@ -167,7 +168,7 @@ export interface RuntimeDiscoveredModelView {
 /** Explicit one-off draft probe. No persisted credential or session may be resolved for it. */
 export interface RuntimeModelProbeParams {
   readonly baseURL: string;
-  readonly api: RuntimeOpenAIProtocol;
+  readonly api: RuntimeChatProtocol;
   readonly model: string;
   readonly apiKey?: string;
 }

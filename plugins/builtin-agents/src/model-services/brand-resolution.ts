@@ -1,6 +1,7 @@
 /** Presentation only: never use these aliases to choose a connection or model. */
 export type BrandKind = "provider" | "model";
 const providerAliases = new Map(Object.entries({
+  "openai-compatible": "openai", "anthropic-compatible": "anthropic",
   "deepseek-official": "deepseek", "openai-codex": "openai", "amazon-bedrock": "bedrock",
   "ant-ling": "antgroup", "azure-openai-responses": "azure", "google-vertex": "vertexai",
   "cloudflare-ai-gateway": "cloudflare", "cloudflare-workers-ai": "cloudflare",

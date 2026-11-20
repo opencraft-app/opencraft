@@ -63,8 +63,9 @@ function ProviderRow({ provider, controller }: { provider: RuntimeProviderView; 
   const custom = provider.declared && ["llm-pi-ai", "image-generation"].includes(provider.settingsNs);
   const disabled = controller.busy || controller.service.getSnapshot().settings?.writable !== true || controller.draft(provider).dirty;
   const canToggle = provider.configuration?.canToggle === true;
-  const defaults = controller.service.getSnapshot().settings?.namespaces.find(entry => entry.ns === "agent-default-model")?.value as {provider?: string} | undefined;
-  const defaultProtected = provider.enabled && defaults?.provider === provider.provider;
+  const settingsSnapshot = controller.service.getSnapshot().settings;
+  const defaults = settingsSnapshot?.namespaces.find(entry => entry.ns === "agent-default-model")?.value as {provider?: string} | undefined;
+  const defaultProtected = !settingsSnapshot?.hasDocument && provider.enabled && defaults?.provider === provider.provider;
   const row = <div className="model-services__provider-row" data-selected={provider.provider === controller.selected}>
     <button className="model-services__provider" type="button" aria-pressed={provider.provider === controller.selected} onClick={() => controller.select(provider.provider)}><BrandMark kind="provider" id={provider.provider} size={22} /><span>{provider.displayName}</span></button>
     <SettingsSwitch label={`启用提供商：${provider.displayName}`} checked={provider.enabled === true}
@@ -105,15 +106,16 @@ function ProviderRow({ provider, controller }: { provider: RuntimeProviderView; 
   </AlertDialog.Portal></AlertDialog.Root></>;
 }
 
-function CreatePopover({ label, disabled, allowSpeech = false, allowImage = false, onCreate }: { label: string; disabled: boolean; allowSpeech?: boolean; allowImage?: boolean; onCreate(name: string, type: "chat" | "asr" | "image"): Promise<void> }) {
+function CreatePopover({ label, disabled, allowSpeech = false, allowImage = false, onCreate }: { label: string; disabled: boolean; allowSpeech?: boolean; allowImage?: boolean; onCreate(name: string, type: "chat" | "anthropic" | "asr" | "image"): Promise<void> }) {
+  const intl = useIntl();
   const [open, setOpen] = useState(false), [name, setName] = useState(""), [error, setError] = useState<string | null>(null), [saving, setSaving] = useState(false);
-  const [type, setType] = useState<"chat" | "asr" | "image">("chat");
+  const [type, setType] = useState<"chat" | "anthropic" | "asr" | "image">("chat");
   return <Popover.Root open={open} onOpenChange={value => { if (!saving) { setOpen(value); setName(""); setError(null); } }}>
     <Popover.Trigger asChild><SettingsIconButton label={label} disabled={disabled}><Plus size={16} /></SettingsIconButton></Popover.Trigger>
     <Popover.Portal><Popover.Content className="model-services-create" align="end" sideOffset={6} collisionPadding={12} aria-label={label}>
       <form onSubmit={event => { event.preventDefault(); if (!name.trim() || saving) return; setSaving(true); setError(null);
         void onCreate(name.trim(), type).then(() => setOpen(false)).catch(cause => setError(cause instanceof Error ? cause.message : "创建失败")).finally(() => setSaving(false)); }}>
-        {allowSpeech || allowImage ? <label>用途<SettingsSelect aria-label="提供商用途" value={type} disabled={saving} onChange={event => setType(event.target.value as "chat" | "asr" | "image")}><option value="chat">聊天</option>{allowSpeech ? <option value="asr">混元语音转写</option> : null}{allowImage ? <option value="image"><FormattedMessage id="modelServices.image.kind" defaultMessage="Image generation" /></option> : null}</SettingsSelect></label> : null}
+        {label !== "添加模型" ? <label>{intl.formatMessage({ id: "modelServices.protocol.label", defaultMessage: "Protocol" })}<SettingsSelect aria-label="提供商用途" value={type} disabled={saving} onChange={event => setType(event.target.value as "chat" | "anthropic" | "asr" | "image")}><option value="chat">{intl.formatMessage({ id: "modelServices.protocol.openai", defaultMessage: "OpenAI protocol" })}</option><option value="anthropic">{intl.formatMessage({ id: "modelServices.protocol.anthropic", defaultMessage: "Anthropic protocol" })}</option>{allowSpeech ? <option value="asr">混元语音转写</option> : null}{allowImage ? <option value="image"><FormattedMessage id="modelServices.image.kind" defaultMessage="Image generation" /></option> : null}</SettingsSelect></label> : null}
         <label>{label}<SettingsTextInput value={name} disabled={saving} placeholder={label === "添加模型" ? "模型 ID" : "提供商名称"} onChange={event => setName(event.target.value)} required /></label>
         {error ? <SettingsNotice tone="error">{error}</SettingsNotice> : null}
         <div><Popover.Close asChild><SettingsButton disabled={saving}>取消</SettingsButton></Popover.Close><SettingsButton variant="primary" type="submit" disabled={saving || !name.trim()}>{saving ? "添加中…" : "添加"}</SettingsButton></div>
@@ -166,7 +168,10 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
   const [searchVisible, setSearchVisible] = useState(false);
   const revision = controller.revision(provider);
   const conflict = draft.dirty && revision !== draft.revision;
-  const baseUrlIssue = modelBaseUrlError(draft.config.baseURL);
+  const activeProtocol = draft.config.api ?? provider.configuration?.defaultApi;
+  const anthropic = activeProtocol === "anthropic-messages";
+  const defaultEndpointPlaceholder = provider.configuration?.defaultBaseURL ?? (anthropic ? "https://api.anthropic.com" : "https://api.openai.com/v1");
+  const baseUrlIssue = modelBaseUrlError(draft.config.baseURL, activeProtocol);
   const editable = snapshot.settings?.writable === true && !controller.busy && !conflict && provider.provider !== "openai-codex";
   useEffect(() => { void controller.inspectCredential(provider); }, [controller, provider.provider, revision]);
   const models = new Map<string, RuntimeModelView>((snapshot.models?.groups.find(group => group.id === provider.provider)?.models ?? []).map(model => [model.id, model]));
@@ -184,8 +189,11 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
   const configured = provider.configured && (!draft.config.credentialRef || draft.credentialSet === true);
   const expanded = draft.dirty || (draft.connectionExpanded ?? (!configured && !credentialUnknown));
   const setExpanded = (value: boolean) => { draft.connectionExpanded = value; controller.notify(); };
-  const rows = (enabled: boolean) => filtered.filter(model => (model.enabled !== false) === enabled).map(model => {
+  const providerEnabled = provider.enabled !== false;
+  const effectiveModelEnabled = (model: { enabled?: boolean }) => providerEnabled && model.enabled !== false;
+  const rows = (enabled: boolean) => filtered.filter(model => effectiveModelEnabled(model) === enabled).map(model => {
     const declared = declarations.get(model.id);
+    const modelActive = effectiveModelEnabled(model);
     // RuntimeModelView is the final resolved capability (native answer,
     // declaration fallback, then conservative text). Show what Chat will use.
     const supportsImages = model.input?.includes("image") === true;
@@ -203,7 +211,7 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
     {isDefault(model.id) ? <span className="model-services__kind">默认</span> : null}
     {speech ? <span className="model-services__kind">语音转写</span> : null}{image ? <span className="model-services__kind"><FormattedMessage id="modelServices.image.kind" defaultMessage="Image generation" /></span> : null}
     {!speech ? <MoreActions label={`模型操作：${model.id}`}><small>{model.id}</small>
-      {!speech ? <Popover.Close asChild><SettingsButton variant="quiet" aria-label={`设为默认：${model.id}`} disabled={!editable || draft.dirty || !provider.active || model.enabled === false || isDefault(model.id)} onClick={() => { void controller.setDefault(provider, model.id); }}>设为默认</SettingsButton></Popover.Close> : null}
+      {!speech ? <Popover.Close asChild><SettingsButton variant="quiet" aria-label={`设为默认：${model.id}`} disabled={!editable || draft.dirty || !provider.active || !modelActive || isDefault(model.id)} onClick={() => { void controller.setDefault(provider, model.id); }}>设为默认</SettingsButton></Popover.Close> : null}
       {capabilityEditable && provider.configuration?.canInspectSaved ? <Popover.Close asChild><SettingsButton variant="quiet" disabled={!editable || draft.dirty} onClick={() => setCapabilityModel(model.id)}><FormattedMessage id="modelServices.capabilities.open" defaultMessage="View and inspect capabilities" /></SettingsButton></Popover.Close> : null}
       {capabilityEditable ? <div className="model-services-actions__toggle">
         <span><strong>图片输入</strong><small>允许在聊天时向该模型发送图片附件</small></span>
@@ -228,7 +236,7 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
         {capabilityPending ? <small role="status">正在保存模型能力…</small> : null}
       </div> : null}
     </MoreActions> : null}
-    <SettingsSwitch label={`启用 ${model.name}`} checked={model.enabled !== false} disabled={!editable || draft.dirty || isDefault(model.id)} onCheckedChange={value => { void controller.changeModel(provider, model.id, value); }} />
+    <SettingsSwitch label={`启用 ${model.name}`} checked={modelActive} disabled={!editable || draft.dirty || (!snapshot.settings?.hasDocument && isDefault(model.id))} onCheckedChange={value => { void controller.changeModel(provider, model.id, value); }} />
   </div>;
   });
   const canTest = !!provider.configuration?.canCheckSaved && !!(draft.config.api ?? provider.configuration.defaultApi);
@@ -244,7 +252,7 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
         {!provider.enabled && provider.configuration?.canToggle ? <SettingsButton className="model-services__enable-fallback" aria-label="启用提供商" disabled={!editable || !configured || draft.dirty} onClick={() => { void controller.toggle(provider, true); }}>启用</SettingsButton> : null}
         <SettingsButton variant="quiet" aria-expanded={expanded} aria-controls="model-service-connection" disabled={draft.dirty} onClick={() => setExpanded(!expanded)}>{expanded ? "收起" : "编辑"}{expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</SettingsButton></div></div>
       <div id="model-service-connection" hidden={!expanded}>
-      {provider.configuration?.canUseWithoutAuthentication ? <div className="model-services__row"><div>
+      {provider.configuration?.canUseWithoutAuthentication && !anthropic ? <div className="model-services__row"><div>
         <label>{intl.formatMessage({id: "modelServices.noAuth.title", defaultMessage: "No authentication"})}</label>
         <p>{intl.formatMessage({id: "modelServices.noAuth.description", defaultMessage: "Use only when this endpoint does not require an API key. Saved and environment keys will not be sent."})}</p>
       </div><SettingsSwitch label={intl.formatMessage({id: "modelServices.noAuth.title", defaultMessage: "No authentication"})}
@@ -254,7 +262,7 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
           <SettingsIconButton label={showKey ? "隐藏 API Key" : "显示 API Key"} onClick={() => setShowKey(!showKey)}>{showKey ? <EyeOff size={15} /> : <Eye size={15} />}</SettingsIconButton>
         </div>
       </div> : null}
-      <div className="model-services__row"><div><label htmlFor="model-service-url">{image ? intl.formatMessage({"id": "modelServices.image.endpoint", "defaultMessage": "Full image endpoint URL"}) : speech ? "语音服务地址" : "API 基础地址（Base URL）"}</label><p>{image ? intl.formatMessage({"id": "modelServices.image.endpointHint", "defaultMessage": "Enter the full Hunyuan Image v3.5 generation endpoint URL."}) : speech ? "使用混元转写服务；保存并启用后，可在语音输入中选择模型。" : "例如 https://example.com/v1，不含 /chat/completions 或 /responses；留空使用默认地址"}</p></div><div><SettingsTextInput id="model-service-url" aria-invalid={!!baseUrlIssue} aria-describedby={baseUrlIssue ? "model-service-url-error" : undefined} value={draft.config.baseURL} disabled={!editable} readOnly={speech} placeholder={provider.configuration?.defaultBaseURL ?? "https://example.com/v1"} onChange={event => change({ baseURL: event.target.value })} />{baseUrlIssue ? <SettingsNotice id="model-service-url-error" tone="error">{baseUrlIssue}</SettingsNotice> : null}</div></div>
+      <div className="model-services__row"><div><label htmlFor="model-service-url">{image ? intl.formatMessage({"id": "modelServices.image.endpoint", "defaultMessage": "Full image endpoint URL"}) : speech ? "语音服务地址" : "API 基础地址（Base URL）"}</label><p>{image ? intl.formatMessage({"id": "modelServices.image.endpointHint", "defaultMessage": "Enter the full Hunyuan Image v3.5 generation endpoint URL."}) : speech ? "使用混元转写服务；保存并启用后，可在语音输入中选择模型。" : anthropic ? intl.formatMessage({"id": "modelServices.anthropic.endpointHint", "defaultMessage": "For example https://api.anthropic.com, without /v1 or /v1/messages"}) : provider.configuration?.defaultBaseURL ? "例如 https://example.com/v1，不含 /chat/completions 或 /responses；留空使用默认地址" : intl.formatMessage({"id": "modelServices.openai.endpointHint", "defaultMessage": "For example https://api.openai.com/v1, without /chat/completions or /responses"})}</p></div><div><SettingsTextInput id="model-service-url" aria-invalid={!!baseUrlIssue} aria-describedby={baseUrlIssue ? "model-service-url-error" : undefined} value={draft.config.baseURL} disabled={!editable} readOnly={speech} placeholder={defaultEndpointPlaceholder} onChange={event => change({ baseURL: event.target.value })} />{baseUrlIssue ? <SettingsNotice id="model-service-url-error" tone="error">{baseUrlIssue}</SettingsNotice> : null}</div></div>
       {canTest ? <div className="model-services__row"><div><label htmlFor="model-service-test-model">连通性检查</label><p>{draft.dirty ? "请先保存修改，再检查连接" : "使用已保存的连接和密钥发送文本请求，可能计费"}</p></div>
         <div className="model-services__checker"><SettingsSelect id="model-service-test-model" value={testModel} disabled={!editable} onChange={event => { draft.testModel = event.target.value; draft.probe = null; controller.notify(); }}>
           {!testModel ? <option value="">暂无可用模型</option> : null}{[...models.values()].map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
@@ -276,7 +284,7 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
           if (!speech && !image && provider.configuration?.canInspectSaved) { setCapabilityModel(name); void controller.inspectModel(provider, name, "metadata"); } }} /> : null}
       </div></div>
       {rows(true)}
-      {filtered.some(model => model.enabled === false) ? <details><summary className="ui-native-disclosure">未启用模型</summary>{rows(false)}</details> : null}
+      {filtered.some(model => !effectiveModelEnabled(model)) ? <details open={!providerEnabled || undefined}><summary className="ui-native-disclosure">未启用模型</summary>{rows(false)}</details> : null}
       {!filtered.length ? <p className="model-services__muted">{models.size ? "没有匹配的模型" : "暂无模型"}</p> : null}
     </section>
     {controller.error ? <SettingsNotice tone="error">{controller.error}</SettingsNotice> : null}
@@ -284,10 +292,32 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
   </div>;
 }
 
+function consumeRequestedModelConfigurationTab(): string {
+  try {
+    const requested = sessionStorage.getItem("opencraft.settings.modelConfigurationTab");
+    if (requested === "agents" || requested === "models") {
+      sessionStorage.removeItem("opencraft.settings.modelConfigurationTab");
+      return requested;
+    }
+  } catch { /* Ignore storage restrictions. */ }
+  return "agents";
+}
+
 export function createModelServicesView(controller: ModelServicesController) {
   return function ModelServicesView(_props: ExtensionSettingsViewProps) {
     const AgentConfiguration = _props?.regions?.AgentConfiguration;
-    const [tab, setTab] = useState("agents");
+    const [tab, setTab] = useState(consumeRequestedModelConfigurationTab);
+    useEffect(() => {
+      const selectTab = (event: Event) => {
+        const next = event instanceof CustomEvent ? event.detail?.tab : undefined;
+        if (next === "agents" || next === "models") {
+          try { sessionStorage.removeItem("opencraft.settings.modelConfigurationTab"); } catch { /* Ignore storage restrictions. */ }
+          setTab(next);
+        }
+      };
+      window.addEventListener("opencraft:model-configuration-tab", selectTab);
+      return () => window.removeEventListener("opencraft:model-configuration-tab", selectTab);
+    }, []);
     const id = useId();
     const agentPanel = `${id}-agents`, modelPanel = `${id}-models`;
     const intl = useIntl();

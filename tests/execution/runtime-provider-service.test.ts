@@ -214,7 +214,7 @@ test("model selection is durable, revision guarded, independent of catalog and c
 
 test("capabilities are host supplied; apply stages a new secret and writes runtime-owned paths with CAS", async () => {
   const f = fixture();
-  assert.deepEqual((await f.service.list()).creation?.apis, ["openai-completions", "openai-responses"]);
+  assert.deepEqual((await f.service.list()).creation?.apis, ["openai-completions", "openai-responses", "anthropic-messages"]);
   const result = await f.service.apply(createInput());
   assert.equal(result.saved, true);
   assert.equal(f.secrets.get("SHARED_KEY"), "original");
@@ -421,4 +421,54 @@ test("explicit no-auth mode clears the route binding without deleting shared sec
   assert.equal((f.section().value as any).providers.existing.authentication,undefined);
   await assert.rejects(f.service.apply({target:{kind:"update",id:"existing"},expectedRevision:f.section().revision,
     baseURL:"http://127.0.0.1:11434/v1",enabled:true,credential:{kind:"none"}}),/authentication/);
+});
+
+test("enabling a model on a configured disabled protocol enables the protocol; disabling the last model disables it", async () => {
+  let revision = 1;
+  const config: any = {
+    providers: {
+      "openai-compatible": {
+        baseURL: "https://api.example.invalid/v1",
+        api: "openai-completions",
+        apiKeyEnv: "SAVED_REF",
+        enabled: false,
+        models: [{ id: "hy4-flash" }, { id: "hy4" }],
+      },
+    },
+    modelSelection: { "openai-compatible": ["hy4-flash", "hy4"] },
+  };
+  const service = new RuntimeProviderService({ async call<T>(method: string, args: any = {}): Promise<T> {
+    if (method === "settings.describe") return {
+      writable: true,
+      hasDocument: true,
+      namespaces: [
+        { ns: "llm-pi-ai", value: structuredClone(config), user: structuredClone(config), revision },
+        { ns: "agent-default-model", value: { provider: "openai-compatible", model: "hy4-flash" } },
+      ],
+    } as T;
+    if (method === "llm.providers") return {
+      providers: [{ provider: "openai-compatible", displayName: "OpenAI 协议", declared: false, settingsNs: "llm-pi-ai", settingsPath: ["providers", "openai-compatible"], active: config.providers["openai-compatible"].enabled }],
+    } as T;
+    if (method === "llm.models") return { groups: [], failures: [] } as T;
+    if (method === "credentials.describe") return { credentials: { SAVED_REF: { configured: true } } } as T;
+    if (method === "settings.mutate") {
+      assert.equal(args.expectedRevision, revision);
+      for (const op of args.ops) {
+        let target = config;
+        for (const key of op.path.slice(0, -1)) target = target[key] ??= {};
+        target[op.path.at(-1)] = op.value;
+      }
+      revision += 1;
+      return { ns: "llm-pi-ai", revision, value: structuredClone(config), user: structuredClone(config) } as T;
+    }
+    throw new Error(`Unexpected method ${method}`);
+  } });
+
+  await service.mutateModel({ provider: "openai-compatible", model: "hy4-flash", expectedRevision: 1 }, true);
+  assert.equal(config.providers["openai-compatible"].enabled, true);
+  assert.deepEqual(config.modelSelection["openai-compatible"], ["hy4"]);
+
+  await service.mutateModel({ provider: "openai-compatible", model: "hy4-flash", expectedRevision: 2 }, false);
+  assert.equal(config.providers["openai-compatible"].enabled, false);
+  assert.deepEqual(new Set(config.modelSelection["openai-compatible"]), new Set(["hy4-flash", "hy4"]));
 });

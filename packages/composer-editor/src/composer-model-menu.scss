@@ -1,0 +1,210 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+
+.opencraft-composer-model-browser {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+
+  &__machines {
+    display: flex;
+    flex-direction: column;
+    flex: none;
+    gap: var(--spacing);
+    padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 2) calc(var(--spacing) * 2);
+    border-bottom: .5px solid var(--color-border-subtle);
+  }
+
+  &__machines-label {
+    padding: 0 var(--spacing);
+    @include typography.role(metadata, tertiary);
+  }
+
+  & &__machine-segmented.segmented-control[data-appearance="inset"] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+
+    > button[role="radio"] {
+      width: 100%;
+      min-width: 0;
+      justify-content: space-between;
+    }
+  }
+
+  &__machine-option {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: calc(var(--spacing) * 1.5);
+    min-width: 0;
+  }
+
+  &__machine-name {
+    min-width: 0;
+    flex: 1;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__machine-badge {
+    flex: none;
+    padding: 1px calc(var(--spacing) * 1.25);
+    border-radius: var(--radius-sm);
+    @include typography.role(metadata, secondary);
+    background: var(--color-badge-neutral-background);
+    color: var(--color-badge-neutral-foreground);
+
+    &[data-tone="current"] {
+      background: var(--color-badge-blue-background);
+      color: var(--color-badge-blue-foreground);
+    }
+  }
+
+  &__sources {
+    display: flex;
+    flex-wrap: wrap;
+    flex: none;
+    align-items: center;
+    gap: var(--spacing);
+    padding: calc(var(--spacing) * 2);
+    overflow-x: auto;
+    border-bottom: .5px solid var(--color-border-subtle);
+  }
+
+  &__cross-device-notice {
+    display: flex;
+    flex-direction: column;
+    flex: none;
+    gap: calc(var(--spacing) * 2);
+    margin: calc(var(--spacing) * 2) calc(var(--spacing) * 2) 0;
+    padding: calc(var(--spacing) * 2);
+    border: 1px solid color-mix(in srgb, var(--color-indicator-orange, var(--color-text-warning)) 26%, transparent);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--color-badge-orange-background) 85%, transparent);
+  }
+
+  &__cross-device-head {
+    display: flex;
+    align-items: flex-start;
+    gap: calc(var(--spacing) * 1.5);
+
+    > svg {
+      flex: none;
+      margin-top: 2px;
+      color: var(--color-indicator-orange, var(--color-text-warning));
+    }
+  }
+
+  &__cross-device-copy {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--spacing) * .5);
+    min-width: 0;
+  }
+
+  &__cross-device-title {
+    @include typography.role(control, primary);
+  }
+
+  &__cross-device-desc {
+    @include typography.role(metadata, secondary);
+  }
+
+  &__return-origin {
+    display: flex;
+    flex: none;
+    padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2) 0;
+  }
+
+  &__switch-machine-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  &__source-name {
+    @include typography.role(metadata, secondary);
+    min-width: 0;
+    margin-left: auto;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  &__search {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: calc(var(--spacing) * 2);
+    padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
+    border-bottom: .5px solid var(--color-border-subtle);
+    color: var(--color-text-secondary);
+
+    input {
+      @include typography.role(control, primary);
+      width: 100%;
+      min-width: 0;
+      min-height: var(--size-control-hit-min);
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+    }
+  }
+
+  &__models {
+    min-height: 0;
+    max-height: 300px;
+    padding: calc(var(--spacing) * 2);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+
+  &__reasoning {
+    flex: none;
+    padding: calc(var(--spacing) * 2);
+    border-top: .5px solid var(--color-border-subtle);
+  }
+
+  &__section-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    @include typography.role(metadata, secondary);
+    padding: var(--spacing) calc(var(--spacing) * 2);
+  }
+
+  &__efforts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing);
+  }
+
+  &__fast,
+  &__configure {
+    flex: none;
+    margin: calc(var(--spacing) * 2);
+  }
+
+  &__fast {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--spacing) * 2);
+    padding: calc(var(--spacing) * 2);
+    border-top: .5px solid var(--color-border-subtle);
+    @include typography.role(control, primary);
+
+    > span {
+      flex: 1;
+    }
+  }
+
+  &__catalog-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: calc(var(--spacing) * 2);
+  }
+}

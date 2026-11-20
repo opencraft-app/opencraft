@@ -16,9 +16,24 @@
 
 [![AI Agents](https://img.shields.io/badge/AI_Agents-18181b)](https://github.com/topics/ai-agents) [![ACP](https://img.shields.io/badge/ACP-18181b)](plugins/acp-engine/README.md) [![MCP](https://img.shields.io/badge/MCP-18181b)](docs/session-capabilities.md) [![自主部署](https://img.shields.io/badge/Self_Hosted-18181b)](docker/README.md) [![协作](https://img.shields.io/badge/Collaboration-18181b)](docs/actor-collaboration-api.md)
 
-[快速开始](#快速开始) · [可以用来做什么](#可以用来做什么) · [文档导航](#文档导航) · [参与贡献](CONTRIBUTING.md)
+[核心亮点](#核心亮点) · [适合谁用](#适合谁用) · [快速开始](#快速开始) · [文档导航](#文档导航) · [参与贡献](CONTRIBUTING.md)
 
 </div>
+
+## 核心亮点
+
+OpenCraft 是一个围绕 **Anyone Agents Anywhere** 构建的开源 Agent 工作台，把分散在不同工具、不同账号额度和不同机器上的 Agent 接进同一个连续的工作界面：
+
+- **多 Agent 统一接入，额度与长处无缝接力**：支持接入机器上已安装并登录的 **Codex**、**Claude Code**、**Cursor**、**CodeBuddy（CLI / IDE）**、**Pi**、外置 **DSH（ACP）**，同时支持按 **OpenAI 协议 / Anthropic 协议** 配置自有 API 模型服务及 **Ollama** 本地与云端模型。某一个工具额度见底、限流，或换到更擅长当前步骤的模型时，可在对话中直接切换或一键移交上下文继续推进。
+- **跨设备连接与对话接力（本机 ⇄ 远程开发机 / 云服务器）**：一条命令即可通过 HTTPS 中继接入远程 Linux/macOS 机器，无需手工维护端口转发。即使多台机器上都装了同名 Agent（例如本机和远端都有 Codex），也能清晰区分执行机器，并支持跨机器移交对话（自动同步 JSONL 上下文并提示执行环境差异）。
+- **环境与凭据留在原处，多端随时接管**：Agent 继续在它原本所在的机器和目录中运行，登录态与 API Key 由对应执行 Host 保管；你可以通过桌面浏览器、Electron 桌面端或手机端查看同一个工作台、恢复原生历史并随时接管任务。
+- **可控的能力分享与协作**：在明确授权边界的前提下，把你接入的 Agent 开放给指定协作者或其他主体使用，共享执行能力而无需交出底层账号凭据。
+
+## 适合谁用
+
+- **同时使用多个 AI 编程工具、需要统筹额度的人**：手里同时有 Codex、Claude Code、Cursor、CodeBuddy 或多家模型 API，不同工具额度周期和计费方式不同，希望在一个入口里按剩余额度与任务难度随时换 Agent 接力，而不是在多个窗口来回复制粘贴上下文。
+- **经常跨多台机器开发的工程师与研究者**：代码和环境分布在个人电脑（Mac / PC）、远程开发机、内网工作站或云服务器上，希望把所有机器上的 Agent 收拢到一起管理，并能在远端与本机之间自由切换继续同一段对话。
+- **希望把零散工具整合成个人统一工作台的人**：不想每次换设备、换 CLI、换本地大模型都重配一遍工作流，想要统一管理历史会话、模型协议开关、运行状态与移动端查看体验的重度 AI 用户与小团队。
 
 ## 我们的理念
 
@@ -44,9 +59,9 @@ OpenCraft 是一个开源 Agent 工作台，围绕 **Anyone Agents Anywhere** �
 
 | 能力 | OpenCraft 中的体验 |
 | --- | --- |
-| **接入已有 Agent** | 连接已安装的 Codex、Cursor，检查登录状态、发现原生模型，选择实际支持的推理档位与 Fast 设置；其他运行时通过对应适配器接入。 |
-| **使用自己的模型服务** | 在模型设置中配置 API 端点与凭据，由执行 Host 持有凭据。 |
-| **跨机器工作** | 连接本地与远程执行 Host，按所选 Host 管理工作目录、会话及保存的状态。 |
+| **接入已有 Agent** | 连接已安装的 Codex、Claude Code、Cursor、CodeBuddy（CLI / IDE）、Pi 与外置 DSH，检查登录状态、发现原生模型，选择实际支持的推理档位与 Fast 设置。 |
+| **使用自己的模型服务** | 按 OpenAI 协议、Anthropic 协议或 Ollama 配置 API 端点与凭据，由执行 Host 持有凭据。 |
+| **跨机器工作与对话移交** | 连接本机与远程执行 Host，清晰区分不同机器上的同名 Agent；支持跨 Agent / 跨机器移交对话（同步 JSONL 历史上下文并提示环境变化）。 |
 | **保持对话连续** | 恢复已支持的原生历史、保留草稿、查看工具活动与已上报的 Token 用量，在一个工作台里发送任务或停止执行。 |
 | **构建协作流程** | 使用经过认证的主体消息、接收／已读回执与显式授权；当前单 Hub 执行桥接支持绑定的本地 Codex 会话。 |
 | **扩展工作台** | 通过现有扩展边界接入客户端插件、MCP 工具与 Host 侧能力。 |

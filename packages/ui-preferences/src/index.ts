@@ -40,7 +40,7 @@ export interface UiPreferenceValues {
   readonly "sidebar.collaborationServers": Readonly<Record<string,string>>;
   readonly "sidebar.instanceNames": Readonly<Record<string,string>>;
   readonly "sidebar.recentConversations": Readonly<Record<string, RecentConversationPreference>>;
-  readonly "sidebar.conversationTags": Readonly<Record<string, ConversationTagId>>;
+  readonly "sidebar.conversationTags": Readonly<Record<string, readonly ConversationTagId[]>>;
   readonly "sidebar.serverFilter": { readonly serverId: string; readonly label: string };
 }
 
@@ -83,10 +83,16 @@ export const uiPreferenceDefinitions = Object.freeze({
       if (!value || typeof value !== "object" || Array.isArray(value)) return null;
       const entries = Object.entries(value);
       if (entries.length > 2000) return null;
-      const result: Record<string, ConversationTagId> = {};
-      for (const [key, tagId] of entries) {
-        if (!key || key.length > 8192 || !isConversationTagId(tagId)) return null;
-        result[key] = tagId;
+      const result: Record<string, readonly ConversationTagId[]> = {};
+      for (const [key, raw] of entries) {
+        if (!key || key.length > 8192) return null;
+        if (isConversationTagId(raw)) {
+          result[key] = [raw];
+          continue;
+        }
+        if (!Array.isArray(raw) || raw.length > 16 || raw.some(item => !isConversationTagId(item))) return null;
+        const unique = [...new Set(raw)];
+        if (unique.length > 0) result[key] = unique;
       }
       return result;
     },

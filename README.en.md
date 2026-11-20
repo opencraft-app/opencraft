@@ -16,9 +16,24 @@ Connect the agents you run, wherever they live, and make them available to the p
 
 [![AI Agents](https://img.shields.io/badge/AI_Agents-18181b)](https://github.com/topics/ai-agents) [![ACP](https://img.shields.io/badge/ACP-18181b)](plugins/acp-engine/README.md) [![MCP](https://img.shields.io/badge/MCP-18181b)](docs/session-capabilities.md) [![Self Hosted](https://img.shields.io/badge/Self_Hosted-18181b)](docker/README.md) [![Collaboration](https://img.shields.io/badge/Collaboration-18181b)](docs/actor-collaboration-api.md)
 
-[Get started](#get-started) · [What you can do](#what-you-can-do) · [Documentation](#documentation) · [Contribute](CONTRIBUTING.md)
+[Highlights](#highlights) · [Who it's for](#who-its-for) · [Get started](#get-started) · [Documentation](#documentation) · [Contribute](CONTRIBUTING.md)
 
 </div>
+
+## Highlights
+
+OpenCraft is an open-source Agent workbench built around **Anyone Agents Anywhere**—bringing agents scattered across subscriptions, quotas, and machines into one continuous workspace:
+
+- **One workbench for all your Agents and quotas** — Connect installed **Codex**, **Claude Code**, **Cursor**, **CodeBuddy (CLI & IDE)**, **Pi**, and external **DSH (ACP)** agents alongside custom **OpenAI / Anthropic protocol** API providers and **Ollama** models. When one subscription hits its usage limit or another model fits the next step better, switch or hand off the conversation inline without losing momentum.
+- **Cross-machine execution & conversation handoff** — Enroll remote Linux/macOS machines with a single command over HTTPS relay—no manual port-forwarding tunnels to maintain. Distinguish identical agents across machines (for example, Codex on your Mac vs. Codex on a cloud devbox) and hand off threads across machines with automatic JSONL context sync and clear environment-change notices.
+- **Credentials stay on their Host, reachable anywhere** — Agents keep running where your code and credentials already live, while you drive them from desktop browsers, the Electron app, or mobile.
+- **Explicit, credential-free sharing** — Grant chosen collaborators access to an Agent's capabilities without handing over its underlying account keys.
+
+## Who it's for
+
+- **Developers juggling multiple AI coding subscriptions** — If you split work across Codex, Claude Code, Cursor, CodeBuddy, and API keys with different quota windows and rate limits, OpenCraft lets you chain them together in one place instead of copy-pasting context between tools.
+- **Engineers working across laptops, remote devboxes, and servers** — If your projects live across a local Mac/PC and one or more remote machines, you can manage every machine's agents side by side and move an ongoing conversation from a remote box back to your laptop (or vice versa).
+- **Power users and small teams building a unified AI hub** — Anyone who wants native CLI agents, IDE bridges, custom API endpoints, local models, conversation history, and mobile check-ins connected into a single self-hosted workbench.
 
 ## The idea
 
@@ -44,9 +59,9 @@ Sharing means granting access to its capabilities; recipients do not need to inh
 
 | Capability | In OpenCraft |
 | --- | --- |
-| **Bring an existing Agent** | Connect installed Codex and Cursor agents, check sign-in, discover native models, and select supported reasoning and Fast settings. Other runtimes connect through their adapters. |
-| **Use your model providers** | Configure API endpoints and credentials through model settings. The execution Host owns the credentials. |
-| **Work across machines** | Connect local and remote execution Hosts, with workspaces, conversations and saved state scoped to the selected Host. |
+| **Bring existing Agents** | Connect installed Codex, Claude Code, Cursor, CodeBuddy (CLI & IDE), Pi, and external DSH agents, check sign-in, discover native models, and select supported reasoning and Fast settings. |
+| **Use your model providers** | Configure OpenAI-compatible, Anthropic-compatible, and Ollama endpoints through model settings. The execution Host owns the credentials. |
+| **Work & hand off across machines** | Connect local and remote execution Hosts, distinguish same-name agents across machines, and hand off conversations with JSONL context sync and environment-change reminders. |
 | **Keep conversations continuous** | Restore supported native history, keep drafts, inspect tool activity and reported token usage, and send or stop work from one workbench. |
 | **Build collaboration** | Use authenticated Actor messaging, delivery/read receipts and explicit grants. The current single-Hub execution bridge supports bound local Codex sessions. |
 | **Extend the workbench** | Add client extensions, MCP tools and Host-side capabilities through their existing integration boundaries. |

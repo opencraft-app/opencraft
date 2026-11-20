@@ -1,5 +1,5 @@
 import {mkdir,readFile,writeFile,rename,unlink,stat,chmod,mkdtemp,rm} from 'node:fs/promises';
-import {join,dirname,resolve} from 'node:path';
+import {join,dirname,resolve,delimiter} from 'node:path';
 import {homedir,tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {request as httpsRequest} from 'node:https';
@@ -9,7 +9,6 @@ import {promisify} from 'node:util';
 import {createHash} from 'node:crypto';
 import {startLocalAgentHost,acquireLocalAgentStorageOwner} from '../../apps/local-agent-host/src/main.js';
 import {readHostMachineIdentity} from '../../apps/local-agent-host/src/machine-identity.js';
-import {isPrivateIpv4Address} from '@opencraft/relay-protocol';
 import {connectRelay} from '../../plugins/relay-connect/src/server.js';
 import {createLocalIngress} from '../../packages/hub-network/src/local-ingress.js';
 import {machineServiceUnit} from './service.mjs';
@@ -18,7 +17,10 @@ const args=process.argv.slice(2),state=resolve(args[args.indexOf('--state')+1]??
 if(!args.includes('--state'))throw new Error('--state is required');
 const configPath=join(state,'connection.json'),socketPath=join(state,'control.sock');
 let config;try{config=JSON.parse(await readFile(configPath,'utf8'));}catch{throw new Error('Invalid machine connection file');}
-for(const key of ['PATH','CODEX_HOME','CURSOR_CONFIG_DIR']){const value=config.nativeEnvironment?.[key];if(typeof value==='string')process.env[key]=value;}
+for(const key of ['PATH','CODEX_HOME','CURSOR_CONFIG_DIR','CLAUDE_CONFIG_DIR','CODEBUDDY_CONFIG_DIR','PI_CODING_AGENT_DIR']){const value=config.nativeEnvironment?.[key];if(typeof value==='string'&&!process.env[key])process.env[key]=value;}
+if(typeof config.nativeEnvironment?.PATH==='string')process.env.PATH=config.nativeEnvironment.PATH;
+const home=homedir(),extraBins=[join(home,'.local','bin'),join(home,'.cargo','bin'),join(home,'.bun','bin'),join(home,'go','bin'),join(home,'.npm-global','bin')];
+process.env.PATH=[...new Set([...(process.env.PATH??'').split(delimiter),...extraBins].filter(Boolean))].join(delimiter);
 personalMachineOrigin(config.origin);
 if(config.schemaVersion!==1||!/^[-a-f0-9]{36}$/.test(config.id)||!/^[-a-f0-9]{36}$/.test(config.hubId)||!/^[A-Za-z0-9_-]{43}$/.test(config.credential))throw new Error('Invalid machine identity');
 const control=(method:string)=>new Promise((done,fail)=>{const r=httpRequest({socketPath,path:'/status',method,timeout:method==='DELETE'?60000:2000},res=>{let text='';res.on('data',c=>text+=c);res.on('end',()=>res.statusCode===200?done(text):fail(new Error('Machine control unavailable')));});r.on('error',fail);r.on('timeout',()=>r.destroy(new Error('Machine control timeout')));r.end();});
@@ -71,10 +73,10 @@ const release=await acquireLocalAgentStorageOwner(data);
 let host:Awaited<ReturnType<typeof startLocalAgentHost>>|undefined;
 try{
   const workspace=join(homedir(),'OpenCraft');await mkdir(workspace,{recursive:true,mode:0o700});
-  host=await startLocalAgentHost({dataDirectory:data,projectlessWorkspaceDirectory:workspace,runtimeDirectory:root,dshCapabilityPlugin:join(root,'apps/local-agent-host/src/dsh-capability-plugin.mjs'),dshExecutable:join(root,'runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js')});
+  host=await startLocalAgentHost({dataDirectory:data,modelStorageDirectory:join(data,'models'),projectlessWorkspaceDirectory:workspace,runtimeDirectory:root,dshCapabilityPlugin:join(root,'apps/local-agent-host/src/dsh-capability-plugin.mjs'),dshExecutable:join(root,'runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js')});
   const target=new URL(host.websocketUrl);
   const ingress=createLocalIngress(()=>({port:Number(target.port),origin:'http://personal-machine',path:target.pathname+target.search}),['/rpc']);
-  const relay=connectRelay({relay:config.origin,credential:config.credential,ca:config.ca,acceptStream:stream=>ingress.accept(stream),allowPrivateNetworkInsecure:isPrivateIpv4Address(new URL(config.origin).hostname),allowLoopbackInsecure:new URL(config.origin).protocol==='http:'});
+  const relay=connectRelay({relay:config.origin,credential:config.credential,ca:config.ca,headers:{'x-opencraft-machine-version':runtimeVersion},acceptStream:stream=>ingress.accept(stream),allowLoopbackInsecure:new URL(config.origin).protocol==='http:'});
   const shutdown=async(reply?:()=>Promise<void>)=>{if(stopping)return;stopping=true;relay.close();ingress.close();controlServer.close();try{await host!.close();}finally{await release();await unlink(socketPath).catch(()=>{});}await reply?.();process.exit(0);};
   const controlServer=createServer((r,res)=>{res.writeHead(200,{'content-type':'application/json'});const body=JSON.stringify({connected:!stopping&&relay.connected(),version:runtimeVersion,machine});if(r.method==='DELETE')void shutdown(()=>new Promise<void>(done=>res.end(body,done)));else res.end(body);});
   await new Promise<void>(done=>controlServer.listen(socketPath,done));await chmod(socketPath,0o600);

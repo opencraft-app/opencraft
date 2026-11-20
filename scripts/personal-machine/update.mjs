@@ -30,12 +30,16 @@ export function verifyArchive(bytes,digest){
  }
  if(offset===0)throw new Error('Empty update archive');
 }
+export function validateOrigin(origin){
+ const url=new URL(origin);
+ if(url.origin!==origin||url.username||url.password||url.protocol!=='https:'&&!(url.protocol==='http:'&&url.hostname==='127.0.0.1'))throw new Error('HTTPS update origin is required');
+}
 export function validateConnection(config){
  if(!config||config.schemaVersion!==1||!/^[-a-f0-9]{36}$/.test(config.id)||!/^[-a-f0-9]{36}$/.test(config.hubId)||!/^[A-Za-z0-9_-]{43}$/.test(config.credential)||config.phase!=='enrolled')throw new Error('An enrolled machine is required');
- const url=new URL(config.origin),parts=url.hostname.split('.').map(Number),privateIp=parts.length===4&&parts.every(x=>Number.isInteger(x)&&x>=0&&x<=255)&&(parts[0]===10||parts[0]===127||parts[0]===192&&parts[1]===168||parts[0]===172&&parts[1]>=16&&parts[1]<=31);
- if(url.origin!==config.origin||url.username||url.password||url.protocol!=='https:'&&!(url.protocol==='http:'&&privateIp))throw new Error('Invalid update origin');
+ validateOrigin(config.origin);
 }
 export function download(config,path,limit=MAX){
+ try{validateOrigin(config.origin);}catch(error){return Promise.reject(error);}
  return new Promise((done,fail)=>{const req=(config.origin.startsWith('https:')?httpsRequest:httpRequest)(config.origin+path,{ca:config.ca,headers:{authorization:'Bearer '+config.credential},timeout:120000},res=>{
   if(res.statusCode!==200){res.resume();fail(new Error('Machine update unavailable ('+res.statusCode+'); check enrollment or retry later'));return;}
   const chunks=[];let size=0;res.on('data',chunk=>{size+=chunk.length;if(size>limit){res.destroy(new Error('Update response too large'));return;}chunks.push(chunk);});res.on('error',fail);res.on('aborted',()=>fail(new Error('Update download interrupted')));res.on('end',()=>done(Buffer.concat(chunks)));
@@ -116,23 +120,24 @@ export async function acquireUpdateLock(state,recovery=false){
   return lock;
  }finally{await rm(staging,{recursive:true,force:true});}
 }
-export async function runUpdate(state,action='--update'){
+export async function runUpdate(state,action='--update',operations={}){
+ const runtimeOps={stop:operations.stop??stop,start:operations.start??start};
  state=await realpath(resolve(state));const config=JSON.parse(await readFile(join(state,'connection.json'),'utf8'));validateConnection(config);
  const lock=await acquireUpdateLock(state,action==='--recover');
  try{
-  if(action==='--recover'){await recover(state);return;}
-  if(await optional(join(state,'update-pending.json'))){if(action==='--update')await recover(state,{stop,start},false);else throw new Error('An interrupted update needs recovery; run --recover before another update.');}
+  if(action==='--recover'){await recover(state,runtimeOps);return;}
+  if(await optional(join(state,'update-pending.json'))){if(action==='--update')await recover(state,runtimeOps,false);else throw new Error('An interrupted update needs recovery; run --recover before another update.');}
   if(action==='--rollback'){
    const previous=JSON.parse(await readFile(join(state,'update-version.json'),'utf8')).previous;
    const version=(await readFile(join(previous,'.machine-version'),'utf8').catch(()=> 'legacy')).trim();
-   await activate(state,previous,version);console.log('Previous machine runtime activated.');return;
+   await activate(state,previous,version,runtimeOps);console.log('Previous machine runtime activated.');return;
   }
   const metadata=JSON.parse((await download(config,'/__opencraft_machines/bootstrap?update=1&id='+config.id,16384)).toString());
   if(metadata.schemaVersion!==1||metadata.id!==config.id||metadata.hubId!==config.hubId||metadata.origin!==config.origin||!/^[a-f0-9]{64}$/.test(metadata.digest))throw new Error('Update identity mismatch');
   const version=(await optional(join(state,'runtime/.machine-version')))?.toString().trim();
   if(version===metadata.digest){console.log('Machine runtime is up to date.');return;}
   if(action==='--check-update'){console.log('A machine runtime update is available: '+metadata.digest.slice(0,12));return;}
-  if(process.versions.node!=='26.7.0')throw new Error('This update requires the installed private Node 26.7.0 runtime');
+  if((operations.nodeVersion??process.versions.node)!=='26.7.0')throw new Error('This update requires the installed private Node 26.7.0 runtime');
   await mkdir(join(state,'releases'),{recursive:true,mode:0o700});const candidate=join(state,'releases',metadata.digest);
   if(!await optional(join(candidate,'.machine-version'))){
    const bytes=await download(config,'/__opencraft_machines/source.tgz?update=1&id='+config.id);verifyArchive(bytes,metadata.digest);
@@ -140,12 +145,17 @@ export async function runUpdate(state,action='--update'){
    try{
     await writeFile(join(staging,'source.tgz'),bytes,{mode:0o600});await run('tar',['-xzf','source.tgz'],staging);await rm(join(staging,'source.tgz'));
     console.log('Preparing machine runtime; the current runtime remains active.');
-    await run(process.platform==='win32'?'npm.cmd':'npm',['ci','--no-audit','--no-fund'],staging);
-    await run('npm',['run','prepare:dsh-runtime'],staging);await run('npm',['run','build:preview-bridge'],staging);
+    const prepareScript=join(staging,'scripts/personal-machine/prepare.mjs');
+    if(await optional(prepareScript)){
+     await run(process.execPath,[prepareScript],staging);
+    }else{
+     await run(process.platform==='win32'?'npm.cmd':'npm',['ci','--no-audit','--no-fund'],staging);
+     await run('npm',['run','prepare:dsh-runtime'],staging);await run('npm',['run','build:preview-bridge'],staging);
+    }
     await writeFile(join(staging,'.machine-version'),metadata.digest+'\n',{mode:0o600});await rename(staging,candidate);
    }finally{await rm(staging,{recursive:true,force:true});}
   }
-  await activate(state,candidate,metadata.digest);console.log('Machine runtime updated and connected. Previous runtime retained for rollback.');
+  await activate(state,candidate,metadata.digest,runtimeOps);console.log('Machine runtime updated and connected. Previous runtime retained for rollback.');
  }finally{await rm(lock,{recursive:true,force:true});}
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(await realpath(resolve(process.argv[1]))).href){const args=process.argv.slice(2),i=args.indexOf('--state');if(i<0||!args[i+1])throw new Error('--state is required');await runUpdate(args[i+1],args.includes('--check-update')?'--check-update':args.includes('--rollback')?'--rollback':args.includes('--recover')?'--recover':'--update');}

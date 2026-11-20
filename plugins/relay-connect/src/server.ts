@@ -5,27 +5,26 @@ import { relayDuplex } from '@opencraft/relay-protocol/node';
 import { AssertionProvider, readPrivateJson, type AssertionProviderOptions } from '@opencraft/identity-core/node';
 import { readFile } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
-import { CONTROL_PATH, DATA_PATH, STREAM_HEADER, RELAY_PROTOCOL, MAX_RELAY_STREAMS, parseOpen, isPrivateIpv4Address, MACHINE_GATEWAY_CONTROL_PATH, MACHINE_GATEWAY_DATA_PATH } from "@opencraft/relay-protocol";
-export type RelayConnectOptions = { readonly machineGateway?: boolean; readonly relay: string; readonly credential: string; readonly allowLoopbackInsecure?: boolean; readonly allowPrivateNetworkInsecure?: boolean; readonly ca?: string } & ({ readonly targetPort:number; readonly acceptStream?:never } | {readonly targetPort?:never;readonly acceptStream:(stream:Duplex)=>void});
+import { CONTROL_PATH, DATA_PATH, STREAM_HEADER, RELAY_PROTOCOL, MAX_RELAY_STREAMS, parseOpen, MACHINE_GATEWAY_CONTROL_PATH, MACHINE_GATEWAY_DATA_PATH } from "@opencraft/relay-protocol";
+export type RelayConnectOptions = { readonly machineGateway?: boolean; readonly relay: string; readonly credential: string; readonly allowLoopbackInsecure?: boolean; readonly ca?: string; readonly headers?: Readonly<Record<string, string>> } & ({ readonly targetPort:number; readonly acceptStream?:never } | {readonly targetPort?:never;readonly acceptStream:(stream:Duplex)=>void});
 export async function loadRelayConnection(path: string, assertionOptions: AssertionProviderOptions = {}) {
   const input = await readPrivateJson(path) as Record<string, unknown>;
-  if (!input || input.schemaVersion !== 1 || Object.keys(input).some(k => !['schemaVersion', 'relay', 'credential', 'targetPort', 'allowLoopbackInsecure', 'allowPrivateNetworkInsecure', 'issuer', 'instanceId', 'origin', 'publicKey', 'caFile'].includes(k))
+  if (!input || input.schemaVersion !== 1 || Object.keys(input).some(k => !['schemaVersion', 'relay', 'credential', 'targetPort', 'allowLoopbackInsecure', 'issuer', 'instanceId', 'origin', 'publicKey', 'caFile'].includes(k))
     || !['relay', 'credential', 'issuer', 'instanceId', 'origin', 'publicKey'].every(k => typeof input[k] === 'string')
     || (input.targetPort !== undefined && (!Number.isInteger(input.targetPort) || Number(input.targetPort) < 1 || Number(input.targetPort) > 65535))
-    || (input.allowPrivateNetworkInsecure !== undefined && typeof input.allowPrivateNetworkInsecure !== 'boolean')
     || (input.allowLoopbackInsecure !== undefined && typeof input.allowLoopbackInsecure !== 'boolean')) throw new Error('Invalid private relay connection');
   const provider = new AssertionProvider({ issuer: String(input.issuer), instanceId: String(input.instanceId), origin: String(input.origin) }, String(input.publicKey), Date.now, assertionOptions);
   if (input.caFile !== undefined && (typeof input.caFile !== 'string' || !isAbsolute(input.caFile))) throw new Error('Relay CA file requires an absolute path');
   const ca = input.caFile ? await readFile(String(input.caFile), 'utf8') : undefined;
   if (ca !== undefined && (ca.length > 262_144 || !ca.includes('-----BEGIN CERTIFICATE-----'))) throw new Error('Invalid relay CA bundle');
   return { provider, options: { relay: String(input.relay), credential: String(input.credential), targetPort: input.targetPort as number | undefined,
-    allowLoopbackInsecure: input.allowLoopbackInsecure === true, allowPrivateNetworkInsecure: input.allowPrivateNetworkInsecure === true, ca } };
+    allowLoopbackInsecure: input.allowLoopbackInsecure === true, ca } };
 }
 /** The operator pins one literal loopback target; the relay never supplies a target URL/port. */
 export function connectRelay(options: RelayConnectOptions) {
   const endpoint = new URL(options.relay);
   if (endpoint.origin !== options.relay || endpoint.username || endpoint.password
-    || (endpoint.protocol !== 'https:' && !(endpoint.protocol === 'http:' && (options.allowLoopbackInsecure && endpoint.hostname === '127.0.0.1'||options.allowPrivateNetworkInsecure && isPrivateIpv4Address(endpoint.hostname))))
+    || (endpoint.protocol !== 'https:' && !(endpoint.protocol === 'http:' && options.allowLoopbackInsecure && endpoint.hostname === '127.0.0.1'))
     || !/^[A-Za-z0-9_-]{43}$/u.test(options.credential) || (!options.acceptStream && (!Number.isInteger(options.targetPort) || options.targetPort < 1 || options.targetPort > 65535))) throw new Error('Invalid relay connection configuration');
   const base = endpoint.origin.replace(/^http/u, 'ws');
   const streams = new Set<WebSocket>();
@@ -33,7 +32,7 @@ export function connectRelay(options: RelayConnectOptions) {
   let lastPong = Date.now();
   const open = () => {
     if (stopped) return;
-    const ws = new WebSocket(base + (options.machineGateway ? MACHINE_GATEWAY_CONTROL_PATH : CONTROL_PATH), RELAY_PROTOCOL, { ca: options.ca, headers: { authorization: `Bearer ${options.credential}` }, perMessageDeflate: false, maxPayload: 4096, handshakeTimeout: 10_000 }); control = ws;
+    const ws = new WebSocket(base + (options.machineGateway ? MACHINE_GATEWAY_CONTROL_PATH : CONTROL_PATH), RELAY_PROTOCOL, { ca: options.ca, headers: { ...options.headers, authorization: `Bearer ${options.credential}` }, perMessageDeflate: false, maxPayload: 4096, handshakeTimeout: 10_000 }); control = ws;
     ws.on('open', () => { attempts = 0; lastPong = Date.now(); }); ws.on('error', () => {}); ws.on('pong', () => { lastPong = Date.now(); });
     ws.on('message', raw => {
       try {
