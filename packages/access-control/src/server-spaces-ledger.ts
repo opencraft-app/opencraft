@@ -109,11 +109,17 @@ export class ServerSpacesLedger {
     if (existing && existing.space_id !== spaceId) deny();
     this.db.prepare('INSERT OR IGNORE INTO collaboration_space_threads VALUES(?,?,?)').run(engineServerId,threadId,spaceId);
   }
+  /** The caller's additional assistants (not their default one), enabled and claimed. */
+  #managedBots(actorId: string): {actorId:string;displayName:string}[] {
+    if (!this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='personal_assistants'").get()) return [];
+    return this.db.prepare(`SELECT a.id AS actorId,a.display_name AS displayName FROM personal_assistants p JOIN actors a ON a.id=p.actor_id
+      WHERE p.owner_human_id=? AND p.state='claimed' AND p.is_default=0 AND a.enabled=1 ORDER BY a.display_name,a.id`).all(actorId).map(r => ({actorId:String(r.actorId),displayName:String(r.displayName)}));
+  }
   command(context: ActorContext, input: ServerSpaceCommand): unknown {
     this.actor(context);
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ServerSpaceError('invalid', -32602);
     const fields:Record<string,readonly string[]>={list:['action'],create:['action','name'],select:['action','spaceId'],members:['action','spaceId'],invite:['action','spaceId'],join:['action','code'],remove:['action','spaceId','actorId'],
-      contact:['action','spaceId','open'],addBot:['action','spaceId','actorId']};
+      contact:['action','spaceId','open'],addBot:['action','spaceId','actorId'],bots:['action','spaceId']};
     if(!fields[input.action]||Object.keys(input).some(key=>!fields[input.action]!.includes(key)))throw new ServerSpaceError('invalid',-32602);
     switch (input.action) {
       case 'list': return this.directory(context);
@@ -162,12 +168,19 @@ export class ServerSpacesLedger {
         // and it belongs to exactly one space so its phonebook has one boundary.
         this.member(input.spaceId,context,true);
         if (!valid(input.actorId)) throw new ServerSpaceError('invalid', -32602);
-        const bot = this.db.prepare('SELECT kind,enabled FROM actors WHERE id=?').get(input.actorId);
+        const bot = this.db.prepare('SELECT kind,enabled,created_by FROM actors WHERE id=?').get(input.actorId);
         if (!bot || bot.kind !== 'session' || bot.enabled !== 1) throw new ServerSpaceError('invalid', -32602);
+        // Only a Bot the owner manages: it is theirs to place, and it can sit in one space only.
+        if (bot.created_by !== context.actorId && !this.#managedBots(context.actorId).some(b => b.actorId === input.actorId)) deny();
         const elsewhere = this.db.prepare('SELECT space_id FROM collaboration_space_members WHERE actor_id=?').get(input.actorId);
         if (elsewhere && elsewhere.space_id !== input.spaceId) deny();
         this.db.prepare("INSERT OR IGNORE INTO collaboration_space_members VALUES(?,?,'member',?)").run(input.spaceId,input.actorId,this.now());
         return {members:this.members(context,input.spaceId)};
+      }
+      case 'bots': {
+        this.member(input.spaceId,context,true);
+        const placed = new Set((this.db.prepare('SELECT actor_id FROM collaboration_space_members').all()).map(r => String(r.actor_id)));
+        return {bots:this.#managedBots(context.actorId).filter(b => !placed.has(b.actorId))};
       }
       case 'remove': {
         this.member(input.spaceId,context,true);

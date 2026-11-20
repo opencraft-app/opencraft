@@ -132,6 +132,8 @@ export interface ChannelChanged {
 export interface ChannelPerson { actorId: string; displayName: string; kind: 'human' | 'bot'; canMessage: boolean; avatar?: ChannelIdentityAvatar }
 /** Someone a space Bot may proactively reach (one-way); `session` entries are Bots. */
 export interface CrewPhonebookEntry { actorId: string; displayName: string; kind: 'human' | 'session' }
+/** A Bot's phonebook as one member sees it: entries, the space members who could be entries, and edit rights. */
+export interface CrewPhonebook { entries: CrewPhonebookEntry[]; members: CrewPhonebookEntry[]; editable: boolean }
 /** One piece of crew work and the people it answers to, nearest first, the space owner last. */
 export interface CrewWorkView {
   id: string; state: 'open' | 'closed'; origin: 'member' | 'bot' | 'routine';
@@ -161,8 +163,8 @@ export interface ChannelsMethodMap {
   "opencraft/channels/list": { params: Record<string, never>; result: { groups: ChannelSummary[] } };
   "opencraft/channels/direct/open": { params: { actorId: string }; result: ChannelSummary };
   /** Readable by members of the Bot's space; only the space owner edits it, with members of that space. */
-  "opencraft/crew/phonebook/list": { params: { botId: string }; result: { entries: CrewPhonebookEntry[] } };
-  "opencraft/crew/phonebook/set": { params: { botId: string; actorId: string; present: boolean }; result: { entries: CrewPhonebookEntry[] } };
+  "opencraft/crew/phonebook/list": { params: { botId: string }; result: CrewPhonebook };
+  "opencraft/crew/phonebook/set": { params: { botId: string; actorId: string; present: boolean }; result: CrewPhonebook };
   /** Members (same space) or Bots (phonebook, under an open parent) hand work to a space Bot. */
   "opencraft/crew/work/dispatch": { params: { targetActorId: string; content: string; idempotencyKey: string; parentWorkId?: string }; result: { messageId: string; workId: string; work: CrewWorkView } };
   /** The assignee of open work reaches anyone on its chain, or the space owner. */

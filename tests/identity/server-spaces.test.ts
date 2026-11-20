@@ -152,6 +152,26 @@ test('the owner adds a Bot as a peer member of exactly one space',async t=>{
   ledger.command(f.alice,{action:'remove',spaceId:team.spaceId,actorId:bot.id});
   ledger.command(f.alice,{action:'addBot',spaceId:other.spaceId,actorId:bot.id});
   assert.equal(ledger.members(f.alice,other.spaceId).find(m=>m.actorId===bot.id)?.kind,'session');
+  const bobs=f.actors.createSession('Bobs',f.bob.actorId);
+  assert.throws(()=>ledger.command(f.alice,{action:'addBot',spaceId:team.spaceId,actorId:bobs.id}),'someone else\'s Bot is not the owner\'s to place');
+});
+
+test('the owner sees their own additional assistants that are not yet in a space',async t=>{
+  const f=await fixture(t);const ledger=new ServerSpacesLedger(f.owner.database);
+  ledger.bootstrap(f.alice.actorId,[f.bob.actorId]);
+  const team=ledger.command(f.alice,{action:'create',name:'Team'}) as {spaceId:string};
+  const assistant=(name:string,owner:{actorId:string},isDefault:0|1)=>{
+    const actor=f.actors.createSession(name,owner.actorId),human=f.actors.get(owner.actorId)!;
+    f.owner.database.prepare(`INSERT INTO personal_assistants(bot_id,actor_id,owner_human_id,owner_generation,assignment_id,epoch,state,created_at,is_default,paused)
+      VALUES(?,?,?,?,?,'1','claimed',?,?,0)`).run('bot-'+name,actor.id,human.id,human.generation,'assignment-'+name,Date.now(),isDefault);
+    return actor;
+  };
+  const alan=assistant('Alan',f.alice,0);assistant('Butler',f.alice,1);assistant('Bobby',f.bob,0);
+  const list=()=>(ledger.command(f.alice,{action:'bots',spaceId:team.spaceId}) as {bots:{actorId:string;displayName:string}[]}).bots;
+  assert.deepEqual(list(),[{actorId:alan.id,displayName:'Alan'}],'not the default assistant, not someone else\'s');
+  assert.throws(()=>ledger.command(f.bob,{action:'bots',spaceId:'myself'}),'owners only');
+  ledger.command(f.alice,{action:'addBot',spaceId:team.spaceId,actorId:alan.id});
+  assert.deepEqual(list(),[],'a placed Bot is no longer offered');
 });
 
 test('Native delivery filters spaces and revokes an already observed conversation; unknown Threads stay closed',async t=>{

@@ -5,6 +5,8 @@ import type { ActorStore } from './actors.js';
 /** A phonebook entry lets a Bot find someone and hand them work; both travel together. */
 export const PHONEBOOK_ACTIONS = ['message.send', 'execution.queue'] as const;
 export interface PhonebookEntry { actorId: string; displayName: string; kind: 'human' | 'session' }
+/** What a member sees when opening a Bot's phonebook: its entries, who could be added, and whether they may edit. */
+export interface PhonebookView { entries: PhonebookEntry[]; members: PhonebookEntry[]; editable: boolean }
 
 const denied = (): never => { throw Object.assign(Error('channel_denied'), { status: 403, code: 'channel_denied' }); };
 const invalid = (): never => { throw Object.assign(Error('invalid_input'), { status: 400, code: 'invalid_input' }); };
@@ -67,6 +69,14 @@ export class CrewContact {
       JOIN collaboration_space_members m ON m.actor_id=a.id AND m.space_id=?
       WHERE g.actor_id=? AND g.action='message.send' AND g.enabled=1 AND a.enabled=1
       ORDER BY a.display_name,a.id`).all(space, String(botId)) as unknown as PhonebookEntry[];
+  }
+
+  view(context: ActorContext, botId: unknown): PhonebookView {
+    const entries = this.phonebook(context, botId), space = this.#botFor(botId);
+    const members = this.db.prepare(`SELECT a.id AS actorId,a.display_name AS displayName,a.kind FROM collaboration_space_members m
+      JOIN actors a ON a.id=m.actor_id WHERE m.space_id=? AND m.actor_id<>? AND a.enabled=1 ORDER BY a.display_name,a.id`).all(space, String(botId)) as unknown as PhonebookEntry[];
+    const operator = this.actors.get(context.actorId);
+    return { entries, members, editable: operator?.kind === 'human' && this.#role(space, context.actorId) === 'owner' };
   }
 
   /** Only the space owner edits a Bot's phonebook, and only with members of that space. */

@@ -75,7 +75,10 @@ test('only the space owner edits a phonebook, only with members; members can rea
   await assert.rejects(f.call(f.alice, 'opencraft/crew/phonebook/set', { botId: f.alan.id, actorId: f.alan.id, present: true }), /invalid_input/);
   await assert.rejects(f.call(f.alice, 'opencraft/crew/phonebook/set', { botId: f.loner.id, actorId: f.bob.actorId, present: true }), /channel_denied/, 'a Bot outside every space has no crew phonebook');
   await f.call(f.alice, 'opencraft/crew/phonebook/set', { botId: f.alan.id, actorId: f.bob.actorId, present: true });
-  const read = await f.call(f.bob, 'opencraft/crew/phonebook/list', { botId: f.alan.id }) as { entries: { actorId: string }[] };
+  const read = await f.call(f.bob, 'opencraft/crew/phonebook/list', { botId: f.alan.id }) as { entries: { actorId: string }[]; members: { actorId: string }[]; editable: boolean };
+  assert.equal(read.editable, false, 'members read the phonebook; only the owner edits it');
+  assert.deepEqual(new Set(read.members.map(m => m.actorId)), new Set([f.alice.actorId, f.bob.actorId, f.zhe.id]), 'the whole space except the Bot itself');
+  assert.equal(((await f.call(f.alice, 'opencraft/crew/phonebook/list', { botId: f.alan.id })) as { editable: boolean }).editable, true);
   assert.deepEqual(read.entries.map(e => e.actorId), [f.bob.actorId]);
   await assert.rejects(f.call(f.carol, 'opencraft/crew/phonebook/list', { botId: f.alan.id }), /channel_denied/);
   // The entry also carries handing work to that member. Commands run in the storage Worker, so read the committed grants.

@@ -23,4 +23,6 @@ export type ServerSpaceCommand =
   | { action: 'join'; code: string }
   | { action: 'remove'; spaceId: string; actorId: string }
   | { action: 'contact'; spaceId: string; open: boolean }
-  | { action: 'addBot'; spaceId: string; actorId: string };
+  | { action: 'addBot'; spaceId: string; actorId: string }
+  /** The caller's own additional assistants that are not yet in any space; owner only. */
+  | { action: 'bots'; spaceId: string };
