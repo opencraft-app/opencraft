@@ -165,12 +165,11 @@
     display: flex;
     flex-direction: column;
     flex: none;
-    gap: calc(var(--spacing) * 2);
-    margin: calc(var(--spacing) * 2) calc(var(--spacing) * 2) 0;
-    padding: calc(var(--spacing) * 2);
-    border: 1px solid color-mix(in srgb, var(--color-indicator-orange, var(--color-text-warning)) 26%, transparent);
+    margin: calc(var(--spacing) * 1.5) calc(var(--spacing) * 2) 0;
+    padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 2);
+    border: 1px solid color-mix(in srgb, var(--color-indicator-orange, var(--color-text-warning)) 24%, transparent);
     border-radius: var(--radius-md);
-    background: color-mix(in srgb, var(--color-badge-orange-background) 85%, transparent);
+    background: color-mix(in srgb, var(--color-badge-orange-background) 80%, transparent);
   }
 
   &__cross-device-head {
@@ -188,27 +187,11 @@
   &__cross-device-copy {
     display: flex;
     flex-direction: column;
-    gap: calc(var(--spacing) * .5);
     min-width: 0;
-  }
-
-  &__cross-device-title {
-    @include typography.role(control, primary);
   }
 
   &__cross-device-desc {
     @include typography.role(metadata, secondary);
-  }
-
-  &__return-origin {
-    display: flex;
-    flex: none;
-    padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2) 0;
-  }
-
-  &__switch-machine-btn {
-    width: 100%;
-    justify-content: center;
   }
 
   &__source-name {

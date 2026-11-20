@@ -54,6 +54,9 @@ export function useInputAuxiliaryMenuFocus(options: {
 
   return {
     preservesEditorFocus: () => preserve.current && editorHasFocus(latest.current.getEditor()),
+    focusEditorOnNextClose: () => {
+      returnEditor.current = latest.current.getEditor();
+    },
     triggerProps: {
       onPointerDown(event: PointerEvent<HTMLButtonElement>) {
         const editor = latest.current.getEditor();

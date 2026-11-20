@@ -345,14 +345,13 @@ try {
     assert.equal(await page.locator(".opencraft-composer-handoff").count(), 0, "same-agent switch stays in current thread");
     assert.equal(await page.evaluate(() => (window as any).__controller.getSnapshot().draft.selections.model), "codex:gpt-5.3[high]");
 
-    // 2. Cross-agent model selection enters Handoff to new thread inline!
+    // 2. Cross-agent model selection enters Handoff to new thread inline & closes menu!
     await activate(modelTrigger);
     await menu.waitFor();
     assert.equal(await menu.locator('.opencraft-composer-model-browser__machine-tab').count(), 2, "both machines appear as layered bookmark tabs");
     assert.equal(await menu.getByRole("tab", { name: "Codex · Devcloud", exact: true }).count(), 0, "other machine's agents stay tucked away until its machine tab is selected");
     await activate(menu.getByRole("tab", { name: "Cursor · 本地Mac", exact: true }));
     await activate(menu.getByRole("menuitem", { name: "Gemini 4 Carbon", exact: true }));
-    await page.keyboard.press("Escape");
     await menu.waitFor({ state: "hidden" });
 
     await page.locator(".opencraft-composer-handoff").waitFor();
@@ -394,17 +393,19 @@ try {
     await page.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-zh-filled-lavender.png` });
     await page.evaluate(() => (window as any).__setTheme("light", false));
 
-    // 4b. Switch directly to Devcloud's Codex from the model menu -> verify machine switcher, inline CTA & auto-close into cross-device handoff!
+    // 4b. Switch directly to Devcloud's Codex by picking a model -> no redundant switch/handoff buttons in menu!
     assert.equal(await page.locator(".opencraft-composer-handoff__cross-device-notice").count(), 0);
     await activate(modelTrigger);
     await menu.waitFor();
     await activate(menu.locator('.opencraft-composer-model-browser__machine-tab[data-value="devcloud"]'));
     assert.equal(await menu.getByRole("tab", { name: "Codex · Devcloud", exact: true }).getAttribute("aria-selected"), "true");
+    assert.equal(await menu.locator(".opencraft-composer-model-browser__switch-machine-btn").count(), 0, "no redundant switch button inside menu");
+    assert.equal(await menu.getByRole("menuitem", { name: "移交到新对话", exact: true }).count(), 0, "no redundant handoff item inside menu");
     const menuCrossNotice = menu.locator(".opencraft-composer-model-browser__cross-device-notice");
     await menuCrossNotice.waitFor();
     assert.match(await menuCrossNotice.innerText(), /JSONL/u);
     await page.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-cross-device-menu-light.png` });
-    await activate(menu.getByRole("button", { name: "切换到 Devcloud · Codex", exact: true }));
+    await activate(menu.getByRole("menuitem", { name: "5.3 Codex", exact: true }));
     await menu.waitFor({ state: "hidden" });
     assert.match(await page.locator(".opencraft-composer-mode__model-label").innerText(), /^Devcloud · /u);
     const crossNotice = page.locator(".opencraft-composer-handoff__cross-device-notice");
@@ -416,37 +417,32 @@ try {
     await activate(deviceMenu.getByRole("menuitem", { name: "opencraft", exact: true }));
     assert.equal(await page.getByRole("button", { name: /目标文件夹：opencraft/u }).count(), 1);
     await page.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-cross-device-light.png` });
-    // Switch back to local Mac -> cross-device warning disappears cleanly!
+    // Switch back to local Mac -> cross-device warning disappears cleanly & continue-in-current-thread option works!
     await activate(page.getByRole("button", { name: /目标设备：Devcloud/u }));
     await deviceMenu.waitFor();
     await activate(deviceMenu.getByRole("menuitem", { name: "本地Mac", exact: true }));
     await crossNotice.waitFor({ state: "hidden" });
 
-    // 5. Cancel handoff restores original Codex model while keeping draft text!
-    await activate(page.getByRole("button", { name: "取消移交", exact: true }));
-    await page.locator(".opencraft-composer-handoff").waitFor({ state: "hidden" });
-    assert.equal((await editor.innerText()).trim(), "换一下UI设计，一个对话如果换了模型，也改成这个样子");
-    await page.waitForFunction(() => /5\.3 Codex/.test(document.querySelector(".opencraft-composer-mode--intelligence")?.textContent ?? ""));
-
-    // 6. Explicit same-agent handoff from model menu + split options menu.
-    await activate(modelTrigger);
-    await menu.waitFor();
-    await activate(menu.getByRole("menuitem", { name: "移交到新对话", exact: true }));
-    await page.locator(".opencraft-composer-handoff").waitFor();
+    // 5. Split options menu "在当前对话继续" returns to current thread while keeping draft text!
     await activate(page.getByRole("button", { name: "移交选项", exact: true }));
     const optionsMenu = page.locator(".opencraft-composer-handoff-menu");
     await optionsMenu.waitFor();
     await activate(optionsMenu.getByRole("menuitem", { name: "在当前对话继续", exact: true }));
     await page.locator(".opencraft-composer-handoff").waitFor({ state: "hidden" });
+    assert.equal((await editor.innerText()).trim(), "换一下UI设计，一个对话如果换了模型，也改成这个样子");
 
-    // 7. Re-select Pi agent and submit handoff!
+    // 6. Select Pi agent model -> menu auto-closes, editor receives focus, and pressing Enter directly switches & submits!
     await activate(modelTrigger);
     await menu.waitFor();
     await activate(menu.getByRole("tab", { name: "Pi · 本地Mac", exact: true }));
     await activate(menu.getByRole("menuitem", { name: "Claude Sonnet 4.5", exact: true }));
-    await page.keyboard.press("Escape");
     await menu.waitFor({ state: "hidden" });
-    await activate(newThreadButton);
+    if (!touch) {
+      await page.waitForFunction(() => document.querySelector(".opencraft-composer-editor")?.contains(document.activeElement));
+      await page.keyboard.press("Enter");
+    } else {
+      await activate(newThreadButton);
+    }
 
     assert.equal(await page.evaluate(() => (window as any).__handoffSubmissions.length), 1);
     const submitted = await page.evaluate(() => (window as any).__handoffSubmissions[0]);

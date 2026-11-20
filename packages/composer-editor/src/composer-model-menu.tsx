@@ -3,7 +3,7 @@ import { useState } from "react";
 import { composerAgentSources, type ComposerAgentSource } from "./composer-agent-sources";
 import { Button, IconButton } from "@opencraft/design-system-web/button";
 import { AgentBrandIcon, CloudIcon, LaptopIcon, ServerIcon, WarningIcon } from "@opencraft/design-system-web/action-icons";
-import { CheckIcon, SearchIcon, ModelIcon, LightningIcon, AddIcon, NewMessageIcon, ResetIcon } from "@opencraft/design-system-web/action-icons";
+import { CheckIcon, SearchIcon, ModelIcon, LightningIcon, AddIcon, ResetIcon } from "@opencraft/design-system-web/action-icons";
 import * as Menu from "@opencraft/design-system-web/dropdown-menu";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import { SettingsSwitch } from "@opencraft/extension-react";
@@ -20,8 +20,9 @@ function MachineGlyph({ role, isLocal }: { readonly role?: "local" | "server" | 
 
 /** Browsing sources/search is local. Only an explicit choice writes a model. */
 export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffortChange, serviceTier, onServiceTierChange,
-  switchingAgentId, agentSelectionError, onConfigure, onStartHandoff, onRequestClose, agentInHeader = false }: {
+  switchingAgentId, agentSelectionError, onConfigure, onRequestClose, existingConversation = false, agentInHeader = false }: {
   readonly agentInHeader?: boolean;
+  readonly existingConversation?: boolean;
   readonly catalog?: ComposerSelectionCatalog;
   readonly selected: string | null;
   readonly onSelect: (model: ComposerModelOption, group?: ComposerAgentModelGroup) => void;
@@ -33,7 +34,7 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
   readonly agentSelectionError: { id: string; message: string } | null;
   readonly onConfigure?: () => void;
   readonly onStartHandoff?: () => void;
-  readonly onRequestClose?: () => void;
+  readonly onRequestClose?: (focusEditor?: boolean) => void;
 }) {
   const intl = useIntl();
   const [query, setQuery] = useState("");
@@ -102,18 +103,7 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
 
   const families = modelChoiceFamilies(source.models);
   const activeSource = availableSources.find(item => item.group.active && item.models.some(model => model.value === selected || model.id === selected));
-  const activeFamilyLabel = activeSource
-    ? modelChoiceFamilies(activeSource.models).find(family => family.models.some(model => model.value === selected || model.id === selected))?.label ?? null
-    : null;
   const selectedFamily = source.group.active ? families.find(family => family.models.some(model => model.value === selected || model.id === selected)) : undefined;
-  const preferredFamily = selectedFamily
-    ?? families.find(family => family.models.some(model => model.value === selected || model.id === selected))
-    ?? (activeFamilyLabel ? families.find(family => family.label === activeFamilyLabel) : undefined)
-    ?? families.find(family => family.models.some(model => model.isDefault))
-    ?? families[0];
-  const preferredModel = preferredFamily
-    ? chooseFamilyModel(preferredFamily, selected)
-    : (source.models.find(model => model.isDefault) ?? source.models[0]);
   const current = selectedFamily?.models.find(model => model.value === selected || model.id === selected);
   const variants = selectedFamily?.variants ?? [];
   const efforts = variants.length ? variants.map(variant => ({ value: variant.effort, label: variant.effort })) : current?.efforts ?? [];
@@ -123,13 +113,13 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
   const fast = current?.serviceTiers?.find(tier => tier.id === "fast" || tier.name.toLowerCase() === "fast");
   const matches = families.filter(family => `${family.label} ${family.models.map(model => model.value).join(" ")}`.toLocaleLowerCase(intl.locale).includes(query.trim().toLocaleLowerCase(intl.locale)));
   const searchLabel = intl.formatMessage({ id: "composer.model.search", defaultMessage: "Search models" });
-  const switchingAcrossMachines = Boolean(
-    !source.group.active
-    && (source.group.crossDevice || (source.group.isConversationMachine && anyCrossDeviceActive)),
+  const switchingConversationTarget = Boolean(
+    existingConversation
+    && (!source.group.active || (activeSource && source.id !== activeSource.id) || (source.group.isConversationMachine && anyCrossDeviceActive)),
   );
-  const choose = (model: ComposerModelOption, forceClose = false) => {
+  const choose = (model: ComposerModelOption) => {
     onSelect(model, catalog?.agentGroups?.length ? source.group as ComposerAgentModelGroup : undefined);
-    if (forceClose || switchingAcrossMachines) onRequestClose?.();
+    if (switchingConversationTarget) onRequestClose?.(true);
   };
   const moveMachineFocus = (currentKey: string, key: string, groupNode: HTMLElement | null) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(key)) return false;
@@ -220,13 +210,6 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
       <div className="opencraft-composer-model-browser__cross-device-head">
         <WarningIcon size={14} aria-hidden="true" />
         <div className="opencraft-composer-model-browser__cross-device-copy">
-          <div className="opencraft-composer-model-browser__cross-device-title">
-            <FormattedMessage
-              id="composer.model.crossMachineTitle"
-              defaultMessage="Continue this conversation on {machine}"
-              values={{ machine: source.group.machineLabel || source.group.label }}
-            />
-          </div>
           <div className="opencraft-composer-model-browser__cross-device-desc">
             <FormattedMessage
               id="composer.model.crossMachineHint"
@@ -236,60 +219,7 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
           </div>
         </div>
       </div>
-      {!source.group.active && preferredModel && !preferredModel.policyRestricted ? (
-        <Button
-          size="sm"
-          variant="primary"
-          className="opencraft-composer-model-browser__switch-machine-btn"
-          disabled={!!switchingAgentId}
-          onClick={() => choose(preferredModel, true)}
-        >
-          <FormattedMessage
-            id="composer.model.switchToMachineAgent"
-            defaultMessage="Switch to {machine} · {agent}"
-            values={{
-              machine: source.group.machineLabel || source.group.label,
-              agent: source.agentLabel,
-            }}
-          />
-        </Button>
-      ) : null}
-    </div> : (source.group.crossDevice && !source.group.active && preferredModel && !preferredModel.policyRestricted ? (
-      <div className="opencraft-composer-model-browser__return-origin">
-        <Button
-          size="sm"
-          variant="primary"
-          className="opencraft-composer-model-browser__switch-machine-btn"
-          disabled={!!switchingAgentId}
-          onClick={() => choose(preferredModel, true)}
-        >
-          <FormattedMessage
-            id="composer.model.switchToMachineAgent"
-            defaultMessage="Switch to {machine} · {agent}"
-            values={{
-              machine: source.group.machineLabel || source.group.label,
-              agent: source.agentLabel,
-            }}
-          />
-        </Button>
-      </div>
-    ) : (!source.group.active && source.group.isConversationMachine && anyCrossDeviceActive && preferredModel && !preferredModel.policyRestricted ? (
-      <div className="opencraft-composer-model-browser__return-origin">
-        <Button
-          size="sm"
-          variant="secondary"
-          className="opencraft-composer-model-browser__switch-machine-btn"
-          disabled={!!switchingAgentId}
-          onClick={() => choose(preferredModel, true)}
-        >
-          <FormattedMessage
-            id="composer.model.returnToOriginMachine"
-            defaultMessage="Return to original machine ({machine})"
-            values={{ machine: source.group.machineLabel || source.group.label }}
-          />
-        </Button>
-      </div>
-    ) : null))}
+    </div> : null}
     <label className="opencraft-composer-model-browser__search">
       <SearchIcon size={16} aria-hidden="true" />
       <input type="search" value={query} aria-label={searchLabel} placeholder={searchLabel} onChange={event => setQuery(event.target.value)}
@@ -304,7 +234,7 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
       {matches.map(family => <Menu.Item key={family.id} data-model-choice className="opencraft-composer-selection-menu__item"
         data-selected={family === selectedFamily || undefined} disabled={!!switchingAgentId || family.models.every(model => model.policyRestricted)}
         onSelect={event => {
-          if (!switchingAcrossMachines) event.preventDefault();
+          if (!switchingConversationTarget) event.preventDefault();
           choose(chooseFamilyModel(family, selected));
         }}>
         <span className="opencraft-composer-selection-menu__copy"><span className="opencraft-composer-selection-menu__label">{family.label}</span></span>
@@ -338,13 +268,6 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
       <SettingsSwitch checked={serviceTier === fast.id} disabled={!!switchingAgentId} onCheckedChange={checked => onServiceTierChange(checked ? fast.id : null)}
         label={intl.formatMessage({ id: "composer.model.fastMode", defaultMessage: "Fast mode" })} />
     </div> : null}
-    {onStartHandoff ? <Menu.Item className="opencraft-composer-selection-menu__item opencraft-composer-model-browser__handoff" onSelect={() => {
-      if (!source.group.active && preferredModel && !preferredModel.policyRestricted) choose(preferredModel, true);
-      else onStartHandoff();
-    }}>
-      <NewMessageIcon size={16} aria-hidden="true" />
-      <FormattedMessage id="composer.handoff.action" defaultMessage="Handoff to new thread" />
-    </Menu.Item> : null}
     {!agentInHeader && catalog?.onConfigureAgents ? <Menu.Item className="opencraft-composer-selection-menu__item" onSelect={catalog.onConfigureAgents}><FormattedMessage id="composer.agent.manage" defaultMessage="Manage agents…" /></Menu.Item> : null}
     {onConfigure ? <Menu.Item className="opencraft-composer-selection-menu__item opencraft-composer-model-browser__configure" onSelect={onConfigure}>
       <AddIcon size={16} aria-hidden="true" />{groups.find(group => group.active)?.models.length === 0

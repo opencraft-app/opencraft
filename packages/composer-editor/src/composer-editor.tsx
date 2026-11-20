@@ -2768,10 +2768,12 @@ export const OpenCraftComposer = forwardRef<
                 portalContainer={portalContainer} focus={intelligenceFocus} displayFast={displayFast}>
                 {(() => {
                   const MenuComponent = resolvedComposerModelMenu ?? LazyComposerModelMenu;
-                  const menuElement = <MenuComponent key={draftId} agentInHeader={agentInHeader} catalog={selectionCatalog} selected={selectedModelValue}
+                  const menuElement = <MenuComponent key={draftId} agentInHeader={agentInHeader} existingConversation={existingConversation} catalog={selectionCatalog} selected={selectedModelValue}
                     switchingAgentId={switchingAgentId} agentSelectionError={agentSelectionError} onConfigure={manageModels}
-                    onStartHandoff={existingConversation && activeHandoff === null ? onStartHandoff : undefined}
-                    onRequestClose={() => changePicker("intelligence")(false)}
+                    onRequestClose={focusEditor => {
+                      if (focusEditor) intelligenceFocus.focusEditorOnNextClose();
+                      changePicker("intelligence")(false);
+                    }}
                     onSelect={(model, group) => {
                       if (group) { void selectAgentModel(group, model); }
                       else selectModel(model);
