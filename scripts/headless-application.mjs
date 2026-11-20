@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {workspaceTurnOutputContext} from './workspace-turn-output-context.mjs';
 import { restoreWorkspaceQueuedContext } from '../apps/opencraft-daemon/src/workspace-queued-context.ts';
 import { HostWorkspaceCatalogTransport } from './host-workspace-catalog-transport.ts';
 import { createCodexWorkspaceHooks, validateCodexWorkspaceHooks, configuredWorkspaceExecution } from './codex-workspace-hooks.mjs';
@@ -300,6 +301,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   if (composition.createIdentity !== undefined && typeof composition.createIdentity !== "function") throw new Error("Invalid Headless identity factory");
   if (composition.selectHostTerminalService !== undefined && typeof composition.selectHostTerminalService !== "function") throw new Error("Invalid Headless terminal selector");
   if (composition.selectHostFiles !== undefined && typeof composition.selectHostFiles !== "function") throw new Error("Invalid Headless workspace file selector");
+  if(composition.workspaceOutputIdentity!==undefined&&typeof composition.workspaceOutputIdentity!=='function')throw Error('Invalid Headless workspace output identity selector');
   validateCodexWorkspaceHooks(composition);
   const workspaceExecution = configuredWorkspaceExecution(options);
   if (composition.close !== undefined && typeof composition.close !== "function") throw new Error("Invalid Headless disposer");
@@ -950,22 +952,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
             submission: (threadId,inputId) => actorCollaboration.usageSubmission(threadId,inputId),
           },
           collaboration: {
-            workspaceTurnContext: async (threadId, turnId) => {
-              const stored = await actorCollaboration.executionContext(threadId, {turnId});
-              const context = Object.freeze({...stored.context});
-              const assertCurrent = () => {
-                const current = actorCollaboration.delegation(threadId, turnId, stored.authorityId);
-                const serverId = actorCollaboration.execution.serverForThread?.(threadId) ?? actorCollaboration.execution.serverId;
-                if (current.context.actorId !== context.actorId || current.context.generation !== context.generation
-                  || current.context.expiresAt !== context.expiresAt || !actorStore.isCurrent(context)
-                  || !serverId
-                  || !actorCollaboration.conversationAllowed(context, {serverId,threadId}, 'execution.delegate'))
-                  throw Error('Workspace output authority revoked');
-              };
-              assertCurrent();
-              return Object.freeze({sender:null,actorContext:context,validUntil:context.expiresAt,
-                resourceOwner:Object.freeze({id:context.actorId,assertCurrent})});
-            },
+            workspaceTurnContext: (threadId,turnId) => workspaceTurnOutputContext({collaboration:actorCollaboration,actors:actorStore,threadId,turnId,selectIdentity:composition.workspaceOutputIdentity}),
             restoreWorkspaceSubmission: (thread, inputId, submission) => restoreWorkspaceQueuedContext(thread, inputId, submission, {
               actors: actorStore,
               executionContext: (id, execution) => actorCollaboration.executionContext(id, execution),

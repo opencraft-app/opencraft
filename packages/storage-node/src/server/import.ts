@@ -5,15 +5,16 @@ import { join } from "node:path";
 import { openManagedDatabase, sqliteTransaction, SqliteLifecycleError, durableJson, assertRecoveryState } from "@opencraft/sqlite-node";
 import { SERVER_LEGACY_MIGRATIONS, serverLegacyOptions, type ServerStoreId } from "./legacy.js";
 
-import { SERVER_MIGRATIONS, SERVER_ALTERNATE_MIGRATIONS } from "./migrations.generated.js";
+import {serverMigrationComposition} from "./migration-composition.js";
 
 // Only exact declared histories may authorize the historical six-store import.
 // Canonical append positions do not identify an installed downstream prefix.
-const baselineContractHashes = new Set(
-  [SERVER_MIGRATIONS, ...SERVER_ALTERNATE_MIGRATIONS.map(entry => entry.migrations)]
-    .flatMap(chain => [1, 2, 8, 13].filter(count => count <= chain.length).map(count =>
-      createHash("sha256").update(JSON.stringify(chain.slice(0, count))).digest("hex"))),
-);
+function baselineContractHashes() {
+  const composition=serverMigrationComposition();
+  return new Set([composition.canonical,...composition.alternates.map(entry=>entry.migrations)]
+    .flatMap(chain=>[1,2,8,13].filter(count=>count<=chain.length).map(count=>
+      createHash("sha256").update(JSON.stringify(chain.slice(0,count))).digest("hex"))));
+}
 const stores = Object.keys(SERVER_LEGACY_MIGRATIONS) as ServerStoreId[];
 const identifier = (name: string) => `"${name.replaceAll('"', '""')}"`;
 const encode = (value: unknown) => JSON.stringify(value, (_key, item) => typeof item === "bigint" ? { bigint: String(item) }
@@ -62,7 +63,7 @@ function verifySources(database: DatabaseSync, directory: string, installedHash:
   // atomic two-domain retirement only before either canonical domain has data.
   const pendingBaseline = missing.length === additiveStores.size
     && missing.every(store => additiveStores.has(store))
-    && baselineContractHashes.has(String(installedHash))
+    && baselineContractHashes().has(String(installedHash))
     && ["thread_access", "thread_access_audit", "thread_notes"].every(table =>
       !database.prepare(`SELECT 1 FROM ${table} LIMIT 1`).get());
   if (receipts.some(row => !stores.includes(String(row.source) as ServerStoreId))

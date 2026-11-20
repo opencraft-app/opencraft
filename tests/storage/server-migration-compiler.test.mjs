@@ -37,3 +37,12 @@ test('Server compiler requires explicit freeze for a new append and preserves ev
  const frozen=f.run('--freeze');assert.equal(frozen.status,0,frozen.stderr);assert.deepEqual(JSON.parse(readFileSync(manifestFile,'utf8')).canonicalPublished.slice(0,before.length),before);
  const checked=f.run('--check');assert.equal(checked.status,0,checked.stderr);
 });
+
+test('imported Server compiler checks an explicit owner without touching the default tree',t=>{
+ const f=fixture(t),privateRoot=join(f.root,'private-server');cpSync(f.server,privateRoot,{recursive:true});
+ const journal=JSON.parse(readFileSync(join(f.server,'migrations/meta/_journal.json'),'utf8'));writeFileSync(join(f.server,'migrations',journal.entries[0].tag+'.sql'),'SELECT 0; -- intentionally invalid default owner');
+ const output=readFileSync(join(privateRoot,'migrations.generated.ts'),'utf8');
+ const code=`import {compileServerMigrations} from './scripts/compile-storage-migrations.mjs';compileServerMigrations({root:${JSON.stringify(privateRoot)},check:true});`;
+ const result=spawnSync(process.execPath,['--input-type=module','-e',code],{cwd:f.root,encoding:'utf8'});assert.equal(result.status,0,result.stderr);assert.equal(readFileSync(join(privateRoot,'migrations.generated.ts'),'utf8'),output);
+ assert.match(readFileSync(join(f.server,'migrations',journal.entries[0].tag+'.sql'),'utf8'),/intentionally invalid/);
+});

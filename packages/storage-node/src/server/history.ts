@@ -2,18 +2,19 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { SqliteLifecycleError, type Migration } from "@opencraft/sqlite-node";
-import { SERVER_MIGRATIONS, SERVER_ALTERNATE_MIGRATIONS } from "./migrations.generated.js";
+import {serverMigrationComposition} from "./migration-composition.js";
 
 /** Select a declared exact history under the installation writer fence. No ledger
  * row is edited or adopted. The managed opener still validates every applied row
  * and performs normal backup/recovery before appending the missing SQL. */
 export function serverMigrationsFor(path: string): readonly Migration[] {
-  if (!existsSync(path)) return SERVER_MIGRATIONS;
+  const composition=serverMigrationComposition();
+  if (!existsSync(path)) return composition.canonical;
   const db = new DatabaseSync(path, {readOnly:true});
   try {
-    if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'").get()) return SERVER_MIGRATIONS;
+    if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'").get()) return composition.canonical;
     const rows=db.prepare("SELECT version,name,checksum FROM schema_migrations ORDER BY version").all();
-    const chains: readonly (readonly Migration[])[] = [SERVER_MIGRATIONS,...SERVER_ALTERNATE_MIGRATIONS.map(entry=>entry.migrations)];
+    const chains: readonly (readonly Migration[])[] = [composition.canonical,...composition.alternates.map(entry=>entry.migrations)];
     for (const chain of chains) if (rows.length <= chain.length && rows.every((row,index)=>{
       const expected=chain[index]!;
       return row.version === index+1 && row.name === expected.name && row.checksum === createHash("sha256").update(expected.sql).digest("hex");

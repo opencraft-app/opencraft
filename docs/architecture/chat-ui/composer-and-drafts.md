@@ -2,6 +2,25 @@
 
 [Architecture index](../../chat-ui-architecture.md) · [Documentation index](../../README.md)
 
+## Workspace selection
+
+The new-chat execution rail has two selectors: node and workspace. A workspace
+choice atomically supplies an environment and working directory/source; project
+association is optional. The host is the default environment. A library bound
+to several environments has distinct choices, with environment names shown as
+metadata. Temporary workspaces carry no project, source or host path; the
+existing Host submission lifecycle allocates their real directory.
+
+The application command owner remembers the last execution location per Host
+within its current account scope. A different machine with no remembered choice
+starts empty, while same-machine Agent changes can retain the location. No
+filesystem or Project identity is inferred from a matching path on another
+machine. Changing the choice preserves the Composer's content and stable scope;
+Host changes continue through the existing attachment-transfer rules. Pending
+submission, superseded navigation, edited drafts and account changes fence late
+selection results. The workspace catalog remains a declaration of configured
+environments and sources, not a registry of allocated session directories.
+
 ## Browser reconnect outbox
 
 Delivery uncertainty is owned by the conversation runtime, not by connection

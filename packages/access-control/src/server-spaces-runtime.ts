@@ -1,3 +1,4 @@
+import {installedServerMigrationComposition} from '@opencraft/storage-node/server';
 import type { DatabaseOutcome } from '@opencraft/sqlite-node';
 import { pathToFileURL } from 'node:url';
 import { Worker } from 'node:worker_threads';
@@ -26,7 +27,7 @@ export class ServerSpacesRuntime {
   readonly ready: Promise<void>;
   private readonly worker: Worker;
   constructor(options: {directory?:string;path?:string;ownerActorId?:string;members?:readonly string[];bootstrapInstance?:boolean}) {
-    this.worker = new Worker(new URL('server-spaces-worker.mjs',typeof __dirname==='string'?pathToFileURL(__dirname+'/'):new URL('.',import.meta.url)),{workerData:options});
+    this.worker = new Worker(new URL('server-spaces-worker.mjs',typeof __dirname==='string'?pathToFileURL(__dirname+'/'):new URL('.',import.meta.url)),{workerData:{...options,serverMigrationComposition:options.directory?installedServerMigrationComposition():undefined}});
     this.ready = new Promise((resolve,reject) => {
       this.worker.on('message', message => {
         if (message.type === 'ready') {this.publish(message.projection);this.localContext=message.localContext;this.outcome=message.outcome??null;resolve();return;}

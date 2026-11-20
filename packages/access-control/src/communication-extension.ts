@@ -4,8 +4,13 @@ import type { PersonalAssistants } from './personal-assistants.js';
 import type { ActorContext } from '@opencraft/identity-core/actors';
 
 /** Trusted installation composition only. No client-selected modules or provider
- * semantics. Callbacks execute inside the existing communication transaction. */
+ * semantics. Storage callbacks execute inside the communication transaction;
+ * synchronizeOwner runs on the live Actor owner before Worker dispatch. */
 export interface CommunicationExtension {
+  /** Trusted transport only, never client RPC. Use the live Actor owner for identity
+   * mutations so authorization projections publish with committed bindings.
+   * undefined continues ordinary storage dispatch; an envelope handles the call. */
+  synchronizeOwner?(service:Collaboration,command:{method:string;params:Record<string,any>}):{result:unknown}|undefined;
   /** Installation-owned metadata replication. Never reachable from client-selected sync RPCs. */
   synchronize?(service:Collaboration,db:DatabaseSync,command:{method:string;params:Record<string,any>}):{result:unknown;changes:import('./native-channels.js').NativeChannelChange[]}|undefined;
   /** Presentation only; provider labels cannot grant access or become explicit names. */

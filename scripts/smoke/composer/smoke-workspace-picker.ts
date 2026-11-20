@@ -10,58 +10,73 @@ const vite = await createServer({ configFile: false, root: process.cwd(), logLev
 await vite.listen();
 const browser = await chromium.launch({ executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE, args: ['--no-sandbox'] });
 try {
-  for (const touch of [false, true]) {
+  for (const touch of [false, true]) for (const theme of ['light', 'dark']) {
     const context = await browser.newContext({ viewport: { width: touch ? 390 : 1280, height: 844 }, hasTouch: touch, isMobile: touch });
     await context.addInitScript('window.__name=value=>value');
     const page = await context.newPage(), errors: string[] = [];
     page.setDefaultTimeout(15_000);
+    page.setDefaultNavigationTimeout(60_000);
     page.on('pageerror', error => errors.push(error.message));
-    // Hold the lazy menus to prove typing and editor identity survive their arrival.
     let releaseMenus!: () => void;
     const menusReady = new Promise<void>(resolve => { releaseMenus = resolve; });
-    await page.route('**/draft-execution-utility-bar.tsx*', async route => {
-      await menusReady;
-      await route.continue();
-    });
-    await page.goto(`${vite.resolvedUrls!.local[0]}?toolbar${touch ? '&theme=dark' : '&desktop'}`, { waitUntil: 'domcontentloaded' });
+    await page.route('**/draft-execution-utility-bar.tsx*', async route => { await menusReady; await route.continue(); });
+    await page.goto(`${vite.resolvedUrls!.local[0]}?toolbar&theme=${theme}${touch ? '' : '&desktop'}`, { waitUntil: 'domcontentloaded' });
     const editor = page.locator('.opencraft-composer-editor'); await editor.waitFor();
     await editor.fill('Keep this workspace draft');
     await editor.evaluate(element => { (window as any).keptEditor = element; });
-    assert.equal(await page.getByRole('button', { name: 'Run environment', exact: true }).count(), 0);
+    assert.equal(await page.getByRole('button', { name: 'Choose workspace', exact: true }).count(), 0);
     releaseMenus();
-    const choose = async (button: string, item: string) => {
-      const trigger = page.getByRole('button', { name: button, exact: true });
+    const trigger = page.getByRole('button', { name: 'Choose workspace', exact: true });
+    const open = async () => {
       await trigger.scrollIntoViewIfNeeded();
-      if (touch) await trigger.tap(); else await trigger.click();
-      await page.getByRole('menuitem').filter({ hasText: item }).click();
+      if (touch) await trigger.tap(); else { await trigger.focus(); await page.keyboard.press('Enter'); }
+      await page.getByRole('searchbox', { name: 'Search workspaces' }).waitFor();
     };
-    await choose('Run environment', 'e2b');
-    await choose('Workspace source', 'Shared library');
-    await choose('Run environment', 'other');
-    await page.getByRole('alert').filter({ hasText: 'empty workspace' }).waitFor();
-    await page.keyboard.press('Escape');
-    let target = await page.evaluate(() => (window as any).picker.execution());
-    assert.equal(target.execution.environment.configurationId, 'e2b');
-    assert.equal(target.execution.workspace.source.libraryId, 'shared');
-    assert.equal(target.execution.workspace.cwd, null);
+    const select = async (label: string) => {
+      const item = page.getByRole('menuitem').filter({ hasText: label });
+      if (touch) await item.tap(); else await item.click();
+    };
+    const execution = () => page.evaluate(() => (window as any).picker.execution().execution);
+    await open();
+    assert.equal(await page.locator('.composer-utility-scroll-area__content > button').count(), 2);
+    assert.equal(await page.getByRole('button', { name: 'Run environment', exact: true }).count(), 0);
+    assert.equal(await page.getByRole('button', { name: 'Workspace source', exact: true }).count(), 0);
+    const search = page.getByRole('searchbox');
+    await search.fill('opencraft');
+    if (touch) await select('opencraft'); else { await search.press('ArrowDown'); await page.keyboard.press('Enter'); }
+    assert.equal((await execution()).workspace.projectId, 'project');
+    await open();
+    await page.screenshot({ path: `/tmp/workspace-picker-${touch ? 'touch' : 'desktop'}-${theme}.png` });
+    await select('Shared library');
+    let target = await execution();
+    assert.equal(target.environment.configurationId, 'e2b');
+    assert.equal(target.workspace.source.libraryId, 'shared');
+    assert.equal(target.workspace.cwd, null);
+    assert.equal(target.workspace.projectId, undefined);
+    assert.deepEqual(target.workspace.runtimeWorkspaceRoots, []);
+    await open();
     await page.evaluate(() => (window as any).picker.setAvailable(false));
-    const sourceTrigger = page.getByRole('button', { name: 'Workspace source', exact: true });
-    await sourceTrigger.scrollIntoViewIfNeeded();
-    if (touch) await sourceTrigger.tap(); else await sourceTrigger.click();
-    await page.screenshot({path: `/tmp/workspace-picker-${touch ? 'touch' : 'desktop'}.png`});
     assert.equal(await page.getByRole('menuitem').filter({ hasText: 'Shared library' }).getAttribute('data-disabled'), '');
     assert.equal(await page.locator('.opencraft-composer-submit').isDisabled(), true);
     await page.keyboard.press('Escape');
+    assert.equal((await execution()).workspace.source.libraryId, 'shared');
     await page.evaluate(() => (window as any).picker.setAvailable(true));
-    await choose('Workspace source', 'Use an empty workspace');
-    await choose('Run environment', 'other');
-    target = await page.evaluate(() => (window as any).picker.execution());
-    assert.equal(target.execution.environment.configurationId, 'other');
-    assert.equal(target.execution.workspace.source, undefined);
+    await open(); await select('New temporary workspace'); await select('other');
+    target = await execution();
+    assert.equal(target.environment.configurationId, 'other');
+    assert.deepEqual(target.workspace, { cwd: null, runtimeWorkspaceRoots: [] });
+    await open(); await select('opencraft');
+    assert.equal((await execution()).environment, undefined);
+    await open(); await select('New temporary workspace'); await select('Host');
+    target = await execution();
+    assert.equal(target.environment, undefined);
+    assert.deepEqual(target.workspace, { cwd: null, runtimeWorkspaceRoots: [] });
+    await open(); await select('Open folder');
+    assert.equal((await execution()).workspace.cwd, '/opened-folder');
     assert.equal(await editor.innerText(), 'Keep this workspace draft');
     assert.equal(await editor.evaluate(element => element === (window as any).keptEditor), true);
     assert.deepEqual(errors, []);
-    console.log(`Workspace picker ${touch ? 'touch dark' : 'desktop light'} passed`);
+    console.log(`Unified workspace picker ${touch ? 'touch' : 'desktop'} ${theme} passed`);
     await context.close();
   }
 } finally { await browser.close(); await vite.close(); }

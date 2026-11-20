@@ -2,13 +2,15 @@ import { sqliteTransaction } from '@opencraft/sqlite-node';
 import { parentPort, workerData } from 'node:worker_threads';
 import { statSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { openServerDatabase } from '@opencraft/storage-node/server';
+import { openServerDatabase,installServerMigrationComposition } from '@opencraft/storage-node/server';
 import { ActorStore } from './actors.js';
 import { ServerSpacesLedger } from './server-spaces-ledger.js';
 import type { ActorContext } from '@opencraft/identity-core/actors';
 
 if (!parentPort) throw new Error('Server space storage needs a Worker');
 const port = parentPort;
+// Trusted parent-owned data only; no request/module path selects migration code.
+if(workerData.directory&&workerData.serverMigrationComposition!==undefined)installServerMigrationComposition(workerData.serverMigrationComposition);
 const owner = workerData.directory ? await openServerDatabase(workerData.directory) : null;
 if(!owner&&!statSync(workerData.path).isFile())throw new Error('Managed Server database unavailable');
 const db = owner?.database ?? new DatabaseSync(workerData.path);

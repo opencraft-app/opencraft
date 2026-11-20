@@ -1,10 +1,18 @@
 import { WebChatDocument } from "@opencraft/chat-render-web";
+import { initializeAppearanceTheme, setThemePreference } from "../../apps/workbench-web/src/appearance-theme";
 import { createIntlTestRoot } from "./intl-root";
 import "../../apps/workbench-web/src/styles/app.scss";
 
 const params = new URLSearchParams(location.search);
-document.documentElement.dataset.theme = params.get("theme") ?? "light";
-const source = `正文引用 [main.ts](/workspace/project/src/main.ts:42)，另一个 [main.ts](/workspace/other/main.ts:7)。
+initializeAppearanceTheme();
+setThemePreference(params.get("theme") === "dark" ? "dark" : "light");
+const source = `1. 第二页提示统一使用与第一页相同的格式。
+
+2. 昵称一行改为输入当前账号昵称以继续。
+
+[刷新预览查看](http://example.org:18096/preview?account=demo)
+
+正文引用 [main.ts](/workspace/project/src/main.ts:42)，另一个 [main.ts](/workspace/other/main.ts:7)。
 
 [/workspace/project/设计说明.pdf](/workspace/project/设计说明.pdf)
 

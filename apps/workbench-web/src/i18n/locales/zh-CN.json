@@ -2135,7 +2135,7 @@
   "workspacePlacement.unavailable": "工作区选项暂不可用，已保留当前选择。",
   "workspacePlacement.refresh": "刷新工作区",
   "workspacePlacement.environment": "运行环境",
-  "workspacePlacement.host": "主机工作区",
+  "workspacePlacement.host": "主机",
   "workspacePlacement.configured": "已配置",
   "workspacePlacement.source": "工作区来源",
   "workspacePlacement.emptyLabel": "空工作区",
@@ -2338,5 +2338,15 @@
   "modelServices.local.privateDescription": "保存在本机，供你和帮你办事的助手使用。",
   "modelServices.local.onlyMe": "仅自己",
   "chat.resource.conversation": "会话",
-  "chat.resource.application": "应用"
+  "chat.resource.application": "应用",
+  "workspacePlacement.browseFailed": "无法打开文件夹选择器，请重试。",
+  "workspacePlacement.choose": "选择工作区",
+  "workspacePlacement.createIn": "选择临时工作区的运行环境",
+  "workspacePlacement.newTemporary": "新建临时工作区…",
+  "workspacePlacement.noMatches": "没有匹配的工作区",
+  "workspacePlacement.nodeFailed": "无法切换到此节点，请重试。",
+  "workspacePlacement.openFolder": "打开文件夹…",
+  "workspacePlacement.search": "搜索工作区",
+  "workspacePlacement.selectionFailed": "无法选择此工作区，请刷新后重试。",
+  "workspacePlacement.temporary": "临时工作区"
 }

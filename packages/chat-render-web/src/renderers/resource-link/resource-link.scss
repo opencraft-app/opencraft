@@ -142,7 +142,7 @@
   overflow: hidden;
   border: 1px solid var(--color-border-subtle);
   border-radius: 6px;
-  background: var(--color-background-elevated-secondary, var(--color-background-surface));
+  background: var(--color-background-elevated-secondary-opaque, var(--color-background-surface));
   box-shadow: var(--shadow-200, var(--shadow-300));
   color: var(--color-text);
   font: var(--typography-metadata-font);
@@ -150,7 +150,7 @@
   white-space: nowrap;
 }
 
-.chat-external-link-tooltip__arrow { fill: var(--color-background-elevated-secondary, var(--color-background-surface)); }
+.chat-external-link-tooltip__arrow { fill: var(--color-background-elevated-secondary-opaque, var(--color-background-surface)); }
 
 .chat-external-link-menu {
   z-index: var(--layer-confirmation-modal);

@@ -2,41 +2,33 @@
 
 .opencraft-chat-document a.chat-resource-chip {
   display: inline-flex;
-  align-items: center;
-  gap: 5px;
+  align-items: baseline;
+  gap: 3px;
   max-width: 100%;
   min-width: 0;
-  padding: 1px 4px;
+  padding: 0 2px;
   border: 0;
-  border-radius: 5px;
-  background: var(--color-background-primary-ghost-hover);
-  color: var(--color-text, var(--text-primary));
+  border-radius: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--color-text-info, #2563eb) 80%, var(--color-text, currentColor) 20%);
   font-family: inherit;
   font-size: inherit;
-  font-weight: inherit;
+  font-weight: var(--typography-primary-action-weight);
   line-height: inherit;
-  vertical-align: middle;
+  vertical-align: baseline;
   text-decoration: none;
 
-  > svg { flex: 0 0 auto; color: var(--color-text-secondary); transform: none; }
+  > svg { width: 16px; height: 16px; flex: 0 0 auto; color: currentColor; transform: translateY(2px); }
   &:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 2px; }
 }
 
-.chat-resource-chip__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-resource-chip__name { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .chat-resource-chip__location { flex: 0 0 auto; color: var(--color-text-secondary); font: var(--typography-caption-font); }
-
-.opencraft-chat-document p > a.chat-resource-chip:only-child {
-  padding: 8px 12px;
-  gap: 9px;
-  border: 1px solid var(--color-border-default, var(--border-default));
-  border-radius: 8px;
-  background: transparent;
-  > svg { width: 16px; height: 16px; }
-}
 
 @include controls.hover-capable {
   .opencraft-chat-document a.chat-resource-chip:hover {
-    background: var(--color-background-primary-ghost-hover);
-    text-decoration: none;
+    text-decoration: underline dashed;
+    text-decoration-thickness: 0.5px;
+    text-underline-offset: 2px;
   }
 }

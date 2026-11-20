@@ -700,12 +700,14 @@ export class Collaboration {
     if (this.channels.registerDirect(id,context.actorId,target)) this.channels.changed({ channelId: id, directory: true });
     return this.channels.get(context,id);
   }
-  createChannelGroup(context: ActorContext, title: unknown, members: unknown, key: unknown) {
+  /** Trusted installation callback; runs only for a newly created group, inside its transaction. */
+  createChannelGroup(context: ActorContext, title: unknown, members: unknown, key: unknown, onCreated?: (id:string,input:{title:string;members:string[]})=>void) {
     if (!Array.isArray(members) || members.length > 63) throw Error('invalid_input');
     const ids = members.map(id => text(id));
     const name = text(title,128).trim(), requestId = text(key,128);
     const { id, created } = this.#transaction(() => {
       const result = this.channels.createGroup(context,name,ids,requestId);
+      if(result.created)onCreated?.(result.id,{title:name,members:ids});
       return result;
     });
     if (created) this.channels.changed({ channelId: id, directory: true });
@@ -982,6 +984,9 @@ export class Collaboration {
   /** Trusted installation transport port; not reachable from communicate/RPC. */
   async synchronizeChannels(command: ChannelSyncCommand): Promise<any> {
     if(this.#closed)throw Error('channel_sync_closed');
+    // Identity mutations remain with the live Actor owner, never the storage Worker.
+    const owned=communicationExtension()?.synchronizeOwner?.(this,command);
+    if(owned!==undefined)return owned.result;
     let packet;
     if(this.managedStorage){
       const path=this.database.location();if(!path)throw Error('communication_storage_unavailable');

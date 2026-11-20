@@ -2084,7 +2084,7 @@
   "workspacePlacement.unavailable": "ตัวเลือกพื้นที่ทำงานไม่พร้อมใช้งาน ตัวเลือกของคุณยังคงอยู่",
   "workspacePlacement.refresh": "รีเฟรชพื้นที่ทำงาน",
   "workspacePlacement.environment": "สภาพแวดล้อมการทำงาน",
-  "workspacePlacement.host": "พื้นที่ทำงานของโฮสต์",
+  "workspacePlacement.host": "โฮสต์",
   "workspacePlacement.configured": "กำหนดค่าแล้ว",
   "workspacePlacement.source": "แหล่งที่มาของพื้นที่ทำงาน",
   "workspacePlacement.emptyLabel": "พื้นที่ทำงานว่าง",
@@ -2207,5 +2207,15 @@
   "modelServices.local.onlyMe": "เฉพาะฉัน",
   "settings.serverInformation.effectsHint": "ลิงก์การแจ้งเตือนภายนอกใช้ที่อยู่ที่บันทึกไว้เมื่อส่ง รวมถึงปลายทางที่ลงทะเบียนไว้ก่อนหน้านี้",
   "chat.resource.conversation": "การสนทนา",
-  "chat.resource.application": "แอปพลิเคชัน"
+  "chat.resource.application": "แอปพลิเคชัน",
+  "workspacePlacement.browseFailed": "ไม่สามารถเปิดตัวเลือกโฟลเดอร์ได้ โปรดลองอีกครั้ง",
+  "workspacePlacement.choose": "เลือกพื้นที่ทำงาน",
+  "workspacePlacement.createIn": "สร้างพื้นที่ทำงานชั่วคราวใน",
+  "workspacePlacement.newTemporary": "พื้นที่ทำงานชั่วคราวใหม่…",
+  "workspacePlacement.noMatches": "ไม่พบพื้นที่ทำงานที่ตรงกัน",
+  "workspacePlacement.nodeFailed": "ไม่สามารถสลับไปยังโหนดนี้ได้ โปรดลองอีกครั้ง",
+  "workspacePlacement.openFolder": "เปิดโฟลเดอร์…",
+  "workspacePlacement.search": "ค้นหาพื้นที่ทำงาน",
+  "workspacePlacement.selectionFailed": "ไม่สามารถเลือกพื้นที่ทำงานนี้ได้ โปรดรีเฟรชแล้วลองอีกครั้ง",
+  "workspacePlacement.temporary": "พื้นที่ทำงานชั่วคราว"
 }

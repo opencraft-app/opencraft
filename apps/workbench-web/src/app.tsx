@@ -756,10 +756,8 @@ export function App({
       const key = selectedProjectStorageKey(draft?.target.execution.hostId ?? snapshot.hostId);
       setLocalPreference(key, workspace.projectId ?? null);
       if (draft === null) throw new Error("No active Draft can be retargeted");
-      hostCatalog.retargetDraft(draft.id, {
-        hostId: draft.target.execution.hostId,
-        workspace,
-      });
+      const { environment: _previousEnvironment, ...execution } = draft.target.execution;
+      hostCatalog.retargetDraft(draft.id, { ...execution, workspace });
     },
     [presentation.executionSelection, draft, hostCatalog, snapshot.hostId],
   );
@@ -2521,12 +2519,12 @@ export function App({
             effectiveSelections={modelSelectionPolicy === "session" ? undefined : composerCatalog.newThreadDefaults ?? undefined}
             resolveAgentCycleShortcut={resolveAgentCycleShortcut}
             personalDefaultsPending={composerCatalog.personalDefaultsPending}
-            placement={workspaceCatalog.available || draft.target.execution.environment || draft.target.execution.workspace.source ? {
+            placement={{
               catalog: workspaceCatalog.data, available: workspaceCatalog.available, selectable: workspaceCatalog.selectable,
               loading: workspaceCatalog.loading, error: workspaceCatalog.error, problem: selectedPlacementProblem,
               refresh: workspaceCatalog.refresh,
               select: execution => hostCatalog.retargetDraft(draft.id, execution),
-            } : undefined}
+            }}
             workspaceOptions={draftWorkspaceOptions}
             workspaceOptionsLoading={projectCatalog.isFetching}
             nativeWorkspacePicking={localProjectPicker !== null}

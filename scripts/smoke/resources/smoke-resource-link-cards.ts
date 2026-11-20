@@ -22,6 +22,7 @@ try {
     const context = await browser.newContext({ viewport: { width, height: 1000 }, hasTouch: width === 390,
       permissions: ["clipboard-read", "clipboard-write"] });
     const page = await context.newPage();
+    page.setDefaultNavigationTimeout(60_000);
     await page.goto(`http://127.0.0.1:${(server.httpServer!.address() as any).port}/?theme=${theme}`);
     await page.locator(".chat-resource-chip").first().waitFor();
     const chips = page.locator(".chat-resource-chip");
@@ -36,6 +37,18 @@ try {
     await page.getByRole("link", { name: "main.ts L42", exact: true }).click({ button: "right" });
     await page.getByRole("menuitem").click();
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), "file:///workspace/project/src/main.ts#L42");
+    await page.getByRole("link", { name: "刷新预览查看", exact: true }).hover();
+    const tooltip = page.locator(".chat-external-link-tooltip");
+    await tooltip.waitFor({ state: "visible" });
+    const paint = await tooltip.evaluate(element => {
+      const background = getComputedStyle(element).backgroundColor;
+      const canvas = document.createElement("canvas"); canvas.width = canvas.height = 1;
+      const context = canvas.getContext("2d")!; context.fillStyle = background; context.fillRect(0, 0, 1, 1);
+      return { alpha: context.getImageData(0, 0, 1, 1).data[3], background,
+        arrow: getComputedStyle(element.querySelector(".chat-external-link-tooltip__arrow")!).fill };
+    });
+    assert.equal(paint.alpha, 255, `Tooltip must cover underlying text in ${theme}`);
+    assert.equal(paint.arrow, paint.background);
     await page.screenshot({ path: `${output}/${theme}-${width}.png`, fullPage: true });
     await context.close();
   }

@@ -2084,7 +2084,7 @@
   "workspacePlacement.unavailable": "Pilihan ruang kerja tidak tersedia. Pilihan anda dikekalkan.",
   "workspacePlacement.refresh": "Muat semula ruang kerja",
   "workspacePlacement.environment": "Persekitaran pelaksanaan",
-  "workspacePlacement.host": "Ruang kerja hos",
+  "workspacePlacement.host": "Hos",
   "workspacePlacement.configured": "Dikonfigurasi",
   "workspacePlacement.source": "Sumber ruang kerja",
   "workspacePlacement.emptyLabel": "Ruang kerja kosong",
@@ -2207,5 +2207,15 @@
   "modelServices.local.onlyMe": "Saya sahaja",
   "settings.serverInformation.effectsHint": "Pautan pemberitahuan luaran menggunakan alamat yang disimpan semasa penghantaran, termasuk destinasi yang didaftarkan sebelum ini.",
   "chat.resource.conversation": "Perbualan",
-  "chat.resource.application": "Aplikasi"
+  "chat.resource.application": "Aplikasi",
+  "workspacePlacement.browseFailed": "Tidak dapat membuka pemilih folder. Cuba lagi.",
+  "workspacePlacement.choose": "Pilih ruang kerja",
+  "workspacePlacement.createIn": "Cipta ruang kerja sementara dalam",
+  "workspacePlacement.newTemporary": "Ruang kerja sementara baharu…",
+  "workspacePlacement.noMatches": "Tiada ruang kerja yang sepadan",
+  "workspacePlacement.nodeFailed": "Tidak dapat beralih ke nod ini. Cuba lagi.",
+  "workspacePlacement.openFolder": "Buka folder…",
+  "workspacePlacement.search": "Cari ruang kerja",
+  "workspacePlacement.selectionFailed": "Tidak dapat memilih ruang kerja ini. Muat semula dan cuba lagi.",
+  "workspacePlacement.temporary": "Ruang kerja sementara"
 }

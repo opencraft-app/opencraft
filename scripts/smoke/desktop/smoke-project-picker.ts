@@ -20,7 +20,7 @@ const launch = async () => {
   page.setDefaultTimeout(30_000);
   page.on("pageerror", (error: Error) => errors.push(error.message));
   await page.locator(".app-shell-root").waitFor();
-  const projectTrigger = page.getByRole("button", { name: "Choose project folder" });
+  const projectTrigger = page.getByRole("button", { name: "Choose workspace" });
   if (!(await projectTrigger.isVisible())) {
     const chat = page.getByRole("button", { name: "Chat", exact: true });
     if (await chat.isVisible()) await chat.click();
@@ -37,8 +37,8 @@ const launch = async () => {
   return page;
 };
 const addProject = async (page: any) => {
-  await page.getByRole("button", { name: "Choose project folder" }).click();
-  const item = page.getByRole("menuitem", { name: /^Add project/ });
+  await page.getByRole("button", { name: "Choose workspace" }).click();
+  const item = page.getByRole("menuitem", { name: /^Open folder/ });
   assert.equal(await item.getAttribute("data-disabled"), null);
   await item.click();
 };
@@ -72,7 +72,7 @@ try {
   console.log("STEP: select directory");
   await addProject(page);
   try {
-    await page.getByRole("button", { name: "Choose project folder" }).filter({ hasText: "Example Workspace" }).waitFor();
+    await page.getByRole("button", { name: "Choose workspace" }).filter({ hasText: "Example Workspace" }).waitFor();
   } catch (error) {
     console.log("PICKER_DIAGNOSTIC", await desktop.evaluate(() => (globalThis as any).__projectDialogCalls), await page.locator("body").innerText());
     throw error;
@@ -103,7 +103,7 @@ try {
   assert.equal(JSON.parse(await readFile(join(storage, "projects.json"), "utf8")).projects.length, 1);
   await desktop.close(); desktop = undefined;
   page = await launch();
-  await page.getByRole("button", { name: "Choose project folder" }).click();
+  await page.getByRole("button", { name: "Choose workspace" }).click();
   await page.getByRole("menuitem", { name: /Example Workspace/ }).waitFor();
   assert.equal(JSON.parse(await readFile(join(storage, "projects.json"), "utf8")).projects[0].id, id);
   assert.deepEqual(errors, []);

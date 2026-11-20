@@ -2022,7 +2022,7 @@
   "workspacePlacement.unavailable": "Workspace choices are unavailable. Your selection is retained.",
   "workspacePlacement.refresh": "Refresh workspaces",
   "workspacePlacement.environment": "Run environment",
-  "workspacePlacement.host": "Host workspace",
+  "workspacePlacement.host": "Host",
   "workspacePlacement.configured": "Configured",
   "workspacePlacement.source": "Workspace source",
   "workspacePlacement.emptyLabel": "Empty workspace",
@@ -2239,5 +2239,15 @@
   "modelServices.local.privateDescription": "Stored on this device for you and your assistants.",
   "modelServices.local.onlyMe": "Only me",
   "chat.resource.conversation": "Conversation",
-  "chat.resource.application": "Application"
+  "chat.resource.application": "Application",
+  "workspacePlacement.browseFailed": "Could not open the folder picker. Try again.",
+  "workspacePlacement.choose": "Choose workspace",
+  "workspacePlacement.createIn": "Create temporary workspace in",
+  "workspacePlacement.newTemporary": "New temporary workspace…",
+  "workspacePlacement.noMatches": "No matching workspaces",
+  "workspacePlacement.nodeFailed": "Could not switch to this node. Try again.",
+  "workspacePlacement.openFolder": "Open folder…",
+  "workspacePlacement.search": "Search workspaces",
+  "workspacePlacement.selectionFailed": "Could not select this workspace. Refresh and try again.",
+  "workspacePlacement.temporary": "Temporary workspace"
 }

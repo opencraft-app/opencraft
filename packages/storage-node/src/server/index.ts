@@ -5,19 +5,22 @@ import { openManagedDatabase, SqliteLifecycleError, acquireProcessWriter } from 
 import type { ServerDatabaseSource } from "./repository.js";
 import { importServerData } from "./import.js";
 import { serverMigrationsFor } from "./history.js";
-import { SERVER_MIGRATIONS, SERVER_MIGRATION_CONTRACT_HASH, OPENCRAFT_VERSION } from "./migrations.generated.js";
+import {DEFAULT_SERVER_MIGRATION_COMPOSITION,serverMigrationComposition,type ServerDataContract} from "./migration-composition.js";
+export {createServerMigrationComposition,installServerMigrationComposition,installedServerMigrationComposition} from "./migration-composition.js";
+export type {ServerDataContract,ServerMigrationComposition,ServerMigrationCompositionInput} from "./migration-composition.js";
 export { SERVER_MIGRATIONS } from "./migrations.generated.js";
 
-export const SERVER_DATA_CONTRACT = Object.freeze({ productVersion: OPENCRAFT_VERSION, store: "server", migrationVersion: SERVER_MIGRATIONS.length,
-  hash: SERVER_MIGRATION_CONTRACT_HASH });
+/** Public/default compile-time contract; each opened owner exposes its selected contract. */
+export const SERVER_DATA_CONTRACT:ServerDataContract = DEFAULT_SERVER_MIGRATION_COMPOSITION.contract;
 
 export type ServerDatabase = Exclude<ServerDatabaseSource, string> & {
-  readonly contract: typeof SERVER_DATA_CONTRACT;
+  readonly contract: ServerDataContract;
   close(): Promise<void>;
 };
 
 /** Owns the same installation fence used by Headless, including offline admin commands. */
 export async function openServerDatabase(directory: string): Promise<ServerDatabase> {
+  const contract=serverMigrationComposition().contract;
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const release = acquireProcessWriter(join(directory, "server.lock"));
   let managed: ReturnType<typeof openManagedDatabase> | undefined;
@@ -37,10 +40,10 @@ export async function openServerDatabase(directory: string): Promise<ServerDatab
     mkdirSync(join(directory, ".server-import"), { recursive: true, mode: 0o700 });
     const parent = openSync(directory, "r");
     try { fsyncSync(parent); } finally { closeSync(parent); }
-    const imported = importServerData(managed.database, directory, SERVER_DATA_CONTRACT);
+    const imported = importServerData(managed.database, directory, contract);
     if (imported === "migrated") managed = { ...managed, outcome: { ...managed.outcome, status: "migrated" } };
     let closed = false;
-    return { ...managed, contract: SERVER_DATA_CONTRACT, async close() {
+    return { ...managed, contract, async close() {
       if (closed) return;
       managed!.database.close();
       release();

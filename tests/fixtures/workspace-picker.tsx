@@ -45,9 +45,9 @@ function App() {
     <NewThreadDraftPage placement={placement} setupBlocksSubmission={!available} showExecutionControls draft={draft} controller={controller} selectionCatalog={{ models: toolbar ? models : [], permissionProfiles: toolbar ? permissionProfiles : [] }}
       modelSelectionPolicy={params.get("policy") === "session" ? "session" : params.get("policy") === "host-default" ? "host-default" : "user"}
       composerEndActions={toolbar ? <button className="opencraft-composer-icon-button" aria-label="Microphone"><MicrophoneIcon size={16} /></button> : undefined}
-      catalog={{ search: async () => [] }} workspaceOptions={[]} activeHostId="fixture" hostOptions={[]}
-      placeholderPending={recovering} connectionPhase={recovering ? "reconnecting" : "ready"} onSelectHost={noop} onSelectWorkspace={noop} onBrowseWorkspace={noop}
+      catalog={{ search: async () => [] }} workspaceOptions={[{ cwd: '/home/demo/opencraft', runtimeWorkspaceRoots: ['/home/demo/opencraft'], projectId: 'project', label: 'opencraft', rootLabel: 'opencraft', branch: 'main' }]} activeHostId="fixture" hostOptions={[{ id: 'fixture', hostIds: ['fixture'], label: 'GitHub-Demo', platform: 'linux', resource: null, cloud: false, role: 'server', connectable: true }]}
+      placeholderPending={recovering} connectionPhase={recovering ? "reconnecting" : "ready"} onSelectHost={noop} onSelectWorkspace={workspace => placement.select({ hostId: 'fixture', workspace: { cwd: workspace.cwd, runtimeWorkspaceRoots: workspace.runtimeWorkspaceRoots, projectId: workspace.projectId } })} onBrowseWorkspace={() => placement.select({ hostId: 'fixture', workspace: { cwd: '/opened-folder', runtimeWorkspaceRoots: ['/opened-folder'] } })}
       onSubmit={() => false} heading="要做点什么？" placeholder="聊聊你的想法，或交给我一件事" />
   </AppShell>;
 }
-createIntlTestRoot(document.getElementById("root")!, undefined, "en-US").render(<App />);
+createIntlTestRoot(document.getElementById("root")!, undefined, params.get("locale") ?? "en-US").render(<App />);

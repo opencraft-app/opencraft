@@ -44,13 +44,13 @@ test("switching Agent preserves text/cwd/project and applies the requested model
   } finally { await f.close(); }
 });
 
-for (const exists of [true, false]) test(`switching machine preserves text; project ${exists ? "remaps when present" : "clears when absent"}`, async () => {
+for (const exists of [true, false]) test(`a new machine starts empty even if a same-named directory ${exists ? "exists" : "is absent"}`, async () => {
   const f = await fixture(exists);
   try {
     await f.commands.selectHost("other");
     assert.equal(composerDocumentToPlainText(f.composer().getSnapshot().draft.document), "keep my draft");
-    assert.equal(f.scopes.getActiveDraft()!.target.execution.workspace.cwd, exists ? "/project" : null);
-    assert.equal(f.scopes.getActiveDraft()!.target.execution.workspace.projectId, exists ? "target-project" : undefined);
+    assert.equal(f.scopes.getActiveDraft()!.target.execution.workspace.cwd, null);
+    assert.equal(f.scopes.getActiveDraft()!.target.execution.workspace.projectId, undefined);
     assert.equal(f.projectCreates, 0);
   } finally { await f.close(); }
 });
@@ -110,13 +110,24 @@ test("choosing a model on the current Agent cancels a held engine switch", async
   } finally { held.resolve(); await f.close(); }
 });
 
-for (const catalog of [true, false]) test(`target directory existence overrides ${catalog ? "a stale catalog" : "a missing catalog"}`, async () => {
-  const f = await fixture(catalog, !catalog);
+test("each node restores its last complete location without moving a sandbox path to another node", async () => {
+  const f = await fixture(true, true);
   try {
+    const original = f.scopes.getActiveDraft()!.target.execution;
+    const environment = { version: 1, configurationId: "e2b", templateId: "general" } as const;
+    const sandbox = { ...original, environment, workspace: { cwd: null, runtimeWorkspaceRoots: [],
+      source: { version: 1, kind: "library-reference", libraryId: "shared", relativePath: "" } } } as const;
+    f.commands.retargetDraft(f.scopes.getActiveDraft()!.id, sandbox);
     await f.commands.selectHost("other");
-    assert.equal(f.scopes.getActiveDraft()!.target.execution.workspace.cwd, catalog ? null : "/project");
-    assert.equal(f.scopes.getActiveDraft()!.target.execution.workspace.projectId, undefined);
-    assert.deepEqual(f.scopes.getActiveDraft()!.target.execution.workspace.runtimeWorkspaceRoots, catalog ? [] : ["/project"]);
+    assert.deepEqual(f.scopes.getActiveDraft()!.target.execution.workspace, { cwd: null, runtimeWorkspaceRoots: [] });
+    assert.equal(f.scopes.getActiveDraft()!.target.execution.environment, undefined);
+    const other = { ...f.scopes.getActiveDraft()!.target.execution, workspace: { cwd: "/other-folder", runtimeWorkspaceRoots: ["/other-folder"] } };
+    f.commands.retargetDraft(f.scopes.getActiveDraft()!.id, other);
+    await f.commands.selectHost("local");
+    assert.deepEqual(f.scopes.getActiveDraft()!.target.execution, sandbox);
+    await f.commands.selectHost("other");
+    assert.deepEqual(f.scopes.getActiveDraft()!.target.execution, other);
+    assert.equal(composerDocumentToPlainText(f.composer().getSnapshot().draft.document), "keep my draft");
     assert.equal(f.projectCreates, 0);
   } finally { await f.close(); }
 });

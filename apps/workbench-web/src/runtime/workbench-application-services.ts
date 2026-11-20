@@ -83,7 +83,6 @@ import {
 } from "@tanstack/react-query";
 import type { BrowserStorageError } from "./browser-storage-error";
 import { type OptionalFeatureStartup } from "./optional-feature-startup";
-import { resolveWorkInWorkspace } from "./work-in-workspace";
 import { type ApplicationNavigation } from "./workbench-navigation";
 
 import { type ManagedHostCatalogSource } from "./host-thread-catalog";
@@ -652,6 +651,14 @@ export function createWebWorkbenchCommands(input: {
   let submissionPipeline: ReturnType<typeof createWorkbenchSubmissionPipeline>;
   const nativeTransfers = new Map<string, Promise<SubmissionReceipt>>();
   let hostSelectionEpoch = 0;
+  // Application-owned selection memory is isolated by account/space scope and Host.
+  const workspaceMemory = new Map<string, ComposerExecutionTarget>();
+  let workspaceMemoryScope = input.threadMemoryScope?.();
+  const locationMemory = () => {
+    const scope = input.threadMemoryScope?.();
+    if (scope !== workspaceMemoryScope) { workspaceMemory.clear(); workspaceMemoryScope = scope; }
+    return workspaceMemory;
+  };
   const navigateAndRemember = async (location: WorkbenchLocation, action: () => Promise<boolean>) => {
     assertTarget(location.kind === "thread" ? location.key.hostId : location.hostId);
     const epoch = ++hostSelectionEpoch;
@@ -743,36 +750,32 @@ export function createWebWorkbenchCommands(input: {
       if (activeDraft !== null && draftSubmissionOwnsNavigation(activeDraft.phase)) {
         throw new Error("The execution node cannot change while the first turn is being submitted");
       }
-      if (activeDraft && activeDraft.target.execution.hostId !== hostId
-        && (activeDraft.target.execution.environment || activeDraft.target.execution.workspace.source)) {
-        throw new Error("Choose an empty Host workspace before changing Host. Your current environment and source have been retained.");
-      }
-      let runtime: AppServerWorkbenchRuntime;
-      try { runtime = await input.registry.ensureConnected(hostId); }
+      const memoryScope = input.threadMemoryScope?.();
+      const memory = locationMemory();
+      try { await input.registry.ensureConnected(hostId); }
       catch (error) { if (epoch !== hostSelectionEpoch) return; throw error; }
       const profiles = input.hostProfiles.getSnapshot().profiles;
       const sameMachine = activeDraft !== null && sameWorkInMachine(
         profiles.find(profile => profile.hostId === activeDraft.target.execution.hostId),
         profiles.find(profile => profile.hostId === hostId), input.environmentDirectory?.getSnapshot().entries);
-      let workspace = activeDraft?.target.execution.workspace ?? { cwd: null, runtimeWorkspaceRoots: [] };
-      if (!sameMachine && workspace.cwd !== null) {
-        const resolved = await resolveWorkInWorkspace(workspace, runtime.resources, () => epoch === hostSelectionEpoch
-          && origin === input.navigation.getSnapshot().revision && input.scopes.getActiveDraft()?.target === activeDraft?.target);
-        if (resolved === null) return;
-        workspace = resolved;
-      }
+      const remembered = memory.get(hostId);
+      const current = activeDraft?.target.execution;
+      const execution: ComposerExecutionTarget = {
+        ...(remembered ?? (sameMachine ? current : undefined)),
+        hostId: asHostId(hostId),
+        ...(current?.collaborationSpaceId ? { collaborationSpaceId: current.collaborationSpaceId } : {}),
+        workspace: remembered?.workspace ?? (sameMachine ? current?.workspace : undefined) ?? { cwd: null, runtimeWorkspaceRoots: [] },
+      };
+      const workspace = execution.workspace;
       if (!input.hostProfiles.getSnapshot().profiles.some(profile => profile.hostId === hostId && isNewConversationHost(profile))) return;
-      if (epoch !== hostSelectionEpoch || origin !== input.navigation.getSnapshot().revision
+      if (memoryScope !== input.threadMemoryScope?.() || epoch !== hostSelectionEpoch || origin !== input.navigation.getSnapshot().revision
         || input.scopes.getActiveDraft()?.id !== activeDraft?.id
         || input.scopes.getActiveDraft()?.target !== activeDraft?.target) return;
       if (activeDraft !== null && activeDraft.target.execution.hostId !== hostId) {
         const nextDraft = input.scopes.openDraft({
           activate: false,
           entrypoint: activeDraft.entrypoint,
-          execution: {
-            hostId: asHostId(hostId),
-            workspace,
-          },
+          execution,
         });
         const previousViewId = input.coordinator.getSnapshot().viewId;
         const previousComposer = previousViewId === null ? null : input.views.get(previousViewId)?.composer;
@@ -799,6 +802,10 @@ export function createWebWorkbenchCommands(input: {
             nextComposer.dispatch({ type: "set-selections", patch: { ...previous.selections, cwd: workspace.cwd ?? undefined } });
             nextComposer.dispatch({ type: "set-options", patch: previous.options });
             if (selection) nextComposer.dispatch({ type: "set-selections", patch: { model: selection.model, effort: selection.effort ?? undefined, ...(selection.serviceTier === undefined ? {} : { serviceTier: selection.serviceTier }) } });
+          }
+          if (memoryScope === input.threadMemoryScope?.()) {
+            memory.set(activeDraft.target.execution.hostId, activeDraft.target.execution);
+            memory.set(hostId, execution);
           }
           input.scopes.dismissDraft(activeDraft.id);
         } catch (error) {
@@ -869,6 +876,7 @@ export function createWebWorkbenchCommands(input: {
       ++hostSelectionEpoch;
       input.activation.cancelPending();
       input.activation.retargetDraft(draftId, execution);
+      locationMemory().set(execution.hostId, execution);
     },
     async submit(intent) {
       requireRestoredDraft();

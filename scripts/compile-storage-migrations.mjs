@@ -1,14 +1,15 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { readJournal } from './storage-migration-tools.mjs';
 
-const root = fileURLToPath(new URL('../packages/storage-node/src/server/', import.meta.url));
+const defaultRoot = fileURLToPath(new URL('../packages/storage-node/src/server/', import.meta.url));
+/** Trusted maintenance caller chooses its source owner; import never compiles the default tree. */
+export function compileServerMigrations({root=defaultRoot,check=false,freeze=false}={}) {
 const journal = readJournal(join(root, 'migrations'));
 const manifestPath = join(root, 'migration-lineages.json');
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-const check = process.argv.includes('--check'), freeze = process.argv.includes('--freeze');
 const digest = value => createHash('sha256').update(value).digest('hex');
 if (manifest.format !== 1 || !Array.isArray(manifest.canonicalPublished) || !Array.isArray(manifest.alternates)) throw Error('Invalid Server migration lineages');
 const migrations = journal.entries.map((entry, index) => {
@@ -72,3 +73,7 @@ const generated = '// Generated from reviewed SQL. Run npm run generate:storage.
 const output = join(root, 'migrations.generated.ts');
 if (check) { if (readFileSync(output, 'utf8') !== generated) throw Error('Storage SQL and bundled migrations differ'); }
 else writeFileSync(output, generated);
+
+return {migrations,alternates,contractHash};
+}
+if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))compileServerMigrations({check:process.argv.includes('--check'),freeze:process.argv.includes('--freeze')});
