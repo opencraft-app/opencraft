@@ -49,9 +49,15 @@ asynchronous cleanup finishes; repeated stop signals join the same cleanup.
 baseline, checksummed patch series and explicit source/sync/build commands. Its
 initial native patch exposes observation-only editing metadata and caret bounds;
 source verification is separate from compilation and real native input testing.
-All distributed desktop and browser-runtime packages require a compiled,
-probe-verified repository-owned Electron distribution. Missing, stale or
-incomplete artifacts fail packaging; there is no stock Electron fallback.
+All distributed browser-runtime packages and Linux desktop packages require a
+compiled, probe-verified repository-owned Electron distribution. Missing, stale
+or incomplete artifacts fail packaging; there is no implicit stock Electron
+fallback. The one explicit exception: until macOS and Windows have native build
+runners, their desktop packages may use stock Electron at the fork's upstream
+version when `OPENCRAFT_ELECTRON_STOCK_DESKTOP=1` is set (the fork's patches
+serve the Linux server browser runtime, which the desktop app does not call).
+The "Desktop pre-release" workflow builds Linux with the fork and macOS/Windows
+this way, unsigned, from one commit and publishes a GitHub pre-release.
 Desktop packages use `OPENCRAFT_ELECTRON_DISTRIBUTION_<PLATFORM>_<ARCH>` or
 `OPENCRAFT_ELECTRON_DISTRIBUTION`; headless packages use
 `OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION`. The default Dockerfile consumes the

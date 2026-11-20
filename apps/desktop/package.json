@@ -37,7 +37,8 @@
     "package:linux:x64:appimage": "node ../../scripts/package-electron-desktop.mjs --linux AppImage --x64",
     "package:linux:x64:rpm": "node ../../scripts/package-electron-desktop.mjs --linux rpm --x64",
     "package:linux:x64:deb": "node ../../scripts/package-electron-desktop.mjs --linux deb --x64",
-    "package:linux:x64": "node ../../scripts/package-electron-desktop.mjs --linux AppImage rpm deb --x64"
+    "package:linux:x64": "node ../../scripts/package-electron-desktop.mjs --linux AppImage rpm deb --x64",
+    "package:win:x64": "node ../../scripts/package-electron-desktop.mjs --win nsis zip --x64"
   },
   "devDependencies": {
     "@electron/notarize": "2.5.0",
@@ -235,6 +236,19 @@
         "rpm",
         "deb"
       ]
+    },
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        "nsis",
+        "zip"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "OpenCraft-Setup-${version}-${arch}.${ext}"
     },
     "dmg": {
       "artifactName": "OpenCraft-${version}-${arch}.${ext}",

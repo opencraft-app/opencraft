@@ -1,0 +1,151 @@
+name: Desktop pre-release
+
+# Builds OpenCraft Desktop from one commit and publishes a GitHub pre-release:
+# Linux x64 with the repository-owned Electron fork (restored from a verified
+# native artifacts run), and macOS arm64/x64 and Windows x64 with stock Electron
+# at the fork's upstream version (OPENCRAFT_ELECTRON_STOCK_DESKTOP=1), unsigned.
+# The fork's patches serve the Linux server browser runtime, which the desktop
+# app does not use; macOS and Windows move to the fork once they have native
+# build runners.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Pre-release tag to create at this commit, such as v0.1.0-beta.1
+        required: true
+        type: string
+      publish:
+        description: Publish the GitHub pre-release (otherwise only build the packages)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: desktop-prerelease-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require a pre-release tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*$ ]]; then
+            echo "::error::Use a pre-release tag such as v0.1.0-beta.1; stable releases go through release.yml." >&2
+            exit 1
+          fi
+
+  linux:
+    needs: tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          # Release packages must not depend on a cache a pull request could write.
+          package-manager-cache: false
+      - run: npm ci --no-audit --no-fund
+      - uses: ./.github/actions/owned-electron
+        with:
+          run-id: ${{ vars.OPENCRAFT_ELECTRON_ARTIFACT_RUN_ID }}
+          target: linux-x64
+          kind: desktop
+      - run: npm run package:electron:linux:x64:appimage
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-linux-x64
+          path: apps/desktop/release/*.AppImage
+          if-no-files-found: error
+          retention-days: 14
+
+  stock:
+    needs: tag
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: macos-arm64
+            runner: macos-15
+            packages: package:mac:arm64:dmg package:mac:arm64:zip
+          - id: macos-x64
+            runner: macos-15-intel
+            packages: package:mac:x64:dmg package:mac:x64:zip
+          - id: windows-x64
+            runner: windows-latest
+            packages: package:win:x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      OPENCRAFT_ELECTRON_STOCK_DESKTOP: '1'
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      PACKAGES: ${{ matrix.packages }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - run: npm ci --no-audit --no-fund
+      - run: npm run prepare:dsh-runtime
+      - run: npm run build:electron:release
+      - name: Package with stock Electron
+        run: |
+          for package in $PACKAGES; do
+            npm run "$package" --workspace @opencraft/desktop
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-${{ matrix.id }}
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: [linux, stock]
+    if: inputs.publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: desktop-*
+          path: dist
+          merge-multiple: true
+      - name: Create the GitHub pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          cd dist
+          sha256sum -- * > SHA256SUMS.txt
+          cat > ../notes.md <<NOTES
+          Test build of OpenCraft Desktop from \`${GITHUB_SHA}\` ([build run](${RUN_URL})).
+
+          - **Linux x64** (AppImage): repository-owned Electron fork.
+          - **macOS arm64 / x64** (DMG, ZIP) and **Windows x64** (installer, ZIP): stock Electron at the fork's upstream version. These builds are **not code-signed**: on macOS, right-click the app and choose Open (or run \`xattr -dr com.apple.quarantine /Applications/OpenCraft.app\`); on Windows, choose "More info" then "Run anyway" in SmartScreen.
+
+          Checksums are in SHA256SUMS.txt. No npm package is published.
+          NOTES
+          gh release create "$TAG" --target "$GITHUB_SHA" --prerelease --title "$TAG" --notes-file ../notes.md ./*

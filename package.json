@@ -94,6 +94,7 @@
     "package:electron:linux:x64:rpm": "npm run build:electron:release && npm run package:linux:x64:rpm --workspace @opencraft/desktop",
     "package:electron:linux:x64:deb": "npm run build:electron:release && npm run package:linux:x64:deb --workspace @opencraft/desktop",
     "package:electron:linux:x64": "npm run build:electron:release && npm run package:linux:x64 --workspace @opencraft/desktop",
+    "package:electron:win:x64": "npm run prepare:dsh-runtime && npm run build:electron:release && npm run package:win:x64 --workspace @opencraft/desktop",
     "publish:web": "node scripts/publish-workbench-web.mjs",
     "serve:web:static": "node scripts/serve-workbench-web-cli.mjs",
     "package:headless:linux:amd64": "node scripts/package-headless-linux.mjs",

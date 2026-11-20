@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
+import { existsSync as existsSyncEntry, readFileSync, realpathSync as realpathSyncEntry } from 'node:fs';
 import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,12 +33,35 @@ export function electronDistributionForTarget(environment, target) {
   };
 }
 
+// The fork's patches serve the Linux server browser runtime; the desktop app
+// does not call them. Until macOS and Windows have native build runners, their
+// desktop packages may use stock Electron at the fork's upstream version, but
+// only when OPENCRAFT_ELECTRON_STOCK_DESKTOP=1 is set explicitly. Linux desktop
+// and every browser runtime still require the verified fork.
+export const STOCK_DESKTOP_PLATFORMS = Object.freeze(["darwin", "win32"]);
+
+export function forkUpstreamElectronVersion() {
+  return JSON.parse(readFileSync(resolve(repositoryRoot, "vendor/electron/fork.json"), "utf8")).version;
+}
+
+export function stockDesktopRequested(environment, target) {
+  if (environment.OPENCRAFT_ELECTRON_STOCK_DESKTOP !== "1") return false;
+  if (!STOCK_DESKTOP_PLATFORMS.includes(target.platform)) {
+    throw new Error(`Stock Electron is only allowed for macOS and Windows desktop packages; ${target.platform} requires the verified fork`);
+  }
+  return true;
+}
+
 export async function packageBuilderArguments(
   args = process.argv.slice(2),
   environment = process.env,
   runtime = {},
 ) {
   const target = packageTarget(args, runtime);
+  if (stockDesktopRequested(environment, target)) {
+    return [...args.filter(arg => !arg.startsWith("--config.electronDist") && !arg.startsWith("--config.electronVersion")),
+      `--config.electronVersion=${forkUpstreamElectronVersion()}`];
+  }
   const selected = electronDistributionForTarget(environment, target);
   const distribution = selected.path;
   if (!distribution) {
