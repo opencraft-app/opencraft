@@ -359,6 +359,12 @@ jobs:
       - run: npm run test:sandbox
         if: always() && steps.dependencies.outcome == 'success'
         timeout-minutes: 10
+      - run: npm run test:assistant-runtime
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 20
+      - run: npm run test:convergence
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 30
       - run: npm run test:cloud-desktop
         if: always() && steps.dependencies.outcome == 'success'
         timeout-minutes: 10
