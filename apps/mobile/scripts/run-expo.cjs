@@ -5,11 +5,7 @@ const { spawn } = require("node:child_process");
 const appRoot = path.resolve(__dirname, "..");
 // Build before Metro observes the static asset reference. A release never
 // falls back to a remote executable page when the packaged runtime is absent.
-const { resolveProductEntry } = require("../product-entry.cjs");
-resolveProductEntry(appRoot);
-if (!process.env.OPENCRAFT_EXPO_PRODUCT_ENTRY) {
-  require("node:child_process").execFileSync(process.execPath, ["--import", "tsx", path.join(__dirname, "build-web-workbench.mts")], { cwd: path.resolve(appRoot, "../.."), stdio: "inherit" });
-}
+require("node:child_process").execFileSync(process.execPath, ["--import", "tsx", path.join(__dirname, "build-web-workbench.mts")], { cwd: path.resolve(appRoot, "../.."), stdio: "inherit" });
 const expoPackage = require.resolve("expo/package.json", { paths: [appRoot] });
 const expoCli = path.join(path.dirname(expoPackage), "bin", "cli");
 const localModules = path.join(appRoot, "node_modules");

@@ -5,7 +5,7 @@ Workbench bootstrap, application, components and styles into a packaged local
 module graph. A small HTML bootstrap loads required modules; editors and
 previewers retain their dynamic import boundaries. Sidebar, Composer, settings
 and tool panels retain their Web owners.
-The independent RN workbench has been retired. Downstream product entrypoints remain independent; device acceptance is reported separately.
+The independent RN workbench has been retired, and `apps/mobile` has no downstream product entry; device acceptance is reported separately.
 
 ## Ownership
 
@@ -57,8 +57,7 @@ so native exports include the complete graph. Resource directories, require map
 and manifest are ignored build outputs. Browser validation reads the matching
 public resource directory; native never falls back to it.
 `apps/mobile` always selects the bundled Web Workbench for public builds. There
-is no RN fallback or native workbench selector. Trusted product entry selection
-remains a separate build-time contract.
+is no RN fallback, native workbench selector or downstream product entry.
 
 Optional `EXPO_PUBLIC_APPSERVER_WS_URL` and `EXPO_PUBLIC_APPSERVER_HOST_ID` seed a
 public Host recipe at build time. The URL must be ws/wss without credentials,

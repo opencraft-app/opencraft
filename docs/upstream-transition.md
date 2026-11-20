@@ -191,6 +191,9 @@ this migration does not claim a device/native build or change application behavi
   managed site startup declares it as an additional exact admission probe. Default core
   assertions only recognize the generic endpoint, with all original binding and
   replay checks retained. This removes one dependency edge, not the product entrypoint closures.
+- Superseded (2026-11): `apps/mobile` no longer accepts a downstream product
+  entry or Expo config; products keep their own Expo app. The history below is
+  kept for reference.
 - Expo's default entry now composes the existing native Workbench/Composer and
   direct WebSocket Host without selecting the downstream product Router, account or Bot DOM.
   `OPENCRAFT_EXPO_PRODUCT_ENTRY` and `OPENCRAFT_EXPO_PRODUCT_CONFIG` are trusted

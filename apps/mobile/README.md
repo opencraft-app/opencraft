@@ -38,11 +38,13 @@ Native material uses Expo GlassEffect where the SDK/device supports it and the
 shared semantic surface elsewhere. Workbench state stays with the Web owner.
 See [container design](../../docs/mobile-workbench-container.md).
 
-## Public and downstream product entries
+## No downstream product entry
 
-Trusted downstream product entries remain build-time inputs selected by their
-own runner. Product accounts, branding and local Bot assets belong to products.
-The public runner never builds private product sources.
+`apps/mobile` builds only the public container. It has no build-time hook for a
+downstream product's entry, router, styles or Expo config, and its native
+dependencies are only the modules the container uses. A downstream product that
+wants native accounts, navigation or Bot views maintains its own Expo app and
+consumes core through published packages.
 
 ## 手机端路线
 
@@ -88,8 +90,7 @@ Expo Go 是临时开发预览，不是已安装的独立 IPA。
 
 ## iOS site shell and simulator
 
-The public iOS entry uses the packaged Web Workbench. A downstream site/account
-shell is selected only through the trusted product entry described above.
+The public iOS entry uses the packaged Web Workbench.
 On a Mac with Xcode and CocoaPods, run from the repository root:
 
 ```bash
@@ -130,29 +131,7 @@ npm run build:expo:ios
 This emits `apps/mobile/dist/ios/main.jsbundle` and its assets. It does
 not compile CocoaPods, sign an IPA or prove an Apple binary runs.
 
-## Native sign-in
-
-The public default entry does not create a downstream account. A product that
-adds native sign-in owns the authorization endpoints, registered OIDC client,
-exact callback URLs, region selection, session format and any account SDK.
-Configure those in the product's trusted local entry/config and auth service;
-changing the core bundle alone cannot enable an external backend contract.
-
-Keep each transaction's random state and PKCE verifier with its credential
-owner. Validate the exact callback and state before exchanging a short-lived
-one-time code over TLS. Cancellation, replacement and cold-start restoration
-must act only on the owning transaction; stale callbacks or 401 responses must
-not clear a newer session. Never put session tokens in callback URLs or send
-credentials, Bot state or cached account data to another region. A product with
-multiple installed editions must use matching Bundle IDs, schemes, callbacks
-and signing profiles, then verify callback delivery on physical devices.
-
-The product also owns its packaged Bot DOM runtime and generated login assets.
-Prepare them through that product's build tools before selecting its Expo
-entry. The shared runner packages the public Web Workbench. Public builds
-do not require private frontend sources or generated Bot HTML. For shared
-container and lifecycle invariants see [mobile shell](../../docs/mobile-shell.md),
-[embedded Bot bridge](../../docs/mobile-bot-bridge.md) and
+For shared container and lifecycle invariants see
 [packaged Web Workbench](../../docs/mobile-workbench-container.md).
 
 Update bundled dependency license metadata with

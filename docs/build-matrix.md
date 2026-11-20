@@ -775,13 +775,9 @@ document before Metro. This is the only public mobile entry; it neither selects 
 product nor proves native-device parity. See
 [container ownership and acceptance](mobile-workbench-container.md).
 
-Default Expo Web/iOS bundle commands build the packaged Web Workbench with its
-configured direct Host. An account-gated downstream Router is selected through
-`products/<product>/run-expo.cjs`; product-owned APK/IPA and agents-next aliases explicitly delegate
-to it so Metro, Gradle and Xcode inherit the same local product entry/config.
-All downstream product platform entries use its frontend-generated Bot HTML;
-math/Mermaid rendering is part of that shared packaged document. This selection does not
-claim signed builds, physical plugin extraction or device verification.
+Expo Web/iOS bundle commands build the packaged Web Workbench with its
+configured direct Host. `apps/mobile` has no downstream product entry; a product
+that needs its own native app builds it in its own workspace.
 
 
 ## Headless smoke process ownership

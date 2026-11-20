@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createRequire } from 'node:module';
-import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 
 const require = createRequire(import.meta.url);
 const notice = require('../../packages/react-runtime/NOTICE.json');
@@ -28,23 +26,4 @@ test('Expo config retains the full notice without losing unrelated public metada
   assert.equal(config.name, 'Fixture');
   assert.equal(config.extra.existing, true);
   assert.deepEqual(config.extra.openSourceNotices, [notice]);
-});
-
-test('an explicit native product keeps its own notices as well as the shared dependency notice', t => {
-  const directory = mkdtempSync(join(tmpdir(), 'opencraft-notice-product-'));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const filename = join(directory, 'product.cjs');
-  writeFileSync(filename, 'module.exports = ({config}) => ({...config, name: "Product", extra: {product: true, openSourceNotices: [{name: "product-dependency"}]}});\n');
-  const original = process.env.OPENCRAFT_EXPO_PRODUCT_CONFIG;
-  process.env.OPENCRAFT_EXPO_PRODUCT_CONFIG = filename;
-  try {
-    const configure = require('../../apps/mobile/app.config.js');
-    const config = configure({ config: { name: 'Core' } });
-    assert.equal(config.name, 'Product');
-    assert.equal(config.extra.product, true);
-    assert.deepEqual(config.extra.openSourceNotices, [{ name: 'product-dependency' }, notice]);
-  } finally {
-    if (original === undefined) delete process.env.OPENCRAFT_EXPO_PRODUCT_CONFIG;
-    else process.env.OPENCRAFT_EXPO_PRODUCT_CONFIG = original;
-  }
 });

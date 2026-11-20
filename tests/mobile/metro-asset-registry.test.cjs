@@ -13,14 +13,9 @@ const config = require('../../apps/mobile/metro.config.cjs');
 process.chdir(previousCwd);
 const nativePath = appRequire.resolve('react-native');
 const assetRoot = path.dirname(appRequire.resolve('expo-asset/package.json'));
-// Node does not enable Metro's react-native package export condition. Select
-// the installed package's published native export at the filesystem boundary.
-const uniwindRoot = path.dirname(appRequire.resolve('uniwind/package.json'));
-const nativeUiPath = path.resolve(uniwindRoot, appRequire('uniwind/package.json').exports['./components']['react-native']);
-const resolveRequest = (_context, name) => ({ type: 'sourceFile', filePath: name === 'uniwind/components' ? nativeUiPath : appRequire.resolve(name) });
+// Metro's own package lookup is supplied at the resolver boundary.
+const resolveRequest = (_context, name) => ({ type: 'sourceFile', filePath: appRequire.resolve(name) });
 
-// Use the installed Expo/Uniwind resolver chain, with filesystem package lookup
-// supplied at Metro's boundary. Do not replace the dependency's component facade.
 for (const platform of ['ios', 'android']) {
   test(`${platform} Expo assets and generated asset modules share RN's actual registry`, () => {
     for (const relative of ['src/Asset.ts', 'src/resolveAssetSource.ts']) {
@@ -56,8 +51,3 @@ for (const platform of ['ios', 'android']) {
     assert.equal(assetEntry.getAssetByID(id), metadata);
   });
 }
-
-test('native UI still receives the existing Uniwind component facade', () => {
-  const result = config.resolver.resolveRequest({ originModulePath: path.join(appRoot, 'src/components/workspace-surface.native.tsx'), resolveRequest }, 'react-native', 'ios');
-  assert.equal(result.filePath, nativeUiPath);
-});

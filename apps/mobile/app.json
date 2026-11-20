@@ -16,30 +16,9 @@
       "softwareKeyboardLayoutMode": "resize"
     },
     "plugins": [
-      "expo-router",
-      "expo-image",
       "expo-sqlite",
-      "expo-secure-store",
-      "expo-web-browser",
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "Allow OpenCraft to choose a profile photo.",
-          "cameraPermission": false,
-          "microphonePermission": false
-        }
-      ],
-      [
-        "expo-audio",
-        {
-          "microphonePermission": "Allow OpenCraft to record your voice for transcription.",
-          "enableBackgroundRecording": false
-        }
-      ]
+      "expo-secure-store"
     ],
-    "experiments": {
-      "typedRoutes": true
-    },
     "web": {
       "bundler": "metro",
       "output": "single"
