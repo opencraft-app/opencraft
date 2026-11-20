@@ -58,7 +58,10 @@ try {
     await chrome.getByRole('heading', { name: 'Navigation group 2', exact: true }).waitFor({ timeout: 10000 });
     assert.equal(await page.locator('.im-channel-chat__conversation > header').count(), 0, 'selected detail uses the global standard header at every width');
     const editor = page.locator('.im-channel-chat__conversation [contenteditable="true"]:visible');
-    await editor.waitFor(); await page.waitForTimeout(450); await editor.fill('Keep standard page draft'); await editor.blur();
+    await editor.waitFor();
+    await page.waitForFunction(() => !document.querySelector<HTMLElement>('.page-stack > .page-stack__live')?.inert);
+    await page.getByText('New messages will appear here.', { exact: true }).waitFor();
+    await editor.fill('Keep standard page draft'); await editor.blur();
     await page.waitForTimeout(150); assert.equal(await editor.innerText(), 'Keep standard page draft', 'draft settles before resize');
     await editor.evaluate(el => { (window as any).originalEditor = el; });
     // Header ownership changes must not move the editor, recreate the directory,
