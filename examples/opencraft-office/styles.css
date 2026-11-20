@@ -164,3 +164,28 @@ p.say { padding: 12px 16px; text-align: center; }
 /* 做了就收不回的操作：第一下变成确认文字，第二下才执行 */
 .armed { color: var(--warn) !important; font-weight: 600; }
 .sw.fixed em { color: var(--ink-2); }
+
+/* 他的手机：资料页里画一部手机，消息和通讯录在手机里翻 */
+:root { --bezel: #1d1b22; --dev-shadow: 0 12px 32px rgba(30, 20, 60, .16); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bezel: #3a3842; --dev-shadow: 0 12px 32px rgba(0, 0, 0, .5); } }
+:root[data-theme="dark"] { --bezel: #3a3842; --dev-shadow: 0 12px 32px rgba(0, 0, 0, .5); }
+.devwrap { padding: 14px 16px 0; display: flex; flex-direction: column; align-items: center; }
+.devcap { margin: 0 0 8px; font-size: 13px; color: var(--ink-2); }
+.device { width: 100%; max-width: 360px; border: 7px solid var(--bezel); border-radius: 34px; background: var(--card); overflow: hidden; box-shadow: var(--dev-shadow); }
+.dev-status { display: flex; justify-content: space-between; align-items: center; padding: 8px 22px 2px; background: var(--bg); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.dev-sig { display: inline-flex; align-items: flex-end; gap: 2px; height: 10px; } .dev-sig i { width: 3px; border-radius: 1px; background: var(--ink); } .dev-sig i:nth-child(1) { height: 4px; } .dev-sig i:nth-child(2) { height: 6px; } .dev-sig i:nth-child(3) { height: 8px; } .dev-sig i:nth-child(4) { height: 10px; }
+.dev-nav { display: flex; align-items: center; min-height: 44px; padding: 0 4px; background: var(--bg); }
+.dev-nav b { flex: 1; text-align: center; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dev-nav .l, .dev-nav .r { width: 44px; display: flex; } .dev-nav .r { justify-content: flex-end; }
+.devbtn { width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: none; color: var(--ink); cursor: pointer; padding: 0; } .devbtn svg { width: 22px; height: 22px; }
+.dev-body { min-height: 300px; max-height: 58vh; overflow-y: auto; overscroll-behavior: contain; background: var(--card); }
+.dev-body .cell { min-height: 64px; padding: 10px 14px; } .dev-body .cell + .cell::before { left: 72px; } .dev-body .av { width: 44px; height: 44px; }
+.dev-body .cell .btn.sm { min-height: 30px; padding: 0 14px; font-size: 14px; }
+.devcount { margin: 0; padding: 8px 14px; font-size: 12px; color: var(--ink-2); background: var(--bg); }
+.devempty { margin: 0; padding: 56px 20px; text-align: center; color: var(--ink-2); font-size: 14px; }
+.devchat { padding: 10px 10px 14px; display: flex; flex-direction: column; gap: 12px; background: var(--chat); min-height: 300px; }
+.dev-home { height: 22px; display: grid; place-items: center; background: var(--card); } .dev-home::after { content: ""; width: 34%; height: 4px; border-radius: 2px; background: var(--ink); opacity: .8; }
+.contact { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 28px 22px 24px; text-align: center; }
+.contact .av { width: 84px; height: 84px; border-radius: 12px; margin-bottom: 6px; } .contact b { font-size: 22px; font-weight: 600; } .contact > span { color: var(--ink-2); font-size: 14px; }
+.contact p { margin: 14px 0 10px; color: var(--ink-2); font-size: 14px; } .contact .btn.wide { min-height: 44px; }
+.devnote { margin: 0; padding: 12px 24px 20px; text-align: center; color: var(--ink-2); font-size: 13px; }

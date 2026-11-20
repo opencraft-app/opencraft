@@ -77,7 +77,7 @@
   var TABBAR = [['chats', '消息', '<path d="M12 4.500c-4.700 0-8.500 3.100-8.500 7 0 2.200 1.200 4.100 3.100 5.400L6 20l3.400-1.600c.8.200 1.700.300 2.600.300 4.700 0 8.500-3.100 8.500-7s-3.800-7.200-8.500-7.200z"/>'], ['people', '通讯录', '<circle cx="9" cy="9" r="3.200"/><path d="M3.500 19c.6-3 2.800-4.800 5.500-4.800s4.900 1.800 5.500 4.800M16 6.500a2.800 2.800 0 0 1 0 5.400M17.500 14.600c1.600.7 2.700 2.200 3 4.400"/>'], ['office', '办公室', '<path d="M12 3.500 4 8v8l8 4.500 8-4.500V8z"/><path d="M4 8l8 4.500L20 8M12 12.500v8"/>']];
   var AVC = ['#e9e6f0', '#a9dcc9', '#c3b5ee', '#a9c8f2', '#fbe39c', '#f9cdb0', '#bfe3ee', '#d9e8a6'];
   var ICON = { plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>', more: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>', back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14.500 5-7 7 7 7"/></svg>' };
-  var ui = { tab: 'chats', stack: [], sel: null, sub: null }, has3d = false;
+  var ui = { tab: 'chats', stack: [], sel: null, sub: null, ph: null }, has3d = false;
   var wideMq = window.matchMedia ? matchMedia('(min-width: 900px)') : { matches: false }; function wide() { return wideMq.matches && ui.tab !== 'office'; }
   function top() { return ui.stack[ui.stack.length - 1]; }
   function cur() { var t = top(); return t && t.id ? P(t.id) : null; }
@@ -91,7 +91,7 @@
   }
   function sync() { if (has3d) { window.Office.sync(toScene()); window.Office.select(ui.sel, ui.sel ? talkTargets(ui.sel) : [], []); } }
   function pick(id) { if (id && !P(id)) id = null; ui.sel = id; draw(); if (has3d) window.Office.select(id, id ? talkTargets(id) : [], []); }
-  function go(page) { ui.sub = null; var prev = ui.stack[ui.stack.length - 2]; if (prev && prev.id === page.id && prev.k === page.k) ui.stack.pop(); else ui.stack.push(page); draw(); }
+  function go(page) { ui.sub = null; ui.ph = null; var prev = ui.stack[ui.stack.length - 2]; if (prev && prev.id === page.id && prev.k === page.k) ui.stack.pop(); else ui.stack.push(page); draw(); }
 
   function av(id, n) { var p = P(id); return '<span class="av" style="--c:' + (p && p.kind === 'outside' ? '#f6c1c7' : AVC[((p || {}).look || 0) % AVC.length]) + '">' + (n ? '<i class="badge">' + n + '</i>' : '') + '</span>'; }
   function nav(title, right) { return '<header class="nav"><button class="back" data-do="back" aria-label="返回">' + ICON.back + '</button><h1>' + esc(title) + '</h1><span class="r">' + (right || '') + '</span></header>'; }
@@ -152,11 +152,21 @@
     var body = p.kind === 'outside' ? outsideBody(p) : ({ talking: talking, doing: doing, reach: reach, can: can, role: role })[tab](p);
     return head + (tabs.length ? '<div class="tabs" role="tablist">' + tabs.map(function (t) { return '<button role="tab" aria-selected="' + (tab === t[0]) + '" data-tab="' + t[0] + '">' + t[1] + '</button>'; }).join('') + '</div>' : '') + body;
   }
-  /* 看：他在联系谁（他手机里的对话，只读） */
+  /* 他的手机：在联系谁、能联系谁都画在一部手机里，像真的在翻他的手机 */
+  function device(owner, title, left, right, body) {
+    return '<div class="devwrap"><p class="devcap">' + esc(owner.id === 'me' ? '你的手机' : owner.name + '的手机') + '</p><div class="device"><div class="dev-status"><span>' + hhmm(Date.now()) + '</span><span class="dev-sig" aria-hidden="true"><i></i><i></i><i></i><i></i></span></div>' +
+      '<div class="dev-nav"><span class="l">' + (left || '') + '</span><b>' + title + '</b><span class="r">' + (right || '') + '</span></div><div class="dev-body">' + body + '</div><div class="dev-home" aria-hidden="true"></div></div></div>';
+  }
+  function devBack(sw, label) { return '<button class="devbtn" data-do="' + sw + '" data-id="" aria-label="' + label + '">' + ICON.back + '</button>'; }
+  function row(id, subline, right, attrs) { var x = P(id); return '<button class="cell"' + attrs + '>' + av(id) + '<span class="t"><b>' + esc(x.name) + '</b>' + (subline ? '<span>' + subline + '</span>' : '') + '</span>' + (right ? '<span class="rt">' + right + '</span>' : '') + '</button>'; }
+  /* 看：他在联系谁（他手机里的消息，只读） */
   function talking(p) {
-    if (ui.sub) { var tr = thread(p.id, ui.sub); return '<div class="body chat"><button class="lk" data-do="sub" data-id="">‹ 返回</button><p class="cap">' + esc(p.name) + ' 和 ' + esc(N(ui.sub)) + ' 的聊天记录（只读）</p>' + bubbles(tr, p.id) + '</div>'; }
+    if (ui.sub) { var tr = thread(p.id, ui.sub);
+      return '<div class="body">' + device(p, esc(N(ui.sub)), devBack('sub', '返回消息'), '', '<div class="chat devchat">' + bubbles(tr, p.id) + '</div>') + '<p class="devnote">这是他手机上的聊天记录，只能看。</p></div>'; }
     var ps = partners(p.id);
-    return '<div class="body list">' + (ps.length ? ps.map(function (j) { var l = thread(p.id, j).pop(); return '<button class="cell" data-do="sub" data-id="' + j + '">' + av(j) + '<span class="t"><b>' + esc(N(j)) + (P(j).kind === 'outside' ? '<em>公司外</em>' : '') + (canTalk(p.id, j) ? '' : '<em>现在不能联系</em>') + '</b><span>' + esc((l.who === p.id && !l.sys ? '他：' : '') + l.text) + '</span></span><span class="rt">' + hhmm(l.ts) + '</span></button>'; }).join('') : '<p class="empty">他还没有联系过别人。</p>') + '</div>';
+    return '<div class="body">' + device(p, '消息', '', '', ps.length ? ps.map(function (j) { var l = thread(p.id, j).pop();
+      return row(j, esc((l.who === p.id && !l.sys ? '他：' : '') + l.text), hhmm(l.ts), ' data-do="sub" data-id="' + j + '"'); }).join('') : '<p class="devempty">还没有消息</p>') +
+      '<p class="devnote">他手机里的消息，只能看，不能替他回。</p></div>';
   }
   /* 看：他在做什么、做过的改动 */
   function doing(p) {
@@ -165,11 +175,19 @@
       sec('现在', w ? '<div class="doing"><i></i>' + esc(w.text) + '</div><p class="cap">' + esc(ago(w.ts)) + '开始' + (envT ? '，在' + esc(envT.name) + '上' : '') + '</p>' + '<div class="inl"><button class="btn danger" data-do="stop" data-id="' + w.id + '" data-confirm="再点一次，让他停下">让他停下</button></div>' : none(envT ? '他现在没在做事。' : '他还没有工作环境，现在只能发消息。')) +
       sec('做过的改动', list.length ? list.map(function (e) { return '<div class="fxrow"><time>' + hhmm(e.ts) + '</time>' + changeCard(e) + '</div>'; }).join('') : none('他还没有在外面做过什么。'), list.length ? '他用工具在外面做的事。做了就是做了，不能撤回。' : '') + '</div>';
   }
-  /* 设：能联系谁（单向勾选）。你的资料页只有这一页 */
+  /* 设：能联系谁 = 他手机通讯录里有谁。加进来就能联系，删掉就联系不上。你的资料页只有这一页 */
   function reach(p) {
-    var he = p.id === 'me' ? '你' : '他', self = p.id === 'me', others = db.people.filter(function (x) { return x.id !== p.id && !(p.kind === 'human' && x.kind === 'outside'); });
-    return '<div class="body">' + sec(he + '能联系谁', others.map(function (x) { return check('reach', p.id, x.id, 'talk', canTalk(p.id, x.id), esc(x.name), x.kind === 'outside' ? '公司外' : ''); }).join('') || none('还没有别人。'),
-      '勾上谁，' + he + '就能联系谁。' + (self ? '你和谁聊过，在「消息」里。' : '')) + '</div>';
+    var me = p.id === 'me', he = me ? '你' : '他', pool = db.people.filter(function (x) { return x.id !== p.id && !(p.kind === 'human' && x.kind === 'outside'); }),
+      inBook = pool.filter(function (x) { return canTalk(p.id, x.id); }), notIn = pool.filter(function (x) { return !canTalk(p.id, x.id); }), view = ui.ph, d;
+    function line(x) { return x.kind === 'outside' ? '公司外' : x.kind === 'human' ? '老板' : esc(x.role || ''); }
+    if (view === 'add') d = device(p, '添加联系人', devBack('ph', '返回通讯录'), '', notIn.length ? notIn.map(function (x) {
+        return '<div class="cell">' + av(x.id) + '<span class="t"><b>' + esc(x.name) + '</b><span>' + line(x) + '</span></span><button class="btn ok sm" data-do="phadd" data-id="' + x.id + '">添加</button></div>'; }).join('') : '<p class="devempty">公司里的人都已经在' + he + '的通讯录里了</p>');
+    else if (view && P(view)) { var x = P(view), inside = canTalk(p.id, x.id);
+      d = device(p, '', devBack('ph', '返回通讯录'), '', '<div class="contact">' + av(x.id) + '<b>' + esc(x.name) + '</b><span>' + line(x) + '</span>' +
+        (inside ? '<p>' + esc(x.name) + '在' + he + '的通讯录里，' + he + '能联系' + (x.id === 'me' ? '你' : '他') + '。</p><button class="btn danger wide" data-do="phdel" data-id="' + x.id + '">删除联系人</button>' : '<p>' + esc(x.name) + '不在' + he + '的通讯录里。</p><button class="btn ok wide" data-do="phadd" data-id="' + x.id + '">添加到通讯录</button>') + '</div>'); }
+    else d = device(p, '通讯录', '', '<button class="devbtn" data-do="ph" data-id="add" aria-label="添加联系人">' + ICON.plus + '</button>',
+        '<p class="devcount">' + inBook.length + ' 位联系人</p>' + (inBook.length ? inBook.map(function (x) { return row(x.id, line(x), '', ' data-do="ph" data-id="' + x.id + '"'); }).join('') : '<p class="devempty">通讯录是空的</p>'));
+    return '<div class="body">' + d + '<p class="devnote">' + he + '的通讯录里有谁，' + he + '就能联系谁。这是单向的：' + he + '能联系对方，不代表对方能联系' + he + '。' + (me ? '你和谁聊过，在「消息」里。' : '') + '</p></div>';
   }
   /* 设：能做什么（工作环境、账号） */
   function can(p) {
@@ -204,7 +222,7 @@
     return nav('添加公司外的人') + '<form class="body" data-do="addout">' + sec('他是谁', '<label class="fld"><span>名字</span><input id="oname" autocomplete="off" placeholder="例如：供应商老秦"></label>', '添加后，在员工的「能联系谁」里勾上他，那个员工就能联系他。') + '<div class="acts"><button class="btn ok wide">添加</button></div></form>';
   }
   function draw() {
-    var t = top(), view = $('view'), b = view.querySelector('.pane.r .body') || view.querySelector('.body'), keep = b ? b.scrollTop : 0, key = JSON.stringify(t || ui.tab) + ui.sub, same = view.getAttribute('data-key') === key;
+    var t = top(), view = $('view'), b = view.querySelector('.pane.r .body') || view.querySelector('.body'), keep = b ? b.scrollTop : 0, key = JSON.stringify(t || ui.tab) + ui.sub + ui.ph, same = view.getAttribute('data-key') === key;
     if (t && t.k === 'chat') markRead(t.id);
     while (t && t.id && !P(t.id)) { ui.stack.pop(); t = top(); }
     var office = !t && ui.tab === 'office', page = t ? (t.k === 'chat' ? chat(P(t.id)) : t.k === 'person' ? profile(P(t.id), t) : t.k === 'newout' ? newOut() : recruit()) : '', root = ui.tab === 'chats' ? chats() : ui.tab === 'people' ? people() : '';
@@ -221,9 +239,12 @@
 
   var DO = {
     tab: function (el) { ui.tab = el.getAttribute('data-id'); ui.stack = []; draw(); },
-    back: function () { if (ui.sub && top() && top().k === 'person') ui.sub = null; else ui.stack.pop(); draw(); },
+    back: function () { if (ui.sub && top() && top().k === 'person') ui.sub = null; else if (ui.ph && top() && top().k === 'person') ui.ph = null; else { ui.stack.pop(); ui.ph = null; } draw(); },
     see: function (el) { ui.stack = []; ui.tab = 'office'; draw(); pick(el.getAttribute('data-id')); },
     sub: function (el) { ui.sub = el.getAttribute('data-id') || null; draw(); },
+    ph: function (el) { ui.ph = el.getAttribute('data-id') || null; draw(); },
+    phadd: function (el) { var p = cur(); if (!p) return; setGrant(p.id, el.getAttribute('data-id'), 'talk', true); if (ui.ph === 'add' && !db.people.some(function (x) { return x.id !== p.id && x.kind !== (p.kind === 'human' ? 'outside' : '-') && !canTalk(p.id, x.id); })) ui.ph = null; changed(); },
+    phdel: function (el) { var p = cur(); if (!p) return; setGrant(p.id, el.getAttribute('data-id'), 'talk', false); ui.ph = null; changed(); },
     say: function () { var v = $('say').value.trim(), p = cur(); if (!v || !p || !canTalk('me', p.id)) return; db.msgs.push({ id: uid('m'), ts: Date.now(), who: 'me', to: p.id, text: v }); changed(); $('say').focus(); },
     stop: function (el) { var w = db.work.filter(function (x) { return x.id === el.getAttribute('data-id'); })[0], p = cur(); if (!w || !p) return; w.state = 'stopped'; db.msgs.push({ id: uid('m'), ts: Date.now(), who: 'me', to: w.who, sys: true, text: '你让' + N(w.who) + '停下了：' + w.text + '。已经做了的改动还在。' }); changed(); },
     tool: function (f) { var p = cur(), v = f.querySelector('input').value.trim(), k = f.getAttribute('data-k'); if (!v || !p) return; var kind = k === 'env' ? f.querySelector('select').value : 'account', t = { id: uid('t'), kind: kind, name: v }; db.tools.push(t); if (k === 'env') p.env = t.id; else p.accounts.push(t.id); changed(); },
@@ -248,7 +269,7 @@
   };
 
   document.addEventListener('click', function (e) {
-    var t = e.target.closest('[data-tab]'); if (t && top()) { top().tab = t.getAttribute('data-tab'); ui.sub = null; draw(); return; }
+    var t = e.target.closest('[data-tab]'); if (t && top()) { top().tab = t.getAttribute('data-tab'); ui.sub = null; ui.ph = null; draw(); return; }
     var g = e.target.closest('[data-go]'); if (g) { if (wide() && g.closest('.pane.l')) ui.stack = []; go(JSON.parse(g.getAttribute('data-go'))); return; }
     var d = e.target.closest('button[data-do]'); if (!d) return; e.preventDefault();
     /* 删除、停下这类做了就收不回的操作：在原位点两下确认，不弹窗 */
