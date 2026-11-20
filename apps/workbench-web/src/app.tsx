@@ -2469,7 +2469,7 @@ export function App({
           rightPanel={panelHost ? null : rightPanelView}
         >
         {panelHost ? createPortal(rightPanelView, panelHost.target) : null}
-        <AppShellStandardPage className="workbench-route-stage">
+        <AppShellStandardPage>
           {!embedded && visibleOnboardingOverlay !== null ? <Suspense fallback={
             <div className="hostless-workbench__empty-stage" role="dialog" aria-modal={visibleOnboardingOverlay === "gate"}
               aria-label={intl.formatMessage({ id: "common.loading", defaultMessage: "Loading…" })}>
