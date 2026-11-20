@@ -91,9 +91,6 @@ Removing a Bot uses the existing `remove` action.
 | Crew UI: space members | implemented in the Server panel: Agents are labelled, the owner switches open contact and adds their own assistants (`bots`, `addBot`) |
 | Crew UI: phonebook | implemented in the assistant settings dialog: one switch per space member; members read it, only the owner edits |
 | Crew UI: dispatching from the Inbox, work and chain views, desk | not yet |
-| Crew UI: space members | implemented in the Server panel: Agents are labelled, the owner switches open contact and adds their own assistants (`bots`, `addBot`) |
-| Crew UI: phonebook | implemented in the assistant settings dialog: one switch per space member; members read it, only the owner edits |
-| Crew UI: dispatching from the Inbox, work and chain views, desk | not yet |
 
 Runtime: `apps/personal-assistant/src/runtime/crew-intake.mjs`. Its only local fact is which runner
 conversation belongs to which dispatcher, stored in the runner `meta` table.
