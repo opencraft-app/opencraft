@@ -58,7 +58,7 @@ const topIncludesNativeExecServer = service => {
 let passed = false, origin;
 try {
   const layout = await prepareLayout(env, { uid: process.getuid(), gid: process.getgid() });
-  if (process.getuid() === 0) for (const path of [directory, layout.state, layout.execution, layout.workspace, layout.logs, ...['brain', 'gateway', 'hands'].map(service => join(logs, service))]) await chown(path, deploymentUid, deploymentGid);
+  if (process.getuid() === 0) for (const path of [directory, layout.state, layout.execution, layout.gitCredentials, layout.workspace, layout.logs, ...['brain', 'gateway', 'hands'].map(service => join(logs, service))]) await chown(path, deploymentUid, deploymentGid);
   const listener = createServer(); listener.listen(0, '127.0.0.1'); await once(listener, 'listening');
   env.OPENCRAFT_PORT = String(listener.address().port); await new Promise(resolve => listener.close(resolve));
   origin = `http://127.0.0.1:${env.OPENCRAFT_PORT}`;

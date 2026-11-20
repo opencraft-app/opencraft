@@ -70,7 +70,7 @@ export async function doctor(environment, { allowOversubscription = false } = {}
     throw new Error(`Run this tool as the deployment identity ${identity.uid}:${identity.gid}`);
   const layout = hostLayout(environment);
   await inspectWorkspaceDirectory(layout.workspace, identity, environment);
-  await Promise.all([layout.state, layout.execution, layout.logs, ...SERVICES.map(service => join(layout.logs, service))]
+  await Promise.all([layout.state, layout.execution, layout.gitCredentials, layout.logs, ...SERVICES.map(service => join(layout.logs, service))]
     .map(path => inspectPrivateDirectory(path, identity)));
   const resources = handsResources(environment);
   const requiredMemory = resources.memoryBytes + 2 * 1024 ** 3;
