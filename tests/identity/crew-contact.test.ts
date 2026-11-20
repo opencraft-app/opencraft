@@ -158,3 +158,14 @@ test('members who leave are skipped on the chain, and a removed Bot holds no wor
   await assert.rejects(say(f, f.alan, work.workId, f.alice.actorId, 'removed'), /crew_work_denied/);
   assert.deepEqual((await f.call(f.alan.context, 'opencraft/crew/work/list', {}) as { works: unknown[] }).works, []);
 });
+
+test('a crew dispatch from the Bot owner is marked so the owner chat does not take it twice', async t => {
+  const f = await fixture(t);
+  const alice = f.actors.get(f.alice.actorId)!;
+  f.storage.database.prepare(`INSERT INTO personal_assistants(bot_id,actor_id,owner_human_id,owner_generation,assignment_id,epoch,state,created_at,credential_id,is_default,paused)
+    VALUES('bot-alan',?,?,?,'assignment-alan','1','claimed',?,?,1,0)`).run(f.alan.id, alice.id, alice.generation, Date.now(), f.alan.context.credentialId);
+  await f.call(f.alice, 'send', { targetActorId: f.alan.id, content: 'plain chat', idempotencyKey: 'plain' });
+  await dispatch(f, f.alice, f.alan.id, 'crew job');
+  const rows = await f.call(f.alan.context, 'personal-assistant/own-messages', { after: 0 }) as { content: string; crewWork: boolean }[];
+  assert.deepEqual(rows.map(r => [r.content, r.crewWork]), [['plain chat', false], ['crew job', true]]);
+});

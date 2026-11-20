@@ -173,7 +173,7 @@ export function createAssistantSession(peer, onStopped) {
             }
             for (const row of rows) {
               if (stopping) return;
-              if (row.author_id === runner.profile.config.botBinding.owner.id) {
+              if (row.author_id === runner.profile.config.botBinding.owner.id && row.crewWork !== true) {
                 let attachments;
                 if(row.attachment){
                   let offset=0,name,expectedSize,total=0;const chunks=[];
