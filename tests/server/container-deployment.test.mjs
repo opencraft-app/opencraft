@@ -113,6 +113,7 @@ test('rendered Compose separates gateway, brain and hands while preserving path 
   assert.equal(hands.mem_limit, '8589934592');
   // Some Compose versions omit false-valued bind options from JSON output.
   assert.deepEqual(service.volumes.map(v => [v.type, v.source, v.target, v.bind?.create_host_path ?? false]), [
+    ['bind', '/srv/opencraft/state/execution/git-credentials', '/var/lib/opencraft/git-credentials', false],
     ['bind', '/srv/opencraft/state', '/var/lib/opencraft', false], ['bind', '/srv/opencraft/workspaces', '/workspace', false],
     ['bind', '/srv/opencraft/logs', '/var/log/opencraft', false], ['bind', '/srv/opencraft/logs/gateway', '/var/log/opencraft/gateway', false],
   ]);
@@ -187,7 +188,9 @@ test('custom container candidates carry pinned bases, source identity and a veri
   assert.match(workflow, /--build-context "owned-electron=\$OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION"/u);
   for (const argument of ['OPENCRAFT_BUILD_ID', 'OPENCRAFT_SOURCE_REVISION', 'SOURCE_DATE_EPOCH'])
     assert.match(workflow, new RegExp(`--build-arg "${argument}=`, 'u'));
-  assert.ok(workflow.indexOf('npm ci --no-audit --no-fund') < workflow.indexOf('node --test tests/server/container-deployment.test.mjs'));
+  const installIndex = workflow.indexOf('npm ci --no-audit --no-fund');
+  const testIndex = workflow.indexOf('node --import tsx --test tests/server/container-deployment.test.mjs');
+  assert.ok(installIndex >= 0 && testIndex > installIndex, 'install dependencies before the container regressions');
 });
 
 test('standalone container Core entries ship the registry and recovery Workers beside the runtime', async () => {

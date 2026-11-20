@@ -94,7 +94,8 @@ test('cached immutable reuse is scope-local and rejects HTML or unsuccessful res
     await other.put(scope + hashed, new Response('foreign'));
     await f.emit('install'); assert.ok(f.fetched.some(x => x.url.endsWith(hashed)));
     for (const row of f.fetched) {
-      assert.equal(row.options.credentials, 'omit'); assert.equal(row.options.redirect, 'error'); assert.equal(row.options.priority, 'low');
+      assert.equal(new URL(row.url).origin, new URL(scope).origin);
+      assert.equal(row.options.credentials, 'same-origin'); assert.equal(row.options.redirect, 'error'); assert.equal(row.options.priority, 'low');
     }
   }
 });
