@@ -365,7 +365,7 @@ async function automation(p, method, input, validate, signal, requestId) {
     });
   }
   if (method.startsWith('annotate')) {
-    const value = await annotationAutomation(p, method, input); validate(); signal?.throwIfAborted(); return value;
+    const value = await annotationAutomation(p, method, input, validate, signal); validate(); signal?.throwIfAborted(); return value;
   }
   if (!p.domReady) await new Promise((resolve, reject) => {
     const timer = setTimeout(() => { clean(); reject(Object.assign(new Error('Browser document not ready'), { code: 'DOCUMENT_NOT_READY' })); }, 15000);
@@ -388,7 +388,8 @@ async function automation(p, method, input, validate, signal, requestId) {
   }
   return p.automation.invoke(method, input || {}, { validate, signal });
 }
-async function annotationAutomation(p, method, input) {
+async function annotationAutomation(p, method, input, validate = () => {}, signal) {
+  validate(); signal?.throwIfAborted();
   if (!['readContext', 'inspect', 'click', 'fill', 'press', 'scroll', 'wait', 'annotatePick', 'annotateRegion', 'annotateText', 'annotateStyles', 'annotatePreview', 'annotateClearPreview'].includes(method)) throw new Error('Unsupported browser operation');
   const generation = p.document, wc = p.window.webContents;
   if (!p.domReady) await new Promise((resolve, reject) => {
@@ -401,6 +402,7 @@ async function annotationAutomation(p, method, input) {
     wc.once('dom-ready', ready); wc.on('did-start-navigation', changed); wc.once('destroyed', destroyed);
     signal?.addEventListener('abort', aborted, { once: true }); if (signal?.aborted) aborted();
   });
+  validate(); signal?.throwIfAborted();
   if (p.document !== generation || p.closed) throw new Error('Browser document changed');
   const frame = wc.mainFrame;
   const key = 'opencraft.remote.bridge.' + generation;
@@ -412,6 +414,7 @@ async function annotationAutomation(p, method, input) {
     window[Symbol.for(${JSON.stringify(key)})]={adapter,cleanup,policy};
   })()`);
   await p.bridgeInstalled;
+  validate(); signal?.throwIfAborted();
   if (p.document !== generation || p.closed) throw new Error('Browser document changed');
   const result = await frame.executeJavaScript(`(async () => {
     const state=window[Symbol.for(${JSON.stringify(key)})];
@@ -422,6 +425,7 @@ async function annotationAutomation(p, method, input) {
     catch(error) { return {ok:false,error:{code:error.code||'BROWSER_ERROR',message:error.message,retryable:!!error.retryable}}; }
     finally { if (preview) state.policy.preview = false; }
   })()`);
+  validate(); signal?.throwIfAborted();
   if (p.document !== generation || p.closed) throw new Error('Browser document changed');
   if (!result.ok) throw Object.assign(new Error(result.error.message), result.error);
   if (['annotatePick', 'annotateText'].includes(method) && typeof result.value?.anchor?.bindingKey === 'string') wc.send('opencraft:annotation', { type: 'bind', key: result.value.anchor.bindingKey, selector: result.value.anchor.selector, framePath: result.value.anchor.framePath });
@@ -572,6 +576,9 @@ async function command(message) {
     return automation(p, input.method, input.input, () => {
       checkDocument();
       if (p.closed || p.document !== document) throw Object.assign(new Error('Browser document changed'), { code: 'DOCUMENT_CHANGED' });
+      if (['annotatePreview', 'annotateClearPreview'].includes(input.method)
+        && (!message.control || message.control !== p.controlToken))
+        throw Object.assign(new Error('Browser control required for annotation preview'), { code: 'CONTROL_LOST' });
       if (message.control !== undefined && (p.controlToken !== control || message.control !== p.controlToken))
         throw Object.assign(new Error('Browser control changed'), { code: 'CONTROL_LOST' });
     }, message.signal, message.id);
