@@ -2,7 +2,14 @@ name: Electron fork native artifacts
 
 on:
   push:
+    # Rebuild when the fork definition reaches main, so CI that restores the
+    # owned runtime always has a run built from the current fork.json.
+    # Path filters do not apply to tag pushes.
+    branches: [main]
     tags: ['v*']
+    paths:
+      - vendor/electron/**
+      - .github/workflows/electron-native-artifacts.yml
   workflow_dispatch:
     inputs:
       mode:
@@ -22,6 +29,12 @@ on:
 
 permissions:
   contents: read
+
+# Native builds share a persistent source tree on the build runner; queue them
+# instead of cancelling a multi-hour build halfway.
+concurrency:
+  group: electron-native-artifacts-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   prepare-linux-runner:
@@ -251,4 +264,5 @@ jobs:
             apps/desktop/release/**
             ${{ runner.temp }}/opencraft-electron-evidence/**
           if-no-files-found: error
-          retention-days: 14
+          # CI restores this runtime until the next fork change; keep it as long as allowed.
+          retention-days: 90

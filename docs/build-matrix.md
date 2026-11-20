@@ -57,8 +57,15 @@ Desktop packages use `OPENCRAFT_ELECTRON_DISTRIBUTION_<PLATFORM>_<ARCH>` or
 `OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION`. The default Dockerfile consumes the
 browser distribution through its `owned-electron` named context, also supplied
 by Compose. See [native build and Docker delivery](../vendor/electron/CONTAINER.md).
-CI consumes a successful native build selected by repository variable
-`OPENCRAFT_ELECTRON_ARTIFACT_RUN_ID`; browser and desktop proofs remain separate.
+CI restores the newest successful "Electron fork native artifacts" run on the
+default branch (or the branch being built) whose `vendor/electron/fork.json` and
+`args.gn` match the checkout and whose target artifact has not expired
+(`scripts/ci/resolve-electron-artifact-run.mjs`). Repository variable
+`OPENCRAFT_ELECTRON_ARTIFACT_RUN_ID` pins a specific run instead. A change under
+`vendor/electron/` merged to `main` starts a Linux x64 build; until it finishes,
+jobs that restore the runtime fail with instructions. A branch that changes the
+fork needs its own build run (mode `build`) before those jobs pass. Artifacts
+are kept 90 days. Browser and desktop proofs remain separate.
 Linux x64 is verified; other native builds and physical input-method validation
 remain separate work.
 
