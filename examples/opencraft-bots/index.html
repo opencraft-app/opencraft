@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>OpenCraft Bot 手机</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+  <main id="view"></main>
+  <section id="office" hidden aria-label="办公室">
+    <div class="stage"><canvas id="stage"></canvas><div id="labels"></div><button id="whole" class="btn" hidden>看全景</button><div id="fail" hidden>这台设备没能打开三维办公室。换回列表看吧。</div></div>
+    <div id="card" aria-live="polite"></div>
+  </section>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="scene.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
