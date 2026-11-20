@@ -1,3 +1,4 @@
+import { INPUT_DELIVERY_SCHEMA } from "./input-delivery-store.js";
 import { OPENCRAFT_HOST_EXECUTION_LEASES, OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK } from "./execution-lease-schema.js";
 import { OPENCRAFT_HOST_TOKEN_USAGE_FROZEN } from "./token-usage-frozen-schema.js";
 import { OPENCRAFT_HOST_TOKEN_USAGE_ACTORS } from "./token-usage-actor-schema.js";
@@ -7,7 +8,7 @@ import { OPENCRAFT_HOST_TOKEN_USAGE_COUNTERS } from "./token-usage-counter-schem
 import { ownedDatabasePath } from "./owned-database-path.js";
 import { acquireOwnedStorageLease } from "./owned-storage-lease.js";
 import type { DatabaseSync } from "node:sqlite";
-import { openManagedDatabase, createSchemaValidator, createMissingLegacyObjects, type DatabaseOutcome } from "@opencraft/sqlite-node";
+import { openManagedDatabase, resolveStoreMigrations, createSchemaValidator, createMissingLegacyObjects, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import { OPENCRAFT_HOST_TOKEN_USAGE } from "./token-usage-schema.js";
 import { OPENCRAFT_HOST_TOKEN_USAGE_RUNTIME } from "./token-usage-runtime-schema.js";
 
@@ -104,7 +105,7 @@ ALTER TABLE codex_bot_message_slots RENAME TO opencraft_bot_message_slots;
 `;
 const PREVIOUS_OWNED_SCHEMA = LEGACY_FULL_SCHEMA + OPENCRAFT_HOST_STATE_OWNED_NAMES;
 const V14_SCHEMA = PREVIOUS_OWNED_SCHEMA + OPENCRAFT_HOST_BOT_OWNED_NAMES;
-const FULL_SCHEMA = V14_SCHEMA + OPENCRAFT_HOST_EXECUTION_LEASES + OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK;
+const FULL_SCHEMA = V14_SCHEMA + OPENCRAFT_HOST_EXECUTION_LEASES + OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK + INPUT_DELIVERY_SCHEMA;
 // Historical schema source and the deployed CREATE/ALTER sequence establish these
 // room layouts. Only known objects/constraints are accepted; records are retained.
 const LEGACY_ROOM_COLUMNS = [
@@ -181,6 +182,11 @@ export const OPENCRAFT_HOST_STATE_MIGRATIONS = [
   { version: 15, name: "immutable-execution-leases", sql: OPENCRAFT_HOST_EXECUTION_LEASES },
   { version: 16, name: "execution-boot-clock", sql: OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK },
 ] as const;
+
+/** Full registered chain; the immutable legacy prefix above is not the current version. */
+export const OPENCRAFT_HOST_STATE_CURRENT_MIGRATIONS = resolveStoreMigrations(
+  "opencraft-host-state-database", OPENCRAFT_HOST_STATE_MIGRATIONS,
+);
 
 export class OpenCraftHostStateDatabase {
   readonly database: DatabaseSync;

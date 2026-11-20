@@ -1,4 +1,4 @@
-import { RIGHT_PANEL_MAIN_CONTENT_RESERVE, RIGHT_PANEL_MINIMUM_WIDTH } from "./model";
+import { RIGHT_PANEL_MAXIMUM_PREFERRED_WIDTH, RIGHT_PANEL_MAIN_CONTENT_RESERVE, RIGHT_PANEL_MINIMUM_WIDTH } from "./model";
 
 /** Renderer-neutral projection. Resources, credentials and callbacks stay with the owner. */
 export interface HostPanelState {
@@ -92,6 +92,6 @@ export function resolveHostPanelGeometry(width: number, state: Pick<HostPanelSta
   const overlay = containerWidth < RIGHT_PANEL_MINIMUM_WIDTH + RIGHT_PANEL_MAIN_CONTENT_RESERVE || state?.fullWidth === true;
   const open = state?.available === true && state.open;
   const panelWidth = !open ? 0 : overlay ? containerWidth : Math.min(containerWidth - RIGHT_PANEL_MAIN_CONTENT_RESERVE,
-    Math.max(RIGHT_PANEL_MINIMUM_WIDTH, preferredWidth ?? containerWidth * 0.42));
+    Math.max(RIGHT_PANEL_MINIMUM_WIDTH, preferredWidth ?? Math.min(RIGHT_PANEL_MAXIMUM_PREFERRED_WIDTH, containerWidth * 0.42)));
   return { containerWidth, panelWidth, chromeHeight, overlay };
 }

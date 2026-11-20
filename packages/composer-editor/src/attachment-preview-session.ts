@@ -9,11 +9,17 @@ export type AttachmentResolver = (
   onProgress?: (progress: AttachmentProgress | null) => void,
 ) => ComposerAttachment | Promise<ComposerAttachment>;
 
+/** One result destination captured when a history image starts editing. */
+export interface ComposerImageEditSession {
+  complete(file: File): boolean;
+  focus(): void;
+}
+
 interface AttachmentJob {
   readonly draftId: string;
   readonly attachmentId: string;
   readonly file: File;
-  readonly previewUrl: string | null;
+  previewUrl: string | null;
   controller: AbortController | null;
   progress: AttachmentProgress | null;
 }
@@ -81,6 +87,13 @@ export class AttachmentPreviewSession {
     if (previous?.previewUrl) URL.revokeObjectURL(previous.previewUrl);
     this.notify();
     if (resolve) this.start(entry, resolve);
+    return true;
+  }
+
+  addImageToDraft(draftId: string, file: File, resolve: AttachmentResolver | undefined): boolean {
+    if (this.disposed || !resolve || !file.type.startsWith("image/")
+      || this.composer.getSnapshot().draft.id !== draftId) return false;
+    this.addFiles([file], resolve);
     return true;
   }
 
@@ -163,6 +176,12 @@ export class AttachmentPreviewSession {
     })).then(
       resolved => {
         if (job.signal.aborted || entry.controller !== job) return;
+        // A resolver may identify an image whose browser File had no image MIME.
+        // This session still owns its preview and releases it with the same job.
+        if (entry.previewUrl === null && resolved.lifecycle === 'ready' && resolved.mimeType.startsWith('image/')) {
+          try { entry.previewUrl = URL.createObjectURL(new Blob([entry.file], { type: resolved.mimeType })); }
+          catch { /* The resolved attachment remains usable without an immediate preview. */ }
+        }
         const { id: _id, ...patch } = resolved;
         this.composer.updateDraftAttachment(entry.draftId, entry.attachmentId, patch);
       },

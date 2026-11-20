@@ -7,3 +7,9 @@ export const retirements = sqliteTable('browser_retirements', { key: text('key')
 export const identities = sqliteTable('browser_retirement_identities', {
   owner: text('owner').notNull(), kind: text('kind').notNull(), id: text('id').notNull(), key: text('key').notNull(),
 }, table => [primaryKey({ columns: [table.owner, table.kind, table.id, table.key] })]);
+export const presentations = sqliteTable('browser_presentations', {
+  key: text('key').primaryKey(), owner: text('owner').notNull(), value: text('value').notNull(),
+});
+export const operations = sqliteTable('browser_operations', {
+  key: text('key').primaryKey(), owner: text('owner').notNull(), value: text('value').notNull(),
+});

@@ -45,10 +45,9 @@ export async function packageBuilderArguments(
     if (target.platform === "linux" && args.includes("AppImage")) {
       throw new Error(`Linux AppImage packaging requires the verified fork in ${selected.key}`);
     }
-    if (environment.OPENCRAFT_ELECTRON_ALLOW_STOCK === "1") return [...args];
     throw new Error(
       `Electron release packaging requires ${selected.key}; `
-      + "set OPENCRAFT_ELECTRON_ALLOW_STOCK=1 only for an explicit local stock-runtime diagnostic",
+      + "only verified repository-owned Electron distributions can be packaged",
     );
   }
   const verified = await verifyElectronDistribution(

@@ -1,0 +1,288 @@
+{
+  "format": 1,
+  "canonicalPublished": [
+    {
+      "version": 1,
+      "name": "0000_server_core",
+      "checksum": "d9988a3f715bac332da54dd79455a47fd34ef568cb1dbef797936e8286df05af",
+      "snapshotChecksum": "9de4504302ba7c161174394548b13c7acd5d23c001356fc1dbc73fb2499d50ec"
+    },
+    {
+      "version": 2,
+      "name": "0001_execution_capability_bindings",
+      "checksum": "5fe82f0e68f34983b2b5255d7873485f5b826318d59fccd07ff6c23384b19b31",
+      "snapshotChecksum": "2d02c94c3199392251fbe2320c26f062ae92e7e9b770ebb1b72ce8a6282e4553"
+    },
+    {
+      "version": 3,
+      "name": "0002_thread_access_and_notes",
+      "checksum": "569fa2217ae43ec59b90b6323573af514663aa00c370eb0614d473158665a47e",
+      "snapshotChecksum": "cd4a0f50e48be214c1312827abb6448508c20d9576f23087eda2e3823a739a8f"
+    },
+    {
+      "version": 4,
+      "name": "0003_project_automations",
+      "checksum": "ed4100079a93f254664dc61176cf01202d8d00a7df8184d36f67acb33981874f",
+      "snapshotChecksum": "b8bf4e5349f0f6f7b4bc7148cb023e2a2d1c1cb0c8c9317af5422c874549f785"
+    },
+    {
+      "version": 5,
+      "name": "0004_magenta_aqueduct",
+      "checksum": "f6d13ee0808a333c14a05a9febbcf5a7a58e4689b802e03869b6203fd7bb84c6",
+      "snapshotChecksum": "1e62a0c1f491b6010f6f6a18ffbe0b2c3ef620245315916669a7d5f29c9be3e8"
+    },
+    {
+      "version": 6,
+      "name": "0005_native_channels",
+      "checksum": "750d52e3cb3dd983a5b7339f4cb59779456cc6fa5228f3f5289bd7d0e5065dd8",
+      "snapshotChecksum": "7dbee12648a7b1509bf21bc0eea9d6e70d16350d4f7d7bbbd99ff9ca99f5a7d6"
+    },
+    {
+      "version": 7,
+      "name": "0006_actor_inbox",
+      "checksum": "f41a01bbeeb44df393266b4e36bf4440e30f86359082630a8a9cbb53d84148f1",
+      "snapshotChecksum": "247360d4057b056c343de0372622aa9bb616d7677151d84fac1bdbd3cf8b7b2d"
+    },
+    {
+      "version": 8,
+      "name": "0007_native_channel_sync",
+      "checksum": "f1beed6031ff9069ce1b1697c466213d2547c6587227d1895da46c088dc34efd",
+      "snapshotChecksum": "a5900476df0881bca428ac4de86a958b2f19c36cebb652c624a57f1c8aa09245"
+    },
+    {
+      "version": 9,
+      "name": "0008_personal_assistants",
+      "checksum": "f42175da982c1380f855fe0fda80e87a9b2084b88b982be36b6748e2bc42f53f",
+      "snapshotChecksum": "b1bf982e74144e8ff61e51fe485f6dc669fa38e78ab07b48cf08e8e3e9441a4a"
+    },
+    {
+      "version": 10,
+      "name": "0009_personal_assistant_credentials",
+      "checksum": "8f4a7481d769026df0d35756e33e841744ca291a63f5733aad2daf2fa4177103",
+      "snapshotChecksum": "f26de776c233e848bc89bcf9f36164c3762744d61fad78b54b88dad6e9e78fd5"
+    },
+    {
+      "version": 11,
+      "name": "0010_assistant_model_selection",
+      "checksum": "272febfc9fd6d396bd05ab16f12ab7b99485058f6aa7312bb1ac28df98939a60",
+      "snapshotChecksum": "02d4aaf1945c454b98548b5ed7d5fc21b352ac3549aa23f0b7d2eb3ac8100adc"
+    },
+    {
+      "version": 12,
+      "name": "0011_eminent_mathemanic",
+      "checksum": "7281923e750c75042b9b0cd784bf8017594566aaedebd96a3a0130853864bdd6",
+      "snapshotChecksum": "a82ce5bd40d1accbbb72b8ab0e89df81d33230e21a3754bdeb6670323933b16b"
+    },
+    {
+      "version": 13,
+      "name": "0012_dear_wild_pack",
+      "checksum": "d3cb22474c9393bf2a8787e45cd67b6143b87606f1246ee0d921f2211dfea5b9",
+      "snapshotChecksum": "0898d4eea264fdf9685c98a97bb7ca38eedb233cff4bbaf06e52e5693d45f402"
+    },
+    {
+      "version": 14,
+      "name": "0013_channel_attachments",
+      "checksum": "f58b0bbe9d80a47d9247535059881587be505b33dfe679859bf930bcf42a1b59",
+      "snapshotChecksum": "28a3c175f2f82922888305832861211b7ae7534456bdbb7e4eca7e9f10bfc0f0"
+    },
+    {
+      "version": 15,
+      "name": "0014_native_channel_mentions",
+      "checksum": "fa9447bfcc3ab802054f0d2b705705e2c0775453e52a0ee8a6bd6fa04a40a868",
+      "snapshotChecksum": "af5228b2fc9bdddfb17443991cafc3fccd23271dc03fc0124f85da1a79e90b1b"
+    },
+    {
+      "version": 16,
+      "name": "0015_visible_mention_reads",
+      "checksum": "6730029e68957a8a788500baa6ec3c31bac39429efda69be3d3653e6c1a3e471",
+      "snapshotChecksum": "c1da436d03a73ebc868705fdfb9f68684e65dc4684a67b884d069b63654ca74f"
+    },
+    {
+      "version": 17,
+      "name": "0016_human_reservations",
+      "checksum": "ea19b836061f82c6c25908f5c10c7e70f18306bd31c239c138d171e75f69cb6c",
+      "snapshotChecksum": "3de42e18bed9f27531c61f5e965d91eda84070daeebd68a8106e05febefd758b"
+    },
+    {
+      "version": 18,
+      "name": "0017_multi_bot_assignments",
+      "checksum": "92419be103c6c03065cdf4ad7cf903e75def97eef97b7718920d1dd3f7b1f16f",
+      "snapshotChecksum": "1db6f1a87b0739cf066c36e0178989140b54903517b6070d90358a779a4bf835"
+    },
+    {
+      "version": 19,
+      "name": "0018_native_group_lifecycle",
+      "checksum": "0c322591d0f760d46eb10adecad67adcebf8f9b504effebcbf9a28b6e48f6814",
+      "snapshotChecksum": "b78f630e193dd3075a1c9683dc7f14d25dded18cccd988dbcb58e4a0dc8d6db7"
+    }
+  ],
+  "alternates": [
+    {
+      "id": "generic-legacy-v13",
+      "published": [
+        {
+          "version": 1,
+          "name": "0000_server_core",
+          "checksum": "d9988a3f715bac332da54dd79455a47fd34ef568cb1dbef797936e8286df05af"
+        },
+        {
+          "version": 2,
+          "name": "0001_execution_capability_bindings",
+          "checksum": "5fe82f0e68f34983b2b5255d7873485f5b826318d59fccd07ff6c23384b19b31"
+        },
+        {
+          "version": 3,
+          "name": "0002_native_channels",
+          "checksum": "750d52e3cb3dd983a5b7339f4cb59779456cc6fa5228f3f5289bd7d0e5065dd8"
+        },
+        {
+          "version": 4,
+          "name": "0003_actor_inbox",
+          "checksum": "f41a01bbeeb44df393266b4e36bf4440e30f86359082630a8a9cbb53d84148f1"
+        },
+        {
+          "version": 5,
+          "name": "0004_native_channel_sync",
+          "checksum": "f1beed6031ff9069ce1b1697c466213d2547c6587227d1895da46c088dc34efd"
+        },
+        {
+          "version": 6,
+          "name": "0005_personal_assistants",
+          "checksum": "f42175da982c1380f855fe0fda80e87a9b2084b88b982be36b6748e2bc42f53f"
+        },
+        {
+          "version": 7,
+          "name": "0006_personal_assistant_credentials",
+          "checksum": "8f4a7481d769026df0d35756e33e841744ca291a63f5733aad2daf2fa4177103"
+        },
+        {
+          "version": 8,
+          "name": "0007_assistant_model_selection",
+          "checksum": "272febfc9fd6d396bd05ab16f12ab7b99485058f6aa7312bb1ac28df98939a60"
+        },
+        {
+          "version": 9,
+          "name": "0008_thread_access_and_notes",
+          "checksum": "569fa2217ae43ec59b90b6323573af514663aa00c370eb0614d473158665a47e"
+        },
+        {
+          "version": 10,
+          "name": "0009_project_automations",
+          "checksum": "ed4100079a93f254664dc61176cf01202d8d00a7df8184d36f67acb33981874f"
+        },
+        {
+          "version": 11,
+          "name": "0010_eminent_mathemanic",
+          "checksum": "7281923e750c75042b9b0cd784bf8017594566aaedebd96a3a0130853864bdd6"
+        },
+        {
+          "version": 12,
+          "name": "0011_dear_wild_pack",
+          "checksum": "d3cb22474c9393bf2a8787e45cd67b6143b87606f1246ee0d921f2211dfea5b9"
+        },
+        {
+          "version": 13,
+          "name": "0012_channel_attachments",
+          "checksum": "f58b0bbe9d80a47d9247535059881587be505b33dfe679859bf930bcf42a1b59"
+        }
+      ],
+      "convergencePublished": [
+        {
+          "version": 1,
+          "name": "0000_server_core",
+          "checksum": "d9988a3f715bac332da54dd79455a47fd34ef568cb1dbef797936e8286df05af"
+        },
+        {
+          "version": 2,
+          "name": "0001_execution_capability_bindings",
+          "checksum": "5fe82f0e68f34983b2b5255d7873485f5b826318d59fccd07ff6c23384b19b31"
+        },
+        {
+          "version": 3,
+          "name": "0002_native_channels",
+          "checksum": "750d52e3cb3dd983a5b7339f4cb59779456cc6fa5228f3f5289bd7d0e5065dd8"
+        },
+        {
+          "version": 4,
+          "name": "0003_actor_inbox",
+          "checksum": "f41a01bbeeb44df393266b4e36bf4440e30f86359082630a8a9cbb53d84148f1"
+        },
+        {
+          "version": 5,
+          "name": "0004_native_channel_sync",
+          "checksum": "f1beed6031ff9069ce1b1697c466213d2547c6587227d1895da46c088dc34efd"
+        },
+        {
+          "version": 6,
+          "name": "0005_personal_assistants",
+          "checksum": "f42175da982c1380f855fe0fda80e87a9b2084b88b982be36b6748e2bc42f53f"
+        },
+        {
+          "version": 7,
+          "name": "0006_personal_assistant_credentials",
+          "checksum": "8f4a7481d769026df0d35756e33e841744ca291a63f5733aad2daf2fa4177103"
+        },
+        {
+          "version": 8,
+          "name": "0007_assistant_model_selection",
+          "checksum": "272febfc9fd6d396bd05ab16f12ab7b99485058f6aa7312bb1ac28df98939a60"
+        },
+        {
+          "version": 9,
+          "name": "0008_thread_access_and_notes",
+          "checksum": "569fa2217ae43ec59b90b6323573af514663aa00c370eb0614d473158665a47e"
+        },
+        {
+          "version": 10,
+          "name": "0009_project_automations",
+          "checksum": "ed4100079a93f254664dc61176cf01202d8d00a7df8184d36f67acb33981874f"
+        },
+        {
+          "version": 11,
+          "name": "0010_eminent_mathemanic",
+          "checksum": "7281923e750c75042b9b0cd784bf8017594566aaedebd96a3a0130853864bdd6"
+        },
+        {
+          "version": 12,
+          "name": "0011_dear_wild_pack",
+          "checksum": "d3cb22474c9393bf2a8787e45cd67b6143b87606f1246ee0d921f2211dfea5b9"
+        },
+        {
+          "version": 13,
+          "name": "0012_channel_attachments",
+          "checksum": "f58b0bbe9d80a47d9247535059881587be505b33dfe679859bf930bcf42a1b59"
+        },
+        {
+          "version": 14,
+          "name": "converge_0004_magenta_aqueduct",
+          "checksum": "f6d13ee0808a333c14a05a9febbcf5a7a58e4689b802e03869b6203fd7bb84c6"
+        },
+        {
+          "version": 15,
+          "name": "converge_0014_native_channel_mentions",
+          "checksum": "fa9447bfcc3ab802054f0d2b705705e2c0775453e52a0ee8a6bd6fa04a40a868"
+        },
+        {
+          "version": 16,
+          "name": "converge_0015_visible_mention_reads",
+          "checksum": "6730029e68957a8a788500baa6ec3c31bac39429efda69be3d3653e6c1a3e471"
+        },
+        {
+          "version": 17,
+          "name": "converge_0016_human_reservations",
+          "checksum": "ea19b836061f82c6c25908f5c10c7e70f18306bd31c239c138d171e75f69cb6c"
+        },
+        {
+          "version": 18,
+          "name": "converge_0017_multi_bot_assignments",
+          "checksum": "92419be103c6c03065cdf4ad7cf903e75def97eef97b7718920d1dd3f7b1f16f"
+        },
+        {
+          "version": 19,
+          "name": "converge_0018_native_group_lifecycle",
+          "checksum": "0c322591d0f760d46eb10adecad67adcebf8f9b504effebcbf9a28b6e48f6814"
+        }
+      ]
+    }
+  ]
+}

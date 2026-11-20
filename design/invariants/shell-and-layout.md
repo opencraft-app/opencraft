@@ -1,5 +1,46 @@
 # Workbench invariants: Shell and layout
 
+## Shell navigation and page chrome coordinate ownership
+
+The application Router remains the sole owner of destinations, parent paths and
+history. Shell owns persistent navigation and native-control reservations; pane
+geometry owns the space available to a page. A page owns its header, scrolling
+content and page overlays. Route motion translates only that page presentation,
+never the persistent brand, sidebar toggle or application entrance. Desktop
+semantic Back belongs beside the page title, not in place of Shell's sidebar
+toggle. Compact layouts place leading actions on the moving page; this is a
+placement projection, not a second navigation or action owner.
+
+`ShellPresentationContext` supplies that physical placement. `AppShellHeader` adapts
+the same shared navigation controls into Shell and page slots. One intrinsic
+measurement stays mounted across placement changes; only its single writer
+publishes the Shell reservation. Page chrome reserves only the portion extending
+past the sidebar, using the existing live pane geometry. Header paint is projected
+into that same page-local basis. Spacing, materials and hit geometry keep their
+existing semantic tokens; no screenshot-derived sidebar-width compensation is
+allowed.
+
+Page frames establish their layout containing block both at rest and in flight.
+Adding or removing a route transform cannot change a fixed descendant's origin.
+Browser safe top is allocated by the existing row; a scroll-under page's header
+consumes only that page's exact bleed allocation. The Shell navigation rail has
+its own stable home rather than a body portal chasing a measured placeholder.
+Its input/focus and overview suspension retain the existing Shell ownership.
+
+Portal mount location does not establish semantic ownership. Page overlays still
+consume `ShellPageOverlayContext` and the existing route/drawer motion projection;
+global modal placement stays with its current owner. Outgoing route snapshots may
+contain page chrome, never persistent Shell controls. Readiness, interrupted
+travel and gesture commit/cancel remain with `RouteStackMotion`; it neither
+commits navigation nor creates another resource, draft or conversation owner.
+
+`tests/shell/route-chrome.browser.ts` shares the actual Shell/Router/IM fixture
+with the lifecycle test. It samples enter, return, rapid re-entry and pane resize
+in docked/collapsed desktop, wide touch and mobile/reduced-motion layouts. It
+checks stable local header bounds, unchanged Shell controls, snapshot membership
+and retained unsent drafts. The fixture's account/RPC/storage are synthetic;
+these checks do not certify a physical phone or production authentication.
+
 ## Sidebar reading width without an icon rail
 
 The unified desktop sidebar measures one context column and a normal-flow
@@ -210,10 +251,71 @@ Touch narrow full-width panels share one bottom material rail across every tab
 kind. The rail consumes the same floating ControlSurface as Shell chrome, with
 one shared LiquidGlassBackdrop for the group. Buttons use the shared Button and
 IconButton owners; the feature does not repaint or resize their internals. The
-all-tab overview uses NavigationList/NavigationGroup/NavigationItem for current,
-hover and focus, shared close/create actions and SettingsTextInput for search.
-ModalSurface owns the overview and utilities surface; no feature-level material
-or button paint is layered on top. The latest-turn reading card consumes shared
+all-tool overview uses ObjectActionSurface/ObjectTitleButton for card activation,
+shared close/create actions and SettingsTextInput for search. Main chat and the
+inline tool launcher are always the first two cards; neither is a closable tool
+or included in the tool count. Main chat and opted-in resident tools reuse their
+existing physical view through a Shell-scoped retained-view registry. A stable
+portal target uses an atomic DOM move when available. Otherwise a native top-layer
+placement keeps the DOM in its original home and clips its paint to the card and
+scroll viewport. React, iframe browsing contexts, media, xterm and resources stay
+mounted; plain append/reparent must not reload embedded content. This tested
+capability adapter and the confirmation paint adapter are the only native
+placement API callers allowed by browser compatibility lint. Older engines without either capability retain the main-chat
+entry rather than reload live content. Canvas-only viewers explicitly opt into
+`previewFallback: reparent-safe`. The card scales the original viewport by width
+and clips overflow, preserving native typography, Markdown, media and terminal
+colors. Original logical dimensions, terminal grid, scroll and selection remain
+owned by the existing view. Preview placement is inert and disables presentation
+activity/history backfill; dismissing or filtering restores the same view before
+normal interaction resumes, without automatically focusing terminal input. No second renderer, terminal, session or history
+request is created for an overview. Border-box measurements compensate visual
+scale, while ResizeObserver remains in original layout coordinates.
+Side chat uses the same retained conversation view as primary chat, anchored to
+the latest visible content. Its Markdown and code retain their original styles;
+the input footer is hidden during preview without dropping the draft or view.
+Inactive previews cannot backfill history or focus input on handback. Engines
+without supported native placement show the same return entry as primary chat.
+Closing a side chat uses the shared, localized confirmation request. Its compact
+surface owns wrapped body copy and a separate wrapping cancel/destructive action
+row. Cancellation and Escape leave the same live tool instances mounted. On
+engines with native popovers, the confirmation scrim and content acquire a paired
+top-layer paint lease above retained previews, including previews raised later;
+Radix still owns focus, modality and dismissal. Engines without popovers use the
+ordinary modal layer. The capability adapter is covered by the confirmation mode
+of `scripts/smoke/shell/smoke-tab-overview.ts` with forced native/legacy placement,
+touch cancellation, keyboard focus and light/dark/extended themes.
+Compact preview titles occupy a fixed single-line header; horizontal title
+scrolling leaves the close action fixed and must not activate the card. Terminal
+cards reuse the actual terminal viewer's paint, grid and font through the
+`previewPresentation: retained-view` registration, paired with `while-tab-open`
+residency. Cached providers for other tools observe changes only while overview
+cards are mounted, coalesce bursts and preserve the previous value during refresh.
+Reopening reads current content. Search matches tool titles and says so. Creation actions come
+from the existing toolbar registry, scroll within their card, and never require
+a second creation sheet. The empty touch panel renders this same overview,
+without search/count or a floating Composer. Search is explicit (opening does
+not focus it), and filters apply only to opened tools. Preview data remains
+read-only and cached by the existing owner; returning to chat or another tool
+preserves mounted resources and drafts. Overview geometry, card/message colors,
+radii, elevation and summary line limits consume the design-system
+`tool-overview` semantic tokens; icon sizes use `workbenchIconMetrics.overview`.
+Typography stays on the shared role registry. Material/accessibility projection
+remains shared, including custom themes, reduced transparency and forced colors.
+Modal scroll isolation must choose the wheel axis from each wheel event rather
+than retain the axis of a previous touch gesture; the version-guarded
+`patch-remove-scroll-input-axis.mjs` compatibility patch preserves that boundary.
+The visible inline overview selects one Shell canvas through the existing touch
+full-width presentation; Shell paints the complete SafeLayout row, including top
+and bottom insets. Shell also reserves its toolbar height above the first card
+row for persistent navigation; cards do not compensate for chrome. Panel chassis and inline content stay transparent. A hidden
+retained panel cannot select that canvas. Fullscreen ModalSurface consumes the
+same `background-tool-overview-canvas` token; only cards and controls add material.
+Touch full-width panels do not mount the desktop creation/tab menu. Desktop
+split panels keep it. Shell header suppression belongs to eager Shell styles,
+never the lazy mobile toolbar chunk; cold empty entry must match warm entry.
+Utilities retain the shared ModalSurface material; no feature-level button paint
+is layered on top. The latest-turn reading card consumes shared
 panel material, and its localized disclosure uses Button. The leftmost action always returns to the workspace in one tap; browser
 history back/forward remain browser utilities. A flexible center displays the
 browser address or the active panel title. The icon-only Agent toggle and all-tab
@@ -272,9 +374,10 @@ owned by the host, separate from control material. The ownership check and its
 negative fixtures run in the normal boundary gate; capability/override, loading
 geometry, focus and draft preservation are covered by `smoke:controls`.
 
-On macOS Electron, translucent Sidecar navigation, its context list and sticky
-headings share the BrowserWindow's native material. They do not add the Web
-Sidebar veil, another backdrop filter or an opaque context sheet. The entire
+On macOS Electron, translucent Sidecar navigation and its context list share the
+BrowserWindow's native material, without a Web Sidebar veil, another backdrop
+filter or an opaque context sheet. Sticky disclosures alone use the theme's
+Sidebar-over-Window backing to occlude rows; the rest of the plane stays native. The entire
 titlebar exposes that same plane across the Sidecar boundary. Theme-declared
 opaque Sidebar colors remain authoritative below the titlebar; forced colors
 use Canvas. Native focus/minimize fallback stays owned by Main. The
@@ -373,11 +476,13 @@ Other Shell, navigation, style and spring implementations retain their owners.
 
 | ID | 不变量 | 实现责任与证据 |
 |---|---|---|
-| SHL-01 | Pane 几何只投影一次；内容面板宽度、占位、聊天 Frame 均从同一 paneGeometry 读取 | workspace-pane-geometry.ts；纯函数矩阵及帧采样 |
+| SHL-01 | Pane 几何只投影一次；内容面板宽度、占位、聊天 Frame 均从同一 paneGeometry 读取。最大化／还原时工具内容与外框同步连续调宽，不预先切到终点宽度；显隐单独裁切，减少动态效果直接落点 | workspace-pane-geometry.ts；纯函数矩阵及帧采样 |
 | SHL-02 | Viewport 是 flex 裁切区域；Frame 宽度为 max(min(W,mainMinimum),W-min(R,A))，并且 min-width:100%；Frame 由原生 layout 右对齐 Viewport，X=min(0,Viewport−Frame)，空间不足时保留可读排版并向左平移；聊天容器查询归 Frame | AppShell + app.scss；最大化中间帧 Frame≥普通并排下界 |
 | SHL-03 | 显隐与全宽进度分离，由一个 Shell 事务入口写入；模式切换先终止残余显隐，scope/reduced-motion 直接落到端点；旧完成回调被清理 | useWorkspacePaneAnimation；快速反向及 reduced-motion native trace |
 | SHL-04 | 退出阶段保留同 scope 的主布局描述，完成后更新；模式交接不卸载聊天草稿或浏览器 backing；普通 resize 仍实时改变排版宽度 | mainLayoutSnapshot；草稿/WebContents身份＋held resize验证 |
 | SHL-05 | 不绘制 Sidecar/main 边缘渐变。Header 的主表面上沿随既有 primary/context 实时宽度与 context 显隐进度向左延伸，形成包含原生按钮预留区的连续标题栏；不得等 context 卸载再切换绘制，或另设 CSS 动画时钟。上沿下边缘消费同一主面板主题 elevation，连接边裁切避免重复接缝，flat 不额外加阴影。横向细线与 Sidecar 标题栏下方的竖分界共用绘制进度；内容生命周期仍由 pane exit owner 独立保留。safe-area/几何/命中区不改、不复制原生按钮；主面板主题阴影/描边/flat、expanded/context 材质与浮动阴影保留，强制颜色使用系统分界 | Header + Sidecar + live motion + Design System/theme tokens；真实 AppShell 前 100ms 与中间帧上沿跟手、native reservation、十种主题 shadow authority/下沿像素与白色接缝负例、快速反向/held resize/显隐与浮动回归 |
+
+工具阅读面使用共享 `--material-reading-background`，与主阅读面消费同一主题材质及减少透明度／强制颜色回退；不另铺实色背景遮断渐变。`smoke-workspace-presentation.ts --pane-motion` 在真实 AppShell/RightPanel 上逐帧验证同步调宽、反向、无过冲、键盘／触控和减少动态效果；显隐仍允许独立裁切。
 
 边界：普通并排使用 shellSpaceMetrics.mainMinimum（480），保持既有空间策略。状态：63项聚焦测试、完整门禁、最终包556帧验收通过；Frame最低480而Viewport可到0，普通held resize及取消恢复通过。证据 /tmp/oc-pane-4aFgS4；草稿和WebContents ID保留。
 
@@ -646,6 +751,31 @@ the existing mobile and desktop workspace consumers. Held movement, reversal,
 cancellation, safe frame, input blocking and retained editor/guest identity are
 separate assertions; browser emulation does not establish physical iPhone input.
 
+## Primary-route header ownership
+
+AppShellHeader has a primary-route slot beside its title and a separate workspace
+end slot. Conversation info, task links, sharing and More consume `primaryAction`;
+only workspace controls such as the tool-region toggle consume the end slot.
+The existing live tool aperture allocates both regions, so a split resize moves
+the primary actions with their conversation rather than with the window edge.
+Dock capacity is measured from the primary header, with the route declaring the
+number of fixed slots; title and overflow budgets do not borrow space from tools.
+Touch presentation hides title copy independently of the action slot. A tools-only
+scene makes primary chrome hidden and inert. This placement does not change the
+conversation, draft, resource or action identity owners.
+
+Conversation summary popovers use the owning conversation layout as their Radix
+collision boundary. Their portalled surface retires while that primary scene is
+not presented, preserving explicit open intent for its return. It cannot paint
+over a full-screen tool as if it described that tool. The host's same summary
+controller still owns visibility and plugin view state. See
+`smoke:conversation-header-ownership` for split geometry, held resize, primary
+visibility, theme/input variants and retained editor/tool identity checks.
+
+Transient conversation More menus close when their primary scene becomes hidden
+and do not restore focus to a hidden trigger or reopen on return. Explicit task
+dialogs and unsaved toolbar configuration retain their own modal lifecycle.
+
 ## Tab group toolbar slots
 
 TabGroupToolbar owns the shared touch toolbar composition, with scene-supplied
@@ -690,6 +820,20 @@ that destination instead of toggling a group. Home/brand and the bottom return
 restore the remembered conversation; Settings selects its categories. The selected
 entrance reflects the sidebar destination independently of the underlying page.
 Opening an application still uses its declared existing route/action.
+
+Back to app is a return to the conversation list, not a conversation-row selection.
+It preserves the current drawer/split allocation and restores the remembered
+conversation, View and draft as the default selection. The shared return button
+does not dismiss the drawer; connected navigation carries `sidebar: preserve` on
+that return transaction so Shell preparation cannot dismiss it indirectly. The
+policy belongs to one intent, never to a sticky global preference: subsequent
+conversation selection and history traversal retain their normal behavior. A
+phone row selection dismisses its drawer; a docked tablet/desktop list remains
+visible. Hostless return uses the same peer-list action without creating a Host.
+`OPENCRAFT_SIDEBAR_RETURN_ONLY=1` in
+`scripts/smoke/shell/smoke-sidebar-selection-handoff.ts` exercises Settings/catalog
+return, actual Settings route return, retained View/draft identity, and subsequent
+explicit selection with phone touch, reduced motion, tablet touch and mouse input.
 
 Retain inactive conversation/sidebar content and its scroll state, but suspend its
 primary action portal while Applications owns the slot. Only the active list can
@@ -751,6 +895,418 @@ sidebarToggleGlyphs artwork as Shell navigation. The shared chrome icon token
 owns dock glyph size independently of the touch hit target; action slots must
 not introduce per-feature silhouettes or arbitrary per-icon touch sizes.
 
+Touch main chat and tool scenes expose the same trailing tab-count overview action.
+Composer navigation follows the input surface through the shared navigationActions
+slot, outside its voice/submit controls. It is a separate floating circular control,
+bottom-aligned beside the input or tool capsule with the shared dock gap. Input
+expansion grows upwards; navigation retains its own material and remains usable
+during dictation. Both scenes use the same stacked tab-count glyph and shared
+floating navigation size, not CSS visual reordering. Shell owns one overview request scoped to the current
+panel owner; tools retain the actual tab directory and creation actions. Opening
+never implicitly activates a tool. Dismiss retains the prior destination, while
+selecting a tool reveals it and selecting main chat closes the tool plane. Search
+never receives automatic focus. The active floating Composer publishes its actual
+presentation so only its trailing entrance is shown, rather than duplicating the
+tool dock entrance. Counts exclude main chat and creation cards.
+
+### Scene intent and adaptive presentation
+
+ConversationPanelState retains primary/tools foreground per stable owner across
+conversation and route switches. Tab identity and explicit visibility/maximize
+are independent fields in that same owner. Shell holds no writable navigation copy. `projectShellScene` consumes the existing space resolver;
+input density chooses chrome, never the content destination. No device-name or
+767px branch decides tool navigation. Explicitly entering an empty tool directory
+is allowed without manufacturing a tab or persisted region-open state.
+
+Selecting primary in split view focuses its existing viewport without closing
+tools; selecting primary in a single-pane frame changes foreground only. Explicit
+hide remains a separate action. A transient sidebar drawer does not pin itself
+when the window grows, and its dock admission reserves the visible split content.
+Tool sidebar controls invoke Shell sidebar navigation, not region hide. Competing
+sidebar/overview requests dismiss each other; dialog ownership stays with Modal.
+
+Overview request identity is scoped to the panel owner and survives narrow/wide
+reflow. The same content DOM moves from fullscreen to adaptive sheet;
+wide touch panels expose an overview entrance in their toolbar. Focus restoration
+chooses a currently visible entrance. Floating primary Composer remains gated by
+actual full-width tool presentation; split view retains the ordinary primary input.
+
+Evidence: workbench-shell-scene.test.ts exercises scene combinations, narrow/wide
+roundtrips, empty directory, explicit close/maximize and scope changes. The real
+Shell smoke-tab-overview adds 390/768/799/1024 transitions, sidebar dismissal,
+retained tab identity and overview content DOM across resize. Physical iPad/iPhone
+and real IME remain separate device acceptance, not inferred from simulation.
+
+Explicit right-panel open/activation commands select tools even when the panel is already open; resource updates, passive hydration, resize, and close/MRU fallbacks preserve foreground. Shell consumes the owner directly instead of inferring navigation from activeTabId, open flags or revision pulses.
+
+### Stable scene action region
+
+Within the same protected viewport, touch chat navigation, tool navigation, and overview Done consume the existing scene dock inset and navigation control size. The trailing hit target has a stable center and bounds; multi-line editing grows upward. Overview owns a bounded flex content region with an independently scrolling card grid and a non-shrinking action row, including zero tabs. Fullscreen Modal consumes top/bottom safe insets once; the inline scene already inherits the protected Shell frame. Contained overviews anchor within their own container, not to an unrelated chat input. No cross-component measurements or Composer dependencies define overview geometry.
+
+### Overview scene transitions
+
+The overview borrows existing view instances; it owns only a short presentation
+transaction, never a terminal, conversation, or browser resource. View keys identify
+the retained source and its preview frame, but do not define scene allocation.
+Shell supplies primary/tools target bounds for both retained and image previews;
+compact bounds use the common content allocation, never a parked pane position. The existing Motion pane spring
+moves that frame between its measured card and scene rectangles. Native top-layer
+placement keeps DOM/iframe/canvas identity; unsupported placement or unavailable
+geometry settles directly. No cloned interactive tree is mounted for motion.
+
+The travelling surface is the complete selected card, including its shell and heading.
+Its old slot is an invisible layout placeholder. An independently interpolated content
+rectangle stays inside that surface; native retained paint consumes that inner aperture,
+not the outer heading area. Reversal retains the shared card-to-scene progress before cleanup; both rectangles
+and title visibility are derived from that progress.
+
+One transaction writes the frame geometry. Stop its writer before sampling a
+reversal; replacement/unmount revokes its completion. Selection commits through
+the existing navigation owner when the presentation hands back the view. Search
+editing cancels a pending selection. Resize settles the intended destination;
+reduced motion skips interpolation. Compact scenes project a parked pane into the
+visible scene's horizontal allocation; split scenes retain their actual pane bounds.
+The shared bottom action region does not move with the preview.
+
+Atomic and native-popover retained previews consume the same explicit geometry
+invalidation during flight. The latter remains above the moving frame and stops
+clipping to the old scrollport until the flight ends. Non-selected native top-layer
+views project their cards’ opacity explicitly, since top-layer paint escapes ancestor
+compositing. The placement adapter owns this projection and restores it on release. Cleanup restores card styles,
+clipping and view placement; business state continues to belong to its original owner.
+
+Primary chat preview framing follows the end of its rendered message content,
+clamped to the original viewport. Short content stays at the top; long content is
+cropped from the beginning so the visible tail is not lost below the card. Native
+view size, scroll position and draft are not changed. Conversation turns mark
+preview content; footer chrome is paint-hidden only while borrowed. Both atomic
+and native-top-layer placement consume the same framing calculation, including
+content resize while the preview is open. Tool previews retain start alignment.
+
+Presentation interruption preserves radius and opacity as well as geometry. Only
+scrolling the overview viewport invalidates scene bounds; live content scrolling
+inside a borrowed view does not commit navigation. Floating composer completion
+follows finite CSS animations and transitions, not a duplicate duration timer.
+Superseded snapshots cannot settle newer intent. Modal presence uses existing Motion
+retention and Radix closed-state animation; reopening revokes the old removal.
+
+Overview scene handoff has one visual owner: after its card flight completes, the
+Shell commits pane geometry without replaying a second horizontal transition.
+Destination chrome (Shell header, side-chat title, resource controls and floating
+composer/footer) consumes that same Shell's remaining scene progress, never a
+per-view/document-global handoff animation or forced document reflow. Read-only
+retained views hide their controls while preserving layout and DOM. Opacity is
+applied once at the outermost chrome boundary, not multiplied by nested footers;
+input leases follow the same membership and cannot acquire a nested Shell.
+The handoff revision is presentation-only; ordinary pane navigation still uses
+its shared spring. Lifted preview frames keep a flow placeholder, and cards with
+live top-layer descendants must not use content-visibility skipping: title paint
+and the measured destination must remain stable across lift/restore.
+
+Motion's completion callback runs outside React. Scene handback must synchronously
+commit the destination in the same presentation transaction that restores the
+borrowed view; otherwise observers (and potentially paint) see a card-sized view
+between the full-size flight and the actual scene. Completion regression coverage
+must inspect this boundary, not only the stable frames before and after it.
+
+The scene flight interpolates a visible aperture as well as frame geometry. A partly
+clipped card contributes its scrollport intersection; native top-layer content and
+atomic placement consume the same aperture and corner radius. Restoring normal
+clipping cannot expose or cut away another region on the handback frame. Raster
+previews scale by width without changing object-fit crop during the flight.
+
+Overview has one prepare/transition/commit transaction. Preparing projects a
+candidate renderer under the opaque overview without changing the panel's selected
+tab. Shell allocates the destination without replaying its pane animation. Ordinary
+DOM/retained renderers acknowledge the layout commit; asynchronous renderers opt
+into onPresentationReady. Browser attachment and drawable media are distinct:
+remote media acknowledges after an existing or first painted frame, not merely
+WebSocket connection. The BrowserPanel scene acknowledges its mounted actionable
+surface (address, loading/error and retry) independently of that media receipt;
+missing frames cannot prevent selection or hold the overview animation. Cancellation
+revokes only the temporary allocation; committed foreground never changed; late acknowledgements
+cannot complete a replacement transaction. Retiring the target cancels preparation.
+
+The same bounded Motion progress drives scene geometry, aperture, backdrop and
+chrome visibility. Scene chrome stays hidden while overview controls are present;
+after synchronous content handback, the presentation owner reveals the real controls
+with the shared Motion spring. Reopening, owner replacement and reduced motion
+cancel that final phase. Navigation commits before the transition layer is released. Reduced
+motion skips interpolation but retains the readiness and ownership checks. Preparing
+can be cancelled through the existing overview actions, without a duration timeout
+pretending that an unready renderer is usable. Controls are never duplicated.
+Start the spring's clock after synchronous geometry preparation, not at an earlier
+task timestamp: allocation/measurement time must not consume unpainted animation
+frames. Reversal retains the current value and velocity with that same clock rule.
+
+The scene's surface paint and modal scrim consume the same bounded progress as
+its frame and aperture, including interrupted/reversed transitions. The modal
+container itself must not translate independently: it supplies the coordinate
+basis for the retained content. Spring overshoot must not yield negative radii
+or advance opacity beyond the geometric endpoint. Viewport and overview-scroll changes remeasure the flow slot and scene bounds;
+they preserve the painted frame and converge to the new destination rather than
+committing navigation early. Middle-frame
+checks cover backdrop/scrim composition as well as content geometry.
+
+Overview chrome belongs to a destination token, not merely the presence of a
+panel host. Batched release/publish across conversations must reset hidden chrome
+before paint even when the destination never renders as null. A modal overview
+exclusively borrows retained views while open; the inline empty-tool overview may
+remain mounted but must be inactive until the modal releases them. Closing the
+last tool must not strand the inline chat preview in its unavailable fallback.
+
+Overview filtering must keep its escape path while criteria are active. The tab
+count threshold only decides when to initially offer type filtering; reducing
+the count cannot hide an active type filter's All action. Likewise, closing the
+last tab must not remove a nonempty search query's edit/clear control.
+
+The overview flight uses one reversible card-to-scene progress. Frame and content
+aperture allocate a heading band together. Measure its text ranges and icon bounds
+in normal card layout, separately from padding and inert control hit areas. Center
+the complete ink within the forming band, converging to its measured resting
+position; derive its reveal from the space remaining around that ink. Waiting for
+the entire control box makes a late threshold, even when driven by the same spring.
+The title row's inline edges follow the current frame and measured card insets;
+trailing actions stay at the travelling edge instead of jumping to the card width.
+Do not hard-clip glyphs or grow them from zero. Title position and opacity join the
+painted snapshot when reversing or rebasing; removing flight styles at the card
+endpoint cannot change their geometry or paint. Rendered coverage samples the
+forming band, whole-ink clearance, reversal and cleanup, not merely the existence
+of one translucent frame (`overview-heading-geometry.test.ts` and the existing
+overview smoke's `OPENCRAFT_OVERVIEW_HEADING_ONLY` path). Inner
+and outer corner radii reach zero together at the scene endpoint. Preparation holds
+the current progress, including a partially faded backdrop, rather than resetting it.
+Raster previews lease their current image/title for the whole transaction; cache
+updates continue independently and become visible after cancellation or completion.
+Once the destination is drawable and scene geometry is reached, the frozen raster
+cover dissolves only after geometry reaches the scene endpoint, into the actual viewer before commit. A readiness acknowledgement
+is not a promise that a cached image and a live video frame have identical pixels.
+
+The scene driver survives modal handback through an explicit playback lease held
+by the presentation owner. Chrome consumes the remaining progress; handback never
+starts another spring. New requests, owner replacement, reduced motion and unmount
+retire that lease. A different-card selection returns the currently painted card
+while preparing and expanding the new target concurrently. Only the foreground
+transaction writes shared backdrop/chrome or commits navigation. Reselecting a
+returning card adopts its painted geometry and progress. Responsive flow slots
+remeasure heading, content and frame together; reversal anchors to the actual
+painted rectangles before changing correction direction. Native top-layer
+retained content consumes its travelling frame's opacity too.
+Modal focus restoration waits until scene chrome releases inertness, resolves the
+current visible overview button, and yields to later user focus/pointer/key intent
+or scope replacement. It never restores an editor's IME.
+Retained scroll restoration follows reading intent: preserve a history offset,
+or follow the new end if the user was at the end. Restore after the home layout
+is active, including scrollable containers initially at zero.
+
+### Conversation navigation and scene allocation
+
+ConversationPanelState owns foreground (primary or tools) alongside, but independently
+of, selected tool tabs and pane preferences. A primary selection retains terminal and
+browser resources. Returning to a conversation restores its foreground; application
+route changes, resource hydration and window/input-mode changes do not infer it from
+pane visibility. This memory is scoped to the client runtime, not reload persistence.
+
+Shell projects the owner's intent into single or split layout. Split is not a
+navigation destination. Composer overview originates from primary; tool controls
+originate from their pane. Primary retained-view identity includes the conversation
+owner, just like tool identity.
+
+Overview preparation carries owner, target key and foreground only as a temporary
+allocation. It cannot call navigation or update the selected tab. Commit updates the
+owner once; cancel drops allocation without reverse navigation. Owner/route changes
+retire preparations and late acknowledgements cannot navigate a different owner.
+An empty right tool outlet remains a valid launcher after close. Explicit hide
+returns to primary; transferring the final right tab to bottom also releases right
+maximization and returns to the main workspace so the destination remains visible.
+
+Read-only retained previews disable native scroll anchoring in their nested scrollports.
+The retained portal's physical attachment follows its mounted lifetime. Changing
+the conversation registry key revokes and rebinds the preview registration without
+removing or re-appending the connected portal root. React identity alone does not
+preserve embedded browsing contexts across a native DOM disconnection.
+Scale and crop changes cannot write the borrowed view's scroll position; normal
+scroll anchoring resumes when the preview lease ends.
+
+Interruptible overview playback retains both position and velocity through the shared
+physical Motion spring. Geometry has zero endpoint derivatives at the compositing
+boundary. Entering and retiring overview flights return their original cards and
+hit targets once all painted edges are within half a device pixel and opacity
+within one alpha step of their endpoints; numerical spring tails cannot keep a
+visually settled card unclickable. Destination handback still waits for readiness.
+Chrome remains inert until its reveal completes, including controls
+mounted during handback; the Shell releases its temporary inert lease on completion
+or teardown. Modal focus ownership and domain navigation remain unchanged.
+
+Chrome input suppression is a temporary presentation lease. It is acquired once
+when opacity leaves its settled state, discovers only inserted subtrees while
+active, and restores the latest external inert intent (including writes queued
+in the same task as release). It never rescans the Shell on each animation frame.
+Enabling reduced motion retires every outgoing card, even while the active
+selection is awaiting renderer readiness; it must not bypass that readiness.
+
+The unified overview has no text search field or query state. It opens directly
+on the card grid (with type filters when needed); the shared dock continues to
+own the Done action position independently of card count.
+
+### Reduced motion must not create transitions
+
+The global reduced-motion rule sets CSS transition duration **and delay** to zero.
+A tiny nonzero duration applied to every element invents transitions on static
+surfaces because the default transition property is `all`. In particular, local
+SVG backdrop references can become animated during retained-view owner changes;
+Electron 44.8.0 / Chromium 152.0.7977.167 hit a native StyleResolver DCHECK in this
+sequence. The fix preserves SVG glass, atomic DOM moves and the shared motion
+framework. Keyframe animation completion retains its existing short-duration
+policy; transition-based semantic completion must handle reduced motion directly.
+Regression: the subscriptions mode of `smoke-tab-overview.ts` checks absence of
+invented transitions and switches owners in the actual retained-view Shell.
+
+## Live mobile workspace preview
+
+A mobile workspace preview loads the same application document and WorkbenchRoot
+in a same-origin iframe. The iframe supplies its actual viewport and a temporary
+`data-opencraft-preview="mobile"` presentation intent. Shared density binding
+consumes that intent without persisting a device preference; pointer modality
+and physical keyboard/gesture capabilities remain browser-owned. There is no
+parallel Demo Shell, terminal renderer, fake chat or mobile business state.
+
+The normal application owns authentication, routes, resources and transport.
+Mutations are real; server state sync uses ordinary client protocols. Focus,
+scroll and navigation stay local to each client, rather than becoming a screen
+mirror. AnnouncementCenter validates the frame path and ModalHost owns dismissal
+and focus. The parent sends theme selection to the child's existing appearance
+owner; an unconsumed Escape returns to the parent ModalHost. Embedded clients
+suppress the phone-guide contribution to avoid recursive frames.
+
+The Join guide resolves the current route on open, keeps only hostId/draftId
+routing query fields, and never transfers authentication credentials. Phone
+access retains normal login and admission. Product smoke checks share the actual
+WorkbenchRoot and production entry; synthetic identity/Host checks do not certify
+real phone keyboards, WeChat scanning or external execution.
 ### PWA sidebar and page capacity
 
 Installed browser overlay mode bounds the page row, stationary sidebar portal and page-overlay plane by the same dynamic viewport height. Full-bleed paint remains independent; footer SafeLayout allocates the bottom inset once and its measured height reserves list scroll clearance. Mobile drawer capacity comes from the current container, independent of the saved desktop width. This keeps the page preview narrow without scaling text or touch targets.
+
+Shell bottom navigation and primary sidebar actions share ShellNavigationButton.
+It projects design-system navigation size, ghost feedback and solid floating
+material for avatar, sign-in, Settings, applications, updates, create and return.
+Primary create/return actions retain their icon and label in the same capsule;
+icon-only accessories retain circular navigation geometry. Shell owns available
+row width and overflow, while the shared Button owns shape and control sizing.
+
+### Overview presentation clock and geometry projection
+
+Overview navigation readiness remains with `SceneTransitionOwner`; it is not an
+animation start time. `overview-playback` samples the existing physical Motion
+spring on the first admitted animation frame at time zero, in both directions.
+Allocation/React commits cannot consume that first frame. Normal 60/120Hz frame
+intervals are retained; a blocked/hidden interval admits at most one 30Hz step,
+without catch-up debt. Under sustained load this deliberately trades elapsed
+transition speed for spatial continuity; it does not guarantee device frame rate.
+Cancellation stops writes without sampling unpainted wall time. Reversal inherits
+position and physical spring velocity. The same driver survives scene handback
+for chrome reveal; no second spring or navigation timer is introduced.
+
+The flight owns frame/content/aperture geometry and publishes one projection to
+atomic and native-popover retained views. Placement observers consume that
+projection instead of reading back the layout just written by the flight. Content
+end measurements are invalidated by content resize/replacement, borrowed scrolling
+and destination reflow, not by each projected frame. Native decoration inherits
+its frame's border tokens and active/theme state; it does not cache resolved theme
+colors. Outside a flight, existing scroll/resize and CSS-anchor positioning remain
+active. Sibling opacity and the overview surface opacity have explicit composition
+leases: the native placement observer updates cached opacity factors without
+remeasuring geometry for those owned writes. Any simultaneous non-composition
+style/class/theme change still invalidates geometry; lease release restores the
+original inline value and priority and resumes normal measurement. CSSOM opacity
+rounding must not turn a compositor-only write into geometry invalidation.
+
+Teardown releases the projection before normal placement resumes, except an
+accepted handback that unmounts the overview in the same commit: there must be no
+last thumbnail remeasure/re-raise immediately before release. A multi-root handback
+uses the existing Shell chrome progress; it must not announce a document-global
+control reveal or restart CSS animations. Shell viewport initialization is lazy; its existing ResizeObserver owns subsequent
+sizes, not viewport getters evaluated on every React render. Existing selection
+restoration and focus ownership are unchanged.
+
+Retained scroll handback batches all destination reads before writes, in one
+microtask after the final home layouts and before the next paint. The queue is
+keyed by retained root, replaced/cancelled on reborrow, source rebinding and
+unmount, and excludes detached owners. Historical reading and current tail-follow
+intent remain distinct; renderer-owned scrollports stay with their renderer.
+
+`overview-playback.test.ts` covers delayed first frames, slow-frame admission,
+reversal, cancellation, pause/seek and completion. The actual Shell overview smoke
+has `OPENCRAFT_OVERVIEW_CADENCE_ONLY=1`: primary/terminal/side-chat, both directions,
+normal/6x throttled Chromium and native/atomic placement. It checks initial progress,
+intermediate spring samples and retained draft/iframe/side-chat identity. Its
+pre-application probe also counts MutationObserver, ResizeObserver and microtask
+work, viewport/client/scroll reads, synchronous handback duration and frame gaps
+through the final chrome reveal. The composition contract checks CSSOM rounding,
+external writers, width/class invalidation and native content/decoration opacity.
+`retained-preview-scroll.test.ts` covers batched restoration and cancelled owners.
+
+`NODE_ENV=production OPENCRAFT_SMOKE_PRODUCTION=1` selects production React for
+performance checks (use a distinct Vite cache). The controlled fixture budgets
+handoff plus scroll restoration at 150ms × CPU slowdown and complete-frame gaps
+at 175ms × slowdown, in addition to structural no-forced-document-layout and
+steady opacity-observer no-read assertions. These are regression ceilings, not
+smooth-frame targets. `OPENCRAFT_OVERVIEW_REVIEW_BASELINE=<fixed git ref>` loads the
+previous implementation into the same fixture/probe without changing the checkout;
+it reports metrics without applying candidate-only gates. Neither throttled
+Chromium nor these budgets constitute physical-phone acceptance.
+
+### Adaptive dialog input and queue hit geometry
+
+Adaptive information dialogs (including Assets pickers) use the resolved shared
+interaction-density preference and narrow capacity together for bottom sheets.
+A narrow compact pointer window keeps the centered utility dialog; a wide touch
+window may keep it too. Sheet dismissal accepts touch/pen contacts, never mouse
+contacts, and resize/preference changes retire held drags without dismissal.
+ModalSurface retains focus, Escape, scroll and content ownership throughout.
+
+Queued-message Resume and drag controls consume shared semantic geometry tokens
+and the existing control hit minimum. Compact row/glyph typography is unchanged;
+touch targets are at least44px, including an explicit on preference on pointer
+hardware. An off preference on coarse hardware retains compact geometry. Queue
+state, permissions, delivery, native execution and reorder callbacks are unchanged.
+
+### Composer utility and notification dismissal hit geometry
+
+Queue Send/Steer, Edit, Delete, cancel/review actions, Resume, and inline send-error
+dismissal share `--size-composer-utility-action`. Notification dismissal consumes
+`--size-notice-dismiss`, including reserved text space and surface containment.
+Both roles derive their minimum from `--size-control-hit-min`; no local pointer
+media query may override the resolved touch preference. Explicit on/off and live
+preference changes preserve the mounted controls and work in either hardware mode.
+Compact visual defaults remain22px/32px respectively; touch is at least44px.
+Glyphs, typography, delivery callbacks and authority are unchanged. Browser tests
+cover pointer/coarse contexts, preference changes,52px token propagation, keyboard
+activation, touch dismissal/action callbacks and narrow containment; not phone E2E.
+
+### Attachment and transcript accessory geometry
+
+Composer reference removal, file actions, image removal/retry, answer actions,
+terminal copy and generated-image Edit all consume shared semantic hit tokens and
+`--size-control-hit-min`. Glyphs and type scale remain unchanged. The answer lane
+reserves its action height even while streaming. Terminal copy reserves matching
+height and text clearance; enlarging a target must not overlap adjacent content.
+These are existing actions and state owners, not new permission/delivery paths.
+
+
+## Extension collection/detail regions
+
+A trusted View may consume `regions.MasterDetail`. The Web/Electron host measures
+its allocated route aperture and reuses `resolveShellSpace` with the shared collection-navigation
+width and readable-main minimum, including hysteresis. Window size and
+touch presentation are not layout authorities. The region owns frame, inactive
+inert/focus handling and Header placement; it never writes navigation, draft or
+resource state. Both slots retain DOM across capacity changes. A selected detail
+uses the existing route Header when narrow and an inline Header when split.
+
+Inbox directory and channel routes share one deferred renderer identity. The
+route activation selects the channel; the directory remains mounted across those
+routes. The existing ChannelRuntime, Composer draft leases and message display
+checkpoints remain the only data owners. Empty Inbox does not auto-select/read a
+group. Other platforms without this optional region retain single-route behavior.

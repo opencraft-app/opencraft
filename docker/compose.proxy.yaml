@@ -1,0 +1,70 @@
+# Optional overlay: run the model proxy (split Codex account Core: account pool,
+# configured providers, credentials and usage) as its own service.
+#   docker compose -f compose.yaml -f compose.proxy.yaml up -d
+# Brain then waits for the proxy instead of starting it, so Brain releases no
+# longer restart the proxy and proxy releases no longer restart engines.
+# Switching an existing deployment is a maintenance operation: stop Brain (which
+# owns the embedded Core) before the proxy can take the account writer lock.
+services:
+  proxy:
+    image: ${OPENCRAFT_PROXY_IMAGE:-${OPENCRAFT_IMAGE:-opencraft:local}}
+    platform: ${OPENCRAFT_PLATFORM:-linux/amd64}
+    init: true
+    restart: unless-stopped
+    user: "${OPENCRAFT_UID:?Set the deployment user UID}:${OPENCRAFT_GID:?Set the deployment user group GID}"
+    network_mode: host
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+    entrypoint: ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "proxy"]
+    environment:
+      OPENCRAFT_DATA_DIR: ${OPENCRAFT_DATA_DIR}
+      OPENCRAFT_WORKSPACE_DIR: ${OPENCRAFT_WORKSPACE_DIR}
+      OPENCRAFT_EXECUTION_DIR: ${OPENCRAFT_EXECUTION_DIR:-${OPENCRAFT_DATA_DIR}/execution}
+      OPENCRAFT_LOG_DIR: ${OPENCRAFT_LOG_DIR:-/var/log/opencraft}
+      OPENCRAFT_PROXY_PORT: ${OPENCRAFT_PROXY_PORT:-45071}
+    volumes:
+      - type: bind
+        source: ${OPENCRAFT_HOST_DATA_DIR:?Set the absolute host data directory}
+        target: ${OPENCRAFT_DATA_DIR:?Set the absolute container data directory}
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${OPENCRAFT_HOST_WORKSPACE_DIR:?Set the absolute host workspace directory}
+        target: ${OPENCRAFT_WORKSPACE_DIR:?Set the absolute container workspace directory}
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${OPENCRAFT_HOST_LOG_DIR:-${OPENCRAFT_HOST_DATA_DIR}/logs}
+        target: ${OPENCRAFT_LOG_DIR:-/var/log/opencraft}
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${OPENCRAFT_HOST_LOG_DIR:-${OPENCRAFT_HOST_DATA_DIR}/logs}/proxy
+        target: ${OPENCRAFT_LOG_DIR:-/var/log/opencraft}/proxy
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "/opt/opencraft/bin/opencraft-health", "proxy"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+    # Let accepted model requests and credential refreshes finish before exit.
+    stop_grace_period: 150s
+
+  # The personal assistant gateway reaches configured providers through the proxy too.
+  gateway:
+    environment:
+      OPENCRAFT_ASSISTANT_PROXY_CALLER_FILE: ${OPENCRAFT_DATA_DIR}/run/proxy-callers/assistant.json
+
+  brain:
+    environment:
+      OPENCRAFT_PROXY_MODE: external
+      OPENCRAFT_PROXY_PORT: ${OPENCRAFT_PROXY_PORT:-45071}
+    depends_on:
+      proxy:
+        condition: service_healthy

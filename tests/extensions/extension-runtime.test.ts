@@ -533,7 +533,7 @@ test("presentation contributions cannot outlive or invent their semantic target"
   await supervisor.dispose();
 });
 
-for (const role of ["bot-conversation", "connector-management"] as const) test(`the ${role} View role has exactly one transactional owner`, async () => {
+for (const role of ["connector-management"] as const) test(`the ${role} View role has exactly one transactional owner`, async () => {
   const supervisor = new ExtensionSupervisor({ platform: "web" });
   await supervisor.activate(definition("opencraft.bot-owner", (api) => {
     api.views.register({

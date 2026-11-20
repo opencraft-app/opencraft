@@ -21,6 +21,7 @@ import {
 test("filesystem and drive roots remain valid directory identities", () => {
   assert.equal(workspacePathParent("/"), "/");
   assert.equal(workspacePathParent("C:/"), "C:/");
+  assert.equal(workspacePathParent("C:/repo"), "C:/");
   assert.equal(workspacePathParent("C:\\"), "C:/");
   assert.deepEqual(workspaceRootsForResource(["/", "C:/", ""], null, "/"), ["/", "C:/"]);
   assert.deepEqual(workspaceRootsForResource([], null, "/"), ["/"]);

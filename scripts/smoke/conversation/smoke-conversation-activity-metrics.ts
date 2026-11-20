@@ -75,7 +75,7 @@ try {
     assert.notEqual(await subagent.first().getAttribute('aria-expanded'), wasExpanded, "shared visual header preserves native collaboration toggle");
     await subagent.first().click();
     assert.equal(await subagent.first().getAttribute('aria-expanded'), wasExpanded);
-    const subagentStatus = await page.locator('.thread-subagent-activity__status').evaluateAll(nodes => nodes.map(node => {
+    const subagentStatus = await page.locator('.thread-subagent-activity__summary').evaluateAll(nodes => nodes.map(node => {
       const style = getComputedStyle(node);
       return { size: parseFloat(style.fontSize), weight: style.fontWeight };
     }));
@@ -105,7 +105,7 @@ try {
     await page.evaluate(() => document.documentElement.style.setProperty('--opencraft-chat-font-size', '20px'));
     const enlarged = await measure();
     assert.deepEqual(enlarged, normal, "reading preference cannot change summary metrics or glyph identity");
-    assert.deepEqual(await page.locator('.thread-subagent-activity__status').evaluateAll(nodes => nodes.map(node => {
+    assert.deepEqual(await page.locator('.thread-subagent-activity__summary').evaluateAll(nodes => nodes.map(node => {
       const style = getComputedStyle(node);
       return { size: parseFloat(style.fontSize), weight: style.fontWeight };
     })), subagentStatus, "collaboration state stays on body when reading size changes");

@@ -1,15 +1,20 @@
-import type { ConfiguredCodexResponses } from "./configured-responses.js";
-import { join } from "node:path";
+import { accountFailure } from "./account-diagnostics.js";
+import { mkdirSync, writeFileSync, renameSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { createHash } from "node:crypto";
+import { configuredModelGatewayPath, ModelGatewayStore } from './model-gateway-store.js';
+import { modelGatewayProvider } from './model-gateway-connection.js';
 import { deviceLoginMaintenanceReason } from "./device-login-maintenance.js";
 import type { CodexAccountView } from "@opencraft/appserver-protocol";
 import { AccountPoolStore, accountCreditStatus } from "./store.js";
-import { CodexAccountPoolProxy } from "./codex-proxy.js";
+import { CodexAccountPoolProxy, PROXY_CALLERS, PROXY_CALLER_PREFIX } from "./codex-proxy.js";
 import { AccountCredentialRefreshManager } from "./oauth-refresh.js";
 import { CodexDeviceLoginService, createManagedCodexRefresh, type CodexMaintenanceClientFactory } from "./codex-auth.js";
 import { CodexSubscriptionService } from "./codex-usage.js";
 import { CodexResetCreditService } from "./codex-reset-credits.js";
 import { createCodexMaintenanceClient } from "./codex-maintenance-client.js";
 import { createCodexAccountPoolLaunch } from "./codex-launch.js";
+import type { ConfiguredCodexResponses } from "./configured-responses.js";
 import { startCodexAccountPoolServer, type AccountPoolUncertainDiagnostic } from "./server.js";
 
 function string(value: unknown): string { return typeof value === "string" ? value : ""; }
@@ -50,8 +55,12 @@ export class CodexAccountService {
   private readonly maintenanceReady: () => Promise<void>;
   private activation?: Promise<void>;
 
-  private constructor(private readonly options: CodexAccountServiceOptions) {
+  private readonly personalPools = new Map<string, Promise<CodexAccountService>>();
+  private readonly personalInstances = new Map<string,CodexAccountService>();
+  private personalLogin?: Promise<Awaited<ReturnType<CodexDeviceLoginService['start']>>>;
+  private constructor(private readonly options: CodexAccountServiceOptions, private readonly personal: string | null = null) {
     const store = new AccountPoolStore({
+      ownerActor: personal,
       databasePath: join(options.dataDirectory, "account-pool.sqlite"),
       secretsDirectory: join(options.dataDirectory, "secrets"),
       preserveAffinity: options.ownerHandoff?.admissionOpen() === false,
@@ -59,8 +68,9 @@ export class CodexAccountService {
     this.store = store;
     const createClient = options.createMaintenanceClient
       ?? (codexHome => createCodexMaintenanceClient({ executable: options.executable, codexHome }));
+    const maintenanceDirectory = personal ? join(options.dataDirectory,"personal-logins",createHash("sha256").update(personal).digest("hex")) : options.dataDirectory;
     const managedRefresh = createManagedCodexRefresh({
-      refreshRoot: join(options.dataDirectory, "refresh"), createClient,
+      refreshRoot: join(maintenanceDirectory, "refresh"), createClient,
       deferRecovery: options.ownerHandoff?.admissionOpen() === false,
     });
     this.maintenanceReady = managedRefresh.ready;
@@ -72,11 +82,25 @@ export class CodexAccountService {
     this.resetCreditService = new CodexResetCreditService({ store, fetch: options.fetch,
       resolveCredential: (account, secret, reason) => refresh.resolve(account, secret, reason),
       refreshUsage: accountId => this.subscriptions.refreshAccount(accountId) });
-    this.login = new CodexDeviceLoginService({ store, loginRoot: join(options.dataDirectory, "login"), createClient,
+    this.login = new CodexDeviceLoginService({ store, loginRoot: join(maintenanceDirectory, "login"), createClient,
       deferRecovery: options.ownerHandoff?.admissionOpen() === false,
       onAccountImported: account => { void this.subscriptions.refreshAccount(account.id).catch(() => undefined); },
     });
-    this.proxy = new CodexAccountPoolProxy({ store, configuredResponses: options.configuredResponses,
+    this.proxy = new CodexAccountPoolProxy({ store,
+      privateHostId: personal ? "personal-subscription:"+createHash("sha256").update(personal).digest("hex") : undefined,
+      personalRoute: personal ? undefined : request => this.personalRoute(request),
+      configuredResponses: options.configuredResponses ? {
+        catalog: () => options.configuredResponses!.catalog(),
+        resolve: async model => {
+          const route=await options.configuredResponses!.resolve(model);
+          const match=route&&/^http:\/\/127\.0\.0\.1:[0-9]+(\/personal\/([a-f0-9]{64})\/v1)$/.exec(route.baseUrl);
+          if(match && modelGatewayProvider(model)==='subscription-'+match[2]) {
+            if(!this.server)throw Error('Subscription proxy unavailable');
+            return {...route!,baseUrl:this.server.url+match[1]};
+          }
+          return route;
+        },
+      } : undefined,
       upstreamBaseUrl: options.upstreamBaseUrl ?? "https://chatgpt.com/backend-api/codex",
       fetch: options.fetch, resolveCredential: (account, secret, reason) => refresh.resolve(account, secret, reason) });
     if (options.ownerHandoff?.retained) {
@@ -105,8 +129,8 @@ export class CodexAccountService {
     })();
   }
 
-  handoffObservation() {
-    const counts = { requests: this.requests.size, proxy: this.server?.activeCount() ?? 0,
+  handoffObservation(): { counts: { requests: number; proxy: number; oauth: number; refresh: number; subscriptions: number; resetCredits: number }; activeCount: number; historicalCount: number } {
+    const counts = { requests: this.requests.size + [...this.personalInstances.values()].reduce((n,pool)=>n+pool.handoffObservation().activeCount,0), proxy: this.server?.activeCount() ?? 0,
       oauth: this.login.activeCount(), refresh: this.refresh.activeCount(),
       subscriptions: this.subscriptions.activeCount(), resetCredits: this.resetCreditService.activeCount() };
     return { counts, activeCount: Object.values(counts).reduce((a, b) => a + b, 0),
@@ -134,8 +158,23 @@ export class CodexAccountService {
     } catch { throw new Error("Account credential validation failed"); }
   }
 
+  private callersPublished = false;
+  /** Issue stable proxy tokens for non-Codex callers and publish them beside the Core sockets (0600, owner only). */
+  private publishCallerTokens(): void {
+    if (this.callersPublished || this.personal !== null || this.server === null) return;
+    const directory = join(dirname(this.options.dataDirectory), "run", "proxy-callers");
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    for (const caller of PROXY_CALLERS) {
+      const path = join(directory, caller.slice(PROXY_CALLER_PREFIX.length) + ".json"), temporary = `${path}.${process.pid}.tmp`;
+      writeFileSync(temporary, JSON.stringify({ caller, baseUrl: this.server.url, token: this.store.issueHostToken(caller) }) + "\n", { mode: 0o600 });
+      renameSync(temporary, path);
+    }
+    this.callersPublished = true;
+  }
+
   launch() {
     if (this.server === null || this.closing) throw new Error("Codex account service is unavailable");
+    this.publishCallerTokens();
     return createCodexAccountPoolLaunch({ baseUrl: this.server.url, hostToken: this.store.issueHostToken("local-codex") });
   }
 
@@ -152,6 +191,9 @@ export class CodexAccountService {
       throw new Error("Account maintenance requires a fenced live owner");
     }
     await this.server!.interruptForMaintenance();
+    await Promise.all([...this.personalPools.values()].map(async pool => (await pool).close()));
+    this.personalPools.clear();
+    this.personalInstances.clear();
   }
 
   close(): Promise<void> {
@@ -170,12 +212,45 @@ export class CodexAccountService {
         phase = "reset-credits"; await this.resetCreditService.dispose();
         phase = "subscriptions"; await this.subscriptions.dispose();
         phase = "proxy"; await this.server?.close();
+        await Promise.allSettled([...this.personalPools.values()].map(async pool => (await pool).close()));
         this.store.close();
       } finally { clearInterval(timer); }
     })();
   }
 
   private async handleRequest(method: string, params: Record<string, unknown>): Promise<unknown> {
+    if (method.startsWith('opencraft/codex/accounts/personal/')) {
+      if (this.personal || !configuredModelGatewayPath() || this.options.ownerHandoff?.admissionOpen() === false) throw Error('Personal subscriptions unavailable');
+      const actor=string(params.actor);
+      if (!actor || actor.length>512) throw Error('Human identity required');
+      const pool=await this.personalPool(actor), operation=method.slice('opencraft/codex/accounts/personal/'.length);
+      if(operation==='cancel') {
+        const cancelled=await pool.login.cancel(string(params.sessionId));
+        if(cancelled)pool.personalLogin=undefined;
+        return {cancelled};
+      }
+      if(operation==='disconnect') {for(const account of pool.store.listAccounts())pool.store.removeAccount(account.id);return {disconnected:true};}
+      if(operation==='start' && pool.store.listAccounts().length===0) {
+        if(pool.personalLogin) {
+          const previous=await pool.personalLogin;
+          if(previous.expiresAt<=Date.now()) {
+            await pool.login.cancel(previous.sessionId);
+            pool.personalLogin=undefined;
+          }
+        }
+        if(!pool.personalLogin) {
+          const pending=pool.login.start();pool.personalLogin=pending;
+          void pending.catch(()=>{if(pool.personalLogin===pending)pool.personalLogin=undefined;});
+        }
+        return {status:'pending',login:await pool.personalLogin};
+      }
+      if(operation==='poll') {
+        const result=await pool.login.poll(string(params.sessionId));
+        if(result.status!=='pending' && pool.personalLogin && (await pool.personalLogin).sessionId===string(params.sessionId))pool.personalLogin=undefined;
+        if(result.status!=='complete')return result;
+      } else if(operation!=='start')throw Error('Unsupported subscription operation');
+      return {status:'complete',connection:await this.personalDescriptor(actor,pool)};
+    }
     const { store, login, subscriptions } = this;
     let result: unknown;
     switch (method) {
@@ -230,9 +305,62 @@ export class CodexAccountService {
         break;
       }
       case "opencraft/codex/accounts/deviceLogin/cancel": result = { cancelled: await login.cancel(string(params.sessionId)) }; break;
-      default: throw new Error("Unsupported Codex account method");
+      default: throw accountFailure("invalid-request", "operation", false);
     }
     return result;
+  }
+
+  /** Reuse the account owner in a Human-specific directory. Subscription tokens
+   * never enter the installation pool or the model configuration document. */
+  private personalPool(actor:string):Promise<CodexAccountService> {
+    const namespace=createHash('sha256').update(actor).digest('hex');
+    let pending=this.personalPools.get(namespace);
+    if(!pending) {
+      if(this.personalPools.size>=128)throw Error('Personal subscription capacity reached');
+      const directory=join(this.options.dataDirectory,'personal-subscriptions',namespace);
+      pending=(async()=>{
+        const pool=new CodexAccountService({...this.options,nativeCodexHomeDirectory:join(directory,'native'),proxyPort:undefined,configuredResponses:undefined,ownerHandoff:undefined},actor);
+        try{await pool.login.ready();await pool.activate();this.personalInstances.set(namespace,pool);return pool;}catch(error){await pool.close();throw error;}
+      })();
+      this.personalPools.set(namespace,pending);
+      void pending.catch(()=>this.personalPools.delete(namespace));
+    }
+    return pending;
+  }
+
+  private async personalDescriptor(actor:string,pool:CodexAccountService) {
+    if(!this.server)throw Error('Subscription proxy unavailable');
+    const namespace=createHash('sha256').update(actor).digest('hex'),token=pool.store.issueHostToken('personal-subscription:'+namespace);
+    const response=await pool.proxy.handle(new Request('http://personal.invalid/v1/models',{headers:{'x-opencraft-account-pool-token':token}}));
+    if(!response.ok)throw Error('Subscription model catalog unavailable');
+    const catalog=await response.json() as {models?:Record<string,unknown>[]};
+    const models=(catalog.models??[]).flatMap(m=>{
+      const id=string(m.slug)||string(m.id)||string(m.model);
+      return /^[A-Za-z0-9_.:/-]{1,160}$/.test(id)?[{id,name:string(m.display_name)||string(m.name)||id,enabled:true}]:[];
+    });
+    if(!models.length)throw Error('Subscription has no available models');
+    return {providerId:'subscription-'+namespace,baseUrl:this.server.url+'/personal/'+namespace+'/v1',proxyToken:token,models,
+      name:'我的 Codex 订阅',accounts:pool.accountViews().map(a=>({label:a.label,subscriptionType:a.subscriptionType,enabled:a.enabled}))};
+  }
+
+  private async personalRoute(request:Request):Promise<Response|null> {
+    const match=/^\/personal\/([a-f0-9]{64})\/v1\/(responses|models)$/.exec(new URL(request.url).pathname);
+    if(!match)return null;
+    const path=configuredModelGatewayPath();if(!path)return new Response(null,{status:404});
+    const ledger=new ModelGatewayStore(path);
+    let actor:string;
+    try {
+      const connection=ledger.contribution('subscription-'+match[1]);
+      if(connection?.state!=='shared'||connection.templateProvider!=='codex-subscription'||connection.scope!=='personal')return new Response(null,{status:403});
+      actor=connection.actor;
+    }finally{ledger.close();}
+    if(createHash('sha256').update(actor).digest('hex')!==match[1])return new Response(null,{status:403});
+    const token=request.headers.get('authorization')?.replace(/^Bearer /,'')??'';
+    if(this.store.authenticateHostToken(token)!=='personal-subscription:'+match[1])return new Response(null,{status:401});
+    const pool=await this.personalPool(actor);
+    const headers=new Headers(request.headers);headers.set('x-opencraft-account-pool-token',token);headers.delete('authorization');
+    return pool.proxy.handle(new Request('http://personal.invalid/v1/'+match[2],{method:request.method,headers,
+      ...(request.method==='GET'?{}:{body:request.body,duplex:'half'}),signal:request.signal} as RequestInit));
   }
 
   private accountViews(): CodexAccountView[] {
@@ -256,6 +384,7 @@ export class CodexAccountService {
         resetCreditActions: true,
         credits: accountCreditStatus(state.limitWindows),
         status: state.status,
+        maintenance: store.accountMaintenance(account.id),
         observedAt: state.observedAt,
         heldUntil: state.heldUntil,
         lastUsedAt: state.lastUsedAt,

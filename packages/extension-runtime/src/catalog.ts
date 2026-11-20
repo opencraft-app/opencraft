@@ -40,7 +40,7 @@ export function projectExtensionCatalog(
       id, name: manifest?.name ?? running?.name ?? id,
       description: manifest?.description ?? running?.description ?? null,
       version: manifest?.version ?? running?.version ?? "",
-      source: managed?.installation.source.kind === "module-url" ? "installed" as const : "builtin" as const,
+      source: managed?.origin === 'user' || managed?.installation.source.kind === "module-url" ? "installed" as const : "builtin" as const,
       sourceUrl: managed?.installation.source.kind === "module-url" ? managed.installation.source.url : null,
       enabled: managed?.installation.enabled ?? status === "active",
       status,

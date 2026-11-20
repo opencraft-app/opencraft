@@ -459,6 +459,15 @@ state. Immutable signed payload files keep their authenticated identity; local
 plugins load from their persistent state directory. This is a shared ownership
 contract for all deployments.
 
+Headless/Compose Gateway uses `<dataDirectory>/user-plugins` by default, with an
+absolute `OPENCRAFT_USER_PLUGIN_DIRECTORY` override. This is deployment state on
+the existing data volume, not code copied into the application image. Headless
+advertises it through the inert `opencraft-user-plugins` JSON script; Host and
+connection bootstrap keep their existing owner and values. New clients retain
+compatibility with managed Web workers advertising the same ABI in deployment
+configuration. Bundled functionality remains bundled; enabling this mechanism
+does not relocate first-party plugins.
+
 ## Operator-installed Web plugins
 
 Managed deployments keep operator-installed trusted Web plugins in
@@ -478,6 +487,11 @@ can install these modules: browser URL installations cannot acquire internal
 capabilities by claiming this descriptor or trust level. The normal extension
 manager owns activation, enable/disable state and plugin storage; replacing a
 bundled default does not delete its stored installation or data.
+
+The plugin catalog distinguishes user-installed origin from a bundled loader
+strategy: host-installed user code appears as installed, while only the server
+owner may remove its files. The bootstrap is bounded to 128 entries/2 MiB and
+individual modules to 512 KiB. Orphan directories are not public asset grants.
 
 An optional `branding` object carries initial HTML `name`, `faviconUrl`,
 `markUrl` and `appleTouchIconUrl`; asset URLs must stay within the plugin's own

@@ -24,6 +24,7 @@ export async function executeBrowserTool(
   const value = record(args);
   if (value === null) return textResult("Browser tool arguments must be an object", false);
   try {
+    if (context.signal?.aborted) throw new BrowserToolError('CDP_ABORTED', 'Browser invocation cancelled', false, 'not-dispatched');
     if (open) return textResult(await host.open(context, value));
     if (tool.name === "get_tab_context") return textResult(await host.getTabContext(context, value));
     const result = await host.browserUse(context, value);

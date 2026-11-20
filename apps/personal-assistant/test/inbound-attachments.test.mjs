@@ -1,0 +1,20 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {join} from 'node:path';
+import {Runner,request} from '../src/runner.mjs';
+import {LocalAttachmentStore} from '../src/adapters/filesystem/attachment-store.mjs';
+import {profileFor,until} from './helpers.mjs';
+test('inbound attachment references survive admission and reach the reception model with the owning input',async t=>{
+ const profile=profileFor(t),store=new LocalAttachmentStore(join(profile.path,'attachments'));
+ const attachment=store.importBytes('notes.txt',Buffer.from('from the uploaded file'));
+ let received;
+ const runner=await Runner.open(profile,{receptionModel:{async decide(input){received=input;return {kind:'reply',text:'received'};}}});
+ t.after(()=>runner.close());
+ const payload={op:'say',id:'attached',params:{text:'Read this file',attachments:[attachment.attachmentId]}};
+ await request(profile,payload);await request(profile,payload);
+ await until(()=>received);
+ assert.equal(received.attachments[0].attachmentId,attachment.attachmentId);
+ assert.equal(received.attachments[0].name,'notes.txt');
+ assert.equal(received.text,'Read this file');
+ await assert.rejects(request(profile,{op:'say',id:'invalid',params:{text:'Read another',attachments:['../other-profile']}}));
+});

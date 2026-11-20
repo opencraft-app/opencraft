@@ -76,6 +76,7 @@ export function workspacePathParent(path: string): string {
   if (/^[a-z]:[\\/]+$/iu.test(path)) return `${path.slice(0, 2)}/`;
   const normalized = path.replaceAll("\\", "/").replace(/\/+$/u, "");
   const slash = normalized.lastIndexOf("/");
+  if (slash === 2 && /^[a-z]:\//iu.test(normalized)) return normalized.slice(0, 3);
   if (slash <= 0) return normalized.startsWith("/") ? "/" : normalized;
   return normalized.slice(0, slash);
 }
@@ -210,4 +211,17 @@ export function workspaceRootsForResource(
   if (roots.length > 0) return roots;
   if (cwd !== null && cwd.length > 0) return [cwd];
   return [workspacePathParent(normalizedPath)];
+}
+
+export function workspaceBreadcrumbs(path: string): readonly { path: string; label: string }[] {
+  const normalized = path.replaceAll('\\', '/');
+  const drive = /^[a-z]:\//iu.exec(normalized)?.[0];
+  const root = drive ?? (normalized.startsWith('/') ? '/' : '');
+  const result = root ? [{ path: root, label: root }] : [];
+  let current = root;
+  for (const segment of normalized.slice(root.length).split('/').filter(Boolean)) {
+    current = current ? joinWorkspacePath(current, segment) : segment;
+    result.push({ path: current, label: segment });
+  }
+  return result;
 }

@@ -79,7 +79,7 @@ test("v1 dedicated store upgrades its thread index without changing facts, alloc
   old.database.close();
   let upgraded = new TokenUsageStateDatabase(directory);
   try {
-    assert.equal(upgraded.outcome.appliedVersion, 3);
+    assert.equal(upgraded.outcome.appliedVersion, 4);
     assert.equal(upgraded.outcome.status, "migrated");
     assert.ok(upgraded.outcome.backupPath);
     assert.deepEqual(upgraded.database.prepare("SELECT * FROM schema_migrations WHERE version=1").get(), migration);
@@ -306,7 +306,7 @@ test("v2 source recency upgrade preserves facts and installed history and avoids
  seed(owner);const facts=old.database.prepare('SELECT * FROM token_usage_sources').all(),history=old.database.prepare('SELECT * FROM schema_migrations ORDER BY version').all();old.database.close();
  const state=new TokenUsageStateDatabase(directory);
  try{
-  assert.equal(state.outcome.appliedVersion,3);assert.deepEqual(state.database.prepare('SELECT * FROM token_usage_sources').all(),facts);
+  assert.equal(state.outcome.appliedVersion,4);assert.deepEqual(state.database.prepare('SELECT * FROM token_usage_sources').all(),facts);
   assert.deepEqual(state.database.prepare('SELECT * FROM schema_migrations WHERE version<=2 ORDER BY version').all(),history);
   const sql='SELECT max(observed_ms) AS at FROM token_usage_sources WHERE server_id=?';
   assert.equal(state.database.prepare(sql).get('server')!.at,1000);

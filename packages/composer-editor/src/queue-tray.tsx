@@ -1,4 +1,6 @@
 import { ChatDocumentCompiler, chatDocumentPlainText } from "@opencraft/chat-document";
+import { canSteerQueueItem } from "./queue-policy";
+import { Button } from "@opencraft/design-system-web/button";
 import { EditIcon as Pencil, DeleteIcon as Trash2, CloseIcon as X } from "@opencraft/design-system-web/action-icons";
 import { AvatarImage } from "@opencraft/extension-react";
 import { useIntl } from "@opencraft/i18n/react";
@@ -20,9 +22,42 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import React, { lazy, Suspense, useMemo, useRef, useState } from "react";
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { ImageIcon } from "@opencraft/design-system-web/action-icons";
 
 const WebUserMessageDocument = lazy(() => import("@opencraft/chat-render-web").then(module => ({ default: module.WebUserMessageDocument })));
+
+/** The Host retains authority over file-backed image bytes and their lifetime. */
+export type ComposerQueueImageLoader = (source: string, signal: AbortSignal) => Promise<{
+  readonly source: string;
+  readonly release?: () => void;
+} | null>;
+
+function QueueImage({ source, loadImage }: { source: string; loadImage?: ComposerQueueImageLoader }) {
+  const direct = /^(?:data:image\/|blob:|https?:\/\/)/iu.test(source) ? source : null;
+  const [resolved, setResolved] = useState<{ source: string; loader: ComposerQueueImageLoader; url: string } | null>(null);
+  useEffect(() => {
+    if (direct || !loadImage) return;
+    const controller = new AbortController();
+    let release: (() => void) | undefined;
+    void loadImage(source, controller.signal).then(result => {
+      if (controller.signal.aborted) { result?.release?.(); return; }
+      release = result?.release;
+      if (result) setResolved({ source, loader: loadImage, url: result.source });
+    }).catch(() => { /* Keep the same-sized image placeholder. */ });
+    return () => { controller.abort(); release?.(); };
+  }, [source, direct, loadImage]);
+  const url = direct ?? (resolved?.source === source && resolved.loader === loadImage ? resolved.url : null);
+  return <span className="opencraft-composer-queue-image" aria-hidden="true"><AvatarImage
+    src={url} fallback={<ImageIcon size={14} />} /></span>;
+}
+
+function QueueImages({ sources, loadImage }: { sources: readonly string[]; loadImage?: ComposerQueueImageLoader }) {
+  return <span className="opencraft-composer-queue-images" aria-hidden="true">
+    {sources.slice(0, 3).map((source, index) => <QueueImage key={index + ":" + source} source={source} loadImage={loadImage} />)}
+    {sources.length > 3 ? <span className="opencraft-composer-queue-image">+{sources.length - 3}</span> : null}
+  </span>;
+}
 import { AlertIcon as CircleAlert, TurnRightIcon as CornerDownRight, GripIcon as GripVertical, PlayIcon as Play, PersonIcon as User } from "@opencraft/design-system-web/action-icons";
 
 /** Display-only author resolved by the host; the Composer owns no directory policy. */
@@ -37,11 +72,14 @@ export interface ComposerQueueTrayItem {
   readonly renderKey?: string;
   readonly id: string;
   readonly preview: string;
+  readonly imageSources?: readonly string[];
   readonly state: "submitting" | "queued" | "failed" | "unknown";
   readonly operation: "idle" | "updating" | "deleting" | "starting";
   readonly actionable: boolean;
   readonly steerable?: boolean;
   readonly dismissible?: boolean;
+  /** Explicit Host permission, independent of editability. */
+  readonly deletable?: boolean;
   readonly reorderable?: boolean;
   readonly editing: boolean;
   /** Automatic recovery waits do not require a manual Resume action. */
@@ -53,6 +91,7 @@ export interface ComposerQueueTrayItem {
 }
 
 export interface ComposerQueueTrayProps {
+  readonly loadImage?: ComposerQueueImageLoader;
   readonly items: readonly ComposerQueueTrayItem[];
   readonly isResponseInProgress: boolean;
   readonly atomicSteer?: boolean;
@@ -66,16 +105,7 @@ export interface ComposerQueueTrayProps {
   readonly portalContainer?: HTMLElement | null;
 }
 
-/** The shortcut and row button must respect the same queue admission state. */
-export function canSteerQueueItem(
-  item: Pick<ComposerQueueTrayItem, "actionable" | "steerable" | "operation" | "pausedReason">,
-  isResponseInProgress: boolean,
-  atomicSteer: boolean,
-): boolean {
-  return (item.steerable ?? item.actionable) && item.operation === "idle"
-    && item.pausedReason !== "restored-after-host-restart"
-    && (!isResponseInProgress || atomicSteer);
-}
+export { canSteerQueueItem } from "./queue-policy";
 
 function ignoreRejected(operation: Promise<void> | undefined): void {
   void operation?.catch(() => undefined);
@@ -124,6 +154,7 @@ function QueueTooltip({ children, label, content, portalContainer, disabled = fa
 
 function SortableQueueItem({
   item,
+  loadImage,
   isResponseInProgress,
   atomicSteer,
   portalContainer,
@@ -134,6 +165,7 @@ function SortableQueueItem({
   onSteer,
 }: {
   readonly item: ComposerQueueTrayItem;
+  readonly loadImage?: ComposerQueueImageLoader;
   readonly isResponseInProgress: boolean;
   readonly atomicSteer: boolean;
   readonly portalContainer?: HTMLElement | null;
@@ -167,7 +199,7 @@ function SortableQueueItem({
   const dragDisabled = item.reorderable === false || !item.actionable || busy || item.editing;
   const dragTooltip = item.reorderable === false ? item.error ?? item.pausedReason ?? intl.formatMessage({ id: "chat.queue.message", defaultMessage: "Queued message" }) : reorderLabel;
   const steerDisabled = !canSteerQueueItem(item, isResponseInProgress, atomicSteer);
-  const deleteDisabled = (!item.actionable && !item.dismissible) || busy;
+  const deleteDisabled = (!(item.deletable ?? item.actionable) && !item.dismissible) || busy;
   const steerTooltip = awaitingNativeReconciliation
       ? intl.formatMessage({ id: "chat.queue.awaitingReconciliation", defaultMessage: "This queued message is awaiting native reconciliation before it can be sent" })
       : isResponseInProgress && !atomicSteer
@@ -217,11 +249,12 @@ function SortableQueueItem({
         </span>
       </QueueTooltip>
 
-      <QueueTooltip label={[plainPreview, item.error ?? item.pausedReason].filter(Boolean).join("\n\n")} content={<>
+      <QueueTooltip label={[plainPreview || intl.formatMessage({ id: "chat.queue.images", defaultMessage: "Image attachment" }), item.error ?? item.pausedReason].filter(Boolean).join("\n\n")} content={<>
+        {item.imageSources?.length ? <QueueImages sources={item.imageSources} loadImage={loadImage} /> : null}
         <Suspense fallback={item.preview}><WebUserMessageDocument documentId={`queue-preview:${item.id}`} source={item.preview} allowWideBlocks={false} /></Suspense>
         {item.error ?? item.pausedReason ? <p>{item.error ?? item.pausedReason}</p> : null}
       </>} portalContainer={portalContainer} tapToOpen>
-        <button type="button" aria-label={plainPreview || intl.formatMessage({ id: "chat.queue.message", defaultMessage: "Queued message" })} className="opencraft-composer-queue-item__preview-trigger" style={{ width: "100%", minWidth: 0, maxWidth: "100%", textAlign: "left" }}><span className="opencraft-composer-queue-item__preview">{plainPreview}</span></button>
+        <Button variant="link" size="sm" contentLayout="row" aria-label={plainPreview || intl.formatMessage({ id: "chat.queue.images", defaultMessage: "Image attachment" })} className="opencraft-composer-queue-item__preview-trigger" style={{ width: "100%", minWidth: 0, maxWidth: "100%", alignSelf: "stretch", justifyContent: "flex-start" }}><span className="opencraft-composer-queue-item__message">{item.imageSources?.length ? <QueueImages sources={item.imageSources} loadImage={loadImage} /> : null}<span className="opencraft-composer-queue-item__preview">{plainPreview}</span></span></Button>
       </QueueTooltip>
 
       <div className="opencraft-composer-queue-item__actions">
@@ -282,6 +315,7 @@ function SortableQueueItem({
 
 export function ComposerQueueTray({
   items,
+  loadImage,
   isResponseInProgress,
   atomicSteer = false,
   onEdit,
@@ -346,6 +380,7 @@ export function ComposerQueueTray({
           <SortableQueueItem
                 key={item.renderKey ?? item.id}
                 item={item}
+                loadImage={loadImage}
                 isResponseInProgress={isResponseInProgress}
                 atomicSteer={atomicSteer}
                 portalContainer={portalContainer}

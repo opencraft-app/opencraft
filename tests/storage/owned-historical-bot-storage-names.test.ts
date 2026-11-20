@@ -6,10 +6,10 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { openManagedDatabase, SqliteLifecycleError } from "@opencraft/sqlite-node";
-import { OpenCraftHostStateDatabase, OPENCRAFT_HOST_STATE_MIGRATIONS } from "../../apps/opencraft-daemon/src/opencraft-host-state-database.js";
+import { OpenCraftHostStateDatabase, OPENCRAFT_HOST_STATE_MIGRATIONS, OPENCRAFT_HOST_STATE_CURRENT_MIGRATIONS } from "../../apps/opencraft-daemon/src/opencraft-host-state-database.js";
 
 const temporaryDirectory = realpathSync(tmpdir());
-const currentVersion = OPENCRAFT_HOST_STATE_MIGRATIONS.at(-1)!.version;
+const currentVersion = OPENCRAFT_HOST_STATE_CURRENT_MIGRATIONS.at(-1)!.version;
 const oldTables = ["codex_bot_rooms", "codex_bot_commands", "codex_bot_message_slots"];
 const currentName = (name: string) => oldTables.includes(name) ? name.replace(/^codex_/, "opencraft_") : name;
 const history = (db: DatabaseSync) => db.prepare("SELECT * FROM schema_migrations ORDER BY version").all();

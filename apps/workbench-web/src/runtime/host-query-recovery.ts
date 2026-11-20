@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
+import { retireThreadCatalogConnection } from "./thread-catalog-updates";
 
 interface HostQueryRuntime {
   getSnapshot(): { readonly phase: string; readonly connectionGeneration: number };
@@ -27,10 +28,12 @@ export function bindHostQueryRecovery(runtime: HostQueryRuntime, hostId: string,
     const alreadyReady = wasReady;
     wasReady = true;
     if (alreadyReady && readyGeneration === snapshot.connectionGeneration) return;
+    const replacingConnection = readyGeneration !== null;
     readyGeneration = snapshot.connectionGeneration;
     const ticket = ++revision;
     void queries.cancelQueries(filters).then(() => {
       if (disposed || ticket !== revision || runtime.getSnapshot().phase !== "ready") return;
+      if (replacingConnection) retireThreadCatalogConnection(queries, hostId);
       // Active readers refetch; inactive caches stay visible but stale.
       return queries.invalidateQueries(filters);
     }).catch(() => undefined);

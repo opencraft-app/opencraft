@@ -15,6 +15,8 @@ function fixture() {
     request: async (method,params,admit) => {
       if (admit && !admit()) throw Error('revoked');
       requests.push({method,params});
+      if(method==='opencraft/orchestration/private-capability')return {version:1};
+      if(method==='opencraft/orchestration/publish')return {published:true};
       if (method === 'thread/resume') return {cwd:'/workspace',model:'inherited',modelProvider:'test',approvalPolicy:'never',sandbox:{type:'readOnly'}};
       return {thread:{id:'child'}};
     },
@@ -123,4 +125,67 @@ test('a Codex native full-access source exports the portable profile only for cr
   assert.equal(portable.permissions,permissionModeProfileId('full'),'foreign drivers consume the shared permission contract');
   f.port.request=async()=>({cwd:'/workspace',approvalPolicy:'never',sandbox:{type:'dangerFullAccess'},activePermissionProfile:{id:'custom-unknown'}});
   assert.equal((await f.invoke('prepare',{arguments:{},sourceOnly:true})).permissions,'custom-unknown','unknown custom policies cannot be promoted to Full access');
+});
+
+test('independent assistant creation preserves granted settings without a fabricated parent', async()=>{
+ const f=fixture();await f.invoke('create',{threadId:'',settings:{cwd:'/workspace',model:'granted',sandbox:'read-only',approvalPolicy:'never',orchestrationRoot:true}});
+ const native=f.requests.find(r=>r.method==='thread/start')!.params;
+ assert.equal(native.cwd,'/workspace');assert.equal(native.model,'granted');assert.equal(native.sandbox,'read-only');
+ assert.equal(native.__opencraftOrchestrationSourceThreadId,undefined);assert.equal(native.orchestrationRoot,undefined);
+ assert.equal(native.__opencraftOrchestrationOperation,'op');assert.equal(native.__opencraftDeferPublication,true);
+ await f.invoke('publish');
+});
+
+test('an old Host cannot silently publish assistant Threads before ownership exists',async()=>{
+ const f=fixture();f.port.request=async()=>({});
+ await assert.rejects(f.invoke('create',{settings:{cwd:'/workspace',orchestrationRoot:true}}),{code:503});
+ assert.equal(f.requests.length,0);
+});
+
+test('private roots return identity before hydration/name, and finalize only after publication',async()=>{
+ const f=fixture(),settings={cwd:'/workspace',orchestrationTitle:'Owned title',orchestrationRoot:true};
+ let published=false,hydrated=false;
+ const request=f.port.request;
+ f.port.materialize=async id=>{assert.equal(id,'child');assert.equal(published,true);hydrated=true;};
+ f.port.request=async(method,params,admit)=>{
+   if(method==='thread/name/set'){assert.equal(published,true);assert.equal(hydrated,true);}
+   const result=await request(method,params,admit);
+   if(method==='opencraft/orchestration/publish')published=true;
+   return result;
+ };
+ const created=await f.invoke('create',{threadId:'',settings});
+ assert.equal(created.threadId,'child');assert.equal(hydrated,false);
+ assert.equal(f.requests.some(r=>r.method==='thread/name/set'),false);
+ await f.invoke('publish');
+ await f.invoke('finalize',{threadId:'child',settings:{cwd:'/workspace',orchestrationTitle:'Owned title'}});
+ const native=f.requests.find(r=>r.method==='thread/start')!,named=f.requests.find(r=>r.method==='thread/name/set')!;
+ assert.equal(native.params.__opencraftOrchestrationFingerprint,named.params.__opencraftOrchestrationFingerprint);
+ assert.equal(named.params.__opencraftOrchestrationOperation,'op:title');
+ assert.equal(named.params.name,'Owned title');
+});
+
+test('revocation during root hydration prevents title mutation',async()=>{
+ const f=fixture();f.port.materialize=async()=>{f.revoke();};
+ await assert.rejects(f.invoke('finalize',{threadId:'child',settings:{orchestrationTitle:'Title'}}),{code:403});
+ assert.equal(f.requests.length,0);
+});
+
+test('failed root hydration preserves the same identity and original title mutation key on retry',async()=>{
+ const f=fixture();let attempts=0;
+ f.port.materialize=async()=>{if(++attempts===1)throw Error('read outcome unknown');};
+ const params={threadId:'child',settings:{orchestrationTitle:'Title'}};
+ await assert.rejects(f.invoke('finalize',params),/read outcome unknown/);
+ assert.equal(f.requests.length,0);
+ await f.invoke('finalize',params);
+ assert.equal(f.requests.length,1);assert.equal(f.requests[0].params.__opencraftOrchestrationOperation,'op:title');
+ assert.equal(f.requests.some(r=>r.method==='thread/start'),false);
+});
+
+test('internal stop forwards only the exact Thread/Turn with live admission',async()=>{
+ const f=fixture();await f.invoke('interrupt',{threadId:'private-child',turnId:'expected-turn'});
+ assert.deepEqual(f.requests,[{method:'turn/interrupt',params:{threadId:'private-child',turnId:'expected-turn'}}]);
+ await assert.rejects(f.invoke('interrupt',{threadId:'private-child'}),{code:400});
+ await assert.rejects(f.invoke('interrupt',{threadId:'',turnId:'expected-turn'}),{code:400});
+ f.revoke();await assert.rejects(f.invoke('interrupt',{threadId:'private-child',turnId:'expected-turn'}),{code:403});
+ assert.equal(f.requests.length,1);
 });

@@ -1,9 +1,10 @@
+import { PendingPreview } from "@opencraft/design-system-web/preview-activation";
 import { useIntl } from "@opencraft/i18n/react";
 import { CopyIcon, CheckIcon } from "@opencraft/design-system-web/action-icons";
 import { ExpandIcon as SharedExpandIcon, CloseIcon as SharedCloseIcon } from "@opencraft/design-system-web/action-icons";
 import type { ChatDocumentNode } from "@opencraft/chat-document";
 import type { ChatNodeRendererProps } from "@opencraft/chat-render-react";
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { useState, type MouseEvent as ReactMouseEvent, type ReactNode, lazy, Suspense } from "react";
 
 import { writeToClipboard } from "../../clipboard";
 import { usePreviewFocusOrigin } from "../../preview-focus-origin";
@@ -39,28 +40,8 @@ function TableContents({ node, renderNodes }: {
   );
 }
 
-function TablePreview({ children, onClose, onKeyboardNavigation, open, openedByPointer }: {
-  readonly children: ReactNode;
-  readonly onClose: () => void;
-  readonly onKeyboardNavigation: ReturnType<typeof usePreviewFocusOrigin>["onPreviewKeyDown"];
-  readonly open: boolean;
-  readonly openedByPointer: boolean;
-}) {
-  const intl = useIntl();
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const dialog = ref.current;
-    if (dialog === null) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
-  }, [open]);
-  return (
-    <dialog aria-label={intl.formatMessage({ id: "chat.table.preview", defaultMessage: "Table preview" })} className="chat-table-preview" data-opened-by-pointer={openedByPointer || undefined} onCancel={(event) => { event.preventDefault(); onClose(); }} onClose={onClose} onKeyDown={onKeyboardNavigation} ref={ref}>
-      <div className="chat-table-preview__toolbar"><span>{intl.formatMessage({ id: "chat.table.preview", defaultMessage: "Table preview" })}</span><button aria-label={intl.formatMessage({ id: "chat.table.close", defaultMessage: "Close table preview" })} onClick={onClose} type="button"><CloseGlyph /></button></div>
-      <div className="chat-table-preview__content">{children}</div>
-    </dialog>
-  );
-}
+const LazyTablePreview=lazy(()=>import("./table-preview").then(module=>({default:module.TablePreview})));
+function TablePreview(props: import("react").ComponentProps<typeof LazyTablePreview>) {return props.open ? <Suspense fallback={<PendingPreview onClose={props.onClose}/>}><LazyTablePreview {...props}/></Suspense>:null;}
 
 export function TableRenderer({ context, node, renderNodes }: ChatNodeRendererProps) {
   const intl = useIntl();
@@ -95,7 +76,7 @@ export function TableRenderer({ context, node, renderNodes }: ChatNodeRendererPr
           <button aria-label={copied ? intl.formatMessage({ id: "chat.table.copied", defaultMessage: "Copied table" }) : intl.formatMessage({ id: "chat.table.copy", defaultMessage: "Copy table" })} onClick={(event) => void copy(event)} title={copied ? intl.formatMessage({ id: "chat.table.copiedShort", defaultMessage: "Copied" }) : intl.formatMessage({ id: "chat.table.copy", defaultMessage: "Copy table" })} type="button"><CopyGlyph copied={copied} /></button>
         </div>
       </div>
-      <TablePreview onClose={() => setPreviewOpen(false)} onKeyboardNavigation={previewFocus.onPreviewKeyDown} open={previewOpen} openedByPointer={previewFocus.openedByPointer}><TableContents node={node} renderNodes={renderNodes} /></TablePreview>
+      <TablePreview returnFocus={previewFocus.returnFocus} onClose={() => setPreviewOpen(false)} onKeyboardNavigation={previewFocus.onPreviewKeyDown} open={previewOpen} openedByPointer={previewFocus.openedByPointer}><TableContents node={node} renderNodes={renderNodes} /></TablePreview>
     </div>
   );
 }

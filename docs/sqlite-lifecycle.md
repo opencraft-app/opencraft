@@ -958,3 +958,16 @@ cost remains separate; permanent anti-resurrection facts are never expired.
 ### 多源声明模型检查
 
 Server 的 `check:storage` 与生成器读取同一份 `packages/storage-node/drizzle.config.ts` 中的 `schema` 配置：支持单个具体文件路径或非空路径数组，路径相对该包解析。产品消费者可在自己的配置中组合独立声明模块，不需要把产品表复制进核心 schema。检查不读取运行中数据库，不接受 glob，缺失文件、重复源、重复导出名或跨源重复表 owner 均失败；完整声明模型仍须与最后的冻结 snapshot 一致。其他独立 owner 默认继续检查各自的 `schema.ts`。
+
+
+### Server 已发布历史分叉的收敛
+
+Server 的 `migration-lineages.json` 只声明源码中已审查的有限历史，不从运行中数据库推导新迁移。已有内部账本与上游账本如果在相同 version 使用了不同 name/SQL，不能重排已执行记录，也不能把同内容 SQL 在不同位置的账本当成同一身份。
+
+- 默认新建库沿 canonical journal；编译器冻结其 name、version、SQL 与 snapshot 校验值。已有库在安装级 writer fence 内以只读方式核对完整账本，只能选择一个精确声明的前缀；之后仍由通用 managed opener 完成校验、备份、恢复与追加。未知、篡改、混合和更新版本的历史拒绝打开，不编辑旧记录。
+- alternate 的已发布 SQL 必须逐字节对应 canonical 中唯一的已审查 SQL。编译器只追加该路径尚未执行的 SQL，跳过已经执行过的同内容迁移；两条路径必须在测试中得到相同最终结构，并保留业务行、原账本时间戳与身份。
+- 不只冻结 alternate 的原始 published 前缀，也冻结其完整 `convergencePublished`。以后 canonical 增加迁移，可在各路径末尾追加并审查 `--freeze`；若上游发布了一个新的分叉前缀，必须增加新的 alternate ID，不能扩展或改写旧 ID 的 published 前缀而重排已经收敛的数据库。
+- `SERVER_DATA_CONTRACT.hash` 描述完整有限迁移族，而不是声称所有库都被改写成 canonical 账本。旧来源导入凭据及其摘要仍独立核验，不能用新 hash 洗白旧来源。
+- Drizzle 生成、schema 检查和物理结构验证必须使用同一份配置中的全部声明源，包括产品拥有的独立 schema。旧迁移的等价内联 FK/CHECK、列顺序和 identifier quoting 不是改写已发布 SQL 的理由；测试对明确列出的旧表示验证列/default/PK/FK/CHECK/index/STRICT，再保留其余对象和 trigger 的严格校验，并用反例验证没有放宽约束。
+
+相关验证：`tests/storage/server-history-convergence.test.ts`、`server-migration-compiler.test.mjs`、`server-schema-assertion.test.ts` 和 `server-storage.test.ts`。完整 `check:storage` 与干净依赖安装仍是交付门槛，单独 Server 编译检查不能替代所有 owner 的验收。

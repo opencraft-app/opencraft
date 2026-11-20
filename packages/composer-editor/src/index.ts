@@ -1,3 +1,4 @@
+export type { AttachmentResolver, AttachmentProgress, ComposerImageEditSession } from "./attachment-preview-session";
 export { modelChoiceFamilies, chooseFamilyModel } from "./model-choice-families";
 export { modelEffortLabel } from "./model-choice-labels";
 export { ComposerAttachedRail } from "./attached-rail";
@@ -37,5 +38,3 @@ export { groupComposerModels } from "./session-model-picker";
 
 export { ConversationReferenceProvider } from "./conversation-references";
 export type { ConversationReferencePort } from "./conversation-references";
-
-export type { AttachmentProgress } from "./attachment-preview-session";

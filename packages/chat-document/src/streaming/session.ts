@@ -11,6 +11,7 @@ export class ChatDocumentStreamingSession {
   private committed: ChatDocumentSnapshot | null = null;
   private nextIdentity = 0;
   private committedParsedNodes: readonly ChatDocumentNode[] = [];
+  private committedLiteralSpans = "[]";
   private committedDialect: ChatDocumentDialect | null = null;
 
   constructor(
@@ -27,11 +28,12 @@ export class ChatDocumentStreamingSession {
   compile(source: string, options: ChatDocumentCompilerOptions = {}): ChatDocumentCompileCandidate {
     const base = this.committed;
     const dialect = options.dialect ?? "assistant";
+    const literalSpansKey=JSON.stringify(options.literalSpans??[]);
     // Returning to a completed document reuses its committed identities and
     // settled segments. Render context (Host, theme, policy) is resolved by the
     // View on every mount; this snapshot contains syntax and identity only.
     if (base !== null && !base.streaming && options.streaming !== true
-      && base.source === source && this.committedDialect === dialect) {
+      && base.source === source && this.committedDialect === dialect && this.committedLiteralSpans === literalSpansKey) {
       return { snapshot: base, commit: () => {} };
     }
     const parsed = this.compiler.compile(source, options);
@@ -61,6 +63,7 @@ export class ChatDocumentStreamingSession {
         this.committed = snapshot;
         this.committedParsedNodes = parsed.nodes;
         this.committedDialect = dialect;
+        this.committedLiteralSpans = literalSpansKey;
         this.nextIdentity = reconciled.nextIdentity;
       },
     };

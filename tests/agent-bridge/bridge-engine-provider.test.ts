@@ -106,13 +106,15 @@ test("bridge engine provider maps AppServer new Threads and steer onto one Host 
   assert.equal(steerStatus.schemaVersion, 1);
 });
 
-test("new bridge Threads only use their configured prefix; legacy identities never fall through", async () => {
+test("new bridge Threads only use their configured prefix; legacy identities never fall through", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-prefix-"));
   const provider = new BridgeEngineProvider({
     id: "fixture", label: "Fixture", engine: "claude-code",
     threadPrefix: "claude_bridge_", modelPrefix: "claude-code:",
     defaultCwd: "/tmp", models: [],
-    gateway: { url: "http://127.0.0.1:1", token: "x".repeat(32), serverId: "server-1", inboxPath: "/tmp/provider-inbox.sqlite" },
+    gateway: { url: "http://127.0.0.1:1", token: "x".repeat(32), serverId: "server-1", inboxPath: join(root, "inbox.sqlite") },
   });
+  t.after(async () => { await provider.close(); await rm(root, { recursive: true, force: true }); });
   assert.equal(provider.ownsThread("claude_bridge_id"), true);
   assert.equal(provider.ownsThread("claude_legacy"), false);
   assert.equal(provider.ownsModel("claude-code:current"), true);

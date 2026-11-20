@@ -8,6 +8,8 @@ export const ASSERTION_HEADER = "x-opencraft-relay-assertion";
 export type IdentityRequest = Pick<IncomingMessage, "headers"> & Partial<Pick<IncomingMessage, "rawHeaders" | "method" | "url">>;
 export interface IdentityProvider {
   authenticate(request: IdentityRequest): Principal | null;
+  /** Authentication-owner enrichment using fresh independently verified directory evidence. */
+  preparePrincipal?(principal: Principal): Promise<Principal>;
   trustedOrigin?(request: IdentityRequest): string | null;
   /** Revalidate server-owned browser sessions when a connection outlives its request. */
   isCurrent?(principal: Principal): boolean;

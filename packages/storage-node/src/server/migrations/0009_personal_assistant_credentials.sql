@@ -1,0 +1,1 @@
+ALTER TABLE `personal_assistants` ADD `credential_id` text;

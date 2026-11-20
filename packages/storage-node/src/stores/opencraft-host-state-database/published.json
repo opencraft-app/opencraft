@@ -6,5 +6,14 @@
     "sqlChecksum": "8f31b77b1bb630c1cd8b910d2d84dcf530c2f45af6e8a185ae2033be8ed0274f",
     "snapshotChecksum": "017a2fbfcd28626388bd3481eb95391d7209704715ae9b426e10f0858a813699",
     "compiledChecksum": null
+  },
+  {
+    "tag": "0001_input_delivery",
+    "when": 1795099259152,
+    "version": 17,
+    "sqlChecksum": "67f4d4d9067c1f168c1ec3d342f9d650ee640286ed325cce1be972be58f8e118",
+    "snapshotChecksum": "9a61785e9bad6959e8c197f8d92ed4bfde3991e357e8f451aeffe3258947db2e",
+    "compiledChecksum": "67f4d4d9067c1f168c1ec3d342f9d650ee640286ed325cce1be972be58f8e118",
+    "ledgerName": "input-delivery-lifecycle"
   }
 ]

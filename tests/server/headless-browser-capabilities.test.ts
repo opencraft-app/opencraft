@@ -5,7 +5,9 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import { WebSocketServer } from 'ws';
+import { WebSocketServer, WebSocket } from 'ws';
+import { WebSocketTransport } from '../../packages/appserver-transport-websocket/src/index.ts';
+import { SessionCapabilities } from '@opencraft/session-capabilities';
 import { startHeadlessServer } from '../../scripts/headless-server.mjs';
 import { createWorkbenchWebServer } from '../../scripts/serve-workbench-web.mjs';
 import { LOGICAL_CLIENT_FIELD } from '../../packages/app-host-protocol/src/index.js';
@@ -16,6 +18,9 @@ test('headless assembly binds browser capabilities to admitted execution and con
   await mkdir(webRoot); await writeFile(join(webRoot, 'index.html'), '<html>fixture</html>');
   await writeFile(join(webRoot, 'version.json'), JSON.stringify({ schemaVersion: 1, buildId: 'browser-capability', headlessServer: true, headlessHostId: 'opencraft-server' }));
   const native = new WebSocketServer({ host: '127.0.0.1', port: 0 }); await once(native, 'listening');
+  let registry: SessionCapabilities | undefined;
+  const scoped = SessionCapabilities.prototype.scoped;
+  t.mock.method(SessionCapabilities.prototype, 'scoped', function(this: SessionCapabilities, serverId: string) { registry = this; return scoped.call(this, serverId); });
   let app: any, options: any, capabilities: SessionCapabilityPort | undefined, state = 'inProgress', inspections = 0;
   t.after(async () => { await app?.close(); for (const socket of native.clients) socket.terminate(); await new Promise<void>(resolve => native.close(() => resolve())); await rm(root, { recursive: true, force: true }); });
   native.on('connection', socket => socket.on('message', bytes => {
@@ -26,13 +31,15 @@ test('headless assembly binds browser capabilities to admitted execution and con
     if (message.method === 'thread/read') result = { thread: { id: message.params.threadId, status: { type: 'active', activeFlags: [] }, turns: [] } };
     socket.send(JSON.stringify({ id: message.id, result, ...(message[LOGICAL_CLIENT_FIELD] ? { [LOGICAL_CLIENT_FIELD]: message[LOGICAL_CLIENT_FIELD] } : {}) }));
   }));
-  app = await startHeadlessServer({ root, webRoot, dataDirectory: join(root, 'data'), port: 0,
+  app = await startHeadlessServer({ root, webRoot, engines: ['dsh'], defaultEngine: 'dsh', dataDirectory: join(root, 'data'), port: 0,
+    createCodexTransport: () => new WebSocketTransport({ url: `ws://127.0.0.1:${(native.address() as any).port}/rpc`, createSocket: url => new WebSocket(url) }),
     startAgentHost: async (input: any) => { capabilities = input.sessionCapabilities; return { websocketUrl: `ws://127.0.0.1:${(native.address() as any).port}/rpc`, async close() {} }; },
     createWebServer: async (input: any) => { options = input; return createWorkbenchWebServer(input); } });
   assert(capabilities);
   const actors = options.actorService.store, service = options.actorCollaborationService.service;
   const context = actors.resolveHuman({ provider: 'opencraft-deployment', subject: 'anonymous-operator', displayName: 'Operator', expiresAt: Date.now() + 60000 });
   const threadId = 'codex_fixture';
+  capabilities = registry!.scoped(service.execution.serverForThread(threadId));
   service.authorizeExecution(context, threadId, 'input'); service.executionStarted(threadId, 'input', 'turn');
   const browser = options.remoteBrowserService, { scope } = await browser.metadata('local-anonymous', undefined, () => {});
   // The native execution transport is a fixture; no browser process is needed

@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+import { chromium } from 'playwright';
+const code = (await build({entryPoints:['packages/browser-preview-bridge/src/annotation-overlay.ts'],bundle:true,write:false,format:'iife',globalName:'Overlay',platform:'browser'})).outputFiles[0].text;
+const browser=await chromium.launch();
+try {
+ const page=await browser.newPage({viewport:{width:800,height:600}});
+ await page.setContent('<div id="opencraft-annotation-host">Page owned</div><div id="scroller" style="position:absolute;left:80px;top:100px;width:250px;height:150px;overflow:auto"><div style="height:600px"><button id="target" style="margin-top:70px;width:100px;height:40px">Target</button><div id="sticky" style="position:sticky;top:0;height:30px">Sticky</div></div></div>');
+ await page.evaluate(() => {
+  const original=Element.prototype.attachShadow;window.shadows=[];Element.prototype.attachShadow=function(init){const s=original.call(this,init);window.shadows.push(s);return s;};
+  const raf=requestAnimationFrame.bind(window),cancel=cancelAnimationFrame.bind(window);window.pending=new Set();
+  window.requestAnimationFrame=fn=>{const id=raf(t=>{window.pending.delete(id);fn(t)});window.pending.add(id);return id;};
+  window.cancelAnimationFrame=id=>{window.pending.delete(id);cancel(id)};
+ });
+ await page.addScriptTag({content:code});
+ await page.evaluate(()=>{window.overlay=Overlay.createAnnotationOverlay(window)});
+ assert.equal(await page.evaluate(()=>pending.size),0,'no frame while unused');
+ await page.evaluate(()=>{overlay.bind('one',document.querySelector('#target'));overlay.draw([{x:0,y:0,width:100,height:40,targetKey:'one'}]);});
+ const rect=()=>page.evaluate(()=>{const n=shadows.at(-1).querySelector('.box');const r=n.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,display:n.style.display};});
+ assert.equal((await rect()).y,170);
+ await page.evaluate(()=>overlay.suspend(true)); assert.equal(await page.evaluate(()=>pending.size),0,'parked remote page stops work');
+ await page.evaluate(()=>overlay.suspend(false)); assert.equal(await page.evaluate(()=>pending.size),1);
+ await page.evaluate(()=>document.querySelector('#scroller').scrollTop=40);await page.waitForTimeout(60);
+ assert.equal((await rect()).y,130,'nested scroll follows element');
+ await page.evaluate(()=>document.querySelector('#target').style.marginTop='100px');await page.waitForTimeout(60);
+ assert.equal((await rect()).y,160,'layout shift follows element');
+ await page.evaluate(()=>document.querySelector('#scroller').scrollTop=120);await page.waitForTimeout(60);
+ assert.equal((await rect()).y,100,'clip to scroll container');assert.equal((await rect()).h,20);
+ await page.evaluate(()=>{document.querySelector('#target').remove();});await page.waitForTimeout(60);
+ assert.equal((await rect()).display,'none');assert.equal(await page.evaluate(()=>pending.size),0,'removed target stops work');
+ await page.evaluate(()=>{const b=document.createElement('button');b.id='target';document.body.append(b);overlay.bind('one',b);overlay.draw([{x:0,y:0,width:100,height:40,targetKey:'one'}]);});
+ assert.equal((await rect()).display,'none','replacement does not inherit old mark');
+ await page.evaluate(()=>{overlay.bind('sticky',document.querySelector('#sticky'));overlay.draw([{x:0,y:0,width:100,height:30,targetKey:'sticky'}]);});
+ await page.waitForTimeout(50);
+ assert.equal((await rect()).y,await page.evaluate(()=>document.querySelector('#sticky').getBoundingClientRect().y));
+ await page.evaluate(()=>overlay.dispose());
+ assert.equal(await page.evaluate(()=>pending.size),0);
+ assert.equal(await page.locator('#opencraft-annotation-host').textContent(),'Page owned','never remove a colliding page node');
+ console.log('annotation tracking: nested scroll, clipping, layout, sticky, replacement, idle and DOM ownership passed');
+} finally { await browser.close(); }

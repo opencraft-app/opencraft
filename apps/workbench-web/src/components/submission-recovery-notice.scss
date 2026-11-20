@@ -1,0 +1,42 @@
+@use "@opencraft/design-system/menu.web" as menu;
+@use "@opencraft/design-system/controls.web" as controls;
+
+.submission-recovery-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--spacing) * 1);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  cursor: pointer;
+  @include controls.density-target(0px, 28px);
+  &[data-status-kind="failed"] { color: var(--color-text-danger); }
+  &:focus-visible { outline: 2px solid var(--color-text-accent); outline-offset: 2px; }
+  @include controls.hover-capable { &:hover { color: var(--color-text); } }
+  > svg { flex: none; }
+}
+
+.submission-recovery-popover {
+  @include menu.surface;
+  z-index: var(--layer-confirmation-modal);
+  width: min(280px, calc(100vw - 24px));
+  max-height: var(--radix-popover-content-available-height);
+  padding: calc(var(--spacing) * 3);
+  transform-origin: var(--radix-popover-content-transform-origin);
+  p { margin: 0 0 calc(var(--spacing) * 3); white-space: normal; overflow-wrap: anywhere; }
+  [role="alert"] { color: var(--color-text-danger); margin: calc(var(--spacing) * 2) 0 0; }
+}
+
+.submission-recovery-detached {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: calc(var(--spacing) * 2);
+  color: var(--color-text-secondary);
+  font: var(--typography-control-compact-font);
+  > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  > button { flex-shrink: 0; }
+}

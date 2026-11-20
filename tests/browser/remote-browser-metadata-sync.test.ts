@@ -82,15 +82,18 @@ test('creation invalidation merges queued edits and imports the same page/tab id
   assert.equal(f.service.metadataPeers.size, 1);
 });
 
-test('same-record conflict retains the local draft and current server record, without retry', async t => {
+test('concurrent viewport observations converge to the committed record without disabling the browser', async t => {
   const f = await fixture(t); await f.service.createTab(grant('original'), { url: 'https://example.test/one' });
   const storage = await f.client(), key = 'opencraft.browser-tabs.v1';
   const base = storage.getItem(key)!, remote = JSON.parse(base), local = JSON.parse(base);
   remote[0].viewportMode = { type: 'fit', width: 600, height: 400 }; local[0].viewportMode = { type: 'fit', width: 700, height: 500 };
   const current = await f.service.metadata('owner', undefined, () => {});
   await f.service.metadata('owner', { scope: current.scope, key: 'tabs', value: JSON.stringify(remote), expectedKeyRevision: current.keyRevisions.tabs, mutationId: randomUUID() }, () => {});
-  storage.setItem(key, JSON.stringify(local)); await assert.rejects(storage.flush(), { code: 'STATE_CONFLICT' });
-  assert.equal(storage.getItem(key), JSON.stringify(local)); assert.equal(storage.isReady, false);
+  storage.setItem(key, JSON.stringify(local)); await storage.flush();
+  assert.equal(storage.getItem(key), JSON.stringify(remote)); assert.equal(storage.isReady, true);
+  const attached = JSON.parse(storage.getItem(key)!); attached[0].panelAttached = true;
+  storage.setItem(key, JSON.stringify(attached)); await storage.flush();
+  assert.equal(storage.isReady, true); remote[0].panelAttached = true;
   assert.equal((await f.service.metadata('owner', undefined, () => {})).values.tabs, JSON.stringify(remote));
 });
 
@@ -234,15 +237,15 @@ test('snapshot on reconnect discovers missed creation and disposal removes metad
   await eventually(() => f.service.metadataPeers.size === 0);
 });
 
-test('an invalidation arriving during a read schedules a newer full snapshot', async t => {
+test('an invalidation arriving during a read schedules a newer snapshot', async t => {
   const f = await fixture(t); await f.service.createTab(grant('first'), { url: 'https://example.test/' });
   const storage = await f.client(); await storage.flush();
-  const metadata = f.service.metadata.bind(f.service); let admitted!: () => void, release!: () => void;
+  const metadata = f.service.metadataDigest.bind(f.service); let admitted!: () => void, release!: () => void;
   const started = new Promise<void>(resolve => { admitted = resolve; }), gate = new Promise<void>(resolve => { release = resolve; });
   t.after(() => release?.()); let hold = true;
-  f.service.metadata = async (...args: any[]) => {
+  f.service.metadataDigest = async (...args: any[]) => {
     const value = await (metadata as any)(...args);
-    if (args[1] === undefined && hold) { hold = false; admitted(); await gate; }
+    if (hold) { hold = false; admitted(); await gate; }
     return value;
   };
   await f.service.createTab(grant('second'), { url: 'https://example.test/second' }); await started;
@@ -664,4 +667,92 @@ test('creation failure recovery queries committed retirement after concurrent cl
   assert.equal(f.service.pages.size, 0);
   assert.equal(f.service.store.account('owner').pages.length, 0);
   assert.equal(f.service.commands.some(call => call.method === 'create'), false, 'failure recovery cannot replay native creation');
+});
+
+
+test('fingerprint reads return all divergent fields and their versions from one snapshot', async t => {
+  const f = await fixture(t), initial = await f.service.metadata('owner', undefined, () => {});
+  const versions = { ...initial.keyRevisions };
+  for (const [key, value] of [['bindings', '[]'], ['pages', '[]']]) {
+    const current = await f.service.metadata('owner', undefined, () => {});
+    await f.service.metadata('owner', { scope: current.scope, key, value, expectedKeyRevision: current.keyRevisions?.[key] ?? 0, mutationId: randomUUID() }, () => {});
+  }
+  const reply = await f.service.metadataDigest('owner', { root: initial.root, versions }, () => {}, { pages: [], tabs: [], leases: [] });
+  assert.deepEqual(reply.values, { pages: '[]', bindings: '[]' });
+  assert.equal(reply.leaves.bindings.keyRevision, 1); assert.equal(reply.leaves.pages.keyRevision, 1);
+  const equal = await f.service.metadataDigest('owner', { root: reply.root, versions: Object.fromEntries(Object.entries(reply.leaves).map(([key, leaf]: [string, any]) => [key, leaf.keyRevision])) }, () => {});
+  assert.equal(equal.equal, true); assert.equal(equal.values, undefined);
+  await assert.rejects(f.service.metadataDigest('owner', { versions: { pages: -1 } }, () => {}), /versions/);
+});
+
+test('foreground receipts survive an equal metadata digest without shadowing thumbnail presentation', async t => {
+  const f = await fixture(t), client = await f.client();
+  const tab = await f.service.createTab(grant('compat-create'), { url: 'https://example.test/compat' });
+  await eventually(() => client.getItem('opencraft.browser-tabs.v1') !== null);
+  const shown = f.service.presentTab(grant('compat-present'), { tabId: tab.tabId });
+  const failed = shown.catch(error => error);
+  await eventually(() => client.presentationRequests().some(row => row.tabId === tab.tabId));
+  const receipt = client.presentationRequests().find(row => row.tabId === tab.tabId)!;
+  const snapshot = await f.service.metadata('owner', undefined, () => {});
+  const digest = await f.service.metadataDigest('owner', { root: snapshot.root, versions: snapshot.keyRevisions }, () => {});
+  assert.equal(digest.equal, true);
+  assert.equal(digest.presentationRequests.some(row => row.id === receipt.id), true);
+  const page = [...f.service.pages.values()].find(row => row.link?.tabId === tab.tabId)!;
+  assert.equal(await client.readPresentation(JSON.parse(page.key)[1]), null, 'legacy thumbnail route remains readable');
+  assert.equal((await client.acknowledgePresentation(receipt.id, 'claim')).status, 'claimed');
+  assert.equal((await client.acknowledgePresentation(receipt.id, 'visible')).status, 'visible');
+  const result = await failed;
+  assert.equal(result.visible, true);
+});
+
+
+test('one browser client restores presentation and successive navigation without a metadata failure', async t => {
+  const f = await fixture(t), tab = await f.service.createTab(grant('single-phone'), { url: 'https://example.test/' });
+  const storage = await f.client(); await storage.flush();
+  let failures = 0; storage.onError(() => failures++);
+  const key = 'opencraft.browser-tabs.v1';
+  const tabs = JSON.parse(storage.getItem(key)!); tabs[0].panelAttached = true;
+  storage.setItem(key, JSON.stringify(tabs));
+  tabs[0].viewportMode = { type: 'fit', width: 390, height: 844 };
+  storage.setItem(key, JSON.stringify(tabs));
+  const pageKey = 'opencraft.browser-pages.v1';
+  const pages = JSON.parse(storage.getItem(pageKey)!);
+  pages[0].entries = [{ url: 'https://example.test/', title: 'Loading' }];
+  storage.setItem(pageKey, JSON.stringify(pages));
+  pages[0].entries[0].title = 'Loaded'; storage.setItem(pageKey, JSON.stringify(pages));
+  await storage.flush(); await storage.reconcile();
+  assert.equal(f.service.metadataPeers.size, 1); assert.equal(storage.isReady, true); assert.equal(failures, 0);
+  assert.equal(JSON.parse(storage.getItem(key)!)[0].viewportMode.height, 844);
+  assert.equal(JSON.parse(storage.getItem(pageKey)!)[0].entries[0].title, 'Loaded');
+  assert.equal(f.service.commands.filter(command => command.method === 'create').length, 1);
+  assert.equal(JSON.parse(storage.getItem(key)!)[0].id, tab.tabId);
+});
+
+
+test('presentation observations are bounded evidence and never claim or settle a request', async t => {
+  const f=await fixture(t),binding=grant('observe'),tab=await f.service.createTab(binding,{url:'https://example.test/'}),storage=await f.client();await storage.flush();
+  const presenting=f.service.presentTab(binding,{tabId:tab.tabId},{timeoutMs:1500});const rejected=assert.rejects(presenting,/owner-mismatch/);
+  await eventually(()=>f.service.store.account('owner').states[0][1].presentationRequests?.length===1);
+  const request=f.service.store.account('owner').states[0][1].presentationRequests[0];
+  await storage.acknowledgePresentation(request.id,'observe','owner-mismatch');
+  const result=await storage.acknowledgePresentation(request.id,'observe','owner-mismatch');
+  assert.equal(result.status,'pending');assert.equal(result.clientId,undefined);assert.equal((result as any).observations.length,1);
+  await assert.rejects(storage.acknowledgePresentation(request.id,'observe','https://secret.test' as any),{code:'INVALID_ARGUMENT'});
+  await rejected;
+});
+
+
+test('presentation observations explain nonclaims without owning focus or settling the request', async t => {
+ const f=await fixture(t);const tab=await f.service.createTab(grant('observed'),{url:'https://example.test/'});
+ const storage=await f.client();await storage.flush();
+ const presenting=f.service.presentTab(grant('observed'),{tabId:tab.tabId},{timeoutMs:2000});
+ await eventually(()=>storage.presentationRequests().some(row=>row.status==='pending'));
+ const id=storage.presentationRequests().find(row=>row.status==='pending')!.id;
+ const observed:any=await storage.acknowledgePresentation(id,'observe','view-inactive');
+ assert.equal(observed.status,'pending');assert.equal(observed.clientId,undefined);assert.equal(observed.observations.length,1);
+ const again:any=await storage.acknowledgePresentation(id,'observe','view-inactive');assert.equal(again.observations.length,1);
+ await assert.rejects(storage.acknowledgePresentation(id,'observe','secret-url' as any),/Invalid browser presentation/);
+ await storage.acknowledgePresentation(id,'claim');
+ await storage.acknowledgePresentation(id,'failed','paint-timeout');
+ await assert.rejects(presenting,/paint-timeout/);
 });

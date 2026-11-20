@@ -43,7 +43,7 @@ export interface UsageSubmission {
   readonly sourceKind: UsageSourceKind;
   readonly submittedAt: number;
 }
-export type UsageGapReason = "storage-write" | "queue-full" | "source-offline" | "source-replaced" | "invalid-source" | "unreplayable" | "oversized-line";
+export type UsageGapReason = "storage-write" | "queue-full" | "source-offline" | "thread-not-loaded" | "source-replaced" | "invalid-source" | "unreplayable" | "oversized-line";
 export interface UsageRollout { readonly threadId: string; readonly path: string; readonly cursor: string; readonly lastSuccessAt: number | null; readonly errorKind: string | null }
 
 export function normalizeUsageCounts(value: UsageSource["counts"]): UsageCounts {
@@ -480,9 +480,10 @@ export class OpenCraftTokenUsageLedger {
   }
   noteGap(gap: { readonly id: string; readonly reason: UsageGapReason; readonly threadId?: string; readonly turnId?: string }): void {
     requiredId(gap.id);
-    if (!["storage-write","queue-full","source-offline","source-replaced","invalid-source","unreplayable","oversized-line"].includes(gap.reason)) throw new TypeError("Unknown usage gap category");
+    if (!["storage-write","queue-full","source-offline","thread-not-loaded","source-replaced","invalid-source","unreplayable","oversized-line"].includes(gap.reason)) throw new TypeError("Unknown usage gap category");
     this.write(() => {
-      const inserted=this.statement("INSERT OR IGNORE INTO token_usage_gaps VALUES(?,?,?,?,?,?,NULL)")
+      // A recurring fault reopens its existing row rather than adding history.
+      const inserted=this.statement("INSERT INTO token_usage_gaps VALUES(?,?,?,?,?,?,NULL) ON CONFLICT(server_id,gap_key) DO UPDATE SET ends_ms=NULL,reason=excluded.reason,starts_ms=excluded.starts_ms WHERE ends_ms IS NOT NULL OR reason!=excluded.reason")
         .run(this.serverId, gap.id, gap.threadId ?? null, gap.turnId ?? null, gap.reason, timestamp(this.now()));
       if(inserted.changes)this.afterCommit(()=>this.telemetry.increment("missing"));
       if (gap.threadId) this.statement("UPDATE token_usage_rollouts SET error_kind=? WHERE server_id=? AND thread_id=?").run(gap.reason, this.serverId, gap.threadId);
@@ -504,7 +505,7 @@ export class OpenCraftTokenUsageLedger {
    * after a Host restart. Invalid/replaced source evidence needs separate proof. */
   resolveReplayGaps(threadId:string): void {
     this.write(()=>{
-      const result=this.statement("UPDATE token_usage_gaps SET ends_ms=? WHERE server_id=? AND thread_id=? AND ends_ms IS NULL AND reason IN ('storage-write','queue-full','source-offline','unreplayable','source-replaced')").run(timestamp(this.now()),this.serverId,requiredId(threadId));
+      const result=this.statement("UPDATE token_usage_gaps SET ends_ms=? WHERE server_id=? AND thread_id=? AND ends_ms IS NULL AND reason IN ('storage-write','queue-full','source-offline','thread-not-loaded','unreplayable','source-replaced')").run(timestamp(this.now()),this.serverId,requiredId(threadId));
       if(result.changes)this.bump();
     });
   }

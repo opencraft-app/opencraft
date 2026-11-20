@@ -4,11 +4,16 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
+    "./model-config": "./src/model-config/index.ts",
     ".": "./src/main.ts",
     "./attachments/local-staging": "./src/attachments/local-attachment-staging.ts",
     "./desktop": "./src/desktop/local-desktop-service.ts",
     "./desktop-native": "./src/desktop/native-observer.ts",
-    "./model-config": "./src/model-config/index.ts"
+    "./artifacts": "./src/artifacts/catalog.ts",
+    "./artifacts/tool-output": "./src/artifacts/tool-output.ts",
+    "./artifacts/host-capture": "./src/artifacts/host-capture.ts",
+    "./artifacts/generated-output": "./src/artifacts/generated-output.ts",
+    "./model-config/assistant": "./src/model-config/assistant.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -35,7 +40,9 @@
     "@opencraft/native-history-node": "0.1.0",
     "@opencraft/app-host-server": "0.1.0",
     "@opencraft/model-usage-policy": "0.1.0",
+    "@opencraft/account-pool-host": "0.1.0",
     "@opencraft/plugin-acp-engine": "^0.1.0",
+    "@opencraft/sandbox-node": "0.1.0",
     "@opencraft/agent-bridge-host": "0.1.0",
     "@opencraft/access-control": "0.1.0",
     "@opencraft/observability-contract": "0.1.0"

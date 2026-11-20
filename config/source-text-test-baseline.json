@@ -3,7 +3,6 @@
   "reason": "Recorded debt: tests that regex-match product source text. Rewrite as behavior tests and remove entries; do not add new ones (declare a real static contract with `// source-contract: <reason>`).",
   "files": [
     "tests/browser/browser-device-toolbar.test.ts",
-    "tests/chat/chat-bot-conversation.test.ts",
     "tests/chat/chat-permission-menu.test.ts",
     "tests/chat/chat-render-runtime.test.ts",
     "tests/composer/opencraft-composer-attachment-focus.test.ts",

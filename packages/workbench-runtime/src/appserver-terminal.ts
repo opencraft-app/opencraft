@@ -46,6 +46,8 @@ export interface AppServerTerminalSession {
   write(deltaBase64: string): Promise<void>;
   resize(cols: number, rows: number): Promise<void>;
   terminate(): Promise<void>;
+  /** Re-read authorized native state when a directory hint repairs a missed event. */
+  refresh?(): Promise<void>;
   /** Releases the observer, not the Host-owned process. */
   dispose(): Promise<void>;
 }
@@ -98,7 +100,7 @@ export class AppServerTerminalController implements AppServerTerminalResourcePor
     return supportsTerminalMethod(this.client.initializeResult?.capabilities?.extensions, method);
   }
   list(scope: { threadId?: string | null; projectId?: string | null } = {}) {
-    if (!this.supports("process/list")) return Promise.resolve({ processes: [] });
+    if (!this.supports("process/list")) return Promise.reject(new TerminalRestoreUnavailableError());
     return this.client.request("process/list", scope);
   }
   /** Called after AppServer initialize, not merely after the transport opens. */
@@ -177,6 +179,7 @@ export class AppServerTerminalController implements AppServerTerminalResourcePor
       subscribe: listener => { session.listeners.add(listener); return () => session.listeners.delete(listener); },
       write: async deltaBase64 => { await live(); await this.client.request("process/writeStdin", { ...session.scope, processHandle: id, deltaBase64 }); },
       resize: async (cols, rows) => { const size = { cols: cell(cols), rows: cell(rows) }; await live(); await this.client.request("process/resizePty", { ...session.scope, processHandle: id, size }); },
+      refresh: () => this.sync(id, session),
       terminate: async () => {
         await session.ready;
         if (session.snapshot.phase === "exited") return;

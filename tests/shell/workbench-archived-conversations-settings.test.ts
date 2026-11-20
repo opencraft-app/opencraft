@@ -15,7 +15,7 @@ const settingsSource = readFileSync(
   "utf8",
 );
 const threadManagementSource = readFileSync(
-  new URL("../../apps/workbench-web/src/components/thread-management.tsx", import.meta.url),
+  new URL("../../apps/workbench-web/src/components/archived-conversations-settings.tsx", import.meta.url),
   "utf8",
 );
 

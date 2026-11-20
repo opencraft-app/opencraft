@@ -49,7 +49,7 @@ const openInOpenCraftSchema = Object.freeze({
     url: { type: "string", description: "Absolute http(s) URL to open." },
     tab_id: { type: "string", description: "Existing OpenCraft browser tab ID." },
     placement: { type: "string", enum: ["right"], default: "right" },
-    visible: { type: "boolean", default: true, description: "False creates a background browser tab without taking focus. Open the same tab_id with visible=true to show it." },
+    visible: { type: "boolean", default: false, description: "Defaults to background without taking focus. Explicit true presents the tab in an active Workbench and waits for its foreground acknowledgement." },
   },
   anyOf: [{ required: ["url"] }, { required: ["tab_id"] }],
 });
@@ -99,7 +99,7 @@ export const BROWSER_TOOL_CATALOG: readonly BrowserToolNamespace[] = Object.free
     tools: [{
       type: "function",
       name: "open_in_opencraft",
-      description: "Open or focus a browser page in OpenCraft. This does not inspect or verify it.",
+      description: "Create or recover a browser page in OpenCraft. Defaults to background; visible=true requests foreground presentation and waits for acknowledgement. This does not inspect or verify the page.",
       inputSchema: openInOpenCraftSchema,
     }],
   },

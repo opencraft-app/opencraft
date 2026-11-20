@@ -142,3 +142,11 @@ lease. Metadata fences and transport callbacks check their connection identity;
 a stale callback cannot end a replacement connection. Ordinary disconnection
 and admission errors keep their separate recovery/error semantics. Server close
 notifications follow the durable retirement commit.
+
+### Recovery checkpoint writes
+
+The Gateway's existing asynchronous `BrowserStateFile` queue remains the storage
+owner. Recovery checkpoints compare their draft with the committed state inside
+that queue and skip atomic replacement when unchanged. Lifecycle operations keep
+their normal durable transaction; a queued close cannot be overwritten by an
+older viewer checkpoint. A failed reducer never publishes its draft.

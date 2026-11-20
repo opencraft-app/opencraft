@@ -106,6 +106,19 @@ and window resizing remain live; parking preserves the normal viewport.
 
 - Portaled browser surfaces follow Shell foreground translation after Motion DOM writes, including the terminal frame; unchanged viewport size must not suppress position updates.
 
+### Chat and tool switching
+
+Hiding a tool is a presentation change. An opened terminal keeps its xterm renderer,
+output cursor, selection and scrollback while its logical tab remains open. Restored
+inactive tabs defer renderer initialization until first activation, cannot take focus,
+and do not publish hidden PTY sizes. Reactivation fits the existing renderer; explicit
+tab close or View disposal releases it without changing the terminal resource owner.
+
+Shell toolbar capacity derives from observed geometry and current actions separately.
+Changing the panel action does not synchronously remeasure the toolbar. Pane motion
+uses stable root font metrics; real Shell resizing refreshes those metrics and keeps
+capacity decisions live.
+
 
 - Native control and editor icon paint: reuse the shared SVG artwork through the
   generated native-control masks or JSX, while retaining native input events,
@@ -130,3 +143,54 @@ and window resizing remain live; parking preserves the normal viewport.
   prompt supplies recognition at rail size; no second underline or miniature
   page/brain ornament. Artwork changes preserve process/disclosure identity,
   running/reduced-motion semantics, rail metrics and protected layout/gear/font.
+
+- Touch browser conversation chrome has one presentation owner: expanding the
+  current conversation moves the existing browser controls into its header and
+  keeps the overview control beside the composer on the shared bottom baseline.
+  A scope/tab/token lease provides DOM slots only; browser navigation and draft
+  ownership do not migrate. Address editing and More preserve the conversation;
+  chat toggles the conversation and overview switches scenes. Collapsing restores
+  the same browser controls to the dock. Desktop projection is unchanged.
+
+- Touch browser conversation expansion uses one reversible Motion progress and
+  the shared continuous pane spring. Browser controls and the native address
+  input retain DOM identity across their header/dock placement. That progress
+  drives chrome position, conversation clipping and editor/history opacity;
+  a second history height animation must not run underneath it. The overview
+  control stays on the bottom anchor, outside the conversation clip. Completion
+  belongs to the current flight; superseded/unmounted flights cannot settle the
+  next intent. Reduced motion settles directly and releases the same leases.
+
+- Fullscreen overview owns its canvas background; Modal keeps focus trapping,
+  dismissal and interaction isolation without adding a second black backdrop.
+  Fading an opaque canvas over a fading dim scrim creates a mid-flight dark pulse,
+  even when both use the same progress. Contained overview and ordinary dialogs
+  retain their normal dim backdrop. Backdrop selection applies at modal mount,
+  before lazy scene styles are available.
+
+- Fullscreen overview has no dialog elevation. A flying card morphs its theme
+  elevation on the geometry clock; its content aperture and decoration aperture
+  are distinct. Native content stays inside the rounded card while the shadow
+  may extend to the physical scrollport edge. Removing the flight clip must not
+  be the first frame in which card elevation can paint.
+
+- The travelling frame's border belongs to the same geometry/material projection
+  as radius and elevation. A material-only border plane preserves the native
+  content's containing block; fractional layout borders snap to device pixels
+  and cannot represent a continuous inset. Spring completion may release the
+  presentation lease, but cannot introduce the card's border for the first time.
+
+- Overview resource cards are scene containers, never floating glass panels.
+  The same scene layout/material contract applies in the grid, its measured
+  placeholder and native top layer: no nested preview radius or inset, no
+  backdrop filter, and no background/border owner swap on cleanup. Only the
+  new-tool action panel consumes frosted control material. Title allocation,
+  scene geometry and decoration opacity share the existing Motion clock.
+
+- A separately painted native preview acquires a decoration lease above its
+  content. The card yields its local border/elevation while that lease exists;
+  the lease projects the same geometry, theme, Motion progress and scrollport
+  aperture, then releases atomically with native placement. A resource surface
+  never sits above its own perimeter. Decoration is inert, transparent and has
+  no backdrop/focus owner; it never clones the resource. Read-only resource
+  controls declare preview-chrome and retain DOM without painting in previews.

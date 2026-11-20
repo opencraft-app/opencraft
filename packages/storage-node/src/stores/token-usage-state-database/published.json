@@ -6,5 +6,14 @@
     "sqlChecksum": "fb71306eb94e3dfcaa57218344a6a4fa399f4da1493fa754a730b8ad1c7386f7",
     "snapshotChecksum": "ddeca1a4bcbccae318c57472b2fae5ca0a68d629474cb3ba903f302a4435986c",
     "compiledChecksum": null
+  },
+  {
+    "tag": "0001_open_gap_thread",
+    "when": 1795099108766,
+    "version": 4,
+    "sqlChecksum": "fedb951eb4bac584ce0464dda32fcb7dcda17c314f4f656ccda90508c3672ba1",
+    "snapshotChecksum": "1aedd92be213b8e840bf5f093d60aaa4f6f3a5b92a8986780491e4bebc42bb29",
+    "compiledChecksum": "fedb951eb4bac584ce0464dda32fcb7dcda17c314f4f656ccda90508c3672ba1",
+    "ledgerName": "token-usage-open-gap-thread-index"
   }
 ]

@@ -1,0 +1,11 @@
+[Unit]
+Description=Check for verified OpenCraft releases to upload
+
+[Timer]
+OnBootSec=1min
+OnUnitInactiveSec=1min
+AccuracySec=10s
+Unit=opencraft-registry-upload.service
+
+[Install]
+WantedBy=timers.target

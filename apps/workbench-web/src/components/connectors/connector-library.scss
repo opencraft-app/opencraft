@@ -1,5 +1,5 @@
 @use "@opencraft/design-system/interaction-mixins.web" as controls;
-@use "../../../../../packages/design-system/src/typography.web" as typography;
+@use "../../../../../packages/design-system/src/typography-mixins.web" as typography;
 
 .connector-library {
   @include typography.role(body);

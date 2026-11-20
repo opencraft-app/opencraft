@@ -4,7 +4,7 @@ import { openManagedDatabase, type DatabaseOutcome } from '@opencraft/sqlite-nod
 import type { ActorContext } from '@opencraft/identity-core/actors';
 
 export interface PushSubscriptionData { endpoint: string; keys: { p256dh: string; auth: string } }
-export type NotificationTarget = {kind:'bark';url:string} | {kind:'webhook';url:string;authorization?:string} | {kind:'im';channelId:string;senderId:string;label:string};
+export type NotificationTarget = {kind:'bark';url:string} | {kind:'webhook';url:string;authorization?:string} | {kind:'im';channelId:string;senderId:string;label:string;methodId?:string;methodLabel?:string};
 export interface PushBinding { context: ActorContext; loginDigest?: string }
 export interface PushDevice {
   id: string; actorId: string; bindingId: string; authorization: PushBinding;
@@ -26,14 +26,14 @@ CREATE TABLE push_deliveries (id TEXT PRIMARY KEY, device_id TEXT NOT NULL, bind
 CREATE INDEX push_deliveries_due ON push_deliveries(state,next_at);
 `.trim();
 
-
+const targetKey = (target: NotificationTarget) => hash(target.kind==='im' ? ['im',target.channelId,target.senderId] : target);
 
 /** One server process owns this private store. No browser credentials are stored. */
 export class PushStore {
   readonly outcome: DatabaseOutcome;
   private readonly db: DatabaseSync;
   constructor(path: string, private readonly now = Date.now) {
-    const managed = openManagedDatabase({ schemaId: "web-push-node", path, migrations: [{version:1,name:'web-push-subscriptions-and-outbox',sql:SCHEMA}]});
+    const managed = openManagedDatabase({schemaId:"web-push-node",path, migrations:[{version:1,name:'web-push-subscriptions-and-outbox',sql:SCHEMA}]});
     this.db = managed.database; this.outcome = managed.outcome;
   }
   private transaction<T>(work: () => T): T {
@@ -66,7 +66,7 @@ export class PushStore {
   master(actorId: string): boolean { return this.db.prepare('SELECT enabled FROM push_preferences WHERE actor_id=?').get(actorId)?.enabled !== 0; }
   setMaster(actorId: string, enabled: boolean) {
     this.transaction(() => {
-      this.db.prepare('INSERT INTO push_preferences VALUES(?,?) ON CONFLICT(actor_id) DO UPDATE SET enabled=excluded.enabled').run(actorId, enabled?1:0);
+      this.db.prepare('INSERT INTO push_preferences(actor_id,enabled,defaults_blocked) VALUES(?,?,?) ON CONFLICT(actor_id) DO UPDATE SET enabled=excluded.enabled,defaults_blocked=MAX(defaults_blocked,excluded.defaults_blocked)').run(actorId, enabled?1:0, enabled?0:1);
       if (!enabled) {
         this.db.prepare("UPDATE push_deliveries SET state='dead' WHERE device_id IN (SELECT id FROM push_devices WHERE actor_id=?) AND state='pending'").run(actorId);
         this.db.prepare('UPDATE push_watches SET done=1 WHERE actor_id=?').run(actorId);
@@ -76,7 +76,29 @@ export class PushStore {
   setEnabled(id: string, actorId: string, enabled: boolean) {
     this.transaction(() => {
       this.db.prepare('UPDATE push_devices SET enabled=? WHERE id=? AND actor_id=?').run(enabled?1:0,id,actorId);
-      if (!enabled && this.get(id)?.actorId===actorId) this.db.prepare("UPDATE push_deliveries SET state='dead' WHERE device_id=? AND state='pending'").run(id);
+      if (!enabled && this.get(id)?.actorId===actorId) {
+        this.rememberOptOut(actorId,this.get(id)?.target);
+        this.db.prepare("UPDATE push_deliveries SET state='dead' WHERE device_id=? AND state='pending'").run(id);
+      }
+    });
+  }
+  private rememberOptOut(actorId: string, target?: NotificationTarget) {
+    if(target)this.db.prepare('INSERT OR IGNORE INTO push_target_opt_outs VALUES(?,?)').run(actorId,targetKey(target));
+  }
+  /** Decision and target creation share the Worker's transaction. Policy IDs never impersonate Actors. */
+  initializeDefault(authorization: PushBinding, policyId: string, target: Extract<NotificationTarget,{kind:'im'}>, origin: string, basePath: string, locale: string, messages: Record<string,string>): void {
+    if(!/^[a-zA-Z0-9._:-]{1,128}$/u.test(policyId))throw Error('invalid_default_policy');
+    const actorId=authorization.context.actorId;
+    this.transaction(() => {
+      const decided=!!this.db.prepare('SELECT 1 FROM push_default_decisions WHERE actor_id=? AND policy_id=?').get(actorId,policyId);
+      const blocked=this.db.prepare('SELECT defaults_blocked FROM push_preferences WHERE actor_id=?').get(actorId)?.defaults_blocked===1
+        || this.db.prepare('SELECT 1 FROM push_target_opt_outs WHERE actor_id=? AND target_key=?').get(actorId,targetKey(target));
+      const existing=this.devices(actorId).find(device=>device.target && targetKey(device.target)===targetKey(target));
+      // Refresh only the same enabled verified destination, never recreate a removed
+      // one, retarget it, overwrite its route or undo a master/channel opt-out.
+      if(existing?.enabled && this.master(actorId))this.saveTarget(authorization,existing.target!,existing.origin,existing.basePath,existing.locale,existing.messages,existing.id);
+      else if(!decided && !blocked && !existing)this.saveTarget(authorization,target,origin,basePath,locale,messages);
+      if(!decided)this.db.prepare('INSERT INTO push_default_decisions VALUES(?,?)').run(actorId,policyId);
     });
   }
   saveTarget(authorization: PushBinding, target: NotificationTarget, origin: string, basePath: string, locale: string, messages: Record<string,string>, existingId?: string, creationId?: string): PushDevice {
@@ -87,6 +109,7 @@ export class PushStore {
     if (!previous && this.devices(actorId).length>=16) throw Error('device_limit');
     const id=previous?.id??proposedId;
     const bindingId=previous && JSON.stringify(previous.target)===JSON.stringify(target) && previous.origin===origin && previous.basePath===basePath ? previous.bindingId : randomUUID();
+    if(previous?.target && targetKey(previous.target)!==targetKey(target))this.rememberOptOut(actorId,previous.target);
     this.db.prepare(`INSERT INTO push_devices(id,actor_id,binding_id,authorization,subscription,origin,base_path,locale,messages,target,enabled) VALUES(?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(id) DO UPDATE SET binding_id=excluded.binding_id,authorization=excluded.authorization,origin=excluded.origin,base_path=excluded.base_path,locale=excluded.locale,messages=excluded.messages,target=excluded.target`)
       .run(id,actorId,bindingId,JSON.stringify(authorization),'null',origin,basePath,locale,JSON.stringify(messages),JSON.stringify(target),previous?.enabled===false?0:1);
@@ -95,6 +118,7 @@ export class PushStore {
   remove(id: string, actorId: string): void {
     this.transaction(() => {
       if (this.get(id)?.actorId !== actorId) return;
+      this.rememberOptOut(actorId,this.get(id)?.target);
       this.db.prepare('DELETE FROM push_devices WHERE id=?').run(id);
       this.db.prepare('DELETE FROM push_deliveries WHERE device_id=?').run(id);
     });

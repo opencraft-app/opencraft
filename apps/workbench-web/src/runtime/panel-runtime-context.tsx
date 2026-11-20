@@ -1,3 +1,5 @@
+import { useAppearanceTheme } from "../appearance-theme";
+import { preparePreviewResources } from "../panels/prepare-preview-resources";
 import { FilePreviewProvider } from "@opencraft/file-preview-web";
 import {
   createWorkbenchPanelReactRuntime,
@@ -35,9 +37,10 @@ export function WorkbenchPanelRuntimeProvider({
   readonly children: ReactNode;
   readonly runtime: WorkbenchPanelReactRuntime;
 }) {
+  const theme=useAppearanceTheme();
   return (
     <PanelRuntimeContext.Provider value={runtime}>
-      <FilePreviewProvider service={runtime.context.filePreviews ?? null}>{children}</FilePreviewProvider>
+      <FilePreviewProvider service={runtime.context.filePreviews ?? null} prepare={preparePreviewResources} dark={theme.resolvedTheme === "dark"}>{children}</FilePreviewProvider>
     </PanelRuntimeContext.Provider>
   );
 }

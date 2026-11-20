@@ -1,3 +1,5 @@
+import { logAccountRecovery } from "./account-diagnostics.js";
+import type { CodexAccountMaintenanceView } from "@opencraft/appserver-protocol";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   chmodSync,
@@ -298,7 +300,18 @@ function affinityKey(provider: AccountPoolProvider, hostId: string, affinityId: 
 }
 
 export class AccountPoolStore {
+  // Diagnostic observations share the credential/catalog owner, not a browser
+  // or background-job cache. They are intentionally not a credential database.
+  private readonly maintenanceViews = new Map<string, CodexAccountMaintenanceView>();
+  accountMaintenance(id: string): CodexAccountMaintenanceView | undefined { return this.maintenanceViews.get(id); }
+  observeAccountMaintenance(id: string, view: CodexAccountMaintenanceView): void {
+    this.getAccount(id);
+    if (this.maintenanceViews.size >= 1024 && !this.maintenanceViews.has(id)) this.maintenanceViews.delete(this.maintenanceViews.keys().next().value!);
+    this.maintenanceViews.set(id, Object.freeze(view));
+  }
+
   private readonly database: DatabaseSync;
+  private readonly ownerActor: string | null;
   readonly outcome: DatabaseOutcome;
   private readonly secretsDirectory: string;
   // Local record ownership changes only through this exclusive store. Listing
@@ -316,6 +329,7 @@ export class AccountPoolStore {
   private readonly maxAffinityBindings: number;
 
   constructor(options: {
+    readonly ownerActor?: string | null;
     readonly databasePath: string;
     readonly secretsDirectory: string;
     readonly now?: () => number;
@@ -328,6 +342,7 @@ export class AccountPoolStore {
     mkdirSync(options.secretsDirectory, { recursive: true, mode: 0o700 });
     chmodSync(options.secretsDirectory, 0o700);
     this.secretsDirectory = options.secretsDirectory;
+    this.ownerActor = options.ownerActor == null ? null : requiredText(options.ownerActor,"Human owner");
     this.now = options.now ?? Date.now;
     this.switchThreshold = options.switchThreshold ?? 0.98;
     this.affinityIdleTtlMs = options.affinityIdleTtlMs ?? 30 * 60 * 1_000;
@@ -377,7 +392,7 @@ export class AccountPoolStore {
     try {
       this.transaction(() => {
         this.database.prepare(
-          "INSERT INTO pool_accounts (id,provider,label,upstream_account_id,priority,enabled,created_at,allow_credits) VALUES(?,?,?,?,?,?,?,?)",
+          "INSERT INTO pool_accounts (id,provider,label,upstream_account_id,priority,enabled,created_at,allow_credits,owner_actor) VALUES(?,?,?,?,?,?,?,?,?)",
         ).run(
           account.id,
           account.provider,
@@ -387,6 +402,7 @@ export class AccountPoolStore {
           Number(account.enabled),
           account.createdAt,
           Number(account.allowCredits),
+          this.ownerActor,
         );
         this.writeSecret(account.id, secret);
       });
@@ -399,7 +415,7 @@ export class AccountPoolStore {
   }
 
   listAccounts(): AccountPoolAccountSummary[] {
-    return this.database.prepare("SELECT * FROM pool_accounts ORDER BY priority, created_at, id").all().map(row => {
+    return this.database.prepare("SELECT * FROM pool_accounts WHERE owner_actor IS ? ORDER BY priority, created_at, id").all(this.ownerActor).map(row => {
       const account = this.accountFromRow(row);
       return {
         id: account.id,
@@ -430,12 +446,12 @@ export class AccountPoolStore {
       `SELECT a.id,a.enabled,a.allow_credits,a.email,a.subscription_type,a.rate_limit_tier,a.last_used_at,a.last_used_host_id,a.reset_credit_count,a.reset_credits_observed_at,
         q.utilization,q.reset_at,q.held_until,q.error,q.observed_at,q.limit_windows_json
        FROM pool_accounts a LEFT JOIN pool_quota q ON q.account_id=a.id
-       WHERE a.provider='codex' ORDER BY a.priority,a.created_at,a.id`,
-    ).all().map(row => this.accountStateFromRow(row, now));
+       WHERE a.provider='codex' AND a.owner_actor IS ? ORDER BY a.priority,a.created_at,a.id`,
+    ).all(this.ownerActor).map(row => this.accountStateFromRow(row, now));
   }
 
   getAccount(id: string): AccountPoolAccount {
-    const row = this.database.prepare("SELECT * FROM pool_accounts WHERE id=?").get(accountId(id));
+    const row = this.database.prepare("SELECT * FROM pool_accounts WHERE id=? AND owner_actor IS ?").get(accountId(id),this.ownerActor);
     if (!row) throw new Error("Account not found");
     return this.accountFromRow(row);
   }
@@ -457,26 +473,30 @@ export class AccountPoolStore {
   }
 
   setEnabled(id: string, enabled: boolean): void {
+    this.getAccount(id);
     const result = this.database.prepare("UPDATE pool_accounts SET enabled=? WHERE id=?").run(Number(enabled), accountId(id));
     if (Number(result.changes) !== 1) throw new Error("Account not found");
   }
 
   setAllowCredits(id: string, allowCredits: boolean): void {
+    this.getAccount(id);
     if (typeof allowCredits !== "boolean") throw new TypeError("Invalid credit policy");
     const result = this.database.prepare("UPDATE pool_accounts SET allow_credits=? WHERE id=?")
       .run(Number(allowCredits), accountId(id));
     if (Number(result.changes) !== 1) throw new Error("Account not found");
   }
 
-  replaceCredential(id: string, rawSecret: AccountPoolSecret): void {
+  replaceCredential(id: string, rawSecret: AccountPoolSecret, options: { preserveAuthorizationError?: boolean } = {}): void {
     const normalizedId = accountId(id);
-    if (!this.database.prepare("SELECT 1 FROM pool_accounts WHERE id=?").get(normalizedId)) throw new Error("Account not found");
+    this.getAccount(normalizedId);
     if (rawSecret.external || parseCodexAuthFileReference(JSON.parse(readFileSync(this.secretPath(normalizedId), "utf8")))) {
       throw new Error("Shared Codex credentials must be updated by their external owner");
     }
     this.writeSecret(normalizedId, parseSecret(rawSecret));
     this.credentialSources.set(normalizedId, "managed");
-    this.database.prepare("UPDATE pool_quota SET error=NULL,held_until=NULL WHERE account_id=?").run(normalizedId);
+    if (!options.preserveAuthorizationError) {
+      this.database.prepare("UPDATE pool_quota SET error=NULL,held_until=NULL WHERE account_id=?").run(normalizedId);
+    }
   }
 
   updateSubscriptionMetadata(id: string, input: {
@@ -486,6 +506,7 @@ export class AccountPoolStore {
     readonly resetCredits?: { readonly availableCount: number; readonly observedAt: number } | null;
   }): void {
     const normalizedId = accountId(id);
+    this.getAccount(normalizedId);
     const current = this.database.prepare(
       "SELECT email,subscription_type,rate_limit_tier,reset_credit_count,reset_credits_observed_at FROM pool_accounts WHERE id=?",
     ).get(normalizedId);
@@ -521,12 +542,13 @@ export class AccountPoolStore {
       throw error;
     }
     this.credentialSources.delete(normalizedId);
+    this.maintenanceViews.delete(normalizedId);
     rmSync(tombstone, { force: true });
   }
 
   reorder(provider: AccountPoolProvider, orderedIds: readonly string[]): void {
     if (provider !== "codex") throw new TypeError("Invalid provider");
-    const expected = this.database.prepare("SELECT id FROM pool_accounts WHERE provider=? ORDER BY id").all(provider).map(row => String(row.id));
+    const expected = this.database.prepare("SELECT id FROM pool_accounts WHERE provider=? AND owner_actor IS ? ORDER BY id").all(provider,this.ownerActor).map(row => String(row.id));
     const normalized = orderedIds.map(accountId);
     if (new Set(normalized).size !== normalized.length
       || normalized.length !== expected.length
@@ -547,15 +569,17 @@ export class AccountPoolStore {
     const metadata = input.purpose === "metadata";
     const provider = input.provider;
     if (provider !== "codex") throw new TypeError("Invalid provider");
-    const key = affinityKey(provider, input.hostId, input.affinityId);
+    const scopedHost = this.ownerActor === null ? input.hostId : createHash("sha256").update(JSON.stringify([this.ownerActor,input.hostId])).digest("hex");
+    const providerState = this.ownerActor === null ? provider : JSON.stringify([provider,this.ownerActor]);
+    const key = affinityKey(provider, scopedHost, input.affinityId);
     const now = this.now();
     const excluded = input.excludeAccountIds ?? new Set<string>();
     this.pruneAffinity(now);
     const orderedAccounts = this.database.prepare(
       `SELECT a.*,q.utilization,q.reset_at,q.held_until,q.error,q.limit_windows_json
        FROM pool_accounts a LEFT JOIN pool_quota q ON q.account_id=a.id
-       WHERE a.provider=? ORDER BY a.priority,a.created_at,a.id`,
-    ).all(provider).map(row => ({
+       WHERE a.provider=? AND a.owner_actor IS ? ORDER BY a.priority,a.created_at,a.id`,
+    ).all(provider,this.ownerActor).map(row => ({
       account: this.accountFromRow(row),
       utilization: row.utilization == null ? null : Number(row.utilization),
       resetAt: row.reset_at == null ? null : Number(row.reset_at),
@@ -574,9 +598,9 @@ export class AccountPoolStore {
     const candidates = available.filter(candidate => !excluded.has(candidate.account.id)
       && (candidate.heldUntil === null || candidate.heldUntil <= now));
     const boundRow = metadata ? undefined : this.readAffinity(key, now);
-    const parentKey = input.parentAffinityId == null ? null : affinityKey(provider, input.hostId, input.parentAffinityId);
+    const parentKey = input.parentAffinityId == null ? null : affinityKey(provider, scopedHost, input.parentAffinityId);
     const parentRow = metadata || parentKey === null ? undefined : this.readAffinity(parentKey, now);
-    const activeRow = this.database.prepare("SELECT account_id FROM pool_active_account WHERE provider=?").get(provider);
+    const activeRow = this.database.prepare("SELECT account_id FROM pool_active_account WHERE provider=?").get(providerState);
     const boundAccountId = boundRow?.account_id == null ? null : String(boundRow.account_id);
     const bound = boundAccountId === null || excluded.has(boundAccountId) ? undefined : availableById.get(boundAccountId);
     const inherited = bound === undefined && parentRow?.account_id != null && !excluded.has(String(parentRow.account_id))
@@ -615,7 +639,7 @@ export class AccountPoolStore {
       if (!keepsAffinity) {
         this.database.prepare(
           "INSERT INTO pool_active_account VALUES(?,?) ON CONFLICT(provider) DO UPDATE SET account_id=excluded.account_id",
-        ).run(provider, selected.account.id);
+        ).run(providerState, selected.account.id);
       }
       this.pruneAffinity(now);
     }
@@ -642,6 +666,7 @@ export class AccountPoolStore {
 
   observeQuota(id: string, observation: AccountPoolQuotaObservation): void {
     const normalizedId = accountId(id);
+    this.getAccount(normalizedId);
     if (observation.utilization !== null && (!Number.isFinite(observation.utilization) || observation.utilization < 0 || observation.utilization > 1)) throw new TypeError("Invalid utilization");
     for (const value of [observation.resetAt, observation.heldUntil]) {
       if (value !== undefined && value !== null && (!Number.isSafeInteger(value) || value < 0)) throw new TypeError("Invalid quota timestamp");
@@ -690,8 +715,18 @@ export class AccountPoolStore {
     this.observeQuota(id, { utilization: null, resetAt: null, error: code });
   }
 
+  /** Called only after provider-accepted authorization, without replacing quota facts. */
+  clearAuthorizationError(id: string): void {
+    this.getAccount(id);
+    this.database.prepare("UPDATE pool_quota SET error=NULL WHERE account_id=? AND error='authorization-rejected'").run(accountId(id));
+    const checkedAt = this.now();
+    logAccountRecovery(id, checkedAt, this.accountMaintenance(id));
+    this.observeAccountMaintenance(id, { state: "ok", checkedAt, lastSuccessAt: checkedAt });
+  }
+
   /** A successful external-auth check need not report or replace quota windows. */
   clearExternalAuthorizationError(id: string): void {
+    this.getAccount(id);
     const normalizedId = accountId(id);
     if (this.credentialSources.get(normalizedId) !== "external-file") return;
     this.externalRejections.delete(normalizedId);

@@ -8,6 +8,11 @@ import type { NativeRolloutSource } from "@opencraft/native-history-node/codex-r
 function record(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function text(value: unknown): string { return typeof value === "string" ? value : ""; }
 
+function isUnloadedThread(error: unknown, threadId: string): boolean {
+  const rpc = record(error);
+  return rpc.code === -32600 && rpc.message === `thread not loaded: ${threadId}`;
+}
+
 /** Native Turn.id is UUIDv7. Use its millisecond precision rather than rounding
  * a native startedAt second down across the first-enable boundary. */
 export function nativeTurnStartedAt(turnId: string, startedAt?: unknown): number | null {
@@ -72,7 +77,13 @@ export class CodexTokenUsageRuntime {
   private readonly pending = new Set<string>();
   private readonly active = new Set<string>();
   private readonly gaps = new Map<string, string>();
+  private readonly reported = new Map<string, number>();
   private readonly identities = new Map<string, RolloutTurnIdentity>();
+  // Infinity waits for native activity; finite deadlines back off transient failures.
+  private readonly retry = new Map<string, { at: number; delay: number }>();
+  private readingWithoutActivity: string | null = null;
+  /** Set by collect when a source cannot be read without an error being thrown. */
+  private deferred: string | null = null;
   private gapRetryAfter = "";
   private readonly settling = new Map<string,number>();
   private readonly receiptAfter=new Map<string,string>();
@@ -82,6 +93,8 @@ export class CodexTokenUsageRuntime {
   private draining = false;
   /** Includes faults which an unwritable store could not persist. */
   liveGapCount(): number { return this.gaps.size; }
+  /** A late trusted identity can resolve pending receipts without new native activity. */
+  recheck(threadId: string): void { if (threadId) this.schedule(threadId); }
   private enabled(): boolean {
     try { return this.ledger.coverage().enabled; }
     catch { try { this.port.diagnostic("storage-read"); } catch {} return false; }
@@ -170,9 +183,27 @@ export class CodexTokenUsageRuntime {
     } catch { this.missing(key.threadId, "storage-write"); }
     this.schedule(key.threadId);
   }
+  threadLoaded(threadId: string): void {
+    if (!threadId) return;
+    // A real load can race a response from an earlier read of the same thread.
+    const reading = this.readingWithoutActivity === threadId;
+    if (reading) this.readingWithoutActivity = null;
+    if (this.retry.get(threadId)?.at === Infinity || reading) {
+      this.retry.delete(threadId);
+      this.schedule(threadId);
+    }
+  }
   notification(method: string, params: Record<string, unknown>): void {
     const threadId = text(params.threadId);
     if (!threadId) return;
+    if (method === "thread/status/changed") {
+      const status = record(params.status).type;
+      if (status === "active" || status === "idle") this.threadLoaded(threadId);
+      return;
+    }
+    if (method === "turn/started" || method === "thread/tokenUsage/updated" || method === "turn/completed") {
+      this.threadLoaded(threadId);
+    }
     if(this.ephemeral.has(threadId)&&!this.enabled()){if(this.port.derived)this.missing(threadId,"unreplayable");else this.counterMissing(threadId);return;}
     const accepted=nativeLiveAcceptedInputFact(method,params);
     if(accepted)this.admission(accepted,accepted.inputId);
@@ -197,14 +228,25 @@ export class CodexTokenUsageRuntime {
     if (method === "turn/completed") this.active.delete(threadId);
     if (["turn/started", "turn/completed", "thread/tokenUsage/updated", "rawResponse/completed"].includes(method)) this.schedule(threadId);
   }
-  private missing(threadId: string, reason: "storage-write" | "queue-full" | "source-offline" | "source-replaced" | "invalid-source" | "unreplayable" | "oversized-line"): void {
-    try { this.port.diagnostic(reason); } catch { /* failure reporting never changes execution */ }
-    if (this.gaps.has(threadId) || this.gaps.size >= 256) return;
-    const id = randomUUID(); this.gaps.set(threadId, id);
+  private missing(threadId: string, reason: "storage-write" | "queue-full" | "source-offline" | "thread-not-loaded" | "source-replaced" | "invalid-source" | "unreplayable" | "oversized-line"): void {
+    const id = `thread:${threadId}:${reason}`;
+    // Report transitions, not every retry of an already-open gap: the retry
+    // sweep revisits open gaps continuously and would flood the log.
+    const known = this.gaps.get(threadId);
+    const now = Date.now();
+    // Any open gap for the thread is already reported and persisted, including
+    // rows seeded from older releases whose keys are random rather than
+    // `thread:<id>:<reason>`. Only a new gap is reported.
+    const quiet = known !== undefined || (this.gaps.size >= 256 && now - (this.reported.get(reason) ?? -Infinity) < 60_000);
+    if (!quiet) { this.reported.set(reason, now); try { this.port.diagnostic(reason); } catch { /* failure reporting never changes execution */ } }
+    if (known || this.gaps.size >= 256) return;
+    // One durable row per thread and reason: repeated faults reopen it.
+    this.gaps.set(threadId, id);
     try { this.ledger.noteGap({ id, threadId, reason }); } catch { /* an unwritable store cannot persist its own fault */ }
   }
   private retryGaps(): void {
-    const keys = [...this.gaps.keys()];
+    const now = Date.now();
+    const keys = [...this.gaps.keys()].filter(id => (this.retry.get(id)?.at ?? 0) <= now);
     if (!keys.length) return;
     const first = (keys.indexOf(this.gapRetryAfter) + 1) % keys.length;
     // A completed thread can still regain a durable source after an outage.
@@ -216,6 +258,7 @@ export class CodexTokenUsageRuntime {
   }
   private schedule(threadId: string): void {
     if (this.abort.signal.aborted || this.ephemeral.has(threadId) || !this.nativeHome || !this.enabled()) return;
+    if ((this.retry.get(threadId)?.at ?? 0) > Date.now()) return;
     if (this.pending.size >= 256 && !this.pending.has(threadId)) { this.missing(threadId, "queue-full"); return; }
     this.pending.add(threadId);
     if (this.draining || this.scheduled) return;
@@ -251,8 +294,29 @@ export class CodexTokenUsageRuntime {
       const threadId = this.pending.values().next().value as string | undefined;
       if (!threadId || this.abort.signal.aborted) return;
       this.pending.delete(threadId);
-      try { await this.collect(threadId); }
-      catch { if (!this.abort.signal.aborted) this.missing(threadId, "source-offline"); }
+      this.readingWithoutActivity = threadId;
+      try {
+        this.deferred = null;
+        await this.collect(threadId);
+        if (this.deferred === threadId) {
+          // Replaced/missing sources do not throw; back off like transient
+          // failures instead of re-reading them on every timer tick.
+          const delay = Math.min(60_000, (this.retry.get(threadId)?.delay ?? 1000) * 2);
+          this.retry.set(threadId, { at: Date.now() + delay, delay });
+        } else this.retry.delete(threadId);
+      } catch (error) {
+        if (this.abort.signal.aborted) return;
+        const unloaded = isUnloadedThread(error, threadId);
+        this.missing(threadId, unloaded ? "thread-not-loaded" : "source-offline");
+        if (unloaded && this.readingWithoutActivity !== threadId) return;
+        this.pending.delete(threadId);
+        if (this.gaps.has(threadId) || this.active.has(threadId) || this.settling.has(threadId)) {
+          const delay = Math.min(60_000, (this.retry.get(threadId)?.delay ?? 1000) * 2);
+          this.retry.set(threadId, { at: unloaded ? Infinity : Date.now() + delay, delay });
+        }
+      } finally {
+        this.readingWithoutActivity = null;
+      }
     } finally {
       this.draining = false;
       const next = this.pending.values().next().value;
@@ -271,17 +335,17 @@ export class CodexTokenUsageRuntime {
     const thread = record(record(await this.port.request("thread/read", {threadId,includeTurns:false})).thread);
     signal.throwIfAborted();
     const path = text(thread.path);
-    if (!path) { this.missing(threadId, "unreplayable"); return; }
+    if (!path) { this.missing(threadId, "unreplayable"); this.deferred = threadId; return; }
     const source = await this.port.source?.(threadId, path);
     signal.throwIfAborted();
     let canonical: string;
     try { canonical = await realpath(path); }
-    catch { this.missing(threadId, "source-replaced"); return; }
+    catch { this.missing(threadId, "source-replaced"); this.deferred = threadId; return; }
     const storedBefore = this.ledger.rollout(threadId);
     if (storedBefore && storedBefore.path !== canonical) {
       let previousCanonical: string | null = null;
       try { previousCanonical = await realpath(storedBefore.path); } catch { /* deleted */ }
-      if (previousCanonical !== canonical) { this.missing(threadId, "source-replaced"); return; }
+      if (previousCanonical !== canonical) { this.missing(threadId, "source-replaced"); this.deferred = threadId; return; }
       this.ledger.repairRolloutPath(threadId, storedBefore.path, canonical);
     }
     this.ledger.rememberRollout(threadId, canonical);
@@ -364,6 +428,6 @@ export class CodexTokenUsageRuntime {
     this.counterWork.length=0;this.ephemeral.clear();
     if (this.timer) clearInterval(this.timer);
     if (this.scheduled) clearImmediate(this.scheduled);
-    this.pending.clear(); this.active.clear(); this.gaps.clear(); this.identities.clear(); this.gapRetryAfter=""; this.settling.clear();this.receiptAfter.clear();
+    this.retry.clear(); this.pending.clear(); this.active.clear(); this.gaps.clear(); this.reported.clear(); this.identities.clear(); this.gapRetryAfter=""; this.settling.clear();this.receiptAfter.clear();
   }
 }

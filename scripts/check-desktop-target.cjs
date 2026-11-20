@@ -18,4 +18,11 @@ module.exports = async function beforePack(context) {
   if (context.electronPlatformName !== process.platform || target !== process.arch) {
     throw new Error(`Bundled DSH requires a native ${context.electronPlatformName}/${target} build. Current builder is ${process.platform}/${process.arch}. Run npm ci and the package command on the target OS/architecture.`);
   }
+  // Direct electron-builder calls must obey the same contract as the public wrapper.
+  const { verifyElectronDistribution } = await import('./electron-distribution.mjs');
+  const verified = await verifyElectronDistribution(context.packager.config?.electronDist,
+    join(__dirname, '../vendor/electron/fork.json'), { platform: context.electronPlatformName, arch: target });
+  const version = context.packager.info.framework?.version ?? context.packager.config?.electronVersion;
+  if (version !== verified.marker.electronVersion)
+    throw new Error('Electron packaging version differs from the owned artifact; use scripts/package-electron-desktop.mjs');
 };

@@ -1,5 +1,7 @@
 /** Application-owned metadata keys; resource and account identities stay opaque. */
 export const browserMetadataKeys = {
+  resourceSignals: "opencraft.resource-signals.v1",
+  sideChats: "opencraft.side-chats.v1",
   pages: "opencraft.browser-pages.v1",
   tabs: "opencraft.browser-tabs.v1",
   bindings: "opencraft.conversation-bindings.v1",

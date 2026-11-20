@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./server-borrow": "./src/server/borrow.ts",
     "./server": "./src/server/index.ts",
     "./server-legacy": "./src/server/legacy.ts",
     "./server-repository": "./src/server/repository.ts"

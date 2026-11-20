@@ -43,6 +43,8 @@ export function fromDshProfile(id:string,value:unknown,disabled:unknown,catalogI
 export class DshModelEngineAdapter implements ModelEnginePort {
   constructor(private readonly client:Pick<DshClient,'call'>){}
   async apply(doc:ModelDocument,credentials:ModelCredentialResolver){
+    doc={...doc,providers:doc.providers.filter(p=>!p.catalogId?.startsWith('opencraft-human-'))};
+    if(doc.defaultModel&&!doc.providers.some(p=>p.id===doc.defaultModel!.providerId))doc={...doc,defaultModel:null};
     for(const provider of doc.providers){
       const issue=modelBaseUrlError(provider.baseUrl);if(issue)throw new Error(issue);
       if(provider.enabled&&!provider.models.some(model=>model.enabled))throw new ModelConfigurationApplyError(`“${provider.name}”没有已启用模型。请先获取模型，并启用至少一个模型。`);

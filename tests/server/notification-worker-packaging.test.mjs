@@ -26,7 +26,7 @@ test("bundled notification worker opens, generates keys and closes beside its ow
     const { openPushStore } = await import(pathToFileURL(join(output, "push-api.mjs")).href);
     const store = await openPushStore(join(output, "notifications.sqlite"));
     try {
-      assert.equal(store.outcome.appliedVersion, 2);
+      assert.equal(store.outcome.appliedVersion, 3);
       const keys = await store.keys();
       assert.ok(keys.publicKey && keys.privateKey);
       assert.deepEqual(await store.keys(), keys);

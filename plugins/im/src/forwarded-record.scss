@@ -1,0 +1,195 @@
+@use '@opencraft/design-system/typography-mixins.web' as typography;
+.im-record-card {
+  gap: calc(var(--spacing) * 2);
+  inline-size: 19rem;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.im-record-card__title {
+  @include typography.role(body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.im-record-card__preview {
+  @include typography.role(metadata, secondary);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  min-block-size: 1lh;
+}
+.im-record-card__footer {
+  @include typography.role(metadata, tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-block-start: 1px solid var(--color-border-subtle);
+  padding-block-start: calc(var(--spacing) * 2);
+  svg {
+    inline-size: 1em;
+    block-size: 1em;
+  }
+}
+.modal-surface.im-record {
+  inline-size: min(42rem, calc(100vw - var(--spacing) * 8));
+  max-inline-size: 100%;
+  block-size: min(48rem, calc(100dvh - var(--spacing) * 12));
+  max-block-size: calc(100dvh - var(--spacing) * 8);
+  padding: 0;
+  gap: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-background-surface);
+}
+.im-record {
+  &__header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) var(--size-control-hit-min);
+    align-items: center;
+    gap: calc(var(--spacing) * 2);
+    flex: none;
+    padding: calc(var(--spacing) * 3);
+    border-block-end: 1px solid var(--color-border-subtle);
+    > div {
+      min-inline-size: 0;
+      text-align: center;
+    }
+    h2 {
+      @include typography.role(panel-title);
+      margin: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    span {
+      @include typography.role(metadata, secondary);
+    }
+  }
+  &__body {
+    flex: 1;
+    min-block-size: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding: calc(var(--spacing) * 5);
+  }
+  &__entry {
+    display: grid;
+    grid-template-columns: 2rem minmax(0, 1fr);
+    gap: calc(var(--spacing) * 3);
+    margin-block-end: calc(var(--spacing) * 6);
+  }
+  &__entry-main {
+    min-inline-size: 0;
+    > header {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: var(--spacing);
+      @include typography.role(metadata, secondary);
+      span {
+        overflow-wrap: anywhere;
+      }
+      time {
+        @include typography.role(caption, tertiary);
+        white-space: nowrap;
+      }
+    }
+  }
+  &__text,
+  &__legacy {
+    @include typography.role(body);
+    font-weight: var(--font-weight-regular);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin: var(--spacing) 0 0;
+  }
+  &__legacy {
+    font-family: inherit;
+    line-height: var(--typography-chat-line-height);
+  }
+  &__url {
+    color: var(--color-text-secondary);
+    white-space: pre-wrap;
+  }
+  &__resource {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing);
+    margin-block-start: calc(var(--spacing) * 2);
+  }
+  &__file-name {
+    display: block;
+    inline-size: 100%;
+    @include typography.role(body);
+    overflow-wrap: anywhere;
+  }
+  &__nested {
+    margin-block-start: calc(var(--spacing) * 2);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    padding: calc(var(--spacing) * 3);
+    summary {
+      display: flex;
+      justify-content: space-between;
+      gap: var(--spacing);
+      cursor: pointer;
+      @include typography.role(body);
+      svg {
+        inline-size: 1em;
+        flex: none;
+      }
+    }
+    [open] > summary svg {
+      transform: rotate(90deg);
+    }
+    &[open] > summary {
+      margin-block-end: calc(var(--spacing) * 4);
+    }
+  }
+  &__partial {
+    @include typography.role(metadata, secondary);
+    margin: 0 0 calc(var(--spacing) * 4);
+  }
+}
+@media (max-width: 600px) {
+  .modal-surface.im-record {
+    inline-size: 100%;
+    block-size: 100dvh;
+    max-block-size: 100dvh;
+    max-inline-size: 100vw;
+    border-radius: 0;
+  }
+  .im-record__header {
+    padding-block-start: max(
+      calc(var(--spacing) * 3),
+      env(safe-area-inset-top)
+    );
+  }
+  .im-record__body {
+    padding: calc(var(--spacing) * 4);
+    padding-block-end: max(
+      calc(var(--spacing) * 5),
+      env(safe-area-inset-bottom)
+    );
+  }
+  .im-record__entry {
+    gap: calc(var(--spacing) * 2);
+  }
+}
+
+// A forwarded record is the message surface itself, not a card inside a blue bubble.
+.im-channel-chat__conversation
+  .im-channel-chat__timeline
+  [role='listitem'][data-self='true']
+  .im-channel-chat__message[data-record='true'] {
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+}

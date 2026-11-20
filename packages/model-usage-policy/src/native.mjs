@@ -27,7 +27,28 @@ export function readPolicy(path) {
   finally { db?.close(); }
 }
 export function denied(rules, engine, model, effort) {
-  return rules.some(r => r.engine === engine && (r.model === undefined || r.model === model) && (r.effort === undefined || r.effort === effort));
+  const canonical = gatewayPolicyModel(engine, model);
+  return rules.some(r => r.engine === engine && (r.model === undefined || r.model === model || r.model === canonical) && (r.effort === undefined || r.effort === effort));
+}
+
+// Contributed keys retain the administrator's original model-policy identity.
+// The contribution table holds references only; this reader never opens secrets.
+function gatewayPolicyModel(engine, model) {
+  const path = process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE;
+  if (path === undefined || engine !== 'codex' || typeof model !== 'string' || !model.startsWith('configured/')) return model;
+  if (!isAbsolute(path)) throw Error('model_gateway_unavailable');
+  let db;
+  try {
+    const parts = model.slice('configured/'.length).split('/');
+    if(parts.length !== 2) throw Error();
+    const provider = decodeURIComponent(parts[0]);
+    db = new DatabaseSync(path,{readOnly:true});db.exec('PRAGMA busy_timeout=5000');
+    const contribution = db.prepare('SELECT template_provider,state FROM gateway_contributions WHERE provider=?').get(provider);
+    if (!contribution) return model;
+    if (contribution.state !== 'shared') throw Error();
+    return 'configured/' + encodeURIComponent(contribution.template_provider) + '/' + parts[1];
+  } catch { throw Error('model_gateway_connection_unavailable'); }
+  finally { db?.close(); }
 }
 export class ModelPolicyError extends Error {
   constructor(kind, alternatives = []) {
@@ -41,14 +62,15 @@ export function assertModelPolicy(path, engine, model, effort, catalog = []) {
   // A missing native default cannot mean "not restricted".
   if (typeof model !== 'string' || !model || policy.rules.some(r=>r.engine===engine && r.effort !== undefined) && (typeof effort !== 'string' || !effort)) throw new ModelPolicyError('unresolved');
   if (!denied(policy.rules,engine,model,effort)) return policy.revision;
-  const kind = policy.rules.some(r=>r.engine===engine && r.effort===undefined && (r.model===undefined || r.model===model)) ? 'model' : 'effort';
+  const canonical = gatewayPolicyModel(engine,model);
+  const kind = policy.rules.some(r=>r.engine===engine && r.effort===undefined && (r.model===undefined || r.model===model || r.model===canonical)) ? 'model' : 'effort';
   const alternatives = kind === 'effort' ? (catalog.find(m=>(m.model ?? m.id)===model)?.supportedReasoningEfforts ?? []).map(e=>e.reasoningEffort).filter(e=>!denied(policy.rules,engine,model,e))
     : catalog.filter(m=>!denied(policy.rules,engine,m.model ?? m.id,m.defaultReasoningEffort)).map(m=>m.model ?? m.id);
   throw new ModelPolicyError(kind,alternatives.slice(0,10));
 }
 export function projectModels(path, engine, models, policy = readPolicy(path)) {
   const {rules} = policy;
-  return models.map(m=>({...m,policyRestricted:rules.some(r=>r.engine===engine),policyRestrictedEfforts:(m.supportedReasoningEfforts ?? []).filter(e=>denied(rules,engine,m.model ?? m.id,e.reasoningEffort)).map(e=>e.reasoningEffort),hidden:m.hidden || rules.some(r=>r.engine===engine && r.effort===undefined && r.model===(m.model ?? m.id)),
+  return models.map(m=>({...m,policyRestricted:denied(rules.filter(r=>r.effort===undefined),engine,m.model ?? m.id),policyRestrictedEfforts:(m.supportedReasoningEfforts ?? []).filter(e=>denied(rules,engine,m.model ?? m.id,e.reasoningEffort)).map(e=>e.reasoningEffort),hidden:m.hidden || denied(rules.filter(r=>r.effort===undefined),engine,m.model ?? m.id),
     supportedReasoningEfforts:(m.supportedReasoningEfforts ?? []).filter(e=>!denied(rules,engine,m.model ?? m.id,e.reasoningEffort))}));
 }
 

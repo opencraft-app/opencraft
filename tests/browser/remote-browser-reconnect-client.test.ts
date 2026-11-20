@@ -1,3 +1,4 @@
+import * as mediaRuntime from '../../apps/workbench-web/src/browser/remote-browser-media-runtime';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AdaptiveInputWindow } from '@opencraft/remote-interaction';
@@ -29,7 +30,7 @@ test('transient failures keep recovering past five attempts without navigation o
   host.resetTransport=(page:any)=>{host.rejectPending(page);page.opened=false;};
   host.keyboardChanged=host.applyViewport=host.queueViewport=host.run=host.setControl=()=>{};
   const flush=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
-  const connect=()=>{p.ready=host.connect(p);void p.ready.catch(()=>{});};
+  const connect=()=>{p.mediaRuntime=mediaRuntime;p.inputBound=true;p.ready=host.connect(p);void p.ready.catch(()=>{});};
   try {
     connect();
     // A deployment/network outage can outlast the old five-attempt budget.
@@ -85,7 +86,7 @@ test('only authoritative closure terminates the logical tab, fenced against old 
     events:{onError(){},onLoaded(){},onSessionClosed(){closed++;}},visible:true};
   host.resetTransport=(page:any)=>host.rejectPending(page);
   const flush=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
-  const connect=()=>{p.serverClosed=false;p.ready=host.connect(p);host.watchConnection(p);};
+  const connect=()=>{p.serverClosed=false;p.mediaRuntime=mediaRuntime;p.inputBound=true;p.ready=host.connect(p);host.watchConnection(p);};
   try {
     connect();sockets[0].close(1006);await flush();assert.equal(closed,0);
     clearTimeout(p.reconnect);p.reconnect=null;

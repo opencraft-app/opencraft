@@ -423,3 +423,48 @@ test("a stable panel tab ID cannot silently replace its resource identity", asyn
   unregister();
   await fiber.dispose();
 });
+
+test('file browser navigation changes recovery location without changing identity or dropping dirty guards on reopen', async () => {
+  const ctx = new Context();
+  await ctx.plugin(WorkbenchPanelService);
+  ctx.workbenchPanels.register({ kind: 'resource', createTab: () => ({ id: 'files', kind: 'resource', region: 'right', title: 'repo', resource: '/repo', closable: true, preview: true,
+    durableRoute: { kind: 'workspace-resource', payloadVersion: 1, params: { resource: '/repo' } } }) });
+  ctx.workbenchPanels.open('owner', 'resource', {});
+  ctx.workbenchPanels.dispatch('owner', { type: 'update-tab', region: 'right', tabId: 'files', patch: { title: 'a.ts •', closable: false, preview: false,
+    durableRoute: { kind: 'workspace-resource', payloadVersion: 1, params: { resource: '/repo', location: 'file:///repo/a.ts#L2' } } } });
+  ctx.workbenchPanels.open('owner', 'resource', {});
+  let tab = ctx.workbenchPanels.getOwnerSnapshot('owner').right.tabs[0]!;
+  assert.equal(tab.resource, '/repo'); assert.equal(tab.durableRoute?.params.location, 'file:///repo/a.ts#L2');
+  assert.equal(tab.closable, false); assert.equal(tab.preview, false);
+  ctx.workbenchPanels.close('owner', 'right', 'files'); assert.equal(ctx.workbenchPanels.getOwnerSnapshot('owner').right.tabs.length, 1);
+  ctx.workbenchPanels.dispatch('owner', { type: 'update-tab', region: 'right', tabId: 'files', patch: { durableRoute: { kind: 'workspace-resource', payloadVersion: 1, params: { resource: '/other' } } } });
+  tab = ctx.workbenchPanels.getOwnerSnapshot('owner').right.tabs[0]!; assert.equal(tab.durableRoute?.params.resource, '/repo');
+  ctx.workbenchPanels.releaseOwner("owner");
+});
+
+
+test("explicit reveal requests are separate from background resource changes", () => {
+  let state = createConversationPanelState({ ownerId: "scene" });
+  state = reduceConversationPanelState(state, { type: "open-tab", tab: tab("one") });
+  assert.equal(state.foreground, "tools");
+  state = reduceConversationPanelState(state, { type: "activate-tab", region: "right", tabId: "one" });
+  assert.equal(state.foreground, "tools", "reactivating the same resource is an explicit request");
+  state = reduceConversationPanelState(state, { type: "select-foreground", foreground: "primary" });
+  state = reduceConversationPanelState(state, { type: "open-tab", tab: tab("background"), activate: false });
+  state = reduceConversationPanelState(state, { type: "update-tab", region: "right", tabId: "one", patch: { title: "Updated" } });
+  state = reduceConversationPanelState(state, { type: "close-tab", region: "right", tabId: "one" });
+  state = reduceConversationPanelState(state, { type: "activate-tab", region: "right", tabId: "missing" });
+  assert.equal(state.foreground, "primary", "background selection fallbacks never request foreground");
+  state = reduceConversationPanelState(state, { type: "open-tab", tab: tab("bottom", { region: "bottom" }) });
+  assert.equal(state.foreground, "primary", "bottom region cannot reveal right tools");
+});
+
+test("compact tool panes stay bounded on tall and ultra-wide screens", () => {
+  for (const height of [700, 1200, 2160]) {
+    for (const width of [1440, 1920, 3840]) {
+      assert.ok(computeRightPanelDefaultWidth({ mainContentWidth: width, shellHeight: height, size: "compact" }) <= 640);
+    }
+  }
+  // The default cap is not a restriction on an explicit user split position.
+  assert.ok(Math.abs(interpolateRightPanelWidth(normalizeRightPanelWidth(1000, 1920), 1920) - 1000) < 0.001);
+});

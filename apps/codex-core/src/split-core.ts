@@ -1,7 +1,8 @@
 import { ACCOUNT_CORE_STATE_MAX_BYTES } from "../../../scripts/full-upgrade/account-core-limits.mjs";
 import { realpath } from "node:fs/promises";
+import { Readable } from 'node:stream';
 import { dirname, isAbsolute, join } from "node:path";
-import { acquireCodexWriter, CODEX_CORE_PROTOCOL_VERSION, CodexAccountService, CodexCoreControlClient } from "@opencraft/account-pool-host";
+import { accountFailure, classifyAccountFailure, logAccountFailure, acquireCodexWriter, CODEX_CORE_PROTOCOL_VERSION, CodexAccountService, CodexCoreControlClient } from "@opencraft/account-pool-host";
 import type { CodexCoreOptions } from "./main.js";
 import { readControlJson, startControlServer } from "./control-server.js";
 import { AccountCoreOwner, type AccountOwnerExpectation } from "./account-owner.js";
@@ -85,6 +86,14 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
           });
         } catch { return { status: 409, value: { error: "Account Core handoff rejected" } }; }
       }
+      if(/^\/personal\/[a-f0-9]{64}\/v1\/(responses|models)$/.test(request.url??'')) {
+        if(!owner.isOpen()||!accounts)return new Response(null,{status:503});
+        const headers=new Headers();
+        headers.set('authorization','Bearer '+String(request.headers['x-opencraft-subscription-token']??''));
+        if(request.headers['content-type'])headers.set('content-type',request.headers['content-type']);
+        return fetch(`http://127.0.0.1:${options.proxyPort}${request.url}`,{method:request.method,headers,
+          ...(request.method==='GET'?{}:{body:Readable.toWeb(request),duplex:'half'})} as RequestInit);
+      }
       if (request.method === "GET" && request.url?.split("?")[0] === "/generation-directory") {
         const query = new URL(request.url, "http://local.invalid");
         return { status: 200, value: await runtime.generationDirectory(query.searchParams.get("threadId") ?? undefined) };
@@ -113,25 +122,37 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
       }
       if (request.method !== "POST" || request.url !== "/accounts") return { status: 404, value: { error: "Unknown operation" } };
       let leave;
+      let operation: string | undefined;
+      const startedAt = Date.now();
+      const acceptedOpen = owner.isOpen();
       try {
         // Count the body read too. An already accepted mutation is not forgotten
         // when a caller disconnects or maintenance closes new admission.
-        const acceptedOpen = owner.isOpen();
         leave = owner.enter(true);
         const chunks: Buffer[] = []; let size = 0;
         for await (const chunk of request) {
           size += chunk.length;
-          if (size > 1024 * 1024) throw new Error("Account request too large");
+          if (size > 1024 * 1024) throw accountFailure("invalid-request", "operation", false);
           chunks.push(chunk);
         }
-        const value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        let value;
+        try { value = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+        catch { throw accountFailure("invalid-request", "operation", false); }
         if (typeof value?.method !== "string" || !value.method.startsWith("opencraft/codex/accounts/")
-          || !value.params || typeof value.params !== "object" || Array.isArray(value.params)) throw new Error("Invalid account request");
+          || !value.params || typeof value.params !== "object" || Array.isArray(value.params)) throw accountFailure("invalid-request", "operation", false);
+        operation = value.method;
         if (!acceptedOpen && !["opencraft/codex/accounts/deviceLogin/cancel", "opencraft/codex/accounts/deviceLogin/poll"].includes(value.method)) {
-          return { status: 503, value: { error: "Account Core admission is fenced" } };
+          throw accountFailure("admission-fenced", "operation", true);
         }
         return { status: 200, value: await accounts!.request(value.method, value.params) };
-      } catch { return { status: owner.isOpen() ? 400 : 503, value: { error: "Invalid or fenced Codex account operation" } }; }
+      } catch (error) {
+        const failure = acceptedOpen ? classifyAccountFailure(error, "operation") : accountFailure("admission-fenced", "operation", true);
+        logAccountFailure(failure, { operation, durationMs: Date.now() - startedAt });
+        const code = failure.diagnostic.code;
+        const status = code === "invalid-request" ? 400 : code === "admission-fenced" || code === "service-unavailable" ? 503
+          : code === "request-timeout" ? 504 : 502;
+        return { status, value: { error: failure.message, diagnostic: failure.diagnostic } };
+      }
       finally { leave?.(); }
     });
     // A listening account plane can bootstrap the runtime before health becomes ready.

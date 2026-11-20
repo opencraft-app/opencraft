@@ -8,6 +8,13 @@
       "when": 1793322053389,
       "tag": "0000_legacy_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1795099108766,
+      "tag": "0001_open_gap_thread",
+      "breakpoints": true
     }
   ]
 }

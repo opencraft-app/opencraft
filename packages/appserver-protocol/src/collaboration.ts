@@ -1,3 +1,4 @@
+import type { InputCompletion } from "./input-delivery.js";
 /** Stable resource identity. Host connection paths are deliberately absent. */
 export interface ConversationRef { readonly serverId: string; readonly threadId: string }
 export type CollaborationTarget = { kind: "actor"; actorId: string } | { kind: "conversation"; ref: ConversationRef };
@@ -30,6 +31,7 @@ export interface ConversationReceipt {
   ref: ConversationRef; operationKey: string; messageId: string; requestId: string;
   mode: 'queue' | 'steer'; deliveryState: OrchestrationDeliveryStatus;
   targetTurnId: string | null; observedAt: number; taskOutcome: 'unknown';
+  completion?: InputCompletion;
 }
 export type ConversationLookup = { found: true; receipt: ConversationReceipt } |
   { found: false; ref: ConversationRef; operationKey: string; deliveryState: 'unknown'; observedAt: number; taskOutcome: 'unknown' };
@@ -125,5 +127,6 @@ export function parseThreadOrchestrationView(value: unknown): ThreadOrchestratio
   return {threadId:source.threadId,calls};
 }
 
+export * from './actor-inbox.js';
 export * from './thread-count';
 export * from './thread-search';

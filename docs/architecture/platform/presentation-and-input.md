@@ -388,7 +388,7 @@ checks are part of `gate`; locale coverage is distinct from runtime correctness.
 TerminalPanel separates visual inset from its measured xterm host, and that host
 also isolates inherited application letter spacing, word spacing and text
 transforms. xterm owns font/grid metrics and its internal row compensation; CSS
-must not override those internal rows. The terminal explicitly requests zero
+must not override those internal row metrics. The terminal explicitly requests zero
 additional grid letter spacing. Canvas cell measurement and the DOM width cache
 must not see different application typography. WSP-21 acceptance measures full
 row text advances and the last-column cursor as well as screen/host boxes.
@@ -409,7 +409,46 @@ not be delivered after the panel changes terminal or the session stops. The
 entry field is View-scoped, cleared on cancellation or terminal change, and
 never persists clipboard contents.
 
+Terminal touch selection uses the browser's native range, handles, menu and
+clipboard on an in-place stable text presentation. It copies the existing DOM
+renderer's resolved text styles and glyph geometry, never creates another
+Terminal or PTY and never measures a separate character grid. The original
+renderer remains the grid/input owner and continues parsing output and answering
+applications while a native range holds its text presentation. A contact/range
+only holds these plain text nodes; releasing it projects the latest rendered
+rows. Selection pauses shared drawer/scroll gestures. Ordinary panning still uses
+xterm's wheel adapter, including alternate screens. Mouse-reporting applications
+and actual mouse input keep xterm's existing event/selection path. Touch capability
+comes from the Shell toolbar contract. The text presentation has no custom
+context menu, dialog, clipboard permission flow or editable control.
+Browser automation verifies native DOM ranges and copy, stable text during live
+output and theme changes, glyph alignment, gestures and TUI mode transitions.
+Linux headless cannot verify UIKit handles or the iPhone/WeChat native callout.
+
 ### Conversation terminal semantics
+
+The three-owner container deployment explicitly selects a Hands terminal owner.
+It reuses `HostProcessService` for PTY lifetime, account/Host quotas, output
+sequence replay, stdin, resize and termination. Hands supervises the owner in
+its existing CPU/memory/PID cgroup. Its private authenticated Unix socket is
+separate from the fixed Codex exec-server channel. The exec-server allowlist is
+not relaxed and Native `include_local` remains disabled.
+
+The local Host transport routes all six `process/*` operations to that owner,
+independently of Codex, DSH or Pi. The existing `/appserver` Server UI ingress
+uses the same terminal session routing as AppHost leases. Authenticated actor/admission and live resource
+ownership are rechecked before dispatch, receipt and streamed delivery. Only
+the owner's account/Host can list or control its PTYs; explicit thread/project
+scopes narrow discovery and control. Browser-supplied owner identities are
+ignored. Hands checks physical cwd against its execution mounts and supplies
+its own PATH/HOME; Brain/Gateway environment and loader variables are not
+inherited. Account environment overlays use the existing trusted runtime.
+
+Gateway/Host connection loss detaches observers; reconnect attaches by process
+ID and output cursor. Unknown spawn outcomes are not retried. A Hands restart
+ends its PTYs rather than fabricating replacements. Positive method capability
+is published after the configured owner handshake; an unavailable owner rejects
+terminal requests without forwarding to Native or preventing engine use.
 
 The Host authorizes access while its independent PTY owner retains processes and output. The
 renderer application projects those resources through one
@@ -521,3 +560,46 @@ same provider instance and releases that per-call lease on success or failure.
 Retirement publishes removal immediately and drains already accepted calls.
 No command registry or asynchronous lookup of the selected Host is introduced.
 See [Composer semantics](../../chat-ui-architecture.md).
+
+
+## Downloadable browser diagnostics
+
+The conversation actions (ellipsis) menu exposes a diagnostics download action.
+The Web viewport owner retains at most 240 geometry observations at its existing
+bounded cadence, plus the last editing and last reduced-viewport editing observations. Keyboard dismissal when
+opening the menu cannot overwrite the last editing observation. It adds no
+polling loop. Diagnostics collection loads independently of viewport adaptation;
+the export/probe module preloads on toolbar interaction, keeping it off startup.
+
+The JSON export combines current geometry, recent and last-editing observations,
+CSS dynamic/small/large viewport heights and safe-bottom samples while editing,
+a fixed computed-style allowlist, CSS capability results, build metadata and the
+existing bounded error, warning and failed-request records. It does not serialize
+DOM, editor values, storage, cookies, request/response bodies or arbitrary
+JavaScript. Diagnostic log URLs drop query/fragment data and common credential
+fields are redacted. It is a local download, not an upload. History covers the
+current page lifetime only; actual iOS keyboard bounds and earlier DevTools logs
+are not available through this capture. Browser emulation verifies export
+behavior, not physical iOS keyboard geometry.
+
+
+### Browser keyboard clearance
+
+The touch browser conversation menu offers “Raise input above keyboard”, off by
+default. The installation UI preference is explicit user intent; it is not an
+automatic diagnosis of WeChat or a measurement of the native keyboard. The Web
+viewport owner separately projects focused, unzoomed capacity reduction even
+when native focus pan makes the inferred bottom keyboard inset zero. Existing
+keyboard-open and safe-area behavior remain unchanged.
+
+When enabled in that state, the main conversation footer and floating composer
+reserve up to 24 spacing units of additional clearance, capped so the reported
+viewport retains 240 CSS pixels for header and input. Blur, restored capacity,
+zoom, compact density and nonbrowser hosts do not apply the clearance. The
+editor and draft are retained. The action toggles back to normal placement and
+survives reload through the existing device-local preference store.
+
+Captured normal/faulty WeChat geometry is replayed in the real Shell/Composer
+browser smoke, with a synthetic native overlay as a negative control. This
+proves the opt-in placement and continuity, not detection of real iOS keyboard
+bounds or an automatic repair of the browser's native geometry.

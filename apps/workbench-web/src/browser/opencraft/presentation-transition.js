@@ -143,7 +143,11 @@ export function createImplementation(_ports) {
         return;
       }
       if (lane.waiting) this.#cancel(lane, true);
-      if (!lane.front || lane.front.host === host || !lane.front.host.isPainted()) {
+      // A different logical Tab acquires display ownership immediately. Keeping
+      // the previous Tab as a cover would disagree with the selected Tab chrome.
+      // Only replacement hosts for the same Tab may retain their own cover.
+      if (!lane.front || lane.front.host === host || !lane.front.host.isPainted()
+        || lane.front.host.getBrowserTabId() !== host.getBrowserTabId()) {
         const previous = lane.front;
         lane.front = claim;
         if (previous && previous.host !== host) this.#detach(previous);

@@ -2,7 +2,20 @@ import type { MessageSender } from "./message-sender";
 export type ThreadHistoryItemsView = "full" | "notLoaded" | "presentation";
 export type ThreadHistorySortDirection = "asc" | "desc";
 
+/** A committed immutable image in the existing authenticated Host file plane. */
+export interface HistoryImageResource {
+  readonly version: 1;
+  readonly path: string;
+  readonly sha256: string;
+  readonly byteSize: number;
+  readonly mimeType: "image/png";
+  readonly width: number;
+  readonly height: number;
+}
+
 export interface ThreadTurnsPageRequest {
+  /** Opt-in only; old consumers retain inline images. No change to history pagination. */
+  imageResources?: boolean;
   limit: number | null;
   itemsView: ThreadHistoryItemsView;
   sortDirection: ThreadHistorySortDirection;
@@ -49,6 +62,7 @@ export interface AppServerThread {
 }
 
 export interface ThreadTurnsListRequest {
+  imageResources?: boolean;
   threadId: string;
   /** Only with read-history itemDetails; never forwarded to native. */
   detailItemId?: string;

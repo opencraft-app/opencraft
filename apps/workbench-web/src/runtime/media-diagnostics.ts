@@ -1,6 +1,7 @@
 import type { ChatMediaDiagnostic } from "@opencraft/chat-render-react";
 import { FileBlobNetworkError, FileBlobReadError } from "./blob-files";
-import { observeEvent, subscribeObservationEnabled } from "./observability";
+import { isLocalDiagnosticsEnabled, getLocalDiagnosticsState } from "./local-diagnostics";
+import { observeEvent } from "./observability";
 
 /** Only closed diagnostic vocabulary leaves the page; no URLs, paths, alt text or error messages. */
 export function mediaDiagnosticFields(event: ChatMediaDiagnostic) {
@@ -23,18 +24,13 @@ export function mediaDiagnosticFields(event: ChatMediaDiagnostic) {
       ? { errorCode: `rpc:${event.error.code}` } : {}) };
 }
 
-let ready = false;
-const early: ChatMediaDiagnostic[] = [];
-subscribeObservationEnabled(() => {
-  ready = true;
-  for (const event of early.splice(0)) observeChatMediaDiagnostic(event);
-});
-
 export function observeChatMediaDiagnostic(event: ChatMediaDiagnostic): void {
-  if (!ready) { if (early.length < 32) early.push(event); return; }
+  if (!isLocalDiagnosticsEnabled()) return;
   // Native message IDs have high entropy. Hash the identity for exact-document
   // correlation; the transport never receives the message ID itself.
+  const session = getLocalDiagnosticsState().session;
   void crypto.subtle.digest("SHA-256", new TextEncoder().encode(event.documentId)).then(digest => {
+    if (session !== getLocalDiagnosticsState().session) return;
     const mediaDocumentId = [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, "0")).join("");
     observeEvent({ ...mediaDiagnosticFields(event), mediaDocumentId });
   }).catch(() => { /* Diagnostics never change image loading or retry behavior. */ });

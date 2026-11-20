@@ -11,7 +11,7 @@ export function projectMiniApps(snapshot: ExtensionContributionSnapshot, platfor
   const views = new Set(snapshot.views.map(entry => entry.contribution)
     .filter(view => visible(view) && canRender(view.viewType)).map(view => view.id));
   const pages = new Set(snapshot.settingsPages.map(entry => entry.contribution)
-    .filter(page => visible(page) && views.has(page.viewId)).map(page => page.id));
+    .filter(page => page.placement !== 'extension' && visible(page) && views.has(page.viewId)).map(page => page.id));
   return snapshot.navigation.map(entry => entry.contribution)
     .filter((app): app is MiniAppContribution => app.surface === "applications" && visible(app)
       && (app.target.kind === "view" ? views.has(app.target.viewId)

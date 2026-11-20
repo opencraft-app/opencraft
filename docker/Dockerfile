@@ -44,4 +44,4 @@ RUN chown root:root /opt/opencraft/runtime/browser/electron/chrome-sandbox \
 ENV PATH=/opt/opencraft/bin:$PATH
 WORKDIR /opt/opencraft
 USER ${OPENCRAFT_UID}:${OPENCRAFT_GID}
-ENTRYPOINT ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-gateway.mjs"]
+ENTRYPOINT ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "gateway"]

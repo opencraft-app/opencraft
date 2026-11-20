@@ -52,12 +52,14 @@ test("Hands Unix owner runs only the pinned Codex exec-server and fences its lea
   await assert.rejects(startHandsExecutionOwner({ endpoint, tokenFile, executable, workspace,
     projectlessWorkspace: redirected, resources }), /Invalid Hands projectless workspace/);
   const owner = await startHandsExecutionOwner({ endpoint, tokenFile, executable, workspace, projectlessWorkspace, resources }); t.after(() => owner.close());
-  assert.deepEqual(await probe(endpoint), { type: "healthy", protocol: 1, resources });
+  const health = await probe(endpoint);
+  assert.match(health.incarnation, /^[a-zA-Z0-9-]{16,80}$/u);
+  assert.deepEqual(health, { type: "healthy", protocol: 1, incarnation: health.incarnation, resources });
   const pool = await createSandboxPool({ id: "hands-test", capacity: resources }, await handsUnixSandboxBackend({ endpoint, tokenFile })); t.after(() => pool.close());
   const sandbox = await pool.createSandbox({ owner: "turn:generation-7", resources });
   const output: Buffer[] = [];
   const child = await sandbox.spawn({ command: [executable, "exec-server", "--listen", "stdio"], cwd: taskDirectory, env: { PATH: "/usr/bin:/bin" } }, event => output.push(Buffer.from(event.data)));
-  assert.deepEqual(await probe(endpoint), { type: "healthy", protocol: 1, resources });
+  assert.deepEqual(await probe(endpoint), health);
   await child.writeStdin(Buffer.from("hello\n")); await child.closeStdin();
   assert.deepEqual(await child.exited, { code: 0 }); assert.equal(Buffer.concat(output).toString(), "hands:hello\n");
   await sandbox.close();

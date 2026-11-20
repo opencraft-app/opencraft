@@ -1,0 +1,28 @@
+.retained-preview-home, .retained-preview-view { width: 100%; height: 100%; min-width: 0; min-height: 0; }
+[data-retained-view='primary-chat'] { container: app-shell-main-content / inline-size; }
+.retained-view-preview { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: clip; isolation: isolate; }
+[data-retained-preview='true'] {
+  position: absolute; top: 0; left: 0; transform-origin: top left; pointer-events: none;
+  user-select: none; overflow: clip; contain: layout paint;
+  // Preview geometry must not become a browser scroll-position writer. Nested
+  // scrollports retain their owner's position while this read-only view moves.
+  &, * { overflow-anchor: none; }
+}
+[data-retained-preview-presentation='popover'] {
+  position: fixed; inset: auto; margin: 0; padding: 0; border: 0; outline: 0;
+  background: transparent; color: inherit;
+}
+// A top-layer thumbnail still needs a layout tree for an inactive resident view.
+// Its normal slot contributes no flow or paint; only the read-only popover paints.
+.right-panel-resident[hidden]:has(> .retained-preview-home > [data-retained-preview-presentation='popover']) {
+  display: block; position: absolute; inset: 0; visibility: hidden; pointer-events: none;
+}
+
+// Conversation thumbnails are reading surfaces. Keep footer geometry/DOM (and drafts),
+// but exclude composer, floating controls and their scrim from the borrowed paint.
+[data-retained-preview='true'] .thread-scroll-footer {
+  visibility: hidden;
+}
+
+// Resource controls retain their DOM/drafts but never paint in read-only cards.
+[data-retained-preview='true'] [data-retained-preview-chrome] { visibility: hidden; }

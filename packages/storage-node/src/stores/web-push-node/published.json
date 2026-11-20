@@ -15,5 +15,14 @@
     "snapshotChecksum": "dfd9ad2bd79325e3e971d485502f326f13adc7ce5b84a665899061a9d4c875f5",
     "compiledChecksum": "051fcc6e15af2eb7a8838d774beca6cafa0270dd067a966b688cc0859e26c7b6",
     "ledgerName": "notification-destinations"
+  },
+  {
+    "tag": "0002_default_decisions",
+    "when": 1795105062287,
+    "version": 3,
+    "sqlChecksum": "4d41eb5aa014a34503788335a32f3e95e626e74c659e5ec6ac377c5388a27a59",
+    "snapshotChecksum": "59e7d319d548031bc3dedcb1b8d706986190fc6d935650321fc7c76c5f8be6b1",
+    "compiledChecksum": "4d41eb5aa014a34503788335a32f3e95e626e74c659e5ec6ac377c5388a27a59",
+    "ledgerName": "notification-default-decisions"
   }
 ]

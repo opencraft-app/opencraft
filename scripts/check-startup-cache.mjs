@@ -17,7 +17,7 @@ if (mode === '--build') {
     VITE_HYPERNODE_PLUGIN: 'disabled', VITE_WEB_EXTENSIONS: '',
     VITE_APPSERVER_HOSTS_JSON: JSON.stringify(headlessWebHostDefinitions()),
   });
-  const target = join(root, 'apps/workbench-web/src/runtime/bot-management-extension.ts');
+  const target = join(root, 'apps/workbench-web/src/runtime/token-usage-extension.tsx');
   let transformed = false;
   const { build } = await import('vite');
   await build({ root: join(root, 'apps/workbench-web'),
@@ -26,7 +26,7 @@ if (mode === '--build') {
     plugins: variant === 'probe' ? [{ name: 'startup-cache-controlled-probe', enforce: 'pre',
       transform(code, id) {
         if (id !== target) return;
-        const changed = code.replace('name: "Bots"', 'name: "Bots cache probe"');
+        const changed = code.replace('title: "Token usage"', 'title: "Token usage cache probe"');
         if (changed === code) throw new Error('Cache probe target changed; review the controlled scenario');
         transformed = true; return { code: changed, map: null };
       },

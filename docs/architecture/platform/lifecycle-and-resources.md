@@ -157,8 +157,8 @@ be declared failed after the generic 30 seconds. A transport loss still leaves
 the outcome unknown, so the UI warns against blind retry rather than claiming
 that the child was not created. Identical concurrent durable Fork intents
 share one pending AppServer request within the Host runtime.
-Temporary Side Chat requires explicit fork or ephemeralFork, plus ephemeral, inject-items and
-unsubscribe support. Codex
+Recoverable Side Chat requires explicit persistent fork, inject-items and
+unsubscribe support, resolved for the source Thread. Codex
 Fork is only recoverable after the source's first Turn has been accepted;
 paginated ephemeral Fork uses `excludeTurns: true` and its returned child is
 adopted as the baseline rather than resumed from durable storage. The shared
@@ -167,14 +167,56 @@ child; a disconnected client's late Fork response cannot reclaim ownership.
 Codex persists a blank durable Fork so `thread/read` can recover it after an
 engine restart, but its native `thread/list` omits that child until the first
 child Turn completes. The Host-scoped Workbench runtime temporarily projects
-the acknowledged child into the default catalog and removes that projection
-once the native list includes it; ephemeral children and filtered/archived
+the acknowledged independent child into the default catalog and removes that projection
+once the native list includes it; owned side chats, ephemeral children and filtered/archived
 queries are never overlaid. The projection is in-memory, so a browser reload
 before the child's first Turn retains direct-route recovery but not sidebar
 discovery of that blank child.
 `ephemeralFork` additionally declares temporary context forks without enabling
-persistent Fork actions. Side Chat requires `fork` or `ephemeralFork` together
-with ephemeral, injection and unsubscribe support, resolved for its parent Thread.
+persistent Fork actions. That capability alone does not enable recoverable Side Chat.
+
+Product ownership (`ConversationOwnership`) is separate from native fork provenance
+and physical history references. An ordinary fork is independent by default. Side
+Chat supplies an explicit owner with its native fork intent; ownership is not a
+native engine parameter or an execution grant. A Host may contain several engines;
+Host identity must not be used as engine identity. This implementation retains the
+current same-Host native fork path. Cross-engine context export/import is not yet
+implemented by this path and must not be advertised by a model picker or simulated
+by replaying currently loaded UI messages.
+
+The account-scoped side-chat directory remains the recovery-reference owner; the
+service derives catalog classification from its committed rows, including known
+bindings of closed children, without connecting to an engine or restoring a parent
+view. The ordinary sidebar and conversation-picker catalog consume that projection;
+native catalogs, history and direct-route lookup retain the resources. A pending
+acknowledged child is classified before boundary injection completes. The native
+durable-fork catalog overlay is reserved for independent forks. Deduplication also
+distinguishes product ownership. None of these projections authorizes a native read
+or submission. The reference directory is account-scoped; resource-wide classification
+for other authorized readers still requires Server-owned conversation metadata, not
+disclosure of another account's recovery directory.
+
+New closes retain `{id,parent,key,closed:true}` in Server-owned account state. The
+existing `values.sideChats` leaf keeps the strict v1 shape (`{id,closed:true}`), so
+old pages continue to read, write, push-sync and compare fingerprints unchanged.
+An additive `sideChatDirectory` projection carries full bindings, fenced by account
+scope, sideChats key revision and matching v1 content. A new binding intent shares
+the existing metadata CAS and exact-input receipt identity; it cannot change the
+v1 leaf or rebind an existing identity. It is sent only after the Server advertises
+the projection. Small pushes include both views; congested/large pushes recover
+through the digest. No new metadata field enters the fingerprint tree.
+
+Server transition validation retains bindings even when an old client closes a
+side chat with an identity-only tombstone. Reopening and rebinding remain forbidden.
+Identity-only historical tombstones remain valid but cannot safely identify an old
+child, so they are not backfilled from titles or native fork lineage. Legacy Servers
+remain usable without closed-binding recovery. No engine history is deleted or rewritten.
+
+Parent archive/delete cascade, durable server-owned cleanup and cross-engine portable
+snapshots remain separate work. In particular, product ownership cannot be used to
+delete a native history base still referenced by an independent fork. A native create
+whose response is lost before its child ID is known still has an unknown outcome;
+this client-side classification does not replace a server publication transaction.
 
 
 The SDK fences late unsubscribe responses, retains newly acquired views and
@@ -406,3 +448,197 @@ overrides take precedence, including explicit null. Credentials, tool entries an
 permissions are not copied by this policy. Path forks retain native semantics.
 The Workbench adopts the fork response for durable and temporary children so
 read-only history hydration preserves the newly acknowledged execution choices.
+
+### Archived conversation resources (internal Headless composition)
+
+An acknowledged archive/delete is distinct from detaching a renderer or evicting
+its cache. The Headless composition observes successful lifecycle RPCs and native
+notifications on each local Host transport, even with no UI subscriber. Failed
+or unauthorized archive RPCs never close resources. Correlation includes the
+logical client ID; an archive notification followed by an unarchive cannot be
+undone by the earlier archive RPC's late acknowledgement.
+
+`ConversationResourceLifecycle` keeps a durable **cleanup projection**, not a
+second conversation catalog, in `conversation-resources.json` under the existing
+single-writer server data directory. The engine remains archive/history authority.
+The projection fences resource allocation before invoking registered owners,
+retains failed owners for retry, and replays pending work after restart. A new
+lifecycle generation wins over old cleanup acknowledgements. Unarchive waits for
+that cleanup before admitting new resources; it never restarts old commands.
+Corrupt/unwritable lifecycle state fails closed instead of resetting to empty.
+
+The shipped local Headless composition registers these owners:
+
+- Browser: closes native pages and all attached viewers across humans, preserving
+  logical tabs, URL, zoom and other recovery checkpoints. Reopening after unarchive
+  creates a fresh native page. Shared browser infrastructure remains alive.
+- Hands terminal: private authenticated owner IPC drains terminals by Host + Thread
+  across humans. Draft aliases are additionally matched against their creating
+  human's resource owner; a coincident scope string is insufficient. An owner-side
+  fence rejects late spawns. Completion waits for native exit, not just a kill ACK.
+  On Linux the drain also terminates background process groups in the same PTY
+  session, with SIGKILL escalation after a grace period.
+
+Late draft binding invalidates cleanup completion and schedules a new pass. On
+startup, and after a lost engine connection, archived metadata is reconciled only
+for Hosts with recorded resources; empty installations do not cold-start engines
+for this purpose. Pagination does not read transcripts. A newer lifecycle event
+wins over an older catalog page. Missing catalog rows are never treated as proof
+of deletion. Unknown or unbound ownership is not grounds for broad process kills.
+
+Execution still belongs to its engine. DSH must acknowledge native release before
+publishing archive; active Turns, armed goals or native jobs that refuse release
+leave the conversation unarchived, with an error. Pi rejects active archive and
+closes its idle native session. ACP rejects active archive and closes dedicated
+session transports, never a driver shared by other conversations. Existing
+schedule suspension continues to prevent new scheduled submissions. These rules
+do not cancel unrelated server-wide jobs, remote desktops, or shared services.
+
+Deployment must update Gateway and Hands together: older Hands does not implement
+the private lifecycle IPC and cleanup will remain pending, never falsely complete.
+The standalone Electron composition is not wired to this Headless coordinator.
+A process explicitly escaping the terminal POSIX session (for example `setsid`)
+requires a separate job/cgroup owner to guarantee reclamation; this change does
+not claim containment of those processes or delete conversation/workspace data.
+
+### Terminal cold-page recovery
+
+A page reload creates a fresh Workbench/controller projection, not a fresh PTY.
+The Host's `opencraft/terminal` version 1 capability with both `available` and
+`recovery` true is positive restore support even when the selected engine has no
+method-admission manifest. Explicit method admission still wins; an unadvertised
+legacy server does not gain `process/list` or `process/attach` by default.
+Workbench's terminal resource adapter forwards the requested Thread/Project scope
+unchanged for list and attach, including replay after reconnect. Recovery must
+reuse the returned process handle and output, without spawn/kill as a substitute.
+Panel visibility is separate: reopening the tools panel must show the recovered
+tab, but background resource discovery does not force the panel open.
+
+A pre-promotion Draft PTY may retain a null Thread and its original resource-owner
+alias. Recover it by exact known conversation aliases under the authenticated Host,
+not by relabeling or respawning the process. Thread-scoped recovery is followed by
+an optional metadata lookup for these unbound PTYs; unrelated bound Threads and
+unknown owners are excluded. A scoped-only Host rejecting the optional lookup must
+not discard successful scoped recovery. Adopt recovered entries into the current
+conversation directory while attaching with the process's original scope. Known
+aliases are supplied by the binding store only for the same Host + canonical
+Thread; browser-metadata failure cannot disable an otherwise healthy terminal Host.
+
+### Durable side-chat page recovery
+
+SideChatService owns durable child Threads; a panel owns only its presentation.
+Creation explicitly requests `ephemeral:false`, commits the inherited-history
+boundary once, and persists only the parent/child Host+Thread reference before
+publishing the session. Independent side-chat intents do not share an in-flight
+fork. Host capability admission requires persistent fork, injectItems and
+unsubscribe; ephemeral-only peers cannot claim recoverability.
+
+The headless Web adapter stores references in the authenticated Server
+resource-metadata directory (`sideChats`). The existing account partition,
+per-field CAS, fingerprints, push and reconnect reconciliation are shared with
+Browser/alias metadata; no media owner or codec readiness gates side chats.
+This supports same-account, same-deployment cross-device discovery, not a history
+mirror, an authorization grant or a saved Composer draft. Standalone/local
+Electron adapters without this Server channel retain their local-only policy. Reacquisition reads the
+same native child; it never forks a replacement or reinjects the boundary. Failed
+recovery remains an explicit resource error with retry. A failed child does not
+hide other children. Old ephemeral children cannot gain a missing rollout after
+the fact. Application disposal releases readers without interrupting accepted
+work. Explicit close first commits its durable tombstone, then applies the existing
+interrupt/unsubscribe policy; a failed reference removal leaves the live session
+available for retry. Late acquisitions after close/disposal release their lease
+and cannot republish a retired resource.
+
+Browser resources retain their original tab/page identities across reload.
+Persisted Draft aliases are equivalent for discovery/presentation only when the
+binding owner proves both the same Host and canonical Thread. Late bindings
+invalidate initialized panel directories; unresolved owners are not close
+commands. Hidden resources remain hidden and explicit close remains authoritative.
+
+Evidence: `tests/shell/side-chat-refresh.test.ts`, browser conversation-resource
+and panel-ownership tests; `scripts/smoke/shell/smoke-resource-refresh.ts` exercises
+real page reload with real Shell/panel plugins/renderers and a synthetic external
+Host (touch/pointer and same/late alias). It does not prove physical iOS, live
+model inference, or production account routing.
+
+The side-chat field is a bounded directory of immutable parent/child identities
+and durable closed-ID tombstones. Server validation forbids reopening a closed ID,
+rebinding it, or dropping tombstones. Row reconciliation makes close win even over
+an offline device's initial legacy import; Server account scope is derived from
+admission, never a supplied owner ID. Metadata is not a grant to read the child.
+Old local references are not bulk-promoted on login: authorized native child
+history must be read first, then the reference is committed and local cleanup is
+best-effort. Failed migration cannot upload into another account.
+
+SideChatService observes only acknowledged metadata, not optimistic writes still
+awaiting CAS. A rejected close retains the session and restores its reachable tab
+with an explicit error. Own create ACKs cannot double-acquire a pending child;
+own close ACKs cannot steal its interrupt/cleanup ownership. A remote close only
+detaches the receiving view/lease, never echoes an interrupt or another close.
+Late acquisition checks current directory membership before publishing. Application
+teardown remains a detach, not an authoritative close.
+
+Evidence: `tests/shell/side-chat-sync.test.ts` covers account isolation, invalid
+identities, reopen rejection, durable tombstones/restart, denied migration, failed
+commit visibility and late-reader fencing. `smoke-side-chat-sync.ts` uses real
+WebSocket metadata service/client and real Shell/plugins/renderers in independent
+Chromium storage contexts (touch↔pointer), with synthetic authenticated actors and
+Host histories. It covers a second device, reload, failed-close UI, missed push,
+reconnect and a different account; media startup is forbidden. These are not
+physical devices or authenticated production-user end-to-end evidence.
+
+### Workbench resource directory convergence
+
+Browser tabs/pages/bindings and durable side-chat references use the authenticated
+account metadata channel. The fixed-field Merkle root now also covers
+`resourceSignals`: a bounded, canonical `(kind, Host)` row with a random change
+token. This is a broadcast hint, **not** a second resource catalog or authority.
+No terminal output, Thread history, credentials, input, draft, focus, tab order,
+active selection, panel geometry or scroll position is stored in these signals.
+
+`WorkbenchResourceSync` lets resource owners register an authoritative refresh.
+Terminal creation announces only after native acceptance; explicit close announces
+after the kill request succeeds. Discovery attaches the original Host process;
+a received hint never spawns or kills a process. Notifications during a read are
+coalesced into a trailing read rather than discarded. Every successful metadata
+anti-entropy pass (normally once per minute and on reconnect), **including an equal
+root**, also refreshes observed external owners. This repairs actions from older
+clients, missing pushes and external owner changes that produced no signal.
+
+The Web adapter exposes `AccountMetadataStorage` separately from browser catalog
+and media capabilities. Side-chat persistence and resource invalidation consume
+only that narrow port. A committed `null` is authoritative absence, never a reason
+to read an unacknowledged optimistic value. Field acknowledgement and committed
+subscriptions share helpers, while each owner keeps its validation and merge rules.
+
+Refresh registration is explicitly kind-wide: owners read all their observed,
+authorized Hosts. A Host hint does not narrow or authorize a read. Independent
+registered owners isolate failures and removed owners do not start queued work.
+`getStatus(kind)` exposes in-memory pending/failure/last-success diagnostics only;
+it is neither persisted state nor a user-visible tab indicator. Side-chat recovery
+uses the same keyed trailing-read scheduler, retaining its own admission, retired
+identity and late-lease fences. Awaiting recovery drains notifications received
+while that recovery was in flight.
+
+Terminal reads retain authenticated Host/Thread/project scope and alias checks.
+Only observed conversation owners refresh periodically; cache eviction detaches
+the observation. A failed/unsupported list is unavailable, not an authoritative
+empty directory. Successful reads detach entries pruned by the Host without a
+kill, and authorized attach repairs a missed native exit. Native exited records
+may retain their output view under the existing terminal policy; a cross-device
+resource-state repair is not a command to discard another device's output view.
+Already-exited native records are not reintroduced as new running tabs on reload.
+
+Metadata writes are retryable per field. A failed write does not permanently poison
+the connection, block the write chain or fail another resource owner's accepted
+transaction. Side-chat pending creation remains part of its local directory until
+admitted or cancelled; non-user definition removal only detaches presentation.
+Conversation aliases and metadata recovery do not depend on video codec readiness.
+
+Verification: `resource-directory-sync.test.ts` exercises real metadata storage and
+Server commits with isolated accounts, missed pushes, an equal-root repair,
+trailing reads, failed writes and native directory projection. The browser smoke
+`smoke-resource-directory-sync.ts` uses real WebSocket metadata, Workbench runtime,
+TerminalPanel and two independent Chromium storage contexts in both touch/pointer
+directions. Native PTYs/admission are synthetic fixtures in this smoke; it does
+not establish physical-device or production-account end-to-end coverage.

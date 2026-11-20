@@ -3,9 +3,9 @@ import { createPortal } from "react-dom";
 import { toast, Toaster } from "sonner";
 import { AlertIcon, CheckedCircleIcon, CloseIcon, InfoIcon, WarningIcon } from "@opencraft/design-system-web/action-icons";
 import { ProgressIndicator } from "@opencraft/design-system-web/progress";
-import "sonner/dist/styles.css";
 import { useIntl } from "@opencraft/i18n/react";
 import { useWorkbenchPresentationRoot } from "./workbench-presentation-root";
+import "sonner/dist/styles.css";
 import "./async-notices.scss";
 
 import { reduceNoticeHistory, type OperationNotice, type NoticeRecord, type NoticeTone } from "./notice-history";

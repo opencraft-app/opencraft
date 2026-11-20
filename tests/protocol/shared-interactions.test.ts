@@ -105,3 +105,38 @@ test("source loss during synchronous admission publication fences the native wri
   waits.subscribe(() => { if (waits.snapshot("thread", true).requests[0]?.state === "responding") waits.markSourceUnavailable("thread"); });
   await assert.rejects(waits.respond("thread", id, "answer", { answers: {} }, async () => assert.fail("revoked route executed")), /source changed during admission/);
 });
+
+test('reused native ID rebinds only an unavailable stable route, without retiring its old interaction', async () => {
+  const waits = new HostInteractions();
+  const old = { ...source(1), __opencraftInteractionKey: 'old-producer' };
+  const fresh = { ...source(1), __opencraftInteractionKey: 'new-producer', params: { ...source(1).params, turnId: 'new-turn' } };
+  const oldId = waits.capture(old);
+  assert.throws(() => waits.capture(fresh), /still in use/);
+  waits.markSourceUnavailable();
+  const newId = waits.capture(fresh);
+  assert.notEqual(oldId, newId);
+  assert.equal(waits.size, 2);
+  await assert.rejects(waits.respond('thread', oldId, 'stale', {}, async () => assert.fail('stale route wrote')), /unavailable/);
+  assert.throws(() => waits.capture(old), /still in use/);
+  waits.resolveTurn('thread', 'turn');
+  assert.equal(waits.size, 1);
+  assert.equal(waits.threadForNative(1), 'thread');
+  let writes = 0;
+  await waits.respond('thread', newId, 'new', {}, async request => { writes++; assert.equal(request.__opencraftInteractionKey, 'new-producer'); });
+  await waits.respond('thread', newId, 'duplicate', {}, async () => { writes++; });
+  assert.equal(writes, 1);
+  waits.resolveNative(1, 'thread');
+  assert.equal(waits.size, 0);
+});
+
+test('a conflicting replay cannot replace the suspended native route', () => {
+  const waits = new HostInteractions();
+  const a = { ...source(1), __opencraftInteractionKey: 'a' };
+  const b = { ...source(2), __opencraftInteractionKey: 'b' };
+  waits.capture(a); waits.capture(b); waits.markSourceUnavailable();
+  const before = waits.snapshot('thread', true);
+  assert.throws(() => waits.capture({ ...a, id: 2, method: 'item/fileChange/requestApproval' }), /reused/);
+  assert.deepEqual(waits.snapshot('thread', true), before);
+  waits.resolveNative(2, 'thread');
+  assert.equal(waits.snapshot('thread', true).requests[0]?.id, 'a');
+});

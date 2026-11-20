@@ -137,3 +137,39 @@
 - <a id="21-迁移与删除"></a>[21. 迁移与删除](architecture/browser/acceptance-and-migration.md#21-迁移与删除)
 - <a id="22-完成定义"></a>[22. 完成定义](architecture/browser/acceptance-and-migration.md#22-完成定义)
 - <a id="23-r6-复审结论"></a>[23. R6 复审结论](architecture/browser/acceptance-and-migration.md#23-r6-复审结论)
+
+### Remote tab presentation protocol v1
+
+The physical browser page owns a bounded, memory-only thumbnail and favicon cache.
+`configuration.presentationVersion = 1` advertises support; retained older workers
+continue serving their tabs and return no presentation until their runtime is upgraded.
+This is separate from the full-resolution `capture` automation command and media demand.
+
+An authenticated browser metadata socket sends `presentation` with `{lease, revision?}`.
+The service resolves the lease under its authenticated owner; it never creates a tab,
+attaches a viewer, requests input control or starts video for this read. The response is
+`null`, `{version:1, unchanged:true, revision}`, or
+`{version:1, document, revision, updatedAt, thumbnail, favicon}`. Images are bounded
+raster data URLs (thumbnail ≤360000 characters, favicon ≤24000); clients must not treat
+website-provided URLs as authenticated image endpoints. Unchanged versions omit bytes.
+
+After the first presentation read, that metadata socket receives owner-scoped
+`presentation-changed` events containing the lease and version metadata, without image
+bytes. Visible cards refetch; hidden cards invalidate their local projection. Navigation
+clears both assets and rotates the document generation; late capture/fetch responses
+cannot publish across that boundary. Close disposes the cache and aborts icon reads.
+
+The page reuses paint frames at most once per five seconds and creates a bounded still
+frame after load when parked; this does not grant media demand. Icons come from Electron's
+page favicon event, fetched in that page's session, with timeout/body limits and raster
+normalization to 32px PNG. No client-provided URL is accepted by the presentation RPC.
+Both caches are disposable: a browser-worker restart loses its image cache, and a newly
+loaded page repopulates it. Gateway/client reconnects retain the physical-page cache.
+
+Validation: `tests/browser/remote-browser-presentation.test.mjs`, the presentation cases
+in `remote-browser-session.test.mjs`, and `scripts/smoke/browser/smoke-browser-presentation.mjs`
+(real isolated Electron, including thumbnail/favicon, a new reader, owner isolation,
+conditional responses and zero video frames). The latter writes a local fixture consumable
+by `OPENCRAFT_PRESENTATION_FIXTURE` in `smoke-tab-overview.ts` for actual card rendering.
+
+Favicon bytes are decoded by Chromium in the sandboxed helper renderer (including ICO and SVG), then rasterized to a bounded 32×32 PNG. The helper permits only blob image sources and cannot fetch remote resources; the physical page session remains the network owner. Navigation/abort checks also apply after asynchronous decoding. Native presentation smoke accepts `OPENCRAFT_ICON_FORMAT=png|ico|svg` to verify the actual runtime codec path.

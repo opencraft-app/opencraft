@@ -40,7 +40,7 @@ test("classic and standard destinations keep outline artwork and weight when sel
 test("core navigation uses the downstream outline role without boldening selected glyphs", () => {
   for (const name of ["chat", "start", "columns", "server", "settings"]) {
     for (const selected of [false, true]) {
-      assert.match(render(name, selected), name === "settings" ? /stroke-width="1.5"/ : /stroke-width="2"/);
+      assert.match(render(name, selected), /stroke-width="2"/);
       assert.match(render(name, selected), /fill="none"/);
     }
     const shape = (svg: string) => svg.slice(svg.indexOf(">") + 1, svg.lastIndexOf("<"));

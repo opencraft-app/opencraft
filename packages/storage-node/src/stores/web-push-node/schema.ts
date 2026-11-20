@@ -60,6 +60,10 @@ export const table_push_watches = sqliteTable("push_watches", {
 ]);
 
 export const table_push_preferences = sqliteTable("push_preferences", {
+  "defaults_blocked": integer("defaults_blocked").notNull().default(sql`0`),
   "actor_id": text("actor_id").notNull(),
   "enabled": integer("enabled").notNull(),
 }, table => [primaryKey({ columns: [table["actor_id"]] })]);
+
+export const table_push_default_decisions = sqliteTable("push_default_decisions", { actor_id: text("actor_id").notNull(), policy_id: text("policy_id").notNull() }, t => [primaryKey({columns:[t.actor_id,t.policy_id]})]);
+export const table_push_target_opt_outs = sqliteTable("push_target_opt_outs", { actor_id: text("actor_id").notNull(), target_key: text("target_key").notNull() }, t => [primaryKey({columns:[t.actor_id,t.target_key]})]);

@@ -189,6 +189,7 @@ export async function readTurnsPage(
   const compact = executionEngineExtension(context.client.initializeResult?.capabilities?.extensions, context.threadId, "opencraft/read-history")?.itemDetails === true;
   const request = (itemsView: "full" | "notLoaded" | "presentation") => context.client.request("thread/turns/list", {
     threadId: context.threadId, cursor, limit: pageLimit, itemsView, sortDirection: "desc",
+    ...(executionEngineExtension(context.client.initializeResult?.capabilities?.extensions, context.threadId, "opencraft/read-history")?.imageResources === true ? { imageResources: true } : {}),
   }, { timeoutMs: context.requestTimeoutMs, priority: "user-visible", signal: context.signal });
   while (true) {
     try { return requireTurnsPage(await request(compact ? "presentation" : "full"), "thread/turns/list"); }

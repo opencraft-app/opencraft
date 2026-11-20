@@ -56,11 +56,13 @@ export function ActivityDisclosureHeader({
   count,
   open,
   onToggle,
+  showChevron = onToggle !== undefined,
 }: {
   readonly item: WorkStatusItem | null;
   readonly durationMs: number | null;
   readonly count: number;
   readonly open: boolean;
+  readonly showChevron?: boolean;
   readonly onToggle?: (anchor: HTMLButtonElement) => void;
 }) {
   const labelId = useId();
@@ -78,7 +80,7 @@ export function ActivityDisclosureHeader({
           <span id={labelId}>
             <ActivityDisclosureLabel item={item} durationMs={durationMs} count={count} />
           </span>
-          {onToggle ? <ChevronRight aria-hidden="true" className={open ? "is-open" : undefined} size={12} /> : null}
+          {showChevron ? <ChevronRight aria-hidden="true" className={open ? "is-open" : undefined} size={12} /> : null}
       </OverlayDisclosureTrigger>
       <div className="thread-agent-activity__rule-row">
         <div className="thread-work-status__rule" />

@@ -4,7 +4,6 @@ import { useLayoutEffect, useRef, useState, useMemo, type PointerEvent } from "r
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { FilePreviewIntl, WebPreviewDocument } from "@opencraft/file-preview-web";
 import { columnLabel, decodeDelimitedBytes, parseDelimited } from "./delimited-model";
-import "./preview.web.scss";
 
 const tableMessage = { id: "chat.table.table", defaultMessage: "Table" };
 const sourceMessage = { id: "panel.markdownSource", defaultMessage: "Source" };
@@ -109,7 +108,7 @@ export async function openDelimited(input: { blob: Blob; name: string; signal: A
   const render = (intl?: FilePreviewIntl) => root.render(<DelimitedTable rows={rows} source={source} name={input.name} intl={intl} />);
   render();
   let disposed = false;
-  const dispose = () => { if (!disposed) { disposed = true; input.signal.removeEventListener("abort", dispose); root.unmount(); element.remove(); } };
+  const dispose = () => { if (!disposed) { disposed = true; input.signal.removeEventListener("abort", dispose); queueMicrotask(() => root.unmount()); element.remove(); } };
   input.signal.addEventListener("abort", dispose, { once: true });
   return { element, dispose, setIntl: intl => { if (!disposed) render(intl); }, setActive: active => { element.inert = !active; } };
 }

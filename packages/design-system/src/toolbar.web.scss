@@ -71,12 +71,12 @@
   min-width: 0;
   flex: 1;
   align-items: center;
-  gap: var(--gap-control-group);
+  gap: var(--gap-menu-item-content);
 
   > svg {
-    width: var(--size-toolbar-control-icon);
-    height: var(--size-toolbar-control-icon);
-    flex: 0 0 var(--size-toolbar-control-icon);
+    width: var(--size-menu-item-icon);
+    height: var(--size-menu-item-icon);
+    flex: 0 0 var(--size-menu-item-icon);
     color: var(--color-text-secondary);
   }
 
@@ -88,8 +88,8 @@
 }
 
 @mixin menu-check {
-  width: var(--size-toolbar-control-icon);
-  height: var(--size-toolbar-control-icon);
-  flex: 0 0 var(--size-toolbar-control-icon);
+  width: var(--size-menu-item-icon);
+  height: var(--size-menu-item-icon);
+  flex: 0 0 var(--size-menu-item-icon);
   color: var(--color-text);
 }

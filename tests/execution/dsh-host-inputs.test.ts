@@ -89,3 +89,15 @@ test('fenced HTTP input is rejected before a consumer lease is created',async t=
  assert.equal((await submit()).status,503);assert.equal(leases,0);assert.equal(submissions,0);
  open=true;assert.equal((await submit()).status,200);assert.equal(leases,1);assert.equal(submissions,1);
 });
+
+test('HTTP input and ACK wait for durable custody boundaries without executing early',async t=>{
+ const gate=()=>{let release!:()=>void;const promise=new Promise<void>(resolve=>{release=resolve;});return{promise,release};};
+ const begun=gate(),begin=gate(),finished=gate(),finish=gate(),acking=gate(),ack=gate();let submissions=0;
+ const receipts={run:async(run:()=>Promise<void>)=>run(),async beginReceipt(){begun.release();await begin.promise;return async()=>{finished.release();await finish.promise;return{id:'one',receipt:'exact'};};},async acknowledgeReceipt(){acking.release();await ack.promise;}};
+ const inputs:any={submit:async()=>{submissions++;return{state:'accepted'};}};
+ const server=createServer((request,response)=>void handleHostInput(request,response,'fixture',inputs,()=>true,receipts));await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));t.after(()=>new Promise<void>(done=>server.close(()=>done())));
+ const post=(body:any)=>fetch(`http://127.0.0.1:${(server.address() as any).port}/host-inputs`,{method:'POST',headers:{authorization:'Bearer fixture','content-type':'application/json'},body:JSON.stringify(body)});
+ let returned=false;const pending=post({action:'submit',threadId:'thread',inputId:'actor-input:one',text:'fixture'}).then(r=>{returned=true;return r;});
+ await begun.promise;assert.equal(submissions,0);begin.release();await finished.promise;assert.equal(submissions,1);assert.equal(returned,false);finish.release();const response=await pending;assert.equal(response.status,200);const body=await response.json();assert.deepEqual(body.ownerReceipt,{id:'one',receipt:'exact'});
+ returned=false;const acknowledging=post({action:'ack',ownerReceipt:body.ownerReceipt}).then(r=>{returned=true;return r;});await acking.promise;assert.equal(returned,false);ack.release();assert.equal((await acknowledging).status,200);
+});

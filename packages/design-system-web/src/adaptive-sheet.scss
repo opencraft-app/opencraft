@@ -1,0 +1,71 @@
+@use "@opencraft/design-system/controls.web" as controls;
+// Loaded with adaptive information dialogs; ordinary modals keep their existing geometry.
+.modal-surface__sheet-handle { display: none; }
+.modal-surface[data-presentation="adaptive-sheet"][data-size] {
+  flex-direction: column;
+  .modal-surface__close { @include controls.density-target(36px, 36px); top: 12px; right: 12px; width: 36px; height: 36px; border-radius: 50%; }
+}
+
+
+
+@media (max-width: 640px) {
+  @include controls.touch-presentation {
+  .modal-surface__scrim[data-presentation="adaptive-sheet"][data-state="closed"] { animation: modal-sheet-scrim-exit 180ms ease-in both; }
+  .modal-surface[data-presentation="adaptive-sheet"][data-size] {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    max-width: none;
+    max-height: calc(100dvh - 24px);
+    border: 0;
+    border-radius: 24px 24px 0 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    transform: translateY(var(--modal-sheet-offset, 0px));
+    transition: transform 180ms ease-out;
+    animation: modal-sheet-enter 180ms ease-out;
+    &[data-state="closed"] { animation: modal-sheet-exit 180ms ease-in both; pointer-events: none; }
+    &[data-dragging] { transition: none; }
+    .modal-surface__close { top: 28px; }
+    .modal-surface__sheet-handle {
+      display: grid;
+      flex: 0 0 24px;
+      place-items: center;
+      touch-action: none;
+      cursor: grab;
+      > span { width: 36px; height: 4px; border-radius: 4px; background: var(--color-border); }
+    }
+    .information-panel { padding-top: 8px; }
+  }
+}
+
+}
+
+@keyframes modal-sheet-exit { from { translate: 0 0; } to { translate: 0 100%; } }
+@keyframes modal-sheet-enter { from { translate: 0 100%; } to { translate: 0 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .modal-surface[data-presentation="adaptive-sheet"][data-size][data-state] { animation: none; transition: none; }
+}
+
+// Body-portaled sheets consume the existing viewport owner's fixed-basis frame.
+// Presentation-root portals already inherit their owner's containing block.
+@media (max-width: 640px) {
+  @include controls.touch-presentation {
+  :root[data-timeline-tracks-visual-viewport="true"] .modal-surface[data-presentation="adaptive-sheet"][data-size] {
+    max-height: calc(var(--timeline-available-viewport-height, 100dvh) - 24px);
+    &[data-viewport-owner="document"] {
+      bottom: auto;
+      top: calc(var(--timeline-available-viewport-top, 0px) + var(--timeline-available-viewport-height, 100dvh));
+      left: var(--timeline-available-viewport-left, 0px);
+      width: var(--timeline-available-viewport-width, 100%);
+      transform: translateY(calc(-100% + var(--modal-sheet-offset, 0px)));
+    }
+  }
+}
+
+}
+
+@keyframes modal-sheet-scrim-exit { from { opacity: 1; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .modal-surface__scrim[data-presentation="adaptive-sheet"][data-state="closed"] { animation: none; }
+}

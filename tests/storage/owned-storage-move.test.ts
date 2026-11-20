@@ -85,8 +85,11 @@ test("populated stores retain every table, SQL definition and migration receipt;
     if (process.platform !== "win32") assert.equal(statSync(result.moved[index]!.backup).mode & 0o777, 0o600);
   });
   const host = new OpenCraftHostStateDatabase(root), attachments = new OpenCraftMessageAttachments(root);
-  assert.equal(host.outcome.status, "up-to-date"); assert.equal(attachments.outcome.status, "up-to-date");
+  assert.equal(host.outcome.status, "migrated", "filename-only move retains the old schema until the owner appends registered migrations");
+  assert.equal(attachments.outcome.status, "up-to-date");
   host.close(); attachments.close();
+  const reopened = new OpenCraftHostStateDatabase(root);
+  assert.equal(reopened.outcome.status, "up-to-date"); reopened.close();
   assert.deepEqual(moveOwnedStorage(root).moved, []);
 });
 

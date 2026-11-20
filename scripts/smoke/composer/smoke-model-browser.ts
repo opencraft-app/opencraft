@@ -4,6 +4,7 @@ import { createServer } from "vite";
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const output = process.env.OPENCRAFT_MODEL_BROWSER_OUTPUT ?? "/tmp/opencraft-model-browser";
 const vite = await createServer({ configFile: false, root: process.cwd(), logLevel: "error",
+  optimizeDeps: { entries: ["tests/fixtures/composer-model-browser.tsx"] },
   resolve: { dedupe: ["react", "react-dom"] }, cacheDir: "node_modules/.vite-model-browser", esbuild: { jsx: "automatic" },
   server: { host: "127.0.0.1", port: 0 }, plugins: [{ name: "model-browser-fixture", configureServer(server) {
     server.middlewares.use((req, res, next) => {
@@ -19,7 +20,7 @@ try {
   for (const touch of [false, true]) {
     const context = await browser.newContext({ viewport: { width: touch ? 390 : 1200, height: 900 }, hasTouch: touch, isMobile: touch, reducedMotion: "reduce" });
     const p = await context.newPage(); p.setDefaultTimeout(20_000); const errors: string[] = []; p.on("pageerror", (error: Error) => errors.push(error.message));
-    await p.goto(base); const editor = p.locator(".opencraft-composer-editor"); await editor.fill("Keep this model selection draft");
+    await p.goto(base, { waitUntil: "domcontentloaded", timeout: 60_000 }); const editor = p.locator(".opencraft-composer-editor"); await editor.fill("Keep this model selection draft");
     await editor.evaluate(el => (window as any).originalModelBrowserEditor = el);
     const trigger = p.locator(".opencraft-composer-mode--intelligence");
     if (touch) await trigger.tap(); else { await trigger.focus(); await p.keyboard.press("Enter"); }
@@ -162,6 +163,53 @@ try {
       assert.equal(await menu.evaluate(el => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight; }), true);
       await p.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-${theme}.png` });
       await p.keyboard.press("Escape");
+    }
+    if (touch) {
+      // The short visual viewport represents space above an open keyboard.
+      // This checks real touch controls, six effort levels and Fast together.
+      for (const size of [{ width: 390, height: 430 }, { width: 430, height: 390 }, { width: 320, height: 320 }]) {
+        await p.setViewportSize(size);
+        await p.evaluate(() => {
+          const root = document.getElementById("root")!;
+          Object.assign(root.style, { height: "auto", minHeight: "0", position: "fixed", bottom: "12px", left: "16px", width: "calc(100vw - 32px)", margin: "0" });
+        });
+        await trigger.tap(); await menu.waitFor();
+        await p.getByRole("tab", { name: "API models", exact: true }).tap();
+        await menu.getByRole("menuitem", { name: "Six-level thinking", exact: true }).tap();
+        const list = p.locator(".opencraft-composer-model-browser__models");
+        await list.evaluate(el => { el.scrollTop = 0; });
+        await p.locator(".opencraft-composer-model-browser").evaluate(el => { el.scrollTop = 0; });
+        const visible = await list.evaluate(el => {
+          const bounds = el.getBoundingClientRect();
+          const surface = el.closest('[role="menu"]')!.getBoundingClientRect();
+          return [...el.querySelectorAll('[data-model-choice]')].filter(item => {
+            const r = item.getBoundingClientRect();
+            return r.top >= Math.max(bounds.top, surface.top) && r.bottom <= Math.min(bounds.bottom, surface.bottom);
+          }).length;
+        });
+        const minimumRows = size.height <= 320 ? 2 : 3;
+        assert.ok(visible >= minimumRows, `short touch viewport ${size.width}x${size.height} shows ${minimumRows} complete model rows; got ${visible}`);
+        assert.ok(await menu.getByRole("searchbox").evaluate(el => parseFloat(getComputedStyle(el).fontSize) >= 16), "search avoids iOS focus zoom");
+        assert.equal(await menu.evaluate(el => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight; }), true);
+        await p.screenshot({ path: `${output}/keyboard-${size.width}x${size.height}.png` });
+        await menu.getByRole("switch", { name: "Fast mode", exact: true }).tap();
+        await p.keyboard.press("Escape");
+        assert.equal(await editor.innerText(), "Keep this model selection draft");
+        assert.equal(await editor.evaluate(el => el === (window as any).originalModelBrowserEditor), true);
+      }
+    }
+    if (touch) {
+      await p.setViewportSize({ width: 390, height: 430 });
+      await p.goto(`${base}?locale=zh-CN`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+      await p.evaluate(() => Object.assign(document.getElementById("root")!.style, { height: "auto", position: "fixed", bottom: "12px", left: "16px", width: "calc(100vw - 32px)", margin: "0" }));
+      await p.locator(".opencraft-composer-editor").fill("保留尚未发送的草稿");
+      await p.locator(".opencraft-composer-mode--intelligence").tap();
+      await p.getByRole("tab", { name: /API/ }).tap();
+      await p.getByRole("menuitem", { name: "Six-level thinking", exact: true }).tap();
+      const effortRows = await p.locator(".opencraft-composer-model-browser__efforts button").evaluateAll(buttons => buttons.map(button => Math.round(button.getBoundingClientRect().top)));
+      assert.equal(new Set(effortRows).size, 1, "six Chinese effort labels and reset share one touch row");
+      await p.locator(".opencraft-composer-model-browser__models").evaluate(el => { el.scrollTop = 0; });
+      await p.screenshot({ path: `${output}/keyboard-zh-CN.png` });
     }
     assert.deepEqual(errors, []); await context.close();
   }

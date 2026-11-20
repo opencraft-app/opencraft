@@ -95,9 +95,89 @@ test("Server directory retains committed rows until the native index observes th
   const publisher = new ThreadCatalogPublisher(() => {}, true);
   publisher.observeResult("thread/start", {}, { thread: row("new") });
   publisher.observeResult("turn/start", { threadId: "new" }, { turn: { id: "committed" } });
-  const first = page(); publisher.observeResult("thread/list", { cursor: null }, first);
-  assert.equal(first.data[0]?.id, "new", "a new read cannot lose a committed but unindexed creation");
-  const indexed = page(row("new")); publisher.observeResult("thread/list", { cursor: null }, indexed);
-  const later = page(); publisher.observeResult("thread/list", { cursor: null }, later);
-  assert.equal(later.data.length, 0, "native observation releases the temporary directory tail");
+  const native = { ...page(...Array.from({ length: 200 }, (_, i) => row("indexed-" + i, 1))), nextCursor: "next" };
+  const original = [...native.data];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    publisher.observeResult("thread/list", { cursor: null, limit: 200 }, native);
+    const view = publisher.projectList({ cursor: null, limit: 200 }, native) as ThreadListResponse;
+    assert.deepEqual(native.data, original);
+    assert.equal(native.nextCursor, "next");
+    assert.deepEqual(view.data.map(thread => thread.id), ["new", ...original.map(thread => thread.id)]);
+    assert.equal(view.nextCursor, native.nextCursor);
+  }
+  const cached = page(row("new"));
+  assert.equal(publisher.projectList({}, cached), cached, "a cached copy is displayed once");
+  assert.deepEqual((publisher.projectList({}, page()) as ThreadListResponse).data.map(thread => thread.id), ["new"]);
+  for (const params of [{ cursor: "next" }, { archived: true }, { searchTerm: "other" }]) {
+    assert.equal(publisher.projectList(params, native), native);
+  }
+  publisher.observeResult("thread/list", { cursor: "next" }, cached);
+  assert.equal(publisher.projectList({}, native), native, "native discovery retires the provisional row");
+});
+
+
+test("existing thread turn start publishes a running fact without depending on status notification",()=>{
+ const events:ThreadCatalogChange[]=[];const publisher=new ThreadCatalogPublisher((_method,event)=>events.push(event),true);
+ publisher.observeNotification("turn/started",{threadId:"existing",turn:{id:"live"}});
+ assert.deepEqual(events.at(-1)?.change,{type:"patch",threadId:"existing",status:{type:"active",activeFlags:[]}});
+ publisher.observeResult("thread/start",{ephemeral:true},{thread:row("helper")});
+ const count=events.length;publisher.observeNotification("turn/started",{threadId:"helper",turn:{id:"temporary"}});assert.equal(events.length,count);
+});
+
+test("native value confirmation survives Query structural sharing; a lagging or projected read is not confirmation", () => {
+  const q = new QueryClient();
+  const updates = new ThreadCatalogUpdates("host"); updates.enabled = true;
+  updates.receive(change(1, { type: "patch", threadId: "A", name: "committed" }));
+  const before = updates.getSnapshot();
+  const old = updates.markRead(page({ ...row("A"), name: "old" }), before);
+  q.setQueryData(["catalog"], old);
+  updates.acknowledge(q.getQueryData<ThreadListResponse>(["catalog"]));
+  assert.equal(updates.hasPending, true);
+  updates.acknowledge(updates.markRead(updates.project(old)!, before));
+  assert.equal(updates.hasPending, true, "a projected value cannot acknowledge itself");
+  const matching = updates.markRead(page({ ...row("A"), name: "committed" }), before);
+  q.setQueryData(["catalog"], matching);
+  updates.acknowledge(q.getQueryData<ThreadListResponse>(["catalog"]));
+  assert.equal(updates.hasPending, false, "only native field-value evidence confirms the write");
+  q.clear();
+});
+
+test("materialized cache cannot self-acknowledge, and repeated folding is referentially stable", () => {
+  const updates = new ThreadCatalogUpdates("host"); updates.enabled = true;
+  const q = new QueryClient();
+  const native = updates.markRead(page(row("A")), updates.getSnapshot());
+  const data = { pages: [native], pageParams: [null] };
+  q.setQueryData(["catalog"], data);
+  updates.receive(change(1, { type: "patch", threadId: "A", name: "committed" }));
+  q.setQueryData(["catalog"], updates.materialize(q.getQueryData(["catalog"])));
+  const cached = q.getQueryData<typeof data>(["catalog"])!;
+  updates.acknowledge(cached);
+  assert.equal(updates.hasPending, true);
+  assert.equal(updates.materialize(cached), cached, "no render/update loop after structural sharing");
+  q.clear();
+});
+
+test("incomplete directory absence cannot retire removal; complete native pages can", () => {
+  const updates = new ThreadCatalogUpdates("host"); updates.enabled = true;
+  updates.receive(change(1, { type: "remove", threadId: "A" }));
+  const cut = updates.getSnapshot();
+  updates.acknowledge(updates.markRead({ ...page(), catalog: { state: "warming", coverage: "partial" } } as ThreadListResponse, cut));
+  assert.equal(updates.hasPending, true);
+  const first = updates.markRead({ ...page(row("B")), nextCursor: "tail" }, cut);
+  updates.acknowledge(first); assert.equal(updates.hasPending, true);
+  const tail = updates.markRead(page(row("C")), cut);
+  updates.acknowledge({ pages: [first, tail], pageParams: [null, "tail"] });
+  assert.equal(updates.hasPending, false);
+});
+
+
+test("a matching tail duplicate cannot acknowledge a fact hidden by the authoritative first row", () => {
+  const updates = new ThreadCatalogUpdates("host"); updates.enabled = true;
+  updates.receive(change(1, { type: "patch", threadId: "A", name: "committed" }));
+  const at = updates.getSnapshot();
+  const first = updates.markRead({ ...page({ ...row("A"), name: "lagging-first" }), nextCursor: "tail" }, at);
+  const tail = updates.markRead(page({ ...row("A"), name: "committed" }), at);
+  updates.acknowledge({ pages: [first, tail], pageParams: [null, "tail"] });
+  assert.equal(updates.hasPending, true, "confirmation uses the same first-occurrence law as display");
+  assert.equal(updates.project(first)?.data[0]?.name, "committed");
 });

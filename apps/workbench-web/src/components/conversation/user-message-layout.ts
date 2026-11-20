@@ -70,7 +70,7 @@ export function deriveUserMessageWebLayout(block: UserMessageTimelineBlock): Use
   }
   const visibleFiles = files.filter(file => !imageFiles.has(file));
   const hasText = block.message.trim().length > 0;
-  const hasStatus = block.steerEvidence !== undefined || block.goal || block.hookFeedback || block.reviewMode
+  const hasStatus = (block.inputDelivery !== undefined && block.inputDelivery.context === 'unobserved') || block.steerEvidence !== undefined || block.goal || block.hookFeedback || block.reviewMode
     || block.pullRequestFixMode || block.autoResolveSync || block.commentCount > 0
     || block.deliveryStatus === "not-sent" || block.deliveryStatus === "failed"
     || block.deliveryStatus === "unknown";

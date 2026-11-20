@@ -8,7 +8,7 @@ import { pipeline } from "node:stream/promises";
 import { createSshPasswordAgent, quoteSshShellArgument as quote, validateSshConnection, type SshConnectionOptions } from "./ssh-connection.js";
 
 interface FileStream { readonly size: number; readonly body: Readable; dispose(): Promise<void> }
-type FileHost = "local" | SshConnectionOptions;
+type FileHost = "local" | SshConnectionOptions | { openFile(path: string, head: boolean, signal: AbortSignal, root?: string): Promise<FileStream> };
 
 /** The only remote command is a read of one quoted path, on an independent SSH channel. */
 export function fileReadCommand(path: string, head: boolean, root?: string): string {
@@ -115,7 +115,8 @@ export class HostFileDownloads {
     let file: FileStream | undefined;
     try {
       const host = this.resolveHost(hostId);
-      file = host === "local" ? await localFile(path, false, combined, root) : await remoteFile(host, path, false, combined, this.spawnSsh, root);
+      file = host === "local" ? await localFile(path, false, combined, root)
+        : 'openFile' in host ? await host.openFile(path, false, combined, root) : await remoteFile(host, path, false, combined, this.spawnSsh, root);
       if (file.size > maxBytes) throw new Error("Preview too large");
       const chunks: Buffer[] = []; let bytes = 0;
       for await (const chunk of file.body) {
@@ -147,7 +148,8 @@ export class HostFileDownloads {
     let file: FileStream | undefined;
     try {
       const host = this.resolveHost(hostId), head = request.method === "HEAD";
-      file = host === "local" ? await localFile(path, head, controller.signal) : await remoteFile(host, path, head, controller.signal, this.spawnSsh);
+      file = host === "local" ? await localFile(path, head, controller.signal)
+        : 'openFile' in host ? await host.openFile(path, head, controller.signal) : await remoteFile(host, path, head, controller.signal, this.spawnSsh);
       controller.signal.throwIfAborted();
       if (!authorize(hostId)) throw new Error("File access expired");
       response.writeHead(200, { "content-type": "application/octet-stream", "content-length": String(file.size),

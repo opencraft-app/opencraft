@@ -6,7 +6,7 @@ import { useUiPreferencesRuntime } from "../runtime/ui-preferences-runtime";
 import { useDefaultFollowUpAction } from "../runtime/use-default-follow-up-action";
 import { TurnNotificationSettings } from "./turn-notification-settings";
 
-export function ChatSettings() {
+export function ChatSettings({onOpenImSettings}: {onOpenImSettings?:()=>void} = {}) {
   const intl = useIntl();
   const preferences = useUiPreferencesRuntime();
   const defaultFollowUpAction = useDefaultFollowUpAction();
@@ -32,7 +32,7 @@ export function ChatSettings() {
       </SettingsRow>
     </SettingsGroup>
     <AgentManagement />
-    <TurnNotificationSettings />
+    <TurnNotificationSettings onOpenImSettings={onOpenImSettings} />
     {saveError ? <SettingsNotice tone="error">{intl.formatMessage({ id: "settings.chat.saveError", defaultMessage: "Could not save your preference. Please try again." })}</SettingsNotice> : null}
   </>;
 }

@@ -211,3 +211,52 @@ test("calendar plan persists, executes through native port with skill instructio
     await assert.rejects(f.service.handle("opencraft/schedules/save", { threadId: "thread", expectedRevision: f.service.read("thread").schedule!.revision, prompt: "bad", nextRunAt: now+180000, intervalMinutes: null, timeZone: "UTC", calendar: { period: "weekly", times: ["25:00"], days: [] } }, null));
   } finally { await f.close(); }
 });
+
+
+test("unknown delivery is inspected after restart, restores its exact Turn and never resubmits", async () => {
+  const f = await fixture();
+  const submit = f.port.submit;
+  f.port.submit = async (...args) => { const result = await submit(...args); return { state: result.state }; };
+  try {
+    await f.save(60); f.setResult("unknown"); await f.service.tick();
+    const occurrence = f.service.read("thread").runs[0]!.id;
+    await f.restart();
+    f.port.inspect = async run => { assert.equal(run.id, occurrence); return { state: "running", turnId: "recovered-turn" }; };
+    await f.service.tick();
+    assert.equal(f.service.read("thread").runs[0]!.turnId, "recovered-turn");
+    assert.equal(f.service.list().schedules[0]!.needsReview, false);
+    f.port.inspect = async () => ({ state: "completed", turnId: "recovered-turn" });
+    await f.restart(); await f.service.tick();
+    assert.equal(f.service.read("thread").runs[0]!.state, "completed");
+    assert.ok(f.service.read("thread").schedule!.nextRunAt > 1800000000000);
+    assert.equal(f.sends, 1); assert.equal(f.seen.length, 1);
+  } finally { await f.close(); }
+});
+
+test("unconfirmed delivery remains reviewable and inspection is bounded, not a send retry", async () => {
+  const f = await fixture();
+  try {
+    await f.save(60); f.setResult("unknown"); await f.service.tick(); await f.restart();
+    await f.service.tick(); const inspections = f.inspections;
+    for (let i = 0; i < 10; i++) await f.service.tick();
+    assert.equal(f.inspections, inspections);
+    f.advance(60000); await f.service.tick(); assert.equal(f.inspections, inspections + 1);
+    assert.equal(f.sends, 1); assert.equal(f.seen.length, 1);
+    assert.equal(f.service.list().schedules[0]!.needsReview, true);
+  } finally { await f.close(); }
+});
+
+test("late unknown inspection cannot undo explicit human review", async () => {
+  const f = await fixture(); let release!: () => void;
+  try {
+    await f.save(60); f.setResult("unknown"); await f.service.tick(); await f.restart();
+    let entered!: () => void; const ready = new Promise<void>(resolve => { entered = resolve; });
+    const held = new Promise<void>(resolve => { release = resolve; });
+    f.port.inspect = async () => { entered(); await held; return { state: "unknown" }; };
+    const tick = f.service.tick(); await ready; await f.action("review"); release(); await tick;
+    assert.equal(f.service.read("thread").runs[0]!.state, "reviewed");
+    assert.equal(f.service.read("thread").schedule!.status, "paused");
+    assert.equal(f.service.list().schedules[0]!.needsReview, false);
+    assert.equal(f.sends, 1);
+  } finally { release?.(); await f.close(); }
+});

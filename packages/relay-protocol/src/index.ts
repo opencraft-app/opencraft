@@ -2,6 +2,9 @@ export const RELAY_PROTOCOL = "opencraft-relay.v1";
 export const CONTROL_PATH = "/__opencraft_relay/control";
 export const DATA_PATH = "/__opencraft_relay/data";
 export const STREAM_HEADER = "x-opencraft-relay-stream";
+/** Negotiated in the control handshake; v1 peers never receive new message types. */
+export const DRAIN_HEADER = "x-opencraft-relay-drain";
+export const DRAIN_CAPABILITY = "streams-v1";
 export const MAX_STREAMS = 128;
 /** Ordinary relay tunnels have a separate budget from Hub peer links. */
 export const MAX_RELAY_STREAMS = 512;

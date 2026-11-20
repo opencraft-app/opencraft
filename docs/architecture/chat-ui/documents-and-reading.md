@@ -11,6 +11,15 @@ additional actions in its text. Raw target/title values and existing UTF-16 sour
 ranges stay parser compatibility data. Sanitization, streaming activation and
 opening belong to the existing renderer/resource owners.
 
+User-message conversation references render inline as accent `@title` tokens,
+matching Composer mention typography and colors. The canonical conversation URI
+stays an application route, never a workspace path. Pending display retains that
+URI; native history's legacy `Referenced conversation: ` label is projected only
+for validated conversation links. Code examples and ordinary links retain their
+literal content. Native file and skill references keep their existing attachment
+and context actions. The user-message semantics smoke covers restored and pending
+mentions, escaped titles, touch, keyboard, themes and neighboring resource types.
+
 ## Trusted Web renderer composition
 
 A local Application may declare `chatRenderExtensions` as Cordis renderer plugins.
@@ -22,6 +31,30 @@ another Application. This is trusted build composition, not an HTTP-supplied
 module loader or a product ID switch. Product parsers, dictionaries and artwork
 stay downstream. `smoke-product-render-extensions.ts` exercises the real
 Application and documents, default isolation and startup/disposal failures.
+
+## Warm document presentation
+
+A restored View must not downgrade already computed document output and then
+enhance it again after navigation is visible. Shiki and KaTeX read completed
+immutable output synchronously from the application's existing bounded
+`ChatEnhancementService` cache. Visibility leases and debounce govern new work,
+not access to completed output. Source, language and theme remain part of the
+relevant cache identity; disposal and eviction remove reuse eligibility.
+
+Measurement callbacks report layout changes; replacing a callback is not a new
+resource request. Image and math effects read the latest callback without
+releasing/reloading an unchanged resource. Async cancellation still belongs to
+the actual source and consumer lifetime.
+
+The retained Conversation View also checkpoints a bounded map of media layout
+sizes. A matching resource at the same layout width reserves its previous space
+while a fresh media lease resolves. This map contains only geometry, no bytes,
+URLs or authority. Changed widths remeasure, and actual resolved content can
+change size. File freshness, permissions, downloads and URL release remain with
+their existing owners. `smoke-chat-resource-continuity.ts` checks first-frame
+enhancement reuse, delayed media resolution, callback replacement, source append,
+and lease release in narrow/wide light/dark layouts. Real-device Safari remains
+a separate acceptance step.
 
 ## Message timestamp presentation
 
@@ -302,3 +335,54 @@ existing document measurement transactions. Failed loads offer retry and the
 existing file-open action. Disposal aborts file work and ignores late results.
 
 Inline visualization renderer, sandbox generator and styles load on the first visualization directive through a React Suspense boundary. Ordinary chat startup does not load them; the startup resource policy rejects eager inclusion. The existing localized loading status remains visible until the renderer and its styles are ready.
+
+### Natural-flow virtual space
+
+Natural-flow conversations align short nonempty history to the same bottom edge
+as overflowing history. Empty states and response-placement retain their own
+layout. A first-page layout receipt does not require a full viewport, a completed
+Turn, or a quiet stream: later revisions and prepended pages update the existing
+View without restarting its readiness. Bottom-follow and historical reading use
+the existing viewport owner and measured reading anchor; no loading timer or
+second scroll writer owns this transition.
+
+Display authority and coverage are independent. When an authoritative partial
+window shares its oldest Turn with the display cache, only the cached prefix
+before that boundary may remain alongside the canonical tail. The prefix stays
+read-only (including fork, questions, retry and read receipts); live Turns retain
+their current actions and streaming state. Missing content inside the returned
+range is removed, and complete or disjoint baselines do not inherit a prefix.
+Display persistence applies the same bounded projection, so observing the first
+short page cannot erase a prefix already displayed. Scope and expiry still belong
+to the display continuity owner.
+Visible cached rows also request canonical backfill even when the display cache
+already fills the viewport. The existing single-flight owner treats a shrinking
+coverage gap as progress without requiring a height change, and stops if neither
+coverage nor geometry advances. Offscreen cached rows do not force extra pages.
+
+`scripts/smoke/conversation/smoke-conversation-cold-history.ts` covers held history,
+ongoing short output, prepend continuity, touch/desktop historical reading,
+checkpoint restoration and mixed-cache actions, with normal/reduced motion.
+`OPENCRAFT_COLD_HISTORY_NEGATIVE_CONTROL=1` restores top alignment and must fail.
+
+The virtualizer reserves space only for rows outside the mounted window. Mounted
+rows own their DOM height, including asynchronous shrink as well as growth. A
+previously measured total must not become a `min-height` floor around the live
+window: shrinking a media placeholder would otherwise create a visible gap until
+the later row measurement removes the floor. The window exposes its leading and
+trailing unmounted extents; fixed-height response-placement consumers keep their
+existing allocation policy.
+
+For a naturally flowing row that contains the reading position, a whole-row
+height delta cannot locate the change relative to the visible text. The Web
+viewport owner samples one visible text anchor after committed measurements and
+uses its displacement in the existing row transaction. The scroll controller
+remains the sole writer; no second observer, timer or restoration loop is added.
+Initial restoration, before an anchor exists, must not apply the containing
+row's total delta. Fully preceding/following rows retain their normal virtual
+geometry compensation. Explicit targeting, response placement, active disclosure
+reflow, viewport resizing and overview scaling retain their existing owners.
+
+`scripts/smoke/conversation/smoke-chat-initial-layout.mjs` exercises the packaged
+App through cold loading, refresh, asynchronous media settlement, changes below
+a reader and repeated conversation returns, with touch and desktop entry points.

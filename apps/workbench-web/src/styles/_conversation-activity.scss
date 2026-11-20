@@ -1,7 +1,8 @@
-@use "@opencraft/design-system/typography.web" as typography;
+@use "@opencraft/design-system/typography-mixins.web" as typography;
 
 // Process summaries (including compaction) have one visual owner, independent
 // of the reading preference. Disclosure geometry/interaction stays in app.scss.
+.thread-subagent-activity,
 .thread-activity-item__header,
 .thread-subagent-trigger,
 .thread-subagent-activity__status {

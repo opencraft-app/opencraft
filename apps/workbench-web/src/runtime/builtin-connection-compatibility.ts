@@ -21,8 +21,6 @@ const viewAliases = new Map([
   ["vela.headless-model-services.view", "opencraft.headless-model-services.view"],
   ["vela.voice-input.settings-view", "opencraft.voice-input.settings-view"],
   ["vela.voice-input.web-settings-view", "opencraft.voice-input.web-settings-view"],
-  ["vela.bot-chat.view", "opencraft.bot-chat.view"],
-  ["vela.bot-management.view", "opencraft.bot-management.view"],
 ]);
 
 export async function migrateBuiltinConnectionProfiles(store: HostConnectionProfileStore, availableProviders: readonly string[]): Promise<void> {

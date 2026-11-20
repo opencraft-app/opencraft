@@ -1,7 +1,8 @@
 import { access, lstat, readFile, readdir, readlink, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { isAbsolute, join, normalize, sep } from "node:path";
+import { isAbsolute, join, normalize, resolve, sep } from "node:path";
+import { pathToFileURL } from 'node:url';
 
 export function electronExecutableName(platform = process.platform) {
   if (platform === "darwin") return join("Electron.app", "Contents", "MacOS", "Electron");
@@ -96,4 +97,9 @@ export async function verifyElectronDistribution(distribution, forkDefinition, {
     throw new Error("Electron fork executable provenance mismatch");
   }
   return { distribution, executable, marker };
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  await verifyElectronDistribution(process.argv[2], process.argv[3]);
+  console.log('Owned desktop distribution verified');
 }

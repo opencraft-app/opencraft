@@ -71,11 +71,11 @@ function createCdpAutomation(options) {
       call.frameViewport = async frame => call.value(await frames.world(frame, call), 'viewport');
       if (method === 'inspect') {
         const next = ++revision, references = new Map(), elements = [];
-        let rootInfo;
+        let rootInfo, rootWorld;
         for (const frame of frameList.values()) {
           if (elements.length >= 500) break;
           const world = await frames.world(frame, call);
-          if (!frame.parentId) rootInfo = await call.value(world, 'context', [1, false]);
+          if (!frame.parentId) { rootInfo = await call.value(world, 'context', [1, false]); rootWorld = world; }
           const result = await call.send('Runtime.callFunctionOn', {
             executionContextId: world.contextId, functionDeclaration: declaration('collect'),
             arguments: [{ value: 500 - elements.length }], objectGroup: call.group,
@@ -90,13 +90,15 @@ function createCdpAutomation(options) {
             const ref = `${options.instanceId}:${next}:${elements.length + 1}`;
             references.set(ref, { world, backendNodeId: node.node.backendNodeId, metadata: meta });
             elements.push({ ref, role: meta.role, name: meta.name, disabled: meta.disabled,
-              ...(meta.value !== undefined ? { value: meta.value } : {}), frameId: frame.id });
+              ...(meta.value !== undefined ? { value: meta.value } : {}), frameId: frame.id, documentId: world.documentId });
           }
         }
         for (const reference of references.values()) frames.assert(reference.world);
+        if (rootWorld) frames.assert(rootWorld);
         snapshots.set(next, references);
         while (snapshots.size > 8) snapshots.delete(snapshots.keys().next().value);
-        return { url: rootInfo?.url || '', title: rootInfo?.title || '', revision: next, elements };
+        return { url: rootInfo?.url || '', title: rootInfo?.title || '', revision: next, elements,
+          ...(rootWorld ? { frameId: rootWorld.id, documentId: rootWorld.documentId } : {}) };
       }
       if (method === 'readContext' || method === 'wait') {
         const read = async currentFrames => {
@@ -107,7 +109,8 @@ function createCdpAutomation(options) {
             if (remaining <= 0) break;
             const world = await frames.world(frame, call);
             const context = await call.value(world, 'context', [remaining, input.includeSelection !== false]);
-            if (!frame.parentId) result = { ...context, revision };
+            frames.assert(world);
+            if (!frame.parentId) result = { ...context, revision, frameId: world.id, documentId: world.documentId };
             else if (result && context.content) result.content += `\n${context.content}`;
             remaining -= context.content.length + 1;
           }
@@ -187,6 +190,7 @@ function createCdpAutomation(options) {
   const api = {
     capabilities,
     invoke(method, input = {}, invocation = {}) {
+      if (invocation.signal?.aborted) return Promise.reject(failure('CDP_ABORTED', 'Browser operation cancelled', 'not-dispatched'));
       if (!methods.includes(method)) return Promise.reject(failure('INVALID_ARGUMENT', 'Unsupported browser operation'));
       try { assertLive(); invocation.validate?.(); input = parseRequest(method, input, options.platform); }
       catch (error) { return Promise.reject(error); }
@@ -196,6 +200,7 @@ function createCdpAutomation(options) {
     dispose() { if (disposed) return; disposed = true; for (const controller of controllers) controller.abort(); frames.dispose(); snapshots.clear(); },
   };
   for (const method of methods) api[method] = (input, invocation) => api.invoke(method, input, invocation);
+  api.inspect = invocation => api.invoke('inspect', {}, invocation);
   return api;
 }
 module.exports = { createCdpAutomation, capabilities };

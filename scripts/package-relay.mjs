@@ -15,7 +15,7 @@ export async function packageRelay({ output = join(root, 'dist/relay'), relayEnt
   }
   const buildId = new Date().toISOString();
   await mkdir(output, { recursive: true });
-  for (const [entry, file] of [[resolve(relayEntry), 'relay.mjs'], [join(root, 'scripts/access-admin.ts'), 'access-admin.mjs'], [join(root, 'scripts/hub-admin.ts'), 'hub-admin.mjs']]) {
+  for (const [entry, file] of [[resolve(relayEntry), 'relay.mjs'], [join(root, 'scripts/access-admin.ts'), 'access-admin.mjs'], [join(root, 'scripts/hub-admin.ts'), 'hub-admin.mjs'], [join(root, 'scripts/relay-cluster-admin.ts'), 'relay-cluster-admin.mjs']]) {
     await build({ nodePaths: [join(root, 'node_modules')], entryPoints: [entry], outfile: join(output, file), bundle: true, platform: 'node', format: 'esm', target: 'node24',
       define: { 'process.env.OPENCRAFT_RELAY_SOURCE_REVISION': JSON.stringify(revision), 'process.env.OPENCRAFT_RELAY_BUILD_ID': JSON.stringify(buildId) },
       banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" } });

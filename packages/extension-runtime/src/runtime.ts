@@ -1,5 +1,6 @@
 import type { ExtensionLocalPreferenceStore } from "@opencraft/extension-contract";
 import { Context, type Fiber } from "@deepseek-ai/cordis";
+import type { BlobResourceService } from "@opencraft/blob-resources";
 import {
   parseExtensionManifestV1,
   assertExtensionCompatibility,
@@ -59,6 +60,12 @@ export interface TrustedExtensionApiV1 extends OpenCraftExtensionApiV1 {
   readonly internal: {
     register(channel: string, value: unknown): ExtensionDisposable;
   };
+  /**
+   * The application's shared blob IO scheduler and memory budget, when the
+   * host provides one. Extensions create their own presentation stores from it
+   * and close them with `signal`; they never own the service.
+   */
+  readonly blobResources?: BlobResourceService;
 }
 
 export type ExtensionActivationStatus = "activating" | "active" | "deactivating" | "failed";
@@ -84,6 +91,7 @@ export interface ExtensionSupervisorOptions {
   readonly localPreferences?: (extensionId: string, accountKey: string) => ExtensionLocalPreferenceStore;
   readonly resolveHostPersistence?: (hostId: string, signal: AbortSignal) => Promise<ExtensionPersistence>;
   readonly context?: Context;
+  readonly blobResources?: BlobResourceService;
   readonly platform: ExtensionPlatform;
   readonly internalContributions?: Readonly<Record<string, InternalContributionAdapter>>;
   readonly createActivationId?: () => string;
@@ -205,6 +213,7 @@ class ActivationTransaction {
     private readonly cleanupTimeoutMs = 5000,
     private readonly activationTimeoutMs = 15000,
     localPreferences?: ExtensionSupervisorOptions["localPreferences"],
+    blobResources?: BlobResourceService,
   ) {
     const storage = persistence || resolveHostPersistence ? createScopedExtensionStorage(persistence, token.identity.extensionId,
       () => token.phase === "activating" || token.phase === "active", resolveHostPersistence) : null;
@@ -270,6 +279,7 @@ class ActivationTransaction {
       internal: Object.freeze({
         register: (channel: string, value: unknown) => this.stageInternal(channel, value),
       }),
+      ...(blobResources ? { blobResources } : {}),
     });
   }
 
@@ -518,6 +528,7 @@ export class ExtensionSupervisor {
   private readonly platform: ExtensionPlatform;
   private readonly persistence: ExtensionPersistence | undefined;
   private readonly localPreferences: ExtensionSupervisorOptions["localPreferences"];
+  private readonly blobResources: BlobResourceService | undefined;
   private readonly resolveHostPersistence: ExtensionSupervisorOptions["resolveHostPersistence"];
   private readonly adapters: Readonly<Record<string, InternalContributionAdapter>>;
   private readonly createActivationId: () => string;
@@ -540,6 +551,7 @@ export class ExtensionSupervisor {
     this.platform = options.platform;
     this.persistence = options.persistence;
     this.localPreferences = options.localPreferences;
+    this.blobResources = options.blobResources;
     this.resolveHostPersistence = options.resolveHostPersistence;
     this.adapters = options.internalContributions ?? {};
     this.createActivationId = options.createActivationId ?? defaultActivationId;
@@ -616,7 +628,7 @@ export class ExtensionSupervisor {
         generation,
       });
       const token: ActivationToken = { phase: "activating", identity, controller: new AbortController() };
-      const transaction = new ActivationTransaction(token, this.contributions, this.announcements, this.adapters, this.persistence, this.resolveHostPersistence, this.cleanupTimeoutMs, this.activationTimeoutMs, this.localPreferences);
+      const transaction = new ActivationTransaction(token, this.contributions, this.announcements, this.adapters, this.persistence, this.resolveHostPersistence, this.cleanupTimeoutMs, this.activationTimeoutMs, this.localPreferences, this.blobResources);
       const owner = { token, transaction };
       this.owners.add(owner);
       this.setDescriptor(manifest, identity, "activating");

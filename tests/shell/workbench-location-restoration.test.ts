@@ -246,3 +246,27 @@ test("selection does not coalesce a different pending View of the same Thread", 
     assert.equal(session.coordinator.getSnapshot().viewId, original);
   } finally { await session.dispose(); }
 });
+
+test("sidebar restores a saved conversation View without reusing bootstrap initialization", async () => {
+  const a = createWorkbenchThreadLocation("local", "thread-a"), b = createWorkbenchThreadLocation("local", "thread-b");
+  const session = createNavigationRestorationSession({ initialThread: a, router: { restoreViewId: async () => "saved-view-b" as any } });
+  try {
+    const originalId = session.navigation.getSnapshot().routeScopeId;
+    const editorA = session.views.getDraftOwner(originalId)!;
+    editorA.composer.dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "Keep A's unsent draft" }] }] } });
+    assert.equal(await session.navigation.selectConversation(b), true);
+    assert.deepEqual(session.navigation.getSnapshot().location, b);
+    assert.equal(session.navigation.getSnapshot().routeScopeId, "saved-view-b");
+    assert.deepEqual(session.coordinator.getSnapshot().location, b);
+    assert.equal(session.views.getDraftOwner(originalId)!.composer, editorA.composer);
+    assert.equal(composerDocumentToPlainText(editorA.composer.getSnapshot().draft.document), "Keep A's unsent draft");
+    const editorB = session.views.getDraftOwner("saved-view-b")!;
+    assert.equal(editorB.composer.getSnapshot().draft.target.type, "existing-thread");
+    editorB.composer.dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "Keep B too" }] }] } });
+    assert.equal(await session.navigation.selectConversation(a), true);
+    assert.equal(session.navigation.getSnapshot().routeScopeId, originalId);
+    assert.equal(await session.navigation.selectConversation(b), true);
+    assert.equal(session.navigation.getSnapshot().routeScopeId, "saved-view-b");
+    assert.equal(session.views.getDraftOwner("saved-view-b")!.composer, editorB.composer);
+  } finally { await session.dispose(); }
+});

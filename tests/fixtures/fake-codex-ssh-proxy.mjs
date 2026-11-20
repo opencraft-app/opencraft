@@ -158,7 +158,7 @@ function workbenchResult(message) {
     }], nextCursor: null };
     case "thread/search": return { data: [{ thread: fixtureThread, snippet: "Historical remote answer" }], nextCursor: null, backwardsCursor: null };
     case "thread/searchOccurrences": return { data: [{ turnId: "fixture-turn", itemId: "fixture-answer", snippet: "Historical remote answer", snippetMatchRange: { start: 0, end: 10 }, turnCursor: "fixture-latest" }], nextCursor: null };
-    case "thread/list": return { data: process.env.FIXTURE_WORKBENCH_UI_EMPTY_HISTORY === "1" ? [] : [fixtureThread], nextCursor: null };
+    case "thread/list": return { data: process.env.FIXTURE_WORKBENCH_UI_EMPTY_HISTORY === "1" || message.params?.archived === true ? [] : [fixtureThread], nextCursor: null };
     case "threadSection/list": return { data: [], nextCursor: null };
     case "thread/read": return { thread: fixtureHistory };
     case "thread/resume": return { thread: { ...fixtureThread, turns: [] }, model: "fixture-model", modelProvider: "openai",

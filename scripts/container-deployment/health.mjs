@@ -1,8 +1,10 @@
 import { createConnection } from 'node:net';
-import { deploymentPaths } from './paths.mjs';
+import { deploymentPaths, readPrivateToken } from './paths.mjs';
 import { coreHealth } from '../server-deployment/execution.mjs';
+import { proxyHealth } from './proxy-core.mjs';
 import { readDshHostIdentity } from '../server-deployment/dsh-host-client.mjs';
 import { readEngineHostIdentity } from '../server-deployment/engine-host-client.mjs';
+import { createHostFileSystem } from '../host-filesystem.ts';
 
 const timeoutMs = 4000;
 function probeSocket(path, frame, expected) {
@@ -31,13 +33,23 @@ function probeSocket(path, frame, expected) {
 }
 
 export async function checkHands(environment = process.env) {
+  const paths = deploymentPaths(environment);
+  const files = createHostFileSystem({ endpoint: paths.fileSystemEndpoint, tokenFile: paths.fileSystemToken });
+  const terminalToken = await readPrivateToken(paths.terminalToken);
   const browserDirectory = environment.OPENCRAFT_BROWSER_DATA_DIR;
   const executionSocket = environment.OPENCRAFT_HANDS_EXECUTION_SOCKET;
   if (!browserDirectory?.startsWith('/') || !executionSocket?.startsWith('/')) throw new Error('Hands health paths are invalid');
-  await Promise.all([
+  try { await Promise.all([
+    files.probe(AbortSignal.timeout(timeoutMs)),
     probeSocket(`${browserDirectory}/owner.sock`, { type: 'probe', protocol: 1 }, value => value.type === 'healthy' && value.protocol === 1),
     probeSocket(executionSocket, { type: 'probe', protocol: 1 }, value => value.type === 'healthy' && value.protocol === 1),
-  ]);
+    probeSocket(paths.terminalEndpoint, { type: 'probe', protocol: 1, token: terminalToken }, value => value.type === 'healthy' && value.protocol === 1),
+  ]); } finally { files.close(); }
+}
+
+export async function checkProxy(environment = process.env) {
+  const paths = deploymentPaths(environment);
+  await proxyHealth(paths.coreEndpoint, paths.tokenPath, timeoutMs);
 }
 
 export async function checkBrain(environment = process.env) {
@@ -51,7 +63,7 @@ export async function checkBrain(environment = process.env) {
 
 const mode = process.argv[2];
 if (mode) {
-  const check = mode === 'hands' ? checkHands : mode === 'brain' ? checkBrain : null;
-  if (!check) throw new Error('Usage: opencraft-health hands|brain');
+  const check = mode === 'hands' ? checkHands : mode === 'brain' ? checkBrain : mode === 'proxy' ? checkProxy : null;
+  if (!check) throw new Error('Usage: opencraft-health hands|brain|proxy');
   await check();
 }

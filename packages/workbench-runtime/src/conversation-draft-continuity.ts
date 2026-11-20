@@ -1,5 +1,6 @@
 import {
   encodeComposerTarget,
+  assertComposerPlacement,
   isComposerDocumentEmpty,
   type ComposerController,
   type ComposerContextReference,
@@ -17,7 +18,7 @@ export interface ConversationDraftStorage {
 }
 
 export interface ConversationDraftContinuity {
-  attach(viewId: string, controller: ComposerController): () => void;
+  attach(viewId: string, controller: ComposerController, recovery?: { loaded(raw: string | null): void; settled(): void }): () => void;
   discard(viewId: string, target: ComposerTarget): void;
 }
 
@@ -54,7 +55,7 @@ function block(value: unknown, depth: number): boolean {
 }
 
 export function parseConversationDraftDocument(value: string | null): ComposerDocument | null {
-  if (value === null || value.length > MAX_CHARACTERS) return null;
+  if (typeof value !== "string" || value.length > MAX_CHARACTERS) return null;
   try {
     const envelope: unknown = JSON.parse(value);
     if (!record(envelope) || envelope.version !== VERSION || !record(envelope.document)) return null;
@@ -109,6 +110,9 @@ export function parseConversationDraftTarget(value: string | null): Extract<Comp
     if (!(workspace.cwd === null || typeof workspace.cwd === "string")
       || !Array.isArray(workspace.runtimeWorkspaceRoots) || !workspace.runtimeWorkspaceRoots.every(root => typeof root === "string")
       || !(workspace.projectId === undefined || workspace.projectId === null || typeof workspace.projectId === "string")) return null;
+    assertComposerPlacement({ environment: target.execution.environment, workspace: {
+      cwd: workspace.cwd, runtimeWorkspaceRoots: workspace.runtimeWorkspaceRoots, source: workspace.source,
+    } });
     return target as unknown as Extract<ComposerTarget, { type: "new-thread" }>;
   } catch { return null; }
 }
@@ -142,15 +146,27 @@ export function createConversationDraftContinuity(input: {
     enqueue(key, () => value === null ? input.storage.remove(key) : input.storage.save(key, value));
   };
   return {
-    attach(viewId, controller) {
+    attach(viewId, controller, recovery) {
       const initial = controller.getSnapshot().draft;
       const key = keyFor(viewId, initial.target);
       let live = true;
       let hydrated = false;
+      let loaded = false;
+      let loadedValue: string | null = null;
+      let previousDocument = initial.document;
+      let previousTarget = initial.target;
+      let previousContext = initial.context;
+      let previousSelections = initial.selections;
       const persist = () => {
         if (!hydrated || !live) return;
         const current = controller.getSnapshot().draft;
         if (keyFor(viewId, current.target) !== key) return;
+        if (current.document === previousDocument && current.context === previousContext && current.selections === previousSelections
+          && (current.target === previousTarget || isComposerDocumentEmpty(current.document))) return;
+        previousDocument = current.document;
+        previousTarget = current.target;
+        previousContext = current.context;
+        previousSelections = current.selections;
         cancelTimer(key);
         const value = serializeConversationDraftDocument(current.document, current.target, current);
         if (value === null) {
@@ -169,6 +185,10 @@ export function createConversationDraftContinuity(input: {
         try {
           await (pending.get(key) ?? Promise.resolve()).catch(() => undefined);
           const value = await input.storage.load(key);
+          loadedValue = value;
+          loaded = true;
+          if (!live) return;
+          recovery?.loaded(value);
           if (!live) return;
           const document = parseConversationDraftDocument(value);
           const current = controller.getSnapshot().draft;
@@ -179,17 +199,33 @@ export function createConversationDraftContinuity(input: {
             if (record(envelope) && current.selections.model === initial.selections.model
               && current.selections.effort === initial.selections.effort && current.selections.serviceTier === initial.selections.serviceTier)
               controller.dispatch({ type: "set-selections", patch: modelSelection(envelope.modelSelection) });
+            previousDocument = controller.getSnapshot().draft.document;
+            previousTarget = controller.getSnapshot().draft.target;
+            previousContext = controller.getSnapshot().draft.context;
+            previousSelections = controller.getSnapshot().draft.selections;
           }
-        } catch { /* A failed local read never prevents editing. */ }
-        finally { hydrated = true; if (live) persist(); }
+          hydrated = true;
+          persist();
+        } catch {
+          // Resume explicit edits. An untouched editor is never a reason to
+          // erase data that the adapter could not read.
+          hydrated = true;
+          if (live) persist();
+        } finally { recovery?.settled(); }
       })();
       return () => {
         if (!live) return;
         live = false;
         unsubscribe();
+        const needsFlush = timers.has(key);
         cancelTimer(key);
         const current = controller.getSnapshot().draft;
-        if (keyFor(viewId, current.target) === key && (hydrated || current.document !== initial.document)) write(key, current);
+        const hasUnhydratedInput = !hydrated && (current.document !== initial.document || current.context !== initial.context || current.selections !== initial.selections);
+        const currentValue = serializeConversationDraftDocument(current.document, current.target, current);
+        // Hydrating and leaving an untouched editor is not a new write. Preserve
+        // pre-existing unsaved input and edits without rewriting the loaded slot.
+        const hasLoadedInput = loaded && currentValue !== null && currentValue !== loadedValue;
+        if (keyFor(viewId, current.target) === key && (needsFlush || hasUnhydratedInput || hasLoadedInput)) write(key, current);
       };
     },
     discard(viewId, target) {

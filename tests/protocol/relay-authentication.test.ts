@@ -17,7 +17,7 @@ test('one approved login origin hands off only to enrolled team and initiating b
   let identity={provider:'corporate-oidc',subject:'stable-user',displayName:'Employee',expiresAt:Date.now()+60_000};
   const routes=[{instanceId:'a',origin:'https://team-a.test'},{instanceId:'b',origin:'https://team-b.test'}];
   const auth=new RelayAuthentication('https://login.test',{authenticate:r=>r.headers['x-test-verified']==='yes'?identity:null},routes);
-  const server=createServer((req,res)=>{if(auth.handle(req,res))return;const route=routes.find(r=>new URL(r.origin).host===req.headers.host);if(!route){res.writeHead(404);res.end();return;}const principal=auth.authenticate(req,route);if(principal)res.end(principal.subject);else auth.begin(req,res,route);});server.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>new Promise<void>(r=>{server.close(()=>r());server.closeAllConnections();}));
+  const server=createServer(async(req,res)=>{if(await auth.handle(req,res))return;const route=routes.find(r=>new URL(r.origin).host===req.headers.host);if(!route){res.writeHead(404);res.end();return;}const principal=await auth.authenticate(req,route);if(principal)res.end(principal.subject);else await auth.begin(req,res,route);});server.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>new Promise<void>(r=>{server.close(()=>r());server.closeAllConnections();}));
   const base=`http://127.0.0.1:${(server.address() as any).port}`;
   const start=await get(base,'/chat?id=42','team-a.test');assert.equal(start.status,303);
   const challenge=start.headers['set-cookie']![0]!.split(';')[0]!;assert.match(start.headers['set-cookie']![0]!,/HttpOnly; SameSite=Lax.*Secure/u);

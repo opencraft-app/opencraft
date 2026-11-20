@@ -100,7 +100,7 @@ Connector 目录属于 Skills 能力页的同级 Tab；配置弹窗复用 Settin
 Connector 目录浏览不套用设置行：采用限宽品牌卡片，已配置实例单独管理，分类/搜索和返回位置不因打开详情丢失。详情的侧边/窄屏呈现由共享 Modal `inspector` variant 持有，业务不能手写 focus trap 或遮罩；正文滚动不带走操作区。不保留旧长列表模式或为测试专设的第二套管理入口。
 
 - 持久 Thread 元数据、引擎上下文、逻辑订阅、View 是独立生命周期；普通退订不等于中断或归档。
-- 临时 Side Chat 分支完整原生上下文，继承历史边界在获取 view 前提交；创建/关闭失败保留清理身份，旧失败不得覆盖主要错误。
+- 持久 Side Chat 分支完整原生上下文，继承历史边界在获取 view 前提交；创建/关闭失败保留清理身份，旧失败不得覆盖主要错误。
 - 两个 renderer 共享物理 Host 时，订阅和审批仍按逻辑客户端隔离；后台卸载与新订阅序列化，SDK 迟到退订必须重新订阅。
 - 顶部会话菜单按 Host archive capability 显示归档（Archive 图标），复用 threadManagement.archive 并刷新该 Host 目录；点击即关闭菜单并由应用通知层持续显示正在归档，确认后替换为成功提示，失败提示结果未确认并允许用户检查后重试；处理中禁用重复及相冲突操作。归档回执不等待目录刷新，成功或失败均后台刷新目录核对；迟到回执不得关闭用户重新打开的菜单，不提前宣称归档成功。归属任务入口使用 ListTodo 图标与同一菜单图标槽。
 - 菜单和 Settings 归档页消费唯一 Host 命令及共享 Radix/主题控件；主 Sidebar 只展示活跃会话，不持有归档入口或撤销提示。归档是可恢复目录状态，不删除 workspace。
@@ -389,3 +389,25 @@ retires the raw routing socket after returning the failure to its callers. A
 failed initialize may already have consumed that socket's one-initialize slot.
 The existing delayed reconnect establishes a fresh routing connection; it never
 replays a submitted execution request or changes the retained callback lane's owner.
+
+## Shared channel recovery presentation
+
+Ordinary Chat and IM use chat-core conversationRecoveryPresentation for cold/warm and loading/error states. Display caches do not confer command/read-receipt authority. history-presentation in chat-render-web owns the stable content attributes, dimming and delayed nonverbal progress. IM retains the same MessageTimeline and Composer through recovery; only cached rows are inert while scroll/checkpoints/drafts survive. The Composer consumes its existing isRecovering/isUnstable/submissionDisabled controls. Empty messages are an authoritative outcome, never a pending state. Inbox retains cached groups with disabled shared rows on disconnect/failure, revalidates through its existing owner and retires data on identity-scope change.
+
+### Channel runtime ownership
+
+An authenticated IM extension has one scope, directory replica and assistant observation. Inbox, channel titles and settings consume those replicas. An identity change, expired authentication or global directory denial retires the scope, cancels all reads/actions, unmounts page-local member/search/settings state and clears private display memory. A single-channel denial retires that channel's history, not unrelated conversations.
+
+A channel watch owns a separate AbortController and subscription per connection. Disconnect retires that work immediately; a replacement connection never waits for an old Promise. Every watch consumer uses the supplied connection signal for its reads and checks it before publication. Cancelling a View does not close the shared transport; retiring authentication does.
+
+Channel display history is independent from Composer drafts and send settlement. It shares ordinary conversation display budgets (64 entries, at most 24 messages / 64 KiB of message serialization per entry, seven-day expiry), including confirmed-empty tombstones. Checkpoint geometry is discarded when its history window is trimmed. Active explicitly loaded history stays with the mounted View; its inactive display copy is bounded. Draft controllers use the shared conversation scope lease registry (20 inactive scopes by default); retained input, attachments, reply context, unresolved submissions and pending restoration hold leases, so reclamation never silently drops input. Completed opening Promises must release their references. Protocol messages remain Channels; a display or Composer adapter does not turn a Channel into an engine Thread.
+
+## Natural-flow window handoff
+
+Retiring virtualized row identities must not temporarily reduce the scrollable
+extent and clamp a reader's native offset. The existing Web viewport owner holds
+the outgoing extent only across the pre-mutation/replacement-layout transaction,
+then releases it before paint. Stable-row updates, legitimate media/disclosure
+shrink, hidden viewports and retired owners must not retain that reservation.
+Window handoff never rewinds real user movement or takes over scroll writes.
+See [mounted content and virtual height](../../docs/architecture/chat-ui/history-and-recovery.md#mounted-content-and-virtual-height).

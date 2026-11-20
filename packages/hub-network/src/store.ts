@@ -51,6 +51,52 @@ export function parseInvitation(value: unknown): InvitePayload {
     || (p.ca !== undefined && (typeof p.ca !== 'string' || p.ca.length > 16_384 || !p.ca.includes('-----BEGIN CERTIFICATE-----')))) throw new Error('Invalid invitation');
   transportEndpoint(p.endpoint); if (p.authority) authority(p.authority); return p;
 }
+export function parseHubState(input: unknown): State {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid Hub state');
+  const s = input as State;
+  if (s.schemaVersion !== 1 || !Number.isSafeInteger(s.revision) || !Array.isArray(s.peers) || !Array.isArray(s.invitations) || !Array.isArray(s.audit)
+    || typeof s.accepting !== 'boolean' || typeof s.forwarding !== 'boolean' || typeof s.name !== 'string' || s.name.length > 128
+    || createPrivateKey(s.privateKey).asymmetricKeyType !== 'ed25519'
+    || createPublicKey(s.privateKey).export({ format: 'pem', type: 'spki' }).toString() !== s.publicKey) throw new Error('Invalid Hub state');
+  if (s.endpoint) transportEndpoint(s.endpoint); if (s.origin) publicOrigin(s.origin); if (s.authority) authority(s.authority);
+  if (s.peers.length > 32 || s.invitations.length > 128 || s.audit.length > 200) throw new Error('Invalid Hub state size');
+  const origins = (values: unknown): values is string[] => Array.isArray(values) && values.length <= 64 && values.every(v => publicOrigin(v) === v);
+  for (const p of s.peers) if (!p || typeof p.id !== 'string' || !validHubId(p.hubId) || hubId(p.publicKey) !== p.hubId || transportEndpoint(p.endpoint) !== p.endpoint
+    || (p.name !== undefined && (typeof p.name !== 'string' || p.name.length > 128)) || !/^[A-Za-z0-9_-]{43}$/u.test(p.credential) || typeof p.allowTransit !== 'boolean' || !origins(p.origins)
+    || (p.ca !== undefined && (typeof p.ca !== 'string' || p.ca.length > 16_384 || !p.ca.includes('-----BEGIN CERTIFICATE-----')))) throw new Error('Invalid stored peer');
+  for (const i of s.invitations) if (!i || typeof i.id !== 'string' || !/^[a-f0-9]{64}$/u.test(i.hash) || !Number.isSafeInteger(i.expiresAt)
+    || (i.name !== undefined && (typeof i.name !== 'string' || i.name.length > 128)) || typeof i.allowTransit !== 'boolean' || !origins(i.origins) || (i.hubId !== undefined && (!validHubId(i.hubId) || typeof i.publicKey !== 'string' || hubId(i.publicKey) !== i.hubId))) throw new Error('Invalid stored invitation');
+  if (typeof s.endpoint !== 'string' || typeof s.origin !== 'string' || s.revision < 0) throw new Error('Invalid Hub state');
+  return s;
+}
+export interface HubStateOwner {
+  readonly state: State;
+  readonly id: string;
+  record(operator: string, action: string): void;
+  service(): HubService | null;
+  close(): void;
+}
+function recordChange(state: State, operator: string, action: string) {
+  state.revision++;
+  state.audit.push({ at: new Date().toISOString(), operator: operator.slice(0, 512), action });
+  state.audit = state.audit.slice(-200);
+}
+function storedService(state: State, id: string): HubService | null {
+  if (!state.origin || !state.authority) return null;
+  const data = { hubId: id, publicKey: state.publicKey, origin: state.origin, authority: state.authority };
+  return { ...data, signature: signed(data, state.privateKey) };
+}
+/** The enclosing async persistence owner supplies fencing and durable acknowledgements. */
+export class MemoryHubStore implements HubStateOwner {
+  readonly state: State;
+  readonly id: string;
+  #closed = false;
+  constructor(input: unknown) { this.state = parseHubState(structuredClone(input)); this.id = hubId(this.state.publicKey); }
+  record(operator: string, action: string) { if (this.#closed) throw new Error('Hub store is closed'); recordChange(this.state, operator, action); }
+  service() { return storedService(this.state, this.id); }
+  close() { this.#closed = true; }
+}
+
 /** One deployment-owned, atomic private state; never browser preferences or relay replicas. */
 export class HubStore {
   readonly state: State;
@@ -68,19 +114,7 @@ export class HubStore {
       const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
       try { const info = lstatSync(path); if (!info.isFile() || info.size > 1_048_576 || (info.mode & 0o077) || (process.getuid && info.uid !== process.getuid())) throw new Error('Hub state must be private');
         this.state = JSON.parse(readFileSync(fd, 'utf8')); } finally { closeSync(fd); }
-      const s = this.state;
-      if (s.schemaVersion !== 1 || !Number.isSafeInteger(s.revision) || !Array.isArray(s.peers) || !Array.isArray(s.invitations) || !Array.isArray(s.audit)
-        || typeof s.accepting !== 'boolean' || typeof s.forwarding !== 'boolean' || typeof s.name !== 'string' || s.name.length > 128
-        || createPrivateKey(s.privateKey).asymmetricKeyType !== 'ed25519'
-        || createPublicKey(s.privateKey).export({ format: 'pem', type: 'spki' }).toString() !== s.publicKey) throw new Error('Invalid Hub state');
-      if (s.endpoint) transportEndpoint(s.endpoint); if (s.origin) publicOrigin(s.origin); if (s.authority) authority(s.authority);
-      if (s.peers.length > 32 || s.invitations.length > 128 || s.audit.length > 200) throw new Error('Invalid Hub state size');
-      const origins = (values: unknown): values is string[] => Array.isArray(values) && values.length <= 64 && values.every(v => publicOrigin(v) === v);
-      for (const p of s.peers) if (!p || typeof p.id !== 'string' || !validHubId(p.hubId) || hubId(p.publicKey) !== p.hubId || transportEndpoint(p.endpoint) !== p.endpoint
-        || (p.name !== undefined && (typeof p.name !== 'string' || p.name.length > 128)) || !/^[A-Za-z0-9_-]{43}$/u.test(p.credential) || typeof p.allowTransit !== 'boolean' || !origins(p.origins)
-        || (p.ca !== undefined && (typeof p.ca !== 'string' || p.ca.length > 16_384 || !p.ca.includes('-----BEGIN CERTIFICATE-----')))) throw new Error('Invalid stored peer');
-      for (const i of s.invitations) if (!i || typeof i.id !== 'string' || !/^[a-f0-9]{64}$/u.test(i.hash) || !Number.isSafeInteger(i.expiresAt)
-        || (i.name !== undefined && (typeof i.name !== 'string' || i.name.length > 128)) || typeof i.allowTransit !== 'boolean' || !origins(i.origins) || (i.hubId !== undefined && (!validHubId(i.hubId) || typeof i.publicKey !== 'string' || hubId(i.publicKey) !== i.hubId))) throw new Error('Invalid stored invitation');
+      this.state = parseHubState(this.state);
     } else {
       const pair = generateKeyPairSync('ed25519');
       this.state = { schemaVersion: 1, revision: 0, privateKey: pair.privateKey.export({ format: 'pem', type: 'pkcs8' }).toString(),
@@ -99,15 +133,10 @@ export class HubStore {
     renameSync(temp, this.path);
   }
   record(operator: string, action: string) {
-    this.state.revision++;
-    this.state.audit.push({ at: new Date().toISOString(), operator: operator.slice(0, 512), action });
-    this.state.audit = this.state.audit.slice(-200); this.save();
+    recordChange(this.state, operator, action); this.save();
   }
   service(): HubService | null {
-    const s = this.state;
-    if (!s.origin || !s.authority) return null;
-    const data = { hubId: this.id, publicKey: s.publicKey, origin: s.origin, authority: s.authority };
-    return { ...data, signature: signed(data, s.privateKey) };
+    return storedService(this.state, this.id);
   }
   close() { if (!this.#closed) { this.#closed = true; this.#release(); } }
 }

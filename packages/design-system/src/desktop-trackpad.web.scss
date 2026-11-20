@@ -1,4 +1,4 @@
-@use "./typography.web" as typography;
+@use "./typography-mixins.web" as typography;
 
 // A quiet glass/aluminium touch surface; media and input ownership stay with
 // the desktop adapter. The pad occupies its own row, never overlays pixels.
@@ -21,8 +21,6 @@
   }
 }
 .ui-desktop-trackpad__surface {
-  --trackpad-top: color-mix(in srgb, var(--color-text) 5%, var(--color-background-surface));
-  --trackpad-bottom: color-mix(in srgb, var(--color-text) 10%, var(--color-background-surface));
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -35,14 +33,16 @@
   position: relative;
   border-radius: 18px;
   border: 1px solid color-mix(in srgb, var(--color-text) 18%, transparent);
-  background: linear-gradient(155deg, var(--trackpad-top), var(--trackpad-bottom));
+  background: var(--material-contact-background);
+  -webkit-backdrop-filter: var(--material-card-filter);
+  backdrop-filter: var(--material-card-filter);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-background-surface) 80%, transparent), 0 3px 8px #0000000a;
   color: var(--color-text-secondary);
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
   overflow: hidden;
-  &[data-pressed="true"] { box-shadow: inset 0 1px 4px #00000020; }
+  &[data-pressed="true"] { box-shadow: var(--material-contact-pressed-shadow); }
 }
 .ui-desktop-trackpad__title { @include typography.role(body, null); color: var(--color-text); }
 .ui-desktop-trackpad__hint, .ui-desktop-trackpad__detail {

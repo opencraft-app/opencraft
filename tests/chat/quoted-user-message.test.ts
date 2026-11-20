@@ -80,3 +80,30 @@ test("multiline and nested quotes keep every line inside the quote through nativ
   assert.equal(composerDocumentToMessageText(document), wire);
   assertQuote(wire);
 });
+
+test("pending and native conversation mentions retain one link and literal titles while search stays plain", () => {
+  const uri = "opencraft://conversation/v1/server/thread";
+  const label = "修复 [复查] `版本` 👋 ]( C:\\work";
+  const document: ComposerDocument = { version: 1, blocks: [{ type: "paragraph", children: [
+    { type: "text", text: "你问问 " }, { type: "mention", id: "reference", mentionKind: "thread", label, uri },
+  ] }] };
+  const intent = quotedIntent(document);
+  const native = compileSubmitIntent(intent).input;
+  for (const source of [submittedMessageDisplay(intent).message, ...native.flatMap(part => part.type === "text" ? [part.text] : [])]) {
+    const paragraph = parser.compile(source, { dialect: "user-message" }).nodes[0];
+    assert.equal(paragraph?.kind, "paragraph");
+    if (paragraph?.kind !== "paragraph") throw new Error("Missing paragraph");
+    const links = paragraph.children.filter(node => node.kind === "link");
+    assert.equal(links.length, 1);
+    assert.equal(links[0]!.href, uri);
+    const text = links[0]!.children.map(node => node.kind === "text" ? node.text : "").join("");
+    assert.equal(text.replace(/^(?:Referenced conversation: |@)/u, ""), label);
+  }
+  assert.equal(composerDocumentToPlainText(document), `你问问 @${label}`);
+  const fileAndSkill = compileSubmitIntent(quotedIntent({ version: 1, blocks: [{ type: "paragraph", children: [
+    { type: "mention", id: "file", mentionKind: "file", label: "[文件].ts", uri: "file:///workspace/file.ts" },
+    { type: "resource", id: "skill", title: "review", resourceKind: "skill", uri: "file:///skills/review/SKILL.md" },
+  ] }] })).input;
+  assert.deepEqual(fileAndSkill, [{ type: "mention", name: "[文件].ts", path: "/workspace/file.ts" },
+    { type: "skill", name: "review", path: "/skills/review/SKILL.md" }]);
+});

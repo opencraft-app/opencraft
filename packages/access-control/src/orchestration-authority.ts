@@ -10,6 +10,7 @@ export interface OrchestrationMessageOrigin {
   authorActorId: string|null; delegatorActorId: string|null; delegationId: string|null;
   senderConversation: ConversationRef|null; senderTurnId: string|null; operationId: string|null;
   replyExpectation: 'required'|'none'; delegationRevision: number; usageSourceKind: 'human'|'system'; createdAtMs: number;
+  assistantGrant?: {actor:ActorContext;profile:string;revision:number;epoch:string};
   userInputExcerpt?: string;
   childBatchSize?: number;
 }

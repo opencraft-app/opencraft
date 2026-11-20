@@ -1,3 +1,4 @@
+import {ConversationUnavailableState} from "../../apps/workbench-web/src/components/conversation-archived-state";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement, type ReactElement } from "react";
@@ -8,7 +9,6 @@ import {
   connectionRecoveryIsPending,
   ConversationRecoveryNotice,
   ConversationRecoveryEmptyState,
-  ConversationUnavailableState,
   conversationArchivePresentation,
   conversationRecoveryPresentation,
   conversationRecoveryIsPending,
@@ -50,11 +50,27 @@ test("archived conversations render one read-only restore state instead of a ret
   try {
     const markup = renderToStaticMarkup(createElement(IntlRuntimeProvider, { runtime,
       children: createElement(ConversationUnavailableState, { reason: "archived", onRestore: () => undefined }) }));
-    assert.match(markup, /Conversation archived/);
-    assert.match(markup, /read-only until you restore it/);
+    assert.match(markup, /This conversation is archived/);
+    assert.match(markup, /You can still view the history/);
     assert.match(markup, /Restore conversation/);
     assert.doesNotMatch(markup, /Continue/);
     assert.match(markup, /data-reason="archived"/);
+  } finally { runtime.dispose(); }
+});
+
+test('authentication and permission failures have distinct recovery actions without refreshing the chat', () => {
+  const runtime = new LocaleRuntime([]);
+  try {
+    for (const Component of [ConversationRecoveryNotice, ConversationRecoveryEmptyState]) {
+      for (const accessFailure of ['authentication', 'permission'] as const) {
+        const markup = renderToStaticMarkup(createElement(IntlRuntimeProvider, { runtime,
+          children: createElement(Component, { failed: true, accessFailure, onRetry() {} }) }));
+        assert.match(markup, /Retry connection/);
+        if (accessFailure === 'authentication') { assert.match(markup, /Open sign-in/); assert.match(markup, /This chat will stay open/); }
+        else { assert.match(markup, /administrator/); assert.doesNotMatch(markup, /Open sign-in/); }
+        assert.doesNotMatch(markup, /Reconnecting/);
+      }
+    }
   } finally { runtime.dispose(); }
 });
 

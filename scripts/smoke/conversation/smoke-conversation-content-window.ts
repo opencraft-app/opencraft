@@ -29,7 +29,7 @@ try {
     const initial = await metrics();
     assert(initial.mounted < 200, JSON.stringify(initial));
     assert(initial.activities < 200, JSON.stringify(initial));
-    const first = page.locator('[data-conversation-content-key]').first();
+    const first = page.locator('[data-conversation-content-key][data-conversation-row="activity"]').first();
     await first.evaluate(element => element.scrollIntoView({ block: "center" }));
     await page.getByText("Thought 0", { exact: true }).waitFor();
     await page.waitForTimeout(500);
@@ -44,7 +44,7 @@ try {
     await page.waitForTimeout(500);
     assert.equal(await draft.inputValue(), "Preserved while streaming");
     assert(await draft.evaluate(element => element === document.activeElement));
-    const last = page.locator('[data-conversation-content-key]').last();
+    const last = page.locator('[data-conversation-content-key][data-conversation-row="activity"]').last();
     await last.evaluate(element => element.scrollIntoView({ block: "center" }));
     await page.waitForTimeout(500);
     assert((await last.innerText()).length > 0, "new tail must be rendered");

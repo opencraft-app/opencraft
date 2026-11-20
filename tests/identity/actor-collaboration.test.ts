@@ -10,6 +10,7 @@ import { MembershipStore, InstanceAccess } from '../../packages/access-control/s
 import { ActorStore } from '../../packages/access-control/src/actors';
 import { ActorAccess } from '../../packages/access-control/src/actor-access';
 import { Collaboration, CollaborationHttpApi, type ConversationExecutionPort, type ExecutionReceipt } from '../../packages/access-control/src/collaboration';
+import { OrchestrationRuntimeWorker } from '../../packages/access-control/src/orchestration-runtime-store';
 import { parsePrincipal } from '../../packages/identity-core/src/index';
 import { createConversationExecution } from '../../scripts/conversation-execution.mjs';
 
@@ -52,7 +53,7 @@ async function fixture(t: any, now = Date.now, hostId = 'fixture-host') {
     get service() { return service; },
     setFailAdd(value = true) { failAdd = value; }, setFailSteer(value: boolean | 'ambiguous' = true) { failSteer = value; },
     holdValidation(value: Promise<void>) { validateHold = value; }, revokeAdmission() { current = false; },
-    async restart() { await service.close(); service = new Collaboration(join(root, 'collaboration.sqlite'), actors, execution); },
+    async restart() { await service.close(); service = new Collaboration(join(root, 'collaboration.sqlite'), actors, execution, now); },
     async checksumDrift() { await service.close(); const db = new DatabaseSync(join(root, 'collaboration.sqlite')); db.exec("UPDATE schema_migrations SET checksum='changed' WHERE version=1"); db.close(); assert.throws(() => new Collaboration(join(root, 'collaboration.sqlite'), actors, execution)); },
     send(extra: Record<string, unknown> = {}) { return service.send(aContext, { targetActorId: b.id, content: 'review the code', idempotencyKey: 'first', ...extra }); },
   };
@@ -192,7 +193,7 @@ test('lost add acknowledgement queries the original queue after restart, never s
   await f.restart(); await f.service.pump();
   assert.equal(f.inputs.length, 1); assert.equal(f.service.getRequest(f.aContext, sent.requestId!).state, 'queued');
   f.receipts.set(sent.requestId!, { id: 'queue:' + sent.requestId, state: 'delivered', targetTurnId: 'R' });
-  await f.service.pump(); assert.equal(f.service.getRequest(f.aContext, sent.requestId!).state, 'submitted');
+  await f.service.pump(); assert.equal(f.service.getRequest(f.aContext, sent.requestId!).state, 'injected');
 });
 
 test('steer is pinned to one Turn; definitive rejection never falls back to queue execution', async t => {
@@ -302,9 +303,294 @@ test('stable execution polling performs no update, while each durable transition
     f.receipts.set(sent.requestId!,{id:'queue:'+sent.requestId,state:'delivered',targetTurnId:'final-turn'});
     await f.service.pump();
     const after=f.service.getRequest(f.aContext,sent.requestId!);
-    assert.equal(after.state,'submitted');assert.equal(after.turn_id,'final-turn');assert.equal(after.updated_at,now);
+    assert.equal(after.state,'injected');assert.equal(after.turn_id,'final-turn');assert.equal(after.updated_at,now);
     assert.equal(mainUpdates,0);
   } finally {DatabaseSync.prototype.prepare=prepare;}
   await f.restart();
-  assert.equal(f.service.getRequest(f.aContext,sent.requestId!).state,'submitted');
+  assert.equal(f.service.getRequest(f.aContext,sent.requestId!).state,'injected');
+});
+
+test('one HTTP Server keeps concurrent Human authors, receipts and revocation independent', async t => {
+  const f = await fixture(t);
+  const secondPrincipal = parsePrincipal({ provider: 'local', subject: 'person-2', displayName: 'second', expiresAt: Date.now() + 60_000 })!;
+  const second = f.actors.resolveHuman(secondPrincipal)!;
+  f.grant(second.actorId, f.b.id, 'message.send');
+  const access = new ActorAccess(f.actors, {
+    authenticateHuman: request => request.headers.cookie === 'human=one' ? f.principal : request.headers.cookie === 'human=two' ? secondPrincipal : null,
+    admitted: () => true, administrator: () => false,
+  });
+  const api = new CollaborationHttpApi(f.service, access);
+  const server = createServer((req, res) => { void api.handle(req, res).then(handled => { if (!handled) { res.writeHead(404); res.end(); } }); });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.closeAllConnections(); return new Promise<void>(resolve => server.close(() => resolve())); });
+  const origin = `http://127.0.0.1:${(server.address() as any).port}`;
+  const url = origin + '/__opencraft_actors/collaboration/';
+  const send = (cookie: string, content: string, idempotencyKey = 'same-key') => fetch(url + 'messages', {
+    method: 'POST', headers: { cookie, origin, 'content-type': 'application/json' },
+    body: JSON.stringify({ targetActorId: f.b.id, content, idempotencyKey }),
+  });
+  const replies = await Promise.all([send('human=one', 'from one'), send('human=two', 'from two')]);
+  assert.deepEqual(replies.map(r => r.status), [200, 200]);
+  const [one, two] = await Promise.all(replies.map(r => r.json()));
+  assert.notEqual(one.messageId, two.messageId, 'idempotency keys are scoped to each Actor');
+  const rows = f.service.database.prepare('SELECT author_id,content FROM actor_messages ORDER BY content').all();
+  assert.deepEqual(rows.map(row => [row.author_id, row.content]), [[f.human.actorId, 'from one'], [second.actorId, 'from two']]);
+  const firstHistory = await fetch(url + 'messages?peerActorId=' + encodeURIComponent(f.b.id), { headers: { cookie: 'human=one' } }).then(r => r.json());
+  assert.ok(JSON.stringify(firstHistory).includes('from one'));
+  assert.ok(!JSON.stringify(firstHistory).includes('from two'), 'same recipient does not make private messages shared');
+  assert.equal((await send('human=one', 'from one').then(r => r.json())).messageId, one.messageId);
+  f.actors.setEnabled(second.actorId, false, 'operator');
+  assert.equal((await send('human=two', 'revoked', 'later')).status, 401);
+  assert.equal((await send('human=one', 'still admitted', 'later')).status, 200);
+});
+
+test('model task authority uses current Human delegation, not historical usage or Session provenance',async t=>{
+ const f=await fixture(t);
+ const sent=f.service.send(f.human,{targetActorId:f.b.id,content:'Help me',idempotencyKey:'model-task',execution:{mode:'queue'}});
+ const input='actor-input:'+sent.requestId;
+ const authority=f.service.modelExecutionAuthority('thread-B',input);
+ assert.equal(authority.authorizer,f.human.actorId);assert.equal(authority.executor,f.b.id);
+ assert.throws(()=>f.service.modelExecutionAuthority('another-thread',input),/delegation_revoked/);
+ const autonomous=f.send({execution:{mode:'queue'}});
+ assert.throws(()=>f.service.modelExecutionAuthority('thread-B','actor-input:'+autonomous.requestId),/delegation_revoked/);
+ f.grant(f.human.actorId,f.b.id,'execution.queue',false);
+ assert.equal(f.service.usageSubmission('thread-B',input)?.actorId,f.human.actorId,'historical accounting is retained');
+ assert.throws(()=>f.service.modelExecutionAuthority('thread-B',input),/delegation_revoked/);
+});
+
+test('exact actor-input start before add reply advances injection after stale queued write and survives restart', async t => {
+  const f = await fixture(t), add = f.execution.add;
+  f.execution.add = async (binding, id, input) => {
+    f.service.executionStarted(binding.threadId, 'actor-input:' + id, 'exact-turn');
+    return add(binding, id, input);
+  };
+  const sent = f.send({execution:{mode:'queue'}});
+  await f.service.pump();
+  await f.restart(); // close drains the start write queued behind the pump.
+  const row = f.service.getRequest(f.aContext, sent.requestId!);
+  assert.equal(row.state, 'injected');
+  assert.equal(row.turn_id, 'exact-turn');
+  assert.equal(row.queue_id, 'queue:' + sent.requestId);
+  await f.service.pump();
+  assert.equal(f.inputs.length, 1);
+});
+
+test('start correlation rejects another input, thread, Host, and a different steer Turn', async t => {
+  const f = await fixture(t), sent = f.send({execution:{mode:'queue'}});
+  await f.service.pump();
+  f.service.executionStarted('thread-B', 'some-old-input', 'old-turn');
+  f.service.executionStarted('other-thread', 'actor-input:' + sent.requestId, 'old-turn');
+  f.service.executionStarted('thread-B', 'actor-input:' + sent.requestId, 'unknown');
+  await f.service.pump();
+  assert.equal(f.service.getRequest(f.aContext, sent.requestId!).state, 'queued');
+  const steer = f.send({idempotencyKey:'steer',execution:{mode:'steer',expectedTurnId:'expected'}});
+  f.service.executionStarted('thread-B', 'actor-input:' + steer.requestId, 'old-turn');
+  assert.equal(f.service.getRequest(f.aContext, steer.requestId!).state, 'accepted');
+  await f.service.close();
+  const db = new DatabaseSync(join(f.root,'collaboration.sqlite'));
+  db.prepare('UPDATE actor_execution_requests SET host_id=? WHERE id=?').run('other-host',sent.requestId);
+  db.close();
+  await f.restart();
+  f.service.executionStarted('thread-B', 'actor-input:' + sent.requestId, 'old-turn');
+  await f.service.close();
+  const read = new DatabaseSync(join(f.root,'collaboration.sqlite'),{readOnly:true});
+  assert.equal(read.prepare('SELECT state FROM actor_execution_requests WHERE id=?').get(sent.requestId)!.state,'queued');
+  read.close();
+});
+
+test('submitted without Turn proof recovers the original exact receipt after restart without resubmission', async t => {
+  const f = await fixture(t), sent = f.send({execution:{mode:'queue'}}), id = sent.requestId!;
+  await f.service.pump();
+  f.receipts.set(id,{id:'queue:'+id,state:'delivered',targetTurnId:null});
+  await f.service.pump();
+  assert.equal(f.service.getRequest(f.aContext,id).state,'submitted');
+  await f.restart();
+  for (const targetTurnId of [null,'unknown']) {
+    f.receipts.set(id,{id:'queue:'+id,state:'delivered',targetTurnId});
+    await f.service.pump();
+    assert.equal(f.service.getRequest(f.aContext,id).state,'submitted');
+  }
+  f.receipts.set(id,{id:'wrong-queue',state:'delivered',targetTurnId:'old-turn'});
+  await f.service.pump();
+  assert.equal(f.service.getRequest(f.aContext,id).state,'submitted');
+  f.receipts.set(id,{id:'queue:'+id,state:'unknown',targetTurnId:'old-turn'});
+  await f.service.pump();
+  assert.equal(f.service.getRequest(f.aContext,id).state,'submitted');
+  f.receipts.set(id,{id:'queue:'+id,state:'delivered',targetTurnId:'exact-turn'});
+  await f.service.pump();
+  assert.equal(f.service.getRequest(f.aContext,id).state,'injected');
+  assert.equal(f.service.getRequest(f.aContext,id).turn_id,'exact-turn');
+  assert.equal(f.inputs.length,1);
+});
+
+test('accepted steering receipt recovers injection only for its pinned Turn', async t => {
+  const f = await fixture(t), sent = f.send({execution:{mode:'steer',expectedTurnId:'expected'}}), id = sent.requestId!;
+  f.receipts.set(id,{id:'queue:'+id,state:'steering',targetTurnId:'old-turn'});
+  await f.service.pump();
+  assert.equal(f.service.getRequest(f.aContext,id).state,'submitted');
+  // The existing mismatched Turn cannot silently be rebound to unrelated execution.
+  f.receipts.set(id,{id:'queue:'+id,state:'steering',targetTurnId:'expected'});
+  await f.service.pump();
+  assert.equal(f.service.getRequest(f.aContext,id).state,'submitted');
+});
+
+test('Worker rejects late receipt downgrades and conflicting injected Turn identities without durable writes', async t => {
+  const f = await fixture(t), sent = f.send({execution:{mode:'queue'}}), id = sent.requestId!;
+  await f.service.pump();
+  f.service.executionStarted('thread-B','actor-input:'+id,'exact-turn');
+  await f.service.pump();
+  assert.equal(f.service.getRequest(f.aContext,id).state,'injected');
+  const worker = new OrchestrationRuntimeWorker(join(f.root,'collaboration.sqlite'));
+  await worker.start();
+  try {
+    const before = f.service.getRequest(f.aContext,id);
+    const reader = new DatabaseSync(join(f.root,'collaboration.sqlite'),{readOnly:true});
+    try {
+      const version = reader.prepare('PRAGMA data_version').get()!.data_version;
+      for (const state of ['accepted','transferring','queued','unknown','submitted','rejected','cancelled']) {
+        await worker.updateExecution({id,state,reason:'late',queueId:'queue:'+id,turnId:'exact-turn',now:999999});
+        assert.deepEqual(f.service.getRequest(f.aContext,id),before);
+      }
+      await worker.updateExecution({id,state:'injected',reason:null,queueId:'queue:'+id,turnId:'old-turn',now:999999});
+      assert.deepEqual(f.service.getRequest(f.aContext,id),before);
+      await worker.updateExecution({id,state:'injected',reason:null,queueId:'wrong-queue',turnId:'exact-turn',now:999999});
+      assert.deepEqual(f.service.getRequest(f.aContext,id),before);
+      assert.equal(reader.prepare('PRAGMA data_version').get()!.data_version,version);
+    } finally { reader.close(); }
+  } finally { await worker.close(); }
+});
+
+test('an exact start remains factual when a lost native reply races a negative reconciliation', async t => {
+  const f = await fixture(t);
+  f.execution.add = async (binding, id) => {
+    f.service.executionStarted(binding.threadId,'actor-input:'+id,'exact-turn');
+    throw Object.assign(new Error('lost reply after native start'),{code:-32600});
+  };
+  const sent = f.send({execution:{mode:'queue'}});
+  await f.service.pump();
+  await f.restart();
+  assert.equal(f.service.getRequest(f.aContext,sent.requestId!).state,'injected');
+  assert.equal(f.service.getRequest(f.aContext,sent.requestId!).turn_id,'exact-turn');
+});
+
+
+test('matching acknowledged steering receipt recovers the pinned Turn without a second steer', async t => {
+  const f = await fixture(t), sent = f.send({execution:{mode:'steer',expectedTurnId:'expected'}}), id = sent.requestId!;
+  let steers = 0;
+  f.execution.steer = async () => { steers++; };
+  f.receipts.set(id,{id:'queue:'+id,state:'steering',targetTurnId:'expected'});
+  await f.service.pump();
+  assert.equal(f.service.getRequest(f.aContext,id).state,'injected');
+  assert.equal(f.service.getRequest(f.aContext,id).turn_id,'expected');
+  assert.equal(steers,0);
+  assert.equal(f.inputs.length,0);
+});
+
+test('receipt rejection is an observation failure: one query, no mutation and no pump bypass', async t => {
+  let clock = Date.now(); const f = await fixture(t, () => clock);
+  let queries = 0, broken = true;
+  const read = f.execution.receipt;
+  f.execution.receipt = async (...args) => { queries++; if (broken) throw Object.assign(Error('private engine detail'), {code:-32602}); return read(...args); };
+  const sent = f.send({execution:{mode:'queue'}}), id = sent.requestId!;
+  await f.service.pump();
+  assert.equal(queries,1); assert.deepEqual(f.calls,[]);
+  const row = f.service.getRequest(f.aContext,id);
+  assert.equal(row.state,'accepted');
+  assert.equal((row.reconciliation as any).state,'waiting');
+  assert.equal((row.reconciliation as any).reason,'protocol');
+  assert.equal(JSON.stringify(row.reconciliation).includes('private engine detail'),false);
+  for (let i=0;i<5;i++) await f.service.pump();
+  assert.equal(queries,1,'another input/manual pump cannot hammer the broken receipt endpoint');
+  clock+=30_000;broken=false;await f.service.pump();
+  assert.equal(queries,2);assert.deepEqual(f.calls,['add']);
+  assert.equal(f.service.getRequest(f.aContext,id).state,'queued');
+  assert.deepEqual(f.service.getRequest(f.aContext,id).reconciliation,{state:'ready'});
+});
+
+test('unknown delivery enters bounded recovery, leaves other work live and settles only on original evidence', async t => {
+  let clock=Date.now();const f=await fixture(t,()=>clock);f.setFailAdd();
+  const id=f.send({execution:{mode:'queue'}}).requestId!;await f.service.pump();
+  const before=f.service.getRequest(f.aContext,id);assert.equal(before.state,'unknown');
+  let queries=0,broken=true;const read=f.execution.receipt;
+  f.execution.receipt=async (binding,requestId,options)=>{
+    if(requestId===id){queries++;if(broken)throw Object.assign(Error('unsupported receipt'),{code:-32602});}
+    return read(binding,requestId,options);
+  };
+  await f.service.pump();clock+=30_000;await f.service.pump();clock+=60_000;await f.service.pump();
+  const after=f.service.getRequest(f.aContext,id);
+  for(const key of ['state','reason','queue_id','turn_id','updated_at'])assert.equal(after[key],before[key]);
+  assert.equal(queries,3);assert.equal((after.reconciliation as any).state,'recovery_required');
+  assert.equal((after.reconciliation as any).nextAttemptAt,clock+300_000);
+  // Different receiver/thread, not a global circuit breaker or another runnable queue.
+  f.setFailAdd(false);const receiver=f.actors.createSession('independent',f.human.actorId);
+  f.grant(f.a.id,receiver.id,'message.send');f.grant(f.a.id,receiver.id,'execution.queue');
+  await f.service.bind(receiver.id,'thread-independent',0,()=>{});
+  const other=f.service.send(f.aContext,{targetActorId:receiver.id,content:'independent input',idempotencyKey:'independent',execution:{mode:'queue'}});
+  await f.service.pump();assert.equal(f.service.getRequest(f.aContext,other.requestId!).state,'queued');
+  assert.equal(queries,3);assert.equal(f.inputs.length,2);
+  broken=false;f.receipts.set(id,{id:'queue:'+id,state:'delivered',targetTurnId:'original-turn'});
+  clock+=300_000;await f.service.pump();
+  assert.equal(f.service.getRequest(f.aContext,id).state,'injected');
+  assert.equal(f.service.getRequest(f.aContext,id).turn_id,'original-turn');
+  assert.deepEqual(f.service.getRequest(f.aContext,id).reconciliation,{state:'ready'});
+  assert.equal(f.inputs.length,2,'recovery never creates a replacement for the old input');
+});
+
+test('restart drops only health hints; durable unknown request and no-replay custody survive', async t => {
+  let clock=Date.now();const f=await fixture(t,()=>clock);f.setFailAdd();
+  const id=f.send({execution:{mode:'queue'}}).requestId!;await f.service.pump();
+  const before=f.service.getRequest(f.aContext,id);const read=f.execution.receipt;let broken=true,queries=0;
+  f.execution.receipt=async (...args)=>{queries++;if(broken)throw Object.assign(Error('offline'),{code:-32602});return read(...args);};
+  await f.service.pump();await f.restart();
+  assert.deepEqual(f.service.getRequest(f.aContext,id).reconciliation,{state:'ready'});
+  await f.service.pump();assert.equal(queries,2);
+  for(const key of ['state','reason','queue_id','turn_id','updated_at'])assert.equal(f.service.getRequest(f.aContext,id)[key],before[key]);
+  assert.equal(f.inputs.length,1);
+  clock+=30_000;broken=false;f.receipts.delete(id);await f.service.pump();
+  assert.equal(f.service.getRequest(f.aContext,id).state,'unknown');assert.equal(f.inputs.length,1,'absence is not permission to replay');
+});
+
+test('a rejected mutation without a receipt cannot prove non-execution', async t=>{
+  const f=await fixture(t);f.execution.add=async()=>{f.calls.push('add');throw Object.assign(Error('invalid native response'),{code:-32602});};
+  const id=f.send({execution:{mode:'queue'}}).requestId!;await f.service.pump();
+  assert.equal(f.service.getRequest(f.aContext,id).state,'unknown');assert.deepEqual(f.calls,['add']);
+  await f.service.pump();assert.deepEqual(f.calls,['add']);
+});
+
+test('a claim racing rejected steer cannot be relabelled unexecuted when cancel loses', async t=>{
+  const f=await fixture(t);f.setFailSteer();
+  f.execution.cancel=async(_binding,id)=>{f.calls.push('cancel');f.receipts.set(id,{id:'queue:'+id,state:'delivered',targetTurnId:'R'});return false;};
+  const id=f.send({execution:{mode:'steer',expectedTurnId:'R'}}).requestId!;await f.service.pump();
+  assert.equal(f.service.getRequest(f.aContext,id).state,'unknown');
+  await f.service.pump();assert.equal(f.service.getRequest(f.aContext,id).state,'injected');
+  assert.equal(f.service.getRequest(f.aContext,id).turn_id,'R');assert.deepEqual(f.calls,['add','steer','cancel']);
+});
+
+test('revocation plus a missing receipt cannot turn an uncertain input into a confirmed rejection',async t=>{
+  const f=await fixture(t);f.setFailAdd();const id=f.send({execution:{mode:'queue'}}).requestId!;await f.service.pump();
+  f.receipts.delete(id);f.grant(f.a.id,f.b.id,'execution.queue',false);await f.service.pump();
+  assert.equal(f.service.getRequest(f.aContext,id).state,'unknown');assert.deepEqual(f.calls,['add']);
+});
+
+test('a failed observation after a lost cancellation is not queried again in the rejection handler',async t=>{
+  const f=await fixture(t);const id=f.send({execution:{mode:'queue'}}).requestId!;await f.service.pump();
+  f.grant(f.a.id,f.b.id,'execution.queue',false);
+  let queries=0;const read=f.execution.receipt;
+  f.execution.receipt=async (...args)=>{queries++;if(queries>1)throw Object.assign(Error('receipt protocol mismatch'),{code:-32602});return read(...args);};
+  f.execution.cancel=async()=>{f.calls.push('cancel');return false;};
+  await f.service.pump();
+  assert.equal(queries,2,'only initial observation and post-cancel observation; no duplicate reconcile query');
+  assert.equal(f.service.getRequest(f.aContext,id).state,'unknown');
+  assert.equal((f.service.getRequest(f.aContext,id).reconciliation as any).state,'waiting');
+  await f.service.pump();assert.equal(queries,2);assert.deepEqual(f.calls,['add','cancel']);
+});
+
+test('submitted custody is retained when a later exact-injection receipt lookup fails',async t=>{
+  const f=await fixture(t);const id=f.send({execution:{mode:'queue'}}).requestId!;await f.service.pump();
+  f.receipts.set(id,{id:'queue:'+id,state:'delivered',targetTurnId:null});await f.service.pump();
+  const before=f.service.getRequest(f.aContext,id);assert.equal(before.state,'submitted');
+  f.execution.receipt=async()=>{throw Object.assign(Error('receipt endpoint invalid'),{code:-32602});};
+  await f.service.pump();const after=f.service.getRequest(f.aContext,id);
+  for(const key of ['state','reason','queue_id','turn_id','updated_at'])assert.equal(after[key],before[key]);
+  assert.equal((after.reconciliation as any).state,'waiting');assert.equal(f.inputs.length,1);
 });

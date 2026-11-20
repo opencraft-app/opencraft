@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter";
+import { ExecutionEnvironmentSnapshot } from "../../scripts/execution-environment";
 function fixture(source: Record<string, unknown>) {
   const writes: any[] = [], reads: any[] = [];
   const adapter: any = Object.create(CodexEngineAdapter.prototype);
@@ -28,4 +29,14 @@ test("path forks do not inherit from an ignored threadId", async () => {
 test("failed source snapshot cannot create a fork with silently reset choices", async () => {
   const f = fixture({}); f.adapter.requestPhysical = async () => { throw Error("unavailable"); };
   await assert.rejects(f.adapter.writePhysical({ id: "fork", method: "thread/fork", params: { threadId: "parent" } }), /unavailable/); assert.equal(f.writes.length, 0);
+});
+test("fork replaces the source environment with its own creator snapshot, including an empty snapshot", async () => {
+  for (const values of [{ SERVICE_KEY: 'synthetic-copy-owner' }, {}]) {
+    const f = fixture({ model: 'parent', config: { 'shell_environment_policy.set': { SERVICE_KEY: 'synthetic-parent' } } });
+    f.adapter.environmentCreations.set('fork', new ExecutionEnvironmentSnapshot({ account: 'employee:bob', hostId: 'local-codex', threadId: null, projectId: null }, values));
+    await f.adapter.writePhysical({ id: 'fork', method: 'thread/fork', params: { threadId: 'parent', config: { 'shell_environment_policy.set': { SERVICE_KEY: 'synthetic-forged' } } } });
+    assert.deepEqual(f.writes[0].params.config['shell_environment_policy.set'], values);
+    assert.equal(JSON.stringify(f.writes).includes('synthetic-parent'), false);
+    assert.equal(JSON.stringify(f.writes).includes('synthetic-forged'), false);
+  }
 });

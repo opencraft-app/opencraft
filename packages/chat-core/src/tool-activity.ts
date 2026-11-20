@@ -953,6 +953,7 @@ export function isToolActivityPresentationSuppressed(
   block: ToolCallTimelineBlock,
   registry: ToolActivityPresenterRegistry = defaultToolActivityPresenters,
 ): boolean {
+  if (block.displayPreview) return false;
   if (block.activityPresentation?.hidden === true) return true;
   const state = isToolCallFailed(block) ? "failed" : stateFor(block.status);
   const claim = registry.claim(block, state);
@@ -976,6 +977,7 @@ export function presentToolActivity(
   block: ActivityBlock,
   registry: ToolActivityPresenterRegistry = defaultToolActivityPresenters,
 ): ToolActivityPresentation {
+  if ("displayPreview" in block && block.displayPreview) return block.displayPreview.presentation;
   const state = isToolCallFailed(block) ? "failed" : stateFor(block.status);
   if (block.type === "command-execution") {
     const semantic = commandActionPresentation(block, state);

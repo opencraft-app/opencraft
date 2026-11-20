@@ -1,9 +1,9 @@
 import { createDeferredView, type ExtensionSettingsViewProps } from "@opencraft/extension-react";
 import type { TrustedExtensionDefinition } from "@opencraft/extension-runtime";
-import { tokenUsageBuiltin } from "./token-usage-builtin";
+import { tokenUsageManifest } from "./token-usage-manifest";
 
 export const tokenUsageExtension: TrustedExtensionDefinition = {
-  manifest: tokenUsageBuiltin.manifest,
+  manifest: tokenUsageManifest,
   activate(api) {
     api.views.register({ id: "opencraft.token-usage.view", title: "Token usage", viewType: "opencraft.token-usage", platforms: ["web", "electron"] });
     api.settings.registerPage({

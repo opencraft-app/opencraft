@@ -176,9 +176,12 @@ owners.
 
 The manager continues to own backing hosts, storage and mount claims. Its
 presentation transition module now independently implements owner/surface leases:
-a pending incoming view retains the painted outgoing view, blocks both during
-handoff, accepts a current attachment ack or bounded deadline, then prewarms for
-two frames and releases on the next frame. Registration only updates stacking.
+selecting a different logical Tab synchronously revokes the outgoing display and
+input lease, then presents only the selected Tab. Retained backing pages are not
+closed or reloaded. A pending replacement host for the same Tab may retain that
+Tab's painted outgoing view, block both during handoff, accept a current attachment
+ack or bounded deadline, then prewarm for two frames and release on the next frame.
+Registration only updates stacking; it cannot resurrect a deselected Tab.
 Removal, route transfer, hidden sync and rapid replacement revoke scheduled work;
 old callbacks cannot reclaim a newer reference or generation. Surface moves retire
 the previous presentation claim. Automation input/focus locks remain on the Host.
@@ -281,3 +284,25 @@ consume the shared browser-core limits. The 8 MiB wire budget accommodates all f
 fields at maximum size with worst-case JSON escaping. Rejecting an oversized local
 snapshot does not poison the authenticated metadata connection or erase its last
 acknowledged value; unrelated valid metadata can still be committed.
+
+### Actionable panel readiness and guest media readiness
+
+BrowserPanel owns a mounted loading/error/reload surface independently of the
+presentation handle's drawable-frame promise. Shell scene readiness acknowledges
+that usable panel; media connection, decoding or first-frame delays never own
+navigation selection or the overview spring. The existing scene lease still fences
+layout, cancellation and late selection commits.
+
+Before first paint a remote guest continues receiving layout/visibility and media,
+but its empty external canvas neither covers nor intercepts the panel's status.
+The media owner marks first paint; existing painted frames survive ordinary resize
+and reconnect. A view-local 15-second first-frame wait offers reload (not fabricated
+media readiness). A late first frame may recover that same view. Replacing the
+presentation or leaving it retires its timer and callbacks; reload does not create
+a second logical tab or destroy the browser backing.
+
+Verification: `scripts/smoke/browser/smoke-browser-panel-readiness.ts` composes the
+real Shell, overview and BrowserPanel with controlled backing promises. It covers
+touch preview-body selection, mouse input, pending/error/retry, late receipts,
+light/dark layout and synchronous attachment failure. Physical iPhone and the live
+remote media chain remain separate acceptance boundaries.

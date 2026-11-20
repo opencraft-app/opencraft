@@ -19,6 +19,7 @@ export interface ExtensionModuleLoader {
 export type ManagedExtensionStatus = "disabled" | "loading" | "active" | "failed" | "incompatible";
 
 export interface ManagedExtensionDescriptor {
+  readonly origin?: 'bundled' | 'user';
   readonly installation: ExtensionInstallationRecord;
   readonly status: ManagedExtensionStatus;
   readonly error?: string;
@@ -42,6 +43,8 @@ export interface ExtensionManagerOptions {
 
 /** Optional bundled functionality: discovered without loading its implementation. */
 export interface ManagedBuiltinExtension {
+  /** A host loader can provide user code; loading strategy is not distribution. */
+  readonly origin?: 'user';
   readonly manifest: ExtensionManifestV1;
   readonly defaultEnabled: boolean;
   load(): Promise<TrustedExtensionDefinition>;
@@ -423,6 +426,8 @@ export class ExtensionManager {
       extensions: Object.freeze(installationSnapshot.records
         .filter(installation => installation.source.kind !== "builtin" || this.builtins.has(installation.extensionId))
         .map((installation) => Object.freeze({
+        origin: installation.source.kind === 'module-url' || this.builtins.get(installation.extensionId)?.origin === 'user'
+          ? 'user' as const : 'bundled' as const,
         installation: installation.source.kind === "builtin" && this.builtins.has(installation.extensionId)
           ? Object.freeze({ ...installation, lastResolvedManifest: this.builtins.get(installation.extensionId)!.manifest })
           : installation,

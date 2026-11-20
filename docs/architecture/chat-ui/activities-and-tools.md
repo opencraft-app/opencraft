@@ -262,8 +262,8 @@ Web retains explicit detail and full-member-list choices in the existing
 Conversation View disclosure snapshot. The core render-unit identity owns a
 collaboration group, including when one operation grows into several; a standalone
 block uses its own identity. Member order, count and status do not replace that
-owner. Detail choices retain the running/settled defaults separately, while
-showing all members is independent of execution phase. A fresh View starts with
+owner. Detail choices use the same compact default while showing all members is
+independent of execution phase. A fresh View starts with
 the original defaults. Only display booleans enter this snapshot; agent content,
 status, navigation and execution remain under their existing owners.
 
@@ -452,21 +452,27 @@ choices contain no output, execution state, permission or automatic action.
 
 ### Subagent lifecycle notices
 
-A single native lifecycle notice without a collaboration tool uses the shared
-core inline status label and agent identity. Accepting a `started` notification
-does not mean that the child finished: started, interacted and interrupted remain
-visible as such. The whole inline button opens the child through the existing
-navigation context and is disabled without that capability. Collaboration tool
-groups and completed-notice projection keep their existing presentation.
+Native lifecycle notices and collaboration calls share one avatar/name/activity
+sentence. `started`, `interacted`, `interrupted` and `completed` remain distinct;
+a completed tool or delivered message cannot imply child completion. Unknown
+child state remains unconfirmed. A creation without a returned Thread uses its
+provided task title and call identity, with no navigable placeholder Thread.
+The receipt enriches the same avatar instead of replaying its entrance.
+Names open child conversations through the existing navigation capability. A
+separate labelled disclosure action exposes instructions and call details;
+running and settled activity both start compact. Keyboard focus and touch make
+the disclosure discoverable without requiring hover. Reduced motion disables
+avatar entrance and detail transitions.
 
 ### Subagent summary density
 
-The summary initially exposes at most three agent chips and a remaining-agent
-count action. Expanding that count exposes all navigation chips independently of
-the detail disclosure. This keeps narrow summaries readable while the shared core
-continues to own every agent identity and status. The header and chip rail wrap
-naturally when a long operation label or an explicit full list needs more room;
-the remaining-agent action stays on one line.
+The sentence shows all names for up to three members. Larger groups show the
+first two names and a remaining-member action, with at most four small avatars.
+The count action opens the full member list in the detail region; it never grows
+the summary into a navigation-chip rail. Detail and full-list choices retain the
+existing Conversation View identity across streaming updates and restoration.
+Pending and returned members keep source order. Task instructions survive later
+status-only operations for the same child; newer instructions replace older ones.
 
 
 Thread handoff rows with reported steps use that same running/settled choice.

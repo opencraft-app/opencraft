@@ -14,7 +14,7 @@ const ConversationSearchContent = createDeferredView(async () =>
 
 export interface ConversationSearchTarget { readonly turnId: string | null; readonly itemId: string | null; readonly requestId: string }
 
-export function ConversationSearch({ enabled, open, onOpenChange, threads, loading, incomplete = false, sources = NO_SOURCES, onSelectThread }: {
+export function ConversationSearch({ enabled, open, onOpenChange, threads, loading, incomplete = false, sources = NO_SOURCES, onSelectView, onSelectThread }: {
   enabled: boolean;
   open: boolean;
   onOpenChange(open: boolean): void;
@@ -22,6 +22,7 @@ export function ConversationSearch({ enabled, open, onOpenChange, threads, loadi
   loading: boolean;
   incomplete?: boolean;
   sources?: readonly ConversationSearchSource[];
+  onSelectView?(viewId:string,resourceUri:string):void;
   onSelectThread(hostId: string, threadId: string, target?: ConversationSearchTarget): void;
 }) {
   useEffect(() => {
@@ -44,6 +45,6 @@ export function ConversationSearch({ enabled, open, onOpenChange, threads, loadi
     label={intl.formatMessage({ id: "sidebar.search", defaultMessage: "Search conversations" })}
     appearance="utility" size="wide" className="conversation-search" onDismiss={close}>
     <ConversationSearchContent threads={threads} loading={loading} incomplete={incomplete} sources={sources}
-      onClose={close} onSelectThread={onSelectThread} />
+      onClose={close} onSelectView={onSelectView} onSelectThread={onSelectThread} />
   </ModalSurface> : null;
 }

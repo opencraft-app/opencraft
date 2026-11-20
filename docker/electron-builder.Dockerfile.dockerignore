@@ -1,0 +1,11 @@
+**
+!LICENSE
+!scripts/
+!scripts/remote-browser/
+!scripts/remote-browser/focus.cjs
+!vendor/
+!vendor/electron/
+!vendor/electron/**
+vendor/electron/.work
+vendor/electron/**/__pycache__
+vendor/electron/**/*.pyc

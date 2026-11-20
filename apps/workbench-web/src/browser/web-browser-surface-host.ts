@@ -5,11 +5,7 @@ import {
   type BrowserViewportLayout,
   type BrowserUrl,
 } from "@opencraft/browser-core";
-import {
-  PreviewBridgeAdapter,
-  installPreviewBridgeRuntime,
-  type PreviewBridgeChildMessage,
-} from "@opencraft/browser-preview-bridge";
+import type { PreviewBridgeChildMessage } from "@opencraft/browser-preview-bridge";
 import type { PresentationHostPort } from "./opencraft-presentation-host";
 import type { BrowserLocalMenuController } from './browser-local-menu';
 
@@ -43,7 +39,12 @@ export interface BrowserSurfaceHost {
   setNewTabLabels?(labels: BrowserNewTabLabels): void;
   trackPointerNearBottom?(pageId: BrowserPageId, height: number, listener: (near: boolean) => void): () => void;
   setZoom?(pageId: BrowserPageId, percent: number): void;
+  readPresentation?(pageId: BrowserPageId): Promise<import('@opencraft/browser-core/presentation').BrowserTabPresentation | null>;
+  onPresentationChanged?(pageId: BrowserPageId, listener: () => void): () => void;
+  capturePreview?(pageId: BrowserPageId): Promise<string | null> | string | null;
   capture?(pageId: BrowserPageId): Promise<string>;
+  /** Page-side element picker and overlay. Absent = annotation unsupported on this host. */
+  annotate?(pageId: BrowserPageId): import("@opencraft/browser-core").BrowserAnnotator | null;
   setUseFactory?(factory: ((pageId: BrowserPageId) => () => void) | null): void;
   waitUntilReady?(pageId: BrowserPageId): Promise<void>;
   siteSettings?(pageId: BrowserPageId, action: "permissions" | "clear-data"): Promise<void>;
@@ -66,6 +67,7 @@ export interface BrowserSurfaceHost {
   commit(pageId: BrowserPageId, layout: BrowserViewportLayout, phase: "staged" | "visible"): void;
   block(pageId: BrowserPageId): void;
   park(pageId: BrowserPageId): void;
+  detach?(pageId: BrowserPageId): void;
   close(pageId: BrowserPageId): void;
   /** Drop a projection of a resource already retired by its authoritative owner. */
   retire?(pageId: BrowserPageId): void;
@@ -323,7 +325,9 @@ export class WebIframeSurfaceHost implements BrowserSurfaceHost {
     };
     iframe.addEventListener("load", () => {
       if (this.surfaces.get(pageId) !== record) return;
-      this.connectAutomation(record);
+      void this.connectAutomation(record).catch(() => {
+        if (this.surfaces.get(pageId) === record) record.events.onError("Could not connect to this preview. Reload the page to retry.");
+      });
       let documentTitle: string | null = null;
       try {
         documentTitle = iframe.contentDocument?.title.trim() || null;
@@ -350,7 +354,7 @@ export class WebIframeSurfaceHost implements BrowserSurfaceHost {
     return record;
   }
 
-  private connectAutomation(record: SurfaceRecord): void {
+  private async connectAutomation(record: SurfaceRecord): Promise<void> {
     record.automation?.dispose();
     record.disposeInjectedRuntime?.();
     record.automation = null;
@@ -370,6 +374,9 @@ export class WebIframeSurfaceHost implements BrowserSurfaceHost {
         // The initial about:blank load can race the requested navigation. It
         // has no serializable postMessage origin and owns no automation bridge.
         if (targetOrigin === "null") return;
+        const document = frameWindow.document;
+        const { installPreviewBridgeRuntime } = await import("@opencraft/browser-preview-bridge/runtime");
+        if (this.surfaces.get(record.pageId) !== record || record.automationGeneration !== generation || frameWindow.document !== document) return;
         record.disposeInjectedRuntime = installPreviewBridgeRuntime({
           window: frameWindow,
           parentOrigin: window.location.origin,
@@ -380,6 +387,8 @@ export class WebIframeSurfaceHost implements BrowserSurfaceHost {
         if (targetOrigin === "null") return;
       }
     }
+    const { PreviewBridgeAdapter } = await import("@opencraft/browser-preview-bridge/adapter");
+    if (this.surfaces.get(record.pageId) !== record || record.automationGeneration !== generation) return;
     record.automation = new PreviewBridgeAdapter({
       hostWindow: window,
       frameWindow,

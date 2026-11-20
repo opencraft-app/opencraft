@@ -1,3 +1,8 @@
+import { lazy } from "react";
+
+// ModalHost suspends the complete surface until content and its styles are ready.
+const AnnouncementExperience = lazy(() => import("./announcement-experience").then(module => ({ default: module.AnnouncementExperience })));
+import { useIntl } from "@opencraft/i18n/react";
 import type { AnnouncementContribution } from "@opencraft/extension-contract";
 import { Button } from "../ui/button";
 
@@ -14,6 +19,7 @@ export function AnnouncementDialogContent({
   announcement,
   onAction,
 }: AnnouncementDialogContentProps) {
+  const intl = useIntl();
   const actions = (
     <div
       className="announcement-dialog__actions"
@@ -25,7 +31,7 @@ export function AnnouncementDialogContent({
           variant="ghost"
           onClick={() => onAction(announcement.secondaryAction!.id)}
         >
-          {announcement.secondaryAction.label}
+          {announcement.secondaryAction.labelMessage ? intl.formatMessage(announcement.secondaryAction.labelMessage) : announcement.secondaryAction.label}
         </Button>
       )}
       {announcement.primaryAction === undefined ? null : (
@@ -34,24 +40,26 @@ export function AnnouncementDialogContent({
           variant="primary"
           onClick={() => onAction(announcement.primaryAction!.id)}
         >
-          {announcement.primaryAction.label}
+          {announcement.primaryAction.labelMessage ? intl.formatMessage(announcement.primaryAction.labelMessage) : announcement.primaryAction.label}
         </Button>
       )}
     </div>
   );
 
+  if (announcement.preview) return <AnnouncementExperience announcement={announcement} onAction={onAction}/>;
   return (
-    <article className="announcement-dialog">
+    <article className="announcement-dialog" data-compact={!!announcement.anchorNavigationId}>
       <header className="announcement-dialog__header">
-        <h2>{announcement.title}</h2>
-        {announcement.body === undefined ? null : <p>{announcement.body}</p>}
-        {actions}
+        <h2>{announcement.titleMessage ? intl.formatMessage(announcement.titleMessage) : announcement.title}</h2>
+        {announcement.body === undefined ? null : <p>{announcement.bodyMessage ? intl.formatMessage(announcement.bodyMessage) : announcement.body}</p>}
+        {announcement.anchorNavigationId ? null : actions}
       </header>
       {announcement.media === undefined ? null : (
         <div className="announcement-dialog__media">
           <img alt={announcement.media.alt} src={announcement.media.url} />
         </div>
       )}
+      {announcement.anchorNavigationId ? actions : null}
     </article>
   );
 }

@@ -1,4 +1,4 @@
-@use "./typography.web" as typography;
+@use "./typography-mixins.web" as typography;
 @use "./controls.web" as controls;
 
 // Compact secondary actions belong to the design system, not desktop CSS.
@@ -31,6 +31,7 @@
   contain: layout paint style;
   > svg { display: block; flex: 0 0 auto; }
   @media (prefers-reduced-motion: no-preference) {
+    &[data-determinate] > svg > circle:last-child { transition: stroke-dasharray var(--transition-duration-basic) linear; }
     &:not([data-determinate]) { animation: ui-progress-rotate var(--duration-progress-cycle) var(--timing-progress-cycle) infinite; }
   }
 }

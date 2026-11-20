@@ -65,13 +65,18 @@ try {
       await firstImage.locator("img").evaluate(async image => { await (image as HTMLImageElement).decode(); });
       if (touch) await firstImage.tap(); else { await firstImage.focus(); await page.keyboard.press("Enter"); }
       await page.getByRole("dialog", { name: "Attached image 1 of 2" }).waitFor();
-      await page.waitForFunction(() => (window as any).metadataLoads === 3);
+      await page.waitForFunction(() => (window as any).metadataLoads >= 3);
       await page.evaluate(() => (window as any).completeMetadataMedia());
       await page.getByRole("dialog").locator("img").evaluate(async image => { await (image as HTMLImageElement).decode(); });
+      // The retained gallery also previews its two navigation neighbors. Settle
+      // these independent consumers before measuring the hydration boundary.
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => { (window as any).completeMetadataMedia(); resolve(); }))));
+      const beforeHydration = await page.evaluate(() => [...(window as any).metadataRequests]);
+      assert.equal(new Set(beforeHydration.map((request: any) => JSON.stringify(request))).size, beforeHydration.length, "one read per stable consumer, no duplicate request");
       await page.evaluate(() => (window as any).hydrateImageContent());
       await page.getByRole("dialog", { name: "Attached image 2 of 2" }).waitFor();
       assert.equal(await thumbnail.nth(1).evaluate(element => element === (window as any).metadataThumbnail), true);
-      assert.equal(await page.evaluate(() => (window as any).metadataLoads), 3);
+      assert.deepEqual(await page.evaluate(() => (window as any).metadataRequests), beforeHydration, "reorder cannot restart thumbnail, viewer or neighbor reads");
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => document.querySelector("#host")!.shadowRoot!.activeElement === (window as any).metadataThumbnail);
 

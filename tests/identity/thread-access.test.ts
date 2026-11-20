@@ -26,7 +26,7 @@ async function fixture(t: any) {
     }, result(id: number,result: unknown) { const frame = session.project(JSON.stringify({id,result})); return frame === null ? null : JSON.parse(frame); }};
   };
   t.after(async () => { for(const s of sessions)s.close();store.close();actors.close();await rm(dir,{recursive:true,force:true}); });
-  return {actors,alice,bob,lane,get store(){return store;},restart(){store.close();store=new ThreadAccessStore(join(dir,'policy.sqlite'),actors);}};
+  return {dir,actors,alice,bob,lane,get store(){return store;},restart(){store.close();store=new ThreadAccessStore(join(dir,'policy.sqlite'),actors);}};
 }
 
 test('only immutable creator can change policy; unknown historical and anonymous conversations cannot be claimed',async t => {
@@ -106,7 +106,7 @@ test('task links and participant batches cannot expose private metadata; another
 test('cross-conversation tools obey private policy even with an existing explicit grant',async t=>{
   const f=await fixture(t);f.store.created('server','secret',f.alice);f.store.set('server','secret','private',1,f.alice);
   const execution:any={hostId:'h',serverId:'server'};
-  const service=new Collaboration(join(tmpdir(),`thread-access-collab-${crypto.randomUUID()}.sqlite`),f.actors,execution,Date.now,()=>true,undefined,(context,ref)=>f.store.allows(ref.serverId,ref.threadId,context));
+  const service=new Collaboration(join(f.dir,"collaboration.sqlite"),f.actors,execution,Date.now,()=>true,undefined,(context,ref)=>f.store.allows(ref.serverId,ref.threadId,context));
   t.after(()=>service.close());
   assert.equal(service.conversationAllowed(f.alice,{serverId:'server',threadId:'secret'},'conversation.read'),true);
   assert.equal(service.conversationAllowed(f.bob,{serverId:'server',threadId:'secret'},'conversation.read'),false);
@@ -141,6 +141,22 @@ test('catalog categories use trusted policy for paged lists and upserts, never p
   assert.equal(bob.session.project(upsert),null);
   f.store.set('server','mine','shared',2,f.alice);
   assert.equal(JSON.parse(alice.session.project(upsert)!).params.change.thread.accessMode,'shared');
+});
+
+test('directory creation relation is per authenticated reader and overrides provider claims', async t => {
+  const f=await fixture(t), alice=f.lane(f.alice), bob=f.lane(f.bob), anonymous=f.lane(undefined);
+  f.store.created('server','new',f.alice);
+  const row={id:'new',cwd:'/synthetic',updatedAt:2,createdAt:1,createdByViewer:true};
+  for(const [lane,expected] of [[alice,true],[bob,false],[anonymous,undefined]] as const) {
+    await lane.request('thread/list');
+    assert.equal(lane.result(1,{data:[row],nextCursor:null}).result.data[0].createdByViewer,expected);
+    const notification=lane.session.project(JSON.stringify({method:'opencraft/thread-catalog/changed',params:{change:{type:'upsert',thread:row}}}));
+    assert.equal(JSON.parse(notification!).params.change.thread.createdByViewer,expected);
+  }
+  await alice.request('thread/list');
+  assert.equal(alice.result(1,{data:[{...row,id:'unknown'}],nextCursor:null}).result.data[0].createdByViewer,undefined,'absence is unknown, never a provider assertion');
+  f.store.set('server','new','private',1,f.alice);
+  assert.equal(bob.session.project(JSON.stringify({method:'opencraft/thread-catalog/changed',params:{change:{type:'upsert',thread:row}}})),null,'relationship never grants access');
 });
 
 test('handoff rejects another human private source before native creation and inherits owner visibility',async t=>{

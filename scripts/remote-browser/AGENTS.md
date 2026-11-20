@@ -35,7 +35,9 @@ link, never creates a fake viewer or changes a live tab's visibility.
 both acquire the same per-page slot. Unknown creation outcomes are reconciled
 by snapshot or positive absence before recreation. Recovery preserves native
 partition identity and saved URL/zoom/viewport without changing metadata CAS.
-Service agents cannot preempt a human; a human takeover cancels old writes.
+Agent operations automatically preempt human control; human input is retired at
+the native control barrier before the Agent grant. Human takeover also cancels
+old writes. Concurrent Agents cannot preempt each other.
 The private Owner maps gateway request IDs to Worker IDs for cancellation and
 advertises that capability. Older retained owners fail service invocation
 explicitly; do not destroy their live tabs or invent a cancellation guarantee.
@@ -51,7 +53,8 @@ its memory/directory projection and notify clients before reporting the unknown
 outcome with its tab ID. Do not activate or replay native creation from that catch.
 
 `tab-close.mjs` admits conversation close through the same control queue. An
-Agent cannot close a human-controlled tab or cross a preceding human takeover.
+Agent may take over a human-controlled tab, but cannot cross a newer human takeover
+between its grant and the durable close intent.
 `tab-retirement.mjs` owns retirement for service close, viewer close, discard and
 legacy storage removal. Intent commits remove all logical references, record
 retirement facts and prevent recreation before native cleanup. Accepted cleanup

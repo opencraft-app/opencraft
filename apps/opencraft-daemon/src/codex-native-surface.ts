@@ -23,7 +23,7 @@ export const CODEX_NATIVE_SHARED_METHODS = Object.freeze([
   "config/batchWrite", "skills/list",
   "thread/list", "thread/read", "thread/turns/list", "thread/items/list", "thread/loaded/list",
   "thread/search", "thread/searchOccurrences",
-  "thread/start", "thread/resume", "thread/fork", "thread/unsubscribe",
+  "thread/start", "thread/resume", "thread/fork", "thread/unsubscribe", "thread/settings/update",
   "thread/name/set", "thread/archive", "thread/unarchive", "thread/compact/start",
   "opencraft/thread-pins/list", "opencraft/thread-pins/set",
   "turn/start", "turn/steer", "turn/interrupt",
@@ -52,7 +52,7 @@ export function projectSharedNativeCodexInitialize(value: unknown, goalCapabilit
   // Only these lifecycle operations are routed by this shared-native surface.
   extensions[OPENCRAFT_THREAD_LIFECYCLE_EXTENSION] = {
     version: 1, fork: true, rename: true, archive: true, unsubscribe: true,
-    ephemeral: false, injectItems: false, delete: false,
+    ephemeral: false, injectItems: false, sideChatSettings: true, delete: false,
   };
   const goalMethods = goalCapability ? goalCapability.write ? CODEX_NATIVE_GOAL_METHODS : ["thread/goal/get"] : [];
   if (goalCapability) extensions[OPENCRAFT_THREAD_GOAL_EXTENSION] = goalCapability;

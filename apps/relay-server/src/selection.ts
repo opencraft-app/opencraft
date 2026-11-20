@@ -77,12 +77,61 @@ export function parseSelectionDefaults(input: unknown): ReadonlyMap<string, stri
     || typeof id!=='string' || !/^[A-Za-z0-9._-]{1,128}$/u.test(id))) throw new Error('Invalid selection defaults');
   return new Map(entries as [string,string][]);
 }
-export function selectorPage(principal: { provider: string; subject: string }, servers: readonly { id: string; name: string; route?: string }[], automatic: boolean, defaultServer?: string): string {
+/** Retry only unresolved target admission. Each response is freshly authenticated;
+ * no previous membership result, name or route is used to authorize discovery. */
+const selectionRecovery = String.raw`function(automaticTarget) {
+  const state = JSON.parse(document.getElementById('server-selection-state').textContent);
+  if (!state.pending) return;
+  const deadline = Date.now() + 30_000;
+  let disposed = false;
+  window.addEventListener('pagehide', () => { disposed = true; }, { once: true });
+  async function refresh() {
+    if (disposed || Date.now() >= deadline) return;
+    const abort = new AbortController(), timer = window.setTimeout(() => abort.abort(), 5000);
+    try {
+      const response = await fetch(location.href, { credentials: 'same-origin', headers: { accept: 'text/html' }, cache: 'no-store', redirect: 'error', signal: abort.signal });
+      if (!response.ok || disposed) return;
+      const next = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const data = next.getElementById('server-selection-state');
+      if (!data || disposed) return;
+      const nextState = JSON.parse(data.textContent);
+      // A login change must never insert another principal's directory here.
+      if (state.key !== nextState.key) { disposed = true; return; }
+      const list = document.querySelector('#server-choices ul');
+      const existing = new Map(Array.from(list.querySelectorAll('a[data-server]')).map(link => [link.dataset.server, link.parentElement]));
+      const links = Array.from(next.querySelectorAll('#server-choices a[data-server]'));
+      const retained = new Set(links.map(link => link.dataset.server));
+      for (const [id, item] of existing) if (!retained.has(id)) item.remove();
+      let previous = null;
+      for (const link of links) {
+        const item = existing.get(link.dataset.server) ?? document.importNode(link.parentElement, true);
+        const anchor = item.querySelector('a');
+        anchor.textContent = link.textContent;
+        anchor.setAttribute('href', link.getAttribute('href'));
+        const following = previous ? previous.nextElementSibling : list.firstElementChild;
+        if (following !== item) list.insertBefore(item, following);
+        previous = item;
+      }
+      const empty = document.querySelector('#server-choices > p:last-child');
+      if (links.length) empty?.remove();
+      else if (!empty) {
+        const nextEmpty = next.querySelector('#server-choices > p:last-child');
+        if (nextEmpty) list.after(document.importNode(nextEmpty, true));
+      }
+      const destination = links.find(link => link.dataset.server === automaticTarget);
+      if (destination) { disposed = true; location.replace(destination.getAttribute('href')); }
+      if (!nextState.pending) disposed = true;
+    } catch { /* A transient ingress error does not replace or reset the chooser. */ }
+    finally { window.clearTimeout(timer); if (!disposed && Date.now() < deadline) window.setTimeout(refresh, 1500); }
+  }
+  window.setTimeout(refresh, 1500);
+}`;
+export function selectorPage(principal: { provider: string; subject: string }, servers: readonly { id: string; name: string; route?: string }[], automatic: boolean, defaultServer?: string, pending = false): string {
   const key = preferenceKey(principal);
   const destinations = servers.map(s => ({ id: s.id, path: serverBase(s.route ?? s.id) + '/' }));
   // Resolve before the chooser can paint. Keep the choices available without JS.
-  const entry = `<script>const key=${json(key)},automatic=${automatic},initial=${json(defaultServer ?? null)};let previous=null;try{previous=localStorage.getItem(key)}catch{}let unavailable=false,destinationPath=null;if(automatic){const target=previous===null?initial:previous;if(target){const destination=${json(destinations)}.find(server=>server.id===target);if(destination){document.documentElement.dataset.serverNavigation='true';document.title='OpenCraft';destinationPath=destination.path}else unavailable=true}}</script>`;
-  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>选择服务器 · OpenCraft</title>${entry}<style>:root{color-scheme:light dark;font:15px system-ui;background:#f9f9f9;color:#262626}body{max-width:480px;margin:10vh auto;padding:24px}h1{font-size:24px}p{color:#737373;line-height:1.7}ul{padding:0;list-style:none}a{display:block;padding:18px;margin:12px 0;border:1px solid #8885;border-radius:12px;color:inherit;text-decoration:none;background:#fff}@media(any-hover:hover) and (any-pointer:fine){:root:not([data-touch-interaction]) a:hover{background:#eee}}a:focus-visible{outline:2px solid currentColor;outline-offset:3px}@media(prefers-color-scheme:dark){:root{background:#161616;color:#eee}a{background:#222}@media(any-hover:hover) and (any-pointer:fine){:root:not([data-touch-interaction]) a:hover{background:#333}}}:root[data-server-navigation] #server-choices{display:none}</style><body><main id="server-choices"><h1>选择服务器</h1><p>各服务器独立管理访问权限。选择后会记住，下次直接进入。</p><ul>${servers.map(s => `<li><a data-server="${escape(s.id)}" href="${serverBase(s.route ?? s.id)}/">${escape(s.name)}</a></li>`).join('')}</ul>${servers.length ? '' : '<p>暂时没有可访问的服务器，请联系服务器管理员。</p>'}</main><script>document.addEventListener('pointerdown',event=>{if(event.pointerType==='touch'||event.pointerType==='pen')document.documentElement.dataset.touchInteraction='true'},true);document.addEventListener('pointermove',event=>{if(event.pointerType==='mouse')delete document.documentElement.dataset.touchInteraction},true);if(destinationPath){try{location.replace(destinationPath)}catch{delete document.documentElement.dataset.serverNavigation}}if(unavailable)document.querySelector('#server-choices p').textContent='上次使用的服务器当前不可用，请重新选择。'</script></body></html>`;
+  const entry = `<script id="server-selection-state" type="application/json">${json({key,pending})}</script><script>const key=${json(key)},automatic=${automatic},initial=${json(defaultServer ?? null)};let previous=null;try{previous=localStorage.getItem(key)}catch{}let unavailable=false,destinationPath=null;if(automatic){const target=previous===null?initial:previous;if(target){const destination=${json(destinations)}.find(server=>server.id===target);if(destination){document.documentElement.dataset.serverNavigation='true';document.title='OpenCraft';destinationPath=destination.path}else unavailable=true}}</script>`;
+  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>选择服务器 · OpenCraft</title>${entry}<style>:root{color-scheme:light dark;font:15px system-ui;background:#f9f9f9;color:#262626}body{max-width:480px;margin:10vh auto;padding:24px}h1{font-size:24px}p{color:#737373;line-height:1.7}ul{padding:0;list-style:none}a{display:block;padding:18px;margin:12px 0;border:1px solid #8885;border-radius:12px;color:inherit;text-decoration:none;background:#fff}@media(any-hover:hover) and (any-pointer:fine){:root:not([data-touch-interaction]) a:hover{background:#eee}}a:focus-visible{outline:2px solid currentColor;outline-offset:3px}@media(prefers-color-scheme:dark){:root{background:#161616;color:#eee}a{background:#222}@media(any-hover:hover) and (any-pointer:fine){:root:not([data-touch-interaction]) a:hover{background:#333}}}:root[data-server-navigation] #server-choices{display:none}</style><body><main id="server-choices"><h1>选择服务器</h1><p>各服务器独立管理访问权限。选择后会记住，下次直接进入。</p><ul>${servers.map(s => `<li><a data-server="${escape(s.id)}" href="${serverBase(s.route ?? s.id)}/">${escape(s.name)}</a></li>`).join('')}</ul>${servers.length ? '' : '<p>暂时没有可访问的服务器，请联系服务器管理员。</p>'}</main><script>document.addEventListener('pointerdown',event=>{if(event.pointerType==='touch'||event.pointerType==='pen')document.documentElement.dataset.touchInteraction='true'},true);document.addEventListener('pointermove',event=>{if(event.pointerType==='mouse')delete document.documentElement.dataset.touchInteraction},true);if(destinationPath){try{location.replace(destinationPath)}catch{delete document.documentElement.dataset.serverNavigation}}if(unavailable)document.querySelector('#server-choices p').textContent='上次使用的服务器当前不可用，请重新选择。';(${selectionRecovery})(automatic?(previous===null?initial:previous):null)</script></body></html>`;
 }
 export function scopedHtml(html: string, server: { id: string; name: string; base: string; targetOrigin?: string; canonicalPath?: string }, principal?: { provider: string; subject: string }): string {
   // Only an admitted top-level document commits the preference. The URL remains

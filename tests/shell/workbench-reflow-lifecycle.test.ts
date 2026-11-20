@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { beginTimelineElementReflow, preserveTimelineElementPositionOnReflow } from "../../packages/timeline-host-web/src/reflow";
+import { WebConversationViewportOwner } from "../../packages/timeline-host-web/src/conversation-viewport-owner";
 
 function fixture(run: (state: ReturnType<typeof setup>) => void) {
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
@@ -101,4 +102,80 @@ test("legacy bounded expanders keep their policy but cancellation clears all res
   assert.equal(state.timers.size, 0);
   assert.equal(state.frames.size, 0);
   assert.equal(state.disconnects, 1);
+}));
+
+test("reflow publishes actual scroll writes and releases ownership only after settlement", () => fixture(state => {
+  const positions: number[] = [], finished: string[] = [];
+  const lease = beginTimelineElementReflow(state.anchor, state.scroll, {
+    onPositionChanged: () => positions.push(state.scroll.scrollTop),
+    onFinish: reason => finished.push(reason),
+  });
+  state.frame();
+  assert.deepEqual(positions, []);
+  state.move(-80); lease.complete();
+  assert.deepEqual(positions, [-80]);
+  assert.deepEqual(finished, []);
+  state.frame(); state.frame();
+  assert.deepEqual(finished, []);
+  state.frame();
+  assert.deepEqual(finished, ["settled"]);
+  lease.cancel(); lease.complete(); state.frame();
+  assert.deepEqual(finished, ["settled"]);
+}));
+
+test("cancelled or detached reflows release once without claiming settlement", () => fixture(state => {
+  const finished: string[] = [];
+  const options = { onFinish: (reason: string) => finished.push(reason) };
+  const first = beginTimelineElementReflow(state.anchor, state.scroll, options);
+  first.complete(); first.cancel(); first.cancel(); state.frame();
+  const second = beginTimelineElementReflow(state.anchor, state.scroll, options);
+  state.disconnect(); state.frame(); second.cancel();
+  assert.deepEqual(finished, ["cancelled", "cancelled"]);
+}));
+
+test("a row measurement can synchronize its disclosure before anchor RO or RAF delivery", () => fixture(state => {
+  const lease = beginTimelineElementReflow(state.anchor, state.scroll);
+  state.move(-7132);
+  lease.synchronize();
+  assert.equal(state.scroll.scrollTop, -7132);
+  assert.equal(state.anchor.getBoundingClientRect().top, 100);
+  lease.synchronize(); state.resize(); state.frame();
+  assert.equal(state.scroll.scrollTop, -7132, "the same height must not be compensated twice");
+  lease.cancel(); state.move(-50); lease.synchronize();
+  assert.equal(state.scroll.scrollTop, -7132, "a cancelled lease cannot write again");
+}));
+
+test("the viewport publishes the synchronized physical base only during its current reflow", () => fixture(state => {
+  Object.assign(state.scroll, { clientHeight: 690, scrollHeight: 20000, clientWidth: 402, contains: () => true });
+  const owner = new WebConversationViewportOwner(0);
+  owner.scrollElementRef.current = state.scroll as HTMLDivElement;
+  assert.equal(owner.synchronizeReflowAnchor(), null);
+  const first = owner.beginReflowAnchor(state.anchor)!;
+  state.move(-7132);
+  assert.equal(owner.synchronizeReflowAnchor(), 7132);
+  assert.equal(owner.scrollController.getLastScrollDistanceFromBottomPx(), 7132);
+  const second = owner.beginReflowAnchor(state.anchor)!;
+  first.cancel(); first.complete(); first.synchronize();
+  state.move(-50);
+  assert.equal(owner.synchronizeReflowAnchor(), 7182, "old callbacks cannot retire the replacement");
+  second.complete(); state.frame(); state.frame(); state.frame();
+  assert.equal(owner.synchronizeReflowAnchor(), null);
+  assert.equal(owner.scrollController.getLastScrollDistanceFromBottomPx(), 7182);
+}));
+
+test("synchronizing a disconnected disclosure cancels rather than publishing a stale base", () => fixture(state => {
+  const owner = new WebConversationViewportOwner(0);
+  Object.assign(state.scroll, { contains: () => true });
+  owner.scrollElementRef.current = state.scroll as HTMLDivElement;
+  owner.beginReflowAnchor(state.anchor);
+  state.disconnect();
+  assert.equal(owner.synchronizeReflowAnchor(), null);
+  assert.equal(state.frames.size, 0);
+}));
+
+test("a bounded lease clears its timer after cancellation or final settlement", () => fixture(state => {
+  const lease = beginTimelineElementReflow(state.anchor, state.scroll, { durationMs: 250 });
+  assert.equal(state.timers.size, 1);
+  lease.complete(); state.frame(); state.frame(); state.frame();
+  assert.equal(state.timers.size, 0);
 }));
