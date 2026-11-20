@@ -12,6 +12,7 @@ import type { HookStats } from "./hook-stats";
 import { normalizeTurnUserMessages } from "./turn-user-message-normalization";
 import { deriveTurnWorkStatus } from "./work-status";
 import { createTurnChangeSummary } from "./turn-diff";
+import { recoverTurnChangeSummary } from "./turn-file-changes";
 import { normalizeCommandCompletionOrder } from "./command-completion-order";
 
 export type TimelineLane = "user" | "assistant" | "event" | "interaction";
@@ -252,14 +253,15 @@ function projectTurnFrames(
     const turn = inferSettledMessagePhases(normalizeTurnUserMessages(normalizeCommandCompletionOrder(sourceTurn)));
     const workStatus = deriveTurnWorkStatus(turn);
     // Compatibility Items are lowered once here, not allowed to participate
-    // in transcript topology. An explicit Turn value (including null) wins.
+    // in transcript topology. Empty native aggregates recover from durable patches
+    // before legacy Items. An explicit Turn value suppresses compatibility Items.
     const legacyDiff = turn.items.filter(item => item.type === "turnDiff").at(-1);
     const legacyBlock = legacyDiff === undefined ? null
       : registry.project(legacyDiff, { turn, itemIndex: turn.items.indexOf(legacyDiff) }).block;
-    const changeSummary = turn.unifiedDiff !== undefined
-      ? createTurnChangeSummary(turn.id, turn.status, turn.unifiedDiff)
-      : legacyBlock?.type === "turn-diff"
-        ? { ...legacyBlock, id: `${turn.id}:turn-diff`, sourceItemIds: [] } : null;
+    const changeSummary = createTurnChangeSummary(turn.id, turn.status, turn.unifiedDiff ?? null)
+      ?? recoverTurnChangeSummary(turn)
+      ?? (turn.unifiedDiff === undefined && legacyBlock?.type === "turn-diff"
+        ? { ...legacyBlock, id: `${turn.id}:turn-diff`, sourceItemIds: [] } : null);
     const initialFrameCount = frames.length;
     let pendingLane: TimelineLane | null = null;
     let pendingBlocks: TimelineBlock[] = [];

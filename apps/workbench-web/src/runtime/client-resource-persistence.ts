@@ -1,5 +1,4 @@
 import type { ClientResourcePersistence } from "@opencraft/document-storage/client-resources";
-import { openIndexedDbClientResources } from "./indexeddb-client-resources";
 
 /** Storage choice belongs to application composition, never to a list or editor. */
 export async function openClientResourcePersistence(databaseName: string): Promise<ClientResourcePersistence> {
@@ -10,5 +9,6 @@ export async function openClientResourcePersistence(databaseName: string): Promi
     if (!desktop.clientResources) throw new Error("Client resource bridge unavailable; restart the desktop application");
     return { ...desktop.clientResources, close() {} };
   }
+  const { openIndexedDbClientResources } = await import("./indexeddb-client-resources");
   return openIndexedDbClientResources(databaseName, indexedDB);
 }

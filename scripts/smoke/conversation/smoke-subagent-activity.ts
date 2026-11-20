@@ -57,10 +57,15 @@ try {
         await page.keyboard.press("Enter");
       }
       await page.locator(".thread-subagent-details__row").first().waitFor();
+      assert.equal(await page.locator(".thread-subagent-details__row").count(), 3, "details start with bounded member window");
+      const more = page.getByRole("button", {name:"1 more",exact:true});
+      if(touch)await more.tap();else await more.click();
       assert.equal(await page.locator(".thread-subagent-details__row").count(), 4);
-      assert.equal(await page.locator(".thread-subagent-details__meta").count(), 0);
+      const facts=page.locator(".thread-subagent-details__meta[data-tool-call-status]");
+      assert.equal(await facts.count(), 4, "retained details show the four completed spawn calls");
+      assert.deepEqual(await facts.evaluateAll(elements=>elements.map(element=>[element.getAttribute("data-tool-call-status"),element.getAttribute("data-delivery-status")])),Array.from({length:4},()=>["complete","none"]),"tool completion must not invent input-delivery evidence");
       assert.equal(await page.getByText("Review fixtures and summarize the result.", { exact: true }).count(), 1);
-      const firstAgent = page.locator(".thread-subagent-details__name").first();
+      const firstAgent = page.locator(".thread-subagent-details__row").first().getByRole("button", {name:"Open fixtures conversation",exact:true});
       if (touch) await firstAgent.tap();
       else await firstAgent.click();
       assert.deepEqual(await page.evaluate(() => (window as any).subagentOpen), {

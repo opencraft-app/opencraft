@@ -80,9 +80,12 @@ test("late animation completion cannot reverse a newer transition", async () => 
   const state = new FloatingComposerState();
   state.hide("a");
   assert.equal(project(state).phase, "exiting");
+  const oldPresentation = state.getSnapshot();
   state.show("a");
   assert.equal(project(state).phase, "entering");
-  await new Promise((resolve) => setTimeout(resolve, 160));
+  state.completePresentation(oldPresentation);
+  assert.equal(project(state).phase, "entering");
+  state.completePresentation(state.getSnapshot());
   assert.equal(project(state).phase, "visible");
   state.hide("a");
   state.show("a", true);

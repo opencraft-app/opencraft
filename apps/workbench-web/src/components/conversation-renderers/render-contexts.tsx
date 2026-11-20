@@ -1,5 +1,5 @@
 import { useIntl } from "@opencraft/i18n/react";
-import { useOptionalAsyncNotices } from "../async-notices";
+import { useOptionalAsyncNotices } from "../async-notices-context";
 import {
   createDefaultToolActivityPresenterRegistry,
   presentToolActivity,
@@ -56,7 +56,7 @@ export const AsyncQuestionContext = createContext<AsyncQuestionContextValue>({
   answer: null, updateDraft: () => undefined,
 });
 export const HistoryItemDetailContext = createContext<((ids: readonly string[], signal: AbortSignal) => Promise<void>) | null>(null);
-export function useHistoryItemDetail(block: TimelineBlock, open: boolean): void {
+export function useHistoryItemDetail(block: TimelineBlock, open: boolean, retryKey = 0): void {
   const load = useContext(HistoryItemDetailContext);
   const intl = useIntl(), notices = useOptionalAsyncNotices();
   const ids = JSON.stringify(block.sourceItemIds);
@@ -68,7 +68,7 @@ export function useHistoryItemDetail(block: TimelineBlock, open: boolean): void 
       notices?.error({ key: `history-item:${ids}`, message: intl.formatMessage({ id: "chat.restore.failed", defaultMessage: "Could not load this conversation" }) });
     });
     return () => controller.abort();
-  }, [open, block.historyDetail, ids, load, notices, intl]);
+  }, [open, block.historyDetail, ids, load, notices, intl, retryKey]);
 }
 
 export const ConversationDetailContext = createContext<ConversationDetailLevel>("STEPS_COMMANDS");

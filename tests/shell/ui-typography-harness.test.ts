@@ -87,3 +87,16 @@ test("Agent instructions progressively route UI and font work without expanding 
   assert.match(pkg.scripts['check:typography'], /check-ui-typography/u);
   assert.match(pkg.scripts.gate, /test:typography/u);
 });
+
+test("menu semantic aliases are valid consumers but cannot be redefined by features",()=>{
+ assert.deepEqual(inspectStyle('.x{font:var(--menu-item-font);letter-spacing:var(--menu-item-tracking)}'),[]);
+ assert.equal(inspectStyle('.x{--menu-item-font:12px Arial}').length,1);
+ assert.equal(inspectStyle('.x{--menu-item-tracking:0.2em}').length,1);
+ assert.equal(inspectStyle('.x{font:var(--menu-item-font,12px Arial)}').length,1);
+ assert.equal(inspectStyle('.x{font:var(--menu-item-invented)}').length,1);
+ const tokens=read('../packages/design-system/src/tokens.web.scss');
+ for(const role of ['control-compact','menu']){
+  assert.ok(tokens.includes(`--menu-item-font: var(--typography-${role}-font)`));
+  assert.ok(tokens.includes(`--menu-item-tracking: var(--typography-${role}-tracking)`));
+ }
+});

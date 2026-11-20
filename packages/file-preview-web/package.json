@@ -4,7 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.tsx"
+    ".": "./src/index.tsx",
+    "./media-player": "./src/media-player.tsx",
+    "./dialog": "./src/file-preview-dialog.tsx",
+    "./pdf-assets": "./src/pdf-assets.ts",
+    "./pdf.web": "./src/pdf.scss"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -13,7 +17,10 @@
     "@deepseek-ai/cordis": "4.0.5",
     "@opencraft/file-preview-core": "0.1.0",
     "@opencraft/i18n": "0.1.0",
-    "react": "19.3.1"
+    "react": "19.3.1",
+    "@opencraft/design-system-web": "0.1.0",
+    "react-dom": "19.3.1",
+    "pdfjs-dist": "6.4.299"
   },
   "devDependencies": {
     "@types/react": "~19.3.0",

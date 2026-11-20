@@ -73,7 +73,8 @@ test('Pi IM uses native durable input and both browser/Host tools; final and dup
   assert.deepEqual(capabilities.tools({serverId:'server:fixture:dsh',threadId:thread.id}),[]);
   const history = (await engine.request('thread/read',{threadId:thread.id,includeTurns:true},browser)).thread.turns;
   assert.equal(history.length,1);assert.match(JSON.stringify(history),/final remains in workbench/);
-  const request = collaboration.getRequest(human,record.request_id!);assert.equal(request.state,'submitted');
+  const request = collaboration.getRequest(human,record.request_id!);assert.equal(request.state,'injected');
+  assert.equal(request.turn_id,history[0]!.id,'confirmed native receipt names the exact executed turn');
   const inputId = 'actor-input:'+record.request_id;
   assert.equal((await engine.inputs.receipt(thread.id,inputId))?.state,'delivered');
   await appHost.close();await host.close();
@@ -98,8 +99,14 @@ test('multi-engine admission isolates server identity, safely defers busy native
   assert.equal(service.authorizeInput(ref.threadId,'actor-input:'+id,'queue',undefined,ref.serverId),true);
   assert.equal(service.authorizeInput(ref.threadId,'actor-input:'+id,'queue',undefined,'server:fixture:dsh'),false);
   await service.pump();assert.equal(service.getRequest(human,id).state,'accepted');assert.equal(sent,0);
-  busy=false;await service.pump();await service.pump();assert.equal(service.getRequest(human,id).state,'submitted');assert.equal(sent,1);
-  const steer=send('steer',{mode:'steer',expectedTurnId:'foreign'});await service.pump();assert.equal(service.getRequest(human,steer).state,'rejected');assert.equal(sent,1);
+  busy=false;await service.pump();await service.pump();assert.equal(service.getRequest(human,id).state,'injected');assert.equal(service.getRequest(human,id).turn_id,'native-turn');assert.equal(sent,1);
+  // The adapter rejects unsupported steering before any native mutation, but has
+  // no durable discarded receipt. The broker must not manufacture rejection
+  // proof from an exception after handoff, or retry this ambiguous request.
+  const steer=send('steer',{mode:'steer',expectedTurnId:'foreign'});await service.pump();
+  assert.equal(service.getRequest(human,steer).state,'unknown');assert.equal(sent,1);
+  for(let i=0;i<3;i++)await service.pump();
+  assert.equal(service.getRequest(human,steer).state,'unknown');assert.equal(sent,1);
   ambiguous=true;const unknown=send('unknown');await service.pump();await service.pump();assert.equal(service.getRequest(human,unknown).state,'unknown');assert.equal(sent,2);
   await service.pump();assert.equal(sent,2);
   const revoked=send('revoke');current=false;await service.pump();assert.equal(service.getRequest(human,revoked).state,'rejected');assert.equal(sent,2);

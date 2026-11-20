@@ -79,7 +79,7 @@ self.addEventListener("install", event => {
           for (let attempt = 0; ; attempt++) {
             try {
               await withResourceDeadline(async signal => {
-                response = await fetch(url(name), { credentials: "omit", cache: "default", priority: "low", redirect: "error", signal });
+                response = await fetch(url(name), { credentials: "same-origin", cache: "default", priority: "low", redirect: "error", signal });
                 if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
                   const error = new Error("Offline resource denied: " + response.status);
                   stop(error); throw error;

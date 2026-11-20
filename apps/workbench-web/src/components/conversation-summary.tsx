@@ -10,6 +10,7 @@ import { useWorkbenchPanelRuntime } from "../runtime/panel-runtime-context";
 import { useTouchLayout } from "../runtime/use-touch-layout";
 import { useWorkbenchPresentationRoot } from "./workbench-presentation-root";
 import { resolveSummaryPresentation } from "./conversation-summary-layout";
+import { useShellPresentation } from "./shell-presentation";
 import "./conversation-summary.scss";
 
 const noopSubscribe = () => () => {};
@@ -45,10 +46,11 @@ export function useConversationSummary(scopeKey: string, available: boolean) {
   const id = useId();
   const currentScope = useRef(scopeKey);
   currentScope.current = scopeKey;
-  const [state, setState] = useState<{ scopeKey: string; intent: boolean | null }>({ scopeKey, intent: null });
-  const intent = state.scopeKey === scopeKey ? state.intent : null;
+  const [state, setState] = useState({ scopeKey, intent: false });
+  if (state.scopeKey !== scopeKey) setState({ scopeKey, intent: false });
+  const intent = state.scopeKey === scopeKey && state.intent;
   const enabled = available && contribution !== null;
-  const open = enabled && (intent ?? budget.mode !== "overlay");
+  const open = enabled && intent;
   const currentOpen = useRef(open);
   currentOpen.current = open;
   const setOpen = (next: boolean) => {
@@ -100,7 +102,7 @@ function SummaryPopup({ controller, label, children, touch, restoreFocus }: {
   const portal = useWorkbenchPresentationRoot();
   return <Popover.Portal forceMount container={portal}>
     <Popover.Content forceMount asChild align="end" side="bottom" sideOffset={12}
-      collisionPadding={12} avoidCollisions aria-label={label}
+      collisionBoundary={controller.layoutRef.current} collisionPadding={12} avoidCollisions updatePositionStrategy="always" aria-label={label}
       onInteractOutside={event => {
         if (event.target instanceof Node && controller.triggerRef.current?.contains(event.target)) event.preventDefault();
         else restoreFocus.current = false;
@@ -123,6 +125,7 @@ function SummaryPopup({ controller, label, children, touch, restoreFocus }: {
 
 export function ConversationSummarySurface({ controller, context }: { controller: Controller; context: ConversationSummaryContext }) {
   const intl = useIntl();
+  const shell = useShellPresentation();
   const touch = useTouchLayout();
   const restoreFocus = useRef(true);
   useLayoutEffect(() => { if (controller.open) restoreFocus.current = true; }, [controller.open, context.scopeKey]);
@@ -133,7 +136,7 @@ export function ConversationSummarySurface({ controller, context }: { controller
   const [state, setState] = useState<{ scope: string; value: ConversationSummaryViewState }>({ scope: context.scopeKey, value: { collapsed: new Set(), scrollTop: 0 } });
   const viewState = state.scope === context.scopeKey ? state.value : { collapsed: new Set<string>(), scrollTop: 0 };
   if (state.scope !== context.scopeKey) setState({ scope: context.scopeKey, value: viewState });
-  if (!controller.enabled || !controller.contribution) return null;
+  if (!controller.enabled || !controller.contribution || shell?.rightPanelFullWidth || shell?.contentPresentation === 'tools') return null;
   const { Component, title } = controller.contribution;
   const label = intl.formatMessage(title);
   const closeLabel = intl.formatMessage({ id: "common.close", defaultMessage: "Close" });

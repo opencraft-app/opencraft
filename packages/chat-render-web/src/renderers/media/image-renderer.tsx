@@ -1,17 +1,11 @@
 import { useIntl } from "@opencraft/i18n/react";
-import { CloseIcon as SharedCloseIcon, ChevronLeftIcon as SharedChevronLeftIcon, ChevronRightIcon as SharedChevronRightIcon } from "@opencraft/design-system-web/action-icons";
 import { chatMediaPresentationKey, useChatMediaSource, type ChatNodeRendererProps, type ChatResourcePolicyService } from "@opencraft/chat-render-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 
 import { usePreviewFocusOrigin } from "../../preview-focus-origin";
-import { ZoomableImage } from "../../zoomable-image";
+import { ImagePreview } from "../../image-preview";
 import "./image.scss";
-
-function CloseGlyph() { return <SharedCloseIcon size={16} />; }
-
-function PreviousGlyph() { return <SharedChevronLeftIcon size={16} />; }
-
-function NextGlyph() { return <SharedChevronRightIcon size={16} />; }
+import { ChatMediaLayoutBoundary } from "../../media-layout";
 
 interface ImageGalleryState {
   readonly key: string;
@@ -23,13 +17,13 @@ export function createImageRenderer(resources: ChatResourcePolicyService) {
   return function ImageRenderer({ node, context }: ChatNodeRendererProps) {
     const intl = useIntl();
     const [gallery, setGallery] = useState<ImageGalleryState | null>(null);
+    const [decodedSource, setDecodedSource] = useState<string | null>(null);
     const [attempt, setAttempt] = useState(0);
     const [mediaState, setMediaState] = useState<{
       readonly key: string;
       readonly source: string | null;
       readonly status: "loading" | "ready" | "unavailable";
     } | null>(null);
-    const dialogRef = useRef<HTMLDialogElement>(null);
     const previewFocus = usePreviewFocusOrigin();
     if (node.kind !== "image") return null;
     // anchor policy rejects every data: URL. Keep that exception local to the
@@ -42,12 +36,6 @@ export function createImageRenderer(resources: ChatResourcePolicyService) {
     const decision = hostFile ? { allowed: true as const, kind: "file" as const, target: hostFile } : standardDecision;
     const loadKey = chatMediaPresentationKey(node.src, decision, context);
     const activeGallery = gallery?.key === loadKey ? gallery : null;
-    useEffect(() => {
-      const dialog = dialogRef.current;
-      if (dialog === null) return;
-      if (activeGallery !== null && !dialog.open) dialog.showModal();
-      if (activeGallery === null && dialog.open) dialog.close();
-    }, [activeGallery]);
     useEffect(() => {
       if (gallery !== null && gallery.key !== loadKey) setGallery(null);
     }, [gallery, loadKey]);
@@ -109,7 +97,7 @@ export function createImageRenderer(resources: ChatResourcePolicyService) {
       return <span className="chat-markdown-media-unavailable" role="img" title={decision.reason}>{node.alt || intl.formatMessage({ id: "chat.image.unavailable", defaultMessage: "Image unavailable" })}</span>;
     }
     if (effectiveState.status === "loading") {
-      return <span aria-label={node.alt || intl.formatMessage({ id: "chat.image.loading", defaultMessage: "Loading image…" })} className="chat-markdown-media-placeholder" data-state="loading" role="img" />;
+      return <ChatMediaLayoutBoundary resourceKey={loadKey} settled={false}><span aria-label={node.alt || intl.formatMessage({ id: "chat.image.loading", defaultMessage: "Loading image…" })} className="chat-markdown-media-placeholder" data-state="loading" role="img" /></ChatMediaLayoutBoundary>;
     }
     if (effectiveState.status === "unavailable" || effectiveState.source === null) {
       const canRetry = !mustLoadThroughHost || !context.loadMediaSource?.getSnapshot || context.loadMediaSource.retry !== undefined;
@@ -141,8 +129,10 @@ export function createImageRenderer(resources: ChatResourcePolicyService) {
     const currentImage = activeGallery?.items[activeGallery.index] ?? { alt: node.alt, source: imageSource };
     const showPrevious = activeGallery !== null && activeGallery.index > 0;
     const showNext = activeGallery !== null && activeGallery.index + 1 < activeGallery.items.length;
+    const previous = () => setGallery(current => current?.key === loadKey ? { ...current, index: current.index - 1 } : null);
+    const next = () => setGallery(current => current?.key === loadKey ? { ...current, index: current.index + 1 } : null);
     return (
-      <>
+      <ChatMediaLayoutBoundary resourceKey={loadKey} settled={decodedSource === imageSource}>
         <button aria-label={node.alt || intl.formatMessage({ id: "chat.image.openPreview", defaultMessage: "Preview image" })} className="chat-markdown-image-button" data-markdown-image-preview-trigger="true" onClick={(event) => { previewFocus.recordOpen(event); openGallery(event.currentTarget); }} onKeyDown={previewFocus.onTriggerKeyDown} onPointerCancel={previewFocus.onTriggerPointerCancel} onPointerDown={previewFocus.onTriggerPointerDown} type="button">
           <img
             key={attempt}
@@ -150,23 +140,18 @@ export function createImageRenderer(resources: ChatResourcePolicyService) {
             className="chat-markdown-image"
             loading="lazy"
             onError={markUnavailable}
-            onLoad={() => { reportMedia("decode", "ok"); context.requestMeasurement?.({ geometryChanged: true, reason: "image-load" }); }}
+            onLoad={() => { setDecodedSource(imageSource); reportMedia("decode", "ok"); context.requestMeasurement?.({ geometryChanged: true, reason: "image-load" }); }}
             src={imageSource}
             title={node.title ?? undefined}
           />
         </button>
-        <dialog aria-label={currentImage.alt || intl.formatMessage({ id: "chat.image.preview", defaultMessage: "Image preview" })} className="chat-markdown-image-preview" data-opened-by-pointer={previewFocus.openedByPointer || undefined} onCancel={(event) => { event.preventDefault(); close(); }} onClose={close} onKeyDown={(event) => {
-          previewFocus.onPreviewKeyDown(event);
-          if (activeGallery === null) return;
-          if (event.key === "ArrowLeft" && showPrevious) setGallery({ ...activeGallery, index: activeGallery.index - 1 });
-          if (event.key === "ArrowRight" && showNext) setGallery({ ...activeGallery, index: activeGallery.index + 1 });
-        }} ref={dialogRef}>
-          <button aria-label={intl.formatMessage({ id: "chat.image.close", defaultMessage: "Close image preview" })} className="chat-markdown-image-preview__close" onClick={close} type="button"><CloseGlyph /></button>
-          {showPrevious ? <button aria-label={intl.formatMessage({ id: "chat.image.previous", defaultMessage: "Previous image" })} className="chat-markdown-image-preview__previous" onClick={() => setGallery((current) => current?.key !== loadKey ? null : { ...current, index: current.index - 1 })} type="button"><PreviousGlyph /></button> : null}
-          <ZoomableImage onBackgroundClick={close} key={`${activeGallery !== null}:${activeGallery?.index}`} alt={currentImage.alt} src={currentImage.source} title={node.title ?? undefined} />
-          {showNext ? <button aria-label={intl.formatMessage({ id: "chat.image.next", defaultMessage: "Next image" })} className="chat-markdown-image-preview__next" onClick={() => setGallery((current) => current?.key !== loadKey ? null : { ...current, index: current.index + 1 })} type="button"><NextGlyph /></button> : null}
-        </dialog>
-      </>
+        {activeGallery && <ImagePreview returnFocus={previewFocus.returnFocus} className="chat-markdown-image-preview" openedByPointer={previewFocus.openedByPointer}
+          image={{ id: String(activeGallery.index), source: currentImage.source, alt: currentImage.alt, title: node.title ?? undefined }}
+          onClose={close} position={{ index: activeGallery.index, count: activeGallery.items.length }}
+          previous={showPrevious ? { onSelect: previous, content: <img alt="" draggable={false} src={activeGallery.items[activeGallery.index - 1]!.source} /> } : undefined}
+          next={showNext ? { onSelect: next, content: <img alt="" draggable={false} src={activeGallery.items[activeGallery.index + 1]!.source} /> } : undefined} />}
+
+      </ChatMediaLayoutBoundary>
     );
   };
 }

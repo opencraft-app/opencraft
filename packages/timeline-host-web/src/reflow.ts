@@ -1,12 +1,17 @@
-const OPENCRAFT_REFLOW_PRESERVATION_MS = 250;
+import { recordTimelineDiagnostic, timelineDiagnosticsEnabled, timelineDiagnosticId } from "./diagnostics";
+export const OPENCRAFT_REFLOW_PRESERVATION_MS = 250;
 
 export interface TimelineReflowPreservationOptions {
   readonly durationMs?: number;
   readonly turnSelector?: string;
   readonly zoomScale?: number;
+  readonly onPositionChanged?: () => void;
+  readonly onFinish?: (reason: "settled" | "cancelled") => void;
 }
 
 export interface TimelineReflowLease {
+  /** Stabilize current layout before the virtualizer selects its render window. */
+  synchronize(): void;
   /** Finish only after the disclosure's final layout has been committed. */
   complete(): void;
   /** Cancel immediately when input, replacement or unmount supersedes it. */
@@ -32,13 +37,14 @@ export function timelineReflowScrollAdjustment(
 export function beginTimelineElementReflow(
   element: HTMLElement,
   scrollElement: HTMLElement,
-  options: Pick<TimelineReflowPreservationOptions, "turnSelector" | "zoomScale"> = {},
+  options: TimelineReflowPreservationOptions = {},
 ): TimelineReflowLease {
   const initialTop = element.getBoundingClientRect().top;
   const zoomScale = Number.isFinite(options.zoomScale) && (options.zoomScale ?? 0) > 0
     ? options.zoomScale!
     : 1;
   let frame: number | null = null;
+  let timer: number | null = null;
   let disposed = false;
   let completing = false;
   let layoutRevision = 0;
@@ -47,11 +53,19 @@ export function beginTimelineElementReflow(
 
   const adjust = () => {
     if (disposed || !element.isConnected || !scrollElement.isConnected) return;
-    scrollElement.scrollTop += timelineReflowScrollAdjustment(
+    const before = scrollElement.scrollTop;
+    const correction = timelineReflowScrollAdjustment(
       initialTop,
       element.getBoundingClientRect().top,
       zoomScale,
     );
+    if (Math.abs(correction) <= 0.01) return;
+    scrollElement.scrollTop = before + correction;
+    if (timelineDiagnosticsEnabled()) recordTimelineDiagnostic("scroll-write", {
+      viewport: timelineDiagnosticId(scrollElement), reason: "reflow-anchor", before, after: scrollElement.scrollTop,
+      delta: scrollElement.scrollTop - before, requested: before + correction,
+    });
+    if (scrollElement.scrollTop !== before) options.onPositionChanged?.();
   };
   const schedule = () => {
     if (frame !== null || disposed) return;
@@ -66,7 +80,7 @@ export function beginTimelineElementReflow(
         settledFrames = settledRevision === layoutRevision ? settledFrames + 1 : 0;
         settledRevision = layoutRevision;
         if (settledFrames >= 2) {
-          dispose();
+          dispose("settled");
           return;
         }
       }
@@ -88,22 +102,33 @@ export function beginTimelineElementReflow(
   if (turn !== null) observer?.observe(turn);
   schedule();
 
-  const dispose = () => {
+  const dispose = (reason: "settled" | "cancelled" = "cancelled") => {
     if (disposed) return;
     disposed = true;
     if (frame !== null) window.cancelAnimationFrame(frame);
     frame = null;
+    if (timer !== null) window.clearTimeout(timer);
+    timer = null;
     observer?.disconnect();
+    options.onFinish?.(reason);
   };
+  const complete = () => {
+    if (disposed || completing) return;
+    completing = true;
+    // A synchronous collapse may commit after this frame's RAF callbacks.
+    // Compensate in its layout completion, before the first collapsed paint.
+    adjust();
+    schedule();
+  };
+  if (options.durationMs !== undefined) timer = window.setTimeout(
+    complete, Math.max(0, options.durationMs),
+  );
   return {
-    complete: () => {
-      if (disposed || completing) return;
-      completing = true;
-      // A synchronous collapse may commit after this frame's RAF callbacks.
-      // Compensate in its layout completion, before the first collapsed paint.
-      adjust();
-      schedule();
+    synchronize: () => {
+      if (!element.isConnected || !scrollElement.isConnected) dispose();
+      else adjust();
     },
+    complete,
     cancel: dispose,
   };
 }
@@ -114,13 +139,7 @@ export function preserveTimelineElementPositionOnReflow(
   scrollElement: HTMLElement,
   options: TimelineReflowPreservationOptions = {},
 ): () => void {
-  const lease = beginTimelineElementReflow(element, scrollElement, options);
-  const timeout = window.setTimeout(
-    lease.complete,
-    Math.max(0, options.durationMs ?? OPENCRAFT_REFLOW_PRESERVATION_MS),
-  );
-  return () => {
-    window.clearTimeout(timeout);
-    lease.cancel();
-  };
+  return beginTimelineElementReflow(element, scrollElement, {
+    ...options, durationMs: options.durationMs ?? OPENCRAFT_REFLOW_PRESERVATION_MS,
+  }).cancel;
 }

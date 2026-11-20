@@ -5,14 +5,13 @@ import { writeTextToClipboard } from "@opencraft/chat-render-web/clipboard";
 import "../styles/internal-developer-diagnostics.scss";
 
 import {
-  captureRuntimeEnvironment,
   clearRuntimeDiagnostics,
-  formatDiagnosticsCopy,
   getRuntimeDiagnosticsSnapshot,
-  probeCssSupports,
   subscribeRuntimeDiagnostics,
   type RuntimeDiagnosticErrorEntry,
 } from "../runtime-diagnostics";
+
+import { captureRuntimeEnvironment, formatDiagnosticsCopy, probeCssSupports } from "../runtime-diagnostic-snapshot";
 
 const EMPTY_SNAPSHOT = { errors: [], network: [] };
 

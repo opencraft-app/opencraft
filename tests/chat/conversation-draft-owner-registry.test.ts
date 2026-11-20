@@ -466,3 +466,16 @@ test("promotion carries only the editable follow-up draft, preserving its identi
   assert.equal(text(composer), "", "ordinary navigation remains target-isolated");
   release(); registry.dispose();
 });
+
+test("a presentation keeps empty identity without protecting nonempty content from its budget", () => {
+  const registry = createConversationDraftOwnerRegistry({composerServices: services(), maxDrafts: 1});
+  const owner = registry.ensure("first", hostId, target("first"));
+  const releasePresentation = registry.retainPresentation("first");
+  registry.retain("first", "editor")();
+  assert.equal(registry.get("first")?.composer, owner.composer);
+  assert.equal(registry.get("first")?.retainCount, 0);
+  content(owner.composer, "inactive input");
+  content(registry.ensure("second", hostId, target("second")).composer, "new input");
+  assert.equal(registry.get("first"), null, "a presentation does not pin content capacity");
+  releasePresentation(); releasePresentation(); registry.dispose();
+});

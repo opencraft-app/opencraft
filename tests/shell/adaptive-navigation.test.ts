@@ -29,3 +29,10 @@ test("selecting siblings replaces detail; back removes one semantic level", () =
   assert.equal(navigation.back(), true); assert.equal(navigation.back(), false);
   assert.throws(() => navigation.enter("missing", { id: "one", minWidth: 360 }));
 });
+
+test("Router-owned semantic entries restore metadata without requiring geometry", () => {
+  const model = new AdaptiveNavigation({ id: "inbox", key: "parent" }, [{ id: "group", key: "child" }]);
+  assert.equal(model.back(), true); assert.equal(model.getSnapshot()[0]!.key, "parent");
+  assert.throws(() => new AdaptiveNavigation({ id: "same" }, [{ id: "same" }]));
+  assert.throws(() => new AdaptiveNavigation({ id: "root" }, Array.from({ length: 32 }, (_, i) => ({ id: String(i) }))));
+});

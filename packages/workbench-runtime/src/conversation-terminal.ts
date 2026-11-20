@@ -104,11 +104,13 @@ export class ConversationTerminalSessionRegistry {
   private disposed = false;
   private restoreRevision = 0;
   private readonly ownerRestoreRevisions = new Map<string, number>();
+  private readonly restoreRequests = new Map<string, { hostId: string; ownerId?: string; scope?: { threadId?: string | null; projectId?: string | null }; aliases: readonly string[] }>();
   private readonly retiredSessions = new Map<string, { hostId: string; ownerId: string | null }>();
 
   constructor(
     private readonly resolveRuntime: (hostId: string) => AppServerWorkbenchRuntime,
     private readonly bufferLimit = CONVERSATION_TERMINAL_BUFFER_LIMIT,
+    private readonly directoryChanged?: (hostId: string) => void,
   ) {
     if (!Number.isSafeInteger(bufferLimit) || bufferLimit < 1) {
       throw new RangeError("Conversation terminal buffer limit must be a positive integer");
@@ -119,6 +121,7 @@ export class ConversationTerminalSessionRegistry {
     this.ensureOpen();
     if ([...this.sessions.values()].filter(session => session.hostId === options.hostId).length >= TERMINAL_RESOURCE_LIMITS.retainedPerHost)
       throw new Error("Terminal tab limit reached. Close an existing terminal before creating another.");
+    this.invalidateRestore(options.resourceOwnerId ?? null);
     const runtime = this.resolveRuntime(options.hostId);
     const session = runtime.resources.terminal.open({
       resourceOwnerId: options.resourceOwnerId, command: DEFAULT_TERMINAL_COMMAND, threadId: options.threadId, projectId: options.projectId,
@@ -136,6 +139,12 @@ export class ConversationTerminalSessionRegistry {
       title: "Terminal",
       session,
     });
+    let announced = false;
+    const announce = () => { if (!announced && !this.disposed && this.sessions.has(sessionId) && session.getSnapshot().phase === "running") { announced = true; this.directoryChanged?.(options.hostId); } };
+    const stop = session.subscribe(announce);
+    const entry = this.sessions.get(sessionId)!;
+    this.sessions.set(sessionId, { ...entry, unsubscribe: () => { stop(); entry.unsubscribe(); } });
+    announce();
     return sessionId;
   }
 
@@ -215,20 +224,46 @@ export class ConversationTerminalSessionRegistry {
 
   releaseOwner(ownerId: string): void {
     this.invalidateRestore(ownerId);
+    for (const [key, request] of this.restoreRequests) if (request.ownerId === ownerId) this.restoreRequests.delete(key);
     for (const sessionId of [...this.listForOwner(ownerId)]) this.release(sessionId);
     this.owners.delete(ownerId);
     this.ownerSnapshots.delete(ownerId);
     this.ownerListeners.delete(ownerId);
   }
 
-  async restore(hostId: string, ownerId?: string, scope?: { threadId?: string | null; projectId?: string | null }): Promise<string[]> {
+  async restore(hostId: string, ownerId?: string, scope?: { threadId?: string | null; projectId?: string | null }, ownerAliases: readonly string[] = []): Promise<string[]> {
     this.ensureOpen();
+    this.restoreRequests.set(JSON.stringify([hostId, ownerId ?? null]), { hostId, ownerId, scope, aliases: ownerAliases });
     const terminal = this.resolveRuntime(hostId).resources.terminal;
     this.invalidateRestore(ownerId ?? null);
     const revision = ownerId === undefined ? this.restoreRevision : this.ownerRestoreRevisions.get(ownerId) ?? 0;
-    const { processes } = await terminal.list(scope);
+    const owned = new Set(ownerId === undefined ? [] : [ownerId, ...ownerAliases]);
+    const known = new Set([...this.sessions].filter(([, entry]) => entry.hostId === hostId && entry.ownerId === (ownerId ?? null) && entry.session.getSnapshot().phase !== "starting").map(([id]) => id));
+    const listed = await terminal.list(scope);
+    let processes = listed.processes;
+    let complete = true;
+    if (ownerId !== undefined && scope?.threadId) {
+      // A PTY opened before Draft promotion still has a null Thread. Its
+      // authenticated Host owns it; known conversation aliases only locate it.
+      // Never adopt an unrelated bound Thread via this broader metadata read.
+      try {
+        const drafts = (await terminal.list()).processes.filter(process =>
+          process.context?.threadId === null && owned.has(process.context.resourceOwnerId ?? ''));
+        processes = [...new Map([...processes, ...drafts].map(process => [process.processHandle, process])).values()];
+      } catch { complete = false; /* Partial reads cannot retire a previously adopted Draft PTY. */ }
+    }
     const currentRevision = ownerId === undefined ? this.restoreRevision : this.ownerRestoreRevisions.get(ownerId) ?? 0;
     if (this.disposed || revision !== currentRevision) return [];
+    const present = new Map(processes.map(process => [JSON.stringify([hostId, process.processHandle]), process]));
+    for (const id of known) {
+      if (this.disposed || revision !== (ownerId === undefined ? this.restoreRevision : this.ownerRestoreRevisions.get(ownerId) ?? 0)) return [];
+      const entry = this.sessions.get(id); if (!entry) continue;
+      const process = present.get(id);
+      if (!process && complete) this.detach(id);
+      else if (process?.phase === "exited" && entry.session.getSnapshot().phase !== "exited")
+        await entry.session.refresh?.();
+    }
+    if (this.disposed || revision !== (ownerId === undefined ? this.restoreRevision : this.ownerRestoreRevisions.get(ownerId) ?? 0)) return [];
     const runningIds = new Set(processes.filter(process => process.phase === "running").map(process => JSON.stringify([hostId, process.processHandle])));
     for (const [id, retired] of this.retiredSessions) {
       if (ownerId !== undefined && retired.hostId === hostId && retired.ownerId === ownerId && !runningIds.has(id))
@@ -236,13 +271,14 @@ export class ConversationTerminalSessionRegistry {
     }
     return processes.filter((process) => process.phase === "running"
       && !this.retiredSessions.has(JSON.stringify([hostId, process.processHandle]))
-      && (ownerId === undefined || process.context?.resourceOwnerId === ownerId)).map((process) => {
+      && (ownerId === undefined || owned.has(process.context?.resourceOwnerId ?? ''))
+      && (!scope?.threadId || process.context?.threadId === null || process.context?.threadId === scope.threadId)).map((process) => {
       const sessionId = JSON.stringify([hostId, process.processHandle]);
       if (!this.sessions.has(sessionId)) {
         this.register(sessionId, {
-          openOptions: { hostId, resourceOwnerId: process.context?.resourceOwnerId ?? undefined,
-            threadId: process.context?.threadId, projectId: process.context?.projectId, cwd: process.context?.cwd ?? null },
-          ownerId: process.context?.resourceOwnerId ?? null,
+          openOptions: { hostId, resourceOwnerId: ownerId ?? process.context?.resourceOwnerId ?? undefined,
+            threadId: scope?.threadId ?? process.context?.threadId, projectId: scope?.projectId ?? process.context?.projectId, cwd: process.context?.cwd ?? null },
+          ownerId: ownerId ?? process.context?.resourceOwnerId ?? null,
           hostId,
           cwd: process.context?.cwd ?? "",
           shell: process.context?.shell ?? "unknown",
@@ -252,6 +288,26 @@ export class ConversationTerminalSessionRegistry {
       }
       return sessionId;
     });
+  }
+
+  /** Broadcast/digest hints only schedule authoritative Host reads; they cannot
+   * fabricate a PTY, submit input, interrupt work or kill a remote resource. */
+  async refreshDirectories(hostId?: string): Promise<void> {
+    if (this.disposed) return;
+    await Promise.all([...this.restoreRequests.values()].filter(request => (!hostId || request.hostId === hostId) && (request.ownerId === undefined || this.ownerListeners.has(request.ownerId)))
+      .map(request => this.restore(request.hostId, request.ownerId, request.scope, request.aliases)));
+  }
+
+  /** A successful authoritative read removed this resource. Detach the reader,
+   * never echo a kill or a directory mutation from a remote notification. */
+  private detach(sessionId: string): void {
+    const entry = this.sessions.get(sessionId); if (!entry) return;
+    this.sessions.delete(sessionId); entry.unsubscribe();
+    if (entry.ownerId !== null) {
+      const owner = this.owners.get(entry.ownerId);
+      if (owner) { owner.sessionIds = owner.sessionIds.filter(id => id !== sessionId); if (owner.activeSessionId === sessionId) owner.activeSessionId = owner.sessionIds.at(-1) ?? null; this.publish(entry.ownerId, owner); }
+    }
+    void entry.session.dispose().catch(() => {});
   }
 
   release(sessionId: string): void {
@@ -272,6 +328,7 @@ export class ConversationTerminalSessionRegistry {
       }
     }
     void entry.session.terminate().then(async () => {
+      this.directoryChanged?.(entry.hostId);
       await entry.session.dispose();
     }).catch(() => {
       void entry.session.dispose();
@@ -287,7 +344,7 @@ export class ConversationTerminalSessionRegistry {
     this.ownerSnapshots.clear();
     this.ownerListeners.clear();
     this.retiredSessions.clear();
-    this.ownerRestoreRevisions.clear();
+    this.ownerRestoreRevisions.clear(); this.restoreRequests.clear();
     entries.forEach((entry) => entry.unsubscribe());
     await Promise.allSettled(entries.map(({ session }) => session.dispose()));
   }

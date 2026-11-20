@@ -7,7 +7,7 @@ import WebSocket from 'ws';
 import {DshClient} from '../../apps/local-agent-host/src/dsh-client.ts';
 
 const expected=(host:any)=>({expectedOwner:host.handoff.authority.owner,expectedEpoch:host.handoff.authority.snapshot().epoch,operationId:'test',fence:'test'});
-test('real native direct RPC fence, consumer custody and cold successor',async t=>{
+test('real native direct RPC fence, consumer custody and cold successor', { skip: process.platform !== 'linux' ? 'Independent DSH writer requires Linux flock' : false }, async t=>{
  const root=await mkdtemp('/tmp/dsh-p3c-');const skills=join(root,'skills');await mkdir(skills);
  const options={coldDependencyRoots:[resolve('node_modules')],dataDirectory:join(root,'agent'),descriptorPath:join(root,'connection.json'),runtimeDirectory:root,skillsDirectory:skills,
  dshExecutable:resolve('runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'),dshCapabilityPlugin:resolve('apps/local-agent-host/src/dsh-capability-plugin.mjs')};
@@ -22,7 +22,7 @@ test('real native direct RPC fence, consumer custody and cold successor',async t
  const response:any=await new Promise(done=>{socket.once('message',data=>done(JSON.parse(data.toString())));socket.send(JSON.stringify({id:1,method:'initialize',params:{}}));});
  assert.ok(response.opencraftDshReceipt);
  assert.equal(host.handoff.receipts.observation().activeCount,1);
- assert.throws(()=>host.handoff.acknowledgeReceipt({...response.opencraftDshReceipt,receipt:'wrong'}));
+ await assert.rejects(host.handoff.acknowledgeReceipt({...response.opencraftDshReceipt,receipt:'wrong'}));
  socket.send(JSON.stringify({method:'opencraft/owner/receipt',params:response.opencraftDshReceipt}));
  for(let i=0;i<100&&host.handoff.receipts.observation().activeCount;i++)await new Promise(r=>setTimeout(r,10));
  assert.equal(host.handoff.receipts.observation().activeCount,0);socket.close();
@@ -64,7 +64,7 @@ test('real native direct RPC fence, consumer custody and cold successor',async t
  await assert.rejects(startIndependentDshHost(options),/unconfirmed/);
 });
 
-test('missing or invalid native history headers cannot certify a cold handoff',async t=>{
+test('missing or invalid native history headers cannot certify a cold handoff', { skip: process.platform !== 'linux' ? 'Independent DSH writer requires Linux flock' : false }, async t=>{
  const {readdir}=await import('node:fs/promises');const {dirname,basename}=await import('node:path');const {zstdCompressSync}=await import('node:zlib');
  const root=await mkdtemp('/tmp/dsh-corrupt-');const skills=join(root,'skills');await mkdir(skills);
  const options={coldDependencyRoots:[resolve('node_modules')],dataDirectory:join(root,'agent'),descriptorPath:join(root,'connection.json'),runtimeDirectory:root,skillsDirectory:skills,
@@ -95,7 +95,7 @@ test('missing or invalid native history headers cannot certify a cold handoff',a
 });
 
 
-test('legacy idle active goal cold handoff matches normal restart',async t=>{
+test('legacy idle active goal cold handoff matches normal restart', { skip: process.platform !== 'linux' ? 'Independent DSH writer requires Linux flock' : false }, async t=>{
  const {startLocalAgentHost}=await import('../../apps/local-agent-host/src/main.ts');
  const {zstdCompressSync,zstdDecompressSync}=await import('node:zlib');
  const root=await mkdtemp('/tmp/dsh-legacy-goal-');await mkdir(join(root,'skills'));
@@ -158,7 +158,7 @@ test('legacy idle active goal cold handoff matches normal restart',async t=>{
  assert.equal(host.handoff.open(),true);
 });
 
-test('real legacy started tool without a result stays unknown through cold inspection',async t=>{
+test('real legacy started tool without a result stays unknown through cold inspection', { skip: process.platform !== 'linux' ? 'Independent DSH writer requires Linux flock' : false }, async t=>{
  const {startLocalAgentHost}=await import('../../apps/local-agent-host/src/main.ts');
  const {zstdCompressSync,zstdDecompressSync}=await import('node:zlib');
  const root=await mkdtemp('/tmp/dsh-legacy-unknown-');await mkdir(join(root,'skills'));
@@ -221,7 +221,7 @@ test('automatic recovery and fence share the owner control queue', async t => {
  t.after(()=>rm(root,{recursive:true,force:true}));
  await mkdir(join(root,'owner-handoff'));
  const handoff=new DshOwnerHandoff(root,{},()=>({coverage:'complete',activeCount:0}));
- await handoff.load();
+ await handoff.load();t.after(()=>handoff.receipts.close());
  handoff.attach({nativeOwner:async()=>({}),handoffObservation:async()=>({})});
  const state=handoff.authority.snapshot();
  const input={expectedOwner:state.owner,expectedEpoch:state.epoch,operationId:'race',fence:'race'};
@@ -239,7 +239,7 @@ test('failed automatic recovery durably fences the open owner', async t => {
  t.after(()=>rm(root,{recursive:true,force:true}));
  await mkdir(join(root,'owner-handoff'));
  const handoff=new DshOwnerHandoff(root,{},()=>({coverage:'complete',activeCount:0}));
- await handoff.load();
+ await handoff.load();t.after(()=>handoff.receipts.close());
  const before=handoff.authority.snapshot();
  await assert.rejects(handoff.recoverNative(async()=>{throw new Error('restart failed');}), /restart failed/);
  assert.equal(handoff.open(),false);

@@ -17,8 +17,10 @@ export const table_pool_accounts = sqliteTable("pool_accounts", {
   "reset_credit_count": integer("reset_credit_count"),
   "reset_credits_observed_at": integer("reset_credits_observed_at"),
   "allow_credits": integer("allow_credits").notNull().default(sql`1`),
+  "owner_actor": text("owner_actor"),
 }, table => [
   primaryKey({ columns: [table["id"]] }),
+  index("pool_account_owner").on(table["owner_actor"]),
   check("pool_accounts_check_0", sql`reset_credit_count >= 0`),
   check("pool_accounts_check_1", sql`allow_credits IN (0,1)`),
 ]);

@@ -6,10 +6,46 @@ import { tmpdir } from 'node:os';
 import { gzipSync, brotliCompressSync, gunzipSync, brotliDecompressSync } from 'node:zlib';
 import { request } from 'node:http';
 import { createWorkbenchWebServer } from '../../scripts/workbench-web-server.mjs';
-const get = (url, encoding, method = 'GET') => new Promise((resolve, reject) => {
-  const req = request(url, { method, headers: { 'accept-encoding': encoding } }, res => {
+import { createWorkbenchWebServer as createIntegratedWebServer } from '../../scripts/serve-workbench-web.mjs';
+const get = (url, encoding, method = 'GET', headers = {}) => new Promise((resolve, reject) => {
+  const req = request(url, { method, headers: { 'accept-encoding': encoding, ...headers } }, res => {
     const chunks = []; res.on('data', data => chunks.push(data)); res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
   }); req.on('error', reject); req.end();
+});
+test('integrated server selects representation-specific validators and preserves negotiation on HEAD/304/406', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'opencraft-integrated-encoding-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, 'assets'));
+  const source = Buffer.from('export const data = "compressed payload";'.repeat(100));
+  await Promise.all([['', source], ['.br', brotliCompressSync(source)], ['.gz', gzipSync(source)]].map(([suffix, body]) => writeFile(join(root, 'assets/main-ABC12345.js' + suffix), body)));
+  const server = await createIntegratedWebServer({ root, appServerTarget: null });
+  t.after(() => server.close());
+  const address = await server.listen({ host: '127.0.0.1', port: 0 });
+  const url = `http://127.0.0.1:${address.port}/assets/main-ABC12345.js`;
+  const br = await get(url, 'br');
+  assert.deepEqual(brotliDecompressSync(br.body), source);
+  assert.equal(br.headers.vary, 'Accept-Encoding');
+  assert.match(br.headers['content-type'], /javascript/);
+  assert.match(br.headers['cache-control'], /immutable/);
+  const head = await get(url, 'br', 'HEAD');
+  assert.equal(head.body.length, 0);
+  assert.equal(head.headers['content-length'], br.headers['content-length']);
+  assert.equal(head.headers.etag, br.headers.etag);
+  const unchanged = await get(url, 'br', 'GET', { 'if-none-match': br.headers.etag });
+  assert.equal(unchanged.status, 304);
+  assert.equal(unchanged.headers.vary, 'Accept-Encoding');
+  assert.equal(unchanged.headers['content-length'], undefined);
+  assert.equal(unchanged.body.length, 0);
+  const identity = await get(url, 'identity', 'GET', { 'if-none-match': br.headers.etag });
+  assert.equal(identity.status, 200);
+  assert.notEqual(identity.headers.etag, br.headers.etag);
+  assert.deepEqual(identity.body, source);
+  const gzip = await get(url, 'br;q=0,gzip');
+  assert.deepEqual(gunzipSync(gzip.body), source);
+  const rejected = await get(url, '*;q=0', 'HEAD');
+  assert.equal(rejected.status, 406);
+  assert.equal(rejected.headers.vary, 'Accept-Encoding');
+  assert.equal(rejected.body.length, 0);
 });
 test('immutable sidecars negotiate gzip/br/q-values, preserve MIME/cache and support HEAD without runtime compression', async t => {
   const root = await mkdtemp(join(tmpdir(), 'opencraft-encoding-')); t.after(() => rm(root, { recursive: true, force: true }));

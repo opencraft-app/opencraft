@@ -4,5 +4,11 @@
     "version": 2,
     "name": "notification-destinations",
     "checksum": "051fcc6e15af2eb7a8838d774beca6cafa0270dd067a966b688cc0859e26c7b6"
+  },
+  {
+    "tag": "0002_default_decisions",
+    "version": 3,
+    "name": "notification-default-decisions",
+    "checksum": "4d41eb5aa014a34503788335a32f3e95e626e74c659e5ec6ac377c5388a27a59"
   }
 ]

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { selectWorkspaceManifests } from "./workspace-typecheck-plan.mjs";
 // Runs every workspace's `typecheck` script in parallel. Each is an
 // independent `tsc --noEmit`, so order does not matter; running them one at a
 // time left all but one core idle.
@@ -15,13 +16,9 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 
-const workspaces = JSON.parse(readFileSync(join(root, "package.json"), "utf8"))
-  .workspaces.flatMap((pattern) => {
-    const base = pattern.replace(/\/\*$/u, "");
-    return execFileSync("git", ["ls-files", "--", `${base}/*/package.json`], { cwd: root, encoding: "utf8" })
-      .split("\n")
-      .filter((file) => file && file.split("/").length === 3);
-  })
+const patterns = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).workspaces;
+const trackedManifests = execFileSync("git", ["ls-files", "--", "**/package.json"], { cwd: root, encoding: "utf8" }).split("\n");
+const workspaces = selectWorkspaceManifests(patterns, trackedManifests)
   .map((file) => ({ dir: dirname(file), manifest: JSON.parse(readFileSync(join(root, file), "utf8")) }))
   .filter(({ manifest }) => typeof manifest.scripts?.typecheck === "string");
 

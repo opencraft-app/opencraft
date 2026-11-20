@@ -1,10 +1,11 @@
 import React from "react";
 import type { ConversationRecoveryDiagnostic } from "../runtime/conversation-recovery-diagnostic";
-import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
-import { ArchiveIcon, RestoreArchiveIcon } from "@opencraft/design-system-web/action-icons";
+import { Button } from '@opencraft/design-system-web/button';
+import { FormattedMessage } from "@opencraft/i18n/react";
 
 
-export type ConversationRecoveryPresentation = "none" | "cold-loading" | "cold-error" | "warm-loading" | "warm-error";
+import { type ConversationRecoveryPresentation } from "@opencraft/chat-core";
+export { conversationRecoveryPresentation, type ConversationRecoveryPresentation } from "@opencraft/chat-core";
 export type ConversationUnavailableReason = "archived" | "not-found";
 
 /** Archive keeps a readable transcript. Only a missing conversation replaces it. */
@@ -15,16 +16,6 @@ export function conversationArchivePresentation(
   if (reason === "archived") return { showHistory: hasHistory, banner: hasHistory ? "alongside" : "replace" };
   if (reason === "not-found") return { showHistory: false, banner: "replace" };
   return { showHistory: true, banner: "none" };
-}
-
-/** Presentation only: a retained timeline is useful even before it is authoritative. */
-export function conversationRecoveryPresentation(input: {
-  readonly authoritative: boolean;
-  readonly hasVisibleHistory: boolean;
-  readonly failed: boolean;
-}): ConversationRecoveryPresentation {
-  if (input.authoritative) return "none";
-  return `${input.hasVisibleHistory ? "warm" : "cold"}-${input.failed ? "error" : "loading"}`;
 }
 
 /** Initial connection/history loading is routine, not evidence of instability. */
@@ -67,78 +58,43 @@ function ClientUpdateRequired() {
   return <FormattedMessage id="chat.reconnect.updateRequired" defaultMessage="Update or reload to reconnect" />;
 }
 
-/** Routine recovery stays in the owner; only incompatible clients need an instruction. */
-export function ConversationRecoveryEmptyState({ failed, requiresUpdate = false }: {
+export type ConnectionAccessFailure = 'authentication' | 'permission';
+interface AccessRecoveryProps {
+  readonly accessFailure?: ConnectionAccessFailure | null;
+  readonly onRetry?: () => void;
+}
+function AccessRecovery({ accessFailure, onRetry }: AccessRecoveryProps) {
+  return <>
+    <span>{accessFailure === 'authentication'
+      ? <FormattedMessage id="chat.reconnect.signInRequired" defaultMessage="Sign in in a new window, then return here and retry. This chat will stay open." />
+      : <FormattedMessage id="chat.reconnect.accessDenied" defaultMessage="Your account does not have access to this server. Ask an administrator, then retry." />}</span>
+    {accessFailure === 'authentication' ? <Button variant="link" size="sm" onClick={() => {
+      // Explicit user action only. Never refresh this page, rewrite its draft or
+      // start a login flow from an automatic reconnect/background event.
+      window.open(window.location.href, '_blank', 'noopener,noreferrer');
+    }}><FormattedMessage id="chat.reconnect.signIn" defaultMessage="Open sign-in" /></Button> : null}
+    {onRetry ? <Button variant="link" size="sm" onClick={onRetry}><FormattedMessage id="chat.reconnect.retryConnection" defaultMessage="Retry connection" /></Button> : null}
+  </>;
+}
+
+/** Routine recovery stays in its owner; manual admission failures need actions. */
+export function ConversationRecoveryEmptyState({ failed, requiresUpdate = false, accessFailure, onRetry }: {
   readonly failed: boolean;
   readonly requiresUpdate?: boolean;
-}) {
+} & AccessRecoveryProps) {
+  if (failed && accessFailure) return <div className="conversation-recovery-empty-error thread-layout-width" role="alert"><AccessRecovery accessFailure={accessFailure} onRetry={onRetry} /></div>;
   return failed && requiresUpdate
     ? <div className="conversation-recovery-empty-error thread-layout-width" role="alert"><ClientUpdateRequired /></div>
     : null;
 }
 
-export function ConversationRecoveryNotice({ failed, requiresUpdate = false }: {
+export function ConversationRecoveryNotice({ failed, requiresUpdate = false, accessFailure, onRetry }: {
   readonly failed: boolean;
   readonly requiresUpdate?: boolean;
-}) {
+} & AccessRecoveryProps) {
+  if (failed && accessFailure) return <div className="conversation-recovery-notice" role="alert"><AccessRecovery accessFailure={accessFailure} onRetry={onRetry} /></div>;
   return failed && requiresUpdate
     ? <div className="conversation-recovery-notice" role="alert"><ClientUpdateRequired /></div>
     : null;
 }
 
-/**
- * A terminal lifecycle result is a conversation state, not a failed Turn.
- * Keep the transcript and composer out of the error path so an archived route
- * cannot grow duplicate "Continue" messages while it is being restored.
- */
-export function ConversationUnavailableState({
-  reason,
-  onRestore,
-  restoring = false,
-}: {
-  readonly reason: ConversationUnavailableReason;
-  readonly onRestore?: () => void | Promise<void>;
-  readonly restoring?: boolean;
-}) {
-  const intl = useIntl();
-  const archived = reason === "archived";
-  return (
-    <section
-      aria-live="polite"
-      className="conversation-unavailable-state"
-      data-reason={reason}
-      role="status"
-    >
-      <span aria-hidden="true" className="conversation-unavailable-state__icon">
-        <ArchiveIcon size={18} />
-      </span>
-      <div className="conversation-unavailable-state__copy">
-        <strong>
-          {archived
-            ? <FormattedMessage id="chat.archived.title" defaultMessage="Conversation archived" />
-            : <FormattedMessage id="chat.unavailable.title" defaultMessage="Conversation unavailable" />}
-        </strong>
-        <p>
-          {archived
-            ? <FormattedMessage id="chat.archived.description" defaultMessage="This conversation is archived and read-only until you restore it." />
-            : <FormattedMessage id="chat.unavailable.description" defaultMessage="This conversation is no longer available." />}
-        </p>
-      </div>
-      {archived && onRestore ? (
-        <button
-          aria-busy={restoring || undefined}
-          aria-label={intl.formatMessage({ id: "chat.archived.restore", defaultMessage: "Restore conversation" })}
-          className="conversation-unavailable-state__restore"
-          disabled={restoring}
-          onClick={() => { void onRestore(); }}
-          type="button"
-        >
-          <RestoreArchiveIcon aria-hidden="true" size={14} />
-          <span>{restoring
-            ? <FormattedMessage id="chat.archived.restoring" defaultMessage="Restoring…" />
-            : <FormattedMessage id="chat.archived.restore" defaultMessage="Restore conversation" />}</span>
-        </button>
-      ) : null}
-    </section>
-  );
-}

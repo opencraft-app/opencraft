@@ -24,6 +24,11 @@ async function writeHeadlessVersion(webRoot) {
   }));
 }
 
+test('headless rejects relative or root execution CLI paths before opening storage', async () => {
+  await assert.rejects(startHeadlessServer({ threadCliDirectory: 'cli' }), /absolute non-root execution path/);
+  await assert.rejects(startHeadlessServer({ threadCliDirectory: '/' }), /absolute non-root execution path/);
+});
+
 test('running headless gateway resolves a new Host address on reconnect and rejects unavailable attachments', { timeout: 10_000 }, async (context) => {
   const root = await mkdtemp(join(tmpdir(), 'opencraft-host-reconnect-'));
   const webRoot = join(root, 'web'); await mkdir(webRoot);
@@ -40,7 +45,7 @@ test('running headless gateway resolves a new Host address on reconnect and reje
     let selected = 0;
     let unavailable = false;
     const target = () => `ws://127.0.0.1:${backends[selected].address().port}/rpc`;
-    server = await startHeadlessServer({ root, webRoot, dataDirectory: join(root, 'data'), port: 0, machineName: 'join服务器', isolateBrowserStorage: true,
+    server = await startHeadlessServer({ root, webRoot, dataDirectory: join(root, 'data'), threadCliDirectory: join(root, 'execution', 'cli'), port: 0, machineName: 'join服务器', isolateBrowserStorage: true,
       startAgentHost: async options => { assert.equal(options.machineIdentity.name, 'join服务器'); return { websocketUrl: target(),
         resolveWebsocketUrl: async () => { if (unavailable) throw new Error('private attachment failure'); return target(); },
         async close() {} }; } });
@@ -191,7 +196,7 @@ test("public SSH can explicitly allow changing addresses without removing authen
   const argv = ["--host", "0.0.0.0", "--allow-unauthenticated-public", "--ssh-public-access", "--ssh-servers", "/private/ssh.json", "--data-dir", "/tmp/private"];
   assert.equal(parseHeadlessArguments(argv, {}).sshPublicAccess, true);
   assert.equal(parseHeadlessArguments([...argv, "--ssh-require-access-key"], {}).sshRequireAccessKey, true);
-  assert.throws(() => parseHeadlessArguments([...argv, "--ssh-public-origin", "https://fixture.invalid"], {}), /Choose either/u);
+  assert.throws(() => parseHeadlessArguments([...argv, "--ssh-public-origin", "https://fixture.invalid"], {}), /Unknown option/u);
 });
 
 test("public headless mode requires explicit acknowledgement and keeps one HTTP and WebSocket server", async (context) => {
@@ -278,7 +283,11 @@ test("bundled headless help exits without starting the imported static gateway",
   context.after(() => rm(directory, { recursive: true, force: true }));
   const entry = join(directory, "server.mjs");
   await buildHeadlessBundle(entry);
-  const output = execFileSync(process.execPath, [entry, "--help"], { encoding: "utf8", timeout: 5000 });
+  // Exercise the built artifact like an installed CLI, not through the source-test
+  // tsx loader (which otherwise retransforms the bundle and delays process exit).
+  const artifactEnvironment = { ...process.env };
+  delete artifactEnvironment.NODE_OPTIONS;
+  const output = execFileSync(process.execPath, [entry, "--help"], { encoding: "utf8", timeout: 5000, env: artifactEnvironment });
   assert.match(output, /Usage: opencraft-server/u);
   assert.doesNotMatch(output, /opencraft static|appserver/u);
 });

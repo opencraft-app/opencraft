@@ -1,3 +1,4 @@
+import { isWorkspaceFileRuntime } from './workspace-file-runtime';
 import type { BlobResourceService, BlobResource, BlobAcquireOptions } from "@opencraft/blob-resources";
 import { BlobUrlManager } from "@opencraft/blob-resources/browser";
 import type { AppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
@@ -86,7 +87,7 @@ async function readHttpBlob(download: string, signal: AbortSignal, attempt: numb
 
 export async function loadFileBlob(runtime: AppServerWorkbenchRuntime, hostId: string, path: string, signal: AbortSignal,
   onReadAttempt?: (attempt: number) => void): Promise<Blob> {
-  const download = fileDownloadUrl(hostId, path);
+  const download = isWorkspaceFileRuntime(runtime) ? null : fileDownloadUrl(hostId, path);
   if (download) {
     const delays = [250, 500, 1000, 2000];
     for (let attempt = 1; ; attempt++) {

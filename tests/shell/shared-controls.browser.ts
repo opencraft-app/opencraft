@@ -113,7 +113,18 @@ try {
     await page.getByLabel("Open preview panel", { exact: true }).click();
     await page.getByText("Preview content", { exact: true }).waitFor();
     await page.getByLabel("Close preview panel", { exact: true }).click();
-    await page.getByText("Preview content", { exact: true }).waitFor({ state: "hidden" });
+    // Closed content remains mounted to preserve Native frames. Playwright's
+    // visibility predicate ignores ancestor opacity and zero-width clipping.
+    // Assert the actual Shell-owned paint, hit-test and accessibility boundary.
+    await page.waitForFunction(() => {
+      const panel = document.querySelector<HTMLElement>('.app-shell-right-panel');
+      if (!panel) return true;
+      return panel.getAttribute('aria-hidden') === 'true' && panel.inert
+        && panel.getBoundingClientRect().width <= 0.5
+        && Number(getComputedStyle(panel).opacity) <= 0.001;
+    });
+    assert.equal(await page.getByRole('button', { name: 'Open preview panel', exact: true }).isVisible(), true);
+    assert.equal(await page.getByLabel('Retained draft').inputValue(), 'Unsaved draft stays here');
     assert.ok(before && before.width >= 44 && before.height >= 44);
     await page.evaluate(() => (window as any).controlsFixture.setTouch("off"));
     await page.mouse.move(600, 500);

@@ -13,18 +13,18 @@ try {
  await context.addInitScript(()=>{(window as any).__name=(v:unknown)=>v});
  const page=await context.newPage(),errors:string[]=[];page.on('pageerror',(e:Error)=>{errors.push(e.message);console.error(e.stack)});page.on('console',m=>{if(m.type()==='error')console.error(m.text())});
  await page.goto(vite.resolvedUrls!.local[0]!);await page.getByLabel('Draft').waitFor({timeout:60000}).catch(async error=>{await page.screenshot({path:output+'/startup-error.png'});console.error((await page.locator('body').innerText()).slice(0,1500));console.error('inputs',await page.locator('input').count());throw error;});await page.evaluate(()=>{document.documentElement.dataset.uiDensity='touch';});await page.evaluate(theme=>(window as any).fixture.setThemePreference(theme),theme);await page.waitForTimeout(350);
- const controls=page.locator('.app-shell-header__window-controls button:visible, .app-shell-header__end-actions button:visible, .app-shell-touch-sidebar-toggle button:visible');
+ const controls=page.locator('.app-shell-header__window-controls button:visible, .app-shell-header__end-actions button:visible, .app-shell-header__primary-actions button:visible, .shell-chrome button:visible');
  assert.equal(await controls.count(),3,'sidebar, menu and preview');assert.equal(await page.locator('.thread-header-title').isVisible(),false);assert.equal(await page.locator('.app-shell-header__right-panel-toggle').last().isVisible(),true);
  const bounds=await controls.evaluateAll(es=>es.map(e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return{x:r.x,y:r.y,width:r.width,height:r.height,filter:s.backdropFilter,shadow:s.boxShadow}}));
  for(const b of bounds){assert.ok(b.width>=44&&b.height>=44,JSON.stringify({width,bounds}));assert.ok(b.x>=12&&b.x+b.width<=width-12&&b.y>=0);assert.equal(b.filter,'none','glyph/action planes must not filter their content')}
  assert.ok(bounds.some(b=>b.x>width-90),'menu on trailing edge');
- const lenses=page.locator('.app-shell-header .ui-liquid-glass:visible, .app-shell-touch-sidebar-toggle .ui-liquid-glass:visible');
- assert.equal(await lenses.count(),2,'one circular lens and one shared trailing lens');
- const group=page.locator('.app-shell-header__end-slot .app-shell-header__action-group');
- assert.equal(await group.locator('button').count(),2);
+ const lenses=page.locator('.app-shell-header .ui-liquid-glass:visible, .shell-chrome .ui-liquid-glass:visible');
+ assert.equal(await lenses.count(),3,'sidebar, primary route and workspace each own their surface');
+ const group=page.locator('.app-shell-header__primary-actions .app-shell-header__action-group');
+ assert.equal(await group.locator('button').count(),1);
  const optics=await lenses.evaluateAll(es=>es.map(e=>{const b=e.getBoundingClientRect(),s=getComputedStyle(e,'::before');return {width:b.width,height:b.height,filter:s.backdropFilter,rim:s.boxShadow,map:!!e.querySelector('feDisplacementMap')}}));
  for(const lens of optics){assert.ok(lens.width>=44&&lens.height>=44);assert.notEqual(lens.filter,'none');assert.notEqual(lens.rim,'none');}
- assert.ok(optics.some(lens=>lens.width>lens.height*1.8),'trailing actions share one capsule');
+ assert.ok(optics.every(lens=>lens.width>=lens.height),'each owner retains a complete surface');
 
  const fade=await page.locator('.main-content-top-fade').evaluate(e=>{const s=getComputedStyle(e);return{display:s.display,opacity:s.opacity,pointer:s.pointerEvents,background:s.backgroundImage,filter:s.backdropFilter}});assert.equal(await page.locator('.main-content-frame').evaluate(e=>getComputedStyle(e).marginTop),'0px');assert.equal(fade.display,'none','no app-owned full-width top overlay');assert.equal(fade.filter,'none');assert.equal(fade.pointer,'none');
  await page.getByLabel('Draft').fill('Retained draft');await page.evaluate(()=>{(window as any).editor=document.querySelector('input')});
@@ -131,9 +131,9 @@ try {
   await page.waitForFunction(()=>getComputedStyle(document.querySelector('.app-shell-floating-left-panel')!).opacity==='1');
   const geometry=await page.evaluate(()=>{
    const panel=document.querySelector('.app-shell-floating-left-panel__surface')!,track=document.querySelector('.shell-sidebar__scroll')!,create=document.querySelector('.shell-sidebar__floating-action .sidebar-new-chat')!,settings=document.querySelector('.shell-sidebar__rail-footer [data-surface=settings]')!;
-   return{panelBottom:panel.getBoundingClientRect().bottom,trackBottom:track.getBoundingClientRect().bottom,newBottom:create.getBoundingClientRect().bottom,settingsBottom:settings.getBoundingClientRect().bottom,trackPadding:parseFloat(getComputedStyle(track).paddingBottom),frameEdges:panel.getAttribute('data-safe-layout'),actionEdges:create.parentElement!.getAttribute('data-safe-layout')};
+   return{panelBottom:panel.getBoundingClientRect().bottom,trackBottom:track.getBoundingClientRect().bottom,newBottom:create.getBoundingClientRect().bottom,settingsBottom:settings.getBoundingClientRect().bottom,trackPadding:parseFloat(getComputedStyle(track).paddingBottom),frameEdges:panel.getAttribute('data-safe-layout'),actionEdges:create.closest('.shell-sidebar__footer')!.getAttribute('data-safe-layout'),footerHeight:document.querySelector('.shell-sidebar__footer')!.getBoundingClientRect().height};
   });
-  assert.equal(geometry.panelBottom,844);assert.equal(geometry.trackBottom,844,'the list paints behind the actions through the physical bottom');assert.equal(geometry.newBottom,844-34-16);assert.equal(geometry.settingsBottom,geometry.newBottom);assert.equal(geometry.trackPadding,88+34);assert.equal(geometry.frameEdges,'top left');assert.equal(geometry.actionEdges,'bottom');
+  assert.equal(geometry.panelBottom,844);assert.equal(geometry.trackBottom,844,'the list paints behind the actions through the physical bottom');assert.equal(geometry.newBottom,844-34-12);assert.equal(geometry.settingsBottom,geometry.newBottom);assert.equal(geometry.trackPadding,geometry.footerHeight+8);assert.equal(geometry.frameEdges,'top left');assert.equal(geometry.actionEdges,'bottom');
   const oldInset=await page.addStyleTag({content:'.app-shell-floating-left-panel__surface{padding-bottom:34px!important}'});
   assert.equal(await page.locator('.shell-sidebar__scroll').evaluate(e=>e.getBoundingClientRect().bottom),844-34,'whole-frame inset double-consumes the device safe bottom');await oldInset.evaluate(e=>e.remove());
   // Sample 8px stripes behind the actual controls, not a synthetic glass div.
@@ -221,7 +221,7 @@ try {
  await fallbackContext.addInitScript(()=>{const supports=CSS.supports.bind(CSS);CSS.supports=((property:string,value?:string)=>property==='-webkit-backdrop-filter'?true:value===undefined?supports(property):supports(property,value)) as typeof CSS.supports});
  const fallbackPage=await fallbackContext.newPage();await fallbackPage.goto(vite.resolvedUrls!.local[0]!);await fallbackPage.getByLabel('Draft').waitFor({timeout:60000});
  await fallbackPage.evaluate(()=>{document.documentElement.dataset.uiDensity='touch';});
- const fallbackLenses=fallbackPage.locator('.app-shell-header .ui-liquid-glass:visible, .app-shell-touch-sidebar-toggle .ui-liquid-glass:visible');
+ const fallbackLenses=fallbackPage.locator('.app-shell-header .ui-liquid-glass:visible, .shell-chrome .ui-liquid-glass:visible');
  const fallback=await fallbackLenses.evaluateAll(es=>es.map(e=>({map:!!e.querySelector('feImage'),filter:getComputedStyle(e,'::before').backdropFilter,shadow:getComputedStyle(e).boxShadow,rim:getComputedStyle(e,'::before').boxShadow})));
  assert.equal(fallback.length,2);assert.ok(fallback.every(e=>!e.map&&e.filter.includes('blur(12px)')&&!e.filter.includes('url(')),'syntax-only URL engines must retain the working CSS fallback');
  assert.ok(fallback.every(e=>e.shadow!=='none'&&e.rim!=='none'),'CSS approximation keeps directional edge light and a soft contact shadow');

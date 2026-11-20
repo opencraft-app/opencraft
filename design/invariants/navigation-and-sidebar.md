@@ -8,13 +8,20 @@ The unified desktop sidebar has one full-width context column. Global destinatio
 icons occupy its bottom row, with Settings and Account at the trailing edge in
 normal flow. There is no independent vertical icon rail. The action track scrolls
 horizontally if its destinations exceed the available width; accessory controls
-remain reachable. Application routes keep the same sidebar width rather than
+remain reachable. Adjacent destination and accessory controls use the same shared
+application-navigation item gap, including narrow sidebars; capacity never
+collapses their hover/current faces together. Application routes keep the same sidebar width rather than
 compressing this row into a vertical rail. Existing saved reading widths remain
 valid; default and minimum widths no longer include an absent rail.
 
+The four desktop footer glyphs (Home, Applications, Search and Settings) share
+the theme-aware sidebar section-icon tone, including current and hover states.
+Their state surfaces and focus feedback remain unchanged; account avatars,
+contributed destinations, header controls and Composer icons are not retinted.
+
 Applications has one desktop entrance in the persistent header, immediately before
 the preview-window toggle. It uses the same navigation action and selected state
-as the existing destination. Mobile retains its labeled scrolling navigation,
+as the existing destination. Mobile retains labeled fixed navigation,
 drawer-header Applications entrance and floating actions. Portal, conversation,
 draft, scrolling, account and navigation owners remain unchanged.
 
@@ -62,7 +69,7 @@ cover desktop lists. Layout coordinates are independent. A new viewport restores
 its receipt in layout effect before paint. Empty, detached, hidden or exiting
 viewports cannot overwrite receipts with clamped zeros; a deliberate scroll to
 zero in a visible viewport is valid. Hidden selection updates do not auto-scroll.
-No new persistence, polling or drawer keep-mounted policy is implied.
+Portal restoration spans the slot-ref layout commits before paint; transient browser clamping cannot replace its logical receipt. A new pointer, touch, wheel or keyboard intent cancels pending restoration. No new persistence, polling or drawer keep-mounted policy is implied.
 Acceptance: `OPENCRAFT_SIDEBAR_SCROLL_ONLY=1 npx tsx scripts/smoke/shell/smoke-mobile-sidebar-gesture.ts`
 uses the actual AppShell/Sidebar and verifies reopen, zero, quick reversal,
 hidden selection updates and desktop/mobile handoff in light/dark/reduced motion.
@@ -86,6 +93,23 @@ horizontal flick commits. Cancellation, multitouch and resize return to the
 starting intent. Window blur, page hiding and replacement contacts also retire a
 held gesture synchronously, even when the host omits its terminal touch event;
 replacement editor/native contacts cannot strand a partial foreground.
+A held or cancelling gesture can transfer its visible position to a replacement
+contact. On release, a committed Back decision is accepted by Router immediately;
+its completion must never be deferred to an animation callback. A rejected return
+springs home. An accepted return retires the old page's effects and makes the live
+parent interactive while an inert departure settles above it. A new contact cannot
+revoke that route decision or turn a parent-row tap into a return to the old child.
+Lifecycle interruption restores the Router's committed presentation.
+The page stack explicitly transfers its current visible position when a touch
+acquires an entering page. Pending presentation readiness and an ancestor still
+revealed by a departing child decline that handoff for the entire contact; late
+readiness cannot start an entrance over a held gesture. Taps and native readers
+release an acquired entry through the same shared spring.
+Semantic page retention and painted-scene snapshots have separate identities.
+Interrupting a transition captures the complete currently painted composition,
+without caching that composition as an ancestor page. Snapshot restoration must
+retain only visible cloned nodes; removed hidden Activities and resource owners
+must not remain reachable through restoration closures.
 Vertical scrolling, editors, exclusive gesture regions,
 selection, menus and dialogs keep their own input. Unclaimed outer 24px contacts
 remain reserved for browser/OS gestures. A Runtime adapter may hand the original
@@ -178,8 +202,10 @@ uses a fixed theme radius, released once the page has returned home; interpolati
 its radius repaints the full foreground/shadow during each drag frame. Mobile
 foreground opts into transform compositing while present, so nested masked
 composer scrollers do not repaint against the viewport on each translation;
-rear depth opts into transform/opacity compositing only for its mounted floating
-lifetime and normal motion. Neither changes content identity or freezes updates.
+rear depth opts into transform compositing only for its mounted floating
+lifetime and normal motion. Its ancestor opacity stays at one, so floating
+footer controls retain their material during a held or reversing drag. The
+stationary wash owns depth dimming. Neither changes content identity or freezes updates.
 The moving page disables CSS transition properties: the global reduced-motion
 minimum duration must not add a second transition to each MotionValue write.
 Do not publish inherited animated CSS variables through the conversation subtree.
@@ -200,17 +226,51 @@ headers and row menus remain independent controls and do not dismiss the drawer.
 Evidence: `mobile-sidebar-gesture.test.ts`, `smoke-mobile-sidebar-gesture.ts`;
 real iPhone Safari and native Expo remain separate verification surfaces.
 
+## Native activity dates
+
+Task chronology uses native activity time, not the browser's arrival or selection
+clock. A genuine `turn/started` promotes a known row immediately using its native
+start time (or the documented Codex UUIDv7 Turn timestamp when omitted). Read,
+resume, status changes and opening a conversation do not count as new activity;
+replay and overnight execution retain their actual calendar day.
+
+The existing per-Host, full-query-key catalog journal holds a monotonic minimum
+activity clock while the native metadata index catches up. Cold events create no
+phantom rows. Old/partial reads and client materialization cannot acknowledge
+their own activity projection; an actual native first page must catch up. Native
+removal drops the clock. Sidebar grouping consumes this projection unchanged.
+
+Acceptance: `thread-catalog-live-recency.test.ts` and
+`smoke-sidebar-live-recency.mjs` exercise real notification binding, catalog hook
+and Sidebar, with synthetic native metadata in UTC and Asia/Shanghai.
+
 ## Unified sidebar scroll
 
-On desktop, unified navigation remains independent of list scrolling: docked and
-floating sidebars retain the 60px vertical rail. Buttons retain at least 44px hit
-areas. In the desktop list column, the heading and its filter button stay fixed;
+On desktop, unified destinations occupy a pinned compact icon area below the conversation
+viewport and Token usage, alongside Settings and account in both docked and floating sidebars. Shared NavigationItem controls
+retain their input-density geometry. New chat follows Assistants before the conversation list
+and Settings remains in the fixed footer. Visual and keyboard reading order agree;
+destinations remain in one row, using native horizontal overflow only when capacity requires it; fixed Settings/account entrances remain reachable. In the desktop list column, the heading and its filter button stay fixed;
 `.sidebar-activity-list` is the conversation scroll owner. Mobile uses the shared
-native viewport described below, rather than a separate fixed navigation strip. Selection reveal targets that
+native conversation viewport below its fixed navigation region. Selection reveal targets that
 viewport. Moving the shared content portals preserves its DOM and scroll position.
+The conversation viewport meets Token usage at its single hairline separator,
+without an extra blank margin. The list, usage disclosure and desktop footer
+share the sidebar content gutter. The context panel retains just one spacing
+unit below the accessory for unclipped focus ink; the desktop footer owns one
+spacing unit above/below its controls, even with touch density. Compact whitespace
+never shrinks the shared touch hit targets.
+Expanding usage changes the list's available
+height, not the fixed bottom navigation position. The
+`OPENCRAFT_USAGE_BOUNDARY_ONLY=1` smoke mode covers this boundary in pointer/touch
+presentations and light/dark themes.
 Evidence: `scripts/smoke/shell/smoke-sidebar-thread-insets.mjs` (real AppShell/Sidebar).
 
-Mobile navigation rows, including Home, scroll out with conversations in the shared native viewport. No Home-only sticky surface or top scroll offset remains; the floating New chat and settings actions remain reachable at the bottom. Desktop navigation is unchanged. Acceptance: FAB-only mobile sidebar smoke measures Home displacement against actual scrollTop and verifies it leaves the viewport while creation/settings stay fixed.
+Mobile has three Shell-owned regions: fixed navigation below the brand, a native conversation viewport, and one detached bottom action row. Global application actions and entry-style catalogs remain in the fixed region while conversations scroll. New chat, Applications, Settings and Account share the bottom row, with individual floating surfaces and full touch targets. Entry placement follows declaration semantics, never plugin IDs.
+
+Desktop management destinations (and global product Inbox and Agents entries) occupy a
+nonshrinking slot above `.sidebar-content-scroll`; conversation scrolling cannot
+move these destinations out of view. The mobile Shell provides a fixed entry slot outside its outer conversation scrollport. Both that slot and the desktop inline entry slot reuse SidebarContentPortal, preserving one React/DOM owner across reparenting. Conversation scroll receipts retain their existing desktop/mobile owners; no second list or plugin-specific layout is introduced.
 
 ## Application navigation restoration
 
@@ -222,7 +282,7 @@ the list viewport and the existing application Router authority.
 
 任务草稿保留：Application 级输入槽拥有原 Controller、File、预览与处理任务，View 只借用。桌面 20 个、移动端 4 个非活动页面的缓存淘汰不得删除非空输入；输入槽按 50 份非空草稿单独执行 LRU，空输入不计数，淘汰同时丢弃持久文档并释放附件资源。正在编辑或发送的所有者不可淘汰；全部受保护时拒绝新内容，不超限。侧栏完整 A→B→A 回到最后成功呈现的槽位，显式新 View 与 POP 仍独立。Scope promotion 必须更新无页面但仍保留的草稿；账号撤销清除全部槽位与目标缓存。验证：`test:task-draft-switching`、`smoke:task-draft-switching`。
 
-浏览器草稿补充：任务输入槽由 ConversationDraftOwnerRegistry 保留，ConversationDraftContinuity 仍是唯一文档持久化写入者，不叠加另一套持久化写入者。Bot Composer 通过平台存储端口保存 document、context 与附件元数据，不保存提交回执、执行状态、临时听写或发送锁；存储按产品／账号和 Host + Conversation 身份隔离。只有显式内容编辑和接受发送后的清空写入存储，生命周期变化与卸载不能覆盖其他 View 的输入。账号作用域变化撤销并清除旧适配器，迟到写入不得复活旧内容；新应用实例绑定新账号。浏览器 File 字节及临时侧聊不在当前持久化承诺内；失效 Object URL 或未完成附件恢复为可移除、不可发送的文件卡片。验证见 `chat-browser-drafts.test.ts` 和 `smoke:browser-drafts`。
+浏览器草稿补充：任务输入槽由 ConversationDraftOwnerRegistry 保留，ConversationDraftContinuity 仍是唯一文档持久化写入者，不叠加另一套持久化写入者。只有显式内容编辑和接受发送后的清空写入存储，生命周期变化与卸载不能覆盖其他 View 的输入。账号作用域变化撤销并清除旧适配器，迟到写入不得复活旧内容；新应用实例绑定新账号。浏览器 File 字节及临时侧聊不在当前持久化承诺内；失效 Object URL 或未完成附件恢复为可移除、不可发送的文件卡片。验证见 `chat-browser-drafts.test.ts`。
 
 确定被拒绝的排队跟进由 Conversation Runtime 本地持有，尚无 Server 队列 ID；用户删除只撤销该本地记录，不请求 Host 队列删除，也不自动重发。投递结果未知的记录不得当作失败项删除或再次提交，直到同一 client message ID 出现在 Host 队列或权威历史中。提交中的记录不可删除，已确认入队的消息仍以 Server 队列 ID 删除。
 
@@ -302,9 +362,7 @@ Web/Electron conversation list titles consume the dedicated `threadListTitle` ro
 
 The browser drawer uses `data-navigation-layout="mobile"` with its own
 `shell-navigation.mobile.scss` presentation layer. Full-width application rows (44px minimum targets) and the conversation context
-share one native scrollport. Home, the other application rows and filters
-scroll away together. Mobile New chat and Settings float above the bottom of the
-scroll track; the mobile account entrance is omitted. No horizontal navigation
+occupy separate fixed navigation and scrolling conversation regions. Application rows stay visible; conversation filters scroll with the conversation list. Mobile New chat, Applications, Settings and Account share one row above the bottom of the scroll track. No horizontal navigation
 scrolling. This replaces the earlier mobile horizontal strip, sticky Start and
 bottom account track; desktop retains its icon rail and footer.
 Actions, translated labels, account controls, list/filter state and portals are
@@ -328,9 +386,9 @@ and does not receive the standard task-flow continuation button.
 
 ### Desktop navigation surface (2026-10-15)
 
-Unified desktop-layout bottom navigation follows the shared density preference. Compact controls use 36px targets, 20px glyphs, 24px account avatars, 4px gaps and 4px block padding (44px row). Touch controls use at least 44px targets, 24px glyphs, 28px avatars, 8px gaps and 12px block padding (68px row). Explicit compact mode works on touch-capable hardware; individual pointer contacts do not replace that choice. Width selects layout independently.
+Unified desktop-layout bottom navigation follows the shared density preference. Compact controls use 36px targets, 20px glyphs, 24px account avatars, 4px gaps and 4px block padding (44px row). Touch controls use at least 44px targets, 24px glyphs, 28px avatars, 8px gaps and 12px block padding (68px row). Explicit compact mode works on touch-capable hardware; individual pointer contacts do not replace that choice. Container width selects docking independently. Narrow capacity alone never enables the touch drawer: AppShell also requires the shared touch presentation preference (auto capability or explicit on). A narrow compact desktop keeps the integrated horizontal navigation/footer and ordinary floating panel/dismissal; it does not acquire the mobile page translation, gestures or detached action circles. Explicit off retains that compact presentation on touch-capable hardware; explicit on enables it on pointer hardware when capacity requires a drawer.
 
-Unified Shell uses horizontal bottom navigation in desktop layout, with the density geometry defined above. Labeled mobile rows retain their own glyph sizing and neutral current-page highlighting. Home is the single conversation-area destination for both existing chat and draft routes, invoking openChat without creating a new draft. Desktop retains a full-width New chat row directly below Conversations. Mobile projects the same creation action into a Shell-owned floating pill over the bottom of the scroll track, with a circular settings button on its right. The floating settings button composites its secondary state tint over the existing theme opaque elevated surface in resting, hover and pressed states, so list content cannot show through. The mobile account/avatar entrance and bottom plate are omitted; desktop retains its rail footer. The list reserves space so its last row can clear both controls. New chat dismisses the mobile drawer. The generic Settings entrance retains the open mobile drawer while its shared left slot becomes settings-category navigation; only an explicit category selection dismisses it, including selecting the already active category. Desktop keeps its direct default Appearance route; route normalization and explicit deep links do not create a new drawer or a second navigation owner. Filters retain their existing scroll lifetime; mobile search is a floating header action. Real Shell browser coverage: `OPENCRAFT_GESTURE_FAB_ONLY=1` in `scripts/smoke/shell/smoke-mobile-sidebar-gesture.ts`. The toolbar exposes the sidebar toggle and preserves the measured native-window safe area; history remains in the router/browser without rendered arrow controls. A standalone managed site has a mascot/wordmark brand region in compact layout, sized from the default sidebar metric and capped by viewport space, with collapse at its trailing edge. Touch layout or a browser window whose unified sidebar has moved into its narrow drawer hides both the mark and wordmark in the persistent page header and releases the reserved rail width in visible and measurement copies, retaining navigation controls. The narrow browser rule also applies with compact density; wide compact browser and native desktop branding remain visible. Drawer headers retain the wordmark and a plugin-provided leading mark; plugins can opt out of their mark. The managed site retains its mascot there, replacing the internal mobile collapse button. The closed page retains its plain sidebar entrance, matching right-panel chrome. Search keeps its separate glass circular control. The existing data-ui-density preference owns interaction density; Shell owns the separate narrow-browser branding condition from its existing docking decision. The browser header uses the shared surface color, avoiding a separate gray empty strip. The context column and context-free main frame meet the toolbar and rail with square top-start seams; context presence changes neither saved width nor DOM ownership. Cards and modal surfaces retain their own semantic corner tokens. Tasks owns its single title above its Board/List toolbar; shell chrome omits duplicate management titles. Embedded shells retain their host presentation.
+Unified Shell uses horizontal bottom navigation in desktop layout, with the density geometry defined above. Labeled mobile rows retain their own glyph sizing and neutral current-page highlighting. Home is the single conversation-area destination for both existing chat and draft routes, invoking openChat without creating a new draft. Desktop and compact-density drawers keep one inline New chat row after Assistants and before Conversations. A touch-density drawer uses the original large bottom floating New chat button. Mobile retains its independent floating Applications/Settings/Account controls. Narrow capacity puts the primary button above the accessory row without reducing touch targets. The floating settings button composites its secondary state tint over the existing theme opaque elevated surface in resting, hover and pressed states, so list content cannot show through. The mobile account/avatar entrance reuses the shared account popover and sign-in behavior; the bottom plate is omitted and desktop retains its rail footer. The list reserves space so its last row can clear the remaining floating controls. New chat dismisses the mobile drawer. The generic Settings entrance retains the open mobile drawer while its shared left slot becomes settings-category navigation; only an explicit category selection dismisses it, including selecting the already active category. Desktop keeps its direct default Appearance route; route normalization and explicit deep links do not create a new drawer or a second navigation owner. Filters retain their existing scroll lifetime; mobile search is a floating header action. Real Shell browser coverage: `OPENCRAFT_GESTURE_FAB_ONLY=1` in `scripts/smoke/shell/smoke-mobile-sidebar-gesture.ts`. The toolbar exposes the sidebar toggle and preserves the measured native-window safe area; history remains in the router/browser without rendered arrow controls. A standalone managed site has a mascot/wordmark brand region in compact layout, sized from the default sidebar metric and capped by viewport space, with collapse at its trailing edge. Touch layout hides both the mark and wordmark in the persistent page header and releases the reserved rail width in visible and measurement copies, retaining navigation controls. Compact narrow browser drawers retain desktop header branding and integrated controls; wide compact browser and native desktop branding also remain visible. Drawer headers retain the wordmark and a plugin-provided leading mark; plugins can opt out of their mark. The managed site retains its mascot there, replacing the internal mobile collapse button. The closed page retains its plain sidebar entrance, matching right-panel chrome. Search keeps its separate glass circular control. The existing data-ui-density preference owns interaction density; Shell owns the separate narrow-browser branding condition from its existing docking decision. The browser header uses the shared surface color, avoiding a separate gray empty strip. The context column and context-free main frame meet the toolbar and rail with square top-start seams; context presence changes neither saved width nor DOM ownership. Cards and modal surfaces retain their own semantic corner tokens. Tasks owns its single title above its Board/List toolbar; shell chrome omits duplicate management titles. Embedded shells retain their host presentation.
 
 ### Unified navigation conversation search
 
@@ -340,7 +398,18 @@ The modal searches titles in the existing multi-Host loaded catalog, explicitly 
 
 ### Conversation group disclosures
 
-Group headings omit counts and keep the chevron immediately after the label.
+The private conversation entrance is labelled Private (私密), preserving its
+existing access scope. Activity group headings (Pinned, Recent and Needs your
+attention) keep the chevron immediately after the label and show compact,
+right-aligned blue-dot/unread, gray-dot/attention and spinner/in-progress counts.
+Zero categories are omitted. Counts cover each distinct Host/Thread in the full
+filtered group tree, including folded descendants and later pages, independently
+of disclosure and pagination. The row's participant-gated unread and Goal/status
+precedence remain authoritative: a running or active Goal counts once as in
+progress; waits/errors count once as attention. Opening a row is not execution.
+Counts reuse the row indicator material, metadata typography and reduced-motion
+behavior; their accessible description preserves the disclosure's original name.
+They add no badge capsule, row height, status writer or grouping rule.
 Opacity alone changes for fine mouse hover or keyboard focus; reserved geometry
 and the full-row button remain stable. Mobile layout and coarse/touch input keep
 the chevron visible, with a 44px mobile target. Existing aria-expanded/controls,
@@ -357,17 +426,24 @@ The active heading's visible top equals the real header's bottom, not the
 scrollport origin plus a second toolbar height. Tests measure that chrome edge
 independently and sample continuous scroll phases to catch blank gaps or row bleed.
 The original disclosure remains the interactive owner, stacked below Shell
-chrome. Opaque themes use their context surface; a continuous translucent Sidebar
-plane keeps the disclosure transparent, without a local backdrop filter. Each
-group's item container forms its own isolated stacking context and clips row
-paint entering its own sticky heading. The list observes existing viewport scroll
-only to project overlap; it introduces no scroll writer, scroll state or extra
-scrollport. Row badges and avatar stacks cannot tint or paint over the disclosure.
-Participant popover portals retain their existing floating-surface ownership.
-There are no duplicate headings. Scroll overlap reads coalesce within a frame and complete before clip writes.
-Row content changes retain geometry subscriptions; structural group/item replacement
-reconciles those subscriptions, while real size changes project before paint.
-Disposal cancels pending projection and clears owned clipping styles.
+chrome. Its occluding background is a theme-owned opaque projection of Sidebar
+material over Window material, not the Chat surface or another backdrop filter.
+Existing explicit context and heading background paints remain above that backing,
+including alpha and image paints; they cannot expose moving row pixels.
+Only the sticky disclosure needs this backing; the surrounding Shell and native
+vibrancy retain their existing ownership. Each group's item container keeps its
+isolated avatar stacking context, but has no scroll-dependent clip, mask or
+geometry observer. Native scroll/sticky composition owns the moving boundary,
+including reversals while the main thread is busy. Row badges and avatar stacks
+cannot tint or paint over the disclosure. Participant popover portals retain their
+existing floating-surface ownership. There are no duplicate headings or extra
+scrollports. Keyboard reveal reserves the disclosure height for every row control, including
+menus, participants and tree controls. Explicit selection reveal reserves that
+height even if the group will only become sticky after the reveal; reading itself
+does not write scroll position.
+Real Sidebar coverage in `scripts/smoke/shell/smoke-sidebar-heading-plane.ts`
+checks immediate reverse-scroll hit testing before rAF, native wheel sequences,
+heading-pixel independence, themes, touch input, disclosure and retained rows.
 Historical Shell coverage used `OPENCRAFT_SIDEBAR_STICKY_ONLY=1` in
 `scripts/smoke-sidebar-topology.ts`. That probe is absent from this standalone
 checkout; this record does not establish a current passing sticky-geometry check.
@@ -378,7 +454,7 @@ The conversation heading's single Filters button contains the existing display-m
 
 Conversations has equal block spacing from the existing navigation section token.
 Desktop New chat is an unfilled quiet action with no extra top margin; the mobile
-floating New chat retains its primary fill.
+floating New chat uses the same icon-only action treatment as the other bottom entrances.
 
 Conversation filter triggers use primary button fill and matching foreground while open or keyboard focused, rather than a persistent outline after menu focus restoration. Forced-colors mode retains the shared focus indicator; filter state and menu ownership remain unchanged.
 
@@ -414,8 +490,9 @@ Title results remain available immediately; Message results add an escaped snipp
 ### Mobile search presentation
 
 Mobile/touch conversation search is a full-page result view with the search field
-and circular close control at the bottom, rather than a centered popup. The narrow
-modal breakpoint and touch density select this presentation in CSS, preserving
+and circular close control at the bottom, rather than a centered popup. Only the
+resolved touch presentation preference selects it; narrow compact desktop windows
+retain their bounded centered utility dialog. Both presentations preserve
 one input/query/result tree across rotation and density changes. Radix continues
 to own isolation, focus, Escape and restoration. The existing timeline viewport
 port alone publishes software-keyboard/visual viewport geometry; search consumes
@@ -538,11 +615,17 @@ keyboard focus, menus and independent badge popovers in both input modes/themes.
 
 ## Compact title-accessory conversation rows
 
-Single-line conversation rows with title badges use the shared sidebar title-row
-height token: 36px with pointer input, at least the 44px shared touch target when
-touch interaction is active. Keep participant artwork, count circles, independent
-action lanes and section/list gaps at their existing sizes; compact density must
-not change metadata rows or other navigation owners.
+Single-line conversation rows, with or without title badges, consume the shared
+sidebar title-row height and single-row block-padding tokens. The title-row role
+references the sidebar navigation-row role (28px in compact density) and retains
+at least the shared 44px touch target. Native offscreen intrinsic-size estimates
+consume the same height/padding roles, avoiding a second row-size authority.
+Section/catalog gaps consume the shared sidebar vertical-rhythm roles. Typography,
+leading artwork, participant/count artwork, independent action lanes, two-line
+metadata layouts and bottom floating actions remain unchanged. A smaller gap or
+narrower container never changes the input-density preference. The real Shell
+fixture in `scripts/smoke/shell/smoke-sidebar-compact-rhythm.mjs` compares the old
+rhythm on the same retained controls in pointer/touch and light/dark modes.
 
 
 ## Offscreen ordinary navigation rows
@@ -587,6 +670,42 @@ elapsed work duration is separate.
 
 Edge bridge acceptance: `OPENCRAFT_GESTURE_EDGE_ONLY=1 npx tsx scripts/smoke/shell/smoke-mobile-sidebar-gesture.ts` exercises the actual ClientRuntime and AppShell: Web native gutter, Apple PWA handoff and an injected host-neutral adapter, held open/close, cancel/reversal, full 24px boundary, resize, exclusions, disposal/rebind and draft identity. Synthetic host capabilities do not establish physical iOS native gesture acceptance.
 
+Native vertical readers can declare `data-sidebar-gesture="vertical-pan"` to lend
+horizontal contacts to that same Shell owner, never a separate local drawer.
+Nested editors, media and explicit ignore surfaces retain priority. Terminal
+output publishes this capability only without a selection or TUI mouse tracking;
+vertical scrolling and keyboard input stay with xterm. Once Shell acquires the
+contact, the native reader cannot also consume its moves. The current foreground
+page owns the transform, including full-width tools in the page presentation.
+If a live reader replaces the original touch target, the existing transaction
+continues on that target's detached event path; connected paths are handled once.
+End, cancel, native admission and teardown release that temporary listener lease.
+Real Terminal/RightPanel/AppShell coverage is in
+`scripts/smoke/shell/smoke-terminal-sidebar-gesture.ts`, including animated held
+travel, close/cancel, selection, TUI reporting, modal priority and PTY view identity.
+Terminal vertical drags use the same shared axis lock and adapt to xterm's wheel
+owner: normal-buffer history stays local, alternate-buffer cursor mode and mouse
+reporting follow xterm's protocol. An empty normal buffer cannot emit shell arrow
+input. Buffer/mouse-mode changes revoke a held contact; redraws preserve its
+original target lease. Touch cancellation, view teardown and host interruption
+release it. See `scripts/smoke/shell/smoke-terminal-touch-scroll.ts` for continuous
+history reading, incoming output, alternate/application cursor keys, SGR wheel
+reporting, mode changes, cancellation and same-terminal identity.
+
+A cold Terminal preview fits only its local renderer, with no PTY geometry or
+input publication. Selecting it consumes the existing SceneTransition renderer
+readiness: prepare the selected retained view at its allocated home size and
+mount the touch toolbar before the flight; acknowledge only a rendered matching
+grid with its toolbar slot connected. Active handback fits in the layout commit
+and publishes one PTY size, without reopening the keyboard. Virtual scrollports
+marked `data-retained-scroll-owner="renderer"` retain their own reading anchors;
+the generic DOM snapshot must not overwrite them. Terminal uses public buffer
+markers or follow-tail intent across preview preparation and disposes the lease
+on handback/unmount. Ordinary retained views keep their existing frozen layout.
+Regression: `scripts/smoke/shell/smoke-terminal-open.ts` includes the deferred-fit
+negative control, expansion frames, cold/cached handoff, cancelled preparation,
+history reading, alternate screen, reduced motion and both native placement paths.
+
 
 ## Live directory membership
 
@@ -607,7 +726,7 @@ redeclaring those shared-control properties.
 
 ### Sidebar bottom action surfaces
 
-Touch New chat, Applications and Settings retain their separate floating glass surfaces above a full-height scrollport. The footer hosts remain transparent. Shell measures both hosts and reserves their maximum height as scroll content padding, including safe areas and stacked update notices, so final rows can scroll above the buttons. Desktop surfaces and shared feedback remain.
+Touch New chat, Applications, Settings and Account retain separate floating glass surfaces in one bottom row. One Shell footer owns the transparent action slots and consumes the bottom safe area once. Shell measures that footer and reserves its height as conversation scroll padding, including stacked update notices, so the last row can clear every button. New chat keeps its existing action, accessible name and shortcut; desktop placement and shared feedback remain.
 
 ## Footer overlay topology
 
@@ -668,6 +787,34 @@ own eagerly available styles rather than depending on the search dialog having
 been opened. Feature styles consume typography mixins; global text utilities
 remain at the application style owner.
 
+### Conversation View continuity at navigation handoff
+
+A retained View is a bounded presentation identity, not proof of a mounted DOM
+or a connected Thread. Its empty Composer controller must survive editor release
+until the View cache evicts it. A presentation lease does not protect nonempty
+input from the independent draft capacity policy and retains no Thread/network
+resources. Explicit close and account disposal still revoke the owner.
+
+A resident Thread can be borrowed synchronously before the old View releases its
+lease. This reads the same runtime body without connecting, hydrating or copying
+history. Missing residency continues through existing cold preparation. Releasing
+a View refuses new commands; already admitted commands retain their own lifetime.
+A temporary recovery window cannot replace an existing replica body. Confirmed
+canonical history can still correct or delete content. Cold display fallback
+must retain known message coverage until canonical history supersedes it.
+
+Reading checkpoints are keyed by View, including while its network lease is
+absent. The virtual viewport acknowledges readiness in its layout transaction,
+after pending measurement and positioning work, rather than a mandatory later
+animation frame. Streaming revisions do not restart that receipt. Navigation
+keeps its existing intent/cancellation authority; Motion must not insert a zero
+opacity frame just to commit a prepared target. Sidebar departure can continue
+independently; reduced motion adds no artificial hide. These rules apply to the
+same desktop and touch Shell and do not introduce a cache of every visited DOM.
+
+Evidence: conversation-draft-scope-retention, conversation-draft-owner-registry,
+chat-view-read-lease, chat-host-runtime-registry, appserver-replica and
+chat-conversation-display-continuity tests; smoke-sidebar-selection-handoff.
 
 ## Private conversation section
 
@@ -682,3 +829,88 @@ same section heading, folding and paginated row controls as the shared flow, wit
 its own page limit and empty state. Permission updates move rows between sections
 without navigating or rebuilding the active conversation or draft. Sidebar
 classification never grants access; the Hub remains the permission authority.
+
+### Child conversation disclosure
+
+Each parent initially shows its first three child agents in the existing catalog
+order. Additional children share a disclosure, regardless of their titles;
+no date grouping or date-specific ordering is introduced. Selecting a descendant
+inside the folded remainder reveals that branch, and search exposes matches
+without requiring the disclosure first. Folding is view state: it never archives
+conversations, moves their parent, changes execution or changes context inheritance.
+
+### Sidebar row inset ownership
+
+The Shell slot or `NavigationList inset="sidebar"` owns the gutter outside row
+surfaces. `inset="contained"` reuses that gutter without removing the row
+content inset. Selection, hover and focus contours must retain space around
+glyphs and labels; aligning a row with its host never means zeroing its padding.
+Mobile destination and conversation rows share the same content inset, while
+NavigationList owns the leading slot and label gap. Application destinations
+consume the sidebar list role in the mobile drawer and the compact role in the
+desktop rail; plugins must not compensate with per-entry margins.
+
+### Exclusive conversation disclosures
+
+Fixed task-flow sections and contributed creator sections share one Shell-local
+expanded key, namespaced by section kind and scoped by grouping mode. At most one
+is expanded; activating the open heading closes it and allows an entirely folded
+list. Initial selection may use the current conversation and product-owned
+collapse preferences, but an explicit disclosure intent wins over later catalog,
+badge or timestamp updates. Product identity/grouping and preference writes stay
+with their existing contribution; the Shell does not rewrite their schema.
+
+A disclosure activation measures the clicked heading in the existing native
+scrollport. After the layout commit the Shell compensates its position, reserving
+room for the first row on opening. Scroll boundaries may prevent exact anchoring;
+keep the heading visible without inserting spacers, creating an inner scrollport,
+remounting the editor, changing selection, or deferring a scroll that could steal
+later user input. A closing label may use shared motion tokens to reach its real
+position; reduced motion skips that paint transition. Disclosures do not become
+group selectors and there is no new group-location menu. Existing pagination and
+sticky-heading paint ownership remain intact; this is not list virtualization.
+
+### Recent state and calendar headings
+
+Recent retains running-first ordering, canonical recency and its shared ten-row
+pagination budget. Its leading running run has one quiet `In progress` heading,
+not dates. Only non-running history receives local-day headings. This is a
+presentation within the existing flat keyed list, not another disclosure, data
+owner, copy of a conversation or running lease for an idle active goal. Completing
+a run restores its dated place using the existing canonical time. One Sidebar
+calendar timer refreshes labels at the next local midnight (calendar/DST-aware),
+pauses in hidden documents and reconciles on focus/visibility. It never requests
+catalog data, sorts rows or changes selection. Stable row/tree/menu owners and
+scroll tracks survive label updates; intra-day focus retains the same day value.
+
+### Creation evidence and viewer relationship
+
+A creation receipt and native creation notification feed the same catalog
+acceptance model. Metadata alone is not first-Turn acceptance; an accepted Turn
+without metadata cannot fabricate a row. When both facts exist, publish the row
+without waiting for the native discovery index, title generation or full
+participant details. Duplicate receipts and reordered notifications do not
+create another row; late metadata cannot undo a known removal or repaint a
+completed pending Turn as running. Native list evidence retires the temporary
+projection; its existing read-acknowledgement and recency rules still apply.
+
+The Codex adapter reuses its creation journal, but distinguishes catalog-only
+observations from recovery receipts: notifications cannot prove empty history or
+bind an execution environment. A later receipt enriches that partial record once.
+Input IDs are confirmed only by a receipt for the same accepted Turn. On restart,
+durable acceptance alone cannot resurrect possibly archived rows; fresh native
+metadata is required. Catalog failure invalidates the projection and never asks
+the caller to replay an already accepted native mutation.
+
+`createdByViewer` is optional authenticated reader metadata, recomputed by the
+access owner after authorization. `true` is positive creation relationship
+for personal filtering; `false` does not disprove later participation, and
+absence means unknown/unsupported. It is neither an access grant nor a complete
+participant list. The shared offline catalog does not persist this per-reader
+proof. Product adapters may use it without waiting for legacy membership batches;
+unknown rows keep their previous filtering semantics. Actor/Host isolation,
+permission revocation, explicit filters, expansion and draft continuity remain
+owned by their existing layers.
+
+Evidence: thread-creation-evidence and thread-access tests; downstream sidebar
+creation regression and desktop/touch browser fixture.

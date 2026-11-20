@@ -53,7 +53,9 @@ export function inspectActivityJsx(source, file = "fixture.tsx") {
     if (ts.isFunctionDeclaration(node) && ["SubagentBlock", "AggregatedSubagentActivity", "ThreadTool"].includes(node.name?.text)) {
       let rail = false;
       let header = false;
+      let subagentRow = false;
       const find = child => {
+        if (ts.isJsxSelfClosingElement(child) && child.tagName.getText(tree) === "SubagentActivityRow") subagentRow = true;
         if ((ts.isJsxOpeningElement(child) || ts.isJsxSelfClosingElement(child)) && ["ActivityIcon", "ActivityRowContent"].includes(child.tagName.getText(tree))) rail = true;
         if (ts.isJsxAttribute(child) && child.name.getText(tree) === "className" && child.initializer
           && (/\bthread-activity-item__header\b/.test(child.initializer.getText(tree))
@@ -61,7 +63,7 @@ export function inspectActivityJsx(source, file = "fixture.tsx") {
         ts.forEachChild(child, find);
       };
       find(node);
-      if (!rail || !header) add(node);
+      if ((!rail || !header) && !subagentRow) add(node);
     }
     if (ts.isFunctionDeclaration(node) && ["ActivityDisclosure", "ActivitySummaryRow", "AgentActivityGroupDisclosure", "ThreadTool"].includes(node.name?.text)) {
       let shared = false;

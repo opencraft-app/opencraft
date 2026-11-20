@@ -42,6 +42,7 @@ spacing and a small hierarchy instead of emphasizing every interactive label.
 | Empty state / welcome display | `emptyTitle` / `displayTitle`, `displaySummary` | Page heading enlarged ad hoc |
 | Prose headings / emphasis | `proseHeadingOne/Two/Three/Small`, `proseStrong` | Browser h1/strong defaults |
 | Fenced / inline code | `proseCode` / `inlineCode` | Terminal font just because both are monospace |
+| Overview card identity | `previewTitle` | Document headings; retained view previews keep their original typography and scale as a whole |
 | Terminal grid / mono metadata | `terminalText` / `code` | Inherited body tracking |
 | Touch editable text / login verification code | `mobileInput` / `verificationCode` | Per-feature numeric exception |
 
@@ -182,3 +183,47 @@ trim. Never apply both. Preserve the title string, text box, hit target, nested
 indentation and ellipsis. Latin, Han and ASCII punctuation stay unchanged.
 Desktop retains its current spacing. This is an optical edge policy, not a font
 replacement or a per-title padding adjustment.
+
+## Input-adaptive menus
+
+Shared menu typography projects `controlCompact` for compact density and
+`menu` for touch density through `--menu-item-font` / tracking. Menu
+labels, including Composer selection labels, consume that owner rather than
+reasserting compact typography. Touch keeps the shared hit-area floor and removes
+inter-row dead space; radius and leading icons follow the same density projection.
+Do not infer input from viewport width or globally enlarge metadata/reading text.
+System CJK fallbacks, regular weight, theme materials, focus and Radix behavior
+remain unchanged. Verify narrow mouse and wide touch as well as phone layouts.
+
+### Menu composition and available space
+
+Nested leading glyphs and selection marks consume the menu icon role, not the
+compact toolbar-trigger role. Single-choice toolbar menus expose Radix radio
+semantics; their checked state shares the persistent menu selection treatment.
+Touch menus use the available dynamic viewport/collision height instead of the
+compact 376px ceiling. Toolbar option groups let their surface own touch scrolling;
+compact menus retain their bounded list. Keep 44px touch targets, existing material,
+keyboard navigation and native overflow scrolling.
+
+### Quiet utility menus
+
+Touch menu labels have their own regular-weight `menu` role rather than inheriting
+a large button role. The UI family and natural tracking are unchanged; do not
+substitute per-feature fonts or synthetic smoothing. Keep the existing touch hit
+floor and leading glyph size. Surface insets align labels and leave breathing room
+without inter-row dead space. Menus use the shared low floating elevation, not the
+large panel shadow. Subtle separators distinguish collaboration, organization,
+context and support actions without changing saved toolbar order or access.
+Menu surfaces keep text-size-adjust at 100% so portal width does not inflate the
+declared utility role in WebKit; page zoom and reading typography are unchanged.
+
+
+## Editable font floors
+
+Web Input/Composer roles declare `editable` in the registry. Their generated
+font shorthand and role mixin consume the same resolved size and line-height.
+The narrow coarse-pointer browser focus-zoom safeguard supplies only a minimum;
+it must never cap a larger role/user size. This browser safety policy is separate
+from the installation's touch-friendly presentation preference. Other reading,
+code and terminal roles and Native scales are unchanged. Generic editables get a
+low-specificity fallback, not a global `!important` font override.

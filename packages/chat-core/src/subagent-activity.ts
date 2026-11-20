@@ -100,6 +100,7 @@ function displayStatusFor(block: SubagentTimelineBlock, status: SubagentTaskStat
   if (block.activityKind === "interrupted") return "interrupted";
   if (block.activityKind === "interacted") return "updated";
   if (block.activityKind === "started") return "active";
+  if (block.activityKind === "completed") return "done";
   return status === "unknown" ? "unknown" : status === "waiting" || status === "working" ? "active" : "done";
 }
 
@@ -109,7 +110,7 @@ function summaryStatusFor(
 ): SubagentSummaryStatus {
   if (blocks.some(block => block.toolCallStatus === "failed" || block.deliveryStatus === "rejected")
     || agents.some(agent => agent.status === "failed")) return "failed";
-  if (blocks.some(block => block.deliveryStatus === "cancelled")
+  if (blocks.some(block => block.deliveryStatus === "cancelled" || block.toolCallStatus === "interrupted")
     || agents.some(agent => agent.displayStatus === "interrupted")) return "interrupted";
   if (agents.some(agent => agent.statusLabel === "awaiting attention")) return "attention";
   if (blocks.some(block => block.toolCallStatus === "pending" || block.toolCallStatus === "running"
@@ -126,9 +127,11 @@ export function deriveSubagentActivityPresentation(block: SubagentTimelineBlock)
   const pathName = nameFromPath(block.agentPath);
   const agents = uniqueThreadIds(block, states).map((threadId): SubagentActivityAgent => {
     const source = record(states[threadId]);
-    const rawStatus = block.childRuntimeStatus?.[threadId] ?? source?.status ?? "unknown";
+    const rawStatus = block.childRuntimeStatus?.[threadId] ?? source?.status
+      ?? (block.activityKind === "completed" ? "completed" : block.activityKind === "started" ? "running"
+        : block.activityKind === "interrupted" ? "interrupted" : "unknown");
     const status = mapSubagentTaskStatus(rawStatus);
-    const defaultName = block.label !== "Agent" ? block.label : pathName;
+    const defaultName = block.label !== "Agent" ? text(block.label) ?? pathName : pathName;
     return {
       threadId,
       displayName: text(source?.displayName) ?? text(source?.agentName) ?? text(source?.name) ?? defaultName ?? "Agent",
@@ -203,8 +206,58 @@ export function deriveSubagentActivityGroupPresentation(
 }
 
 export function subagentInlineStatusLabel(agent: SubagentActivityAgent): string {
-  if (agent.displayStatus === "active") return agent.displayName + " started working";
+  if (agent.status === "failed") return agent.displayName + " failed";
+  if (agent.displayStatus === "active" && agent.status !== "unknown") return agent.displayName + " started working";
   if (agent.displayStatus === "updated") return agent.displayName + " updated";
   if (agent.displayStatus === "interrupted") return agent.displayName + " interrupted";
-  return agent.displayName + " finished";
+  return agent.displayName + (agent.status === "done" ? " finished" : " status unconfirmed");
+}
+
+export type SubagentActivitySummaryStatus = SubagentSummaryStatus | "starting" | "updated";
+
+export interface SubagentActivityMember {
+  /** A creation call keeps its presentation identity when its Thread arrives. */
+  readonly key: string;
+  readonly threadId: string | null;
+  readonly displayName: string;
+  readonly status: SubagentTaskStatus;
+}
+
+/** Pending tasks are presentation members, never invented navigable Threads. */
+export function deriveSubagentActivitySummary(blocks: readonly SubagentTimelineBlock[]) {
+  const presentation = deriveSubagentActivityGroupPresentation(blocks);
+  const creationKeys = new Map<string, string>();
+  const pending: SubagentActivityMember[] = [];
+  for (const block of blocks) {
+    if (block.tool !== "spawnAgent") continue;
+    const agents = deriveSubagentActivityPresentation(block).agents;
+    if (agents.length === 1 && !creationKeys.has(agents[0]!.threadId)) {
+      creationKeys.set(agents[0]!.threadId, block.id);
+    } else if (agents.length === 0) {
+      pending.push({ key: block.id, threadId: null, displayName: text(block.label) ?? "Agent",
+        status: block.toolCallStatus === "failed" ? "failed"
+          : block.toolCallStatus === "pending" || block.toolCallStatus === "running" ? "waiting" : "unknown" });
+    }
+  }
+  const order = new Map<string, number>();
+  for (const block of blocks) {
+    const agents = deriveSubagentActivityPresentation(block).agents;
+    for (const agent of agents) {
+      const key = creationKeys.get(agent.threadId) ?? agent.threadId;
+      if (!order.has(key)) order.set(key, order.size);
+    }
+    if (block.tool === "spawnAgent" && agents.length === 0 && !order.has(block.id)) order.set(block.id, order.size);
+  }
+  const members: readonly SubagentActivityMember[] = [
+    ...presentation.agents.map(agent => ({ key: creationKeys.get(agent.threadId) ?? agent.threadId,
+      threadId: agent.threadId, displayName: agent.displayName, status: agent.status })),
+    ...pending,
+  ].sort((left, right) => order.get(left.key)! - order.get(right.key)!);
+  let status: SubagentActivitySummaryStatus = presentation.summaryStatus;
+  if (status === "working" && members.length > 0 && members.every(member => member.status === "waiting")) status = "starting";
+  if (status === "working" && members.every(member => member.status !== "waiting" && member.status !== "working")
+    && !blocks.some(block => block.tool === "spawnAgent" && (block.toolCallStatus === "pending" || block.toolCallStatus === "running"))) status = "unknown";
+  if (status === "unknown" && blocks.length > 0 && blocks.every(block => block.tool === null && block.activityKind !== null)
+    && presentation.agents.length > 0 && presentation.agents.every(agent => agent.displayStatus === "updated")) status = "updated";
+  return { ...presentation, members, status };
 }

@@ -1,8 +1,7 @@
 import { startHandsExecutionOwner } from '@opencraft/sandbox-node/hands-unix';
 import { handsResources } from './resources.mjs';
-import { dirname } from 'node:path';
 import { mkdir } from 'node:fs/promises';
-import { codexProjectlessDirectory } from './paths.mjs';
+import { deploymentPaths } from './paths.mjs';
 
 const required = name => {
   const value = process.env[name];
@@ -10,7 +9,7 @@ const required = name => {
   return value;
 };
 const tokenFile = required('OPENCRAFT_HANDS_EXECUTION_TOKEN');
-const projectlessWorkspace = codexProjectlessDirectory(dirname(tokenFile));
+const projectlessWorkspace = deploymentPaths().codexProjectlessDirectory;
 await mkdir(projectlessWorkspace, { recursive: true, mode: 0o700 });
 const owner = await startHandsExecutionOwner({
   endpoint: required('OPENCRAFT_HANDS_EXECUTION_SOCKET'),

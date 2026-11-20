@@ -39,6 +39,7 @@
       "scales": {
         "body": { "fontSize": 14, "lineHeight": 20 },
         "controlLarge": { "fontSize": 16, "lineHeight": 22 },
+        "menu": { "fontSize": 15, "lineHeight": 22 },
         "settingsTitle": { "fontSize": 20, "lineHeight": 28 },
         "chat": { "fontSize": 14, "lineHeight": 22 },
         "composer": { "fontSize": 14, "lineHeight": 21 },
@@ -78,15 +79,16 @@
         "controlSmall": { "family": "ui", "scale": "caption", "weight": "regular" },
         "controlPanel": { "family": "ui", "scale": "controlPanel", "weight": "regular" },
         "controlLarge": { "family": "ui", "scale": "controlLarge", "weight": "regular" },
+        "menu": { "family": "ui", "scale": "menu", "weight": "regular" },
         "controlCompact": { "family": "ui", "scale": "toolbarTitle", "weight": "regular" },
-        "input": { "family": "ui", "scale": "toolbarTitle", "weight": "regular" },
+        "input": { "family": "ui", "scale": "toolbarTitle", "weight": "regular", "editable": true },
         "settingsTitle": { "family": "ui", "scale": "settingsTitle", "weight": "semibold" },
         "settingsSummary": { "family": "ui", "scale": "textMd", "weight": "regular" },
         "settingsLabel": { "family": "ui", "scale": "body", "weight": "medium" },
         "settingsSectionTitle": { "family": "ui", "scale": "body", "weight": "semibold" },
         "body": { "family": "ui", "scale": "body", "weight": "regular" },
         "chat": { "family": "content", "scale": "chat", "weight": "regular" },
-        "composer": { "family": "content", "scale": "composer", "weight": "regular" },
+        "composer": { "family": "content", "scale": "composer", "weight": "regular", "editable": true },
         "modeTitle": { "family": "ui", "scale": "modeTitle", "weight": "semibold" },
         "largeTitle": { "family": "ui", "scale": "largeTitle", "weight": "semibold" },
         "navigationTitle": { "family": "ui", "scale": "navigationTitle", "weight": "semibold" },
@@ -119,7 +121,8 @@
         "displaySummary": { "family": "ui", "scale": "textMd", "weight": "regular" },
         "mobileInput": { "family": "content", "scale": "mobileInput", "weight": "regular" },
         "verificationCode": { "family": "mono", "scale": "verificationCode", "weight": "medium" },
-        "terminalText": { "family": "mono", "scale": "terminalText", "weight": "regular" }
+        "terminalText": { "family": "mono", "scale": "terminalText", "weight": "regular" },
+        "previewTitle": { "family": "ui", "scale": "toolbarTitle", "weight": "medium" }
       }
     },
     "native": {
@@ -162,6 +165,7 @@
         "controlSmall": { "family": "ui", "scale": "caption", "weight": "regular" },
         "controlPanel": { "family": "ui", "scale": "controlPanel", "weight": "regular" },
         "controlLarge": { "family": "ui", "scale": "controlLarge", "weight": "regular" },
+        "menu": { "family": "ui", "scale": "controlLarge", "weight": "regular" },
         "controlCompact": { "family": "ui", "scale": "toolbarTitle", "weight": "regular" },
         "input": { "family": "ui", "scale": "toolbarTitle", "weight": "regular" },
         "settingsTitle": { "family": "ui", "scale": "settingsTitle", "weight": "semibold" },
@@ -203,7 +207,8 @@
         "displaySummary": { "family": "ui", "scale": "body", "weight": "regular" },
         "mobileInput": { "family": "content", "scale": "mobileInput", "weight": "regular" },
         "verificationCode": { "family": "mono", "scale": "verificationCode", "weight": "medium" },
-        "terminalText": { "family": "mono", "scale": "terminalText", "weight": "regular" }
+        "terminalText": { "family": "mono", "scale": "terminalText", "weight": "regular" },
+        "previewTitle": { "family": "ui", "scale": "toolbarTitle", "weight": "medium" }
       }
     }
   }

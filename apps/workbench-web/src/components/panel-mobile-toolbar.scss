@@ -1,19 +1,5 @@
 @use '@opencraft/design-system/typography-mixins.web' as typography;
 
-.right-panel-content[data-mobile-panel='true'] > .right-panel-toolbar { display: none; }
-.app-shell-root:has(.right-panel-content[data-mobile-panel='true']) {
-  .app-shell-header-motion-host { display: none; }
-}
-
-.right-panel-content[data-mobile-panel='true'],
-.browser-panel[data-mobile-browser='true'],
-.thread-composer-overlay-host[data-mobile-panel='true'] {
-  --panel-mobile-control: var(--size-chrome-action);
-  // One control row, its padding/border, bottom gap and separation above it.
-  // The guest and the body-level Composer consume the same dock allocation.
-  --panel-mobile-dock-height: calc(var(--panel-mobile-control) + var(--padding-material-liquid-group) * 2 + var(--spacing) * 4);
-}
-
 .browser-panel[data-mobile-browser='true'] {
   position: relative;
   // The Shell row (and body portals measured from it) already excludes the
@@ -52,7 +38,7 @@
 
 // Preserve the original two surfaces: the recent turn behind the unchanged
 // Composer. Shell owns safe-area/keyboard contraction; this only reserves dock.
-:root[data-ui-density='touch'] .thread-composer-overlay-host[data-mobile-panel='true'] {
+:root[data-ui-density='touch'] .thread-composer-overlay-host[data-mobile-panel='true']:not([data-integrated-browser='true']) {
   .thread-composer-overlay__padding {
     padding-inline: max(calc(var(--spacing) * 3), env(safe-area-inset-left, 0px)) max(calc(var(--spacing) * 3), env(safe-area-inset-right, 0px));
     padding-bottom: var(--panel-mobile-dock-height);
@@ -62,10 +48,6 @@
   .thread-composer-overlay__response { max-height: min(40cqh, var(--right-panel-composer-preview-max-height)); }
 }
 
-.right-panel-content[data-mobile-panel='true'] {
-  position: relative;
-  &:not([data-mobile-browser='true']) > .right-panel-view { margin-bottom: var(--panel-mobile-dock-height); }
-}
 .panel-mobile-dock__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .panel-mobile-dock__location { margin: 0; }
 

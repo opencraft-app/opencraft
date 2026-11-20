@@ -170,8 +170,25 @@ app.whenReady().then(async () => {
     await run(wc.mainFrame,'a.focus()');const before=await wc.mainFrame.getNativeImeFocusForTesting();assert(before.available);
     await run(wc.mainFrame,'b.focus();a.focus()');const after=await wc.mainFrame.getNativeImeFocusForTesting();assert.equal(after.targetIdentity,before.targetIdentity);assert.notEqual(after.focusIdentity,before.focusIdentity);
   });
+  await test('native ACK orders repeated root and cross-site frame focus before returning',async()=>{
+    for(let i=0;i<120;i++){
+      await reset(wc);
+      const inChild=i%2===1,field=i%4<2?'a':'b';
+      const frame=inChild?wc.mainFrame.frames.find(candidate=>candidate.url.includes('localhost')):wc.mainFrame;
+      const x=100,y=(field==='a'?40:100)+(inChild?220:0);
+      const down=await wc.sendInputEventWithNativeInputTicket({type:'mouseDown',button:'left',modifiers:['leftButtonDown'],clickCount:1,x,y});
+      // Check synchronously at ACK: a round trip here can hide a late focus IPC.
+      assert.equal(wc.focusedFrame,frame,`Focus must precede mouseDown ACK at iteration ${i}`);
+      const focus=await frame.getNativeImeFocusForInputForTesting(down.nativeInputTicket);assert(focus.available,focus.reason);
+      assert.equal(focus.inputType,field==='a'?1:2);
+      const up=await wc.sendInputEventWithNativeInputTicket({type:'mouseUp',button:'left',clickCount:1,x,y});
+      assert.equal(wc.focusedFrame,frame,`Focus must precede mouseUp ACK at iteration ${i}`);
+      assert((await frame.getNativeImeFocusForInputForTesting(up.nativeInputTicket)).available);
+    }
+    return {iterations:120,arbitraryDelay:false};
+  });
   assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({passed:true,cases,errors,physicalOsIme:false,unknownFirstInputWireEnabled:false,nativeImeContextVersion:2,focusIdentityProved:true,readOnlyFocusQueryProved:true,mouseDownPhaseProved:true}));
+  console.log(JSON.stringify({passed:true,cases,errors,physicalOsIme:false,unknownFirstInputWireEnabled:false,nativeImeContextVersion:2,focusIdentityProved:true,readOnlyFocusQueryProved:true,mouseDownPhaseProved:true,inputFocusSynchronizationProved:true}));
 }).catch(error=>{console.error(error);process.exitCode=1}).finally(async()=>{
   clearTimeout(deadline);disposeFocus?.();for(const candidate of windows)if(!candidate.isDestroyed())candidate.destroy();
   if(server)await new Promise(resolve=>server.close(resolve));rmSync(profile,{recursive:true,force:true});app.exit(process.exitCode||0);

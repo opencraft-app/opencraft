@@ -1,10 +1,26 @@
 import type { IntlShape } from "@opencraft/i18n";
 import type { IdentityAvatarContribution } from "@opencraft/extension-react";
 import type { MessageSender } from "@opencraft/appserver-protocol";
-import { restoreQueuedInput } from "@opencraft/composer-appserver";
+import { restoreQueuedInput } from "@opencraft/composer-appserver/runtime";
 import type { ComposerQueuedSubmissionPresentation } from "@opencraft/composer-editor";
 import type { QueuedSubmission } from "@opencraft/chat-runtime";
 import type { TimelineSnapshot } from "@opencraft/chat-core";
+import type { ChatMediaSourceLoader } from "@opencraft/chat-render-web";
+import { resolveConversationMediaSource } from "./components/conversation/conversation-media-source";
+
+/** Queue photos use the same resource policy and byte owner as transcript photos. */
+export function createQueuedImageLoader(loader: ChatMediaSourceLoader, context: {
+  readonly conversationId: string | null; readonly hostId: string; readonly cwd: string | null;
+}) {
+  return async (source: string, signal: AbortSignal) => {
+    if (signal.aborted) return null;
+    const resolution = resolveConversationMediaSource(source, context.cwd, undefined, true);
+    if (resolution.directSource !== null) return { source: resolution.directSource };
+    const { target, kind } = resolution.decision;
+    if (!resolution.loadThroughHost || !target || !kind) return null;
+    return loader({ ...context, source, signal, resolvedTarget: target, resourceKind: kind, documentId: "composer-queue-image" });
+  };
+}
 
 /** A transcript user message already paints this exact input, including during handoff. */
 export function visibleQueuedSubmissions(
@@ -58,11 +74,12 @@ export function queuedSubmissionPresentation(
     preview: submission.preview,
     state: submission.state,
     operation: submission.operation,
-    actionable: submission.serverSubmissionId !== null,
-    steerable: ["execution-recovering", "execution-fault-unconfirmed", "execution-interrupted"].includes(submission.pausedReason ?? "") ? false : submission.steerable,
+    actionable: submission.serverSubmissionId !== null && submission.actions?.edit !== false,
+    deletable: submission.serverSubmissionId !== null && submission.actions?.delete !== false,
+    steerable: submission.actions?.start === false || ["execution-recovering", "execution-fault-unconfirmed", "execution-interrupted"].includes(submission.pausedReason ?? "") ? false : submission.steerable,
     resumable: !["execution-recovering", "execution-fault-unconfirmed", "execution-interrupted"].includes(submission.pausedReason ?? ""),
-    dismissible: (submission.local === true && submission.state !== "submitting") || (submission.state === "failed" && submission.serverSubmissionId === null),
-    reorderable: !submission.local && reorderable,
+    dismissible: (submission.local === true && submission.state !== "submitting" && submission.state !== "unknown") || (submission.state === "failed" && submission.serverSubmissionId === null),
+    reorderable: !submission.local && reorderable && submission.actions?.reorder !== false,
     editableContent: restoreQueuedInput(submission.input),
     pausedReason: statusMessage ? intl?.formatMessage(statusMessage) ?? statusMessage.defaultMessage : submission.pausedReason,
     error: submission.error?.message ?? null,

@@ -82,6 +82,7 @@ async function verifyGroupDisclosures(page: any, touch: boolean, mobileLayout = 
     const toggle = section.getByRole('button', { name, exact: true });
     const arrow = toggle.locator('> svg');
     await toggle.waitFor();
+    if (await toggle.getAttribute('aria-expanded') === 'false') { if (touch) await toggle.tap(); else await toggle.click(); }
     const geometry = () => toggle.evaluate((button: HTMLElement) => {
       const label = button.querySelector('.sidebar-thread-group-label')!.getBoundingClientRect();
       const glyph = button.querySelector(':scope > svg')!.getBoundingClientRect();

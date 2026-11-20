@@ -17,6 +17,8 @@ export interface WorkbenchThread {
   visibility?: "visible" | "hidden";
   /** Authenticated directory policy; private rows are visible only to their creator. */
   accessMode?: "shared" | "private";
+  /** Per-reader server fact; unknown on legacy peers, never a permission. */
+  createdByViewer?: boolean;
   time: string;
   /** Canonical AppServer recency timestamp in seconds. */
   updatedAt: number;

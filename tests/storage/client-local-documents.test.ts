@@ -52,7 +52,7 @@ for (const kind of ["sqlite", "indexeddb"] as const) {
       legacy.setItem(savedKey, saved);
       assert.equal(await task.storage.load(savedKey), saved);
       assert.equal(legacy.getItem(savedKey), null, "only remove source after accepted import");
-      assert.equal((await task.loadNewTarget("saved-new"))?.draftId, "saved-new");
+      assert.equal(await task.loadViewId({ ...draftTarget, execution: { ...draftTarget.execution, hostId: "other" } }), null);
       assert.equal(await task.loadViewId(draftTarget), "view", "a fresh document restores the existing input slot rather than copying input");
       const botDocs = new ClientLocalDocuments(Promise.resolve(storage), "account", "composer-draft");
       new BrowserComposerDrafts(legacy, "bot").write(target, { document: document("Bot input"), attachments: [], context: [] });

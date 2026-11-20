@@ -31,6 +31,8 @@ export interface ChatDocumentHeadingNode extends ChatDocumentParentNode<"heading
 }
 
 export interface ChatDocumentTextNode extends ChatDocumentNodeBase<"text"> {
+  /** An explicit source literal, independent of preprocessed parser coordinates. */
+  readonly literalSourceRange?: ChatDocumentSourceRange;
   readonly text: string;
   /** Only segments introduced by the current committed stream revision enter. */
   readonly segments: readonly ChatTextSegment[];

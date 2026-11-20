@@ -50,9 +50,13 @@ test('public Headless artifact has no enterprise implementation and its CLI reje
   const source = await readFile(bundle, 'utf8');
   assert.ok(!source.includes('TencentOaServerPlugin'));
   const run = promisify(execFile);
-  const help = await run(process.execPath, [bundle, '--help'], { timeout: 10_000 });
+  // Run packaged JavaScript like the installed CLI, not through source-test
+  // TypeScript hooks. Keep the original deadlines and all behavior assertions.
+  const artifactEnvironment = { ...process.env };
+  delete artifactEnvironment.NODE_OPTIONS;
+  const help = await run(process.execPath, [bundle, '--help'], { timeout: 10_000, env: artifactEnvironment });
   assert.match(help.stdout, /human-auth-config/); assert.ok(!help.stdout.includes('enterprise-identity'));
-  await assert.rejects(run(process.execPath, [bundle, '--enterprise-identity-token-file', '/not-loaded'], { timeout: 10_000 }), /Unknown option/);
+  await assert.rejects(run(process.execPath, [bundle, '--enterprise-identity-token-file', '/not-loaded'], { timeout: 10_000, env: artifactEnvironment }), /Unknown option/);
   const api = await import(pathToFileURL(bundle).href);
   const browserWorker = join(f.root, 'browser-state-worker.mjs');
   assert.equal((await stat(browserWorker)).isFile(), true);
@@ -63,7 +67,7 @@ test('public Headless artifact has no enterprise implementation and its CLI reje
   } }); t.after(() => app.close());
   const health = await fetch(app.url + '/__opencraft_health').then(response => response.json());
   const storage = health.storage.find(row => row.name === 'remote-browser');
-  assert.equal(storage.appliedVersion, 2);
+  assert.equal(storage.appliedVersion, 4);
   assert.equal(storage.movedAside, false);
   assert.equal((await fetch(app.url)).status, 200);
   assert.equal((await fetch(app.url + '/__opencraft_actors/me')).status, 401);

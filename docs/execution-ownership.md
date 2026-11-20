@@ -1084,6 +1084,19 @@ the explicit gaps (no real unconsumed-race reproduction; no real-model Host
 round trip) are recorded in
 [`plugins/pi-bridge/VALIDATION.md`](../plugins/pi-bridge/VALIDATION.md).
 
+## DSH consumer receipt persistence
+
+`DshConsumerReceipts` 通过异步端口调用专属 Worker；`DshConsumerReceiptStore` 在 Worker
+内持有 `dsh-consumer-receipts` managed SQLite owner 和唯一 writer 锁。
+begin 必须先提交未知责任，再派发业务；finish 提交准确响应摘要后才向消费者发布响应；
+ACK 必须匹配 id/receipt，并在删除提交后才完成。失败关闭、队列有界，不同步降级。
+热观察使用已提交计数并计入待提交操作，不能把持久化中的责任报告为空闲。
+
+旧 `consumer-receipts.json` 的每条原记录（包括 unknown 与额外字段）一次事务导入，
+原文件保留且不重写。导入来源摘要提交在同一数据库，重启不复活已确认记录；旧来源
+发生变化拒绝启动，避免旧/新 writer 分叉。升级恢复必须继续选择能打开当前存储的
+程序；不能恢复旧数据覆盖后续 ACK。持久化不等于消费者确认，断线不自动退休责任。
+
 
 ## Browser AppHost route resumption
 

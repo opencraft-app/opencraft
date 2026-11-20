@@ -57,6 +57,21 @@
       "version": 5,
       "name": "thread-orchestration-views",
       "checksum": "5ff829626fcb3f555d6306fa1b00b7708991e2b85f31901991130d34a158a19d"
+    },
+    {
+      "version": 6,
+      "name": "native-channels",
+      "checksum": "3cf8891c8e96787ed4df47a90d624b93f70a8d8b1ce3fb693a8d27173b1aab9d"
+    },
+    {
+      "version": 7,
+      "name": "actor-inbox",
+      "checksum": "f41a01bbeeb44df393266b4e36bf4440e30f86359082630a8a9cbb53d84148f1"
+    },
+    {
+      "version": 8,
+      "name": "native-channel-sync",
+      "checksum": "f1beed6031ff9069ce1b1697c466213d2547c6587227d1895da46c088dc34efd"
     }
   ],
   "session-capabilities": [

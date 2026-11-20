@@ -387,18 +387,29 @@ test('an unconfirmed handoff stays unknown for review and is re-read at most eve
  reads=0;await f.service.pump();assert.equal(reads,1,'explicit pump reads immediately');
 });
 
-test('a request whose receipt read keeps throwing is backed off as well',async t=>{
+test('throwing receipt reads enter bounded recovery cooldown and resume without replaying input',async t=>{
  const f=await fixture(t);f.service.authorizeExecution(f.b,'recipient','human-b');f.service.executionStarted('recipient','human-b','recipient-original');
- const native=f.native as any;native.add=async()=>{throw Error('Engine restarted during reconciliation');};
+ const native=f.native as any;let adds=0;native.add=async()=>{adds++;throw Error('Engine restarted during reconciliation');};
  await f.invoke('recipient-tell','thread_tell',{threadId:'recipient',message:'Please inspect'});await f.service.pump();
  const request=f.service.database.prepare("SELECT id,state,reason FROM actor_execution_requests WHERE thread_id='recipient'").get() as {id:string;state:string;reason:string};
  assert.equal(request.state,'unknown');
- let reads=0;native.receipt=async(_binding:any,id:string)=>{if(id===request.id)reads++;throw Error('Receipt lane unavailable');};
+ const receipt=native.receipt;let reads=0;native.receipt=async(_binding:any,id:string)=>{if(id===request.id)reads++;throw Error('Receipt lane unavailable');};
  for(let i=0;i<400;i++){f.advance(500);await f.service.pump(true);}
+ assert.equal(reads,8,'unavailable observations are bounded before recovery cooldown');
+ const health=f.service.getRequest(f.a,request.id).reconciliation as {state:string;failures:number;lastAttemptAt:number;nextAttemptAt:number};
+ assert.equal(health.state,'recovery_required');assert.equal(health.failures,8);
+ assert.equal(health.nextAttemptAt-health.lastAttemptAt,300_000);
  reads=0;for(let i=0;i<240;i++){f.advance(500);await f.service.pump(true);}
- assert.ok(reads>=3&&reads<=5,`throwing receipt read ${reads} times in 120 s`);
+ assert.equal(reads,0,'timer pumps cannot bypass recovery cooldown');
+ await f.service.pump();assert.equal(reads,0,'ordinary pumps cannot bypass a failed observation either');
  const after=f.service.database.prepare('SELECT state,reason FROM actor_execution_requests WHERE id=?').get(request.id) as {state:string;reason:string};
  assert.deepEqual({...after},{state:'unknown',reason:request.reason});
+ native.receipt=async(binding:any,id:string)=>{if(id===request.id)reads++;return receipt(binding,id);};
+ f.advance(300_000);await f.service.pump(true);
+ assert.equal(reads,1,'expired cooldown permits a recovery observation');
+ assert.deepEqual(f.service.getRequest(f.a,request.id).reconciliation,{state:'ready'});
+ assert.equal(adds,1,'a missing recovery receipt cannot replay an ambiguous native input');
+ assert.equal((f.service.database.prepare('SELECT state FROM actor_execution_requests WHERE id=?').get(request.id) as {state:string}).state,'unknown');
 });
 
 

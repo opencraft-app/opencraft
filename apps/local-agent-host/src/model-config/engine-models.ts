@@ -1,3 +1,5 @@
+import { configuredModelGatewayPath, ModelGatewayStore } from "@opencraft/account-pool-host";
+import { createHash } from 'node:crypto';
 import { ModelConfigurationRepository, ModelCredentialRepository } from "./repository.js";
 import type { ConfiguredModel, ConfiguredProvider, ModelDocument } from "./model-document.js";
 
@@ -81,11 +83,30 @@ function eligible(provider: ConfiguredProvider, model: ConfiguredModel, protocol
  * Single read-only resolver over the installation model owners (Model Services).
  * Engines never copy endpoints or keys into their own stores; every execution resolves again.
  */
-export function createEngineModelSource(directory: string, options: { readonly protocols: readonly EngineModelProtocol[]; readonly allowInsecureLocalNetwork?: boolean }) {
+export function createEngineModelSource(directory: string, options: { readonly protocols: readonly EngineModelProtocol[]; readonly meteredContributions?: boolean; readonly allowInsecureLocalNetwork?: boolean }) {
   const repository = new ModelConfigurationRepository(directory), credentials = new ModelCredentialRepository(directory);
 
   async function route(document: ModelDocument, provider: ConfiguredProvider, model: ConfiguredModel): Promise<EngineModelRoute> {
     if (!eligible(provider, model, options.protocols, options.allowInsecureLocalNetwork === true)) throw new EngineModelError("unavailable");
+    if (provider.catalogId === "opencraft-human-contribution" || provider.catalogId === "opencraft-human-subscription") {
+      if (!options.meteredContributions) throw new EngineModelError("unavailable");
+      const path = configuredModelGatewayPath();
+      if (!path) throw new EngineModelError("unavailable");
+      const gateway = new ModelGatewayStore(path);
+      try {
+        const contribution = gateway.contribution(provider.id);
+        const template = document.providers.find(p => p.id === contribution?.templateProvider);
+        if (provider.catalogId === "opencraft-human-subscription") {
+          if (contribution?.state !== "shared" || contribution.templateProvider !== "codex-subscription" || contribution.scope !== "personal" || provider.protocol !== "openai-responses" || !/^http:\/\/127\.0\.0\.1:[0-9]+\/personal\/[a-f0-9]{64}\/v1$/.test(provider.baseUrl)) throw new EngineModelError("unavailable");
+          const namespace=createHash('sha256').update(contribution.actor).digest('hex');
+          if(provider.id!=='subscription-'+namespace||new URL(provider.baseUrl).pathname!=='/personal/'+namespace+'/v1')throw new EngineModelError('unavailable');
+        } else
+        if (contribution?.state !== "shared" || !template || template.protocol !== provider.protocol
+          || template.baseUrl.replace(/\/$/u, "") !== provider.baseUrl.replace(/\/$/u, "")
+          || !template.models.some(m => m.id === model.id && m.type !== "asr")) throw new EngineModelError("unavailable");
+      }
+      finally { gateway.close(); }
+    }
     let apiKey: string | undefined;
     if (provider.authentication !== "none") {
       apiKey = provider.credentialRef ? await credentials.resolve(provider.credentialRef) : undefined;

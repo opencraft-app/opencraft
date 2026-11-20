@@ -1,3 +1,4 @@
+import { ModalContent } from "@opencraft/design-system-web/modal-content";
 import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowRightIcon as ArrowRight, ClockIcon as Clock } from "@opencraft/design-system-web/action-icons";
@@ -150,13 +151,12 @@ export function AIFollowUp({ tasks, members, activity, port, ownerFilter, onOwne
   const ownerOptions = <><option value="">{t("allOwners")}</option><option value="unassigned">{t("unassigned")}</option>{ownerIds.map(id => <option key={id} value={`member:${id}`}>{ownerName(id)}</option>)}</>;
   const filterAction = <Dialog.Root open={filtersOpen} onOpenChange={setFiltersOpen}><Dialog.Trigger asChild>
     <SettingsButton variant="quiet" aria-label={t("filters")} >{t("filters")}{ownerFilter ? " · 1" : ""}</SettingsButton>
-  </Dialog.Trigger><Dialog.Portal><Dialog.Overlay className="modal-surface__scrim" data-layer="application" data-appearance="utility" />
-    <Dialog.Content className="modal-surface tasks-dialog tasks-work-board-filters" data-layer="application" data-appearance="utility" aria-describedby={undefined}>
+  </Dialog.Trigger><ModalContent overlayClassName={"modal-surface__scrim"} overlayProps={{"data-layer":"application","data-appearance":"utility"}} className="modal-surface tasks-dialog tasks-work-board-filters" data-layer="application" data-appearance="utility" aria-describedby={undefined}>
       <header><Dialog.Title>{t("filters")}</Dialog.Title><Dialog.Close asChild><SettingsButton variant="ghost" aria-label={t("close")}><CloseIcon size={18} aria-hidden="true" /></SettingsButton></Dialog.Close></header>
       <label>{t("search")}<SettingsTextInput type="search" value={selection.search} onChange={e => onSelectionChange({ ...selection, search: e.target.value })} /></label>
       <label>{t("ownerFilter")}<SettingsSelect value={ownerFilter} onChange={e => onOwnerFilterChange(e.target.value)}>{ownerOptions}</SettingsSelect></label>
       <footer><SettingsButton variant="quiet" onClick={() => { onOwnerFilterChange(""); onSelectionChange({ ...selection, search: "" }); }}>{t("clearFilters")}</SettingsButton><Dialog.Close asChild><SettingsButton variant="primary">{t("showResults")}</SettingsButton></Dialog.Close></footer>
-    </Dialog.Content></Dialog.Portal></Dialog.Root>;
+    </ModalContent></Dialog.Root>;
   const readRecord = (task: TaskDetail) => workBoardReadRecord(task, projection(task), !unverified(task), dwellSince);
   const readTask = active.find(task => task.id === readTaskId) ?? active[0];
   const readDocument = agentOpen ? JSON.stringify({ schemaVersion: 1, kind: "work-board-read-projection", grouping, filter: { scope: selection.scope, search: selection.search, owner: ownerFilter || null }, items: active.map(readRecord) }, null, 2) : "";
@@ -169,15 +169,12 @@ export function AIFollowUp({ tasks, members, activity, port, ownerFilter, onOwne
     <div className="tasks-ai-follow-up__grouping">
       <div className="tasks-ai-follow-up__desktop-grouping"><SegmentedControl label={t("grouping")} value={grouping} onValueChange={changeGrouping} options={groupingOptions} /></div>
       <div className="tasks-ai-follow-up__mobile-grouping"><SettingsChoiceSelect label={t("grouping")} value={grouping} options={groupingOptions} onValueChange={changeGrouping} />{filterAction}</div>
-      <Dialog.Root open={agentOpen} onOpenChange={setAgentOpen}><Dialog.Trigger asChild><SettingsButton variant="quiet">{t("agentRead")}</SettingsButton></Dialog.Trigger><Dialog.Portal>
-        <Dialog.Overlay className="modal-surface__scrim" data-layer="application" data-appearance="utility" />
-        <Dialog.Content className="modal-surface tasks-dialog tasks-work-board-reader" data-layer="application" data-appearance="utility" aria-describedby="work-board-reader-description">
+      <Dialog.Root open={agentOpen} onOpenChange={setAgentOpen}><Dialog.Trigger asChild><SettingsButton variant="quiet">{t("agentRead")}</SettingsButton></Dialog.Trigger><ModalContent overlayClassName={"modal-surface__scrim"} overlayProps={{"data-layer":"application","data-appearance":"utility"}} className="modal-surface tasks-dialog tasks-work-board-reader" data-layer="application" data-appearance="utility" aria-describedby="work-board-reader-description">
           <header><div><Dialog.Title>{t("agentRead")}</Dialog.Title><Dialog.Description id="work-board-reader-description">{t("agentDescription")}</Dialog.Description></div><Dialog.Close asChild><SettingsButton variant="ghost" aria-label={t("close")}><CloseIcon size={18} aria-hidden="true" /></SettingsButton></Dialog.Close></header>
           <div className="tasks-work-board-reader__body"><label>{t("selectItem")}<SettingsSelect value={readTask?.id ?? ""} disabled={!active.length} onChange={event => setReadTaskId(event.target.value)}>{active.length ? active.map(task => <option key={task.id} value={task.id}>{task.title}</option>) : <option value="">{t("empty")}</option>}</SettingsSelect></label>
             <pre role="region" aria-label={t("readData")}>{JSON.stringify(readTask ? readRecord(readTask) : { items: [] }, null, 2)}</pre></div>
           <footer><SettingsCopyButton value={readDocument} label={t("copySelection")} successLabel={t("copied")} errorLabel={t("copyError")} /><span>{t("readOnly")}</span></footer>
-        </Dialog.Content>
-      </Dialog.Portal></Dialog.Root>
+        </ModalContent></Dialog.Root>
     </div>
     <div className="tasks-ai-follow-up__toolbar">
       <SegmentedControl className="tasks-ai-follow-up__scope" label={t("scope")} value={selection.scope} onValueChange={scope => onSelectionChange({ ...selection, scope, ...(scope === "mine" ? { lanes: { ...selection.lanes, state: "needs" } } : {}) })} options={(compact ? ["mine", "owned", "all"] : ["all", "mine", "owned"]).map(value => ({ value, label: value === "mine" ? t("needsMe") : value === "owned" ? t("owned") : t("all") }))} />

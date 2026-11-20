@@ -53,7 +53,12 @@ export function useAccountModelDefaults(accounts: PlatformAccountContributionReg
       void client.invalidateQueries({ queryKey: key });
     });
   }, [enabled, port, scope, current, keyFor, client, owner]);
-  return { authoritative: port !== undefined, selection: enabled && scope !== null ? query.data?.selection : null,
+  const retry = useCallback(() => {
+    if (!enabled || !port || scope === null || !current()) return;
+    setFailure(null);
+    void query.refetch().catch(() => undefined);
+  }, [enabled, port, scope, current, query.refetch]);
+  return { retry, authoritative: port !== undefined, selection: enabled && scope !== null ? query.data?.selection : null,
     error: !enabled ? null : failure?.owner === owner ? failure.error : query.error,
     isPending: enabled && !!port && (phase === "loading" || scope !== null && query.isPending),
     isFetching: enabled && query.isFetching, remember };

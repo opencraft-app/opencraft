@@ -81,6 +81,8 @@ export interface AgentActivityPartitionOptions {
 }
 
 export interface AgentActivityRenderUnit {
+    /** Body availability is independent of the View-owned disclosure preference. */
+    readonly contentAvailable?: boolean;
     readonly type: "agent-activity";
     readonly id: string;
     readonly blocks: readonly TimelineBlock[];
@@ -215,7 +217,7 @@ function lastIndex<T>(values: readonly T[], matches: (value: T) => boolean): num
   return -1;
 }
 const live = (status: TimelineStatus) => status === "pending" || status === "streaming";
-const running = (block: TimelineBlock) => "status" in block && (block.status === "pending" || block.status === "running");
+const running = (block: TimelineBlock) => !("displayPreview" in block && block.displayPreview) && "status" in block && (block.status === "pending" || block.status === "running");
 const qualifyingAnswer = (block: TimelineBlock): block is TextTimelineBlock => block.type === "text"
   && block.phase === "final_answer" && isAssistantAnswerContent(block)
   && (block.text.trim().length > 0 || block.completed === true || block.hasStructuredOutput === true);
@@ -457,7 +459,7 @@ export function shouldAllowAgentActivityCollapse(unit: AgentActivityRenderUnit):
 }
 
 export function resolveAgentActivityLayout(unit: AgentActivityRenderUnit, persistedCollapsed?: boolean): AgentActivityLayout {
-  const showToggle = shouldAllowAgentActivityCollapse(unit);
+  const showToggle = unit.contentAvailable === false || shouldAllowAgentActivityCollapse(unit);
   const collapsed = showToggle && resolveAgentActivityDisclosure({ ...unit, persistedCollapsed }).isCollapsed;
   return { showToggle, workedForItem: showToggle ? unit.partitions.workedForItem : null, isCollapsed: collapsed,
     preToggleUnits: showToggle ? unit.partitions.preToggleUnits : [],
@@ -480,7 +482,7 @@ export function createAssistantTurnPresentationPlan(frame: AssistantTimelineFram
   let finalSegmentId: string | null = null;
   const flush = (segmentEnd: AgentActivitySegmentEnd) => {
     // A paint-only history can retain the completed clock without tool bodies.
-    if (!pending.length && !((work || hasStaticDuration) && segmentEnd === "final-answer"
+    if (!pending.length && !(frame.presentationRegions === undefined && (work || hasStaticDuration) && segmentEnd === "final-answer"
       && !slots.some(slot => slot.type === "agent-activity"))) return;
     finalSegmentId = activityId;
     const subagents = pending.filter((block): block is SubagentTimelineBlock => block.type === "subagent");
@@ -513,6 +515,10 @@ export function createAssistantTurnPresentationPlan(frame: AssistantTimelineFram
       (block.kind === "web-search" && (!block.input || (typeof block.input === "object" && "query" in block.input && !block.input.query && !("action" in block.input && block.input.action)))))) continue;
     if (block.type !== "user-message" && isAgentActivityBlock(block)) { pending.push(block); continue; }
     const end: AgentActivitySegmentEnd = qualifyingAnswer(block) ? "final-answer" : block.type === "user-message" ? "user-input" : "content";
+    // Cropping may remove the preceding reply that originally named this work
+    // interval. Its retained next-content anchor preserves the original identity.
+    const retainedRegion = frame.presentationRegions?.find(region => region.beforeBlockId === block.id);
+    if (retainedRegion) activityId = retainedRegion.id;
     flush(end);
     slots.push({ type: "assistant-content", id: `${frame.turnId}:slot:assistant-content:${block.id}`, block });
     activityId = `${frame.turnId}:slot:activity-after:${block.id}`;
@@ -528,10 +534,37 @@ export function createAssistantTurnPresentationPlan(frame: AssistantTimelineFram
     slots[clockIndex] = { ...owner, workedDurationMs: frame.displayDurationMs ?? frame.durationMs, contentUnits,
       partitions: partitionAgentActivityContentUnits(contentUnits, partitionOptions) };
   }
+  for (const region of frame.presentationRegions ?? []) {
+    if (region.type !== "activity") continue;
+    const before = slots.findIndex(slot => slot.type === "assistant-content" && slot.block.id === region.beforeBlockId);
+    // A missing anchor is omitted history, never permission to move work to
+    // the end of a different response. Null explicitly denotes a trailing region.
+    if (region.beforeBlockId !== null && before < 0) continue;
+    const existing = slots.findIndex(slot => slot.type === "agent-activity" && slot.id === region.id);
+    const retained: AgentActivityRenderUnit = {
+      type: "agent-activity", id: region.id, contentAvailable: false, blocks: [], contentUnits: region.workStatus ? [{ type: "worked-for", id: `${frame.turnId}:worked-for`, item: region.workStatus }] : [],
+      inlineSubagentActivity: null,
+      partitions: { workedForItem: region.workStatus, collapsibleUnits: [], expandedUnits: [], persistentUnits: [], preToggleUnits: [] },
+      collapsedItemCount: region.count, phase: "before-final-answer", status: "complete",
+      workedDurationMs: region.durationMs, hasFinalAssistantStarted: true, segmentEnd: "final-answer",
+      hasRenderableAgentItems: true, isTurnCancelled: false, forceExpanded: false,
+      disableCollapse: false, preventAutoCollapse: false,
+      summary: { commandCount: 0, patchCount: 0, reasoningCount: 0, subagentCount: 0, toolCount: 0 },
+    };
+    // A display projection can now retain inert activity rows, not just the
+    // old header descriptor. Preserve those rows and their stable group keys.
+    const body = existing >= 0 ? slots[existing] : undefined;
+    if (body?.type === "agent-activity" && body.blocks.some(block => "displayPreview" in block && block.displayPreview)) {
+      slots[existing] = { ...body, workedDurationMs: region.durationMs, collapsedItemCount: region.count };
+    } else if (existing >= 0) slots[existing] = retained;
+    else {
+      slots.splice(before < 0 ? slots.length : before, 0, retained);
+    }
+  }
   // Only the assigned clock owner can keep an otherwise empty work segment.
   // Earlier hidden observations must not reserve a timeline layout slot.
   return { slots: slots.filter(slot => slot.type !== "agent-activity"
-    || slot.contentUnits.length > 0 || slot.inlineSubagentActivity !== null
+    || slot.contentAvailable === false || slot.contentUnits.length > 0 || slot.inlineSubagentActivity !== null
     || slot.workedDurationMs !== null), changeSummary };
 }
 
@@ -556,6 +589,8 @@ export function createTimelineTurnPresentationPlan(turn: TimelineTurnView, regis
   const latestObservation = [...blocks].reverse().find(block => block.type !== "todo");
   let assistantFrame: AssistantTimelineFrame | null = remaining.length || active || changeSummary !== null ? {
     type: "assistant", id: `${turn.turnId}:assistant-surface`, turnId: turn.turnId, status: turn.status,
+    presentationRegions: assistants.some(frame => frame.presentationRegions !== undefined)
+      ? assistants.flatMap(frame => frame.presentationRegions ?? []) : undefined,
     durationMs: seed?.durationMs ?? null, displayDurationMs: seed?.displayDurationMs ?? null, workStatus: seed?.workStatus ?? null, changeSummary,
     interruptedByThisClient: seed?.interruptedByThisClient ?? false, hookStats: seed?.hookStats ?? null,
     anchors: assistants.flatMap(frame => frame.anchors), blocks,

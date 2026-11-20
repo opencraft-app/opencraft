@@ -84,6 +84,11 @@ export class ChatEnhancementService extends Service {
     };
   }
 
+  /** Completed immutable output is available during render; visibility gates new work only. */
+  peek<T>(cacheKey: string): T | undefined {
+    return this.disposed ? undefined : this.resultCache.get(cacheKey) as T | undefined;
+  }
+
   run<T>(task: ChatEnhancementTask<T>): Promise<T> {
     if (this.disposed) return Promise.reject(new Error("Chat enhancement service is disposed"));
     if (task.signal?.aborted === true) return Promise.reject(abortError());

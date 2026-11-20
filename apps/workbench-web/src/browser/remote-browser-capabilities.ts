@@ -1,5 +1,6 @@
 import { serverStorageKey, serverFetch } from '../runtime/server-context';
 
+import { exponentialBackoffMs } from "@opencraft/workbench-runtime/retry-schedule";
 const unavailable = () => Object.assign(new Error('Browser capability service unavailable; reconnecting'), { code: 'BROWSER_UNAVAILABLE', retryable: true });
 const protocolError = () => Object.assign(new Error('Invalid browser capability response'), { code: 'PROTOCOL_ERROR' });
 
@@ -42,7 +43,7 @@ async function readAvailability(response: Response, signal: AbortSignal): Promis
   }
 }
 
-function probe(signal?: AbortSignal): Promise<boolean> {
+function probe(signal?: AbortSignal, timeoutMs = 2000): Promise<boolean> {
   return new Promise((resolve, reject) => {
     const request = new AbortController(); let settled = false;
     const finish = (complete: () => void) => {
@@ -51,7 +52,7 @@ function probe(signal?: AbortSignal): Promise<boolean> {
       request.abort(); complete();
     };
     const abort = () => finish(() => reject(signal!.reason));
-    const timer = setTimeout(() => finish(() => reject(unavailable())), 2000);
+    const timer = setTimeout(() => finish(() => reject(unavailable())), timeoutMs);
     signal?.addEventListener('abort', abort, { once: true });
     void Promise.resolve().then(() => {
       request.signal.throwIfAborted();
@@ -74,17 +75,17 @@ function backoff(attempt: number, signal?: AbortSignal) {
       clearTimeout(timer); signal?.removeEventListener('abort', abort); complete();
     };
     const abort = () => finish(() => reject(signal!.reason));
-    const timer = setTimeout(() => finish(resolve), Math.min(30000, 250 * 2 ** Math.min(attempt, 7)));
+    const timer = setTimeout(() => finish(resolve), exponentialBackoffMs(attempt, { initialMs: 250, maxMs: 30_000 }));
     signal?.addEventListener('abort', abort, { once: true });
   });
 }
 
 /** Only an authoritative boolean selects a backend; transient transport errors
  * retain startup admission instead of permanently choosing a local iframe. */
-export async function discoverRemoteBrowser(signal?: AbortSignal): Promise<boolean> {
+export async function discoverRemoteBrowser(signal?: AbortSignal, timeoutMs = 2000): Promise<boolean> {
   for (let attempt = 0; ; attempt++) {
     signal?.throwIfAborted();
-    try { return await probe(signal); }
+    try { return await probe(signal, timeoutMs); }
     catch (error) {
       signal?.throwIfAborted();
       const failure = error as { code?: string; retryable?: boolean; name?: string };
@@ -132,5 +133,20 @@ export async function discoverRemoteBrowserForStartup(signal?: AbortSignal): Pro
   } finally {
     signal?.removeEventListener('abort', abort);
     window.removeEventListener('offline', offline);
+  }
+}
+
+/** Backend selection is deployment configuration, not network availability. */
+export function declaredBrowserBackend(): boolean | undefined {
+  const value = document.querySelector<HTMLMetaElement>('meta[name="opencraft-browser-backend"]')?.content;
+  return value === 'remote' ? true : value === 'iframe' ? false : undefined;
+}
+
+/** Only the optional browser waits for runtime availability. The shell never does. */
+export async function waitForRemoteBrowser(signal: AbortSignal): Promise<void> {
+  for (let attempt=0; ; attempt++) {
+    signal.throwIfAborted();
+    if (await discoverRemoteBrowser(signal,20_000)) return;
+    signal.throwIfAborted();await backoff(Math.min(attempt+3,7),signal);
   }
 }

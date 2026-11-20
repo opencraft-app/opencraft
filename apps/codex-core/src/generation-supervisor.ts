@@ -84,7 +84,10 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
   async inspect(g: GenerationRecord): Promise<CodexAppServerHealth> { return this.health(g); }
   async inspectNative(g: GenerationRecord): Promise<CodexAppServerHealth> { return this.health(g, "native"); }
   private async health(g: GenerationRecord, observation: "execution" | "native" = "execution"): Promise<CodexAppServerHealth> {
-    return new CodexCoreControlClient(g.endpoint, this.options.token).appServerHealth(observation);
+    const health = await new CodexCoreControlClient(g.endpoint, this.options.token).appServerHealth(observation);
+    if (process.env.OPENCRAFT_WORKSPACE_AUTHORITY_SOCKET !== undefined && health.workspaceExecutionVersion !== 1)
+      throw new Error("Generation does not support configured private workspace authority");
+    return health;
   }
   async start(g: GenerationRecord, validation?: { homeCopy: string }): Promise<CodexAppServerHealth> {
     try { return await this.health(g, ["active", "ready", "draining"].includes(g.state) ? "native" : "execution"); } catch { /* Readiness below never signals an existing unit. */ }
@@ -99,6 +102,11 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
       const managed = new Set(["NOTIFY_SOCKET", "LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES", "INVOCATION_ID", "MANAGERPID", "JOURNAL_STREAM", "SYSTEMD_EXEC_PID", "WATCHDOG_PID", "WATCHDOG_USEC"]);
       const identity = { uid: g.executionUid ?? process.getuid!(), gid: g.executionGid ?? process.getgid!() };
       const sameUser = identity.uid === process.getuid!();
+      // Cross-user generations intentionally inherit only public environment.
+      // Dropping strict workspace routing would silently restore local execution.
+      // A separately owned authority/socket handoff is required for that topology.
+      if (!sameUser && process.env.OPENCRAFT_WORKSPACE_AUTHORITY_SOCKET !== undefined)
+        throw new Error("Private workspace authority requires a same-user generation");
       const publicEnvironment = new Set(["PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TZ"]);
       const environment = Object.keys(process.env).filter(name => /^[A-Za-z_][A-Za-z0-9_]*$/u.test(name) && !managed.has(name)
         && (sameUser || publicEnvironment.has(name))).map(name => `--setenv=${name}`);

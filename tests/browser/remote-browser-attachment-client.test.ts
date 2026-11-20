@@ -1,3 +1,4 @@
+import * as mediaRuntime from '../../apps/workbench-web/src/browser/remote-browser-media-runtime';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RemoteBrowserSurfaceHost } from '../../apps/workbench-web/src/browser/remote-browser-surface-host';
@@ -35,7 +36,7 @@ test('transferred viewer stops retries and implicit navigation; explicit reload 
   host.keyboardChanged = host.applyViewport = host.queueViewport = host.run = () => {};
   host.pages.set(id, p);
   try {
-    p.ready = host.connect(p); sockets[0].onopen?.();
+    p.mediaRuntime = mediaRuntime; p.inputBound = true; p.ready = host.connect(p); sockets[0].onopen?.();
     assert.equal(sockets[0].sent[0].input.multiView, true);
     assert.equal(sockets[0].sent[0].input.documentInput, true);
     assert.equal(sockets[0].sent[0].input.takeover, undefined);
@@ -112,4 +113,24 @@ test('native connection waits for durable metadata and a failed or abandoned flu
   page.closed = false;
   host.storage.flush = async () => { throw Object.assign(new Error('Metadata conflict'), { code: 'STATE_CONFLICT' }); };
   await assert.rejects(host.connect(page), { code: 'STATE_CONFLICT' }); assert.equal(attempts, 1);
+});
+
+
+test('toolbar navigation yields to AI while later manual intent retains its grant', async () => {
+  const host: any = Object.create(RemoteBrowserSurfaceHost.prototype);
+  const p: any = { control: { controller: false, kind: null }, humanIntent: undefined };
+  let release: () => void = () => {}, releases = 0;
+  host.acquireControl = async (_p: any, kind: string, temporary: boolean) => {
+    assert.equal(kind, 'human'); assert.equal(temporary, true);
+    p.control = { controller: true, kind: 'human', token: 'toolbar' }; return 'toolbar';
+  };
+  host.call = () => new Promise<void>(resolve => { release = resolve; });
+  host.releaseControlToken = async (_p: any, token: string) => { assert.equal(token, 'toolbar'); releases++; p.control = { controller: false, kind: null }; };
+  const navigation = host.humanCall(p, 'navigate', {}); await Promise.resolve();
+  release(); await navigation; assert.equal(releases, 1);
+  const reload = host.humanCall(p, 'reload', {}); await Promise.resolve();
+  p.humanIntent = 1; release(); await reload;
+  assert.equal(releases, 1, 'navigation cleanup cannot release a newer button/gesture claim');
+  const manual = host.humanCall(p, 'back', {}); await Promise.resolve();
+  release(); await manual; assert.equal(releases, 1, 'an existing manual grant is retained');
 });

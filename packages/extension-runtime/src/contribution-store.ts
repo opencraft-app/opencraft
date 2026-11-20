@@ -119,9 +119,19 @@ function validateSettingsSchema(owner: ExtensionActivationIdentity, value: Setti
 function validateView(owner: ExtensionActivationIdentity, value: ViewContribution): void {
   assertOwnedContributionId(owner.extensionId, value.id);
   requireLabel(value.title, `View ${value.id} title`);
+  validateMessage(value.titleMessage, "view title");
   requireLabel(value.viewType, `View ${value.id} viewType`);
-  if (value.role !== undefined && value.role !== "bot-conversation" && value.role !== "connector-management") {
+  if (value.role !== undefined && value.role !== "connector-management") {
     throw new RangeError(`View ${value.id} has an invalid semantic role`);
+  }
+  if (value.routeFamily !== undefined) assertOwnedContributionId(owner.extensionId, value.routeFamily);
+  if (value.navigationParent !== undefined) {
+    if (!value.navigationParent || typeof value.navigationParent !== "object") throw new TypeError("Invalid navigation parent");
+    requireLabel(value.navigationParent.viewId, "Navigation parent View ID");
+    if (value.navigationParent.viewId === value.id || (value.navigationParent.resourceUri != null && typeof value.navigationParent.resourceUri !== "string")) throw new TypeError("Invalid navigation parent");
+  }
+  if (value.keepConversationSidebar !== undefined && typeof value.keepConversationSidebar !== "boolean") {
+    throw new TypeError(`View ${value.id} has an invalid sidebar preference`);
   }
   if (value.audience !== undefined && value.audience !== "public" && value.audience !== "internal") {
     throw new RangeError(`View ${value.id} has an invalid audience`);
@@ -160,10 +170,14 @@ function validateNavigation(owner: ExtensionActivationIdentity, value: Navigatio
 function validateSidebarCatalog(owner: ExtensionActivationIdentity, value: SidebarCatalogContribution): void {
   assertOwnedContributionId(owner.extensionId, value.id);
   assertOwnedContributionId(owner.extensionId, value.viewId);
+  if (value.actionViewId !== undefined) assertOwnedContributionId(owner.extensionId, value.actionViewId);
   requireLabel(value.title, `Sidebar catalog ${value.id} title`);
+  validateMessage(value.titleMessage, "sidebar catalog title");
 }
 
 function validateSettingsPage(owner: ExtensionActivationIdentity, value: SettingsPageContribution): void {
+  if (value.placement !== undefined && value.placement !== 'navigation' && value.placement !== 'extension')
+    throw new RangeError('Invalid settings page placement');
   assertOwnedContributionId(owner.extensionId, value.id);
   assertOwnedContributionId(owner.extensionId, value.viewId);
   requireLabel(value.title, `Settings page ${value.id} title`);
@@ -323,6 +337,8 @@ function freezeSettingsSchema(value: SettingsSchemaContribution): SettingsSchema
 function freezeView(value: ViewContribution): ViewContribution {
   return Object.freeze({
     ...value,
+    ...(value.navigationParent === undefined ? {} : { navigationParent: Object.freeze({ ...value.navigationParent }) }),
+    ...(value.titleMessage === undefined ? {} : { titleMessage: Object.freeze({ ...value.titleMessage }) }),
     ...(value.platforms === undefined ? {} : { platforms: Object.freeze([...value.platforms]) }),
   });
 }
@@ -463,10 +479,14 @@ export class ExtensionContributionStore {
       validateBot(owner, contribution);
       this.assertAvailable(contribution.id, this.bots, allIds);
     }
-
     const hasView = (id: string) => this.views.has(id) || batch.views.some((view) => view.id === id);
     const hasCommand = (id: string) => this.commands.has(id) || batch.commands.some((entry) => entry.contribution.id === id);
     const hasSettingsPage = (id: string) => this.settingsPages.has(id) || batch.settingsPages.some((page) => page.id === id);
+    for (const catalog of batch.sidebarCatalogs) {
+      if (catalog.actionViewId !== undefined && !hasView(catalog.actionViewId)) {
+        throw new Error(`Sidebar catalog ${catalog.id} targets unregistered action View ${catalog.actionViewId}`);
+      }
+    }
     for (const contribution of batch.navigation) {
       const targetExists = contribution.target.kind === "command"
         ? hasCommand(contribution.target.commandId)
@@ -525,7 +545,10 @@ export class ExtensionContributionStore {
         this.navigation.set(contribution.id, { owner, contribution: freezeNavigation(contribution) });
       }
       for (const contribution of batch.sidebarCatalogs) {
-        this.sidebarCatalogs.set(contribution.id, { owner, contribution: freezePlatforms(contribution) });
+        this.sidebarCatalogs.set(contribution.id, { owner, contribution: freezePlatforms({
+          ...contribution,
+          ...(contribution.titleMessage === undefined ? {} : { titleMessage: Object.freeze({ ...contribution.titleMessage }) }),
+        }) });
       }
       for (const contribution of batch.settingsPages) {
         this.settingsPages.set(contribution.id, { owner, contribution: freezeSettingsPage(contribution) });
@@ -574,7 +597,7 @@ export class ExtensionContributionStore {
     records.delete(id);
     if (kind === "view") {
       for (const [dependentId, dependent] of this.sidebarCatalogs) {
-        if (dependent.contribution.viewId === id) this.sidebarCatalogs.delete(dependentId);
+        if (dependent.contribution.viewId === id || dependent.contribution.actionViewId === id) this.sidebarCatalogs.delete(dependentId);
       }
       for (const [dependentId, dependent] of this.settingsPages) {
         if (dependent.contribution.viewId === id) {

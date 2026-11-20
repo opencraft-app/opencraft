@@ -4,6 +4,17 @@
 
 ## Employee account entrance
 
+- Browser Host recovery distinguishes a confirmed HTTP 401 from network failure
+  and permission denial (403). Manual admission failures stop automatic socket
+  retries and explain the required action beside the current composer, including
+  new-chat drafts; they do not masquerade as model setup or keep “Reconnecting”.
+  A confirmed 401 automatically reloads the current browser entry once per tab
+  and selected server, after queued local document writes finish, allowing the
+  gateway to reauthenticate. A sessionStorage fence survives reload and is cleared
+  only by confirmed 204 admission. Blocked storage, failed persistence or repeated
+  401 retains the explicit sign-in/retry fallback. A 403 never navigates. Recovery
+  never replays a user write or extends identity validity locally.
+
 - The 企业身份 plugin owns stable browser-loaded `directory.example.com/photo/150` URLs for
   employee photos. The account menu/footer and each verified message sender use
   the same directory lookup; sender identity never follows the footer account.

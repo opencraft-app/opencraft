@@ -30,6 +30,12 @@ function Demo() {
   append() { setTail(t => t + "\n// appended source"); },
   replace() { setReplaced(true); },
   snapshots() { return [...snapshots]; },
+  checkpoint(distanceFromBottomPx: number) {
+   const previous = snapshots.get(scope);
+   if (!previous) throw new Error("Capture a checkpoint before replacing it");
+   snapshots.set(scope, { ...previous, distanceFromBottomPx });
+   setRevision(n => n + 1);
+  },
  };
  for(const key of ["theme", "hide", "show", "append", "replace"]) {
   const fn = (window as any).readerFixture[key];

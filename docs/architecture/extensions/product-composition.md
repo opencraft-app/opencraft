@@ -34,10 +34,6 @@ workspace root）；缺失文件或 URL 拒绝构建，无配置时不探测下�
 再按产品返回顺序经既有 ExtensionSupervisor 激活，随后等待可选 preflight，最后启动
 配置 Host。session 贡献可选 builtin 描述，仍由现有 ExtensionManager 读取用户持久意图。
 启动失败逆序回滚；正常卸载先释放扩展和缓存订阅，再释放产品 session，不另建生命周期管理器。
-Bot 管理通过 session 的可选 `botManagement` 声明 provider 准入与空态提示；省略准入
-表示所有启用 profile，显式空列表表示不开放候选。核心按目录实际能力选择唯一管理
-目标，不修改当前聊天 Host；产品声明不是权限授予。下游产品可在自己的 client plugin
-保留云端专用策略，核心不解释私有 provider ID 或账号语义。
 
 
 默认 Web/Electron 入口不选择私有产品，保留本地与远端 Host；本地缓存按服务器和可选

@@ -3,7 +3,7 @@ import type {RecordedThreadCountRead,RecordedThreadCountSet} from '@opencraft/ap
 import { recordedNameQuery, type RecordedNameRead, type RecordedNameWindow, type RecordedNameFence } from '@opencraft/appserver-protocol/collaboration';
 import { randomUUID } from "node:crypto";
 import { DIRECTORY_FULL_RECONCILE_MS, DIRECTORY_MAX_SOURCE_PAGES } from "./policy.js";
-import { parseThreadCatalogChange, THREAD_CATALOG_CHANGED, threadDirectoryIncomplete, type ThreadCatalogChange, type ThreadCatalogMetadata, type ThreadListResponse } from "@opencraft/appserver-protocol";
+import { threadCatalogStatus, parseThreadCatalogChange, THREAD_CATALOG_CHANGED, threadDirectoryIncomplete, type ThreadCatalogChange, type ThreadCatalogMetadata, type ThreadListResponse } from "@opencraft/appserver-protocol";
 import type { DatabaseSync } from "node:sqlite";
 import type { Thread, ThreadListParams } from "@opencraft/appserver-protocol/generated/v2";
 import { DirectorySnapshotIndex, DirectorySnapshotPages, SNAPSHOT_CURSOR } from "./snapshots.js";
@@ -52,6 +52,8 @@ export class ThreadDirectory {
   readonly #sourceRevisions = new Map<string, number>();
   readonly #temporary = new Set<string>();
   readonly #liveStatus = new Map<string, Thread["status"]>();
+  #connection = 0;
+  readonly #execution = new Map<string, { status: Thread["status"]; turnId?: string; event: boolean }>();
   #revision: number;
   #timer?: ReturnType<typeof setTimeout>;
   #job: Promise<void> | null = null;
@@ -59,6 +61,8 @@ export class ThreadDirectory {
   #abort = new AbortController();
   constructor(readonly database: DatabaseSync, readonly port: {
     list(params: ThreadListParams, signal: AbortSignal): Promise<unknown>;
+    /** Execution observations are connection-local, never persisted metadata. */
+    connectionLocalExecution?: boolean;
     changed(event?: ThreadCatalogChange): void;
     measured?(measurement: DirectoryMeasurement): void;
     readMetadata?(threadId: string, signal: AbortSignal): Promise<unknown>;
@@ -77,7 +81,9 @@ export class ThreadDirectory {
     this.#revision = Number(database.prepare("SELECT MAX(revision) AS revision FROM opencraft_thread_catalog").get()?.revision ?? 0);
     this.#snapshotBase = this.#revision;
     const path = database.location();
-    if (path) this.#snapshotReader = new DirectorySnapshotReader(path);
+    if (path && !port.connectionLocalExecution) this.#snapshotReader = new DirectorySnapshotReader(path);
+    if (port.connectionLocalExecution) this.#snapshotIndex.replace(database.prepare("SELECT metadata_json,archived FROM opencraft_thread_catalog WHERE deleted=0").all()
+      .map(row => ({row: this.#present(JSON.parse(String(row.metadata_json)) as Thread), archived: Boolean(row.archived)})));
   }
   /** Preserve native semantics for advanced filters and native cursors. */
   supports(params: Record<string, unknown>): boolean {
@@ -209,7 +215,7 @@ export class ThreadDirectory {
     const more = rows.length > limit; rows.length = Math.min(rows.length, limit);
     const last = rows.at(-1);
     this.#measure({ phase: "read", outcome: "ok", durationMs: performance.now() - readStarted, rows: rows.length, changed: 0, noop: 0, sourceReads: 0 });
-    return { data: rows.map(row => JSON.parse(String(row.metadata_json)) as Thread),
+    return { data: rows.map(row => this.#present(JSON.parse(String(row.metadata_json)) as Thread)),
       nextCursor: more && last ? this.cursor(archived === 1, { updatedAt: Number(last.updated_at), id: String(last.thread_id) }) : null,
       backwardsCursor: null, catalog: { lastSuccessAt: sync?.last_success_ms ?? null, state: sync?.state === "error" ? "error" : sync?.last_success_ms == null ? "warming" : sync?.state ?? "syncing",
         coverage: sync?.last_success_ms == null ? "unknown" : sync?.state === "error" ? "partial" : "complete" } };
@@ -243,9 +249,10 @@ export class ThreadDirectory {
     return job;
   }
   async #refresh(metric: DirectoryMeasurement): Promise<void> {
+    const connection = this.#connection;
     let failed = false;
     for (const archived of this.port.archivePartitioned === false ? [0] : [0, 1]) {
-      if (this.#closed) return;
+      if (this.#closed || connection !== this.#connection) return;
       const previous = this.#state(archived), startedRevision = this.#revision, startedObservation = this.#observation;
       const full = !this.port.incrementalScan || !previous?.last_full_ms || this.now() - previous.last_full_ms > DIRECTORY_FULL_RECONCILE_MS;
       this.database.prepare(`INSERT INTO opencraft_catalog_sync(archived,state) VALUES(?,'syncing')
@@ -258,7 +265,7 @@ export class ThreadDirectory {
           metric.sourceReads++;
           const response = object(await this.port.list({ archived: archived === 1, limit: 200,
             sortKey: "updated_at", sortDirection: "desc", useStateDbOnly: true, cursor }, this.#abort.signal));
-          if (this.#closed) return;
+          if (this.#closed || connection !== this.#connection) return;
           partial ||= threadDirectoryIncomplete(response);
           if (!Array.isArray(response.data) || !(response.nextCursor == null || typeof response.nextCursor === "string")) throw new Error("Invalid catalog page");
           if(this.port.streamingSync && response.data.length>200)throw new Error("Oversized metadata page");
@@ -272,7 +279,7 @@ export class ThreadDirectory {
           if(this.port.streamingSync){
             if(!await this.#chunks(staged.splice(0),row=>{if((this.#fences.get(row.id)??0)<=startedObservation)this.#put(row,archived,startedRevision,true,metric);},metric))return;
             await new Promise<void>(resolve=>setImmediate(resolve));
-            if(this.#closed)return;
+            if(this.#closed || connection !== this.#connection)return;
           }
           if (response.nextCursor == null || !full && oldest < (previous?.watermark ?? 0)) { complete = true; break; }
           if (!response.nextCursor || cursors.has(response.nextCursor)) throw new Error("Catalog cursor did not advance");
@@ -287,7 +294,7 @@ export class ThreadDirectory {
           if(this.port.streamingSync){
             const upper=Number(this.database.prepare('SELECT rowid AS n FROM opencraft_thread_catalog ORDER BY rowid DESC LIMIT 1').get()?.n??0);
             for(let position=0;position<upper;position+=1024){
-              if(this.#closed)return;
+              if(this.#closed || connection !== this.#connection)return;
               const rows=this.database.prepare('SELECT thread_id FROM opencraft_thread_catalog NOT INDEXED WHERE rowid>? AND rowid<=? AND archived=? AND revision<=? AND deleted=0 ORDER BY rowid').all(position,Math.min(upper,position+1024),archived,startedRevision);
               if(!await this.#chunks(rows,row=>{const id=String(row.thread_id);if(!seen.has(id)&&!this.port.retain?.(id)&&(this.#fences.get(id)??0)<=startedObservation)this.#remove(id,metric);},metric))return;
               await new Promise<void>(resolve=>setImmediate(resolve));
@@ -319,13 +326,13 @@ export class ThreadDirectory {
         if(this.port.streamingSync){
           const upper=Number(this.database.prepare('SELECT rowid AS n FROM opencraft_thread_catalog ORDER BY rowid DESC LIMIT 1').get()?.n??0);
           for(let position=0;position<upper;position+=1024){
-            if(this.#closed)return;
+            if(this.#closed || connection !== this.#connection)return;
             this.port.observed?.(this.database.prepare('SELECT thread_id FROM opencraft_thread_catalog NOT INDEXED WHERE rowid>? AND rowid<=? AND deleted=0 ORDER BY rowid').all(position,Math.min(upper,position+1024)).map(row=>String(row.thread_id)));
             await new Promise<void>(resolve=>setImmediate(resolve));
           }
         }else this.port.observed?.(this.database.prepare("SELECT thread_id FROM opencraft_thread_catalog WHERE deleted=0").all().map(row => String(row.thread_id)));
       } catch {
-        if (this.#closed) return;
+        if (this.#closed || connection !== this.#connection) return;
         const error = { lastSuccessAt: previous?.last_success_ms ?? null, state: "error", coverage: "partial" as const };
         this.#coverage.set(archived, error);
         if (this.port.archivePartitioned === false) this.#coverage.set(1, error);
@@ -336,12 +343,13 @@ export class ThreadDirectory {
     if (failed) throw new Error("Remote catalog refresh failed");
   }
   async #chunks<T>(rows: readonly T[], apply: (row: T) => void, metric: DirectoryMeasurement): Promise<boolean> {
+    const connection = this.#connection;
     for (let offset = 0; offset < rows.length; offset += 128) {
-      if (this.#closed) return false;
+      if (this.#closed || connection !== this.#connection) return false;
       this.#commit(() => { for (const row of rows.slice(offset, offset + 128)) apply(row); }, metric);
       if (offset + 128 < rows.length) await new Promise<void>(resolve => setImmediate(resolve));
     }
-    return !this.#closed;
+    return !this.#closed && connection === this.#connection;
   }
   #commit(apply: () => void, metric: DirectoryMeasurement): void {
     const revision = this.#revision, eventRevision = this.#eventRevision, changed = metric.changed;
@@ -362,18 +370,35 @@ export class ThreadDirectory {
     const old = this.database.prepare("SELECT revision,metadata_json,archived,deleted FROM opencraft_thread_catalog WHERE thread_id=?").get(row.id);
     if (fence !== undefined && old && (Number(old.revision) > fence || old.deleted)) return;
     if (metric) metric.rows++;
+    const nativeStatus = row.status;
+    const previousExecutionStatus = this.#execution.get(row.id)?.status;
     if (preserveStatus && old && !old.deleted) row = { ...row, status: (JSON.parse(String(old.metadata_json)) as Thread).status };
-    if (this.#liveStatus.has(row.id)) row = { ...row, status: this.#liveStatus.get(row.id)! };
+    if (this.port.connectionLocalExecution) {
+      const known = this.#execution.get(row.id);
+      if (!known || fence !== undefined && !known.event) {
+        const status = threadCatalogStatus(nativeStatus);
+        if (status) this.#execution.set(row.id, {status, event:false});
+      }
+      row = {...row, status:{type:"notLoaded"}};
+    } else if (this.#liveStatus.has(row.id)) row = { ...row, status: this.#liveStatus.get(row.id)! };
     row = metadata(this.port.project?.(row) ?? row)!;
     if (!row) throw new Error("Invalid projected metadata");
-    if (old && !old.deleted && Number(old.archived) === archived && String(old.metadata_json) === JSON.stringify(row)) { if (metric) metric.noop++; return; }
+    const presented = this.#present(row);
+    if (old && !old.deleted && Number(old.archived) === archived && String(old.metadata_json) === JSON.stringify(row)) {
+      if (metric) metric.noop++;
+      if (this.port.connectionLocalExecution) {
+        this.#editIndex(() => this.#snapshotIndex.set(presented, archived === 1));
+        if (!archived && JSON.stringify(previousExecutionStatus) !== JSON.stringify(this.#execution.get(row.id)?.status)) this.#change({type:"upsert",thread:presented});
+      }
+      return;
+    }
     this.database.prepare(`INSERT INTO opencraft_thread_catalog VALUES(?,?,?,?,?,?,0) ON CONFLICT(thread_id) DO UPDATE SET
       metadata_json=excluded.metadata_json,updated_at=excluded.updated_at,archived=excluded.archived,
       observed_at_ms=excluded.observed_at_ms,revision=excluded.revision,deleted=0`)
       .run(row.id, JSON.stringify(row), row.recencyAt ?? row.updatedAt, archived, this.now(), ++this.#revision);
     if (metric) metric.changed++;
-    this.#editIndex(() => this.#snapshotIndex.set(row, archived === 1));
-    this.#change(archived ? { type: "remove", threadId: row.id } : { type: "upsert", thread: row });
+    this.#editIndex(() => this.#snapshotIndex.set(presented, archived === 1));
+    this.#change(archived ? { type: "remove", threadId: row.id } : { type: "upsert", thread: presented });
   }
   #change(change: ThreadCatalogChange["change"]): void {
     const event: ThreadCatalogChange = { version: 1, authority: "directory", source: this.#source, revision: ++this.#eventRevision, change };
@@ -392,6 +417,7 @@ export class ThreadDirectory {
   #remove(id: string, metric?: DirectoryMeasurement): void {
     const previous = this.database.prepare("SELECT deleted FROM opencraft_thread_catalog WHERE thread_id=?").get(id);
     if (previous?.deleted) return;
+    this.#execution.delete(id);
     this.database.prepare(`INSERT INTO opencraft_thread_catalog VALUES(?,'{}',0,0,?,?,1)
       ON CONFLICT(thread_id) DO UPDATE SET deleted=1,revision=excluded.revision`).run(id, this.now(), ++this.#revision);
     if (metric) { metric.rows++; metric.changed++; }
@@ -426,6 +452,7 @@ export class ThreadDirectory {
     return job;
   }
   async #flush(metric: DirectoryMeasurement): Promise<void> {
+    const connection = this.#connection;
     // Bounded batches, sequential native reads; notification bursts share one latest read.
     const ids = [...this.#dirty].slice(0, 64);
     const fences = new Map(ids.map(id => [id, this.#fences.get(id)]));
@@ -435,7 +462,7 @@ export class ThreadDirectory {
     if (ids.length && this.port.readMetadataBatch) {
       try { metric.sourceReads++; batch = await this.port.readMetadataBatch(ids, this.#abort.signal); }
       catch { batchFailed = true; }
-      if (this.#closed) return;
+      if (this.#closed || connection !== this.#connection) return;
     }
     for (const id of ids) {
       this.#dirty.delete(id);
@@ -445,7 +472,7 @@ export class ThreadDirectory {
         if (batchFailed) throw new Error("Metadata batch unavailable");
         if (!batch) metric.sourceReads++;
         const result = object(batch ? batch.get(id) : await this.port.readMetadata!(id, this.#abort.signal));
-        if (this.#closed) return;
+        if (this.#closed || connection !== this.#connection) return;
         if (this.#fences.get(id) !== fence) { this.#dirty.add(id); continue; }
         if (object(result.thread).ephemeral === true) { this.#temporary.add(id); continue; }
         const row = metadata(result.thread);
@@ -458,13 +485,33 @@ export class ThreadDirectory {
         if (!stored?.deleted) this.#put(row, this.port.archived ? Number(this.port.archived(id)) : Number(stored?.archived ?? 0), undefined, true, metric);
       } catch {
         metric.outcome = "failed";
-        if (!this.#closed && !this.#temporary.has(id) && this.#fences.get(id) === fence
+        if (!this.#closed && connection === this.#connection && !this.#temporary.has(id) && this.#fences.get(id) === fence
           && !this.database.prepare("SELECT deleted FROM opencraft_thread_catalog WHERE thread_id=?").get(id)?.deleted) this.#dirty.add(id);
       }
     }
   }
   observe(method: string, params: unknown, result?: unknown): void {
     if (this.#closed) return;
+    if (this.port.connectionLocalExecution) {
+      const input = object(params), id = input.threadId;
+      if (typeof id === "string" && id) {
+        const previous = this.#execution.get(id), turnId = object(input.turn).id;
+        let status = method === "thread/status/changed" ? threadCatalogStatus(input.status) : null;
+        if (method === "turn/started" && typeof turnId === "string") status = {type:"active",activeFlags:[]};
+        if (method === "turn/completed" && typeof turnId === "string" && (previous?.turnId === undefined || previous.turnId === turnId)) status = {type:"idle"};
+        if (method === "thread/closed" || method === "thread/unloaded") status = {type:"notLoaded"};
+        if (status) {
+          this.#execution.set(id, {status,event:true,...(status.type === "active" ? {turnId:method === "turn/started" ? String(turnId) : previous?.turnId} : {})});
+          this.#fences.set(id, ++this.#observation);
+          const row = this.database.prepare("SELECT metadata_json,archived FROM opencraft_thread_catalog WHERE thread_id=? AND deleted=0").get(id);
+          if (row) {
+            const thread = this.#present(JSON.parse(String(row.metadata_json)) as Thread);
+            this.#editIndex(() => this.#snapshotIndex.set(thread,Boolean(row.archived)));
+            if (!row.archived) this.#change({type:"upsert",thread});
+          }
+        }
+      }
+    }
     if (method === THREAD_CATALOG_CHANGED) {
       const event = parseThreadCatalogChange(params);
       if (!event || event.revision <= (this.#sourceRevisions.get(event.source) ?? 0)) return;
@@ -522,7 +569,22 @@ export class ThreadDirectory {
     this.#put(current, archived);
 
   }
+  #present(row: Thread): Thread {
+    return this.port.connectionLocalExecution ? {...row,status:this.#execution.get(row.id)?.status ?? {type:"notLoaded"}} : row;
+  }
+  /** Transport replacement invalidates observations, not durable metadata. */
+  resetExecution(): void {
+    if (this.#closed || !this.port.connectionLocalExecution) return;
+    ++this.#connection; this.#execution.clear(); this.#liveStatus.clear(); this.#dirty.clear();
+    this.#snapshots.clear();
+    clearTimeout(this.#dirtyTimer); this.#dirtyTimer = undefined;
+    this.#lastAttempt = -Infinity;
+    this.#snapshotIndex.replace(this.database.prepare("SELECT metadata_json,archived FROM opencraft_thread_catalog WHERE deleted=0").all()
+      .map(row => ({row:this.#present(JSON.parse(String(row.metadata_json)) as Thread),archived:Boolean(row.archived)})));
+    ++this.#eventRevision; this.#publish();
+  }
   close(): void {
+    this.#execution.clear();
     this.#snapshots.clear();
     this.#snapshotReader?.close();
     this.#closed = true; this.#countReads.clear(); clearTimeout(this.#timer); clearTimeout(this.#dirtyTimer);

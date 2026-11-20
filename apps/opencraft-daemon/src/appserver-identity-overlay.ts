@@ -3,7 +3,7 @@ import { ExecutionLeaseStore } from "./execution-lease-store.js";
 import { ExecutionLeaseTracker } from "./execution-ownership-transport.js";
 import WebSocket from "ws";
 import { randomUUID } from "node:crypto";
-import { JsonRpcAppServerClient, type AppServerClient, type TransportSubmissionContext } from "@opencraft/appserver-client";
+import { JsonRpcAppServerClient, type AppServerClient, type DuplexTransport, type TransportStatus, type TransportSubmissionContext } from "@opencraft/appserver-client";
 import { WebSocketTransport, type AppServerWebSocket } from "@opencraft/appserver-transport-websocket";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { OPENCRAFT_METHOD_ACCESS_EXTENSION } from "@opencraft/appserver-protocol";
@@ -64,10 +64,55 @@ export class AppServerIdentityOverlay {
     void job.finally(() => { if (this.reading === job) this.reading = null; }).catch(() => {});
     return job;
   }
-  open(emit: (frame: string) => void): IdentitySocketSession {
+  open(emit: (frame: string) => void, trackExecutions = true): IdentitySocketSession {
     if (this.closed) throw new Error("Thread identity overlay closed");
-    const session = new IdentitySocketSession(this.identity, emit, () => this.sessions.delete(session), this.executionTracker, this.options.resolveExecutionNative);
+    const session = new IdentitySocketSession(this.identity, emit, () => this.sessions.delete(session), trackExecutions ? this.executionTracker : undefined, trackExecutions ? this.options.resolveExecutionNative : undefined);
     this.sessions.add(session); return session;
+  }
+  /** AppHost already has an execution owner; this adapter owns identity projection only. */
+  wrapTransport(inner: DuplexTransport): DuplexTransport {
+    const listeners = new Set<(frame: string) => void>();
+    const statuses = new Set<(status: TransportStatus) => void>();
+    let closed = false, failure: TransportStatus | null = null;
+    const emit = (frame: string) => { if (!closed) for (const listener of listeners) listener(frame); };
+    const session = this.open(emit, false);
+    let observations = Promise.resolve();
+    const release = inner.subscribeMessage(frame => {
+      observations = observations.then(async () => {
+        if (closed) return;
+        const projected = await session.observeNative(frame);
+        if (projected !== null) emit(projected);
+      }).catch(() => {
+        failure = { state: "failed", reason: "Thread identity projection unavailable" };
+        session.close();
+        for (const listener of statuses) listener(failure);
+      });
+    });
+    const releaseStatus = inner.subscribeStatus(status => { for (const listener of statuses) listener(status); });
+    const sendWithContext = async (frame: string, context: TransportSubmissionContext, signal?: AbortSignal) => {
+      if (closed || failure) throw new Error("Thread identity transport unavailable");
+      signal?.throwIfAborted();
+      const prepared = await session.prepareNative(frame, context);
+      signal?.throwIfAborted();
+      if (prepared === null) return;
+      if (inner.sendWithContext) await inner.sendWithContext(prepared, context, signal);
+      else await inner.send(prepared, signal);
+    };
+    return {
+      get status() { return failure ?? inner.status; },
+      connect: signal => inner.connect(signal),
+      send: (frame, signal) => sendWithContext(frame, { sender: null }, signal),
+      sendWithContext,
+      subscribeMessage(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+      subscribeStatus(listener) { statuses.add(listener); return () => { statuses.delete(listener); }; },
+      subscribeRecoveryHint: listener => inner.subscribeRecoveryHint?.(listener) ?? (() => {}),
+      async close() {
+        if (closed) return;
+        closed = true; release(); releaseStatus(); session.close();
+        await inner.close(); await observations;
+        listeners.clear(); statuses.clear();
+      },
+    };
   }
   async close(): Promise<void> {
     if (this.closed) return;

@@ -1,4 +1,4 @@
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentType, ReactNode, RefObject } from "react";
 
 import type { ViewContribution } from "@opencraft/extension-contract";
 import type { HostConnectionProfile, ProvisionHostInput, ThreadReadReceiptPort, AccountModelDefaultsPort } from "@opencraft/workbench-runtime";
@@ -19,6 +19,7 @@ export interface PlatformViewHost {
   readonly authentication?: AuthenticationFlowPort;
   readonly platform: "web" | "electron" | "expo";
   readonly activeHostId: string;
+  readonly activeView?: { readonly viewId: string; readonly resourceUri: string | null };
   readonly profiles: readonly HostConnectionProfile[];
   /** Establishes the selected Agent Runtime without choosing a Thread or workspace. */
   ensureRuntimeReady?(hostId: string): Promise<void>;
@@ -28,6 +29,8 @@ export interface PlatformViewHost {
   /** Resolve a stable Server/Thread identity through the application's current route directory. */
   openConversation?(serverId: string, threadId: string): void | Promise<void>;
   openSettings?(section: string): void;
+  /** Guard in-app navigation while a View owns an unsaved draft. Cleanup cancels pending attempts. */
+  registerNavigationGuard?(shouldBlock: () => boolean, onBlocked: (attempt: { proceed(): void; cancel(): void }) => void): () => void;
   /** Pushes a new deep-link entry for another resource owned by the active View. */
   pushViewResource(viewId: string, resourceUri: string): void;
   replaceViewResource(viewId: string, resourceUri: string): void;
@@ -35,7 +38,33 @@ export interface PlatformViewHost {
   prepareImageUpload?(blob: Blob): Promise<Blob>;
 }
 
+/** Host-owned collection capacity and Header placement; resources remain View-owned. */
+export interface PlatformMasterDetailProps {
+  readonly master: ReactNode;
+  readonly masterLabel: string;
+  readonly detailSelected: boolean;
+  readonly detail: (presentation: {
+    readonly mode: "split" | "master" | "detail";
+    readonly Header: ComponentType<{ readonly children: ReactNode }>;
+  }) => ReactNode;
+}
+
+/** Local page history inside an existing modal; domain state stays View-owned. */
+export interface PlatformNavigationStackProps {
+  /** Explicit edit destination; otherwise restore the prior page focus. */
+  readonly focusTarget?: RefObject<HTMLElement | null>;
+  readonly path: readonly string[];
+  readonly disabled?: boolean;
+  readonly onBack: () => void;
+  readonly children: ReactNode;
+}
+
 export interface PlatformViewRegions {
+  readonly NavigationStack?: ComponentType<PlatformNavigationStackProps>;
+  /** Same mounted collection/detail slots across capacity changes. No navigation or resource ownership. */
+  readonly MasterDetail?: ComponentType<PlatformMasterDetailProps>;
+  /** Host input capabilities bound to the View’s existing draft. */
+  readonly ComposerActions?: ComponentType<{ readonly controller: import("@opencraft/composer-core").ComposerController; readonly disabled: boolean; readonly platform: PlatformViewHost["platform"] }>;
   /** Route-owned content rendered by the persistent platform Header. */
   readonly Header?: ComponentType<{ readonly children: ReactNode }>;
   /** Platform-owned compact selector for controls rendered inside Header. */
@@ -191,7 +220,7 @@ export * from "./identity-avatar";
 
 export * from "./thread-list-grouping";
 
-export { createDeferredView } from "./deferred-view";
+export { createDeferredView, ViewPresentationReadinessContext, type ViewPresentationReadiness } from "./deferred-view";
 
 export * from "./thread-participation";
 export { EnvironmentVariablesEditor, type EnvironmentEditorLabels, type EnvironmentEditorPort } from './environment-variables-editor';

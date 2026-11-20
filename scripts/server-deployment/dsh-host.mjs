@@ -1,3 +1,4 @@
+import { createHostFileSystem } from '../host-filesystem.ts';
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { verifyDshOwnerAdmission } from '../patch-dsh-owner-admission.mjs';
@@ -18,7 +19,7 @@ import { readTaskCoreConversations } from '../tasks-conversation-catalog.mjs';
 import { RemoteSessionCapabilities } from '../../packages/session-capabilities/src/remote.ts';
 
 export async function startIndependentDshHost(configuration) {
-  const {descriptorPath, machineIdentityDirectory, machineName, taskCodexCoreEndpoint, taskCodexCoreTokenFile, coldDependencyRoots = [], ...options} = configuration;
+  const {descriptorPath, machineIdentityDirectory, machineName, taskCodexCoreEndpoint, taskCodexCoreTokenFile, coldDependencyRoots = [], fileSystemOwner, ...options} = configuration;
   if (!isAbsolute(descriptorPath) || !isAbsolute(options.dataDirectory ?? ''))
     throw new Error('Independent DSH Host requires absolute descriptor and data paths');
   if (process.env.OPENCRAFT_DSH_URL?.trim() || options.dshUrl)
@@ -41,7 +42,10 @@ export async function startIndependentDshHost(configuration) {
   catch (error) { await releaseKernel(); throw error; }
   let controlServer;
   let agent;
+  const artifactFiles=fileSystemOwner?createHostFileSystem(fileSystemOwner):null;
+  if(artifactFiles) options.prepareArtifact=(artifact,owner,signal)=>artifactFiles.prepareArtifact(artifact,owner,signal);
   let closed;
+  let handoff;
   const temporary = `${descriptorPath}.${randomUUID()}.tmp`;
   try {
   const runtime = {entrySha256:createHash('sha256').update(await readFile(fileURLToPath(import.meta.url))).digest('hex'),
@@ -51,7 +55,7 @@ export async function startIndependentDshHost(configuration) {
   for (const path of [process.env.OPENCRAFT_DSH_HOST_CONFIG,taskCodexCoreTokenFile].filter(Boolean))
     immutableAttachments.set(path,createHash('sha256').update(await readFile(path)).digest('hex'));
   const bootId = await bootIdentity();
-  const handoff = new DshOwnerHandoff(options.dataDirectory,runtime,inspectOwnerCgroup);
+  handoff = new DshOwnerHandoff(options.dataDirectory,runtime,inspectOwnerCgroup);
     const machineIdentity = options.machineIdentity ?? await readDaemonMachineIdentity(
       machineIdentityDirectory ?? dirname(options.dataDirectory), machineName);
     options.modelPolicyPath ??= join(dirname(options.dataDirectory), "model-usage-policy.sqlite");
@@ -113,12 +117,12 @@ export async function startIndependentDshHost(configuration) {
       close() {
         return closed ??= (async () => {
           try { await agent.close(); }
-          finally { controlServer.closeAllConnections(); await new Promise(resolve=>controlServer.close(resolve)); await rm(descriptorPath, { force: true }); await release(); await releaseKernel(); }
+          finally { try { await handoff.receipts?.close(); } finally { artifactFiles?.close(); controlServer.closeAllConnections(); await new Promise(resolve=>controlServer.close(resolve)); await rm(descriptorPath, { force: true }); await release(); await releaseKernel(); } }
         })();
       } };
   } catch (error) {
     await rm(temporary, { force: true });
-    try { await agent?.close(); } finally { controlServer?.close(); await release(); await releaseKernel(); }
+    try { await agent?.close(); } finally { try { await handoff?.receipts?.close(); } finally { artifactFiles?.close(); controlServer?.close(); await release(); await releaseKernel(); } }
     throw error;
   }
 }

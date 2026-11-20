@@ -1,9 +1,16 @@
+import { NavigationItem } from "@opencraft/design-system-web/navigation";
+import { NavigationEmpty } from "@opencraft/design-system-web/navigation";
+import { ShellNavigationButton } from "./shell-navigation/navigation-button";
+import { createPortal } from "react-dom";
+import { SidebarContentPortal } from "./shared-sidebar-content";
+import { workbenchIconMetrics } from "@opencraft/design-system/tokens";
+import { ConversationAppearanceIcon } from "./conversation-appearance";
+import { SidebarEmptyIcon, SidebarSectionIcon } from "./sidebar-section-icons";
 import { useStableEvent } from "@opencraft/react-runtime";
 import { Button } from "@opencraft/design-system-web/button";
 import { ChevronDownIcon as ChevronDown, LoadingRingIcon as LoaderCircle, ComposeIcon as SquarePen, SearchIcon as Search, CheckIcon as Check } from "@opencraft/design-system-web/action-icons";
 import { FolderIcon, SettingsGearIcon } from "@opencraft/design-system-web/action-icons";
 import { shortcutLabel, shortcutAria } from "../workbench-shortcuts";
-import { createPortal } from "react-dom";
 import * as ContextMenu from "@opencraft/design-system-web/context-menu";
 import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
 import { ThreadListModeItems } from "./thread-list-mode-menu";
@@ -23,14 +30,18 @@ import { SidebarBots, SidebarEntityDndCoordinator } from "./sidebar-bots";
 import { ThreadActionModals, threadActionKey, useThreadActionOwner, type ThreadActionCallbacks, type ThreadActionCapabilities, type ThreadActionOwner } from "./thread-management";
 import { SidebarThreadMenuStore, type OpenSidebarThreadMenu, type SidebarThreadMenuKind } from "./sidebar-thread-menu-state";
 import { SidebarThreadRowMenu, SidebarThreadBadge, SidebarFiltersMenu, SidebarListContextMenu } from "./sidebar-thread-menu";
-import { sidebarActivityDateHeadings, groupThreadsByNativeProject, groupThreadsByTaskFlow, sidebarThreadMetadata } from "../sidebar-activity";
+import { sidebarRecentHeadings, sidebarActivityDateLabel, groupThreadsByTaskFlow, groupThreadsByNativeProject, sidebarThreadMetadata, summarizeSidebarActivity } from "../sidebar-activity";
 import { sidebarThreadIdentity, sidebarThreadTree, type SidebarThreadTreeNode } from "../sidebar-thread-tree";
 import { NavigationIcon as SidebarContributionIcon, type NavigationAction as SidebarActionItem } from "./shell-navigation/navigation-action";
 import { useSidebarEndPull } from "./use-sidebar-end-pull";
-import { useSidebarHeadingOcclusion } from "./use-sidebar-heading-occlusion";
+import { sidebarScrollViewport, useSidebarAccordion } from "./use-sidebar-accordion";
 import { SidebarBrowserResources } from "./sidebar-browser-resources";
 import { SidebarActivityItem } from "./sidebar-activity-item";
+import { SidebarActivitySummary } from "./sidebar-activity-summary";
 import { SidebarNavigationItem } from "./sidebar-navigation-item";
+import { SidebarThreadChildren } from "./sidebar-thread-children";
+import { useTouchLayout } from "../runtime/use-touch-layout";
+import { SidebarCalendarDayProvider, useSidebarCalendarDay } from "./use-sidebar-calendar-day";
 import { useShellPresentation, useDismissSidebarAfterSelection } from "./shell-presentation";
 import type { HostThreadCatalogState } from "../runtime/thread-catalog-query";
 import { useUiPreferencesRuntime } from "../runtime/ui-preferences-runtime";
@@ -47,10 +58,12 @@ export interface SidebarThread extends WorkbenchThread {
 }
 
 export interface SidebarCatalogItem {
+  readonly presentation?: 'section' | 'entry';
   readonly id: string;
   readonly title: string;
   readonly icon?: string;
   readonly initiallyCollapsed?: boolean;
+  readonly action?: ReactNode;
   readonly content: ReactNode;
 }
 import { createContext, useContext, memo, useCallback, useEffect, useId, useMemo, useSyncExternalStore, useLayoutEffect, useRef, useState, useTransition } from "react";
@@ -69,7 +82,8 @@ interface SidebarProps {
   bots?: readonly SidebarEntity[];
   sidebarLayout: SidebarLayoutStore;
   botCreation?: SidebarEntityCreationCommand | null;
-  onSelectThread(hostId: string, id: string): void;
+  /** Resolves after navigation commits; false means rejected or superseded. */
+  onSelectThread(hostId: string, id: string): void | boolean | Promise<boolean>;
   onNewTask(): void;
   onOpenSettings(): void;
   showFooter?: boolean;
@@ -90,18 +104,22 @@ interface SidebarProps {
 
 function ExtensionCatalog({ catalog }: { readonly catalog: SidebarCatalogItem }) {
   const [collapsed, setCollapsed] = useState(catalog.initiallyCollapsed ?? false);
-  return (
-    <section className="sidebar-extension-catalog" aria-label={catalog.title}>
+  if(catalog.presentation==='entry')return <section data-catalog-presentation="entry" className="sidebar-extension-catalog" aria-label={catalog.title}>{catalog.content}</section>;
+  const heading = (
       <button
-        className="sidebar-section-heading sidebar-extension-catalog__heading"
+        className="sidebar-section-heading sidebar-catalog-heading"
         type="button"
         aria-expanded={!collapsed}
         onClick={() => setCollapsed((value) => !value)}
       >
-        <ChevronDown size={12} className={collapsed ? "is-collapsed" : undefined} />
+        <ChevronDown size={12} data-group-disclosure="" className={collapsed ? "is-collapsed" : undefined} />
         <SidebarContributionIcon name={catalog.icon} size={13} />
         <span>{catalog.title}</span>
       </button>
+  );
+  return (
+    <section className="sidebar-extension-catalog" aria-label={catalog.title}>
+      {catalog.action ? <div className="sidebar-catalog-bar">{heading}{catalog.action}</div> : heading}
       {collapsed ? null : (
         <div className="sidebar-extension-catalog__content">{catalog.content}</div>
       )}
@@ -109,13 +127,36 @@ function ExtensionCatalog({ catalog }: { readonly catalog: SidebarCatalogItem })
   );
 }
 
+/** Entry contributions share one DOM owner while Shell moves their navigation slot. */
+function SidebarEntryNavigation({ catalogs }: { catalogs: readonly SidebarCatalogItem[] }) {
+  const shell = useShellPresentation();
+  const [localHost, setLocalHost] = useState<HTMLDivElement | null>(null);
+  return <><div className="sidebar-entry-navigation" ref={setLocalHost} />
+    <SidebarContentPortal name="entry-navigation" target={shell?.sidebarActionHost ? shell.sidebarNavigationHost ?? null : localHost}>
+      {catalogs.map(catalog => <ExtensionCatalog key={catalog.id} catalog={catalog} />)}
+    </SidebarContentPortal>
+  </>;
+}
+
 const defaultGrouping: ThreadListGroupingSnapshot = { revision: 0, mode: null, modes: [], hideRowBadge: false, notice: null };
 const noThreadActions: ThreadActionCallbacks = { onRename: async () => {}, onFork: async () => {}, onArchive: async () => {}, onDelete: async () => {} };
 const noSubscribe = () => () => {};
 const getDefaultGrouping = () => defaultGrouping;
 
+function SidebarDateHeading({ timestampMs }: { readonly timestampMs: number }) {
+  const day = useSidebarCalendarDay();
+  const intl = useIntl();
+  return <h4 className="sidebar-activity-group__heading">{sidebarActivityDateLabel(timestampMs, day, intl.locale)}</h4>;
+}
+
 const PINNED_PAGE_SIZE = 6;
 const RECENT_PAGE_SIZE = 10;
+
+function sidebarUnread(thread: SidebarThread, grouping: ThreadListGroupingContribution | null) {
+  return Boolean(thread.unread) && (grouping?.isParticipant?.({
+    hostId: thread.connectionHostId, threadId: thread.id, updatedAt: thread.updatedAt, pinned: thread.pinned, createdByViewer: thread.createdByViewer,
+  }) ?? true);
+}
 
 function SidebarPagination({ total, visibleCount, pageSize, onChange, pullToLoad = false }: {
   total: number; visibleCount: number; pageSize: number; onChange: (count: number) => void; pullToLoad?: boolean;
@@ -133,9 +174,9 @@ function SidebarPagination({ total, visibleCount, pageSize, onChange, pullToLoad
   return <div className="sidebar-activity-pagination" ref={footerRef} aria-busy={pending} hidden={total <= pageSize}>
     {visibleCount < total ? <button type="button" className="sidebar-activity-more" onClick={reveal} disabled={pending} aria-label={moreLabel}>
       {pending ? <LoaderCircle size={14} className="is-spinning" aria-hidden="true" /> : <span>{moreLabel}</span>}
-    </button> : pullToLoad ? <span className="sidebar-activity-empty" role="status">
+    </button> : pullToLoad ? <NavigationEmpty className="sidebar-activity-empty">
       {intl.formatMessage({ id: "sidebar.catalog.end", defaultMessage: "No more conversations" })}
-    </span> : null}
+    </NavigationEmpty> : null}
     {visibleCount > pageSize ? <button type="button" className="sidebar-activity-more" disabled={pending} onClick={() => onChange(pageSize)}>
       {intl.formatMessage({ id: "sidebar.catalog.less", defaultMessage: "Show less" })}
     </button> : null}
@@ -146,9 +187,10 @@ const SidebarThreadContent = memo(function SidebarThreadContent({ thread, attent
   thread: SidebarThread;
   attention: boolean;
   projectGrouped?: boolean;
-  render: (thread: SidebarThread, attention: boolean, projectGrouped: boolean) => ReactNode;
+  render: (thread: SidebarThread, attention: boolean, rowId: string, projectGrouped: boolean) => ReactNode;
 }) {
-  return render(thread, attention, projectGrouped);
+  const rowId = useId();
+  return render(thread, attention, rowId, projectGrouped);
 });
 
 interface SidebarThreadPresentationProps {
@@ -175,24 +217,25 @@ const SidebarThreadPresentation = memo(function SidebarThreadPresentation(props:
     delete: props.delete, pin: props.pin, reference: props.reference };
   const changeOverlay = (kind: OpenSidebarThreadMenu["kind"], open: boolean) => {
     if (open && disabled) return;
-    menus.update({ hostId: target.hostId, threadId: target.threadId, kind }, open);
+    menus.update({ hostId: target.hostId, threadId: target.threadId, rowId: activityId, kind }, open);
   };
   const badge = threadBadge && !(grouping.mode && grouping.hideRowBadge) ? <LiveSidebarThreadBadge
-    store={menus} contribution={threadBadge} hostId={thread.connectionHostId} threadId={thread.id}
+    store={menus} rowId={activityId} contribution={threadBadge} hostId={thread.connectionHostId} threadId={thread.id}
     portalContainer={presentationRoot} onOpenChange={open => changeOverlay("badge", open)}
     onCloseAutoFocus={event => { if (menus.getSnapshot() !== null) event.preventDefault(); }}
   /> : null;
   const metadata = sidebarThreadMetadata(thread);
-  return <SidebarThreadRowMenu key={sidebarThreadIdentity(thread)} store={menus} target={target} owner={actionOwner}
+  return <SidebarThreadRowMenu key={sidebarThreadIdentity(thread)} store={menus} rowId={activityId} target={target} owner={actionOwner}
     capabilities={capabilities} disabled={disabled} activityLabelId={activityId}
     contextMenuExtra={threadListGrouping ? <ThreadListModeItems contribution={threadListGrouping} snapshot={grouping} kind="context" /> : undefined}
     onOpenMenuChange={(kind, open) => changeOverlay(kind, open)}
     onCloseAutoFocus={event => { if (menus.getSnapshot() !== null) event.preventDefault(); }}>
     <SidebarActivityItem activityId={activityId} active={active} selected={selected} pending={pending}
       disabled={disabled} title={title} project={props.projectGrouped ? "" : metadata}
+      icon={<ConversationAppearanceIcon hostId={thread.connectionHostId} threadId={thread.id} size={workbenchIconMetrics.core.settings} />}
       tooltip={[title, metadata, thread.connectionHostLabel].filter(Boolean).join(" · ")}
       status={thread.status} unread={unread} goalActive={thread.goalActive}
-      schedule={thread.schedule} twoLine={attention} resources={<SidebarBrowserResources store={menus} hostId={thread.connectionHostId} threadId={thread.id} unavailable={disabled}
+      schedule={thread.schedule} twoLine={attention} resources={<SidebarBrowserResources store={menus} rowId={activityId} hostId={thread.connectionHostId} threadId={thread.id} unavailable={disabled}
         onOpenConversation={() => { openConversation(thread.connectionHostId, thread.id); }} />} badge={badge} badgePlacement={threadBadge?.placement}
       onInvoke={() => { menus.close(); openConversation(thread.connectionHostId, thread.id); }} />
   </SidebarThreadRowMenu>;
@@ -219,12 +262,30 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     threadListGrouping ? () => threadListGrouping.getSnapshot() : getDefaultGrouping,
   );
   const [query, setQuery] = useState("");
-  const [folded, setFolded] = useState<Record<string, boolean>>({});
   const [pinnedLimit, setPinnedLimit] = useState(PINNED_PAGE_SIZE);
   const [projectLimits, setProjectLimits] = useState<Record<string, number>>({});
   const [recentLimit, setRecentLimit] = useState(RECENT_PAGE_SIZE);
+  const [scheduledLimit, setScheduledLimit] = useState(PINNED_PAGE_SIZE);
   const [mineLimit, setMineLimit] = useState(RECENT_PAGE_SIZE);
   const [menus] = useState(() => new SidebarThreadMenuStore());
+  const selectionIntent = useRef<symbol | null>(null);
+  const [selectionReceipt, setSelectionReceipt] = useState<{ intent: symbol; hostId: string; threadId: string } | null>(null);
+  useLayoutEffect(() => () => { selectionIntent.current = null; }, [dismiss]);
+  useLayoutEffect(() => {
+    if (!selectionReceipt || selectionIntent.current !== selectionReceipt.intent) return;
+    if (pendingHostId !== null || pendingThreadId !== null) return;
+    if (activeHostId !== selectionReceipt.hostId || activeThreadId !== selectionReceipt.threadId) return;
+    // Exit belongs to the committed target's render, not the click or connection.
+    selectionIntent.current = null;
+    dismiss?.();
+  }, [selectionReceipt, activeHostId, activeThreadId, pendingHostId, pendingThreadId, dismiss]);
+  const selectThread = useCallback((hostId: string, threadId: string) => {
+    const intent = selectionIntent.current = Symbol('sidebar-selection');
+    menus.close();
+    void Promise.resolve(onSelectThread(hostId, threadId)).then(accepted => {
+      if (accepted !== false && selectionIntent.current === intent) setSelectionReceipt({ intent, hostId, threadId });
+    }).catch(error => console.error('Failed to select sidebar conversation', error));
+  }, [menus, onSelectThread]);
   const actionOwner = useThreadActionOwner(threadActions ?? noThreadActions);
   useEffect(() => {
     const target = actionOwner.modal?.target;
@@ -236,7 +297,6 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   }, [threads, actionOwner]);
   const rowIdPrefix = useId();
   const activityList = useRef<HTMLDivElement>(null);
-  useSidebarHeadingOcclusion(activityList);
   const contentViewport = useRef<HTMLDivElement>(null);
   const text = (id: string, defaultMessage: string) => intl.formatMessage({ id, defaultMessage });
   const label = (value: ThreadListLabel) => typeof value === "string" ? value : intl.formatMessage(value);
@@ -246,7 +306,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     dismiss?.();
   });
   const references = useMemo(() => threads.filter(thread => thread.visibility !== "hidden").map(thread => ({
-    hostId: thread.connectionHostId, threadId: thread.id, updatedAt: thread.updatedAt, pinned: thread.pinned,
+    hostId: thread.connectionHostId, threadId: thread.id, updatedAt: thread.updatedAt, pinned: thread.pinned, createdByViewer: thread.createdByViewer,
   })), [threads]);
   const groupingWatch = useRef<(() => void) | undefined>(undefined);
   useEffect(() => {
@@ -294,9 +354,53 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     const roots = sharedTree.roots.map(node => node.thread);
     const rootIds = new Set(roots.map(identity));
     const matchingReferences = references.filter(ref => rootIds.has(JSON.stringify([ref.hostId, ref.threadId])));
-    const taskFlow = { ...groupThreadsByTaskFlow(roots), mine: mineTree.roots.map(node => node.thread) };
+    const taskFlow = { ...groupThreadsByTaskFlow(roots), scheduled: matching.filter(thread => thread.schedule && thread.schedule.status !== "deleted").sort((a, b) => b.updatedAt - a.updatedAt), mine: mineTree.roots.map(node => node.thread) };
     return { matching, matchingById, tree, matchingReferences, taskFlow };
   }, [threads, references, allowedKeys, needle, serverFilter.serverId]);
+  const selection = pendingHostId !== null && pendingThreadId !== null
+    ? identity({ connectionHostId: pendingHostId, id: pendingThreadId })
+    : identity({ connectionHostId: activeHostId, id: activeThreadId });
+  const groupedSections = grouping.mode && threadListGrouping ? threadListGrouping.project(matchingReferences) : null;
+  const nativeProjects = groupThreadsByNativeProject(taskFlow.recent);
+  const recentWithoutProjects = taskFlow.recent.filter(thread => !thread.nativeProject);
+  const flowKey = (key: string) => `flow:${key}`;
+  const groupKey = (key: string) => `group:${key}`;
+  const selectedRoot = tree.rootByIdentity.get(selection) ?? selection;
+  const containsSelected = (rows: readonly SidebarThread[]) => rows.some(thread => identity(thread) === selectedRoot);
+  let initialSection: string | null;
+  if (!preferenceState.values["sidebar.scheduledCollapsed"] && taskFlow.scheduled.some(thread => identity(thread) === selection)) initialSection = flowKey("scheduled");
+  else if (containsSelected(taskFlow.mine)) initialSection = flowKey("mine");
+  else if (groupedSections) {
+    const group = groupedSections.find(group => !group.collapsed && group.threads.some(ref => JSON.stringify([ref.hostId, ref.threadId]) === selectedRoot))
+      ?? groupedSections.find(group => !group.collapsed);
+    initialSection = group ? groupKey(group.id) : null;
+  } else {
+    const selectedFlow = (["attention","pinned"] as const).find(key => containsSelected(taskFlow[key]));
+    const selectedProject = nativeProjects.find(group=>containsSelected(group.threads));
+    const fallback = recentWithoutProjects.length ? "recent" : nativeProjects[0] ? `native-project:${nativeProjects[0].key}`
+      : taskFlow.pinned.length ? "pinned" : taskFlow.attention.length ? "attention" : "mine";
+    initialSection=flowKey(selectedFlow ?? (selectedProject ? `native-project:${selectedProject.key}` : fallback));
+  }
+  const accordion = useSidebarAccordion(JSON.stringify([threadListGrouping?.id ?? null, grouping.mode]), initialSection, contentViewport, activityList);
+  const sectionCollapsed = (key: string) => accordion.collapsed(flowKey(key));
+  const toggleSection = (key: string, button: HTMLElement) => {
+    const next = accordion.toggle(flowKey(key), button);
+    if (key === "scheduled" || accordion.openKey === flowKey("scheduled")) {
+      void preferences.set("sidebar.scheduledCollapsed", next !== flowKey("scheduled"));
+    }
+  };
+  const selectedPath = useMemo(() => {
+    const path = new Set<string>();
+    let key = selection;
+    while (!path.has(key)) {
+      const node = tree.nodes.get(key);
+      if (!node) break;
+      path.add(key);
+      if (!node.thread.parentThreadId) break;
+      key = identity({ connectionHostId: node.thread.connectionHostId, id: node.thread.parentThreadId });
+    }
+    return path;
+  }, [tree, selection]);
   const applicableCatalogs = threadCatalogs.filter(catalog => !serverFilter.serverId
     || catalog.hostId === serverFilter.serverId
     || threads.some(thread => thread.connectionHostId === catalog.hostId && thread.serverOrigin.serverId === serverFilter.serverId));
@@ -306,7 +410,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const empty = matching.length === 0 && !busyCatalog && catalogErrors.length === 0 && threadCatalogDiscovery !== "error";
   const filtersLabel = text("sidebar.filters", "Filters");
   const allServersLabel = text("sidebar.allServers", "All servers");
-  const dismissAfter = (action: () => void) => { menus.close(); action(); dismiss?.(); };
+  const dismissAfter = (action: () => void) => { selectionIntent.current = null; menus.close(); action(); dismiss?.(); };
   const writeServerFilter = (serverId: string) => {
     menus.setFiltersOpen(false);
     const name = serverOptions.find(([id]) => id === serverId)?.[1] ?? "";
@@ -314,18 +418,16 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   };
   const modeItems = (kind: "context" | "dropdown") => <ThreadListModeItems contribution={threadListGrouping} snapshot={grouping} kind={kind}
     onSelect={kind === "dropdown" ? () => menus.setFiltersOpen(false) : undefined} />;
-  const renderThreadContent = useCallback((thread: SidebarThread, attention: boolean, projectGrouped: boolean) => {
+  const renderThreadContent = useCallback((thread: SidebarThread, attention: boolean, rowId: string, projectGrouped: boolean) => {
     const pending = pendingHostId === thread.connectionHostId && pendingThreadId === thread.id;
     const active = activeHostId === thread.connectionHostId && activeThreadId === thread.id;
     const selected = pendingHostId !== null && pendingThreadId !== null ? pending : active;
     const title = pendingTitle?.(thread.connectionHostId, thread.id) ?? thread.title;
-    const activityId = `${rowIdPrefix}-${encodeURIComponent(identity(thread))}`;
+    const activityId = `${rowIdPrefix}-${rowId}`;
     const disabled = thread.interactionAvailable === false;
     const capabilities = threadCapabilities?.(thread.connectionHostId, thread.id)
       ?? { rename: !!threadActions, archive: !!threadActions, fork: !!threadActions, delete: !!threadActions, pin: !!threadActions?.onSetPinned };
-    const unread = Boolean(thread.unread) && (threadListGrouping?.isParticipant?.({
-      hostId: thread.connectionHostId, threadId: thread.id, updatedAt: thread.updatedAt, pinned: thread.pinned,
-    }) ?? true);
+    const unread = sidebarUnread(thread, threadListGrouping);
     return <SidebarParentRenderContext.Provider value={props}>
       <SidebarThreadPresentation projectGrouped={projectGrouped} thread={thread} attention={attention} pending={pending} active={active}
         selected={selected} title={title} unread={unread} activityId={activityId} disabled={disabled}
@@ -343,9 +445,8 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     <li key={identity(node.thread)} className="sidebar-thread-tree__node"
       data-thread-id={node.thread.id} data-host-id={node.thread.connectionHostId}>
       {renderThread(node.thread, attention, projectGrouped)}
-      {node.children.length ? <ul className="sidebar-thread-tree__children" role="list">
-        {node.children.map(child => renderTreeNode(child, attention, projectGrouped && child.thread.nativeProject?.id === node.thread.nativeProject?.id))}
-      </ul> : null}
+      {node.children.length ? <SidebarThreadChildren children={node.children} selectedPath={selectedPath}
+        selection={selection} searching={Boolean(needle)} renderNode={child => renderTreeNode(child, attention, projectGrouped && child.thread.nativeProject?.id === node.thread.nativeProject?.id)} /> : null}
     </li>
   );
   const renderThreadTree = (thread: SidebarThread, attention = false, projectGrouped = false) => {
@@ -354,38 +455,47 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   };
   const renderFlowSection = (key: string, title: string, rows: readonly SidebarThread[], limit?: number, update?: (count: number) => void, nativeProject = false) => {
     if (!rows.length && key !== "mine") return null;
-    const collapsed = folded[key] ?? false;
+    const collapsed = sectionCollapsed(key);
     const visible = limit === undefined ? rows : rows.slice(0, limit);
-    const dates = key === "recent" ? sidebarActivityDateHeadings(visible, Date.now(), intl.locale) : new Map<SidebarThread, string>();
+    const headings = key === "recent" ? sidebarRecentHeadings(visible) : null;
+    const counts = key === "pinned" || key === "recent" || key === "attention" || nativeProject
+      ? summarizeSidebarActivity(rows.flatMap(thread => { const node = tree.nodes.get(identity(thread)); return node ? [node] : []; }), thread => sidebarUnread(thread, threadListGrouping))
+      : null;
+    const summaryId = `${rowIdPrefix}-summary-${key}`;
+    const hasSummary = counts !== null && (counts.unread + counts.attention + counts.running) > 0;
     return <section key={key} className="sidebar-activity-group" aria-label={title} data-collapsed={collapsed} data-native-project={nativeProject || undefined}>
       <h3 className="sidebar-thread-group-heading"><button type="button" className="sidebar-thread-group-toggle" aria-expanded={!collapsed} aria-controls={`${rowIdPrefix}-flow-${key}`}
-        onClick={() => setFolded(current => ({ ...current, [key]: !collapsed }))}>
-        {nativeProject ? <span className="sidebar-native-project-icon" aria-hidden="true"><FolderIcon size={16} /></span> : null}
-        <span className="sidebar-thread-group-label">{title}</span><ChevronDown size={12} className={collapsed ? "is-collapsed" : undefined} />
+        aria-label={title} aria-describedby={hasSummary ? summaryId : undefined}
+        onClick={event => toggleSection(key, event.currentTarget)}>
+        {nativeProject ? <span className="sidebar-native-project-icon" aria-hidden="true"><FolderIcon size={16} /></span> : <SidebarSectionIcon section={key} />}<span className="sidebar-thread-group-label">{title}</span><ChevronDown size={12} data-group-disclosure="" className={collapsed ? "is-collapsed" : undefined} />
+        {counts ? <SidebarActivitySummary id={summaryId} counts={counts} /> : null}
       </button></h3>
       <div className="sidebar-activity-group__items" id={`${rowIdPrefix}-flow-${key}`} hidden={collapsed}>
-        {key === "mine" && !rows.length ? <div className="sidebar-activity-empty">{text("sidebar.access.empty", "No private conversations yet")}</div> : null}
-        {visible.map(thread => <div key={identity(thread)}>
-          {dates.has(thread) ? <h4 className="sidebar-activity-group__heading">{dates.get(thread)}</h4> : null}
-          {renderThreadTree(thread, key === "attention", nativeProject)}
-        </div>)}
+        {key === "mine" && !rows.length ? <NavigationEmpty className="sidebar-activity-empty"><SidebarEmptyIcon />{text("sidebar.access.empty", "No private conversations yet")}</NavigationEmpty> : null}
+        {visible.map(thread => {
+          const heading = headings?.get(thread);
+          return <div key={identity(thread)}>
+            {heading === "running" ? <h4 className="sidebar-activity-group__heading">
+              {intl.formatMessage({ id: "sidebar.activity.inProgress", defaultMessage: "In progress" })}
+            </h4> : heading === "date" ? <SidebarDateHeading timestampMs={thread.updatedAt * 1_000} /> : null}
+            {key === "scheduled" ? renderThread(thread) : renderThreadTree(thread, key === "attention", nativeProject)}
+          </div>;
+        })}
         {limit !== undefined && update ? <SidebarPagination total={rows.length} visibleCount={limit}
-          pageSize={nativeProject ? 6 : key === "pinned" ? PINNED_PAGE_SIZE : RECENT_PAGE_SIZE} onChange={update} pullToLoad={key === "recent"} /> : null}
+          pageSize={nativeProject ? 6 : key === "pinned" || key === "scheduled" ? PINNED_PAGE_SIZE : RECENT_PAGE_SIZE} onChange={update} pullToLoad={key === "recent"} /> : null}
       </div>
     </section>;
   };
-  const nativeProjects = groupThreadsByNativeProject(taskFlow.recent);
-  const recentWithoutProjects = taskFlow.recent.filter(thread => !thread.nativeProject);
-  const groupedSections = grouping.mode && threadListGrouping ? threadListGrouping.project(matchingReferences) : null;
   const visibleSections = [
-    ...(groupedSections ?? Object.entries({ ...taskFlow, recent: recentWithoutProjects }).filter(([id]) => id !== "mine").map(([id, rows]) => ({
-      id, collapsed: folded[id] ?? false,
-      threads: rows.slice(0, id === "pinned" ? pinnedLimit : id === "recent" ? recentLimit : rows.length)
+    ...(groupedSections?.map(group => ({ ...group, collapsed: accordion.collapsed(groupKey(group.id)) })) ?? Object.entries({...taskFlow,recent:recentWithoutProjects}).filter(([id]) => id !== "mine" && id !== "scheduled").map(([id, rows]) => ({
+      id, collapsed: sectionCollapsed(id),
+      threads: rows.slice(0, id === "pinned" ? pinnedLimit : id === "recent" ? recentLimit : id === "scheduled" ? scheduledLimit : rows.length)
         .map(thread => ({ hostId: thread.connectionHostId, threadId: thread.id })),
     }))),
-    ...(!groupedSections ? nativeProjects.map(group => ({ id: `native-project:${group.key}`, collapsed: folded[`native-project:${group.key}`] ?? false,
-      threads: group.threads.slice(0, projectLimits[group.key] ?? 6).map(thread => ({ hostId: thread.connectionHostId, threadId: thread.id })) })) : []),
-    { id: "mine", collapsed: folded.mine ?? false,
+    ...(!groupedSections ? nativeProjects.map(group => ({ id: `native-project:${group.key}`, collapsed: sectionCollapsed(`native-project:${group.key}`),
+      threads: group.threads.slice(0,projectLimits[group.key]??6).map(thread=>({hostId:thread.connectionHostId,threadId:thread.id})) })) : []),
+    { id: "scheduled", collapsed: sectionCollapsed("scheduled"), threads: taskFlow.scheduled.slice(0, scheduledLimit).map(thread => ({ hostId: thread.connectionHostId, threadId: thread.id })) },
+    { id: "mine", collapsed: sectionCollapsed("mine"),
       threads: taskFlow.mine.slice(0, mineLimit).map(thread => ({ hostId: thread.connectionHostId, threadId: thread.id })) },
   ];
   // Row menus, the badge and the list display menu are one exclusive overlay
@@ -397,45 +507,52 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   useLayoutEffect(() => {
     const current = menus.getSnapshot();
     if (!current || !("hostId" in current)) return;
+    const row = current.rowId ? document.getElementById(current.rowId) : null;
+    if (current.rowId && (!row || row.closest("[hidden]"))) { menus.close(); return; }
     const key = JSON.stringify([current.hostId, current.threadId]);
     const target = matchingById.get(key);
     const rootKey = tree.rootByIdentity.get(key) ?? key;
     const visible = target && target.interactionAvailable !== false && visibleSections.some(group =>
-      !group.collapsed && group.threads.some(ref => JSON.stringify([ref.hostId, ref.threadId]) === rootKey));
+      !group.collapsed && group.threads.some(ref => JSON.stringify([ref.hostId, ref.threadId]) === (group.id === "scheduled" ? key : rootKey)));
     if (!visible) menus.close();
   });
   const selectedKey = JSON.stringify(pendingHostId !== null && pendingThreadId !== null
     ? [pendingHostId, pendingThreadId] : [activeHostId, activeThreadId]);
   const selectedRootKey = tree.rootByIdentity.get(selectedKey) ?? selectedKey;
-  const selectedSection = visibleSections.find(group => group.threads.some(ref =>
-    JSON.stringify([ref.hostId, ref.threadId]) === selectedRootKey));
+  const containsSelection = (group: typeof visibleSections[number]) => group.threads.some(ref =>
+    JSON.stringify([ref.hostId, ref.threadId]) === (group.id === "scheduled" ? selectedKey : selectedRootKey));
+  const selectedSection = visibleSections.find(group => !group.collapsed && containsSelection(group)) ?? visibleSections.find(containsSelection);
   const selectedSectionId = selectedSection?.id;
   const selectedVisible = selectedSection !== undefined && !selectedSection.collapsed;
-  const previousSelection = useRef({ key: selectedKey, pinnedLimit, recentLimit, mineLimit });
+  const previousSelection = useRef({ key: selectedKey, pinnedLimit, recentLimit, mineLimit, projectLimits });
   useLayoutEffect(() => {
     const previous = previousSelection.current;
-    previousSelection.current = { key: selectedKey, pinnedLimit, recentLimit, mineLimit };
+    previousSelection.current = { key: selectedKey, pinnedLimit, recentLimit, mineLimit, projectLimits };
     // Revealing more history is a reading action, not a new navigation intent.
-    if (previous.key === selectedKey && (pinnedLimit > previous.pinnedLimit || recentLimit > previous.recentLimit || mineLimit > previous.mineLimit)) return;
-    if (!selectedVisible) return;
+    if (previous.key === selectedKey && (pinnedLimit > previous.pinnedLimit || recentLimit > previous.recentLimit || mineLimit > previous.mineLimit || Object.entries(projectLimits).some(([key,limit])=>limit>(previous.projectLimits[key]??6)))) return;
+    if (accordion.disclosureChanged || !selectedVisible) return;
     const content = contentViewport.current;
-    const row = content?.querySelector<HTMLElement>(".sidebar-activity-item.is-selected");
+    const sectionId = selectedSectionId === "scheduled" || selectedSectionId === "mine" || !groupedSections
+      ? `${rowIdPrefix}-flow-${selectedSectionId}` : `${rowIdPrefix}-group-${encodeURIComponent(selectedSectionId ?? "")}`;
+    const row = document.getElementById(sectionId)?.querySelector<HTMLElement>(".sidebar-activity-item.is-selected");
     if (!content || !row) return;
-    const column = content.closest(".shell-sidebar__column");
-    const mobile = column?.getAttribute("data-navigation-layout") === "mobile";
-    const viewport = (mobile ? column?.querySelector<HTMLElement>(".shell-sidebar__scroll")
-      : content.querySelector<HTMLElement>(".sidebar-activity-list")) ?? content;
+    const viewport = sidebarScrollViewport(content, activityList.current) ?? content;
     if (!viewport.isConnected || !viewport.clientHeight || !viewport.clientWidth
       || viewport.closest('[inert], [aria-hidden="true"]')) return;
     const bounds = viewport.getBoundingClientRect();
-    const sticky = mobile ? column?.querySelector<HTMLElement>('[data-action-id="shell.home"]') : null;
     const padding = getComputedStyle(viewport);
-    const top = Math.max(bounds.top + (parseFloat(padding.scrollPaddingTop) || 0), sticky?.getBoundingClientRect().bottom ?? bounds.top);
+    // Explicit selection reveal shares the native sticky disclosure's reading
+    // boundary. This is a selection transaction, not a per-scroll projection.
+    const heading = row.closest(".sidebar-activity-group")?.querySelector(".sidebar-thread-group-heading");
+    const readingTop = bounds.top + (parseFloat(padding.scrollPaddingTop) || 0);
+    // Reserve its height even after the section has left the viewport: revealing
+    // an earlier row can make that same heading sticky again in this transaction.
+    const top = readingTop + (heading?.getBoundingClientRect().height ?? 0);
     const bottom = bounds.bottom - (parseFloat(padding.scrollPaddingBottom) || 0);
     const item = row.getBoundingClientRect();
     if (item.top < top) viewport.scrollTop += item.top - top;
     else if (item.bottom > bottom) viewport.scrollTop += Math.min(item.bottom - bottom, item.top - top);
-  }, [selectedKey, selectedSectionId, selectedVisible, pinnedLimit, recentLimit, mineLimit]);
+  }, [selectedKey, selectedSectionId, selectedVisible, pinnedLimit, recentLimit, mineLimit, projectLimits]);
   const navigationAction = (action: SidebarActionItem) => <SidebarNavigationItem key={action.id} title={action.title}
     active={action.active} icon={<SidebarContributionIcon name={action.icon} />} onInvoke={() => dismissAfter(action.onInvoke)} />;
   const retryLabel = text("sidebar.catalog.retry", "Retry");
@@ -444,16 +561,18 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     {retry ? <button type="button" className="sidebar-catalog-feedback__retry" onClick={retry}>{retryLabel}</button> : null}
   </div>;
 
-  return <SidebarEntityDndCoordinator items={bots} layout={sidebarLayout}>
+  return <SidebarCalendarDayProvider><SidebarEntityDndCoordinator items={bots} layout={sidebarLayout}>
     <div className="sidebar-panel">
       <nav className="sidebar-navigation" aria-label="Primary">
         {showStart ? <SidebarNavigationItem icon={<SquarePen size={18} />} title={text("sidebar.start", "Start")} onInvoke={() => dismissAfter(onNewTask)} /> : null}
         {primaryActions.map(navigationAction)}
       </nav>
+      {managementNavigation ? <div className="sidebar-management-navigation">{managementNavigation}</div> : null}
+      {catalogs.some(catalog => catalog.presentation === "entry") ? <SidebarEntryNavigation catalogs={catalogs.filter(catalog => catalog.presentation === "entry")} /> : null}
       <div className="sidebar-content-scroll" ref={contentViewport}>
-        {managementNavigation}
-        {catalogs.map(catalog => <ExtensionCatalog key={catalog.id} catalog={catalog} />)}
+        {catalogs.filter(catalog => catalog.presentation !== "entry").map(catalog => <ExtensionCatalog key={catalog.id} catalog={catalog} />)}
         <SidebarBots items={bots} creation={botCreation} />
+        {showNewChat ? <SidebarNewChatButton onNewTask={onNewTask} /> : null}
         <SidebarListContextMenu store={menus}>
         <ContextMenu.Trigger asChild><section className="sidebar-tasks" aria-label="Tasks" aria-busy={busyCatalog}>
           <div className="sidebar-list-toolbar"><span>{text("sidebar.conversations", "Conversations")}</span>
@@ -477,29 +596,35 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
           {!searchInDialog ? <label className="sidebar-list-search"><Search size={14} aria-hidden="true" /><input type="search"
             aria-label={text("sidebar.search", "Search conversations")} placeholder={text("sidebar.search", "Search conversations")}
             value={query} onChange={event => setQuery(event.currentTarget.value)} /></label> : null}
-          {showNewChat ? <SidebarNewChatButton onNewTask={onNewTask} /> : null}
           <div className="sidebar-activity-list" ref={activityList}>
-            {grouping.notice ? <div className="sidebar-activity-empty">{label(grouping.notice)}</div> : null}
-            {groupedSections ? groupedSections.map(group => <section key={group.id} className="sidebar-activity-group" aria-label={label(group.label)} data-collapsed={group.collapsed}>
-              <h3 className="sidebar-thread-group-heading"><button type="button" className="sidebar-thread-group-toggle" aria-expanded={!group.collapsed} aria-controls={`${rowIdPrefix}-group-${encodeURIComponent(group.id)}`} onClick={() => threadListGrouping?.toggleGroup(group.id)}>
+            {grouping.notice ? <NavigationEmpty className="sidebar-activity-empty">{label(grouping.notice)}</NavigationEmpty> : null}
+            {renderFlowSection("scheduled", text("schedules.catalog.title", "Scheduled tasks"), taskFlow.scheduled, scheduledLimit, setScheduledLimit)}
+            {groupedSections ? groupedSections.map(group => <section key={group.id} className="sidebar-activity-group" aria-label={label(group.label)} data-collapsed={accordion.collapsed(groupKey(group.id))}>
+              <h3 className="sidebar-thread-group-heading"><button type="button" className="sidebar-thread-group-toggle" aria-expanded={!accordion.collapsed(groupKey(group.id))} aria-controls={`${rowIdPrefix}-group-${encodeURIComponent(group.id)}`} onClick={event => {
+                const next = accordion.toggle(groupKey(group.id), event.currentTarget);
+                if (accordion.openKey === flowKey("scheduled")) void preferences.set("sidebar.scheduledCollapsed", true);
+                // Product-owned preferences remain product-owned; Shell projects
+                // their initial intent into its exclusive disclosure layout.
+                if ((next !== groupKey(group.id)) !== group.collapsed) threadListGrouping?.toggleGroup(group.id);
+              }}>
                 <span className="sidebar-thread-group-avatar" aria-hidden="true"><AvatarImage src={group.avatarUrl} fallback={<UserRound size={14} />} /></span>
-                <span className="sidebar-thread-group-label">{label(group.label)}</span><ChevronDown size={12} className={group.collapsed ? "is-collapsed" : undefined} />
+                <span className="sidebar-thread-group-label">{label(group.label)}</span><ChevronDown size={12} data-group-disclosure="" className={accordion.collapsed(groupKey(group.id)) ? "is-collapsed" : undefined} />
               </button></h3>
-              <div className="sidebar-activity-group__items" id={`${rowIdPrefix}-group-${encodeURIComponent(group.id)}`} hidden={group.collapsed}>
-                {!group.collapsed && group.threads.map(ref => { const thread = matchingById.get(JSON.stringify([ref.hostId, ref.threadId])); return thread ? <div key={identity(thread)}>{renderThreadTree(thread)}</div> : null; })}
+              <div className="sidebar-activity-group__items" id={`${rowIdPrefix}-group-${encodeURIComponent(group.id)}`} hidden={accordion.collapsed(groupKey(group.id))}>
+                {!accordion.collapsed(groupKey(group.id)) && group.threads.map(ref => { const thread = matchingById.get(JSON.stringify([ref.hostId, ref.threadId])); return thread ? <div key={identity(thread)}>{renderThreadTree(thread)}</div> : null; })}
               </div>
             </section>) : <>
               {renderFlowSection("attention", text("sidebar.flow.attention", "Needs your attention"), taskFlow.attention)}
               {renderFlowSection("pinned", text("sidebar.flow.pinned", "Pinned"), taskFlow.pinned, pinnedLimit, setPinnedLimit)}
             </>}
-            {renderFlowSection("mine", text("sidebar.access.mine", "Mine"), taskFlow.mine, mineLimit, setMineLimit)}
+            {renderFlowSection("mine", text("sidebar.access.mine", "Private"), taskFlow.mine, mineLimit, setMineLimit)}
             {!groupedSections && nativeProjects.length ? <div className="sidebar-native-projects">
               <h3 className="sidebar-native-projects__title">{text("sidebar.nativeProjects", "Projects")}</h3>
               {nativeProjects.map(group => renderFlowSection(`native-project:${group.key}`, group.label, group.threads, projectLimits[group.key] ?? 6,
                 count => setProjectLimits(current => ({ ...current, [group.key]: count })), true))}
             </div> : null}
             {!groupedSections ? renderFlowSection("recent", text("sidebar.flow.recent", "Recent"), recentWithoutProjects, recentLimit, setRecentLimit) : null}
-            {empty ? <div className="sidebar-activity-empty">{text("sidebar.empty", "No tasks yet")}</div> : null}
+            {empty ? <NavigationEmpty className="sidebar-activity-empty">{text("sidebar.empty", "No tasks yet")}</NavigationEmpty> : null}
             {catalogErrors.map(catalog => retryFeedback(catalog.hostId, intl.formatMessage(catalog.cachedAt !== undefined
               ? { id: "sidebar.catalog.cached", defaultMessage: "Showing saved {server} conversations; refresh failed" }
               : { id: "sidebar.catalog.error", defaultMessage: "Couldn't load {server} conversations" }, { server: catalog.label }), onRetryThreadCatalog ? () => onRetryThreadCatalog(catalog.hostId) : undefined))}
@@ -519,21 +644,30 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
       </div> : null}
       <ThreadActionModals owner={actionOwner} />
     </div>
-  </SidebarEntityDndCoordinator>;
+  </SidebarEntityDndCoordinator></SidebarCalendarDayProvider>;
 });
 
-/** Only this small control follows the Shell's transient action host. */
+/** Creation occupies the same bottom action row as the other touch entrances. */
 function SidebarNewChatButton({ onNewTask }: { onNewTask(): void }) {
   const intl = useIntl();
   const shell = useShellPresentation();
-  const button = <Button type="button" size="navigation" variant="ghost" contentLayout="row"
-    surface={shell?.mobileSidebar ? "floating" : "integrated"}
-    className="sidebar-new-chat shell-sidebar-primary-action" title={`${intl.formatMessage({ id: "sidebar.newChat", defaultMessage: "New chat" })} (${shortcutLabel("newChat")})`} aria-keyshortcuts={shortcutAria("newChat")} onClick={() => {
-    onNewTask();
-    shell?.dismissSidebarAfterSelection();
-  }}><SquarePen size={16} aria-hidden="true" /><span>{intl.formatMessage({ id: "sidebar.newChat", defaultMessage: "New chat" })}</span></Button>;
-
-  return shell?.mobileSidebar
-    ? shell.sidebarActionHost ? createPortal(button, shell.sidebarActionHost) : null
-    : button;
+  const touch = useTouchLayout();
+  const floating = !!shell?.mobileSidebar && touch;
+  const label = intl.formatMessage({ id: "sidebar.newChat", defaultMessage: "New chat" });
+  const props = {
+    type: "button" as const,
+    "aria-label": label,
+    className: `sidebar-new-chat${floating ? " shell-sidebar-primary-action" : ""}`,
+    title: `${label} (${shortcutLabel("newChat")})`,
+    "aria-keyshortcuts": shortcutAria("newChat"),
+    onClick: () => {
+      onNewTask();
+      shell?.dismissSidebarAfterSelection();
+    },
+    children: <><SquarePen size={16} aria-hidden="true" /><span data-navigation-label="">{label}</span></>,
+  };
+  const button = floating
+    ? <ShellNavigationButton {...props} contentLayout="row" surface="floating" />
+    : <NavigationItem {...props} inset="sidebar" />;
+  return floating ? shell?.sidebarActionHost ? createPortal(button, shell.sidebarActionHost) : null : button;
 }

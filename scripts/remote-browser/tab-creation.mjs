@@ -12,7 +12,7 @@ function parse(state, key, fallback) {
 
 /** A trusted invocation owns identity; one durable transaction publishes every
  * logical dependency. Native activation follows outside the state writer. */
-export async function createRemoteTab(service, binding, input, { signal } = {}) {
+export async function createRemoteTab(service, binding, input, { signal, requirePresentation = false } = {}) {
   if (!binding || typeof binding.authorize !== 'function' || ['ownerId', 'hostId', 'threadId', 'turnId', 'callId'].some(k => typeof binding[k] !== 'string' || !binding[k] || binding[k].length > 1024))
     throw fail('TAB_ACCESS_DENIED', 'Browser creation requires admitted execution identity');
   let url; try { url = new URL(input?.url); } catch {}
@@ -39,6 +39,8 @@ export async function createRemoteTab(service, binding, input, { signal } = {}) 
           throw fail('TAB_ACCESS_DENIED', 'Browser creation no longer belongs to the admitted conversation');
         return prepared = { record: structuredClone(previous), changed: false };
       }
+      if (requirePresentation && !service.presentationAvailable(binding.ownerId))
+        throw fail('PRESENTATION_UNAVAILABLE', 'No connected workbench can present this browser tab');
       const used = draft.pages.filter(occupied);
       if (used.filter(p => p.ownerId === binding.ownerId).length >= 16) throw fail('ACCOUNT_CAPACITY', 'Your active browser page limit (16) is reached');
       if (draft.capacityUsed >= 64) throw fail('RUNTIME_CAPACITY', 'Shared browser capacity (64) is full');

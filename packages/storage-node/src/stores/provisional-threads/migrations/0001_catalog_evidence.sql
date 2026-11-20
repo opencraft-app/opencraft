@@ -1,0 +1,2 @@
+ALTER TABLE thread_creations ADD COLUMN catalog_state TEXT CHECK(catalog_state IN ('pending','retired'));
+ALTER TABLE thread_creations ADD COLUMN catalog_only INTEGER NOT NULL DEFAULT 0 CHECK(catalog_only IN (0,1));

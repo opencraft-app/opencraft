@@ -227,15 +227,15 @@ input.on("line", line => {
     const turnId = turns.get(threadId);
     turns.delete(threadId);
     if (message.params.testSystemError) systemErrorThreads.add(threadId);
-    const completed = { id: turnId, status: message.params.codexErrorInfo ? "failed" : "completed", items: [], ...(message.params.codexErrorInfo ? { error: { message: "Selected model is at capacity.", codexErrorInfo: message.params.codexErrorInfo } } : {}) };
+    const completed = { id: turnId, status: message.params.status ?? (message.params.codexErrorInfo ? "failed" : "completed"), items: [], ...(message.params.codexErrorInfo ? { error: { message: "Selected model is at capacity.", codexErrorInfo: message.params.codexErrorInfo } } : {}) };
     threadTurns.set(threadId, (threadTurns.get(threadId) ?? []).map(turn => turn.id === turnId ? completed : turn));
     const deferred = deferredSteerHistory.get(threadId) ?? [];
-    if (deferred.length > 0) {
+    if (deferred.length > 0 && !message.params.dropDeferredInput) {
       history.set(threadId, [...(history.get(threadId) ?? []), ...deferred]);
       deferredSteerHistory.delete(threadId);
     }
     send({ id: message.id, result: {} });
-    if (turnId && subscribedThreads.has(threadId)) {
+    if (turnId && subscribedThreads.has(threadId) && !message.params.suppressNotification) {
       send({ method: "turn/completed", params: { threadId, turn: completed } });
       send({ method: "thread/status/changed", params: { threadId, status: { type: "idle" } } });
     }
@@ -258,6 +258,7 @@ input.on("line", line => {
     const respond = () => {
       send({ id: message.id, result: {
         thread: { id: message.params.testWrongThreadId ? "different-thread" : message.params.threadId, preview: "", ephemeral: false, turns: [] },
+        sandbox: { type: "dangerFullAccess" },
       } });
       if (message.params.testDelayMs) send({ method: "test/delayedResponseSent", params: { requestId: message.id } });
     };
@@ -269,6 +270,7 @@ input.on("line", line => {
     const threadId = message.params.threadId;
     const status = !loadedThreads.has(threadId) ? "notLoaded"
       : subscribedThreads.delete(threadId) ? "unsubscribed" : "notSubscribed";
+    if (process.env.OPENCRAFT_TEST_UNLOAD_ON_UNSUBSCRIBE === "1") loadedThreads.delete(threadId);
     send({ id: message.id, result: { status } });
     return;
   }
@@ -298,6 +300,7 @@ input.on("line", line => {
     return;
   }
   if (message.method === "thread/start") {
+    if (message.params.testRejectCreation) { send({ id: message.id, error: { code: -32602, message: "synthetic creation rejected" } }); return; }
     const respond = () => {
       const title = process.env.OPENCRAFT_TEST_AUTO_TITLES && message.params.threadSource === "thread_title";
       const thread = { id: title ? `title-thread-${++nextTitleThread}` : "fixture-thread-1", preview: "", ephemeral: message.params.ephemeral === true, modelProvider: "opencraft-account-pool", createdAt: 1, updatedAt: 1, status: { type: "idle" }, turns: [] };

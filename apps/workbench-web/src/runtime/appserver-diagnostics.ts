@@ -1,12 +1,13 @@
 import type { AppServerClient, AppServerRequestLifecycleEvent } from "@opencraft/appserver-client";
 
+import { isLocalDiagnosticsEnabled, recordLocalDiagnostic, subscribeLocalDiagnostics } from "./local-diagnostics";
 let instanceSequence = 0;
 const pendingOwners = new Map<string, Set<number>>();
 const tracedMethods = new Set(["initialize", "runtime/machine/read", "thread/read", "thread/resume"]);
 
 /** Renderer adapter: log protocol metadata only, never params, results or error messages. */
 export function installAppServerDiagnostics(client: Pick<AppServerClient, "connectionGeneration" | "subscribeRequestLifecycle">, role: "runtime" | "identity-probe",
-  write: (event: string, metadata: Record<string, unknown>) => void = (event, metadata) => console.info(`[appserver-diagnostics] ${event}`, metadata),
+  write: (event: string, metadata: Record<string, unknown>) => void = (event, metadata) => recordLocalDiagnostic(`appserver:${event}`, Object.fromEntries(Object.entries(metadata).filter((entry): entry is [string, string | number] => typeof entry[1] === "string" || typeof entry[1] === "number"))),
 ): () => void {
   const instance = ++instanceSequence;
   const owned = new Set<string>();
@@ -18,7 +19,9 @@ export function installAppServerDiagnostics(client: Pick<AppServerClient, "conne
     owners?.delete(instance);
     if (owners?.size === 0) pendingOwners.delete(key);
   };
+  const stopPreference = subscribeLocalDiagnostics(() => { for (const key of owned) release(key); failures = 0; });
   const stop = client.subscribeRequestLifecycle((event: AppServerRequestLifecycleEvent) => {
+    if (!isLocalDiagnosticsEnabled()) { for (const key of owned) release(key); return; }
     if (disposed || event.type === "queued") return;
     const key = JSON.stringify([event.hostId, event.id]);
     const metadata: Record<string, unknown> = {
@@ -53,6 +56,7 @@ export function installAppServerDiagnostics(client: Pick<AppServerClient, "conne
   });
   return () => {
     disposed = true;
+    stopPreference();
     stop();
     for (const key of owned) release(key);
   };

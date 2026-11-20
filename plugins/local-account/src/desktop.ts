@@ -1,3 +1,5 @@
+import { openServerDatabase } from '@opencraft/storage-node/server';
+import { borrowServerDatabase } from '@opencraft/storage-node/server-borrow';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -19,23 +21,25 @@ import { LocalAccountServerPlugin } from './server.js';
 import { LocalAccountApplication } from './application.js';
 
 /** Native Main owns these stores and the private browser proof. No renderer supplies identity. */
-export async function createDesktopAccountHost(directory: string, renderLogin: (nonce: string) => string, options: { openRemote?: (origin: string) => Promise<void> } = {}) {
+export async function createDesktopAccountHost(directory: string, renderLogin: (nonce: string) => string, options: { openRemote?: (origin: string) => Promise<void>; storageRole?: 'owner' | 'borrower' } = {}) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
+  const storage=options.storageRole==='borrower'?borrowServerDatabase(directory):await openServerDatabase(directory);
   const disposers: (() => void)[] = [];
-  const disposeAll = () => {
+  const disposeAll = async () => {
     const failures: unknown[] = [];
     for (const dispose of disposers.splice(0).reverse()) { try { dispose(); } catch (error) { failures.push(error); } }
+    try { await storage.close(); } catch(error) { failures.push(error); }
     if (failures.length) throw new AggregateError(failures, 'Desktop account shutdown failed');
   };
   try {
-    const actors = new ActorStore(join(directory, 'actors.sqlite'));
+    const actors = new ActorStore(storage,Date.now,{permissionProjection:false});
     disposers.push(() => actors.close());
-    const accounts = new HumanAccounts(join(directory, 'human-logins.sqlite'), actors);
+    const accounts = new HumanAccounts(storage, actors);
     disposers.push(() => accounts.close());
     accounts.registerLocalAccounts(new LocalAccountServerPlugin(accounts.localAccountRepository));
-    const members = new MembershipStore(join(directory, 'memberships.sqlite'));
+    const members = new MembershipStore(storage,{permissionProjection:false});
     disposers.push(() => members.close());
-    const management = new HumanAccountManagement(join(directory, 'account-onboarding.sqlite'), accounts, actors, members);
+    const management = new HumanAccountManagement(storage, accounts, actors, members);
     disposers.push(() => management.close());
     // Default desktop remains immediately usable; /setup is also available as a management entry.
     if (management.status().state !== 'complete') await management.initialize({ mode: 'desktop' });
@@ -56,6 +60,8 @@ export async function createDesktopAccountHost(directory: string, renderLogin: (
     let nativeSession = accounts.issue(management.desktopIdentity());
     return {
       browserProof,
+      storage, actors,
+      admittedActor: (id: string) => members.actorMembership(id)?.enabled !== false,
       get browserSessionToken() { return nativeSession.token; },
       createNativeSession() {
         if (!accounts.authenticate(nativeSession.token) || nativeSession.login.context.expiresAt <= Date.now() + 60_000) nativeSession = accounts.issue(management.desktopIdentity());
@@ -85,7 +91,7 @@ export async function createDesktopAccountHost(directory: string, renderLogin: (
       close: disposeAll,
     };
   } catch (error) {
-    try { disposeAll(); } catch { /* preserve initialization failure */ }
+    try { await disposeAll(); } catch { /* preserve initialization failure */ }
     throw error;
   }
 }

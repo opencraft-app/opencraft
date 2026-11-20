@@ -13,6 +13,7 @@ function measure({
   measurements = [{ turnKey: "latest", heightPx: 420 }],
   distance = 400,
   preserve = false,
+  naturalFlow = false,
   restore = (() => null) as (() => number | null) | null,
   previous = null as TurnMeasurementTransaction | null,
 } = {}) {
@@ -26,6 +27,7 @@ function measure({
     currentDistanceFromBottomPx: distance,
     bottomPaddingPx: 0,
     preserveMeasuredTurnViewport: preserve,
+    measuredContentFlowsNaturally: naturalFlow,
     getPendingRestoreScrollDistanceFromBottomPx: restore,
     previousPendingTransaction: previous,
   });
@@ -86,4 +88,27 @@ test("preserved bottom remains bottom through first measurement and shrink", () 
   assert.equal(first.scrollDistanceFromBottomPx, 0);
   assert.equal(shrink.scrollDistanceFromBottomPx, 0);
   assert.equal(shrink.latestTurnHeightChange?.heightDeltaPx, -120);
+});
+
+test("natural-flow restore does not infer an internal anchor from the containing row's height", () => {
+  const result = measure({
+    heights: { old: 800, latest: 1200 },
+    measurements: [{ turnKey: "latest", heightPx: 1020 }],
+    distance: 350,
+    preserve: true,
+    naturalFlow: true,
+  });
+  assert.equal(result.scrollDistanceFromBottomPx, null,
+    "a whole-row delta cannot tell whether the shrink is above or below visible text");
+});
+
+test("natural-flow rows entirely below the viewport still compensate their full delta", () => {
+  const result = measure({
+    heights: { old: 800, latest: 280 },
+    measurements: [{ turnKey: "latest", heightPx: 420 }],
+    distance: 500,
+    preserve: true,
+    naturalFlow: true,
+  });
+  assert.equal(result.scrollDistanceFromBottomPx, 640);
 });

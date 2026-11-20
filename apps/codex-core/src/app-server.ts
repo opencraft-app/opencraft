@@ -1,4 +1,5 @@
-import { configureCodexExecutionSandbox, codexSandboxRequestPolicy, type CodexExecutionSandbox } from "./execution-sandbox.js";
+import { privateWorkspaceExecutionPolicy } from "./workspace-execution-policy.js";
+import { configureCodexExecutionSandbox, codexSandboxRequestPolicy, type CodexExecutionSandbox, type CodexWorkspaceResolver } from "./execution-sandbox.js";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { chmod, mkdir, readFile, realpath, unlink } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
@@ -22,6 +23,10 @@ export interface CodexAppServerOptions {
   readonly executable: string;
   readonly executionSandbox?: CodexExecutionSandbox;
   readonly projectlessWorkspaceDirectory?: string;
+  /** Trusted owner composition only; never deserialized from launch configuration. */
+  readonly resolveWorkspace?: CodexWorkspaceResolver;
+  /** Private Gateway authority. Matching Gateway admission is mandatory when enabled. */
+  readonly workspaceAuthoritySocket?: string;
   readonly spawnAppServer?: CodexCoreOptions["spawnAppServer"];
   readonly onFailure?: (error: Error) => void;
   readonly waitForCore?: boolean;
@@ -30,6 +35,11 @@ export interface CodexAppServerOptions {
 
 /** Fixed-payload execution owner; no account database, credentials or maintenance clients. */
 export async function startCodexAppServer(options: CodexAppServerOptions) {
+  if (options.workspaceAuthoritySocket !== undefined && (options.resolveWorkspace || !options.executionSandbox
+    || !isAbsolute(options.workspaceAuthoritySocket) || options.workspaceAuthoritySocket.includes("\0")
+    || Buffer.byteLength(options.workspaceAuthoritySocket) > 103))
+    throw new Error("Invalid private workspace authority configuration");
+  if (options.resolveWorkspace && !options.executionSandbox) throw new Error("Workspace routing requires execution sandbox policy");
   if (process.platform === "win32" || ![options.endpoint, options.coreEndpoint, options.dataDirectory, options.runtimeDirectory].every(isAbsolute)
     || options.endpoint === options.coreEndpoint || options.authToken.length < 32) throw new Error("Invalid Codex AppServer configuration");
   const runtimeDataDirectory = options.runtimeDataDirectory ?? options.dataDirectory;
@@ -103,7 +113,7 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
       const healthy = request.method === "GET" && (request.url === "/health" || nativeOnly) && !failed && ready && (nativeOnly || await executable());
       return { status: healthy ? 200 : 503,
       value: healthy
-        ? { environmentVariablesVersion: 1, protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, codexPid: child!.pid!, nativeSocket,
+        ? { environmentVariablesVersion: 1, ...(options.workspaceAuthoritySocket ? { workspaceExecutionVersion: 1 as const } : {}), protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, codexPid: child!.pid!, nativeSocket,
           dataDirectory, runtimeDataDirectory: runtimeOwnerRoot, codexHome: runtimeRoot, proxyBaseUrl,
           callbackProtocolVersion: 1, callbackIncarnation: relay?.incarnation, pendingCallbacks: relay?.pendingCallbacks ?? 0, pendingOrchestrationMutations: relay?.pendingMutations ?? 0 } satisfies CodexAppServerHealth
         : { error: ready && !failed && options.executionSandbox ? "Execution environment unavailable" : "Codex AppServer unavailable",
@@ -140,9 +150,16 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     if (protectedApp) await makeNativeFamilyKillable(child.pid!);
     if (options.executionSandbox) await nativeOwnerRequest(authSocket, "environment/info", { environmentId: "opencraft" }, 50_000);
     relay = await startOrchestrationCallbackRelay(nativeSocket, nativeListener, options.executionSandbox ? {
-      requestPolicy: codexSandboxRequestPolicy(
+      requestPolicy: options.workspaceAuthoritySocket ? privateWorkspaceExecutionPolicy({
+        socketPath: options.workspaceAuthoritySocket, token: options.authToken,
+        readThread: threadId => nativeOwnerRequest(authSocket!, "thread/read", { threadId, includeTurns: false }),
+        projectlessRoot: options.projectlessWorkspaceDirectory ?? join(dataDirectory, "projectless-workspaces"),
+        nativeRequest: (method, params) => nativeOwnerRequest(authSocket!, method, params, 50_000),
+      }) : codexSandboxRequestPolicy(
         threadId => nativeOwnerRequest(authSocket!, "thread/read", {threadId, includeTurns: false}),
         options.projectlessWorkspaceDirectory ?? join(dataDirectory, "projectless-workspaces"),
+        options.resolveWorkspace,
+        (method, params) => nativeOwnerRequest(authSocket!, method, params, 50_000),
         async () => { if (!await executable()) throw new Error("Execution environment unavailable"); },
       ),
     } : undefined);

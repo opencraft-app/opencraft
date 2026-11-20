@@ -63,6 +63,8 @@ export class PiModelEngineAdapter implements ModelEnginePort {
     });
   }
   async apply(document: ModelDocument, credentials: ModelCredentialResolver) {
+    document = {...document,providers:document.providers.filter(p=>!p.catalogId?.startsWith('opencraft-human-'))};
+    if(document.defaultModel&&!document.providers.some(p=>p.id===document.defaultModel!.providerId))document={...document,defaultModel:null};
     const bindings = await this.providerBindings(document.providers);
     const providers: Provider[] = [];
     for (const provider of document.providers) {

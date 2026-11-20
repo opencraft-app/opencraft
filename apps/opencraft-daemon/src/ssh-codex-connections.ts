@@ -55,9 +55,9 @@ export async function readSshCodexServerBindings(path: string): Promise<readonly
   });
 }
 
-export function createSshCodexEngineAdapter(binding: SshCodexServerBinding, stateDirectory?: string, createThreadMetadata?: import("./codex-engine-adapter").RemoteCodexEngineOptions["createThreadMetadata"], onStorageOpened?: import("./codex-engine-adapter").RemoteCodexEngineOptions["onStorageOpened"]): CodexEngineAdapter {
+export function createSshCodexEngineAdapter(binding: SshCodexServerBinding, stateDirectory?: string, createThreadMetadata?: import("./codex-engine-adapter").RemoteCodexEngineOptions["createThreadMetadata"], onStorageOpened?: import("./codex-engine-adapter").RemoteCodexEngineOptions["onStorageOpened"], execution?: Pick<import("./codex-engine-adapter").RemoteCodexEngineOptions, 'nativeTool' | 'executionAuthority'>, createAdapter: (options: import("./codex-engine-adapter").RemoteCodexEngineOptions) => CodexEngineAdapter = options => new CodexEngineAdapter(options)): CodexEngineAdapter {
   const connection = binding.connection;
-  return new CodexEngineAdapter({ kind: "remote", transport: new SshCodexTransport(connection),
-    ...createSshAttachmentOptions(binding, stateDirectory), createThreadMetadata, onStorageOpened,
+  return createAdapter({ kind: "remote", transport: new SshCodexTransport(connection),
+    ...createSshAttachmentOptions(binding, stateDirectory), createThreadMetadata, onStorageOpened, ...execution,
   });
 }

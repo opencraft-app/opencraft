@@ -75,11 +75,11 @@ class Host {
 }
 const state = { mountGeneration: 1, isVisible: true, shouldPaint: true, bounds: { x: 0, y: 0, width: 500, height: 500 }, scale: 1 };
 
-test("presentation transition keeps outgoing until ack, prewarm, and next-frame release", () => {
+test("same-tab host replacement keeps its own cover until attachment and prewarm", () => {
   const env = environment();
   try {
     const Transition = createImplementation({});
-    const transition = new Transition(), a = new Host("a"), b = new Host("b");
+    const transition = new Transition(), a = new Host("tab"), b = new Host("tab");
     transition.sync(a, state, {}, "right-panel");
     transition.sync(b, state, {}, "right-panel");
     assert.equal(a.painted, true); assert.equal(a.blocked, true);
@@ -97,11 +97,11 @@ test("presentation transition keeps outgoing until ack, prewarm, and next-frame 
   } finally { env.close(); }
 });
 
-test("A to B to C fences a late B prewarm callback and preserves the correct outgoing host", () => {
+test("same-tab host replacements fence a late prewarm callback", () => {
   const env = environment();
   try {
     const Transition = createImplementation({});
-    const transition = new Transition(), a = new Host("a"), b = new Host("b"), c = new Host("c");
+    const transition = new Transition(), a = new Host("tab"), b = new Host("tab"), c = new Host("tab");
     transition.sync(a, state, {}, "right-panel");
     transition.sync(b, state, {}, "right-panel");
     transition.acknowledgeAttachment(b, 1, 1);
@@ -197,4 +197,32 @@ test("page input boundary survives guest commits and automation release without 
     assert.equal(container.style.pointerEvents, "auto");
     assert.ok(focused > 0);
   } finally { env.close(); }
+});
+
+ test("cross-tab selection synchronously retires the old display lease", () => {
+ const env=environment(); try {
+  const Transition=createImplementation({}), transition=new Transition();
+  const a=new Host('a'), b=new Host('b'), c=new Host('c');
+  const refs=[{},{},{}];
+  transition.sync(a,state,refs[0],'right-panel');
+  transition.sync(b,state,refs[1],'right-panel');
+  assert.equal(a.painted,false); assert.equal(b.painted,true); assert.equal(b.blocked,false);
+  assert.equal(env.frames.size,0); assert.equal(env.timers.size,0);
+  transition.sync(c,state,refs[2],'right-panel');
+  transition.acknowledgeAttachment(a,1,1); transition.acknowledgeAttachment(b,1,1);
+  transition.detach(b,refs[1],'right-panel',1); env.tick();
+  assert.equal(a.painted,false); assert.equal(b.painted,false); assert.equal(c.painted,true);
+  transition.disposeAll();
+ }finally{env.close();}
+});
+test("cross-tab selection revokes an in-flight same-tab host handoff", () => {
+ const env=environment();try{
+  const Transition=createImplementation({}),transition=new Transition();
+  const a=new Host('a'),replacement=new Host('a'),b=new Host('b');
+  transition.sync(a,state,{},'right-panel');transition.sync(replacement,state,{},'right-panel');
+  transition.acknowledgeAttachment(replacement,1,1);const late=[...env.frames.values()][0]!;
+  transition.sync(b,state,{},'right-panel');late();
+  assert.equal(a.painted,false);assert.equal(replacement.painted,false);assert.equal(b.painted,true);
+  assert.equal(env.frames.size,0);assert.equal(env.timers.size,0);transition.disposeAll();
+ }finally{env.close();}
 });

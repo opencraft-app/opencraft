@@ -319,7 +319,7 @@ header padding and an extracted DSH composition are retired where actual browser
 or native provider regressions cover the behavior. The DSH discovery test uses
 isolated real files and the installed native registry to check project switching,
 shared user Skills and source attribution; omitting project roots fails it.
-Authentication, account clipboard/focus and Bot-management fixtures consume the
+Authentication and account clipboard/focus fixtures consume the
 current platform contract and actual services. Attachment tests reflect the
 existing 1 GiB chunked capability and verify transport assembly through both
 Codex adapter and local Host; no commercial wire limit is changed here.

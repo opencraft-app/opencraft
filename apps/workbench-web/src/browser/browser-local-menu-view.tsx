@@ -1,5 +1,5 @@
 import * as DropdownMenu from '@opencraft/design-system-web/dropdown-menu';
-import { useLayoutEffect, useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
 import { useIntl } from '@opencraft/i18n/react';
 import type { BrowserLocalMenuController } from './browser-local-menu';
 import '../styles/context-menu.scss';
@@ -10,8 +10,6 @@ export function BrowserLocalMenu({ controller }: { readonly controller: BrowserL
   const menu = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const copy = intl.formatMessage({ id: 'browser.menu.copy', defaultMessage: 'Copy' });
   const copyLink = intl.formatMessage({ id: 'browser.menu.copyLink', defaultMessage: 'Copy link address' });
-  useLayoutEffect(() => { controller.setLabels({ copy, copyLink }); }, [controller, copy, copyLink]);
-  useLayoutEffect(() => () => controller.retire(), [controller]);
   if (!menu) return null;
   return <DropdownMenu.Root key={menu.id} open
     onOpenChange={open => { if (!open) controller.dismiss(menu.id); }}>

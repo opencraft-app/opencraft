@@ -79,3 +79,18 @@ test("native failure disables every shared source until an actual request replay
   assert.equal(reply.error.code, -32083); assert.equal(f.snapshot("a").requests[0].canRespond, false);
   f.emit(); assert.equal(f.snapshot("a").requests[0].id, request.id); assert.equal(f.snapshot("a").requests[0].canRespond, true);
 });
+
+test('adapter sends the stable approval identity after a reused native route reconnects', async t => {
+  const f=await fixture(t);await f.init('a');await f.rpc('a','thread/start',{cwd:f.root,testNoServerRequest:true});
+  const native=f.adapter as any;
+  const emit=(key:string,turnId:string)=>native.receiveServerRequest(901,{id:901,method:'item/commandExecution/requestApproval',__opencraftInteractionKey:key,params:{threadId:'fixture-thread-1',turnId,itemId:'item',command:'echo fixture'}});
+  emit('old','old-turn');native.publishStatus({state:'failed'});native.publishStatus({state:'open'});emit('fresh','new-turn');
+  const writes:any[]=[];
+  const original=native.writePhysical.bind(native);
+  native.writePhysical=async(message:any,...args:any[])=>{if(message.id===901&&message.result){writes.push(message);return;}return original(message,...args);};
+  const old=await f.rpc('a',SHARED_INTERACTIONS_RESPOND,{threadId:'fixture-thread-1',interactionId:'old',submissionId:'old',result:{decision:'accept'}});
+  assert.equal(old.error.code,-32083);
+  const fresh=await f.rpc('a',SHARED_INTERACTIONS_RESPOND,{threadId:'fixture-thread-1',interactionId:'fresh',submissionId:'fresh',result:{decision:'decline'}});
+  assert.equal(fresh.error,undefined);
+  assert.deepEqual(writes,[{id:901,result:{decision:'decline'},__opencraftInteractionKey:'fresh'}]);
+});

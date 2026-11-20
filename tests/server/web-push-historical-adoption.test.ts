@@ -54,7 +54,7 @@ for (const count of [1, 2])
         before,
       );
       assert.equal(db.prepare("SELECT public_key FROM push_keys WHERE id=1").get()!.public_key, "synthetic-public");
-      assert.equal(db.prepare("SELECT count(*) AS n FROM schema_migrations").get()!.n, 2);
+      assert.equal(db.prepare("SELECT count(*) AS n FROM schema_migrations").get()!.n, 3);
       assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
       db.close();
     } finally {

@@ -1491,7 +1491,7 @@ test("known pre-ledger AccountPool tables retain account metadata, affinity, act
       });
       assert.equal(reader.prepare("SELECT account_id FROM pool_active_account WHERE provider='codex'").get()?.account_id, "account-a");
       assert.equal(reader.prepare("SELECT limit_windows_json FROM pool_quota").get()?.limit_windows_json, "[]");
-      assert.equal(reader.prepare("SELECT count(*) AS n FROM schema_migrations").get()?.n, 3);
+      assert.equal(reader.prepare("SELECT count(*) AS n FROM schema_migrations").get()?.n, 4);
     } finally { reader.close(); }
     const again = new AccountPoolStore({ databasePath, secretsDirectory, now: () => 2_000 });
     try {
@@ -1579,7 +1579,7 @@ test("legacy account-pool database with v2 schema migrates without ledger and ac
         limitWindows: [], status: "ready",
       });
       const files = await readdir(root);
-      assert.ok(files.some(name => name.includes(".pre-v3-")));
+      assert.ok(files.some(name => name.includes(".pre-v4-")));
       assert.equal(files.some(name => name.includes(".legacy-")), false);
     } finally {
       pool.close();

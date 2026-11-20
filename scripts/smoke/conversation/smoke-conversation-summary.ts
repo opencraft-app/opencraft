@@ -28,7 +28,20 @@ const {chromium}=await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE??'playwrig
 const evidence=[];
 for(const theme of ['light','dark','lavender']) {
  const page=await browser.newPage({viewport:{width:1680,height:900}});const errors:string[]=[];page.on('pageerror',(e:Error)=>errors.push(e.message));
- await page.addInitScript(()=>{(window as any).__name=(value:unknown)=>value});await page.goto(vite.resolvedUrls!.local[0]!);await page.waitForSelector('.thread-summary__section');
+ await page.addInitScript(()=>{(window as any).__name=(value:unknown)=>value});await page.goto(vite.resolvedUrls!.local[0]!);await page.getByRole('button',{name:'Task info',exact:true}).waitFor();
+ // Space and history do not own visibility; all three budgets start closed.
+ for(const width of [1680,1280,960,1680]){
+   await page.evaluate(width=>(window as any).fixture.setFrameWidth(width),width);
+   await page.waitForFunction(()=>Number(document.querySelector('.conversation-summary-layout')?.getBoundingClientRect().width)>0);
+   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+   assert.equal(await page.locator('.conversation-summary').count(),0,'initial layout must not open task info');
+   assert.equal(await page.getByRole('button',{name:'Task info',exact:true}).getAttribute('aria-expanded'),'false');
+ }
+ await page.evaluate(()=>(window as any).fixture.setFilesOnly(true));
+ assert.equal(await page.locator('.conversation-summary').count(),0,'loaded files do not open task info');
+ await page.evaluate(()=>(window as any).fixture.setFilesOnly(false));
+ await page.getByRole('button',{name:'Task info',exact:true}).click();
+ await page.waitForSelector('.thread-summary__section');
  await page.evaluate(theme=>{const f=(window as any).fixture;f.setThemePreference(theme==='dark'?'dark':'light');f.setAppearanceThemeId(theme==='lavender'?'opencraft.core.lavender':f.coreThemeId)},theme);
  const draft=await page.locator('textarea').elementHandle();
  const layout=page.locator('.conversation-summary-layout');
@@ -77,7 +90,15 @@ for(const theme of ['light','dark','lavender']) {
  await page.evaluate(()=>(window as any).fixture.setFrameWidth(1680));await page.waitForFunction(()=>document.querySelector('aside[data-summary-present=true]'));
  assert.equal(await page.locator('textarea').inputValue(),'Preserve this draft');assert.equal(await draft!.evaluate(e=>e===document.querySelector('textarea')),true);
  assert.equal(await page.getByRole('button',{name:/Plan/}).getAttribute('aria-expanded'),'true');
- await page.evaluate(()=>(window as any).fixture.setScope('cached'));await page.waitForFunction(()=>document.querySelector('[data-summary-present=true] .thread-summary__scroll')!.scrollTop===0);
+ await page.evaluate(()=>(window as any).fixture.setScope('cached'));
+ await page.waitForFunction(()=>!document.querySelector('.conversation-summary'));
+ assert.equal(await page.getByRole('button',{name:'Task info',exact:true}).getAttribute('aria-expanded'),'false','new conversation scope starts closed');
+ await page.evaluate(()=>(window as any).fixture.setScope('account/host/one'));
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+ assert.equal(await page.getByRole('button',{name:'Task info',exact:true}).getAttribute('aria-expanded'),'false','returning to a previous scope cannot resurrect its old open intent');
+ await page.evaluate(()=>(window as any).fixture.setScope('cached'));
+ await page.getByRole('button',{name:'Task info',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelector('[data-summary-present=true] .thread-summary__scroll')?.scrollTop===0);
  assert.equal(await page.locator('[data-summary-present=true] .thread-summary__link:not(:disabled)').count(),0);
  await page.evaluate(()=>(window as any).fixture.setEmpty(true));await page.waitForSelector('.thread-summary__empty');
  assert((await page.locator('.conversation-summary[data-summary-present=true]').boundingBox())!.height<200,'empty card stays compact');

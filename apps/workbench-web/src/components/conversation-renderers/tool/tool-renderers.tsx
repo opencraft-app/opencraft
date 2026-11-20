@@ -1,28 +1,32 @@
+import { MediaPlayer } from "@opencraft/file-preview-web/media-player";
+import { workbenchIconMetrics } from "@opencraft/design-system/tokens";
+import { ConversationAppearanceIcon } from "../../conversation-appearance";
 import { useRevealSearchItem } from "../../conversation/search-target";
-import { useIntl } from "@opencraft/i18n/react";
+import { FormattedList, FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import { collaborationMessages, collaborationStateMessage } from "./collaboration-messages";
 import { CheckIcon as Check, ChevronRightIcon as ChevronRight, LoadingRingIcon as LoaderCircle, CloseIcon as X } from "@opencraft/design-system-web/action-icons";
 import {
   threadToolNavigationTarget, createdThreadToolResult,
-  deriveSubagentActivityGroupPresentation, deriveSubagentActivityPresentation,
+  deriveSubagentActivitySummary, deriveSubagentActivityPresentation,
+  type SubagentActivityMember,
   extractToolCallContentParts, formatThreadHandoffStepLabel, isCodexAppThreadTool,
   threadHandoffToolResult, visibleThreadHandoffSteps,
   type SubagentActivityRenderUnit, type TimelineBlock, type ToolCallContentPart,
   type WebMcpToolSurfaceCall,
 } from "@opencraft/chat-core";
-import { ZoomableImage, LazyHighlightedCodeSurface, resolveStandardChatResource } from "@opencraft/chat-render-web";
+import { ImagePreview, LazyHighlightedCodeSurface, resolveStandardChatResource } from "@opencraft/chat-render-web";
 import { CircleIcon as Circle, CodeIcon as Code2, GlobeIcon as Globe2, ImageIcon, MessageIcon as MessageSquare } from "@opencraft/design-system-web/action-icons";
-import { lazy, Suspense, useCallback, useContext, useEffect, useState, type CSSProperties } from "react";
-import { Button } from "@opencraft/design-system-web/button";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { lazy, Suspense, useCallback, useContext, useEffect, useId, useRef, useState, type CSSProperties } from "react";
+import { Button, IconButton, InlineAction } from "@opencraft/design-system-web/button";
+import { AnimatePresence, motion, useIsPresent, useReducedMotion } from "motion/react";
 import { useDisclosureReflow } from "../../use-disclosure-reflow";
 import { useDisclosureHeight } from "../../use-disclosure-height";
 import { ConversationDocumentContext, browserReadableImageSource } from "../../conversation/document-context";
 import { useConversationMediaSource } from "../../conversation/conversation-media-source";
+import { usePreviewImageEdit } from "../../conversation/use-preview-image-edit";
 import { ModalSurface } from "../../modal";
 import { ActivityRowContent } from "../activity/activity-row-content";
-import { AgentActivityIcon } from "../../activity-glyphs";
-import { ActivityIcon, activityIcon } from "../activity/activity-icon";
+import { activityIcon } from "../activity/activity-icon";
 import { AutomaticApprovalReviewIcon, AutomaticApprovalReviewList } from "../activity/command-and-review-renderers";
 import { ActivityDisclosure, useActivityOpen } from "../activity/activity-disclosure";
 import {
@@ -77,7 +81,7 @@ function ContentPart({ part, id, showRole }: { part: ToolCallContentPart; id: st
     case "json": body = <JsonSurface value={part.value} documentId={id} />; break;
     case "unknown": body = <div className="thread-tool-details__unknown"><JsonPreview value={part.value} /></div>; break;
     case "image": body = <div><ToolImage source={part.source} alt={part.alt ?? "Tool image"} id={id} /></div>; break;
-    case "audio": body = <audio className="thread-tool-details__audio" controls src={browserReadableImageSource(part.source, undefined) ?? undefined} />; break;
+    case "audio": body = <MediaPlayer kind="audio" className="thread-tool-details__audio" source={browserReadableImageSource(part.source, undefined) ?? undefined} />; break;
     case "resource-link": body = <div className="thread-tool-details__resource-link"><ResourceLink target={part.uri}>Read {part.name}</ResourceLink></div>; break;
     case "embedded-resource": body = <div className="thread-tool-details__embedded-resource">
       <div><b>URI</b><ResourceLink target={part.uri}>{part.uri}</ResourceLink></div>
@@ -154,6 +158,7 @@ function RawToolOutput({ block }: { block: Tool }) {
 }
 
 function ThreadTool({ block }: { block: Tool }) {
+  const documentContext = useContext(ConversationDocumentContext);
   const presentation = useToolActivityPresentation(block);
   const navigation = useContext(SubagentNavigationContext);
   const [open, setOpen] = useActivityOpen(presentation.state === "running", false, `thread-handoff:${block.id}`);
@@ -162,7 +167,7 @@ function ThreadTool({ block }: { block: Tool }) {
   const handoff = threadHandoffToolResult(block);
   if (created !== null) return <button type="button" className="thread-created-thread-card" aria-label="Open chat"
     disabled={navigation.open === null} onClick={() => navigation.open?.(created.threadId, created.title)}>
-    <span className="thread-created-thread-card__icon"><MessageSquare size={14} /></span>
+    <span className="thread-created-thread-card__icon"><ConversationAppearanceIcon hostId={documentContext.hostId ?? ""} threadId={created.threadId} size={workbenchIconMetrics.core.panel} fallback={<MessageSquare size={14} />} /></span>
     <span className="thread-created-thread-card__copy"><strong>{created.title}</strong></span>
     <span className="thread-created-thread-card__action">Open chat <ChevronRight size={13} /></span>
   </button>;
@@ -252,176 +257,194 @@ export function ImageViewToolBlock({ block }: { readonly block: Tool }) {
 export function GeneratedImageBlock({ block }: { readonly block: Image }) {
   const context = useContext(ConversationDocumentContext);
   const [attempt, setAttempt] = useState(0);
-  // A deferred result can be a text-sized base64 prefix, never an image.
-  useHistoryItemDetail(block, Boolean(block.historyDetail && !block.savedPath));
+  const owner = JSON.stringify([context.hostId, context.conversationId, block.id]);
+  const [failedResource, setFailedResource] = useState<string | null>(null);
+  const previous = useRef({ id: owner, dimensions: block.dimensions });
+  if (previous.current.id !== owner) previous.current = { id: owner, dimensions: block.dimensions };
+  else if (block.dimensions) previous.current.dimensions = block.dimensions;
+  const dimensions = block.dimensions ?? previous.current.dimensions;
+  // A failed derived reference restores the original Item through the existing authorized detail read.
+  // Keep geometry while that fallback replaces the resource; never collapse the image slot.
+  useHistoryItemDetail(block, failedResource === owner || Boolean(block.historyDetail && !block.savedPath && !block.dimensions), attempt);
   const source = context.resolveGeneratedImageSource?.(block)
-    ?? (block.historyDetail ? block.savedPath : block.uri ?? block.savedPath);
+    ?? (block.dimensions && block.uri ? block.uri : block.historyDetail ? block.savedPath : block.uri ?? block.savedPath);
   const identity = JSON.stringify([context.hostId, context.conversationId, context.cwd, block.id, source, block.savedPath, attempt]);
-  return source === null ? <GeneratedImagePending running={block.status === "pending" || block.status === "running"} />
-    : <GeneratedImage key={identity} block={block} source={source} onRetry={() => setAttempt(value => value + 1)} />;
+  const unavailable = useCallback(() => setFailedResource(owner), [owner]);
+  return source === null ? <GeneratedImagePending dimensions={dimensions} running={block.status === "pending" || block.status === "running"} />
+    : <GeneratedImage key={identity} block={block} dimensions={dimensions} source={source} onUnavailable={unavailable} onRetry={() => setAttempt(value => value + 1)} />;
 }
 
-function GeneratedImagePending({ running, loading = false }: { running: boolean; loading?: boolean }) {
-  if (!running && !loading) return null;
+function generatedImageFrame(dimensions: Image["dimensions"]) {
+  return { className: "thread-generated-image-gallery" + (dimensions ? " thread-generated-image-gallery--sized" : ""),
+    style: dimensions ? { "--generated-image-width": `${dimensions.width}px`, "--generated-image-ratio": dimensions.width / dimensions.height } as CSSProperties : undefined };
+}
+function GeneratedImagePending({ running, loading = false, dimensions }: { running: boolean; loading?: boolean; dimensions?: Image["dimensions"] }) {
+  if (!running && !loading && !dimensions) return null;
   const label = running ? "Generating image" : "Loading generated image";
-  return <div className="thread-generated-image-gallery thread-generated-image-gallery--pending"
+  return <div {...generatedImageFrame(dimensions)} className={generatedImageFrame(dimensions).className + " thread-generated-image-gallery--pending"}
     data-testid="generated-image-gallery" role="progressbar" aria-label={label} aria-valuetext={label}>
     <div className="thread-generated-image-placeholder" />
   </div>;
 }
 
-function GeneratedImage({ block, source, onRetry }: { block: Image; source: string; onRetry: () => void }) {
+function GeneratedImage({ block, source, onRetry, onUnavailable, dimensions }: { block: Image; source: string; onRetry: () => void; onUnavailable: () => void; dimensions?: Image["dimensions"] }) {
   const context = useContext(ConversationDocumentContext);
   const intl = useIntl();
   const [open, setOpen] = useState(false);
   const [failedSources, setFailedSources] = useState<readonly string[]>([]);
-  const activeSource = failedSources.includes(source) ? block.savedPath ?? source : source;
+  const activeSource = failedSources.includes(source) && !(block.historyDetail && dimensions) ? block.savedPath ?? source : source;
   const resolveDirect = useCallback((path: string) =>
     (path === source ? context.resolveGeneratedImageSource?.(block) : null) ?? browserReadableImageSource(path, context.resolveImageSource),
   [block, source, context.resolveGeneratedImageSource, context.resolveImageSource]);
   const media = useConversationMediaSource(activeSource, block.id, resolveDirect);
   const markFailed = useCallback(() => {
     setFailedSources(previous => previous.includes(activeSource) ? previous : [...previous, activeSource]);
-  }, [activeSource]);
+    if (block.historyDetail) onUnavailable();
+  }, [activeSource, block.historyDetail, onUnavailable]);
   useEffect(() => {
     if (media.status === "unavailable") markFailed();
   }, [media.status, markFailed]);
   useEffect(() => {
     if (failedSources.length) media.requestMeasurement("image-load");
   }, [failedSources]);
-  if (failedSources.includes(activeSource)) return <div className="thread-generated-image-gallery" role="status">
+  const imageEdit = usePreviewImageEdit(media.source, block.savedPath?.split(/[\\/]/u).at(-1) ?? "image.png", () => setOpen(false));
+  if (failedSources.includes(activeSource)) return <div {...generatedImageFrame(dimensions)} role="status">
     <span>{intl.formatMessage({ id: "chat.image.unavailable", defaultMessage: "Image unavailable" })}</span>
     <Button size="sm" variant="ghost" onClick={onRetry}>{intl.formatMessage({ id: "common.retry", defaultMessage: "Try again" })}</Button>
   </div>;
-  if (media.source === null) return <GeneratedImagePending
+  if (media.source === null) return <GeneratedImagePending dimensions={dimensions}
     running={block.status === "pending" || block.status === "running"} loading={media.status === "loading"} />;
   const alt = "Generated image 1";
-  return <div className="thread-generated-image-gallery" data-testid="generated-image-gallery">
+  return <div {...generatedImageFrame(dimensions)} data-testid="generated-image-gallery">
     <div className="thread-generated-image-preview-wrap">
       <button type="button" className="thread-generated-image-preview" data-testid="generated-image-preview"
         aria-label={alt} onClick={() => context.onOpenGeneratedImage ? context.onOpenGeneratedImage(block) : setOpen(true)}>
-        <img src={media.source} alt={alt} draggable onError={markFailed} onLoad={() => media.requestMeasurement("image-load")} />
+        <img src={media.source} width={dimensions?.width} height={dimensions?.height} alt={alt} draggable onError={markFailed} onLoad={() => media.requestMeasurement("image-load")} />
       </button>
       {context.onEditGeneratedImage ? <button type="button" className="thread-generated-image-edit"
         aria-label="Edit generated image 1" onClick={() => context.onEditGeneratedImage?.(block)}>Edit</button> : null}
     </div>
-    {open ? <ModalSurface label={alt} className="thread-generated-image-lightbox__dialog" layer="nested"
-      presentation="fullscreen" showCloseButton={false} onDismiss={() => setOpen(false)}>
-      <ZoomableImage onBackgroundClick={() => setOpen(false)} src={media.source} alt={alt} />
-      <div className="thread-generated-image-lightbox__toolbar">
+    {open ? imageEdit.editor ?? <ImagePreview image={{ id: block.id, source: media.source, alt }} onClose={() => setOpen(false)}
+      actions={<>{imageEdit.action}<div className="thread-generated-image-lightbox__toolbar">
         <a href={media.source} download={block.savedPath?.split(/[\\/]/u).at(-1) ?? "generated-image.png"}>Save</a>
-        <button type="button" aria-label="Close generated image 1" onClick={() => setOpen(false)}><X size={18} /></button>
-      </div>
-    </ModalSurface> : null}
+      </div></>} /> : null}
   </div>;
 }
 
-type Agent = ReturnType<typeof deriveSubagentActivityPresentation>["agents"][number];
-function Avatar({ agent }: { agent: Agent }) {
-  // Stable presentation only; thread identity and status remain owned by core.
+function Avatar({ member }: { member: SubagentActivityMember }) {
   let color = 0;
-  for (const character of agent.threadId) color = (color * 31 + character.codePointAt(0)!) % 360;
-  return <span className="thread-subagent-avatar" aria-hidden data-status={agent.status}
-    style={{ "--agent-hue": color + "deg" } as CSSProperties}>{agent.displayName.slice(0, 1).toLocaleUpperCase()}</span>;
+  for (const character of member.threadId ?? member.key) color = (color * 31 + character.codePointAt(0)!) % 360;
+  return <span className="thread-subagent-avatar" aria-hidden data-status={member.status}
+    style={{ "--agent-hue": color + "deg" } as CSSProperties}>{member.displayName.slice(0, 1).toLocaleUpperCase()}</span>;
 }
 
-type AgentToggle = {
-  readonly label: string; readonly open: boolean; readonly disabled: boolean;
-  readonly onClick: (event: import("react").MouseEvent<HTMLButtonElement>) => void;
-};
+function SubagentDetails({ children, id, onComplete }: {
+  children: import("react").ReactNode; id: string; onComplete: () => void;
+}) {
+  const present = useIsPresent();
+  const reducedMotion = useReducedMotion();
+  const height = useDisclosureHeight("auto");
+  return <motion.div id={id} className="thread-subagent-details" inert={!present} aria-hidden={!present}
+    initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+    style={{ height }} transition={{ duration: reducedMotion ? 0 : 0.2 }} onAnimationComplete={onComplete}>
+    {children}
+  </motion.div>;
+}
 
-function Agents({ blocks, grouped, restoreKey, renderToggle }: {
-  blocks: readonly AgentBlock[]; grouped: boolean; restoreKey: string;
-  renderToggle: (props: AgentToggle) => import("react").ReactNode;
+function SubagentActivityRow({ blocks, restoreKey }: {
+  blocks: readonly AgentBlock[]; restoreKey: string;
 }) {
   const navigation = useContext(SubagentNavigationContext);
   const intl = useIntl();
-  const toolName = (tool:AgentBlock["tool"]) => intl.formatMessage(tool === "spawnAgent" ? collaborationMessages.create
+  const detailsId = useId();
+  const toolName = (tool: AgentBlock["tool"]) => intl.formatMessage(tool === "spawnAgent" ? collaborationMessages.create
     : tool === "sendInput" ? collaborationMessages.send : tool === "resumeAgent" ? collaborationMessages.resume
     : tool === "wait" ? collaborationMessages.wait : tool === "closeAgent" ? collaborationMessages.close : collaborationMessages.collaborate);
-  const stateName = (state:string) => intl.formatMessage(collaborationStateMessage(state));
-  const deliveryName = (state:AgentBlock["deliveryStatus"]) => intl.formatMessage(state === null ? collaborationMessages.none
+  const stateName = (state: string) => intl.formatMessage(collaborationStateMessage(state));
+  const deliveryName = (state: AgentBlock["deliveryStatus"]) => intl.formatMessage(state === null ? collaborationMessages.none
     : collaborationMessages[state]);
-  const presentation = grouped ? deriveSubagentActivityGroupPresentation(blocks)
-    : deriveSubagentActivityPresentation(blocks[0]!);
+  const presentation = deriveSubagentActivitySummary(blocks);
+  const name = (value: string) => value === "Agent" ? intl.formatMessage(collaborationMessages.unnamed) : value;
+  const [open, setOpen] = useActivityOpen(false, false, restoreKey);
+  const [showAllAgents, setShowAllAgents] = useActivityOpen(false, false,
+    JSON.stringify(["subagent-members", restoreKey]));
+  const namedCount = presentation.members.length > 3 ? 2 : presentation.members.length;
+  const members = presentation.members.slice(0, namedCount);
+  const hiddenCount = presentation.members.length - namedCount;
+  const reflow = useDisclosureReflow();
+  const expandable = presentation.expandable || presentation.members.length > 1;
   const detailsByThread = new Map<string, AgentBlock>();
+  const taskByThread = new Map<string, AgentBlock>();
   for (const block of blocks) {
     for (const agent of deriveSubagentActivityPresentation(block).agents) {
-      // Keep task text when a later inspection has no prompt.
-      if (!detailsByThread.has(agent.threadId) || block.prompt) detailsByThread.set(agent.threadId, block);
+      detailsByThread.set(agent.threadId, block);
+      if (block.prompt || block.action) taskByThread.set(agent.threadId, block);
     }
   }
-  const [open, setOpen] = useActivityOpen(false, false, restoreKey);
-  const reducedMotion = useReducedMotion();
-  const summary = presentation.agents.length
-    ? presentation.agents.slice(0, 2).map(agent => agent.displayName).join(" · ")
-      + (presentation.agents.length > 2 ? " · " + intl.formatMessage(collaborationMessages.more, { count: presentation.agents.length - 2 }) : "") : toolName(blocks[0]!.tool);
-  const reflow = useDisclosureReflow();
-  const height = useDisclosureHeight("auto");
-  if (!grouped && blocks[0]!.tool === null && blocks[0]!.activityKind !== null && presentation.agents.length === 1) {
-    const agent = presentation.agents[0]!;
-    const canOpen = navigation.open !== null && agent.threadId.length > 0;
-    return <button type="button" className="thread-subagent-inline" data-status={agent.displayStatus}
-      disabled={!canOpen} aria-label={canOpen ? intl.formatMessage(collaborationMessages.open,{name:agent.displayName}) : undefined}
-      onClick={() => navigation.open?.(agent.threadId, agent.displayName)}>
-      <Avatar agent={agent} /><span>{intl.formatMessage(collaborationMessages.inline,{name:agent.displayName,status:stateName(agent.statusLabel)})}</span>
-    </button>;
-  }
-  return <section className="thread-subagent-activity" data-status={presentation.summaryStatus} data-open={open || undefined}>
+  const renderName = (member: SubagentActivityMember) => member.threadId && navigation.open
+    ? <InlineAction key={member.key} aria-label={intl.formatMessage(collaborationMessages.open, { name: name(member.displayName) })}
+        onClick={() => navigation.open?.(member.threadId!, name(member.displayName))}>{name(member.displayName)}</InlineAction>
+    : <span key={member.key}>{name(member.displayName)}</span>;
+  const names = members.map(renderName);
+  if (hiddenCount > 0) names.push(<InlineAction key="more" aria-expanded={open && showAllAgents} aria-controls={detailsId}
+    onClick={event => { if (!open) reflow.begin(event.currentTarget); setShowAllAgents(true); setOpen(true); }}>
+    {intl.formatMessage(collaborationMessages.more, { count: hiddenCount })}</InlineAction>);
+  const detailMembers = showAllAgents ? presentation.members : presentation.members.slice(0, 3);
+  return <section className="thread-subagent-activity" data-status={presentation.status} data-open={open || undefined}>
     <div className="thread-subagent-activity__header">
-      {renderToggle({ label: stateName(presentation.summaryStatus) + " · " + summary, open,
-        disabled: !presentation.expandable, onClick: event => {
-          reflow.begin(event.currentTarget); setOpen(!open);
-        } })}
+      <span className="thread-subagent-avatars" aria-hidden>
+        {presentation.members.slice(0, 4).map(member => <span key={member.key} className="thread-subagent-avatar-entry"><Avatar member={member} /></span>)}
+      </span>
+      <span className="thread-subagent-activity__summary">
+        <FormattedMessage {...collaborationMessages.activity} values={{
+          names: names.length ? <FormattedList key="names" type="conjunction" value={names} /> : intl.formatMessage(collaborationMessages.unnamed),
+          status: presentation.status, count: presentation.members.length || 1,
+        }} />
+      </span>
+      {expandable ? <IconButton className="thread-subagent-activity__toggle" size="chrome" variant="ghost"
+        aria-label={intl.formatMessage(open ? collaborationMessages.hideDetails : collaborationMessages.showDetails)}
+        aria-expanded={open} aria-controls={detailsId} onClick={event => { reflow.begin(event.currentTarget); setOpen(!open); }}>
+        <ChevronRight aria-hidden className="thread-subagent-activity__chevron" />
+      </IconButton> : null}
     </div>
-    <AnimatePresence initial={false}>{open && presentation.expandable ? <motion.div className="thread-subagent-details"
-      initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-      style={{ height }} transition={{ duration: reducedMotion ? 0 : 0.2 }} onAnimationComplete={reflow.complete}>
+    <AnimatePresence initial={false} onExitComplete={reflow.complete}>{open && expandable ? <SubagentDetails id={detailsId} onComplete={reflow.complete}>
       <div className="thread-subagent-details__inner">
-      {blocks.filter(block => block.toolCallStatus === "failed" || block.deliveryStatus === "rejected"
-        || block.deliveryStatus === "cancelled").map(block => <p key={block.id} className="thread-subagent-details__meta"
+        {detailMembers.map(member => {
+          const agent = presentation.agents.find(agent => agent.threadId === member.threadId);
+          const block = member.threadId ? detailsByThread.get(member.threadId) : blocks.find(block => block.id === member.key);
+          const task = member.threadId ? taskByThread.get(member.threadId) : block;
+          return <div key={member.key} className="thread-subagent-details__row" data-status={member.status}>
+            <Avatar member={member} /><div>
+              <p>{renderName(member)} · {stateName(agent?.statusLabel ?? (member.status === "waiting" ? "starting" : member.status))}</p>
+              {task?.prompt || task?.action ? <p>{task.prompt || task.action}</p> : null}
+              {agent?.statusMessage ? <p className="thread-subagent-details__message">{agent.statusMessage}</p> : null}
+            </div>
+          </div>;
+        })}
+        {!showAllAgents && presentation.members.length > 3 ? <InlineAction aria-controls={detailsId}
+          onClick={() => setShowAllAgents(true)}>
+          {intl.formatMessage(collaborationMessages.more, { count: presentation.members.length - 3 })}
+        </InlineAction> : null}
+        {blocks.filter(block => block.tool !== null).map(block => <p key={block.id} className="thread-subagent-details__meta"
           data-tool-call-status={block.toolCallStatus} data-delivery-status={block.deliveryStatus ?? "none"}>
-          {toolName(block.tool)} · {stateName(block.toolCallStatus)} · {deliveryName(block.deliveryStatus)}
+          {toolName(block.tool)} · {stateName(block.toolCallStatus)}
+          {block.deliveryStatus ? <> · {deliveryName(block.deliveryStatus)}</> : null}
         </p>)}
-      {presentation.agents.map(agent => {
-        const block = detailsByThread.get(agent.threadId)!;
-        return <div key={agent.threadId} className="thread-subagent-details__row" data-status={agent.status}>
-          <Avatar agent={agent} /><div><p>
-            <Button variant="link" size="sm" className="thread-subagent-details__name"
-              disabled={navigation.open === null}
-              aria-label={intl.formatMessage(collaborationMessages.open,{name:agent.displayName})}
-              onClick={() => navigation.open?.(agent.threadId, agent.displayName)}>{agent.displayName}</Button>
-            <span> · {stateName(agent.statusLabel)}</span>
-          </p>
-            {block.prompt ? <p>{block.prompt}</p> : block.action ? <p>{block.action}</p> : null}
-            {agent.statusMessage ? <p className="thread-subagent-details__message">{agent.statusMessage}</p> : null}
-          </div></div>;
-      })}
-      {!grouped && blocks[0]?.tool === "wait" && blocks[0].prompt ?
-        <p className="thread-subagent-details__input">{intl.formatMessage(collaborationMessages.input,{input:blocks[0].prompt})}</p> : null}
-      {!grouped && (blocks[0]?.reasoningEffort || blocks[0]?.agentPath) ?
-        <p className="thread-subagent-details__meta">{[
-          blocks[0].reasoningEffort ? intl.formatMessage(collaborationMessages.reasoning,{effort:blocks[0].reasoningEffort}) : null, blocks[0].agentPath,
-        ].filter(Boolean).join(" · ")}</p> : null}
-    </div></motion.div> : null}</AnimatePresence>
+        {blocks.length === 1 && (blocks[0]?.reasoningEffort || blocks[0]?.agentPath) ?
+          <p className="thread-subagent-details__meta">{[
+            blocks[0].reasoningEffort ? intl.formatMessage(collaborationMessages.reasoning, { effort: blocks[0].reasoningEffort }) : null,
+            blocks[0].agentPath,
+          ].filter(Boolean).join(" · ")}</p> : null}
+      </div>
+    </SubagentDetails> : null}</AnimatePresence>
   </section>;
 }
 
 export function SubagentBlock({ block }: { block: AgentBlock }) {
-  return <Agents blocks={[block]} grouped={false} restoreKey={JSON.stringify(["subagent", block.id])} renderToggle={props =>
-    <Button variant="link" size="sm" contentLayout="row" className="thread-subagent-activity__toggle thread-subagent-trigger"
-      aria-expanded={props.open} disabled={props.disabled} onClick={props.onClick}>
-      <ActivityIcon><AgentActivityIcon /></ActivityIcon><span className="thread-activity-item__summary">{props.label}</span>
-      <ChevronRight size={12} aria-hidden className="thread-subagent-activity__chevron" />
-    </Button>} />;
+  return <SubagentActivityRow blocks={[block]} restoreKey={JSON.stringify(["subagent", block.id])} />;
 }
 
 export function SubagentActivityGroup({ unit }: { readonly unit: SubagentActivityRenderUnit }) {
-  return unit.blocks.length > 0 ? <Agents blocks={unit.blocks} grouped={unit.blocks.length > 1}
-    restoreKey={JSON.stringify(["subagent-group", unit.id])} renderToggle={props =>
-    <Button variant="link" size="sm" contentLayout="row" className="thread-subagent-activity__toggle thread-subagent-trigger"
-      aria-expanded={props.open} disabled={props.disabled} onClick={props.onClick}>
-      <ActivityIcon><AgentActivityIcon /></ActivityIcon><span className="thread-activity-item__summary">{props.label}</span>
-      <ChevronRight size={12} aria-hidden className="thread-subagent-activity__chevron" />
-    </Button>} /> : <></>;
+  return unit.blocks.length > 0 ? <SubagentActivityRow blocks={unit.blocks}
+    restoreKey={JSON.stringify(["subagent-group", unit.id])} /> : <></>;
 }

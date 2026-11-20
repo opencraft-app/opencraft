@@ -1,0 +1,2 @@
+CREATE INDEX `assistant_thread_owned_page` ON `assistant_thread_operations` (`bot_id`,`epoch`,`command`,`id`);--> statement-breakpoint
+CREATE INDEX `assistant_thread_target` ON `assistant_thread_operations` (`bot_id`,`epoch`,`reference`,`command`);

@@ -20,6 +20,7 @@ export interface ChatDocumentSessionViewProps {
   readonly source: string;
   readonly streaming: boolean;
   readonly dialect?: ChatDocumentDialect;
+  readonly literalSpans?: readonly import("@opencraft/chat-document").ChatDocumentSourceRange[];
   readonly context: Omit<ChatRenderContext, "documentId" | "streaming">;
   readonly fallback: (props: ChatDocumentErrorFallbackProps) => ReactNode;
 }
@@ -30,14 +31,15 @@ export function ChatDocumentSessionView({
   source,
   streaming,
   dialect = "assistant",
+  literalSpans,
   context,
   fallback,
 }: ChatDocumentSessionViewProps) {
   const session = useMemo(() => runtime.documents.session(documentId), [runtime, documentId]);
   const fadeTimeline = useMemo(() => new ChatFadeTimeline(), [session]);
   const candidate = useMemo(
-    () => session.compile(source, { dialect, streaming }),
-    [dialect, session, source, streaming],
+    () => session.compile(source, { dialect, streaming, literalSpans }),
+    [dialect, session, source, streaming, literalSpans],
   );
   useLayoutEffect(() => candidate.commit(), [candidate]);
   useEffect(() => () => runtime.documents.release(documentId), [runtime, documentId]);

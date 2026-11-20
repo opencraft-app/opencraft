@@ -394,6 +394,9 @@ export function createTurnWindowSlice<TEntry extends VirtualizedTurnEntry>(
     entries: entries.slice(range.startIndex, range.endIndex),
     range,
     marginTopPx: layout.topOffsetsPx[range.startIndex] ?? 0,
+    paddingBottomPx: range.endIndex > range.startIndex
+      ? layout.bottomOffsetsPx[range.endIndex - 1] ?? 0
+      : layout.totalHeightPx,
     totalHeightPx: layout.totalHeightPx,
     gapPx,
   };

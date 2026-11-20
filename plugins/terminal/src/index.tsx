@@ -2,6 +2,9 @@ import { createPortal } from "react-dom";
 import { Button, IconButton } from "@opencraft/design-system-web/button";
 import { KeyboardIcon, PasteIcon } from "@opencraft/design-system-web/action-icons";
 import { useIntl } from "@opencraft/i18n/react";
+import type { IMarker } from '@xterm/xterm';
+import { attachTerminalNativeSelection, hasTerminalNativeSelection } from './selection';
+import { attachTerminalTouchScroll } from './touch-scroll';
 import { typographyRegistry, typographyRole } from "@opencraft/design-system/typography";
 import type { Context } from "@deepseek-ai/cordis";
 import type { PanelRendererProps } from "@opencraft/workbench-panels-react";
@@ -13,6 +16,7 @@ import {
 } from "@opencraft/workbench-runtime";
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -98,14 +102,25 @@ export function pasteIntoActiveTerminal(
 }
 
 function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry, openAnother: (ownerId: string, sessionId: string) => void) {
-  return function TerminalPanel({ tab, ownerId, active = true, touchToolbar = false, toolbarContainer = null }: PanelRendererProps) {
+  return function TerminalPanel({ tab, ownerId, active = true, overviewPreview = false, touchToolbar = false, toolbarContainer = null, onPresentationReady }: PanelRendererProps) {
     const intl = useIntl();
     const sessionId = tab.resource ?? "";
     const session = registry.get(sessionId);
     const hostRef = useRef<HTMLDivElement | null>(null);
     const terminalRef = useRef<import("@xterm/xterm").Terminal | null>(null);
+    const nativeSelectionRef = useRef<ReturnType<typeof attachTerminalNativeSelection> | null>(null);
+    const readingRef = useRef<{ followEnd: boolean; line: number; marker?: IMarker } | null>(null);
+    const wasActive = useRef(active);
     const activeRef = useRef(active);
     activeRef.current = active;
+    const previewRef = useRef(overviewPreview); previewRef.current = overviewPreview;
+    const readyRef = useRef(onPresentationReady); readyRef.current = onPresentationReady;
+    const toolbarRef = useRef({ touchToolbar, toolbarContainer });
+    toolbarRef.current = { touchToolbar, toolbarContainer };
+    const [presented, setPresented] = useState(active || overviewPreview || !!onPresentationReady);
+    if ((active || overviewPreview || !!onPresentationReady) && !presented) setPresented(true);
+    const revealRef = useRef<((focus?: boolean) => void) | null>(null);
+    const wasOverviewPreview = useRef(overviewPreview);
     const [presentationError, setPresentationError] = useState<Error | null>(null);
     const [clipboardNotice, setClipboardNotice] = useState<string | null>(null);
     const emptySnapshot = useMemo(() => Object.freeze({
@@ -129,9 +144,38 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry, openAno
       setPresentationError(null);
     }, [sessionId]);
 
+    useLayoutEffect(() => {
+      const terminal = terminalRef.current;
+      if (terminal) terminal.options.disableStdin = !active || snapshot.phase !== "running";
+      nativeSelectionRef.current?.sync();
+    }, [active, snapshot.phase, touchToolbar]);
+
+    useLayoutEffect(() => {
+      const terminal = terminalRef.current;
+      if (!active && wasActive.current && terminal) {
+        readingRef.current?.marker?.dispose();
+        const buffer = terminal.buffer.active;
+        readingRef.current = buffer.type === 'normal' ? {
+          followEnd: buffer.viewportY === buffer.baseY, line: buffer.viewportY,
+          marker: terminal.registerMarker(buffer.viewportY - buffer.baseY - buffer.cursorY),
+        } : null;
+      }
+      wasActive.current = active;
+      if (overviewPreview) wasOverviewPreview.current = true;
+      if (active) { revealRef.current?.(!wasOverviewPreview.current); wasOverviewPreview.current = false; }
+    }, [active, overviewPreview]);
+
+    useLayoutEffect(() => {
+      if (onPresentationReady) revealRef.current?.(false);
+    }, [onPresentationReady, toolbarContainer, touchToolbar]);
+
+    useLayoutEffect(() => {
+      if (onPresentationReady && (session === null || presentationError !== null || snapshot.error != null)) onPresentationReady();
+    }, [onPresentationReady, session, presentationError, snapshot.error]);
+
     useEffect(() => {
       const host = hostRef.current;
-      if (host === null || session === null) return;
+      if (host === null || session === null || !presented) return;
       let disposed = false;
       let frameId: number | null = null;
       let removeSessionListener: () => void = () => undefined;
@@ -141,12 +185,14 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry, openAno
       let terminal: import("@xterm/xterm").Terminal | null = null;
       let lastOutputSequence = 0;
       let lastPublishedGrid: TerminalGridSize | null = null;
+      let nativeSelection: ReturnType<typeof attachTerminalNativeSelection> | null = null;
 
       const mount = async () => {
         const [{ Terminal }, { FitAddon }] = await Promise.all([
           import("@xterm/xterm"),
           import("@xterm/addon-fit"),
           import("@xterm/xterm/css/xterm.css"),
+          import("./selection.scss"),
         ]);
         if (disposed) return;
         terminal = new Terminal({
@@ -169,29 +215,57 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry, openAno
         terminal.loadAddon(fit);
         terminal.open(host);
         terminalRef.current = terminal;
+        if (!activeRef.current) readingRef.current = { followEnd: true, line: 0 };
+        const publishGesturePolicy = () => {
+          if (disposed || terminal === null) return;
+          // Terminal owns selection and TUI mouse reporting. Shell owns the
+          // standard horizontal drawer gesture only on ordinary vertical output.
+          nativeSelection?.sync();
+          const policy = terminal.hasSelection() || hasTerminalNativeSelection(host) || terminal.modes.mouseTrackingMode !== 'none' ? 'ignore' : 'vertical-pan';
+          if (host.dataset.sidebarGesture !== policy) host.dataset.sidebarGesture = policy;
+        };
+        publishGesturePolicy();
+        const selection = terminal.onSelectionChange(publishGesturePolicy);
+        nativeSelection = attachTerminalNativeSelection(terminal, host, () => activeRef.current, () => toolbarRef.current.touchToolbar, publishGesturePolicy);
+        nativeSelectionRef.current = nativeSelection;
+        const stopTouchScroll = attachTerminalTouchScroll(terminal, host, () => activeRef.current);
 
         const writePendingOutput = () => {
           if (terminal === null) return;
           const current = session.getSnapshot();
+          terminal.options.disableStdin = !activeRef.current || current.phase !== "running";
           for (const chunk of current.output) {
             if (chunk.sequence <= lastOutputSequence) continue;
             lastOutputSequence = chunk.sequence;
-            terminal.write(base64ToBytes(chunk.deltaBase64));
+            terminal.write(base64ToBytes(chunk.deltaBase64), publishGesturePolicy);
           }
         };
         writePendingOutput();
         removeSessionListener = session.subscribe(writePendingOutput);
         const input = terminal.onData((data) => {
+          if (!activeRef.current || session.getSnapshot().phase !== "running") return;
           setClipboardNotice(null);
           const bytes = new TextEncoder().encode(data);
-          void session.write(bytesToBase64(bytes)).catch(setPresentationError);
+          void session.write(bytesToBase64(bytes)).catch((error) => {
+            // An exit can win the race with an already submitted keystroke.
+            // Its final status owns the feedback, not the rejected input.
+            if (activeRef.current && session.getSnapshot().phase !== "exited") setPresentationError(error as Error);
+          });
         });
 
         const fitAndPublish = () => {
           frameId = null;
-          if (disposed || terminal === null) return;
+          if (disposed || terminal === null || (!activeRef.current && !previewRef.current && !readyRef.current)) return;
           if (!terminalBoxIsVisible(host.clientWidth, host.clientHeight)) return;
           fit.fit();
+          const reading = readingRef.current;
+          if (reading && terminal.buffer.active.type === 'normal') {
+            if (reading.followEnd) terminal.scrollToBottom();
+            else terminal.scrollToLine(reading.marker && !reading.marker.isDisposed ? reading.marker.line : reading.line);
+          }
+          // A thumbnail/prepared scene may fit its local renderer, never its PTY.
+          if (!activeRef.current) return;
+          readingRef.current?.marker?.dispose(); readingRef.current = null;
           const nextGrid = { cols: terminal.cols, rows: terminal.rows };
           if (!terminalGridSizeChanged(lastPublishedGrid, nextGrid)) return;
           lastPublishedGrid = nextGrid;
@@ -202,6 +276,24 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry, openAno
         const scheduleFit = () => {
           if (frameId === null) frameId = window.requestAnimationFrame(fitAndPublish);
         };
+        revealRef.current = (focus = true) => {
+          // Retained handback already owns its final layout. Fit before paint,
+          // rather than exposing the thumbnail grid until a later frame.
+          if (frameId !== null) window.cancelAnimationFrame(frameId);
+          fitAndPublish();
+          if (readyRef.current && terminal) terminal.refresh(0, terminal.rows - 1);
+          if (focus) terminal?.focus();
+        };
+
+        let acknowledged: (() => void) | undefined;
+        const rendered = terminal.onRender(() => {
+          nativeSelection?.sync();
+          const ready = readyRef.current;
+          if (disposed || !terminal || !ready || ready === acknowledged || (toolbarRef.current.touchToolbar && !toolbarRef.current.toolbarContainer?.isConnected)) return;
+          const desired = fit.proposeDimensions();
+          if (!desired || desired.cols !== terminal.cols || desired.rows !== terminal.rows) return;
+          acknowledged = ready; ready();
+        });
 
         const invalidateFontMeasurement = () => {
           if (disposed || terminal === null) return;
@@ -239,10 +331,15 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry, openAno
         resizeObserver.observe(host);
         fitAndPublish();
         scheduleFit();
-        terminal.focus();
+        if (activeRef.current) terminal.focus();
 
         return () => {
           input.dispose();
+          selection.dispose();
+          rendered.dispose();
+          stopTouchScroll();
+          nativeSelection?.dispose();
+          delete host.dataset.sidebarGesture;
         };
       };
 
@@ -262,12 +359,16 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry, openAno
         themeObserver?.disconnect();
         stopObservingFonts?.();
         removeSessionListener();
+        revealRef.current = null;
         terminalRef.current = null;
+        readingRef.current?.marker?.dispose(); readingRef.current = null;
+        nativeSelectionRef.current = null;
         terminal?.dispose();
       };
-    }, [session]);
+    }, [session, presented]);
 
     const pasteIntoTerminal = (text: string, target = terminalRef.current): boolean => {
+      if (target === terminalRef.current && session?.getSnapshot().phase === "running") nativeSelectionRef.current?.clear();
       return pasteIntoActiveTerminal(target, terminalRef.current, text, session?.getSnapshot().phase === "running");
     };
 
@@ -276,6 +377,7 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry, openAno
       if (target === null || !active || session?.getSnapshot().phase !== "running") return;
       setClipboardNotice(null);
       // Focus within the gesture so native system paste still targets this PTY.
+      nativeSelectionRef.current?.clear();
       target.focus();
       try {
         const text = await navigator.clipboard.readText();
@@ -304,7 +406,7 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry, openAno
     const actions = <>
       <IconButton type="button" className="panel-mobile-dock__button" aria-label={keyboardLabel} title={keyboardLabel}
         disabled={!active || snapshot.phase !== "running"}
-        onClick={() => terminalRef.current?.focus()}><KeyboardIcon /></IconButton>
+        onClick={() => { nativeSelectionRef.current?.clear(); terminalRef.current?.focus(); }}><KeyboardIcon /></IconButton>
       <IconButton type="button" className="panel-mobile-dock__button" aria-label={pasteLabel} title={pasteLabel}
         disabled={!active || snapshot.phase !== "running"}
         onClick={() => void pasteFromClipboard()}><PasteIcon /></IconButton>
@@ -312,17 +414,23 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry, openAno
     return (
       <section className="terminal-panel" data-phase={snapshot.phase}>
         <div className="terminal-panel__inset" data-selection="text">
-          <div className="terminal-panel__host" ref={hostRef} />
+          <div className="terminal-panel__host" data-retained-scroll-owner="renderer" ref={hostRef} />
         </div>
         {touchToolbar ? active && toolbarContainer !== null ? createPortal(actions, toolbarContainer) : null : (
-          <div className="terminal-panel__paste-controls terminal-panel__toolbar">{actions}</div>
+          <div data-retained-preview-chrome className="terminal-panel__paste-controls terminal-panel__toolbar">{actions}</div>
         )}
         {clipboardNotice !== null ? (
-          <div className="terminal-panel__status terminal-panel__clipboard-status" data-touch-toolbar={touchToolbar || undefined} role="status">
+          <div data-retained-preview-chrome className="terminal-panel__status terminal-panel__clipboard-status" data-touch-toolbar={touchToolbar || undefined} role="status">
             {clipboardNotice}
           </div>
         ) : null}
-        {error !== null ? (
+        {snapshot.phase === "exited" ? (
+          <div className="terminal-panel__status" data-terminal-status="exited" data-touch-toolbar={touchToolbar || undefined} role="status">
+            {snapshot.exitCode === null
+              ? intl.formatMessage({ id: "terminal.exited", defaultMessage: "Terminal exited. Open a new terminal to continue." })
+              : intl.formatMessage({ id: "terminal.exitedWithCode", defaultMessage: "Terminal exited (code {code}). Open a new terminal to continue." }, { code: snapshot.exitCode })}
+          </div>
+        ) : error !== null ? (
           <div className="terminal-panel__status terminal-panel__recovery" role="status">
             <span>{intl.formatMessage(error instanceof TerminalRestoreUnavailableError
               ? { id: "terminal.restoreUnavailable", defaultMessage: "This server cannot reconnect this terminal. Open a new terminal to continue." }
@@ -333,10 +441,6 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry, openAno
               try { openAnother(ownerId, sessionId); }
               catch (cause) { setPresentationError(cause instanceof Error ? cause : new Error(String(cause))); }
             }}>{intl.formatMessage({ id: "terminal.new", defaultMessage: "New terminal" })}</Button> : null}
-          </div>
-        ) : snapshot.phase === "exited" ? (
-          <div className="terminal-panel__status" role="status">
-            Process exited with code {snapshot.exitCode ?? "unknown"}
           </div>
         ) : null}
       </section>
@@ -373,6 +477,16 @@ export function createTerminalWorkbenchPanelPlugin(
       ctx.workbenchPanels.open(ownerId, "terminal", { sessionId: next });
     });
     const observedPanelOwners = new Map<string, () => void>();
+    const resourceOwners = new Map<string, string>();
+    const directoryObservers = new Map<string, { rebind(): void }>();
+    const resourceOwner = (panelOwner: string) => resourceOwners.get(panelOwner) ?? panelOwner;
+    const bindResourceOwner = (panelOwner: string, owner: string) => {
+      const existing = resourceOwners.get(panelOwner);
+      if (existing !== undefined && existing !== owner) throw new Error('Terminal panel resource owner cannot change');
+      if (existing === owner) return;
+      resourceOwners.set(panelOwner, owner);
+      directoryObservers.get(panelOwner)?.rebind();
+    };
     const syncActiveTerminal = (panelOwnerId: string) => {
       const sessionId = activeTerminalSessionId(
         ctx.workbenchPanels.getOwnerSnapshot(panelOwnerId),
@@ -391,13 +505,24 @@ export function createTerminalWorkbenchPanelPlugin(
     const remove = [
       ctx.workbenchPanels.register<{ readonly sessionId: string }>({
         kind: "terminal",
+        tabDirectory: {
+          read: ownerId => registry.listForOwner(resourceOwner(ownerId)).map(terminalTab),
+          subscribe: (ownerId, changed) => {
+            let stop = registry.subscribe(resourceOwner(ownerId), changed);
+            const observer = { rebind() {
+              stop(); stop = registry.subscribe(resourceOwner(ownerId), changed); changed();
+            } };
+            directoryObservers.set(ownerId, observer);
+            return () => { stop(); if (directoryObservers.get(ownerId) === observer) directoryObservers.delete(ownerId); };
+          },
+        },
         restoreTabs: (ownerId) => {
           observePanelOwner(ownerId);
-          return registry.listForOwner(ownerId).map(terminalTab);
+          return registry.listForOwner(resourceOwner(ownerId)).map(terminalTab);
         },
         ...(restoreOwner ? { hydrateTabs: async (ownerId: string) => {
-          await restoreOwner(ownerId);
-          return registry.listForOwner(ownerId).map(terminalTab);
+          await restoreOwner(resourceOwner(ownerId));
+          return registry.listForOwner(resourceOwner(ownerId)).map(terminalTab);
         } } : {}),
         createTab: ({ sessionId }) => terminalTab(sessionId),
         disposeTab: (tab, _ownerId, reason) => {
@@ -408,6 +533,10 @@ export function createTerminalWorkbenchPanelPlugin(
       ctx.workbenchPanelRenderers.register({
         kind: "terminal",
         Component: TerminalPanel,
+        presentationReadiness: "renderer",
+        previewPresentation: "retained-view",
+        previewFallback: "reparent-safe",
+        residency: "while-tab-open",
       }),
       ctx.workbenchPanels.registerToolbarAction({
         id: "opencraft.terminal.new-session",
@@ -418,6 +547,7 @@ export function createTerminalWorkbenchPanelPlugin(
         creationLabel: "Terminal",
         isAvailable: context => registry.canOpen(context.hostId),
         run: (context) => {
+          bindResourceOwner(context.ownerId, context.resourceOwnerId);
           const sessionId = registry.open({ hostId: context.hostId, cwd: context.cwd,
             threadId: context.threadId, projectId: context.projectId, resourceOwnerId: context.resourceOwnerId, ...resolveScope?.(context.resourceOwnerId) });
           ctx.workbenchPanels.open(context.ownerId, "terminal", { sessionId });

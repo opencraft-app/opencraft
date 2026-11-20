@@ -1,4 +1,4 @@
-@use "@opencraft/design-system/typography.web" as typography;
+@use "@opencraft/design-system/typography-mixins.web" as typography;
 @use "@opencraft/design-system/controls.web" as controls;
 
 // Shared utility-window controls. Product views provide content, not a second UI kit.
@@ -22,15 +22,17 @@
 .settings-panel__header {
   display: flex;
   flex: 0 0 auto;
+  flex-wrap: wrap;
+  min-width: 0;
   min-height: 52px;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 0 56px 0 24px;
+  padding: 4px calc(max(28px, var(--size-control-hit-min)) + 28px) 4px 24px;
   border-bottom: .5px solid var(--color-border-subtle);
-  h2 { margin: 0; font: var(--typography-panel-title-font); text-wrap: balance; letter-spacing: var(--typography-panel-title-tracking); }
+  h2 { flex: 1 1 10em; min-width: 0; max-width: 100%; overflow-wrap: anywhere; margin: 0; font: var(--typography-panel-title-font); text-wrap: balance; letter-spacing: var(--typography-panel-title-tracking); }
 }
-.settings-panel__actions { display: flex; align-items: center; }
+.settings-panel__actions { display: flex; flex-wrap: wrap; min-width: 0; max-width: 100%; align-items: center; gap: 8px; }
 // Document routes own scrolling when this body grows with its content.
 // Do not contain wheel input in a body that has no scroll range.
 .settings-panel__body { flex: 0 1 auto; min-height: 0; overflow: auto; padding: 16px 24px; overscroll-behavior: auto; }

@@ -624,8 +624,14 @@ test("ordinary Core cold boot tolerates a missing external credential and recove
     assert.deepEqual((await restarted.adapter.snapshot()).handoff.uncertain, unknown);
     assert.equal(await readFile(join(f.data, "secrets/account-a.json"), "utf8"), reference);
     await writeFile(auth, contents, { mode: 0o600 });
-    const available = await f.model(); assert.equal(available.status, 200); await available.text();
+    // A missing file is a local availability failure, not provider rejection.
+    // The independent writer's valid restored file changes the rejected digest;
+    // the next explicit request still goes through the actual provider proxy.
+    const recovered = await f.model(); assert.equal(recovered.status, 200); await recovered.text();
     assert.equal(f.modelCalls(), 1);
+    assert.equal((await f.accountRpc("refresh", { accountId: "a" })).status, 200);
+    const available = await f.model(); assert.equal(available.status, 200); await available.text();
+    assert.equal(f.modelCalls(), 2);
     assert.deepEqual((await restarted.adapter.snapshot()).handoff.uncertain, unknown);
     assert.equal((await f.accountRpc("list")).value.accounts.length, 1);
     assert.equal((await restarted.adapter.snapshot()).pid, restarted.child.pid);

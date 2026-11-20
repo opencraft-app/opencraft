@@ -4,7 +4,7 @@
 
 ### Changed-file review
 
-The Turn's existing unified diff remains the read authority for its changed-file summary. ChatUI renders a lightweight in-progress entry and a completed resource card; it only emits an open intent. In the Web Workbench, the actual Composer owns the active Turn's live entry above the editor, including when that Composer floats over a panel. The live entry is a compact, content-width pill centered above the Composer with a visible gap, independent of the attached queue/goal rail and its material. The same placement remains when approval replaces the editor. Its exact Turn identity suppresses duplicate live resources in the main and mini transcript; it is presentation routing, not a second execution or resource owner. Standalone Conversation consumers retain inline presentation. On completion, the same resource appears as the transcript's completed card. The Workbench owns the read-only Review dialog, keeps it tied to the active Thread, and projects the current Timeline block while streaming. File selection filters that existing diff for display; it does not create a second TurnDiff model or mutate the workspace. Undo/Reapply is not advertised until a real Host apply-patch capability is connected.
+A nonempty Turn unified diff is authoritative for its changed-file summary. When native history omits that transient aggregate, shared projection rebuilds the same resource from its durable file-change Items. ChatUI renders a lightweight in-progress entry and a completed resource card; it only emits an open intent. In the Web Workbench, the actual Composer owns the active Turn's live entry above the editor, including when that Composer floats over a panel. The live entry is a compact, content-width pill centered above the Composer with a visible gap, independent of the attached queue/goal rail and its material. The same placement remains when approval replaces the editor. Its exact Turn identity suppresses duplicate live resources in the main and mini transcript; it is presentation routing, not a second execution or resource owner. Standalone Conversation consumers retain inline presentation. On completion, the same resource appears as the transcript's completed card. The Workbench owns the read-only Review dialog, keeps it tied to the active Thread, and projects the current Timeline block while streaming. File selection filters that existing diff for display; it does not create a second TurnDiff model or mutate the workspace. Undo/Reapply is not advertised until a real Host apply-patch capability is connected.
 
 The Web resource presentation uses a square-plus-minus glyph in a 40px
 slot, 12px header padding, 10px gaps and theme-owned `radius-lg` (10px in the
@@ -56,7 +56,7 @@ The Turn resource is read from Frame metadata independently of assistant Items.
 A Turn with only user or interaction Frames still materializes an empty assistant
 resource surface when it has a change summary. Completed, failed and interrupted
 Turns retain their Review entry even when no assistant message was returned;
-clearing the canonical resource removes it without inventing transcript content.
+clearing the canonical resource removes it when there are no recoverable file operations, without inventing transcript content.
 
 Old `turnDiff` Items are lowered at the shared projection boundary and excluded
 from transcript/work-status derivation. An explicitly supplied Turn value,
@@ -67,6 +67,27 @@ tests cover running diff updates, later work, saved collapse choices, reload,
 final answers, resource clearing and completed Review cards. The browser fixture
 uses the real Conversation and Review dialog in desktop/mobile-width light/dark
 views; it is not a production deployment or native-device acceptance claim.
+
+History recovery runs once per immutable Turn revision in `chat-core`, not in a
+browser-local cache. Completed operations are retained even when a Turn failed or
+was interrupted; failed/declined operations and settled pending work are excluded.
+Raw add/delete contents and update hunks are formatted using their native kind,
+path, move destination and recorded cwd. Repeated paths share one summary row.
+Absent, empty or null aggregates use this fallback, while an explicit null still
+suppresses stale aliases and compatibility Items. The resource ID and lack of
+transcript anchors are unchanged, so independent tabs, refresh and reconnect
+recover the same historical list. No database, engine event or workspace read is
+added. Historical counts sum recorded operations; they need not equal a live net
+diff after repeated edits. Review shows those recorded patches, not today's file.
+
+Presentation history may defer large patch bodies. Recovery retains their paths
+and detail targets but hides incomplete line statistics instead of reporting
+false zero counts. Existing conversation-lease detail reads run only on Review;
+the dialog retains its frame/files while loading, supports retry on failure, and
+aborts on dismissal or Thread/Host change. Hydration updates the same resource.
+Display-only retention preserves unknown-statistics metadata but strips detail
+load authority and patch bodies. Cached or otherwise read-only views cannot use
+this metadata to regain execution or review authority.
 
 Changed-file row geometry belongs to its renderer: line counts retain their intrinsic width while the path consumes the remaining space. The directory yields first to the basename, but the basename is capped at its path slot and truncates when even the filename cannot fit. Neither path segment may paint over the counts. Truncation affects presentation only; the complete path remains the accessible row label and Review target. Regression coverage includes long basenames without directories, deep directories, both counts, narrow containers and expanding/collapsing the file list.
 
@@ -101,6 +122,14 @@ the Web renderer projects an allowed HTTP(S) target as an inline
 mention with origin favicon, globe fallback, URL tooltip and Radix context
 actions. It never demotes a heading merely because its child is a link.
 Restricted or unsafe targets receive no href, favicon request or open action.
+
+The URL-keyed link glyph owns candidate image availability and selects exactly
+one visible representation: the first successful favicon, or the globe when no
+candidate is available. Other successes do not replace the selected image; an
+image failure promotes another ready candidate or restores the globe. Target
+replacement disposes this presentation state synchronously, so late callbacks
+(including A → B → A) cannot update a new link instance. CSS owns geometry only;
+it does not keep a fallback layer beneath transparent favicon pixels.
 
 During streaming, a changed URL remains inert for 500ms before it receives an
 href or begins remote favicon loading, and the prior href cannot remain active.
@@ -196,6 +225,21 @@ retain their panel viewport. Only the image viewport claims touch
 gestures, leaving modal close, gallery navigation and focus with their existing
 owners. Source changes, reopening and viewport resizing restore the fitted view.
 No page zoom, navigation or media reload is required for manipulation.
+At fitted scale and upright rotation, a single touch can claim horizontal gallery
+navigation. The current and adjacent pages follow one shared progress during
+drag and settle; a short/cancelled swipe settles back. `usePagedMotion` in the
+Web design system reuses Motion and `selectionMotion.settle`; it measures the
+actual container, independently of phone/iPad/desktop host and input density.
+Gallery selection commits only on settle completion, and a new intent, source,
+unmount or resize revokes the old completion. Resizing cancels obsolete geometry
+and retains the committed image. Arrow buttons and keys use the same page path;
+reduced motion commits directly. Vertical travel, mouse panning and any contact that becomes multi-touch
+cannot select another image. Zoomed/rotated images retain pan/rotation ownership.
+The viewport only invokes the existing previous/next callbacks: each gallery
+keeps its own membership, order and boundary/wrap policy. Adjacent media keep
+their existing resource resolver/lease; animation does not create a second media cache.
+Single-image previews
+have no navigation callbacks and preserve their previous manipulation behavior.
 The preview's whole modal input layer, including empty screen space, excludes
 background Shell gestures. Global capture listeners must resolve native dialog
 semantics, the composed path and the presentation root before admitting input;
@@ -440,22 +484,27 @@ idle. Therefore a Codex queued message cannot safely be converted to an active
 steer by composing `turn/steer` and `thread/queue/delete` in the Client or Host.
 The Codex Host now owns queued input in its own durable SQLite store. It claims
 one item before sending the standard `turn/steer` to Codex, and reconciles by
-client-message ID against paged Codex user-message history. A crash or timeout
-with no conclusive acknowledgement leaves the claim delivery-unconfirmed,
-outside automatic dispatch; the Host never silently resends it. The user may
-explicitly discard an unresolved claim after reviewing the transcript. The
-Host delete request requires the original queue ID, target Turn ID and an
-acknowledgement flag, checks history and rejects while the Thread is active.
-For Codex queued steering, a matching `turn/steer` acknowledgement is the
-admission boundary: the Host persists `steering` before releasing the per-Thread
-dispatch operation, so a later queued steer need not wait for the first input
-to appear in Codex history. Accepted `steering` rows remain visible for history
-reconciliation but do not occupy the dispatch head. Only `dispatching` or
-delivery-`unknown` rows block later admission; an unknown claim is reconciled
-by client-message identity and is never retried automatically. The Composer
-disables later Send/Steer and reorder while such a claim is unresolved, and
-must not offer a generic Resume action behind it. Editing and removing ordinary
-queued rows remain available.
+client-message ID against paged Codex user-message history. Host custody,
+native admission, context evidence and execution termination are independent
+facts; the [input delivery lifecycle](input-delivery-lifecycle.md) owns their
+contract. Direct steering now uses the same durable message owner.
+
+A crash or timeout leaves native admission unknown while the bound execution is
+live. Exact terminal Turn evidence closes that attempt, retains the message as
+Host-authored display content and releases its dispatch fence without replaying
+it. Missing history never proves non-adoption. A new explicit user intention can
+proceed after closure; a repeated delivery identity returns the existing receipt.
+Definitively rejected stale-Turn input retains custody in the next-turn queue.
+Unknown live attempts and unknown target identities still require reconciliation.
+Legacy explicit discard remains available for unresolved claims, with the exact
+queue/Turn identity, acknowledgement flag and existing history/idle checks.
+
+A matching native acknowledgement advances admission without waiting for a
+history echo. Positive exact client-message history refines context evidence and
+retires the Host display overlay. An old terminal notification cannot close a
+newer Turn. Closed receipt reads are scoped to loaded timeline Turns and excluded
+from active queue maintenance. Existing edit/remove actions on ordinary queued
+messages remain available.
 Queued-message action hints use a hover/focus tooltip mounted in the Workbench
 presentation root, outside the scroll-clipped queue tray. The tooltip remains
 hoverable and text-selectable; native `title` is not used for these actions.
@@ -470,6 +519,11 @@ started or steered until native reconciliation confirms its identity. The Host
 enforces this even if a client bypasses the disabled UI action.
 
 Attachment staging is a Host resource, not a Renderer filesystem convention.
+Storage readiness does not prove that a separate execution environment can read
+the attachment. The engine-independent target model, current container boundary
+gap, execution preparation and legacy-reference migration are specified in
+[附件资源与执行交付](attachment-delivery.md). That document distinguishes intended
+behavior from the currently implemented upload and adapter paths described here.
 The `opencraft/attachment-staging` capability declares accepted source kinds,
 returned location kinds and the byte limit; Composer consumes only the shared
 `pending/processing/ready/failed` lifecycle and an opaque `AttachmentRef`.

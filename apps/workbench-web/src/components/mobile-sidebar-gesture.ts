@@ -1,9 +1,10 @@
+import { TOUCH_PAN_DEADZONE, touchPanAxis } from "@opencraft/design-system-web/touch-contact";
 import { frame } from "@opencraft/design-system/tokens";
 
 /** Swipe right to reveal the left sidebar; swipe left to dismiss. */
 export const MOBILE_SIDEBAR_REVEAL_DIRECTION = 1;
 export { EDGE_GESTURE_GUTTER as MOBILE_SIDEBAR_EDGE_RESERVE } from "../runtime/edge-gesture-bridge";
-export const MOBILE_GESTURE_DEADZONE = 8;
+export const MOBILE_GESTURE_DEADZONE = TOUCH_PAN_DEADZONE;
 // A visible front-page strip remains large enough to dismiss by touch.
 export const MOBILE_SIDEBAR_PAGE_PEEK = 64;
 
@@ -14,12 +15,7 @@ export function mobileSidebarWidth(viewportWidth: number): number {
     viewportWidth * frame.sidebarMobileWidthRatio)));
 }
 
-export function sidebarGestureAxis(dx: number, dy: number): "pending" | "horizontal" | "vertical" {
-  if (Math.max(Math.abs(dx), Math.abs(dy)) < MOBILE_GESTURE_DEADZONE) return "pending";
-  if (Math.abs(dx) > Math.abs(dy) * 1.25) return "horizontal";
-  if (Math.abs(dy) > Math.abs(dx) * 1.25) return "vertical";
-  return "pending";
-}
+export const sidebarGestureAxis = touchPanAxis;
 
 export type MobileGestureOwner = "pending" | "sidebar" | "content" | "native";
 export interface GestureSample { x: number; time: number }

@@ -65,11 +65,14 @@ test("Web AppHost uploads binary files through the advertised 32 MiB staging lim
     const connected = await waitFor(frame => frame.type === "response" && frame.requestId === "connect");
     assert.equal(connected.ok, true);
     const rpc = async (id: string, params: unknown) => {
-      socket.send(JSON.stringify({
+      // The response deadline starts after the actual frame is flushed, not
+      // while a large Base64 envelope is still queued on the socket. The test's
+      // overall deadline still bounds a stalled send; no timeout is increased.
+      await new Promise<void>((resolve, reject) => socket.send(JSON.stringify({
         type: "host/send", requestId: `send-${id}`, hostId: "upload-host", leaseId: "upload-lease",
         generation: connected.result.generation,
         frame: JSON.stringify({ jsonrpc: "2.0", id, method: "attachment/stage", params }),
-      }));
+      }), error => error ? reject(error) : resolve()));
       const response = await waitFor(frame => frame.type === "host/frame" && JSON.parse(frame.frame).id === id);
       return JSON.parse(response.frame);
     };

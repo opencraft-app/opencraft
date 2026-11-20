@@ -5,8 +5,6 @@ import { ConversationContentBoundary } from "../../conversation/content-window";
 import { ThinkingLabel } from "../../thinking-label";
 import {
   deriveAgentActivityHeaderPresentation,
-  formatHookEventName,
-  formatHookSource,
   isVisibleAgentActivityRow,
   isToolActivityBlock,
   presentToolActivity,
@@ -24,7 +22,9 @@ import { TimelineBlockView } from "@opencraft/timeline-render-react";
 
 import { motion, useReducedMotion } from "motion/react";
 import {
-  Fragment,
+  lazy,
+  Suspense,
+  useState,
   memo,
   useContext,
   useId,
@@ -114,11 +114,10 @@ function AgentActivityGroup({
       >
         {() => visibleBlocks.length > 0 ? (
           <div className="thread-agent-activity__rows" data-scroll-owner="timeline" style={standalone ? { display: "contents" } : undefined}>
-            {visibleBlocks.map((block, index) => visibleBlocks.length < 80
-              ? <div key={block.id} data-content-search-unit-keys={JSON.stringify(block.sourceItemIds)}><GenericBlock block={block} onRetry={onRetry} /></div>
-              : <ConversationContentBoundary id={`activity-block:${block.id}`} key={block.id}
-                  className="thread-activity-window-row" activity
-                  keepMounted={block.sourceItemIds.some(id => id === searchTarget?.itemId) || index === visibleBlocks.length - 1
+            {visibleBlocks.map((block, index) => <ConversationContentBoundary id={`activity-block:${block.id}`} key={block.id}
+                  className="thread-activity-window-row"
+                  activity={isToolActivityBlock(block) || block.type === "reasoning" || block.type === "automatic-approval-review"}
+                  keepMounted={visibleBlocks.length < 80 || block.sourceItemIds.some(id => id === searchTarget?.itemId) || index === visibleBlocks.length - 1
                     || (block.type !== "command-execution" && block.type !== "patch" && block.type !== "reasoning")}>
                   {() => <div data-content-search-unit-keys={JSON.stringify(block.sourceItemIds)}><GenericBlock block={block} onRetry={onRetry} /></div>}
                 </ConversationContentBoundary>)}
@@ -189,7 +188,7 @@ function AgentActivityContent({
           id={contentUnit.id}
           activity={contentUnit.type === "reasoning" || contentUnit.type === "group"
             || (contentUnit.type === "standalone"
-              && (contentUnit.block.type === "command-execution" || contentUnit.block.type === "patch"))}
+              && isToolActivityBlock(contentUnit.block))}
           keepMounted={contentUnits.length < 80 || contentUnit === followUnit
             || innerCollapsedById[contentUnit.id] === false
             || (contentUnit.type !== "reasoning" && contentUnit.type !== "group"
@@ -224,13 +223,17 @@ function AgentActivity({
   const allowEntryMotion = useContext(ConversationEntryMotionContext);
   // Explicit disclosure interaction may animate even while recovery is syncing.
   const userOpening = useRef(false);
-  const animateEntry = allowEntryMotion || userOpening.current;
+  const animateEntry = unit.contentAvailable !== false && (allowEntryMotion || userOpening.current);
   useRevealSearchItem(blockItemIds(unit.blocks), itemId => {
     onCollapsedChange(false);
     for (const content of unit.contentUnits) if (content.type !== "worked-for" && blockItemIds(content.type === "group" ? content.blocks : [content.block]).includes(itemId)) onInnerCollapsedChange(content.id, false);
   });
   const layout = resolveAgentActivityLayout(unit, persistedCollapsed);
   const open = !layout.isCollapsed;
+  useLayoutEffect(() => {
+    // Requesting a missing cache body is reading intent, not a future entrance.
+    if (unit.contentAvailable === false) userOpening.current = false;
+  }, [unit.contentAvailable, open]);
   const inlineSubagentActivity = unit.inlineSubagentActivity;
   const reflow = useDisclosureReflow();
   const staticWork = unit.contentUnits.find(content => content.type === "worked-for");
@@ -244,7 +247,7 @@ function AgentActivity({
   // One keyed list keeps persistent Apps mounted while restoring chronological
   // expanded content. Separate persistent/expanded trees duplicate the surface.
   const keepsPersistentContent = layout.showToggle && unit.partitions.persistentUnits.length > 0;
-  const hasContent = visibleContent.length > 0 || (open && inlineSubagentActivity !== null);
+  const hasContent = visibleContent.length > 0 || (open && (inlineSubagentActivity !== null || unit.contentAvailable === false));
   const renderContent = (contentUnits: readonly AgentActivityContentUnit[]) => (
     <ConversationEntryMotionContext.Provider value={animateEntry}>
       <AgentActivityContent contentUnits={contentUnits} onRetry={onRetry}
@@ -279,6 +282,7 @@ function AgentActivity({
         durationMs={unit.workedDurationMs}
         count={layout.collapsedItemCount}
         open={open}
+        showChevron
         onToggle={(anchor) => {
           userOpening.current = !open;
           reflow.begin(anchor);
@@ -299,16 +303,22 @@ function AgentActivity({
             }}
             transition={{ duration: prefersReducedMotion ? 0.12 : 0.22, ease: [0.33, 1, 0.68, 1] }}
           >
-            {layout.showToggle ? <div aria-hidden="true" className="thread-agent-activity__section-divider" /> : null}
-            {visibleContent.length > 0
-              ? renderContent(visibleContent)
-              : null}
-            {!open || inlineSubagentActivity === null ? null : (
-              <>
-                {visibleContent.length > 0 ? <div aria-hidden="true" className="thread-agent-activity__section-divider" /> : null}
-                <SubagentActivityGroup unit={inlineSubagentActivity} />
-              </>
-            )}
+            <ConversationContentBoundary id={`${unit.id}:body:${open ? "expanded" : "collapsed"}`}
+              className="thread-agent-activity__body" keepMounted
+              contentAvailable={unit.contentAvailable !== false}>
+              {() => <>
+                {layout.showToggle ? <div aria-hidden="true" className="thread-agent-activity__section-divider" /> : null}
+                {visibleContent.length > 0
+                  ? renderContent(visibleContent)
+                  : null}
+                {!open || inlineSubagentActivity === null ? null : (
+                  <>
+                    {visibleContent.length > 0 ? <div aria-hidden="true" className="thread-agent-activity__section-divider" /> : null}
+                    <SubagentActivityGroup unit={inlineSubagentActivity} />
+                  </>
+                )}
+              </>}
+            </ConversationContentBoundary>
           </motion.div>
       ) : null}
     </section>
@@ -317,60 +327,8 @@ function AgentActivity({
 
 function HookLifecycleIcon(): ReactNode { return <HookIcon size={18} />; }
 
-function hookStatsEntryLabel(kind: HookStats["entries"][number]["kind"]): string {
-  switch (kind) {
-    case "feedback": return "Feedback";
-    case "stop": return "Stop";
-    case "error": return "Error";
-  }
-}
-
 export type { ConversationDetailLevel } from "@opencraft/chat-core";
-
-function HookStatsSummary({ stats }: { readonly stats: HookStats }) {
-  return (
-    <>
-      <strong>Hooks summary</strong>
-      <span className="thread-hook-stats__counts">
-        <span>Ran</span><b>{stats.count}</b>
-        {stats.blockedCount > 0 ? <><span>Blocked</span><b>{stats.blockedCount}</b></> : null}
-        {stats.errorCount > 0 ? <><span>Errors</span><b>{stats.errorCount}</b></> : null}
-      </span>
-      {stats.entries.length > 0 ? (
-        <span className="thread-hook-stats__entries">
-          {stats.entries.map((entry, index) => (
-            <span className="thread-hook-stats__entry" key={`${entry.kind}:${index}:${entry.text}`}>
-              <em>{hookStatsEntryLabel(entry.kind)}</em>
-              <span>{entry.text}</span>
-            </span>
-          ))}
-        </span>
-      ) : null}
-    </>
-  );
-}
-
-function HookStatsDetails({ stats }: { readonly stats: HookStats }) {
-  return (
-    <>
-      <strong>Hooks</strong>
-      <ul className="thread-hook-stats__runs">
-        {stats.runs.map((run) => (
-          <Fragment key={run.id}>
-            <li>{formatHookEventName(run.eventName)}</li>
-            <li className="thread-hook-stats__run">
-              <span>{formatHookSource(run.source)}{run.count > 1 ? ` · ${String(run.count)} runs` : ""}</span>
-              {run.statusMessage === null ? null : <span>{run.statusMessage}</span>}
-              {run.entries.map((entry, index) => (
-                <span className={`is-${entry.tone}`} key={`${entry.tone}:${index}:${entry.text}`}>{entry.text}</span>
-              ))}
-            </li>
-          </Fragment>
-        ))}
-      </ul>
-    </>
-  );
-}
+const HookStatsContent = lazy(() => import("./hook-stats-content"));
 
 function HookStatsButton({
   detailLevel,
@@ -380,15 +338,16 @@ function HookStatsButton({
   readonly stats: HookStats;
 }) {
   const tooltipId = useId();
+  const [requested, setRequested] = useState(false);
   const detailed = detailLevel !== "STEPS_PROSE";
   return (
-    <span className="thread-hook-stats">
-      <span aria-describedby={tooltipId} aria-label="Hooks" className="thread-hook-stats__trigger" role="img" tabIndex={0}>
+    <span className="thread-hook-stats" onPointerEnter={event => { if (event.pointerType !== "mouse") return; setRequested(true); }} onFocus={() => setRequested(true)}>
+      <span aria-describedby={stats.contentAvailable === false ? undefined : tooltipId} aria-busy={stats.contentAvailable === false || undefined} aria-label="Hooks" className="thread-hook-stats__trigger" role="img" tabIndex={0}>
         <HookLifecycleIcon />
       </span>
-      <span className="thread-hook-stats__tooltip" data-detail-level={detailed ? "commands" : "prose"} id={tooltipId} role="tooltip">
-        {detailed ? <HookStatsDetails stats={stats} /> : <HookStatsSummary stats={stats} />}
-      </span>
+      {stats.contentAvailable === false ? null : <span className="thread-hook-stats__tooltip" data-detail-level={detailed ? "commands" : "prose"} id={tooltipId} role="tooltip">
+        {requested ? <Suspense fallback={<span aria-busy="true">…</span>}><HookStatsContent stats={stats} detailed={detailed} /></Suspense> : null}
+      </span>}
     </span>
   );
 }

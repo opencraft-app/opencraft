@@ -1,0 +1,146 @@
+@use '@opencraft/design-system/material.web' as material;
+
+.browser-annotation-layer {
+  position: fixed;
+  z-index: calc(var(--layer-workspace-browser) + 1);
+  pointer-events: none;
+  font: var(--typography-body-font);
+  color: var(--color-text);
+}
+
+// A single quiet mode strip. Exit never competes with the commit action.
+.browser-annotation-toolbar {
+  position: absolute; top: calc(var(--spacing) * 2); left: 50%; transform: translateX(-50%);
+  display: grid; justify-items: center; gap: var(--spacing);
+  width: max-content; max-width: calc(100% - var(--spacing) * 4);
+}
+.browser-annotation-modebar {
+  @include material.surface(menu);
+  display: flex; align-items: center; gap: var(--spacing); padding: var(--spacing);
+  max-width: 100%; border-radius: var(--radius-xl); pointer-events: auto;
+  &__divider { flex: none; width: 1px; height: 18px; background: var(--color-border-subtle); }
+}
+.browser-annotation-modes { display: flex; flex-wrap: nowrap; gap: calc(var(--spacing) / 2); }
+.browser-annotation-bar {
+  @include material.floating;
+  display: flex; align-items: center; gap: var(--spacing);
+  max-width: 100%; padding: var(--spacing) calc(var(--spacing) * 2); border-radius: var(--radius-lg);
+  font: var(--typography-metadata-font); pointer-events: auto;
+  &__hint { min-width: 0; color: var(--color-text-secondary); }
+  &__exit { flex: none; }
+}
+
+@keyframes annotation-card-enter {
+  from { opacity: 0; translate: 0 4px; }
+  to { opacity: 1; translate: 0 0; }
+}
+.browser-annotation-editor {
+  @include material.surface(menu);
+  position: absolute; left: 50%; bottom: calc(var(--spacing) * 3); transform: translateX(-50%);
+  display: flex; flex-direction: column; box-sizing: border-box;
+  width: min(360px, calc(100% - var(--spacing) * 4)); max-height: calc(100% - var(--spacing) * 15);
+  overflow: hidden; overscroll-behavior: contain; border-radius: var(--radius-2xl); pointer-events: auto;
+  animation: annotation-card-enter var(--transition-duration-basic) var(--ease-enter-snappy);
+  &[data-variant='sheet'] {
+    left: 0; right: 0; bottom: 0; width: auto; transform: none;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    max-height: min(68%, calc(100% - var(--spacing) * 24));
+    border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+    textarea { font: var(--typography-mobile-input-font); } // prevent iOS focus zoom
+  }
+  &[data-collapsed] { max-height: none; }
+  &__header { flex: none; display: grid; gap: var(--spacing); padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3); border-bottom: 1px solid var(--color-border-subtle); }
+  &__body { flex: 1; display: grid; min-height: 0; gap: calc(var(--spacing) * 2); padding: calc(var(--spacing) * 3); overflow-y: auto; overscroll-behavior: contain; }
+  &__actions { flex: none; display: flex; justify-content: flex-end; gap: calc(var(--spacing) * 2); padding: calc(var(--spacing) * 2); border-top: 1px solid var(--color-border-subtle); background: var(--color-background-panel); }
+  &__collapse { flex: none; min-height: var(--size-control-hit-min); }
+  &__header[hidden], &__body[hidden], &__actions[hidden] { display: none; }
+  &__target { display: flex; align-items: center; gap: calc(var(--spacing) * 2); padding: calc(var(--spacing) * 1.5); border-radius: var(--radius-lg); background: var(--color-background-elevated-secondary); }
+  &__number { display: grid; flex: none; width: 22px; height: 22px; border-radius: 11px 11px 11px 3px; place-items: center; background: var(--color-text-accent); color: var(--color-text-on-accent); font: var(--typography-label-font); }
+  &__label {
+    display: grid; flex: 1; min-width: 0;
+    strong, small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    strong { font: var(--typography-panel-title-font); }
+    small { color: var(--color-text-secondary); font: var(--typography-metadata-font); }
+  }
+  &__steps { display: flex; gap: calc(var(--spacing) / 2); }
+  &__notice { margin: 0; color: var(--color-text-secondary); font: var(--typography-metadata-font); }
+  &__details { min-width: 0; color: var(--color-text-secondary); font: var(--typography-metadata-font); code { display: block; overflow-wrap: anywhere; padding-block: var(--spacing); } }
+  summary { min-height: var(--size-control-hit-min); align-content: center; cursor: pointer; }
+  &__details summary { min-height: 28px; }
+  textarea {
+    width: 100%; min-height: 54px; box-sizing: border-box; padding: calc(var(--spacing) * 2); resize: none;
+    border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg);
+    background: var(--color-background-panel); color: inherit; font: var(--typography-body-font);
+    :root:not([data-touch-interaction]) &:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 1px; }
+  }
+  &__screenshot { display: grid; gap: calc(var(--spacing) * 2); margin: 0; img { display: block; max-width: 100%; max-height: 160px; object-fit: contain; } p { margin: 0; color: var(--color-text-secondary); } }
+}
+.browser-annotation-targets {
+  display: flex; gap: var(--spacing); flex-wrap: nowrap; align-items: center; overflow-x: auto; padding-block: var(--spacing); scrollbar-width: thin;
+  &__item { display: inline-flex; flex: none; align-items: center; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); }
+  &__name { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  b { font: inherit; color: var(--color-text-accent); }
+}
+.browser-annotation-intents, .browser-annotation-evidence {
+  display: grid; gap: calc(var(--spacing) * 2); min-width: 0;
+  p, blockquote, figure { margin: 0; }
+  blockquote { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 10em; overflow-y: auto; color: var(--color-text-secondary); }
+  label { display: grid; gap: var(--spacing); }
+  input:not([type='color']) { min-width: 0; width: 100%; box-sizing: border-box; font: inherit; color: inherit; background: var(--color-background-input); border: 1px solid var(--color-border-default); border-radius: var(--radius-sm); padding: var(--spacing); }
+  &__row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing); }
+}
+.annotation-style-groups {
+  display: grid; gap: calc(var(--spacing) * 2);
+  > details { border-top: 1px solid var(--color-border-subtle); }
+  summary { color: var(--color-text-secondary); font: var(--typography-metadata-font); }
+}
+.annotation-style-field {
+  display: grid; gap: var(--spacing); padding-block: var(--spacing); min-width: 0;
+  &__label { font: var(--typography-metadata-font); color: var(--color-text-secondary); }
+  &__value {
+    display: flex; align-items: center; gap: calc(var(--spacing) / 2); min-width: 0;
+    .browser-annotation-editor & input:not([type='color']) { flex: 1; width: 0; min-height: var(--size-control-hit-min); }
+    .browser-annotation-editor & input[type='color'] { flex: none; width: var(--size-color-input); min-width: var(--size-color-input); }
+    button { flex: none; }
+  }
+  &[data-edited] input { border-color: var(--color-text-accent); }
+  small { color: var(--color-text-secondary); font: var(--typography-metadata-font); }
+}
+.browser-annotation-discard { display: flex; flex-wrap: wrap; gap: var(--spacing); p { width: 100%; margin: 0; } }
+.browser-annotation-marker-choices {
+  @include material.surface(menu);
+  position: absolute; top: 35%; left: 50%; transform: translateX(-50%); z-index: 2;
+  display: flex; flex-wrap: wrap; gap: var(--spacing); padding: calc(var(--spacing) * 2);
+  border-radius: var(--radius-xl); pointer-events: auto; max-width: calc(100% - var(--spacing) * 4);
+}
+.browser-annotation-tray {
+  @include material.surface(menu);
+  position: absolute; left: 50%; bottom: calc(var(--spacing) * 3); transform: translateX(-50%);
+  display: flex; align-items: center; justify-content: center; gap: calc(var(--spacing) * 2); flex-wrap: wrap;
+  max-width: calc(100% - var(--spacing) * 4); padding: 4px 4px 4px 12px;
+  border-radius: var(--radius-xl); font: var(--typography-metadata-font); pointer-events: auto;
+  &__saved { display: flex; max-width: 100%; overflow-x: auto; }
+}
+.browser-annotation-layer[data-touch] {
+  .browser-annotation-toolbar { width: calc(100% - var(--spacing) * 6); }
+  .browser-annotation-modebar { width: 100%; box-sizing: border-box; }
+  .browser-annotation-modes { flex: 1; min-width: 0; > button { flex: 1; min-width: 0; padding-inline: var(--spacing); } }
+  .browser-annotation-bar { box-sizing: border-box; }
+  .browser-annotation-bar__hint { white-space: normal; text-align: center; }
+  .browser-annotation-editor__collapse { align-self: flex-end; margin: var(--spacing) calc(var(--spacing) * 2) 0; gap: var(--spacing); }
+  .browser-annotation-editor__header { padding-top: 0; }
+  .browser-annotation-editor__actions { gap: calc(var(--spacing) * 3); padding: calc(var(--spacing) * 2.5) calc(var(--spacing) * 3); > :first-child { flex: none; min-width: 64px; } > :last-child { flex: 1; } }
+}
+[data-annotating='true'] canvas { cursor: crosshair; }
+// Native disclosure fallback is immediate on engines without size interpolation.
+@supports (interpolate-size: allow-keywords) {
+  .browser-annotation-editor details {
+    interpolate-size: allow-keywords;
+    &::details-content { block-size: 0; overflow: clip; transition: block-size var(--transition-duration-basic) var(--ease-enter-snappy), content-visibility var(--transition-duration-basic) allow-discrete; }
+    &[open]::details-content { block-size: auto; }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .browser-annotation-editor { animation: none; details::details-content { transition: none; } }
+}
+:root[data-reduced-motion='true'] .browser-annotation-editor { animation: none; details::details-content { transition: none; } }

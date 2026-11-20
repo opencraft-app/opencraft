@@ -345,6 +345,24 @@ sidebar variant; containers must not stack separate padding on Apps and Settings
 See [shared sidebar reading inset](ui/settings-pages.md#shared-sidebar-reading-inset)
 and the [Workbench design language](../docs/workbench-design-language.md#shared-sidebar-content-inset).
 
+## 触控标签概览
+
+标签数量订阅、资源归属与对账边界见[标签附件目录](invariants/documents-and-resources.md#panel-attachment-directory-and-resource-ownership)。
+
+- 原生滚动与预览定位不能由两个异步时钟分别驱动。保留视图优先使用无损 DOM 移动；顶层兼容呈现支持 CSS Anchor Positioning 时，由浏览器绑定内容及装饰到卡片，JavaScript 只更新缩放、场景几何与裁剪。不支持锚点的旧引擎保留测量兼容路径，不能宣称其具备合成线程同步保证。
+- 底部只保留固定动作槽的完成按钮，不显示工具计数条；工具数量不改变退出动作的位置。
+- 概览是现有面板 owner 的只读投影；插件提供可选 preview/label，新建来源仍为 creationActions。
+- 缩略图不能隐式创建或恢复资源；缓存只驻留内存、受界限约束，并拒绝关闭/换 owner 后的迟到结果。
+- 卡片、筛选、新建 sheet 和底栏消费现有主题与共享控件；原始网页像素不随壳层主题染色。
+- 实现/测试：`panel-tab-overview.tsx`、`PanelPreviewCache`、`tests/shell/panel-preview-cache.test.ts`、`scripts/smoke/shell/smoke-tab-overview.ts`；物理手机仍待用户实测。
+
+## Conversation appearance
+
+Personal conversation icons and colors follow [会话图标](conversation-appearance.md).
+UiPreferences owns persistence by account scope, Host and Thread; presentation never replaces execution status or Agent identity.
+
+## Execution recovery
+
 - Codex execution recovery preserves the existing Conversation and Composer. The
   shared queue shows automatic waiting without a manual Resume action, and the
   Workbench notice owner reports execution failure/recovery without changing the

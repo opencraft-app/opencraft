@@ -144,7 +144,7 @@ test('published v15 upgrades append-only and leaves old execution clock unknown'
   prior.database.exec("INSERT INTO execution_leases(execution_id,thread_id,input_id,generation,turn_id,engine_incarnation,state,admitted_at_ms) VALUES('old','t','A',1,'one','engine','active',1000);");
   const original=prior.database.prepare('SELECT * FROM schema_migrations WHERE version=15').get();prior.database.close();
   const next=new OpenCraftHostStateDatabase(dir);try{
-    assert.equal(next.outcome.appliedVersion,16);assert.deepEqual(next.database.prepare('SELECT * FROM schema_migrations WHERE version=15').get(),original);
+    assert.equal(next.outcome.appliedVersion,17);assert.deepEqual(next.database.prepare('SELECT * FROM schema_migrations WHERE version=15').get(),original);
     const reader=new ExecutionLeaseReader(next.database);
     assert.equal(reader.resolveJobOrigin({threadId:'t',engineIncarnation:'engine',startedAtMs:1100,uncertaintyMs:20,bootId:'boot',startedAtBootMs:1100}).status,'unknown');
   }finally{next.close();}

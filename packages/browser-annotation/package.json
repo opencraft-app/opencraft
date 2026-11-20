@@ -1,0 +1,16 @@
+{
+  "name": "@opencraft/browser-annotation",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@opencraft/browser-core": "0.1.0"
+  }
+}

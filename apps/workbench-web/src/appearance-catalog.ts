@@ -1,6 +1,6 @@
 import type { ResolvedTheme } from "@opencraft/design-system/theme";
 import { opencraftNeutralThemePalette, frostThemePalette, lavenderThemePalette, longingThemePalette,
-  mistThemePalette, opencraftCanvasThemePalette, graphiteThemePalette, type OpenCraftThemeDefinition,
+  porcelainThemePalette, seeThemePalette, mistThemePalette, opencraftCanvasThemePalette, graphiteThemePalette, type OpenCraftThemeDefinition,
 } from "@opencraft/design-system/theme-engine";
 import { builtinThemeIds, normalizeBuiltinThemeId, type WorkbenchPresentation } from "./workbench-presentation";
 
@@ -26,11 +26,13 @@ export const builtinAppearanceThemes: readonly CatalogEntry[] = [
   builtin(builtinThemeIds.lavender, "Lavender", "A soft lavender workspace with a quiet UI palette.", lavenderThemePalette),
   builtin(builtinThemeIds.graphite, "Graphite", "Quiet grayscale layers, crisp controls, and an opaque workspace.", graphiteThemePalette),
   builtin(builtinThemeIds.mist, "Mist", "Close neutral surfaces with a quiet, unified canvas.", mistThemePalette),
+  builtin(builtinThemeIds.see, "See", "Sky, warm light, and soft translucent surfaces.", seeThemePalette),
+  builtin(builtinThemeIds.porcelain, "Porcelain", "White content and soft gray navigation with Longing’s translucent material.", porcelainThemePalette),
 ];
 
 /** Build-time bootstrap and runtime share product visibility/default resolution. */
 export function resolveBuiltinAppearanceCatalog(presentation: Pick<WorkbenchPresentation, "defaultThemeId" | "hiddenBuiltinThemeIds">): readonly CatalogEntry[] {
   const visible = builtinAppearanceThemes.filter(entry => !presentation.hiddenBuiltinThemeIds.includes(entry.descriptor.id));
-  const preferred = visible.find(entry => entry.descriptor.id === normalizeBuiltinThemeId(presentation.defaultThemeId ?? builtinThemeIds.neutral));
+  const preferred = visible.find(entry => entry.descriptor.id === normalizeBuiltinThemeId(presentation.defaultThemeId ?? builtinThemeIds.porcelain));
   return preferred ? [preferred, ...visible.filter(entry => entry !== preferred)] : visible.length ? visible : [builtinAppearanceThemes[0]!];
 }

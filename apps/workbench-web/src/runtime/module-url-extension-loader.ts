@@ -12,7 +12,7 @@ type ExternalExtensionModule = {
   readonly extension?: unknown;
 };
 
-async function assertSelfContained(code: string): Promise<void> {
+export async function assertSelfContained(code: string): Promise<void> {
   const { parse } = await import("acorn");
   const visit = (value: unknown): void => {
     if (!value || typeof value !== "object") return;
@@ -74,6 +74,25 @@ function externalDefinition(value: unknown): {
   };
 }
 
+/** Public capability facade shared by URL and Hands-crafted modules. This is
+ * not a renderer sandbox; installation still requires trusted code. */
+export function publicExtensionDefinition(value: unknown): TrustedExtensionDefinition {
+  const external = externalDefinition(value);
+  const manifest = parseExtensionManifestV1(external.manifest);
+  return {
+    manifest,
+    activate(api: TrustedExtensionApiV1) {
+      const publicApi: OpenCraftExtensionApiV1 = Object.freeze({
+        signal: api.signal, identity: api.identity, storage: api.storage,
+        subscriptions: api.subscriptions, commands: api.commands, settings: api.settings,
+        views: api.views, navigation: api.navigation, sidebar: api.sidebar,
+        workbench: api.workbench, themes: api.themes, bots: api.bots, window: api.window,
+      });
+      return external.activate(publicApi) as ReturnType<TrustedExtensionDefinition['activate']>;
+    },
+  };
+}
+
 export class BrowserModuleUrlExtensionLoader implements ExtensionModuleLoader {
   constructor(
     private readonly baseUrl = window.location.href,
@@ -109,29 +128,10 @@ export class BrowserModuleUrlExtensionLoader implements ExtensionModuleLoader {
     }
     await assertSelfContained(artifact.code);
     const loaded = await this.ports.importArtifact(artifact.code);
-    const external = externalDefinition(loaded.default ?? loaded.extension);
-    const manifest = parseExtensionManifestV1(external.manifest);
+    const definition = publicExtensionDefinition(loaded.default ?? loaded.extension);
     return Object.freeze({
-      manifest,
+      ...definition,
       artifact,
-      activate(api: TrustedExtensionApiV1) {
-        const publicApi: OpenCraftExtensionApiV1 = Object.freeze({
-          signal: api.signal,
-          identity: api.identity,
-          storage: api.storage,
-          subscriptions: api.subscriptions,
-          commands: api.commands,
-          settings: api.settings,
-          views: api.views,
-          navigation: api.navigation,
-          sidebar: api.sidebar,
-          workbench: api.workbench,
-          themes: api.themes,
-          bots: api.bots,
-          window: api.window,
-        });
-        return external.activate(publicApi) as ReturnType<TrustedExtensionDefinition["activate"]>;
-      },
     });
   }
 }

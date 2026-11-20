@@ -4,18 +4,45 @@
 
 ## Browser reconnect outbox
 
+Delivery uncertainty is owned by the conversation runtime, not by connection
+status. An authoritative history or queue without a message is not a negative
+receipt: pages may be partial and an earlier admission may still complete.
+Reconnect, idle Turns and queue refresh never turn unknown into failed. Only
+exact positive client-message evidence resolves an uncertain admission
+automatically. No new server cancellation or negative-receipt capability is
+assumed.
+
+The explicit `abandonUnknownSubmission` command releases local waiting custody
+and its conversation fence. It makes no claim that the original was cancelled
+or not received: the message may still appear later. It performs no transport
+write and never resends the abandoned input. The runtime rejects reuse of that
+command or client-message identity for its lifetime. Persisted outbox custody
+is removed before the fence is released; a storage failure retains it. Generic
+remove and failed retry cannot abandon unknown. A UI invoking abandonment must
+explain that delivery remains uncertain and the original may still arrive;
+server steering withdrawal remains its separate existing capability.
+
+A definitive failed outbox row remains visible but does not block subsequent
+independent waiting inputs. Unknown and sending rows still fence the remaining
+FIFO. Explicit `retryQueuedSubmission` accepts only a failed local outbox row,
+persists it at the tail with its unchanged delivery identity, and then wakes
+the drain. Connection wakeups never retry a failed row. Failed storage commits
+stop dispatch rather than let an unpersisted transition cross the transport.
+
 An undispatched submission retains the originating error message and cause when
 the adapter classifies it for retry. The generic connection-waiting message is
 only a fallback when no originating error exists; tool or queue preparation
 failures must not be relabeled as connection failures. Classification and retry
 delays remain independent of the displayed message.
 
-An existing online text submission can also enter this outbox after a structured
+An existing online text submission, including a next-turn enqueue, can also enter this outbox after a structured
 Host tool-preparation rejection proves it was never dispatched and explicitly
 marks the reason retryable. The local owner must persist the unchanged intent
 before releasing its failed optimistic row, then transfer the same message ID
 to the Host queue. A queue-admission rejection may schedule a bounded retry while
-ready; disconnect, disposal or scope replacement fences that wakeup. Positive
+ready. The head command owns a retry-not-before deadline: Replica wakeups cannot
+shorten it, and a replacement head does not inherit it. Disconnect, disposal or
+scope replacement fences that wakeup. Positive
 server queue custody supersedes a matching local row during acknowledgement
 handoff, so the Composer renders each input once. Unknown delivery, permanent
 configuration errors, creation and explicit steering retain their existing
@@ -34,10 +61,12 @@ the draft. New Thread creation still requires a connection. Native/embedded
 consumers without this port retain their existing admission behavior.
 
 A ready connection alone does not consume a draft. The Web submit boundary
-checks that the same command and client message identity is already published
-in the target conversation's pending or queued submissions; otherwise it awaits
-admission, retaining the draft if identity restoration, hydration or persistence
-fails. Already owned online submissions release the editor before remote ACK.
+awaits a local-persistence or Host admission receipt matching the command,
+client message and target conversation identities. Optimistic pending/queued
+projection is presentation, not proof of custody. Until that receipt arrives,
+the Composer retains the draft, including attachment/context handles; identity,
+preparation or persistence failures cannot silently clear it. Unknown outcomes
+retain their existing reconciliation policy and are never blindly replayed.
 An unchanged failed retry keeps its delivery identity even when EditorView
 serializes an equivalent document again, while settlement uses the current draft.
 
@@ -102,6 +131,19 @@ Application, without changing the refresh persistence limits below.
 
 ## Browser-local input drafts
 
+Native channel chat uses the same Composer submission settlement as task chat.
+A receipt in `sending` state already means the native channel owns external
+delivery; waiting for the external provider would restore an already accepted
+message into the input. Image-only sends return an attachment acceptance to the
+Composer, which removes only matching submitted assets on the original draft.
+Unsent text, quotes, other attachments and later edits remain available. The
+consumer must not mutate the draft before returning acceptance. This is draft
+custody, not a new transport or a claim that an external provider delivered it.
+When the write response is lost, the channel client queries the existing native
+delivery receipt with the original client message ID before restoring input.
+This bounded read never replays a write. Missing confirmation preserves the
+draft and retry identity; revoked views or explicit denial cannot adopt a receipt.
+
 `ComposerStoreServices.drafts` is a platform-neutral content storage port;
 the persistent browser adapter uses shared local documents for Bot input without
 server or device synchronization. `BrowserComposerDrafts` remains the legacy
@@ -153,7 +195,7 @@ reload restoration are not implemented. Expired Object URLs and unfinished attac
 failed removable cards asking the user to re-add the file, never as ready files.
 Storage corruption, denial or quota failures retain in-memory editing; diagnostics
 do not log content. Mounted Views do not subscribe to cross-tab changes.
-Tests: `tests/chat/chat-browser-drafts.test.ts`, `npm run smoke:browser-drafts`.
+Tests: `tests/chat/chat-browser-drafts.test.ts`.
 
 Thread identity, execution activation, capability leases and revocation follow
 the [execution ownership contract](../../execution-ownership.md), including its
@@ -165,7 +207,7 @@ Conversation Scope 是会话身份，View 是具体窗口或页面的呈现与�
 
 `recovery-policy.ts` 中的 `ConversationReturnProbe` 统一短暂离开、较长前台恢复和断网恢复的触发条件。iOS 把 AppState/Expo Network 事件交给它，Web/Electron 把 visibility/online 事件交给它；真正的追平仍调用当前 Thread lease 的 `retryRestore()`。追平不创建新会话，不重置可读历史。已经显示的内容是否权威，仍由 Replica/Session 决定。
 
-手机、iPad、折叠屏和桌面共享上述身份及状态转换。屏幕宽度、安全区、键盘和指针决定各自布局，不决定另一套业务流程。V3 ThreadView 的 revision/epoch 属于连接代次，不能把它写进持久 Replica 检查点。`ConversationDisplayContinuity` 只从权威时间线保存有界的用户消息与回答文本，包括进行中已收到的文字、过程说明及推理摘要；冷启动重建 `painted / authoritative: false` 的只读 Timeline 供两端原有渲染器展示，当前 Host 恢复后整体替换。工具、审批、附件、交互以及 Replica 游标不进入展示缓存，不能从该缓存授权发送或其他操作。缓存按账号、Bot/Host 和 Thread 分区，并在退出登录时清除。
+手机、iPad、折叠屏和桌面共享上述身份及状态转换。屏幕宽度、安全区、键盘和指针决定各自布局，不决定另一套业务流程。V3 ThreadView 的 revision/epoch 属于连接代次，不能把它写进持久 Replica 检查点。`ConversationDisplayContinuity` 只从权威时间线保存有界的消息呈现数据：用户消息（包括同轮 steering 输入、原始 content 与附件描述）、回答、异步问题语义、过程说明及推理。缓存保留原始顺序、类型与分段边界，不把问题改成普通回答，也不截断 Markdown 或回复信封。冷启动重建 `painted / authoritative: false` 的只读 Timeline，复用两端原有呈现器；消息及问题状态来自同一共享推导。工具执行体、审批、可执行交互与 Replica 游标不进入展示缓存，附件描述和问题元数据也不能授权发送、回答或其他操作。V2 拒绝旧版有损文本摘录；单条消息完整保留，超出容量则按旧 Turn 淘汰，不切碎内容。缓存按账号、Bot/Host 和 Thread 分区，并在退出登录时清除。
 
 会话定位共享 Turn 身份、最小时间线 revision 和对齐意图。Web 与 Native 都先挂载目标 Turn，等平台实测高度进入虚拟布局后才滚动；用户接管或 View 卸载会取消等待。两端用户消息使用共享 `getTimelineUserMessageTargetKey` 的 Item 锚点；Web 注册 DOM，Native 注册当前挂载行的局部布局。投影确定目标不存在时返回 unavailable；目标存在但尚未测量时继续等待，不能用经过几帧或整条 Turn 的估计位置冒充精确命中。Native 行高度是否已测量与项内锚点是否已注册是独立事实。
 
@@ -771,19 +813,21 @@ the active Turn's aggregate duration.
 A provisional history window can regroup or omit cached messages. After exact
 message metadata is merged, a preview that still loses a known cached date,
 completed interval or static duration keeps the previous display until authority.
-A compatible preview can update its text immediately; authoritative history can
+A preview also cannot discard known reasoning, async delivery/questions or user input structure. A compatible preview can update its text immediately; authoritative history can
 always replace the display and correct or remove clocks. This selection is
 account/Host/Thread scoped and never grants execution authority.
 
 A completed history may provide only aggregate duration, without observed work
 start/end clocks. The shared presenter retains a previously visible aggregate label through
-paint-only displayDurationMs when tool/reasoning bodies were omitted. Hidden
+paint-only displayDurationMs when tool bodies were omitted. Hidden
 activity cannot acquire a label on reload merely because Turn duration exists. Web and Expo render a
 static label and the same full-width rule/header geometry as completed history,
 without inventing a work interval or an empty disclosure. The static header has
 no disclosure button or chevron; authoritative work bodies restore that action.
 An active Turn's aggregate duration is still not persisted.
 
+
+Question cards and their styles load with the transcript renderer. The initial paint must not substitute a plain title for the resolved card and later change the height. Cold/reload acceptance includes an answered async question and its inline steering reply, with history held until the cached body is inspected.
 
 ## Inherited Fast status in compact input
 
@@ -843,6 +887,49 @@ that editor; keyboard entry returns to its thumbnail. Stale draft cleanup never
 focuses a replacement editor. Embedded consumers supply their presentation root
 through the existing Composer portal container.
 
+## Attachment preparation and transfer feedback
+
+AttachmentPreviewSession owns transient transfer progress alongside the File,
+object URL and attempt AbortController. It does not persist byte counters in the
+Draft or create a second upload owner. Resolver progress callbacks are fenced by
+draft/attachment/job identity and current attempt; retry, replacement, removal and
+disposal retire old callbacks. Reconnection resets progress to unknown before a
+fresh upload starts. Completion and failure release progress without delaying
+semantic readiness for animation.
+
+The physical WebSocket owner accounts for every serialized send in one FIFO ledger.
+Per-request observations sample local queue drain at 50ms only while observed writes
+remain. UTF-8 framing bytes are projected proportionally to file bytes as a bounded
+sending estimate; these observations do not establish peer receipt. Unobserved
+chat/control writes are included in queue accounting, not attributed to attachments.
+Callbacks never cross the AppHost wire or native MessagePort. Cancellation/retirement
+removes observations; obsolete request and chunk callbacks cannot update progress.
+
+The chunk uploader still validates server acknowledgements and only the committed
+AttachmentRef makes the attachment ready. A locally drained final chunk displays
+a full ring with "Processing…" while waiting for that ref. Virtual/native adapters
+without a byte counter fall back to acknowledged progress. Legacy staging has no
+measurable intermediate progress. Inline image compression and encoding remain
+indeterminate preparation, not network upload. Browser counters may themselves be
+coarse; no timer invents future bytes or delays semantic completion.
+
+The shared ProgressIndicator renders determinate SVG arcs with the existing basic
+transition token and the document-synchronized rotating ring. Reduced motion
+disables both transitions and rotation. Composer owns accessible labels and values;
+progress is decorative inside that boundary.
+
+Feedback occupies the existing thumbnail/icon and metadata slots. Image retry
+does not expand the tile; file errors replace metadata rather than append a row.
+Cancel/remove remain independent controls. Theme colors and shared typography
+continue to come from the attachment surface.
+
+Verification: attachment ownership, acknowledged-byte progress, reconnect and
+legacy resolver tests; actual Composer fixture at 390/1280, neutral/frost
+light/dark, reduced motion, touch and keyboard retry, completion and stable bounds.
+Smoke: scripts/smoke/composer/smoke-upload-progress.ts. Includes real browser
+WebSocket queue-drain with deliberately withheld server confirmation, plus held
+resolver states. This is not a physical-phone or production-upload check.
+
 ## Optional browser image editing
 
 The trusted `imageEditor` contribution supplies a View through `ImageEditorContext`.
@@ -893,7 +980,7 @@ current native registry before loading instructions or admitting inference.
 
 ## Local document persistence and offline restoration
 
-Conversation draft continuity and Bot Composer draft storage share the platform
+Conversation draft continuity uses the platform
 client-resource adapter while retaining their independent existing input owners.
 Web/PWA uses IndexedDB; Electron uses named Main SQLite ports. Async hydration
 only replaces untouched initial content. Accepted write is the custody boundary;
@@ -965,7 +1052,10 @@ A created Thread, an attempted first input, a native acceptance receipt and a
 persisted transcript are distinct facts. The local Codex Host records positive
 creation evidence before returning its acknowledgement. A replacement Host may
 restore that exact empty creation only while no first input was attempted, the
-native process still lists the same loaded identity, and no rollout exists.
+native process still lists the same loaded identity, and no rollout exists or
+the native-written rollout contains only that identity’s allocation metadata.
+Paginated allocations must also confirm their Native-owned empty index; metadata
+file existence alone is not index readiness.
 Legacy or missing evidence, an uncertain send and accepted/persisted history do
 not qualify for an empty-history fallback. The existing generation route remains
 bound to the original native identity. Recovery also requires the original
@@ -977,8 +1067,13 @@ applies; only created/attempted input protects the provisional context.
 
 Creation-time MCP credentials retain their original endpoint and persistent
 Thread binding across a managed listener replacement. They bind once to the
-first attested execution; listing or recovering a creation never authorizes a
-tool call. A first-Turn dispatch retires empty-history eligibility before the
+first attested execution only while the live installed creation environment is
+still confirmed. For managed execution environments, after Host replacement or
+an uncertain configuration handoff,
+creation provenance cannot restore that confirmation: the current admitted
+execution must safely refresh its environment and tools, or preparation rejects
+without dispatch. Listing or recovering a creation never authorizes a tool call.
+A first-Turn dispatch retires empty-history eligibility before the
 native write. The Composer keeps its Draft until native acceptance; unknown
 outcomes still require positive message acknowledgement rather than replay.
 
@@ -1005,6 +1100,61 @@ while preserving non-text input entries. The existing user-message document
 renderer supplies the quote rail, with the user's following request outside it.
 Acknowledgement and reopening history retain the same quote boundary; they do
 not add a second quote block or fabricate a link to the source message.
+
+### Acceptance is independent of projection refresh
+
+A matching submission receipt releases the original input immediately. The
+Workbench pipeline schedules post-acceptance list invalidation separately; slow
+or failed reads cannot delay the receipt, turn acceptance into failure, or make
+the editor retain already accepted text and attachment cards. Diagnostics for
+that refresh contain no input content.
+
+The Web editor settles through the Composer controller using the submitting
+Draft identity and immutable content, including when that target is cached.
+Its pending input lock belongs to that Draft, not every Draft on the Controller.
+A late result cannot clear another target or newer content, and navigation must
+not receive focus from the old submission. Failed admission retains original
+text and attachments. Local action consumption remains its separate contract.
+Browser regression: `smoke-composer-acceptance` holds list refresh indefinitely
+and exercises two attachments, acceptance, target switching and rejection with
+both touch and mouse input against the real editor and pipeline.
+
+Submission settlement compares immutable document, attachment and context values,
+not their JavaScript object identities. An editor/IME serialization or an equal
+attachment refresh does not create new user input and cannot prevent an accepted
+Draft from clearing. Draft identity, target and submitting lifecycle still fence
+late receipts; genuinely changed content remains editable. The acceptance browser
+smoke includes equal reserialization while a receipt is pending.
+
+### Admission proof survives a lost RPC response
+
+The Conversation Runtime settles admission from either its command receipt or
+an authoritative Replica user Item / server queue entry carrying the exact
+client message identity. It returns the same submission receipt to the existing
+Workbench/Composer boundary; the View does not infer acceptance from a painted
+bubble. Cached Replica content, Turn input hints, assistant Items and equal text
+are insufficient proof. Steer Items must belong to their targeted Turn. A late
+RPC failure cannot reverse proven Host custody or revive consumed queue input.
+Observers use the Runtime's existing subscription lifecycle and are removed on
+settlement/disposal. A receipt from the RPC still settles normally when no
+Replica proof has arrived. This does not cancel the underlying RPC or replay it.
+
+### One visible input during the outgoing handoff
+
+Composer snapshot `input` is the editable projection; `draft` retains the exact
+submitted content until its existing custody receipt settles. Entering
+`submitting` synchronously makes `input` empty, including attachment/context
+presentation, before the optimistic timeline can paint the same message.
+This changes presentation, not delivery evidence: no optimistic bubble can
+establish acceptance. Rejection restores the original content and, in the same
+physical editor generation, its selection/history. Success retires the retained
+Draft normally. Native/IME document mutations during this pending projection
+cannot overwrite recovery content. No timer or network-speed assumption gates
+the handoff. Browser smoke samples every painted submitting frame from before
+Send while the receipt is held, with both touch and mouse input.
+
+
+Follow-up custody and exact Turn termination now follow the shared [input delivery lifecycle](input-delivery-lifecycle.md). A Host custody receipt acknowledges reception independently of native context evidence; closed attempts remain visible without blocking later explicit input. Local outbox attempts without a Host receipt retain the reconciliation rules above.
 
 
 ## Chunk upload recovery and measured preparation

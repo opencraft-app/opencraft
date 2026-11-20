@@ -1,4 +1,6 @@
+import { CodexAccountOperationError, parseAccountFailure } from "./account-diagnostics.js";
 import { request } from "node:http";
+import { Readable } from 'node:stream';
 import { isAbsolute } from "node:path";
 import type { createCodexAccountPoolLaunch } from "./codex-launch.js";
 
@@ -15,6 +17,8 @@ export interface CodexCoreHealth {
   readonly generationId?: string;
   readonly admissionEpoch?: number;
   readonly environmentVariablesVersion?: 1;
+  /** Strict private Gateway placement admission, checked for the actual target generation. */
+  readonly workspaceExecutionVersion?: 1;
   readonly environmentRoutingVersion?: 1;
   readonly callbackProtocolVersion?: 1;
   readonly orchestrationRoutingVersion?: 1;
@@ -65,7 +69,7 @@ export interface CodexGenerationDirectory {
 }
 
 /** Temporary control-plane outage; callers may wait before starting execution. */
-export class CodexCoreUnavailableError extends Error {}
+export class CodexCoreUnavailableError extends Error { override name = "CodexCoreUnavailableError"; }
 class CodexCoreHttpError extends Error {
   constructor(readonly status: number, message: string) { super(`Codex core request failed: ${message}`); }
 }
@@ -77,11 +81,34 @@ export class CodexExecutionUnavailableError extends CodexCoreUnavailableError {
 
 /** Local authenticated control plane. Requests are never retried: mutations may have committed. */
 export class CodexCoreControlClient {
+  // Pin identity only, never a health result or a directory snapshot. Every read
+  // still asks the authenticated owner for current routes and incarnations.
+  private directoryEpoch: string | undefined;
   private healthFlight: { operation: Promise<CodexCoreHealth>; controller: AbortController;
     readers: number; settled: boolean; observation: "execution" | "native" } | null = null;
   constructor(private readonly endpoint: string, private readonly authToken: string) {
     if (!isAbsolute(endpoint)) throw new Error("Codex core endpoint must be an absolute Unix socket path");
     if (!authToken) throw new Error("Codex core requires the daemon authentication token");
+  }
+
+  /** Streams one private subscription call through the existing authenticated
+   * Unix socket. The account proxy remains the credential and quota owner. */
+  async subscriptionRequest(input:Request):Promise<Response> {
+    const path=new URL(input.url).pathname;
+    if(!/^\/personal\/[a-f0-9]{64}\/v1\/(responses|models)$/.test(path))throw Error('Invalid subscription route');
+    return new Promise((resolve,reject)=>{
+      const headers:Record<string,string>={authorization:'Bearer '+this.authToken,
+        'x-opencraft-subscription-token':input.headers.get('authorization')?.replace(/^Bearer /,'')??''};
+      if(input.headers.has('content-type'))headers['content-type']=input.headers.get('content-type')!;
+      const outgoing=request({socketPath:this.endpoint,path,method:input.method,headers,signal:input.signal},incoming=>{
+        const responseHeaders=new Headers();
+        for(const [key,value]of Object.entries(incoming.headers))if(value!==undefined&&!['connection','transfer-encoding','keep-alive'].includes(key))responseHeaders.set(key,Array.isArray(value)?value.join(', '):value);
+        resolve(new Response(Readable.toWeb(incoming) as ReadableStream<Uint8Array>,{status:incoming.statusCode??502,headers:responseHeaders}));
+      });
+      outgoing.on('error',reject);
+      if(input.body)Readable.fromWeb(input.body as import('node:stream/web').ReadableStream).on('error',error=>outgoing.destroy(error)).pipe(outgoing);
+      else outgoing.end();
+    });
   }
 
   async health(signal?: AbortSignal, observation: "execution" | "native" = "execution"): Promise<CodexCoreHealth> {
@@ -193,20 +220,32 @@ export class CodexCoreControlClient {
 
   /** A read never claims the Host lease or starts a retired native HOME. Legacy owners return null. */
   async generationDirectory(threadId?: string, signal?: AbortSignal): Promise<CodexGenerationDirectory | null> {
-    const health = await this.health(signal, "native");
-    if (!health.routingEpoch) return null;
-    const path = "/generation-directory" + (threadId === undefined ? "" : `?threadId=${encodeURIComponent(threadId)}`);
-    const value = await this.request("GET", path, undefined, signal) as CodexGenerationDirectory | null;
-    if (value?.routingEpoch !== health.routingEpoch) throw new CodexCoreUnavailableError("Codex routing owner changed during directory read");
-    if (value.protocolVersion !== CODEX_CORE_PROTOCOL_VERSION || !Number.isSafeInteger(value.admissionEpoch) || value.admissionEpoch < 1
-      || !Array.isArray(value.homes) || !value.homes.every(home => home && typeof home.generationId === "string"
-        && typeof home.codexHome === "string" && isAbsolute(home.codexHome) && Number.isSafeInteger(home.incarnation) && home.incarnation >= 0)
-      || new Set(value.homes.map(home => home.generationId)).size !== value.homes.length
-      || new Set(value.homes.map(home => home.codexHome)).size !== value.homes.length
-      || (value.route !== null && (!value.route || value.route.threadId !== threadId || !value.homes.some(home => home.generationId === value.route!.generationId)))) {
-      throw new Error("Incompatible Codex generation directory");
+    let epoch = this.directoryEpoch;
+    if (epoch === undefined) {
+      const health = await this.health(signal, "native");
+      if (!health.routingEpoch) return null;
+      epoch = health.routingEpoch;
+      this.directoryEpoch = epoch;
     }
-    return value;
+    const path = "/generation-directory" + (threadId === undefined ? "" : `?threadId=${encodeURIComponent(threadId)}`);
+    try {
+      const value = await this.request("GET", path, undefined, signal) as CodexGenerationDirectory | null;
+      if (value?.routingEpoch !== epoch) throw new CodexCoreUnavailableError("Codex routing owner changed during directory read");
+      if (value.protocolVersion !== CODEX_CORE_PROTOCOL_VERSION || !Number.isSafeInteger(value.admissionEpoch) || value.admissionEpoch < 1
+        || !Array.isArray(value.homes) || !value.homes.every(home => home && typeof home.generationId === "string"
+          && typeof home.codexHome === "string" && isAbsolute(home.codexHome) && Number.isSafeInteger(home.incarnation) && home.incarnation >= 0)
+        || new Set(value.homes.map(home => home.generationId)).size !== value.homes.length
+        || new Set(value.homes.map(home => home.codexHome)).size !== value.homes.length
+        || (value.route !== null && (!value.route || value.route.threadId !== threadId || !value.homes.some(home => home.generationId === value.route!.generationId)))) {
+        throw new Error("Incompatible Codex generation directory");
+      }
+      return value;
+    } catch (error) {
+      // A successor must establish its own identity. Do not let an old failed
+      // request clear an identity established by a newer request.
+      if (this.directoryEpoch === epoch) this.directoryEpoch = undefined;
+      throw error;
+    }
   }
 
   private request(method: string, path: string, payload?: unknown, signal?: AbortSignal): Promise<unknown> {
@@ -225,6 +264,10 @@ export class CodexCoreControlClient {
         res.on("end", () => {
           try {
             const value = JSON.parse(response);
+            if (path === "/accounts" && res.statusCode !== 200) {
+              const diagnostic = parseAccountFailure(value?.diagnostic);
+              if (diagnostic) throw new CodexAccountOperationError(diagnostic);
+            }
             if (res.statusCode === 503) {
               if (value?.code === "EXECUTION_ENVIRONMENT_UNAVAILABLE") throw new CodexExecutionUnavailableError(
                 value.executionStatus === "pending" || value.executionStatus === "disconnected" ? value.executionStatus : "unknown");
@@ -232,7 +275,7 @@ export class CodexCoreControlClient {
             }
             if (res.statusCode !== 200) throw new CodexCoreHttpError(res.statusCode ?? 0, typeof value?.error === "string" ? value.error : `HTTP ${res.statusCode}`);
             resolve(value);
-          } catch (error) { reject(error instanceof CodexCoreUnavailableError || error instanceof CodexCoreHttpError ? error
+          } catch (error) { reject(error instanceof CodexCoreUnavailableError || error instanceof CodexAccountOperationError || error instanceof CodexCoreHttpError ? error
             : new Error(`Codex core request failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error })); }
         });
       });

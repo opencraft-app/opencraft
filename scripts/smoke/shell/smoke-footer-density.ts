@@ -61,7 +61,7 @@ try {
       assert.equal(metrics.height, expectedTouch ? 44 : 36);
       assert.equal(metrics.icon, expectedTouch ? 24 : 20);
       assert.equal(metrics.padding, expectedTouch ? "12px" : "4px");
-      assert.equal(metrics.trackHeight, expectedTouch ? 68 : 44);
+      assert.ok(metrics.trackHeight >= (expectedTouch ? 68 : 44), "pinned destinations may wrap without shrinking touch targets");
       assert.equal(metrics.footerHeight, expectedTouch ? 68 : 44);
       assert.ok(metrics.footerControls.length >= 2 && metrics.footerControls.every(control => control.width === (expectedTouch ? 44 : 36) && control.height === (expectedTouch ? 44 : 36)));
       assert.equal(metrics.gap, expectedTouch ? "8px" : "4px");

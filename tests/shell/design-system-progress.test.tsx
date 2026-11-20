@@ -15,3 +15,15 @@ test("shared progress has a stable decorative vector and caller-owned status", (
   assert.match(html, /d="M12 5a7 7 0 1 1-7 7"/);
   assert.doesNotMatch(html, /role="status"|aria-live|style=|tabindex/i);
 });
+
+
+test("invalid progress dimensions use finite positive geometry", () => {
+  for (const size of [NaN, Infinity, -1, 0]) {
+    const html = renderToStaticMarkup(<ProgressIndicator size={size} value={0.5} />);
+    assert.match(html, /width="24" height="24"/);
+    assert.doesNotMatch(html, /NaN|Infinity|width:-/);
+  }
+  const html = renderToStaticMarkup(<ProgressIndicator size={32} value={2} />);
+  assert.match(html, /width="32" height="32"/);
+  assert.match(html, /stroke-dasharray="1 1"/);
+});

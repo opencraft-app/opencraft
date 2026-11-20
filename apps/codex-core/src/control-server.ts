@@ -3,11 +3,13 @@ import { chmod, mkdir, stat, unlink } from "node:fs/promises";
 import { createServer, type IncomingMessage } from "node:http";
 import { dirname } from "node:path";
 import type { Socket } from "node:net";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { removeStaleSocket } from "./native-process.js";
 
 /** Authenticated local control only. Closing drains accepted account mutations. */
 export async function startControlServer(endpoint: string, token: string,
-  handle: (request: IncomingMessage) => Promise<{ status: number; value: unknown }>) {
+  handle: (request: IncomingMessage) => Promise<{ status: number; value: unknown } | Response>) {
   await mkdir(dirname(endpoint), { recursive: true, mode: 0o700 });
   if (((await stat(dirname(endpoint))).mode & 0o077) !== 0) throw new Error("Codex socket directory must be private");
   await removeStaleSocket(endpoint);
@@ -30,13 +32,19 @@ export async function startControlServer(endpoint: string, token: string,
     response.once("close", finishResponse);
     const operation = (async () => {
       const supplied = Buffer.from(request.headers.authorization ?? ""), expected = Buffer.from(`Bearer ${token}`);
-      let result: { status: number; value: unknown };
+      let result: { status: number; value: unknown } | Response;
       if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
         result = { status: 401, value: { error: "Codex core authentication failed" } };
       } else if (closing) result = { status: 503, value: { error: "Codex service is closing" } };
       else {
         try { result = await handle(request); }
         catch { result = { status: 503, value: { error: "Codex service unavailable" } }; }
+      }
+      if(result instanceof Response) {
+        response.writeHead(result.status,Object.fromEntries(result.headers));
+        if(result.body)await pipeline(Readable.fromWeb(result.body as import('node:stream/web').ReadableStream),response);
+        else response.end();
+        return;
       }
       response.writeHead(result.status, { "content-type": "application/json", "cache-control": "no-store" });
       response.end(JSON.stringify(result.value));

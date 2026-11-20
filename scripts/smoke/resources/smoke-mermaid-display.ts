@@ -56,7 +56,24 @@ try {
     assert.match(await page.evaluate(() => navigator.clipboard.readText()), /```mermaid\nflowchart LR/);
     const expand = page.locator('[data-diagram="login"] [aria-label="Expand Mermaid diagram"]');
     await expand.click();
-    await page.locator("dialog[open] .chat-mermaid-preview__diagram > svg").waitFor();
+    const preview = page.locator("dialog[open] .chat-mermaid-preview__diagram .opencraft-zoomable-image");
+    await preview.locator("img").evaluate(async (image: HTMLImageElement) => image.decode());
+    await page.waitForTimeout(100);
+    const fitted = await preview.evaluate(element => {
+      const box = element.getBoundingClientRect(), image = element.querySelector("img")!.getBoundingClientRect();
+      return { fits: image.left >= box.left - 1 && image.right <= box.right + 1 && image.top >= box.top - 1 && image.bottom <= box.bottom + 1 };
+    });
+    assert.ok(fitted.fits, "The complete diagram initially fits the shared preview");
+    await preview.evaluate(element => {
+      const box = element.getBoundingClientRect();
+      element.dispatchEvent(new WheelEvent("wheel", { ctrlKey: true, deltaY: -50, clientX: box.x + box.width / 2, clientY: box.y + box.height / 2, bubbles: true, cancelable: true }));
+    });
+    await page.waitForFunction(() => {
+      const element = document.querySelector("dialog[open] .opencraft-zoomable-image img");
+      if (!element) return false;
+      const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform); return Math.hypot(matrix.a, matrix.b) > 1.5;
+    }, undefined, { timeout: 3000 });
+    await page.screenshot({ path: `${output}/${theme}-preview-zoomed.png` });
     await page.getByRole("button", {name:"Close Mermaid preview"}).click();
     // Closed diagrams survive prose updates and completion without a blank frame.
     await page.evaluate(() => {

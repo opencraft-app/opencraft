@@ -3,7 +3,8 @@ import { OPENCRAFT_DESKTOP_ATTACH, OPENCRAFT_DESKTOP_RELEASE, OPENCRAFT_DESKTOP_
 import { asConversationScopeId, type ConversationBindingStore, type HostRuntimeRegistry,
   type AppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
 import { desktopTargetKey, type DesktopAttachment, type DesktopBackend, type DesktopTarget } from "@opencraft/plugin-cloud-desktop/contract";
-import { createRfbDesktopAdapter, type RfbDesktopAdapter } from "@opencraft/plugin-cloud-desktop/rfb";
+import type { RfbDesktopAdapter } from "@opencraft/plugin-cloud-desktop/rfb";
+import { createDeferredDesktopMedia } from "./deferred-desktop-media";
 import { createDesktopWireSession } from "@opencraft/plugin-cloud-desktop/session-wire";
 import { combineAbortSignals } from "@opencraft/appserver-client/transport";
 
@@ -29,7 +30,7 @@ export class HostDesktopBackend implements DesktopBackend {
     readonly media?: RfbDesktopAdapter;
     readonly openSocket?: (url: string) => WebSocket;
   }) {
-    this.media = options.media ?? createRfbDesktopAdapter();
+    this.media = options.media ?? createDeferredDesktopMedia();
     this.surfaces = this.media.surfaces;
     this.unsubscribers.push(options.bindings.subscribe(() => this.changed()));
     this.unsubscribers.push(options.registry.subscribe(() => this.watchRuntimes()));

@@ -36,11 +36,11 @@ try {
     args: ["--no-sandbox"],
   });
   const errors: string[] = [];
-  for (const width of [390, 1200]) for (const theme of ["light", "dark"]) {
+  for (const width of [390, 1200]) for (const theme of ["light", "dark", "custom"]) {
     const page = await browser.newPage({ viewport: { width, height: 1100 }, reducedMotion: "reduce", hasTouch: width === 390, isMobile: width === 390 });
     page.on("pageerror", error => errors.push(error.message));
     await page.addInitScript({ content: `Object.defineProperty(navigator, "clipboard", { value: { async writeText(text) { document.documentElement.dataset.copied = text; } } });` });
-    await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}/${theme === "dark" ? "?dark" : ""}`, { waitUntil: "domcontentloaded" });
+    await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}/${theme === "light" ? "" : "?" + theme}`, { waitUntil: "domcontentloaded" });
     const example = (id: string) => page.locator(`[data-case="${id}"]`);
     await example("bridge-admission").getByText("Accepted; context not yet confirmed", { exact: true }).waitFor();
     assert.equal(await example("bridge-unknown").getByText("Delivery unconfirmed", { exact: true }).count(), 1);
@@ -94,6 +94,24 @@ try {
     await page.waitForFunction(() => document.documentElement.dataset.opened === "file:///workspace/index.ts");
     await example("context").getByRole("button", { name: "/review", exact: true }).click();
     await page.waitForFunction(() => document.documentElement.dataset.opened === "file:///skills/review/SKILL.md");
+    for (const id of ["mention-pending", "mention-restored", "mention-legacy"]) {
+      const mention = example(id).getByRole("link");
+      assert.equal(await mention.getAttribute("href"), "opencraft://conversation/v1/server/thread", "conversation identity survives resource policy");
+      assert.equal(await mention.getAttribute("data-chat-resource-kind"), "app-route");
+      assert.equal(await mention.innerText(), id === "mention-legacy" ? "@修复会话存档报错" : "@修复会话存档报错 [复查] `版本` 👋");
+      assert.equal(await mention.evaluate(element => getComputedStyle(element).fontFamily), await mention.evaluate(element => getComputedStyle(element.parentElement!).fontFamily), "mentions use prose typography");
+      assert.equal(await mention.locator("code").count(), 0);
+      const colors = (element: Element) => { const style = getComputedStyle(element); return [style.color, style.backgroundColor]; };
+      assert.deepEqual(await mention.evaluate(colors), await example("mention-composer").locator(".opencraft-composer-token").evaluate(colors), "sent mentions match Composer theme tokens");
+      if (width === 390) await mention.tap();
+      else { await mention.focus(); await page.keyboard.press("Enter"); }
+      await page.waitForFunction(() => document.documentElement.dataset.opened === "opencraft://conversation/v1/server/thread");
+    }
+    assert.equal(await example("mention-code").locator("a").count(), 0, "code examples are never converted into mentions");
+    assert.match(await example("mention-code").innerText(), /Referenced conversation: 原样代码/);
+    assert.equal(await example("ordinary-link").locator(".chat-conversation-mention").count(), 0, "a label alone cannot create a conversation reference");
+    assert.equal(await example("ordinary-link").getByRole("link").innerText(), "Referenced conversation: 普通网站");
+    await example("mention-legacy").screenshot({ path: `${output}/conversation-mention-${width}-${theme}.png` });
     assert.equal(await example("failed").locator("[data-status-kind=failed]").count(), 1);
     for (const id of ["sending", "steer-pending", "steer-accepted", "steer-cancelled", "steer-declined"]) {
       assert.equal(await example(id).locator(".thread-user-message__status-row").count(), 0, id);
@@ -127,7 +145,7 @@ try {
     await page.close();
   }
   assert.deepEqual(errors, []);
-  console.log("PASS: four user-message rendering scenarios; wrapped Goal/review, copy, empty/status/attachment visibility, file/context navigation, image viewer and sender ownership");
+  console.log("PASS: user-message mouse/touch and light/dark/custom scenarios; pending/restored conversation mentions, wrapped Goal/review, copy, empty/status/attachment visibility, file/context navigation, image viewer and sender ownership");
 } finally {
   await browser?.close();
   await vite.close();

@@ -5,10 +5,15 @@ import { join } from "node:path";
 import { openManagedDatabase, sqliteTransaction, SqliteLifecycleError, durableJson, assertRecoveryState } from "@opencraft/sqlite-node";
 import { SERVER_LEGACY_MIGRATIONS, serverLegacyOptions, type ServerStoreId } from "./legacy.js";
 
-import { SERVER_MIGRATIONS } from "./migrations.generated.js";
+import { SERVER_MIGRATIONS, SERVER_ALTERNATE_MIGRATIONS } from "./migrations.generated.js";
 
-const baselineContractHashes = new Set([1, 2].map(count =>
-  createHash("sha256").update(JSON.stringify(SERVER_MIGRATIONS.slice(0, count))).digest("hex")));
+// Only exact declared histories may authorize the historical six-store import.
+// Canonical append positions do not identify an installed downstream prefix.
+const baselineContractHashes = new Set(
+  [SERVER_MIGRATIONS, ...SERVER_ALTERNATE_MIGRATIONS.map(entry => entry.migrations)]
+    .flatMap(chain => [1, 2, 8, 13].filter(count => count <= chain.length).map(count =>
+      createHash("sha256").update(JSON.stringify(chain.slice(0, count))).digest("hex"))),
+);
 const stores = Object.keys(SERVER_LEGACY_MIGRATIONS) as ServerStoreId[];
 const identifier = (name: string) => `"${name.replaceAll('"', '""')}"`;
 const encode = (value: unknown) => JSON.stringify(value, (_key, item) => typeof item === "bigint" ? { bigint: String(item) }
@@ -52,8 +57,16 @@ const additiveStores = new Set<ServerStoreId>(["thread-access", "thread-notes"])
 function verifySources(database: DatabaseSync, directory: string, installedHash: unknown): Set<ServerStoreId> {
   const receipts = database.prepare("SELECT source,source_digest FROM opencraft_server_imports").all();
   const completed = new Set(receipts.map(row => String(row.source)));
+  const missing = stores.filter(store => !completed.has(store));
+  // Published downstream v13 still had the six-store importer. Admit its
+  // atomic two-domain retirement only before either canonical domain has data.
+  const pendingBaseline = missing.length === additiveStores.size
+    && missing.every(store => additiveStores.has(store))
+    && baselineContractHashes.has(String(installedHash))
+    && ["thread_access", "thread_access_audit", "thread_notes"].every(table =>
+      !database.prepare(`SELECT 1 FROM ${table} LIMIT 1`).get());
   if (receipts.some(row => !stores.includes(String(row.source) as ServerStoreId))
-    || stores.some(store => !completed.has(store) && (!additiveStores.has(store) || !baselineContractHashes.has(String(installedHash))))) {
+    || stores.some(store => !completed.has(store) && (!additiveStores.has(store) || !pendingBaseline))) {
     throw new SqliteLifecycleError("history-mismatch", "Incomplete Server import receipts");
   }
   for (const store of stores) {
@@ -145,8 +158,14 @@ export function importServerData(database: DatabaseSync, directory: string, cont
         if (source.working) {
           const alias = `legacy_${index}`;
           const tableNames = database.prepare(`SELECT name FROM ${alias}.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name!='schema_migrations' ORDER BY name`).all();
+          if (source.store === "actor-collaboration") {
+            const changes = tableNames.findIndex(row => row.name === "actor_channel_changes");
+            if (changes >= 0) tableNames.push(...tableNames.splice(changes, 1));
+          }
           for (const row of tableNames) {
             const table = identifier(String(row.name));
+            // Replace migration seeds and trigger projections with the legacy timeline's epoch and revisions.
+            if (row.name === "actor_channel_identity" || row.name === "actor_channel_changes") database.exec(`DELETE FROM main.${table}`);
             const columns = database.prepare(`PRAGMA ${alias}.table_info(${table})`).all().map(column => identifier(String(column.name))).join(",");
             database.exec(`INSERT INTO main.${table}(${columns}) SELECT ${columns} FROM ${alias}.${table}`);
             const expected = Number(database.prepare(`SELECT count(*) AS n FROM ${alias}.${table}`).get()!.n);

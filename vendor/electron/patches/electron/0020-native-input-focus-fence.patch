@@ -1,0 +1,162 @@
+diff --git a/shell/common/api/api.mojom b/shell/common/api/api.mojom
+index 7ca76b4..3ed261b 100644
+--- a/shell/common/api/api.mojom
++++ b/shell/common/api/api.mojom
+@@ -45,6 +45,11 @@ interface ElectronFrameStartup {
+   SetStartupData(RendererStartupData data);
+ };
+ 
++// Ordered with the frame focus channel, unlike the widget input ACK.
++interface ElectronInputFocusFence {
++  Synchronize() => ();
++};
++
+ enum NativeImeOperationType { kCompose, kCommit, kCancel };
+ 
+ struct NativeImeContext {
+diff --git a/shell/renderer/electron_api_service_impl.h b/shell/renderer/electron_api_service_impl.h
+index 7cab8ea..5c12d83 100644
+--- a/shell/renderer/electron_api_service_impl.h
++++ b/shell/renderer/electron_api_service_impl.h
+@@ -27,6 +27,7 @@ class RendererClientBase;
+ class ElectronApiServiceImpl
+     : public mojom::ElectronRenderer,
+       public mojom::ElectronFrameStartup,
++      public mojom::ElectronInputFocusFence,
+       public content::RenderFrameObserver,
+       public content::RenderFrameObserverTracker<ElectronApiServiceImpl> {
+  public:
+@@ -42,6 +43,10 @@ class ElectronApiServiceImpl
+   void BindFrameStartupReceiver(
+       mojo::PendingAssociatedReceiver<mojom::ElectronFrameStartup> receiver);
+ 
++  void BindInputFocusFence(
++      mojo::PendingAssociatedReceiver<mojom::ElectronInputFocusFence> receiver);
++  void Synchronize(SynchronizeCallback callback) override;
++
+   void GetNativeClipboardContextForTesting(
+       GetNativeClipboardContextForTestingCallback) override;
+   void CopyNativeClipboardForTesting(
+@@ -128,6 +133,9 @@ class ElectronApiServiceImpl
+   mojo::AssociatedReceiver<mojom::ElectronFrameStartup> frame_startup_receiver_{
+       this};
+ 
++  mojo::AssociatedReceiver<mojom::ElectronInputFocusFence> input_focus_fence_{
++      this};
++
+   // The most recent RendererStartupData pushed by the browser, consumed by the
+   // sandboxed renderer client at DidCreateScriptContext time.
+   mojom::RendererStartupDataPtr startup_data_;
+diff --git a/shell/renderer/electron_api_service_impl.cc b/shell/renderer/electron_api_service_impl.cc
+index 0233d44..653e676 100644
+--- a/shell/renderer/electron_api_service_impl.cc
++++ b/shell/renderer/electron_api_service_impl.cc
+@@ -71,6 +71,11 @@ ElectronApiServiceImpl::ElectronApiServiceImpl(
+           base::BindRepeating(&ElectronApiServiceImpl::BindFrameStartupReceiver,
+                               base::Unretained(this)));
+ 
++  render_frame->GetAssociatedInterfaceRegistry()
++      ->AddInterface<mojom::ElectronInputFocusFence>(
++          base::BindRepeating(&ElectronApiServiceImpl::BindInputFocusFence,
++                              base::Unretained(this)));
++
+   // window.open() popup's about:blank fires DidCreateScriptContext before
+   // any push can land; the browser attaches its startup data to the
+   // CreateNewWindowReply and SetPendingCreateNewWindowStartupData() stashes it
+@@ -91,6 +96,18 @@ void ElectronApiServiceImpl::BindFrameStartupReceiver(
+   frame_startup_receiver_.Bind(std::move(receiver));
+ }
+ 
++void ElectronApiServiceImpl::BindInputFocusFence(
++    mojo::PendingAssociatedReceiver<mojom::ElectronInputFocusFence> receiver) {
++  input_focus_fence_.reset();
++  input_focus_fence_.Bind(std::move(receiver));
++}
++
++void ElectronApiServiceImpl::Synchronize(SynchronizeCallback callback) {
++  // The response follows focus notifications already sent on this frame's
++  // associated channel. No DOM read, edit grant or focus mutation is needed.
++  std::move(callback).Run();
++}
++
+ void ElectronApiServiceImpl::SetStartupData(
+     mojom::RendererStartupDataPtr data) {
+   startup_data_ = std::move(data);
+diff --git a/shell/browser/api/electron_api_web_contents.cc b/shell/browser/api/electron_api_web_contents.cc
+index 6938baa..b3926b8 100644
+--- a/shell/browser/api/electron_api_web_contents.cc
++++ b/shell/browser/api/electron_api_web_contents.cc
+@@ -498,7 +498,7 @@ class NativeInputTicketWaiter final
+     dispatched_ = true;
+     if (!frame_route)
+       Complete("", false);
+-    else if (acknowledged_)
++    else if (focus_synchronized_)
+       Finish("");
+   }
+   ~NativeInputTicketWaiter() override {
+@@ -516,18 +516,42 @@ class NativeInputTicketWaiter final
+     host->RemoveObserver(this);
+     hosts_.erase(host);
+   }
+-  void OnInputEventAck(const content::RenderWidgetHost&,
++  void OnInputEventAck(const content::RenderWidgetHost& host,
+                        blink::mojom::InputEventResultSource,
+                        blink::mojom::InputEventResultState,
+                        const blink::WebInputEvent& event) override {
+-    if (event.GetType() == type_ && event.TimeStamp() == timestamp_) {
+-      acknowledged_ = true;
+-      if (dispatched_)
+-        Finish("");
++    if (event.GetType() != type_ || event.TimeStamp() != timestamp_ ||
++        acknowledged_ || !promise_)
++      return;
++    acknowledged_ = true;
++    content::RenderFrameHost* target = nullptr;
++    web_contents()->ForEachRenderFrameHost(
++        [&](content::RenderFrameHost* frame) {
++          if (!target && frame->IsRenderFrameLive() &&
++              frame->GetRenderWidgetHost() == &host)
++            target = frame;
++        });
++    if (!target) {
++      Finish("Native input frame unavailable");
++      return;
+     }
++    // Widget ACKs and frame focus notifications use different pipes. Round
++    // trip on the target's associated frame channel before exposing its ACK;
++    // queued DidFocusFrame messages must reach the browser first.
++    target->GetRemoteAssociatedInterfaces()->GetInterface(&focus_fence_);
++    focus_fence_.set_disconnect_handler(base::BindOnce(
++        &NativeInputTicketWaiter::Finish, weak_factory_.GetWeakPtr(),
++        "Native input focus channel disconnected"));
++    focus_fence_->Synchronize(base::BindOnce(
++        &NativeInputTicketWaiter::FocusSynchronized, weak_factory_.GetWeakPtr()));
+   }
+ 
+  private:
++  void FocusSynchronized() {
++    focus_synchronized_ = true;
++    if (dispatched_)
++      Finish("");
++  }
+   void Attach(content::RenderWidgetHost* host) {
+     if (!host || hosts_.contains(host))
+       return;
+@@ -540,6 +564,7 @@ class NativeInputTicketWaiter final
+     if (!promise_)
+       return;
+     timer_.Stop();
++    focus_fence_.reset();
+     for (auto* host : hosts_) {
+       host->RemoveInputEventObserver(this);
+       host->RemoveObserver(this);
+@@ -560,6 +585,8 @@ class NativeInputTicketWaiter final
+   }
+   bool dispatched_ = false;
+   bool acknowledged_ = false;
++  bool focus_synchronized_ = false;
++  mojo::AssociatedRemote<mojom::ElectronInputFocusFence> focus_fence_;
+   blink::WebInputEvent::Type type_;
+   base::TimeTicks timestamp_;
+   std::string ticket_;

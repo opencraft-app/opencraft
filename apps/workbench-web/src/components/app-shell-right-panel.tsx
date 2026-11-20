@@ -1,4 +1,4 @@
-import React, { useCallback, useLayoutEffect, useState, type ReactNode } from "react";
+import React, { useCallback, useLayoutEffect, useState, useRef, type ReactNode } from "react";
 import { motion, useTransform, type MotionStyle, type MotionValue } from "motion/react";
 import {
   computeRightPanelDefaultWidth,
@@ -19,10 +19,9 @@ interface AppShellRightPanelProps {
   readonly open: boolean;
   readonly keepMounted?: boolean;
   readonly rightPanelWidth: MotionValue<number>;
-  /** Layout endpoint; physical width may still be animating toward it. */
-  readonly contentWidth?: MotionValue<number>;
-  readonly contentFullWidth?: boolean;
-  readonly rightPanelWidthRatio: MotionValue<number>;
+  readonly rightPanelWidthRatio: MotionValue<number | null>;
+  readonly defaultSize: "standard" | "compact";
+  onWidthCommit(ratio: number | null): void;
   readonly rightPanelLayoutTick: MotionValue<number>;
   readonly shellHeight: MotionValue<number>;
   onOpenChange(open: boolean): void;
@@ -31,30 +30,30 @@ interface AppShellRightPanelProps {
 
 export function AppShellRightPanel({
   animation, children, fullWidth, mainContentWidth, open, keepMounted = false,
-  rightPanelWidth, contentWidth = rightPanelWidth, contentFullWidth = fullWidth,
-  rightPanelWidthRatio, rightPanelLayoutTick, shellHeight, onOpenChange,
+  rightPanelWidth,
+  rightPanelWidthRatio, rightPanelLayoutTick, shellHeight, onOpenChange, defaultSize: defaultSizeMode, onWidthCommit,
 }: AppShellRightPanelProps) {
   const [dragging, setDragging] = useState(false);
   const { animatedSize, isMounted, progress } = usePanelAnimation({
     animation, isVisible: open, size: rightPanelWidth,
   });
-  const rightPanelTargetWidthPx = useTransform(contentWidth, value => `${value}px`);
+  // Content follows the live pane width; visibility alone clips this layout.
+  const rightPanelTargetWidthPx = useTransform(rightPanelWidth, value => `${value}px`);
 
   useLayoutEffect(() => {
     const invalidate = () => rightPanelLayoutTick.set(rightPanelLayoutTick.get() + 1);
     const removeProgress = progress.on("change", invalidate);
     const removeWidth = rightPanelWidth.on("change", invalidate);
-    const removeContentWidth = contentWidth.on("change", invalidate);
-    return () => { removeContentWidth(); removeWidth(); removeProgress(); };
-  }, [progress, rightPanelWidth, contentWidth, rightPanelLayoutTick]);
+    return () => { removeWidth(); removeProgress(); };
+  }, [progress, rightPanelWidth, rightPanelLayoutTick]);
 
   const bounds = useCallback(() => getRightPanelWidthBounds(
     mainContentWidth.get(), "regular", shellSpaceMetrics.mainMinimum,
   ), [mainContentWidth]);
   const defaultSize = useCallback(() => computeRightPanelDefaultWidth({
-    mainContentWidth: mainContentWidth.get(), shellHeight: shellHeight.get(),
+    mainContentWidth: mainContentWidth.get(), shellHeight: shellHeight.get(), size: defaultSizeMode,
     mainContentReserve: shellSpaceMetrics.mainMinimum,
-  }), [mainContentWidth, shellHeight]);
+  }), [mainContentWidth, shellHeight, defaultSizeMode]);
 
   const resize = useCallback((size: number) => {
     const visible = size >= RIGHT_PANEL_COLLAPSE_SHELF;
@@ -68,20 +67,39 @@ export function AppShellRightPanel({
     if (visible !== open) onOpenChange(visible);
   }, [mainContentWidth, onOpenChange, open, rightPanelWidthRatio]);
 
+  const gesture = useRef<{ ratio: number | null; committed: boolean } | null>(null);
+  const resizingChange = useCallback((active: boolean) => {
+    if (active) gesture.current = { ratio: rightPanelWidthRatio.get(), committed: false };
+    else {
+      if (gesture.current && !gesture.current.committed) rightPanelWidthRatio.set(gesture.current.ratio);
+      gesture.current = null;
+    }
+    setDragging(active);
+  }, [rightPanelWidthRatio]);
+  const commitResize = useCallback((size: number) => {
+    if (size < RIGHT_PANEL_COLLAPSE_SHELF) {
+      if (gesture.current) rightPanelWidthRatio.set(gesture.current.ratio);
+      return;
+    }
+    if (gesture.current) gesture.current.committed = true;
+    onWidthCommit(rightPanelWidthRatio.get());
+  }, [onWidthCommit, rightPanelWidthRatio]);
+
   if (!isMounted && !keepMounted && !dragging) return <></>;
   const surfaceStyle = {
     "--app-shell-right-panel-target-width": rightPanelTargetWidthPx,
   } as MotionStyle;
   return (
     <motion.aside className="app-shell-right-panel" data-app-shell-focus-area="right-panel"
-      data-full-width={fullWidth} data-content-full-width={contentFullWidth} aria-hidden={!open} inert={!open}
+      data-full-width={fullWidth} data-content-full-width={fullWidth} aria-hidden={!open} inert={!open}
       style={{ opacity: progress, width: animatedSize }}>
       {!fullWidth ? <>
         <div className="right-panel-divider" aria-hidden="true" />
         <RightPanelResizeHandle
           getCurrentSize={() => rightPanelWidth.get()} getDefaultSize={defaultSize}
           getMinimumSize={() => bounds().minimum} getMaximumSize={() => bounds().maximum}
-          onResize={resize} onResizeEnd={resize} onResizingChange={setDragging}
+          onResize={resize} onResizeEnd={commitResize} onResizingChange={resizingChange}
+          onResetSize={() => onWidthCommit(null)}
         />
       </> : null}
       <div className="app-shell-right-panel__clip">

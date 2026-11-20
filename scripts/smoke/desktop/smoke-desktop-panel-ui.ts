@@ -118,8 +118,8 @@ try {
       const style = getComputedStyle(element);
       return { opacity: style.opacity, property: style.transitionProperty, transform: style.transform };
     });
-    // Global reduced-motion CSS shortens duration to 0.01ms. The meaningful
-    // invariant is no transitioned property, regardless of that fallback.
+    // Global reduced-motion CSS disables transition durations. This control
+    // also declares no transitioned property independently of that fallback.
     assert.deepEqual(disabledFeedback, { opacity: "0.4", property: "none", transform: "none" });
     const buttonStyle = await initialAction.evaluate(element => {
       const style = getComputedStyle(element); return { size: style.fontSize, line: style.lineHeight,

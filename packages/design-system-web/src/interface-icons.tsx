@@ -22,6 +22,8 @@ function Chat({ children }: { readonly children?: ReactNode }) {
   return <><path d="M7.5 4.5h9A3.5 3.5 0 0 1 20 8v6.5a3.5 3.5 0 0 1-3.5 3.5H9l-5 3V8a3.5 3.5 0 0 1 3.5-3.5Z" />{children}</>;
 }
 
+export const SmartphoneIcon = glyph("smartphone", <><rect x="6.5" y="3.5" width="11" height="17" rx="2.5" /><path d="M10 6h4m-3 11.5h2" /></>);
+
 export const HomeIcon = glyph("home", <path d="M4.5 10.5 10.3 5.3a2.6 2.6 0 0 1 3.4 0l5.8 5.2v7a2.5 2.5 0 0 1-2.5 2.5h-3v-6h-4v6H7a2.5 2.5 0 0 1-2.5-2.5v-7Z" />);
 export const ChatIcon = glyph("chat", <path d="M7.5 18.6 4 20l1.2-4a8 8 0 1 1 2.3 2.6Z" />);
 export const MessageIcon = sharedActionIcon("MessageIcon");
@@ -146,3 +148,6 @@ export function CheckboxIcon({ checked = false, ...props }: ActionIconProps & { 
 export const DateIcon = glyph("date", <><rect x="4" y="5" width="16" height="15" rx="3" /><path d="M8 3.5v3m8-3v3M4 10h16" /></>);
 export const NumberStepperIcon = glyph("number-stepper", <path d="m8 8 4-4 4 4m-8 8 4 4 4-4" />);
 export const IndeterminateCheckboxIcon = glyph("checkbox-indeterminate", <><rect x="4.5" y="4.5" width="15" height="15" rx="2.75" /><path d="M8.5 12h7" /></>);
+
+/** Switch between server entries; shared chrome owns color and hit area. */
+export const SwitchServerIcon = glyph("switch-server", <path d="M5 8h14m-4-4 4 4-4 4M19 16H5m4-4-4 4 4 4" />);

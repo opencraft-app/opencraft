@@ -74,6 +74,7 @@ for (const identityOverlay of [false, true]) for (const entry of ['apphost', 'ap
     return entry === 'appserver' ? result : JSON.parse(result.frame);
   };
   const initialized = await rpc('initialize', { clientInfo: { name: 'test', version: '1' }, capabilities: {} });
+  assert.equal(initialized.error, undefined, JSON.stringify(initialized.error));
   assert.equal(initialized.result.capabilities.extensions['opencraft/token-usage'].query, true);
   for (const scope of ['self', 'team']) for (const filtered of [false, true]) {
     const reply = await rpc('opencraft/token-usage/query', { from: '2026-10-21', through: '2026-10-21', scope, ...(filtered ? {threadId:'existing'} : {}) });

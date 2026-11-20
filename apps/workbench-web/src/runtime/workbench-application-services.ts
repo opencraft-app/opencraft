@@ -1,3 +1,5 @@
+import type { BrowserDraftRecovery } from "./browser-draft-recovery";
+import type { ChannelSearchRegistry } from './channel-search-contribution';
 import { parseConversationRef } from "@opencraft/appserver-protocol/collaboration";
 import { continueNativeSessionInBranch, nativeSessionBusyBeforeInput } from "./native-session-recovery";
 import { readSelectionPreference, writeSelectionPreference } from "./selection-preferences";
@@ -21,9 +23,6 @@ import {
   type TasksRequestPort
 } from "@opencraft/appserver-protocol";
 import { BlobResourceService } from "@opencraft/blob-resources";
-import {
-  AppServerBotDirectory
-} from "@opencraft/bot-conversation-appserver";
 import {
   asHostId,
   createConversationKey,
@@ -98,6 +97,7 @@ import {
 
 // The Context object itself is part of the renderer's hot-reload state.
 export interface AppServerHostCatalog {
+  readonly draftRecovery: Pick<BrowserDraftRecovery, "isPending" | "subscribe">;
   readonly clientResources: ClientResources;
   readonly setConversationPresentationActive?: (active: boolean) => void;
   readonly tasks: TasksRequestPort | null;
@@ -131,12 +131,12 @@ export interface AppServerHostCatalog {
   readonly platformAccounts: PlatformAccountContributionRegistry;
   readonly threadAttention: BrowserThreadAttention;
   readonly applicationBranding: ApplicationBrandingRegistry;
+  readonly channelSearch: ChannelSearchRegistry;
   readonly threadBadges: ThreadBadgeContributionRegistry;
   readonly threadListGrouping: ThreadListGroupingContributionRegistry;
   readonly identityAvatars: IdentityAvatarContributionRegistry;
   readonly imageEditors?: import("./image-editor-contributions").ImageEditorContributionRegistry;
   readonly composerActionRenderers: ComposerActionRendererRegistry;
-  readonly botDirectory: AppServerBotDirectory;
   readonly sidebarLayout: SidebarLayoutStore;
   /**
    * Navigation intent being hydrated. The presented Conversation remains the
@@ -451,12 +451,12 @@ export interface WebWorkbenchApplicationBase {
   readonly platformViewRenderers: PlatformViewRendererRegistry;
   readonly platformAccounts: PlatformAccountContributionRegistry;
   readonly applicationBranding: ApplicationBrandingRegistry;
+  readonly channelSearch: ChannelSearchRegistry;
   readonly threadBadges: ThreadBadgeContributionRegistry;
   readonly threadListGrouping: ThreadListGroupingContributionRegistry;
   readonly identityAvatars: IdentityAvatarContributionRegistry;
   readonly imageEditors?: import("./image-editor-contributions").ImageEditorContributionRegistry;
   readonly composerActionRenderers: ComposerActionRendererRegistry;
-  readonly botDirectory: AppServerBotDirectory;
   readonly sidebarLayout: SidebarLayoutStore;
   readonly hostProfiles: HostConnectionProfileStore;
   readonly hostProfileStorageError?: BrowserStorageError | null;
@@ -482,6 +482,7 @@ export interface HostlessWebWorkbenchApplicationSupervisor extends WebWorkbenchA
 }
 
 export interface ActiveWebWorkbenchApplicationSupervisor extends WebWorkbenchApplicationBase {
+  readonly draftRecovery: Pick<BrowserDraftRecovery, "isPending" | "subscribe">;
   readonly tasks: TasksRequestPort | null;
   readonly displayContinuity: BrowserDisplayContinuity;
   readonly mode: "active";
@@ -620,6 +621,7 @@ export function provisionWebSocketHost(
 }
 
 export function createWebWorkbenchCommands(input: {
+  readonly isDraftRecovering?: () => boolean;
   readonly displayContinuity: BrowserDisplayContinuity;
   readonly presentation?: WorkbenchPresentationPolicy;
   readonly threadMemoryScope?: () => string;
@@ -639,6 +641,7 @@ export function createWebWorkbenchCommands(input: {
   readonly onThreadCreated?: (intent: SubmitIntent, receipt: SubmissionReceipt) => Promise<void>;
 }): WebWorkbenchCommands {
   const presentation = input.presentation ?? FULL_WORKBENCH_PRESENTATION;
+  const requireRestoredDraft = () => { if (input.isDraftRecovering?.()) throw new Error("Local draft recovery is pending"); };
   const assertSelectable = () => { if (presentation.executionSelection === "fixed") throw new Error("The embedding product owns execution selection"); };
   const assertHostConfiguration = () => { if (!presentation.runtimeHostConfiguration) throw new Error("The embedding product owns Host configuration"); };
   const assertTarget = (hostId: string) => {
@@ -655,7 +658,7 @@ export function createWebWorkbenchCommands(input: {
     const memoryScope = input.threadMemoryScope?.();
     const activated = await action();
     if (location.kind === "thread" && memoryScope === input.threadMemoryScope?.()
-      && input.registry.peekRuntime(location.key.hostId)?.resources.threads.getUnavailableReason?.(location.key.threadId)) {
+      && input.registry.peekRuntime(location.key.hostId)?.resources.threads.getUnavailableReason?.(location.key.threadId) === "not-found") {
       commands.forgetThread(location.key.hostId, location.key.threadId);
       return false;
     }
@@ -703,6 +706,7 @@ export function createWebWorkbenchCommands(input: {
       else if (surface.kind === "extension-view") input.navigation.openExtensionView(surface.viewId, surface.resourceUri);
     },
     createGoal(intent, objective) {
+      requireRestoredDraft();
       if (intent.target.type !== "new-thread") throw new Error("Expected a new conversation");
       assertTarget(intent.target.execution.hostId);
       const target = intent.target;
@@ -738,6 +742,10 @@ export function createWebWorkbenchCommands(input: {
       const activeDraft = input.scopes.getActiveDraft();
       if (activeDraft !== null && draftSubmissionOwnsNavigation(activeDraft.phase)) {
         throw new Error("The execution node cannot change while the first turn is being submitted");
+      }
+      if (activeDraft && activeDraft.target.execution.hostId !== hostId
+        && (activeDraft.target.execution.environment || activeDraft.target.execution.workspace.source)) {
+        throw new Error("Choose an empty Host workspace before changing Host. Your current environment and source have been retained.");
       }
       let runtime: AppServerWorkbenchRuntime;
       try { runtime = await input.registry.ensureConnected(hostId); }
@@ -856,12 +864,14 @@ export function createWebWorkbenchCommands(input: {
       return location;
     },
     retargetDraft(draftId, execution) {
+      requireRestoredDraft();
       assertSelectable();
       ++hostSelectionEpoch;
       input.activation.cancelPending();
       input.activation.retargetDraft(draftId, execution);
     },
     async submit(intent) {
+      requireRestoredDraft();
       assertTarget(intent.target.type === "new-thread" ? intent.target.execution.hostId : intent.target.key.hostId);
       if (intent.handoff && intent.target.type !== "new-thread") {
         if (intent.target.key.threadId !== intent.handoff.sourceThreadId) throw new Error("Handoff source changed");

@@ -4,13 +4,71 @@
 
 ## Shared history backfill coordinator
 
-`TurnHistoryBackfillCoordinator` owns one history-load operation and layout epoch
-through the existing `timeline-react` adapter. Same-generation requests share the
-operation; replacement generations wait for old work, including failures, before
-starting another load. A completed page always reaches the platform layout
-barrier, then current ownership/enabled state, explicit stop, missing geometry or
-unchanged height ends continuation. Web and Native retain their own measurements
-and frame scheduling.
+The enhanced tool-side chat reads the same conversation timeline and existing
+Thread lease as the main view. It renders the complete loaded window through
+`Conversation` with natural scrolling and Turn virtualization; scrolling to the
+old edge loads more history through the existing callback. User inputs remain
+visible. A new Turn does not replace the reading surface or reset its anchor.
+The main and overlay views retain independent reading checkpoints in their
+existing view scope. Only the active reading surface binds history input and
+viewport-fill requests; parking a view invalidates its fill generation without
+discarding the shared history or cancelling another reader's Thread lease.
+The overlay restores its checkpoint after disclosure/tool changes and keeps the
+existing stable Composer host, draft and resource lifetimes. Its viewport uses
+the existing keyboard/container budget. Cached display history remains paint-only;
+execution and detail actions still use the existing authority gates.
+
+A mounted `Conversation` consumes its restore checkpoint once, for the lifetime
+of its keyed View. Later parent checkpoint updates cannot reposition that reader
+or reseed a newly mounted scrolling-policy child with a different baseline.
+Explicit navigation uses the scroll API; a new View consumes the latest saved
+checkpoint. Scroll distance, disclosures and virtualizer restoration share this
+same initial snapshot boundary.
+
+### Display cache ownership and asynchronous receipts
+
+Display continuity remains a paint-only projection; it never becomes the live
+conversation authority. Its three lifetimes are independent:
+
+| State | Owner and invalidation |
+| --- | --- |
+| Resident display | Bounded in-memory cache, including explicitly empty transcripts. Every authoritative observation can refill or refresh it, even when its serialized content has not changed. Equal resident content retains its timeline identity. |
+| Storage read receipt | One in-flight read per conversation key. Every authoritative observation revokes its write-back permission, including empty or identical content. Completion releases the receipt. |
+| Persistence projection | Write coalescing and deduplication only. A failed write permits retry; it cannot restore permission to an invalidated read or remove the current display. |
+
+Late read success and failure return the current resident display after authority
+has changed. Account namespaces keep their separate continuity owners. Memory
+eviction is not a persistence failure, and persistence failure is not evidence
+that older content is current. Navigation restore I/O likewise checks its intent
+on both success and failure: abandoned operations return `false`, while current
+restore and subsequent cold-activation failures still propagate to the caller.
+
+A resident empty transcript suppresses storage reads even when removal failed;
+it is distinct from a cache miss. It shares the cache's capacity and expiry,
+and an identical later observation still retries a failed persistence operation.
+
+The React adapter retains no second copy of a storage-read payload. A completed
+read requests a render; that render selects from the current shared cache.
+Otherwise an old hook-local payload could bypass an empty transcript or cache
+expiry when authoritative history becomes temporarily unavailable. Read-completion
+notifications remain fenced by account scope and conversation identity.
+
+`TurnHistoryBackfillCoordinator` owns demand and serialized page reads for one
+history/layout epoch. Viewport geometry (or visible retained-history gaps) decides
+whether another page is needed; canonical pagination owns availability, loading
+and cursor progress. A viewport's scrollHeight can stay fixed while short pages
+add content below its minimum height, so geometry never proves page progress.
+
+The React adapter rechecks demand when pagination becomes available or settles,
+including when rows and viewport sizes are unchanged. Layout notifications during
+an active read are coalesced into a pending recheck; they never overlap reads.
+Every completed page reaches the existing platform layout barrier before the
+next demand/progress check. Exhaustion, unchanged cursors, errors, hidden geometry
+and retired owners stop automatic work. A stopped cursor is not retried by
+incidental layout/loading updates: a new cursor, new owner, or explicit user
+retry admits it again. Replacing the epoch waits for the prior read to settle and
+fences late errors. Main chat and Side Chat consume the same pagination model;
+platform adapters retain measurement and reading-position ownership.
 
 ## Shared Turn measurement transactions
 
@@ -157,38 +215,6 @@ revision per Item: this protects observed updates, not a claim of server-wide
 causal sequencing or a V4 Journal. Dot and task-chat renderers may differ while
 consuming this same identity-versus-position distinction.
 
-### Hermes message windows and Bot history continuity
-
-Hermes REST pagination owns source-row offsets, not rendered Turn or Bot-message
-counts. Each read adds one 120-row page to the scoped chronological window;
-the bridge returns that complete loaded projection. AppServer `limit` must not
-slice it again. A tail refresh grafts at a durable row anchor, accounts for the
-preserved prefix in its next offset, and does not reopen a known exhausted edge.
-Partial Turn regrouping can change execution/causal associations while retaining
-message IDs. Bot backfill therefore refreshes covered durable message metadata,
-rather than keeping stale associations merely because those IDs already exist.
-
-The Bot Source keeps durable history separate from local/live overlays. Resync
-may preserve an older prefix only within the same conversation incarnation and
-with a shared durable anchor; descriptor, execution and interaction authority
-always comes from the new read. A new cursor is opaque and cannot be calculated
-from visible message count. Delayed older reads are generation-scoped and cannot
-commit after resync, deletion or disposal. Old-epoch remote events are discarded;
-unadopted local submissions retain their independent client-message ownership.
-Once a durable row confirms that client-message identity, it adopts the local
-overlay, whether obtained by refresh or backfill. A delayed send failure or
-receipt then settles from the confirmed receipt; it cannot restore a failed
-optimistic row or regress completed execution. Concurrent reuse of an in-flight
-client-message identity does not issue another request.
-
-An empty display projection is not proof of empty source history. Completed
-tool-only rows can legitimately produce no Bot-chat units. The viewport requests
-at most three older pages per recovery intent, one page at a time, without
-requiring a physical top-scroll gesture. Remaining history or a failed read
-offers an explicit load/retry action in the existing status slot; unchanged or
-cyclic cursors stop automatic traversal. This is bounded display demand, not
-eager draining, transcript persistence, or execution readiness.
-
 ### Turn identity handoff and mounted window
 
 The canonical `turnKey` remains the protocol locator. When a submitted Turn
@@ -206,6 +232,29 @@ without acquiring bottom ownership from a reader, forcing scroll, reordering
 history, or remounting the Conversation.
 
 ## Restored baseline versus live entry motion
+
+Display-cache trimming treats messages and omitted-region descriptors as one
+document. Regions with non-null anchors survive only with that assistant block
+in the same Turn; they never fall back to the end of another response. Memory
+paint and persisted reload share the same normalization and per-Turn identity
+deduplication. The existing envelope character budget bounds descriptors; the
+message-count budget must not discard an entire region array. An explicit region
+list, even empty after trimming, suppresses legacy aggregate-clock inference so
+omitted work cannot reappear as a synthetic header on the first retained reply.
+Absent descriptors still allow compatible old duration-only cache entries.
+
+Disclosure preference belongs to the Conversation View, not to cache provenance
+or action authority. A retained activity region declares body availability
+separately: missing tool bodies must not force a saved expanded choice closed or
+disable its reading toggle. An expanded unavailable body uses the existing
+content-window owner's measured height (or its estimate when never measured),
+with separate expanded/collapsed geometry keys. Placeholders never overwrite
+measured heights. View restoration carries those heights alongside disclosures;
+display-cache descriptors carry neither pixel sizes nor interaction preferences.
+Canonical body arrival fills that same flow boundary without a new entry event.
+This preserves known geometry, not an exact prediction of previously unseen or
+subsequently changed content. Fork and other execution actions still require
+their independent authoritative callbacks.
 
 Web/Electron Conversation owns a narrow entry-motion context. Initial display,
 Host/Thread changes and paint/sync recovery (including the first authoritative
@@ -359,6 +408,23 @@ Coalesced retries of an active work item still share the original observation.
 
 ### Recovery correlation and socket liveness
 
+History directory reads retain only the authenticated routing owner's epoch after
+initial identification. Each source read and completion check still fetches a
+fresh directory, including route and HOME incarnation. An epoch mismatch rejects
+the result and retires the pinned identity; the next attempt identifies the new
+owner. Completed health results and directory snapshots are never reused. This
+removes recursive health probes from every warm history validation without
+weakening the source's end-of-read ownership check.
+
+The browser's physical AppHost owner treats `freeze` and `pagehide` as suspended
+demand even when `visibilityState` remains visible. Both events cancel the
+foreground reachability probe. `resume` and `pageshow` wake the existing recovery
+owner and start a fresh probe deadline; expired pre-suspension timers and late
+responses cannot close or acknowledge that successor probe. Lifecycle state and
+subscriptions belong to the connection factory and are released with it. A real
+remote close or missing response on the new probe remains recoverable through
+the existing Host policy.
+
 Recovery observations carry the local physical `attemptId` and `eventAtMs`; the server receipt time is not the client event time. `history-started`, `history-backoff`, and allowlisted slow/failed history RPC metadata are accepted by the diagnostic endpoint. A rejected metadata record is discarded instead of blocking later reports. No request params, conversation text, credentials, URLs or Thread IDs are added.
 
 The renderer logs the full allowlisted diagnostic to `console.log` on recovery state transitions, without an elapsed-time logging timer. Loading UI stays concise and retains existing messages and drafts.
@@ -452,6 +518,17 @@ This local draft does not create a remote Thread, unarchive it or replay input.
 
 ### Retained Web viewport measurements
 
+A borrowed overview is not a new reading layout. The retained-view owner captures
+its inherited CSS context before an atomic DOM move can invalidate Shell
+`:has()` styles. Primary-chat footer reservation consumes that context from the
+retained reading view, not from a physical `.main-content-surface` ancestor.
+Safe-area/keyboard clearance, footer height and the reader's local position must
+remain unchanged throughout the flight and handback; hiding controls does not
+remove their layout. No second scroll writer, remount or delayed animation repairs
+this invariant. `smoke-overview-chat-reading.ts` samples actual Shell/Conversation/
+Composer frames for atomic and native-popover placement; WebKit is an explicit
+optional run when its system dependencies are available.
+
 A parked conversation has a zero-height scrollport. Its Web viewport owner keeps
 row, follow-content, footer and viewport observations registered but does not
 publish those hidden geometry records or platform scroll events. Zero layout
@@ -520,12 +597,23 @@ not remote execution cancellation or an automatic write retry.
 
 ### Mounted content and virtual height
 
-In natural scrolling, the Web virtualizer's measured total is a minimum height for its spacer, including
-unmounted history. Mounted rows retain their natural block size: a renderer can
-grow while its row measurement is queued, so stale measurements must never let
-that content overflow the spacer and overlap the sticky Composer. Both the
-latest-row fast path and React project the same minimum; the viewport owner
-continues to own measurement transactions and reading-position compensation.
+In natural scrolling, only unmounted history owns synthetic spacer padding.
+Mounted rows retain their natural block size; the measured total is not a
+permanent minimum that can retain obsolete height after media/disclosure shrink.
+When a render-window update retires row identities, ConversationTurnWindow takes
+a pre-mutation React snapshot. The Web viewport owner temporarily protects the
+old spacer extent, resolves replacement styles/layout with that protection, and
+releases it synchronously in the layout commit, before paint. WebKit may perform
+an intermediate layout while styling a rebuilt inline-size query container;
+the handoff must not let that temporary tree clamp the native scroll offset.
+Same-window content updates do not acquire this lease. Cancellation, viewport
+retirement and failed layout release it without a stale geometry read; no timer,
+retained floor or competing scroll writer is introduced. Genuine unreported
+touch/momentum remains part of the physical reading position.
+The viewport owner continues to own measurement transactions and reading-position
+compensation; the query-container width contract is retained. The full-component
+`smoke-history-window-handoff.ts` covers the geometry-matched history prepend,
+diagnostics on/off, touch/pointer, unreported movement, later shrink and clearing.
 Response-placement policy retains its explicitly measured height because its
 response spacer and follow transaction own the position during streaming.
 
@@ -571,3 +659,124 @@ draft and retained conversation consume the same pending recovery projection;
 typed content keeps its document and remains visible during recovery. The
 Composer does not append a separate connection explanation below its shell.
 This presentation does not schedule reconnects or change input admission.
+
+### Message timeline measurement and native scrolling
+
+Direct and group message timelines use the shared Web viewport owner's mount
+measurement queue before painting newly visible rows. ResizeObserver batches
+commit through the same measurement transaction before paint, without an extra
+animation-frame delay. The pending position belongs to the geometry commit;
+measured heights and their scroll correction are not published in separate frames.
+An unchanged physical distance is observed without issuing a scroll command, so
+catalog refreshes and newly mounted history cannot interrupt native touch momentum.
+
+### Continuous output during unsequenced history recovery
+
+A read and live deltas from legacy providers have no common ordering token. One
+immediate reread still obtains a quiet cut for short overlaps. If that read also
+overlaps, publish its canonical snapshot and let the Session's single retained
+Thread reader follow snapshots (at most one read per second, with bounded RPCs
+and failure backoff). Do not append ambiguous buffered deltas. History changes
+are coalesced to an invalidation bit; non-history observations keep their ordering.
+A quiet snapshot restores normal live projection. Release, a fresh baseline,
+connection retirement and disposal cancel the follower and fence late replies.
+This is a compatibility fallback, not a claim of provider sequence support.
+
+Channel directory authority is independent from optional Inbox summaries. A valid
+directory is immediately usable while a lifetime-owned Inbox read updates unread
+counts and latest-message projections. Transient Inbox failures retry with bounded
+backoff; explicit identity/access revocation still invalidates directory consumers.
+
+Within one snapshot-following source, an overlapping partial tail refresh preserves
+the loaded prefix and backward-page cursor. It must not revoke an in-flight older
+page merely because another tail read completed. A disjoint window, complete
+snapshot, changed checkpoint epoch or explicit new baseline still replaces old
+coverage; never concatenate histories without a shared boundary.
+
+Channel membership checks distinguish explicit access denial from transient
+storage/worker failure. Both may invalidate the consumer's read, but only explicit
+denial removes the subscription. A temporary failure retains it so recovery and
+subsequent changes do not require a browser reload.
+
+### Cached presentation regions and action authority
+
+A paint-only history preserves structural region identity independently of its
+source and command authority. The shared Timeline presenter consumes
+`presentationRegions` when omitted activity bodies need their collapsed header
+retained. Region descriptors store semantic identity, insertion position, count
+and completed clock data, never executable bodies or platform pixel sizes.
+Future omitted region kinds extend this shared contract and its cold-handoff
+geometry assertions. Cache size limits include these descriptors.
+
+Host-supported action shape is declared separately from callbacks through
+`ConversationDocumentContext.turnActions`. Read-only/cache rows keep the same
+action slots with disabled controls; confirmation supplies callbacks without
+inserting controls. Absence of a callback never grants execution authority.
+The cold-history smoke compares activity, content and action geometry across
+cache → mixed → history at touch/desktop widths and reduced-motion settings.
+
+For settled providers that omit every message phase, chat-core derives missing
+phases within each input segment; phase-aware histories retain deliberate
+unqualified boundaries. The Anthropic bridge assigns phases only after its
+message stop receipt, before releasing executable tool receipts. Live, async
+and explicit provider semantics remain owned by their source.
+
+### Cached Turn resources and layout-qualified measurements
+
+Display continuity retains Turn resources once, after selecting retained messages:
+Hook indicator counters and a settled diff's identity, file paths/statistics and
+per-file preview line counts. It never retains Hook output/details, unified-diff
+bytes, handlers or live running resource state. Both observed and persisted
+metadata pass the same allowlist. These resources hydrate through the existing
+HookStatsButton/TurnDiffBlock, not a second set of fixed-height skeleton cards.
+Their contentAvailable=false means details are missing, not that the resource
+or the reader's file-list disclosure vanished. The host's turnActions.reviewDiff
+declares a stable action slot; body availability plus the authorized callback
+control execution separately. Cached review/file actions stay disabled while
+file-list expansion remains a reading operation.
+
+Content-window measurements are qualified by actual boundary width, computed
+typography, shared prose/code typography inputs and the document's font-load
+generation. The View restore snapshot carries those qualified measurements
+separately from its legacy numeric heights. Legacy numbers cannot establish
+layout compatibility. Missing bodies reuse only compatible measurements;
+otherwise they use the existing estimate, never invent a new exact height.
+Resize observations include placeholder widths but never record placeholder
+heights. Relevant ancestor class/style changes and font loading invalidate
+affected measurements and notify their mounted boundaries. Replaced observers
+are fenced so queued old-layout records cannot repopulate the cache. Pure
+opacity/transform animation style changes do not trigger typography rescans.
+No invalidation changes disclosure preference or acquires scroll ownership.
+
+A resource-only Turn does not need a retained assistant message: the bounded
+display document carries a read-only assistant resource surface alongside its
+retained input. This surface never invents an assistant answer. Hook tooltip
+details and the diff review dialog are demand-loaded; their indicator/header/file
+list and declared action slots remain synchronous, preserving startup budgets
+without deferring transcript layout.
+
+### Refresh display handoff
+
+A retained display envelope restores its bounded title/project together with its
+message bodies. The Web header uses this account/Host/Thread-scoped presentation
+until the catalog is ready; it does not acquire rename or appearance controls
+from cached metadata. An unknown title stays unknown, rather than briefly
+claiming that an existing conversation is an “Untitled task”. The React adapter
+only associates header metadata with a timeline matching the committed View key.
+
+Up to 64 nearby command/tool/patch summaries accompany the existing 24-message,
+64-Ki-character envelope. They retain group identity, labels and shared row
+geometry, not raw tool arguments/results, process/call IDs, approval records,
+item-detail IDs or App resource URIs. A dedicated inert renderer takes precedence
+over executable/detail renderers. Tool previews are shed before message bodies
+when the size budget is reached. Omitted message boundaries cannot move their
+preceding tools to another answer; canonical deletion/empty history always wins.
+Old envelopes remain readable and acquire summaries/header after an authoritative
+observation; this is not an unbounded history or output cache.
+
+Recovery changes authority, not reading contrast. The transcript no longer dims
+as a whole during warm recovery; Composer/status and the existing action gates
+own pending feedback. Incomplete previews cannot delete visible retained tool
+rows. Canonical data replaces the inert rows through the same Turn/activity keys,
+without an extra fade or delayed reveal. View-owned disclosure/scroll state stays
+with the mounted Conversation.

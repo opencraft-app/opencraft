@@ -65,7 +65,13 @@ test("failed settings restoration never marks configuration applied or starts a 
   await assert.rejects(f.adapter.writePhysical({ method: "turn/start", params: { threadId: "one" } }), (cause: unknown) => cause instanceof RecoveryNotSubmitted);
   assert.equal(f.adapter.sessionMcpConfigurations.has("one"), false); assert.equal(f.adapter.sessionMcpRefreshes.size, 0);
   assert(!f.calls.some(c => c.method === "turn/start")); fail = false;
-  await f.adapter.prepareSessionMcp("one"); assert.equal(applied(f).length, 2);
+  await f.adapter.prepareSessionMcp("one");
+  // Tools were installed before settings restoration failed. Retry restores the
+  // settings without reissuing the already applied credential configuration.
+  assert.equal(applied(f).length, 1);
+  assert.deepEqual(f.adapter.sessionMcpConfigurations.get("one"), config());
+  assert.equal(f.adapter.sessionMcpRefreshes.size, 0);
+  assert(!f.calls.some(c => c.method === "turn/start"));
 });
 
 test("connection retirement fences late native responses and old cleanup cannot erase a new refresh", async () => {

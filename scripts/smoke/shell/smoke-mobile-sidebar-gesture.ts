@@ -70,7 +70,8 @@ let mounts=0;const actions=[];
 const navigationRouter=createApplicationNavigation(null,{mode:'memory'});
 const contributionSnapshot={settingsPages:[]};
 const contributions={subscribe:()=>()=>{},getSnapshot:()=>contributionSnapshot};
-function Context({showNewChat=true}){const[selected,setSelected]=useState('thread-0');window.selectFixtureThread=setSelected;useEffect(()=>{mounts++},[]);return <Sidebar showStart={false} showFooter={false} showNewChat={showNewChat} threads={threads} activeHostId='fixture' activeThreadId={selected} sidebarLayout={layout} onNewTask={()=>actions.push('New chat')} onOpenSettings={()=>{}} onSelectThread={(_host,id)=>actions.push(id)}/>}
+const pinnedEntries=${JSON.stringify(navigationProbe || process.env.OPENCRAFT_GESTURE_FAB_ONLY === "1")}?[{id:'fixture.inbox.catalog',title:'Inbox',presentation:'entry',content:<nav className='fixture-pinned-entries'><button type='button'>Inbox</button><button type='button'>Assistants</button></nav>}]:[];
+function Context({showNewChat=true}){const[selected,setSelected]=useState('thread-0');window.selectFixtureThread=setSelected;useEffect(()=>{mounts++},[]);return <Sidebar showStart={false} showFooter={false} showNewChat={showNewChat} catalogs={pinnedEntries} threads={threads} activeHostId='fixture' activeThreadId={selected} sidebarLayout={layout} onNewTask={()=>actions.push('New chat')} onOpenSettings={()=>{}} onSelectThread={(_host,id)=>actions.push(id)}/>}
 function App(){const preferences=useUiPreferencesRuntime();useEffect(()=>bindInteractionDensity(document,preferences),[preferences]);const route=useSyncExternalStore(navigationRouter.subscribe,navigationRouter.getSnapshot).applicationRoute;const[open,setOpen]=useState(false),[modal,setModal]=useState(false),[showNewChat,setShowNewChat]=useState(true),[conversationHeader,setConversationHeader]=useState(false);window.fixture={setDensity:value=>preferences.set('interface.touchFriendly',value),sidebarOpen:()=>open,setOpen,setModal,setShowNewChat,setConversationHeader,setThemePreference,returnToChat:()=>navigationRouter.openChat(),route:()=>navigationRouter.getSnapshot().applicationRoute,mounts:()=>mounts,actions};
 const navigation={layout:'unified',applicationsInSidebar:${navigationProbe || process.env.OPENCRAFT_GESTURE_PWA_CAPACITY === "1"},account:{snapshot:{phase:'authenticated',name:'Synthetic employee',avatarUrl:null},onOpen:()=>actions.push('Account'),onRefresh:async()=>{}},settingsActive:route.kind==='settings',onOpenSettings:()=>{actions.push('Settings');navigationRouter.openSettings();},actions:[...(stationaryProbe?[{id:'shell.search',title:'Search conversations',icon:'search',onInvoke:()=>setModal(true)}]:[]),{id:'shell.home',title:'Home',icon:'home',onInvoke:()=>actions.push('Home')},...(${navigationProbe || process.env.OPENCRAFT_GESTURE_PWA_CAPACITY === "1"}?[{id:'shell.applications',title:'Applications',icon:'grid',onInvoke:()=>actions.push('Applications')}]:[]),{id:'opencraft.tasks.navigation',title:'Tasks',icon:'columns',onInvoke:()=>actions.push('Tasks')},{id:'example.workspace.navigation',title:'Collaboration',icon:'messages',onInvoke:()=>actions.push('Collaboration')},{id:'skills',title:'Skills, extensions and cloud tools',icon:'sparkles',onInvoke:()=>actions.push('Skills')}]};
 return <><Dialog.Root open={modal} onOpenChange={setModal}><Dialog.Portal container={presentationRoot}><Dialog.Overlay style={{position:'fixed',inset:0,zIndex:100}}/><Dialog.Content style={{position:'fixed',inset:40,zIndex:101,background:'white'}}><Dialog.Title>Gesture exclusion probe</Dialog.Title><Dialog.Description>Touches stay in the dialog.</Dialog.Description>${process.env.OPENCRAFT_GESTURE_ARBITRATION_ONLY === "1" ? `<div style={{height:200,overflow:'auto'}}><WebChatDocument documentId="modal-arbitration" allowWideBlocks={false} source={${JSON.stringify(arbitrationMarkdown)}}/></div>` : ""}</Dialog.Content></Dialog.Portal></Dialog.Root><AppShell sidebarTransientEnabled={${process.env.OPENCRAFT_GESTURE_SAFE_LAYOUT_ONLY === "1" ? "false" : "true"}} navigation={navigation} layoutScope={route.kind} mainContentLayout={conversationHeader?'thread-edge-scroll':'default'} sidebarOpen={open} sidebarWidth={335} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} onSidebarCollapse={()=>setOpen(false)} onSidebarExpand={()=>setOpen(true)} onSidebarResizeEnd={()=>{}} rightPanel={null} rightPanelOpen={false} rightPanelFullWidth={false} onRightPanelOpenChange={()=>{}}
@@ -94,7 +95,7 @@ const presentationRoot=shadow?document.createElement('div'):host;
 if(shadow){const style=document.createElement('style');style.textContent=appStyles+mediaStyles;shadow.append(style,presentationRoot);presentationRoot.style.cssText='width:100vw;height:100dvh';}
 createIntlTestRoot(presentationRoot).render(<WorkbenchPresentationRootProvider target={presentationRoot}><App/></WorkbenchPresentationRootProvider>);`;
 const vite = await createServer({ configFile: false, root: process.cwd(), publicDir: "apps/workbench-web/public", logLevel: "error", resolve: { dedupe: ["react", "react-dom"] }, cacheDir: "node_modules/.vite-mobile-sidebar-gesture", esbuild: { jsx: "automatic", target: "esnext" }, server: { host: "127.0.0.1", port: 0, hmr: false },
-  optimizeDeps: { entries: [], include: ["react", "react-dom/client", "react-use-event-hook", "react-intl", "@radix-ui/react-dialog", "@radix-ui/react-tooltip", "@radix-ui/react-dropdown-menu", "@radix-ui/react-popover", "@radix-ui/react-alert-dialog", "@deepseek-ai/cordis", "tslib"] },
+  optimizeDeps: { entries: [], include: ["react", "react-dom", "react-dom/client", "motion/react", "sonner", "@tanstack/react-query", "react-use-event-hook", "react-intl", "@radix-ui/react-dialog", "@radix-ui/react-tooltip", "@radix-ui/react-dropdown-menu", "@radix-ui/react-popover", "@radix-ui/react-alert-dialog", "@deepseek-ai/cordis", "tslib"] },
   plugins: [pluginBranding(process.env.OPENCRAFT_SMOKE_BRANDING_WORKSPACE ?? process.cwd(), []), { name: "mobile-sidebar-gesture-fixture", resolveId: id => id === "/gesture-probe.tsx" ? id : null, load: id => id === "/gesture-probe.tsx" ? source : null,
     configureServer(server) { server.middlewares.use((req, res, next) => { if (new URL(req.url??"/","http://fixture").pathname !== "/") return next(); res.setHeader("content-type", "text/html"); res.end('<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><div id="root"></div><script type="module" src="/gesture-probe.tsx"></script>'); }); },
   }],
@@ -177,6 +178,27 @@ try {
       await panel.waitFor();await page.waitForTimeout(reducedMotion==='reduce'?100:700);
       await expandScrollFixture();
       const scroll=panel.locator('.shell-sidebar__scroll');
+      {
+        // Inbox/Assistants stay in view while conversations scroll beneath them.
+        const pinned=async()=>panel.evaluate(root=>{
+          const entry=root.querySelector<HTMLElement>('.sidebar-extension-catalog[data-catalog-presentation="entry"]')!;
+          const r=entry.getBoundingClientRect(),h=root.querySelector('.app-shell-floating-left-panel__header')!.getBoundingClientRect();
+          const hits=[...entry.querySelectorAll('button')].map(b=>{const x=b.getBoundingClientRect();return b.contains(document.elementFromPoint(x.x+x.width/2,x.y+x.height/2));});
+          return {top:r.top,bottom:r.bottom,headerBottom:h.bottom,hits};
+        });
+        await scroll.evaluate((el:HTMLElement)=>{el.scrollTop=0});await page.waitForTimeout(100);
+        const resting=await pinned();
+        await scroll.evaluate((el:HTMLElement)=>{el.scrollTop=el.scrollHeight/2});await page.waitForTimeout(100);
+        const scrolled=await pinned();
+        assert.ok(await scroll.evaluate((el:HTMLElement)=>el.scrollTop>200),'fixture list is long enough to scroll');
+        assert.ok(scrolled.top>=scrolled.headerBottom-1,'pinned entries sit below the floating header');
+        assert.ok(scrolled.hits.every(Boolean)&&scrolled.hits.length===2,'Inbox and Assistants stay tappable while the list is scrolled');
+        assert.ok(Math.abs(scrolled.top-resting.top)<1,'fixed entry navigation does not move with conversations');
+        const fixedActions=await panel.locator('.shell-sidebar__fixed-navigation [data-action-id]').evaluateAll(nodes=>nodes.filter(el=>el.getBoundingClientRect().height>0).map(el=>({top:el.getBoundingClientRect().top,hit:el.contains(document.elementFromPoint(el.getBoundingClientRect().x+el.getBoundingClientRect().width/2,el.getBoundingClientRect().y+el.getBoundingClientRect().height/2))})));
+        assert.ok(fixedActions.length>0&&fixedActions.every(action=>action.hit),'fixed application destinations remain tappable after scrolling');
+        await page.screenshot({path:`${output}/pinned-entries-${theme}-${reducedMotion}.png`});
+        await scroll.evaluate((el:HTMLElement)=>{el.scrollTop=0});
+      }
       for (const width of [320,390,430]) {
         await page.setViewportSize({width,height:700});
         await scroll.evaluate((el:HTMLElement)=>{el.scrollTop=0});
@@ -196,27 +218,28 @@ try {
         assert.equal(await panel.locator('[data-action-id="shell.home"]').count(),0,'brand replaces duplicate Home row');
         const apps=await panel.locator('[data-action-id="shell.applications"]').boundingBox();
         const settings=await panel.getByRole('button',{name:'Settings',exact:true}).boundingBox();
+        const newChat=await panel.getByRole('button',{name:'New chat',exact:true}).boundingBox();
+        assert.ok(newChat&&settings&&Math.abs(newChat.y-settings.y)<1,'creation and utilities share one bottom row');
         assert.ok(apps&&settings&&Math.abs(apps.y-settings.y)<1&&apps.x+apps.width<=settings.x,'catalog and settings have distinct bottom targets');
         const footerPaint=await panel.evaluate(root=>{
           const scroll=root.querySelector<HTMLElement>('.shell-sidebar__scroll')!;
           const column=root.querySelector('.shell-sidebar__column')!;
-          const actions=[...root.querySelectorAll<HTMLElement>('.sidebar-new-chat,[data-surface="applications"],[data-surface="settings"]')];
+          const actions=[...root.querySelectorAll<HTMLElement>('.sidebar-new-chat,[data-surface="applications"],[data-surface="settings"],[data-surface="account"]')];
           return {bottom:scroll.getBoundingClientRect().bottom,columnBottom:column.getBoundingClientRect().bottom,
             surfaces:actions.map(el=>({surface:el.dataset.controlSurface,glass:!!el.querySelector('.ui-liquid-glass')}))};
         });
         assert.ok(Math.abs(footerPaint.bottom-footerPaint.columnBottom)<1,'list paints to the bottom edge behind actions');
-        assert.equal(footerPaint.surfaces.length,3);
-        assert.ok(footerPaint.surfaces.every(a=>a.surface==='floating'&&a.glass),'all three glass button surfaces remain');
+        assert.equal(footerPaint.surfaces.length,4);
+        assert.ok(footerPaint.surfaces.every(a=>a.surface==='floating'&&a.glass),'New chat, Applications, Settings and Account retain their floating surfaces');
         await scroll.evaluate(el=>{el.scrollTop=el.scrollHeight/2});await page.waitForTimeout(100);
-        const creation=panel.locator('.sidebar-new-chat');const creationBox=await creation.boundingBox();assert.ok(creationBox);
+        const creation=panel.locator('[data-surface="settings"]');const creationBox=await creation.boundingBox();assert.ok(creationBox);
         const underlay=await panel.evaluate(root=>{
-          const button=root.querySelector('.sidebar-new-chat')!,r=button.getBoundingClientRect();
+          const button=root.querySelector('[data-surface="settings"]')!,r=button.getBoundingClientRect();
           const scroll=root.querySelector('.shell-sidebar__scroll')!,s=scroll.getBoundingClientRect();
-          const stack=document.elementsFromPoint(r.x+r.width/2,r.y+r.height/2);
           const gap=document.elementFromPoint(s.x+2,r.y+r.height/2);
-          return {rowBehind:stack.some(el=>!!el.closest('.sidebar-activity-item')),gapInScroll:!!gap?.closest('.shell-sidebar__scroll')};
+          return {controlHit:button.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)),gapInScroll:!!gap?.closest('.shell-sidebar__scroll')};
         });
-        assert.ok(underlay.rowBehind,'conversation rows actually render behind the glass button');
+        assert.ok(underlay.controlHit,'remaining floating Settings stays directly clickable');
         assert.ok(underlay.gapInScroll,'gaps between controls reveal the scrollport instead of a footer plate');
         await page.screenshot({path:`${output}/footer-underlay-${width}-${theme}-${reducedMotion}.png`});
         await scroll.evaluate(el=>{el.scrollTop=el.scrollHeight});await page.waitForTimeout(100);
@@ -803,16 +826,16 @@ try {
           assert.ok(sample.drawerRight>sample.pageLeft+20,'page uncovers the stationary rear layer');
           assert.ok(Math.abs(sample.frontWash + sample.wash - (reducedMotion==='reduce'?0:.65))<.002,'foreground and sidebar wash remain reciprocal');
           if(reducedMotion==='reduce') assert.ok(sample.scale===1&&sample.opacity===1&&sample.wash===0,'reduced motion skips depth');
-          else assert.ok(sample.scale<1&&sample.scale>.9&&sample.opacity<1&&sample.opacity>.45&&sample.wash>0&&sample.wash<.65,JSON.stringify(sample));
+          else assert.ok(sample.scale<1&&sample.scale>.9&&sample.opacity===1&&sample.wash>0&&sample.wash<.65,JSON.stringify(sample));
         }
-        if(reducedMotion!=='reduce') assert.ok(b.scale>a.scale&&b.opacity>a.opacity&&b.wash<a.wash,'reversing the close brings the sidebar forward');
+        if(reducedMotion!=='reduce') assert.ok(b.scale>a.scale&&b.opacity===1&&a.opacity===1&&b.wash<a.wash,'reversing the close brings the sidebar forward');
         assert.ok(Math.abs(b.pageLeft-a.pageLeft-35)<2,JSON.stringify({a,b}));
         await page.screenshot({path:`${output}/${theme}-${reducedMotion}-${width}-held-depth.png`});
         evidence.push({theme,reducedMotion,width,heldDepth:[a,b],materialEdges:{open:openEdges,held:aEdges,reversed:bEdges}});
         await touch('touchMove',30,400);await page.waitForTimeout(40);
         const recessed=await readStack();
         if(reducedMotion!=='reduce') {
-          assert.ok(recessed.scale<.96&&recessed.opacity<.8&&recessed.wash>.25,'partly covered sidebar has visible depth and wash');
+          assert.ok(recessed.scale<.96&&recessed.opacity===1&&recessed.wash>.25,'partly covered sidebar has visible depth and wash');
           const veil=await page.locator('.app-shell-mobile-sidebar-wash').evaluate((e:HTMLElement)=>({z:getComputedStyle(e).zIndex,pointer:getComputedStyle(e).pointerEvents,background:getComputedStyle(e).backgroundImage}));
           assert.equal(veil.z,'3');assert.equal(veil.pointer,'none');assert.match(veil.background,/linear-gradient/);
         }
@@ -849,7 +872,7 @@ try {
       assert.deepEqual(await page.evaluate(() => (window as any).unsafeSidebarPaint), [], 'sidebar content and backing never paint above the returned page during exit presence');
       assert.deepEqual(await page.evaluate(() => (window as any).pageTranslationViolations), [], 'mobile page never bounces outside its closed/open bounds');
       await page.setViewportSize({width:1280,height:844});await page.waitForTimeout(300);
-      const desktop=page.locator('.app-shell-touch-sidebar-toggle button');await desktop.waitFor();
+      const desktop=page.locator('.shell-chrome [data-app-shell-sidebar-trigger]');await desktop.waitFor();
       await desktop.tap();await page.waitForTimeout(650);assert.equal(await row.evaluate((e:HTMLElement)=>getComputedStyle(e).transform),'none','desktop does not translate');
       await page.keyboard.press('Escape');await page.waitForTimeout(650);assert.equal(await desktop.evaluate((e:HTMLElement)=>e===document.activeElement),true);
       assert.equal(await page.evaluate(()=>(window as any).fixture.mounts()),1);assert.deepEqual(errors,[]);
@@ -857,11 +880,11 @@ try {
     }
     if (process.env.OPENCRAFT_GESTURE_INPLACE_ONLY === '1') {
       await page.evaluate(() => (window as any).fixture.setDensity('on'));
-      const control=page.locator('.app-shell-touch-sidebar-toggle button');
-      await control.waitFor();
+      const control=page.locator('.shell-chrome [data-app-shell-sidebar-trigger]');
       for(const width of [1280]) {
         await page.setViewportSize({width,height:844}); await page.waitForTimeout(300);
-        await page.evaluate(() => (window as any).sameToggle=document.querySelector('.app-shell-touch-sidebar-toggle button'));
+        await control.waitFor();
+        await page.evaluate(() => (window as any).sameToggle=document.querySelector('.shell-chrome [data-app-shell-sidebar-trigger]'));
         const before=await control.boundingBox(); assert.ok(before && before.width>=44);
         const right=await page.locator('.app-shell-header__end-slot .app-shell-header__right-panel-toggle').boundingBox();
         assert.ok(right && right.width>=44 && right.height>=44,'right control retains touch target');
@@ -874,7 +897,7 @@ try {
               const samples=[];
               for(let i=0;i<12;i++) {
                 await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
-                const button=document.querySelector<HTMLButtonElement>('.app-shell-touch-sidebar-toggle button')!;
+                const button=document.querySelector<HTMLButtonElement>('.shell-chrome [data-app-shell-sidebar-trigger]')!;
                 const box=button.getBoundingClientRect();
                 samples.push({same:button===(window as any).sameToggle,expanded:button.getAttribute('aria-expanded'),x:box.x,y:box.y,
                   hittable:document.elementFromPoint(box.x+box.width/2,box.y+box.height/2)===button});
@@ -919,141 +942,75 @@ try {
         evidence.push({theme,reducedMotion,width,edgeInset:2,safeInsets:true,stationaryNode:true,hitTestEveryFrame:true,cycles:3,rapidReopen:true});
       }
       await page.evaluate(() => (window as any).fixture.setDensity('off'));
-      await page.waitForFunction(()=>!document.querySelector('.app-shell-touch-sidebar-toggle'));
+      assert.equal(await control.evaluate(button=>button===(window as any).sameToggle),true,'density changes keep the same Shell control');
+      assert.equal(await page.locator('.app-shell-touch-sidebar-toggle').count(),0,'no measured body-level control exists');
       assert.equal(await page.getByLabel('Draft',{exact:true}).inputValue(),'Keep this draft');
       assert.deepEqual(errors,[]);
       await context.close(); continue;
     }
-    // Mobile action uses the real Shell portal/scroll/footer owners, not CSS-only markup.
+    // One action: floating touch drawer, inline compact/desktop navigation.
     if (process.env.OPENCRAFT_GESTURE_FAB_ONLY === '1') {
-      if (process.env.OPENCRAFT_GESTURE_PWA_CAPACITY === '1') {
-        await page.evaluate(() => {
-          const html = document.documentElement;
-          html.dataset.windowHost = 'browser'; html.dataset.windowDisplayMode = 'standalone';
-          html.dataset.windowEdgeStrategy = 'legacy-overlay-requested';
-          html.dataset.timelineTracksVisualViewport = 'true'; html.dataset.timelineViewportOccluded = 'false';
-        });
-        await page.addStyleTag({ content: '.app-shell-root, .app-shell-floating-overlay-root, .app-shell-page-presentation { height: calc(100dvh + 80px) !important; }' });
-      }
-
-      for (const width of [320,390,430]) {
-        await page.setViewportSize({width,height:844}); await page.waitForTimeout(250);
-        await drag(80,width-50); await opened();
+      const assertInlineOrder = async () => {
         const button=panel.getByRole('button',{name:'New chat',exact:true});
         assert.equal(await button.count(),1,'one accessible creation action');
-        assert.equal(await panel.locator('.sidebar-tasks > .sidebar-new-chat').count(),0,'mobile inline row removed');
-        const before=await button.boundingBox();assert.ok(before);
-        if (process.env.OPENCRAFT_GESTURE_PWA_CAPACITY === '1') {
-          const geometry = await page.evaluate(() => {
-            const panel = document.querySelector('.app-shell-floating-left-panel')!.getBoundingClientRect();
-            const row = document.querySelector('.app-shell-row')!.getBoundingClientRect();
-            const portal = document.querySelector('.app-shell-floating-overlay-root')!.getBoundingClientRect();
-            const overlays = document.querySelector('.app-shell-page-presentation')!.getBoundingClientRect();
-            return { panelBottom: panel.bottom, rowHeight: row.height, portalHeight: portal.height, overlayHeight: overlays.height,
-              pagePeek: innerWidth - row.left, visibleHeight: innerHeight };
-          });
-          assert.ok(geometry.panelBottom <= geometry.visibleHeight, JSON.stringify(geometry));
-          assert.equal(geometry.rowHeight, geometry.portalHeight, 'page and drawer share dynamic capacity');
-          assert.equal(geometry.overlayHeight, geometry.portalHeight, 'page overlays share dynamic capacity');
-          assert.ok(geometry.pagePeek >= 64 && geometry.pagePeek < 65, 'only a reachable page strip remains');
-          evidence.push({ pwaCapacity: geometry, theme, reducedMotion, width });
-        }
-
-        const initialViewport=await panel.locator('.shell-sidebar__scroll').boundingBox();assert.ok(initialViewport);
-        const column=await panel.locator('.shell-sidebar__column').boundingBox();assert.ok(column);
-        assert.ok(Math.abs(initialViewport.y+initialViewport.height-column.y-column.height)<1,
-          'initial list viewport reaches the bottom edge');
-        await expandScrollFixture();
-        assert.ok(before.height>=48 && before.width>=100,'comfortable pill touch target');
+        assert.equal(await panel.locator('.sidebar-content-scroll > .sidebar-new-chat').count(),1,'creation belongs to the shared content, not the bottom overlay');
+        assert.equal(await panel.locator('.shell-sidebar__floating-action .sidebar-new-chat,.sidebar-tasks > .sidebar-new-chat').count(),0);
+        assert.equal(await button.getAttribute('data-control-surface'),'integrated');
+        const geometry=await panel.evaluate(root=>{
+          const box=(selector:string)=>root.querySelector(selector)!.getBoundingClientRect().toJSON();
+          return {entry:box('.sidebar-extension-catalog'),creation:box('.sidebar-new-chat'),list:box('.sidebar-list-toolbar')};
+        });
+        assert.ok(geometry.creation.top>=geometry.entry.bottom-1,'New chat follows Inbox/Assistants');
+        assert.ok(geometry.creation.bottom<=geometry.list.top+1,'New chat precedes Conversations');
+        return button;
+      };
+      for (const width of [320,390,430]) {
+        await page.setViewportSize({width,height:844});await page.waitForTimeout(250);
+        await drag(80,width-50);await opened();
+        const button=panel.getByRole('button',{name:'New chat',exact:true});
+        assert.equal(await button.count(),1);
+        assert.equal(await panel.locator('.shell-sidebar__floating-action .sidebar-new-chat').count(),1);
+        assert.equal(await button.getAttribute('data-control-surface'),'floating');
+        const before=await button.boundingBox();assert.ok(before&&before.height>=44&&before.width>=44,'compact creation retains its full touch target '+JSON.stringify(before));
+        const account=panel.locator('[data-surface="account"]');
+        await account.tap();await page.waitForTimeout(150);
+        assert.equal(await page.locator('.shell-navigation__peek').count(),1,'personal entrance opens existing account menu');
+        await page.keyboard.press('Escape');await page.waitForTimeout(200);
+        const bounds=await panel.evaluate(root=>[...root.querySelectorAll<HTMLElement>('.sidebar-new-chat,[data-surface="applications"],[data-surface="settings"],[data-surface="account"]')].map(e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height,hit:e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}}));
+        for(const b of bounds)assert.ok(b.width>=44&&b.height>=44&&b.hit,'separate reachable touch target '+JSON.stringify(bounds));
+        for(let i=0;i<bounds.length;i++)for(let j=i+1;j<bounds.length;j++){const a=bounds[i],b=bounds[j];assert.ok(a.right<=b.x+1||b.right<=a.x+1||a.bottom<=b.y+1||b.bottom<=a.y+1,'bottom actions never overlap');}
         const scroll=panel.locator('.shell-sidebar__scroll');
-        await scroll.evaluate(e=>{e.scrollTop=0});await page.waitForTimeout(100);
-        const home=process.env.OPENCRAFT_GESTURE_PWA_CAPACITY === '1' ? panel.locator('.sidebar-activity-item').first() : panel.locator('[data-action-id="shell.home"]');
-        const homeBefore=await home.boundingBox();assert.ok(homeBefore);
-        await scroll.evaluate(e=>{e.scrollTop=e.scrollHeight});await page.waitForTimeout(100);
-        const homeAfter=await home.boundingBox();assert.ok(homeAfter);
-        const scrollTop=await scroll.evaluate(e=>e.scrollTop);
-        const viewport=await scroll.boundingBox();assert.ok(viewport);
-        assert.ok(scrollTop>100,'fixture scrolls enough to hide navigation');
-        assert.ok(Math.abs(homeBefore.y-homeAfter.y-scrollTop)<1,'Home scrolls with the shared viewport: '+JSON.stringify({homeBefore,homeAfter,scrollTop}));
-        assert.ok(homeAfter.y+homeAfter.height<=viewport.y,'Home leaves the visible list instead of sticking over conversations');
-        const after=await button.boundingBox();assert.ok(after);
-        assert.ok(Math.abs(after.y-before.y)<1,'action stays fixed as conversations scroll');
-        const footer=await panel.locator('.shell-sidebar__rail-footer').boundingBox();assert.ok(footer);
-        const settings=panel.getByRole('button',{name:'Settings',exact:true});
-        assert.equal(await settings.count(),1,'one accessible settings action');
-        const gear=await settings.boundingBox();assert.ok(gear);
-        // Controls overlay the full-height scrollport; content clearance is measured.
-        assert.ok(viewport.y+viewport.height>Math.max(after.y,gear.y), 'list continues behind glass actions');
-        assert.ok(Math.abs(viewport.y+viewport.height-column.y-column.height)<1, 'list reaches bottom edge');
-        assert.equal(await scroll.evaluate(e=>getComputedStyle(e).marginBottom),'0px');
-        assert.ok(gear.width>=48&&gear.height>=48,'settings retains a comfortable touch target');
-        assert.ok(gear.x>=after.x+after.width+8,'settings floats to the right without overlapping creation');
-        assert.ok(Math.abs(gear.y-after.y)<1,'floating actions share a baseline');
-        assert.equal(await panel.locator('[data-surface="account"],.sidebar-account__avatar').count(),0,'no mobile avatar or hidden account entrance');
-        const creationPlate=await panel.locator('.shell-sidebar__floating-action').evaluate(e=>getComputedStyle(e).backgroundColor);
-        assert.equal(creationPlate,'rgba(0, 0, 0, 0)','creation host remains transparent');
-        const plate=await panel.locator('.shell-sidebar__rail-footer').evaluate(e=>({background:getComputedStyle(e).backgroundColor,border:getComputedStyle(e).borderTopWidth}));
-        assert.deepEqual(plate,{background:'rgba(0, 0, 0, 0)',border:'0px'},'no bottom plate or divider');
-        assert.ok(gear.y+gear.height<=844-34,'settings respects the simulated bottom safe area');
-        const last=await panel.locator('.sidebar-activity-item').last().boundingBox();assert.ok(last);
-        assert.ok(last.y+last.height<=after.y,'last conversation scrolls fully above action');
-        const pagination=await panel.locator('.sidebar-activity-pagination').last().boundingBox();assert.ok(pagination);
-        assert.ok(pagination.y+pagination.height<=Math.min(after.y,gear.y),'final pagination remains fully above glass actions');
-        assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-        await page.screenshot({path:`${output}/${theme}-${reducedMotion}-${width}-fab.png`});
+        await scroll.evaluate(el=>{el.scrollTop=el.scrollHeight});await page.waitForTimeout(100);
+        const after=await button.boundingBox();assert.ok(after&&Math.abs(after.y-before.y)<1,'touch action stays fixed while conversations scroll');
+        await scroll.evaluate(el=>{el.scrollTop=0});await page.waitForTimeout(100);
+        await page.screenshot({path:output+'/'+theme+'-'+reducedMotion+'-'+width+'-touch-new-chat.png'});
         const prior=await page.evaluate(()=>(window as any).fixture.actions.length);
         await button.tap();await page.waitForTimeout(650);await closed();
-        assert.deepEqual(await page.evaluate(n=>(window as any).fixture.actions.slice(n),prior),['New chat'],'one shared action and drawer dismissal');
+        assert.deepEqual(await page.evaluate(n=>(window as any).fixture.actions.slice(n),prior),['New chat'],'one invocation and mobile drawer dismissal');
         assert.equal(await page.getByLabel('Draft',{exact:true}).inputValue(),'Keep this draft');
-        await drag(80,width-50);await opened();
-        const settingsPrior=await page.evaluate(()=>(window as any).fixture.actions.length);
-        await panel.getByRole('button',{name:'Settings',exact:true}).tap();await page.waitForTimeout(650);await closed();
-        await drag(80,width-50);await opened();
-        await panel.locator(".settings-page__navigation .ui-navigation-list:visible").waitFor({state:'visible'});
-        assert.deepEqual(await page.evaluate(n=>(window as any).fixture.actions.slice(n),settingsPrior),['Settings'],'one settings entrance intent; destination dismisses the drawer');
-        assert.deepEqual(await page.evaluate(()=>(window as any).fixture.route()),{kind:'settings',slug:'appearance'});
-        await page.screenshot({path:`${output}/${theme}-${reducedMotion}-${width}-settings-categories.png`});
-        const category=width===320?'Appearance':'Chat';
-        await panel.getByRole('button',{name:category,exact:true}).tap();await page.waitForTimeout(650);await closed();
-        assert.deepEqual(await page.evaluate(()=>(window as any).fixture.route()),{kind:'settings',slug:category.toLowerCase()});
-        await drag(80,width-50);await opened();
-        assert.equal(await page.locator('.app-shell-header [data-return-to-app]').count(),0);
-        const returnButton=panel.locator('.settings-return-to-app:visible');
-        await returnButton.waitFor();assert.equal(await returnButton.isEnabled(),true,'settings exit does not require browser history');
-        await returnButton.tap();await page.waitForTimeout(150);
-        assert.deepEqual(await page.evaluate(()=>(window as any).fixture.route()),{kind:'conversation'});
-        assert.equal(await page.getByLabel('Draft',{exact:true}).inputValue(),'Keep this draft');
-        evidence.push({theme,reducedMotion,width,button:after,gear,footer,last,passed:true});
+        evidence.push({theme,reducedMotion,width,floatingCreation:true,accountPopover:true});
       }
-      // Non-chat destinations can omit creation; settings remains reachable.
-      await page.setViewportSize({width:390,height:844});
       await drag(80,340);await opened();
-      await page.evaluate(()=>(window as any).fixture.setShowNewChat(false));
-      await panel.locator('.sidebar-new-chat').waitFor({state:'detached'});
-      const standaloneSettings=panel.getByRole('button',{name:'Settings',exact:true});
-      await standaloneSettings.waitFor({state:'visible'});
-      const settingsPrior=await page.evaluate(()=>(window as any).fixture.actions.length);
-      await standaloneSettings.tap();await page.waitForTimeout(650);await closed();
-      await drag(80,340);await opened();
-      assert.deepEqual(await page.evaluate(n=>(window as any).fixture.actions.slice(n),settingsPrior),['Settings']);
-      await panel.getByRole('button',{name:'Appearance',exact:true}).tap();await page.waitForTimeout(650);await closed();
-      assert.deepEqual(await page.evaluate(()=>(window as any).fixture.route()),{kind:'settings',slug:'appearance'},'choosing already selected category still dismisses');
-      await page.evaluate(()=>(window as any).fixture.returnToChat());
+      await page.evaluate(()=>(window as any).fixture.setDensity('off'));await page.waitForTimeout(150);
+      await assertInlineOrder();
+      await page.evaluate(()=>(window as any).fixture.setShowNewChat(false));await page.waitForTimeout(100);
+      assert.equal(await panel.locator('.sidebar-new-chat').count(),0,'hidden creation leaves no duplicate');
       await page.evaluate(()=>(window as any).fixture.setShowNewChat(true));
       await page.setViewportSize({width:1280,height:900});
-      await page.evaluate(()=>(window as any).fixture.setOpen(true));await page.waitForTimeout(700);
-      assert.equal(await page.locator('.shell-sidebar__floating-action').count(),0,'desktop has no floating action');
-      await page.getByRole('button',{name:'Synthetic employee',exact:true}).waitFor({state:'visible'});
-      assert.equal(await page.locator('.shell-sidebar__rail-footer [data-surface="settings"]').count(),1,'desktop rail settings remains available');
-      await page.locator('.sidebar-tasks > .sidebar-new-chat').waitFor({state:'visible'});
-      assert.equal(await page.getByRole('button',{name:'New chat',exact:true}).count(),1,'desktop inline action remains unique');
-      const desktopPrior=await page.evaluate(()=>(window as any).fixture.actions.length);
-      await page.getByRole('button',{name:'New chat',exact:true}).click();
-      assert.deepEqual(await page.evaluate(n=>(window as any).fixture.actions.slice(n),desktopPrior),['New chat']);
-      await page.locator('.shell-sidebar__rail-footer [data-surface="settings"]').click();
-      await page.locator(".settings-page__navigation .ui-navigation-list:visible").waitFor({state:'visible'});
-      assert.deepEqual(await page.evaluate(()=>(window as any).fixture.route()),{kind:'settings',slug:'appearance'},'desktop retains default Appearance');
-      assert.equal(await page.evaluate(()=>(window as any).fixture.sidebarOpen()),true,'desktop rail stays docked');
+      await page.evaluate(()=>{(window as any).fixture.setOpen(true);(window as any).fixture.setDensity('off')});
+      await page.waitForTimeout(700);
+      const desktopButton=page.getByRole('button',{name:'New chat',exact:true});
+      assert.equal(await desktopButton.count(),1);
+      assert.equal(await page.locator('.sidebar-content-scroll > .sidebar-new-chat').count(),1);
+      assert.ok(await page.locator('.sidebar-new-chat').evaluate(e=>{
+        const toolbar=e.parentElement!.querySelector('.sidebar-list-toolbar')!;
+        return e.getBoundingClientRect().bottom<=toolbar.getBoundingClientRect().top;
+      }),'desktop creation also precedes Conversations');
+      await page.screenshot({path:output+'/'+theme+'-'+reducedMotion+'-desktop-inline-new-chat.png'});
+      const prior=await page.evaluate(()=>(window as any).fixture.actions.length);
+      await desktopButton.click();
+      assert.deepEqual(await page.evaluate(n=>(window as any).fixture.actions.slice(n),prior),['New chat']);
+      assert.equal(await page.evaluate(()=>(window as any).fixture.sidebarOpen()),true,'desktop stays docked');
       assert.equal(await page.getByLabel('Draft',{exact:true}).inputValue(),'Keep this draft');
       assert.deepEqual(errors,[]);await context.close();continue;
     }
@@ -1204,5 +1161,5 @@ try {
     assert.deepEqual(errors,[]);evidence.push({theme,reducedMotion,held:[held1,held2],safe,mounts,scrollPosition,passed:true});
     await context.close();
   }
-  console.log(process.env.OPENCRAFT_GESTURE_SAFE_LAYOUT_ONLY === '1' ? 'Browser-host safe layout stays active without transient sidebar across widths, themes and motion preferences' : process.env.OPENCRAFT_GESTURE_STACK_ONLY === '1' ? 'Mobile page stack, plugin mark, plain entrance, held reversal/cancel, Escape and reopen passed in light/dark and normal/reduced motion' : process.env.OPENCRAFT_GESTURE_INPLACE_ONLY === '1' ? 'Touch sidebar button retains its node, position and hit target throughout open/close; compact fallback and draft preserved' : process.env.OPENCRAFT_GESTURE_TOGGLE_RETURN_ONLY === '1' ? 'Sidebar entrance returns on first closing frame in light/dark and normal/reduced motion; draft and exit lifetime preserved' : process.env.OPENCRAFT_GESTURE_FAB_ONLY === '1' ? 'Mobile creation/settings geometry, hidden account, no plate, scroll, shared actions and desktop fallback passed' : process.env.OPENCRAFT_GESTURE_WIDTH_ONLY === '1' ? 'Real touch sidebar normal-width, screen clamp, reveal/dismiss and draft checks passed' : 'Real touch sidebar follow/cancel/reverse, scroll/draft preservation and safe-area checks passed');
+  console.log(process.env.OPENCRAFT_GESTURE_SAFE_LAYOUT_ONLY === '1' ? 'Browser-host safe layout stays active without transient sidebar across widths, themes and motion preferences' : process.env.OPENCRAFT_GESTURE_STACK_ONLY === '1' ? 'Mobile page stack, plugin mark, plain entrance, held reversal/cancel, Escape and reopen passed in light/dark and normal/reduced motion' : process.env.OPENCRAFT_GESTURE_INPLACE_ONLY === '1' ? 'Touch sidebar button retains its node, position and hit target throughout open/close; compact fallback and draft preserved' : process.env.OPENCRAFT_GESTURE_TOGGLE_RETURN_ONLY === '1' ? 'Sidebar entrance returns on first closing frame in light/dark and normal/reduced motion; draft and exit lifetime preserved' : process.env.OPENCRAFT_GESTURE_FAB_ONLY === '1' ? 'Touch bottom New chat and account, compact inline placement, single action, scroll and draft retention passed' : process.env.OPENCRAFT_GESTURE_WIDTH_ONLY === '1' ? 'Real touch sidebar normal-width, screen clamp, reveal/dismiss and draft checks passed' : 'Real touch sidebar follow/cancel/reverse, scroll/draft preservation and safe-area checks passed');
 } finally { await writeFile(`${output}/result.json`,JSON.stringify(evidence,null,2));await browser?.close();await vite.close(); }

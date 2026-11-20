@@ -52,6 +52,11 @@ export const selectionMotion = {
   hoveredScale: 1.04,
 } as const;
 
+/** Full-page travel needs a readable handoff, including wide touch panels. */
+export const pagedMotion = {
+  settle: { duration: 0.42, ease: [0.25, 0.1, 0.25, 1] },
+} as const;
+
 /**
  * Cross-platform menu geometry. The platform overlay owns collision and
  * placement mechanics; product surfaces only choose an anchor alignment.
@@ -92,6 +97,8 @@ export const frame = {
   toolbarHeight: 46,
   paneToolbarHeight: 40,
   sidebarDefaultWidth: sidebarListDefaultWidth,
+  /** Two-line collection rows include an avatar, summary and timestamp. */
+  collectionNavigationWidth: 320,
   serverDrawerWidth: 280,
   serverDrawerEdgeWidth: 36,
   sidebarIconRailWidth,
@@ -422,6 +429,7 @@ export const opencraftShadowTokens = {
 
 /** Artwork scale is a product choice, separate from color and typography. */
 export const workbenchIconMetrics = {
+  overview: { heading: 20, action: 18 },
   // Shared action artwork and outline navigation use one readable stroke.
   core: { stroke: 2, navigation: 14, settings: 16, panel: 14, work: 15, chrome: 16 },
   classic: { stroke: 2, navigation: 15, settings: 16, panel: 14, work: 15, chrome: 16 },

@@ -1,3 +1,4 @@
+import { assertComposerPlacement } from "@opencraft/composer-core";
 import { asHostId } from "@opencraft/chat-core";
 import type { MessageSender } from "@opencraft/appserver-protocol";
 import type {
@@ -90,6 +91,7 @@ function defaultDraftId(): string {
 }
 
 function normalizeExecution(execution: ComposerExecutionTarget): ComposerExecutionTarget {
+  assertComposerPlacement(execution);
   if(execution.collaborationSpaceId!==undefined&&(typeof execution.collaborationSpaceId!=='string'||!execution.collaborationSpaceId||execution.collaborationSpaceId.length>256))throw new Error('Invalid collaboration space');
   const roots = [...new Set(
     execution.workspace.runtimeWorkspaceRoots
@@ -99,10 +101,12 @@ function normalizeExecution(execution: ComposerExecutionTarget): ComposerExecuti
   const cwd = execution.workspace.cwd?.trim() || null;
   return {
     hostId: asHostId(execution.hostId),
+    ...(execution.environment === undefined ? {} : { environment: { ...execution.environment } }),
     ...(execution.collaborationSpaceId===undefined?{}:{collaborationSpaceId:execution.collaborationSpaceId}),
     workspace: {
       cwd,
       runtimeWorkspaceRoots: roots,
+      ...(execution.workspace.source === undefined ? {} : { source: { ...execution.workspace.source } }),
       ...(execution.workspace.projectId === undefined
         ? {}
         : { projectId: execution.workspace.projectId }),

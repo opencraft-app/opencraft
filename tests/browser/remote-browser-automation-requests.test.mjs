@@ -67,11 +67,16 @@ test('gateway cancellation uses the original private request identity and never 
   const messages = []; service.child = { connected: true, send(message) { messages.push(message); }, kill() {} };
   const controller = new AbortController();
   const pending = service.request('page', 'automation', { method: 'wait', input: { text: 'never', timeoutMs: 60000 } }, 'grant', 'document', { signal: controller.signal });
+  let settled = false; void pending.finally(() => { settled = true; }).catch(() => {});
   const rejection = assert.rejects(pending, { code: 'CDP_ABORTED', retryable: false, outcome: 'unknown' });
-  controller.abort(); await rejection;
+  controller.abort(); await tick();
   assert.equal(messages.length, 2); assert.equal(messages[1].method, 'cancelAutomation');
-  assert.equal(messages[1].input.requestId, messages[0].id); assert.equal(service.requests.size, 0);
+  assert.equal(messages[1].input.requestId, messages[0].id); assert.equal(service.requests.size, 1);
+  assert.equal(settled, false, 'logical cancellation cannot release physical reply custody');
+  service.receive({ type: 'result', id: messages[1].id, value: { cancelled: true } });
+  assert.equal(service.requests.size, 1); assert.equal(settled, false, 'a cancellation command ACK is not the original operation reply');
   service.receive({ type: 'result', id: messages[0].id, value: 'late' });
+  await rejection; assert.equal(settled, true); assert.equal(service.requests.size, 0);
   await assert.rejects(service.request('page', 'automation', {}, undefined, undefined, { signal: controller.signal }), { outcome: 'not-dispatched' });
   assert.equal(messages.length, 2); service.close();
 });
@@ -84,4 +89,33 @@ test('renderer loss keeps an admitted automation outcome unknown and does not su
   const rejection = assert.rejects(pending, { code: 'BROWSER_UNAVAILABLE', retryable: false, outcome: 'unknown' });
   service.receive({ type: 'renderer-gone', page: 'page' }); await rejection;
   assert.equal(service.requests.size, 0); service.pages.clear(); service.close();
+});
+
+test('cancelling an uninterruptible native capture retains custody until its original reply', async () => {
+  const service = new RemoteBrowserService({ root: '/unused', dataDirectory: '/unused', ownerConnector: null });
+  const messages = []; service.child = { connected: true, send(message) { messages.push(message); }, kill() {} };
+  const controller = new AbortController(); let settled = false;
+  const pending = service.request('page', 'capture', {}, undefined, undefined, { signal: controller.signal });
+  void pending.finally(() => { settled = true; }).catch(() => {});
+  const rejection = assert.rejects(pending, { code: 'CDP_ABORTED', outcome: 'unknown' });
+  controller.abort(); await tick();
+  assert.equal(messages.length, 1, 'there is no fake native capture cancellation command');
+  assert.equal(service.requests.size, 1); assert.equal(settled, false);
+  service.receive({ type: 'result', id: messages[0].id, value: 'private native image must not escape after cancellation' });
+  await rejection; assert.equal(service.requests.size, 0); service.close();
+});
+
+test('a native cancellation deadline remains unknown and never fabricates completion', async t => {
+  const nativeTimeout = globalThis.setTimeout;
+  t.mock.method(globalThis, 'setTimeout', (callback, delay, ...args) => nativeTimeout(callback, delay >= 35000 ? 5 : delay, ...args));
+  const service = new RemoteBrowserService({ root: '/unused', dataDirectory: '/unused', ownerConnector: null });
+  const messages = []; service.child = { connected: true, send(message) { messages.push(message); }, kill() {} };
+  const controller = new AbortController();
+  const pending = service.request('page', 'automation', { method: 'wait', input: { timeoutMs: 60000 } }, undefined, undefined, { signal: controller.signal });
+  const rejected = assert.rejects(pending, { code: 'CDP_ABORTED', retryable: false, outcome: 'unknown' });
+  controller.abort(); assert.equal(service.requests.size, 1);
+  await new Promise(resolve => nativeTimeout(resolve, 20)); await rejected;
+  assert.equal(service.requests.size, 0); assert.equal(messages.length, 2);
+  service.receive({ type: 'result', id: messages[0].id, value: 'late result cannot change the unknown outcome' });
+  service.close();
 });

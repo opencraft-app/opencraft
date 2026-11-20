@@ -7,4 +7,5 @@ function browserControlAttributesAreSensitive(attributes) {
   const pattern = /(?:pass(?:word|code)?|secret|token|api[-_\s]?key|credential|authorization|cookie|one[-_\s]?time|otp|cc[-_\s]?(?:number|csc|cvv))/iu;
   return Object.values(attributes).some(value => typeof value === 'string' && pattern.test(value));
 }
-module.exports = { browserControlAttributesAreSensitive };
+const SENSITIVE_CONTROL_PATTERN = /(?:pass(?:word|code)?|secret|token|api[-_\s]?key|credential|authorization|cookie|one[-_\s]?time|otp|cc[-_\s]?(?:number|csc|cvv))/iu;
+module.exports = { browserControlAttributesAreSensitive, SENSITIVE_CONTROL_PATTERN };

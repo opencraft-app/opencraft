@@ -33,7 +33,18 @@ function retireMetadata(draft, page, threadId, advanceRevision) {
       pageIds: [...new Set(pageIds)], tabIds: retiredTabIds, status: 'closing',
     });
   }
-  if (!state || !pageIds.length) return false;
+  let presentationChanged = false;
+  if (state?.presentationRequests) state.presentationRequests = state.presentationRequests.map(request => {
+    if (!retiredTabIds.includes(request.tabId) || !['pending', 'claimed'].includes(request.status)) return request;
+    const receipt = draft.presentationReceipts.get(request.id);
+    if (!receipt || !['pending', 'claimed'].includes(receipt.status)) return request;
+    const cancelled = { ...receipt, status: 'cancelled' };
+    draft.presentationReceipts.put(cancelled); presentationChanged = true; return cancelled;
+  });
+  if (!state || !pageIds.length) {
+    if (presentationChanged && advanceRevision) state.revision++;
+    return presentationChanged;
+  }
   const values = { ...state.values }, keyRevisions = { ...state.keyRevisions };
   const nextStorage = Object.fromEntries(Object.entries(storage).filter(([id]) => !pageIds.includes(id)));
   const changes = { storage: nextStorage, pages: parse(state.values.pages, []).filter(row => !pageIds.includes(row?.id)), tabs: tabs.filter(row => !pageIds.includes(row?.pageId)) };
@@ -46,7 +57,8 @@ function retireMetadata(draft, page, threadId, advanceRevision) {
     const next = { ...state, values, keyRevisions, revision: state.revision + (advanceRevision ? 1 : 0) };
     draft.states = draft.states.filter(([owner]) => owner !== page.ownerId); draft.states.push([page.ownerId, next]);
   }
-  return changed;
+  if (!changed && presentationChanged && advanceRevision) state.revision++;
+  return changed || presentationChanged;
 }
 
 /** Synchronous part shared by API close and legacy metadata removal. The latter

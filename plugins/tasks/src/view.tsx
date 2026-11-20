@@ -1,3 +1,4 @@
+import { ModalContent } from "@opencraft/design-system-web/modal-content";
 import { Button } from "@opencraft/design-system-web/button";
 import { UrgentPriorityIcon, ArrowUpIcon, ArrowDownIcon, MinusIcon } from "@opencraft/design-system-web/action-icons";
 import { ChevronRightIcon } from "@opencraft/design-system-web/action-icons";
@@ -546,7 +547,7 @@ function QuickEditor({ draft, task, session, planning, supportedKinds, propertie
     <div className="tasks-quick-form__actions"><SettingsButton type="submit" variant="primary" disabled={busy || changed || !draft.title.trim()}>{t("save")}</SettingsButton><SettingsButton type="button" variant="quiet" disabled={busy} onClick={() => session.full()}><ArrowUpRight size={14} />{t("fullDetails")}</SettingsButton><SettingsButton type="button" variant="quiet" disabled={busy} onClick={() => session.close()}>{t("closeButton")}</SettingsButton></div>
   </form>;
   const returnFocus = (event: Event) => { event.preventDefault(); if (session.getSnapshot().draft === null) anchor?.focus({ preventScroll: true }); };
-  if (compact) return <Dialog.Root open onOpenChange={open => { if (!open && !busy) session.close(); }}><Dialog.Portal><Dialog.Overlay className="modal-surface__scrim" data-layer="application" data-appearance="utility" /><Dialog.Content className="modal-surface tasks-quick-dialog" data-layer="application" data-appearance="utility" aria-describedby={undefined} onCloseAutoFocus={returnFocus} onEscapeKeyDown={event => { if (busy) event.preventDefault(); }} onPointerDownOutside={event => { if (busy) event.preventDefault(); }}><Dialog.Title className="tasks-sr-only">{t("quickEdit")}</Dialog.Title>{fields}</Dialog.Content></Dialog.Portal></Dialog.Root>;
+  if (compact) return <Dialog.Root open onOpenChange={open => { if (!open && !busy) session.close(); }}><ModalContent overlayClassName={"modal-surface__scrim"} overlayProps={{"data-layer":"application","data-appearance":"utility"}} className="modal-surface tasks-quick-dialog" data-layer="application" data-appearance="utility" aria-describedby={undefined} onCloseAutoFocus={returnFocus} onEscapeKeyDown={event => { if (busy) event.preventDefault(); }} onPointerDownOutside={event => { if (busy) event.preventDefault(); }}><Dialog.Title className="tasks-sr-only">{t("quickEdit")}</Dialog.Title>{fields}</ModalContent></Dialog.Root>;
   const rect = () => (anchor?.closest("[data-task-id]") ?? anchor)?.getBoundingClientRect() ?? new DOMRect(24, 80, 272, 100);
   return <Popover.Root open modal onOpenChange={open => { if (!open && !busy) session.close(); }}><Popover.Anchor virtualRef={{ current: { getBoundingClientRect: rect } }} /><Popover.Portal><div className="tasks-quick-scrim" /></Popover.Portal><Popover.Portal><Popover.Content className="tasks-quick-popover" side="right" align="start" sideOffset={8} collisionPadding={16} onCloseAutoFocus={returnFocus} onEscapeKeyDown={event => { if (busy) event.preventDefault(); }} onInteractOutside={event => { if (busy) event.preventDefault(); }}>{fields}</Popover.Content></Popover.Portal></Popover.Root>;
 }
@@ -724,14 +725,7 @@ function Editor({
   };
   return (
     <Dialog.Root open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
-    <Dialog.Portal>
-      <Dialog.Overlay
-        className="modal-surface__scrim"
-        data-layer="application"
-        data-appearance="utility"
-        onClick={() => { if (!busy) onClose(); }}
-      />
-      <Dialog.Content
+    <ModalContent overlayClassName={"modal-surface__scrim"} overlayProps={{"data-layer":"application","data-appearance":"utility","onClick":() => { if (!busy) onClose(); }}}
         className="modal-surface tasks-dialog"
         data-layer="application"
         data-appearance="utility"
@@ -1064,8 +1058,7 @@ function Editor({
         ) : null}
       </footer>
     </form>
-      </Dialog.Content>
-    </Dialog.Portal>
+      </ModalContent>
     </Dialog.Root>
   );
 }
@@ -1107,9 +1100,7 @@ function ArchivePanel({ model, members, pending, reportError, ports, session, ac
       </li>)}</ul>}
       {state.nextCursor ? <SettingsButton disabled={state.loading} onClick={() => void model.refresh(true)}>{t(state.loading ? "loading" : "archiveMore")}</SettingsButton> : null}
     </div>
-    {selected ? <Dialog.Root open onOpenChange={open => { if (!open && !pending) setSelected(null); }}><Dialog.Portal>
-      <Dialog.Overlay className="modal-surface__scrim" data-layer="application" data-appearance="utility" />
-      <Dialog.Content className="modal-surface tasks-dialog tasks-archive-dialog" data-layer="application" data-appearance="utility" aria-describedby={undefined}
+    {selected ? <Dialog.Root open onOpenChange={open => { if (!open && !pending) setSelected(null); }}><ModalContent overlayClassName={"modal-surface__scrim"} overlayProps={{"data-layer":"application","data-appearance":"utility"}} className="modal-surface tasks-dialog tasks-archive-dialog" data-layer="application" data-appearance="utility" aria-describedby={undefined}
         onCloseAutoFocus={event => { event.preventDefault(); const target = opener.current?.isConnected ? opener.current : search.current; target?.focus(); }}
         onEscapeKeyDown={event => { if (pending) event.preventDefault(); }} onPointerDownOutside={event => { if (pending) event.preventDefault(); }}>
         <header className="tasks-archive-dialog__header"><Dialog.Title>{selected.title}</Dialog.Title><Dialog.Close asChild><SettingsButton variant="ghost" aria-label={t("close")} disabled={pending}><X size={18} aria-hidden="true" /></SettingsButton></Dialog.Close></header>
@@ -1124,8 +1115,7 @@ function ArchivePanel({ model, members, pending, reportError, ports, session, ac
           <ActivityPanel model={activityFor(selected)} session={session} canPost={false} ports={ports} />
         </div>
         <footer><SettingsButton variant="primary" disabled={pending} onClick={() => void restore(selected)}><ArchiveRestore size={16} aria-hidden="true" />{t("archiveRestore")}</SettingsButton></footer>
-      </Dialog.Content>
-    </Dialog.Portal></Dialog.Root> : null}
+      </ModalContent></Dialog.Root> : null}
   </section>;
 }
 /** Decorative geometry only: counts and empty states require an authority snapshot. */

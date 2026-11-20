@@ -1,5 +1,6 @@
 import { ComposerTurnChangeSummary } from "../../apps/workbench-web/src/components/conversation/turn-diff-resource";
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
+import { ShellPresentationContext } from "../../apps/workbench-web/src/components/shell-presentation";
 import type { TimelineStatus, TurnDiffTimelineBlock } from "@opencraft/chat-core";
 import { TurnDiffReviewDialog } from "../../apps/workbench-web/src/components/conversation/turn-diff-review-dialog";
 import gitCases from "./turn-diff-git-cases.json";
@@ -41,18 +42,53 @@ document.documentElement.dataset.theme = theme;
 for (const [key, value] of Object.entries(buildOpenCraftThemeCssProperties(theme))) {
   document.documentElement.style.setProperty(key, value);
 }
-const timeline = projectTimeline({
+const historyMode = new URLSearchParams(location.search).get("history");
+const historicalChanges = Array.from({ length: 14 }, (_, index) => ({ path: `/workspace/src/file-${index}.ts`, kind: { type: "add" }, diff: index === 0 ? "large content\n".repeat(120) : `file ${index}\n` }));
+function buildTimeline(hydrated: boolean, loadedItems: readonly string[] = []) { return projectTimeline({
   key: createConversationKey("fixture", "diff-layout"), revision: 1, authoritative: true, phase: "live",
-  turns: [{ id: "turn", status, unifiedDiff: diff, items: [
+  turns: [{ id: "turn", status, ...(historyMode ? {} : { unifiedDiff: diff }), items: [
+    ...historyMode === "multiple" ? historicalChanges.map((change, index) => ({ id: `historical-${index}`, type: "fileChange", payload: {
+      status: "completed", changes: [index < 3 && !loadedItems.includes(`historical-${index}`) ? { path: change.path, kind: change.kind } : change],
+      ...index < 3 && !loadedItems.includes(`historical-${index}`) ? { historyDetail: { cursor: `fixture-${index}` } } : {} } }))
+    : historyMode ? [{ id: "historical-patch", type: "fileChange", payload: { status: "completed", changes: historicalChanges.map((change, index) => !hydrated && historyMode !== "full" && index === 0 ? { path: change.path, kind: change.kind, additions: 0, deletions: 0 } : change),
+      ...!hydrated && historyMode !== "full" ? { historyDetail: { cursor: "fixture" } } : {} } }] : [],
     { id: "question", type: "userMessage", payload: { text: "Update files" } },
     ...withoutAssistant ? [] : [{ id: "answer", type: "agentMessage", payload: { text: "Updated.", completed: true, phase: "final_answer" } }],
   ] }],
-}, createDefaultTimelineProjectorRegistry());
+}, createDefaultTimelineProjectorRegistry()); }
 function Fixture() {
+  const shellTest = new URLSearchParams(location.search).has("shellPresentation");
+  const [panelMode, setPanelMode] = useState("chat");
+  const [hydrated, setHydrated] = useState(false);
+  const [loadedItems, setLoadedItems] = useState<readonly string[]>([]);
+  const timeline = buildTimeline(hydrated, loadedItems);
+  const loadItemDetails = useCallback(async (ids: readonly string[], signal: AbortSignal) => {
+    const calls = Number(document.documentElement.dataset.detailCalls ?? "0") + 1;
+    document.documentElement.dataset.detailCalls = String(calls);
+    document.documentElement.dataset.detailIds = JSON.stringify(ids);
+    const wait = () => new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, historyMode === "slow" ? 20_000 : 300);
+      signal.addEventListener("abort", () => { clearTimeout(timer); document.documentElement.dataset.detailAborted = "true"; reject(new Error("aborted")); }, { once: true });
+    });
+    if (historyMode === "multiple") {
+      for (const id of ids) {
+        await wait();
+        if (signal.aborted) return;
+        setLoadedItems(previous => [...previous, id]);
+      }
+      return;
+    }
+    await wait();
+    if (signal.aborted) return;
+    if (historyMode === "failure" && calls === 1) throw new Error("fixture read failed");
+    setHydrated(true);
+  }, []);
   const [review, setReview] = useState<{ block: TurnDiffTimelineBlock; path: string | null } | null>(null);
   return (
+  <ShellPresentationContext.Provider value={shellTest ? { sidebarOpen: false, sidebarFloating: false, rightPanelOpen: panelMode !== "chat", rightPanelFullWidth: panelMode === "tools", toggleSidebar() {}, dismissSidebarAfterSelection() {}, toggleRightPanel() {} } : null}>
+  {shellTest ? <nav aria-label="Fixture presentation">{["chat", "tools", "split"].map(mode => <button key={mode} onClick={() => setPanelMode(mode)}>{mode}</button>)}</nav> : null}
   <TimelineBlockRendererProvider registry={ctx.timelineBlockRenderers}>
-    {!floatingSummary ? <Conversation timeline={timeline} scrollPolicy="natural" threadDetailLevel="STEPS_PROSE"
+    {!floatingSummary ? <Conversation onLoadItemDetails={loadItemDetails} timeline={timeline} scrollPolicy="natural" threadDetailLevel="STEPS_PROSE"
       documentContext={{ conversationId: "diff-layout", hostId: "fixture", cwd: "/workspace", theme,
         onReviewTurnDiff: (block, path) => {
           document.documentElement.dataset.reviewPath = path ?? "";
@@ -62,8 +98,9 @@ function Fixture() {
       onVisibleContentReady={() => { document.documentElement.dataset.conversationReady = "true"; }} /> : null}
     {floatingSummary ? <ComposerTurnChangeSummary timeline={timeline} turnId="turn" documentContext={{ conversationId: "fixture", cwd: "/workspace", theme,
       onReviewTurnDiff: (block, path) => setReview({ block, path: path ?? null }) }} /> : null}
-    {review !== null ? <TurnDiffReviewDialog block={review.block} initialPath={review.path} onClose={() => setReview(null)} /> : null}
+    {review !== null ? <TurnDiffReviewDialog onLoadItemDetails={loadItemDetails} block={timeline.frames.find(frame => frame.changeSummary?.id === review.block.id)?.changeSummary ?? review.block} initialPath={review.path} onClose={() => setReview(null)} /> : null}
   </TimelineBlockRendererProvider>
+  </ShellPresentationContext.Provider>
   );
 }
 createIntlTestRoot(document.getElementById("root")!).render(<Fixture />);

@@ -1,4 +1,5 @@
 import { runTokenUsageAttemptWorker } from "./token-usage-attempt-worker.js";
+import { runTokenUsageCollectorWorker } from "./token-usage-collector-worker.js";
 import { parentPort, workerData } from "node:worker_threads";
 import { DatabaseSync } from "node:sqlite";
 import { TokenUsageQuery, TokenUsageQueryError, type TokenUsageAuthority } from "./token-usage-query.js";
@@ -6,6 +7,7 @@ import { RolloutDerivedTokenUsage } from "./token-usage-derived.js";
 import { CodexCoreControlClient } from "@opencraft/account-pool-host";
 import { CodexNativeStorage } from "./codex-native-storage.js";
 if(workerData.role==="attempt-writer")runTokenUsageAttemptWorker();
+else if(workerData.role==="collector")runTokenUsageCollectorWorker();
 else {
 // The Host opens/migrates the file first. This projection worker never migrates,
 // creates files or writes facts; it owns and closes only its read-only handle.

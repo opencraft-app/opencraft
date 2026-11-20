@@ -228,11 +228,11 @@ test("Extension View resources round-trip and can be canonically replaced", () =
   const resourceUri =
     "opencraft-bot:conversation?hostId=host-a&conversationId=conversation-a";
   const url = new URL(
-    `https://opencraft.test/views/opencraft.bot-chat.view?resource=${encodeURIComponent(resourceUri)}`,
+    `https://opencraft.test/views/example.chat.view?resource=${encodeURIComponent(resourceUri)}`,
   );
   assert.deepEqual(parseApplicationRouteUrl(url), {
     kind: "extension-view",
-    viewId: "opencraft.bot-chat.view",
+    viewId: "example.chat.view",
     resourceUri,
   });
 });
@@ -254,4 +254,10 @@ test("an active Extension View can push and pop resources without losing Chat de
     assert.equal(navigation.getSnapshot().applicationRoute.kind, "conversation");
     assert.deepEqual(navigation.getSnapshot().location, location);
   } finally { navigation.dispose(); }
+});
+
+test("retired server-switch settings bookmarks recover without changing server information or Hub routes", () => {
+  assert.deepEqual(parseApplicationRouteUrl(new URL("https://opencraft.test/settings/servers")), { kind: "settings", slug: "appearance" });
+  assert.deepEqual(parseApplicationRouteUrl(new URL("https://opencraft.test/settings/server-information")), { kind: "settings", slug: "server-information" });
+  assert.deepEqual(parseApplicationRouteUrl(new URL("https://opencraft.test/settings/hub-network")), { kind: "settings", slug: "hub-network" });
 });

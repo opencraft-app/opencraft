@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createBrowserGrantResolver } from '../../scripts/remote-browser/execution-grant.js';
+import { NativeExecutionAuthority } from '../../scripts/native-execution-authority.js';
 
 test('browser grants bind admitted human, canonical server and exact active native turn', async () => {
   const context = { actorId: 'human', generation: 1, credentialId: null, expiresAt: Date.now() + 60000 };
@@ -23,4 +24,33 @@ test('browser grants bind admitted human, canonical server and exact active nati
   authority = 'replacement'; await assert.rejects(resolve(session, true), /changed/); authority = 'authority';
   native = { id: 'turn', status: 'completed' }; await assert.rejects(resolve(session, true), /active/);
   enabled = false; assert.throws(grant.authorize, /revoked/);
+});
+
+test('remote native grant resolves its physical Host source without borrowing an identical local turn', async () => {
+  let enabled = true;
+  const context = {actorId:'remote-human',generation:1,credentialId:null,expiresAt:Date.now()+60000};
+  const authorize = () => { if (!enabled) throw Error('revoked'); };
+  const remote = new NativeExecutionAuthority(authorize);
+  remote.admit(context, 'same-thread', 'input'); remote.started('same-thread', 'input', 'same-turn');
+  const sources = new Map([['remote-server', {hostId:'ssh:one', authority:remote}],
+    ['other-remote', {hostId:'ssh:two', authority:new NativeExecutionAuthority(authorize)}]]);
+  let localReads = 0;
+  const resolve = createBrowserGrantResolver({
+    serverForThread: (_thread, requested) => sources.has(requested!) ? requested! : 'local-server',
+    hostForServer: server => sources.get(server)!.hostId,
+    async source(thread, execution, server) {
+      const entry = sources.get(server);
+      if (!entry) { localReads++; throw Error('must not read local authority'); }
+      return entry.authority.source(thread, execution);
+    }, authorize, owner: context => context.actorId,
+    async currentTurn(hostId, threadId) { assert.equal(hostId, 'ssh:one'); assert.equal(threadId, 'same-thread'); return {id:'same-turn',status:'inProgress'}; },
+  });
+  const session = {serverId:'remote-server',threadId:'same-thread',execution:{turnId:'same-turn',callId:'call'}};
+  const grant = await resolve(session, true);
+  assert.equal(grant.hostId, 'ssh:one'); assert.equal(grant.ownerId, 'remote-human');
+  await assert.rejects(resolve({...session,serverId:'other-remote'}, true));
+  await assert.rejects(resolve({...session,serverId:'unregistered'}, true));
+  assert.equal(localReads, 0);
+  enabled = false; assert.throws(grant.authorize, /revoked/u);
+  await assert.rejects(resolve(session, true), /revoked/u);
 });

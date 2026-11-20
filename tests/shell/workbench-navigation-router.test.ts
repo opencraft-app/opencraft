@@ -393,7 +393,7 @@ test("promotion aliases share the latest successfully presented canonical Thread
 test("owner eviction and retained-View validation revoke preferred slots", async () => {
   const a = createWorkbenchThreadLocation("local", "a"), b = createWorkbenchThreadLocation("local", "b");
   const invalid = new Set<string>();
-  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {},
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {}, mountRestored() {},
     prepare: async () => ({ commit: () => true, cancel() {} }),
   } as any, { getActiveDraft: () => null } as any, {
     mode: "memory", isRetainedView: (_location, viewId) => !invalid.has(viewId),
@@ -431,7 +431,7 @@ test("recycled empty Views cannot evict a preferred View whose draft owner remai
   const a = createWorkbenchThreadLocation("local", "a"), b = createWorkbenchThreadLocation("local", "b"),
     c = createWorkbenchThreadLocation("local", "c");
   const recycled = new Set<string>();
-  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {},
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {}, mountRestored() {},
     prepare: async () => ({ commit: () => true, cancel() {} }),
   } as any, { getActiveDraft: () => null } as any, {
     mode: "memory", maxPreferredViews: 2, isRetainedView: (_location, viewId) => !recycled.has(viewId),
@@ -532,5 +532,36 @@ test("history paint stays pending after navigation commit, re-arms warm and abor
     assert.equal(nav.historyFirstPaint.getSnapshot(),warm,"old renderer cannot finish new open");
     nav.historyFirstPaint.settle(warm,"ok",{lengthBucket:'lt50',engine:'codex'});
     assert.equal(nav.historyFirstPaint.getSnapshot(),null);
+  } finally { nav.dispose(); }
+});
+
+for (const abandoned of [false, true]) test(`restored-view read failure ${abandoned ? "after leaving is ignored" : "while current remains visible"}`, async () => {
+  const a = createWorkbenchDraftLocation("local", "a"), b = createWorkbenchDraftLocation("local", "b");
+  let reject!: (error: Error) => void;
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {},
+    prepare: async () => ({ commit: () => true, cancel() {} }),
+  } as any, { getActiveDraft: () => null } as any, { mode: "memory",
+    restoreViewId: () => new Promise((_resolve, fail) => { reject = fail; }),
+  });
+  try {
+    const selection = nav.selectConversation(b);
+    const outcome = selection.then(value => ({ value }), error => ({ error: error.message }));
+    await settle();
+    if (abandoned) nav.openSettings();
+    reject(new Error("restore unavailable"));
+    assert.deepEqual(await outcome, abandoned ? { value: false } : { error: "restore unavailable" });
+    assert.deepEqual(nav.getSnapshot().location, a);
+    assert.equal(nav.getSnapshot().applicationRoute.kind, abandoned ? "settings" : "conversation");
+  } finally { nav.dispose(); }
+});
+
+test("current cold activation failures still propagate after restored-view lookup", async () => {
+  const a = createWorkbenchDraftLocation("local", "a"), b = createWorkbenchDraftLocation("local", "b");
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {},
+    prepare: async () => { throw new Error("activation unavailable"); },
+  } as any, { getActiveDraft: () => null } as any, { mode: "memory", restoreViewId: async () => undefined });
+  try {
+    await assert.rejects(nav.selectConversation(b), /activation unavailable/);
+    assert.deepEqual(nav.getSnapshot().location, a);
   } finally { nav.dispose(); }
 });

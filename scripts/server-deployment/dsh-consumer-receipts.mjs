@@ -1,43 +1,40 @@
 import {createHash,randomUUID} from 'node:crypto';
-import {readFileSync,lstatSync,writeFileSync,openSync,closeSync,fsyncSync,renameSync} from 'node:fs';
-import {join} from 'node:path';
+import {Worker} from 'node:worker_threads';
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
-/** Provider-side leases for the actual Pi/gateway consumer. Socket delivery is
- * not application acceptance. Only the exact returned proof retires a lease. */
+/** Provider custody remains durable until exact consumer acknowledgement.
+ * Network callbacks see only the Worker's last committed count. */
 export class DshConsumerReceipts {
+  #worker; #pending=new Map(); #sequence=0; #count=0; #failure; #closing; #closeAcknowledged=false; #ready=false;
   constructor(directory) {
-    this.directory=directory;this.path=join(directory,'consumer-receipts.json');this.failed=false;this.rows=Object.create(null);
-    try {
-      const info=lstatSync(this.path);
-      if(!info.isFile()||info.uid!==process.getuid()||info.mode&0o077)throw Error('Private DSH consumer receipts required');
-      const saved=JSON.parse(readFileSync(this.path,'utf8'));
-      if(saved.schemaVersion!==1||!saved.rows||typeof saved.rows!=='object'||Array.isArray(saved.rows)
-        ||Object.values(saved.rows).some(row=>!row||typeof row.request!=='string'||!['unknown','receipt'].includes(row.state)||row.state==='receipt'&&typeof row.receipt!=='string'))throw Error('Invalid DSH consumer receipts');
-      this.rows=Object.assign(Object.create(null),saved.rows);
-    }catch(error){if(error.code!=='ENOENT')throw error;}
+    this.#worker=new Worker(new URL('./dsh-consumer-receipts-worker.mjs',import.meta.url),{workerData:{directory},execArgv:[]});
+    this.ready=new Promise((resolve,reject)=>this.#pending.set(0,{resolve,reject}));
+    this.#worker.on('error',error=>this.#fail(error));
+    this.#worker.on('exit',()=>{if(!this.#closeAcknowledged)this.#fail(Error('DSH consumer storage worker exited'));});
+    this.#worker.on('message',reply=>{
+      const pending=this.#pending.get(reply.id);if(!pending)return;
+      this.#pending.delete(reply.id);
+      if(reply.error){const error=Error(reply.error.message);pending.reject(error);if(!reply.error.recoverable)this.#fail(error);return;}
+      if(reply.activeCount!==undefined)this.#count=reply.activeCount;
+      if(reply.outcome)this.outcome=reply.outcome;
+      if(reply.id===0)this.#ready=true;
+      pending.resolve(reply.result);
+    });
   }
-  save() {
-    const temporary=this.path+'.'+randomUUID()+'.tmp';
-    try {
-      writeFileSync(temporary,JSON.stringify({schemaVersion:1,rows:this.rows}),{mode:0o600,flag:'wx'});
-      const fd=openSync(temporary,'r');try{fsyncSync(fd);}finally{closeSync(fd);}
-      renameSync(temporary,this.path);const root=openSync(this.directory,'r');try{fsyncSync(root);}finally{closeSync(root);}
-    }catch(error){this.failed=true;throw error;}
+  static async open(directory){const store=new DshConsumerReceipts(directory);try{await store.ready;return store;}catch(error){await store.#worker.terminate();throw error;}}
+  #fail(error){this.#failure??=error;for(const pending of this.#pending.values())pending.reject(this.#failure);this.#pending.clear();}
+  #request(method,args){
+    if(this.#failure)return Promise.reject(this.#failure);
+    if(this.#closing&&method!=='close')return Promise.reject(Error('DSH consumer storage closing'));
+    if(this.#pending.size>=128&&method!=='close')return Promise.reject(Error('DSH consumer storage queue full'));
+    const id=++this.#sequence;
+    return new Promise((resolve,reject)=>{this.#pending.set(id,{resolve,reject});try{this.#worker.postMessage({id,method,args});}catch(error){this.#fail(error);}});
   }
-  begin(request) {
-    if(this.failed)throw Error('DSH consumer custody unknown');
-    const id=randomUUID();this.rows[id]={request:hash(request),state:'unknown'};this.save();
-    return packet=>{
-      if(this.failed)throw Error('DSH consumer custody unknown');
-      const receipt=hash({id,request:this.rows[id].request,packet});
-      this.rows[id]={...this.rows[id],state:'receipt',receipt};this.save();return{id,receipt};
-    };
+  async begin(request){
+    await this.ready;
+    const id=randomUUID();await this.#request('begin',[id,hash(request)]);
+    return packet=>this.#request('finish',[id,packet]);
   }
-  acknowledge(input) {
-    if(this.failed||!input||typeof input.id!=='string'||typeof input.receipt!=='string')throw Error('Invalid consumer receipt');
-    const row=this.rows[input.id];
-    if(!row||row.state!=='receipt'||row.receipt!==input.receipt)throw Error('Exact consumer receipt required');
-    delete this.rows[input.id];this.save();
-  }
-  observation(){return{coverage:this.failed?'unknown':'complete',activeCount:this.failed?null:Object.keys(this.rows).length};}
+  acknowledge(input){return this.#request('acknowledge',[input]);}
+  observation(){const complete=this.#ready&&!this.#failure;return{coverage:complete?'complete':'unknown',activeCount:complete?this.#count+this.#pending.size:null};}
+  close(){return this.#closing??=(async()=>{try{await this.ready;await this.#request('close',[]);this.#closeAcknowledged=true;}finally{await this.#worker.terminate();}})();}
 }

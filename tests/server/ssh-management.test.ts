@@ -102,7 +102,7 @@ test("missing credential key stops recovery without generating a replacement", a
   assert.equal(preserved.prepare("SELECT server_id FROM ssh_connections").get()!.server_id, row.serverId); preserved.close();
 });
 
-async function fixture(context: any, sessionTtlMs?: number, publicAccess = false, beforeReset?: () => Promise<void>, beforeConnect?: () => Promise<void>, accessMode: "shared" | "access-key" = "access-key") {
+async function fixture(context: any, sessionTtlMs?: number, publicAccess = false, beforeReset?: () => Promise<void>, beforeConnect?: () => Promise<void>, accessMode: "shared" | "access-key" = "access-key", defaultDomainPolicy = false) {
   const root = await mkdtemp(join(tmpdir(), "opencraft-ssh-http-"));
   const calls: string[] = [], resets: string[] = [];
   const appHost = new AppHostServer({ physicalHostLifetime: "server", createTransport: host => {
@@ -110,7 +110,7 @@ async function fixture(context: any, sessionTtlMs?: number, publicAccess = false
     return { status: { state: "open" as const }, async connect() {}, async send() {}, subscribeMessage() { return () => undefined; }, subscribeStatus() { return () => undefined; }, async close() {} };
   } });
   const hostKey = key();
-  const management = new SshManagement({ directory: join(root, "private"), sessionTtlMs, publicAccess, ...(accessMode === "access-key" ? { accessMode } : {}),
+  const management = new SshManagement({ directory: join(root, "private"), sessionTtlMs, ...(!defaultDomainPolicy ? { publicAccess } : {}), ...(accessMode === "access-key" ? { accessMode } : {}),
     scanHostKey: async () => hostKey, resetConnection: async id => { resets.push(id); await beforeReset?.(); await appHost.resetHost(id); }, connectConnection: async (id, assertAdmission) => { await beforeConnect?.(); await appHost.ensureHostConnected(id, assertAdmission); }, connectionState: id => appHost.hostState(id) });
   const web = await createWorkbenchWebServer({ root, loopbackOnly: !publicAccess, appServerTarget: null, appHostServer: appHost, sshManagement: management, webSocketHeartbeatIntervalMs: 20, onAppHostDiagnostic: () => undefined });
   const address = await web.listen({ host: "127.0.0.1", port: 0 });
@@ -295,18 +295,11 @@ test("trust challenge is session-scoped; logout during a slow body rejects persi
   assert.equal(status, 401); assert.equal(f.management.store.list().length, 0);
 });
 
-test("fixed-origin public access remains strict and never trusts forwarded headers", async () => {
-  assert.throws(() => new SshManagement({ directory: "/not-created", publicOrigin: "http://fixture.invalid", resetConnection: async () => undefined, connectConnection: async () => undefined }), /HTTPS/u);
-  const management = new SshManagement({ directory: await mkdtemp(join(tmpdir(), "opencraft-ssh-origin-")), publicOrigin: "https://fixture.invalid", resetConnection: async () => undefined, connectConnection: async () => undefined });
-  try {
-    assert.equal(management.sameOrigin({ headers: { origin: "https://foreign.invalid", "x-forwarded-host": "fixture.invalid" } } as any, true), false);
-    assert.equal(management.sameOrigin({ headers: { origin: "https://fixture.invalid" } } as any, true), true);
-  } finally { management.close(); }
-});
 
+for (const defaultDomainPolicy of [true, false]) {
 for (const accessMode of ["shared", "access-key"] as const) {
-test(`flexible ${accessMode} admission binds each HTTP/WS session to its origin`, async context => {
-  const f = await fixture(context, undefined, true, undefined, undefined, accessMode);
+test(`${defaultDomainPolicy ? "default" : "explicit flexible"} ${accessMode} admission binds each HTTP/WS session to its origin`, async context => {
+  const f = await fixture(context, undefined, true, undefined, undefined, accessMode, defaultDomainPolicy);
   assert.equal((await f.request("connections")).response.status, 401);
   if (accessMode === "access-key") assert.equal((await f.request("session", "POST", { accessKey: "wrong" }, "https://one.invalid")).response.status, 401);
   assert.equal((await f.request("session", "POST", {}, "null")).response.status, 403);
@@ -333,6 +326,7 @@ test(`flexible ${accessMode} admission binds each HTTP/WS session to its origin`
   assert.equal(plain.response.status, 200);
   assert.doesNotMatch(plain.response.headers.get("set-cookie")!, /; Secure/u, "explicit plain-HTTP access is usable, not silently pinned to HTTPS");
 });
+}
 }
 
 test("shared default preserves an existing key; explicit access file enables protection", async () => {

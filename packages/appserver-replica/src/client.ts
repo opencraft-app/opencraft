@@ -213,10 +213,12 @@ export class ReplicaClient<TValue extends ReplicaJsonValue = ReplicaJsonValue> {
   }
 
   /** Paint-only data during Resume. It must never advance a replay cursor or
-   * authorize commands; only synchronize() can establish those facts. */
-  reportPreview(entityId: string, value: TValue): void {
+   * authorize commands; only synchronize() can establish those facts.
+   * Partial recovery windows preserve an existing body; local queue projections
+   * may still update it while synchronization is pending. */
+  reportPreview(entityId: string, value: TValue, options?: { readonly preserveExisting?: boolean }): void {
     this.assertActive();
-    if (this.snapshot.authoritative) return;
+    if (this.snapshot.authoritative || (options?.preserveExisting && this.snapshot.entities.has(entityId))) return;
     this.publish({ entities: new Map(this.snapshot.entities).set(entityId, value) });
   }
 
