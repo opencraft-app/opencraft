@@ -10,7 +10,7 @@ const DESKTOP_PLATFORMS = ["darwin", "win32"];
 test("every locked platform-specific optional dependency is present for macOS and Windows", () => {
   const { packages } = JSON.parse(readFileSync(new URL("../../package-lock.json", import.meta.url), "utf8"));
   const locate = (from, name) => {
-    for (let base = from; ; ) {
+    for (let base = from; ;) {
       const key = `${base ? `${base}/` : ""}node_modules/${name}`;
       if (key in packages) return key;
       if (!base) return null;
@@ -25,5 +25,9 @@ test("every locked platform-specific optional dependency is present for macOS an
       if (!locate(path, name)) missing.push(`${path || "(root)"} -> ${name}`);
     }
   }
-  assert.deepEqual(missing, [], "Restore the missing entries (for example npm install --package-lock-only from a lockfile that has them)");
+  assert.deepEqual(
+    missing,
+    [],
+    "Restore the missing entries (for example npm install --package-lock-only from a lockfile that has them)",
+  );
 });
