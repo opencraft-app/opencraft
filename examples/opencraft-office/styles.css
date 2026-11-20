@@ -87,7 +87,7 @@ em { font-style: normal; font-size: 12px; color: var(--ink-2); margin-left: 6px;
 
 /* 资料页的三个页签：下划线 */
 .tabs { display: flex; flex: none; margin-top: 8px; background: var(--card); border-bottom: 1px solid var(--line); }
-.tabs button { flex: 1; min-height: 46px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--ink-2); font-size: 15px; cursor: pointer; }
+.tabs button { flex: 1; min-width: 0; padding: 0 2px; white-space: nowrap; min-height: 46px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--ink-2); font-size: 15px; cursor: pointer; }
 .tabs button[aria-selected="true"] { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
 
 /* 分组：灰色小标题，下面一整块白 */
