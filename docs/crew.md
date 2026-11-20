@@ -38,8 +38,14 @@ message and the work it opens commit or roll back together. Work records its ass
 handed it over, the work it was split from and its root. `origin` is `member` (a person asked),
 `bot` (another Bot handed it on) or `routine` (a Bot started it on its own).
 
-- **Dispatch.** Members dispatch to a Bot of their space; Bots dispatch only to their phonebook,
-  and only under open work they hold (`parentWorkId`).
+- **Dispatch.** Every direct message a member sends to a Bot of their space opens work, in the
+  same transaction as the message (`send` and `crew/work/dispatch` alike). The one exception is a
+  Bot's own owner, whose direct chat with it stays their private line. Bots dispatch only to
+  their phonebook, and only under open work they hold (`parentWorkId`).
+- **Replies are not dispatches.** `crew/work/message` carries a reply: the assignee writes up its
+  chain, or the requester answers the assignee. A reply opens no work and spends no budget.
+  When it reaches a Bot it is filed in `crew_messages` (migration `0021_crew_messages`) against
+  that Bot's own work in the tree, and the Bot reads it with `crew/work/replies`.
 - **Chain pass.** While work is open, its assignee may message everyone the work answers to:
   each requester up the tree, nearest first, then the space owner. This ignores the phonebook,
   covers messages only, and ends when the assignee calls `finish`. Routine work answers to
@@ -63,7 +69,8 @@ Who on the chain is actually asked, and whether that member can decide, is the r
 | `opencraft/crew/phonebook/list` `{botId}` | members of the Bot's space | entries, the space members that could be entries, and whether the caller may edit |
 | `opencraft/crew/phonebook/set` `{botId,actorId,present}` | space owner | add or remove an entry; adding requires a member of the space |
 | `opencraft/crew/work/dispatch` `{targetActorId,content,idempotencyKey,parentWorkId?}` | members; Bots under open work | send and open work |
-| `opencraft/crew/work/message` `{workId,targetActorId,content,idempotencyKey}` | the work's assignee | message someone on its chain |
+| `opencraft/crew/work/message` `{workId,targetActorId,content,idempotencyKey}` | the work's assignee; its requester | reply: the assignee to anyone on its chain, the requester to the assignee |
+| `opencraft/crew/work/replies` `{after}` | a Bot | replies filed against its work, after a cursor |
 | `opencraft/crew/work/start` `{}` | space Bots | open routine work |
 | `opencraft/crew/work/finish` `{workId}` | the work's assignee | close it; the chain pass ends |
 | `opencraft/crew/work/get` `{workId}` | assignee, requester, chain | the work with its chain and budget; `request` (the dispatch text) only for the assignee and requester |
@@ -87,7 +94,10 @@ Removing a Bot uses the existing `remove` action.
 | Finishing work | the runtime closes work once its turn settled, no Work linked to that conversation is active and its outbox is empty; a blocked turn stays open |
 | Cancelling unstarted work of someone who left | implemented in the runtime: closed before intake without a reply |
 | Stopping started work after the current step when its dispatcher leaves | not yet; replies already move up the chain |
-| Bots dispatching to their phonebook, routine work | core only; no runtime tool yet |
+| Direct messages from members as dispatch (rule 10) | implemented in core; the Bot owner's private line is exempt |
+| Replies between Bots without budget, returned to the work they answer | implemented in core and in the runtime intake; work with open hand-offs is not finished |
+| Bots dispatching to their phonebook, answering down the tree, routine work | core only; no runtime tool yet |
+| Attachments sent to a space Bot by someone other than its owner | not yet: the work carries the text only |
 | Crew UI: space members | implemented in the Server panel: Agents are labelled, the owner switches open contact and adds their own assistants (`bots`, `addBot`) |
 | Crew UI: phonebook | implemented in the assistant settings dialog: one switch per space member; members read it, only the owner edits |
 | Crew UI: dispatching from the Inbox, work and chain views, desk | not yet |

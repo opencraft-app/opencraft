@@ -22,7 +22,16 @@ export interface CrewWorkView {
   budget: { used: number; limit: number };
   /** The dispatch message text; shown only to the assignee and the requester, null for routine work. */
   request: string | null;
+  /** Work handed on from this one that is still open; the assignee should not finish before it settles. */
+  openChildren: number;
 }
+/** A message that reached a Bot inside crew work, filed against the Bot's own work. */
+export interface CrewReply {
+  seq: number; messageId: string; workId: string; requesterId: string; state: 'open' | 'closed';
+  from: CrewWorkPerson; content: string;
+}
+/** Who a crew message may go to, and which of the recipient's works it answers, if the recipient is a Bot. */
+export interface CrewRoute { pass: CrewPass; recipientWorkId: string | null }
 
 type Row = Record<string, unknown>;
 const fail = (status: number, code: string): never => { throw Object.assign(Error(code), { status, code }); };
@@ -68,9 +77,57 @@ export class CrewWork {
     return [...new Set(people)].filter(actorId => actorId !== row.assignee_id && this.#member(row.space_id, actorId));
   }
 
-  pass(context: ActorContext, workId: unknown): CrewPass {
-    const allowed = new Set(this.chain(this.#held(context, workId)));
-    return { allows: (target, action) => action === 'message.send' && allowed.has(target) };
+  /**
+   * A message about open work. Its assignee may write up the chain; its requester may answer the
+   * assignee. Either way it is a reply, never a new dispatch, so it spends no budget. When the
+   * recipient is a Bot, the message is filed against the recipient's own work in this tree.
+   */
+  route(context: ActorContext, workId: unknown, target: string): CrewRoute {
+    const row = this.#row(workId);
+    const only = (actorId: string): CrewPass => ({ allows: (to, action) => action === 'message.send' && to === actorId });
+    if (row.state === 'open' && row.assignee_id === context.actorId && this.#member(row.space_id, context.actorId)) {
+      if (!this.chain(row).includes(target)) fail(403, 'crew_work_denied');
+      let recipientWorkId: string | null = null;
+      for (let current = row.parent_id === null ? undefined : this.db.prepare('SELECT * FROM crew_work WHERE id=?').get(String(row.parent_id)), hops = 0;
+        current && hops < 64; current = current.parent_id === null ? undefined : this.db.prepare('SELECT * FROM crew_work WHERE id=?').get(String(current.parent_id)), hops++) {
+        if (current.assignee_id === target) { recipientWorkId = current.state === 'open' ? String(current.id) : null; break; }
+      }
+      return { pass: only(target), recipientWorkId };
+    }
+    if (row.state === 'open' && row.requester_id === context.actorId && row.assignee_id === target
+      && this.#member(row.space_id, context.actorId) && this.#member(row.space_id, target))
+      return { pass: only(target), recipientWorkId: String(row.id) };
+    return fail(403, 'crew_work_denied');
+  }
+
+  file(messageId: string, recipientId: string, workId: string, fromWorkId: string): void {
+    this.db.prepare('INSERT OR IGNORE INTO crew_messages(message_id,recipient_id,work_id,from_work_id,created_at) VALUES(?,?,?,?,?)')
+      .run(messageId, recipientId, workId, fromWorkId, this.now());
+  }
+
+  /** Replies filed for the calling Bot, oldest first. */
+  replies(context: ActorContext, after: unknown): CrewReply[] {
+    if (!Number.isSafeInteger(after) || Number(after) < 0) fail(400, 'invalid_input');
+    return this.db.prepare(`SELECT c.seq,c.message_id,c.work_id,w.requester_id,w.state,m.author_id,m.content FROM crew_messages c
+      JOIN crew_work w ON w.id=c.work_id JOIN actor_messages m ON m.id=c.message_id
+      WHERE c.recipient_id=? AND c.seq>? ORDER BY c.seq LIMIT 50`).all(context.actorId, Number(after)).map(r => {
+      const author = this.actors.get(String(r.author_id));
+      return { seq: Number(r.seq), messageId: String(r.message_id), workId: String(r.work_id), requesterId: String(r.requester_id),
+        state: r.state as CrewReply['state'], content: String(r.content),
+        from: { actorId: String(r.author_id), displayName: author?.displayName ?? '', kind: author?.kind === 'human' ? 'human' as const : 'session' as const } };
+    });
+  }
+
+  /**
+   * Rule: every message a member sends to a space Bot is a dispatch. A Bot's own owner keeps their
+   * private line to it, and Bots hand work on only through dispatch or reply under work they hold.
+   */
+  openForDirect(context: ActorContext, target: string, messageId: string): void {
+    const space = this.crew.botSpace(target), sender = this.actors.get(context.actorId);
+    if (space === null || sender?.kind !== 'human' || !this.#member(space, sender.id)) return;
+    const owned = this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='personal_assistants'").get()
+      && this.db.prepare("SELECT 1 FROM personal_assistants WHERE actor_id=? AND owner_human_id=? AND state='claimed'").get(target, sender.id);
+    if (!owned && !this.forMessage(messageId)) this.open(context, target, messageId);
   }
 
   /** Opens work for a message just sent to a space Bot. Bot hand-offs spend the root's budget. */
@@ -127,7 +184,8 @@ export class CrewWork {
       assigneeId: String(row.assignee_id), requesterId: String(row.requester_id), parentId: row.parent_id === null ? null : String(row.parent_id),
       rootId: String(row.root_id), messageId: row.message_id === null ? null : String(row.message_id),
       chain: chain.map(person), budget: { used: Number(root.dispatches), limit: CREW_DISPATCH_BUDGET },
-      request: message ? String(message.content) : null };
+      request: message ? String(message.content) : null,
+      openChildren: Number(this.db.prepare("SELECT COUNT(*) AS n FROM crew_work WHERE parent_id=? AND state='open'").get(String(row.id))!.n) };
   }
 
   /** The caller's open work, oldest first. */

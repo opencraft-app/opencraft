@@ -104,6 +104,11 @@ export const SERVER_MIGRATIONS = [
     "version": 21,
     "name": "0020_crew_work",
     "sql": "CREATE TABLE `crew_work` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`space_id` text NOT NULL,\n\t`assignee_id` text NOT NULL,\n\t`requester_id` text NOT NULL,\n\t`parent_id` text,\n\t`root_id` text NOT NULL,\n\t`origin` text NOT NULL,\n\t`message_id` text,\n\t`state` text NOT NULL,\n\t`dispatches` integer DEFAULT 0 NOT NULL,\n\t`created_at` integer NOT NULL,\n\t`closed_at` integer,\n\tCONSTRAINT \"crew_work_origin\" CHECK(origin IN ('member','bot','routine')),\n\tCONSTRAINT \"crew_work_state\" CHECK(state IN ('open','closed'))\n) STRICT;\n--> statement-breakpoint\nCREATE INDEX `crew_work_assignee` ON `crew_work` (`assignee_id`,`state`);--> statement-breakpoint\nCREATE INDEX `crew_work_root` ON `crew_work` (`root_id`);"
+  },
+  {
+    "version": 22,
+    "name": "0021_crew_messages",
+    "sql": "CREATE TABLE `crew_messages` (\n\t`seq` integer PRIMARY KEY AUTOINCREMENT NOT NULL,\n\t`message_id` text NOT NULL,\n\t`recipient_id` text NOT NULL,\n\t`work_id` text NOT NULL,\n\t`from_work_id` text NOT NULL,\n\t`created_at` integer NOT NULL\n) STRICT;\n--> statement-breakpoint\nCREATE UNIQUE INDEX `crew_messages_message_id_unique` ON `crew_messages` (`message_id`);--> statement-breakpoint\nCREATE INDEX `crew_messages_recipient` ON `crew_messages` (`recipient_id`,`seq`);"
   }
 ] as const;
 export const SERVER_ALTERNATE_MIGRATIONS = [
@@ -214,9 +219,14 @@ export const SERVER_ALTERNATE_MIGRATIONS = [
         "version": 21,
         "name": "converge_0020_crew_work",
         "sql": SERVER_MIGRATIONS[20].sql
+      },
+      {
+        "version": 22,
+        "name": "converge_0021_crew_messages",
+        "sql": SERVER_MIGRATIONS[21].sql
       }
     ]
   }
 ] as const;
-export const SERVER_MIGRATION_CONTRACT_HASH = "f1460a91638fa3afa26f5dbb5b9b079379328daf02cb181009092246cc3c80ea" as const;
+export const SERVER_MIGRATION_CONTRACT_HASH = "ae965bb6cb2dacb7f3d9557669b1e53e46849995fb2a8d02a8f1ca6b54c79242" as const;
 export const OPENCRAFT_VERSION = "0.1.0" as const;

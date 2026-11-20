@@ -118,6 +118,7 @@ test('upgrade keeps existing spaces and their members, with contact closed',asyn
     {id:'legacy',name:'Legacy',owner_actor_id:'owner-1',created_at:1,open_contact:0});
   assert.equal(updated.database.prepare("SELECT role FROM collaboration_space_members WHERE space_id='legacy'").get()?.role,'owner');
   assert.equal(updated.database.prepare('SELECT COUNT(*) AS n FROM crew_work').get()?.n,0,'crew work starts empty after upgrade');
+  assert.equal(updated.database.prepare('SELECT COUNT(*) AS n FROM crew_messages').get()?.n,0,'crew replies start empty after upgrade');
 });
 
 test('new spaces open contact, the default space does not, and only the owner switches it',async t=>{

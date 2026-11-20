@@ -719,3 +719,11 @@ export const crewWork = sqliteTable("crew_work", {
   dispatches: integer("dispatches").notNull().default(0), createdAt: integer("created_at").notNull(), closedAt: integer("closed_at"),
 }, table => [index("crew_work_assignee").on(table.assigneeId, table.state), index("crew_work_root").on(table.rootId),
   check("crew_work_origin", sql.raw("origin IN ('member','bot','routine')")), check("crew_work_state", sql.raw("state IN ('open','closed')"))]);
+
+/** Messages exchanged inside crew work that reach a Bot. A reply is not a new dispatch: it is filed
+ * against the recipient's own work, so its runtime can return it to the conversation handling that work. */
+export const crewMessages = sqliteTable("crew_messages", {
+  seq: integer("seq").primaryKey({ autoIncrement: true }), messageId: text("message_id").notNull().unique(),
+  recipientId: text("recipient_id").notNull(), workId: text("work_id").notNull(), fromWorkId: text("from_work_id").notNull(),
+  createdAt: integer("created_at").notNull(),
+}, table => [index("crew_messages_recipient").on(table.recipientId, table.seq)]);

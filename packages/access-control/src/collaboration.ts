@@ -704,6 +704,7 @@ export class Collaboration {
         .run(id,seq,channelId,context.actorId,target,content,reply,now,this.actors.get(context.actorId)!.displayName);
       if(attachment)this.database.prepare('INSERT INTO actor_channel_attachments(message_id,name,mime,bytes) VALUES(?,?,?,?)').run(id,attachment.name,attachment.type,attachment.bytes);
       this.database.prepare("INSERT INTO actor_deliveries VALUES(?,?,'received',?,NULL)").run(id, target, now);
+      if (!pass) this.crewWork.openForDirect(context, target, id);
       return { messageId: id, requestId: intent ? this.#createRequest(context, target, [id], intent) : null };
     });
     if (!result.replayed) this.channels.changed({ channelId, directory: created });
@@ -717,11 +718,15 @@ export class Collaboration {
     const workId = this.crewWork.forMessage(String(sent.messageId)) ?? this.crewWork.open(context, target, String(sent.messageId), body.parentWorkId);
     return { messageId: sent.messageId, workId, work: this.crewWork.view(context, workId) };
   }
-  /** Lets the assignee of open work reach anyone that work answers to, whatever its phonebook. */
+  /**
+   * A reply inside open work: its assignee reaches anyone the work answers to, whatever its
+   * phonebook, and its requester answers the assignee. Replies open no work and spend no budget.
+   */
   crewMessage(context: ActorContext, body: Record<string, unknown>) {
     fields(body, ['workId', 'targetActorId', 'content', 'idempotencyKey']);
-    const pass = this.crewWork.pass(context, body.workId);
-    const sent = this.send(context, { targetActorId: body.targetActorId, content: body.content, idempotencyKey: body.idempotencyKey }, undefined, pass);
+    const target = text(body.targetActorId), route = this.crewWork.route(context, body.workId, target);
+    const sent = this.send(context, { targetActorId: target, content: body.content, idempotencyKey: body.idempotencyKey }, undefined, route.pass);
+    if (route.recipientWorkId) this.crewWork.file(String(sent.messageId), target, route.recipientWorkId, String(body.workId));
     return { messageId: sent.messageId };
   }
   openChannelDirect(context: ActorContext, targetActorId: unknown) {

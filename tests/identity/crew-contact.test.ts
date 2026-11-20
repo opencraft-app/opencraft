@@ -109,7 +109,7 @@ test('work opened by a member lets its Bot reach that member and the owner, what
   assert.equal(await seen(f.alice), null, 'the rest of the chain sees the work, not the dispatch text');
   await say(f, f.alan, work.workId, f.bob.actorId, 'which branch?');
   await say(f, f.alan, work.workId, f.alice.actorId, 'heads up');
-  await assert.rejects(say(f, f.alan, work.workId, f.zhe.id, 'not on the chain'), /actor_action_denied/);
+  await assert.rejects(say(f, f.alan, work.workId, f.zhe.id, 'not on the chain'), /crew_work_denied/);
   await assert.rejects(say(f, f.zhe, work.workId, f.bob.actorId, 'not my work'), /crew_work_denied/);
   const replay = await dispatch(f, f.bob, f.alan.id, 'tidy the release');
   assert.equal(replay.workId, work.workId, 'a retried dispatch reuses its work');
@@ -143,7 +143,7 @@ test('work a Bot starts on its own answers to the space owner', async t => {
   assert.equal(started.work.origin, 'routine');
   assert.deepEqual(started.work.chain.map(p => p.actorId), [f.alice.actorId]);
   await say(f, f.alan, started.work.id, f.alice.actorId, 'nightly check found a gap');
-  await assert.rejects(say(f, f.alan, started.work.id, f.bob.actorId, 'not on the chain'), /actor_action_denied/);
+  await assert.rejects(say(f, f.alan, started.work.id, f.bob.actorId, 'not on the chain'), /crew_work_denied/);
   await assert.rejects(f.call(f.alice, 'opencraft/crew/work/start', {}), /crew_work_denied/, 'only space Bots start work');
   const listed = await f.call(f.alan.context, 'opencraft/crew/work/list', {}) as { works: { id: string }[] };
   assert.deepEqual(listed.works.map(w => w.id), [started.work.id]);
@@ -155,7 +155,7 @@ test('members who leave are skipped on the chain, and a removed Bot holds no wor
   f.ledger.command(f.alice, { action: 'remove', spaceId: f.team, actorId: f.bob.actorId });
   const view = await f.call(f.alan.context, 'opencraft/crew/work/get', { workId: work.workId }) as { work: { chain: { actorId: string }[] } };
   assert.deepEqual(view.work.chain.map(p => p.actorId), [f.alice.actorId], 'the departed requester is skipped; escalation goes on up');
-  await assert.rejects(say(f, f.alan, work.workId, f.bob.actorId, 'gone'), /actor_action_denied/);
+  await assert.rejects(say(f, f.alan, work.workId, f.bob.actorId, 'gone'), /crew_work_denied/);
   await say(f, f.alan, work.workId, f.alice.actorId, 'Bob left; your call');
   f.ledger.command(f.alice, { action: 'remove', spaceId: f.team, actorId: f.alan.id });
   await assert.rejects(say(f, f.alan, work.workId, f.alice.actorId, 'removed'), /crew_work_denied/);
@@ -171,4 +171,39 @@ test('a crew dispatch from the Bot owner is marked so the owner chat does not ta
   await dispatch(f, f.alice, f.alan.id, 'crew job');
   const rows = await f.call(f.alan.context, 'personal-assistant/own-messages', { after: 0 }) as { content: string; crewWork: boolean }[];
   assert.deepEqual(rows.map(r => [r.content, r.crewWork]), [['plain chat', false], ['crew job', true]]);
+});
+
+test('every message a member sends to a space Bot is a dispatch', async t => {
+  const f = await fixture(t);
+  const sent = await f.call(f.bob, 'send', { targetActorId: f.alan.id, content: 'draft the notes', idempotencyKey: 'notes' }) as { messageId: string };
+  const works = (await f.call(f.alan.context, 'opencraft/crew/work/list', {}) as { works: { id: string; messageId: string; requesterId: string; request: string }[] }).works;
+  assert.deepEqual(works.map(w => [w.messageId, w.requesterId, w.request]), [[sent.messageId, f.bob.actorId, 'draft the notes']]);
+  await f.call(f.bob, 'send', { targetActorId: f.alan.id, content: 'draft the notes', idempotencyKey: 'notes' });
+  assert.equal((await f.call(f.alan.context, 'opencraft/crew/work/list', {}) as { works: unknown[] }).works.length, 1, 'a retried send opens nothing new');
+  const viaDispatch = await dispatch(f, f.bob, f.alan.id, 'second job');
+  assert.equal((await f.call(f.alan.context, 'opencraft/crew/work/list', {}) as { works: unknown[] }).works.length, 2);
+  assert.ok(viaDispatch.workId);
+});
+
+test('replies between Bots open no work, spend no budget and come back on the work they answer', async t => {
+  const f = await fixture(t);
+  await f.call(f.alice, 'opencraft/crew/phonebook/set', { botId: f.alan.id, actorId: f.zhe.id, present: true });
+  const root = await dispatch(f, f.bob, f.alan.id, 'ship 2.3');
+  const child = await dispatch(f, f.alan, f.zhe.id, 'check the signatures', root.workId);
+  const work = async (workId: string) => (await f.call(f.bob, 'opencraft/crew/work/get', { workId }) as { work: { budget: { used: number }; openChildren: number } }).work;
+  assert.equal((await work(root.workId)).openChildren, 1);
+
+  await say(f, f.zhe, child.workId, f.alan.id, 'signatures look fine');
+  const replies = async (bot: { context: unknown }) => (await f.call(bot.context as never, 'opencraft/crew/work/replies', { after: 0 }) as { replies: { workId: string; requesterId: string; content: string; from: { actorId: string } }[] }).replies;
+  assert.deepEqual((await replies(f.alan)).map(r => [r.workId, r.requesterId, r.content, r.from.actorId]),
+    [[root.workId, f.bob.actorId, 'signatures look fine', f.zhe.id]], 'filed against the work Alan holds, which Bob gave it');
+  await say(f, f.alan, child.workId, f.zhe.id, 'thanks, also check the notes');
+  assert.deepEqual((await replies(f.zhe)).map(r => [r.workId, r.content]), [[child.workId, 'thanks, also check the notes']], 'the requester answers down the tree');
+  assert.equal((await f.call(f.zhe.context, 'opencraft/crew/work/list', {}) as { works: unknown[] }).works.length, 1, 'no new work for Zhe');
+  assert.equal((await work(root.workId)).budget.used, 1, 'replies spend no budget');
+
+  await assert.rejects(f.call(f.bob, 'opencraft/crew/work/message', { workId: child.workId, targetActorId: f.zhe.id, content: 'not my hand-off', idempotencyKey: 'bob-down' }), /crew_work_denied/, 'only the requester answers down');
+  await f.call(f.zhe.context, 'opencraft/crew/work/finish', { workId: child.workId });
+  assert.equal((await work(root.workId)).openChildren, 0);
+  await assert.rejects(say(f, f.alan, child.workId, f.zhe.id, 'too late'), /crew_work_denied/, 'closed work carries no replies');
 });

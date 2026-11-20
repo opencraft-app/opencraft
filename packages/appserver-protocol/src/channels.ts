@@ -141,6 +141,13 @@ export interface CrewWorkView {
   chain: CrewPhonebookEntry[]; budget: { used: number; limit: number };
   /** Dispatch text, visible to the assignee and the requester only; null otherwise or for routine work. */
   request: string | null;
+  /** Work handed on from this one that is still open. */
+  openChildren: number;
+}
+/** A reply that reached a Bot inside crew work, filed against that Bot's own work. */
+export interface CrewReply {
+  seq: number; messageId: string; workId: string; requesterId: string; state: 'open' | 'closed';
+  from: CrewPhonebookEntry; content: string;
 }
 export interface ChannelsMethodMap {
   'opencraft/channels/group/get': {params:{channelId:string};result:ChannelSummary};
@@ -173,6 +180,7 @@ export interface ChannelsMethodMap {
   "opencraft/crew/work/finish": { params: { workId: string }; result: { work: CrewWorkView } };
   "opencraft/crew/work/get": { params: { workId: string }; result: { work: CrewWorkView } };
   "opencraft/crew/work/list": { params: Record<string, never>; result: { works: CrewWorkView[] } };
+  "opencraft/crew/work/replies": { params: { after: number }; result: { replies: CrewReply[] } };
   "opencraft/channels/group/create": {
     params: { title: string; memberActorIds: string[]; clientRequestId: string };
     result: ChannelSummary;

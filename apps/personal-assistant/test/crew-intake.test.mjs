@@ -7,16 +7,18 @@ import { createCrewIntake } from "../src/runtime/crew-intake.mjs";
 const bob = { actorId: "bob", displayName: "Bob", kind: "human" };
 const alice = { actorId: "alice", displayName: "Alice", kind: "human" };
 const work = (id, requesterId, chain, request = "tidy the release") =>
-  ({ id, state: "open", origin: "member", requesterId, chain, request });
+  ({ id, state: "open", origin: "member", requesterId, chain, request, openChildren: 0 });
 
 /** Stands in for the Core crew ledger as the Host would forward it. */
-function core(works) {
+function core(works, replies = []) {
   const calls = [];
   return {
     calls,
     works,
+    replies,
     request: async (method, params) => {
       calls.push([method, params]);
+      if (method === "opencraft/crew/work/replies") return { replies: replies.filter((r) => r.seq > params.after) };
       if (method === "opencraft/crew/work/list") return { works: works.filter((w) => w.state === "open") };
       if (method === "opencraft/crew/work/finish") {
         works.find((w) => w.id === params.workId).state = "closed";
@@ -69,8 +71,10 @@ test("crew work becomes a turn in its dispatcher's conversation and closes only 
 
   s.store.db.prepare("UPDATE reception SET status='settled' WHERE id='crew:w1'").run();
   await crew.poll(() => false);
-  assert.equal(ledger.works[0].state, "closed", "settled and quiet closes the work");
-  assert.equal(ledger.works[1].state, "open");
+  assert.equal(ledger.works[0].state, "open", "the dispatcher's follow-up is still queued in the same conversation");
+  s.store.db.prepare("UPDATE reception SET status='settled' WHERE id='crew:w2'").run();
+  await crew.poll(() => false);
+  assert.deepEqual(ledger.works.map((w) => w.state), ["closed", "closed"], "settled and quiet closes the work");
 });
 
 test("work whose dispatcher left before intake is closed without starting", async (t) => {
@@ -90,4 +94,31 @@ test("a reply is routed to the nearest person left on the chain", async (t) => {
   ledger.works[0].chain = [alice];
   await crew.deliver({ id: "m2", conversationId }, "Bob left; who decides?");
   assert.equal(ledger.calls.at(-1)[1].targetActorId, "alice");
+});
+
+test("a reply from a Bot it handed work to returns to the conversation of the work it answers", async (t) => {
+  const ledger = core([work("root", "bob", [bob, alice])]);
+  const s = setup(t, ledger);
+  const crew = s.intake();
+  await crew.poll(() => false);
+  const conversationId = s.store.app.reception.turn("crew:root").conversation_id;
+  s.store.db.prepare("UPDATE reception SET status='settled' WHERE id='crew:root'").run();
+  ledger.works[0].openChildren = 1;
+  await crew.poll(() => false);
+  assert.equal(ledger.works[0].state, "open", "work with an open hand-off stays open");
+
+  const zhe = { actorId: "zhe", displayName: "Zhe", kind: "session" };
+  ledger.replies.push({ seq: 1, messageId: "r1", workId: "root", requesterId: "bob", state: "open", from: zhe, content: "signatures look fine" });
+  ledger.works[0].openChildren = 0;
+  await crew.poll(() => false);
+  const turn = s.store.app.reception.turn("crew-reply:r1");
+  assert.equal(turn.conversation_id, conversationId);
+  assert.equal(turn.text, "Zhe:\nsignatures look fine");
+  assert.equal(ledger.works[0].state, "open", "the returned reply is still to be handled");
+
+  await crew.poll(() => false);
+  assert.equal(ledger.calls.filter(([m, p]) => m === "opencraft/crew/work/replies" && p.after === 1).length > 0, true, "the cursor moved past the reply");
+  s.store.db.prepare("UPDATE reception SET status='settled' WHERE id='crew-reply:r1'").run();
+  await crew.poll(() => false);
+  assert.equal(ledger.works[0].state, "closed");
 });

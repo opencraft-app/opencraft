@@ -10,8 +10,11 @@
  *   follow-ups and answers to the Bot's questions arrive as new work in that same conversation.
  * - Replies in that conversation go back through the work's chain pass to the nearest person the
  *   work still answers to. A Bot asking upward is therefore the dispatcher's own decision to make.
- * - Work is reported finished only once it is quiet here: its intake turn settled, no Work linked
- *   to the conversation still active, and nothing waiting in the outbox for that conversation.
+ * - Replies are not dispatches. One that answers work this Bot holds is returned as a new turn in
+ *   the conversation handling that work, so the Bot reads it with the work's context.
+ * - Work is reported finished only once it is quiet here: its intake turn settled, nothing it
+ *   handed on is still open, no Work linked to the conversation still active, and nothing waiting
+ *   in the outbox for that conversation.
  * - Work whose dispatcher left before intake is not started; it is closed without a reply.
  */
 const UPSERT = "INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value";
@@ -19,6 +22,7 @@ const ACTIVE_WORK = ["queued", "running", "waiting_input", "awaiting_review", "a
 const peerKey = (actorId) => "crew:peer:" + actorId;
 const conversationKey = (conversationId) => "crew:conversation:" + conversationId;
 const inputId = (workId) => "crew:" + workId;
+const REPLY_CURSOR = "crew:replies:seq";
 
 export function createCrewIntake({ runner, request }) {
   const db = () => runner.uow.db;
@@ -36,8 +40,11 @@ export function createCrewIntake({ runner, request }) {
   }
 
   function quiet(work, conversationId) {
+    if (work.openChildren !== 0) return false;
     const turn = db().prepare("SELECT status FROM reception WHERE id=?").get(inputId(work.id));
     if (!turn || turn.status !== "settled") return false;
+    // A reply returned to this conversation is a turn of its own; wait for it as well.
+    if (db().prepare("SELECT 1 FROM reception WHERE conversation_id=? AND status IN ('queued','running') LIMIT 1").get(conversationId)) return false;
     const marks = ACTIVE_WORK.map(() => "?").join(",");
     if (db().prepare(`SELECT 1 FROM work w JOIN conversation_work c ON c.work_id=w.id WHERE c.conversation_id=? AND w.status IN (${marks}) LIMIT 1`)
       .get(conversationId, ...ACTIVE_WORK)) return false;
@@ -50,8 +57,24 @@ export function createCrewIntake({ runner, request }) {
   return {
     isPeerConversation,
 
-    /** One pass over the Bot's open work: start new work, close work that has gone quiet. */
+    /** One pass: return replies to their conversations, start new work, close work that has gone quiet. */
     async poll(stopped) {
+      const after = Number(meta(REPLY_CURSOR) ?? 0);
+      const { replies } = await request("opencraft/crew/work/replies", { after });
+      for (const reply of replies) {
+        if (stopped()) return;
+        const conversationId = meta(peerKey(reply.requesterId));
+        // A reply to work that already closed, or that this runner never took in, has no turn to join.
+        if (reply.state === "open" && conversationId) {
+          const response = await runner.dispatch({
+            op: "say",
+            id: "crew-reply:" + reply.messageId,
+            params: { conversationId, text: `${reply.from.displayName}:\n${reply.content}` },
+          });
+          if (response?.ok === false) throw Error("Crew reply rejected");
+        }
+        runner.uow.transaction(() => db().prepare(UPSERT).run(REPLY_CURSOR, String(reply.seq)));
+      }
       const { works } = await request("opencraft/crew/work/list", {});
       for (const work of works) {
         if (stopped()) return;
