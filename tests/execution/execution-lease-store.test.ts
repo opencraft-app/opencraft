@@ -55,6 +55,45 @@ test("pre-ACK native tools bind pending origin; late ACK cannot revive completed
   f.store.started("t", "turn", undefined, "engine"); f.store.finished("t", "turn"); f.store.started("t", "turn", "in", "engine");
   assert.equal(f.store.resolve({ threadId: "t", executionId: id }).status, "expired");
 });
+test("queued input inserted into a native goal turn cannot become its execution origin", t => {
+  const f = fixture(t), queue = new OpenCraftHostQueue(f.directory, f.owner.database);
+  f.store.observedStart("t", "goal-turn", "engine");
+  const original = f.owner.database.prepare("SELECT execution_id FROM execution_leases WHERE turn_id=?").get("goal-turn")!;
+  queue.add("t", "queued-human", [{ type: "text", text: "try Git again" }], A);
+  f.store.observedInput("t", "goal-turn", "queued-human");
+  const lease = f.owner.database.prepare("SELECT input_id,state FROM execution_leases WHERE execution_id=?").get(original.execution_id!);
+  assert.equal(lease?.input_id, "native:goal-turn", "a message inside the turn cannot attest its launch");
+  assert.equal(f.store.resolve({ threadId: "t", executionId: String(original.execution_id) }).status, "unknown");
+  assert.deepEqual(f.store.getSubmission("t", "queued-human"), A, "the message retains its authenticated sender");
+  f.restart();
+  f.store.reconcile("t", [{ id: "goal-turn", status: "inProgress", items: [
+    { type: "userMessage", clientId: "queued-human" },
+  ] }], "engine");
+  assert.equal(f.store.resolve({ threadId: "t", executionId: String(original.execution_id) }).status, "unknown");
+});
+test("a queued input with its own admitted execution still binds before the native acknowledgement", t => {
+  const f = fixture(t), queue = new OpenCraftHostQueue(f.directory, f.owner.database);
+  queue.add("t", "queued-human", [{ type: "text", text: "start a new reply" }], A);
+  const id = f.store.begin("t", "queued-human", "engine");
+  f.store.observedStart("t", "new-turn", "engine");
+  f.store.observedInput("t", "new-turn", "queued-human");
+  const result = f.store.resolve({ threadId: "t", executionId: id });
+  assert.equal(result.status, "active");
+  if (result.status === "active") assert.deepEqual(result.lease.principal, A.principal);
+});
+test("a later queue admission cannot claim a native turn that was already running", t => {
+  const f = fixture(t), queue = new OpenCraftHostQueue(f.directory, f.owner.database);
+  f.store.observedStart("t", "goal-turn", "engine");
+  f.owner.database.prepare("UPDATE execution_leases SET boot_id='boot',admitted_at_ms=1000,admitted_at_boot_ms=1000 WHERE turn_id=?").run("goal-turn");
+  queue.add("t", "queued-human", [{ type: "text", text: "next reply" }], A);
+  const id = f.store.begin("t", "queued-human", "engine");
+  f.owner.database.prepare("UPDATE execution_leases SET boot_id='boot',admitted_at_ms=500,admitted_at_boot_ms=2000 WHERE execution_id=?").run(id);
+  f.store.observedInput("t", "goal-turn", "queued-human");
+  assert.equal(f.store.resolve({ threadId: "t", executionId: id }).status, "unknown");
+  assert.equal(f.owner.database.prepare("SELECT input_id FROM execution_leases WHERE turn_id=?").get("goal-turn")?.input_id, "native:goal-turn");
+  f.store.started("t", "new-turn", "queued-human", "engine");
+  assert.equal(f.store.resolve({ threadId: "t", executionId: id }).status, "active", "the queued input can still start its own turn");
+});
 test("attested job birth rejects boundaries and incarnation mismatch, never follows next employee", t => {
   const f = fixture(t); f.store.capture("t", "a", A); const a = f.store.begin("t", "a"); f.store.started("t", "a", "a", "engine");
   f.owner.database.prepare("UPDATE execution_leases SET admitted_at_ms=1000 WHERE execution_id=?").run(a);
