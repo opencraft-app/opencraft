@@ -1,31 +1,31 @@
 /* OpenCraft 新办公室。按精简后的模型重做，旧原型 examples/matter-canvas 不动。
    四个名词：人（你、员工、公司外的人，同一种资料页）、对话、工具（工作环境、账号）、改动（他用工具在外面做的事）。
-   两种关系：归谁管（只是组织关系）、能联系谁（单向，勾选）。招人时上下级默认互相能联系，之后可以改。你是老板，所有人的设置都能改。
-   联系公司外的人靠账号：员工有那个人用的账号，就能联系他，不另外勾。
+   只有一种关系：能联系谁（单向，勾选，对公司里外的人都一样）。没有上下级；招人时默认你和他互相能联系。你是老板，所有人的设置都能改。
    这是结构原型，没有接真实的 Bot：你发出去的话不会有人回。示例内容是一份静态快照，清空后各处如实显示为空。 */
 (function () {
   'use strict';
-  var KEY = 'opencraft.office.v2', $ = function (id) { return document.getElementById(id); };
+  var KEY = 'opencraft.office.v3', $ = function (id) { return document.getElementById(id); };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
   var ENV = { pc: '电脑', cloud: '云环境' };
-  var ROLES = [['客服', '你负责回答客户的问题。答不了的记下来，转给{boss}。'], ['采购', '你负责买东西、订场地。超过预算先问{boss}。'], ['对账', '你核对每一笔账和发票是否对得上，对不上的列出来交给{boss}。'], ['文档核对', '你只做核对：版本、页码、签章。核完写清楚看的是哪一份、结论是什么。'], ['行政', '你负责开账号、订会议室、收报销单。办完告诉交办的人。']];
+  var ROLES = [['客服', '你负责回答客户的问题。答不了的记下来，转给你。'], ['采购', '你负责买东西、订场地。超过预算先问你。'], ['对账', '你核对每一笔账和发票是否对得上，对不上的列出来交给你。'], ['文档核对', '你只做核对：版本、页码、签章。核完写清楚看的是哪一份、结论是什么。'], ['行政', '你负责开账号、订会议室、收报销单。办完告诉交办的人。']];
   var NAMES = ['青柚', '白榆', '半夏', '南星', '远山', '知秋', '云杉', '松果', '小满', '若木'];
 
   function blank() { return { people: [{ id: 'me', kind: 'human', name: '你', role: '老板', look: 0 }], grants: [], msgs: [], changes: [], work: [], tools: [], n: 0, sample: false }; }
-  /* 招人时的默认值：上下级互相能联系 */
-  function defaults(d, boss, id) { d.grants.push({ from: boss, to: id, can: 'talk' }, { from: id, to: boss, can: 'talk' }); }
+  /* 招人时的默认值：你和他互相能联系 */
+  function defaults(d, id) { d.grants.push({ from: 'me', to: id, can: 'talk' }, { from: id, to: 'me', can: 'talk' }); }
   function sample() { /* 一家小工作室老板眼里的某个下午 */
     var d = blank(), now = Date.now(), look = 1, ago = function (min) { return now - min * 60000; };
     [['t1', 'pc', '办公室的 Mac mini'], ['t2', 'pc', '机房的 Linux 主机'], ['t3', 'cloud', '测试环境'], ['t4', 'cloud', '客户演示环境'], ['a5', 'account', '飞书'], ['a6', 'account', '企业邮箱'], ['a7', 'account', 'GitHub'], ['a8', 'account', '公司网盘']].forEach(function (t) { d.tools.push({ id: t[0], kind: t[1], name: t[2] }); });
-    function bot(id, name, role, boss, howto, env, accounts) { d.people.push({ id: id, kind: 'bot', name: name, role: role, boss: boss, howto: howto, env: env, accounts: accounts, look: look++ }); defaults(d, boss, id); }
-    bot('a', '阿岚', '项目交付', 'me', '你负责把版本按时交到客户手里。缺什么材料自己找同事要，拿不准的事先问老板。交付前一定让人核对签字页。', 't1', ['a5', 'a6', 'a8']);
-    bot('y', '言禾', '合同与验收', 'me', '你保管合同和验收文件。别人来要文件，先确认是哪个版本，再给盖章的那一份。', 't1', ['a5', 'a8']);
-    bot('c', '沐川', '行政与账号', 'me', '你负责开账号、订会议室、收报销单。办完告诉交办的人。', 't2', ['a5', 'a6', 'a7']);
-    bot('z', '小折', '文档核对', 'a', '你只做核对：版本、页码、签章。核完写清楚看的是哪一份、结论是什么。', 't3', ['a8']);
-    bot('t', '秋池', '对账', 'c', '你核对每一笔报销和发票是否对得上，对不上的列出来交给沐川。', null, ['a6']);
-    bot('n', '北野', '采购', 'c', '你负责买办公用品和订场地。超过预算先问沐川。', null, []);
-    d.people.push({ id: 'o1', kind: 'outside', name: '客户周姐', via: 'a6', look: 0 });
-    [['a', 'y'], ['y', 'a'], ['y', 'c'], ['c', 'y'], ['n', 't']].forEach(function (g) { d.grants.push({ from: g[0], to: g[1], can: 'talk' }); }); /* 北野能找秋池，秋池不能主动找北野 */
+    function bot(id, name, role, howto, env, accounts) { d.people.push({ id: id, kind: 'bot', name: name, role: role, howto: howto, env: env, accounts: accounts, look: look++ }); }
+    bot('a', '阿岚', '项目交付', '你负责把版本按时交到客户手里。缺什么材料自己找同事要，拿不准的事先问老板。交付前一定让人核对签字页。', 't1', ['a5', 'a6', 'a8']);
+    bot('y', '言禾', '合同与验收', '你保管合同和验收文件。别人来要文件，先确认是哪个版本，再给盖章的那一份。', 't1', ['a5', 'a8']);
+    bot('c', '沐川', '行政与账号', '你负责开账号、订会议室、收报销单。办完告诉交办的人。', 't2', ['a5', 'a6', 'a7']);
+    bot('z', '小折', '文档核对', '你只做核对：版本、页码、签章。核完写清楚看的是哪一份、结论是什么。', 't3', ['a8']);
+    bot('t', '秋池', '对账', '你核对每一笔报销和发票是否对得上，对不上的列出来交给沐川。', null, ['a6']);
+    bot('n', '北野', '采购', '你负责买办公用品和订场地。超过预算先问沐川。', null, []);
+    d.people.push({ id: 'o1', kind: 'outside', name: '客户周姐', look: 0 });
+    /* 谁能联系谁，一条条写明。北野能联系秋池，秋池不能联系北野；你还不能联系小折 */
+    [['me', 'a'], ['a', 'me'], ['me', 'y'], ['y', 'me'], ['me', 'c'], ['c', 'me'], ['a', 'z'], ['z', 'a'], ['c', 't'], ['t', 'c'], ['c', 'n'], ['n', 'c'], ['a', 'y'], ['y', 'a'], ['y', 'c'], ['c', 'y'], ['n', 't'], ['a', 'o1']].forEach(function (g) { d.grants.push({ from: g[0], to: g[1], can: 'talk' }); });
     function change(id, min, who, via, what, name, body) { d.changes.push({ id: id, ts: ago(min), who: who, via: via, what: what, name: name, body: body || '' }); }
     change('e1', 172, 'c', 'a5', '订了会议室', '周三 14:00–16:00 大会议室，借了投影');
     change('e2', 62, 'y', 'a8', '共享了文件', '验收签字页（两份附件），共享给阿岚');
@@ -47,8 +47,8 @@
     d.n = 100; d.sample = true; return d;
   }
   var db = sample();
-  try { var raw = JSON.parse(localStorage.getItem(KEY)); if (raw && raw.people && raw.grants && raw.v === 2) db = raw; } catch (e) { /* 没有存储也能用 */ }
-  function save() { db.v = 2; try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { /* ignore */ } }
+  try { var raw = JSON.parse(localStorage.getItem(KEY)); if (raw && raw.people && raw.grants && raw.v === 3) db = raw; } catch (e) { /* 没有存储也能用 */ }
+  function save() { db.v = 3; try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { /* ignore */ } }
   function uid(p) { db.n += 1; return p + db.n; }
 
   /* ---------- 模型 ---------- */
@@ -60,9 +60,8 @@
   function granted(a, b, can) { return db.grants.some(function (g) { return g.from === a && g.to === b && g.can === can; }); }
   function setGrant(a, b, can, on) { db.grants = db.grants.filter(function (g) { return !(g.from === a && g.to === b && g.can === can); }); if (on) db.grants.push({ from: a, to: b, can: can }); }
   /* 能找：公司里的人看权限；公司外的人看有没有他用的账号 */
-  function canTalk(a, b) { var x = P(a), y = P(b); if (!x || !y || a === b) return false; if (y.kind === 'outside') return x.kind === 'bot' && x.accounts.indexOf(y.via) >= 0; if (x.kind === 'outside') return false; return granted(a, b, 'talk'); }
+  function canTalk(a, b) { var x = P(a), y = P(b); if (!x || !y || a === b || x.kind === 'outside') return false; return granted(a, b, 'talk'); }
   function talkTargets(id) { return db.people.filter(function (x) { return canTalk(id, x.id); }).map(function (x) { return x.id; }); }
-  function below(id) { var o = []; bots().forEach(function (x) { if (x.boss === id) o.push(x.id); }); o.slice().forEach(function (j) { o = o.concat(below(j)); }); return o; }
   function thread(a, b) { return db.msgs.filter(function (x) { return (x.who === a && x.to === b) || (x.who === b && x.to === a); }).sort(function (x, y) { return x.ts - y.ts; }); }
   function partners(id) { var o = []; db.msgs.slice().sort(function (x, y) { return y.ts - x.ts; }).forEach(function (x) { var p = x.who === id ? x.to : x.to === id ? x.who : null; if (p && o.indexOf(p) < 0) o.push(p); }); return o; }
   function unread(id) { return db.msgs.filter(function (x) { return x.to === 'me' && !x.read && (!id || x.who === id); }); } /* 红点就是没看过的消息 */
@@ -72,7 +71,7 @@
   function lastChange(id) { return db.changes.filter(function (e) { return e.who === id && Date.now() - e.ts < 3600000; }).sort(function (a, b) { return b.ts - a.ts; })[0]; } /* 最近一小时里他在外面做的最后一件事 */
   function hhmm(ts) { var d = new Date(ts); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
   function ago(ts) { var m = Math.round((Date.now() - ts) / 60000); return m < 1 ? '刚刚' : m < 60 ? m + ' 分钟前' : hhmm(ts); }
-  function sub(p) { return p.kind === 'human' ? '老板' : p.kind === 'outside' ? '公司外 · 通过' + ((T(p.via) || {}).name || '还没定的账号') + '联系' : (p.role || '未填岗位') + ' · 归' + N(p.boss) + '管'; }
+  function sub(p) { return p.kind === 'human' ? '老板' : p.kind === 'outside' ? '公司外的人' : (p.role || '未填岗位'); }
 
   /* ---------- 界面：微信的结构。三个标签（消息、通讯录、办公室），点进去是整页，左上角返回。 ---------- */
   var TABBAR = [['chats', '消息', '<path d="M12 4.500c-4.700 0-8.500 3.100-8.500 7 0 2.200 1.200 4.100 3.100 5.400L6 20l3.400-1.600c.8.200 1.700.300 2.600.300 4.700 0 8.500-3.100 8.500-7s-3.800-7.200-8.500-7.200z"/>'], ['people', '通讯录', '<circle cx="9" cy="9" r="3.200"/><path d="M3.500 19c.6-3 2.800-4.800 5.500-4.800s4.900 1.800 5.500 4.800M16 6.500a2.800 2.800 0 0 1 0 5.400M17.500 14.600c1.600.7 2.700 2.200 3 4.400"/>'], ['office', '办公室', '<path d="M12 3.500 4 8v8l8 4.500 8-4.500V8z"/><path d="M4 8l8 4.500L20 8M12 12.500v8"/>']];
@@ -86,7 +85,7 @@
     var nodes = [], links = [], boss = [];
     db.people.forEach(function (p) { var e = p.kind === 'bot' && lastChange(p.id), t = e && T(e.via);
       nodes.push({ id: p.id, name: p.name, kind: p.kind === 'human' ? 'me' : p.kind === 'outside' ? 'out' : 'bot', look: p.look, badge: unread(p.id).length, busy: !!running(p.id), pc: !!p.env, fx: e ? { id: e.id, mark: t ? t.name.slice(0, 1) : '改' } : null });
-      if (p.kind === 'bot') { boss.push([p.boss, p.id]); links.push([p.boss, p.id]); } });
+    });
     db.people.forEach(function (a) { talkTargets(a.id).forEach(function (b) { links.push([a.id, b]); }); });
     return { nodes: nodes, links: links, boss: boss };
   }
@@ -123,9 +122,9 @@
   function people() {
     return '<header class="nav top"><span class="r"></span><h1>通讯录</h1><span class="r"></span></header><div class="body list">' +
       '<button class="cell"' + link({ k: 'recruit' }) + '><span class="av plus">+</span><span class="t"><b>招募</b><span>选个岗位，他就入职</span></span></button>' +
-      '<button class="cell"' + link({ k: 'newout' }) + '><span class="av plus">+</span><span class="t"><b>添加公司外的人</b><span>客户、供应商，定好通过哪个账号联系</span></span></button>' +
+      '<button class="cell"' + link({ k: 'newout' }) + '><span class="av plus">+</span><span class="t"><b>添加公司外的人</b><span>客户、供应商</span></span></button>' +
       cell(person('me'), 'me', '你', '老板') +
-      (bots().length ? '<h4>员工</h4>' + bots().map(function (p) { return cell(person(p.id), p.id, esc(p.name), esc(p.role || '未填岗位'), '归' + esc(N(p.boss)) + '管'); }).join('') : '') +
+      (bots().length ? '<h4>员工</h4>' + bots().map(function (p) { return cell(person(p.id), p.id, esc(p.name), esc(p.role || '未填岗位')); }).join('') : '') +
       (outs().length ? '<h4>公司外的人</h4>' + outs().map(function (o) { return cell(person(o.id), o.id, esc(o.name), esc(sub(o))); }).join('') : '') + '</div>';
   }
   /* 标签三：办公室。三维画面在 .stage 里，这里只出底部那张卡片 */
@@ -153,15 +152,13 @@
     return head + (tabs.length ? '<div class="tabs" role="tablist">' + tabs.map(function (t) { return '<button role="tab" aria-selected="' + (tab === t[0]) + '" data-tab="' + t[0] + '">' + t[1] + '</button>'; }).join('') + '</div>' : '') + body;
   }
   function contacts(p) {
-    var he = p.id === 'me' ? '你' : '他';
-    if (ui.sub) { var tr = thread(p.id, ui.sub); return '<div class="body chat"><button class="lk" data-do="sub" data-id="">‹ 回到' + he + '的联系</button><p class="cap">' + esc(p.name) + ' 和 ' + esc(N(ui.sub)) + ' 的聊天记录（只读）</p>' + bubbles(tr, p.id) + '</div>'; }
-    function rel(j) { var x = P(j); return x.kind === 'outside' ? '公司外' : x.id === p.boss ? he + '的上级' : x.boss === p.id ? he + '的下属' : ''; }
-    var ps = partners(p.id), inside = db.people.filter(function (x) { return x.id !== p.id && x.kind !== 'outside'; });
+    var he = p.id === 'me' ? '你' : '他', self = p.id === 'me';
+    if (ui.sub) { var tr = thread(p.id, ui.sub); return '<div class="body chat"><button class="lk" data-do="sub" data-id="">‹ 回到他的联系</button><p class="cap">' + esc(p.name) + ' 和 ' + esc(N(ui.sub)) + ' 的聊天记录（只读）</p>' + bubbles(tr, p.id) + '</div>'; }
+    var ps = partners(p.id), others = db.people.filter(function (x) { return x.id !== p.id && !(p.kind === 'human' && x.kind === 'outside'); });
     return '<div class="body">' +
-      sec(he + '在联系谁', ps.length ? ps.map(function (j) { var l = thread(p.id, j).pop(); return '<button class="cell" data-do="sub" data-id="' + j + '">' + av(j) + '<span class="t"><b>' + esc(N(j)) + (rel(j) ? '<em>' + rel(j) + '</em>' : '') + (canTalk(p.id, j) ? '' : '<em>现在不能联系</em>') + '</b><span>' + esc((l.who === p.id && !l.sys ? he + '：' : '') + l.text) + '</span></span><span class="rt">' + hhmm(l.ts) + '</span></button>'; }).join('') : none(he + '还没有联系过别人。')) +
-      sec(he + '能联系谁', inside.map(function (x) { return check('reach', p.id, x.id, 'talk', canTalk(p.id, x.id), esc(x.name), rel(x.id)); }).join('') +
-        (p.kind === 'bot' ? outs().map(function (o) { var t = T(o.via), on = canTalk(p.id, o.id); return check('reach', p.id, o.id, 'talk', on, esc(o.name), t ? (on ? '通过' : '要先给他') + t.name : '还没定账号', true); }).join('') : ''),
-        '勾上谁，' + he + '就能联系谁。' + (p.kind === 'bot' && outs().length ? '公司外的人看账号：有对方用的账号就能联系，在「工作」里给账号。' : '')) + '</div>';
+      (self ? '' : sec('他在联系谁', ps.length ? ps.map(function (j) { var l = thread(p.id, j).pop(); return '<button class="cell" data-do="sub" data-id="' + j + '">' + av(j) + '<span class="t"><b>' + esc(N(j)) + (P(j).kind === 'outside' ? '<em>公司外</em>' : '') + (canTalk(p.id, j) ? '' : '<em>现在不能联系</em>') + '</b><span>' + esc((l.who === p.id && !l.sys ? '他：' : '') + l.text) + '</span></span><span class="rt">' + hhmm(l.ts) + '</span></button>'; }).join('') : none('他还没有联系过别人。'))) +
+      sec(he + '能联系谁', others.map(function (x) { return check('reach', p.id, x.id, 'talk', canTalk(p.id, x.id), esc(x.name), x.kind === 'outside' ? '公司外' : ''); }).join('') || none('还没有别人。'),
+        '勾上谁，' + he + '就能联系谁。' + (self ? '你和谁聊过，在「消息」里。' : '')) + '</div>';
   }
   function work(p) {
     var w = running(p.id), envT = T(p.env), list = db.changes.filter(function (e) { return e.who === p.id; }).sort(function (a, b) { return b.ts - a.ts; });
@@ -172,35 +169,31 @@
       sec('工作环境', ('<label class="fld"><span>用</span><select data-sw="env"><option value="">没有</option>' + ['pc', 'cloud'].map(function (k) { return '<optgroup label="' + ENV[k] + '">' + envs.filter(function (t) { return t.kind === k; }).map(function (t) { return '<option value="' + t.id + '"' + (p.env === t.id ? ' selected' : '') + '>' + esc(t.name) + '</option>'; }).join('') + '</optgroup>'; }).join('') + '</select></label>' +
           '<form class="inl" data-do="tool" data-k="env"><select aria-label="哪种"><option value="pc">电脑</option><option value="cloud">云环境</option></select><input autocomplete="off" placeholder="添加一个新的给他" aria-label="名字"><button class="btn">添加</button></form>'), '他在哪儿干活：一台电脑，或者一个云环境。') +
       sec('账号', ((accs.length ? '<div class="chips">' + accs.map(function (t) { return '<label class="chip ck"><input type="checkbox" data-sw="acc" data-id="' + t.id + '"' + (p.accounts.indexOf(t.id) >= 0 ? ' checked' : '') + '>' + esc(t.name) + '</label>'; }).join('') + '</div>' : '') +
-          '<form class="inl" data-do="tool" data-k="account"><input autocomplete="off" placeholder="添加一个账号给他，例如：飞书" aria-label="账号名"><button class="btn">添加</button></form>'), '他能用的账号。联系公司外的人也靠它。') + '</div>';
+          '<form class="inl" data-do="tool" data-k="account"><input autocomplete="off" placeholder="添加一个账号给他，例如：飞书" aria-label="账号名"><button class="btn">添加</button></form>'), '他能用的账号，比如飞书、邮箱、网盘。') + '</div>';
   }
   function role(p) {
     var lock = '';
     return '<form class="body" data-do="role">' +
-      sec('他是谁', '<label class="fld"><span>名字</span><input id="rname" value="' + esc(p.name) + '" autocomplete="off"' + lock + '></label><label class="fld"><span>岗位</span><input id="rrole" value="' + esc(p.role) + '" autocomplete="off" placeholder="例如：项目交付"' + lock + '></label><label class="fld"><span>归谁管</span><select id="rboss"' + lock + '>' +
-        db.people.filter(function (x) { return x.kind !== 'outside' && x.id !== p.id && below(p.id).indexOf(x.id) < 0; }).map(function (x) { return '<option value="' + x.id + '"' + (p.boss === x.id ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') + '</select></label>', '归谁管只是组织关系：他向谁汇报。能联系谁在「联系」里单独勾。') +
+      sec('他是谁', '<label class="fld"><span>名字</span><input id="rname" value="' + esc(p.name) + '" autocomplete="off"' + lock + '></label><label class="fld"><span>岗位</span><input id="rrole" value="' + esc(p.role) + '" autocomplete="off" placeholder="例如：项目交付"' + lock + '></label>') +
       sec('做事说明', '<label class="fld col"><textarea id="rhowto" rows="5" aria-label="做事说明" placeholder="告诉他这个岗位该怎么做事"' + lock + '>' + esc(p.howto) + '</textarea></label>') +
       '<div class="acts"><button class="btn ok wide">保存</button></div><button type="button" class="lrow danger" data-do="drop" data-confirm="再点一次，确定让他离开">让他离开</button></form>';
   }
   function outsideBody(o) {
-    var accs = db.tools.filter(function (t) { return t.kind === 'account'; }), who = bots().filter(function (x) { return canTalk(x.id, o.id); }).map(function (x) { return x.id; });
-    return '<div class="body">' + sec('通过哪个账号联系', '<label class="fld"><span>账号</span><select data-sw="via">' + '<option value="">还没定</option>' + accs.map(function (t) { return '<option value="' + t.id + '"' + (o.via === t.id ? ' selected' : '') + '>' + esc(t.name) + '</option>'; }).join('') + '</select></label>', '员工有这个账号，就能联系' + esc(o.name) + '。') +
-      sec('谁能联系' + esc(o.name), who.length ? who.map(function (j) { return cell(person(j), j, esc(N(j)), esc(P(j).role || '')); }).join('') : none('现在没有员工有这个账号。')) +
+    var who = db.people.filter(function (x) { return canTalk(x.id, o.id); }).map(function (x) { return x.id; });
+    return '<div class="body">' + sec('谁能联系' + esc(o.name), who.length ? who.map(function (j) { return cell(person(j), j, esc(N(j)), esc(P(j).role || '')); }).join('') : none('现在没有人能联系他。'), '在员工的「能联系谁」里勾上' + esc(o.name) + '。') +
       '<button class="lrow danger" data-do="dropout" data-id="' + o.id + '" data-confirm="再点一次，确定移走">从通讯录移走</button></div>';
   }
   function recruit() {
     var used = db.people.map(function (x) { return x.name; }), free = NAMES.filter(function (n) { return used.indexOf(n) < 0; })[0] || '新同事';
     return nav('招募') + '<form class="body" data-do="add"><p class="cap">选一个岗位就能招，名字和做事说明都可以以后再改。</p>' +
       sec('岗位', '<div class="chips">' + ROLES.map(function (r, i) { return '<button type="button" class="chip" data-do="preset" data-id="' + i + '">' + r[0] + '</button>'; }).join('') + '</div><label class="fld"><span>岗位</span><input id="nrole" autocomplete="off" placeholder="选上面的，或者自己写"></label>') +
-      sec('他是谁', '<label class="fld"><span>名字</span><input id="nname" autocomplete="off" value="' + esc(free) + '"></label><label class="fld"><span>归谁管</span><select id="nboss"><option value="me">你</option>' + bots().map(function (x) { return '<option value="' + x.id + '">' + esc(x.name) + '</option>'; }).join('') + '</select></label>', '入职后，他和上级互相能联系。以后可以在「联系」里改。') +
+      sec('他是谁', '<label class="fld"><span>名字</span><input id="nname" autocomplete="off" value="' + esc(free) + '"></label>', '入职后，你和他互相能联系。他还能联系谁，在他的「联系」里勾。') +
       sec('做事说明', '<label class="fld col"><textarea id="nhowto" rows="4" aria-label="做事说明" placeholder="告诉他这个岗位该怎么做事。不填就按岗位给一段最基本的。"></textarea></label>') +
       '<div class="acts"><button class="btn ok wide">招募</button></div></form>';
   }
   function newOut() {
-    var accs = db.tools.filter(function (t) { return t.kind === 'account'; });
-    return nav('添加公司外的人') + '<form class="body" data-do="addout">' + sec('他是谁', '<label class="fld"><span>名字</span><input id="oname" autocomplete="off" placeholder="例如：供应商老秦"></label><label class="fld"><span>账号</span><select id="ovia"><option value="">还没定</option>' + accs.map(function (t) { return '<option value="' + t.id + '">' + esc(t.name) + '</option>'; }).join('') + '</select></label>', '选通过哪个账号联系他。有这个账号的员工就能联系他。') + '<div class="acts"><button class="btn ok wide">添加</button></div></form>';
+    return nav('添加公司外的人') + '<form class="body" data-do="addout">' + sec('他是谁', '<label class="fld"><span>名字</span><input id="oname" autocomplete="off" placeholder="例如：供应商老秦"></label>', '添加后，在员工的「能联系谁」里勾上他，那个员工就能联系他。') + '<div class="acts"><button class="btn ok wide">添加</button></div></form>';
   }
-
   function draw() {
     var t = top(), view = $('view'), b = view.querySelector('.pane.r .body') || view.querySelector('.body'), keep = b ? b.scrollTop : 0, key = JSON.stringify(t || ui.tab) + ui.sub, same = view.getAttribute('data-key') === key;
     if (t && t.k === 'chat') markRead(t.id);
@@ -225,16 +218,16 @@
     say: function () { var v = $('say').value.trim(), p = cur(); if (!v || !p || !canTalk('me', p.id)) return; db.msgs.push({ id: uid('m'), ts: Date.now(), who: 'me', to: p.id, text: v }); changed(); $('say').focus(); },
     stop: function (el) { var w = db.work.filter(function (x) { return x.id === el.getAttribute('data-id'); })[0], p = cur(); if (!w || !p) return; w.state = 'stopped'; db.msgs.push({ id: uid('m'), ts: Date.now(), who: 'me', to: w.who, sys: true, text: '你让' + N(w.who) + '停下了：' + w.text + '。已经做了的改动还在。' }); changed(); },
     tool: function (f) { var p = cur(), v = f.querySelector('input').value.trim(), k = f.getAttribute('data-k'); if (!v || !p) return; var kind = k === 'env' ? f.querySelector('select').value : 'account', t = { id: uid('t'), kind: kind, name: v }; db.tools.push(t); if (k === 'env') p.env = t.id; else p.accounts.push(t.id); changed(); },
-    role: function () { var p = cur(); if (!p) return; p.name = $('rname').value.trim() || p.name; p.role = $('rrole').value.trim(); p.howto = $('rhowto').value.trim(); p.boss = $('rboss').value; changed(); },
-    drop: function () { var p = cur(); if (!p) return; var id = p.id; bots().forEach(function (x) { if (x.boss === id) x.boss = p.boss; }); remove(id); ui.tab = 'people'; changed(); },
+    role: function () { var p = cur(); if (!p) return; p.name = $('rname').value.trim() || p.name; p.role = $('rrole').value.trim(); p.howto = $('rhowto').value.trim(); changed(); },
+    drop: function () { var p = cur(); if (!p) return; remove(p.id); ui.tab = 'people'; changed(); },
     dropout: function (el) { remove(el.getAttribute('data-id')); changed(); },
-    preset: function (el) { Array.prototype.forEach.call(el.parentNode.children, function (b) { b.classList.toggle('on', b === el); }); var r = ROLES[+el.getAttribute('data-id')]; $('nrole').value = r[0]; $('nhowto').value = r[1].replace('{boss}', N($('nboss').value)); },
-    add: function () { var name = $('nname').value.trim() || $('nname').defaultValue, role = $('nrole').value.trim(), boss = $('nboss').value, howto = $('nhowto').value.trim();
-      if (!howto && role) howto = '你负责' + role + '。拿不准的先问' + N(boss) + '，办完告诉交办的人。';
-      var p = { id: uid('p'), kind: 'bot', name: name, role: role, boss: boss, howto: howto, env: null, accounts: [], look: db.n }; db.people.push(p); defaults(db, boss, p.id);
-      db.msgs.push({ id: uid('m'), ts: Date.now(), who: boss, to: p.id, sys: true, text: name + '入职了，归' + N(boss) + '管。' + (boss === 'me' ? '现在可以对他说要办什么。' : '') });
+    preset: function (el) { Array.prototype.forEach.call(el.parentNode.children, function (b) { b.classList.toggle('on', b === el); }); var r = ROLES[+el.getAttribute('data-id')]; $('nrole').value = r[0]; $('nhowto').value = r[1]; },
+    add: function () { var name = $('nname').value.trim() || $('nname').defaultValue, role = $('nrole').value.trim(), howto = $('nhowto').value.trim();
+      if (!howto && role) howto = '你负责' + role + '。拿不准的先问老板，办完告诉交办的人。';
+      var p = { id: uid('p'), kind: 'bot', name: name, role: role, howto: howto, env: null, accounts: [], look: db.n }; db.people.push(p); defaults(db, p.id);
+      db.msgs.push({ id: uid('m'), ts: Date.now(), who: 'me', to: p.id, sys: true, text: name + '入职了。现在可以对他说要办什么。' });
       ui.stack = [canTalk('me', p.id) ? { k: 'chat', id: p.id } : person(p.id)]; ui.tab = canTalk('me', p.id) ? 'chats' : 'people'; changed(); },
-    addout: function () { var name = $('oname').value.trim(); if (!name) { $('oname').focus(); return; } var o = { id: uid('o'), kind: 'outside', name: name, via: $('ovia').value || null, look: 0 }; db.people.push(o); ui.stack = [person(o.id)]; changed(); },
+    addout: function () { var name = $('oname').value.trim(); if (!name) { $('oname').focus(); return; } var o = { id: uid('o'), kind: 'outside', name: name, look: 0 }; db.people.push(o); ui.stack = [person(o.id)]; changed(); },
     clear: function () { db = blank(); ui.sel = null; ui.stack = []; changed(); },
     sample: function () { db = sample(); ui.sel = null; ui.stack = []; changed(); }
   };
@@ -242,8 +235,7 @@
   var SW = {
     reach: function (el) { setGrant(el.getAttribute('data-a'), el.getAttribute('data-b'), 'talk', el.checked); changed(); },
     acc: function (el, p) { var id = el.getAttribute('data-id'); p.accounts = p.accounts.filter(function (j) { return j !== id; }); if (el.checked) p.accounts.push(id); changed(); },
-    env: function (el, p) { p.env = el.value || null; changed(); },
-    via: function (el, p) { p.via = el.value || null; changed(); }
+    env: function (el, p) { p.env = el.value || null; changed(); }
   };
 
   document.addEventListener('click', function (e) {
