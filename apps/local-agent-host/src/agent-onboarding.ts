@@ -45,14 +45,14 @@ export const ONBOARDING_AGENTS = [
   },
   {
     id: "gemini",
-    name: "Gemini",
-    commands: ["agy", "gemini"],
+    name: "Gemini CLI",
+    commands: ["gemini"],
     versionArgs: ["--version"],
-    statusArgs: ["models"],
-    signInArgs: ["acp", "--login"],
-    signInEnv: { BROWSER: "/usr/bin/true" },
+    statusArgs: [],
+    signInArgs: [],
+    signInEnv: {},
     installPackage: "@google/gemini-cli",
-    installUrl: "https://gemini.google.com/macos",
+    installUrl: "https://github.com/google-gemini/gemini-cli",
   },
   {
     id: "codebuddy",
@@ -170,14 +170,6 @@ export async function resolveExecutable(commands: readonly string[], deps: Pick<
       const resolvedDir = resolve(dir);
       if ((command === "pi" || command === "dsh") && (resolvedDir === bundledNodeBin || resolvedDir === bundledDshBin)) continue;
       const candidate = join(dir, command);
-      if (await deps.exists(candidate)) return candidate;
-    }
-  }
-  if (commands.includes("agy")) {
-    for (const candidate of [
-      "/Applications/Gemini.app/Contents/Helpers/agy",
-      join(deps.homedir, "Applications", "Gemini.app", "Contents", "Helpers", "agy"),
-    ]) {
       if (await deps.exists(candidate)) return candidate;
     }
   }
@@ -331,7 +323,7 @@ export class AgentOnboardingService {
   private async probe(agent: (typeof ONBOARDING_AGENTS)[number]): Promise<OnboardingAgentSnapshot> {
     const native=this.native.get(agent.id);if(native)return native.probe();
     const executable = await resolveExecutable(agent.commands, this.deps);
-    const isStandaloneGeminiCli = agent.id === "gemini" && executable !== null && !/(?:^|[\\/])agy(?:\.exe)?$/iu.test(executable);
+    const isStandaloneGeminiCli = agent.id === "gemini";
     const base = {
       id: agent.id,
       engineId: ONBOARDING_AGENT_ENGINES[agent.id], historyImport: agent.id !== "codebuddy-ide" && agent.id !== "dsh" && agent.id !== "gemini",

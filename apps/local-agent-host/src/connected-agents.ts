@@ -507,10 +507,9 @@ export class ConnectedAgentHost {
       return { engineId, command, args: ["acp"] };
     }
     if (engineId === "gemini") {
-      const command = await resolveExecutable(["agy", "gemini"], this.deps);
-      if (!command) throw new Error("Gemini is not installed");
-      const isAgy = /(?:^|[\\/])agy(?:\.exe)?$/iu.test(command);
-      return { engineId, command, args: isAgy ? ["acp"] : ["--experimental-acp"] };
+      const command = await resolveExecutable(["gemini"], this.deps);
+      if (!command) throw new Error("Gemini CLI is not installed");
+      return { engineId, command, args: ["--experimental-acp"] };
     }
     if (engineId === "codebuddy") {
       const command = await resolveExecutable(["codebuddy", "cbc"], this.deps);
