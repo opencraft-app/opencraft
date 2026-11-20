@@ -55,6 +55,7 @@ GitHub `opencraft-app/opencraft` 是目标核心上游，产品身份来源、�
 | Android 内测、正式 APK，或 iOS 测试 IPA | 先读 [手机端路线](apps/mobile/README.md#手机端路线) 和 [构建矩阵](docs/build-matrix.md)；按目标选择签名、包名及验证步骤 |
 | Android 备案资料或临时局域网下载 | [Android 正式 APK](apps/mobile/README.md#android-release-apk)；从最终 APK 核对包名、签名证书和文件摘要，只开放 APK 下载路径 |
 | 承载当前代理的 headless 预览服务切换或重启 | [opencraft-self-hosted-preview](.agents/skills/opencraft-self-hosted-preview/SKILL.md)；由独立服务完成切换与回退，重连后核对实际进程 |
+| 已部署 OpenCraft 的小范围快速变更、局部构建与单服务更新 | [opencraft-fast-change](.agents/skills/opencraft-fast-change/SKILL.md)；以运行产物为基线，构建候选并验证实际行为，依赖/迁移/跨服务变化转正式流程 |
 | 下游产品 Agent Console 共享实现 | [历史与消费契约](docs/upstream-history.md)；同步边界由下游产品工作区维护 |
 | Web、Expo、Electron 构建与交付 | [build-matrix](docs/build-matrix.md) |
 | 公共 npm 发布、Web 更新部署 | [Web 发布与部署](docs/web-deployment.md#公共-npm-发布流程)，含包名、Trusted Publisher、精确归档与验收约定 |
@@ -178,7 +179,7 @@ UI 任务按需读取 [UI 专题索引](design/ui/README.md)，字体任务继�
 |---|---|
 | 单 workspace | `npm run typecheck --workspace <package>` + 相关聚焦测试 |
 | 跨包 contract | 两端 typecheck/test + `npm run check:boundaries` |
-| Bot/Host | `npm run test:bot-management`，再按风险补 adapter/runtime 测试 |
+| Host | `npm run test:host-connection`，再按风险补 adapter/runtime 测试 |
 | Agent Console 同步（仅下游产品） | 在下游产品目录运行该产品的同步与只读漂移检查；公开核心不提供私有转调 |
 | 广泛共享或交付矩阵 | `npm run gate` |
 
