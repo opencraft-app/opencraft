@@ -251,6 +251,12 @@ Linux 上可额外设置 `OPENCRAFT_CORE_DRILL_SYSTEMD=1`，使用自动清理�
 
 该脚本只使用合成账号、私有 HOME/数据根和本地 Responses/usage 服务；不从用户 profile 导入凭据。它记录固定 CLI 版本、Core/owner/native PID、原 Thread/Turn、Core 延迟 12 秒启动时的同进程等待、35 秒流与并发 8 秒 shell 在排空期间的后续请求、36 秒 shell 的 start/done 次数、Core crash 后模型重试次数、APP Server crash 后只读恢复，以及保留当前数据退回合并形态。报告留在私有证据目录，进程与 listener 在结束时停止；合成模型不证明真实 OAuth/外部模型可用。
 
+### 无 systemd 的拆分形态（桌面）
+
+账号 Core 加单个独立 APP Server（`app-server-bin`）本身不依赖 systemd：APP Server 直接启动 native，systemd 只用于服务器的多代 routing/generation 监督。不设 `OPENCRAFT_CORE_DRILL_SYSTEMD` 时，上述演练在 Linux 上用固定的 native 0.162.1 全部通过，包括 Core 重启与崩溃、APP Server 崩溃后由新 owner 接手，以及退回合并形态；Codex bridge 也能经该 Core 的 `/launch` 与 native socket 完成握手。合并形态不提供 `/launch`，bridge 只能接拆分形态。
+
+演练和部署必须直接使用 native 可执行文件，不能用 npm 的 `codex` 启动脚本：没有 cgroup 时，强杀启动脚本会留下仍占用同一 `CODEX_HOME` 的 native 子进程，新的 owner 会因此拒绝启动。账号 Core 的开机身份在 Linux 仍取内核 boot ID，macOS 取 `kern.bootsessionuuid`，Windows 取最近启动时间。Windows 目前仍不可用：Core 与 APP Server 只监听 Unix socket。
+
 
 Stage 1 appends registry schema v2 for immutable creation incarnation. Explicit
 orchestration claims replay confirmed success or rejection from the same APP

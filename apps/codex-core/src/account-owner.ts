@@ -1,3 +1,4 @@
+import { bootIdentity } from "./boot-identity.js";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, readFile, readdir, realpath, rename, unlink } from "node:fs/promises";
@@ -167,7 +168,7 @@ export class AccountCoreOwner {
     if (!["legacy-account-maintenance", "fenced-account-maintenance", "exported-account-maintenance"].includes(maintenanceKind)) throw new Error("Invalid account maintenance kind");
     this.sealedInspection = undefined;
     await mkdir(this.options.dataDirectory, { recursive: true, mode: 0o700 });
-    this.bootId = (await readFile("/proc/sys/kernel/random/boot_id", "utf8")).trim();
+    this.bootId = await bootIdentity();
     try {
       const file = await open(this.path, constants.O_RDONLY | constants.O_NOFOLLOW);
       try {
@@ -281,7 +282,7 @@ export class AccountCoreOwner {
     if (state.schemaVersion !== 1 || state.phase !== "fenced" || !Number.isSafeInteger(state.epoch) || state.epoch < 0
       || !Array.isArray(state.uncertain) || ![state.operationId,state.fence,state.sourceOwner].every(v => typeof v === "string" && v)) throw new Error("Invalid fenced source state");
     this.state = state;
-    this.bootId = (await readFile("/proc/sys/kernel/random/boot_id", "utf8")).trim();
+    this.bootId = await bootIdentity();
     const released = await this.legacyReleasedState(receipt, "exported-account-maintenance", false);
     return { status: "passed", projectedStateBytes: Buffer.byteLength(this.serialized(released, 4096)),
       stateLimitBytes: ACCOUNT_CORE_STATE_MAX_BYTES, reserveBytes: 4096,
