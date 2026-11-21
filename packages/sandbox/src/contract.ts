@@ -10,7 +10,23 @@ export interface SandboxPoolPolicy {
   readonly capacity: SandboxResources;
   readonly defaults?: Partial<SandboxResources>;
   readonly queueLimit?: number;
+  /**
+   * Weaker guarantees this pool explicitly accepts. Omitted, the pool admits only
+   * environments with enforced resources and complete containment.
+   */
+  readonly accept?: { readonly unenforcedResources?: boolean; readonly bestEffortContainment?: boolean };
 }
+/**
+ * What a provider guarantees for one environment. Absent on an environment, it
+ * means the full guarantee this contract has always required.
+ */
+export interface SandboxEnforcement {
+  /** "enforced": the reported CPU/memory limits applied before user code ran. "unenforced": they are an admission reservation only. */
+  readonly resources: "enforced" | "unenforced";
+  /** "complete": close reclaims every descendant, even one that leaves its group or session. "best-effort": a self-detaching descendant can survive close. */
+  readonly containment: "complete" | "best-effort";
+}
+export const FULL_SANDBOX_ENFORCEMENT: Readonly<SandboxEnforcement> = Object.freeze({ resources: "enforced", containment: "complete" });
 export interface SandboxIdentity {
   /** Correlation/idempotency identity; never an OS PID or vendor-specific ID. */
   readonly id: string;
@@ -41,11 +57,17 @@ export interface SandboxEnvironment {
   readonly resources: Readonly<SandboxResources>;
   readonly capabilities: { readonly terminal: boolean };
   readonly processLimits?: { readonly tasks: number; readonly fileDescriptorsPerProcess: number };
+  /** A provider that guarantees less than FULL_SANDBOX_ENFORCEMENT must say so here. */
+  readonly enforcement?: Readonly<SandboxEnforcement>;
   spawn(command: SandboxCommand, onOutput?: (output: SandboxOutput) => void): Promise<SandboxProcess>;
   /** Idempotent; resolves only after the environment and its executions are gone. */
   close(): Promise<void>;
 }
-export interface Sandbox extends SandboxEnvironment { readonly identity: SandboxIdentity }
+export interface Sandbox extends SandboxEnvironment {
+  readonly identity: SandboxIdentity;
+  /** Always resolved, so consumers never present a weaker environment as isolated. */
+  readonly enforcement: Readonly<SandboxEnforcement>;
+}
 export interface SandboxBackend {
   readonly id: string;
   /** Prepare only provider/pool control state; do not provision user environments. */

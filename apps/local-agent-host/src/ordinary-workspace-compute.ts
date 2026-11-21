@@ -59,6 +59,8 @@ export class OrdinaryWorkspaceCompute {
           ...(raw.privateVolumeId !== undefined ? { privateVolumeId: raw.privateVolumeId } : {}),
           environment: { resources: raw.environment.resources, capabilities: raw.environment.capabilities,
             ...(raw.environment.processLimits ? { processLimits: raw.environment.processLimits } : {}),
+            // Forward a weaker guarantee; dropping it would upgrade the environment to full enforcement.
+            ...(raw.environment.enforcement ? { enforcement: raw.environment.enforcement } : {}),
             spawn: async (command, output) => {
               await authorize();
               const current = this.store.read(options.authority, lease.workspaceId);

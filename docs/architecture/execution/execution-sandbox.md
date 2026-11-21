@@ -43,6 +43,49 @@ creation rejection. Failed destruction likewise retains admission capacity.
 A creation error carries the correlation identity for caller-owned reconciliation.
 A backend must implement the lifecycle before advertising its capability.
 
+## Stated guarantees
+
+Each environment states what its provider guarantees: `resources` is `enforced`
+(the reported CPU/memory limits applied before user code ran) or `unenforced`
+(they are an admission reservation only), and `containment` is `complete`
+(close reclaims every descendant, even one that leaves its group or session) or
+`best-effort`. An environment that states nothing claims the full guarantee
+this contract has always required; the Linux systemd, Hands and E2B providers
+keep that claim. A provider that guarantees less must say so.
+
+A pool admits a weaker environment only when its policy explicitly accepts that
+dimension (`accept.unenforcedResources`, `accept.bestEffortContainment`);
+otherwise the environment is reclaimed and creation fails with
+`SANDBOX_POLICY`. Every admitted `Sandbox` exposes its resolved `enforcement`,
+so a consumer never presents a weaker environment as isolated. An unenforced
+environment still reports the requested budget, which keeps admission counting.
+Wrappers that forward an environment must forward its statement as well.
+
+## Host-process backend
+
+`hostProcessSandboxBackend()` (`host-process`) runs each command as an ordinary
+host process for hosts without a kernel resource domain: macOS, Windows, or
+Linux without systemd. It states `unenforced` resources and `best-effort`
+containment, and a runtime configuration that selects it must accept both
+explicitly. Permission isolation stays with the engine, for example Codex's own
+native sandbox; this backend adds lifetime ownership, not isolation.
+
+- POSIX: each command starts its own session and process group. Close, and the
+  end of the command's root process, ask the group to stop, force it after the
+  grace period and confirm the group is empty before capacity returns. A
+  descendant that starts its own session leaves the group and can survive.
+- Windows: the root's live tree is stopped with `taskkill /T`. A descendant
+  whose parent already exited is no longer in that tree and can survive.
+- Commands receive exactly the selected environment and an absolute cwd on the
+  host filesystem. Terminals use a pseudo-terminal.
+- A private state directory records the owner and each command's PID with its
+  start identity before the caller receives the process. A successor owner
+  refuses while the recorded owner is still alive, and otherwise reclaims only
+  groups it can identify as its own: the same leader by start identity or, on
+  POSIX, a leaderless group still carrying the recorded number (a PID is not
+  reused while it names a live group). Anything it cannot reclaim stops
+  initialization for inspection.
+
 ## Optional Linux backend
 
 systemdSandboxBackend() requires cgroup v2, systemd 254+, systemd D-Bus access

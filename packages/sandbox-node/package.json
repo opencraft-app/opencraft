@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./systemd": "./src/systemd.ts",
+    "./host-process": "./src/host-process.ts",
     "./runtime": "./src/runtime.ts",
     "./command": "./src/command.ts",
     "./lifecycle": "./src/lifecycle.ts",

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createSandboxPool, DEFAULT_SANDBOX_RESOURCES, SandboxFault, type SandboxBackend, type SandboxPool, type SandboxPoolPolicy } from "@opencraft/sandbox";
 import { systemdSandboxBackend, type SystemdSandboxOptions } from "./systemd.js";
 import { handsUnixSandboxBackend } from "./hands-unix.js";
+import { hostProcessSandboxBackend } from "./host-process.js";
 import type { SandboxLifecycleEvent } from "./lifecycle.js";
 
 const invalid = () => new SandboxFault("SANDBOX_POLICY", "Execution sandbox configuration is invalid");
@@ -13,7 +14,7 @@ function record(value: unknown): Record<string, unknown> {
 export interface SandboxRuntimeConfiguration {
   readonly schemaVersion: 1;
   readonly backend: { readonly id: string; readonly options: unknown };
-  readonly pool: { readonly idPrefix: string; readonly capacity?: SandboxPoolPolicy["capacity"]; readonly defaults?: SandboxPoolPolicy["defaults"] };
+  readonly pool: { readonly idPrefix: string; readonly capacity?: SandboxPoolPolicy["capacity"]; readonly defaults?: SandboxPoolPolicy["defaults"]; readonly accept?: SandboxPoolPolicy["accept"] };
   readonly environment: { readonly mode: "selected"; readonly names: readonly string[] } | { readonly mode: "local-inherit" };
 }
 export type SandboxBackendFactory = (options: unknown, lifecycle?: (event: SandboxLifecycleEvent) => void) => SandboxBackend | Promise<SandboxBackend>;
@@ -25,6 +26,12 @@ export const nodeSandboxBackends: Readonly<Record<string, SandboxBackendFactory>
     if (Object.keys(value).some(key => !["endpoint", "tokenFile"].includes(key))
       || ![value.endpoint, value.tokenFile].every(path => typeof path === "string" && path.startsWith("/"))) throw invalid();
     return handsUnixSandboxBackend(value as unknown as { endpoint: string; tokenFile: string });
+  },
+  "host-process": async raw => {
+    const value = record(raw);
+    if (Object.keys(value).some(key => !["stateDirectory", "terminateGraceMs"].includes(key)) || typeof value.stateDirectory !== "string"
+      || value.terminateGraceMs !== undefined && !(typeof value.terminateGraceMs === "number" && Number.isSafeInteger(value.terminateGraceMs))) throw invalid();
+    return hostProcessSandboxBackend(value as unknown as { stateDirectory: string; terminateGraceMs?: number });
   },
   "linux-systemd": async (raw, lifecycle) => {
     const value = record(raw);
@@ -56,15 +63,20 @@ export function parseSandboxRuntimeConfiguration(raw: unknown): SandboxRuntimeCo
     || typeof backend.id !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/u.test(backend.id)
     || Object.keys(backend).some(key => !["id", "options"].includes(key))
     || typeof pool.idPrefix !== "string" || !/^[a-z0-9][a-z0-9-]{0,19}$/u.test(pool.idPrefix)
-    || Object.keys(pool).some(key => !["idPrefix", "capacity", "defaults"].includes(key))) throw invalid();
+    || Object.keys(pool).some(key => !["idPrefix", "capacity", "defaults", "accept"].includes(key))) throw invalid();
+  const accept = pool.accept === undefined ? undefined : record(pool.accept);
+  if (accept && Object.entries(accept).some(([key, value]) => !["unenforcedResources", "bestEffortContainment"].includes(key) || typeof value !== "boolean")) throw invalid();
+  // host-process never enforces resources or full containment; a configuration must say it accepts that.
+  if (backend.id === "host-process" && !(accept?.unenforcedResources === true && accept.bestEffortContainment === true)) throw invalid();
   if (environment.mode === "local-inherit") {
-    if (backend.id !== "linux-systemd" || Object.keys(environment).length !== 1) throw invalid();
+    if (!["linux-systemd", "host-process"].includes(backend.id) || Object.keys(environment).length !== 1) throw invalid();
   } else if (environment.mode === "selected") {
     if (!Array.isArray(environment.names) || environment.names.length > 1024 || environment.names.some(name => typeof name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(name))
       || Object.keys(environment).some(key => !["mode", "names"].includes(key))) throw invalid();
   } else throw invalid();
   return { schemaVersion: 1, backend: { id: backend.id, options: backend.options },
-    pool: { idPrefix: pool.idPrefix, ...(pool.capacity === undefined ? {} : { capacity: pool.capacity as SandboxPoolPolicy["capacity"] }), ...(pool.defaults === undefined ? {} : { defaults: pool.defaults as SandboxPoolPolicy["defaults"] }) },
+    pool: { idPrefix: pool.idPrefix, ...(pool.capacity === undefined ? {} : { capacity: pool.capacity as SandboxPoolPolicy["capacity"] }), ...(pool.defaults === undefined ? {} : { defaults: pool.defaults as SandboxPoolPolicy["defaults"] }),
+      ...(accept ? { accept: accept as SandboxPoolPolicy["accept"] } : {}) },
     environment: environment as unknown as SandboxRuntimeConfiguration["environment"] };
 }
 
@@ -81,7 +93,8 @@ export async function configuredSandboxPool(config: SandboxRuntimeConfiguration,
   if (!factory) throw new SandboxFault("SANDBOX_UNAVAILABLE", "Selected sandbox provider is not installed");
   const backend = await factory(selected.backend.options, lifecycle);
   return createSandboxPool({ id: selected.pool.idPrefix + "-" + randomUUID().replaceAll("-", "").slice(0, 10),
-    capacity: selected.pool.capacity ?? DEFAULT_SANDBOX_RESOURCES, defaults: selected.pool.defaults }, backend);
+    capacity: selected.pool.capacity ?? DEFAULT_SANDBOX_RESOURCES, defaults: selected.pool.defaults,
+    ...(selected.pool.accept ? { accept: selected.pool.accept } : {}) }, backend);
 }
 
 export function sandboxPayloadEnvironment(config: SandboxRuntimeConfiguration, source: Readonly<Record<string, string | undefined>>): Record<string, string> {
