@@ -900,3 +900,5 @@ tested commit. An Actions build does not publish a GitHub Release.
 - Renderer 重建后旧窗口不会热更新；关闭旧预览并用新构建、隔离 profile 和新调试端口重启。
 - Electron Main 必须由仓库 `start` 入口启动；不得用 `node dist-host/main.cjs`，也不得让父环境的 `ELECTRON_RUN_AS_NODE=1` 进入 Main。该变量只属于明确以 Electron 二进制承载 Node bundle 的 Daemon/工具子进程。若 `require("electron")` 返回二进制路径字符串、`app` 为 `undefined` 或模块找不到，先检查实际可执行文件、参数和 `ELECTRON_RUN_AS_NODE`，再用同一 Electron 二进制的最小正常 Main 对照；这类结果本身不能证明 Electron 版本回归或缓存损坏。
 - `opencraft://` 是全机 scheme。发起系统浏览器登录前确认 LaunchServices 实际指向本次预览；浏览器打开不等于回调已进入当前窗口。不得为排查批量注销其他预览或读取回调 code/token。
+- 桌面 daemon 的输出写入 `<userData>/runtime/opencraft-daemon.log`（权限 0600，每次拉起前超过 5 MB 时保留一份 `.1`）。daemon 未就绪时主进程报错会给出该路径；先看这里，不要猜测。Unix socket 路径受系统长度上限约束，预览 profile 应使用 `/tmp/opencraft-electron-preview-XXXXXX` 这类短路径。
+- 已知问题：daemon 由 Electron 主进程拉起，会继承 Chromium 未设置 close-on-exec 的少量描述符（两个 socket、一对管道、V8 快照文件；开启 `--remote-debugging-port` 时还有该端口的监听 socket）。主进程退出后该调试端口仍被 daemon 占用，换端口或结束 daemon 即可。彻底关闭需原生启动器，尚未实施。

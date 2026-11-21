@@ -24,7 +24,7 @@ import { seedLegacyHostStorage, seedNewerHostStorage } from "../support/local-ag
 import { OpenCraftDaemonClientManager } from "../../apps/desktop/src/daemon-client.js";
 import { readDaemonMachineIdentity } from "../../apps/opencraft-daemon/src/machine-identity.js";
 import { startOpenCraftDaemonServer } from "../../apps/opencraft-daemon/src/server.js";
-import { isDaemonEndpointUnavailable } from "../../apps/desktop/src/daemon-client.js";
+import { daemonLogPath, isDaemonEndpointUnavailable, openDaemonLog } from "../../apps/desktop/src/daemon-client.js";
 
 class TestTransport implements DuplexTransport {
   readonly sent: string[] = [];
@@ -369,6 +369,35 @@ test("the desktop daemon owns the Server database and Electron Main only borrows
       assert.ok(main.authenticateSession(token), "Main's native session is accepted against the daemon-owned database");
     } finally { await main.close(); }
   } finally { await daemon?.close(); process.chdir(cwd); await rm(directory, { recursive: true, force: true }); }
+});
+
+test("the daemon log is private and keeps one previous generation once large", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-daemon-log-"));
+  const { closeSync, writeSync } = await import("node:fs");
+  try {
+    const runtime = join(root, "runtime");
+    let fd = openDaemonLog(runtime); writeSync(fd, "first\n"); closeSync(fd);
+    assert.equal((await stat(daemonLogPath(runtime))).mode & 0o777, 0o600);
+    await writeFile(daemonLogPath(runtime), "x".repeat(5 * 1024 * 1024 + 1));
+    fd = openDaemonLog(runtime); writeSync(fd, "second\n"); closeSync(fd);
+    assert.equal(await readFile(daemonLogPath(runtime), "utf8"), "second\n");
+    assert.equal((await stat(daemonLogPath(runtime) + ".1")).size, 5 * 1024 * 1024 + 1);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("a daemon that fails to start leaves its output in the log the error names", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-daemon-fail-"));
+  try {
+    const entry = join(root, "failing-daemon.cjs");
+    await writeFile(entry, 'process.stderr.write("synthetic daemon startup failure\\n"); process.exit(1);');
+    const runtimeDirectory = join(root, "runtime"), tokenPath = join(root, "token");
+    await writeFile(tokenPath, "synthetic-" + "x".repeat(48));
+    const manager = new OpenCraftDaemonClientManager({ endpoint: join(root, "daemon.sock"), tokenPath, tokenMode: "existing", daemonEntry: entry,
+      executable: process.execPath, runtimeDirectory, dataDirectory: join(root, "data"), dshExecutable: "unused", codexExecutable: "unused",
+      codexDataDirectory: join(root, "codex"), nativeCodexHomeDirectory: join(root, "native") });
+    await assert.rejects(manager.ensureStarted(), error => error instanceof Error && error.message.includes(daemonLogPath(runtimeDirectory)));
+    assert.match(await readFile(daemonLogPath(runtimeDirectory), "utf8"), /synthetic daemon startup failure/u);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("a daemon left by another build is stopped and a compatible daemon is adopted", async () => {

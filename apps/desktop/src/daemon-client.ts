@@ -1,8 +1,8 @@
 import { spawn, type SpawnOptions } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
   DaemonJsonLineChannel,
@@ -45,6 +45,24 @@ export interface OpenCraftDaemonClientOptions {
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+const DAEMON_LOG_LIMIT = 5 * 1024 * 1024;
+
+/** Private daemon output beside its runtime state; a failed start names it. */
+export function daemonLogPath(runtimeDirectory: string): string {
+  return join(runtimeDirectory, "opencraft-daemon.log");
+}
+
+/** Open the daemon log for one launch, keeping one previous generation once it grows large. */
+export function openDaemonLog(runtimeDirectory: string): number {
+  const path = daemonLogPath(runtimeDirectory);
+  mkdirSync(runtimeDirectory, { recursive: true, mode: 0o700 });
+  try { if (statSync(path).size > DAEMON_LOG_LIMIT) renameSync(path, `${path}.1`); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  const fd = openSync(path, "a", 0o600);
+  try { chmodSync(path, 0o600); } catch (error) { closeSync(fd); throw error; }
+  return fd;
 }
 
 /** A live daemon from another build. It is ours (same token), but this client cannot drive it. */
@@ -265,7 +283,8 @@ export class OpenCraftDaemonClientManager {
       }
     }
     throw new Error(
-      `OpenCraft Daemon did not become ready: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+      `OpenCraft Daemon did not become ready: ${lastError instanceof Error ? lastError.message : String(lastError)}. `
+        + `See ${daemonLogPath(this.options.runtimeDirectory)}`,
     );
   }
 
@@ -306,8 +325,12 @@ export class OpenCraftDaemonClientManager {
 
   private spawnDaemon(): void {
     const launch = daemonLaunchSpec(this.options, this.authToken);
-    const child = spawn(launch.executable, launch.args, launch.options);
-    child.unref();
+    // The daemon outlives Main, so its output goes to a private file instead of a pipe.
+    const log = openDaemonLog(this.options.runtimeDirectory);
+    try {
+      const child = spawn(launch.executable, launch.args, { ...launch.options, stdio: ["ignore", log, log] });
+      child.unref();
+    } finally { closeSync(log); }
   }
 
   private open(role: "app-host" | "control", connectionId: string): Promise<ConnectedDaemonChannel> {
