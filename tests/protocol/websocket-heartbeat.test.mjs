@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EventEmitter } from 'node:events';
 import { WebSocket, WebSocketServer } from 'ws';
-import { trackSocketHeartbeat } from '../../scripts/websocket-heartbeat.mjs';
+import { trackSocketHeartbeat } from '../../apps/headless-server/src/websocket-heartbeat.mjs';
 function fixture() {
  let time = 0, callback, token;
  const events = [], socket = Object.assign(new EventEmitter(), { readyState: 1, bufferedAmount: 0,

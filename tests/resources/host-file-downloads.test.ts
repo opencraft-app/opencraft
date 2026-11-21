@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { HostFileDownloads } from "../../apps/opencraft-daemon/src/host-file-downloads.js";
-import { createWorkbenchWebServer } from "../../scripts/serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 
 async function fixture(t: test.TestContext, options: { remote?: boolean; spawnSsh?: (args: readonly string[], env: NodeJS.ProcessEnv) => ChildProcessWithoutNullStreams } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "opencraft-file-download-"));

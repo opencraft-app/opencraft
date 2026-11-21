@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs";
-import { serveNotModified } from "./web-asset-cache.mjs";
+import { serveNotModified } from "../apps/headless-server/src/web-asset-cache.mjs";
 import { realpath, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join, resolve, sep } from "node:path";

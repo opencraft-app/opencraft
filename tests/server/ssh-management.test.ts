@@ -11,7 +11,7 @@ import WebSocket from "ws";
 import { SshConnectionStore, hostKeyFingerprint, parseSshConnectionInput } from "../../apps/opencraft-daemon/src/ssh-connection-store.js";
 import { SshManagement } from "../../apps/opencraft-daemon/src/ssh-management.js";
 import { AppHostServer } from "@opencraft/app-host-server";
-import { createWorkbenchWebServer } from "../../scripts/serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 
 function key(host = "fixture.invalid") {
   const alg = Buffer.from("ssh-ed25519"), prefix = Buffer.alloc(4), size = Buffer.alloc(4);

@@ -4,7 +4,7 @@ import { mkdtemp, readFile, writeFile, chmod, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startIndependentEngineHost } from '../../scripts/server-deployment/engine-host.mjs';
-import { attachEngineHost } from '../../scripts/server-deployment/engine-host-client.mjs';
+import { attachEngineHost } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
 import { ModelConfigurationRepository } from '../../apps/local-agent-host/src/model-config/repository.ts';
 
 async function fixture(t) {

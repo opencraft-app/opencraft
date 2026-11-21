@@ -16,10 +16,10 @@ import { stewardRoute } from "../../../plugins/im/src/templates.js";
 import { IM_REPLY_TOOL } from "../../../plugins/im/src/reply-tool.js";
 import { encodeConversationRef } from "../../../packages/appserver-protocol/src/collaboration.js";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "../../../apps/local-agent-host/src/model-config/repository.js";
-import { createRoutedConversationExecution, callConversationHost } from "../../conversation-execution.mjs";
-import { createImExecution } from "../../im-plugins.mjs";
+import { createRoutedConversationExecution, callConversationHost } from "../../../apps/headless-server/src/conversation-execution.mjs";
+import { createImExecution } from "../../../apps/headless-server/src/im-plugins.mjs";
 import { startIndependentDshHost } from "../../server-deployment/dsh-host.mjs";
-import { attachDshHost } from "../../server-deployment/dsh-host-client.mjs";
+import { attachDshHost } from "../../../apps/headless-server/src/server-deployment/dsh-host-client.mjs";
 
 // Real isolated DSH + production Host/MCP/IM adapters. The only external boundary
 // is a local synthetic model and in-memory delivery; no real IM message is sent.

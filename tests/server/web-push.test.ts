@@ -92,7 +92,7 @@ test('transport uses verified attribution and cannot turn a notification failure
 
 test('real AppHost service lane completes after renderer retirement without resubmitting work',async()=>{
  const {AppHostServer}=await import('@opencraft/app-host-server');
- const {callConversationHost}=await import('../../scripts/conversation-execution.mjs');
+ const {callConversationHost}=await import('../../apps/headless-server/src/conversation-execution.mjs');
  const f=fixture(),store=new PushStore(f.path);let complete=false,starts=0,sent=0;const listeners=new Set<(frame:string)=>void>();
  const inner:any={status:{state:'open'},connect:async()=>{},close:async()=>{},subscribeMessage:(listener:(frame:string)=>void)=>{listeners.add(listener);return()=>{listeners.delete(listener);};},subscribeStatus:()=>()=>{},
   send:async(frame:string)=>{

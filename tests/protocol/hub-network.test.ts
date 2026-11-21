@@ -15,7 +15,7 @@ import { createHubController } from '../../packages/hub-network/src/controller';
 import { createRelayServer } from '../../apps/relay-server/src/server';
 import { AssertionSigner } from '../../packages/identity-core/src/node';
 import { MembershipStore, InstanceAccess } from '../../packages/access-control/src/index';
-import { createWorkbenchWebServer } from '../../scripts/serve-workbench-web.mjs';
+import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
 
 const principal = { provider: 'enterprise-identity', subject: '123', displayName: 'Network member', expiresAt: Date.now() + 3600_000 };
 const keys = () => { const pair = generateKeyPairSync('ed25519'); return { publicKey: pair.publicKey.export({ format: 'pem', type: 'spki' }).toString(), privateKey: pair.privateKey.export({ format: 'pem', type: 'pkcs8' }).toString() }; };
@@ -222,7 +222,7 @@ test('packaged offline enrollment boots a token-free Headless team with pinned H
 });
 
 test('Headless publishes its managed Web entry through the real Hub transport', async t => {
-  const { startHeadlessServer } = await import('../../scripts/headless-server.mjs');
+  const { startHeadlessServer } = await import('../../apps/headless-server/src/headless-server.mjs');
   const dir = await mkdtemp(join(tmpdir(), 'headless-managed-hub-'));
   const data = join(dir, 'data'), web = join(dir, 'web');
   await mkdir(data,{mode:0o700}); await mkdir(web);

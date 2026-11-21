@@ -13,10 +13,6 @@
     },
     {
       "file": "apps/desktop/src/main.ts",
-      "target": "scripts/human-login-page.js"
-    },
-    {
-      "file": "apps/desktop/src/main.ts",
       "target": "scripts/serve-workbench-static.mjs"
     },
     {

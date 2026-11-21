@@ -4,13 +4,13 @@ import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startHandsTerminal } from '../../scripts/container-deployment/terminal.mjs';
-import { createHandsTerminalService, terminalResourceOwnerId, HostTerminalTransport } from '../../scripts/host-terminal-transport.js';
+import { createHandsTerminalService, terminalResourceOwnerId, HostTerminalTransport } from '../../apps/headless-server/src/host-terminal-transport.js';
 import { deploymentPaths } from '../../scripts/container-deployment/paths.mjs';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 import { OPENCRAFT_METHOD_ACCESS_EXTENSION } from '@opencraft/appserver-protocol';
 import type { DuplexTransport, TransportSubmissionContext } from '@opencraft/appserver-client';
 import { WebSocket, WebSocketServer } from 'ws';
-import { startHeadlessServer } from '../../scripts/headless-server.mjs';
+import { startHeadlessServer } from '../../apps/headless-server/src/headless-server.mjs';
 
 class Engine implements DuplexTransport {
   status = { state: 'idle' as 'idle' | 'open' | 'closed' };

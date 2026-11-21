@@ -5,7 +5,7 @@ import { AppHostServer } from "@opencraft/app-host-server";
 import { WebSocketTransport } from "@opencraft/appserver-transport-websocket";
 import { WebSocketServer, WebSocket } from "ws";
 import { chromium } from "playwright";
-import { createWorkbenchWebServer } from "../../serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
 
 const root = process.env.OPENCRAFT_HISTORY_WEB_ROOT;
 if (!root) throw Error("Set OPENCRAFT_HISTORY_WEB_ROOT to built or installed Web assets");

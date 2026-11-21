@@ -10,7 +10,7 @@ import { startOpenCraftDaemonServer } from '../../apps/opencraft-daemon/src/serv
 import { AppHostServer } from '@opencraft/app-host-server';
 import { connect } from 'node:net';
 import { DaemonJsonLineChannel, OPENCRAFT_DAEMON_BUILD_ID, OPENCRAFT_DAEMON_PROTOCOL_VERSION } from '@opencraft/daemon-ipc';
-import { humanLoginPage } from '../../scripts/human-login-page';
+import { humanLoginPage } from '../../apps/headless-server/src/human-login-page';
 
 test('real desktop static entry uses Main-held HttpOnly proof, shares one Human with the daemon and retires revoked sessions', async t => {
   const root = await mkdtemp(join(tmpdir(), 'desktop-account-')); t.after(() => rm(root, { recursive: true, force: true }));

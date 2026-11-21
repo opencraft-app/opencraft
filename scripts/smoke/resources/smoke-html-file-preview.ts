@@ -6,7 +6,7 @@ import { request as httpRequest } from 'node:http';
 import { createServer, loadConfigFromFile } from 'vite';
 import react from '@vitejs/plugin-react';
 import { HostFileDownloads } from '../../../apps/opencraft-daemon/src/host-file-downloads.js';
-import { createWorkbenchWebServer } from '../../serve-workbench-web.mjs';
+import { createWorkbenchWebServer } from '../../../apps/headless-server/src/serve-workbench-web.mjs';
 
 const output=process.env.OPENCRAFT_HTML_PREVIEW_OUTPUT??await mkdtemp(join(tmpdir(),'html-preview-ui-'));
 const report=process.env.OPENCRAFT_HTML_PREVIEW_REPORT;

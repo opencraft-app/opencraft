@@ -9,7 +9,7 @@ import type { TransportStatus } from "@opencraft/appserver-client";
 
 import { LocalAttachmentStagingService } from "../../apps/local-agent-host/src/attachments/local-attachment-staging.js";
 import { AppHostServer } from "../../packages/app-host-server/src/index.js";
-import { createWorkbenchWebServer } from "../../scripts/serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 import { AttachmentChunkDeadline } from "../../packages/workbench-runtime/src/attachment-upload.js";
 
 test("Web AppHost uploads binary files through the advertised 32 MiB staging limit", { timeout: 30_000 }, async () => {

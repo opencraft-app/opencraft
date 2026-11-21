@@ -13,7 +13,7 @@ import { MembershipStore, InstanceAccess } from "../../packages/access-control/s
 import { createRelayServer } from "../../apps/relay-server/src/server";
 import { connectRelay } from "../../plugins/relay-connect/src/server";
 import { FixtureRequestIdentity, signedFixtureIdentity as signed } from "../fixtures/request-identity";
-import { createWorkbenchWebServer } from "../../scripts/serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 import { createHeadlessBackendProxy, isHeadlessBackendPath } from "../../scripts/web-deployment/headless-backend.mjs";
 import { relayPathAllowed } from "../../packages/relay-protocol/src";
 import { DatabaseSync } from 'node:sqlite';
@@ -179,7 +179,7 @@ test('provider admission accepts verified employees without enrollment, retains 
 test('IM list traverses relay, managed Web proxy, verified human admission and channel service', async t => {
   const {ActorStore} = await import('../../packages/access-control/src/actors');
   const {ActorAccess} = await import('../../packages/access-control/src/actor-access');
-  const {ImChannelService} = await import('../../scripts/im-channel-service.mjs');
+  const {ImChannelService} = await import('../../apps/headless-server/src/im-channel-service.mjs');
   const dir = await mkdtemp(join(tmpdir(), 'relay-im-')); t.after(() => rm(dir,{recursive:true,force:true}));
   await writeFile(join(dir,'index.html'),'IM');
   const pair=keys(), scope={issuer:'fixture',instanceId:'im',origin:'https://im.test'};

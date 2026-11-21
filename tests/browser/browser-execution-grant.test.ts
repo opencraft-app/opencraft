@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createBrowserGrantResolver } from '../../apps/headless-server/src/remote-browser/execution-grant.js';
-import { NativeExecutionAuthority } from '../../scripts/native-execution-authority.js';
+import { NativeExecutionAuthority } from '../../apps/headless-server/src/native-execution-authority.js';
 
 test('browser grants bind admitted human, canonical server and exact active native turn', async () => {
   const context = { actorId: 'human', generation: 1, credentialId: null, expiresAt: Date.now() + 60000 };

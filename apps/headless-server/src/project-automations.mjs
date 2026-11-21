@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { ProjectAutomations } from '../packages/access-control/src/automation-runtime.ts';
+import { ProjectAutomations } from '@opencraft/access-control/automation-runtime';
 
 /** Assembly only. Server Worker stores runs, Broker owns agent operations, Host owns scripts. */
 export function createProjectAutomations(storage, broker, collaboration, bridge) {

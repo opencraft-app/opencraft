@@ -90,8 +90,8 @@ test('desktop owner and daemon borrow the same installation, Human and personal-
 test('HTTP and native logical-client transports share the personal-assistant contract and never expose Host credentials',async t=>{
  const {ActorAccess}=await import('../../packages/access-control/src/actor-access');
  const {CollaborationHttpApi}=await import('../../packages/access-control/src/collaboration');
- const {createWorkbenchWebServer}=await import('../../scripts/serve-workbench-web.mjs');
- const {ImChannelsAppServer}=await import('../../scripts/im-channels-appserver.mjs');
+ const {createWorkbenchWebServer}=await import('../../apps/headless-server/src/serve-workbench-web.mjs');
+ const {ImChannelsAppServer}=await import('../../apps/headless-server/src/im-channels-appserver.mjs');
  const {LOGICAL_CLIENT_FIELD}=await import('../../packages/app-host-protocol/src/index');
  const f=await fixture(t);
  const principal={provider:'local',subject:'alice',displayName:'alice',expiresAt:Date.now()+60000};

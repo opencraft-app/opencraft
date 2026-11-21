@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,chmod,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {startHeadlessServer} from '../../scripts/headless-application.mjs';
+import {startHeadlessServer} from '../../apps/headless-server/src/headless-application.mjs';
 
 test('actual Headless HTTP catalogue registers private sandbox configuration and fails optional invalid configuration closed',async()=>{
  const root=await mkdtemp(join(tmpdir(),'headless-environments-')),webRoot=join(root,'web'),configPath=join(root,'environments.json'),key=join(root,'key');let app;

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { brotliCompressSync } from "node:zlib";
 import { createWorkbenchWebServer as worker } from "../../scripts/workbench-web-server.mjs";
-import { createWorkbenchWebServer as web } from "../../scripts/serve-workbench-web.mjs";
+import { createWorkbenchWebServer as web } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 import { createWorkbenchStaticServer as desktop } from "../../scripts/serve-workbench-static.mjs";
 
 for (const [name, create] of [["managed worker", worker], ["Web", web], ["desktop", desktop]] as const) {

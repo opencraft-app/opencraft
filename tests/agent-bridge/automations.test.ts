@@ -177,7 +177,7 @@ test('all automation CLI commands use the execution launcher, JSON, help, pagina
 test('Server assembly drives once through Broker and cron through input ledger with current project grant',async t=>{
   const {Collaboration}=await import('../../packages/access-control/src/collaboration');
   const {ThreadOrchestrationBroker}=await import('../../packages/access-control/src/thread-orchestration-broker');
-  const {createProjectAutomations}=await import('../../scripts/project-automations.mjs');
+  const {createProjectAutomations}=await import('../../apps/headless-server/src/project-automations.mjs');
   const root=await mkdtemp(join(tmpdir(),'oc-automation-broker-')),owner=await openServerDatabase(root),actors=new ActorStore(owner);
   const context=actors.resolveHuman({provider:'local',subject:'owner',displayName:'Owner',expiresAt:Date.now()+86_400_000})!;
   const receipts=new Map<string,any>();let creates=0,submissions=0;

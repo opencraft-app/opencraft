@@ -1,9 +1,9 @@
 import { request as httpRequest } from 'node:http';
 import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
-import { socketRequest, nodeObserver, observationGrafanaBasePath } from '../packages/observability-contract/node.mjs';
-import { backgroundRefreshLog } from '../packages/observability-query/rpc-work.mjs';
-import { sanitizeEvent } from '../packages/observability-contract/index.mjs';
+import { socketRequest, nodeObserver, observationGrafanaBasePath } from '@opencraft/observability-contract/node';
+import { backgroundRefreshLog } from '@opencraft/observability-query/rpc-work';
+import { sanitizeEvent } from '@opencraft/observability-contract';
 
 function send(res,status,value){res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(value));}
 export async function createObservabilityIngress(path,{access,actors,executionHealth,identity}={}) {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createWorkbenchWebServer } from "../../serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const server = await createWorkbenchWebServer({ root: process.env.OPENCRAFT_WEB_ROOT, appServerTarget: null });
 let browser: any;

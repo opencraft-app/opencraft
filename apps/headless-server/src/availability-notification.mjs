@@ -3,7 +3,7 @@ import { readFile, mkdir, chmod, lstat, unlink, open } from 'node:fs/promises';
 import { createConnection } from 'node:net';
 import { dirname } from 'node:path';
 import { timingSafeEqual, createHash } from 'node:crypto';
-import { readPrivateJson } from '../packages/identity-core/src/node.ts';
+import { readPrivateJson } from '@opencraft/identity-core/node';
 
 /** Separate private Unix socket; never registered with HTTP ingress/relay routes. */
 export async function startAvailabilityNotification(configFile, getService) {

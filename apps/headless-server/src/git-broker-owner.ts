@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { closeSync, existsSync, fsyncSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { OperatorLease, type OperatorLeaseClaim } from '../apps/codex-core/src/operator-lease.js';
+import { OperatorLease, type OperatorLeaseClaim } from '@opencraft/codex-core/operator-lease';
 
 interface State {
   version: 1; owner: string; epoch: number; phase: 'open' | 'fenced' | 'released' | 'cold-ready';

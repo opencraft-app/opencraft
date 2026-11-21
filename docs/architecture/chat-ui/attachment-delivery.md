@@ -17,7 +17,7 @@
 
 - `packages/appserver-protocol/src/attachments.ts` 定义 `AttachmentRef`、上传能力、分块上传与删除。
 - `apps/local-agent-host/src/attachments/local-attachment-staging.ts` 保存文件、校验 manifest 并解析所属路径；`host-resources.ts` 已将上传列为独立于引擎的 Host 资源。
-- `scripts/headless-application.mjs` 的本地 Codex adapter 使用 `dataDirectory/codex`；adapter 在其下创建 `attachments`。其他引擎的装配存在独立的 `agent/attachments` 配置。
+- `apps/headless-server/src/headless-application.mjs` 的本地 Codex adapter 使用 `dataDirectory/codex`；adapter 在其下创建 `attachments`。其他引擎的装配存在独立的 `agent/attachments` 配置。
 - `codex-engine-adapter.ts` 的 `modelVisibleAttachmentInput()` 在本地 staging 服务验证文件后，为原生 mention 增加模型可见的文件路径文字。验证发生在 adapter 文件系统，文字却声称文件在执行 Host 可读。
 - 容器装配将命令执行与文件能力交给 Hands。`docker/compose.yaml` 中 Brain 挂载完整数据目录，Hands 只挂载执行目录和工作区；`scripts/container-deployment/gateway.mjs` 接通 Hands 的文件系统 owner，`HostFileSystemTransport` 只接管 `fs/*`，没有补齐附件交付。
 

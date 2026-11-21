@@ -12,7 +12,7 @@ import { ThreadCatalog } from "../../apps/local-agent-host/src/thread-catalog.js
 import { createAppServerWorkbenchRuntime } from "../../packages/workbench-runtime/src/appserver-runtime.js";
 import { WebSocketTransport } from "../../packages/appserver-transport-websocket/src/websocket-transport.js";
 import { LOGICAL_CLIENT_FIELD } from "../../packages/app-host-protocol/src/index.js";
-import { createWorkbenchWebServer } from "../../scripts/serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 
 const flush = async () => { for (let i = 0; i < 10; i++) await new Promise<void>(resolve => setImmediate(resolve)); };
 async function until(check: () => boolean) {

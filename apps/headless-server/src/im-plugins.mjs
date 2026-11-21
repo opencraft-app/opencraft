@@ -1,11 +1,11 @@
 import { setTimeout as delay } from 'node:timers/promises';
-import { readPrivateJson } from '../packages/identity-core/src/node.ts';
-import { IM_REPLY_TOOL } from '../plugins/im/src/reply-tool.ts';
-import { WECOM_POST_TOOL } from '../plugins/wecom/src/post-tool.ts';
-import { WECOM_HISTORY_TOOLS } from '../plugins/wecom/src/history.ts';
-import { IM_READ_TOOLS } from '../plugins/im/src/read-tools.ts';
-import { ImFault } from '../plugins/im/src/server.ts';
-import { conversationRef, encodeConversationRef } from '../packages/appserver-protocol/src/collaboration.ts';
+import { readPrivateJson } from '@opencraft/identity-core/node';
+import { IM_REPLY_TOOL } from '@opencraft/plugin-im/reply-tool';
+import { WECOM_POST_TOOL } from '@opencraft/plugin-wecom/post-tool';
+import { WECOM_HISTORY_TOOLS } from '@opencraft/plugin-wecom/history';
+import { IM_READ_TOOLS } from '@opencraft/plugin-im/read-tools';
+import { ImFault } from '@opencraft/plugin-im/server';
+import { conversationRef, encodeConversationRef } from '@opencraft/appserver-protocol/collaboration';
 import { callConversationHost } from './conversation-execution.mjs';
 
 function fields(value, allowed) {

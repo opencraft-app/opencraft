@@ -7,7 +7,7 @@ import {
 import {
   WeComHistoryApi,
   WECOM_HISTORY_TOOLS,
-} from "../plugins/wecom/src/history.ts";
+} from "@opencraft/plugin-wecom/history";
 
 const fail = () => {
   throw Error("wecom_history_denied_or_invalid");

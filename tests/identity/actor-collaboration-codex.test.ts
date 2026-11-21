@@ -9,7 +9,7 @@ import { Collaboration } from "../../packages/access-control/src/collaboration";
 import { AppHostServer } from "../../packages/app-host-server/src/index";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter";
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
-import { createConversationExecution } from "../../scripts/conversation-execution.mjs";
+import { createConversationExecution } from "../../apps/headless-server/src/conversation-execution.mjs";
 
 async function fixture(t: any) {
   const root = await mkdtemp(join(tmpdir(), 'actor-codex-'));

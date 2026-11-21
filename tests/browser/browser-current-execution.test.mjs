@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readConversationCurrentTurn } from '../../scripts/conversation-execution.mjs';
+import { readConversationCurrentTurn } from '../../apps/headless-server/src/conversation-execution.mjs';
 
 function fixture({ providers = [], global = {}, result, error } = {}) {
   const sent = [], contexts = []; let closed = 0;

@@ -3,8 +3,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { AppHostServer } from '@opencraft/app-host-server';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
-import { createWorkbenchWebServer } from '../../serve-workbench-web.mjs';
-import { assertHeadlessWebRelease } from '../../headless-web-release.mjs';
+import { createWorkbenchWebServer } from '../../../apps/headless-server/src/serve-workbench-web.mjs';
+import { assertHeadlessWebRelease } from '../../../apps/headless-server/src/headless-web-release.mjs';
 import { createCodexPreview } from '../../../tests/agent-bridge/fixtures/codex-preview.js';
 
 const webRoot = process.env.OPENCRAFT_BRIDGE_WEB_ROOT ?? resolve('apps/workbench-web/dist');

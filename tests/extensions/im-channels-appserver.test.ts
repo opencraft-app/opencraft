@@ -14,9 +14,9 @@ import { ActorStore } from '../../packages/access-control/src/actors';
 import { Collaboration, CollaborationHttpApi, type ConversationExecutionPort, type ExecutionReceipt } from '../../packages/access-control/src/collaboration';
 import { parsePrincipal } from '../../packages/identity-core/src/index';
 import { connectWebSocketAppHost } from '../../apps/workbench-web/src/runtime/websocket-app-host';
-import { createWorkbenchWebServer } from '../../scripts/serve-workbench-web.mjs';
-import { ImChannelService } from '../../scripts/im-channel-service.mjs';
-import { ImChannelsAppServer } from '../../scripts/im-channels-appserver.mjs';
+import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
+import { ImChannelService } from '../../apps/headless-server/src/im-channel-service.mjs';
+import { ImChannelsAppServer } from '../../apps/headless-server/src/im-channels-appserver.mjs';
 
 test('native channels share one AppServer timeline for people and bots, including restart and membership fencing', { timeout: 15000 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'native-channels-'));

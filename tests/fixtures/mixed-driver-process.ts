@@ -21,8 +21,8 @@ import { WebSocketTransport, type AppServerWebSocket } from "../../packages/apps
 import { ActorStore } from "../../packages/access-control/src/actors.js";
 import { Collaboration, CollaborationError } from "../../packages/access-control/src/collaboration.js";
 import { ThreadOrchestrationBroker } from "../../packages/access-control/src/thread-orchestration-broker.js";
-import { createThreadOrchestrationExecution } from "../../scripts/thread-orchestration-execution.mjs";
-import { createRoutedConversationExecution } from "../../scripts/conversation-execution.mjs";
+import { createThreadOrchestrationExecution } from "../../apps/headless-server/src/thread-orchestration-execution.mjs";
+import { createRoutedConversationExecution } from "../../apps/headless-server/src/conversation-execution.mjs";
 import { THREAD_ORCHESTRATION_TOOLS } from "../../packages/appserver-protocol/src/collaboration.js";
 import { SessionCapabilities } from "../../packages/session-capabilities/src/index.js";
 import { RemoteSessionCapabilities } from "../../packages/session-capabilities/src/remote.js";

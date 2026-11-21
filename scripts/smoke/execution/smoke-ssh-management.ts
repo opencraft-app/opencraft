@@ -8,8 +8,8 @@ import { AppHostServer } from "@opencraft/app-host-server";
 import { CodexEngineAdapter } from "../../../apps/opencraft-daemon/src/codex-engine-adapter.js";
 import { SshCodexTransport } from "../../../apps/opencraft-daemon/src/ssh-codex-transport.js";
 import { SshManagement } from "../../../apps/opencraft-daemon/src/ssh-management.js";
-import { createWorkbenchWebServer } from "../../serve-workbench-web.mjs";
-import { assertHeadlessWebRelease } from "../../headless-web-release.mjs";
+import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
+import { assertHeadlessWebRelease } from "../../../apps/headless-server/src/headless-web-release.mjs";
 
 const webRoot = process.env.OPENCRAFT_SSH_UI_WEB_ROOT;
 const publicAccess = process.env.OPENCRAFT_SSH_UI_PUBLIC_ACCESS === "true";

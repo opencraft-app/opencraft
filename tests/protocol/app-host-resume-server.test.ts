@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
 import { APP_HOST_PROTOCOL_VERSION } from '@opencraft/app-host-protocol/version';
-import { createWorkbenchWebServer } from '../../scripts/serve-workbench-web.mjs';
+import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
 
 const until = async (ready: () => boolean, label = 'condition') => {
   const deadline = Date.now() + 3_000;

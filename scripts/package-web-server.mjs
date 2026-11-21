@@ -4,7 +4,7 @@ import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from
 import { packageBrowserRuntime } from './package-browser-runtime.mjs';
 import { optimizeWebImages } from './optimize-web-images.mjs';
 import { packageWebResources, copyPdfLicenses } from './package-web-resources.mjs';
-import { splitProductPluginPacks } from './web-deployment/product-plugin-packs.mjs';
+import { splitProductPluginPacks } from '../apps/headless-server/src/web-deployment/product-plugin-packs.mjs';
 import { mkdir, readFile, writeFile, cp, rm, chmod, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, relative } from 'node:path';
@@ -17,7 +17,7 @@ import { buildPiShellRuntime } from './package-pi-shell-runtime.mjs';
 import { copyAllServerRuntime } from './package-mcp-app-runtime.mjs';
 import { copySshRuntime } from './package-ssh-runtime.mjs';
 import semver from 'semver';
-import { assertHeadlessWebRelease } from './headless-web-release.mjs';
+import { assertHeadlessWebRelease } from '../apps/headless-server/src/headless-web-release.mjs';
 import { parseNpmPackResult } from './web-deployment/npm-pack-result.mjs';
 import { PACKAGE_NAME, PUBLIC_PACKAGE_NAME, RESOURCE_PACKAGE, assertPackageName } from './web-deployment/package-identity.mjs';
 import { sealPackage, npmPack } from './full-release/producer.mjs';

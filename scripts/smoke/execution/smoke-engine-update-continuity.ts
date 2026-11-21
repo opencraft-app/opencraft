@@ -12,8 +12,8 @@ import { createManagedWebServer } from '../../web-deployment/server.mjs';
 import { packageWebServer } from '../../package-web-server.mjs';
 import { startIndependentEngineHost } from '../../server-deployment/engine-host.mjs';
 import { startIndependentDshHost } from '../../server-deployment/dsh-host.mjs';
-import { attachDshHost } from '../../server-deployment/dsh-host-client.mjs';
-import { startHeadlessServer } from '../../headless-application.mjs';
+import { attachDshHost } from '../../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
+import { startHeadlessServer } from '../../../apps/headless-server/src/headless-application.mjs';
 import {
   ModelConfigurationRepository,
   ModelCredentialRepository,

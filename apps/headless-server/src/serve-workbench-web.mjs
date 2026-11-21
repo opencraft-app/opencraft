@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { observeNotificationRequest } from '../packages/web-push-node/src/diagnostics.ts';
-import { McpAppsRpcSession } from "../packages/mcp-apps/src/transport.ts";
+import { observeNotificationRequest } from '@opencraft/web-push-node/diagnostics';
+import { McpAppsRpcSession } from "@opencraft/mcp-apps/transport";
 import { serveNotModified } from "./web-asset-cache.mjs";
 import { selectAssetEncoding } from "./web-asset-encoding.mjs";
 import { injectUserPluginBootstrap, loadUserPlugins, userPluginAsset } from './web-deployment/user-plugins.mjs';
@@ -8,7 +8,7 @@ import { createUserPluginCatalog } from './web-deployment/craft-plugins.mjs';
 import { resourceRecoveryHtml, resourceRecoveryPath } from './web-resource-recovery.mjs';
 import { HtmlFilePreviews } from "./html-file-previews.mjs";
 import { APP_HOST_PROTOCOL_VERSION } from "@opencraft/app-host-protocol/version";
-import { CHANNELS_HOST_ID } from "../packages/appserver-protocol/src/channels.ts";
+import { CHANNELS_HOST_ID } from "@opencraft/appserver-protocol/channels";
 
 import { createReadStream } from "node:fs";
 import { readFile, realpath, stat } from "node:fs/promises";
@@ -18,9 +18,9 @@ import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import WebSocket, { WebSocketServer } from "ws";
-import { createWebSocketSender } from "../packages/relay-protocol/src/websocket-sender.mjs";
-import { RESUME_ACK_DELAY_MS, isAcknowledgement, isResumeAttempt, isSequence, parseResumeAttempt } from "../packages/app-host-resume/src/index.ts";
-import { ResumeRegistry, ResumeSessionCapacityError } from "../packages/app-host-resume/src/server.ts";
+import { createWebSocketSender } from "@opencraft/relay-protocol/websocket-sender";
+import { RESUME_ACK_DELAY_MS, isAcknowledgement, isResumeAttempt, isSequence, parseResumeAttempt } from "@opencraft/app-host-resume";
+import { ResumeRegistry, ResumeSessionCapacityError } from "@opencraft/app-host-resume/server";
 import { trackSocketHeartbeat } from "./websocket-heartbeat.mjs";
 import { appHostWebSocketOptions } from "./apphost-websocket-options.mjs";
 

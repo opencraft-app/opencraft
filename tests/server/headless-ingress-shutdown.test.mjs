@@ -10,8 +10,8 @@ import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { AssertionSigner } from '../../packages/identity-core/src/node.ts';
 import { createRelayServer } from '../../apps/relay-server/src/server.ts';
 import { HubNetwork } from '../../packages/hub-network/src/node.ts';
-import { startHeadlessServer } from '../../scripts/headless-application.mjs';
-import { createWorkbenchWebServer } from '../../scripts/serve-workbench-web.mjs';
+import { startHeadlessServer } from '../../apps/headless-server/src/headless-application.mjs';
+import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
 import { generateEd25519KeyPair } from '../support/ssh-ed25519.mjs';
 
 async function fixture() {

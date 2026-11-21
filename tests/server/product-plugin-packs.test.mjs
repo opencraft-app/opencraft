@@ -7,10 +7,10 @@ import { fork } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
-import { splitProductPluginPacks, prepareProductPluginPacks, openProductPluginAssets } from '../../scripts/web-deployment/product-plugin-packs.mjs';
+import { splitProductPluginPacks, prepareProductPluginPacks, openProductPluginAssets } from '../../apps/headless-server/src/web-deployment/product-plugin-packs.mjs';
 import { createWorkbenchWebServer } from '../../scripts/workbench-web-server.mjs';
-import { createWorkbenchWebServer as createHeadlessWebServer } from '../../scripts/serve-workbench-web.mjs';
-import { startHeadlessServer } from '../../scripts/headless-server.mjs';
+import { createWorkbenchWebServer as createHeadlessWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
+import { startHeadlessServer } from '../../apps/headless-server/src/headless-server.mjs';
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 async function fixture(t) {
   const root = await mkdtemp('/tmp/product-plugin-'); t.after(() => rm(root, { recursive: true, force: true }));

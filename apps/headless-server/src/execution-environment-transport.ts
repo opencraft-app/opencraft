@@ -1,8 +1,8 @@
-import type { DuplexTransport, TransportSubmissionContext } from '../packages/appserver-client/src/transport.js';
+import type { DuplexTransport, TransportSubmissionContext } from '@opencraft/appserver-client/transport';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 import { EXECUTION_ENVIRONMENT_FIELD, requiresEnvironmentAuthority, type ExecutionEnvironmentRuntime, type EnvironmentExecutionScope } from '@opencraft/execution-environment';
-import { TerminalCapacityError } from '../apps/local-agent-host/src/process-service.js';
-import { DurableHostProcessService } from '../apps/local-agent-host/src/durable-process-service.js';
+import { TerminalCapacityError } from '@opencraft/local-agent-host/process-service';
+import { DurableHostProcessService } from '@opencraft/local-agent-host/durable-process-service';
 const terminals = new WeakMap<ExecutionEnvironmentRuntime, DurableHostProcessService>();
 const object = (v: unknown): Record<string, any> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, any> : {};
 const key = (v: Record<string, any>) => JSON.stringify([v[LOGICAL_CLIENT_FIELD] ?? '', v.id]);

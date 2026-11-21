@@ -9,7 +9,7 @@ import { chromium } from '@playwright/test';
 import WebSocket from 'ws';
 import { HubNetwork } from "../../../packages/hub-network/src/node";
 import { MembershipStore, InstanceAccess } from "../../../packages/access-control/src";
-import { createWorkbenchWebServer } from "../../serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
 import { AssertionSigner } from "../../../packages/identity-core/src/node";
 import { packageRelay } from "../../package-relay.mjs";
 

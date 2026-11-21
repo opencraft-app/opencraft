@@ -12,8 +12,8 @@ import { CodexCoreControlClient } from '@opencraft/account-pool-host';
 import { startCodexCore } from "../../../apps/codex-core/src/main.js";
 import { CodexNativeCoreTransport } from "../../../apps/opencraft-daemon/src/codex-native-core-transport.js";
 import { startIndependentDshHost } from "../../server-deployment/dsh-host.mjs";
-import { attachDshHost } from "../../server-deployment/dsh-host-client.mjs";
-import { createWorkbenchWebServer } from "../../serve-workbench-web.mjs";
+import { attachDshHost } from "../../../apps/headless-server/src/server-deployment/dsh-host-client.mjs";
+import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "../../../apps/local-agent-host/src/model-config/repository.js";
 
 const root = await mkdtemp(join(tmpdir(), 'independent-dsh-'));

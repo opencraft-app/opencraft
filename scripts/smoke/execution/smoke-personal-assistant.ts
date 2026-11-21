@@ -3,10 +3,10 @@ import {ThreadAccessStore} from '../../../packages/access-control/src/thread-acc
 import {createAssistantModelSource} from '../../../apps/local-agent-host/src/model-config/assistant';
 import {ModelConfigurationRepository} from '../../../apps/local-agent-host/src/model-config/repository';
 import {createPersonalAssistantHost} from '../../../apps/personal-assistant/src/runtime/host-supervisor.mjs';
-import {ImChannelService} from '../../im-channel-service.mjs';
+import {ImChannelService} from '../../../apps/headless-server/src/im-channel-service.mjs';
 import {AppHostServer} from '@opencraft/app-host-server';
-import {ImChannelsAppServer} from '../../im-channels-appserver.mjs';
-import {createWorkbenchWebServer} from '../../serve-workbench-web.mjs';
+import {ImChannelsAppServer} from '../../../apps/headless-server/src/im-channels-appserver.mjs';
+import {createWorkbenchWebServer} from '../../../apps/headless-server/src/serve-workbench-web.mjs';
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';

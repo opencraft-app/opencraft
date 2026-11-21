@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
-import { initializeHeadlessCodexHost, maintainHeadlessCodexHost } from '../../scripts/headless-host-readiness.mjs';
+import { initializeHeadlessCodexHost, maintainHeadlessCodexHost } from '../../apps/headless-server/src/headless-host-readiness.mjs';
 
 function hostFixture() {
   let available = false, opens = 0, closes = 0, state = 'failed';

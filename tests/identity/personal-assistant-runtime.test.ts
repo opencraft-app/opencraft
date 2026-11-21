@@ -7,7 +7,7 @@ import {openServerDatabase} from '../../packages/storage-node/src/server/index';
 import {ActorStore} from '../../packages/access-control/src/actors';
 import {ActorAccess} from '../../packages/access-control/src/actor-access';
 import {Collaboration,CollaborationHttpApi} from '../../packages/access-control/src/collaboration';
-import {createWorkbenchWebServer} from '../../scripts/serve-workbench-web.mjs';
+import {createWorkbenchWebServer} from '../../apps/headless-server/src/serve-workbench-web.mjs';
 import {startPersonalAssistant} from '@opencraft/personal-assistant';
 import {httpPlatformAssistantPort} from '@opencraft/personal-assistant/platform-port';
 

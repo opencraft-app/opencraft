@@ -1,4 +1,4 @@
-import { ownedDatabasePath } from '../apps/opencraft-daemon/src/owned-database-path.js';
+import { ownedDatabasePath } from '@opencraft/opencraft-daemon/owned-database-path';
 import { gitGrantAuthority, openGitGrant, type GitGrantScope } from '@opencraft/execution-environment/personal-git-protocol';
 import { createDecipheriv, randomBytes } from 'node:crypto';
 import { readFile, lstat, chmod, rm, mkdir, writeFile } from 'node:fs/promises';

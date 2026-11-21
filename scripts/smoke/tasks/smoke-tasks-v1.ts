@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import WebSocket from "ws";
-import { startHeadlessServer } from "../../headless-server.mjs";
+import { startHeadlessServer } from "../../../apps/headless-server/src/headless-server.mjs";
 const { expect } = await import("@playwright/test");
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const root = process.cwd(), dataDirectory = await mkdtemp(join(tmpdir(), "tasks-v1-workbench-"));

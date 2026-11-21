@@ -8,7 +8,7 @@ import { build } from "esbuild";
 import { JSDOM } from "jsdom";
 import { act } from "react";
 import { openPushStore, TurnPushService } from "@opencraft/web-push-node";
-import { createWorkbenchWebServer } from "../../scripts/serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {createConversationExecution,createRoutedConversationExecution} from '../../scripts/conversation-execution.mjs';
+import {createConversationExecution,createRoutedConversationExecution} from '../../apps/headless-server/src/conversation-execution.mjs';
 
 function hostFixture(){
  const requests:any[]=[];

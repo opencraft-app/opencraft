@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
 import { WebSocket, WebSocketServer } from 'ws';
-import { startHeadlessServer } from '../../scripts/headless-server.mjs';
+import { startHeadlessServer } from '../../apps/headless-server/src/headless-server.mjs';
 import { readDaemonMachineIdentity } from '../../apps/opencraft-daemon/src/machine-identity.js';
 import { TokenUsageStateDatabase } from '../../apps/opencraft-daemon/src/token-usage-state-database.js';
 import { OpenCraftTokenUsageLedger } from '../../apps/opencraft-daemon/src/token-usage-ledger.js';

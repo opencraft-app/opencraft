@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { WECOM_POST_TOOL } from "../plugins/wecom/src/post-tool.ts";
+import { WECOM_POST_TOOL } from "@opencraft/plugin-wecom/post-tool";
 const hash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const fail = (code = "wecom_post_denied_or_invalid") => { throw Error(code); };
 

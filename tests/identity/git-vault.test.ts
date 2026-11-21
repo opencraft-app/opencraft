@@ -8,7 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { createConnection } from 'node:net';
 import nodeTest from 'node:test';
 import { EmployeeGitVaultStore } from '@opencraft/execution-environment/employee-git-vault-store';
-import { createMemoryGitSigner, createMemoryGitAuthenticator, generateGitSigningKey, sshString } from '../../scripts/git-identity-signer';
+import { createMemoryGitSigner, createMemoryGitAuthenticator, generateGitSigningKey, sshString } from '../../apps/headless-server/src/git-identity-signer';
 const test = process.platform === 'linux' ? nodeTest : nodeTest.skip;
 
 const credential = () => ({ identity: { username: 'synthetic', name: 'Synthetic Employee', email: 'synthetic@example.test' }, token: 'synthetic-token-only', signing: null });
@@ -77,7 +77,7 @@ test('real Git signs through memory-only agent and verifies its SSH signature', 
 });
 test('SIGKILL leaves only a socket, never a plaintext signing key', async t => {
   const root = await mkdtemp(join(tmpdir(), 'git-signer-kill-')); t.after(() => rm(root, { recursive: true, force: true }));
-  const worker = resolve('scripts/git-identity-signer.ts');
+  const worker = resolve('apps/headless-server/src/git-identity-signer.ts');
   const child = spawn(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', `import {createMemoryGitSigner,generateGitSigningKey} from ${JSON.stringify(worker)};await createMemoryGitSigner(generateGitSigningKey(),process.argv[1]);process.stdout.write('ready\\n');setInterval(()=>{},1000);`, root], { stdio: ['ignore', 'pipe', 'pipe'] });
   t.after(() => { child.kill('SIGKILL'); });
   await once(child.stdout, 'data'); child.kill('SIGKILL'); await once(child, 'close');

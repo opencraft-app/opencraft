@@ -4,7 +4,7 @@ import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
-import { loadUserPlugins, userPluginAsset } from "../../scripts/web-deployment/user-plugins.mjs";
+import { loadUserPlugins, userPluginAsset } from "../../apps/headless-server/src/web-deployment/user-plugins.mjs";
 
 const example = fileURLToPath(new URL("../../examples/user-plugins/", import.meta.url));
 

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { openPushStore, TurnPushService, type PushBinding } from "@opencraft/web-push-node";
-import { createWorkbenchWebServer } from "../../scripts/serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 
 const messages = { completed: "Done", failed: "Failed", interrupted: "Stopped", body: "Return", test: "Test" };
 

@@ -7,7 +7,7 @@ import { encodeJsonRpcMessage, isJsonRpcRequest } from '@opencraft/appserver-pro
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { createRoutedConversationExecution } from '../../scripts/conversation-execution.mjs';
+import { createRoutedConversationExecution } from '../../apps/headless-server/src/conversation-execution.mjs';
 
 test('metadata is an allowlisted server projection without title fallback or message content', () => {
   const result = projectConversationMetadata('server', { id: 'thread', name: 'sensitive-title', preview: 'sensitive-preview',

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TasksService } from "../../../plugins/tasks/src/server";
 import { TASKS, type TaskDetail, type TasksSnapshot } from "@opencraft/appserver-protocol";
-import { startHeadlessServer } from "../../headless-server.mjs";
+import { startHeadlessServer } from "../../../apps/headless-server/src/headless-server.mjs";
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const root = process.cwd(), data = await mkdtemp(join(tmpdir(), "oc-tasks-archive-ui-"));
 const artifacts = process.env.OPENCRAFT_TASKS_ARCHIVE_ARTIFACTS ?? join(root, ".local/tasks-archive");

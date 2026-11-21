@@ -3,7 +3,7 @@ import { once } from 'node:events';
 import { createServer } from 'node:http';
 import test from 'node:test';
 import { WebSocket, WebSocketServer } from 'ws';
-import { appHostWebSocketOptions } from '../../scripts/apphost-websocket-options.mjs';
+import { appHostWebSocketOptions } from '../../apps/headless-server/src/apphost-websocket-options.mjs';
 
 const cases = [
   { name: 'enabled', compression: true },

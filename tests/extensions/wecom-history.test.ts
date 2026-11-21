@@ -10,7 +10,7 @@ import {
   WECOM_HISTORY_TOOLS,
 } from "../../plugins/wecom/src/history.js";
 import { ImPostReceipts } from "../../plugins/im/src/post-receipts.js";
-import { ImChannelService } from "../../scripts/im-channel-service.mjs";
+import { ImChannelService } from "../../apps/headless-server/src/im-channel-service.mjs";
 import { SessionCapabilities } from "../../packages/session-capabilities/src/index.js";
 import { SessionCapabilityMcp } from "../../packages/session-capabilities/src/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";

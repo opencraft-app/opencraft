@@ -6,7 +6,7 @@ import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import WebSocket from 'ws';
 import { once } from 'node:events';
-import { createWorkbenchWebServer } from "../../serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
 import { RemoteBrowserService } from "../../../apps/headless-server/src/remote-browser-service.mjs";
 import { packageBrowserRuntime } from "../../package-browser-runtime.mjs";
 

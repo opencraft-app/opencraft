@@ -1,7 +1,7 @@
 import { APP_HOST_PROTOCOL_VERSION } from "@opencraft/app-host-protocol/version";
 import { randomUUID } from "node:crypto";
 import { JsonRpcAppServerClient } from "@opencraft/appserver-client";
-import { CodexNativeCoreTransport } from "../apps/opencraft-daemon/src/codex-native-core-transport.ts";
+import { CodexNativeCoreTransport } from "@opencraft/opencraft-daemon/codex-native-core-transport";
 
 function catalog(result, serverId) {
   return { conversations: result.data.map(thread => ({ serverId, threadId: thread.id, title: thread.name || thread.preview || thread.id })), nextCursor: result.nextCursor ?? null };

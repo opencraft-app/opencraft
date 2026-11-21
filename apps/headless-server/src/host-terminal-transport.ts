@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { DurableHostProcessService } from '../apps/local-agent-host/src/durable-process-service.js';
-import { TerminalCapacityError, type PreparedProcessIdentity } from '../apps/local-agent-host/src/process-service.js';
+import { DurableHostProcessService } from '@opencraft/local-agent-host/durable-process-service';
+import { TerminalCapacityError, type PreparedProcessIdentity } from '@opencraft/local-agent-host/process-service';
 import { validateEnvironmentName } from '@opencraft/execution-environment/account-environment';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 import { OPENCRAFT_METHOD_ACCESS_EXTENSION } from '@opencraft/appserver-protocol';

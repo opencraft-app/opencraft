@@ -10,7 +10,7 @@ import { createAppServerWorkbenchRuntime } from '@opencraft/workbench-runtime';
 import { createConversationKey } from '@opencraft/chat-core';
 import { createConversationOutbox, type ConversationOutboxEntry } from '@opencraft/chat-runtime';
 import { connectWebSocketAppHost, type AppHostRecoveryEvents } from '../../../apps/workbench-web/src/runtime/websocket-app-host';
-import { createWorkbenchWebServer } from '../../../scripts/serve-workbench-web.mjs';
+import { createWorkbenchWebServer } from '../../../apps/headless-server/src/serve-workbench-web.mjs';
 import { ChaosViolation, requireThat, recoveryChaosRandom } from './recovery-chaos';
 
 type Tab = 'a' | 'b';

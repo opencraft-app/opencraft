@@ -7,8 +7,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import nodeTest from 'node:test';
-import { createGitOriginResolver, hasGitNativeRoot, readCodexGitNatives } from '../../scripts/git-identity-origin';
-import { readGitProcess } from '../../scripts/git-identity-broker';
+import { createGitOriginResolver, hasGitNativeRoot, readCodexGitNatives } from '../../apps/headless-server/src/git-identity-origin';
+import { readGitProcess } from '../../apps/headless-server/src/git-identity-broker';
 const test = process.platform === 'linux' ? nodeTest : nodeTest.skip;
 
 test('native origin is attested against registry PID, start, executable and hash', async t => {

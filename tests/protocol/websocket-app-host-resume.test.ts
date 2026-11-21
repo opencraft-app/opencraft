@@ -7,7 +7,7 @@ import WebSocket from "ws";
 import { createConversationKey } from "@opencraft/chat-core";
 import { createConversationOutbox, SubmissionNotDispatchedError, type ConversationOutboxEntry } from "@opencraft/chat-runtime";
 import { APP_HOST_PROTOCOL_VERSION } from "@opencraft/app-host-protocol/version";
-import { createWorkbenchWebServer } from "../../scripts/serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 import { connectWebSocketAppHost, type AppHostRecoveryEvents } from "../../apps/workbench-web/src/runtime/websocket-app-host";
 
 class Events implements AppHostRecoveryEvents {

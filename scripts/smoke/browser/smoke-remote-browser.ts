@@ -14,7 +14,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { SessionCapabilities } from '../../../packages/session-capabilities/src/index.js';
 import { SessionCapabilityMcp } from '../../../packages/session-capabilities/src/mcp.js';
 import { RemoteBrowserCapabilities } from '../../../apps/headless-server/src/remote-browser/capabilities.js';
-import { createWorkbenchWebServer } from "../../serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
 import { RemoteBrowserService } from "../../../apps/headless-server/src/remote-browser-service.mjs";
 import { packageBrowserRuntime } from "../../package-browser-runtime.mjs";
 import { connectBrowserOwner } from "../../../apps/headless-server/src/remote-browser-owner.mjs";

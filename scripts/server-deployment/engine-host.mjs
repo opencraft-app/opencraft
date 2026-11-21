@@ -1,4 +1,4 @@
-import { createHostFileSystem } from '../host-filesystem.ts';
+import { createHostFileSystem } from '../../apps/headless-server/src/host-filesystem.ts';
 import { LocalAttachmentStagingService } from '@opencraft/local-agent-host/attachments/local-staging';
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { ExecutionEnvironmentRuntime } from "@opencraft/execution-environment";
@@ -17,14 +17,14 @@ import { dirname, isAbsolute, resolve, join } from 'node:path';
 import lockfile from 'proper-lockfile';
 import { startEngineHost } from '../../apps/local-agent-host/src/engine-host.ts';
 import { RemoteEngineProvider } from '../../apps/local-agent-host/src/remote-engine-provider.ts';
-import { attachEngineHost } from './engine-host-client.mjs';
+import { attachEngineHost } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
 import { handleHostInput } from '../../apps/local-agent-host/src/host-input-http.ts';
 import { createPiModelConfiguration } from '../../apps/local-agent-host/src/model-config/pi-adapter.ts';
 import { PiEngine, piHandoffReconciliation } from '../../plugins/pi-engine/src/index.ts';
 import { BridgeEngineProvider } from '../../apps/local-agent-host/src/bridge-engine-provider.ts';
 import { RemoteSessionCapabilities } from '../../packages/session-capabilities/src/remote.ts';
 import { readDaemonMachineIdentity } from '../../apps/opencraft-daemon/src/machine-identity.ts';
-import { attachDshHost, readPrivateJson } from './dsh-host-client.mjs';
+import { attachDshHost, readPrivateJson } from '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
 
 /** Owns Pi execution independently of a versioned gateway. DSH remains in its
  * existing pinned Host; this process only attaches to it. */

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TasksService } from "../../../plugins/tasks/src/server";
 import { TASKS } from "@opencraft/appserver-protocol";
-import { startHeadlessServer } from "../../headless-server.mjs";
+import { startHeadlessServer } from "../../../apps/headless-server/src/headless-server.mjs";
 
 // Real built Workbench and SQLite authority; synthetic fixtures only. Native
 // pointer/keyboard/touch input verifies removal without weakening status edits.

@@ -1,25 +1,25 @@
 import { join } from "node:path";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
-import { SwitchboardStore } from "../plugins/im/src/store.ts";
-import { IM_REPLY_TOOL } from "../plugins/im/src/reply-tool.ts";
-import { IM_READ_TOOLS } from "../plugins/im/src/read-tools.ts";
-import { ImPostReceipts } from "../plugins/im/src/post-receipts.ts";
-import { ChannelSync } from "../plugins/im/src/channel-sync.ts";
-import { CHANNEL_IMAGE_LIMIT, CHANNEL_IMAGE_TYPES } from "../packages/appserver-protocol/src/channel-images.ts";
+import { SwitchboardStore } from "@opencraft/plugin-im/store";
+import { IM_REPLY_TOOL } from "@opencraft/plugin-im/reply-tool";
+import { IM_READ_TOOLS } from "@opencraft/plugin-im/read-tools";
+import { ImPostReceipts } from "@opencraft/plugin-im/post-receipts";
+import { ChannelSync } from "@opencraft/plugin-im/channel-sync";
+import { CHANNEL_IMAGE_LIMIT, CHANNEL_IMAGE_TYPES } from "@opencraft/appserver-protocol/channel-images";
 import { ImWeComPosts } from "./im-wecom-posts.mjs";
-import { WECOM_POST_TOOL } from "../plugins/wecom/src/post-tool.ts";
+import { WECOM_POST_TOOL } from "@opencraft/plugin-wecom/post-tool";
 import { ImWeComHistory } from "./im-wecom-history.mjs";
-import { WECOM_HISTORY_TOOLS } from "../plugins/wecom/src/history.ts";
-import { ImPlugin } from "../plugins/im/src/server.ts";
+import { WECOM_HISTORY_TOOLS } from "@opencraft/plugin-wecom/history";
+import { ImPlugin } from "@opencraft/plugin-im/server";
 import {
   compileRoute,
   evaluateRoute,
   routeSource,
   sourceRoute,
-} from "../plugins/im/src/routing.ts";
-import { WeComPlugin } from "../plugins/wecom/src/server.ts";
-import { SlackPlugin, slackApi } from "../plugins/slack/src/server.ts";
-import { ModelCredentialRepository } from "../apps/local-agent-host/src/model-config/repository.ts";
+} from "@opencraft/plugin-im/routing";
+import { WeComPlugin } from "@opencraft/plugin-wecom/server";
+import { SlackPlugin, slackApi } from "@opencraft/plugin-slack/server";
+import { ModelCredentialRepository } from "@opencraft/local-agent-host/model-config/repository";
 import { createImExecution } from "./im-plugins.mjs";
 
 const digest = (v) => createHash("sha256").update(v).digest("hex");
@@ -331,7 +331,7 @@ export class ImChannelService {
       };
     if (body.action === "sources") {
       const { conversationRef, encodeConversationRef } = await import(
-        "../packages/appserver-protocol/src/collaboration.ts"
+        "@opencraft/appserver-protocol/collaboration"
       );
       const execution = this.dependencies.collaboration.execution;
       let serverId;
@@ -464,7 +464,7 @@ export class ImChannelService {
     if (!manages) throw Error("channel_denied");
     if (body.action === "conversations") {
       const { encodeConversationRef } = await import(
-        "../packages/appserver-protocol/src/collaboration.ts"
+        "@opencraft/appserver-protocol/collaboration"
       );
       if (
         body.search !== undefined &&

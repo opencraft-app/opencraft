@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {workspaceTurnOutputContext} from '../../scripts/workspace-turn-output-context.mjs';
+import {workspaceTurnOutputContext} from '../../apps/headless-server/src/workspace-turn-output-context.mjs';
 function fixture(){
  const state={context:{actorId:'actor',generation:1,expiresAt:1000},current:true,allowed:true,server:'server'};
  const actors={isCurrent:context=>state.current&&context.actorId==='actor'};

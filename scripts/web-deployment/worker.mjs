@@ -4,7 +4,7 @@ import { createOptionalResources } from './optional-resources.mjs';
 import { readFile } from 'node:fs/promises';
 import { createWorkbenchWebServer } from '../workbench-web-server.mjs';
 import { inspectRelease } from './releases.mjs';
-import { prepareProductPluginRelease } from './product-plugin-packs.mjs';
+import { prepareProductPluginRelease } from '../../apps/headless-server/src/web-deployment/product-plugin-packs.mjs';
 const identity = await inspectRelease(process.env.OPENCRAFT_RELEASE_ROOT);
 const manifest = JSON.parse(await readFile(`${identity.releaseRoot}/package.json`, 'utf8'));
 // Runs before listen; old installed controllers already pass this persistent

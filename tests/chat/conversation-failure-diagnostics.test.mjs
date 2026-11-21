@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ConversationFailureDiagnostics, conversationFailure } from '../../packages/access-control/src/conversation-failure-diagnostics.mjs';
-import { callConversationHost } from '../../scripts/conversation-execution.mjs';
+import { callConversationHost } from '../../apps/headless-server/src/conversation-execution.mjs';
 const binding = {hostId:'local-codex',threadId:'recipient'};
 
 test('delivery diagnostics redact arbitrary engine text and bound unchanged errors', () => {

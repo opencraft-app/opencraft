@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { LocalAttachmentStagingService } from "../../../apps/local-agent-host/src/attachments/local-attachment-staging";
 import { AppHostServer } from "../../../packages/app-host-server/src/index";
-import { createWorkbenchWebServer } from "../../serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const root = await mkdtemp(join(tmpdir(), "opencraft-large-upload-"));
 const service = new LocalAttachmentStagingService(join(root, "staged"));

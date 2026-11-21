@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { ServerInformationStore, serverInformationHttp, normalizePublicEntry, SERVER_INFORMATION_PATH } from '../../scripts/server-information.mjs';
+import { ServerInformationStore, serverInformationHttp, normalizePublicEntry, SERVER_INFORMATION_PATH } from '../../apps/headless-server/src/server-information.mjs';
 import { isHeadlessBackendPath } from '../../scripts/web-deployment/headless-backend.mjs';
 import { PushStore, TurnPushService, type PushBinding } from '@opencraft/web-push-node';
 const binding: PushBinding = { context: { actorId: 'admin-a', credentialId: null, generation: 1, expiresAt: Date.now() + 86400000 } };

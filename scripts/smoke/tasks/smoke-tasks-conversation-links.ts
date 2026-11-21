@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { chromium } from "playwright";
 import { TASKS } from "@opencraft/appserver-protocol";
 import { TasksService } from "../../../plugins/tasks/src/server";
-import { startHeadlessServer } from "../../headless-server.mjs";
+import { startHeadlessServer } from "../../../apps/headless-server/src/headless-server.mjs";
 
 // Complete built Workbench and isolated SQLite. Only native conversation reads
 // get synthetic replies; no Turn/model request, real account or live data used.

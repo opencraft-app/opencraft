@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { AccountEnvironment } from '@opencraft/execution-environment/account-environment';
 import { EmployeeGitVaultStore } from '@opencraft/execution-environment/employee-git-vault-store';
 import { ExecutionEnvironmentRuntime } from '@opencraft/execution-environment';
-import { ExecutionEnvironmentTransport } from '../../scripts/execution-environment-transport.js';
+import { ExecutionEnvironmentTransport } from '../../apps/headless-server/src/execution-environment-transport.js';
 import type { TransportSubmissionContext } from '../../packages/appserver-client/src/transport.js';
 
 const context = (subject: string): TransportSubmissionContext => ({ sender: null,

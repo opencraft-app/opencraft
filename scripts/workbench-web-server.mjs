@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-import { loadUserPlugins, userPluginAsset } from './web-deployment/user-plugins.mjs';
-import { createUserPluginCatalog } from './web-deployment/craft-plugins.mjs';
-import { selectAssetEncoding } from "./web-asset-encoding.mjs";
-import { serveNotModified } from "./web-asset-cache.mjs";
+import { loadUserPlugins, userPluginAsset } from '../apps/headless-server/src/web-deployment/user-plugins.mjs';
+import { createUserPluginCatalog } from '../apps/headless-server/src/web-deployment/craft-plugins.mjs';
+import { selectAssetEncoding } from "../apps/headless-server/src/web-asset-encoding.mjs";
+import { serveNotModified } from "../apps/headless-server/src/web-asset-cache.mjs";
 
 import { createReadStream } from "node:fs";
 import { readFile, realpath, stat } from "node:fs/promises";
-import { resourceRecoveryHtml, resourceRecoveryPath } from "./web-resource-recovery.mjs";
+import { resourceRecoveryHtml, resourceRecoveryPath } from "../apps/headless-server/src/web-resource-recovery.mjs";
 import { createServer } from "node:http";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";

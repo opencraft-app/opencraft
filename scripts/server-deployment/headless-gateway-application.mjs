@@ -1,10 +1,10 @@
 import { readFile, stat } from 'node:fs/promises';
 import { basename, dirname, resolve, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { startHeadlessServer, parseHeadlessArguments } from '../headless-application.mjs';
+import { startHeadlessServer, parseHeadlessArguments } from '../../apps/headless-server/src/headless-application.mjs';
 import { coreHealth } from './execution.mjs';
-import { readEngineHostIdentity } from './engine-host-client.mjs';
-import { attachDshHost, readDshHostIdentity } from './dsh-host-client.mjs';
+import { readEngineHostIdentity } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
+import { attachDshHost, readDshHostIdentity } from '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
 import { readGatewayUpdateIntent } from './gateway-update-intent.mjs';
 
 /** Read dependencies concurrently and retain release identity even when one is

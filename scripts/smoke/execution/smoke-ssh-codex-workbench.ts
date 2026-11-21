@@ -5,8 +5,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { AppHostServer } from "@opencraft/app-host-server";
 import { CodexEngineAdapter } from "../../../apps/opencraft-daemon/src/codex-engine-adapter.js";
 import { SshCodexTransport } from "../../../apps/opencraft-daemon/src/ssh-codex-transport.js";
-import { createWorkbenchWebServer } from "../../serve-workbench-web.mjs";
-import { assertHeadlessWebRelease } from "../../headless-web-release.mjs";
+import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
+import { assertHeadlessWebRelease } from "../../../apps/headless-server/src/headless-web-release.mjs";
 
 // Exercise the complete built Workbench. Only SSH exec is synthetic. Never
 // bind a real credential, create a Thread or invoke an actual model here.

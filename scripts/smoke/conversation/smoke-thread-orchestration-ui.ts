@@ -13,7 +13,7 @@ import { ActorStore } from "../../../packages/access-control/src/actors";
 import { Collaboration, type ConversationExecutionPort } from "../../../packages/access-control/src/collaboration";
 import type { ThreadRelation } from "../../../packages/access-control/src/orchestration-ledger";
 import { projectThreadTopologyResult } from "../../../apps/opencraft-daemon/src/thread-orchestration-projection";
-import { createWorkbenchWebServer } from "../../serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
 
 // Full built Web/AppHost UI with synthetic Native history and real, isolated
 // collaboration storage. No external identity, user conversation or model call.

@@ -13,7 +13,18 @@
     "./artifacts/tool-output": "./src/artifacts/tool-output.ts",
     "./artifacts/host-capture": "./src/artifacts/host-capture.ts",
     "./artifacts/generated-output": "./src/artifacts/generated-output.ts",
-    "./model-config/assistant": "./src/model-config/assistant.ts"
+    "./model-config/assistant": "./src/model-config/assistant.ts",
+    "./process-service": "./src/process-service.ts",
+    "./durable-process-service": "./src/durable-process-service.ts",
+    "./engine-host": "./src/engine-host.ts",
+    "./model-capability-transport": "./src/model-capability-transport.ts",
+    "./model-gateway-settings-transport": "./src/model-gateway-settings-transport.ts",
+    "./image-model-transport": "./src/image-model-transport.ts",
+    "./model-config/image-generation": "./src/model-config/image-generation.ts",
+    "./model-config/pi-adapter": "./src/model-config/pi-adapter.ts",
+    "./desktop/native-control": "./src/desktop/native-control.ts",
+    "./model-config/repository": "./src/model-config/repository.ts",
+    "./model-config/speech": "./src/model-config/speech.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

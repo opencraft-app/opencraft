@@ -2,9 +2,9 @@ import { createConnection } from 'node:net';
 import { deploymentPaths, readPrivateToken } from './paths.mjs';
 import { coreHealth } from '../server-deployment/execution.mjs';
 import { proxyHealth } from './proxy-core.mjs';
-import { readDshHostIdentity } from '../server-deployment/dsh-host-client.mjs';
-import { readEngineHostIdentity } from '../server-deployment/engine-host-client.mjs';
-import { createHostFileSystem } from '../host-filesystem.ts';
+import { readDshHostIdentity } from '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
+import { readEngineHostIdentity } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
+import { createHostFileSystem } from '../../apps/headless-server/src/host-filesystem.ts';
 
 const timeoutMs = 4000;
 function probeSocket(path, frame, expected) {

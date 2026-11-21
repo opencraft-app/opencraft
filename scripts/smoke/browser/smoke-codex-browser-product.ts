@@ -12,8 +12,8 @@ import { gunzipSync, zstdDecompressSync } from 'node:zlib';
 import { chromium } from 'playwright';
 import { createServer as createVite } from 'vite';
 import { createWorkbenchWebConfig } from '../../../apps/workbench-web/vite.config.js';
-import { startHeadlessServer } from '../../headless-server.mjs';
-import { createWorkbenchWebServer } from '../../serve-workbench-web.mjs';
+import { startHeadlessServer } from '../../../apps/headless-server/src/headless-server.mjs';
+import { createWorkbenchWebServer } from '../../../apps/headless-server/src/serve-workbench-web.mjs';
 import { packageBrowserRuntime } from '../../package-browser-runtime.mjs';
 import {createLoopbackSshFixture} from './ssh-loopback-fixture.js';
 

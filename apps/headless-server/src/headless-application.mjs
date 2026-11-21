@@ -1,24 +1,24 @@
 #!/usr/bin/env node
 import {workspaceTurnOutputContext} from './workspace-turn-output-context.mjs';
-import { restoreWorkspaceQueuedContext } from '../apps/opencraft-daemon/src/workspace-queued-context.ts';
+import { restoreWorkspaceQueuedContext } from '@opencraft/opencraft-daemon/workspace-queued-context';
 import { HostWorkspaceCatalogTransport } from './host-workspace-catalog-transport.ts';
 import { createCodexWorkspaceHooks, validateCodexWorkspaceHooks, configuredWorkspaceExecution } from './codex-workspace-hooks.mjs';
 import { ServerInformationStore, serverInformationHttp } from './server-information.mjs';
 import { configuredModelGatewayPath, modelGatewayHttp, CodexCoreControlClient } from "@opencraft/account-pool-host";
 import { gatewayContributions } from "@opencraft/local-agent-host/model-config";
 import { createAssistantModelSource } from '@opencraft/local-agent-host/model-config/assistant';
-import { loadAssistantEnvironments } from '../apps/opencraft-daemon/src/assistant-environments.ts';
+import { loadAssistantEnvironments } from '@opencraft/opencraft-daemon/assistant-environments';
 import { createPersonalAssistantHost } from '@opencraft/personal-assistant/host';
 import { LocalAttachmentStagingService } from '@opencraft/local-agent-host/attachments/local-staging';
-import { deploymentOperator } from "../packages/access-control/src/deployment-operator.ts";
-import { localExecutionCli } from "../packages/session-capabilities/src/execution-cli.ts";
-import { ServerSpacesRuntime } from '../packages/access-control/src/server-spaces-runtime.ts';
-import { ServerSpacesSession } from '../packages/access-control/src/server-spaces-session.ts';
+import { deploymentOperator } from "@opencraft/access-control/deployment-operator";
+import { localExecutionCli } from "@opencraft/session-capabilities/execution-cli";
+import { ServerSpacesRuntime } from '@opencraft/access-control/server-spaces';
+import { ServerSpacesSession } from '@opencraft/access-control/server-spaces-session';
 import { createProjectAutomations } from './project-automations.mjs';
-import { executionCliSourceToken } from '../packages/session-capabilities/src/credentials.ts';
-import { waitForExecutionCliBinding } from '../packages/session-capabilities/src/execution-cli.ts';
-import { createServerCodexBridge,readCodexBridgeConfiguration,createBridgeSessionMcp } from '../apps/opencraft-daemon/src/bridge-execution-admission.ts';
-import { openServerDatabase } from "../packages/storage-node/src/server/index.ts";
+import { executionCliSourceToken } from '@opencraft/session-capabilities/credentials';
+import { waitForExecutionCliBinding } from '@opencraft/session-capabilities/execution-cli';
+import { createServerCodexBridge,readCodexBridgeConfiguration,createBridgeSessionMcp } from '@opencraft/opencraft-daemon/bridge-execution-admission';
+import { openServerDatabase } from "@opencraft/storage-node/server";
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { modelPolicyHttp } from '@opencraft/model-usage-policy/http';
 import { ModelPolicyTransport } from '@opencraft/model-usage-policy/transport';
@@ -27,16 +27,16 @@ import { ExecutionEnvironmentTransport } from './execution-environment-transport
 import { composeHostTerminalSelector, createHandsTerminalService, HostTerminalSession, HostTerminalTransport, terminalResourceOwnerId } from './host-terminal-transport.js';
 import { createHostFileSystem } from './host-filesystem.js';
 import { composeHostFileSelector, HostFileSystemSession, HostFileSystemTransport } from './host-filesystem-transport.js';
-import { HeadlessConnectors } from "../packages/connector-host/src/headless.ts";
-import { CapabilityBindings } from "../packages/session-capabilities/src/bindings.ts";
-import { SessionCapabilities } from "../packages/session-capabilities/src/index.ts";
-import { SessionCapabilityMcp, capabilitySigningKey } from "../packages/session-capabilities/src/mcp.ts";
+import { HeadlessConnectors } from "@opencraft/connector-host/headless";
+import { CapabilityBindings } from "@opencraft/session-capabilities/bindings";
+import { SessionCapabilities } from "@opencraft/session-capabilities";
+import { SessionCapabilityMcp, capabilitySigningKey } from "@opencraft/session-capabilities/mcp";
 import { ConversationResourceLifecycle } from './conversation-resource-lifecycle.mjs';
 import { ConversationResourceTransport } from './conversation-resource-transport.js';
-import { RemoteBrowserService } from '../apps/headless-server/src/remote-browser-service.mjs';
-import { RemoteBrowserCapabilities } from '../apps/headless-server/src/remote-browser/capabilities.ts';
-import { createBrowserGrantResolver } from '../apps/headless-server/src/remote-browser/execution-grant.ts';
-import { connectBrowserOwner } from '../apps/headless-server/src/remote-browser-owner.mjs';
+import { RemoteBrowserService } from './remote-browser-service.mjs';
+import { RemoteBrowserCapabilities } from './remote-browser/capabilities.ts';
+import { createBrowserGrantResolver } from './remote-browser/execution-grant.ts';
+import { connectBrowserOwner } from './remote-browser-owner.mjs';
 
 import { createObservabilityIngress } from "./observability-ingress.mjs";
 import { existsSync } from "node:fs";
@@ -52,73 +52,73 @@ import { createSshHttpIngress, loadSshIngressConfiguration } from "@opencraft/ss
 import { createSshNativeRpcGateway } from "./ssh-native-rpc-gateway.mjs";
 import { createSshCodexControl } from "./ssh-codex-control.mjs";
 
-import { McpAppsService } from "../packages/mcp-apps/src/server.ts";
-import { McpAppsTransport } from "../packages/mcp-apps/src/transport.ts";
-import { AppHostServer } from "../packages/app-host-server/src/index.ts";
-import { AppServerIdentityOverlay } from "../apps/opencraft-daemon/src/appserver-identity-overlay.ts";
-import { TokenUsageQuerySession, TokenUsageQueryTransport } from "../apps/opencraft-daemon/src/token-usage-query-transport.ts";
-import { TokenUsageQueryService } from "../apps/opencraft-daemon/src/token-usage-query-service.ts";
-import { CodexEngineAdapter } from "../apps/opencraft-daemon/src/codex-engine-adapter.ts";
-import { MachineIdentityTransport } from "../apps/opencraft-daemon/src/machine-transport.ts";
-import { ExecutionOwnershipTransport } from "../apps/opencraft-daemon/src/execution-ownership-transport.ts";
-import { ExecutionLeaseStore } from "../apps/opencraft-daemon/src/execution-lease-store.ts";
-import { ThreadIdentityDatabase } from "../apps/opencraft-daemon/src/thread-identity-database.ts";
-import { observeNativeExecutionProcess } from "../apps/opencraft-daemon/src/native-execution-origin.ts";
-import { createWebSocketExecutionTurnInspector } from "../apps/opencraft-daemon/src/native-execution-inspector.ts";
-import { AgentDriverTransport, AgentDriverSession } from "../apps/opencraft-daemon/src/agent-driver-transport.ts";
-import { WebSocketTransport } from "../packages/appserver-transport-websocket/src/index.ts";
+import { McpAppsService } from "@opencraft/mcp-apps/server";
+import { McpAppsTransport } from "@opencraft/mcp-apps/transport";
+import { AppHostServer } from "@opencraft/app-host-server";
+import { AppServerIdentityOverlay } from "@opencraft/opencraft-daemon/appserver-identity-overlay";
+import { TokenUsageQuerySession, TokenUsageQueryTransport } from "@opencraft/opencraft-daemon/token-usage-query-transport";
+import { TokenUsageQueryService } from "@opencraft/opencraft-daemon/token-usage-query-service";
+import { CodexEngineAdapter } from "@opencraft/opencraft-daemon/codex-engine-adapter";
+import { MachineIdentityTransport } from "@opencraft/opencraft-daemon/machine-transport";
+import { ExecutionOwnershipTransport } from "@opencraft/opencraft-daemon/execution-ownership-transport";
+import { ExecutionLeaseStore } from "@opencraft/opencraft-daemon/execution-lease-store";
+import { ThreadIdentityDatabase } from "@opencraft/opencraft-daemon/thread-identity-database";
+import { observeNativeExecutionProcess } from "@opencraft/opencraft-daemon/native-execution-origin";
+import { createWebSocketExecutionTurnInspector } from "@opencraft/opencraft-daemon/native-execution-inspector";
+import { AgentDriverTransport, AgentDriverSession } from "@opencraft/opencraft-daemon/agent-driver-transport";
+import { WebSocketTransport } from "@opencraft/appserver-transport-websocket";
 import { WebSocket } from 'ws';
-import { readDaemonMachineIdentity } from "../apps/opencraft-daemon/src/machine-identity.ts";
-import { readSshCodexServerBindings, createSshCodexEngineAdapter } from "../apps/opencraft-daemon/src/ssh-codex-connections.ts";
-import { SshManagement } from "../apps/opencraft-daemon/src/ssh-management.ts";
-import { HostFileDownloads } from "../apps/opencraft-daemon/src/host-file-downloads.ts";
-import { startLocalAgentHost } from "../apps/local-agent-host/src/main.ts";
-import { startEngineHost } from "../apps/local-agent-host/src/engine-host.ts";
-import {ModelCapabilityTransport} from "../apps/local-agent-host/src/model-capability-transport.ts";
-import {ModelGatewaySettingsTransport} from "../apps/local-agent-host/src/model-gateway-settings-transport.ts";
-import {ImageModelTransport} from "../apps/local-agent-host/src/image-model-transport.ts";
-import {ImageGenerationConfiguration} from "../apps/local-agent-host/src/model-config/image-generation.ts";
-import { createPiModelConfiguration } from "../apps/local-agent-host/src/model-config/pi-adapter.ts";
+import { readDaemonMachineIdentity } from "@opencraft/opencraft-daemon/machine-identity";
+import { readSshCodexServerBindings, createSshCodexEngineAdapter } from "@opencraft/opencraft-daemon/ssh-codex-connections";
+import { SshManagement } from "@opencraft/opencraft-daemon/ssh-management";
+import { HostFileDownloads } from "@opencraft/opencraft-daemon/host-file-downloads";
+import { startLocalAgentHost } from "@opencraft/local-agent-host";
+import { startEngineHost } from "@opencraft/local-agent-host/engine-host";
+import {ModelCapabilityTransport} from "@opencraft/local-agent-host/model-capability-transport";
+import {ModelGatewaySettingsTransport} from "@opencraft/local-agent-host/model-gateway-settings-transport";
+import {ImageModelTransport} from "@opencraft/local-agent-host/image-model-transport";
+import {ImageGenerationConfiguration} from "@opencraft/local-agent-host/model-config/image-generation";
+import { createPiModelConfiguration } from "@opencraft/local-agent-host/model-config/pi-adapter";
 import { attachEngineHost } from './server-deployment/engine-host-client.mjs';
-import { PiEngine } from "../plugins/pi-engine/src/index.ts";
+import { PiEngine } from "@opencraft/plugin-pi-engine";
 import { createWorkbenchWebServer } from "./serve-workbench-web.mjs";
 import { prepareProductPluginRelease } from './web-deployment/product-plugin-packs.mjs';
 import { loadLocalMachineAccess } from './local-machine-access.mjs';
 import { maintainHeadlessCodexHost } from "./headless-host-readiness.mjs";
 import { readTaskCodexConversations } from "./tasks-conversation-catalog.mjs";
 import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
-import { LocalDesktopService } from "../apps/local-agent-host/src/desktop/local-desktop-service.ts";
-import { createNativeObserver, localDesktopMachineIdentity } from "../apps/local-agent-host/src/desktop/native-observer.ts";
-import { createNativeDesktopControl } from "../apps/local-agent-host/src/desktop/native-control.ts";
-import { ModelConfigurationRepository, ModelCredentialRepository } from "../apps/local-agent-host/src/model-config/repository.ts";
-import { SpeechModelConfiguration } from "../apps/local-agent-host/src/model-config/speech.ts";
+import { LocalDesktopService } from "@opencraft/local-agent-host/desktop";
+import { createNativeObserver, localDesktopMachineIdentity } from "@opencraft/local-agent-host/desktop-native";
+import { createNativeDesktopControl } from "@opencraft/local-agent-host/desktop/native-control";
+import { ModelConfigurationRepository, ModelCredentialRepository } from "@opencraft/local-agent-host/model-config/repository";
+import { SpeechModelConfiguration } from "@opencraft/local-agent-host/model-config/speech";
 import { SpeechTranscriptionService } from "./speech-transcription-service.mjs";
-import { MembershipStore, InstanceAccess } from '../packages/access-control/src/index.ts';
-import { ActorStore } from '../packages/access-control/src/actors.ts';
-import { ThreadAccessStore, ThreadAccessSession } from '../packages/access-control/src/thread-access.ts';
-import { ThreadNoteStore } from '../plugins/thread-summary/src/note-store.ts';
-import { ActorAccess } from '../packages/access-control/src/actor-access.ts';
-import { Collaboration, CollaborationError, CollaborationHttpApi } from '../packages/access-control/src/collaboration.ts';
-import { OrchestrationRuntimeWorker } from '../packages/access-control/src/orchestration-runtime-store.ts';
-import { ThreadOrchestrationBroker } from '../packages/access-control/src/thread-orchestration-broker.ts';
+import { MembershipStore, InstanceAccess } from '@opencraft/access-control';
+import { ActorStore } from '@opencraft/access-control/actors';
+import { ThreadAccessStore, ThreadAccessSession } from '@opencraft/access-control/thread-access';
+import { ThreadNoteStore } from '@opencraft/plugin-thread-summary/note-store';
+import { ActorAccess } from '@opencraft/access-control/actor-access';
+import { Collaboration, CollaborationError, CollaborationHttpApi } from '@opencraft/access-control/collaboration';
+import { OrchestrationRuntimeWorker } from '@opencraft/access-control/orchestration-runtime-store';
+import { ThreadOrchestrationBroker } from '@opencraft/access-control/thread-orchestration-broker';
 import { createThreadOrchestrationExecution, driverForThread } from './thread-orchestration-execution.mjs';
-import { THREAD_ORCHESTRATION_TOOLS } from '../packages/appserver-protocol/src/collaboration.ts';
+import { THREAD_ORCHESTRATION_TOOLS } from '@opencraft/appserver-protocol/collaboration';
 import { createRoutedConversationExecution, conversationAccessServer, callConversationHost, readConversationCurrentTurn } from './conversation-execution.mjs';
-import { openPushStore, TurnPushService, PushObservationTransport } from '../packages/web-push-node/src/index.ts';
+import { openPushStore, TurnPushService, PushObservationTransport } from '@opencraft/web-push-node';
 import { NativeExecutionAuthority } from './native-execution-authority.ts';
 import { readImConfiguration, startImPlugins } from './im-plugins.mjs';
 import { ImChannelsAppServer } from './im-channels-appserver.mjs';
-import { CHANNELS_HOST_ID } from '../packages/appserver-protocol/src/channels.ts';
-import { HumanAccounts } from '../packages/access-control/src/human-accounts.ts';
-import { LocalAccountServerPlugin } from '../plugins/local-account/src/server.ts';
-import { LocalAccountApplication } from '../plugins/local-account/src/application.ts';
-import { readPrivateJson } from '../packages/identity-core/src/node.ts';
-import { HumanAccountManagement } from '../packages/access-control/src/account-management.ts';
-import { HumanAuth, readHumanAuthConfiguration } from '../packages/access-control/src/human-auth.ts';
+import { CHANNELS_HOST_ID } from '@opencraft/appserver-protocol/channels';
+import { HumanAccounts } from '@opencraft/access-control/human-accounts';
+import { LocalAccountServerPlugin } from '@opencraft/plugin-local-account/server';
+import { LocalAccountApplication } from '@opencraft/plugin-local-account/application';
+import { readPrivateJson } from '@opencraft/identity-core/node';
+import { HumanAccountManagement } from '@opencraft/access-control/account-management';
+import { HumanAuth, readHumanAuthConfiguration } from '@opencraft/access-control/human-auth';
 import { humanLoginPage } from './human-login-page.ts';
-import { connectRelay, loadRelayConnection } from '../plugins/relay-connect/src/server.ts';
+import { connectRelay, loadRelayConnection } from '@opencraft/plugin-relay-connect/server';
 import { validateHeadlessIdentity } from "./headless-identity.mjs";
-import { createHubController } from '../packages/hub-network/src/controller.ts';
+import { createHubController } from '@opencraft/hub-network/controller';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -819,7 +819,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     usageQueries = new TokenUsageQueryService({
       entry: existsSync(fileURLToPath(new URL('./token-usage-query-worker.mjs', import.meta.url)))
         ? fileURLToPath(new URL('./token-usage-query-worker.mjs', import.meta.url))
-        : fileURLToPath(new URL('../apps/opencraft-daemon/src/token-usage-query-worker.ts', import.meta.url)),
+        : fileURLToPath(new URL('../../opencraft-daemon/src/token-usage-query-worker.ts', import.meta.url)),
       databasePath: join(dataDirectory, 'codex', 'token-usage.sqlite'),
       serverId: `server:${machineIdentity.machineId}:codex`,
       ...(process.env.OPENCRAFT_TOKEN_USAGE_SOURCE === 'ledger' ? {} : {rollout:{nativeHome:join(dataDirectory,'codex','runtime'),
@@ -944,7 +944,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           tokenUsage: {
             queryWorkerEntry: existsSync(fileURLToPath(new URL('./token-usage-query-worker.mjs',import.meta.url)))
               ? fileURLToPath(new URL('./token-usage-query-worker.mjs',import.meta.url))
-              : fileURLToPath(new URL('../apps/opencraft-daemon/src/token-usage-query-worker.ts',import.meta.url)),
+              : fileURLToPath(new URL('../../opencraft-daemon/src/token-usage-query-worker.ts',import.meta.url)),
             serverId: `server:${machineIdentity.machineId}:codex`,
             ...(process.env.OPENCRAFT_TOKEN_USAGE_SOURCE === 'ledger' ? {} : {derivedQueries:usageQueries}),
             actor: context => actorStore.isCurrent(context) ? actorStore.get(context.actorId) : null,

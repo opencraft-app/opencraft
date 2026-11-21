@@ -7,7 +7,7 @@ import {WebSocketServer} from 'ws';
 import {_electron} from 'playwright-core';
 // A Web-only checkout can use an independently provisioned server fixture.
 const backendRoot=process.env.OPENCRAFT_SWITCH_BACKEND_ROOT??resolve(dirname(fileURLToPath(import.meta.url)),'../../..');
-const {startHeadlessServer}=await import(pathToFileURL(join(backendRoot,'scripts/headless-server.mjs')));
+const {startHeadlessServer}=await import(pathToFileURL(join(backendRoot,'apps/headless-server/src/headless-server.mjs')));
 const {startHandsTerminal}=await import(pathToFileURL(join(backendRoot,'scripts/container-deployment/terminal.mjs')));
 const {deploymentPaths}=await import(pathToFileURL(join(backendRoot,'scripts/container-deployment/paths.mjs')));
 const directory=process.env.OPENCRAFT_SMOKE_OUTPUT??join(tmpdir(),'opencraft-tool-switch');await mkdir(directory,{recursive:true});if(!process.env.OPENCRAFT_SWITCH_WEB_ROOT||!process.env.OPENCRAFT_ELECTRON_EXECUTABLE)throw Error('Set OPENCRAFT_SWITCH_WEB_ROOT to a built Web package and OPENCRAFT_ELECTRON_EXECUTABLE to an Electron executable');

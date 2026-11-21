@@ -563,7 +563,7 @@
     "packages/session-capabilities/src/execution-cli.ts": "76660f364fc3f44991d74d2e74d25fa70f265f700db7af8a538b9f1123382c52",
     "packages/session-capabilities/src/mcp.ts": "a92934836b71ff185f2020a1fb20f53beab6d245d8976304efcf6ee12a89b4f3",
     "packages/session-capabilities/src/thread-cli-provider.ts": "201c36cc02f342e3e34705ac123288da6be99f501cc44b69c1b3f4594258ccac",
-    "scripts/headless-application.mjs": "31c59b58380c3caf12a5b9807b0c8da9112415d2b2780b92103a5a52565bd796",
+    "apps/headless-server/src/headless-application.mjs": "31c59b58380c3caf12a5b9807b0c8da9112415d2b2780b92103a5a52565bd796",
     "scripts/smoke/execution/smoke-codex-first-turn-cli.ts": "35c36903ba845f6cf1b66823627f9235f244aa8f8f7e4cddfcbcd373114a5a3c",
     "tests/agent-bridge/codex-first-turn.test.ts": "5633be45f5e7b05ad6f9bbeee0a4f8e655716da1c03ca461d42d44ebe536038d",
     "tests/agent-bridge/codex-gateway.test.ts": "d1c5bc557352b1adc34c39d8a22a4ff05c275d84d77fa7205a4cd0f97048fa89",
