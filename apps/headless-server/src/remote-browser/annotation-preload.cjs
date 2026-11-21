@@ -1,6 +1,6 @@
 'use strict';
 const { ipcRenderer } = require('electron');
-const { createAnnotationOverlay } = require('../../packages/browser-preview-bridge/src/annotation-overlay.ts');
+const { createAnnotationOverlay } = require('@opencraft/browser-preview-bridge/annotation-overlay');
 const overlay = createAnnotationOverlay(window);
 // Resolve only unique, bounded paths in accessible documents/open shadow roots.
 // Binding happens once; an overlay never adopts a replacement with the same selector.

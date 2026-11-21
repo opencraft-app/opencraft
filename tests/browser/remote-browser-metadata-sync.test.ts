@@ -8,7 +8,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
-import { RemoteBrowserService } from '../../scripts/remote-browser-service.mjs';
+import { RemoteBrowserService } from '../../apps/headless-server/src/remote-browser-service.mjs';
 import { RemoteBrowserStorage } from '../../apps/workbench-web/src/browser/remote-browser-storage';
 import { WebBrowserPageRuntime } from '../../apps/workbench-web/src/browser/web-browser-runtime';
 import { BrowserWorkbenchCoordinator } from '../../apps/workbench-web/src/browser/browser-workbench-coordinator';
@@ -555,7 +555,7 @@ test('a retryable writer-handover error does not permanently disable a connected
 });
 
 test('retirement cursors send only additions and recover from changed prefixes or other scopes', async () => {
-  const { initializeRetirementFacts, retirementSnapshot } = await import('../../scripts/remote-browser/retirement-facts.mjs');
+  const { initializeRetirementFacts, retirementSnapshot } = await import('../../apps/headless-server/src/remote-browser/retirement-facts.mjs');
   const state: any = { retired: Array.from({ length: 10000 }, (_, index) => JSON.stringify(['owner', `browser-${index.toString(16).padStart(64, '0')}`])) };
   initializeRetirementFacts(state);
   assert.equal(state.retiredResources.length, 10000);

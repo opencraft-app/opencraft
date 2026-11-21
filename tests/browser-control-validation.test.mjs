@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const source = fileURLToPath(new URL('../', import.meta.url));
-const worker = readFileSync(join(source, 'scripts/remote-browser/worker.cjs'), 'utf8');
+const worker = readFileSync(join(source, 'apps/headless-server/src/remote-browser/worker.cjs'), 'utf8');
 // Execute the actual worker command and both automation paths. Only native
 // Electron/renderer boundaries are fixtures; no control logic is reimplemented.
 const implementation = worker.slice(worker.indexOf('async function automation('), worker.indexOf("ipcMain.on('encoder-ready'"));

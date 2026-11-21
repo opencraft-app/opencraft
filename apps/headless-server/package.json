@@ -1,0 +1,23 @@
+{
+  "name": "@opencraft/headless-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p src/remote-browser/tsconfig.json"
+  },
+  "dependencies": {
+    "@opencraft/browser-cdp": "0.1.0",
+    "@opencraft/browser-core": "0.1.0",
+    "@opencraft/browser-preview-bridge": "0.1.0",
+    "@opencraft/identity-core": "0.1.0",
+    "@opencraft/remote-interaction": "0.1.0",
+    "@opencraft/session-capabilities": "0.1.0",
+    "@opencraft/sqlite-node": "0.1.0",
+    "@opencraft/workbench-runtime": "0.1.0",
+    "ws": "^8.22.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15"
+  }
+}

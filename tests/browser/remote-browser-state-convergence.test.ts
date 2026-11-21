@@ -1,7 +1,7 @@
 import { bindRemoteBrowserInput } from '../../apps/workbench-web/src/browser/remote-browser-input-runtime';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RemoteBrowserService } from '../../scripts/remote-browser-service.mjs';
+import { RemoteBrowserService } from '../../apps/headless-server/src/remote-browser-service.mjs';
 import { RemoteBrowserSurfaceHost } from '../../apps/workbench-web/src/browser/remote-browser-surface-host';
 const tick = async () => { for (let i=0;i<20;i++) await Promise.resolve(); };
 const deferred = () => { let resolve!: (value?:any)=>void, reject!: (e:Error)=>void; const promise=new Promise((a,b)=>{resolve=a;reject=b;}); return {resolve,reject,promise}; };

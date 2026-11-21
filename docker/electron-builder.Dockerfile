@@ -46,8 +46,8 @@ PY
 RUN gclient --version && dpkg-query -W > /opt/opencraft-electron-builder/os-packages.txt
 COPY LICENSE ./LICENSE
 COPY vendor/electron/ ./vendor/electron/
-COPY scripts/remote-browser/focus.cjs ./scripts/remote-browser/focus.cjs
-RUN node -e "if (typeof require('./scripts/remote-browser/focus.cjs').initializeNativeFocus !== 'function') throw new Error('Native probe focus helper missing')"
+COPY apps/headless-server/src/remote-browser/focus.cjs ./apps/headless-server/src/remote-browser/focus.cjs
+RUN node -e "if (typeof require('./apps/headless-server/src/remote-browser/focus.cjs').initializeNativeFocus !== 'function') throw new Error('Native probe focus helper missing')"
 RUN mkdir /workspace && chown 1000:1000 /workspace
 USER 1000:1000
 WORKDIR /workspace

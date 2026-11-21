@@ -900,7 +900,7 @@ Conversation access and shared notes use the same Server owner. An installation 
 ### Remote browser resources
 
 `remote-browser` owns `remote-browser/state.sqlite` through
-`scripts/remote-browser/state.worker.ts`. The existing directory writer fence
+`apps/headless-server/src/remote-browser/state.worker.ts`. The existing directory writer fence
 covers both legacy JSON and SQLite owners; shutdown drains the service queue,
 closes the Worker, then releases that fence. The registered schema stores active
 resources, account metadata/CAS and retry receipts, close receipts, and permanent

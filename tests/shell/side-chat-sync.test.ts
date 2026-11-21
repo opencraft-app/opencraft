@@ -8,7 +8,7 @@ import { SideChatService } from '@opencraft/workbench-runtime';
 import { createConversationKey } from '@opencraft/chat-core';
 import { parseSideChatDirectory, validateSideChatDirectoryTransition } from '@opencraft/workbench-runtime/side-chat-records';
 import { mergeMetadataValue } from '@opencraft/browser-core/metadata-sync';
-import { RemoteBrowserService } from '../../scripts/remote-browser-service.mjs';
+import { RemoteBrowserService } from '../../apps/headless-server/src/remote-browser-service.mjs';
 import { RemoteBrowserStorage } from '../../apps/workbench-web/src/browser/remote-browser-storage';
 import { createSynchronizedSideChatPersistence, createSideChatPersistence } from '../../apps/workbench-web/src/runtime/side-chat-persistence';
 

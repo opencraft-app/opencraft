@@ -10,10 +10,10 @@ import { connect } from 'node:net';
 import { once, EventEmitter } from 'node:events';
 import { createServer } from 'node:http';
 import WebSocket from 'ws';
-import { browserRuntimeIdentity } from '../../scripts/browser-runtime-identity.mjs';
-import { connectBrowserOwner, reuseBrowserOwner } from '../../scripts/remote-browser-owner.mjs';
-import { RemoteBrowserService } from '../../scripts/remote-browser-service.mjs';
-const { createBrowserOwner, installOwnerSignals } = createRequire(import.meta.url)('../../scripts/remote-browser/owner.cjs');
+import { browserRuntimeIdentity } from '../../apps/headless-server/src/browser-runtime-identity.mjs';
+import { connectBrowserOwner, reuseBrowserOwner } from '../../apps/headless-server/src/remote-browser-owner.mjs';
+import { RemoteBrowserService } from '../../apps/headless-server/src/remote-browser-service.mjs';
+const { createBrowserOwner, installOwnerSignals } = createRequire(import.meta.url)('../../apps/headless-server/src/remote-browser/owner.cjs');
 
 const worker = `
 const pages=new Map(),automation=new Map();process.send({type:'ready'});
@@ -364,7 +364,7 @@ test('a closed cold service cannot reacquire the state writer through a late rea
 
 
 test('CLI uses small-shm fallback while retaining sandbox flags and cleaning the worker environment', async () => {
-  const source = await readFile(new URL('../../scripts/remote-browser/owner.cjs', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../../apps/headless-server/src/remote-browser/owner.cjs', import.meta.url), 'utf8');
   const main = source.slice(source.indexOf('if (require.main === module)'));
   const module = { exports: {} };
   const process = { env: { OPENCRAFT_BROWSER_DATA_DIR: '/tmp/fixture-browser', ELECTRON_RUN_AS_NODE: '1' } };

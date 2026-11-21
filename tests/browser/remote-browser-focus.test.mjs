@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { createRequire } from 'node:module';
-const { initializeNativeFocus } = createRequire(import.meta.url)('../../scripts/remote-browser/focus.cjs');
+const { initializeNativeFocus } = createRequire(import.meta.url)('../../apps/headless-server/src/remote-browser/focus.cjs');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function fixture() {
   const debuggerPort = new EventEmitter(), calls = [], failures = [];

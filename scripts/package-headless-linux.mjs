@@ -50,7 +50,7 @@ export function headlessWebHostDefinitions() {
 export async function buildHeadlessBundle(output, { headlessEntry = join(repositoryRoot, "scripts/headless-server.mjs"), additionalGitRuntimeEntries = [], assistantEntry = join(repositoryRoot,'apps/personal-assistant/src/runtime/assistant-server.mjs') } = {}) {
   await mkdir(dirname(output), { recursive: true });
   await cp(join(repositoryRoot, 'scripts/craft-plugin.mjs'), join(dirname(output), 'craft-plugin.mjs'));
-  await build({ entryPoints: [join(repositoryRoot, "scripts/remote-browser/state.worker.ts")], outfile: join(dirname(output), "browser-state-worker.mjs"), bundle: true, platform: "node", format: "esm", target: "node26", logLevel: "warning" });
+  await build({ entryPoints: [join(repositoryRoot, "apps/headless-server/src/remote-browser/state.worker.ts")], outfile: join(dirname(output), "browser-state-worker.mjs"), bundle: true, platform: "node", format: "esm", target: "node26", logLevel: "warning" });
   await buildTranscriptCacheRuntime(dirname(output));
   await build({entryPoints:[fileURLToPath(new URL('../packages/web-push-node/src/store.worker.ts',import.meta.url))],outfile:join(dirname(output),'push-storage-worker.mjs'),bundle:true,platform:'node',format:'esm',target:'node26',logLevel:'warning',banner:{js:"import { createRequire } from 'node:module'; const require=createRequire(import.meta.url);"}});
   await buildServerSpacesRuntime(dirname(output));

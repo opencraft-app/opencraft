@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
-const {createNativeDiagnostics}=createRequire(import.meta.url)('../../scripts/remote-browser/diagnostics.cjs');
+const {createNativeDiagnostics}=createRequire(import.meta.url)('../../apps/headless-server/src/remote-browser/diagnostics.cjs');
 
 test('native stderr is bounded private metadata, never arbitrary text or arguments',()=>{
  const d=createNativeDiagnostics();

@@ -47,7 +47,7 @@ class ContainerBuilderTests(unittest.TestCase):
                 build.stage('preflight')
             self.assertIn(('gsutil.py', 'version', '-l'), [call.args for call in command.call_args_list])
             self.assertIn(('cipd', 'version'), [call.args for call in command.call_args_list])
-            self.assertTrue(any(call.args[0] == 'node' and str(call.args[-1]).endswith('scripts/remote-browser/focus.cjs')
+            self.assertTrue(any(call.args[0] == 'node' and str(call.args[-1]).endswith('apps/headless-server/src/remote-browser/focus.cjs')
                                 for call in command.call_args_list))
             target = Path(build.environment['DEPOT_TOOLS_GSUTIL_BIN_DIR'])
             self.assertTrue(target.is_dir())

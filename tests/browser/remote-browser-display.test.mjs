@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { createRequire } from 'node:module';
 import WebSocket, { WebSocketServer } from 'ws';
-const { createDisplayFlow } = createRequire(import.meta.url)('../../scripts/remote-browser/display.cjs');
+const { createDisplayFlow } = createRequire(import.meta.url)('../../apps/headless-server/src/remote-browser/display.cjs');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 test('a short real WS backlog keeps the viewer and resumes only on a new keyframe', async () => {

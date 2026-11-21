@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp, mkdir, writeFile, stat, symlink, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {prepareBrowserRuntimeAccess} from '../../scripts/remote-browser-access.mjs';
+import {prepareBrowserRuntimeAccess} from '../../apps/headless-server/src/remote-browser-access.mjs';
 
 test('private installation modes permit the browser UID without exposing adjacent state',{skip:process.platform==='win32'},async()=>{
  const root=await mkdtemp(join(tmpdir(),'browser-installed-access-'));

@@ -6,9 +6,9 @@ import { tmpdir } from 'node:os';
 import { randomUUID, createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { openManagedDatabase, resolveStoreMigrations } from '@opencraft/sqlite-node';
-import { migrations as legacy } from '../../scripts/remote-browser/state-migrations.js';
+import { migrations as legacy } from '../../apps/headless-server/src/remote-browser/state-migrations.js';
 const migrations = resolveStoreMigrations('remote-browser', legacy);
-import { BrowserStateStore } from '../../scripts/remote-browser/state-store.mjs';
+import { BrowserStateStore } from '../../apps/headless-server/src/remote-browser/state-store.mjs';
 
 test('consumer SQLite version 2 upgrades additively with resources, metadata and retirement intact', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'browser-consumer-upgrade-'));

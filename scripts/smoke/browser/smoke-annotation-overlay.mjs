@@ -13,7 +13,7 @@ import { build } from 'esbuild';
 const executable = process.env.OPENCRAFT_ELECTRON_EXECUTABLE;
 if (!executable) throw Error('Set OPENCRAFT_ELECTRON_EXECUTABLE to a local Electron runtime');
 const dir = await mkdtemp(join(tmpdir(), 'annotation-overlay-'));
-await build({entryPoints:[resolve('scripts/remote-browser/annotation-preload.cjs')],outfile:join(dir,'annotation-preload.cjs'),bundle:true,platform:'node',format:'cjs',external:['electron']});
+await build({entryPoints:[resolve('apps/headless-server/src/remote-browser/annotation-preload.cjs')],outfile:join(dir,'annotation-preload.cjs'),bundle:true,platform:'node',format:'cjs',external:['electron']});
 await build({ entryPoints: [resolve('packages/browser-preview-bridge/src/index.ts')], outfile: join(dir, 'preview-bridge.js'),
   bundle: true, platform: 'browser', format: 'iife', globalName: 'OpenCraftPreviewBridgeRuntime', logLevel: 'silent' });
 

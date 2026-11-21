@@ -6,9 +6,9 @@ import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
 import { build } from 'esbuild';
-import { BrowserStateStore } from '../../scripts/remote-browser/state-store.mjs';
-import { RemoteBrowserService } from '../../scripts/remote-browser-service.mjs';
-import { recordRetirementFacts } from '../../scripts/remote-browser/retirement-facts.mjs';
+import { BrowserStateStore } from '../../apps/headless-server/src/remote-browser/state-store.mjs';
+import { RemoteBrowserService } from '../../apps/headless-server/src/remote-browser-service.mjs';
+import { recordRetirementFacts } from '../../apps/headless-server/src/remote-browser/retirement-facts.mjs';
 
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), 'browser-sqlite-')), stores = [];
@@ -117,9 +117,9 @@ test('a SQLite writer wait leaves the event loop responsive and a queued commit 
 test('bundled service ships a standalone Worker and recovers its durable state without source loaders', async t => {
   const f = await fixture(t), bundle = join(f.directory, 'bundle'); await mkdir(bundle);
   await Promise.all([
-    build({ entryPoints: ['scripts/remote-browser-service.mjs'], outfile: join(bundle, 'service.mjs'), bundle: true, platform: 'node', format: 'esm',
+    build({ entryPoints: ['apps/headless-server/src/remote-browser-service.mjs'], outfile: join(bundle, 'service.mjs'), bundle: true, platform: 'node', format: 'esm',
       banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" }, logLevel: 'silent' }),
-    build({ entryPoints: ['scripts/remote-browser/state.worker.ts'], outfile: join(bundle, 'browser-state-worker.mjs'), bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' }),
+    build({ entryPoints: ['apps/headless-server/src/remote-browser/state.worker.ts'], outfile: join(bundle, 'browser-state-worker.mjs'), bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' }),
   ]);
   const worker = await readFile(join(bundle, 'browser-state-worker.mjs'), 'utf8'); assert(!worker.includes("from 'tsx"));
   await writeFile(join(bundle, 'probe.mjs'), `
@@ -201,7 +201,7 @@ test('cold SQL startup and indexed retirement reads stay bounded by referenced i
 test('v1 SQL upgrades its historical identity index without changing the published migration prefix', async t => {
   const f = await fixture(t);
   const { openManagedDatabase } = await import('@opencraft/sqlite-node');
-  const { migrations } = await import('../../scripts/remote-browser/state-migrations.ts');
+  const { migrations } = await import('../../apps/headless-server/src/remote-browser/state-migrations.js');
   const { database } = openManagedDatabase({ path: join(f.directory, 'state.sqlite'), migrations, legacyPolicy: 'reject' });
   const key = keyFor(17), fact = { key, ownerId: 'owner', lease: JSON.parse(key)[1], pageIds: ['historical-page'], tabIds: ['historical-tab'] };
   database.prepare('INSERT INTO browser_retirements VALUES (?,?,?)').run(key, 'owner', JSON.stringify(fact));
@@ -389,7 +389,7 @@ test('startup retirement prefetch excludes unrelated account metadata but later 
 });
 
 test('startup page validation indexes account rows once instead of searching per resource', async () => {
-  const { validateBrowserState } = await import('../../scripts/remote-browser/state-validation.mjs');
+  const { validateBrowserState } = await import('../../apps/headless-server/src/remote-browser/state-validation.mjs');
   const saved = empty();
   for (let index = 0; index < 1000; index++) {
     const owner = 'owner-' + index, key = JSON.stringify([owner, 'browser-page']);
@@ -401,7 +401,7 @@ test('startup page validation indexes account rows once instead of searching per
 });
 
 test('bulk session links parse each metadata field once and preserve scope and first-match authority', async () => {
-  const { linkedSessions, sessionLink, sessionLinkIndex } = await import('../../scripts/remote-browser-state-file.mjs');
+  const { linkedSessions, sessionLink, sessionLinkIndex } = await import('../../apps/headless-server/src/remote-browser-state-file.mjs');
   const encoded = { storage: JSON.stringify({ first: 'browser:shared', second: 'browser-shared', mismatch: 'browser-mismatch', missing: 'browser-missing' }),
     pages: JSON.stringify([{ id: 'first', ownerId: 'scope', hostId: 'host', entries: [{ url: 'https://first.example' }], index: 0 },
       { id: 'second', ownerId: 'scope' }, { id: 'mismatch', ownerId: 'scope' }]),
@@ -424,8 +424,8 @@ test('bulk session links parse each metadata field once and preserve scope and f
 });
 
 test('legacy resource validation builds each owner link index once without retaining mutable drafts', async () => {
-  const { validateBrowserState } = await import('../../scripts/remote-browser/state-validation.mjs');
-  const { linkedSessions } = await import('../../scripts/remote-browser-state-file.mjs');
+  const { validateBrowserState } = await import('../../apps/headless-server/src/remote-browser/state-validation.mjs');
+  const { linkedSessions } = await import('../../apps/headless-server/src/remote-browser-state-file.mjs');
   const saved = empty(), pages = [], tabs = [], storage = {};
   for (let index = 0; index < 1000; index++) {
     const key = keyFor(90000 + index), pageId = 'page-' + index;

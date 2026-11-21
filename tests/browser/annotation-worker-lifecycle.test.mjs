@@ -6,7 +6,7 @@ import vm from 'node:vm';
 
 // Exercise the actual worker function without launching or mocking Electron's
 // security/transport owner. Native rendering is a separate acceptance boundary.
-const source = await readFile(new URL('../../scripts/remote-browser/worker.cjs', import.meta.url), 'utf8');
+const source = await readFile(new URL('../../apps/headless-server/src/remote-browser/worker.cjs', import.meta.url), 'utf8');
 const start = source.indexOf('async function annotationAutomation(');
 const end = source.indexOf('async function command(', start);
 assert.ok(start >= 0 && end > start);

@@ -4,8 +4,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { RemoteBrowserService } from '../../scripts/remote-browser-service.mjs';
-import { acknowledgePresentation } from '../../scripts/remote-browser/tab-presentation.mjs';
+import { RemoteBrowserService } from '../../apps/headless-server/src/remote-browser-service.mjs';
+import { acknowledgePresentation } from '../../apps/headless-server/src/remote-browser/tab-presentation.mjs';
 
 class Native extends RemoteBrowserService {
   native = new Map();
@@ -73,7 +73,7 @@ test('claimed presentation timeout stays unknown and is never reassigned or redi
 });
 
 test('durable browser effect receipts suppress completed, concurrent and uncertain native replay', async t => {
-  const { invokeWithReceipt } = await import('../../scripts/remote-browser/operation-receipts.mjs');
+  const { invokeWithReceipt } = await import('../../apps/headless-server/src/remote-browser/operation-receipts.mjs');
   const f = await fixture(t), [tab] = await f.service.conversationTabs('owner', 'host', 'thread', () => {});
   const binding = { ...f.binding, ...tab, callId: 'effect' }, input = { ref: 'ref-1', value: 'synthetic-private-input', expectedRevision: 1 };
   let release, entered, calls = 0;
@@ -93,7 +93,7 @@ test('durable browser effect receipts suppress completed, concurrent and uncerta
 });
 
 test('every browser write has a permanent receipt while observations stay ledger-free', async t => {
-  const { invokeWithReceipt } = await import('../../scripts/remote-browser/operation-receipts.mjs');
+  const { invokeWithReceipt } = await import('../../apps/headless-server/src/remote-browser/operation-receipts.mjs');
   const { DatabaseSync } = await import('node:sqlite');
   const f = await fixture(t), [tab] = await f.service.conversationTabs('owner', 'host', 'thread', () => {});
   let calls = 0;
@@ -126,7 +126,7 @@ test('closing a tab atomically cancels its pending presentation and prevents a l
 });
 
 test('operation receipts survive service restart without replaying completed or uncertain input', async t => {
-  const { invokeWithReceipt } = await import('../../scripts/remote-browser/operation-receipts.mjs');
+  const { invokeWithReceipt } = await import('../../apps/headless-server/src/remote-browser/operation-receipts.mjs');
   const f = await fixture(t), [tab] = await f.service.conversationTabs('owner', 'host', 'thread', () => {});
   const binding = { ...f.binding, ...tab, callId: 'restart-completed' };
   let calls = 0;
@@ -147,7 +147,7 @@ test('operation receipts survive service restart without replaying completed or 
 });
 
 test('cancellation after receipt admission but before dispatch is durably not-dispatched', async t => {
-  const { invokeWithReceipt } = await import('../../scripts/remote-browser/operation-receipts.mjs');
+  const { invokeWithReceipt } = await import('../../apps/headless-server/src/remote-browser/operation-receipts.mjs');
   const f = await fixture(t), [tab] = await f.service.conversationTabs('owner', 'host', 'thread', () => {});
   const binding = { ...f.binding, ...tab, callId: 'cancel-before-dispatch' }, controller = new AbortController();
   const transact = f.service.store.transactOperation.bind(f.service.store);
@@ -182,7 +182,7 @@ test('visible presentation receipt survives restart and disconnected clients wit
 });
 
 test('persisted operation success cannot bypass current authority or conversation ownership', async t => {
-  const { invokeWithReceipt } = await import('../../scripts/remote-browser/operation-receipts.mjs');
+  const { invokeWithReceipt } = await import('../../apps/headless-server/src/remote-browser/operation-receipts.mjs');
   const f = await fixture(t), [tab] = await f.service.conversationTabs('owner', 'host', 'thread', () => {});
   const binding = { ...f.binding, ...tab, callId: 'authority-replay' };
   let calls = 0;

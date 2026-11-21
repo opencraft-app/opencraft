@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RemoteBrowserStorage } from '../../apps/workbench-web/src/browser/remote-browser-storage';
-import { RemoteBrowserService } from '../../scripts/remote-browser-service.mjs';
+import { RemoteBrowserService } from '../../apps/headless-server/src/remote-browser-service.mjs';
 
 const tab = (id: string, extra: Record<string, unknown> = {}) => ({ id, pageId: 'p-' + id, ownerId: 'owner', createdAt: 1, viewportMode: 'responsive', ...extra });
 const sleep = async (ms = 20) => new Promise(resolve => setTimeout(resolve, ms));

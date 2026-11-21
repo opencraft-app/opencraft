@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'vite';
 import { chromium } from 'playwright';
-import { RemoteBrowserService } from '../../remote-browser-service.mjs';
+import { RemoteBrowserService } from '../../../apps/headless-server/src/remote-browser-service.mjs';
 
 const output = process.env.OPENCRAFT_SMOKE_OUTPUT ?? join(tmpdir(), 'side-chat-sync');
 await mkdir(output, { recursive: true });

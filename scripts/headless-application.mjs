@@ -33,10 +33,10 @@ import { SessionCapabilities } from "../packages/session-capabilities/src/index.
 import { SessionCapabilityMcp, capabilitySigningKey } from "../packages/session-capabilities/src/mcp.ts";
 import { ConversationResourceLifecycle } from './conversation-resource-lifecycle.mjs';
 import { ConversationResourceTransport } from './conversation-resource-transport.js';
-import { RemoteBrowserService } from './remote-browser-service.mjs';
-import { RemoteBrowserCapabilities } from './remote-browser/capabilities.ts';
-import { createBrowserGrantResolver } from './remote-browser/execution-grant.ts';
-import { connectBrowserOwner } from './remote-browser-owner.mjs';
+import { RemoteBrowserService } from '../apps/headless-server/src/remote-browser-service.mjs';
+import { RemoteBrowserCapabilities } from '../apps/headless-server/src/remote-browser/capabilities.ts';
+import { createBrowserGrantResolver } from '../apps/headless-server/src/remote-browser/execution-grant.ts';
+import { connectBrowserOwner } from '../apps/headless-server/src/remote-browser-owner.mjs';
 
 import { createObservabilityIngress } from "./observability-ingress.mjs";
 import { existsSync } from "node:fs";

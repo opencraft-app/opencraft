@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { RemoteBrowserService } from '../../remote-browser-service.mjs';
+import { RemoteBrowserService } from '../../../apps/headless-server/src/remote-browser-service.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createServer } from 'vite';

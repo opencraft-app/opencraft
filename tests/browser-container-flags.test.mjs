@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const source = fileURLToPath(new URL('../', import.meta.url));
-const text = readFileSync(join(source,'scripts/remote-browser/owner.cjs'),'utf8');
+const text = readFileSync(join(source,'apps/headless-server/src/remote-browser/owner.cjs'),'utf8');
 const main = text.slice(text.indexOf('if (require.main === module)'));
 test('actual browser launch retains small-shm mitigation without disabling sandbox', async () => {
   const module = { exports: {} }, require = { main: module };

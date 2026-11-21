@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import { runInNewContext } from 'node:vm';
-const source = readFileSync(new URL('../../scripts/remote-browser/worker.cjs', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../../apps/headless-server/src/remote-browser/worker.cjs', import.meta.url), 'utf8');
 // Execute the real Worker operation without starting Electron or exposing its private mailbox.
 const start = source.indexOf('async function annotationAutomation(');
 const end = source.indexOf('async function command(', start);

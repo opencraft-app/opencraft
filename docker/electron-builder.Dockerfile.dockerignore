@@ -1,8 +1,8 @@
 **
 !LICENSE
 !scripts/
-!scripts/remote-browser/
-!scripts/remote-browser/focus.cjs
+!apps/headless-server/src/remote-browser/
+!apps/headless-server/src/remote-browser/focus.cjs
 !vendor/
 !vendor/electron/
 !vendor/electron/**

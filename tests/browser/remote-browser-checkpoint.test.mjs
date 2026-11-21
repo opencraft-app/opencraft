@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { BrowserStateStore } from '../../scripts/remote-browser/state-store.mjs';
-import { RemoteBrowserService } from '../../scripts/remote-browser-service.mjs';
+import { BrowserStateStore } from '../../apps/headless-server/src/remote-browser/state-store.mjs';
+import { RemoteBrowserService } from '../../apps/headless-server/src/remote-browser-service.mjs';
 
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), 'browser-checkpoint-'));

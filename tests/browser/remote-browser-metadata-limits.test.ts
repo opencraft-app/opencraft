@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { browserMetadataValueLimit, browserMetadataWireLimit } from '@opencraft/browser-core/metadata-limits';
 import { RemoteBrowserStorage } from '../../apps/workbench-web/src/browser/remote-browser-storage';
-import { RemoteBrowserService } from '../../scripts/remote-browser-service.mjs';
+import { RemoteBrowserService } from '../../apps/headless-server/src/remote-browser-service.mjs';
 
 test('catalog quota round-trips 1200 bindings and local quota rejection preserves the live owner',async()=>{
  const directory=await mkdtemp(join(tmpdir(),'browser-metadata-budget-'));

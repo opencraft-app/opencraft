@@ -4,8 +4,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { RemoteBrowserService } from '../../scripts/remote-browser-service.mjs';
-import { browserConversation } from '../../scripts/remote-browser-state-file.mjs';
+import { RemoteBrowserService } from '../../apps/headless-server/src/remote-browser-service.mjs';
+import { browserConversation } from '../../apps/headless-server/src/remote-browser-state-file.mjs';
 import { ConversationResourceLifecycle } from '../../scripts/conversation-resource-lifecycle.mjs';
 
 test('browser ownership resolves canonical and pre-binding draft scopes', () => {

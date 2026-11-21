@@ -9,14 +9,14 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { build } from 'esbuild';
 import WebSocket from 'ws';
-import { RemoteBrowserService } from '../../remote-browser-service.mjs';
+import { RemoteBrowserService } from '../../../apps/headless-server/src/remote-browser-service.mjs';
 const executable = process.env.OPENCRAFT_ELECTRON_EXECUTABLE;
 if (!executable) throw Error('Set OPENCRAFT_ELECTRON_EXECUTABLE to a local Electron runtime');
 const root=await mkdtemp(join(tmpdir(),'browser-presentation-')),directory=join(root,'runtime/browser');await mkdir(directory,{recursive:true});
-await build({entryPoints:[resolve('scripts/remote-browser/worker.cjs')],outfile:join(directory,'worker.cjs'),bundle:true,platform:'node',format:'cjs',external:['electron'],target:'node24'});
-for(const name of ['encoder-preload.cjs','encoder.html'])await cp('scripts/remote-browser/'+name,join(directory,name));
+await build({entryPoints:[resolve('apps/headless-server/src/remote-browser/worker.cjs')],outfile:join(directory,'worker.cjs'),bundle:true,platform:'node',format:'cjs',external:['electron'],target:'node24'});
+for(const name of ['encoder-preload.cjs','encoder.html'])await cp('apps/headless-server/src/remote-browser/'+name,join(directory,name));
 await build({entryPoints:[resolve('packages/browser-preview-bridge/src/index.ts')],outfile:join(directory,'preview-bridge.js'),bundle:true,platform:'browser',format:'iife',globalName:'OpenCraftPreviewBridgeRuntime'});
-await build({entryPoints:[resolve('scripts/remote-browser/annotation-preload.cjs')],outfile:join(directory,'annotation-preload.cjs'),bundle:true,platform:'node',format:'cjs',external:['electron']});
+await build({entryPoints:[resolve('apps/headless-server/src/remote-browser/annotation-preload.cjs')],outfile:join(directory,'annotation-preload.cjs'),bundle:true,platform:'node',format:'cjs',external:['electron']});
 function chunk(type, data) { const body=Buffer.concat([Buffer.from(type),data]);let crc=0xffffffff;for(const byte of body){crc^=byte;for(let i=0;i<8;i++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}const out=Buffer.alloc(body.length+8);out.writeUInt32BE(data.length);body.copy(out,4);out.writeUInt32BE((crc^0xffffffff)>>>0,body.length+4);return out; }
 const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(1);ihdr.writeUInt32BE(1,4);ihdr[8]=8;ihdr[9]=6;
 const png=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',ihdr),chunk('IDAT',deflateSync(Buffer.from([0,60,100,220,255]))),chunk('IEND',Buffer.alloc(0))]);

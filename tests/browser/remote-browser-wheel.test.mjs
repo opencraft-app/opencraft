@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-const { createWidgetWheelDispatcher } = createRequire(import.meta.url)('../../scripts/remote-browser/touch.cjs');
+const { createWidgetWheelDispatcher } = createRequire(import.meta.url)('../../apps/headless-server/src/remote-browser/touch.cjs');
 
 test('wheel native hit testing follows current pinch/zoom with original physical deltas', async () => {
   let scale = 1, zoom = 1;

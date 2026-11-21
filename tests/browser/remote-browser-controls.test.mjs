@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-const { createControls } = createRequire(import.meta.url)('../../scripts/remote-browser/controls.cjs');
+const { createControls } = createRequire(import.meta.url)('../../apps/headless-server/src/remote-browser/controls.cjs');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const input = (type, x = 0, page = 'a') => ({ page, method: 'input', input: { type, x } });
 
@@ -144,7 +144,7 @@ test('document identity is captured at admission and checked before native dispa
 });
 
 test('native coalescing preserves only the real bounded single-finger tail and its release time', async () => {
- const {createTouchInput}=createRequire(import.meta.url)('../../scripts/remote-browser/touch.cjs');
+ const {createTouchInput}=createRequire(import.meta.url)('../../apps/headless-server/src/remote-browser/touch.cjs');
  let release;const gate=new Promise(r=>release=r),seen=[];
  const touch=createTouchInput(async input=>{seen.push(input);if(seen.length===1)await gate},()=>1700000000000);
  const dispatch=createControls(message=>touch.apply(message.input));

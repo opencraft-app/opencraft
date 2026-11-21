@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { createRequire } from 'node:module';
-const { installIme, keyboardPolicy } = createRequire(import.meta.url)('../../scripts/remote-browser/ime.cjs');
+const { installIme, keyboardPolicy } = createRequire(import.meta.url)('../../apps/headless-server/src/remote-browser/ime.cjs');
 const id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', other = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 function fixture() {
   const wc = new EventEmitter(), calls = [], events = [];

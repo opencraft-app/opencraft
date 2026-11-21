@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-const {createTouchInput,createWidgetTouchDispatcher,isTouchInput}=createRequire(import.meta.url)('../../scripts/remote-browser/touch.cjs');
+const {createTouchInput,createWidgetTouchDispatcher,isTouchInput}=createRequire(import.meta.url)('../../apps/headless-server/src/remote-browser/touch.cjs');
 const p=(id,x=30)=>({id,x,y:50,force:.5,radiusX:4,radiusY:5});
 const frame=(type,...touchPoints)=>({type,touchPoints});
 
