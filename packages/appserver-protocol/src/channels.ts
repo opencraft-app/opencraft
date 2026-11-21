@@ -143,6 +143,13 @@ export interface CrewWorkView {
   request: string | null;
   /** Work handed on from this one that is still open. */
   openChildren: number;
+  assignee: CrewPhonebookEntry;
+}
+/** One row of a person's crew Inbox. `waiting` is the latest unanswered question to them on this work. */
+export interface CrewInboxItem {
+  work: CrewWorkView;
+  waiting: { from: CrewPhonebookEntry; content: string; at: number } | null;
+  updatedAt: number;
 }
 /** A reply that reached a Bot inside crew work, filed against that Bot's own work. */
 export interface CrewReply {
@@ -181,6 +188,7 @@ export interface ChannelsMethodMap {
   "opencraft/crew/work/get": { params: { workId: string }; result: { work: CrewWorkView } };
   "opencraft/crew/work/list": { params: Record<string, never>; result: { works: CrewWorkView[] } };
   "opencraft/crew/work/replies": { params: { after: number }; result: { replies: CrewReply[] } };
+  "opencraft/crew/work/inbox": { params: Record<string, never>; result: { items: CrewInboxItem[] } };
   "opencraft/channels/group/create": {
     params: { title: string; memberActorIds: string[]; clientRequestId: string };
     result: ChannelSummary;

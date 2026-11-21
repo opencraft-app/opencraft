@@ -1,5 +1,6 @@
 import { PeopleDefaultFaceArtwork as DefaultFace, PeopleEntryGlyph as EntryGlyph } from "@opencraft/design-system-web/action-icons";
 import {ManagedBots} from './managed-bots';
+import {CrewWorkList} from './crew-work-view';
 import { getChannelRuntime, type ChannelRuntime, type ChannelRead, type ChannelReadState } from './channel-runtime';
 import { combineAbortSignals } from '@opencraft/appserver-client/transport';
 import { AssistantMemory } from './assistant-memory';
@@ -209,7 +210,7 @@ export function createPeopleViews(transport:ChannelRpc, activation:AbortSignal, 
       {mode==='inbox'?<div className="people-toolbar">
         <div className="people-toolbar-search"><SettingsTextInput aria-label={f('searchAll')} placeholder={f('searchAll')} value={query} onChange={e=>setQuery(e.target.value)} maxLength={128}/>
         <CreateGroupButton client={runtime.client} reportError={reportError} onCreated={group=>{void groupsResource.refresh();host.openView(chatViewId,'opencraft-channel:'+group.id);}}/></div>
-        <SegmentedControl appearance="toolbar" width="content" label={intl.formatMessage(title)} value={tab} onValueChange={setTab} options={[{value:'groups',label:f('groups')},{value:'members',label:f('members')}]}/>
+        <SegmentedControl appearance="toolbar" width="content" label={intl.formatMessage(title)} value={tab} onValueChange={setTab} options={[{value:'groups',label:f('groups')},{value:'work',label:intl.formatMessage({id:'crew.work.label',defaultMessage:'Work'})},{value:'members',label:f('members')}]}/>
       </div>:null}
       {mode==='agents'?<ManagedBots rpc={rpc} signal={signal} onOpen={id=>host.openView(chatViewId,'opencraft-channel:'+id)}/>:null}
       {mode==='agents'?<div inert={!statusState.authoritative&&!!status} data-history-presentation={!statusState.authoritative&&!!status?'warm-loading':'none'}>
@@ -260,7 +261,7 @@ export function createPeopleViews(transport:ChannelRpc, activation:AbortSignal, 
           <GroupMeta at={group.latestMessage!.at}/>
         </span></ObjectRowButton></div>)}
         <div role="status" className="people-status">{groupsState.failed?<>{f('failed')} <SettingsButton variant="quiet" onClick={()=>void groupsResource.refresh()}>{f('retry')}</SettingsButton></>:!groupsPending&&!visibleGroups.length&&!assistantRow?f('noGroups'):null}</div>
-      </section>:<section className="people-stream" aria-label={f('members')}>
+      </section>:tab==='work'?<CrewWorkList rpc={rpc} signal={signal} reportError={reportError} placeholder={<SkeletonRows count={3} variant="group"/>} onOpenChat={id=>host.openView(chatViewId,'opencraft-channel:'+id)}/>:<section className="people-stream" aria-label={f('members')}>
         <div className="people-members" aria-busy={listing}>
           {listing&&!people.length?<SkeletonRows count={4} variant="member"/>:null}
           {visiblePeople.map(person=><div className="people-member" key={person.actorId}><Avatar person={person}/><div className="people-member-copy"><span>{person.displayName}</span></div><small className="people-kind">{f(person.kind)}</small></div>)}

@@ -24,6 +24,7 @@ export interface CrewWorkView {
   request: string | null;
   /** Work handed on from this one that is still open; the assignee should not finish before it settles. */
   openChildren: number;
+  assignee: CrewWorkPerson;
 }
 /** A message that reached a Bot inside crew work, filed against the Bot's own work. */
 export interface CrewReply {
@@ -31,6 +32,14 @@ export interface CrewReply {
   /** The work the reply was written under; answering down the tree goes back on it. */
   fromWorkId: string; from: CrewWorkPerson; content: string;
 }
+/** One row of a person's crew Inbox: the work as they may see it, and whether it is waiting on them. */
+export interface CrewInboxItem {
+  work: CrewWorkView;
+  /** The latest message on this work that asked the caller something, unanswered since. */
+  waiting: { from: CrewWorkPerson; content: string; at: number } | null;
+  updatedAt: number;
+}
+const RECENT_MS = 7 * 86_400_000;
 /** Who a crew message may go to, and which of the recipient's works it answers, if the recipient is a Bot. */
 export interface CrewRoute { pass: CrewPass; recipientWorkId: string | null }
 
@@ -88,6 +97,8 @@ export class CrewWork {
     const only = (actorId: string): CrewPass => ({ allows: (to, action) => action === 'message.send' && to === actorId });
     if (row.state === 'open' && row.assignee_id === context.actorId && this.#member(row.space_id, context.actorId)) {
       if (!this.chain(row).includes(target)) fail(403, 'crew_work_denied');
+      // A person is asked about this very work; the Inbox shows it as waiting on them.
+      if (this.actors.get(target)?.kind === 'human') return { pass: only(target), recipientWorkId: String(row.id) };
       let recipientWorkId: string | null = null;
       for (let current = row.parent_id === null ? undefined : this.db.prepare('SELECT * FROM crew_work WHERE id=?').get(String(row.parent_id)), hops = 0;
         current && hops < 64; current = current.parent_id === null ? undefined : this.db.prepare('SELECT * FROM crew_work WHERE id=?').get(String(current.parent_id)), hops++) {
@@ -117,6 +128,36 @@ export class CrewWork {
         state: r.state as CrewReply['state'], fromWorkId: String(r.from_work_id), content: String(r.content),
         from: { actorId: String(r.author_id), displayName: author?.displayName ?? '', kind: author?.kind === 'human' ? 'human' as const : 'session' as const } };
     });
+  }
+
+  /**
+   * A person's crew Inbox: work they handed over, work that asked them something, and for a space
+   * owner all work in that space. Open work and work closed in the last week, most recent first.
+   */
+  inbox(context: ActorContext): CrewInboxItem[] {
+    const me = this.actors.get(context.actorId);
+    if (!me || me.kind !== 'human') return fail(403, 'crew_work_denied');
+    const since = this.now() - RECENT_MS;
+    const rows = this.db.prepare(`SELECT DISTINCT w.id FROM crew_work w
+      JOIN collaboration_space_members m ON m.space_id=w.space_id AND m.actor_id=?
+      LEFT JOIN collaboration_spaces s ON s.id=w.space_id
+      WHERE (w.state='open' OR w.closed_at>=?) AND (w.requester_id=? OR s.owner_actor_id=?
+        OR EXISTS(SELECT 1 FROM crew_messages c WHERE c.work_id=w.id AND c.recipient_id=?))
+      ORDER BY COALESCE(w.closed_at,w.created_at) DESC LIMIT 100`).all(me.id, since, me.id, me.id, me.id);
+    return rows.flatMap(({ id }) => {
+      let work: CrewWorkView;
+      try { work = this.view(context, id); } catch { return []; }
+      const asked = this.db.prepare(`SELECT m.author_id,m.content,m.created_at FROM crew_messages c JOIN actor_messages m ON m.id=c.message_id
+        WHERE c.work_id=? AND c.recipient_id=? ORDER BY c.seq DESC LIMIT 1`).get(String(id), me.id);
+      const answered = asked && this.db.prepare('SELECT 1 FROM actor_messages WHERE author_id=? AND target_id=? AND created_at>=? LIMIT 1')
+        .get(me.id, String(asked.author_id), Number(asked.created_at));
+      const author = asked && this.actors.get(String(asked.author_id));
+      const waiting = work.state === 'open' && asked && !answered && author
+        ? { from: { actorId: author.id, displayName: author.displayName, kind: author.kind === 'human' ? 'human' as const : 'session' as const },
+          content: String(asked.content), at: Number(asked.created_at) } : null;
+      const row = this.#row(id);
+      return [{ work, waiting, updatedAt: Math.max(Number(row.closed_at ?? 0), Number(row.created_at), waiting?.at ?? 0) }];
+    }).sort((a, b) => Number(!!b.waiting) - Number(!!a.waiting) || b.updatedAt - a.updatedAt);
   }
 
   /**
@@ -186,6 +227,7 @@ export class CrewWork {
       rootId: String(row.root_id), messageId: row.message_id === null ? null : String(row.message_id),
       chain: chain.map(person), budget: { used: Number(root.dispatches), limit: CREW_DISPATCH_BUDGET },
       request: message ? String(message.content) : null,
+      assignee: person(String(row.assignee_id)),
       openChildren: Number(this.db.prepare("SELECT COUNT(*) AS n FROM crew_work WHERE parent_id=? AND state='open'").get(String(row.id))!.n) };
   }
 

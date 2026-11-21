@@ -2264,5 +2264,18 @@
   "crew.phonebook.agent": "Agent",
   "crew.phonebook.member": "Member",
   "crew.phonebook.empty": "No one else is in this Server yet.",
-  "crew.phonebook.error": "Contacts were not saved. Try again."
+  "crew.phonebook.error": "Contacts were not saved. Try again.",
+  "crew.work.label": "Work",
+  "crew.work.waiting": "Waiting on you",
+  "crew.work.open": "In progress",
+  "crew.work.closed": "Done recently",
+  "crew.work.asks": "{name}: {text}",
+  "crew.work.from": "From {name}",
+  "crew.work.handedOn": "{count, plural, one {Handed # part on} other {Handed # parts on}}",
+  "crew.work.done": "Done",
+  "crew.work.untitled": "Work for {name}",
+  "crew.work.empty": "No work yet. Message an Agent in your Server to hand it something to do.",
+  "crew.work.failed": "Could not load work.",
+  "crew.work.retry": "Try again",
+  "crew.work.openFailed": "Could not open this conversation."
 }

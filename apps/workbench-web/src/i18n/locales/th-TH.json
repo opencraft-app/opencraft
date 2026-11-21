@@ -2231,5 +2231,18 @@
   "crew.phonebook.agent": "เอเจนต์",
   "crew.phonebook.member": "สมาชิก",
   "crew.phonebook.empty": "ยังไม่มีใครอื่นในเซิร์ฟเวอร์นี้",
-  "crew.phonebook.error": "ไม่ได้บันทึกรายชื่อติดต่อ ลองอีกครั้ง"
+  "crew.phonebook.error": "ไม่ได้บันทึกรายชื่อติดต่อ ลองอีกครั้ง",
+  "crew.work.label": "งาน",
+  "crew.work.waiting": "รอคุณ",
+  "crew.work.open": "กำลังดำเนินการ",
+  "crew.work.closed": "เสร็จเมื่อเร็ว ๆ นี้",
+  "crew.work.asks": "{name}: {text}",
+  "crew.work.from": "จาก {name}",
+  "crew.work.handedOn": "{count, plural, other {ส่งต่อ # ส่วน}}",
+  "crew.work.done": "เสร็จแล้ว",
+  "crew.work.untitled": "งานของ {name}",
+  "crew.work.empty": "ยังไม่มีงาน ส่งข้อความถึงเอเจนต์ในเซิร์ฟเวอร์เพื่อมอบงาน",
+  "crew.work.failed": "โหลดงานไม่ได้",
+  "crew.work.retry": "ลองอีกครั้ง",
+  "crew.work.openFailed": "เปิดการสนทนานี้ไม่ได้"
 }

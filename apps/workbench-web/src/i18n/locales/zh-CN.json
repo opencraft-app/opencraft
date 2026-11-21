@@ -2363,5 +2363,18 @@
   "crew.phonebook.agent": "Agent",
   "crew.phonebook.member": "成员",
   "crew.phonebook.empty": "这个服务器里还没有其他人。",
-  "crew.phonebook.error": "电话簿未保存，请重试。"
+  "crew.phonebook.error": "电话簿未保存，请重试。",
+  "crew.work.label": "工作",
+  "crew.work.waiting": "等你回复",
+  "crew.work.open": "进行中",
+  "crew.work.closed": "最近完成",
+  "crew.work.asks": "{name}：{text}",
+  "crew.work.from": "{name} 派来",
+  "crew.work.handedOn": "{count, plural, other {已转派 # 项}}",
+  "crew.work.done": "已完成",
+  "crew.work.untitled": "给 {name} 的活",
+  "crew.work.empty": "还没有工作。给服务器里的 Agent 发条消息，就能把活交给它。",
+  "crew.work.failed": "无法加载工作。",
+  "crew.work.retry": "重试",
+  "crew.work.openFailed": "无法打开这个对话。"
 }

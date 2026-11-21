@@ -2231,5 +2231,18 @@
   "crew.phonebook.agent": "Ejen",
   "crew.phonebook.member": "Ahli",
   "crew.phonebook.empty": "Belum ada orang lain dalam Pelayan ini.",
-  "crew.phonebook.error": "Kenalan tidak disimpan. Cuba lagi."
+  "crew.phonebook.error": "Kenalan tidak disimpan. Cuba lagi.",
+  "crew.work.label": "Kerja",
+  "crew.work.waiting": "Menunggu anda",
+  "crew.work.open": "Sedang berjalan",
+  "crew.work.closed": "Selesai baru-baru ini",
+  "crew.work.asks": "{name}: {text}",
+  "crew.work.from": "Daripada {name}",
+  "crew.work.handedOn": "{count, plural, other {# bahagian diserahkan}}",
+  "crew.work.done": "Selesai",
+  "crew.work.untitled": "Kerja untuk {name}",
+  "crew.work.empty": "Belum ada kerja. Hantar mesej kepada Ejen dalam Pelayan anda untuk memberinya tugas.",
+  "crew.work.failed": "Tidak dapat memuatkan kerja.",
+  "crew.work.retry": "Cuba lagi",
+  "crew.work.openFailed": "Tidak dapat membuka perbualan ini."
 }

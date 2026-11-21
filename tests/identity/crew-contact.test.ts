@@ -210,3 +210,24 @@ test('replies between Bots open no work, spend no budget and come back on the wo
   assert.equal((await work(root.workId)).openChildren, 0);
   await assert.rejects(say(f, f.alan, child.workId, f.zhe.id, 'too late'), /crew_work_denied/, 'closed work carries no replies');
 });
+
+test('the crew Inbox shows who is waiting on whom, and clears once they answer', async t => {
+  const f = await fixture(t);
+  const root = await dispatch(f, f.bob, f.alan.id, 'ship 2.3');
+  type Item = { work: { id: string }; waiting: { from: { actorId: string }; content: string } | null };
+  const inbox = async (who: object) => ((await f.call(('context' in who ? who.context : who) as never, 'opencraft/crew/work/inbox', {})) as { items: Item[] }).items;
+  assert.deepEqual((await inbox(f.bob)).map(i => [i.work.id, i.waiting]), [[root.workId, null]], 'the requester sees work they handed over');
+  assert.deepEqual((await inbox(f.alice)).map(i => i.work.id), [root.workId], 'the space owner sees all work in the space');
+
+  await say(f, f.alan, root.workId, f.bob.actorId, '2.3 or 2.3.1?');
+  const [asked] = await inbox(f.bob);
+  assert.equal(asked!.waiting?.from.actorId, f.alan.id);
+  assert.equal(asked!.waiting?.content, '2.3 or 2.3.1?');
+  assert.equal((await inbox(f.alice))[0]!.waiting, null, 'a question to Bob does not wait on Alice');
+
+  await f.call(f.bob, 'send', { targetActorId: f.alan.id, content: '2.3.1', idempotencyKey: 'answer' });
+  const items = await inbox(f.bob);
+  assert.equal(items.find(i => i.work.id === root.workId)!.waiting, null, 'answering clears it');
+  assert.equal(items.length, 2, 'the answer itself is a new dispatch (rule 10)');
+  await assert.rejects(f.call(f.alan.context, 'opencraft/crew/work/inbox', {}), /crew_work_denied/, 'the Inbox is for people');
+});

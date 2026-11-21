@@ -71,6 +71,7 @@ Who on the chain is actually asked, and whether that member can decide, is the r
 | `opencraft/crew/work/dispatch` `{targetActorId,content,idempotencyKey,parentWorkId?}` | members; Bots under open work | send and open work |
 | `opencraft/crew/work/message` `{workId,targetActorId,content,idempotencyKey}` | the work's assignee; its requester | reply: the assignee to anyone on its chain, the requester to the assignee |
 | `opencraft/crew/work/replies` `{after}` | a Bot | replies filed against its work, after a cursor |
+| `opencraft/crew/work/inbox` `{}` | a person | work they handed over, work that asked them something, and for a space owner all work in the space; open or closed in the last week, with the latest unanswered question to them |
 | `opencraft/crew/work/start` `{}` | space Bots | open routine work |
 | `opencraft/crew/work/finish` `{workId}` | the work's assignee | close it; the chain pass ends |
 | `opencraft/crew/work/get` `{workId}` | assignee, requester, chain | the work with its chain and budget; `request` (the dispatch text) only for the assignee and requester |
@@ -102,14 +103,16 @@ Removing a Bot uses the existing `remove` action.
 | Attachments sent to a space Bot by someone other than its owner | not yet: the work carries the text only |
 | Crew UI: space members | implemented in the Server panel: Agents are labelled, the owner switches open contact and adds their own assistants (`bots`, `addBot`) |
 | Crew UI: phonebook | implemented in the assistant settings dialog: one switch per space member; members read it, only the owner edits |
-| Crew UI: dispatching from the Inbox, work and chain views, desk | not yet |
+| Crew UI: dispatching from the Inbox | implemented by rule 10: an ordinary direct message is the dispatch |
+| Crew UI: work in the Inbox | implemented as a Work tab grouped Waiting on you, In progress and Done recently; a row opens the conversation with whoever asked, or with the Agent. Questions from a Bot to a person are filed in `crew_messages`, and a question counts as answered once that person writes back. This is where escalations wait when the owner is away (rule 13) |
+| Crew UI: chain detail and the desk | not yet |
 
 Runtime: `apps/personal-assistant/src/runtime/crew-intake.mjs`. Its only local fact is which runner
 conversation belongs to which dispatcher, stored in the runner `meta` table.
 
 Verification: `tests/identity/crew-contact.test.ts`, `tests/identity/server-spaces.test.ts`,
 `apps/personal-assistant/test/crew-intake.test.mjs`, `apps/personal-assistant/test/crew-tools.test.mjs`,
-`tests/shell/server-spaces-crew.test.tsx`, `tests/shell/crew-phonebook.test.tsx`.
+`tests/shell/server-spaces-crew.test.tsx`, `tests/shell/crew-phonebook.test.tsx`, `tests/shell/crew-work-view.test.tsx`.
 
 End to end, `tests/identity/crew-runtime.test.ts` runs the real Host, which spawns the real assistant
 process against the real Core with the deterministic reception fixture in place of a model: a
