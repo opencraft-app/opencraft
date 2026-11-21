@@ -54,6 +54,10 @@ export class CodexProviderBridge implements DuplexTransport {
       this.emit({ id: params.interactionId, method: payload.method, params: { ...object(this.gateway.history(threadId, payload.params)), threadId } }, client);
     }
   }
+  /** Native sends lifecycle notifications only to the bridge's own connection; mirror them for subscribers. */
+  private notify(threadId: string, method: string, params: Record<string, unknown>): void {
+    for (const client of this.subscriptions.get(threadId) ?? []) this.emit({ method, params }, client);
+  }
   private revokeClient(client: string, threadId?: string): void {
     for (const [thread, subscribers] of this.subscriptions) if (!threadId || thread === threadId) subscribers.delete(client);
     for (const interaction of this.interactions.values()) if (!threadId || interaction.threadId === threadId) interaction.clients.delete(client);
@@ -99,7 +103,7 @@ export class CodexProviderBridge implements DuplexTransport {
             providers: [...(Array.isArray(object(extensions['opencraft/execution-engines']).providers) ? object(extensions['opencraft/execution-engines']).providers : []), {
               id: 'codex-bridge', label: 'Codex', threadPrefix: 'bridge:codex:', extensions: {
                 'opencraft/thread-follow-up': { version: 1, queue: false, steer: evidence },
-                'opencraft/thread-lifecycle': { version: 1, fork: false, ephemeral: false, injectItems: false, rename: false, archive: false, unsubscribe: true },
+                'opencraft/thread-lifecycle': { version: 1, fork: true, ephemeral: false, injectItems: false, rename: true, archive: true, unsubscribe: true },
                 ...(evidence ? { [OPENCRAFT_STEER_EVIDENCE_EXTENSION]: inputCapability } : {}),
               },
             }],
@@ -145,6 +149,9 @@ export class CodexProviderBridge implements DuplexTransport {
       return;
     }
     if (optIn && threadId) this.gateway.reserve(threadId);
+    // A fork of a bridge Thread is a new bridge Thread; native fork is not idempotent either.
+    const forkedId = frame.method === 'thread/fork' && !optIn && this.gateway.owns(threadId) ? `bridge:codex:${randomUUID()}` : undefined;
+    if (forkedId) this.gateway.reserve(forkedId);
     if (!optIn && !this.gateway.owns(threadId)) {
       if (threadId.startsWith('bridge:codex:')) throw Error('Bridge thread has no retained owner; native fallback refused');
       if (frame.id !== undefined) this.pending.set(JSON.stringify([client, frame.id]), { method: frame.method, client });
@@ -154,7 +161,10 @@ export class CodexProviderBridge implements DuplexTransport {
     const identity = this.clients.get(client);
     if (!identity || frame.id === undefined) throw Error('Initialized client and request ID required');
     const subscribers = this.subscriptions.get(threadId) ?? new Set<string>(); this.subscriptions.set(threadId, subscribers);
-    if (optIn || ['thread/resume', 'thread/read', 'thread/turns/list', 'thread/items/list', 'turn/start'].includes(frame.method)) subscribers.add(client);
+    // Opening, sending and thread operations (which a list may issue without opening) subscribe the client.
+    if (optIn || ['thread/resume', 'thread/read', 'thread/turns/list', 'thread/items/list', 'turn/start', 'thread/fork', 'thread/name/set',
+      'thread/archive', 'thread/unarchive', 'thread/delete', 'thread/goal/get', 'thread/goal/set', 'thread/goal/clear'].includes(frame.method)) subscribers.add(client);
+    if (forkedId) { const forked = new Set<string>([client]); this.subscriptions.set(forkedId, forked); }
     if (!subscribers.has(client)) throw Error('Conversation subscription required');
     const requestKey = optIn ? p.agentBridge?.clientRequestId : p.clientUserMessageId;
     const commandId = typeof requestKey === 'string' && requestKey ? `bridge-mutation:${createHash('sha256').update(JSON.stringify([threadId, frame.method, requestKey])).digest('hex')}` : `bridge-query:${randomUUID()}`;
@@ -186,12 +196,28 @@ export class CodexProviderBridge implements DuplexTransport {
       else if (frame.method === 'thread/items/list') result = await this.gateway.observe(threadId, { turnId: this.gateway.nativeTurn(threadId, p.turnId), cursor: p.cursor ?? null,
         ...(p.limit !== undefined ? { limit: p.limit } : {}),
       });
+      else if (frame.method === 'thread/fork') {
+        const { threadId: _, ...native } = p;
+        result = await this.gateway.command(forkedId!, commandId, 'session/fork', { sourceThreadId: threadId, native });
+      } else if (frame.method === 'thread/name/set') {
+        result = await command('session/rename', { name: p.name });
+        this.notify(threadId, 'thread/name/updated', { threadId, threadName: p.name });
+      } else if (frame.method === 'thread/archive') { result = await command('session/archive', {}); this.notify(threadId, 'thread/archived', { threadId }); }
+      else if (frame.method === 'thread/unarchive') { result = await command('session/unarchive', {}); this.notify(threadId, 'thread/unarchived', { threadId }); }
+      else if (frame.method === 'thread/delete') { result = await command('session/delete', {}); this.notify(threadId, 'thread/deleted', { threadId }); }
+      else if (frame.method === 'thread/goal/get') result = await command('goal/get', { native: {} });
+      else if (frame.method === 'thread/goal/set') {
+        const { threadId: _, ...native } = p;
+        result = await command('goal/set', { native });
+        const goal = object(result).goal;
+        if (goal !== undefined) this.notify(threadId, 'thread/goal/updated', { threadId, goal });
+      } else if (frame.method === 'thread/goal/clear') { result = await command('goal/clear', { native: {} }); this.notify(threadId, 'thread/goal/cleared', { threadId }); }
       else if (frame.method === 'thread/unsubscribe') { this.revokeClient(client, threadId); result = {}; }
       else if (frame.method === 'opencraft/steer/status') result = await this.gateway.status(threadId, p.inputIds);
       else throw Object.assign(Error('Method unavailable for this bridge thread'), { code: -32601 });
       const pendingInteractions = ['thread/resume', 'thread/read'].includes(frame.method) ? await this.gateway.pendingInteractions(threadId) : [];
       if (this.clients.get(client) === identity) {
-        this.emit({ id: frame.id, result: this.gateway.history(threadId, result) }, client);
+        this.emit({ id: frame.id, result: this.gateway.history(forkedId ?? threadId, result) }, client);
         for (const pending of pendingInteractions) {
           if (this.clients.get(client) !== identity) break;
           this.offerInteraction(threadId, object(pending), client);
@@ -200,7 +226,7 @@ export class CodexProviderBridge implements DuplexTransport {
     };
     if (admission) this.admissionsInFlight++;
     const task = execute().finally(() => { if (admission) this.admissionsInFlight--; });
-    if (optIn) this.creations.add(task);
+    if (optIn || forkedId) this.creations.add(task);
     try { await task; }
     catch (cause) {
       const error = cause as Error & { code?: number; kind?: string; commandId?: string };

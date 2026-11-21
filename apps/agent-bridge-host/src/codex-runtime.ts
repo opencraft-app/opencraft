@@ -74,7 +74,8 @@ export class CodexBridgeRuntime {
     if (method === 'maintenance/probe') return { providerId: 'codex', attached: true };
     const threadId = identifier(p.threadId);
     switch (method) {
-      case 'session/create': {
+      case 'session/create':
+      case 'session/fork': {
         if (this.creating.has(threadId)) throw new CodexBridgeError('explicit-reject', 'Session creation already pending');
         try { this.adapter.nativeSession(threadId); throw new CodexBridgeError('explicit-reject', 'Session already exists'); }
         catch (error) { if (!(error instanceof CodexBridgeError) || error.message !== 'Session is not bound') throw error; }
@@ -89,16 +90,29 @@ export class CodexBridgeRuntime {
           // Respect an explicitly selected history contract.
           native.historyMode??='legacy';
         }
-        if (typeof native.cwd !== 'string' || !native.cwd.startsWith('/')) throw new CodexBridgeError('invalid', 'Explicit absolute workspace required');
+        // A fork inherits its source's workspace; only a new session must name one.
+        const source = method === 'session/fork' ? this.adapter.nativeSession(identifier(p.sourceThreadId)) : undefined;
+        if (!source && (typeof native.cwd !== 'string' || !native.cwd.startsWith('/'))) throw new CodexBridgeError('invalid', 'Explicit absolute workspace required');
         this.creating.add(threadId);
         try {
-          const result = object(await this.owner.request('thread/start', native));
+          const result = object(await this.owner.request(source ? 'thread/fork' : 'thread/start', source ? { ...native, threadId: source } : native));
           const nativeId = identifier(object(result.thread).id);
           this.adapter.bind(threadId, nativeId);
           this.callback('thread/identity', { threadId, providerThreadId: nativeId, sessionRestorable: true });
           return result;
         } finally { this.creating.delete(threadId); }
       }
+      case 'session/rename': {
+        if (typeof p.name !== 'string' || p.name.length > 1024) throw new CodexBridgeError('invalid', 'Invalid session name');
+        return this.owner.request('thread/name/set', { threadId: this.adapter.nativeSession(threadId), name: p.name });
+      }
+      case 'session/archive': return this.owner.request('thread/archive', { threadId: this.adapter.idle(threadId, 'archive').nativeId });
+      case 'session/unarchive': return this.owner.request('thread/unarchive', { threadId: this.adapter.nativeSession(threadId) });
+      case 'session/delete': return this.adapter.delete(threadId);
+      case 'goal/get':
+      case 'goal/set':
+      case 'goal/clear':
+        return this.owner.request(`thread/${method}`, { ...object(p.native), threadId: this.adapter.nativeSession(threadId) });
       case 'session/resume': {
         const nativeId = this.adapter.nativeSession(threadId);
         // Only this generation's bound session can resume; old legacy sessions

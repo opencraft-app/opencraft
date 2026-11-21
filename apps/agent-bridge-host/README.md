@@ -152,8 +152,9 @@ configuration. A new thread opts in with
 The returned public ID has the `bridge:codex:` namespace. Subsequent mutations
 use that returned ID and stable `clientUserMessageId`. Old threads stay native.
 Direct native IDs for retained bridge sessions and unknown bridge IDs cannot
-fall through to the old writer path. Client engine declarations disable queue,
-fork, rename, archive and other unsupported actions for bridge threads.
+fall through to the old writer path. Client engine declarations disable queue
+and other unsupported actions for bridge threads; fork, rename, archive and
+delete are available (see below).
 
 The bridge maps native turn, message, shell/tool, usage and approval facts into
 P1a semantic deltas. Host assembly/inbox projection owns the public item and turn
@@ -261,9 +262,23 @@ blocks another steer across turns, avoiding ambiguous attribution. Native
 the model understood the instruction. Admission alone never upgrades it.
 Unknown mutation outcomes retain their command ID and are not automatically
 resent. Clients without the typed evidence extension cannot steer these threads.
-The initial capability is text input; unsupported queue/fork/archive/rename and
+The initial capability is text input; unsupported queue and
 withdrawal paths remain unavailable. Core's synthetic broker credentials answer
 native auth requests; upstream account credentials remain with Core.
+
+Thread operations kept for parity with non-bridge Codex threads are separate
+commands gated by declared capabilities: `session/fork` (`forkCheckpoint`),
+`session/rename|archive|unarchive|delete` (`lifecycle`) and
+`goal/get|set|clear` (`goals`). A declaration or older bridge artifact without
+`lifecycle`/`goals` supports neither. A fork is a creating command on a new
+route that names its source Thread; the Host passes the source route and the
+provider forks the bound native session. Archive and delete require an idle
+session with settled inputs; delete removes the binding only after native
+deletion succeeds. The daemon mirrors the native change notifications
+(`thread/name/updated`, `thread/archived`, `thread/unarchived`,
+`thread/deleted`, `thread/goal/updated|cleared`) to subscribers when an
+operation succeeds. Notifications that native Codex raises on its own, such as
+a goal updated by the model during a turn, are not yet forwarded.
 
 ### P7a: Implementation decisions
 

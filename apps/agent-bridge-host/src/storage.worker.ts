@@ -7,6 +7,9 @@ import { projectToAppServer, assemble, createAssemblerState, type AssemblerState
 import { parseThreadDeltaParams } from '@opencraft/agent-bridge-protocol';
 import { migrations } from './migrations.js';
 import type { Receipt, Generation, OutboxEvent } from './types.js';
+/** Commands that bring a Thread route into existence, and that end its native session. */
+const CREATES: readonly string[] = ['session/create', 'session/fork'];
+const ENDS: readonly string[] = ['session/close', 'session/delete'];
 if (isMainThread) throw Error('Bridge SQL must run in a Worker');
 mkdirSync(dirname(workerData.path), { recursive: true, mode: 0o700 });
 const release = acquireProcessWriter(`${workerData.path}.writer`);
@@ -82,9 +85,9 @@ const operations: Record<string, (args: any) => any> = {
   admit: ({ command, digest, route, maxSpoolBytes }: any) => tx(() => {
     const old = receipt(command.commandId);
     if (old) { require(old.digest === digest, 'commandId reused with different input'); return { receipt: old, fresh: false }; }
-    require(!['session/create','turn/start','turn/steer'].includes(command.method) || Number(get('SELECT coalesce(sum(length(CAST(payload AS BLOB))),0) AS bytes FROM outbox').bytes) < maxSpoolBytes, 'Spool full; new admissions stopped');
+    require(![...CREATES,'turn/start','turn/steer'].includes(command.method) || Number(get('SELECT coalesce(sum(length(CAST(payload AS BLOB))),0) AS bytes FROM outbox').bytes) < maxSpoolBytes, 'Spool full; new admissions stopped');
     let binding = get('SELECT generation FROM routes WHERE route=?', route);
-    if (binding && command.method === 'session/create') {
+    if (binding && CREATES.includes(command.method)) {
       // A rejected first create left only a route binding, no native session,
       // outbox or accepted command. Allow that Thread identity to retry rather
       // than bricking it; any accepted/unsettled command or native fact still
@@ -96,7 +99,7 @@ const operations: Record<string, (args: any) => any> = {
     }
     if (!binding) {
       require(!get('SELECT 1 FROM released_routes WHERE route=?', route), 'Thread is permanently closed');
-      require(command.method === 'session/create', 'Thread must be explicitly created');
+      require(CREATES.includes(command.method), 'Thread must be explicitly created');
       const generation = meta('current');
       require(get('SELECT 1 FROM generations WHERE id=? AND retired=0', generation), 'No active generation');
       run('INSERT INTO routes VALUES (?,?)', route, generation); binding = { generation };
@@ -125,7 +128,7 @@ const operations: Record<string, (args: any) => any> = {
     if (receipt(id)?.state !== 'dispatching') return receipt(id);
     run('UPDATE commands SET state=?,response=? WHERE id=?', state, response ? JSON.stringify(response) : null, id);
     const row = receipt(id)!;
-    if (state === 'accepted' && ['interaction/resolve', 'session/close', 'turn/stop'].includes(row.method)) {
+    if (state === 'accepted' && ['interaction/resolve', ...ENDS, 'turn/stop'].includes(row.method)) {
       const retiring = row.method === 'interaction/resolve' ? all('SELECT * FROM interactions WHERE route=? AND id=?', row.route, interactionId) : all('SELECT * FROM interactions WHERE route=?', row.route);
       for (const interaction of retiring) {
         run('DELETE FROM interactions WHERE route=? AND id=?', row.route, interaction.id);
@@ -183,7 +186,7 @@ const operations: Record<string, (args: any) => any> = {
   }),
   abandon: ({ route, id }: any) => tx(() => {
     const row = get('SELECT method,state,route FROM commands WHERE id=?', id);
-    require(row && row.state === 'rejected' && row.method === 'session/create' && row.route === route,
+    require(row && row.state === 'rejected' && CREATES.includes(row.method) && row.route === route,
       'Only a rejected create can abandon its route');
     require(!get('SELECT 1 FROM native_sessions WHERE route=?', route), 'Native session retains the route');
     require(!get('SELECT 1 FROM commands WHERE route=? AND id<>?', route), 'Other command custody retains the route');
@@ -193,7 +196,7 @@ const operations: Record<string, (args: any) => any> = {
   }),
   releaseRoute: ({ route }: any) => tx(() => {
     require(!busy(route), 'Thread still has work or unknown custody');
-    require(get("SELECT 1 FROM commands WHERE route=? AND method='session/close' AND state='accepted'", route), 'Native close required');
+    require(get("SELECT 1 FROM commands WHERE route=? AND method IN ('session/close','session/delete') AND state='accepted'", route), 'Native close required');
     require(!get('SELECT 1 FROM outbox WHERE route=?', route), 'Thread events remain unacknowledged');
     run('INSERT INTO released_routes SELECT route,generation FROM routes WHERE route=?', route);
     run('DELETE FROM routes WHERE route=?', route);

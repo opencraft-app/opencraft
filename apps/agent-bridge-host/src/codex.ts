@@ -41,13 +41,26 @@ export class CodexBridge {
     if (session.activeTurn !== expectedTurnId) throw new CodexBridgeError('stale-target', 'Target turn is no longer active');
     return this.owner.request('turn/interrupt', { threadId: session.nativeId, turnId: expectedTurnId });
   }
-  async close(threadId: string): Promise<void> {
+  /** No turn running or starting, and every input outcome settled. */
+  idle(threadId: string, action: string): Session {
     const session = this.session(threadId);
-    if (session.activeTurn || session.starting || session.uncertainStart) throw new CodexBridgeError('explicit-reject', 'Active session cannot close');
-    if ([...session.inputs.values()].some(input => input.state === 'unknown' || input.state === 'dispatching' || input.state === 'accepted' && !input.evidence)) throw new CodexBridgeError('explicit-reject', 'Input outcome requires reconciliation before closing');
+    if (session.activeTurn || session.starting || session.uncertainStart) throw new CodexBridgeError('explicit-reject', `Active session cannot ${action}`);
+    if ([...session.inputs.values()].some(input => input.state === 'unknown' || input.state === 'dispatching' || input.state === 'accepted' && !input.evidence)) throw new CodexBridgeError('explicit-reject', `Input outcome requires reconciliation before ${action}`);
+    return session;
+  }
+  async close(threadId: string): Promise<void> {
+    const session = this.idle(threadId, 'close');
     await this.owner.request('thread/unsubscribe', { threadId: session.nativeId });
     this.sessions.delete(threadId);
     this.emit(threadId, [{ op: 'session.ended', scope: { threadId } }]);
+  }
+  /** Native deletion first; the binding is dropped only once native confirmed it. */
+  async delete(threadId: string): Promise<unknown> {
+    const session = this.idle(threadId, 'delete');
+    const result = await this.owner.request('thread/delete', { threadId: session.nativeId });
+    this.sessions.delete(threadId);
+    this.emit(threadId, [{ op: 'session.ended', scope: { threadId } }]);
+    return result;
   }
   async start(threadId: string, params: Record<string, unknown>, cliEnvironment?: Readonly<Record<string,string>>,cliPreparationDeadlineMs?:number,sessionMcp?:Record<string,unknown>|null): Promise<unknown> {
     const session = this.session(threadId);

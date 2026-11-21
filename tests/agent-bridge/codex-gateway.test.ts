@@ -34,6 +34,7 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   let approvalAnswer: unknown, approvalAnswers = 0;
   let hasRollout=!initial,initialConfig:any;
   let loaded=true,nativeActive=false,issued=0,revoked=0,blockRetirement=cli==='timeout';const nativeConfigurations:any[]=[];
+  const lifecycleCalls:any[]=[];
   ws.on('connection', socket => {
     nativePeer = socket;
     socket.on('message', raw => {
@@ -42,6 +43,14 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
       const reply = (result: unknown) => socket.send(JSON.stringify({ id: f.id, result }));
       const event = (method: string, params: unknown) => socket.send(JSON.stringify({ method, params }));
       if (f.method === 'initialize') reply({ userAgent: 'codex/0.167.0' });
+      if (['thread/fork','thread/name/set','thread/archive','thread/unarchive','thread/delete','thread/goal/get','thread/goal/set','thread/goal/clear'].includes(f.method)) {
+        lifecycleCalls.push({method:f.method,params:f.params});
+        if (f.method === 'thread/fork') reply({ thread: { id: 'native-fork', cwd: root, turns: [] } });
+        else if (f.method === 'thread/unarchive') reply({ thread: { id: f.params.threadId, turns: [] } });
+        else if (f.method === 'thread/goal/set' || f.method === 'thread/goal/get') reply({ goal: { objective: 'ship it', status: 'active' } });
+        else if (f.method === 'thread/goal/clear') reply({ cleared: true });
+        else reply({});
+      }
       if (f.method === 'thread/start') {initialConfig=f.params.config;reply({sandbox:{type:'readOnly'},approvalPolicy:'never',approvalsReviewer:'user',thread: { id: 'native-new', cwd: root, turns: [] }});}
       if(f.method==='turn/start'&&f.params.clientUserMessageId==='initial-invalid'){socket.send(JSON.stringify({id:f.id,error:{code:-32602,message:'invalid input'}}));return;}
       if (f.method === 'turn/start' && f.params.clientUserMessageId === 'unknown-start') { socket.send(JSON.stringify({ id: f.id, error: { code: -32000, message: 'Opaque native failure' } })); return; }
@@ -160,6 +169,29 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     const snapshot=await request('opencraft/codex/maintenance/read');
     assert.equal(snapshot.paused,true); assert.equal(snapshot.rejectedAdmissions,4); assert.equal(snapshot.pendingAdmissions,0);
     paused=false;
+    // Existing thread operations reach native Codex under the bound native ID and
+    // come back under public identities, with the same change notifications.
+    const pub='bridge:codex:public-new', seen=()=>frames.filter(f=>f.method&&f.method.startsWith('thread/')&&f.id===undefined);
+    await request('thread/name/set',{threadId:pub,name:'Renamed'});
+    await request('thread/goal/set',{threadId:pub,objective:'ship it'});
+    assert.deepEqual((await request('thread/goal/get',{threadId:pub})).goal,{objective:'ship it',status:'active'});
+    await request('thread/goal/clear',{threadId:pub});
+    await request('thread/archive',{threadId:pub});
+    assert.equal((await request('thread/unarchive',{threadId:pub})).thread.id,pub);
+    const forked=(await request('thread/fork',{threadId:pub})).thread.id;
+    assert.match(forked,/^bridge:codex:/u); assert.notEqual(forked,pub); assert.equal(currentGateway().owns(forked),true);
+    await request('thread/delete',{threadId:forked});
+    assert.deepEqual(lifecycleCalls.map(c=>[c.method,c.params.threadId]),[['thread/name/set','native-new'],['thread/goal/set','native-new'],['thread/goal/get','native-new'],
+      ['thread/goal/clear','native-new'],['thread/archive','native-new'],['thread/unarchive','native-new'],['thread/fork','native-new'],['thread/delete','native-fork']]);
+    assert.equal(lifecycleCalls[0].params.name,'Renamed'); assert.equal(lifecycleCalls[1].params.objective,'ship it');
+    assert.deepEqual(seen().filter(f=>['thread/name/updated','thread/goal/updated','thread/goal/cleared','thread/archived','thread/unarchived','thread/deleted'].includes(f.method)).map(f=>[f.method,f.params.threadId]),
+      [['thread/name/updated',pub],['thread/goal/updated',pub],['thread/goal/cleared',pub],['thread/archived',pub],['thread/unarchived',pub],['thread/deleted',forked]]);
+    assert.ok(!JSON.stringify(frames).includes('native-fork'),'the native fork identity never reaches clients');
+    assert.ok(!forwarded.some(f=>lifecycleCalls.some(c=>c.method===f.method)),'bridge Thread operations never fall through to the legacy owner');
+    // A deleted bridge Thread has no session left to operate on.
+    const gone=++sequence;
+    await transport.send(JSON.stringify({id:gone,method:'thread/name/set',params:{threadId:forked,name:'late'},[LOGICAL_CLIENT_FIELD]:'client'}));
+    assert.equal((await until(()=>frames.find(f=>f.id===gone),Boolean)).error.data.submissionOutcome,'rejected');
   }
   const started = await request('turn/start', { threadId: 'bridge:codex:public-new', clientUserMessageId: 'start', input: [{ type: 'text', text: 'read' }] });
   const latest = await request('thread/turns/list', { threadId: 'bridge:codex:public-new', limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' });

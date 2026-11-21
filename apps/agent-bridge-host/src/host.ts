@@ -133,6 +133,11 @@ export class BridgeHost {
         const upper = expected.result.effectiveCapabilities;
         for (const key of ['model','reasoning','history','usage','approval','cliExecutable','forkCheckpoint','skills','installation'] as const)
           if (typeof caps[key] !== 'boolean' || caps[key] && !upper[key]) throw Error('Bridge widened capabilities');
+        // Added later: an older bridge artifact omits them, which means unsupported.
+        for (const key of ['lifecycle','goals'] as const) {
+          caps[key] ??= false;
+          if (typeof caps[key] !== 'boolean' || caps[key] && !upper[key]) throw Error('Bridge widened capabilities');
+        }
         const steer = object(caps.steer);
         for (const key of ['deliveryMethods','evidenceKinds'] as const)
           if (!Array.isArray(steer[key]) || !(steer[key] as unknown[]).every(v => (upper.steer[key] as readonly unknown[]).includes(v))) throw Error('Bridge widened steer capability');
@@ -189,7 +194,7 @@ export class BridgeHost {
         await this.storage.call('settle', { id: command.commandId, state: 'rejected' }); return;
       }
       let cliEnvironment: Readonly<Record<string,string>> | undefined;
-      if(command.method==='session/create'&&this.options.executionCli?.reserve&&this.capabilities.get(receipt.generation)?.cliExecutable) {
+      if((command.method==='session/create'||command.method==='session/fork')&&this.options.executionCli?.reserve&&this.capabilities.get(receipt.generation)?.cliExecutable) {
         try {
           const lease=await this.options.executionCli.reserve({serverId:command.serverId,threadId:command.threadId});
           if(this.closing||peer.diagnostic().failed){await lease.revoke();throw Error('CLI owner unavailable');}
@@ -218,16 +223,18 @@ export class BridgeHost {
       const start=command.method==='turn/start'?{observed:false,commandId:command.commandId}:undefined;
       if(start)this.cliStarts.set(receipt.route,start);
       const {executionSource:_executionSource,...providerParams}=command.params;
+      // A fork names its source by public Thread; the provider knows sessions by route.
+      if(command.method==='session/fork')providerParams.sourceThreadId=routeKey(command.serverId,identifier(command.params.sourceThreadId));
       const response = await peer.request(`host-command:${command.commandId}`, command.method, { ...providerParams, ...(cliEnvironment?{cliEnvironment}:{}),...(cliEnvironment||command.params.sessionMcp!==undefined?{cliPreparationDeadlineMs:Date.now()+Math.min(10000,Math.max(1,Math.floor((this.options.requestTimeoutMs??30000)/2)))}:{}), threadId: receipt.route, executionEpoch: receipt.epoch });
       let state = dispatchSettlement(response);
       if(start&&this.cliStarts.get(receipt.route)===start)this.cliStarts.delete(receipt.route);
       if(state==='rejected'&&start?.observed)state='unknown';
       await this.storage.call('settle', { id: command.commandId, response, state, interactionId: command.params.interactionId });
-      if(command.method==='session/create'&&state==='rejected'||command.method==='session/close'&&state==='accepted') {
+      if((command.method==='session/create'||command.method==='session/fork')&&state==='rejected'||(command.method==='session/close'||command.method==='session/delete')&&state==='accepted') {
         const reserved=this.cliReservations.get(receipt.route);
         if(reserved){this.cliReservations.delete(receipt.route);await reserved.lease.revoke();}
       }
-      if (state === 'rejected' && command.method === 'session/create') {
+      if (state === 'rejected' && (command.method === 'session/create' || command.method === 'session/fork')) {
         const failure = 'error' in response ? (response.error.data as { failure?: unknown } | undefined)?.failure : undefined;
         // Only failures that leave no resumable native session release the
         // fresh route binding. pending/exists/locked/orphaned keep it so the
@@ -236,7 +243,7 @@ export class BridgeHost {
           await this.storage.call('abandon', { route: receipt.route, id: command.commandId }).catch(() => {});
         }
       }
-      if(state==='rejected' && command.method==='turn/start' && cliEnvironment!==undefined || command.method==='turn/stop' && state==='accepted' || command.method==='session/close' && state==='accepted') {
+      if(state==='rejected' && command.method==='turn/start' && cliEnvironment!==undefined || command.method==='turn/stop' && state==='accepted' || (command.method==='session/close'||command.method==='session/delete') && state==='accepted') {
         const lease=this.cliLeases.get(receipt.route);
         if(lease){
           if(state==='rejected'&&command.method==='turn/start'&&lease.rejectBeforeStart) {

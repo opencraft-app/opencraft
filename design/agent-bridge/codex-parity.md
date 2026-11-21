@@ -30,11 +30,11 @@ bridge 协议加方法与能力声明，Engine Host 转发原生请求并投影 
 
 | 能力 | 原生方法 | 旧路径 | 备注 |
 |---|---|---|---|
-| 分叉 | `thread/fork` | 有 | 协议已有 `forkCheckpoint` 能力位，Codex 声明为 false；新线程需新的 `bridge:codex:` 身份与 Host 账本记录 |
-| 重命名 | `thread/name/set`、`thread/name/updated` | 有 | 旧路径同时失效标题缓存 |
-| 归档 / 取消归档 | `thread/archive`、`thread/unarchive` 及通知 | 有 | 需定义归档后 bridge 会话的保留与续接 |
-| 删除 | `thread/delete`、`thread/deleted` | 有 | 需同步清理 Host 账本与网关 inbox 的绑定 |
-| 目标（goal） | `thread/goal/get|set|clear` 及通知 | 有 | 旧路径还在 goal 激活时执行模型使用策略检查 |
+| 分叉 | `thread/fork` | 有 | **已接线**：`session/fork`（`forkCheckpoint`），新线程获得新的 `bridge:codex:` 身份与 Host 路由，与创建同等的账本/租约处理 |
+| 重命名 | `thread/name/set`、`thread/name/updated` | 有 | **已接线**：`session/rename`（`lifecycle`）；成功后向订阅者发 `thread/name/updated` |
+| 归档 / 取消归档 | `thread/archive`、`thread/unarchive` 及通知 | 有 | **已接线**：`session/archive|unarchive`（`lifecycle`）；归档要求会话空闲、输入已结算，会话保持绑定，取消归档后可直接续用 |
+| 删除 | `thread/delete`、`thread/deleted` | 有 | **已接线**：`session/delete`（`lifecycle`）；先原生删除成功再解除绑定，Host 按结束会话处理租约与审批 |
+| 目标（goal） | `thread/goal/get|set|clear` 及通知 | 有 | **已接线**：`goal/get|set|clear`（`goals`）；设置/清除成功后发 `thread/goal/updated|cleared`。模型在轮次中自行更新目标产生的原生通知尚未转发，见下 |
 | 图片输入 | `turn/start` 的 `localImage` / `image` | 有 | bridge 声明 `inputContentTypes: ["text"]`；附件暂存见 B |
 | 压缩上下文 | `thread/compact/start` | 未暴露 | 非对齐必需，按产品需要 |
 
@@ -74,7 +74,7 @@ bridge 协议加方法与能力声明，Engine Host 转发原生请求并投影 
 ## 顺序建议
 
 1. ~~维护准入~~（已补）；模型使用策略核实为已覆盖。另：模型网关准入（`OPENCRAFT_MODEL_GATEWAY_DATABASE`，仅服务器）对 bridge 线程尚未生效，见 B。
-2. A 中的分叉、重命名、归档、删除、目标：原生已有，接线即可。
+2. ~~A 中的分叉、重命名、归档、删除、目标~~（已接线，2026-11-21，仅替身原生验证）。剩余：原生自发的线程通知（如模型更新目标）需要 provider→Host 的转发通道。
 3. 排队（Engine Host 落地）、图片输入与附件。
 4. 标题、置顶、线程设置、历史取消。
 5. 已有会话接管、线程无关能力的 owner 拆分，然后才能进入 P8。

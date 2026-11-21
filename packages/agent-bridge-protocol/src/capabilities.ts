@@ -56,6 +56,10 @@ export interface DeclaredCapabilities {
   readonly forkCheckpoint: boolean;
   readonly skills: boolean;
   readonly installation: boolean;
+  /** Rename, archive, unarchive and delete a session. Absent means unsupported. */
+  readonly lifecycle?: boolean;
+  /** Read, set and clear a session goal. Absent means unsupported. */
+  readonly goals?: boolean;
   readonly steer: SteerDeclaration;
 }
 
@@ -121,6 +125,8 @@ export function effectiveCapabilities(
     forkCheckpoint: declared.forkCheckpoint && !off("forkCheckpoint"),
     skills: declared.skills && !off("skills"),
     installation: declared.installation && !off("installation"),
+    lifecycle: declared.lifecycle === true && !off("lifecycle"),
+    goals: declared.goals === true && !off("goals"),
     steer: {
       deliveryMethods: steer.deliveryMethods.filter(
         (method) => !has(probe.steerDisabledMethods as readonly string[] | undefined, method),
@@ -177,6 +183,8 @@ function capabilityEnabled(capabilities: DeclaredCapabilities, key: CapabilityKe
     case "forkCheckpoint": return capabilities.forkCheckpoint;
     case "skills": return capabilities.skills;
     case "installation": return capabilities.installation;
+    case "lifecycle": return capabilities.lifecycle === true;
+    case "goals": return capabilities.goals === true;
     // Any still-declared delivery path (native-inject, next-turn, or
     // interrupt-replace) is enough. Probing away native-inject while a queue
     // or interrupt path remains must not disable turn/steer.

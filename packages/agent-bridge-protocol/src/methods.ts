@@ -21,6 +21,14 @@ export const BRIDGE_COMMANDS = Object.freeze({
   skillsConfigure: "skills/configure",
   installationStatus: "installation/status",
   installationRun: "installation/run",
+  sessionFork: "session/fork",
+  sessionRename: "session/rename",
+  sessionArchive: "session/archive",
+  sessionUnarchive: "session/unarchive",
+  sessionDelete: "session/delete",
+  goalGet: "goal/get",
+  goalSet: "goal/set",
+  goalClear: "goal/clear",
 } as const);
 
 export const BRIDGE_CALLBACKS = Object.freeze({
@@ -57,6 +65,8 @@ export type CapabilityKey =
   | "forkCheckpoint"
   | "skills"
   | "installation"
+  | "lifecycle"
+  | "goals"
   | "steer";
 
 /**
@@ -81,4 +91,13 @@ export const BRIDGE_COMMAND_REQUIREMENTS: Readonly<Record<BridgeCommand, Capabil
   "skills/configure": "skills",
   "installation/status": "installation",
   "installation/run": "installation",
+  // Existing product thread operations, kept for parity with non-bridge threads.
+  "session/fork": "forkCheckpoint",
+  "session/rename": "lifecycle",
+  "session/archive": "lifecycle",
+  "session/unarchive": "lifecycle",
+  "session/delete": "lifecycle",
+  "goal/get": "goals",
+  "goal/set": "goals",
+  "goal/clear": "goals",
 });
