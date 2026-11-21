@@ -94,6 +94,11 @@ export const SERVER_MIGRATIONS = [
     "version": 19,
     "name": "0018_native_group_lifecycle",
     "sql": "CREATE TABLE `actor_channel_departures` (\n\t`channel_id` text NOT NULL,\n\t`actor_id` text NOT NULL,\n\t`member_epoch` text NOT NULL,\n\t`left_at` integer NOT NULL,\n\tPRIMARY KEY(`channel_id`, `actor_id`),\n\tFOREIGN KEY (`channel_id`) REFERENCES `actor_channels`(`id`) ON UPDATE no action ON DELETE no action\n) STRICT;\n--> statement-breakpoint\nCREATE TABLE `actor_channel_lifecycles` (\n\t`channel_id` text PRIMARY KEY NOT NULL,\n\t`revision` integer DEFAULT 1 NOT NULL,\n\t`dissolved_at` integer,\n\t`dissolved_by` text,\n\tFOREIGN KEY (`channel_id`) REFERENCES `actor_channels`(`id`) ON UPDATE no action ON DELETE no action,\n\tCONSTRAINT \"actor_channel_lifecycles_revision\" CHECK(\"actor_channel_lifecycles\".\"revision\" >= 1)\n) STRICT;\n--> statement-breakpoint\nCREATE TABLE `actor_channel_list_states` (\n\t`channel_id` text NOT NULL,\n\t`actor_id` text NOT NULL,\n\t`hidden` integer DEFAULT 0 NOT NULL,\n\tPRIMARY KEY(`channel_id`, `actor_id`),\n\tFOREIGN KEY (`channel_id`) REFERENCES `actor_channels`(`id`) ON UPDATE no action ON DELETE no action,\n\tCONSTRAINT \"actor_channel_list_hidden\" CHECK(\"actor_channel_list_states\".\"hidden\" IN (0,1))\n) STRICT;\n"
+  },
+  {
+    "version": 20,
+    "name": "0019_channel_connection_ownership",
+    "sql": "CREATE TABLE `actor_channel_connections` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`incarnation` text NOT NULL,\n\t`active` integer NOT NULL\n) STRICT;\n--> statement-breakpoint\nCREATE TABLE `actor_channel_source_owners` (\n\t`source` text PRIMARY KEY NOT NULL,\n\t`connection_id` text NOT NULL,\n\tFOREIGN KEY (`source`) REFERENCES `actor_channel_sources`(`source`) ON UPDATE no action ON DELETE cascade,\n\tFOREIGN KEY (`connection_id`) REFERENCES `actor_channel_connections`(`id`) ON UPDATE no action ON DELETE no action\n) STRICT;\n"
   }
 ] as const;
 export const SERVER_ALTERNATE_MIGRATIONS = [
@@ -194,9 +199,14 @@ export const SERVER_ALTERNATE_MIGRATIONS = [
         "version": 19,
         "name": "converge_0018_native_group_lifecycle",
         "sql": SERVER_MIGRATIONS[18].sql
+      },
+      {
+        "version": 20,
+        "name": "converge_0019_channel_connection_ownership",
+        "sql": SERVER_MIGRATIONS[19].sql
       }
     ]
   }
 ] as const;
-export const SERVER_MIGRATION_CONTRACT_HASH = "e8d9070f6e6d9dc974c3e8fb7f750a676af95756b8e43125c44437a75dfa7cc6" as const;
+export const SERVER_MIGRATION_CONTRACT_HASH = "9905d8945d189f6632fd2912a839e2269c34a47f68758778c87dd596919e6969" as const;
 export const OPENCRAFT_VERSION = "0.1.0" as const;

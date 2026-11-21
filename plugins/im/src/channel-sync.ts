@@ -5,6 +5,9 @@ import type { ActorContext } from '@opencraft/identity-core/actors';
 export interface ChannelSourceBinding { source: string; channelId: string }
 export interface ChannelArrival { source: string; id: string; author: string; sender?: {id:string;displayName:string}; text:string; at:number; mediaId?:string; mediaIdentity?:string; inlineImage?:Uint8Array }
 export interface ChannelSyncTransport {
+  /** Stable operator-selected connection ID. Omitted IDs share the legacy singleton scope.
+   * This is installation metadata, not a tenant or an authorization credential. */
+  readonly connectionId?: string;
   /** Optional connection-owned personal Turn notification adapter. No group selection or credentials. */
   notifications?: {
     targets(actorId:string):Array<{channelId:string;senderId:string;label:string;methodId:string;methodLabel:string}>;
@@ -37,6 +40,7 @@ export interface NativeChannelSyncPort {
  * claims durable sends and publishes all timeline changes through its Worker. */
 export class ChannelSync {
   private readonly incarnation=randomUUID();
+  private readonly connectionId:string;
   private readonly abort=new AbortController();
   private readonly pending=new Set<Promise<unknown>>();
   private unsubscribe?:()=>void;
@@ -45,12 +49,21 @@ export class ChannelSync {
   private pumping?:Promise<void>;
   private downloading?:Promise<void>;
   private wakePending=false;
-  private constructor(readonly transport:ChannelSyncTransport,private readonly port:NativeChannelSyncPort){}
+  private constructor(readonly transport:ChannelSyncTransport,private readonly port:NativeChannelSyncPort){
+    this.connectionId=transport.connectionId??'legacy';
+    if(!/^[a-z0-9][a-z0-9._:-]{0,127}$/u.test(this.connectionId))throw Error('Invalid channel connection ID');
+  }
   static async open(transport:ChannelSyncTransport,port:NativeChannelSyncPort){
     if(!port?.synchronizeChannels)throw Error('Native channels required');
     // Callbacks belong to the generic channel transport namespace.
     if(transport.callback&&!/^\/__opencraft_im\/channel-callback\/[a-z0-9_-]{1,64}$/.test(transport.callback.path))throw Error('Invalid channel callback route');
     const sync=new ChannelSync(transport,port);
+    // Older owners must reject explicit multi-connection use before configure;
+    // silently ignored new fields would otherwise retain deployment-wide resets.
+    if(transport.connectionId!==undefined){
+      const capability=await port.synchronizeChannels({method:'connectionCapabilities',params:{}});
+      if(capability?.version!==1)throw Error('Channel connection isolation unavailable');
+    }
     try{
       await sync.call('configure',{bindings:transport.bindings,images:!!transport.images});
       sync.unsubscribe=transport.subscribeWithReceipt
@@ -62,7 +75,7 @@ export class ChannelSync {
     }catch(error){await sync.close();throw error;}
   }
   private call(method:string,params:Record<string,unknown>={}){
-    return this.port.synchronizeChannels({method,params:{...params,incarnation:this.incarnation}});
+    return this.port.synchronizeChannels({method,params:{...params,connectionId:this.connectionId,incarnation:this.incarnation}});
   }
   private track<T>(promise:Promise<T>):Promise<T>{
     this.pending.add(promise);void promise.then(()=>this.pending.delete(promise),()=>this.pending.delete(promise));return promise;

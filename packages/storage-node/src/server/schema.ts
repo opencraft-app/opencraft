@@ -564,6 +564,14 @@ export const actorChannelSources = sqliteTable("actor_channel_sources", {
   epoch: text("epoch").notNull(), incarnation: text("incarnation").notNull(),
   active: integer("active").notNull(), images: integer("images").notNull(),
 }, table => [uniqueIndex("actor_channel_sources_channel").on(table.channelId)]);
+// Stable installation connection identity is distinct from each running incarnation.
+export const actorChannelConnections = sqliteTable("actor_channel_connections", {
+  id: text("id").primaryKey(), incarnation: text("incarnation").notNull(), active: integer("active").notNull(),
+});
+export const actorChannelSourceOwners = sqliteTable("actor_channel_source_owners", {
+  source: text("source").primaryKey().references(() => actorChannelSources.source, { onDelete: "cascade" }),
+  connectionId: text("connection_id").notNull().references(() => actorChannelConnections.id),
+});
 export const actorChannelExternalMessages = sqliteTable("actor_channel_external_messages", {
   messageId: text("message_id").primaryKey().references(() => actorMessages.id),
   source: text("source").notNull(), externalId: text("external_id").notNull(),

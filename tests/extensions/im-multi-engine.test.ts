@@ -10,6 +10,7 @@ import { PiEngine, piModel } from '../../plugins/pi-engine/src/index.js';
 import { startEngineHost } from '../../apps/local-agent-host/src/engine-host.js';
 import { WebSocketTransport } from '../../packages/appserver-transport-websocket/src/index.js';
 import { AppHostServer } from '../../packages/app-host-server/src/index.js';
+import { openServerDatabase } from '@opencraft/storage-node/server';
 import { ActorStore } from '../../packages/access-control/src/actors.js';
 import { Collaboration } from '../../packages/access-control/src/collaboration.js';
 import { SessionCapabilities } from '../../packages/session-capabilities/src/index.js';
@@ -24,13 +25,18 @@ import WebSocket from 'ws';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 
 const signal = () => new AbortController().signal;
-async function root(t: test.TestContext) {
+async function root(t: test.TestContext, consolidated = false) {
   const directory = await mkdtemp(join(tmpdir(), 'im-multi-engine-'));
-  t.after(() => rm(directory, { recursive: true, force: true }));
-  const actors = new ActorStore(join(directory, 'actors.sqlite'));
+  const storage = consolidated ? await openServerDatabase(directory) : null;
+  const beforeClose: Array<() => Promise<unknown>> = [];
+  const actors = new ActorStore(storage ?? join(directory, 'actors.sqlite'));
   const human = actors.resolveHuman({provider:'local',subject:'fixture',displayName:'Human',expiresAt:Date.now()+60_000})!;
-  t.after(() => actors.close());
-  return {directory,actors,human};
+  t.after(async () => {
+    for (const close of beforeClose) await close();
+    actors.close(); await storage?.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  return {directory,actors,human,storage,beforeClose};
 }
 
 test('Pi IM uses native durable input and both browser/Host tools; final and duplicate input never resend', async t => {
@@ -114,7 +120,8 @@ test('multi-engine admission isolates server identity, safely defers busy native
 });
 
 test('conversation picker reads both Hosts on its first page, preserves independent cursors and maps sources by canonical identity',async t=>{
-  const {directory,actors,human}=await root(t),calls:any[]=[];
+  // Native channel composition consumes the current Server owner, not frozen legacy split-file SQL.
+  const {directory,actors,human,storage,beforeClose}=await root(t,true),calls:any[]=[];
   const appHost=new AppHostServer({logicalClientRouting:true,physicalHostLifetime:'server',createTransport(hostId){
     const messages=new Set<(frame:string)=>void>(),statuses=new Set<(status:any)=>void>();let state:any={state:'idle'};
     return {get status(){return state;},async connect(){state={state:'open'};statuses.forEach(fn=>fn(state));},async send(raw:string){
@@ -134,8 +141,8 @@ test('conversation picker reads both Hosts on its first page, preserves independ
   assert.equal(calls.length,2);assert.ok(first.nextCursor);
   const second=await execution.discover('',first.nextCursor);assert.equal(second.conversations.length,1);assert.equal(second.nextCursor,null);assert.equal(calls.length,3);assert.equal(calls[2].hostId,'local-codex');assert.equal(calls[2].cursor,'codex-page-2');
   const {ImChannelService}=await import('../../apps/headless-server/src/im-channel-service.mjs');
-  const collaboration=new Collaboration(join(directory,'collaboration.sqlite'),actors,execution);t.after(()=>collaboration.close());
-  const service=await ImChannelService.open([],{dataDirectory:directory,actors,collaboration,getAppHost:()=>appHost,actorAccess:{authenticate:()=>human},credentials:{set:async()=>{},remove:async()=>{},resolve:async()=>null}});t.after(()=>service.close());
+  const collaboration=new Collaboration(storage!,actors,execution);beforeClose.push(()=>collaboration.close());
+  const service=await ImChannelService.open([],{dataDirectory:directory,actors,collaboration,getAppHost:()=>appHost,actorAccess:{authenticate:()=>human},credentials:{set:async()=>{},remove:async()=>{},resolve:async()=>null}});beforeClose.unshift(()=>service.close());
   const document=await service.operation(human,{action:'list'});assert.equal(document.servers.length,3);
   for(const [hostId,threadId]of [['local-codex','pi_same'],['opencraft-server','pi_same'],['opencraft-server','same']]){
     const result=await service.operation(human,{action:'sources',hostId,threadId});assert.deepEqual(result.sources,[]);
