@@ -18,6 +18,9 @@ run transactionally in the existing communication storage Worker, not the networ
   source/epoch/message rows are not renamed or rewritten by the migration.
 - Omitted connection IDs retain the `legacy` singleton scope. Source rows written by an
   older trusted adapter, without an ownership row, also belong to `legacy`.
+  An old trusted `addSource` caller may bootstrap an absent legacy connection;
+  it cannot replace any registered incarnation, revive a stopped connection or
+  implicitly register an explicit connection.
 - Configure reconciles only its owned sources: its in-flight effects become unknown,
   its removed queued deliveries are rejected, and other connections remain untouched.
 - Source/channel binding remains one-to-one. There is no implicit transfer of a source

@@ -33,9 +33,14 @@ export function channelSyncCommand(service: Collaboration, db: DatabaseSync, com
     if(typeof id!=='string'||!/^[a-z0-9][a-z0-9._:-]{0,127}$/u.test(id))throw Error('invalid_channel_connection');
     return id;
   };
-  const currentConnection=()=>{
-    const id=connection();
-    if(!db.prepare('SELECT 1 FROM actor_channel_connections WHERE id=? AND incarnation=? AND active=1').get(id,text(p.incarnation)))throw Error('channel_connection_retired');
+  const currentConnection=(legacyBootstrap=false)=>{
+    const id=connection();text(p.incarnation);
+    // Pre-scope trusted transports could attach their first source directly.
+    // Bootstrap only an absent legacy owner; never replace a live/retired owner,
+    // and never infer an explicit connection from an unnegotiated old caller.
+    if(legacyBootstrap&&p.connectionId===undefined&&id==='legacy'&&!db.prepare('SELECT 1 FROM actor_channel_connections WHERE id=?').get(id))
+      db.prepare('INSERT INTO actor_channel_connections(id,incarnation,active) VALUES(?,?,1)').run(id,p.incarnation);
+    if(!db.prepare('SELECT 1 FROM actor_channel_connections WHERE id=? AND incarnation=? AND active=1').get(id,p.incarnation))throw Error('channel_connection_retired');
     return id;
   };
   // Sources created by older trusted adapters have no owner row and stay in the
@@ -78,7 +83,7 @@ export function channelSyncCommand(service: Collaboration, db: DatabaseSync, com
         else db.prepare('UPDATE actor_channel_sources SET active=0 WHERE source=?').run(p.source);changed(String(s.channel_id));return null;
       }
       case 'addSource': {
-        const id=currentConnection(),binding=p.binding;text(binding?.source);text(binding?.channelId);
+        const id=currentConnection(true),binding=p.binding;text(binding?.source);text(binding?.channelId);
         if(!db.prepare('SELECT 1 FROM actor_channels WHERE id=? AND peer_id IS NULL').get(binding.channelId))throw Error('invalid_channel_binding');
         if(!service.channels.isActive(binding.channelId))throw Error('channel_dissolved');
         const old=db.prepare("SELECT s.channel_id,COALESCE(own.connection_id,'legacy') AS connection_id FROM actor_channel_sources s LEFT JOIN actor_channel_source_owners own ON own.source=s.source WHERE s.source=?").get(binding.source);

@@ -348,3 +348,17 @@ test("a late channel uniqueness failure rolls back only the attempted reconfigur
     undefined,
   );
 });
+
+test("old trusted direct attachment bootstraps legacy once but never revives a retired instance", async (t) => {
+  const f = await fixture(t);
+  await f.sync(undefined, "old-direct", "addSource", { binding: f.bindings[0], images: false });
+  await f.send(0, "old-queue");
+  assert.equal((await f.sync(undefined, "old-direct", "claim")).text, "old-queue");
+  await f.sync(undefined, "new-owner", "configure", { bindings: [f.bindings[0]], images: false });
+  await assert.rejects(f.sync(undefined, "old-direct", "addSource", { binding: f.bindings[2] }), /retired/);
+  await assert.rejects(f.sync("unconfigured.explicit", "first", "addSource", { binding: f.bindings[2] }), /retired/);
+  assert.equal(
+    f.storage.database.prepare("SELECT 1 FROM actor_channel_connections WHERE id=?").get("unconfigured.explicit"),
+    undefined,
+  );
+});
