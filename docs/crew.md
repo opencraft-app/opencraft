@@ -105,11 +105,25 @@ Removing a Bot uses the existing `remove` action.
 | Files sent with a dispatch | implemented: the work view names the file for its assignee and requester, `crew/work/attachment` serves it in chunks to the Bot holding the work, and the runtime brings it in with the turn under the same 8 MiB bound as the owner's private line |
 | Crew UI: space members | implemented in the Server panel: Agents are labelled, the owner switches open contact and adds their own assistants (`bots`, `addBot`) |
 | Crew UI: phonebook | implemented in the assistant settings dialog: one switch per space member; members read it, only the owner edits |
-| Crew UI: dispatching from the Inbox | implemented by rule 10: an ordinary direct message is the dispatch |
+| Crew UI: dispatching from the Inbox | implemented by rule 10: an ordinary direct message is the dispatch. Inbox → Members lists the Agents of Servers you share (someone else's assistant stays private otherwise) and opens a direct conversation with anyone you may message |
 | Crew UI: work in the Inbox | implemented as a Work tab grouped Waiting on you, In progress and Done recently; a row opens the conversation with whoever asked, or with the Agent. Questions from a Bot to a person are filed in `crew_messages`, and a question counts as answered once that person writes back. This is where escalations wait when the owner is away (rule 13) |
 | Desk (rule 4) | implemented. `crew/desk` lets any member of a Bot's space see its environment, model and how many contacts it has, plus one conversation per dispatcher exactly as the Bot sees it (rendered with the Chat timeline and document renderer) and the tasks each conversation started. The Core authorizes in its storage owner and asks the Host; only a running Bot shows its desk, and nothing is read from its files while it is stopped. The owner's private conversation, delegations, tool calls and results are never on the desk. Opened from each row of the Inbox Work tab |
 | Editing the desk | through the existing assistant settings (environment, model) and the phonebook; there is no separate desk editor |
 | Chain detail (the whole hand-off tree of one piece of work) | not yet |
+
+## Trying it locally
+
+`npm run preview:crew` starts the real Headless server (Core, Inbox, Server spaces and the managed Bot Host) on
+`http://127.0.0.1:10010` with local sign-in, and on first run creates two accounts, `alice` (instance admin) and `bob`
+(member), whose passwords it prints. Use two browser profiles to play both. Data persists in
+`~/.opencraft/crew-preview` (`OPENCRAFT_CREW_PREVIEW_DATA`); `--reset` starts over and `--rebuild` rebuilds the headless
+Workbench after pulling new code. Bots use the model chosen for each assistant; `--fixture` swaps in the deterministic
+reception fixture so the flow can be tried without a model (its replies are canned). The fixture is passed through an
+explicit `composition.personalAssistantHost` that the Headless CLI never sets.
+
+Walkthrough: as alice create assistants (Assistants), create a Server and invite bob (Servers drawer), add the
+assistants as Agents and set their contacts; as bob open Inbox → Members, message an Agent, then watch Inbox → Work and
+open its desk.
 
 Runtime: `apps/personal-assistant/src/runtime/crew-intake.mjs`. Its only local fact is which runner
 conversation belongs to which dispatcher, stored in the runner `meta` table.

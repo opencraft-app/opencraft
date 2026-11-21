@@ -2404,5 +2404,6 @@
   "crew.desk.status.blocked": "需要处理",
   "crew.desk.status.completed": "已完成",
   "crew.desk.status.cancelled": "已停止",
-  "crew.desk.status.failed": "未能完成"
+  "crew.desk.status.failed": "未能完成",
+  "people.directFailed": "无法打开这个对话。"
 }

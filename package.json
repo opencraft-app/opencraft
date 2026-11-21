@@ -221,6 +221,7 @@
     "smoke:schedules": "tsx scripts/smoke/tasks/smoke-conversation-schedules.ts",
     "smoke:tasks:workbench": "tsx scripts/smoke/tasks/smoke-tasks-workbench.ts",
     "preview:tasks:workbench": "tsx scripts/preview-tasks-workbench.ts",
+    "preview:crew": "tsx scripts/preview-crew.ts",
     "package:web:server": "npm run build:web:release && node scripts/package-web-server.mjs",
     "test:web-updates": "tsx --test tests/server/offline-shell-startup.test.ts && node --test tests/server/web-deployment*.test.mjs tests/server/offline-shell-worker.test.mjs tests/server/offline-shell-install.test.mjs tests/execution/full-parent.test.mjs tests/execution/full-upgrade-failure.test.mjs",
     "serve:web:managed": "node scripts/web-deployment/cli.mjs",

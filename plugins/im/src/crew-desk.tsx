@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ModalContent } from "@opencraft/design-system-web/modal-content";
 import { IconButton } from "@opencraft/design-system-web/button";
-import { CloseIcon, MonitorIcon as MonitorGlyph } from "@opencraft/design-system-web/action-icons";
+import { CloseIcon } from "@opencraft/design-system-web/action-icons";
 import { NavigationList, NavigationItem } from "@opencraft/design-system-web/navigation";
 import { SettingsButton } from "@opencraft/extension-react";
 import { MessageTimeline, type MessageTimelineCheckpoint } from "@opencraft/chat-render-web/message-timeline";
@@ -12,6 +12,14 @@ import { CHANNELS_HOST_ID, type CrewDesk as Desk, type CrewPhonebookEntry } from
 import { useIntl } from "@opencraft/i18n/react";
 import type { ChannelRpc } from "./channel-client";
 import { ChatAvatar } from "./channel-chat-ui";
+import { CompanionAvatar } from "@opencraft/design-system-web/companion-avatar";
+
+/** A navigation row's leading mark: an Agent's companion or a person's initial, at the slot's size. */
+function SlotAvatar({ person }: { person: CrewPhonebookEntry }) {
+  return <span className="crew-desk__mark" aria-hidden="true">{person.kind === "session"
+    ? <CompanionAvatar id={person.actorId} size={20} />
+    : Array.from(person.displayName.trim()).slice(0, 1).join("").toLocaleUpperCase()}</span>;
+}
 import "./crew-desk.scss";
 
 const messages = {
@@ -32,7 +40,6 @@ const messages = {
   failed: { id: "crew.desk.failed", defaultMessage: "Could not load the desk." },
   retry: { id: "crew.desk.retry", defaultMessage: "Try again" },
   close: { id: "crew.desk.close", defaultMessage: "Close" },
-  open: { id: "crew.desk.open", defaultMessage: "Open {name}’s desk" },
   latest: { id: "crew.desk.latest", defaultMessage: "Back to latest" },
 };
 const statuses = {
@@ -113,7 +120,7 @@ export function CrewDesk({ rpc, bot, open, onOpenChange }: {
               <NavigationList label={f("conversations")} inset="contained">
                 {desk.conversations.map(c => <NavigationItem key={c.actor.actorId} aria-current={c.actor.actorId === selected?.actor.actorId ? "page" : undefined}
                   onClick={() => setActorId(c.actor.actorId)}>
-                  <ChatAvatar id={c.actor.actorId} label={c.actor.displayName} bot={c.actor.kind === "session"} /><span>{c.actor.displayName}</span>
+                  <SlotAvatar person={c.actor} /><span>{c.actor.displayName}</span>
                 </NavigationItem>)}
               </NavigationList>
               <h3>{f("tasks")}</h3>
@@ -135,11 +142,4 @@ export function CrewDesk({ rpc, bot, open, onOpenChange }: {
           </div>}
     </ModalContent>
   </Dialog.Root>;
-}
-
-/** A desk trigger for a row of work; it carries no state of its own. */
-export function CrewDeskButton({ bot, onOpen }: { bot: CrewPhonebookEntry; onOpen(): void }) {
-  const intl = useIntl();
-  return <IconButton variant="ghost" size="accessory" className="crew-desk__trigger"
-    aria-label={intl.formatMessage(messages.open, { name: bot.displayName })} onClick={onOpen}><MonitorGlyph /></IconButton>;
 }

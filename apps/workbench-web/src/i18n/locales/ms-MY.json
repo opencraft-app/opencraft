@@ -2272,5 +2272,6 @@
   "crew.desk.status.blocked": "Perlu perhatian",
   "crew.desk.status.completed": "Selesai",
   "crew.desk.status.cancelled": "Dihentikan",
-  "crew.desk.status.failed": "Tidak dapat diselesaikan"
+  "crew.desk.status.failed": "Tidak dapat diselesaikan",
+  "people.directFailed": "Tidak dapat membuka perbualan ini."
 }

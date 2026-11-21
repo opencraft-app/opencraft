@@ -182,10 +182,13 @@ export class NativeChannels {
   people(context: ActorContext, query = '', after = '') {
     this.assertStanding(context, 'people.directory');
     if(typeof query!=='string'||query.length>128||typeof after!=='string'||after.length>128)throw Error('invalid_input');
+    // Someone else's assistant stays private unless it is a crew member of a space the caller shares.
+    const spaces=!!this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='collaboration_space_members'").get();
     const rows=this.db.prepare(`SELECT a.*,(SELECT owner_human_id FROM personal_assistants WHERE actor_id=a.id) AS personal_owner_id FROM actors a WHERE a.enabled=1 AND a.id>? AND instr(lower(a.display_name),lower(?))>0
       AND (a.kind='human' OR NOT EXISTS(SELECT 1 FROM personal_assistants WHERE actor_id=a.id) OR EXISTS(SELECT 1 FROM personal_assistants p JOIN actors o ON o.id=p.owner_human_id
-        WHERE p.actor_id=a.id AND p.owner_human_id=? AND p.state='claimed' AND o.enabled=1 AND o.generation=p.owner_generation))
-      ORDER BY a.id LIMIT 100`).all(after,query,context.actorId);
+        WHERE p.actor_id=a.id AND p.owner_human_id=? AND p.state='claimed' AND o.enabled=1 AND o.generation=p.owner_generation)
+        ${spaces?`OR EXISTS(SELECT 1 FROM collaboration_space_members x JOIN collaboration_space_members y ON y.space_id=x.space_id WHERE x.actor_id=a.id AND y.actor_id=?)`:''})
+      ORDER BY a.id LIMIT 100`).all(after,query,context.actorId,...(spaces?[context.actorId]:[]));
     const scope: AvatarReadScope = new Map();
     return {people:rows.filter(r=>this.admitted(String(r.id))&&(!r.personal_owner_id||this.admitted(String(r.personal_owner_id)))).map(r=>{
       const avatar=this.avatar({actorId:String(r.id)},scope);

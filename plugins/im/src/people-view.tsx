@@ -1,12 +1,13 @@
 import { PeopleDefaultFaceArtwork as DefaultFace, PeopleEntryGlyph as EntryGlyph } from "@opencraft/design-system-web/action-icons";
 import {ManagedBots} from './managed-bots';
-import {CrewWorkList} from './crew-work-view';
+// Crew work and the desk load when the Work tab is first opened, not with the Inbox.
+const CrewWorkList=lazy(()=>import('./crew-work-view').then(m=>({default:m.CrewWorkList})));
 import { getChannelRuntime, type ChannelRuntime, type ChannelRead, type ChannelReadState } from './channel-runtime';
 import { combineAbortSignals } from '@opencraft/appserver-client/transport';
 import { AssistantMemory } from './assistant-memory';
 import { AssistantThreadSettings } from './assistant-thread-settings';
 import { PeopleIcon, AgentIcon, SettingsGearIcon } from '@opencraft/design-system-web/action-icons';
-import { useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ChannelPerson, PersonalAssistantStatus, PersonalAssistantModelCatalog } from '@opencraft/appserver-protocol';
 import { CompanionAvatar } from '@opencraft/design-system-web/companion-avatar';
 import { ObjectRowButton } from '@opencraft/design-system-web/button';
@@ -135,6 +136,13 @@ export function createPeopleViews(transport:ChannelRpc, activation:AbortSignal, 
   }
   function DirectoryPage({host,reportError,regions,mode}:ExtensionSettingsViewProps & {mode:'inbox'|'agents'}) {
     const intl=useIntl(),f=(key:keyof typeof messages)=>intl.formatMessage(messages[key]);
+    const [openingPerson,setOpeningPerson]=useState<string|null>(null);
+    async function openDirect(actorId:string){
+      if(openingPerson)return;setOpeningPerson(actorId);
+      try{await rpc.connect();const channel=await rpc.request('opencraft/channels/direct/open',{actorId},signal);if(!signal.aborted)host.openView(chatViewId,'opencraft-channel:'+channel.id);}
+      catch{if(!signal.aborted)reportError?.({key:'people-direct',message:intl.formatMessage({id:'people.directFailed',defaultMessage:'Could not open this conversation.'})});}
+      finally{if(!signal.aborted)setOpeningPerson(null);}
+    }
     const [tab,setTab]=useState('groups'),[details,setDetails]=useState(false),[confirmStop,setConfirmStop]=useState(false),[listRetry,setListRetry]=useState(0);
     const groupsState=useResource(groupsResource,0),statusState=useResource(statusResource,0);
     const groups=groupsState.value?.groups??[],groupMembers=groupsState.value?.members??{};
@@ -201,7 +209,8 @@ export function createPeopleViews(transport:ChannelRpc, activation:AbortSignal, 
     function Unread({count}:{count?:number}) {return count?<span className="people-unread">{count>99?'99+':count}</span>:null;}
     const assistantGroup=groupsState.value?.all.find(g=>g.id===status?.channelId);
     const assistantRow=claimed&&(!query.trim()||f('assistant').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))?<div className="people-group-entry"><ObjectRowButton className="people-group" aria-current={host.activeView?.viewId===chatViewId&&parseChannelResource(host.activeView.resourceUri)?.id===status?.channelId?'page':undefined} aria-label={f('assistant')} disabled={pending||!statusState.authoritative||!groupsState.authoritative} onClick={()=>void action('open')}><span className="people-group-content"><span className="people-group-badge-anchor"><CompanionAvatar id={assistant!.actorId}/><Unread count={assistantGroup?.unreadCount}/></span><span className="people-member-copy"><strong>{f('assistant')}</strong><small>{assistantGroup?.latestMessage?.text||f('ready')}</small></span>{assistantGroup?.latestMessage?<GroupMeta at={assistantGroup.latestMessage.at}/>:null}</span></ObjectRowButton></div>:null;
-    const visiblePeople=people.filter(person=>person.kind==='human');
+    // People, plus the Agents you can reach: a Server's Agents join the directory as members do.
+    const visiblePeople=people.filter(person=>person.kind==='human'||person.canMessage);
     const visibleGroups=groups.filter(group=>group.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
     const selectedChannel = host.activeView?.viewId === chatViewId ? parseChannelResource(host.activeView.resourceUri)?.id : undefined;
     const phaseText=status?.assistant?.state==='claimed'?f(status.runtime.phase):f('stopped');
@@ -261,10 +270,15 @@ export function createPeopleViews(transport:ChannelRpc, activation:AbortSignal, 
           <GroupMeta at={group.latestMessage!.at}/>
         </span></ObjectRowButton></div>)}
         <div role="status" className="people-status">{groupsState.failed?<>{f('failed')} <SettingsButton variant="quiet" onClick={()=>void groupsResource.refresh()}>{f('retry')}</SettingsButton></>:!groupsPending&&!visibleGroups.length&&!assistantRow?f('noGroups'):null}</div>
-      </section>:tab==='work'?<CrewWorkList rpc={rpc} signal={signal} reportError={reportError} placeholder={<SkeletonRows count={3} variant="group"/>} onOpenChat={id=>host.openView(chatViewId,'opencraft-channel:'+id)}/>:<section className="people-stream" aria-label={f('members')}>
+      </section>:tab==='work'?<Suspense fallback={<SkeletonRows count={3} variant="group"/>}><CrewWorkList rpc={rpc} signal={signal} reportError={reportError} placeholder={<SkeletonRows count={3} variant="group"/>} onOpenChat={id=>host.openView(chatViewId,'opencraft-channel:'+id)}/></Suspense>:<section className="people-stream" aria-label={f('members')}>
         <div className="people-members" aria-busy={listing}>
           {listing&&!people.length?<SkeletonRows count={4} variant="member"/>:null}
-          {visiblePeople.map(person=><div className="people-member" key={person.actorId}><Avatar person={person}/><div className="people-member-copy"><span>{person.displayName}</span></div><small className="people-kind">{f(person.kind)}</small></div>)}
+          {visiblePeople.map(person=>{
+            const row=<><Avatar person={person}/><div className="people-member-copy"><span>{person.displayName}</span></div><small className="people-kind">{f(person.kind)}</small></>;
+            // Someone you may message opens your direct conversation; to a space Agent that message is a dispatch.
+            return person.canMessage?<ObjectRowButton key={person.actorId} className="people-member people-member--open" aria-busy={openingPerson===person.actorId} disabled={openingPerson===person.actorId}
+              onClick={()=>void openDirect(person.actorId)}>{row}</ObjectRowButton>:<div className="people-member" key={person.actorId}>{row}</div>;
+          })}
         </div>
         <div role="status" className="people-status">{listFailed?<>{f('listFailed')} <SettingsButton variant="quiet" onClick={()=>setListRetry(n=>n+1)}>{f('retry')}</SettingsButton></>:!listing&&!visiblePeople.length?f('empty'):null}</div>
         {next?<SettingsButton disabled={listing} onClick={()=>{

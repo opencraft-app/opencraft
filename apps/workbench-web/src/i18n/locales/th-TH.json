@@ -2272,5 +2272,6 @@
   "crew.desk.status.blocked": "ต้องดูแล",
   "crew.desk.status.completed": "เสร็จแล้ว",
   "crew.desk.status.cancelled": "หยุดแล้ว",
-  "crew.desk.status.failed": "ทำไม่สำเร็จ"
+  "crew.desk.status.failed": "ทำไม่สำเร็จ",
+  "people.directFailed": "เปิดการสนทนานี้ไม่ได้"
 }

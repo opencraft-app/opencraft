@@ -1255,7 +1255,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           return fetch(request);
         },
       }),
-      codexBinary:options.codexExecutable ?? join(root,'runtime/codex/bin/codex')});
+      codexBinary:options.codexExecutable ?? join(root,'runtime/codex/bin/codex'),
+      // Explicit local preview composition only (scripts/preview-crew.ts); the CLI never sets it.
+      ...(composition.personalAssistantHost ?? {})});
     imPlugins = await startImPlugins(imConfiguration,{dataDirectory,capabilities,prepareCapabilities: tools => capabilityMcp.prepare(tools),actors:actorStore,collaboration:actorCollaboration,actorAccess,getAppHost:() => appHostServer,admittedActor:actorId => !instanceAccess || instanceAccess.admitsActor(actorId),channelSync:composition.createChannelSync ? await composition.createChannelSync({collaboration:actorCollaboration}) : composition.channelSync});
     try { availabilityNotification = await startAvailabilityNotification(process.env.OPENCRAFT_AVAILABILITY_NOTIFICATION_CONFIG, () => imPlugins); }
     catch { console.warn('[availability-notification] startup-unavailable'); }

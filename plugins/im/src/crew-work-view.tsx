@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { ObjectRowButton } from "@opencraft/design-system-web/button";
 import { CompanionAvatar } from "@opencraft/design-system-web/companion-avatar";
 import { SettingsButton, type ExtensionSettingsViewProps } from "@opencraft/extension-react";
 import type { CrewInboxItem } from "@opencraft/appserver-protocol";
 import { useIntl } from "@opencraft/i18n/react";
 import type { ChannelRpc } from "./channel-client";
-import { CrewDesk, CrewDeskButton } from "./crew-desk";
+import { CrewDeskButton } from "./crew-desk-button";
+// The desk brings the Chat renderer; it loads when someone opens a desk.
+const CrewDesk = lazy(() => import("./crew-desk").then(m => ({ default: m.CrewDesk })));
 import "./crew-work-view.scss";
 
 const messages = {
@@ -119,7 +121,7 @@ export function CrewWorkList({ rpc, signal, placeholder, onOpenChat, reportError
         <CrewDeskButton bot={item.work.assignee} onOpen={() => setDesk(item.work.assignee)} />
       </div>)}
     </div> : null)}
-    {desk ? <CrewDesk rpc={rpc} bot={desk} open onOpenChange={open => { if (!open) setDesk(null); }} /> : null}
+    {desk ? <Suspense fallback={null}><CrewDesk rpc={rpc} bot={desk} open onOpenChange={open => { if (!open) setDesk(null); }} /></Suspense> : null}
     <div role="status" className="people-status">
       {!items.length ? f("empty") : null}
       {failed ? <>{f("failed")} <SettingsButton variant="quiet" onClick={() => void load()}>{f("retry")}</SettingsButton></> : null}

@@ -246,3 +246,13 @@ test('a file sent with a dispatch reaches the Bot that holds the work, and no on
   await assert.rejects(f.call(f.zhe.context, 'opencraft/crew/work/attachment', { workId: work!.id }), /crew_work_denied/);
   assert.equal(((await f.call(f.alice, 'opencraft/crew/work/get', { workId: work!.id })) as { work: { attachment: unknown } }).work.attachment, null, 'the rest of the chain does not see the file');
 });
+
+test("a space member finds someone else's assistant that joined the space, and no one outside does", async t => {
+  const f = await fixture(t);
+  const alice = f.actors.get(f.alice.actorId)!;
+  f.storage.database.prepare(`INSERT INTO personal_assistants(bot_id,actor_id,owner_human_id,owner_generation,assignment_id,epoch,state,created_at,credential_id,is_default,paused)
+    VALUES('bot-alan',?,?,?,'assignment-alan','1','claimed',?,?,0,0)`).run(f.alan.id, alice.id, alice.generation, Date.now(), f.alan.context.credentialId);
+  const people = async (who: typeof f.bob) => ((await f.call(who, 'opencraft/channels/people/list', {})) as { people: { actorId: string; canMessage: boolean }[] }).people;
+  assert.equal((await people(f.bob)).find(p => p.actorId === f.alan.id)?.canMessage, true, 'Bob shares the team space with Alan');
+  assert.equal((await people(f.carol)).some(p => p.actorId === f.alan.id), false, "outside the space Alice's assistant stays private");
+});

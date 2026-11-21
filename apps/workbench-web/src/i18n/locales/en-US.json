@@ -2305,5 +2305,6 @@
   "crew.desk.status.blocked": "Needs attention",
   "crew.desk.status.completed": "Completed",
   "crew.desk.status.cancelled": "Stopped",
-  "crew.desk.status.failed": "Could not complete"
+  "crew.desk.status.failed": "Could not complete",
+  "people.directFailed": "Could not open this conversation."
 }

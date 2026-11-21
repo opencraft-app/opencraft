@@ -42,3 +42,11 @@
   .crew-desk__body { flex-direction: column; }
   .crew-desk__aside { flex: 0 0 auto; max-block-size: 35%; border-inline-end: 0; border-block-end: 1px solid var(--color-border-subtle); }
 }
+.crew-desk__mark {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  inline-size: var(--size-navigation-leading-slot); block-size: var(--size-navigation-leading-slot);
+  border-radius: var(--radius-full); overflow: hidden;
+  background: var(--color-badge-neutral-background); color: var(--color-badge-neutral-foreground);
+  @include typography.role(metadata);
+}
+.crew-desk__mark:has(svg) { background: none; }
