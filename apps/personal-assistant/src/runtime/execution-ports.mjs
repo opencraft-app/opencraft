@@ -211,6 +211,7 @@ function crewTools(work, crew, app, assertOwner) {
       const result = await crew.request("opencraft/crew/work/message", {
         workId, targetActorId: text(args.to, "recipient"), content: text(args.text, "message"),
         idempotencyKey: key("crew_message", callId),
+        ...(args.asks === undefined ? {} : { asks: args.asks === true }),
       }, signal);
       check("crew_message", signal);
       return { messageId: result.messageId };

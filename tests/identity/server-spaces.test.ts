@@ -121,6 +121,18 @@ test('upgrade keeps existing spaces and their members, with contact closed',asyn
   assert.equal(updated.database.prepare('SELECT COUNT(*) AS n FROM crew_messages').get()?.n,0,'crew replies start empty after upgrade');
 });
 
+test('upgrade keeps crew messages and treats them as reports, not open questions',async t=>{
+  const root=mkdtempSync(join(tmpdir(),'opencraft-crew-questions-upgrade-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
+  const path=join(root,'database.sqlite');
+  const before=SERVER_MIGRATIONS.findIndex(m=>m.name==='0022_crew_questions');assert(before>0);
+  const previous=openManagedDatabase({path,migrations:SERVER_MIGRATIONS.slice(0,before),legacyPolicy:'reject'});
+  previous.database.prepare("INSERT INTO crew_messages(message_id,recipient_id,work_id,from_work_id,created_at) VALUES('m1','bob','w1','w1',5)").run();
+  previous.database.close();
+  const updated=openManagedDatabase({path,migrations:SERVER_MIGRATIONS,legacyPolicy:'reject'});t.after(()=>updated.database.close());
+  assert.deepEqual({...updated.database.prepare("SELECT message_id,recipient_id,work_id,created_at,asks,answers FROM crew_messages").get()},
+    {message_id:'m1',recipient_id:'bob',work_id:'w1',created_at:5,asks:0,answers:null});
+});
+
 test('new spaces open contact, the default space does not, and only the owner switches it',async t=>{
   const f=await fixture(t);const ledger=new ServerSpacesLedger(f.owner.database);
   ledger.bootstrap(f.alice.actorId,[f.bob.actorId]);

@@ -62,7 +62,9 @@ test("crew work becomes a turn in its dispatcher's conversation and closes only 
   const receipt = await crew.deliver({ id: "m1", conversation_id: turn.conversation_id }, "which branch?");
   assert.equal(receipt.messageId, "sent:m1");
   assert.deepEqual(ledger.calls.at(-1), ["opencraft/crew/work/message",
-    { workId: "w1", targetActorId: "bob", content: "which branch?", idempotencyKey: "m1" }]);
+    { workId: "w1", targetActorId: "bob", content: "which branch?", idempotencyKey: "m1", asks: false }]);
+  await crew.deliver({ id: "m1q", conversation_id: turn.conversation_id, body: { type: "question", question: { prompt: "2.3 or 2.3.1?" } } }, "2.3 or 2.3.1?");
+  assert.equal(ledger.calls.at(-1)[1].asks, true, "an Interaction question waits on the person it asks");
 
   ledger.works.push(work("w2", "bob", [bob, alice], "main, please"));
   s.reopen();

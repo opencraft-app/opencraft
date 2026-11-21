@@ -132,6 +132,12 @@
       "name": "0021_crew_messages",
       "checksum": "dffd4e69be838ac0a449c63b60dda8160d7e022aee14e89e24a6c990fc63796b",
       "snapshotChecksum": "acc124a06f2c82c1cff1bb19329f04982c24e3330bb671369c533d686e672c02"
+    },
+    {
+      "version": 23,
+      "name": "0022_crew_questions",
+      "checksum": "52099c4481b4a661ce5d9149ba88b076117a69f08c5e04977cbf554f9b646770",
+      "snapshotChecksum": "f194ea2f035a08179031006f19e1093aff7170afcb11f526f99a83f60b618f83"
     }
   ],
   "alternates": [
@@ -314,6 +320,11 @@
           "version": 22,
           "name": "converge_0021_crew_messages",
           "checksum": "dffd4e69be838ac0a449c63b60dda8160d7e022aee14e89e24a6c990fc63796b"
+        },
+        {
+          "version": 23,
+          "name": "converge_0022_crew_questions",
+          "checksum": "52099c4481b4a661ce5d9149ba88b076117a69f08c5e04977cbf554f9b646770"
         }
       ]
     }

@@ -133,9 +133,28 @@ export class CrewWork {
     return fail(403, 'crew_work_denied');
   }
 
-  file(messageId: string, recipientId: string, workId: string, fromWorkId: string): void {
-    this.db.prepare('INSERT OR IGNORE INTO crew_messages(message_id,recipient_id,work_id,from_work_id,created_at) VALUES(?,?,?,?,?)')
-      .run(messageId, recipientId, workId, fromWorkId, this.now());
+  file(messageId: string, recipientId: string, workId: string, fromWorkId: string, asks = false, answers: string | null = null): void {
+    this.db.prepare('INSERT OR IGNORE INTO crew_messages(message_id,recipient_id,work_id,from_work_id,created_at,asks,answers) VALUES(?,?,?,?,?,?,?)')
+      .run(messageId, recipientId, workId, fromWorkId, this.now(), asks ? 1 : 0, answers);
+  }
+
+  /**
+   * A person's direct message to a Bot that asked them something, and is still waiting, is the
+   * answer: it goes back on the work the question was asked under and opens nothing new. A reply
+   * to one question answers that one; otherwise the Bot's latest open question to them.
+   */
+  answerOpenQuestion(context: ActorContext, botId: string, messageId: string, replyTo: string | null): boolean {
+    // Crew rules stand aside where there are no spaces, as in a standalone collaboration store.
+    if (this.actors.get(context.actorId)?.kind !== 'human' || this.crew.botSpace(botId) === null) return false;
+    const open = (only: string | null) => this.db.prepare(`SELECT c.message_id,c.work_id FROM crew_messages c
+      JOIN actor_messages m ON m.id=c.message_id JOIN crew_work w ON w.id=c.work_id
+      WHERE c.recipient_id=? AND m.author_id=? AND c.asks=1 AND w.state='open' AND w.assignee_id=?
+        AND NOT EXISTS(SELECT 1 FROM crew_messages a WHERE a.answers=c.message_id)${only ? ' AND c.message_id=?' : ''}
+      ORDER BY c.seq DESC LIMIT 1`).get(context.actorId, botId, botId, ...(only ? [only] : []));
+    const question = (replyTo ? open(replyTo) : undefined) ?? open(null);
+    if (!question || !this.#member(this.#row(question.work_id).space_id, context.actorId)) return false;
+    this.file(messageId, botId, String(question.work_id), String(question.work_id), false, String(question.message_id));
+    return true;
   }
 
   /** Replies filed for the calling Bot, oldest first. */
@@ -168,12 +187,12 @@ export class CrewWork {
     return rows.flatMap(({ id }) => {
       let work: CrewWorkView;
       try { work = this.view(context, id); } catch { return []; }
+      // Only a question waits on someone, and only until they answer it; reports and notices never do.
       const asked = this.db.prepare(`SELECT m.author_id,m.content,m.created_at FROM crew_messages c JOIN actor_messages m ON m.id=c.message_id
-        WHERE c.work_id=? AND c.recipient_id=? ORDER BY c.seq DESC LIMIT 1`).get(String(id), me.id);
-      const answered = asked && this.db.prepare('SELECT 1 FROM actor_messages WHERE author_id=? AND target_id=? AND created_at>=? LIMIT 1')
-        .get(me.id, String(asked.author_id), Number(asked.created_at));
+        WHERE c.work_id=? AND c.recipient_id=? AND c.asks=1 AND NOT EXISTS(SELECT 1 FROM crew_messages a WHERE a.answers=c.message_id)
+        ORDER BY c.seq DESC LIMIT 1`).get(String(id), me.id);
       const author = asked && this.actors.get(String(asked.author_id));
-      const waiting = work.state === 'open' && asked && !answered && author
+      const waiting = work.state === 'open' && asked && author
         ? { from: { actorId: author.id, displayName: author.displayName, kind: author.kind === 'human' ? 'human' as const : 'session' as const },
           content: String(asked.content), at: Number(asked.created_at) } : null;
       const row = this.#row(id);

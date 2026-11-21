@@ -198,7 +198,8 @@ export interface ChannelsMethodMap {
   /** Members (same space) or Bots (phonebook, under an open parent) hand work to a space Bot. */
   "opencraft/crew/work/dispatch": { params: { targetActorId: string; content: string; idempotencyKey: string; parentWorkId?: string }; result: { messageId: string; workId: string; work: CrewWorkView } };
   /** The assignee of open work reaches anyone on its chain, or the space owner. */
-  "opencraft/crew/work/message": { params: { workId: string; targetActorId: string; content: string; idempotencyKey: string }; result: { messageId: string } };
+  /** `asks` marks a question; it waits on a person until they answer it, and their answer opens no new work. */
+  "opencraft/crew/work/message": { params: { workId: string; targetActorId: string; content: string; idempotencyKey: string; asks?: boolean }; result: { messageId: string } };
   "opencraft/crew/work/start": { params: Record<string, never>; result: { work: CrewWorkView } };
   "opencraft/crew/work/finish": { params: { workId: string }; result: { work: CrewWorkView } };
   "opencraft/crew/work/get": { params: { workId: string }; result: { work: CrewWorkView } };

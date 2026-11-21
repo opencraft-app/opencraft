@@ -61,6 +61,8 @@ test("messages go up on the held work, or down only on a hand-off made from it",
   assert.deepEqual(f.calls.at(-1), ["opencraft/crew/work/message", { workId: "root", targetActorId: "bob", content: "2.3 or 2.3.1?", idempotencyKey: "crew:w1:crew_message:call-3" }]);
   await f.tools.crewMessage({ to: "zhe", text: "thanks", workId: "child" }, "call-4");
   assert.equal(f.calls.at(-1)[1].workId, "child");
+  await f.tools.crewMessage({ to: "bob", text: "2.3 or 2.3.1?", asks: true }, "call-6");
+  assert.equal(f.calls.at(-1)[1].asks, true, "a question is marked so it waits on Bob");
   const stranger = fixture({ child: { parentId: "elsewhere" } });
   await assert.rejects(stranger.tools.crewMessage({ to: "zhe", text: "hi", workId: "other" }, "call-5"), /not made from this work/);
   assert.equal(stranger.calls.some(([m]) => m === "opencraft/crew/work/message"), false);

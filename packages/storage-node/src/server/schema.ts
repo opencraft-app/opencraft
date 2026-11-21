@@ -726,4 +726,8 @@ export const crewMessages = sqliteTable("crew_messages", {
   seq: integer("seq").primaryKey({ autoIncrement: true }), messageId: text("message_id").notNull().unique(),
   recipientId: text("recipient_id").notNull(), workId: text("work_id").notNull(), fromWorkId: text("from_work_id").notNull(),
   createdAt: integer("created_at").notNull(),
+  // 1 when the sender asked the recipient something; 0 for reports and notices. Written only by CrewWork.
+  asks: integer("asks").notNull().default(0),
+  // The question this message answers; an answer closes it instead of opening new work.
+  answers: text("answers"),
 }, table => [index("crew_messages_recipient").on(table.recipientId, table.seq)]);

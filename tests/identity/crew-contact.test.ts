@@ -96,8 +96,8 @@ test('a Bot outside every space keeps the existing per-target grant rule', async
 const dispatch = (f: Awaited<ReturnType<typeof fixture>>, from: { actorId: string } | { context: unknown }, target: string, key: string, parentWorkId?: string) =>
   f.call(('context' in from ? from.context : from) as never, 'opencraft/crew/work/dispatch',
     { targetActorId: target, content: key, idempotencyKey: key, ...(parentWorkId ? { parentWorkId } : {}) }) as Promise<{ workId: string; work: { chain: { actorId: string }[]; budget: { used: number; limit: number } } }>;
-const say = (f: Awaited<ReturnType<typeof fixture>>, bot: { context: unknown }, workId: string, target: string, key: string) =>
-  f.call(bot.context as never, 'opencraft/crew/work/message', { workId, targetActorId: target, content: key, idempotencyKey: key });
+const say = (f: Awaited<ReturnType<typeof fixture>>, bot: { context: unknown }, workId: string, target: string, key: string, asks?: boolean) =>
+  f.call(bot.context as never, 'opencraft/crew/work/message', { workId, targetActorId: target, content: key, idempotencyKey: key, ...(asks === undefined ? {} : { asks }) }) as Promise<{ messageId: string }>;
 
 test('work opened by a member lets its Bot reach that member and the owner, whatever its phonebook', async t => {
   const f = await fixture(t);
@@ -211,25 +211,48 @@ test('replies between Bots open no work, spend no budget and come back on the wo
   await assert.rejects(say(f, f.alan, child.workId, f.zhe.id, 'too late'), /crew_work_denied/, 'closed work carries no replies');
 });
 
-test('the crew Inbox shows who is waiting on whom, and clears once they answer', async t => {
+test('only questions wait on a person, and their answer closes the question instead of opening work', async t => {
   const f = await fixture(t);
   const root = await dispatch(f, f.bob, f.alan.id, 'ship 2.3');
   type Item = { work: { id: string }; waiting: { from: { actorId: string }; content: string } | null };
   const inbox = async (who: object) => ((await f.call(('context' in who ? who.context : who) as never, 'opencraft/crew/work/inbox', {})) as { items: Item[] }).items;
+  const works = async () => ((await f.call(f.alan.context as never, 'opencraft/crew/work/list', {})) as { works: unknown[] }).works.length;
+  const replies = async () => ((await f.call(f.alan.context as never, 'opencraft/crew/work/replies', { after: 0 })) as { replies: { workId: string; content: string }[] }).replies;
   assert.deepEqual((await inbox(f.bob)).map(i => [i.work.id, i.waiting]), [[root.workId, null]], 'the requester sees work they handed over');
   assert.deepEqual((await inbox(f.alice)).map(i => i.work.id), [root.workId], 'the space owner sees all work in the space');
 
-  await say(f, f.alan, root.workId, f.bob.actorId, '2.3 or 2.3.1?');
+  await say(f, f.alan, root.workId, f.bob.actorId, 'started on the notes');
+  assert.equal((await inbox(f.bob))[0]!.waiting, null, 'a progress report waits on no one');
+
+  await say(f, f.alan, root.workId, f.bob.actorId, '2.3 or 2.3.1?', true);
   const [asked] = await inbox(f.bob);
   assert.equal(asked!.waiting?.from.actorId, f.alan.id);
   assert.equal(asked!.waiting?.content, '2.3 or 2.3.1?');
   assert.equal((await inbox(f.alice))[0]!.waiting, null, 'a question to Bob does not wait on Alice');
 
   await f.call(f.bob, 'send', { targetActorId: f.alan.id, content: '2.3.1', idempotencyKey: 'answer' });
-  const items = await inbox(f.bob);
-  assert.equal(items.find(i => i.work.id === root.workId)!.waiting, null, 'answering clears it');
-  assert.equal(items.length, 2, 'the answer itself is a new dispatch (rule 10)');
+  assert.equal((await inbox(f.bob))[0]!.waiting, null, 'answering closes the question');
+  assert.equal(await works(), 1, 'the answer opens no new work');
+  assert.deepEqual((await replies()).map(r => [r.workId, r.content]), [[root.workId, '2.3.1']], 'it goes back on the work the question was asked under');
+
+  await f.call(f.bob, 'send', { targetActorId: f.alan.id, content: 'also tag the release', idempotencyKey: 'next' });
+  assert.equal(await works(), 2, 'with nothing left to answer, a message is a dispatch again (rule 10)');
   await assert.rejects(f.call(f.alan.context, 'opencraft/crew/work/inbox', {}), /crew_work_denied/, 'the Inbox is for people');
+  await assert.rejects(f.call(f.alan.context, 'opencraft/crew/work/message', { workId: root.workId, targetActorId: f.bob.actorId, content: 'x', idempotencyKey: 'bad', asks: 'yes' }), /invalid_input/);
+});
+
+test('replying to one question answers that one when several are open', async t => {
+  const f = await fixture(t);
+  const first = await dispatch(f, f.bob, f.alan.id, 'notes');
+  const second = await dispatch(f, f.bob, f.alan.id, 'changelog');
+  const q1 = await say(f, f.alan, first.workId, f.bob.actorId, 'which branch?', true);
+  await say(f, f.alan, second.workId, f.bob.actorId, 'which tone?', true);
+  await f.call(f.bob, 'send', { targetActorId: f.alan.id, content: 'main', replyTo: q1.messageId, idempotencyKey: 'a1' });
+  const replies = ((await f.call(f.alan.context as never, 'opencraft/crew/work/replies', { after: 0 })) as { replies: { workId: string }[] }).replies;
+  assert.deepEqual(replies.map(r => r.workId), [first.workId], 'the reply named the first question');
+  await f.call(f.bob, 'send', { targetActorId: f.alan.id, content: 'friendly', idempotencyKey: 'a2' });
+  const all = ((await f.call(f.alan.context as never, 'opencraft/crew/work/replies', { after: 0 })) as { replies: { workId: string }[] }).replies;
+  assert.deepEqual(all.map(r => r.workId), [first.workId, second.workId], 'a plain message answers the one still open');
 });
 
 test('a file sent with a dispatch reaches the Bot that holds the work, and no one else', async t => {
@@ -255,4 +278,18 @@ test("a space member finds someone else's assistant that joined the space, and n
   const people = async (who: typeof f.bob) => ((await f.call(who, 'opencraft/channels/people/list', {})) as { people: { actorId: string; canMessage: boolean }[] }).people;
   assert.equal((await people(f.bob)).find(p => p.actorId === f.alan.id)?.canMessage, true, 'Bob shares the team space with Alan');
   assert.equal((await people(f.carol)).some(p => p.actorId === f.alan.id), false, "outside the space Alice's assistant stays private");
+});
+
+test("the Bot owner's answer to a crew question travels as crew, not on the private line", async t => {
+  const f = await fixture(t);
+  const alice = f.actors.get(f.alice.actorId)!;
+  f.storage.database.prepare(`INSERT INTO personal_assistants(bot_id,actor_id,owner_human_id,owner_generation,assignment_id,epoch,state,created_at,credential_id,is_default,paused)
+    VALUES('bot-alan',?,?,?,'assignment-alan','1','claimed',?,?,0,0)`).run(f.alan.id, alice.id, alice.generation, Date.now(), f.alan.context.credentialId);
+  const work = await dispatch(f, f.bob, f.alan.id, 'budget');
+  await say(f, f.alan, work.workId, f.alice.actorId, 'over by 5%, approve?', true);
+  await f.call(f.alice, 'send', { targetActorId: f.alan.id, content: 'approved', idempotencyKey: 'ok' });
+  const rows = await f.call(f.alan.context, 'personal-assistant/own-messages', { after: 0 }) as { author_id: string; content: string; crewWork: boolean }[];
+  assert.deepEqual(rows.filter(r => r.author_id === f.alice.actorId).map(r => [r.content, r.crewWork]), [['approved', true]], 'the runtime skips it on the private line');
+  const replies = ((await f.call(f.alan.context as never, 'opencraft/crew/work/replies', { after: 0 })) as { replies: { workId: string; content: string }[] }).replies;
+  assert.deepEqual(replies.map(r => [r.workId, r.content]), [[work.workId, 'approved']]);
 });

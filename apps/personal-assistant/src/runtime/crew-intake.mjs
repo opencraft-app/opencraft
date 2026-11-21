@@ -191,8 +191,9 @@ export function createCrewIntake({ runner, request }) {
       const { works } = await request("opencraft/crew/work/list", {}, signal);
       const work = works.find((w) => w.requesterId === actorId && w.chain.length);
       if (!work) throw Error("No open crew work for this conversation");
+      // A question the Bot put to someone through its Interaction service waits on them until answered.
       return request("opencraft/crew/work/message",
-        { workId: work.id, targetActorId: work.chain[0].actorId, content: text, idempotencyKey: message.id }, signal);
+        { workId: work.id, targetActorId: work.chain[0].actorId, content: text, idempotencyKey: message.id, asks: !!message.body?.question }, signal);
     },
   };
 }

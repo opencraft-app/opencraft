@@ -109,6 +109,11 @@ export const SERVER_MIGRATIONS = [
     "version": 22,
     "name": "0021_crew_messages",
     "sql": "CREATE TABLE `crew_messages` (\n\t`seq` integer PRIMARY KEY AUTOINCREMENT NOT NULL,\n\t`message_id` text NOT NULL,\n\t`recipient_id` text NOT NULL,\n\t`work_id` text NOT NULL,\n\t`from_work_id` text NOT NULL,\n\t`created_at` integer NOT NULL\n) STRICT;\n--> statement-breakpoint\nCREATE UNIQUE INDEX `crew_messages_message_id_unique` ON `crew_messages` (`message_id`);--> statement-breakpoint\nCREATE INDEX `crew_messages_recipient` ON `crew_messages` (`recipient_id`,`seq`);"
+  },
+  {
+    "version": 23,
+    "name": "0022_crew_questions",
+    "sql": "ALTER TABLE `crew_messages` ADD `asks` integer DEFAULT 0 NOT NULL;--> statement-breakpoint\nALTER TABLE `crew_messages` ADD `answers` text;"
   }
 ] as const;
 export const SERVER_ALTERNATE_MIGRATIONS = [
@@ -224,9 +229,14 @@ export const SERVER_ALTERNATE_MIGRATIONS = [
         "version": 22,
         "name": "converge_0021_crew_messages",
         "sql": SERVER_MIGRATIONS[21].sql
+      },
+      {
+        "version": 23,
+        "name": "converge_0022_crew_questions",
+        "sql": SERVER_MIGRATIONS[22].sql
       }
     ]
   }
 ] as const;
-export const SERVER_MIGRATION_CONTRACT_HASH = "ae965bb6cb2dacb7f3d9557669b1e53e46849995fb2a8d02a8f1ca6b54c79242" as const;
+export const SERVER_MIGRATION_CONTRACT_HASH = "a2bac3c167688c396c53a481da58e6dfa567c19a5fa872dd3ae14d591d3ebb8f" as const;
 export const OPENCRAFT_VERSION = "0.1.0" as const;

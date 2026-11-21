@@ -46,6 +46,14 @@ handed it over, the work it was split from and its root. `origin` is `member` (a
   chain, or the requester answers the assignee. A reply opens no work and spends no budget.
   When it reaches a Bot it is filed in `crew_messages` (migration `0021_crew_messages`) against
   that Bot's own work in the tree, and the Bot reads it with `crew/work/replies`.
+- **Questions and answers.** A reply marked `asks` is a question (migration `0022_crew_questions`);
+  the runtime marks the questions its Interaction service puts to people, and the `crew_message`
+  tool takes `asks`. Only an open question waits in a person's Inbox; reports and notices never do.
+  A person's direct message to a Bot that has an open question for them is the answer: it is filed
+  against the work the question was asked under, closes that question and opens no new work. A
+  reply to one question answers that one, otherwise the Bot's latest open question. With no open
+  question, a direct message is a dispatch again (rule 10). The Bot's owner answering a crew
+  question goes through crew too, not the private line.
 - **Chain pass.** While work is open, its assignee may message everyone the work answers to:
   each requester up the tree, nearest first, then the space owner. This ignores the phonebook,
   covers messages only, and ends when the assignee calls `finish`. Routine work answers to
@@ -69,7 +77,7 @@ Who on the chain is actually asked, and whether that member can decide, is the r
 | `opencraft/crew/phonebook/list` `{botId}` | members of the Bot's space | entries, the space members that could be entries, and whether the caller may edit |
 | `opencraft/crew/phonebook/set` `{botId,actorId,present}` | space owner | add or remove an entry; adding requires a member of the space |
 | `opencraft/crew/work/dispatch` `{targetActorId,content,idempotencyKey,parentWorkId?}` | members; Bots under open work | send and open work |
-| `opencraft/crew/work/message` `{workId,targetActorId,content,idempotencyKey}` | the work's assignee; its requester | reply: the assignee to anyone on its chain, the requester to the assignee |
+| `opencraft/crew/work/message` `{workId,targetActorId,content,idempotencyKey,asks?}` | the work's assignee; its requester | reply: the assignee to anyone on its chain, the requester to the assignee |
 | `opencraft/crew/work/replies` `{after}` | a Bot | replies filed against its work, after a cursor |
 | `opencraft/crew/work/attachment` `{workId,offset?}` | the Bot holding the work | the dispatch file, in 64 KiB chunks |
 | `opencraft/crew/desk` `{botId,actorId?}` | members of the Bot's space | the Bot's setup and, for one dispatcher, its conversation and tasks; only while the Bot runs |
@@ -106,7 +114,7 @@ Removing a Bot uses the existing `remove` action.
 | Crew UI: space members | implemented in the Server panel: Agents are labelled, the owner switches open contact and adds their own assistants (`bots`, `addBot`) |
 | Crew UI: phonebook | implemented in the assistant settings dialog: one switch per space member; members read it, only the owner edits |
 | Crew UI: dispatching from the Inbox | implemented by rule 10: an ordinary direct message is the dispatch. Inbox → Members lists the Agents of Servers you share (someone else's assistant stays private otherwise) and opens a direct conversation with anyone you may message |
-| Crew UI: work in the Inbox | implemented as a Work tab grouped Waiting on you, In progress and Done recently; a row opens the conversation with whoever asked, or with the Agent. Questions from a Bot to a person are filed in `crew_messages`, and a question counts as answered once that person writes back. This is where escalations wait when the owner is away (rule 13) |
+| Crew UI: work in the Inbox | implemented as a Work tab grouped Waiting on you, In progress and Done recently; a row opens the conversation with whoever asked, or with the Agent. Questions (`asks`) from a Bot to a person are filed in `crew_messages` and wait until that person answers; the answer closes the question instead of opening work. This is where escalations wait when the owner is away (rule 13) |
 | Desk (rule 4) | implemented. `crew/desk` lets any member of a Bot's space see its environment, model and how many contacts it has, plus one conversation per dispatcher exactly as the Bot sees it (rendered with the Chat timeline and document renderer) and the tasks each conversation started. The Core authorizes in its storage owner and asks the Host; only a running Bot shows its desk, and nothing is read from its files while it is stopped. The owner's private conversation, delegations, tool calls and results are never on the desk. Opened from each row of the Inbox Work tab |
 | Editing the desk | through the existing assistant settings (environment, model) and the phonebook; there is no separate desk editor |
 | Chain detail (the whole hand-off tree of one piece of work) | not yet |

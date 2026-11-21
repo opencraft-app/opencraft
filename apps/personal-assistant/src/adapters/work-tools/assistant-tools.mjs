@@ -92,11 +92,12 @@ export function assistantTools({
             name: "crew_message",
             replay: "safe",
             description:
-              "Reply inside crew work; this opens no new work and spends no budget. Without workId, write to someone in answersTo: decide what you can yourself, and ask the nearest person only what you cannot. With workId of a hand-off you made, answer the Agent you handed it to.",
+              "Reply inside crew work; this opens no new work and spends no budget. Without workId, write to someone in answersTo: decide what you can yourself, and ask the nearest person only what you cannot. Set asks to true only for a question you need answered; it then waits in their Inbox until they reply, and their reply comes back to you. Reports and notices leave asks unset. With workId of a hand-off you made, answer the Agent you handed it to.",
             parameters: Type.Object({
               to: Type.String({ maxLength: 256 }),
               text: Type.String({ maxLength: 16384 }),
               workId: Type.Optional(Type.String({ maxLength: 256 })),
+              asks: Type.Optional(Type.Boolean()),
             }),
             execute: async (args, api, { abortSignal } = {}) => {
               guard("crew_message");
