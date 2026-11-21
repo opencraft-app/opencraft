@@ -40,7 +40,7 @@ under `/var/lib/opencraft/execution`; it is not a workspace. Hands can read the
 shared logs while only writing its own service log directory. Existing deployments
 pin their old path identities before upgrading; no runtime silently moves or
 rewrites persisted session paths. Configuration, permissions and the explicit
-adoption procedure are owned by [Docker deployment](../../../docker/README.md).
+adoption procedure are owned by [Docker deployment](../../../deploy/docker/README.md).
 
 Installation IDs are owned by each build configuration:
 

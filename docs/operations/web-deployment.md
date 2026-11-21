@@ -192,7 +192,7 @@ npm run gate:server-updates -- --scenario self-upgrade
 
 公共包使用 `@opencraft-app/opencraft`，源为 `https://registry.npmjs.org/`。首版 0.1.10 支持 Linux x64 / Node.js 24；包含网站、更新器、执行 gateway/daemon，不包含独立 Codex core、CLI 或 DSH 引擎，不是全新服务器一键安装器。
 
-正式发布workflow为 `.github/workflows/release.yml`。在main合入提升 `packaging/web-server/package.json` 稳定版本并提交精确 `## vX.Y.Z` changelog后自动请求发布；版本未变不发布，降级、预发布号与缺失发布记录拒绝。来源清单的 `--release` 检查通过后才创建指向该main事件提交的新tag；已有同名tag只能精确指向原提交，禁止覆盖。仍可从main手动派发已有稳定tag以恢复既有发布。来源清单检查与产品隔离均已具备；首次 npm 发布按既定决定暂缓，因此实现已就绪但不等于已经在 GitHub 或 npm 真实发布。
+正式发布workflow为 `.github/workflows/release.yml`。在main合入提升 `deploy/web-server/package.json` 稳定版本并提交精确 `## vX.Y.Z` changelog后自动请求发布；版本未变不发布，降级、预发布号与缺失发布记录拒绝。来源清单的 `--release` 检查通过后才创建指向该main事件提交的新tag；已有同名tag只能精确指向原提交，禁止覆盖。仍可从main手动派发已有稳定tag以恢复既有发布。来源清单检查与产品隔离均已具备；首次 npm 发布按既定决定暂缓，因此实现已就绪但不等于已经在 GitHub 或 npm 真实发布。
 
 包模板版本必须与tag相同；tag必须位于main历史中。预检再次核对tag内来源清单、安装锁定依赖、执行相关测试和浏览器回归，然后构建一个execution tgz、核对公开包内容并生成SHA256 manifest。发布job只下载并发布这份归档，不重建；npm版本已存在时只接受字节完全一致的归档。最后核对npm下载/安装及GitHub Release归档、manifest和release notes。全发布workflow串行，`npm-release` Environment仍只允许main。已上传后若最终校验失败，用 `gh run rerun <run-id> --failed` 复用原归档，核对远端字节后继续，不重建或重复上传。操作技能见 [opencraft-release](../../.agents/skills/opencraft-release/SKILL.md)，迁移边界见[上游迁移](../history/upstream-transition.md)。
 
@@ -366,7 +366,7 @@ composition. The fixed bootstrap embeds its own trust roots; keys contained in
 an incoming package never establish trust. Public distribution defaults remain
 independent of downstream signing policy.
 
-The formal contracts are `packaging/full-release/manifest-v1.schema.json` and
+The formal contracts are `scripts/full-release/schemas/manifest-v1.schema.json` and
 `preflight-v1.schema.json`. `scripts/full-release/contract.mjs` adds semantic
 checks: duplicate JSON keys, safe integer bounds, exact source identities,
 UTF-8 sorted file tuples, canonical POSIX paths and modes, disjoint component

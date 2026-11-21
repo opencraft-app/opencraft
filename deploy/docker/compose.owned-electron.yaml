@@ -2,6 +2,6 @@
 services:
   brain:
     build:
-      dockerfile: docker/Dockerfile.owned-electron
+      dockerfile: deploy/docker/Dockerfile.owned-electron
       additional_contexts:
         owned-electron: ${OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION:?Set the verified browser distribution}

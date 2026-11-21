@@ -1,4 +1,4 @@
-import { generate } from '../../ops/observability/generate.mjs';
+import { generate } from '../../deploy/observability/generate.mjs';
 import {execFile} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import { createServer } from 'node:http';

@@ -33,7 +33,7 @@ function docker(args, options = {}) {
   return (execFileSync('docker', args, { cwd: root, env, encoding: 'utf8', timeout: 600_000,
     stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], ...options }) ?? '').trim();
 }
-const compose = args => docker(['compose', '--env-file', '/dev/null', '-f', join(root, 'docker/compose.yaml'), '-p', name, ...args]);
+const compose = args => docker(['compose', '--env-file', '/dev/null', '-f', join(root, 'deploy/docker/compose.yaml'), '-p', name, ...args]);
 async function freePortBelowEphemeralRange() {
   for (let attempt = 0; attempt < 50; attempt++) {
     const port = 20_000 + Math.floor(Math.random() * 12_000);
@@ -138,7 +138,7 @@ try {
   console.log(JSON.stringify({ ok: true, origin, persistence: true,
     gatewayRestartKeepsBrain: true, gatewayRestartKeepsHands: true, brainUnavailable: 503, brainRecovery: true }));
 } catch (error) {
-  const logs = spawnSync('docker', ['compose', '--env-file', '/dev/null', '-f', join(root, 'docker/compose.yaml'), '-p', name, 'logs', '--tail=100'],
+  const logs = spawnSync('docker', ['compose', '--env-file', '/dev/null', '-f', join(root, 'deploy/docker/compose.yaml'), '-p', name, 'logs', '--tail=100'],
     { cwd: root, env, encoding: 'utf8' });
   process.stderr.write((logs.stdout ?? '') + (logs.stderr ?? ''));
   throw error;

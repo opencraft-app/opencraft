@@ -1,6 +1,6 @@
 # OpenCraft 运行观测平台规格 V1
 
-状态：实施规格，首批实现见 [可选观测部署与运行手册](../../ops/observability/README.md)，运行验收仍按矩阵逐项记录。规范版本：1.1（2026-10-21：补充宿主维护入口和免二次登录，扩展 F-13/F-19、NF-06/NF-12）。最终完成以真实目标部署的验收为准，文档合入、进程启动或单元测试通过均不代表能力已落地。功能性与非功能性验收见 [验收矩阵](observability-acceptance.md)。
+状态：实施规格，首批实现见 [可选观测部署与运行手册](../../deploy/observability/README.md)，运行验收仍按矩阵逐项记录。规范版本：1.1（2026-10-21：补充宿主维护入口和免二次登录，扩展 F-13/F-19、NF-06/NF-12）。最终完成以真实目标部署的验收为准，文档合入、进程启动或单元测试通过均不代表能力已落地。功能性与非功能性验收见 [验收矩阵](observability-acceptance.md)。
 
 本文的“必须”是 V1 验收要求；预算是待实现验证的工程目标，不是当前产品的性能声明。变更规范须记录版本、理由、兼容性和受影响验收项，不得通过放宽阈值掩盖失败。
 
@@ -37,7 +37,7 @@ V1 不要求增长分析、留存漏斗、多部署汇总、全量 profiler、�
 | `apps/observability-service` | 可选 Observe 服务：有界只读查询、证据索引及观察活动汇总 |
 | `apps/observability-cli` | 随维护工具包安装的短进程命令 |
 | `runtime/skills/opencraft-observe` | 唯一运行时 Skill 源；经各引擎真实安装/发现端口交付 |
-| `ops/observability` | 固定版本部署模板、配置 schema、provisioning、升级/关闭手册 |
+| `deploy/observability` | 固定版本部署模板、配置 schema、provisioning、升级/关闭手册 |
 
 完整 V1 配套栈是 **5 个常驻服务**：
 

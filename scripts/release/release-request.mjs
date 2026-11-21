@@ -37,11 +37,11 @@ export function selectRelease({ eventName, ref, event, currentVersion, previousV
 if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   const eventName = process.env.GITHUB_EVENT_NAME;
   const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
-  const currentVersion = JSON.parse(readFileSync('packaging/web-server/package.json', 'utf8')).version;
+  const currentVersion = JSON.parse(readFileSync('deploy/web-server/package.json', 'utf8')).version;
   let previousVersion;
   if (eventName === 'push') {
     if (!/^[a-f0-9]{40}$/u.test(event.before ?? '') || /^0+$/u.test(event.before)) throw new Error('Missing previous main revision');
-    previousVersion = JSON.parse(execFileSync('git', ['show', `${event.before}:packaging/web-server/package.json`], { encoding: 'utf8' })).version;
+    previousVersion = JSON.parse(execFileSync('git', ['show', `${event.before}:deploy/web-server/package.json`], { encoding: 'utf8' })).version;
   }
   const request = selectRelease({ eventName, ref: process.env.GITHUB_REF, event, currentVersion, previousVersion, changelog: readFileSync('CHANGELOG.md', 'utf8') });
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT,

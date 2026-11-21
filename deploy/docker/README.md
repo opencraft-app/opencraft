@@ -61,7 +61,7 @@ docker compose ps
 Direct builds use the same Dockerfile and contract:
 
 ```sh
-docker buildx build --load -f docker/Dockerfile \
+docker buildx build --load -f deploy/docker/Dockerfile \
   --target runtime -t opencraft:local .
 ```
 
@@ -94,7 +94,7 @@ provides separate Gateway, Brain and Hands images, add their three full referenc
 to the deployment `.env` alongside the storage and user settings above. Set
 `OPENCRAFT_GATEWAY_IMAGE`, `OPENCRAFT_BRAIN_IMAGE` and `OPENCRAFT_HANDS_IMAGE` to
 compatible images from the same release. Digest references pin the exact bytes.
-From the `docker/` directory run:
+From the `deploy/docker/` directory run:
 
 ```sh
 docker compose -f compose.yaml -f compose.role-images.yaml config --images
@@ -145,7 +145,7 @@ using the private `execution/terminal.token`. The shell runs in Hands, within
 its declared cgroup limits, and uses the conversation's explicit cwd. This does
 not enable Codex's local execution environment. Closing a frontend/Host
 connection preserves the PTY; restarting Hands ends it. Terminal readiness is
-part of the Hands health check. See [terminal semantics](../docs/architecture/platform/presentation-and-input.md#conversation-terminal-semantics).
+part of the Hands health check. See [terminal semantics](../../docs/architecture/platform/presentation-and-input.md#conversation-terminal-semantics).
 
 `OPENCRAFT_HOST_DATA_DIR` is mounted as `OPENCRAFT_DATA_DIR` in Brain and
 Gateway. Hands receives only the `execution/` subdirectory and keeps browser and
@@ -204,7 +204,7 @@ node scripts/container-deployment/layout.mjs prepare
 node scripts/container-deployment/compose-release.mjs doctor
 ```
 
-`adopt-legacy` makes a private `docker/.env.before-layout` backup and explicitly
+`adopt-legacy` makes a private `deploy/docker/.env.before-layout` backup and explicitly
 pins the existing browser, execution, projectless cwd and Gateway home paths.
 It changes no data, starts no service and rejects conflicting overrides.
 It also explicitly permits an existing administrator-owned shared workspace
@@ -310,15 +310,15 @@ install -D -o root -g root -m 0755 \
   scripts/container-deployment/build-from-github.sh \
   /usr/local/libexec/opencraft-build-from-github
 install -D -o root -g root -m 0600 \
-  packaging/container-build/opencraft-github-build.env.example \
+  deploy/container-build/opencraft-github-build.env.example \
   /etc/opencraft-github-build.env
 # Set OPENCRAFT_BUILD_REPOSITORY to this host's absolute OpenCraft checkout.
 ${EDITOR:-vi} /etc/opencraft-github-build.env
 install -D -o root -g root -m 0644 \
-  packaging/container-build/opencraft-github-build.service \
+  deploy/container-build/opencraft-github-build.service \
   /etc/systemd/system/opencraft-github-build.service
 install -D -o root -g root -m 0644 \
-  packaging/container-build/opencraft-github-build.timer \
+  deploy/container-build/opencraft-github-build.timer \
   /etc/systemd/system/opencraft-github-build.timer
 systemctl daemon-reload
 systemctl enable --now opencraft-github-build.timer

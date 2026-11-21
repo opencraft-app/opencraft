@@ -8,7 +8,7 @@ on:
       - scripts/packaging/electron-distribution.mjs
       - scripts/packaging/remote-browser-artifact.mjs
       - .github/actions/owned-electron/**
-      - docker/electron-builder.Dockerfile*
+      - deploy/docker/electron-builder.Dockerfile*
       - .github/workflows/electron-fork.yml
       - .github/workflows/electron-native-artifacts.yml
       - .gitattributes
@@ -20,7 +20,7 @@ on:
       - scripts/packaging/electron-distribution.mjs
       - scripts/packaging/remote-browser-artifact.mjs
       - .github/actions/owned-electron/**
-      - docker/electron-builder.Dockerfile*
+      - deploy/docker/electron-builder.Dockerfile*
       - .github/workflows/electron-fork.yml
       - .github/workflows/electron-native-artifacts.yml
       - .gitattributes

@@ -48,7 +48,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   await mkdir(directory, { recursive: true });
   await rm(packageRoot, { recursive: true, force: true });
   await mkdir(join(packageRoot, 'runtime'), { recursive: true });
-  const manifest = JSON.parse(await readFile(join(repositoryRoot, 'packaging/web-server/package.json'), 'utf8'));
+  const manifest = JSON.parse(await readFile(join(repositoryRoot, 'deploy/web-server/package.json'), 'utf8'));
   manifest.name = packageName;
   if (registry) {
     const url = new URL(registry);
@@ -77,7 +77,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest, null, 2));
   await cp(join(repositoryRoot, 'docs/operations/web-deployment.md'), join(packageRoot, 'README.md'));
   await cp(join(repositoryRoot, 'LICENSE'), join(packageRoot, 'LICENSE'));
-  const unit = await readFile(join(repositoryRoot, 'packaging/web-server/opencraft-web.service'), 'utf8');
+  const unit = await readFile(join(repositoryRoot, 'deploy/web-server/opencraft-web.service'), 'utf8');
   await writeFile(join(packageRoot, 'opencraft-web.service'), unit.replace(`node_modules/${PUBLIC_PACKAGE_NAME}/`, `node_modules/${packageName}/`));
   for (const entry of ['cli', 'worker', 'controlled-registry', 'prefetch']) {
     await build({ entryPoints: [join(repositoryRoot, `scripts/web-deployment/${entry}.mjs`)], outfile: join(packageRoot, `runtime/${entry}.mjs`),
@@ -115,7 +115,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
     await build({entryPoints:[join(repositoryRoot,entry)],outfile:join(packageRoot,`runtime/${name}.mjs`),bundle:true,platform:'node',format:'esm',target:'node24',define:{'process.env.OPENCRAFT_OBSERVE_SOURCE_REVISION':JSON.stringify(web.sourceRevision??null),'process.env.OPENCRAFT_OBSERVE_BUILD_ID':JSON.stringify(web.buildId)}});
   }
   await cp(join(repositoryRoot,'runtime/skills/opencraft-observe'),join(packageRoot,'runtime/skills/opencraft-observe'),{recursive:true});
-  await cp(join(repositoryRoot,'ops/observability'),join(packageRoot,'runtime/observability'),{recursive:true});
+  await cp(join(repositoryRoot,'deploy/observability'),join(packageRoot,'runtime/observability'),{recursive:true});
   manifest.bin['opencraft-observe']='runtime/observe-cli.mjs';
   await chmod(join(packageRoot,'runtime/observe-cli.mjs'),0o755);
   await writeFile(join(packageRoot,'package.json'),JSON.stringify(manifest,null,2));
@@ -201,10 +201,10 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
     }
     manifest.opencraftExecution = executionManifest;
     await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest, null, 2));
-    await cp(join(repositoryRoot, 'packaging/web-server/opencraft-execution.service'), join(packageRoot, 'opencraft-execution.service'));
-    await cp(join(repositoryRoot, 'packaging/web-server/opencraft-engine-host.service'), join(packageRoot, 'opencraft-engine-host.service'));
-    await cp(join(repositoryRoot, 'packaging/web-server/opencraft-dsh-host.service'), join(packageRoot, 'opencraft-dsh-host.service'));
-    await cp(join(repositoryRoot, 'packaging/web-server/opencraft-acp-host.service'), join(packageRoot, 'opencraft-acp-host.service'));
+    await cp(join(repositoryRoot, 'deploy/web-server/opencraft-execution.service'), join(packageRoot, 'opencraft-execution.service'));
+    await cp(join(repositoryRoot, 'deploy/web-server/opencraft-engine-host.service'), join(packageRoot, 'opencraft-engine-host.service'));
+    await cp(join(repositoryRoot, 'deploy/web-server/opencraft-dsh-host.service'), join(packageRoot, 'opencraft-dsh-host.service'));
+    await cp(join(repositoryRoot, 'deploy/web-server/opencraft-acp-host.service'), join(packageRoot, 'opencraft-acp-host.service'));
   }
   await chmod(join(packageRoot, 'runtime/cli.mjs'), 0o755);
   const complete = completeRuntime || (fullRelease && !fullRelease.template.updater.bridge);

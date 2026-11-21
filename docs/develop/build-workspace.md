@@ -61,7 +61,7 @@ state volume is backed by the build filesystem. Set `OPENCRAFT_BUILD_BUILDER`
 to that builder and run from the volume-backed checkout:
 
 ```sh
-node scripts/packaging/build-workspace.mjs container -- --load -f docker/Dockerfile -t opencraft:candidate .
+node scripts/packaging/build-workspace.mjs container -- --load -f deploy/docker/Dockerfile -t opencraft:candidate .
 ```
 
 BuildKit intermediates use the provisioned disk. `--load` still imports final

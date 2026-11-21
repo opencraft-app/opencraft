@@ -19,7 +19,7 @@ upstream with a completed source cutover.
    unresolved rights have been cleared. Scan the actual candidate/history with
    the verified Gitleaks version in the security workflow.
 3. Prepare a release PR with a strictly increased stable version in
-   `packaging/web-server/package.json` and its exact `## vX.Y.Z` section in
+   `deploy/web-server/package.json` and its exact `## vX.Y.Z` section in
    `CHANGELOG.md`. Keep the lockfile in sync if the packaging contract changes.
    Run the affected product tests and the release workflow's local checks.
 4. Merging that version change into main triggers `.github/workflows/release.yml`.

@@ -71,7 +71,7 @@ const composeAvailable = () => spawnSync(composeExecutable, [...composePrefix, '
 
 test('the proxy overlay adds an independent proxy owner and switches Brain to wait for it', t => {
   if (!composeAvailable()) return t.skip('Docker Compose CLI is unavailable');
-  const config = JSON.parse(execFileSync(composeExecutable, [...composePrefix, '-f', 'docker/compose.yaml', '-f', 'docker/compose.proxy.yaml', 'config', '--format', 'json'], {
+  const config = JSON.parse(execFileSync(composeExecutable, [...composePrefix, '-f', 'deploy/docker/compose.yaml', '-f', 'deploy/docker/compose.proxy.yaml', 'config', '--format', 'json'], {
     cwd: new URL('../..', import.meta.url), encoding: 'utf8',
     env: { ...process.env, OPENCRAFT_UID: '1234', OPENCRAFT_GID: '2345',
       OPENCRAFT_HOST_DATA_DIR: '/srv/opencraft/state', OPENCRAFT_DATA_DIR: '/var/lib/opencraft',

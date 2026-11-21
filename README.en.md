@@ -14,7 +14,7 @@ Connect the agents you run, wherever they live, and make them available to the p
 
 [![Build](https://github.com/opencraft-app/opencraft/actions/workflows/build-matrix.yml/badge.svg)](https://github.com/opencraft-app/opencraft/actions/workflows/build-matrix.yml) [![Security](https://github.com/opencraft-app/opencraft/actions/workflows/security.yml/badge.svg)](https://github.com/opencraft-app/opencraft/actions/workflows/security.yml) [![License: MIT-0](https://img.shields.io/badge/License-MIT--0-64748b)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://github.com/topics/typescript)
 
-[![AI Agents](https://img.shields.io/badge/AI_Agents-18181b)](https://github.com/topics/ai-agents) [![ACP](https://img.shields.io/badge/ACP-18181b)](plugins/acp-engine/README.md) [![MCP](https://img.shields.io/badge/MCP-18181b)](docs/architecture/execution/session-capabilities.md) [![Self Hosted](https://img.shields.io/badge/Self_Hosted-18181b)](docker/README.md) [![Collaboration](https://img.shields.io/badge/Collaboration-18181b)](docs/architecture/identity/actor-collaboration-api.md)
+[![AI Agents](https://img.shields.io/badge/AI_Agents-18181b)](https://github.com/topics/ai-agents) [![ACP](https://img.shields.io/badge/ACP-18181b)](plugins/acp-engine/README.md) [![MCP](https://img.shields.io/badge/MCP-18181b)](docs/architecture/execution/session-capabilities.md) [![Self Hosted](https://img.shields.io/badge/Self_Hosted-18181b)](deploy/docker/README.md) [![Collaboration](https://img.shields.io/badge/Collaboration-18181b)](docs/architecture/identity/actor-collaboration-api.md)
 
 [Get started](#get-started) · [What you can do](#what-you-can-do) · [Documentation](#documentation) · [Contribute](CONTRIBUTING.md)
 
@@ -78,7 +78,7 @@ or configure a model provider in Settings. Local development requires no OpenCra
 
 | Your next step | Start here |
 | --- | --- |
-| Run with Docker Compose | [Docker deployment](docker/README.md) |
+| Run with Docker Compose | [Docker deployment](deploy/docker/README.md) |
 | Install or manage a self-hosted website | [Web deployment and updates](docs/operations/web-deployment.md) |
 | Develop or package the desktop app | [Development guide](docs/develop/development.md#desktop-with-the-bundled-local-agent) |
 | Run Expo or build for mobile | [Mobile guide](apps/mobile/README.md) |

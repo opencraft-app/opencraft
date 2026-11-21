@@ -314,7 +314,7 @@ tools and desktop product composition now have explicit boundary checks; remaini
 consumer/build paths still require review. This is not a claim that every product
 edge has been removed. When an npm release
 is requested, merge a release PR
-that raises `packaging/web-server/package.json` and includes the exact
+that raises `deploy/web-server/package.json` and includes the exact
 `## vX.Y.Z` changelog section. The main workflow creates the immutable tag and
 performs preflight, package-once, exact-byte npm publication and verification.
 Existing-tag manual dispatch remains the retry path. The npm-release

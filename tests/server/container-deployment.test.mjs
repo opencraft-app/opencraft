@@ -69,7 +69,7 @@ test('core authentication refuses readable-by-others and empty files', async t =
 test('rendered Compose separates gateway, brain and hands while preserving path identity', t => {
   if (!composeAvailable())
     return t.skip('Docker Compose CLI is unavailable');
-  const config = JSON.parse(compose(['-f', 'docker/compose.yaml', 'config', '--format', 'json'], {
+  const config = JSON.parse(compose(['-f', 'deploy/docker/compose.yaml', 'config', '--format', 'json'], {
     cwd: new URL('../..', import.meta.url), encoding: 'utf8',
     env: { ...process.env, OPENCRAFT_UID: '1234', OPENCRAFT_GID: '2345',
       OPENCRAFT_HOST_DATA_DIR: '/srv/opencraft/state', OPENCRAFT_DATA_DIR: '/var/lib/opencraft',
@@ -130,12 +130,12 @@ test('prebuilt role images preserve the runtime service contract and project pat
   const roles = ['gateway', 'brain', 'hands'];
   const image = role => `example.org/opencraft/${role}:v1`;
   for (const role of roles) env[`OPENCRAFT_${role.toUpperCase()}_IMAGE`] = image(role);
-  const render = (...extra) => JSON.parse(execFileSync('docker', ['compose', '--env-file', 'docker/.env.example',
-    '-f', 'docker/compose.yaml', ...extra, 'config', '--format', 'json'], {
+  const render = (...extra) => JSON.parse(execFileSync('docker', ['compose', '--env-file', 'deploy/docker/.env.example',
+    '-f', 'deploy/docker/compose.yaml', ...extra, 'config', '--format', 'json'], {
     cwd: new URL('../..', import.meta.url), encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'],
   })).services;
   const base = render();
-  const overlay = ['-f', 'docker/compose.role-images.yaml'];
+  const overlay = ['-f', 'deploy/docker/compose.role-images.yaml'];
   const rendered = render(...overlay);
   for (const role of roles) {
     const { build, ...expected } = base[role];
@@ -150,7 +150,7 @@ test('prebuilt role images preserve the runtime service contract and project pat
 test('the published env example renders without hidden required variables', t => {
   if (!composeAvailable())
     return t.skip('Docker Compose CLI is unavailable');
-  assert.doesNotThrow(() => compose(['-f', 'docker/compose.yaml', '--env-file', 'docker/.env.example', 'config'], {
+  assert.doesNotThrow(() => compose(['-f', 'deploy/docker/compose.yaml', '--env-file', 'deploy/docker/.env.example', 'config'], {
     cwd: new URL('../..', import.meta.url), stdio: 'pipe',
   }));
 });
@@ -159,7 +159,7 @@ test('adopted legacy deployments render the existing browser, execution and thre
   if (!composeAvailable()) return t.skip('Docker Compose CLI is unavailable');
   const environment = { OPENCRAFT_UID: '1234', OPENCRAFT_GID: '2345', OPENCRAFT_HOST_DATA_DIR: '/home/demo/.opencraft',
     OPENCRAFT_DATA_DIR: '/data/.opencraft', OPENCRAFT_HOST_WORKSPACE_DIR: '/srv/projects', OPENCRAFT_WORKSPACE_DIR: '/data' };
-  const config = JSON.parse(compose(['-f', 'docker/compose.yaml', 'config', '--format', 'json'], {
+  const config = JSON.parse(compose(['-f', 'deploy/docker/compose.yaml', 'config', '--format', 'json'], {
     cwd: new URL('../..', import.meta.url), encoding: 'utf8', env: { ...process.env, ...environment, ...legacyLayoutValues(environment) },
   }));
   const hands = config.services.hands, brain = config.services.brain;
@@ -175,7 +175,7 @@ test('adopted legacy deployments render the existing browser, execution and thre
 test('custom container candidates carry pinned bases, source identity and a verified owned runtime input', async () => {
   const root = new URL('../..', import.meta.url);
   const [dockerfile, workflow] = await Promise.all([
-    readFile(new URL('docker/Dockerfile.owned-electron', root), 'utf8'),
+    readFile(new URL('deploy/docker/Dockerfile.owned-electron', root), 'utf8'),
     readFile(new URL('.github/workflows/container.yml', root), 'utf8'),
   ]);
   assert.match(dockerfile, /node:26\.7\.0-bookworm-slim@sha256:[a-f0-9]{64}/u);
@@ -204,9 +204,9 @@ test('the local GitHub builder is portable, locked, revision-pinned and advances
   const root = new URL('../..', import.meta.url);
   const [builder, environmentExample, service, timer] = await Promise.all([
     readFile(new URL('scripts/container-deployment/build-from-github.sh', root), 'utf8'),
-    readFile(new URL('packaging/container-build/opencraft-github-build.env.example', root), 'utf8'),
-    readFile(new URL('packaging/container-build/opencraft-github-build.service', root), 'utf8'),
-    readFile(new URL('packaging/container-build/opencraft-github-build.timer', root), 'utf8'),
+    readFile(new URL('deploy/container-build/opencraft-github-build.env.example', root), 'utf8'),
+    readFile(new URL('deploy/container-build/opencraft-github-build.service', root), 'utf8'),
+    readFile(new URL('deploy/container-build/opencraft-github-build.timer', root), 'utf8'),
   ]);
   assert.match(environmentExample, /^OPENCRAFT_BUILD_REPOSITORY=\/path\/to\/opencraft$/mu);
   assert.match(environmentExample, /^OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION=\/path\/to\/verified\/browser$/mu);

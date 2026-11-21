@@ -63,7 +63,7 @@ the [local server replacement guide](../operations/web-local-deployment.md).
 ### Docker Compose
 
 For a Linux amd64 or ARM64 Docker installation with independent data storage and
-execution on the host, use the [Docker Compose deployment guide](../../docker/README.md).
+execution on the host, use the [Docker Compose deployment guide](../../deploy/docker/README.md).
 
 ### Desktop with the bundled Local Agent
 

@@ -1,6 +1,6 @@
 import { createHash, createPublicKey, sign, verify } from 'node:crypto';
-import manifestSchema from '../../packaging/full-release/manifest-v1.schema.json' with { type: 'json' };
-import preflightSchema from '../../packaging/full-release/preflight-v1.schema.json' with { type: 'json' };
+import manifestSchema from './schemas/manifest-v1.schema.json' with { type: 'json' };
+import preflightSchema from './schemas/preflight-v1.schema.json' with { type: 'json' };
 
 export const BOOTSTRAP_PROTOCOL = 1;
 export const AGENT_PROTOCOL = 1;

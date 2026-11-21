@@ -38,7 +38,7 @@ export function planChanges(paths, { event = 'pull_request', unknownDiff = false
       || /^tests\/extensions\/extension-.*\.test\.ts$/.test(path)
       || path === 'apps/workbench-web/src/runtime/module-url-extension-loader.ts') extensions = true;
     if (/^(docs|design|\.agents)\//.test(path) || /^[^/]+\.md$/i.test(path) || /(?:^|\/)(?:README|AGENTS)\.md$/i.test(path) || /^(LICENSE|NOTICE)(\.|$)/.test(path)) continue;
-    if (/^(packaging\/web-server\/|scripts\/server-deployment\/|apps\/headless-server\/src\/server-deployment\/|apps\/headless-server\/src\/headless-web-release\.mjs$)/.test(path)
+    if (/^(deploy\/web-server\/|scripts\/server-deployment\/|apps\/headless-server\/src\/server-deployment\/|apps\/headless-server\/src\/headless-web-release\.mjs$)/.test(path)
       || /^(scripts\/(packaging\/(package-headless-linux\.mjs|install-headless-linux\.sh|headless-(codex-launcher|server-launcher)\.sh)|smoke\/server\/smoke-headless-package\.mjs)|config\/build-matrix\.json)$/.test(path)
       || /^tests\/server\/(headless-installer|server-deployment)\.test\.mjs$/.test(path)) {
       headlessTests = true;
@@ -65,7 +65,7 @@ export function planChanges(paths, { event = 'pull_request', unknownDiff = false
       web(); continue;
     }
     if (/^(packages|plugins)\//.test(path)) { web(); managedWeb = true; headlessTests = true; continue; }
-    if (/^(scripts\/(web-deployment|server-deployment)\/|apps\/headless-server\/src\/(web-deployment|server-deployment)\/|packaging\/web-server\/)/.test(path)
+    if (/^(scripts\/(web-deployment|server-deployment)\/|apps\/headless-server\/src\/(web-deployment|server-deployment)\/|deploy\/web-server\/)/.test(path)
       || /^(scripts|tests)\/(.*web-(updates|deployment|release)|.*server-(updates|deployment)|.*public-release)/.test(path)
       || /^config\/playwright\.web-updates/.test(path)) { web(); managedWeb = true; headlessTests = true; continue; }
     // Unknown inputs retain Web and server coverage, not the opt-in platform matrix.

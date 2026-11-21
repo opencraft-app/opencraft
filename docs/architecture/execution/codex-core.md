@@ -73,7 +73,7 @@ WantedBy=multi-user.target
 
 ## 容器部署中的独立模型代理（proxy）
 
-容器部署默认仍由 Brain 的 native-host 启动拆分形态的账号 Core（`codex-core.cjs`），即模型代理与 Brain 同生命周期。叠加 `docker/compose.proxy.yaml` 后，账号 Core 改由独立的 `proxy` 服务运行：
+容器部署默认仍由 Brain 的 native-host 启动拆分形态的账号 Core（`codex-core.cjs`），即模型代理与 Brain 同生命周期。叠加 `deploy/docker/compose.proxy.yaml` 后，账号 Core 改由独立的 `proxy` 服务运行：
 
 - `proxy` 使用同一镜像，入口 `container-service.mjs proxy`，以固定 `OPENCRAFT_PROXY_PORT`（默认 45071）启动账号 Core；参数与 Brain 内嵌时完全一致（`scripts/container-deployment/proxy-core.mjs` 单一定义）。健康检查只看账号 owner 处于 `open`（`GET /owner-handoff`），不依赖 Brain 的 APP Server，因此可先于 Brain 启动。
 - Brain 设置 `OPENCRAFT_PROXY_MODE=external` 与相同端口：只等待 proxy 就绪，不再启动或停止账号 Core；APP Server 继续通过控制 socket 取得代理地址与 Host token。
@@ -237,7 +237,7 @@ loaded/Turn/工具状态，不能把私有 Core health 或页面连接数当成�
 
 回退先关闭新任务准入并排空原生任务；停独立 APP Server 后停账号 Core，确认两把锁释放，再恢复**兼容当前数据版本**的未拆分 bundle/unit，保留当前账号和 native 数据，恢复原 gateway endpoint。验收原会话与新任务读取/完成；不恢复旧数据库快照、不同时运行两种形态。账号 Core 单独升级失败时只退兼容账号 bundle，APP Server 保持；首次拆分失败才使用整体维护回退。固定旧 reader 若拒绝新 schema，继续前向恢复，不能删除迁移账本。
 
-模板见 `packaging/web-server/opencraft-codex-appserver.service` 和 `opencraft-codex-accounts.service.example`；后者需明确安装为既有 Core unit，而不是额外启动第二账号服务。模板路径/端口必须现场填写，包构建不会安装 unit。
+模板见 `deploy/web-server/opencraft-codex-appserver.service` 和 `opencraft-codex-accounts.service.example`；后者需明确安装为既有 Core unit，而不是额外启动第二账号服务。模板路径/端口必须现场填写，包构建不会安装 unit。
 
 ## 拆分隔离演练
 

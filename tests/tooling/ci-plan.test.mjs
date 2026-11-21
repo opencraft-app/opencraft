@@ -61,7 +61,7 @@ test('server runtime changes test without packaging; archive inputs also build a
   for (const path of ['scripts/packaging/package-headless-linux.mjs', 'scripts/packaging/install-headless-linux.sh',
     'scripts/packaging/headless-codex-launcher.sh', 'scripts/packaging/headless-server-launcher.sh', 'apps/headless-server/src/headless-web-release.mjs',
     'scripts/smoke/server/smoke-headless-package.mjs', 'scripts/server-deployment/service.mjs',
-    'tests/server/headless-installer.test.mjs', 'tests/server/server-deployment.test.mjs', 'packaging/web-server/package.json']) {
+    'tests/server/headless-installer.test.mjs', 'tests/server/server-deployment.test.mjs', 'deploy/web-server/package.json']) {
     const plan = planChanges([path]);
     assert.equal(plan.headlessTests, true, path);
     assert.equal(plan.headlessPackage, true, path);
@@ -80,7 +80,7 @@ test('managed Web is selected for update UI, deployment, protocol and Vite chang
     'apps/workbench-web/vite.config.ts', 'apps/workbench-web/public/opencraft-host-proxy-sw.js',
     'scripts/web-deployment/server.mjs', 'scripts/server-deployment/gateway.mjs',
     'packages/web-update-protocol/src/index.mjs', 'tests/server/web-deployment-source.test.mjs',
-    'config/playwright.web-updates.config.mjs', 'config/playwright.web-updates.live.config.mjs', 'packaging/web-server/package.json']) {
+    'config/playwright.web-updates.config.mjs', 'config/playwright.web-updates.live.config.mjs', 'deploy/web-server/package.json']) {
     assert.equal(planChanges([path]).managedWeb, true, path);
   }
 });

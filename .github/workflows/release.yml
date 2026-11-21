@@ -4,7 +4,7 @@ name: Release OpenCraft
 on:
   push:
     branches: [main]
-    paths: [packaging/web-server/package.json]
+    paths: [deploy/web-server/package.json]
   workflow_dispatch:
     inputs:
       tag:
@@ -130,7 +130,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ needs.request.outputs.tag }}
         run: |
-          VERSION="$(node -p "require('./packaging/web-server/package.json').version")"
+          VERSION="$(node -p "require('./deploy/web-server/package.json').version")"
           python3 "$KIT" source --tag "$RELEASE_TAG" --version "$VERSION" --primary-ref origin/main
 
 
@@ -297,7 +297,7 @@ jobs:
           NPM_CONFIG_LOGLEVEL: verbose
         run: |
           VERSION="${RELEASE_TAG#v}"
-          PACKAGE="$(node -p "require('./packaging/web-server/package.json').name")"
+          PACKAGE="$(node -p "require('./deploy/web-server/package.json').name")"
           mapfile -t TARBALLS < <(find release -maxdepth 1 -type f -name '*.tgz' -print)
           test "${#TARBALLS[@]}" -eq 1
           TARBALL="$(realpath -- "${TARBALLS[0]}")"
@@ -314,7 +314,7 @@ jobs:
           RELEASE_TAG: ${{ needs.request.outputs.tag }}
           NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/opencraft-npmrc
         run: |
-          PACKAGE="$(node -p "require('./packaging/web-server/package.json').name")"
+          PACKAGE="$(node -p "require('./deploy/web-server/package.json').name")"
           METADATA_ARGS=()
           # The exact tag may contain a kit predating the public version API.
           if python3 "$KIT" npm-smoke --help | grep -Fq -- '--metadata-source'; then

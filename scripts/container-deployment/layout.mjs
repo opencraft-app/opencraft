@@ -79,7 +79,7 @@ async function main() {
   const { deploymentIdentity, parseEnvironment, setEnvironmentValue } = await import('./compose-release.mjs');
   const command = process.argv[2];
   if (!['prepare', 'adopt-legacy'].includes(command)) throw new Error('Usage: layout.mjs prepare|adopt-legacy');
-  const path = resolve(dirname(fileURLToPath(import.meta.url)), '../../docker/.env');
+  const path = resolve(dirname(fileURLToPath(import.meta.url)), '../../deploy/docker/.env');
   let source = await readFile(path, 'utf8');
   const environment = parseEnvironment(source), identity = deploymentIdentity(environment);
   if (process.getuid() !== identity.uid || process.getgid() !== identity.gid) throw new Error('Run as the deployment UID:GID');

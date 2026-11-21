@@ -14,7 +14,7 @@
 
 [![构建](https://github.com/opencraft-app/opencraft/actions/workflows/build-matrix.yml/badge.svg)](https://github.com/opencraft-app/opencraft/actions/workflows/build-matrix.yml) [![安全检查](https://github.com/opencraft-app/opencraft/actions/workflows/security.yml/badge.svg)](https://github.com/opencraft-app/opencraft/actions/workflows/security.yml) [![许可证：MIT-0](https://img.shields.io/badge/License-MIT--0-64748b)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://github.com/topics/typescript)
 
-[![AI Agents](https://img.shields.io/badge/AI_Agents-18181b)](https://github.com/topics/ai-agents) [![ACP](https://img.shields.io/badge/ACP-18181b)](plugins/acp-engine/README.md) [![MCP](https://img.shields.io/badge/MCP-18181b)](docs/architecture/execution/session-capabilities.md) [![自主部署](https://img.shields.io/badge/Self_Hosted-18181b)](docker/README.md) [![协作](https://img.shields.io/badge/Collaboration-18181b)](docs/architecture/identity/actor-collaboration-api.md)
+[![AI Agents](https://img.shields.io/badge/AI_Agents-18181b)](https://github.com/topics/ai-agents) [![ACP](https://img.shields.io/badge/ACP-18181b)](plugins/acp-engine/README.md) [![MCP](https://img.shields.io/badge/MCP-18181b)](docs/architecture/execution/session-capabilities.md) [![自主部署](https://img.shields.io/badge/Self_Hosted-18181b)](deploy/docker/README.md) [![协作](https://img.shields.io/badge/Collaboration-18181b)](docs/architecture/identity/actor-collaboration-api.md)
 
 [快速开始](#快速开始) · [可以用来做什么](#可以用来做什么) · [文档导航](#文档导航) · [参与贡献](CONTRIBUTING.md)
 
@@ -77,7 +77,7 @@ npm run dev
 
 | 接下来想做什么 | 从这里开始 |
 | --- | --- |
-| 使用 Docker Compose 部署 | [Docker 部署指南](docker/README.md) |
+| 使用 Docker Compose 部署 | [Docker 部署指南](deploy/docker/README.md) |
 | 安装或管理自主部署的网站 | [Web 部署与更新](docs/operations/web-deployment.md) |
 | 开发或打包桌面应用 | [开发指南](docs/develop/development.md#desktop-with-the-bundled-local-agent) |
 | 运行 Expo 或构建手机端 | [手机端指南](apps/mobile/README.md) |

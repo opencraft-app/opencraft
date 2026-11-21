@@ -3,7 +3,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-spec = importlib.util.spec_from_file_location('deploy', Path(__file__).resolve().parents[1] / 'docker/deploy/deploy.py')
+spec = importlib.util.spec_from_file_location('deploy', Path(__file__).resolve().parents[1] / 'deploy/docker/deploy/deploy.py')
 deploy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(deploy)
 

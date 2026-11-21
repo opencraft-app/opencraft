@@ -466,7 +466,7 @@ origin, so one Web build works behind both authenticated entry points.
 
 ### Docker Compose
 
-The Linux ARM64 container entry is maintained in [`docker/`](../../docker/README.md).
+The Linux ARM64 container entry is maintained in [`deploy/docker/`](../../deploy/docker/README.md).
 It packages the Headless gateway and exports matching native Codex/Pi execution
 owners for the host, with independent bind-mounted data and workspaces. The
 container build is separate from the single-owner archive target below.
