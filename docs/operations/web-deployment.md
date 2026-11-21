@@ -226,7 +226,9 @@ gh workflow run release.yml --repo opencraft-app/opencraft --ref main -f tag=v0.
 
 默认更新范围是包内网站 worker 与 Web 代理；显式受管服务器模式还包含上文执行端 payload。稳定入口/更新器本身不在此次热更新范围；新包必须使用 worker protocol 1，不兼容版本拒绝安装。入口维护升级需要单独安排服务重启；执行进程仍独立，但入口连接会重连。配置独立 owner 时，Codex、DSH 与 Pi 的执行连续性分别依赖 Codex core、DSH Host 与 Pi 执行 Host；固定入口重启不关闭这些 owner。Codex 显式拆分后账号 Core 可独立排空代理请求并重启，APP Server/CLI PID 保持，见 [三步升级与边界](../architecture/execution/codex-core.md#执行侧平滑升级三步方案)。未拆分 Core 仍会连带停止 native。执行宿主自身升级仍须自然排空。Codex 显式多代模式由独立 routing owner 原子切换新 Thread 默认代，旧会话固定原 HOME，旧 CLI 无任务/工具/Host 工作后自然退休；账号 Core 继续共享，见同页第 3 步。默认 combined/单 APP 部署仍兼容，不因 Web CI 自动改变拓扑。
 
-SQLite 升级前备份由库 owner 用 `VACUUM INTO` 生成，Host 备份位于 `OPENCRAFT_EXECUTION_STATE/data/<库文件名>.pre-v<N>-<时间戳>.sqlite`，成功处置后默认保留 3 份。无账本旧库结构不一致时，先备份，再将原库及仍存在的同名 WAL/SHM 移到 `.legacy-<时间戳>`，移开文件保留、不自动清理。更新器不直接操作数据目录；回退只回退代码，不恢复数据，不承诺 N-1 旧二进制兼容。旧代码若不接受当前账本，回退也可能未就绪，不能用备份存在冒充自动回退成功。
+SQLite 升级前备份由库 owner 用 `VACUUM INTO` 生成，Host 备份位于 `OPENCRAFT_EXECUTION_STATE/data/<库文件名>.pre-v<N>-<时间戳>.sqlite`，成功处置后默认保留 3 份。无账本旧库结构不一致时拒绝打开并保留原文件，不再移开重建。更新器不直接操作数据目录；回退只回退代码，不恢复数据，不承诺 N-1 旧二进制兼容。
+
+执行端回退守卫：执行部署把每个执行版本健康时报告的各库 `appliedVersion` 记在 `<execution link>.storage-versions.json`，候选版本在后续检查失败前报告过的库版本也会记入。切换到某个版本前，若任一库当前版本高于该版本曾报告的版本，执行部署在改指针、重启之前拒绝，错误为 `schema-advanced`，并列出库名与版本（例如 `threads v1→v2`）。手动回退因此直接失败并保持当前版本；安装失败触发的自动回退同样被拒，任务标记为 `recovery-required`，执行端留在已迁移的候选版本，而不是重启一个因 `newer-schema` 起不来的旧版本。守卫只覆盖执行端健康接口报告过的库，从未报告过库版本的旧版本不受保护；记录文件损坏时告警并按无记录处理。确需回到旧版本时，按下方步骤恢复升级前快照，删除该记录文件，再执行回退。
 
 人工恢复 Host 库时：先停止执行 unit（例如 `systemctl stop opencraft-execution.service`）并确认 daemon 已退出；保留当前库与 sidecar，核对备份身份、拟启动代码及备份之后会丢失的写入；用选定备份覆盖目标库文件并删除目标同名 `-wal` / `-shm`，保持私有权限；再启动执行 unit，核对 `/health.storage` 和业务数据。不要删除其他库的 sidecar 或 `.legacy-*`。account-pool 的恢复必须另停独立 codex-core，不因停止执行 unit 就认为其 owner 已停止；详见 [备份与恢复](../architecture/server/sqlite-lifecycle.md#备份与恢复)。
 
