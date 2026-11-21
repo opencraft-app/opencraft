@@ -6,7 +6,7 @@ import { checkBrowserCompatibility } from "./browser-compatibility-checker.mjs";
 const started = performance.now();
 const root = fileURLToPath(new URL("../../", import.meta.url));
 if (process.argv.length > 3) throw new Error("Usage: check-browser-compatibility.mjs [module-graph.json]");
-const graph = process.argv[2] ? path.resolve(process.argv[2]) : new URL("../node_modules/.cache/opencraft/browser-modules.json", import.meta.url);
+const graph = process.argv[2] ? path.resolve(process.argv[2]) : new URL("../../node_modules/.cache/opencraft/browser-modules.json", import.meta.url);
 const files = JSON.parse(readFileSync(graph, "utf8"));
 const { results, output } = await checkBrowserCompatibility(root, files);
 if (output) process.stdout.write(output);
