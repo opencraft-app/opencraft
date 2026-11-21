@@ -29,7 +29,7 @@ test('upstream policy preserves advisory findings across repository visibility c
   const workflow = readFileSync(new URL('../../.github/workflows/security.yml', import.meta.url), 'utf8');
   assert.match(workflow, /NPM_AUDIT_REPORT_ONLY: 'true'/);
   assert.doesNotMatch(workflow, /PRIVATE_MIGRATION_AUDIT_REPORT_ONLY|github\.event\.repository\.private/);
-  assert.match(workflow, /node "\$GITHUB_WORKSPACE\/scripts\/dependency-audit\.mjs"/);
+  assert.match(workflow, /node "\$GITHUB_WORKSPACE\/scripts\/check\/dependency-audit\.mjs"/);
   assert.doesNotMatch(workflow, /continue-on-error|npm audit.*\|\| true/);
   assert.match(workflow, /SECRETS_RESULT: \$\{\{ needs\.secrets\.result \}\}/);
 });
