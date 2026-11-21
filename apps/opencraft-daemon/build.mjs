@@ -4,6 +4,7 @@ import { buildDshRoutingRuntime } from '../../scripts/packaging/package-dsh-rout
 import { buildTranscriptCacheRuntime } from '../../scripts/packaging/package-transcript-cache-runtime.mjs';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { daemonMainBundle } from './main-bundle.mjs';
 import { buildTerminalOwnerRuntime } from '../../scripts/packaging/package-terminal-runtime.mjs';
 await buildTranscriptCacheRuntime(fileURLToPath(new URL('./dist/', import.meta.url)));
 await buildDshRoutingRuntime(fileURLToPath(new URL('./dist/', import.meta.url)));
@@ -11,9 +12,7 @@ await buildServerSpacesRuntime(fileURLToPath(new URL('./dist/', import.meta.url)
 await buildConnectedAgentHistoryRuntime(fileURLToPath(new URL('./dist/', import.meta.url)));
 await buildTerminalOwnerRuntime(fileURLToPath(new URL('./dist/', import.meta.url)));
 await build({entryPoints:['src/execution-fault.worker.ts'],outfile:'dist/execution-fault-worker.mjs',bundle:true,platform:'node',format:'esm',target:'node26'});
-await build({ entryPoints: ['src/bin.ts'], bundle: true, platform: 'node', format: 'cjs', external: ['node-pty', '@earendil-works/pi-*', '@earendil-works/chord'], outfile: 'dist/main.cjs',
-  define: { 'import.meta.url': 'import_meta_url' },
-  banner: { js: "const import_meta_url = require('node:url').pathToFileURL(__filename).href;" } });
+await build(daemonMainBundle);
 
 await build({entryPoints:['../../packages/access-control/src/orchestration-runtime.worker.ts'],outfile:'dist/orchestration-runtime-worker.mjs',bundle:true,platform:'node',format:'esm',target:'node26'});
 
