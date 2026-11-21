@@ -163,7 +163,7 @@ automation 不能持久保存短期 Thread bearer：保存 human 授权的可撤
 | P7a | CLI credential 中立化与主动发行、稳定入口、限定的 thread 通信与状态查询命令；依赖 P2a；[决策与已知限制](../../apps/agent-bridge-host/README.md#design-decisions-and-known-limits) | 修复前 PR #233 曾因 no rollout found 未验；修复后 Codex 首轮真实 spawn/native tell/wait/output 已通过；确定性权限/撤销/旧路径回归通过。其它 provider、queue follow-up 及生产装配仍待验。原退出条件： 所有本机 agent 各执行 context 和一次有界 spawn/tell/wait/output 链，权限拒绝与撤销有效；网关重启同 key 不双 spawn；仅编排 thread_* 与 thread_cli 注入退出，其它 MCP 工具回归通过 |
 | P7b | 项目 automation + CLI；依赖 P7a；[决策与已知限制](../../apps/agent-bridge-host/README.md#design-decisions-and-known-limits) | 确定性 timezone/DST、重启单次、失败暂停、unknown 与对账、旧 schedule 冲突拒绝已覆盖；真实 script 完成，once/cron 原生接纳后因 429 失败；跨 owner 导入未实现，完整退出条件待补；2026-11-11 续验：once/cron 各一次真实调度和模型输出通过；生产装配/CLI 注入仍未验 |
 | P9 | Hermes 现有桥兼容回归；依赖 P2a | 旧桥契约录制/替身与现有客户端读取和发送回执一致；旧桥与下游不变。缺真实本机环境则如实登记，不声称真实产品验收 |
-| P8 | 切新默认和有条件移除旧 DSH owner/编排 MCP 注入；依赖 P2a/P2c/P2d、P3/P3b、P4–P7/P9 全验收 | 对本机 agent 配置逐条映射和冒烟，子线程/automation 真实闭环；旧活动代排空且可读历史；Hermes 和其它平台 MCP 保留；下线清单用户确认 |
+| P8 | 切新默认和有条件移除旧 DSH owner/编排 MCP 注入；依赖 P2a/P2c/P2d、P3/P3b、P4–P7/P9 全验收；内置 Codex 退休旧路径前须完成 [Codex 能力对照清单](codex-parity.md) | 对本机 agent 配置逐条映射和冒烟，子线程/automation 真实闭环；旧活动代排空且可读历史；Hermes 和其它平台 MCP 保留；下线清单用户确认 |
 
 P3b 的 DSH ACP 伴生插件、真实 messageId admission→claimed 录制、确定性负例及独立审查裁决见 [p3b-dsh.md](p3b-dsh.md)；旧原生 DSH 路径与默认引擎不变。
 
