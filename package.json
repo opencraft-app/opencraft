@@ -287,7 +287,7 @@
     "smoke:derived-history": "node --import tsx scripts/smoke/conversation/smoke-derived-history.ts",
     "test:client-resources": "tsx --test tests/storage/client-resources.test.ts && npm run test:attachment-upload",
     "test:git-identity": "tsx --test tests/identity/git-vault.test.ts tests/identity/git-identity-broker.test.ts tests/identity/git-identity-ipc.test.ts tests/identity/git-identity-origin.test.ts && node --test tests/identity/personal-git.test.mjs",
-    "typecheck:git-identity": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler --types node packages/execution-environment/src/employee-git-vault-store.ts apps/headless-server/src/git-identity*.ts packages/execution-environment/src/account-environment*.ts packages/execution-environment/src/personal-git*.ts apps/headless-server/src/personal-git*.ts",
+    "typecheck:git-identity": "tsc --ignoreConfig --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler --types node packages/execution-environment/src/employee-git-vault-store.ts apps/headless-server/src/git-identity*.ts packages/execution-environment/src/account-environment*.ts packages/execution-environment/src/personal-git*.ts apps/headless-server/src/personal-git*.ts",
     "test:agent-drivers": "tsx --test tests/execution/pi-orchestration-driver.test.ts tests/execution/acp-engine.test.ts tests/execution/connected-codebuddy-auth.test.ts tests/execution/acp-host-handoff.test.ts tests/execution/full-upgrade-generation.test.ts tests/execution/independent-acp-host.test.mjs tests/execution/agent-driver-transport.test.ts tests/execution/model-usage-policy.test.ts",
     "check:controls": "node scripts/check/check-control-ownership.mjs",
     "test:controls": "node --test tests/shell/control-ownership.test.mjs && tsc -p tests/tsconfig.controls.json",
@@ -369,7 +369,7 @@
     "sharp": "0.35.5",
     "tar": "7.5.22",
     "tsx": "^4.23.15",
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.3",
     "ws": "^8.22.1",
     "@typescript-eslint/eslint-plugin": "8.72.1",
     "prettier": "3.9.10"
@@ -394,10 +394,10 @@
     "nanoid@3": "3.3.20",
     "nanoid@4": "5.1.16",
     "re2js": "2.8.7",
-    "undici@8": "8.12.3",
+    "undici@8": "8.12.4",
     "@esbuild-kit/core-utils": {
       "esbuild": "0.25.12"
     },
-    "undici@5": "8.12.3"
+    "undici@5": "8.12.4"
   }
 }
