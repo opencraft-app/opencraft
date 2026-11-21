@@ -73,6 +73,8 @@
   "tests/execution/sandbox-workspace-files.test.ts",
   "tests/execution/thread-publication-native.test.ts",
   "tests/execution/workspace-execution-channel.test.ts",
+  "tests/extensions/assets-catalog.test.ts",
+  "tests/extensions/assets-extension.test.ts",
   "tests/extensions/assistant-memory-drafts.test.ts",
   "tests/extensions/channel-attachment-file.test.ts",
   "tests/extensions/channel-attachments.test.ts",
