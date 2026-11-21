@@ -7,7 +7,7 @@ with the area that owns them; a task's working notes are not project entry point
 | Location | Contents |
 | --- | --- |
 | `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `AGENTS.md` | User, contributor, security and agent entry points |
-| `LICENSE`, `OWNERS`, `CHANGELOG.md` | Licensing, ownership and release history |
+| `LICENSE`, `CHANGELOG.md` | Licensing and release history |
 | `package.json`, `package-lock.json`, `tsconfig*.json`, `postcss.config.mjs`, root dotfiles | Workspace manifests, shared TypeScript settings and automatically discovered configuration |
 | `apps/`, `packages/`, `plugins/` | Platform applications, shared contracts and bundled integrations |
 | `docs/` | `architecture/` design and ownership topics grouped by domain (platform, execution, identity, chat-ui, workbench, extensions, server, browser, mobile), `develop/` contributor and build guides, `operations/` deployment and operations, `history/` migration records and retired designs; start at [the index](../README.md) |
