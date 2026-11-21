@@ -4,6 +4,95 @@
 
 Server 存储入口复用 Headless 的 `server.lock` 内核进程锁，离线管理命令与服务器互斥；正常退出先关闭全部消费者和数据库，再释放锁。新增执行凭据绑定表通过核心迁移 v2 接入，导入同时识别旧 `session-capabilities.sqlite` 的 v1/v2 并保留执行绑定，历史 SQL/checksum 不变。
 
+## 0. 按组件的数据库升级总览
+
+本节回答三个问题：每个组件有哪些库、各库升到第几版、谁在什么时候执行升级。规则细节见后续各节；本节与源码不一致时以源码和 `npm run check:storage` 为准。
+
+OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在打开时向前迁移：
+
+- **Server 核心库** `opencraft-server.sqlite`：迁移链在 `packages/storage-node/src/server/migrations/`，canonical 链 v1–v20；另有一条已发布分叉 `generic-legacy-v13`，在 v13 之后追加收敛迁移，最终结构与 canonical 相同。
+- **35 个独立 owner**：登记在 `packages/storage-node/stores.json`，每个 owner 的迁移在 `packages/storage-node/src/stores/<id>/`，账本互不相关。
+
+下表“版本”是当前源码中该库账本的最高 version。
+
+| 组件（进程） | 库文件 | owner id | 版本 | 何时打开并迁移 |
+|---|---|---|---|---|
+| **Headless 服务器**（`apps/headless-server`，数据目录 `<H>` = `OPENCRAFT_SERVER_DATA_DIR`） | `<H>/opencraft-server.sqlite` | Server 核心 | v20 | 启动时，业务服务之前；同目录离线管理工具 `access-admin`、`human-account` 须先停服 |
+| | `web-push.sqlite` | web-push-node | v3 | 启动时 |
+| | `im-posts.sqlite`、`im-switchboard.sqlite` | post-receipts、im | v1、v3 | 启动后段（IM 插件） |
+| | `mcp-apps.sqlite` | mcp-apps | v1 | 启动时 |
+| | `model-usage-policy.sqlite` | model-usage-policy | v1 | 启动时 |
+| | `thread-identities/opencraft-server/thread-identity.sqlite` | thread-identity-database | v3 | 启动时 |
+| | `ssh/connections.sqlite` | ssh-connection-store | v2 | 启动时（仅启用 SSH 管理时） |
+| | `remote-browser/state.sqlite` | remote-browser | v4 | 启动后资源对账时 |
+| | `connectors/<actor 摘要>.sqlite` | connector-host | v1 | 每个 actor 首次使用时 |
+| | `codex/token-usage-derived.sqlite`、`token-usage-retained.sqlite` | token-usage-cache、token-usage-retained | v7、v1 | 计量查询服务构造时；derived 是可丢弃缓存，版本不符时重建 |
+| **Local Agent Host 存储组**（桌面在 daemon 内；Headless 在 `<H>/agent`；独立部署在 dsh-host） | `opencraft-session-routing.sqlite` | dsh-session-routing | v1 | daemon 启动、监听 IPC 之前；任一失败则 daemon 不监听并非零退出 |
+| | `opencraft-threads.sqlite` | thread-catalog | v2 | 同上 |
+| | `opencraft-executions.sqlite` | dsh-execution-authority | v1 | 同上 |
+| | `opencraft-host-documents.sqlite` | document-storage | v1 | 同上 |
+| | `opencraft-managed-connectors.sqlite` | connector-host | v1 | 同上 |
+| | `tasks.sqlite` | tasks | v5 | 同上（配置了数据目录时） |
+| | `conversation-schedules.sqlite`、`interrupted-turn-recovery.sqlite` | host-schedules、host-recovery | v1、v1 | Host 启动时 |
+| | `collaboration/opencraft-server.sqlite` | Server 核心 | v20 | Host 启动时（协作空间） |
+| | `cache/transcript-index.sqlite`、`artifacts/catalog.sqlite` | transcript-read-cache、artifact-catalog | v1、v1 | 首次读历史 / 首次用附件时 |
+| **Codex 适配器组**（桌面在 daemon 内；Headless 在 `<H>/codex`） | `opencraft-host-state.sqlite`（旧目录沿用 `codex-host-queue.sqlite`） | opencraft-host-state-database | v17 | 首次连接 Codex Host 时 |
+| | `opencraft-message-attachments.sqlite`（旧名 `codex-message-attachments.sqlite`） | opencraft-message-attachments | v2 | 同上 |
+| | `thread-creations.sqlite` | provisional-threads | v3 | 同上 |
+| | `token-usage.sqlite` | token-usage-state-database | v4 | 同上 |
+| | `conversation-schedules.sqlite`、`interrupted-turn-recovery.sqlite`、`provider-turn-retry.sqlite` | host-schedules、host-recovery、provider-retry | v1 | 同上 |
+| | `account-pool.sqlite` | account-pool-host | v4 | 同上，仅内嵌模式（未配置 codex-core 地址，桌面默认） |
+| | `tasks.sqlite`、`cache/transcript-index.sqlite` | tasks、transcript-read-cache | v5、v1 | 首次请求 Tasks / 首次读历史时 |
+| **Electron Main**（`apps/desktop`，`userData` 目录） | `opencraft-ui.sqlite` | ui-preferences-store | v1 | 启动时 |
+| | `opencraft-connectors.sqlite`、`opencraft-extensions.sqlite`、`opencraft-client-resources.sqlite` | connector-configuration-store、document-storage、client-resources-sqlite | v1 | 首次使用时 |
+| | `human-account/opencraft-server.sqlite` | Server 核心 | v20 | 首次启动本机账号服务时由 Main 迁移；daemon 只借用连接，不迁移 |
+| **codex-core**（`apps/codex-core`，独立升级） | `account-pool.sqlite` | account-pool-host | v4 | 账号 Core 启动时 |
+| | `codex-generations.sqlite` | generation-registry | v2 | generation 路由服务启动时 |
+| **其他独立进程** | agent-bridge-host 配置的库路径 | agent-bridge-host | v3 | 进程启动时 |
+| | `observe.sqlite` | observability | v6 | observability-service 启动时 |
+| | `owner-handoff/consumer-receipts.sqlite` | dsh-consumer-receipts | v1 | dsh-host 启动时 |
+| | `employee-git-vault.sqlite` | employee-git-vault-store | v1 | 执行环境插件启动时（DSH、Pi、ACP Host） |
+| **多进程共享路径** | `OPENCRAFT_MODEL_GATEWAY_DATABASE` 指定的库 | model-gateway | v4 | 每次操作短开短关：Headless、Codex 适配器、Local Agent 模型配置、codex-core 计量与 `scripts/admin/model-gateway.ts` |
+
+### 同一库文件被多个组件打开
+
+库版本跟随“最先用新代码打开它的进程”。两个独立升级的组件打开同一个文件时，新版本先把库迁到 v(N+1)，旧版本再打开就会报 `newer-schema` 并拒绝启动。当前存在这种关系的有：
+
+- **model-gateway**：Headless 与独立升级的 codex-core 会打开同一路径。给该库加迁移时，codex-core 必须与 Headless 同批升级；先升级的一方会让另一方在升级完成前无法打开该库。
+- **model-usage-policy**：Headless 常驻打开 `<H>/model-usage-policy.sqlite`；dsh-host、engine-host、acp-host 启动时各打开一次以完成迁移，默认路径是各自数据目录的上一级。部署让它们落到同一文件时，同样要同批升级。
+- **桌面 `human-account/opencraft-server.sqlite`**：Electron Main 迁移，daemon 借用。两者在同一个桌面安装包里发布，版本天然一致；不要让单独替换的 daemon 借用更新版本的库。
+- **Server 核心库有三份独立实例**（Headless、桌面 `human-account`、Local Agent Host `collaboration`），文件不同，各自随所在组件迁移；修改核心 schema 会影响全部三处。
+
+`account-pool.sqlite`、`tasks.sqlite`、`conversation-schedules.sqlite` 等在不同组件里各有一份，位于不同目录，互不影响。
+
+### 未纳入受管迁移的库
+
+以下库不经 `openManagedDatabase`，不受本节版本与备份规则保护：
+
+- `ordinary-workspaces.sqlite`（`apps/local-agent-host/src/ordinary-workspace-store.ts`）：直接用 `DatabaseSync` 与 `CREATE TABLE IF NOT EXISTS`，违反“运行时建表只由迁移执行”的规则，是待迁移的存量。
+- `assistant.sqlite`（`apps/personal-assistant`）：自管 `user_version`，升级前另存 `schema<N>-before-coordination.sqlite`。
+- 引擎私有库（Pi 的 `pi_<id>.sqlite`、Codex 原生 `queue_1.sqlite`、`CODEX_HOME` 与 DSH 目录下的原生库）由引擎自己升级；OpenCraft 只读或按既有搬运语义访问。
+- 锁文件（`.codex-writer.sqlite`、`.codex-runtime.sqlite`、`.codex-routing-owner.sqlite`、`schema-lock.sqlite`、`.opencraft-owned-storage-lock.sqlite`、`*.writer`、`server.lock`）只用于互斥，没有业务表。
+
+客户端 IndexedDB 另有独立版本号，不走 SQLite 账本：`opencraft-host-connections` v2，`opencraft-sidebar-layout`、`opencraft-appserver-replica`、UI 偏好、扩展文档、客户端资源与 blob 库均为 v1。
+
+### 跨组件升级规则
+
+- **每个物理库独立升级。** 每个库只有一个 `schema_migrations` 账本，由唯一 owner 进程在打开时向前迁移。不同库之间没有跨库事务，也没有全局版本号；Server 核心库的 `SERVER_DATA_CONTRACT` 只覆盖 `opencraft-server.sqlite`，不代表 Host、客户端或引擎库的版本。
+- **组件各自换代码，各自迁移。** 受管服务器更新只切换网站、gateway、daemon 与 capability adapter；独立 codex-core、CLI 与 DSH 引擎不随之重启，它们的库要等各自进程换代码并重启后才迁移。Electron 的库随桌面 App 升级，在首次使用时迁移。
+- **迁移前先备份。** 有数据的库在执行新迁移前，用 `VACUUM INTO` 在同目录生成 `<库文件名>.pre-v<N>-<时间戳>.sqlite`，默认保留 3 份。Server 核心库首次合库导入另在 `.server-import/<operationId>/` 保留原始快照。
+- **失败即拒绝，不重建。** 账本漂移（`history-mismatch`）、库版本高于代码（`newer-schema`）、未知旧结构（`unsupported-legacy`）都拒绝打开并保留原文件；不会自动移开重建空库。daemon 存储打开失败时不监听 IPC、非零退出。
+- **回退只切代码，不降级 schema。** 新版本一旦把某个库迁到 v(N+1)，回退到只认识 v(N) 的旧代码时，该库报 `newer-schema` 并拒绝打开。需要回退时，先停止该库全部 owner，再按[备份与恢复](#备份与恢复)用升级前快照人工恢复；恢复会丢弃快照之后的写入。
+- **旧二进制兼容不承诺。** 不承诺任意 N-1 旧程序能读新库；只有 owner 显式声明的已知旧结构可被转换采纳（见[版本与兼容模型](#4-版本与兼容模型)）。
+
+### 新增一次迁移
+
+1. 修改 `packages/storage-node/src/stores/<id>/schema.ts`（Server 核心库改 `packages/storage-node/src/server/schema.ts`），运行 `npm run generate:storage -- --store <id>`（Server 不带 `--store`）。
+2. 审查生成的明文 SQL 与数据变换；新版本号是该库账本的 N+1，不改写任何已发布迁移的 SQL、名称或版本。
+3. 运行 `npm run freeze:storage -- --store <id>` 把新条目追加到 `published.json`，与 SQL、snapshot、journal 一起提交。
+4. 补一条“从上一版本结构升级并保留业务数据”的测试，以及“已记录 checksum 不一致时拒绝打开”的测试；空库测试不能代替。
+5. 运行 `npm run check:storage` 与 `npm run test:sqlite-node`。同步更新[第 0 节](#0-按组件的数据库升级总览)的版本列；若该库被多个组件打开，在发布说明里写明须同批升级的组件。发布说明写清哪个组件的哪个库升了版本，以及该版本发布后旧代码将无法回退打开。
+
 ## 已发布分支历史的选择
 
 若同一 owner 已存在多套不可改写的迁移账本，可信 owner 可以在其存储 Worker 内持有写入围栏的期间调用 `selectMigrationHistory`：它只读取规范账本、校验每条名称和 SQL 哈希，并严格校验当前结构；因此要求每个历史前缀的 SQL 均可在空内存库重放，依赖真实业务数据才能执行的迁移不适用；未知、空账本或异常结构均拒绝。共享前缀必须由 owner 显式指定匹配的首选分支，已分叉前缀只匹配对应分支。选择后仍须在同一围栏内使用该链调用 `openManagedDatabase`；选择器不迁移、不改写账本、不创建备份，也不保证不同分支最终结构或业务语义等价。各链最终状态、追加迁移、回退及版本兼容由 owner 验证；不得从数据库内容或不可信输入构造迁移链。
@@ -20,14 +109,14 @@ Server 存储入口复用 Headless 的 `server.lock` 内核进程锁，离线管
 
 ## 2. 现有存储清单
 
-以下存储条目经 `openManagedDatabase` 打开并暴露 outcome。路径由可信平台/进程配置确定，Renderer/RPC 不提供任意数据库路径。
+以下存储条目经 `openManagedDatabase` 打开并暴露 outcome。按组件的完整清单与版本见[第 0 节](#0-按组件的数据库升级总览)；本表保留各库的数据职责。路径由可信平台/进程配置确定，Renderer/RPC 不提供任意数据库路径。
 
 | 文件名 | Owner 进程与源码 | 数据目录 | 数据职责 |
 |---|---|---|---|
 | `opencraft-server.sqlite` | [Server storage owner](../../../packages/storage-node/src/server/index.ts)；Headless 与离线管理工具独占同一 fence | Headless installation data directory | Actors、human logins/local accounts、memberships、account onboarding、collaboration/orchestration、session capability bindings、conversation access、shared notes |
 | `im-posts.sqlite` | Headless IM composition：[ImPostReceipts](../../../plugins/im/src/post-receipts.ts) | IM data directory | Standalone native channel post claims/receipts; schema v1, hashes and official IDs only, interrupted claims become unknown without resend |
 | `thread-identity.sqlite` | Headless Hub：[ThreadIdentityDatabase](../../../apps/opencraft-daemon/src/thread-identity-database.ts) / AppServerIdentityOverlay | Headless `thread-identities/opencraft-server` | DSH trusted sender/creator, fork origins and derived 企业身份 presence/completion; no native messages or execution state |
-| `thread-read-receipts.sqlite` | Headless installation：[ThreadReadReceiptStore](../../../scripts/thread-read-receipt-store.ts) | Headless server data directory | Verified-account exact read receipts; existing document-store migrations/CAS, independent of selected Host |
+| `thread-read-receipts.sqlite` | [ThreadReadReceiptStore](../../../scripts/thread-read-receipt-store.ts)；当前没有运行时调用方，仅测试构造 | — | Verified-account exact read receipts; existing document-store migrations/CAS |
 | `opencraft-client-resources.sqlite` | Electron Main：[client resource store](../../../packages/document-storage/src/client-resources-sqlite.ts) | Electron `userDataDirectory` | 跨端客户端资源；本地原件 CAS，远端展示副本可清理；lazy open，独立 schema v1 |
 | `opencraft-ui.sqlite` | Electron Main：[ui-preferences-store](../../../apps/desktop/src/ui-preferences-store.ts) | Electron `userDataDirectory` | UI 偏好与 CAS |
 | `opencraft-connectors.sqlite` | Electron Main：[connector-configuration-store](../../../apps/desktop/src/connector-configuration-store.ts) | Electron `userDataDirectory` | 连接选择意图，不含凭据 |
@@ -155,7 +244,7 @@ Server schema 在 `storage-node/src/server/schema.ts`，明文迁移与 Drizzle 
 
 ### 独立 SQLite owner 的 Drizzle 开发流程
 
-Drizzle 管理 schema 不要求物理合库。`packages/storage-node/stores.json` 注册31组
+Drizzle 管理 schema 不要求物理合库。`packages/storage-node/stores.json` 注册35组
 OpenCraft 自有独立 SQLite：Host 状态/附件/身份/路由/执行/计量、Agent Bridge 命令托管、客户端偏好/文档/资源、
 Tasks/IM、连接/模型策略/MCP Apps/定时/恢复、Web push、Git vault、观测及
 OpenCraft 自有 generation registry/account pool 元数据。各声明位于

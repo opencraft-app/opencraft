@@ -72,7 +72,7 @@ GitHub `opencraft-app/opencraft` 是目标核心上游，产品身份来源、�
 
 - **执行沙盒**：引擎执行一律经 `createSandboxPool()` / `createSandbox()`；不得新增绕过已选沙盒的裸执行路径，后端缺失或创建失败时拒绝执行，不静默回退本机。见 [Sandbox 入口](packages/sandbox/AGENTS.md)。
 - **主线程**：承载连接、路由和消息分发的事件循环不得执行阻塞 IO 或同步 SQLite；`async` 包装不算移出主线程。见[代码与 Contract 规则](docs/develop/code-contracts.md#网络主线程不得阻塞)。
-- **SQLite**：表结构只由 owner 的迁移追加 N+1，不改写已发布迁移；所有自有库经 `openManagedDatabase` 打开；改表须有升级保数据与 checksum 拒绝测试。见[代码与 Contract 规则](docs/develop/code-contracts.md#边界数据协议与存储)。
+- **SQLite**：表结构只由 owner 的迁移追加 N+1，不改写已发布迁移；所有自有库经 `openManagedDatabase` 打开；改表须有升级保数据与 checksum 拒绝测试。各组件有哪些库、当前版本与跨组件升级规则见[数据库升级总览](docs/architecture/server/sqlite-lifecycle.md#0-按组件的数据库升级总览)；细则见[代码与 Contract 规则](docs/develop/code-contracts.md#边界数据协议与存储)。
 - **国际化**：新增或调整的可见/无障碍文案消费 IntlRuntime/IntlPort 与稳定 ID，不为新增硬编码扩增 baseline。见[国际化约束](docs/develop/internationalization.md#贡献约束)。
 - **图标**：界面图标禁止使用 Lucide（含适配包与搬用 SVG 路径），统一使用 `@opencraft/design-system-web/action-icons`。见 [UI 实现规则](design/ui/implementation-rules.md#界面图标禁止-lucide)。
 - **UI**：新增或修改界面前先读[设计入口](design.md)与 [UI 专题索引](design/ui/README.md)，再按 [UI 实现规则](design/ui/implementation-rules.md)实现；共享控件消费 `@opencraft/design-system-web/button` 与 `navigation`，运行 `npm run check:controls`、`npm run test:controls`。

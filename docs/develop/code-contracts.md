@@ -1,6 +1,6 @@
 # 代码与 Contract 规则
 
-本页承接根 [AGENTS.md](../../AGENTS.md) 中的代码级约束；存储生命周期细节见 [sqlite-lifecycle](../architecture/server/sqlite-lifecycle.md)。
+本页承接根 [AGENTS.md](../../AGENTS.md) 中的代码级约束；存储生命周期细节见 [sqlite-lifecycle](../architecture/server/sqlite-lifecycle.md)，按组件的库、版本与跨组件升级规则见其[第 0 节](../architecture/server/sqlite-lifecycle.md#0-按组件的数据库升级总览)。
 
 ## 网络主线程不得阻塞
 
