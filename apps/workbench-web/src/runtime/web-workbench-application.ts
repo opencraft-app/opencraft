@@ -183,7 +183,7 @@ export async function createWebWorkbenchApplication(
   const panelRuntime = await createWorkbenchPanelRuntime(cordis);
   let chatRenderRuntime: ChatRenderRuntime;
   try {
-    chatRenderRuntime = await createWebChatRenderRuntime(cordis, options.chatRenderExtensions);
+    chatRenderRuntime = await createWebChatRenderRuntime(cordis, [...(options.chatRenderExtensions ?? []), ...(options.serverExtensions ?? []).flatMap(extension => extension.chatRenderExtensions ?? [])]);
   } catch (error) {
     releaseBindingMetadata?.();
     releaseBrowserAdmission(); releaseResourceSync();

@@ -100,18 +100,46 @@ try {
       await page.waitForFunction(() => (window as any).fixture.draft().lifecycle.phase === "editing");
       assert.equal(await editor.textContent(), "");
     }
-    assert.equal(await page.locator(".opencraft-composer-queue-item").count(), 3);
-    const cancelled = page.locator(".opencraft-composer-queue-item").filter({ hasText: "cancel this" });
-    await cancelled.getByRole("button", { name: "Delete queued message", exact: true }).click();
-    assert.equal(await page.locator(".opencraft-composer-queue-item").count(), 2);
+    assert.equal(await page.locator(".opencraft-local-message").count(), 3);
+    const cancelled = page.locator(".opencraft-local-message").filter({ hasText: "cancel this" });
+    const activate = async (locator: import("playwright").Locator) => width === 390 ? locator.tap() : locator.click();
+    await activate(cancelled.getByRole("button", { name: "Message actions", exact: true }));
+    await activate(page.getByRole("menuitem", { name: "Cancel sending", exact: true }));
+    await page.waitForFunction(() => document.querySelectorAll(".opencraft-local-message").length === 2);
+    assert.equal(await page.locator(".opencraft-composer-queue-item").count(), 0);
+    assert.equal(await page.locator(".opencraft-composer-queue-tray__heading").count(), 0);
+    assert.equal(await page.locator(".opencraft-local-message button:disabled").count(), 0);
+    // An independent newer draft may not be overwritten by a queued message.
+    const first = page.locator(".opencraft-local-message").filter({ hasText: "first offline message" });
+    await editor.fill("newer draft");
+    await activate(first.getByRole("button", { name: "Message actions", exact: true }));
+    assert.equal(await page.getByRole("menuitem", { name: "Move back to input", exact: true }).getAttribute("aria-disabled"), "true");
+    await page.keyboard.press("Escape");
+    await page.getByRole("menu").waitFor({ state: "hidden" });
+    assert.equal(await editor.innerText(), "newer draft");
+    await editor.fill("");
+    await page.waitForFunction(() => document.querySelector("[data-composer-empty]")?.getAttribute("data-composer-empty") === "true");
+    await activate(first.getByRole("button", { name: "Message actions", exact: true }));
+    await activate(page.getByRole("menuitem", { name: "Move back to input", exact: true }));
+    await page.waitForFunction(() => (window as any).fixture.draft().lifecycle.phase === "editing"
+      && document.querySelectorAll(".opencraft-local-message").length === 1);
+    assert.equal(await editor.innerText(), "first offline message");
+    // Re-submit explicitly; restoring input itself never dispatches.
+    assert.equal(calls.filter(call => call.method === "thread/queue/add").length, before);
+    await send.click();
+    await page.waitForFunction(() => document.querySelectorAll(".opencraft-local-message").length === 2);
+    const bounds = await page.locator(".opencraft-local-messages").boundingBox();
+    const composerBounds = await page.locator(".opencraft-composer-shell").boundingBox();
+    assert.ok(bounds && composerBounds && bounds.y + bounds.height < composerBounds.y, "pending messages are separate from input");
     assert.equal(calls.filter(call => call.method === "thread/queue/add").length, before);
     assert.equal(await page.getByRole("button", { name: "Resume", exact: true }).count(), 0);
+    assert.equal(await page.getByRole('alert').count(), 0);
     await page.screenshot({ path: `${output}/${width}-${theme}-waiting.png` });
     // Cover both same-tab reload and an uninterrupted automatic reconnect.
     online = true; if (theme === "light") await page.reload(); await page.waitForSelector('[data-authoritative="true"]');
     await page.waitForFunction(() => (window as any).fixture.snapshot().queuedSubmissions.every((row: any) => !row.local));
     const adds = calls.filter(call => call.method === "thread/queue/add").slice(before);
-    assert.deepEqual(adds.map(call => call.params.input[0].text), ["first offline message", "second offline message"]);
+    assert.deepEqual(adds.map(call => call.params.input[0].text), ["second offline message", "first offline message"]);
     assert.equal(rows.length, 2);
     // A rejected storage write must retain input even with a running Turn.
     online = false; for (const ws of sockets.clients) ws.close(1012, "storage test");
@@ -260,7 +288,7 @@ try {
     await p.waitForSelector('[data-authoritative="true"]');
     await p.locator('.opencraft-composer-editor').fill('independent new message ' + width);
     await p.locator('[data-composer-primary-action]').click();
-    await p.waitForFunction(() => (window as any).fixture.snapshot().queuedSubmissions.some((row: any) => !row.local));
+    await p.waitForFunction(() => (window as any).fixture.snapshot().queuedSubmissions.some((row: any) => row.serverSubmissionId !== null && row.state === "queued"));
     assert.deepEqual(calls.filter(call => call.method === 'thread/queue/add').slice(before).map(call => call.params.input[0].text), ['uncertain original ' + width, 'independent new message ' + width]);
     await p.close();
   }

@@ -4125,6 +4125,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     letter-spacing: var(--typography-metadata-tracking);
   }
 
+
   &__sender-avatar {
     display: inline-grid;
     place-items: center;
@@ -9193,12 +9194,13 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   column-gap: max(var(--gap-toolbar-dock), var(--gap-control-density-min));
   align-items: end;
   > .opencraft-composer-floating-content { grid-column: 1; grid-row: 1; }
-  > .opencraft-composer-attached-rail { grid-column: 1; grid-row: 2; }
-  > .opencraft-composer-shell { grid-column: 1; grid-row: 3; }
+  > .opencraft-local-messages { grid-column: 1; grid-row: 2; }
+  > .opencraft-composer-attached-rail { grid-column: 1; grid-row: 3; }
+  > .opencraft-composer-shell { grid-column: 1; grid-row: 4; }
   > .opencraft-composer-navigation {
     display: flex;
     grid-column: 2;
-    grid-row: 3;
+    grid-row: 4;
     align-self: end;
   }
 }
@@ -12021,4 +12023,52 @@ html[data-window-host="browser"] body {
   &__title { margin: 0; padding: calc(var(--spacing) * 3) var(--padding-sidebar-activity-row-inline); @include typography.role(body, secondary); }
   [data-native-project] .sidebar-thread-group-toggle { gap: calc(var(--spacing) * 2); }
   [data-native-project] .sidebar-activity-group__items { padding-inline-start: calc(var(--spacing) * 4); }
+}
+
+// Client-owned submitted messages are separate from both the draft and Host queue.
+.opencraft-local-messages {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing) * 3);
+  margin-block-end: calc(var(--spacing) * 4);
+  max-height: 40dvh;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.opencraft-local-message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
+  padding-inline: var(--spacing);
+}
+.opencraft-local-message__body {
+  max-width: min(85%, 60ch);
+  border-radius: calc(var(--spacing) * 4);
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
+  background: color-mix(in srgb, var(--color-text) 5%, transparent);
+  color: var(--color-text-primary);
+  font: var(--typography-body-font);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.opencraft-local-message__meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  gap: var(--spacing);
+  max-width: 100%;
+}
+.opencraft-local-message__status {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing);
+  min-width: 0;
+  padding-block: var(--spacing);
+  color: var(--color-text-tertiary);
+  font: var(--typography-metadata-font);
+  letter-spacing: var(--typography-metadata-tracking);
+  overflow-wrap: anywhere;
+  svg { flex-shrink: 0; }
 }

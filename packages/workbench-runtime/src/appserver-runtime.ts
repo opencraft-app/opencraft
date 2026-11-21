@@ -468,6 +468,7 @@ export interface AppServerThreadRuntimeLease {
     input: readonly UserInput[],
   ): Promise<void>;
   deleteQueuedSubmission(queuedSubmissionId: string): Promise<void>;
+  withdrawQueuedSubmission(commandId: string): Promise<SubmitIntent>;
   abandonUnknownSubmission(commandId: string): Promise<void>;
   retryQueuedSubmission(commandId: string): Promise<void>;
   retryUnconfirmedSteer(queuedSubmissionId: string, expectedTurnId: TurnId): Promise<void>;
@@ -2226,6 +2227,7 @@ export function createAppServerWorkbenchRuntime(
         ),
       abandonUnknownSubmission: commandId => runCommand(() => binding.runtime.abandonUnknownSubmission(commandId)),
       retryQueuedSubmission: commandId => runCommand(() => binding.runtime.retryQueuedSubmission(commandId)),
+      withdrawQueuedSubmission: commandId => runCommand(() => binding.runtime.withdrawQueuedSubmission(commandId)),
       deleteQueuedSubmission: (queuedSubmissionId) =>
         runCommand(() =>
           binding.runtime.deleteQueuedSubmission(queuedSubmissionId),

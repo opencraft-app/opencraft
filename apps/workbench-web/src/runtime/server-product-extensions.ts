@@ -7,6 +7,7 @@ import type { LocaleCatalog } from "@opencraft/i18n";
 /** Trusted build/application composition, never a deployment JSON module URL. */
 export interface ServerWorkbenchExtension {
   readonly id: string;
+  readonly chatRenderExtensions?: readonly import("@deepseek-ai/cordis").Plugin[];
   /** Prepare public code only; never construct services, read account data or activate. */
   readonly preload?: () => Promise<unknown>;
   /** Product-owned messages for the application's existing language choices. */

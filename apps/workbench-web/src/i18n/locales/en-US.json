@@ -758,9 +758,14 @@
   "office.failed": "This document could not be displayed. You can download the original file.",
   "navigation.switchServer": "Switch server",
   "webUpdates.directManagement": "Manage software updates through this server’s deployment entry.",
-  "chat.outbox.waiting": "Saved locally · sends automatically after reconnect",
+  "chat.outbox.actions": "Message actions",
+  "chat.outbox.withdraw": "Move back to input",
+  "chat.outbox.keepDraft": "Keep or send the current draft first",
+  "chat.outbox.cancel": "Cancel sending",
+  "chat.outbox.pending": "Pending messages",
+  "chat.outbox.waiting": "Waiting for connection · sends automatically",
   "chat.outbox.unconfirmed": "Delivery unconfirmed · check the conversation before sending again",
-  "chat.outbox.failed": "Message not sent · remove it and retry after reconnect",
+  "chat.outbox.failed": "Not sent",
   "mcpApp.failed": "App unavailable",
   "mcpApp.loading": "Loading app…",
   "mcpApp.resume": "Open app",
@@ -2250,5 +2255,6 @@
   "workspacePlacement.search": "Search workspaces",
   "workspacePlacement.selectionFailed": "Could not select this workspace. Refresh and try again.",
   "workspacePlacement.temporary": "Temporary workspace",
-  "chat.appearance.confirm": "Confirm"
+  "chat.appearance.confirm": "Confirm",
+  "chat.outbox.sending": "Sending…"
 }

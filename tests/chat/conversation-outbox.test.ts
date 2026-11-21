@@ -332,3 +332,45 @@ for (const changed of ['dispose', 'scope', 'readiness'] as const) test(`fallback
   t.mock.timers.tick(10000); await microtasks();
   assert.equal(f.sent.length, 1, 'old custody must not send after authority is revoked');
 });
+
+
+test("withdraw returns the original structured document and never replays it on reconnect", async () => {
+  const f = fixture(); const box = f.create();
+  const original = { ...intent("withdraw"), document: { version: 1 as const, blocks: [
+    { type: "paragraph" as const, children: [{ type: "text" as const, text: "first line" }] },
+    { type: "paragraph" as const, children: [{ type: "text" as const, text: "second line" }] },
+  ] } };
+  await box.admit(original);
+  assert.deepEqual(box.project()[0]?.localIntent, original);
+  assert.deepEqual(await box.withdraw(original.commandId), original);
+  assert.equal(box.project().length, 0);
+  f.ready(); box.wake(); await settle();
+  assert.equal(f.sent.length, 0); assert.equal(f.rows().length, 0);
+  box.dispose();
+});
+
+test("withdraw storage failure retains local custody", async () => {
+  const f = fixture(); const box = f.create(); await box.admit(intent("retain"));
+  f.fail(); await assert.rejects(box.withdraw("retain"), /Quota/);
+  assert.equal(box.project()[0]?.preview, "retain");
+  assert.equal(f.rows().length, 1); box.dispose();
+});
+
+test("withdraw refuses an in-flight or unconfirmed delivery", async () => {
+  let rejectSend!: (error: Error) => void;
+  const f = fixture(() => new Promise<void>((_, reject) => { rejectSend = reject; }));
+  const box = f.create(); await box.admit(intent("in-flight")); f.ready(); box.wake(); await settle();
+  assert.equal(box.project()[0]?.state, "submitting");
+  await assert.rejects(box.withdraw("in-flight"), /unsent/);
+  rejectSend(new SubmissionOutcomeUnknownError()); await settle();
+  await assert.rejects(box.withdraw("in-flight"), /unsent/);
+  assert.equal(f.rows().length, 1); box.dispose();
+});
+
+test("withdraw wins a serialized race with reconnect without dispatching the removed input", async () => {
+  const f = fixture(); const box = f.create(); await box.admit(intent("race"));
+  const withdrawing = box.withdraw("race");
+  f.ready(); box.wake();
+  assert.equal((await withdrawing).commandId, "race"); await settle();
+  assert.equal(f.sent.length, 0); assert.equal(box.project().length, 0); box.dispose();
+});

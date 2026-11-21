@@ -1374,6 +1374,10 @@ export function App({
         return;
       }
       if (decision.kind === "external") {
+        if (!/^(?:https?:)?\/\//iu.test(target)) {
+          window.open(target, "_blank", "noopener,noreferrer");
+          return;
+        }
         if (chatLinkOpensExternally(extensionPlatform, intent, browserWorkbench.isRecognizedInternalUrl(target))) {
           window.open(target, "_blank", "noopener,noreferrer");
           return;
@@ -2789,7 +2793,8 @@ export function App({
                         loadQueuedImage={loadQueuedImage}
                         queuedSubmissions={[
                           ...visibleQueuedSubmissions(snapshot.conversation?.queuedSubmissions ?? localQueuedSubmissions,
-                            visibleTimeline).filter(submission => !deliveryRecovery.byClientId.has(submission.clientMessageId)).map((submission) =>
+                            visibleTimeline).filter(submission => !deliveryRecovery.byClientId.has(submission.clientMessageId)
+                              && !deliveryRecovery.detached.some(row => row.clientMessageId === submission.clientMessageId)).map((submission) =>
                             queuedSubmissionPresentation(submission, queueReorderable, identityAvatar, intl)),
                           ...(snapshot.conversation?.unconfirmedSteers ?? []).map((claim) => ({
                             id: claim.id,
@@ -2806,6 +2811,12 @@ export function App({
                             retryable: claim.retryable === true,
                           })),
                         ]}
+                        onWithdrawQueuedSubmission={(id) => queueOperation("withdraw", id, async () => {
+                          if (activeThreadLease) await activeThreadLease.withdrawQueuedSubmission(id);
+                          else if (localOutbox) await localOutbox.withdraw(id);
+                          else throw new Error("No local message owner");
+                        })}
+                        onRetryLocalQueuedSubmission={(id) => queueOperation("retry", id, () => deliveryRecoveryActions.onRetry(id))}
                         onUpdateQueuedSubmission={(id, intent) => queueOperation("update", id, () => updateQueuedSubmission(id, intent))}
                         onDeleteQueuedSubmission={(id) => queueOperation("delete", id, () => deleteQueuedSubmission(id))}
                         onRetryUnconfirmedSteer={queueUnconfirmedDeliveryRetry ? (id,turnId)=>queueOperation("retry-unconfirmed-steer",id,()=>retryUnconfirmedSteer(id,turnId)) : undefined}

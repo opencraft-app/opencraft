@@ -892,3 +892,52 @@ test("failed handoff retains immutable retry identity, successful settlement res
   assert.equal(controller.getSnapshot().draft.selections.model, "pi-model");
   controller.dispose();
 });
+
+
+test("withdrawing input reserves the empty draft and restores the original structured document", async () => {
+  let release!: () => void;
+  const controller = createComposerController(existing("one"), services());
+  const content = { document: richDocument, attachments: [], context: [] };
+  const restored = controller.restoreQueuedContent(content, () => new Promise<void>(resolve => { release = resolve; }));
+  await Promise.resolve();
+  assert.equal(controller.getSnapshot().draft.lifecycle.phase, "submitting");
+  controller.dispatch({ type: "set-document", document: { version: 1, blocks: [] } });
+  release(); assert.equal(await restored, true);
+  assert.deepEqual(controller.getSnapshot().draft.document, richDocument);
+  assert.equal(controller.getSnapshot().draft.lifecycle.phase, "editing");
+});
+
+test("withdrawing never replaces a newer draft and never removes its queue item", async () => {
+  const controller = createComposerController(existing("one"), services());
+  controller.dispatch({ type: "set-document", document: richDocument });
+  let taken = false;
+  await assert.rejects(controller.restoreQueuedContent({ document: richDocument, attachments: [], context: [] }, async () => { taken = true; }), /current draft/);
+  assert.equal(taken, false); assert.deepEqual(controller.getSnapshot().draft.document, richDocument);
+});
+
+test("late withdrawal restores only the cached initiating conversation", async () => {
+  let release!: () => void;
+  const controller = createComposerController(existing("one"), services());
+  const restored = controller.restoreQueuedContent({ document: richDocument, attachments: [], context: [] }, () => new Promise<void>(resolve => { release = resolve; }));
+  await Promise.resolve(); controller.dispatch({ type: "switch-target", target: existing("two") });
+  const otherId = controller.getSnapshot().draft.id;
+  release(); assert.equal(await restored, false);
+  assert.equal(controller.getSnapshot().draft.id, otherId);
+  assert.equal(controller.getSnapshot().hasContent, false);
+  controller.dispatch({ type: "switch-target", target: existing("one") });
+  assert.deepEqual(controller.getSnapshot().draft.document, richDocument);
+});
+
+test("withdrawal requires persisted draft custody and rolls back a rejected queue removal", async () => {
+  let writeFails = true; let taken = false;
+  const controller = createComposerController(existing("one"), { ...services(), drafts: {
+    read: () => null, write: () => { if (writeFails) throw new Error("quota"); },
+  } });
+  const content = { document: richDocument, attachments: [], context: [] };
+  await assert.rejects(controller.restoreQueuedContent(content, async () => { taken = true; }), /quota/);
+  assert.equal(taken, false); assert.equal(controller.getSnapshot().hasContent, false);
+  writeFails = false;
+  await assert.rejects(controller.restoreQueuedContent(content, async () => { throw new Error("already sending"); }), /already sending/);
+  assert.equal(controller.getSnapshot().hasContent, false);
+  assert.equal(controller.getSnapshot().draft.lifecycle.phase, "editing");
+});
