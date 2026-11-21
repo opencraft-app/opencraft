@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./human-login-page": "./src/human-login-page.ts"
+    "./human-login-page": "./src/human-login-page.ts",
+    "./serve-workbench-static": "./src/serve-workbench-static.mjs"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p src/remote-browser/tsconfig.json"

@@ -10,10 +10,10 @@ import {
   PREVIEW_APP_ID,
   PREVIEW_PRODUCT_NAME,
   previewBuilderArguments,
-} from "../../scripts/package-macos-preview.mjs";
-import { signMacosPreview } from "../../scripts/sign-macos-preview.mjs";
+} from "../../scripts/build/package-macos-preview.mjs";
+import { signMacosPreview } from "../../scripts/build/sign-macos-preview.mjs";
 import { ownedDesktopFixture } from '../fixtures/owned-electron.mjs';
-const beforePack = createRequire(import.meta.url)("../../scripts/check-desktop-target.cjs");
+const beforePack = createRequire(import.meta.url)("../../scripts/check/check-desktop-target.cjs");
 
 test("packaging rejects a bundle and installer with different identities", async t => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-package-identity-"));

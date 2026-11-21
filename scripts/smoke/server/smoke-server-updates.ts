@@ -164,7 +164,7 @@ if (process.argv[2] === 'core') {
     const base = `http://127.0.0.1:${(await app.listen({ port: 0 })).port}`;
     if (selfUpgrade) {
       const quote = (value: string) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
-      toolCommand = `echo started >> shell-count && OPENCRAFT_WEB_STATE=${quote(join(root, 'web-state'))} OPENCRAFT_WEB_UPDATE_URL=${quote(base)} OPENCRAFT_WEB_PACKAGE_OUTPUT=${quote(join(root, 'self-built'))} ${quote(process.execPath)} ${quote(resolve('scripts/update-server-local.mjs'))} --version 1.1.0 && echo finished >> shell-count && echo UPDATE_TASK_FINISHED`;
+      toolCommand = `echo started >> shell-count && OPENCRAFT_WEB_STATE=${quote(join(root, 'web-state'))} OPENCRAFT_WEB_UPDATE_URL=${quote(base)} OPENCRAFT_WEB_PACKAGE_OUTPUT=${quote(join(root, 'self-built'))} ${quote(process.execPath)} ${quote(resolve('scripts/admin/update-server-local.mjs'))} --version 1.1.0 && echo finished >> shell-count && echo UPDATE_TASK_FINISHED`;
     }
     const initialHealth = await (await fetch(`http://127.0.0.1:${gatewayPort}/health`)).json();
     assert.equal(initialHealth.ok, true);

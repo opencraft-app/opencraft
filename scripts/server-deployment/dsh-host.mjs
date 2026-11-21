@@ -1,7 +1,7 @@
 import { createHostFileSystem } from '../../apps/headless-server/src/host-filesystem.ts';
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
-import { verifyDshOwnerAdmission } from '../patch-dsh-owner-admission.mjs';
+import { verifyDshOwnerAdmission } from '../postinstall/patch-dsh-owner-admission.mjs';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';

@@ -4,10 +4,10 @@ import { resolve, join } from 'node:path';
 import { build } from 'vite';
 import { chromium } from 'playwright';
 import { optionalWebAssets } from "../../../apps/workbench-web/optional-web-assets";
-import { packageWebResources } from "../../package-web-resources.mjs";
-import { packageWebServer } from "../../package-web-server.mjs";
+import { packageWebResources } from "../../build/package-web-resources.mjs";
+import { packageWebServer } from "../../build/package-web-server.mjs";
 import { createOptionalResources } from "../../web-deployment/optional-resources.mjs";
-import { createWorkbenchWebServer } from "../../workbench-web-server.mjs";
+import { createWorkbenchWebServer } from "../../../apps/headless-server/src/workbench-web-server.mjs";
 
 await mkdir('.local/web-resource-optimization', { recursive: true });
 const selfContained = process.argv.includes('--self-contained');

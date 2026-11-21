@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { build } from 'vite';
 import { productPluginPacks } from '../../apps/workbench-web/product-plugin-packs.vite';
 import { splitProductPluginPacks, prepareProductPluginRelease } from '../../apps/headless-server/src/web-deployment/product-plugin-packs.mjs';
-import { createWorkbenchWebServer } from '../../scripts/workbench-web-server.mjs';
+import { createWorkbenchWebServer } from '../../apps/headless-server/src/workbench-web-server.mjs';
 
 test('actual Vite graph externalizes /@fs registrations and refuses leaked implementation', async t => {
   const root = await mkdtemp('/tmp/product-plugin-build-'); t.after(() => rm(root, { recursive: true, force: true }));

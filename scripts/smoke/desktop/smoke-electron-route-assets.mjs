@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
-import { createWorkbenchStaticServer } from "../../serve-workbench-static.mjs";
+import { createWorkbenchStaticServer } from "../../../apps/headless-server/src/serve-workbench-static.mjs";
 
 const server = await createWorkbenchStaticServer({ root: resolve("apps/workbench-web/dist-electron") });
 try {

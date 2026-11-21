@@ -8,7 +8,7 @@ ARG OPENCRAFT_SOURCE_REVISION
 ARG OPENCRAFT_BASE_IMAGE_ID
 ARG RUNTIME_USER=1000:1000
 COPY vendor/electron/fork.json /tmp/opencraft-browser-install/fork.json
-COPY scripts/install-owned-browser-runtime.mjs scripts/remote-browser-artifact.mjs /tmp/opencraft-browser-install/
+COPY scripts/build/install-owned-browser-runtime.mjs scripts/build/remote-browser-artifact.mjs /tmp/opencraft-browser-install/
 RUN --mount=type=bind,from=owned-electron,target=/tmp/opencraft-owned-electron,ro \
     /opt/opencraft/bin/node /tmp/opencraft-browser-install/install-owned-browser-runtime.mjs \
     /tmp/opencraft-owned-electron /opt/opencraft /tmp/opencraft-browser-install/fork.json \

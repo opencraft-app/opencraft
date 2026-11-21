@@ -40,7 +40,7 @@ test("bundled notification worker opens, generates keys and closes beside its ow
 
 test("web and headless release packaging both include the notification worker", async () => {
   for (const name of ["package-web-server.mjs", "package-headless-linux.mjs"]) {
-    const source = await readFile(join(root, "scripts", name), "utf8");
+    const source = await readFile(join(root, "scripts", "build", name), "utf8");
     assert.match(source, /packages\/web-push-node\/src\/store\.worker\.ts/);
     assert.match(source, /push-storage-worker\.mjs/);
   }

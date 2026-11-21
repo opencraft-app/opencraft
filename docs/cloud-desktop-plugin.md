@@ -530,7 +530,7 @@ Backend rejection, lease expiry and releasing held remote keys/buttons remain
 backend responsibilities; local `viewOnly` is never their substitute.
 
 The pinned npm decoder has a deliberately small public-event extension applied by
-`scripts/patch-novnc-desktop-events.mjs` during postinstall and before Web builds. It verifies version,
+`scripts/postinstall/patch-novnc-desktop-events.mjs` during postinstall and before Web builds. It verifies version,
 original SHA-256, every unique replacement anchor and the complete idempotent
 result. Upgrades and partial/unreviewed edits fail installation/build; they cannot
 silently remove first-frame evidence. The application consumes only public

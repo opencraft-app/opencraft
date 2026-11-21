@@ -13,6 +13,6 @@
   "source_docs": ["README.md", "AGENTS.md", "docs/upstream-history.md"],
   "agent_entry": "AGENTS.md",
   "service_docs": "docs/README.md",
-  "deploy": ["config/build-matrix.json", "scripts/publish-workbench-web.mjs"],
+  "deploy": ["config/build-matrix.json", "scripts/release/publish-workbench-web.mjs"],
   "generated_paths": ["apps/*/dist*"]
 }

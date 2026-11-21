@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { patchCursorHotspot, patchDesktopEvents } from "../../scripts/patch-novnc-desktop-events.mjs";
+import { patchCursorHotspot, patchDesktopEvents } from "../../scripts/postinstall/patch-novnc-desktop-events.mjs";
 
 const novncRoot = dirname(createRequire(new URL("../../plugins/cloud-desktop/package.json", import.meta.url))
   .resolve("@novnc/novnc/package.json"));

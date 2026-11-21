@@ -15,8 +15,8 @@ import {
   freezeStore,
   readJournal,
   retainTableOptions,
-} from "../../scripts/storage-migration-tools.mjs";
-import { readOwnerMigrations } from "../../scripts/storage-owner-source.mjs";
+} from "../../scripts/storage/storage-migration-tools.mjs";
+import { readOwnerMigrations } from "../../scripts/storage/storage-owner-source.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const source = join(root, "packages/storage-node/src/stores/provider-retry");

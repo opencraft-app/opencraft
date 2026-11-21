@@ -7,7 +7,7 @@ import test from "node:test";
 
 import WebSocket, { WebSocketServer } from "ws";
 
-import { publishWorkbenchWeb } from "../../scripts/publish-workbench-web.mjs";
+import { publishWorkbenchWeb } from "../../scripts/release/publish-workbench-web.mjs";
 import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 
 test("generic Web release builds before publishing", async () => {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer } from "vite";
-import { assertBrowserRuntimeDependencies } from "../../browser-smoke-preflight.mjs";
+import { assertBrowserRuntimeDependencies } from "../../check/browser-smoke-preflight.mjs";
 const playwright = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const { chromium } = playwright.default ?? playwright;
 assertBrowserRuntimeDependencies(process.env.OPENCRAFT_CHROMIUM_EXECUTABLE ?? chromium.executablePath());

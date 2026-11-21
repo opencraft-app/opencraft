@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { checkActivityRepository, inspectActivityStyle, inspectActivityJsx, visualOwner } from "../../scripts/check-conversation-activity.mjs";
+import { checkActivityRepository, inspectActivityStyle, inspectActivityJsx, visualOwner } from "../../scripts/check/check-conversation-activity.mjs";
 
 test("activity visual metrics have one owner, including valid-but-wrong font roles", () => {
   for (const source of [

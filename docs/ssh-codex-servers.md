@@ -264,7 +264,7 @@ npm run smoke:ssh-codex-browser
 OPENCRAFT_SSH_UI_WEB_ROOT=/absolute/isolated/headless-web-build npm run smoke:ssh-codex-workbench
 OPENCRAFT_SSH_UI_WEB_ROOT=/absolute/isolated/headless-web-build npm run smoke:ssh-management
 OPENCRAFT_SSH_UI_WEB_ROOT=/absolute/isolated/headless-web-build OPENCRAFT_SSH_UI_SHARED_ACCESS=true npm run smoke:ssh-management
-npx tsx scripts/probe-ssh-codex.ts --host HOST --port PORT --user USER --known-hosts VERIFIED_FILE
+npx tsx scripts/diagnose/probe-ssh-codex.ts --host HOST --port PORT --user USER --known-hosts VERIFIED_FILE
 ```
 
 The probe asks for a password without echo (or accepts `--key PATH`), initializes

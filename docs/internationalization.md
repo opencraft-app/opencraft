@@ -35,7 +35,7 @@ catalogs and the separate Electron Main catalogs. Native Main does not acquire
 Web language options. Tests, fixtures, generated output and locale directories
 are excluded. IDs must agree on their English source and catalogs must preserve
 ICU parameters. Extract the Web/shared descriptor handoff with
-`node scripts/check-i18n.mjs --extract /tmp/opencraft-messages.json`.
+`node scripts/check/check-i18n.mjs --extract /tmp/opencraft-messages.json`.
 
 It also detects direct JSX text, visible text/accessibility attributes, literal
 rendered conditional/logical branches and interpolated templates. New occurrences

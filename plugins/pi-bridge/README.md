@@ -44,7 +44,7 @@ Evidence is deliberately limited:
 ## Build and run
 
 ```sh
-node scripts/build-pi-bridge.mjs
+node scripts/build/build-pi-bridge.mjs
 # artifact: plugins/pi-bridge/dist/main.mjs (SHA-256 pinned by the Host generation)
 
 PI_BRIDGE_DATA_DIR=/absolute/private/pi-bridge \
@@ -139,7 +139,7 @@ explicit reconcile operation; this bridge never auto-replays it.
 npm run typecheck --workspace @opencraft/plugin-pi-engine
 npm run typecheck --workspace @opencraft/plugin-pi-bridge
 npm run test:agent-bridge
-node scripts/build-pi-bridge.mjs
+node scripts/build/build-pi-bridge.mjs
 PI_BRIDGE_AGENT_DIR="$HOME/.pi/agent" \
   node --import tsx scripts/smoke/execution/smoke-pi-bridge.ts
 ```

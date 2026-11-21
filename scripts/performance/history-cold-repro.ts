@@ -196,8 +196,8 @@ try {
     await engine.transcriptCache.invalidate(fixture.threadId);
     const webRoot = resolve(value("--web-root"));
     const { createWorkbenchWebServer } = await load("apps/headless-server/src/serve-workbench-web.mjs");
-    const { createWorkbenchWebServer: createStaticWorker } = await load("scripts/workbench-web-server.mjs");
-    const { createHeadlessBackendProxy } = await load("scripts/web-deployment/headless-backend.mjs");
+    const { createWorkbenchWebServer: createStaticWorker } = await load("apps/headless-server/src/workbench-web-server.mjs");
+    const { createHeadlessBackendProxy } = await load("apps/headless-server/src/web-deployment/headless-backend.mjs");
     backend = await createWorkbenchWebServer({ root: webRoot, appHostServer: server, appServerTarget: null, loopbackOnly: true });
     const address = await backend.listen({ host: "127.0.0.1", port: 0 });
     const target = `http://127.0.0.1:${address.port}`;

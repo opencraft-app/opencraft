@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
-import { websiteDeploymentConfig, injectWebsiteDeploymentConfig, createWorkbenchWebServer } from '../../scripts/workbench-web-server.mjs';
+import { websiteDeploymentConfig, injectWebsiteDeploymentConfig, createWorkbenchWebServer } from '../../apps/headless-server/src/workbench-web-server.mjs';
 
 const local = { hostId: 'local', label: 'Server', kind: 'remote-control', url: '/appserver' };
 const codex = { hostId: 'local-codex', label: 'Server', kind: 'remote-control', url: '/codex-appserver' };

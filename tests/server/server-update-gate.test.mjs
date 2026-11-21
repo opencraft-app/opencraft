@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 
 function invoke(args, env = process.env) {
   return new Promise((accept, reject) => {
-    const child = spawn(process.execPath, [resolve('scripts/gate-server-updates.mjs'), ...args], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [resolve('scripts/check/gate-server-updates.mjs'), ...args], { env, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = ''; child.stdout.on('data', b => output += b); child.stderr.on('data', b => output += b);
     child.once('error', reject); child.once('close', code => accept({ code, output }));
   });

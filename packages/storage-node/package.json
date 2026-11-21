@@ -19,6 +19,6 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "db:generate": "drizzle-kit generate --config drizzle.config.ts && node ../../scripts/compile-storage-migrations.mjs"
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts && node ../../scripts/storage/compile-storage-migrations.mjs"
   }
 }

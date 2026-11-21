@@ -55,4 +55,4 @@ jobs:
       - id: select
         env:
           CI_FULL_MATRIX: ${{ inputs.full-matrix }}
-        run: node scripts/ci-plan.mjs
+        run: node scripts/ci/ci-plan.mjs

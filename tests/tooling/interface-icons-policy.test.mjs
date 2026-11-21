@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { inspectInterfaceIcons, inspectInterfaceIconStyles } from "../../scripts/check-interface-icons.mjs";
+import { inspectInterfaceIcons, inspectInterfaceIconStyles } from "../../scripts/check/check-interface-icons.mjs";
 
 test("dependency defaults and browser arrows require explicit shared artwork", () => {
   const imports = 'import { ChevronDownIcon as Arrow } from "@opencraft/design-system-web/action-icons";';

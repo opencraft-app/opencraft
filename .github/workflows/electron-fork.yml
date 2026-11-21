@@ -5,8 +5,8 @@ on:
     paths:
       - vendor/electron/**
       - apps/headless-server/src/remote-browser/focus.cjs
-      - scripts/electron-distribution.mjs
-      - scripts/remote-browser-artifact.mjs
+      - scripts/build/electron-distribution.mjs
+      - scripts/build/remote-browser-artifact.mjs
       - .github/actions/owned-electron/**
       - docker/electron-builder.Dockerfile*
       - .github/workflows/electron-fork.yml
@@ -17,8 +17,8 @@ on:
     paths:
       - vendor/electron/**
       - apps/headless-server/src/remote-browser/focus.cjs
-      - scripts/electron-distribution.mjs
-      - scripts/remote-browser-artifact.mjs
+      - scripts/build/electron-distribution.mjs
+      - scripts/build/remote-browser-artifact.mjs
       - .github/actions/owned-electron/**
       - docker/electron-builder.Dockerfile*
       - .github/workflows/electron-fork.yml

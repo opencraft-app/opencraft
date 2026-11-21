@@ -4,7 +4,7 @@
 
 ## What was compared
 
-`scripts/diagnose-work-status-completion.ts` drives real Activity and
+`scripts/diagnose/diagnose-work-status-completion.ts` drives real Activity and
 Conversation rendering through work → final and late-final-at-completion changes.
 It records the status node identity, label/row geometry, scroll height, response
 spacer position and motion transforms for 30 RAF samples.

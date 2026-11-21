@@ -12,7 +12,7 @@ asset `tla2tools.jar`, SHA-256
 Keep the binary and TLC state outside tracked source. The runner never downloads or installs anything.
 
 ```sh
-node scripts/check-thread-catalog-model.mjs --jar /path/tla2tools.jar --output /tmp/catalog-model-run-UNIQUE
+node scripts/check/check-thread-catalog-model.mjs --jar /path/tla2tools.jar --output /tmp/catalog-model-run-UNIQUE
 ```
 
 The runner verifies both actual exit codes and specific violated properties. A parser error,
@@ -64,8 +64,8 @@ not a model of the complete production transport/ACL, personal pin scope or two 
 ## Replay against the actual implementation
 
 ```sh
-node --import tsx scripts/recovery-chaos.ts --suite catalog --seed 0 --cases 100 --steps 60 --output /tmp/catalog-chaos-UNIQUE
-node --import tsx scripts/recovery-chaos.ts --replay /tmp/catalog-chaos-UNIQUE/failure-minimal.json --output /tmp/catalog-replay-UNIQUE
+node --import tsx scripts/diagnose/recovery-chaos.ts --suite catalog --seed 0 --cases 100 --steps 60 --output /tmp/catalog-chaos-UNIQUE
+node --import tsx scripts/diagnose/recovery-chaos.ts --replay /tmp/catalog-chaos-UNIQUE/failure-minimal.json --output /tmp/catalog-replay-UNIQUE
 NODE_OPTIONS=--import=tsx node --test tests/chat/thread-catalog-ownership-model.test.ts tests/chat/thread-catalog-collaboration-model.test.ts
 ```
 

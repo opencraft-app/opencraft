@@ -13,7 +13,7 @@ import { createManagedWebServer } from "../../scripts/web-deployment/server.mjs"
 import { computeExecutionHash, createExecutionDeployment, coreHealth } from "../../scripts/server-deployment/execution.mjs";
 import { parseWebUpdateStatus } from "../../packages/web-update-protocol/src/index.mjs";
 import { releaseFixture } from "../support/web-deployment-fixture.mjs";
-import { packageWebServer } from "../../scripts/package-web-server.mjs";
+import { packageWebServer } from "../../scripts/build/package-web-server.mjs";
 
 async function until(read, condition) {
   for (let i = 0; i < 500; i++) { const value = await read(); if (condition(value)) return value; await delay(20); }
@@ -154,7 +154,7 @@ test('server update commits both versions, restores execution after failure and 
     const invalidLocal = await until(status, s => s.job.phase === 'failed');
     assert.match(invalidLocal.job.error, /integrity mismatch/); assert.equal(restarts.length, restartsBeforeCorruption);
     health.protocolVersion = 999; // Web/execution can advance while the independent Core protocol differs.
-    const { updateLocalServer } = await import("../../scripts/update-server-local.mjs");
+    const { updateLocalServer } = await import("../../scripts/admin/update-server-local.mjs");
     const local = await updateLocalServer({ version: '1.1.0', archive: archive.archive, buildId: archive.buildId, url: base, stateDirectory: state });
     assert.equal(local.execution.version, '1.1.0');
     const installed = await status();

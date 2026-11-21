@@ -7,7 +7,7 @@ import { createServer } from 'node:net';
 import { once } from 'node:events';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { buildHeadlessBundle, buildHumanAccountBundle } from '../../scripts/package-headless-linux.mjs';
+import { buildHeadlessBundle, buildHumanAccountBundle } from '../../scripts/build/package-headless-linux.mjs';
 import { createManagedWebServer } from '../../scripts/web-deployment/server.mjs';
 import { releaseFixture } from '../support/web-deployment-fixture.mjs';
 import { humanAuthFixture, AuthBrowser } from '../support/human-auth-fixture';

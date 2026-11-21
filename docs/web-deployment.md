@@ -208,7 +208,7 @@ Trusted Publisher 的配置：GitHub Actions；组织 `opencraft-app`；仓库 `
 gh workflow run release.yml --repo opencraft-app/opencraft --ref main -f tag=v0.1.10
 ```
 
-首次发布前选择未占用版本，在当前 checkout 使用 Node 24 构建。按任务范围完成 `npm run gate:server-updates`、typecheck、i18n、Web 更新 Playwright、独立审查。用 `OPENCRAFT_RELEASE_VERSION`、`OPENCRAFT_SOURCE_REVISION`、`OPENCRAFT_WEB_PACKAGE_OUTPUT` 记录版本、来源和独立输出，运行 `npm run package:web:server:execution`；再用 `node scripts/inspect-public-release.mjs /absolute/package.tgz` 验证归档。首次 CLI 发布显式指定 `--access public --tag latest --ignore-scripts --registry=https://registry.npmjs.org/`，发布精确 tgz。发布后必须查询精确版本/latest、下载校验并验证包内 buildId。上传响应不确定时先核对远端，不能直接重复发布或覆盖版本。
+首次发布前选择未占用版本，在当前 checkout 使用 Node 24 构建。按任务范围完成 `npm run gate:server-updates`、typecheck、i18n、Web 更新 Playwright、独立审查。用 `OPENCRAFT_RELEASE_VERSION`、`OPENCRAFT_SOURCE_REVISION`、`OPENCRAFT_WEB_PACKAGE_OUTPUT` 记录版本、来源和独立输出，运行 `npm run package:web:server:execution`；再用 `node scripts/check/inspect-public-release.mjs /absolute/package.tgz` 验证归档。首次 CLI 发布显式指定 `--access public --tag latest --ignore-scripts --registry=https://registry.npmjs.org/`，发布精确 tgz。发布后必须查询精确版本/latest、下载校验并验证包内 buildId。上传响应不确定时先核对远端，不能直接重复发布或覆盖版本。
 
 ### 已有部署切换
 
@@ -587,7 +587,7 @@ writing the separate terminal child receipt. A crash between those writes stays
 unknown and can be retried for the same job. The upgrade agent binds both records
 to the retained signed identity and projects `rolled-back` with a `not-applied`
 receipt for the failed candidate. Missing or mismatching evidence remains unknown.
-`node scripts/recover-server-local.mjs --url <loopback> --state-directory <state>
+`node scripts/admin/recover-server-local.mjs --url <loopback> --state-directory <state>
 --origin <public-origin> --job-id <failed-job> --version <retained-version>
 --build-id <retained-build>` uses the existing local administrator key without
 printing it. The fixed Web handler must first support this endpoint; installing

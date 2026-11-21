@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { temporaryWebPackagePrefix } from "../../scripts/package-web-server.mjs";
-import { temporaryServerReleasePrefix } from "../../scripts/update-server-local.mjs";
+import { temporaryWebPackagePrefix } from "../../scripts/build/package-web-server.mjs";
+import { temporaryServerReleasePrefix } from "../../scripts/admin/update-server-local.mjs";
 
 test("source packaging defaults live in the OS temporary directory", () => {
   const repository = resolve(new URL("../..", import.meta.url).pathname);

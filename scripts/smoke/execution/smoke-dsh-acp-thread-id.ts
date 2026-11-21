@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { AcpEngine, dshAcpCommand } from "../../../plugins/acp-engine/src/index.js";
-import { patchDshThreadEnvironment } from "../../patch-dsh-thread-environment.mjs";
+import { patchDshThreadEnvironment } from "../../postinstall/patch-dsh-thread-environment.mjs";
 const runtime = process.env.OPENCRAFT_DSH_TEST_RUNTIME;
 if (!runtime) throw new Error("Set an isolated writable OPENCRAFT_DSH_TEST_RUNTIME copy; never pass a shared toolchain");
 const root = await mkdtemp(join(tmpdir(), "oc-dsh-acp-thread-id-"));

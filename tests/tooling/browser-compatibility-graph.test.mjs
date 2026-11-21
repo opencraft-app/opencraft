@@ -7,7 +7,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { build } from "vite";
-import { checkBrowserCompatibility } from "../../scripts/browser-compatibility-checker.mjs";
+import { checkBrowserCompatibility } from "../../scripts/check/browser-compatibility-checker.mjs";
 import { browserCompatibility, browserSourcePath } from "../../apps/workbench-web/browser-compatibility.vite.ts";
 
 for (const paths of [path.posix, path.win32]) {
@@ -63,7 +63,7 @@ test("real product graph and CLI retain typed checks outside the core workspace"
     const graph = path.join(temporary, "graph.json");
     const files = captured.map(file => file.startsWith("apps/") ? file : path.relative(core, path.resolve(root, file)).split(path.sep).join("/"));
     await writeFile(graph, JSON.stringify(files));
-    const command = [path.join(core, "scripts/check-browser-compatibility.mjs"), graph];
+    const command = [path.join(core, "scripts/check/check-browser-compatibility.mjs"), graph];
     await assert.rejects(run(process.execPath, command, { cwd: core }), error => {
       assert.equal(error.code, 1);
       assert.match(error.stdout, /es-x\/no-iterator-prototype-map/);

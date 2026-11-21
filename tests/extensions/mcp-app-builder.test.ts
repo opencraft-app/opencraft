@@ -477,7 +477,7 @@ test("N+1 managed upgrade preserves app rows; changed migration checksum rejecte
 test("packaged worker uses its own pinned runtime closure outside workstation dependencies", async () => {
   const { build } = await import("esbuild"),
     { copyMcpAppRuntime } = await import(
-      "../../scripts/package-mcp-app-runtime.mjs"
+      "../../scripts/build/package-mcp-app-runtime.mjs"
     ),
     { writeFile } = await import("node:fs/promises"),
     { spawnSync } = await import("node:child_process");

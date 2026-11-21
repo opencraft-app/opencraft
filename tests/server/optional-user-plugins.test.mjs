@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { loadUserPlugins } from '../../apps/headless-server/src/web-deployment/user-plugins.mjs';
 import { createUserPluginCatalog } from '../../apps/headless-server/src/web-deployment/craft-plugins.mjs';
 import { createWorkbenchWebServer as gateway } from '../../apps/headless-server/src/serve-workbench-web.mjs';
-import { createWorkbenchWebServer as worker } from '../../scripts/workbench-web-server.mjs';
+import { createWorkbenchWebServer as worker } from '../../apps/headless-server/src/workbench-web-server.mjs';
 
 async function fixture(t) {
  const root=await mkdtemp(join(tmpdir(),'optional-user-plugins-'));t.after(()=>rm(root,{recursive:true,force:true}));

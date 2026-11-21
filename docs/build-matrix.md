@@ -85,14 +85,14 @@ The work-status diagnostic runs against the current production components,
 including final-response transitions and reading-position measurements:
 
 ```sh
-WORK_TRANSITION_ONLY=1 npx tsx scripts/diagnose-work-status-completion.ts
+WORK_TRANSITION_ONLY=1 npx tsx scripts/diagnose/diagnose-work-status-completion.ts
 ```
 
 Connector catalog exports require an explicit local input. Missing arguments
 fail with usage before reading files:
 
 ```sh
-node scripts/export-hermes-connector-catalog.mjs /absolute/marketplace
+node scripts/build/export-hermes-connector-catalog.mjs /absolute/marketplace
 ```
 
 The catalog exporter emits metadata; it does not install a connector or connect
@@ -129,7 +129,7 @@ reports its actual version. The embedded bootstrap is also built and run with a
 synthetic product whose top-level code needs these APIs. No account credentials
 or model calls are used. CI pins Chromium 116 for this startup regression.
 
-Every workbench renderer build runs `scripts/check-browser-compatibility.mjs`
+Every workbench renderer build runs `scripts/check/check-browser-compatibility.mjs`
 after Vite exits, including release builds in CI. Vite records actual runtime
 source modules, including lazy chunks, in an ignored local cache; npm archives
 do not contain this list. The checker uses typed `eslint-plugin-es-x` rules
@@ -170,7 +170,7 @@ lease lifetime. `AbortSignal.any` is absent from Safari 16.6, and
 Run `npm run build:web:release` for a fresh graph and automatic check, or
 `npm run lint:browser` to recheck source against the last build's graph after
 editing. Adding imports requires a new build. For an explicit captured graph,
-run `node scripts/check-browser-compatibility.mjs /path/to/module-graph.json`.
+run `node scripts/check/check-browser-compatibility.mjs /path/to/module-graph.json`.
 Malformed graphs, missing files and ignored/unparsed files fail the check. `npm run test:browser-compatibility`
 contains positive/negative examples; CI's `test:web-release` also runs the lint
 regressions. Node follows `.nvmrc`; the lint tooling remains development-only. The curated runtime shims above are
@@ -198,7 +198,7 @@ is tested against the `main` it saw; when several merge close together, the
 push run is what tests their combination, and it reports a break right after
 the merge rather than preventing it. Each `main` commit keeps its own run and is
 never cancelled, so a failure names the merge that caused it; a push run selects
-jobs from the pushed range. `scripts/ci-plan.mjs` chooses its jobs from
+jobs from the pushed range. `scripts/ci/ci-plan.mjs` chooses its jobs from
 Git's full merge-base diff. It includes deleted paths and both sides of a rename;
 it does not use GitHub's limited workflow path filter or a paginated file API.
 The reusable `ci-plan.yml` tests the selector and aggregate check without
@@ -444,7 +444,7 @@ For isolated Skills acceptance, set `OPENCRAFT_SKILLS_DIRECTORY` alongside
 `OPENCRAFT_MODEL_STORAGE_DIRECTORY` and a fresh `--user-data-dir`. Main forwards
 the Skills root through the daemon's `--skills-directory` option to the local
 Host. Omission retains `~/.opencraft/skills`; changing the model/profile directory
-alone does not isolate Skill writes. `scripts/skills-desktop-fixture.ts` seeds
+alone does not isolate Skill writes. `scripts/dev/skills-desktop-fixture.ts` seeds
 only a synthetic loopback model and temporary roots for manual desktop QA.
 
 The `web-browser` artifact does not contain the local Host, DSH, Node APIs, or
@@ -532,7 +532,7 @@ For a restricted systemd preview, set a private `StateDirectory` and its
 writer lock inside the data root so `ProtectSystem=strict` can remain enabled.
 
 For an operator-requested persistent, unauthenticated HTTP installation, run
-the separate repository tool `scripts/install-headless-linux.sh` on the Linux
+the separate repository tool `scripts/build/install-headless-linux.sh` on the Linux
 host. It consumes a newly built tar and its trusted SHA-256, installs a
 `DynamicUser` systemd service with `Restart=on-failure` and `enable --now`,
 binding OpenCraft directly to `0.0.0.0:80` by default. The static WebUI and both
@@ -544,7 +544,7 @@ stops an existing preview or copies account data automatically.
 
 ```sh
 sha256sum release/OpenCraft-server-0.1.0-linux-amd64.tar.gz
-sudo ./scripts/install-headless-linux.sh \
+sudo ./scripts/build/install-headless-linux.sh \
   --archive release/OpenCraft-server-0.1.0-linux-amd64.tar.gz \
   --sha256 '<verified 64-character digest>' \
   --port 80 \
@@ -689,7 +689,7 @@ Unicode mapping, forced key release and no control reacquisition after recovery.
 ldd "$OPENCRAFT_CHROMIUM_EXECUTABLE"
 ```
 
-项目复用 `scripts/browser-smoke-preflight.mjs` 的 `assertBrowserRuntimeDependencies`，列出
+项目复用 `scripts/check/browser-smoke-preflight.mjs` 的 `assertBrowserRuntimeDependencies`，列出
 所有 `not found` 库并失败退出，不自动安装、不绕过检查、不把失败算成 UI 验收。
 `smoke-cloud-desktop-rfb.ts`、`smoke-desktop-panel-ui.ts` 和 `smoke-local-desktop.ts` 已调用此检查。工具路径用明确的
 `OPENCRAFT_PLAYWRIGHT_MODULE` / `OPENCRAFT_CHROMIUM_EXECUTABLE` 注入；不得复制别的

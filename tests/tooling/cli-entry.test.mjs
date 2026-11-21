@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
-for (const entry of ['verify-web-package.mjs', 'full-upgrade/cli.mjs', 'recovery/prepare-join-legacy-fallback.ts']) {
+for (const entry of ['build/verify-web-package.mjs', 'full-upgrade/cli.mjs', 'recovery/prepare-join-legacy-fallback.ts']) {
   test(`${entry}: symlink reaches CLI validation, import stays inert`, async t => {
     const directory = await mkdtemp(join(tmpdir(), 'opencraft-cli-'));
     t.after(() => rm(directory, { recursive: true, force: true }));

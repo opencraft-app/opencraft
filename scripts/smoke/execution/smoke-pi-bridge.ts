@@ -9,7 +9,7 @@
  *   PI_BRIDGE_AGENT_DIR="$HOME/.pi/agent" \
  *     node --import tsx scripts/smoke/execution/smoke-pi-bridge.ts
  *
- * Build the artifact first: `node scripts/build-pi-bridge.mjs`.
+ * Build the artifact first: `node scripts/build/build-pi-bridge.mjs`.
  * Set PI_BRIDGE_MODEL to override the cheapest-model choice and
  * PI_BRIDGE_KEEP=1 to keep the temporary native session for inspection.
  */
@@ -27,7 +27,7 @@ type Delta = Record<string, any>;
 const root = process.cwd();
 const artifact = join(root, "plugins/pi-bridge/dist/main.mjs");
 await access(artifact).catch(() => {
-  throw new Error("Missing bridge artifact; run `node scripts/build-pi-bridge.mjs` first");
+  throw new Error("Missing bridge artifact; run `node scripts/build/build-pi-bridge.mjs` first");
 });
 const agentDirectory = process.env.PI_BRIDGE_AGENT_DIR ?? join(process.env.HOME ?? "", ".pi", "agent");
 await access(join(agentDirectory, "auth.json")).catch(() => {

@@ -106,7 +106,7 @@ test('wire fields cannot forge trusted Actor queue admission or mutate a managed
 test('actual Headless bundle persists authenticated messages, binds execution and recovers request status', { timeout: 30_000 }, async t => {
   const { mkdir, writeFile } = await import('node:fs/promises');
   const { pathToFileURL } = await import('node:url');
-  const { buildHeadlessBundle } = await import("../../scripts/package-headless-linux.mjs");
+  const { buildHeadlessBundle } = await import("../../scripts/build/package-headless-linux.mjs");
   const runtime = new URL("../../.runtime/", import.meta.url).pathname; await mkdir(runtime, { recursive: true });
   const root = await mkdtemp(join(runtime, 'actor-collaboration-artifact-'));
   let app: any;

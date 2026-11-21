@@ -1418,8 +1418,8 @@ lifecycle signals and controllable network boundary are synthetic. Two factories
 represent independent tabs of the same Host; they do not share a resume ticket.
 
 ```sh
-node --import tsx scripts/recovery-chaos.ts --suite websocket --seed 0 --cases 100 --steps 120 --output .local/websocket-chaos
-node --import tsx scripts/recovery-chaos.ts --replay .local/websocket-chaos/failure-minimal.json --output .local/websocket-replay
+node --import tsx scripts/diagnose/recovery-chaos.ts --suite websocket --seed 0 --cases 100 --steps 120 --output .local/websocket-chaos
+node --import tsx scripts/diagnose/recovery-chaos.ts --replay .local/websocket-chaos/failure-minimal.json --output .local/websocket-replay
 node --import tsx --test tests/protocol/websocket-recovery-chaos.test.ts
 ```
 

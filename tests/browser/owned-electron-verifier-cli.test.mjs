@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 
-const cli = resolve("scripts/verify-owned-electron-artifact.mjs");
+const cli = resolve("scripts/build/verify-owned-electron-artifact.mjs");
 const hash = (data) => createHash("sha256").update(data).digest("hex");
 const run = (...args) => spawnSync(process.execPath, [cli, ...args], { encoding: "utf8" });
 

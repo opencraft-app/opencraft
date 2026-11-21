@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { auditOutcome } from '../../scripts/dependency-audit.mjs';
+import { auditOutcome } from '../../scripts/check/dependency-audit.mjs';
 
 const report = (high = 1, critical = 0) => ({ auditReportVersion: 2, vulnerabilities: {},
   metadata: { vulnerabilities: { info: 0, low: 0, moderate: 0, high, critical, total: high + critical } } });

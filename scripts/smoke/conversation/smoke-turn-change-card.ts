@@ -3,7 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "vite";
-import { assertBrowserRuntimeDependencies } from "../../browser-smoke-preflight.mjs";
+import { assertBrowserRuntimeDependencies } from "../../check/browser-smoke-preflight.mjs";
 
 const playwright = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const { chromium } = playwright.default ?? playwright;

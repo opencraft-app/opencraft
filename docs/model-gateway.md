@@ -104,7 +104,7 @@ The feature is opt-in. Before enabling, configure a policy with the local operat
 tool. Use a **dedicated private directory** for the database:
 
 ```sh
-node --import tsx scripts/model-gateway.ts /absolute/budgets/model-gateway.sqlite configure '*' /absolute/limits.json
+node --import tsx scripts/admin/model-gateway.ts /absolute/budgets/model-gateway.sqlite configure '*' /absolute/limits.json
 ```
 
 Example `limits.json` (choose deployment-specific values):
@@ -124,8 +124,8 @@ deployment, activate a policy or migrate production data automatically.
 The local operator can inspect a human or reconcile a verified unknown receipt:
 
 ```sh
-node --import tsx scripts/model-gateway.ts /absolute/budgets/model-gateway.sqlite status HUMAN_ACTOR_ID
-node --import tsx scripts/model-gateway.ts /absolute/budgets/model-gateway.sqlite reconcile REQUEST_ID /absolute/receipt.json
+node --import tsx scripts/admin/model-gateway.ts /absolute/budgets/model-gateway.sqlite status HUMAN_ACTOR_ID
+node --import tsx scripts/admin/model-gateway.ts /absolute/budgets/model-gateway.sqlite reconcile REQUEST_ID /absolute/receipt.json
 ```
 
 The receipt file contains `actualTokens` and `reason`. The local operator has OS

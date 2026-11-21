@@ -2,7 +2,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { electronExecutableName } from '../../scripts/electron-distribution.mjs';
+import { electronExecutableName } from '../../scripts/build/electron-distribution.mjs';
 const hash = value => createHash('sha256').update(value).digest('hex');
 
 export async function ownedDesktopFixture(t) {

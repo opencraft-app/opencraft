@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 import { copyDependencyClosure } from './closure.mjs';
 import { cachedRuntime } from './runtime-cache.mjs';
 import { COMPONENT_LIMITS } from './components.mjs';
-import { prepareDshRuntime } from '../prepare-dsh-runtime.mjs';
+import { prepareDshRuntime } from '../build/prepare-dsh-runtime.mjs';
 const exec = promisify(execFile);
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const SUPPORTED_FULL_RUNTIME_ENGINES = Object.freeze(['pi', 'codex', 'dsh']);

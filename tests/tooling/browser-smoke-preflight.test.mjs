@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertBrowserRuntimeDependencies } from "../../scripts/browser-smoke-preflight.mjs";
+import { assertBrowserRuntimeDependencies } from "../../scripts/check/browser-smoke-preflight.mjs";
 
 test("browser preflight lists missing libraries before browser launch", () => {
   assert.throws(() => assertBrowserRuntimeDependencies("/confirmed/chrome", { platform: "linux", run: () =>

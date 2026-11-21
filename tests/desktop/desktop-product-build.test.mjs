@@ -25,7 +25,7 @@ test("real desktop bundles exclude private accounts by default and package selec
     // The official local-account plugin is core authentication, independent of
     // optional private product identity composition.
     const sourceRoots = ["apps/desktop/src/", "packages/", "plugins/local-account/src/", "node_modules/"];
-    const coreScripts = new Set(["scripts/serve-workbench-static.mjs", "apps/headless-server/src/human-login-page.ts", "apps/headless-server/src/web-asset-cache.mjs"]);
+    const coreScripts = new Set(["apps/headless-server/src/serve-workbench-static.mjs", "apps/headless-server/src/human-login-page.ts", "apps/headless-server/src/web-asset-cache.mjs"]);
     const unexpectedInputs = Object.keys(result.metafile.inputs).filter(file =>
       !coreScripts.has(file) && !sourceRoots.some(root => file.startsWith(root)));
     assert.deepEqual(unexpectedInputs, [], "Standalone desktop bundles only its core owners and dependencies");

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { selectRelease } from '../../scripts/release-request.mjs';
+import { selectRelease } from '../../scripts/release/release-request.mjs';
 const input = { eventName: 'push', ref: 'refs/heads/main', event: {}, previousVersion: '0.1.12', currentVersion: '0.1.13', changelog: '# Changelog\n\n## v0.1.13\n\nChanges\n' };
 test('main version bump requests exact automatic tag; unchanged version does nothing', () => {
   assert.deepEqual(selectRelease(input), { publish: true, tag: 'v0.1.13', createTag: true });

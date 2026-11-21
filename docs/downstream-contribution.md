@@ -10,7 +10,7 @@ Start from a concrete downstream base and contribution head. List exact files,
 not directories or glob patterns:
 
 ```sh
-python3 scripts/contribute-upstream.py prepare \
+python3 scripts/release/contribute-upstream.py prepare \
   --source /path/to/downstream --base BASE_SHA --head CONTRIBUTION_SHA \
   --destination /path/to/new-public-checkout \
   --repo opencraft-app/opencraft --branch contrib/reusable-change \
@@ -41,7 +41,7 @@ author, or repeat `--co-author 'Name <email>'` with permission to publish those
 identities. Internal email addresses are never copied automatically.
 
 ```sh
-python3 scripts/contribute-upstream.py publish \
+python3 scripts/release/contribute-upstream.py publish \
   --receipt /path/to/new-public-checkout.contribution.json \
   --approve-sha256 REVIEWED_APPROVAL_SHA256 \
   --gitleaks /path/to/gitleaks \

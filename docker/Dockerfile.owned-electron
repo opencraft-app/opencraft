@@ -6,10 +6,10 @@ ARG RUNTIME_IMAGE=debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907d
 FROM scratch AS owned-electron
 FROM ${NODE_IMAGE} AS browser-input
 WORKDIR /src
-COPY scripts/remote-browser-artifact.mjs scripts/remote-browser-artifact.mjs
+COPY scripts/build/remote-browser-artifact.mjs scripts/build/remote-browser-artifact.mjs
 COPY vendor/electron/fork.json vendor/electron/fork.json
 RUN --mount=type=bind,from=owned-electron,target=/opt/owned-electron,ro \
-    node scripts/remote-browser-artifact.mjs /opt/owned-electron vendor/electron/fork.json
+    node scripts/build/remote-browser-artifact.mjs /opt/owned-electron vendor/electron/fork.json
 
 FROM ${NODE_IMAGE} AS build-dependencies
 ARG OPENCRAFT_CONTAINER_WEB_SCRIPT=build:web:release
@@ -28,13 +28,13 @@ COPY . .
 RUN test "$(node --version)" = "v$(cat .nvmrc)"
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 FROM build-dependencies AS build-control
-RUN --mount=type=cache,target=/root/.npm node scripts/package-container.mjs /out --without-browser
+RUN --mount=type=cache,target=/root/.npm node scripts/build/package-container.mjs /out --without-browser
 
 FROM build-dependencies AS build
 RUN --mount=type=bind,from=browser-input,source=/src,target=/verified-browser-input,ro \
     --mount=type=cache,target=/root/.npm \
     --mount=type=bind,from=owned-electron,target=/opt/owned-electron,ro \
-    OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION=/opt/owned-electron node scripts/package-container.mjs /out
+    OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION=/opt/owned-electron node scripts/build/package-container.mjs /out
 
 # Export with --target host-artifact --output type=local,dest=./.local/docker-host.
 FROM scratch AS host-artifact

@@ -7,7 +7,7 @@ import {
   electronAppEnvironment,
   electronLaunchSpec,
   startElectron,
-} from "../../scripts/start-electron.mjs";
+} from "../../scripts/dev/start-electron.mjs";
 
 test("Electron app launch removes inherited Node mode without mutating the source environment", () => {
   const source = { ELECTRON_RUN_AS_NODE: "1", OPENCRAFT_TEST_VALUE: "kept" };
@@ -57,6 +57,6 @@ test("the workbench start script uses the sanitized Electron launcher", async ()
   ));
   assert.equal(
     manifest.scripts.start,
-    "npm run build:host && node ../../scripts/start-electron.mjs",
+    "npm run build:host && node ../../scripts/dev/start-electron.mjs",
   );
 });

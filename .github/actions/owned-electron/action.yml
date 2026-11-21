@@ -82,7 +82,7 @@ runs:
         python3 vendor/electron/restore-artifact.py \
           --directory "$RUNNER_TEMP/owned-electron-download-$ARTIFACT_KIND-$ARTIFACT_TARGET" \
           --distribution "$distribution" --kind "$ARTIFACT_KIND"
-        node scripts/verify-owned-electron-artifact.mjs "$ARTIFACT_KIND" "$ARTIFACT_TARGET" "$distribution" vendor/electron/fork.json
+        node scripts/build/verify-owned-electron-artifact.mjs "$ARTIFACT_KIND" "$ARTIFACT_TARGET" "$distribution" vendor/electron/fork.json
         if test "$ARTIFACT_KIND" = browser; then
           echo "OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION=$distribution" >> "$GITHUB_ENV"
         else

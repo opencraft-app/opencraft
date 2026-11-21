@@ -1,6 +1,6 @@
 # Dedicated local build storage
 
-`scripts/build-workspace.mjs` is an opt-in Linux build entry for a separately
+`scripts/build/build-workspace.mjs` is an opt-in Linux build entry for a separately
 provisioned build volume. It never formats disks or changes production storage.
 Set `OPENCRAFT_BUILD_ROOT` to its mount point. The entry refuses a missing,
 read-only or unprovisioned mount and refuses to fall back to a directory on the
@@ -18,8 +18,8 @@ From an OpenCraft checkout:
 
 ```sh
 export OPENCRAFT_BUILD_ROOT=/path/to/mounted/build-volume
-node scripts/build-workspace.mjs status
-node scripts/build-workspace.mjs worktree dev/local
+node scripts/build/build-workspace.mjs status
+node scripts/build/build-workspace.mjs worktree dev/local
 ```
 
 The last command prints a detached checkout path keyed by its complete commit
@@ -28,9 +28,9 @@ SHA. Build from that path with its own dependencies; another checkout's
 and build, keeping generated output on the volume:
 
 ```sh
-node scripts/build-workspace.mjs run -- npm ci --no-audit --no-fund
-node scripts/build-workspace.mjs run -- npm run build:web:release
-node scripts/build-workspace.mjs run -- npm run package:headless:linux:amd64
+node scripts/build/build-workspace.mjs run -- npm ci --no-audit --no-fund
+node scripts/build/build-workspace.mjs run -- npm run build:web:release
+node scripts/build/build-workspace.mjs run -- npm run package:headless:linux:amd64
 ```
 
 The wrapper sets npm, Electron, electron-builder, XDG, ccache, Git and temporary
@@ -44,10 +44,10 @@ Electron source and output live under `worktrees/electron/<fork-definition-hash>
 
 ```sh
 export OPENCRAFT_BUILD_PYTHON=/absolute/path/to/python3.12
-node scripts/build-workspace.mjs electron preflight
-node scripts/build-workspace.mjs electron checkout
-node scripts/build-workspace.mjs electron sync
-node scripts/build-workspace.mjs electron build
+node scripts/build/build-workspace.mjs electron preflight
+node scripts/build/build-workspace.mjs electron checkout
+node scripts/build/build-workspace.mjs electron sync
+node scripts/build/build-workspace.mjs electron build
 ```
 
 Preflight/checkout/sync require 200 GiB free. Builds default to at most four
@@ -61,7 +61,7 @@ state volume is backed by the build filesystem. Set `OPENCRAFT_BUILD_BUILDER`
 to that builder and run from the volume-backed checkout:
 
 ```sh
-node scripts/build-workspace.mjs container -- --load -f docker/Dockerfile -t opencraft:candidate .
+node scripts/build/build-workspace.mjs container -- --load -f docker/Dockerfile -t opencraft:candidate .
 ```
 
 BuildKit intermediates use the provisioned disk. `--load` still imports final

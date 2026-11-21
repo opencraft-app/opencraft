@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDesktopAccountHost } from '../../plugins/local-account/src/desktop';
-import { createWorkbenchStaticServer } from '../../scripts/serve-workbench-static.mjs';
+import { createWorkbenchStaticServer } from '../../apps/headless-server/src/serve-workbench-static.mjs';
 import { MembershipStore } from '../../packages/access-control/src/index';
 import { startOpenCraftDaemonServer } from '../../apps/opencraft-daemon/src/server';
 import { AppHostServer } from '@opencraft/app-host-server';

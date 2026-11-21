@@ -16,7 +16,7 @@ import { SessionCapabilityMcp } from '../../../packages/session-capabilities/src
 import { RemoteBrowserCapabilities } from '../../../apps/headless-server/src/remote-browser/capabilities.js';
 import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
 import { RemoteBrowserService } from "../../../apps/headless-server/src/remote-browser-service.mjs";
-import { packageBrowserRuntime } from "../../package-browser-runtime.mjs";
+import { packageBrowserRuntime } from "../../build/package-browser-runtime.mjs";
 import { connectBrowserOwner } from "../../../apps/headless-server/src/remote-browser-owner.mjs";
 import { runCodexBrowserCli } from './codex-browser-cli.js';
 import { runCodexBrowserAdmission } from './codex-browser-admission.js';

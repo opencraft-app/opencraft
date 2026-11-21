@@ -6,8 +6,8 @@ import { join, relative, isAbsolute } from 'node:path';
 import { promisify } from 'node:util';
 import test from 'node:test';
 import { build } from 'esbuild';
-import { buildPiShellRuntime } from '../../scripts/package-pi-shell-runtime.mjs';
-import { copyAllServerRuntime } from '../../scripts/package-mcp-app-runtime.mjs';
+import { buildPiShellRuntime } from '../../scripts/build/package-pi-shell-runtime.mjs';
+import { copyAllServerRuntime } from '../../scripts/build/package-mcp-app-runtime.mjs';
 
 test('packaged Pi dependencies resolve in isolation and keep all symlinks inside the archive', async t => {
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'pi-packaged-runtime-')));

@@ -52,7 +52,7 @@ jobs:
         run: node --test tests/tooling/release-request.test.mjs
       - name: Select the exact release request
         id: request
-        run: node scripts/release-request.mjs
+        run: node scripts/release/release-request.mjs
       - name: Create an immutable automatic version tag
         if: steps.request.outputs.create-tag == 'true'
         env:
@@ -209,7 +209,7 @@ jobs:
           npm run package:web:server:execution
           mkdir release
           cp "$OPENCRAFT_WEB_PACKAGE_OUTPUT"/*.tgz release/
-          node scripts/inspect-public-release.mjs release/*.tgz
+          node scripts/check/inspect-public-release.mjs release/*.tgz
           python3 "$KIT" changelog --tag "$RELEASE_TAG" --changelog CHANGELOG.md --notes release/release-notes.md
           VERSION="${RELEASE_TAG#v}"
           mapfile -t TARBALLS < <(find release -maxdepth 1 -type f -name '*.tgz' -print)

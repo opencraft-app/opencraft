@@ -158,7 +158,7 @@ Verification additionally uses `tests/execution/model-services.test.ts` and
 model endpoint). Empty optional `input: []` materialized by DSH is normalized to
 omission in the client read projection so round-trip saves keep inherited semantics.
 
-`scripts/patch-dsh-provider-lifecycle.mjs` adds enabled-state support to the pinned DSH pi-ai adapter. Disabled routes remain editable through the domain API but are excluded from runtime resolution. OAuth, unauthenticated inference and failover are not introduced by this surface.
+`scripts/postinstall/patch-dsh-provider-lifecycle.mjs` adds enabled-state support to the pinned DSH pi-ai adapter. Disabled routes remain editable through the domain API but are excluded from runtime resolution. OAuth, unauthenticated inference and failover are not introduced by this surface.
 
 ## 新任务的上次模型选择
 

@@ -5,7 +5,7 @@ import { once } from "node:events";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { startHeadlessSmokeProcess } from "../../scripts/headless-smoke-process.mjs";
+import { startHeadlessSmokeProcess } from "../../scripts/smoke/server/headless-smoke-process.mjs";
 
 const linux = { skip: process.platform !== "linux", timeout: 12_000 };
 async function isRunning(pid) {

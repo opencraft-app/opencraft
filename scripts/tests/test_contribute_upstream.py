@@ -12,7 +12,7 @@ import types
 import unittest
 from unittest.mock import patch
 
-SPEC = importlib.util.spec_from_file_location('contribute', Path(__file__).resolve().parents[1] / 'contribute-upstream.py')
+SPEC = importlib.util.spec_from_file_location('contribute', Path(__file__).resolve().parents[1] / 'release' / 'contribute-upstream.py')
 module = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(module)
 

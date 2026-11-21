@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
 import { build } from 'esbuild';
 import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
-import { createHeadlessBackendProxy } from '../../scripts/web-deployment/headless-backend.mjs';
+import { createHeadlessBackendProxy } from '../../apps/headless-server/src/web-deployment/headless-backend.mjs';
 
 async function fixture(t, options = {}) {
   const root = await mkdtemp(join(tmpdir(), 'request-identity-'));

@@ -4,8 +4,8 @@ import { resolve, join } from 'node:path';
 import { chromium, type BrowserContext, type Page } from '@playwright/test';
 import { AppHostServer } from "../../../packages/app-host-server/src/index";
 import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
-import { createWorkbenchWebServer as createStaticWorker } from "../../workbench-web-server.mjs";
-import { createHeadlessBackendProxy } from "../../web-deployment/headless-backend.mjs";
+import { createWorkbenchWebServer as createStaticWorker } from "../../../apps/headless-server/src/workbench-web-server.mjs";
+import { createHeadlessBackendProxy } from "../../../apps/headless-server/src/web-deployment/headless-backend.mjs";
 
 // Full built Application: a Conversation-only fixture misses a parent hiding
 // valid display data behind a network-backed lease. Both smoke and gate use it.

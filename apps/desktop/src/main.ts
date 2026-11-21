@@ -62,7 +62,7 @@ import {
 import {
   createWorkbenchStaticServer,
   type WorkbenchStaticServer,
-} from "../../../scripts/serve-workbench-static.mjs";
+} from "@opencraft/headless-server/serve-workbench-static";
 import {
   OpenCraftDaemonClientManager,
   type OpenCraftDaemonAppHostConnection,

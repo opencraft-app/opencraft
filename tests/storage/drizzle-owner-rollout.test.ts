@@ -8,8 +8,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { generateSQLiteDrizzleJson, generateSQLiteMigration } from 'drizzle-kit/api';
 import { sqliteTable as declareTable, text as declareText } from 'drizzle-orm/sqlite-core';
 import { openManagedDatabase, resolveMigrationContract, resolveStoreMigrations, type StorageSchemaId } from '../../packages/sqlite-node/src/index';
-import { readOwnerMigrations } from '../../scripts/storage-owner-source.mjs';
-import { compileStore, freezeStore, readJournal, retainTableOptions, restoreIndexExpressions } from '../../scripts/storage-migration-tools.mjs';
+import { readOwnerMigrations } from '../../scripts/storage/storage-owner-source.mjs';
+import { compileStore, freezeStore, readJournal, retainTableOptions, restoreIndexExpressions } from '../../scripts/storage/storage-migration-tools.mjs';
 import { ownerSchemaSignature } from './drizzle-owner-signature';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));

@@ -9,7 +9,7 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { buildGitIdentityRuntime } from '../../scripts/package-git-identity-runtime.mjs';
+import { buildGitIdentityRuntime } from '../../scripts/build/package-git-identity-runtime.mjs';
 
 const bytes = value => { const b=Buffer.from(value),n=Buffer.alloc(4);n.writeUInt32BE(b.length);return Buffer.concat([n,b]); };
 const field = (b,at) => { const n=b.readUInt32BE(at);return [b.subarray(at+4,at+4+n),at+4+n]; };

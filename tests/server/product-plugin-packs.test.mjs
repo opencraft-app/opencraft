@@ -8,7 +8,7 @@ import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { splitProductPluginPacks, prepareProductPluginPacks, openProductPluginAssets } from '../../apps/headless-server/src/web-deployment/product-plugin-packs.mjs';
-import { createWorkbenchWebServer } from '../../scripts/workbench-web-server.mjs';
+import { createWorkbenchWebServer } from '../../apps/headless-server/src/workbench-web-server.mjs';
 import { createWorkbenchWebServer as createHeadlessWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
 import { startHeadlessServer } from '../../apps/headless-server/src/headless-server.mjs';
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');

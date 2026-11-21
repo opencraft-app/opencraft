@@ -187,7 +187,7 @@ test('redeemed invitation pins the peer key; challenge replay and revocation dur
 });
 
 test('packaged offline enrollment boots a token-free Headless team with pinned Hub identity and core admission', { timeout: 30000 }, async t => {
-  const { build } = await import('esbuild'), { buildHeadlessBundle } = await import('../../scripts/package-headless-linux.mjs');
+  const { build } = await import('esbuild'), { buildHeadlessBundle } = await import('../../scripts/build/package-headless-linux.mjs');
   const { execFile } = await import('node:child_process'), { promisify } = await import('node:util');
   const { pathToFileURL } = await import('node:url');
   await mkdir(join(process.cwd(), '.runtime'), { recursive: true });
@@ -195,7 +195,7 @@ test('packaged offline enrollment boots a token-free Headless team with pinned H
   await mkdir(data, { mode: 0o700 }); await mkdir(web); await writeFile(join(web, 'index.html'), 'Bootstrapped private team');
   await writeFile(join(web, 'version.json'), JSON.stringify({ schemaVersion: 1, buildId: 'hub-bootstrap-fixture', headlessServer: true, headlessHostId: 'opencraft-server' }));
   const operator = join(dir, 'hub-admin.mjs'), bundle = join(dir, 'headless.mjs');
-  await build({ entryPoints: [join(process.cwd(), 'scripts/hub-admin.ts')], outfile: operator, bundle: true, platform: 'node', format: 'esm', target: 'node24', banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" } });
+  await build({ entryPoints: [join(process.cwd(), 'scripts/admin/hub-admin.ts')], outfile: operator, bundle: true, platform: 'node', format: 'esm', target: 'node24', banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" } });
   await buildHeadlessBundle(bundle);
   const pair = keys(), a = new HubNetwork(join(dir, 'a.json'), { authority: { issuer: 'bootstrap-login', publicKey: pair.publicKey, providers: ['enterprise-identity'] } }); configure(a, 'http://127.0.0.1:9');
   const invitation = invite(a, ['http://bootstrap-team.test']), file = join(dir, 'command.json'), state = join(data, 'hub-network.json');

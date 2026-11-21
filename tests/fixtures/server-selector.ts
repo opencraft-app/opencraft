@@ -68,7 +68,7 @@ export async function selectorFixture(options:{entryOrigin?:EntryOriginResolver;
       const upstream=request(`http://127.0.0.1:${address.port}${req.url}`,{method:req.method,headers:req.headers},result=>{res.writeHead(result.statusCode!,result.headers);result.pipe(res);});upstream.on('error',()=>res.destroy());req.pipe(upstream);
     });
     // The frontend forwards HTTP only; real WS is tunnelled directly to the core.
-    const { createHeadlessBackendProxy }=await import('../../scripts/web-deployment/headless-backend.mjs');
+    const { createHeadlessBackendProxy }=await import('../../apps/headless-server/src/web-deployment/headless-backend.mjs');
     const proxy=createHeadlessBackendProxy(`http://127.0.0.1:${address.port}`);target.on('upgrade',(req,socket,head)=>proxy.upgrade(req,socket,head,()=>{},new Set()));
     target.listen(0,'127.0.0.1');await once(target,'listening');cleanup.push(()=>new Promise<void>(r=>{target.close(()=>r());target.closeAllConnections();}));
     const route={...scope,name:id==='join'?(options.entryName??'Server'):'Lighthouse',credential:randomBytes(32).toString('base64url'),signer:new AssertionSigner(scope,privateKey),identityProvider:provider};routes.push(route);targets.push((target.address() as any).port);

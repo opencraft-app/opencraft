@@ -194,7 +194,7 @@ test('custom container candidates carry pinned bases, source identity and a veri
 });
 
 test('standalone container Core entries ship the registry and recovery Workers beside the runtime', async () => {
-  const packager = await readFile(new URL('../../scripts/package-container.mjs', import.meta.url), 'utf8');
+  const packager = await readFile(new URL('../../scripts/build/package-container.mjs', import.meta.url), 'utf8');
   for (const [source, target] of [['generation-registry.worker.ts', 'generation-registry-worker.mjs'], ['router-evidence.worker.ts', 'router-evidence-worker.mjs']]) {
     assert.ok(packager.includes(`['apps/codex-core/src/${source}', '${target}', 'esm']`));
   }

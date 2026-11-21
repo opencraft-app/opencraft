@@ -619,7 +619,7 @@ Derived mode stops maintaining the former source store's allocations, model
 buckets, daily/actor aggregates and per-turn contribution rows. Sources, turns,
 confirmed/pending participation, attempts, submissions, admissions, coverage,
 terminals and both replay cursors remain. Existing projection rows can be retired
-offline with `scripts/retire-token-usage-projections.ts`; source history is never
+offline with `scripts/admin/retire-token-usage-projections.ts`; source history is never
 pruned. This is an explicit maintenance operation, not an automatic archive policy.
 Stop **both** the Headless query owner and its physical Host using their normal
 managed lifecycle before running it. The CLI acquires the existing physical and
@@ -751,12 +751,12 @@ regenerate synthetic data in a fresh benchmark directory before measuring it.
 
 ### Model identity backfill CLI
 
-`scripts/backfill-token-usage-models.ts` targets an existing `token-usage.sqlite`
+`scripts/admin/backfill-token-usage-models.ts` targets an existing `token-usage.sqlite`
 and an existing Server scope. Supply both explicitly; the tool has no deployment
 directory or Server ID default:
 
 ```sh
-npx tsx scripts/backfill-token-usage-models.ts \
+npx tsx scripts/admin/backfill-token-usage-models.ts \
   --data-dir /path/to/host-data --server-id server:example --dry-run
 ```
 

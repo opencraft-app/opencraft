@@ -18,7 +18,7 @@
 
 - 管理页面、连接器目录/详情与低频 parser 保持在动态边之后；连接器图标用 `?no-inline` 生成独立哈希资源，列表的 lazy image 才能实际节省传输。
 - 稳定 React runtime 和图标库独立成组，共享 packages 按入口集合分组并合并小于4KB的邻近组，不把全部可选供应商塞成一个启动 vendor 包。此策略减少应用改动污染共享运行时，但不保证业务 Shell 的每次部署零失效。
-- `node scripts/compare-startup-resources.mjs <before.json> <after.json>` 按文件 URL 与模块归属报告关键缓存失效字节；合法代码变化和仅依赖哈希传播分别审查。不能把相同 chunk 数量当作缓存稳定证据。可加 `--max-invalidated-js <bytes>` 作为指定场景的硬门禁。
+- `node scripts/diagnose/compare-startup-resources.mjs <before.json> <after.json>` 按文件 URL 与模块归属报告关键缓存失效字节；合法代码变化和仅依赖哈希传播分别审查。不能把相同 chunk 数量当作缓存稳定证据。可加 `--max-invalidated-js <bytes>` 作为指定场景的硬门禁。
 - `npm run check:startup:cache` 在隔离临时目录构建同一 Headless 发布两次，仅通过构建插件改变可选 Bot 扩展名称，不改工作区源码；关键 JS 失效超过900KB即失败。私有报告保留在 `.local/startup-cache/`，构建目录自动清理。该检查进入 `gate`，900KB只约束这个受控场景，不是所有业务修改的通用预算。
 - 文件和扩展解析仍保留 HTML 导航/CSP 清理、扩展签名/摘要与 self-contained 校验；延迟导入不得跳过这些边界。
 

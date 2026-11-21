@@ -4,9 +4,9 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { brotliCompressSync } from "node:zlib";
-import { createWorkbenchWebServer as worker } from "../../scripts/workbench-web-server.mjs";
+import { createWorkbenchWebServer as worker } from "../../apps/headless-server/src/workbench-web-server.mjs";
 import { createWorkbenchWebServer as web } from "../../apps/headless-server/src/serve-workbench-web.mjs";
-import { createWorkbenchStaticServer as desktop } from "../../scripts/serve-workbench-static.mjs";
+import { createWorkbenchStaticServer as desktop } from "../../apps/headless-server/src/serve-workbench-static.mjs";
 
 for (const [name, create] of [["managed worker", worker], ["Web", web], ["desktop", desktop]] as const) {
   test(`${name}: conditional static GET/HEAD, changed bytes and no-store documents`, async t => {

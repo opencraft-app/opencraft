@@ -8,9 +8,9 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
-import { packageWebServer } from '../../scripts/package-web-server.mjs';
+import { packageWebServer } from '../../scripts/build/package-web-server.mjs';
 import { unpackPackage } from '../../scripts/web-deployment/releases.mjs';
-import { verifyWebPackage } from '../../scripts/verify-web-package.mjs';
+import { verifyWebPackage } from '../../scripts/build/verify-web-package.mjs';
 import { parseNpmPackResult } from '../../scripts/web-deployment/npm-pack-result.mjs';
 
 test('default website archive includes lazy PDF assets and licenses and starts without execution or a resource registry', async t => {

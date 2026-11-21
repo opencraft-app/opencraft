@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { controlOwnershipViolations as check, sharedControlClassNames } from "../../scripts/check-control-ownership.mjs";
+import { controlOwnershipViolations as check, sharedControlClassNames } from "../../scripts/check/check-control-ownership.mjs";
 
 test("raw controls cannot bypass the owner through conditional or composed classes", () => {
   for (const source of [

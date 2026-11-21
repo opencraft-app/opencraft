@@ -12,7 +12,7 @@ import WebSocket, { WebSocketServer } from "ws";
 import { AppHostServer } from "../../packages/app-host-server/src/index.ts";
 import { parseHeadlessArguments, startHeadlessServer } from "../../apps/headless-server/src/headless-server.mjs";
 import { applyExecutionProfile } from "../../scripts/server-deployment/headless-gateway-application.mjs";
-import { assertHeadlessBuildHost, buildHeadlessBundle, headlessWebHostDefinitions } from "../../scripts/package-headless-linux.mjs";
+import { assertHeadlessBuildHost, buildHeadlessBundle, headlessWebHostDefinitions } from "../../scripts/build/package-headless-linux.mjs";
 import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 
 async function writeHeadlessVersion(webRoot) {

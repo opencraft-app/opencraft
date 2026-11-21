@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 
-const script = resolve("scripts/install-headless-linux.sh");
+const script = resolve("scripts/build/install-headless-linux.sh");
 
 function run(...args) {
   return spawnSync("bash", [script, ...args], { encoding: "utf8" });

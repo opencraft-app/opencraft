@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { join } from "node:path";
-import { electronLaunchSpec } from "../start-electron.mjs";
+import { electronLaunchSpec } from "../dev/start-electron.mjs";
 
 /** Only starts and stops this fixture's process, never an installed/user instance. */
 export async function launchIsolatedElectron(root: string) {

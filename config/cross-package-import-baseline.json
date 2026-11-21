@@ -12,10 +12,6 @@
       "target": "scripts/full-upgrade/account-core-limits.mjs"
     },
     {
-      "file": "apps/desktop/src/main.ts",
-      "target": "scripts/serve-workbench-static.mjs"
-    },
-    {
       "file": "apps/local-agent-host/src/dsh-acp-execution-environment.mjs",
       "target": "plugins/acp-engine/src/execution-thread-resolver.mjs"
     },

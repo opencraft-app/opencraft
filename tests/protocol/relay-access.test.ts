@@ -14,7 +14,7 @@ import { createRelayServer } from "../../apps/relay-server/src/server";
 import { connectRelay } from "../../plugins/relay-connect/src/server";
 import { FixtureRequestIdentity, signedFixtureIdentity as signed } from "../fixtures/request-identity";
 import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
-import { createHeadlessBackendProxy, isHeadlessBackendPath } from "../../scripts/web-deployment/headless-backend.mjs";
+import { createHeadlessBackendProxy, isHeadlessBackendPath } from "../../apps/headless-server/src/web-deployment/headless-backend.mjs";
 import { relayPathAllowed } from "../../packages/relay-protocol/src";
 import { DatabaseSync } from 'node:sqlite';
 
