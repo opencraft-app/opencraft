@@ -23,8 +23,10 @@ not a general remote shell: other executables and argument vectors are rejected.
 ## First installation
 
 The default image follows upstream and packages the pinned stock Electron runtime.
-Node, Codex and DSH are pinned by this checkout and lockfile; no account or model
-credential is included. Native Linux amd64 and arm64 build hosts are supported.
+Node and Codex are pinned by this checkout and lockfile; no account or model
+credential is included. The image does not ship DeepSeek Harness (DSH): Brain
+starts without it, and a DSH installed in the image can be bridged by setting
+`OPENCRAFT_DSH_EXECUTABLE` to its `lib/bin.js`. Native Linux amd64 and arm64 build hosts are supported.
 Docker Desktop runs these Linux containers inside its VM.
 
 Internal builds can opt into a verified custom browser by setting

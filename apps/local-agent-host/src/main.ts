@@ -1115,15 +1115,21 @@ export async function startLocalAgentHost(options: {
     await skillRefresh.changed().catch(() => undefined);
   }
   client.sealBootstrap();
-  if (options.ownerHandoff) await capabilityLink!.nativeOwner("seal-bootstrap");
-  if (options.ownerHandoff?.open()) await capabilityLink!.nativeOwner("resume");
+  if (options.ownerHandoff && dshInstalled) await capabilityLink!.nativeOwner("seal-bootstrap");
+  if (options.ownerHandoff?.open() && dshInstalled) await capabilityLink!.nativeOwner("resume");
   schedules.start();
   interrupted.recovery.wake();
   const websocketUrl = `ws://127.0.0.1:${address.port}/rpc?token=${encodeURIComponent(token)}`;
   return {
     websocketUrl,
     inputs,
-    nativeOwner: (action: "inspect" | "fence" | "resume" | "seal-release" | "abort-release") => capabilityLink!.nativeOwner(action),
+    // Without an installed DSH there is no native writer to fence: report an
+    // empty, complete native owner so Host storage handoff proceeds unchanged.
+    nativeOwner: (action: "inspect" | "fence" | "resume" | "seal-release" | "abort-release") => dshInstalled
+      ? capabilityLink!.nativeOwner(action)
+      : Promise.resolve(action === "inspect"
+        ? { owner: "absent", pid: null, configuration: null, coverage: "complete", activeCount: 0, records: [] }
+        : {}),
     async handoffObservation(native: {id:string;turns:[string,string][];rpcInputs:[string,string][]}[] = []) {
       const schedulesState = schedules.handoffObservation(), recovery = interrupted.recovery.handoffObservation();
       const executions = authority.handoffObservation(native.flatMap(record => {

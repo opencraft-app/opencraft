@@ -117,13 +117,9 @@ async function copyRuntimeModules(stageRoot) {
     await mkdir(dirname(target), { recursive: true });
     await cp(resolve(sourceBase, entry.from), target);
   }
+  // The DSH bridge ships; the DSH runtime does not. A server that installs DSH
+  // points OPENCRAFT_DSH_EXECUTABLE at it; otherwise the Host runs without it.
   await buildDshCapabilityPlugin(join(stageRoot, 'runtime/dsh/opencraft-capability-plugin.mjs'));
-  await cp(join(repositoryRoot, "runtime/dsh/package.json"), join(stageRoot, "runtime/dsh/package.json"));
-  await cp(join(repositoryRoot, "runtime/dsh/package-lock.json"), join(stageRoot, "runtime/dsh/package-lock.json"));
-  await cp(join(repositoryRoot, "runtime/dsh/node_modules"), join(stageRoot, "runtime/dsh/node_modules"), {
-    recursive: true,
-    verbatimSymlinks: true,
-  });
   await mkdir(join(stageRoot, "runtime/node_modules"), { recursive: true });
   await cp(join(repositoryRoot, "node_modules/node-pty"), join(stageRoot, "runtime/node_modules/node-pty"), {
     recursive: true,
@@ -175,7 +171,6 @@ export async function packageHeadlessLinux(composition = {}) {
   }
   const require = createRequire(import.meta.url);
   if (typeof require("node-pty").spawn !== "function") throw new Error("Linux node-pty is unavailable");
-  await run("npm", ["run", "prepare:dsh-runtime"]);
   await run("npm", ["ci", "--prefix", join(repositoryRoot, "runtime/codex"), "--workspaces=false", "--omit=dev", "--no-audit", "--no-fund"]);
   await run("npm", ["run", process.env.OPENCRAFT_CONTAINER_WEB_SCRIPT || "build:web:release"], {
     env: {

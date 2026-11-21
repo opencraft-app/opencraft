@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Desktop packages ship the pinned native Codex (0.162.1) and no longer ship the DeepSeek Harness (DSH) runtime; the app starts without DSH and keeps connected agents, model settings and the Codex host.
+- Server packages (headless Linux archive, container image and full-release payloads) no longer ship the DSH runtime either. OpenCraft still bridges DSH: install it separately and set `OPENCRAFT_DSH_EXECUTABLE` to its `lib/bin.js`.
+- **Upgrade note:** on a server or desktop that used DSH, existing DSH conversations are hidden until DSH is installed and `OPENCRAFT_DSH_EXECUTABLE` points to it; their data stays on disk. Without DSH, the local Host still starts, hands off during upgrades and serves its other engines.
+
 ## v0.1.17
 
 - Correct leftover architecture text that still said sending clocks were hidden at rest on both desktop and touch, matching the dedicated footer-clock contract.

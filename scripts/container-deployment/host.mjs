@@ -78,7 +78,7 @@ try {
     artifactDirectory: join(paths.dataDirectory,"artifacts"),
     descriptorPath: paths.dshDescriptor, dataDirectory: join(paths.dataDirectory, 'agent'),
     machineIdentityDirectory: paths.dataDirectory, runtimeDirectory: paths.runtimeDirectory,
-    dshExecutable: join(root, 'runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'),
+    dshExecutable: process.env.OPENCRAFT_DSH_EXECUTABLE?.trim() || join(root, 'runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'),
     dshCapabilityPlugin: join(root, 'runtime/dsh/opencraft-capability-plugin.mjs'),
     modelStorageDirectory: join(paths.dataDirectory, 'models'), speechModelManagement: true,
     projectStorageDirectory: join(paths.dataDirectory, 'projects'),
