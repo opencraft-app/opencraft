@@ -11,8 +11,8 @@ import { MembershipStore, InstanceAccess } from '../../packages/access-control/s
 import { HumanAccountManagement } from '../../packages/access-control/src/account-management';
 import { LocalAccountServerPlugin } from '../../plugins/local-account/src/server';
 import { LocalAccountApplication } from '../../plugins/local-account/src/application';
-import { humanLoginPage } from '../../scripts/human-login-page';
-import { createWorkbenchWebServer } from '../../scripts/serve-workbench-web.mjs';
+import { humanLoginPage } from '../../apps/headless-server/src/human-login-page';
+import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
 import { AuthBrowser } from '../support/human-auth-fixture';
 
 const password = 'Only-for-local-synthetic-tests-42';

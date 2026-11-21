@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-const source = readFileSync(new URL('../../scripts/remote-browser/worker.cjs', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../../apps/headless-server/src/remote-browser/worker.cjs', import.meta.url), 'utf8');
 function fixture() {
   let now = 0, copies = 0; const sent = [];
   const context = vm.createContext({ performance: { now: () => now }, encoderReady: true,

@@ -317,8 +317,7 @@
   min-height: var(--size-control-hit-min);
   padding: 0;
   border-radius: var(--radius-xs);
-  font: inherit;
-  letter-spacing: inherit;
+  @include typography.inherit-surrounding;
   white-space: normal;
   overflow-wrap: anywhere;
   vertical-align: baseline;

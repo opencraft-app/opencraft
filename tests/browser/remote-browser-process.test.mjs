@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 
 // Run the real Node Writable failure in a separate Gateway process: the old
 // service crashes the process despite passing a callback to stdin.write().
-const serviceUrl = new URL('../../scripts/remote-browser-service.mjs', import.meta.url).href;
+const serviceUrl = new URL('../../apps/headless-server/src/remote-browser-service.mjs', import.meta.url).href;
 const probe = String.raw`
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';

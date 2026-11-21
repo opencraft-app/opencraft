@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ConversationResourceLifecycle } from '../../scripts/conversation-resource-lifecycle.mjs';
+import { ConversationResourceLifecycle } from '../../apps/headless-server/src/conversation-resource-lifecycle.mjs';
 const deferred = () => { let resolve; const promise = new Promise(r => resolve = r); return { promise, resolve }; };
 
 test('a synchronous owner failure does not prevent other owners from releasing resources', async () => {

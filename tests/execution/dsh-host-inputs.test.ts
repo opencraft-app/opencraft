@@ -12,7 +12,7 @@ import { DshExecutionAuthority } from '../../apps/local-agent-host/src/dsh-execu
 import { DshAppServerAdapter } from '../../apps/local-agent-host/src/dsh-appserver-adapter.js';
 import { dshHostInputs } from '../../apps/local-agent-host/src/dsh-host-inputs.js';
 import { handleHostInput } from '../../apps/local-agent-host/src/host-input-http.js';
-import { attachDshHost } from '../../scripts/server-deployment/dsh-host-client.mjs';
+import { attachDshHost } from '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
 
 const hostOwner={connectionId:'host-input',identity:{id:'host-input',username:'Host input'}};
 const browser={connectionId:'browser',identity:{id:'human',username:'Human'}};

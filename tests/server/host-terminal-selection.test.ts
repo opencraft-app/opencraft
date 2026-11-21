@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { HostTerminalSession, type HostTerminalService } from '../../scripts/host-terminal-transport';
+import { HostTerminalSession, type HostTerminalService } from '../../apps/headless-server/src/host-terminal-transport';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 function service() {
  const listeners=new Set<(m:string,p:unknown)=>void>(), calls:string[]=[];

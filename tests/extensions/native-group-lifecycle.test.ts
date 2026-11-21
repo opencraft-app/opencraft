@@ -7,7 +7,7 @@ import {openServerDatabase,SERVER_MIGRATIONS} from '@opencraft/storage-node/serv
 import {openManagedDatabase} from '@opencraft/sqlite-node';
 import {ActorStore} from '../../packages/access-control/src/actors';
 import {Collaboration,type ConversationExecutionPort,type ExecutionReceipt} from '../../packages/access-control/src/collaboration';
-import {ImChannelsAppServer} from '../../scripts/im-channels-appserver.mjs';
+import {ImChannelsAppServer} from '../../apps/headless-server/src/im-channels-appserver.mjs';
 import {LOGICAL_CLIENT_FIELD} from '@opencraft/app-host-protocol';
 
 async function fixture(t:test.TestContext,execution?:ConversationExecutionPort){

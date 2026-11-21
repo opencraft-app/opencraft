@@ -10,8 +10,8 @@ import { LocalAccountServerPlugin } from '../../plugins/local-account/src/server
 import { HumanAuth } from '../../packages/access-control/src/human-auth';
 import { ActorAccess } from '../../packages/access-control/src/actor-access';
 import { InstanceAccess, MembershipStore } from '../../packages/access-control/src/index';
-import { humanLoginPage } from '../../scripts/human-login-page';
-import { createWorkbenchWebServer } from '../../scripts/serve-workbench-web.mjs';
+import { humanLoginPage } from '../../apps/headless-server/src/human-login-page';
+import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
 
 export async function mockIssuer() {
   const keys = generateKeyPairSync('rsa', { modulusLength: 2048 }), other = generateKeyPairSync('rsa', { modulusLength: 2048 });

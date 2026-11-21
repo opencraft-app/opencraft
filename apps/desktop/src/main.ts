@@ -40,7 +40,7 @@ import { browserMetadataKeys as browserMetadataIdentity, normalizeBrowserMetadat
 import { resolveCodexExecutable } from "./codex-executable.js";
 import { remoteServerOrigin } from '@opencraft/plugin-local-account/connections';
 import { createDesktopAccountHost } from '@opencraft/plugin-local-account/desktop';
-import { humanLoginPage } from '../../../scripts/human-login-page.js';
+import { humanLoginPage } from '@opencraft/headless-server/human-login-page';
 
 import {
   BrowserWindow,

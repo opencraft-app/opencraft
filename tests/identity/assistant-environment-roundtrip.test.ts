@@ -38,6 +38,15 @@ test(
   "unknown sandbox effect stays pending across brain restart and is never replayed by a new native call",
   { timeout: 50000 },
   async (t) => {
+    // Same native precondition as the round-trip above: the Host validates and launches this binary.
+    if (
+      !existsSync(
+        "/opt/opencraft/runtime/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex",
+      )
+    ) {
+      t.skip("Pinned native binary unavailable");
+      return;
+    }
     const root = await mkdtemp(join(tmpdir(), "bot-unknown-fixture-"));
     t.after(() => rm(root, { recursive: true, force: true }));
     const f = localSandboxFixture({

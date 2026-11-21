@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { AppHostServer } from '../../packages/app-host-server/src/index';
-import { callConversationHost } from '../../scripts/conversation-execution.mjs';
+import { callConversationHost } from '../../apps/headless-server/src/conversation-execution.mjs';
 
 for (const method of ['prepare','create']) for (const code of [400,403,409,502,503,-32081]) {
   test(`orchestration ${method} preserves rejection or uncertain creation ${code} without retry or error-text disclosure`, async t => {
@@ -47,7 +47,7 @@ test('operation-bound internal control reaches an owned private Thread without g
  assert.equal(access.allows('server','private-child'),false);assert.equal(access.allows('server','private-child',owner),true);
 });
 
-import {createThreadOrchestrationExecution} from '../../scripts/thread-orchestration-execution.mjs';
+import {createThreadOrchestrationExecution} from '../../apps/headless-server/src/thread-orchestration-execution.mjs';
 import {CodexOrchestrationControl} from '../../apps/opencraft-daemon/src/codex-orchestration-control';
 
 test('real driver stop crosses AppHost private access only on the admitted control lane',async t=>{

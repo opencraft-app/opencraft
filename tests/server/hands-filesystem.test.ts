@@ -4,11 +4,11 @@ import { chmod, mkdtemp, mkdir, open, readFile, rm, symlink, writeFile } from 'n
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { request } from 'node:http';
-import { startHostFileSystem, createHostFileSystem } from '../../scripts/host-filesystem.js';
-import { HostFileSystemSession } from '../../scripts/host-filesystem-transport.js';
+import { startHostFileSystem, createHostFileSystem } from '../../apps/headless-server/src/host-filesystem.js';
+import { HostFileSystemSession } from '../../apps/headless-server/src/host-filesystem-transport.js';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 import { WebSocket, WebSocketServer } from 'ws';
-import { startHeadlessServer } from '../../scripts/headless-server.mjs';
+import { startHeadlessServer } from '../../apps/headless-server/src/headless-server.mjs';
 
 async function fixture(t: test.TestContext, concurrency = 4) {
   const root = await mkdtemp(join(tmpdir(), 'hands-files-'));

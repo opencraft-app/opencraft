@@ -6,7 +6,7 @@ import WebSocket, { WebSocketServer } from 'ws';
 const require = createRequire(import.meta.url);
 const { CreditWindow, parseMediaFeedback } = require('../../packages/remote-interaction/src/protocol.cjs');
 const { MediaFlow } = require('../../packages/remote-interaction/src/media-flow.cjs');
-const { createDisplayFlow } = require('../../scripts/remote-browser/display.cjs');
+const { createDisplayFlow } = require('../../apps/headless-server/src/remote-browser/display.cjs');
 const frame = (id, key = false, bytes = 20) => {
   const buffer = Buffer.alloc(bytes); buffer[0] = key ? 1 : 0; buffer.writeBigUInt64BE(BigInt(id), 1); return buffer;
 };

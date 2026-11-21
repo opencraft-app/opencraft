@@ -6,7 +6,7 @@ const { createServer } = require('node:http');
 const { mkdtempSync, rmSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
-const { initializeNativeFocus } = require('../../scripts/remote-browser/focus.cjs');
+const { initializeNativeFocus } = require('../../apps/headless-server/src/remote-browser/focus.cjs');
 const profile = mkdtempSync(join(tmpdir(), 'opencraft-native-causal-input-'));
 app.setPath('userData', profile); app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('site-per-process');
@@ -177,7 +177,10 @@ app.whenReady().then(async () => {
   await test('destroying WebContents retires a pending native acknowledgement',async()=>{
     const temporary=new BrowserWindow({show:false,width:400,height:300,webPreferences:{offscreen:true,sandbox:true}});windows.add(temporary);
     const twc=temporary.webContents;await twc.loadURL('about:blank');
-    const dispose=await initializeNativeFocus(twc,()=>errors.push('Temporary native focus failed'));
+    // Destroying the window below is the fixture; the focus owner reports that
+    // loss as a failure, which only counts before the intentional destroy.
+    let retiring=false;
+    const dispose=await initializeNativeFocus(twc,()=>{if(!retiring)errors.push('Temporary native focus failed')});
     try {
       await twc.loadURL(origin+'/child');await twc.capturePage();
       const ready=await activation(twc,'mouse',100,40);assert((await causal(twc.mainFrame,ready)).available);
@@ -187,7 +190,7 @@ app.whenReady().then(async () => {
       void run(twc.mainFrame,`console.info('owned-native-causal-destroy-busy');{const end=performance.now()+3200;while(performance.now()<end){}}`).catch(()=>{});
       await started;assert(Date.now()-issued<1500,'Destroy marker must precede the blocked renderer task completion');
       const pending=twc.sendInputEventWithNativeInputTicket({type:'mouseUp',button:'left',clickCount:1,x:100,y:40});
-      const rejected=assert.rejects(pending,/destroyed|superseded|timed out/);temporary.destroy();await rejected;
+      const rejected=assert.rejects(pending,/destroyed|superseded|timed out/);retiring=true;temporary.destroy();await rejected;
       return {rendererWasBlocked:true};
     } finally {dispose();}
   });

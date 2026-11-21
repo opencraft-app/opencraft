@@ -6,8 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { HostFileDownloads } from "../../apps/opencraft-daemon/src/host-file-downloads.js";
-import { HtmlFilePreviews } from "../../scripts/html-file-previews.mjs";
-import { createWorkbenchWebServer } from "../../scripts/serve-workbench-web.mjs";
+import { HtmlFilePreviews } from "../../apps/headless-server/src/html-file-previews.mjs";
+import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 import { isHeadlessBackendPath } from "../../scripts/web-deployment/headless-backend.mjs";
 
 async function fixture(t: test.TestContext, gateway = false, remote = false) {

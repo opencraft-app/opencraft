@@ -11,14 +11,14 @@ import nodeTest from 'node:test';
 import { build } from 'esbuild';
 import ssh2 from 'ssh2';
 const { Server: SshServer, utils: sshUtils } = ssh2;
-import { EmployeeGitVaultStore } from '../../scripts/employee-git-vault-store';
-import { GitIdentityBroker, type GitExecutionIdentity } from '../../scripts/git-identity-broker';
-import { queryGitIdentityBroker, serveGitIdentityBroker } from '../../scripts/git-identity-ipc';
-import { exactGitHost, gitConfigParameter, parseGitInvocation, personalHttpsRemote } from '../../scripts/git-identity-wrapper';
-import { managedGitEnvironment } from '../../scripts/git-identity-environment';
-import { renderGitIdentityInstallation } from '../../scripts/git-identity-installation';
-import { GitBrokerOwner } from '../../scripts/git-broker-owner';
-import { generateGitSigningKey } from '../../scripts/git-identity-signer';
+import { EmployeeGitVaultStore } from '@opencraft/execution-environment/employee-git-vault-store';
+import { GitIdentityBroker, type GitExecutionIdentity } from '../../apps/headless-server/src/git-identity-broker';
+import { queryGitIdentityBroker, serveGitIdentityBroker } from '@opencraft/execution-environment/git-identity-ipc';
+import { exactGitHost, gitConfigParameter, parseGitInvocation, personalHttpsRemote } from '../../apps/headless-server/src/git-identity-wrapper';
+import { managedGitEnvironment } from '../../apps/headless-server/src/git-identity-environment';
+import { renderGitIdentityInstallation } from '../../apps/headless-server/src/git-identity-installation';
+import { GitBrokerOwner } from '../../apps/headless-server/src/git-broker-owner';
+import { generateGitSigningKey } from '../../apps/headless-server/src/git-identity-signer';
 // SO_PEERCRED and /proc are the supported local Linux execution boundary.
 const test = process.platform === 'linux' ? nodeTest : nodeTest.skip;
 
@@ -35,7 +35,7 @@ async function fixture(t: any, httpsCredentialHosts?: readonly string[]) {
     }
     return request(peer, value);
   };
-  const socket = join(root, 'broker.sock'), ipc = await serveGitIdentityBroker(broker, socket, resolve('scripts/git-identity-peer-bridge.py'));
+  const socket = join(root, 'broker.sock'), ipc = await serveGitIdentityBroker(broker, socket, resolve('apps/headless-server/src/git-identity-peer-bridge.py'));
   t.after(async () => { await ipc.close(); store.close(); await rm(root, { recursive: true, force: true }); });
   return { root, socket, store, opens, credentials: () => credentials, setIdentity: (value: GitExecutionIdentity) => { identity = value; } };
 }
@@ -75,7 +75,7 @@ test('an unbound host answers before a stalled execution origin lookup', async t
   const store = new EmployeeGitVaultStore(root); let lookups = 0;
   const broker = new GitIdentityBroker({ store, hosts: ['github.com'], runtimeDirectory: root,
     resolve: async () => { lookups++; return new Promise(() => {}); } });
-  const socket = join(root, 'broker.sock'), ipc = await serveGitIdentityBroker(broker, socket, resolve('scripts/git-identity-peer-bridge.py'));
+  const socket = join(root, 'broker.sock'), ipc = await serveGitIdentityBroker(broker, socket, resolve('apps/headless-server/src/git-identity-peer-bridge.py'));
   t.after(async () => { await ipc.close(); store.close(); await rm(root, { recursive: true, force: true }); });
   assert.equal((await queryGitIdentityBroker(socket, { op: 'open', threadId: 'existing-session', host: 'github.com' }, 250)).status, 'unconfigured');
   assert.equal(lookups, 0);
@@ -86,7 +86,7 @@ test('credential helper accepts repeated Git array keys but rejects a repeated s
   const session = await queryGitIdentityBroker(f.socket, { op: 'open', threadId: 'synthetic-thread', host: 'github.com' });
   assert.equal(session.status, 'configured');
   const wrapper = join(f.root, 'credential-helper.mjs');
-  await build({ entryPoints: [resolve('scripts/git-identity-wrapper.ts')], outfile: wrapper, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' });
+  await build({ entryPoints: [resolve('apps/headless-server/src/git-identity-wrapper.ts')], outfile: wrapper, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' });
   const env = { ...process.env, OPENCRAFT_GIT_BROKER_SOCKET: f.socket, OPENCRAFT_GIT_COMMAND_SESSION: session.sessionId };
   const helper = (input: string) => child(process.execPath, [wrapper, '--opencraft-credential-helper', 'get'], env, f.root, input);
   // Git 2.46+ announces capabilities and may pass several WWW-Authenticate values.
@@ -112,7 +112,7 @@ test('real wrapper preserves original authors on amend/cherry-pick/rebase and ne
   await git('remote', 'add', 'origin', 'https://github.com/synthetic/fixture.git');
   const managedEnv = { ...env, CODEX_THREAD_ID: 'synthetic-thread', OPENCRAFT_GIT_NATIVE: '/usr/bin/git', OPENCRAFT_GIT_BROKER_SOCKET: f.socket };
   const wrapper = join(f.root, 'git-identity-wrapper.mjs');
-  await build({ entryPoints: [resolve('scripts/git-identity-wrapper.ts')], outfile: wrapper, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' });
+  await build({ entryPoints: [resolve('apps/headless-server/src/git-identity-wrapper.ts')], outfile: wrapper, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' });
   const managed = (...args: string[]) => child(process.execPath, [wrapper, ...args], managedEnv, work);
   assert.equal((await managed('commit', '--allow-empty', '-qm', 'unconfigured')).code, 0);
   assert.equal((await git('show', '-s', '--format=%an|%cn')).out, 'Original|Server');
@@ -172,7 +172,7 @@ test('managed constants survive a login bash profile without changing the global
   const bin = join(root, 'bin'); await mkdir(bin);
   await writeFile(join(bin, 'git'), '#!/bin/sh\nprintf managed\\n\n', { mode: 0o700 });
   const before = process.env.PATH;
-  const env = managedGitEnvironment(process.env, { binDirectory: bin, nativeGit: '/usr/bin/git', brokerSocket: join(root, 'broker.sock'), hosts: ['github.com'], bashEnvironment: resolve('scripts/git-identity-shell-env.sh') });
+  const env = managedGitEnvironment(process.env, { binDirectory: bin, nativeGit: '/usr/bin/git', brokerSocket: join(root, 'broker.sock'), hosts: ['github.com'], bashEnvironment: resolve('apps/headless-server/src/git-identity-shell-env.sh') });
   const result = await child('/bin/bash', ['-lc', 'command -v git'], env, root);
   assert.equal(result.code, 0); assert.equal(result.out, join(bin, 'git'));
   assert.equal(process.env.PATH, before);
@@ -184,7 +184,7 @@ async function managedRepository(t: any) {
   await child('/usr/bin/git', ['init', '-q', work], env, f.root);
   const native = (...args: string[]) => child('/usr/bin/git', args, env, work);
   await native('symbolic-ref', 'HEAD', 'refs/heads/main'); await native('commit', '--allow-empty', '-qm', 'initial');
-  const wrapper = join(f.root, 'git.mjs'); await build({ entryPoints: [process.env.OPENCRAFT_TEST_GIT_WRAPPER_SOURCE || resolve('scripts/git-identity-wrapper.ts')], outfile: wrapper, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' });
+  const wrapper = join(f.root, 'git.mjs'); await build({ entryPoints: [process.env.OPENCRAFT_TEST_GIT_WRAPPER_SOURCE || resolve('apps/headless-server/src/git-identity-wrapper.ts')], outfile: wrapper, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' });
   const managedEnv: NodeJS.ProcessEnv = { ...env, CODEX_THREAD_ID: 'synthetic-thread', OPENCRAFT_GIT_MANAGED: '1', OPENCRAFT_GIT_NATIVE: '/usr/bin/git', OPENCRAFT_GIT_BROKER_SOCKET: f.socket, OPENCRAFT_GIT_HOSTS: 'github.com,unconfigured.example.test' };
   const managed = (...args: string[]) => child(process.execPath, [wrapper, ...args], managedEnv, work);
   const bind = () => f.store.write('synthetic:1', 'github.com', 0, { identity: { username: 'synthetic', name: 'Employee', email: 'employee@example.test' }, token: 'synthetic-only', signing: null });

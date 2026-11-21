@@ -275,6 +275,9 @@ jobs:
       - name: Ensure system packages for Git identity and token tests
         run: bash scripts/ci/setup-toolchain.sh system
         if: matrix.part == 'tests'
+      - name: Install Chromium for browser-backed unit tests
+        run: bash scripts/ci/install-playwright-chromium.sh
+        if: matrix.part == 'tests'
       - id: dsh
         run: npm run prepare:dsh-runtime
         if: always() && steps.dependencies.outcome == 'success'
@@ -350,6 +353,8 @@ jobs:
       # Same system packages as Claude Code cloud sessions (.claude/hooks/session-start.sh).
       - name: Ensure system packages for Git identity and token tests
         run: bash scripts/ci/setup-toolchain.sh system
+      - name: Install Chromium for browser-backed unit tests
+        run: bash scripts/ci/install-playwright-chromium.sh
       - run: npm run test:controls
         if: always() && steps.dependencies.outcome == 'success'
         timeout-minutes: 10

@@ -9,12 +9,12 @@ import { request } from 'node:http';
 import WebSocket from 'ws';
 import { releaseFixture } from '../support/web-deployment-fixture.mjs';
 import { createManagedWebServer } from '../../scripts/web-deployment/server.mjs';
-import { createWorkbenchWebServer } from '../../scripts/serve-workbench-web.mjs';
+import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
 import { createRelayServer } from '../../apps/relay-server/src/server';
 import { connectRelay } from '../../plugins/relay-connect/src/server';
 import { AssertionSigner, AssertionProvider } from '../../packages/identity-core/src/node';
 import { MembershipStore, InstanceAccess } from '../../packages/access-control/src';
-import { loadLocalMachineAccess } from '../../scripts/local-machine-access.mjs';
+import { loadLocalMachineAccess } from '../../apps/headless-server/src/local-machine-access.mjs';
 import { createProtocolIngress } from '../../scripts/web-deployment/protocol-ingress.mjs';
 
 for (const admission of ['explicit', 'verified-provider', 'local-machine'] as const) test(`managed ${admission} ingress protects private entry and updater authority`,async t=>{

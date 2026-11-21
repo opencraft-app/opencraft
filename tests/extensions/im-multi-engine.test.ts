@@ -18,8 +18,8 @@ import { ImPlugin } from '../../plugins/im/src/server.js';
 import { SwitchboardStore } from '../../plugins/im/src/store.js';
 import { stewardRoute } from '../../plugins/im/src/templates.js';
 import { encodeConversationRef } from '../../packages/appserver-protocol/src/collaboration.js';
-import { createRoutedConversationExecution } from '../../scripts/conversation-execution.mjs';
-import { createImExecution } from '../../scripts/im-plugins.mjs';
+import { createRoutedConversationExecution } from '../../apps/headless-server/src/conversation-execution.mjs';
+import { createImExecution } from '../../apps/headless-server/src/im-plugins.mjs';
 import WebSocket from 'ws';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 
@@ -133,7 +133,7 @@ test('conversation picker reads both Hosts on its first page, preserves independ
   const first=await execution.discover('',null);assert.deepEqual(first.conversations.map((c:any)=>c.ref.serverId),['server:fixture:codex','server:fixture:pi','server:fixture:dsh']);
   assert.equal(calls.length,2);assert.ok(first.nextCursor);
   const second=await execution.discover('',first.nextCursor);assert.equal(second.conversations.length,1);assert.equal(second.nextCursor,null);assert.equal(calls.length,3);assert.equal(calls[2].hostId,'local-codex');assert.equal(calls[2].cursor,'codex-page-2');
-  const {ImChannelService}=await import('../../scripts/im-channel-service.mjs');
+  const {ImChannelService}=await import('../../apps/headless-server/src/im-channel-service.mjs');
   const collaboration=new Collaboration(join(directory,'collaboration.sqlite'),actors,execution);t.after(()=>collaboration.close());
   const service=await ImChannelService.open([],{dataDirectory:directory,actors,collaboration,getAppHost:()=>appHost,actorAccess:{authenticate:()=>human},credentials:{set:async()=>{},remove:async()=>{},resolve:async()=>null}});t.after(()=>service.close());
   const document=await service.operation(human,{action:'list'});assert.equal(document.servers.length,3);

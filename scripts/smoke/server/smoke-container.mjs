@@ -58,7 +58,7 @@ const topIncludesNativeExecServer = service => {
 let passed = false, origin;
 try {
   const layout = await prepareLayout(env, { uid: process.getuid(), gid: process.getgid() });
-  if (process.getuid() === 0) for (const path of [directory, layout.state, layout.execution, layout.workspace, layout.logs, ...['brain', 'gateway', 'hands'].map(service => join(logs, service))]) await chown(path, deploymentUid, deploymentGid);
+  if (process.getuid() === 0) for (const path of [directory, layout.state, layout.execution, layout.gitCredentials, layout.workspace, layout.logs, ...['brain', 'gateway', 'hands'].map(service => join(logs, service))]) await chown(path, deploymentUid, deploymentGid);
   const listener = createServer(); listener.listen(0, '127.0.0.1'); await once(listener, 'listening');
   env.OPENCRAFT_PORT = String(listener.address().port); await new Promise(resolve => listener.close(resolve));
   origin = `http://127.0.0.1:${env.OPENCRAFT_PORT}`;
@@ -72,7 +72,9 @@ try {
   const terminalProbe = await readFile(join(root, 'scripts/smoke/server/hands-terminal-probe.mjs'), 'utf8');
   const gatewayContainer = compose(['ps', '-q', 'gateway']);
   const terminal = JSON.parse(docker(['exec', '-i', gatewayContainer, '/opt/opencraft/bin/node', '--input-type=module', '-', 'start', workspace], { input: terminalProbe }));
-  assert.ok(terminal.output.includes(compose(['ps', '-q', 'hands'])), 'PTY must belong to the Hands cgroup, not Brain or Gateway');
+  const cgroupNamespace = service => compose(['exec', '-T', service, '/opt/opencraft/bin/node', '-p', "require('node:fs').readlinkSync('/proc/self/ns/cgroup')"]);
+  assert.equal(terminal.cgroupNamespace, cgroupNamespace('hands'), 'PTY must run in the Hands container');
+  for (const service of ['brain', 'gateway']) assert.notEqual(terminal.cgroupNamespace, cgroupNamespace(service), `PTY must not run in ${service}`);
   for (const service of ['brain', 'gateway', 'hands']) {
     const records = (await readFile(join(logs, service, 'service.log'), 'utf8')).trim().split('\n').map(JSON.parse);
     assert.ok(records.length > 0 && records.every(record => record.time && record.stream));

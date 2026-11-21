@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RemoteBrowserService } from '../../scripts/remote-browser-service.mjs';
+import { RemoteBrowserService } from '../../apps/headless-server/src/remote-browser-service.mjs';
 const settle = () => new Promise(resolve => setImmediate(resolve));
 test('unsupported retained pacing is cached until native retirement; transient errors retry', async () => {
   const host = Object.create(RemoteBrowserService.prototype); host.child = {};

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { build, loadConfigFromFile } from "vite";
 import { WebSocketServer } from "ws";
-import { startHeadlessServer } from "../../headless-application.mjs";
+import { startHeadlessServer } from "../../../apps/headless-server/src/headless-application.mjs";
 import { chromium } from "playwright";
 const output = path.resolve(
   process.env.OPENCRAFT_MCP_APP_OUTPUT ?? "/tmp/opencraft-mcp-app-builder",

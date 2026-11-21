@@ -123,8 +123,7 @@ durable authority journal, expected-cursor writes and command receipts.
   AppServer source, Memory storage and Cordis registry.
 - `@opencraft/appserver-replica-storage-node`: atomic server/Lab persistence.
 - `@opencraft/appserver-replica-storage-web`: IndexedDB transaction adapter.
-- `@opencraft/appserver-replica-storage-expo`: Expo SQLite exclusive-transaction adapter.
 - `@opencraft/appserver-session`: AppServer V3 Resume/View adapter.
 
-All three storage engines implement the same atomic ports; none defines an
+All storage engines implement the same atomic ports; none defines an
 alternate Replica model.

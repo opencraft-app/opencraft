@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRoutedConversationExecution } from '../../scripts/conversation-execution.mjs';
+import { createRoutedConversationExecution } from '../../apps/headless-server/src/conversation-execution.mjs';
 
 test('connected sessions use their deployed Host authority, including the native Pi and Claude paths', () => {
   const execution = createRoutedConversationExecution(() => null, { machineId:'fixture', engines:['dsh'], connectedAgentsOwner:'dsh', getInputs:async () => null });

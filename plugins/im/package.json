@@ -7,7 +7,12 @@
     "./server": "./src/server.ts",
     "./store": "./src/store.ts",
     ".": "./src/index.tsx",
-    "./sources": "./src/sources.tsx"
+    "./sources": "./src/sources.tsx",
+    "./reply-tool": "./src/reply-tool.ts",
+    "./read-tools": "./src/read-tools.ts",
+    "./post-receipts": "./src/post-receipts.ts",
+    "./channel-sync": "./src/channel-sync.ts",
+    "./routing": "./src/routing.ts"
   },
   "dependencies": {
     "@opencraft/appserver-client": "0.1.0",

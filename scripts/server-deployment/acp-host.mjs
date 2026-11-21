@@ -1,5 +1,5 @@
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
-import { ExecutionEnvironmentRuntime } from "../execution-environment.ts";
+import { ExecutionEnvironmentRuntime } from "@opencraft/execution-environment";
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
@@ -16,7 +16,7 @@ import { createDshAcpHistory } from './dsh-acp-history.mjs';
 import { dshAcpCommand } from '../../plugins/acp-engine/src/index.ts';
 import { RemoteSessionCapabilities } from '../../packages/session-capabilities/src/remote.ts';
 import { readDaemonMachineIdentity } from '../../apps/opencraft-daemon/src/machine-identity.ts';
-import { readPrivateJson } from './dsh-host-client.mjs';
+import { readPrivateJson } from '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
 
 export { inspectOwnerCgroup as inspectAcpCgroup } from './owner-cgroup.mjs';
 import { inspectOwnerCgroup as inspectAcpCgroup } from './owner-cgroup.mjs';

@@ -14,7 +14,7 @@ import {
   sourceRoute,
 } from "../../plugins/im/src/routing";
 import { ImPlugin, type ImExecutionPort } from "../../plugins/im/src/server";
-import { ImChannelService } from "../../scripts/im-channel-service.mjs";
+import { ImChannelService } from "../../apps/headless-server/src/im-channel-service.mjs";
 
 const event = {
   id: "event",

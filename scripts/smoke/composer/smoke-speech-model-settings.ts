@@ -6,7 +6,7 @@ import { createServer } from "vite";
 import { startLocalAgentHost } from "../../../apps/local-agent-host/src/main";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "../../../apps/local-agent-host/src/model-config/repository";
 import { SpeechModelConfiguration } from "../../../apps/local-agent-host/src/model-config/speech";
-import { SpeechTranscriptionService, validateSpeechWav } from "../../speech-transcription-service.mjs";
+import { SpeechTranscriptionService, validateSpeechWav } from "../../../apps/headless-server/src/speech-transcription-service.mjs";
 
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const directory = await mkdtemp(join(tmpdir(), "opencraft-speech-model-ui-"));

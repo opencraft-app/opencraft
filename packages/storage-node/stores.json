@@ -1,7 +1,7 @@
 [
   {
     "id": "employee-git-vault-store",
-    "owner": "scripts/employee-git-vault-store.ts",
+    "owner": "packages/execution-environment/src/employee-git-vault-store.ts",
     "index": 0
   },
   {
@@ -156,7 +156,7 @@
   },
   {
     "id": "remote-browser",
-    "owner": "scripts/remote-browser/state.worker.ts",
+    "owner": "apps/headless-server/src/remote-browser/state.worker.ts",
     "index": 0
   },
   {

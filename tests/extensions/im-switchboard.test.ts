@@ -8,7 +8,7 @@ import { ImPlugin, imSourceKey, type ImExecutionPort } from '../../plugins/im/sr
 import { SwitchboardStore } from '../../plugins/im/src/store';
 import type { ConversationRef } from '../../packages/appserver-protocol/src/collaboration';
 import { encodeConversationRef } from '../../packages/appserver-protocol/src/collaboration';
-import { readImConfiguration } from '../../scripts/im-plugins.mjs';
+import { readImConfiguration } from '../../apps/headless-server/src/im-plugins.mjs';
 
 function deferred<T>() { let resolve!: (value:T) => void; const promise = new Promise<T>(r => {resolve=r;}); return {promise,resolve}; }
 

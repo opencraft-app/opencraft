@@ -7,7 +7,7 @@ import { build } from "esbuild";
 import { AppHostServer } from "@opencraft/app-host-server";
 import { CodexEngineAdapter } from "../../../apps/opencraft-daemon/src/codex-engine-adapter.js";
 import { SshCodexTransport } from "../../../apps/opencraft-daemon/src/ssh-codex-transport.js";
-import { createWorkbenchWebServer } from "../../serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
 
 // Actual browser AppHost Client and AppServerClient. Only the remote SSH exec
 // boundary is synthetic; it still speaks real HTTP/WebSocket bytes.

@@ -8,7 +8,7 @@ import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
 import { build } from 'esbuild';
-import { createWorkbenchWebServer } from '../../scripts/serve-workbench-web.mjs';
+import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
 import { createHeadlessBackendProxy } from '../../scripts/web-deployment/headless-backend.mjs';
 
 async function fixture(t, options = {}) {
@@ -101,7 +101,7 @@ test('obsolete or incomplete server identity configuration cannot silently enabl
 test('standalone generic gateway bundles without any product identity module or private endpoint', async () => {
   const result = await build({
     absWorkingDir: fileURLToPath(new URL('../..', import.meta.url)),
-    entryPoints: ['scripts/serve-workbench-web.mjs'],
+    entryPoints: ['apps/headless-server/src/serve-workbench-web.mjs'],
     bundle: true, platform: 'node', format: 'esm', write: false, metafile: true,
     external: ['ws'],
   });

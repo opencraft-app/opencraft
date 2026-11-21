@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "vite";
 import { chromium } from "playwright";
-import { ImChannelService } from "../../im-channel-service.mjs";
+import { ImChannelService } from "../../../apps/headless-server/src/im-channel-service.mjs";
 import { sourceRoute } from "../../../plugins/im/src/templates";
 
 // Real Settings/Supervisor/IM UI, HTTP API, SQLite and QuickJS. Only human

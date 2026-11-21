@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { WebSocket } from 'ws';
 import { startIndependentAcpHost } from '../../scripts/server-deployment/acp-host.mjs';
-import { attachEngineHost } from '../../scripts/server-deployment/engine-host-client.mjs';
+import { attachEngineHost } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
 
 async function connect(url) {
   const socket = new WebSocket(url), calls = new Map(); let sequence = 0;

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createCodexWorkspaceHooks,validateCodexWorkspaceHooks,configuredWorkspaceExecution} from './codex-workspace-hooks.mjs';
+import {createCodexWorkspaceHooks,validateCodexWorkspaceHooks,configuredWorkspaceExecution} from '../apps/headless-server/src/codex-workspace-hooks.mjs';
 const names=['decorateNativeTransport','finalizeNativeCreation','finalizeNativeResume','requiresWorkspaceResume','restoreProvisionalWorkspace'];
 test('physical hook factory separates receipts even when request IDs repeat',async()=>{
  let generation=0;const receipts=[];

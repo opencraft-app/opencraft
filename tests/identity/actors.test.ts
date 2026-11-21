@@ -10,7 +10,7 @@ import { ActorAccess } from "../../packages/access-control/src/actor-access";
 import { InstanceAccess, MembershipStore } from "../../packages/access-control/src/index";
 import { parsePrincipal } from "../../packages/identity-core/src/index";
 import { FixtureRequestIdentity, signedFixtureIdentity as signed } from "../fixtures/request-identity";
-import { createWorkbenchWebServer } from "../../scripts/serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 import { DatabaseSync } from 'node:sqlite';
 import { once } from 'node:events';
 import { createCipheriv, createHash, randomBytes } from 'node:crypto';

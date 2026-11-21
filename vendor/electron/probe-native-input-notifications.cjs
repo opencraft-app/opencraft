@@ -6,7 +6,7 @@ const { createServer } = require('node:http');
 const { mkdtempSync, rmSync } = require('node:fs');
 const { join } = require('node:path');
 const { tmpdir } = require('node:os');
-const { initializeNativeFocus } = require('../../scripts/remote-browser/focus.cjs');
+const { initializeNativeFocus } = require('../../apps/headless-server/src/remote-browser/focus.cjs');
 const profile = mkdtempSync(join(tmpdir(), 'opencraft-native-input-events-'));
 app.setPath('userData', profile);
 app.disableHardwareAcceleration();

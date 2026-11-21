@@ -52,7 +52,7 @@ test('Codex bridge continues one native tool/turn across gateway SIGKILL and dur
 
 test('fresh AppHost inspector reads an active Bridge turn without resuming native execution', async t => {
   const { AppHostServer } = await import('../../packages/app-host-server/src/index.js');
-  const { callConversationHost } = await import('../../scripts/conversation-execution.mjs');
+  const { callConversationHost } = await import('../../apps/headless-server/src/conversation-execution.mjs');
   const fixture = await createCodexPreview(), transport = fixture.createTransport(), frames: any[] = [];
   await transport.connect(); transport.subscribeMessage(raw => frames.push(JSON.parse(raw)));
   const host = new AppHostServer({ logicalClientRouting: true, physicalHostLifetime: 'server', createTransport: () => transport });

@@ -145,7 +145,7 @@ test('managed Web forwards push enrollment to Headless with authentication and b
 
 test('operator plugin storage rejects tampering and incompatible release activation without removing files', async t => {
   const { createHash } = await import('node:crypto');
-  const { loadUserPlugins, assertUserPluginCompatibility, userPluginAsset } = await import('../../scripts/web-deployment/user-plugins.mjs');
+  const { loadUserPlugins, assertUserPluginCompatibility, userPluginAsset } = await import('../../apps/headless-server/src/web-deployment/user-plugins.mjs');
   const root = await mkdtemp(join(tmpdir(), 'web-user-plugins-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const directory = join(root, 'user-plugins');

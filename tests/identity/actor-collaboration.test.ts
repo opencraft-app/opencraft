@@ -12,7 +12,7 @@ import { ActorAccess } from '../../packages/access-control/src/actor-access';
 import { Collaboration, CollaborationHttpApi, type ConversationExecutionPort, type ExecutionReceipt } from '../../packages/access-control/src/collaboration';
 import { OrchestrationRuntimeWorker } from '../../packages/access-control/src/orchestration-runtime-store';
 import { parsePrincipal } from '../../packages/identity-core/src/index';
-import { createConversationExecution } from '../../scripts/conversation-execution.mjs';
+import { createConversationExecution } from '../../apps/headless-server/src/conversation-execution.mjs';
 
 async function fixture(t: any, now = Date.now, hostId = 'fixture-host') {
   const root = await mkdtemp(join(tmpdir(), 'actor-collaboration-'));

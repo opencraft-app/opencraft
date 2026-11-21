@@ -7,9 +7,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { assertExecutionNativePayload } from './native-preflight.mjs';
-import { readEngineHostIdentity } from './engine-host-client.mjs';
-import { attachDshHost, readPrivateJson } from './dsh-host-client.mjs';
-import { browserRuntimeIdentity } from '../browser-runtime-identity.mjs';
+import { readEngineHostIdentity } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
+import { attachDshHost, readPrivateJson } from '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
+import { browserRuntimeIdentity } from '../../apps/headless-server/src/browser-runtime-identity.mjs';
 import { withGatewayUpdateIntent } from './gateway-update-intent.mjs';
 import { linuxProcessIdentity, sameProcess } from './runtime-equivalence.mjs';
 

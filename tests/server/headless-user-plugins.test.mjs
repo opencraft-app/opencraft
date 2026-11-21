@@ -6,11 +6,11 @@ import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
-import { startHeadlessServer } from '../../scripts/headless-server.mjs';
-import { createWorkbenchWebServer } from '../../scripts/serve-workbench-web.mjs';
+import { startHeadlessServer } from '../../apps/headless-server/src/headless-server.mjs';
+import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
 import { createWorkbenchWebServer as createWebWorkerServer } from '../../scripts/workbench-web-server.mjs';
 import { assertInstalledPlugins } from '../support/assert-user-plugins.ts';
-import { injectUserPluginBootstrap } from '../../scripts/web-deployment/user-plugins.mjs';
+import { injectUserPluginBootstrap } from '../../apps/headless-server/src/web-deployment/user-plugins.mjs';
 
 test('user plugin discovery leaves Host bootstrap intact and escapes script data before module execution', () => {
   const existing = '<script id="opencraft-deployment-config" type="application/json">{"hosts":["retained"]}</script>';

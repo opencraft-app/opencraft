@@ -8,7 +8,7 @@ import { JsonRpcAppServerClient } from "@opencraft/appserver-client";
 import { CodexCoreControlClient } from "@opencraft/account-pool-host";
 import { startCodexCore } from "../../apps/codex-core/src/main";
 import { CodexNativeCoreTransport } from "../../apps/opencraft-daemon/src/codex-native-core-transport";
-import { readTaskCoreConversations } from "../../scripts/tasks-conversation-catalog.mjs";
+import { readTaskCoreConversations } from "../../apps/headless-server/src/tasks-conversation-catalog.mjs";
 import { startIndependentDshHost } from "../../scripts/server-deployment/dsh-host.mjs";
 
 test("split Tasks catalog reads the existing Core, strips history, and leaves its process and other clients alive", async () => {

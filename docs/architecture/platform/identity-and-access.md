@@ -480,6 +480,6 @@ Personal Composer model/effort defaults are account data, separate from installa
 
 ### 单 Hub 主体协作
 
-Headless 将 `access-control/collaboration` 作为 ActorStore / ActorAccess 后的协作权威，拥有独立托管 SQLite 中的私聊消息、投递、运行绑定与执行交接记录。`scripts/conversation-execution.mjs` 是有限的进程内 AppHost 适配；OpenCraftHostQueue 仍唯一拥有执行领取，并在领取前调用当前 Actor 授权校验。Wire 字段不构成可信调用上下文。契约及未隔离边界见[主体协作接口](../../actor-collaboration-api.md)。
+Headless 将 `access-control/collaboration` 作为 ActorStore / ActorAccess 后的协作权威，拥有独立托管 SQLite 中的私聊消息、投递、运行绑定与执行交接记录。`apps/headless-server/src/conversation-execution.mjs` 是有限的进程内 AppHost 适配；OpenCraftHostQueue 仍唯一拥有执行领取，并在领取前调用当前 Actor 授权校验。Wire 字段不构成可信调用上下文。契约及未隔离边界见[主体协作接口](../../actor-collaboration-api.md)。
 
 [会话引用、读取与投递](../conversation-interoperability.md)将Actor和Conversation资源分开，统一Collaboration接纳与交接，目标Host继续拥有执行队列。Headless本地Codex已接通稳定引用、按需历史、原始输入委托的服务端工具；其他引擎与跨Server投递须有实际适配，不因协议类型而自动可用。

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { HostFileSystemSession } from '../../scripts/host-filesystem-transport';
+import { HostFileSystemSession } from '../../apps/headless-server/src/host-filesystem-transport';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 const context = { sender: null };
 const frame = (id: string, method: string, params: unknown = {}) => JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: 'client' });

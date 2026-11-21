@@ -1,5 +1,5 @@
 export { rpcWorkClass, rpcLatencySummary, backgroundRefreshLog } from './rpc-work.mjs';
-import { fault } from '../observability-contract/index.mjs';
+import { fault } from '@opencraft/observability-contract';
 export const queryDefinitionRevision = 'observe-v1.3.0';
 const latency = 'histogram_quantile(0.95, sum by (le, operation, cache, engine) (rate(opencraft_interactive_operation_duration_seconds_bucket[5m])))';
 /** This is the only expression registry, shared by Observe and generated provisioning. */

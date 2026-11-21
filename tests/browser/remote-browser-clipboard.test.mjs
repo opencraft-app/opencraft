@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { createRequire } from 'node:module';
-const { installClipboard } = createRequire(import.meta.url)('../../scripts/remote-browser/clipboard.cjs');
+const { installClipboard } = createRequire(import.meta.url)('../../apps/headless-server/src/remote-browser/clipboard.cjs');
 const deferred = () => { let resolve; const promise = new Promise(yes => { resolve = yes; }); return { promise, resolve }; };
 function fixture() {
   const wc = new EventEmitter(), sent = [], operations = [];

@@ -16,7 +16,7 @@ import { selectionIdentity, type ServerPaths } from '../../apps/relay-server/src
 import { connectRelay } from '../../plugins/relay-connect/src/server';
 import { SshManagement } from '../../apps/opencraft-daemon/src/ssh-management';
 import { FixtureRequestIdentity } from './request-identity';
-import { createWorkbenchWebServer } from '../../scripts/serve-workbench-web.mjs';
+import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
 
 export async function waitFor(check: () => boolean | Promise<boolean>) {
   const deadline=Date.now()+8000;

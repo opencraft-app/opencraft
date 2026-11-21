@@ -8,8 +8,8 @@ import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 import type { DuplexTransport, TransportStatus, TransportSubmissionContext } from '@opencraft/appserver-client/transport';
 import { CodexEngineAdapter } from '../../apps/opencraft-daemon/src/codex-engine-adapter.js';
 import { isCodexAdmission } from '../../apps/opencraft-daemon/src/codex-maintenance.js';
-import { EmployeeGitVaultStore } from '../../scripts/employee-git-vault-store.js';
-import { ExecutionEnvironmentRuntime, executionEnvironmentOwner, requiresEnvironmentAuthority, requiresCurrentEnvironmentAuthority } from '../../scripts/execution-environment.js';
+import { EmployeeGitVaultStore } from '@opencraft/execution-environment/employee-git-vault-store';
+import { ExecutionEnvironmentRuntime, executionEnvironmentOwner, requiresEnvironmentAuthority, requiresCurrentEnvironmentAuthority } from '@opencraft/execution-environment';
 
 const pause = { threadId: 'goal-task', status: 'paused' };
 const context = (subject = 'alice'): TransportSubmissionContext => ({ sender: { kind: 'employee', loginName: subject },

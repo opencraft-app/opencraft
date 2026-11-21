@@ -11,7 +11,7 @@ test('late outputs and errors from a retired encoder cannot release or corrupt i
     configure(){} encode(){} close(){this.closed=true}
   }
   const ipcRenderer={on:(name,fn)=>events.set(name,fn),send:(...args)=>sent.push(args)};
-  vm.runInNewContext(await readFile(new URL('../../scripts/remote-browser/encoder-preload.cjs',import.meta.url),'utf8'),{
+  vm.runInNewContext(await readFile(new URL('../../apps/headless-server/src/remote-browser/encoder-preload.cjs',import.meta.url),'utf8'),{
     require:()=>({ipcRenderer}),VideoEncoder:Encoder,VideoFrame:class{close(){}},Uint8Array,
   });
   await new Promise(r=>setImmediate(r));
@@ -31,7 +31,7 @@ test('late outputs and errors from a retired encoder cannot release or corrupt i
 test('encoder construction failure still reports the owned media epoch', async () => {
   const events=new Map(),sent=[];
   class Encoder { static async isConfigSupported(){return {supported:true}} constructor(){throw Error('failed')} }
-  vm.runInNewContext(await readFile(new URL('../../scripts/remote-browser/encoder-preload.cjs',import.meta.url),'utf8'),{
+  vm.runInNewContext(await readFile(new URL('../../apps/headless-server/src/remote-browser/encoder-preload.cjs',import.meta.url),'utf8'),{
     require:()=>({ipcRenderer:{on:(name,fn)=>events.set(name,fn),send:(...args)=>sent.push(args)}}),VideoEncoder:Encoder,
   });
   await new Promise(r=>setImmediate(r));

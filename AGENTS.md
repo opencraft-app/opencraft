@@ -67,8 +67,8 @@ GitHub `opencraft-app/opencraft` 是目标核心上游，产品身份来源、�
 
 ## 手机端入口
 
-- 公开 Expo 位于 apps/mobile，默认复用完整随包 Web Workbench；旧独立 RN 工作台已退役；显式下游产品入口由产品 runner 选择原 Router/账号/Bot。下游产品的 iOS 由 HeroUI Native 登录和操作控件、原生导航页面及 Bot 侧栏承载；账号与设置入口固定在侧栏底部，没有底栏。Bot 功能在 App 内打包的 frontend DOM runtime 中呈现；Android 同样使用产品已有随包 DOM 控制台，设备能力按实装声明。手机平台、构建方式和产物先按 [Expo 路线表](apps/mobile/README.md#手机端路线) 选择，不能把 Expo Go 预览当作可安装包。
-- 修改 iOS Shell 或内置 Bot 功能时，先读 [Expo 局部 Agent 入口](apps/mobile/AGENTS.md)，由它路由 [Shell 状态](docs/mobile-shell.md)与[原生／DOM 桥接](docs/mobile-bot-bridge.md)；优先修改现有过时规则，避免把旧底栏、旧网页套壳等已失效方案追加成并列事实。
+- 公开 Expo 位于 apps/mobile，只是承载完整随包 Web Workbench 的 WebView 容器；旧独立 RN 工作台已退役。apps/mobile 不再提供下游产品入口（Router、账号、Bot、产品 Expo 配置），原生依赖只保留容器自身使用的模块；下游产品如需原生账号、导航或 Bot 界面，自行维护独立的 Expo App。手机平台、构建方式和产物先按 [Expo 路线表](apps/mobile/README.md#手机端路线) 选择，不能把 Expo Go 预览当作可安装包。
+- 修改手机容器时先读 [Expo 局部 Agent 入口](apps/mobile/AGENTS.md)。[Shell 状态](docs/mobile-shell.md)与[原生／DOM 桥接](docs/mobile-bot-bridge.md)记录的是下游产品 Shell 的历史设计，apps/mobile 不再承载；优先修改现有过时规则，避免把已失效方案追加成并列事实。
 - 默认内置模式的 JS/CSS 与 Worker 必须预制在安装包中，远程只提供 API 数据和媒体。用户明确选择的自托管 HTTPS 网站模式遵循 [移动容器来源边界](docs/mobile-workbench-container.md)，不注入内置身份或原生权限桥接；不能在内置模式失败时自动切换远程网页。原生设备能力经平台端口接入，外部账号、实名与订阅页面交给系统浏览器。具体边界见 [Embedded Bot bridge](docs/mobile-bot-bridge.md#native-audio-and-packaged-code)。
 - 手机端请求、缓存和离线写入先按 [移动数据协调契约](docs/mobile-data-architecture.md) 区分读取、在线事务与可持久化草稿；不得把 TanStack Query 的内存缓存、WebView 的独立 JS 环境或普通重试称为全 App 持久请求队列。账号展示缓存必须按会话与区域隔离，退出登录清除。
 - 会话连续性按 [ChatUI 架构](docs/architecture/chat-ui/composer-and-drafts.md#跨桌面手机和平板的会话连续性)维护一个共享语义模型：Scope/View 身份、草稿保存与丢弃、前台追平条件属于共享包；桌面浏览器和手机/平板只适配存储、生命周期、手势与布局。V3 连接代次不能当持久 Replica 游标，旧消息缓存只可展示，不能授权发送或交互；任何私有缓存都要按账号和 Host 隔离，退出账号撤销对应作用域。不要因屏幕宽度另造一套业务状态机。
@@ -116,7 +116,7 @@ OpenCraft 所有自有客户端及内置插件的用户界面遵循[全项目国
 
 ## 界面图标禁止 Lucide
 
-OpenCraft 界面图标禁止使用 Lucide，包括 `lucide-react`、其他平台适配包及直接搬用其 SVG 路径。新增、替换与维护图标统一使用项目共享自绘组件（Web 为 `@opencraft/design-system-web/action-icons`，Native 为 `@opencraft/design-system-native/action-icons`，通用图形几何由 `@opencraft/design-system/action-artwork` 持有），缺少语义时在共享图标 owner 补齐，业务插件不另造一份。此要求覆盖此前允许 Lucide 的决定；既有残留应明确记录并迁移，不能以规则更新宣称已经全仓清除。
+OpenCraft 界面图标禁止使用 Lucide，包括 `lucide-react`、其他平台适配包及直接搬用其 SVG 路径。新增、替换与维护图标统一使用项目共享自绘组件（Web 为 `@opencraft/design-system-web/action-icons`，通用图形几何由 `@opencraft/design-system/action-artwork` 持有），缺少语义时在共享图标 owner 补齐，业务插件不另造一份。此要求覆盖此前允许 Lucide 的决定；既有残留应明确记录并迁移，不能以规则更新宣称已经全仓清除。
 
 ## UI 与设计系统
 

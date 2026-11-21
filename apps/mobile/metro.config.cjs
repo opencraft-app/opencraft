@@ -1,52 +1,28 @@
 const { getDefaultConfig } = require("expo/metro-config");
-const { withUniwindConfig } = require("uniwind/metro");
 const compression = require("compression");
 const path = require("node:path");
-const { resolveProductEntry, resolveProductRouterContext, resolveProductStyles, withProductEntryResolver } = require("./product-entry.cjs");
 
 // Expo SDK 52+ discovers npm workspaces automatically. Keep this file free of
-// nodeModulesPaths overrides so Metro and npm resolve one graph. An explicit
-// downstream entry adds only its own directory to the watched graph.
-const productStyles = resolveProductStyles(__dirname);
-const nativeConfig = getDefaultConfig(__dirname);
-const config = withUniwindConfig(nativeConfig, {
-  // Uniwind joins this input with cwd; an absolute path bypasses its CSS transformer.
-  cssEntryFile: productStyles ? path.relative(__dirname, productStyles) : "./global.css",
-  dtsFile: "./src/uniwind-types.d.ts",
-});
+// nodeModulesPaths overrides so Metro and npm resolve one graph.
+const config = getDefaultConfig(__dirname);
 config.resolver.assetExts.push("html", "ocasset");
-// Adapt only HeroUI's Web theme reader; keep Uniwind's existing resolver chain.
-const resolveThemeRequest = config.resolver.resolveRequest;
+const appDependencies = Object.keys(require("./package.json").dependencies);
+const i18nRoot = path.resolve(__dirname, "../../packages/i18n/src") + path.sep;
+const resolveDefault = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
-  // expo-asset needs RN's public AssetRegistry, added in RN 0.88. Uniwind's
-  // component facade does not export it; SDK resource code needs the actual
-  // native module, while UI consumers keep the existing styling resolver.
-  if (platform !== "web" && moduleName === "react-native"
-    && /[/\\]node_modules[/\\]expo-asset[/\\]/.test(context.originModulePath)) {
-    const resolveNative = nativeConfig.resolver.resolveRequest ?? context.resolveRequest;
-    return resolveNative(context, moduleName, platform);
-  }
   // Shared ESM source uses .js specifiers for NodeNext. Metro consumes the
   // TypeScript source directly; translate only missing local files in our i18n owner.
-  const i18nRoot = path.resolve(__dirname, "../../packages/i18n/src") + path.sep;
   if (context.originModulePath.startsWith(i18nRoot) && moduleName.startsWith(".") && moduleName.endsWith(".js")) {
     const typed = path.resolve(path.dirname(context.originModulePath), moduleName.slice(0, -3) + ".ts");
     if (require("node:fs").existsSync(typed)) moduleName = moduleName.slice(0, -3);
   }
-  const resolved = resolveThemeRequest
-    ? resolveThemeRequest(context, moduleName, platform)
-    : context.resolveRequest(context, moduleName, platform);
-  if (platform === "web" && resolved.type === "sourceFile"
-    && /heroui-native\/.*\/hooks\/use-theme-color\.(?:js|ts)$/.test(resolved.filePath.replaceAll("\\", "/"))) {
-    return { type: "sourceFile", filePath: require("node:path").join(__dirname, "src/runtime/heroui-theme-color.web.ts") };
-  }
-  return resolved;
+  // A workspace can use a different React patch for its Web renderer. Native
+  // components, shared hooks and RN's renderer must all use this app's React.
+  const packageName = moduleName.startsWith("@") ? moduleName.split("/").slice(0, 2).join("/") : moduleName.split("/")[0];
+  const origin = (packageName === "react" || packageName === "react-dom") && appDependencies.includes(packageName)
+    ? { ...context, originModulePath: path.join(__dirname, "index.ts") } : context;
+  return resolveDefault ? resolveDefault(origin, moduleName, platform) : origin.resolveRequest(origin, moduleName, platform);
 };
-const productEntry = resolveProductEntry(__dirname);
-if (productEntry) {
-  config.watchFolders = [...new Set([...config.watchFolders, require("node:path").dirname(productEntry)])];
-}
-config.resolver.resolveRequest = withProductEntryResolver(__dirname, productEntry, config.resolver.resolveRequest, resolveProductRouterContext(__dirname), Object.keys(require("./package.json").dependencies));
 
 const enhanceMiddleware = config.server.enhanceMiddleware;
 const gzipBundle = compression({ level: 1 });

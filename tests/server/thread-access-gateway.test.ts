@@ -12,7 +12,7 @@ import { AgentDriverSession } from '../../apps/opencraft-daemon/src/agent-driver
 import { ActorStore } from '../../packages/access-control/src/actors';
 import { ActorAccess } from '../../packages/access-control/src/actor-access';
 import { ThreadAccessStore,ThreadAccessSession } from '../../packages/access-control/src/thread-access';
-import { createWorkbenchWebServer } from '../../scripts/serve-workbench-web.mjs';
+import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
 
 test('real AppHost and direct AppServer sockets enforce the same creator, directory and revocation policy', {timeout:20000}, async t => {
   const root=await mkdtemp(join(tmpdir(),'thread-access-gateway-'));

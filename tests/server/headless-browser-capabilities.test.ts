@@ -8,8 +8,8 @@ import { randomUUID } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { WebSocketTransport } from '../../packages/appserver-transport-websocket/src/index.ts';
 import { SessionCapabilities } from '@opencraft/session-capabilities';
-import { startHeadlessServer } from '../../scripts/headless-server.mjs';
-import { createWorkbenchWebServer } from '../../scripts/serve-workbench-web.mjs';
+import { startHeadlessServer } from '../../apps/headless-server/src/headless-server.mjs';
+import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
 import { LOGICAL_CLIENT_FIELD } from '../../packages/app-host-protocol/src/index.js';
 import type { SessionCapabilityPort } from '../../packages/session-capabilities/src/index.js';
 

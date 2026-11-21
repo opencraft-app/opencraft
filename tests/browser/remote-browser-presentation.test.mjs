@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createPresentation } from '../../scripts/remote-browser/presentation.cjs';
+import { createPresentation } from '../../apps/headless-server/src/remote-browser/presentation.cjs';
 import { readPresentation } from '@opencraft/browser-core/presentation';
 const image = (text = 'frame') => ({ isEmpty: () => false, getSize: () => ({ width: 800, height: 1200 }), crop() { return this; }, resize() { return this; }, toJPEG: () => Buffer.from(text), toPNG: () => Buffer.from(text) });
 function fixture(overrides = {}) { let time = 0, document = 'first', captures = 0; const events = [];

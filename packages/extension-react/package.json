@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./settings-collection": "./src/settings-collection.tsx"
+    "./settings-collection": "./src/settings-collection.tsx",
+    "./standard-page.web": "./src/standard-page.web.scss"
   },
   "dependencies": {
     "@opencraft/composer-core": "0.1.0",

@@ -9,7 +9,7 @@ import {ActorStore} from "../../../packages/access-control/src/actors";
 import {Collaboration} from "../../../packages/access-control/src/collaboration";
 import {CodexEngineAdapter} from "../../../apps/opencraft-daemon/src/codex-engine-adapter";
 import {AppHostServer} from "../../../packages/app-host-server/src/index";
-import {createConversationExecution} from "../../conversation-execution.mjs";
+import {createConversationExecution} from "../../../apps/headless-server/src/conversation-execution.mjs";
 import {LOGICAL_CLIENT_FIELD} from '@opencraft/app-host-protocol';
 const root=await mkdtemp(join(tmpdir(),'conversation-browser-')),out=process.env.OPENCRAFT_SMOKE_OUTPUT??join(tmpdir(),'opencraft-conversation-browser-'+Date.now());await mkdir(out,{recursive:true});
 const actors=new ActorStore(join(root,'actors.sqlite')),human=actors.resolveHuman({provider:'local',subject:'browser-test',displayName:'Test user',expiresAt:Date.now()+600000})!;

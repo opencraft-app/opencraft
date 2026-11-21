@@ -15,6 +15,8 @@ const output = await build({
     export { Context } from '@deepseek-ai/cordis';
   `, resolveDir: process.cwd(), loader: 'ts' },
   bundle: true, write: false, format: 'cjs', platform: 'node', packages: 'external',
+  // Plugin-resolved workspace sources do not pick up tsconfig.base.json; mirror its react-jsx contract.
+  jsx: 'automatic',
   loader: { '.scss': 'empty', '.css': 'empty' },
   plugins: [{ name: 'workspace', setup(b) {
     b.onResolve({filter:/^@opencraft\//}, async (args) => ({path:new URL(await import.meta.resolve(args.path)).pathname}));
@@ -58,7 +60,10 @@ test('inline document path click opens the existing right-panel resource flow', 
     await act(()=>root.render(React.createElement(Media,mediaProps(mediaNode.text))));
     const mediaLink=document.querySelector('a');
     assert.ok(mediaLink,'Hermes MEDIA Markdown path must be actionable');
-    assert.equal(mediaLink.textContent,'/home/agentuser/国庆江西行作文.md');
+    // Compact resource references show the object name; the full target stays in the hint and href.
+    assert.equal(mediaLink.textContent,'国庆江西行作文.md');
+    assert.equal(mediaLink.getAttribute('title'),'file:///home/agentuser/国庆江西行作文.md');
+    assert.equal(mediaLink.getAttribute('href'),'file:///home/agentuser/国庆江西行作文.md');
     assert.equal(calls.length,1,'rendering a MEDIA path must not read or open a file');
     await act(()=>mediaLink.dispatchEvent(new window.MouseEvent('click',{bubbles:true,cancelable:true})));
     assert.deepEqual(calls,['file:///home/agentuser/顺德攻略.md','file:///home/agentuser/国庆江西行作文.md']);
@@ -80,7 +85,8 @@ test('inline document path click opens the existing right-panel resource flow', 
     await act(()=>root.render(React.createElement(Inline,{node:inlineMediaNode,context,renderNodes:()=>null})));
     const inlineMediaLink=document.querySelector('a');
     assert.ok(inlineMediaLink,'backticked MEDIA Markdown path must be actionable');
-    assert.equal(inlineMediaLink.textContent,'MEDIA:/home/agentuser/国庆江西行作文.md');
+    assert.equal(inlineMediaLink.textContent,'国庆江西行作文.md');
+    assert.equal(inlineMediaLink.getAttribute('title'),'file:///home/agentuser/国庆江西行作文.md');
     assert.equal(inlineMediaLink.getAttribute('href'),'file:///home/agentuser/国庆江西行作文.md');
     assert.equal(calls.length,2,'rendering inline MEDIA must not read or open a file');
     await act(()=>inlineMediaLink.dispatchEvent(new window.MouseEvent('click',{bubbles:true,cancelable:true})));

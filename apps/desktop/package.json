@@ -22,7 +22,8 @@
     "@opencraft/workbench-runtime": "0.1.0",
     "@opencraft/sqlite-node": "0.1.0",
     "@opencraft/plugin-local-account": "0.1.0",
-    "ws": "^8.22.1"
+    "ws": "^8.22.1",
+    "@opencraft/headless-server": "0.1.0"
   },
   "scripts": {
     "build:host": "node build-tray.mjs && node build-native-speech.mjs && npm run build --workspace @opencraft/opencraft-daemon && node build-host.mjs",
@@ -37,7 +38,8 @@
     "package:linux:x64:appimage": "node ../../scripts/package-electron-desktop.mjs --linux AppImage --x64",
     "package:linux:x64:rpm": "node ../../scripts/package-electron-desktop.mjs --linux rpm --x64",
     "package:linux:x64:deb": "node ../../scripts/package-electron-desktop.mjs --linux deb --x64",
-    "package:linux:x64": "node ../../scripts/package-electron-desktop.mjs --linux AppImage rpm deb --x64"
+    "package:linux:x64": "node ../../scripts/package-electron-desktop.mjs --linux AppImage rpm deb --x64",
+    "package:win:x64": "node ../../scripts/package-electron-desktop.mjs --win nsis zip --x64"
   },
   "devDependencies": {
     "@electron/notarize": "2.5.0",
@@ -235,6 +237,19 @@
         "rpm",
         "deb"
       ]
+    },
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        "nsis",
+        "zip"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "OpenCraft-Setup-${version}-${arch}.${ext}"
     },
     "dmg": {
       "artifactName": "OpenCraft-${version}-${arch}.${ext}",

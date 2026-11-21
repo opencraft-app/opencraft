@@ -11,8 +11,8 @@ import { migrateSpeechEnvironment } from "../../apps/local-agent-host/src/model-
 import { DshModelConfigurationBridge, DshModelEngineAdapter } from "../../apps/local-agent-host/src/model-config/dsh-adapter";
 import { ModelConfigurationService } from "../../apps/local-agent-host/src/model-config/service";
 import { RuntimeProviderService } from "../../apps/local-agent-host/src/runtime-provider-service";
-import { SpeechTranscriptionService } from "../../scripts/speech-transcription-service.mjs";
-import { createWorkbenchWebServer } from "../../scripts/serve-workbench-web.mjs";
+import { SpeechTranscriptionService } from "../../apps/headless-server/src/speech-transcription-service.mjs";
+import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 import { encodeSpeechWav } from "../../plugins/voice-input/src/audio-capture";
 import { CloudSpeechInputProvider, SpeechServiceClient } from "../../plugins/voice-input/src/cloud-speech";
 import type { DshClient } from "../../apps/local-agent-host/src/dsh-client";

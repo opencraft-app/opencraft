@@ -12,11 +12,10 @@ const configureExpo = require(join(expoRoot, "app.config.js"));
 
 const publicNotice = require("../../packages/react-runtime/NOTICE.json");
 
-const withBuildInputs = ({ android = false, ios = false, config }, run) => {
+const withBuildInputs = ({ android = false, ios = false }, run) => {
   const inputs = {
     OPENCRAFT_ANDROID_RELEASE: android ? "1" : undefined,
     OPENCRAFT_IOS_RELEASE: ios ? "1" : undefined,
-    OPENCRAFT_EXPO_PRODUCT_CONFIG: config,
   };
   const saved = Object.fromEntries(Object.keys(inputs).map(key => [key, process.env[key]]));
   try {
@@ -45,7 +44,7 @@ const assertNotices = (actual, base) => {
   assert.equal(actual.extra.fixture, "preserved");
 };
 
-test("standalone mobile identities ignore product release flags and retain license notices", () => {
+test("mobile identities ignore release flags and retain license notices", () => {
   const base = standaloneConfig();
   const original = structuredClone(base);
   for (const android of [false, true]) {
@@ -58,29 +57,6 @@ test("standalone mobile identities ignore product release flags and retain licen
       assert.deepEqual(base, original, "building must not mutate the input manifest");
     }
   }
-});
-
-test("explicit product config owns mobile identities while public notices remain in the manifest", () => {
-  const fixtureRoot = mkdtempSync(join(tmpdir(), "opencraft-product-config-"));
-  try {
-    const config = join(fixtureRoot, "product.cjs");
-    writeFileSync(config, `module.exports = ({config, fixtureEdition}) => ({
-      ...config, name: 'Fixture product',
-      android: {...config.android, package: 'org.example.product.' + fixtureEdition},
-      ios: {...config.ios, bundleIdentifier: 'org.example.product.' + fixtureEdition},
-    });\n`);
-    const base = standaloneConfig();
-    const original = structuredClone(base);
-    const result = withBuildInputs({ config }, () => configureExpo({ config: base, fixtureEdition: "test" }));
-    assert.equal(result.name, "Fixture product");
-    assert.deepEqual(result.android, { ...original.android, package: "org.example.product.test" });
-    assert.deepEqual(result.ios, { ...original.ios, bundleIdentifier: "org.example.product.test" });
-    assertNotices(result, original);
-    assert.deepEqual(base, original);
-    for (const invalid of ["https://example.test/product.cjs", join(fixtureRoot, "missing.cjs")]) {
-      assert.throws(() => withBuildInputs({ config: invalid }, () => configureExpo({ config: base })));
-    }
-  } finally { rmSync(fixtureRoot, { recursive: true, force: true }); }
 });
 
 test("release signing only replaces the generated Gradle release identity", () => {

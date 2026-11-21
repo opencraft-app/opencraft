@@ -8,7 +8,7 @@ import ssh2 from 'ssh2';
 import WebSocket, { WebSocketServer } from 'ws';
 import { createSshHttpIngress, classifyIngress } from '../../plugins/ssh-http-ingress/src/index.mjs';
 import { createProtocolIngress, classifyProtocol } from '../../scripts/web-deployment/protocol-ingress.mjs';
-import { createSshNativeRpcGateway } from '../../scripts/ssh-native-rpc-gateway.mjs';
+import { createSshNativeRpcGateway } from '../../apps/headless-server/src/ssh-native-rpc-gateway.mjs';
 import { AppHostServer } from '../../packages/app-host-server/src/index.ts';
 import { generateEd25519KeyPair } from '../support/ssh-ed25519.mjs';
 

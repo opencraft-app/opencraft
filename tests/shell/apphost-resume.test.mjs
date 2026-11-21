@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import WebSocket from "ws";
 import { APP_HOST_PROTOCOL_VERSION } from "@opencraft/app-host-protocol/version";
-import { createWorkbenchWebServer } from "../../scripts/serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 
 /** Fake App Host: echoes host/send frames and streams numbered frames on demand. */
 function fakeAppHost() {

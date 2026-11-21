@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { chromium, type BrowserContext, type Page } from '@playwright/test';
 import { AppHostServer } from "../../../packages/app-host-server/src/index";
-import { createWorkbenchWebServer } from "../../serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
 import { createWorkbenchWebServer as createStaticWorker } from "../../workbench-web-server.mjs";
 import { createHeadlessBackendProxy } from "../../web-deployment/headless-backend.mjs";
 

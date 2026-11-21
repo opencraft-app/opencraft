@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { once } from 'node:events';
 import { WebSocket, WebSocketServer } from 'ws';
 import { AppHostServer } from '../../packages/app-host-server/src/index.ts';
-import { createWorkbenchWebServer } from '../../scripts/serve-workbench-web.mjs';
+import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
 import { withGatewayUpdateIntent, readGatewayUpdateIntent } from '../../scripts/server-deployment/gateway-update-intent.mjs';
 import { ObserveStore } from '../../apps/observability-service/store.ts';
 

@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createWorkbenchWebServer } from "../../scripts/serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 import { createWorkbenchWebServer as createManagedWebServer } from "../../scripts/workbench-web-server.mjs";
 
 for (const [name, createServer] of [["direct", createWorkbenchWebServer], ["managed", createManagedWebServer]]) {

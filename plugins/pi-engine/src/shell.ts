@@ -6,7 +6,7 @@ import { prepareSandboxInvocation } from "@opencraft/sandbox-node/command";
 import { fork, spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { defineDoc } from "@earendil-works/pi-durable";
-import type { ExecutionEnvironmentSnapshot } from '../../../scripts/execution-environment.js';
+import type { ExecutionEnvironmentSnapshot } from '@opencraft/execution-environment';
 
 export type ShellRecord = { id: string; state: "running" | "completed" | "interrupted"; command: string;
   output: string; detached: boolean; isError?: boolean; rawOutput?: string; truncated?: boolean; exitCode?: number | null; createdAtMs: number; notified?: boolean; turnId?: string; generation: string; environmentOwner?: string; monitorEvents?: { id: number; content: string; createdAtMs: number }[] };

@@ -2,7 +2,7 @@ import { executionCliInstructions, type ExecutionCliLease, type ScopedExecutionC
 import { threadCliLabel } from "@opencraft/session-capabilities/thread-cli-instruction";
 import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 import { queueProjection, type PiQueuedInput } from "./queue.js";
-import type { ExecutionEnvironmentRuntime } from '../../../scripts/execution-environment.js';
+import type { ExecutionEnvironmentRuntime } from '@opencraft/execution-environment';
 import { createPiTranscriptCache, readPiSnapshot } from "./read-history.js";
 import { nodeObserver } from "@opencraft/observability-contract/node";
 import { InterruptedTurnRecovery } from "@opencraft/host-recovery";

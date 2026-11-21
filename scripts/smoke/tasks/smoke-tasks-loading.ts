@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TASKS } from "@opencraft/appserver-protocol";
 import { TasksService } from "../../../plugins/tasks/src/server";
-import { startHeadlessServer } from "../../headless-server.mjs";
+import { startHeadlessServer } from "../../../apps/headless-server/src/headless-server.mjs";
 import { chromium, type WebSocketRoute } from "playwright";
 
 // Full built Workbench, real read authority. Only the browser's read replies are

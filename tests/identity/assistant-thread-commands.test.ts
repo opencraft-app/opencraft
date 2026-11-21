@@ -1224,7 +1224,7 @@ test('finalization follows custody/publication; lost hydration reuses the alloca
 
 import {AppHostServer} from '../../packages/app-host-server/src/index';
 import {ThreadAccessSession} from '../../packages/access-control/src/thread-access';
-import {callConversationHost} from '../../scripts/conversation-execution.mjs';
+import {callConversationHost} from '../../apps/headless-server/src/conversation-execution.mjs';
 
 test('actual internal create lane retains Human custody when Bot is revoked before native reply',async t=>{
  const f=await fixture(t);await f.grant();

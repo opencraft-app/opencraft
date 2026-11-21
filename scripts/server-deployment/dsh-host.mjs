@@ -1,4 +1,4 @@
-import { createHostFileSystem } from '../host-filesystem.ts';
+import { createHostFileSystem } from '../../apps/headless-server/src/host-filesystem.ts';
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { verifyDshOwnerAdmission } from '../patch-dsh-owner-admission.mjs';
@@ -14,8 +14,8 @@ import { dirname, isAbsolute, resolve, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { acquireLocalAgentStorageOwner, startLocalAgentHost } from '../../apps/local-agent-host/src/main.ts';
 import { readDaemonMachineIdentity } from '../../apps/opencraft-daemon/src/machine-identity.ts';
-import { readPrivateJson } from './dsh-host-client.mjs';
-import { readTaskCoreConversations } from '../tasks-conversation-catalog.mjs';
+import { readPrivateJson } from '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
+import { readTaskCoreConversations } from '../../apps/headless-server/src/tasks-conversation-catalog.mjs';
 import { RemoteSessionCapabilities } from '../../packages/session-capabilities/src/remote.ts';
 
 export async function startIndependentDshHost(configuration) {

@@ -1,4 +1,4 @@
-import { startHostFileSystem, createHostFileSystem } from '../host-filesystem.ts';
+import { startHostFileSystem, createHostFileSystem } from '../../apps/headless-server/src/host-filesystem.ts';
 import { deploymentPaths } from './paths.mjs';
 const paths = deploymentPaths();
 const options = { endpoint: paths.fileSystemEndpoint, tokenFile: paths.fileSystemToken };

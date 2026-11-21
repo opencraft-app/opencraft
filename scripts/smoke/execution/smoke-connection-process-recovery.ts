@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {fork} from 'node:child_process';
 import {once} from 'node:events';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { createWorkbenchWebServer } from "../../serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
 import { AppHostServer } from '@opencraft/app-host-server';
 import { WebSocketTransport } from '@opencraft/appserver-transport-websocket';
 import { WebSocketServer, WebSocket } from 'ws';

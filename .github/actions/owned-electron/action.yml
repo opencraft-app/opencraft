@@ -2,8 +2,11 @@ name: Restore verified owned Electron
 description: Consume a selected native build run; never download a stock runtime
 inputs:
   run-id:
-    description: Successful Electron fork native artifacts run ID in this repository
-    required: true
+    description: >-
+      Successful Electron fork native artifacts run ID in this repository. Leave empty to use the
+      newest successful run on the default or current branch built from this fork.json and args.gn.
+    required: false
+    default: ''
   target:
     description: Native artifact target, such as linux-x64 or macos-arm64
     required: true
@@ -17,9 +20,28 @@ outputs:
 runs:
   using: composite
   steps:
+    - id: run
+      shell: bash
+      env:
+        PINNED_RUN_ID: ${{ inputs.run-id }}
+        ARTIFACT_TARGET: ${{ inputs.target }}
+        GH_TOKEN: ${{ github.token }}
+        GH_REPOSITORY: ${{ github.repository }}
+        GH_API_URL: ${{ github.api_url }}
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        CURRENT_BRANCH: ${{ github.head_ref || github.ref_name }}
+      run: |
+        if test -n "$PINNED_RUN_ID"; then
+          echo "Using pinned native artifacts run $PINNED_RUN_ID"
+          echo "id=$PINNED_RUN_ID" >> "$GITHUB_OUTPUT"
+        else
+          id="$(node scripts/ci/resolve-electron-artifact-run.mjs "$ARTIFACT_TARGET")"
+          echo "Using native artifacts run $id"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+        fi
     - shell: bash
       env:
-        NATIVE_RUN_ID: ${{ inputs.run-id }}
+        NATIVE_RUN_ID: ${{ steps.run.outputs.id }}
         ARTIFACT_KIND: ${{ inputs.kind }}
         ARTIFACT_TARGET: ${{ inputs.target }}
         GH_TOKEN: ${{ github.token }}
@@ -27,7 +49,7 @@ runs:
         GH_API_URL: ${{ github.api_url }}
       run: |
         if ! [[ "$NATIVE_RUN_ID" =~ ^[0-9]+$ ]]; then
-          echo 'Set repository variable OPENCRAFT_ELECTRON_ARTIFACT_RUN_ID to a successful native artifact build run.' >&2
+          echo 'The native artifacts run ID must be numeric.' >&2
           exit 1
         fi
         if ! [[ "$ARTIFACT_KIND" =~ ^(browser|desktop)$ && "$ARTIFACT_TARGET" =~ ^(linux-x64|windows-x64|macos-arm64|macos-x64)$ ]]; then
@@ -47,7 +69,7 @@ runs:
     - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
       with:
         name: opencraft-electron-${{ inputs.target }}
-        run-id: ${{ inputs.run-id }}
+        run-id: ${{ steps.run.outputs.id }}
         github-token: ${{ github.token }}
         path: ${{ runner.temp }}/owned-electron-download-${{ inputs.kind }}-${{ inputs.target }}
     - id: paths

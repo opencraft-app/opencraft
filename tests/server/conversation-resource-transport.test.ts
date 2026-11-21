@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ConversationResourceTransport } from '../../scripts/conversation-resource-transport.js';
+import { ConversationResourceTransport } from '../../apps/headless-server/src/conversation-resource-transport.js';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 
 test('only successful archive and engine events retire resources, independently of UI subscribers', async () => {

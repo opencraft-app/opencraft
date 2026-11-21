@@ -8,8 +8,10 @@ there is no `skipWaiting`, so an existing document keeps its complete worker.
 A subsequent installation can reuse successful content-hashed `assets/` responses
 from its own staging cache or the same deployment's prior caches. Mutable shell
 HTML is fetched again, and unsuccessful or HTML responses cannot stand in for an
-immutable asset. Resource fetches omit credentials and reject redirects. Neither
-account/API responses nor credentials become offline configuration.
+immutable asset. Resource fetches send same-origin credentials only, so a
+deployment that gates static files behind a session cookie can still install,
+and reject redirects. Neither account/API responses nor credentials become
+offline configuration.
 
 Installation admits at most two resource transfers concurrently. Each attempt has
 a 30-second budget covering fetch, response-body consumption and cache writing.

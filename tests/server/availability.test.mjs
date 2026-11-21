@@ -4,7 +4,7 @@ import { mkdtemp,rm,writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startObserve } from '../../apps/observability-service/service.mjs';
-import { startAvailabilityNotification } from '../../scripts/availability-notification.mjs';
+import { startAvailabilityNotification } from '../../apps/headless-server/src/availability-notification.mjs';
 import { request } from 'node:http';
 function socketJson(socketPath,path,body,authorization) {return new Promise((yes,no)=>{const req=request({socketPath,path,method:'POST',headers:authorization?{authorization}:{}},res=>{let text='';res.on('data',c=>text+=c);res.on('end',()=>res.statusCode===200?yes(JSON.parse(text)):no(Error('rejected')));});req.on('error',no);req.end(JSON.stringify(body));});}
 const event=fields=>({schemaVersion:1,kind:'availability',component:'gateway',producerId:'probe',eventId:crypto.randomUUID(),at:Date.now(),site:'local',hostId:'local-codex',engine:'codex',originClass:'probe',outcome:'failed',errorCode:'rpc:-32080',...fields});

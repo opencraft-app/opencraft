@@ -8,6 +8,8 @@
 @use "@opencraft/design-system/focus.web";
 @use "@opencraft/design-system-web/native-controls.web";
 @use "@opencraft/design-system-web/choice-select.web";
+// Standard page chrome for extension pages; the component does not import its own styles.
+@use "@opencraft/extension-react/standard-page.web";
 @use "@opencraft/design-system/menu.web" as menu;
 @use "@opencraft/design-system/material.web" as material;
 @use "@opencraft/design-system/utility-card.web" as utility-card;

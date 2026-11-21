@@ -146,6 +146,17 @@ test("an automatic A queue Turn never binds the sole pending B start that loses 
   assert.equal(f.store().resolve({threadId:"t",executionId:bId}).status,"expired");
 });
 
+test("a native queue admission recorded after a Turn was observed cannot claim that Turn", t=>{
+  const f=fixture(t),tracker=f.tracker;
+  tracker.observe({method:"turn/started",params:{threadId:"t",turn:{id:"goal-turn"}}},native);
+  const id=String(f.db.prepare("SELECT execution_id FROM execution_leases WHERE turn_id='goal-turn'").get()!.execution_id);
+  tracker.prepare({id:1,method:"thread/queue/add",params:{threadId:"t",clientUserMessageId:"late",input:[]}},context("B"),native);
+  tracker.observe({id:1,result:{queuedSubmission:{id:"queue-late",__opencraftExecutionAdmission:f.store().queueAdmissionToken("t","late")}}});
+  tracker.observe({method:"item/started",params:{threadId:"t",turnId:"goal-turn",item:{type:"userMessage",clientId:"late"}}});
+  assert.equal(f.store().resolve({threadId:"t",executionId:id}).status,"unknown");
+  assert.equal(f.db.prepare("SELECT input_id FROM execution_leases WHERE execution_id=?").get(id)!.input_id,"native:goal-turn");
+});
+
 test("steer cannot claim an unresolved native Turn through either steering projection", t=>{
   const f=fixture(t),tracker=f.tracker;
   tracker.prepare({id:1,method:"thread/queue/add",params:{threadId:"t",clientUserMessageId:"A",input:[]}},context("A"),native);

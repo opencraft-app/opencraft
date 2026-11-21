@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {mkdtemp,writeFile,rm} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
-import {createWorkbenchWebServer} from '../../scripts/serve-workbench-web.mjs';
+import {createWorkbenchWebServer} from '../../apps/headless-server/src/serve-workbench-web.mjs';
 test('a configured native transport receives its generic callback without restoring legacy routes',async t=>{
  const root=await mkdtemp(join(tmpdir(),'native-callback-'));await writeFile(join(root,'index.html'),'fixture');
  const configured='/__opencraft_im/channel-callback/fixture',calls=[];

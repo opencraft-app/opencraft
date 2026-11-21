@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
 import type { BridgeWireMessage } from '@opencraft/agent-bridge-protocol';
-import { createBrowserGrantResolver } from '../../scripts/remote-browser/execution-grant.js';
+import { createBrowserGrantResolver } from '../../apps/headless-server/src/remote-browser/execution-grant.js';
 
 test('history preserves bounded latest-turn queries for browser admission in multi-turn sessions', async () => {
   const calls: any[] = [], frames: any[] = [];

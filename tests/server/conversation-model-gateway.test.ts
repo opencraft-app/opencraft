@@ -13,11 +13,11 @@ import {ActorAccess} from '../../packages/access-control/src/actor-access';
 import {ThreadAccessStore, ThreadAccessSession} from '../../packages/access-control/src/thread-access';
 import {CodexEngineAdapter} from '../../apps/opencraft-daemon/src/codex-engine-adapter';
 import {AccountPoolStore, CodexAccountPoolProxy, ModelGatewayStore, startCodexAccountPoolServer} from '@opencraft/account-pool-host';
-import {createWorkbenchWebServer} from '../../scripts/serve-workbench-web.mjs';
-import {EmployeeGitVaultStore} from '../../scripts/employee-git-vault-store';
-import {AccountEnvironment} from '../../scripts/account-environment';
-import {ExecutionEnvironmentRuntime, EXECUTION_ENVIRONMENT_FIELD} from '../../scripts/execution-environment';
-import {ExecutionEnvironmentTransport} from '../../scripts/execution-environment-transport';
+import {createWorkbenchWebServer} from '../../apps/headless-server/src/serve-workbench-web.mjs';
+import {EmployeeGitVaultStore} from '@opencraft/execution-environment/employee-git-vault-store';
+import {AccountEnvironment} from '@opencraft/execution-environment/account-environment';
+import {ExecutionEnvironmentRuntime, EXECUTION_ENVIRONMENT_FIELD} from '@opencraft/execution-environment';
+import {ExecutionEnvironmentTransport} from '../../apps/headless-server/src/execution-environment-transport';
 
 const model = 'configured/alice-key/model';
 /** Real loopback HTTP/WS, Actor/Thread ACL, Codex adapter, account proxy and SQLite.

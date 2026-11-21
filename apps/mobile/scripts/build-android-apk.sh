@@ -24,6 +24,14 @@ export NODE_ENV=production
 CI=1 node scripts/run-expo.cjs prebuild --platform android --no-install --no-clean
 
 gradle_options=(--no-daemon --max-workers=2)
+# Phones are arm64. x86/x86_64 serve only emulators and each ABI adds a full
+# React Native, Hermes and Expo native copy, so build arm64 unless asked.
+architectures="${OPENCRAFT_ANDROID_ARCHITECTURES:-arm64-v8a}"
+if [[ ! "$architectures" =~ ^(arm64-v8a|armeabi-v7a|x86|x86_64)(,(arm64-v8a|armeabi-v7a|x86|x86_64))*$ ]]; then
+  echo "OPENCRAFT_ANDROID_ARCHITECTURES must list Android ABIs separated by commas." >&2
+  exit 1
+fi
+gradle_options+=("-PreactNativeArchitectures=$architectures")
 if [[ "${OPENCRAFT_ANDROID_USE_CN_MIRRORS:-0}" == "1" ]]; then
   gradle_options+=(-I ../scripts/gradle-cn-mirrors.init.gradle)
 fi

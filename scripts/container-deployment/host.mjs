@@ -9,8 +9,8 @@ import lockfile from 'proper-lockfile';
 import { deploymentPaths, readPrivateToken } from './paths.mjs';
 import { handsResources } from './resources.mjs';
 import { coreHealth } from '../server-deployment/execution.mjs';
-import { readDshHostIdentity } from '../server-deployment/dsh-host-client.mjs';
-import { readEngineHostIdentity } from '../server-deployment/engine-host-client.mjs';
+import { readDshHostIdentity } from '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
+import { readEngineHostIdentity } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
 import { readHandsIncarnation, watchHandsIncarnation } from './hands-incarnation.mjs';
 import { codexCoreArguments, waitForProxy } from './proxy-core.mjs';
 

@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { attachDshHost, readDshHostIdentity } from '../../scripts/server-deployment/dsh-host-client.mjs';
+import { attachDshHost, readDshHostIdentity } from '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
 
 test('independent DSH identity is observable before any lazy engine attachment', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'independent-dsh-health-'));

@@ -22,7 +22,7 @@ import WebSocket from "ws";
 import { MessageChannel } from "node:worker_threads";
 import { MessagePortAppHostClient } from "../../packages/app-host-client/src/index.js";
 import { JsonRpcAppServerClient } from "../../packages/appserver-client/src/index.js";
-import { createThreadOrchestrationExecution } from "../../scripts/thread-orchestration-execution.mjs";
+import { createThreadOrchestrationExecution } from "../../apps/headless-server/src/thread-orchestration-execution.mjs";
 
 const [kind, configPath] = process.argv.slice(2), config = JSON.parse(await readFile(configPath!, "utf8"));
 const root = config.root as string, data = join(root, "data"), serverId = "server:synthetic-pi-smoke:pi";

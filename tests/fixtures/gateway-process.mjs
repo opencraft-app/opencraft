@@ -1,4 +1,4 @@
-import { startHeadlessServer } from '../../scripts/headless-application.mjs';
+import { startHeadlessServer } from '../../apps/headless-server/src/headless-application.mjs';
 import { WebSocketTransport } from '../../packages/appserver-transport-websocket/src/index.ts';
 import { WebSocket } from 'ws';
 const config = JSON.parse(process.argv[2]);

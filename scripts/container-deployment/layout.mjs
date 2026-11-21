@@ -20,7 +20,9 @@ export function hostLayout(environment) {
   if (inside(workspace, execution) || inside(execution, workspace)) throw new Error('Execution state and workspace directories must not overlap');
   if (inside(workspace, logs) || inside(logs, workspace) || inside(logs, state) || inside(execution, logs) || inside(logs, execution))
     throw new Error('Logs must be separate from workspaces, private execution state and the state root');
-  return { state, workspace, execution, logs };
+  // Compose binds this directory for Git credential helpers without creating it.
+  const gitCredentials = join(execution, 'git-credentials');
+  return { state, workspace, execution, gitCredentials, logs };
 }
 
 export async function inspectPrivateDirectory(path, identity) {
@@ -48,7 +50,7 @@ export async function prepareLayout(environment, identity) {
     if (!environment.OPENCRAFT_HOST_EXECUTION_DIR)
       throw new Error('Legacy Hands state exists. Run layout.mjs adopt-legacy before prepare; existing thread cwd must be retained.');
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  for (const directory of [layout.state, layout.execution, layout.logs, ...SERVICES.map(service => join(layout.logs, service))]) {
+  for (const directory of [layout.state, layout.execution, layout.gitCredentials, layout.logs, ...SERVICES.map(service => join(layout.logs, service))]) {
     await mkdir(directory, { recursive: true, mode: 0o700 });
     await inspectPrivateDirectory(directory, identity);
   }

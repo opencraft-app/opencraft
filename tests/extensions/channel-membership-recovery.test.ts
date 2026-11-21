@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ImChannelsAppServer } from '../../scripts/im-channels-appserver.mjs';
+import { ImChannelsAppServer } from '../../apps/headless-server/src/im-channels-appserver.mjs';
 import { LOGICAL_CLIENT_FIELD } from '../../packages/app-host-protocol/src/index.ts';
 const flush=async()=>{for(let i=0;i<12;i++)await new Promise<void>(r=>setImmediate(r));};
 for(const failure of ['temporary worker unavailable','channel_denied'])test('membership check: '+failure,async()=>{

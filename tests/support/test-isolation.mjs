@@ -7,7 +7,7 @@
 // them that are still alive after every test file has exited. Non-test Node
 // processes (npm, tsc, the test runner itself) are untouched.
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
 export const MARKER = "OPENCRAFT_TEST_ISOLATION";
@@ -24,6 +24,17 @@ if (process.env.NODE_TEST_CONTEXT && !process.env[MARKER]) {
   // for their GitHub proxy) is host state like ~/.gitconfig; tests must not see it.
   for (const name of Object.keys(process.env)) {
     if (/^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+|PARAMETERS|GLOBAL|SYSTEM)$/u.test(name)) delete process.env[name];
+  }
+  // Installed browsers are host tooling, not user state: keep Playwright's
+  // default cache (under the real HOME) reachable once HOME is replaced.
+  if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
+    const cache =
+      process.platform === "darwin"
+        ? join(homedir(), "Library", "Caches")
+        : process.platform === "win32"
+          ? (process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"))
+          : (process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache"));
+    process.env.PLAYWRIGHT_BROWSERS_PATH = join(cache, "ms-playwright");
   }
   Object.assign(process.env, {
     HOME: home,

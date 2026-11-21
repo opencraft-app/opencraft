@@ -7,7 +7,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { DatabaseSync } from "node:sqlite";
 import WebSocket from "ws";
-import { startHeadlessServer } from "../../headless-server.mjs";
+import { startHeadlessServer } from "../../../apps/headless-server/src/headless-server.mjs";
 
 // Exercise the built product, actual AppHost transport and native Codex history.
 // Each run has independent storage and no model accounts or real credentials.

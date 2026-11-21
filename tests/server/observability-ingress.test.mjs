@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { mkdtemp,writeFile,rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createObservabilityIngress } from '../../scripts/observability-ingress.mjs';
+import { createObservabilityIngress } from '../../apps/headless-server/src/observability-ingress.mjs';
 import { startObserve } from '../../apps/observability-service/service.mjs';
 
 test('host identity wins over forged Grafana headers/cookies; member cannot use deployment queries; content never persists',async()=>{

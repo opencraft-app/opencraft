@@ -4,9 +4,9 @@ import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
-import { loadUserPlugins } from '../../scripts/web-deployment/user-plugins.mjs';
-import { createUserPluginCatalog } from '../../scripts/web-deployment/craft-plugins.mjs';
-import { createWorkbenchWebServer as gateway } from '../../scripts/serve-workbench-web.mjs';
+import { loadUserPlugins } from '../../apps/headless-server/src/web-deployment/user-plugins.mjs';
+import { createUserPluginCatalog } from '../../apps/headless-server/src/web-deployment/craft-plugins.mjs';
+import { createWorkbenchWebServer as gateway } from '../../apps/headless-server/src/serve-workbench-web.mjs';
 import { createWorkbenchWebServer as worker } from '../../scripts/workbench-web-server.mjs';
 
 async function fixture(t) {

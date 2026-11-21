@@ -8,7 +8,7 @@ import test from "node:test";
 import WebSocket, { WebSocketServer } from "ws";
 
 import { publishWorkbenchWeb } from "../../scripts/publish-workbench-web.mjs";
-import { createWorkbenchWebServer } from "../../scripts/serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 
 test("generic Web release builds before publishing", async () => {
   const manifest = JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8"));

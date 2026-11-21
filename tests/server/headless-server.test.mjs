@@ -10,10 +10,10 @@ import test from "node:test";
 import WebSocket, { WebSocketServer } from "ws";
 
 import { AppHostServer } from "../../packages/app-host-server/src/index.ts";
-import { parseHeadlessArguments, startHeadlessServer } from "../../scripts/headless-server.mjs";
+import { parseHeadlessArguments, startHeadlessServer } from "../../apps/headless-server/src/headless-server.mjs";
 import { applyExecutionProfile } from "../../scripts/server-deployment/headless-gateway-application.mjs";
 import { assertHeadlessBuildHost, buildHeadlessBundle, headlessWebHostDefinitions } from "../../scripts/package-headless-linux.mjs";
-import { createWorkbenchWebServer } from "../../scripts/serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 
 async function writeHeadlessVersion(webRoot) {
   await writeFile(join(webRoot, "version.json"), JSON.stringify({

@@ -7,9 +7,9 @@ import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {WebSocketServer} from 'ws';
 import {_electron} from 'playwright-core';
-import {startHeadlessServer} from '../../headless-server.mjs';
+import {startHeadlessServer} from '../../../apps/headless-server/src/headless-server.mjs';
 import {startTerminalPtyOwner} from '../../../apps/local-agent-host/src/terminal-pty-owner.ts';
-import {startHostFileSystem} from '../../host-filesystem.ts';
+import {startHostFileSystem} from '../../../apps/headless-server/src/host-filesystem.ts';
 
 const webRoot=process.env.OPENCRAFT_FILES_WEB_ROOT;
 const executablePath=process.env.OPENCRAFT_ELECTRON_EXECUTABLE;

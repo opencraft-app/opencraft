@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import WebSocket from "ws";
 import { TasksService } from "../../../plugins/tasks/src/server";
 import { TASKS, type TaskDetail } from "@opencraft/appserver-protocol";
-import { startHeadlessServer } from "../../headless-server.mjs";
+import { startHeadlessServer } from "../../../apps/headless-server/src/headless-server.mjs";
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const root=process.cwd();
 const directory=await mkdtemp(join(tmpdir(),"oc-task-team-"));

@@ -7,8 +7,8 @@ import { ThreadOrchestrationBroker } from '../../packages/access-control/src/thr
 import { CodexEngineAdapter } from '../../apps/opencraft-daemon/src/codex-engine-adapter';
 import {TokenUsageQueryService} from '../../apps/opencraft-daemon/src/token-usage-query-service';
 import { AppHostServer } from '../../packages/app-host-server/src/index';
-import { callConversationHost,createConversationExecution } from '../../scripts/conversation-execution.mjs';
-import { createThreadOrchestrationExecution } from '../../scripts/thread-orchestration-execution.mjs';
+import { callConversationHost,createConversationExecution } from '../../apps/headless-server/src/conversation-execution.mjs';
+import { createThreadOrchestrationExecution } from '../../apps/headless-server/src/thread-orchestration-execution.mjs';
 const config=JSON.parse(await readFile(process.argv[2]!, 'utf8'));
 const actors=new ActorStore(join(config.gatewayDirectory,'actors.sqlite'));
 const human=actors.resolveHuman({provider:'local',subject:'drill-user',displayName:'Synthetic user',expiresAt:Date.now()+3_600_000})!;

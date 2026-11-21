@@ -9,11 +9,11 @@ import {AppHostServer} from '../../packages/app-host-server/src/index';
 import {ActorStore} from '../../packages/access-control/src/actors';
 import {ActorAccess} from '../../packages/access-control/src/actor-access';
 import {ThreadAccessStore,ThreadAccessSession} from '../../packages/access-control/src/thread-access';
-import {createWorkbenchWebServer} from '../../scripts/serve-workbench-web.mjs';
-import {EmployeeGitVaultStore} from '../../scripts/employee-git-vault-store';
-import {AccountEnvironment} from '../../scripts/account-environment';
-import {ExecutionEnvironmentRuntime,EXECUTION_ENVIRONMENT_FIELD} from '../../scripts/execution-environment';
-import {ExecutionEnvironmentTransport} from '../../scripts/execution-environment-transport';
+import {createWorkbenchWebServer} from '../../apps/headless-server/src/serve-workbench-web.mjs';
+import {EmployeeGitVaultStore} from '@opencraft/execution-environment/employee-git-vault-store';
+import {AccountEnvironment} from '@opencraft/execution-environment/account-environment';
+import {ExecutionEnvironmentRuntime,EXECUTION_ENVIRONMENT_FIELD} from '@opencraft/execution-environment';
+import {ExecutionEnvironmentTransport} from '../../apps/headless-server/src/execution-environment-transport';
 async function fixture(t:any){
  const root=await mkdtemp(join(tmpdir(),'thread-env-gateway-'));await writeFile(join(root,'index.html'),'<!doctype html><title>Fixture</title>');
  const actors=new ActorStore(join(root,'actors.sqlite')),store=new ThreadAccessStore(join(root,'access.sqlite'),actors),vault=new EmployeeGitVaultStore(root),runtime=new ExecutionEnvironmentRuntime(root,vault),env=new AccountEnvironment(vault);

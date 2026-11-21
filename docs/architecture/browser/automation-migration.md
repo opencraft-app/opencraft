@@ -11,9 +11,9 @@ service or update an installed desktop client.
 | `packages/browser-core` | Separate automation contracts/policy/errors and neutral tool catalog/dispatch/results | Extend document/frame identity |
 | `packages/browser-appserver` | Wire conversion over neutral catalog/dispatch, preserving compatibility exports | Verify each harness adapter |
 | `packages/browser-preview-bridge` | Opt-in page runtime, semantic events, global DOM revision | Independent controlled-preview backend |
-| `scripts/remote-browser/worker.cjs` | Electron pages; native CDP automation under existing control/document fencing | Shared CDP automation under existing control authority |
-| `scripts/remote-browser/focus.cjs` | Shared owner initializes focus and nested frames | Keep a single physical owner |
-| `scripts/remote-browser/touch.cjs` | Worker supplies the shared owner port with document guards | Reuse for native automation |
+| `apps/headless-server/src/remote-browser/worker.cjs` | Electron pages; native CDP automation under existing control/document fencing | Shared CDP automation under existing control authority |
+| `apps/headless-server/src/remote-browser/focus.cjs` | Shared owner initializes focus and nested frames | Keep a single physical owner |
+| `apps/headless-server/src/remote-browser/touch.cjs` | Worker supplies the shared owner port with document guards | Reuse for native automation |
 | `apps/workbench-web/src/browser/electron-browser-automation.ts` | Thin client of document-scoped Main IPC, with temporary native focus and per-operation cancellation | Thin client of owned-guest Main IPC |
 | `apps/desktop/src/browser-guests.ts` | Main owns guests, CDP connections, document leases and cancellation | Host of shared CDP automation with trusted caller checks |
 | `packages/session-capabilities` | Generic provider/gateway with bounded text/image wire conversion; headless registers a browser provider with execution-bound grants | Per-harness receipt and cancellation acceptance |
@@ -269,7 +269,7 @@ their own native integration acceptance.
 
 ## Shared native activation and service navigation
 
-`scripts/remote-browser/page-lifecycle.mjs` now owns native activation, recovery
+`apps/headless-server/src/remote-browser/page-lifecycle.mjs` now owns native activation, recovery
 configuration, unknown-outcome reconciliation and failure cleanup. Viewer open
 and service invocation acquire the same per-page activation slot. A dormant
 committed tab can become native without any viewer, media subscription or fake

@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { AppHostServer } from "../../../packages/app-host-server/src/index";
-import { createWorkbenchWebServer } from "../../serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
 import { createWorkbenchWebServer as createStaticServer } from "../../workbench-web-server.mjs";
 import { createHeadlessBackendProxy } from "../../web-deployment/headless-backend.mjs";
 

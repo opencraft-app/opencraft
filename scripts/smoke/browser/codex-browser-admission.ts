@@ -10,8 +10,8 @@ import { Collaboration } from '../../../packages/access-control/src/collaboratio
 import { OrchestrationRuntimeWorker } from '../../../packages/access-control/src/orchestration-runtime-store.js';
 import { SessionCapabilities } from '../../../packages/session-capabilities/src/index.js';
 import { SessionCapabilityMcp } from '../../../packages/session-capabilities/src/mcp.js';
-import { createBrowserGrantResolver } from '../../remote-browser/execution-grant.js';
-import { RemoteBrowserCapabilities } from '../../remote-browser/capabilities.js';
+import { createBrowserGrantResolver } from '../../../apps/headless-server/src/remote-browser/execution-grant.js';
+import { RemoteBrowserCapabilities } from '../../../apps/headless-server/src/remote-browser/capabilities.js';
 import { CodexBridgeRuntime } from '../../../apps/agent-bridge-host/src/codex-runtime.js';
 import { randomBytes } from 'node:crypto';
 

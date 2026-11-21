@@ -10,7 +10,7 @@ website in native settings. This is not an automatic fallback. Validate the URL,
 keep source changes transactional and fence retired views/messages. Remote sites
 must not receive the bundled document's privileged identity, credentials or native
 bridge. The native source control must remain usable on network/process failure.
-Preserve bundle IDs, user data and the independent trusted product entry resolver.
+Preserve bundle IDs and user data.
 
 Expo Go is a required development preview. Use compatible SDK modules; native
 material/permissions have runtime capability fallbacks. Do not require a custom
@@ -21,10 +21,10 @@ Web owns keyboard geometry and memory navigation. Apply outer safe area once;
 Android back uses Web navigation for bundled content and WebView history only in
 website mode. Resize/foreground must not remount the working app.
 
-Downstream accounts and packaged Bot consoles stay product-owned. Inspect actual
-product consumers when moving/removing utilities; no private code enters core.
-Use shared self-drawn icon components, never Lucide. Keep required third-party
-notices. Temporary assets, logs, dependencies and preview URLs stay out of Git.
+There is no downstream product entry: no product router, account, Bot or
+config hook, and no native dependency only a product needs. Products keep their
+own Expo app; no private code enters core. Use shared self-drawn icon
+components, never Lucide. Keep required third-party notices. Temporary assets, logs, dependencies and preview URLs stay out of Git.
 
 Build: npm run build:web-workbench --workspace @opencraft/mobile.
 Preview: npm run dev:expo -- --go. For external iPhone links use the core

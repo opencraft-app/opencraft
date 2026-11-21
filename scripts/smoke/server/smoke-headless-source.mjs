@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import WebSocket from "ws";
 
-import { startHeadlessServer } from "../../headless-server.mjs";
+import { startHeadlessServer } from "../../../apps/headless-server/src/headless-server.mjs";
 import { smokeCodexAppHost } from "./smoke-headless-package.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");

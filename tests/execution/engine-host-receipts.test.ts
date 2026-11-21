@@ -6,7 +6,7 @@ import {mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {WebSocket,WebSocketServer} from 'ws';
 import {startEngineHost} from '../../apps/local-agent-host/src/engine-host.js';
-import {createWorkbenchWebServer} from '../../scripts/serve-workbench-web.mjs';
+import {createWorkbenchWebServer} from '../../apps/headless-server/src/serve-workbench-web.mjs';
 import {DshConsumerReceipts} from '../../scripts/server-deployment/dsh-consumer-receipts.mjs';
 import {LOGICAL_CLIENT_FIELD} from '../../packages/app-host-protocol/src/index.js';
 for(const proxy of [false,true])test(`current Gateway consumes/ACKs DSH replies once, including errors (${proxy?'Web':'direct'})`,async t=>{

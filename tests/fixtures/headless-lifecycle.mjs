@@ -1,4 +1,4 @@
-import { startHeadlessServer } from '../../scripts/headless-application.mjs';
+import { startHeadlessServer } from '../../apps/headless-server/src/headless-application.mjs';
 import { mkdir, writeFile, open } from 'node:fs/promises';
 import { join } from 'node:path';
 

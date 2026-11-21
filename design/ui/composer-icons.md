@@ -173,9 +173,8 @@ slot sizing and materials do not carry a separate thin stroke override. Generate
 Bot personas are avatar artwork and retain their dedicated body/effect strokes.
 
 
-Native actions use `@opencraft/design-system-native/action-icons`. The plain
-`@opencraft/design-system/action-artwork` catalog owns shared action contours;
-Web and Native adapters choose SVG primitives and accessibility independently.
+The plain `@opencraft/design-system/action-artwork` catalog owns shared action
+contours; each platform adapter chooses SVG primitives and accessibility.
 Keep size, color, stroke and disabled-state decisions at existing control slots.
 The Native sidebar buttons use the existing `sidebar-toggle-glyphs` filled state
 contours and their 20-unit canvas. Do not import Web SVG components into Native

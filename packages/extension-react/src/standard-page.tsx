@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import "./standard-page.scss";
 import type { PlatformStandardPageProps, PlatformViewRegions } from "./index";
 
 /** Use the host's standard frame without importing Shell implementation details.

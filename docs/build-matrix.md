@@ -49,16 +49,29 @@ asynchronous cleanup finishes; repeated stop signals join the same cleanup.
 baseline, checksummed patch series and explicit source/sync/build commands. Its
 initial native patch exposes observation-only editing metadata and caret bounds;
 source verification is separate from compilation and real native input testing.
-All distributed desktop and browser-runtime packages require a compiled,
-probe-verified repository-owned Electron distribution. Missing, stale or
-incomplete artifacts fail packaging; there is no stock Electron fallback.
+All distributed browser-runtime packages and Linux desktop packages require a
+compiled, probe-verified repository-owned Electron distribution. Missing, stale
+or incomplete artifacts fail packaging; there is no implicit stock Electron
+fallback. The one explicit exception: until macOS and Windows have native build
+runners, their desktop packages may use stock Electron at the fork's upstream
+version when `OPENCRAFT_ELECTRON_STOCK_DESKTOP=1` is set (the fork's patches
+serve the Linux server browser runtime, which the desktop app does not call).
+The "Desktop pre-release" workflow builds Linux with the fork and macOS/Windows
+this way, unsigned, from one commit and publishes a GitHub pre-release.
 Desktop packages use `OPENCRAFT_ELECTRON_DISTRIBUTION_<PLATFORM>_<ARCH>` or
 `OPENCRAFT_ELECTRON_DISTRIBUTION`; headless packages use
 `OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION`. The default Dockerfile consumes the
 browser distribution through its `owned-electron` named context, also supplied
 by Compose. See [native build and Docker delivery](../vendor/electron/CONTAINER.md).
-CI consumes a successful native build selected by repository variable
-`OPENCRAFT_ELECTRON_ARTIFACT_RUN_ID`; browser and desktop proofs remain separate.
+CI restores the newest successful "Electron fork native artifacts" run on the
+default branch (or the branch being built) whose `vendor/electron/fork.json` and
+`args.gn` match the checkout and whose target artifact has not expired
+(`scripts/ci/resolve-electron-artifact-run.mjs`). Repository variable
+`OPENCRAFT_ELECTRON_ARTIFACT_RUN_ID` pins a specific run instead. A change under
+`vendor/electron/` merged to `main` starts a Linux x64 build; until it finishes,
+jobs that restore the runtime fail with instructions. A branch that changes the
+fork needs its own build run (mode `build`) before those jobs pass. Artifacts
+are kept 90 days. Browser and desktop proofs remain separate.
 Linux x64 is verified; other native builds and physical input-method validation
 remain separate work.
 
@@ -762,13 +775,9 @@ document before Metro. This is the only public mobile entry; it neither selects 
 product nor proves native-device parity. See
 [container ownership and acceptance](mobile-workbench-container.md).
 
-Default Expo Web/iOS bundle commands build the packaged Web Workbench with its
-configured direct Host. An account-gated downstream Router is selected through
-`products/<product>/run-expo.cjs`; product-owned APK/IPA and agents-next aliases explicitly delegate
-to it so Metro, Gradle and Xcode inherit the same local product entry/config.
-All downstream product platform entries use its frontend-generated Bot HTML;
-math/Mermaid rendering is part of that shared packaged document. This selection does not
-claim signed builds, physical plugin extraction or device verification.
+Expo Web/iOS bundle commands build the packaged Web Workbench with its
+configured direct Host. `apps/mobile` has no downstream product entry; a product
+that needs its own native app builds it in its own workspace.
 
 
 ## Headless smoke process ownership

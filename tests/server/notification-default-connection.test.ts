@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {once} from 'node:events';
 import WebSocket,{WebSocketServer} from 'ws';
 import {PushStore,TurnPushService,type PushBinding} from '@opencraft/web-push-node';
-import {createWorkbenchWebServer} from '../../scripts/serve-workbench-web.mjs';
+import {createWorkbenchWebServer} from '../../apps/headless-server/src/serve-workbench-web.mjs';
 
 test('a real admitted AppServer connection enrolls defaults independently of the renderer and without delaying the wire',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'notification-connection-')),store=new PushStore(join(dir,'push.sqlite'));

@@ -1,10 +1,10 @@
 import { readFile, mkdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseHeadlessArguments, startHeadlessServer } from '../headless-application.mjs';
+import { parseHeadlessArguments, startHeadlessServer } from '../../apps/headless-server/src/headless-application.mjs';
 import { coreHealth } from '../server-deployment/execution.mjs';
-import { attachDshHost, readDshHostIdentity } from '../server-deployment/dsh-host-client.mjs';
-import { readEngineHostIdentity } from '../server-deployment/engine-host-client.mjs';
+import { attachDshHost, readDshHostIdentity } from '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
+import { readEngineHostIdentity } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
 import { observeExecutionHealth } from '../server-deployment/headless-gateway-application.mjs';
 import { deploymentPaths, readPrivateToken } from './paths.mjs';
 

@@ -32,7 +32,7 @@ test('only slow or unsuccessful background completions log, with causal links an
 test('ingress wires the label once and logging failure does not reject telemetry', async t => {
   const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os'); const { join } = await import('node:path');
-  const { createObservabilityIngress } = await import('../../scripts/observability-ingress.mjs');
+  const { createObservabilityIngress } = await import('../../apps/headless-server/src/observability-ingress.mjs');
   const directory = await mkdtemp(join(tmpdir(), 'refresh-log-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const config = join(directory, 'ingress.json');

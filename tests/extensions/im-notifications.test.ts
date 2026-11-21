@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ImChannelService } from '../../scripts/im-channel-service.mjs';
+import { ImChannelService } from '../../apps/headless-server/src/im-channel-service.mjs';
 import { SlackPlugin } from '../../plugins/slack/src/server';
 test('IM notification targets require verified personal bindings and revoke immediately without SQL reads',async()=>{
   const calls:any[]=[];

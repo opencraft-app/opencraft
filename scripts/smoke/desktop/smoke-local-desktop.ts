@@ -13,7 +13,7 @@ import { CodexEngineAdapter } from "../../../apps/opencraft-daemon/src/codex-eng
 import { LocalDesktopService } from "../../../apps/local-agent-host/src/desktop/local-desktop-service.js";
 import { createNativeObserver, localDesktopMachineIdentity } from "../../../apps/local-agent-host/src/desktop/native-observer.js";
 import { createNativeDesktopControl } from "../../../apps/local-agent-host/src/desktop/native-control.js";
-import { createWorkbenchWebServer } from "../../serve-workbench-web.mjs";
+import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
 import { assertBrowserRuntimeDependencies } from "../../browser-smoke-preflight.mjs";
 
 if (!process.env.OPENCRAFT_CODEX_EXECUTABLE || !process.env.OPENCRAFT_PLAYWRIGHT_MODULE) {

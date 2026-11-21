@@ -16,7 +16,7 @@ test("AppHost resume package runs in native Node strip-only release imports", ()
     const session = registry.create('native-owner', {}, () => {});
     assert.equal(session.isEnded, false);
     registry.close(); assert.equal(session.isEnded, true);
-    await import('./scripts/serve-workbench-web.mjs');
+    await import('./apps/headless-server/src/serve-workbench-web.mjs');
   `], { cwd: new URL("../../", import.meta.url), encoding: "utf8" });
   assert.equal(child.status, 0, child.stderr || child.stdout);
 });

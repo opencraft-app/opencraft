@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { RemoteBrowserService } from '../../scripts/remote-browser-service.mjs';
-const { createAutomationRequests } = createRequire(import.meta.url)('../../scripts/remote-browser/automation-requests.cjs');
-const { createControls } = createRequire(import.meta.url)('../../scripts/remote-browser/controls.cjs');
+import { RemoteBrowserService } from '../../apps/headless-server/src/remote-browser-service.mjs';
+const { createAutomationRequests } = createRequire(import.meta.url)('../../apps/headless-server/src/remote-browser/automation-requests.cjs');
+const { createControls } = createRequire(import.meta.url)('../../apps/headless-server/src/remote-browser/controls.cjs');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 test('private cancellation stops queued automation without dispatch or affecting another page', async () => {

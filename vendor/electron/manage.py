@@ -182,7 +182,13 @@ class Fork:
         # DEPS selects the required revisions, including individual release
         # tags. Fetching every tag and branch head adds unrelated history to
         # each sync and is unnecessary for a fixed native build.
-        run([gclient, 'sync', '--no-history'], cwd=self.root)
+        # A persistent root keeps Chromium dependencies from the previous build,
+        # which Electron's patch hooks left modified; gclient refuses to update
+        # them ("You have uncommitted changes"). --reset hard-resets each managed
+        # dependency before updating, and the hooks re-apply the patches.
+        # src/electron is unmanaged, so gclient never touches the fork itself,
+        # and verify() above has already checked it is clean and pinned.
+        run([gclient, 'sync', '--no-history', '--reset'], cwd=self.root)
         return self.verify()
 
     def build(self, jobs):

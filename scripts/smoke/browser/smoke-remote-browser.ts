@@ -13,11 +13,11 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { SessionCapabilities } from '../../../packages/session-capabilities/src/index.js';
 import { SessionCapabilityMcp } from '../../../packages/session-capabilities/src/mcp.js';
-import { RemoteBrowserCapabilities } from '../../remote-browser/capabilities.js';
-import { createWorkbenchWebServer } from "../../serve-workbench-web.mjs";
-import { RemoteBrowserService } from "../../remote-browser-service.mjs";
+import { RemoteBrowserCapabilities } from '../../../apps/headless-server/src/remote-browser/capabilities.js';
+import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
+import { RemoteBrowserService } from "../../../apps/headless-server/src/remote-browser-service.mjs";
 import { packageBrowserRuntime } from "../../package-browser-runtime.mjs";
-import { connectBrowserOwner } from "../../remote-browser-owner.mjs";
+import { connectBrowserOwner } from "../../../apps/headless-server/src/remote-browser-owner.mjs";
 import { runCodexBrowserCli } from './codex-browser-cli.js';
 import { runCodexBrowserAdmission } from './codex-browser-admission.js';
 
@@ -32,7 +32,7 @@ const service = new RemoteBrowserService({ root: runtimeRoot, dataDirectory: tem
     assert.equal(process.env.OPENCRAFT_SMOKE_AUTOMATION_ONLY, '1');
     if (!privateOwner) {
       const profile = join(temporary, 'owner-profile'); await mkdir(profile, { recursive: true });
-      const { createBrowserOwner } = createRequire(import.meta.url)('../../remote-browser/owner.cjs');
+      const { createBrowserOwner } = createRequire(import.meta.url)('../../../apps/headless-server/src/remote-browser/owner.cjs');
       const env = { ...process.env, OPENCRAFT_BROWSER_DATA_DIR: profile };
       for (const name of ['ELECTRON_RUN_AS_NODE', 'NODE_OPTIONS', 'NODE_PATH', 'DISPLAY', 'WAYLAND_DISPLAY']) delete env[name];
       privateOwner = await createBrowserOwner({ socketPath: join(temporary, 'owner.sock'), spawnWorker: () =>

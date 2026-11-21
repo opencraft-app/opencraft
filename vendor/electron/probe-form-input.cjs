@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { installIme } = require('../../scripts/remote-browser/ime.cjs');
+const { installIme } = require('../../apps/headless-server/src/remote-browser/ime.cjs');
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'opencraft-form-input-')));
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('ozone-platform', 'headless');

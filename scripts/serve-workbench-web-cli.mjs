@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { runWorkbenchWebCli } from "./serve-workbench-web.mjs";
+import { runWorkbenchWebCli } from "../apps/headless-server/src/serve-workbench-web.mjs";
 
 runWorkbenchWebCli().catch((error) => {
   console.error("[opencraft static] failed to start", error);

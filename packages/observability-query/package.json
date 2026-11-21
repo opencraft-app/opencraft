@@ -1,0 +1,13 @@
+{
+  "name": "@opencraft/observability-query",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./index.mjs",
+    "./rpc-work": "./rpc-work.mjs"
+  },
+  "dependencies": {
+    "@opencraft/observability-contract": "0.1.0"
+  }
+}

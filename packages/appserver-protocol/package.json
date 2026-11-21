@@ -22,7 +22,9 @@
       "import": "./src/thread-command.mjs"
     },
     "./input-completion": "./src/input-completion.mjs",
-    "./server-spaces": "./src/server-spaces.ts"
+    "./server-spaces": "./src/server-spaces.ts",
+    "./channels": "./src/channels.ts",
+    "./channel-images": "./src/channel-images.ts"
   },
   "dependencies": {
     "@opencraft/document-storage": "0.1.0",

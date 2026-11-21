@@ -9,7 +9,7 @@ import { ImPlugin, type ImExecutionPort } from "../../plugins/im/src/server.js";
 import { IM_READ_TOOLS } from "../../plugins/im/src/read-tools.js";
 import { SessionCapabilities } from "../../packages/session-capabilities/src/index.js";
 import { SessionCapabilityMcp } from "../../packages/session-capabilities/src/mcp.js";
-import { ImChannelService } from "../../scripts/im-channel-service.mjs";
+import { ImChannelService } from "../../apps/headless-server/src/im-channel-service.mjs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 

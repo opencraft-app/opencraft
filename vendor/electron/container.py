@@ -116,7 +116,7 @@ class Build:
         if action == 'preflight':
             self.command(sys.executable, HERE / 'ci.py', 'preflight', '--target', 'linux-x64', '--root', self.root)
             self.command('node', '-e', "if(typeof require(process.argv[1]).initializeNativeFocus !== 'function') throw new Error('Native probe focus helper missing')",
-                         HERE.parents[1] / 'scripts/remote-browser/focus.cjs')
+                         HERE.parents[1] / 'apps/headless-server/src/remote-browser/focus.cjs')
             self.command('gclient', '--version')
             self.command('cipd', 'version')
             self.command('gsutil.py', 'version', '-l')

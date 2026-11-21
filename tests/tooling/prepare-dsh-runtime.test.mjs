@@ -137,7 +137,9 @@ test("desktop packaging refuses foreign native modules", async t => {
   const arches = { ia32: 0, x64: 1, armv7l: 2, arm64: 3 };
   const arch = arches[process.arch];
   const context = { packager, electronPlatformName: process.platform, arch };
-  if (arch !== undefined) await checkDesktopTarget(context);
+  // The native target passes the identity and architecture checks and then
+  // requires the owned Electron distribution; there is no stock fallback.
+  if (arch !== undefined) await assert.rejects(checkDesktopTarget(context), /OPENCRAFT_ELECTRON_DISTRIBUTION must be an absolute path/);
   await assert.rejects(checkDesktopTarget({ ...context, electronPlatformName: "not-this-os", arch: 1 }), /requires a native/);
   await assert.rejects(checkDesktopTarget({ ...context, arch: 4 }), /requires a native/);
   await assert.rejects(checkDesktopTarget({

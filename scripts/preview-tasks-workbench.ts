@@ -1,7 +1,7 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
-import { startHeadlessServer } from "./headless-server.mjs";
+import { startHeadlessServer } from "../apps/headless-server/src/headless-server.mjs";
 
 // Full production Workbench + actual DSH/Codex engines, with independent data.
 // Build using OPENCRAFT_HEADLESS_SERVER_BUILD and the headless Host definition.

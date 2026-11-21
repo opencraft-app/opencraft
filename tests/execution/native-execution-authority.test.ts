@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { NativeExecutionAuthority } from '../../scripts/native-execution-authority.js';
+import { NativeExecutionAuthority } from '../../apps/headless-server/src/native-execution-authority.js';
 
 const human = (actorId = 'alice') => ({actorId, generation:1, credentialId:'login', expiresAt:100_000});
 test('native notifications need an admitted submission and exact thread/turn binding', () => {

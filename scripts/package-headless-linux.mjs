@@ -21,11 +21,11 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { copyAllServerRuntime } from "./package-mcp-app-runtime.mjs";
 import { copySshRuntime } from "./package-ssh-runtime.mjs";
-import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
+import { assertHeadlessWebRelease } from "../apps/headless-server/src/headless-web-release.mjs";
 import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
 import { buildDshCapabilityPlugin } from './package-dsh-capability-runtime.mjs';
 import { buildConversationCli } from './build-conversation-cli.mjs';
-import { splitProductPluginPacks } from './web-deployment/product-plugin-packs.mjs';
+import { splitProductPluginPacks } from '../apps/headless-server/src/web-deployment/product-plugin-packs.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -47,10 +47,10 @@ export function headlessWebHostDefinitions() {
   }];
 }
 
-export async function buildHeadlessBundle(output, { headlessEntry = join(repositoryRoot, "scripts/headless-server.mjs"), additionalGitRuntimeEntries = [], assistantEntry = join(repositoryRoot,'apps/personal-assistant/src/runtime/assistant-server.mjs') } = {}) {
+export async function buildHeadlessBundle(output, { headlessEntry = join(repositoryRoot, "apps/headless-server/src/headless-server.mjs"), additionalGitRuntimeEntries = [], assistantEntry = join(repositoryRoot,'apps/personal-assistant/src/runtime/assistant-server.mjs') } = {}) {
   await mkdir(dirname(output), { recursive: true });
   await cp(join(repositoryRoot, 'scripts/craft-plugin.mjs'), join(dirname(output), 'craft-plugin.mjs'));
-  await build({ entryPoints: [join(repositoryRoot, "scripts/remote-browser/state.worker.ts")], outfile: join(dirname(output), "browser-state-worker.mjs"), bundle: true, platform: "node", format: "esm", target: "node26", logLevel: "warning" });
+  await build({ entryPoints: [join(repositoryRoot, "apps/headless-server/src/remote-browser/state.worker.ts")], outfile: join(dirname(output), "browser-state-worker.mjs"), bundle: true, platform: "node", format: "esm", target: "node26", logLevel: "warning" });
   await buildTranscriptCacheRuntime(dirname(output));
   await build({entryPoints:[fileURLToPath(new URL('../packages/web-push-node/src/store.worker.ts',import.meta.url))],outfile:join(dirname(output),'push-storage-worker.mjs'),bundle:true,platform:'node',format:'esm',target:'node26',logLevel:'warning',banner:{js:"import { createRequire } from 'node:module'; const require=createRequire(import.meta.url);"}});
   await buildServerSpacesRuntime(dirname(output));

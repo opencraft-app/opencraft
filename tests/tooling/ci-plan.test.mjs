@@ -53,13 +53,13 @@ test('root toolchain, lockfile, workflow and selector changes stay on Web/Linux'
   }
 });
 test('server runtime changes test without packaging; archive inputs also build and smoke the archive', () => {
-  for (const path of ['scripts/headless-server.mjs', 'scripts/headless-identity.mjs', 'tests/server/headless-server.test.mjs']) {
+  for (const path of ['apps/headless-server/src/headless-server.mjs', 'apps/headless-server/src/headless-identity.mjs', 'tests/server/headless-server.test.mjs']) {
     const plan = planChanges([path]);
     assert.equal(plan.headlessTests, true, path);
     assert.equal(plan.headlessPackage, false, path);
   }
   for (const path of ['scripts/package-headless-linux.mjs', 'scripts/install-headless-linux.sh',
-    'scripts/headless-codex-launcher.sh', 'scripts/headless-server-launcher.sh', 'scripts/headless-web-release.mjs',
+    'scripts/headless-codex-launcher.sh', 'scripts/headless-server-launcher.sh', 'apps/headless-server/src/headless-web-release.mjs',
     'scripts/smoke/server/smoke-headless-package.mjs', 'scripts/server-deployment/service.mjs',
     'tests/server/headless-installer.test.mjs', 'tests/server/server-deployment.test.mjs', 'packaging/web-server/package.json']) {
     const plan = planChanges([path]);

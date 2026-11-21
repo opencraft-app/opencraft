@@ -18,11 +18,22 @@ module.exports = async function beforePack(context) {
   if (context.electronPlatformName !== process.platform || target !== process.arch) {
     throw new Error(`Bundled DSH requires a native ${context.electronPlatformName}/${target} build. Current builder is ${process.platform}/${process.arch}. Run npm ci and the package command on the target OS/architecture.`);
   }
+  const version = context.packager.info.framework?.version ?? context.packager.config?.electronVersion;
+  const fork = JSON.parse(readFileSync(join(__dirname, '../vendor/electron/fork.json'), 'utf8'));
+  // Explicit stock desktop packages (macOS and Windows only; see package-electron-desktop.mjs).
+  if (process.env.OPENCRAFT_ELECTRON_STOCK_DESKTOP === '1') {
+    if (!['darwin', 'win32'].includes(context.electronPlatformName))
+      throw new Error(`Stock Electron is only allowed for macOS and Windows desktop packages; ${context.electronPlatformName} requires the verified fork`);
+    if (context.packager.config?.electronDist)
+      throw new Error('A stock desktop package must not also select an Electron distribution');
+    if (version !== fork.version)
+      throw new Error(`Stock desktop packages use Electron ${fork.version}, the fork's upstream version; got ${version}`);
+    return;
+  }
   // Direct electron-builder calls must obey the same contract as the public wrapper.
   const { verifyElectronDistribution } = await import('./electron-distribution.mjs');
   const verified = await verifyElectronDistribution(context.packager.config?.electronDist,
     join(__dirname, '../vendor/electron/fork.json'), { platform: context.electronPlatformName, arch: target });
-  const version = context.packager.info.framework?.version ?? context.packager.config?.electronVersion;
   if (version !== verified.marker.electronVersion)
     throw new Error('Electron packaging version differs from the owned artifact; use scripts/package-electron-desktop.mjs');
 };

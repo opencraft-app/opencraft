@@ -4,7 +4,7 @@ import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from
 import { packageBrowserRuntime } from './package-browser-runtime.mjs';
 import { optimizeWebImages } from './optimize-web-images.mjs';
 import { packageWebResources, copyPdfLicenses } from './package-web-resources.mjs';
-import { splitProductPluginPacks } from './web-deployment/product-plugin-packs.mjs';
+import { splitProductPluginPacks } from '../apps/headless-server/src/web-deployment/product-plugin-packs.mjs';
 import { mkdir, readFile, writeFile, cp, rm, chmod, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, relative } from 'node:path';
@@ -17,7 +17,7 @@ import { buildPiShellRuntime } from './package-pi-shell-runtime.mjs';
 import { copyAllServerRuntime } from './package-mcp-app-runtime.mjs';
 import { copySshRuntime } from './package-ssh-runtime.mjs';
 import semver from 'semver';
-import { assertHeadlessWebRelease } from './headless-web-release.mjs';
+import { assertHeadlessWebRelease } from '../apps/headless-server/src/headless-web-release.mjs';
 import { parseNpmPackResult } from './web-deployment/npm-pack-result.mjs';
 import { PACKAGE_NAME, PUBLIC_PACKAGE_NAME, RESOURCE_PACKAGE, assertPackageName } from './web-deployment/package-identity.mjs';
 import { sealPackage, npmPack } from './full-release/producer.mjs';
@@ -127,7 +127,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
     for (const [entry, target, format] of [
       [executionProfile === 'headless' ? headlessGatewayEntry : 'scripts/server-deployment/gateway.mjs', 'gateway.mjs', 'esm'],
       ['apps/opencraft-daemon/src/bin.ts', 'daemon.cjs', 'cjs'],
-      ['scripts/remote-browser/state.worker.ts', 'browser-state-worker.mjs', 'esm'],
+      ['apps/headless-server/src/remote-browser/state.worker.ts', 'browser-state-worker.mjs', 'esm'],
       ['apps/codex-core/src/router-evidence.worker.ts', 'router-evidence-worker.mjs', 'esm'],
       ['apps/opencraft-daemon/src/execution-fault.worker.ts', 'execution-fault-worker.mjs', 'esm'],
       ['apps/codex-core/src/generation-registry.worker.ts', 'generation-registry-worker.mjs', 'esm'],

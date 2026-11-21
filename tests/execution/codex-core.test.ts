@@ -16,9 +16,9 @@ import { startCodexAppServer } from "../../apps/codex-core/src/app-server.js";
 import { OPENCRAFT_HOST_STATE_MIGRATIONS, OPENCRAFT_HOST_STATE_CURRENT_MIGRATIONS } from "../../apps/opencraft-daemon/src/opencraft-host-state-database.js";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter.js";
 import { DatabaseSync } from "node:sqlite";
-import { ExecutionEnvironmentRuntime, environmentProjectId } from "../../scripts/execution-environment.js";
-import { AccountEnvironment } from "../../scripts/account-environment.js";
-import { EmployeeGitVaultStore } from "../../scripts/employee-git-vault-store.js";
+import { ExecutionEnvironmentRuntime, environmentProjectId } from "@opencraft/execution-environment";
+import { AccountEnvironment } from "@opencraft/execution-environment/account-environment";
+import { EmployeeGitVaultStore } from "@opencraft/execution-environment/employee-git-vault-store";
 import { observeNativeExecutionProcess } from "../../apps/opencraft-daemon/src/native-execution-origin.js";
 
 // macOS Unix-domain sockets have a small pathname limit. Keep fixture paths
@@ -730,7 +730,7 @@ test("managed Headless initializes its queue owner without a browser and drains 
     const webRoot = join(f.root, "web"); await mkdir(webRoot);
     await writeFile(join(webRoot, "index.html"), '<html><head></head><body>synthetic</body></html>');
     await writeFile(join(webRoot, "version.json"), JSON.stringify({ schemaVersion: 1, buildId: "headless-test", headlessServer: true, headlessHostId: "opencraft-server" }));
-    const { startHeadlessServer } = await import("../../scripts/headless-server.mjs");
+    const { startHeadlessServer } = await import("../../apps/headless-server/src/headless-server.mjs");
     headless = await startHeadlessServer({ dataDirectory: join(f.root, "headless"), webRoot, port: 0,
       codexCoreEndpoint: f.core.endpoint, codexCoreAuthToken: token,
       codexExecutable: "/external-core-only", runtimeDirectory: f.root,
@@ -800,7 +800,7 @@ test('Actor collaboration survives Headless overlay restart while native Core re
     const webRoot = join(f.root, 'web'); await mkdir(webRoot);
     await writeFile(join(webRoot, 'index.html'), '<!doctype html>Actor overlay fixture');
     await writeFile(join(webRoot, 'version.json'), JSON.stringify({ schemaVersion: 1, buildId: 'actor-core-fixture', headlessServer: true, headlessHostId: 'opencraft-server' }));
-    const { startHeadlessServer } = await import("../../scripts/headless-server.mjs");
+    const { startHeadlessServer } = await import("../../apps/headless-server/src/headless-server.mjs");
     const options = { dataDirectory, webRoot, port: 0, codexCoreEndpoint: f.core.endpoint, codexCoreAuthToken: token,
       codexExecutable: '/external-core-only', runtimeDirectory: f.root,
       startAgentHost: async () => ({ websocketUrl: 'ws://127.0.0.1:1/rpc', async close() {} }) };

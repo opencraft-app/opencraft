@@ -19,7 +19,11 @@
     "./conversation-execution": "./src/runtime/conversation-execution.mjs",
     "./conversation-projections": "./src/runtime/conversation-projections.mjs",
     "./thread-orchestration-execution": "./src/runtime/thread-orchestration-execution.mjs",
-    "./im-channels-appserver": "./src/runtime/im-channels-appserver.mjs"
+    "./im-channels-appserver": "./src/runtime/im-channels-appserver.mjs",
+    "./deployment-operator": "./src/deployment-operator.ts",
+    "./orchestration-runtime-store": "./src/orchestration-runtime-store.ts",
+    "./thread-orchestration-broker": "./src/thread-orchestration-broker.ts",
+    "./automation-runtime": "./src/automation-runtime.ts"
   },
   "dependencies": {
     "@opencraft/identity-core": "*",

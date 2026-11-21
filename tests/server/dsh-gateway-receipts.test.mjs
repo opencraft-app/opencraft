@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import WebSocket,{WebSocketServer} from 'ws';
-import {createWorkbenchWebServer} from '../../scripts/serve-workbench-web.mjs';
+import {createWorkbenchWebServer} from '../../apps/headless-server/src/serve-workbench-web.mjs';
 
 test('direct DSH gateway acknowledges only its matched responses and preserves raw frames',async t=>{
  const root=await mkdtemp('/tmp/dsh-gateway-');await writeFile(join(root,'index.html'),'<html><head></head></html>');

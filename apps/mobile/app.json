@@ -6,6 +6,7 @@
     "scheme": "opencraft",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "dev.opencraft.workbench"
@@ -16,30 +17,14 @@
       "softwareKeyboardLayoutMode": "resize"
     },
     "plugins": [
-      "expo-router",
-      "expo-image",
       "expo-sqlite",
-      "expo-secure-store",
-      "expo-web-browser",
       [
-        "expo-image-picker",
+        "expo-secure-store",
         {
-          "photosPermission": "Allow OpenCraft to choose a profile photo.",
-          "cameraPermission": false,
-          "microphonePermission": false
-        }
-      ],
-      [
-        "expo-audio",
-        {
-          "microphonePermission": "Allow OpenCraft to record your voice for transcription.",
-          "enableBackgroundRecording": false
+          "faceIDPermission": false
         }
       ]
     ],
-    "experiments": {
-      "typedRoutes": true
-    },
     "web": {
       "bundler": "metro",
       "output": "single"

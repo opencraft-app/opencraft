@@ -77,6 +77,9 @@ class ForkSourceTests(unittest.TestCase):
         self.assertEqual(before, after)
         self.assertEqual(len(calls), 1)
         self.assertIn('--no-history', calls[0])
+        # A persistent root's dependencies carry the previous build's patches.
+        self.assertIn('--reset', calls[0])
+        self.assertNotIn('--delete_unversioned_trees', calls[0])
         self.assertNotIn('--with_tags', calls[0])
         self.assertNotIn('--with_branch_heads', calls[0])
 

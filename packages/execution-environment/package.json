@@ -1,0 +1,23 @@
+{
+  "name": "@opencraft/execution-environment",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/execution-environment.ts",
+    "./account-environment": "./src/account-environment.ts",
+    "./account-environment-http": "./src/account-environment-http.ts",
+    "./execution-request-policy": "./src/execution-request-policy.ts",
+    "./personal-git": "./src/personal-git.ts",
+    "./personal-git-protocol": "./src/personal-git-protocol.ts",
+    "./employee-git-vault-store": "./src/employee-git-vault-store.ts",
+    "./git-identity-ipc": "./src/git-identity-ipc.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/appserver-client": "0.1.0",
+    "@opencraft/workbench-runtime": "0.1.0"
+  }
+}

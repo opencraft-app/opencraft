@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'vite';
 import { chromium } from 'playwright';
-import { ServerInformationStore, serverInformationHttp } from '../../server-information.mjs';
+import { ServerInformationStore, serverInformationHttp } from '../../../apps/headless-server/src/server-information.mjs';
 
 // Real React Settings primitives, locale, server-scoped fetch, HTTP API and durable
 // configuration. Authentication roles are synthetic; no production data or sends.

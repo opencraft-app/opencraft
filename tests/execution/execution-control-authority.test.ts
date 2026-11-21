@@ -6,9 +6,9 @@ import {join} from 'node:path';
 import {spawn} from 'node:child_process';
 import {LOGICAL_CLIENT_FIELD} from '@opencraft/app-host-protocol';
 import {CodexEngineAdapter} from '../../apps/opencraft-daemon/src/codex-engine-adapter.js';
-import {ExecutionEnvironmentRuntime} from '../../scripts/execution-environment.js';
-import {AccountEnvironment} from '../../scripts/account-environment.js';
-import {EmployeeGitVaultStore} from '../../scripts/employee-git-vault-store.js';
+import {ExecutionEnvironmentRuntime} from '@opencraft/execution-environment';
+import {AccountEnvironment} from '@opencraft/execution-environment/account-environment';
+import {EmployeeGitVaultStore} from '@opencraft/execution-environment/employee-git-vault-store';
 
 async function sharedCredentialAdapter(t:test.TestContext) {
   const root=await mkdtemp(join(tmpdir(),'native-control-model-'));

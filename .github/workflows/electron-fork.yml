@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - vendor/electron/**
-      - scripts/remote-browser/focus.cjs
+      - apps/headless-server/src/remote-browser/focus.cjs
       - scripts/electron-distribution.mjs
       - scripts/remote-browser-artifact.mjs
       - .github/actions/owned-electron/**
@@ -16,7 +16,7 @@ on:
     branches: [main]
     paths:
       - vendor/electron/**
-      - scripts/remote-browser/focus.cjs
+      - apps/headless-server/src/remote-browser/focus.cjs
       - scripts/electron-distribution.mjs
       - scripts/remote-browser-artifact.mjs
       - .github/actions/owned-electron/**

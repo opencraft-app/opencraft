@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { RemoteBrowserService } from '../../scripts/remote-browser-service.mjs';
+import { RemoteBrowserService } from '../../apps/headless-server/src/remote-browser-service.mjs';
 async function fixture(t,options={}){
  const directory=await mkdtemp(join(tmpdir(),'browser-target-'));
  const calls={spawn:0,attach:0};

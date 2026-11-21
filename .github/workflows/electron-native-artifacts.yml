@@ -2,7 +2,14 @@ name: Electron fork native artifacts
 
 on:
   push:
+    # Rebuild when the fork definition reaches main, so CI that restores the
+    # owned runtime always has a run built from the current fork.json.
+    # Path filters do not apply to tag pushes.
+    branches: [main]
     tags: ['v*']
+    paths:
+      - vendor/electron/**
+      - .github/workflows/electron-native-artifacts.yml
   workflow_dispatch:
     inputs:
       mode:
@@ -22,6 +29,12 @@ on:
 
 permissions:
   contents: read
+
+# Native builds share a persistent source tree on the build runner; queue them
+# instead of cancelling a multi-hour build halfway.
+concurrency:
+  group: electron-native-artifacts-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   prepare-linux-runner:
@@ -45,13 +58,13 @@ jobs:
           persist-credentials: false
       - id: targets
         env:
-          TARGET: ${{ inputs.target || 'linux-x64' }}
+          NATIVE_TARGET: ${{ inputs.target || 'linux-x64' }}
           MODE: ${{ inputs.mode || 'build' }}
           ELECTRON_BUILD_RUNNER_LINUX_X64: ${{ vars.ELECTRON_BUILD_RUNNER_LINUX_X64 }}
           ELECTRON_BUILD_RUNNER_WINDOWS_X64: ${{ vars.ELECTRON_BUILD_RUNNER_WINDOWS_X64 }}
           ELECTRON_BUILD_RUNNER_MACOS_ARM64: ${{ vars.ELECTRON_BUILD_RUNNER_MACOS_ARM64 }}
           ELECTRON_BUILD_RUNNER_MACOS_X64: ${{ vars.ELECTRON_BUILD_RUNNER_MACOS_X64 }}
-        run: python3 vendor/electron/ci.py plan --target "$TARGET" --mode "$MODE"
+        run: python3 vendor/electron/ci.py plan --target "$NATIVE_TARGET" --mode "$MODE"
   validate:
     needs: plan
     strategy:
@@ -65,7 +78,7 @@ jobs:
     # Matrix values reach shell scripts only through the environment.
     env:
       PYTHON: ${{ matrix.python }}
-      TARGET: ${{ matrix.id }}
+      NATIVE_TARGET: ${{ matrix.id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -75,7 +88,7 @@ jobs:
           python-version: '3.12'
       - name: Verify native runner architecture
         run: |
-          "$PYTHON" vendor/electron/ci.py platform --target "$TARGET"
+          "$PYTHON" vendor/electron/ci.py platform --target "$NATIVE_TARGET"
       - run: |
           "$PYTHON" -m unittest discover -s vendor/electron/tests -v
       - run: |
@@ -101,7 +114,8 @@ jobs:
       OPENCRAFT_BUILD_ID: github-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
       # Matrix values reach shell scripts only through the environment.
       PYTHON: ${{ matrix.python }}
-      TARGET: ${{ matrix.id }}
+      # Not TARGET: Chromium's run_bindgen.py refuses to run when TARGET is set.
+      NATIVE_TARGET: ${{ matrix.id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -135,7 +149,7 @@ jobs:
       - name: Check build capacity before source download
         if: steps.native-cache.outputs.cache-hit != 'true'
         run: |
-          "$PYTHON" vendor/electron/ci.py preflight --target "$TARGET" --root "${OPENCRAFT_ELECTRON_PERSISTENT_ROOT:-$RUNNER_TEMP}"
+          "$PYTHON" vendor/electron/ci.py preflight --target "$NATIVE_TARGET" --root "${OPENCRAFT_ELECTRON_PERSISTENT_ROOT:-$RUNNER_TEMP}"
       - name: Set native absolute paths
         # Python writes native Windows paths; MSYS strings must not reach Node.
         run: |
@@ -225,7 +239,7 @@ jobs:
       - name: Build and package OpenCraft with the verified fork
         run: |
           npm run build:electron:release
-          "$PYTHON" vendor/electron/ci.py package --target "$TARGET" --distribution "$DISTRIBUTION"
+          "$PYTHON" vendor/electron/ci.py package --target "$NATIVE_TARGET" --distribution "$DISTRIBUTION"
       - name: Test final AppImage and record checksum
         if: matrix.id == 'linux-x64'
         run: |
@@ -251,4 +265,5 @@ jobs:
             apps/desktop/release/**
             ${{ runner.temp }}/opencraft-electron-evidence/**
           if-no-files-found: error
-          retention-days: 14
+          # CI restores this runtime until the next fork change; keep it as long as allowed.
+          retention-days: 90

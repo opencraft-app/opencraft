@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/contract.ts",
     "./node": "./src/node.ts",
-    "./store": "./src/store.ts"
+    "./store": "./src/store.ts",
+    "./controller": "./src/controller.ts"
   },
   "dependencies": {
     "@opencraft/sqlite-node": "*",

@@ -78,7 +78,7 @@ test("output replay and retained exit records remain bounded while live PTYs are
 });
 
 test("execution transport reports capacity exhaustion without exposing unrelated authorization failures", async () => {
-  const { ExecutionEnvironmentTransport } = await import('../../scripts/execution-environment-transport');
+  const { ExecutionEnvironmentTransport } = await import('../../apps/headless-server/src/execution-environment-transport');
   const directory = await mkdtemp(join(tmpdir(), 'terminal-transport-'));
   const location = await terminalOwnerLocation(directory);
   const stop = await startTerminalPtyOwner(location.directory, location.endpoint);

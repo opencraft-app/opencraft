@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import WebSocket from "ws";
 import { APP_HOST_PROTOCOL_VERSION } from "@opencraft/app-host-protocol/version";
-import { appHostFrameRejection, createWorkbenchWebServer } from "../../scripts/serve-workbench-web.mjs";
+import { appHostFrameRejection, createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 
 const hello = { type: "hello", protocolVersion: APP_HOST_PROTOCOL_VERSION, rendererId: "renderer-secret" };
 const send = { type: "host/send", requestId: "request-secret", hostId: "host-secret", leaseId: "lease-secret", generation: 1, frame: "message-secret" };

@@ -8,9 +8,9 @@ import { SessionCapabilities } from '../../packages/session-capabilities/src/ind
 import { SessionCapabilityMcp } from '../../packages/session-capabilities/src/mcp.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { RemoteBrowserCapabilities } from '../../scripts/remote-browser/capabilities.js';
-import { RemoteBrowserService } from '../../scripts/remote-browser-service.mjs';
-import { acknowledgePresentation } from '../../scripts/remote-browser/tab-presentation.mjs';
+import { RemoteBrowserCapabilities } from '../../apps/headless-server/src/remote-browser/capabilities.js';
+import { RemoteBrowserService } from '../../apps/headless-server/src/remote-browser-service.mjs';
+import { acknowledgePresentation } from '../../apps/headless-server/src/remote-browser/tab-presentation.mjs';
 import { nativeToolCapabilityToken } from '../../packages/session-capabilities/src/credentials.js';
 
 class NativeFixture extends RemoteBrowserService {
@@ -85,7 +85,7 @@ test('native mutation identity cannot change operation or target after SQLite re
   const tabId = JSON.parse((created.contentItems[0] as { text: string }).text).tabId;
   // Restart the actual Worker/store, preserving durable state rather than an adapter cache.
   await f.service.store.close();
-  const { BrowserStateStore } = await import('../../scripts/remote-browser/state-store.mjs');
+  const { BrowserStateStore } = await import('../../apps/headless-server/src/remote-browser/state-store.mjs');
   f.service.store = new BrowserStateStore(f.service.dataDirectory);
   await f.service.store.open();
   const before = f.service.calls.length;
