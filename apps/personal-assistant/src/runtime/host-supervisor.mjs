@@ -12,7 +12,7 @@ import { validateCodexConfig, readCodexKey } from '../adapters/codex/config.mjs'
 
 const modelPurposes=new Set(['reception','context-summary','execution','memory-propose','memory-verify']);
 /** Crew work the Bot holds. The Core judges every call as the Bot itself; the Host only forwards. */
-const crewMethods = new Set(['list','get','message','finish','replies'].map(s=>'opencraft/crew/work/'+s));
+const crewMethods = new Set([...['list','get','message','finish','replies','dispatch'].map(s=>'opencraft/crew/work/'+s),'opencraft/crew/phonebook/list']);
 const platformMethods = new Set(['authorize','threads/command','groups/list','groups/history','groups/search','conversations/list','conversations/history'].map(s=>'opencraft/personal-assistant/'+s));
 /** Installation-owned runtime handles. Assignment facts and message cursors remain durable owners.
  * No renderer, Human cookie or model-selected destination crosses this boundary. */

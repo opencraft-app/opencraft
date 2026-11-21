@@ -199,6 +199,7 @@ test('replies between Bots open no work, spend no budget and come back on the wo
     [[root.workId, f.bob.actorId, 'signatures look fine', f.zhe.id]], 'filed against the work Alan holds, which Bob gave it');
   await say(f, f.alan, child.workId, f.zhe.id, 'thanks, also check the notes');
   assert.deepEqual((await replies(f.zhe)).map(r => [r.workId, r.content]), [[child.workId, 'thanks, also check the notes']], 'the requester answers down the tree');
+  assert.equal(((await f.call(f.alan.context, 'opencraft/crew/work/replies', { after: 0 })) as { replies: { fromWorkId: string }[] }).replies[0]!.fromWorkId, child.workId, 'a reply says which hand-off it came from');
   assert.equal((await f.call(f.zhe.context, 'opencraft/crew/work/list', {}) as { works: unknown[] }).works.length, 1, 'no new work for Zhe');
   assert.equal((await work(root.workId)).budget.used, 1, 'replies spend no budget');
 

@@ -28,7 +28,8 @@ export interface CrewWorkView {
 /** A message that reached a Bot inside crew work, filed against the Bot's own work. */
 export interface CrewReply {
   seq: number; messageId: string; workId: string; requesterId: string; state: 'open' | 'closed';
-  from: CrewWorkPerson; content: string;
+  /** The work the reply was written under; answering down the tree goes back on it. */
+  fromWorkId: string; from: CrewWorkPerson; content: string;
 }
 /** Who a crew message may go to, and which of the recipient's works it answers, if the recipient is a Bot. */
 export interface CrewRoute { pass: CrewPass; recipientWorkId: string | null }
@@ -108,12 +109,12 @@ export class CrewWork {
   /** Replies filed for the calling Bot, oldest first. */
   replies(context: ActorContext, after: unknown): CrewReply[] {
     if (!Number.isSafeInteger(after) || Number(after) < 0) fail(400, 'invalid_input');
-    return this.db.prepare(`SELECT c.seq,c.message_id,c.work_id,w.requester_id,w.state,m.author_id,m.content FROM crew_messages c
+    return this.db.prepare(`SELECT c.seq,c.message_id,c.work_id,c.from_work_id,w.requester_id,w.state,m.author_id,m.content FROM crew_messages c
       JOIN crew_work w ON w.id=c.work_id JOIN actor_messages m ON m.id=c.message_id
       WHERE c.recipient_id=? AND c.seq>? ORDER BY c.seq LIMIT 50`).all(context.actorId, Number(after)).map(r => {
       const author = this.actors.get(String(r.author_id));
       return { seq: Number(r.seq), messageId: String(r.message_id), workId: String(r.work_id), requesterId: String(r.requester_id),
-        state: r.state as CrewReply['state'], content: String(r.content),
+        state: r.state as CrewReply['state'], fromWorkId: String(r.from_work_id), content: String(r.content),
         from: { actorId: String(r.author_id), displayName: author?.displayName ?? '', kind: author?.kind === 'human' ? 'human' as const : 'session' as const } };
     });
   }

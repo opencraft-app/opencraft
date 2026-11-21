@@ -108,12 +108,12 @@ test("a reply from a Bot it handed work to returns to the conversation of the wo
   assert.equal(ledger.works[0].state, "open", "work with an open hand-off stays open");
 
   const zhe = { actorId: "zhe", displayName: "Zhe", kind: "session" };
-  ledger.replies.push({ seq: 1, messageId: "r1", workId: "root", requesterId: "bob", state: "open", from: zhe, content: "signatures look fine" });
+  ledger.replies.push({ seq: 1, messageId: "r1", workId: "root", requesterId: "bob", state: "open", fromWorkId: "child", from: zhe, content: "signatures look fine" });
   ledger.works[0].openChildren = 0;
   await crew.poll(() => false);
   const turn = s.store.app.reception.turn("crew-reply:r1");
   assert.equal(turn.conversation_id, conversationId);
-  assert.equal(turn.text, "Zhe:\nsignatures look fine");
+  assert.equal(turn.text, "Zhe (zhe, work child):\nsignatures look fine");
   assert.equal(ledger.works[0].state, "open", "the returned reply is still to be handled");
 
   await crew.poll(() => false);

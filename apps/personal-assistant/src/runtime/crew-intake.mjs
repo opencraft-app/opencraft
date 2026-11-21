@@ -54,8 +54,27 @@ export function createCrewIntake({ runner, request }) {
   const answersTo = (work) => work.chain.some((p) => p.actorId === work.requesterId);
   const isPeerConversation = (conversationId) => !!meta(conversationKey(conversationId));
 
+  /** The dispatcher whose conversation a runner Work belongs to, or null for any other Work. */
+  const requesterOf = (workId) => {
+    for (const { conversation_id } of db().prepare("SELECT conversation_id FROM conversation_work WHERE work_id=?").all(workId)) {
+      const actorId = meta(conversationKey(conversation_id));
+      if (actorId) return actorId;
+    }
+    return null;
+  };
+
   return {
     isPeerConversation,
+    /** Whether a runner Work answers crew work; only such Work gets the crew tools. */
+    answers: (workId) => requesterOf(workId) !== null,
+    /** The open crew work a runner Work answers: the oldest one from that dispatcher. */
+    async held(workId, signal) {
+      const actorId = requesterOf(workId);
+      const { works } = await request("opencraft/crew/work/list", {}, signal);
+      const work = actorId && works.find((w) => w.requesterId === actorId);
+      if (!work) throw Error("This work no longer answers open crew work");
+      return work;
+    },
 
     /** One pass: return replies to their conversations, start new work, close work that has gone quiet. */
     async poll(stopped) {
@@ -69,7 +88,8 @@ export function createCrewIntake({ runner, request }) {
           const response = await runner.dispatch({
             op: "say",
             id: "crew-reply:" + reply.messageId,
-            params: { conversationId, text: `${reply.from.displayName}:\n${reply.content}` },
+            // The hand-off it came from lets the Bot answer back down with crew_message.
+            params: { conversationId, text: `${reply.from.displayName} (${reply.from.actorId}, work ${reply.fromWorkId}):\n${reply.content}` },
           });
           if (response?.ok === false) throw Error("Crew reply rejected");
         }

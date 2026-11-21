@@ -7,6 +7,7 @@ export function createExecutionPorts(
   threadCommand,
   platformReads,
   environment,
+  crew,
 ) {
   return Object.freeze({
     executions: Object.freeze({
@@ -28,6 +29,7 @@ export function createExecutionPorts(
     }),
     toolsFor: (work, snapshot) =>
       Object.freeze({
+        ...(crew && crew.answers(work.id) ? crewTools(work, crew, app, assertOwner) : {}),
         ...(environment
           ? {
               environmentRun: async (args, callId, signal) => {
@@ -156,4 +158,62 @@ export function createExecutionPorts(
     report: (workId, error) =>
       app.event("pi.report", workId, { error: String(error) }),
   });
+}
+
+/**
+ * Crew tools for Work that answers crew work. The crew work is resolved from the Work's own
+ * conversation, never chosen by the model; the Core judges every call as this Bot. Idempotency
+ * keys come from the Work and native call ID, so a replayed call reuses its message.
+ */
+function crewTools(work, crew, app, assertOwner) {
+  const check = (tool, signal) => {
+    signal?.throwIfAborted();
+    assertOwner();
+    app.works.assertCurrent(work);
+    app.executions.assertCrewAction(work, tool);
+  };
+  const key = (tool, callId) => {
+    if (typeof callId !== "string" || !callId) throw Error("Crew tools require a native call ID");
+    return `crew:${work.id}:${tool}:${callId}`;
+  };
+  const text = (value, name) => {
+    if (typeof value !== "string" || !value.trim() || value.length > 16384) throw Error(`Invalid ${name}`);
+    return value;
+  };
+  return {
+    crewContacts: async (signal) => {
+      check("crew_contacts", signal);
+      const held = await crew.held(work.id, signal);
+      const book = await crew.request("opencraft/crew/phonebook/list", { botId: held.assigneeId }, signal);
+      check("crew_contacts", signal);
+      const person = ({ actorId, displayName, kind }) => ({ actorId, displayName, kind });
+      return { contacts: book.entries.map(person), answersTo: held.chain.map(person), budget: held.budget };
+    },
+    crewDispatch: async (args, callId, signal) => {
+      check("crew_dispatch", signal);
+      const held = await crew.held(work.id, signal);
+      const result = await crew.request("opencraft/crew/work/dispatch", {
+        targetActorId: text(args.to, "recipient"), content: text(args.text, "request"),
+        idempotencyKey: key("crew_dispatch", callId), parentWorkId: held.id,
+      }, signal);
+      check("crew_dispatch", signal);
+      return { workId: result.workId, budget: result.work.budget };
+    },
+    crewMessage: async (args, callId, signal) => {
+      check("crew_message", signal);
+      const held = await crew.held(work.id, signal);
+      // Up the chain on the work this Bot holds, or down on a hand-off it made from that work.
+      const workId = args.workId === undefined ? held.id : text(args.workId, "work");
+      if (workId !== held.id) {
+        const { work: child } = await crew.request("opencraft/crew/work/get", { workId }, signal);
+        if (child.parentId !== held.id) throw Error("That hand-off was not made from this work");
+      }
+      const result = await crew.request("opencraft/crew/work/message", {
+        workId, targetActorId: text(args.to, "recipient"), content: text(args.text, "message"),
+        idempotencyKey: key("crew_message", callId),
+      }, signal);
+      check("crew_message", signal);
+      return { messageId: result.messageId };
+    },
+  };
 }

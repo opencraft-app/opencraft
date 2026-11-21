@@ -147,7 +147,7 @@ export interface CrewWorkView {
 /** A reply that reached a Bot inside crew work, filed against that Bot's own work. */
 export interface CrewReply {
   seq: number; messageId: string; workId: string; requesterId: string; state: 'open' | 'closed';
-  from: CrewPhonebookEntry; content: string;
+  fromWorkId: string; from: CrewPhonebookEntry; content: string;
 }
 export interface ChannelsMethodMap {
   'opencraft/channels/group/get': {params:{channelId:string};result:ChannelSummary};

@@ -114,6 +114,12 @@ export function createAssistantSession(peer, onStopped) {
                 }),
               resolveModelFailure: (purpose) =>
                 request("model-failure", { purpose }),
+              // Crew intake starts after the runner opens; until then no Work answers crew work.
+              crewPort: {
+                answers: (workId) => crew?.answers(workId) ?? false,
+                held: (workId, signal) => crew ? crew.held(workId, signal) : Promise.reject(Error("Crew unavailable")),
+                request: (method, params, signal) => request(method, params, signal),
+              },
               messageTransport: {
                 async deliver(message, signal) {
                   if (

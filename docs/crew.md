@@ -96,7 +96,9 @@ Removing a Bot uses the existing `remove` action.
 | Stopping started work after the current step when its dispatcher leaves | not yet; replies already move up the chain |
 | Direct messages from members as dispatch (rule 10) | implemented in core; the Bot owner's private line is exempt |
 | Replies between Bots without budget, returned to the work they answer | implemented in core and in the runtime intake; work with open hand-offs is not finished |
-| Bots dispatching to their phonebook, answering down the tree, routine work | core only; no runtime tool yet |
+| Bots dispatching to their phonebook and answering down the tree | implemented as Work tools for both execution engines (Pi and Codex): `crew_contacts`, `crew_dispatch`, `crew_message`. They appear only in Work that answers crew work; the crew work is taken from the Work's conversation, never from the model, and idempotency keys come from the Work and native call |
+| Dispatching from the reception turn without a Work (`dispatch` / `message` decisions) | not yet |
+| Routine work started by a Bot | core only; no runtime trigger yet |
 | Attachments sent to a space Bot by someone other than its owner | not yet: the work carries the text only |
 | Crew UI: space members | implemented in the Server panel: Agents are labelled, the owner switches open contact and adds their own assistants (`bots`, `addBot`) |
 | Crew UI: phonebook | implemented in the assistant settings dialog: one switch per space member; members read it, only the owner edits |
