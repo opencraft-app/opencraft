@@ -35,6 +35,8 @@ export interface OpenCraftDaemonClientOptions {
   readonly modelStorageDirectory?: string;
   readonly skillsDirectory?: string;
   readonly codexExecutable: string;
+  /** Where that Codex came from; recorded by the daemon's Codex adapter. */
+  readonly codexExecutableSource?: "explicit" | "builtin" | "user-installed" | "unresolved";
   readonly codexDataDirectory: string;
   readonly nativeCodexHomeDirectory: string;
   readonly codexCoreEndpoint?: string;
@@ -116,6 +118,7 @@ export function daemonLaunchSpec(
       ...(options.modelStorageDirectory ? ["--model-storage-directory", options.modelStorageDirectory] : []),
       ...(options.skillsDirectory ? ["--skills-directory", options.skillsDirectory] : []),
       "--codex-executable", options.codexExecutable,
+      ...(options.codexExecutableSource ? ["--codex-executable-source", options.codexExecutableSource] : []),
       "--codex-data-directory", options.codexDataDirectory,
       "--native-codex-home-directory", options.nativeCodexHomeDirectory,
       ...(options.codexCoreEndpoint ? ["--codex-core-endpoint", options.codexCoreEndpoint] : []),

@@ -1,3 +1,4 @@
+import { AGENT_PROVIDERS, externalSource } from "@opencraft/agent-bridge-protocol";
 import type { OnboardingActivity, OnboardingAgentId, OnboardingAgentSnapshot, OnboardingSnapshot } from "@opencraft/appserver-protocol";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { constants } from "node:fs";
@@ -5,55 +6,21 @@ import { access, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 
-export const ONBOARDING_AGENT_ENGINES = { codex: "codex", cursor: "cursor", claude: "claude-code", codebuddy: "codebuddy" } as const;
+type ProviderEntry = (typeof AGENT_PROVIDERS)[number];
 
-/** Local CLIs the first-run agent step can see. Commands and packages are fixed. */
-export const ONBOARDING_AGENTS = [
-  {
-    id: "codex",
-    name: "Codex",
-    commands: ["codex"],
-    versionArgs: ["--version"],
-    statusArgs: ["login", "status"],
-    signInArgs: ["login"],
-    signInEnv: {},
-    installPackage: "@openai/codex",
-    installUrl: "https://developers.openai.com/codex/cli",
-  },
-  {
-    id: "cursor",
-    name: "Cursor",
-    commands: ["cursor-agent"],
-    versionArgs: ["--version"],
-    statusArgs: ["status"],
-    signInArgs: ["login"],
-    signInEnv: { NO_OPEN_BROWSER: "1" },
-    installPackage: null,
-    installUrl: "https://cursor.com/docs/cli/installation",
-  },
-  {
-    id: "claude",
-    name: "Claude Code",
-    commands: ["claude"],
-    versionArgs: ["--version"],
-    statusArgs: ["auth", "status"],
-    signInArgs: ["auth", "login"],
-    signInEnv: {},
-    installPackage: null,
-    installUrl: "https://code.claude.com/docs/en/setup",
-  },
-  {
-    id: "codebuddy",
-    name: "CodeBuddy",
-    commands: ["codebuddy", "cbc"],
-    versionArgs: ["--version"],
-    statusArgs: ["--version"],
-    signInArgs: ["auth", "login"],
-    signInEnv: {},
-    installPackage: "@tencent-ai/codebuddy-code",
-    installUrl: "https://www.codebuddy.cn/cli/",
-  },
-] as const;
+/** Engine identity per agent, from the shared provider catalog. */
+export const ONBOARDING_AGENT_ENGINES = Object.fromEntries(AGENT_PROVIDERS.map(provider => [provider.id, provider.engineId])) as
+  { readonly [P in ProviderEntry as P["id"]]: P["engineId"] };
+
+/** Local CLIs the first-run agent step can see: each provider's user-installed source. */
+export const ONBOARDING_AGENTS = AGENT_PROVIDERS.flatMap(provider => {
+  const source = externalSource(provider);
+  return source ? [{
+    id: provider.id, name: provider.displayName, commands: source.commands, versionArgs: source.versionArgs,
+    statusArgs: source.statusArgs, signInArgs: source.signInArgs, signInEnv: source.signInEnv,
+    installPackage: source.installPackage, installUrl: source.installUrl,
+  }] : [];
+});
 
 export type { OnboardingActivity, OnboardingAgentId, OnboardingAgentSnapshot, OnboardingSnapshot };
 

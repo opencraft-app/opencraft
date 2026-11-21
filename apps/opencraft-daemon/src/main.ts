@@ -67,6 +67,7 @@ export async function startOpenCraftDaemon(options: {
   readonly modelStorageDirectory?: string;
   readonly skillsDirectory?: string;
   readonly codexExecutable: string;
+  readonly codexExecutableSource?: "explicit" | "builtin" | "user-installed" | "unresolved";
   readonly codexDataDirectory: string;
   readonly nativeCodexHomeDirectory: string;
   readonly codexCoreEndpoint?: string;
@@ -169,6 +170,7 @@ export async function startOpenCraftDaemon(options: {
             })));
           },
           executable: options.codexExecutable,
+          ...(options.codexExecutableSource ? { executableSource: options.codexExecutableSource } : {}),
           runtimeDirectory: options.runtimeDirectory,
           dataDirectory: options.codexDataDirectory,
           artifactDirectory: join(options.dataDirectory,"artifacts"),

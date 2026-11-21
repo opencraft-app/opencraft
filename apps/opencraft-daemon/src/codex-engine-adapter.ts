@@ -325,6 +325,8 @@ interface LocalCodexEngineOptions extends SharedCodexRoutingOptions {
   /** Opt in before migrating a legacy embedded writer to independently owned core storage. */
   readonly writerOwnership?: boolean;
   readonly executable: string;
+  /** Builtin (bundled, pinned), user-installed, explicit or unresolved; diagnostics only. */
+  readonly executableSource?: "explicit" | "builtin" | "user-installed" | "unresolved";
   readonly runtimeDirectory: string;
   readonly modelPolicyPath?: string;
   readonly dataDirectory: string;
@@ -1122,7 +1124,8 @@ export class CodexEngineAdapter implements DuplexTransport {
       stdio: ["pipe", "pipe", "pipe"],
     });
     this.child = child;
-    this.diagnostic({ event: "appserver-start", pid: child.pid ?? null });
+    this.diagnostic({ event: "appserver-start", pid: child.pid ?? null,
+      ...(this.options.executableSource ? { executableSource: this.options.executableSource } : {}) });
     child.stderr.on("data", chunk => { this.stderrTail = `${this.stderrTail}${String(chunk)}`.slice(-4_000); });
     this.lines = createInterface({ input: child.stdout });
     this.lines.on("line", this.receivePhysicalLine);

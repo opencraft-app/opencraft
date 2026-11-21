@@ -40,7 +40,15 @@ import { createAccountRouteProxy } from "./account-route-proxy.js";
 import { registerExtensionDataIpc } from "./extension-data-ipc.js";
 import { workbenchWindowMetrics } from "@opencraft/workbench-runtime/window-metrics";
 import { browserMetadataKeys as browserMetadataIdentity, normalizeBrowserMetadata } from "@opencraft/workbench-runtime/browser-metadata-identity";
-import { resolveCodexExecutable } from "./codex-executable.js";
+import { resolveCodexLaunch } from "./codex-executable.js";
+
+/** The bundled Codex is the builtin source; record where the started Codex actually came from. */
+function codexLaunchOptions(launch: ReturnType<typeof resolveCodexLaunch>) {
+  if (app.isPackaged && launch.source !== "builtin" && launch.source !== "explicit") {
+    console.warn(`[opencraft codex] The bundled Codex is unavailable; starting a ${launch.source} Codex instead`);
+  }
+  return { codexExecutable: launch.executable, codexExecutableSource: launch.source };
+}
 import { remoteServerOrigin } from '@opencraft/plugin-local-account/connections';
 
 import {
@@ -848,14 +856,14 @@ async function bootstrap(): Promise<void> {
     },
     modelStorageDirectory: process.env.OPENCRAFT_MODEL_STORAGE_DIRECTORY?.trim() || desktopPaths.productHomeDirectory,
     skillsDirectory: process.env.OPENCRAFT_SKILLS_DIRECTORY?.trim() || join(desktopPaths.productHomeDirectory, "skills"),
-    codexExecutable: resolveCodexExecutable({
+    ...codexLaunchOptions(resolveCodexLaunch({
       explicit: process.env.OPENCRAFT_CODEX_EXECUTABLE,
       bundled: app.isPackaged
         ? join(process.resourcesPath, `runtime/codex-${process.arch}/bin`, process.platform === "win32" ? "codex.exe" : "codex")
         : null,
       path: process.env.PATH,
       homeDirectory: homedir(),
-    }),
+    })),
     codexDataDirectory: desktopPaths.codexDataDirectory,
     nativeCodexHomeDirectory: process.env.CODEX_HOME?.trim() || join(homedir(), ".codex"),
     executable: process.execPath,

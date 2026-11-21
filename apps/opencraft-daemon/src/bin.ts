@@ -19,6 +19,12 @@ function requiredEnvironment(name: string): string {
   return value;
 }
 
+function codexSource(value: string | undefined) {
+  if (value === undefined) return undefined;
+  if (value === "explicit" || value === "builtin" || value === "user-installed" || value === "unresolved") return value;
+  throw new Error("--codex-executable-source must be explicit, builtin, user-installed or unresolved");
+}
+
 void (async () => startOpenCraftDaemon({
   endpoint: requiredArgument("--endpoint"),
   runtimeDirectory: requiredArgument("--runtime-directory"),
@@ -30,6 +36,7 @@ void (async () => startOpenCraftDaemon({
   modelStorageDirectory: argument("--model-storage-directory"),
   skillsDirectory: argument("--skills-directory"),
   codexExecutable: requiredArgument("--codex-executable"),
+  codexExecutableSource: codexSource(argument("--codex-executable-source")),
   codexDataDirectory: requiredArgument("--codex-data-directory"),
   nativeCodexHomeDirectory: requiredArgument("--native-codex-home-directory"),
   codexCoreEndpoint: argument("--codex-core-endpoint"),

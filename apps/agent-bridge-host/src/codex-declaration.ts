@@ -1,7 +1,8 @@
-import { BRIDGE_PROTOCOL_VERSION, BRIDGE_GRAMMAR_RANGE, type BridgeDeclaration } from '@opencraft/agent-bridge-protocol';
+import { BRIDGE_PROTOCOL_VERSION, BRIDGE_GRAMMAR_RANGE, BUILTIN_CODEX_VERSION, type BridgeDeclaration } from '@opencraft/agent-bridge-protocol';
 export const codexDeclaration: BridgeDeclaration = {
   providerId: 'codex', protocolVersion: BRIDGE_PROTOCOL_VERSION, grammarRange: BRIDGE_GRAMMAR_RANGE,
-  approvalExecutor: 'provider', minNativeVersion: '0.162.1',
+  // The declaration was established against the builtin Codex; external versions must be at least this.
+  approvalExecutor: 'provider', minNativeVersion: BUILTIN_CODEX_VERSION,
   probeBasis: 'AppServer v2 turn/steer expectedTurnId and clientUserMessageId; native userMessage clientId events',
   capabilities: {
     model: true, reasoning: false, history: true, usage: true, approval: true,
