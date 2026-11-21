@@ -5,6 +5,7 @@ import { rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { packageBuilderArguments } from './package-electron-desktop.mjs';
+import { stageCodexRuntime } from './stage-codex-runtime.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const electronAppRoot = resolve(repositoryRoot, "apps/desktop");
@@ -26,9 +27,10 @@ export function previewBuilderArguments(arch) {
   ];
 }
 
-export async function packageMacosPreview(arch, { spawnImpl = spawn } = {}) {
+export async function packageMacosPreview(arch, { spawnImpl = spawn, stageCodex = stageCodexRuntime } = {}) {
   if (process.platform !== "darwin") throw new Error("macOS preview packaging must run on macOS");
   const args = await packageBuilderArguments(previewBuilderArguments(arch));
+  await stageCodex({ platform: "darwin", arch });
   const output = resolve(electronAppRoot, "release/preview");
   await rm(output, { recursive: true, force: true });
   const child = spawnImpl(process.execPath, [electronBuilderCli, ...args], {

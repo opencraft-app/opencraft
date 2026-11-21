@@ -813,6 +813,9 @@ async function bootstrap(): Promise<void> {
     skillsDirectory: process.env.OPENCRAFT_SKILLS_DIRECTORY?.trim() || join(desktopPaths.productHomeDirectory, "skills"),
     codexExecutable: resolveCodexExecutable({
       explicit: process.env.OPENCRAFT_CODEX_EXECUTABLE,
+      bundled: app.isPackaged
+        ? join(process.resourcesPath, "runtime/codex/bin", process.platform === "win32" ? "codex.exe" : "codex")
+        : null,
       path: process.env.PATH,
       homeDirectory: homedir(),
     }),

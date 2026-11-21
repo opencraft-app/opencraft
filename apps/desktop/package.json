@@ -190,6 +190,13 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "build/codex-runtime",
+        "to": "runtime/codex",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "mac": {
