@@ -2,7 +2,7 @@
 
 `@opencraft/sandbox-e2b` implements the existing `SandboxBackend` port using the
 pinned E2B JavaScript SDK. It does not add an environment allocator, Bot table,
-model gateway, queue or persistent assistant runtime. It is not automatically registered in engine assembly. The optional daemon installation config connects it to managed-Bot execution (see `docs/managed-bots.md`). Consumers must explicitly install and select this backend.
+model gateway, queue or persistent assistant runtime. It is not automatically registered in engine assembly. The optional daemon installation config connects it to managed-Bot execution (see `docs/architecture/identity/managed-bots.md`). Consumers must explicitly install and select this backend.
 
 An installation supplies trusted API/proxy endpoints, one approved template and
 a private secret-reader function. User-facing Bot settings must contain only a

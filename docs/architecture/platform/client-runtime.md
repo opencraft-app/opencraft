@@ -70,7 +70,7 @@ PwaTurnPushController, which coordinates current server/Actor registration.
 The existing preference store remains its owner; the controller projects effective
 consent, permission, delivery and pending/error state. React consumes that unified
 snapshot and invokes one explicit enable/disable action. The server alone observes execution and owns notification delivery.
-See [Web Push](../../web-push.md) for the subscription, authorization and outbox
+See [Web Push](../server/web-push.md) for the subscription, authorization and outbox
 contract. Runtime or DOM identity never authorizes a push subscription on the server.
 
 ## Standalone Web setup

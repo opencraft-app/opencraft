@@ -2,7 +2,7 @@
 
 状态：**待共同评审的候选设计，不是已批准的 schema**。本轮仅写文档，不新增表、生成迁移、改变权限行为或操作现网数据。已有发现接口修复不代表本方案已实现。
 
-[Human 工作台](human-workbench.md) · [实施覆盖账本](../multi-human-server.md) · [主体纲领](actor-collaboration.md) · [存储生命周期](../sqlite-lifecycle.md)
+[Human 工作台](workbench/human-workbench.md) · [实施覆盖账本](identity/multi-human-server.md) · [主体纲领](identity/actor-collaboration.md) · [存储生命周期](server/sqlite-lifecycle.md)
 
 ## 1. 先固定语义，再决定 SQL
 

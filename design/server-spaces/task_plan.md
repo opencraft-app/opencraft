@@ -30,7 +30,7 @@ wide/narrow, pointer/touch, theme, motion and failure sequences reviewed. Core
 coverage includes membership isolation, invitation expiry/replay, revocation,
 Worker lock waits, restart recovery and previous-schema upgrade/checksum refusal.
 The implemented authentication and deployment boundaries are in
-[Server spaces](../../docs/server-spaces.md).
+[Server spaces](../../docs/architecture/server/server-spaces.md).
 
 ## Edge discovery refinement
 

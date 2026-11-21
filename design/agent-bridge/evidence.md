@@ -20,9 +20,9 @@ BB 根为 BB checkout，其他仓库均为相邻的 Codex / amp-acp / cursor-acp
 
 | 事实 | 核验位置（仓库相对路径） | 结论与范围 |
 | --- | --- | --- |
-| Thread/Server 与 Host/Client 分离、原生日志真源 | `docs/execution-ownership.md` 的拓扑和 owner 表 | 当前正式契约；不宣称完整多租户/Hub 级联已实现 |
-| Codex 常驻、账号池、native listener | `docs/codex-core.md` 所有权与协议；`apps/local-agent-host/src` Codex 连接路径 | 正式部署契约；native unix socket 是 WS Upgrade，控制面是 Unix HTTP；桌面默认仍内嵌 stdio |
-| 独立 ACP Host | `docs/acp-host.md`；其列出的 `execution/acp-host.mjs` 运行入口 | 已有独立 owner 设计/装配；不证明用户机器该 unit 已启动 |
+| Thread/Server 与 Host/Client 分离、原生日志真源 | `docs/architecture/execution/execution-ownership.md` 的拓扑和 owner 表 | 当前正式契约；不宣称完整多租户/Hub 级联已实现 |
+| Codex 常驻、账号池、native listener | `docs/architecture/execution/codex-core.md` 所有权与协议；`apps/local-agent-host/src` Codex 连接路径 | 正式部署契约；native unix socket 是 WS Upgrade，控制面是 Unix HTTP；桌面默认仍内嵌 stdio |
+| 独立 ACP Host | `docs/architecture/execution/acp-host.md`；其列出的 `execution/acp-host.mjs` 运行入口 | 已有独立 owner 设计/装配；不证明用户机器该 unit 已启动 |
 | 编排 Broker 跨引擎 | `packages/access-control/src/thread-orchestration-broker.ts:77` cli，`:111` perform | context/list/spawn/tell/show/wait；driver 白名单含 codex/pi/dsh/acp/claude-code；这是代码分派范围，不是所有引擎验收结论 |
 | 每次从 execution 派生委托 | 同文件 `executionSource`、`authorize`、`invoke` | sender 不能由 CLI 参数指定；每次重新调用 delegation/资源授权 |
 | 幂等和通知 | 同文件 `withOperation`、`receipt`、`reconcile`；现有 orchestration ledger | 调用以 operation ledger 回执、waitTicket 和通知批次衔接；不能据此声称任意 native mutation 恰好一次 |
@@ -32,7 +32,7 @@ BB 根为 BB checkout，其他仓库均为相邻的 Codex / amp-acp / cursor-acp
 | 私有 CLI 校验 | `packages/session-capabilities/src/thread-cli.ts`；`apps/opencraft-cli/src/main.ts:194` | 检查文件 owner/mode/大小/非 symlink，限定 loopback endpoint；spawn/tell 强制 key；env 已可发现 connection 路径 |
 | 现有定时不是项目 automation | `packages/host-schedules/src/index.ts:19`、schedule/read/dispatch | schedules 以 thread_id 为键，运行提交 prompt；不能把这个表名改成 automation 就得到 project agent/script 实体 |
 
-已读 `AGENTS.md`、`docs/platform-architecture.md`、`docs/execution-ownership.md`、`docs/acp-host.md`、`docs/codex-core.md`、`design/thread-orchestration-architecture.md`。架构文档内「15 秒重试透明」「<5ms 读取」等描述未做运行复测，正文不依赖该时限和性能保证；重试必须服从结果未知不重放。
+已读 `AGENTS.md`、`docs/architecture/README.md`、`docs/architecture/execution/execution-ownership.md`、`docs/architecture/execution/acp-host.md`、`docs/architecture/execution/codex-core.md`、`design/thread-orchestration-architecture.md`。架构文档内「15 秒重试透明」「<5ms 读取」等描述未做运行复测，正文不依赖该时限和性能保证；重试必须服从结果未知不重放。
 
 ## 正文依赖的 BB 与 agent 事实
 

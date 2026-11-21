@@ -1,6 +1,6 @@
 # ChatUI: Composer and drafts
 
-[Architecture index](../../chat-ui-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](chat-ui-architecture.md) · [Documentation index](../../README.md)
 
 ## Workspace selection
 
@@ -242,7 +242,7 @@ do not log content. Mounted Views do not subscribe to cross-tab changes.
 Tests: `tests/chat/chat-browser-drafts.test.ts`.
 
 Thread identity, execution activation, capability leases and revocation follow
-the [execution ownership contract](../../execution-ownership.md), including its
+the [execution ownership contract](../execution/execution-ownership.md), including its
 explicit distinction between implemented coordination and pending delivery guarantees.
 
 ## 跨桌面、手机和平板的会话连续性

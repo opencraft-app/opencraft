@@ -1,6 +1,6 @@
 # ChatUI: Documents and reading
 
-[Architecture index](../../chat-ui-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](chat-ui-architecture.md) · [Documentation index](../../README.md)
 
 ## Inline link label construction
 

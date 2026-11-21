@@ -6,8 +6,7 @@ OpenCraft 是多端 Agent Workbench 核心，包含 Chat Runtime、Web Workbench
 
 | 目录 | 内容 |
 |---|---|
-| `docs/`（顶层） | 各功能与子系统的设计、契约与所有权专题 |
-| [`architecture/`](architecture/) | 平台、ChatUI、浏览器、扩展等分层架构专题 |
+| [`architecture/`](architecture/README.md) | 按领域分组的设计、契约与所有权：`platform/` 平台、`execution/` 执行与运行时、`identity/` 身份与协作、`chat-ui/` 会话呈现、`workbench/` 界面框架与预览、`extensions/` 插件与连接器、`server/` 服务器存储与通知、`browser/` 浏览器、`mobile/` 手机容器 |
 | [`develop/`](develop/) | 贡献与开发：开发环境、构建矩阵、仓库布局、扩展开发、国际化、性能治理 |
 | [`operations/`](operations/) | 部署与运维：CLI、Web 安装与更新、Relay、Headless、升级、运行观测 |
 | [`history/`](history/) | 历史记录：上下游迁移、身份迁移、已退役的下游手机 Shell 设计、阶段报告 |
@@ -18,20 +17,20 @@ OpenCraft 是多端 Agent Workbench 核心，包含 Chat Runtime、Web Workbench
 - Agent 工作规则：[AGENTS.md](../AGENTS.md)。
 - 项目维护方法与验收路由：[OpenCraft 维护总纲 Skill](../.agents/skills/opencraft-maintenance/SKILL.md)；不替代下列正式架构文档。
 - 仓库历史与下游消费契约：[仓库历史与下游消费](history/upstream-history.md)。
-- 平台与插件架构：[平台架构专题索引](platform-architecture.md)、[插件架构](plugin-architecture.md)。
+- 平台与插件架构：[平台架构专题索引](architecture/README.md)、[插件架构](architecture/extensions/plugin-architecture.md)。
 - 运行观测平台：[定位、服务与数据/CLI/Skill 规格 V1](operations/observability-platform.md)、[功能与非功能验收矩阵](operations/observability-acceptance.md)；当前为待实现规格，最终以真实部署验收为准。
-- 主体与协作设计纲领：[原生主体、Hub、Channel 与授权](architecture/actor-collaboration.md)；人类与 Agent/Bot/Session 具备原生主体性，权限独立授予；属于目标设计，不代表多租户已实现。
-- Human 工作台与 Portal：[以一个当前身份组织跨端、跨 Hub 资源入口](architecture/human-workbench.md)；租户是可选管理作用域，身份、路由和执行隔离分别建模，属于目标设计。
-- 单 Server 多 Human：[核心／插件边界与实施覆盖账本](multi-human-server.md)；区分已验证请求隔离、共享协作与未完成的执行隔离。
-- 存量会话的 Skills 目录刷新：[实现边界与验收标准](session-capability-refresh.md)；正文版本更新与 Hermes 自动热刷新已取消，Connector 按下列独立文档推进。
-- 平台级 Connector：[机制、已实现链路与剩余范围](platform-connectors.md)；由平台运行时持有连接与授权状态。
-- 跨端存储生命周期：[SQLite / IndexedDB 升级与恢复](sqlite-lifecycle.md)、[插件持久化契约](plugin-persistence.md)、[Host 通用文档 API](host-document-storage.md)；九个自有 Node SQLite 库已接入账本/备份/旧库处置，Host 五库启动期门控并投影健康摘要；回退只回退代码，不自动恢复备份，不承诺 N-1 兼容，不引入 Drizzle。
-- Chat 与浏览器 Workbench：[Chat 架构专题索引](chat-ui-architecture.md)、[浏览器 Workbench](browser-workbench-architecture.md)。
-- 执行所有权：[会话、运行实例与能力租约](execution-ownership.md)；明确创建提交、执行准入、断线撤销、释放及 warm 边界。
-- Tasks 与看板：[领域模型](tasks-model.md) 与 [实现入口](../plugins/tasks/README.md)；两张业务表，同源列表/看板、多会话关联与独立活动状态，首版源码已实现。
+- 主体与协作设计纲领：[原生主体、Hub、Channel 与授权](architecture/identity/actor-collaboration.md)；人类与 Agent/Bot/Session 具备原生主体性，权限独立授予；属于目标设计，不代表多租户已实现。
+- Human 工作台与 Portal：[以一个当前身份组织跨端、跨 Hub 资源入口](architecture/workbench/human-workbench.md)；租户是可选管理作用域，身份、路由和执行隔离分别建模，属于目标设计。
+- 单 Server 多 Human：[核心／插件边界与实施覆盖账本](architecture/identity/multi-human-server.md)；区分已验证请求隔离、共享协作与未完成的执行隔离。
+- 存量会话的 Skills 目录刷新：[实现边界与验收标准](architecture/execution/session-capability-refresh.md)；正文版本更新与 Hermes 自动热刷新已取消，Connector 按下列独立文档推进。
+- 平台级 Connector：[机制、已实现链路与剩余范围](architecture/extensions/platform-connectors.md)；由平台运行时持有连接与授权状态。
+- 跨端存储生命周期：[SQLite / IndexedDB 升级与恢复](architecture/server/sqlite-lifecycle.md)、[插件持久化契约](architecture/extensions/plugin-persistence.md)、[Host 通用文档 API](architecture/server/host-document-storage.md)；九个自有 Node SQLite 库已接入账本/备份/旧库处置，Host 五库启动期门控并投影健康摘要；回退只回退代码，不自动恢复备份，不承诺 N-1 兼容，不引入 Drizzle。
+- Chat 与浏览器 Workbench：[Chat 架构专题索引](architecture/chat-ui/chat-ui-architecture.md)、[浏览器 Workbench](architecture/browser/browser-workbench-architecture.md)。
+- 执行所有权：[会话、运行实例与能力租约](architecture/execution/execution-ownership.md)；明确创建提交、执行准入、断线撤销、释放及 warm 边界。
+- Tasks 与看板：[领域模型](architecture/extensions/tasks-model.md) 与 [实现入口](../plugins/tasks/README.md)；两张业务表，同源列表/看板、多会话关联与独立活动状态，首版源码已实现。
 - 构建目标：[构建矩阵](develop/build-matrix.md) 与 [目标配置](../config/build-matrix.json)。
-- 手机端：下游 iOS Shell 与 Bot 桥接的历史设计见 [Mobile shell](history/mobile-shell.md)、[Embedded Bot bridge](history/mobile-bot-bridge.md)；缓存与请求状态：[Mobile data architecture](mobile-data-architecture.md)。
-- 行为验证架构：[Harness 设计纲领](architecture/harness.md)。
+- 手机端：下游 iOS Shell 与 Bot 桥接的历史设计见 [Mobile shell](history/mobile-shell.md)、[Embedded Bot bridge](history/mobile-bot-bridge.md)；缓存与请求状态：[Mobile data architecture](architecture/mobile/mobile-data-architecture.md)。
+- 行为验证架构：[Harness 设计纲领](architecture/execution/harness.md)。
 - 根目录与文件归属：[仓库布局](develop/repository-layout.md)。
 
 ## 核心不变量

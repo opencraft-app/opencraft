@@ -1,6 +1,6 @@
 # Platform: Build and deployment
 
-[Architecture index](../../platform-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](../README.md) · [Documentation index](../../README.md)
 
 ## Commands
 
@@ -277,7 +277,7 @@ The Web bootstrap owns the durable release pointer and update authorization. In 
 
 Conversation-local scheduling is a Host service with a durable occurrence ledger
 and a narrow engine execution port. Views only manage plans and read results;
-engines retain admission and execution authority. See [conversation schedules](../../execution-ownership.md#conversation-schedules)
+engines retain admission and execution authority. See [conversation schedules](../execution/execution-ownership.md#conversation-schedules)
 for capability, restart, uncertain delivery, timing and shared-Host authorization
 boundaries. Codex and DSH consume `@opencraft/host-schedules` through separate
 execution ports; queue support alone does not imply an adapter for other engines.
@@ -286,7 +286,7 @@ Schedule presence in the shared Sidebar is a Host catalog projection, independen
 of conversation execution status. The multi-Host reader uses capability-gated,
 profile/authorization-scoped summary queries and Host invalidation subscriptions;
 row components receive semantic summary data only. See the [schedule catalog
-contract](../../execution-ownership.md#schedule-catalog-projection).
+contract](../execution/execution-ownership.md#schedule-catalog-projection).
 
 ## Retired implementation audit (2026-10-16)
 

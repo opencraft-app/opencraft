@@ -1,6 +1,6 @@
 # Extensions: Identity and execution
 
-[Architecture index](../../plugin-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](plugin-architecture.md) · [Documentation index](../../README.md)
 
 ### 服务端请求身份端口
 

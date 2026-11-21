@@ -1,6 +1,6 @@
 # Platform: Connections and routing
 
-[Architecture index](../../platform-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](../README.md) · [Documentation index](../../README.md)
 
 ### Backend SSH Codex connections
 

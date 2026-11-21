@@ -1,6 +1,6 @@
 # ChatUI: Files and resources
 
-[Architecture index](../../chat-ui-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](chat-ui-architecture.md) · [Documentation index](../../README.md)
 
 ### Changed-file review
 

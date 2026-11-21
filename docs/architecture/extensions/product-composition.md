@@ -1,12 +1,12 @@
 # Extensions: Product composition
 
-[Architecture index](../../plugin-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](plugin-architecture.md) · [Documentation index](../../README.md)
 
 
 Headless 的 IM 与企业微信为两层可选服务端插件：IM 持有交换机绑定、来源策略和运行时
 回复上下文，企业微信依赖 IM 消息 contract 并持有协议连接；核心保留自然人、准入、会话
 和执行权威。私有配置显式装配，无配置不连接，不属于浏览器可安装扩展的信任范围。
-配置与恢复边界见 [IM switchboard](../../im-switchboard.md)。
+配置与恢复边界见 [IM switchboard](im-switchboard.md)。
 
 > 开发入口：[当前插件边界、API 与贡献路径](../../develop/extension-development.md)。本文同时保留目标拓扑和迁移历史；目标设计不是已实现 API。当前类型以 `packages/extension-contract/src/index.ts` 为准，示例以 `examples/extensions/hello.mjs` 为准。
 
@@ -104,7 +104,7 @@ The managed site owns its numeric employee binding rules, token/allowlist parsin
 presentation/preferences assembly outside the replaceable upstream prefix.
 Standalone and managed packaging choose their entry explicitly; importing an
 application module never starts an extra CLI/listener. See
-[server authentication](../../server-authentication.md#headless-composition-contract).
+[server authentication](../identity/server-authentication.md#headless-composition-contract).
 
 `threadListGrouping` is an optional trusted presentation contribution in
 `extension-react`: the plugin provides mode descriptors, stable group identities,
@@ -122,7 +122,7 @@ hides its chip and menu group without changing the stored preference or hiding r
 Product-specific creator semantics, account ordering and preference schemas stay
 in the plugin. The optional `api.localPreferences` port supplies generic
 product/extension/account isolation and activation fencing; see
-[persistence](../../plugin-persistence.md#8-插件的账号本地呈现偏好).
+[persistence](plugin-persistence.md#8-插件的账号本地呈现偏好).
 
 ## Application branding
 

@@ -50,4 +50,4 @@ Bot Host 装配可注入 platformChannelPort；bot-authority.mjs 在 UoW 外刷�
 LocalRunner 的 `thread.command` / CLI 与 Work `thread_command` 共用 argv 后端；Work ID 由工具端口绑定，
 不可从模型选择。Desktop Daemon/Headless 复用同一平台服务。详见 ../../../../docs/architecture/personal-assistant.md。
 
-2026-11-16：sandbox-environment-provider 仅持临时进程/租约句柄，唯一分配器仍为 createSandboxPool/createSandbox。Bot brain/记忆/模型网关留本机；环境 binding 按启动 incarnation 捕获，不写 profile、不让旧委托获得新环境。私有父子 RPC 不接受模型指定 workId/callId；原工具 port 闭包固定身份。授权变化、暂停、租约丢失停止执行；未知效果不能自动重放，未知创建/销毁保留容量并给安全 correlation 诊断。当前工作区临时、仅 Codex，不能宣称透明断线续跑或跨重启文件持久化。配置、验证与限制见根 docs/managed-bots.md。
+2026-11-16：sandbox-environment-provider 仅持临时进程/租约句柄，唯一分配器仍为 createSandboxPool/createSandbox。Bot brain/记忆/模型网关留本机；环境 binding 按启动 incarnation 捕获，不写 profile、不让旧委托获得新环境。私有父子 RPC 不接受模型指定 workId/callId；原工具 port 闭包固定身份。授权变化、暂停、租约丢失停止执行；未知效果不能自动重放，未知创建/销毁保留容量并给安全 correlation 诊断。当前工作区临时、仅 Codex，不能宣称透明断线续跑或跨重启文件持久化。配置、验证与限制见根 docs/architecture/identity/managed-bots.md。

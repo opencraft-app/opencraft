@@ -1,6 +1,6 @@
 # ChatUI: Navigation and catalog
 
-[Architecture index](../../chat-ui-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](chat-ui-architecture.md) · [Documentation index](../../README.md)
 
 ## New chat placement
 
@@ -101,7 +101,7 @@ The DSH Host advertises writes only when its native Goal port is available;
 otherwise it remains read-only. The native service owns mutation and durability,
 and its Goal-round driver owns continuation. It declares `usageAccounting:false`,
 so shared UI omits token/time metrics rather than inventing accounting. See the
-[DSH Goal boundary](../../dsh-appserver-boundaries.md) for activation, restore,
+[DSH Goal boundary](../execution/dsh-appserver-boundaries.md) for activation, restore,
 and supported mutation semantics.
 
 For SSH Codex, Goals remain native remote Thread state. The shared broker

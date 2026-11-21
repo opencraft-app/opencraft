@@ -1,6 +1,6 @@
 # Platform: Storage and preferences
 
-[Architecture index](../../platform-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](../README.md) · [Documentation index](../../README.md)
 
 跨端客户端资源的 scope、authority、运行时 fence、失效事件与移动端/Electron/Web adapter 边界见[Client resource contract](./client-resource-contract.md)。本文继续持有物理存储、迁移和 UI 偏好的 owner 规则。
 
@@ -44,8 +44,8 @@ reserved-section pins, read-only diagnostics and writer locks are not adopted.
 optional `storageOutcomes` adds complete scoped outcomes. New clients accept both,
 and gateway/Headless health project only actual owner opening results. These are
 migration dispositions, not claims that every optional engine is initialized.
-See [storage lifecycle](../../sqlite-lifecycle.md) for implemented behavior, manual
-recovery and verification limits, and [plugin persistence](../../plugin-persistence.md)
+See [storage lifecycle](../server/sqlite-lifecycle.md) for implemented behavior, manual
+recovery and verification limits, and [plugin persistence](../extensions/plugin-persistence.md)
 for payload migration. Server core consolidates eight domains in `opencraft-server.sqlite`; Drizzle owns its schema authoring and SQL generation, while the single managed executor retains node:sqlite at runtime. Host and Electron physical consolidation is deferred; Web retains IndexedDB. Known database identity handoffs wait for other windows to release
 connections within a bounded deadline; the Sidebar adapter closes on versionchange
 and startup rollback owns its handle before loading layout rows. Expired migration
@@ -57,7 +57,7 @@ Client-local and Host-owned data have separate authorities; engine-private
 databases retain their owners. Code rollback does not restore database backups
 or promise N-1 binary compatibility.
 
-The first [Host document API](../../host-document-storage.md) implementation exposes
+The first [Host document API](../server/host-document-storage.md) implementation exposes
 versioned capability discovery, read/CAS and content-free invalidation on the
 authenticated Local Agent Host. The client borrows a fixed initialized Host
 connection and rejects old generations, with no local fallback or implicit
@@ -183,7 +183,7 @@ The current Web adapter is localStorage with last-write-wins and tab invalidatio
 not revision/CAS or account synchronization. React consumes plugin snapshots and
 actions rather than selecting a physical store. This does not replace registered
 Workbench keys or claim a Native/Electron stable-origin adapter. See
-[plugin persistence](../../plugin-persistence.md#8-插件的账号本地呈现偏好).
+[plugin persistence](../extensions/plugin-persistence.md#8-插件的账号本地呈现偏好).
 
 `chat.defaultFollowUpAction` is an installation-scoped `steer | queue`
 preference, defaulting to `queue`. Chat settings and the main conversation

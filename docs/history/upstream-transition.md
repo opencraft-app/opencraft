@@ -102,7 +102,7 @@ this migration does not claim a device/native build or change application behavi
   implementation and compatibility channels belong to the downstream desktop
   composition. Core retains profile/protocol/window ownership, early callback
   routing and current-frame IPC admission; product disposal retires its handlers.
-  See [desktop product composition](../desktop-product-composition.md). JS closure,
+  See [desktop product composition](../architecture/workbench/desktop-product-composition.md). JS closure,
   preload and lifecycle checks do not claim OS or external-login acceptance.
 - Public Application lifetime, optional-builtin and plugin-Settings browser probes
   no longer assume the removed private bootstrap options or an automatically

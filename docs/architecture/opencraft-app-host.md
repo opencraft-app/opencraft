@@ -25,7 +25,7 @@ OpenCraft Daemon
 The Renderer owns conversation meaning. Electron Main owns windows, tray and
 presentation integration. OpenCraft Daemon owns desktop native Agent
 processes and physical AppServer connections. Servers can explicitly delegate
-Codex execution and account ownership to the independent [Codex core](../codex-core.md);
+Codex execution and account ownership to the independent [Codex core](execution/codex-core.md);
 their daemon owns only its client connection. There is no direct
 Renderer-to-Agent or Electron-Main-to-Agent compatibility path.
 

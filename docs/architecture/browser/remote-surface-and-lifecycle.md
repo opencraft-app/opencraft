@@ -1,6 +1,6 @@
 # Browser: Remote surface and lifecycle
 
-[Architecture index](../../browser-workbench-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](browser-workbench-architecture.md) · [Documentation index](../../README.md)
 
 ## 13. Remote Browser
 

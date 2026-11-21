@@ -227,7 +227,7 @@ Downstream product assembly remains independent. Packaged modules load lazily
 through a fixed native asset registry, never an arbitrary file or remote-code
 reader. The built-in ready surface uses the full safe-area viewport; source
 selection lives in Web settings with independent native startup/error recovery. Packaging, bridge and acceptance boundaries are owned by
-[Mobile Workbench container](../../docs/mobile-workbench-container.md).
+[Mobile Workbench container](../../docs/architecture/mobile/mobile-workbench-container.md).
 
 A Settings destination invoked from the floating applications drawer uses the
 same Shell `onInvoke` dismissal as other destinations. Do not leave the former

@@ -1,6 +1,6 @@
 # ChatUI: Questions and interactions
 
-[Architecture index](../../chat-ui-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](chat-ui-architecture.md) · [Documentation index](../../README.md)
 
 ### MCP elicitation presentation
 
@@ -39,7 +39,7 @@ compiler identity or resource admission.
 
 ## Agent-originated async questions
 
-The related contracts are grouped in the [architecture index](../../chat-ui-architecture.md).
+The related contracts are grouped in the [architecture index](chat-ui-architecture.md).
 
 ### Hermes direct approval ownership
 

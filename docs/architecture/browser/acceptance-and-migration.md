@@ -1,6 +1,6 @@
 # Browser: Acceptance and migration
 
-[Architecture index](../../browser-workbench-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](browser-workbench-architecture.md) · [Documentation index](../../README.md)
 
 ## 19. 测试不变量
 

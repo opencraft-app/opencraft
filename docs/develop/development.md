@@ -9,7 +9,7 @@ linked deployment guides and build matrix.
 Core development belongs to this GitHub upstream; product providers and branding
 are composed downstream. See [transition status](../history/upstream-transition.md).
 Branding, installed application identity, storage and protocol namespaces are
-separate concerns; [product identity](../architecture/product-identity.md) documents
+separate concerns; [product identity](../architecture/identity/product-identity.md) documents
 the naming policy and the identifiers intentionally kept stable.
 
 ## Run
@@ -28,7 +28,7 @@ npm run dev
 
 Private product assembly belongs to downstream workspaces. Trusted local build
 entries can compose the same complete client without making public installation
-depend on a private account provider. See [plugin architecture](../plugin-architecture.md).
+depend on a private account provider. See [plugin architecture](../architecture/extensions/plugin-architecture.md).
 
 `npm run dev` (also `npm run dev:local`) prepares the pinned DSH engine and
 starts local execution and Web together on a loopback address. Open the printed
@@ -178,12 +178,12 @@ Linux-compatible Metro iOS bundle gate; launching an Apple Simulator and
 compiling the native pods still require macOS and Xcode.
 
 The frame layout contract is documented in
-`docs/workbench-frame-spec.md`. Platform boundaries and reuse rules are documented
-in `docs/platform-architecture.md`. The Cordis-backed extension kernel,
+`docs/architecture/workbench/workbench-frame-spec.md`. Platform boundaries and reuse rules are documented
+in `docs/architecture/README.md`. The Cordis-backed extension kernel,
 capability boundary and future marketplace model are documented in
-`docs/plugin-architecture.md`; the AI-native discovery, task lease, execution
+`docs/architecture/extensions/plugin-architecture.md`; the AI-native discovery, task lease, execution
 journal and generated-capability model are documented in
-`docs/agent-capability-fabric.md`. The package ownership and proof ladder for
+`docs/architecture/execution/agent-capability-fabric.md`. The package ownership and proof ladder for
 automated changes are documented in `docs/develop/agent-iteration-guide.md`.
 
 See [SECURITY.md](../../SECURITY.md) for private vulnerability reporting and the

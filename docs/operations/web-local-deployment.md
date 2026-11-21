@@ -114,7 +114,7 @@ curl --fail --silent --show-error http://127.0.0.1:10000/version.json
 
 daemon、协议或启动参数变化时，需要同时升级执行侧；仅网站资源变化不需要重启执行侧。实际 unit、bundle、启动文件、状态目录与备份路径以 `.local/README.md` 为准。
 
-执行侧仍内嵌 Codex 的旧部署中，重启 unit 会停止网关、Daemon、DSH 和 Codex，活动任务可能中断。采用独立 [Codex core](../codex-core.md) 后，执行 unit 重启不停止 core/CLI，Codex 原 turn 可重连恢复；OpenCraft/DSH 活动任务仍可能中断。已接入受管执行端时，使用上面的统一源码升级命令，不再手工覆盖正在运行的 bundle。升级 core/CLI 自身仍属于独立维护操作。
+执行侧仍内嵌 Codex 的旧部署中，重启 unit 会停止网关、Daemon、DSH 和 Codex，活动任务可能中断。采用独立 [Codex core](../architecture/execution/codex-core.md) 后，执行 unit 重启不停止 core/CLI，Codex 原 turn 可重连恢复；OpenCraft/DSH 活动任务仍可能中断。已接入受管执行端时，使用上面的统一源码升级命令，不再手工覆盖正在运行的 bundle。升级 core/CLI 自身仍属于独立维护操作。
 
 先备份 daemon bundle、启动文件和相关 drop-in，构建并升级执行侧，按部署要求调整启动参数，再重启执行侧。等待健康通过，并用 `runtime/machine/read` 等匹配本次变更的协议探针确认后，才替换网站。记录重启前后的任务状态、进程身份和探针结果；是否允许中断由本次部署授权决定。
 

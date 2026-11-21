@@ -1,6 +1,6 @@
 # Browser: Overview and ownership
 
-[Architecture index](../../browser-workbench-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](browser-workbench-architecture.md) · [Documentation index](../../README.md)
 
 
 > 状态：Web iframe、Electron webview 与 Linux Server H.264 Surface；各平台验收分别记录，Playwright/Expo Adapter Proposed

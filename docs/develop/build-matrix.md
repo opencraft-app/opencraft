@@ -672,7 +672,7 @@ Updating an already-running input helper requires an explicit service restart;
 that revokes active input. The main OpenCraft service is not restarted by installation.
 Default installations remain hidden. This explicit network-trust mode is not a
 multi-tenant or anonymous Internet deployment; see the
-[authority boundary](../cloud-desktop-plugin.md#local-execution-server-authority).
+[authority boundary](../architecture/extensions/cloud-desktop-plugin.md#local-execution-server-authority).
 `OPENCRAFT_DESKTOP_ACCESS=trusted-internal npm run smoke:local-desktop` verifies
 the same real native/Thread chain at a non-loopback browser hostname with
 isolated synthetic inference, including viewing recovery and disabled input.
@@ -773,7 +773,7 @@ The public mobile entry always selects the packaged full
 Web Workbench container for public Expo commands. The runner builds its local
 document before Metro. This is the only public mobile entry; it neither selects a private
 product nor proves native-device parity. See
-[container ownership and acceptance](../mobile-workbench-container.md).
+[container ownership and acceptance](../architecture/mobile/mobile-workbench-container.md).
 
 Expo Web/iOS bundle commands build the packaged Web Workbench with its
 configured direct Host. `apps/mobile` has no downstream product entry; a product

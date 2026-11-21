@@ -1,6 +1,6 @@
 # Platform: Lifecycle and resources
 
-[Architecture index](../../platform-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](../README.md) · [Documentation index](../../README.md)
 
 ### Client cache and presentation resource policy
 

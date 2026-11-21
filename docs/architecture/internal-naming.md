@@ -50,7 +50,7 @@ consume these same names. Host queue, Host state and message-metadata tests use
 - Live Host queue/catalog and attachment tables use owned names through appended
   migrations; published migration names/SQL and historical upgrade inputs remain
   immutable. Fresh files use owned names and existing file paths remain readable.
-  [Offline file maintenance](../sqlite-lifecycle.md#两个-host-自有文件的离线改名)
+  [Offline file maintenance](server/sqlite-lifecycle.md#两个-host-自有文件的离线改名)
   moves existing names with recovery evidence; installing the code does not move
   a deployment's data. Renaming a TypeScript constant never migrates storage.
 - Existing Settings contribution IDs, Host IDs, saved theme aliases and native

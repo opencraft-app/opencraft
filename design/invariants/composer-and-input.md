@@ -144,7 +144,7 @@ Surface消费Shell的同一逻辑active投影：隐藏立即退出模拟光标�
 重新展开保留媒体连接但不抢焦点或恢复控制；只有新确认授权才挂载最新形状。
 此规则不清除远端画面内已有的光标像素；重复启用不能清空仍有效的光标附件。
 模型/真实decoder浏览器验收不等于iPhone系统键盘或原生执行器验收，详见
-[桌面输入策略](../../docs/cloud-desktop-plugin.md#pointer-viewing-gestures-and-mobile-text-input)。
+[桌面输入策略](../../docs/architecture/extensions/cloud-desktop-plugin.md#pointer-viewing-gestures-and-mobile-text-input)。
 
 Confirmed coarse-pointer desktop control may expose a relative trackpad through
 the mounted media capability. The pad interprets gestures only; media owns the

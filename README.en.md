@@ -14,7 +14,7 @@ Connect the agents you run, wherever they live, and make them available to the p
 
 [![Build](https://github.com/opencraft-app/opencraft/actions/workflows/build-matrix.yml/badge.svg)](https://github.com/opencraft-app/opencraft/actions/workflows/build-matrix.yml) [![Security](https://github.com/opencraft-app/opencraft/actions/workflows/security.yml/badge.svg)](https://github.com/opencraft-app/opencraft/actions/workflows/security.yml) [![License: MIT-0](https://img.shields.io/badge/License-MIT--0-64748b)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://github.com/topics/typescript)
 
-[![AI Agents](https://img.shields.io/badge/AI_Agents-18181b)](https://github.com/topics/ai-agents) [![ACP](https://img.shields.io/badge/ACP-18181b)](plugins/acp-engine/README.md) [![MCP](https://img.shields.io/badge/MCP-18181b)](docs/session-capabilities.md) [![Self Hosted](https://img.shields.io/badge/Self_Hosted-18181b)](docker/README.md) [![Collaboration](https://img.shields.io/badge/Collaboration-18181b)](docs/actor-collaboration-api.md)
+[![AI Agents](https://img.shields.io/badge/AI_Agents-18181b)](https://github.com/topics/ai-agents) [![ACP](https://img.shields.io/badge/ACP-18181b)](plugins/acp-engine/README.md) [![MCP](https://img.shields.io/badge/MCP-18181b)](docs/architecture/execution/session-capabilities.md) [![Self Hosted](https://img.shields.io/badge/Self_Hosted-18181b)](docker/README.md) [![Collaboration](https://img.shields.io/badge/Collaboration-18181b)](docs/architecture/identity/actor-collaboration-api.md)
 
 [Get started](#get-started) · [What you can do](#what-you-can-do) · [Documentation](#documentation) · [Contribute](CONTRIBUTING.md)
 
@@ -54,9 +54,9 @@ Sharing means granting access to its capabilities; recipients do not need to inh
 
 **Current scope.** Each adapter exposes its actual capabilities. The first Actor collaboration loop
 is single-Hub. Broader cross-Hub Agent sharing and a universal plug-and-play bridge for every Agent
-remain development goals. See the [implemented collaboration API](docs/actor-collaboration-api.md),
-[identity and Hub design](docs/architecture/actor-collaboration.md), and
-[execution contracts](docs/execution-ownership.md).
+remain development goals. See the [implemented collaboration API](docs/architecture/identity/actor-collaboration-api.md),
+[identity and Hub design](docs/architecture/identity/actor-collaboration.md), and
+[execution contracts](docs/architecture/execution/execution-ownership.md).
 
 ## Get started
 
@@ -89,10 +89,10 @@ or configure a model provider in Settings. Local development requires no OpenCra
 | For | Read |
 | --- | --- |
 | A tour of the project | [Documentation index](docs/README.md) · [Repository layout](docs/develop/repository-layout.md) |
-| Agent identity, access and collaboration | [Actor and Hub design](docs/architecture/actor-collaboration.md) · [Collaboration API](docs/actor-collaboration-api.md) · [Server authentication](docs/server-authentication.md) |
-| Execution and integration | [Execution ownership](docs/execution-ownership.md) · [Session capabilities](docs/session-capabilities.md) · [Plugin architecture](docs/plugin-architecture.md) |
+| Agent identity, access and collaboration | [Actor and Hub design](docs/architecture/identity/actor-collaboration.md) · [Collaboration API](docs/architecture/identity/actor-collaboration-api.md) · [Server authentication](docs/architecture/identity/server-authentication.md) |
+| Execution and integration | [Execution ownership](docs/architecture/execution/execution-ownership.md) · [Session capabilities](docs/architecture/execution/session-capabilities.md) · [Plugin architecture](docs/architecture/extensions/plugin-architecture.md) |
 | Building an extension | [Extension development](docs/develop/extension-development.md) · [Runnable example](examples/extensions/README.md) |
-| Architecture and design | [Platform architecture](docs/platform-architecture.md) · [Interface design](design.md) · [Build matrix](docs/develop/build-matrix.md) |
+| Architecture and design | [Platform architecture](docs/architecture/README.md) · [Interface design](design.md) · [Build matrix](docs/develop/build-matrix.md) |
 
 ## Build with us
 

@@ -172,7 +172,7 @@ test('CLI propagates explicit manual full-matrix requests without widening PRs',
 
 
 test('extension guide and example select contract tests without platform builds', () => {
-  for (const path of ['CONTRIBUTING.md', 'docs/develop/extension-development.md', 'docs/plugin-architecture.md',
+  for (const path of ['CONTRIBUTING.md', 'docs/develop/extension-development.md', 'docs/architecture/extensions/plugin-architecture.md',
     'docs/architecture/extensions/architecture-and-lifecycle.md',
     'docs/architecture/extensions/manifest-and-contributions.md',
     'docs/architecture/extensions/identity-and-execution.md',

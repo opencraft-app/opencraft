@@ -9,14 +9,14 @@
 
 ## requirement_refs / requirement_excerpt
 - 用户：“DSH 只是其中一个引擎”“似乎可以开始落地了”。
-- 目标与验收：`../../docs/session-capability-refresh.md` 第 7.1 节。
+- 目标与验收：`../../docs/architecture/execution/session-capability-refresh.md` 第 7.1 节。
 
 ## interface_refs / data_structure_refs
 - AppServer `skills/list` / `skills/changed` 与既有安装作用域不变。
 - DSH 私有 Provider/invalidate/pre-step 留在 local-agent-host；Hermes 保留 Profile action 协议。
 
 ## history_context
-- current_design_refs：`../../docs/session-capability-refresh.md`、`../../docs/platform-architecture.md`。
+- current_design_refs：`../../docs/architecture/execution/session-capability-refresh.md`、`../../docs/architecture/README.md`。
 - relevant_evolution：R2 明确贡献、刷新边界和分级保证；第二引擎边界先复核再实现。
 - superseded_refs：不采用通用 DSH scope、万能能力管理器。
 

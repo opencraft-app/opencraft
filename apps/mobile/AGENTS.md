@@ -1,6 +1,6 @@
 # Mobile container
 
-Follow the core AGENTS.md, design.md and docs/mobile-workbench-container.md.
+Follow the core AGENTS.md, design.md and docs/architecture/mobile/mobile-workbench-container.md.
 The only public entry packages the actual Web Workbench. Do not restore a parallel
 RN chat, composer, settings or workbench state tree. Expo owns native lifecycle,
 safe area, recovery, source selection and device adapters, never conversations.

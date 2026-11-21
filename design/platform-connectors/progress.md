@@ -9,7 +9,7 @@
 - 复核补充只读边界：未知/写工具不进入首批执行面，MCP 必须明确 public 或借用认证 Provider；readOnlyHint 不冒充真实服务端权限隔离。
 - 工具 metadata 与执行函数固定到准备结果，原对象后续属性修改不能接管旧 handle。
 - Connector 聚焦测试、400 项 Chat 回归、扩展回归、平台边界、Web/Runtime 类型与 Electron Renderer 构建通过；现有大 chunk/i18n 缺失字典警告未作为本轮新功能扩展。
-- 正式设计见 docs/platform-connectors.md；普通用户 UI/OAuth/写审批/持久化/内置 Skill 安装器明确未交付。正文更新和 Hermes 自动热刷新仍取消。
+- 正式设计见 docs/architecture/extensions/platform-connectors.md；普通用户 UI/OAuth/写审批/持久化/内置 Skill 安装器明确未交付。正文更新和 Hermes 自动热刷新仍取消。
 - 2026-09-18：最终 11 项 Connector 专项与真实 DSH/AppServer/HTTP smoke 通过。同步 Provider 异常也经过安全错误映射，不把底层凭据细节回传。
 - 完整 `npm run gate` 最终退出 0：全 workspace 类型、全部配置的回归、Web/Expo Web/iOS bundle 均通过。它不代表 Expo 已装配 Connector 功能。
 - 文档校验、21 个本地链接、显式源码变更影响检查及 git diff --check 通过；--staged 集为空，没有自动暂存、提交、推送或发布。

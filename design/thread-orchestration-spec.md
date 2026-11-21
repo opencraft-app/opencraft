@@ -1,6 +1,6 @@
 # OpenCraft 跨会话编排、3+1 驱动与可重建读取缓存实施规范 (Spec)
 
-> 状态：Stage 0、Codex Stage 1 与 Stage 3 独立宿主驱动已接入；Stage 2 UI 已实现。实际可用性仍由独立宿主的能力握手与部署验收决定。已实现接口以[协作契约](../docs/actor-collaboration-api.md#thread-orchestration-control-ledger)和[Core 契约](../docs/codex-core.md)为准（对应架构文档：[thread-orchestration-architecture.md](thread-orchestration-architecture.md)）
+> 状态：Stage 0、Codex Stage 1 与 Stage 3 独立宿主驱动已接入；Stage 2 UI 已实现。实际可用性仍由独立宿主的能力握手与部署验收决定。已实现接口以[协作契约](../docs/architecture/identity/actor-collaboration-api.md#thread-orchestration-control-ledger)和[Core 契约](../docs/architecture/execution/codex-core.md)为准（对应架构文档：[thread-orchestration-architecture.md](thread-orchestration-architecture.md)）
 > 目标：在遵循“执行侧平滑升级（引擎进程由长驻宿主持有）”、“原生日志为唯一正文真源”、“多人 `identity-core` 有界委托与 Token Spec 系统来源归属”的前提下，提供可直接编码与验收的接口契约、SQLite 表结构、缓存重建规则及分阶段实施计划。
 
 ---
@@ -186,7 +186,7 @@ Thread、Turn 与 native call ID；权限仍从持久输入委托派生，Host �
 
 ## 4. 控制账本与可重建读取缓存规格
 
-所有文件均位于 `docs/architecture/product-identity.md` 与 `docs/sqlite-lifecycle.md` 解析出的受管 Host `dataDirectory` 下（严禁使用 `~/.opencraft`）。
+所有文件均位于 `docs/architecture/identity/product-identity.md` 与 `docs/architecture/server/sqlite-lifecycle.md` 解析出的受管 Host `dataDirectory` 下（严禁使用 `~/.opencraft`）。
 
 ### 4.1 控制账本增量表（归属 `actor-collaboration.sqlite` v3 迁移 / `opencraft-threads.sqlite`）
 
@@ -261,7 +261,7 @@ CREATE TABLE IF NOT EXISTS opencraft_wait_tickets (
 
 当前缓存实现位于 `packages/native-history-node/`。Codex 复用 Token 统计的 rollout 字节增量读取器，交给原生只读分页器投影 Turn；Pi 只读 SQLite/WAL 快照，DSH 通过原生 persistence 的 list/locate 定位全部会话代日志，再以规范只读投影对共享缓存做稳定前缀差分。缓存命中只核原生水位，不创建 Pi Harness 或 DSH 执行 owner。追加与未完成尾轮更新保持分页 epoch；来源替换、历史前缀改写或投影版本变化重建。完整 Item 响应沿用当前 wire contract，磁盘 Blob 在请求该页时还原；单独的预览与 Blob 拉取协议留待后续阶段。
 
-按照 `docs/sqlite-lifecycle.md` 第 1 节“可重建的副本/索引”管理，独立于权威控制库，随时可整库/整目录删除重建：
+按照 `docs/architecture/server/sqlite-lifecycle.md` 第 1 节“可重建的副本/索引”管理，独立于权威控制库，随时可整库/整目录删除重建：
 
 ```sql
 CREATE TABLE IF NOT EXISTS opencraft_cache_meta (

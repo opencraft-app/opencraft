@@ -1,6 +1,6 @@
 # Sandbox contract owner
 
-Read the repository [execution sandbox contract](../../docs/execution-sandbox.md) before changing this package or adding a consumer.
+Read the repository [execution sandbox contract](../../docs/architecture/execution/execution-sandbox.md) before changing this package or adding a consumer.
 
 - Own the backend-neutral contract, admission budget and environment lifecycle. The API is `createSandboxPool()` / `createSandbox()`, hosted by an existing execution owner.
 - Request 4 vCPUs / 8 GiB by default. Validate the provider's effective resources before exposing an environment; reject mismatches. Provider capacity is an admission budget, including for remote providers.

@@ -1,6 +1,6 @@
 # Extensions: Architecture and lifecycle
 
-[Architecture index](../../plugin-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](plugin-architecture.md) · [Documentation index](../../README.md)
 
 ## 1. 结论
 
@@ -10,7 +10,7 @@ Plugin/Extension 为中心：安装、启用、设置、命令、面板、渲染
 
 Agent Capability 是 Extension 的一个可选 Contribution，也是 AppServer/MCP 能力进入模型
 的适配层；它不取代传统插件 API。完整 Agent 调用语义由
-[`agent-capability-fabric.md`](../../agent-capability-fabric.md) 定义。
+[`agent-capability-fabric.md`](../execution/agent-capability-fabric.md) 定义。
 
 OpenCraft 仍然不能把 Cordis 的 `Context` 直接作为公共插件 API。
 
@@ -37,7 +37,7 @@ ExtensionHost、Electron utility process、远端 Host 或 sandbox UI 是可选�
 Extension 可以不启用细粒度权限 broker。无论插件采用哪种信任模式，Agent-facing
 Contribution 仍不会因为安装或激活而自动进入模型上下文。
 
-主体协作的目标设计还遵循[核心与插件边界](../actor-collaboration.md#核心与插件的边界)：主体、授权和 Hub 分发由必备核心拥有；身份来源、执行引擎与通信渠道由插件适配。插件安装权限与主体对目标资源的权限分别建模，可信执行模式不意味着调用主体获得额外资源权限。身份或渠道插件卸载不能关闭核心授权检查；目标资源的最终校验、延后执行与撤销约束继续有效。该边界不表示现有插件机制已实现主体准入或多租户隔离。
+主体协作的目标设计还遵循[核心与插件边界](../identity/actor-collaboration.md#核心与插件的边界)：主体、授权和 Hub 分发由必备核心拥有；身份来源、执行引擎与通信渠道由插件适配。插件安装权限与主体对目标资源的权限分别建模，可信执行模式不意味着调用主体获得额外资源权限。身份或渠道插件卸载不能关闭核心授权检查；目标资源的最终校验、延后执行与撤销约束继续有效。该边界不表示现有插件机制已实现主体准入或多租户隔离。
 
 面向开发者的一句话定义是：
 
@@ -256,7 +256,7 @@ UNLOADING / DISPOSED`，非常适合实现 Activation 内核。`ctx.effect()` �
 云桌面第一阶段使用现有可信内建 Panel definition / renderer / toolbar 注册，
 由 Workbench Application 显式注入后端与媒体适配器；不增加公共权限或新的全局 Context。
 未接通适配器时不发布可用入口，桌面进程、观看连接和独占控制租约分开所有权。
-框架及后续接入条件见 [Conversation desktop plugin](../../cloud-desktop-plugin.md)。
+框架及后续接入条件见 [Conversation desktop plugin](cloud-desktop-plugin.md)。
 
 云桌面与下游产品插件保持单向依赖：通用插件拥有桌面 contract、面板和 noVNC
 媒体适配，不读取账号或调用企业云服务；下游桌面 provider 只消费通用
