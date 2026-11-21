@@ -48,14 +48,55 @@ const sync = await ChannelSync.open(transport, existingCollaboration);
 // During shutdown: await sync.close();
 ```
 
+## Headless installation composition
+
+Headless accepts one of `channelSync`, `createChannelSync(context)`,
+`channelSyncs`, or `createChannelSyncs(context)`. Existing single-transport
+composition remains supported; plural factories return an array (including an
+explicit empty array). Factories receive the existing `collaboration` owner.
+Never install competing factories/values; they are rejected before invoking a factory.
+
+```ts
+const composition = {
+  async createChannelSyncs({ collaboration }) {
+    return [firstApprovedTransport, secondApprovedTransport];
+  },
+};
+```
+
+Each connection needs a distinct stable ID, exact callback path, source and native
+channel binding. Preflight rejects collisions before constructing the IM service
+or configuring durable work. Invalid installation configuration remains the
+caller's resource responsibility; after preflight succeeds, the service owns all
+supplied transports. A later startup failure releases started, failed and
+unstarted transports, preserving the original startup error. This is not an
+atomic transaction across all connections or providers: already attempted
+external effects are not rolled back or replayed.
+
+Callback paths are captured at registration and dispatched exactly, for POST only.
+Callbacks never choose a connection from untrusted payload fields. Shutdown retires
+all callbacks, closes every transport even if another close fails, and fences its
+native incarnation. Concurrent close calls await the same cleanup. An unsupported
+native owner receives only capability negotiation, not configure/deactivate.
+
+Personal notifications collect verified targets from all connections. The existing
+notification contract addresses `(channelId, senderId)`; duplicate claims (including
+ordinary adapters) are omitted and refused, rather than routed to the first
+provider. Operators should use distinct channel namespaces. A prepared send pins
+the exact connection and notification port and rechecks Actor admission, target
+binding and ambiguity at delivery. Adapters must call the supplied `assertCurrent`
+after asynchronous preparation and immediately before external handoff. There is
+no broadcast fallback, cross-provider identity inference or new notification store.
+
 ## Limits
 
-This is a lifecycle/storage primitive, not a complete enterprise connector manager.
-The current Headless composition still takes one `channelSync` dependency; multiple
-transports require explicit trusted composition. Communication and assistant-host
-extensions remain single installation-selected extensions. This change does not
-make arbitrary business extensions independently composable, add tenant isolation,
-merge people by name/email, or introduce new provider credentials/selection UI.
+This is trusted installation composition, not a user-selectable enterprise
+connector manager or a hot-reload API. Communication and assistant-host extensions
+remain single installation-selected extensions. It does not make arbitrary business
+extensions independently composable, add tenant isolation, merge people by
+name/email, or introduce provider credentials/selection UI. Connection-scoped
+account-link selection is not provided: legacy singleton actions must not choose
+an arbitrary connection from a plural installation.
 
 ## Verification
 
@@ -65,3 +106,9 @@ unknown outcomes, image attribution, legacy coexistence and capability rejection
 `tests/storage/channel-connection-upgrade.test.ts` seeds the frozen v19 schema and
 checks exact preservation of its migration ledger/source epoch without creating Actors.
 Existing native-channel and file-delivery tests retain their authorization checks.
+
+`tests/extensions/headless-channel-connections.test.ts` covers real IM service/native
+storage composition, two-way messages, exact callback routing, notification
+collisions/revocation, startup failure, failed shutdown and the actual Headless HTTP
+application with a two-transport factory. It uses synthetic providers, not live
+enterprise credentials or external provider service acceptance.

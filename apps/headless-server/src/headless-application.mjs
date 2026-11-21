@@ -106,7 +106,7 @@ import { THREAD_ORCHESTRATION_TOOLS } from '@opencraft/appserver-protocol/collab
 import { createRoutedConversationExecution, conversationAccessServer, callConversationHost, readConversationCurrentTurn } from './conversation-execution.mjs';
 import { openPushStore, TurnPushService, PushObservationTransport } from '@opencraft/web-push-node';
 import { NativeExecutionAuthority } from './native-execution-authority.ts';
-import { readImConfiguration, startImPlugins } from './im-plugins.mjs';
+import { readImConfiguration, startImPlugins, createChannelSyncDependencies } from './im-plugins.mjs';
 import { ImChannelsAppServer } from './im-channels-appserver.mjs';
 import { CHANNELS_HOST_ID } from '@opencraft/appserver-protocol/channels';
 import { HumanAccounts } from '@opencraft/access-control/human-accounts';
@@ -1256,7 +1256,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         },
       }),
       codexBinary:options.codexExecutable ?? join(root,'runtime/codex/bin/codex')});
-    imPlugins = await startImPlugins(imConfiguration,{dataDirectory,capabilities,prepareCapabilities: tools => capabilityMcp.prepare(tools),actors:actorStore,collaboration:actorCollaboration,actorAccess,getAppHost:() => appHostServer,admittedActor:actorId => !instanceAccess || instanceAccess.admitsActor(actorId),channelSync:composition.createChannelSync ? await composition.createChannelSync({collaboration:actorCollaboration}) : composition.channelSync});
+    imPlugins = await startImPlugins(imConfiguration,{dataDirectory,capabilities,prepareCapabilities: tools => capabilityMcp.prepare(tools),actors:actorStore,collaboration:actorCollaboration,actorAccess,getAppHost:() => appHostServer,admittedActor:actorId => !instanceAccess || instanceAccess.admitsActor(actorId),...await createChannelSyncDependencies(composition,{collaboration:actorCollaboration})});
     try { availabilityNotification = await startAvailabilityNotification(process.env.OPENCRAFT_AVAILABILITY_NOTIFICATION_CONFIG, () => imPlugins); }
     catch { console.warn('[availability-notification] startup-unavailable'); }
     capabilitiesReadyResolve();

@@ -90,6 +90,7 @@
   "tests/extensions/communication-owner-extension.test.ts",
   "tests/extensions/craft-plugin-loader.test.ts",
   "tests/extensions/extension-inline-settings.test.ts",
+  "tests/extensions/headless-channel-connections.test.ts",
   "tests/extensions/im-channel-resources.test.ts",
   "tests/extensions/im-notifications.test.ts",
   "tests/extensions/native-channel-author-projection.test.ts",

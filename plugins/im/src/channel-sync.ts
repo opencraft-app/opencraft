@@ -49,22 +49,28 @@ export class ChannelSync {
   private pumping?:Promise<void>;
   private downloading?:Promise<void>;
   private wakePending=false;
+  private closing?:Promise<void>;
+  private configurationAttempted=false;
   private constructor(readonly transport:ChannelSyncTransport,private readonly port:NativeChannelSyncPort){
-    this.connectionId=transport.connectionId??'legacy';
-    if(!/^[a-z0-9][a-z0-9._:-]{0,127}$/u.test(this.connectionId))throw Error('Invalid channel connection ID');
+    this.connectionId=ChannelSync.validateTransport(transport);
+  }
+  /** Preflight is side-effect free so composition can reject collisions before configure. */
+  static validateTransport(transport:ChannelSyncTransport){
+    const connectionId=transport?.connectionId??'legacy';
+    if(!transport||typeof connectionId!=='string'||!/^[a-z0-9][a-z0-9._:-]{0,127}$/u.test(connectionId))throw Error('Invalid channel connection ID');
+    if(transport.callback&&!/^\/__opencraft_im\/channel-callback\/[a-z0-9_-]{1,64}$/.test(transport.callback.path))throw Error('Invalid channel callback route');
+    return connectionId;
   }
   static async open(transport:ChannelSyncTransport,port:NativeChannelSyncPort){
-    if(!port?.synchronizeChannels)throw Error('Native channels required');
-    // Callbacks belong to the generic channel transport namespace.
-    if(transport.callback&&!/^\/__opencraft_im\/channel-callback\/[a-z0-9_-]{1,64}$/.test(transport.callback.path))throw Error('Invalid channel callback route');
     const sync=new ChannelSync(transport,port);
-    // Older owners must reject explicit multi-connection use before configure;
-    // silently ignored new fields would otherwise retain deployment-wide resets.
-    if(transport.connectionId!==undefined){
-      const capability=await port.synchronizeChannels({method:'connectionCapabilities',params:{}});
-      if(capability?.version!==1)throw Error('Channel connection isolation unavailable');
-    }
     try{
+      if(!port?.synchronizeChannels)throw Error('Native channels required');
+      // Do not silently fall back to deployment-wide resets on an older owner.
+      if(transport.connectionId!==undefined){
+        const capability=await port.synchronizeChannels({method:'connectionCapabilities',params:{}});
+        if(capability?.version!==1)throw Error('Channel connection isolation unavailable');
+      }
+      sync.configurationAttempted=true;
       await sync.call('configure',{bindings:transport.bindings,images:!!transport.images});
       sync.unsubscribe=transport.subscribeWithReceipt
         ? transport.subscribeWithReceipt(arrival=>sync.track(sync.ingest(arrival)))
@@ -72,7 +78,7 @@ export class ChannelSync {
       sync.unwatch=port.channels.onChange(()=>sync.wake());
       sync.timer=setInterval(()=>sync.wake(),1000);sync.timer.unref();sync.wake();
       return sync;
-    }catch(error){await sync.close();throw error;}
+    }catch(error){await sync.close().catch(()=>{});throw error;}
   }
   private call(method:string,params:Record<string,unknown>={}){
     return this.port.synchronizeChannels({method,params:{...params,connectionId:this.connectionId,incarnation:this.incarnation}});
@@ -171,11 +177,18 @@ export class ChannelSync {
       await this.call('imageReady',{source:item.source,messageId:item.messageId,bytes});
     }
   }
-  async close(){
-    if(this.abort.signal.aborted)return;
-    this.abort.abort();clearInterval(this.timer);this.unsubscribe?.();this.unwatch?.();
+  close(){
+    return this.closing??=this.dispose();
+  }
+  private async dispose(){
+    this.abort.abort();clearInterval(this.timer);
+    const failures:unknown[]=[];
+    for(const cleanup of [this.unsubscribe,this.unwatch]) {
+      try { cleanup?.(); } catch(error) { failures.push(error); }
+    }
     await Promise.allSettled([...this.pending,this.pumping,this.downloading]);
-    await this.transport.close?.();
-    await this.call('deactivate').catch(()=>{});
+    try { await this.transport.close?.(); } catch(error) { failures.push(error); }
+    if(this.configurationAttempted)await this.call('deactivate').catch(()=>{});
+    if(failures.length)throw new AggregateError(failures,'Channel connection shutdown failed');
   }
 }
