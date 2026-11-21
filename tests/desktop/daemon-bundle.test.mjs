@@ -34,3 +34,18 @@ test("the desktop daemon loads only built-ins and shipped modules at startup", a
   const bundledEsbuild = Object.keys(result.metafile.inputs).filter((file) => file.includes("node_modules/esbuild/"));
   assert.deepEqual(bundledEsbuild, [], "the esbuild JavaScript API cannot run from a bundle");
 });
+
+// Workers the daemon starts by URL (server spaces, storage, transcript cache,
+// execution faults) live beside it. Listing them one by one left four out of
+// the packaged runtime, so the local host failed with "Server storage
+// unavailable"; package the whole build output instead.
+test("the desktop package copies every daemon worker beside the daemon", async () => {
+  const manifest = JSON.parse(await readFile(new URL("../../apps/desktop/package.json", import.meta.url), "utf8"));
+  const resources = manifest.build.extraResources.filter((entry) =>
+    String(entry.from).startsWith("../opencraft-daemon/dist"),
+  );
+  assert.deepEqual(resources, [
+    { from: "../opencraft-daemon/dist", to: "runtime", filter: ["*.mjs", "schema.sql"] },
+    { from: "../opencraft-daemon/dist/main.cjs", to: "runtime/opencraft-daemon.cjs" },
+  ]);
+});

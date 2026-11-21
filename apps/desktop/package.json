@@ -157,16 +157,12 @@
         ]
       },
       {
-        "from": "../opencraft-daemon/dist/terminal-pty-owner.mjs",
-        "to": "runtime/terminal-pty-owner.mjs"
-      },
-      {
-        "from": "../opencraft-daemon/dist/dsh-session-routing-worker.mjs",
-        "to": "runtime/dsh-session-routing-worker.mjs"
-      },
-      {
-        "from": "../opencraft-daemon/dist/connected-agent-history-worker.mjs",
-        "to": "runtime/connected-agent-history-worker.mjs"
+        "from": "../opencraft-daemon/dist",
+        "to": "runtime",
+        "filter": [
+          "*.mjs",
+          "schema.sql"
+        ]
       },
       {
         "from": "../opencraft-daemon/dist/main.cjs",
@@ -194,18 +190,6 @@
         "filter": [
           "**/*"
         ]
-      },
-      {
-        "from": "../opencraft-daemon/dist/assistant-server.mjs",
-        "to": "runtime/assistant-server.mjs"
-      },
-      {
-        "from": "../opencraft-daemon/dist/schema.sql",
-        "to": "runtime/schema.sql"
-      },
-      {
-        "from": "../opencraft-daemon/dist/orchestration-runtime-worker.mjs",
-        "to": "runtime/orchestration-runtime-worker.mjs"
       }
     ],
     "mac": {
