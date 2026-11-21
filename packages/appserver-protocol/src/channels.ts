@@ -153,6 +153,20 @@ export interface CrewInboxItem {
   waiting: { from: CrewPhonebookEntry; content: string; at: number } | null;
   updatedAt: number;
 }
+/** A Bot's desk as its teammates see it: its setup, one conversation per dispatcher and that conversation's tasks. */
+export interface CrewDesk {
+  environment: { kind: 'local' } | { kind: 'sandbox'; backendId: string; templateId: string };
+  model: { providerId: string; modelId: string } | null;
+  /** How many people and Agents the Bot may reach on its own. */
+  contacts: number;
+  conversations: { actor: CrewPhonebookEntry; updatedAt: number }[];
+  selected: {
+    actor: CrewPhonebookEntry;
+    /** `author` is set on the Bot's incoming turns: the dispatcher, or the teammate whose reply came back. */
+    messages: { id: string; role: 'user' | 'assistant'; text: string; at: number; author?: CrewPhonebookEntry }[];
+    works: { id: string; title: string; status: string; updatedAt: number }[];
+  } | null;
+}
 /** A reply that reached a Bot inside crew work, filed against that Bot's own work. */
 export interface CrewReply {
   seq: number; messageId: string; workId: string; requesterId: string; state: 'open' | 'closed';
@@ -191,6 +205,7 @@ export interface ChannelsMethodMap {
   "opencraft/crew/work/list": { params: Record<string, never>; result: { works: CrewWorkView[] } };
   "opencraft/crew/work/replies": { params: { after: number }; result: { replies: CrewReply[] } };
   "opencraft/crew/work/attachment": { params: { workId: string; offset?: number }; result: { file: { name: string; type: string; size: number; next: number | null; base64: string } | null } };
+  "opencraft/crew/desk": { params: { botId: string; actorId?: string }; result: CrewDesk };
   "opencraft/crew/work/inbox": { params: Record<string, never>; result: { items: CrewInboxItem[] } };
   "opencraft/channels/group/create": {
     params: { title: string; memberActorIds: string[]; clientRequestId: string };

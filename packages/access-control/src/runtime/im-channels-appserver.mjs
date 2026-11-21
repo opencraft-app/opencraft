@@ -138,6 +138,7 @@ export class ImChannelsAppServer {
     // Crew phonebooks are grants over Actors, decided by the same native communication authority.
     if (request.method.startsWith('opencraft/crew/')) {
       if (!native) throw Error('channel_denied');
+      if (request.method === 'opencraft/crew/desk') return native.crewDesk(actorContext,params);
       return native.communicate(actorContext,request.method,params);
     }
     const nativeCommand = request.method.startsWith('opencraft/channels/')

@@ -47,4 +47,16 @@ test('a member messages a space Bot: the Host-run Bot takes the work, answers on
  await service.communicate(alice,'send',{targetActorId:alan.actorId,content:'你好',idempotencyKey:'alice-1'});
  assert.equal((storage.database.prepare('SELECT COUNT(*) AS n FROM crew_work').get() as {n:number}).n,before);
  await waitFor(()=>(storage.database.prepare('SELECT COUNT(*) AS n FROM actor_messages WHERE author_id=? AND target_id=?').get(alan.actorId,alice.actorId) as {n:number}).n===1);
+
+ // The desk: any member of the space can look at the Bot's working session, read through the Host.
+ const desk=await service.crewDesk(alice,{botId:alan.actorId});
+ assert.deepEqual(desk.environment,{kind:'local'});
+ assert.deepEqual(desk.conversations.map(c=>c.actor.actorId),[bob.actorId],'one conversation per dispatcher; the owner\'s private line is not on the desk');
+ assert.deepEqual(desk.selected?.messages.map(m=>m.role),['user','assistant']);
+ assert.match(desk.selected!.messages[0]!.text,/看看 2\.3 的发布说明/);
+ assert.ok(!JSON.stringify(desk).includes('你好'));
+ const carol=human('Carol');
+ await assert.rejects(service.crewDesk(carol,{botId:alan.actorId}),/crew_work_denied/,'outside the space there is no desk');
+ await host.close();host=undefined;
+ await assert.rejects(service.crewDesk(alice,{botId:alan.actorId}),/crew_desk_unavailable/,'a stopped Bot shows no desk; nothing is read from its files');
 });

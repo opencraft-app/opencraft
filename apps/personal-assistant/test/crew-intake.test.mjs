@@ -167,3 +167,22 @@ test("a file sent with the dispatch comes in with the turn", async (t) => {
   assert.equal(files[0].name, "notes.txt");
   assert.deepEqual(ledger.calls.find(([m]) => m === "opencraft/crew/work/attachment")[1], { workId: "w1", offset: 0 });
 });
+
+test("the desk shows each dispatcher's conversation and tasks, never the owner's private line", async (t) => {
+  const ledger = core([work("w1", "bob", [bob, alice]), work("w2", "alice", [alice], "budget review")]);
+  const s = setup(t, ledger);
+  const crew = s.intake();
+  s.store.app.dispatch({ op: "say", id: "owner-private", params: { text: "私事" } });
+  await crew.poll(() => false);
+  const conversationId = s.store.app.reception.turn("crew:w1").conversation_id;
+  const { workId } = s.store.app.dispatch({ op: "submit", id: "task", params: { text: "整理发布说明" } });
+  s.store.app.history.link(conversationId, workId);
+
+  const desk = crew.desk({ actorId: "bob" });
+  assert.deepEqual(desk.conversations.map((c) => c.actorId).sort(), ["alice", "bob"]);
+  assert.deepEqual(desk.selected.messages.map((m) => [m.role, m.text]), [["user", "Bob:\ntidy the release"]]);
+  assert.deepEqual(desk.selected.works.map((w) => [w.id, w.title, w.status]), [[workId, "整理发布说明", "queued"]]);
+  assert.ok(!JSON.stringify(crew.desk()).includes("私事"), "the owner's conversation is not on the desk");
+  assert.equal(crew.desk({ actorId: "carol" }).selected, null);
+  assert.throws(() => crew.desk({ conversationId }), /Invalid desk request/, "a desk is read by dispatcher, not by raw conversation");
+});

@@ -53,6 +53,7 @@ export function createAssistantSession(peer, onStopped) {
         };
       }
       if(method==='memory'&&memoryBrowser&&!stopping)return memoryBrowser(params);
+      if(method==='desk'&&crew&&!stopping)return crew.desk(params);
       if (method === "observe" && runner && !stopping) return observe();
       if (method === "dispatch" && runner && !stopping)
         return runner.dispatch(params);

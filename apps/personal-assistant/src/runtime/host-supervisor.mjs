@@ -50,6 +50,15 @@ export async function createPersonalAssistantHost({ directory, service, spawn = 
       if(stopping||entries.get(botId)!==e||e.handle!==handle||e.epoch!==epoch)throw Error('Assistant retired');
       return result;
     },
+    /** Only a running Bot shows its desk; nothing is read from its files while it is stopped. */
+    async desk(botId,epoch,params) {
+      const e=entries.get(botId),handle=e?.handle;
+      if(stopping||!e||e.epoch!==epoch||!handle?.desk||handle.failed())throw Object.assign(Error('crew_desk_unavailable'),{status:503});
+      await handle.ready;
+      const result=await handle.desk(params);
+      if(stopping||entries.get(botId)!==e||e.handle!==handle||e.epoch!==epoch)throw Error('Assistant retired');
+      return result;
+    },
     async models() {
       if(!modelSource || !codexBinary)return {models:[],available:false};
       try {await access(codexBinary,1);} catch {return {models:[],available:false};}
@@ -233,7 +242,8 @@ export function spawnAssistant({directory,profileOptions,request,executionEnviro
  const ready=peer.request('initialize',{protocolVersion:1,directory,profileOptions,...(executionEnvironment?{executionEnvironment}:{})},{timeoutMs:30000}).then(result=>{
   if(result?.protocolVersion!==1)throw Error('Assistant protocol mismatch');initializing=false;
  }).catch(error=>{fail(error);child.kill();throw error;});void ready.catch(()=>{});
- return {ready,pid:child.pid,memory:params=>{if(failure||closing)throw Error('Assistant retired');return peer.request('memory',params,{timeoutMs:15000});},works:()=>!failure&&!closing&&activity&&Date.now()-activity.at<5000?activity.works:undefined,
+ return {ready,pid:child.pid,memory:params=>{if(failure||closing)throw Error('Assistant retired');return peer.request('memory',params,{timeoutMs:15000});},
+ desk:params=>{if(failure||closing)throw Error('Assistant retired');return peer.request('desk',params,{timeoutMs:15000});},works:()=>!failure&&!closing&&activity&&Date.now()-activity.at<5000?activity.works:undefined,
  activity:()=>!failure&&!closing&&activity&&Date.now()-activity.at<5000?{...activity.value}:undefined,failed:()=>!!failure,
  close:()=>closing??=(async()=>{
   if(!exited){

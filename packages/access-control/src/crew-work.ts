@@ -182,6 +182,24 @@ export class CrewWork {
   }
 
   /**
+   * Who may look at a Bot's desk, and what the Core knows of it: any member of the Bot's space.
+   * Runs in the storage owner; the caller then asks the Host for the live session.
+   */
+  deskAuthority(context: ActorContext, actorId: unknown) {
+    const bot = id(actorId), space = this.crew.botSpace(bot);
+    if (space === null || !this.#member(space, context.actorId)) return fail(403, 'crew_work_denied');
+    const row = this.db.prepare("SELECT bot_id,epoch,environment_json,model_selection FROM personal_assistants WHERE actor_id=? AND state='claimed' AND paused=0").get(bot);
+    if (!row) return fail(409, 'crew_desk_unavailable');
+    const model = row.model_selection ? JSON.parse(String(row.model_selection)) as { providerId: string; modelId: string } : null;
+    const members = this.db.prepare(`SELECT a.id AS actorId,a.display_name AS displayName,a.kind FROM collaboration_space_members m
+      JOIN actors a ON a.id=m.actor_id WHERE m.space_id=?`).all(space).map(r => ({ actorId: String(r.actorId), displayName: String(r.displayName),
+      kind: r.kind === 'human' ? 'human' as const : 'session' as const }));
+    return { botId: String(row.bot_id), epoch: String(row.epoch), environment: JSON.parse(String(row.environment_json ?? '{"kind":"local"}')),
+      model: model ? { providerId: model.providerId, modelId: model.modelId } : null,
+      contacts: this.crew.phonebook(context, bot).length, members };
+  }
+
+  /**
    * Rule: every message a member sends to a space Bot is a dispatch. A Bot's own owner keeps their
    * private line to it, and Bots hand work on only through dispatch or reply under work they hold.
    */

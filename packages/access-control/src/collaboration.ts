@@ -104,6 +104,7 @@ export class Collaboration {
   /** Storage-worker-only authority check. */
   assistantThreadGuard(c:ActorContext,id:string,revision?:number,epoch?:string){return new AssistantThreadStore(this,this.database).guard(c,id,revision,epoch);}
   private assistantHost?: { memory?(botId:string,epoch:string,params:Record<string,unknown>,binding:import('@opencraft/appserver-protocol').PersonalAssistantBinding):Promise<unknown>; state(botId: string): PersonalAssistantRuntimeState; wake(botId?: string): void;
+    desk?(botId:string,epoch:string,params:{actorId?:string}):Promise<unknown>;
     environments?(context:ActorContext):Promise<import('@opencraft/appserver-protocol').BotEnvironmentCatalog>;
     validateEnvironment?(environment:import('@opencraft/appserver-protocol').BotEnvironment,context:ActorContext):Promise<void>;
     models?(): Promise<import('@opencraft/appserver-protocol').PersonalAssistantModelCatalog>;
@@ -898,6 +899,48 @@ export class Collaboration {
   }
   /** Public personal-assistant entry shared by native and network transports.
    * Public callers cannot request internal authority projections or select a Human. */
+  /**
+   * A Bot's desk for a member of its space. The storage owner authorizes and describes the Bot;
+   * only a running Bot can show its session, so an idle one reports itself unavailable.
+   */
+  async crewDesk(context: ActorContext, params: Record<string, unknown> = {}): Promise<import('@opencraft/appserver-protocol').CrewDesk> {
+    fields(params, ['botId', 'actorId']);
+    const authority = await this.communicate(context, 'crew/desk-authority', { actorId: params.botId });
+    const host = this.assistantHost;
+    if (!host?.desk) throw new CollaborationError(503, 'crew_desk_unavailable');
+    const raw = await host.desk(authority.botId, authority.epoch, params.actorId === undefined ? {} : { actorId: text(params.actorId) })
+      .catch(() => { throw new CollaborationError(503, 'crew_desk_unavailable'); }) as Record<string, unknown>;
+    const current = await this.communicate(context, 'crew/desk-authority', { actorId: params.botId });
+    if (this.assistantHost !== host || current.epoch !== authority.epoch) throw new CollaborationError(409, 'assistant_changed');
+    // The runtime is a separate process: check its answer before it reaches a client.
+    const people = new Map<string, { actorId: string; displayName: string; kind: 'human' | 'session' }>(
+      (authority.members as { actorId: string; displayName: string; kind: 'human' | 'session' }[]).map(m => [m.actorId, m]));
+    const person = (actorId: unknown) => typeof actorId === 'string' ? people.get(actorId) : undefined;
+    const str = (value: unknown, max: number) => typeof value === 'string' && value.length <= max;
+    const time = (value: unknown) => Number.isSafeInteger(value) && Number(value) >= 0;
+    const conversations = Array.isArray(raw?.conversations) ? raw.conversations : [];
+    const selected = raw?.selected as Record<string, unknown> | null | undefined;
+    const messages = Array.isArray(selected?.messages) ? selected!.messages as Record<string, unknown>[] : [];
+    const works = Array.isArray(selected?.works) ? selected!.works as Record<string, unknown>[] : [];
+    if (conversations.length > 200 || messages.length > 100 || works.length > 20
+      || messages.some(m => !str(m.id, 256) || !['user', 'assistant'].includes(String(m.role)) || !str(m.text, 16384) || !time(m.at)
+        || (m.authorId !== undefined && !str(m.authorId, 256)))
+      || works.some(w => !str(w.id, 256) || !str(w.title, 512) || !str(w.status, 64) || !time(w.updatedAt)))
+      throw new CollaborationError(502, 'crew_desk_invalid');
+    const chosen = selected ? person(selected.actorId) : undefined;
+    return {
+      environment: authority.environment, model: authority.model, contacts: authority.contacts,
+      // A dispatcher who has since left the space drops off the desk.
+      conversations: conversations.flatMap((c: Record<string, unknown>) => { const actor = person(c.actorId); return actor && time(c.updatedAt) ? [{ actor, updatedAt: Number(c.updatedAt) }] : []; }),
+      selected: chosen ? {
+        actor: chosen,
+        // An author who is not a member of the space any more is shown as the dispatcher's conversation.
+        messages: messages.map(m => ({ id: String(m.id), role: m.role as 'user' | 'assistant', text: String(m.text), at: Number(m.at),
+          ...(m.role === 'user' ? { author: person(m.authorId) ?? chosen } : {}) })),
+        works: works.map(w => ({ id: String(w.id), title: String(w.title), status: String(w.status), updatedAt: Number(w.updatedAt) })),
+      } : null,
+    };
+  }
   async personalAssistant(context: ActorContext, method: string, params: Record<string,unknown> = {}): Promise<any> {
     if (!(PERSONAL_ASSISTANT_METHODS as readonly string[]).includes(method)) throw new CollaborationError(404,'method_not_found');
     if(method==='opencraft/personal-assistant/environments'){

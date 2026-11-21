@@ -5,6 +5,7 @@ import { SettingsButton, type ExtensionSettingsViewProps } from "@opencraft/exte
 import type { CrewInboxItem } from "@opencraft/appserver-protocol";
 import { useIntl } from "@opencraft/i18n/react";
 import type { ChannelRpc } from "./channel-client";
+import { CrewDesk, CrewDeskButton } from "./crew-desk";
 import "./crew-work-view.scss";
 
 const messages = {
@@ -42,6 +43,7 @@ export function CrewWorkList({ rpc, signal, placeholder, onOpenChat, reportError
   const [failed, setFailed] = useState(false);
   // Opening is per row: one pending row never disables the others.
   const [opening, setOpening] = useState<string | null>(null);
+  const [desk, setDesk] = useState<CrewInboxItem["work"]["assignee"] | null>(null);
   const life = useRef<AbortController | null>(null), loading = useRef(false);
 
   async function load() {
@@ -114,8 +116,10 @@ export function CrewWorkList({ rpc, signal, placeholder, onOpenChat, reportError
                 : intl.formatDate(item.updatedAt, { month: "numeric", day: "numeric" })}</time></span>
           </span>
         </ObjectRowButton>
+        <CrewDeskButton bot={item.work.assignee} onOpen={() => setDesk(item.work.assignee)} />
       </div>)}
     </div> : null)}
+    {desk ? <CrewDesk rpc={rpc} bot={desk} open onOpenChange={open => { if (!open) setDesk(null); }} /> : null}
     <div role="status" className="people-status">
       {!items.length ? f("empty") : null}
       {failed ? <>{f("failed")} <SettingsButton variant="quiet" onClick={() => void load()}>{f("retry")}</SettingsButton></> : null}

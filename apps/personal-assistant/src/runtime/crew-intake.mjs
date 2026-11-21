@@ -77,7 +77,43 @@ export function createCrewIntake({ runner, request }) {
     return null;
   };
 
+  /**
+   * The Bot's desk as teammates see it: one conversation per dispatcher, its messages and the
+   * tasks it started. The owner's private conversation, delegations, tool calls and results are
+   * never part of it; those stay with the runtime like any other work observation.
+   */
+  /** A dispatcher's own turns are theirs; a returned reply belongs to whoever wrote it. */
+  function authorOf(message, dispatcher) {
+    let inputId;
+    try { inputId = JSON.parse(message.data)?.inputId; } catch { inputId = undefined; }
+    return typeof inputId === "string" && inputId.startsWith("crew-reply:")
+      ? meta("crew:reply-from:" + inputId.slice("crew-reply:".length)) ?? dispatcher
+      : dispatcher;
+  }
+  function desk(params = {}) {
+    if (!params || typeof params !== "object" || Array.isArray(params) || Object.keys(params).some((k) => k !== "actorId")
+      || (params.actorId !== undefined && (typeof params.actorId !== "string" || !params.actorId || params.actorId.length > 256)))
+      throw Error("Invalid desk request");
+    const conversations = db().prepare("SELECT key,value FROM meta WHERE key LIKE 'crew:peer:%'").all().map(({ key, value }) => ({
+      actorId: key.slice("crew:peer:".length),
+      conversationId: value,
+      updatedAt: Number(db().prepare("SELECT MAX(at) AS at FROM conversation_message WHERE conversation_id=?").get(value)?.at ?? 0),
+    })).sort((a, b) => b.updatedAt - a.updatedAt);
+    const chosen = params.actorId === undefined ? conversations[0] : conversations.find((c) => c.actorId === params.actorId);
+    const selected = chosen ? {
+      actorId: chosen.actorId,
+      messages: db().prepare(`SELECT id,role,text,at,data FROM conversation_message WHERE conversation_id=? AND role IN ('user','assistant')
+        ORDER BY seq DESC LIMIT 100`).all(chosen.conversationId).reverse()
+        .map((m) => ({ id: m.id, role: m.role, text: m.text.slice(0, 16384), at: m.at, ...(m.role === "user" ? { authorId: authorOf(m, chosen.actorId) } : {}) })),
+      works: db().prepare(`SELECT w.id,w.text,w.status,w.updated_at FROM work w JOIN conversation_work c ON c.work_id=w.id
+        WHERE c.conversation_id=? ORDER BY w.updated_at DESC LIMIT 20`).all(chosen.conversationId)
+        .map((w) => ({ id: w.id, title: w.text.slice(0, 512), status: w.status, updatedAt: w.updated_at })),
+    } : null;
+    return { conversations: conversations.map(({ actorId, updatedAt }) => ({ actorId, updatedAt })), selected };
+  }
+
   return {
+    desk,
     isPeerConversation,
     /** Whether a runner Work answers crew work; only such Work gets the crew tools. */
     answers: (workId) => requesterOf(workId) !== null,
@@ -99,6 +135,8 @@ export function createCrewIntake({ runner, request }) {
         const conversationId = meta(peerKey(reply.requesterId));
         // A reply to work that already closed, or that this runner never took in, has no turn to join.
         if (reply.state === "open" && conversationId) {
+          // The desk shows who actually wrote a returned reply, not only whose conversation holds it.
+          runner.uow.transaction(() => db().prepare(UPSERT).run("crew:reply-from:" + reply.messageId, reply.from.actorId));
           const response = await runner.dispatch({
             op: "say",
             id: "crew-reply:" + reply.messageId,
