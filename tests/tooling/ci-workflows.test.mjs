@@ -259,6 +259,22 @@ test('workflow-lint checks every workflow change with pinned actionlint and zizm
 });
 
 
+test('gate-tests shards every suite into exactly one parallel part', () => {
+  const gate = job('gate-tests');
+  const parts = gate.match(/matrix:\n\s+part: \[([^\]]+)\]/)[1].split(',').map(part => part.trim());
+  assert.deepEqual(parts, ['runtime', 'convergence', 'platform']);
+  const steps = [...gate.matchAll(/- (?:name: [^\n]+\n\s+)?run: (npm run [^\n]+)\n\s+if: ([^\n]+)/g)];
+  assert.ok(steps.length > 20);
+  const used = new Set();
+  for (const [, command, condition] of steps) {
+    const owners = [...condition.matchAll(/matrix\.part == '([\w-]+)'/g)].map(match => match[1]);
+    assert.equal(owners.length, 1, `${command} must run in exactly one gate part`);
+    assert.ok(parts.includes(owners[0]), command);
+    used.add(owners[0]);
+  }
+  assert.deepEqual([...used].sort(), [...parts].sort(), 'every gate part runs at least one suite');
+});
+
 test('generic convergence and assistant runtime remain mandatory gate steps', () => {
   for (const name of ['test:assistant-runtime', 'test:convergence']) {
     assert.ok(job('gate-tests').includes('run: npm run ' + name));

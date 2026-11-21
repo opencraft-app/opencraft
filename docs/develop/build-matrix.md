@@ -230,7 +230,9 @@ without a matching CI step.
 `gate-tests` runs in parallel with `core-tests`, under the same selection and
 test isolation, for the suites `npm run gate` requires beyond `npm test`
 (sandbox, identity and actor authorization, relay, hub network, Codex core and
-others), plus the startup cache evidence. `tests/tooling/ci-workflows.test.mjs`
+others), plus the startup cache evidence. It is split into three parallel parts
+(`runtime`, `convergence`, `platform`) balanced by measured step time; each
+suite runs in exactly one part. `tests/tooling/ci-workflows.test.mjs`
 fails when a `gate` script runs in no workflow and is not a recorded exception;
 `test:startup` is excluded until its Expo native-module version mismatch is
 resolved.

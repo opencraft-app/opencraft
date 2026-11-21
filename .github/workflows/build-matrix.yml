@@ -329,11 +329,18 @@ jobs:
 
   # Suites that npm run gate requires but npm test does not include. They run
   # in parallel with core-tests so neither job grows; each step keeps its log.
+  # Sharded by measured step time so no shard holds the critical path alone;
+  # every step belongs to exactly one part (tests/tooling/ci-workflows.test.mjs).
   gate-tests:
+    name: gate-tests (${{ matrix.part }})
     needs: plan
     if: needs.plan.outputs.has-builds == 'true' || needs.plan.outputs.headless-tests == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [runtime, convergence, platform]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -356,83 +363,83 @@ jobs:
       - name: Install Chromium for browser-backed unit tests
         run: bash scripts/ci/install-playwright-chromium.sh
       - run: npm run test:controls
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'runtime'
         timeout-minutes: 10
       - run: npm run test:typography
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'runtime'
         timeout-minutes: 10
       - run: npm run test:sandbox
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'runtime'
         timeout-minutes: 10
       - run: npm run test:assistant-runtime
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'runtime'
         timeout-minutes: 20
       - run: npm run test:convergence
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'convergence'
         timeout-minutes: 30
       - run: npm run test:cloud-desktop
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'platform'
         timeout-minutes: 10
       - run: npm run test:electron-launch
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'convergence'
         timeout-minutes: 10
       - run: npm run test:file-preview
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'runtime'
         timeout-minutes: 10
       - run: npm run test:projects
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'platform'
         timeout-minutes: 10
       - run: npm run test:tasks
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'platform'
         timeout-minutes: 10
       - run: npm run test:schedules
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'runtime'
         timeout-minutes: 10
       - run: npm run test:thread-lifecycle
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'platform'
         timeout-minutes: 10
       - run: npm run test:hunyuan-speech
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'runtime'
         timeout-minutes: 10
       - run: npm run test:appserver:lab
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'runtime'
         timeout-minutes: 10
       - run: npm run test:mcp-apps
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'runtime'
         timeout-minutes: 10
       - run: npm run test:shell-space
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'runtime'
         timeout-minutes: 10
       - run: npm run test:workspace-presentation
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'runtime'
         timeout-minutes: 10
       - run: npm run test:environments
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'runtime'
         timeout-minutes: 10
       - run: npm run test:desktop-login
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'runtime'
         timeout-minutes: 10
       - run: npm run test:relay
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'convergence'
         timeout-minutes: 10
       - run: npm run test:hub-network
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'platform'
         timeout-minutes: 10
       - run: npm run test:identity-storage
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'convergence'
         timeout-minutes: 10
       - run: npm run test:actors
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'platform'
         timeout-minutes: 10
       - run: npm run test:human-auth
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'convergence'
         timeout-minutes: 10
       - run: npm run test:codex-core
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'platform'
         timeout-minutes: 10
       - name: Startup cache evidence
         run: npm run build:preview-bridge && npm run check:startup:cache
-        if: always() && steps.dependencies.outcome == 'success'
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'platform'
         timeout-minutes: 10
 
   build-checks:
