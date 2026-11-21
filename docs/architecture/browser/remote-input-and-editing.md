@@ -1,6 +1,6 @@
 # Browser: Remote input and editing
 
-[Architecture index](../../browser-workbench-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](browser-workbench-architecture.md) · [Documentation index](../../README.md)
 
 ### 原生远程编辑运行时
 

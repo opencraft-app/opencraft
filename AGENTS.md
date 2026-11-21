@@ -38,16 +38,16 @@ GitHub `opencraft-app/opencraft` 是目标核心上游，产品身份来源、�
 
 - DSH 是可替换的执行引擎，不是 Bot、模型、会话、凭据或产品配置的唯一真源。先确认对象身份、生命周期和唯一写入者，再修改页面或 adapter。
 - 宿主只声明并呈现已接通的能力；不得用开关、菜单项或前端状态冒充协议、运行时或后端能力。
-- 云桌面通用插件拥有桌面 contract、媒体和面板，不依赖产品账号、Bot 或企业云服务。产品 provider 只消费通用 contract/media 子入口，拥有授权绑定、资源准备和观看 attachment 交接，不拥有桌面 DOM、Shell 或 Chat 连接。依赖方向与回收顺序见 [云桌面插件边界](docs/cloud-desktop-plugin.md#cloud-desktop--downstream-product-plugin-boundary)；客户端只读状态不得代替后端输入授权。
-- 主体与协作遵循[原生主体与 Hub 协作设计纲领](docs/architecture/actor-collaboration.md)：人类与持久 Agent/Bot/Session 都是主体，权限独立授予，Hub 负责准入与授权路由。该纲领是目标设计，不代表多租户已实现。现有 Client / Hub / Server 的连接、执行与 lease 契约见[执行所有权](docs/execution-ownership.md#client--hub--server-拓扑)；Renderer 是呈现机制，Host 是部署载体，均不能决定主体身份。
-- 自然人身份是主对象，登录方式是身份绑定：[多种登录方式落到同一自然人](docs/architecture/actor-collaboration.md#多种登录方式绑定同一自然人)。本地账号、OIDC 与企业身份等身份来源共用核心 human Actor；权限、资源归属和审计关联 Actor，不随登录方式变化。绑定须验证身份，不按同名或相同邮箱自动合并；登录态与 Bot Session 凭据分开管理。Headless 随包提供每部署独立账号的官方服务端插件 `opencraft.account` 与可配置 OIDC，专用企业验证由可选插件接入；配置与已实现边界见[服务器登录](docs/server-authentication.md)。
+- 云桌面通用插件拥有桌面 contract、媒体和面板，不依赖产品账号、Bot 或企业云服务。产品 provider 只消费通用 contract/media 子入口，拥有授权绑定、资源准备和观看 attachment 交接，不拥有桌面 DOM、Shell 或 Chat 连接。依赖方向与回收顺序见 [云桌面插件边界](docs/architecture/extensions/cloud-desktop-plugin.md#cloud-desktop--downstream-product-plugin-boundary)；客户端只读状态不得代替后端输入授权。
+- 主体与协作遵循[原生主体与 Hub 协作设计纲领](docs/architecture/identity/actor-collaboration.md)：人类与持久 Agent/Bot/Session 都是主体，权限独立授予，Hub 负责准入与授权路由。该纲领是目标设计，不代表多租户已实现。现有 Client / Hub / Server 的连接、执行与 lease 契约见[执行所有权](docs/architecture/execution/execution-ownership.md#client--hub--server-拓扑)；Renderer 是呈现机制，Host 是部署载体，均不能决定主体身份。
+- 自然人身份是主对象，登录方式是身份绑定：[多种登录方式落到同一自然人](docs/architecture/identity/actor-collaboration.md#多种登录方式绑定同一自然人)。本地账号、OIDC 与企业身份等身份来源共用核心 human Actor；权限、资源归属和审计关联 Actor，不随登录方式变化。绑定须验证身份，不按同名或相同邮箱自动合并；登录态与 Bot Session 凭据分开管理。Headless 随包提供每部署独立账号的官方服务端插件 `opencraft.account` 与可配置 OIDC，专用企业验证由可选插件接入；配置与已实现边界见[服务器登录](docs/architecture/identity/server-authentication.md)。
 
 ## 按需加载
 
 | 任务 | 必读入口 |
 |---|---|
 | 新增功能含 UI，或界面、设置页、列表、表单、弹窗的实现/改版/评审 | [维护 Skill 的 UI 路径](.agents/skills/opencraft-maintenance/SKILL.md#ui-任务先进入设计路径) → [设计入口](design.md)；按需读取专项，不等用户另外提出设计要求 |
-| 平台、AppServer、Chat Runtime、Workbench、扩展 | [platform-architecture](docs/platform-architecture.md) 与命中的专题文档 |
+| 平台、AppServer、Chat Runtime、Workbench、扩展 | [platform-architecture](docs/architecture/README.md) 与命中的专题文档 |
 | Browser 自动化、PreviewBridge、Electron CDP 与 harness 工具适配 | [自动化迁移清单](docs/architecture/browser/automation-migration.md)；实现 TODO 见 [browser-cdp](packages/browser-cdp/AGENTS.md) |
 | 工作区、工具面板、浮动聊天、Side Chat | [design](design/README.md)；实现变更通过 `design/invariants.md` 索引维护对应专题 |
 | OpenCraft 架构、交互、布局、平台适配或预览 | [opencraft-maintenance](.agents/skills/opencraft-maintenance/SKILL.md)，按任务读取其验证清单 |
@@ -69,11 +69,11 @@ GitHub `opencraft-app/opencraft` 是目标核心上游，产品身份来源、�
 
 - 公开 Expo 位于 apps/mobile，只是承载完整随包 Web Workbench 的 WebView 容器；旧独立 RN 工作台已退役。apps/mobile 不再提供下游产品入口（Router、账号、Bot、产品 Expo 配置），原生依赖只保留容器自身使用的模块；下游产品如需原生账号、导航或 Bot 界面，自行维护独立的 Expo App。手机平台、构建方式和产物先按 [Expo 路线表](apps/mobile/README.md#手机端路线) 选择，不能把 Expo Go 预览当作可安装包。
 - 修改手机容器时先读 [Expo 局部 Agent 入口](apps/mobile/AGENTS.md)。[Shell 状态](docs/history/mobile-shell.md)与[原生／DOM 桥接](docs/history/mobile-bot-bridge.md)记录的是下游产品 Shell 的历史设计，apps/mobile 不再承载；优先修改现有过时规则，避免把已失效方案追加成并列事实。
-- 默认内置模式的 JS/CSS 与 Worker 必须预制在安装包中，远程只提供 API 数据和媒体。用户明确选择的自托管 HTTPS 网站模式遵循 [移动容器来源边界](docs/mobile-workbench-container.md)，不注入内置身份或原生权限桥接；不能在内置模式失败时自动切换远程网页。原生设备能力经平台端口接入，外部账号、实名与订阅页面交给系统浏览器。具体边界见 [Embedded Bot bridge](docs/history/mobile-bot-bridge.md#native-audio-and-packaged-code)。
-- 手机端请求、缓存和离线写入先按 [移动数据协调契约](docs/mobile-data-architecture.md) 区分读取、在线事务与可持久化草稿；不得把 TanStack Query 的内存缓存、WebView 的独立 JS 环境或普通重试称为全 App 持久请求队列。账号展示缓存必须按会话与区域隔离，退出登录清除。
+- 默认内置模式的 JS/CSS 与 Worker 必须预制在安装包中，远程只提供 API 数据和媒体。用户明确选择的自托管 HTTPS 网站模式遵循 [移动容器来源边界](docs/architecture/mobile/mobile-workbench-container.md)，不注入内置身份或原生权限桥接；不能在内置模式失败时自动切换远程网页。原生设备能力经平台端口接入，外部账号、实名与订阅页面交给系统浏览器。具体边界见 [Embedded Bot bridge](docs/history/mobile-bot-bridge.md#native-audio-and-packaged-code)。
+- 手机端请求、缓存和离线写入先按 [移动数据协调契约](docs/architecture/mobile/mobile-data-architecture.md) 区分读取、在线事务与可持久化草稿；不得把 TanStack Query 的内存缓存、WebView 的独立 JS 环境或普通重试称为全 App 持久请求队列。账号展示缓存必须按会话与区域隔离，退出登录清除。
 - 会话连续性按 [ChatUI 架构](docs/architecture/chat-ui/composer-and-drafts.md#跨桌面手机和平板的会话连续性)维护一个共享语义模型：Scope/View 身份、草稿保存与丢弃、前台追平条件属于共享包；桌面浏览器和手机/平板只适配存储、生命周期、手势与布局。V3 连接代次不能当持久 Replica 游标，旧消息缓存只可展示，不能授权发送或交互；任何私有缓存都要按账号和 Host 隔离，退出账号撤销对应作用域。不要因屏幕宽度另造一套业务状态机。
 - 手机端读取状态按“可展示数据、最后成功时间、后台刷新、错误、会话有效性”分别建模：已有同会话数据时，后台刷新不得清空数据或切回全屏 loading；短暂失败保留旧布局并给轻量重试。只有冷启动且没有可用数据时显示与最终页面结构接近的静态占位，避免卡片消失、列表跳动和闪动菊花。缓存身份只能用于展示；实名、支付及账号安全操作在当前服务端状态核实前不可凭旧缓存放行。成功写入后精确失效相关查询，401、退出或切换账号/区域清除对应作用域。头像等媒体的缓存键只在资源确实改变时更新，不能每次普通刷新都强制重载。
-- 修改手机读取页时先列出 `cold-loading / cached-refreshing / fresh / cached-error / session-expired` 五态，确认每态的数据来源、占位几何、可用动作和退出条件；实现中把 `data` 与 `isFetching` 分开，刷新只更新数据和轻量状态槽位，不能卸载整页、重置滚动位置或清空已渲染列表。重复进入时，首帧就从当前会话的内存缓存取值；不能等 `useEffect` 异步读取后才用缓存，否则仍会闪一帧占位。真正冷启动的占位按实际卡片和行高排布，禁用未核实的敏感操作。验收至少覆盖首次进入、30 秒内重复进入、后台恢复、断网再联网、刷新失败、401 与切换账号；逐帧查看是否出现短页、跳动或旧账号资料。细化策略见 [移动数据协调契约](docs/mobile-data-architecture.md)。
+- 修改手机读取页时先列出 `cold-loading / cached-refreshing / fresh / cached-error / session-expired` 五态，确认每态的数据来源、占位几何、可用动作和退出条件；实现中把 `data` 与 `isFetching` 分开，刷新只更新数据和轻量状态槽位，不能卸载整页、重置滚动位置或清空已渲染列表。重复进入时，首帧就从当前会话的内存缓存取值；不能等 `useEffect` 异步读取后才用缓存，否则仍会闪一帧占位。真正冷启动的占位按实际卡片和行高排布，禁用未核实的敏感操作。验收至少覆盖首次进入、30 秒内重复进入、后台恢复、断网再联网、刷新失败、401 与切换账号；逐帧查看是否出现短页、跳动或旧账号资料。细化策略见 [移动数据协调契约](docs/architecture/mobile/mobile-data-architecture.md)。
 - 当需求指定 HeroUI Native/NextUI Native 的抽屉、弹层或其他交互控件时，要求涵盖**容器本身**的手势、遮罩、关闭、可访问性和动画；仅在手写 `Animated.View`、`PanResponder` 或普通 `View` 里放 HeroUI 按钮，不算使用该原生控件。实现前核对当前安装版本实际导出的组件及 Expo Go 支持；若库没有对应控件，选用可在 Expo Go 运行的成熟原生交互原语，并在 Task Pack 与交接中明确组件来源及例外，不能把它标为 HeroUI Native 抽屉。禁止引入 Unistyles。
 - iOS 页面前进和返回统一经过可复用的原生导航页面容器：按钮返回与左边缘右滑必须走同一完成路径；拖动要跟手、未达阈值回弹、松手后补完动画。按当前**容器**宽度计算位移和阈值，窗口尺寸变化后重新测量，不能写死 iPhone 宽度或假定所有页面都是手机全屏 Stack。尊重系统减少动态效果设置，动画期间保留底层页面和 Bot runtime；从侧栏进入个人与设置时还必须保留侧栏的打开状态，返回应露出原侧栏，不能先关闭再推页面。状态栏与 Home Indicator 属于同一移动页面，不得留下独立横条。新增页面先复用这一层，再选择具体的手机、iPad 或折叠屏呈现方式。
 - iPhone 外网预览提供完整明文 `exps://` 链接，在 Safari 打开并跳转 Expo Go；Metro 与 Cloudflare Tunnel 必须持续运行。为加快迭代，新链接只做轻量可用性检查（Metro 监听、隧道连接和 iOS manifest 响应），**不下载完整 bundle 校验**；源码的 Expo 类型检查和 iOS 打包仍按改动风险运行。链接失效时重新生成并做同样的轻量检查；不要把服务端检查表述为真机已验证。
@@ -82,7 +82,7 @@ GitHub `opencraft-app/opencraft` 是目标核心上游，产品身份来源、�
 
 ## 执行沙盒与资源所有权
 
-- 新增或修改引擎的命令、子进程、PTY、后台 worker 与取消路径时，先读 [CreateSandbox 契约](docs/execution-sandbox.md)；共享原语归 `packages/sandbox`，Node/provider 适配归 `packages/sandbox-node`，分别遵循其局部 `AGENTS.md`。
+- 新增或修改引擎的命令、子进程、PTY、后台 worker 与取消路径时，先读 [CreateSandbox 契约](docs/architecture/execution/execution-sandbox.md)；共享原语归 `packages/sandbox`，Node/provider 适配归 `packages/sandbox-node`，分别遵循其局部 `AGENTS.md`。
 - 执行入口消费 `createSandboxPool()` / `createSandbox()`；部署装配显式选择后端。Linux 本机只是可选后端，不能按操作系统隐式选择或把 Node PID、ChildProcess、PTY、systemd/cgroup 暴露为跨后端 contract。后续远程后端必须实现真实资源、工作目录与生命周期映射；不能仅登记名称便宣称 E2B 已接通。
 - 默认每环境请求 4 vCPU / 8 GiB。CPU/内存有效约束须由 provider 验证；Linux 默认每环境4096 tasks（含线程）、每进程65536 FD，FD 不是环境总量。每引擎的环境生命周期以正式契约为准，不假定一个 Thread 等于一个沙盒。
 - Codex 官方 exec-server、DSH subprocess/PTY（含 ACP DSH）和 Pi shell worker 的实际执行路径复用该原语。不得新增绕过已选沙盒的裸执行路径；选中后端缺失、配置无效或创建失败时拒绝执行，不能静默回退本机。未配置的既有 Host 不得宣称已隔离。
@@ -101,10 +101,10 @@ GitHub `opencraft-app/opencraft` 是目标核心上游，产品身份来源、�
 - Optional/nullable 字段必须表示真实缺失。默认值只在 authority 边界填充；声明但忽略的 capability、route、command 或 wire 字段必须删除或端到端实现。
 - 协议变化必须同时检查声明、生成类型、Host/provider adapter、持久化/恢复、失败语义和兼容测试。共享 TypeScript 能编译不等于已部署 Host 兼容。
 - 内建 UI Preferences 统一消费 `UiPreferencesRuntime`；插件的个人本地呈现偏好可消费可选 `api.localPreferences`，由平台隔离产品/插件/账号与激活生命周期、插件持有 schema；不代替业务文档 CAS 或共享账号 authority。React 不直接选择 localStorage、IndexedDB、SQLite 或远端存储。scope、adapter、CAS 和正式 key 以 [UI preference authority](docs/architecture/platform/storage-and-preferences.md#ui-preference-authority) 为准。
-- Desktop 路径必须消费 [Directory identity charter](docs/architecture/product-identity.md#directory-identity-charter) 的唯一 resolver：生产数据根必须使用核心产品规范名称，旧产品目录只允许作为显式配置的幂等迁移输入；Main/Daemon/DSH 显式使用 runtime cwd，Thread workspace cwd 必须来自 Project/Thread，禁止回退 `process.cwd()`。
+- Desktop 路径必须消费 [Directory identity charter](docs/architecture/identity/product-identity.md#directory-identity-charter) 的唯一 resolver：生产数据根必须使用核心产品规范名称，旧产品目录只允许作为显式配置的幂等迁移输入；Main/Daemon/DSH 显式使用 runtime cwd，Thread workspace cwd 必须来自 Project/Thread，禁止回退 `process.cwd()`。
 - Hermes 的 Console 适配源码和生成工具属于下游产品，不是独立核心的安装或默认检查依赖。下游产品工作区持有机械生成层；不得直接编辑，须修改其前端真源后运行该产品的同步及只读漂移检查，连同 `UPSTREAM.json` 提交。详见 [历史与消费契约](docs/history/upstream-history.md)。
 - Server 六类核心数据由 `@opencraft/storage-node` 持有统一连接、Drizzle schema 和明文 SQL；新增迁移运行 `npm run generate:storage`，检查 `npm run check:storage` 和 `npm run test:sqlite-node`。领域 repository 借用 owner 连接；`server/legacy.ts` 中已发布旧库 SQL/name/hash 不可改写。Headless 与离线账号/权限管理工具走同一存储入口，不再写六个旧文件。
-- SQLite 表结构变更只在该库 owner 的 migrations 列表追加连续 version N+1；不得改写已发布迁移的 SQL 原文、名称或版本。生命周期与恢复契约见 [sqlite-lifecycle](docs/sqlite-lifecycle.md)。
+- SQLite 表结构变更只在该库 owner 的 migrations 列表追加连续 version N+1；不得改写已发布迁移的 SQL 原文、名称或版本。生命周期与恢复契约见 [sqlite-lifecycle](docs/architecture/server/sqlite-lifecycle.md)。
 - OpenCraft 自有 SQLite 的新增运行时 `CREATE TABLE` / `ALTER TABLE` 只由迁移执行；业务初始化与恢复不得另建表或按列探测补结构。测试 fixture 与下述保留的上游镜像不作为升级 authority。
 - 所有 OpenCraft 自有 SQLite 库必须经 `openManagedDatabase` 打开并暴露 outcome；owner 负责独占生命周期、关闭和处置摘要，不得吞掉迁移失败后继续宣称 ready。
 - 改表必须有从上一版本结构升级并保留业务数据的测试，以及已记录 checksum 不一致时拒绝打开的测试；空库测试不能替代升级测试。

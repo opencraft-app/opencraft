@@ -1,6 +1,6 @@
 # Client resource contract
 
-[Storage and preferences](./storage-and-preferences.md) · [Mobile data coordination](../../mobile-data-architecture.md)
+[Storage and preferences](./storage-and-preferences.md) · [Mobile data coordination](../mobile/mobile-data-architecture.md)
 
 状态：2026-10-26 设计基线。本文定义 Web/PWA、Electron 和移动端共用的资源语义；它不规定各平台使用同一种数据库，也不把离线能力扩展成离线执行。
 

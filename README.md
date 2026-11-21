@@ -14,7 +14,7 @@
 
 [![构建](https://github.com/opencraft-app/opencraft/actions/workflows/build-matrix.yml/badge.svg)](https://github.com/opencraft-app/opencraft/actions/workflows/build-matrix.yml) [![安全检查](https://github.com/opencraft-app/opencraft/actions/workflows/security.yml/badge.svg)](https://github.com/opencraft-app/opencraft/actions/workflows/security.yml) [![许可证：MIT-0](https://img.shields.io/badge/License-MIT--0-64748b)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://github.com/topics/typescript)
 
-[![AI Agents](https://img.shields.io/badge/AI_Agents-18181b)](https://github.com/topics/ai-agents) [![ACP](https://img.shields.io/badge/ACP-18181b)](plugins/acp-engine/README.md) [![MCP](https://img.shields.io/badge/MCP-18181b)](docs/session-capabilities.md) [![自主部署](https://img.shields.io/badge/Self_Hosted-18181b)](docker/README.md) [![协作](https://img.shields.io/badge/Collaboration-18181b)](docs/actor-collaboration-api.md)
+[![AI Agents](https://img.shields.io/badge/AI_Agents-18181b)](https://github.com/topics/ai-agents) [![ACP](https://img.shields.io/badge/ACP-18181b)](plugins/acp-engine/README.md) [![MCP](https://img.shields.io/badge/MCP-18181b)](docs/architecture/execution/session-capabilities.md) [![自主部署](https://img.shields.io/badge/Self_Hosted-18181b)](docker/README.md) [![协作](https://img.shields.io/badge/Collaboration-18181b)](docs/architecture/identity/actor-collaboration-api.md)
 
 [快速开始](#快速开始) · [可以用来做什么](#可以用来做什么) · [文档导航](#文档导航) · [参与贡献](CONTRIBUTING.md)
 
@@ -54,8 +54,8 @@ OpenCraft 是一个开源 Agent 工作台，围绕 **Anyone Agents Anywhere** �
 
 **当前范围。** 每种适配器只提供实际接通的能力。首期主体协作闭环位于单个 Hub；
 跨 Hub 分享 Agent、任意 Agent 的通用即插即用接入，是我们推进的方向。
-已实现能力及具体范围见[主体协作接口](docs/actor-collaboration-api.md)、
-[主体与 Hub 设计](docs/architecture/actor-collaboration.md)和[执行契约](docs/execution-ownership.md)。
+已实现能力及具体范围见[主体协作接口](docs/architecture/identity/actor-collaboration-api.md)、
+[主体与 Hub 设计](docs/architecture/identity/actor-collaboration.md)和[执行契约](docs/architecture/execution/execution-ownership.md)。
 
 ## 快速开始
 
@@ -88,10 +88,10 @@ npm run dev
 | 想了解 | 相关文档 |
 | --- | --- |
 | 项目全貌 | [文档索引](docs/README.md) · [仓库布局](docs/develop/repository-layout.md) |
-| Agent 身份、权限与协作 | [主体与 Hub 设计](docs/architecture/actor-collaboration.md) · [主体协作接口](docs/actor-collaboration-api.md) · [服务器登录](docs/server-authentication.md) |
-| 执行与能力接入 | [执行所有权](docs/execution-ownership.md) · [会话能力](docs/session-capabilities.md) · [插件架构](docs/plugin-architecture.md) |
+| Agent 身份、权限与协作 | [主体与 Hub 设计](docs/architecture/identity/actor-collaboration.md) · [主体协作接口](docs/architecture/identity/actor-collaboration-api.md) · [服务器登录](docs/architecture/identity/server-authentication.md) |
+| 执行与能力接入 | [执行所有权](docs/architecture/execution/execution-ownership.md) · [会话能力](docs/architecture/execution/session-capabilities.md) · [插件架构](docs/architecture/extensions/plugin-architecture.md) |
 | 开发扩展 | [扩展开发指南](docs/develop/extension-development.md) · [可运行示例](examples/extensions/README.md) |
-| 架构与设计 | [平台架构](docs/platform-architecture.md) · [界面设计](design.md) · [构建矩阵](docs/develop/build-matrix.md) |
+| 架构与设计 | [平台架构](docs/architecture/README.md) · [界面设计](design.md) · [构建矩阵](docs/develop/build-matrix.md) |
 
 ## 一起建设
 

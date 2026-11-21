@@ -1,6 +1,6 @@
 # Extensions: Manifest and contributions
 
-[Architecture index](../../plugin-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](plugin-architecture.md) · [Documentation index](../../README.md)
 
 ## 7. 公共 Manifest 与 API
 
@@ -44,7 +44,7 @@ const manifest = {
 公共 API 不提供根 Cordis Context、React Component、Query client、
 AppServer Transport、可变 Replica、文件系统或 Electron IPC。
 可信模块仍运行在 Renderer realm；这不是隔离执行宿主。
-数据与生命周期语义见 [插件持久化契约](../../plugin-persistence.md) 与
+数据与生命周期语义见 [插件持久化契约](plugin-persistence.md) 与
 [可运行示例](../../../examples/extensions/README.md)。
 
 #### 7.2.1 稳定性契约与后续目标

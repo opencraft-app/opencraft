@@ -13,8 +13,8 @@
 当前对话：用户要求先设计，随后补充 Web IndexedDB、插件兼容，并要求“定一下”。最终决策替代早期以 Drizzle 为目标的草案；只定设计。
 
 ## history_context
-current_design_refs: `../../docs/platform-architecture.md`、`../../docs/platform-connectors.md`、`../invariants.md`。
-relevant_evolution: 设计初期 OpenCraft 自有 SQLite 多为建表初始化，session-routing 存在按列检测追加 intent 的历史升级。后续生命周期契约见 [SQLite 生命周期](../../docs/sqlite-lifecycle.md)，实现结论以各库 owner 当前源码为准。
+current_design_refs: `../../docs/architecture/README.md`、`../../docs/architecture/extensions/platform-connectors.md`、`../invariants.md`。
+relevant_evolution: 设计初期 OpenCraft 自有 SQLite 多为建表初始化，session-routing 存在按列检测追加 intent 的历史升级。后续生命周期契约见 [SQLite 生命周期](../../docs/architecture/server/sqlite-lifecycle.md)，实现结论以各库 owner 当前源码为准。
 superseded_refs: 本任务早期“Drizzle 为默认方案”的设计草案已被后续需求取代；不把待实施契约写成既有能力。
 
 ## interface_refs / data_structure_refs
@@ -59,7 +59,7 @@ extension-contract/runtime、Workbench Web 存储适配、Electron Main/Preload/
 ## handoff
 client-local 与 Host 文档切片完成：最小API、持久CAS、内容转换、稳定Electron存储、Web升级协调、Cordis生命周期及显式Host绑定。旧IndexedDB保留，仅迁移当前可访问来源。历史其他origin找回、其他既有数据库全量迁移及其他Host实现仍待后续，不宣称全部模块已完成。未提交/发行/覆盖安装版。
 
-2026-10-13：上述 handoff 是早期切片记录；九个自有 Node SQLite 库的账本、备份、旧库处置与 Host 启动门禁现已实现，当前状态与未覆盖边界以 [存储生命周期](../../docs/sqlite-lifecycle.md) 为准。
+2026-10-13：上述 handoff 是早期切片记录；九个自有 Node SQLite 库的账本、备份、旧库处置与 Host 启动门禁现已实现，当前状态与未覆盖边界以 [存储生命周期](../../docs/architecture/server/sqlite-lifecycle.md) 为准。
 
 ## 实施 evidence / checkpoint
 

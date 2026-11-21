@@ -6,7 +6,6 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { once } from 'node:events';
 import { prepareLayout } from '../../container-deployment/layout.mjs';
 
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
@@ -35,6 +34,19 @@ function docker(args, options = {}) {
     stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], ...options }) ?? '').trim();
 }
 const compose = args => docker(['compose', '--env-file', '/dev/null', '-f', join(root, 'docker/compose.yaml'), '-p', name, ...args]);
+async function freePortBelowEphemeralRange() {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const port = 20_000 + Math.floor(Math.random() * 12_000);
+    const listener = createServer();
+    const bound = await new Promise(resolve => {
+      listener.once('error', () => resolve(false));
+      listener.listen(port, '127.0.0.1', () => resolve(true));
+    });
+    if (bound) { await new Promise(resolve => listener.close(resolve)); return port; }
+  }
+  throw new Error('no free port below the ephemeral range');
+}
+
 async function waitFor(read, predicate, description) {
   let last;
   for (let attempt = 0; attempt < 240; attempt++) {
@@ -59,8 +71,10 @@ let passed = false, origin;
 try {
   const layout = await prepareLayout(env, { uid: process.getuid(), gid: process.getgid() });
   if (process.getuid() === 0) for (const path of [directory, layout.state, layout.execution, layout.gitCredentials, layout.workspace, layout.logs, ...['brain', 'gateway', 'hands'].map(service => join(logs, service))]) await chown(path, deploymentUid, deploymentGid);
-  const listener = createServer(); listener.listen(0, '127.0.0.1'); await once(listener, 'listening');
-  env.OPENCRAFT_PORT = String(listener.address().port); await new Promise(resolve => listener.close(resolve));
+  // The Gateway binds this port only after Brain and Hands are healthy, and they share
+  // the host network. A kernel-assigned port is from the ephemeral range, so one of
+  // them can be handed it in between; probe a free port below that range instead.
+  env.OPENCRAFT_PORT = String(await freePortBelowEphemeralRange());
   origin = `http://127.0.0.1:${env.OPENCRAFT_PORT}`;
   compose(['up', '-d', '--no-build', '--wait']);
   const health = async () => {

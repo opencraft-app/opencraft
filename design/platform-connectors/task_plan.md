@@ -10,7 +10,7 @@
 
 ## requirement_refs / requirement_excerpt
 - 用户：“需要你思考，实现。设计文档没问题吧？”
-- 参考：`../../docs/session-capability-refresh.md` 第 4 节；`../../docs/agent-capability-fabric.md`。
+- 参考：`../../docs/architecture/execution/session-capability-refresh.md` 第 4 节；`../../docs/architecture/execution/agent-capability-fabric.md`。
 
 ## interface_refs / data_structure_refs
 - 复用 AuthenticationService 的 provider/session epoch，无 token 进入 Connector。
@@ -82,7 +82,7 @@
 
 ### 当前设计与演进
 
-- current_design_refs：`docs/platform-connectors.md`、`docs/platform-architecture.md`。
+- current_design_refs：`docs/architecture/extensions/platform-connectors.md`、`docs/architecture/README.md`。
 - superseded：第二阶段“仅发现已配置原生 MCP”的产品入口不是完整服务目录；其 SPI/审批/撤销仍复用。
 - relevant_evolution：新增 OpenCraft Host 管理的接入，原生 MCP adapter 保持兼容，不强制外部 Host 改存储。
 

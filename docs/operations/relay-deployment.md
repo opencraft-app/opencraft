@@ -206,7 +206,7 @@ Enrollment, peer TLS and incoming endpoint configuration are described below.
 
 An authenticated gateway instead requires a trusted entry that supplies
 `RelayComposition.createIdentity`; the default CLI rejects gateway configuration
-without that adapter. See [server identity composition](../server-authentication.md#headless-composition-contract)
+without that adapter. See [server identity composition](../architecture/identity/server-authentication.md#headless-composition-contract)
 for the instance-side boundary. Its core configuration shape is:
 
 ```json

@@ -209,7 +209,7 @@ A foldable's current window is the layout input, not a device category.
 resizing never changes Bot, Thread, Draft or content runtime identity.
 Bot selection preserves the navigation presentation instead of clearing its
 rows while awaiting the DOM controller. Both hosts consume the bounded,
-scope-isolated [navigation continuity model](../mobile-data-architecture.md#bot-navigation-continuity);
+scope-isolated [navigation continuity model](../architecture/mobile/mobile-data-architecture.md#bot-navigation-continuity);
 cached display and current command admission are separate states.
 Web uses ResizeObserver through RN `onLayout`, native uses measured container
 layout. Account updates use the Web mount port's update operation. Platform

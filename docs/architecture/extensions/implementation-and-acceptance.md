@@ -1,16 +1,16 @@
 # Extensions: Implementation and acceptance
 
-[Architecture index](../../plugin-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](plugin-architecture.md) · [Documentation index](../../README.md)
 
 ### 当前实现账本（2026-09-04）
 
 已实现并进入仓库质量门：
 
-- 随标准 Headless 分发的 `opencraft.account`：每部署独立本地账号的服务端凭据插件，拥有密码策略、验证及凭据版本证明；通过核心提供的窄存储端口保留既有账号库，不依赖统一账号中心。核心仍拥有浏览器登录态、自然人绑定、成员与资源授权，停用插件不能绕过准入。由私有配置启用，非浏览器扩展安装；见[服务器登录](../../server-authentication.md#自部署账号插件)。
+- 随标准 Headless 分发的 `opencraft.account`：每部署独立本地账号的服务端凭据插件，拥有密码策略、验证及凭据版本证明；通过核心提供的窄存储端口保留既有账号库，不依赖统一账号中心。核心仍拥有浏览器登录态、自然人绑定、成员与资源授权，停用插件不能绕过准入。由私有配置启用，非浏览器扩展安装；见[服务器登录](../identity/server-authentication.md#自部署账号插件)。
 
 - 可信产品装配可提供外部身份 provider、账户入口和设置页；凭据验证、员工目录与
   企业界面由下游插件持有，核心保留主体绑定、成员与资源授权。
-  详见 [外部身份与消息来源契约](../../enterprise-authentication.md)。
+  详见 [外部身份与消息来源契约](../identity/enterprise-authentication.md)。
 
 - `packages/extension-contract`：renderer-free manifest V1、activation identity、Command、Settings、
   location-neutral View、Navigation、Sidebar Catalog、Settings Page、Workbench Surface、双明暗
@@ -246,4 +246,4 @@ Web、Electron、Expo 和 SSH Host 锁死在一个不稳定的 TypeScript 内部
 - 将来可以建立真正的 marketplace，而不需要再推翻 HostRuntime、Replica 和工作台布局。
 
 这应当成为 OpenCraft Extension Platform 的正式目标架构；面向 Agent 的可选调用投影见
-[`agent-capability-fabric.md`](../../agent-capability-fabric.md)。
+[`agent-capability-fabric.md`](../execution/agent-capability-fabric.md)。

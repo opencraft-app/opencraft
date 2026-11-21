@@ -1,6 +1,6 @@
 # Platform: Shell and navigation
 
-[Architecture index](../../platform-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](../README.md) · [Documentation index](../../README.md)
 
 ### Overview scene handoff
 
@@ -336,7 +336,7 @@ isolated Web realms, Electron utility processes, remote Hosts and sandboxed UI
 are optional Restricted-channel policies rather than a universal prerequisite.
 A plain same-origin Web Worker is not advertised as a security boundary. Full
 rationale and the migration plan are defined in
-[`plugin-architecture.md`](../../plugin-architecture.md).
+[`plugin-architecture.md`](../extensions/plugin-architecture.md).
 
 Trusted product composition owns its account service, identity-provider adapters
 and private service clients. Optional engine/UI consumers borrow that authority;
@@ -358,10 +358,10 @@ searchable capabilities rather than packages, progressively loads model
 context, issues Task/request-series-scoped leases, routes invocations to local/SSH/MCP
 providers and records exact receipts. Extension activation never implicitly
 adds every contributed Tool or Skill to a model request. The full design is in
-[`agent-capability-fabric.md`](../../agent-capability-fabric.md).
+[`agent-capability-fabric.md`](../execution/agent-capability-fabric.md).
 
 The first concrete external-integration slice is the application-owned
-`ConnectorRuntime` plus its `ConnectorCapabilityRuntime` projection, documented in [platform connectors](../../platform-connectors.md).
+`ConnectorRuntime` plus its `ConnectorCapabilityRuntime` projection, documented in [platform connectors](../extensions/platform-connectors.md).
 Trusted extensions register Providers through the existing internal contribution
 transaction. It borrows Authentication session epochs and Host-owned clients;
 the ConnectorRuntime owns logical readiness, explicit Thread selections and execution,
@@ -412,7 +412,7 @@ configuration only when empty; after that, IndexedDB is the Web authority.
 
 ## Fixed navigation entrances
 
-The related contracts are grouped in the [architecture index](../../platform-architecture.md).
+The related contracts are grouped in the [architecture index](../README.md).
 
 ### Application Router authority
 
@@ -558,7 +558,7 @@ configuration client remains permanently bound to the immutable `local` Host ID.
 Moving the View does not make it follow the active conversation Host. Provider
 connection identity, provider-scoped model declarations, write-only credential
 intents and per-session selection remain separate; see
-[Local Agent custom providers](../../local-agent-custom-providers.md). Model edit drafts
+[Local Agent custom providers](../execution/local-agent-custom-providers.md). Model edit drafts
 survive View reattachment and must be applied before saving a connection. A
 capability-gated draft endpoint probe uses only explicitly entered credentials,
 does not mutate the runtime and is not a substitute for full runtime validation.

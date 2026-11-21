@@ -362,9 +362,9 @@ SQLite 使用项目既有持久化、事务、升级与备份契约。变更、�
 
 ## 9. 既有事实入口
 
-- [平台架构与已有诊断](../platform-architecture.md)、[执行所有权](../execution-ownership.md)。
+- [平台架构与已有诊断](../architecture/README.md)、[执行所有权](../architecture/execution/execution-ownership.md)。
 - [启动/性能基线与整页导航范围](../develop/startup-performance.md)。
-- [持久化生命周期](../sqlite-lifecycle.md)、[Skill 发现协议](../appserver-profile-skills-protocol-v1.md)。
+- [持久化生命周期](../architecture/server/sqlite-lifecycle.md)、[Skill 发现协议](../architecture/execution/appserver-profile-skills-protocol-v1.md)。
 - [验收矩阵与证据格式](observability-acceptance.md)。
 
 ### Implementation measurement notes

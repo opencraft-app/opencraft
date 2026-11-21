@@ -16,14 +16,14 @@ The authoritative types are [extension-contract](../../packages/extension-contra
 
 Identity adapters verify their identity source; core decides admission and
 resource authorization. UI visibility and contribution registration do not grant
-access to a Host or another Actor. See [Actor collaboration](../architecture/actor-collaboration.md).
+access to a Host or another Actor. See [Actor collaboration](../architecture/identity/actor-collaboration.md).
 
 Product owners select trusted **local build entries**, including
 `OPENCRAFT_CLIENT_PRODUCT_ENTRY`, `OPENCRAFT_EMBEDDED_PRODUCT_ENTRY` and
 `OPENCRAFT_SERVER_EXTENSIONS_ENTRY`. These are application composition inputs,
 not module URLs supplied by browser users. Public builds do not discover a
 private parent workspace automatically. See [product session types](../../packages/client-product/src/index.ts)
-and the entry-specific contracts in [plugin architecture](../plugin-architecture.md).
+and the entry-specific contracts in [plugin architecture](../architecture/extensions/plugin-architecture.md).
 A product may use internal trusted renderers; that does not expose React, Cordis
 or arbitrary application services to installed Extensions.
 
@@ -146,7 +146,7 @@ Installation stores module bytes and their SHA-256. Restart restores those bytes
 **Update from source / 从来源更新** (`reload`) explicitly fetches an update from the source URL. A failed update
 preserves the old persisted installation pointer. This is not a transaction over
 arbitrary side effects performed by the module. Ordinary disable/uninstall does
-not imply deletion of plugin documents; see [persistence](../plugin-persistence.md).
+not imply deletion of plugin documents; see [persistence](../architecture/extensions/plugin-persistence.md).
 
 ## Compatibility and contributing new capabilities
 

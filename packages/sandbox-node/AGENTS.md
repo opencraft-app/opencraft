@@ -1,6 +1,6 @@
 # Node sandbox adapter owner
 
-Follow the [shared contract owner](../sandbox/AGENTS.md) and [execution sandbox contract](../../docs/execution-sandbox.md). This package adapts providers and transports; it does not choose an execution backend from the operating system.
+Follow the [shared contract owner](../sandbox/AGENTS.md) and [execution sandbox contract](../../docs/architecture/execution/execution-sandbox.md). This package adapts providers and transports; it does not choose an execution backend from the operating system.
 
 - Deployment assembly selects an owned private runtime configuration and an installed provider. Reject invalid configuration, unavailable providers or denied admission without falling back to bare host execution. Only the Linux provider may select `local-inherit`; remote payload environments select named entries.
 - Keep trusted controller environment and task environment separate. Task PATH, loader variables and credentials must not configure the privileged launcher. Use private envelopes/files; never expose payload environment values in argv or diagnostics.

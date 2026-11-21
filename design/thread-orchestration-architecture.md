@@ -1,8 +1,8 @@
 # OpenCraft 跨会话编排、3+1 引擎驱动与可重建读取缓存架构
 
-> 状态：Stage 0、Codex Stage 1 与 Stage 3 独立宿主驱动已接入；Stage 2 UI 已实现。各独立宿主实际能力仍须握手与部署验收。当前实现以[协作契约](../docs/actor-collaboration-api.md#thread-orchestration-control-ledger)与[Core 契约](../docs/codex-core.md)为准。
+> 状态：Stage 0、Codex Stage 1 与 Stage 3 独立宿主驱动已接入；Stage 2 UI 已实现。各独立宿主实际能力仍须握手与部署验收。当前实现以[协作契约](../docs/architecture/identity/actor-collaboration-api.md#thread-orchestration-control-ledger)与[Core 契约](../docs/architecture/execution/codex-core.md)为准。
 > 适用范围：`opencraft/apps/opencraft-daemon`、`opencraft/apps/local-agent-host`、`opencraft/packages/appserver-protocol`、`opencraft/packages/chat-core`  
-> 关联契约：[执行所有权](../docs/execution-ownership.md)、[平台架构](../docs/platform-architecture.md)、[SQLite 生命周期](../docs/sqlite-lifecycle.md)、[实施 Spec](thread-orchestration-spec.md)
+> 关联契约：[执行所有权](../docs/architecture/execution/execution-ownership.md)、[平台架构](../docs/architecture/README.md)、[SQLite 生命周期](../docs/architecture/server/sqlite-lifecycle.md)、[实施 Spec](thread-orchestration-spec.md)
 
 ## 1. 结论与核心目标
 
@@ -94,7 +94,7 @@ flowchart TB
 
 ## 4. 多人共享部署下的身份、权限委托与 Token 归属
 
-直接对齐现有 `opencraft/docs/actor-admission.md`、`opencraft/docs/architecture/actor-collaboration.md`、`opencraft/docs/architecture/conversation-interoperability.md` 与 Token 用量看板 Spec：
+直接对齐现有 `opencraft/docs/architecture/identity/actor-admission.md`、`opencraft/docs/architecture/identity/actor-collaboration.md`、`opencraft/docs/architecture/conversation-interoperability.md` 与 Token 用量看板 Spec：
 
 ### 4.1 `MessageOrigin` 与已验证发送者（Actor）、企业身份的关系
 三者不是平行重复的概念，而是同一套 `identity-core` 体系下的三个层次：
@@ -131,12 +131,12 @@ flowchart TB
 ### 5.1 定位澄清：只做可丢弃缓存，不做第二份历史真源
 上一轮方案中将 `.turns.jsonl` + Blob 表述为“混合存储底座”，容易被误解为与原生日志并列的第二套权威库。特此明确：
 - **唯一正文真源**：各引擎的原生会话记录（Codex rollout、DSH/Pi 原生 session 日志、Claude/ACP 原生记录）是对话正文与工具输出的**唯一真源**；控制事实（关系、委托、投递回执、`MessageOrigin`）的唯一真源是 `actor-collaboration.sqlite` / `opencraft-threads.sqlite`。
-- **可重建派生缓存（Rebuildable Read Cache）**：`<dataDirectory>/cache/transcripts/` 下的 `.turns.jsonl`、Blob 预览缓存与 SQLite 中的 `opencraft_turn_offset_index` **纯粹是为了让 UI 打开会话时免于唤醒引擎和现场全量解析而设立的派生缓存**（对应 `docs/sqlite-lifecycle.md` 第 1 节“可重建的副本/索引”）。删除整个 `cache/transcripts/` 目录不会丢失任何权威数据。
+- **可重建派生缓存（Rebuildable Read Cache）**：`<dataDirectory>/cache/transcripts/` 下的 `.turns.jsonl`、Blob 预览缓存与 SQLite 中的 `opencraft_turn_offset_index` **纯粹是为了让 UI 打开会话时免于唤醒引擎和现场全量解析而设立的派生缓存**（对应 `docs/architecture/server/sqlite-lifecycle.md` 第 1 节“可重建的副本/索引”）。删除整个 `cache/transcripts/` 目录不会丢失任何权威数据。
 
 ### 5.2 缓存生命周期、重建与对账六条规则
 
 1. **存储路径遵循既有 `dataDirectory` 约定**：
-   - 严禁硬编码 `~/.opencraft`。统一使用 `docs/architecture/product-identity.md` 与 `docs/sqlite-lifecycle.md` 解析出的受管 Host `dataDirectory`（例如 `<dataDirectory>/cache/transcripts/<threadId>.turns.jsonl` 与 `<dataDirectory>/cache/transcripts/<threadId>.blobs/`，目录权限 `0700`，文件权限 `0600`）。
+   - 严禁硬编码 `~/.opencraft`。统一使用 `docs/architecture/identity/product-identity.md` 与 `docs/architecture/server/sqlite-lifecycle.md` 解析出的受管 Host `dataDirectory`（例如 `<dataDirectory>/cache/transcripts/<threadId>.turns.jsonl` 与 `<dataDirectory>/cache/transcripts/<threadId>.blobs/`，目录权限 `0700`，文件权限 `0600`）。
 2. **与 Token 统计共用同一个 Codex Rollout 增量读取器**：
    - `CodexDriver` 的 `NativeHistoryPort` 与缓存构建器**必须直接复用**Token 统计使用的 Codex rollout 增量解析模块（共享字节游标与事件解析逻辑），严禁在仓库中维护两套 Codex rollout 解析器。
 3. **如何从原生日志重建 & 投影格式变化时如何升级**：

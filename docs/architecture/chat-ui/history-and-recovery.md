@@ -1,6 +1,6 @@
 # ChatUI: History and recovery
 
-[Architecture index](../../chat-ui-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](chat-ui-architecture.md) · [Documentation index](../../README.md)
 
 ## Shared history backfill coordinator
 

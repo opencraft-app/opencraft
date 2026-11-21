@@ -25,7 +25,7 @@ node /opt/opencraft-web/bootstrap/node_modules/@opencraft-app/opencraft/runtime/
 
 配置自定义缓存目录时，预装命令也消费 `OPENCRAFT_RESOURCE_CACHE_DIRECTORY`。仅启动新 worker 即可接通资源路由，稳定入口协议保持 1；使用旧固定入口时应确保它的服务环境已设置正确的 registry 和 npm 配置路径。
 
-私有 registry 的包名要求由部署侧确认；构建可显式设置 `OPENCRAFT_NPM_PACKAGE_NAME`、`OPENCRAFT_NPM_RESOURCE_PACKAGE_NAME` 和 `OPENCRAFT_NPM_REGISTRY`，归档、runtime、更新源和资源下载使用同一发行身份。首次换名须升级固定 bootstrap；新版保留原公共命名安装的载入和回退。公共默认值保持不变。默认只发布一个自包含主包，再推进该部署目标的频道；独立网站与Headless服务器使用不同构建和频道，更新器在切换前拒绝不匹配的execution profile。显式拆包时才先发布资源包。公开源暂不提供本次资源包，现有公开 workflow 显式设置 `OPENCRAFT_SPLIT_WEB_RESOURCES=0` 保持完整包；未来显式启用公开拆包时，须将两份固定归档一起交付，不能单独发布引用未发布资源的主包。完整设计见 [Web 可选资源交付](../web-resource-delivery.md)。
+私有 registry 的包名要求由部署侧确认；构建可显式设置 `OPENCRAFT_NPM_PACKAGE_NAME`、`OPENCRAFT_NPM_RESOURCE_PACKAGE_NAME` 和 `OPENCRAFT_NPM_REGISTRY`，归档、runtime、更新源和资源下载使用同一发行身份。首次换名须升级固定 bootstrap；新版保留原公共命名安装的载入和回退。公共默认值保持不变。默认只发布一个自包含主包，再推进该部署目标的频道；独立网站与Headless服务器使用不同构建和频道，更新器在切换前拒绝不匹配的execution profile。显式拆包时才先发布资源包。公开源暂不提供本次资源包，现有公开 workflow 显式设置 `OPENCRAFT_SPLIT_WEB_RESOURCES=0` 保持完整包；未来显式启用公开拆包时，须将两份固定归档一起交付，不能单独发布引用未发布资源的主包。完整设计见 [Web 可选资源交付](../architecture/server/web-resource-delivery.md)。
 
 ## 首次安装
 
@@ -76,7 +76,7 @@ OPENCRAFT_NPM_REGISTRY=https://registry.npmjs.org/
 
 `npm run package:web:server:execution` 生成包含 `execution/` 的服务器包，版本仍使用 `OPENCRAFT_RELEASE_VERSION`。包记录执行协议、构建平台、架构和 Node ABI，附带 gateway、daemon、DSH capability adapter 与 node-pty；不包含 Codex core、CLI、DSH 引擎、模型配置或账户数据。跨平台/Node ABI 的包不能安装到受管执行端。普通 `package:web:server` 保留网站独立升级语义。
 
-首次接入需要一次部署迁移，网页旧更新器不会自动升级自己。先按 [Codex core](../codex-core.md) 将服务器改为独立 core；在无活动 OpenCraft/DSH 任务的维护时段安装新的固定启动包和 `opencraft-execution.service` 模板。保留执行状态、机器身份、token、模型和 core 数据，停止旧执行侧后再启用新执行 unit，避免两个 daemon 同时写入。迁移不自动升级 core 或 CLI。
+首次接入需要一次部署迁移，网页旧更新器不会自动升级自己。先按 [Codex core](../architecture/execution/codex-core.md) 将服务器改为独立 core；在无活动 OpenCraft/DSH 任务的维护时段安装新的固定启动包和 `opencraft-execution.service` 模板。保留执行状态、机器身份、token、模型和 core 数据，停止旧执行侧后再启用新执行 unit，避免两个 daemon 同时写入。迁移不自动升级 core 或 CLI。
 
 执行 unit 消费 `/etc/opencraft-execution.env`，路径按实际部署填写：
 
@@ -109,7 +109,7 @@ link 必须与执行 unit 的 `ExecStart` 一致，父目录已存在且网站�
 
 启用配置后，网站启动器以 `deployment.json` 为版本权威，自动创建/恢复 execution-current 并检查执行端健康。第一次启动指向带 payload 的初始包，再启用执行 unit；启动器在等待执行端健康期间可以重启该 unit。缺少 payload、平台不符、core 不可用或 unit 不独立时，不继续切换。
 
-daemon 在监听 IPC、报告 ready 前打开并迁移 Host 的五个 SQLite 库；失败则拒绝监听并非零退出，DSH 引擎仍懒启动。gateway `/health` 现在附带 `storage` 摘要（库名、打开处置 status、appliedVersion、可选 backupPath、movedAside），来自认证 `daemon/ready.storage`，不含业务记录或凭据。摘要不包含 Electron Main 或独立 codex-core 的 account-pool 库。存储失败由既有健康检查失败/执行版本回退逻辑处理，更新器的 `ok` 判定不变；完整语义见 [存储生命周期](../sqlite-lifecycle.md)。
+daemon 在监听 IPC、报告 ready 前打开并迁移 Host 的五个 SQLite 库；失败则拒绝监听并非零退出，DSH 引擎仍懒启动。gateway `/health` 现在附带 `storage` 摘要（库名、打开处置 status、appliedVersion、可选 backupPath、movedAside），来自认证 `daemon/ready.storage`，不含业务记录或凭据。摘要不包含 Electron Main 或独立 codex-core 的 account-pool 库。存储失败由既有健康检查失败/执行版本回退逻辑处理，更新器的 `ok` 判定不变；完整语义见 [存储生命周期](../architecture/server/sqlite-lifecycle.md)。
 
 更新页显示实际执行网关版本和「更新网站和执行服务」。一次安装先下载并校验精确归档、启动候选网站，再切换 execution-current。执行 payload 的归一化摘要变化时重启执行 unit；只有网站身份变化而后端相同时，先复用现有进程，健康失败才重启。健康版本从稳定执行指针对应的 manifest 读取；新版 gateway 通过 daemon IPC/core 健康检查、版本/buildId 一致且 core/CLI PID 未变后，才提交网站版本。失败恢复原执行版本与网站；若回退也失败，页面显示失败原因和执行端实际版本/就绪状态，不冒称成功。重启启动器时按已提交版本修复中断的切换。执行指针以及持久化 pins 文件引用的包不能被历史清理删除。重启或回退结果不确定时，保留所有可能运行的执行版本，直到健康检查确认替换成功。页面版本取实际 gateway 健康响应，不用指针目标冒充正在运行的版本；无法确认时显示未知。
 
@@ -224,11 +224,11 @@ gh workflow run release.yml --repo opencraft-app/opencraft --ref main -f tag=v0.
 
 稳定入口的安装和回退共用 execution profile 解释：带完整 v1 执行元数据（protocolVersion、platform、arch、nodeAbi）且包含非空 gateway、daemon、DSH capability payload 的旧包，未声明 profile 且没有 Headless 网站或独立 DSH Host 标识时按历史 daemon 契约识别。没有 execution 元数据的纯网站包仍是独立网站；显式未知或无效 profile 不按 daemon 回退。网站独立更新只核验发行 profile，不额外要求执行平台/ABI 与网站主机一致；显式启用受管执行后，原有平台/ABI、原生 payload、活动任务、数据和切换检查继续由执行部署负责。真正不同 profile 的迁移仍须单独安排。本兼容逻辑属于固定启动器，网站热更新不会替换已安装的旧启动器；已有入口须经后续修复版的入口维护才能生效。
 
-默认更新范围是包内网站 worker 与 Web 代理；显式受管服务器模式还包含上文执行端 payload。稳定入口/更新器本身不在此次热更新范围；新包必须使用 worker protocol 1，不兼容版本拒绝安装。入口维护升级需要单独安排服务重启；执行进程仍独立，但入口连接会重连。配置独立 owner 时，Codex、DSH 与 Pi 的执行连续性分别依赖 Codex core、DSH Host 与 Pi 执行 Host；固定入口重启不关闭这些 owner。Codex 显式拆分后账号 Core 可独立排空代理请求并重启，APP Server/CLI PID 保持，见 [三步升级与边界](../codex-core.md#执行侧平滑升级三步方案)。未拆分 Core 仍会连带停止 native。执行宿主自身升级仍须自然排空。Codex 显式多代模式由独立 routing owner 原子切换新 Thread 默认代，旧会话固定原 HOME，旧 CLI 无任务/工具/Host 工作后自然退休；账号 Core 继续共享，见同页第 3 步。默认 combined/单 APP 部署仍兼容，不因 Web CI 自动改变拓扑。
+默认更新范围是包内网站 worker 与 Web 代理；显式受管服务器模式还包含上文执行端 payload。稳定入口/更新器本身不在此次热更新范围；新包必须使用 worker protocol 1，不兼容版本拒绝安装。入口维护升级需要单独安排服务重启；执行进程仍独立，但入口连接会重连。配置独立 owner 时，Codex、DSH 与 Pi 的执行连续性分别依赖 Codex core、DSH Host 与 Pi 执行 Host；固定入口重启不关闭这些 owner。Codex 显式拆分后账号 Core 可独立排空代理请求并重启，APP Server/CLI PID 保持，见 [三步升级与边界](../architecture/execution/codex-core.md#执行侧平滑升级三步方案)。未拆分 Core 仍会连带停止 native。执行宿主自身升级仍须自然排空。Codex 显式多代模式由独立 routing owner 原子切换新 Thread 默认代，旧会话固定原 HOME，旧 CLI 无任务/工具/Host 工作后自然退休；账号 Core 继续共享，见同页第 3 步。默认 combined/单 APP 部署仍兼容，不因 Web CI 自动改变拓扑。
 
 SQLite 升级前备份由库 owner 用 `VACUUM INTO` 生成，Host 备份位于 `OPENCRAFT_EXECUTION_STATE/data/<库文件名>.pre-v<N>-<时间戳>.sqlite`，成功处置后默认保留 3 份。无账本旧库结构不一致时，先备份，再将原库及仍存在的同名 WAL/SHM 移到 `.legacy-<时间戳>`，移开文件保留、不自动清理。更新器不直接操作数据目录；回退只回退代码，不恢复数据，不承诺 N-1 旧二进制兼容。旧代码若不接受当前账本，回退也可能未就绪，不能用备份存在冒充自动回退成功。
 
-人工恢复 Host 库时：先停止执行 unit（例如 `systemctl stop opencraft-execution.service`）并确认 daemon 已退出；保留当前库与 sidecar，核对备份身份、拟启动代码及备份之后会丢失的写入；用选定备份覆盖目标库文件并删除目标同名 `-wal` / `-shm`，保持私有权限；再启动执行 unit，核对 `/health.storage` 和业务数据。不要删除其他库的 sidecar 或 `.legacy-*`。account-pool 的恢复必须另停独立 codex-core，不因停止执行 unit 就认为其 owner 已停止；详见 [备份与恢复](../sqlite-lifecycle.md#备份与恢复)。
+人工恢复 Host 库时：先停止执行 unit（例如 `systemctl stop opencraft-execution.service`）并确认 daemon 已退出；保留当前库与 sidecar，核对备份身份、拟启动代码及备份之后会丢失的写入；用选定备份覆盖目标库文件并删除目标同名 `-wal` / `-shm`，保持私有权限；再启动执行 unit，核对 `/health.storage` 和业务数据。不要删除其他库的 sidecar 或 `.legacy-*`。account-pool 的恢复必须另停独立 codex-core，不因停止执行 unit 就认为其 owner 已停止；详见 [备份与恢复](../architecture/server/sqlite-lifecycle.md#备份与恢复)。
 
 ## 检查结果与浏览器回归
 

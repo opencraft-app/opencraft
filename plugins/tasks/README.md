@@ -91,7 +91,7 @@ subscriptions; extension retirement clears drafts and fences late replies.
 Browser scripts accept `OPENCRAFT_PLAYWRIGHT_MODULE` and
 `OPENCRAFT_CHROMIUM_EXECUTABLE`. Browser phone sizing is not physical-device
 keyboard verification; Electron interactions require a packaged desktop check.
-The domain contract and execution boundary are in [Tasks model](../../docs/tasks-model.md).
+The domain contract and execution boundary are in [Tasks model](../../docs/architecture/extensions/tasks-model.md).
 
 
 ## Agent CLI and team ownership
@@ -136,7 +136,7 @@ AI can start research, needs context, or needs a decision. Edit it in task detai
 and filter it from Board/List. The coordinator may assess unowned tasks; the
 field itself does not launch execution. Hosts must advertise `aiResearch:true`.
 Assessments reuse the existing transactional event authority, retaining v5 storage
-and rollback compatibility. See docs/tasks-model.md for the exact contract.
+and rollback compatibility. See docs/architecture/extensions/tasks-model.md for the exact contract.
 
 ## AI follow-up board
 
@@ -146,5 +146,5 @@ Explicit progress facts distinguish execution/review/readiness; old business
 statuses remain visibly unverified. No synthetic Demo tasks or simulate actions
 ship. Owner filtering and All/Needs me/My work plus search scope every count.
 Cards open existing task details and independently link original conversations.
-See [Tasks model](../../docs/tasks-model.md#ai-collaboration-board-and-compatibility)
+See [Tasks model](../../docs/architecture/extensions/tasks-model.md#ai-collaboration-board-and-compatibility)
 for `AI_FOLLOW_UP_V1`, legacy handoff compatibility and round timing.
