@@ -1,0 +1,581 @@
+{
+  "version": 1,
+  "reason": "Recorded debt: synchronous file, process and SQLite calls in code that network processes load on their main thread (AGENTS.md 网络主线程不得阻塞). Counts may only shrink: move the work into a Worker or an async API, then run `node scripts/check/check-main-thread-sync-io.mjs --update`. Startup-only calls are recorded too; they still block a restarted process before it serves.",
+  "entries": [
+    "apps/opencraft-daemon/src/bin.ts",
+    "apps/desktop/src/main.ts",
+    "apps/local-agent-host/src/main.ts",
+    "apps/codex-core/src/bin.ts",
+    "apps/codex-core/src/main.ts",
+    "apps/codex-core/src/app-server-bin.ts",
+    "apps/codex-core/src/account-owner.ts",
+    "apps/codex-core/src/router-owner.ts",
+    "apps/agent-bridge-host/src/main.ts",
+    "apps/claude-code-bridge/src/main.ts",
+    "apps/cursor-bridge/src/main.ts",
+    "apps/relay-server/src/main.ts",
+    "apps/headless-server/src/headless-server.mjs",
+    "apps/headless-server/src/workbench-web-server.mjs",
+    "apps/observability-service/service.mjs",
+    "apps/personal-assistant/bin/assistant.mjs",
+    "scripts/server-deployment/acp-host.mjs",
+    "scripts/server-deployment/dsh-host.mjs",
+    "scripts/server-deployment/engine-host.mjs",
+    "scripts/server-deployment/gateway.mjs",
+    "scripts/container-deployment/host.mjs"
+  ],
+  "files": {
+    "apps/claude-code-bridge/src/executable.ts": {
+      "execFileSync": 1,
+      "statSync": 1
+    },
+    "apps/codex-core/src/account-owner.ts": {
+      "DatabaseSync": 1
+    },
+    "apps/codex-core/src/app-server-bin.ts": {
+      "existsSync": 1
+    },
+    "apps/codex-core/src/generation-files.ts": {
+      "chownSync": 1,
+      "execFileSync": 1,
+      "mkdirSync": 1,
+      "statSync": 2
+    },
+    "apps/codex-core/src/generation-registry.ts": {
+      "chmodSync": 2,
+      "DatabaseSync": 5,
+      "mkdirSync": 1,
+      "realpathSync": 4
+    },
+    "apps/codex-core/src/operator-lease.ts": {
+      "readFileSync": 2
+    },
+    "apps/codex-core/src/router-maintenance.ts": {
+      "closeSync": 1,
+      "execFileSync": 1,
+      "fstatSync": 1,
+      "lstatSync": 1,
+      "openSync": 1,
+      "readdirSync": 1,
+      "readFileSync": 6
+    },
+    "apps/desktop/src/codex-executable.ts": {
+      "accessSync": 1
+    },
+    "apps/desktop/src/connector-configuration-store.ts": {
+      "DatabaseSync": 1
+    },
+    "apps/desktop/src/daemon-client.ts": {
+      "chmodSync": 1,
+      "mkdirSync": 1,
+      "readFileSync": 2,
+      "writeFileSync": 1
+    },
+    "apps/desktop/src/main.ts": {
+      "execFileSync": 1
+    },
+    "apps/desktop/src/private-storage.ts": {
+      "chmodSync": 1,
+      "closeSync": 2,
+      "existsSync": 2,
+      "fstatSync": 1,
+      "fsyncSync": 1,
+      "lstatSync": 1,
+      "mkdirSync": 1,
+      "openSync": 2,
+      "readFileSync": 1,
+      "renameSync": 1,
+      "rmSync": 2,
+      "writeFileSync": 1
+    },
+    "apps/desktop/src/sqlite-debug-reader.ts": {
+      "DatabaseSync": 2,
+      "statSync": 1
+    },
+    "apps/desktop/src/ui-preferences-store.ts": {
+      "DatabaseSync": 1
+    },
+    "apps/headless-server/src/conversation-resource-lifecycle.mjs": {
+      "closeSync": 3,
+      "fsyncSync": 2,
+      "mkdirSync": 1,
+      "openSync": 2,
+      "readFileSync": 1,
+      "renameSync": 1,
+      "unlinkSync": 1,
+      "writeFileSync": 1
+    },
+    "apps/headless-server/src/headless-application.mjs": {
+      "existsSync": 2
+    },
+    "apps/local-agent-host/src/artifacts/catalog.ts": {
+      "chmodSync": 1,
+      "DatabaseSync": 2,
+      "mkdirSync": 1
+    },
+    "apps/local-agent-host/src/dsh-execution-authority.ts": {
+      "DatabaseSync": 1
+    },
+    "apps/local-agent-host/src/dsh-session-routing.ts": {
+      "DatabaseSync": 1
+    },
+    "apps/local-agent-host/src/model-config/service.ts": {
+      "readFileSync": 1
+    },
+    "apps/local-agent-host/src/storage/daemon-storage-owner.ts": {
+      "mkdirSync": 1,
+      "readFileSync": 1,
+      "renameSync": 1,
+      "rmSync": 1,
+      "unlinkSync": 1,
+      "writeFileSync": 1
+    },
+    "apps/local-agent-host/src/terminal-owner-runtime.ts": {
+      "existsSync": 3
+    },
+    "apps/local-agent-host/src/terminal-process-session.ts": {
+      "readdirSync": 1,
+      "readFileSync": 1
+    },
+    "apps/local-agent-host/src/thread-catalog.ts": {
+      "DatabaseSync": 1
+    },
+    "apps/opencraft-daemon/src/codex-engine-adapter.ts": {
+      "DatabaseSync": 1,
+      "existsSync": 6
+    },
+    "apps/opencraft-daemon/src/codex-maintenance.ts": {
+      "existsSync": 1
+    },
+    "apps/opencraft-daemon/src/execution-lease-store.ts": {
+      "DatabaseSync": 1,
+      "readFileSync": 2
+    },
+    "apps/opencraft-daemon/src/input-delivery-store.ts": {
+      "DatabaseSync": 1
+    },
+    "apps/opencraft-daemon/src/native-empty-creation.ts": {
+      "lstatSync": 1,
+      "readFileSync": 1
+    },
+    "apps/opencraft-daemon/src/opencraft-host-queue.ts": {
+      "DatabaseSync": 3,
+      "existsSync": 1
+    },
+    "apps/opencraft-daemon/src/opencraft-host-state-database.ts": {
+      "DatabaseSync": 2
+    },
+    "apps/opencraft-daemon/src/opencraft-message-attachments.ts": {
+      "DatabaseSync": 1
+    },
+    "apps/opencraft-daemon/src/opencraft-message-senders.ts": {
+      "DatabaseSync": 2
+    },
+    "apps/opencraft-daemon/src/owned-database-path.ts": {
+      "lstatSync": 1
+    },
+    "apps/opencraft-daemon/src/owned-storage-lease.ts": {
+      "chmodSync": 1,
+      "DatabaseSync": 1,
+      "lstatSync": 1,
+      "mkdirSync": 1
+    },
+    "apps/opencraft-daemon/src/ssh-connection-store.ts": {
+      "closeSync": 4,
+      "DatabaseSync": 2,
+      "fstatSync": 3,
+      "mkdirSync": 1,
+      "openSync": 4,
+      "readFileSync": 1,
+      "writeFileSync": 2
+    },
+    "apps/opencraft-daemon/src/ssh-management.ts": {
+      "writeFileSync": 1
+    },
+    "apps/opencraft-daemon/src/thread-identity-database.ts": {
+      "DatabaseSync": 1
+    },
+    "apps/opencraft-daemon/src/thread-identity.ts": {
+      "DatabaseSync": 2
+    },
+    "apps/opencraft-daemon/src/token-usage-query-service.ts": {
+      "existsSync": 1
+    },
+    "apps/opencraft-daemon/src/token-usage-state-database.ts": {
+      "DatabaseSync": 1
+    },
+    "apps/opencraft-daemon/src/token-usage-team-query.ts": {
+      "DatabaseSync": 2
+    },
+    "apps/personal-assistant/bin/assistant.mjs": {
+      "readFileSync": 3
+    },
+    "apps/personal-assistant/src/adapters/codex/config.mjs": {
+      "lstatSync": 1,
+      "readFileSync": 1
+    },
+    "apps/personal-assistant/src/adapters/filesystem/atomic-file.mjs": {
+      "closeSync": 3,
+      "existsSync": 2,
+      "fsyncSync": 3,
+      "openSync": 3,
+      "readFileSync": 2,
+      "renameSync": 2,
+      "unlinkSync": 2,
+      "writeFileSync": 2
+    },
+    "apps/personal-assistant/src/adapters/filesystem/attachment-store.mjs": {
+      "closeSync": 6,
+      "fstatSync": 3,
+      "fsyncSync": 4,
+      "lstatSync": 3,
+      "mkdirSync": 2,
+      "openSync": 5,
+      "readSync": 3,
+      "unlinkSync": 3,
+      "writeFileSync": 2
+    },
+    "apps/personal-assistant/src/adapters/filesystem/knowledge-source.mjs": {
+      "closeSync": 2,
+      "fstatSync": 2,
+      "lstatSync": 3,
+      "openSync": 2,
+      "readdirSync": 2,
+      "readSync": 2,
+      "realpathSync": 3
+    },
+    "apps/personal-assistant/src/adapters/filesystem/message-delivery.mjs": {
+      "mkdirSync": 1
+    },
+    "apps/personal-assistant/src/adapters/local/bot-profile.mjs": {
+      "existsSync": 1,
+      "lstatSync": 1,
+      "mkdirSync": 1,
+      "realpathSync": 1
+    },
+    "apps/personal-assistant/src/adapters/local/credential-vault.mjs": {
+      "chmodSync": 2,
+      "existsSync": 3,
+      "mkdirSync": 2,
+      "readFileSync": 3,
+      "writeFileSync": 3
+    },
+    "apps/personal-assistant/src/adapters/local/profile.mjs": {
+      "chmodSync": 2,
+      "existsSync": 2,
+      "lstatSync": 4,
+      "mkdirSync": 3,
+      "readFileSync": 2,
+      "realpathSync": 4,
+      "statSync": 3,
+      "writeFileSync": 3
+    },
+    "apps/personal-assistant/src/adapters/local/unix-socket.mjs": {
+      "chmodSync": 1,
+      "existsSync": 1,
+      "unlinkSync": 1
+    },
+    "apps/personal-assistant/src/adapters/memory/file-authority.mjs": {
+      "closeSync": 2,
+      "existsSync": 2,
+      "fsyncSync": 2,
+      "openSync": 2,
+      "readFileSync": 2,
+      "renameSync": 2,
+      "unlinkSync": 2,
+      "writeFileSync": 2
+    },
+    "apps/personal-assistant/src/adapters/memory/file-store.mjs": {
+      "closeSync": 6,
+      "existsSync": 2,
+      "fstatSync": 2,
+      "fsyncSync": 4,
+      "lstatSync": 2,
+      "mkdirSync": 3,
+      "openSync": 5,
+      "readdirSync": 3,
+      "readFileSync": 2,
+      "realpathSync": 3,
+      "renameSync": 2,
+      "unlinkSync": 3,
+      "writeFileSync": 2
+    },
+    "apps/personal-assistant/src/adapters/memory/file-transaction.mjs": {
+      "existsSync": 1,
+      "mkdirSync": 2,
+      "readFileSync": 2,
+      "rmdirSync": 3,
+      "unlinkSync": 3,
+      "writeFileSync": 2
+    },
+    "apps/personal-assistant/src/adapters/sqlite/database.mjs": {
+      "chmodSync": 2,
+      "DatabaseSync": 1,
+      "existsSync": 2,
+      "lstatSync": 4,
+      "mkdirSync": 2,
+      "readFileSync": 2
+    },
+    "apps/personal-assistant/src/adapters/telemetry/local-telemetry.mjs": {
+      "closeSync": 3,
+      "existsSync": 2,
+      "fstatSync": 3,
+      "ftruncateSync": 2,
+      "lstatSync": 2,
+      "mkdirSync": 2,
+      "openSync": 3,
+      "renameSync": 2,
+      "writeSync": 2
+    },
+    "apps/personal-assistant/src/runtime/create-local-domain.mjs": {
+      "DatabaseSync": 1
+    },
+    "apps/personal-assistant/src/runtime/memory-browser-offline.mjs": {
+      "DatabaseSync": 1,
+      "existsSync": 4,
+      "lstatSync": 1
+    },
+    "packages/access-control/src/account-management.ts": {
+      "DatabaseSync": 1
+    },
+    "packages/access-control/src/actor-inbox-projection.ts": {
+      "DatabaseSync": 1
+    },
+    "packages/access-control/src/actors.ts": {
+      "DatabaseSync": 1
+    },
+    "packages/access-control/src/assistant-thread-store.ts": {
+      "DatabaseSync": 1
+    },
+    "packages/access-control/src/channel-mentions.ts": {
+      "DatabaseSync": 2
+    },
+    "packages/access-control/src/collaboration.ts": {
+      "DatabaseSync": 1
+    },
+    "packages/access-control/src/communication-command.ts": {
+      "DatabaseSync": 1
+    },
+    "packages/access-control/src/communication-extension.ts": {
+      "DatabaseSync": 14
+    },
+    "packages/access-control/src/execution-request-state.ts": {
+      "DatabaseSync": 1
+    },
+    "packages/access-control/src/human-accounts.ts": {
+      "DatabaseSync": 2
+    },
+    "packages/access-control/src/index.ts": {
+      "DatabaseSync": 1
+    },
+    "packages/access-control/src/native-channel-sync.ts": {
+      "DatabaseSync": 2
+    },
+    "packages/access-control/src/native-channels.ts": {
+      "DatabaseSync": 1
+    },
+    "packages/access-control/src/orchestration-ledger.ts": {
+      "DatabaseSync": 1
+    },
+    "packages/access-control/src/personal-assistants.ts": {
+      "DatabaseSync": 1
+    },
+    "packages/access-control/src/thread-access.ts": {
+      "DatabaseSync": 2
+    },
+    "packages/account-pool-host/src/codex-account-service.ts": {
+      "mkdirSync": 1,
+      "renameSync": 1,
+      "writeFileSync": 1
+    },
+    "packages/account-pool-host/src/codex-auth-file.ts": {
+      "readFileSync": 1
+    },
+    "packages/account-pool-host/src/codex-writer-lock.ts": {
+      "DatabaseSync": 2
+    },
+    "packages/account-pool-host/src/store.ts": {
+      "chmodSync": 4,
+      "DatabaseSync": 3,
+      "existsSync": 5,
+      "mkdirSync": 2,
+      "readdirSync": 2,
+      "readFileSync": 9,
+      "renameSync": 5,
+      "rmSync": 5,
+      "writeFileSync": 3
+    },
+    "packages/app-host-server/src/thread-directory/index.ts": {
+      "DatabaseSync": 1
+    },
+    "packages/app-host-server/src/thread-directory/snapshot-reader.ts": {
+      "DatabaseSync": 1
+    },
+    "packages/connector-host/src/headless.ts": {
+      "mkdirSync": 1
+    },
+    "packages/connector-host/src/store.ts": {
+      "DatabaseSync": 1
+    },
+    "packages/document-storage/src/client-resources-sqlite.ts": {
+      "DatabaseSync": 1
+    },
+    "packages/document-storage/src/sqlite.ts": {
+      "DatabaseSync": 1
+    },
+    "packages/execution-environment/src/employee-git-vault-store.ts": {
+      "closeSync": 2,
+      "DatabaseSync": 1,
+      "fstatSync": 2,
+      "mkdirSync": 1,
+      "openSync": 2,
+      "readFileSync": 1,
+      "realpathSync": 1,
+      "writeFileSync": 1
+    },
+    "packages/execution-environment/src/execution-environment.ts": {
+      "DatabaseSync": 1,
+      "existsSync": 3
+    },
+    "packages/hub-network/src/controller.ts": {
+      "lstatSync": 1
+    },
+    "packages/hub-network/src/store.ts": {
+      "closeSync": 2,
+      "fsyncSync": 1,
+      "lstatSync": 2,
+      "mkdirSync": 1,
+      "openSync": 2,
+      "readFileSync": 1,
+      "renameSync": 1,
+      "writeFileSync": 1
+    },
+    "packages/mcp-apps/src/store.ts": {
+      "mkdirSync": 1
+    },
+    "packages/model-usage-policy/src/native.mjs": {
+      "DatabaseSync": 2
+    },
+    "packages/session-capabilities/src/credentials.ts": {
+      "closeSync": 1,
+      "mkdirSync": 1,
+      "openSync": 1,
+      "readFileSync": 1,
+      "statSync": 1,
+      "writeFileSync": 1
+    },
+    "packages/session-capabilities/src/mcp.ts": {
+      "lstatSync": 1,
+      "readFileSync": 1
+    },
+    "packages/sqlite-node/src/backup.ts": {
+      "chmodSync": 1,
+      "DatabaseSync": 1,
+      "existsSync": 1,
+      "readdirSync": 1,
+      "unlinkSync": 2,
+      "writeFileSync": 1
+    },
+    "packages/sqlite-node/src/connection.ts": {
+      "chmodSync": 2,
+      "DatabaseSync": 2,
+      "mkdirSync": 1
+    },
+    "packages/sqlite-node/src/history-selection.ts": {
+      "DatabaseSync": 1
+    },
+    "packages/sqlite-node/src/lifecycle.ts": {
+      "DatabaseSync": 8
+    },
+    "packages/sqlite-node/src/migrations.ts": {
+      "DatabaseSync": 7
+    },
+    "packages/sqlite-node/src/read-guard.ts": {
+      "DatabaseSync": 1
+    },
+    "packages/sqlite-node/src/recovery.ts": {
+      "closeSync": 2,
+      "DatabaseSync": 3,
+      "existsSync": 5,
+      "fsyncSync": 2,
+      "openSync": 2,
+      "readdirSync": 1,
+      "readFileSync": 1,
+      "renameSync": 1,
+      "unlinkSync": 2,
+      "writeFileSync": 1
+    },
+    "packages/sqlite-node/src/writer-lock.ts": {
+      "closeSync": 4,
+      "DatabaseSync": 2,
+      "fstatSync": 1,
+      "fsyncSync": 2,
+      "lstatSync": 1,
+      "openSync": 4,
+      "readFileSync": 3,
+      "renameSync": 1,
+      "unlinkSync": 1,
+      "writeFileSync": 1
+    },
+    "packages/storage-node/src/server/borrow.ts": {
+      "DatabaseSync": 2
+    },
+    "packages/storage-node/src/server/history.ts": {
+      "DatabaseSync": 1,
+      "existsSync": 1
+    },
+    "packages/storage-node/src/server/import.ts": {
+      "copyFileSync": 1,
+      "DatabaseSync": 7,
+      "existsSync": 8,
+      "mkdirSync": 2,
+      "readFileSync": 1,
+      "renameSync": 1,
+      "unlinkSync": 3,
+      "writeFileSync": 1
+    },
+    "packages/storage-node/src/server/index.ts": {
+      "closeSync": 1,
+      "DatabaseSync": 1,
+      "existsSync": 2,
+      "fsyncSync": 1,
+      "mkdirSync": 2,
+      "openSync": 1
+    },
+    "packages/storage-node/src/server/repository.ts": {
+      "DatabaseSync": 1,
+      "existsSync": 2
+    },
+    "packages/web-push-node/src/store.ts": {
+      "DatabaseSync": 1
+    },
+    "plugins/pi-engine/src/read-history.ts": {
+      "DatabaseSync": 1
+    },
+    "plugins/tasks/src/sqlite.ts": {
+      "DatabaseSync": 1
+    },
+    "scripts/server-deployment/acp-host.mjs": {
+      "readFileSync": 1
+    },
+    "scripts/server-deployment/dsh-cold-resources.mjs": {
+      "DatabaseSync": 1
+    },
+    "scripts/server-deployment/dsh-owner-handoff.mjs": {
+      "closeSync": 2,
+      "fsyncSync": 2,
+      "lstatSync": 1,
+      "openSync": 2,
+      "readFileSync": 1,
+      "renameSync": 1,
+      "writeFileSync": 1
+    },
+    "scripts/server-deployment/engine-host.mjs": {
+      "readFileSync": 1
+    },
+    "scripts/server-deployment/owner-cgroup.mjs": {
+      "readdirSync": 2,
+      "readFileSync": 3
+    }
+  }
+}
