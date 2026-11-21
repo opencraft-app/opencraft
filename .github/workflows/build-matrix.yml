@@ -401,6 +401,9 @@ jobs:
       - run: npm run test:hunyuan-speech
         if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'runtime'
         timeout-minutes: 10
+      - run: npm run test:startup
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'runtime'
+        timeout-minutes: 10
       - run: npm run test:appserver:lab
         if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'runtime'
         timeout-minutes: 10

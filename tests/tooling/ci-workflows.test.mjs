@@ -143,7 +143,6 @@ const GATE_ONLY_EXCEPTIONS = new Map([
   ['build:web', 'covered by the portable web-browser build'],
   ['build:expo:web', 'Expo builds are opt-in platform validation'],
   ['build:expo:ios', 'requires macOS with Xcode'],
-  ['test:startup', 'pending: react-native-worklets 0.13.1 does not match the Expo SDK 58 pin 0.13.0'],
 ]);
 
 test('every npm run gate script runs in CI unless it is a recorded exception', () => {

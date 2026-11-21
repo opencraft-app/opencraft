@@ -289,8 +289,8 @@ The host projects the displayed timeline and the existing goal resource, scopes 
 account/Host/thread, and supplies guarded semantic open-resource/open-thread callbacks.
 It owns actual-container layout, the toolbar and existing Radix ModalSurface; the plugin owns
 section content and typography. The first section is a collaborative Markdown note when the
-Host advertises the note capability. Yjs synchronization and the independent gateway store
-are described in [shared conversation notes](../platform/storage-and-preferences.md#shared-conversation-notes).
+Host advertises the note capability. Yjs synchronization lives in `plugins/thread-summary`;
+the server keeps notes in the `thread_notes` table owned by `@opencraft/storage-node`.
 Existing history projections remain read-only and follow the note; no inference request or
 new execution owner is introduced. History may be partial; only
 structured plan/file records and explicit agent states contribute. Terminal completion never

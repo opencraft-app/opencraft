@@ -78,10 +78,8 @@ in `scripts/smoke/conversation/smoke-disclosure-reflow.ts`.
 Bot 的空展示页与历史耗尽分开：仍有更早源记录时，视口可在没有滚动手势的情况下
 按一次恢复意图最多推进三页，串行且有界；额度耗尽或失败在原状态槽提供继续／重试，
 不呈现新会话欢迎页、不自动排空全历史。重同步保留有持久锚点的已加载前缀及独立
-本地提交，不以展示缓存恢复执行权限。协议所有权见
-[Hermes message windows](../../docs/architecture/chat-ui/history-and-recovery.md#hermes-message-windows-and-bot-history-continuity)；
-`hermes-bot-history-integration.test.ts` 和 `smoke-hermes-bot-history.ts` 验证真实组件与模拟远端端口，
-不代表已替换运行预览或实测远端 Hermes。
+本地提交，不以展示缓存恢复执行权限。Hermes 消息窗口协议及其集成验证由下游 Hermes
+产品持有，不在公开核心中。
 
 ## 会话生命周期补充（2026-09-15）
 

@@ -61,7 +61,6 @@
 - <a id="shared-turn-measurement-transactions"></a>[Shared Turn measurement transactions](history-and-recovery.md#shared-turn-measurement-transactions)
 - <a id="initial-history-and-display-reuse"></a>[Initial history and display reuse](history-and-recovery.md#initial-history-and-display-reuse)
 - <a id="history-positions-and-concurrent-observations"></a>[History positions and concurrent observations](history-and-recovery.md#history-positions-and-concurrent-observations)
-- <a id="hermes-message-windows-and-bot-history-continuity"></a>[Hermes message windows and Bot history continuity](history-and-recovery.md#hermes-message-windows-and-bot-history-continuity)
 - <a id="turn-identity-handoff-and-mounted-window"></a>[Turn identity handoff and mounted window](history-and-recovery.md#turn-identity-handoff-and-mounted-window)
 - <a id="restored-baseline-versus-live-entry-motion"></a>[Restored baseline versus live entry motion](history-and-recovery.md#restored-baseline-versus-live-entry-motion)
 - <a id="server-owned-native-codex-history"></a><a id="durable-host-legacy-history"></a>[Durable Host legacy history](history-and-recovery.md#durable-host-legacy-history)
