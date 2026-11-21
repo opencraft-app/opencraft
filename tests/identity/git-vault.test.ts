@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createConnection } from 'node:net';
 import nodeTest from 'node:test';
-import { EmployeeGitVaultStore } from '../../scripts/employee-git-vault-store';
+import { EmployeeGitVaultStore } from '@opencraft/execution-environment/employee-git-vault-store';
 import { createMemoryGitSigner, createMemoryGitAuthenticator, generateGitSigningKey, sshString } from '../../scripts/git-identity-signer';
 const test = process.platform === 'linux' ? nodeTest : nodeTest.skip;
 

@@ -1,5 +1,5 @@
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
-import { ExecutionEnvironmentRuntime } from "../execution-environment.ts";
+import { ExecutionEnvironmentRuntime } from "@opencraft/execution-environment";
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';

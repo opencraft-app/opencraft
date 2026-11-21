@@ -24,22 +24,6 @@
       "target": "plugins/acp-engine/src/execution-thread-resolver.mjs"
     },
     {
-      "file": "apps/local-agent-host/src/dsh-capability-plugin.mjs",
-      "target": "scripts/execution-environment.ts"
-    },
-    {
-      "file": "apps/local-agent-host/src/durable-process-service.ts",
-      "target": "scripts/execution-environment.js"
-    },
-    {
-      "file": "apps/local-agent-host/src/process-service.ts",
-      "target": "scripts/account-environment.js"
-    },
-    {
-      "file": "apps/local-agent-host/src/process-service.ts",
-      "target": "scripts/execution-environment.js"
-    },
-    {
       "file": "apps/mobile/src/runtime/mobile-messages.ts",
       "target": "apps/workbench-web/src/i18n/locales/ms-MY.json"
     },
@@ -52,28 +36,8 @@
       "target": "apps/workbench-web/src/i18n/locales/zh-CN.json"
     },
     {
-      "file": "apps/opencraft-daemon/src/codex-engine-adapter.ts",
-      "target": "scripts/execution-environment.js"
-    },
-    {
       "file": "apps/opencraft-daemon/src/machine-identity.ts",
       "target": "apps/local-agent-host/src/machine-identity.js"
-    },
-    {
-      "file": "plugins/acp-engine/src/index.ts",
-      "target": "scripts/execution-environment.js"
-    },
-    {
-      "file": "plugins/pi-engine/src/index.ts",
-      "target": "scripts/execution-environment.js"
-    },
-    {
-      "file": "plugins/pi-engine/src/session.ts",
-      "target": "scripts/execution-environment.js"
-    },
-    {
-      "file": "plugins/pi-engine/src/shell.ts",
-      "target": "scripts/execution-environment.js"
     }
   ]
 }

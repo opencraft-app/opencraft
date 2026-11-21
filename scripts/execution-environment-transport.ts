@@ -1,6 +1,6 @@
 import type { DuplexTransport, TransportSubmissionContext } from '../packages/appserver-client/src/transport.js';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
-import { EXECUTION_ENVIRONMENT_FIELD, requiresEnvironmentAuthority, type ExecutionEnvironmentRuntime, type EnvironmentExecutionScope } from './execution-environment.js';
+import { EXECUTION_ENVIRONMENT_FIELD, requiresEnvironmentAuthority, type ExecutionEnvironmentRuntime, type EnvironmentExecutionScope } from '@opencraft/execution-environment';
 import { TerminalCapacityError } from '../apps/local-agent-host/src/process-service.js';
 import { DurableHostProcessService } from '../apps/local-agent-host/src/durable-process-service.js';
 const terminals = new WeakMap<ExecutionEnvironmentRuntime, DurableHostProcessService>();

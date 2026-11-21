@@ -2,8 +2,8 @@ import { terminalProcessSession, drainTerminalProcessSessions, type TerminalProc
 import { homedir } from "node:os";
 import { spawn, type IPty } from "node-pty";
 import { TERMINAL_RESOURCE_LIMITS, type ProcessContext, type ProcessOutput, type ProcessSnapshot } from "@opencraft/appserver-protocol";
-import { validateEnvironmentName } from '../../../scripts/account-environment.js';
-import type { ExecutionEnvironmentRuntime, EnvironmentExecutionScope } from '../../../scripts/execution-environment.js';
+import { validateEnvironmentName } from '@opencraft/execution-environment/account-environment';
+import type { ExecutionEnvironmentRuntime, EnvironmentExecutionScope } from '@opencraft/execution-environment';
 
 export class TerminalCapacityError extends Error {
   constructor() { super("Terminal limit reached. Close an existing terminal before creating another."); }

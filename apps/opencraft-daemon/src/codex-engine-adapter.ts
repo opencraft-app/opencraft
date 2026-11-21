@@ -17,7 +17,7 @@ import { COLLABORATION_CAPABILITIES } from '@opencraft/appserver-protocol/collab
 import { SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND, isHumanInteraction, type InteractionSourceRequest } from "@opencraft/appserver-protocol";
 import { projectThreadTopologyResult } from "./thread-orchestration-projection.js";
 import { ExecutionLeaseStore, type ExecutionSubmission, originalExecutionInputIds, snapshotExecutionSubmission } from "./execution-lease-store.js";
-import { EXECUTION_ENVIRONMENT_FIELD, requiresEnvironmentAuthority, requiresCurrentEnvironmentAuthority, executionEnvironmentOwner, type ExecutionEnvironmentRuntime, type ExecutionEnvironmentSnapshot, type EnvironmentExecutionScope } from '../../../scripts/execution-environment.js';
+import { EXECUTION_ENVIRONMENT_FIELD, requiresEnvironmentAuthority, requiresCurrentEnvironmentAuthority, executionEnvironmentOwner, type ExecutionEnvironmentRuntime, type ExecutionEnvironmentSnapshot, type EnvironmentExecutionScope } from '@opencraft/execution-environment';
 import { CodexOrchestrationControl, OrchestrationControlError } from "./codex-orchestration-control.js";
 import { ExecutionFaultWriter } from "./execution-fault-writer.js";
 import { TokenUsageAttemptWriter } from "./token-usage-attempt-writer.js";

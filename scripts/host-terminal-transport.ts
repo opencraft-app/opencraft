@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
 import { DurableHostProcessService } from '../apps/local-agent-host/src/durable-process-service.js';
 import { TerminalCapacityError, type PreparedProcessIdentity } from '../apps/local-agent-host/src/process-service.js';
-import { validateEnvironmentName } from './account-environment.js';
+import { validateEnvironmentName } from '@opencraft/execution-environment/account-environment';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 import { OPENCRAFT_METHOD_ACCESS_EXTENSION } from '@opencraft/appserver-protocol';
 import type { DuplexTransport, TransportSubmissionContext } from '@opencraft/appserver-client';
-import type { EnvironmentExecutionScope, ExecutionEnvironmentRuntime } from './execution-environment.js';
+import type { EnvironmentExecutionScope, ExecutionEnvironmentRuntime } from '@opencraft/execution-environment';
 
 export const HOST_TERMINAL_METHODS = ['process/spawn', 'process/attach', 'process/list', 'process/writeStdin', 'process/resizePty', 'process/kill'] as const;
 const methods = new Set<string>(HOST_TERMINAL_METHODS);

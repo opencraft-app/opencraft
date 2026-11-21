@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { readyGitBroker } from './personal-git-protocol.js';
+import { readyGitBroker } from '@opencraft/execution-environment/personal-git-protocol';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { spawn, execFile } from 'node:child_process';
 import { chmod, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import { queryGitIdentityBroker } from './git-identity-ipc.js';
+import { queryGitIdentityBroker } from '@opencraft/execution-environment/git-identity-ipc';
 
 const execute = promisify(execFile);
 export function gitConfigParameter(key: string, value: string): string {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter";
-import { ExecutionEnvironmentSnapshot } from "../../scripts/execution-environment";
+import { ExecutionEnvironmentSnapshot } from "@opencraft/execution-environment";
 function fixture(source: Record<string, unknown>) {
   const writes: any[] = [], reads: any[] = [];
   const adapter: any = Object.create(CodexEngineAdapter.prototype);

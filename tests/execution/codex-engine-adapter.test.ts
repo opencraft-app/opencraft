@@ -2548,9 +2548,9 @@ test("tool reconfiguration retains original settings until restoration succeeds"
 
 test('internal orchestration creation persists an unowned environment before its first input',async()=>{
  const root=await mkdtemp(join(tmpdir(),'codex-internal-environment-')),frames:Array<Record<string,unknown>>=[];
- const {EmployeeGitVaultStore}=await import('../../scripts/employee-git-vault-store.js');
- const {ExecutionEnvironmentRuntime}=await import('../../scripts/execution-environment.js');
- const {AccountEnvironment}=await import('../../scripts/account-environment.js');
+ const {EmployeeGitVaultStore}=await import('@opencraft/execution-environment/employee-git-vault-store');
+ const {ExecutionEnvironmentRuntime}=await import('@opencraft/execution-environment');
+ const {AccountEnvironment}=await import('@opencraft/execution-environment/account-environment');
  const vault=new EmployeeGitVaultStore(root),runtime=new ExecutionEnvironmentRuntime(root,vault),adapter=createRoutingAdapter(root,frames),internal=adapter as any;
  internal.options.executionEnvironment=runtime;
  internal.options.spawnAppServer=({cwd,env}:any)=>spawn(process.execPath,[new URL('../fixtures/fake-codex-stdio-appserver.mjs',import.meta.url).pathname],{cwd,env:{...env,OPENCRAFT_TEST_UNLOAD_ON_UNSUBSCRIBE:'1'},stdio:['pipe','pipe','pipe']});
@@ -2678,9 +2678,9 @@ for (const [nativeMessage, reason, hint] of [
 
 async function sharedCredentialAdapter(t: test.TestContext, withMcp = false) {
   const root = await mkdtemp(join(tmpdir(), 'codex-shared-credentials-')), frames: Array<Record<string, unknown>> = [];
-  const { EmployeeGitVaultStore } = await import('../../scripts/employee-git-vault-store.js');
-  const { ExecutionEnvironmentRuntime } = await import('../../scripts/execution-environment.js');
-  const { AccountEnvironment } = await import('../../scripts/account-environment.js');
+  const { EmployeeGitVaultStore } = await import('@opencraft/execution-environment/employee-git-vault-store');
+  const { ExecutionEnvironmentRuntime } = await import('@opencraft/execution-environment');
+  const { AccountEnvironment } = await import('@opencraft/execution-environment/account-environment');
   const vault = new EmployeeGitVaultStore(root), runtime = new ExecutionEnvironmentRuntime(root, vault);
   for (const user of ['alice', 'bob']) new AccountEnvironment(vault).replace('employee:' + user, { projectId: null }, 0, [{ name: 'SERVICE_KEY', value: 'synthetic-' + user, secret: true }]);
   const reservations = { bound: 0, cancelled: 0 };
@@ -2905,7 +2905,7 @@ for(const fail of ['bind','restore'] as const)test(`creation capability ${fail} 
 
 for (const available of [true, false]) test(`first admitted input awaits Git readiness, not a creation grant (ready=${available})`, async t => {
   const f = await sharedCredentialAdapter(t);
-  const { ExecutionEnvironmentSnapshot } = await import('../../scripts/execution-environment.js');
+  const { ExecutionEnvironmentSnapshot } = await import('@opencraft/execution-environment');
   const snapshot = f.runtime.snapshot.bind(f.runtime);
   let resolve!: () => void, reject!: (error: Error) => void, waiting = false;
   const ready = new Promise<void>((yes, no) => { resolve = yes; reject = no; });

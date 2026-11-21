@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { GitBrokerOwner } from './git-broker-owner.js';
 import { readFile } from 'node:fs/promises';
-import { EmployeeGitVaultStore, type GitVaultCredential } from './employee-git-vault-store.js';
+import { EmployeeGitVaultStore, type GitVaultCredential } from '@opencraft/execution-environment/employee-git-vault-store';
 import { createMemoryGitSigner, createMemoryGitAuthenticator } from './git-identity-signer.js';
 
 export interface GitPeer { pid: number; uid: number }

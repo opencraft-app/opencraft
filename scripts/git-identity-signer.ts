@@ -2,7 +2,7 @@ import { createHash, createPrivateKey, generateKeyPairSync, randomUUID, sign } f
 import { chmod, mkdtemp, rm } from 'node:fs/promises';
 import { createServer, type Socket } from 'node:net';
 import { join } from 'node:path';
-import type { GitVaultCredential } from './employee-git-vault-store.js';
+import type { GitVaultCredential } from '@opencraft/execution-environment/employee-git-vault-store';
 
 export function sshString(value: string | Uint8Array): Buffer {
   const bytes = Buffer.from(value), size = Buffer.alloc(4); size.writeUInt32BE(bytes.length);

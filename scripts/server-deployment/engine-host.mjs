@@ -1,7 +1,7 @@
 import { createHostFileSystem } from '../host-filesystem.ts';
 import { LocalAttachmentStagingService } from '@opencraft/local-agent-host/attachments/local-staging';
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
-import { ExecutionEnvironmentRuntime } from "../execution-environment.ts";
+import { ExecutionEnvironmentRuntime } from "@opencraft/execution-environment";
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

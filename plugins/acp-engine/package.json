@@ -11,7 +11,8 @@
     "@opencraft/appserver-client": "0.1.0",
     "@opencraft/appserver-protocol": "0.1.0",
     "@opencraft/model-usage-policy": "0.1.0",
-    "@opencraft/session-capabilities": "0.1.0"
+    "@opencraft/session-capabilities": "0.1.0",
+    "@opencraft/execution-environment": "0.1.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

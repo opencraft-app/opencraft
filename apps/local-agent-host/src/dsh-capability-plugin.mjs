@@ -1,5 +1,5 @@
 import { createDshPolicyBoundary } from '@opencraft/model-usage-policy/native';
-import { ExecutionEnvironmentRuntime } from "../../../scripts/execution-environment.ts";
+import { ExecutionEnvironmentRuntime } from "@opencraft/execution-environment";
 import { createDshNativeOwner } from "./dsh-native-owner.mjs";
 import { registerDshSubprocessSandbox } from "./dsh-subprocess-sandbox.mjs";
 import { registerDshExecutionEnvironment } from "./dsh-execution-environment.mjs";

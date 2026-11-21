@@ -4,7 +4,7 @@ import { createServer } from 'node:net';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { queryGitIdentityBroker } from '../../scripts/git-identity-ipc.js';
+import { queryGitIdentityBroker } from '@opencraft/execution-environment/git-identity-ipc';
 
 for (const [name, response, expected] of [
   ['malformed', 'not JSON\n', 'response-invalid'],

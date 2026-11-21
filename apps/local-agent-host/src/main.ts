@@ -232,7 +232,7 @@ export async function startLocalAgentHost(options: {
     // Source previews run DSH without the parent's TS loader. Packaged plugins
     // are already bundled; only source composition needs this build step.
     try {
-      await access(resolve(dirname(plugin), '../../../scripts/execution-environment.ts'));
+      await access(resolve(dirname(plugin), '../../../packages/execution-environment/src/execution-environment.ts'));
       const { build } = await import('esbuild');
       nativePlugin = join(bridgeDirectory, 'dsh-capability-plugin.mjs');
       await build({ entryPoints: [plugin], outfile: nativePlugin, bundle: true, platform: 'node', format: 'esm', target: 'node24', logLevel: 'silent' });

@@ -3,9 +3,9 @@ import test from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AccountEnvironment } from '../../scripts/account-environment.js';
-import { EmployeeGitVaultStore } from '../../scripts/employee-git-vault-store.js';
-import { ExecutionEnvironmentRuntime } from '../../scripts/execution-environment.js';
+import { AccountEnvironment } from '@opencraft/execution-environment/account-environment';
+import { EmployeeGitVaultStore } from '@opencraft/execution-environment/employee-git-vault-store';
+import { ExecutionEnvironmentRuntime } from '@opencraft/execution-environment';
 import { ExecutionEnvironmentTransport } from '../../scripts/execution-environment-transport.js';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 

@@ -7,9 +7,9 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { AccountEnvironment, EnvironmentError } from '../../scripts/account-environment';
-import { AccountEnvironmentHttp } from '../../scripts/account-environment-http';
-import { EmployeeGitVaultStore } from '../../scripts/employee-git-vault-store';
+import { AccountEnvironment, EnvironmentError } from '@opencraft/execution-environment/account-environment';
+import { AccountEnvironmentHttp } from '@opencraft/execution-environment/account-environment-http';
+import { EmployeeGitVaultStore } from '@opencraft/execution-environment/employee-git-vault-store';
 import { parseEnvironmentDocument } from '../../packages/workbench-runtime/src/account-environment';
 
 async function fixture(t: any) {

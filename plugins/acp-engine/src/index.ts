@@ -2,7 +2,7 @@ import { executionCliInstructions, type ScopedExecutionCliPort } from "@opencraf
 import { threadCliLabel } from "@opencraft/session-capabilities/thread-cli-instruction";
 import { capabilityResultToMcp } from "@opencraft/session-capabilities/content";
 import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
-import { EXECUTION_ENVIRONMENT_FIELD, type ExecutionEnvironmentRuntime, type ExecutionEnvironmentSnapshot, type EnvironmentExecutionScope } from "../../../scripts/execution-environment.js";
+import { EXECUTION_ENVIRONMENT_FIELD, type ExecutionEnvironmentRuntime, type ExecutionEnvironmentSnapshot, type EnvironmentExecutionScope } from "@opencraft/execution-environment";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";

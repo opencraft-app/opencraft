@@ -10,9 +10,9 @@ import {ActorStore} from '../../packages/access-control/src/actors';
 import {ActorAccess} from '../../packages/access-control/src/actor-access';
 import {ThreadAccessStore,ThreadAccessSession} from '../../packages/access-control/src/thread-access';
 import {createWorkbenchWebServer} from '../../scripts/serve-workbench-web.mjs';
-import {EmployeeGitVaultStore} from '../../scripts/employee-git-vault-store';
-import {AccountEnvironment} from '../../scripts/account-environment';
-import {ExecutionEnvironmentRuntime,EXECUTION_ENVIRONMENT_FIELD} from '../../scripts/execution-environment';
+import {EmployeeGitVaultStore} from '@opencraft/execution-environment/employee-git-vault-store';
+import {AccountEnvironment} from '@opencraft/execution-environment/account-environment';
+import {ExecutionEnvironmentRuntime,EXECUTION_ENVIRONMENT_FIELD} from '@opencraft/execution-environment';
 import {ExecutionEnvironmentTransport} from '../../scripts/execution-environment-transport';
 async function fixture(t:any){
  const root=await mkdtemp(join(tmpdir(),'thread-env-gateway-'));await writeFile(join(root,'index.html'),'<!doctype html><title>Fixture</title>');

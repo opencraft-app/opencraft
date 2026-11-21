@@ -3,7 +3,7 @@ import { lstat, mkdir, realpath, writeFile } from 'node:fs/promises';
 import { isAbsolute, relative } from 'node:path';
 import { startTerminalPtyOwner } from '../../apps/local-agent-host/src/terminal-pty-owner.js';
 import { verifyHandsCgroup } from '@opencraft/sandbox-node/hands-unix';
-import { validateEnvironmentName } from '../account-environment.js';
+import { validateEnvironmentName } from '@opencraft/execution-environment/account-environment';
 import { deploymentPaths, readPrivateToken } from './paths.mjs';
 import { handsResources } from './resources.mjs';
 

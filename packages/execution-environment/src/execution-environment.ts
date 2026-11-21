@@ -3,7 +3,7 @@ import { PersonalGitEnvironment, type PersonalGitGrant } from './personal-git.js
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import type { TransportSubmissionContext } from '../packages/appserver-client/src/transport.js';
+import type { TransportSubmissionContext } from '@opencraft/appserver-client/transport';
 import { EmployeeGitVaultStore, GitVaultError } from './employee-git-vault-store.js';
 import { AccountEnvironment, EnvironmentError, validateEnvironmentName } from './account-environment.js';
 

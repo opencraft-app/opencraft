@@ -16,9 +16,9 @@ import { startCodexAppServer } from "../../apps/codex-core/src/app-server.js";
 import { OPENCRAFT_HOST_STATE_MIGRATIONS, OPENCRAFT_HOST_STATE_CURRENT_MIGRATIONS } from "../../apps/opencraft-daemon/src/opencraft-host-state-database.js";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter.js";
 import { DatabaseSync } from "node:sqlite";
-import { ExecutionEnvironmentRuntime, environmentProjectId } from "../../scripts/execution-environment.js";
-import { AccountEnvironment } from "../../scripts/account-environment.js";
-import { EmployeeGitVaultStore } from "../../scripts/employee-git-vault-store.js";
+import { ExecutionEnvironmentRuntime, environmentProjectId } from "@opencraft/execution-environment";
+import { AccountEnvironment } from "@opencraft/execution-environment/account-environment";
+import { EmployeeGitVaultStore } from "@opencraft/execution-environment/employee-git-vault-store";
 import { observeNativeExecutionProcess } from "../../apps/opencraft-daemon/src/native-execution-origin.js";
 
 // macOS Unix-domain sockets have a small pathname limit. Keep fixture paths

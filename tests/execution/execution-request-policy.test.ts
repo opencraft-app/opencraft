@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { executionRequestEffect as effect, requiresEnvironmentAuthority, requiresCurrentEnvironmentAuthority } from '../../scripts/execution-request-policy.js';
+import { executionRequestEffect as effect, requiresEnvironmentAuthority, requiresCurrentEnvironmentAuthority } from '@opencraft/execution-environment/execution-request-policy';
 
 test('effects separate input admission, shared control and use of configured credentials', () => {
   for (const method of ['turn/start','thread/queue/add','thread/queue/start']) assert.equal(effect(method),'admit-input');

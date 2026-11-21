@@ -1,7 +1,7 @@
 import { piModel } from './contract.js';
 import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 
-import type { ExecutionEnvironmentRuntime, ExecutionEnvironmentSnapshot } from "../../../scripts/execution-environment.js";
+import type { ExecutionEnvironmentRuntime, ExecutionEnvironmentSnapshot } from "@opencraft/execution-environment";
 import { createHash, randomUUID } from "node:crypto";
 import { PiPrivateCallsDoc, type PiPrivateCalls } from "./private-calls.js";
 import { join } from "node:path";

@@ -1,10 +1,15 @@
 import { spawn } from 'node:child_process';
 import { createConnection } from 'node:net';
 import { createInterface } from 'node:readline';
-import type { GitIdentityBroker } from './git-identity-broker.js';
+
+/** The broker surface the IPC bridge drives; implemented by scripts/git-identity-broker.ts. */
+export interface GitIdentityBrokerEndpoint {
+  request(peer: { readonly pid: number; readonly uid: number }, input: unknown): Promise<Record<string, unknown>>;
+  close(): Promise<void>;
+}
 
 /** Only the bridge can write this inherited pipe; requests cannot supply their own peer identity. */
-export async function serveGitIdentityBroker(broker: GitIdentityBroker, socket: string, bridgePath: string) {
+export async function serveGitIdentityBroker(broker: GitIdentityBrokerEndpoint, socket: string, bridgePath: string) {
   const child = spawn('python3', [bridgePath, socket], { stdio: ['pipe', 'pipe', 'ignore'] });
   const lines = createInterface({ input: child.stdout });
   const exited = new Promise<void>(resolve => child.once('exit', () => resolve()));

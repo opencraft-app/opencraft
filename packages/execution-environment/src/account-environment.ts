@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { EmployeeGitVaultStore } from './employee-git-vault-store.js';
-import type { EnvironmentVariableView, EnvironmentScope, EnvironmentView } from '../packages/workbench-runtime/src/account-environment.js';
-export type { EnvironmentVariableView, EnvironmentScope, EnvironmentView } from '../packages/workbench-runtime/src/account-environment.js';
+import type { EnvironmentVariableView, EnvironmentScope, EnvironmentView } from '@opencraft/workbench-runtime';
+export type { EnvironmentVariableView, EnvironmentScope, EnvironmentView } from '@opencraft/workbench-runtime';
 
 export interface EnvironmentVariable { name: string; value: string; secret: boolean }
 export class EnvironmentError extends Error {

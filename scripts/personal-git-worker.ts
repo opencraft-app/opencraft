@@ -1,5 +1,5 @@
 import { ownedDatabasePath } from '../apps/opencraft-daemon/src/owned-database-path.js';
-import { gitGrantAuthority, openGitGrant, type GitGrantScope } from './personal-git-protocol.js';
+import { gitGrantAuthority, openGitGrant, type GitGrantScope } from '@opencraft/execution-environment/personal-git-protocol';
 import { createDecipheriv, randomBytes } from 'node:crypto';
 import { readFile, lstat, chmod, rm, mkdir, writeFile } from 'node:fs/promises';
 import { createServer, type Socket } from 'node:net';
@@ -7,8 +7,8 @@ import { join } from 'node:path';
 import { parentPort, workerData } from 'node:worker_threads';
 import { DatabaseSync } from 'node:sqlite';
 import { createMemoryGitAuthenticator, createMemoryGitSigner } from './git-identity-signer.js';
-import type { GitVaultCredential } from './employee-git-vault-store.js';
-import type { PersonalGitScope } from './personal-git.js';
+import type { GitVaultCredential } from '@opencraft/execution-environment/employee-git-vault-store';
+import type { PersonalGitScope } from '@opencraft/execution-environment/personal-git';
 
 const { directory, privateDirectory, hosts } = workerData as { directory: string; privateDirectory: string; hosts: string[] };
 const runtime = (await import('node:path')).dirname(privateDirectory);
