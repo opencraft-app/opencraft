@@ -27,6 +27,10 @@ CREATE TABLE desktop_client_imports (
 export const DESKTOP_CLIENT_MIGRATIONS = [{ version: 1, name: "desktop-client", sql: DESKTOP_CLIENT_SCHEMA }];
 
 export function openDesktopClientDatabase(directory: string): BorrowedDatabase {
-  return openManagedDatabase({ schemaId: "desktop-client", path: join(directory, DESKTOP_CLIENT_DATABASE),
-    migrations: DESKTOP_CLIENT_MIGRATIONS, legacyPolicy: "reject" });
+  return openManagedDatabase({
+    schemaId: "desktop-client",
+    path: join(directory, DESKTOP_CLIENT_DATABASE),
+    migrations: DESKTOP_CLIENT_MIGRATIONS,
+    legacyPolicy: "reject",
+  });
 }

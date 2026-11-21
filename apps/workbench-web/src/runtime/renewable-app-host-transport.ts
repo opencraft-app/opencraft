@@ -1,6 +1,14 @@
 import type { TransportSendProgressOptions } from "@opencraft/appserver-client/transport";
-import { captureTransportMessageScope, ClientObserverList, TransportStatusObservers } from "@opencraft/appserver-client/transport";
-import type { DuplexTransport, TransportStatus, TransportFailureDiagnostic } from "@opencraft/appserver-client/transport";
+import {
+  captureTransportMessageScope,
+  ClientObserverList,
+  TransportStatusObservers,
+} from "@opencraft/appserver-client/transport";
+import type {
+  DuplexTransport,
+  TransportStatus,
+  TransportFailureDiagnostic,
+} from "@opencraft/appserver-client/transport";
 import { AppHostAdmissionError } from "./app-host-admission";
 
 // Workbench keeps one transport object for its lifetime. A closed WebSocket
@@ -14,46 +22,80 @@ export class RenewableAppHostTransport implements DuplexTransport {
   private readonly statusListeners = new TransportStatusObservers();
   private readonly recoveryListeners = new Set<() => void>();
   private currentStatus: TransportStatus = { state: "idle" };
-  private attempt: { readonly controller: AbortController; readonly promise: Promise<void>;
-    cancel(reason: unknown, retirement?: TransportStatus): void } | null = null;
+  private attempt: {
+    readonly controller: AbortController;
+    readonly promise: Promise<void>;
+    cancel(reason: unknown, retirement?: TransportStatus): void;
+  } | null = null;
   // Physical lease release is serialized independently of local attempt cancellation.
   private closeBarrier: Promise<void> = Promise.resolve();
   private closed = false;
 
-  constructor(private readonly createLease: (assertCurrent: () => void, waiting: (delayMs: number) => void) => Promise<{ transport: DuplexTransport; attemptId: string; diagnostic: () => TransportFailureDiagnostic | undefined; subscribeStage(listener: (stage: "bridge" | "host") => void): () => void }>, private readonly onClose: () => void, private readonly beforeConnect?: () => Promise<void>) {}
+  constructor(
+    private readonly createLease: (
+      assertCurrent: () => void,
+      waiting: (delayMs: number) => void,
+    ) => Promise<{
+      transport: DuplexTransport;
+      attemptId: string;
+      diagnostic: () => TransportFailureDiagnostic | undefined;
+      subscribeStage(listener: (stage: "bridge" | "host") => void): () => void;
+    }>,
+    private readonly onClose: () => void,
+    private readonly beforeConnect?: () => Promise<void>,
+  ) {}
 
-  get status(): TransportStatus { return this.currentStatus; }
+  get status(): TransportStatus {
+    return this.currentStatus;
+  }
 
   connect(signal?: AbortSignal): Promise<void> {
     if (this.closed) return Promise.reject(new Error("App Host transport is closed"));
     if (signal?.aborted) return Promise.reject(signal.reason ?? new Error("Connection cancelled"));
     if (this.currentStatus.state === "open" && this.lease && !this.captureMessageScope()()) {
       const native = this.lease.status;
-      const retirement: TransportStatus = { ...(native.state === "open" ? { state: "closed" as const } : native),
-        attemptId: this.currentStatus.attemptId };
+      const retirement: TransportStatus = {
+        ...(native.state === "open" ? { state: "closed" as const } : native),
+        attemptId: this.currentStatus.attemptId,
+      };
       if (this.attempt) this.attempt.cancel(new Error(retirement.reason ?? "App Host connection retired"), retirement);
       else this.setStatus(retirement);
     }
     if (this.attempt !== null) return this.attempt.promise;
     if (this.currentStatus.state === "open") return Promise.resolve();
     let resolve!: () => void, reject!: (cause: unknown) => void;
-    const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+    const promise = new Promise<void>((done, fail) => {
+      resolve = done;
+      reject = fail;
+    });
     void promise.catch(() => undefined);
     const controller = new AbortController();
     let removeStage: (() => void) | undefined;
-    const cleanup = () => { signal?.removeEventListener("abort", abort); removeStage?.(); };
-    const attempt = { controller, promise, cancel: (cause: unknown, retirement?: TransportStatus) => {
-      if (this.attempt !== attempt) return;
-      this.attempt = null;
-      cleanup();
-      // Detach callbacks and install the physical barrier before abort/status reentry.
-      this.retireLease();
-      controller.abort(cause);
-      reject(cause);
-      if (!this.closed && this.currentStatus.state !== "failed")
-        this.setStatus(retirement ?? { state: "failed", reason: cause instanceof Error ? cause.message : String(cause),
-          ...(cause instanceof AppHostAdmissionError ? { failure: cause.failure } : {}) });
-    } };
+    const cleanup = () => {
+      signal?.removeEventListener("abort", abort);
+      removeStage?.();
+    };
+    const attempt = {
+      controller,
+      promise,
+      cancel: (cause: unknown, retirement?: TransportStatus) => {
+        if (this.attempt !== attempt) return;
+        this.attempt = null;
+        cleanup();
+        // Detach callbacks and install the physical barrier before abort/status reentry.
+        this.retireLease();
+        controller.abort(cause);
+        reject(cause);
+        if (!this.closed && this.currentStatus.state !== "failed")
+          this.setStatus(
+            retirement ?? {
+              state: "failed",
+              reason: cause instanceof Error ? cause.message : String(cause),
+              ...(cause instanceof AppHostAdmissionError ? { failure: cause.failure } : {}),
+            },
+          );
+      },
+    };
     const abort = () => attempt.cancel(signal?.reason ?? new Error("Connection cancelled"));
     this.attempt = attempt;
     signal?.addEventListener("abort", abort, { once: true });
@@ -82,12 +124,13 @@ export class RenewableAppHostTransport implements DuplexTransport {
       // Cancellation cannot bypass a physical close already started by an old lease.
       this.retireLease();
       await wait(this.closeBarrier);
-      const acquired = await this.createLease(assertCurrent, retryAfterMs => {
+      const acquired = await this.createLease(assertCurrent, (retryAfterMs) => {
         assertCurrent();
         this.setStatus({ state: "connecting", connectionStage: "retry", retryAfterMs });
       });
-      try { assertCurrent(); }
-      catch (cause) {
+      try {
+        assertCurrent();
+      } catch (cause) {
         // Acquisition may finish in the microtask after local cancellation.
         // Release only this lease; healthy peers keep their physical socket.
         this.closeBarrier = this.closeBarrier.then(() => acquired.transport.close()).catch(() => undefined);
@@ -95,30 +138,40 @@ export class RenewableAppHostTransport implements DuplexTransport {
       }
       const next = acquired.transport;
       this.lease = next;
-      this.removeMessageListener = next.subscribeMessage(frame => {
+      this.removeMessageListener = next.subscribeMessage((frame) => {
         if (this.lease !== next) return;
         this.messageListeners.emit(frame, this.captureMessageScope());
       });
-      this.removeStatusListener = next.subscribeStatus(status => {
+      this.removeStatusListener = next.subscribeStatus((status) => {
         if (this.lease !== next) return;
         const diagnostic = acquired.diagnostic();
-        this.setStatus({ ...status, attemptId: acquired.attemptId, ...(status.failure && diagnostic
-          ? { failure: { ...status.failure, diagnostic } } : {}) });
+        this.setStatus({
+          ...status,
+          attemptId: acquired.attemptId,
+          ...(status.failure && diagnostic ? { failure: { ...status.failure, diagnostic } } : {}),
+        });
       });
       // Install observers before I/O. Stage notifications grant no readiness.
-      removeStage = acquired.subscribeStage(stage => {
-        if (this.attempt === attempt) this.setStatus({ state: "connecting", connectionStage: stage, attemptId: acquired.attemptId });
+      removeStage = acquired.subscribeStage((stage) => {
+        if (this.attempt === attempt)
+          this.setStatus({ state: "connecting", connectionStage: stage, attemptId: acquired.attemptId });
       });
       assertCurrent();
       await wait(next.connect(controller.signal));
       assertCurrent();
     };
-    void run().then(() => {
-      if (this.attempt !== attempt) return;
-      this.attempt = null;
-      cleanup();
-      resolve();
-    }, cause => { cleanup(); attempt.cancel(cause); });
+    void run().then(
+      () => {
+        if (this.attempt !== attempt) return;
+        this.attempt = null;
+        cleanup();
+        resolve();
+      },
+      (cause) => {
+        cleanup();
+        attempt.cancel(cause);
+      },
+    );
     return promise;
   }
 

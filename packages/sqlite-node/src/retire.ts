@@ -15,7 +15,8 @@ const RETIRED_PREFIX = "retired-into:";
 /** The database a retired owner's data now lives in, or null while it is still active. */
 export function retiredInto(database: DatabaseSync): string | null {
   if (!hasLedger(database)) return null;
-  const row = database.prepare("SELECT name FROM schema_migrations ORDER BY version DESC LIMIT 1").get() as { name: string } | undefined;
+  const row = database.prepare("SELECT name FROM schema_migrations ORDER BY version DESC LIMIT 1").get() as
+    { name: string } | undefined;
   return row && row.name.startsWith(RETIRED_PREFIX) ? row.name.slice(RETIRED_PREFIX.length) : null;
 }
 
@@ -27,15 +28,21 @@ export function retiredInto(database: DatabaseSync): string | null {
  * changing at the import. Idempotent for the same target.
  */
 export function retireManagedDatabase(database: DatabaseSync, into: string): void {
-  if (!/^[A-Za-z0-9._-]{1,128}$/.test(into)) throw new SqliteLifecycleError("history-mismatch", "Invalid retirement target");
+  if (!/^[A-Za-z0-9._-]{1,128}$/.test(into))
+    throw new SqliteLifecycleError("history-mismatch", "Invalid retirement target");
   transaction(database, () => {
-    if (!hasLedger(database)) throw new SqliteLifecycleError("history-mismatch", "Only a ledgered database can be retired");
+    if (!hasLedger(database))
+      throw new SqliteLifecycleError("history-mismatch", "Only a ledgered database can be retired");
     const current = retiredInto(database);
     if (current === into) return;
-    if (current !== null) throw new SqliteLifecycleError("history-mismatch", "Database was already retired into another database");
-    const { version } = database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number };
+    if (current !== null)
+      throw new SqliteLifecycleError("history-mismatch", "Database was already retired into another database");
+    const { version } = database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as {
+      version: number;
+    };
     const name = RETIRED_PREFIX + into;
-    database.prepare("INSERT INTO schema_migrations(version,name,checksum,applied_at) VALUES(?,?,?,?)")
+    database
+      .prepare("INSERT INTO schema_migrations(version,name,checksum,applied_at) VALUES(?,?,?,?)")
       .run(Number(version) + 1, name, createHash("sha256").update(name).digest("hex"), Date.now());
   });
 }

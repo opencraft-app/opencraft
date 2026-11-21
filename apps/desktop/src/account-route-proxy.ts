@@ -16,12 +16,18 @@ export function createAccountRouteProxy(endpoint: () => string | null) {
         return Promise.resolve(true);
       }
       return new Promise<boolean>((resolve) => {
-        const upstream = forward({ socketPath, method: request.method, path: request.url, headers: request.headers }, (reply) => {
-          response.writeHead(reply.statusCode ?? 502, reply.headers);
-          reply.pipe(response);
-          reply.once("end", () => resolve(true));
-          reply.once("error", () => { response.destroy(); resolve(true); });
-        });
+        const upstream = forward(
+          { socketPath, method: request.method, path: request.url, headers: request.headers },
+          (reply) => {
+            response.writeHead(reply.statusCode ?? 502, reply.headers);
+            reply.pipe(response);
+            reply.once("end", () => resolve(true));
+            reply.once("error", () => {
+              response.destroy();
+              resolve(true);
+            });
+          },
+        );
         upstream.once("error", () => {
           if (!response.headersSent) {
             response.writeHead(503, { "content-type": "application/json", "cache-control": "no-store" });
