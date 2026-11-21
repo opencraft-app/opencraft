@@ -1061,10 +1061,8 @@ image prompt support. Existing engine compositions do not select this path.
 
 The bridge contract, command parameters, permission-mode mapping, dialect
 extension point and failure boundaries are documented in the
-[ACP bridge README](../../../packages/agent-bridge-acp/README.md). Real Copilot/Amp
-initialize recordings and minimal-task evidence live under
-`design/agent-bridge/recordings/p3/`; deterministic fixtures cover the paths a
-single real task cannot trigger.
+[ACP bridge README](../../../packages/agent-bridge-acp/README.md). Deterministic
+fixtures cover the paths a single real task cannot trigger.
 
 ## Pi bridge owner (P2d, opt-in)
 
@@ -1091,8 +1089,8 @@ model-context evidence. An input still queued at a turn boundary is reported as
 the AppServer PTY worker for its own sessions and uses the ordinary coding
 tools; the existing engine's PTY path is unchanged. Real local acceptance and
 the explicit gaps (no real unconsumed-race reproduction; no real-model Host
-round trip) are recorded in
-[`plugins/pi-bridge/VALIDATION.md`](../../../plugins/pi-bridge/VALIDATION.md).
+round trip) are listed in the
+[Pi bridge README](../../../plugins/pi-bridge/README.md#design-decisions-and-known-limits).
 
 ## DSH consumer receipt persistence
 

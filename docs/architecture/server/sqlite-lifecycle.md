@@ -291,7 +291,7 @@ IndexedDB 使用原生升级事务，不运行 SQL runner；广播仅通知已�
 - 未跑 N-1 旧二进制回退，不承诺任意降级；不自动恢复备份，不提供恢复 UI、跨库原子升级或大规模在线回填框架。
 - 未迁移真实用户数据库；未以本轮 Node 库工作覆盖 Native adapter、所有远端 Host、历史所有 Electron origin 找回或新签名发行包验收。
 
-历史设计与实施记录见 [任务计划](../../../design/sqlite-lifecycle/task_plan.md)、[进展](../../../design/sqlite-lifecycle/progress.md)。源码与测试证据不代表线上部署已升级。Server 合库的回归见 `tests/storage/server-storage.test.ts`：真实旧结构和业务记录、原始文件和历史保留、备份恢复、重复打开、CLI、SIGKILL 前后恢复及未知版本拒绝。未迁移真实用户数据。
+历史设计见 [任务计划](../../../design/sqlite-lifecycle/task_plan.md)。源码与测试证据不代表线上部署已升级。Server 合库的回归见 `tests/storage/server-storage.test.ts`：真实旧结构和业务记录、原始文件和历史保留、备份恢复、重复打开、CLI、SIGKILL 前后恢复及未知版本拒绝。未迁移真实用户数据。
 
 ### 受管 Headless 的历史 Codex Bot 数据保留
 

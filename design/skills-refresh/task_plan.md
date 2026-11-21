@@ -50,7 +50,7 @@
 - Provider 层级优先于 rank，不能把 global 注册误当同层覆盖。
 
 ## evidence / scan_scope / scan_output
-- 精确搜索 Host Skills 入口、Hermes Profile handler、原生 filesystem/scope 注册；结论见 findings.md。
+- 精确搜索 Host Skills 入口、Hermes Profile handler、原生 filesystem/scope 注册。
 - 查询曾遇不存在的构建脚本及 zsh 空 glob；后续使用 rg --files 定位，不重试猜测路径。
 
 ## handoff / checkpoint

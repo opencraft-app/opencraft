@@ -204,7 +204,7 @@ Current dialects:
   return `-32602` with `Steer operation requires "sessionId"` in message or
   string data. Generic mid-turn metadata never substitutes for this probe.
   Native injection uses the private method and waits for both same-owner
-  admission and same-run message-id insertion. See [P4 validation](VALIDATION.md).
+  admission and same-run message-id insertion.
 - `copilot`: no native steering (1.0.102 has no local ACP native path);
   permission config `allow_all`; `model` config selector.
 
@@ -252,8 +252,7 @@ Real-account acceptance through `apps/agent-bridge-host` uses
 `scripts/smoke/agent-bridge/p3c-real-host.ts --agent copilot|amp` (recorded
 under `design/agent-bridge/recordings/p3c/`). It consumes real quota, runs one
 temporary file write, one steer, then closes/resumes the native session and
-reads native history. The earlier direct-bridge acceptance remains under
-`design/agent-bridge/recordings/p3/`. Neither script is part of CI.
+reads native history. Neither script is part of CI.
 
 The Web presentation check is
 `scripts/smoke/agent-bridge/p3c-web-presentation.ts`; it renders the existing
@@ -325,3 +324,36 @@ proof is unknown and never replayed. SQLite lives only in the lifecycle-owned
 `src/agy-trace.worker.mjs` Worker; ship that asset alongside a bundled bridge.
 See [P6 evidence and decisions](../../design/agent-bridge/p6-agy.md) and the
 opt-in `scripts/smoke/agent-bridge/p6-agy-host.ts` real Host acceptance.
+
+## Design decisions and known limits
+
+Carried over from the retired validation ledgers; evidence runs and review logs live in Git history.
+
+### P4: Implementation decisions
+
+- Reimplemented the user's confirmed CodeBuddy patch semantics in an independent
+  module; did not copy the shared compatibility proxy or its retry/cancel loop.
+- Evaluate admission and main-prompt completion in native wire order through the
+  existing frame observer; Promise scheduling cannot move a late insertion back
+  inside its run.
+- Use `native-input-id`, with actual message id and run owner, rather than
+  a stronger model-consumption claim; insertion is not proof of consumption.
+  The shared assembler projects this kind to `context-confirmed` in the design
+  document’s sense: a native run/context path, never model understanding.
+- Latch one owner per native run and retain prior owners during the session so
+  stale notifications cannot rebind a later run. Refuse injection before owner
+  discovery; unknown content fields cannot silently disappear during parsing.
+- Retain the generic one-unsettled-native-input limit. Stable ids improve
+  evidence correlation here; increasing parallel admission is outside P4.
+- Match the user's 3-second admission window; insertion has no arbitrary timer
+  and must arrive before the target run ends. Unknown never chooses a fallback.
+- For repeatable checks on this host, remove only the exported Bash function
+  `BASH_FUNC_which%%` from the test command environment: it is not a valid sandbox
+  environment name. No production environment validation is weakened.
+
+### P4: Deviation and remaining gap
+
+Implementation and deterministic verification can complete independently of
+account health. The required real tool-time steer/double receipt remains
+**未验（外部阻塞）**. P4 is not full real-account acceptance; a later authorized
+retest must supply both native receipts before that row can be closed.

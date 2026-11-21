@@ -189,7 +189,7 @@ Skill contribution 目前接收已有安装服务提供的 `installationId + ref
 
 ## 验证与剩余范围
 
-2026-09-18 Connector Capability Runtime 已完成；验证与前序阶段一起在 [实施账本](../../../design/platform-connectors/progress.md) 记录。证据严格区分模型、真实组件、Desktop IPC 与第三方服务，不把构建通过当真实账号授权完成。
+2026-09-18 Connector Capability Runtime 已完成。证据严格区分模型、真实组件、Desktop IPC 与第三方服务，不把构建通过当真实账号授权完成。
 
 本阶段最终 `npm run gate`、17 项 Connector 专项、226 项 DSH 回归、隔离浏览器授权和 Electron 配置重启验收通过。仓库根 context validator/4 项治理测试仍因已有文档问题失败，记录在账本；不把 OpenCraft gate 通过表述为全仓零问题。未提交或发布。
 
