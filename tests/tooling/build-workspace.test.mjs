@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {buildPaths,validateBuildVolume} from '../../scripts/build/build-workspace.mjs';
+import {buildPaths,validateBuildVolume} from '../../scripts/packaging/build-workspace.mjs';
 
 const metadata={schemaVersion:1,purpose:'opencraft-build',filesystemUuid:'ff2b5c55-9da9-483f-956a-e08c896aca5d'};
 const mount='40 30 253:17 / /data/build rw,noatime - ext4 /dev/vdb1 rw\n';

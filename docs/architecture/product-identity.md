@@ -47,7 +47,7 @@ Installation IDs are owned by each build configuration:
 | Host/profile | Identifier | Authority |
 |---|---|---|
 | Desktop installed app | `app.opencraft.desktop` | `apps/desktop/package.json` |
-| macOS local Preview | `app.opencraft.desktop.preview` | `scripts/build/package-macos-preview.mjs` |
+| macOS local Preview | `app.opencraft.desktop.preview` | `scripts/packaging/package-macos-preview.mjs` |
 | Standalone Expo Android and iOS | `dev.opencraft.workbench` | `apps/mobile/app.json` |
 
 `apps/mobile/app.config.js` preserves the public open-source notices in the final

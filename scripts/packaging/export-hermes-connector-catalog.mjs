@@ -1,7 +1,7 @@
 // Emit a public, build-time browsing projection. Runtime state is never copied.
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-if (!process.argv[2]?.trim()) throw new Error('Usage: node scripts/build/export-hermes-connector-catalog.mjs <marketplace-directory>; this optional product snapshot is not included in OpenCraft.');
+if (!process.argv[2]?.trim()) throw new Error('Usage: node scripts/packaging/export-hermes-connector-catalog.mjs <marketplace-directory>; this optional product snapshot is not included in OpenCraft.');
 const root = process.argv[2];
 const manifest = JSON.parse(readFileSync(join(root, '.codebuddy-connector/connectors.json'), 'utf8'));
 console.log('// Generated marketplace browsing snapshot. No VM connection or credentials required.');

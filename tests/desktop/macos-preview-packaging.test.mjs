@@ -10,8 +10,8 @@ import {
   PREVIEW_APP_ID,
   PREVIEW_PRODUCT_NAME,
   previewBuilderArguments,
-} from "../../scripts/build/package-macos-preview.mjs";
-import { signMacosPreview } from "../../scripts/build/sign-macos-preview.mjs";
+} from "../../scripts/packaging/package-macos-preview.mjs";
+import { signMacosPreview } from "../../scripts/packaging/sign-macos-preview.mjs";
 import { ownedDesktopFixture } from '../fixtures/owned-electron.mjs';
 const beforePack = createRequire(import.meta.url)("../../scripts/check/check-desktop-target.cjs");
 

@@ -14,7 +14,7 @@ import { createServer as createVite } from 'vite';
 import { createWorkbenchWebConfig } from '../../../apps/workbench-web/vite.config.js';
 import { startHeadlessServer } from '../../../apps/headless-server/src/headless-server.mjs';
 import { createWorkbenchWebServer } from '../../../apps/headless-server/src/serve-workbench-web.mjs';
-import { packageBrowserRuntime } from '../../build/package-browser-runtime.mjs';
+import { packageBrowserRuntime } from '../../packaging/package-browser-runtime.mjs';
 import {createLoopbackSshFixture} from './ssh-loopback-fixture.js';
 
 // Real product/account/Host/Codex/Electron composition. Only inference and the

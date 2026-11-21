@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, chmod, rm, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
-import { verifyRemoteBrowserArtifact } from '../../scripts/build/remote-browser-artifact.mjs';
+import { verifyRemoteBrowserArtifact } from '../../scripts/packaging/remote-browser-artifact.mjs';
 const hash = value => createHash('sha256').update(value).digest('hex');
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), 'owned-browser-artifact-'));

@@ -11,7 +11,7 @@ import { HubNetwork } from "../../../packages/hub-network/src/node";
 import { MembershipStore, InstanceAccess } from "../../../packages/access-control/src";
 import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
 import { AssertionSigner } from "../../../packages/identity-core/src/node";
-import { packageRelay } from "../../build/package-relay.mjs";
+import { packageRelay } from "../../packaging/package-relay.mjs";
 
 const output = resolve(process.env.OPENCRAFT_HUB_SMOKE_DIRECTORY ?? '.local/hub-network-transport'); await mkdir(output, { recursive: true });
 const privateRoot = await mkdtemp(join(output, 'private-')), cleanup: (() => unknown)[] = [];

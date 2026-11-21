@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { access, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { packageBrowserRuntime } from '../../scripts/build/package-browser-runtime.mjs';
-import { packageHeadlessLinux } from '../../scripts/build/package-headless-linux.mjs';
-import { forkUpstreamElectronVersion, packageBuilderArguments } from '../../scripts/build/package-electron-desktop.mjs';
+import { packageBrowserRuntime } from '../../scripts/packaging/package-browser-runtime.mjs';
+import { packageHeadlessLinux } from '../../scripts/packaging/package-headless-linux.mjs';
+import { forkUpstreamElectronVersion, packageBuilderArguments } from '../../scripts/packaging/package-electron-desktop.mjs';
 import checkDesktopTarget from '../../scripts/check/check-desktop-target.cjs';
 import { ownedDesktopFixture } from '../fixtures/owned-electron.mjs';
 

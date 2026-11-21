@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {ownerAdmissionEdits,patchDshOwnerAdmission,verifyDshOwnerAdmission} from "../../scripts/postinstall/patch-dsh-owner-admission.mjs";
-import { prepareDshRuntime } from "../../scripts/build/prepare-dsh-runtime.mjs";
+import { prepareDshRuntime } from "../../scripts/packaging/prepare-dsh-runtime.mjs";
 import { threadEnvironmentEdit, terminalThreadEnvironmentEdit } from "../../scripts/postinstall/patch-dsh-thread-environment.mjs";
 import checkDesktopTarget from "../../scripts/check/check-desktop-target.cjs";
 import { providerLifecycleEdits, nativeProviderLifecycleEdits, patchDshProviderLifecycle } from "../../scripts/postinstall/patch-dsh-provider-lifecycle.mjs";

@@ -7,7 +7,7 @@ import { serverDocumentStyles } from '@opencraft/design-system/document.web';
 import { typographyRole } from '@opencraft/design-system/typography';
 
 test('account document uses shared theme and typography before Workbench and formats its requested locale', async () => {
-  execFileSync(process.execPath, ['scripts/build/generate-document-tokens.mjs', '--check']);
+  execFileSync(process.execPath, ['scripts/packaging/generate-document-tokens.mjs', '--check']);
   for (const [locale, title] of [['en-US', 'Accounts and members'], ['zh-CN', '账号与成员']]) {
     const page = await accountPage({ nonce: 'synthetic', native: true, setup: false, locale });
     assert(page.includes('href="/__opencraft_account/styles.css"'));

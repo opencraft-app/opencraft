@@ -92,7 +92,7 @@ def package(target, distribution):
     environment['CSC_IDENTITY_AUTO_DISCOVERY'] = 'false'
     # Invoke Node directly: no POSIX env-assignment syntax or MSYS paths reach
     # Windows electron-builder. The wrapper verifies the full fork inventory.
-    subprocess.run(['node', str(root / 'scripts/build/package-electron-desktop.mjs'), *arguments],
+    subprocess.run(['node', str(root / 'scripts/packaging/package-electron-desktop.mjs'), *arguments],
                    cwd=root, env=environment, check=True)
 
 

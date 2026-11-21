@@ -3,7 +3,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { packageWebServer } from '../../scripts/build/package-web-server.mjs';
+import { packageWebServer } from '../../scripts/packaging/package-web-server.mjs';
 import { PACKAGE_NAME, createNpmReleaseSource } from '../../scripts/web-deployment/releases.mjs';
 export async function releaseFixture(directory, { realWebRoot, realWebRoots, execution = false, executionProfile = 'daemon' } = {}) {
   const releases = new Map(); let selected = '1.1.0'; let failDownload = false; let holdDownload = null;

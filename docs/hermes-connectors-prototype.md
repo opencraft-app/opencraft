@@ -20,7 +20,7 @@ supply required tokens, add/connect or disable. The installer URL/checksum live 
 advanced section, not the primary page.
 The installer is an explicit user action, never an effect of opening settings.
 
-`scripts/build/export-hermes-connector-catalog.mjs` exports public browsing metadata from an explicit
+`scripts/packaging/export-hermes-connector-catalog.mjs` exports public browsing metadata from an explicit
 marketplace directory; icons are copied from the same snapshot. This build-time projection contains no
 credentials or live authorization state. Installed instances and status always come from the VM.
 The 173-entry upstream snapshot is filtered by the plugin's managed-account dependency

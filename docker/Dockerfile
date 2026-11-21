@@ -13,7 +13,7 @@ WORKDIR /src
 COPY . .
 RUN test "$(node --version)" = "v$(cat .nvmrc)"
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
-RUN --mount=type=cache,target=/root/.npm env -u ELECTRON_SKIP_BINARY_DOWNLOAD node scripts/build/package-container.mjs /out
+RUN --mount=type=cache,target=/root/.npm env -u ELECTRON_SKIP_BINARY_DOWNLOAD node scripts/packaging/package-container.mjs /out
 
 # Export with --target host-artifact --output type=local,dest=./.local/docker-host.
 FROM scratch AS host-artifact

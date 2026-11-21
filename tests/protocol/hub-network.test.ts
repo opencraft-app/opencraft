@@ -187,7 +187,7 @@ test('redeemed invitation pins the peer key; challenge replay and revocation dur
 });
 
 test('packaged offline enrollment boots a token-free Headless team with pinned Hub identity and core admission', { timeout: 30000 }, async t => {
-  const { build } = await import('esbuild'), { buildHeadlessBundle } = await import('../../scripts/build/package-headless-linux.mjs');
+  const { build } = await import('esbuild'), { buildHeadlessBundle } = await import('../../scripts/packaging/package-headless-linux.mjs');
   const { execFile } = await import('node:child_process'), { promisify } = await import('node:util');
   const { pathToFileURL } = await import('node:url');
   await mkdir(join(process.cwd(), '.runtime'), { recursive: true });

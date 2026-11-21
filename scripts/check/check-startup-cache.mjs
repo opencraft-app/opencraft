@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { headlessWebHostDefinitions } from '../build/package-headless-linux.mjs';
+import { headlessWebHostDefinitions } from '../packaging/package-headless-linux.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const [mode, output, variant] = process.argv.slice(2);

@@ -7,7 +7,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { startHeadlessServer } from '../../apps/headless-server/src/headless-server.mjs';
 import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
-import { buildHeadlessBundle } from '../../scripts/build/package-headless-linux.mjs';
+import { buildHeadlessBundle } from '../../scripts/packaging/package-headless-linux.mjs';
 import { loadLocalMachineAccess } from '../../apps/headless-server/src/local-machine-access.mjs';
 import { randomBytes } from 'node:crypto';
 import { networkInterfaces } from 'node:os';

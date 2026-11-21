@@ -11,10 +11,10 @@ import {
   architectureSpecificRuntimeGlob,
   synchronizeRendererFiles,
   synchronizeRuntimeFiles,
-} from "../../scripts/build/merge-macos-universal.mjs";
-import { loadMacosSigner, signAndNotarizeMacos } from "../../scripts/build/sign-notarize-macos.mjs";
-import { notarizeMacosDmg, runXcrun } from "../../scripts/build/notarize-macos-dmg.mjs";
-import { stapleAndValidateMacos } from "../../scripts/build/staple-macos.mjs";
+} from "../../scripts/packaging/merge-macos-universal.mjs";
+import { loadMacosSigner, signAndNotarizeMacos } from "../../scripts/packaging/sign-notarize-macos.mjs";
+import { notarizeMacosDmg, runXcrun } from "../../scripts/packaging/notarize-macos-dmg.mjs";
+import { stapleAndValidateMacos } from "../../scripts/packaging/staple-macos.mjs";
 
 test("universal merge synchronizes architecture-qualified runtime packages without overwriting shared files", async t => {
   const directory = await mkdtemp(join(tmpdir(), "opencraft-universal-"));
@@ -108,7 +108,7 @@ test("signer's real resource walker tolerates a low file descriptor limit", { sk
   }
   const script = `
     import { createRequire } from "node:module";
-    import { loadMacosSigner } from ${JSON.stringify(new URL("../../scripts/build/sign-notarize-macos.mjs", import.meta.url).href)};
+    import { loadMacosSigner } from ${JSON.stringify(new URL("../../scripts/packaging/sign-notarize-macos.mjs", import.meta.url).href)};
     const signer = await loadMacosSigner();
     const require = createRequire(${JSON.stringify(new URL("../../apps/desktop/package.json", import.meta.url).href)});
     // v2 exports its walker; v1 only exposes the legacy internal helper.

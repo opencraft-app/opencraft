@@ -8,8 +8,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { headlessWebHostDefinitions } from '../build/package-headless-linux.mjs';
-import { packageWebServer } from '../build/package-web-server.mjs';
+import { headlessWebHostDefinitions } from '../packaging/package-headless-linux.mjs';
+import { packageWebServer } from '../packaging/package-web-server.mjs';
 
 // Installation may synchronously inventory/decompress/verify a large payload.
 // Only the accepted job's terminal state determines the outcome; an individual

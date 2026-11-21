@@ -7,7 +7,7 @@ import { join, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 const source = fileURLToPath(new URL('../', import.meta.url));
-const script = await readFile(join(source, 'scripts/build/package-container.mjs'), 'utf8');
+const script = await readFile(join(source, 'scripts/packaging/package-container.mjs'), 'utf8');
 const inventorySource = script.slice(script.indexOf('async function inventory('), script.indexOf('await inventory(root);'));
 async function run(root) {
   const files = [];

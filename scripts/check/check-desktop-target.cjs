@@ -31,9 +31,9 @@ module.exports = async function beforePack(context) {
     return;
   }
   // Direct electron-builder calls must obey the same contract as the public wrapper.
-  const { verifyElectronDistribution } = await import('../build/electron-distribution.mjs');
+  const { verifyElectronDistribution } = await import('../packaging/electron-distribution.mjs');
   const verified = await verifyElectronDistribution(context.packager.config?.electronDist,
     join(__dirname, '../../vendor/electron/fork.json'), { platform: context.electronPlatformName, arch: target });
   if (version !== verified.marker.electronVersion)
-    throw new Error('Electron packaging version differs from the owned artifact; use scripts/build/package-electron-desktop.mjs');
+    throw new Error('Electron packaging version differs from the owned artifact; use scripts/packaging/package-electron-desktop.mjs');
 };

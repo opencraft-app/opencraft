@@ -49,7 +49,7 @@ export function headlessWebHostDefinitions() {
 
 export async function buildHeadlessBundle(output, { headlessEntry = join(repositoryRoot, "apps/headless-server/src/headless-server.mjs"), additionalGitRuntimeEntries = [], assistantEntry = join(repositoryRoot,'apps/personal-assistant/src/runtime/assistant-server.mjs') } = {}) {
   await mkdir(dirname(output), { recursive: true });
-  await cp(join(repositoryRoot, 'scripts/build/craft-plugin.mjs'), join(dirname(output), 'craft-plugin.mjs'));
+  await cp(join(repositoryRoot, 'scripts/packaging/craft-plugin.mjs'), join(dirname(output), 'craft-plugin.mjs'));
   await build({ entryPoints: [join(repositoryRoot, "apps/headless-server/src/remote-browser/state.worker.ts")], outfile: join(dirname(output), "browser-state-worker.mjs"), bundle: true, platform: "node", format: "esm", target: "node26", logLevel: "warning" });
   await buildTranscriptCacheRuntime(dirname(output));
   await build({entryPoints:[fileURLToPath(new URL('../../packages/web-push-node/src/store.worker.ts',import.meta.url))],outfile:join(dirname(output),'push-storage-worker.mjs'),bundle:true,platform:'node',format:'esm',target:'node26',logLevel:'warning',banner:{js:"import { createRequire } from 'node:module'; const require=createRequire(import.meta.url);"}});
@@ -136,7 +136,7 @@ async function copyRuntimeModules(stageRoot) {
     recursive: true,
     verbatimSymlinks: true,
   });
-  await cp(join(repositoryRoot, "scripts/build/headless-codex-launcher.sh"), join(stageRoot, "runtime/codex/bin/codex"));
+  await cp(join(repositoryRoot, "scripts/packaging/headless-codex-launcher.sh"), join(stageRoot, "runtime/codex/bin/codex"));
   await chmod(join(stageRoot, "runtime/codex/bin/codex"), 0o755);
 }
 
@@ -201,13 +201,13 @@ export async function packageHeadlessLinux(composition = {}) {
     await mkdir(join(stage, "runtime"), { recursive: true });
     await cp(process.execPath, join(stage, "bin/node"));
     await chmod(join(stage, "bin/node"), 0o755);
-    await cp(join(repositoryRoot, "scripts/build/headless-server-launcher.sh"), join(stage, "bin/opencraft-server"));
+    await cp(join(repositoryRoot, "scripts/packaging/headless-server-launcher.sh"), join(stage, "bin/opencraft-server"));
     await chmod(join(stage, "bin/opencraft-server"), 0o755);
     await buildHeadlessBundle(join(stage, "runtime/server.mjs"), composition);
     await buildConversationCli(join(stage, 'runtime/opencraft-cli.mjs'));
     await writeFile(join(stage, 'bin/opencraft'), '#!/bin/sh\nexec "$(dirname "$0")/node" "$(dirname "$0")/../runtime/opencraft-cli.mjs" "$@"\n', { mode: 0o755 });
     await buildHumanAccountBundle(join(stage, 'runtime/human-account.mjs'));
-    await build({ entryPoints: [join(repositoryRoot, 'scripts/build/codex-account-reference.ts')], outfile: join(stage, 'runtime/codex-account-reference.mjs'),
+    await build({ entryPoints: [join(repositoryRoot, 'scripts/packaging/codex-account-reference.ts')], outfile: join(stage, 'runtime/codex-account-reference.mjs'),
       bundle: true, platform: 'node', format: 'esm', target: 'node26' });
     // Optional native installation assets; startup never installs services.
     await cp(join(repositoryRoot, "apps/local-agent-host/native/linux"), join(stage, "runtime/native-desktop"), { recursive: true });

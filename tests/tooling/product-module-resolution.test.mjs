@@ -5,11 +5,11 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "vite";
-import { isBareModuleSpecifier, isExternalWorkspaceSource } from "../../scripts/build/workspace-dependencies.mjs";
+import { isBareModuleSpecifier, isExternalWorkspaceSource } from "../../scripts/packaging/workspace-dependencies.mjs";
 import { workspaceDependencies } from "../../apps/workbench-web/workspace-dependencies.vite.ts";
-import { buildHeadlessBundle } from "../../scripts/build/package-headless-linux.mjs";
-import { packageRelay } from "../../scripts/build/package-relay.mjs";
-import { packageWebServer } from "../../scripts/build/package-web-server.mjs";
+import { buildHeadlessBundle } from "../../scripts/packaging/package-headless-linux.mjs";
+import { packageRelay } from "../../scripts/packaging/package-relay.mjs";
+import { packageWebServer } from "../../scripts/packaging/package-web-server.mjs";
 import { checkBrowserCompatibility } from "../../scripts/check/browser-compatibility-checker.mjs";
 
 const core = fileURLToPath(new URL("../../", import.meta.url));

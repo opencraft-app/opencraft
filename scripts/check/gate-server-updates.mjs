@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { once } from 'node:events';
-import { headlessWebHostDefinitions } from '../build/package-headless-linux.mjs';
+import { headlessWebHostDefinitions } from '../packaging/package-headless-linux.mjs';
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const exec = promisify(execFile);

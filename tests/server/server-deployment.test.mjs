@@ -13,7 +13,7 @@ import { createManagedWebServer } from "../../scripts/web-deployment/server.mjs"
 import { computeExecutionHash, createExecutionDeployment, coreHealth } from "../../scripts/server-deployment/execution.mjs";
 import { parseWebUpdateStatus } from "../../packages/web-update-protocol/src/index.mjs";
 import { releaseFixture } from "../support/web-deployment-fixture.mjs";
-import { packageWebServer } from "../../scripts/build/package-web-server.mjs";
+import { packageWebServer } from "../../scripts/packaging/package-web-server.mjs";
 
 async function until(read, condition) {
   for (let i = 0; i < 500; i++) { const value = await read(); if (condition(value)) return value; await delay(20); }

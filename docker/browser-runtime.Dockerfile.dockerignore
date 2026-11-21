@@ -1,7 +1,7 @@
 **
 !scripts/
-!scripts/build/install-owned-browser-runtime.mjs
-!scripts/build/remote-browser-artifact.mjs
+!scripts/packaging/install-owned-browser-runtime.mjs
+!scripts/packaging/remote-browser-artifact.mjs
 !vendor/
 !vendor/electron/
 !vendor/electron/fork.json

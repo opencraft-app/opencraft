@@ -4,7 +4,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { installOwnedBrowserRuntime } from '../../scripts/build/install-owned-browser-runtime.mjs';
+import { installOwnedBrowserRuntime } from '../../scripts/packaging/install-owned-browser-runtime.mjs';
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'owned-browser-install-'));

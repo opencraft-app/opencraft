@@ -2,7 +2,7 @@ import { ESLint } from "eslint";
 import path from "node:path";
 import ts from "typescript";
 import browserConfig from "../../config/eslint.browser.config.mjs";
-import { isBareModuleSpecifier, isExternalWorkspaceSource } from "../build/workspace-dependencies.mjs";
+import { isBareModuleSpecifier, isExternalWorkspaceSource } from "../packaging/workspace-dependencies.mjs";
 
 /** Only the last real bundle's local runtime modules are linted. No downstream
  * directory is scanned, and a missing or invalid graph fails rather than skips. */

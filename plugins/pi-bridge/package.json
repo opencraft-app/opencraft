@@ -10,7 +10,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "start": "node --import tsx src/main.ts",
-    "build": "node ../../scripts/build/build-pi-bridge.mjs"
+    "build": "node ../../scripts/packaging/build-pi-bridge.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "1.3.0",

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import sharp from 'sharp';
-import { optimizeWebImages } from '../../scripts/build/optimize-web-images.mjs';
+import { optimizeWebImages } from '../../scripts/packaging/optimize-web-images.mjs';
 
 async function directory(context) {
   const root = await mkdtemp(join(tmpdir(), 'opencraft-image-delivery-'));

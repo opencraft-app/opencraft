@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { packageWebServer } from '../../scripts/build/package-web-server.mjs';
+import { packageWebServer } from '../../scripts/packaging/package-web-server.mjs';
 import { inspectPublicRelease } from '../../scripts/check/inspect-public-release.mjs';
 import { parseNpmPackResult } from '../../scripts/web-deployment/npm-pack-result.mjs';
 

@@ -92,7 +92,7 @@ Connector catalog exports require an explicit local input. Missing arguments
 fail with usage before reading files:
 
 ```sh
-node scripts/build/export-hermes-connector-catalog.mjs /absolute/marketplace
+node scripts/packaging/export-hermes-connector-catalog.mjs /absolute/marketplace
 ```
 
 The catalog exporter emits metadata; it does not install a connector or connect
@@ -532,7 +532,7 @@ For a restricted systemd preview, set a private `StateDirectory` and its
 writer lock inside the data root so `ProtectSystem=strict` can remain enabled.
 
 For an operator-requested persistent, unauthenticated HTTP installation, run
-the separate repository tool `scripts/build/install-headless-linux.sh` on the Linux
+the separate repository tool `scripts/packaging/install-headless-linux.sh` on the Linux
 host. It consumes a newly built tar and its trusted SHA-256, installs a
 `DynamicUser` systemd service with `Restart=on-failure` and `enable --now`,
 binding OpenCraft directly to `0.0.0.0:80` by default. The static WebUI and both
@@ -544,7 +544,7 @@ stops an existing preview or copies account data automatically.
 
 ```sh
 sha256sum release/OpenCraft-server-0.1.0-linux-amd64.tar.gz
-sudo ./scripts/build/install-headless-linux.sh \
+sudo ./scripts/packaging/install-headless-linux.sh \
   --archive release/OpenCraft-server-0.1.0-linux-amd64.tar.gz \
   --sha256 '<verified 64-character digest>' \
   --port 80 \

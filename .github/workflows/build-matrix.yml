@@ -171,7 +171,7 @@ jobs:
       - name: Package an ad-hoc signed CI DMG
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: node scripts/build/package-electron-desktop.mjs --mac dmg --config.mac.identity=- --config.forceCodeSigning=true
+        run: node scripts/packaging/package-electron-desktop.mjs --mac dmg --config.mac.identity=- --config.forceCodeSigning=true
       - name: Verify and launch the app from the final DMG
         env:
           OPENCRAFT_SMOKE_OUTPUT: ${{ runner.temp }}/opencraft-macos-smoke

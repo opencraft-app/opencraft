@@ -10,7 +10,7 @@ const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 // Include the entire transformation, not only the dependency version. A DSH
 // patch or closure-policy change must never reuse an older generated payload.
 const scripts = ['full-release/runtime-cache.mjs', 'full-release/package-runtime.mjs',
-  'full-release/closure.mjs', 'build/prepare-dsh-runtime.mjs', 'postinstall/patch-dsh-thread-environment.mjs',
+  'full-release/closure.mjs', 'packaging/prepare-dsh-runtime.mjs', 'postinstall/patch-dsh-thread-environment.mjs',
   'postinstall/patch-dsh-provider-lifecycle.mjs', 'postinstall/patch-dsh-owner-admission.mjs'];
 export async function runtimeCacheKey(repositoryRoot, name) {
   if (!['codex', 'dsh'].includes(name)) throw new Error('Unknown cached runtime');

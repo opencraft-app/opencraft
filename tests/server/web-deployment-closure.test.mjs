@@ -58,7 +58,7 @@ test('closure cannot satisfy a missing pinned dependency from an ancestor or hos
 
 
 test('complete unsigned packaging requires dry-run before creating any output',async t=>{
- const {packageWebServer}=await import('../../scripts/build/package-web-server.mjs');const root=await workspace(t),output=join(root,'package-output');
+ const {packageWebServer}=await import('../../scripts/packaging/package-web-server.mjs');const root=await workspace(t),output=join(root,'package-output');
  await assert.rejects(packageWebServer({version:'1.0.0',output,completeRuntime:true}),/unsigned payloads/);await assert.rejects(stat(output),{code:'ENOENT'});
 });
 
@@ -92,7 +92,7 @@ test('explicit roots keep their versions when earlier roots require conflicting 
 test('bundled default dependency boundary cannot borrow a missing package from the release parent',async t=>{
  const{build}=await import('esbuild');const{fileURLToPath}=await import('node:url');const root=await workspace(t),release=join(root,'release'),runtime=join(release,'runtime'),entry=join(runtime,'prepare.mjs'),out=join(root,'out');await mkdir(runtime,{recursive:true});await writeFile(join(release,'package.json'),JSON.stringify({name:'fixed-release',version:'1.0.0',type:'module'}));
  await pkg(join(root,'node_modules/pinned'),'pinned','9.9.9',"module.exports='host-decoy'");
- const helper=fileURLToPath(new URL('../../scripts/build/package-mcp-app-runtime.mjs',import.meta.url));
+ const helper=fileURLToPath(new URL('../../scripts/packaging/package-mcp-app-runtime.mjs',import.meta.url));
  await build({stdin:{contents:`import{copyServerRuntime}from${JSON.stringify(helper)};console.log(JSON.stringify(await copyServerRuntime(${JSON.stringify(out)},['pinned'])));`,resolveDir:release},outfile:entry,bundle:true,platform:'node',format:'esm',logLevel:'silent'});
  await assert.rejects(exec(process.execPath,[entry],{cwd:release,env:{...process.env,NODE_PATH:''}}),/Missing runtime dependency/);
  await assert.rejects(stat(join(out,'pinned/package.json')),{code:'ENOENT'});
@@ -101,6 +101,6 @@ test('bundled default dependency boundary cannot borrow a missing package from t
 test('bundled tools resolve an explicitly selected release instead of their own or host dependencies',async t=>{
  const{build}=await import('esbuild');const{fileURLToPath}=await import('node:url');const root=await workspace(t),tool=join(root,'tool'),release=join(root,'release'),out=join(root,'out');await mkdir(join(tool,'runtime'),{recursive:true});await mkdir(release);for(const p of [tool,release])await writeFile(join(p,'package.json'),JSON.stringify({name:'fixed-runtime',version:'1.0.0',type:'module'}));
  await pkg(join(tool,'node_modules/pinned'),'pinned','9.0.0',"module.exports='tool-decoy'");await pkg(join(release,'node_modules/pinned'),'pinned','1.0.0',"module.exports='fixed-release'");
- const entry=join(tool,'runtime/prepare.mjs'),helper=fileURLToPath(new URL('../../scripts/build/package-mcp-app-runtime.mjs',import.meta.url));await build({stdin:{contents:`import{copyServerRuntime}from${JSON.stringify(helper)};import{createRequire}from'node:module';console.log(JSON.stringify(await copyServerRuntime(${JSON.stringify(out)},['pinned'],{installationRoot:${JSON.stringify(release)},resolver:createRequire(${JSON.stringify(join(release,'package.json'))})})));`,resolveDir:tool},outfile:entry,bundle:true,platform:'node',format:'esm',logLevel:'silent'});
+ const entry=join(tool,'runtime/prepare.mjs'),helper=fileURLToPath(new URL('../../scripts/packaging/package-mcp-app-runtime.mjs',import.meta.url));await build({stdin:{contents:`import{copyServerRuntime}from${JSON.stringify(helper)};import{createRequire}from'node:module';console.log(JSON.stringify(await copyServerRuntime(${JSON.stringify(out)},['pinned'],{installationRoot:${JSON.stringify(release)},resolver:createRequire(${JSON.stringify(join(release,'package.json'))})})));`,resolveDir:tool},outfile:entry,bundle:true,platform:'node',format:'esm',logLevel:'silent'});
  const{stdout}=await exec(process.execPath,[entry],{cwd:tool,env:{...process.env,NODE_PATH:''}});assert.equal(JSON.parse(stdout).pinned,'1.0.0');assert.equal(await readFile(join(out,'pinned/index.cjs'),'utf8'),"module.exports='fixed-release'");
 });

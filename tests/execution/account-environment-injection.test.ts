@@ -17,7 +17,7 @@ import { AcpEngine } from '../../plugins/acp-engine/src/index.js';
 import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { EXECUTION_ENVIRONMENT_FIELD } from '@opencraft/execution-environment';
-import { buildDshCapabilityPlugin } from '../../scripts/build/package-dsh-capability-runtime.mjs';
+import { buildDshCapabilityPlugin } from '../../scripts/packaging/package-dsh-capability-runtime.mjs';
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const program = "process.stdout.write(require('node:crypto').createHash('sha256').update(process.env.SERVICE_KEY??'missing').digest('hex'))";
 const entry = (value: string) => ({ name: 'SERVICE_KEY', value, secret: true });

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { mkdtemp, mkdir, writeFile, stat, rm, access } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
-const prepare = require('../../scripts/build/prepare-packaged-pty.cjs');
+const prepare = require('../../scripts/packaging/prepare-packaged-pty.cjs');
 
 test('packaging repairs the executable helper before signing and rejects absent native assets', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'packaged-pty-'));

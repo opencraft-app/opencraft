@@ -100,7 +100,7 @@ Typography is a design-system protocol, not feature CSS. The checked-in
 `packages/design-system/src/typography/typography.tokens.json` registry is the
 single data authority for font-family roles and per-platform semantic metrics.
 `typography.shared.ts` projects that registry to TypeScript/Native, while
-`scripts/build/generate-typography.mjs` deterministically creates the Web custom
+`scripts/packaging/generate-typography.mjs` deterministically creates the Web custom
 properties in `_generated.web.scss`. Generated output is checked but never
 hand-edited.
 
