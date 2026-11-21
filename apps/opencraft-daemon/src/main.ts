@@ -95,7 +95,9 @@ export async function startOpenCraftDaemon(options: {
   reportStorage();
   let humanAccounts: Awaited<ReturnType<typeof createDesktopAccountHost>> | null = null;
   try {
-    humanAccounts = options.humanAccountDirectory ? await createDesktopAccountHost(options.humanAccountDirectory, () => '', {storageRole:'borrower'}) : null;
+    // The daemon is the desktop installation's server role: it owns, migrates and fences the
+    // Server database before listening. Electron Main only borrows it for the login pages.
+    humanAccounts = options.humanAccountDirectory ? await createDesktopAccountHost(options.humanAccountDirectory, () => '', {storageRole:'owner'}) : null;
   } catch (error) {
     try { await storage.close(); } finally { await releaseStorageOwner(); }
     throw error;

@@ -572,7 +572,11 @@ async function openRemoteWindow(input: string, primary = false): Promise<void> {
 
 async function ensureLoopbackHost(): Promise<string> {
   if (rendererOrigin !== null) return rendererOrigin;
-  localAccountHost = await createDesktopAccountHost(join(desktopPaths.userDataDirectory, 'human-account'), humanLoginPage, { openRemote: origin => openRemoteWindow(origin) });
+  // The daemon owns and migrates the Server database; it must be ready before Main borrows it.
+  if (!daemonManager) throw new Error('OpenCraft Daemon is not configured');
+  await daemonManager.ensureStarted();
+  localAccountHost = await createDesktopAccountHost(join(desktopPaths.userDataDirectory, 'human-account'), humanLoginPage,
+    { openRemote: origin => openRemoteWindow(origin), storageRole: 'borrower' });
   try {
     loopbackHost = await createWorkbenchStaticServer({
       root: rendererRoot(),

@@ -20,7 +20,8 @@ import { HumanAccountManagement } from '@opencraft/access-control/account-manage
 import { LocalAccountServerPlugin } from './server.js';
 import { LocalAccountApplication } from './application.js';
 
-/** Native Main owns these stores and the private browser proof. No renderer supplies identity. */
+/** The desktop daemon owns these stores (`storageRole: 'owner'`); Electron Main borrows them for the
+ * login pages and holds the private browser proof. No renderer supplies identity. */
 export async function createDesktopAccountHost(directory: string, renderLogin: (nonce: string) => string, options: { openRemote?: (origin: string) => Promise<void>; storageRole?: 'owner' | 'borrower' } = {}) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const storage=options.storageRole==='borrower'?borrowServerDatabase(directory):await openServerDatabase(directory);

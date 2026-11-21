@@ -349,6 +349,64 @@ test("daemon wire keeps the old five-name projection and exposes complete scoped
   }finally{await server.close();await appHost.close();await rm(root,{recursive:true,force:true});}
 });
 
+test("the desktop daemon owns the Server database and Electron Main only borrows it", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oc-daemon-server-owner-"));
+  const cwd = process.cwd();
+  let daemon: Awaited<ReturnType<typeof startOpenCraftDaemon>> | undefined;
+  const { createDesktopAccountHost } = await import("../../plugins/local-account/src/desktop.js");
+  try {
+    const humanAccountDirectory = join(directory, "human-account");
+    daemon = await startOpenCraftDaemon({ endpoint: join(directory, "daemon.sock"), runtimeDirectory: cwd, authToken: "synthetic-" + "x".repeat(48),
+      dshExecutable: "unused", dataDirectory: join(directory, "data"), codexExecutable: "unused", codexDataDirectory: join(directory, "codex"),
+      nativeCodexHomeDirectory: join(directory, "native"), humanAccountDirectory });
+    // The daemon migrated and initialized the installation before listening.
+    await stat(join(humanAccountDirectory, "opencraft-server.sqlite"));
+    // The previous arrangement, Main opening it as owner, now meets the daemon's fence.
+    await assert.rejects(createDesktopAccountHost(humanAccountDirectory, () => ""));
+    const main = await createDesktopAccountHost(humanAccountDirectory, () => "", { storageRole: "borrower" });
+    try {
+      const token = main.createNativeSession();
+      assert.ok(main.authenticateSession(token), "Main's native session is accepted against the daemon-owned database");
+    } finally { await main.close(); }
+  } finally { await daemon?.close(); process.chdir(cwd); await rm(directory, { recursive: true, force: true }); }
+});
+
+test("a daemon left by another build is stopped and a compatible daemon is adopted", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-daemon-build-")), endpoint = join(root, "daemon.sock"), token = "synthetic-" + "x".repeat(48);
+  const tokenPath = join(root, "token"); await writeFile(tokenPath, token);
+  const appHost = new AppHostServer({ createTransport: () => new TestTransport() });
+  const { createServer } = await import("node:net");
+  let shutdownRequests = 0;
+  let replacement: Awaited<ReturnType<typeof startOpenCraftDaemonServer>> | undefined;
+  const sockets = new Set<import("node:net").Socket>();
+  // An older daemon: authenticates the same token but reports another build.
+  const old = createServer(socket => {
+    sockets.add(socket);
+    const channel = new DaemonJsonLineChannel(socket);
+    channel.subscribeMessage(value => {
+      const message = value as { type?: string };
+      if (message.type === "daemon/hello") channel.send({ type: "daemon/ready", protocolVersion: OPENCRAFT_DAEMON_PROTOCOL_VERSION, buildId: "older-build", pid: 1 });
+      if (message.type === "daemon/shutdown") {
+        shutdownRequests++;
+        channel.send({ type: "daemon/shutting-down" });
+        for (const open of sockets) open.destroy();
+        old.close(() => { void startOpenCraftDaemonServer({ endpoint, authToken: token, appHost }).then(server => { replacement = server; }); });
+      }
+    });
+  });
+  await new Promise<void>(resolve => old.listen(endpoint, resolve));
+  try {
+    const manager = new OpenCraftDaemonClientManager({ endpoint, tokenPath, tokenMode: "existing", daemonEntry: "unused", executable: process.execPath,
+      runtimeDirectory: root, dataDirectory: root, dshExecutable: "unused", codexExecutable: "unused", codexDataDirectory: join(root, "codex"),
+      nativeCodexHomeDirectory: join(root, "native") });
+    await manager.ensureStarted();
+    assert.equal(shutdownRequests, 1);
+    const connection = await manager.connectAppHost("after-replacement"); connection.close();
+  } finally {
+    await replacement?.close(); await appHost.close(); old.close(); await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("closing a daemon JSON line channel destroys its socket instead of only half-closing", () => {
   const socket = new PassThrough();
   const channel = new DaemonJsonLineChannel(socket as unknown as import("node:net").Socket);

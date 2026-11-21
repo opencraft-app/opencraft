@@ -47,6 +47,11 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+/** A live daemon from another build. It is ours (same token), but this client cannot drive it. */
+export class DaemonBuildMismatchError extends Error {
+  constructor() { super("OpenCraft Daemon protocol/build mismatch"); this.name = "DaemonBuildMismatchError"; }
+}
+
 export function isDaemonEndpointUnavailable(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | null)?.code;
   return code === "ENOENT" || code === "ECONNREFUSED" || code === "EPIPE";
@@ -139,6 +144,12 @@ export class OpenCraftDaemonClientManager {
     } else this.authToken = loadOrCreateToken(options.tokenPath);
   }
 
+  /** Start or adopt the daemon and wait until it has opened its owned storage. */
+  async ensureStarted(): Promise<void> {
+    if (this.shuttingDown) throw new Error("OpenCraft Daemon is shutting down");
+    await this.ensureRunning();
+  }
+
   async connectAppHost(connectionId: string): Promise<OpenCraftDaemonAppHostConnection> {
     if (this.shuttingDown) throw new Error("OpenCraft Daemon is shutting down");
     await this.ensureRunning();
@@ -220,7 +231,12 @@ export class OpenCraftDaemonClientManager {
       existing.close();
       return;
     } catch (error) {
-      if (!isDaemonEndpointUnavailable(error)) {
+      // A daemon left running by another build (for example after an app update
+      // while the previous Main crashed) owns this profile's storage. Stop it
+      // cleanly so this build's daemon opens and migrates that storage itself.
+      if (error instanceof DaemonBuildMismatchError) {
+        if (await this.retireMismatchedDaemon(error) === "adopted") return;
+      } else if (!isDaemonEndpointUnavailable(error)) {
         throw new Error(
           `A process owns the OpenCraft Daemon endpoint but cannot be adopted: ${error instanceof Error ? error.message : String(error)}`,
           { cause: error },
@@ -251,6 +267,41 @@ export class OpenCraftDaemonClientManager {
     throw new Error(
       `OpenCraft Daemon did not become ready: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
     );
+  }
+
+  /** Ask the other build's daemon to stop; report whether a compatible one already replaced it. */
+  private async retireMismatchedDaemon(original: Error): Promise<"absent" | "adopted"> {
+    await new Promise<void>((resolve) => {
+      const socket = connect(this.endpoint);
+      const channel = new DaemonJsonLineChannel(socket);
+      const timeout = setTimeout(finish, 5_000);
+      function finish() { clearTimeout(timeout); channel.destroy(); resolve(); }
+      channel.subscribeMessage((value) => {
+        const message = value as DaemonServerMessage;
+        if (message?.type === "daemon/ready") channel.send({ type: "daemon/shutdown" });
+        else if (message?.type === "daemon/shutting-down" || message?.type === "daemon/fatal") finish();
+      });
+      channel.subscribeClose(() => finish());
+      socket.once("error", () => finish());
+      socket.once("connect", () => channel.send({
+        type: "daemon/hello",
+        protocolVersion: OPENCRAFT_DAEMON_PROTOCOL_VERSION,
+        buildId: OPENCRAFT_DAEMON_BUILD_ID,
+        authToken: this.authToken,
+        connectionId: `retire:${process.pid}`,
+        role: "control",
+      }));
+    });
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+      try { (await this.open("control", `probe:${process.pid}`)).close(); return "adopted"; }
+      catch (error) {
+        if (isDaemonEndpointUnavailable(error)) return "absent";
+        if (!(error instanceof DaemonBuildMismatchError)) throw error;
+      }
+      await delay(100);
+    }
+    throw new Error(`An OpenCraft Daemon from another build did not stop: ${original.message}`, { cause: original });
   }
 
   private spawnDaemon(): void {
@@ -288,7 +339,7 @@ export class OpenCraftDaemonClientManager {
           message.protocolVersion !== OPENCRAFT_DAEMON_PROTOCOL_VERSION
           || message.buildId !== OPENCRAFT_DAEMON_BUILD_ID
         ) {
-          fail(new Error("OpenCraft Daemon protocol/build mismatch"));
+          fail(new DaemonBuildMismatchError());
           return;
         }
         let storage: readonly DaemonStorageSummary[] | undefined;

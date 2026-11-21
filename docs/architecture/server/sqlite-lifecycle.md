@@ -44,7 +44,7 @@ OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在
 | | `account-pool.sqlite` | account-pool-host | v4 | 同上，仅内嵌模式（未配置 codex-core 地址，桌面默认） |
 | | `tasks.sqlite`、`cache/transcript-index.sqlite` | tasks、transcript-read-cache | v5、v1 | 首次请求 Tasks / 首次读历史时 |
 | **Electron Main**（`apps/desktop`，`userData` 目录，只存客户端角色数据） | `opencraft-desktop.sqlite`：界面偏好、连接器选择、扩展本地文档、客户端资源 | desktop-client | v1 | 启动时；首次启动时导入旧版的四个独立文件，见[客户端库合并](#electron-main-客户端库合并) |
-| | `human-account/opencraft-server.sqlite` | Server 核心 | v20 | 首次启动本机账号服务时由 Main 迁移；daemon 只借用连接，不迁移 |
+| **桌面 daemon**（服务端角色，随托盘常驻） | `userData/human-account/opencraft-server.sqlite` | Server 核心 | v20 | daemon 启动、监听 IPC 之前打开、迁移并持有 `server.lock`；Electron Main 打开窗口前等待 daemon 就绪，再借用连接提供本机登录页 |
 | **codex-core**（`apps/codex-core`，独立升级） | `account-pool.sqlite` | account-pool-host | v4 | 账号 Core 启动时 |
 | | `codex-generations.sqlite` | generation-registry | v2 | generation 路由服务启动时 |
 | **其他独立进程** | agent-bridge-host 配置的库路径 | agent-bridge-host | v3 | 进程启动时 |
@@ -59,7 +59,7 @@ OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在
 
 - **model-gateway**：Headless 与独立升级的 codex-core 会打开同一路径。给该库加迁移时，codex-core 必须与 Headless 同批升级；先升级的一方会让另一方在升级完成前无法打开该库。
 - **model-usage-policy**：Headless 常驻打开 `<H>/model-usage-policy.sqlite`；dsh-host、engine-host、acp-host 启动时各打开一次以完成迁移，默认路径是各自数据目录的上一级。部署让它们落到同一文件时，同样要同批升级。
-- **桌面 `human-account/opencraft-server.sqlite`**：Electron Main 迁移，daemon 借用。两者在同一个桌面安装包里发布，版本天然一致；不要让单独替换的 daemon 借用更新版本的库。
+- **桌面 `human-account/opencraft-server.sqlite`**：daemon 迁移并持有写锁，Electron Main 借用。两者在同一个桌面安装包里发布；Main 发现另一构建的 daemon 仍在运行时（例如 Main 崩溃后升级了 App），先请它正常退出，再由本构建的 daemon 打开并迁移，不借用版本不符的库。
 - **Server 核心库有三份独立实例**（Headless、桌面 `human-account`、Local Agent Host `collaboration`），文件不同，各自随所在组件迁移；修改核心 schema 会影响全部三处。
 
 `account-pool.sqlite`、`tasks.sqlite`、`conversation-schedules.sqlite` 等在不同组件里各有一份，位于不同目录，互不影响。
