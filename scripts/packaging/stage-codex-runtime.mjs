@@ -11,6 +11,13 @@ import { fileURLToPath } from "node:url";
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /** npm's os/cpu names for the desktop package targets that ship Codex. */
+/**
+ * Vendor resources OpenCraft never uses. `voice` is Codex's terminal voice
+ * pipeline (a GStreamer/Opus audio host, ~74 MB per target, no models);
+ * OpenCraft drives Codex through app-server and has its own speech input.
+ */
+export const OMITTED_CODEX_RESOURCES = Object.freeze(["codex-resources/voice"]);
+
 const CODEX_TARGETS = Object.freeze({
   "darwin/arm64": "codex-darwin-arm64",
   "darwin/x64": "codex-darwin-x64",
@@ -93,6 +100,7 @@ export async function stageCodexRuntime(
   await rm(staging, { recursive: true, force: true });
   await mkdir(staging, { recursive: true });
   await cp(source, output, { recursive: true, preserveTimestamps: true });
+  for (const omitted of OMITTED_CODEX_RESOURCES) await rm(join(output, omitted), { recursive: true, force: true });
   return { version, target: layout.target, output };
 }
 

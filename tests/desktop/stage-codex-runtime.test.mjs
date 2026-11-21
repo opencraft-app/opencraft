@@ -21,6 +21,8 @@ async function fixture(t, { version = "0.162.1", layoutVersion = version } = {})
     await mkdir(join(vendor, "codex-resources"), { recursive: true });
     await writeFile(join(vendor, "bin/codex"), "#!/bin/sh\n", { mode: 0o755 });
     await writeFile(join(vendor, "codex-resources/marker"), "resource");
+    await mkdir(join(vendor, "codex-resources/voice/bin"), { recursive: true });
+    await writeFile(join(vendor, "codex-resources/voice/bin/codex-voice-host"), "voice");
     await writeFile(
       join(vendor, "codex-package.json"),
       JSON.stringify({ version: layoutVersion, target: "aarch64-apple-darwin", entrypoint: "bin/codex" }),
@@ -38,6 +40,11 @@ test("stages the target's pinned Codex vendor tree in Codex's own layout", async
   assert.equal(staged.version, "0.162.1");
   assert.equal((await stat(join(output, "bin/codex"))).mode & 0o111, 0o111, "the binary stays executable");
   assert.equal(await readFile(join(output, "codex-resources/marker"), "utf8"), "resource");
+  await assert.rejects(
+    stat(join(output, "codex-resources/voice")),
+    { code: "ENOENT" },
+    "the unused voice pipeline is not shipped",
+  );
 });
 
 test("refuses a vendor tree that is not the pinned version or an unsupported target", async (t) => {

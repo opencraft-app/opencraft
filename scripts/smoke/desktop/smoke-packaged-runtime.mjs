@@ -17,4 +17,8 @@ const codex = resolve(resources, `runtime/codex-${arch}/bin`, process.platform =
 const { stdout } = await promisify(execFile)(codex, ["--version"], { timeout: 30_000 });
 assert.match(stdout, new RegExp(`\\b${pinned.replaceAll(".", "\\.")}\\b`), `bundled Codex reports ${stdout.trim()}`);
 await assert.rejects(access(resolve(resources, "runtime/dsh/node_modules")), "the package must not ship a DSH runtime");
+await assert.rejects(
+  access(resolve(resources, `runtime/codex-${arch}/codex-resources/voice`)),
+  "the package must not ship Codex's voice pipeline",
+);
 console.log(`Packaged runtime smoke passed: bundled Codex ${pinned} runs; no DSH runtime is shipped.`);

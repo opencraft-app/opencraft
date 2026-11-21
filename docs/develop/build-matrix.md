@@ -62,7 +62,8 @@ Every desktop package also ships the native Codex pinned in `runtime/codex`:
 `scripts/packaging/stage-codex-runtime.mjs` installs the target's official
 platform package (`npm ci --os --cpu`, so a target can be staged from another
 host) and copies its vendor tree to `runtime/codex-<arch>/` in the package
-(architecture-qualified, so the macOS universal merge keeps both). The
+(architecture-qualified, so the macOS universal merge keeps both), without
+Codex's terminal voice pipeline, which OpenCraft does not use. The
 desktop starts that binary unless `OPENCRAFT_CODEX_EXECUTABLE` names another,
 and falls back to a user-installed Codex only when none is bundled.
 Desktop packages do not ship the DSH runtime. They keep OpenCraft's DSH bridge
