@@ -44,7 +44,7 @@ OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在
 | | `account-pool.sqlite` | account-pool-host | v4 | 同上，仅内嵌模式（未配置 codex-core 地址，桌面默认） |
 | | `tasks.sqlite`、`cache/transcript-index.sqlite` | tasks、transcript-read-cache | v5、v1 | 首次请求 Tasks / 首次读历史时 |
 | **Electron Main**（`apps/desktop`，`userData` 目录，只存客户端角色数据） | `opencraft-desktop.sqlite`：界面偏好、连接器选择、扩展本地文档、客户端资源 | desktop-client | v1 | 启动时；首次启动时导入旧版的四个独立文件，见[客户端库合并](#electron-main-客户端库合并) |
-| **桌面 daemon**（服务端角色，随托盘常驻） | `userData/human-account/opencraft-server.sqlite` | Server 核心 | v20 | daemon 启动、监听 IPC 之前打开、迁移并持有 `server.lock`；Electron Main 打开窗口前等待 daemon 就绪，再借用连接提供本机登录页 |
+| **桌面 daemon**（服务端角色，随托盘常驻） | `userData/human-account/opencraft-server.sqlite` | Server 核心 | v20 | daemon 启动、监听 IPC 之前打开、迁移并持有 `server.lock`，同时提供本机账号服务；Electron Main 不打开该库，只把账号路由转发给 daemon，见[桌面服务端角色](#桌面服务端角色与账号服务) |
 | **codex-core**（`apps/codex-core`，独立升级） | `account-pool.sqlite` | account-pool-host | v4 | 账号 Core 启动时 |
 | | `codex-generations.sqlite` | generation-registry | v2 | generation 路由服务启动时 |
 | **其他独立进程** | agent-bridge-host 配置的库路径 | agent-bridge-host | v3 | 进程启动时 |
@@ -59,7 +59,7 @@ OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在
 
 - **model-gateway**：Headless 与独立升级的 codex-core 会打开同一路径。给该库加迁移时，codex-core 必须与 Headless 同批升级；先升级的一方会让另一方在升级完成前无法打开该库。
 - **model-usage-policy**：Headless 常驻打开 `<H>/model-usage-policy.sqlite`；dsh-host、engine-host、acp-host 启动时各打开一次以完成迁移，默认路径是各自数据目录的上一级。部署让它们落到同一文件时，同样要同批升级。
-- **桌面 `human-account/opencraft-server.sqlite`**：daemon 迁移并持有写锁，Electron Main 借用。两者在同一个桌面安装包里发布；Main 发现另一构建的 daemon 仍在运行时（例如 Main 崩溃后升级了 App），先请它正常退出，再由本构建的 daemon 打开并迁移，不借用版本不符的库。
+- **桌面 `human-account/opencraft-server.sqlite`**：只有 daemon 打开、迁移并持有写锁，Electron Main 不打开它。Main 发现另一构建的 daemon 仍在运行时（例如 Main 崩溃后升级了 App），先请它正常退出，再由本构建的 daemon 打开并迁移。
 - **Server 核心库有三份独立实例**（Headless、桌面 `human-account`、Local Agent Host `collaboration`），文件不同，各自随所在组件迁移；修改核心 schema 会影响全部三处。
 
 `account-pool.sqlite`、`tasks.sqlite`、`conversation-schedules.sqlite` 等在不同组件里各有一份，位于不同目录，互不影响。
@@ -150,6 +150,16 @@ Web preferences、Connector configuration 与插件文档继续使用各自 Inde
 4. 回执已写入但标记未写入时（中途崩溃），只在旧文件内容摘要与回执一致时补写标记；不一致说明旧版本在此期间写过它，拒绝启动并保留两份文件供人工处理。
 
 旧文件除这一条账本记录外不改动，即为恢复副本。装回合并前的旧版本会因旧文件已退休而无法启动；回到旧版本需要人工处理。四个旧 owner 仍登记在注册表中，只供导入器打开旧文件，不再追加迁移。后续服务端库按进程合并时沿用同一做法：导入加回执、旧文件打退休标记、不删除旧文件。
+
+### 桌面服务端角色与账号服务
+
+桌面安装对远程设备而言就是服务端，服务端角色归随托盘常驻的 daemon；Electron Main 只持有客户端角色（窗口、托盘、cookie 与客户端库）。
+
+- daemon 以 owner 身份持有 Server 核心库与本机账号服务（含登录页），在 daemon IPC 端点旁的私有 Unix socket `opencraft-account.sock`（0600，Windows 为命名管道）上提供 `/setup`、`/__opencraft_account`、`/__opencraft_auth`，不监听 TCP 端口。
+- Main 的本地静态服务器继续提供渲染器文件，并把上述账号路由原样转发给该 socket；页面来源仍是 Main 的回环地址，账号服务按 Main 告知的来源校验 Host 与 Origin。
+- Main 通过已认证的 daemon 控制通道发送 `account/attach`（页面来源），取回浏览器凭证与本机会话，写入 `oc_desktop_owner`、`oc_human` cookie。账号服务需要打开远程服务器窗口时，经同一通道请求 Main（`account/open-remote`）。
+- 控制通道断开（daemon 退出或重启）时，Main 以退避重试重新拉起或接管 daemon、重新 attach 并刷新 cookie；浏览器凭证每次 daemon 启动都会重新生成。
+- 已知问题：daemon 意外退出后，渲染器自身的 AppHost 重连会占满 CPU（改动前同样存在），需单独修复。
 
 ### 两个 Host 自有文件的离线改名
 

@@ -26,6 +26,8 @@ import type { BridgeGatewayOptions } from "@opencraft/agent-bridge-host/gateway"
 import { CodexEngineAdapter } from "./codex-engine-adapter.js";
 import { startOpenCraftDaemonServer } from "./server.js";
 import { createDesktopAccountHost } from '@opencraft/plugin-local-account/desktop';
+import { humanLoginPage } from '@opencraft/plugin-local-account/login-page';
+import { desktopAccountEndpoint, startDesktopAccountServer, type DesktopAccountServer } from './desktop-account-endpoint.js';
 
 function isNamedPipe(endpoint: string): boolean {
   return endpoint.startsWith("\\\\.\\pipe\\");
@@ -94,11 +96,20 @@ export async function startOpenCraftDaemon(options: {
   };
   reportStorage();
   let humanAccounts: Awaited<ReturnType<typeof createDesktopAccountHost>> | null = null;
+  let accountServer: DesktopAccountServer | null = null;
+  // The native Main currently attached; it opens remote windows for the account service.
+  let openRemoteWindow: ((origin: string) => Promise<void>) | null = null;
   try {
     // The daemon is the desktop installation's server role: it owns, migrates and fences the
-    // Server database before listening. Electron Main only borrows it for the login pages.
-    humanAccounts = options.humanAccountDirectory ? await createDesktopAccountHost(options.humanAccountDirectory, () => '', {storageRole:'owner'}) : null;
+    // Server database and serves the account routes. Electron Main only forwards those routes.
+    humanAccounts = options.humanAccountDirectory ? await createDesktopAccountHost(options.humanAccountDirectory, humanLoginPage, {
+      storageRole: 'owner',
+      openRemote: origin => openRemoteWindow ? openRemoteWindow(origin) : Promise.reject(new Error('No native window host is attached')),
+    }) : null;
+    if (humanAccounts) accountServer = await startDesktopAccountServer(desktopAccountEndpoint(options.endpoint), (request, response) => humanAccounts!.handle(request, response));
   } catch (error) {
+    await accountServer?.close();
+    try { await humanAccounts?.close(); } catch { /* keep the original failure */ }
     try { await storage.close(); } finally { await releaseStorageOwner(); }
     throw error;
   }
@@ -200,6 +211,7 @@ export async function startOpenCraftDaemon(options: {
       codexAgents.clear();
       await collaboration?.close();
       threadAccess?.close();
+      await accountServer?.close();
       await humanAccounts?.close();
     });
     closing = operation;
@@ -221,6 +233,11 @@ export async function startOpenCraftDaemon(options: {
     authToken: options.authToken,
     appHost,
     ...(humanAccounts ? { authenticateHumanSession: proof => humanAccounts!.authenticateSession(proof) } : {}),
+    ...(humanAccounts && accountServer ? { attachAccount: (origin: string, openRemote: (origin: string) => Promise<void>) => {
+      humanAccounts!.setOrigin(origin);
+      openRemoteWindow = openRemote;
+      return { browserProof: humanAccounts!.browserProof, sessionToken: humanAccounts!.createNativeSession(), endpoint: accountServer!.endpoint };
+    } } : {}),
     onShutdownRequested: () => void close().then(() => process.exit(0), () => process.exit(1)),
   });
   } catch (error) {
@@ -228,6 +245,7 @@ export async function startOpenCraftDaemon(options: {
     await assistantThreads?.close();
     await collaboration?.close();
     threadAccess?.close();
+    await accountServer?.close();
     await humanAccounts?.close();
     await appHost.close();
     try { await storage.close(); } finally { await releaseStorageOwner(); }

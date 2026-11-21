@@ -65,6 +65,14 @@ export function openDaemonLog(runtimeDirectory: string): number {
   return fd;
 }
 
+export interface DesktopAccountAttachment {
+  readonly browserProof: string;
+  readonly sessionToken: string;
+  readonly endpoint: string;
+  subscribeClose(listener: () => void): () => void;
+  close(): void;
+}
+
 /** A live daemon from another build. It is ours (same token), but this client cannot drive it. */
 export class DaemonBuildMismatchError extends Error {
   constructor() { super("OpenCraft Daemon protocol/build mismatch"); this.name = "DaemonBuildMismatchError"; }
@@ -166,6 +174,46 @@ export class OpenCraftDaemonClientManager {
   async ensureStarted(): Promise<void> {
     if (this.shuttingDown) throw new Error("OpenCraft Daemon is shutting down");
     await this.ensureRunning();
+  }
+
+  /**
+   * Attach this Main as the window host of the daemon-owned account service.
+   * The returned channel stays open: the daemon sends remote-window requests on it,
+   * and its close means the daemon went away and cookie material must be refreshed.
+   */
+  async attachAccount(origin: string, openRemote: (origin: string) => Promise<void>): Promise<DesktopAccountAttachment> {
+    if (this.shuttingDown) throw new Error("OpenCraft Daemon is shutting down");
+    await this.ensureRunning();
+    const connected = await this.open("control", `account:${process.pid}`);
+    const closeListeners = new Set<() => void>();
+    return await new Promise<DesktopAccountAttachment>((resolve, reject) => {
+      let attached: DesktopAccountAttachment | null = null;
+      const timeout = setTimeout(() => { connected.close(); reject(new Error("OpenCraft Daemon did not attach the account service")); }, 5_000);
+      connected.channel.subscribeMessage((value) => {
+        const message = value as DaemonServerMessage;
+        if (message?.type === "account/attached" && !attached) {
+          clearTimeout(timeout);
+          attached = { browserProof: message.browserProof, sessionToken: message.sessionToken, endpoint: message.endpoint,
+            subscribeClose(listener) { closeListeners.add(listener); return () => closeListeners.delete(listener); },
+            close() { closeListeners.clear(); connected.close(); } };
+          resolve(attached);
+        } else if (message?.type === "account/open-remote" && attached) {
+          void openRemote(message.origin).then(() => true, () => false).then(ok => {
+            try { connected.channel.send({ type: "account/open-remote-result", id: message.id, ok }); } catch { /* channel closed */ }
+          });
+        } else if (message?.type === "daemon/fatal" && !attached) {
+          clearTimeout(timeout);
+          reject(new Error(`${message.code}: ${message.message}`));
+        }
+      });
+      connected.channel.subscribeClose(() => {
+        clearTimeout(timeout);
+        if (!attached) { reject(new Error("OpenCraft Daemon closed before attaching the account service")); return; }
+        for (const listener of [...closeListeners]) listener();
+        closeListeners.clear();
+      });
+      connected.channel.send({ type: "account/attach", origin });
+    });
   }
 
   async connectAppHost(connectionId: string): Promise<OpenCraftDaemonAppHostConnection> {

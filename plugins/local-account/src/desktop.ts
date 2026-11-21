@@ -20,8 +20,8 @@ import { HumanAccountManagement } from '@opencraft/access-control/account-manage
 import { LocalAccountServerPlugin } from './server.js';
 import { LocalAccountApplication } from './application.js';
 
-/** The desktop daemon owns these stores (`storageRole: 'owner'`); Electron Main borrows them for the
- * login pages and holds the private browser proof. No renderer supplies identity. */
+/** The desktop daemon owns these stores and serves the account routes (`storageRole: 'owner'`);
+ * Electron Main forwards those routes and installs the browser proof as a cookie. No renderer supplies identity. */
 export async function createDesktopAccountHost(directory: string, renderLogin: (nonce: string) => string, options: { openRemote?: (origin: string) => Promise<void>; storageRole?: 'owner' | 'borrower' } = {}) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const storage=options.storageRole==='borrower'?borrowServerDatabase(directory):await openServerDatabase(directory);
@@ -79,7 +79,8 @@ export async function createDesktopAccountHost(directory: string, renderLogin: (
       },
       setOrigin(origin: string) {
         const url = new URL(origin);
-        if (configuration.origin || url.origin !== origin || url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw new Error('Desktop account origin requires its private loopback listener');
+        if (url.origin !== origin || url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw new Error('Desktop account origin requires its private loopback listener');
+        // The daemon outlives Main; a restarted Main serves the renderer on a new loopback port.
         configuration.origin = origin;
       },
       async handle(request: IncomingMessage, response: ServerResponse) {

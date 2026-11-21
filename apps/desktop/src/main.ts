@@ -36,13 +36,12 @@ import { DesktopConnectorConfigurationStore } from "./connector-configuration-st
 import { SqliteDocumentStore as DesktopExtensionDataStore } from "@opencraft/document-storage/sqlite";
 import type { BorrowedDatabase } from "@opencraft/sqlite-node";
 import { openDesktopClientStorage } from "./desktop-client-import.js";
+import { createAccountRouteProxy } from "./account-route-proxy.js";
 import { registerExtensionDataIpc } from "./extension-data-ipc.js";
 import { workbenchWindowMetrics } from "@opencraft/workbench-runtime/window-metrics";
 import { browserMetadataKeys as browserMetadataIdentity, normalizeBrowserMetadata } from "@opencraft/workbench-runtime/browser-metadata-identity";
 import { resolveCodexExecutable } from "./codex-executable.js";
 import { remoteServerOrigin } from '@opencraft/plugin-local-account/connections';
-import { createDesktopAccountHost } from '@opencraft/plugin-local-account/desktop';
-import { humanLoginPage } from '@opencraft/headless-server/human-login-page';
 
 import {
   BrowserWindow,
@@ -67,6 +66,7 @@ import {
 } from "@opencraft/headless-server/serve-workbench-static";
 import {
   OpenCraftDaemonClientManager,
+  type DesktopAccountAttachment,
   type OpenCraftDaemonAppHostConnection,
 } from "./daemon-client.js";
 
@@ -93,7 +93,7 @@ let browserGuests: ReturnType<typeof installBrowserGuests> | null = null;
 let browserPermissions!: BrowserPermissionPolicy;
 let tray: Tray | null = null;
 let loopbackHost: WorkbenchStaticServer | null = null;
-let localAccountHost: Awaited<ReturnType<typeof createDesktopAccountHost>> | null = null;
+let accountAttachment: DesktopAccountAttachment | null = null;
 let rendererOrigin: string | null = null;
 let daemonManager: OpenCraftDaemonClientManager | null = null;
 const daemonBridges = new Set<{ close(): void }>();
@@ -572,28 +572,52 @@ async function openRemoteWindow(input: string, primary = false): Promise<void> {
 
 async function ensureLoopbackHost(): Promise<string> {
   if (rendererOrigin !== null) return rendererOrigin;
-  // The daemon owns and migrates the Server database; it must be ready before Main borrows it.
+  // The daemon owns the Server database and the account service; Main serves the
+  // renderer, forwards account routes to the daemon and holds the cookies.
   if (!daemonManager) throw new Error('OpenCraft Daemon is not configured');
   await daemonManager.ensureStarted();
-  localAccountHost = await createDesktopAccountHost(join(desktopPaths.userDataDirectory, 'human-account'), humanLoginPage,
-    { openRemote: origin => openRemoteWindow(origin), storageRole: 'borrower' });
   try {
     loopbackHost = await createWorkbenchStaticServer({
       root: rendererRoot(),
-      accountService: localAccountHost,
+      accountService: createAccountRouteProxy(() => accountAttachment?.endpoint ?? null),
     });
     const address = await loopbackHost.listen({ host: "127.0.0.1", port: 0 });
     rendererOrigin = `http://127.0.0.1:${address.port}`;
-    localAccountHost.setOrigin(rendererOrigin);
-    await session.defaultSession.cookies.set({ url: rendererOrigin, name: 'oc_desktop_owner', value: localAccountHost.browserProof,
-      httpOnly: true, sameSite: 'strict', path: '/' });
-    await session.defaultSession.cookies.set({ url: rendererOrigin, name: 'oc_human', value: localAccountHost.browserSessionToken,
-      httpOnly: true, sameSite: 'lax', path: '/' });
+    await attachDesktopAccount(rendererOrigin);
     return rendererOrigin;
   } catch (error) {
-    await loopbackHost?.close().catch(() => {}); loopbackHost = null;
-    await localAccountHost.close(); localAccountHost = null; rendererOrigin = null;
+    accountAttachment?.close(); accountAttachment = null;
+    await loopbackHost?.close().catch(() => {}); loopbackHost = null; rendererOrigin = null;
     throw error;
+  }
+}
+
+/** Attach to the daemon's account service and install its proof and session as cookies. */
+async function attachDesktopAccount(origin: string): Promise<void> {
+  if (!daemonManager) throw new Error('OpenCraft Daemon is not configured');
+  const attachment = await daemonManager.attachAccount(origin, remote => openRemoteWindow(remote));
+  try {
+    await session.defaultSession.cookies.set({ url: origin, name: 'oc_desktop_owner', value: attachment.browserProof,
+      httpOnly: true, sameSite: 'strict', path: '/' });
+    await session.defaultSession.cookies.set({ url: origin, name: 'oc_human', value: attachment.sessionToken,
+      httpOnly: true, sameSite: 'lax', path: '/' });
+  } catch (error) { attachment.close(); throw error; }
+  accountAttachment?.close();
+  accountAttachment = attachment;
+  // A restarted daemon issues a new browser proof; reattach and refresh the cookies.
+  attachment.subscribeClose(() => {
+    if (accountAttachment !== attachment) return;
+    accountAttachment = null;
+    void reattachDesktopAccount(origin);
+  });
+}
+
+async function reattachDesktopAccount(origin: string): Promise<void> {
+  for (let attempt = 0; !lifecycle.quitting && rendererOrigin === origin && accountAttachment === null; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, Math.min(5_000, 250 * 2 ** attempt)));
+    if (lifecycle.quitting || rendererOrigin !== origin || accountAttachment !== null) return;
+    try { await attachDesktopAccount(origin); return; }
+    catch (error) { console.error("[opencraft account] reattach failed", error instanceof Error ? error.message : String(error)); }
   }
 }
 
@@ -757,9 +781,10 @@ const lifecycle = new DesktopLifecycle({
     daemonManager = null;
     loopbackHost = null;
     rendererOrigin = null;
+    const attachment = accountAttachment;
+    accountAttachment = null;
+    attachment?.close();
     const results = await Promise.allSettled([daemon?.shutdown(), loopback?.close()]);
-    try { await localAccountHost?.close(); } catch (error) { productErrors.push(error); }
-    localAccountHost = null;
     const errors = results.filter(result => result.status === "rejected");
     if (errors.length || productErrors.length) throw new AggregateError([...productErrors, ...errors.map(result => result.reason)], "Desktop shutdown failed");
   },

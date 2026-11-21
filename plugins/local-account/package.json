@@ -9,7 +9,8 @@
     "./desktop": "./src/desktop.ts",
     "./client": "./src/client.tsx",
     "./client-scope": "./src/client-scope.ts",
-    "./connections": "./src/connections.ts"
+    "./connections": "./src/connections.ts",
+    "./login-page": "./src/login-page.ts"
   },
   "dependencies": {
     "@opencraft/design-system": "*",

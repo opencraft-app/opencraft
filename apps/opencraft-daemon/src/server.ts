@@ -23,6 +23,18 @@ export interface OpenCraftDaemonServerOptions {
   readonly appHost: AppHostServer;
   readonly onShutdownRequested: () => void;
   readonly authenticateHumanSession?: (proof: string) => TransportSubmissionContext | null;
+  /**
+   * Desktop account service owned by the daemon. Native Main attaches the loopback
+   * origin it serves the renderer from and receives its cookie material in return;
+   * the daemon asks that same Main to open remote windows.
+   */
+  readonly attachAccount?: (origin: string, openRemote: (origin: string) => Promise<void>) => DesktopAccountAttachment;
+}
+
+export interface DesktopAccountAttachment {
+  readonly browserProof: string;
+  readonly sessionToken: string;
+  readonly endpoint: string;
 }
 
 function isNamedPipe(endpoint: string): boolean {
@@ -84,6 +96,14 @@ export async function startOpenCraftDaemonServer(options: OpenCraftDaemonServerO
       try { if ((humanContext.validUntil ?? 0) <= Date.now()) return false; humanContext.resourceOwner?.assertCurrent(); return true; }
       catch { return false; }
     };
+    const pendingRemote = new Map<string, (ok: boolean) => void>();
+    let remoteSequence = 0;
+    const openRemote = (origin: string) => new Promise<void>((resolve, reject) => {
+      const id = String(++remoteSequence);
+      pendingRemote.set(id, ok => ok ? resolve() : reject(new Error("Native Main could not open the remote window")));
+      try { channel.send({ type: "account/open-remote", id, origin }); }
+      catch (error) { pendingRemote.delete(id); reject(error); }
+    });
     const handshakeTimeout = setTimeout(() => {
       if (!authenticated) channel.destroy();
     }, 5_000);
@@ -132,6 +152,22 @@ export async function startOpenCraftDaemonServer(options: OpenCraftDaemonServerO
         appHostPort?.receive(message.payload);
         return;
       }
+      if (role === "control" && message.type === "account/attach") {
+        let origin: URL | null = null;
+        try { origin = new URL(String(message.origin)); } catch { /* rejected below */ }
+        if (!options.attachAccount || !origin || origin.origin !== message.origin || origin.protocol !== "http:" || origin.hostname !== "127.0.0.1") {
+          channel.send({ type: "daemon/fatal", code: "ACCOUNT_ATTACH_REJECTED", message: "Desktop account service is unavailable for this origin" });
+          channel.close(); return;
+        }
+        try { channel.send({ type: "account/attached", ...options.attachAccount(message.origin, openRemote) }); }
+        catch { channel.send({ type: "daemon/fatal", code: "ACCOUNT_ATTACH_FAILED", message: "Desktop account service could not attach" }); channel.close(); }
+        return;
+      }
+      if (role === "control" && message.type === "account/open-remote-result") {
+        const settle = typeof message.id === "string" ? pendingRemote.get(message.id) : undefined;
+        if (settle) { pendingRemote.delete(message.id); settle(message.ok === true); }
+        return;
+      }
       if (role === "control" && message.type === "daemon/shutdown") {
         channel.send({ type: "daemon/shutting-down" });
         // Let the acknowledgement reach Electron before shutdown destroys all
@@ -141,6 +177,8 @@ export async function startOpenCraftDaemonServer(options: OpenCraftDaemonServerO
     });
     channel.subscribeClose(() => {
       clearTimeout(handshakeTimeout);
+      for (const settle of pendingRemote.values()) settle(false);
+      pendingRemote.clear();
       if (humanTimer) clearInterval(humanTimer);
       unsubscribeMessage();
       if (appHostConnection !== null) {
