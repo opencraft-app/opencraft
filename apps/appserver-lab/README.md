@@ -54,4 +54,4 @@ to a private pending map or renderer store, the SDK contract must be improved
 instead of adding a Lab escape hatch.
 
 The implemented and deferred scenario matrix is documented in
-[`docs/appserver-lab-scenarios.md`](../../docs/appserver-lab-scenarios.md).
+[`docs/develop/appserver-lab-scenarios.md`](../../docs/develop/appserver-lab-scenarios.md).

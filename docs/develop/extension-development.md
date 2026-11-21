@@ -2,8 +2,8 @@
 
 This is the implemented development path. The architecture's proposed hosts,
 permissions and marketplace are not additional APIs available to a V1 module.
-The authoritative types are [extension-contract](../packages/extension-contract/src/index.ts);
-[hello.mjs](../examples/extensions/hello.mjs) is the executable consumer.
+The authoritative types are [extension-contract](../../packages/extension-contract/src/index.ts);
+[hello.mjs](../../examples/extensions/hello.mjs) is the executable consumer.
 
 ## Choose a boundary
 
@@ -16,14 +16,14 @@ The authoritative types are [extension-contract](../packages/extension-contract/
 
 Identity adapters verify their identity source; core decides admission and
 resource authorization. UI visibility and contribution registration do not grant
-access to a Host or another Actor. See [Actor collaboration](architecture/actor-collaboration.md).
+access to a Host or another Actor. See [Actor collaboration](../architecture/actor-collaboration.md).
 
 Product owners select trusted **local build entries**, including
 `OPENCRAFT_CLIENT_PRODUCT_ENTRY`, `OPENCRAFT_EMBEDDED_PRODUCT_ENTRY` and
 `OPENCRAFT_SERVER_EXTENSIONS_ENTRY`. These are application composition inputs,
 not module URLs supplied by browser users. Public builds do not discover a
-private parent workspace automatically. See [product session types](../packages/client-product/src/index.ts)
-and the entry-specific contracts in [plugin architecture](plugin-architecture.md).
+private parent workspace automatically. See [product session types](../../packages/client-product/src/index.ts)
+and the entry-specific contracts in [plugin architecture](../plugin-architecture.md).
 A product may use internal trusted renderers; that does not expose React, Cordis
 or arbitrary application services to installed Extensions.
 
@@ -103,7 +103,7 @@ extension manager, install `http://127.0.0.1:5174/hello.mjs`, and enable it if
 necessary. Select **Hello extension** in the sidebar; an application-owned
 announcement opens. Disable the extension while it is open: both the entry and
 the pending announcement must disappear. Re-enable it to restore the entry.
-The [example walkthrough](../examples/extensions/README.md) includes update,
+The [example walkthrough](../../examples/extensions/README.md) includes update,
 restart and troubleshooting steps. No configured model or Host is needed for
 this example.
 
@@ -146,7 +146,7 @@ Installation stores module bytes and their SHA-256. Restart restores those bytes
 **Update from source / 从来源更新** (`reload`) explicitly fetches an update from the source URL. A failed update
 preserves the old persisted installation pointer. This is not a transaction over
 arbitrary side effects performed by the module. Ordinary disable/uninstall does
-not imply deletion of plugin documents; see [persistence](plugin-persistence.md).
+not imply deletion of plugin documents; see [persistence](../plugin-persistence.md).
 
 ## Compatibility and contributing new capabilities
 
@@ -165,11 +165,11 @@ When proposing a new contribution point:
 3. Test an existing V1 consumer plus new success, unsupported, failure and disposal
    paths, and typecheck both ends of a changed contract.
 4. Report the platforms actually exercised in the PR. Use the commands in
-   [CONTRIBUTING](../CONTRIBUTING.md#develop-and-validate).
+   [CONTRIBUTING](../../CONTRIBUTING.md#develop-and-validate).
 
 The architecture's isolated ExtensionHosts, publisher distribution, full
 resolver and richer permissions remain proposals, tracked separately from this
-implemented path. See [remaining ecosystem work](architecture/extensions/implementation-and-acceptance.md#142-尚未完成的生态边界).
+implemented path. See [remaining ecosystem work](../architecture/extensions/implementation-and-acceptance.md#142-尚未完成的生态边界).
 
 ### Host model configuration destinations
 
@@ -200,7 +200,7 @@ original registry owns activation, identity and retirement. The desktop filters
 platform/audience and renderable targets, then uses the normal application Router.
 A miniapp entry grants no resource permission and cannot invoke an execution
 command. This adds no downloaded-code runtime or public renderer ABI; see
-[Overhome ownership](architecture/platform/shell-and-navigation.md#overhome-and-miniapps).
+[Overhome ownership](../architecture/platform/shell-and-navigation.md#overhome-and-miniapps).
 
 
 A model settings page that implements the runtime providers, models, settings and

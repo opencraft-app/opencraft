@@ -212,7 +212,7 @@ requires an execution-signed scope and rejects session-only tokens and browser
 Origins. It shares `ThreadOrchestrationBroker.cli`, resource checks, immutable
 input delegation and the original write budget; it creates no parallel queue.
 The child's durable Broker parentage, rather than each engine's native lineage,
-is the authority for paginated discovery. See [Conversation CLI](thread-cli.md).
+is the authority for paginated discovery. See [Conversation CLI](operations/thread-cli.md).
 
 ## 多 Human 发现与实施范围
 

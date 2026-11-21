@@ -27,5 +27,5 @@ workflow and documentation references together.
 
 Reports and temporary profiles belong in ignored `.local/` or an explicit
 isolated output directory. A smoke result proves only the runtime and scenarios
-actually exercised; CI selection and the [build matrix](../../docs/build-matrix.md)
+actually exercised; CI selection and the [build matrix](../../docs/develop/build-matrix.md)
 define the checks for a contribution.

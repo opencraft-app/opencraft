@@ -49,6 +49,6 @@ surface. The grant fixes the target and permissions, and contains no saved
 execution bearer. Existing execution credentials cannot create that grant.
 Derived automation execution cannot create or mutate another automation.
 
-See [P7b validation and operational contract](../apps/agent-bridge-host/VALIDATION-P7b.md)
+See [P7b validation and operational contract](../../apps/agent-bridge-host/VALIDATION-P7b.md)
 for grant fields, schedules, reconciliation, script Host configuration, decisions
 and remaining real-execution gaps.

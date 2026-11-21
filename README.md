@@ -78,20 +78,20 @@ npm run dev
 | 接下来想做什么 | 从这里开始 |
 | --- | --- |
 | 使用 Docker Compose 部署 | [Docker 部署指南](docker/README.md) |
-| 安装或管理自主部署的网站 | [Web 部署与更新](docs/web-deployment.md) |
-| 开发或打包桌面应用 | [开发指南](docs/development.md#desktop-with-the-bundled-local-agent) |
+| 安装或管理自主部署的网站 | [Web 部署与更新](docs/operations/web-deployment.md) |
+| 开发或打包桌面应用 | [开发指南](docs/develop/development.md#desktop-with-the-bundled-local-agent) |
 | 运行 Expo 或构建手机端 | [手机端指南](apps/mobile/README.md) |
-| 配置 Host 或自定义构建 | [开发与构建指南](docs/development.md) |
+| 配置 Host 或自定义构建 | [开发与构建指南](docs/develop/development.md) |
 
 ## 文档导航
 
 | 想了解 | 相关文档 |
 | --- | --- |
-| 项目全貌 | [文档索引](docs/README.md) · [仓库布局](docs/repository-layout.md) |
+| 项目全貌 | [文档索引](docs/README.md) · [仓库布局](docs/develop/repository-layout.md) |
 | Agent 身份、权限与协作 | [主体与 Hub 设计](docs/architecture/actor-collaboration.md) · [主体协作接口](docs/actor-collaboration-api.md) · [服务器登录](docs/server-authentication.md) |
 | 执行与能力接入 | [执行所有权](docs/execution-ownership.md) · [会话能力](docs/session-capabilities.md) · [插件架构](docs/plugin-architecture.md) |
-| 开发扩展 | [扩展开发指南](docs/extension-development.md) · [可运行示例](examples/extensions/README.md) |
-| 架构与设计 | [平台架构](docs/platform-architecture.md) · [界面设计](design.md) · [构建矩阵](docs/build-matrix.md) |
+| 开发扩展 | [扩展开发指南](docs/develop/extension-development.md) · [可运行示例](examples/extensions/README.md) |
+| 架构与设计 | [平台架构](docs/platform-architecture.md) · [界面设计](design.md) · [构建矩阵](docs/develop/build-matrix.md) |
 
 ## 一起建设
 
@@ -100,7 +100,7 @@ npm run dev
 
 - [反馈问题或提出想法](https://github.com/opencraft-app/opencraft/issues)。
 - 修改共享核心前，阅读[贡献指南](CONTRIBUTING.md)。
-- 产品专用身份、品牌和服务通过[下游装配](docs/upstream-transition.md)接入。
+- 产品专用身份、品牌和服务通过[下游装配](docs/history/upstream-transition.md)接入。
 - 安全漏洞请按 [SECURITY.md](SECURITY.md) 中的流程私密报告。
 
 ## 开源许可

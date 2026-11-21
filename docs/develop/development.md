@@ -1,15 +1,15 @@
 # Development and build guide
 
-[中文主页](../README.md) · [English overview](../README.en.md) · [Contributing](../CONTRIBUTING.md)
+[中文主页](../../README.md) · [English overview](../../README.en.md) · [Contributing](../../CONTRIBUTING.md)
 
 This guide keeps detailed source-development, Host configuration and platform
 build commands together. For installation and delivery requirements, follow the
 linked deployment guides and build matrix.
 
 Core development belongs to this GitHub upstream; product providers and branding
-are composed downstream. See [transition status](upstream-transition.md).
+are composed downstream. See [transition status](../history/upstream-transition.md).
 Branding, installed application identity, storage and protocol namespaces are
-separate concerns; [product identity](architecture/product-identity.md) documents
+separate concerns; [product identity](../architecture/product-identity.md) documents
 the naming policy and the identifiers intentionally kept stable.
 
 ## Run
@@ -28,7 +28,7 @@ npm run dev
 
 Private product assembly belongs to downstream workspaces. Trusted local build
 entries can compose the same complete client without making public installation
-depend on a private account provider. See [plugin architecture](plugin-architecture.md).
+depend on a private account provider. See [plugin architecture](../plugin-architecture.md).
 
 `npm run dev` (also `npm run dev:local`) prepares the pinned DSH engine and
 starts local execution and Web together on a loopback address. Open the printed
@@ -52,18 +52,18 @@ The self-hosted Web package is `@opencraft-app/opencraft` on the public npm regi
 `https://registry.npmjs.org/`. It includes the website and managed updater.
 The public execution package also includes the managed gateway and daemon;
 Codex core, CLI and DSH engine remain independently deployed. See the
-[Web deployment and public npm release runbook](web-deployment.md) for
+[Web deployment and public npm release runbook](../operations/web-deployment.md) for
 installation, credential selection, publishing, rollback and Playwright checks.
 Source development above uses public dependencies; distributing this Web package
 uses the public npm registry.
 
 To build from source and replace an existing server installation directly, follow
-the [local server replacement guide](web-local-deployment.md).
+the [local server replacement guide](../operations/web-local-deployment.md).
 
 ### Docker Compose
 
 For a Linux amd64 or ARM64 Docker installation with independent data storage and
-execution on the host, use the [Docker Compose deployment guide](../docker/README.md).
+execution on the host, use the [Docker Compose deployment guide](../../docker/README.md).
 
 ### Desktop with the bundled Local Agent
 
@@ -172,7 +172,7 @@ build inputs and task records.
 The Expo host keeps one canonical React 19 instance.
 The public entry packages the shared Web Workbench; downstream
 products select their own native Shell, entry and configuration explicitly. See the
-[Expo guide](../apps/mobile/README.md) for Expo Go previews, native builds
+[Expo guide](../../apps/mobile/README.md) for Expo Go previews, native builds
 and their platform requirements. `npm run build:expo:ios` runs the
 Linux-compatible Metro iOS bundle gate; launching an Apple Simulator and
 compiling the native pods still require macOS and Xcode.
@@ -184,8 +184,8 @@ capability boundary and future marketplace model are documented in
 `docs/plugin-architecture.md`; the AI-native discovery, task lease, execution
 journal and generated-capability model are documented in
 `docs/agent-capability-fabric.md`. The package ownership and proof ladder for
-automated changes are documented in `docs/agent-iteration-guide.md`.
+automated changes are documented in `docs/develop/agent-iteration-guide.md`.
 
-See [SECURITY.md](../SECURITY.md) for private vulnerability reporting and the
+See [SECURITY.md](../../SECURITY.md) for private vulnerability reporting and the
 repository's security checks. A passing build does not establish that dependencies,
 Git history or third-party licensing are ready for a public release.

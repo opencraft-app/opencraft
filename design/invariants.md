@@ -343,7 +343,7 @@ and [Settings composition](ui/settings-pages.md#settings-as-a-peer-sidebar-desti
 Sidebar destination lists share the foundation content inset and NavigationList
 sidebar variant; containers must not stack separate padding on Apps and Settings.
 See [shared sidebar reading inset](ui/settings-pages.md#shared-sidebar-reading-inset)
-and the [Workbench design language](../docs/workbench-design-language.md#shared-sidebar-content-inset).
+and the [Workbench design language](../docs/workbench-design-language.md#sidebar-alignment).
 
 ## 触控标签概览
 
@@ -367,7 +367,7 @@ UiPreferences owns persistence by account scope, Host and Thread; presentation n
   shared queue shows automatic waiting without a manual Resume action, and the
   Workbench notice owner reports execution failure/recovery without changing the
   reading layout. Unknown old work stays distinct from newly queued inputs. See
-  [execution recovery](../docs/specs/codex-execution-health-and-recovery.md).
+  [execution recovery](../docs/architecture/codex-execution-health-and-recovery.md).
 
 PWA sidebar and page capacity share the dynamic viewport bound, including the stationary drawer portal and page overlays; the mobile reading column leaves a reachable page dismiss strip independently of desktop width. See [PWA capacity](invariants/shell-and-layout.md#pwa-sidebar-and-page-capacity).
 

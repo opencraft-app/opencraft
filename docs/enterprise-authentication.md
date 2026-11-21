@@ -60,5 +60,5 @@ migrations would reject deployed databases. See [SQLite lifecycle](sqlite-lifecy
 
 Product-specific behavior and operational configuration are documented in the
 downstream product workspace. Public extension ports and their stability are
-described in [extension development](extension-development.md); trusted product
+described in [extension development](develop/extension-development.md); trusted product
 assembly is not an installable Extension ABI.

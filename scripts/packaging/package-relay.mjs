@@ -21,7 +21,7 @@ export async function packageRelay({ output = join(root, 'dist/relay'), relayEnt
       banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" } });
   }
   await writeFile(join(output, 'package.json'), JSON.stringify({ name: '@opencraft/relay-deployment', version: '0.1.0', private: true, type: 'module', engines: { node: '>=24' } }, null, 2));
-  await copyFile(join(root, 'docs/relay-deployment.md'), join(output, 'README.md'));
+  await copyFile(join(root, 'docs/operations/relay-deployment.md'), join(output, 'README.md'));
   console.log(output);
   return { output, revision, buildId };
 }

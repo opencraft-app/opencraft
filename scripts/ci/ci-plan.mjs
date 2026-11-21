@@ -28,7 +28,7 @@ export function planChanges(paths, { event = 'pull_request', unknownDiff = false
   if (event === 'push' || event === 'schedule') auditDirectories.forEach(dir => audits.add(dir));
   for (const path of paths) {
     if (/^examples\/extensions\//.test(path) || path === 'tests/extensions/extension-example.test.ts'
-      || path === 'docs/extension-development.md' || path === 'docs/plugin-architecture.md'
+      || path === 'docs/develop/extension-development.md' || path === 'docs/plugin-architecture.md'
       || path.startsWith('docs/architecture/extensions/')
       || path === 'CONTRIBUTING.md') {
       extensions = true;

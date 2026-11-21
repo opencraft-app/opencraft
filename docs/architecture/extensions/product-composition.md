@@ -8,12 +8,12 @@ Headless 的 IM 与企业微信为两层可选服务端插件：IM 持有交换�
 和执行权威。私有配置显式装配，无配置不连接，不属于浏览器可安装扩展的信任范围。
 配置与恢复边界见 [IM switchboard](../../im-switchboard.md)。
 
-> 开发入口：[当前插件边界、API 与贡献路径](../../extension-development.md)。本文同时保留目标拓扑和迁移历史；目标设计不是已实现 API。当前类型以 `packages/extension-contract/src/index.ts` 为准，示例以 `examples/extensions/hello.mjs` 为准。
+> 开发入口：[当前插件边界、API 与贡献路径](../../develop/extension-development.md)。本文同时保留目标拓扑和迁移历史；目标设计不是已实现 API。当前类型以 `packages/extension-contract/src/index.ts` 为准，示例以 `examples/extensions/hello.mjs` 为准。
 
 GitHub上游迁移要求公开Application/Headless/Relay通过产品装配端口接入下游产品/企业身份，
 不能无条件导入私有插件；移除配置中的必需身份提供者必须保持拒绝，核心Actor、
 成员与资源授权不下沉到产品。当前拆分尚在实施，已知直接依赖与验证不变量见
-[upstream transition](../../upstream-transition.md#boundary-migration-record-and-remaining-review)，不把菜单开关当依赖隔离。
+[upstream transition](../../history/upstream-transition.md#boundary-migration-record-and-remaining-review)，不把菜单开关当依赖隔离。
 
 Web supervisor 通过 `WebWorkbenchSupervisorOptions.serverExtensions` 接收可信工厂，
 仅在服务端工作台接入时加载；通用默认列表为空，不把 Headless 等同于企业身份。
@@ -62,7 +62,7 @@ Web构建预设由可信本地Vite配置组合：核心导出`createWorkbenchWeb
 产品构建保留原 loader URL、element API、绘制/连接与释放时序。通用绘制、发送、
 音频、连接和面板 helpers 仍属于核心，不复制组件、不以空实现代替完整客户端。
 
-普通中继的可部署边界见 [relay deployment](../../relay-deployment.md)：`apps/relay-server`
+普通中继的可部署边界见 [relay deployment](../../operations/relay-deployment.md)：`apps/relay-server`
 独立启动，`plugins/relay-connect` 可选出站连接；企业身份 验签、JWE 与员工字段映射属于
 下游产品的企业插件，通用 Principal/成员/角色/撤销属于核心包。实例只接收固定 issuer、
 公钥、实例与 Origin 范围的短期凭证；中继注册权不产生业务管理员权限。启用核心准入后，
@@ -202,7 +202,7 @@ authentication, access or ownership, and task assignment works without a provide
 
 ### Startup registration and demand presentation
 
-扩展元数据/provider 必须在路由恢复前可发现，管理页实现不属于注册依赖。Web 的 Required/Optional/Demand 阶段、共享账户/Host 生命周期、延迟组件失败重试和连接导入取消屏障，以 [Startup resource ownership](../platform/lifecycle-and-resources.md#startup-resource-ownership) 为当前实现契约；事件名 `onStartupFinished` 本身不保证模块已脱离关键图。构建应检查真实静态依赖，见 [启动资源门禁](../../startup-performance.md)。
+扩展元数据/provider 必须在路由恢复前可发现，管理页实现不属于注册依赖。Web 的 Required/Optional/Demand 阶段、共享账户/Host 生命周期、延迟组件失败重试和连接导入取消屏障，以 [Startup resource ownership](../platform/lifecycle-and-resources.md#startup-resource-ownership) 为当前实现契约；事件名 `onStartupFinished` 本身不保证模块已脱离关键图。构建应检查真实静态依赖，见 [启动资源门禁](../../develop/startup-performance.md)。
 
 ### Provider-owned Composer commands
 

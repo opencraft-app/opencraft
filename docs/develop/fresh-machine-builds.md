@@ -8,8 +8,8 @@ The Git checkout plus public, locked dependencies is the complete build input.
 - `runtime/dsh/package-lock.json`: independently installed Local Agent runtime.
   Only its manifest/lockfile are committed, never its dependencies or user data.
 - `.nvmrc`: tested build Node version.
-- [Desktop package manifest](../apps/desktop/package.json): pinned
-  Electron version, resolved by the [root lockfile](../package-lock.json).
+- [Desktop package manifest](../../apps/desktop/package.json): pinned
+  Electron version, resolved by the [root lockfile](../../package-lock.json).
 - Native toolchains: provided by the target OS. Native binaries must not be
   copied from a different OS/CPU. Desktop packaging checks this before packing.
 - Credentials and endpoints: configured by each user at runtime. Web/Expo need
@@ -57,7 +57,7 @@ OPENCRAFT_MAC_SSH_PORT=22 npm run update:mac
 No developer username, home path or internal service IP is a build default.
 Paths in identity test fixtures are synthetic data; they are not read from the
 host filesystem. Persisted application identity remains stable
-as explained in [product identity](architecture/product-identity.md).
+as explained in [product identity](../architecture/product-identity.md).
 
 Build outputs, installed dependencies, runtime data, private keys, and `.env`
 files stay ignored. Keep secret-bearing configuration outside source control;

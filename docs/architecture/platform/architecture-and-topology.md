@@ -14,8 +14,8 @@ loss and close still reject the exact pending request. The Host owns preparation
 and must stop before its deadline; the client never retries or replays the input.
 
 The proposed cross-cutting observation plane is specified in
-[Observability V1](../../observability-platform.md), with a separate
-[functional and nonfunctional acceptance matrix](../../observability-acceptance.md).
+[Observability V1](../../operations/observability-platform.md), with a separate
+[functional and nonfunctional acceptance matrix](../../operations/observability-acceptance.md).
 It observes existing owners and does not own execution, recovery or history.
 This is an implementation specification, not a claim that the optional stack,
 CLI or runtime Skill has already been deployed.
@@ -75,7 +75,7 @@ HTML entry and trusted embedded product loader finish the shared curated
 ECMAScript compatibility module before dynamically importing application/product
 code. Product dependencies cannot race shim installation through static module
 evaluation. The policy and real minimum-engine startup regression are documented
-in [browser compatibility](../../build-matrix.md#browser-compatibility). This boundary
+in [browser compatibility](../../develop/build-matrix.md#browser-compatibility). This boundary
 does not emulate DOM/device capabilities, cover Workers or relax owned-source
 compatibility checks.
 
@@ -134,7 +134,7 @@ addresses never authorize automatic account merging. Identity adapters verify
 their proof; core owns binding, authenticated sessions, admission and authorization.
 Client login sessions remain distinct from persistent Bot/Session actors and credentials.
 Trusted identity adapters may supply the optional admission port described in
-[relay deployment](../../relay-deployment.md#optional-provider-admission-policy).
+[relay deployment](../../operations/relay-deployment.md#optional-provider-admission-policy).
 The gateway prepares verified identities asynchronously; core role, connection
 revocation and durable human admission share its synchronous decision. The port
 does not replace identity verification, membership or resource authorization.
@@ -170,7 +170,7 @@ manages the one authoritative node state; the relay app reuses this core rather
 than defining a second federation model. Links, identity issuer trust, forwarding
 eligibility and final membership remain separate decisions. This is the Web
 transport slice of the charter, not general Actor/resource federation. See
-[relay deployment](../../relay-deployment.md).
+[relay deployment](../../operations/relay-deployment.md).
 
 The existing connection and execution contract is `Client / Hub / Server`. A Client is a
 protocol participant and may use an Electron renderer, a static Web page or

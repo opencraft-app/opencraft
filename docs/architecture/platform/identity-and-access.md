@@ -13,7 +13,7 @@ receive a fetch port and contain no relay-path or company deployment assumptions
 Changing the browser choice creates a new page lifetime, without transferring
 permissions or cancelling server execution. Per-identity remembered selection is
 a navigation preference, never an authorization credential. See
-[shared entry selection](../../relay-deployment.md#shared-entry-server-selection) for
+[shared entry selection](../../operations/relay-deployment.md#shared-entry-server-selection) for
 configuration, cookie handling, rollout and the shared-origin trust boundary.
 
 ### Account read receipt authority

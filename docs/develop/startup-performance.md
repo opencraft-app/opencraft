@@ -4,7 +4,7 @@
 
 ## Resource model
 
-阶段与生命周期以 [startup resource ownership](architecture/platform/lifecycle-and-resources.md#startup-resource-ownership) 为准。`startup-resource-policy.vite.ts` 是构建预算与禁止模块的可执行真源；`startup-resources.vite.ts` 从最终 chunk 图生成私有报告，检查 Web/embedded 入口、Workbench 和必需 provider 的静态依赖保守并集。恢复的具体 Host/页面可以额外按需加载；不得把其成本冒称为零。
+阶段与生命周期以 [startup resource ownership](../architecture/platform/lifecycle-and-resources.md#startup-resource-ownership) 为准。`startup-resource-policy.vite.ts` 是构建预算与禁止模块的可执行真源；`startup-resources.vite.ts` 从最终 chunk 图生成私有报告，检查 Web/embedded 入口、Workbench 和必需 provider 的静态依赖保守并集。恢复的具体 Host/页面可以额外按需加载；不得把其成本冒称为零。
 
 当前保守并集预算：原始 JS 3.7MB、独立 CSS 700KB、JS/CSS gzip 1.2MB、静态关键 JS 最多120个请求。JS 中的 shadow 内联 CSS计入 JS。预算按解析成本与传输量分别控制；调整必须附同场景浏览器测量和模块归属原因，不得仅提高阈值掩盖回归。管理实现、字典数据、连接器目录、HTML/扩展 parser 和桌面 panel 不允许进入静态关键图，即使总字节没超标。
 

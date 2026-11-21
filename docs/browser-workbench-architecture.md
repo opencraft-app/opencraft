@@ -36,7 +36,7 @@
 ### Domain and runtime
 
 - <a id="7-browser-domain-最小契约"></a>[7. Browser Domain 最小契约](architecture/browser/domain-and-runtime.md#7-browser-domain-最小契约)
-- <a id="headless-文件目录与原生预留"></a>[Headless 文件目录与原生预留](architecture/browser/domain-and-runtime.md#headless-文件目录与原生预留)
+- <a id="headless-文件目录与原生预留"></a>[Headless 文件目录与原生预留](architecture/browser/domain-and-runtime.md#headless-事务存储与原生预留)
 - <a id="71-正交状态"></a>[7.1 正交状态](architecture/browser/domain-and-runtime.md#71-正交状态)
 - <a id="72-url-必须通过构造器"></a>[7.2 URL 必须通过构造器](architecture/browser/domain-and-runtime.md#72-url-必须通过构造器)
 - <a id="73-能力只暴露有效结果"></a>[7.3 能力只暴露有效结果](architecture/browser/domain-and-runtime.md#73-能力只暴露有效结果)

@@ -62,7 +62,7 @@ previews. The native history remains authoritative.
 
 ## Commands, permission and audit
 
-The bundled [CLI](../cli.md) negotiates `servers`, `metadata`,
+The bundled [CLI](../operations/cli.md) negotiates `servers`, `metadata`,
 `metadataDiscovery` and `boundedRead` independently on this same command lane.
 The directory returns the admitted Actor and stable installation/Server identity.
 Metadata discovery disables native rollout repair and projects only explicit

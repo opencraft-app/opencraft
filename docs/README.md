@@ -2,14 +2,24 @@
 
 OpenCraft 是多端 Agent Workbench 核心，包含 Chat Runtime、Web Workbench、Expo 客户端、Electron 桌面壳和 AppServer 适配层。下游产品/Hermes 产品与 Agent Console 共享适配由下游产品持有；公开核心保持独立运行时、包管理器、构建矩阵和发布所有权。
 
+## 目录
+
+| 目录 | 内容 |
+|---|---|
+| `docs/`（顶层） | 各功能与子系统的设计、契约与所有权专题 |
+| [`architecture/`](architecture/) | 平台、ChatUI、浏览器、扩展等分层架构专题 |
+| [`develop/`](develop/) | 贡献与开发：开发环境、构建矩阵、仓库布局、扩展开发、国际化、性能治理 |
+| [`operations/`](operations/) | 部署与运维：CLI、Web 安装与更新、Relay、Headless、升级、运行观测 |
+| [`history/`](history/) | 历史记录：上下游迁移、身份迁移、已退役的下游手机 Shell 设计、阶段报告 |
+
 ## 权威入口
 
 - 服务所有权、依赖和生成路径：[仓库元数据](../config/catalog-info.yaml)。
 - Agent 工作规则：[AGENTS.md](../AGENTS.md)。
 - 项目维护方法与验收路由：[OpenCraft 维护总纲 Skill](../.agents/skills/opencraft-maintenance/SKILL.md)；不替代下列正式架构文档。
-- 仓库历史与下游消费契约：[仓库历史与下游消费](upstream-history.md)。
+- 仓库历史与下游消费契约：[仓库历史与下游消费](history/upstream-history.md)。
 - 平台与插件架构：[平台架构专题索引](platform-architecture.md)、[插件架构](plugin-architecture.md)。
-- 运行观测平台：[定位、服务与数据/CLI/Skill 规格 V1](observability-platform.md)、[功能与非功能验收矩阵](observability-acceptance.md)；当前为待实现规格，最终以真实部署验收为准。
+- 运行观测平台：[定位、服务与数据/CLI/Skill 规格 V1](operations/observability-platform.md)、[功能与非功能验收矩阵](operations/observability-acceptance.md)；当前为待实现规格，最终以真实部署验收为准。
 - 主体与协作设计纲领：[原生主体、Hub、Channel 与授权](architecture/actor-collaboration.md)；人类与 Agent/Bot/Session 具备原生主体性，权限独立授予；属于目标设计，不代表多租户已实现。
 - Human 工作台与 Portal：[以一个当前身份组织跨端、跨 Hub 资源入口](architecture/human-workbench.md)；租户是可选管理作用域，身份、路由和执行隔离分别建模，属于目标设计。
 - 单 Server 多 Human：[核心／插件边界与实施覆盖账本](multi-human-server.md)；区分已验证请求隔离、共享协作与未完成的执行隔离。
@@ -19,14 +29,14 @@ OpenCraft 是多端 Agent Workbench 核心，包含 Chat Runtime、Web Workbench
 - Chat 与浏览器 Workbench：[Chat 架构专题索引](chat-ui-architecture.md)、[浏览器 Workbench](browser-workbench-architecture.md)。
 - 执行所有权：[会话、运行实例与能力租约](execution-ownership.md)；明确创建提交、执行准入、断线撤销、释放及 warm 边界。
 - Tasks 与看板：[领域模型](tasks-model.md) 与 [实现入口](../plugins/tasks/README.md)；两张业务表，同源列表/看板、多会话关联与独立活动状态，首版源码已实现。
-- 构建目标：[构建矩阵](build-matrix.md) 与 [目标配置](../config/build-matrix.json)。
-- iOS 手机端容器与手势：[Mobile shell](mobile-shell.md)；打包的 frontend Bot runtime 与原生通信：[Embedded Bot bridge](mobile-bot-bridge.md)；缓存与请求状态：[Mobile data architecture](mobile-data-architecture.md)。
+- 构建目标：[构建矩阵](develop/build-matrix.md) 与 [目标配置](../config/build-matrix.json)。
+- 手机端：下游 iOS Shell 与 Bot 桥接的历史设计见 [Mobile shell](history/mobile-shell.md)、[Embedded Bot bridge](history/mobile-bot-bridge.md)；缓存与请求状态：[Mobile data architecture](mobile-data-architecture.md)。
 - 行为验证架构：[Harness 设计纲领](architecture/harness.md)。
-- 根目录与文件归属：[仓库布局](repository-layout.md)。
+- 根目录与文件归属：[仓库布局](develop/repository-layout.md)。
 
 ## 核心不变量
 
-- GitHub 是目标核心上游，下游产品持有私有装配并消费固定版本；状态见 [迁移状态](upstream-transition.md)，不建立两套可写核心。
+- GitHub 是目标核心上游，下游产品持有私有装配并消费固定版本；状态见 [迁移状态](history/upstream-transition.md)，不建立两套可写核心。
 - 仓库根目录是独立 npm workspace，持有自己的 `package-lock.json`；公开核心的安装与检查不依赖父目录或私有产品工作区。
 - AppServer 事件游标、投影状态和 durable history 的生命周期必须一致；Hermes 转译遵循 Hermes Desktop 语义，Chat Runtime 统一 Turn、queue、steer、工具活动和滚动所有权，各引擎适配保留其原生协议与能力边界。
 - Web、Expo 与 Electron 共享领域模型和设计 token，但平台能力通过显式 adapter/port 接入，不能用平台条件分支破坏核心状态机。
@@ -34,9 +44,9 @@ OpenCraft 是多端 Agent Workbench 核心，包含 Chat Runtime、Web Workbench
 
 ## 变更边界
 
-共享核心能力通过本仓库的正常 PR 演进；下游产品消费固定源码版本，并持有自己的身份、品牌、企业服务和部署装配。产品工作区中的生成兼容层由产品维护，在产品仓库执行生成与漂移检查；不是公开核心的前置依赖。边界与升级要求见 [上游与下游消费](upstream-transition.md)。
+共享核心能力通过本仓库的正常 PR 演进；下游产品消费固定源码版本，并持有自己的身份、品牌、企业服务和部署装配。产品工作区中的生成兼容层由产品维护，在产品仓库执行生成与漂移检查；不是公开核心的前置依赖。边界与升级要求见 [上游与下游消费](history/upstream-transition.md)。
 
-贡献 PR 执行安装、校验和构建，不部署下游产品。公共包发布走独立的 [精确制品发布流程](web-deployment.md#公共-npm-发布流程)；构建通过不代表已经发布。
+贡献 PR 执行安装、校验和构建，不部署下游产品。公共包发布走独立的 [精确制品发布流程](operations/web-deployment.md#公共-npm-发布流程)；构建通过不代表已经发布。
 
 ## 验证
 
@@ -49,7 +59,7 @@ npm run gate
 
 下游产品工作区的 Console 同步与原探针在产品目录运行显式命令，不是独立核心的前置依赖。
 
-按实际改动选择相邻类型检查、聚焦测试及受影响的两端验证，具体范围见 [贡献指南](../CONTRIBUTING.md#develop-and-validate) 与 [构建矩阵](build-matrix.md)。客户端行为变化还需相关平台的真实运行证据；不以单元测试替代完整平台验收。
+按实际改动选择相邻类型检查、聚焦测试及受影响的两端验证，具体范围见 [贡献指南](../CONTRIBUTING.md#develop-and-validate) 与 [构建矩阵](develop/build-matrix.md)。客户端行为变化还需相关平台的真实运行证据；不以单元测试替代完整平台验收。
 # 任务工作区设计
 
 OpenCraft 工作区的所有权、呈现策略、不变量及验证账本见 [design/](../design/README.md)。

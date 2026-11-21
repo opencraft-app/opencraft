@@ -198,7 +198,7 @@ adapter. Existing current state wins, and failed copies retain their source.
 The former versioned writer is retired before a transactional snapshot/copy;
 blocked windows produce a visible retry boundary. Scope IDs, recipes, extension
 revisions, sidebar ownership and Replica cursors remain intact. See
-[database identity migration](../indexeddb-identity-migration.md) for archive,
+[database identity migration](../history/indexeddb-identity-migration.md) for archive,
 recovery and platform boundaries. Split legacy extension settings/installations
 remain read-only import sources; Expo native SQLite is a separate owner.
 
@@ -208,7 +208,7 @@ Expo native Replica files use the owned `opencraft-*.db` names. Exact former
 files are snapshot inputs; existing current caches win, and a complete SQLite
 snapshot is installed without overwriting a competing destination. Old files
 remain recoverable and current cache clears do not revive them. See
-[native Replica migration](../native-replica-identity-migration.md) for the native
+[native Replica migration](../history/native-replica-identity-migration.md) for the native
 owner, WAL, recovery and verification boundaries.
 
 ## Browser metadata identity

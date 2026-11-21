@@ -18,7 +18,7 @@ test('visual-only changes build Web without native packaging, server tests or up
   });
 });
 test('docs-only and empty diffs need no build; main and weekly runs still audit unchanged dependencies', () => {
-  for (const paths of [[], ['docs/build-matrix.md', 'README.md', 'design/invariants.md']]) {
+  for (const paths of [[], ['docs/develop/build-matrix.md', 'README.md', 'design/invariants.md']]) {
     assert.deepEqual(planChanges(paths), emptyPlan);
   }
   for (const event of ['push', 'schedule']) {
@@ -172,7 +172,7 @@ test('CLI propagates explicit manual full-matrix requests without widening PRs',
 
 
 test('extension guide and example select contract tests without platform builds', () => {
-  for (const path of ['CONTRIBUTING.md', 'docs/extension-development.md', 'docs/plugin-architecture.md',
+  for (const path of ['CONTRIBUTING.md', 'docs/develop/extension-development.md', 'docs/plugin-architecture.md',
     'docs/architecture/extensions/architecture-and-lifecycle.md',
     'docs/architecture/extensions/manifest-and-contributions.md',
     'docs/architecture/extensions/identity-and-execution.md',

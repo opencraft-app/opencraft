@@ -307,7 +307,7 @@ that acceptance is reported separately in [the native speech plan](../../../desi
 
 ### Internationalization authority
 
-The [project-wide authoring and coverage contract](../../internationalization.md) applies
+The [project-wide authoring and coverage contract](../../develop/internationalization.md) applies
 to every first-party app, shared UI and bundled plugin. Source discovery is no
 longer limited to migrated Web feature folders: `check:i18n` also checks literal
 JSX/accessibility/branch/template copy against an explicit legacy inventory and

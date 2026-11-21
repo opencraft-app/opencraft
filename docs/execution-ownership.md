@@ -746,7 +746,7 @@ engine; an unavailable or incompatible descriptor cannot trigger a local fallbac
 Native history remains the recovery authority. Browser-owned platform-tool
 leases still expire on disconnect and cannot authorize replay of unknown effects.
 
-See [server updates](web-deployment.md#独立-pi-执行-host) for configuration and the
+See [server updates](operations/web-deployment.md#独立-pi-执行-host) for configuration and the
 one-time migration. Updating the execution Host itself is separate from ordinary
 website/gateway/entry updates.
 
@@ -986,7 +986,7 @@ submitted work. Re-observing completed receipts must not interrupt successor tur
 Transport status exposes execution independently, including affected conversation
 IDs for retained generations. Existing Views and newly attached Views receive
 the same status; history and Composer stay mounted. Attach-only external servers
-retain their external lifecycle owner. See the [specification](specs/codex-execution-health-and-recovery.md)
+retain their external lifecycle owner. See the [specification](architecture/codex-execution-health-and-recovery.md)
 and [decision](adr/0001-codex-execution-fault-recovery.md).
 
 Fault recovery may retire Router custody for the exact source generation and

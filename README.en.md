@@ -79,20 +79,20 @@ or configure a model provider in Settings. Local development requires no OpenCra
 | Your next step | Start here |
 | --- | --- |
 | Run with Docker Compose | [Docker deployment](docker/README.md) |
-| Install or manage a self-hosted website | [Web deployment and updates](docs/web-deployment.md) |
-| Develop or package the desktop app | [Development guide](docs/development.md#desktop-with-the-bundled-local-agent) |
+| Install or manage a self-hosted website | [Web deployment and updates](docs/operations/web-deployment.md) |
+| Develop or package the desktop app | [Development guide](docs/develop/development.md#desktop-with-the-bundled-local-agent) |
 | Run Expo or build for mobile | [Mobile guide](apps/mobile/README.md) |
-| Connect Hosts or customize a build | [Development and build guide](docs/development.md) |
+| Connect Hosts or customize a build | [Development and build guide](docs/develop/development.md) |
 
 ## Documentation
 
 | For | Read |
 | --- | --- |
-| A tour of the project | [Documentation index](docs/README.md) · [Repository layout](docs/repository-layout.md) |
+| A tour of the project | [Documentation index](docs/README.md) · [Repository layout](docs/develop/repository-layout.md) |
 | Agent identity, access and collaboration | [Actor and Hub design](docs/architecture/actor-collaboration.md) · [Collaboration API](docs/actor-collaboration-api.md) · [Server authentication](docs/server-authentication.md) |
 | Execution and integration | [Execution ownership](docs/execution-ownership.md) · [Session capabilities](docs/session-capabilities.md) · [Plugin architecture](docs/plugin-architecture.md) |
-| Building an extension | [Extension development](docs/extension-development.md) · [Runnable example](examples/extensions/README.md) |
-| Architecture and design | [Platform architecture](docs/platform-architecture.md) · [Interface design](design.md) · [Build matrix](docs/build-matrix.md) |
+| Building an extension | [Extension development](docs/develop/extension-development.md) · [Runnable example](examples/extensions/README.md) |
+| Architecture and design | [Platform architecture](docs/platform-architecture.md) · [Interface design](design.md) · [Build matrix](docs/develop/build-matrix.md) |
 
 ## Build with us
 
@@ -101,7 +101,7 @@ Contributions to adapters, collaboration, client experiences, documentation and 
 
 - [Report a problem or propose an idea](https://github.com/opencraft-app/opencraft/issues).
 - Follow the [contribution guide](CONTRIBUTING.md) for changes to the shared core.
-- Build product-specific identity, branding and services through [downstream composition](docs/upstream-transition.md).
+- Build product-specific identity, branding and services through [downstream composition](docs/history/upstream-transition.md).
 - Report security vulnerabilities through the private process in [SECURITY.md](SECURITY.md).
 
 ## License

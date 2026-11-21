@@ -10,7 +10,7 @@
   "runtime": "TypeScript、React 19、Vite、Expo、Electron、Node.js",
   "interfaces": ["Workbench Web", "Expo native app", "Electron desktop", "AppServer protocol", "extension runtime"],
   "dependencies": ["agent-runtime", "service-gateway", "identity"],
-  "source_docs": ["README.md", "AGENTS.md", "docs/upstream-history.md"],
+  "source_docs": ["README.md", "AGENTS.md", "docs/history/upstream-history.md"],
   "agent_entry": "AGENTS.md",
   "service_docs": "docs/README.md",
   "deploy": ["config/build-matrix.json", "scripts/release/publish-workbench-web.mjs"],

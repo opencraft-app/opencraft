@@ -4,7 +4,7 @@ GitHub is the target upstream for OpenCraft core. Open an issue or pull request
 against `main`; use a separate branch and keep changes focused. Product identity
 providers, company services and branding belong in downstream composition.
 
-Read [the upstream boundaries](docs/upstream-transition.md) before transferring code
+Read [the upstream boundaries](docs/history/upstream-transition.md) before transferring code
 from a downstream repository. Do not replace current downstream changes with an
 older snapshot or edit two copies of the same core feature independently.
 
@@ -13,8 +13,8 @@ older snapshot or edit two copies of the same core feature independently.
 | Change | Where it belongs | Start here |
 | --- | --- | --- |
 | Shared behavior, Actor authorization, Hub dispatch, lifecycle or a reusable integration port | OpenCraft core, with a focused PR against `main` | [AGENTS.md](AGENTS.md), then the affected package and its tests |
-| Commands, navigation, settings, themes or other supported client contributions | A client Extension using public API V1 | [Extension development](docs/extension-development.md) and the [runnable example](examples/extensions/README.md) |
-| Company login, branding, private services or deployment defaults | Downstream trusted product composition | [Boundary and compatibility guide](docs/extension-development.md#choose-a-boundary) |
+| Commands, navigation, settings, themes or other supported client contributions | A client Extension using public API V1 | [Extension development](docs/develop/extension-development.md) and the [runnable example](examples/extensions/README.md) |
+| Company login, branding, private services or deployment defaults | Downstream trusted product composition | [Boundary and compatibility guide](docs/develop/extension-development.md#choose-a-boundary) |
 | Skills, MCP, hooks or execution-engine capabilities | The owning Host/AppServer plugin or adapter | [Execution-side versus client plugins](docs/architecture/extensions/architecture-and-lifecycle.md#3-先区分两种插件) |
 
 A client Extension does not need a core PR merely to be installed. Propose a
@@ -45,10 +45,10 @@ for the affected boundary rather than inventing another migration harness.
 
 ## Develop and validate
 
-Follow the [repository layout](docs/repository-layout.md) when adding files. Keep
+Follow the [repository layout](docs/develop/repository-layout.md) when adding files. Keep
 task-specific plans and findings with their topic rather than at the root.
 
-Read [AGENTS.md](AGENTS.md) for ownership and [the build matrix](docs/build-matrix.md)
+Read [AGENTS.md](AGENTS.md) for ownership and [the build matrix](docs/develop/build-matrix.md)
 for the target platform. Use the pinned Node version in `.nvmrc` and `npm ci` in
 your own checkout. Run checks relevant to the changed contract; describe actual
 commands, results and limitations in the pull request. Platform behavior changes
@@ -82,7 +82,7 @@ TMPDIR, and a process a test leaves running fails the run. To reproduce that
 locally, set `NODE_OPTIONS="--import $PWD/tests/support/test-isolation.mjs
 --test-global-setup=$PWD/tests/support/test-isolation-global.mjs"`.
 
-The [build matrix](docs/build-matrix.md) describes explicit Electron/Expo/native
+The [build matrix](docs/develop/build-matrix.md) describes explicit Electron/Expo/native
 validation. A browser build does not prove those platforms work. Extension CI
 runs on Linux when its contract, runtime, example or guide changes; other platform
 builds remain opt-in under the existing CI policy.

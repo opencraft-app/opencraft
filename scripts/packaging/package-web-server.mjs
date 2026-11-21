@@ -75,7 +75,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   await buildConversationCli(join(packageRoot, 'runtime/opencraft-cli.mjs'));
   manifest.opencraftWeb = { userPlugins: 1, schemaVersion: 1, workerProtocol: 1, buildId: web.buildId, ...(productPlugins ? { productPlugins } : {}), ...(resources ? { resources: { packageName: resources.packageName, version, buildId: web.buildId, integrity: resources.integrity } } : {}) };
   await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest, null, 2));
-  await cp(join(repositoryRoot, 'docs/web-deployment.md'), join(packageRoot, 'README.md'));
+  await cp(join(repositoryRoot, 'docs/operations/web-deployment.md'), join(packageRoot, 'README.md'));
   await cp(join(repositoryRoot, 'LICENSE'), join(packageRoot, 'LICENSE'));
   const unit = await readFile(join(repositoryRoot, 'packaging/web-server/opencraft-web.service'), 'utf8');
   await writeFile(join(packageRoot, 'opencraft-web.service'), unit.replace(`node_modules/${PUBLIC_PACKAGE_NAME}/`, `node_modules/${packageName}/`));

@@ -102,7 +102,7 @@ records this disposition. A dormant binding resumes in its original generation.
 Registry publication fsyncs the file and parent directory; persistence failure
 stops admission instead of continuing from an uncertain in-memory default.
 
-See [generation upgrade transactions](full-upgrade-generations.md).
+See [generation upgrade transactions](operations/full-upgrade-generations.md).
 
 
 ## Host process handoff (protocol 1)

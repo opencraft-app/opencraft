@@ -83,7 +83,7 @@ configuration, then stop Observe and `docker compose down`. Existing observation
 data stays available for a later re-enable. Roll back code/configuration only; never
 restore business backups as part of an observation rollback.
 
-Runtime acceptance remains tracked by [the V1 matrix](../../docs/observability-acceptance.md).
+Runtime acceptance remains tracked by [the V1 matrix](../../docs/operations/observability-acceptance.md).
 Container health and the focused tests are not completion of that matrix.
 
 ### Named-server dashboard paths

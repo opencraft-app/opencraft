@@ -6,8 +6,8 @@ description: Prepare, validate, publish or recover an OpenCraft GitHub/npm relea
 # OpenCraft upstream release
 
 Paths are relative to the standalone OpenCraft repository. Read `AGENTS.md`,
-`SECURITY.md` and the public npm section of `docs/web-deployment.md`.
-`docs/upstream-transition.md` records migration state; do not confuse a planned
+`SECURITY.md` and the public npm section of `docs/operations/web-deployment.md`.
+`docs/history/upstream-transition.md` records migration state; do not confuse a planned
 upstream with a completed source cutover.
 
 1. Fetch main and tags in a clean isolated feature checkout. Confirm the

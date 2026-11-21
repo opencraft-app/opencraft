@@ -32,5 +32,5 @@ Web中文使用系统字体，Inter和代码等宽字体保留Latin/Latin Extend
 
 ## 相关文档
 
-- [Web部署与更新契约](web-deployment.md)
-- [多端构建矩阵](build-matrix.md)
+- [Web部署与更新契约](operations/web-deployment.md)
+- [多端构建矩阵](develop/build-matrix.md)

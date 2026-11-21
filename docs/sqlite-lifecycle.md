@@ -302,14 +302,14 @@ OpenCraftHostStateDatabase 的已发布 v1 保持原文，v2 追加 rooms/comman
 拒绝新版库；无版本守卫的旧 bridge 不得重开当前库并重建旧表。
 已知旧结构仍在 owner 内有界转换并保留映射/receipt/消息 ID，
 未知仍拒绝；回退接受性须用实际旧 reader 在隔离副本验证。来源与边界见
-[受管 Headless](managed-headless.md#codex-原生会话与保留数据)。
+[受管 Headless](operations/managed-headless.md#codex-原生会话与保留数据)。
 
 
 受管站点首次受管迁移的SSH历史恢复：旧单体只接受v1账本，而正式owner已发布的v2仅维护
 user_version。原未修改旧入口不能直接作为升级后的回退。固定历史恢复工具复用该owner
 正式迁移清单，对固定来源的旧owner增加精确v2接受，原SQL/checksum/记录不变，未知仍拒绝；
 生成物不入Git、不作为常规启动热patch。必须证明完整兼容旧入口接受新owner后的真实副本，
-而非只证明某张库可读；见[受管Headless历史恢复](managed-headless.md#固定旧部署的历史恢复工具)。
+而非只证明某张库可读；见[受管Headless历史恢复](operations/managed-headless.md#固定旧部署的历史恢复工具)。
 
 
 ## OpenCraft Host state v5：持久会话目录与参与关系完成状态

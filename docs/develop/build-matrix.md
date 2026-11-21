@@ -45,7 +45,7 @@ asynchronous cleanup finishes; repeated stop signals join the same cleanup.
 
 ## Repository-owned Electron source fork
 
-[`vendor/electron`](../vendor/electron/README.md) owns the fixed Electron source
+[`vendor/electron`](../../vendor/electron/README.md) owns the fixed Electron source
 baseline, checksummed patch series and explicit source/sync/build commands. Its
 initial native patch exposes observation-only editing metadata and caret bounds;
 source verification is separate from compilation and real native input testing.
@@ -62,7 +62,7 @@ Desktop packages use `OPENCRAFT_ELECTRON_DISTRIBUTION_<PLATFORM>_<ARCH>` or
 `OPENCRAFT_ELECTRON_DISTRIBUTION`; headless packages use
 `OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION`. The default Dockerfile consumes the
 browser distribution through its `owned-electron` named context, also supplied
-by Compose. See [native build and Docker delivery](../vendor/electron/CONTAINER.md).
+by Compose. See [native build and Docker delivery](../../vendor/electron/CONTAINER.md).
 CI restores the newest successful "Electron fork native artifacts" run on the
 default branch (or the branch being built) whose `vendor/electron/fork.json` and
 `args.gn` match the checkout and whose target artifact has not expired
@@ -283,7 +283,7 @@ Web E2E is selected by update/deployment and shared inputs, not every visual edi
 Selected audits retain complete findings for three days. Advisory dependency
 findings remain advisory under the current upstream policy, independent of
 repository visibility; installation/registry errors, secrets and functional
-regressions still fail. See [Security](../SECURITY.md#upstream-audit-policy-2026-10-18).
+regressions still fail. See [Security](../../SECURITY.md#upstream-audit-policy-2026-10-18).
 
 Validate policy changes with
 `node --test tests/tooling/ci-plan.test.mjs tests/tooling/ci-workflows.test.mjs tests/tooling/dependency-audit.test.mjs`
@@ -337,7 +337,7 @@ edition selection and original artifact names belong to the explicit downstream
 `products/<product>` build commands; public APK/IPA commands do not select that product.
 `OPENCRAFT_NATIVE_ARTIFACT_NAME` is an optional trusted filename prefix, defaulting
 to `OpenCraft`, for generic release APK and IPA output. The certificate MD5 and
-APK file MD5 are different values. The [Expo mobile route](../apps/mobile/README.md#手机端路线)
+APK file MD5 are different values. The [Expo mobile route](../../apps/mobile/README.md#手机端路线)
 also covers the temporary Expo Go preview, iOS test IPA and single-file
 intranet download flow. An iOS IPA needs macOS, Xcode, CocoaPods and Apple
 signing; `expo-ios-bundle` does not produce an IPA.
@@ -466,7 +466,7 @@ origin, so one Web build works behind both authenticated entry points.
 
 ### Docker Compose
 
-The Linux ARM64 container entry is maintained in [`docker/`](../docker/README.md).
+The Linux ARM64 container entry is maintained in [`docker/`](../../docker/README.md).
 It packages the Headless gateway and exports matching native Codex/Pi execution
 owners for the host, with independent bind-mounted data and workspaces. The
 container build is separate from the single-owner archive target below.
@@ -672,7 +672,7 @@ Updating an already-running input helper requires an explicit service restart;
 that revokes active input. The main OpenCraft service is not restarted by installation.
 Default installations remain hidden. This explicit network-trust mode is not a
 multi-tenant or anonymous Internet deployment; see the
-[authority boundary](cloud-desktop-plugin.md#local-execution-server-authority).
+[authority boundary](../cloud-desktop-plugin.md#local-execution-server-authority).
 `OPENCRAFT_DESKTOP_ACCESS=trusted-internal npm run smoke:local-desktop` verifies
 the same real native/Thread chain at a non-loopback browser hostname with
 isolated synthetic inference, including viewing recovery and disabled input.
@@ -733,13 +733,13 @@ registry. Run `npm run test:web-updates` for registry/package/worker update and
 rollback behavior, alongside `npm run test:web-release`.
 
 For requests to “发布 npm”, follow the
-[public npm release procedure](web-deployment.md#公共-npm-发布流程),
+[public npm release procedure](../operations/web-deployment.md#公共-npm-发布流程),
 including explicit source revision, credential reuse, exact-archive publication,
 registry download verification and the real website Playwright check.
 
 Managed Web installs expose Settings → Website updates after the actual server
 capability is confirmed. Plain static hosting and Electron retain their own
-delivery paths. See [Web deployment](web-deployment.md) for the bootstrap,
+delivery paths. See [Web deployment](../operations/web-deployment.md) for the bootstrap,
 public npm access, supported hot-update scope and browser refresh.
 
 
@@ -773,7 +773,7 @@ The public mobile entry always selects the packaged full
 Web Workbench container for public Expo commands. The runner builds its local
 document before Metro. This is the only public mobile entry; it neither selects a private
 product nor proves native-device parity. See
-[container ownership and acceptance](mobile-workbench-container.md).
+[container ownership and acceptance](../mobile-workbench-container.md).
 
 Expo Web/iOS bundle commands build the packaged Web Workbench with its
 configured direct Host. `apps/mobile` has no downstream product entry; a product
@@ -806,7 +806,7 @@ build/release runtimes and actual copied delivery-asset verification.
 
 ### Linux remote-browser payload
 
-Both `package-headless-linux.mjs` and managed headless `package-web-server.mjs` ship `runtime/browser` using `package-browser-runtime.mjs`, including Electron licenses. Build on native Linux using the workspace-pinned Electron distribution. The independent browser worker does not start the desktop application. See [managed headless](managed-headless.md#内置远程网页渲染) for sandbox, dependencies and profile ownership. `npm run smoke:remote-browser` exercises the real typed Dynamic Tool Host, Page/Presentation and H.264 Canvas on Linux; it uses a synthetic website and does not prove macOS behavior or physical-device input.
+Both `package-headless-linux.mjs` and managed headless `package-web-server.mjs` ship `runtime/browser` using `package-browser-runtime.mjs`, including Electron licenses. Build on native Linux using the workspace-pinned Electron distribution. The independent browser worker does not start the desktop application. See [managed headless](../operations/managed-headless.md#内置远程网页渲染) for sandbox, dependencies and profile ownership. `npm run smoke:remote-browser` exercises the real typed Dynamic Tool Host, Page/Presentation and H.264 Canvas on Linux; it uses a synthetic website and does not prove macOS behavior or physical-device input.
 
 
 Optional Session history refresh, older-page projection and tail-drain handling

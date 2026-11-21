@@ -1,7 +1,7 @@
 # Internationalization across OpenCraft
 
 All first-party user interfaces in `apps/`, `packages/` and bundled `plugins/`
-follow the [locale authority](architecture/platform/presentation-and-input.md#internationalization-authority).
+follow the [locale authority](../architecture/platform/presentation-and-input.md#internationalization-authority).
 This includes Web, Electron renderer and native menus, embedded surfaces, Expo,
 settings, accessibility labels, empty/loading/error states and notifications.
 A feature being a plugin does not make its UI exempt.
@@ -41,7 +41,7 @@ It also detects direct JSX text, visible text/accessibility attributes, literal
 rendered conditional/logical branches and interpolated templates. New occurrences
 fail even if the same text was previously allowed in another file or another
 position count. The legacy inventory is
-[`config/i18n-copy-baseline.json`](../config/i18n-copy-baseline.json), keyed by
+[`config/i18n-copy-baseline.json`](../../config/i18n-copy-baseline.json), keyed by
 file, syntax kind, exact normalized text and occurrence count. Remove or decrease
 the corresponding allowance as copy is migrated. Do not regenerate the inventory
 to accept new hardcoded copy. New UI must use descriptors. Explicit intentional

@@ -2,7 +2,7 @@
 
 服务器可显式启用 `@opencraft/codex-core`。默认兼容形态将 `codex app-server`、账户池代理、登录、凭据刷新与用量维护放在同一个独立长驻进程中；显式拆分形态把 APP Server 移至另一个独立 unit，账号 Core 可以单独升级。执行网关和 daemon 只持客户端连接。关闭最后一个页面、关闭 daemon 或重启执行侧不终止所选常驻执行 owner 中的活动轮次、shell 工具、原生 queue 与 goal。
 
-桌面端默认继续使用 daemon 内嵌 stdio 模式。没有 `--codex-core-endpoint` 时不会探测或启动核心服务。服务器执行更新可接入[受管更新器](web-deployment.md#服务器执行端更新)，只切换网关、daemon 和 capability adapter，保持 core 与 CLI 运行。网页/网关发布不等待 Core 更新、目标完成或账户源码同步；两者分别报告实际版本。Codex 多代会话分配、候选准备与 CAS 切换已经实现，详见[代升级契约](full-upgrade-generations.md)；DSH 宿主自身平滑升级仍属后续设计。
+桌面端默认继续使用 daemon 内嵌 stdio 模式。没有 `--codex-core-endpoint` 时不会探测或启动核心服务。服务器执行更新可接入[受管更新器](operations/web-deployment.md#服务器执行端更新)，只切换网关、daemon 和 capability adapter，保持 core 与 CLI 运行。网页/网关发布不等待 Core 更新、目标完成或账户源码同步；两者分别报告实际版本。Codex 多代会话分配、候选准备与 CAS 切换已经实现，详见[代升级契约](operations/full-upgrade-generations.md)；DSH 宿主自身平滑升级仍属后续设计。
 
 ## 所有权与协议
 
@@ -103,7 +103,7 @@ npm run check:boundaries
 
 线上只做不触发推理的健康、身份与菜单检查。真实任务连续性单独获得授权；合成推理不替代真实 OAuth、外部模型、全部工具或桌面呈现验收。
 
-受管 Headless 显式 raw core/downstream overlay 接入见 [受管 Headless](managed-headless.md)，不改变其他部署默认模式。
+受管 Headless 显式 raw core/downstream overlay 接入见 [受管 Headless](operations/managed-headless.md)，不改变其他部署默认模式。
 
 
 ## 网页就绪与 Host 就绪
@@ -301,7 +301,7 @@ restart. Artifacts and HOME remain on disk. No old goal, queue, approval or
 historical binding is cancelled to obtain readiness. Previously activated HOMEs
 use normal draining and retirement, never candidate revocation.
 
-See [generation upgrade transactions](full-upgrade-generations.md) for plan
+See [generation upgrade transactions](operations/full-upgrade-generations.md) for plan
 acceptance, compatibility and compensation boundaries.
 
 ## Split account Core owner handoff

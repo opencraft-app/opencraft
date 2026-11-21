@@ -266,12 +266,12 @@ until disconnect. DSH/Codex belong to independently managed execution services.
 The Settings UI reads server status, submits authenticated update intent, and never
 holds registry credentials or controls an execution process. Publishing a package,
 installing a server version and refreshing a browser are separate actions. See the
-[Web installation and update runbook](../../web-deployment.md) for setup, failure recovery
+[Web installation and update runbook](../../operations/web-deployment.md) for setup, failure recovery
 and the stable entry maintenance limitation.
 
 ## Managed server updates
 
-The Web bootstrap owns the durable release pointer and update authorization. In explicitly configured server deployments, its execution adapter switches the same release's gateway/daemon through a dedicated systemd unit and checks daemon IPC readiness, release identity and unchanged external core PIDs before committing. A failed activation restores the prior execution release. Startup reconciles interrupted execution pointers against committed deployment state; cleanup retains every execution-referenced release. Runtime cwd, machine identity, credentials and DSH installation remain deployment-owned. Codex core/CLI are never replaced by this adapter. See [deployment contract](../../web-deployment.md#服务器执行端更新).
+The Web bootstrap owns the durable release pointer and update authorization. In explicitly configured server deployments, its execution adapter switches the same release's gateway/daemon through a dedicated systemd unit and checks daemon IPC readiness, release identity and unchanged external core PIDs before committing. A failed activation restores the prior execution release. Startup reconciles interrupted execution pointers against committed deployment state; cleanup retains every execution-referenced release. Runtime cwd, machine identity, credentials and DSH installation remain deployment-owned. Codex core/CLI are never replaced by this adapter. See [deployment contract](../../operations/web-deployment.md#服务器执行端更新).
 
 ### Server-owned conversation schedules
 

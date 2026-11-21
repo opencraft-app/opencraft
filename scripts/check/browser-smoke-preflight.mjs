@@ -16,5 +16,5 @@ export function assertBrowserRuntimeDependencies(executable, {
     const match = /^\s*(\S+)\s+=>\s+not found\s*$/.exec(line);
     return match ? [match[1]] : [];
   });
-  if (missing.length) throw new Error(`Chromium runtime libraries missing: ${missing.join(", ")}. See docs/build-matrix.md#linux-browser-smoke-prerequisites`);
+  if (missing.length) throw new Error(`Chromium runtime libraries missing: ${missing.join(", ")}. See docs/develop/build-matrix.md#linux-browser-smoke-prerequisites`);
 }

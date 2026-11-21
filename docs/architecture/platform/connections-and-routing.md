@@ -218,7 +218,7 @@ read-only compatibility source. This is single-installation administrator access
 not member-specific Server sharing. Reset has a physical close/claim barrier.
 Closing a page or proxy does not stop the remote daemon, and reconnection does not
 replay mutations. Scope, configuration, compatibility gates and limitations are
-specified in [SSH Codex Servers](../../ssh-codex-servers.md).
+specified in [SSH Codex Servers](../../operations/ssh-codex-servers.md).
 
 ### Hub-owned remote conversation directory
 

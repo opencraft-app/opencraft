@@ -672,7 +672,7 @@ storage. A selected installation owns its version checks and error reports. WebK
 failures may try one fresh resource graph; even a newer reported build must not repeatedly navigate
 an already recovered document. Persistent failures retain the explicit retry surface. This does not
 change viewport geometry or turn storage/evaluation failures into resource retries. The serving
-contract is documented in [Web resource recovery](../../docs/web-local-deployment.md#保留本地数据的模块资源恢复).
+contract is documented in [Web resource recovery](../../docs/operations/web-local-deployment.md#保留本地数据的模块资源恢复).
 
 
 ## Anchored footer surfaces in embedded presentations

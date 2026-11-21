@@ -106,7 +106,7 @@ code may be cached without retaining a mounted View. Hidden pages do not advance
 optional startup work. Deferred feature CSS must reach both standalone document
 and embedded shadow presentations, and stop observing when the embedded owner
 retires. Build graph, byte/request budgets, controlled cache probe and validation
-boundaries are maintained in [startup performance](../../docs/startup-performance.md).
+boundaries are maintained in [startup performance](../../docs/develop/startup-performance.md).
 
 ## Shared measurement transaction ownership
 

@@ -110,7 +110,7 @@ resubmitted. A child success whose parent receipt was lost can be reconciled
 without a duplicate child. Kernel writer locks are recovered before journals
 are read. A full host reboot does not imply that native work survived.
 
-The private internal adapter contract is [owner-contract.d.ts](../scripts/full-upgrade/owner-contract.d.ts).
+The private internal adapter contract is [owner-contract.d.ts](../../scripts/full-upgrade/owner-contract.d.ts).
 P3 must implement authority CAS, complete lease/fence/drain coverage, boot and
 incarnation-bound cold readiness, storage ownership and consistent backups.
 All inventory database owners must be covered; cross-store backup requires one

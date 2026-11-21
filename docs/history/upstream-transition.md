@@ -75,7 +75,7 @@ The work-status diagnostic exercises current production components without a
 separate source snapshot. Browser evidence uses system temporary directories.
 External execution-runtime checks and connector catalog exports still require
 explicit local inputs. See
-[developer inputs](build-matrix.md#developer-diagnostics-and-browser-evidence).
+[developer inputs](../develop/build-matrix.md#developer-diagnostics-and-browser-evidence).
 
 Host-specific Composer shortcut declarations and standalone action adapters belong
 to the trusted connection provider. Core matching, presentation and resident
@@ -102,7 +102,7 @@ this migration does not claim a device/native build or change application behavi
   implementation and compatibility channels belong to the downstream desktop
   composition. Core retains profile/protocol/window ownership, early callback
   routing and current-frame IPC admission; product disposal retires its handlers.
-  See [desktop product composition](desktop-product-composition.md). JS closure,
+  See [desktop product composition](../desktop-product-composition.md). JS closure,
   preload and lifecycle checks do not claim OS or external-login acceptance.
 - Public Application lifetime, optional-builtin and plugin-Settings browser probes
   no longer assume the removed private bootstrap options or an automatically

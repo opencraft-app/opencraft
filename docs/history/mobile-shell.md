@@ -1,6 +1,6 @@
 # iOS mobile shell
 
-本文描述显式下游产品的 Shell。公开默认 Expo 在 apps/mobile 中承载同一套随包 Web Workbench，独立 RN 工作台已退役；下游产品通过下游产品 runner 选择原入口，见 [Expo README](../apps/mobile/README.md#public-and-downstream-product-entries)。入口拆分不改变本文的导航、账号、Bot 或几何所有权。
+本文描述显式下游产品的 Shell。公开默认 Expo 在 apps/mobile 中承载同一套随包 Web Workbench，独立 RN 工作台已退役；下游产品通过下游产品 runner 选择原入口，见 [Expo README](../../apps/mobile/README.md#no-downstream-product-entry)。入口拆分不改变本文的导航、账号、Bot 或几何所有权。
 
 ## Ownership
 
@@ -209,7 +209,7 @@ A foldable's current window is the layout input, not a device category.
 resizing never changes Bot, Thread, Draft or content runtime identity.
 Bot selection preserves the navigation presentation instead of clearing its
 rows while awaiting the DOM controller. Both hosts consume the bounded,
-scope-isolated [navigation continuity model](mobile-data-architecture.md#bot-navigation-continuity);
+scope-isolated [navigation continuity model](../mobile-data-architecture.md#bot-navigation-continuity);
 cached display and current command admission are separate states.
 Web uses ResizeObserver through RN `onLayout`, native uses measured container
 layout. Account updates use the Web mount port's update operation. Platform

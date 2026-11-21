@@ -1,6 +1,6 @@
 # OpenCraft Extension Platform 与插件内核架构
 
-本页是插件内核架构入口。当前实现账本、正式契约、目标设计与验收限制按职责保留在下列专题正文；开发入口见 [Extension development](extension-development.md)，修改行为时维护对应专题。
+本页是插件内核架构入口。当前实现账本、正式契约、目标设计与验收限制按职责保留在下列专题正文；开发入口见 [Extension development](develop/extension-development.md)，修改行为时维护对应专题。
 
 | 专题 | 范围 |
 | --- | --- |
