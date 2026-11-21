@@ -58,17 +58,20 @@ function installLockedRuntime(runtime, { platform, arch }) {
 
 /**
  * Installs runtime/codex for the target and copies its vendor tree to
- * `output`, so the packaged layout is `<output>/bin/codex[.exe]` beside
+ * `<staging>/codex-<arch>`, packaged as `runtime/codex-<arch>/bin/codex[.exe]` beside
  * `codex-resources/`, `codex-path/` and `codex-package.json`.
  */
 export async function stageCodexRuntime(
   target,
   {
     root = repositoryRoot,
-    output = resolve(root, "apps/desktop/build/codex-runtime"),
+    staging = resolve(root, "apps/desktop/build/codex-runtime"),
     install = installLockedRuntime,
   } = {},
 ) {
+  // Architecture-qualified, like the other per-architecture runtimes, so a
+  // macOS universal merge keeps both trees instead of comparing their files.
+  const output = join(staging, `codex-${target.arch}`);
   const runtime = resolve(root, "runtime/codex");
   const manifest = JSON.parse(await readFile(join(runtime, "package.json"), "utf8"));
   const version = manifest.dependencies?.["@openai/codex"];
@@ -87,8 +90,8 @@ export async function stageCodexRuntime(
   }
   const executable = join(source, layout.entrypoint ?? join("bin", codexExecutableName(target.platform)));
   if (!(await stat(executable)).isFile()) throw new Error(`Codex executable is missing at ${executable}`);
-  await rm(output, { recursive: true, force: true });
-  await mkdir(dirname(output), { recursive: true });
+  await rm(staging, { recursive: true, force: true });
+  await mkdir(staging, { recursive: true });
   await cp(source, output, { recursive: true, preserveTimestamps: true });
   return { version, target: layout.target, output };
 }

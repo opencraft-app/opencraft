@@ -26,12 +26,14 @@ async function fixture(t, { version = "0.162.1", layoutVersion = version } = {})
       JSON.stringify({ version: layoutVersion, target: "aarch64-apple-darwin", entrypoint: "bin/codex" }),
     );
   };
-  return { root, install, installs, output: join(root, "staged") };
+  return { root, install, installs, staging: join(root, "staged") };
 }
 
 test("stages the target's pinned Codex vendor tree in Codex's own layout", async (t) => {
-  const { root, install, installs, output } = await fixture(t);
-  const staged = await stageCodexRuntime({ platform: "darwin", arch: "arm64" }, { root, install, output });
+  const { root, install, installs, staging } = await fixture(t);
+  const staged = await stageCodexRuntime({ platform: "darwin", arch: "arm64" }, { root, install, staging });
+  const output = join(staging, "codex-arm64");
+  assert.equal(staged.output, output, "staged under an architecture-qualified directory");
   assert.deepEqual(installs, [{ platform: "darwin", arch: "arm64" }]);
   assert.equal(staged.version, "0.162.1");
   assert.equal((await stat(join(output, "bin/codex"))).mode & 0o111, 0o111, "the binary stays executable");

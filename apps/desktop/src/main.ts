@@ -814,7 +814,7 @@ async function bootstrap(): Promise<void> {
     codexExecutable: resolveCodexExecutable({
       explicit: process.env.OPENCRAFT_CODEX_EXECUTABLE,
       bundled: app.isPackaged
-        ? join(process.resourcesPath, "runtime/codex/bin", process.platform === "win32" ? "codex.exe" : "codex")
+        ? join(process.resourcesPath, `runtime/codex-${process.arch}/bin`, process.platform === "win32" ? "codex.exe" : "codex")
         : null,
       path: process.env.PATH,
       homeDirectory: homedir(),

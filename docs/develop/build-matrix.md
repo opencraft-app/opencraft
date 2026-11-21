@@ -61,7 +61,8 @@ this way, unsigned, from one commit and publishes a GitHub pre-release.
 Every desktop package also ships the native Codex pinned in `runtime/codex`:
 `scripts/packaging/stage-codex-runtime.mjs` installs the target's official
 platform package (`npm ci --os --cpu`, so a target can be staged from another
-host) and copies its vendor tree to `runtime/codex/` in the package. The
+host) and copies its vendor tree to `runtime/codex-<arch>/` in the package
+(architecture-qualified, so the macOS universal merge keeps both). The
 desktop starts that binary unless `OPENCRAFT_CODEX_EXECUTABLE` names another,
 and falls back to a user-installed Codex only when none is bundled.
 Desktop packages use `OPENCRAFT_ELECTRON_DISTRIBUTION_<PLATFORM>_<ARCH>` or

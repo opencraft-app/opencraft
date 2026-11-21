@@ -193,7 +193,7 @@
       },
       {
         "from": "build/codex-runtime",
-        "to": "runtime/codex",
+        "to": "runtime",
         "filter": [
           "**/*"
         ]
