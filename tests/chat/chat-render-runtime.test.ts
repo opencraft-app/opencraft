@@ -244,6 +244,19 @@ test("Chat URLs distinguish navigation, workspace files, external links and unsa
   );
 });
 
+test("custom application URIs remain external and never acquire a workspace prefix", () => {
+  const context = { cwd: "/workspace", externalResourcePolicy: "allow" as const };
+  for (const target of ["wxwork://message/?username=renahhuang", "WXWORK://message/?username=renahhuang", "example-app:contact/123"]) {
+    assert.equal(resolveStandardChatResource(target, context).allowed, false);
+    assert.equal(resolveStandardChatResource(target, { ...context, externalResourcePolicy: "restricted" }).allowed, false);
+  }
+  assert.equal(resolveStandardChatResource("main.ts:42", context).target, "file:///workspace/main.ts#L42");
+  assert.equal(resolveStandardChatResource("C:\\work\\main.ts:42", context).target, "file:///C:/work/main.ts#L42");
+  for (const target of ["javascript:alert(1)", "vbscript:msgbox(1)", "data:text/html,test"]) {
+    assert.equal(resolveStandardChatResource(target, context).allowed, false);
+  }
+});
+
 test("legacy Codex resource URIs remain classified without rewriting their target", () => {
   for (const target of ["codex://settings", "CoDeX://settings"]) {
     assert.deepEqual(resolveStandardChatResource(target, { cwd: null, externalResourcePolicy: "restricted" }), {

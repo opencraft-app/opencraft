@@ -12,7 +12,8 @@ import { createConversationKey } from "@opencraft/chat-core";
 import { WebSocketTransport } from "@opencraft/appserver-transport-websocket";
 import { createAppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
 import { createBrowserConversationOutbox } from "../../apps/workbench-web/src/runtime/browser-conversation-outbox";
-import { queuedSubmissionPresentation } from "../../apps/workbench-web/src/queued-submission-presentation";
+import { queuedSubmissionPresentation, visibleQueuedSubmissions } from "../../apps/workbench-web/src/queued-submission-presentation";
+import { BrowserComposerDrafts } from "../../apps/workbench-web/src/runtime/browser-composer-drafts";
 import { completeConversationComposerSubmission } from "../../apps/workbench-web/src/runtime/composer-submission-admission";
 import { initializeAppearanceTheme, setThemePreference } from "../../apps/workbench-web/src/appearance-theme";
 import "../../apps/workbench-web/src/styles/app.scss";
@@ -30,7 +31,7 @@ const runtime = createAppServerWorkbenchRuntime({ hostId: "fixture", outbox: sto
 });
 await runtime.connect();
 const lease = await runtime.acquireThread("thread-one"); lease.setRecoveryVisibility(true);
-const controller = createComposerController({ type: new URLSearchParams(location.search).get("target") === "queue" ? "enqueue-follow-up" : "existing-thread", key: createConversationKey("fixture", "thread-one") }, { now: Date.now, createId: () => crypto.randomUUID() });
+const controller = createComposerController({ type: new URLSearchParams(location.search).get("target") === "queue" ? "enqueue-follow-up" : "existing-thread", key: createConversationKey("fixture", "thread-one") }, { now: Date.now, createId: () => crypto.randomUUID(), drafts: new BrowserComposerDrafts(sessionStorage, "fixture-drafts") });
 const submittedIntents: import("@opencraft/composer-core").SubmitIntent[] = [];
 (window as any).fixture = { runtime: runtime.getSnapshot, snapshot: lease.getSnapshot, setThemePreference,
   account: (next: string | null) => { account = next; store.refreshScope(); }, draft: () => controller.getSnapshot().draft,
@@ -52,8 +53,10 @@ function App() {
     <OpenCraftComposer controller={controller} awaitSubmission isStreaming={snapshot.activeTurn !== null}
       availableFollowUpActions={!snapshot.authoritative || snapshot.queuedSubmissions.some(row => row.local)
         ? ["queue"] : (["steer", "queue"] as const).filter(action => runtime.resources.host.canRequest?.(action === "queue" ? "thread/queue/add" : "turn/steer") !== false)}
-      queuedSubmissions={snapshot.queuedSubmissions.filter(row => !recovery.byClientId.has(row.clientMessageId)).map(row => queuedSubmissionPresentation(row, false))}
+      queuedSubmissions={visibleQueuedSubmissions(snapshot.queuedSubmissions, snapshot.timeline).filter(row => !recovery.byClientId.has(row.clientMessageId) && !recovery.detached.some(item => item.clientMessageId === row.clientMessageId)).map(row => queuedSubmissionPresentation(row, false))}
       onSubmit={intent => { submittedIntents.push(intent); return completeConversationComposerSubmission(intent, lease.submit(intent), () => {}); }} onCancel={() => {}}
+      onWithdrawQueuedSubmission={id => lease.withdrawQueuedSubmission(id)}
+      onRetryLocalQueuedSubmission={id => lease.retryQueuedSubmission(id)}
       onDeleteQueuedSubmission={id => lease.deleteQueuedSubmission(id)} />
   </>;
   return <main style={{ height: '100dvh', position: 'relative' }} data-authoritative={String(snapshot.authoritative)}>

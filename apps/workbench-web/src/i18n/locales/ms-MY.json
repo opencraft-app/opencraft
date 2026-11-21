@@ -757,9 +757,14 @@
   "office.failed": "Dokumen ini tidak dapat dipaparkan. Anda boleh memuat turun fail asal.",
   "navigation.switchServer": "Tukar pelayan",
   "webUpdates.directManagement": "Urus kemas kini perisian melalui halaman pengurusan pelayan ini.",
-  "chat.outbox.waiting": "Disimpan secara setempat · dihantar secara automatik selepas disambung semula",
+  "chat.outbox.actions": "Tindakan mesej",
+  "chat.outbox.withdraw": "Kembali ke input",
+  "chat.outbox.keepDraft": "Simpan atau hantar draf semasa dahulu",
+  "chat.outbox.cancel": "Batal penghantaran",
+  "chat.outbox.pending": "Mesej menunggu",
+  "chat.outbox.waiting": "Menunggu sambungan · dihantar secara automatik",
   "chat.outbox.unconfirmed": "Penghantaran belum disahkan · semak perbualan sebelum menghantar semula",
-  "chat.outbox.failed": "Mesej tidak dihantar · padam dan cuba semula selepas disambung semula",
+  "chat.outbox.failed": "Tidak dihantar",
   "mcpApp.failed": "App unavailable",
   "mcpApp.loading": "Loading app…",
   "mcpApp.resume": "Open app",
@@ -2218,5 +2223,6 @@
   "workspacePlacement.openFolder": "Buka folder…",
   "workspacePlacement.search": "Cari ruang kerja",
   "workspacePlacement.selectionFailed": "Tidak dapat memilih ruang kerja ini. Muat semula dan cuba lagi.",
-  "workspacePlacement.temporary": "Ruang kerja sementara"
+  "workspacePlacement.temporary": "Ruang kerja sementara",
+  "chat.outbox.sending": "Menghantar…"
 }

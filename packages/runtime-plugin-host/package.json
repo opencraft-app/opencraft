@@ -1,0 +1,16 @@
+{
+  "name": "@opencraft/runtime-plugin-host",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./host.mjs",
+    "./store": "./store.mjs",
+    "./source": "./source.mjs",
+    "./contract": "./contract.ts",
+    "./install": "./install.mjs"
+  },
+  "dependencies": {
+    "@opencraft/identity-core": "0.1.0"
+  }
+}

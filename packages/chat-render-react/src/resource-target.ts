@@ -11,6 +11,8 @@ const conversationScheme = /^opencraft:\/\/conversation\/v1\//u;
 // Legacy URI input compatibility; hosts still decide whether to open the target.
 const legacyCodexAppScheme = /^codex:/iu;
 const resourceScheme = /^(?:sandbox|attachment|resource|plugin|mcp):/iu;
+const uriScheme = /^[a-z][a-z0-9+.-]*:/iu;
+const windowsDrivePath = /^[a-z]:(?!\/\/)/iu;
 const windowsAbsolutePath = /^[a-z]:[\\/]/iu;
 const posixAbsolutePath = /^\//u;
 
@@ -20,6 +22,7 @@ function decision(kind: ChatResourceKind, target: string): ChatResourceDecision 
 
 function workspaceTarget(target: string, cwd: string | null | undefined): string {
   if (fileScheme.test(target)) return target;
+  if (windowsDrivePath.test(target) && !windowsAbsolutePath.test(target)) return target;
   if (windowsAbsolutePath.test(target)) return `file:///${target.replace(/\\/gu, "/")}`;
   if (posixAbsolutePath.test(target)) return `file://${target}`;
   if (cwd == null || cwd.trim().length === 0) return target;
@@ -79,7 +82,14 @@ export function resolveStandardChatResource(
   if (contactScheme.test(target)) return decision("external", target);
   if (appScheme.test(target) || legacyCodexAppScheme.test(target) || conversationScheme.test(target)) return decision("app-route", target);
   if (resourceScheme.test(target)) return decision("resource", target);
+  // A valid URI cannot become a workspace-relative file. Drive-relative
+  // Windows paths (C:src/main.ts) remain file inputs, like absolute drives.
   const location = fileLocationTarget(target);
+  const fileWithLocation = location.fragment !== "" && /^[^:/\\]+\.[a-z0-9]+$/iu.test(location.path);
+  const scheme = fileWithLocation ? undefined : uriScheme.exec(target)?.[0].toLowerCase();
+  if (scheme && !fileScheme.test(target) && !windowsDrivePath.test(target)) {
+    return { allowed: false, kind: "blocked", target: null, reason: "Unregistered external protocol" };
+  }
   if (fileScheme.test(location.path) || windowsAbsolutePath.test(location.path) || posixAbsolutePath.test(location.path)) {
     return decision("file", workspaceTarget(location.path, context.cwd) + location.fragment);
   }

@@ -30,7 +30,7 @@ export function submissionRecoveryPresentation(
     block.type === 'user-message' && block.clientId !== null ? [block.clientId] : [])) ?? []);
   for (const item of rows.values()) {
     if (messages.has(item.clientMessageId)) byClientId.set(item.clientMessageId, item);
-    else detached.push(item);
+    else if (item.state === "unknown") detached.push(item);
   }
   return { byClientId, detached };
 }

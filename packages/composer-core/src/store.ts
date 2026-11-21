@@ -160,6 +160,8 @@ export interface ComposerController {
   createSubmitIntent(): SubmitIntent;
   /** Settle only the Draft that produced this immutable submission. */
   settleSubmission(draftId: string, intent: SubmitIntent, result: ComposerSubmissionSettlement): boolean;
+  /** Restore an unsent queue item only into an empty, identity-reserved Draft. */
+  restoreQueuedContent(content: ComposerSavedContent, withdraw: () => Promise<unknown>): Promise<boolean>;
   registerView(handle: ComposerViewHandle): () => void;
   focus(): void;
   blur(): void;
@@ -379,6 +381,7 @@ export function createComposerController(
   let currentSnapshot = snapshot(revision, draft);
   const draftCache = new Map<string, ComposerDraft>();
   const submissionIntents = new Map<string, SubmitIntent>();
+  const restoringDrafts = new Set<string>();
   const listeners = new Set<() => void>();
   const interactionListeners = new Set<() => void>();
   const disposeListeners = new Set<() => void>();
@@ -492,6 +495,7 @@ export function createComposerController(
     },
     dispatch(action) {
       ensureOpen();
+      if (restoringDrafts.has(draft.id) && action.type !== "switch-target" && action.type !== "reset-all") return;
       if (action.type === "switch-target" || action.type === "clear" || action.type === "reset-all" || action.type === "replace-content") {
         contentEpoch++;
         const active = transient;
@@ -670,6 +674,42 @@ export function createComposerController(
         publishSnapshot();
       }
       return true;
+    },
+    async restoreQueuedContent(content, withdraw) {
+      ensureOpen();
+      const origin = draft;
+      if (origin.lifecycle.phase === "submitting" || transient !== null
+        || !isComposerDocumentEmpty(origin.document) || origin.attachments.length || origin.context.length)
+        throw new Error("Keep or send the current draft before restoring a queued message");
+      const key = encodeComposerTarget(origin.target);
+      restoringDrafts.add(origin.id);
+      publish(reduce(origin, { type: "set-lifecycle", phase: "submitting" }, services));
+      const owner = () => draft.id === origin.id ? draft : draftCache.get(key)?.id === origin.id ? draftCache.get(key)! : null;
+      try {
+        // Establish draft custody before removing the send-queue copy. A storage
+        // failure cannot discard the only persisted copy of the user's input.
+        await services.drafts?.write(origin.target, content);
+        if (disposed || owner()?.lifecycle.phase !== "submitting")
+          throw new Error("The original draft is no longer available");
+        await withdraw();
+      } catch (error) {
+        // A failed withdrawal leaves the queue authoritative and input unchanged.
+        restoringDrafts.delete(origin.id);
+        persist(origin);
+        const current = owner();
+        if (current?.lifecycle.phase === "submitting") {
+          const next = reduce(current, { type: "set-lifecycle", phase: "editing" }, services);
+          if (draft.id === origin.id) publish(next);
+          else { draftCache.set(key, next); publishSnapshot(); }
+        }
+        throw error;
+      }
+      restoringDrafts.delete(origin.id);
+      const restored = reduce(origin, { type: "replace-content", ...content }, services);
+      if (disposed) return false; // Persisted draft custody survives the View.
+      if (draft.id === origin.id) { contentEpoch++; publish(restored); return true; }
+      if (draftCache.get(key)?.id === origin.id) { draftCache.set(key, restored); publishSnapshot(); }
+      return false;
     },
     registerView(handle) {
       ensureOpen();

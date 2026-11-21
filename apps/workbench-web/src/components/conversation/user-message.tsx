@@ -377,6 +377,7 @@ export function UserMessageBlock({ block, hookStatsAccessory }: {
 }) {
   const intl = useIntl();
   const avatars = useContext(IdentityAvatarContext);
+  const contact = block.sender ? avatars?.contactLink?.(block.sender.kind, block.sender.loginName) : null;
   const layout = deriveUserMessageWebLayout(block);
   const allowEntryMotion = useContext(ConversationEntryMotionContext);
   const bubbleRef = useRef<HTMLDivElement>(null);
@@ -419,7 +420,7 @@ export function UserMessageBlock({ block, hookStatsAccessory }: {
     >
       <h4 className="thread-role-heading"><FormattedMessage id="chat.message.youSaid" defaultMessage="You said:" /></h4>
       {block.sender?.kind === "employee" && block.sender.loginName ? (
-        <div className="thread-user-message__sender"><span className="thread-user-message__sender-avatar" aria-hidden="true"><AvatarImage src={avatars?.resolve(block.sender.kind, block.sender.loginName) ?? null} fallback={<UserRound size={12} />} /></span><span>{block.sender.loginName}</span></div>
+        <div className="thread-user-message__sender">{contact ? <a className="thread-user-message__sender-avatar" href={contact.href} title={contact.label} aria-label={contact.label} target="_blank" rel="noopener noreferrer"><AvatarImage src={avatars?.resolve(block.sender.kind, block.sender.loginName) ?? null} fallback={<UserRound size={12} />} /></a> : <span className="thread-user-message__sender-avatar" aria-hidden="true"><AvatarImage src={avatars?.resolve(block.sender.kind, block.sender.loginName) ?? null} fallback={<UserRound size={12} />} /></span>}<span>{block.sender.loginName}</span></div>
       ) : null}
       <UserMessageAttachmentRows block={block} />
       {layout.showBody ? (

@@ -786,9 +786,14 @@
   "office.failed": "无法预览此文档，可以下载原文件查看。",
   "navigation.switchServer": "切换服务器",
   "webUpdates.directManagement": "请通过这台服务器的部署管理入口更新软件。",
-  "chat.outbox.waiting": "已保存在本地 · 重连后自动发送",
+  "chat.outbox.actions": "消息操作",
+  "chat.outbox.withdraw": "撤回到输入框",
+  "chat.outbox.keepDraft": "请先保留或发送当前草稿",
+  "chat.outbox.cancel": "取消发送",
+  "chat.outbox.pending": "待发送消息",
+  "chat.outbox.waiting": "等待连接，恢复后自动发送",
   "chat.outbox.unconfirmed": "发送结果未知 · 请先核对会话，再决定是否重发",
-  "chat.outbox.failed": "消息未发送 · 重连后可删除并重新发送",
+  "chat.outbox.failed": "未发送",
   "mcpApp.failed": "应用暂不可用",
   "mcpApp.loading": "正在加载应用…",
   "mcpApp.resume": "打开应用",
@@ -2349,5 +2354,6 @@
   "workspacePlacement.search": "搜索工作区",
   "workspacePlacement.selectionFailed": "无法选择此工作区，请刷新后重试。",
   "workspacePlacement.temporary": "临时工作区",
-  "chat.appearance.confirm": "确定"
+  "chat.appearance.confirm": "确定",
+  "chat.outbox.sending": "发送中…"
 }

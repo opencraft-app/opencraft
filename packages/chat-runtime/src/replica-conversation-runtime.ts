@@ -87,6 +87,7 @@ export interface ConversationRuntime {
     input: readonly UserInput[],
   ): Promise<void>;
   deleteQueuedSubmission(queuedSubmissionId: string): Promise<void>;
+  withdrawQueuedSubmission(commandId: string): Promise<SubmitIntent>;
   retryUnconfirmedSteer(queuedSubmissionId: string, expectedTurnId: TurnId): Promise<void>;
   discardUnconfirmedSteer(queuedSubmissionId: string, expectedTurnId: TurnId): Promise<void>;
   reorderQueuedSubmissions(
@@ -2206,6 +2207,10 @@ export function createReplicaConversationRuntime(
         localRevision += 1;
         publish();
       }
+    },
+    async withdrawQueuedSubmission(commandId) {
+      if (!outbox) throw new Error("No local message queue owns this input");
+      return outbox.withdraw(commandId);
     },
     async deleteQueuedSubmission(queuedSubmissionId) {
       if (await outbox?.remove(queuedSubmissionId)) return;

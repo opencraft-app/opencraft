@@ -757,9 +757,14 @@
   "office.failed": "ไม่สามารถแสดงเอกสารนี้ได้ คุณสามารถดาวน์โหลดไฟล์ต้นฉบับได้",
   "navigation.switchServer": "เปลี่ยนเซิร์ฟเวอร์",
   "webUpdates.directManagement": "จัดการการอัปเดตซอฟต์แวร์ผ่านหน้าจัดการการติดตั้งของเซิร์ฟเวอร์นี้",
-  "chat.outbox.waiting": "บันทึกในเครื่องแล้ว · ส่งอัตโนมัติเมื่อเชื่อมต่ออีกครั้ง",
+  "chat.outbox.actions": "การดำเนินการข้อความ",
+  "chat.outbox.withdraw": "ย้ายกลับไปยังช่องป้อนข้อมูล",
+  "chat.outbox.keepDraft": "เก็บหรือส่งฉบับร่างปัจจุบันก่อน",
+  "chat.outbox.cancel": "ยกเลิกการส่ง",
+  "chat.outbox.pending": "ข้อความที่รอส่ง",
+  "chat.outbox.waiting": "รอการเชื่อมต่อ · ส่งโดยอัตโนมัติ",
   "chat.outbox.unconfirmed": "ยังยืนยันการส่งไม่ได้ · ตรวจสอบการสนทนาก่อนส่งอีกครั้ง",
-  "chat.outbox.failed": "ยังไม่ได้ส่งข้อความ · ลบแล้วลองใหม่เมื่อเชื่อมต่ออีกครั้ง",
+  "chat.outbox.failed": "ยังไม่ได้ส่ง",
   "mcpApp.failed": "App unavailable",
   "mcpApp.loading": "Loading app…",
   "mcpApp.resume": "Open app",
@@ -2218,5 +2223,6 @@
   "workspacePlacement.openFolder": "เปิดโฟลเดอร์…",
   "workspacePlacement.search": "ค้นหาพื้นที่ทำงาน",
   "workspacePlacement.selectionFailed": "ไม่สามารถเลือกพื้นที่ทำงานนี้ได้ โปรดรีเฟรชแล้วลองอีกครั้ง",
-  "workspacePlacement.temporary": "พื้นที่ทำงานชั่วคราว"
+  "workspacePlacement.temporary": "พื้นที่ทำงานชั่วคราว",
+  "chat.outbox.sending": "กำลังส่ง…"
 }
