@@ -159,7 +159,8 @@ Web preferences、Connector configuration 与插件文档继续使用各自 Inde
 - Main 的本地静态服务器继续提供渲染器文件，并把上述账号路由原样转发给该 socket；页面来源仍是 Main 的回环地址，账号服务按 Main 告知的来源校验 Host 与 Origin。
 - Main 通过已认证的 daemon 控制通道发送 `account/attach`（页面来源），取回浏览器凭证与本机会话，写入 `oc_desktop_owner`、`oc_human` cookie。账号服务需要打开远程服务器窗口时，经同一通道请求 Main（`account/open-remote`）。
 - 控制通道断开（daemon 退出或重启）时，Main 以退避重试重新拉起或接管 daemon、重新 attach 并刷新 cookie；浏览器凭证每次 daemon 启动都会重新生成。
-- 已知问题：daemon 意外退出后，渲染器自身的 AppHost 重连会占满 CPU（改动前同样存在），需单独修复。
+- 渲染器侧 Electron AppHost 由 `connectRecoveringElectronAppHost` 持有：端口因 daemon 断开被终止后，各 Host 通道在同一退避计划下等待并换用新端口，期间保持 `connecting`，不会对已终止的端口立即失败再重试。
+- 已知问题：daemon 被强制结束时，它拉起的引擎子进程（例如 DSH）不会随之退出；新 daemon 会另起一份，旧进程成为孤儿。需要按进程组或 cgroup 回收，尚未实施。
 
 ### 两个 Host 自有文件的离线改名
 

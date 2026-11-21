@@ -239,6 +239,9 @@ export class MessagePortAppHostClient {
     return this.ready;
   }
 
+  /** True once the port is closed or terminated; a terminated client never reopens. */
+  get isClosed(): boolean { return this.closed; }
+
   createTransport(hostId: string): DuplexTransport {
     if (this.closed) throw this.terminalError ?? new Error("App Host connection is closed");
     return new AppHostChannelTransport(
