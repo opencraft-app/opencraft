@@ -20,13 +20,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/cordis": "4.1.0",
     "@expo/metro-runtime": "~58.0.16",
-    "@formatjs/intl-locale": "5.4.2",
+    "@formatjs/intl-locale": "5.5.0",
     "@opencraft/client-product": "0.1.0",
     "@opencraft/design-system": "0.1.0",
     "@opencraft/i18n": "0.1.0",
-    "@tanstack/react-query": "^5.105.0",
+    "@tanstack/react-query": "^5.108.0",
     "@ungap/structured-clone": "^1.4.0",
     "expo": "58.0.26",
     "expo-asset": "~58.0.21",
@@ -43,7 +43,7 @@
     "react-dom": "19.3.1",
     "react-native": "0.88.1",
     "react-native-safe-area-context": "~5.11.0",
-    "react-native-svg": "15.16.0",
+    "react-native-svg": "15.16.1",
     "react-native-web": "~0.21.4",
     "react-native-webview": "14.0.1"
   },
