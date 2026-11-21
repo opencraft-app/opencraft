@@ -163,7 +163,8 @@ export function mergeAssetCatalog(
         .filter((item) => assetSource(item) === source)
         .map((item) => {
           if (kind === "environments" && source === "platform" && !next.canManagePlatform) {
-            const { credentialId, ...publicItem } = item as SandboxConfigurationsSnapshot["environments"][number];
+            const { credentialId: _credentialId, ...publicItem } =
+              item as SandboxConfigurationsSnapshot["environments"][number];
             return publicItem;
           }
           return item;
