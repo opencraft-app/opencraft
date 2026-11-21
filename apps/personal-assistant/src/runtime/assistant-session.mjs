@@ -1,14 +1,13 @@
 import { MemoryFilesChangedError } from "../adapters/memory/file-authority.mjs";
 import { createMemoryBrowser } from "./memory-browser.mjs";
 import { assistantHostExtension } from './host-extension.mjs';
-import { LocalAttachmentStore } from "../adapters/filesystem/attachment-store.mjs";
-import { join } from "node:path";
 import { workObservation } from "./work-observation.mjs";
 import { startPersonalAssistant } from "./personal-assistant.mjs";
 import { LocalRunner } from "./local-runner.mjs";
 import { loadProfile } from "../adapters/local/profile.mjs";
 import { platformAssistantPort } from "../adapters/local/platform-assistant-port.mjs";
 import { createCrewIntake } from "./crew-intake.mjs";
+import { downloadAttachment } from "./attachment-download.mjs";
 
 /** One runtime lifetime; transport and platform authorization remain separate owners. */
 export function createAssistantSession(peer, onStopped) {
@@ -181,19 +180,8 @@ export function createAssistantSession(peer, onStopped) {
               if (stopping) return;
               if (row.author_id === runner.profile.config.botBinding.owner.id && row.crewWork !== true) {
                 let attachments;
-                if(row.attachment){
-                  let offset=0,name,expectedSize,total=0;const chunks=[];
-                  do{
-                    const file=await request('attachment',{messageId:row.id,offset});
-                    if(!file||file.size>8*1024*1024||file.size<0||(expectedSize!==undefined&&expectedSize!==file.size))throw Error('Attachment unavailable');
-                    name=file.name;expectedSize=file.size;const chunk=Buffer.from(file.base64,'base64');total+=chunk.length;
-                    if(total>expectedSize||file.next!==null&&(file.next!==offset+65536||chunk.length!==65536))throw Error('Invalid attachment chunk');
-                    chunks.push(chunk);offset=file.next;
-                  }while(offset!==null);
-                  if(total!==expectedSize)throw Error('Incomplete attachment');
-                  const stored=new LocalAttachmentStore(join(runner.profile.path,'attachments')).importBytes(name,Buffer.concat(chunks,total));
-                  attachments=[stored.attachmentId];
-                }
+                if(row.attachment)
+                  attachments=[await downloadAttachment(runner.profile.path,offset=>request('attachment',{messageId:row.id,offset}))];
                 const response = await runner.dispatch({
                   op: "say",
                   id: "native:" + row.id,

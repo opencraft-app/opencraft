@@ -66,6 +66,7 @@ export function communicationCommand(service: Collaboration, db: DatabaseSync, c
         case 'opencraft/crew/work/get':fields(p,['workId']);return {work:service.crewWork.view(c,p.workId)};
         case 'opencraft/crew/work/list':fields(p,[]);return {works:service.crewWork.list(c)};
         case 'opencraft/crew/work/replies':fields(p,['after']);return {replies:service.crewWork.replies(c,p.after)};
+        case 'opencraft/crew/work/attachment':fields(p,['workId','offset']);return {file:service.crewWork.attachmentChunk(c,p.workId,p.offset)};
         case 'opencraft/crew/work/inbox':fields(p,[]);return {items:service.crewWork.inbox(c)};
         case 'opencraft/channels/group/get':fields(p,['channelId']);return service.channels.getGroup(c,text(p.channelId));
         case 'opencraft/channels/group/list-state/set':fields(p,['channelId','hidden','clientRequestId']);return service.setChannelListHidden(c,text(p.channelId),p.hidden,p.clientRequestId);

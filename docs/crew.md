@@ -71,6 +71,7 @@ Who on the chain is actually asked, and whether that member can decide, is the r
 | `opencraft/crew/work/dispatch` `{targetActorId,content,idempotencyKey,parentWorkId?}` | members; Bots under open work | send and open work |
 | `opencraft/crew/work/message` `{workId,targetActorId,content,idempotencyKey}` | the work's assignee; its requester | reply: the assignee to anyone on its chain, the requester to the assignee |
 | `opencraft/crew/work/replies` `{after}` | a Bot | replies filed against its work, after a cursor |
+| `opencraft/crew/work/attachment` `{workId,offset?}` | the Bot holding the work | the dispatch file, in 64 KiB chunks |
 | `opencraft/crew/work/inbox` `{}` | a person | work they handed over, work that asked them something, and for a space owner all work in the space; open or closed in the last week, with the latest unanswered question to them |
 | `opencraft/crew/work/start` `{}` | space Bots | open routine work |
 | `opencraft/crew/work/finish` `{workId}` | the work's assignee | close it; the chain pass ends |
@@ -100,7 +101,7 @@ Removing a Bot uses the existing `remove` action.
 | Bots dispatching to their phonebook and answering down the tree | implemented as Work tools for both execution engines (Pi and Codex): `crew_contacts`, `crew_dispatch`, `crew_message`. They appear only in Work that answers crew work; the crew work is taken from the Work's conversation, never from the model, and idempotency keys come from the Work and native call |
 | Dispatching from the reception turn without a Work (`dispatch` / `message` decisions) | not yet |
 | Routine work started by a Bot | core only; no runtime trigger yet |
-| Attachments sent to a space Bot by someone other than its owner | not yet: the work carries the text only |
+| Files sent with a dispatch | implemented: the work view names the file for its assignee and requester, `crew/work/attachment` serves it in chunks to the Bot holding the work, and the runtime brings it in with the turn under the same 8 MiB bound as the owner's private line |
 | Crew UI: space members | implemented in the Server panel: Agents are labelled, the owner switches open contact and adds their own assistants (`bots`, `addBot`) |
 | Crew UI: phonebook | implemented in the assistant settings dialog: one switch per space member; members read it, only the owner edits |
 | Crew UI: dispatching from the Inbox | implemented by rule 10: an ordinary direct message is the dispatch |

@@ -231,3 +231,18 @@ test('the crew Inbox shows who is waiting on whom, and clears once they answer',
   assert.equal(items.length, 2, 'the answer itself is a new dispatch (rule 10)');
   await assert.rejects(f.call(f.alan.context, 'opencraft/crew/work/inbox', {}), /crew_work_denied/, 'the Inbox is for people');
 });
+
+test('a file sent with a dispatch reaches the Bot that holds the work, and no one else', async t => {
+  const f = await fixture(t);
+  const channel = await f.call(f.bob, 'opencraft/channels/direct/open', { actorId: f.alan.id }) as { id: string };
+  const bytes = Buffer.from('release notes draft');
+  await f.call(f.bob, 'opencraft/channels/attachments/send', { channelId: channel.id, clientMessageId: 'file-1', name: 'notes.txt', type: 'text/plain', base64: bytes.toString('base64'), text: 'tidy this up' });
+  const [work] = (await f.call(f.alan.context, 'opencraft/crew/work/list', {}) as { works: { id: string; request: string; attachment: { name: string; size: number } | null }[] }).works;
+  assert.equal(work!.request, 'tidy this up');
+  assert.deepEqual(work!.attachment, { name: 'notes.txt', type: 'text/plain', size: bytes.length });
+  const read = await f.call(f.alan.context, 'opencraft/crew/work/attachment', { workId: work!.id }) as { file: { base64: string; next: number | null } };
+  assert.equal(Buffer.from(read.file.base64, 'base64').toString(), 'release notes draft');
+  assert.equal(read.file.next, null);
+  await assert.rejects(f.call(f.zhe.context, 'opencraft/crew/work/attachment', { workId: work!.id }), /crew_work_denied/);
+  assert.equal(((await f.call(f.alice, 'opencraft/crew/work/get', { workId: work!.id })) as { work: { attachment: unknown } }).work.attachment, null, 'the rest of the chain does not see the file');
+});

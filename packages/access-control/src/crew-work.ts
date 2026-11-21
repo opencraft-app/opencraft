@@ -25,6 +25,8 @@ export interface CrewWorkView {
   /** Work handed on from this one that is still open; the assignee should not finish before it settles. */
   openChildren: number;
   assignee: CrewWorkPerson;
+  /** A file sent with the dispatch, shown to the assignee and the requester only. */
+  attachment: { name: string; type: string; size: number } | null;
 }
 /** A message that reached a Bot inside crew work, filed against the Bot's own work. */
 export interface CrewReply {
@@ -67,6 +69,25 @@ export class CrewWork {
     const row = this.db.prepare('SELECT owner_actor_id FROM collaboration_spaces WHERE id=?').get(String(spaceId));
     return row ? String(row.owner_actor_id) : null;
   }
+  #attachment(messageId: string | null): CrewWorkView['attachment'] {
+    const file = messageId === null ? undefined
+      : this.db.prepare('SELECT name,mime,length(bytes) AS size FROM actor_channel_attachments WHERE message_id=?').get(messageId);
+    return file ? { name: String(file.name), type: String(file.mime), size: Number(file.size) } : null;
+  }
+
+  /** The dispatch file of open work the caller holds, in 64 KiB chunks. */
+  attachmentChunk(context: ActorContext, workId: unknown, offset: unknown) {
+    const row = this.#held(context, workId);
+    const at = offset ?? 0;
+    if (!Number.isSafeInteger(at) || Number(at) < 0 || Number(at) > 8 * 1024 * 1024) fail(400, 'invalid_input');
+    const file = row.message_id === null ? undefined
+      : this.db.prepare('SELECT name,mime,length(bytes) AS size,substr(bytes,?,65536) AS bytes FROM actor_channel_attachments WHERE message_id=?').get(Number(at) + 1, String(row.message_id));
+    if (!file) return null;
+    if (Number(at) > Number(file.size)) fail(400, 'invalid_input');
+    return { name: String(file.name), type: String(file.mime), size: Number(file.size),
+      next: Number(at) + 65536 < Number(file.size) ? Number(at) + 65536 : null, base64: Buffer.from(file.bytes as Uint8Array).toString('base64') };
+  }
+
   /** Open work the caller holds. A Bot removed from its space no longer holds anything. */
   #held(context: ActorContext, workId: unknown): Row {
     const row = this.#row(workId);
@@ -228,6 +249,7 @@ export class CrewWork {
       chain: chain.map(person), budget: { used: Number(root.dispatches), limit: CREW_DISPATCH_BUDGET },
       request: message ? String(message.content) : null,
       assignee: person(String(row.assignee_id)),
+      attachment: this.#attachment(message ? String(row.message_id) : null),
       openChildren: Number(this.db.prepare("SELECT COUNT(*) AS n FROM crew_work WHERE parent_id=? AND state='open'").get(String(row.id))!.n) };
   }
 

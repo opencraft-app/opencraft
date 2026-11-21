@@ -1,3 +1,4 @@
+import { downloadAttachment } from "./attachment-download.mjs";
 /**
  * Crew work this Bot holds, joined to the runner's own conversations.
  *
@@ -120,10 +121,13 @@ export function createCrewIntake({ runner, request }) {
           }
           const conversationId = await conversationFor(work.requesterId);
           const from = work.chain.find((p) => p.actorId === work.requesterId).displayName;
+          const attachments = work.attachment
+            ? [await downloadAttachment(runner.profile.path, async (offset) => (await request("opencraft/crew/work/attachment", { workId: work.id, offset })).file)]
+            : undefined;
           const response = await runner.dispatch({
             op: "say",
             id: inputId(work.id),
-            params: { conversationId, text: `${from}:\n${work.request}` },
+            params: { conversationId, text: `${from}:\n${work.request}`, ...(attachments ? { attachments } : {}) },
           });
           if (response?.ok === false) throw Error("Crew intake rejected");
           continue;

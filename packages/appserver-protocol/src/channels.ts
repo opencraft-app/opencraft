@@ -144,6 +144,8 @@ export interface CrewWorkView {
   /** Work handed on from this one that is still open. */
   openChildren: number;
   assignee: CrewPhonebookEntry;
+  /** A file sent with the dispatch; assignee and requester only. */
+  attachment: { name: string; type: string; size: number } | null;
 }
 /** One row of a person's crew Inbox. `waiting` is the latest unanswered question to them on this work. */
 export interface CrewInboxItem {
@@ -188,6 +190,7 @@ export interface ChannelsMethodMap {
   "opencraft/crew/work/get": { params: { workId: string }; result: { work: CrewWorkView } };
   "opencraft/crew/work/list": { params: Record<string, never>; result: { works: CrewWorkView[] } };
   "opencraft/crew/work/replies": { params: { after: number }; result: { replies: CrewReply[] } };
+  "opencraft/crew/work/attachment": { params: { workId: string; offset?: number }; result: { file: { name: string; type: string; size: number; next: number | null; base64: string } | null } };
   "opencraft/crew/work/inbox": { params: Record<string, never>; result: { items: CrewInboxItem[] } };
   "opencraft/channels/group/create": {
     params: { title: string; memberActorIds: string[]; clientRequestId: string };

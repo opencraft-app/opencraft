@@ -25,6 +25,8 @@ function core(works, replies = []) {
         return {};
       }
       if (method === "opencraft/crew/work/message") return { messageId: "sent:" + params.idempotencyKey };
+      if (method === "opencraft/crew/work/attachment")
+        return { file: { name: "notes.txt", type: "text/plain", size: 5, next: null, base64: Buffer.from("draft").toString("base64") } };
       throw Error("unexpected " + method);
     },
   };
@@ -34,7 +36,7 @@ function setup(t, ledger) {
   const profile = profileFor(t);
   let store = new Store(profile);
   t.after(() => store.close());
-  const runner = () => ({ uow: store.uow, dispatch: (r) => store.app.dispatch(r) });
+  const runner = () => ({ uow: store.uow, profile: store.profile, dispatch: (r) => store.app.dispatch(r) });
   return {
     get store() { return store; },
     intake: () => createCrewIntake({ runner: runner(), request: ledger.request }),
@@ -153,4 +155,15 @@ test("when the dispatcher leaves after work started, its running Work is cancell
   await crew.poll(() => false);
   assert.equal(s.store.db.prepare("SELECT status FROM work WHERE id=?").get(workId).status, "cancelled");
   assert.equal(ledger.works[0].state, "closed");
+});
+
+test("a file sent with the dispatch comes in with the turn", async (t) => {
+  const ledger = core([{ ...work("w1", "bob", [bob, alice], "tidy this up"), attachment: { name: "notes.txt", type: "text/plain", size: 5 } }]);
+  const s = setup(t, ledger);
+  await s.intake().poll(() => false);
+  const turn = s.store.app.reception.turn("crew:w1");
+  const files = JSON.parse(turn.query_scope_json).attachments;
+  assert.equal(files.length, 1);
+  assert.equal(files[0].name, "notes.txt");
+  assert.deepEqual(ledger.calls.find(([m]) => m === "opencraft/crew/work/attachment")[1], { workId: "w1", offset: 0 });
 });
