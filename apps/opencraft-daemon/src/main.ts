@@ -22,6 +22,7 @@ import { readDaemonMachineIdentity } from "./machine-identity.js";
 import { MachineIdentityTransport } from "./machine-transport.js";
 
 import { CodexProviderBridge } from "./codex-provider-bridge.js";
+import { codexAdmissionPaused } from "./codex-maintenance.js";
 import type { BridgeGatewayOptions } from "@opencraft/agent-bridge-host/gateway";
 import { CodexEngineAdapter } from "./codex-engine-adapter.js";
 import { startOpenCraftDaemonServer } from "./server.js";
@@ -181,7 +182,8 @@ export async function startOpenCraftDaemon(options: {
         });
         codexAgents.add(codexAgent);
         if (options.codexAgentBridge && !options.codexCoreEndpoint) throw Error("Bridge requires existing Core endpoint");
-        return options.codexAgentBridge ? new CodexProviderBridge(codexAgent, options.codexAgentBridge) : codexAgent;
+        return options.codexAgentBridge ? new CodexProviderBridge(codexAgent, options.codexAgentBridge,
+          { admissionPaused: () => codexAdmissionPaused(options.codexDataDirectory) }) : codexAgent;
       }
       throw new Error(`OpenCraft Daemon does not own Host ${hostId}`);
       });

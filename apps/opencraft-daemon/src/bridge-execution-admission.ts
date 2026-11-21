@@ -29,8 +29,9 @@ export interface BridgeExecutionAdmissionPort {
   started(threadId:string,inputId:string,turnId:string):void;
 }
 /** Keep signing and the bridge consumer adjacent; legacy traffic stays untouched. */
-export function createServerCodexBridge(legacy:DuplexTransport,options:BridgeGatewayOptions|undefined,admission:BridgeExecutionAdmissionPort):DuplexTransport {
-  return options?new BridgeExecutionAdmissionTransport(new CodexProviderBridge(legacy,options),admission):legacy;
+export { codexAdmissionPaused } from './codex-maintenance.js';
+export function createServerCodexBridge(legacy:DuplexTransport,options:BridgeGatewayOptions|undefined,admission:BridgeExecutionAdmissionPort,policy:{admissionPaused?:()=>boolean}={}):DuplexTransport {
+  return options?new BridgeExecutionAdmissionTransport(new CodexProviderBridge(legacy,options,policy),admission):legacy;
 }
 
 /** Server-side admission only for opt-in bridge Threads. Legacy frames pass intact. */

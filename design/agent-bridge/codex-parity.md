@@ -49,8 +49,9 @@ bridge 协议加方法与能力声明，Engine Host 转发原生请求并投影 
 | 置顶 `thread/pins/updated` | `codex-thread-pins.ts` | daemon | 纯展示状态 |
 | 线程设置 `thread/settings/update` | adapter 配置刷新 | 共享配置 owner | P7a 已让 bridge 消费同一 Codex 配置刷新 owner，需补线程设置入口 |
 | 附件暂存 | `LocalAttachmentStagingService` | daemon 暂存后以本地路径传入 | 与图片输入一起做 |
-| 维护准入（`codex-admission.paused`） | adapter 检查 | daemon 路由层统一检查 | 目前 bridge 线程的 `turn/start` 不受维护暂停约束，属漏洞 |
-| 模型使用策略 | adapter 在 `turn/start`、goal 激活时检查 | daemon 路由层统一检查 | 目前 bridge 线程绕过 |
+| 维护准入（`codex-admission.paused`） | adapter 检查 | **已补**：`CodexProviderBridge` | 新建与发送等准入（与旧路径同一 `isCodexAdmission` 判定）在暂停时以同一维护错误拒绝；steer、读取、审批继续；维护快照合并 bridge 在途与拒绝计数。daemon 与服务器装配均传入同一暂停开关 |
+| 模型使用策略 | adapter 在 `turn/start`、goal 激活时检查 | **无需补**：服务器的 `ModelPolicyTransport` 包在 bridge 外层，经 bridge 的 `thread/read` 同样校验 bridge 线程；桌面 daemon 两条路径都未配置 Codex 模型策略 | 新接入 goal 等准入方法时须在该外层覆盖范围内 |
+| 模型网关准入（花费授权） | adapter `admitModelExecution`：按人类授权者登记执行，轮次结束结算 | daemon 路由层，需观察 bridge 轮次结束 | 仅在设置 `OPENCRAFT_MODEL_GATEWAY_DATABASE` 的服务器生效；bridge 线程目前不登记，属漏洞，桌面不受影响 |
 | 历史读取取消 `thread/history/cancel` | adapter | daemon | 长历史读取的取消 |
 | 待建线程 | `ProvisionalThreads` | 由 bridge 的 `session/create` 幂等语义取代，需核实 UI 依赖 | |
 | 编排 / 协作回执 | adapter 与 orchestration | P7a 执行 CLI 已覆盖 spawn/tell/wait；queue follow-up 待做 | 见 P7a 剩余范围 |
@@ -72,7 +73,7 @@ bridge 协议加方法与能力声明，Engine Host 转发原生请求并投影 
 
 ## 顺序建议
 
-1. B 中的维护准入与模型使用策略：现在就是漏洞，先补。
+1. ~~维护准入~~（已补）；模型使用策略核实为已覆盖。另：模型网关准入（`OPENCRAFT_MODEL_GATEWAY_DATABASE`，仅服务器）对 bridge 线程尚未生效，见 B。
 2. A 中的分叉、重命名、归档、删除、目标：原生已有，接线即可。
 3. 排队（Engine Host 落地）、图片输入与附件。
 4. 标题、置顶、线程设置、历史取消。

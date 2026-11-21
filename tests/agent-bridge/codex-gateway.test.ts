@@ -86,6 +86,7 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   await host.add({ id: 'codex-1', artifact, digest: createHash('sha256').update(await readFile(artifact)).digest('hex'), provider: codexDeclaration, launch: { command: [process.execPath, artifact, config], cwd: root, env: {} } });
   await host.activate('codex-1', '');
   const frames: any[] = [], forwarded: any[] = [];
+  let paused = false;
   let legacyListener: (frame: string) => void = () => {};
   const createTransport = async () => {
     const legacy = {
@@ -93,14 +94,15 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
       subscribeMessage(listener: (frame: string) => void) { legacyListener = listener; return () => {}; },
       async send(raw: string) {
         const f = JSON.parse(raw); forwarded.push(f);
-        if (f.id !== undefined) legacyListener(JSON.stringify({ id: f.id, [LOGICAL_CLIENT_FIELD]: 'client', result: f.method === 'initialize' ? { capabilities: {} } : { data: [{ id: 'native-old' }, { id: 'native-new' }] } }));
+        if (f.id !== undefined) legacyListener(JSON.stringify({ id: f.id, [LOGICAL_CLIENT_FIELD]: 'client', result: f.method === 'initialize' ? { capabilities: {} }
+          : f.method === 'opencraft/codex/maintenance/read' ? { paused, pendingAdmissions: 0, rejectedAdmissions: 2 } : { data: [{ id: 'native-old' }, { id: 'native-new' }] } }));
       },
     };
     const options={url:attachment.url,token,serverId:'server',inboxPath:join(root,'gateway.db')};
     const next=cli?createServerCodexBridge(legacy,options,{
       async admit(threadId,inputId){return {serverId:'server',threadId,execution:{inputId,executionId:inputId}};},
       sign:scope=>'signed:'+scope.execution!.inputId,...(initial?{async prepareSessionMcp(){return {configuration:{url:'http://127.0.0.1:1/mcp',http_headers:{Authorization:'Bearer platform-mcp'}}};}}:{}),sessionMcp:async()=>({url:'http://127.0.0.1:1/mcp',http_headers:{Authorization:'Bearer platform-mcp'}}),started:()=>{serverStarted++;},rejectedBeforeStart:()=>{serverReset++;},
-    }):new CodexProviderBridge(legacy,options);
+    },{admissionPaused:()=>paused}):new CodexProviderBridge(legacy,options,{admissionPaused:()=>paused});
     next.subscribeMessage(raw => frames.push(JSON.parse(raw))); await next.connect(); return next;
   };
   transport = await createTransport();
@@ -140,6 +142,24 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     await transport.send(JSON.stringify({id:invalid,method:'turn/start',params:{threadId:'bridge:codex:public-new',clientUserMessageId:'initial-invalid',input:[{type:'text',text:'invalid'}]},[LOGICAL_CLIENT_FIELD]:'client'}));
     const refusal=await until(()=>frames.find(f=>f.id===invalid),Boolean);
     assert.equal(refusal.error.data.submissionOutcome,'rejected');assert.equal(starts,0);
+  }
+  if(cli===false){
+    // Maintenance pauses new bridge work like legacy work; reads continue and the
+    // snapshot counts bridge refusals, so an operator never sees a false drain.
+    paused=true;
+    const startsBefore=starts;
+    for(const [method,params] of [['turn/start',{threadId:'bridge:codex:public-new',clientUserMessageId:'paused-input',input:[{type:'text',text:'not now'}]}],
+      ['thread/start',{cwd:root,agentBridge:{threadId:'bridge:codex:paused-new',clientRequestId:'paused-create'}}]] as const){
+      const id=++sequence;
+      await transport.send(JSON.stringify({id,method,params,[LOGICAL_CLIENT_FIELD]:'client'}));
+      const refusal=await until(()=>frames.find(f=>f.id===id),Boolean);
+      assert.equal(refusal.error.code,-32000); assert.match(refusal.error.message,/maintenance/u); assert.equal(refusal.error.data.retryable,true);
+    }
+    assert.equal(starts,startsBefore,'no native turn started while paused');
+    assert.equal(currentGateway().owns('bridge:codex:paused-new'),false,'a refused creation reserves nothing');
+    const snapshot=await request('opencraft/codex/maintenance/read');
+    assert.equal(snapshot.paused,true); assert.equal(snapshot.rejectedAdmissions,4); assert.equal(snapshot.pendingAdmissions,0);
+    paused=false;
   }
   const started = await request('turn/start', { threadId: 'bridge:codex:public-new', clientUserMessageId: 'start', input: [{ type: 'text', text: 'read' }] });
   const latest = await request('thread/turns/list', { threadId: 'bridge:codex:public-new', limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' });

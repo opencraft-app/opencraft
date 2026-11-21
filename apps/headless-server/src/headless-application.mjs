@@ -17,7 +17,7 @@ import { ServerSpacesSession } from '@opencraft/access-control/server-spaces-ses
 import { createProjectAutomations } from './project-automations.mjs';
 import { executionCliSourceToken } from '@opencraft/session-capabilities/credentials';
 import { waitForExecutionCliBinding } from '@opencraft/session-capabilities/execution-cli';
-import { createServerCodexBridge,readCodexBridgeConfiguration,createBridgeSessionMcp } from '@opencraft/opencraft-daemon/bridge-execution-admission';
+import { codexAdmissionPaused,createServerCodexBridge,readCodexBridgeConfiguration,createBridgeSessionMcp } from '@opencraft/opencraft-daemon/bridge-execution-admission';
 import { openServerDatabase } from "@opencraft/storage-node/server";
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { modelPolicyHttp } from '@opencraft/model-usage-policy/http';
@@ -1007,7 +1007,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           sign:session=>executionCliSourceToken(capabilityKey,session),
           ...bridgeSessionMcp,
           started:(threadId,inputId,turnId)=>actorCollaboration.executionStarted(threadId,inputId,turnId),
-        })), mcpApps), hostId);
+        },{admissionPaused:()=>codexAdmissionPaused(join(dataDirectory,"codex"))})), mcpApps), hostId);
         })(), modelPolicyPath, hostId === 'opencraft-server' ? 'dsh' : 'codex');
         let scopedTransport = identity?.executionEnvironment && ['local-codex', 'opencraft-server'].includes(hostId)
           ? new ExecutionEnvironmentTransport(transport, identity.executionEnvironment, hostId) : transport;

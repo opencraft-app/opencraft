@@ -3,6 +3,7 @@ import { BridgeGateway, type BridgeGatewayOptions } from '@opencraft/agent-bridg
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 import type { DuplexTransport, TransportStatus, TransportSubmissionContext } from '@opencraft/appserver-client/transport';
 import { OPENCRAFT_STEER_EVIDENCE_NOTIFICATION, OPENCRAFT_STEER_EVIDENCE_EXTENSION } from '@opencraft/appserver-protocol';
+import { CODEX_MAINTENANCE_READ, codexMaintenanceError, isCodexAdmission } from './codex-maintenance.js';
 const object = (v: unknown): Record<string, any> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, any> : {};
 
 /** Opt-in composition around the existing Core path. No gateway child/owner. */
@@ -18,7 +19,11 @@ export class CodexProviderBridge implements DuplexTransport {
   private closed = false;
   private connecting?: Promise<void>;
   private creations = new Set<Promise<unknown>>();
-  constructor(private legacy: DuplexTransport, options: BridgeGatewayOptions) {
+  // Bridge admissions are invisible to the legacy Host's maintenance snapshot; merge them in.
+  private admissionsInFlight = 0;
+  private rejectedAdmissions = 0;
+  /** `admissionPaused` is the same maintenance switch the legacy Host obeys. */
+  constructor(private legacy: DuplexTransport, options: BridgeGatewayOptions, private readonly policy: { admissionPaused?: () => boolean } = {}) {
     this.gateway = new BridgeGateway(options, (threadId, value) => {
       const frame = object(value);
       if (frame.method === 'interaction/resolved') {
@@ -79,6 +84,10 @@ export class CodexProviderBridge implements DuplexTransport {
     const key = JSON.stringify([frame[LOGICAL_CLIENT_FIELD], frame.id]), pending = this.pending.get(key);
     if (pending && ('result' in frame || 'error' in frame)) {
       this.pending.delete(key);
+      if (pending.method === CODEX_MAINTENANCE_READ && frame.result && typeof frame.result === 'object') {
+        frame.result.pendingAdmissions = (Number(frame.result.pendingAdmissions) || 0) + this.admissionsInFlight;
+        frame.result.rejectedAdmissions = (Number(frame.result.rejectedAdmissions) || 0) + this.rejectedAdmissions;
+      }
       if (pending.method === 'initialize' && frame.result) {
         const capabilities = object(frame.result.capabilities);
         const extensions = object(capabilities.extensions), evidence = this.clients.get(pending.client)?.evidence === true;
@@ -126,6 +135,15 @@ export class CodexProviderBridge implements DuplexTransport {
     const seed = String(p.agentBridge?.threadId ?? '');
     const threadId = optIn ? seed ? seed.startsWith('bridge:codex:') ? seed : `bridge:codex:${seed}` : '' : String(p.threadId ?? '');
     if (!optIn && this.gateway.publicThread(threadId)) throw Error('Use the bridge thread identity; native owner bypass refused');
+    // Maintenance pauses new work on bridge threads exactly as on legacy ones;
+    // steering, reads and approvals of admitted work continue.
+    const admission = (optIn || this.gateway.owns(threadId)) && isCodexAdmission(frame.method, p);
+    if (admission && this.policy.admissionPaused?.()) {
+      this.rejectedAdmissions++;
+      console.warn('[codex-admission-audit]', JSON.stringify({ event: 'codex-admission-rejected', reason: 'maintenance', route: 'bridge', method: frame.method, rejectedAdmissions: this.rejectedAdmissions }));
+      if (frame.id !== undefined) this.emit({ id: frame.id, error: codexMaintenanceError() }, client);
+      return;
+    }
     if (optIn && threadId) this.gateway.reserve(threadId);
     if (!optIn && !this.gateway.owns(threadId)) {
       if (threadId.startsWith('bridge:codex:')) throw Error('Bridge thread has no retained owner; native fallback refused');
@@ -180,7 +198,8 @@ export class CodexProviderBridge implements DuplexTransport {
         }
       }
     };
-    const task = execute();
+    if (admission) this.admissionsInFlight++;
+    const task = execute().finally(() => { if (admission) this.admissionsInFlight--; });
     if (optIn) this.creations.add(task);
     try { await task; }
     catch (cause) {
