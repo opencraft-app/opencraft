@@ -17,8 +17,64 @@ const readsFile = /\breadFile(?:Sync)?\s*\(/;
 const regexAssertion = /\bassert\.(?:match|doesNotMatch)\s*\(/;
 const declared = /\/\/\s*source-contract:\s*\S/;
 
+// Inside a read call a root-relative path ("apps/...") also names product source.
+const sourceArgument = /["'`](?:\.\.?\/)*(?:apps|packages|plugins)\/[^"'`\s]+\.(?:[cm]?tsx?|scss|css)["'`]/;
+const sourceReferenceGlobal = new RegExp(sourceArgument.source, "g");
+const binding = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([^;\n]*(?:\n(?!\s*(?:const|let|var)\b)[^;\n]*){0,3})/g;
+
+/** Names of local helpers that wrap readFile, such as `const read = (path) => readFileSync(...)`. */
+function readerNames(text) {
+  const names = ["readFile", "readFileSync"];
+  for (const [, name] of text.matchAll(
+    /\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*(?::[^=]*)?=>[^;\n]*\breadFile(?:Sync)?\s*\(/g,
+  ))
+    names.push(name);
+  for (const [, name] of text.matchAll(
+    /\bfunction\s+([A-Za-z_$][\w$]*)\s*\([^)]*\)[^{]*\{[^}]*\breadFile(?:Sync)?\s*\(/g,
+  ))
+    names.push(name);
+  return names;
+}
+
+/** Arguments of each read call (readFile, readFileSync or a local wrapper), up to its balanced closing parenthesis. */
+function readFileArguments(text) {
+  const result = [];
+  const call = new RegExp(`(?<![\\w$.])(?:${readerNames(text).join("|")})\\s*\\(`, "g");
+  for (const match of text.matchAll(call)) {
+    let depth = 1;
+    let index = match.index + match[0].length;
+    const start = index;
+    while (index < text.length && depth > 0) {
+      if (text[index] === "(") depth++;
+      else if (text[index] === ")") depth--;
+      index++;
+    }
+    result.push(text.slice(start, index - 1));
+  }
+  return result;
+}
+
+/**
+ * True when the file reads product source (a readFile argument names an
+ * apps/packages/plugins source file, directly or through a binding that does)
+ * and asserts on text with a regex. Tests that only mention source paths to
+ * start a process and read runtime output are not source-text tests.
+ */
 export function isSourceTextTest(text) {
-  return sourceReference.test(text) && readsFile.test(text) && regexAssertion.test(text);
+  if (!sourceReference.test(text) || !readsFile.test(text) || !regexAssertion.test(text)) return false;
+  const sourceBindings = new Set();
+  for (const [, name, value] of text.matchAll(binding)) {
+    if (
+      sourceReferenceGlobal.test(value) ||
+      [...sourceBindings].some((known) => new RegExp(`\\b${known}\\b`).test(value))
+    )
+      sourceBindings.add(name);
+    sourceReferenceGlobal.lastIndex = 0;
+  }
+  return readFileArguments(text).some(
+    (argument) =>
+      sourceArgument.test(argument) || [...sourceBindings].some((name) => new RegExp(`\\b${name}\\b`).test(argument)),
+  );
 }
 
 function main() {

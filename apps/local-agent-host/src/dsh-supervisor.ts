@@ -26,11 +26,7 @@ export class DshSupervisor {
   constructor(private readonly options: DshSupervisorOptions = {}) {}
   get processId(): number | null { return this.child?.pid ?? null; }
 
-  async start(): Promise<string> {
-    const externallyManaged = process.env.OPENCRAFT_DSH_URL?.trim();
-    if (externallyManaged) return externallyManaged;
-    if (this.child !== null) throw new Error("DSH is already starting");
-
+  private async entry() {
     const repository = this.options.repository
       ?? process.env.OPENCRAFT_DSH_REPOSITORY?.trim();
     const sourceEntry = repository ? join(repository, "apps/cli/src/bin.ts") : null;
@@ -43,6 +39,26 @@ export class DshSupervisor {
         : join(process.cwd(), "runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js"));
     const usePackaged = await exists(packagedEntry);
     const useSource = !usePackaged && sourceEntry !== null && await exists(sourceEntry);
+    return { repository, sourceEntry, runtimeDirectory, packagedEntry, usePackaged, useSource };
+  }
+
+  /**
+   * DSH is an optional engine that OpenCraft does not distribute. Hosts start
+   * without it, and only route DSH threads here when a runtime is installed
+   * (OPENCRAFT_DSH_EXECUTABLE, a source checkout's runtime/dsh, or a URL).
+   */
+  async available(): Promise<boolean> {
+    if (process.env.OPENCRAFT_DSH_URL?.trim()) return true;
+    const { usePackaged, useSource } = await this.entry();
+    return usePackaged || useSource;
+  }
+
+  async start(): Promise<string> {
+    const externallyManaged = process.env.OPENCRAFT_DSH_URL?.trim();
+    if (externallyManaged) return externallyManaged;
+    if (this.child !== null) throw new Error("DSH is already starting");
+
+    const { repository, sourceEntry, runtimeDirectory, packagedEntry, usePackaged, useSource } = await this.entry();
     if (!usePackaged && !useSource) {
       throw new Error("OpenCraft DSH runtime is missing; run npm run prepare:dsh-runtime before packaging");
     }

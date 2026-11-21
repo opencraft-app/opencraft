@@ -22,8 +22,8 @@ export const mobileMessages = defineMessages({
 
 // Reuse the canonical catalogs; native does not own another translation registry.
 export const mobileLocale = new LocaleRuntime([
-  { locale: "zh-CN", label: "简体中文", load: async () => (await import("../../../workbench-web/src/i18n/locales/zh-CN.json")).default },
-  { locale: "ms-MY", label: "Bahasa Melayu", load: async () => (await import("../../../workbench-web/src/i18n/locales/ms-MY.json")).default },
-  { locale: "th-TH", label: "ไทย", load: async () => (await import("../../../workbench-web/src/i18n/locales/th-TH.json")).default },
+  { locale: "zh-CN", label: "简体中文", load: async () => (await import("@opencraft/workbench-web/i18n/locales/zh-CN.json")).default },
+  { locale: "ms-MY", label: "Bahasa Melayu", load: async () => (await import("@opencraft/workbench-web/i18n/locales/ms-MY.json")).default },
+  { locale: "th-TH", label: "ไทย", load: async () => (await import("@opencraft/workbench-web/i18n/locales/th-TH.json")).default },
 ]);
 void mobileLocale.update({ systemLocale: Intl.DateTimeFormat().resolvedOptions().locale });

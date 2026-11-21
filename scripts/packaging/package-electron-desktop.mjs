@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { verifyElectronDistribution } from "./electron-distribution.mjs";
+import { stageCodexRuntime } from "./stage-codex-runtime.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const electronAppRoot = resolve(repositoryRoot, "apps/desktop");
@@ -84,8 +85,12 @@ export async function packageBuilderArguments(
 export async function packageElectronDesktop(args = process.argv.slice(2), {
   environment = process.env,
   spawnImpl = spawn,
+  stageCodex = stageCodexRuntime,
 } = {}) {
-  const child = spawnImpl(process.execPath, [electronBuilderCli, ...await packageBuilderArguments(args, environment)], {
+  const builderArguments = await packageBuilderArguments(args, environment);
+  // Every desktop package ships the pinned native Codex for its own target.
+  await stageCodex(packageTarget(args));
+  const child = spawnImpl(process.execPath, [electronBuilderCli, ...builderArguments], {
     cwd: electronAppRoot,
     env: { ...environment },
     stdio: "inherit",

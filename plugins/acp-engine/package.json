@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./generations": "./src/generations.ts"
+    "./generations": "./src/generations.ts",
+    "./execution-thread-resolver": "./src/execution-thread-resolver.mjs"
   },
   "dependencies": {
     "@opencraft/appserver-client": "0.1.0",

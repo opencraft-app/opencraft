@@ -58,6 +58,20 @@ version when `OPENCRAFT_ELECTRON_STOCK_DESKTOP=1` is set (the fork's patches
 serve the Linux server browser runtime, which the desktop app does not call).
 The "Desktop pre-release" workflow builds Linux with the fork and macOS/Windows
 this way, unsigned, from one commit and publishes a GitHub pre-release.
+Every desktop package also ships the native Codex pinned in `runtime/codex`:
+`scripts/packaging/stage-codex-runtime.mjs` installs the target's official
+platform package (`npm ci --os --cpu`, so a target can be staged from another
+host) and copies its vendor tree to `runtime/codex-<arch>/` in the package
+(architecture-qualified, so the macOS universal merge keeps both), without
+Codex's terminal voice pipeline, which OpenCraft does not use. The
+desktop starts that binary unless `OPENCRAFT_CODEX_EXECUTABLE` names another,
+and falls back to a user-installed Codex only when none is bundled.
+Desktop `app.asar` holds only the esbuild-bundled Main and Preload (`dist-host`)
+and `package.json`; `build.files` excludes `node_modules`, which electron-builder
+would otherwise copy from every production dependency although nothing loads it.
+Desktop packages do not ship the DSH runtime. They keep OpenCraft's DSH bridge
+files, so a user-installed DSH (`OPENCRAFT_DSH_EXECUTABLE`) still connects; without
+one the local host starts with its other engines and reports DSH as not installed.
 Desktop packages use `OPENCRAFT_ELECTRON_DISTRIBUTION_<PLATFORM>_<ARCH>` or
 `OPENCRAFT_ELECTRON_DISTRIBUTION`; headless packages use
 `OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION`. The default Dockerfile consumes the

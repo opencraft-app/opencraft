@@ -34,3 +34,29 @@ test("the desktop daemon loads only built-ins and shipped modules at startup", a
   const bundledEsbuild = Object.keys(result.metafile.inputs).filter((file) => file.includes("node_modules/esbuild/"));
   assert.deepEqual(bundledEsbuild, [], "the esbuild JavaScript API cannot run from a bundle");
 });
+
+// Workers the daemon starts by URL (server spaces, storage, transcript cache,
+// execution faults) live beside it. Listing them one by one left four out of
+// the packaged runtime, so the local host failed with "Server storage
+// unavailable"; package the whole build output instead.
+test("the desktop package copies every daemon worker beside the daemon", async () => {
+  const manifest = JSON.parse(await readFile(new URL("../../apps/desktop/package.json", import.meta.url), "utf8"));
+  const resources = manifest.build.extraResources.filter((entry) =>
+    String(entry.from).startsWith("../opencraft-daemon/dist"),
+  );
+  assert.deepEqual(resources, [
+    { from: "../opencraft-daemon/dist", to: "runtime", filter: ["*.mjs", "schema.sql"] },
+    { from: "../opencraft-daemon/dist/main.cjs", to: "runtime/opencraft-daemon.cjs" },
+  ]);
+});
+
+// Main and Preload are esbuild bundles that load only Node built-ins and
+// electron. electron-builder otherwise copies every production dependency of
+// apps/desktop into app.asar (about 600 MB, none of it reachable at runtime).
+test("the desktop app archive holds only the bundled Main and Preload", async () => {
+  const manifest = JSON.parse(await readFile(new URL("../../apps/desktop/package.json", import.meta.url), "utf8"));
+  assert.deepEqual(manifest.build.files, ["dist-host/**/*", "package.json", "!**/node_modules/**/*"]);
+  const hostBuild = await readFile(new URL("../../apps/desktop/build-host.mjs", import.meta.url), "utf8");
+  // source-contract: the Main bundle's only external must stay electron for the archive to omit node_modules
+  assert.match(hostBuild, /external: \["electron"\]/);
+});

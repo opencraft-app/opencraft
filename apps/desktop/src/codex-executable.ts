@@ -1,8 +1,14 @@
 import { constants, accessSync } from "node:fs";
 import { delimiter, isAbsolute, join, resolve } from "node:path";
 
+/**
+ * The Codex binary OpenCraft starts: an explicit override, then the pinned
+ * native Codex packaged with the desktop app (the protocol version its adapter
+ * targets), then a user-installed Codex.
+ */
 export function resolveCodexExecutable(options: {
   readonly explicit?: string | null;
+  readonly bundled?: string | null;
   readonly path?: string | null;
   readonly homeDirectory: string;
   readonly platform?: NodeJS.Platform;
@@ -13,6 +19,7 @@ export function resolveCodexExecutable(options: {
   });
   const explicit = options.explicit?.trim();
   if (explicit) return isAbsolute(explicit) ? resolve(explicit) : explicit;
+  if (options.bundled && isExecutable(options.bundled)) return options.bundled;
   const executableName = (options.platform ?? process.platform) === "win32" ? "codex.exe" : "codex";
   const candidates = [
     ...(options.path ?? "").split(delimiter).filter(Boolean).map(directory => join(directory, executableName)),
