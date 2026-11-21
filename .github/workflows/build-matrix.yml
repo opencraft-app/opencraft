@@ -123,7 +123,7 @@ jobs:
       - run: npm run test:extension-storage
       - run: npm run typecheck --workspace @opencraft/extension-contract
       - run: npm run typecheck --workspace @opencraft/extension-runtime
-      - run: npm exec -- tsc --allowJs --checkJs --strict --noEmit --module ESNext --moduleResolution Bundler --target ES2022 --skipLibCheck examples/extensions/hello.mjs
+      - run: npm exec -- tsc --ignoreConfig --allowJs --checkJs --strict --noEmit --module ESNext --moduleResolution Bundler --target ES2022 --skipLibCheck examples/extensions/hello.mjs
 
   macos-native:
     needs: plan
