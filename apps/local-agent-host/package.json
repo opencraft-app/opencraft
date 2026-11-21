@@ -24,7 +24,8 @@
     "./model-config/pi-adapter": "./src/model-config/pi-adapter.ts",
     "./desktop/native-control": "./src/desktop/native-control.ts",
     "./model-config/repository": "./src/model-config/repository.ts",
-    "./model-config/speech": "./src/model-config/speech.ts"
+    "./model-config/speech": "./src/model-config/speech.ts",
+    "./machine-identity": "./src/machine-identity.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

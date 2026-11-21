@@ -23,6 +23,7 @@
     "typescript": "^5.9.3"
   },
   "exports": {
-    "./operator-lease": "./src/operator-lease.ts"
+    "./operator-lease": "./src/operator-lease.ts",
+    "./account-core-limits": "./src/account-core-limits.mjs"
   }
 }
