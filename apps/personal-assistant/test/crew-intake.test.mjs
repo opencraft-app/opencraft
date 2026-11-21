@@ -57,7 +57,7 @@ test("crew work becomes a turn in its dispatcher's conversation and closes only 
   assert.equal(ledger.works[0].state, "open", "an unsettled turn keeps the work open");
   assert.equal(ledger.calls.filter(([m]) => m === "opencraft/crew/work/finish").length, 0);
 
-  const receipt = await crew.deliver({ id: "m1", conversationId: turn.conversation_id }, "which branch?");
+  const receipt = await crew.deliver({ id: "m1", conversation_id: turn.conversation_id }, "which branch?");
   assert.equal(receipt.messageId, "sent:m1");
   assert.deepEqual(ledger.calls.at(-1), ["opencraft/crew/work/message",
     { workId: "w1", targetActorId: "bob", content: "which branch?", idempotencyKey: "m1" }]);
@@ -92,7 +92,7 @@ test("a reply is routed to the nearest person left on the chain", async (t) => {
   await crew.poll(() => false);
   const conversationId = s.store.app.reception.turn("crew:w1").conversation_id;
   ledger.works[0].chain = [alice];
-  await crew.deliver({ id: "m2", conversationId }, "Bob left; who decides?");
+  await crew.deliver({ id: "m2", conversation_id: conversationId }, "Bob left; who decides?");
   assert.equal(ledger.calls.at(-1)[1].targetActorId, "alice");
 });
 
@@ -121,4 +121,19 @@ test("a reply from a Bot it handed work to returns to the conversation of the wo
   s.store.db.prepare("UPDATE reception SET status='settled' WHERE id='crew-reply:r1'").run();
   await crew.poll(() => false);
   assert.equal(ledger.works[0].state, "closed");
+});
+
+test("a reply that never reached its dispatcher keeps the work open", async (t) => {
+  const ledger = core([work("w1", "bob", [bob, alice])]);
+  const s = setup(t, ledger);
+  const crew = s.intake();
+  await crew.poll(() => false);
+  const turn = s.store.app.reception.turn("crew:w1");
+  s.store.db.prepare("UPDATE reception SET status='settled' WHERE id='crew:w1'").run();
+  // A synthetic outbox row standing for a reply whose five delivery attempts all failed.
+  s.store.db.exec("PRAGMA foreign_keys=OFF");
+  s.store.db.prepare("INSERT INTO user_message(id,conversation_id,body_json,state,created_at) VALUES('lost',?,'{}','failed',?)").run(turn.conversation_id, Date.now() + 1000);
+  s.store.db.exec("PRAGMA foreign_keys=ON");
+  await crew.poll(() => false);
+  assert.equal(ledger.works[0].state, "open");
 });

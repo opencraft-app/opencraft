@@ -171,6 +171,8 @@ test('a crew dispatch from the Bot owner is marked so the owner chat does not ta
   await dispatch(f, f.alice, f.alan.id, 'crew job');
   const rows = await f.call(f.alan.context, 'personal-assistant/own-messages', { after: 0 }) as { content: string; crewWork: boolean }[];
   assert.deepEqual(rows.map(r => [r.content, r.crewWork]), [['plain chat', false], ['crew job', true]]);
+  await f.call(f.alan.context, 'personal-assistant/reply', { id: 'private', text: 'hello Alice' });
+  await assert.rejects(f.open(f.alan.context, f.bob.actorId), /actor_action_denied/, 'the private line opens nothing beyond the owner');
 });
 
 test('every message a member sends to a space Bot is a dispatch', async t => {

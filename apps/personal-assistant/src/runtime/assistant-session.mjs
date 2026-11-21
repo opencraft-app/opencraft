@@ -135,7 +135,7 @@ export function createAssistantSession(peer, onStopped) {
                   if (typeof text !== "string" || !text.trim())
                     throw Error("No native text representation");
                   // A dispatcher's conversation answers that dispatcher; everything else answers the owner.
-                  const receipt = crew?.isPeerConversation(message.conversationId)
+                  const receipt = crew?.isPeerConversation(message.conversation_id)
                     ? await crew.deliver(message, text, signal)
                     : await request("reply", { id: message.id, text }, signal);
                   return {

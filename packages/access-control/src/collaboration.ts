@@ -196,9 +196,11 @@ export class Collaboration {
   #message(id: string): Row | null { return this.database.prepare('SELECT * FROM actor_messages WHERE id=?').get(id) ?? null; }
   /** Crew rules decide first; outside them the exact grant (or a personal assistant pair) applies. */
   #allows(context: ActorContext, target: string, action: string): boolean {
+    // A claimed Bot and its owner keep their private line whatever the crew rules say.
+    const privateLine = () => action === 'message.send' && new PersonalAssistants(this,this.database).canMessage(context,target);
     const crew = this.crew.decide(context, target, action);
-    if (crew !== null) return crew;
-    return this.actors.can(context, target, action) || (action === 'message.send' && new PersonalAssistants(this,this.database).canMessage(context,target));
+    if (crew !== null) return crew || privateLine();
+    return this.actors.can(context, target, action) || privateLine();
   }
   #require(context: ActorContext, target: string, action: string) {
     if (this.#closed || !this.actors.isCurrent(context) || !this.actors.get(target)?.enabled || !this.#allows(context, target, action)) throw new CollaborationError(403, 'actor_action_denied');

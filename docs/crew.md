@@ -108,4 +108,11 @@ Runtime: `apps/personal-assistant/src/runtime/crew-intake.mjs`. Its only local f
 conversation belongs to which dispatcher, stored in the runner `meta` table.
 
 Verification: `tests/identity/crew-contact.test.ts`, `tests/identity/server-spaces.test.ts`,
-`apps/personal-assistant/test/crew-intake.test.mjs`, `tests/shell/server-spaces-crew.test.tsx`, `tests/shell/crew-phonebook.test.tsx`. Not verified against a running server, a real model or a client.
+`apps/personal-assistant/test/crew-intake.test.mjs`, `apps/personal-assistant/test/crew-tools.test.mjs`,
+`tests/shell/server-spaces-crew.test.tsx`, `tests/shell/crew-phonebook.test.tsx`.
+
+End to end, `tests/identity/crew-runtime.test.ts` runs the real Host, which spawns the real assistant
+process against the real Core with the deterministic reception fixture in place of a model: a
+member's message opens work, the Bot answers that member on the chain and the work closes, while
+the Bot's owner keeps their private line. Not covered: a real model choosing the crew tools, and
+the Web or Electron client.

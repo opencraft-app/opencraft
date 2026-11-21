@@ -13,8 +13,8 @@
  * - Replies are not dispatches. One that answers work this Bot holds is returned as a new turn in
  *   the conversation handling that work, so the Bot reads it with the work's context.
  * - Work is reported finished only once it is quiet here: its intake turn settled, nothing it
- *   handed on is still open, no Work linked to the conversation still active, and nothing waiting
- *   in the outbox for that conversation.
+ *   handed on is still open, no Work linked to the conversation still active, nothing waiting in
+ *   the outbox for that conversation, and no reply since its intake that failed to deliver.
  * - Work whose dispatcher left before intake is not started; it is closed without a reply.
  */
 const UPSERT = "INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value";
@@ -41,14 +41,16 @@ export function createCrewIntake({ runner, request }) {
 
   function quiet(work, conversationId) {
     if (work.openChildren !== 0) return false;
-    const turn = db().prepare("SELECT status FROM reception WHERE id=?").get(inputId(work.id));
+    const turn = db().prepare("SELECT status,created_at FROM reception WHERE id=?").get(inputId(work.id));
     if (!turn || turn.status !== "settled") return false;
     // A reply returned to this conversation is a turn of its own; wait for it as well.
     if (db().prepare("SELECT 1 FROM reception WHERE conversation_id=? AND status IN ('queued','running') LIMIT 1").get(conversationId)) return false;
     const marks = ACTIVE_WORK.map(() => "?").join(",");
     if (db().prepare(`SELECT 1 FROM work w JOIN conversation_work c ON c.work_id=w.id WHERE c.conversation_id=? AND w.status IN (${marks}) LIMIT 1`)
       .get(conversationId, ...ACTIVE_WORK)) return false;
-    return !db().prepare("SELECT 1 FROM user_message WHERE conversation_id=? AND state='pending' LIMIT 1").get(conversationId);
+    if (db().prepare("SELECT 1 FROM user_message WHERE conversation_id=? AND state='pending' LIMIT 1").get(conversationId)) return false;
+    // A reply that could not be delivered leaves the work open, visibly stuck, instead of closing unanswered.
+    return !db().prepare("SELECT 1 FROM user_message WHERE conversation_id=? AND state='failed' AND created_at>=? LIMIT 1").get(conversationId, turn.created_at);
   }
 
   const answersTo = (work) => work.chain.some((p) => p.actorId === work.requesterId);
@@ -125,7 +127,7 @@ export function createCrewIntake({ runner, request }) {
      * dispatcher, to the nearest person that work still answers to.
      */
     async deliver(message, text, signal) {
-      const actorId = meta(conversationKey(message.conversationId));
+      const actorId = meta(conversationKey(message.conversation_id));
       const { works } = await request("opencraft/crew/work/list", {}, signal);
       const work = works.find((w) => w.requesterId === actorId && w.chain.length);
       if (!work) throw Error("No open crew work for this conversation");
