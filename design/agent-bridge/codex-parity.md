@@ -60,6 +60,12 @@ bridge 协议加方法与能力声明，Engine Host 转发原生请求并投影 
 - SSH 远程 Codex（`kind: "remote"`）：bridge 只接本机 Core，远程 Host 保留现有路径，不在本清单退休范围。
 - 实时语音 `thread/realtime/*`、`thread/revert`、`thread/shellCommand` 等原生能力：旧路径未暴露，不是对齐项。
 
+## 已有会话的连续性
+
+- 并存期：账号 Core 与 APP Server 使用桌面现有 `codexDataDirectory`（同一 `CODEX_HOME` 与账号库），已有会话不迁移数据。路由按线程 ID 前缀，非 `bridge:codex:` 的已有会话继续由旧 adapter 经 Core 读写。
+- 关闭 bridge：已有会话不受影响；开启期间创建的 `bridge:codex:` 会话因“native fallback refused”暂不可用，原生数据仍在 `CODEX_HOME`，重新开启即恢复。开关说明须写明。
+- 退休前必需：**接管已有会话**。当前规则是线程 owner 由创建前缀决定、永不 adoption，旧 adapter 退休后已有会话将无 owner。须新增：以原线程 ID 在 bridge 内续接原生会话（原生 `thread/resume`），Engine Host 账本补登记，公开 ID 不变；只在会话空闲时接管，活动轮次与排队输入先在旧路径结算。未完成此项不得退休旧 adapter。
+
 ## 退休旧 adapter 时的其余 owner
 
 线程无关的能力目前借旧 adapter 的连接：账号管理、任务、定时、`command/exec`、模型列表、`thread/list` 合并。退休 adapter 前，需要一个不持有线程执行的 Codex 控制 owner（直接连 Core 控制接口）接住它们。
@@ -70,4 +76,4 @@ bridge 协议加方法与能力声明，Engine Host 转发原生请求并投影 
 2. A 中的分叉、重命名、归档、删除、目标：原生已有，接线即可。
 3. 排队（Engine Host 落地）、图片输入与附件。
 4. 标题、置顶、线程设置、历史取消。
-5. 线程无关能力的 owner 拆分，然后才能进入 P8。
+5. 已有会话接管、线程无关能力的 owner 拆分，然后才能进入 P8。
