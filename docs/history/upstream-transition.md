@@ -260,6 +260,10 @@ findings stay advisory across the visibility change, with full reports retained.
 Secrets scans, relevant builds/tests and protected normal PR merges remain.
 No npm publication or downstream deployment is authorized by this cutover step.
 
+### 根入口记录的交付范围（2026-10-19）
+
+公开核心独立运行、下游产品隔离、贡献/发布Skills、上下游固定版本与补丁链路是当前重点。清理自有主体中的旧品牌名称、额外来源注释和来源档案；保留第三方版权声明、许可证和必要NOTICE。法律来源权利核实与仓库内措辞分开处理，不把未核实项写成已核实。npm仍暂不发布；旧私有历史归档保留。真实权限、凭据、构建及受保护分支检查继续遵守。
+
 ## Downstream import
 
 During the transition, a source-tree import avoids the known external

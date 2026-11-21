@@ -14,6 +14,7 @@ below. Token numbers and behavior remain at their existing source owners.
 | Conversation process-summary parity, SVG size, optical weight and clarity | [Activity icons](activity-icons.md) | Shared summary/rail owner; activity policy in typography gate; real Conversation metrics smoke |
 | Composer microphone, lightning and action artwork consistency | [Composer icons](composer-icons.md) | Shared design-system-web glyphs; real Composer/voice checks |
 | Layout, pane ownership, adaptive presentation | [Workspace invariants](../invariants.md) | Existing Shell geometry and platform adapters |
+| Controls, icons, motion, focus, menus, async feedback | [UI implementation rules](implementation-rules.md) | Shared button/navigation owners; `npm run check:controls`, `npm run test:controls` |
 | Colors, surfaces, controls | [Workbench language](../../docs/architecture/workbench/workbench-design-language.md), [platform theme ownership](../../docs/architecture/platform/presentation-and-input.md#theme-surfaces-and-native-appearance) | Existing theme engine and shared controls |
 
 For a future topic such as SVG icons, add one scoped document and a corresponding

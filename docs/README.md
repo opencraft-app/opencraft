@@ -7,7 +7,7 @@ OpenCraft 是多端 Agent Workbench 核心，包含 Chat Runtime、Web Workbench
 | 目录 | 内容 |
 |---|---|
 | [`architecture/`](architecture/README.md) | 按领域分组的设计、契约与所有权：`platform/` 平台、`execution/` 执行与运行时、`identity/` 身份与协作、`chat-ui/` 会话呈现、`workbench/` 界面框架与预览、`extensions/` 插件与连接器、`server/` 服务器存储与通知、`browser/` 浏览器、`mobile/` 手机容器 |
-| [`develop/`](develop/) | 贡献与开发：开发环境、构建矩阵、仓库布局、扩展开发、国际化、性能治理 |
+| [`develop/`](develop/) | 贡献与开发：开发环境、构建矩阵、仓库布局、代码规则、扩展开发、国际化、性能治理 |
 | [`operations/`](operations/) | 部署与运维：CLI、Web 安装与更新、Relay、Headless、升级、运行观测 |
 | [`history/`](history/) | 历史记录：上下游迁移、身份迁移、已退役的下游手机 Shell 设计、阶段报告 |
 
@@ -33,6 +33,7 @@ OpenCraft 是多端 Agent Workbench 核心，包含 Chat Runtime、Web Workbench
 - 手机端：下游 iOS Shell 与 Bot 桥接的历史设计见 [Mobile shell](history/mobile-shell.md)、[Embedded Bot bridge](history/mobile-bot-bridge.md)；缓存与请求状态：[Mobile data architecture](architecture/mobile/mobile-data-architecture.md)。
 - 行为验证架构：[Harness 设计纲领](architecture/execution/harness.md)。
 - 根目录与文件归属：[仓库布局](develop/repository-layout.md)。
+- 主线程、协议字段与 SQLite 迁移：[代码与 Contract 规则](develop/code-contracts.md)。
 
 ## 核心不变量
 

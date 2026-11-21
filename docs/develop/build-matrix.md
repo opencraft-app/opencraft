@@ -635,6 +635,15 @@ rtk proxy shasum -a 256 "$signed_dmg_path" "$signed_zip_path"
 - 在该签名进程中验证首页、相关导航与本次修改。不得复用旧源码预览的结果冒充包体验证，不登录或发送付费请求来做默认烟测。
 - 输出说明分别列出：源码/dirty 状态、buildId、App/DMG 签名、公证/Gatekeeper、完整性、启动/功能验证、未通过门禁，以及是否安装或发布。一次能启动不等于完整分发资格。
 
+### 交付约束
+
+- “重新打包/签名”默认包含重新构建与本地验收，不包含覆盖 `/Applications`、终止用户实例或上传发布。先核对分支、未提交改动与目标架构；使用新的独立输出目录，保留旧包，记录 buildId 和实际包含的源码状态。
+- 分发包与 ad-hoc 预览包分开。实时检查 `security find-identity -v -p codesigning`，选择有效 Developer ID 并强制签名；不可凭记忆写死身份。签名身份、公证凭据和公证结果是三件事，环境变量为空不能证明钥匙串里没有凭据。
+- `.app` 签名不代表 DMG 已签名；最终 DMG 必须单独验证。签名/公证完成后再生成最终 ZIP、DMG 和 blockmap；封包后若修改或重签制品，须重建受影响的归档、blockmap 与校验和。
+- 交付分别核验 App 深度/严格签名、DMG 签名及镜像校验、ZIP 完整性、Gatekeeper/公证状态和隔离启动。`Unnotarized Developer ID` 必须明确报告，不能称为已公证或 Gatekeeper 就绪。
+- 隔离启动同时隔离 `--user-data-dir` 与 `OPENCRAFT_MODEL_STORAGE_DIRECTORY`，清除 Main 的 `ELECTRON_RUN_AS_NODE`；不复制真实凭据、不付费推理。核对包内 Renderer/Daemon/DSH 构建身份，避免验证了旧窗口。
+- 保留未通过的质量门禁，不以签名或能启动替代完整功能验收。
+
 ## Linux browser smoke prerequisites
 
 ### Trusted internal desktop deployment
@@ -884,3 +893,10 @@ The workflow launches the final AppImage under Xvfb, checks the renderer and
 desktop preload, and uploads the AppImage and SHA-256 checksum as
 `OpenCraft-AppImage-linux-x64-<commit>`. Download that Actions artifact for the
 tested commit. An Actions build does not publish a GitHub Release.
+
+## 本机预览注意事项
+
+- Linux 测试工具链只有一份：GitHub CI 与 Claude Code 云端会话（`.claude/hooks/session-start.sh`）都调用 `scripts/ci/setup-toolchain.sh`，使用 `.nvmrc` 的 Node、测试所需系统包、`npm ci` 与同一套测试隔离。新增系统依赖只改该脚本，不在 workflow 里另写 apt 步骤。
+- Renderer 重建后旧窗口不会热更新；关闭旧预览并用新构建、隔离 profile 和新调试端口重启。
+- Electron Main 必须由仓库 `start` 入口启动；不得用 `node dist-host/main.cjs`，也不得让父环境的 `ELECTRON_RUN_AS_NODE=1` 进入 Main。该变量只属于明确以 Electron 二进制承载 Node bundle 的 Daemon/工具子进程。若 `require("electron")` 返回二进制路径字符串、`app` 为 `undefined` 或模块找不到，先检查实际可执行文件、参数和 `ELECTRON_RUN_AS_NODE`，再用同一 Electron 二进制的最小正常 Main 对照；这类结果本身不能证明 Electron 版本回归或缓存损坏。
+- `opencraft://` 是全机 scheme。发起系统浏览器登录前确认 LaunchServices 实际指向本次预览；浏览器打开不等于回调已进入当前窗口。不得为排查批量注销其他预览或读取回调 code/token。
