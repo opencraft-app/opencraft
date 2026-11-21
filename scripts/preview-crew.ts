@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { startHeadlessServer } from "./headless-server.mjs";
+import { startHeadlessServer } from "../apps/headless-server/src/headless-server.mjs";
 import { headlessWebHostDefinitions } from "./package-headless-linux.mjs";
 
 /**
