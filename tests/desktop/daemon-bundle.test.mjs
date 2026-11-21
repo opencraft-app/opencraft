@@ -49,3 +49,14 @@ test("the desktop package copies every daemon worker beside the daemon", async (
     { from: "../opencraft-daemon/dist/main.cjs", to: "runtime/opencraft-daemon.cjs" },
   ]);
 });
+
+// Main and Preload are esbuild bundles that load only Node built-ins and
+// electron. electron-builder otherwise copies every production dependency of
+// apps/desktop into app.asar (about 600 MB, none of it reachable at runtime).
+test("the desktop app archive holds only the bundled Main and Preload", async () => {
+  const manifest = JSON.parse(await readFile(new URL("../../apps/desktop/package.json", import.meta.url), "utf8"));
+  assert.deepEqual(manifest.build.files, ["dist-host/**/*", "package.json", "!**/node_modules/**/*"]);
+  const hostBuild = await readFile(new URL("../../apps/desktop/build-host.mjs", import.meta.url), "utf8");
+  // source-contract: the Main bundle's only external must stay electron for the archive to omit node_modules
+  assert.match(hostBuild, /external: \["electron"\]/);
+});

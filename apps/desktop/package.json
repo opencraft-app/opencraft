@@ -72,7 +72,8 @@
     },
     "files": [
       "dist-host/**/*",
-      "package.json"
+      "package.json",
+      "!**/node_modules/**/*"
     ],
     "extraResources": [
       {

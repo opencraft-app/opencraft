@@ -66,6 +66,9 @@ host) and copies its vendor tree to `runtime/codex-<arch>/` in the package
 Codex's terminal voice pipeline, which OpenCraft does not use. The
 desktop starts that binary unless `OPENCRAFT_CODEX_EXECUTABLE` names another,
 and falls back to a user-installed Codex only when none is bundled.
+Desktop `app.asar` holds only the esbuild-bundled Main and Preload (`dist-host`)
+and `package.json`; `build.files` excludes `node_modules`, which electron-builder
+would otherwise copy from every production dependency although nothing loads it.
 Desktop packages do not ship the DSH runtime. They keep OpenCraft's DSH bridge
 files, so a user-installed DSH (`OPENCRAFT_DSH_EXECUTABLE`) still connects; without
 one the local host starts with its other engines and reports DSH as not installed.
