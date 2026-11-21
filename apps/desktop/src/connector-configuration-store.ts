@@ -1,18 +1,26 @@
 import type { DatabaseSync } from "node:sqlite";
-import { openManagedDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
+import { openManagedDatabase, type BorrowedDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import { emptyConnectorConfiguration, parseConnectorConfiguration, type ConnectorConfigurationRecord } from "@opencraft/workbench-runtime/connectors/configuration";
 
 const BASELINE = "CREATE TABLE connector_configuration (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, value TEXT NOT NULL) STRICT";
 
+/** Open the retired standalone file; only the desktop client storage importer reads it now. */
+export function openConnectorConfigurationDatabase(path: string): BorrowedDatabase {
+  return openManagedDatabase({ schemaId: "connector-configuration-store",
+    path,
+    migrations: [{ version: 1, name: "connector-configuration", sql: BASELINE }],
+  });
+}
+
 export class DesktopConnectorConfigurationStore {
   private readonly db: DatabaseSync;
+  private readonly owned: boolean;
   readonly outcome: DatabaseOutcome;
-  constructor(path: string) {
-    const managed = openManagedDatabase({ schemaId: "connector-configuration-store",
-      path,
-      migrations: [{ version: 1, name: "connector-configuration", sql: BASELINE }],
-    });
+  /** A path opens a standalone database; a borrowed connection belongs to its lender. */
+  constructor(source: string | BorrowedDatabase) {
+    const managed = typeof source === "string" ? openConnectorConfigurationDatabase(source) : source;
     this.db = managed.database;
+    this.owned = typeof source === "string";
     this.outcome = managed.outcome;
   }
   load(): ConnectorConfigurationRecord {
@@ -31,5 +39,5 @@ export class DesktopConnectorConfigurationStore {
       this.db.exec("COMMIT"); return { updated: true, record };
     } catch (error) { this.db.exec("ROLLBACK"); throw error; }
   }
-  close() { this.db.close(); }
+  close() { if (this.owned) this.db.close(); }
 }

@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import { openManagedDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
+import { openManagedDatabase, type BorrowedDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import {
   serializeDocumentValue, validateDataRevision, validateDataScope, validateDataVersion, parseDocumentRecord, validateDocumentTransition,
   type DocumentRecord, type DocumentCommit, type DocumentValue,
@@ -8,16 +8,23 @@ import {
 const BASELINE = "CREATE TABLE extension_records (scope TEXT PRIMARY KEY NOT NULL, revision INTEGER NOT NULL, data_version INTEGER NOT NULL, value_json TEXT NOT NULL) STRICT";
 
 /** Owner supplies a fixed private path; RPC callers never supply database paths. */
+export function openDocumentDatabase(path: string): BorrowedDatabase {
+  return openManagedDatabase({ schemaId: "document-storage", path, migrations: [{ version: 1, name: "extension-records", sql: BASELINE }] });
+}
+
 export class SqliteDocumentStore {
   private readonly database: DatabaseSync;
+  private readonly owned: boolean;
   readonly outcome: DatabaseOutcome;
-  constructor(path: string) {
-    const managed = openManagedDatabase({ schemaId: "document-storage", path, migrations: [{ version: 1, name: "extension-records", sql: BASELINE }] });
+  /** A path opens a standalone database; a borrowed connection belongs to its lender. */
+  constructor(source: string | BorrowedDatabase) {
+    const managed = typeof source === "string" ? openDocumentDatabase(source) : source;
     this.database = managed.database;
+    this.owned = typeof source === "string";
     this.outcome = managed.outcome;
     try {
       this.database.prepare("SELECT scope,revision,data_version,value_json FROM extension_records LIMIT 0").all();
-    } catch (error) { this.database.close(); throw error; }
+    } catch (error) { if (this.owned) this.database.close(); throw error; }
   }
   read(scope: unknown): DocumentRecord | null {
     validateDataScope(scope);
@@ -38,5 +45,5 @@ export class SqliteDocumentStore {
       return { updated: true, record: { revision: revision + 1, version, value: JSON.parse(json) as DocumentValue } };
     } catch (error) { if (this.database.isTransaction) this.database.exec("ROLLBACK"); throw error; }
   }
-  close() { this.database.close(); }
+  close() { if (this.owned) this.database.close(); }
 }

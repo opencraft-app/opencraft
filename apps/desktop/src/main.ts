@@ -34,6 +34,8 @@ import { SqliteClientResources } from "@opencraft/document-storage/client-resour
 import { createDesktopClientResourcePort } from "./client-resource-port.js";
 import { DesktopConnectorConfigurationStore } from "./connector-configuration-store.js";
 import { SqliteDocumentStore as DesktopExtensionDataStore } from "@opencraft/document-storage/sqlite";
+import type { BorrowedDatabase } from "@opencraft/sqlite-node";
+import { openDesktopClientStorage } from "./desktop-client-import.js";
 import { registerExtensionDataIpc } from "./extension-data-ipc.js";
 import { workbenchWindowMetrics } from "@opencraft/workbench-runtime/window-metrics";
 import { browserMetadataKeys as browserMetadataIdentity, normalizeBrowserMetadata } from "@opencraft/workbench-runtime/browser-metadata-identity";
@@ -96,6 +98,7 @@ let rendererOrigin: string | null = null;
 let daemonManager: OpenCraftDaemonClientManager | null = null;
 const daemonBridges = new Set<{ close(): void }>();
 let sqliteDebugReader!: SqliteDebugReader;
+let desktopClientStorage!: BorrowedDatabase;
 let uiPreferences!: DesktopUiPreferenceStore;
 let clientResourceStore: SqliteClientResources | undefined;
 const desktopLocale = createDesktopLocaleRuntime();
@@ -119,9 +122,9 @@ ipcMain.on(CONNECT_DESKTOP_SERVER, (event, value: unknown) => {
   void desktopServers.connect(value, event.ports[0]!);
 });
 let connectorConfiguration: DesktopConnectorConfigurationStore | null = null;
-const connectorStore = () => connectorConfiguration ??= new DesktopConnectorConfigurationStore(join(desktopPaths.userDataDirectory, "opencraft-connectors.sqlite"));
+const connectorStore = () => connectorConfiguration ??= new DesktopConnectorConfigurationStore(desktopClientStorage);
 let extensionData: DesktopExtensionDataStore | null = null;
-registerExtensionDataIpc(() => extensionData ??= new DesktopExtensionDataStore(join(desktopPaths.userDataDirectory, "opencraft-extensions.sqlite")), trustedLoginCaller);
+registerExtensionDataIpc(() => extensionData ??= new DesktopExtensionDataStore(desktopClientStorage), trustedLoginCaller);
 let desktopProductSession: DesktopProductSession | null = null;
 let desktopProductReady = false;
 const pendingProductUrls: string[] = [];
@@ -165,7 +168,9 @@ function initializeDesktopProfile(paths: DesktopDirectoryPlan): void {
     return { allow: result.response === 1, remember: result.checkboxChecked };
   });
   sqliteDebugReader = new SqliteDebugReader(paths.dshDataDirectory);
-  uiPreferences = new DesktopUiPreferenceStore(join(paths.userDataDirectory, "opencraft-ui.sqlite"));
+  // One client-role database; earlier standalone files are merged into it on first start.
+  desktopClientStorage = openDesktopClientStorage(paths.userDataDirectory);
+  uiPreferences = new DesktopUiPreferenceStore(desktopClientStorage);
   speechPreferences = createFilePrivateStorage(join(paths.userDataDirectory, "voice-input"));
   desktopProductSession = activateDesktopProduct(createDesktopProduct, {
     userDataDirectory: paths.userDataDirectory,
@@ -279,7 +284,7 @@ ipcMain.handle("opencraft:ui-preference-load", (event, key: unknown) => {
   return uiPreferences.load(key);
 });
 function clientResources() {
-  return clientResourceStore ??= new SqliteClientResources(join(desktopPaths.userDataDirectory, "opencraft-client-resources.sqlite"));
+  return clientResourceStore ??= new SqliteClientResources(desktopClientStorage);
 }
 const clientResourcePort = createDesktopClientResourcePort(clientResources);
 ipcMain.handle("opencraft:client-resource-read", (event, key) => {
@@ -735,6 +740,7 @@ const lifecycle = new DesktopLifecycle({
     clientResourceStore?.close();
     connectorConfiguration?.close();
     extensionData?.close();
+    desktopClientStorage.database.close();
     const productErrors: unknown[] = [];
     try { desktopProductSession?.dispose(); } catch (error) { productErrors.push(error); }
     desktopProductSession = null;

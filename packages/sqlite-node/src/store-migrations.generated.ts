@@ -641,5 +641,15 @@ export const STORE_MIGRATIONS = {
       }
     ],
     "migrations": []
+  },
+  "desktop-client": {
+    "baseline": [
+      {
+        "version": 1,
+        "name": "desktop-client",
+        "checksum": "79c2b6a974f518fddd0c35ab1fd76fc25d6a4f75d7dd6a74e73a1b2e2aac886d"
+      }
+    ],
+    "migrations": []
   }
 } as const;

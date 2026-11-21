@@ -1,0 +1,33 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "desktop-client",
+      "checksum": "79c2b6a974f518fddd0c35ab1fd76fc25d6a4f75d7dd6a74e73a1b2e2aac886d"
+    }
+  ],
+  "tableOptions": {
+    "client_resources": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "connector_configuration": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "desktop_client_imports": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "extension_records": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "ui_preferences": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "442743fa8b289fbe8b4ac34d005addbc8a1094c35b5d115c856090e1e4c5bc38",
+  "baselineSnapshotChecksum": "126844cc99b902ec7e5222f43b102efc4aa56b56c5f4066716161a8a325457fb"
+}

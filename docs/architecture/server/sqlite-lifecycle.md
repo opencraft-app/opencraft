@@ -11,9 +11,9 @@ Server 存储入口复用 Headless 的 `server.lock` 内核进程锁，离线管
 OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在打开时向前迁移：
 
 - **Server 核心库** `opencraft-server.sqlite`：迁移链在 `packages/storage-node/src/server/migrations/`，canonical 链 v1–v20；另有一条已发布分叉 `generic-legacy-v13`，在 v13 之后追加收敛迁移，最终结构与 canonical 相同。
-- **35 个独立 owner**：登记在 `packages/storage-node/stores.json`，每个 owner 的迁移在 `packages/storage-node/src/stores/<id>/`，账本互不相关。
+- **36 个独立 owner**：登记在 `packages/storage-node/stores.json`，每个 owner 的迁移在 `packages/storage-node/src/stores/<id>/`，账本互不相关。
 
-下表“版本”是当前源码中该库账本的最高 version。
+下表“版本”是当前源码中该库账本的最高 version。`ui-preferences-store`、`connector-configuration-store`、`client-resources-sqlite` 已退休，只供桌面导入器读取旧文件，不在表中。
 
 | 组件（进程） | 库文件 | owner id | 版本 | 何时打开并迁移 |
 |---|---|---|---|---|
@@ -43,8 +43,7 @@ OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在
 | | `conversation-schedules.sqlite`、`interrupted-turn-recovery.sqlite`、`provider-turn-retry.sqlite` | host-schedules、host-recovery、provider-retry | v1 | 同上 |
 | | `account-pool.sqlite` | account-pool-host | v4 | 同上，仅内嵌模式（未配置 codex-core 地址，桌面默认） |
 | | `tasks.sqlite`、`cache/transcript-index.sqlite` | tasks、transcript-read-cache | v5、v1 | 首次请求 Tasks / 首次读历史时 |
-| **Electron Main**（`apps/desktop`，`userData` 目录） | `opencraft-ui.sqlite` | ui-preferences-store | v1 | 启动时 |
-| | `opencraft-connectors.sqlite`、`opencraft-extensions.sqlite`、`opencraft-client-resources.sqlite` | connector-configuration-store、document-storage、client-resources-sqlite | v1 | 首次使用时 |
+| **Electron Main**（`apps/desktop`，`userData` 目录，只存客户端角色数据） | `opencraft-desktop.sqlite`：界面偏好、连接器选择、扩展本地文档、客户端资源 | desktop-client | v1 | 启动时；首次启动时导入旧版的四个独立文件，见[客户端库合并](#electron-main-客户端库合并) |
 | | `human-account/opencraft-server.sqlite` | Server 核心 | v20 | 首次启动本机账号服务时由 Main 迁移；daemon 只借用连接，不迁移 |
 | **codex-core**（`apps/codex-core`，独立升级） | `account-pool.sqlite` | account-pool-host | v4 | 账号 Core 启动时 |
 | | `codex-generations.sqlite` | generation-registry | v2 | generation 路由服务启动时 |
@@ -117,10 +116,10 @@ OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在
 | `im-posts.sqlite` | Headless IM composition：[ImPostReceipts](../../../plugins/im/src/post-receipts.ts) | IM data directory | Standalone native channel post claims/receipts; schema v1, hashes and official IDs only, interrupted claims become unknown without resend |
 | `thread-identity.sqlite` | Headless Hub：[ThreadIdentityDatabase](../../../apps/opencraft-daemon/src/thread-identity-database.ts) / AppServerIdentityOverlay | Headless `thread-identities/opencraft-server` | DSH trusted sender/creator, fork origins and derived 企业身份 presence/completion; no native messages or execution state |
 | `thread-read-receipts.sqlite` | [ThreadReadReceiptStore](../../../scripts/thread-read-receipt-store.ts)；当前没有运行时调用方，仅测试构造 | — | Verified-account exact read receipts; existing document-store migrations/CAS |
-| `opencraft-client-resources.sqlite` | Electron Main：[client resource store](../../../packages/document-storage/src/client-resources-sqlite.ts) | Electron `userDataDirectory` | 跨端客户端资源；本地原件 CAS，远端展示副本可清理；lazy open，独立 schema v1 |
-| `opencraft-ui.sqlite` | Electron Main：[ui-preferences-store](../../../apps/desktop/src/ui-preferences-store.ts) | Electron `userDataDirectory` | UI 偏好与 CAS |
-| `opencraft-connectors.sqlite` | Electron Main：[connector-configuration-store](../../../apps/desktop/src/connector-configuration-store.ts) | Electron `userDataDirectory` | 连接选择意图，不含凭据 |
-| `opencraft-extensions.sqlite` | Electron Main：[document-storage/sqlite](../../../packages/document-storage/src/sqlite.ts) | Electron `userDataDirectory` | client-local 插件文档、设置与安装记录 |
+| `opencraft-client-resources.sqlite` | Electron Main：[client resource store](../../../packages/document-storage/src/client-resources-sqlite.ts) | Electron `userDataDirectory` | 跨端客户端资源；本地原件 CAS，远端展示副本可清理；lazy open，独立 schema v1；**已退休**：数据并入 `opencraft-desktop.sqlite`，旧文件保留作恢复副本 |
+| `opencraft-ui.sqlite` | Electron Main：[ui-preferences-store](../../../apps/desktop/src/ui-preferences-store.ts) | Electron `userDataDirectory` | UI 偏好与 CAS；**已退休**：数据并入 `opencraft-desktop.sqlite`，旧文件保留作恢复副本 |
+| `opencraft-connectors.sqlite` | Electron Main：[connector-configuration-store](../../../apps/desktop/src/connector-configuration-store.ts) | Electron `userDataDirectory` | 连接选择意图，不含凭据；**已退休**：数据并入 `opencraft-desktop.sqlite`，旧文件保留作恢复副本 |
+| `opencraft-extensions.sqlite` | Electron Main：[document-storage/sqlite](../../../packages/document-storage/src/sqlite.ts) | Electron `userDataDirectory` | client-local 插件文档、设置与安装记录；**已退休**：数据并入 `opencraft-desktop.sqlite`，旧文件保留作恢复副本 |
 | `opencraft-session-routing.sqlite` | daemon 内 Local Agent Host：[dsh-session-routing](../../../apps/local-agent-host/src/dsh-session-routing.ts) | Host `dataDirectory` | 逻辑/原生身份、generation、水位与 intent |
 | `opencraft-threads.sqlite` | daemon 内 Local Agent Host：[thread-catalog](../../../apps/local-agent-host/src/thread-catalog.ts) | Host `dataDirectory` | 人工标题、归档、关系与配置 |
 | `opencraft-executions.sqlite` | daemon 内 Local Agent Host：[dsh-execution-authority](../../../apps/local-agent-host/src/dsh-execution-authority.ts) | Host `dataDirectory` | epoch、执行日志、输入及队列 |
@@ -135,9 +134,22 @@ OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在
 | `employee-git-vault.sqlite` | [EmployeeGitVaultStore](../../../packages/execution-environment/src/employee-git-vault-store.ts)；optional product credential runtime | Installation data directory | Encrypted account/host documents and CAS tombstones; schema v1, separate owner-only 32-byte key; missing key refuses recovery; see [managed Git identity](../identity/git-identity.md) |
 
 
-Electron Main 三库仍按消费入口懒打开。Local Agent 基础五库及配置目录时的 Tasks 统一由 [local-agent-storage](../../../apps/local-agent-host/src/storage/local-agent-storage.ts) 打开；未配置目录的嵌入/测试入口使用内存库，不提供持久 Host 文档能力。服务器 Host 目录为 `OPENCRAFT_EXECUTION_STATE/data`。account-pool 由所选 Codex owner 管理；独立 [codex-core](../execution/codex-core.md) 仍独立启动/升级，默认下游 Codex adapter 在连接时打开并报告 outcome，不被 Local Agent owner 二次打开。
+Electron Main 的客户端数据合并为一个 `opencraft-desktop.sqlite`，启动时打开。Local Agent 基础五库及配置目录时的 Tasks 统一由 [local-agent-storage](../../../apps/local-agent-host/src/storage/local-agent-storage.ts) 打开；未配置目录的嵌入/测试入口使用内存库，不提供持久 Host 文档能力。服务器 Host 目录为 `OPENCRAFT_EXECUTION_STATE/data`。account-pool 由所选 Codex owner 管理；独立 [codex-core](../execution/codex-core.md) 仍独立启动/升级，默认下游 Codex adapter 在连接时打开并报告 outcome，不被 Local Agent owner 二次打开。
 
 Web preferences、Connector configuration 与插件文档继续使用各自 IndexedDB adapter；Web/Expo replica 保持原有平台语义。SQLite debug reader 是只读消费者，不建表、不迁移。DSH/Hermes/Codex 引擎私有存储、JSON 项目/模型配置不由本 runner 接管。`codex-thread-pins` 经原生 reserved section 协议操作，不是另一份本地自有 SQLite；Hermes pins 同样由远端协议 owner 持有。原生 `queue_1.sqlite` 只沿既有队列搬运语义读取/删除已确认导入记录，不接管其 schema；`.codex-routing-owner.sqlite` 只保护唯一 generation registry owner，`.codex-writer.sqlite` 只承担账号 writer lock，`.codex-runtime.sqlite` 保护 native runtime；兼容/内嵌模式获取两把，显式拆分的账号 Core 与 APP Server owner 分别持有，均排除于业务库清单。账号 Core 不打开 native 数据库；APP Server 不打开 account-pool。不同代次必须使用独立可写 CODEX_HOME，见 [三步平滑升级](../execution/codex-core.md#执行侧平滑升级三步方案)。类名中的 DSH 不改变 routing/executions 的 OpenCraft 所有权。
+
+### Electron Main 客户端库合并
+
+桌面安装里 Electron 主进程只持有客户端角色数据；服务端角色数据归 daemon，与 Headless 的布局一致。客户端数据原先分在 `opencraft-ui.sqlite`、`opencraft-connectors.sqlite`、`opencraft-extensions.sqlite`、`opencraft-client-resources.sqlite` 四个文件，现合并为 [desktop-client](../../../apps/desktop/src/desktop-client-storage.ts) 一个库，四个存储借用它的连接，各自只读写自己的表。
+
+首次启动时 [导入器](../../../apps/desktop/src/desktop-client-import.ts) 依次处理仍存在的旧文件：
+
+1. 用原 owner 打开旧文件（仍走 `openManagedDatabase`），在目标库的一个 `BEGIN IMMEDIATE` 事务里复制全部行并写入导入回执（行数与内容摘要）。同时启动的第二个实例会等待该事务，随后看到回执而跳过。
+2. 目标表已有数据而旧文件尚未导入时拒绝合并，旧文件原样保留。
+3. 提交后在旧文件账本末尾追加 `retired-into:opencraft-desktop.sqlite`（[retireManagedDatabase](../../../packages/sqlite-node/src/retire.ts)）。仍读取旧文件的旧版本因此报 `newer-schema` 拒绝打开，而不是静默读取停在导入时刻的数据。
+4. 回执已写入但标记未写入时（中途崩溃），只在旧文件内容摘要与回执一致时补写标记；不一致说明旧版本在此期间写过它，拒绝启动并保留两份文件供人工处理。
+
+旧文件除这一条账本记录外不改动，即为恢复副本。装回合并前的旧版本会因旧文件已退休而无法启动；回到旧版本需要人工处理。四个旧 owner 仍登记在注册表中，只供导入器打开旧文件，不再追加迁移。后续服务端库按进程合并时沿用同一做法：导入加回执、旧文件打退休标记、不删除旧文件。
 
 ### 两个 Host 自有文件的离线改名
 
@@ -244,7 +256,7 @@ Server schema 在 `storage-node/src/server/schema.ts`，明文迁移与 Drizzle 
 
 ### 独立 SQLite owner 的 Drizzle 开发流程
 
-Drizzle 管理 schema 不要求物理合库。`packages/storage-node/stores.json` 注册35组
+Drizzle 管理 schema 不要求物理合库。`packages/storage-node/stores.json` 注册36组
 OpenCraft 自有独立 SQLite：Host 状态/附件/身份/路由/执行/计量、Agent Bridge 命令托管、客户端偏好/文档/资源、
 Tasks/IM、连接/模型策略/MCP Apps/定时/恢复、Web push、Git vault、观测及
 OpenCraft 自有 generation registry/account pool 元数据。各声明位于
@@ -375,7 +387,7 @@ IndexedDB 使用原生升级事务，不运行 SQL runner；广播仅通知已�
 
 ### 明确未做
 
-- Electron Main 三库仍懒打开，没有 UI 呈现生命周期处置结果；本轮不新增全局升级/恢复提示。
+- Electron Main 客户端库启动时打开，没有 UI 呈现生命周期处置结果；本轮不新增全局升级/恢复提示。
 - Web 插件文档已有 blocked 错误与 versionchange 关闭；preferences/Connector configuration IndexedDB 的 blocked/versionchange 缺口未变，不声称所有 Web 库都有升级协调。
 - 未跑 N-1 旧二进制回退，不承诺任意降级；不自动恢复备份，不提供恢复 UI、跨库原子升级或大规模在线回填框架。
 - 未迁移真实用户数据库；未以本轮 Node 库工作覆盖 Native adapter、所有远端 Host、历史所有 Electron origin 找回或新签名发行包验收。

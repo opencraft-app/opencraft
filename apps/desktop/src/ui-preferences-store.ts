@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { resolve } from "node:path";
-import { openManagedDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
+import { openManagedDatabase, type BorrowedDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
 
 import {
   UI_PREFERENCE_KEYS,
@@ -42,20 +42,28 @@ function jsonValue(value: unknown): string {
   return value;
 }
 
+/** Open the retired standalone file; only the desktop client storage importer reads it now. */
+export function openUiPreferencesDatabase(path: string): BorrowedDatabase {
+  const resolvedPath = path === ":memory:" ? ":memory:" : resolve(path);
+  return openManagedDatabase({ schemaId: "ui-preferences-store",
+    path: resolvedPath,
+    migrations: [{ version: 1, name: "ui-preferences", sql: BASELINE }],
+  });
+}
+
 /** Installation authority for Electron; Renderer never supplies a database path. */
 export class DesktopUiPreferenceStore {
   readonly #database: DatabaseSync;
+  readonly #owned: boolean;
   readonly outcome: DatabaseOutcome;
 
-  constructor(path: string) {
-    const resolvedPath = path === ":memory:" ? ":memory:" : resolve(path);
-    const managed = openManagedDatabase({ schemaId: "ui-preferences-store",
-      path: resolvedPath,
-      migrations: [{ version: 1, name: "ui-preferences", sql: BASELINE }],
-    });
+  /** A path opens a standalone database; a borrowed connection belongs to its lender. */
+  constructor(source: string | BorrowedDatabase) {
+    const managed = typeof source === "string" ? openUiPreferencesDatabase(source) : source;
     this.#database = managed.database;
+    this.#owned = typeof source === "string";
     this.outcome = managed.outcome;
-    this.#database.exec("PRAGMA synchronous = NORMAL;");
+    if (this.#owned) this.#database.exec("PRAGMA synchronous = NORMAL;");
   }
 
   load(rawKey: unknown): StoredUiPreference | null {
@@ -108,6 +116,6 @@ export class DesktopUiPreferenceStore {
   }
 
   close(): void {
-    this.#database.close();
+    if (this.#owned) this.#database.close();
   }
 }
