@@ -231,7 +231,7 @@ test("process termination during import rolls back; termination after commit res
 test("official account and access commands use the consolidated authority", async t => {
   const root = fixture(t), before = await seed(root);
   const invoke = (script: string, args: string[]) => {
-    const child = spawnSync(process.execPath, ["--import", "tsx", new URL("../../scripts/" + script, import.meta.url).pathname, ...args], { encoding: "utf8", timeout: 30_000 });
+    const child = spawnSync(process.execPath, ["--import", "tsx", new URL("../../scripts/admin/" + script, import.meta.url).pathname, ...args], { encoding: "utf8", timeout: 30_000 });
     assert.equal(child.status, 0, child.stderr); return child.stdout;
   };
   assert.match(invoke("access-admin.ts", [join(root, "memberships.sqlite"), "revoke", "local", before.subject]), /updated/);
