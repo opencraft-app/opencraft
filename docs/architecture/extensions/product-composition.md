@@ -223,3 +223,9 @@ it does not become a failed installation. Its durable record is retained so a pr
 or later reintroduction preserves the user's enabled/disabled choice. Other bundled extensions
 and installed module URLs still restore independently. The background task is named
 `extensions.restore`; it is not owned by a particular optional product feature.
+
+## Provider-neutral assets catalog
+
+The shared Assets view and its trusted account/provider ports are documented in
+[Assets catalog UI](assets-catalog.md). UI extraction does not itself enable a
+default account service, execution provider or desktop destination.
