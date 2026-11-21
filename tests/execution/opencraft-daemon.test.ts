@@ -163,7 +163,7 @@ test("Electron Main is a process bridge and no longer owns Agent or physical App
   const source = await readFile(new URL("../../apps/desktop/src/main.ts", import.meta.url), "utf8");
   assert.match(source, /OpenCraftDaemonClientManager/u);
   assert.match(source, /dshCapabilityPlugin:/u);
-  assert.match(source, /serve-workbench-static\.mjs/u);
+  assert.match(source, /@opencraft\/headless-server\/serve-workbench-static/u);
   assert.doesNotMatch(source, /AppHostServerSession|AppHostServer\b|WebSocketTransport|startLocalAgentHost/u);
   assert.doesNotMatch(source, /serve-workbench-web\.mjs|OPENCRAFT_APPSERVER_URL|function appServerTarget/u);
 });
