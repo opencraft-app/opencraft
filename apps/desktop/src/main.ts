@@ -796,8 +796,10 @@ async function bootstrap(): Promise<void> {
     daemonEntry: app.isPackaged
       ? join(process.resourcesPath, "runtime/opencraft-daemon.cjs")
       : join(app.getAppPath(), "../opencraft-daemon/dist/main.cjs"),
+    // DSH is not distributed. A packaged app bridges one the user installed;
+    // without it the local host serves its other engines.
     dshExecutable: app.isPackaged
-      ? join(process.resourcesPath, "runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js")
+      ? process.env.OPENCRAFT_DSH_EXECUTABLE?.trim() || join(process.resourcesPath, "runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js")
       : join(app.getAppPath(), "../../runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js"),
     dshCapabilityPlugin: app.isPackaged
       ? join(process.resourcesPath, "runtime/dsh/opencraft-capability-plugin.mjs")

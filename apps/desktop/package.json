@@ -177,21 +177,6 @@
         ]
       },
       {
-        "from": "../../runtime/dsh",
-        "to": "runtime/dsh",
-        "filter": [
-          "package.json",
-          "package-lock.json"
-        ]
-      },
-      {
-        "from": "../../runtime/dsh/node_modules",
-        "to": "runtime/dsh/node_modules",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
         "from": "build/codex-runtime",
         "to": "runtime",
         "filter": [

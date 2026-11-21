@@ -28,14 +28,15 @@ it down. It does not reuse a developer DSH home or make a paid model request.
 After packaging, verify the shipped runtime outside the source directory:
 
 ```bash
-# Linux example; on macOS use the executable and Resources inside OpenCraft.app
+# Linux example; on macOS use the Resources directory inside OpenCraft.app
 node scripts/smoke/desktop/smoke-packaged-runtime.mjs \
-  /absolute/path/to/linux-unpacked/opencraft \
   /absolute/path/to/linux-unpacked/resources
 ```
 
-This runs DSH with the packaged Electron Node, not the system Node or checkout
-dependencies, and checks its host API from a fresh temporary working directory.
+This runs the packaged native Codex (`runtime/codex-<arch>`) and checks it is the
+version pinned in `runtime/codex`, and that the package ships no DSH runtime:
+OpenCraft bridges a DSH the user installs (`OPENCRAFT_DSH_EXECUTABLE`) but does
+not distribute it.
 
 For GUI first-run testing, pass Electron's `--user-data-dir=/absolute/temp/path`
 to the packaged executable. OpenCraft creates that profile before initializing

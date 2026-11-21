@@ -65,6 +65,9 @@ host) and copies its vendor tree to `runtime/codex-<arch>/` in the package
 (architecture-qualified, so the macOS universal merge keeps both). The
 desktop starts that binary unless `OPENCRAFT_CODEX_EXECUTABLE` names another,
 and falls back to a user-installed Codex only when none is bundled.
+Desktop packages do not ship the DSH runtime. They keep OpenCraft's DSH bridge
+files, so a user-installed DSH (`OPENCRAFT_DSH_EXECUTABLE`) still connects; without
+one the local host starts with its other engines and reports DSH as not installed.
 Desktop packages use `OPENCRAFT_ELECTRON_DISTRIBUTION_<PLATFORM>_<ARCH>` or
 `OPENCRAFT_ELECTRON_DISTRIBUTION`; headless packages use
 `OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION`. The default Dockerfile consumes the
