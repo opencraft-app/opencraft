@@ -94,7 +94,7 @@ Removing a Bot uses the existing `remove` action.
 | Asking upward on the Bot's own judgment | implemented by the same path: a question goes to the immediate dispatcher, which decides or asks its own dispatcher |
 | Finishing work | the runtime closes work once its turn settled, no Work linked to that conversation is active and its outbox is empty; a blocked turn stays open |
 | Cancelling unstarted work of someone who left | implemented in the runtime: closed before intake without a reply |
-| Stopping started work after the current step when its dispatcher leaves | not yet; replies already move up the chain |
+| Stopping started work after the current step when its dispatcher leaves | implemented in the runtime: the active Work in that dispatcher's conversation is cancelled (the step in flight finishes and is not replayed; no later step runs) and the crew work is closed. Hand-offs it already made keep running; their replies to closed work are dropped |
 | Direct messages from members as dispatch (rule 10) | implemented in core; the Bot owner's private line is exempt |
 | Replies between Bots without budget, returned to the work they answer | implemented in core and in the runtime intake; work with open hand-offs is not finished |
 | Bots dispatching to their phonebook and answering down the tree | implemented as Work tools for both execution engines (Pi and Codex): `crew_contacts`, `crew_dispatch`, `crew_message`. They appear only in Work that answers crew work; the crew work is taken from the Work's conversation, never from the model, and idempotency keys come from the Work and native call |

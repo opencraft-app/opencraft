@@ -15,7 +15,9 @@
  * - Work is reported finished only once it is quiet here: its intake turn settled, nothing it
  *   handed on is still open, no Work linked to the conversation still active, nothing waiting in
  *   the outbox for that conversation, and no reply since its intake that failed to deliver.
- * - Work whose dispatcher left before intake is not started; it is closed without a reply.
+ * - Work whose dispatcher left before intake is not started; it is closed without a reply. Work
+ *   already started is stopped: its active Work in that conversation is cancelled, so the step in
+ *   flight finishes without replay and no later step runs, and then the crew work is closed.
  */
 const UPSERT = "INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value";
 const ACTIVE_WORK = ["queued", "running", "waiting_input", "awaiting_review", "awaiting_delivery"];
@@ -54,6 +56,15 @@ export function createCrewIntake({ runner, request }) {
   }
 
   const answersTo = (work) => work.chain.some((p) => p.actorId === work.requesterId);
+  async function stop(conversationId, crewWorkId) {
+    const marks = ACTIVE_WORK.map(() => "?").join(",");
+    const active = db().prepare(`SELECT w.id,w.revision FROM work w JOIN conversation_work c ON c.work_id=w.id
+      WHERE c.conversation_id=? AND w.status IN (${marks})`).all(conversationId, ...ACTIVE_WORK);
+    for (const w of active) {
+      const response = await runner.dispatch({ op: "cancel", id: `crew-stop:${crewWorkId}:${w.id}`, params: { workId: w.id, expectedRevision: w.revision } });
+      if (response?.ok === false) throw Error("Crew stop rejected");
+    }
+  }
   const isPeerConversation = (conversationId) => !!meta(conversationKey(conversationId));
 
   /** The dispatcher whose conversation a runner Work belongs to, or null for any other Work. */
@@ -118,6 +129,13 @@ export function createCrewIntake({ runner, request }) {
           continue;
         }
         const conversationId = meta(peerKey(work.requesterId));
+        if (conversationId && !answersTo(work)) {
+          // The dispatcher left after the work started: stop it. Cancelling lets the step in
+          // flight finish without replay and refuses every later step.
+          await stop(conversationId, work.id);
+          await request("opencraft/crew/work/finish", { workId: work.id });
+          continue;
+        }
         if (conversationId && quiet(work, conversationId)) await request("opencraft/crew/work/finish", { workId: work.id });
       }
     },

@@ -137,3 +137,20 @@ test("a reply that never reached its dispatcher keeps the work open", async (t) 
   await crew.poll(() => false);
   assert.equal(ledger.works[0].state, "open");
 });
+
+test("when the dispatcher leaves after work started, its running Work is cancelled and the crew work closed", async (t) => {
+  const ledger = core([work("w1", "bob", [bob, alice])]);
+  const s = setup(t, ledger);
+  const crew = s.intake();
+  await crew.poll(() => false);
+  const conversationId = s.store.app.reception.turn("crew:w1").conversation_id;
+  const { workId } = s.store.app.dispatch({ op: "submit", id: "task", params: { text: "整理发布说明" } });
+  s.store.app.history.link(conversationId, workId);
+  await crew.poll(() => false);
+  assert.equal(ledger.works[0].state, "open", "work in progress stays open while its dispatcher is there");
+
+  ledger.works[0].chain = [alice]; // Bob left the space.
+  await crew.poll(() => false);
+  assert.equal(s.store.db.prepare("SELECT status FROM work WHERE id=?").get(workId).status, "cancelled");
+  assert.equal(ledger.works[0].state, "closed");
+});
