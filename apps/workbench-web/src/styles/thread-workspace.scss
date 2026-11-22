@@ -293,21 +293,49 @@
 html:root[data-ui-density="touch"] {
   // One emitted rule for the common title and blur band; both reading surfaces
   // consume this contract rather than expanding identical Sass mixins twice.
+  // The band starts at the reading plane's physical top edge. When the primary
+  // transcript bleeds under the device safe area, that area belongs to the same
+  // band, so scrolled text never meets the status bar. Side Chat keeps its
+  // panel origin and therefore no extent.
+  :is(.side-chat-header, .app-shell-header[data-app-shell-conversation-header="true"]) {
+    --reading-header-edge-extent: 0px;
+  }
+  .app-shell-header[data-app-shell-conversation-header="true"] {
+    --reading-header-edge-extent: var(--shell-conversation-top-bleed, 0px);
+  }
   :is(.side-chat-header, .app-shell-header[data-app-shell-conversation-header="true"])::before {
+    --reading-header-fade: calc(var(--spacing) * 8);
     content: "";
     position: absolute;
     z-index: -1;
-    inset: 0 0 auto 0;
+    inset: calc(0px - var(--reading-header-edge-extent)) 0 auto 0;
     width: auto;
-    height: calc(100% + var(--spacing) * 6);
+    height: calc(100% + var(--reading-header-edge-extent) + var(--spacing) * 6);
     clip-path: none;
     border: 0;
     pointer-events: none;
-    background: color-mix(in srgb, var(--color-background-surface) 55%, transparent);
-    -webkit-backdrop-filter: blur(14px) saturate(1.4);
-    backdrop-filter: blur(14px) saturate(1.4);
-    -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
-    mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
+    // Nearly solid behind the status area and controls, thinning toward the
+    // transcript; the mask then dissolves the blur itself without a hard edge.
+    background: linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--color-background-surface) 92%, transparent) 0,
+      color-mix(in srgb, var(--color-background-surface) 82%, transparent) calc(100% - var(--reading-header-fade)),
+      color-mix(in srgb, var(--color-background-surface) 40%, transparent) 100%
+    );
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    backdrop-filter: blur(16px) saturate(1.4);
+    -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - var(--reading-header-fade)), transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - var(--reading-header-fade)), transparent 100%);
+    @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+      background: linear-gradient(
+        to bottom,
+        var(--color-background-surface) 0,
+        var(--color-background-surface) calc(100% - var(--reading-header-fade)),
+        transparent 100%
+      );
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
   }
   :is(.side-chat-header__copy, .app-shell-header[data-app-shell-conversation-header="true"] .thread-header-copy) {
     strong {

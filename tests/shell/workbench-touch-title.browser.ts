@@ -141,6 +141,22 @@ try {
         element.scrollTop = 240;
       });
       assert.equal(await title.isVisible(), true);
+      if (scenario.density !== "off") {
+        // A device top inset (iOS PWA / full-screen WebView) moves the header
+        // below the status area while the transcript bleeds under it. The
+        // reading band must start at the physical top so text never meets it.
+        const inset = await page.addStyleTag({ content: ":root { --safe-layout-inset-top: 47px; }" });
+        const band = await page.evaluate(() => {
+          const header = document.querySelector<HTMLElement>('.app-shell-header[data-app-shell-conversation-header="true"]')!;
+          const before = getComputedStyle(header, "::before");
+          const top = header.getBoundingClientRect().top;
+          return { headerTop: top, bandTop: top + parseFloat(before.top), bandBottom: top + parseFloat(before.top) + parseFloat(before.height) };
+        });
+        assert.equal(band.headerTop, 47, JSON.stringify(band));
+        assert.ok(Math.abs(band.bandTop) < 0.5, `reading band must cover the status area: ${JSON.stringify(band)}`);
+        assert.ok(band.bandBottom > band.headerTop + 47, JSON.stringify(band));
+        await inset.evaluate((element) => element.remove());
+      }
       await page.screenshot({ path: `${output}/${scenario.width}-${scenario.density}-${scenario.theme}.png` });
       await page.evaluate(() => {
         (window as any).fixture.setFull(true);
