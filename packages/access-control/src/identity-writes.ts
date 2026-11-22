@@ -1,9 +1,11 @@
 import type { OwnerCalls } from "@opencraft/worker-owner";
-import type { ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
+import type { ServerDatabase } from "@opencraft/storage-node/server";
+import { sqliteTransaction } from "@opencraft/sqlite-node";
 import type { Principal } from "@opencraft/identity-core";
 import type { ActorContext } from "@opencraft/identity-core/actors";
 import { ActorStore } from "./actors.js";
 import { HumanAccounts, type HumanLogin } from "./human-accounts.js";
+import { commitFence, serveCommitFence } from "./commit-fence.js";
 
 /**
  * Identity writes a Server owner Worker performs on its own connection: login
@@ -11,13 +13,33 @@ import { HumanAccounts, type HumanLogin } from "./human-accounts.js";
  * this process's registrations (local account versions, resource authorities)
  * happens on the calling thread first. Reads stay on the calling thread's
  * permission projection, which is republished after every commit.
+ *
+ * Actor administration is authorized by the caller's management authority,
+ * which can be revoked or expire while the write waits in the owner's queue.
+ * Each such write therefore takes the writer lock first, then asks the calling
+ * thread through the commit fence to recheck that authority, and mutates only
+ * if it was approved. No authority can commit a change while the lock is held.
  */
 export class IdentityWriteOwner {
   readonly #actors: ActorStore;
   readonly #accounts: HumanAccounts;
-  constructor(owner: ServerDatabaseSource) {
+  readonly #fence: ((token: number) => void) | null;
+  constructor(
+    private readonly owner: ServerDatabase,
+    fence?: SharedArrayBuffer,
+  ) {
     this.#actors = new ActorStore(owner, Date.now, { permissionProjection: false });
     this.#accounts = new HumanAccounts(owner, this.#actors);
+    this.#fence = fence ? commitFence(fence) : null;
+  }
+  /** Runs `write` under the writer lock, after the caller re-approved `token`. */
+  #fenced<T>(token: number, write: () => T): T {
+    const fence = this.#fence;
+    if (!fence) throw new Error("Actor administration requires a commit fence");
+    return sqliteTransaction(this.owner.database, () => {
+      fence(token);
+      return write();
+    });
   }
   issueLogin(principal: Principal, accountVersion: number | null): { token: string; login: HumanLogin } {
     return this.#accounts.issue(principal, accountVersion);
@@ -34,20 +56,29 @@ export class IdentityWriteOwner {
   unbindHuman(owner: ActorContext, binding: Pick<Principal, "provider" | "subject">): void {
     this.#actors.unbindHuman(owner, binding);
   }
-  createSession(displayName: string, operator: string) {
-    return this.#actors.createSession(displayName, operator);
+  createSession(token: number, displayName: string, operator: string) {
+    return this.#fenced(token, () => this.#actors.createSession(displayName, operator));
   }
-  issueCredential(id: string, expiresAt: number, operator: string) {
-    return this.#actors.issueCredential(id, expiresAt, operator);
+  issueCredential(token: number, id: string, expiresAt: number, operator: string) {
+    return this.#fenced(token, () => this.#actors.issueCredential(id, expiresAt, operator));
   }
-  revokeCredential(id: string, operator: string): void {
-    this.#actors.revokeCredential(id, operator);
+  revokeCredential(token: number, id: string, operator: string): void {
+    this.#fenced(token, () => this.#actors.revokeCredential(id, operator));
   }
-  setCheckedGrant(id: string, resource: string, action: string, enabled: boolean, operator: string): void {
-    this.#actors.setGrant(id, resource, action, enabled, operator, { authorityChecked: true });
+  setCheckedGrant(
+    token: number,
+    id: string,
+    resource: string,
+    action: string,
+    enabled: boolean,
+    operator: string,
+  ): void {
+    this.#fenced(token, () =>
+      this.#actors.setGrant(id, resource, action, enabled, operator, { authorityChecked: true }),
+    );
   }
-  setEnabled(id: string, enabled: boolean, operator: string): void {
-    this.#actors.setEnabled(id, enabled, operator);
+  setEnabled(token: number, id: string, enabled: boolean, operator: string): void {
+    this.#fenced(token, () => this.#actors.setEnabled(id, enabled, operator));
   }
   close(): void {
     try {
@@ -85,12 +116,34 @@ export function identityWriteMethods(owner: IdentityWriteOwner): Record<string, 
  * registered registration hooks the owner cannot run, the write stays local.
  */
 export class IdentityWrites {
+  readonly #checks = new Map<number, () => boolean>();
+  #sequence = 0;
+  readonly #stopFence: () => void;
   constructor(
     private readonly owner: OwnerCalls<IdentityWriteOwner>,
     readonly actors: ActorStore,
     /** Absent when this installation has no human login. */
-    readonly accounts?: HumanAccounts,
-  ) {}
+    readonly accounts: HumanAccounts | undefined,
+    /** The buffer the owner's `IdentityWriteOwner` was given. */
+    fence: SharedArrayBuffer,
+  ) {
+    this.#stopFence = serveCommitFence(fence, (token) => this.#checks.get(token)?.() === true);
+  }
+  close(): void {
+    this.#stopFence();
+  }
+  /** Runs an administration write whose authority `authorize` rechecks under the owner's writer lock. */
+  async #administer<T>(authorize: () => boolean, write: (token: number) => Promise<T>): Promise<T> {
+    if (!authorize()) throw new Error("Actor management denied");
+    const token = ++this.#sequence;
+    this.#checks.set(token, authorize);
+    try {
+      return await write(token);
+    } finally {
+      this.#checks.delete(token);
+      this.actors.ownerCommitted();
+    }
+  }
 
   async issueLogin(principal: Principal): Promise<{ token: string; login: HumanLogin }> {
     const accounts = this.loginAccounts();
@@ -117,29 +170,37 @@ export class IdentityWrites {
     await this.owner.unbindHuman(owner, binding);
     this.actors.ownerCommitted(owner.actorId);
   }
-  async createSession(displayName: string, operator: string) {
-    const actor = await this.owner.createSession(displayName, operator);
-    this.actors.ownerCommitted();
-    return actor;
+  // Actor administration. `authorize` is the caller's current management
+  // authority; it is checked now and again under the owner's writer lock.
+  createSession(authorize: () => boolean, displayName: string, operator: string) {
+    return this.#administer(authorize, (token) => this.owner.createSession(token, displayName, operator));
   }
-  async issueCredential(id: string, expiresAt: number, operator: string) {
-    const credential = await this.owner.issueCredential(id, expiresAt, operator);
-    this.actors.ownerCommitted();
-    return credential;
+  issueCredential(authorize: () => boolean, id: string, expiresAt: number, operator: string) {
+    return this.#administer(authorize, (token) => this.owner.issueCredential(token, id, expiresAt, operator));
   }
-  async revokeCredential(id: string, operator: string): Promise<void> {
-    await this.owner.revokeCredential(id, operator);
-    this.actors.ownerCommitted();
+  revokeCredential(authorize: () => boolean, id: string, operator: string): Promise<void> {
+    return this.#administer(authorize, (token) => this.owner.revokeCredential(token, id, operator));
   }
-  async setGrant(id: string, resource: string, action: string, enabled: boolean, operator: string): Promise<void> {
-    // Resource authorities are registered on this thread; the owner trusts this check.
-    this.actors.checkGrant(id, resource, action, enabled);
-    await this.owner.setCheckedGrant(id, resource, action, enabled, operator);
-    this.actors.ownerCommitted();
+  setGrant(
+    authorize: () => boolean,
+    id: string,
+    resource: string,
+    action: string,
+    enabled: boolean,
+    operator: string,
+  ): Promise<void> {
+    // Resource authorities are registered on this thread, so the compiled check
+    // runs here; the fence rechecks it with the management authority.
+    const check = () => {
+      this.actors.checkGrant(id, resource, action, enabled);
+      return authorize();
+    };
+    return this.#administer(check, (token) =>
+      this.owner.setCheckedGrant(token, id, resource, action, enabled, operator),
+    );
   }
-  async setEnabled(id: string, enabled: boolean, operator: string): Promise<void> {
-    await this.owner.setEnabled(id, enabled, operator);
-    this.actors.ownerCommitted();
+  setEnabled(authorize: () => boolean, id: string, enabled: boolean, operator: string): Promise<void> {
+    return this.#administer(authorize, (token) => this.owner.setEnabled(token, id, enabled, operator));
   }
   private committed() {
     this.actors.ownerCommitted();

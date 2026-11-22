@@ -23,16 +23,23 @@ export interface ServerCoreStorage<T = object> extends ServerDatabase {
  */
 export async function openServerCoreOwner<T = object>(
   directory: string,
-  { entry = ownerEntry(import.meta.url, "server-core-owner") }: { entry?: URL } = {},
+  {
+    entry = ownerEntry(import.meta.url, "server-core-owner"),
+    data,
+  }: {
+    entry?: URL;
+    /** Passed to the entry's domains, e.g. a SharedArrayBuffer for a commit fence. */
+    data?: Record<string, unknown>;
+  } = {},
 ): Promise<ServerCoreStorage<T>> {
-  const { owner, ready } = await WorkerOwner.open<T & CreationReceiptMethods, { outcome: DatabaseOutcome; contract: ServerDataContract }>(
-    entry,
-    {
-      name: "Server storage",
-      workerData: { directory, composition: installedServerMigrationComposition() },
-      errors: [SqliteLifecycleError],
-    },
-  );
+  const { owner, ready } = await WorkerOwner.open<
+    T & CreationReceiptMethods,
+    { outcome: DatabaseOutcome; contract: ServerDataContract }
+  >(entry, {
+    name: "Server storage",
+    workerData: { directory, composition: installedServerMigrationComposition(), data },
+    errors: [SqliteLifecycleError],
+  });
   let connection: ReturnType<typeof borrowServerDatabase>;
   try {
     // The owner's connection settings (no foreign key enforcement, 5 s busy wait),

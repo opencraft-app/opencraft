@@ -119,6 +119,7 @@ import { readPrivateJson } from '@opencraft/identity-core/node';
 import { HumanAccountManagement } from '@opencraft/access-control/account-management';
 import { HumanAuth, readHumanAuthConfiguration } from '@opencraft/access-control/human-auth';
 import { IdentityWrites } from '@opencraft/access-control/identity-writes';
+import { createCommitFenceBuffer } from '@opencraft/access-control/commit-fence';
 import { humanLoginPage } from './human-login-page.ts';
 import { connectRelay, loadRelayConnection } from '@opencraft/plugin-relay-connect/server';
 import { validateHeadlessIdentity } from "./headless-identity.mjs";
@@ -344,7 +345,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   const productPluginAssets = await prepareProductPluginRelease({ releaseRoot: root, webRoot,
     cacheDirectory: process.env.OPENCRAFT_PRODUCT_PLUGIN_CACHE_DIRECTORY || join(dataDirectory, 'product-plugin-packs'),
     metadata: releaseManifest.productPlugins ?? null });
-  const serverStorage = await openServerCoreOwner(dataDirectory, { entry: ownerEntry(import.meta.url, 'server-core') });
+  const identityFence = createCommitFenceBuffer();
+  const serverStorage = await openServerCoreOwner(dataDirectory, { entry: ownerEntry(import.meta.url, 'server-core'), data: { identityFence } });
   const orchestrationStorage = new OrchestrationRuntimeWorker(join(dataDirectory, 'opencraft-server.sqlite'));
   try { await orchestrationStorage.start(); } catch (error) { await orchestrationStorage.close().catch(()=>{}); await serverStorage.close(); throw error; }
   const releaseLock = async () => { await orchestrationStorage.close(); await serverStorage.close(); };
@@ -383,6 +385,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let serverSpaces;
   let threadAccess;
   let threadNotes;
+  let identityWrites;
   let humanAccounts;
   let imPlugins, availabilityNotification;
   let connectorService;
@@ -449,7 +452,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         () => modelPolicy?.close(), () => mcpApps?.close(), () => sshManagement?.close(), () => identity?.executionEnvironment?.close(), () => identity?.close?.(),
 
         () => ownedWorkspaceRouting?.close(), () => installedBotProvider?.close(), () => humanGitExecution?.close(), () => assetsService?.close(), () => assetsStorage?.close(), () => composition.close?.(), () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
-        () => capabilityBindings?.close(), () => actorStore?.close(), () => membership?.close()]) {
+        () => identityWrites?.close(), () => capabilityBindings?.close(), () => actorStore?.close(), () => membership?.close()]) {
         await settle([dispose]);
       }
       const failures = results.filter((result) => result.status === "rejected").map((result) => result.reason);
@@ -596,7 +599,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     });
     // Login sessions, identity bindings and Actor administration commit in the
     // Server owner Worker; reads stay on this thread's permission projection.
-    const identityWrites = new IdentityWrites(serverStorage.call, actorStore, humanAccounts);
+    identityWrites = new IdentityWrites(serverStorage.call, actorStore, humanAccounts, identityFence);
     actorAccess.useOwnerWrites(identityWrites);
     humanAuth?.useOwnerWrites(identityWrites);
     const engines = options.engines ?? ["dsh"];

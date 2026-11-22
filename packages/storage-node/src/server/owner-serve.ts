@@ -17,9 +17,20 @@ export interface ServerCoreDomains {
  * until the owner closes. `domains` builds the domain services this Worker
  * serves on the owner connection (docs/architecture/server/server-core-owner.md).
  */
-export function serveServerCoreOwner(domains?: (owner: ServerDatabase) => ServerCoreDomains): void {
+export function serveServerCoreOwner(
+  domains?: (owner: ServerDatabase, data: Record<string, unknown>) => ServerCoreDomains,
+): void {
   serveWorkerOwner(
-    async ({ directory, composition }: { directory: string; composition?: ServerMigrationComposition }) => {
+    async ({
+      directory,
+      composition,
+      data,
+    }: {
+      directory: string;
+      composition?: ServerMigrationComposition;
+      /** Parent-supplied values for the domains, such as a commit fence buffer. */
+      data?: Record<string, unknown>;
+    }) => {
       // Trusted parent-owned data only, as for the server-spaces Worker.
       if (composition !== undefined) installServerMigrationComposition(composition);
       const owner = await openServerDatabase(directory);
@@ -27,7 +38,7 @@ export function serveServerCoreOwner(domains?: (owner: ServerDatabase) => Server
       let creation: ReturnType<typeof conversationCreationReceiptMethods>;
       try {
         creation = conversationCreationReceiptMethods(owner.database);
-        served = domains?.(owner) ?? { methods: {} };
+        served = domains?.(owner, data ?? {}) ?? { methods: {} };
       } catch (error) {
         await owner.close();
         throw error;
