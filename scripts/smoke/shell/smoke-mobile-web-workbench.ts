@@ -146,6 +146,7 @@ try {
     } else {
       await connect.waitFor();
       await openSettings("Chat");
+      await page.getByRole("switch", { name: "Follow up immediately while responding" }).waitFor();
       await page.evaluate(identity => window.dispatchEvent(new CustomEvent("opencraft-mobile", { detail: { ...identity, type: "back" } })), identity);
       await connect.waitFor();
       await connect.click();

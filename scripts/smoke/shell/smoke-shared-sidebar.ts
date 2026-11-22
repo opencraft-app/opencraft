@@ -1,8 +1,31 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "vite";
+import type { Page, Response } from "playwright";
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const output = process.env.OPENCRAFT_SHARED_SIDEBAR_OUTPUT ?? "/tmp/opencraft-shared-sidebar";
+function isOutdatedOptimizedDependency(response: Response): boolean {
+  return response.status() === 504 && response.url().includes("/node_modules/.vite-shared-sidebar");
+}
+
+async function openFixture(page: Page, url: string) {
+  // A cold optimizer may replace hashed URLs while the virtual entry loads.
+  // Reload with the stabilized graph once. Application errors still fail.
+  let outdated = false;
+  const observe = (response: Response) => { outdated ||= isOutdatedOptimizedDependency(response); };
+  page.on("response", observe);
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      outdated = false;
+      await page.goto(url, { timeout: 90_000, waitUntil: "networkidle" });
+      if (!outdated) return;
+    }
+    throw new Error("Vite optimized dependencies changed during both fixture loads");
+  } finally {
+    page.off("response", observe);
+  }
+}
+
 const source = `
 import React,{useEffect,useState}from'react';import{createIntlTestRoot as createRoot}from'/tests/fixtures/intl-root.tsx';
 import{frame}from'@opencraft/design-system/tokens';
@@ -122,10 +145,10 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
         const scrollErrors: string[] = [];
         page.on('pageerror', error => scrollErrors.push(error.message));
         page.on('response', response => {
-          if (response.status() >= 500) scrollErrors.push(`${response.status()} ${response.url()}`);
+          if (response.status() >= 500 && !isOutdatedOptimizedDependency(response)) scrollErrors.push(`${response.status()} ${response.url()}`);
         });
         try {
-          await page.goto(`http://127.0.0.1:${port}/`, { timeout: 90000 });
+          await openFixture(page, `http://127.0.0.1:${port}/`);
           await page.locator('.app-shell-root').waitFor().catch(error => {
             throw new Error(`Managed workbench failed to mount: ${scrollErrors.join('; ')}`, { cause: error });
           });
@@ -195,7 +218,7 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
       await desktop.addInitScript('window.__name=value=>value');
       const desktopErrors: string[] = []; desktop.on('pageerror', error => desktopErrors.push(error.message));
       try {
-        await desktop.goto(`http://127.0.0.1:${port}/`, { timeout: 90000 });
+        await openFixture(desktop, `http://127.0.0.1:${port}/`);
         await desktop.locator('.shell-navigation__footer--unified').waitFor();
         // The mobile recovery parked the feed on "none"; this page pins "available".
         await desktop.evaluate(() => (window as any).fixture.setUpdateState('available'));
@@ -213,7 +236,7 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
   const page = await browser.newPage({ viewport: { width: 1300, height: 760 }, reducedMotion: process.env.OPENCRAFT_REDUCED_MOTION === "1" ? "reduce" : "no-preference" }); page.setDefaultTimeout(8000);
   await page.addInitScript("window.__name=value=>value");
   page.on("pageerror", (error: Error) => errors.push(error.message));
-  await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}`, {timeout:90000});
+  await openFixture(page, `http://127.0.0.1:${(vite.httpServer!.address() as any).port}`);
   await page.waitForLoadState('networkidle');
   await page.getByRole("button", { name: "Chat", exact: true }).waitFor();
   // A visible DOM box alone misses clipping and competing stacking contexts.
@@ -288,7 +311,7 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
     assert.equal(await page.getByRole('textbox', { name: 'Main draft' }).inputValue(), 'Keep draft');
     evidence.push({ case: 'floating-sidebar-account-settings', passed: true });
     await page.setViewportSize({ width: 1300, height: 760 });
-    await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}/?embedded`, { timeout: 90000 });
+    await openFixture(page, `http://127.0.0.1:${(vite.httpServer!.address() as any).port}/?embedded`);
     await page.waitForSelector('.app-shell-root');
     await page.evaluate(() => (window as any).fixture.setAccountName('Embedded member'));
     await page.locator('.shell-navigation__entrance[data-surface="account"]:visible').click();
@@ -307,7 +330,7 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
 
     // A product can supply its own presentation root and only the context pane.
     await page.setViewportSize({ width: 1300, height: 760 });
-    await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}/?embedded-context`, { timeout: 90000 });
+    await openFixture(page, `http://127.0.0.1:${(vite.httpServer!.address() as any).port}/?embedded-context`);
     const contextFilter = page.getByRole('textbox', { name: 'Sidebar filter' });
     const embeddedDraft = page.getByRole('textbox', { name: 'Main draft' });
     await contextFilter.fill('Embedded context');
@@ -335,7 +358,7 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
   }
   if (process.env.OPENCRAFT_ACCOUNT_TOPOLOGY_ONLY !== "1") {
   await page.setViewportSize({ width: 1300, height: 760 });
-  await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}/`, { timeout: 90000 });
+  await openFixture(page, `http://127.0.0.1:${(vite.httpServer!.address() as any).port}/`);
   await page.waitForLoadState('networkidle');
   // The same header action must remain beside the brand throughout motion.
   const toggle = page.locator('[data-chrome-action-id="sidebar-toggle"]:visible');
