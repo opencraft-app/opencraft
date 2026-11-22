@@ -367,6 +367,9 @@ export class ExecutionRepository extends Repository {
       .prepare("SELECT COUNT(*) AS n FROM work_operation WHERE execution_id=?")
       .get(id).n;
   }
+  hasOperation(id, callId) {
+    return !!this.db.prepare("SELECT 1 FROM work_operation WHERE execution_id=? AND call_id=?").get(id, callId);
+  }
   recordOperation(id, callId, workId, tool, target, summary, at) {
     this.db
       .prepare(
