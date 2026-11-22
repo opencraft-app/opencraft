@@ -1,4 +1,5 @@
 import { DesktopServerConnections } from './desktop-server-connections.js';
+import { codexBridgeStackEnabled } from './codex-bridge-default.js';
 import { CONNECT_DESKTOP_SERVER, isDesktopServerConnectMessage } from '@opencraft/app-host-protocol/desktop-server';
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
@@ -866,9 +867,9 @@ async function bootstrap(): Promise<void> {
     })),
     codexDataDirectory: desktopPaths.codexDataDirectory,
     nativeCodexHomeDirectory: process.env.CODEX_HOME?.trim() || join(homedir(), ".codex"),
-    // Opt-in until verified on real accounts: Codex through the daemon's bridge stack
-    // (Unix sockets; on Windows named pipes and a token-guarded loopback native listener).
-    ...(process.env.OPENCRAFT_CODEX_BRIDGE === "1" ? {
+    // Codex through the daemon's bridge stack: default on macOS/Linux (`OPENCRAFT_CODEX_BRIDGE=0`
+    // returns to the legacy adapter), opt-in on Windows until verified on real machines.
+    ...(codexBridgeStackEnabled(process.platform, process.env.OPENCRAFT_CODEX_BRIDGE) ? {
       codexBridgeStack: app.isPackaged
         ? join(process.resourcesPath, "runtime/codex-bridge")
         : join(app.getAppPath(), "../opencraft-daemon/dist/codex-bridge"),

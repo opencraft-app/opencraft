@@ -77,7 +77,7 @@ daemon 以 `--codex-bridge-stack <程序目录>`（`codexBridgeStack`）启动 b
 
 演练 `scripts/smoke/execution/smoke-codex-bridge-stack.ts`（真实原生 Codex 0.162.1 + 本地假模型 + 合成账号，2026-11-22 在 Node 26 与 Electron 44 以 Node 运行（Node 24.22，与打包 daemon 相同）下均通过）：旧 Host 建的会话在栈启动后以原 ID 续聊并保留历史；新线程经 bridge 应答；daemon 关闭时三个子进程全部退出；整栈重启后同一 bridge 线程续聊；每条输入只到达模型一次。Engine Host 重启后，声明 `adoption` 的 provider 在路由下次使用时续接已记录的原生会话，Host 仍记为进行中的轮次按原生结果收口（查不到记为中断），排队输入随后继续派发。
 
-桌面开启入口：环境变量 `OPENCRAFT_CODEX_BRIDGE=1`（Windows 不提供），Main 把打包的 `runtime/codex-bridge` 传给 daemon。已在运行的 daemon 不会因此重启，需退出应用后再开。
+桌面入口（`apps/desktop/src/codex-bridge-default.ts`）：macOS 与 Linux 默认开启，`OPENCRAFT_CODEX_BRIDGE=0` 退回旧 adapter 作应急；Windows 仍需 `OPENCRAFT_CODEX_BRIDGE=1` 显式开启，待真机验证后再改默认。开启时 Main 把打包的 `runtime/codex-bridge` 传给 daemon。已在运行的 daemon 不会因开关变化而重启，需退出应用后再开。
 
 该模式下 daemon 不再组装旧 adapter，见“退休旧 adapter 时的其余 owner”。演练另覆盖：计划任务自行在 bridge 线程上运行；daemon 在轮次进行中重启后，Host 自行续跑该轮次且只续一次。
 
@@ -97,12 +97,12 @@ daemon 以 `--codex-bridge-stack <程序目录>`（`codexBridgeStack`）启动 b
 | S3′ 线程列表合并、独立命令 | 线程列表依赖旧 Host 的待建线程等创建状态，随旧路径退休处理；`command/exec` 属执行，归 S5 的按线程派发与准入 |
 | S4 初始化能力声明按层组合 | 完成（桌面 bridge 栈）：底层 `CodexNativeFallback` 给原生 initialize（去掉本机专属扩展，加 read-history、首轮持久化、execution-engines 基础声明）；bridge 在独占模式下把线程能力（生命周期含删除、队列 v2、跟进、目标、steer 证据）声明为整个 Host 的；各前台服务声明自己的扩展（置顶、权限模式、附件、计划任务、轮次恢复与容量重试、维护） |
 | S5 作用于线程的后台职责改走“按线程派发” | 桌面完成：前台服务以 Host 自己的客户端身份经 bridge 作用于线程（与客户端同一准入、队列与命令账本），并经 bridge 新增的全线程事件流看到每个线程的事件。轮次恢复、容量重试、目标续跑（`codex-continuation-service.ts`）、计划任务（`codex-schedules-service.ts`，以运行 ID 作客户端消息 ID，重复提交即账本重放）、附件（暂存、消息记录、历史投影、分叉继承、生成文件收集，`codex-attachments-service.ts`）、标题、维护快照（含 Host 新增 `/maintenance` 队列计数）。计量：桌面 daemon 从未配置计量查询，收集无人可读，未迁移；服务器的计量与模型网关计费随服务器迁移处理 |
-| S6 旧 adapter 退休 | 桌面 bridge 栈模式已不组装旧 adapter（`codex-bridge-host.ts`）；旧 Host 队列中仍排队的输入一次性交给对应线程的 Host 队列（`codex-legacy-handoff.ts`，两侧按客户端消息 ID 幂等），恢复、重试、计划、附件、任务记录由新 owner 打开同一存储，无需迁移。旧 adapter 代码仍在：桌面默认（未开启 bridge）与 Windows 走 spawn 模式，服务器走 Core + overlays，SSH 远程走 remote 模式。退休条件见下 |
+| S6 旧 adapter 退休 | 桌面 bridge 栈模式已不组装旧 adapter（`codex-bridge-host.ts`）；旧 Host 队列中仍排队的输入一次性交给对应线程的 Host 队列（`codex-legacy-handoff.ts`，两侧按客户端消息 ID 幂等），恢复、重试、计划、附件、任务记录由新 owner 打开同一存储，无需迁移。旧 adapter 代码仍在：桌面 `OPENCRAFT_CODEX_BRIDGE=0` 应急路径与 Windows 默认走 spawn 模式，服务器走 Core + overlays，SSH 远程走 remote 模式。退休条件见下 |
 
 ### 退休旧 adapter 的剩余条件
 
-1. **桌面默认开启 bridge 栈**：需先在用户机器上用真实账号与界面验证（`OPENCRAFT_CODEX_BRIDGE=1`）。
-2. **Windows**：已实现，桌面开关同样适用。控制端点与 relay 用命名管道（按栈实例命名），原生 Codex 在 `ws://127.0.0.1:随机端口` 上以 `--ws-auth capability-token` 监听，令牌文件在私有 runtime 目录；所有客户端经 `openCodexNativeSocket`（`@opencraft/account-pool-host`）连接三种端点。子进程停止改为关闭 stdin、由预载脚本触发子进程自己的 SIGTERM 处理（Windows 没有可捕获的 SIGTERM）。Windows 专属修正：开机标识在没有 PowerShell 时退回由系统运行时长推算；写锁与恢复记录不再对目录做 fsync、不再检查 POSIX 权限位；Codex provider 用平台的 `isAbsolute` 判断工作区与文件路径。验证：`scripts/smoke/execution/smoke-codex-bridge-stack-windows.ts` 在 Wine 9.0 下用 Windows 版 Node 24.11 与 Codex 0.162.1 通过（建会话、Windows 临时工作区、经 bridge 应答、关闭无残留）；Wine 中 undici `fetch` 无法建连，演练用基于 `node:http` 的替身，产品代码未改。尚未在真实 Windows 上验证，也未覆盖命令执行与 Electron 界面。
+1. **桌面默认开启 bridge 栈**：macOS 与 Linux 已默认开启（2026-11-22，此前已用真实账号与界面验证）；应急开关 `OPENCRAFT_CODEX_BRIDGE=0` 在旧 adapter 退休时一并移除。
+2. **Windows**：已实现，默认仍走旧路径，`OPENCRAFT_CODEX_BRIDGE=1` 开启。控制端点与 relay 用命名管道（按栈实例命名），原生 Codex 在 `ws://127.0.0.1:随机端口` 上以 `--ws-auth capability-token` 监听，令牌文件在私有 runtime 目录；所有客户端经 `openCodexNativeSocket`（`@opencraft/account-pool-host`）连接三种端点。子进程停止改为关闭 stdin、由预载脚本触发子进程自己的 SIGTERM 处理（Windows 没有可捕获的 SIGTERM）。Windows 专属修正：开机标识在没有 PowerShell 时退回由系统运行时长推算；写锁与恢复记录不再对目录做 fsync、不再检查 POSIX 权限位；Codex provider 用平台的 `isAbsolute` 判断工作区与文件路径。验证：`scripts/smoke/execution/smoke-codex-bridge-stack-windows.ts` 在 Wine 9.0 下用 Windows 版 Node 24.11 与 Codex 0.162.1 通过（建会话、Windows 临时工作区、经 bridge 应答、关闭无残留）；Wine 中 undici `fetch` 无法建连，演练用基于 `node:http` 的替身，产品代码未改。尚未在真实 Windows 上验证，也未覆盖命令执行与 Electron 界面。
 3. **服务器（单机与四容器）**：服务器组装依赖旧路径上的协作与编排（`collaboration`、编排控制、对话工具与 `nativeTool` 动态工具）、桌面附着、工作区钩子、线程元数据与发送者、会话 MCP 的环境注入、计量查询与模型网关计费。这些在 bridge 上都还没有 owner，迁移前服务器不能切到无旧路径组装。
 4. **SSH 远程 Codex** 不在退休范围：它与本地模式共享客户端复用、交互、工具、附件、元数据等核心，退休时只删本地模式（spawn、Core 直通、Core + overlays），保留并抽出远程所需部分。
 
