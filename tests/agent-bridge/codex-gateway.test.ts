@@ -122,7 +122,7 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
       prepareInput:async(threadId,clientId,input)=>{staged.push([threadId,clientId]);return input.map((item:any)=>item.type==='mention'?{type:'text',text:`file at ${item.path}`}:item);},
       projectHistory:(method,_params,result)=>({...(result as object),projected:method}),
       observeTitle:(method,params,result)=>titleCalls.push([method,(params as any).threadId??null,(result as any).thread?.id??(result as any).turn?.id]),
-      adoptExisting:true,releaseForAdoption:async threadId=>{releaseCalls.push(threadId);return releaseAnswer;}});
+      adoptExisting:true,newThreads:true,releaseForAdoption:async threadId=>{releaseCalls.push(threadId);return releaseAnswer;}});
     next.subscribeMessage(raw => frames.push(JSON.parse(raw))); await next.connect(); return next;
   };
   transport = await createTransport();
@@ -136,6 +136,15 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   await request('initialize', { capabilities: { extensions: { 'opencraft/steer-evidence': { version: 1 } } } });
   const created = await request('thread/start', { cwd: root, approvalPolicy: 'never', sandbox: 'read-only', agentBridge: { threadId: 'bridge:codex:public-new', clientRequestId: 'create' } });
   assert.equal(created.thread.id, 'bridge:codex:public-new');
+  if(!cli){
+    // With newThreads, a client that does not ask for the bridge still creates its Thread there.
+    // (The fixture native has one session, so the Host refuses binding a second; the creation still went to the bridge.)
+    const id = ++sequence;
+    await transport.send(JSON.stringify({ id, method: 'thread/start', params: { cwd: root }, [LOGICAL_CLIENT_FIELD]: 'client' }));
+    const plain = await until(() => frames.find(f => f.id === id), Boolean);
+    assert.match(plain.error?.data?.bridgeCommandId ?? '', /^bridge-mutation:/);
+    assert.equal(forwarded.some(f => f.method === 'thread/start'), false);
+  }
   if(String(cli).includes('contradiction')){
     const id=++sequence;
     await transport.send(JSON.stringify({id,method:'turn/start',params:{threadId:'bridge:codex:public-new',clientUserMessageId:'contradictory-input',input:[{type:'text',text:'one attempt'}]},[LOGICAL_CLIENT_FIELD]:'client'}));

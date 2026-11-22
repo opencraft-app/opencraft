@@ -11,8 +11,12 @@ npm run start --workspace @opencraft/agent-bridge-host -- /absolute/private/host
 ```
 
 The private configuration supplies `database` (absolute), `token` (at least 32
-bytes), optional loopback `port`, `backend: "linux-systemd"`, `backendOptions`
-(the existing sandbox-node systemd options), and explicit sandbox `policy`.
+bytes), optional loopback `port`, an explicit `backend` with its
+`backendOptions`, and explicit sandbox `policy`. `linux-systemd` takes the
+sandbox-node systemd options; `host-process` (desktop on macOS, Windows and
+Linux) takes `stateDirectory` and requires `policy.accept` for unenforced
+resources and best-effort containment; `hands-unix` (the split deployment's
+brain) takes the Hands `endpoint` and `tokenFile`.
 Default sandbox resources remain 4 vCPU / 8 GiB. There is no automatic local
 fallback. SIGTERM/SIGINT drain the HTTP listener, clean the sandbox pool and its
 whole descendant groups, settle outstanding RPC as unknown, then close storage.

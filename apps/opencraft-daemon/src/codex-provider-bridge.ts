@@ -29,6 +29,8 @@ export class CodexProviderBridge implements DuplexTransport {
     prepareInput?: (threadId: string, clientId: string | undefined, input: readonly unknown[], context: TransportSubmissionContext) => Promise<unknown[]>;
     /** Add recorded attachments to history results. */
     projectHistory?: (method: string, params: Record<string, unknown>, result: unknown) => unknown;
+    /** Create every new Thread through the bridge, also for clients that do not ask for it. Off by default. */
+    newThreads?: boolean;
     /** Move an existing local Thread to the bridge on its next turn/start, keeping its ID. Off by default. */
     adoptExisting?: boolean;
     /** The local Host releases an idle Thread for adoption, or declines. */
@@ -174,7 +176,11 @@ export class CodexProviderBridge implements DuplexTransport {
     if (context.sender !== null) throw Error('Codex core mode does not support verified sender attribution');
     context.resourceOwner?.assertCurrent();
     if (context.validUntil !== undefined && context.validUntil <= Date.now()) throw Error('Execution authorization expired');
-    const frame = object(JSON.parse(raw)), p = object(frame.params), client = String(frame[LOGICAL_CLIENT_FIELD] ?? '');
+    const frame = object(JSON.parse(raw)), client = String(frame[LOGICAL_CLIENT_FIELD] ?? '');
+    let p = object(frame.params);
+    // The bridge owns new Threads: one request is one creation, as a native thread/start is.
+    if (this.policy.newThreads && frame.method === 'thread/start' && p.agentBridge === undefined && frame.id !== undefined)
+      p = { ...p, agentBridge: { threadId: randomUUID(), clientRequestId: `implicit:${randomUUID()}` } };
     if (!client) throw Error('Logical client identity required');
     if (frame.method === 'initialize') { this.revokeClient(client); this.clients.set(client, { evidence: !!object(object(p.capabilities).extensions)[OPENCRAFT_STEER_EVIDENCE_EXTENSION], epoch: ++this.clientEpoch }); }
     if (frame.method === 'runtime/client/disconnect') {

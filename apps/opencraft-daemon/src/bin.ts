@@ -43,6 +43,7 @@ void (async () => startOpenCraftDaemon({
   codexCoreHostOverlays: process.argv.includes("--codex-core-host-overlays"),
   codexAgentBridge: await readCodexBridgeConfiguration(argument('--codex-agent-bridge-config')),
   codexAgentBridgeAdoptExisting: process.argv.includes('--codex-agent-bridge-adopt-existing'),
+  ...(argument("--codex-bridge-stack") ? { codexBridgeStack: { programs: requiredArgument("--codex-bridge-stack") } } : {}),
   codexWriterOwnership: process.argv.includes("--codex-writer-ownership"),
   machineName: argument("--machine-name"),
 }))().then((daemon) => {

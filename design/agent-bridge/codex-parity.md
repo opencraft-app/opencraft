@@ -71,6 +71,14 @@ bridge 协议加方法与能力声明，Engine Host 转发原生请求并投影 
 
 daemon 经 Core 运行旧 adapter 时，只有开启 Core Host overlays 才会暂存附件、保存附件记录、生成标题，也才能可信地判断会话空闲（接管前提）。默认是直通 Core。daemon 现有显式开关 `--codex-core-host-overlays`（`codexCoreHostOverlays`，须同时给 Core 地址；桌面启动参数 `codexCoreHostOverlays`）。桌面接入 Core 时必须打开；服务器的 web-server 部署由网关在同一 Codex 数据目录上运行 overlays，daemon 必须保持关闭，否则两个 overlay owner 争用同一锁。已用真实 Codex 0.162.1 的拆分 Core 验证：该模式下本地任务、定时、附件、排队、恢复、计量等库正常打开并服务。
 
+## 桌面 bridge 栈（daemon 子进程）
+
+daemon 以 `--codex-bridge-stack <程序目录>`（`codexBridgeStack`）启动 bridge 栈：拆分 Core（账号与模型代理）、独立 APP Server、Engine Host（`host-process` 后端，pool 明示接受不强制资源与尽力隔离）。三者是 daemon 子进程，随 daemon 停止；daemon 异常退出时，下次启动按记录（核对命令行，不误杀复用的 pid）先停掉残留子进程，且只在持有存储锁之后启动，不会停到另一个 daemon 的子进程。Codex provider 代次按内容寻址（程序摘要 + 启动参数），重启注册同一代次；产物按摘要保存在私有目录，应用更新后旧代次的线程仍有其产物。该模式下 Core 地址、Host overlays、bridge 配置由栈提供（与显式 Core 地址或 bridge 配置互斥），新线程一律经 bridge 创建（provider bridge 的 `newThreads`），已有会话在下一次 `turn/start` 时接管。程序由 daemon 构建打包到 `dist/codex-bridge/`。
+
+演练 `scripts/smoke/execution/smoke-codex-bridge-stack.ts`（真实原生 Codex 0.162.1 + 本地假模型 + 合成账号，2026-11-22 通过）：旧 Host 建的会话在栈启动后以原 ID 续聊并保留历史；新线程经 bridge 应答；daemon 关闭时三个子进程全部退出；整栈重启后同一 bridge 线程续聊；每条输入只到达模型一次。Engine Host 重启后，声明 `adoption` 的 provider 在路由下次使用时续接已记录的原生会话，Host 仍记为进行中的轮次按原生结果收口（查不到记为中断），排队输入随后继续派发。
+
+未完成：桌面 Main 的开启入口与打包验收；Windows（Core 目前只支持 Unix socket）；真实账号与界面需在用户机器验证；栈中子进程意外退出后的重启策略（当前 daemon 不自动重启，Codex 请求失败可见）。
+
 ## 退休旧 adapter 时的其余 owner
 
 线程无关的职责（账号、任务、定时、计量、附件暂存、置顶列表、模型与线程列表、初始化能力、维护状态等）移到 Thread 路由之前的 Host 服务前台 `CodexHostServices`（`apps/opencraft-daemon/src/codex-host-services.ts`）；只在旧 Host 本来就持有本地状态时（无 Core，或 Core + Host overlays）由前台接管，直通 Core 时不接管，避免同一数据目录出现两个写者。部署形态：桌面在 daemon 进程内；单机服务器在服务进程内；四容器在 gateway。
