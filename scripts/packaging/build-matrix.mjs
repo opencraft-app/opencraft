@@ -17,8 +17,11 @@ function usage() {
   ].join("\n");
 }
 
+// Artifact paths name the product version as {version}
+// (scripts/release/product-version.mjs keeps the root package.json in step).
 async function readMatrix() {
   const matrix = JSON.parse(await readFile(matrixPath, "utf8"));
+  const { version } = JSON.parse(await readFile(resolve(repositoryRoot, "package.json"), "utf8"));
   if (matrix?.schemaVersion !== 1 || !Array.isArray(matrix.targets)) {
     throw new Error("Unsupported build matrix schema");
   }
@@ -31,6 +34,7 @@ async function readMatrix() {
       throw new Error(`Build target ${target.id} has no command`);
     }
     ids.add(target.id);
+    target.artifacts = (target.artifacts ?? []).map((artifact) => artifact.replaceAll("{version}", version));
   }
   return matrix;
 }
