@@ -22,6 +22,10 @@ import {
 import { InstalledOrdinarySandboxAllocator } from "./ordinary-sandbox-allocator.js";
 import { InstalledOrdinaryWorkspaceSources, PublishedOrdinaryGitSources } from "./ordinary-git-sources.js";
 import { WorkspaceActorAuthority, workspaceAdmission, type WorkspaceActorAdmission } from "./actor-authority.js";
+import type {
+  InstalledWorkspaceCatalog,
+  WorkspaceCatalogContext,
+} from "@opencraft/plugin-assets/server/workspace-catalog";
 
 type Fields = { cwd: string; runtimeWorkspaceRoots: string[]; environments: { environmentId: string; cwd: string }[] };
 export type WorkspacePreparation =
@@ -85,13 +89,16 @@ export async function createWorkspaceExecutionOwner(
   context: AssetWorkspaceOwnerContext,
   options: {
     machineId: string;
+    /** Compiled storage/identity composition; neither option is Worker data. */
+    catalog?: InstalledWorkspaceCatalog;
+    catalogContext?: (access: WorkspaceActorAdmission) => WorkspaceCatalogContext;
     terminalOwner?: { directory: string; endpoint: string; tokenFile: string };
     runtime?: (
       store: OrdinaryWorkspaceStore,
       context: AssetWorkspaceOwnerContext,
     ) => InstalledOrdinaryConversationRuntime;
   },
-): Promise<AssetWorkspaceExecutionOwner> {
+): Promise<AssetWorkspaceExecutionOwner & { port: WorkspaceExecutionPort }> {
   if (!validId(options.machineId)) throw Error("Workspace owner requires machine identity");
   const directory = join(context.directory, "ordinary-workspaces");
   await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -109,17 +116,18 @@ export async function createWorkspaceExecutionOwner(
     : undefined;
   let closed = false,
     closing: Promise<void> | undefined;
+  const catalog = options.catalog ?? context.catalog;
   try {
     store = new OrdinaryWorkspaceStore(directory, options.machineId);
     runtime =
-      options.runtime?.(store, context) ??
+      options.runtime?.(store, { ...context, catalog }) ??
       new InstalledOrdinaryConversationRuntime(
         store,
-        context.catalog,
-        new InstalledOrdinaryWorkspaceSources(context.catalog, new PublishedOrdinaryGitSources(context.vault)),
+        catalog,
+        new InstalledOrdinaryWorkspaceSources(catalog, new PublishedOrdinaryGitSources(context.vault)),
         {
           terminalAdmission,
-          allocator: new InstalledOrdinarySandboxAllocator(context.catalog, {
+          allocator: new InstalledOrdinarySandboxAllocator(catalog, {
             backend: (input) =>
               withWorkspaceBudget(
                 {
@@ -145,11 +153,13 @@ export async function createWorkspaceExecutionOwner(
   const admission = (access: WorkspaceActorAdmission, state?: Attempt, resource = false): OrdinaryRuntimeAdmission => {
     const alive = () =>
       current(access, state ? !state.published : !resource) && (!state || state.published || state.active);
+    const source = options.catalogContext?.(access);
+    const authorized = () => alive() && (!source || source.current());
     return {
       authority: { principalId: access.actorId, hostId: "local-codex" },
-      catalog: { scope: "actor:" + access.actorId, current: alive },
+      catalog: { scope: source?.scope ?? "actor:" + access.actorId, current: authorized },
       authorize: async () => {
-        if (!alive()) throw Error("Workspace authority unavailable");
+        if (!authorized()) throw Error("Workspace authority unavailable");
       },
     };
   };
@@ -276,6 +286,9 @@ export async function createWorkspaceExecutionOwner(
             Object.keys(request).some((k) => !["kind", "threadId"].includes(k)))
       )
         throw Error("Workspace preparation unavailable");
+      // A compiled identity projection can still deny this Actor (for example
+      // an ambiguous legacy binding). Do so before retaining an attempt/handle.
+      await admission(access).authorize();
       const token = randomBytes(32).toString("hex"),
         native = deferred<unknown>();
       // No unhandled rejection when cancellation precedes the callback phase.
@@ -443,6 +456,7 @@ export async function createWorkspaceExecutionOwner(
     },
   };
   return {
+    port: methods,
     methods: methods as unknown as AssetWorkspaceExecutionOwner["methods"],
     close: () =>
       (closing ??= (async () => {
