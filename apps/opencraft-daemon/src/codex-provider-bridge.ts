@@ -29,6 +29,10 @@ export class CodexProviderBridge implements DuplexTransport {
     prepareInput?: (threadId: string, clientId: string | undefined, input: readonly unknown[], context: TransportSubmissionContext) => Promise<unknown[]>;
     /** Add recorded attachments to history results. */
     projectHistory?: (method: string, params: Record<string, unknown>, result: unknown) => unknown;
+    /** Live notifications of a bridge Thread, enriched as projectHistory enriches reads. */
+    projectNotification?: (frame: Record<string, any>) => Record<string, any>;
+    /** Whether prepareInput records verified senders (and projectHistory restores them) now. */
+    senderAttribution?: () => boolean;
     /** Translate an OpenCraft permission mode into the provider's own permission fields. */
     resolvePermissions?: (selection: string, cwd: unknown) => Promise<Record<string, unknown>>;
     /** A new private directory for a Thread created without a workspace ("temporary workspace"). */
@@ -64,9 +68,11 @@ export class CodexProviderBridge implements DuplexTransport {
       // Forwarded native notifications name native turns; clients know public ones.
       const params = object(frame.params);
       if (typeof params.turnId === 'string') frame.params = { ...params, turnId: this.gateway.canonicalTurn(threadId, params.turnId) ?? params.turnId };
+      // Live user messages carry their recorded sender, as history reads do.
+      const outgoing = this.policy.projectNotification ? this.policy.projectNotification(frame) : frame;
       for (const client of this.subscriptions.get(threadId) ?? []) {
-        if (frame.method === OPENCRAFT_STEER_EVIDENCE_NOTIFICATION && !this.clients.get(client)?.evidence) continue;
-        this.emit(frame, client);
+        if (outgoing.method === OPENCRAFT_STEER_EVIDENCE_NOTIFICATION && !this.clients.get(client)?.evidence) continue;
+        this.emit(outgoing, client);
       }
     });
     legacy.subscribeMessage(frame => { void this.receiveLegacy(frame).catch(() => {}); });
@@ -217,7 +223,6 @@ export class CodexProviderBridge implements DuplexTransport {
   }
   send(frame: string): Promise<void> { return this.sendWithContext(frame, { sender: null }); }
   async sendWithContext(raw: string, context: TransportSubmissionContext): Promise<void> {
-    if (context.sender !== null) throw Error('Codex core mode does not support verified sender attribution');
     context.resourceOwner?.assertCurrent();
     if (context.validUntil !== undefined && context.validUntil <= Date.now()) throw Error('Execution authorization expired');
     const frame = object(JSON.parse(raw)), client = String(frame[LOGICAL_CLIENT_FIELD] ?? '');
@@ -284,6 +289,10 @@ export class CodexProviderBridge implements DuplexTransport {
     const requestKey = optIn ? p.agentBridge?.clientRequestId : p.clientUserMessageId;
     const commandId = typeof requestKey === 'string' && requestKey ? `bridge-mutation:${createHash('sha256').update(JSON.stringify([threadId, frame.method, requestKey])).digest('hex')}` : `bridge-query:${randomUUID()}`;
     const command = (method: string, params: Record<string, unknown>) => this.gateway.command(threadId, commandId, method, params);
+    // A verified sender is recorded with the input by the Host that owns attribution; without
+    // one, attributed input is refused rather than run unattributed.
+    if (context.sender !== null && !(this.policy.senderAttribution?.() && this.policy.prepareInput))
+      throw Error('Codex core mode does not support verified sender attribution');
     const prepare = async (input: unknown, clientId: string | undefined) =>
       this.policy.prepareInput && Array.isArray(input) ? this.policy.prepareInput(threadId, clientId, input, context) : input;
     const execute = async () => {

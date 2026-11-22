@@ -35,6 +35,10 @@ export function createServerCodexBridge(legacy:DuplexTransport,options:BridgeGat
   const host=legacy as Partial<{prepareExternalInput:NonNullable<typeof policy>['prepareInput'];projectExternalHistory:NonNullable<typeof policy>['projectHistory'];observeExternalTitle:NonNullable<typeof policy>['observeTitle']}>;
   const attachments=typeof host.prepareExternalInput==='function'&&typeof host.projectExternalHistory==='function'&&typeof host.observeExternalTitle==='function'
     ?{prepareInput:host.prepareExternalInput.bind(legacy),projectHistory:host.projectExternalHistory.bind(legacy),observeTitle:host.observeExternalTitle.bind(legacy),
+      ...(typeof (legacy as {projectExternalNotification?:unknown}).projectExternalNotification==='function'
+        ?{projectNotification:(legacy as unknown as {projectExternalNotification:(frame:Record<string,any>)=>Record<string,any>}).projectExternalNotification.bind(legacy)}:{}),
+      // The Host opens its sender storage when it connects, after this bridge is assembled.
+      senderAttribution:()=>(legacy as {externalSenderAttribution?:boolean}).externalSenderAttribution===true,
       ...(typeof (legacy as {releaseForAdoption?:unknown}).releaseForAdoption==='function'?{releaseForAdoption:(legacy as unknown as {releaseForAdoption:(id:string)=>Promise<boolean>}).releaseForAdoption.bind(legacy)}:{})}:{};
   // When the bridge owns every new Thread, its implicit identity is assigned here, before
   // admission, so an implicit creation is prepared exactly as an explicit one.

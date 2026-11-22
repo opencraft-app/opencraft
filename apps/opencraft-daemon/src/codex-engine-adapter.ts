@@ -3563,10 +3563,22 @@ export class CodexEngineAdapter implements DuplexTransport {
    * the same model-readable locator as local Threads, recorded for display.
    */
   async prepareExternalInput(threadId: string, clientId: string | undefined, input: readonly unknown[], context?: TransportSubmissionContext): Promise<unknown[]> {
+    // Attribution is recorded before anything is staged, exactly as for this Host's own Threads.
+    if (context && (clientId || context.sender)) {
+      if (!this.identity) {
+        if (context.sender) throw new Error("Message sender storage is unavailable");
+      } else this.identity.recordSubmission({ threadId, clientUserMessageId: clientId ?? "" }, context);
+    }
     const prepared = await this.modelVisibleAttachmentInput(input, threadId, clientId, context);
     if (clientId && prepared.attachments.length > 0 && this.messageAttachments) this.messageAttachments.record(threadId, clientId, prepared.attachments);
     return prepared.input;
   }
+  /** A bridge Thread's live notification with the sender recorded by prepareExternalInput. */
+  projectExternalNotification(message: RpcRecord): RpcRecord {
+    return this.messageSenders ? projectThreadMessageNotification(this.projectSender, message) as RpcRecord : message;
+  }
+  /** Whether this Host can record verified senders for a bridge Thread's input. */
+  get externalSenderAttribution(): boolean { return !!this.identity; }
   /**
    * Let the bridge adopt one of this Host's Threads. Only a Thread with no turn,
    * queued or unknown input, goal, retry, recovery, title job, active schedule,
@@ -3589,7 +3601,11 @@ export class CodexEngineAdapter implements DuplexTransport {
   observeExternalTitle(method: string, params: RpcRecord, result: unknown): void { this.threadTitles?.observeResult(method, params, result); }
   /** Attachments recorded by prepareExternalInput, projected onto that Thread's history. */
   projectExternalHistory(method: string, params: RpcRecord, result: unknown): unknown {
-    return this.messageAttachments ? projectThreadAttachmentResult(this.messageAttachments, method, params, result) : result;
+    const attached = this.messageAttachments ? projectThreadAttachmentResult(this.messageAttachments, method, params, result) : result;
+    // Senders recorded by prepareExternalInput, as on this Host's own history.
+    return this.messageSenders
+      ? projectThreadMessageResult(this.projectSender, method, params, attached, { trustedSubmissionSender: true })
+      : attached;
   }
 
   private attachmentRecords(): OpenCraftMessageAttachments {

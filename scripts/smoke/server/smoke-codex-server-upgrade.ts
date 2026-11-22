@@ -9,7 +9,12 @@
 // data directory. The client is the Web Workbench's own App Host connection.
 //
 //   npm run build --workspace @opencraft/opencraft-daemon
-//   node --import tsx scripts/smoke/server/smoke-codex-server-upgrade.ts
+//   node --import tsx scripts/smoke/server/smoke-codex-server-upgrade.ts [--identity employee|anonymous]
+//
+// --identity employee (default) runs as a signed-in person, as a deployment with
+// an identity adapter does: every message carries a verified sender, which must
+// be shown on the history before and after the upgrade. anonymous runs as an
+// installation without sign-in.
 //
 // Output: .local/codex-server-upgrade/<time>/result.json
 import { spawn, type ChildProcess } from "node:child_process";
@@ -22,17 +27,21 @@ import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
 import WebSocket from "ws";
 import { AccountPoolStore } from "@opencraft/account-pool-host";
+import { ActorStore } from "@opencraft/access-control/actors";
+import { ServerSpacesRuntime } from "@opencraft/access-control/server-spaces";
+import { openServerDatabase } from "@opencraft/storage-node/server";
 import { JsonRpcAppServerClient } from "@opencraft/appserver-client";
 import { startFakeResponsesModel } from "../../../tests/fixtures/fake-responses-model.mjs";
 import { drillCodexExecutable, prepareDrillPrograms, repositoryRoot } from "../execution/codex-bridge-drill-setup.mjs";
 
+const identityMode = process.argv[process.argv.indexOf("--identity") + 1] === "anonymous" ? "anonymous" : "employee";
 const out = join(repositoryRoot, ".local/codex-server-upgrade", new Date().toISOString().replace(/[:.]/gu, "-"));
 const data = join(out, "data"),
   codexData = join(data, "codex"),
   run = join(out, "run");
 await mkdir(codexData, { recursive: true, mode: 0o700 });
 await mkdir(run, { recursive: true, mode: 0o700 });
-const result: Record<string, unknown> = { out, phases: [] as unknown[] };
+const result: Record<string, unknown> = { out, identity: identityMode, phases: [] as unknown[] };
 const phases = result.phases as unknown[];
 const save = () => writeFile(join(out, "result.json"), JSON.stringify(result, null, 2) + "\n");
 const log = (line: string) => console.log(line);
@@ -156,17 +165,57 @@ async function stopCore(children: ChildProcess[]) {
 type Server = { url: string; close(): Promise<void> };
 async function startServer(bridge: boolean): Promise<Server> {
   const { startHeadlessServer } = await import("../../../apps/headless-server/src/headless-server.mjs");
-  return startHeadlessServer({
-    dataDirectory: data,
-    webRoot,
-    port: 0,
-    codexCoreEndpoint: coreEndpoint,
-    codexCoreAuthToken: token,
-    codexExecutable: codex,
-    runtimeDirectory: run,
-    ...(bridge ? { codexBridgePrograms: programs } : {}),
-    startAgentHost: async () => ({ websocketUrl: "ws://127.0.0.1:9/rpc", async close() {} }),
-  });
+  return startHeadlessServer(
+    {
+      dataDirectory: data,
+      webRoot,
+      port: 0,
+      codexCoreEndpoint: coreEndpoint,
+      codexCoreAuthToken: token,
+      codexExecutable: codex,
+      runtimeDirectory: run,
+      ...(bridge ? { codexBridgePrograms: programs } : {}),
+      startAgentHost: async () => ({ websocketUrl: "ws://127.0.0.1:9/rpc", async close() {} }),
+    },
+    identityMode === "employee" ? { createIdentity: signedInIdentity } : {},
+  );
+}
+
+const verified = () => ({
+  provider: "drill-directory",
+  subject: "alice",
+  displayName: "Alice",
+  expiresAt: Date.now() + 3_600_000,
+});
+/** The onboarding a signed-in deployment does once: the person owns the server's spaces. */
+async function onboardEmployee() {
+  const storage = await openServerDatabase(data);
+  try {
+    const actor = new ActorStore(storage).resolveHuman(verified())!;
+    const spaces = new ServerSpacesRuntime({ path: join(data, "opencraft-server.sqlite"), bootstrapInstance: true });
+    await spaces.ready;
+    await spaces.bootstrap(actor.actorId);
+    await spaces.close();
+  } finally {
+    await storage.close();
+  }
+}
+
+/** A deployment identity adapter that signs every connection in as one employee. */
+async function signedInIdentity({ actors }: { actors: any }) {
+  return {
+    providers: [{ authenticate: () => verified() }],
+    service: {
+      admissionStatus: () => 204,
+      connectionContext: () => ({
+        sender: { kind: "employee", loginName: "alice" },
+        validUntil: Date.now() + 3_600_000,
+        actorContext: actors.resolveHuman(verified()),
+      }),
+      handle: async () => false,
+    },
+    close() {},
+  };
 }
 
 /** A Workbench client of the server's local Codex Host, through the Web's own App Host connection. */
@@ -201,7 +250,9 @@ async function transcript(client: Client, threadId: string): Promise<string[]> {
   return (read.thread.turns ?? []).flatMap((turn: any) =>
     (turn.items ?? []).flatMap((item: any) =>
       item.type === "userMessage"
-        ? [`user: ${(item.content ?? []).map((part: any) => part.text ?? "").join("")}`]
+        ? [
+            `user(${item.sender?.loginName ?? "-"}): ${(item.content ?? []).map((part: any) => part.text ?? "").join("")}`,
+          ]
         : item.type === "agentMessage"
           ? [`agent: ${item.text}`]
           : [],
@@ -256,6 +307,7 @@ const phase = async (name: string, bridge: boolean, body: (client: Client) => Pr
 
 let failed = false;
 try {
+  if (identityMode === "employee") await onboardEmployee();
   const project = join(out, "project");
   await mkdir(project);
   const threads: Record<string, string> = {};
@@ -270,6 +322,14 @@ try {
     threads.project = (await c.request("thread/start", { model: "gpt-test", cwd: project })).thread.id;
     await say(c, threads.project, "LEGACY-PROJECT");
     for (const [name, id] of Object.entries(threads)) history[name] = await transcript(c, id);
+    if (identityMode === "employee")
+      check(
+        Object.values(history)
+          .flat()
+          .filter((line) => line.startsWith("user"))
+          .every((line) => line.startsWith("user(alice)")),
+        "legacy history lost a sender",
+      );
     return { threads: { ...threads }, history };
   });
 
@@ -287,6 +347,13 @@ try {
     await say(c, fresh, "NEW-ON-BRIDGE");
     threads.fresh = fresh;
     history.fresh = await transcript(c, fresh);
+    if (identityMode === "employee")
+      check(
+        [...continued, ...history.fresh]
+          .filter((line) => line.startsWith("user"))
+          .every((line) => line.startsWith("user(alice)")),
+        `a bridge message lost its sender: ${JSON.stringify([...continued, ...history.fresh])}`,
+      );
     return { listed: ids.length, continued: threads.projectless, fresh };
   });
 

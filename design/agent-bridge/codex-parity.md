@@ -115,7 +115,8 @@ daemon 以 `--codex-bridge-stack <程序目录>`（`codexBridgeStack`）启动 b
    - **会话连续性（2026-11-22，单机）**：`--codex-bridge-programs <目录>`（`codexBridgePrograms`）让服务器对已有 Core 自行启动 Codex Engine Host（`startCodexEngineHost`，与桌面栈共用启动与代次注册），新会话经 bridge 创建，已有会话在下一次发送时接管（ID 与历史不变）；关掉该参数即回到旧路径。演练 `scripts/smoke/server/smoke-codex-server-upgrade.ts`（真实原生 Codex、服务器的拆分 Core/AppServer、本地假模型、网页端同一 App Host 连接）通过：旧路径建三类会话（无项目、多轮、带项目）→ 升级后列表、历史一致并可续聊，新会话在 bridge → 回退后旧会话照常打开续聊 → 再次升级全部可用。回退期间 bridge 新建的会话不以原公开 ID 出现，重新升级后恢复。
    - 接线中修正：准入层在 bridge 接管全部新会话时为隐式创建分配 bridge 身份（否则首轮缺少创建时的执行配置而被拒）；匿名部署的 bridge 执行准入使用部署操作员身份（与登录用户同一授权）；原生 `list_turns is not supported yet` 在创建核对中按“尚无记录”处理。
    - 计费：服务器计费当前为演示用途，不做兼容，仅保证不出错。
-   - 仍依赖旧路径、尚未迁移：带发送者的消息（bridge 遇到非空发送者直接拒绝，登录部署开启 bridge 前必须先补）、协作与编排、对话工具与 `nativeTool` 动态工具、桌面附着、工作区钩子、线程元数据、接管会话的会话 MCP 与执行 CLI、计量查询；四容器部署（brain 中启动 Engine Host、命令在 hands 执行）尚未接线。
+   - **发送者（2026-11-22）**：bridge 会话的发送者由同一 Host 的发送者表记录（`prepareExternalInput`），历史读取与实时通知按同一记录投影；旧路径路由原样带发送者交给旧 Host；没有发送者记录者时仍拒收带发送者的输入。演练 `--identity employee`（默认，经身份适配器以登录员工发送）与 `--identity anonymous` 均通过，升级前后、回退与再升级的每条用户消息都带原发送者。
+   - 仍依赖旧路径、尚未迁移：协作与编排、对话工具与 `nativeTool` 动态工具、桌面附着、工作区钩子、线程元数据、接管会话的会话 MCP 与执行 CLI、计量查询；四容器部署（brain 中启动 Engine Host、命令在 hands 执行）尚未接线。
 4. **SSH 远程 Codex** 不在退休范围：它与本地模式共享客户端复用、交互、工具、附件、元数据等核心，退休时只删本地模式（spawn、Core 直通、Core + overlays），保留并抽出远程所需部分。
 
 ## 顺序建议
