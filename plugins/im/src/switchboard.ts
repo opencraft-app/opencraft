@@ -1,7 +1,7 @@
 import { WorkerOwner, ownerEntry, type OwnerCalls } from "@opencraft/worker-owner";
 import type { ConversationRef } from "@opencraft/appserver-protocol/collaboration";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
-import type { Channel, ChannelConfig, ReplyAnchor, StoredMessage } from "./store.js";
+import type { Channel, ChannelConfig, ReplyAnchor, StoredMessage, ReplyClaimKind, ReplyOutcome } from "./store.js";
 import type { SwitchboardChange, SwitchboardConfig, SwitchboardOwner } from "./switchboard-owner.js";
 
 export type SwitchboardPort = OwnerCalls<SwitchboardOwner>;
@@ -142,8 +142,14 @@ export class Switchboard {
   submitted(id: string, requestId: string) {
     return this.apply(this.port.submitted(id, requestId));
   }
-  claimReply(id: string, text: string) {
-    return this.apply(this.port.claimReply(id, text));
+  prepareReply(id: string, requestId: string, text: string) {
+    return this.apply(this.port.prepareReply(id,requestId,text));
+  }
+  claimReply(id: string, text: string, kind: ReplyClaimKind = "tool") {
+    return this.apply(this.port.claimReply(id, text, kind));
+  }
+  settleReply(id: string, token: string, state: ReplyOutcome, error: string | null) {
+    return this.apply(this.port.settleReply(id,token,state,error));
   }
   interruptUncertain() {
     return this.apply(this.port.interruptUncertain());

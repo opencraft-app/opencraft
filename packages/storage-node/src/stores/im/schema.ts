@@ -43,6 +43,7 @@ export const table_im_messages = sqliteTable("im_messages", {
   "reply_mode": text("reply_mode").notNull().default(sql`'final'`),
   "reply_ref": text("reply_ref"),
   "reply_expires_at": integer("reply_expires_at"),
+  "reply_attempt": text("reply_attempt"),
 }, table => [
   primaryKey({ columns: [table["id"]] }),
   uniqueIndex("im_messages_reply_ref").on(table["reply_ref"]).where(sql`reply_ref IS NOT NULL`),

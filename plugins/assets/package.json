@@ -17,7 +17,6 @@
     "./server/configurations": "./src/server/configurations.ts",
     "./server/libraries": "./src/server/libraries.ts",
     "./server/installed-policy": "./src/server/installed-policy.ts",
-    "./server/browser-manifest": "./src/server/browser-manifest.ts",
     "./server": "./src/server/worker.ts",
     "./server/http": "./src/server/http.ts",
     "./client": "./src/client.ts",

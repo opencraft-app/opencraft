@@ -280,7 +280,7 @@
     "smoke:control-icons": "node scripts/smoke/shell/smoke-native-control-icons.mjs",
     "generate:control-icons": "tsx scripts/packaging/generate-native-control-icons.tsx",
     "test:pi-engine": "tsx --test tests/execution/pi-durable-engine.test.ts tests/execution/pi-interactive-shell.test.ts tests/execution/pi-model-configuration.test.ts tests/execution/pi-runtime-packaging.test.mjs tests/execution/pi-host-handoff.test.ts",
-    "test:im": "tsx --test tests/extensions/im-switchboard-owner.test.ts tests/extensions/headless-channel-connections.test.ts tests/extensions/wecom-history.test.ts tests/extensions/im-read-tools.test.ts tests/extensions/im-multi-engine.test.ts tests/extensions/im-switchboard.test.ts tests/extensions/im-programmable.test.ts tests/extensions/im-tool-reply.test.ts tests/execution/session-capabilities.test.ts tests/extensions/wecom-plugin.test.ts",
+    "test:im": "tsx --test --test-concurrency=2 tests/extensions/im-reply-reliability.test.ts tests/extensions/im-switchboard-owner.test.ts tests/extensions/headless-channel-connections.test.ts tests/extensions/wecom-history.test.ts tests/extensions/im-read-tools.test.ts tests/extensions/im-multi-engine.test.ts tests/extensions/im-switchboard.test.ts tests/extensions/im-programmable.test.ts tests/extensions/im-tool-reply.test.ts tests/execution/session-capabilities.test.ts tests/extensions/wecom-plugin.test.ts",
     "test:session-capabilities": "tsx --test tests/execution/session-capabilities.test.ts",
     "test:hover-policy": "node --test tests/tooling/hover-policy.test.mjs",
     "smoke:touch-hover": "tsx scripts/smoke/shell/smoke-touch-hover.ts",
@@ -347,7 +347,7 @@
     "test:convergence": "node scripts/check/test-convergence.mjs",
     "smoke:sidebar-row-geometry": "tsx tests/shell/sidebar-row-geometry.browser.ts",
     "smoke:assets": "tsx tests/extensions/assets-view.browser.ts",
-    "test:assets-service": "node --import tsx --test tests/extensions/assets-service.test.ts tests/extensions/git-connections.test.ts tests/server/assets-worker-packaging.test.mjs tests/server/headless-default-workspaces.test.ts tests/extensions/workspace-budget.test.ts tests/extensions/workspace-catalog.test.ts tests/server/assets-workspace-execution.test.ts tests/server/assets-workspace-bot.test.ts tests/server/workspace-terminal-admission.test.ts tests/server/workspace-browser-router.test.mjs tests/server/workspace-browser-service.test.mjs tests/server/sandbox-browser-runtime.test.ts",
+    "test:assets-service": "node --import tsx --test tests/extensions/assets-service.test.ts tests/extensions/git-connections.test.ts tests/server/assets-worker-packaging.test.mjs tests/server/headless-default-workspaces.test.ts tests/extensions/workspace-budget.test.ts tests/extensions/workspace-catalog.test.ts tests/server/assets-workspace-execution.test.ts tests/server/assets-workspace-bot.test.ts tests/server/workspace-terminal-admission.test.ts tests/server/workspace-browser-router.test.mjs tests/server/workspace-browser-service.test.mjs tests/server/workspace-preinstalled-browser.test.ts",
     "smoke:assets-default": "tsx tests/extensions/assets-default.browser.ts",
     "test:assets-default": "tsx --test tests/identity/assets-default-service.test.ts tests/extensions/assets-default-client.test.ts"
   },

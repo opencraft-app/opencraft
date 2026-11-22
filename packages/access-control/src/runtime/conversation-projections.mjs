@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path';
 import { createHash } from 'node:crypto';
 
 const fault = (status, code) => Object.assign(new Error(code), { status, code });
@@ -89,4 +90,37 @@ export async function readConversationTail(invoke, ref, limit) {
   }
   entries.reverse();
   return { entries, nextCursor: null, watermark: digest([ref, entries]), latestTurnId: turns.data[0]?.id ?? null, truncated };
+}
+
+const PROJECT_PAGE_LIMIT = 30;
+const validString = (value, limit) => typeof value === 'string' && value.trim().length > 0 && value.length <= limit;
+
+/** Project discovery shares the Host catalog used for creation. Only the
+ * display name, stable ID and workspace roots cross the CLI boundary. */
+export async function readConversationProjectPage(invoke, serverId, cursor) {
+  let nativeCursor = null;
+  if (cursor !== null) {
+    try {
+      const value = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+      if (value.version !== 1 || value.kind !== 'projects' || value.serverId !== serverId || !validString(value.nativeCursor, 2048))
+        throw Error();
+      nativeCursor = value.nativeCursor;
+    } catch { throw fault(400, 'invalid_cursor'); }
+  }
+  const page = await invoke('project/list', { limit: PROJECT_PAGE_LIMIT, cursor: nativeCursor });
+  if (!Array.isArray(page?.data) || page.data.length > PROJECT_PAGE_LIMIT) throw fault(503, 'project_catalog_unavailable');
+  const projects = page.data.map(row => {
+    if (!validString(row?.id, 256) || !validString(row.name, 1024) || !Array.isArray(row.roots) || row.roots.length > 64)
+      throw fault(503, 'project_catalog_unavailable');
+    const roots = row.roots.map(root => {
+      if (!validString(root?.path, 4096) || !isAbsolute(root.path) || /[\x00-\x1f]/u.test(root.path))
+        throw fault(503, 'project_catalog_unavailable');
+      return { path: root.path };
+    });
+    return { id: row.id, name: row.name, roots };
+  });
+  if (Buffer.byteLength(JSON.stringify(projects)) > 192_000) throw fault(503, 'project_catalog_unavailable');
+  const next = page.nextCursor ?? null;
+  if (next !== null && (!validString(next, 2048) || next === nativeCursor)) throw fault(503, 'project_catalog_unavailable');
+  return { serverId, projects, nextCursor: next === null ? null : encode({ version: 1, kind: 'projects', serverId, nativeCursor: next }) };
 }

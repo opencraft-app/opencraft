@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Script } from "node:vm";
 import { EventEmitter } from "node:events";
-import { createSandboxBrowserRuntime } from "../../apps/headless-server/src/workspaces/sandbox-browser-runtime.js";
+import { createSandboxBrowserRuntime } from "../../apps/headless-server/src/workspaces/sandbox-browser-runtime";
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 function fixture(overrides: any = {}) {
   let spawns = 0,
@@ -183,10 +183,29 @@ test("concurrent connects share startup and private attachment", async () => {
   await f.owner.close();
 });
 
-for (const directory of ["/workspace/browser", "/opt/opencraft/runtime/browser/../other", "/etc/browser"])
-  test(`explicit preparation cannot select an unapproved browser directory ${directory}`, async () => {
-    const f = fixture({ prepare: async () => ({ directory }) });
-    await assert.rejects(f.owner.connect(), /Invalid prepared browser runtime/);
-    assert.equal(f.stats.spawns, 0);
-    await f.owner.close();
+import { validateInstalledPolicy, type InstalledSandboxPolicy } from "../../plugins/assets/src/server/installed-policy";
+test("installed browser policy accepts preinstalled isolation only and rejects archive manifests", () => {
+  const policy: InstalledSandboxPolicy = {
+    backendId: "e2b",
+    capacity: { cpuMillis: 8000, memoryBytes: 16 * 1024 ** 3 },
+    lease: { timeoutMs: 30000, renewEveryMs: 1000, maxLifetimeMs: 60000 },
+    maxCommandMs: 1000,
+    persistentWorkspaces: true,
+    templates: [
+      {
+        environmentId: "installed-fixture",
+        workspaceRoot: "/workspace",
+        resources: { cpuMillis: 4000, memoryBytes: 8 * 1024 ** 3 },
+        browser: { isolation: "isolated-vm-compatibility" },
+      },
+    ],
+  };
+  validateInstalledPolicy(policy);
+  Object.assign(policy.templates[0]!.browser!, {
+    manifest: {
+      version: 1,
+      archives: [{ path: "/opt/opencraft/runtime-cache/browser-fixture.tgz", sha256: "1".repeat(64) }],
+    },
   });
+  assert.throws(() => validateInstalledPolicy(policy), /Invalid installed sandbox policy/);
+});

@@ -5,15 +5,11 @@ import {
   type SandboxBrowserOwnerTransport,
 } from "@opencraft/local-agent-host/sandbox-browser-owner";
 
-/** One browser Owner per admitted compute incarnation. No Web/request parameters
- * select paths or compatibility flags. Preparation must verify immutable runtime
- * bytes before returning; profile/socket remain local to this compute, not NFS.
- * Hands images/templates supply the default preinstalled layout; an explicit
- * verified preparation callback may retain an older supported delivery layout. */
+/** One browser Owner per admitted compute incarnation. Runtime bytes are supplied
+ * by the Hands image/template; only the private profile/socket live in /tmp. */
 export function createSandboxBrowserRuntime(
   options: {
     sandbox: Pick<SandboxEnvironment, "spawn">;
-    prepare?(): Promise<{ directory: string }>;
     /** Explicit deployment policy, NOT a fallback after sandboxed launch failure. */
     isolation: "chromium-sandbox" | "isolated-vm-compatibility";
     authorize(): Promise<void>;
@@ -55,15 +51,7 @@ export function createSandboxBrowserRuntime(
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         await authorize();
-        const runtime = options.prepare ? await options.prepare() : { directory: "/opt/opencraft/runtime/browser" };
-        await authorize();
-        if (
-          runtime.directory !== "/opt/opencraft/runtime/browser" &&
-          !/^\/(?:tmp\/opencraft-browser-[a-zA-Z0-9_-]+|opt\/opencraft-browser(?:\/[a-zA-Z0-9_-]+)?)$/.test(
-            runtime.directory,
-          )
-        )
-          throw Error("Invalid prepared browser runtime");
+        const directory = "/opt/opencraft/runtime/browser";
         const flags = [
           "--ozone-platform=headless",
           "--ozone-override-screen-size=1920,1080",
@@ -74,13 +62,13 @@ export function createSandboxBrowserRuntime(
             ? ["--no-sandbox", "--no-zygote", "--in-process-gpu", "--disable-dev-shm-usage"]
             : []),
         ];
-        const executable = runtime.directory + "/electron/electron";
+        const executable = directory + "/electron/electron";
         const script = String.raw`const {mkdirSync}=require('node:fs');const {spawn}=require('node:child_process');
-const {createBrowserOwner,installOwnerSignals}=require(${JSON.stringify(runtime.directory + "/owner.cjs")});
+const {createBrowserOwner,installOwnerSignals}=require(${JSON.stringify(directory + "/owner.cjs")});
 mkdirSync(${JSON.stringify(state)},{mode:0o700});mkdirSync(${JSON.stringify(state + "/profile")},{mode:0o700});
 const env={...process.env,OPENCRAFT_BROWSER_DATA_DIR:${JSON.stringify(state + "/profile")},HOME:${JSON.stringify(state + "/profile")}};
 for(const key of ['ELECTRON_RUN_AS_NODE','NODE_OPTIONS','NODE_PATH','DISPLAY','WAYLAND_DISPLAY'])delete env[key];
-createBrowserOwner({socketPath:${JSON.stringify(socketPath)},spawnWorker:()=>spawn(${JSON.stringify(executable)},${JSON.stringify([...flags, runtime.directory + "/worker.cjs"])},{env,stdio:['ignore','ignore','ignore','ipc']})})
+createBrowserOwner({socketPath:${JSON.stringify(socketPath)},spawnWorker:()=>spawn(${JSON.stringify(executable)},${JSON.stringify([...flags, directory + "/worker.cjs"])},{env,stdio:['ignore','ignore','ignore','ipc']})})
 .then(owner=>{installOwnerSignals(owner);process.stdout.write('OPENCRAFT_BROWSER_OWNER_READY\n')})
 .catch(()=>{process.stderr.write('Browser owner startup failed\n');process.exitCode=1});`;
         let resolveReady!: () => void,
@@ -95,7 +83,7 @@ createBrowserOwner({socketPath:${JSON.stringify(socketPath)},spawnWorker:()=>spa
           {
             command: [executable, "-e", script],
             cwd: "/tmp",
-            env: { PATH: "/usr/local/bin:/usr/bin:/bin", ELECTRON_RUN_AS_NODE: "1" },
+            env: { PATH: "/opt/opencraft/bin:/usr/local/bin:/usr/bin:/bin", ELECTRON_RUN_AS_NODE: "1" },
           },
           (output) => {
             if (output.stream !== "stdout") return;

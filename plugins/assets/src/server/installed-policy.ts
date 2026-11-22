@@ -1,5 +1,4 @@
 import { isAbsolute } from "node:path";
-import { browserRuntimeManifest, type BrowserRuntimeManifest } from "./browser-manifest.js";
 export interface InstalledSandboxPolicy {
   backendId: "e2b";
   capacity: { cpuMillis: number; memoryBytes: number };
@@ -12,7 +11,7 @@ export interface InstalledSandboxPolicy {
     resources: { cpuMillis: number; memoryBytes: number };
     python?: string;
     /** Trusted installed delivery, never a renderer-provided path. */
-    browser?: { isolation: "chromium-sandbox" | "isolated-vm-compatibility"; manifest: BrowserRuntimeManifest };
+    browser?: { isolation: "chromium-sandbox" | "isolated-vm-compatibility" };
   }[];
 }
 const invalid = () => {
@@ -77,11 +76,10 @@ export function validateInstalledPolicy(p: InstalledSandboxPolicy) {
     if (t.browser !== undefined) {
       if (
         !t.browser ||
-        Object.keys(t.browser).some((k) => !["isolation", "manifest"].includes(k)) ||
+        Object.keys(t.browser).some((k) => !["isolation"].includes(k)) ||
         !["chromium-sandbox", "isolated-vm-compatibility"].includes(t.browser.isolation)
       )
         invalid();
-      browserRuntimeManifest(t.browser.manifest);
     }
     ids.add(t.environmentId);
   }

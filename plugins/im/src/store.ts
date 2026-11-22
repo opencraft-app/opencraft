@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   openManagedDatabase,
   createSchemaValidator,
+  resolveStoreMigrations,
 } from "@opencraft/sqlite-node";
 import {
   conversationRef,
@@ -26,6 +27,9 @@ ALTER TABLE im_messages ADD COLUMN reply_ref TEXT;
 ALTER TABLE im_messages ADD COLUMN reply_expires_at INTEGER;
 CREATE UNIQUE INDEX im_messages_reply_ref ON im_messages(reply_ref) WHERE reply_ref IS NOT NULL;
 `;
+export type ReplyClaimKind = "tool" | "final" | "resend";
+export interface ReplyAttempt { readonly token: string; }
+export type ReplyOutcome = "delivered" | "reply_unknown" | "reply_failed";
 export const switchboardMigrations = [
   { version: 1, name: "im-switchboard", sql: schema },
   { version: 2, name: "im-programmable-routing", sql: v2 },
@@ -62,6 +66,7 @@ export interface StoredMessage {
   reply_address: string | null;
   reply_text: string | null;
   reply_mode: "final" | "tool";
+  reply_attempt: string | null;
   reply_ref: string | null;
   reply_expires_at: number | null;
   state: string;
@@ -83,7 +88,7 @@ export class SwitchboardStore {
       path,
       legacyPolicy: "reject",
       migrations: switchboardMigrations,
-      validateSchema: createSchemaValidator(schema + v2 + v3),
+      validateSchema: createSchemaValidator(resolveStoreMigrations("im", switchboardMigrations).map(m => m.sql).join(";\n")),
     });
   }
   get outcome() {
@@ -397,9 +402,31 @@ export class SwitchboardStore {
     return this.managed.database.prepare("SELECT * FROM im_messages WHERE conversation_ref=? AND reply_mode='tool' AND (state IN ('delivered','reply_unknown') OR (reply_expires_at>? AND state IN ('accepted','submitted','reply_attempting'))) ORDER BY created_at DESC LIMIT 1024")
       .all(reference, Date.now()) as unknown as StoredMessage[];
   }
-  claimReply(id: string, text: string): boolean {
-    return this.managed.database.prepare("UPDATE im_messages SET state='reply_attempting',reply_text=?,updated_at=? WHERE id=? AND reply_mode='tool' AND state IN ('accepted','submitted') AND reply_expires_at>?")
-      .run(text, Date.now(), id, Date.now()).changes === 1;
+  /** A late result cannot overwrite another sender's durable claim or outcome. */
+  prepareReply(id: string, requestId: string, text: string): boolean {
+    return this.managed.database.prepare("UPDATE im_messages SET state='reply_pending',reply_text=?,updated_at=? WHERE id=? AND request_id=? AND reply_mode='final' AND state='submitted'")
+      .run(text, Date.now(), id, requestId).changes === 1;
+  }
+  /** Claims one physical attempt in the existing message journal, before I/O.
+   * Automatic final/tool sends never claim unknown outcomes; only explicit
+   * operator resend may do so. The nonce fences every subsequent acknowledgement. */
+  claimReply(id: string, text: string, kind: ReplyClaimKind = "tool"): ReplyAttempt | null {
+    const m = this.message(id);
+    if (!m || typeof text !== "string" || !["tool","final","resend"].includes(kind)) return null;
+    const eligible = kind === "tool"
+      ? m.reply_mode === "tool" && ["accepted","submitted"].includes(m.state)
+      : m.reply_text === text && (kind === "final"
+        ? m.reply_mode === "final" && m.state === "reply_pending"
+        : ["reply_unknown","reply_failed"].includes(m.state));
+    if (!eligible || m.reply_mode === "tool" && (m.reply_expires_at === null || m.reply_expires_at <= Date.now())) return null;
+    const token = randomUUID();
+    return this.managed.database.prepare("UPDATE im_messages SET state='reply_attempting',reply_text=?,reply_attempt=?,error=NULL,updated_at=? WHERE id=? AND state=? AND reply_attempt IS ?")
+      .run(text, token, Date.now(), id, m.state, m.reply_attempt).changes === 1 ? {token} : null;
+  }
+  settleReply(id: string, token: string, state: ReplyOutcome, error: string | null): boolean {
+    if (!["delivered","reply_unknown","reply_failed"].includes(state) || typeof token !== "string" || !token) throw Error("Invalid reply outcome");
+    return this.managed.database.prepare("UPDATE im_messages SET state=?,error=?,updated_at=? WHERE id=? AND reply_attempt=? AND state IN ('reply_attempting','reply_unknown')")
+      .run(state, error, Date.now(), id, token).changes === 1;
   }
   /** Filter the authority boundary before the retention bound, never scan other senders. */
   readableMessages(reference: string, channelId: string, actorId: string): StoredMessage[] {

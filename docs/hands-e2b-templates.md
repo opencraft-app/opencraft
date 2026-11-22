@@ -5,8 +5,10 @@ cluster consume the same released image by registry digest. Keep Agent binaries,
 Python, browser artifacts and system dependencies in the existing Hands image
 build; do not duplicate their installation in E2B shell commands.
 
-An operator image build may run `deploy/docker/install-sandbox-deps.sh`. It installs
-the Debian packages required by the self-hosted E2B guest bootstrap. This keeps
+The Hands target in `deploy/docker/Dockerfile.owned-electron` runs
+`deploy/docker/install-sandbox-deps.sh` during image construction. Other operator
+image builds may run the same helper. It installs the Debian packages required by
+the self-hosted E2B guest bootstrap. This keeps
 template provisioning from downloading a second set of OS dependencies over
 the guest network. The script skips installed packages, prevents package scripts
 from starting daemons during image construction, and removes generated SSH host
@@ -20,6 +22,11 @@ The runner does not download Codex, read shared runtime archives, extract tools
 into `/tmp`, or repair a missing runtime. The Hands image, desktop package and
 E2B template builds own runtime delivery and updates. Per-instance browser
 profiles and sockets remain temporary session data.
+
+Installed Assets browser policy declares only its isolation mode, for example
+`"browser": { "isolation": "isolated-vm-compatibility" }`. Remove legacy archive
+`manifest` settings when selecting a preconfigured template; these settings are
+rejected rather than interpreted as a runtime installation request.
 
 Existing templates without the Hands runtime layout must be replaced by a
 preconfigured candidate before enabling this runner version. Template selection

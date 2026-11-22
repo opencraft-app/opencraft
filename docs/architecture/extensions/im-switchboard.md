@@ -114,6 +114,36 @@ and delivered are distinct facts; no exactly-once delivery guarantee is made.
 Terminal records are retained for seven days with a 10,000-record cap; pending
 admissions have a separate 1,024 cap. Reply content and addresses stay server-side.
 
+### Durable reply attempts
+
+V4 appends one nullable `reply_attempt` nonce in the existing message table. The
+published V1–V3 migration prefix remains unchanged; the Drizzle owner migration,
+snapshot and publication manifest define the append. Existing interrupted sends
+remain unknown after upgrade, not delivered or eligible for automatic replay.
+
+The storage Worker atomically claims final, explicit-tool and operator-resend
+attempts. Concurrent resend clicks cannot both claim the same failed receipt.
+Only the matching nonce can settle an acknowledgement; a late ACK from an older
+attempt cannot complete or erase a newer one. A late positive ACK for the same
+still-unknown attempt may record the real effect without issuing another send.
+Late model results cannot reset a claimed or completed reply to pending.
+
+The network thread rechecks the original Human generation, endpoint incarnation,
+sender link, callback expiry and cancellation after asynchronous storage and
+immediately before provider I/O. A proven pre-dispatch denial is `reply_failed`;
+a failure after dispatch remains `reply_unknown`. Authority loss after a positive
+ACK does not erase delivery proof, but the retired tool caller receives no
+success receipt. Explicit resends are drained before the storage owner closes.
+Inbound conversation creation/submission likewise rechecks admission after the
+Worker answers; the journal commit is not an authorization lease.
+
+This is conservative effect accounting, not exactly-once provider delivery.
+An operator's deliberate resend of an unknown outcome can still duplicate an
+effect that the provider accepted without returning an ACK. No automatic retry,
+new destination or fresh input ID is inferred from a transport exception. Tests
+in `tests/extensions/im-reply-reliability.test.ts` use a real Worker and SQLite
+journal with controlled synthetic delivery, not live provider credentials.
+
 ## Received-message read tools
 
 `im_read_context(replyRef, limit?, cursor?, from?, until?)` reads received messages
