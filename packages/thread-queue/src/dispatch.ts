@@ -1,5 +1,32 @@
 import { inputExecutionEnded, type InputDeliveryReceipt } from "@opencraft/appserver-protocol";
-import type { QueuedSubmission, ThreadQueueStore } from "./queue-store.js";
+import type { QueuedSubmission } from "./queue-store.js";
+
+type Awaitable<T> = T | Promise<T>;
+
+/**
+ * The queue operations reconciliation and dispatch use. `ThreadQueueStore`
+ * provides them synchronously; an owner whose SQL runs off the event loop
+ * provides them asynchronously over the same database.
+ */
+export interface QueueStoreAccess<S> {
+  list(threadId: string, receiptTurnIds?: readonly string[]): Awaitable<QueuedSubmission<S>[]>;
+  find(threadId: string, id: string): Awaitable<QueuedSubmission<S> | null>;
+  firstAwaitingAdmission(threadId: string): Awaitable<QueuedSubmission<S> | null>;
+  claim(threadId: string, id: string, targetTurnId: string | null): Awaitable<QueuedSubmission<S> | null>;
+  settle(
+    threadId: string,
+    id: string,
+    state: "queued" | "steering" | "unknown" | "delivered" | "discarded",
+    reason?: string | null,
+    turnId?: string | null,
+  ): Awaitable<boolean>;
+  resumeRequestedRetry(threadId: string, id: string): Awaitable<boolean>;
+  /** Native history shows the input: admitted and recorded in context. */
+  recordInput(threadId: string, clientId: string): Awaitable<void>;
+  /** First terminal outcome of a turn; true when newly recorded. */
+  finishTurn(threadId: string, turnId: string, outcome: string): Awaitable<boolean>;
+  receipt(threadId: string, clientId: string, targetTurnId: string | null): Awaitable<InputDeliveryReceipt>;
+}
 
 /** What an engine supplies to reconcile unsettled queue inputs against its own history. */
 export interface QueueReconcilePort {
@@ -23,14 +50,14 @@ const status = (turn: { readonly status?: unknown } | undefined) =>
  * Nothing is resent and no context evidence is fabricated.
  */
 export async function reconcileThreadQueue<S>(
-  queue: ThreadQueueStore<S>,
+  queue: QueueStoreAccess<S>,
   threadId: string,
   port: QueueReconcilePort,
   receiptTurnIds?: readonly string[],
 ): Promise<void> {
-  const unsettled = queue
-    .list(threadId, receiptTurnIds)
-    .filter((row) => row.state === "unknown" || row.state === "steering" || row.state === "closed");
+  const unsettled = (await queue.list(threadId, receiptTurnIds)).filter(
+    (row) => row.state === "unknown" || row.state === "steering" || row.state === "closed",
+  );
   const terminal = new Map<string, Promise<{ readonly status?: unknown } | undefined>>();
   let idle: boolean | undefined;
   for (const row of unsettled) {
@@ -38,13 +65,13 @@ export async function reconcileThreadQueue<S>(
       row.pausedReason === "delivery-retry-requested" &&
       (row.delivery?.nativeAdmission === "accepted" || row.delivery?.context === "recorded")
     ) {
-      queue.resumeRequestedRetry(threadId, row.id); // Positive evidence retires the retry, never requeues it.
+      await queue.resumeRequestedRetry(threadId, row.id); // Positive evidence retires the retry, never requeues it.
       port.changed();
     }
     const target = row.targetTurnId === "unknown" ? null : row.targetTurnId;
     if (await port.historyHasInput(row.clientUserMessageId, target)) {
-      queue.deliveries.recorded(threadId, row.clientUserMessageId);
-      queue.settle(threadId, row.id, "delivered");
+      await queue.recordInput(threadId, row.clientUserMessageId);
+      await queue.settle(threadId, row.id, "delivered");
       port.changed();
       continue;
     } else if (
@@ -56,16 +83,16 @@ export async function reconcileThreadQueue<S>(
       // Only this explicit retry can re-enter the queue. Recheck final history
       // after idle; a positive native ACK is never a retry authorization.
       if (await port.historyHasInput(row.clientUserMessageId, target)) {
-        queue.deliveries.recorded(threadId, row.clientUserMessageId);
-        queue.settle(threadId, row.id, "delivered");
+        await queue.recordInput(threadId, row.clientUserMessageId);
+        await queue.settle(threadId, row.id, "delivered");
       } else {
         // Idle alone is insufficient. If the terminal notification was lost,
         // recover its exact Turn before consuming the durable retry intent.
         if (!inputExecutionEnded(row.delivery) && target) {
           const turn = await port.findTurn(target);
-          if (turn && TERMINAL.includes(status(turn))) queue.deliveries.finish(threadId, target, status(turn));
+          if (turn && TERMINAL.includes(status(turn))) await queue.finishTurn(threadId, target, status(turn));
         }
-        queue.resumeRequestedRetry(threadId, row.id);
+        await queue.resumeRequestedRetry(threadId, row.id);
       }
       port.changed();
       continue;
@@ -83,7 +110,7 @@ export async function reconcileThreadQueue<S>(
     const turn = await lookup;
     if (turn && TERMINAL.includes(status(turn))) {
       port.turnEnded?.(target);
-      if (queue.deliveries.finish(threadId, target, status(turn))) port.changed();
+      if (await queue.finishTurn(threadId, target, status(turn))) port.changed();
     }
     // No positive context evidence is fabricated. A closed attempt survives
     // as Host-authored transcript content, and no longer fences later input.
@@ -112,43 +139,43 @@ export interface QueueDispatchPort<S, P, R> {
   changed(): void;
 }
 
-function sendable<S>(
-  queue: ThreadQueueStore<S>,
+async function sendable<S>(
+  queue: QueueStoreAccess<S>,
   threadId: string,
   id: string,
   refuse: (message: string) => never,
   unknownMessage: string,
-): QueuedSubmission<S> {
-  const head = queue.firstAwaitingAdmission(threadId);
+): Promise<QueuedSubmission<S>> {
+  const head = await queue.firstAwaitingAdmission(threadId);
   if (head?.state === "unknown") refuse(unknownMessage);
   if (head?.state === "dispatching") refuse("Earlier delivery is still being sent");
-  const queued = queue.find(threadId, id);
+  const queued = await queue.find(threadId, id);
   if (!queued) refuse("Queued message is unavailable");
   return queued;
 }
 
 async function send<S, P, R, T>(
-  queue: ThreadQueueStore<S>,
+  queue: QueueStoreAccess<S>,
   threadId: string,
   id: string,
   targetTurnId: string,
   port: QueueDispatchPort<S, P, R>,
   prepared: P,
-  accepted: (turnId: string) => void,
-  result: (turnId: string, response: R) => T,
+  accepted: (turnId: string) => Awaitable<unknown>,
+  result: (turnId: string, response: R) => Awaitable<T>,
 ): Promise<T> {
-  const row = queue.claim(threadId, id, targetTurnId);
+  const row = await queue.claim(threadId, id, targetTurnId);
   if (!row) port.refuse("Queued message is already being dispatched");
   port.changed();
   try {
     const { turnId, response } = await port.send(row, prepared);
-    accepted(turnId);
+    await accepted(turnId);
     port.changed();
     // Built after settlement, so a receipt in the result reflects it.
-    return result(turnId, response);
+    return await result(turnId, response);
   } catch (error) {
     const failure = port.failed(error);
-    queue.settle(threadId, id, failure.state, failure.reason);
+    await queue.settle(threadId, id, failure.state, failure.reason);
     failure.after?.();
     port.changed();
     throw error;
@@ -157,12 +184,12 @@ async function send<S, P, R, T>(
 
 /** Start a new turn with a queued input. Its turn is unknown until native acknowledges it. */
 export async function dispatchQueuedStart<S, P, R>(
-  queue: ThreadQueueStore<S>,
+  queue: QueueStoreAccess<S>,
   threadId: string,
   id: string,
   port: QueueDispatchPort<S, P, R>,
 ): Promise<R> {
-  const queued = sendable(
+  const queued = await sendable(
     queue,
     threadId,
     id,
@@ -187,22 +214,22 @@ export async function dispatchQueuedStart<S, P, R>(
  * turn answers from its receipt instead of being sent again.
  */
 export async function dispatchQueuedSteer<S, P, R>(
-  queue: ThreadQueueStore<S>,
+  queue: QueueStoreAccess<S>,
   threadId: string,
   id: string,
   expectedTurnId: string,
   port: QueueDispatchPort<S, P, R>,
   reconcile: () => Promise<void>,
 ): Promise<{ turnId: string; delivery: InputDeliveryReceipt | undefined }> {
-  const previous = queue.find(threadId, id);
+  const previous = await queue.find(threadId, id);
   if (previous && (previous.delivery?.nativeAdmission === "accepted" || inputExecutionEnded(previous.delivery))) {
     if (previous.targetTurnId !== expectedTurnId) port.refuse("Message identity already belongs to another Turn");
     return { turnId: expectedTurnId, delivery: previous.delivery };
   }
-  if (queue.firstAwaitingAdmission(threadId)?.state === "unknown") await reconcile();
-  const queued = sendable(queue, threadId, id, port.refuse, "Managed input delivery is still unconfirmed");
+  if ((await queue.firstAwaitingAdmission(threadId))?.state === "unknown") await reconcile();
+  const queued = await sendable(queue, threadId, id, port.refuse, "Managed input delivery is still unconfirmed");
   const prepared = await port.prepare(queued);
-  if (inputExecutionEnded(queue.deliveries.receipt(threadId, queued.clientUserMessageId, expectedTurnId)))
+  if (inputExecutionEnded(await queue.receipt(threadId, queued.clientUserMessageId, expectedTurnId)))
     port.refuse("no active turn to steer");
   port.beforeClaim?.(queued);
   return send(
@@ -213,6 +240,6 @@ export async function dispatchQueuedSteer<S, P, R>(
     port,
     prepared,
     () => queue.settle(threadId, id, "steering"),
-    (turnId) => ({ turnId, delivery: queue.find(threadId, id)?.delivery }),
+    async (turnId) => ({ turnId, delivery: (await queue.find(threadId, id))?.delivery }),
   );
 }

@@ -131,6 +131,16 @@ export class ThreadQueueStore<S = never> {
     return row ? this.project(row) : null;
   }
 
+  recordInput(threadId: string, clientId: string): void {
+    this.deliveries.recorded(threadId, clientId);
+  }
+  finishTurn(threadId: string, turnId: string, outcome: string): boolean {
+    return this.deliveries.finish(threadId, turnId, outcome);
+  }
+  receipt(threadId: string, clientId: string, targetTurnId: string | null): InputDeliveryReceipt {
+    return this.deliveries.receipt(threadId, clientId, targetTurnId);
+  }
+
   find(threadId: string, id: string): QueuedSubmission<S> | null {
     return this.row(threadId, id);
   }

@@ -179,3 +179,47 @@ test("reconciliation settles unknown inputs only from native evidence", async ()
   assert.deepEqual(ended, ["turn-1"]);
   assert.ok(changed >= 2);
 });
+
+test("the shared flows work the same over an asynchronous store, as an owner with off-loop SQL provides", async () => {
+  const q = queue();
+  // Every store call crosses an asynchronous boundary, like a storage worker.
+  const remote = new Proxy(q, {
+    get: (target, key) => {
+      const value = Reflect.get(target, key, target);
+      return typeof value === "function"
+        ? (...args: unknown[]) => new Promise((resolve) => setImmediate(() => resolve(value.apply(target, args))))
+        : value;
+    },
+  }) as unknown as Parameters<typeof dispatchQueuedStart>[0];
+  const started = q.add("t", "c1", text("one")),
+    steered = q.add("t", "c2", text("two"));
+  assert.deepEqual(
+    await dispatchQueuedStart(
+      remote,
+      "t",
+      started.id,
+      port(async () => ({ turnId: "turn-1", response: { ok: true } })),
+    ),
+    { ok: true },
+  );
+  assert.equal(q.find("t", started.id)!.state, "delivered");
+  const result = await dispatchQueuedSteer(
+    remote,
+    "t",
+    steered.id,
+    "turn-1",
+    port(async () => ({ turnId: "turn-1", response: { ok: true } })),
+    async () => {},
+  );
+  assert.equal(result.delivery!.nativeAdmission, "accepted");
+  q.claim("t", q.add("t", "c3", text("three")).id, "turn-1");
+  const lost = q.list("t").find((row) => row.clientUserMessageId === "c3")!;
+  q.settle("t", lost.id, "unknown");
+  await reconcileThreadQueue(remote, "t", {
+    historyHasInput: async (id) => id === "c3",
+    isIdle: async () => true,
+    findTurn: async () => undefined,
+    changed: () => {},
+  });
+  assert.equal(q.find("t", lost.id)!.state, "delivered");
+});

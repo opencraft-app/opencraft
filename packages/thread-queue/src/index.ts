@@ -6,6 +6,7 @@ export {
   dispatchQueuedSteer,
   reconcileThreadQueue,
   type QueueDispatchPort,
+  type QueueStoreAccess,
   type QueueReconcilePort,
   type QueueSendFailure,
 } from "./dispatch.js";
