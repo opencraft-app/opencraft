@@ -56,8 +56,8 @@ fallback. The one explicit exception: until macOS and Windows have native build
 runners, their desktop packages may use stock Electron at the fork's upstream
 version when `OPENCRAFT_ELECTRON_STOCK_DESKTOP=1` is set (the fork's patches
 serve the Linux server browser runtime, which the desktop app does not call).
-The "Desktop pre-release" workflow builds Linux with the fork and macOS/Windows
-this way, unsigned, from one commit and publishes a GitHub pre-release.
+The "App release" workflow builds Linux with the fork and macOS/Windows
+this way from one commit and publishes the GitHub release.
 Every desktop package also ships the native Codex pinned in `runtime/codex`:
 `scripts/packaging/stage-codex-runtime.mjs` installs the target's official
 platform package (`npm ci --os --cpu`, so a target can be staged from another
@@ -349,10 +349,10 @@ repository-external production keystore, verifies the package ID and APK
 signature against that keystore, and writes both the APK and filing values.
 It never falls back to the internal development key. `OPENCRAFT_ANDROID_VERSION_CODE`
 overrides the `app.json` versionCode and the APK's version is verified after the
-build. `.github/workflows/desktop-prerelease.yml` calls
+build. `.github/workflows/app-release.yml` calls
 `.github/workflows/android-release-apk.yml`, which signs with the `android-release`
-Environment's key and derives the versionCode from the beta tag, so every GitHub
-pre-release carries `OpenCraft-<version>-android-arm64.apk` in its manifest.
+Environment's key and derives the versionCode from the release tag, so every GitHub
+release carries `OpenCraft-<version>-android-arm64.apk` in its manifest.
 The same release uploads its commit to TestFlight through
 `.github/workflows/ios-testflight.yml`, without waiting for beta review, and
 attaches `OpenCraft-<version>-ios-unsigned.ipa` from
@@ -377,16 +377,27 @@ assembles arm64 on `macos-15` and x64 on `macos-15-intel`. Both jobs explicitly 
 official Electron at the same pinned upstream version via
 `OPENCRAFT_ELECTRON_STOCK_DESKTOP=1`. The workflow merges both native apps,
 then signs, notarizes and packages the result in the `macos-release` Environment.
-Manual runs from `main` produce Actions artifacts. The
-[`Desktop pre-release`](../../.github/workflows/desktop-prerelease.yml) workflow
-calls the same macOS job and stages its output alongside the Linux AppImage and
-Windows installer/ZIP from that commit. Dispatch from `main` with a new
-`vX.Y.Z-beta.N` tag matching the desktop package's native version. The default
-`publish=false` stages a candidate artifact. Use `publish=true` to publish that
-run's verified candidate. The publisher checks the manifest, uploads to a
-draft, verifies the downloaded bytes, then publishes the draft and checks the
+Manual runs from `main` produce Actions artifacts.
+
+### App release
+
+OpenCraft has one product version, held identically by the root, desktop,
+mobile (`package.json` and `app.json`) and web-server manifests and the lockfile.
+`node scripts/release/product-version.mjs check` verifies it and
+`set X.Y.Z` changes every source together. The
+[`App release`](../../.github/workflows/app-release.yml) workflow is the only
+release publisher; the repository no longer publishes to public npm. Dispatch it
+from `main` with a new tag naming the product version: `vX.Y.Z-beta.N` publishes
+a GitHub pre-release, `vX.Y.Z` a stable release that requires its `## vX.Y.Z`
+section in `CHANGELOG.md`, passes the performance gate, opens its notes with that
+section and becomes the latest release. Each release calls the macOS, Android,
+TestFlight and unsigned iOS jobs and stages their output alongside the Linux
+AppImage and Windows installer/ZIP from that commit into `release-manifest.json`.
+The default `publish=false` stages a candidate artifact. Use `publish=true` to
+publish that run's verified candidate. The publisher checks the manifest, uploads
+to a draft, verifies the downloaded bytes, then publishes the draft and checks the
 public assets again. Rerun failed publication jobs on the original run to reuse
-its staged artifacts. The stable npm release keeps its own stable tag contract.
+its staged artifacts.
 
 A lightweight credential check in the `macos-release` Environment runs before
 either native build. Client distribution runs only from `main`.

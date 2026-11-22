@@ -17,7 +17,7 @@ GitHub `opencraft-app/opencraft` 是目标核心上游，产品身份来源、�
 
 ## 当前上游化交付范围（2026-10-19）
 
-公开核心独立运行、下游产品隔离、贡献/发布Skills、上下游固定版本与补丁链路是当前重点。清理自有主体中的旧品牌名称、额外来源注释和来源档案；保留第三方版权声明、许可证和必要NOTICE。法律来源权利核实与仓库内措辞分开处理，不把未核实项写成已核实。npm仍暂不发布；旧私有历史归档保留。真实权限、凭据、构建及受保护分支检查继续遵守。
+公开核心独立运行、下游产品隔离、贡献/发布Skills、上下游固定版本与补丁链路是当前重点。清理自有主体中的旧品牌名称、额外来源注释和来源档案；保留第三方版权声明、许可证和必要NOTICE。法律来源权利核实与仓库内措辞分开处理，不把未核实项写成已核实。本仓库不再发布公共 npm 包，各端 App 统一由 App release 按同一产品版本发布；旧私有历史归档保留。真实权限、凭据、构建及受保护分支检查继续遵守。
 
 ## 完成标准
 
@@ -58,7 +58,7 @@ GitHub `opencraft-app/opencraft` 是目标核心上游，产品身份来源、�
 | 已部署 OpenCraft 的小范围快速变更、局部构建与单服务更新 | [opencraft-fast-change](.agents/skills/opencraft-fast-change/SKILL.md)；以运行产物为基线，构建候选并验证实际行为，依赖/迁移/跨服务变化转正式流程 |
 | 下游产品 Agent Console 共享实现 | [历史与消费契约](docs/history/upstream-history.md)；同步边界由下游产品工作区维护 |
 | Web、Expo、Electron 构建与交付 | [build-matrix](docs/develop/build-matrix.md) |
-| 公共 npm 发布、Web 更新部署 | [Web 发布与部署](docs/operations/web-deployment.md#公共-npm-发布流程)，含包名、Trusted Publisher、精确归档与验收约定 |
+| App 发版（桌面、Android、iOS）、Web 更新部署 | App 发版按 [opencraft-release](.agents/skills/opencraft-release/SKILL.md)：同一产品版本（`scripts/release/product-version.mjs`），beta `vX.Y.Z-beta.N` 与正式 `vX.Y.Z`；Web 更新见 [Web 发布与部署](docs/operations/web-deployment.md)，公共 npm 已停止发布 |
 | 从源码打包替换服务器本地 Web | [本地替换指引](docs/operations/web-local-deployment.md)；先核对 `.local/README.md` 中的实际部署信息 |
 | 开源提交、公开发布 | [安全与发布说明](SECURITY.md)；按 [opencraft-release](.agents/skills/opencraft-release/SKILL.md) 核对实际来源、隐私、依赖、固定tag和归档；贡献PR遵循仓库当前检查 |
 

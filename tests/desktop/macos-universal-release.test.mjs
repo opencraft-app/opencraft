@@ -85,7 +85,7 @@ test("macOS release workflow isolates signing secrets from native build jobs", a
   assert.match(workflow, /--config\.mac\.identity="\$builder_identity"/u);
   assert.match(workflow, /workflow_call:/u);
   assert.doesNotMatch(workflow, /contents: write/u);
-  const prerelease = await readFile(new URL("../../.github/workflows/desktop-prerelease.yml", import.meta.url), "utf8");
+  const prerelease = await readFile(new URL("../../.github/workflows/app-release.yml", import.meta.url), "utf8");
   assert.match(prerelease, /uses: \.\/\.github\/workflows\/macos-universal-release\.yml/u);
   const signingCredentialNames = ["MACOS_CERTIFICATE_P12_BASE64", "MACOS_CERTIFICATE_PASSWORD", "APPLE_ID", "APPLE_APP_SPECIFIC_PASSWORD", "APPLE_TEAM_ID"];
   for (const name of signingCredentialNames) {

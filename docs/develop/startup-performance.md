@@ -70,8 +70,8 @@ to select linted files, including lazy plugins supplied by a trusted factory.
 ## Formal release performance regression gate
 
 `npm run gate:performance` runs the repeatable browser suite independently of
-ordinary builds and deployment. Only `.github/workflows/release.yml` invokes it
-automatically, in preflight before packaging/publication. Daily server deployment
+ordinary builds and deployment. Only `.github/workflows/app-release.yml` invokes it
+automatically, for stable `vX.Y.Z` releases, before staging and publication. Daily server deployment
 and normal PR/build workflows do not invoke this suite. Existing startup resource
 budgets still run as part of release builds; `check:startup:cache` retains its
 existing separate owner and gate.

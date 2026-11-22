@@ -1,17 +1,19 @@
-name: Desktop pre-release
+name: App release
 
-# The only publisher of OpenCraft beta releases: desktop packages, the
-# production-signed Android APK and the unsigned iOS IPA share one tag, manifest
-# and GitHub pre-release, and the same commit is uploaded to TestFlight.
+# The only publisher of OpenCraft releases. One tag names the product version
+# (scripts/release/product-version.mjs): vX.Y.Z-beta.N publishes a GitHub
+# pre-release, vX.Y.Z a stable release with its CHANGELOG section. Desktop
+# packages, the production-signed Android APK and the unsigned iOS IPA share the
+# tag and manifest, and the same commit is uploaded to TestFlight.
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Pre-release tag to create at this commit, such as v0.1.0-beta.1
+        description: Tag to create at this commit, vX.Y.Z-beta.N (pre-release) or vX.Y.Z (stable)
         required: true
         type: string
       publish:
-        description: Publish the GitHub pre-release (otherwise only build the packages)
+        description: Publish the GitHub release (otherwise only build and verify the packages)
         type: boolean
         default: false
 
@@ -20,7 +22,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: desktop-prerelease-${{ github.ref }}
+  group: app-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -28,6 +30,8 @@ jobs:
     if: github.repository == 'opencraft-app/opencraft' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      prerelease: ${{ steps.match.outputs.prerelease }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -36,16 +40,22 @@ jobs:
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
-      - name: Match the beta tag to this checkout's desktop and mobile versions
+      - name: Match the tag to this checkout's product version
+        id: match
         env:
           TAG: ${{ inputs.tag }}
         run: |
-          version="$(jq -er .version apps/desktop/package.json)"
-          [[ "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-beta\.[1-9][0-9]*$ ]]
-          test "v$version" = "${TAG%-beta.*}"
-          test "$(jq -er .expo.version apps/mobile/app.json)" = "$version"
-          node --test tests/tooling/android-release.test.mjs
+          node scripts/release/product-version.mjs check "$TAG"
           node scripts/release/android-version-code.mjs "$TAG"
+          if [[ "$TAG" == *-beta.* ]]; then
+            echo prerelease=true >> "$GITHUB_OUTPUT"
+          else
+            # A stable release publishes its committed notes; require them now.
+            python3 .github/secure-release/v1/secure_release.py changelog \
+              --tag "$TAG" --changelog CHANGELOG.md --notes "$RUNNER_TEMP/release-notes.md"
+            echo prerelease=false >> "$GITHUB_OUTPUT"
+          fi
+          node --test tests/tooling/android-release.test.mjs tests/tooling/product-version.test.mjs
 
   macos:
     needs: tag
@@ -86,6 +96,34 @@ jobs:
   ios_unsigned:
     needs: tag
     uses: ./.github/workflows/ios-unsigned-ipa.yml
+
+  # Stable releases are gated on the browser performance suite; betas are not.
+  performance:
+    needs: tag
+    if: needs.tag.outputs.prerelease == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - run: npm ci --no-audit --no-fund
+      - name: Install Chromium and system dependencies
+        run: bash scripts/ci/install-playwright-chromium.sh
+      - name: Gate stable releases on performance regressions
+        run: npm run gate:performance -- --output "$RUNNER_TEMP/opencraft-performance"
+      - name: Retain performance samples and failure evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: performance-${{ inputs.tag }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/opencraft-performance
+          retention-days: 30
+          if-no-files-found: error
 
   linux:
     needs: tag
@@ -150,7 +188,9 @@ jobs:
           retention-days: 14
 
   candidate:
-    needs: [linux, windows, macos, android, ios_testflight, ios_unsigned]
+    needs: [tag, linux, windows, macos, android, ios_testflight, ios_unsigned, performance]
+    # The performance job is skipped for betas; every other need must succeed.
+    if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -173,20 +213,20 @@ jobs:
         with:
           name: opencraft-ios-unsigned-${{ github.sha }}
           path: inputs/ios
-      - name: Stage and verify the desktop release candidate
+      - name: Stage and verify the release candidate
         env:
           TAG: ${{ inputs.tag }}
-        run: bash scripts/release/stage-desktop-beta.sh "$TAG"
+        run: bash scripts/release/stage-app-release.sh "$TAG"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: desktop-beta-${{ github.sha }}
+          name: app-release-${{ github.sha }}
           path: candidate/
           retention-days: 30
           if-no-files-found: error
 
   publish:
     needs: [candidate, ios_testflight]
-    if: inputs.publish
+    if: ${{ !cancelled() && !failure() && inputs.publish }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -197,9 +237,9 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: desktop-beta-${{ github.sha }}
+          name: app-release-${{ github.sha }}
           path: candidate
-      - name: Publish the verified desktop beta
+      - name: Publish the verified release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -208,4 +248,4 @@ jobs:
           TESTFLIGHT_VERSION: ${{ needs.ios_testflight.outputs.version }}
           TESTFLIGHT_NUMBER: ${{ needs.ios_testflight.outputs.number }}
           TESTFLIGHT_PUBLIC_LINK: ${{ vars.OPENCRAFT_TESTFLIGHT_PUBLIC_LINK }}
-        run: bash scripts/release/publish-desktop-beta.sh "$TAG"
+        run: bash scripts/release/publish-app-release.sh "$TAG"

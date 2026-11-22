@@ -158,7 +158,7 @@ then verify `IPA-SHA256SUMS.txt` in the archive directory.
 The workflow is also callable. A call uploads the build and returns its
 version and number without waiting for Beta App Review (`check_availability`
 defaults to `false` there), while a manual dispatch still waits by default.
-`Desktop pre-release` calls it for every release, so each release commit is
+`App release` calls it for every release, so each release commit is
 uploaded to TestFlight, and attaches `OpenCraft-<version>-ios-unsigned.ipa`
 from the unsigned workflow. The release notes name the uploaded build; set the
 repository variable `OPENCRAFT_TESTFLIGHT_PUBLIC_LINK`
@@ -260,14 +260,14 @@ versionCode，否则沿用 `app.json` 的值。产物位于 `apps/mobile/release
 
 产品构建的文件名使用产品前缀和实际包名。
 
-### GitHub 预发布
+### GitHub Release
 
-`Desktop pre-release` 工作流在同一 beta tag 下同时发布桌面包和
+`App release` 工作流在同一 tag（beta 或正式版）下同时发布桌面包和
 `OpenCraft-<版本>-android-arm64.apk`。APK 由
 `.github/workflows/android-release-apk.yml` 使用 `android-release` Environment 的
 `ANDROID_RELEASE_KEYSTORE_BASE64`（PKCS12 的 Base64）、
 `ANDROID_RELEASE_KEYSTORE_PASSWORD` 和 `ANDROID_RELEASE_KEY_ALIAS` 构建；缺少任一项时
-整个预发布失败，不回退开发密钥。首次配置在可信电脑上运行（需要 JDK 的 `keytool`、
+整个发布失败，不回退开发密钥。首次配置在可信电脑上运行（需要 JDK 的 `keytool`、
 `openssl` 和有仓库管理权限的 `gh`）：
 
 ```bash

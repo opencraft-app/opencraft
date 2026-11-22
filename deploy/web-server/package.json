@@ -1,6 +1,6 @@
 {
   "name": "@opencraft-app/opencraft",
-  "version": "0.1.17",
+  "version": "0.2.0",
   "description": "OpenCraft self-hosted website and managed execution gateway updates",
   "type": "module",
   "bin": {
