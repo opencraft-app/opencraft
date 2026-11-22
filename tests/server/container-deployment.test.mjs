@@ -81,6 +81,24 @@ test('the first proxy-default release stops an embedded-Core Brain before the pr
   assert.equal(brainEmbedsAccountCore(null), false, 'no Brain container: nothing holds the writer');
 });
 
+test('Brain and Hands render the same non-default execution budget', t => {
+  if (!composeAvailable())
+    return t.skip('Docker Compose CLI is unavailable');
+  const config = JSON.parse(compose(['-f', 'deploy/docker/compose.yaml', 'config', '--format', 'json'], {
+    cwd: new URL('../..', import.meta.url), encoding: 'utf8',
+    env: { ...process.env, OPENCRAFT_UID: '1234', OPENCRAFT_GID: '2345',
+      OPENCRAFT_HOST_DATA_DIR: '/srv/opencraft/state', OPENCRAFT_DATA_DIR: '/var/lib/opencraft',
+      OPENCRAFT_HOST_WORKSPACE_DIR: '/srv/opencraft/workspaces', OPENCRAFT_WORKSPACE_DIR: '/workspace',
+      OPENCRAFT_HANDS_CPUS: '2.0', OPENCRAFT_HANDS_MEMORY_BYTES: '4294967296' },
+  }));
+  const { brain, hands } = config.services;
+  // Hands rejects a lease whose declared resources differ from its own budget.
+  assert.deepEqual(handsResources(brain.environment), { cpuMillis: 2000, memoryBytes: 4294967296 });
+  assert.deepEqual(handsResources(brain.environment), handsResources(hands.environment));
+  assert.equal(hands.cpus, 2);
+  assert.equal(hands.mem_limit, '4294967296');
+});
+
 test('rendered Compose separates gateway, brain and hands while preserving path identity', t => {
   if (!composeAvailable())
     return t.skip('Docker Compose CLI is unavailable');

@@ -114,6 +114,9 @@ services:
       # Brain waits for the proxy service instead of embedding the account Core.
       OPENCRAFT_PROXY_MODE: external
       OPENCRAFT_PROXY_PORT: ${OPENCRAFT_PROXY_PORT:-45071}
+      # Brain opens Hands execution leases with this budget; Hands rejects any other.
+      OPENCRAFT_HANDS_CPUS: ${OPENCRAFT_HANDS_CPUS:-4.0}
+      OPENCRAFT_HANDS_MEMORY_BYTES: ${OPENCRAFT_HANDS_MEMORY_BYTES:-8589934592}
     volumes:
       - *git-volume
       - *data-volume
