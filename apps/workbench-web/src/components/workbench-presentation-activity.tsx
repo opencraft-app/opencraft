@@ -1,7 +1,17 @@
-import { useSyncExternalStore } from "react";
-import { usePresentationActive } from "@opencraft/react-runtime";
-export { PresentationActivity as WorkbenchPresentationActivity,
-  PresentationActivityProvider as WorkbenchPresentationActivityProvider } from "@opencraft/react-runtime";
+import { useSyncExternalStore, type ComponentProps } from "react";
+import { PresentationActivityProvider, usePresentationActive } from "@opencraft/react-runtime";
+import { OverlayPresentationScope } from "@opencraft/design-system-web/presentation-root";
+export { PresentationActivity as WorkbenchPresentationActivity } from "@opencraft/react-runtime";
+
+function WorkbenchOverlayScope({ children }: Pick<ComponentProps<typeof PresentationActivityProvider>, "children">) {
+  const active = usePresentationActive();
+  return <OverlayPresentationScope active={active}>{children}</OverlayPresentationScope>;
+}
+
+export function WorkbenchPresentationActivityProvider({ children, ...props }: ComponentProps<typeof PresentationActivityProvider>) {
+  return <PresentationActivityProvider {...props}><WorkbenchOverlayScope>{children}</WorkbenchOverlayScope></PresentationActivityProvider>;
+}
+
 const alwaysActive = () => true;
 const visibilityListeners = new Set<() => void>();
 const readVisible = () => typeof document === "undefined" || document.visibilityState !== "hidden";

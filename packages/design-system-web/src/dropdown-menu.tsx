@@ -1,7 +1,7 @@
 import * as Primitive from "@radix-ui/react-dropdown-menu";
 import { Slot } from "@radix-ui/react-slot";
-import { forwardRef, useContext, useState, type ComponentPropsWithoutRef, type PointerEventHandler } from "react";
-import { MenuInteraction as Activation } from "./menu-interaction";
+import { forwardRef, useContext, type ComponentPropsWithoutRef, type PointerEventHandler } from "react";
+import { MenuInteraction as Activation, useScopedMenu, useScopedMenuContent } from "./menu-interaction";
 import { useTouchMenuTrigger } from "./use-touch-menu-trigger";
 import { useRadixMenuWindowBlurGuard } from "./use-radix-menu-window-blur-guard";
 
@@ -15,18 +15,16 @@ export type DropdownMenuProps = Omit<ComponentPropsWithoutRef<typeof Primitive.R
 };
 
 export function Root({ open: controlled, defaultOpen = false, onOpenChange, dismissOnWindowBlur = true, children, ...props }: DropdownMenuProps) {
-  const [local, setLocal] = useState(defaultOpen);
-  const open = controlled ?? local;
-  const ignoreWindowBlurClose = useRadixMenuWindowBlurGuard(open, dismissOnWindowBlur);
+  const menu = useScopedMenu(controlled, defaultOpen, onOpenChange);
+  const ignoreWindowBlurClose = useRadixMenuWindowBlurGuard(menu.open, dismissOnWindowBlur);
   const change = (next: boolean) => {
     if (!next && ignoreWindowBlurClose()) return;
-    if (controlled === undefined) setLocal(next);
-    onOpenChange?.(next);
+    menu.change(next);
   };
   // Menus leave page hit testing and scrolling native. Auxiliary consumers
   // retain their editor focus lease without a document-wide modal lock.
-  return <Primitive.Root {...props} modal={false} open={open} onOpenChange={change}>
-    <Activation.Provider value={{ open, change }}>{children}</Activation.Provider>
+  return <Primitive.Root {...props} modal={false} open={menu.open} onOpenChange={change}>
+    <Activation.Provider value={{ ...menu, change }}>{children}</Activation.Provider>
   </Primitive.Root>;
 }
 
@@ -51,7 +49,7 @@ export const Trigger = forwardRef<HTMLButtonElement, ComponentPropsWithoutRef<ty
   { asChild, children, disabled, onPointerDown, onClick, onKeyDown, onContextMenu, ...props }, ref,
 ) {
   const activation = useContext(Activation);
-  const touch = useTouchMenuTrigger(!disabled && activation !== null, () => activation?.change(!activation.open));
+  const touch = useTouchMenuTrigger(!disabled && activation?.active === true, () => activation?.change(!activation.open));
   return <Primitive.Trigger {...props} ref={ref} disabled={disabled} asChild
     onClick={event => { onClick?.(event); if (!event.defaultPrevented) touch.onClick?.(event); }}
     onKeyDown={event => { onKeyDown?.(event); if (!event.defaultPrevented) touch.onKeyDown?.(event); }}
@@ -63,6 +61,13 @@ export const Trigger = forwardRef<HTMLButtonElement, ComponentPropsWithoutRef<ty
   </Primitive.Trigger>;
 });
 
-export const Content = Primitive.Content;
+export const Content = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<typeof Primitive.Content>>(function Content(
+  { onCloseAutoFocus, ...props }, ref,
+) {
+  const presentation = useScopedMenuContent(onCloseAutoFocus);
+  // Remove the portalled surface in the commit that retires its anchor's page.
+  // Radix may still animate a normal close while the page remains active.
+  return presentation.active ? <Primitive.Content {...props} ref={ref} onCloseAutoFocus={presentation.onCloseAutoFocus} /> : null;
+});
 
 export { Root as DropdownMenu, Trigger as DropdownMenuTrigger, Content as DropdownMenuContent };
