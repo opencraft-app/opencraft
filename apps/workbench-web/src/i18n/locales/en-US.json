@@ -2538,5 +2538,17 @@
   "crew.teams.joinTitle": "Join a team",
   "crew.teams.joinAbout": "Paste the invitation link or code someone shared with you.",
   "crew.teams.joinAction": "Join",
-  "crew.teams.cancel": "Cancel"
+  "crew.teams.cancel": "Cancel",
+  "crew.desk.operations": "Operations",
+  "crew.desk.operationsAbout": "What this Agent did with its own access while working for teammates. Only the Agent’s owner and the team’s owner can see this.",
+  "crew.desk.noOperations": "No operations yet.",
+  "crew.desk.onBehalfOf": "For {name}",
+  "crew.desk.formerMember": "For someone who left the team",
+  "crew.desk.tool.environmentRun": "Ran a command",
+  "crew.desk.tool.platformRead": "Read conversations",
+  "crew.desk.tool.threadCommand": "Worked with a task",
+  "crew.desk.tool.crewDispatch": "Handed work on",
+  "crew.desk.tool.crewMessage": "Sent a message",
+  "crew.desk.to": "To {name}",
+  "crew.desk.toFormerMember": "To someone who left the team"
 }

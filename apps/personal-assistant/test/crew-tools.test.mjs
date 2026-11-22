@@ -116,3 +116,28 @@ test("messages go up on the held work, or down only on a hand-off made from it",
     false,
   );
 });
+
+test("tools that act with the Bot's authority record the operation before acting", async () => {
+  const order = [];
+  const ports = {
+    assertAction: () => undefined,
+    recordOperation: (tool, callId, summary, target) => order.push(["record", tool, callId, summary, target]),
+    crewContacts: async () => ({}),
+    crewDispatch: async () => (order.push(["dispatch"]), { workId: "child" }),
+    crewMessage: async () => (order.push(["message"]), { messageId: "m" }),
+  };
+  const tools = assistantTools({
+    ports,
+    snapshot: { delegation: { tools: delegationTools([{ id: "crew.work", binding: "b" }]), resources: [] }, memoryEpoch: 0 },
+    onBoundaryError: () => undefined,
+  });
+  const tool = (name) => tools.find((t) => t.name === name);
+  await tool("crew_dispatch").execute({ to: "zhe", text: "check the signatures" }, { callId: "c1" }, {});
+  await tool("crew_message").execute({ to: "bob", text: "x".repeat(600) }, { callId: "c2" }, {});
+  await tool("crew_contacts").execute({}, { callId: "c3" }, {});
+  assert.deepEqual(order.slice(0, 2), [["record", "crew_dispatch", "c1", "check the signatures", "zhe"], ["dispatch"]], "the recipient is kept apart from the text");
+  assert.equal(order[2][3].length, 512, "a long summary is clipped to the record's bound");
+  assert.equal(order.filter(([k]) => k === "record").length, 2, "reading contacts is not an operation");
+  await tool("crew_message").execute({ to: "bob", text: "hi" }, {}, {});
+  assert.equal(order.filter(([k]) => k === "record").length, 2, "without a native call ID nothing is recorded");
+});

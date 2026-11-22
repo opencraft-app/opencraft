@@ -568,7 +568,7 @@ test("schema15 upgrades without modifying canonical messages or inventing a summ
   store.close();
   const second = new Store(profile);
   t.after(() => second.close());
-  assert.equal(second.db.prepare("PRAGMA user_version").get().user_version, 21);
+  assert.equal(second.db.prepare("PRAGMA user_version").get().user_version, 22);
   assert.deepEqual(
     second.db.prepare("SELECT * FROM conversation_message").all(),
     raw,

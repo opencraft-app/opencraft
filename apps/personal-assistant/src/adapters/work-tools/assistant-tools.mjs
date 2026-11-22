@@ -3,6 +3,7 @@ import { interventionTool } from "./intervention-tools.mjs";
 import { skillTools } from "./skill-tools.mjs";
 import { Type } from "@earendil-works/pi-ai";
 const defineTool = (definition) => definition;
+const clip = (text, max) => (text.length > max ? text.slice(0, max - 1) + "…" : text);
 import { setTimeout as delay } from "node:timers/promises";
 
 export function assistantTools({
@@ -20,6 +21,12 @@ export function assistantTools({
       onBoundaryError(error);
       throw error;
     }
+  };
+  // What a tool does with this assistant's authority, kept for the desk's operation summary.
+  // A recipient is kept apart from the summary so the Core can show who it was, not a raw ID.
+  const record = (tool, api, summary, target = null) => {
+    if (ports.recordOperation && typeof api?.callId === "string" && api.callId)
+      ports.recordOperation(tool, api.callId, clip(summary, 512), target);
   };
   const tools = [
     ...(ports.environmentRun &&
@@ -47,6 +54,7 @@ export function assistantTools({
                   (r) => r.id === "execution.environment",
                 ),
               );
+              record("environment_run", api, args.argv.join(" "));
               const result = await ports.environmentRun(
                 args,
                 api.callId,
@@ -84,6 +92,7 @@ export function assistantTools({
             }),
             execute: async (args, api, { abortSignal } = {}) => {
               guard("crew_dispatch");
+              record("crew_dispatch", api, args.text, args.to);
               const result = await ports.crewDispatch(args, api.callId, abortSignal);
               return { output: [{ type: "text", text: JSON.stringify(result) }] };
             },
@@ -101,6 +110,7 @@ export function assistantTools({
             }),
             execute: async (args, api, { abortSignal } = {}) => {
               guard("crew_message");
+              record("crew_message", api, args.text, args.to);
               const result = await ports.crewMessage(args, api.callId, abortSignal);
               return { output: [{ type: "text", text: JSON.stringify(result) }] };
             },
@@ -134,8 +144,9 @@ export function assistantTools({
                 limit: Type.Optional(Type.Integer()),
               }),
             }),
-            execute: async (args, _context, { abortSignal } = {}) => {
+            execute: async (args, api, { abortSignal } = {}) => {
               guard("platform_read");
+              record("platform_read", api, [args.name, args.params.channelId ?? args.params.reference, args.params.query].filter(Boolean).join(" "));
               const result = await ports.platformRead(args, abortSignal);
               return {
                 output: [{ type: "text", text: JSON.stringify(result) }],
@@ -158,8 +169,9 @@ export function assistantTools({
                 maxItems: 64,
               }),
             }),
-            execute: async (args, _context, { abortSignal } = {}) => {
+            execute: async (args, api, { abortSignal } = {}) => {
               guard("thread_command");
+              record("thread_command", api, args.argv.join(" "));
               const result = await ports.threadCommand(args.argv, abortSignal);
               return {
                 output: [{ type: "text", text: JSON.stringify(result) }],

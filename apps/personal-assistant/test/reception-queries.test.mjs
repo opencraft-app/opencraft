@@ -313,7 +313,7 @@ test("schema-4 queued turns gain no material access on migration; new turns capt
   t.after(() => domain.uow.close());
   assert.equal(
     domain.uow.db.prepare("PRAGMA user_version").get().user_version,
-    21,
+    22,
   );
   assert.equal(
     read(

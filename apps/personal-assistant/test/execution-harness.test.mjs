@@ -348,7 +348,7 @@ test("schema18 preserves native receipts, report/result foreign keys and origina
     );
     assert.equal(
       store.db.prepare("PRAGMA user_version").get().user_version,
-      21,
+      22,
     );
     assert.deepEqual(store.db.prepare("PRAGMA foreign_key_check").all(), []);
     assert.deepEqual(store.app.goals.list(), []);

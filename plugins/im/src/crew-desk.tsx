@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ModalContent } from "@opencraft/design-system-web/modal-content";
 import { IconButton } from "@opencraft/design-system-web/button";
-import { CloseIcon } from "@opencraft/design-system-web/action-icons";
+import { CloseIcon, PermissionShieldIcon } from "@opencraft/design-system-web/action-icons";
 import { NavigationList, NavigationItem } from "@opencraft/design-system-web/navigation";
 import { SettingsButton } from "@opencraft/extension-react";
 import { MessageTimeline, type MessageTimelineCheckpoint } from "@opencraft/chat-render-web/message-timeline";
@@ -54,7 +54,25 @@ const messages = {
   retry: { id: "crew.desk.retry", defaultMessage: "Try again" },
   close: { id: "crew.desk.close", defaultMessage: "Close" },
   latest: { id: "crew.desk.latest", defaultMessage: "Back to latest" },
+  operations: { id: "crew.desk.operations", defaultMessage: "Operations" },
+  operationsAbout: {
+    id: "crew.desk.operationsAbout",
+    defaultMessage:
+      "What this Agent did with its own access while working for teammates. Only the Agent’s owner and the team’s owner can see this.",
+  },
+  noOperations: { id: "crew.desk.noOperations", defaultMessage: "No operations yet." },
+  onBehalfOf: { id: "crew.desk.onBehalfOf", defaultMessage: "For {name}" },
+  formerMember: { id: "crew.desk.formerMember", defaultMessage: "For someone who left the team" },
+  to: { id: "crew.desk.to", defaultMessage: "To {name}" },
+  toFormerMember: { id: "crew.desk.toFormerMember", defaultMessage: "To someone who left the team" },
 };
+const tools = {
+  environment_run: { id: "crew.desk.tool.environmentRun", defaultMessage: "Ran a command" },
+  platform_read: { id: "crew.desk.tool.platformRead", defaultMessage: "Read conversations" },
+  thread_command: { id: "crew.desk.tool.threadCommand", defaultMessage: "Worked with a task" },
+  crew_dispatch: { id: "crew.desk.tool.crewDispatch", defaultMessage: "Handed work on" },
+  crew_message: { id: "crew.desk.tool.crewMessage", defaultMessage: "Sent a message" },
+} as const;
 const statuses = {
   queued: { id: "crew.desk.status.queued", defaultMessage: "Waiting to start" },
   running: { id: "crew.desk.status.running", defaultMessage: "Working" },
@@ -91,6 +109,8 @@ export function CrewDesk({
   const [desk, setDesk] = useState<Desk | null>(null);
   const [failure, setFailure] = useState<"unavailable" | "failed" | null>(null);
   const [actorId, setActorId] = useState<string | undefined>();
+  // The operations list replaces the transcript; choosing a conversation goes back to it.
+  const [auditing, setAuditing] = useState(false);
   const checkpoint = useRef<MessageTimelineCheckpoint | undefined>(undefined);
   const life = useRef<AbortController | null>(null),
     latest = useRef(0),
@@ -227,16 +247,27 @@ export function CrewDesk({
                 {desk.conversations.map((c) => (
                   <NavigationItem
                     key={c.actor.actorId}
-                    aria-current={c.actor.actorId === selected?.actor.actorId ? "page" : undefined}
-                    onClick={() => setActorId(c.actor.actorId)}
+                    aria-current={!auditing && c.actor.actorId === selected?.actor.actorId ? "page" : undefined}
+                    onClick={() => {
+                      setAuditing(false);
+                      setActorId(c.actor.actorId);
+                    }}
                   >
                     <SlotAvatar person={c.actor} />
                     <span>{c.actor.displayName}</span>
                   </NavigationItem>
                 ))}
+                {desk.operations ? (
+                  <NavigationItem aria-current={auditing ? "page" : undefined} onClick={() => setAuditing(true)}>
+                    <span className="crew-desk__mark" aria-hidden="true">
+                      <PermissionShieldIcon />
+                    </span>
+                    <span>{f("operations")}</span>
+                  </NavigationItem>
+                ) : null}
               </NavigationList>
-              <h3>{f("tasks")}</h3>
-              {selected?.works.length ? (
+              {auditing ? null : <h3>{f("tasks")}</h3>}
+              {auditing ? null : selected?.works.length ? (
                 <ul className="crew-desk__tasks">
                   {selected.works.map((w) => (
                     <li key={w.id}>
@@ -258,7 +289,34 @@ export function CrewDesk({
                 </p>
               ) : null}
             </aside>
-            {selected ? (
+            {auditing && desk.operations ? (
+              <section className="crew-desk__operations" aria-label={f("operations")}>
+                <p className="crew-desk__muted">{f("operationsAbout")}</p>
+                {desk.operations.length ? (
+                  <ol>
+                    {desk.operations.map((o) => (
+                      <li key={o.id}>
+                        <div>
+                          <strong>
+                            {intl.formatMessage(tools[o.tool])}
+                            {o.to !== undefined ? (
+                              <span> · {o.to ? f("to", { name: o.to.displayName }) : f("toFormerMember")}</span>
+                            ) : null}
+                          </strong>
+                          <time dateTime={new Date(o.at).toISOString()}>
+                            {intl.formatDate(o.at, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          </time>
+                        </div>
+                        <code>{o.summary}</code>
+                        <small>{o.onBehalfOf ? f("onBehalfOf", { name: o.onBehalfOf.displayName }) : f("formerMember")}</small>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="crew-desk__muted">{f("noOperations")}</p>
+                )}
+              </section>
+            ) : selected ? (
               <MessageTimeline
                 key={selected.actor.actorId}
                 className="crew-desk__timeline"

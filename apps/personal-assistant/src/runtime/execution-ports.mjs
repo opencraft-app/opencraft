@@ -125,6 +125,10 @@ export function createExecutionPorts(
               },
             }
           : {}),
+        recordOperation: (tool, callId, summary, target) => {
+          assertOwner();
+          app.executions.recordOperation(work, callId, tool, summary, target);
+        },
         assertAction: (tool, resource, epoch) => {
           assertOwner();
           return app.executions.assertAction(work, tool, resource, epoch);

@@ -2637,5 +2637,17 @@
   "crew.teams.joinTitle": "加入团队",
   "crew.teams.joinAbout": "粘贴别人发给你的邀请链接或邀请码。",
   "crew.teams.joinAction": "加入",
-  "crew.teams.cancel": "取消"
+  "crew.teams.cancel": "取消",
+  "crew.desk.operations": "操作记录",
+  "crew.desk.operationsAbout": "这个 Agent 替队友干活时用自己的权限做了什么。只有 Agent 的主人和团队的所有者能看到。",
+  "crew.desk.noOperations": "还没有操作。",
+  "crew.desk.onBehalfOf": "替 {name} 做",
+  "crew.desk.formerMember": "替已离开团队的人做",
+  "crew.desk.tool.environmentRun": "运行了命令",
+  "crew.desk.tool.platformRead": "读取了会话",
+  "crew.desk.tool.threadCommand": "操作了任务",
+  "crew.desk.tool.crewDispatch": "转派了工作",
+  "crew.desk.tool.crewMessage": "发了消息",
+  "crew.desk.to": "发给 {name}",
+  "crew.desk.toFormerMember": "发给已离开团队的人"
 }

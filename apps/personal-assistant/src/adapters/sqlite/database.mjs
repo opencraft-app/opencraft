@@ -22,7 +22,7 @@ export class SqliteUnitOfWork {
     if (
       ![
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-        20, 21,
+        20, 21, 22,
       ].includes(version)
     ) {
       this.db.close();
@@ -262,6 +262,16 @@ export class SqliteUnitOfWork {
       CREATE INDEX IF NOT EXISTS execution_thread_unsettled ON execution_thread_link(execution_id) WHERE outcome_json IS NULL;
       CREATE TABLE IF NOT EXISTS execution_thread_answer(execution_id TEXT PRIMARY KEY REFERENCES execution(id),text TEXT NOT NULL,error TEXT);
       PRAGMA user_version=21;
+    `),
+      );
+    if (version < 22)
+      this.transaction(() =>
+        this.db.exec(`
+      CREATE TABLE IF NOT EXISTS work_operation(
+        execution_id TEXT NOT NULL REFERENCES execution(id),call_id TEXT NOT NULL,work_id TEXT NOT NULL REFERENCES work(id),
+        tool TEXT NOT NULL,target TEXT,summary TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(execution_id,call_id));
+      CREATE INDEX IF NOT EXISTS work_operation_recent ON work_operation(work_id,at);
+      PRAGMA user_version=22;
     `),
       );
   }

@@ -37,6 +37,18 @@
   > div { flex: 1; min-inline-size: 0; }
   small { display: block; margin-block-end: var(--spacing); @include typography.role(metadata, secondary); strong { color: var(--color-text); font-weight: inherit; } }
 }
+// The operations list takes the transcript's place: one row per action, newest first.
+.crew-desk__operations {
+  flex: 1; min-inline-size: 0; min-block-size: 0; overflow: auto; padding: calc(3 * var(--spacing)) calc(5 * var(--spacing));
+  ol { list-style: none; margin: calc(2 * var(--spacing)) 0 0; padding: 0; }
+  li { display: flex; flex-direction: column; gap: 2px; padding-block: calc(2 * var(--spacing)); border-block-end: 1px solid var(--color-border-subtle); }
+  li > div { display: flex; justify-content: space-between; gap: calc(3 * var(--spacing));
+    strong { @include typography.role(body); font-weight: inherit; }
+    time { flex: 0 0 auto; @include typography.role(metadata, secondary); }
+  }
+  code { @include typography.role(code, secondary); overflow-wrap: anywhere; white-space: pre-wrap; }
+  small { @include typography.role(metadata, secondary); }
+}
 // Narrow containers stack the list above the transcript instead of squeezing both.
 @container (max-width: 640px) {
   .crew-desk__body { flex-direction: column; }

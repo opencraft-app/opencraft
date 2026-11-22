@@ -248,6 +248,25 @@ test("the desk shows each dispatcher's conversation and tasks, never the owner's
   );
   assert.ok(!JSON.stringify(crew.desk()).includes("私事"), "the owner's conversation is not on the desk");
   assert.equal(crew.desk({ actorId: "carol" }).selected, null);
+
+  // Operations: recorded once per native call, shown only when asked, and never for the owner's own work.
+  const executions = s.store.app.executions,
+    record = (id) => s.store.app.workRecord(id);
+  executions.recordOperation(record(workId), "call-1", "environment_run", "git status");
+  executions.recordOperation(record(workId), "call-1", "environment_run", "git status");
+  executions.recordOperation(record(workId), "call-0", "crew_message", "ready?", "alice");
+  const own = s.store.app.dispatch({ op: "submit", id: "own-task", params: { text: "私人任务" } }).workId;
+  executions.recordOperation(record(own), "call-2", "environment_run", "cat secrets");
+  assert.equal(crew.desk().operations, undefined, "operations are left out unless the Core asks for them");
+  assert.deepEqual(
+    crew.desk({ operations: true }).operations.map((o) => [o.id, o.tool, o.summary, o.actorId, o.workId, o.targetId]),
+    [
+      ["call-0", "crew_message", "ready?", "bob", workId, "alice"],
+      ["call-1", "environment_run", "git status", "bob", workId, undefined],
+    ],
+  );
+  assert.throws(() => crew.desk({ operations: "yes" }), /Invalid desk request/);
+  assert.throws(() => executions.recordOperation(record(workId), "call-3", "environment_run", "x".repeat(513)), /Invalid operation summary/);
   assert.throws(
     () => crew.desk({ conversationId }),
     /Invalid desk request/,

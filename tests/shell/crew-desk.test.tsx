@@ -185,3 +185,43 @@ test("a stopped Agent says so instead of showing an empty desk", async () => {
     await view.close();
   }
 });
+
+test("the owner opens the Agent's operations in place of the transcript, each marked with whom it was for", async () => {
+  const asked: unknown[] = [];
+  const view = await mount((async (_method: string, params: { actorId?: string }) => {
+    asked.push(params);
+    return {
+      ...deskFor(params.actorId === "alice" ? alice : bob),
+      operations: [
+        { id: "c2", tool: "crew_dispatch", summary: "check the signatures", at: 2, onBehalfOf: bob, to: zhe },
+        { id: "c1", tool: "environment_run", summary: "git status", at: 1, onBehalfOf: null },
+      ],
+    };
+  }) as unknown as ChannelRpc["request"]);
+  try {
+    assert.doesNotMatch(view.text(), /Handed work on/, "the transcript is shown first");
+    await React.act(async () => view.item("Operations")!.click());
+    await view.settle();
+    assert.equal(view.item("Operations")!.getAttribute("aria-current"), "page");
+    assert.match(view.text(), /Handed work on · To Zhe.*check the signatures.*For Bob/s);
+    assert.doesNotMatch(view.text(), /No tasks in this conversation/, "the conversation's tasks are hidden with its transcript");
+    assert.match(view.text(), /Ran a command.*git status.*For someone who left the team/s);
+    assert.doesNotMatch(view.text(), /done for Bob/, "the operations replace the transcript");
+    await React.act(async () => view.item("Alice")!.click());
+    await view.settle();
+    assert.match(view.text(), /done for Alice/, "choosing a conversation goes back to its transcript");
+    assert.equal(view.item("Operations")!.getAttribute("aria-current"), null);
+    assert.ok(asked.every((p) => !("operations" in (p as object))), "the client never asks for operations; the Core decides");
+  } finally {
+    await view.close();
+  }
+});
+
+test("a member who is not an owner sees no operations entry", async () => {
+  const view = await mount((async () => deskFor(bob)) as unknown as ChannelRpc["request"]);
+  try {
+    assert.equal(view.item("Operations"), undefined);
+  } finally {
+    await view.close();
+  }
+});

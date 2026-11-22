@@ -330,6 +330,7 @@ export class CrewWork {
 
   /**
    * Who may look at a Bot's desk, and what the Core knows of it: any member of the Bot's space.
+   * Only the Bot's owner and the space's owner also see its operations.
    * Runs in the storage owner; the caller then asks the Host for the live session.
    */
   deskAuthority(context: ActorContext, actorId: unknown) {
@@ -338,7 +339,7 @@ export class CrewWork {
     if (space === null || !this.#member(space, context.actorId)) return fail(403, "crew_work_denied");
     const row = this.db
       .prepare(
-        "SELECT bot_id,epoch,environment_json,model_selection FROM personal_assistants WHERE actor_id=? AND state='claimed' AND paused=0",
+        "SELECT bot_id,epoch,environment_json,model_selection,owner_human_id FROM personal_assistants WHERE actor_id=? AND state='claimed' AND paused=0",
       )
       .get(bot);
     if (!row) return fail(409, "crew_desk_unavailable");
@@ -363,6 +364,8 @@ export class CrewWork {
       model: model ? { providerId: model.providerId, modelId: model.modelId } : null,
       contacts: this.crew.phonebook(context, bot).length,
       members,
+      // Operations are an audit of the Bot's authority: its owner and the team's owner see them.
+      audit: context.actorId === String(row.owner_human_id) || context.actorId === this.#owner(space),
     };
   }
 
