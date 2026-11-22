@@ -320,6 +320,6 @@ try {
   await daemon?.close().catch(() => undefined);
   await new Promise<void>((accept) => model.close(() => accept()));
   if (result.result === "passed" && !process.env.OPENCRAFT_STACK_DRILL_KEEP)
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10 });
   else await writeFile(join(root, "result.json"), JSON.stringify(result, null, 2)).catch(() => undefined);
 }

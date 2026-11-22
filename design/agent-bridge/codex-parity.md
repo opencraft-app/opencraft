@@ -73,11 +73,13 @@ daemon 经 Core 运行旧 adapter 时，只有开启 Core Host overlays 才会�
 
 ## 桌面 bridge 栈（daemon 子进程）
 
-daemon 以 `--codex-bridge-stack <程序目录>`（`codexBridgeStack`）启动 bridge 栈：拆分 Core（账号与模型代理）、独立 APP Server、Engine Host（`host-process` 后端，pool 明示接受不强制资源与尽力隔离）。三者是 daemon 子进程，随 daemon 停止；daemon 异常退出时，下次启动按记录（核对命令行，不误杀复用的 pid）先停掉残留子进程，且只在持有存储锁之后启动，不会停到另一个 daemon 的子进程。Codex provider 代次按内容寻址（程序摘要 + 启动参数），重启注册同一代次；产物按摘要保存在私有目录，应用更新后旧代次的线程仍有其产物。该模式下 Core 地址、Host overlays、bridge 配置由栈提供（与显式 Core 地址或 bridge 配置互斥），新线程一律经 bridge 创建（provider bridge 的 `newThreads`），已有会话在下一次 `turn/start` 时接管。程序由 daemon 构建打包到 `dist/codex-bridge/`。
+daemon 以 `--codex-bridge-stack <程序目录>`（`codexBridgeStack`）启动 bridge 栈：拆分 Core（账号与模型代理）、独立 APP Server、Engine Host（`host-process` 后端，pool 明示接受不强制资源与尽力隔离）。三者是 daemon 子进程，随 daemon 停止：daemon 为每个子进程持有 stdin 管道，子进程预载 `exit-with-parent.cjs`（只在主线程），管道一断（daemon 崩溃或被杀）即走自身的 SIGTERM 正常收尾；另外下次启动按记录（核对命令行，不误杀复用的 pid）停掉仍残留的子进程，且只在持有存储锁之后启动，不会停到另一个 daemon 的子进程。Codex provider 代次按内容寻址（程序摘要 + 启动参数），重启注册同一代次；产物按摘要保存在私有目录，应用更新后旧代次的线程仍有其产物。该模式下 Core 地址、Host overlays、bridge 配置由栈提供（与显式 Core 地址或 bridge 配置互斥），新线程一律经 bridge 创建（provider bridge 的 `newThreads`），已有会话在下一次 `turn/start` 时接管。程序由 daemon 构建打包到 `dist/codex-bridge/`。
 
-演练 `scripts/smoke/execution/smoke-codex-bridge-stack.ts`（真实原生 Codex 0.162.1 + 本地假模型 + 合成账号，2026-11-22 通过）：旧 Host 建的会话在栈启动后以原 ID 续聊并保留历史；新线程经 bridge 应答；daemon 关闭时三个子进程全部退出；整栈重启后同一 bridge 线程续聊；每条输入只到达模型一次。Engine Host 重启后，声明 `adoption` 的 provider 在路由下次使用时续接已记录的原生会话，Host 仍记为进行中的轮次按原生结果收口（查不到记为中断），排队输入随后继续派发。
+演练 `scripts/smoke/execution/smoke-codex-bridge-stack.ts`（真实原生 Codex 0.162.1 + 本地假模型 + 合成账号，2026-11-22 在 Node 26 与 Electron 44 以 Node 运行（Node 24.22，与打包 daemon 相同）下均通过）：旧 Host 建的会话在栈启动后以原 ID 续聊并保留历史；新线程经 bridge 应答；daemon 关闭时三个子进程全部退出；整栈重启后同一 bridge 线程续聊；每条输入只到达模型一次。Engine Host 重启后，声明 `adoption` 的 provider 在路由下次使用时续接已记录的原生会话，Host 仍记为进行中的轮次按原生结果收口（查不到记为中断），排队输入随后继续派发。
 
-未完成：桌面 Main 的开启入口与打包验收；Windows（Core 目前只支持 Unix socket）；真实账号与界面需在用户机器验证；栈中子进程意外退出后的重启策略（当前 daemon 不自动重启，Codex 请求失败可见）。
+桌面开启入口：环境变量 `OPENCRAFT_CODEX_BRIDGE=1`（Windows 不提供），Main 把打包的 `runtime/codex-bridge` 传给 daemon。已在运行的 daemon 不会因此重启，需退出应用后再开。
+
+未完成：打包产物验收（macOS 签名包内的 `runtime/codex-bridge`）；Windows（Core 目前只支持 Unix socket）；真实账号与界面需在用户机器验证；栈中子进程意外退出后的重启策略（当前 daemon 不自动重启，Codex 请求失败可见）。
 
 ## 退休旧 adapter 时的其余 owner
 

@@ -170,6 +170,13 @@
         "to": "runtime/opencraft-daemon.cjs"
       },
       {
+        "from": "../opencraft-daemon/dist/codex-bridge",
+        "to": "runtime/codex-bridge",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "../workbench-web/dist-electron",
         "to": "renderer",
         "filter": [

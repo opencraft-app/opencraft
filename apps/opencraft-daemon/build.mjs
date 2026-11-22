@@ -33,3 +33,4 @@ for (const [source, target, format] of [
   ['../agent-bridge-host/src/codex-main.ts', 'codex.cjs', 'cjs'],
 ]) await build({ entryPoints: [source], outfile: `dist/codex-bridge/${target}`, bundle: true, platform: 'node', format, target: 'node24',
   external: ['node-pty'], ...(format === 'esm' ? { banner: requireBanner } : {}) });
+await (await import('node:fs/promises')).copyFile('src/codex-bridge-exit-with-parent.cjs', 'dist/codex-bridge/exit-with-parent.cjs');

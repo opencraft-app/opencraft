@@ -14,6 +14,8 @@ export const CODEX_BRIDGE_PROGRAMS = {
   appServer: "codex-app-server.cjs",
   engineHost: "engine-host.mjs",
   provider: "codex.cjs",
+  /** Preload that stops a child once the daemon's end of its stdin closes. */
+  exitWithParent: "exit-with-parent.cjs",
 } as const;
 
 export interface CodexBridgeStackOptions {
@@ -110,6 +112,7 @@ async function stopRecordedChildren(stateDirectory: string): Promise<void> {
  * with it; there is no fallback to another execution path when one fails.
  */
 export async function startCodexBridgeStack(options: CodexBridgeStackOptions): Promise<CodexBridgeStack> {
+  if (process.platform === "win32") throw new Error("The Codex bridge stack requires Unix sockets");
   const log = options.log ?? ((line: string) => console.error(line));
   const timeout = options.startupTimeoutMs ?? 60_000;
   await mkdir(options.stateDirectory, { recursive: true, mode: 0o700 });
@@ -120,14 +123,9 @@ export async function startCodexBridgeStack(options: CodexBridgeStackOptions): P
   for (const path of Object.values(programs)) await stat(path);
 
   // Unix socket paths are short-limited (104 bytes on macOS); keep them in a short private directory.
-  const sockets =
-    process.platform === "win32"
-      ? undefined
-      : await mkdtemp(join(process.platform === "darwin" ? "/tmp" : tmpdir(), "ocb-"));
-  const pipe = (name: string) =>
-    sockets ? join(sockets, `${name}.sock`) : `\\\\.\\pipe\\opencraft-${randomBytes(8).toString("hex")}-${name}`;
-  const coreEndpoint = pipe("core"),
-    appServerEndpoint = pipe("app-server");
+  const sockets = await mkdtemp(join(process.platform === "darwin" ? "/tmp" : tmpdir(), "ocb-"));
+  const coreEndpoint = join(sockets, "core.sock"),
+    appServerEndpoint = join(sockets, "app-server.sock");
   const privateFile = async (name: string, content: string) => {
     const path = join(options.stateDirectory, name);
     await writeFile(path, content, { mode: 0o600 });
@@ -145,10 +143,11 @@ export async function startCodexBridgeStack(options: CodexBridgeStackOptions): P
 
   /** Start a child and resolve with its first stdout line accepted by `ready`. */
   const start = async (program: string, args: string[], ready: (line: Record<string, unknown>) => boolean) => {
-    const child = spawn(options.node, [program, ...args], {
+    const child = spawn(options.node, ["--require", programs.exitWithParent, program, ...args], {
       cwd: options.runtimeDirectory,
       env,
-      stdio: ["ignore", "pipe", "pipe"],
+      // The daemon keeps stdin open for the child's life; see CODEX_BRIDGE_PROGRAMS.exitWithParent.
+      stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
     children.push({ child, program });
@@ -189,7 +188,7 @@ export async function startCodexBridgeStack(options: CodexBridgeStackOptions): P
         clearTimeout(forced);
       }
       await rm(join(options.stateDirectory, CHILDREN_RECORD), { force: true });
-      if (sockets) await rm(sockets, { recursive: true, force: true });
+      await rm(sockets, { recursive: true, force: true });
     })());
 
   try {
