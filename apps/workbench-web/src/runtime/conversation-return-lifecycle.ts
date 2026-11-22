@@ -27,15 +27,24 @@ export function bindConversationReturnLifecycle(input: {
   const recover = () => {
     if (disposed || !previous.visible || !previous.online) return;
     const runtime = input.getRuntime();
-    if (runtime.getSnapshot().phase !== "ready") { runtime.requestRecovery?.(); return; }
-    void input.getLease()?.retryRestore().catch(() => undefined);
+    if (runtime.getSnapshot().phase !== "ready") {
+      runtime.requestRecovery?.();
+      return;
+    }
+    void input
+      .getLease()
+      ?.retryRestore()
+      .catch(() => undefined);
   };
-  const stop = input.source.subscribe(snapshot => {
+  const stop = input.source.subscribe((snapshot) => {
     if (disposed) return;
     const changedVisibility = previous.visible !== snapshot.visible;
     previous = snapshot;
     input.getLease()?.setRecoveryVisibility(snapshot.visible && snapshot.online);
-    if (!snapshot.online) { wasOffline = true; probe.offline(); }
+    if (!snapshot.online) {
+      wasOffline = true;
+      probe.offline();
+    }
     if (changedVisibility && !snapshot.visible) probe.background(now());
     if (!snapshot.visible || !snapshot.online) return;
     const networkRecovery = wasOffline;
@@ -44,5 +53,9 @@ export function bindConversationReturnLifecycle(input: {
     if (networkRecovery && changedVisibility) probe.foreground(now());
     if (admitted) recover();
   });
-  return () => { disposed = true; stop(); input.getLease()?.setRecoveryVisibility(false); };
+  return () => {
+    disposed = true;
+    stop();
+    input.getLease()?.setRecoveryVisibility(false);
+  };
 }

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { bindConversationReturnLifecycle, type ConversationLifecycleSnapshot } from "../../apps/workbench-web/src/runtime/conversation-return-lifecycle";
+import {
+  bindConversationReturnLifecycle,
+  type ConversationLifecycleSnapshot,
+} from "../../apps/workbench-web/src/runtime/conversation-return-lifecycle";
 
 test("a hidden panel defers network recovery until activation and releases its lease on disposal", () => {
   let snapshot = { visible: true, online: true };
@@ -12,13 +15,17 @@ test("a hidden panel defers network recovery until activation and releases its l
       getSnapshot: () => snapshot,
       subscribe(listener) {
         listeners.add(listener);
-        return () => { listeners.delete(listener); };
+        return () => {
+          listeners.delete(listener);
+        };
       },
     },
     getRuntime: () => ({ getSnapshot: () => ({ phase: "ready" }) }),
     getLease: () => ({
-      setRecoveryVisibility: value => visibility.push(value),
-      retryRestore: async () => { restores++; },
+      setRecoveryVisibility: (value) => visibility.push(value),
+      retryRestore: async () => {
+        restores++;
+      },
     }),
     now: () => 40_000,
   });
