@@ -60,8 +60,10 @@ const child = spawn(runtime, [join(drill, "drill.mjs"), programs, codex, state, 
   windowsHide: true,
 });
 const timer = setTimeout(() => child.kill(), 8 * 60_000);
-const code = await new Promise((done) => child.once("exit", (exitCode, signal) => done(exitCode ?? (signal ? 1 : 0))));
+const [exitCode, exitSignal] = await new Promise((done) => child.once("exit", (code, signal) => done([code, signal])));
+const code = exitCode ?? (exitSignal ? 1 : 0);
 clearTimeout(timer);
 const result = await readFile(resultFile, "utf8").catch(() => "(no result file)\n");
 process.stdout.write(result);
+console.log(`drill process exited with ${exitSignal ?? exitCode}`);
 process.exit(code === 0 && result.startsWith("PASS") ? 0 : 1);
