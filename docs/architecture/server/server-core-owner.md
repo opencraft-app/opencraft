@@ -11,15 +11,15 @@
 - `headless-application.mjs` 在主线程 `openServerDatabase(dataDirectory)`，持有进程写锁（`server.lock`）、执行迁移与旧库导入，得到 owner 连接 `serverStorage`。
 - 同一连接上构造这些领域服务，请求处理直接同步执行 SQL：
 
-  | 服务 | 文件 | 网络线程的典型调用 |
-  |---|---|---|
-  | `ActorStore` | `actors.ts`（404 行） | `get` ×15、`isCurrent` ×8、`findHuman`，位于认证与授权热路径 |
-  | `MembershipStore` | `index.ts` | 成员角色、`InstanceAccess.authenticate` |
-  | `ThreadAccessStore` | `thread-access.ts`（311 行） | `allows` / `allowsActor`，每次线程访问 |
-  | `HumanAccounts` / `HumanAccountManagement` | `human-accounts.ts`、`account-management.ts` | 登录、账号管理 |
-  | `Collaboration` | `collaboration.ts`（1352 行） | 协作命令（`command` 已是异步） |
-  | `ThreadNoteStore`、`CapabilityBindings` | — | 线程备注、能力绑定 |
-  | 沟通扩展、频道、个人助手台账 | `communication-extension.ts` 等 | 由 Collaboration 内部调用 |
+  | 服务                                       | 文件                                         | 网络线程的典型调用                                           |
+  | ------------------------------------------ | -------------------------------------------- | ------------------------------------------------------------ |
+  | `ActorStore`                               | `actors.ts`（404 行）                        | `get` ×15、`isCurrent` ×8、`findHuman`，位于认证与授权热路径 |
+  | `MembershipStore`                          | `index.ts`                                   | 成员角色、`InstanceAccess.authenticate`                      |
+  | `ThreadAccessStore`                        | `thread-access.ts`（311 行）                 | `allows` / `allowsActor`，每次线程访问                       |
+  | `HumanAccounts` / `HumanAccountManagement` | `human-accounts.ts`、`account-management.ts` | 登录、账号管理                                               |
+  | `Collaboration`                            | `collaboration.ts`（1352 行）                | 协作命令（`command` 已是异步）                               |
+  | `ThreadNoteStore`、`CapabilityBindings`    | —                                            | 线程备注、能力绑定                                           |
+  | 沟通扩展、频道、个人助手台账               | `communication-extension.ts` 等              | 由 Collaboration 内部调用                                    |
 
 - 同一个 `opencraft-server.sqlite` 还有两个 Worker 打开的**第二、第三条 WAL 连接**：`OrchestrationRuntimeWorker` 与 `server-spaces.worker`。
 - owner 连接设置了 `busy_timeout=5000`。任一 Worker 写事务持锁时，主线程上的同步 SQL 可能等待最长 5 秒，期间所有连接、定时器与消息分发停止。这是本设计要消除的具体风险，不只是计数。
@@ -61,11 +61,11 @@
 
 热路径读取改读主线程内存投影，投影由 owner 发布：
 
-| 投影 | 内容 | 服务的调用 |
-|---|---|---|
-| `actors` | 主体行（id、kind、enabled、epoch、显示信息） | `get`、`isCurrent`、`findHuman` |
-| `membership` | `members`、`actor_members` 原始行 | 角色判定、`authenticate` |
-| `thread-access` | 线程授权行与权限所有者 | `allows`、`allowsActor` |
+| 投影            | 内容                                         | 服务的调用                      |
+| --------------- | -------------------------------------------- | ------------------------------- |
+| `actors`        | 主体行（id、kind、enabled、epoch、显示信息） | `get`、`isCurrent`、`findHuman` |
+| `membership`    | `members`、`actor_members` 原始行            | 角色判定、`authenticate`        |
+| `thread-access` | 线程授权行与权限所有者                       | `allows`、`allowsActor`         |
 
 - 投影沿用 `PermissionReadCache` 的"完整原始行 + 整体发布"模型：owner 在 `withPermissionWrite` 结束时生成快照，经 Worker 消息发布；主线程只替换引用，不做增量合并。
 - 每次发布带单调递增的 `revision`。主线程只接受更大的 revision；Worker 重启后从 1 重新开始，并以新的 owner 代次区分。
