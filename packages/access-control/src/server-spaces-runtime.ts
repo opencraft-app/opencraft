@@ -1,4 +1,4 @@
-import {installedServerMigrationComposition} from '@opencraft/storage-node/server';
+import {installedServerMigrationComposition} from '@opencraft/storage-node/server-composition';
 import type { DatabaseOutcome } from '@opencraft/sqlite-node';
 import { pathToFileURL } from 'node:url';
 import { Worker } from 'node:worker_threads';

@@ -1,7 +1,8 @@
+import { personalGitSocketPaths, removePersonalGitSocketDirectory } from './personal-git-sockets.js';
 import { readyGitBroker, validGitGrantScope, type GitGrantScope } from './personal-git-protocol.js';
 import { randomBytes } from 'node:crypto';
 import { rm } from 'node:fs/promises';
-import { dirname, isAbsolute, join } from 'node:path';
+import { basename, dirname, isAbsolute, join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import type { EnvironmentExecutionScope } from './execution-environment.js';
 
@@ -21,6 +22,8 @@ export class PersonalGitEnvironment {
   private unavailable = false;
   private closed = false;
   private closePromise?: Promise<void>;
+  private exited = false;
+  private cleanup = Promise.resolve();
   private readonly ready: Promise<void>;
   private rejectReady!: (error: Error) => void;
   private readonly pending = new Map<string, { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>();
@@ -29,7 +32,9 @@ export class PersonalGitEnvironment {
     if(accountMode==='actor'&&!executionOptions.authorize)throw Error('personal_git_live_authority_required');
     if (![directory, runtime, workerFile].every(isAbsolute) || !hosts.length || hosts.some(h => !/^[a-z0-9.-]{1,253}$/u.test(h))) throw Error('Invalid personal Git deployment');
     const privateDirectory = join(runtime, 'owner-' + randomBytes(6).toString('hex'));
-    this.socket = join(privateDirectory, 'broker.sock');
+    const socketPaths=mode==='issuer'?{directory:privateDirectory,socket:join(privateDirectory,'broker.sock'),root:null}:personalGitSocketPaths(runtime,basename(privateDirectory),process.getuid?.()??-1);
+    this.socket=socketPaths.socket;
+    let ownsSocketDirectory=false;
     if (mode === 'issuer') { this.ready = Promise.resolve(); this.rejectReady = () => {}; return; }
     this.worker = new Worker(workerFile, { workerData: { directory, privateDirectory, hosts, serveExecution: mode === 'execution', accountMode } });
     this.ready = new Promise<void>((resolve, reject) => {
@@ -40,6 +45,8 @@ export class PersonalGitEnvironment {
     void this.ready.catch(() => {});
     this.worker.on('error' , () => { this.unavailable = true; this.rejectReady(Error('personal_git_bridge_failed')); for (const entry of this.pending.values()) { clearTimeout(entry.timer); entry.reject(Error('personal_git_bridge_unavailable')); } this.pending.clear(); });
     this.worker.on('message', message => {
+      if(message?.type==='socket-directory-created'){ownsSocketDirectory=true;return;}
+
       if(message?.type==='authorize-execution'){
         if(!validGitGrantScope(message.scope)||!Number.isSafeInteger(message.id))return;
         void Promise.resolve().then(()=>{
@@ -54,7 +61,16 @@ export class PersonalGitEnvironment {
       this.pending.delete(message.id); clearTimeout(entry.timer);
       if (message.error) entry.reject(Error('personal_git_execution_unavailable')); else entry.resolve(message.result);
     });
-    this.worker.on('exit', () => { this.unavailable = true; this.rejectReady(Error('personal_git_bridge_exited')); for (const entry of this.pending.values()) { clearTimeout(entry.timer); entry.reject(Error('personal_git_bridge_unavailable')); } this.pending.clear(); void rm(privateDirectory, { recursive: true, force: true }).catch(() => {}); });
+    this.worker.on('exit', () => {
+      this.exited = true;
+      this.unavailable = true;
+      this.rejectReady(Error('personal_git_bridge_exited'));
+      for (const entry of this.pending.values()) {clearTimeout(entry.timer);entry.reject(Error('personal_git_bridge_unavailable'));}
+      this.pending.clear();
+      this.cleanup=Promise.all([rm(privateDirectory,{recursive:true,force:true}),
+        ...(ownsSocketDirectory&&socketPaths.root?[removePersonalGitSocketDirectory(socketPaths)]:[])]).then(()=>{});
+      void this.cleanup.catch(()=>{});
+    });
     this.worker.unref();
   }
   grant(scope: PersonalGitScope, _options?: { creation?: boolean }): PersonalGitGrant | undefined {
@@ -124,11 +140,12 @@ export class PersonalGitEnvironment {
     if (this.closePromise) return this.closePromise;
     this.closed = true;
     this.grants.clear();
-    this.closePromise = this.unavailable || !this.worker ? Promise.resolve() : new Promise<void>(resolve => {
-      const timer = setTimeout(() => { void this.worker!.terminate().then(() => resolve()); }, 5000); timer.unref();
-      this.worker!.once('exit', () => { clearTimeout(timer); resolve(); });
-      this.worker!.postMessage({ type: 'close' });
+    const exited = !this.worker || this.exited ? Promise.resolve() : new Promise<void>((resolve,reject) => {
+      const timer = setTimeout(() => {void this.worker!.terminate().then(()=>resolve(),reject);},5000);timer.unref();
+      this.worker!.once('exit',()=>{clearTimeout(timer);resolve();});
+      this.worker!.postMessage({type:'close'});
     });
+    this.closePromise=exited.then(()=>this.cleanup);
     return this.closePromise;
   }
 }

@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile, chmod, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, chmod, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startIndependentEngineHost } from '../../scripts/server-deployment/engine-host.mjs';
 import { attachEngineHost } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
 import { ModelConfigurationRepository } from '../../apps/local-agent-host/src/model-config/repository.ts';
 
-async function fixture(t) {
+async function fixture(t, overrides = {}) {
   const root = await mkdtemp(join(tmpdir(), 'independent-engine-host-test-'));
   const options = {
     dataDirectory: join(root, 'data'),
@@ -15,6 +15,7 @@ async function fixture(t) {
     runtimeDirectory: root,
     engines: ['pi'],
     defaultEngine: 'pi',
+    ...overrides,
   };
   await new ModelConfigurationRepository(join(options.dataDirectory, 'models')).initialize({
     schemaVersion: 1,
@@ -72,4 +73,35 @@ test('private descriptor validates directory, machine, engine selection and live
     body: '{}',
   });
   assert.equal(input.status, 403);
+});
+
+
+test('Assets execution context boots offline without creating a second writable credential vault',async t=>{
+ const f=await fixture(t,{executionContext:'assets'});
+ await assert.rejects(stat(join(f.options.dataDirectory,'employee-git-vault.sqlite')),{code:'ENOENT'});
+ await assert.rejects(stat(join(f.options.dataDirectory,'employee-git-vault.key')),{code:'ENOENT'});
+ assert.equal((await (await f.attach()).getIdentity()).pid,process.pid);
+});
+
+
+test('compiled independent Assets owner boots with packaged Workers and no TypeScript loader',async t=>{
+ const {mkdir}=await import('node:fs/promises');const {fileURLToPath}=await import('node:url');
+ const {execFile}=await import('node:child_process');const {promisify}=await import('node:util');
+ const {buildHeadlessBundle}=await import('../../scripts/packaging/package-headless-linux.mjs');
+ const parent=fileURLToPath(new URL('../../.runtime/',import.meta.url));await mkdir(parent,{recursive:true});
+ const root=await mkdtemp(join(parent,'independent-assets-artifact-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const output=join(root,'runtime','engine-host.mjs');
+ await buildHeadlessBundle(output,{headlessEntry:fileURLToPath(new URL('../../scripts/server-deployment/engine-host.mjs',import.meta.url))});
+ const directory=join(root,'data');
+ await new ModelConfigurationRepository(join(directory,'models')).initialize({schemaVersion:1,revision:0,providers:[],defaultModel:null});
+ const options={dataDirectory:directory,descriptorPath:join(root,'owner.json'),runtimeDirectory:root,engines:['pi'],defaultEngine:'pi',executionContext:'assets'};
+ const env={...process.env};delete env.NODE_OPTIONS;
+ const result=await promisify(execFile)(process.execPath,['--input-type=module','-e',`
+  import {startIndependentEngineHost} from ${JSON.stringify(new URL('file://'+output).href)};
+  import {stat} from 'node:fs/promises';
+  const host=await startIndependentEngineHost(${JSON.stringify(options)});
+  try{try{await stat(${JSON.stringify(join(directory,'employee-git-vault.sqlite'))});throw Error('Native owner created a writable vault');}catch(e){if(e.code!=='ENOENT')throw e;}
+   console.log('compiled-assets-owner-ready');}finally{await host.close();}
+ `],{env,timeout:30000});
+ assert.match(result.stdout,/compiled-assets-owner-ready/);
 });

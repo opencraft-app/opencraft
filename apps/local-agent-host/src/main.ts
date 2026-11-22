@@ -159,6 +159,8 @@ export async function startLocalAgentHost(options: {
   readonly artifactDirectory?: string;
   readonly prepareArtifact?: (artifact: import("./artifacts/catalog.js").Artifact, owner: string, signal?: AbortSignal) => Promise<import("./artifacts/catalog.js").Artifact>;
   readonly environmentDataDirectory?: string;
+  readonly executionContext?: 'assets'|'legacy';
+  readonly gitExecution?: {readonly directory:string;readonly workerFile:string;readonly machineId:string};
   readonly storage?: LocalAgentStorage;
   readonly machineIdentity?: RuntimeMachineIdentity;
   readonly modelStorageDirectory?: string;
@@ -248,7 +250,7 @@ export async function startLocalAgentHost(options: {
       { id: "session-persistence-jsonl", name: resolve(dirname(plugin), "dsh-thread-persistence-plugin.mjs"), config: { moduleUrl: engineModule("dsh-session-persistence-jsonl") } },
       { id: "session-projection-cache", name: resolve(dirname(plugin), "dsh-thread-projection-plugin.mjs"), config: { moduleUrl: engineModule("dsh-session-projection-cache") } },
       { insert: [{ id: "opencraft-capability", name: nativePlugin, config: {
-      modelPolicyPath: options.modelPolicyPath, environmentDataDirectory: options.environmentDataDirectory, token: bridgeToken, ownerRequired: !!options.ownerHandoff,
+      modelPolicyPath: options.modelPolicyPath, environmentDataDirectory: options.environmentDataDirectory, executionContext:options.executionContext, gitExecution:options.gitExecution, token: bridgeToken, ownerRequired: !!options.ownerHandoff,
       skillsRoot: join(bridgeDirectory, "skills"),
       persistentSkillsRoot,
       taskSkillsRoot: join(productDataRoot, "task-agent"),

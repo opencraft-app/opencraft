@@ -1,3 +1,4 @@
+import { bindConversationReturnLifecycle, type ConversationLifecycleSource } from "./conversation-return-lifecycle";
 import type { ChannelSearchRegistry } from './channel-search-contribution';
 import { beginObservedOperation } from "./observability";
 import { ThreadPinWriter } from "./thread-pin-writer";
@@ -145,10 +146,12 @@ if (import.meta.hot !== undefined) {
 }
 
 export function AppServerRuntimeProvider({
+  lifecycleSource,
   supervisor,
   children,
 }: {
   readonly supervisor: ActiveWebWorkbenchApplicationSupervisor;
+  readonly lifecycleSource?: ConversationLifecycleSource;
   readonly children: ReactNode;
 }) {
   const {
@@ -201,6 +204,13 @@ export function AppServerRuntimeProvider({
   const activeThreadLease = coordinator.getActiveThreadLease();
   const returnProbe = useRef(createConversationReturnProbe()).current;
   useEffect(() => {
+    if (lifecycleSource) {
+      return bindConversationReturnLifecycle({
+        source: lifecycleSource,
+        getRuntime: () => coordinator.getRuntime(),
+        getLease: () => activeThreadLease,
+      });
+    }
     const revalidate = () => {
       if (document.visibilityState === "hidden" || coordinator.getRuntime().getSnapshot().phase !== "ready") return;
       const lease = coordinator.getActiveThreadLease();
@@ -222,7 +232,7 @@ export function AppServerRuntimeProvider({
       window.removeEventListener("offline", offline);
       window.removeEventListener("online", online);
     };
-  }, [coordinator, returnProbe, activeThreadLease]);
+  }, [coordinator, returnProbe, activeThreadLease, lifecycleSource]);
   const activeConversationScopeId = conversationActivation.scopeIdFor(coordinatorSnapshot.location);
   const activeConversationViewId = coordinatorSnapshot.viewId;
   if (activeConversationViewId === null) throw new Error("Active Conversation View has no identity");

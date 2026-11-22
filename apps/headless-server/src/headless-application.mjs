@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import {openHeadlessAssetsStorage} from './headless-assets-storage.js';
-import {createHumanGitExecution} from './human-git-execution.js';
+import {humanGitRuntimeDirectory,createHumanGitExecution} from './human-git-execution.js';
 import { openHumanAssets } from '@opencraft/plugin-local-account/assets-server';
 import {workspaceTurnOutputContext} from './workspace-turn-output-context.mjs';
 import { restoreWorkspaceQueuedContext } from '@opencraft/opencraft-daemon/workspace-queued-context';
@@ -21,7 +21,7 @@ import { createProjectAutomations } from './project-automations.mjs';
 import { executionCliSourceToken } from '@opencraft/session-capabilities/credentials';
 import { waitForExecutionCliBinding } from '@opencraft/session-capabilities/execution-cli';
 import { createServerCodexBridge,readCodexBridgeConfiguration,createBridgeSessionMcp } from '@opencraft/opencraft-daemon/bridge-execution-admission';
-import { openServerDatabase } from "@opencraft/storage-node/server";
+import { openServerCoreOwner } from "@opencraft/storage-node/server-owner";
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { modelPolicyHttp } from '@opencraft/model-usage-policy/http';
 import { ModelPolicyTransport } from '@opencraft/model-usage-policy/transport';
@@ -342,7 +342,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   const productPluginAssets = await prepareProductPluginRelease({ releaseRoot: root, webRoot,
     cacheDirectory: process.env.OPENCRAFT_PRODUCT_PLUGIN_CACHE_DIRECTORY || join(dataDirectory, 'product-plugin-packs'),
     metadata: releaseManifest.productPlugins ?? null });
-  const serverStorage = await openServerDatabase(dataDirectory);
+  const serverStorage = await openServerCoreOwner(dataDirectory);
   const orchestrationStorage = new OrchestrationRuntimeWorker(join(dataDirectory, 'opencraft-server.sqlite'));
   try { await orchestrationStorage.start(); } catch (error) { await orchestrationStorage.close().catch(()=>{}); await serverStorage.close(); throw error; }
   const releaseLock = async () => { await orchestrationStorage.close(); await serverStorage.close(); };
@@ -523,7 +523,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       assetsService = await openHumanAssets({ directory: dataDirectory, auth: humanAuth, actors: actorStore, access: instanceAccess,openStorage:openHeadlessAssetsStorage });
       if(!assetsService.gitAuthority)throw Error('Assets execution authority unavailable');
       humanGitExecution=createHumanGitExecution({directory:dataDirectory,
-        runtimeDirectory:join(dataDirectory,'git-runtime'),workerFile:join(options.runtimeDirectory??join(root,'runtime'),'personal-git-worker.mjs'),
+        runtimeDirectory:humanGitRuntimeDirectory(join(dataDirectory,'git-runtime'),'gateway'),workerFile:options.gitWorkerFile??fileURLToPath(new URL('./personal-git-worker.mjs',import.meta.url)),
         hosts:assetsService.gitHosts,authority:assetsService.gitAuthority,grant:assetsService.executionGitGrant,
         authorize:scope=>{
           const actorId=scope.account.slice('actor:'.length),actor=actorStore.get(actorId);
@@ -707,6 +707,16 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     capabilityMcp = new SessionCapabilityMcp(capabilities, capabilityKey, capabilityBindings, {
       descriptorPath:join(dataDirectory,'session-capabilities.json'), retainEndpoint: true,
       cliDirectory:options.threadCliDirectory ?? join(dataDirectory,'thread-cli'),
+      hostGit:async session=>{
+        if(session.serverId!==conversationExecution.serverForHost('opencraft-server',session.threadId)
+          ||conversationExecution.hostForServer(session.serverId)!=='opencraft-server'||(!session.execution?.inputId&&!session.execution?.turnId))
+          throw Error('git_execution_unavailable');
+        // Only explicit installation-level anonymous mode can run without a
+        // personal authority. Missing login/observer/issuer is never fallback.
+        if(!humanGitExecution){if(anonymousDeployment)return {mode:'anonymous'};throw Error('git_execution_unavailable');}
+        const grant=await humanGitExecution.handoff({hostId:'opencraft-server',threadId:session.threadId,...(session.execution.inputId?{inputId:session.execution.inputId}:{turnId:session.execution.turnId})});
+        return {authority:assetsService.gitAuthority,hosts:assetsService.gitHosts,grant};
+      },
       authorizeExecution:async session=>{
         if(session.serverId!==conversationExecution.serverForThread(session.threadId))throw new CollaborationError(403,'execution_delegation_required');
         await actorCollaboration.admittedExecution(session.threadId,session.execution.inputId);
@@ -750,6 +760,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       speechModelManagement: true,
       projectStorageDirectory: join(dataDirectory, "projects"),
       environmentDataDirectory: identity?.executionEnvironment ? dataDirectory : undefined,
+      executionContext:identity?.executionEnvironment?'legacy':'assets',
+      gitExecution:identity?.executionEnvironment?undefined:{directory:dataDirectory,machineId:machineIdentity.machineId,
+        workerFile:options.gitWorkerFile??fileURLToPath(new URL('./personal-git-worker.mjs',import.meta.url))},
       projectlessWorkspaceDirectory: join(dataDirectory, "workspaces"),
       skillsDirectory: join(dataDirectory, "skills"),
       taskSkillDirectories: [join(dataDirectory, "codex/runtime/skills")],
@@ -970,6 +983,18 @@ export async function startHeadlessServer(options = {}, composition = {}) {
             execution: { turnId: context.turnId, callId: context.callId },
           }, tool, args, signal),
           executionEnvironment: identity?.executionEnvironment,
+          ...(assetsService ? {createExecutionGit: native => createHumanGitExecution({
+            directory: dataDirectory, runtimeDirectory: humanGitRuntimeDirectory(join(dataDirectory, 'codex-git-runtime'), 'codex'),
+            workerFile: options.gitWorkerFile ?? fileURLToPath(new URL('./personal-git-worker.mjs', import.meta.url)),
+            hosts: assetsService.gitHosts, authority: assetsService.gitAuthority,
+            grant: assetsService.executionGitGrant, inspect: native.inspect,
+            reservation: {grant: assetsService.executionGitReservation, inspect: native.inspectReservation},
+            authorize: scope => {
+              const actorId = scope.account.slice('actor:'.length), actor = actorStore.get(actorId);
+              return !closing && actor?.enabled === true && actor.kind === 'human'
+                && actor.generation === scope.actorGeneration && instanceAccess.admitsActor(actorId);
+            },
+          })} : {}),
           // Ingress has already authorized shared Thread participation. This
           // delegates native Turn input, not terminal access, ENV or payer identity.
           sharedTurnInput: true,

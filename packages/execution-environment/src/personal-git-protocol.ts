@@ -1,3 +1,5 @@
+export { createPersonalGitSocketDirectory, personalGitSocketPaths, removePersonalGitSocketDirectory } from './personal-git-sockets.js';
+import { assertPersonalGitSocketDirectory, personalGitSocketPaths } from './personal-git-sockets.js';
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
 import { lstat, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -45,8 +47,9 @@ export async function readyGitBroker(runtime: string, authority: string, uid: nu
     if (root && (!root.isDirectory() || root.uid !== uid || (root.mode & 0o077))) throw Error('git_broker_locator_invalid');
     const paths: string[] = [];
     for (const name of (await readdir(runtime).catch(() => [])).filter(n => /^owner-[a-f0-9]{12}$/u.test(n)).sort()) {
-      const dir = join(runtime,name), descriptor = join(dir,'ready.json'), socket = join(dir,'broker.sock');
+      const dir = join(runtime,name), descriptor = join(dir,'ready.json'), socketPaths=personalGitSocketPaths(runtime,name,uid), socket=socketPaths.socket;
       try {
+        if(socketPaths.root){await assertPersonalGitSocketDirectory(socketPaths.root,uid);await assertPersonalGitSocketDirectory(socketPaths.directory,uid);}
         const [d,f,s] = await Promise.all([lstat(dir),lstat(descriptor),lstat(socket)]);
         if (!d.isDirectory() || !f.isFile() || f.size > 2048 || !s.isSocket() || [d,f,s].some(x => x.uid !== uid || (x.mode & 0o077))) continue;
         const v = JSON.parse(await readFile(descriptor,'utf8'));

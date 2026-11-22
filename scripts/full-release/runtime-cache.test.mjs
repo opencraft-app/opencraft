@@ -12,7 +12,7 @@ async function fixture(t) {
   for (const path of ['runtime/codex/package.json', 'runtime/codex/package-lock.json',
     'scripts/full-release/runtime-cache.mjs', 'scripts/full-release/package-runtime.mjs', 'scripts/full-release/closure.mjs',
     'scripts/packaging/prepare-dsh-runtime.mjs', 'scripts/postinstall/patch-dsh-thread-environment.mjs',
-    'scripts/postinstall/patch-dsh-provider-lifecycle.mjs', 'scripts/postinstall/patch-dsh-owner-admission.mjs']) {
+    'scripts/postinstall/patch-dsh-git-execution.mjs', 'scripts/postinstall/patch-dsh-provider-lifecycle.mjs', 'scripts/postinstall/patch-dsh-owner-admission.mjs']) {
     await mkdir(join(repo, path, '..'), { recursive: true }); await writeFile(join(repo, path), path);
   }
   let builds = 0;
@@ -36,11 +36,11 @@ test('warm payload is identical, independently copied, and skips installation', 
 });
 test('lockfile and transformation changes invalidate the key', async t => {
   const f = await fixture(t); await f.build();
-  for (const path of ['runtime/codex/package-lock.json', 'scripts/postinstall/patch-dsh-owner-admission.mjs']) {
+  for (const path of ['runtime/codex/package-lock.json', 'scripts/postinstall/patch-dsh-owner-admission.mjs', 'scripts/postinstall/patch-dsh-git-execution.mjs']) {
     const before = await runtimeCacheKey(f.repo, 'codex'); await writeFile(join(f.repo, path), 'changed');
     assert.notEqual(await runtimeCacheKey(f.repo, 'codex'), before); await f.build();
   }
-  assert.equal(f.builds(), 3);
+  assert.equal(f.builds(), 4);
 });
 test('corrupt, missing, extra files and changed modes rebuild rather than package stale data', async t => {
   const f = await fixture(t); await f.build();

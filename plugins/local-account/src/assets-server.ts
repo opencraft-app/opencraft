@@ -77,6 +77,7 @@ export async function openHumanAssets(options: {
     gitAuthority:owner.gitAuthority,
     gitHosts:owner.gitHosts,
     executionGitGrant:owner.store.executionGitGrant,
+    executionGitReservation:owner.store.executionGitReservation,
     async handle(request: IncomingMessage, response: ServerResponse) {
       const path = new URL(request.url ?? "/", "http://assets.invalid").pathname;
       if (path !== ASSET_STATUS_PATH)
