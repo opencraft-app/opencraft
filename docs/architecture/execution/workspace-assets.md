@@ -163,3 +163,40 @@ placement and scoped files. Providers and Native replies in those tests remain
 synthetic. The default Headless startup still needs the matching Native service
 installation, remaining artifact/terminal/browser ports and a single Bot/provider
 configuration owner; this candidate does not publish default workspace capability.
+
+### Artifact and terminal transport candidate
+
+Workspace artifacts now cross the Worker boundary through bounded private credits,
+not raw provider handles, executable callbacks or a Host path to open inside the
+Worker. The trusted local artifact owner reads upload bytes; Worker receives only
+metadata and at most 64 KiB per credit, writes to the private working volume, and
+waits for the remote size/hash/atomic-rename receipt. Downloads retain the existing
+scoped, symlink-refusing reader and its final digest receipt. Repeated credits do
+not advance the source or write bytes twice. Transfers are bounded to 16 handles,
+1 GiB each and 30 seconds without a consumer heartbeat. Helpers run Python in
+isolated mode so user files in the workspace cannot replace their stdlib imports.
+
+Opening, reading, writing, finishing and closing are short RPC state transitions.
+Their provider/stream jobs run with the existing owner outside the FIFO lane; a
+provider waiting for upload input cannot block Actor, budget or catalog calls.
+Request revocation aborts only that transfer, and cleanup remains pending/failed
+until the actual owner confirms it. Closing a transfer never refunds workspace
+capacity or destroys the separately published Native resource.
+
+Terminal transport reuses the bound `SandboxProcessService`, including its
+existing process limits and bounded output replay. Worker operations have private
+one-shot correlation and are not resubmitted on timeout. A stable Gateway proxy
+belongs to one Actor/Thread/incarnation; each dispatch separately receives the
+original trusted ingress, not the first request or last subscriber. Resource
+watches survive View/request expiry, while each actual mutation rechecks fresh
+Actor/member and request authority. Output forwarding still passes through the
+existing per-client terminal authorization. Proxy/watch detach does not kill
+processes; binding or resource shutdown belongs to their existing owner.
+
+The transport tests use real Worker/journal/budget owners and real scoped Python
+artifact helpers in a temporary synthetic workspace. PTY/provider handles are
+synthetic, not evidence of an E2B connection or kernel enforcement. The bridge reuses per-binding limits; shared terminal admission across bindings
+and Hands is not wired by this change. That still needs its actual admission
+owner and conservative uncertain-incarnation accounting, rather than treating
+this transport as an installation-wide process quota. Default Headless activation, the browser port,
+and the single Bot/provider configuration composition remain unfinished.

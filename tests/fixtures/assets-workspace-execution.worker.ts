@@ -1,3 +1,4 @@
+import { SandboxProcessService } from "@opencraft/local-agent-host/sandbox-process-service";
 import { serveWorkerOwner } from "@opencraft/worker-owner/serve";
 import { openServerDatabase } from "@opencraft/storage-node/server";
 import { ActorStore } from "@opencraft/access-control/actors";
@@ -14,7 +15,12 @@ import {
 } from "../../apps/headless-server/src/workspaces/ordinary-git-sources.js";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import type { SandboxCommand, SandboxOutput, SandboxProcess } from "@opencraft/sandbox";
+import { workspaceArtifactSender } from "../../apps/headless-server/src/workspaces/workspace-artifact-reader.js";
+import { workspaceArtifactReceiver } from "../../apps/headless-server/src/workspaces/workspace-artifact-transfer.js";
 
 const resources = { cpuMillis: 4000, memoryBytes: 8 * 1024 ** 3 };
 serveWorkerOwner<{ directory: string }>(async ({ directory }) => {
@@ -67,6 +73,94 @@ serveWorkerOwner<{ directory: string }>(async ({ directory }) => {
     retained = {};
   }
   const save = () => writeFile(providerPath, JSON.stringify(retained), { mode: 0o600 });
+  const sandboxRoot = join(directory, "synthetic-workspace");
+  await mkdir(sandboxRoot, { recursive: true, mode: 0o700 });
+  await writeFile(join(sandboxRoot, "output.bin"), Buffer.alloc(131089, 65), { mode: 0o600 });
+  await writeFile(
+    join(sandboxRoot, "json.py"),
+    'raise RuntimeError("User workspace modules must not replace transfer helpers")\n',
+    { mode: 0o600 },
+  );
+  const artifactProcesses = new Set<number>();
+  const terminals = new Set<string>();
+  const spawnArtifact = async (
+    command: SandboxCommand,
+    onOutput?: (output: SandboxOutput) => void,
+  ): Promise<SandboxProcess> => {
+    if (command.terminal) {
+      const id = randomUUID();
+      terminals.add(id);
+      let finish!: (value: { code: number | null }) => void;
+      const exited = new Promise<{ code: number | null }>((resolve) => {
+        finish = resolve;
+      });
+      const end = () => {
+        if (terminals.delete(id)) finish({ code: 0 });
+      };
+      onOutput?.({ stream: "stdout", data: Buffer.from("synthetic-ready\n") });
+      return {
+        kind: "terminal",
+        id,
+        exited,
+        async resize() {},
+        async writeStdin(data) {
+          onOutput?.({ stream: "stdout", data: Buffer.from(data) });
+        },
+        async terminate() {
+          end();
+        },
+      };
+    }
+    if (
+      command.command[0] !== "/usr/bin/python3" ||
+      command.command[1] !== "-I" ||
+      command.command[2] !== "-c" ||
+      ![workspaceArtifactSender, workspaceArtifactReceiver].includes(command.command[3] ?? "")
+    )
+      throw Error("Synthetic process command unavailable");
+    const program = command.command[3]!.replace(
+      'root=os.open("/workspace",',
+      "root=os.open(" + JSON.stringify(sandboxRoot) + ",",
+    );
+    const child = spawn("/usr/bin/python3", ["-I", "-c", program, ...command.command.slice(4)], {
+      cwd: sandboxRoot,
+      env: { PATH: "/usr/bin:/bin" },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    if (child.pid) artifactProcesses.add(child.pid);
+    child.stdout.on("data", (data: Buffer) => onOutput?.({ stream: "stdout", data }));
+    child.stderr.on("data", (data: Buffer) => onOutput?.({ stream: "stderr", data }));
+    child.stdin.on("error", () => {});
+    let ended = false;
+    const exited = new Promise<{ code: number | null; signal?: string }>((resolve, reject) => {
+      child.once("error", reject);
+      child.once("close", (code, signal) => {
+        ended = true;
+        if (child.pid) artifactProcesses.delete(child.pid);
+        resolve({ code, ...(signal ? { signal } : {}) });
+      });
+    });
+    return {
+      kind: "process",
+      id: randomUUID(),
+      exited,
+      writeStdin: (data) =>
+        new Promise<void>((resolve, reject) => child.stdin.write(data, (error) => (error ? reject(error) : resolve()))),
+      closeStdin: () =>
+        new Promise<void>((resolve, reject) => child.stdin.end((error?: Error) => (error ? reject(error) : resolve()))),
+      async terminate() {
+        if (ended) return;
+        child.kill("SIGTERM");
+        const timer = setTimeout(() => child.kill("SIGKILL"), 1000);
+        try {
+          await exited;
+        } finally {
+          clearTimeout(timer);
+        }
+      },
+    };
+  };
+
   const storage = await createAssetsStorage(directory, [], undefined, (context) =>
     createWorkspaceExecutionOwner(context, {
       machineId: "synthetic-machine",
@@ -97,9 +191,7 @@ serveWorkerOwner<{ directory: string }>(async ({ directory }) => {
                       return {
                         resources,
                         capabilities: { terminal: true },
-                        async spawn(): Promise<never> {
-                          throw Error("unused");
-                        },
+                        spawn: spawnArtifact,
                         async close() {
                           if (failCleanup) throw Error("synthetic unknown deletion");
                           delete retained[input.lease.workspaceId];
@@ -137,7 +229,11 @@ serveWorkerOwner<{ directory: string }>(async ({ directory }) => {
             },
             async bind(options) {
               let current = true;
+              let processes: SandboxProcessService | undefined;
               return {
+                get processes() {
+                  return processes;
+                },
                 isCurrent: () => current,
                 async executionFields() {
                   await options.authorize();
@@ -158,11 +254,19 @@ serveWorkerOwner<{ directory: string }>(async ({ directory }) => {
                     execServerUrl: "ws://127.0.0.1:9/" + "a".repeat(64),
                   };
                 },
-                async bindThread() {
+                async bindThread(threadId) {
                   await options.authorize();
+                  processes ??= new SandboxProcessService({
+                    sandbox: options.sandbox,
+                    cwd: "/workspace",
+                    context: { threadId, projectId: null, resourceOwnerId: options.processContext!.resourceOwnerId },
+                    authorize: options.authorize,
+                    onCleanupUnconfirmed: options.onCleanupUnconfirmed,
+                  });
                 },
                 async close() {
                   current = false;
+                  await processes?.close();
                 },
                 files: {
                   async request() {
@@ -182,6 +286,8 @@ serveWorkerOwner<{ directory: string }>(async ({ directory }) => {
     methods: {
       ...storage.methods,
       fixtureCounters: () => ({ allocated, deleted, retained: Object.keys(retained).length }),
+      fixtureArtifactStats: () => ({ processes: artifactProcesses.size }),
+      fixtureTerminalStats: () => ({ active: terminals.size }),
       fixtureFailCleanup: () => {
         failCleanup = true;
       },

@@ -1,3 +1,4 @@
+import { WorkspaceArtifactCleanupUnconfirmed } from "./artifact-errors.js";
 import { Readable } from "node:stream";
 import { createHash } from "node:crypto";
 import type { SandboxEnvironment, SandboxProcess } from "@opencraft/sandbox";
@@ -65,7 +66,7 @@ export function workspaceArtifactReader(options: {
       process
         ? (stopping ??= process.terminate().catch(() => {
             options.onCleanupUnconfirmed();
-            throw Error("Workspace output cleanup unconfirmed");
+            throw new WorkspaceArtifactCleanupUnconfirmed();
           }))
         : Promise.resolve();
     const abort = () => {
@@ -90,7 +91,7 @@ export function workspaceArtifactReader(options: {
       await check();
       process = await options.sandbox.spawn(
         {
-          command: ["/usr/bin/python3", "-c", workspaceArtifactSender, path],
+          command: ["/usr/bin/python3", "-I", "-c", workspaceArtifactSender, path],
           cwd: "/workspace",
           env: { PATH: "/usr/bin:/bin" },
         },

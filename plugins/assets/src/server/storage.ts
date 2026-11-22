@@ -78,7 +78,7 @@ export async function createAssetsStorage(
     if (
       Object.keys(workspaceMethods).some(
         (name) =>
-          !/^workspace(?:Begin|Status|NativeReceipt|Cancel|Forget|Selection|FileScope|FileRequest|PlacementPage)$/.test(
+          !/^workspace(?:Begin|Status|NativeReceipt|Cancel|Forget|Selection|FileScope|FileRequest|PlacementPage|ArtifactDownload|ArtifactRead|ArtifactUpload|ArtifactWrite|ArtifactFinish|ArtifactClose|TerminalOpen|TerminalProbe|TerminalRequest|TerminalStatus|TerminalForget|TerminalSnapshot|TerminalUnwatch)$/.test(
             name,
           ),
       )

@@ -60,7 +60,7 @@ export class InstalledOrdinaryConversationRuntime {
   private readonly artifactReadClosers = new Set<() => Promise<void>>();
   private readonly artifactTransfers = new WeakMap<
     OrdinaryExecutionBinding,
-    (artifact: Artifact, signal?: AbortSignal) => Promise<Artifact>
+    (artifact: Artifact, signal?: AbortSignal, body?: AsyncIterable<Uint8Array>) => Promise<Artifact>
   >();
   private readonly allocator: Pick<InstalledOrdinarySandboxAllocator, "allocate" | "inspect" | "close">;
   private closing?: Promise<void>;
@@ -235,11 +235,12 @@ export class InstalledOrdinaryConversationRuntime {
             },
           }),
         );
-        this.artifactTransfers.set(binding, (artifact, signal) =>
+        this.artifactTransfers.set(binding, (artifact, signal, body) =>
           transferWorkspaceArtifact({
             sandbox: allocation.environment,
             artifact,
             signal,
+            body,
             authorize: ownerAuthorize,
             onCleanupUnconfirmed: () => {
               this.cleanupUnconfirmed = true;
@@ -391,13 +392,19 @@ export class InstalledOrdinaryConversationRuntime {
     await admission.authorize();
     return binding;
   }
-  prepareArtifactFor(input: OrdinaryRuntimeAdmission, threadId: string, artifact: Artifact, signal?: AbortSignal) {
+  prepareArtifactFor(
+    input: OrdinaryRuntimeAdmission,
+    threadId: string,
+    artifact: Artifact,
+    signal?: AbortSignal,
+    body?: AsyncIterable<Uint8Array>,
+  ) {
     return this.track(async () => {
       const admission = this.admission(input);
       const binding = await this.bindingFor(admission, threadId);
       const transfer = this.artifactTransfers.get(binding);
       if (!transfer) throw Error("Workspace attachment transfer unavailable");
-      const delivered = await transfer(artifact, signal);
+      const delivered = await transfer(artifact, signal, body);
       if ((await this.bindingFor(admission, threadId)) !== binding) throw Error("Workspace attachment binding retired");
       return delivered;
     });

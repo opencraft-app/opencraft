@@ -41,6 +41,8 @@ export function createWorkspaceNativeRouting(options: {
   authority: Awaited<ReturnType<typeof createWorkspaceExecutionAuthority>>;
   admit(context: TransportSubmissionContext): WorkspaceActorAdmission;
   onCleanupUnconfirmed(): void;
+  readWorkspaceArtifact?: CodexWorkspaceHooks["readWorkspaceArtifact"];
+  prepareWorkspaceArtifact?: CodexWorkspaceHooks["prepareWorkspaceArtifact"];
 }): CodexWorkspaceHooks {
   const handoff = new WorkspaceNativeHandoff({ ...options, placementChanged: () => options.placement.refresh() });
   const owned = new Map<string, () => void>(),
@@ -74,6 +76,8 @@ export function createWorkspaceNativeRouting(options: {
     }
   };
   return {
+    readWorkspaceArtifact: options.readWorkspaceArtifact,
+    prepareWorkspaceArtifact: options.prepareWorkspaceArtifact,
     requiresWorkspaceResume: (threadId) => {
       check();
       return options.placement.has(threadId);

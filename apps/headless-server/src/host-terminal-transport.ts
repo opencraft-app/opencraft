@@ -40,7 +40,11 @@ export function createHandsTerminalService(options: { directory: string; endpoin
 
 /** Structural service port: local durable owner or one already-admitted sandbox.
  * Selection is trusted composition, never a service ID accepted from an RPC. */
-export type HostTerminalService = Pick<DurableHostProcessService, 'probe' | 'subscribe' | 'dispatch'>;
+export type HostTerminalService = Pick<DurableHostProcessService, 'probe' | 'subscribe'> & {
+  dispatch(method:string,params:unknown,scope?:EnvironmentExecutionScope,assertCurrent?:()=>void,onAccepted?:()=>void,
+    /** Original trusted ingress for this operation, never the last subscriber. */
+    context?:TransportSubmissionContext):Promise<unknown>;
+};
 /** Context is the private authenticated ingress object, never process params. */
 export type HostTerminalServiceSelector = (scope: EnvironmentExecutionScope, context: TransportSubmissionContext) => Promise<HostTerminalService>;
 
@@ -145,7 +149,7 @@ export class HostTerminalSession {
         if (typeof params.processHandle !== 'string' || !['process/spawn', 'process/attach'].includes(value.method)) return;
         const watchers = this.watched.get(params.processHandle) ?? new Map();
         watchers.set(JSON.stringify([clientId ?? '', scope]), { context, params, scope, clientId, service }); this.watched.set(params.processHandle, watchers);
-      });
+      }, context);
       current(); this.emit({ id: value.id, result, [LOGICAL_CLIENT_FIELD]: clientId });
     } catch (error) {
       if (this.closed) return true;

@@ -1,3 +1,5 @@
+import { WorkspaceTerminalTransfers, type WorkspaceTerminalPort } from "./terminal-transports.js";
+import { WorkspaceArtifactTransfers, type WorkspaceArtifactPort } from "./artifact-transports.js";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
@@ -26,7 +28,7 @@ export type WorkspacePreparationStatus =
   | { state: "native-ready"; fields: Fields; selection: WorkspaceExecutionSelection }
   | { state: "complete"; receipt: { workspaceId: string; threadId: string } }
   | { state: "failed" };
-export interface WorkspaceExecutionPort {
+export interface WorkspaceExecutionPort extends WorkspaceArtifactPort, WorkspaceTerminalPort {
   workspaceBegin(access: WorkspaceActorAdmission, request: WorkspacePreparation): Promise<string>;
   workspaceStatus(token: string): Promise<WorkspacePreparationStatus>;
   workspaceNativeReceipt(
@@ -125,8 +127,9 @@ export async function createWorkspaceExecutionOwner(
   const owned = runtime,
     journal = store;
   const current = (access: WorkspaceActorAdmission, pending: boolean) => !closed && actors.current(access, pending);
-  const admission = (access: WorkspaceActorAdmission, state?: Attempt): OrdinaryRuntimeAdmission => {
-    const alive = () => current(access, state ? !state.published : true) && (!state || state.published || state.active);
+  const admission = (access: WorkspaceActorAdmission, state?: Attempt, resource = false): OrdinaryRuntimeAdmission => {
+    const alive = () =>
+      current(access, state ? !state.published : !resource) && (!state || state.published || state.active);
     return {
       authority: { principalId: access.actorId, hostId: "local-codex" },
       catalog: { scope: "actor:" + access.actorId, current: alive },
@@ -142,7 +145,59 @@ export async function createWorkspaceExecutionOwner(
     if (!value) throw Error("Workspace preparation unavailable");
     return value;
   };
+  const artifacts = new WorkspaceArtifactTransfers({
+    current: (access) => current(access, true),
+    download: (access, threadId, path, signal) => owned.readArtifactFor(admission(access), threadId, path, signal),
+    upload: (access, threadId, artifact, body, signal) =>
+      owned.prepareArtifactFor(admission(access), threadId, artifact, signal, body),
+  });
+  const terminals = new WorkspaceTerminalTransfers({
+    current: (access, pending) => current(access, pending),
+    binding: (access, threadId, resource) => owned.bindingFor(admission(access, undefined, resource), threadId),
+  });
   const methods: WorkspaceExecutionPort = {
+    async workspaceTerminalOpen(raw, threadId, lease) {
+      return terminals.open(workspaceAdmission(raw), threadId, lease);
+    },
+    async workspaceTerminalProbe(token) {
+      await terminals.probe(token);
+    },
+    async workspaceTerminalRequest(token, raw, method, params) {
+      return terminals.begin(token, workspaceAdmission(raw), method, params);
+    },
+    async workspaceTerminalStatus(token) {
+      return structuredClone(terminals.status(token));
+    },
+    async workspaceTerminalForget(token) {
+      terminals.forget(token);
+    },
+    async workspaceTerminalSnapshot(token, handle, afterSequence) {
+      return terminals.snapshot(token, handle, afterSequence);
+    },
+    async workspaceTerminalUnwatch(token) {
+      terminals.unwatch(token);
+    },
+    async workspaceArtifactDownload(raw, threadId, path) {
+      if (!validId(threadId) || typeof path !== "string" || path.length > 8192)
+        throw Error("Workspace output unavailable");
+      return artifacts.download(workspaceAdmission(raw), threadId, path);
+    },
+    async workspaceArtifactRead(token, sequence) {
+      return artifacts.read(token, sequence);
+    },
+    async workspaceArtifactUpload(raw, threadId, artifact) {
+      if (!validId(threadId)) throw Error("Workspace attachment unavailable");
+      return artifacts.upload(workspaceAdmission(raw), threadId, artifact);
+    },
+    async workspaceArtifactWrite(token, sequence, data) {
+      return artifacts.write(token, sequence, data);
+    },
+    async workspaceArtifactFinish(token) {
+      return artifacts.finish(token);
+    },
+    async workspaceArtifactClose(token) {
+      return artifacts.requestClose(token);
+    },
     async workspaceBegin(raw, request) {
       const access = workspaceAdmission(raw);
       if (
@@ -336,6 +391,16 @@ export async function createWorkspaceExecutionOwner(
             state.native.reject(Error("Workspace owner closed"));
           }
         const errors: unknown[] = [];
+        try {
+          await terminals.close();
+        } catch (error) {
+          errors.push(error);
+        }
+        try {
+          await artifacts.closeAll();
+        } catch (error) {
+          errors.push(error);
+        }
         try {
           await owned.close();
         } catch (error) {

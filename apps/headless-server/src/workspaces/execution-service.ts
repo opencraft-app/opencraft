@@ -1,3 +1,7 @@
+import { WorkspaceTerminalClient } from "./terminal-client.js";
+import type { EnvironmentExecutionScope } from "@opencraft/execution-environment";
+import type { HostTerminalService, HostTerminalServiceSelector } from "../host-terminal-transport.js";
+import { WorkspaceArtifactClient } from "./artifact-client.js";
 import type { AssetStoragePort, AssetAdmission } from "@opencraft/plugin-assets/server";
 import type { CodexWorkspaceHooks } from "../codex-workspace-hooks.mjs";
 import type { HostFileBinding, HostFileSelector } from "../host-filesystem-transport.js";
@@ -35,6 +39,8 @@ export async function openWorkspaceExecutionService(options: {
     throw cause;
   }
   const ownedAuthority = authority;
+  const artifacts = new WorkspaceArtifactClient(options.port);
+  const terminals = new Map<string, Promise<WorkspaceTerminalClient>>();
   const assetAdmission = (context: TransportSubmissionContext): AssetAdmission => {
     const access = admission.admit(context);
     return {
@@ -54,6 +60,43 @@ export async function openWorkspaceExecutionService(options: {
         authority: ownedAuthority,
         admit: admission.admit,
         onCleanupUnconfirmed: options.onCleanupUnconfirmed,
+        readWorkspaceArtifact: async (threadId, path, context, signal) => {
+          check(hostId);
+          if (!placement.has(threadId)) throw Error("Workspace output has no remote placement");
+          const access = admission.admit(context);
+          return artifacts.read(
+            access,
+            threadId,
+            path,
+            () => {
+              check(hostId);
+              admission.admit(context);
+            },
+            signal,
+          );
+        },
+        prepareWorkspaceArtifact: async (artifact, threadId, context, signal) => {
+          check(hostId);
+          if (!placement.has(threadId)) {
+            if (!placement.isKnownLocal(threadId)) throw Error("Native attachment placement unavailable");
+            return null;
+          }
+          if (!context) throw Error("Workspace attachment authority unavailable");
+          const access = admission.admit(context);
+          const delivered = await artifacts.upload(
+            access,
+            threadId,
+            artifact,
+            () => {
+              check(hostId);
+              admission.admit(context);
+            },
+            signal,
+          );
+          check(hostId);
+          admission.admit(context);
+          return delivered;
+        },
       });
     },
     async readCatalog(hostId: string, context: TransportSubmissionContext) {
@@ -75,6 +118,59 @@ export async function openWorkspaceExecutionService(options: {
       check(hostId);
       admission.admit(context);
       return result;
+    },
+    async selectHostTerminalService(
+      hostId: string,
+      scope: EnvironmentExecutionScope,
+      context: TransportSubmissionContext,
+      local: HostTerminalServiceSelector,
+    ): Promise<HostTerminalService> {
+      if (hostId !== "local-codex" || scope.threadId === null) return local(scope, context);
+      check(hostId);
+      if (!placement.has(scope.threadId)) {
+        if (!placement.isKnownLocal(scope.threadId)) throw Error("Native terminal placement unavailable");
+        return local(scope, context);
+      }
+      const access = admission.admit(context),
+        selection = await options.port.workspaceSelection(access, scope.threadId);
+      if (selection.kind !== "bound" || scope.projectId !== null) throw Error("Workspace terminal binding unavailable");
+      const key = JSON.stringify([
+        access.actorId,
+        access.generation,
+        access.membershipRevision,
+        scope.threadId,
+        selection.workspaceId,
+        selection.generation,
+      ]);
+      let pending = terminals.get(key);
+      if (!pending) {
+        if (terminals.size >= 128) throw Error("Workspace terminal bindings exhausted");
+        pending = options.port
+          .workspaceTerminalOpen(access, scope.threadId, {
+            workspaceId: selection.workspaceId,
+            generation: selection.generation,
+          })
+          .then(
+            (token) =>
+              new WorkspaceTerminalClient({
+                port: options.port,
+                token,
+                threadId: scope.threadId!,
+                actorId: access.actorId,
+                generation: access.generation,
+                admit: admission.admit,
+                onCleanupUnconfirmed: options.onCleanupUnconfirmed,
+              }),
+          );
+        terminals.set(key, pending);
+        void pending.catch(() => {
+          if (terminals.get(key) === pending) terminals.delete(key);
+        });
+      }
+      const terminal = await pending;
+      check(hostId);
+      admission.admit(context);
+      return terminal;
     },
     async selectHostFiles(
       hostId: string,
@@ -123,7 +219,13 @@ export async function openWorkspaceExecutionService(options: {
         closed = true;
         placement.close();
         admission.close();
+        const results = await Promise.allSettled(
+          [...terminals.values()].map(async (terminal) => (await terminal).close()),
+        );
+        terminals.clear();
         await ownedAuthority.close();
+        const failures = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+        if (failures.length) throw new AggregateError(failures, "Workspace terminal detach unconfirmed");
       })()),
   };
 }

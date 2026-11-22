@@ -30,7 +30,8 @@
     "./ordinary-workspace-store": "./src/ordinary-workspace-store.ts",
     "./ordinary-workspace-compute": "./src/ordinary-workspace-compute.ts",
     "./sandbox-conversation-binding": "./src/sandbox-conversation-binding.ts",
-    "./sandbox-browser-owner": "./src/sandbox-browser-owner.ts"
+    "./sandbox-browser-owner": "./src/sandbox-browser-owner.ts",
+    "./sandbox-process-service": "./src/sandbox-process-service.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

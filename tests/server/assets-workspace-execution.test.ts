@@ -1,3 +1,6 @@
+import { WorkspaceTerminalClient } from "../../apps/headless-server/src/workspaces/terminal-client.js";
+import { WorkspaceArtifactClient } from "../../apps/headless-server/src/workspaces/artifact-client.js";
+import { createHash } from "node:crypto";
 import { openWorkspaceExecutionService } from "../../apps/headless-server/src/workspaces/execution-service.js";
 import { createWorkspaceNativeRouting } from "../../apps/headless-server/src/workspaces/native-routing.js";
 import { WorkspacePlacementProjection } from "../../apps/headless-server/src/workspaces/placement-projection.js";
@@ -9,7 +12,7 @@ import { WorkspaceNativeHandoff } from "../../apps/headless-server/src/workspace
 import type { TransportSubmissionContext } from "@opencraft/appserver-client/transport";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { WorkerOwner } from "@opencraft/worker-owner";
@@ -25,6 +28,8 @@ type Port = AssetStoragePort &
     fixtureCounters(): Promise<{ allocated: number; deleted: number; retained: number }>;
     fixtureFailCleanup(): Promise<void>;
     fixtureDisableActor(): Promise<void>;
+    fixtureArtifactStats(): Promise<{ processes: number }>;
+    fixtureTerminalStats(): Promise<{ active: number }>;
   };
 const flag = () => {
   const value = new Int32Array(new SharedArrayBuffer(4));
@@ -597,6 +602,41 @@ test("Gateway workspace service composes the existing Worker catalog and scoped 
   const controller = new AbortController();
   controller.abort();
   await assert.rejects(files.files.request("fs/readDirectory", { path: "/workspace" }, controller.signal));
+  const nativeHooks = service.createCodexWorkspaceHooks({ hostId: "local-codex" });
+  assert.equal(typeof nativeHooks.prepareWorkspaceArtifact, "function");
+  const output = await nativeHooks.readWorkspaceArtifact!("native-gateway-service", "/workspace/output.bin", context);
+  try {
+    const chunks: Buffer[] = [];
+    for await (const chunk of output.body) chunks.push(Buffer.from(chunk));
+    assert.deepEqual(Buffer.concat(chunks), Buffer.alloc(131089, 65));
+  } finally {
+    await output.dispose();
+  }
+  const terminalScope = {
+    account: "actor:" + actor.actorId,
+    hostId: "local-codex",
+    threadId: "native-gateway-service",
+    projectId: null,
+  };
+  const noLocalTerminal = async (): Promise<never> => {
+    throw Error("Must not select a controller PTY");
+  };
+  const terminal = await service.selectHostTerminalService("local-codex", terminalScope, context, noLocalTerminal);
+  assert.strictEqual(
+    await service.selectHostTerminalService("local-codex", terminalScope, { ...context }, noLocalTerminal),
+    terminal,
+    "Each request resolves a stable Actor/incarnation service without changing its authority",
+  );
+  await terminal.probe();
+  await terminal.dispatch(
+    "process/spawn",
+    { processHandle: "gateway-terminal", command: ["/bin/sh"], tty: true, size: { cols: 80, rows: 24 } },
+    terminalScope,
+    () => {},
+    undefined,
+    context,
+  );
+  assert.equal((await f.port.fixtureTerminalStats()).active, 1);
   live = false;
   await assert.rejects(files.assertCurrent());
   await assert.rejects(service.readCatalog("local-codex", context));
@@ -604,4 +644,280 @@ test("Gateway workspace service composes the existing Worker catalog and scoped 
   await service.close();
   await assert.rejects(service.readFileScope("local-codex", context, "native-gateway-service"));
   assert.equal((await f.port.fixtureCounters()).retained, 1, "The composition does not own/close the caller Worker");
+});
+
+async function artifactClose(port: Port, token: string) {
+  for (let i = 0; i < 600; i++) {
+    const value = await port.workspaceArtifactClose(token);
+    if (value === "closed") return;
+    if (value === "failed") throw Error("Artifact cleanup unconfirmed");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw Error("Artifact cleanup did not settle");
+}
+async function artifactFixture(t: test.TestContext) {
+  const f = await fixture(t),
+    token = await f.port.workspaceBegin(f.access(), {
+      kind: "start",
+      intentId: "artifacts",
+      environment: await f.target(),
+    });
+  await settled(f.port, token, "native-ready");
+  await f.port.workspaceNativeReceipt(token, { result: { thread: { id: "native-artifacts" } } });
+  return f;
+}
+test("real Worker artifact credits preserve bounded chunks, do not block the FIFO, and read actual scoped helper output", async (t) => {
+  const f = await artifactFixture(t),
+    token = await f.port.workspaceArtifactDownload(f.access(), "native-artifacts", "/workspace/output.bin");
+  const next = async (sequence: number) => {
+    for (let i = 0; i < 600; i++) {
+      const value = await f.port.workspaceArtifactRead(token, sequence);
+      if (value.state !== "pending") return value;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    throw Error("Artifact credit did not settle");
+  };
+  assert.equal((await f.port.workspacePlacementPage()).items[0]?.threadId, "native-artifacts");
+  const first = await next(0);
+  assert.equal(first.state, "chunk");
+  if (first.state !== "chunk") throw Error("unreachable");
+  assert.equal(first.data.byteLength, 65536);
+  assert.deepEqual(await next(0), first, "Repeated credit never advances the source");
+  await assert.rejects(f.port.workspaceArtifactRead(token, 2), "A skipped credit is not an acknowledgement");
+  const chunks = [Buffer.from(first.data)];
+  for (let sequence = 1; ; sequence++) {
+    const value = await next(sequence);
+    if (value.state === "done") break;
+    assert.equal(value.state, "chunk");
+    if (value.state !== "chunk") throw Error("unreachable");
+    assert.ok(value.data.byteLength <= 65536);
+    chunks.push(Buffer.from(value.data));
+  }
+  assert.deepEqual(Buffer.concat(chunks), Buffer.alloc(131089, 65));
+  await artifactClose(f.port, token);
+  assert.equal((await f.port.fixtureArtifactStats()).processes, 0);
+  const stream = await new WorkspaceArtifactClient(f.port).read(
+    f.access(),
+    "native-artifacts",
+    "/workspace/output.bin",
+    () => {},
+  );
+  try {
+    const result: Buffer[] = [];
+    for await (const chunk of stream.body) result.push(Buffer.from(chunk));
+    assert.deepEqual(Buffer.concat(result), Buffer.alloc(131089, 65));
+  } finally {
+    await stream.dispose();
+  }
+  assert.equal(
+    (await f.port.workspaceSelection(f.access(), "native-artifacts")).kind,
+    "bound",
+    "Finishing output is not resource destruction",
+  );
+});
+
+test("Worker artifact uploads cross only byte credits, verify the remote hash receipt, and preserve the Native resource after cancellation", async (t) => {
+  const f = await artifactFixture(t),
+    client = new WorkspaceArtifactClient(f.port),
+    directory = await mkdtemp(join(tmpdir(), "workspace-upload-source-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const source = join(directory, "synthetic.bin"),
+    bytes = Buffer.alloc(200017, 66);
+  await writeFile(source, bytes, { mode: 0o600 });
+  const metadata = {
+    id: "synthetic-artifact",
+    name: "sample.bin",
+    mimeType: "application/octet-stream",
+    size: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+    origin: "upload" as const,
+  };
+  const delivered = await client.upload(f.access(), "native-artifacts", { ...metadata, path: source }, () => {});
+  assert.equal(delivered.path, "/workspace/.opencraft/attachments/" + metadata.sha256 + ".bin");
+  assert.equal(delivered.origin, "execution-copy");
+  const stream = await client.read(f.access(), "native-artifacts", delivered.path, () => {});
+  try {
+    const result: Buffer[] = [];
+    for await (const chunk of stream.body) result.push(Buffer.from(chunk));
+    assert.deepEqual(Buffer.concat(result), bytes);
+  } finally {
+    await stream.dispose();
+  }
+  await assert.rejects(
+    client.upload(f.access(), "native-artifacts", { ...metadata, sha256: "0".repeat(64), path: source }, () => {}),
+  );
+  const access = f.access(),
+    waiting = await f.port.workspaceArtifactUpload(access, "native-artifacts", { ...metadata, size: 1 });
+  assert.equal(
+    (await f.port.workspacePlacementPage()).items.length,
+    1,
+    "A provider waiting for bytes cannot occupy the FIFO",
+  );
+  Atomics.store(access.requestPermit, 0, 0);
+  await artifactClose(f.port, waiting);
+  const controller = new AbortController(),
+    reading = await client.read(f.access(), "native-artifacts", "/workspace/output.bin", () => {}, controller.signal);
+  controller.abort();
+  await reading.dispose();
+  assert.equal((await f.port.fixtureArtifactStats()).processes, 0);
+  assert.equal((await f.port.workspaceSelection(f.access(), "native-artifacts")).kind, "bound");
+});
+
+async function terminalOperation(port: Port, token: string) {
+  for (let i = 0; i < 600; i++) {
+    const value = await port.workspaceTerminalStatus(token);
+    if (value.state !== "pending") {
+      await port.workspaceTerminalForget(token);
+      if (value.state === "failed") throw Error("Terminal operation failed");
+      return value.result;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw Error("Terminal operation did not settle");
+}
+test("Worker terminal uses the existing process owner/replay and keeps published processes independent of a View watch", async (t) => {
+  const f = await artifactFixture(t),
+    seed = f.access(),
+    selection = await f.port.workspaceSelection(seed, "native-artifacts");
+  if (selection.kind !== "bound") throw Error("unreachable");
+  const lease = { workspaceId: selection.workspaceId, generation: selection.generation };
+  const watch = await f.port.workspaceTerminalOpen(seed, "native-artifacts", lease);
+  await terminalOperation(
+    f.port,
+    await f.port.workspaceTerminalRequest(watch, f.access(), "process/spawn", {
+      processHandle: "remote-terminal",
+      command: ["/bin/sh"],
+      tty: true,
+      size: { cols: 80, rows: 24 },
+    }),
+  );
+  Atomics.store(seed.requestPermit, 0, 0);
+  let snapshot = await f.port.workspaceTerminalSnapshot(watch, "remote-terminal", 0);
+  assert.equal(Buffer.from(snapshot.output[0]!.deltaBase64, "base64").toString(), "synthetic-ready\n");
+  await f.port.workspaceTerminalUnwatch(watch);
+  assert.equal((await f.port.fixtureTerminalStats()).active, 1, "Detaching output is not terminal destruction");
+  const next = await f.port.workspaceTerminalOpen(f.access(), "native-artifacts", lease);
+  await terminalOperation(
+    f.port,
+    await f.port.workspaceTerminalRequest(next, f.access(), "process/writeStdin", {
+      processHandle: "remote-terminal",
+      deltaBase64: Buffer.from("echo-bytes").toString("base64"),
+    }),
+  );
+  snapshot = await f.port.workspaceTerminalSnapshot(next, "remote-terminal", 1);
+  assert.equal(Buffer.from(snapshot.output[0]!.deltaBase64, "base64").toString(), "echo-bytes");
+  await assert.rejects(
+    f.port.workspaceTerminalOpen(f.access(), "native-artifacts", { ...lease, generation: lease.generation + 1 }),
+  );
+  await terminalOperation(
+    f.port,
+    await f.port.workspaceTerminalRequest(next, f.access(), "process/kill", { processHandle: "remote-terminal" }),
+  );
+  assert.equal((await f.port.fixtureTerminalStats()).active, 0);
+  assert.equal(
+    (await f.port.fixtureCounters()).retained,
+    1,
+    "Killing a terminal is not destroying the Native workspace",
+  );
+});
+
+test("Main stable terminal proxy authorizes each original operation context, not the first or last subscriber", async (t) => {
+  const f = await artifactFixture(t),
+    seed = f.access(),
+    selection = await f.port.workspaceSelection(seed, "native-artifacts");
+  if (selection.kind !== "bound") throw Error("unreachable");
+  const token = await f.port.workspaceTerminalOpen(seed, "native-artifacts", {
+    workspaceId: selection.workspaceId,
+    generation: selection.generation,
+  });
+  const first: TransportSubmissionContext = {
+      sender: null,
+      actorContext: {
+        actorId: seed.actorId,
+        generation: seed.generation,
+        credentialId: null,
+        expiresAt: Date.now() + 60000,
+      },
+    },
+    second = { ...first };
+  let expired = false;
+  const proxy = new WorkspaceTerminalClient({
+    port: f.port,
+    token,
+    threadId: "native-artifacts",
+    actorId: seed.actorId,
+    generation: seed.generation,
+    admit: (context) => {
+      if (context === first && expired) throw Error("Original first View expired");
+      return f.access();
+    },
+    onCleanupUnconfirmed() {},
+  });
+  const events: { method: string; params: unknown }[] = [],
+    remove = proxy.subscribe((method, params) => events.push({ method, params }));
+  t.after(async () => {
+    remove();
+    await proxy.close();
+  });
+  const scope = {
+    hostId: "local-codex",
+    account: "actor:" + seed.actorId,
+    threadId: "native-artifacts",
+    projectId: null,
+  };
+  let accepted = 0;
+  await proxy.dispatch(
+    "process/spawn",
+    { processHandle: "shared-view-terminal", command: ["/bin/sh"], tty: true, size: { cols: 80, rows: 24 } },
+    scope,
+    () => {},
+    () => {
+      accepted++;
+    },
+    first,
+  );
+  expired = true;
+  await proxy.dispatch(
+    "process/writeStdin",
+    { processHandle: "shared-view-terminal", deltaBase64: Buffer.from("second-view").toString("base64") },
+    scope,
+    () => {},
+    undefined,
+    second,
+  );
+  await assert.rejects(
+    proxy.dispatch(
+      "process/writeStdin",
+      { processHandle: "shared-view-terminal", deltaBase64: "YQ==" },
+      scope,
+      () => {},
+      undefined,
+      first,
+    ),
+  );
+  await assert.rejects(
+    proxy.dispatch(
+      "process/writeStdin",
+      { processHandle: "shared-view-terminal", deltaBase64: "YQ==" },
+      scope,
+      () => {},
+      undefined,
+      { ...second, actorContext: { ...second.actorContext!, actorId: "human://fixture/foreign" } },
+    ),
+  );
+  assert.equal(accepted, 1);
+  for (
+    let i = 0;
+    i < 100 &&
+    !events.some((value) => JSON.stringify(value.params).includes(Buffer.from("second-view").toString("base64")));
+    i++
+  )
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.ok(events.some((value) => value.method === "process/outputDelta"));
+  await proxy.close();
+  assert.equal(
+    (await f.port.fixtureTerminalStats()).active,
+    1,
+    "Closing a proxy detaches only; Worker retains the process owner",
+  );
 });

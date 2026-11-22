@@ -1,3 +1,4 @@
+import { WorkspaceArtifactCleanupUnconfirmed } from "./artifact-errors.js";
 import type { SandboxEnvironment, SandboxProcess } from "@opencraft/sandbox";
 import { artifactFileBody, type Artifact } from "@opencraft/local-agent-host/artifacts";
 import { extname } from "node:path";
@@ -40,6 +41,7 @@ finally:
 export async function transferWorkspaceArtifact(options: {
   sandbox: Pick<SandboxEnvironment, "spawn">;
   artifact: Artifact;
+  body?: AsyncIterable<Uint8Array>;
   authorize(): Promise<void>;
   signal?: AbortSignal;
   onCleanupUnconfirmed(): void;
@@ -59,7 +61,7 @@ export async function transferWorkspaceArtifact(options: {
     process
       ? (stopping ??= process.terminate().catch(() => {
           options.onCleanupUnconfirmed();
-          throw Error("Workspace artifact cleanup unconfirmed");
+          throw new WorkspaceArtifactCleanupUnconfirmed();
         }))
       : Promise.resolve();
   const abort = () => {
@@ -75,7 +77,15 @@ export async function transferWorkspaceArtifact(options: {
     await check();
     process = await options.sandbox.spawn(
       {
-        command: ["/usr/bin/python3", "-c", workspaceArtifactReceiver, String(artifact.size), artifact.sha256, name],
+        command: [
+          "/usr/bin/python3",
+          "-I",
+          "-c",
+          workspaceArtifactReceiver,
+          String(artifact.size),
+          artifact.sha256,
+          name,
+        ],
         cwd: "/workspace",
         env: { PATH: "/usr/bin:/bin" },
       },
@@ -87,7 +97,7 @@ export async function transferWorkspaceArtifact(options: {
     );
     await check();
     if (process.kind !== "process") throw Error("Workspace artifact requires process transport");
-    for await (const chunk of artifactFileBody(artifact.path)) {
+    for await (const chunk of options.body ?? artifactFileBody(artifact.path)) {
       await check();
       await process.writeStdin(chunk);
     }
