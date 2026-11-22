@@ -4,7 +4,6 @@ export const mobileMessages = defineMessages({
   brand: { id: "mobile.brand", defaultMessage: "OpenCraft" },
   source: { id: "mobile.source", defaultMessage: "Workspace source" },
   bundled: { id: "mobile.bundled", defaultMessage: "Built-in workspace" },
-  remote: { id: "mobile.remote", defaultMessage: "Self-hosted workspace" },
   description: { id: "mobile.description", defaultMessage: "Use the built-in workspace or open your own OpenCraft website." },
   consent: { id: "mobile.consent", defaultMessage: "Load my self-hosted website" },
   url: { id: "mobile.url", defaultMessage: "HTTPS address" },

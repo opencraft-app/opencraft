@@ -1092,7 +1092,6 @@
   "overhome.noMatches": "ไม่พบแอป",
   "mobile.source": "แหล่งที่มาของพื้นที่ทำงาน",
   "mobile.bundled": "พื้นที่ทำงานในแอป",
-  "mobile.remote": "พื้นที่ทำงานบนเซิร์ฟเวอร์ของคุณ",
   "mobile.description": "ใช้พื้นที่ทำงานในแอป หรือเปิดเว็บไซต์ OpenCraft ของคุณเอง",
   "mobile.consent": "โหลดเว็บไซต์บนเซิร์ฟเวอร์ของฉัน",
   "mobile.url": "ที่อยู่ HTTPS",

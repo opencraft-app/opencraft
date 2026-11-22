@@ -1093,7 +1093,6 @@
   "overhome.noMatches": "No apps found.",
   "mobile.source": "Workspace source",
   "mobile.bundled": "Built-in workspace",
-  "mobile.remote": "Self-hosted workspace",
   "mobile.description": "Use the built-in workspace or open your own OpenCraft website.",
   "mobile.consent": "Load my self-hosted website",
   "mobile.url": "HTTPS address",

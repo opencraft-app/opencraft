@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View, useColorScheme } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, useColorScheme } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { actionArtwork } from "@opencraft/design-system/action-artwork";
@@ -18,7 +18,8 @@ function Shell() {
   const systemDark = useColorScheme() === "dark";
   const [appearance, setAppearance] = useState<{ resolvedTheme: "light" | "dark"; edgeBackgroundColor: string } | null>(null);
   const [source, setSource] = useState<MobileContentSource | null>(null);
-  const dark = source?.kind === "bundled" && appearance ? appearance.resolvedTheme === "dark" : systemDark;
+  // Appearance is reported only by content that owns it; otherwise follow the system.
+  const dark = appearance ? appearance.resolvedTheme === "dark" : systemDark;
   const theme = nativeThemes[dark ? "dark" : "light"];
   const [settings, setSettings] = useState(false);
   const [ready, setReady] = useState(false);
@@ -40,19 +41,13 @@ function Shell() {
     setSource(next); setAppearance(null); setReadError(false); setSettings(false); setReady(false);
   };
   const identity = source?.kind === "self-hosted" ? source.url : "bundled";
-  // WKWebView gives the website a full-screen canvas and reports its safe areas.
-  const websiteOwnsInsets = Platform.OS === "ios" && source?.kind === "self-hosted";
   const sourceLabel = intl.formatMessage(m.source);
-  return <SafeAreaView edges={websiteOwnsInsets ? [] : undefined} style={[styles.root, { backgroundColor: source?.kind === "bundled" && appearance ? appearance.edgeBackgroundColor : theme.material.content }]}>
+  // One presentation for every source: the content fills the screen behind the
+  // status bar and home indicator and reads safe areas itself (viewport-fit=cover).
+  // The container adds no inset of its own. Its source control floats until the
+  // content reports that it offers source selection itself (ready).
+  return <View style={[styles.root, { backgroundColor: appearance?.edgeBackgroundColor ?? theme.material.content }]}>
     <StatusBar style={dark ? "light" : "dark"} />
-    {!websiteOwnsInsets && (!ready || source?.kind !== "bundled") && <MobileMaterial backgroundColor={theme.material.raised} style={styles.toolbar}>
-      <Text numberOfLines={1} style={[styles.title, theme.platformTypography.label, { color: theme.color.text.primary }]}>
-        {intl.formatMessage(source?.kind === "self-hosted" ? m.remote : m.brand)}
-      </Text>
-      <Pressable accessibilityRole="button" accessibilityLabel={sourceLabel} onPress={() => setSettings(true)} style={styles.control}>
-        <Text style={[theme.platformTypography.label, { color: theme.color.accent.blue }]}>{sourceLabel}</Text>
-      </Pressable>
-    </MobileMaterial>}
     {source ? <WorkspaceSurface key={identity} source={source} dark={dark} onAppearance={setAppearance} onReady={setReady} onSourceSettings={() => setSettings(true)} />
       : <View style={styles.center}>
         {readError ? <>
@@ -62,7 +57,7 @@ function Shell() {
           </Pressable>
         </> : <ActivityIndicator color={theme.color.text.secondary} />}
       </View>}
-    {websiteOwnsInsets && <SafeAreaView edges={["right"]} pointerEvents="box-none" style={styles.sourceOverlay}>
+    {!ready && <SafeAreaView edges={["right"]} pointerEvents="box-none" style={styles.sourceOverlay}>
       <MobileMaterial backgroundColor={theme.material.raised} style={styles.sourceMaterial}>
         <Pressable accessibilityRole="button" accessibilityLabel={sourceLabel} onPress={() => setSettings(true)}
           style={({ pressed }) => [styles.sourceButton, pressed && styles.sourcePressed]}>
@@ -73,15 +68,14 @@ function Shell() {
       </MobileMaterial>
     </SafeAreaView>}
     {settings && <SourceSettings source={source ?? BUNDLED_SOURCE} dark={dark} onClose={() => setSettings(false)} onSave={save} />}
-  </SafeAreaView>;
+  </View>;
 }
 
 export function MobileShell() {
   return <SafeAreaProvider><IntlRuntimeProvider runtime={mobileLocale}><Shell /></IntlRuntimeProvider></SafeAreaProvider>;
 }
 const styles = StyleSheet.create({
-  root: { flex: 1 }, toolbar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, minHeight: 48 },
-  title: { flex: 1 }, control: { minHeight: 44, minWidth: 44, justifyContent: "center", paddingHorizontal: 8 },
+  root: { flex: 1 }, control: { minHeight: 44, minWidth: 44, justifyContent: "center", paddingHorizontal: 8 },
   sourceOverlay: { position: "absolute", right: 0, top: "50%", paddingRight: 8, transform: [{ translateY: -ipadMetrics.toolbar.touchTarget / 2 }] },
   sourceMaterial: { borderRadius: ipadMetrics.toolbar.touchTarget / 2 },
   sourceButton: { width: ipadMetrics.toolbar.touchTarget, height: ipadMetrics.toolbar.touchTarget, alignItems: "center", justifyContent: "center" },
