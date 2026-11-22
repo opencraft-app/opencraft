@@ -5,12 +5,16 @@
 import { serveServerCoreOwner } from "@opencraft/storage-node/server-owner-serve";
 import { ThreadNoteStore } from "@opencraft/plugin-thread-summary/note-store";
 import { CapabilityBindings } from "@opencraft/session-capabilities/bindings";
+import { IdentityWriteOwner, identityWriteMethods } from "@opencraft/access-control/identity-writes";
 
 serveServerCoreOwner((owner) => {
   const notes = new ThreadNoteStore(owner);
   const capabilityBindings = new CapabilityBindings(owner);
+  const identity = new IdentityWriteOwner(owner);
   return {
     methods: {
+      // Login sessions, identity bindings and Actor administration (IdentityWrites).
+      ...identityWriteMethods(identity),
       /** Merges a shared note update; access was checked on the network thread. */
       exchangeThreadNote: (serverId, threadId, update, vector) => notes.exchange(serverId, threadId, update, vector),
       /** Every capability binding, loaded once into the network thread's projection. */
@@ -20,9 +24,13 @@ serveServerCoreOwner((owner) => {
     },
     close: () => {
       try {
-        capabilityBindings.close();
+        identity.close();
       } finally {
-        notes.close();
+        try {
+          capabilityBindings.close();
+        } finally {
+          notes.close();
+        }
       }
     },
   };

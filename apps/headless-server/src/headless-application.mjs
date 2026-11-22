@@ -117,6 +117,7 @@ import { LocalAccountApplication } from '@opencraft/plugin-local-account/applica
 import { readPrivateJson } from '@opencraft/identity-core/node';
 import { HumanAccountManagement } from '@opencraft/access-control/account-management';
 import { HumanAuth, readHumanAuthConfiguration } from '@opencraft/access-control/human-auth';
+import { IdentityWrites } from '@opencraft/access-control/identity-writes';
 import { humanLoginPage } from './human-login-page.ts';
 import { connectRelay, loadRelayConnection } from '@opencraft/plugin-relay-connect/server';
 import { validateHeadlessIdentity } from "./headless-identity.mjs";
@@ -559,6 +560,11 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       administrator: principal => instanceAccess?.role(principal) === 'admin',
       trustedOrigin: request => instanceAccess?.trustedOrigin(request) ?? humanAuth?.trustedOrigin(request) ?? null,
     });
+    // Login sessions, identity bindings and Actor administration commit in the
+    // Server owner Worker; reads stay on this thread's permission projection.
+    const identityWrites = new IdentityWrites(serverStorage.call, actorStore, humanAccounts);
+    actorAccess.useOwnerWrites(identityWrites);
+    humanAuth?.useOwnerWrites(identityWrites);
     const engines = options.engines ?? ["dsh"];
     if (engines.some(engine => !['dsh','pi'].includes(engine)) && !options.engineHostDescriptor)
       throw new Error('ACP and Claude execution require an independent Engine Host descriptor');
