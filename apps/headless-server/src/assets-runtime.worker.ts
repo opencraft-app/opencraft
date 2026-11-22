@@ -4,10 +4,12 @@ serveWorkerOwner<{
   directory: string;
   workspaceMachineId?: string;
   terminalOwner?: { directory: string; endpoint: string; tokenFile: string };
-}>(({ directory, workspaceMachineId, terminalOwner }) =>
+  environmentLaunch?: boolean;
+}>(({ directory, workspaceMachineId, terminalOwner, environmentLaunch }) =>
   createHeadlessAssetsStorage(
     directory,
     undefined,
     workspaceMachineId === undefined ? undefined : { machineId: workspaceMachineId, terminalOwner },
+    { environmentLaunch: environmentLaunch === true },
   ),
 );

@@ -1,11 +1,12 @@
 # Execution ENV launch delivery
 
-Status: slice 1 implemented, with the receiver taking its expected context from
-the execution owner's own durable admission (Decision 1). DSH in `assets` mode
-receives Turn ENV through `EnvironmentLaunchReceiver` when the identity
-composition supplies a vault-owner port; every other consumer still reads a
-decrypted snapshot from `ExecutionEnvironmentRuntime` synchronously in its own
-process.
+Status: slices 1 and 3 implemented, with the receiver taking its expected
+context from the execution owner's own durable admission (Decision 1). DSH in
+`assets` mode receives Turn ENV through `EnvironmentLaunchReceiver` when either
+the identity composition supplies a vault-owner port or the installation sets
+`environmentDelivery: 'vault-owner'`, which makes the core vault Worker the
+issuer. Every other consumer still reads a decrypted snapshot from
+`ExecutionEnvironmentRuntime` synchronously in its own process.
 
 Related: [account environment variables](../identity/account-environment.md),
 [execution control](execution-control-authority.md),
@@ -77,8 +78,13 @@ execution owner: read its own durable admission (Worker), require the relayed
 
 - **Issuer.** The sole vault owner. Its X25519 key is pinned into execution
   owners through trusted composition (process configuration), never from a
-  request or browser frame. Headless receives it from the identity composition
-  as `identity.environmentLaunch = { issuer, seal(target, context) }`.
+  request or browser frame. Headless receives it either from the identity
+  composition as `identity.environmentLaunch = { issuer, seal(target, context) }`
+  or, with `environmentDelivery: 'vault-owner'`, from the core issuer
+  (`EnvironmentLaunchOwner`) in the Headless assets Worker, which already is the
+  only opener of `employee-git-vault.sqlite`. The core issuer key lives for one
+  Worker lifetime; execution owners are pinned at launch, so a restarted vault
+  owner requires its execution owners to be relaunched (the embedded DSH is).
 - **Receiver.** Constructed inside the process that spawns commands. `instance`
   is the authenticated capability attachment (`server:<machine>:<engine>`). The
   Gateway derives purpose and instance from that attachment; the request carries
@@ -131,11 +137,42 @@ execution owner: read its own durable admission (Worker), require the relayed
 - Main-thread rule: the Gateway relay and the vault-owner port are
   asynchronous. No consumer may add a synchronous vault read as a fallback.
 
+## Core vault-owner issuer
+
+`EnvironmentLaunchOwner` runs inside the Worker that owns the vault. Main's port
+is `{ issuer, seal(target, context) }`; `seal` resolves to the opaque capsule and
+the Worker serves no method that returns values, Project bindings or keys. For
+each seal the owner:
+
+- requires the context to be from a handoff (`projectId: null`) for an
+  `opencraft-server` Turn, and to equal the durable admission it reads itself
+  (`GitExecutionAuthority`, the same lease and Actor projection as Git grants);
+- resolves the Project from the Thread's binding in the vault
+  (`environmentThreadProject`, the document the Gateway records from the Host's
+  thread metadata), never from the request, handoff or locator;
+- rereads admission and binding before reading values, after reading them and
+  after encryption, and refuses on any change;
+- reads values with `AccountEnvironment.launchEnvironment` and returns only the
+  capsule. Errors are the opaque `execution_unavailable`.
+
+Closing the Worker retires the issuer key first, then the admission reader and
+the vault; seals accepted before close are drained, later ones are refused. A
+Worker that was asked to issue but did not start an issuer fails startup.
+
+In this mode nothing in Main writes Thread->Project bindings (the synchronous
+`ExecutionEnvironmentTransport.bind` writer is not composed); bindings recorded
+earlier keep applying and new Threads receive personal values only until the
+metadata owner (slice 8) moves `bind` to an asynchronous owner port.
+
 ## Compatibility
 
-- No `identity.environmentLaunch`: every path is unchanged.
+- No `identity.environmentLaunch` and no `environmentDelivery`: every path is
+  unchanged.
 - `identity.environmentLaunch` together with `identity.executionEnvironment` is
-  rejected: one installation has one ENV owner.
+  rejected: one installation has one ENV owner. The core issuer
+  (`environmentDelivery: 'vault-owner'`) together with either of them is
+  rejected at startup (`validateEnvironmentDelivery`), as is a core issuer
+  without the assets vault Worker or without execution admission.
 - `environmentLaunch` without the Actor/lease handoff (`humanGitExecution`) is
   rejected at startup instead of failing every command.
 - Owners that have not migrated keep the synchronous snapshot. A configured
@@ -162,12 +199,15 @@ synchronous runtime.
    In-process Pi inside Main cannot host a receiver; `environmentLaunch`
    requires the independent engine host. Tests: Pi shell worker per snapshot,
    worker reuse keyed by snapshot, revocation. Evidence: engine-host smoke.
-3. **Core vault-owner Worker issuer.** A reference `EnvironmentLaunchIssuerPort`
-   that runs `AccountEnvironment.launchEnvironment` in a Worker owning the
-   vault, so core installations can use slices 1-2 without a downstream port.
-   Project ENV requires the handoff to carry the Thread's Project ID (today the
-   remote Git reply requires `projectId: null`). Tests: main-thread SQL guard,
-   Worker failure does not fall back, shutdown drain.
+3. **Core vault-owner Worker issuer (implemented).** `EnvironmentLaunchOwner`
+   runs `AccountEnvironment.launchEnvironment` in the Headless assets Worker that
+   owns the vault, so core installations can use slices 1-2 without a downstream
+   port. Per Decision 2 the Project is resolved from the Thread's vault binding,
+   not carried by the handoff. Tests (`environment-launch-owner.test.ts`): no
+   decrypted value in any Worker-to-Main message, no decrypted getter, Project
+   from Thread metadata, wrong-project and forged contexts refused, one ENV
+   owner at startup, close drains and retires the key, restart pins a new key.
+   `check-main-thread-sync-io` adds no call.
 4. **Protocol change: launch context without a native Turn.** ACP session
    creation, Codex `thread/start`/`fork` and Hands terminals launch before or
    outside a Turn, which the v1 context cannot express. Add a v2 header with a
@@ -202,6 +242,8 @@ Recorded after the first slice; later slices follow them.
   `tests/identity/environment-launch-owner.test.ts` reads a real lease store.
 - **Project ENV is resolved by the vault owner from Thread metadata.** Handoffs do
   not carry a Project ID; a caller cannot select another project's values.
+  Implemented in `EnvironmentLaunchOwner`; receivers refuse a locator or relayed
+  context that names a Project.
 - **Codex redaction moves to the native Core**, which holds the values. Until a
   native release can redact, native diagnostics are not forwarded when delivery
   is configured.
@@ -210,4 +252,4 @@ Recorded after the first slice; later slices follow them.
   instead of launching with an empty ENV. Missing delivery must fail closed.
 - **The downstream port shape `{issuer, seal(target, context): Promise<string>}` is
   accepted for now**; slice 3 adds a core vault-owner issuer so installations no
-  longer need to supply it.
+  longer need to supply it. Implemented as `environmentDelivery: 'vault-owner'`.

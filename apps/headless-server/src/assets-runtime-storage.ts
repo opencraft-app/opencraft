@@ -9,6 +9,7 @@ export function createHeadlessAssetsStorage(
   directory: string,
   providers?: readonly GitConnectionProvider[],
   workspaces?: { machineId: string; terminalOwner?: { directory: string; endpoint: string; tokenFile: string } },
+  options: { environmentLaunch?: boolean } = {},
 ) {
   const authority = new GitExecutionAuthority(directory, "actor");
   return createAssetsStorage(
@@ -48,5 +49,6 @@ export function createHeadlessAssetsStorage(
         },
       };
     },
+    options,
   );
 }
