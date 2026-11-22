@@ -112,7 +112,9 @@ Node 适配器 `fileBlobStore(root)` 每键一个私有文件，字节先写入 
 
 已迁移：模型凭据（`ModelCredentialRepository` 包装 `SecretStore`，用户可见消息不变）、`session-capabilities.key`、`ssh/access.key`、文件服务 token，以及 Git vault key 的读取方。图片配置替换密钥仍用"新引用＋文档 CAS 切换＋回收"的设计，因为凭据与声明是两个存储。
 
-后续：Git vault key 写入方（同步构造器，"新库创建、旧库缺失须报错"）需改为异步工厂；`hub-network.json` 中的节点私钥移入 `KeyMaterial`；`credentials.json` 改用私有读取模式；只读运营配置（`readPrivateJson`）在 Cloudflare 上对应 Secrets binding。
+后续：Git vault key 写入方（同步构造器，"新库创建、旧库缺失须报错"）需改为异步工厂；`credentials.json` 改用私有读取模式；只读运营配置（`readPrivateJson`）在 Cloudflare 上对应 Secrets binding。
+
+决定：`hub-network.json` 中的节点私钥不拆出。该文档已按私有读取模式打开（不跟随符号链接，同一句柄校验属主与权限），拆出私钥会让回退到旧版本的节点丢失身份；Cloudflare 上它随 Hub 状态存入 owner DO 并按 `SecretStore` 的方式加密。
 
 ### 3.5 不进入存储端口
 
