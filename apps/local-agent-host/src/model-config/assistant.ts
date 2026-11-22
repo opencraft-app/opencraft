@@ -15,7 +15,7 @@ const DEFAULT_EFFORTS = ['medium','low','minimal','high','xhigh','off'] as const
 /** OPENCRAFT_ASSISTANT_PROXY_CALLER_FILE names the assistant's caller record when the model proxy runs as its own
  *  service. A dedicated name keeps it from leaking into engines spawned by the same process. */
 const assistantProxyCaller=()=>readProxyCaller({OPENCRAFT_PROXY_CALLER_FILE:process.env.OPENCRAFT_ASSISTANT_PROXY_CALLER_FILE});
-export function createAssistantModelSource(directory: string, policyPath?: string, options: { fetch?: typeof fetch; proxyCaller?: () => ProxyCaller|null } = {}) {
+export function createAssistantModelSource(directory: string, policyPath?: string, options: { fetch?: typeof fetch; proxyCaller?: () => ProxyCaller|null|Promise<ProxyCaller|null> } = {}) {
   const proxyCaller=options.proxyCaller??assistantProxyCaller;
   const source=createEngineModelSource(directory,{protocols:['openai-responses','anthropic-messages'],meteredContributions:true});
   // Only declared native Codex reasoning levels are projected. No model-name inference.
@@ -40,7 +40,7 @@ export function createAssistantModelSource(directory: string, policyPath?: strin
     effortFor(current);
     // With the proxy service, provider credentials stay in the proxy; the request carries only the caller token.
     // The record is read per request so a proxy restart's new token is used. Capacity stays keyed by the provider.
-    const caller=proxyCaller(), proxied=caller?proxyProviderUrl(current.provider,caller):null;
+    const caller=await proxyCaller(), proxied=caller?proxyProviderUrl(current.provider,caller):null;
     return {baseUrl:proxied??current.baseUrl,model:current.model.id,apiKey:proxied?caller!.token:current.apiKey,protocol:current.protocol,
       reasoningEfforts:current.model.reasoningEfforts,maxTokens:current.model.maxTokens,
       quotaKey:JSON.stringify([new URL(current.baseUrl).origin,current.provider.credentialRef?['credential',current.provider.credentialRef]:['connection',current.provider.id]])};

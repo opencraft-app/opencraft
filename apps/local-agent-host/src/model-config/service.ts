@@ -1,4 +1,4 @@
-import {readFileSync} from 'node:fs';
+import {readFile} from 'node:fs/promises';
 import type {ModelDocument} from './model-document.js';
 import {ModelConfigurationRepository,ModelCredentialRepository} from './repository.js';
 
@@ -11,9 +11,9 @@ export class ModelConfigurationApplyError extends Error {}
 export const PROXY_CALLER_REFERENCE='OPENCRAFT_PROXY_CALLER_TOKEN';
 export interface ProxyCaller {readonly caller:string;readonly baseUrl:string;readonly token:string}
 /** OPENCRAFT_PROXY_CALLER_FILE names the caller record published by the model proxy. Absent: engines connect directly. */
-export function readProxyCaller(env:NodeJS.ProcessEnv=process.env):ProxyCaller|null{
+export async function readProxyCaller(env:NodeJS.ProcessEnv=process.env):Promise<ProxyCaller|null>{
   const path=env.OPENCRAFT_PROXY_CALLER_FILE;if(!path)return null;
-  const value=JSON.parse(readFileSync(path,'utf8'));
+  const value=JSON.parse(await readFile(path,'utf8'));
   if(typeof value?.caller!=='string'||!value.caller.startsWith('caller:')||typeof value.token!=='string'||value.token.length<16
     ||typeof value.baseUrl!=='string'||!/^http:\/\/127\.0\.0\.1:[0-9]{1,5}\/?$/.test(value.baseUrl))throw new ModelConfigurationApplyError('模型代理调用凭据无效，请检查 proxy 服务。');
   return {caller:value.caller,baseUrl:value.baseUrl.replace(/\/$/,''),token:value.token};
@@ -38,7 +38,7 @@ export class ModelConfigurationService {
   constructor(readonly repository:ModelConfigurationRepository,readonly credentials:ModelCredentialRepository,private readonly engine:ModelEnginePort){}
   async synchronize(force=false){
     const operation=this.tail.then(async()=>{const latest=await this.repository.read();const stamp=await this.credentials.stamp();if(!force&&this.application.revision===latest.revision&&this.credentialStamp===stamp&&this.application.state!=='pending')return;
-      try{const caller=readProxyCaller();
+      try{const caller=await readProxyCaller();
         await this.engine.apply(caller?proxyProjection(latest,caller):latest,{resolve:async reference=>caller&&reference===PROXY_CALLER_REFERENCE?caller.token:(await this.credentials.resolve(reference))??process.env[reference]});this.application={state:'applied',revision:latest.revision};this.appliedDocument=JSON.stringify(latest)}
       catch(error){this.application={state:'failed',revision:latest.revision,error:error instanceof ModelConfigurationApplyError?error.message:'配置已保存，但当前引擎未能应用。请检查配置后重试。'}}
       this.credentialStamp=stamp;

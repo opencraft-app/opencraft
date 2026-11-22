@@ -1,6 +1,6 @@
 import { connect, type Socket } from 'node:net';
 import type { ExecutionEnvironmentRuntime, EnvironmentExecutionScope } from '@opencraft/execution-environment';
-import { prepareProcessIdentity, TerminalCapacityError, type PreparedProcessIdentity } from './process-service.js';
+import { prepareProcessIdentity, TerminalCapacityError, type PreparedProcessIdentity } from './process-identity.js';
 import { lstat, readFile } from 'node:fs/promises';
 import { launchTerminalOwner, terminalOwnerLocation } from './terminal-owner-runtime.js';
 import { readOwnerFrames, sendOwnerFrame, TERMINAL_OWNER_PROTOCOL } from './terminal-owner-wire.js';
