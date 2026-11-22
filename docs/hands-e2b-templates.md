@@ -21,6 +21,11 @@ into `/tmp`, or repair a missing runtime. The Hands image, desktop package and
 E2B template builds own runtime delivery and updates. Per-instance browser
 profiles and sockets remain temporary session data.
 
+Installed Assets browser policy declares only its isolation mode, for example
+`"browser": { "isolation": "isolated-vm-compatibility" }`. Remove legacy archive
+`manifest` settings when selecting a preconfigured template; these settings are
+rejected rather than interpreted as a runtime installation request.
+
 Existing templates without the Hands runtime layout must be replaced by a
 preconfigured candidate before enabling this runner version. Template selection
 and resource budgets remain owned by the installed environment catalogue.

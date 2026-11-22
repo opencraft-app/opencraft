@@ -4,7 +4,6 @@ import type { GeneratedFileReader } from "@opencraft/local-agent-host/artifacts/
 import { transferWorkspaceArtifact } from "./workspace-artifact-transfer";
 import type { Artifact } from "@opencraft/local-agent-host/artifacts";
 import { verifyOrdinaryWorkspaceMounts } from "./ordinary-workspace-mounts";
-import { createSandboxBrowserPreparer } from "./sandbox-browser-artifacts";
 import { createSandboxBrowserRuntime } from "./sandbox-browser-runtime";
 import { terminalResourceOwnerId } from "../host-resource-identity.js";
 import {
@@ -77,16 +76,9 @@ export class InstalledOrdinaryConversationRuntime {
       terminalAdmission?: TerminalAdmissionPort;
       verifyMounts?: typeof verifyOrdinaryWorkspaceMounts;
       bind?: (options: Parameters<typeof createSandboxConversationBinding>[0]) => Promise<OrdinaryExecutionBinding>;
-      /** Trusted deployment delivery. Absent means browser unsupported, not local fallback. */
+      /** Trusted deployment policy for the preinstalled Hands browser runtime. */
       browser?: {
         isolation: Parameters<typeof createSandboxBrowserRuntime>[0]["isolation"];
-        prepare(input: {
-          sandbox: Parameters<typeof createSandboxConversationBinding>[0]["sandbox"];
-          workspaceId: string;
-          generation: number;
-          environment: Selection["environment"];
-          authorize(): Promise<void>;
-        }): Promise<{ directory: string }>;
       };
     } = {},
   ) {
@@ -212,24 +204,7 @@ export class InstalledOrdinaryConversationRuntime {
         const cwd = ordinaryWorkspaceCwd(selection());
         await ownerAuthorize();
         const installedBrowser = this.catalog.runtime(admission.catalog, selection().environment).template.browser;
-        const installedPreparer =
-          installedBrowser &&
-          createSandboxBrowserPreparer({
-            sandbox: allocation.environment,
-            manifest: installedBrowser.manifest,
-            authorize: ownerAuthorize,
-            onCleanupUnconfirmed: () => {
-              this.cleanupUnconfirmed = true;
-            },
-          });
-        const browserConfiguration =
-          this.dependencies.browser ??
-          (installedBrowser && installedPreparer
-            ? {
-                isolation: installedBrowser.isolation,
-                prepare: () => installedPreparer.prepare(),
-              }
-            : undefined);
+        const browserConfiguration = this.dependencies.browser ?? installedBrowser;
         const binding = await (this.dependencies.bind ?? createSandboxConversationBinding)({
           sandbox: allocation.environment,
           terminalSupported: allocation.environment.capabilities.terminal,
@@ -281,14 +256,6 @@ export class InstalledOrdinaryConversationRuntime {
             const browser = createSandboxBrowserRuntime({
               sandbox: allocation.environment,
               isolation: browserConfiguration.isolation,
-              prepare: () =>
-                browserConfiguration.prepare({
-                  sandbox: allocation.environment,
-                  workspaceId: workspace.workspaceId,
-                  generation: workspace.generation,
-                  environment: selection().environment,
-                  authorize: ownerAuthorize,
-                }),
               authorize: ownerAuthorize,
               assertCurrent: () => {
                 if (!admission.catalog.current() || !binding.isCurrent!())
