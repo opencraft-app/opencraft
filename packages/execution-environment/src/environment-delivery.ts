@@ -1,6 +1,7 @@
 import {
   createCipheriv,
   createDecipheriv,
+  createHash,
   createPublicKey,
   diffieHellman,
   generateKeyPairSync,
@@ -115,7 +116,11 @@ function header(
 function sharedKey(privateKey: KeyObject, peer: string, nonce: string, aad: Buffer) {
   const secret = diffieHellman({ privateKey, publicKey: publicKey(peer) });
   try {
-    return Buffer.from(hkdfSync("sha256", secret, Buffer.from(nonce, "base64url"), aad, 32));
+    // Node bounds HKDF info to 1024 bytes; legitimate Native IDs can make AAD
+    // larger. Hash the full domain-separated header, without truncating IDs.
+    return Buffer.from(
+      hkdfSync("sha256", secret, Buffer.from(nonce, "base64url"), createHash("sha256").update(aad).digest(), 32),
+    );
   } finally {
     secret.fill(0);
   }

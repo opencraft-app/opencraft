@@ -252,3 +252,22 @@ test("a delayed authorization reply cannot extend the original request's shorter
   issuer.close();
   receiver.close();
 });
+
+test("legitimate long Native IDs bind in full without exceeding the HKDF info limit", async () => {
+  const f = fixture();
+  const scope = original();
+  const expected = {
+    scope: { ...scope.scope, threadId: "t".repeat(512), inputId: "i".repeat(512), executionId: "e".repeat(512) },
+    native: { turnId: "n".repeat(1024), incarnation: "p".repeat(1024) },
+  };
+  const capsule = f.seal(expected);
+  assert.equal((await f.receiver.open(capsule, expected)).apply({}).SERVICE_KEY, "synthetic-worker-only-value");
+  await assert.rejects(
+    f.receiver.open(f.seal(expected), {
+      ...expected,
+      native: { ...expected.native, incarnation: "p".repeat(1023) + "q" },
+    }),
+  );
+  f.receiver.close();
+  f.issuer.close();
+});
