@@ -67,6 +67,9 @@ export function delegationTools(resources = []) {
         ...(resources.some((r) => r.id === "execution.environment")
           ? ["environment_run"]
           : []),
+        ...(resources.some((r) => r.id === "crew.work")
+          ? ["crew_contacts", "crew_dispatch", "crew_message"]
+          : []),
         "recall_memory",
         "read_memory_file",
         "list_memory_files",

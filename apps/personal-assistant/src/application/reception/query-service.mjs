@@ -118,7 +118,7 @@ export class ReceptionQueries {
     return [
       ...(this.authority.permits(grant,current) ? [current.id] : []),
       ...grant.resources.filter(resource =>
-        ["platform.reads", "platform.threads", "execution.environment"].includes(resource.id) &&
+        ["platform.reads", "platform.threads", "execution.environment", "crew.work"].includes(resource.id) &&
         (resource.id !== "platform.reads" || this.platformReads) &&
         this.authority.permits(grant, resource)
       ).map(resource => resource.id),
@@ -210,7 +210,7 @@ export class ReceptionQueries {
         delegationTools: delegationTools(grant.resources.filter(resource =>
           (resource.id !== "platform.reads" || this.platformReads) &&
           this.authority.permits(grant, resource)
-        )).filter(tool => ["platform_read", "thread_command", "environment_run"].includes(tool)),
+        )).filter(tool => ["platform_read", "thread_command", "environment_run", "crew_dispatch", "crew_message"].includes(tool)),
         canPublishLocalNote: true,
         queries: RECEPTION_QUERY_NAMES.filter(
           (name) => this.platformReads || !name.startsWith("platform."),

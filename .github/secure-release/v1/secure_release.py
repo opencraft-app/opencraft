@@ -130,9 +130,18 @@ def changelog(args: argparse.Namespace) -> None:
     print(f"changelog ok: tag={args.tag} notes={args.notes}")
 
 
-def build_manifest(tag: str, version: str, artifacts: Sequence[Path], output: Path) -> None:
-    parse_tag(tag)
-    if version != tag[1:]:
+def manifest_version(tag: str, desktop_beta: bool) -> str:
+    if desktop_beta:
+        base, separator, number = tag.partition("-beta.")
+        parse_tag(base)
+        if not separator or re.fullmatch(r"[1-9][0-9]*", number) is None:
+            raise ReleaseError(f"desktop beta tag must be vX.Y.Z-beta.N: {tag}")
+        return tag[1:]
+    return parse_tag(tag)
+
+
+def build_manifest(tag: str, version: str, artifacts: Sequence[Path], output: Path, *, desktop_beta: bool = False) -> None:
+    if version != manifest_version(tag, desktop_beta):
         raise ReleaseError(f"manifest version {version} does not match tag {tag}")
     if not artifacts:
         raise ReleaseError("at least one artifact is required")
@@ -160,7 +169,7 @@ def build_manifest(tag: str, version: str, artifacts: Sequence[Path], output: Pa
 
 
 def manifest_create(args: argparse.Namespace) -> None:
-    build_manifest(args.tag, args.version, args.artifact, args.output)
+    build_manifest(args.tag, args.version, args.artifact, args.output, desktop_beta=args.desktop_beta)
 
 
 def load_manifest(path: Path) -> dict[str, Any]:
@@ -179,7 +188,7 @@ def manifest_verify(args: argparse.Namespace) -> None:
     version = manifest.get("version")
     commit = manifest.get("commit")
     records = manifest.get("artifacts")
-    if not isinstance(tag, str) or not isinstance(version, str) or version != parse_tag(tag):
+    if not isinstance(tag, str) or not isinstance(version, str) or version != manifest_version(tag, args.desktop_beta):
         raise ReleaseError("manifest tag and version are invalid or inconsistent")
     if args.tag is not None and tag != args.tag:
         raise ReleaseError(f"manifest tag {tag} does not match expected {args.tag}")
@@ -719,6 +728,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--version", required=True)
     command.add_argument("--artifact", required=True, action="append", type=Path)
     command.add_argument("--output", required=True, type=Path)
+    command.add_argument("--desktop-beta", action="store_true")
     command.set_defaults(handler=manifest_create)
 
     command = commands.add_parser("manifest-verify", help="Verify identity and the exact artifact set.")
@@ -726,6 +736,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--directory", required=True, type=Path)
     command.add_argument("--tag")
     command.add_argument("--version")
+    command.add_argument("--desktop-beta", action="store_true")
     command.set_defaults(handler=manifest_verify)
 
     command = commands.add_parser("npm-pack", help="Build exactly one npm tarball and its manifest.")

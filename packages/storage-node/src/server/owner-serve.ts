@@ -1,5 +1,6 @@
 import { serveWorkerOwner } from "@opencraft/worker-owner/serve";
 import { installServerMigrationComposition, openServerDatabase, type ServerDatabase } from "./index.js";
+import { conversationCreationReceiptMethods } from "./conversation-creation-receipts.js";
 import type { ServerMigrationComposition } from "./migration-composition.js";
 
 /** Domain services that run beside the Server owner, on its connection. */
@@ -23,7 +24,9 @@ export function serveServerCoreOwner(domains?: (owner: ServerDatabase) => Server
       if (composition !== undefined) installServerMigrationComposition(composition);
       const owner = await openServerDatabase(directory);
       let served: ServerCoreDomains;
+      let creation: ReturnType<typeof conversationCreationReceiptMethods>;
       try {
+        creation = conversationCreationReceiptMethods(owner.database);
         served = domains?.(owner) ?? { methods: {} };
       } catch (error) {
         await owner.close();
@@ -31,7 +34,7 @@ export function serveServerCoreOwner(domains?: (owner: ServerDatabase) => Server
       }
       return {
         ready: { outcome: owner.outcome, contract: owner.contract },
-        methods: served.methods,
+        methods: { ...served.methods, ...creation },
         close: async () => {
           try {
             served.close?.();

@@ -17,7 +17,8 @@
     "./git-keys": "./src/git-keys.ts",
     "./human-git-execution": "./src/human-git-execution.ts",
     "./remote-human-git-execution": "./src/remote-human-git-execution.ts",
-    "./native-execution-origin": "./src/native-execution-origin.ts"
+    "./native-execution-origin": "./src/native-execution-origin.ts",
+    "./workspace-selection": "./src/workspace-selection.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

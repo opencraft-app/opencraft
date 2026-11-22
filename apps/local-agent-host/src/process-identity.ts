@@ -6,6 +6,7 @@ import type { ExecutionEnvironmentRuntime, EnvironmentExecutionScope } from "@op
 export class TerminalCapacityError extends Error {
   constructor() {
     super("Terminal limit reached. Close an existing terminal before creating another.");
+    this.name = "TerminalCapacityError";
   }
 }
 export interface PreparedProcessIdentity {

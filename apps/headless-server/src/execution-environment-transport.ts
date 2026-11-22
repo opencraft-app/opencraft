@@ -76,8 +76,15 @@ export class ExecutionEnvironmentTransport implements DuplexTransport {
   async sendWithContext(frame: string, context: TransportSubmissionContext, signal?: AbortSignal) {
     const value = object(JSON.parse(frame)), params = object(value.params);
     delete value[EXECUTION_ENVIRONMENT_FIELD]; delete params[EXECUTION_ENVIRONMENT_FIELD];
+    // Collaboration queue admission is authorized from the durable request
+    // ledger by the Host (including the original submitter, binding and
+    // expiry). It only records an input; it must not borrow the creator's
+    // environment credentials before a Host turn admission exists.
+    const collaborationQueueAdmission = value.method === 'thread/queue/add'
+      && typeof context.collaborationRequestId === 'string'
+      && params.clientUserMessageId === `actor-input:${context.collaborationRequestId}`;
     try {
-      if (typeof value.method === 'string' && requiresEnvironmentAuthority(value.method)) this.runtime.scope(context, this.hostId, params);
+      if (typeof value.method === 'string' && requiresEnvironmentAuthority(value.method) && !collaborationQueueAdmission) this.runtime.scope(context, this.hostId, params);
     } catch {
       // This check precedes every native dispatch. Report only a known rejection,
       // not a delivery failure or an invitation to reconnect/replay. Keep logical
@@ -108,7 +115,7 @@ export class ExecutionEnvironmentTransport implements DuplexTransport {
     }
     try {
       let scope: EnvironmentExecutionScope | undefined;
-      if (typeof value.method === 'string' && ['thread/start', 'thread/fork', 'turn/start', 'thread/queue/add', 'thread/queue/start'].includes(value.method)) {
+      if (typeof value.method === 'string' && ['thread/start', 'thread/fork', 'turn/start', 'thread/queue/add', 'thread/queue/start'].includes(value.method) && !collaborationQueueAdmission) {
         // Fork creates an independent task for its authenticated creator. Never
         // inherit the source task's credential identity or private env snapshot.
         const creationParams = value.method === 'thread/fork' ? { projectId: typeof params.threadId === 'string' ? this.runtime.project(this.hostId, params.threadId) : null } : params;

@@ -1,0 +1,1 @@
+ALTER TABLE `im_messages` ADD `reply_attempt` text;

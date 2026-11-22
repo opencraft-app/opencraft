@@ -313,6 +313,13 @@ export class ExecutionService {
       }
     });
   }
+  assertCrewAction(work, tool) {
+    const resource = this.scope
+      .forWork(work)
+      .record.resources.find((r) => r.id === "crew.work");
+    if (!resource) throw Error("Work has no captured crew binding");
+    this.assertAction(work, tool, resource);
+  }
   assertThreadAction(work) {
     const resource = this.scope
       .forWork(work)

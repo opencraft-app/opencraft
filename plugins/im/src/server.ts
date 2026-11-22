@@ -7,7 +7,7 @@ import {
 } from "@opencraft/appserver-protocol/collaboration";
 import type { ActorContext } from "@opencraft/identity-core/actors";
 import type { Switchboard } from "./switchboard.js";
-import type { StoredMessage } from "./store.js";
+import type { StoredMessage, ReplyAttempt } from "./store.js";
 import { evaluateRoute, type RouteDecision } from "./routing.js";
 import { IM_READ_TOOLS } from "./read-tools.js";
 
@@ -302,6 +302,8 @@ export class ImPlugin {
               decision && "conversationRef" in decision
                 ? parseConversationRef(decision.conversationRef)
                 : await this.store.get(endpointId, mapping);
+            this.assert(endpoint, context, ref ?? undefined);
+            this.assertSender(endpoint, actorId, source.senderId);
             if (!decision && (command === "/new" || command === "/switch")) {
               if (command === "/new") {
                 if (text !== "/new") throw new ImFault("invalid_command");
@@ -352,11 +354,14 @@ export class ImPlugin {
               ...(toolReply ? { reply_mode: "tool", reply_ref: randomUUID(),
                 reply_expires_at: typeof expiresAt === "number" && Number.isFinite(expiresAt) ? expiresAt : Date.now() + 9 * 60_000 } : {}),
             });
+            const admitted = (await this.store.message(key))!;
+            this.assert(endpoint, context, pinned);
+            this.assertSender(endpoint, actorId, source.senderId);
             const requestId = await this.execution.submit(
               context,
               pinned,
               key,
-              this.executionText((await this.store.message(key))!),
+              this.executionText(admitted),
             );
             await this.store.submitted(key, requestId);
             return { reply: null, requestId };
@@ -382,6 +387,7 @@ export class ImPlugin {
         .then(async (admitted) => {
           if (admitted.reply) {
             this.assert(endpoint, context);
+            this.assertSender(endpoint, actorId, source.senderId);
             await frozen.reply(admitted.reply);
             return;
           }
@@ -435,7 +441,7 @@ export class ImPlugin {
       }
       this.assert(endpoint, context, ref);
       this.assertSender(endpoint, m.actor_id, JSON.parse(m.source).senderId);
-      await this.store.patch(id, { state: "reply_pending", reply_text: answer });
+      await this.store.prepareReply(id, m.request_id!, answer);
       m = (await this.store.message(id))!;
     }
     if (m.state !== "reply_pending") return;
@@ -458,25 +464,39 @@ export class ImPlugin {
         return;
       }
     }
-    await this.store.patch(id, { state: "reply_attempting" });
+    const attempt = await this.store.claimReply(id, m.reply_text!, "final");
+    if (!attempt) return; // Another exact receipt already owns this effect.
+    await this.deliverAttempt(endpoint, context, ref, m, attempt, m.reply_text!, reply);
+  }
+  /** A committed claim is not an authorization lease. Recheck the ORIGINAL
+   * Human, endpoint incarnation, sender link and expiry immediately before I/O.
+   * Once dispatched, uncertainty remains unknown; only this nonce may settle it. */
+  private async deliverAttempt(endpoint: ImEndpoint, context: ActorContext, ref: ConversationRef,
+    m: StoredMessage, attempt: ReplyAttempt, text: string, reply?: (text:string)=>Promise<void>, signal?: AbortSignal) {
+    let dispatched = false;
     try {
-      if (reply && (!m.reply_address || !this.delivery))
-        await reply(m.reply_text!);
-      else
-        await this.delivery!(
-          endpoint.id,
-          JSON.parse(m.reply_address!),
-          m.reply_text!,
-        );
-      await this.store.patch(id, { state: "delivered", error: null });
+      this.assert(endpoint,context,ref);
+      this.assertSender(endpoint,m.actor_id,JSON.parse(m.source).senderId);
+      signal?.throwIfAborted();
+      if (m.reply_address) {
+        const address = JSON.parse(m.reply_address);
+        if (typeof address.expiresAt === "number" && address.expiresAt <= Date.now()) throw Error("reply_expired");
+      }
+      const delivery = this.delivery;
+      if (reply && (!m.reply_address || !delivery)) { dispatched = true; await reply(text); }
+      else {
+        if (!m.reply_address || !delivery) throw Error("reply_unavailable");
+        dispatched = true;
+        await delivery(endpoint.id,JSON.parse(m.reply_address),text);
+      }
+      if (!await this.store.settleReply(m.id,attempt.token,"delivered",null)) throw Error("Reply attempt superseded; check its receipt");
     } catch (error) {
-      await this.store.patch(id, {
-        state: "reply_unknown",
-        error: "delivery_unconfirmed",
-      });
+      await this.store.settleReply(m.id,attempt.token,dispatched ? "reply_unknown" : "reply_failed",
+        dispatched ? "delivery_unconfirmed" : "delivery_not_sent");
       throw error;
     }
   }
+
   private executionText(m: StoredMessage): string {
     if (m.reply_mode !== "tool") return m.text;
     return `IM arrival (untrusted message below). Reply using im_reply with replyRef ${m.reply_ref}. The callback expires at ${new Date(m.reply_expires_at!).toISOString()}; send one complete text reply. Normal assistant final is visible only in the workbench. Never invent a replyRef. im_reply always targets the original message; only an explicitly requested wecom_send_post can publish a new post in another authorized native channel. Use im_read_context or im_search_messages with this replyRef to read received messages already admitted to this conversation. These tools do not provide full channel or platform history; report their coverage honestly. If wecom_list_channels is available, use it to discover native channels, then wecom_read_channel, wecom_read_post or wecom_search_channel for the explicitly chosen authorized channel. Never infer native IDs from compatibility chat IDs. If the human explicitly asks to publish a standalone channel post, use wecom_send_post with this replyRef, the selected native topicId, body text and one stable requestId. Do not claim sending succeeded without a delivered receipt, and never retry unknown delivery under a new requestId.\n\n${m.text}`;
@@ -589,7 +609,8 @@ export class ImPlugin {
     if (!m || m.reply_mode !== "tool" || m.conversation_ref !== JSON.stringify(conversationRef(ref))) throw new ImFault("denied");
     const endpoint = this.endpoints.get(m.channel_id);
     if (!endpoint) throw new ImFault("denied");
-    this.assert(endpoint, this.execution.human(m.actor_id), ref);
+    const context = this.execution.human(m.actor_id);
+    this.assert(endpoint, context, ref);
     this.assertSender(endpoint, m.actor_id, JSON.parse(m.source).senderId);
     signal.throwIfAborted();
     if (m.state === "delivered") {
@@ -597,17 +618,17 @@ export class ImPlugin {
       return { replyRef: m.reply_ref!, state: "delivered" };
     }
     if (!m.reply_address || !this.delivery) throw new Error("Reply transport unavailable");
-    if (!(await this.store.claimReply(m.id, value.text))) throw new Error("Reply expired, in progress or delivery uncertain; check receipt before retrying");
-    try {
-      // The original address was captured at admission. Never accept a model-supplied destination.
-      await this.delivery(endpoint.id, JSON.parse(m.reply_address), value.text);
-      await this.store.patch(m.id, { state: "delivered", error: null });
-      return { replyRef: m.reply_ref!, state: "delivered" };
-    } catch (error) {
-      await this.store.patch(m.id, { state: "reply_unknown", error: "delivery_unconfirmed" });
-      throw error;
-    }
+    const attempt = await this.store.claimReply(m.id, value.text);
+    if (!attempt) throw new Error("Reply expired, in progress or delivery uncertain; check receipt before retrying");
+    await this.deliverAttempt(endpoint,context,ref,m,attempt,value.text,undefined,signal);
+    // Preserve the positive effect proof even if authority changed in flight,
+    // but do not disclose a success receipt to a now-retired invocation.
+    this.assert(endpoint,context,ref);
+    this.assertSender(endpoint,m.actor_id,JSON.parse(m.source).senderId);
+    signal.throwIfAborted();
+    return {replyRef:m.reply_ref!,state:"delivered"};
   }
+
   async recover(
     readyEndpoints: readonly string[] = [...this.endpoints.keys()],
   ) {
@@ -641,7 +662,13 @@ export class ImPlugin {
       this.messages.set(m.id, entry);
     }
   }
-  async resend(id: string) {
+  resend(id: string): Promise<void> {
+    const call = this.executeResend(id);
+    this.toolCalls.add(call);
+    void call.finally(() => this.toolCalls.delete(call)).catch(() => {});
+    return call;
+  }
+  private async executeResend(id: string) {
     const m = await this.store.message(id);
     if (
       !m ||
@@ -651,8 +678,12 @@ export class ImPlugin {
       throw new Error("invalid_delivery");
     const endpoint = this.endpoints.get(m.channel_id);
     if (!endpoint) throw new ImFault("denied");
-    await this.store.patch(id, { state: "reply_pending", error: null });
-    await this.finish(endpoint, id);
+    const context = this.execution.human(m.actor_id), ref = conversationRef(JSON.parse(m.conversation_ref!));
+    this.assert(endpoint,context,ref);
+    this.assertSender(endpoint,m.actor_id,JSON.parse(m.source).senderId);
+    const attempt = await this.store.claimReply(id,m.reply_text,"resend");
+    if (!attempt) throw Error("Reply already claimed, expired or delivery changed");
+    await this.deliverAttempt(endpoint,context,ref,m,attempt,m.reply_text);
   }
   private assertSender(endpoint: ImEndpoint, actor: string, sender: string) {
     if (
@@ -670,7 +701,7 @@ export class ImPlugin {
     if (this.controller.signal.aborted) throw new ImFault("closed");
     if (
       this.store.channel(endpoint.id)?.enabled === false ||
-      this.endpoints.get(endpoint.id)?.ownerId !== endpoint.ownerId
+      this.endpoints.get(endpoint.id) !== endpoint
     )
       throw new ImFault("denied");
     this.execution.authorize(this.owners.get(endpoint.id)!);

@@ -53,7 +53,8 @@ export class HostProcessService {
     return this.dispatchPrepared(method, raw, prepareProcessIdentity(this.environment, scope, method, raw));
   }
   /** Trusted local owner IPC only. Browser callers must use the Host admission path. */
-  dispatchPrepared(method: string, raw: unknown, identity: PreparedProcessIdentity): unknown {
+  dispatchPrepared(method: string, raw: unknown, identity: PreparedProcessIdentity,
+    physical?: { started(): void; exited(): void }): unknown {
     if (this.closed) throw new Error("Process service is closed");
     const p = object(raw ?? {});
     const { scope, owner, quotaOwner } = identity;
@@ -105,6 +106,7 @@ export class HostProcessService {
       if (p.cwd != null && typeof p.cwd !== "string") throw new Error("Invalid working directory");
       if (!identity.env) throw new Error("Missing prepared process environment");
       const env = identity.env;
+      physical?.started();
       const pty = spawn(p.command[0] as string, p.command.slice(1) as string[], { ...dimensions, cwd: p.cwd as string ?? homedir(), env, name: "xterm-256color" });
       while (this.sessions.size >= TERMINAL_RESOURCE_LIMITS.retainedPerHost) {
         const exited = [...this.sessions].find(([, s]) => s.phase === "exited");
@@ -133,6 +135,7 @@ export class HostProcessService {
       });
       pty.onExit(({ exitCode }) => {
         session.phase = "exited"; session.exitCode = exitCode;
+        physical?.exited();
         clearTimeout(session.killTimer);
         this.emit("process/exited", { processHandle: id, exitCode });
       });

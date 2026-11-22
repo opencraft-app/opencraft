@@ -25,13 +25,15 @@ ARG OPENCRAFT_GID=1000
 ARG OPENCRAFT_BUILD_ID=development
 ARG OPENCRAFT_SOURCE_REVISION=unknown
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates git openssh-client libatomic1 libasound2 libatk-bridge2.0-0 libatk1.0-0 \
+    python3 ca-certificates git openssh-client libatomic1 libasound2 libatk-bridge2.0-0 libatk1.0-0 \
     fonts-noto-cjk fonts-noto-color-emoji \
     libatspi2.0-0 libcups2 libdbus-1-3 libdrm2 libgbm1 libgtk-3-0 libnspr4 libnss3 \
     libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2 \
     && rm -rf /var/lib/apt/lists/* \
     && if ! getent group "${OPENCRAFT_GID}" >/dev/null; then groupadd --gid "${OPENCRAFT_GID}" opencraft; fi \
     && if ! getent passwd "${OPENCRAFT_UID}" >/dev/null; then useradd --uid "${OPENCRAFT_UID}" --gid "${OPENCRAFT_GID}" --no-create-home opencraft; fi
+COPY deploy/docker/install-sandbox-deps.sh /usr/local/share/opencraft/install-sandbox-deps.sh
+RUN /bin/sh /usr/local/share/opencraft/install-sandbox-deps.sh
 COPY --from=build /out/opencraft-server /opt/opencraft
 LABEL org.opencontainers.image.title="OpenCraft" \
       org.opencontainers.image.description="OpenCraft self-hosted Gateway, Brain and Hands runtime" \

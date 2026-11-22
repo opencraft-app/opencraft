@@ -59,6 +59,54 @@ export function assistantTools({
           }),
         ]
       : []),
+    ...(ports.crewDispatch && snapshot.delegation.tools.includes("crew_dispatch")
+      ? [
+          defineTool({
+            name: "crew_contacts",
+            replay: "safe",
+            description:
+              "List who this work lets you reach: contacts (your phonebook, the only people and Agents you may hand work to) and answersTo (who this work answers to, nearest first; you may always report or ask them). Also returns the remaining hand-off budget for this work's tree.",
+            parameters: Type.Object({}),
+            execute: async (_args, _api, { abortSignal } = {}) => {
+              guard("crew_contacts");
+              const result = await ports.crewContacts(abortSignal);
+              return { output: [{ type: "text", text: JSON.stringify(result) }] };
+            },
+          }),
+          defineTool({
+            name: "crew_dispatch",
+            replay: "safe",
+            description:
+              "Hand part of this work to someone in your contacts (actorId from crew_contacts). They receive it as new work answering to you. Each hand-off spends one unit of a budget shared by the whole tree; when it is exhausted, ask whoever this work answers to instead. Their replies come back to you as new turns; do not poll. Returns the new workId; keep it to answer their questions with crew_message.",
+            parameters: Type.Object({
+              to: Type.String({ maxLength: 256 }),
+              text: Type.String({ maxLength: 16384 }),
+            }),
+            execute: async (args, api, { abortSignal } = {}) => {
+              guard("crew_dispatch");
+              const result = await ports.crewDispatch(args, api.callId, abortSignal);
+              return { output: [{ type: "text", text: JSON.stringify(result) }] };
+            },
+          }),
+          defineTool({
+            name: "crew_message",
+            replay: "safe",
+            description:
+              "Reply inside crew work; this opens no new work and spends no budget. Without workId, write to someone in answersTo: decide what you can yourself, and ask the nearest person only what you cannot. Set asks to true only for a question you need answered; it then waits in their Inbox until they reply, and their reply comes back to you. Reports and notices leave asks unset. With workId of a hand-off you made, answer the Agent you handed it to.",
+            parameters: Type.Object({
+              to: Type.String({ maxLength: 256 }),
+              text: Type.String({ maxLength: 16384 }),
+              workId: Type.Optional(Type.String({ maxLength: 256 })),
+              asks: Type.Optional(Type.Boolean()),
+            }),
+            execute: async (args, api, { abortSignal } = {}) => {
+              guard("crew_message");
+              const result = await ports.crewMessage(args, api.callId, abortSignal);
+              return { output: [{ type: "text", text: JSON.stringify(result) }] };
+            },
+          }),
+        ]
+      : []),
     ...(ports.platformRead &&
     snapshot.delegation.tools.includes("platform_read")
       ? [

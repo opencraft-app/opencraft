@@ -13,7 +13,7 @@ import { assertModelPolicy, readPolicy, resolvePolicySelection, ModelPolicyError
 import { ProvisionalThreads } from "./provisional-threads.js";
 import { nativeEmptyCreation } from "./native-empty-creation.js";
 import { HostInteractions, InteractionFault } from "@opencraft/app-host-server/interactions";
-import { COLLABORATION_CAPABILITIES } from '@opencraft/appserver-protocol/collaboration';
+import { COLLABORATION_CAPABILITIES, type CollaborationCapabilities } from '@opencraft/appserver-protocol/collaboration';
 import { SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND, isHumanInteraction, type InteractionSourceRequest } from "@opencraft/appserver-protocol";
 import { projectThreadTopologyResult } from "./thread-orchestration-projection.js";
 import type { HumanGitExecutionPort } from '@opencraft/execution-environment/human-git-execution';
@@ -269,7 +269,10 @@ interface SharedCodexRoutingOptions {
     /** Shared deployment owner; its lifetime belongs to Headless, not a transport. */
     readonly derivedQueries?: TokenUsageQueryService;
   };
+  /** Headless observes gateway model grants in its Server owner Worker. */
+  readonly filterGatewayModelCatalog?: (path: string, actorId: string | null, models: unknown[]) => Promise<unknown[]>;
   readonly collaboration?: {
+    readonly capabilities?: CollaborationCapabilities;
     modelExecutionAuthority?(threadId:string,inputId:string):{authorizer:string;executor:string|null;expiresAt:number;authorityId?:string;parentAuthorityId?:string};
     topology?(threadId: string): {parentThreadId:string|null;visibility:"visible"|"hidden"} | null;
     queuedContext?(threadId: string, inputId: string, input: readonly unknown[]): Promise<unknown>;
@@ -280,7 +283,7 @@ interface SharedCodexRoutingOptions {
     inputDelegation?(threadId:string,inputId:string,expectedTurnId?:string):string|null;
     prepare?(context: NonNullable<TransportSubmissionContext["actorContext"]>, input: readonly unknown[]): Promise<unknown>;
     canCancel?(context: NonNullable<TransportSubmissionContext["actorContext"]>, requestId: string): boolean;
-    command(context: NonNullable<TransportSubmissionContext["actorContext"]>, body: Record<string, unknown>): Promise<unknown>;
+    command(context: NonNullable<TransportSubmissionContext["actorContext"]>, body: Record<string, unknown>, submission?: TransportSubmissionContext): Promise<unknown>;
     authorize(context: NonNullable<TransportSubmissionContext["actorContext"]>, threadId: string, inputId: string, input?: readonly unknown[]): void;
     orchestration?: { available?():boolean; tool(threadId:string,turnId:string,key:string,name:string,args:Record<string,unknown>,delegationId?:string,callbackIncarnation?:string):Promise<unknown>; observed(snapshot:ThreadOrchestrationSnapshot):void };
     started(threadId: string, inputId: string, turnId: string): void;
@@ -376,7 +379,7 @@ class OpenCraftQueueRpcError extends Error {
   constructor(readonly code: number, message: string, readonly data?: unknown) { super(message); }
 }
 
-function withCodexHostCapabilities(value: unknown, attachmentStaging: AttachmentStagingCapability, desktop?: HostDesktopCapability, collaboration = false): RpcRecord {
+function withCodexHostCapabilities(value: unknown, attachmentStaging: AttachmentStagingCapability, desktop?: HostDesktopCapability, collaboration?: CollaborationCapabilities): RpcRecord {
   const result = record(value);
   const capabilities = record(result.capabilities);
   const extensions = { ...record(capabilities.extensions) };
@@ -387,7 +390,7 @@ function withCodexHostCapabilities(value: unknown, attachmentStaging: Attachment
       ...capabilities,
       extensions: {
         ...extensions,
-        ...(collaboration ? {"opencraft/collaboration": COLLABORATION_CAPABILITIES} : {}),
+        ...(collaboration ? {"opencraft/collaboration": collaboration} : {}),
         [OPENCRAFT_THREAD_PINS_EXTENSION]: OPENCRAFT_THREAD_PINS_CAPABILITY,
         [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: attachmentStaging,
         ...(desktop ? { [OPENCRAFT_DESKTOP_EXTENSION]: desktop } : {}),
@@ -1388,9 +1391,18 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   private async sendClientMessage(message: RpcRecord, context: TransportSubmissionContext): Promise<void> {
     delete message[EXECUTION_ENVIRONMENT_FIELD]; delete record(message.params)[EXECUTION_ENVIRONMENT_FIELD];
+    const params = record(message.params);
+    // The durable collaboration ledger is the authority for this queue
+    // admission. No creator credentials exist for the internal connection;
+    // the Host verifies the request before accepting it, and dispatch later
+    // restores the original execution provenance for turn/start.
+    const collaborationQueueAdmission = message.method === 'thread/queue/add'
+      && params.mode !== 'steer'
+      && typeof context.collaborationRequestId === 'string'
+      && params.clientUserMessageId === `actor-input:${context.collaborationRequestId}`;
     try {
-      if (this.options.executionEnvironment && requiresEnvironmentAuthority(string(message.method))) {
-        const scope = this.options.executionEnvironment.scope(context, 'local-codex', record(message.params));
+      if (this.options.executionEnvironment && requiresEnvironmentAuthority(string(message.method)) && !collaborationQueueAdmission) {
+        const scope = this.options.executionEnvironment.scope(context, 'local-codex', params);
         if (requiresCurrentEnvironmentAuthority(string(message.method), message.params)) this.assertCurrentEnvironmentOwner(scope);
         else if (['turn/steer', 'thread/queue/steer'].includes(string(message.method)) && !this.options.sharedTurnInput)
           this.assertCurrentEnvironmentOwner(scope);
@@ -1678,7 +1690,7 @@ export class CodexEngineAdapter implements DuplexTransport {
           if (!this.options.collaboration) throw Object.assign(new Error('unsupported_capability'), {status:409,code:'unsupported_capability'});
           if (!context.actorContext) throw Object.assign(new Error('actor_authentication_required'), {status:401,code:'actor_authentication_required'});
           context.resourceOwner?.assertCurrent();
-          const result = await this.options.collaboration.command(context.actorContext, record(message.params));
+          const result = await this.options.collaboration.command(context.actorContext, record(message.params), context);
           context.resourceOwner?.assertCurrent();
           if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch) this.emit({id,result},clientId);
         } catch (error) {
@@ -1935,7 +1947,14 @@ export class CodexEngineAdapter implements DuplexTransport {
             const actor = (this.options.modelActor ?? this.options.tokenUsage?.actor)?.(context.actorContext);
             return actor?.kind === 'human' ? actor.id : null;
           } } : {}),
-          ...(message.method === "model/list" ? {gatewayViewer:()=>context.actorContext ? this.options.tokenUsage?.actor(context.actorContext)?.id??null:null}:{}),
+          ...(message.method === "model/list" ? { gatewayViewer: () => {
+            if (this.options.filterGatewayModelCatalog) {
+              this.validateSubmissionContext(context);
+              context.resourceOwner?.assertCurrent();
+            }
+            const resolve = this.options.modelActor ?? this.options.tokenUsage?.actor;
+            return context.actorContext ? resolve?.(context.actorContext)?.id ?? null : null;
+          } } : {}),
           executionAuthorityAdmitted,
           ...(["thread/read", "thread/turns/list"].includes(string(message.method)) ? { historyTiming: { pairId: randomUUID(), started: receivedAt } } : {}),
           ...((message.method === "thread/start" || message.method === "thread/fork") ? { metadataSender: context.sender } : {}) };
@@ -2396,7 +2415,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         } else this.initializeResult = shared;
       } else {
         this.initializeResult = this.attachmentStaging
-          ? withCodexHostCapabilities(message.result, this.attachmentStaging.capability, this.desktopService?.capability(), !!this.options.collaboration)
+          ? withCodexHostCapabilities(message.result, this.attachmentStaging.capability, this.desktopService?.capability(), (this.options.collaboration?.capabilities ?? (this.options.collaboration ? COLLABORATION_CAPABILITIES : undefined)))
           : projectSharedNativeCodexInitialize(message.result);
       }
       if (this.threadMetadata) {
@@ -2638,6 +2657,27 @@ export class CodexEngineAdapter implements DuplexTransport {
         });
         const gatewayPath=configuredModelGatewayPath();
         if(pending.method==="model/list" && gatewayPath && Array.isArray(record(message.result).data)) {
+          const filter = this.options.filterGatewayModelCatalog;
+          if (filter) {
+            const generation = this.sessionMcpGeneration, routing = this.generationRoutingEpoch;
+            const result = record(message.result);
+            this.pending.delete(String(id));
+            if (pending.timer) clearTimeout(pending.timer);
+            const failure = () => {
+              if (this.validClientRequest(pending)) this.emit({ id: pending.originalId,
+                error: { code: -32043, message: "Model catalog is unavailable" } }, pending.clientId);
+            };
+            let actor: string | null;
+            try { actor = pending.gatewayViewer?.() ?? null; }
+            catch { failure(); return; }
+            void filter(gatewayPath, actor, result.data as unknown[]).then(data => {
+              if (!this.validClientRequest(pending)) return;
+              if (generation !== this.sessionMcpGeneration || routing !== this.generationRoutingEpoch
+                || (pending.gatewayViewer?.() ?? null) !== actor) { failure(); return; }
+              this.emit({ ...message, id: pending.originalId, result: { ...result, data } }, pending.clientId, pending.method);
+            }).catch(failure);
+            return;
+          }
           const ledger=new ModelGatewayStore(gatewayPath);
           try { const actor=pending.gatewayViewer?.()??null;
             message={...message,result:{...record(message.result),data:(record(message.result).data as unknown[]).filter(item=>{

@@ -104,6 +104,77 @@ test('previous Server schema upgrades without losing data and rejects modified m
   assert.throws(()=>openManagedDatabase({path,migrations:SERVER_MIGRATIONS,legacyPolicy:'reject'}));
 });
 
+test('upgrade keeps existing spaces and their members, with contact closed',async t=>{
+  const root=mkdtempSync(join(tmpdir(),'opencraft-space-contact-upgrade-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
+  const path=join(root,'database.sqlite');
+  const before=SERVER_MIGRATIONS.findIndex(m=>m.name==='0020_crew');assert(before>0);
+  const previous=openManagedDatabase({path,migrations:SERVER_MIGRATIONS.slice(0,before),legacyPolicy:'reject'});
+  assert.equal(previous.database.prepare("SELECT COUNT(*) AS n FROM pragma_table_info('collaboration_spaces') WHERE name='open_contact'").get()?.n,0);
+  previous.database.prepare("INSERT INTO collaboration_spaces VALUES('legacy','Legacy','owner-1',1)").run();
+  previous.database.prepare("INSERT INTO collaboration_space_members VALUES('legacy','owner-1','owner',1)").run();
+  previous.database.close();
+  const updated=openManagedDatabase({path,migrations:SERVER_MIGRATIONS,legacyPolicy:'reject'});t.after(()=>updated.database.close());
+  assert.deepEqual({...updated.database.prepare("SELECT id,name,owner_actor_id,created_at,open_contact FROM collaboration_spaces").get()},
+    {id:'legacy',name:'Legacy',owner_actor_id:'owner-1',created_at:1,open_contact:0});
+  assert.equal(updated.database.prepare("SELECT role FROM collaboration_space_members WHERE space_id='legacy'").get()?.role,'owner');
+  assert.equal(updated.database.prepare('SELECT COUNT(*) AS n FROM crew_work').get()?.n,0,'crew work starts empty after upgrade');
+  assert.equal(updated.database.prepare('SELECT COUNT(*) AS n FROM crew_messages').get()?.n,0,'crew replies start empty after upgrade');
+});
+
+test('new spaces open contact, the default space does not, and only the owner switches it',async t=>{
+  const f=await fixture(t);const ledger=new ServerSpacesLedger(f.owner.database);
+  ledger.bootstrap(f.alice.actorId,[f.bob.actorId]);
+  const created=ledger.command(f.alice,{action:'create',name:'Team'}) as {spaceId:string};
+  const open=(context:typeof f.alice,id:string)=>ledger.directory(context).spaces.find(s=>s.id===id)?.openContact;
+  assert.equal(open(f.alice,'myself'),false);
+  assert.equal(open(f.alice,created.spaceId),true);
+  assert.throws(()=>ledger.command(f.bob,{action:'contact',spaceId:'myself',open:true}),'a member cannot switch contact');
+  assert.throws(()=>ledger.command(f.alice,{action:'contact',spaceId:created.spaceId,open:'yes'} as never));
+  ledger.command(f.alice,{action:'contact',spaceId:created.spaceId,open:false});
+  assert.equal(open(f.alice,created.spaceId),false);
+  const runtime=new ServerSpacesRuntime({path:join(f.path,'opencraft-server.sqlite')});await runtime.ready;t.after(()=>runtime.close());
+  await runtime.command(f.alice,{action:'contact',spaceId:created.spaceId,open:true});
+  assert.equal(runtime.directory(f.alice).spaces.find(s=>s.id===created.spaceId)?.openContact,true,'the committed switch is published');
+});
+
+test('the owner adds a Bot as a peer member of exactly one space',async t=>{
+  const f=await fixture(t);const ledger=new ServerSpacesLedger(f.owner.database);
+  ledger.bootstrap(f.alice.actorId,[f.bob.actorId]);
+  const team=ledger.command(f.alice,{action:'create',name:'Team'}) as {spaceId:string};
+  const other=ledger.command(f.alice,{action:'create',name:'Other'}) as {spaceId:string};
+  const bot=f.actors.createSession('Alan',f.alice.actorId);
+  assert.throws(()=>ledger.command(f.bob,{action:'addBot',spaceId:'myself',actorId:bot.id}),'a member cannot add Bots');
+  assert.throws(()=>ledger.command(f.alice,{action:'addBot',spaceId:team.spaceId,actorId:f.bob.actorId}),'humans join by invitation, not addBot');
+  assert.throws(()=>ledger.command(f.alice,{action:'addBot',spaceId:team.spaceId,actorId:'missing'}));
+  const result=ledger.command(f.alice,{action:'addBot',spaceId:team.spaceId,actorId:bot.id}) as {members:{actorId:string;kind:string;role:string}[]};
+  assert.deepEqual(result.members.map(m=>[m.kind,m.role]),[['human','owner'],['session','member']]);
+  ledger.command(f.alice,{action:'addBot',spaceId:team.spaceId,actorId:bot.id}); // repeating is harmless
+  assert.throws(()=>ledger.command(f.alice,{action:'addBot',spaceId:other.spaceId,actorId:bot.id}),'one space per Bot');
+  ledger.command(f.alice,{action:'remove',spaceId:team.spaceId,actorId:bot.id});
+  ledger.command(f.alice,{action:'addBot',spaceId:other.spaceId,actorId:bot.id});
+  assert.equal(ledger.members(f.alice,other.spaceId).find(m=>m.actorId===bot.id)?.kind,'session');
+  const bobs=f.actors.createSession('Bobs',f.bob.actorId);
+  assert.throws(()=>ledger.command(f.alice,{action:'addBot',spaceId:team.spaceId,actorId:bobs.id}),'someone else\'s Bot is not the owner\'s to place');
+});
+
+test('the owner sees their own additional assistants that are not yet in a space',async t=>{
+  const f=await fixture(t);const ledger=new ServerSpacesLedger(f.owner.database);
+  ledger.bootstrap(f.alice.actorId,[f.bob.actorId]);
+  const team=ledger.command(f.alice,{action:'create',name:'Team'}) as {spaceId:string};
+  const assistant=(name:string,owner:{actorId:string},isDefault:0|1)=>{
+    const actor=f.actors.createSession(name,owner.actorId),human=f.actors.get(owner.actorId)!;
+    f.owner.database.prepare(`INSERT INTO personal_assistants(bot_id,actor_id,owner_human_id,owner_generation,assignment_id,epoch,state,created_at,is_default,paused)
+      VALUES(?,?,?,?,?,'1','claimed',?,?,0)`).run('bot-'+name,actor.id,human.id,human.generation,'assignment-'+name,Date.now(),isDefault);
+    return actor;
+  };
+  const alan=assistant('Alan',f.alice,0);assistant('Butler',f.alice,1);assistant('Bobby',f.bob,0);
+  const list=()=>(ledger.command(f.alice,{action:'bots',spaceId:team.spaceId}) as {bots:{actorId:string;displayName:string}[]}).bots;
+  assert.deepEqual(list(),[{actorId:alan.id,displayName:'Alan'}],'not the default assistant, not someone else\'s');
+  assert.throws(()=>ledger.command(f.bob,{action:'bots',spaceId:'myself'}),'owners only');
+  ledger.command(f.alice,{action:'addBot',spaceId:team.spaceId,actorId:alan.id});
+  assert.deepEqual(list(),[],'a placed Bot is no longer offered');
+});
+
 test('Native delivery filters spaces and revokes an already observed conversation; unknown Threads stay closed',async t=>{
   const f=await fixture(t),runtime=new ServerSpacesRuntime({path:join(f.path,'opencraft-server.sqlite'),ownerActorId:f.alice.actorId});await runtime.ready;t.after(()=>runtime.close());
   const space=await runtime.command(f.alice,{action:'create',name:'Shared'});

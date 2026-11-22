@@ -64,10 +64,11 @@ test("execution CLI credentials come from authenticated admission and Renderer/a
 test('connected Host reference RPC uses authenticated collaboration authority instead of the native engine',async()=>{
   let receive!:(frame:string)=>void;const native:any[]=[],responses:any[]=[],actors:any[]=[];
   const inner:any={status:{state:'open'},subscribeMessage(listener:(frame:string)=>void){receive=listener;return()=>{};},async send(frame:string){native.push(JSON.parse(frame));}};
-  const service:any={async command(actor:unknown,params:any){actors.push(actor);assert.equal(params.action,'reference');return {reference:'opencraft://conversation/v1/server/private-source'};}};
+  const service:any={capabilities:{version:1,read:true,createLookup:true},async command(actor:unknown,params:any){actors.push(actor);assert.equal(params.action,'reference');return {reference:'opencraft://conversation/v1/server/private-source'};}};
   const transport=new AgentDriverTransport(inner,service,()=> 'server');transport.subscribeMessage(frame=>responses.push(JSON.parse(frame)));
   await transport.send(JSON.stringify({id:1,method:'initialize',params:{}}));receive(JSON.stringify({id:1,result:{capabilities:{extensions:{'opencraft/method-access':{methods:['initialize']}}}}}));
   assert.equal(responses[0].result.capabilities.extensions['opencraft/collaboration'].read,true);
+  assert.equal(responses[0].result.capabilities.extensions['opencraft/collaboration'].createLookup,true);
   const message=JSON.stringify({id:2,method:'opencraft/collaboration',params:{action:'reference',threadId:'private-source'}});
   await transport.send(message);assert.equal(responses.at(-1).error.data.code,'actor_authentication_required');
   const actor={actorId:'owner',generation:1,expiresAt:Date.now()+1000,credentialId:null};

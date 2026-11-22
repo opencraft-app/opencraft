@@ -18,7 +18,7 @@ export async function createRemoteTab(service, binding, input, { signal, require
   let url; try { url = new URL(input?.url); } catch {}
   if (!url || !['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.href.length > 8192)
     throw fail('INVALID_ARGUMENT', 'Browser creation requires an absolute http(s) URL without credentials');
-  const authorize = () => { signal?.throwIfAborted(); binding.authorize(); if (service.closed) throw fail('BROWSER_UNAVAILABLE', 'Browser service closed'); };
+  const authorize = () => { signal?.throwIfAborted(); binding.authorize(); service.conversationLifecycle?.assertActive(binding.hostId,binding.threadId); if (service.closed) throw fail('BROWSER_UNAVAILABLE', 'Browser service closed'); };
   authorize(); await service.load(); authorize();
   await service.start(); authorize();
   if (service.ownerConnector && service.child?.automationCancellation !== 1)

@@ -6,5 +6,13 @@
     "sqlChecksum": "0800abb65ab468064821fdd15fcf4c97e923ad4eb1f0d8d696b422a379a027f1",
     "snapshotChecksum": "d109ab9c0401ebef9c5b70217ab1cab5d68e67ec96b6a9c6b0e5f833d7605d3f",
     "compiledChecksum": null
+  },
+  {
+    "tag": "0001_reply_attempts",
+    "when": 1795344397306,
+    "version": 4,
+    "sqlChecksum": "9dd9a107ad32be7c00cda2199a734aad77c172d164038c7bd9bc16ae33c91773",
+    "snapshotChecksum": "b3a02213bf4a1aeebbe2c41ea6f2bc34c8dd91a18aa484ff5f2ac91a5cae98b5",
+    "compiledChecksum": "9dd9a107ad32be7c00cda2199a734aad77c172d164038c7bd9bc16ae33c91773"
   }
 ]

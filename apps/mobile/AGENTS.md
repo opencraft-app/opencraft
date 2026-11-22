@@ -3,7 +3,7 @@
 Follow the core AGENTS.md, design.md and docs/architecture/mobile/mobile-workbench-container.md.
 The only public entry packages the actual Web Workbench. Do not restore a parallel
 RN chat, composer, settings or workbench state tree. Expo owns native lifecycle,
-safe area, recovery, source selection and device adapters, never conversations.
+recovery, source selection and device adapters, never conversations or insets.
 
 The default code is bundled. The user may explicitly select a self-hosted HTTPS
 website in native settings. This is not an automatic fallback. Validate the URL,
@@ -17,7 +17,8 @@ material/permissions have runtime capability fallbacks. Do not require a custom
 native client for the basic workbench. Protocol tests, browser rendering, native
 JS bundles, signed binaries and physical devices are distinct evidence.
 
-Web owns keyboard geometry and memory navigation. Apply outer safe area once;
+Web owns keyboard geometry, safe areas and memory navigation. Every source fills
+the screen; the container adds no inset and never branches on source or platform;
 Android back uses Web navigation for bundled content and WebView history only in
 website mode. Resize/foreground must not remount the working app.
 

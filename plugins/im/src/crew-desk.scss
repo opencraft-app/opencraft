@@ -1,0 +1,52 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+// The desk is a reading surface: setup on top, conversations and tasks beside one transcript.
+.crew-desk {
+  display: flex; flex-direction: column; block-size: min(760px, calc(100vh - 96px)); padding: 0; overflow: hidden;
+  container-type: inline-size;
+}
+.crew-desk__header {
+  display: flex; align-items: flex-start; gap: calc(3 * var(--spacing));
+  padding: calc(4 * var(--spacing)) calc(5 * var(--spacing)) calc(3 * var(--spacing));
+}
+.crew-desk__heading { flex: 1; min-inline-size: 0;
+  h2 { margin: 0; @include typography.role(panel-title); }
+  p { margin: var(--spacing) 0 0; @include typography.role(metadata, secondary); }
+}
+.crew-desk__setup {
+  display: flex; flex-wrap: wrap; gap: calc(2 * var(--spacing)) calc(8 * var(--spacing)); margin: 0;
+  padding: 0 calc(5 * var(--spacing)) calc(3 * var(--spacing)); border-block-end: 1px solid var(--color-border-subtle);
+  dt { @include typography.role(metadata, secondary); }
+  dd { margin: 0; @include typography.role(body); overflow-wrap: anywhere; }
+}
+.crew-desk__body { flex: 1; min-block-size: 0; display: flex; }
+.crew-desk__aside {
+  flex: 0 0 clamp(200px, 24%, 260px); min-block-size: 0; overflow: auto; padding: calc(3 * var(--spacing)); border-inline-end: 1px solid var(--color-border-subtle);
+  h3 { margin: calc(4 * var(--spacing)) 0 calc(2 * var(--spacing)); @include typography.role(metadata, secondary); }
+}
+.crew-desk__tasks { list-style: none; margin: 0; padding: 0;
+  li { display: flex; flex-direction: column; gap: 2px; padding-block: calc(2 * var(--spacing)); border-block-end: 1px solid var(--color-border-subtle); }
+  span { @include typography.role(body); overflow-wrap: anywhere; }
+  small { @include typography.role(metadata, secondary); }
+}
+.crew-desk__muted, .crew-desk__status { margin: 0; @include typography.role(metadata, secondary); }
+.crew-desk__status { padding: calc(6 * var(--spacing)) calc(5 * var(--spacing)); }
+.crew-desk__timeline { position: relative; overflow: hidden; flex: 1; min-inline-size: 0; min-block-size: 0; }
+.crew-desk__message {
+  display: flex; gap: calc(3 * var(--spacing)); padding: calc(3 * var(--spacing)) calc(5 * var(--spacing));
+  max-inline-size: var(--thread-content-max-width); margin-inline: auto;
+  > div { flex: 1; min-inline-size: 0; }
+  small { display: block; margin-block-end: var(--spacing); @include typography.role(metadata, secondary); strong { color: var(--color-text); font-weight: inherit; } }
+}
+// Narrow containers stack the list above the transcript instead of squeezing both.
+@container (max-width: 640px) {
+  .crew-desk__body { flex-direction: column; }
+  .crew-desk__aside { flex: 0 0 auto; max-block-size: 35%; border-inline-end: 0; border-block-end: 1px solid var(--color-border-subtle); }
+}
+.crew-desk__mark {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  inline-size: var(--size-navigation-leading-slot); block-size: var(--size-navigation-leading-slot);
+  border-radius: var(--radius-full); overflow: hidden;
+  background: var(--color-badge-neutral-background); color: var(--color-badge-neutral-foreground);
+  @include typography.role(metadata);
+}
+.crew-desk__mark:has(svg) { background: none; }

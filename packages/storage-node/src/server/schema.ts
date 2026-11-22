@@ -695,6 +695,10 @@ export const actorHumanReservations = sqliteTable("actor_human_reservations", {
 export const collaborationSpaces = sqliteTable("collaboration_spaces", {
   id: text("id").primaryKey(), name: text("name").notNull(), ownerActorId: text("owner_actor_id").notNull(),
   createdAt: integer("created_at").notNull(),
+  // 1: Humans in this space may message any other member without a per-target grant.
+  // Existing rows (including the historical default space) keep the per-grant rule.
+  // Written only by ServerSpacesLedger as 0 or 1; a plain column keeps the upgrade an in-place ADD COLUMN.
+  openContact: integer("open_contact").notNull().default(0),
 });
 export const collaborationSpaceMembers = sqliteTable("collaboration_space_members", {
   spaceId: text("space_id").notNull(), actorId: text("actor_id").notNull(), role: text("role").notNull(),
@@ -710,3 +714,49 @@ export const collaborationSpaceThreads = sqliteTable("collaboration_space_thread
   engineServerId: text("engine_server_id").notNull(), threadId: text("thread_id").notNull(), spaceId: text("space_id").notNull(),
 }, table => [primaryKey({columns:[table.engineServerId,table.threadId]}),
   foreignKey({columns:[table.spaceId],foreignColumns:[collaborationSpaces.id]})]);
+/**
+ * One piece of crew work: who it is assigned to, who handed it over, the work it was split from,
+ * and its root. Written only by Collaboration's crew work ledger. A root carries the Bot-to-Bot
+ * dispatch count for its whole tree. `origin` is 'member' for a member's request, 'bot' for a
+ * Bot's dispatch and 'routine' for work a Bot started on its own.
+ */
+export const crewWork = sqliteTable("crew_work", {
+  id: text("id").primaryKey(), spaceId: text("space_id").notNull(), assigneeId: text("assignee_id").notNull(),
+  requesterId: text("requester_id").notNull(), parentId: text("parent_id"), rootId: text("root_id").notNull(),
+  origin: text("origin").notNull(), messageId: text("message_id"), state: text("state").notNull(),
+  dispatches: integer("dispatches").notNull().default(0), createdAt: integer("created_at").notNull(), closedAt: integer("closed_at"),
+}, table => [index("crew_work_assignee").on(table.assigneeId, table.state), index("crew_work_root").on(table.rootId),
+  check("crew_work_origin", sql.raw("origin IN ('member','bot','routine')")), check("crew_work_state", sql.raw("state IN ('open','closed')"))]);
+
+/** Messages exchanged inside crew work that reach a Bot. A reply is not a new dispatch: it is filed
+ * against the recipient's own work, so its runtime can return it to the conversation handling that work. */
+export const crewMessages = sqliteTable("crew_messages", {
+  seq: integer("seq").primaryKey({ autoIncrement: true }), messageId: text("message_id").notNull().unique(),
+  recipientId: text("recipient_id").notNull(), workId: text("work_id").notNull(), fromWorkId: text("from_work_id").notNull(),
+  createdAt: integer("created_at").notNull(),
+  // 1 when the sender asked the recipient something; 0 for reports and notices. Written only by CrewWork.
+  asks: integer("asks").notNull().default(0),
+  // The question this message answers; an answer closes it instead of opening new work.
+  answers: text("answers"),
+}, table => [index("crew_messages_recipient").on(table.recipientId, table.seq)]);
+
+export const conversationCreationReceipts = sqliteTable("conversation_creation_receipts", {
+  actorId: text("actor_id").notNull(),
+  operationKey: text("operation_key").notNull(),
+  serverId: text("server_id").notNull(),
+  fingerprint: text("fingerprint").notNull(),
+  state: text("state").notNull(),
+  threadId: text("thread_id"),
+  rejectionStatus: integer("rejection_status"),
+  rejectionCode: text("rejection_code"),
+}, table => [
+  primaryKey({ columns: [table.actorId, table.operationKey] }),
+  check("creation_receipt_state", sql.raw(`(
+    (state = 'claimed' AND thread_id IS NULL) OR
+    (state IN ('created', 'submitted', 'first_rejected') AND thread_id IS NOT NULL) OR
+    (state = 'rejected' AND thread_id IS NULL)
+  ) AND (
+    (state = 'rejected' AND rejection_status IS NOT NULL AND rejection_code IS NOT NULL) OR
+    (state <> 'rejected' AND rejection_status IS NULL AND rejection_code IS NULL)
+  )`)),
+]);

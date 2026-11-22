@@ -104,6 +104,31 @@ input.on("line", line => {
   if (message.method === "account/login/start" && process.env.OPENCRAFT_TEST_REJECT_POOL_AUTH) {
     send({ id: message.id, error: { code: -32000, message: "Native external auth rejected" } }); return;
   }
+  if (process.env.OPENCRAFT_TEST_CLI_MODEL_OPTIONS === "1") {
+    if (message.method === "model/list") {
+      const ids = ["fixture-model", "fixture-hidden-by-policy", ...Array.from({ length: 29 }, (_, i) => `fixture-model-${i + 1}`)];
+      const offset = Number(message.params.cursor ?? 0), limit = message.params.limit ?? 30;
+      const data = ids.slice(offset, offset + limit).map(id => ({
+        id, model: id, hidden: false, isDefault: id === "fixture-model",
+        supportedReasoningEfforts: [{ reasoningEffort: "medium" }, { reasoningEffort: "high" }],
+        defaultReasoningEffort: "medium",
+        serviceTiers: [{ id: "fast", name: "Fast", description: "synthetic" }],
+      }));
+      send({ id: message.id, result: { data, nextCursor: offset + limit < ids.length ? String(offset + limit) : null } });
+      return;
+    }
+    if (message.method === "configRequirements/read") {
+      send({ id: message.id, result: { requirements: {
+        allowedApprovalPolicies: ["on-request"], allowedSandboxModes: ["read-only", "workspace-write"],
+        allowedPermissionProfiles: null, additionalDeveloperInstructions: "private fixture settings",
+      } } });
+      return;
+    }
+    if (message.method === "collaborationMode/list") {
+      send({ id: message.id, result: { data: [{ mode: "default" }, { mode: "plan" }] } });
+      return;
+    }
+  }
   if (message.method === "model/list" && process.env.OPENCRAFT_TEST_AUTO_TITLES) {
     send({ id: message.id, result: { data: [{ model: "gpt-6-luna" }], nextCursor: null } });
     return;
@@ -188,11 +213,29 @@ input.on("line", line => {
     }
     send({ id: message.id, result: { turn: { id: turnId, status: "inProgress", items: [] } } });
     send({ method: "turn/started", params: { threadId, turn: { id: turnId, status: "inProgress", items: [] } } });
+    if (process.env.OPENCRAFT_TEST_CLI_ROUNDTRIP === "1") setTimeout(() => {
+      const item = { type: "agentMessage", id: `assistant-${turnId}`, text: `fixture reply ${turnId}` };
+      history.set(threadId, [...(history.get(threadId) ?? []), { turnId, item }]);
+      const turn = threadTurns.get(threadId).find(row => row.id === turnId);
+      turn.status = "completed";
+      turns.delete(threadId);
+      send({ method: "item/completed", params: { threadId, turnId, item } });
+      send({ method: "turn/completed", params: { threadId, turn } });
+    }, 40);
     if (titleThreads.has(threadId)) setTimeout(() => {
       send({ method: "item/completed", params: { threadId, turnId, item: { type: "agentMessage", id: "title-output", text: '{"title":"修复自动会话标题"}' } } });
       turns.delete(threadId);
       send({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "completed", items: [] } } });
     }, 40);
+    else if (process.env.OPENCRAFT_TEST_PACKAGED_TURN === "1") {
+      const text = message.params.input.find(item => item.type === "text")?.text;
+      const item = { type: "agentMessage", id: "packaged-reply", text: `Fixture received: ${text}` };
+      const completed = { id: turnId, status: "completed", items: [item] };
+      turns.delete(threadId);
+      threadTurns.set(threadId, [...(threadTurns.get(threadId) ?? []).slice(0, -1), completed]);
+      send({ method: "item/completed", params: { threadId, turnId, item } });
+      send({ method: "turn/completed", params: { threadId, turn: completed } });
+    }
     return;
   }
   if (message.method === "turn/steer") {
@@ -305,11 +348,14 @@ input.on("line", line => {
       const title = process.env.OPENCRAFT_TEST_AUTO_TITLES && message.params.threadSource === "thread_title";
       const thread = { id: title ? `title-thread-${++nextTitleThread}` : "fixture-thread-1", preview: "", ephemeral: message.params.ephemeral === true, modelProvider: "opencraft-account-pool", createdAt: 1, updatedAt: 1, status: { type: "idle" }, turns: [] };
       if (title) titleThreads.add(thread.id);
+      if (process.env.OPENCRAFT_TEST_CLI_MODEL_OPTIONS === "1") {
+        threadMetadata.set(thread.id, { cwd: message.params.cwd, model: "fixture-model", reasoningEffort: "medium" });
+      }
       loadedThreads.add(thread.id);
       subscribedThreads.add(thread.id);
       send({ id: message.id, result: { thread, model: "gpt-test", modelProvider: "opencraft-account-pool", cwd: message.params.cwd, approvalPolicy: "never", approvalsReviewer: "user", sandbox: { type: "dangerFullAccess" }, serviceTier: null, testNativePermission: message.params.permissions ?? null } });
       send({ method: "thread/started", params: { thread } });
-      if (!title && !message.params.testNoServerRequest) send({ id: 900, method: "item/tool/requestUserInput", params: { threadId: thread.id, turnId: null, itemId: "question-1", questions: [] } });
+      if (!title && !message.params.testNoServerRequest && process.env.OPENCRAFT_TEST_CLI_ROUNDTRIP !== "1") send({ id: 900, method: "item/tool/requestUserInput", params: { threadId: thread.id, turnId: null, itemId: "question-1", questions: [] } });
       if (message.params.testDelayMs) send({ method: "test/delayedResponseSent", params: { requestId: message.id } });
     };
     if (message.params.testDelayMs) setTimeout(respond, message.params.testDelayMs);

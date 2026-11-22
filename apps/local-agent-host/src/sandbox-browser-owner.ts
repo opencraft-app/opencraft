@@ -114,7 +114,7 @@ export async function connectSandboxBrowserOwner(options: {
     } catch { fail(); }
   };
   try {
-    child = await options.sandbox.spawn({ command: ['/usr/bin/python3', '-u', '-c', proxy, options.socketPath], cwd: '/workspace', env: {} },
+    child = await options.sandbox.spawn({ command: ['/usr/bin/python3', '-I', '-u', '-c', proxy, options.socketPath], cwd: '/workspace', env: {} },
       output => { if (output.stream === 'stdout') receive(output.data); });
     if (stopped) { try { await child.terminate(); } catch { options.onCleanupUnconfirmed(); } throw Error('Sandbox browser attach expired'); }
     void child.exited.then(fail, fail);

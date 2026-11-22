@@ -11,14 +11,14 @@ The independent RN workbench has been retired, and `apps/mobile` has no downstre
 
 | Owner | Responsibilities |
 | --- | --- |
-| Web Application | Connections, authentication, navigation, Scope/View, drafts, caches, extensions and panels |
-| Expo container | Packaged document, safe area, native foreground/background, Android back and external navigation |
+| Web Application | Connections, authentication, navigation, Scope/View, drafts, caches, extensions, panels and device safe areas |
+| Expo container | Packaged document, full-screen WebView, native foreground/background, Android back and external navigation |
 | Shared mobile contract | Versioned, runtime-scoped capability messages; no conversation-state replication |
 
 Native back invokes Web's memory history, not WebView URL back or a second route
 stack. Resize/foreground events do not replace the source or remount the app.
-Web visualViewport owns keyboard/Composer geometry; native applies the outer
-safe area once, without a second keyboard-avoidance transform.
+Web visualViewport owns keyboard/Composer geometry and the content applies the
+device safe area once; native adds neither an inset nor a keyboard-avoidance transform.
 `@opencraft/client-product/mobile-container` is a trusted-container contract,
 independent of private Bot/account bridges. Browser/Electron clients without a
 container retain normal startup, navigation and lifecycle behavior.
@@ -147,19 +147,19 @@ mode. Built-in content continues to use the original Web memory navigation.
 Retries create a fresh document/runtime, rejecting late messages from retired
 views. Failed documents never automatically select another source.
 
+Every source has one presentation. The WebView fills the screen behind the
+status bar and home indicator on every platform, and the content reads safe-area
+geometry itself (`viewport-fit=cover`, `env(safe-area-inset-*)`). The container
+adds no inset of its own and does not branch on source kind or platform.
+
 Built-in content opens source selection from the existing Web Appearance
-settings. Once ready it uses the full safe-area viewport without a permanent
-native source toolbar. Startup, failure and self-hosted mode retain a native
-source control independent of Web content. Saving an unchanged source preserves
-the document, draft and appearance.
+settings. Until content reports ready (startup, failure, and a self-hosted site,
+which never reports it), one native source control floats at the right edge with
+its own safe inset. It occupies no space in the WebView layout and remains
+available on failure. Saving an unchanged source preserves the document, draft
+and appearance. Rotation updates both geometries without replacing the document.
 
-In iOS self-hosted mode, the WebView fills the screen behind the status bar and
-home indicator. WebKit supplies safe-area geometry to the site. The native
-source control floats at the right edge with its own safe inset and remains
-available on failure. It occupies no space in the WebView layout. Rotation
-updates both geometries without replacing the website document.
-
-Native recovery toolbar surfaces use Expo GlassEffect when available and fall back to
+The native source control uses Expo GlassEffect when available and falls back to
 shared semantic surfaces. This container material never creates a second
 Workbench navigation state or duplicates Web controls. External website mode
 is a technical capability for user-operated services, not an App Store acceptance

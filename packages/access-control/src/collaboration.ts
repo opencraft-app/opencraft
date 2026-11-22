@@ -1,3 +1,8 @@
+import { isAbsolute } from 'node:path';
+import { COLLABORATION_CAPABILITIES, CONVERSATION_TAIL_MAX_TURNS, type CollaborationCapabilities, type ConversationCreationLookup, type ConversationProjectPage, type ConversationModelPage, type ConversationExecutionOptions, isConversationInitialPermissionMode, type ConversationCreateTarget, type ConversationCreation, type ConversationHistory } from '@opencraft/appserver-protocol/collaboration';
+import type { TransportSubmissionContext } from '@opencraft/appserver-client/transport';
+import type { CrewContact } from './crew-contact.js';
+import type { CrewWork, CrewPass } from './crew-work.js';
 import type { InputCompletion } from "@opencraft/appserver-protocol";
 import { ReceiptReconciliation } from './receipt-reconciliation.js';
 import { ConversationFailureDiagnostics } from './conversation-failure-diagnostics.mjs';
@@ -19,6 +24,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
+import type { CreationReceipt, ServerCoreStorage } from '@opencraft/storage-node/server-owner';
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import type { ActorStore } from './actors.js';
 import type { ActorAccess } from './actor-access.js';
@@ -40,10 +46,15 @@ export interface ConversationExecutionPort {
   serverForThread?(threadId: string): string;
   discover?(search: string, cursor: string | null, suggestions?: { limit: number; sourceThreadId?: string }): Promise<{ conversations: { ref: ConversationRef; title: string; cwd?: string | null; updatedAt?: number }[]; nextCursor: string | null }>;
   directory?(): { instanceId: string; servers: ConversationServer[] };
+  projects?(serverId: string, cursor: string | null, context: TransportSubmissionContext): Promise<ConversationProjectPage>;
+  models?(serverId: string, cursor: string | null, context: TransportSubmissionContext): Promise<ConversationModelPage>;
+  options?(ref: ConversationRef, context: TransportSubmissionContext): Promise<ConversationExecutionOptions>;
   metadata?(ref: ConversationRef): Promise<ConversationMetadata>;
   discoverMetadata?(options: ConversationDiscovery): Promise<{ conversations: ConversationMetadata[]; nextCursor: string | null }>;
   read?(ref: ConversationRef, cursor: string | null): Promise<unknown>;
   readBounded?(ref: ConversationRef, cursor: string | null): Promise<unknown>;
+  readTail?(ref: ConversationRef, limit: number): Promise<ConversationHistory>;
+  create?(target: ConversationCreateTarget, content: string, operationKey: string, context: TransportSubmissionContext, rememberThread?: (ref: ConversationRef) => Promise<void>): Promise<ConversationCreation>;
   validate(binding: RunBinding): Promise<void>;
   receipt(binding: RunBinding, requestId: string, options?: { includeCompletion: true }): Promise<ExecutionReceipt | null>;
   /** Null is an explicit, safe deferral before any native input attempt. */
@@ -68,6 +79,11 @@ const terminal = new Set(['submitted', 'injected', 'rejected', 'cancelled']);
 function text(value: unknown, max = 256): string {
   if (typeof value !== 'string' || !value.trim() || value.length > max || /[\x00-\x08\x0b\x0c\x0e-\x1f]/u.test(value)) throw new CollaborationError(400, 'invalid_field');
   return value;
+}
+function creationOperationKey(value: unknown): string {
+  const key = text(value, 128);
+  if (/[\x00-\x1f\x7f]/u.test(key)) throw new CollaborationError(400, 'invalid_operation_key');
+  return key;
 }
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new CollaborationError(400, 'invalid_body');
@@ -102,6 +118,7 @@ export class Collaboration {
   /** Storage-worker-only authority check. */
   assistantThreadGuard(c:ActorContext,id:string,revision?:number,epoch?:string){return new AssistantThreadStore(this,this.database).guard(c,id,revision,epoch);}
   private assistantHost?: { memory?(botId:string,epoch:string,params:Record<string,unknown>,binding:import('@opencraft/appserver-protocol').PersonalAssistantBinding):Promise<unknown>; state(botId: string): PersonalAssistantRuntimeState; wake(botId?: string): void;
+    desk?(botId:string,epoch:string,params:{actorId?:string}):Promise<unknown>;
     environments?(context:ActorContext):Promise<import('@opencraft/appserver-protocol').BotEnvironmentCatalog>;
     validateEnvironment?(environment:import('@opencraft/appserver-protocol').BotEnvironment,context:ActorContext):Promise<void>;
     models?(): Promise<import('@opencraft/appserver-protocol').PersonalAssistantModelCatalog>;
@@ -119,17 +136,80 @@ export class Collaboration {
     return this.communicationStorage.personalAssistantAssignments(after);
   }
   #closed = false;
+  #creations = new Set<Promise<unknown>>();
   automationAuthorityAllowed?: (id:string)=>boolean;
   #cursor = 0;
   #pump: Promise<void> | null = null;
   // Timer pumps re-read an unchanged receipt with backoff: "queued" 500 ms -> 5 s, "unknown"
   // (awaits human review) 500 ms -> 30 s. A paused queue head or an unconfirmed handoff otherwise
   // costs one engine logical client every 500 ms for as long as it stays.
+  // Crew rules read and write SQLite, so they live only where the communication storage owner runs
+  // (its Worker attaches them). An instance on a network thread has none and the rules stand aside.
+  #crew?: { contact: CrewContact; work: CrewWork };
+  // The Server space ledger owns team membership; Inbox team commands are forwarded to it, never written here.
+  #spaces?: { command(context: ActorContext, command: Record<string, unknown>): Promise<unknown> };
+  attachSpaces(spaces: NonNullable<Collaboration['spaces']>) {
+    if (this.#spaces) throw Error('Server spaces already attached');
+    this.#spaces = spaces;
+    return () => { if (this.#spaces === spaces) this.#spaces = undefined; };
+  }
+  get spaces() { return this.#spaces; }
+  /**
+   * Team management from the Inbox. Only Agents are added or removed here (people join by
+   * invitation); the ledger checks that the caller owns the space and, for an Agent, manages it.
+   */
+  async crewTeam(context: ActorContext, params: Record<string, unknown> = {}) {
+    fields(params, ['action', 'spaceId', 'actorId', 'open', 'name', 'code']);
+    const spaces = this.#spaces;
+    if (!spaces) throw new CollaborationError(503, 'crew_teams_unavailable');
+    // Starting a team and joining one by invitation need no team yet; the ledger checks the caller.
+    if (params.action === 'create') {
+      await spaces.command(context, { action: 'create', name: text(params.name, 80) });
+      return this.communicate(context, 'opencraft/crew/teams', {});
+    }
+    if (params.action === 'join') {
+      await spaces.command(context, { action: 'join', code: text(params.code, 128) });
+      return this.communicate(context, 'opencraft/crew/teams', {});
+    }
+    const spaceId = text(params.spaceId);
+    const teams = (await this.communicate(context, 'opencraft/crew/teams', {})).teams as import('./crew-contact.js').CrewTeam[];
+    const team = teams.find(t => t.id === spaceId);
+    if (!team || team.role !== 'owner') throw new CollaborationError(403, 'crew_work_denied');
+    switch (params.action) {
+      case 'candidates': return { bots: ((await spaces.command(context, { action: 'bots', spaceId })) as { bots: unknown[] }).bots };
+      case 'invite': {
+        const invitation = (await spaces.command(context, { action: 'invite', spaceId })) as { code: string; expiresAt: number };
+        return { code: invitation.code, expiresAt: invitation.expiresAt };
+      }
+      case 'addAgent': await spaces.command(context, { action: 'addBot', spaceId, actorId: text(params.actorId) }); break;
+      case 'removeAgent': {
+        const actorId = text(params.actorId);
+        if (team.members.find(m => m.actorId === actorId)?.kind !== 'session') throw new CollaborationError(400, 'invalid_input');
+        await spaces.command(context, { action: 'remove', spaceId, actorId }); break;
+      }
+      case 'contact':
+        if (typeof params.open !== 'boolean') throw new CollaborationError(400, 'invalid_input');
+        await spaces.command(context, { action: 'contact', spaceId, open: params.open }); break;
+      default: throw new CollaborationError(400, 'invalid_input');
+    }
+    return this.communicate(context, 'opencraft/crew/teams', {});
+  }
+  /** Whether a message to a Bot reaches it through crew intake rather than its owner's private line. */
+  crewOwnsMessage(messageId: string): boolean { return this.#crew?.work.ownsMessage(messageId) ?? false; }
+  attachCrew(contact: CrewContact, work: CrewWork) {
+    if (this.#crew) throw Error('Crew rules already attached');
+    this.#crew = { contact, work };
+  }
+  /** Crew contact rules over spaces and phonebook grants; it decides, it does not own either. */
+  get crew(): CrewContact { return this.#crew?.contact ?? (() => { throw new CollaborationError(503, 'crew_unavailable'); })(); }
+  /** Crew work and its dispatch chain; Collaboration is the ledger's only writer. */
+  get crewWork(): CrewWork { return this.#crew?.work ?? (() => { throw new CollaborationError(503, 'crew_unavailable'); })(); }
   readonly #receiptPacing = new Map<string, { key: string; unchanged: number; dueAt: number }>();
   #operations: Promise<unknown> = Promise.resolve();
   #timer: ReturnType<typeof setInterval> | null = null;
   readonly #closeDatabase: () => void;
-  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, private readonly executionPort?: ConversationExecutionPort, readonly now = Date.now, readonly admittedActor: (actorId: string) => boolean = () => true, private executionStorage?: Pick<OrchestrationRuntimeWorker, "updateExecution"> & Partial<Pick<OrchestrationRuntimeWorker,"admission"|"executionAuthority">>, readonly resourceAccess: (context: ActorContext, ref: ConversationRef) => boolean = () => true) {
+  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, private readonly executionPort?: ConversationExecutionPort, readonly now = Date.now, readonly admittedActor: (actorId: string) => boolean = () => true, private executionStorage?: Pick<OrchestrationRuntimeWorker, "updateExecution"> & Partial<Pick<OrchestrationRuntimeWorker,"admission"|"executionAuthority">>, readonly resourceAccess: (context: ActorContext, ref: ConversationRef) => boolean = () => true, private readonly creationReceipts?: ServerCoreStorage["call"],
+    private readonly readConversationOwner?: (threadId: string) => Promise<{ serverId: string; ownerActorId: string } | null>) {
     if (executionPort !== undefined && (!executionPort || typeof executionPort.hostId !== 'string' || !executionPort.hostId.trim() || executionPort.hostId.length > 256 || /[\x00-\x1f]/u.test(executionPort.hostId))) throw new CollaborationError(500, 'execution_host_required');
     this.managedStorage = typeof path !== "string";
     const managed = openServerRepository(path, "actor-collaboration");
@@ -137,7 +217,7 @@ export class Collaboration {
     this.database = managed.database; this.outcome = managed.outcome;
     this.orchestration = new ThreadOrchestrationLedger(this.database, now);
     this.channels = new NativeChannels(this.database, actors, actorId => !this.#closed && admittedActor(actorId),
-      (c,target)=>new PersonalAssistants(this,this.database).canMessage(c,target));
+      (c,target)=>this.#allows(c,target,'message.send'),()=>this.#crew?.contact.hasSpaces ?? false);
     this.channels.groupDisplayTitle = id => communicationExtension()?.groupDisplayTitle?.(this,this.database,id) ?? null;
     this.channels.avatarForSender = (subject,scope) => communicationExtension()?.avatar?.(this,this.database,subject,scope) ?? null;
     this.channels.humanForExternalSender = (subject,scope) => communicationExtension()?.senderHuman?.(this,this.database,subject,scope) ?? null;
@@ -158,9 +238,19 @@ export class Collaboration {
   async close() {
     if (this.#closed) return;
     this.#closed = true; if (this.#timer) clearInterval(this.#timer);
+    await Promise.allSettled(this.#creations);
     await this.#operations; await this.ownedExecutionStorage?.close(); await this.communicationStorage?.close(); this.#unsubscribeIdentity(); this.#unregisterAuthority(); this.#closeDatabase();
   }
   get available() { return !this.#closed; }
+  get capabilities(): CollaborationCapabilities {
+    return {
+      ...COLLABORATION_CAPABILITIES,
+      ...(this.creationReceipts && this.executionPort?.create ? { createLookup: true } : {}),
+      ...(this.executionPort?.projects ? { projectDiscovery: true } : {}),
+      ...(this.executionPort?.models ? { modelDiscovery: true } : {}),
+      ...(this.executionPort?.options && this.readConversationOwner ? { executionOptions: true } : {}),
+    };
+  }
   binding(actorId: string): RunBinding | null {
     const r = this.database.prepare('SELECT * FROM actor_run_bindings WHERE actor_id=?').get(actorId);
     return r ? { actorId, hostId: r.host_id as string, threadId: r.thread_id as string, epoch: r.epoch as number } : null;
@@ -186,8 +276,16 @@ export class Collaboration {
   }
   #request(id: string): Row | null { return this.database.prepare('SELECT * FROM actor_execution_requests WHERE id=?').get(id) ?? null; }
   #message(id: string): Row | null { return this.database.prepare('SELECT * FROM actor_messages WHERE id=?').get(id) ?? null; }
+  /** Crew rules decide first; outside them the exact grant (or a personal assistant pair) applies. */
+  #allows(context: ActorContext, target: string, action: string): boolean {
+    // A claimed Bot and its owner keep their private line whatever the crew rules say.
+    const privateLine = () => action === 'message.send' && new PersonalAssistants(this,this.database).canMessage(context,target);
+    const crew = this.#crew?.contact.decide(context, target, action) ?? null;
+    if (crew !== null) return crew || privateLine();
+    return this.actors.can(context, target, action) || privateLine();
+  }
   #require(context: ActorContext, target: string, action: string) {
-    if (this.#closed || !this.actors.isCurrent(context) || !this.actors.get(target)?.enabled || !(this.actors.can(context, target, action) || (action === 'message.send' && new PersonalAssistants(this,this.database).canMessage(context,target)))) throw new CollaborationError(403, 'actor_action_denied');
+    if (this.#closed || !this.actors.isCurrent(context) || !this.actors.get(target)?.enabled || !this.#allows(context, target, action)) throw new CollaborationError(403, 'actor_action_denied');
   }
   #createRequest(context: ActorContext, target: string, messageIds: string[], execution: unknown): string {
     const intent = record(execution); fields(intent, ['mode', 'expectedTurnId']);
@@ -251,10 +349,15 @@ export class Collaboration {
     return { actorId: String(row.target_id), hostId: serverId ? this.execution.hostForServer?.(serverId) ?? this.execution.hostId : String(row.host_id ?? legacyRequestHostId),
       threadId: String(row.thread_id), epoch: Number(row.binding_epoch), mode: row.mode as InputMode, ...(serverId ? { serverId } : {}) };
   }
-  #conversation(context: ActorContext, value: unknown, action: string): ConversationRef {
-    let ref: ConversationRef;
-    try { ref = typeof value === 'string' ? parseConversationRef(value)! : conversationRef(value); } catch { throw new CollaborationError(400, 'invalid_reference'); }
+  #parseConversation(value: unknown): ConversationRef {
+    let ref: ConversationRef | null;
+    try { ref = typeof value === 'string' ? parseConversationRef(value) : conversationRef(value); }
+    catch { throw new CollaborationError(400, 'invalid_reference'); }
     if (!ref) throw new CollaborationError(400, 'invalid_reference');
+    return ref;
+  }
+  #conversation(context: ActorContext, value: unknown, action: string): ConversationRef {
+    const ref = this.#parseConversation(value);
     if (!this.conversationAllowed(context, ref, action)) throw new CollaborationError(403, 'conversation_action_denied');
     return ref;
   }
@@ -267,7 +370,11 @@ export class Collaboration {
     const actor = this.actors.get(context.actorId);
     if (!actor || !this.actors.allows(context, 'conversation.directory')) throw new CollaborationError(403, 'conversation_action_denied');
     if (!this.execution.directory) throw new CollaborationError(409, 'unsupported_capability');
-    return { ...this.execution.directory(), actor: { id: actor.id, kind: actor.kind, generation: context.generation } };
+    const directory = this.execution.directory();
+    const servers = this.capabilities.createLookup
+      ? directory.servers.map(server => server.capabilities.create ? { ...server, capabilities: { ...server.capabilities, createLookup: true } } : server)
+      : directory.servers;
+    return { ...directory, servers, actor: { id: actor.id, kind: actor.kind, generation: context.generation } };
   }
   async metadata(context: ActorContext, value: unknown) {
     const ref = this.#conversation(context, value, 'conversation.read');
@@ -284,13 +391,191 @@ export class Collaboration {
     this.servers(context);
     return { ...result, conversations: result.conversations.filter(row => this.conversationAllowed(context, row.ref, 'conversation.discover')) };
   }
-  async readConversation(context: ActorContext, value: unknown, cursor: string | null = null, bounded = false) {
+  async readConversation(context: ActorContext, value: unknown, cursor: string | null = null, bounded = false, tail?: number) {
     const ref = this.#conversation(context, value, 'conversation.read');
-    const read = bounded ? this.execution.readBounded : this.execution.read;
-    if (!read) throw new CollaborationError(409, 'unsupported_capability');
-    const result = await read.call(this.execution, ref, cursor);
+    if (tail !== undefined && (!bounded || cursor !== null || !Number.isInteger(tail) || tail < 1 || tail > CONVERSATION_TAIL_MAX_TURNS))
+      throw new CollaborationError(400, 'invalid_tail');
+    let result: unknown;
+    if (tail === undefined) {
+      const read = bounded ? this.execution.readBounded : this.execution.read;
+      if (!read) throw new CollaborationError(409, 'unsupported_capability');
+      result = await read.call(this.execution, ref, cursor);
+    } else {
+      if (!this.execution.readTail || !this.execution.directory?.().servers.find(row => row.serverId === ref.serverId)?.capabilities.tailRead)
+        throw new CollaborationError(409, 'unsupported_capability');
+      result = await this.execution.readTail(ref, tail);
+    }
     this.#conversation(context, ref, 'conversation.read');
     return {ref, externalContext: true, history: result};
+  }
+  async projects(context: ActorContext, args: Record<string, unknown>, submission?: TransportSubmissionContext) {
+    fields(args, ['serverId', 'cursor']);
+    const serverId = text(args.serverId), cursor = args.cursor === undefined ? null : text(args.cursor, 4096);
+    const assertCurrent = () => {
+      submission?.resourceOwner?.assertCurrent();
+      const server = this.servers(context).servers.find(server => server.serverId === serverId);
+      if (!server || !this.#owns(serverId)) throw new CollaborationError(404, 'conversation_unavailable');
+      if (!server.capabilities.projectDiscovery || !this.execution.projects)
+        throw new CollaborationError(409, 'unsupported_capability');
+    };
+    assertCurrent();
+    const result = await this.execution.projects!(serverId, cursor, {
+      ...submission, sender: submission?.sender ?? null, actorContext: context,
+      resourceOwner: { id: submission?.resourceOwner?.id ?? 'conversation-projects:' + context.actorId, assertCurrent },
+    });
+    assertCurrent();
+    return result;
+  }
+  async models(context: ActorContext, args: Record<string, unknown>, submission?: TransportSubmissionContext) {
+    fields(args, ['serverId', 'cursor']);
+    const serverId = text(args.serverId), cursor = args.cursor === undefined ? null : text(args.cursor, 4096);
+    const assertCurrent = () => {
+      submission?.resourceOwner?.assertCurrent();
+      const server = this.servers(context).servers.find(server => server.serverId === serverId);
+      if (!server || !this.#owns(serverId)) throw new CollaborationError(404, 'conversation_unavailable');
+      if (!server.capabilities.modelDiscovery || !this.execution.models)
+        throw new CollaborationError(409, 'unsupported_capability');
+    };
+    assertCurrent();
+    const result = await this.execution.models!(serverId, cursor, {
+      ...submission, sender: submission?.sender ?? null, actorContext: context,
+      resourceOwner: { id: submission?.resourceOwner?.id ?? 'conversation-models:' + context.actorId, assertCurrent },
+    });
+    assertCurrent();
+    return result;
+  }
+  async executionOptions(context: ActorContext, args: Record<string, unknown>, submission?: TransportSubmissionContext) {
+    fields(args, ['reference']);
+    const ref = this.#parseConversation(args.reference);
+    const assertScope = () => {
+      submission?.resourceOwner?.assertCurrent();
+      if (!this.#conversationBaseAllowed(context, ref)) throw new CollaborationError(403, 'conversation_action_denied');
+      if (!this.execution.options || !this.readConversationOwner
+        || !this.execution.directory?.().servers.find(server => server.serverId === ref.serverId)?.capabilities.executionOptions)
+        throw new CollaborationError(409, 'unsupported_capability');
+    };
+    assertScope();
+    let owner = await this.readConversationOwner!(ref.threadId);
+    const assertCurrent = () => {
+      assertScope();
+      if (!this.#conversationOwnerAllowed(context, ref, 'conversation.read', owner))
+        throw new CollaborationError(403, 'conversation_action_denied');
+    };
+    assertCurrent();
+    const result = await this.execution.options!(ref, {
+      ...submission, sender: submission?.sender ?? null, actorContext: context,
+      resourceOwner: { id: submission?.resourceOwner?.id ?? 'conversation-options:' + context.actorId, assertCurrent },
+    });
+    // A known owner snapshot guides the native reads; a fresh owner fact is
+    // required to return results if resource custody changed while awaiting them.
+    owner = await this.readConversationOwner!(ref.threadId);
+    assertCurrent();
+    return result;
+  }
+  async createConversation(context: ActorContext, body: Record<string, unknown>, submission?: TransportSubmissionContext) {
+    fields(body, ['serverId','projectId','cwd','content','operationKey','initialPermissionMode']);
+    const serverId = text(body.serverId), content = text(body.content, 16384), operationKey = creationOperationKey(body.operationKey);
+    const projectId = body.projectId === undefined ? undefined : text(body.projectId);
+    const cwd = body.cwd === undefined ? undefined : text(body.cwd, 4096);
+    if ((!projectId && !cwd) || (cwd && (!isAbsolute(cwd) || /[\x00-\x1f]/u.test(cwd))))
+      throw new CollaborationError(400, 'invalid_creation_target');
+    const initialPermissionMode = body.initialPermissionMode;
+    if (initialPermissionMode !== undefined && !isConversationInitialPermissionMode(initialPermissionMode))
+      throw new CollaborationError(400, 'invalid_permission_mode');
+
+    const assertCurrent = () => {
+      submission?.resourceOwner?.assertCurrent();
+      if (!this.actors.isCurrent(context) || !this.admittedActor(context.actorId))
+        throw new CollaborationError(401, 'actor_authentication_required');
+      if (this.#closed || !this.actors.allows(context, 'conversation.create', serverId) || !this.actors.allows(context, 'execution.delegate'))
+        throw new CollaborationError(403, 'conversation_action_denied');
+    };
+    assertCurrent();
+    const server = this.execution.directory?.().servers.find(row => row.serverId === serverId);
+    if (!this.#owns(serverId)) throw new CollaborationError(404, 'conversation_unavailable');
+    if (!this.execution.create || !server?.capabilities.create || (initialPermissionMode && !server.capabilities.initialPermissionMode))
+      throw new CollaborationError(409, 'unsupported_capability');
+
+    const target = { serverId, projectId, cwd, initialPermissionMode };
+    const trusted: TransportSubmissionContext = {
+      ...submission, sender: submission?.sender ?? null, actorContext: context, validUntil: Math.min(context.expiresAt, submission?.validUntil ?? Infinity),
+      resourceOwner: { id: submission?.resourceOwner?.id ?? 'conversation-create:' + context.actorId, assertCurrent },
+    };
+    const attempt = this.creationReceipts
+      ? this.#createWithReceipt(this.creationReceipts, target, content, operationKey, trusted, context, assertCurrent)
+      : this.execution.create(target, content, operationKey, trusted);
+    this.#creations.add(attempt);
+    try { return await attempt; }
+    finally { this.#creations.delete(attempt); }
+  }
+  async #createWithReceipt(store: ServerCoreStorage["call"], target: ConversationCreateTarget, content: string,
+    operationKey: string, trusted: TransportSubmissionContext, context: ActorContext, assertCurrent: () => void): Promise<ConversationCreation> {
+    const key = { actorId: context.actorId, operationKey };
+    const fingerprint = createHash('sha256').update(JSON.stringify([
+      target.serverId, target.projectId ?? null, target.cwd ?? null, target.initialPermissionMode ?? 'read-only', content,
+    ])).digest('hex');
+    const claim = await store.claimConversationCreation({ ...key, serverId: target.serverId, fingerprint });
+    assertCurrent();
+    if (claim.kind === 'conflict') throw new CollaborationError(409, 'idempotency_key_reused');
+    if (claim.kind === 'existing') {
+      if (claim.receipt.state === 'rejected') throw new CollaborationError(claim.receipt.status, claim.receipt.code);
+      const result = this.#projectCreation(claim.receipt, target.serverId, operationKey);
+      if (result.ref && !this.#conversationBaseAllowed(context, result.ref)) throw new CollaborationError(403, 'conversation_action_denied');
+      return result;
+    }
+
+    // The committed claim fences replays even if custody is lost before native
+    // responds. Acknowledgement of allocation must reach the owner before input.
+    let allocated = false, result: ConversationCreation;
+    try {
+      result = await this.execution.create!(target, content, operationKey, trusted, async ref => {
+        const verified = conversationRef(ref);
+        if (verified.serverId !== target.serverId) throw Error('Creation returned a different Server');
+        await store.recordConversationAllocation(key, verified.threadId);
+        allocated = true;
+      });
+    } catch (cause) {
+      const fault = cause as { status?: number; code?: unknown };
+      // Only the allocation port's explicit workspace/engine rejection is
+      // terminal. A local admission fence also throws 401/403; it must leave
+      // the already committed claim unconfirmed.
+      if (!allocated && (
+        fault.status === 400 && (fault.code === 'invalid_cwd' || fault.code === 'creation_rejected')
+        || fault.status === 403 && fault.code === 'creation_forbidden'
+        || fault.status === 404 && fault.code === 'conversation_unavailable'
+      )) await store.rejectConversationAllocation(key, fault.status, String(fault.code));
+      throw cause;
+    }
+    if (result.creationState === 'created') {
+      if (!allocated) throw Error('Creation result has no committed allocation');
+      if (result.firstMessageState !== 'unknown')
+        await store.recordConversationFirstInput(key, result.firstMessageState === 'submitted' ? 'submitted' : 'first_rejected');
+    }
+    assertCurrent();
+    if (result.ref && !this.#conversationBaseAllowed(context, result.ref)) throw new CollaborationError(403, 'conversation_action_denied');
+    return result;
+  }
+  #projectCreation(receipt: Exclude<CreationReceipt, { state: 'rejected' }>, serverId: string, operationKey: string): ConversationCreation {
+    if (receipt.state === 'claimed') return { operationKey, ref: null, creationState: 'unknown', firstMessageState: 'unknown' };
+    return {
+      operationKey, ref: { serverId, threadId: receipt.threadId }, creationState: 'created',
+      firstMessageState: receipt.state === 'created' ? 'unknown' : receipt.state === 'submitted' ? 'submitted' : 'rejected',
+    };
+  }
+  async lookupCreation(context: ActorContext, args: Record<string, unknown>): Promise<ConversationCreationLookup> {
+    fields(args, ['serverId', 'operationKey']);
+    const serverId = text(args.serverId), operationKey = creationOperationKey(args.operationKey);
+    if (!this.servers(context).servers.find(server => server.serverId === serverId)?.capabilities.createLookup || !this.creationReceipts)
+      throw new CollaborationError(409, 'unsupported_capability');
+    const receipt = await this.creationReceipts.readConversationCreation({ actorId: context.actorId, operationKey, serverId });
+    this.servers(context);
+    if (!receipt) return { found: false, serverId, operationKey };
+    if (receipt.state === 'rejected') return { found: true, receipt: {
+      operationKey, ref: null, creationState: 'rejected', firstMessageState: 'unknown', rejectionCode: receipt.code,
+    } };
+    const result = this.#projectCreation(receipt, serverId, operationKey);
+    if (result.ref && !this.#conversationBaseAllowed(context, result.ref)) throw new CollaborationError(403, 'conversation_action_denied');
+    return { found: true, receipt: result };
   }
   async discover(context: ActorContext, search: string, cursor: string | null, suggestions?: { limit: number; sourceThreadId?: string }) {
     if (!this.actors.isCurrent(context) || !this.admittedActor(context.actorId) || !this.actors.allows(context, 'conversation.search')) throw new CollaborationError(403, 'conversation_action_denied');
@@ -632,9 +917,12 @@ export class Collaboration {
     const relation = this.orchestration.relation(threadId);
     return relation ? {parentThreadId:relation.parentThreadId,visibility:relation.visibility} : null;
   }
-  async command(context: ActorContext, body: Record<string, unknown>) {
+  async command(context: ActorContext, body: Record<string, unknown>, submission?: TransportSubmissionContext) {
     const {action,...args} = body;
     if (action === 'servers') { fields(args, []); return this.servers(context); }
+    if (action === 'projects') return this.projects(context, args, submission);
+    if (action === 'models') return this.models(context, args, submission);
+    if (action === 'options') return this.executionOptions(context, args, submission);
     if (action === 'metadata') { fields(args, ['reference']); return this.metadata(context, args.reference); }
     if (action === 'discover' && args.metadataOnly === true) {
       fields(args, ['serverId', 'cursor', 'includeTitle', 'metadataOnly', 'projectId', 'cwd']);
@@ -647,10 +935,13 @@ export class Collaboration {
     if (action === 'orchestration') { fields(args,['threadId','calls']); return this.orchestrationView(context,text(args.threadId),args.calls); }
     if (action === 'reference') { fields(args,['threadId']); return this.reference(context,text(args.threadId)); }
     if (action === 'read') {
-      fields(args,['reference','cursor','bounded']);
+      fields(args,['reference','cursor','bounded','tail']);
       if (args.bounded !== undefined && typeof args.bounded !== 'boolean') throw new CollaborationError(400, 'invalid_field');
-      return this.readConversation(context,args.reference,args.cursor === undefined ? null : text(args.cursor,4096),args.bounded === true);
+      if (args.tail !== undefined && typeof args.tail !== 'number') throw new CollaborationError(400, 'invalid_tail');
+      return this.readConversation(context,args.reference,args.cursor === undefined ? null : text(args.cursor,4096),args.bounded === true,args.tail);
     }
+    if (action === 'create') { return this.createConversation(context, args, submission); }
+    if (action === 'createLookup') return this.lookupCreation(context, args);
     if (action === 'discover') {
       fields(args,['search','cursor','suggestions','limit','sourceThreadId']);
       if (args.suggestions !== undefined && args.suggestions !== true) throw new CollaborationError(400, 'invalid_field');
@@ -669,11 +960,14 @@ export class Collaboration {
     if (action === 'cancel') { fields(args,['requestId']); await this.cancel(context,text(args.requestId),()=>{if(!this.actors.isCurrent(context)) throw new CollaborationError(401,'actor_authentication_required');}); return {cancelled:true}; }
     throw new CollaborationError(400,'unknown_collaboration_action');
   }
-  send(context: ActorContext, body: Record<string, unknown>, attachment?: ChannelAttachment) {
+  send(context: ActorContext, body: Record<string, unknown>, attachment?: ChannelAttachment, pass?: CrewPass) {
     fields(body, ['targetActorId', 'content', 'replyTo', 'idempotencyKey', 'execution']);
     if(attachment&&!validChannelAttachment(attachment))throw Error('invalid_input');
     const target = text(body.targetActorId), content = text(body.content, 16_384), reply = body.replyTo === undefined ? null : text(body.replyTo);
-    this.#require(context, target, 'message.send');
+    // A crew pass reaches the people an open piece of work answers to; everything else needs the usual permission.
+    if (pass?.allows(target, 'message.send')) {
+      if (this.#closed || !this.actors.isCurrent(context) || !this.actors.get(target)?.enabled) throw new CollaborationError(403, 'actor_action_denied');
+    } else this.#require(context, target, 'message.send');
     const intent = body.execution === undefined ? null : executionIntent(body.execution);
     if (intent) this.#require(context, target, 'execution.' + intent.mode);
     const channelId = actorChannelId(context.actorId, target);
@@ -687,10 +981,32 @@ export class Collaboration {
         .run(id,seq,channelId,context.actorId,target,content,reply,now,this.actors.get(context.actorId)!.displayName);
       if(attachment)this.database.prepare('INSERT INTO actor_channel_attachments(message_id,name,mime,bytes) VALUES(?,?,?,?)').run(id,attachment.name,attachment.type,attachment.bytes);
       this.database.prepare("INSERT INTO actor_deliveries VALUES(?,?,'received',?,NULL)").run(id, target, now);
+      // An answer to a Bot's open question goes back on that work; anything else to a space Bot is a dispatch.
+      if (!pass && this.#crew && !this.#crew.work.answerOpenQuestion(context, target, id, reply)) this.#crew.work.openForDirect(context, target, id);
       return { messageId: id, requestId: intent ? this.#createRequest(context, target, [id], intent) : null };
     });
     if (!result.replayed) this.channels.changed({ channelId, directory: created });
     return result;
+  }
+  /** Hands work to a space Bot: one message, and the work it opens, in one transaction. */
+  crewDispatch(context: ActorContext, body: Record<string, unknown>) {
+    fields(body, ['targetActorId', 'content', 'idempotencyKey', 'parentWorkId']);
+    const target = text(body.targetActorId);
+    const sent = this.send(context, { targetActorId: target, content: body.content, idempotencyKey: body.idempotencyKey });
+    const workId = this.crewWork.forMessage(String(sent.messageId)) ?? this.crewWork.open(context, target, String(sent.messageId), body.parentWorkId);
+    return { messageId: sent.messageId, workId, work: this.crewWork.view(context, workId) };
+  }
+  /**
+   * A reply inside open work: its assignee reaches anyone the work answers to, whatever its
+   * phonebook, and its requester answers the assignee. Replies open no work and spend no budget.
+   */
+  crewMessage(context: ActorContext, body: Record<string, unknown>) {
+    fields(body, ['workId', 'targetActorId', 'content', 'idempotencyKey', 'asks']);
+    if (body.asks !== undefined && typeof body.asks !== 'boolean') throw new CollaborationError(400, 'invalid_input');
+    const target = text(body.targetActorId), route = this.crewWork.route(context, body.workId, target);
+    const sent = this.send(context, { targetActorId: target, content: body.content, idempotencyKey: body.idempotencyKey }, undefined, route.pass);
+    if (route.recipientWorkId) this.crewWork.file(String(sent.messageId), target, route.recipientWorkId, String(body.workId), body.asks === true);
+    return { messageId: sent.messageId };
   }
   openChannelDirect(context: ActorContext, targetActorId: unknown) {
     const target = text(targetActorId);
@@ -859,6 +1175,48 @@ export class Collaboration {
   }
   /** Public personal-assistant entry shared by native and network transports.
    * Public callers cannot request internal authority projections or select a Human. */
+  /**
+   * A Bot's desk for a member of its space. The storage owner authorizes and describes the Bot;
+   * only a running Bot can show its session, so an idle one reports itself unavailable.
+   */
+  async crewDesk(context: ActorContext, params: Record<string, unknown> = {}): Promise<import('@opencraft/appserver-protocol').CrewDesk> {
+    fields(params, ['botId', 'actorId']);
+    const authority = await this.communicate(context, 'crew/desk-authority', { actorId: params.botId });
+    const host = this.assistantHost;
+    if (!host?.desk) throw new CollaborationError(503, 'crew_desk_unavailable');
+    const raw = await host.desk(authority.botId, authority.epoch, params.actorId === undefined ? {} : { actorId: text(params.actorId) })
+      .catch(() => { throw new CollaborationError(503, 'crew_desk_unavailable'); }) as Record<string, unknown>;
+    const current = await this.communicate(context, 'crew/desk-authority', { actorId: params.botId });
+    if (this.assistantHost !== host || current.epoch !== authority.epoch) throw new CollaborationError(409, 'assistant_changed');
+    // The runtime is a separate process: check its answer before it reaches a client.
+    const people = new Map<string, { actorId: string; displayName: string; kind: 'human' | 'session' }>(
+      (authority.members as { actorId: string; displayName: string; kind: 'human' | 'session' }[]).map(m => [m.actorId, m]));
+    const person = (actorId: unknown) => typeof actorId === 'string' ? people.get(actorId) : undefined;
+    const str = (value: unknown, max: number) => typeof value === 'string' && value.length <= max;
+    const time = (value: unknown) => Number.isSafeInteger(value) && Number(value) >= 0;
+    const conversations = Array.isArray(raw?.conversations) ? raw.conversations : [];
+    const selected = raw?.selected as Record<string, unknown> | null | undefined;
+    const messages = Array.isArray(selected?.messages) ? selected!.messages as Record<string, unknown>[] : [];
+    const works = Array.isArray(selected?.works) ? selected!.works as Record<string, unknown>[] : [];
+    if (conversations.length > 200 || messages.length > 100 || works.length > 20
+      || messages.some(m => !str(m.id, 256) || !['user', 'assistant'].includes(String(m.role)) || !str(m.text, 16384) || !time(m.at)
+        || (m.authorId !== undefined && !str(m.authorId, 256)))
+      || works.some(w => !str(w.id, 256) || !str(w.title, 512) || !str(w.status, 64) || !time(w.updatedAt)))
+      throw new CollaborationError(502, 'crew_desk_invalid');
+    const chosen = selected ? person(selected.actorId) : undefined;
+    return {
+      environment: authority.environment, model: authority.model, contacts: authority.contacts,
+      // A dispatcher who has since left the space drops off the desk.
+      conversations: conversations.flatMap((c: Record<string, unknown>) => { const actor = person(c.actorId); return actor && time(c.updatedAt) ? [{ actor, updatedAt: Number(c.updatedAt) }] : []; }),
+      selected: chosen ? {
+        actor: chosen,
+        // An author who is not a member of the space any more is shown as the dispatcher's conversation.
+        messages: messages.map(m => ({ id: String(m.id), role: m.role as 'user' | 'assistant', text: String(m.text), at: Number(m.at),
+          ...(m.role === 'user' ? { author: person(m.authorId) ?? chosen } : {}) })),
+        works: works.map(w => ({ id: String(w.id), title: String(w.title), status: String(w.status), updatedAt: Number(w.updatedAt) })),
+      } : null,
+    };
+  }
   async personalAssistant(context: ActorContext, method: string, params: Record<string,unknown> = {}): Promise<any> {
     if (!(PERSONAL_ASSISTANT_METHODS as readonly string[]).includes(method)) throw new CollaborationError(404,'method_not_found');
     if(method==='opencraft/personal-assistant/environments'){

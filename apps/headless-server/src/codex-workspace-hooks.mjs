@@ -23,6 +23,11 @@ export function validateCodexWorkspaceHooks(composition) {
   }
 }
 
+/** Inspection only; never construct a physical attachment during startup. */
+export function hasCodexWorkspaceHooks(composition) {
+  return composition.createCodexWorkspaceHooks !== undefined || Object.values(legacy).some(key => composition[key] !== undefined);
+}
+
 /** Called INSIDE MachineIdentityTransport's physical adapter factory, not once
  * per Host. Returned closures belong to that adapter; the decorated transport
  * owns their disposal. Factory construction must not allocate remote resources. */

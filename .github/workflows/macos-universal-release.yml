@@ -2,9 +2,18 @@ name: macOS Universal release
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
+  workflow_call:
+    secrets:
+      MACOS_CERTIFICATE_P12_BASE64:
+        required: true
+      MACOS_CERTIFICATE_PASSWORD:
+        required: true
+      APPLE_ID:
+        required: true
+      APPLE_APP_SPECIFIC_PASSWORD:
+        required: true
+      APPLE_TEAM_ID:
+        required: true
 
 permissions:
   contents: read
@@ -19,7 +28,7 @@ env:
 
 jobs:
   credentials:
-    if: github.repository == 'opencraft-app/opencraft' && (github.event_name == 'push' || github.ref == 'refs/heads/main')
+    if: github.repository == 'opencraft-app/opencraft' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: macos-release
@@ -163,17 +172,23 @@ jobs:
             --config.forceCodeSigning=true \
             --config.dmg.sign=true \
             --config.directories.output=release/ci-universal
+      - name: Resolve the packaged asset filenames
+        run: |
+          version="$(jq -er .version apps/desktop/package.json)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          printf 'MACOS_UNIVERSAL_DMG=apps/desktop/release/ci-universal/OpenCraft-%s-universal.dmg\n' "$version" >> "$GITHUB_ENV"
+          printf 'MACOS_UNIVERSAL_ZIP=apps/desktop/release/ci-universal/OpenCraft-%s-mac-universal.zip\n' "$version" >> "$GITHUB_ENV"
       - name: Notarize final DMG
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: node scripts/packaging/notarize-macos-dmg.mjs apps/desktop/release/ci-universal/OpenCraft-0.1.0-universal.dmg
+        run: node scripts/packaging/notarize-macos-dmg.mjs "$MACOS_UNIVERSAL_DMG"
       - name: Verify final artifacts
         run: |
           app=.release/universal/OpenCraft.app
-          dmg=apps/desktop/release/ci-universal/OpenCraft-0.1.0-universal.dmg
-          zip=apps/desktop/release/ci-universal/OpenCraft-0.1.0-mac-universal.zip
+          dmg="$MACOS_UNIVERSAL_DMG"
+          zip="$MACOS_UNIVERSAL_ZIP"
           test "$(lipo -archs "$app/Contents/MacOS/OpenCraft")" = "x86_64 arm64" || test "$(lipo -archs "$app/Contents/MacOS/OpenCraft")" = "arm64 x86_64"
           codesign --verify --deep --strict --verbose=2 "$app"
           xcrun stapler validate "$app"
@@ -183,11 +198,13 @@ jobs:
           xcrun stapler validate "$dmg"
           spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg"
           unzip -t "$zip"
-          shasum -a 256 "$dmg" "$zip" > apps/desktop/release/ci-universal/SHA256SUMS
+          (cd apps/desktop/release/ci-universal && shasum -a 256 ./*.dmg ./*.zip > SHA256SUMS)
       - name: Launch and inspect the final notarized DMG
         env:
           OPENCRAFT_SMOKE_OUTPUT: ${{ runner.temp }}/opencraft-universal-smoke
-        run: node scripts/smoke/desktop/smoke-macos-dmg.mjs apps/desktop/release/ci-universal/OpenCraft-0.1.0-universal.dmg
+        run: |
+          node --import tsx scripts/smoke/desktop/smoke-macos-dmg.mjs "$MACOS_UNIVERSAL_DMG"
+          cp "$OPENCRAFT_SMOKE_OUTPUT/receipt.json" apps/desktop/release/ci-universal/macos-universal-smoke.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -199,9 +216,10 @@ jobs:
         with:
           name: opencraft-macos-universal-${{ github.sha }}
           path: |
-            apps/desktop/release/ci-universal/OpenCraft-0.1.0-universal.dmg
-            apps/desktop/release/ci-universal/OpenCraft-0.1.0-mac-universal.zip
+            ${{ env.MACOS_UNIVERSAL_DMG }}
+            ${{ env.MACOS_UNIVERSAL_ZIP }}
             apps/desktop/release/ci-universal/SHA256SUMS
+            apps/desktop/release/ci-universal/macos-universal-smoke.json
           if-no-files-found: error
           retention-days: 30
       - name: Remove temporary credentials
@@ -209,25 +227,3 @@ jobs:
         run: |
           security delete-keychain "$RUNNER_TEMP/opencraft-signing.keychain-db" 2>/dev/null || true
           rm -f "$RUNNER_TEMP/opencraft-developer-id.p12"
-
-  publish:
-    if: github.ref_type == 'tag'
-    needs: universal
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: opencraft-macos-universal-${{ github.sha }}
-          path: .release-artifacts
-      - name: Publish GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "$GITHUB_REF_NAME" \
-            .release-artifacts/OpenCraft-0.1.0-universal.dmg \
-            .release-artifacts/OpenCraft-0.1.0-mac-universal.zip \
-            .release-artifacts/SHA256SUMS \
-            --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes

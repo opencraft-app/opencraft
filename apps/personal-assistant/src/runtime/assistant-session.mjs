@@ -1,17 +1,17 @@
 import { MemoryFilesChangedError } from "../adapters/memory/file-authority.mjs";
 import { createMemoryBrowser } from "./memory-browser.mjs";
 import { assistantHostExtension } from './host-extension.mjs';
-import { LocalAttachmentStore } from "../adapters/filesystem/attachment-store.mjs";
-import { join } from "node:path";
 import { workObservation } from "./work-observation.mjs";
 import { startPersonalAssistant } from "./personal-assistant.mjs";
 import { LocalRunner } from "./local-runner.mjs";
 import { loadProfile } from "../adapters/local/profile.mjs";
 import { platformAssistantPort } from "../adapters/local/platform-assistant-port.mjs";
+import { createCrewIntake } from "./crew-intake.mjs";
+import { downloadAttachment } from "./attachment-download.mjs";
 
 /** One runtime lifetime; transport and platform authorization remain separate owners. */
 export function createAssistantSession(peer, onStopped) {
-  let auxiliary, runner, memoryBrowser,
+  let auxiliary, runner, memoryBrowser, crew,
     stopping = false,
     timer,
     work,
@@ -53,6 +53,7 @@ export function createAssistantSession(peer, onStopped) {
         };
       }
       if(method==='memory'&&memoryBrowser&&!stopping)return memoryBrowser(params);
+      if(method==='desk'&&crew&&!stopping)return crew.desk(params);
       if (method === "observe" && runner && !stopping) return observe();
       if (method === "dispatch" && runner && !stopping)
         return runner.dispatch(params);
@@ -113,6 +114,12 @@ export function createAssistantSession(peer, onStopped) {
                 }),
               resolveModelFailure: (purpose) =>
                 request("model-failure", { purpose }),
+              // Crew intake starts after the runner opens; until then no Work answers crew work.
+              crewPort: {
+                answers: (workId) => crew?.answers(workId) ?? false,
+                held: (workId, signal) => crew ? crew.held(workId, signal) : Promise.reject(Error("Crew unavailable")),
+                request: (method, params, signal) => request(method, params, signal),
+              },
               messageTransport: {
                 async deliver(message, signal) {
                   if (
@@ -127,11 +134,10 @@ export function createAssistantSession(peer, onStopped) {
                     message.body.content ?? message.body.question?.prompt;
                   if (typeof text !== "string" || !text.trim())
                     throw Error("No native text representation");
-                  const receipt = await request(
-                    "reply",
-                    { id: message.id, text },
-                    signal,
-                  );
+                  // A dispatcher's conversation answers that dispatcher; everything else answers the owner.
+                  const receipt = crew?.isPeerConversation(message.conversation_id)
+                    ? await crew.deliver(message, text, signal)
+                    : await request("reply", { id: message.id, text }, signal);
                   return {
                     messageId: message.id,
                     channel: message.body.channel,
@@ -142,6 +148,7 @@ export function createAssistantSession(peer, onStopped) {
               },
             },
           });
+      if(!config.profile)crew=createCrewIntake({runner,request});
       if(!config.profile)memoryBrowser=createMemoryBrowser({memory:runner.app.memory,history:runner.app.history,transact:f=>runner.uow.transaction(f),authorize:()=>request('opencraft/personal-assistant/authorize',{})});
       if (stopping) {
         await runner.close();
@@ -172,21 +179,10 @@ export function createAssistantSession(peer, onStopped) {
             }
             for (const row of rows) {
               if (stopping) return;
-              if (row.author_id === runner.profile.config.botBinding.owner.id) {
+              if (row.author_id === runner.profile.config.botBinding.owner.id && row.crewWork !== true) {
                 let attachments;
-                if(row.attachment){
-                  let offset=0,name,expectedSize,total=0;const chunks=[];
-                  do{
-                    const file=await request('attachment',{messageId:row.id,offset});
-                    if(!file||file.size>8*1024*1024||file.size<0||(expectedSize!==undefined&&expectedSize!==file.size))throw Error('Attachment unavailable');
-                    name=file.name;expectedSize=file.size;const chunk=Buffer.from(file.base64,'base64');total+=chunk.length;
-                    if(total>expectedSize||file.next!==null&&(file.next!==offset+65536||chunk.length!==65536))throw Error('Invalid attachment chunk');
-                    chunks.push(chunk);offset=file.next;
-                  }while(offset!==null);
-                  if(total!==expectedSize)throw Error('Incomplete attachment');
-                  const stored=new LocalAttachmentStore(join(runner.profile.path,'attachments')).importBytes(name,Buffer.concat(chunks,total));
-                  attachments=[stored.attachmentId];
-                }
+                if(row.attachment)
+                  attachments=[await downloadAttachment(runner.profile.path,offset=>request('attachment',{messageId:row.id,offset}))];
                 const response = await runner.dispatch({
                   op: "say",
                   id: "native:" + row.id,
@@ -203,6 +199,13 @@ export function createAssistantSession(peer, onStopped) {
                   .run(cursorKey, String(row.seq)),
               );
             }
+          }
+          try {
+            await crew?.poll(() => stopping);
+          } catch (error) {
+            // Crew intake is idempotent by work ID; keep going and retry it on the next poll.
+            if (error instanceof MemoryFilesChangedError || runner.stopping) throw error;
+            peer.notify("activity-unavailable");
           }
           await auxiliary?.poll();
           peer.notify("activity", await observe());

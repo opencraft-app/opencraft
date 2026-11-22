@@ -6,6 +6,7 @@ import { PersonalAssistants } from './personal-assistants.js';
 import { channelSyncCommand } from "./native-channel-sync.js";
 import { ActorStore } from './actors.js';
 import { Collaboration } from './collaboration.js';
+import { attachCrewRules } from './crew-work.js';
 import { communicationCommand } from './communication-command.js';
 import { parentPort, workerData } from 'node:worker_threads';
 import { existsSync } from 'node:fs';
@@ -32,8 +33,12 @@ const source={database:db,outcome:{status:'up-to-date' as const,appliedVersion:N
 let communication: Collaboration | undefined;
 let actors: ActorStore | undefined;
 function communicationService() {
-  return communication ??= new Collaboration(source,actors ??= new ActorStore(source,Date.now,{permissionProjection:false}),undefined,Date.now,
+  if (communication) return communication;
+  communication = new Collaboration(source,actors ??= new ActorStore(source,Date.now,{permissionProjection:false}),undefined,Date.now,
     actorId=>db.prepare('SELECT enabled FROM actor_members WHERE actor_id=?').get(actorId)?.enabled!==0);
+  // Crew rules use this Worker's connection; the network thread never loads them.
+  attachCrewRules(communication, db, actors, Date.now);
+  return communication;
 }
 let tail=Promise.resolve();
 let closed=false;
@@ -77,6 +82,7 @@ async function execute({id,method,payload}: {id:number;method:string;payload:any
             const access=new ThreadAccessStore(source,actorStore,{projection:false});
             const unsupported=async()=>{throw Error('Storage cannot call an engine');};
             const scoped=new Collaboration(source,actorStore,{serverId:scope.serverId,hostId:scope.hostId,serverForThread:()=>scope.serverId,hostForServer:id=>id===scope.serverId?scope.hostId:null,validate:unsupported,receipt:unsupported,add:unsupported,steer:unsupported,cancel:unsupported},Date.now,id=>db.prepare('SELECT enabled FROM actor_members WHERE actor_id=?').get(id)?.enabled!==0,undefined,(c,r)=>access.allows(r.serverId,r.threadId,c));
+            attachCrewRules(scoped,db,actorStore,Date.now);
             try{result=communicationCommand(scoped,db,payload);}finally{await scoped.close();access.close();}break;
           }
           case 'automation': {

@@ -60,8 +60,9 @@ export async function activateRemotePage(service, { ownerId, key, input = {}, mo
   const currentNative = () => !service.closed && !page.closing && service.pages.get(key) === page
     && (page.runtimeEpoch ?? 0) === epoch && service.child === native;
   const requireNative = () => { checkOpen(); if (!currentNative()) throw unavailable(); };
+  let creating;
   try {
-    page.creating = resumed && modern ? service.request(page.id, 'snapshot')
+    page.creating = creating = resumed && modern ? service.request(page.id, 'snapshot')
       : service.request(page.id, 'create', { ...((modern && existing ? page.viewport : input.viewport) ?? page.viewport
         ?? { deviceProfile: input.defaultDeviceProfile ?? 'desktop' }), productionDemand: true });
     let config = await page.creating; requireNative(); page.live = true;
@@ -105,5 +106,9 @@ export async function activateRemotePage(service, { ownerId, key, input = {}, mo
       }
     }
     throw error;
+  } finally {
+    // A settled create receipt is not an in-flight native operation. Retaining
+    // it would make unarchive try to close an already absent, retired owner.
+    if (page.creating === creating) page.creating = null;
   }
 }
