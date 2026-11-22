@@ -1,5 +1,6 @@
 import { buildAssetsRuntime } from '../../scripts/packaging/package-assets-runtime.mjs';
 import { buildServerSpacesRuntime } from '../../scripts/packaging/package-server-spaces-runtime.mjs';
+import { buildOwnerWorkers } from '../../scripts/packaging/owner-workers.mjs';
 import { buildTranscriptCacheRuntime } from '../../scripts/packaging/package-transcript-cache-runtime.mjs';
 import { readFileSync, statSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
@@ -50,6 +51,7 @@ export async function bundleDesktopHost({ environment = process.env, outdir = re
   await buildAssetsRuntime(outdir);
   await buildTranscriptCacheRuntime(outdir);
   await buildServerSpacesRuntime(outdir);
+  await buildOwnerWorkers(outdir);
   await buildTerminalOwnerRuntime(outdir);
   await buildDshCapabilityPlugin(resolve(appRoot, 'build/dsh-capability-plugin.mjs'));
   const [mainEntry, preloadEntry, identityEntry] = resolveDesktopProductEntries(environment);

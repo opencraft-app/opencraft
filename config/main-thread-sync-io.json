@@ -278,28 +278,6 @@
     "packages/storage-node/src/server/borrow.ts": {
       "DatabaseSync": 2
     },
-    "packages/storage-node/src/server/history.ts": {
-      "DatabaseSync": 1,
-      "existsSync": 1
-    },
-    "packages/storage-node/src/server/import.ts": {
-      "copyFileSync": 1,
-      "DatabaseSync": 7,
-      "existsSync": 8,
-      "mkdirSync": 2,
-      "readFileSync": 1,
-      "renameSync": 1,
-      "unlinkSync": 3,
-      "writeFileSync": 1
-    },
-    "packages/storage-node/src/server/index.ts": {
-      "closeSync": 1,
-      "DatabaseSync": 1,
-      "existsSync": 2,
-      "fsyncSync": 1,
-      "mkdirSync": 2,
-      "openSync": 1
-    },
     "packages/storage-node/src/server/repository.ts": {
       "DatabaseSync": 1,
       "existsSync": 2

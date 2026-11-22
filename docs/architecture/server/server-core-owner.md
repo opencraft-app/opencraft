@@ -92,7 +92,7 @@
 
 每阶段一个 PR，均需 CI 全绿并做真实 Headless 验收。
 
-1. **owner Worker 与过渡连接**：`openServerDatabase` 移入 Worker；主线程暂时以只读 WAL 连接服务尚未迁移的领域，方式与 `server-spaces.worker` 相同。验证写锁、迁移、导入、outcome 与关闭顺序不变。
+1. **owner Worker 与过渡连接**（已实施：`openServerCoreOwner`）：`openServerDatabase` 在 Worker 内执行，写锁、迁移与导入随之离开主线程；主线程经 `borrowServerDatabase` 以读写 WAL 连接服务尚未迁移的领域（未迁移的领域仍会写入，所以不能只读），连接设置与原 owner 连接一致（不启用外键、`busy_timeout=5000`）。Headless 与桌面本地账号（owner 角色）都改用它；守卫登记从 285 降到 251。
 2. **主体与成员**：`ActorStore`、`MembershipStore` 迁入 Worker，热路径改读 `actors` / `membership` 投影；`InstanceAccess` 改为消费投影。这是认证主路径，配投影一致性与 fail-closed 测试。
 3. **线程访问、备注与能力绑定**：`ThreadAccessStore` + `thread-access` 投影；`ThreadNoteStore`、`CapabilityBindings` 走异步端口。
 4. **人类账号与账号管理**：登录、绑定与管理写入走端口；会话撤销观察者改为主线程订阅。
