@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { BridgeGateway, type BridgeGatewayOptions } from '@opencraft/agent-bridge-host/gateway';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 import type { DuplexTransport, TransportStatus, TransportSubmissionContext } from '@opencraft/appserver-client/transport';
-import { OPENCRAFT_STEER_EVIDENCE_NOTIFICATION, OPENCRAFT_STEER_EVIDENCE_EXTENSION, OPENCRAFT_THREAD_QUEUE_EXTENSION } from '@opencraft/appserver-protocol';
+import { OPENCRAFT_STEER_EVIDENCE_NOTIFICATION, OPENCRAFT_STEER_EVIDENCE_EXTENSION, OPENCRAFT_THREAD_GOAL_EXTENSION, OPENCRAFT_THREAD_QUEUE_EXTENSION } from '@opencraft/appserver-protocol';
 import { CODEX_MAINTENANCE_READ, codexMaintenanceError, isCodexAdmission } from './codex-maintenance.js';
 const object = (v: unknown): Record<string, any> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, any> : {};
 
@@ -31,6 +31,12 @@ export class CodexProviderBridge implements DuplexTransport {
     projectHistory?: (method: string, params: Record<string, unknown>, result: unknown) => unknown;
     /** Create every new Thread through the bridge, also for clients that do not ask for it. Off by default. */
     newThreads?: boolean;
+    /**
+     * The bridge owns every Thread (no legacy Host underneath): new Threads are
+     * created here, and any other Thread moves here on its first Thread request.
+     * One it cannot adopt is only read by the layer below. Implies newThreads.
+     */
+    exclusive?: boolean;
     /** Move an existing local Thread to the bridge on its next turn/start, keeping its ID. Off by default. */
     adoptExisting?: boolean;
     /** The local Host releases an idle Thread for adoption, or declines. */
@@ -72,6 +78,8 @@ export class CodexProviderBridge implements DuplexTransport {
     }
   }
   private adoptions = new Map<string, Promise<void>>();
+  /** Recently declined adoptions; retried after a while, not on every read. */
+  private declined = new Map<string, number>();
   /**
    * Move an idle local Thread to the bridge under its own ID. The local Host
    * releases it first; if it declines or the Host refuses, the Thread simply
@@ -80,10 +88,15 @@ export class CodexProviderBridge implements DuplexTransport {
   private adopt(threadId: string): Promise<void> {
     const pending = this.adoptions.get(threadId);
     if (pending) return pending;
+    if ((this.declined.get(threadId) ?? 0) > Date.now()) return Promise.resolve();
     const operation = (async () => {
       if (!(await this.policy.releaseForAdoption?.(threadId))) return;
-      try { await this.gateway.command(threadId, `bridge-adopt:${randomUUID()}`, 'session/adopt', { providerThreadId: threadId }); }
-      catch (error) { console.warn('[codex-bridge]', JSON.stringify({ event: 'adoption-declined', reason: error instanceof Error ? error.message : 'unknown' })); }
+      try { await this.gateway.command(threadId, `bridge-adopt:${randomUUID()}`, 'session/adopt', { providerThreadId: threadId }); this.declined.delete(threadId); }
+      catch (error) {
+        if (this.declined.size > 4096) this.declined.clear();
+        this.declined.set(threadId, Date.now() + 30_000);
+        console.warn('[codex-bridge]', JSON.stringify({ event: 'adoption-declined', reason: error instanceof Error ? error.message : 'unknown' }));
+      }
     })().finally(() => this.adoptions.delete(threadId));
     this.adoptions.set(threadId, operation);
     return operation;
@@ -149,18 +162,22 @@ export class CodexProviderBridge implements DuplexTransport {
         const capabilities = object(frame.result.capabilities);
         const extensions = object(capabilities.extensions), evidence = this.clients.get(pending.client)?.evidence === true;
         const inputCapability = { version: 1, perInputEvidence: true, deliveryMethods: ['native-inject'], evidenceKinds: ['admission', 'native-input-id'], withdrawal: 'none', query: true };
+        const threadCapabilities = {
+          'opencraft/thread-follow-up': { version: 1, queue: true, steer: evidence },
+          // Host-owned queue on the shared thread-queue core.
+          [OPENCRAFT_THREAD_QUEUE_EXTENSION]: { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, unconfirmedDeliveryRetry: true, perItemPause: true },
+          'opencraft/thread-lifecycle': { version: 1, fork: true, ephemeral: false, injectItems: false, rename: true, archive: true, unsubscribe: true, delete: true },
+          [OPENCRAFT_THREAD_GOAL_EXTENSION]: { version: 1, read: true, write: true },
+          ...(evidence ? { [OPENCRAFT_STEER_EVIDENCE_EXTENSION]: inputCapability } : {}),
+        };
         frame.result.capabilities = { ...capabilities, extensions: { ...extensions,
+          // Owning every Thread, the bridge's Thread capabilities are the Host's.
+          ...(this.policy.exclusive ? threadCapabilities : {}),
           'opencraft/agent-bridge': { version: 1, providerId: 'codex', threadOptIn: true, threadPrefix: 'bridge:codex:' },
           ...(evidence ? { [OPENCRAFT_STEER_EVIDENCE_EXTENSION]: inputCapability } : {}),
           'opencraft/execution-engines': { ...object(extensions['opencraft/execution-engines']), version: 1,
             providers: [...(Array.isArray(object(extensions['opencraft/execution-engines']).providers) ? object(extensions['opencraft/execution-engines']).providers : []), {
-              id: 'codex-bridge', label: 'Codex', threadPrefix: 'bridge:codex:', extensions: {
-                'opencraft/thread-follow-up': { version: 1, queue: true, steer: evidence },
-                // Host-owned queue on the shared thread-queue core.
-                [OPENCRAFT_THREAD_QUEUE_EXTENSION]: { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, unconfirmedDeliveryRetry: true, perItemPause: true },
-                'opencraft/thread-lifecycle': { version: 1, fork: true, ephemeral: false, injectItems: false, rename: true, archive: true, unsubscribe: true },
-                ...(evidence ? { [OPENCRAFT_STEER_EVIDENCE_EXTENSION]: inputCapability } : {}),
-              },
+              id: 'codex-bridge', label: 'Codex', threadPrefix: 'bridge:codex:', extensions: threadCapabilities,
             }],
           },
         } };
@@ -179,7 +196,7 @@ export class CodexProviderBridge implements DuplexTransport {
     const frame = object(JSON.parse(raw)), client = String(frame[LOGICAL_CLIENT_FIELD] ?? '');
     let p = object(frame.params);
     // The bridge owns new Threads: one request is one creation, as a native thread/start is.
-    if (this.policy.newThreads && frame.method === 'thread/start' && p.agentBridge === undefined && frame.id !== undefined)
+    if ((this.policy.newThreads || this.policy.exclusive) && frame.method === 'thread/start' && p.agentBridge === undefined && frame.id !== undefined)
       p = { ...p, agentBridge: { threadId: randomUUID(), clientRequestId: `implicit:${randomUUID()}` } };
     if (!client) throw Error('Logical client identity required');
     if (frame.method === 'initialize') { this.revokeClient(client); this.clients.set(client, { evidence: !!object(object(p.capabilities).extensions)[OPENCRAFT_STEER_EVIDENCE_EXTENSION], epoch: ++this.clientEpoch }); }
@@ -207,7 +224,8 @@ export class CodexProviderBridge implements DuplexTransport {
     // A native ID behind a different public bridge ID never reaches the legacy writer; an adopted one is its own public ID.
     const behind = this.gateway.publicThread(threadId);
     if (!optIn && behind !== undefined && behind !== threadId) throw Error('Use the bridge thread identity; native owner bypass refused');
-    if (!optIn && frame.method === 'turn/start' && threadId && !threadId.startsWith('bridge:codex:') && !this.gateway.owns(threadId) && this.policy.adoptExisting) await this.adopt(threadId);
+    const adopting = this.policy.exclusive ? !['thread/history/cancel', 'thread/unsubscribe'].includes(String(frame.method)) : frame.method === 'turn/start' && this.policy.adoptExisting;
+    if (!optIn && adopting && threadId && !threadId.startsWith('bridge:codex:') && !this.gateway.owns(threadId)) await this.adopt(threadId);
     // Maintenance pauses new work on bridge threads exactly as on legacy ones;
     // steering, reads and approvals of admitted work continue.
     const admission = (optIn || this.gateway.owns(threadId)) && isCodexAdmission(frame.method, p);

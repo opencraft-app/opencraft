@@ -15,10 +15,15 @@ import {
 } from "@opencraft/account-pool-host";
 import {
   codexPermissionMode,
+  OPENCRAFT_PERMISSION_MODES_CAPABILITY,
+  OPENCRAFT_PERMISSION_MODES_EXTENSION,
+  OPENCRAFT_THREAD_PINS_CAPABILITY,
+  OPENCRAFT_THREAD_PINS_EXTENSION,
   projectPermissionProfileCatalog,
   type OpenCraftPermissionProfile,
 } from "@opencraft/appserver-protocol";
 import { CodexThreadPins } from "./codex-thread-pins.js";
+import { CodexThreadTitles } from "./codex-thread-titles.js";
 
 type Value = Record<string, unknown>;
 const object = (value: unknown): Value =>
@@ -33,6 +38,10 @@ export interface CodexHostService {
   /** Initialize capability extensions this service contributes. */
   capabilities?(): Value;
   storage?(): readonly { name: string; outcome: DatabaseOutcome }[];
+  /** A request Thread routing answered successfully, by the client's (public) identities. */
+  observe?(method: string, params: Value, result: unknown): void;
+  /** A notification on its way to clients. */
+  notification?(method: string, params: Value): void;
   close(): void | Promise<void>;
 }
 
@@ -51,6 +60,8 @@ export class CodexHostServices implements DuplexTransport, CodexHostServiceClien
   private readonly listeners = new Set<(frame: string) => void>();
   private readonly clients = new Set<string>();
   private readonly initializing = new Set<string>();
+  /** Routed requests some service observes, until their answer passes. */
+  private readonly observed = new Map<string, { method: string; params: Value }>();
   private readonly services: CodexHostService[];
   private closing?: Promise<void>;
 
@@ -100,6 +111,26 @@ export class CodexHostServices implements DuplexTransport, CodexHostServiceClien
       return;
     }
     const key = JSON.stringify([frame[LOGICAL_CLIENT_FIELD] ?? null, frame.id ?? null]);
+    const request = frame.id !== undefined && frame.method === undefined ? this.observed.get(key) : undefined;
+    if (request) {
+      this.observed.delete(key);
+      if ("result" in frame)
+        for (const service of this.services) {
+          try {
+            service.observe?.(request.method, request.params, frame.result);
+          } catch {
+            /* an observer never changes the answer */
+          }
+        }
+    }
+    if (typeof frame.method === "string" && frame.id === undefined)
+      for (const service of this.services) {
+        try {
+          service.notification?.(frame.method, object(frame.params));
+        } catch {
+          /* an observer never changes the notification */
+        }
+      }
     // Contribute this Host's capabilities to the routed initialize result.
     if (this.initializing.delete(key) && frame.result && typeof frame.result === "object") {
       const result = object(frame.result),
@@ -129,6 +160,10 @@ export class CodexHostServices implements DuplexTransport, CodexHostServiceClien
     }
     if (method === "runtime/client/disconnect" && client) this.clients.delete(client);
     const service = method ? this.services.find((candidate) => candidate.handles(method)) : undefined;
+    if (!service && method && frame.id !== undefined && this.services.some((candidate) => candidate.observe)) {
+      if (this.observed.size >= 4096) this.observed.delete(this.observed.keys().next().value!);
+      this.observed.set(JSON.stringify([client || null, frame.id]), { method, params: object(frame.params) });
+    }
     if (!service)
       return this.routing.sendWithContext
         ? this.routing.sendWithContext(raw, context, signal)
@@ -247,6 +282,7 @@ export function codexModelsService(
 ): CodexHostService {
   return {
     handles: (method) => method === "model/list" || method === "permissionProfile/list",
+    capabilities: () => ({ [OPENCRAFT_PERMISSION_MODES_EXTENSION]: OPENCRAFT_PERMISSION_MODES_CAPABILITY }),
     request: async (method, params, context) => {
       const result = object(await native.request(method, object(params)));
       if (method === "permissionProfile/list")
@@ -293,6 +329,7 @@ export function codexPinsService(
   const pins = new CodexThreadPins((method, params) => native.request(method, params));
   return {
     handles: (method) => method === "opencraft/thread-pins/list" || method === "opencraft/thread-pins/set",
+    capabilities: () => ({ [OPENCRAFT_THREAD_PINS_EXTENSION]: OPENCRAFT_THREAD_PINS_CAPABILITY }),
     request: async (method, raw) => {
       const params = object(raw);
       try {
@@ -323,5 +360,55 @@ export function codexPinsService(
       }
     },
     close: () => {},
+  };
+}
+
+/** A native connection that also delivers its own notifications (Host-private Threads). */
+export interface CodexNativeConnection extends CodexNativeRequests {
+  subscribeNotification(listener: (method: string, params: Value) => void): () => void;
+}
+
+/**
+ * Generated titles for new conversations, as the local Host made them: after
+ * the first turn of a new Thread, a Host-private ephemeral native Thread infers
+ * a title, which is written by native identity unless someone named it first.
+ */
+export function codexTitlesService(
+  native: CodexNativeConnection,
+  clients: CodexHostServiceClients,
+  identities?: CodexThreadIdentities,
+): CodexHostService {
+  const toNative = (threadId: string) => identities?.toNative(threadId) ?? threadId;
+  const order = new Map<string, Promise<unknown>>();
+  const titles = new CodexThreadTitles({
+    // The generator names Threads by public ID; native Codex knows them by native ID.
+    request: (method, params) =>
+      native.request(
+        method,
+        typeof params.threadId === "string" ? { ...params, threadId: toNative(params.threadId) } : params,
+      ),
+    serialize: (threadId, work) => {
+      const next = (order.get(threadId) ?? Promise.resolve()).catch(() => undefined).then(work);
+      order.set(threadId, next);
+      void next.finally(() => order.get(threadId) === next && order.delete(threadId)).catch(() => undefined);
+      return next;
+    },
+    changed: (threadId, name) => clients.broadcast("thread/name/updated", { threadId, threadName: name }),
+    failed: () => console.warn("[codex-host-services]", JSON.stringify({ event: "thread-title-failed" })),
+  });
+  const stop = native.subscribeNotification((method, params) => void titles.notification(method, params));
+  return {
+    handles: () => false,
+    request: () => null,
+    observe: (method, params, result) => {
+      if (method === "thread/name/set" && typeof params.threadId === "string") titles.invalidate(params.threadId);
+      titles.observeResult(method, params, result);
+    },
+    // Someone else named, archived or removed the Thread: no generated title any more.
+    notification: (method, params) => void titles.notification(method, params),
+    close: () => {
+      stop();
+      titles.close();
+    },
   };
 }

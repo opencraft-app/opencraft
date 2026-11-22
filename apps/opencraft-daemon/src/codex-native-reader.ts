@@ -20,6 +20,8 @@ export class CodexNativeReader {
   >();
   private closed = false;
   private readonly control: CodexCoreControlClient;
+  private initialized?: unknown;
+  private readonly notificationListeners = new Set<(method: string, params: Value) => void>();
 
   constructor(
     endpoint: string,
@@ -53,7 +55,11 @@ export class CodexNativeReader {
           socket.send(JSON.stringify({ id: frame.id, result: auth }));
           return;
         }
-        if (typeof frame.id !== "number") return; // notifications and other server requests are not ours
+        if (typeof frame.method === "string" && frame.id === undefined) {
+          for (const listener of this.notificationListeners) listener(frame.method, (frame.params ?? {}) as Value);
+          return;
+        }
+        if (typeof frame.id !== "number") return; // other server requests are not ours
         const request = this.pending.get(frame.id);
         if (!request) return;
         this.pending.delete(frame.id);
@@ -82,7 +88,7 @@ export class CodexNativeReader {
         socket.once("error", reject);
       });
       this.socket = socket;
-      await this.send(socket, "initialize", {
+      this.initialized = await this.send(socket, "initialize", {
         clientInfo: { name: "opencraft-host-services", version: "1" },
         capabilities: { experimentalApi: true },
       });
@@ -109,6 +115,18 @@ export class CodexNativeReader {
         }
       });
     });
+  }
+
+  /** Native Codex's initialize result on this connection (connects first if needed). */
+  async initializeResult(): Promise<unknown> {
+    await this.open();
+    return this.initialized;
+  }
+
+  /** Notifications native Codex sends this connection (not subscribed to any Thread). */
+  subscribeNotification(listener: (method: string, params: Value) => void): () => void {
+    this.notificationListeners.add(listener);
+    return () => void this.notificationListeners.delete(listener);
   }
 
   async request(method: string, params: Value): Promise<unknown> {
