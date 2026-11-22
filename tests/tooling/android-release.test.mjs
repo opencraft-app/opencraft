@@ -146,36 +146,54 @@ test("staging binds the APK digest and publishes it under the release name", (t)
   );
 });
 
-test("signing provisioning generates or imports a usable key and never replaces a stored one", (t) => {
-  const keytool = spawnSync("keytool", ["-help"], { encoding: "utf8" });
-  if (keytool.error) return t.skip("keytool is not installed");
+// Stand-in gh: answers the Environment lookup and secret listing from fixture
+// state, keeps secret values, and records every mutating API call. A
+// keytool stand-in, when requested, records that it ran and does nothing else.
+function provisioningFixture(t, { stubKeytool = false } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "opencraft-provision-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const bin = join(directory, "bin");
+  const state = join(directory, "state");
   mkdirSync(bin);
-  // Stand-in gh: records each call and its standard input, and answers the
-  // listings from fixture state.
+  mkdirSync(state);
   writeFileSync(
     join(bin, "gh"),
     [
       "#!/usr/bin/env bash",
       'state="$GH_FIXTURE"',
-      'if [[ "$1 $2" == "secret list" ]]; then cat "$state/existing" 2>/dev/null; exit 0; fi',
+      'if [[ "$1" == api && "$2" == repos/owner/repo/environments/android-release && $# -eq 2 ]]; then',
+      '  if [[ -f "$state/lookup-error" ]]; then cat "$state/lookup-error" >&2; exit 1; fi',
+      '  if [[ -f "$state/environment-missing" ]]; then echo "gh: Not Found (HTTP 404)" >&2; exit 1; fi',
+      "  exit 0",
+      "fi",
+      'if [[ "$1 $2" == "secret list" ]]; then',
+      '  if [[ -f "$state/list-fails" ]]; then echo "HTTP 403" >&2; exit 1; fi',
+      '  cat "$state/existing" 2>/dev/null; exit 0',
+      "fi",
       'if [[ "$1 $2" == "secret set" ]]; then cat > "$state/secret-$3"; exit 0; fi',
       'if [[ "$*" == *deployment-branch-policies* && "$*" != *POST* ]]; then exit 0; fi',
       'cat > /dev/null; echo "$*" >> "$state/api"',
     ].join("\n"),
     { mode: 0o755 },
   );
-  const state = join(directory, "state");
-  mkdirSync(state);
+  if (stubKeytool) {
+    writeFileSync(join(bin, "keytool"), `#!/usr/bin/env bash\necho ran >> "${join(state, "keytool")}"\n`, {
+      mode: 0o755,
+    });
+  }
   const provision = (target) =>
     spawnSync("bash", [join(root, "scripts/release/provision-android-signing.sh"), target, "owner/repo"], {
       cwd: directory,
       env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, GH_FIXTURE: state },
       encoding: "utf8",
     });
+  return { directory, state, provision };
+}
 
+test("signing provisioning generates or imports a usable key and never replaces a stored one", (t) => {
+  const keytool = spawnSync("keytool", ["-help"], { encoding: "utf8" });
+  if (keytool.error) return t.skip("keytool is not installed");
+  const { directory, state, provision } = provisioningFixture(t);
   const key = join(directory, "key");
   const result = provision(key);
   assert.equal(result.status, 0, result.stderr);
@@ -226,4 +244,41 @@ test("signing provisioning generates or imports a usable key and never replaces 
   assert.match(again.stderr, /refusing to replace/u);
   assert.throws(() => readdirSync(join(directory, "second")), /ENOENT/u);
   assert.notEqual(provision(join(root, "scratch-key")).status, 0, "keys never land inside a Git checkout");
+});
+
+test("signing provisioning stops before any change when the key inventory is unknown", (t) => {
+  const { directory, state, provision } = provisioningFixture(t, { stubKeytool: true });
+  const untouched = (label, expected) => {
+    const result = provision(join(directory, label));
+    assert.notEqual(result.status, 0, label);
+    assert.match(result.stderr, expected, label);
+    assert.throws(() => readdirSync(join(directory, label)), /ENOENT/u, `${label}: no key directory`);
+    assert.deepEqual(
+      readdirSync(state).filter((name) => ["api", "keytool"].includes(name) || name.startsWith("secret-")),
+      [],
+      `${label}: no key generation, policy change or secret write`,
+    );
+  };
+
+  writeFileSync(join(state, "lookup-error"), "gh: Bad credentials (HTTP 401)\n");
+  untouched("auth-failure", /Cannot verify the android-release Environment/u);
+  writeFileSync(join(state, "lookup-error"), "error connecting to api.github.com\n");
+  untouched("network-failure", /Cannot verify the android-release Environment/u);
+  rmSync(join(state, "lookup-error"));
+
+  writeFileSync(join(state, "list-fails"), "");
+  untouched("listing-failure", /Cannot read the android-release secrets/u);
+  rmSync(join(state, "list-fails"));
+
+  writeFileSync(join(state, "existing"), "ANDROID_RELEASE_KEYSTORE_BASE64\n");
+  untouched("stored-key", /refusing to replace/u);
+  rmSync(join(state, "existing"));
+
+  // A verified missing Environment is an empty inventory: provisioning goes on.
+  writeFileSync(join(state, "environment-missing"), "");
+  provision(join(directory, "missing-environment"));
+  assert.ok(
+    readFileSync(join(state, "keytool"), "utf8").length > 0,
+    "a missing Environment proceeds to key generation",
+  );
 });

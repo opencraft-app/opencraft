@@ -29,10 +29,24 @@ if git -C "$parent" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 1
 fi
 
-# Replacing an existing key would make every installed app unable to update.
-if gh secret list --env "$environment" --repo "$repository" --json name --jq '.[].name' 2>/dev/null \
-  | grep -qx ANDROID_RELEASE_KEYSTORE_BASE64; then
-  echo "The $environment Environment already holds a signing key; refusing to replace it." >&2
+# Replacing an existing key would make every installed app unable to update, so
+# continue only when the inventory is known: a missing Environment (HTTP 404)
+# or a readable secret list without the key. Any other failure stops here,
+# before a key, policy or secret changes.
+lookup_error="$(mktemp)"
+trap 'rm -f "$lookup_error"' EXIT
+if gh api "repos/$repository/environments/$environment" >/dev/null 2>"$lookup_error"; then
+  if ! names="$(gh secret list --env "$environment" --repo "$repository" --json name --jq '.[].name')"; then
+    echo "Cannot read the $environment secrets; refusing to continue without knowing whether a key exists." >&2
+    exit 1
+  fi
+  if grep -qx ANDROID_RELEASE_KEYSTORE_BASE64 <<<"$names"; then
+    echo "The $environment Environment already holds a signing key; refusing to replace it." >&2
+    exit 1
+  fi
+elif ! grep -q 'HTTP 404' "$lookup_error"; then
+  cat "$lookup_error" >&2
+  echo "Cannot verify the $environment Environment; refusing to continue." >&2
   exit 1
 fi
 
@@ -60,8 +74,9 @@ fingerprint="$(keytool -list -keystore "$keystore" -storetype PKCS12 -storepass:
 gh api --method PUT "repos/$repository/environments/$environment" --input - >/dev/null <<'EOF'
 {"deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}}
 EOF
-if ! gh api "repos/$repository/environments/$environment/deployment-branch-policies" \
-  --jq '.branch_policies[].name' | grep -qx main; then
+policies="$(gh api "repos/$repository/environments/$environment/deployment-branch-policies" \
+  --jq '.branch_policies[].name')"
+if ! grep -qx main <<<"$policies"; then
   gh api --method POST "repos/$repository/environments/$environment/deployment-branch-policies" \
     -f name=main -f type=branch >/dev/null
 fi
