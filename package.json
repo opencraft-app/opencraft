@@ -248,6 +248,7 @@
     "test:storage-ports:workerd": "tsx --test tests/storage/storage-ports-workerd.test.ts",
     "test:installation-core:workerd": "tsx --test tests/storage/installation-core-workerd.test.ts",
     "test:client-do:workerd": "tsx --test tests/protocol/client-do-workerd.test.ts",
+    "test:relay-hub:workerd": "tsx --test tests/protocol/relay-hub-workerd.test.ts",
     "test:login-entry:workerd": "tsx --test tests/identity/login-entry-workerd.test.ts",
     "test:sqlite-node": "tsx --test tests/storage/worker-owner.test.ts tests/storage/server-core-owner.test.ts tests/storage/server-core-single-writer.test.ts tests/execution/capability-binding-projection.test.ts tests/storage/worker-owner-read-lane.test.ts tests/storage/sqlite-history-selection.test.ts tests/storage/sqlite-node.test.ts tests/storage/process-writer-lock.test.ts tests/storage/server-storage.test.ts tests/storage/drizzle-owner-rollout.test.ts tests/storage/published-ledger-adoption.test.ts tests/storage/server-history-convergence.test.ts tests/storage/server-generic-history-upgrade.test.ts",
     "test:typography": "tsx --test tests/shell/typography-system.test.ts tests/shell/ui-typography-harness.test.ts tests/chat/conversation-activity-visual.test.ts",
