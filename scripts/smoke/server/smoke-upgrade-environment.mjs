@@ -16,7 +16,7 @@ def read(path):
     with urllib.request.urlopen("http://127.0.0.1:" + str(int(cfg["port"])) + path, timeout=5) as response:
         return json.load(response)
 def run(*args):
-    return subprocess.check_output(args, timeout=12, stderr=subprocess.DEVNULL, text=True)
+    return subprocess.check_output(args, timeout=12, stderr=subprocess.DEVNULL, universal_newlines=True)
 def check(key, fn):
     try:
         ok, data = fn()
@@ -32,7 +32,10 @@ def identity():
     if not program.startswith("/") or program.encode() not in argv:
         raise ValueError("Core program does not match live process")
     with open("/proc/%d/root%s" % (pid, program), "rb") as f:
-        digest = hashlib.file_digest(f, "sha256").hexdigest()
+        hasher = hashlib.sha256()
+        for block in iter(lambda: f.read(1024 * 1024), b""):
+            hasher.update(block)
+        digest = hasher.hexdigest()
     try:
         web = read("/version.json")
     except Exception:

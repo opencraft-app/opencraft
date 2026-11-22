@@ -39,7 +39,7 @@ bounded systemd/Docker state, restart counts and error-journal counts. It does n
 restart services or perform an upgrade. Counts are observations rather than a
 new deployment policy; compare reports before and after a change.
 
-The target requires Linux `/proc`, Python 3.11 or newer and the relevant systemd
+The target requires Linux `/proc`, Python 3.6 or newer and the relevant systemd
 or Docker tools. The local machine needs SSH configured for unattended access.
 Keep connection configuration and reports outside the repository. Example:
 
