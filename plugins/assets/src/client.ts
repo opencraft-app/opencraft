@@ -1,3 +1,4 @@
+import { combineAbortSignals } from "@opencraft/appserver-client/transport";
 import type { TrustedExtensionDefinition } from "@opencraft/extension-runtime";
 import { ASSETS_MANIFEST, createAssetsExtension, e2bAssetProvider } from "./index.js";
 import type { AssetsAccount } from "./ports.js";
@@ -23,42 +24,47 @@ export class ServerAssetsAccount implements AssetsAccount {
   };
   refresh = async () => {
     const generation = ++this.generation;
-    const response = await this.fetcher(STATUS_PATH, {
-      credentials: "same-origin",
-      cache: "no-store",
-      signal: AbortSignal.any([this.abort.signal, AbortSignal.timeout(5000)]),
-    });
-    let scope: string | null,
-      available = false;
-    if (
-      response.status === 404 ||
-      response.status === 401 ||
-      response.status === 403 ||
-      (response.ok && !response.headers.get("content-type")?.includes("application/json"))
-    )
-      scope = null;
-    else {
-      if (!response.ok || !response.headers.get("content-type")?.includes("application/json"))
-        throw Error("assets_unavailable");
-      const input = (await response.json()) as { version?: unknown; scope?: unknown };
+    const request = combineAbortSignals([this.abort.signal, AbortSignal.timeout(5000)]);
+    try {
+      const response = await this.fetcher(STATUS_PATH, {
+        credentials: "same-origin",
+        cache: "no-store",
+        signal: request.signal,
+      });
+      let scope: string | null,
+        available = false;
       if (
-        !input ||
-        input.version !== 1 ||
-        (input.scope !== null &&
-          (typeof input.scope !== "string" ||
-            !input.scope.startsWith("actor:human://") ||
-            input.scope.length > 256 ||
-            /[\x00-\x1f\x7f]/u.test(input.scope)))
+        response.status === 404 ||
+        response.status === 401 ||
+        response.status === 403 ||
+        (response.ok && !response.headers.get("content-type")?.includes("application/json"))
       )
-        throw Error("assets_unavailable");
-      scope = input.scope as string | null;
-      available = true;
+        scope = null;
+      else {
+        if (!response.ok || !response.headers.get("content-type")?.includes("application/json"))
+          throw Error("assets_unavailable");
+        const input = (await response.json()) as { version?: unknown; scope?: unknown };
+        if (
+          !input ||
+          input.version !== 1 ||
+          (input.scope !== null &&
+            (typeof input.scope !== "string" ||
+              !input.scope.startsWith("actor:human://") ||
+              input.scope.length > 256 ||
+              /[\x00-\x1f\x7f]/u.test(input.scope)))
+        )
+          throw Error("assets_unavailable");
+        scope = input.scope as string | null;
+        available = true;
+      }
+      if (this.closed || generation !== this.generation) return;
+      const changed = this.scope !== scope;
+      this.scope = scope;
+      this.available = available;
+      if (changed) for (const listener of this.listeners) listener();
+    } finally {
+      request.dispose();
     }
-    if (this.closed || generation !== this.generation) return;
-    const changed = this.scope !== scope;
-    this.scope = scope;
-    this.available = available;
-    if (changed) for (const listener of this.listeners) listener();
   };
   dispose() {
     this.closed = true;
