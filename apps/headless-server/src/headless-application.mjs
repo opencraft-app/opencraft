@@ -18,7 +18,7 @@ import { createProjectAutomations } from './project-automations.mjs';
 import { executionCliSourceToken } from '@opencraft/session-capabilities/credentials';
 import { waitForExecutionCliBinding } from '@opencraft/session-capabilities/execution-cli';
 import { codexAdmissionPaused,createServerCodexBridge,readCodexBridgeConfiguration,createBridgeSessionMcp } from '@opencraft/opencraft-daemon/bridge-execution-admission';
-import { CodexHostServices, codexTasksService } from '@opencraft/opencraft-daemon/codex-host-services';
+import { CodexHostServices, codexAccountsService, codexTasksService } from '@opencraft/opencraft-daemon/codex-host-services';
 import { openServerDatabase } from "@opencraft/storage-node/server";
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { modelPolicyHttp } from '@opencraft/model-usage-policy/http';
@@ -1012,7 +1012,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           sign:session=>executionCliSourceToken(capabilityKey,session),
           ...bridgeSessionMcp,
           started:(threadId,inputId,turnId)=>actorCollaboration.executionStarted(threadId,inputId,turnId),
-        },{admissionPaused:()=>codexAdmissionPaused(join(dataDirectory,"codex"))}), clients => [codexTasksService(join(dataDirectory, "codex", "tasks.sqlite"), clients, reportLocalCodexStorage)])), mcpApps), hostId);
+        },{admissionPaused:()=>codexAdmissionPaused(join(dataDirectory,"codex"))}), clients => [codexTasksService(join(dataDirectory, "codex", "tasks.sqlite"), clients, reportLocalCodexStorage),
+          ...(options.codexCoreEndpoint ? [codexAccountsService(new CodexCoreControlClient(options.codexCoreEndpoint, options.codexCoreAuthToken))] : [])])), mcpApps), hostId);
         })(), modelPolicyPath, hostId === 'opencraft-server' ? 'dsh' : 'codex');
         let scopedTransport = identity?.executionEnvironment && ['local-codex', 'opencraft-server'].includes(hostId)
           ? new ExecutionEnvironmentTransport(transport, identity.executionEnvironment, hostId) : transport;

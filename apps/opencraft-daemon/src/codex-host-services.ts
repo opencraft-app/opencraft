@@ -6,6 +6,7 @@ import type {
 } from "@opencraft/appserver-client/transport";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import { TasksFault, TasksService } from "@opencraft/plugin-tasks/server";
+import { CodexAccountOperationError, classifyAccountFailure, logAccountFailure } from "@opencraft/account-pool-host";
 
 type Value = Record<string, unknown>;
 const object = (value: unknown): Value =>
@@ -14,6 +15,8 @@ const object = (value: unknown): Value =>
 /** A Codex Host duty that is not scoped to one Thread, answered before Thread routing. */
 export interface CodexHostService {
   handles(method: string): boolean;
+  /** Answer clients that have not initialized yet; default false. */
+  readonly beforeInitialize?: boolean;
   request(method: string, params: unknown, context: TransportSubmissionContext): unknown;
   /** Initialize capability extensions this service contributes. */
   capabilities?(): Value;
@@ -120,7 +123,7 @@ export class CodexHostServices implements DuplexTransport, CodexHostServiceClien
         : this.routing.send(raw, signal);
     if (frame.id === undefined) return;
     // As the local Codex Host did: Host services answer only initialized clients.
-    if (!this.clients.has(client)) {
+    if (!service.beforeInitialize && !this.clients.has(client)) {
       this.emit({ id: frame.id, error: { code: -32600, message: "Client is not initialized" } }, client || undefined);
       return;
     }
@@ -179,5 +182,34 @@ export function codexTasksService(
     },
     storage: () => (tasks.outcome ? [{ name: "tasks", outcome: tasks.outcome }] : []),
     close: () => tasks.close(),
+  };
+}
+
+/**
+ * Accounts of a Core-backed Codex Host: Core owns the pool, credentials and
+ * refresh; this only relays the account RPC, as the local Host did.
+ */
+export function codexAccountsService(control: {
+  accountRequest(method: string, params: Record<string, unknown>): Promise<unknown>;
+}): CodexHostService {
+  return {
+    handles: (method) => method.startsWith("opencraft/codex/accounts/"),
+    beforeInitialize: true,
+    request: async (method, params) => {
+      try {
+        if (method.startsWith("opencraft/codex/accounts/personal/"))
+          throw new Error("Personal subscriptions require the authenticated settings endpoint");
+        return await control.accountRequest(method, object(params));
+      } catch (error) {
+        const failure =
+          error instanceof CodexAccountOperationError ? error : classifyAccountFailure(error, "operation");
+        logAccountFailure(failure, { operation: method });
+        throw Object.assign(new Error(failure.message), {
+          code: -32020,
+          data: { codexAccountFailure: failure.diagnostic },
+        });
+      }
+    },
+    close: () => {},
   };
 }

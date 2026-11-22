@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
-import { CodexHostServices, codexTasksService } from "../../apps/opencraft-daemon/src/codex-host-services.ts";
+import {
+  CodexHostServices,
+  codexAccountsService,
+  codexTasksService,
+} from "../../apps/opencraft-daemon/src/codex-host-services.ts";
 
 function routing() {
   const sent: any[] = [],
@@ -139,4 +143,42 @@ test("Host-wide duties are answered by the front; Thread work goes to routing un
   }
   assert.equal(inner.closed, true);
   assert.equal(serviceClosed, true);
+});
+
+test("Core-backed accounts are relayed by the front, before initialize too, with the account failure shape", async () => {
+  const calls: unknown[] = [];
+  const control = {
+    async accountRequest(method: string, params: Record<string, unknown>) {
+      calls.push([method, params]);
+      if (method.endsWith("/remove")) throw new Error("Core refused");
+      return { accounts: [{ id: "a1" }] };
+    },
+  };
+  const inner = routing(),
+    frames: any[] = [];
+  const services = new CodexHostServices(inner.transport as any, () => [codexAccountsService(control)]);
+  services.subscribeMessage((frame) => frames.push(JSON.parse(frame)));
+  const send = async (id: number, method: string, params: unknown = {}) => {
+    await services.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "early" }));
+    return frames.find((frame) => frame.id === id);
+  };
+  try {
+    assert.deepEqual(
+      (await send(1, "opencraft/codex/accounts/list")).result,
+      { accounts: [{ id: "a1" }] },
+      "no initialize needed, as before",
+    );
+    const failed = (await send(2, "opencraft/codex/accounts/remove", { accountId: "a1" })).error;
+    assert.equal(failed.code, -32020);
+    assert.ok(failed.data.codexAccountFailure);
+    assert.equal((await send(3, "opencraft/codex/accounts/personal/start")).error.code, -32020);
+    assert.deepEqual(
+      calls.map((call: any) => call[0]),
+      ["opencraft/codex/accounts/list", "opencraft/codex/accounts/remove"],
+      "personal subscriptions never reach Core here",
+    );
+    assert.ok(!inner.sent.some((frame) => String(frame.method).startsWith("opencraft/codex/accounts/")));
+  } finally {
+    await services.close();
+  }
 });

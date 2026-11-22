@@ -23,7 +23,8 @@ import { MachineIdentityTransport } from "./machine-transport.js";
 
 import { CodexProviderBridge } from "./codex-provider-bridge.js";
 import { codexAdmissionPaused } from "./codex-maintenance.js";
-import { CodexHostServices, codexTasksService } from "./codex-host-services.js";
+import { CodexHostServices, codexAccountsService, codexTasksService } from "./codex-host-services.js";
+import { CodexCoreControlClient } from "@opencraft/account-pool-host";
 import type { DuplexTransport } from "@opencraft/appserver-client/transport";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import type { BridgeGatewayOptions } from "@opencraft/agent-bridge-host/gateway";
@@ -221,6 +222,7 @@ export async function startOpenCraftDaemon(options: {
         if (!ownsHostState) return routing;
         hostServices = new CodexHostServices(routing, clients => [
           codexTasksService(join(options.codexDataDirectory, "tasks.sqlite"), clients, reportCodexStorage),
+          ...(options.codexCoreEndpoint ? [codexAccountsService(new CodexCoreControlClient(options.codexCoreEndpoint, options.authToken))] : []),
         ]);
         return hostServices;
       }
