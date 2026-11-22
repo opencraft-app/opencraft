@@ -124,6 +124,7 @@ import { createCommitFenceBuffer } from '@opencraft/access-control/commit-fence'
 import { humanLoginPage } from './human-login-page.ts';
 import { connectRelay, loadRelayConnection } from '@opencraft/plugin-relay-connect/server';
 import { validateHeadlessIdentity } from "./headless-identity.mjs";
+import { startHeadlessRuntimePlugins, validateRuntimePluginOptions } from "./runtime-plugins.mjs";
 import { createHubController } from '@opencraft/hub-network/controller';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -312,6 +313,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   const workspaceExecution = configuredWorkspaceExecution(options);
   if (composition.close !== undefined && typeof composition.close !== "function") throw new Error("Invalid Headless disposer");
   if (composition.isHuman !== undefined && typeof composition.isHuman !== "function") throw new Error("Invalid Headless human qualification");
+  const runtimePluginConfiguration = validateRuntimePluginOptions(composition.runtimePlugins);
   const root = resolve(options.root ?? packageRoot);
   const dataDirectory = resolve(options.dataDirectory ?? join(homedir(), ".opencraft-server"));
   const webRoot = resolve(options.webRoot ?? join(root, "web"));
@@ -411,6 +413,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let observability;
   let turnPush;
   let connectedExecutionCli;
+  let runtimePlugins;
   let closing = null;
   const close = (update = null) => {
     if (closing !== null) return closing;
@@ -434,6 +437,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       await settle([() => web?.close(update, closeEntry)]);
       // Custom Web adapters need not implement the optional carrier phase.
       await closeEntry();
+      // Plugins stop after the listener stopped accepting and before any owner
+      // their authority or handlers may still call (admission, identity, stores).
+      await settle([() => runtimePlugins?.close()]);
       await settle([() => observability?.close()]);
       await settle([() => projectAutomations?.close()]);
       await settle([() => threadOrchestration?.close()]);
@@ -1225,6 +1231,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       if (!binding) throw new Error("Unknown file Host");
       return binding.connection;
     });
+    // Explicit opt-in only: loaded once instance authentication and admission exist,
+    // before the listener opens so declared routes are mounted from the first request.
+    if (runtimePluginConfiguration) runtimePlugins = await startHeadlessRuntimePlugins(runtimePluginConfiguration,
+      { dataDirectory, instanceAccess, authService: humanAuth });
     const createWeb = options.createWebServer ?? createWorkbenchWebServer;
     web = await createWeb({
       root: webRoot,
@@ -1269,7 +1279,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       sshServerDescriptors: sshServers.map(binding => binding.descriptor),
       sshManagement,
       fileDownloads,
-      getPluginHealth: () => ({...(imPlugins ? {'opencraft.im':imPlugins.states()} : {}),...(turnPush ? {'opencraft.push':turnPush.health} : {})}),
+      getPluginHealth: () => ({...(imPlugins ? {'opencraft.im':imPlugins.states()} : {}),...(turnPush ? {'opencraft.push':turnPush.health} : {}),
+        ...(runtimePlugins ? {'opencraft.runtime-plugins':runtimePlugins.health()} : {})}),
       getStorageOutcomes: () => [
         { name: 'server-core', status: serverStorage.outcome.status, appliedVersion: serverStorage.outcome.appliedVersion,
           movedAside: false, productVersion: serverStorage.contract.productVersion, contractHash: serverStorage.contract.hash },
@@ -1319,6 +1330,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       })(),
       assetsService,
       identityService: identity?.service ?? null,
+      ...(runtimePlugins ? { runtimePluginService: runtimePlugins } : {}),
       accessService: instanceAccess ?? null,
       actorService: actorAccess,
       allowSessionChannels: true,

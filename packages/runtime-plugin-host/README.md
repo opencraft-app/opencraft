@@ -2,7 +2,8 @@
 
 Explicit operator-selected backend plugins for Node 26. This package is a loader,
 not a sandbox, package registry, automatic discovery service or tenant isolation boundary.
-Nothing imports or enables it from the default application bootstrap.
+The default application bootstrap never enables it; the Headless server loads it only
+when trusted composition passes `runtimePlugins` (see below).
 
 ## Ownership and trust
 
@@ -45,6 +46,41 @@ const host = await loadRuntimePlugins({
 // Delegate only if host.handle(request, response) returns true.
 // Shutdown: await host.close();
 ```
+
+## Headless server composition
+
+The public Headless server owns gateway loading when trusted startup code opts in.
+There is no CLI flag; a selection index alone enables nothing.
+
+```js
+// Same composition object for startHeadlessServer(options, composition) or
+// startContainerGateway(composition), which forwards it unchanged.
+await startHeadlessServer(options, {
+  createIdentity,               // optional; any instance admission owner works
+  runtimePlugins: {
+    directory: '/private/selections',        // default: runtimePluginDirectory(dataDirectory)
+    packageSource: ({ dataDirectory }) => createVfsPluginSource({ ... }), // optional byte source
+    cacheDirectory: '/private/plugin-cache', // default: <dataDirectory>/runtime-plugin-cache
+    role: 'gateway',                          // default; 'execution' loads without routes
+    protectedPaths: ['/__product_session'],   // product routes added to the core set
+  },
+});
+```
+
+- Plugins load after instance authentication/admission (`InstanceAccess`) and login
+  sessions exist, and before the listener opens. Without instance admission a gateway
+  load is skipped (`admission_unavailable`); routes are never served unauthorised.
+- Declared routes are mounted inside the existing request pipeline after core admission
+  and after every core handler, then the host re-checks `authenticate`/`admissionStatus`
+  against the same owner. Every core `/__opencraft_*` namespace is protected in addition
+  to the store's reserved set; `protectedPaths` adds product routes.
+- A bad catalogue, source or plugin is skipped with a fixed reason code; the server starts.
+  `/health` and `/__opencraft_health` report `plugins["opencraft.runtime-plugins"]` with
+  selected IDs/versions and skipped reasons only.
+- Shutdown closes plugins after the listener and ingress stop accepting and accepted
+  plugin requests drain, before observability, identity, composition and stores close.
+- A split static launcher forwards only core Headless routes; plugin routes require the
+  Headless listener itself.
 
 A manifest uses schemaVersion/hostApi 1, nodeMajor 26, a stable plugin ID,
 sourceRevision, gateway/execution role entries and a bounded file inventory

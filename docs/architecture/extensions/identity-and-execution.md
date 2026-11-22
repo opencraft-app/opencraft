@@ -43,6 +43,18 @@ Headless 通过可信服务端 composition 创建身份适配器；受管站点�
 `packageRelay` 的编译期入口参数不是 HTTP/浏览器可安装插件接口。
 企业身份 已迁往下游；本边界仍不等于下游产品客户端私有目录已经全部迁出。
 
+### Headless 运行时插件装配
+
+`startHeadlessServer(options, { runtimePlugins })` 是核心持有的显式开关，未提供时请求
+管线、健康输出与关闭顺序不变。核心在实例准入（`InstanceAccess`）与登录会话就绪后、
+监听打开前调用 `@opencraft/runtime-plugin-host`，以同一准入 owner 提供
+`authenticate`/`admissionStatus`；没有实例准入时跳过加载并报告 `admission_unavailable`。
+插件路由挂在核心准入与全部核心处理器之后，核心 `/__opencraft_*` 命名空间自动列入
+保护集，下游只追加自己的 `protectedPaths` 并可提供 `packageSource` 字节来源。
+单个插件失败只被跳过；健康输出只含 ID、版本与固定原因码。关闭时先停止监听并排空
+已接受的插件请求，再关闭插件，之后才关闭身份、composition 与存储 owner。字段见
+[runtime-plugin-host README](../../../packages/runtime-plugin-host/README.md#headless-server-composition)。
+
 > 状态：R3 已落地 Trusted V1 内核；生态与 Restricted Channel 仍为 Proposed\
 > 架构修订：R3（Extension-first 商业 Workbench）\
 > 适用平台：Vite Web、Electron、Expo iOS/iPadOS、Expo Web\
