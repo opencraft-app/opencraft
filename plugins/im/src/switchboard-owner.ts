@@ -1,5 +1,5 @@
 import type { ConversationRef } from "@opencraft/appserver-protocol/collaboration";
-import { SwitchboardStore, type Channel, type ChannelConfig, type ReplyAnchor, type StoredMessage } from "./store.js";
+import { SwitchboardStore, type Channel, type ChannelConfig, type ReplyAnchor, type StoredMessage, type ReplyAttempt, type ReplyClaimKind, type ReplyOutcome } from "./store.js";
 
 /** Channel configuration a network thread keeps in memory. */
 export interface SwitchboardConfig {
@@ -82,8 +82,14 @@ export class SwitchboardOwner {
     this.store.submitted(id, requestId);
     return { value: undefined, anchor: this.anchor(id) };
   }
-  claimReply(id: string, text: string): SwitchboardChange<boolean> {
-    return { value: this.store.claimReply(id, text), anchor: this.anchor(id) };
+  prepareReply(id: string, requestId: string, text: string): SwitchboardChange<boolean> {
+    return {value: this.store.prepareReply(id,requestId,text), anchor:this.anchor(id)};
+  }
+  claimReply(id: string, text: string, kind: ReplyClaimKind = "tool"): SwitchboardChange<ReplyAttempt | null> {
+    return { value: this.store.claimReply(id, text, kind), anchor: this.anchor(id) };
+  }
+  settleReply(id: string, token: string, state: ReplyOutcome, error: string | null): SwitchboardChange<boolean> {
+    return {value:this.store.settleReply(id,token,state,error),anchor:this.anchor(id)};
   }
   interruptUncertain(): SwitchboardChange {
     this.store.interruptUncertain();

@@ -35,6 +35,6 @@ test("uncertain/expired replies never resend automatically",async t=>{
 test("v2 upgrade keeps automatic in-flight mode and rejects checksum drift",async t=>{
  const dir=await mkdtemp(join(tmpdir(),"im-tools-upgrade-"));t.after(()=>rm(dir,{recursive:true,force:true}));const path=join(dir,"im.sqlite");const old=openManagedDatabase({path,legacyPolicy:"reject",migrations:switchboardMigrations.slice(0,2)});
  old.database.prepare("INSERT INTO im_messages(id,channel_id,fingerprint,actor_id,source,text,route_revision,state,created_at,updated_at) VALUES('old','c','f','a','{}','old',1,'submitted',1,1)").run();old.database.close();
- const store=new SwitchboardStore(path);assert.equal(store.message("old")?.reply_mode,"final");assert.equal(store.outcome.appliedVersion,3);store.close();
+ const store=new SwitchboardStore(path);assert.equal(store.message("old")?.reply_mode,"final");assert.equal(store.outcome.appliedVersion,4);store.close();
  assert.throws(()=>openManagedDatabase({path,legacyPolicy:"reject",migrations:[...switchboardMigrations.slice(0,2),{...switchboardMigrations[2],sql:switchboardMigrations[2].sql+" -- drift"}]}));
 });
