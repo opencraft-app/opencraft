@@ -124,13 +124,11 @@ Brain 与 Hands 在 Docker 上是否合并为一个容器也待定：合并贴�
 
 化身字符串格式会变化（今天是 `["process", bootId, pid, startTicks]`），所以已持久化的执行租约与 Git 来源租约在切换时视为旧化身：按现有规则失效并走恢复，不做格式转换。
 
-### 3.5 Generation Router 的去留（计划退役）
+### 3.5 Generation Router（已删除）
 
-Generation Router 目前只在 systemd 完整发布装配中运行（`deploy/web-server/opencraft-codex-generations.service.example`），职责是 Codex 引擎**不中断升级**：并行运行多个 AppServer 版本，registry 记录 Thread 所属版本，新 Thread 进入新版本，旧 Thread 在旧版本完成后退役；另含多 `CODEX_HOME` 路由、冷恢复与维护检查。Docker 装配不使用它。
+Generation Router 只在 systemd 完整发布装配中运行，用于 Codex 引擎不中断升级（多版本 AppServer 并行、registry 记录 Thread 所属版本、旧版本完成后退役）。用户确认该装配已无部署使用（2026-11-22），Router 与其 systemd 装配已删除。
 
-按工作区拆分后，这一职责由 WorkspaceHost 持有：每个工作区容器记录所运行的镜像版本；升级时新 Thread 在新镜像上启动容器，旧容器完成当前 Turn 后在下一次空闲或重连时退役。采用"每 Thread 专属工作区"默认策略时，这与 Router 的 Thread 级版本固定语义等价，不再需要独立的 generation registry 与路由。
-
-退役条件：WorkspaceHost 的"镜像版本固定＋旧容器排空"步骤（第 7 节）在真实部署上验收，且沿用 Router 现有的不中断、不重放未确认输入与故障停止规则及其测试。在此之前 Router 保留，是 systemd 部署唯一安全的升级路径；之后整体删除（`apps/codex-core/src/generation-*`、registry Worker、systemd 发布中的 bundle、service 示例与相关 smoke）。若已无运行中的 systemd 完整发布部署，可提前到第 1 步之后删除（待用户确认）。
+后继：WorkspaceHost 固定工作区容器的镜像版本，升级时新 Thread 使用新镜像，旧容器完成当前 Turn 后退役；在"每 Thread 专属工作区"默认策略下与 Router 的 Thread 级版本固定等价。该能力实现前，Docker 升级 Brain 的现有规则不变（先等待活动任务完成，见 deploy/docker/README.md）。
 
 ## 4. Codex Host 状态拆分
 
@@ -231,11 +229,13 @@ $DATA/workspaces/<id>/brain/ 容器私有：codex/runtime（CODEX_HOME）、agen
 
 第 5 阶段（Cloudflare 适配器）只在第 2–4 步完成后开始。
 
-补充步骤（Router 退役前置）：WorkspaceHost 固定工作区容器镜像版本，升级时新 Thread 使用新镜像、旧容器排空后退役；验收覆盖进行中 Turn 不被中断、未确认输入不重放、故障停止。完成并在真实部署验收后删除 Generation Router（见 3.5 节）。
+补充步骤（Generation Router 的后继，排在第 7 步之后）：WorkspaceHost 固定工作区容器镜像版本，升级时新 Thread 使用新镜像、旧容器排空后退役；验收覆盖进行中 Turn 不被中断、未确认输入不重放、故障停止（见 3.5 节）。
 
 ## 8. 待决问题
 
-### 8.1 决定一：拆分单位是 Workspace 还是 Thread（由用户决定）
+### 8.1 决定一：拆分单位是 Workspace 还是 Thread（已决定：A）
+
+**决定（2026-11-22）：** 采用 A，单位为 Workspace。默认策略为"每 Thread 专属工作区"（与今天普通会话一致）；同一 Project 的协作 Thread 与父子编排 Thread 可选择放入同一工作区。默认策略可由用户后续调整。下文保留决定前的对照。
 
 两个选项都能满足"每单位一个 Brain＋Hands、凭据不进容器"。下文中性列出证据；末尾给出建议，但**由用户决定**，决定前第 7 步不开始（第 1–6 步对两者都成立）。
 
