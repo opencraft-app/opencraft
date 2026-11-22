@@ -200,3 +200,38 @@ and Hands is not wired by this change. That still needs its actual admission
 owner and conservative uncertain-incarnation accounting, rather than treating
 this transport as an installation-wide process quota. Default Headless activation, the browser port,
 and the single Bot/provider configuration composition remain unfinished.
+
+### Browser transport candidate
+
+The Gateway composition now routes the existing central browser service through
+the same Worker-owned execution binding. Page selection comes from committed
+page/conversation links or a committed close receipt, not renderer-supplied
+workspace/socket identity. A remote or unclassified conversation cannot choose
+the local browser. The central service remains the sole page/capacity store;
+one resource-owned Browser Owner and attachment are shared by the admitted tabs
+of a compute incarnation.
+
+Browser IPC uses bounded opaque channels and explicit read/write credits rather
+than moving SDK handles or secrets to Main. Long attachment/flush work runs
+outside FIFO RPC. Incoming queues are capped at 64 frames/32 MiB per channel and
+64 MiB overall; outgoing messages retain the existing 256 KiB limit and bounded
+pending writes. Overflow or uncertain transport loss retires the channel without
+silently dropping results or replaying commands. Detach closes the IPC proxy,
+not the independent resource-owned browser process. Actor/member epochs,
+incarnation and canonical configuration are rechecked before frames are handed
+to Main; each central page retains its own fresh authorization guard.
+
+Resolving durable browser resources now has a real asynchronous Worker boundary.
+If a page closes or retires while that lookup is pending, the request has not yet
+reached a peer. Its preparation is rejected as `not-dispatched`, without poisoning
+another page's admitted close or the whole shared owner. This does not refresh a
+captured stale guard, weaken page authorization, replay a write, or turn an
+uncertain attachment failure into a non-delivery claim. Proxy startup uses
+isolated Python so workspace modules cannot replace the standard IPC imports.
+
+Tests exercise the actual Worker and central SQLite-backed browser service,
+shared tabs, committed close routing, old-epoch rejection, resource revocation,
+queue overflow, pending cleanup and no local fallback. The Browser Owner in these
+cases is synthetic; no Chromium process/cloud VM or visual media rendering is
+proved by those tests. Bot/provider unification, shared terminal admission and the
+matching default Headless startup are still required before default activation.

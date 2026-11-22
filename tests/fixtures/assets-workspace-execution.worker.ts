@@ -1,3 +1,5 @@
+import { EventEmitter } from "node:events";
+import type { SandboxBrowserOwnerTransport } from "@opencraft/local-agent-host/sandbox-browser-owner";
 import { SandboxProcessService } from "@opencraft/local-agent-host/sandbox-process-service";
 import { serveWorkerOwner } from "@opencraft/worker-owner/serve";
 import { openServerDatabase } from "@opencraft/storage-node/server";
@@ -83,6 +85,9 @@ serveWorkerOwner<{ directory: string }>(async ({ directory }) => {
   );
   const artifactProcesses = new Set<number>();
   const terminals = new Set<string>();
+  const browserOwners = new Set<string>(),
+    browserAttached = new Set<string>();
+  let browserCommands = 0;
   const spawnArtifact = async (
     command: SandboxCommand,
     onOutput?: (output: SandboxOutput) => void,
@@ -230,7 +235,81 @@ serveWorkerOwner<{ directory: string }>(async ({ directory }) => {
             async bind(options) {
               let current = true;
               let processes: SandboxProcessService | undefined;
+              let browserPeer: SandboxBrowserOwnerTransport | undefined;
+              const browserOwner = randomUUID();
+              const browser = {
+                assertCurrent() {
+                  if (!current) throw Error("Synthetic browser retired");
+                },
+                async connect(): Promise<SandboxBrowserOwnerTransport> {
+                  await options.authorize();
+                  if (browserPeer?.connected) throw Error("Synthetic owner already attached");
+                  browserOwners.add(browserOwner);
+                  browserAttached.add(browserOwner);
+                  const peer = Object.assign(new EventEmitter(), {
+                    connected: true,
+                    inventory: [],
+                    workerPid: 12345,
+                    automationCancellation: 1,
+                    automationNavigation: 1,
+                    send(input: unknown, callback?: (error?: Error) => void) {
+                      if (!peer.connected) {
+                        callback?.(Error("Synthetic owner detached"));
+                        return;
+                      }
+                      browserCommands++;
+                      const message = input as { id: string; page: string; method: string };
+                      callback?.();
+                      if (message.method === "syntheticHold") return;
+                      queueMicrotask(() => {
+                        if (!peer.connected) return;
+                        if (message.method === "syntheticFlood") {
+                          for (let i = 0; i < 100; i++)
+                            peer.emit("message", {
+                              type: "frame",
+                              page: message.page,
+                              bucket: "synthetic",
+                              bytes: "YQ==",
+                            });
+                          return;
+                        }
+                        if (message.method === "syntheticMedia")
+                          peer.emit("message", {
+                            type: "frame",
+                            page: message.page,
+                            bucket: "synthetic",
+                            bytes: "YQ==",
+                          });
+                        peer.emit("message", {
+                          type: "result",
+                          id: message.id,
+                          value: {
+                            id: message.page,
+                            document: "synthetic-browser-document",
+                            width: 800,
+                            height: 600,
+                            deviceProfile: "desktop",
+                            navigation: { url: "https://example.test/", isLoading: false },
+                          },
+                        });
+                      });
+                    },
+                    kill() {
+                      void peer.close();
+                    },
+                    async close() {
+                      if (!peer.connected) return;
+                      peer.connected = false;
+                      browserAttached.delete(browserOwner);
+                      peer.emit("exit");
+                    },
+                  });
+                  browserPeer = peer;
+                  return peer;
+                },
+              };
               return {
+                browser,
                 get processes() {
                   return processes;
                 },
@@ -266,6 +345,8 @@ serveWorkerOwner<{ directory: string }>(async ({ directory }) => {
                 },
                 async close() {
                   current = false;
+                  await browserPeer?.close();
+                  browserOwners.delete(browserOwner);
                   await processes?.close();
                 },
                 files: {
@@ -288,6 +369,11 @@ serveWorkerOwner<{ directory: string }>(async ({ directory }) => {
       fixtureCounters: () => ({ allocated, deleted, retained: Object.keys(retained).length }),
       fixtureArtifactStats: () => ({ processes: artifactProcesses.size }),
       fixtureTerminalStats: () => ({ active: terminals.size }),
+      fixtureBrowserStats: () => ({
+        owners: browserOwners.size,
+        attached: browserAttached.size,
+        commands: browserCommands,
+      }),
       fixtureFailCleanup: () => {
         failCleanup = true;
       },

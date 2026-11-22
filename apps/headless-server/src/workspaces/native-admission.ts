@@ -64,27 +64,36 @@ export class WorkspaceNativeAdmission {
     if (this.closed || !actor || !this.options.actors.isCurrent(actor)) throw Error("Workspace Actor unavailable");
     const expiresAt = Math.min(actor.expiresAt, context.validUntil ?? actor.expiresAt);
     if (!Number.isSafeInteger(expiresAt) || expiresAt <= Date.now()) throw Error("Workspace request expired");
-    const revision = this.options.access.store.revocationRevision(
-      actor.actorId,
-      this.options.actors.bindings(actor.actorId),
-    );
-    const key = JSON.stringify([actor.actorId, actor.generation, revision]);
+    return this.capture(actor.actorId, actor.generation, expiresAt);
+  };
+  /** Compiled durable-resource composition only. The caller must independently
+   * authorize the stored page/Thread grant; this does not authenticate a login. */
+  readonly admitResource = (actorId: string): WorkspaceActorAdmission => {
+    this.refresh();
+    const actor = this.options.actors.get(actorId);
+    if (this.closed || !actor || actor.kind !== "human" || !actor.enabled)
+      throw Error("Workspace resource Actor unavailable");
+    return this.capture(actor.id, actor.generation, Date.now() + 30000);
+  };
+  private capture(actorId: string, generation: number, expiresAt: number): WorkspaceActorAdmission {
+    const revision = this.options.access.store.revocationRevision(actorId, this.options.actors.bindings(actorId));
+    const key = JSON.stringify([actorId, generation, revision]);
     let resource = this.resources.get(key);
     if (!resource) {
       if (this.resources.size >= 2048) throw Error("Workspace authority capacity reached");
-      resource = { actorId: actor.actorId, generation: actor.generation, revision, permit: flag() };
+      resource = { actorId: actorId, generation: generation, revision, permit: flag() };
       if (!this.current(resource)) throw Error("Workspace Actor unavailable");
       this.resources.set(key, resource);
     }
     return {
-      actorId: actor.actorId,
-      generation: actor.generation,
+      actorId: actorId,
+      generation: generation,
       membershipRevision: revision,
       expiresAt,
       resourcePermit: resource.permit,
       requestPermit: flag(),
     };
-  };
+  }
   close() {
     if (this.closed) return;
     this.closed = true;

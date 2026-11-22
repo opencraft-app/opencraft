@@ -1,3 +1,4 @@
+import { WorkspaceBrowserTransfers, type WorkspaceBrowserPort } from "./browser-transports.js";
 import { WorkspaceTerminalTransfers, type WorkspaceTerminalPort } from "./terminal-transports.js";
 import { WorkspaceArtifactTransfers, type WorkspaceArtifactPort } from "./artifact-transports.js";
 import { randomBytes } from "node:crypto";
@@ -28,7 +29,7 @@ export type WorkspacePreparationStatus =
   | { state: "native-ready"; fields: Fields; selection: WorkspaceExecutionSelection }
   | { state: "complete"; receipt: { workspaceId: string; threadId: string } }
   | { state: "failed" };
-export interface WorkspaceExecutionPort extends WorkspaceArtifactPort, WorkspaceTerminalPort {
+export interface WorkspaceExecutionPort extends WorkspaceArtifactPort, WorkspaceTerminalPort, WorkspaceBrowserPort {
   workspaceBegin(access: WorkspaceActorAdmission, request: WorkspacePreparation): Promise<string>;
   workspaceStatus(token: string): Promise<WorkspacePreparationStatus>;
   workspaceNativeReceipt(
@@ -155,7 +156,32 @@ export async function createWorkspaceExecutionOwner(
     current: (access, pending) => current(access, pending),
     binding: (access, threadId, resource) => owned.bindingFor(admission(access, undefined, resource), threadId),
   });
+  const browsers = new WorkspaceBrowserTransfers({
+    current: (access, pending) => current(access, pending),
+    binding: (access, threadId) => owned.bindingFor(admission(access, undefined, true), threadId),
+  });
   const methods: WorkspaceExecutionPort = {
+    async workspaceBrowserOpen(raw, threadId, lease) {
+      return browsers.open(workspaceAdmission(raw), threadId, lease);
+    },
+    async workspaceBrowserStatus(token) {
+      return structuredClone(await browsers.status(token));
+    },
+    async workspaceBrowserRead(token, after) {
+      return structuredClone(await browsers.read(token, after));
+    },
+    async workspaceBrowserSend(token, sequence, message) {
+      browsers.send(token, sequence, message);
+    },
+    async workspaceBrowserSent(token, sequence) {
+      return browsers.sent(token, sequence);
+    },
+    async workspaceBrowserForget(token, sequence) {
+      browsers.forget(token, sequence);
+    },
+    async workspaceBrowserClose(token) {
+      return browsers.requestClose(token);
+    },
     async workspaceTerminalOpen(raw, threadId, lease) {
       return terminals.open(workspaceAdmission(raw), threadId, lease);
     },
@@ -391,6 +417,11 @@ export async function createWorkspaceExecutionOwner(
             state.native.reject(Error("Workspace owner closed"));
           }
         const errors: unknown[] = [];
+        try {
+          await browsers.closeAll();
+        } catch (error) {
+          errors.push(error);
+        }
         try {
           await terminals.close();
         } catch (error) {

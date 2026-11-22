@@ -12,7 +12,7 @@ function fixture() {
  }, async closeStdin() {}, async terminate() { terminated++; exit({ code: 0 }); } };
  const options = { socketPath: '/tmp/opencraft-browser-test/owner.sock', authorize: async () => { if (revoked) throw Error('revoked'); },
   onLost() { lost++; }, onCleanupUnconfirmed() { cleanup++; }, sandbox: { async spawn(command: any, output: any) {
-   assert.equal(command.command[0], '/usr/bin/python3');assert.equal(command.cwd, '/workspace');assert.deepEqual(command.env, {});
+   assert.deepEqual(command.command.slice(0,4), ['/usr/bin/python3','-I','-u','-c']);assert.equal(command.cwd, '/workspace');assert.deepEqual(command.env, {});
    emit = output; return child;
   } } };
  return { options, child, writes, emit(data: Buffer) { emit({ stream: 'stdout', data }); }, exit, revoke() { revoked = true; }, get terminated() { return terminated; }, get lost() { return lost; }, get cleanup() { return cleanup; } };

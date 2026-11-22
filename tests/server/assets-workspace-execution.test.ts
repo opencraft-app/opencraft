@@ -1,3 +1,5 @@
+import { RemoteBrowserService } from "../../apps/headless-server/src/remote-browser-service.mjs";
+import { WorkspaceBrowserClient } from "../../apps/headless-server/src/workspaces/browser-client.js";
 import { WorkspaceTerminalClient } from "../../apps/headless-server/src/workspaces/terminal-client.js";
 import { WorkspaceArtifactClient } from "../../apps/headless-server/src/workspaces/artifact-client.js";
 import { createHash } from "node:crypto";
@@ -30,6 +32,7 @@ type Port = AssetStoragePort &
     fixtureDisableActor(): Promise<void>;
     fixtureArtifactStats(): Promise<{ processes: number }>;
     fixtureTerminalStats(): Promise<{ active: number }>;
+    fixtureBrowserStats(): Promise<{ owners: number; attached: number; commands: number }>;
   };
 const flag = () => {
   const value = new Int32Array(new SharedArrayBuffer(4));
@@ -44,7 +47,9 @@ async function fixture(t: test.TestContext) {
       { name: "Synthetic workspace owner", workerData: { directory }, errors: [SandboxConfigurationError] },
     );
   let { owner, ready } = await open();
+  const cleanup: (() => Promise<void>)[] = [];
   t.after(async () => {
+    for (const close of [...cleanup].reverse()) await close();
     await owner.close();
     await rm(directory, { recursive: true, force: true });
   });
@@ -72,6 +77,9 @@ async function fixture(t: test.TestContext) {
     },
     access,
     target,
+    defer(close: () => Promise<void>) {
+      cleanup.push(close);
+    },
     async reopen() {
       await owner.close();
       ({ owner, ready } = await open());
@@ -919,5 +927,210 @@ test("Main stable terminal proxy authorizes each original operation context, not
     (await f.port.fixtureTerminalStats()).active,
     1,
     "Closing a proxy detaches only; Worker retains the process owner",
+  );
+});
+
+async function browserReady(port: Port, token: string) {
+  for (let i = 0; i < 600; i++) {
+    const value = await port.workspaceBrowserStatus(token);
+    if (value.state === "ready") return value;
+    if (value.state === "failed") throw Error("Browser opening failed");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw Error("Browser opening did not settle");
+}
+async function browserClose(port: Port, token: string) {
+  for (let i = 0; i < 600; i++) {
+    const value = await port.workspaceBrowserClose(token);
+    if (value === "closed") return;
+    if (value === "failed") throw Error("Browser detach unconfirmed");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw Error("Browser detach did not settle");
+}
+test("Worker browser channels bind the original resource, preserve frame credits, and never replay a physical command", async (t) => {
+  const f = await artifactFixture(t),
+    access = f.access(),
+    selection = await f.port.workspaceSelection(access, "native-artifacts");
+  if (selection.kind !== "bound") throw Error("unreachable");
+  const lease = { workspaceId: selection.workspaceId, generation: selection.generation };
+  const token = await f.port.workspaceBrowserOpen(access, "native-artifacts", lease);
+  await browserReady(f.port, token);
+  await f.port.workspaceBrowserSend(token, 0, { id: "browser-command", page: "private-page", method: "snapshot" });
+  for (let i = 0; i < 200 && (await f.port.workspaceBrowserSent(token, 0)) === "pending"; i++)
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  await f.port.workspaceBrowserForget(token, 0);
+  await assert.rejects(
+    f.port.workspaceBrowserSend(token, 0, { id: "browser-command", page: "private-page", method: "snapshot" }),
+    "Losing an acknowledgement is not permission to replay",
+  );
+  let frames = await f.port.workspaceBrowserRead(token, 0);
+  for (let i = 0; i < 200 && !frames.frames.length; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    frames = await f.port.workspaceBrowserRead(token, 0);
+  }
+  assert.equal(frames.frames.length, 1);
+  assert.equal((frames.frames[0]!.message as { id: string }).id, "browser-command");
+  assert.deepEqual(
+    await f.port.workspaceBrowserRead(token, 0),
+    frames,
+    "A repeated read credit does not lose the unacknowledged frame",
+  );
+  Atomics.store(access.requestPermit, 0, 0);
+  assert.deepEqual(
+    await f.port.workspaceBrowserRead(token, 1),
+    { frames: [] },
+    "Resource custody does not expire with a View request",
+  );
+  await browserClose(f.port, token);
+  assert.deepEqual(await f.port.fixtureBrowserStats(), { owners: 1, attached: 0, commands: 1 });
+  const bad = await f.port.workspaceBrowserOpen(f.access(), "native-artifacts", {
+    ...lease,
+    generation: lease.generation + 1,
+  });
+  await assert.rejects(browserReady(f.port, bad));
+  await browserClose(f.port, bad);
+  const next = await f.port.workspaceBrowserOpen(f.access(), "native-artifacts", lease);
+  await browserReady(f.port, next);
+  await f.port.fixtureDisableActor();
+  await assert.rejects(f.port.workspaceBrowserRead(next, 0));
+  await browserClose(f.port, next);
+  assert.equal((await f.port.fixtureBrowserStats()).commands, 1);
+});
+
+test("Main browser proxy preserves result/media routing and detaches on overflow without recreating or replaying owner work", async (t) => {
+  const f = await artifactFixture(t),
+    access = f.access(),
+    selection = await f.port.workspaceSelection(access, "native-artifacts");
+  if (selection.kind !== "bound") throw Error("unreachable");
+  const lease = { workspaceId: selection.workspaceId, generation: selection.generation };
+  const peer = await WorkspaceBrowserClient.open({
+    port: f.port,
+    access,
+    threadId: "native-artifacts",
+    lease,
+    authorize() {},
+  });
+  f.defer(() => peer.close());
+  const received: unknown[] = [];
+  peer.on("message", (message) => received.push(message));
+  await new Promise<void>((resolve, reject) =>
+    peer.send({ id: "media-once", page: "page-a", method: "syntheticMedia" }, (error) =>
+      error ? reject(error) : resolve(),
+    ),
+  );
+  for (let i = 0; i < 200 && received.length < 2; i++) await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(received.length, 2);
+  assert.deepEqual(
+    received.map((message) => (message as { type: string }).type),
+    ["frame", "result"],
+  );
+  await peer.close();
+  assert.equal(
+    (await f.port.fixtureBrowserStats()).owners,
+    1,
+    "Transport detach does not kill the independent Browser Owner",
+  );
+  const flooding = await WorkspaceBrowserClient.open({
+    port: f.port,
+    access: f.access(),
+    threadId: "native-artifacts",
+    lease,
+    authorize() {},
+  });
+  f.defer(() => flooding.close());
+  // No read listener: the bounded queue must retire, never silently discard
+  // a result or replay the originating command to catch up after overflow.
+  await new Promise<void>((resolve) =>
+    flooding.send({ id: "overflow-once", page: "page-a", method: "syntheticFlood" }, () => resolve()),
+  );
+  await flooding.close();
+  assert.equal((await f.port.fixtureBrowserStats()).commands, 2);
+  assert.equal((await f.port.fixtureBrowserStats()).owners, 1);
+});
+
+test("central durable browser service selects one actual Worker channel for two tabs and never reaches the local browser fallback", async (t) => {
+  const f = await artifactFixture(t),
+    access = f.access(),
+    directory = await mkdtemp(join(tmpdir(), "workspace-browser-composition-"));
+  let allowed = true,
+    local = 0;
+  const workspace = await openWorkspaceExecutionService({
+    port: f.port,
+    socketPath: join(directory, "authority.sock"),
+    token: "synthetic-browser-service-authority",
+    actors: {
+      get: (id) =>
+        id === access.actorId
+          ? {
+              id,
+              kind: "human",
+              enabled: true,
+              generation: access.generation,
+              displayName: "Fixture",
+              createdAt: 0,
+              createdBy: null,
+            }
+          : null,
+      isCurrent: (ctx) =>
+        ctx.actorId === access.actorId && ctx.generation === access.generation && ctx.expiresAt > Date.now(),
+      bindings: () => [{ provider: "local", subject: "fixture" }],
+      onAuthorityChanged: () => () => {},
+    },
+    access: { admitsActor: () => true, store: { revocationRevision: () => 0, onAuthorityChanged: () => () => {} } },
+    onCleanupUnconfirmed() {},
+  });
+  const browser = new RemoteBrowserService({
+    root: directory,
+    dataDirectory: directory,
+    ownerAvailable: async () => true,
+    ownerConnector: async () => {
+      local++;
+      throw Error("Controller browser fallback is forbidden");
+    },
+    spawnImpl() {
+      throw Error("No Chromium process in this synthetic test");
+    },
+  });
+  f.defer(async () => {
+    await browser.close();
+    await workspace.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  workspace.connectBrowserRouting({
+    service: browser,
+    assertThreadAccess: (descriptor) => {
+      if (!allowed || descriptor.ownerId !== access.actorId || descriptor.threadId !== "native-artifacts")
+        throw Error("Synthetic Thread grant revoked");
+    },
+  });
+  const binding = (callId: string) => ({
+    ownerId: access.actorId,
+    hostId: "local-codex",
+    threadId: "native-artifacts",
+    turnId: "synthetic-turn",
+    callId,
+    authorize() {
+      if (!allowed) throw Error("Synthetic browser authority revoked");
+    },
+  });
+  const first = await browser.createTab(binding("first"), { url: "https://example.test/" });
+  const second = await browser.createTab(binding("second"), { url: "https://example.test/" });
+  assert.notEqual(first.tabId, second.tabId);
+  assert.equal(local, 0);
+  assert.equal((await f.port.fixtureBrowserStats()).attached, 1);
+  assert.equal((await browser.conversationTabs(access.actorId, "local-codex", "native-artifacts", () => {})).length, 2);
+  await browser.closeTab(binding("close-first"), { tabId: first.tabId });
+  assert.equal((await browser.conversationTabs(access.actorId, "local-codex", "native-artifacts", () => {})).length, 1);
+  allowed = false;
+  await assert.rejects(browser.createTab(binding("denied"), { url: "https://example.test/" }));
+  assert.equal(local, 0);
+  await browser.close();
+  await workspace.close();
+  assert.equal((await f.port.fixtureBrowserStats()).attached, 0);
+  assert.equal(
+    (await f.port.fixtureBrowserStats()).owners,
+    1,
+    "Central/transport shutdown does not kill the resource-owned Browser Owner",
   );
 });

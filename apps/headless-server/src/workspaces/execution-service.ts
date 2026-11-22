@@ -1,3 +1,9 @@
+import { WorkspaceBrowserClient } from "./browser-client.js";
+import {
+  installWorkspaceBrowserRouting,
+  type WorkspaceBrowserDescriptor,
+  type WorkspaceBrowserLease,
+} from "./workspace-browser-composition.mjs";
 import { WorkspaceTerminalClient } from "./terminal-client.js";
 import type { EnvironmentExecutionScope } from "@opencraft/execution-environment";
 import type { HostTerminalService, HostTerminalServiceSelector } from "../host-terminal-transport.js";
@@ -41,6 +47,11 @@ export async function openWorkspaceExecutionService(options: {
   const ownedAuthority = authority;
   const artifacts = new WorkspaceArtifactClient(options.port);
   const terminals = new Map<string, Promise<WorkspaceTerminalClient>>();
+  const browserLeases = new Map<string, WorkspaceBrowserLease>();
+  const browserPeers = new Set<WorkspaceBrowserClient>();
+  const browserConnecting = new Set<Promise<WorkspaceBrowserClient>>();
+  const browserClosing = new Set<Promise<void>>();
+  let browserInstalled = false;
   const assetAdmission = (context: TransportSubmissionContext): AssetAdmission => {
     const access = admission.admit(context);
     return {
@@ -52,6 +63,122 @@ export async function openWorkspaceExecutionService(options: {
     };
   };
   return {
+    connectBrowserRouting({
+      service,
+      assertThreadAccess,
+    }: {
+      service: unknown;
+      assertThreadAccess(descriptor: WorkspaceBrowserDescriptor): void;
+    }) {
+      if (closed || browserInstalled) throw Error("Workspace browser routing already installed");
+      installWorkspaceBrowserRouting({
+        service,
+        resolveConversation: async (descriptor, local) => {
+          const assertAccess = () => {
+            if (closed) throw Error("Workspace browser service closed");
+            assertThreadAccess(descriptor);
+          };
+          assertAccess();
+          if (descriptor.hostId !== "local-codex" || descriptor.threadId === null)
+            return { lease: local, assertCurrent: assertAccess };
+          const threadId = descriptor.threadId;
+          if (!placement.has(threadId)) {
+            if (!placement.isKnownLocal(threadId)) throw Error("Native browser placement unavailable");
+            return { lease: local, assertCurrent: assertAccess };
+          }
+          const access = admission.admitResource(descriptor.ownerId),
+            selection = await options.port.workspaceSelection(access, threadId);
+          assertAccess();
+          if (selection.kind !== "bound") throw Error("Workspace browser cannot become local");
+          const key = JSON.stringify([
+            access.actorId,
+            access.generation,
+            access.membershipRevision,
+            threadId,
+            selection.workspaceId,
+            selection.generation,
+          ]);
+          let lease = browserLeases.get(key);
+          if (!lease) {
+            for (const [oldKey, oldLease] of browserLeases) {
+              const old = JSON.parse(oldKey) as unknown[];
+              if (old[0] === access.actorId && old[3] === threadId && oldKey !== key) {
+                browserLeases.delete(oldKey);
+                continue;
+              }
+              try {
+                oldLease.assertCurrent();
+              } catch {
+                browserLeases.delete(oldKey);
+              }
+            }
+            if (browserLeases.size >= 128) throw Error("Workspace browser bindings exhausted");
+            let peer: WorkspaceBrowserClient | undefined, connecting: Promise<WorkspaceBrowserClient> | undefined;
+            const authorize = () => {
+              if (closed || Atomics.load(access.resourcePermit, 0) !== 1)
+                throw Error("Workspace browser resource retired");
+              const current = admission.admitResource(access.actorId);
+              if (
+                current.generation !== access.generation ||
+                current.membershipRevision !== access.membershipRevision ||
+                current.resourcePermit !== access.resourcePermit
+              )
+                throw Error("Workspace browser authority changed");
+            };
+            lease = {
+              assertCurrent: authorize,
+              connect: () => {
+                authorize();
+                if (peer?.connected) return Promise.resolve(peer);
+                if (connecting) return connecting;
+                let work!: Promise<WorkspaceBrowserClient>;
+                work = (async () => {
+                  await peer?.close();
+                  const current = admission.admitResource(access.actorId);
+                  authorize();
+                  const next = await WorkspaceBrowserClient.open({
+                    port: options.port,
+                    access: current,
+                    threadId,
+                    lease: { workspaceId: selection.workspaceId, generation: selection.generation },
+                    authorize,
+                  });
+                  try {
+                    authorize();
+                  } catch (cause) {
+                    await next.close();
+                    throw cause;
+                  }
+                  browserPeers.add(next);
+                  next.once("exit", () => {
+                    const closing = next.close();
+                    browserClosing.add(closing);
+                    void closing
+                      .then(
+                        () => browserPeers.delete(next),
+                        () => {},
+                      )
+                      .finally(() => browserClosing.delete(closing));
+                  });
+                  peer = next;
+                  return next;
+                })().finally(() => {
+                  connecting = undefined;
+                  browserConnecting.delete(work);
+                });
+                connecting = work;
+                browserConnecting.add(work);
+                return work;
+              },
+            };
+            browserLeases.set(key, lease);
+          }
+          lease.assertCurrent();
+          return { lease, assertCurrent: assertAccess };
+        },
+      });
+      browserInstalled = true;
+    },
     createCodexWorkspaceHooks({ hostId }: { hostId: string }): CodexWorkspaceHooks {
       check(hostId);
       return createWorkspaceNativeRouting({
@@ -219,12 +346,19 @@ export async function openWorkspaceExecutionService(options: {
         closed = true;
         placement.close();
         admission.close();
+        await Promise.allSettled([...browserConnecting]);
+        const browserOutcomes = await Promise.allSettled([...browserPeers].map((peer) => peer.close()));
+        await Promise.allSettled([...browserClosing]);
+        browserPeers.clear();
+        browserLeases.clear();
         const results = await Promise.allSettled(
           [...terminals.values()].map(async (terminal) => (await terminal).close()),
         );
         terminals.clear();
         await ownedAuthority.close();
-        const failures = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+        const failures = [...browserOutcomes, ...results].flatMap((result) =>
+          result.status === "rejected" ? [result.reason] : [],
+        );
         if (failures.length) throw new AggregateError(failures, "Workspace terminal detach unconfirmed");
       })()),
   };
