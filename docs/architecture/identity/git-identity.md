@@ -162,8 +162,10 @@ leases, Actor bindings and membership audit. It opens no replacement identity or
 lease store, runs no migration and creates no second vault writer. The ordinary
 Desktop Assets Worker has no execution resolver and cannot issue these grants.
 
-The private `executionGitGrant` owner method accepts only a Host, original input
-and Thread locator. It derives the canonical `actor:human://…` partition from the
+The private `executionGitGrant` owner method accepts only a Host and Thread with
+exactly one original input or native Turn selector. A Turn selector resolves its
+original input from the existing unique native lease, never the latest message.
+It derives the canonical `actor:human://…` partition from the
 persisted original execution principal, never from JSON account/email/username.
 The existing admission path snapshots the verified Human Actor ID and generation
 alongside that provider principal in the existing submission JSON. A later login
@@ -211,7 +213,8 @@ preparation rather than using the server credential. The current default wiring
 covers **in-process Headless Pi** and independently owned Pi configured with
 `executionContext: "assets"`, using the packaged Git runtime. The trusted adapter
 supplies its actual Node executable for npm-style packages without `bin/node`.
-Native DSH/Codex handoff still needs actual-boundary integration and is not implied
+DSH uses the same port at its native bash/PTY boundaries as described below.
+Native Codex handoff still needs actual-boundary integration and is not implied
 by a saved connection. No deployment or sandbox isolation claim is made.
 
 `tests/identity/assets-execution-git.test.ts` uses a real Human/account and HTTP
@@ -222,12 +225,13 @@ Actor/membership disable-enable cycles, the absent public grant action, retireme
 during preparation and held-provider-IO responsiveness.
 
 
-### Independently owned Pi
+### Independently owned Pi and DSH
 
 The compiled native owner uses the existing private session-capability attachment
 and loopback listener for `/host-git`. Its `host-git` HMAC audience is distinct
 from MCP sessions, native tools and model-visible CLI credentials. The request
-contains no body scope: Server, Thread and original input come from signed Host
+contains no body scope: Server, Thread and exactly one original input or native
+Turn selector come from signed Host
 claims. Gateway maps the installed Server back to its physical Host and repeats
 the same existing Actor/membership and bounded native Turn checks before returning
 only the sealed Git handoff and deployment fingerprint. No credential key, PAT or
@@ -241,7 +245,7 @@ and refuses mismatched successors. Gateway loss fails closed. Recovery permits a
 later explicitly invoked command with retained valid evidence; it never replays
 a running or uncertain Git operation.
 
-New container Pi assembly defaults `OPENCRAFT_EXECUTION_CONTEXT=assets`, selects
+New container Pi/DSH assembly defaults `OPENCRAFT_EXECUTION_CONTEXT=assets`, selects
 `executionContext: "assets"` and its
 packaged Git Worker, so that owner does not open `ExecutionEnvironmentRuntime` or
 create another writable vault. An absent mode retains historical legacy product
@@ -249,10 +253,34 @@ configuration; `OPENCRAFT_EXECUTION_CONTEXT=legacy` explicitly retains that exis
 product ENV/Git owner instead. This selects assembly, not an authorization fallback
 or an automatic credential-partition migration.
 There is no runtime sniffing, fallback between modes or shared second writer in
-Assets-mode Pi. This is a trusted same-machine, same-UID attachment, not a remote
-network credential protocol or hostile-process isolation. DSH and native Codex
-still need their own actual-boundary integration before the complete deployment
+Assets-mode Pi or DSH. This is a trusted same-machine, same-UID attachment, not a remote
+network credential protocol or hostile-process isolation. Native Codex
+still needs its own actual-boundary integration before the complete deployment
 can be described as using the single native Assets authority throughout.
+
+DSH's existing generation resolver projects the exact live Agent's open native
+Turn to its public `dsh-turn-<thread>-<turn>` alias. It never takes a later steer,
+queue message or model-selected input as the credential owner. Preparation checks
+the registered Agent reference and native generation before and after awaiting
+the Server; cancelled/replaced executions cannot publish an environment. The
+pinned SDK patch awaits this port in the existing async bash tool and terminal
+backend before foreground, background-job or PTY allocation. Its synchronous
+`shellEnv` contributors remain synchronous. The SDK's approval, sandbox,
+subprocess, job and terminal owners are unchanged; packaging refuses SDK drift
+and includes this transformation in the runtime cache key.
+
+A background process or persistent PTY retains its creation-Turn provenance;
+it cannot adopt a later sender's credentials. Git operations fail closed when
+that Turn ends or its admission is revoked. For Git in a later Turn, create a
+new terminal under that Turn. Automatic credential rebinding of a persistent
+shell is **not implemented** and must not be inferred from terminal reuse.
+
+For installed-runtime verification, set `OPENCRAFT_DSH_RUNTIME` to a read-only
+installation matching `runtime/dsh/package.json` and run
+`npm run test:git-identity`. Tests transform isolated SDK entry copies, exercise
+native foreground/background/PTY paths with a synthetic provider and the real
+Assets Worker, and verify SSH signatures and cancellation. They do not modify
+the reference installation or call a real GitHub account.
 
 
 An explicitly configured anonymous installation answers with a separate

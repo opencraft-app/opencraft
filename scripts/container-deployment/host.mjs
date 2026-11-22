@@ -75,6 +75,7 @@ try {
     fileSystemOwner: {endpoint:paths.fileSystemEndpoint,tokenFile:paths.fileSystemToken},
   }) + '\n', { mode: 0o600 });
   await writeFile(paths.dshConfig, JSON.stringify({
+    executionContext:paths.executionContext,
     fileSystemOwner: {endpoint:paths.fileSystemEndpoint,tokenFile:paths.fileSystemToken},
     artifactDirectory: join(paths.dataDirectory,"artifacts"),
     descriptorPath: paths.dshDescriptor, dataDirectory: join(paths.dataDirectory, 'agent'),

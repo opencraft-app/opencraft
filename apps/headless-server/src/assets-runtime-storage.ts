@@ -18,7 +18,7 @@ export function createHeadlessAssetsStorage(directory: string, providers?: reado
           account: current.account,
           hostId: input.hostId,
           threadId: input.threadId,
-          inputId: input.inputId,
+          inputId: current.inputId,
           executionId: current.executionId,
           leaseGeneration: current.generation,
           actorGeneration: current.actorGeneration,

@@ -9,7 +9,7 @@ import { SessionCapabilities, type CapabilitySession, type CapabilityTool } from
 import { capabilityResultToMcp } from "./content.js";
 
 export { capabilitySigningKey, sessionCapabilityToken } from "./credentials.js";
-import { sessionCapabilityToken,executionCliSourceSession } from "./credentials.js";
+import { sessionCapabilityToken,executionCliSourceSession,parseHostGitSource } from "./credentials.js";
 interface McpClientSession {
   credential: string; server: Server; transport: StreamableHTTPServerTransport;
   authenticate(request: IncomingMessage): void; touched: number; active: number;
@@ -71,8 +71,8 @@ export class SessionCapabilityMcp {
       const pair = JSON.parse(Buffer.from(parts[0]!, "base64url").toString());
       if (!Array.isArray(pair)) return null;
       if(pair[0]==='host-git') {
-        if(request.url!=='/host-git'||pair.length!==4||pair.slice(1).some(v=>typeof v!=='string'||!v||v.length>512||/[\x00-\x1f\x7f]/u.test(v)))return null;
-        return {session:Object.freeze({serverId:pair[1],threadId:pair[2],execution:Object.freeze({inputId:pair[3]})})};
+        if(request.url!=='/host-git'||pair.length!==4||pair.slice(1,3).some(v=>typeof v!=='string'||!v||v.length>512||/[\x00-\x1f\x7f]/u.test(v)))return null;
+        return {session:Object.freeze({serverId:pair[1],threadId:pair[2],execution:parseHostGitSource(pair[3])})};
       }
       if(request.url==='/host-git')return null;
       const cliRoute=request.url==='/thread-cli'||request.url==='/execution-admission';

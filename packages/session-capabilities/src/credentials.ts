@@ -56,11 +56,19 @@ export function executionCliSourceSession(key:Buffer,token:string):CapabilitySes
   return {serverId:claims[1],threadId:claims[2],execution:claims[3]};
 }
 
+
+export type HostGitSource = {readonly inputId:string;readonly turnId?:never}|{readonly turnId:string;readonly inputId?:never};
+export function parseHostGitSource(value:unknown):HostGitSource {
+ if(!value||typeof value!=='object'||Array.isArray(value))throw Error('git_execution_unavailable');
+ const keys=Object.keys(value),source=value as Record<string,unknown>;
+ if(keys.length!==1||!['inputId','turnId'].includes(keys[0]!))throw Error('git_execution_unavailable');
+ const id=source[keys[0]!];if(typeof id!=='string'||!id||id.length>512||/[\x00-\x1f\x7f]/u.test(id))throw Error('git_execution_unavailable');
+ return Object.freeze(keys[0]==='inputId'?{inputId:id}:{turnId:id});
+}
 /** Same-UID compiled Host handoff, not an MCP or model CLI audience. The Server
- * still derives identity and verifies the original live native input. */
-export function hostGitToken(key: Buffer, source: {serverId:string;threadId:string;inputId:string}):string {
-  const fields=[source.serverId,source.threadId,source.inputId];
-  if(key.length!==32||fields.some(v=>typeof v!=='string'||!v||v.length>512||/[\x00-\x1f\x7f]/u.test(v)))throw Error('git_execution_unavailable');
-  const payload=Buffer.from(JSON.stringify(['host-git',...fields])).toString('base64url');
-  return payload+'.'+createHmac('sha256',key).update(payload).digest('base64url');
+ * still derives identity and verifies the exact live native execution. */
+export function hostGitToken(key: Buffer, source: {serverId:string;threadId:string;source:HostGitSource}):string {
+ if(key.length!==32||[source.serverId,source.threadId].some(v=>typeof v!=='string'||!v||v.length>512||/[\x00-\x1f\x7f]/u.test(v)))throw Error('git_execution_unavailable');
+ const payload=Buffer.from(JSON.stringify(['host-git',source.serverId,source.threadId,parseHostGitSource(source.source)])).toString('base64url');
+ return payload+'.'+createHmac('sha256',key).update(payload).digest('base64url');
 }

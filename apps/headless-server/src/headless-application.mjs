@@ -523,7 +523,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       assetsService = await openHumanAssets({ directory: dataDirectory, auth: humanAuth, actors: actorStore, access: instanceAccess,openStorage:openHeadlessAssetsStorage });
       if(!assetsService.gitAuthority)throw Error('Assets execution authority unavailable');
       humanGitExecution=createHumanGitExecution({directory:dataDirectory,
-        runtimeDirectory:join(dataDirectory,'git-runtime'),workerFile:join(options.runtimeDirectory??join(root,'runtime'),'personal-git-worker.mjs'),
+        runtimeDirectory:join(dataDirectory,'git-runtime'),workerFile:options.gitWorkerFile??fileURLToPath(new URL('./personal-git-worker.mjs',import.meta.url)),
         hosts:assetsService.gitHosts,authority:assetsService.gitAuthority,grant:assetsService.executionGitGrant,
         authorize:scope=>{
           const actorId=scope.account.slice('actor:'.length),actor=actorStore.get(actorId);
@@ -703,13 +703,13 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       descriptorPath:join(dataDirectory,'session-capabilities.json'), retainEndpoint: true,
       cliDirectory:options.threadCliDirectory ?? join(dataDirectory,'thread-cli'),
       hostGit:async session=>{
-        if(session.serverId!==conversationExecution.serverForThread(session.threadId)
-          ||conversationExecution.hostForServer(session.serverId)!=='opencraft-server'||!session.execution?.inputId)
+        if(session.serverId!==conversationExecution.serverForHost('opencraft-server',session.threadId)
+          ||conversationExecution.hostForServer(session.serverId)!=='opencraft-server'||(!session.execution?.inputId&&!session.execution?.turnId))
           throw Error('git_execution_unavailable');
         // Only explicit installation-level anonymous mode can run without a
         // personal authority. Missing login/observer/issuer is never fallback.
         if(!humanGitExecution){if(anonymousDeployment)return {mode:'anonymous'};throw Error('git_execution_unavailable');}
-        const grant=await humanGitExecution.handoff({hostId:'opencraft-server',threadId:session.threadId,inputId:session.execution.inputId});
+        const grant=await humanGitExecution.handoff({hostId:'opencraft-server',threadId:session.threadId,...(session.execution.inputId?{inputId:session.execution.inputId}:{turnId:session.execution.turnId})});
         return {authority:assetsService.gitAuthority,hosts:assetsService.gitHosts,grant};
       },
       authorizeExecution:async session=>{
@@ -755,6 +755,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       speechModelManagement: true,
       projectStorageDirectory: join(dataDirectory, "projects"),
       environmentDataDirectory: identity?.executionEnvironment ? dataDirectory : undefined,
+      executionContext:identity?.executionEnvironment?'legacy':'assets',
+      gitExecution:identity?.executionEnvironment?undefined:{directory:dataDirectory,machineId:machineIdentity.machineId,
+        workerFile:options.gitWorkerFile??fileURLToPath(new URL('./personal-git-worker.mjs',import.meta.url))},
       projectlessWorkspaceDirectory: join(dataDirectory, "workspaces"),
       skillsDirectory: join(dataDirectory, "skills"),
       taskSkillDirectories: [join(dataDirectory, "codex/runtime/skills")],

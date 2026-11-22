@@ -1,7 +1,7 @@
 import test from "node:test";
 import { request as httpRequest } from "node:http";
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { SessionCapabilities } from "../../packages/session-capabilities/src/index.js";
 import { SessionCapabilityMcp } from "../../packages/session-capabilities/src/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -281,14 +281,14 @@ test('MCP failures correlate their safe phase without logging arguments or excep
 
 test('native Host Git uses its own audience and accepts no browser-selected scope',async t=>{
  const {hostGitToken,sessionCapabilityToken,nativeToolCapabilityToken,executionCliSourceToken}=await import('../../packages/session-capabilities/src/credentials.js');
- const key=randomBytes(32),source={serverId:'server:fixture:pi',threadId:'pi_original',inputId:'original'};
+ const key=randomBytes(32),source={serverId:'server:fixture:pi',threadId:'pi_original',source:{inputId:'original'}};
  let calls=0;
  const gateway=new SessionCapabilityMcp(new SessionCapabilities(),key,undefined,{hostGit:async session=>{
-  calls++;if(session.serverId!==source.serverId||session.threadId!==source.threadId||session.execution?.inputId!==source.inputId)throw Error('denied');
+  calls++;if(session.serverId!==source.serverId||session.threadId!==source.threadId||session.execution?.inputId!==source.source.inputId)throw Error('denied');
   return {opaque:'synthetic-handoff'};
  }});await gateway.listen();t.after(()=>gateway.close());
  const url=new URL('/host-git',gateway.cliEndpoint);
- const session={serverId:source.serverId,threadId:source.threadId,execution:{inputId:source.inputId,executionId:'native',callId:'tool'}};
+ const session={serverId:source.serverId,threadId:source.threadId,execution:{inputId:source.source.inputId,executionId:'native',callId:'tool'}};
  const request=(token:string,body:unknown={},origin?:string)=>fetch(url,{method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json',...(origin?{origin}:{})},body:JSON.stringify(body)});
  for(const token of [sessionCapabilityToken(key,session),nativeToolCapabilityToken(key,session),executionCliSourceToken(key,session)])
   assert.equal((await request(token)).status,401);
@@ -297,7 +297,29 @@ test('native Host Git uses its own audience and accepts no browser-selected scop
  assert.deepEqual(await (await request(token)).json(),{opaque:'synthetic-handoff'});
  assert.equal((await request(token,{account:'actor:human://forged/owner'})).status,400);
  assert.equal((await request(token,{},'https://untrusted.example')).status,403);
- assert.equal((await request(hostGitToken(key,{...source,inputId:'other'}))).status,403);
+ assert.equal((await request(hostGitToken(key,{...source,source:{inputId:'other'}}))).status,403);
  assert.equal((await request(hostGitToken(key,{...source,serverId:'server:other:pi'}))).status,403);
  assert.equal((await fetch(new URL('/mcp',url),{method:'POST',headers:{authorization:'Bearer '+token},body:'{}'})).status,401);
+});
+
+test('native Host Git Turn audience is exact and mixed/forged selectors cannot dispatch', async t => {
+  const {hostGitToken, parseHostGitSource} = await import('../../packages/session-capabilities/src/credentials.js');
+  const key = randomBytes(32), seen: unknown[] = [];
+  const gateway = new SessionCapabilityMcp(new SessionCapabilities(), key, undefined, {hostGit: async session => {
+    seen.push(session.execution); return {opaque: 'sealed'};
+  }});
+  await gateway.listen(); t.after(() => gateway.close());
+  const request = (token: string) => fetch(new URL('/host-git', gateway.cliEndpoint), {method: 'POST',
+    headers: {authorization: 'Bearer ' + token, 'content-type': 'application/json'}, body: '{}'});
+  const source = {serverId: 'server:fixture:dsh', threadId: 'public', source: {turnId: 'dsh-turn-public-7'}};
+  assert.equal((await request(hostGitToken(key, source))).status, 200);
+  assert.deepEqual(seen, [{turnId: source.source.turnId}]);
+  for (const invalid of [{}, {inputId: 'input', turnId: 'turn'}, {turnId: ''}, {turnId: 'bad\nturn'},
+    {turnId: 'turn', account: 'forged'}, {executionId: 'forged'}]) {
+    assert.throws(() => parseHostGitSource(invalid));
+    const payload = Buffer.from(JSON.stringify(['host-git', source.serverId, source.threadId, invalid])).toString('base64url');
+    const token = payload + '.' + createHmac('sha256', key).update(payload).digest('base64url');
+    assert.equal((await request(token)).status, 401);
+  }
+  assert.equal(seen.length, 1);
 });

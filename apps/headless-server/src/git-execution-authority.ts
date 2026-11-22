@@ -27,6 +27,7 @@ export class GitExecutionAuthority {
     generation: number;
     actorGeneration?: number;
     membershipRevision?: number;
+    inputId: string;
     executionId: string;
     turnId: string;
     incarnation: string;
@@ -49,13 +50,15 @@ export class GitExecutionAuthority {
         db.exec("PRAGMA query_only=ON; PRAGMA busy_timeout=1000");
         this.leaseStores.set(path, db);
       }
-      const row = db
+      const rows = db
         .prepare(
-          `SELECT s.principal_json,s.ownership,s.admission,l.state,l.turn_id,l.engine_incarnation,l.generation,l.execution_id
+          `SELECT s.principal_json,s.ownership,s.admission,l.state,l.turn_id,l.engine_incarnation,l.generation,l.execution_id,l.input_id
       FROM execution_leases l JOIN execution_submissions s ON s.thread_id=l.thread_id AND s.input_id=l.input_id
-      WHERE l.thread_id=? AND ${scope.inputId ? "l.input_id=?" : "l.turn_id=?"} ${scope.executionId ? "AND l.execution_id=?" : ""} ORDER BY l.generation DESC LIMIT 1`,
+      WHERE l.thread_id=? AND ${scope.inputId ? "l.input_id=?" : "l.turn_id=?"} ${scope.executionId ? "AND l.execution_id=?" : ""} ORDER BY l.generation DESC LIMIT 2`,
         )
-        .get(...[scope.threadId, scope.inputId ?? scope.turnId!, ...(scope.executionId ? [scope.executionId] : [])]);
+        .all(...[scope.threadId, scope.inputId ?? scope.turnId!, ...(scope.executionId ? [scope.executionId] : [])]);
+      if (!scope.inputId && rows.length !== 1) return null;
+      const row = rows[0];
       if (
         !row ||
         row.ownership !== "human" ||
@@ -112,6 +115,7 @@ export class GitExecutionAuthority {
         ...actorEpoch,
         account: this.accountMode === "actor" ? `actor:${actor.id}` : `${principal.provider}:${principal.subject}`,
         principal,
+        inputId: String(row.input_id),
         executionId: String(row.execution_id),
         turnId: String(row.turn_id),
         incarnation: String(row.engine_incarnation),
@@ -125,7 +129,7 @@ export class GitExecutionAuthority {
 
   unowned(scope: GitExecutionQuery): boolean {
     if (this.closed) throw Error("git_authority_store_unavailable");
-    if (!scope.threadId || !scope.inputId || !["local-codex", "opencraft-server"].includes(scope.hostId)) return false;
+    if (!scope.threadId || (!scope.inputId && !scope.turnId) || !["local-codex", "opencraft-server"].includes(scope.hostId)) return false;
     const path =
       scope.hostId === "local-codex"
         ? ownedDatabasePath(join(this.directory, "codex"), "opencraft-host-state.sqlite", "codex-host-queue.sqlite")
@@ -136,11 +140,13 @@ export class GitExecutionAuthority {
       db.exec("PRAGMA query_only=ON; PRAGMA busy_timeout=1000");
       this.leaseStores.set(path, db);
     }
-    const row = db
+    const rows = db
       .prepare(
-        `SELECT s.ownership,s.admission,l.state,l.turn_id,l.engine_incarnation FROM execution_leases l JOIN execution_submissions s ON s.thread_id=l.thread_id AND s.input_id=l.input_id WHERE l.thread_id=? AND l.input_id=? ORDER BY l.generation DESC LIMIT 1`,
+        `SELECT s.ownership,s.admission,l.state,l.turn_id,l.engine_incarnation FROM execution_leases l JOIN execution_submissions s ON s.thread_id=l.thread_id AND s.input_id=l.input_id WHERE l.thread_id=? AND ${scope.inputId ? "l.input_id=?" : "l.turn_id=?"} ORDER BY l.generation DESC LIMIT 2`,
       )
-      .get(scope.threadId, scope.inputId);
+      .all(scope.threadId, scope.inputId ?? scope.turnId!);
+    if (!scope.inputId && rows.length !== 1) return false;
+    const row = rows[0];
     return (
       !!row &&
       row.ownership === "unowned" &&

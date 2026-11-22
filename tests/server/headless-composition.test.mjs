@@ -274,5 +274,5 @@ test('an explicitly anonymous native installation declares no personal Git autho
  const app=await startHeadlessServer({...f.options,engines:['pi'],defaultEngine:'pi'});t.after(()=>app.close());
  const machineId=(await readFile(join(f.options.dataDirectory,'machine-id'),'utf8')).trim();
  const remote=new RemoteSessionCapabilities(f.options.dataDirectory,`server:${machineId}:pi`);
- assert.deepEqual(await remote.hostGit('pi_synthetic','unowned-input'),{mode:'anonymous'});
+ assert.deepEqual(await remote.hostGit('pi_synthetic',{inputId:'unowned-input'}),{mode:'anonymous'});
 });

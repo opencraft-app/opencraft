@@ -66,7 +66,8 @@ export function createAssetsStorage(
               !scope.account.startsWith("actor:human://") ||
               scope.hostId !== input.hostId ||
               scope.threadId !== input.threadId ||
-              scope.inputId !== input.inputId
+              (input.inputId !== undefined && scope.inputId !== input.inputId) ||
+              (input.turnId !== undefined && admission!.native.turnId !== input.turnId)
             )
               throw new SandboxConfigurationError("execution_unavailable", 503);
             const current = execution.resolve(input);
