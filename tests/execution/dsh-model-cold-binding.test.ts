@@ -5,9 +5,10 @@ import {mkdtemp,rm,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {ModelConfigurationService} from '../../apps/local-agent-host/src/model-config/service.ts';
 import {ModelConfigurationRepository,ModelCredentialRepository} from '../../apps/local-agent-host/src/model-config/repository.ts';
+import { documentSecretStore } from "@opencraft/secret-storage/documents";
 test('cold configuration proof rejects out-of-band document or credential changes',async t=>{
  const root=await mkdtemp('/tmp/dsh-model-binding-');t.after(()=>rm(root,{recursive:true,force:true}));
- const repository=new ModelConfigurationRepository(fileStateDocumentStore(root)),credentials=new ModelCredentialRepository(root);
+ const repository=new ModelConfigurationRepository(fileStateDocumentStore(root)),credentials=new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(root)));
  await repository.initialize();let applied=0;
  const service=new ModelConfigurationService(repository,credentials,{apply:async()=>{applied++;}});
  await service.synchronize();assert.equal(await service.appliedStateCurrent(),true);

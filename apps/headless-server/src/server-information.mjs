@@ -1,8 +1,5 @@
-import { readFile, mkdir, open, rename, unlink } from 'node:fs/promises';
-import { dirname } from 'node:path';
-import { randomUUID } from 'node:crypto';
-import lockfile from 'proper-lockfile';
-
+/** Document key; the Node composition keeps it as `server-information.json` in the data directory. */
+export const SERVER_INFORMATION_DOCUMENT = 'server-information.json';
 export const SERVER_INFORMATION_PATH = '/__opencraft_server_information';
 /** A link destination, never an authentication origin, proxy route or fetch target. */
 export function normalizePublicEntry(value) {
@@ -18,39 +15,47 @@ export function normalizePublicEntry(value) {
   return url.origin + url.pathname.replace(/\/+$/u, '');
 }
 
-/** One independently persisted server setting, not a per-browser subscription preference. */
+const unavailable = () => Error('server_information_unavailable');
+function parseStored(value) {
+  if (value === null) return { revision: 0, publicUrl: '' };
+  if (value?.schemaVersion !== 1 || !Number.isSafeInteger(value.revision) || value.revision < 1
+    || typeof value.updatedBy !== 'string' || !Number.isSafeInteger(value.updatedAt)) throw unavailable();
+  try { return { revision: value.revision, publicUrl: normalizePublicEntry(value.publicUrl) }; }
+  catch { throw unavailable(); }
+}
+
+/**
+ * One independently persisted server setting, not a per-browser subscription preference.
+ * `documents` is a StateDocumentStore (`@opencraft/document-storage/state`); it
+ * serializes updates and commits atomically, the revision fence stays here.
+ */
 export class ServerInformationStore {
-  constructor(path) { this.path = path; }
+  /** @param {import('@opencraft/document-storage/state').StateDocumentStore} documents */
+  constructor(documents) { this.documents = documents; }
   async read() {
     let value;
-    try { value = JSON.parse(await readFile(this.path, 'utf8')); }
-    catch (error) { if (error.code === 'ENOENT') return { revision: 0, publicUrl: '' }; throw Error('server_information_unavailable'); }
-    if (value?.schemaVersion !== 1 || !Number.isSafeInteger(value.revision) || value.revision < 1
-      || typeof value.updatedBy !== 'string' || !Number.isSafeInteger(value.updatedAt)) throw Error('server_information_unavailable');
-    try { return { revision: value.revision, publicUrl: normalizePublicEntry(value.publicUrl) }; }
-    catch { throw Error('server_information_unavailable'); }
+    try { value = await this.documents.read(SERVER_INFORMATION_DOCUMENT); } catch { throw unavailable(); }
+    return parseStored(value);
   }
   async write(revision, publicUrl, actorId, assertCurrent) {
     const normalized = normalizePublicEntry(publicUrl);
     if (!Number.isSafeInteger(revision) || revision < 0 || typeof actorId !== 'string' || !actorId) throw Error('invalid_server_information');
-    await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
-    let release;
-    try { release = await lockfile.lock(this.path, { realpath: false, retries: 0 }); }
-    catch (error) { if (error.code === 'ELOCKED') throw Error('revision_conflict'); throw Error('server_information_unavailable'); }
-    const temporary = this.path + '.' + randomUUID() + '.tmp';
+    let rejected;
     try {
-      const previous = await this.read();
-      if (previous.revision !== revision) throw Error('revision_conflict');
-      const next = { schemaVersion: 1, revision: revision + 1, publicUrl: normalized, updatedBy: actorId, updatedAt: Date.now() };
-      const file = await open(temporary, 'wx', 0o600);
-      try { await file.writeFile(JSON.stringify(next) + '\n'); await file.sync(); } finally { await file.close(); }
-      // Recheck after lock and filesystem awaits, immediately before the commit boundary.
-      assertCurrent();
-      await rename(temporary, this.path);
-      const directory = await open(dirname(this.path), 'r');
-      try { await directory.sync(); } finally { await directory.close(); }
-      return { revision: next.revision, publicUrl: normalized };
-    } finally { try { await unlink(temporary).catch(error => { if (error.code !== 'ENOENT') throw error; }); } finally { await release(); } }
+      return await this.documents.update(SERVER_INFORMATION_DOCUMENT, current => {
+        try {
+          const previous = parseStored(current);
+          if (previous.revision !== revision) throw Error('revision_conflict');
+          // Recheck under the document lock, immediately before the commit boundary.
+          assertCurrent();
+          const next = { schemaVersion: 1, revision: revision + 1, publicUrl: normalized, updatedBy: actorId, updatedAt: Date.now() };
+          return { result: { revision: next.revision, publicUrl: normalized }, next };
+        } catch (error) { rejected = error; throw error; }
+      });
+    } catch (error) {
+      if (rejected !== undefined && error === rejected) throw error;
+      throw unavailable();
+    }
   }
 }
 

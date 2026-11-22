@@ -27,6 +27,7 @@ import { THREAD_ORCHESTRATION_TOOLS } from "../../packages/appserver-protocol/sr
 import { SessionCapabilities } from "../../packages/session-capabilities/src/index.js";
 import { RemoteSessionCapabilities } from "../../packages/session-capabilities/src/remote.js";
 import { capabilitySigningKey, SessionCapabilityMcp } from "../../packages/session-capabilities/src/mcp.js";
+import { fileKeyMaterial } from "@opencraft/secret-storage/file";
 
 const [kind, path] = process.argv.slice(2), config = JSON.parse(await readFile(path!, "utf8"));
 const root = config.root, shared = join(root, "shared"), machineId = "synthetic-mixed-drivers";
@@ -101,7 +102,7 @@ if (kind === "pi" || kind === "dsh-acp") {
   service = new Collaboration(join(shared, "collaboration.sqlite"), actors, native);
   const execution = createThreadOrchestrationExecution(() => appHost, { enabled: ["codex", "pi", "dsh-acp"], prepared: (id: string) => service.spawnPreparation(id) });
   broker = new ThreadOrchestrationBroker(service, execution); service.start();
-  const mcp = new SessionCapabilityMcp(new SessionCapabilities(), await capabilitySigningKey(join(shared, "session-capabilities.key")), undefined, { descriptorPath: join(shared, "session-capabilities.json"),
+  const mcp = new SessionCapabilityMcp(new SessionCapabilities(), await capabilitySigningKey(fileKeyMaterial(shared)), undefined, { descriptorPath: join(shared, "session-capabilities.json"),
     async orchestration(session, request) {
       // Same envelope validation/binding as headless-application.mjs. The real
       // production MCP server authenticates this synthetic native session.

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { constants } from "node:fs";
 import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import lockfile from "proper-lockfile";
@@ -31,12 +32,42 @@ function serialize<T>(file: string, run: () => Promise<T>): Promise<T> {
  * `lockfilePath` relocates the proper-lockfile lock (default `<file>.lock`)
  * for owners whose `<file>.lock` already holds another fence.
  */
-export function fileStateDocumentStore(directory: string, options: { lockfilePath?(file: string): string } = {}): StateDocumentStore {
+export interface FileStateDocumentOptions {
+  lockfilePath?(file: string): string;
+  /**
+   * Documents hold secrets: reads open the file without following a symlink
+   * and verify the same handle is a regular file of at most `maxBytes`, owned
+   * by this user with no group or other permission bits (owner and mode are
+   * not checked on Windows). Writes are always 0600.
+   */
+  private?: { readonly maxBytes: number };
+}
+
+export class StateDocumentNotPrivateError extends Error {
+  constructor() {
+    super("State document is not a private file");
+    this.name = "StateDocumentNotPrivateError";
+  }
+}
+
+async function readPrivate(file: string, maxBytes: number): Promise<string> {
+  const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const info = await handle.stat();
+    const foreign = process.platform !== "win32" && ((info.mode & 0o077) !== 0 || (process.getuid !== undefined && info.uid !== process.getuid()));
+    if (!info.isFile() || info.size > maxBytes || foreign) throw new StateDocumentNotPrivateError();
+    return await handle.readFile("utf8");
+  } finally {
+    await handle.close();
+  }
+}
+
+export function fileStateDocumentStore(directory: string, options: FileStateDocumentOptions = {}): StateDocumentStore {
   const path = (key: string) => (validateStateKey(key), join(directory, key));
   const load = async (key: string): Promise<unknown | null> => {
     let text: string;
     try {
-      text = await readFile(path(key), "utf8");
+      text = options.private ? await readPrivate(path(key), options.private.maxBytes) : await readFile(path(key), "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;

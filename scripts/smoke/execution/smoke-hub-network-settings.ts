@@ -6,8 +6,7 @@ import { once } from 'node:events';
 import { generateKeyPairSync } from 'node:crypto';
 import { createServer } from 'vite';
 import { chromium } from '@playwright/test';
-import { HubNetwork } from "../../../packages/hub-network/src/node";
-import { HubStore } from '../../../packages/hub-network/src/store-file.js';
+import { openLocalHubNetwork } from '../../../packages/hub-network/src/store-file.js';
 import { createHubController } from "../../../packages/hub-network/src/controller";
 
 const output = resolve(process.env.OPENCRAFT_HUB_SMOKE_DIRECTORY ?? '.local/hub-network-settings'); await mkdir(output, { recursive: true });
@@ -15,11 +14,11 @@ const directory = await mkdtemp(join(output, 'private-')), cleanups: (() => unkn
 let operator: string | null = '["fixture","administrator"]', failReads = false;
 try {
   const controller = await createHubController(join(directory, 'controller.json'), join(directory, 'node.json')); cleanups.push(() => controller.close());
-  const pair = generateKeyPairSync('ed25519'), other = new HubNetwork(new HubStore(join(directory, 'other.json')), { authority: { issuer: 'fixture-login', publicKey: pair.publicKey.export({ format: 'pem', type: 'spki' }).toString(), providers: ['enterprise-identity'] } }); cleanups.push(() => other.close());
+  const pair = generateKeyPairSync('ed25519'), other = await openLocalHubNetwork(join(directory, 'other.json'), { authority: { issuer: 'fixture-login', publicKey: pair.publicKey.export({ format: 'pem', type: 'spki' }).toString(), providers: ['enterprise-identity'] } }); cleanups.push(() => other.close());
   const peer = createHttpServer((_req, res) => { res.writeHead(404); res.end(); }); peer.on('upgrade', (req, socket, head) => { if (!other.handleUpgrade(req, socket, head)) socket.destroy(); });
   peer.listen(0, '127.0.0.1'); await once(peer, 'listening'); const peerPort = (peer.address() as { port: number }).port; other.start(peerPort);
   cleanups.unshift(() => new Promise<void>(r => { peer.close(() => r()); peer.closeAllConnections(); }));
-  other.command({ revision: other.store.state.revision, action: 'configure', name: 'Department fixture', endpoint: `http://127.0.0.1:${peerPort}`, origin: '', accepting: true, forwarding: true }, 'fixture');
+  await other.apply({ revision: other.store.state.revision, action: 'configure', name: 'Department fixture', endpoint: `http://127.0.0.1:${peerPort}`, origin: '', accepting: true, forwarding: true }, 'fixture');
   const source = `import React from 'react';
 import {createIntlTestRoot} from '/tests/fixtures/intl-root.tsx';
 import {createWebWorkbenchApplication,WorkbenchRoot} from '/apps/workbench-web/src/workbench-root.tsx';

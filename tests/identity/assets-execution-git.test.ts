@@ -1,4 +1,5 @@
 import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
+import { fileKeyMaterial } from "@opencraft/secret-storage/file";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
@@ -594,7 +595,7 @@ async function remoteExecution(t:test.TestContext,f:Awaited<ReturnType<typeof fi
  const {RemoteSessionCapabilities}=await import('@opencraft/session-capabilities/remote');
  const {createRemoteHumanGitExecution}=await import('../../apps/headless-server/src/remote-human-git-execution.js');
  const directory=join(f.root,'data'),descriptorPath=join(directory,'session-capabilities.json');
- const key=await capabilitySigningKey(join(directory,'session-capabilities.key'));
+ const key=await capabilitySigningKey(fileKeyMaterial(directory));
  let forcedReply:unknown;
  const open=async()=>{
   const gateway=new SessionCapabilityMcp(new SessionCapabilities(),key,undefined,{descriptorPath,retainEndpoint:true,hostGit:async session=>{
@@ -665,7 +666,7 @@ test('real independent Pi owner consumes the Server handoff at its bash boundary
  const issuer=createHumanGitExecution({directory,runtimeDirectory:join(f.root,'unused-gateway-broker'),workerFile:join(f.root,'runtime/personal-git-worker.mjs'),hosts:f.assets.gitHosts,authority:f.assets.gitAuthority!,grant:f.assets.executionGitGrant,authorize:f.authorize,
   inspect:async handoff=>handoff.native.incarnation===f.native.incarnation&&await inspect({threadId:handoff.scope.threadId,turnId:handoff.native.turnId,engineIncarnation:handoff.native.incarnation} as any)==='active'});
  f.defer(()=>issuer.close());
- const key=await capabilitySigningKey(join(directory,'session-capabilities.key'));
+ const key=await capabilitySigningKey(fileKeyMaterial(directory));
  const gateway=new SessionCapabilityMcp(new SessionCapabilities(),key,undefined,{descriptorPath:join(directory,'session-capabilities.json'),hostGit:async session=>{
   if(session.serverId!==`server:${descriptor.machineId}:pi`||!session.execution?.inputId)throw Error('denied');
   return {authority:f.assets.gitAuthority,hosts:f.assets.gitHosts,grant:await issuer.handoff({hostId:'opencraft-server',threadId:session.threadId,inputId:session.execution.inputId})};
@@ -713,7 +714,7 @@ test('pinned DSH foreground/background and persistent PTY sign through original 
     inspect: async grant => grant.native.incarnation === f.native.incarnation && grant.native.turnId === turnId && agent.status === 'running'
       && agent.session.events.filter(e => e.type === 'turn/start' || e.type === 'turn/end').at(-1)?.type === 'turn/start',
   }); f.defer(() => issuer.close());
-  const key = await capabilitySigningKey(join(directory, 'session-capabilities.key'));
+  const key = await capabilitySigningKey(fileKeyMaterial(directory));
   const gateway = new SessionCapabilityMcp(new SessionCapabilities(), key, undefined, {
     descriptorPath: join(directory, 'session-capabilities.json'), hostGit: async session => {
       if (session.serverId !== 'server:fixture:dsh' || session.threadId !== threadId || !session.execution) throw Error('denied');
@@ -813,7 +814,7 @@ test('real independent DSH process consumes the compiled Assets handoff without 
       return await inspector.inspect({threadId: grant.scope.threadId, turnId: grant.native.turnId, engineIncarnation: grant.native.incarnation} as any) === 'active';
     },
   }); f.defer(() => issuer.close());
-  const key = await capabilitySigningKey(join(directory, 'session-capabilities.key'));
+  const key = await capabilitySigningKey(fileKeyMaterial(directory));
   const gateway = new SessionCapabilityMcp(new SessionCapabilities(), key, undefined, {descriptorPath: join(directory, 'session-capabilities.json'), hostGit: async session => {
     if (session.serverId !== `server:${machine.machineId}:dsh` || !session.execution) throw Error('denied');
     return {authority: f.assets.gitAuthority, hosts: f.assets.gitHosts, grant: await issuer.handoff({hostId: 'opencraft-server', threadId: session.threadId,

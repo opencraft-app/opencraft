@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import { createServer } from "vite";
 import { startLocalAgentHost } from "../../../apps/local-agent-host/src/main";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "../../../apps/local-agent-host/src/model-config/repository";
+import { documentSecretStore } from "@opencraft/secret-storage/documents";
 
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const dataDirectory = await mkdtemp(resolve(tmpdir(), "opencraft-model-services-"));
@@ -27,7 +28,7 @@ try {
   const endpointPort = (endpoint.address() as { port: number }).port;
   const modelStorageDirectory=resolve(dataDirectory,'product');
   if(modelStorageDirectory){
-    const repository=new ModelConfigurationRepository(fileStateDocumentStore(modelStorageDirectory)),credentials=new ModelCredentialRepository(modelStorageDirectory);
+    const repository=new ModelConfigurationRepository(fileStateDocumentStore(modelStorageDirectory)),credentials=new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(modelStorageDirectory)));
     await credentials.set('TEST_NATIVE_KEY','synthetic-model-key');
     await repository.initialize({schemaVersion:1,revision:0,providers:[{id:'deepseek-official',name:'DeepSeek',catalogId:'deepseek',protocol:'openai-completions',baseUrl:'https://api.deepseek.com',credentialRef:'TEST_NATIVE_KEY',enabled:true,models:[{id:'deepseek-v4-flash',name:'DeepSeek-V4-Flash',enabled:true},{id:'deepseek-v4-pro',name:'DeepSeek-V4-Pro',enabled:true},{id:'deepseek-v4-flash-vision-exp',name:'DeepSeek-V4-Flash-Vision-Exp',enabled:true}]}],defaultModel:{providerId:'deepseek-official',modelId:'deepseek-v4-flash'}});
   }

@@ -6,12 +6,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync, zstdCompressSync, brotliCompressSync } from "node:zlib";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "../../apps/local-agent-host/src/model-config/repository.js";
+import { documentSecretStore } from "@opencraft/secret-storage/documents";
 import { createConfiguredCodexResponses, configuredCodexModelId } from "../../apps/codex-core/src/configured-responses.js";
 import { AccountPoolStore, CodexAccountPoolProxy } from "../../packages/account-pool-host/src/index.js";
 
 test("configured Responses models project into Codex without moving credentials or choosing defaults", async () => {
   const directory = await mkdtemp(join(tmpdir(), "codex-configured-"));
-  const repository = new ModelConfigurationRepository(fileStateDocumentStore(directory)), credentials = new ModelCredentialRepository(directory);
+  const repository = new ModelConfigurationRepository(fileStateDocumentStore(directory)), credentials = new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(directory)));
   const pool = new AccountPoolStore({ databasePath: join(directory, "pool.sqlite"), secretsDirectory: join(directory, "secrets") });
   try {
     await credentials.set("TEST_TOKENHUB", "external-key");
@@ -75,7 +76,7 @@ test("configured Responses models project into Codex without moving credentials 
     assert.equal((await proxy.handle(make("configured/missing/ep"))).status, 404);
     assert.equal(calls, 4);
     assert.deepEqual(await createConfiguredCodexResponses(directory).catalog(), []);
-    assert.match(await readFile(credentials.path, "utf8"), /external-key/);
+    assert.match(await readFile(join(directory, "credentials.json"), "utf8"), /external-key/);
     abort.abort();
     assert.equal((forwardedSignal as AbortSignal | null)?.aborted, true);
   } finally { pool.close(); await rm(directory, { recursive: true, force: true }); }
@@ -131,7 +132,7 @@ test("real loopback HTTP ingress decodes native requests, isolates credentials a
     await new Promise<void>((resolve, reject) => provider.close(error => error ? reject(error) : resolve()));
     await rm(directory, { recursive: true, force: true });
   });
-  const repository = new ModelConfigurationRepository(fileStateDocumentStore(directory)), credentials = new ModelCredentialRepository(directory);
+  const repository = new ModelConfigurationRepository(fileStateDocumentStore(directory)), credentials = new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(directory)));
   await credentials.set("HTTP_TEST_KEY", "http-provider-secret");
   await repository.initialize({ schemaVersion: 1, revision: 0, defaultModel: null, providers: [{
     id: "http", name: "HTTP fixture", protocol: "anthropic-messages", baseUrl: `http://127.0.0.1:${address.port}/v1`,

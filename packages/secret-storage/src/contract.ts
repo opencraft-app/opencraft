@@ -15,7 +15,8 @@ export interface SecretStore {
   delete(name: string): Promise<void>;
   /**
    * An opaque value that changes whenever any secret changes. Readers use it to
-   * detect a concurrent change between related reads; it carries no content.
+   * detect a concurrent change between related reads; it carries no content
+   * and is only comparable within one process.
    */
   stamp(): Promise<string>;
 }
@@ -25,6 +26,14 @@ export interface KeyMaterial {
   ensure(name: string, create: () => Uint8Array): Promise<Uint8Array>;
   /** The existing key, or undefined. Never creates one. */
   read(name: string): Promise<Uint8Array | undefined>;
+}
+
+/** The stored secrets exist but are not in the expected layout. */
+export class SecretStoreCorruptError extends Error {
+  constructor() {
+    super("Secret storage format is invalid");
+    this.name = "SecretStoreCorruptError";
+  }
 }
 
 const NAME = /^[_A-Za-z][_A-Za-z0-9]{0,127}$/u;

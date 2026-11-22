@@ -26,6 +26,7 @@
     "@opencraft/codex-core": "0.1.0",
     "@opencraft/connector-host": "0.1.0",
     "@opencraft/document-storage": "0.1.0",
+    "@opencraft/secret-storage": "0.1.0",
     "@opencraft/execution-environment": "0.1.0",
     "@opencraft/hub-network": "0.1.0",
     "@opencraft/identity-core": "0.1.0",

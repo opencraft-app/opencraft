@@ -1,5 +1,5 @@
 import type { StateDocumentStore } from "@opencraft/document-storage/state";
-import { validateSecretName, validateSecretValue, type SecretStore } from "./contract.js";
+import { SecretStoreCorruptError, validateSecretName, validateSecretValue, type SecretStore } from "./contract.js";
 
 type SecretDocument = { schemaVersion: 1; entries: Record<string, string> };
 
@@ -8,10 +8,14 @@ function parse(value: unknown): SecretDocument {
   const doc = value as { schemaVersion?: unknown; entries?: unknown };
   if (doc.schemaVersion !== 1 || !doc.entries || typeof doc.entries !== "object" || Array.isArray(doc.entries)
     || Object.values(doc.entries).some((entry) => typeof entry !== "string")) {
-    throw new Error("Secret storage format is invalid");
+    throw new SecretStoreCorruptError();
   }
   return { schemaVersion: 1, entries: { ...(doc.entries as Record<string, string>) } };
 }
+
+// Stamps are keyed per process so a stamp never becomes an offline oracle for
+// the secrets it covers; they are comparable only within one process.
+const stampKey = crypto.subtle.generateKey({ name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
 
 /**
  * Secrets as one `{schemaVersion: 1, entries}` state document (the existing
@@ -45,7 +49,7 @@ export function documentSecretStore(documents: StateDocumentStore, key = "creden
     async stamp() {
       const value = await documents.read(key);
       if (value === null) return "absent";
-      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(parse(value).entries)));
+      const digest = await crypto.subtle.sign("HMAC", await stampKey, new TextEncoder().encode(JSON.stringify(parse(value).entries)));
       return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
     },
   };

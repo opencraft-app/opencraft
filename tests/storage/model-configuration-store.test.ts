@@ -5,6 +5,7 @@ import {mkdtemp,readFile,stat,rm,mkdir,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {ModelConfigurationRepository,ModelCredentialRepository} from '../../apps/local-agent-host/src/model-config/repository';
+import { documentSecretStore } from "@opencraft/secret-storage/documents";
 import {ModelConfigurationService} from '../../apps/local-agent-host/src/model-config/service';
 import {DshModelEngineAdapter,fromDshProfile} from '../../apps/local-agent-host/src/model-config/dsh-adapter';
 import type {ConfiguredProvider} from '../../apps/local-agent-host/src/model-config/model-document';
@@ -13,7 +14,7 @@ const provider:ConfiguredProvider={id:'custom-test',name:'Test',protocol:'openai
 
 test('OpenCraft JSON survives a fresh repository and engine replacement without engine fields or secrets',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'opencraft-model-store-'));try{
-  const repo=new ModelConfigurationRepository(fileStateDocumentStore(dir)),credentials=new ModelCredentialRepository(dir);await repo.initialize();await credentials.set('TEST_REF','synthetic-private-value');
+  const repo=new ModelConfigurationRepository(fileStateDocumentStore(dir)),credentials=new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(dir)));await repo.initialize();await credentials.set('TEST_REF','synthetic-private-value');
   const failed=new ModelConfigurationService(repo,credentials,{apply:async()=>{throw Error('engine down')}});
   await failed.update(0,d=>{d.providers.push(provider)});assert.equal(failed.application.state,'failed');
   const text=await readFile(join(dir,'models.json'),'utf8');assert.doesNotMatch(text,/llm-pi-ai|settingsNs|apiKeyEnv|synthetic-private-value/);
@@ -54,7 +55,7 @@ test('invalid or engine-specific JSON does not overwrite the committed document'
 });
 test('an existing enabled provider without models reports an actionable failure without touching DSH',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'opencraft-empty-provider-'));try{
-  const repo=new ModelConfigurationRepository(fileStateDocumentStore(dir)),credentials=new ModelCredentialRepository(dir);
+  const repo=new ModelConfigurationRepository(fileStateDocumentStore(dir)),credentials=new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(dir)));
   await repo.initialize({schemaVersion:1,revision:0,providers:[{...provider,models:[]}],defaultModel:null});
   let calls=0;
   const service=new ModelConfigurationService(repo,credentials,new DshModelEngineAdapter({call:async()=>{calls++;throw Error('DSH should not be called')}} as any));
@@ -69,7 +70,7 @@ test('legacy DSH import is one-way, preserves IDs and leaves secrets out of mode
   const old=join(root,'old'),target=join(root,'product');await mkdir(old);
   const settings='llm-pi-ai:\n  providers:\n    custom-old:\n      displayName: Old connection\n      api: openai-completions\n      baseURL: http://127.0.0.1:1/v1\n      apiKeyEnv: LEGACY_KEY\n      enabled: true\n      models:\n        - id: old-model\n';
   await writeFile(join(old,'settings.yaml'),settings,{mode:0o600});await writeFile(join(old,'.credentials.yaml'),'version: 1\nrefs:\n  LEGACY_KEY: synthetic-legacy-secret\n',{mode:0o600});
-  const repo=new ModelConfigurationRepository(fileStateDocumentStore(target)),credentials=new ModelCredentialRepository(target);
+  const repo=new ModelConfigurationRepository(fileStateDocumentStore(target)),credentials=new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(target)));
   assert.equal((await migrateDshModels(repo,credentials,old,target)).count,1);
   assert.equal(await credentials.resolve('LEGACY_KEY'),'synthetic-legacy-secret');
   assert.equal((await repo.read()).providers[0]?.id,'custom-old');
@@ -98,5 +99,21 @@ test('explicit no-auth persists across restart, excludes keys, and projects with
   await assert.rejects(repo.update(1,d=>{d.providers[0]!.credentialRef='SHARED_KEY'}));
   await assert.rejects(repo.update(1,d=>{d.providers[0]!.protocol='anthropic-messages'}));
   assert.equal((await repo.read()).revision,1);
+ }finally{await rm(dir,{recursive:true,force:true})}
+});
+
+test('credential repository keeps its user-visible messages and existing file layout over the secret store',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'opencraft-credentials-'));try{
+  const credentials=new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(dir)));
+  for(const [ref,value] of [['1BAD','v'],['OK',''],['OK','a\nb']])await assert.rejects(credentials.set(ref,value),/^Error: 凭据格式无效$/);
+  assert.equal(await credentials.resolve('not-a-ref'),undefined);await credentials.remove('not-a-ref');
+  const empty=await credentials.stamp();await credentials.set('KEEP','one');const one=await credentials.stamp();assert.notEqual(one,empty);
+  assert.doesNotMatch(one,/one/);assert.equal(await credentials.stamp(),one);
+  assert.deepEqual(JSON.parse(await readFile(join(dir,'credentials.json'),'utf8')),{schemaVersion:1,entries:{KEEP:'one'}});
+  assert.equal((await stat(join(dir,'credentials.json'))).mode&0o777,0o600);
+  await writeFile(join(dir,'credentials.json'),JSON.stringify({schemaVersion:2,entries:{}}));
+  await assert.rejects(credentials.resolve('KEEP'),/^Error: 凭据存储格式无效$/);await assert.rejects(credentials.set('KEEP','two'),/凭据存储格式无效/);
+  await writeFile(join(dir,'credentials.json'),'{');
+  await assert.rejects(credentials.resolve('KEEP'),/配置 JSON 损坏/);assert.equal(await readFile(join(dir,'credentials.json'),'utf8'),'{');
  }finally{await rm(dir,{recursive:true,force:true})}
 });

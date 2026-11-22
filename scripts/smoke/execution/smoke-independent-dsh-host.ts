@@ -16,6 +16,7 @@ import { startIndependentDshHost } from "../../server-deployment/dsh-host.mjs";
 import { attachDshHost } from "../../../apps/headless-server/src/server-deployment/dsh-host-client.mjs";
 import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "../../../apps/local-agent-host/src/model-config/repository.js";
+import { documentSecretStore } from "@opencraft/secret-storage/documents";
 
 const root = await mkdtemp(join(tmpdir(), 'independent-dsh-'));
 let calls = 0;
@@ -54,7 +55,7 @@ async function until(read: () => Promise<any>, label: string) {
 try {
   await new Promise<void>(accept => endpoint.listen(0, '127.0.0.1', accept));
   const models = join(root, 'models');
-  await new ModelCredentialRepository(models).set('FIXTURE', 'synthetic-key');
+  await new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(models))).set('FIXTURE', 'synthetic-key');
   await new ModelConfigurationRepository(fileStateDocumentStore(models)).initialize({ schemaVersion: 1, revision: 0,
     providers: [{ id: 'fixture', name: 'Fixture', protocol: 'openai-completions',
       baseUrl: `http://127.0.0.1:${(endpoint.address() as any).port}/v1`, credentialRef: 'FIXTURE', enabled: true,

@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "../../apps/local-agent-host/src/model-config/repository";
+import { documentSecretStore } from "@opencraft/secret-storage/documents";
 import { SpeechModelConfiguration, HUNYUAN_SPEECH } from "../../apps/local-agent-host/src/model-config/speech";
 import { migrateSpeechEnvironment } from "../../apps/local-agent-host/src/model-config/migrate-speech";
 import { DshModelConfigurationBridge, DshModelEngineAdapter } from "../../apps/local-agent-host/src/model-config/dsh-adapter";
@@ -21,7 +22,7 @@ import type { DshClient } from "../../apps/local-agent-host/src/dsh-client";
 async function fixture(t: any) {
   const dir = await mkdtemp(join(tmpdir(), "opencraft-speech-models-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const repository = new ModelConfigurationRepository(fileStateDocumentStore(dir)), credentials = new ModelCredentialRepository(dir);
+  const repository = new ModelConfigurationRepository(fileStateDocumentStore(dir)), credentials = new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(dir)));
   const configuration = new SpeechModelConfiguration(repository, credentials);
   await repository.initialize();
   return { dir, repository, credentials, configuration };

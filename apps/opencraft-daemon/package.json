@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@opencraft/worker-owner": "0.1.0",
+    "@opencraft/secret-storage": "0.1.0",
     "@opencraft/plugin-tasks": "0.1.0",
     "@opencraft/account-pool-host": "0.1.0",
     "@opencraft/app-host-server": "0.1.0",

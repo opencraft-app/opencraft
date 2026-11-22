@@ -21,6 +21,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
     "@opencraft/sqlite-node": "0.1.0",
+    "@opencraft/secret-storage": "0.1.0",
     "@opencraft/storage-node": "0.1.0",
     "@opencraft/appserver-protocol": "0.1.0"
   },

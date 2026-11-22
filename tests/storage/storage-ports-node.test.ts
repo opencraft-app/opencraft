@@ -1,5 +1,5 @@
 import { test } from "node:test";
-import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
@@ -36,6 +36,17 @@ test("file secrets and keys are private files", async (t) => {
   await documentSecretStore(fileStateDocumentStore(root)).set("API_KEY", "value");
   await fileKeyMaterial(root).ensure("vault.key", () => new Uint8Array([1, 2, 3]));
   for (const name of ["credentials.json", "vault.key"]) assert.equal((await stat(join(root, name))).mode & 0o777, 0o600, name);
+});
+
+test("file key material refuses shared or symlinked key files", async (t) => {
+  const root = await directory(t), keys = fileKeyMaterial(root);
+  await keys.ensure("shared.key", () => new Uint8Array([1]));
+  await chmod(join(root, "shared.key"), 0o640);
+  await assert.rejects(keys.read("shared.key"), /must be private/);
+  await assert.rejects(keys.ensure("shared.key", () => new Uint8Array([2])), /must be private/);
+  await writeFile(join(root, "target"), "x", { mode: 0o600 });
+  await symlink(join(root, "target"), join(root, "linked.key"));
+  await assert.rejects(keys.read("linked.key"));
 });
 
 test("file blob staging leaves no residue after completion, abort or limit failure", async (t) => {

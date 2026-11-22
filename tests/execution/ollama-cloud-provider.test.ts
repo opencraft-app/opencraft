@@ -7,6 +7,7 @@ import { join } from "node:path";
 
 import { DshModelConfigurationBridge } from "../../apps/local-agent-host/src/model-config/dsh-adapter.js";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "../../apps/local-agent-host/src/model-config/repository.js";
+import { documentSecretStore } from "@opencraft/secret-storage/documents";
 import { ModelConfigurationService } from "../../apps/local-agent-host/src/model-config/service.js";
 import { RuntimeProviderService } from "../../apps/local-agent-host/src/runtime-provider-service.js";
 import { LocalAgentSettingsService, type HostProtocolRequest } from "../../plugins/builtin-agents/src/local-agent-settings-service.js";
@@ -15,7 +16,7 @@ test("Ollama Cloud is offered with a working default connection and persists thr
   const directory = await mkdtemp(join(tmpdir(), "opencraft-ollama-cloud-"));
   try {
     const repository = new ModelConfigurationRepository(fileStateDocumentStore(directory));
-    const credentials = new ModelCredentialRepository(directory);
+    const credentials = new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(directory)));
     let projected = false;
     const dsh = { async call<T>(method: string): Promise<T> {
       if (method === "settings.describe") return { writable: true, hasDocument: true, namespaces: [

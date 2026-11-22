@@ -1,23 +1,17 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { mkdir, open } from "node:fs/promises";
-import { dirname } from "node:path";
+import type { KeyMaterial } from "@opencraft/secret-storage";
 import type { CapabilitySession } from "./index.js";
+
+/** Key name shared by the signing owner and Host attachments in one data directory. */
+export const SESSION_CAPABILITY_KEY = "session-capabilities.key";
 
 /** A stable signing key, never a model-visible global credential. Tokens bind a
  * single server/thread/execution. Domain providers reauthorize independently on each call.
  */
-export async function capabilitySigningKey(path: string): Promise<Buffer> {
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  try {
-    const created = await open(path, "wx", 0o600);
-    try { await created.writeFile(randomBytes(32)); } finally { await created.close(); }
-  } catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
-  const handle = await open(path, "r");
-  try {
-    const [key, info] = [await handle.readFile(), await handle.stat()];
-    if (!info.isFile() || (info.mode & 0o077) || key.length !== 32) throw new Error("Invalid capability signing key");
-    return key;
-  } finally { await handle.close(); }
+export async function capabilitySigningKey(keys: KeyMaterial): Promise<Buffer> {
+  const key = Buffer.from(await keys.ensure(SESSION_CAPABILITY_KEY, () => randomBytes(32)));
+  if (key.length !== 32) throw new Error("Invalid capability signing key");
+  return key;
 }
 export function sessionCapabilityToken(key: Buffer, session: CapabilitySession): string {
   const payload = Buffer.from(JSON.stringify(session.execution ? ["execution", session.serverId, session.threadId, session.execution] : ["session", session.serverId, session.threadId])).toString("base64url");

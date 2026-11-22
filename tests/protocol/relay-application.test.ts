@@ -12,8 +12,7 @@ import { pathToFileURL } from 'node:url';
 import { parseRelayConfiguration, startRelayApplication, type RelayComposition } from '../../apps/relay-server/src/application';
 import { AssertionProvider } from '../../packages/identity-core/src/node';
 import { connectRelay } from '../../plugins/relay-connect/src/server';
-import { HubNetwork } from '../../packages/hub-network/src/node';
-import { HubStore } from '../../packages/hub-network/src/store-file.js';
+import { HubStateFile } from '../../packages/hub-network/src/store-file.js';
 import { selectionIdentity } from '../../apps/relay-server/src/selection';
 
 const token = () => randomBytes(32).toString('base64url');
@@ -117,7 +116,7 @@ test('listen failure retires identity and releases the Hub state lock', async t 
     createIdentity: async () => ({ provider: { authenticate: () => null }, close: () => { closed++; } }),
   }), { code: 'EADDRINUSE' });
   assert.equal(closed, 1);
-  const reopened = new HubNetwork(new HubStore(state)); reopened.close();
+  await (await HubStateFile.open(state)).close();
 });
 
 test('certificate failure after resource acquisition rolls back every owner even if identity close fails', async t => {
@@ -129,7 +128,7 @@ test('certificate failure after resource acquisition rolls back every owner even
     hubNetwork: { stateFile: state, operatorCredentialFile: file } }, {
     createIdentity: async () => ({ provider: { authenticate: () => null }, close: () => { closed++; throw new Error('Synthetic close failure'); } }),
   }), /startup and rollback failed/);
-  assert.equal(closed, 1); const reopened = new HubNetwork(new HubStore(state)); reopened.close(); await assert.rejects(get(input.port));
+  assert.equal(closed, 1); await (await HubStateFile.open(state)).close(); await assert.rejects(get(input.port));
 });
 
 test('generic independently bundled application has no enterprise implementation and runs a transit Hub', async t => {

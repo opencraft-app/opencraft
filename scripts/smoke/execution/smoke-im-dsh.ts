@@ -9,6 +9,7 @@ import { AppHostServer } from "../../../packages/app-host-server/src/index.js";
 import { WebSocketTransport } from "../../../packages/appserver-transport-websocket/src/index.js";
 import { SessionCapabilities } from "../../../packages/session-capabilities/src/index.js";
 import { SessionCapabilityMcp, capabilitySigningKey } from "../../../packages/session-capabilities/src/mcp.js";
+import { fileKeyMaterial } from "@opencraft/secret-storage/file";
 import { ActorStore } from "../../../packages/access-control/src/actors.js";
 import { Collaboration } from "../../../packages/access-control/src/collaboration.js";
 import { ImPlugin } from "../../../plugins/im/src/server.js";
@@ -17,6 +18,7 @@ import { stewardRoute } from "../../../plugins/im/src/templates.js";
 import { IM_REPLY_TOOL } from "../../../plugins/im/src/reply-tool.js";
 import { encodeConversationRef } from "../../../packages/appserver-protocol/src/collaboration.js";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "../../../apps/local-agent-host/src/model-config/repository.js";
+import { documentSecretStore } from "@opencraft/secret-storage/documents";
 import { createRoutedConversationExecution, callConversationHost } from "../../../apps/headless-server/src/conversation-execution.mjs";
 import { createImExecution } from "../../../apps/headless-server/src/im-plugins.mjs";
 import { startIndependentDshHost } from "../../server-deployment/dsh-host.mjs";
@@ -48,7 +50,7 @@ const endpoint=createServer(async(request,response)=>{
 });
 try{
  await new Promise<void>(resolve=>endpoint.listen(0,'127.0.0.1',resolve));
- const models=join(directory,'models');await new ModelCredentialRepository(models).set('FIXTURE','synthetic-key');
+ const models=join(directory,'models');await new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(models))).set('FIXTURE','synthetic-key');
  await new ModelConfigurationRepository(fileStateDocumentStore(models)).initialize({schemaVersion:1,revision:0,providers:[{id:'fixture',name:'Fixture',protocol:'openai-completions',baseUrl:`http://127.0.0.1:${(endpoint.address() as any).port}/v1`,credentialRef:'FIXTURE',enabled:true,models:[{id:'fixture',enabled:true,input:['text']}]}],defaultModel:{providerId:'fixture',modelId:'fixture'}});
  const machineIdentity={machineId:'fixture',machineName:'Fixture'};
  const options={descriptorPath:join(directory,'connection.json'),machineIdentity,dataDirectory:join(directory,'agent'),modelStorageDirectory:models,skillsDirectory:join(directory,'skills'),projectlessWorkspaceDirectory:join(directory,'workspaces'),runtimeDirectory:directory,dshExecutable:resolve('runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'),dshCapabilityPlugin:resolve('apps/local-agent-host/src/dsh-capability-plugin.mjs')};
@@ -58,7 +60,7 @@ try{
  appHost=new AppHostServer({physicalHostLifetime:'server',logicalClientRouting:true,createTransport:()=>new WebSocketTransport({url:host.websocketUrl,createSocket:url=>new WebSocket(url)})});
  const execution=createRoutedConversationExecution(()=>appHost,{machineId:'fixture',engines:['dsh'],getInputs:async()=>attachment.inputs});
  collaboration=new Collaboration(join(directory,'collaboration.sqlite'),actors,execution);
- const key=await capabilitySigningKey(join(directory,'session-capabilities.key'));
+ const key=await capabilitySigningKey(fileKeyMaterial(directory));
  const mcpOptions={descriptorPath:join(directory,'session-capabilities.json'),authorizeInput:(session:any,inputId:string)=>collaboration!.authorizeInput(session.threadId,inputId,'queue',undefined,session.serverId)};
  mcp=new SessionCapabilityMcp(capabilities,key,undefined,mcpOptions);await mcp.listen();
  const created=await callConversationHost(appHost,{hostId:'opencraft-server',threadId:''},'fixture','thread/start',{permissions:'danger-full-access'});

@@ -9,6 +9,7 @@ import {ActorStore} from '../../packages/access-control/src/actors';
 import {Collaboration} from '../../packages/access-control/src/collaboration';
 import {createAssistantModelSource} from '../../apps/local-agent-host/src/model-config/assistant';
 import {ModelConfigurationRepository,ModelCredentialRepository} from '../../apps/local-agent-host/src/model-config/repository';
+import { documentSecretStore } from "@opencraft/secret-storage/documents";
 import {ModelPolicyStore} from '@opencraft/model-usage-policy';
 import {createPersonalAssistantHost} from '../../apps/personal-assistant/src/runtime/host-supervisor.mjs';
 const model={providerId:'test',modelId:'synthetic'};
@@ -16,7 +17,7 @@ async function fixture(t:test.TestContext) {
  const directory=await mkdtemp(join(tmpdir(),'assistant-model-')),storage=await openServerDatabase(directory),actors=new ActorStore(storage),service=new Collaboration(storage,actors);
  const human=(subject:string)=>actors.resolveHuman({provider:'local',subject,displayName:subject,expiresAt:Date.now()+3600000})!;
  const alice=human('alice'),bob=human('bob');
- const repository=new ModelConfigurationRepository(fileStateDocumentStore(join(directory,'models'))),credentials=new ModelCredentialRepository(join(directory,'models'));
+ const repository=new ModelConfigurationRepository(fileStateDocumentStore(join(directory,'models'))),credentials=new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(join(directory,'models'))));
  await repository.initialize();await credentials.set('TEST','synthetic-secret');
  await repository.update(0,d=>{d.providers=[{id:'test',name:'Test connection',protocol:'openai-responses',baseUrl:'https://example.invalid/v1',enabled:true,credentialRef:'TEST',models:[{id:'synthetic',name:'Test model',enabled:true,reasoningEfforts:false},{id:'other',enabled:true}]}];});
  let host:any;

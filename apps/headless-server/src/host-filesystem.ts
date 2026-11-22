@@ -1,10 +1,11 @@
 import { ArtifactCatalog, artifactFileBody, inspectArtifactFile, type Artifact } from '@opencraft/local-agent-host/artifacts';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { constants } from 'node:fs';
-import { chmod, lstat, mkdir, open, readFile, readdir, realpath, stat, unlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, open, readFile, readdir, realpath, stat, unlink } from 'node:fs/promises';
 import { createServer, request, type IncomingMessage } from 'node:http';
 import { createConnection } from 'node:net';
-import { dirname, isAbsolute, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, resolve, sep } from 'node:path';
+import { fileKeyMaterial } from '@opencraft/secret-storage/file';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
@@ -64,8 +65,9 @@ export async function startHostFileSystem(options: FileSystemEndpoint & { concur
   await mkdir(dirname(options.endpoint), { recursive: true, mode: 0o700 });
   const parent = await lstat(dirname(options.endpoint));
   if (!parent.isDirectory() || parent.isSymbolicLink() || parent.uid !== process.getuid?.() || parent.mode & 0o077) throw Error('File owner directory must be private');
-  try { await writeFile(options.tokenFile, randomBytes(32).toString('hex') + '\n', { mode: 0o600, flag: 'wx' }); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+  // Created once; an existing owner token is never replaced.
+  try { await fileKeyMaterial(dirname(options.tokenFile)).ensure(basename(options.tokenFile), () => Buffer.from(randomBytes(32).toString('hex') + '\n')); }
+  catch (error) { throw Error('File owner credential unavailable', { cause: error }); }
   const token = await privateToken(options.tokenFile);
   // Never unlink an existing owner. Clean shutdown owns removal of this socket.
   const concurrency = options.concurrency ?? 4, capacity = concurrency + (options.queue ?? 64);

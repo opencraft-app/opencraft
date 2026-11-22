@@ -1,8 +1,6 @@
-import {join} from 'node:path';
-import {stat} from 'node:fs/promises';
 import type {StateDocumentStore} from '@opencraft/document-storage/state';
+import {SecretStoreCorruptError,validateSecretName,validateSecretValue,type SecretStore} from '@opencraft/secret-storage';
 import {emptyModelDocument,validateModelDocument,type ModelDocument} from './model-document.js';
-import {readJson,writeJson,locked} from './json-file.js';
 import {configurationDocument} from './state-documents.js';
 
 export const MODEL_DOCUMENT_KEY='models.json';
@@ -21,13 +19,27 @@ export class ModelConfigurationRepository {
   }))}
 }
 
-/** No secret readback API; adapters receive values only at the execution boundary. */
+/** User-visible over RPC; kept identical to the previous file repository's messages. */
+export const INVALID_CREDENTIAL_MESSAGE='凭据格式无效',CORRUPT_CREDENTIALS_MESSAGE='凭据存储格式无效';
+async function credentialStorage<T>(operation:Promise<T>):Promise<T>{
+  try{return await configurationDocument(operation)}catch(error){
+    if(error instanceof SecretStoreCorruptError)throw new Error(CORRUPT_CREDENTIALS_MESSAGE,{cause:error});
+    throw error;
+  }
+}
+const storableName=(ref:string)=>{try{validateSecretName(ref);return true}catch{return false}};
+
+/** Model credentials over a SecretStore. No secret readback API; adapters
+ * receive values only at the execution boundary. Unknown or malformed
+ * references resolve as absent, as configuration may name any reference. */
 export class ModelCredentialRepository {
-  readonly path:string;
-  constructor(directory:string){this.path=join(directory,'credentials.json')}
-  async stamp(){try{const s=await stat(this.path,{bigint:true});return `${s.ino}:${s.mtimeNs}:${s.size}`}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return 'absent';throw error}}
-  private async read():Promise<Record<string,string>>{const doc=await readJson(this.path) as {schemaVersion?:unknown;entries?:unknown}|null;if(doc===null)return {};if(doc.schemaVersion!==1||!doc.entries||typeof doc.entries!=='object'||Array.isArray(doc.entries)||Object.values(doc.entries).some(v=>typeof v!=='string'))throw new Error('凭据存储格式无效');return doc.entries as Record<string,string>;}
-  async resolve(ref:string){const entries=await this.read();return Object.hasOwn(entries,ref)?entries[ref]:undefined;}
-  async set(ref:string,value:string){if(!/^[_A-Za-z][_A-Za-z0-9]*$/.test(ref)||!value||/[\r\n\0]/.test(value))throw new Error('凭据格式无效');await locked(this.path,async()=>{const entries=await this.read();await writeJson(this.path,{schemaVersion:1,entries:{...entries,[ref]:value}})})}
-  async remove(ref:string){await locked(this.path,async()=>{const entries=await this.read();delete entries[ref];await writeJson(this.path,{schemaVersion:1,entries})})}
+  constructor(private readonly secrets:SecretStore){}
+  /** Changes exactly when a stored credential changes (content-derived). */
+  stamp(){return credentialStorage(this.secrets.stamp())}
+  async resolve(ref:string){return storableName(ref)?credentialStorage(this.secrets.get(ref)):undefined}
+  async set(ref:string,value:string){
+    try{validateSecretName(ref);validateSecretValue(value)}catch{throw new Error(INVALID_CREDENTIAL_MESSAGE)}
+    await credentialStorage(this.secrets.set(ref,value));
+  }
+  async remove(ref:string){if(storableName(ref))await credentialStorage(this.secrets.delete(ref))}
 }

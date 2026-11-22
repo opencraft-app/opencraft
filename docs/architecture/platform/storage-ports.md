@@ -87,7 +87,9 @@ Node 适配器 `fileStateDocumentStore(directory)` 每键一个文件，保持�
 
 **跨 await 的不变量不能依赖端口锁。** 需要在提交前执行异步操作（例如写凭据）的仓储，必须把异步副作用设计成可被 CAS 安全丢弃。图片配置替换密钥时写入新的唯一引用，再由文档 CAS 切换指向，落败方删除自己的引用，成功后回收旧引用；已提交的声明只会指向为它写入的密钥。
 
-已迁移：`models.json`、`image-generation.json`、Pi 的 `model-provider-bindings.json` 与旧 `models.json` 读取、`projects.json`。待迁移：`server-information.json`、`hub-network.json`、`session-capabilities.json`、`conversation-resources.json` 等。凭据文件不进入此端口，进入 `SecretStore`。
+已迁移：`models.json`、`image-generation.json`、Pi 的 `model-provider-bindings.json` 与旧 `models.json` 读取、`projects.json`、`server-information.json`（revision CAS 留在 `ServerInformationStore`）、`hub-network.json`（`documentHubStore`；进程单写者 `<file>.lock` 仍由 Node owner `HubStateFile` 持有，文档锁因此改用 `<file>.state-lock`；文件仍含节点 Ed25519 私钥，后续移入 `SecretStore`/KeyMaterial）。凭据文件不进入此端口，进入 `SecretStore`。
+
+不进入此端口：`session-capabilities.json` 是进程端点发现而非存储；`readPrivateJson` 读取的部署输入与用户插件清单属于只读机密配置或安装产物。
 
 事务性账本（`conversation-resources.json`、Git broker 账本）不是 KV 语义，并入 SQL 核心。
 

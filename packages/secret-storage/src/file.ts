@@ -1,20 +1,40 @@
 import { randomUUID } from "node:crypto";
-import { link, mkdir, open, readFile, unlink, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { link, mkdir, open, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { validateKeyName, type KeyMaterial } from "./contract.js";
 
+/** Directory handles cannot be fsynced on Windows; rename/link durability there is the file system's. */
+async function syncDirectory(directory: string) {
+  if (process.platform === "win32") return;
+  const handle = await open(directory, "r");
+  try { await handle.sync(); } finally { await handle.close(); }
+}
+
 /**
  * One private file per key in `directory`, created exactly once (link-based,
- * so concurrent creators converge on the first complete file).
+ * so concurrent creators converge on the first complete file). Reads fail
+ * closed unless the key is a regular, non-symlinked file owned by this user
+ * with no group or other permission bits.
  */
 export function fileKeyMaterial(directory: string): KeyMaterial {
   const read = async (name: string) => {
     validateKeyName(name);
+    let file;
     try {
-      return new Uint8Array(await readFile(join(directory, name)));
+      file = await open(join(directory, name), constants.O_RDONLY | constants.O_NOFOLLOW);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw error;
+    }
+    try {
+      const info = await file.stat();
+      if (!info.isFile() || (process.platform !== "win32" && ((info.mode & 0o077) !== 0 || info.uid !== process.getuid?.()))) {
+        throw new Error("Key material file must be private");
+      }
+      return new Uint8Array(await file.readFile());
+    } finally {
+      await file.close();
     }
   };
   return {
@@ -38,8 +58,7 @@ export function fileKeyMaterial(directory: string): KeyMaterial {
       } finally {
         await unlink(temporary).catch(() => undefined);
       }
-      const parent = await open(directory, "r");
-      try { await parent.sync(); } finally { await parent.close(); }
+      await syncDirectory(directory);
       const stored = await read(name);
       if (!stored) throw new Error("Key material was not stored");
       return stored;

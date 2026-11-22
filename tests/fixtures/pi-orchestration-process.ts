@@ -11,6 +11,7 @@ import { startEngineHost } from "../../apps/local-agent-host/src/engine-host.js"
 import { RemoteSessionCapabilities } from "../../packages/session-capabilities/src/remote.js";
 import { SessionCapabilities } from "../../packages/session-capabilities/src/index.js";
 import { SessionCapabilityMcp, capabilitySigningKey } from "../../packages/session-capabilities/src/mcp.js";
+import { fileKeyMaterial } from "@opencraft/secret-storage/file";
 import { THREAD_ORCHESTRATION_TOOLS } from "../../packages/appserver-protocol/src/collaboration.js";
 import { ActorStore } from "../../packages/access-control/src/actors.js";
 import { Collaboration, type ConversationExecutionPort } from "../../packages/access-control/src/collaboration.js";
@@ -97,7 +98,7 @@ if (kind === "host") {
     inspect: (threadId, limit) => rpc("opencraft/orchestration/inspect", { operationId: `inspect:${randomUUID()}`, threadId, limit }),
   };
   const broker = new ThreadOrchestrationBroker(service, execution);
-  const key = await capabilitySigningKey(join(data, "session-capabilities.key"));
+  const key = await capabilitySigningKey(fileKeyMaterial(data));
   const mcp = new SessionCapabilityMcp(new SessionCapabilities(), key, undefined, { descriptorPath: join(data, "session-capabilities.json"),
     async orchestration(session, request) {
       if (session.serverId !== serverId) throw new Error("Wrong synthetic scope");
