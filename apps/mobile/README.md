@@ -253,7 +253,16 @@ versionCode，否则沿用 `app.json` 的值。产物位于 `apps/mobile/release
 `.github/workflows/android-release-apk.yml` 使用 `android-release` Environment 的
 `ANDROID_RELEASE_KEYSTORE_BASE64`（PKCS12 的 Base64）、
 `ANDROID_RELEASE_KEYSTORE_PASSWORD` 和 `ANDROID_RELEASE_KEY_ALIAS` 构建；缺少任一项时
-整个预发布失败，不回退开发密钥。versionCode 由 tag 推导
+整个预发布失败，不回退开发密钥。首次配置在可信电脑上运行（需要 JDK 的 `keytool`、
+`openssl` 和有仓库管理权限的 `gh`）：
+
+```bash
+bash scripts/release/provision-android-signing.sh ~/opencraft-android-signing
+```
+
+脚本在仓库外新建目录生成 PKCS12 密钥与随机密码，把 `android-release` Environment
+限制为只允许 main 部署并写入三个 secret；Environment 已有密钥时拒绝替换。随后立即
+备份该目录：后续 `app.opencraft` 版本都必须用这把密钥签名。versionCode 由 tag 推导
 （`scripts/release/android-version-code.mjs`：`X*1000000 + Y*10000 + Z*100`，beta N 加 N，
 正式版加 99），保证后续版本可覆盖安装。手动的 `Android internal APK` 工作流只产出
 使用 Expo 开发密钥的 Actions 构件，仅限内测，不进入 Release。

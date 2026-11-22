@@ -145,3 +145,73 @@ test("staging binds the APK digest and publishes it under the release name", (t)
     { name: "OpenCraft-0.1.0-beta.3-android-arm64.apk", sha256: apkDigest, size: 3 },
   );
 });
+
+test("signing provisioning stores a usable key once and never replaces it", (t) => {
+  const keytool = spawnSync("keytool", ["-help"], { encoding: "utf8" });
+  if (keytool.error) return t.skip("keytool is not installed");
+  const directory = mkdtempSync(join(tmpdir(), "opencraft-provision-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const bin = join(directory, "bin");
+  mkdirSync(bin);
+  // Stand-in gh: records each call and its standard input, and answers the
+  // listings from fixture state.
+  writeFileSync(
+    join(bin, "gh"),
+    [
+      "#!/usr/bin/env bash",
+      'state="$GH_FIXTURE"',
+      'if [[ "$1 $2" == "secret list" ]]; then cat "$state/existing" 2>/dev/null; exit 0; fi',
+      'if [[ "$1 $2" == "secret set" ]]; then cat > "$state/secret-$3"; exit 0; fi',
+      'if [[ "$*" == *deployment-branch-policies* && "$*" != *POST* ]]; then exit 0; fi',
+      'cat > /dev/null; echo "$*" >> "$state/api"',
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  const state = join(directory, "state");
+  mkdirSync(state);
+  const provision = (target) =>
+    spawnSync("bash", [join(root, "scripts/release/provision-android-signing.sh"), target, "owner/repo"], {
+      cwd: directory,
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, GH_FIXTURE: state },
+      encoding: "utf8",
+    });
+
+  const key = join(directory, "key");
+  const result = provision(key);
+  assert.equal(result.status, 0, result.stderr);
+  const api = readFileSync(join(state, "api"), "utf8");
+  assert.match(api, /--method PUT repos\/owner\/repo\/environments\/android-release/u);
+  assert.match(api, /--method POST .*deployment-branch-policies -f name=main/u);
+  const secret = (name) => readFileSync(join(state, `secret-${name}`), "utf8");
+  assert.deepEqual(
+    Buffer.from(secret("ANDROID_RELEASE_KEYSTORE_BASE64"), "base64"),
+    readFileSync(join(key, "opencraft-release.p12")),
+  );
+  assert.equal(secret("ANDROID_RELEASE_KEYSTORE_PASSWORD"), readFileSync(join(key, "password.txt"), "utf8"));
+  assert.equal(secret("ANDROID_RELEASE_KEY_ALIAS"), "opencraft-release");
+  const listed = spawnSync(
+    "keytool",
+    [
+      "-list",
+      "-keystore",
+      join(key, "opencraft-release.p12"),
+      "-storetype",
+      "PKCS12",
+      "-storepass:file",
+      join(key, "password.txt"),
+      "-alias",
+      "opencraft-release",
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(listed.status, 0, listed.stderr);
+  assert.match(result.stdout, /Signing certificate SHA-256: [0-9A-F:]{95}/u);
+
+  assert.notEqual(provision(key).status, 0, "an existing key directory is never overwritten");
+  writeFileSync(join(state, "existing"), "ANDROID_RELEASE_KEYSTORE_BASE64\n");
+  const again = provision(join(directory, "second"));
+  assert.notEqual(again.status, 0);
+  assert.match(again.stderr, /refusing to replace/u);
+  assert.throws(() => readdirSync(join(directory, "second")), /ENOENT/u);
+  assert.notEqual(provision(join(root, "scratch-key")).status, 0, "keys never land inside a Git checkout");
+});
