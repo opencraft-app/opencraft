@@ -136,7 +136,7 @@ export class LocalAccountApplication {
       const owner = this.#owner(request, true);
       if (suffix === '/invitations') { send(201, this.options.management.invite(owner)); return true; }
       if (suffix === '/members') {
-        this.options.management.setMember(owner, body.actorId as string, body.role as 'admin' | 'member', body.enabled as boolean);
+        await this.options.management.setMember(owner, body.actorId as string, body.role as 'admin' | 'member', body.enabled as boolean);
         send(200, { ok: true }); return true;
       }
       if (suffix === '/password') {

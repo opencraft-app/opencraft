@@ -5,6 +5,7 @@ import type { Principal } from "@opencraft/identity-core";
 import type { ActorContext } from "@opencraft/identity-core/actors";
 import { ActorStore } from "./actors.js";
 import { HumanAccounts, type HumanLogin } from "./human-accounts.js";
+import { MembershipStore, type MemberRole } from "./index.js";
 import { commitFence, serveCommitFence } from "./commit-fence.js";
 
 /**
@@ -23,6 +24,7 @@ import { commitFence, serveCommitFence } from "./commit-fence.js";
 export class IdentityWriteOwner {
   readonly #actors: ActorStore;
   readonly #accounts: HumanAccounts;
+  readonly #members: MembershipStore;
   readonly #fence: ((token: number) => void) | null;
   constructor(
     private readonly owner: ServerDatabase,
@@ -30,6 +32,7 @@ export class IdentityWriteOwner {
   ) {
     this.#actors = new ActorStore(owner, Date.now, { permissionProjection: false });
     this.#accounts = new HumanAccounts(owner, this.#actors);
+    this.#members = new MembershipStore(owner, { permissionProjection: false });
     this.#fence = fence ? commitFence(fence) : null;
   }
   /** Runs `write` under the writer lock, after the caller re-approved `token`. */
@@ -80,11 +83,32 @@ export class IdentityWriteOwner {
   setEnabled(token: number, id: string, enabled: boolean, operator: string): void {
     this.#fenced(token, () => this.#actors.setEnabled(id, enabled, operator));
   }
+  /** A binding membership and, when it names a known human, that Actor's membership, in one commit. */
+  setMembership(
+    token: number,
+    binding: Pick<Principal, "provider" | "subject">,
+    role: MemberRole,
+    enabled: boolean,
+    operator: string,
+    actorId: string | null,
+  ): void {
+    this.#fenced(token, () => {
+      this.#members.set(binding, role, enabled, operator);
+      if (actorId) this.#members.setActor(actorId, role, enabled, operator);
+    });
+  }
+  setActorMembership(token: number, actorId: string, role: MemberRole, enabled: boolean, operator: string): void {
+    this.#fenced(token, () => this.#members.setActor(actorId, role, enabled, operator));
+  }
   close(): void {
     try {
-      this.#accounts.close();
+      this.#members.close();
     } finally {
-      this.#actors.close();
+      try {
+        this.#accounts.close();
+      } finally {
+        this.#actors.close();
+      }
     }
   }
 }
@@ -100,6 +124,8 @@ export const IDENTITY_WRITE_METHODS = [
   "revokeCredential",
   "setCheckedGrant",
   "setEnabled",
+  "setMembership",
+  "setActorMembership",
 ] as const satisfies readonly (keyof IdentityWriteOwner)[];
 
 /** Methods a Server owner Worker serves for `IdentityWrites`. */
@@ -126,6 +152,8 @@ export class IdentityWrites {
     readonly accounts: HumanAccounts | undefined,
     /** The buffer the owner's `IdentityWriteOwner` was given. */
     fence: SharedArrayBuffer,
+    /** Absent when this installation has no instance membership. */
+    readonly members?: MembershipStore,
   ) {
     this.#stopFence = serveCommitFence(fence, (token) => this.#checks.get(token)?.() === true);
   }
@@ -201,6 +229,38 @@ export class IdentityWrites {
   }
   setEnabled(authorize: () => boolean, id: string, enabled: boolean, operator: string): Promise<void> {
     return this.#administer(authorize, (token) => this.owner.setEnabled(token, id, enabled, operator));
+  }
+  // Membership administration, fenced like Actor administration.
+  async setMembership(
+    authorize: () => boolean,
+    binding: Pick<Principal, "provider" | "subject">,
+    role: MemberRole,
+    enabled: boolean,
+    operator: string,
+    actorId: string | null,
+  ): Promise<void> {
+    try {
+      await this.#administer(authorize, (token) =>
+        this.owner.setMembership(token, binding, role, enabled, operator, actorId),
+      );
+    } finally {
+      this.members?.ownerCommitted();
+    }
+  }
+  async setActorMembership(
+    authorize: () => boolean,
+    actorId: string,
+    role: MemberRole,
+    enabled: boolean,
+    operator: string,
+  ): Promise<void> {
+    try {
+      await this.#administer(authorize, (token) =>
+        this.owner.setActorMembership(token, actorId, role, enabled, operator),
+      );
+    } finally {
+      this.members?.ownerCommitted();
+    }
   }
   private committed() {
     this.actors.ownerCommitted();

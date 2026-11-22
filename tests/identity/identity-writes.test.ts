@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { openServerCoreOwner } from "@opencraft/storage-node/server-owner";
 import { ActorStore } from "@opencraft/access-control/actors";
 import { HumanAccounts } from "@opencraft/access-control/human-accounts";
+import { MembershipStore } from "@opencraft/access-control";
 import { IdentityWrites, type IdentityWriteOwner } from "@opencraft/access-control/identity-writes";
 import { createCommitFenceBuffer } from "@opencraft/access-control/commit-fence";
 
@@ -24,9 +25,11 @@ async function fixture(t: test.TestContext) {
   const storage = await openServerCoreOwner<IdentityWriteOwner>(directory, { entry, data: { identityFence } });
   const actors = new ActorStore(storage);
   const accounts = new HumanAccounts(storage, actors);
-  const writes = new IdentityWrites(storage.call, actors, accounts, identityFence);
+  const members = new MembershipStore(storage);
+  const writes = new IdentityWrites(storage.call, actors, accounts, identityFence, members);
   t.after(async () => {
     writes.close();
+    members.close();
     accounts.close();
     actors.close();
     await storage.close();
@@ -41,7 +44,7 @@ async function fixture(t: test.TestContext) {
       holder.close();
     };
   };
-  return { actors, accounts, writes, holdWriter };
+  return { actors, accounts, members, writes, holdWriter };
 }
 
 // docs/architecture/server/server-core-owner.md: identity writes commit in the
@@ -164,4 +167,53 @@ test("a login stays on this thread while it registered hooks the owner cannot ru
   actors.onHumanRegistered((p) => registered.push(p.subject));
   await writes.issueLogin(principal("carol"));
   assert.deepEqual(registered, ["carol"]);
+});
+
+test("membership administration commits in the owner and is fenced like Actor administration", async (t) => {
+  const { actors, members, writes, holdWriter } = await fixture(t);
+  const { login: admin } = await writes.issueLogin(principal("admin"));
+  const { login: member } = await writes.issueLogin(principal("member"));
+  const allowed = () => actors.isCurrent(admin.context);
+  await writes.setMembership(
+    allowed,
+    principal("member"),
+    "member",
+    true,
+    admin.context.actorId,
+    member.context.actorId,
+  );
+  assert.deepEqual(members.membership(principal("member")), { role: "member", enabled: true });
+  assert.deepEqual(
+    members.actorMembership(member.context.actorId),
+    { role: "member", enabled: true },
+    "both rows commit together",
+  );
+  // Revoked while queued: the admin is disabled by an earlier queued write.
+  const release = holdWriter();
+  const disable = writes.setEnabled(allowed, admin.context.actorId, false, admin.context.actorId);
+  const promote = writes.setActorMembership(allowed, member.context.actorId, "admin", true, admin.context.actorId);
+  setTimeout(release, 200);
+  await disable;
+  await assert.rejects(promote, /Authorization changed before the write committed/);
+  assert.deepEqual(
+    members.actorMembership(member.context.actorId),
+    { role: "member", enabled: true },
+    "no promotion committed",
+  );
+});
+
+// Authentication calls bindLegacyAlias on every request; without an enabled
+// legacy alias it must not take the writer lock or publish a change.
+test("authenticating a principal without a legacy alias publishes no membership change", async (t) => {
+  const { members } = await fixture(t);
+  let changes = 0;
+  members.onAuthorityChanged(() => changes++);
+  members.bindLegacyAlias({ ...principal("plain"), aliases: [] });
+  members.bindLegacyAlias({ ...principal("aliased"), aliases: ["nobody"] });
+  assert.equal(changes, 0);
+  members.set({ provider: "oidc", subject: "old-name" }, "member", true, "test");
+  changes = 0;
+  members.bindLegacyAlias({ ...principal("renamed"), aliases: ["old-name"] });
+  assert.equal(changes, 1, "a real legacy alias still moves");
+  assert.equal(members.role(principal("renamed")), "member");
 });
