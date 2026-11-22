@@ -14,7 +14,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { AccountPoolStore } from "@opencraft/account-pool-host";
+import { AccountPoolStore, CodexCoreControlClient, openCodexNativeSocket } from "@opencraft/account-pool-host";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { startCodexBridgeStack } from "../../../apps/opencraft-daemon/src/codex-bridge-stack.js";
 import { createCodexBridgeHost } from "../../../apps/opencraft-daemon/src/codex-bridge-host.js";
@@ -40,6 +40,45 @@ process.env.OPENCRAFT_DRILL_UPSTREAM = upstream;
 const codexDataDirectory = join(root, "codex"),
   runtimeDirectory = join(root, "runtime");
 const authToken = "windows-stack-drill-token-".repeat(3);
+/** Each native thread's full read, straight from native Codex through Core, with native's own errors. */
+async function nativeReads(coreEndpoint: string, token: string): Promise<string> {
+  try {
+    const { nativeSocket } = await new CodexCoreControlClient(coreEndpoint, token).health();
+    const socket = openCodexNativeSocket(nativeSocket, { handshakeTimeout: 5000 });
+    await new Promise((resolve, reject) => (socket.once("open", resolve), socket.once("error", reject)));
+    let next = 0;
+    const call = (method: string, params: unknown) =>
+      new Promise<any>((resolve) => {
+        const id = ++next;
+        const timer = setTimeout(() => resolve({ error: "no answer" }), 10_000);
+        socket.on("message", function listen(data) {
+          const frame = JSON.parse(String(data));
+          if (frame.id !== id) return;
+          socket.off("message", listen);
+          clearTimeout(timer);
+          resolve(frame);
+        });
+        socket.send(JSON.stringify({ id, method, params }));
+      });
+    await call("initialize", {
+      clientInfo: { name: "drill-probe", version: "1" },
+      capabilities: { experimentalApi: true },
+    });
+    socket.send(JSON.stringify({ method: "initialized", params: {} }));
+    const listed = await call("thread/list", { limit: 5 });
+    const ids: string[] = (listed.result?.data ?? []).map((thread: any) => thread.id);
+    const reads = [];
+    for (const id of ids) {
+      const read = await call("thread/read", { threadId: id, includeTurns: true });
+      reads.push({ id, error: read.error, turns: read.result?.thread?.turns?.length });
+    }
+    socket.close();
+    return JSON.stringify({ list: listed.error ?? ids.length, reads }).slice(0, 1500);
+  } catch (error) {
+    return `probe failed: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
 let stack: Awaited<ReturnType<typeof startCodexBridgeStack>> | undefined;
 let host: ReturnType<typeof createCodexBridgeHost> | undefined;
 try {
@@ -116,12 +155,28 @@ try {
     clientUserMessageId: "win-1",
     input: [{ type: "text", text: "WIN-HELLO", text_elements: [] }],
   });
+  // Every refused read is recorded with what native Codex itself answers to the same
+  // read (the bridge reports only the outcome kind); polling goes on, so a transient
+  // refusal is told apart from a lasting one. Any refusal still fails the drill.
+  let refusals = 0;
   for (let attempt = 0; ; attempt++) {
-    const read = await request("thread/read", { threadId, includeTurns: true });
+    let read: any;
+    try {
+      read = await request("thread/read", { threadId, includeTurns: true });
+    } catch (error) {
+      refusals++;
+      log(`thread/read refused (attempt ${attempt}): ${error instanceof Error ? error.message : String(error)}`);
+      if (refusals <= 3) log(`native: ${await nativeReads(stack.coreEndpoint, authToken)}`);
+      if (attempt > 240) throw error;
+      await delay(500);
+      continue;
+    }
     const last = read.thread.turns?.at(-1);
     const reply = last?.items?.find((item: any) => item.type === "agentMessage")?.text;
     if (last?.status === "completed" && reply) {
       log(`reply: ${reply}`);
+      log(`native after the answer: ${await nativeReads(stack.coreEndpoint, authToken)}`);
+      if (refusals) throw new Error(`answered, but ${refusals} thread reads were refused first`);
       break;
     }
     if (attempt > 240) throw new Error(`no completed answer: ${JSON.stringify(last)?.slice(0, 400)}`);
