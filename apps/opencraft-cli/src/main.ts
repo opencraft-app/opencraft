@@ -30,13 +30,13 @@ Its private launcher uses this CLI's execution mode (OPENCRAFT_THREAD_CLI_CONNEC
     [--message-file <file|->] [--wait delivered --timeout 30s]
     [--mode steer --expected-turn <exact-turn-id>]
   thread show <ref-or-link> --delivery <request-id>
-  thread lookup <ref-or-link> --key <key>
+  thread lookup [ref-or-link] --key <key>
 Options: --connection <name> --server <id> --json --help
 SSH uses your SSH config, agent/key and known_hosts.
 show/list return metadata. log reads one bounded page.
 Non-interactive sends need --key. Pipe stdin or pass --message-file -.
 Accepted is not completed. After a disconnected send, use lookup.
-Create has no lookup or safe retry.
+After a disconnected create, use thread lookup --key with no reference on a supporting Server.
 Attention means open the UI. Configure --web-url during connection add for links.
 `;
 const configPath = () => process.env.OPENCRAFT_CONFIG ?? join(homedir(), '.config/opencraft/connections.json');
@@ -114,7 +114,7 @@ export async function run(argv: string[]) {
   if (options.help || args.length === 0) return { help };
   const command = args.slice(0, args[0] === 'status' ? 1 : 2).join(' ');
   const counts: Record<string, number> = { status: 1, 'server list': 2, 'connection add': 3, 'thread create': 3, 'thread list': 2, 'thread show': 3, 'thread log': 3,
-    'thread send': args.length === 4 ? 4 : 3, 'thread lookup': 3 };
+    'thread send': args.length === 4 ? 4 : 3, 'thread lookup': args.length === 2 ? 2 : 3 };
   if (counts[command] !== args.length) throw new CliError(2, 'INVALID_ARGUMENTS', 'Check --help.');
   const allowed = ['json', 'connection', 'server', ...(command === 'thread create' ? ['key','project','cwd','permission-mode'] : []), ...(command === 'connection add' ? ['ssh','ssh-config','instance','default','default-server','web-url'] : []),
     ...(['thread list','thread log'].includes(command) ? ['cursor'] : []), ...(command === 'thread log' ? ['tail'] : []), ...(command === 'thread list' ? ['include-title','metadata-only','project','cwd'] : []),
@@ -122,13 +122,14 @@ export async function run(argv: string[]) {
     ...(command === 'thread lookup' ? ['key'] : []), ...(command === 'thread show' ? ['delivery','delivery-key'] : [])];
   if (Object.keys(options).some(key => !allowed.includes(key))) throw new CliError(2, 'INVALID_ARGUMENTS', 'Option is not valid for this command.');
   if (options.delivery !== undefined && options['delivery-key'] !== undefined) throw new CliError(2, 'INVALID_ARGUMENTS', 'Choose --delivery or --delivery-key.');
-  if (command === 'thread lookup' && !options.key) throw new CliError(2, 'INVALID_ARGUMENTS', 'Lookup needs --key.');
+  if (command === 'thread lookup' && (!options.key?.trim() || options.key.length > 128 || /[\x00-\x1f\x7f]/u.test(options.key)))
+    throw new CliError(2, 'INVALID_ARGUMENTS', 'Lookup needs a valid --key.');
   if (options.cwd !== undefined && !options.cwd.startsWith('/')) throw new CliError(2, 'INVALID_ARGUMENTS', '--cwd must be absolute on the Server.');
   const initialPermissionMode = options['permission-mode'];
   if (command === 'thread create') {
     if ((!options.project && !options.cwd) || options.project === '' || options.cwd === '')
       throw new CliError(2, 'INVALID_ARGUMENTS', 'thread create needs --project or --cwd.');
-    if (!args[2]?.trim() || args[2].length > 16384 || (options.key !== undefined && (!options.key.trim() || options.key.length > 128)))
+    if (!args[2]?.trim() || args[2].length > 16384 || (options.key !== undefined && (!options.key.trim() || options.key.length > 128 || /[\x00-\x1f\x7f]/u.test(options.key))))
       throw new CliError(2, 'INVALID_ARGUMENTS', 'Check message and operation key.');
     if (initialPermissionMode !== undefined && !isConversationInitialPermissionMode(initialPermissionMode))
       throw new CliError(2, 'INVALID_ARGUMENTS', '--permission-mode must be read-only, accept-edits or full.');
@@ -173,7 +174,7 @@ export async function run(argv: string[]) {
       return { connection: selected, instanceId: directory.instanceId, actor: directory.actor };
     }
     if (args[0] === 'server' && args[1] === 'list' && args.length === 2) return directory;
-    const uriRef = args[0] === 'thread' && !['list','create'].includes(args[1]!) ? reference(args[2], options.server ?? (parseConversationRef(args[2] ?? '') ? undefined : profile.defaultServer)) : null;
+    const uriRef = args[0] === 'thread' && !['list','create'].includes(args[1]!) && args[2] !== undefined ? reference(args[2], options.server ?? (parseConversationRef(args[2] ?? '') ? undefined : profile.defaultServer)) : null;
     const serverId = options.server ?? uriRef?.serverId ?? profile.defaultServer;
     const candidates = directory.servers.filter(server => !serverId || server.serverId === serverId);
     if (candidates.length === 0) throw new CliError(3, 'UNKNOWN_SERVER', 'Server unavailable.');
@@ -190,10 +191,27 @@ export async function run(argv: string[]) {
     if (command === 'thread create') {
       if (!server.capabilities.create || (initialPermissionMode !== undefined && !server.capabilities.initialPermissionMode))
         throw new CliError(6, 'UNSUPPORTED_CAPABILITY', 'Host lacks thread creation or the requested initial permission control.');
+      client.require('create');
+      if (initialPermissionMode !== undefined) client.require('initialPermissionMode');
       const operationKey = options.key ?? randomUUID();
+      const lookupSupported = server.capabilities.createLookup === true;
+      if (lookupSupported && options.key === undefined) {
+        client.require('createLookup');
+        const operations = join(dirname(configPath()), 'operations');
+        try {
+          await mkdir(operations, { recursive: true, mode: 0o700 });
+          await writeFile(join(operations, 'create-' + operationKey + '.json'), JSON.stringify({
+            schemaVersion: 1, command: 'create', operationKey, instanceId: directory.instanceId,
+            actorId: directory.actor.id, serverId: server.serverId, createdAt: Date.now(),
+          }) + '\n', { flag: 'wx', mode: 0o600 });
+        } catch { throw new CliError(2, 'OPERATION_RECORD_FAILED', 'Cannot save operation key.'); }
+      }
       const target = { serverId: server.serverId, projectId: options.project, cwd: options.cwd,
         initialPermissionMode: isConversationInitialPermissionMode(initialPermissionMode) ? initialPermissionMode : undefined };
-      const unknown = (details: object) => new CliError(7, 'CREATE_OUTCOME_UNKNOWN', 'Creation or first input could not be confirmed. Inspect the server before retrying.', false, { operationKey, ...details });
+      const unknown = (details: object) => new CliError(7, 'CREATE_OUTCOME_UNKNOWN',
+        lookupSupported ? 'Creation or first input could not be confirmed. Use thread lookup --key without a reference.'
+          : 'Creation or first input could not be confirmed. Inspect the server before retrying.',
+        false, { operationKey, serverId: server.serverId, ...details });
       let creation;
       try { creation = await client.create(target, args[2]!, operationKey); }
       catch (cause) {
@@ -211,7 +229,14 @@ export async function run(argv: string[]) {
       if (options['delivery-key'] !== undefined) return await client.lookup(uriRef!, options['delivery-key']);
       return withAttentionLink(await client.metadata(uriRef!), profile);
     }
-    if (args[1] === 'lookup') return await client.lookup(uriRef!, options.key!);
+    if (args[1] === 'lookup') {
+      if (uriRef) return await client.lookup(uriRef, options.key!);
+      if (server.capabilities.createLookup !== true) throw new CliError(6, 'UNSUPPORTED_CAPABILITY', 'Host lacks creation lookup.');
+      const result = await client.lookupCreation(server.serverId, options.key!);
+      if (!result.found) return result;
+      const ref = result.receipt.ref;
+      return { ...result, receipt: { ...result.receipt, reference: ref && encodeConversationRef(ref) } };
+    }
     if (args[1] === 'send' && sendInput) {
       if (server.capabilities[sendInput.execution?.mode ?? 'queue'] !== true) throw new CliError(6, 'UNSUPPORTED_CAPABILITY', 'Host lacks this input mode.');
       return await sendWithAttention(client, uriRef!, sendInput, { instanceId: directory.instanceId, actorId: directory.actor.id,

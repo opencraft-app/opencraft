@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { AppHostServer } from "@opencraft/app-host-server";
 import { createRoutedConversationExecution } from "@opencraft/access-control/conversation-execution";
 import { ActorStore } from "../../packages/access-control/src/actors";
-import { Collaboration } from "../../packages/access-control/src/collaboration";
+import { openServerCoreOwner } from "@opencraft/storage-node/server-owner";
+import { Collaboration, type ConversationExecutionPort } from "../../packages/access-control/src/collaboration";
 import { CollaborationClient } from "../../packages/appserver-client/src/collaboration";
 import { COLLABORATION_CAPABILITIES } from "@opencraft/appserver-protocol/collaboration";
 import { MemoryTransport } from "@opencraft/appserver-transport-memory";
@@ -190,4 +191,102 @@ test("create and tail reject invalid arguments before opening an SSH profile", a
     ["thread", "log", "ref", "--tail", "1e0"],
   ])
     await assert.rejects(run(args), { code: "INVALID_ARGUMENTS" });
+});
+
+test("creation lookup records Actor-scoped custody before first input and never replays an unknown or settled operation", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "cli-create-receipts-"));
+  const serverId = "server:fixture:codex";
+  const otherServer = "server:fixture:alternate";
+  const principal = (subject: string) => ({
+    provider: "local", subject, displayName: subject, expiresAt: Date.now() + 60_000,
+  });
+  const firstPending = Promise.withResolvers<void>();
+  const releaseFirst = Promise.withResolvers<void>();
+  let createCount = 0, inputCount = 0, readable = true, admitted = true;
+  let mode: "held" | "normal" | "unknown" | "lost-first" = "held";
+  const capabilities = { metadata: true, read: true, boundedRead: true, create: true, queue: true, steer: true };
+  const execution: ConversationExecutionPort = {
+    hostId: "fixture",
+    serverId,
+    owns: (id) => id === serverId || id === otherServer,
+    directory: () => ({ instanceId: "fixture", servers: [serverId, otherServer].map(id => ({
+      serverId: id, label: "Fixture", engine: "codex", connectionState: "ready", capabilities,
+    })) }),
+    async create(target, content, operationKey, _context, rememberThread) {
+      createCount++;
+      if (mode === "unknown") return { operationKey, ref: null, creationState: "unknown", firstMessageState: "unknown" };
+      const ref = { serverId: target.serverId, threadId: "thread-" + createCount };
+      assert.equal(content, "synthetic input");
+      await rememberThread!(ref);
+      inputCount++;
+      if (mode === "held") {
+        firstPending.resolve();
+        await releaseFirst.promise;
+      }
+      return { operationKey, ref, creationState: "created", firstMessageState: mode === "lost-first" ? "unknown" : "submitted" };
+    },
+    async validate() {},
+    async receipt() { return null; },
+    async add() { return null; },
+    async steer() {},
+    async cancel() { return false; },
+  };
+  const open = async () => {
+    const owner = await openServerCoreOwner(root);
+    const actors = new ActorStore(owner);
+    const actor = actors.resolveHuman(principal("first"))!;
+    const other = actors.resolveHuman(principal("second"))!;
+    const service = new Collaboration(owner, actors, execution, Date.now, () => admitted, undefined, () => readable, owner.call);
+    return { actor, other, service, async close() { await service.close(); actors.close(); await owner.close(); } };
+  };
+  let deployment = await open();
+  t.after(async () => {
+    releaseFirst.resolve();
+    await deployment.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  const create = (operationKey: string) => ({ action: "create", serverId, operationKey, cwd: root, content: "synthetic input" });
+  const lookup = (operationKey: string) => ({ action: "createLookup", serverId, operationKey });
+  const { service, actor, other } = deployment;
+  assert.equal(service.capabilities.createLookup, true);
+  assert.equal(service.servers(actor).servers[0]!.capabilities.createLookup, true);
+  const started = service.command(actor, create("same"));
+  await firstPending.promise;
+  const checkpoint = await service.command(actor, lookup("same"));
+  assert.equal(checkpoint.receipt.creationState, "created");
+  assert.equal(checkpoint.receipt.firstMessageState, "unknown");
+  const replays = await Promise.all(Array.from({ length: 4 }, () => service.command(actor, create("same"))));
+  assert.deepEqual(replays, Array(4).fill(checkpoint.receipt));
+  await assert.rejects(service.command(actor, { ...create("same"), content: "different" }), { code: "idempotency_key_reused" });
+  await assert.rejects(service.command(actor, { ...create("same"), serverId: otherServer }), { code: "idempotency_key_reused" });
+  assert.equal((await service.command(actor, { ...lookup("same"), serverId: otherServer })).found, false);
+  assert.equal((await service.command(other, lookup("same"))).found, false);
+  assert.equal(createCount, 1);
+  releaseFirst.resolve();
+  const settled = await started;
+  assert.equal(settled.firstMessageState, "submitted");
+  mode = "normal";
+  assert.notDeepEqual((await service.command(other, create("same"))).ref, settled.ref);
+
+  mode = "unknown";
+  const unknown = await service.command(actor, create("allocate-lost"));
+  assert.equal(unknown.creationState, "unknown");
+  mode = "lost-first";
+  const firstLost = await service.command(actor, create("first-lost"));
+  assert.equal(firstLost.creationState, "created");
+  assert.equal(firstLost.firstMessageState, "unknown");
+  assert.deepEqual([createCount, inputCount], [4, 3]);
+  await deployment.close();
+  deployment = await open();
+
+  const restarted = deployment.service, restored = deployment.actor;
+  for (const [key, result] of [["same", settled], ["allocate-lost", unknown], ["first-lost", firstLost]]) {
+    assert.deepEqual(await restarted.command(restored, lookup(key)), { found: true, receipt: result });
+    assert.deepEqual(await restarted.command(restored, create(key)), result);
+  }
+  assert.deepEqual([createCount, inputCount], [4, 3], "restart or lookup never resumes a mutation");
+  readable = false;
+  await assert.rejects(restarted.command(restored, lookup("same")), { status: 403 });
+  admitted = false;
+  await assert.rejects(restarted.command(restored, lookup("first-lost")), { status: 401 });
 });

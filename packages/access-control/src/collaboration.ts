@@ -1,5 +1,5 @@
 import { isAbsolute } from 'node:path';
-import { CONVERSATION_TAIL_MAX_TURNS, isConversationInitialPermissionMode, type ConversationCreateTarget, type ConversationCreation, type ConversationHistory } from '@opencraft/appserver-protocol/collaboration';
+import { COLLABORATION_CAPABILITIES, CONVERSATION_TAIL_MAX_TURNS, type CollaborationCapabilities, type ConversationCreationLookup, isConversationInitialPermissionMode, type ConversationCreateTarget, type ConversationCreation, type ConversationHistory } from '@opencraft/appserver-protocol/collaboration';
 import type { TransportSubmissionContext } from '@opencraft/appserver-client/transport';
 import type { CrewContact } from './crew-contact.js';
 import type { CrewWork, CrewPass } from './crew-work.js';
@@ -24,6 +24,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
+import type { CreationReceipt, ServerCoreStorage } from '@opencraft/storage-node/server-owner';
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import type { ActorStore } from './actors.js';
 import type { ActorAccess } from './actor-access.js';
@@ -50,7 +51,7 @@ export interface ConversationExecutionPort {
   read?(ref: ConversationRef, cursor: string | null): Promise<unknown>;
   readBounded?(ref: ConversationRef, cursor: string | null): Promise<unknown>;
   readTail?(ref: ConversationRef, limit: number): Promise<ConversationHistory>;
-  create?(target: ConversationCreateTarget, content: string, operationKey: string, context: TransportSubmissionContext): Promise<ConversationCreation>;
+  create?(target: ConversationCreateTarget, content: string, operationKey: string, context: TransportSubmissionContext, rememberThread?: (ref: ConversationRef) => Promise<void>): Promise<ConversationCreation>;
   validate(binding: RunBinding): Promise<void>;
   receipt(binding: RunBinding, requestId: string, options?: { includeCompletion: true }): Promise<ExecutionReceipt | null>;
   /** Null is an explicit, safe deferral before any native input attempt. */
@@ -75,6 +76,11 @@ const terminal = new Set(['submitted', 'injected', 'rejected', 'cancelled']);
 function text(value: unknown, max = 256): string {
   if (typeof value !== 'string' || !value.trim() || value.length > max || /[\x00-\x08\x0b\x0c\x0e-\x1f]/u.test(value)) throw new CollaborationError(400, 'invalid_field');
   return value;
+}
+function creationOperationKey(value: unknown): string {
+  const key = text(value, 128);
+  if (/[\x00-\x1f\x7f]/u.test(key)) throw new CollaborationError(400, 'invalid_operation_key');
+  return key;
 }
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new CollaborationError(400, 'invalid_body');
@@ -127,6 +133,7 @@ export class Collaboration {
     return this.communicationStorage.personalAssistantAssignments(after);
   }
   #closed = false;
+  #creations = new Set<Promise<unknown>>();
   automationAuthorityAllowed?: (id:string)=>boolean;
   #cursor = 0;
   #pump: Promise<void> | null = null;
@@ -198,7 +205,7 @@ export class Collaboration {
   #operations: Promise<unknown> = Promise.resolve();
   #timer: ReturnType<typeof setInterval> | null = null;
   readonly #closeDatabase: () => void;
-  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, private readonly executionPort?: ConversationExecutionPort, readonly now = Date.now, readonly admittedActor: (actorId: string) => boolean = () => true, private executionStorage?: Pick<OrchestrationRuntimeWorker, "updateExecution"> & Partial<Pick<OrchestrationRuntimeWorker,"admission"|"executionAuthority">>, readonly resourceAccess: (context: ActorContext, ref: ConversationRef) => boolean = () => true) {
+  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, private readonly executionPort?: ConversationExecutionPort, readonly now = Date.now, readonly admittedActor: (actorId: string) => boolean = () => true, private executionStorage?: Pick<OrchestrationRuntimeWorker, "updateExecution"> & Partial<Pick<OrchestrationRuntimeWorker,"admission"|"executionAuthority">>, readonly resourceAccess: (context: ActorContext, ref: ConversationRef) => boolean = () => true, private readonly creationReceipts?: ServerCoreStorage["call"]) {
     if (executionPort !== undefined && (!executionPort || typeof executionPort.hostId !== 'string' || !executionPort.hostId.trim() || executionPort.hostId.length > 256 || /[\x00-\x1f]/u.test(executionPort.hostId))) throw new CollaborationError(500, 'execution_host_required');
     this.managedStorage = typeof path !== "string";
     const managed = openServerRepository(path, "actor-collaboration");
@@ -227,9 +234,15 @@ export class Collaboration {
   async close() {
     if (this.#closed) return;
     this.#closed = true; if (this.#timer) clearInterval(this.#timer);
+    await Promise.allSettled(this.#creations);
     await this.#operations; await this.ownedExecutionStorage?.close(); await this.communicationStorage?.close(); this.#unsubscribeIdentity(); this.#unregisterAuthority(); this.#closeDatabase();
   }
   get available() { return !this.#closed; }
+  get capabilities(): CollaborationCapabilities {
+    return this.creationReceipts && this.executionPort?.create
+      ? { ...COLLABORATION_CAPABILITIES, createLookup: true }
+      : COLLABORATION_CAPABILITIES;
+  }
   binding(actorId: string): RunBinding | null {
     const r = this.database.prepare('SELECT * FROM actor_run_bindings WHERE actor_id=?').get(actorId);
     return r ? { actorId, hostId: r.host_id as string, threadId: r.thread_id as string, epoch: r.epoch as number } : null;
@@ -344,7 +357,11 @@ export class Collaboration {
     const actor = this.actors.get(context.actorId);
     if (!actor || !this.actors.allows(context, 'conversation.directory')) throw new CollaborationError(403, 'conversation_action_denied');
     if (!this.execution.directory) throw new CollaborationError(409, 'unsupported_capability');
-    return { ...this.execution.directory(), actor: { id: actor.id, kind: actor.kind, generation: context.generation } };
+    const directory = this.execution.directory();
+    const servers = this.capabilities.createLookup
+      ? directory.servers.map(server => server.capabilities.create ? { ...server, capabilities: { ...server.capabilities, createLookup: true } } : server)
+      : directory.servers;
+    return { ...directory, servers, actor: { id: actor.id, kind: actor.kind, generation: context.generation } };
   }
   async metadata(context: ActorContext, value: unknown) {
     const ref = this.#conversation(context, value, 'conversation.read');
@@ -380,7 +397,7 @@ export class Collaboration {
   }
   async createConversation(context: ActorContext, body: Record<string, unknown>, submission?: TransportSubmissionContext) {
     fields(body, ['serverId','projectId','cwd','content','operationKey','initialPermissionMode']);
-    const serverId = text(body.serverId), content = text(body.content, 16384), operationKey = text(body.operationKey, 128);
+    const serverId = text(body.serverId), content = text(body.content, 16384), operationKey = creationOperationKey(body.operationKey);
     const projectId = body.projectId === undefined ? undefined : text(body.projectId);
     const cwd = body.cwd === undefined ? undefined : text(body.cwd, 4096);
     if ((!projectId && !cwd) || (cwd && (!isAbsolute(cwd) || /[\x00-\x1f]/u.test(cwd))))
@@ -402,10 +419,81 @@ export class Collaboration {
     if (!this.execution.create || !server?.capabilities.create || (initialPermissionMode && !server.capabilities.initialPermissionMode))
       throw new CollaborationError(409, 'unsupported_capability');
 
-    return this.execution.create({ serverId, projectId, cwd, initialPermissionMode }, content, operationKey, {
+    const target = { serverId, projectId, cwd, initialPermissionMode };
+    const trusted: TransportSubmissionContext = {
       ...submission, sender: submission?.sender ?? null, actorContext: context, validUntil: Math.min(context.expiresAt, submission?.validUntil ?? Infinity),
       resourceOwner: { id: submission?.resourceOwner?.id ?? 'conversation-create:' + context.actorId, assertCurrent },
-    });
+    };
+    const attempt = this.creationReceipts
+      ? this.#createWithReceipt(this.creationReceipts, target, content, operationKey, trusted, context, assertCurrent)
+      : this.execution.create(target, content, operationKey, trusted);
+    this.#creations.add(attempt);
+    try { return await attempt; }
+    finally { this.#creations.delete(attempt); }
+  }
+  async #createWithReceipt(store: ServerCoreStorage["call"], target: ConversationCreateTarget, content: string,
+    operationKey: string, trusted: TransportSubmissionContext, context: ActorContext, assertCurrent: () => void): Promise<ConversationCreation> {
+    const key = { actorId: context.actorId, operationKey };
+    const fingerprint = createHash('sha256').update(JSON.stringify([
+      target.serverId, target.projectId ?? null, target.cwd ?? null, target.initialPermissionMode ?? 'read-only', content,
+    ])).digest('hex');
+    const claim = await store.claimConversationCreation({ ...key, serverId: target.serverId, fingerprint });
+    assertCurrent();
+    if (claim.kind === 'conflict') throw new CollaborationError(409, 'idempotency_key_reused');
+    if (claim.kind === 'existing') {
+      if (claim.receipt.state === 'rejected') throw new CollaborationError(claim.receipt.status, claim.receipt.code);
+      const result = this.#projectCreation(claim.receipt, target.serverId, operationKey);
+      if (result.ref && !this.#conversationBaseAllowed(context, result.ref)) throw new CollaborationError(403, 'conversation_action_denied');
+      return result;
+    }
+
+    // The committed claim fences replays even if custody is lost before native
+    // responds. Acknowledgement of allocation must reach the owner before input.
+    let allocated = false, result: ConversationCreation;
+    try {
+      result = await this.execution.create!(target, content, operationKey, trusted, async ref => {
+        const verified = conversationRef(ref);
+        if (verified.serverId !== target.serverId) throw Error('Creation returned a different Server');
+        await store.recordConversationAllocation(key, verified.threadId);
+        allocated = true;
+      });
+    } catch (cause) {
+      const fault = cause as { status?: number; code?: unknown };
+      if (!allocated && fault.status && [400, 401, 403, 404, 409].includes(fault.status)
+        && typeof fault.code === 'string' && /^[a-z_]{1,80}$/u.test(fault.code))
+        await store.rejectConversationAllocation(key, fault.status, fault.code);
+      throw cause;
+    }
+    if (result.creationState === 'created') {
+      if (!allocated) throw Error('Creation result has no committed allocation');
+      if (result.firstMessageState !== 'unknown')
+        await store.recordConversationFirstInput(key, result.firstMessageState === 'submitted' ? 'submitted' : 'first_rejected');
+    }
+    assertCurrent();
+    if (result.ref && !this.#conversationBaseAllowed(context, result.ref)) throw new CollaborationError(403, 'conversation_action_denied');
+    return result;
+  }
+  #projectCreation(receipt: Exclude<CreationReceipt, { state: 'rejected' }>, serverId: string, operationKey: string): ConversationCreation {
+    if (receipt.state === 'claimed') return { operationKey, ref: null, creationState: 'unknown', firstMessageState: 'unknown' };
+    return {
+      operationKey, ref: { serverId, threadId: receipt.threadId }, creationState: 'created',
+      firstMessageState: receipt.state === 'created' ? 'unknown' : receipt.state === 'submitted' ? 'submitted' : 'rejected',
+    };
+  }
+  async lookupCreation(context: ActorContext, args: Record<string, unknown>): Promise<ConversationCreationLookup> {
+    fields(args, ['serverId', 'operationKey']);
+    const serverId = text(args.serverId), operationKey = creationOperationKey(args.operationKey);
+    if (!this.servers(context).servers.find(server => server.serverId === serverId)?.capabilities.createLookup || !this.creationReceipts)
+      throw new CollaborationError(409, 'unsupported_capability');
+    const receipt = await this.creationReceipts.readConversationCreation({ actorId: context.actorId, operationKey, serverId });
+    this.servers(context);
+    if (!receipt) return { found: false, serverId, operationKey };
+    if (receipt.state === 'rejected') return { found: true, receipt: {
+      operationKey, ref: null, creationState: 'rejected', firstMessageState: 'unknown', rejectionCode: receipt.code,
+    } };
+    const result = this.#projectCreation(receipt, serverId, operationKey);
+    if (result.ref && !this.#conversationBaseAllowed(context, result.ref)) throw new CollaborationError(403, 'conversation_action_denied');
+    return { found: true, receipt: result };
   }
   async discover(context: ActorContext, search: string, cursor: string | null, suggestions?: { limit: number; sourceThreadId?: string }) {
     if (!this.actors.isCurrent(context) || !this.admittedActor(context.actorId) || !this.actors.allows(context, 'conversation.search')) throw new CollaborationError(403, 'conversation_action_denied');
@@ -768,6 +856,7 @@ export class Collaboration {
       return this.readConversation(context,args.reference,args.cursor === undefined ? null : text(args.cursor,4096),args.bounded === true,args.tail);
     }
     if (action === 'create') { return this.createConversation(context, args, submission); }
+    if (action === 'createLookup') return this.lookupCreation(context, args);
     if (action === 'discover') {
       fields(args,['search','cursor','suggestions','limit','sourceThreadId']);
       if (args.suggestions !== undefined && args.suggestions !== true) throw new CollaborationError(400, 'invalid_field');

@@ -14,6 +14,10 @@ export type ConversationCreation = { operationKey: string } & (
   | { ref: ConversationRef; creationState: 'created'; firstMessageState: 'submitted' | 'rejected' | 'unknown' }
   | { ref: null; creationState: 'unknown'; firstMessageState: 'unknown' }
 );
+export type ConversationCreationLookup =
+  | { found: true; receipt: ConversationCreation | { operationKey: string; ref: null; creationState: 'rejected'; firstMessageState: 'unknown'; rejectionCode: string } }
+  | { found: false; serverId: string; operationKey: string };
+export type CollaborationCapabilities = typeof COLLABORATION_CAPABILITIES & { createLookup?: true };
 export type CollaborationTarget = { kind: "actor"; actorId: string } | { kind: "conversation"; ref: ConversationRef };
 export const COLLABORATION_METHOD = "opencraft/collaboration";
 /** Each addition is negotiated independently; version alone grants no capability. */
@@ -21,7 +25,7 @@ export const COLLABORATION_CAPABILITIES = { version: 1, read: true, queue: true,
   servers: true, metadata: true, metadataDiscovery: true, boundedRead: true, tailRead: true, lookup: true, deliveryMetadata: true, discoverFilters: true, create: true, initialPermissionMode: true } as const;
 export interface ConversationServer {
   serverId: string; label: string; engine: string; connectionState: 'ready' | 'unavailable' | 'unknown';
-  capabilities: { metadata: boolean; read: boolean; boundedRead: boolean; tailRead?: boolean; create?: boolean; initialPermissionMode?: boolean; queue: boolean; steer: boolean; discoverFilters?: boolean };
+  capabilities: { metadata: boolean; read: boolean; boundedRead: boolean; tailRead?: boolean; create?: boolean; createLookup?: boolean; initialPermissionMode?: boolean; queue: boolean; steer: boolean; discoverFilters?: boolean };
 }
 export interface ConversationMetadata {
   ref: ConversationRef; projectId: string | null; cwd: string | null;

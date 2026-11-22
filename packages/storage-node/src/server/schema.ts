@@ -739,3 +739,24 @@ export const crewMessages = sqliteTable("crew_messages", {
   // The question this message answers; an answer closes it instead of opening new work.
   answers: text("answers"),
 }, table => [index("crew_messages_recipient").on(table.recipientId, table.seq)]);
+
+export const conversationCreationReceipts = sqliteTable("conversation_creation_receipts", {
+  actorId: text("actor_id").notNull(),
+  operationKey: text("operation_key").notNull(),
+  serverId: text("server_id").notNull(),
+  fingerprint: text("fingerprint").notNull(),
+  state: text("state").notNull(),
+  threadId: text("thread_id"),
+  rejectionStatus: integer("rejection_status"),
+  rejectionCode: text("rejection_code"),
+}, table => [
+  primaryKey({ columns: [table.actorId, table.operationKey] }),
+  check("creation_receipt_state", sql.raw(`(
+    (state = 'claimed' AND thread_id IS NULL) OR
+    (state IN ('created', 'submitted', 'first_rejected') AND thread_id IS NOT NULL) OR
+    (state = 'rejected' AND thread_id IS NULL)
+  ) AND (
+    (state = 'rejected' AND rejection_status IS NOT NULL AND rejection_code IS NOT NULL) OR
+    (state <> 'rejected' AND rejection_status IS NULL AND rejection_code IS NULL)
+  )`)),
+]);

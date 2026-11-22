@@ -20,6 +20,7 @@ opencraft thread log '<conversation-uri>' --cursor '<nextCursor>' --json
 opencraft thread send '<conversation-uri>' 'Review this change' --mode queue --key review-01 --json
 opencraft thread send '<conversation-uri>' --message-file ./message.txt --key review-02 --wait delivered --timeout 30s --json
 opencraft thread lookup '<conversation-uri>' --key review-01 --json
+opencraft thread lookup --server '<server-id>' --key create-01 --json
 opencraft thread show '<conversation-uri>' --delivery '<request-id>' --json
 opencraft thread send '<conversation-uri>' 'Adjust the current turn' --mode steer --expected-turn '<exact-turn-id>' --key steer-01 --wait delivered --json
 opencraft thread list --server '<server-id>' --project '<project-id>' --cwd /remote/repo --json
@@ -49,11 +50,20 @@ accepts `accept-edits` and `full` when permitted by the Codex Host.
 The response includes a `reference` for subsequent commands. Submitted
 means the first Turn was accepted. It does not establish task completion.
 
-Create's `--key` is for correlation only; a key is generated when omitted.
-The Server has no creation lookup or deduplication receipt yet. An uncertain
-creation or first message exits 7 with the key and any known reference. If the
-engine explicitly rejects the first message after creating the thread, the
-CLI exits 8 with that reference. Inspect the Server before trying again.
+On servers advertising `createLookup`, a creation key is scoped to the current
+Actor on that installation. Repeating the same key and request returns the
+recorded outcome; changing the Server, workspace, permission mode or message
+conflicts. Set `--key` in automation. A generated key is saved before sending
+under `operations/` beside the profiles file, without the message or workspace.
+
+After a lost acknowledgement use `thread lookup --server <server-id> --key <key>`
+without a conversation reference. It reads the durable receipt without creating
+a thread or sending input, including after a Headless restart. A receipt can
+confirm the thread while the first input remains unknown. An absent receipt or
+unknown outcome is not authority to resend. On older Servers without
+`createLookup`, create remains available where advertised; the key is only a
+correlation ID. An uncertain result exits 7 and retains any known reference.
+An explicit first-message rejection after allocation exits 8 with the reference.
 
 Steer requires `--mode steer --expected-turn <exact-turn-id>`. It targets only
 that running Turn; stale/finished Turns are rejected without queue fallback.

@@ -4,10 +4,13 @@ import { borrowServerDatabase } from "./borrow.js";
 import type { ServerDatabase } from "./index.js";
 import { installedServerMigrationComposition, type ServerDataContract } from "./migration-composition.js";
 
+import type { CreationReceiptMethods } from "./conversation-creation-receipts.js";
+export type { CreationReceipt, CreationReceiptMethods } from "./conversation-creation-receipts.js";
+
 /** The Server installation as a network process holds it. */
 export interface ServerCoreStorage<T = object> extends ServerDatabase {
   /** Async ports of the domain services that run in the owner Worker. */
-  readonly call: OwnerCalls<T>;
+  readonly call: OwnerCalls<T & CreationReceiptMethods>;
 }
 
 /**
@@ -22,7 +25,7 @@ export async function openServerCoreOwner<T = object>(
   directory: string,
   { entry = ownerEntry(import.meta.url, "server-core-owner") }: { entry?: URL } = {},
 ): Promise<ServerCoreStorage<T>> {
-  const { owner, ready } = await WorkerOwner.open<T, { outcome: DatabaseOutcome; contract: ServerDataContract }>(
+  const { owner, ready } = await WorkerOwner.open<T & CreationReceiptMethods, { outcome: DatabaseOutcome; contract: ServerDataContract }>(
     entry,
     {
       name: "Server storage",

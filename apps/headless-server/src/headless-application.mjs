@@ -638,7 +638,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     };
     actorCollaboration = new Collaboration(serverStorage, actorStore,
       conversationExecution, Date.now, actorId => operator.owns(actorId) ? anonymousHandoff() : !instanceAccess || instanceAccess.admitsActor(actorId), orchestrationStorage,
-      (context, ref) => threadAccess.allows(ref.serverId, ref.threadId, operator.owns(context.actorId) ? undefined : context));
+      (context, ref) => threadAccess.allows(ref.serverId, ref.threadId, operator.owns(context.actorId) ? undefined : context), serverStorage.call);
     // Inbox team commands go to the Server space ledger, the only writer of team membership.
     actorCollaboration.attachSpaces({command:(context,command)=>serverSpaces.command(context,command)});
 
@@ -1026,6 +1026,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
             inputDelegation: (thread,inputId,expected) => actorCollaboration.inputDelegation(thread,inputId,expected),
             prepare: (context,input) => actorCollaboration.referenceContext(context,input),
             canCancel: (context, id) => actorCollaboration.canCancel(context, id),
+            capabilities: actorCollaboration.capabilities,
             command: (context, body, submission) => actorCollaboration.command(context, body, submission),
             authorize: (context, threadId, inputId, input) => actorCollaboration.authorizeExecution(context, threadId, inputId, input),
             started: (threadId, inputId, turnId) => actorCollaboration.executionStarted(threadId, inputId, turnId),

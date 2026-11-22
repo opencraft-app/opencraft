@@ -394,3 +394,31 @@ test("missing domain receipts cannot reimport over existing canonical policy", a
   await owner.close();
   await assert.rejects(openServerDatabase(root), /Incomplete Server import receipts/);
 });
+
+test("creation receipts upgrade the preceding Server contract and reject a tampered migration checksum", async t => {
+  const root = fixture(t), path = join(root, "opencraft-server.sqlite");
+  const priorVersion = 21;
+  const prior = openManagedDatabase({ path, migrations: SERVER_MIGRATIONS.slice(0, priorVersion) });
+  importServerData(prior.database, root, { productVersion: "0.1.0", hash: "previous-crew-contract" });
+  const actors = new ActorStore(prior);
+  const retained = actors.createSession("Retained session", "fixture");
+  actors.close();
+  const ledger = prior.database.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
+  prior.database.close();
+
+  const owner = await openServerDatabase(root);
+  try {
+    assert.equal(owner.outcome.status, "migrated");
+    assert.equal(owner.outcome.appliedVersion, priorVersion + 1);
+    assert.deepEqual(owner.database.prepare("SELECT * FROM schema_migrations WHERE version<=? ORDER BY version").all(priorVersion), ledger);
+    const restored = new ActorStore(owner);
+    assert.deepEqual(restored.get(retained.id), retained);
+    restored.close();
+    assert.equal(owner.database.prepare("SELECT count(*) n FROM conversation_creation_receipts").get()?.n, 0);
+  } finally { await owner.close(); }
+
+  const changed = new DatabaseSync(path);
+  changed.prepare("UPDATE schema_migrations SET checksum=? WHERE version=?").run("0".repeat(64), priorVersion + 1);
+  changed.close();
+  await assert.rejects(openServerDatabase(root), { kind: "history-mismatch" });
+});

@@ -1,4 +1,4 @@
-import type { ConversationRef, CollaborationReadCommandMap, ConversationReceipt, ConversationLookup, ConversationCreateTarget, ConversationCreation } from '@opencraft/appserver-protocol/collaboration';
+import type { ConversationRef, CollaborationReadCommandMap, ConversationReceipt, ConversationLookup, ConversationCreateTarget, ConversationCreation, ConversationCreationLookup } from '@opencraft/appserver-protocol/collaboration';
 import { COLLABORATION_METHOD } from '@opencraft/appserver-protocol/collaboration';
 import { JsonRpcAppServerClient } from './client';
 import type { DuplexTransport } from './transport';
@@ -60,6 +60,9 @@ export class CollaborationClient {
   create(target: ConversationCreateTarget, content: string, operationKey: string) {
     if (target.initialPermissionMode !== undefined) this.require('initialPermissionMode');
     return this.command<ConversationCreation>('create', { action: 'create', ...target, content, operationKey }, 90_000);
+  }
+  lookupCreation(serverId: string, operationKey: string) {
+    return this.command<ConversationCreationLookup>('createLookup', { action: 'createLookup', serverId, operationKey });
   }
   close() { return this.connection.close(); }
 }

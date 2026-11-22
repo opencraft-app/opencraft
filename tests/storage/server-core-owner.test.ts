@@ -89,3 +89,29 @@ test("the Headless owner Worker serves shared notes durably through its async po
     await storage.close();
   }
 });
+
+test("creation receipt writes await the Server Worker while the main thread services timers", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "server-core-create-receipts-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const storage = await openServerCoreOwner(directory);
+  t.after(() => storage.close());
+  const input = { actorId: "fixture-actor", serverId: "server", operationKey: "key", fingerprint: "hash" };
+  let settled = false;
+  storage.database.exec("BEGIN IMMEDIATE");
+  const pending = storage.call.claimConversationCreation(input).finally(() => { settled = true; });
+  try {
+    await new Promise<void>(resolve => setTimeout(resolve, 60));
+    assert.equal(settled, false);
+  } finally {
+    storage.database.exec("ROLLBACK");
+  }
+  try {
+    assert.deepEqual(await pending, { kind: "fresh" });
+    await storage.call.recordConversationAllocation(input, "allocated-thread");
+    await storage.call.recordConversationFirstInput(input, "submitted");
+    await assert.rejects(storage.call.recordConversationFirstInput(input, "first_rejected"), /did not advance/);
+    assert.deepEqual(await storage.call.readConversationCreation(input), { state: "submitted", threadId: "allocated-thread" });
+  } finally {
+    await storage.close();
+  }
+});

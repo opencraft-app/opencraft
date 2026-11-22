@@ -123,3 +123,11 @@
 - **跨连接提交的权限影响**：需逐条核对 orchestration 与 server-spaces 的写入是否会扩大授权；如会，则这些写入必须经 owner 确认后才生效，或并入 owner Worker。
 - **下游契约**：`access-control` 若被下游产品直接以同步方式使用，需要在相应阶段协调。
 - **`execution-environment`**：其执行身份查询读取引擎宿主状态库（`busy_timeout=1000`），与本设计无关，随引擎侧改造另行处理。
+
+Conversation creation receipts use the Server Worker connection. A committed
+Actor/key claim is the only authority to attempt a native allocation. The
+Worker commits a known thread reference before the first input may be sent.
+Only the native input acknowledgement can advance that receipt to submitted.
+Retrying a key or reading its receipt never resumes an interrupted operation.
+The ledger stores the requested coordinates as a fingerprint, without message
+text. Claim and transition failures never fall back to main-thread SQLite.

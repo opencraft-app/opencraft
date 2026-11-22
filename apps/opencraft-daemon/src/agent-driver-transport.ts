@@ -1,5 +1,5 @@
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
-import { COLLABORATION_METHOD, COLLABORATION_CAPABILITIES } from "@opencraft/appserver-protocol/collaboration";
+import { COLLABORATION_METHOD } from "@opencraft/appserver-protocol/collaboration";
 import { randomUUID } from "node:crypto";
 import type { DuplexTransport, TransportStatus, TransportSubmissionContext } from "@opencraft/appserver-client/transport";
 import type { Collaboration } from "@opencraft/access-control/collaboration";
@@ -39,7 +39,7 @@ export class AgentDriverSession {
     }
     if (this.initializing.delete(this.key(message)) && message.result) {
       const capabilities = message.result.capabilities ??= {}, extensions = capabilities.extensions ??= {};
-      extensions[COLLABORATION_METHOD] = COLLABORATION_CAPABILITIES;
+      extensions[COLLABORATION_METHOD] = this.collaboration.capabilities;
       const access = extensions["opencraft/method-access"];
       if (Array.isArray(access?.methods)) access.methods = [...new Set([...access.methods, COLLABORATION_METHOD])];
       return JSON.stringify(message);

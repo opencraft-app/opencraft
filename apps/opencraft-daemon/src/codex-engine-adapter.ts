@@ -13,7 +13,7 @@ import { assertModelPolicy, readPolicy, resolvePolicySelection, ModelPolicyError
 import { ProvisionalThreads } from "./provisional-threads.js";
 import { nativeEmptyCreation } from "./native-empty-creation.js";
 import { HostInteractions, InteractionFault } from "@opencraft/app-host-server/interactions";
-import { COLLABORATION_CAPABILITIES } from '@opencraft/appserver-protocol/collaboration';
+import { COLLABORATION_CAPABILITIES, type CollaborationCapabilities } from '@opencraft/appserver-protocol/collaboration';
 import { SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND, isHumanInteraction, type InteractionSourceRequest } from "@opencraft/appserver-protocol";
 import { projectThreadTopologyResult } from "./thread-orchestration-projection.js";
 import type { HumanGitExecutionPort } from '@opencraft/execution-environment/human-git-execution';
@@ -270,6 +270,7 @@ interface SharedCodexRoutingOptions {
     readonly derivedQueries?: TokenUsageQueryService;
   };
   readonly collaboration?: {
+    readonly capabilities?: CollaborationCapabilities;
     modelExecutionAuthority?(threadId:string,inputId:string):{authorizer:string;executor:string|null;expiresAt:number;authorityId?:string;parentAuthorityId?:string};
     topology?(threadId: string): {parentThreadId:string|null;visibility:"visible"|"hidden"} | null;
     queuedContext?(threadId: string, inputId: string, input: readonly unknown[]): Promise<unknown>;
@@ -376,7 +377,7 @@ class OpenCraftQueueRpcError extends Error {
   constructor(readonly code: number, message: string, readonly data?: unknown) { super(message); }
 }
 
-function withCodexHostCapabilities(value: unknown, attachmentStaging: AttachmentStagingCapability, desktop?: HostDesktopCapability, collaboration = false): RpcRecord {
+function withCodexHostCapabilities(value: unknown, attachmentStaging: AttachmentStagingCapability, desktop?: HostDesktopCapability, collaboration?: CollaborationCapabilities): RpcRecord {
   const result = record(value);
   const capabilities = record(result.capabilities);
   const extensions = { ...record(capabilities.extensions) };
@@ -387,7 +388,7 @@ function withCodexHostCapabilities(value: unknown, attachmentStaging: Attachment
       ...capabilities,
       extensions: {
         ...extensions,
-        ...(collaboration ? {"opencraft/collaboration": COLLABORATION_CAPABILITIES} : {}),
+        ...(collaboration ? {"opencraft/collaboration": collaboration} : {}),
         [OPENCRAFT_THREAD_PINS_EXTENSION]: OPENCRAFT_THREAD_PINS_CAPABILITY,
         [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: attachmentStaging,
         ...(desktop ? { [OPENCRAFT_DESKTOP_EXTENSION]: desktop } : {}),
@@ -2396,7 +2397,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         } else this.initializeResult = shared;
       } else {
         this.initializeResult = this.attachmentStaging
-          ? withCodexHostCapabilities(message.result, this.attachmentStaging.capability, this.desktopService?.capability(), !!this.options.collaboration)
+          ? withCodexHostCapabilities(message.result, this.attachmentStaging.capability, this.desktopService?.capability(), (this.options.collaboration?.capabilities ?? (this.options.collaboration ? COLLABORATION_CAPABILITIES : undefined)))
           : projectSharedNativeCodexInitialize(message.result);
       }
       if (this.threadMetadata) {
