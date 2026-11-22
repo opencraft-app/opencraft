@@ -46,7 +46,7 @@ test("counts SQL statements prepared or executed as literals, not other prepare/
     "  `INSERT INTO members (id) VALUES (?)`,",
     ").run(id);",
     'database.exec("BEGIN IMMEDIATE"); database.exec(`commit`);',
-    "// db.prepare(\"DELETE FROM gone\")",
+    '// db.prepare("DELETE FROM gone")',
     "session.prepare(frame); admissionPolicy.prepare(identity);",
     '/^a/.exec("abc"); db.prepare(sql); pattern.exec("selected");',
   ].join("\n");
