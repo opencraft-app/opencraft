@@ -51,10 +51,11 @@ try {
     // Under cgroup v2 each container has a private cgroup namespace, so
     // /proc/self/cgroup reads "0::/" and the services share the host's
     // hostname (network_mode: host). The cgroup namespace identity still
-    // names the owning container.
-    await call('process/writeStdin', { processHandle: id, deltaBase64: Buffer.from("export PTY_SMOKE=preserved; printf 'OWNER_PID=%s OWNER_CGROUPNS=%s\\n' $$ \"$(readlink /proc/$$/ns/cgroup)\"\n").toString('base64') });
-    const result = await wait(id, 0, /OWNER_PID=\d+ OWNER_CGROUPNS=cgroup:\[\d+\]\r?\n/), text = decode(result);
-    const [, pid, cgroupNamespace] = text.match(/OWNER_PID=(\d+) OWNER_CGROUPNS=(cgroup:\[\d+\])/);
+    // names the owning container. cgroup v1 hosts default to the host cgroup
+    // namespace, so the owning container is named by the cgroup path instead.
+    await call('process/writeStdin', { processHandle: id, deltaBase64: Buffer.from("export PTY_SMOKE=preserved; printf 'OWNER_PID=%s OWNER_CGROUPNS=%s%s\\n' $$ \"$(readlink /proc/$$/ns/cgroup)\" \"$(grep -m1 -E '^0::|:memory:' /proc/$$/cgroup | cut -d: -f3)\"\n").toString('base64') });
+    const result = await wait(id, 0, /OWNER_PID=\d+ OWNER_CGROUPNS=cgroup:\[\d+\]\S*\r?\n/), text = decode(result);
+    const [, pid, cgroupNamespace] = text.match(/OWNER_PID=(\d+) OWNER_CGROUPNS=(cgroup:\[\d+\]\S*)/);
     console.log(JSON.stringify({ id, pid, cgroupNamespace, cursor: result.nextSequence, output: text }));
   } else {
     const listed = await call('process/list', {}); assert.ok(listed.processes.some(process => process.processHandle === id));

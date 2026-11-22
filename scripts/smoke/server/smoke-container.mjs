@@ -6,7 +6,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { prepareLayout } from '../../container-deployment/layout.mjs';
+import { prepareLayout, SERVICES } from '../../container-deployment/layout.mjs';
 
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
 const image = process.env.OPENCRAFT_IMAGE ?? 'opencraft:local';
@@ -70,7 +70,7 @@ const topIncludesNativeExecServer = service => {
 let passed = false, origin;
 try {
   const layout = await prepareLayout(env, { uid: process.getuid(), gid: process.getgid() });
-  if (process.getuid() === 0) for (const path of [directory, layout.state, layout.execution, layout.gitCredentials, layout.workspace, layout.logs, ...['brain', 'gateway', 'hands'].map(service => join(logs, service))]) await chown(path, deploymentUid, deploymentGid);
+  if (process.getuid() === 0) for (const path of [directory, layout.state, layout.execution, layout.gitCredentials, layout.workspace, layout.logs, ...SERVICES.map(service => join(logs, service))]) await chown(path, deploymentUid, deploymentGid);
   // The Gateway binds this port only after Brain and Hands are healthy, and they share
   // the host network. A kernel-assigned port is from the ephemeral range, so one of
   // them can be handed it in between; probe a free port below that range instead.
@@ -86,10 +86,12 @@ try {
   const terminalProbe = await readFile(join(root, 'scripts/smoke/server/hands-terminal-probe.mjs'), 'utf8');
   const gatewayContainer = compose(['ps', '-q', 'gateway']);
   const terminal = JSON.parse(docker(['exec', '-i', gatewayContainer, '/opt/opencraft/bin/node', '--input-type=module', '-', 'start', workspace], { input: terminalProbe }));
-  const cgroupNamespace = service => compose(['exec', '-T', service, '/opt/opencraft/bin/node', '-p', "require('node:fs').readlinkSync('/proc/self/ns/cgroup')"]);
+  // Namespace inode plus cgroup path: v2 gives each container a private namespace, v1 shares the host's.
+  const cgroupNamespace = service => compose(['exec', '-T', service, '/opt/opencraft/bin/node', '-p',
+    "const fs = require('node:fs'); fs.readlinkSync('/proc/self/ns/cgroup') + (fs.readFileSync('/proc/self/cgroup', 'utf8').split('\\n').find(line => /^0::|:memory:/.test(line)) ?? '::').split(':')[2]"]);
   assert.equal(terminal.cgroupNamespace, cgroupNamespace('hands'), 'PTY must run in the Hands container');
   for (const service of ['brain', 'gateway']) assert.notEqual(terminal.cgroupNamespace, cgroupNamespace(service), `PTY must not run in ${service}`);
-  for (const service of ['brain', 'gateway', 'hands']) {
+  for (const service of SERVICES) {
     const records = (await readFile(join(logs, service, 'service.log'), 'utf8')).trim().split('\n').map(JSON.parse);
     assert.ok(records.length > 0 && records.every(record => record.time && record.stream));
   }
@@ -97,8 +99,10 @@ try {
   assert.ok(docker(['exec', handsContainer, 'cat', '/var/log/opencraft/brain/service.log']).length > 0);
   const denied = spawnSync('docker', ['exec', handsContainer, 'sh', '-c', 'echo forbidden >> /var/log/opencraft/brain/service.log'], { encoding: 'utf8' });
   assert.notEqual(denied.status, 0, 'Hands must not modify Brain logs');
+  // core.pid is the proxy's account Core; Brain owns AppServer, native Codex and the engine Hosts.
+  const proxyCore = first.body.core.pid;
   const brain = {
-    core: first.body.core.pid, codex: first.body.core.codexPid,
+    core: first.body.core.appServerPid, codex: first.body.core.codexPid,
     engine: first.body.engineHost.pid, dsh: first.body.dsh.enginePid,
   };
   const hands = {
@@ -116,7 +120,7 @@ try {
   const second = await ready();
   const resumedTerminal = JSON.parse(docker(['exec', '-i', compose(['ps', '-q', 'gateway']), '/opt/opencraft/bin/node', '--input-type=module', '-', 'resume', workspace, JSON.stringify(terminal)], { input: terminalProbe }));
   assert.equal(resumedTerminal.preserved, true);
-  assert.deepEqual({ core: second.body.core.pid, codex: second.body.core.codexPid,
+  assert.deepEqual({ core: second.body.core.appServerPid, codex: second.body.core.codexPid,
     engine: second.body.engineHost.pid, dsh: second.body.dsh.enginePid }, brain);
   assert.deepEqual({ owner: topPid('hands', 'owner.cjs'), worker: topPid('hands', 'worker.cjs'),
     exec: topPid('hands', 'exec-server --listen stdio') }, hands);
@@ -127,7 +131,8 @@ try {
   await waitFor(health, value => value.status === 503 && !value.body.ok, 'Brain loss reported');
   compose(['start', 'brain']);
   const recovered = await ready();
-  assert.notEqual(recovered.body.core.pid, brain.core);
+  assert.notEqual(recovered.body.core.appServerPid, brain.core);
+  assert.equal(recovered.body.core.pid, proxyCore, 'Brain restart must not restart the model proxy');
   assert.deepEqual({ owner: topPid('hands', 'owner.cjs'), worker: topPid('hands', 'worker.cjs') },
     { owner: hands.owner, worker: hands.worker });
   assert.notEqual(topPid('hands', 'exec-server --listen stdio'), hands.exec,
