@@ -26,6 +26,7 @@ import { CodexProviderBridge } from "./codex-provider-bridge.js";
 import { codexAdmissionPaused } from "./codex-maintenance.js";
 import { CodexHostServices, codexAccountsService, codexModelsService, codexPinsService, codexTasksService } from "./codex-host-services.js";
 import { CodexNativeReader } from "./codex-native-reader.js";
+import { createCodexBridgeHost } from "./codex-bridge-host.js";
 import { CodexCoreControlClient } from "@opencraft/account-pool-host";
 import type { DuplexTransport } from "@opencraft/appserver-client/transport";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
@@ -228,6 +229,16 @@ export async function startOpenCraftDaemon(options: {
             backupPath: outcome.backupPath, movedAside: outcome.movedAsidePaths.length > 0,
           })));
         };
+        // With the daemon's own bridge stack every Thread runs on the bridge and no legacy Host is composed.
+        if (options.codexBridgeStack && options.codexAgentBridge && options.codexCoreEndpoint && !options.createCodexTransport) {
+          hostServices = createCodexBridgeHost({
+            coreEndpoint: options.codexCoreEndpoint, coreAuthToken: options.authToken, bridge: options.codexAgentBridge,
+            codexDataDirectory: options.codexDataDirectory, artifactDirectory: join(options.dataDirectory, "artifacts"),
+            storageOpened: reportCodexStorage,
+          });
+          reportCodexStorage();
+          return hostServices;
+        }
         const codexAgent = (options.createCodexTransport ?? (configuration => new CodexEngineAdapter(configuration)))({
           historyImageResources: process.env.OPENCRAFT_HISTORY_IMAGE_RESOURCES === "1",
           onStorageOpened: outcomes => { adapterOutcomes = outcomes; reportCodexStorage(); },

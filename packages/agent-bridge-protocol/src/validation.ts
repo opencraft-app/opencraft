@@ -109,6 +109,9 @@ export function parseDelta(value: unknown): DeltaParseResult {
       break;
     case "turn.close":
       if (!requireString("nativeTurnId") || !isOneOf(value.status, TURN_STATUSES)) return fail("turn.close needs nativeTurnId/status");
+      if (value.error !== undefined && (value.status !== "failed" || !isRecord(value.error) || !isString(value.error.message)
+        || (value.error.additionalDetails !== undefined && value.error.additionalDetails !== null && !isString(value.error.additionalDetails))
+        || JSON.stringify(value.error).length > 16_384)) return fail("turn.close error needs failed status and a bounded message");
       break;
     case "item.open":
       if (!requireNativeKey() || !isItemShape(value.shape)) return fail("item.open needs nativeKey/shape");

@@ -24,6 +24,12 @@ import {
 } from "@opencraft/appserver-protocol";
 import { CodexThreadPins } from "./codex-thread-pins.js";
 import { CodexThreadTitles } from "./codex-thread-titles.js";
+import {
+  CODEX_MAINTENANCE_CAPABILITY,
+  CODEX_MAINTENANCE_EXTENSION,
+  CODEX_MAINTENANCE_READ,
+  type CodexMaintenanceSnapshot,
+} from "./codex-maintenance.js";
 
 type Value = Record<string, unknown>;
 const object = (value: unknown): Value =>
@@ -38,6 +44,8 @@ export interface CodexHostService {
   /** Initialize capability extensions this service contributes. */
   capabilities?(): Value;
   storage?(): readonly { name: string; outcome: DatabaseOutcome }[];
+  /** A client request about to go to Thread routing (not the Host's own requests). */
+  beforeRoute?(method: string, params: Value): void;
   /** A request Thread routing answered successfully, by the client's (public) identities. */
   observe?(method: string, params: Value, result: unknown): void;
   /** A notification on its way to clients. */
@@ -45,10 +53,18 @@ export interface CodexHostService {
   close(): void | Promise<void>;
 }
 
-/** What a service may do towards clients. */
+/** What a service may do towards clients, and through Thread routing as the Host itself. */
 export interface CodexHostServiceClients {
   broadcast(method: string, params: Value): void;
+  /**
+   * A request through Thread routing as the Host's own client, e.g. to continue
+   * a Thread. It is routed exactly like a client's (bridge, admission, queue).
+   */
+  request(method: string, params: Value, timeoutMs?: number): Promise<unknown>;
 }
+
+/** The Host's own client identity on Thread routing. */
+export const CODEX_HOST_CLIENT = "opencraft-host-services";
 
 /**
  * The Codex Host's front: duties that belong to the Host rather than to any
@@ -65,12 +81,70 @@ export class CodexHostServices implements DuplexTransport, CodexHostServiceClien
   private readonly services: CodexHostService[];
   private closing?: Promise<void>;
 
+  private sequence = 0;
+  private readonly internal = new Map<
+    string,
+    { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }
+  >();
+  private internalReady?: Promise<void>;
+  private readonly stopEvents?: () => void;
+
+  /**
+   * `events`, when given, is the source of Thread events for services (every
+   * Thread, whether or not a client watches it); otherwise services see the
+   * notifications on their way to clients.
+   */
   constructor(
     private readonly routing: DuplexTransport,
     services: (clients: CodexHostServiceClients) => CodexHostService[],
+    events?: (listener: (method: string, params: Value) => void) => () => void,
   ) {
     this.services = services(this);
     routing.subscribeMessage((frame) => this.receive(frame));
+    this.stopEvents = events?.((method, params) => this.notifyServices(method, params));
+  }
+  private notifyServices(method: string, params: Value): void {
+    for (const service of this.services) {
+      try {
+        service.notification?.(method, params);
+      } catch {
+        /* an observer never changes the notification */
+      }
+    }
+  }
+
+  request(method: string, params: Value, timeoutMs = 30_000): Promise<unknown> {
+    const send = (id: string, frame: Value) =>
+      new Promise<unknown>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          this.internal.delete(id);
+          reject(new Error(`Host request ${method} timed out`));
+        }, timeoutMs);
+        timer.unref?.();
+        this.internal.set(id, { resolve, reject, timer });
+        const raw = JSON.stringify({ jsonrpc: "2.0", ...frame, id, [LOGICAL_CLIENT_FIELD]: CODEX_HOST_CLIENT });
+        void (
+          this.routing.sendWithContext ? this.routing.sendWithContext(raw, { sender: null }) : this.routing.send(raw)
+        ).catch((error) => {
+          const pending = this.internal.get(id);
+          if (!pending) return;
+          this.internal.delete(id);
+          clearTimeout(pending.timer);
+          pending.reject(error instanceof Error ? error : new Error(String(error)));
+        });
+      });
+    // The Host's client initializes once, like any client, before its first request.
+    this.internalReady ??= send(`host:${++this.sequence}`, {
+      method: "initialize",
+      params: { clientInfo: { name: CODEX_HOST_CLIENT, version: "1" }, capabilities: { experimentalApi: true } },
+    }).then(
+      () => undefined,
+      (error) => {
+        this.internalReady = undefined;
+        throw error;
+      },
+    );
+    return this.internalReady.then(() => send(`host:${++this.sequence}`, { method, params }));
   }
 
   get status(): TransportStatus {
@@ -110,6 +184,19 @@ export class CodexHostServices implements DuplexTransport, CodexHostServiceClien
       for (const listener of this.listeners) listener(raw);
       return;
     }
+    // The Host's own client: answers settle its requests; nothing of it reaches clients.
+    if (frame[LOGICAL_CLIENT_FIELD] === CODEX_HOST_CLIENT) {
+      const pending = typeof frame.id === "string" ? this.internal.get(frame.id) : undefined;
+      if (pending && frame.method === undefined) {
+        this.internal.delete(frame.id as string);
+        clearTimeout(pending.timer);
+        if (frame.error) {
+          const error = object(frame.error);
+          pending.reject(Object.assign(new Error(String(error.message ?? "Host request failed")), error));
+        } else pending.resolve(frame.result);
+      }
+      return;
+    }
     const key = JSON.stringify([frame[LOGICAL_CLIENT_FIELD] ?? null, frame.id ?? null]);
     const request = frame.id !== undefined && frame.method === undefined ? this.observed.get(key) : undefined;
     if (request) {
@@ -123,14 +210,8 @@ export class CodexHostServices implements DuplexTransport, CodexHostServiceClien
           }
         }
     }
-    if (typeof frame.method === "string" && frame.id === undefined)
-      for (const service of this.services) {
-        try {
-          service.notification?.(frame.method, object(frame.params));
-        } catch {
-          /* an observer never changes the notification */
-        }
-      }
+    if (!this.stopEvents && typeof frame.method === "string" && frame.id === undefined)
+      this.notifyServices(frame.method, object(frame.params));
     // Contribute this Host's capabilities to the routed initialize result.
     if (this.initializing.delete(key) && frame.result && typeof frame.result === "object") {
       const result = object(frame.result),
@@ -160,6 +241,14 @@ export class CodexHostServices implements DuplexTransport, CodexHostServiceClien
     }
     if (method === "runtime/client/disconnect" && client) this.clients.delete(client);
     const service = method ? this.services.find((candidate) => candidate.handles(method)) : undefined;
+    if (!service && method)
+      for (const candidate of this.services) {
+        try {
+          candidate.beforeRoute?.(method, object(frame.params));
+        } catch {
+          /* an observer never changes routing */
+        }
+      }
     if (!service && method && frame.id !== undefined && this.services.some((candidate) => candidate.observe)) {
       if (this.observed.size >= 4096) this.observed.delete(this.observed.keys().next().value!);
       this.observed.set(JSON.stringify([client || null, frame.id]), { method, params: object(frame.params) });
@@ -197,6 +286,12 @@ export class CodexHostServices implements DuplexTransport, CodexHostServiceClien
 
   close(): Promise<void> {
     return (this.closing ??= (async () => {
+      this.stopEvents?.();
+      for (const pending of this.internal.values()) {
+        clearTimeout(pending.timer);
+        pending.reject(new Error("Codex Host is closing"));
+      }
+      this.internal.clear();
       try {
         await this.routing.close();
       } finally {
@@ -377,7 +472,7 @@ export function codexTitlesService(
   native: CodexNativeConnection,
   clients: CodexHostServiceClients,
   identities?: CodexThreadIdentities,
-): CodexHostService {
+): CodexHostService & { pendingCount(): number } {
   const toNative = (threadId: string) => identities?.toNative(threadId) ?? threadId;
   const order = new Map<string, Promise<unknown>>();
   const titles = new CodexThreadTitles({
@@ -400,6 +495,7 @@ export function codexTitlesService(
   return {
     handles: () => false,
     request: () => null,
+    pendingCount: () => titles.pendingCount,
     observe: (method, params, result) => {
       if (method === "thread/name/set" && typeof params.threadId === "string") titles.invalidate(params.threadId);
       titles.observeResult(method, params, result);
@@ -410,5 +506,43 @@ export function codexTitlesService(
       stop();
       titles.close();
     },
+  };
+}
+
+/** What the maintenance snapshot counts beyond the pause switch. */
+export interface CodexMaintenanceSources {
+  paused(): boolean;
+  bridge?(): Promise<{
+    pendingAdmissions: number;
+    rejectedAdmissions: number;
+    queued: number;
+    unknown: number;
+    pendingApprovals: number;
+  }>;
+  continuation?(): { capacityRetries: number; activeGoals: number };
+  pendingTitles?(): number;
+}
+
+/** The operator's drain view (`opencraft/codex/maintenance/read`), as the local Host reported it. */
+export function codexMaintenanceService(sources: CodexMaintenanceSources): CodexHostService {
+  return {
+    handles: (method) => method === CODEX_MAINTENANCE_READ,
+    request: async () => {
+      const bridge = await sources.bridge?.();
+      const continuation = sources.continuation?.();
+      return {
+        paused: sources.paused(),
+        rejectedAdmissions: bridge?.rejectedAdmissions ?? 0,
+        pendingAdmissions: bridge?.pendingAdmissions ?? 0,
+        queued: bridge?.queued ?? 0,
+        unknown: bridge?.unknown ?? 0,
+        activeGoals: continuation?.activeGoals ?? 0,
+        pendingTitles: sources.pendingTitles?.() ?? 0,
+        pendingApprovals: bridge?.pendingApprovals ?? 0,
+        capacityRetries: continuation?.capacityRetries ?? 0,
+      } satisfies CodexMaintenanceSnapshot;
+    },
+    capabilities: () => ({ [CODEX_MAINTENANCE_EXTENSION]: CODEX_MAINTENANCE_CAPABILITY }),
+    close: () => {},
   };
 }

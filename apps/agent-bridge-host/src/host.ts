@@ -732,6 +732,14 @@ export class BridgeHost {
       object(body.params),
     );
   }
+  /** Inputs the Host still holds, for maintenance draining (all servers). */
+  async maintenance(): Promise<{ queued: number; unknown: number; inFlight: number }> {
+    const counts = await this.storage.call<{ queued: number; unknown: number; inFlightKeys: string[] }>("queue", {
+      method: "maintenanceCounts",
+      args: [],
+    });
+    return { queued: counts.queued, unknown: counts.unknown, inFlight: counts.inFlightKeys.length };
+  }
   threadState(serverId: string, threadId: string): Promise<any> {
     return this.storage.call("threadState", { route: routeKey(serverId, threadId) });
   }

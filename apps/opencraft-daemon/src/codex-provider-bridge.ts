@@ -46,6 +46,7 @@ export class CodexProviderBridge implements DuplexTransport {
   } = {}) {
     this.gateway = new BridgeGateway(options, (threadId, value) => {
       const frame = object(value);
+      this.observeEvent(threadId, frame);
       if (frame.method === 'interaction/resolved') {
         const id = object(frame.params).interactionId;
         this.interactions.delete(id);
@@ -77,6 +78,19 @@ export class CodexProviderBridge implements DuplexTransport {
       this.emit({ id: params.interactionId, method: payload.method, params: { ...object(this.gateway.history(threadId, payload.params)), threadId } }, client);
     }
   }
+  private eventObservers = new Set<(method: string, params: Record<string, unknown>) => void>();
+  /** Every Thread event the bridge delivers, whether or not a client watches that Thread (Host duties). */
+  observeEvents(listener: (method: string, params: Record<string, unknown>) => void): () => void {
+    this.eventObservers.add(listener);
+    return () => { this.eventObservers.delete(listener); };
+  }
+  private observeEvent(threadId: string, frame: Record<string, any>): void {
+    if (typeof frame.method !== 'string' || frame.id !== undefined || !this.eventObservers.size) return;
+    const params = object(frame.params);
+    const projected = object(this.gateway.history(threadId, params));
+    const visible = { ...projected, threadId, ...(typeof params.turnId === 'string' ? { turnId: this.gateway.canonicalTurn(threadId, params.turnId) ?? params.turnId } : {}) };
+    for (const listener of this.eventObservers) { try { listener(frame.method, visible); } catch { /* observers never affect delivery */ } }
+  }
   private adoptions = new Map<string, Promise<void>>();
   /** Recently declined adoptions; retried after a while, not on every read. */
   private declined = new Map<string, number>();
@@ -100,6 +114,12 @@ export class CodexProviderBridge implements DuplexTransport {
     })().finally(() => this.adoptions.delete(threadId));
     this.adoptions.set(threadId, operation);
     return operation;
+  }
+  /** What this bridge and its Host still hold, for the Host's maintenance snapshot. */
+  async maintenance(): Promise<{ pendingAdmissions: number; rejectedAdmissions: number; queued: number; unknown: number; pendingApprovals: number }> {
+    const host = await this.gateway.maintenance();
+    return { pendingAdmissions: this.admissionsInFlight + host.inFlight, rejectedAdmissions: this.rejectedAdmissions,
+      queued: host.queued, unknown: host.unknown, pendingApprovals: this.interactions.size };
   }
   /** Public and native identities of bridge Threads, for Host services that address native Codex directly. */
   threadIdentities(): { toNative(threadId: string): string | undefined; toPublic(nativeId: string): string | undefined } {

@@ -33,6 +33,7 @@ const scenarios = result.scenarios as unknown[];
 
 // A local Responses model: answers each user text with "echo: <text>".
 const requests: string[] = [];
+const held = new Set<ServerResponse>();
 const event = (response: ServerResponse, value: Record<string, unknown>) =>
   response.write(`event: ${value.type}\ndata: ${JSON.stringify(value)}\n\n`);
 const model = createServer(async (request, response) => {
@@ -58,6 +59,16 @@ const model = createServer(async (request, response) => {
   const text = String(users.at(-1)?.content?.find((part: any) => part.type === "input_text")?.text ?? "");
   requests.push(text);
   const id = `response-${requests.length}`;
+  // The first STACK-SLOW turn never answers: the daemon restarts while it runs.
+  if (text === "STACK-SLOW" && requests.filter((value) => value === "STACK-SLOW").length === 1) {
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    event(response, {
+      type: "response.created",
+      response: { id, object: "response", status: "in_progress", output: [] },
+    });
+    held.add(response);
+    return;
+  }
   const item = {
     type: "message",
     id: `message-${id}`,
@@ -203,6 +214,7 @@ async function openClient() {
 }
 
 async function answer(client: JsonRpcAppServerClient, threadId: string, text: string, clientUserMessageId: string) {
+  console.log(`[drill] ${text} on ${threadId}`);
   await client.request(
     "turn/start" as any,
     { threadId, clientUserMessageId, input: [{ type: "text", text, text_elements: [] }] } as any,
@@ -308,12 +320,79 @@ try {
   assert.equal(second.reply, "echo: STACK-SECOND");
   assert.equal(second.turns, 2);
   scenarios.push({ name: "after a full restart the same Thread continues", threadId, reply: second.reply });
-  await session.close();
   assert.deepEqual(
     requests,
     ["LEGACY-FIRST", "LEGACY-SECOND", "STACK-FIRST", "STACK-SECOND"],
     "each input reached the model exactly once",
   );
+
+  // A schedule on a bridge Thread runs by itself, through the bridge.
+  const saved: any = await session.client.request(
+    "opencraft/schedules/save" as any,
+    {
+      threadId,
+      expectedRevision: 0,
+      prompt: "STACK-SCHEDULED",
+      nextRunAt: Date.now() + 500,
+      intervalMinutes: null,
+      timeZone: "UTC",
+    } as any,
+  );
+  assert.equal(saved.schedule.status, "active");
+  for (let attempt = 0; ; attempt++) {
+    const view: any = await session.client.request("opencraft/schedules/read" as any, { threadId } as any);
+    if (view.runs.some((run: any) => run.state === "completed")) break;
+    if (attempt > 240) throw new Error(`Scheduled run did not complete: ${JSON.stringify(view.runs)}`);
+    await delay(250);
+  }
+  assert.ok(requests.includes("[Scheduled task]\nSTACK-SCHEDULED"), "the scheduled prompt reached the model");
+  scenarios.push({ name: "a schedule runs on a bridge Thread by itself" });
+
+  // A turn the daemon's restart interrupts is continued by the Host, without anyone asking.
+  await session.client.request(
+    "turn/start" as any,
+    {
+      threadId,
+      clientUserMessageId: "stack-slow",
+      input: [{ type: "text", text: "STACK-SLOW", text_elements: [] }],
+    } as any,
+  );
+  for (let attempt = 0; !held.size; attempt++) {
+    if (attempt > 400) throw new Error("The slow turn never reached the model");
+    await delay(50);
+  }
+  await session.close();
+  await daemon.close();
+  daemon = undefined;
+  for (const response of held) response.end();
+  held.clear();
+  const before = requests.length;
+  daemon = await startOpenCraftDaemon(daemonOptions);
+  session = await openClient();
+  for (let attempt = 0; ; attempt++) {
+    const read: any = await session.client.request("thread/read" as any, { threadId, includeTurns: true } as any);
+    const turns = read.thread.turns ?? [];
+    const last = turns.at(-1);
+    if (
+      requests.length > before &&
+      last?.status === "completed" &&
+      last.items?.some((item: any) => item.type === "agentMessage")
+    ) {
+      scenarios.push({
+        name: "an interrupted turn is continued after a restart",
+        continuation: requests.slice(before),
+        turns: turns.length,
+      });
+      break;
+    }
+    if (attempt > 480)
+      throw new Error(
+        `No continuation after restart: ${JSON.stringify(requests.slice(before))} ${JSON.stringify(last)?.slice(0, 400)}`,
+      );
+    await delay(250);
+  }
+  assert.equal(requests.length - before, 1, "exactly one continuation reached the model");
+  await session.close();
   result.result = "passed";
   console.log(`PASS: ${JSON.stringify(result, null, 2)}`);
 } finally {

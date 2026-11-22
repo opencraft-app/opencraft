@@ -36,6 +36,8 @@ export class BridgeGateway {
     }
     return response.json();
   }
+  /** Inputs the Host holds (queued, unknown, in flight), for maintenance draining. */
+  maintenance(): Promise<{ queued: number; unknown: number; inFlight: number }> { return this.rpc('/maintenance'); }
   async open(): Promise<void> {
     const snapshot = await this.rpc('/snapshot');
     for (const row of snapshot.routes) { const route = JSON.parse(row.route); if (route[0] === this.options.serverId) this.pinned.add(route[1]); }

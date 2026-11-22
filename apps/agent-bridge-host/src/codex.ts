@@ -37,8 +37,10 @@ function id(value: unknown): string {
 }
 /** Native user input the bridge forwards: text, images by URL or local path, and file mentions. */
 export const CODEX_INPUT_TYPES = ["text", "image", "localImage", "mention"] as const;
-function nativeInput(value: unknown): boolean {
-  if (!Array.isArray(value) || value.length === 0 || Buffer.byteLength(JSON.stringify(value)) > 65536) return false;
+/** An empty start continues the Thread (system continuation after a restart or provider failure); steers need content. */
+function nativeInput(value: unknown, allowEmpty = false): boolean {
+  if (!Array.isArray(value) || (value.length === 0 && !allowEmpty) || Buffer.byteLength(JSON.stringify(value)) > 65536)
+    return false;
   return value.every((raw) => {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
     const item = raw as Record<string, unknown>,
@@ -163,7 +165,7 @@ export class CodexBridge {
     const session = this.session(threadId);
     if (session.activeTurn || session.starting || session.uncertainStart)
       throw new CodexBridgeError("explicit-reject", "Turn already active");
-    if (!nativeInput(params.input))
+    if (!nativeInput(params.input, true))
       throw new CodexBridgeError("unsupported", "Input must be bounded text, image, local image or file mention");
     // Permission/environment preparation remains the existing owner's responsibility.
     session.starting = true;
@@ -321,7 +323,21 @@ export class CodexBridge {
       session.endedTurns.add(nativeTurnId);
       if (session.activeTurn === nativeTurnId) session.activeTurn = undefined;
       const status = turn.status === "failed" ? "failed" : turn.status === "interrupted" ? "interrupted" : "completed";
-      this.emit(threadId, [{ op: "turn.close", scope, nativeTurnId, status }]);
+      // record() refuses non-objects; a completed turn carries error: null.
+      const error = turn.error && typeof turn.error === "object" ? (turn.error as Record<string, unknown>) : {};
+      // The native classification lets the Host's owner decide on a provider retry.
+      const failure =
+        status === "failed" && typeof error.message === "string"
+          ? {
+              error: {
+                message: error.message.slice(0, 4096),
+                codexErrorInfo: error.codexErrorInfo ?? null,
+                additionalDetails:
+                  typeof error.additionalDetails === "string" ? error.additionalDetails.slice(0, 4096) : null,
+              },
+            }
+          : {};
+      this.emit(threadId, [{ op: "turn.close", scope, nativeTurnId, status, ...failure }]);
     } else if (method === "item/started" || method === "item/completed") {
       const item = record(p.item),
         nativeKey = id(item.id),

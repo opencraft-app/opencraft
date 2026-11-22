@@ -10,6 +10,7 @@ import type {
   BridgeDelta,
   ItemShape,
   TextChannel,
+  TurnFailure,
   TurnStatus,
 } from "@opencraft/agent-bridge-protocol";
 import type {
@@ -182,7 +183,7 @@ export function assemble(
     state.pendingAccepted = [];
   };
 
-  const settleTurn = (nativeTurnId: string, status: TurnStatus, claimIfIdle: boolean, op: string): void => {
+  const settleTurn = (nativeTurnId: string, status: TurnStatus, claimIfIdle: boolean, op: string, error?: TurnFailure): void => {
     let turnKey = nativeTurnId;
     let turn = state.openTurns[turnKey];
     if (turn === undefined) {
@@ -198,7 +199,7 @@ export function assemble(
     }
     const settledId = turn.turnId;
     queuePending();
-    emit({ kind: "turn.completed", threadId, turnId: settledId, status, startedAtMs: turn.startedAtMs });
+    emit({ kind: "turn.completed", threadId, turnId: settledId, status, startedAtMs: turn.startedAtMs, ...(error ? { error } : {}) });
     state.settledNativeTurns[turnKey] = settledId;
     delete state.openTurns[turnKey];
     if (state.activeTurnId === settledId) {
@@ -254,7 +255,7 @@ export function assemble(
         settleTurn(delta.nativeTurnId, delta.status, delta.claimIfIdle === true, op);
         break;
       case "turn.close":
-        settleTurn(delta.nativeTurnId, delta.status, false, op);
+        settleTurn(delta.nativeTurnId, delta.status, false, op, delta.error);
         break;
       case "turn.mainRun": {
         if (state.activeTurnId === null) {

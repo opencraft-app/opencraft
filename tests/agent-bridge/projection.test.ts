@@ -274,3 +274,19 @@ test("TurnSteerResponse stays compatible and can express the steer/end race as q
   const last = states[states.length - 1] as { status: { disposition: string | null } };
   assert.equal(last.status.disposition, queued.disposition);
 });
+
+test("a provider's turn failure reaches turn/completed as reported, so the Host can classify it", () => {
+  const failure = { message: "Usage limit reached", codexErrorInfo: "usageLimitExceeded", additionalDetails: null };
+  const assembled = assemble(createAssemblerState(BRIDGE_SCHEMA_VERSION), [
+    { op: "turn.open", nativeTurnId: "n1", scope: S },
+    { op: "turn.close", nativeTurnId: "n1", status: "failed", error: failure, scope: S },
+    { op: "turn.open", nativeTurnId: "n2", scope: S },
+    { op: "turn.close", nativeTurnId: "n2", status: "completed", scope: S },
+  ], { threadId: "thr-fixture", clockSeed: 1_700_000_000_000, atMsStep: 1 });
+  const completed = (projectToAppServer(assembled.events, { steerEvidenceDeclared: false, schemaVersion: BRIDGE_SCHEMA_VERSION }) as AppServerNotification[])
+    .filter((n) => n.method === "turn/completed")
+    .map((n) => (n.params as { turn: { status: string; error: unknown } }).turn);
+  assert.deepEqual(completed.map((turn) => turn.status), ["failed", "completed"]);
+  assert.deepEqual(completed[0]!.error, { ...failure, misalignment: null });
+  assert.equal(completed[1]!.error, null);
+});

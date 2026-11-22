@@ -81,10 +81,20 @@ export interface TurnMainRunDelta extends DeltaBase {
   readonly state: "idle" | "running";
 }
 
+/** Why a turn failed, as the provider reported it (AppServer `TurnError` shape). */
+export interface TurnFailure {
+  readonly message: string;
+  /** Provider-specific classification, opaque to the bridge (Codex: `codexErrorInfo`). */
+  readonly codexErrorInfo?: unknown;
+  readonly additionalDetails?: string | null;
+}
+
 export interface TurnCloseDelta extends DeltaBase {
   readonly op: "turn.close";
   readonly nativeTurnId: string;
   readonly status: TurnStatus;
+  /** Only with status failed; optional, bounded to 16 KiB. */
+  readonly error?: TurnFailure;
 }
 
 export interface ItemOpenDelta extends DeltaBase {

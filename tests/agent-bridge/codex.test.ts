@@ -96,7 +96,25 @@ test('native image, local image and file mention input pass through; anything el
   assert.equal(sent[1].method, 'turn/steer');
   bridge.notification('turn/completed', { threadId: 'native', turn: { id: 'turn-1', status: 'completed' } });
   for (const input of [[{ type: 'skill', name: 'x', path: '/x' }], [{ type: 'localImage', path: 'relative.png' }], [{ type: 'image', url: 'http://plain/a.png' }],
-    [{ type: 'text', text: 'x'.repeat(70_000) }], []])
+    [{ type: 'text', text: 'x'.repeat(70_000) }]])
     await assert.rejects(bridge.start('route', { input }), (e: unknown) => e instanceof CodexBridgeError && e.kind === 'unsupported', JSON.stringify(input).slice(0, 60));
   assert.equal(sent.length, 2, 'refused input is never sent');
+  // An empty start continues the Thread (Host recovery and retry); a steer needs content.
+  await bridge.start('route', { input: [], clientUserMessageId: 'continue' });
+  assert.deepEqual(sent[2].params.input, []);
+  bridge.notification('turn/started', { threadId: 'native', turn: { id: 'turn-3' } });
+  await assert.rejects(bridge.steer('route', { inputId: 'empty', clientRequestId: 'empty', expectedTurnId: 'turn-3', input: [] }),
+    (e: unknown) => e instanceof CodexBridgeError && e.kind === 'unsupported');
+  assert.equal(sent.length, 3);
+});
+
+test('a failed native turn carries its error classification; a completed one carries none', () => {
+  const events: BridgeDelta[] = [];
+  const bridge = new CodexBridge({ async request() { return {}; } }, (_, deltas) => events.push(...deltas));
+  bridge.bind('route', 'native');
+  bridge.notification('turn/completed', { threadId: 'native', turn: { id: 'a', status: 'failed', error: { message: 'busy', codexErrorInfo: 'serverOverloaded', additionalDetails: null } } });
+  bridge.notification('turn/completed', { threadId: 'native', turn: { id: 'b', status: 'completed', error: null } });
+  assert.deepEqual(events.map(e => e.op === 'turn.close' ? [e.status, e.error ?? null] : null), [
+    ['failed', { message: 'busy', codexErrorInfo: 'serverOverloaded', additionalDetails: null }], ['completed', null],
+  ]);
 });
