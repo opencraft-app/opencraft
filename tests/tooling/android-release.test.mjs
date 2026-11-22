@@ -63,6 +63,8 @@ test("the Expo config applies only a valid release versionCode", (t) => {
 test("the pre-release publishes only the production-signed APK", () => {
   const android = read(".github/workflows/android-release-apk.yml");
   assert.match(android, /environment: android-release/u);
+  assert.match(android, /^  workflow_dispatch:\n    inputs:\n      tag:/mu);
+  assert.match(android, /github\.ref == 'refs\/heads\/main'/u);
   assert.match(android, /matrix:build -- expo-android-release-apk/u);
   assert.doesNotMatch(android, /expo-android-internal-apk/u);
   assert.match(android, /package-manager-cache: false/u);

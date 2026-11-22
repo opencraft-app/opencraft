@@ -1,9 +1,17 @@
 name: Android release APK
 
-# Builds the public APK with the repository-external production key held by the
-# android-release Environment. It never falls back to Expo's development key;
-# the manual internal APK workflow remains the only development-key build.
+# Builds the published app.opencraft APK with the repository-external production
+# key held by the android-release Environment. It never falls back to Expo's
+# development key; the manual internal APK workflow remains the only
+# development-key build. Desktop pre-release calls it to publish the APK; a
+# manual run only produces the signed APK as an Actions artifact.
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Version the APK carries, such as v0.1.0-beta.7 (must match apps/mobile/app.json)
+        required: true
+        type: string
   workflow_call:
     inputs:
       tag:
@@ -58,7 +66,11 @@ jobs:
       - name: Derive the Android versionCode from the release tag
         env:
           TAG: ${{ inputs.tag }}
-        run: echo "OPENCRAFT_ANDROID_VERSION_CODE=$(node scripts/release/android-version-code.mjs "$TAG")" >> "$GITHUB_ENV"
+        run: |
+          version_code="$(node scripts/release/android-version-code.mjs "$TAG")"
+          version="${TAG#v}"
+          test "$(jq -er .expo.version apps/mobile/app.json)" = "${version%-beta.*}"
+          echo "OPENCRAFT_ANDROID_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
       - name: Materialize the production key outside the checkout
         env:
           ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}

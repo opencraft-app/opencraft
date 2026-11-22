@@ -258,6 +258,10 @@ versionCode，否则沿用 `app.json` 的值。产物位于 `apps/mobile/release
 正式版加 99），保证后续版本可覆盖安装。手动的 `Android internal APK` 工作流只产出
 使用 Expo 开发密钥的 Actions 构件，仅限内测，不进入 Release。
 
+只需要签名 APK、不发布桌面版时，从 main 手动运行 `Android release APK` 工作流并填写
+版本 tag（如 `v0.1.0-beta.7`，基础版本须等于 `app.json` 的 `version`）；产物是
+`opencraft-android-release-<commit>` Actions 构件，不创建 tag 或 Release。
+
 备案表若只写“MD5”，先确认要求的是签名证书还是 APK 文件；两者不同。
 更换密钥或重新构建 APK 后，应重新从新产物读取这些值，不沿用旧资料。
 在有 Android 设备时安装新包验证：
