@@ -9,7 +9,10 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { AccountEnvironment, EnvironmentError } from '@opencraft/execution-environment/account-environment';
 import { AccountEnvironmentHttp } from '@opencraft/execution-environment/account-environment-http';
-import { EmployeeGitVaultStore } from '@opencraft/execution-environment/employee-git-vault-store';
+import { EmployeeGitVaultStore, GitVaultError } from '@opencraft/execution-environment/employee-git-vault-store';
+import { GitVaultError as MetadataGitVaultError } from '../../packages/execution-environment/src/git-vault-error';
+import { build } from 'esbuild';
+import { fileURLToPath } from 'node:url';
 import { parseEnvironmentDocument } from '../../packages/workbench-runtime/src/account-environment';
 
 async function fixture(t: any) {
@@ -19,6 +22,15 @@ async function fixture(t: any) {
 }
 const global = { projectId: null }, a = { projectId: 'project-a' }, b = { projectId: 'project-b' };
 const entry = (value: string, secret = true, name = 'SERVICE_KEY') => ({ name, value, secret });
+
+test('metadata HTTP bundles without the vault implementation and keeps the original domain error identity', async () => {
+  assert.equal(MetadataGitVaultError, GitVaultError);
+  const result = await build({
+    entryPoints: [fileURLToPath(new URL('../../packages/execution-environment/src/account-environment-http.ts', import.meta.url))],
+    bundle: true, platform: 'node', format: 'esm', target: 'node26', write: false, metafile: true, logLevel: 'silent',
+  });
+  assert.ok(!Object.keys(result.metafile!.inputs).some(path => path.includes('employee-git-vault-store')));
+});
 
 test('two employees and two projects remain separate; project deletion restores the personal default', async t => {
   const { env } = await fixture(t);
