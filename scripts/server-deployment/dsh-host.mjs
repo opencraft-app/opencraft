@@ -94,7 +94,9 @@ export async function startIndependentDshHost(configuration) {
         return readDshColdResources({identity:join(machineIdentityDirectory ?? dirname(options.dataDirectory),"machine-id"),
           dependencyRoots:coldDependencyRoots,agent:options.dataDirectory,models:options.modelStorageDirectory,
           projects:options.projectStorageDirectory,skills:options.skillsDirectory,
-          nativeRuntime:resolve(dirname(options.dshExecutable),"../../../.."),plugins:dirname(options.dshCapabilityPlugin),...attachments});
+          nativeRuntime:resolve(dirname(options.dshExecutable),"../../../.."),plugins:dirname(options.dshCapabilityPlugin),...attachments,
+          // Proxy mode: model keys belong to the account Core; the DSH owner neither reads nor hashes them.
+          excluded:process.env.OPENCRAFT_PROXY_CALLER_FILE&&options.modelStorageDirectory?[join(options.modelStorageDirectory,'credentials.json')]:[]});
       },
     });
     const controlToken = randomUUID();

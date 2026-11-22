@@ -3,8 +3,8 @@ import {createProvider, InMemoryCredentialStore, type Api, type Model, type Prov
 import {getApiProvider} from '@earendil-works/pi-ai/compat';
 import {piModel} from '@opencraft/plugin-pi-engine';
 import type {ConfiguredProvider, ModelDocument} from './model-document.js';
-import {ModelConfigurationApplyError, ModelConfigurationService, type ModelCredentialResolver, type ModelEnginePort} from './service.js';
-import {ModelConfigurationRepository, ModelCredentialRepository} from './repository.js';
+import {ModelConfigurationApplyError, ModelConfigurationService, type ModelCredentialPort, type ModelCredentialResolver, type ModelEnginePort, type ProxyCaller} from './service.js';
+import {ModelConfigurationRepository} from './repository.js';
 import type {StateDocumentStore} from '@opencraft/document-storage/state';
 import {configurationDocument} from './state-documents.js';
 
@@ -128,9 +128,10 @@ export class PiModelEngineAdapter implements ModelEnginePort {
 }
 
 /** The same revision/stamp owner used by the DSH adapter; Pi only supplies its execution port. */
-export async function createPiModelConfiguration(repository: ModelConfigurationRepository, credentials: ModelCredentialRepository, piDocuments: StateDocumentStore) {
+/** `caller` is the proxy-mode caller record; with it `credentials` is the account Core port and Pi never holds a provider key. */
+export async function createPiModelConfiguration(repository: ModelConfigurationRepository, credentials: ModelCredentialPort, piDocuments: StateDocumentStore, caller: ProxyCaller | null = null) {
   const adapter = await PiModelEngineAdapter.create(piDocuments);
-  const service = new ModelConfigurationService(repository, credentials, adapter);
+  const service = new ModelConfigurationService(repository, credentials, adapter, caller);
   return {models: adapter.runtime,
     configuration: {
       async synchronize() {

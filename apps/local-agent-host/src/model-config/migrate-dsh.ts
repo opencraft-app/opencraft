@@ -3,7 +3,8 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {parse} from 'yaml';
 import {emptyModelDocument,validateModelDocument} from './model-document.js';
-import {MODEL_DOCUMENT_KEY,ModelConfigurationRepository,ModelCredentialRepository} from './repository.js';
+import {MODEL_DOCUMENT_KEY,ModelConfigurationRepository} from './repository.js';
+import type {ModelCredentialPort} from './service.js';
 import {configurationDocument} from './state-documents.js';
 import {fromDshProfile} from './dsh-adapter.js';
 import type {RuntimeSettingsDescribeResponse} from '@opencraft/appserver-protocol';
@@ -11,7 +12,7 @@ import type {RuntimeSettingsDescribeResponse} from '@opencraft/appserver-protoco
 const object=(v:unknown):Record<string,any>=>v&&typeof v==='object'&&!Array.isArray(v)?v as Record<string,any>:{};
 async function yaml(path:string){let text:string;try{text=await readFile(path,'utf8')}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error}try{return object(parse(text))}catch{throw new Error('旧配置格式无效，未迁移')}}
 /** Explicit one-way import; never mirror engine settings back into the product file. */
-export async function migrateDshModels(repository:ModelConfigurationRepository,credentials:ModelCredentialRepository,legacyHome:string,backupDirectory:string,base?:RuntimeSettingsDescribeResponse){
+export async function migrateDshModels(repository:ModelConfigurationRepository,credentials:ModelCredentialPort,legacyHome:string,backupDirectory:string,base?:RuntimeSettingsDescribeResponse){
   if(await configurationDocument(repository.documents.read(MODEL_DOCUMENT_KEY))!==null)return {migrated:false,count:(await repository.read()).providers.length};
   const legacy=await yaml(join(legacyHome,'settings.yaml'));
   const doc=emptyModelDocument();

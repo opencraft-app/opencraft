@@ -178,3 +178,18 @@ test('private capability transport failure stays unknown after native settlement
  await f.engine.close();const cold=new PiEngine({directory:join(f.root,'pi'),dataDirectory:f.root,cwd:f.root,models:models(),admission:{open:()=>false,run:f.authority.run.bind(f.authority)}});t.after(()=>cold.close());await cold.start();
  assert.equal((await cold.handoffObservation()).coverage,'unknown');await cold.close();assert.equal(calls,1);
 });
+
+test('proxy-mode Pi cold proof skips the model credentials file owned by the account Core',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'pi-proxy-proof-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ for(const path of ['pi','models','projects'])await mkdir(join(root,path));
+ await writeFile(join(root,'models','models.json'),'{"revision":1}');
+ // Unreadable for this owner: any read of it would fail the proof.
+ const {symlink}=await import('node:fs/promises');await symlink(join(root,'absent'),join(root,'models','credentials.json'));
+ const proof=async(credentialsExternal:boolean)=>{
+  const owner=new PiOwnerHandoff(root,{entry:'test'},()=>({coverage:'complete',activeCount:0}),{credentialsExternal});await owner.load();
+  owner.attach({handoffObservation:async()=>({coverage:'complete',activeCount:0,workers:[],records:[],capabilities:[]})},{consumerObservation:()=>({coverage:'complete',activeCount:0})},[]);
+  return owner.coldProof();
+ };
+ await assert.rejects(proof(false),/Unknown Pi store entry/);
+ assert.deepEqual((await proof(true)).stores.map((file:any)=>file.name).filter((name:string)=>name.startsWith('models')),['models/models.json']);
+});

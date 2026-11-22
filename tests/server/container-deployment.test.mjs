@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { deploymentPaths, readPrivateToken } from '../../scripts/container-deployment/paths.mjs';
 import { handsResources } from '../../scripts/container-deployment/resources.mjs';
-import { OWNER_ORDER, assertImageReference, deploymentIdentity, parseEnvironment, setEnvironmentValue } from '../../scripts/container-deployment/compose-release.mjs';
+import { OWNER_ORDER, brainEmbedsAccountCore, ownerSteps, assertImageReference, deploymentIdentity, parseEnvironment, setEnvironmentValue } from '../../scripts/container-deployment/compose-release.mjs';
 import { legacyLayoutValues } from '../../scripts/container-deployment/layout.mjs';
 
 const composeExecutable = process.env.OPENCRAFT_COMPOSE_EXECUTABLE ?? 'docker';
@@ -15,7 +15,7 @@ const composeAvailable = () => spawnSync(composeExecutable, [...composePrefix, '
 const compose = (args, options) => execFileSync(composeExecutable, [...composePrefix, ...args], options);
 
 test('Compose release transactions preserve env content and owner dependency order', () => {
-  assert.deepEqual(OWNER_ORDER, ['hands', 'brain', 'gateway']);
+  assert.deepEqual(OWNER_ORDER, ['hands', 'proxy', 'brain', 'gateway']);
   const source = '# deployment\nOPENCRAFT_IMAGE=opencraft:v1\nOPENCRAFT_PORT=10000\n';
   assert.deepEqual(parseEnvironment(source), { OPENCRAFT_IMAGE: 'opencraft:v1', OPENCRAFT_PORT: '10000' });
   assert.equal(setEnvironmentValue(source, 'OPENCRAFT_IMAGE', 'ghcr.io/opencraft-app/opencraft@sha256:abc'),
@@ -69,6 +69,18 @@ test('core authentication refuses readable-by-others and empty files', async t =
   await assert.rejects(readPrivateToken(path), /Invalid core token/);
 });
 
+test('the first proxy-default release stops an embedded-Core Brain before the proxy takes the account writer', () => {
+  const steps = ownerSteps({ brainEmbedsCore: true });
+  assert.deepEqual(steps, [['stop', 'brain'], ['up', 'hands'], ['up', 'proxy'], ['up', 'brain'], ['up', 'gateway']]);
+  assert.ok(steps.findIndex(([, s]) => s === 'proxy') < steps.findIndex(([a, s]) => a === 'up' && s === 'brain'));
+  // Already switched: Brain keeps serving while the proxy is replaced; nothing is stopped first.
+  assert.deepEqual(ownerSteps({ brainEmbedsCore: false }), OWNER_ORDER.map(service => ['up', service]));
+  assert.equal(brainEmbedsAccountCore(['PATH=/bin', 'OPENCRAFT_DATA_DIR=/d']), true, 'pre-proxy Brain had no proxy mode');
+  assert.equal(brainEmbedsAccountCore(['OPENCRAFT_PROXY_MODE=embedded']), true);
+  assert.equal(brainEmbedsAccountCore(['OPENCRAFT_PROXY_MODE=external', 'OPENCRAFT_PROXY_PORT=45071']), false);
+  assert.equal(brainEmbedsAccountCore(null), false, 'no Brain container: nothing holds the writer');
+});
+
 test('rendered Compose separates gateway, brain and hands while preserving path identity', t => {
   if (!composeAvailable())
     return t.skip('Docker Compose CLI is unavailable');
@@ -79,9 +91,9 @@ test('rendered Compose separates gateway, brain and hands while preserving path 
       OPENCRAFT_HOST_LOG_DIR: '/srv/opencraft/logs', OPENCRAFT_LOG_DIR: '/var/log/opencraft',
       OPENCRAFT_HOST_WORKSPACE_DIR: '/srv/opencraft/workspaces', OPENCRAFT_WORKSPACE_DIR: '/workspace' },
   }));
-  assert.deepEqual(Object.keys(config.services).sort(), ['brain', 'gateway', 'hands']);
-  const service = config.services.gateway, brain = config.services.brain, hands = config.services.hands;
-  for (const value of [service, brain, hands]) {
+  assert.deepEqual(Object.keys(config.services).sort(), ['brain', 'gateway', 'hands', 'proxy']);
+  const service = config.services.gateway, brain = config.services.brain, hands = config.services.hands, proxy = config.services.proxy;
+  for (const value of [service, brain, hands, proxy]) {
     assert.equal(value.user, '1234:2345');
     assert.deepEqual(value.build.args, { OPENCRAFT_UID: '1234', OPENCRAFT_GID: '2345' });
     assert.equal(value.network_mode, 'host');
@@ -105,9 +117,14 @@ test('rendered Compose separates gateway, brain and hands while preserving path 
     assert.equal(value.volumes.find(v => v.target === '/var/log/opencraft').read_only, true);
     assert.notEqual(value.volumes.find(v => v.target === `/var/log/opencraft/${name}`).read_only, true);
     assert.deepEqual(value.entrypoint, ['/opt/opencraft/bin/node', '/opt/opencraft/runtime/container-service.mjs', name]);
+    if (name === 'proxy') continue; // The account Core owns no thread cwd or browser state.
     assert.equal(value.environment.OPENCRAFT_CODEX_PROJECTLESS_DIR, '/workspace/sessions/codex');
     assert.equal(value.environment.OPENCRAFT_BROWSER_DATA_DIR, '/var/lib/opencraft/execution/browser');
   }
+  assert.equal(proxy.pid, undefined);
+  assert.equal(brain.environment.OPENCRAFT_PROXY_MODE, 'external');
+  assert.equal(brain.depends_on.proxy.condition, 'service_healthy');
+  assert.equal(service.environment.OPENCRAFT_ASSISTANT_PROXY_CALLER_FILE, '/var/lib/opencraft/run/proxy-callers/assistant.json');
   assert.equal(hands.environment.OPENCRAFT_HANDS_EXECUTION_SOCKET, '/var/lib/opencraft/execution/exec-owner.sock');
   assert.equal(hands.environment.OPENCRAFT_WORKSPACE_DIR, '/workspace');
   assert.equal(hands.environment.OPENCRAFT_HANDS_CPUS, '4.0');
@@ -130,7 +147,7 @@ test('prebuilt role images preserve the runtime service contract and project pat
   if (spawnSync('docker', ['compose', 'version'], { stdio: 'ignore' }).status !== 0)
     return t.skip('Docker Compose CLI is unavailable');
   const env = { ...process.env, OPENCRAFT_HOST_WORKSPACE_DIR: '/srv/projects', OPENCRAFT_WORKSPACE_DIR: '/srv/projects' };
-  const roles = ['gateway', 'brain', 'hands'];
+  const roles = ['gateway', 'brain', 'hands', 'proxy'];
   const image = role => `example.org/opencraft/${role}:v1`;
   for (const role of roles) env[`OPENCRAFT_${role.toUpperCase()}_IMAGE`] = image(role);
   const render = (...extra) => JSON.parse(execFileSync('docker', ['compose', '--env-file', 'deploy/docker/.env.example',
@@ -146,6 +163,8 @@ test('prebuilt role images preserve the runtime service contract and project pat
     assert.deepEqual(rendered[role], { ...expected, image: image(role) });
     assert.ok(rendered[role].volumes.some(v => v.source === '/srv/projects' && v.target === v.source));
   }
+  delete env.OPENCRAFT_PROXY_IMAGE;
+  assert.equal(render(...overlay).proxy.image, image('brain'), 'the proxy defaults to the Brain role image');
   env.OPENCRAFT_HANDS_IMAGE = '';
   assert.throws(() => render(...overlay), /OPENCRAFT_HANDS_IMAGE/u);
 });

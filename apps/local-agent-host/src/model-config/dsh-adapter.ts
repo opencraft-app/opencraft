@@ -89,7 +89,8 @@ export class DshModelConfigurationBridge {
   async call<T>(method:string,payload:Record<string,any>={}):Promise<T>{
     if(method==='credentials.describe'){
       const doc=await this.config.repository.read(),speechRefs=new Set(doc.providers.filter(p=>p.protocol==='hunyuan-asr').map(p=>p.credentialRef));
-      const credentials:Record<string,unknown>={};for(const ref of payload.refs??[])credentials[ref]={configured:!!(await this.config.credentials.resolve(ref)??(payload.storedOnly===true||speechRefs.has(ref)?undefined:process.env[ref])),writable:true,source:'opencraft'};
+      const credentials:Record<string,unknown>={};for(const ref of payload.refs??[])// Proxy mode: the account Core answers whether a key is stored; the Brain environment is never a key source.
+        credentials[ref]={configured:await this.config.credentials.configured(ref)||(!this.config.caller&&payload.storedOnly!==true&&!speechRefs.has(ref)&&!!process.env[ref]),writable:true,source:'opencraft'};
       return {credentials} as T;
     }
     if(method==='credentials.set'){await this.config.credentials.set(payload.ref,payload.value);this.config.application={state:'pending',revision:-1};return {} as T;}
@@ -109,7 +110,9 @@ export class DshModelConfigurationBridge {
           const p=fromDshProfile(previous?.id??'deepseek-official',value,previous?.models.filter(m=>!m.enabled).map(m=>m.id),'deepseek');
           doc.providers=[...doc.providers.filter(p=>!native(p)),p];
         }else doc.defaultModel=typeof value.provider==='string'&&typeof value.model==='string'?{providerId:value.provider,modelId:value.model,...(value.reasoningEffort?{reasoningEffort:value.reasoningEffort}:{})}:null;
-      }); } catch(error) { if(error instanceof ModelConfigurationConflict)throw new DshClientError('settings-conflict',error.message);throw error; }
+      }); } catch(error) { if(error instanceof ModelConfigurationConflict)throw new DshClientError('settings-conflict',error.message);
+        // Proxy-mode refusal happens before the CAS write commits: a definitive, user-facing rejection.
+        if(error instanceof ModelConfigurationApplyError)throw new DshClientError('settings-rejected',error.message);throw error; }
       const updated=await this.describe();return updated.namespaces.find(n=>n.ns===payload.ns) as T;
     }
     await this.config.synchronize();

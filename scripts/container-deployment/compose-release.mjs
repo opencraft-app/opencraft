@@ -8,7 +8,23 @@ import { fileURLToPath } from 'node:url';
 import { handsResources } from './resources.mjs';
 import { hostLayout, inspectPrivateDirectory, inspectWorkspaceDirectory, SERVICES } from './layout.mjs';
 
-export const OWNER_ORDER = Object.freeze(['hands', 'brain', 'gateway']);
+// The proxy (account Core) precedes Brain, which waits for it; Gateway follows the engines it fronts.
+export const OWNER_ORDER = Object.freeze(['hands', 'proxy', 'brain', 'gateway']);
+
+/** Whether a Brain container's environment still embeds the account Core (pre-proxy default or explicit embedded). */
+export function brainEmbedsAccountCore(environment) {
+  if (!Array.isArray(environment)) return false;
+  return !environment.includes('OPENCRAFT_PROXY_MODE=external');
+}
+
+/**
+ * Apply steps for one image. A Brain that embeds the account Core holds the Codex account writer lock, so it is
+ * stopped before the proxy starts (one-time switch from the old default). Otherwise Brain keeps running while the
+ * proxy is replaced; it reconnects to the fixed proxy port and is recreated only for its own image change.
+ */
+export function ownerSteps({ brainEmbedsCore }) {
+  return [...(brainEmbedsCore ? [['stop', 'brain']] : []), ...OWNER_ORDER.map(service => ['up', service])];
+}
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const dockerDirectory = join(repository, 'deploy', 'docker');
 
@@ -96,8 +112,19 @@ async function acquireLock(dataDirectory) {
   return async () => unlink(path).catch(() => {});
 }
 
+function runningBrainEnvironment() {
+  const id = execFileSync('docker', ['compose', '--env-file', '.env', 'ps', '-q', 'brain'], { cwd: dockerDirectory, encoding: 'utf8' }).trim();
+  if (!id) return null;
+  return JSON.parse(execFileSync('docker', ['inspect', '--format', '{{json .Config.Env}}', id], { encoding: 'utf8' }));
+}
+
 async function applyOwners(image) {
-  for (const service of OWNER_ORDER) runCompose(['up', '-d', '--no-deps', '--wait', '--wait-timeout', '180', service], image);
+  for (const [action, service] of ownerSteps({ brainEmbedsCore: brainEmbedsAccountCore(runningBrainEnvironment()) })) {
+    if (action === 'stop') {
+      console.log('Stopping the Brain that embeds the account Core so the proxy service can take the account writer.');
+      runCompose(['stop', '--timeout', '60', 'brain'], image);
+    } else runCompose(['up', '-d', '--no-deps', '--wait', '--wait-timeout', '180', service], image);
+  }
 }
 
 async function atomicWrite(path, text, mode = 0o600) {

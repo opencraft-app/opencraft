@@ -23,8 +23,8 @@ import { RemoteEngineProvider } from '../../apps/local-agent-host/src/remote-eng
 import { attachEngineHost } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
 import { handleHostInput } from '../../apps/local-agent-host/src/host-input-http.ts';
 import { createPiModelConfiguration } from '../../apps/local-agent-host/src/model-config/pi-adapter.ts';
-import { ModelConfigurationRepository, ModelCredentialRepository } from '../../apps/local-agent-host/src/model-config/repository.ts';
-import { fileSecretStore } from "@opencraft/secret-storage/file";
+import { ModelConfigurationRepository } from '../../apps/local-agent-host/src/model-config/repository.ts';
+import { engineModelCredentials } from '../../apps/local-agent-host/src/model-config/engine-credentials.ts';
 import { fileStateDocumentStore } from '@opencraft/document-storage/state-file';
 import { PiEngine, piHandoffReconciliation } from '../../plugins/pi-engine/src/index.ts';
 import { BridgeEngineProvider } from '../../apps/local-agent-host/src/bridge-engine-provider.ts';
@@ -63,7 +63,7 @@ export async function startIndependentEngineHost(options) {
   catch (error) { await releaseKernel(); throw error; }
   const runtime = { entrySha256: createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex'), node: process.version, nodeAbi: process.versions.modules, sourceRevision:process.env.OPENCRAFT_OBSERVE_SOURCE_REVISION ?? null, buildId:process.env.OPENCRAFT_OBSERVE_BUILD_ID ?? null, configSha256:createHash('sha256').update(JSON.stringify(options)).digest('hex') };
   const bootId = await bootIdentity();
-  const handoff = new PiOwnerHandoff(dataDirectory, runtime, inspectOwnerCgroup);
+  const handoff = new PiOwnerHandoff(dataDirectory, runtime, inspectOwnerCgroup, { credentialsExternal: !!process.env.OPENCRAFT_PROXY_CALLER_FILE });
   let host, pi, server, closed, executionEnvironment, executionGit;
   const artifactFiles=options.fileSystemOwner?createHostFileSystem(options.fileSystemOwner):null;
   const artifactInputs=new LocalAttachmentStagingService(join(dataDirectory,"agent","attachments"),join(dataDirectory,"artifacts"));
@@ -73,6 +73,8 @@ export async function startIndependentEngineHost(options) {
     await Promise.all(['pi','projects','models'].map(name => mkdir(join(dataDirectory,name), { recursive:true, mode:0o700 })));
     new ModelPolicyStore(join(dataDirectory, "model-usage-policy.sqlite")).close();
     await handoff.load();
+    // Proxy mode (OPENCRAFT_PROXY_CALLER_FILE): Pi gets the account Core port, never a SecretStore over credentials.json.
+    const modelCredentials = await engineModelCredentials(join(dataDirectory, 'models'));
     const machine = await readDaemonMachineIdentity(dataDirectory, options.machineName);
     const scope = `server:${machine.machineId}:pi`;
     const capabilities = new RemoteSessionCapabilities(dataDirectory, scope);
@@ -87,7 +89,7 @@ export async function startIndependentEngineHost(options) {
     else executionEnvironment=await ExecutionEnvironmentRuntime.open(dataDirectory,{create:true});
     pi = new PiEngine({
       prepareAttachmentInput:(threadId,input)=>artifactInputs.prepareInput(input,threadId,artifactFiles?(artifact,owner,signal)=>artifactFiles.prepareArtifact(artifact,owner,signal):undefined),
-      ...(await createPiModelConfiguration(new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory, 'models'))), new ModelCredentialRepository(fileSecretStore(join(dataDirectory, 'models'))), fileStateDocumentStore(join(dataDirectory, 'pi')))),
+      ...(await createPiModelConfiguration(new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory, 'models'))), modelCredentials.credentials, fileStateDocumentStore(join(dataDirectory, 'pi')), modelCredentials.caller)),
       modelPolicyPath: join(dataDirectory, "model-usage-policy.sqlite"),
       executionEnvironment, executionGit, admission: handoff, dataDirectory, directory: join(dataDirectory, 'pi'),
       attachmentDirectory: join(dataDirectory, 'agent', 'attachments'),

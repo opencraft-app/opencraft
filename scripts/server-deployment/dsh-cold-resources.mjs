@@ -6,7 +6,10 @@ const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 /** Decode all SQLite rows and JSON declarations, hash opaque attachments and
  * runtime/plugin files. Native compressed history is decoded by the native
  * authority; filesystem hashing alone is never that compatibility proof. */
-export async function readDshColdResources({dependencyRoots = [], ...roots}) {
+/** `excluded`: absolute file paths that are not this owner's inputs (proxy mode: the model credentials file, which the
+ * account Core owns and the Brain must not read). */
+export async function readDshColdResources({dependencyRoots = [], excluded = [], ...roots}) {
+  const skip = new Set(excluded);
   const files = [];
   // Declarations authorize link targets; they are not resources to cold-read.
   // A retired, unused declaration must not block restoring the previous owner.
@@ -19,6 +22,7 @@ export async function readDshColdResources({dependencyRoots = [], ...roots}) {
   }));
   const visiting = new Set(), directories = new Map(), contents = new Map();
   const visit = async (path,name) => {
+    if (skip.has(path)) return;
     const info = await lstat(path);
     if (info.isSymbolicLink()) {
       const target = await realpath(path);

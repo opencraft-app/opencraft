@@ -4,6 +4,7 @@ import { startCodexCore, type CodexCoreOptions } from "./main.js";
 import { AccountCoreOwner, sealLegacyAccountMaintenance, sealFencedAccountMaintenance, sealExportedAccountMaintenance, inspectRetainedAccountExport } from "./account-owner.js";
 import { isAbsolute, dirname, join } from "node:path";
 import { createConfiguredCodexResponses } from "./configured-responses.js";
+import { fileModelCredentials } from "@opencraft/local-agent-host/model-config";
 
 function argument(name: string): string {
   const index = process.argv.indexOf(name);
@@ -30,6 +31,8 @@ async function main() {
     configuredResponses: createConfiguredCodexResponses(modelDirectory, {
       allowInsecureLocalNetwork: process.argv.includes("--allow-insecure-local-model-network"),
     }),
+    // The account Core owns provider keys; proxy-mode engines store them here without reading them back.
+    modelCredentials: fileModelCredentials(modelDirectory),
     proxyPort: optional("--proxy-port") === undefined ? undefined : Number(argument("--proxy-port")),
     onFailure: error => { console.error(error.message); void shutdown?.(1); },
   };

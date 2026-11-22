@@ -11,7 +11,7 @@ import { codexCoreArguments, proxyHealth, waitForProxy } from '../../scripts/con
 const base = { OPENCRAFT_DATA_DIR: '/var/lib/opencraft', OPENCRAFT_WORKSPACE_DIR: '/workspace' };
 
 test('model proxy mode defaults to embedded and an external proxy requires a fixed port', () => {
-  assert.deepEqual(proxyConfiguration({}), { proxyMode: 'embedded', proxyPort: null });
+  assert.deepEqual(proxyConfiguration({}), { proxyMode: 'embedded', proxyPort: null }, 'outside Compose the launcher still embeds the Core unless told otherwise');
   assert.deepEqual(proxyConfiguration({ OPENCRAFT_PROXY_PORT: '45071' }), { proxyMode: 'embedded', proxyPort: 45071 });
   assert.deepEqual(proxyConfiguration({ OPENCRAFT_PROXY_MODE: 'external', OPENCRAFT_PROXY_PORT: '45071' }), { proxyMode: 'external', proxyPort: 45071 });
   assert.throws(() => proxyConfiguration({ OPENCRAFT_PROXY_MODE: 'external' }), /fixed OPENCRAFT_PROXY_PORT/);
@@ -69,19 +69,23 @@ const composeExecutable = process.env.OPENCRAFT_COMPOSE_EXECUTABLE ?? 'docker';
 const composePrefix = process.env.OPENCRAFT_COMPOSE_EXECUTABLE ? [] : ['compose'];
 const composeAvailable = () => spawnSync(composeExecutable, [...composePrefix, 'version'], { stdio: 'ignore' }).status === 0;
 
-test('the proxy overlay adds an independent proxy owner and switches Brain to wait for it', t => {
-  if (!composeAvailable()) return t.skip('Docker Compose CLI is unavailable');
-  const config = JSON.parse(execFileSync(composeExecutable, [...composePrefix, '-f', 'deploy/docker/compose.yaml', '-f', 'deploy/docker/compose.proxy.yaml', 'config', '--format', 'json'], {
+const renderCompose = (...files) => JSON.parse(execFileSync(composeExecutable, [...composePrefix, ...files.flatMap(file => ['-f', file]), 'config', '--format', 'json'], {
     cwd: new URL('../..', import.meta.url), encoding: 'utf8',
     env: { ...process.env, OPENCRAFT_UID: '1234', OPENCRAFT_GID: '2345',
       OPENCRAFT_HOST_DATA_DIR: '/srv/opencraft/state', OPENCRAFT_DATA_DIR: '/var/lib/opencraft',
       OPENCRAFT_HOST_LOG_DIR: '/srv/opencraft/logs', OPENCRAFT_LOG_DIR: '/var/log/opencraft',
       OPENCRAFT_HOST_WORKSPACE_DIR: '/srv/opencraft/workspaces', OPENCRAFT_WORKSPACE_DIR: '/workspace' },
-  }));
+}));
+
+test('the default Compose runs an independent proxy owner and Brain waits for it', t => {
+  if (!composeAvailable()) return t.skip('Docker Compose CLI is unavailable');
+  const config = renderCompose('deploy/docker/compose.yaml');
+  // The retired overlay is a no-op: old commands render the same deployment.
+  assert.deepEqual(renderCompose('deploy/docker/compose.yaml', 'deploy/docker/compose.proxy.yaml'), config);
   assert.deepEqual(Object.keys(config.services).sort(), ['brain', 'gateway', 'hands', 'proxy']);
   const proxy = config.services.proxy, brain = config.services.brain;
   assert.deepEqual(proxy.entrypoint, ['/opt/opencraft/bin/node', '/opt/opencraft/runtime/container-service.mjs', 'proxy']);
-  assert.equal(proxy.network_mode, 'host'); assert.equal(proxy.user, '1234:2345');
+  assert.equal(proxy.network_mode, 'host'); assert.equal(proxy.user, '1234:2345'); assert.equal(proxy.stop_grace_period, '2m30s');
   assert.equal(proxy.environment.OPENCRAFT_PROXY_PORT, '45071');
   assert.equal(brain.environment.OPENCRAFT_PROXY_MODE, 'external');
   assert.equal(brain.environment.OPENCRAFT_PROXY_PORT, proxy.environment.OPENCRAFT_PROXY_PORT);

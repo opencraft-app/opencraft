@@ -3,6 +3,7 @@ import {StateDocumentNotPrivateError} from '@opencraft/document-storage/state-fi
 import {SecretStoreCorruptError,validateSecretName,validateSecretValue,type SecretStore} from '@opencraft/secret-storage';
 import {emptyModelDocument,validateModelDocument,type ModelDocument} from './model-document.js';
 import {configurationDocument} from './state-documents.js';
+import type {ModelCredentialPort} from './service.js';
 
 export const MODEL_DOCUMENT_KEY='models.json';
 export class ModelConfigurationConflict extends Error {readonly code='settings-conflict';constructor(){super('模型配置已在其他窗口更新，请刷新后重试')}}
@@ -37,11 +38,12 @@ const storableName=(ref:string)=>{try{validateSecretName(ref);return true}catch{
 /** Model credentials over a SecretStore. No secret readback API; adapters
  * receive values only at the execution boundary. Unknown or malformed
  * references resolve as absent, as configuration may name any reference. */
-export class ModelCredentialRepository {
+export class ModelCredentialRepository implements ModelCredentialPort {
   constructor(private readonly secrets:SecretStore){}
   /** Changes exactly when a stored credential changes (content-derived). */
   stamp(){return credentialStorage(this.secrets.stamp())}
   async resolve(ref:string){return storableName(ref)?credentialStorage(this.secrets.get(ref)):undefined}
+  async configured(ref:string){return await this.resolve(ref)!==undefined}
   async set(ref:string,value:string){
     try{validateSecretName(ref);validateSecretValue(value)}catch{throw new Error(INVALID_CREDENTIAL_MESSAGE)}
     await credentialStorage(this.secrets.set(ref,value));

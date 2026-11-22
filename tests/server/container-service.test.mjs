@@ -41,7 +41,7 @@ test('layout preparation is idempotent, private and refuses to abandon existing 
   const identity = { uid: process.getuid(), gid: process.getgid() };
   const layout = await prepareLayout(env, identity);
   await prepareLayout(env, identity);
-  for (const service of ['brain', 'gateway', 'hands']) assert.equal((await stat(join(layout.logs, service))).mode & 0o777, 0o700);
+  for (const service of ['brain', 'gateway', 'hands', 'proxy']) assert.equal((await stat(join(layout.logs, service))).mode & 0o777, 0o700);
   assert.equal(layout.gitCredentials, join(layout.execution, 'git-credentials'));
   assert.equal((await stat(layout.gitCredentials)).mode & 0o777, 0o700);
   const legacy = join(layout.state, 'hands');

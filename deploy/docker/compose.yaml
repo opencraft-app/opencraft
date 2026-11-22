@@ -70,6 +70,39 @@ x-environment: &environment
   OPENCRAFT_GATEWAY_HOME: ${OPENCRAFT_GATEWAY_HOME:-${OPENCRAFT_DATA_DIR}/home/gateway}
 
 services:
+  # The model proxy is the split Codex account Core: account pool, configured
+  # providers, model credentials and usage. It has its own lifecycle, so Brain
+  # releases do not restart it and proxy releases do not restart engines. Brain
+  # engines reach every provider through it and never read model credentials.
+  proxy:
+    <<: *runtime
+    image: ${OPENCRAFT_PROXY_IMAGE:-${OPENCRAFT_IMAGE:-opencraft:local}}
+    build: *build
+    entrypoint: ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "proxy"]
+    environment:
+      OPENCRAFT_DATA_DIR: ${OPENCRAFT_DATA_DIR}
+      OPENCRAFT_WORKSPACE_DIR: ${OPENCRAFT_WORKSPACE_DIR}
+      OPENCRAFT_EXECUTION_DIR: ${OPENCRAFT_EXECUTION_DIR:-${OPENCRAFT_DATA_DIR}/execution}
+      OPENCRAFT_LOG_DIR: ${OPENCRAFT_LOG_DIR:-/var/log/opencraft}
+      OPENCRAFT_PROXY_PORT: ${OPENCRAFT_PROXY_PORT:-45071}
+    volumes:
+      - *data-volume
+      - *workspace-volume
+      - *log-volume
+      - type: bind
+        source: ${OPENCRAFT_HOST_LOG_DIR:-${OPENCRAFT_HOST_DATA_DIR}/logs}/proxy
+        target: ${OPENCRAFT_LOG_DIR:-/var/log/opencraft}/proxy
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "/opt/opencraft/bin/opencraft-health", "proxy"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+    # Let accepted model requests and credential refreshes finish before exit.
+    stop_grace_period: 150s
+
   # Brain owns task and engine lifetime. Recreating Gateway must not stop it.
   brain:
     <<: *runtime
@@ -78,6 +111,9 @@ services:
     entrypoint: ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "brain"]
     environment:
       <<: *environment
+      # Brain waits for the proxy service instead of embedding the account Core.
+      OPENCRAFT_PROXY_MODE: external
+      OPENCRAFT_PROXY_PORT: ${OPENCRAFT_PROXY_PORT:-45071}
     volumes:
       - *git-volume
       - *data-volume
@@ -90,6 +126,8 @@ services:
           create_host_path: false
     depends_on:
       hands:
+        condition: service_healthy
+      proxy:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "/opt/opencraft/bin/opencraft-health", "brain"]
@@ -148,6 +186,8 @@ services:
       <<: *environment
       OPENCRAFT_BROWSER_OWNER_SOCKET: ${OPENCRAFT_BROWSER_DATA_DIR:-${OPENCRAFT_EXECUTION_DIR:-${OPENCRAFT_DATA_DIR}/execution}/browser}/owner.sock
       OPENCRAFT_USER_PLUGIN_DIRECTORY: ${OPENCRAFT_USER_PLUGIN_DIRECTORY:-${OPENCRAFT_DATA_DIR}/user-plugins}
+      # The personal assistant gateway reaches configured providers through the proxy too.
+      OPENCRAFT_ASSISTANT_PROXY_CALLER_FILE: ${OPENCRAFT_DATA_DIR}/run/proxy-callers/assistant.json
     command: ["--host", "127.0.0.1", "--port", "${OPENCRAFT_PORT:-10000}", "--data-dir", "${OPENCRAFT_DATA_DIR}", "--engines", "dsh,pi", "--default-engine", "pi"]
     volumes:
       - *git-volume

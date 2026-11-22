@@ -18,13 +18,17 @@ import { Agent, fetch as undiciFetch } from "undici";
 import { CONFIGURED_CODEX_MODEL_PREFIX, type ConfiguredCodexResponses } from "./configured-responses.js";
 import { responsesPayloadForOpenAI } from "./foreign-history.js";
 import { decodeResponsesRequestBody, forwardConfiguredResponses, forwardedResponseHeaders } from "./configured-forward.js";
+import type { ConfiguredModelCredentials } from "./configured-responses.js";
 
 const HOST_TOKEN_HEADER = "x-opencraft-account-pool-token";
 /** Host-token identities for non-Codex model callers. They may only use provider passthrough. */
 export const PROXY_CALLER_PREFIX = "caller:";
 export const PROXY_CALLERS = Object.freeze(["caller:pi", "caller:dsh", "caller:assistant"]);
 // SDKs join base URLs differently (Anthropic appends /v1/messages, OpenAI /responses); accept up to two /v1 prefixes.
-const PROVIDER_ROUTE = /^\/providers\/([^/]{1,256})(?:\/v1){0,2}\/(messages|responses)$/u;
+const PROVIDER_ROUTE = /^\/providers\/([^/]{1,256})(?:\/v1){0,2}\/(messages|responses|chat\/completions)$/u;
+const PROVIDER_PROTOCOLS = { messages: "anthropic-messages", responses: "openai-responses", "chat/completions": "openai-completions" } as const;
+/** Engine callers that may store provider keys through the proxy (the Brain's settings writers). */
+const CREDENTIAL_CALLERS = new Set(["caller:pi", "caller:dsh"]);
 const FORWARDED_REQUEST_HEADERS = new Set([
   "accept",
   "content-encoding",
@@ -229,6 +233,7 @@ export class CodexAccountPoolProxy {
   private readonly fetch: typeof fetch;
   private readonly now: () => number;
   private readonly configuredResponses?: ConfiguredCodexResponses;
+  private readonly modelCredentials?: ConfiguredModelCredentials;
   private readonly resolveCredential?: (
     account: AccountPoolAccount,
     secret: AccountPoolSecret,
@@ -243,6 +248,7 @@ export class CodexAccountPoolProxy {
     readonly fetch?: typeof fetch;
     readonly now?: () => number;
     readonly configuredResponses?: ConfiguredCodexResponses;
+    readonly modelCredentials?: ConfiguredModelCredentials;
     readonly resolveCredential?: (
       account: AccountPoolAccount,
       secret: AccountPoolSecret,
@@ -258,10 +264,12 @@ export class CodexAccountPoolProxy {
     this.now = options.now ?? Date.now;
     this.resolveCredential = options.resolveCredential;
     this.configuredResponses = options.configuredResponses;
+    this.modelCredentials = options.modelCredentials;
   }
 
   async handle(request: Request, onDispatch?: () => void): Promise<Response> {
     if (new URL(request.url).pathname.startsWith("/providers/")) return this.handleProvider(request, onDispatch);
+    if (new URL(request.url).pathname === "/model-credentials") return this.handleModelCredentials(request);
     const personal = await this.personalRoute?.(request);
     if (personal) return personal;
     const path = configuredModelGatewayPath();
@@ -306,7 +314,7 @@ export class CodexAccountPoolProxy {
     if (caller === null || !caller.startsWith(PROXY_CALLER_PREFIX)) return new Response(null, { status: 401 });
     let providerId: string;
     try { providerId = decodeURIComponent(match[1]!); } catch { return Response.json({ error: { message: "Invalid provider" } }, { status: 404 }); }
-    const protocol = match[2] === "messages" ? "anthropic-messages" : "openai-responses";
+    const protocol = PROVIDER_PROTOCOLS[match[2] as keyof typeof PROVIDER_PROTOCOLS];
     const body = new Uint8Array(await request.arrayBuffer());
     if (body.byteLength > ACCOUNT_POOL_MAX_REQUEST_BYTES) return Response.json({ error: { message: "Request too large" } }, { status: 413 });
     const payload = parseJson(body), model = text(payload?.model);
@@ -324,7 +332,7 @@ export class CodexAccountPoolProxy {
     if (!["http:", "https:"].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash)
       return Response.json({ error: { message: "Invalid configured model endpoint" } }, { status: 503 });
     const anthropic = protocol === "anthropic-messages";
-    endpoint.pathname = endpoint.pathname.replace(/\/+$/u, "") + (anthropic ? "/messages" : "/responses");
+    endpoint.pathname = endpoint.pathname.replace(/\/+$/u, "") + "/" + match[2];
     const headers = new Headers({ "content-type": "application/json" });
     for (const name of ["accept", ...(anthropic ? ["anthropic-version", "anthropic-beta"] : [])]) {
       const value = request.headers.get(name); if (value) headers.set(name, value);
@@ -343,6 +351,38 @@ export class CodexAccountPoolProxy {
     }
     console.info(JSON.stringify({ event: "proxy-provider-forward", caller, provider: providerId, model, status: upstream.status, headersMs: this.now() - startedAt }));
     return new Response(upstream.body, { status: upstream.status, headers: forwardedResponseHeaders(upstream.headers) });
+  }
+
+  /** Proxy-mode credential writes for engine settings. Keys are stored by the account Core's owner and never
+   * returned: `describe` answers only whether each reference is configured. */
+  private async handleModelCredentials(request: Request): Promise<Response> {
+    if (request.method !== "POST" || new URL(request.url).search) return Response.json({ error: { message: "Proxy route not found" } }, { status: 404 });
+    if (this.privateHostId || !this.modelCredentials) return new Response(null, { status: 404 });
+    const presented = request.headers.get("authorization")?.replace(/^Bearer /u, "") ?? "";
+    const caller = this.store.authenticateHostToken(presented);
+    if (caller === null || !CREDENTIAL_CALLERS.has(caller)) return new Response(null, { status: 401 });
+    const body = new Uint8Array(await request.arrayBuffer());
+    if (body.byteLength > 64 * 1024) return Response.json({ error: { message: "Request too large" } }, { status: 413 });
+    const input = parseJson(body);
+    const reference = (value: unknown) => typeof value === "string" && /^[_A-Za-z][_A-Za-z0-9]{0,127}$/u.test(value);
+    try {
+      if (input?.op === "describe" && Array.isArray(input.refs) && input.refs.length <= 64 && input.refs.every(reference)) {
+        const configured: Record<string, boolean> = {};
+        for (const ref of input.refs as string[]) configured[ref] = await this.modelCredentials.configured(ref);
+        return Response.json({ configured });
+      }
+      if (input?.op === "set" && reference(input.ref) && typeof input.value === "string" && input.value && !/[\r\n\0]/u.test(input.value)) {
+        await this.modelCredentials.set(input.ref as string, input.value);
+        console.info(JSON.stringify({ event: "proxy-model-credential-set", caller }));
+        return Response.json({});
+      }
+      if (input?.op === "unset" && reference(input.ref)) {
+        await this.modelCredentials.remove(input.ref as string);
+        console.info(JSON.stringify({ event: "proxy-model-credential-unset", caller }));
+        return Response.json({});
+      }
+    } catch { return Response.json({ error: { message: "Model credential storage is unavailable" } }, { status: 503 }); }
+    return Response.json({ error: { message: "Invalid model credential request" } }, { status: 400 });
   }
 
   private async handleUnmetered(request: Request, onDispatch?: (credential?: string) => void): Promise<Response> {
@@ -371,7 +411,8 @@ export class CodexAccountPoolProxy {
       let configured;
       try { configured = await this.configuredResponses?.resolve(payload.model); }
       catch { return Response.json({ error: { message: "Configured Codex model connection is unavailable" } }, { status: 503 }); }
-      if (!configured) return Response.json({ error: { message: "Configured Codex model is disabled or unavailable" } }, { status: 404 });
+      // Chat Completions connections are provider passthrough for engine callers only; Codex speaks Responses.
+      if (!configured || configured.protocol === "openai-completions") return Response.json({ error: { message: "Configured Codex model is disabled or unavailable" } }, { status: 404 });
       // Never forward local Host/OAuth headers; never retry or fall back across providers.
       return forwardConfiguredResponses({ configured, payload, publicModel: payload.model, accept: request.headers.get("accept"),
         signal: request.signal, fetch: this.fetch, onDispatch: () => onDispatch?.(payload.model as string) });

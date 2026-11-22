@@ -1,17 +1,18 @@
 # Docker Compose deployment
 
-This Linux deployment uses one immutable image in three independently restarted
+This Linux deployment uses one immutable image in four independently restarted
 containers:
 
 | Service | Owns | Does not own |
 | --- | --- | --- |
+| `proxy` | the account Core: ChatGPT account pool, configured model providers, model credentials (`models/credentials.json`, account secrets) and usage | engines, tasks or ingress |
 | `gateway` | HTTP/WebSocket admission, authentication, protocol translation and routing | model execution, task lifetime or native browser pages |
-| `brain` | Codex Core/AppServer, DSH/Pi execution and task/session lifetime | public ingress, browser tabs or Codex native filesystem/shell execution |
+| `brain` | Codex AppServer, DSH/Pi execution and task/session lifetime | public ingress, browser tabs, model credentials or Codex native filesystem/shell execution |
 | `hands` | remote-browser resources and the pinned Codex `exec-server` | account admission, AppServer state or conversation orchestration |
 
 Recreating `gateway` leaves Brain tasks and Hands tabs alive. The Gateway
 reattaches to both through private descriptors/sockets and never receives a
-Docker socket. All three services use the same reviewed image, so Docker stores
+Docker socket. All four services use the same reviewed image, so Docker stores
 the large runtime layers once.
 
 Brain keeps Codex AppServer and its writable native session state. Its managed
@@ -243,31 +244,87 @@ Codex chats without a selected project get a private directory per thread under
 workspace mount. DSH uses `sessions/dsh`. Later turns reuse the working directory
 persisted by the selected engine; an explicit Project cwd stays authoritative.
 
-## Optional separate model proxy
+## Model proxy
 
-`compose.proxy.yaml` runs the split Codex account Core (account pool, configured
-model providers, credentials and usage) as its own `proxy` owner with a fixed
-`OPENCRAFT_PROXY_PORT` (default 45071). Brain then waits for it instead of
-starting it, so a Brain release no longer restarts the proxy and a proxy release
-does not restart engines:
+The `proxy` service is the split Codex account Core with its own lifecycle and a
+fixed loopback `OPENCRAFT_PROXY_PORT` (default 45071). Brain runs with
+`OPENCRAFT_PROXY_MODE=external`: it waits for `proxy`, never starts or stops it,
+and reaches every model through it. A Brain release does not restart the proxy;
+a proxy release does not restart engines (they reconnect to the fixed port with
+their stable caller token from `$OPENCRAFT_DATA_DIR/run/proxy-callers/`).
+
+In this mode the Brain engines never open `models/credentials.json` or account
+secrets. Codex reaches the Core through `chatgpt_base_url`; Pi and DSH receive
+only their proxy caller token. Saving an API key in model settings goes from the
+Brain to the proxy, which stores it and answers only "configured / not
+configured". Image generation, speech transcription, IM channels and the
+personal assistant run in the Gateway, which remains the owner of those keys.
+
+| Provider configuration | In this deployment |
+| --- | --- |
+| Anthropic Messages, OpenAI Responses or OpenAI-compatible Chat Completions with an explicit HTTPS (or loopback) endpoint, including native DeepSeek | through the proxy |
+| No-auth OpenAI-compatible endpoint; human contribution/subscription; speech | no engine credential (direct without a key, or owned by the Core/Gateway) |
+| Catalog provider without an endpoint, Google Generative AI and other protocols, plain-HTTP LAN endpoints | refused when saved; an existing one stays saved but is not executable until it is edited to a supported connection |
+
+### Switching an existing installation
+
+Installations created before this release run the account Core inside Brain.
+Data directory, databases and schema are unchanged by the switch; only the owner
+process moves. The account writer lock means Brain must stop before `proxy`
+starts. The transaction tool does this automatically when it finds a Brain
+without `OPENCRAFT_PROXY_MODE=external`. By hand, from `deploy/docker/`:
 
 ```sh
-docker compose -f compose.yaml -f compose.proxy.yaml up -d --wait
+node ../scripts/container-deployment/layout.mjs prepare   # creates logs/proxy (idempotent)
+docker compose stop brain
+docker compose up -d --no-deps --wait proxy
+docker compose up -d --no-deps --wait brain
+docker compose up -d --no-deps --wait gateway
 ```
 
-Switching an existing deployment is a maintenance step: stop Brain first (it
-holds the account writer lock), start `proxy`, then start Brain. The data
-directory and schema are unchanged; rollback stops both and starts Brain without
-the overlay. The release transaction tool still manages `hands`, `brain` and
-`gateway` only; replace `proxy` explicitly.
+`compose.proxy.yaml` is now an empty overlay kept only so existing
+`-f compose.proxy.yaml` commands still work; remove it from your commands.
+
+Rollback to the embedded Core uses the previous release's Compose files and image:
+`docker compose stop gateway brain proxy`, check out the previous `deploy/docker/`
+files, then start `hands`, `brain` and `gateway` with the previous image. Keys
+saved while the proxy owned them are in the same `models/credentials.json`.
+
+### Manual acceptance (operator)
+
+Run on a staging host with a fake model endpoint (no paid inference, no real
+keys). Replace `$DATA` with the host data directory.
+
+1. Configure one OpenAI-compatible (Chat Completions) and one Anthropic Messages
+   provider whose HTTPS or loopback endpoint is your fake server, with a dummy key,
+   and select a Codex configured model on an OpenAI Responses provider the same way.
+2. Prove Brain cannot read the credentials:
+   `docker compose exec brain sh -c 'cat "$OPENCRAFT_DATA_DIR/models/credentials.json"'`
+   must fail once you make the file unreadable for Brain, e.g. by bind-mounting an
+   empty unreadable file over it for the `brain` service only (a Compose override
+   with a read-only `type: bind` of a mode-0000 root-owned file at that path).
+   `proxy` and `gateway` keep the real file.
+3. Start a Pi thread, a DSH thread and a Codex thread on those models. Each must
+   answer; the fake server must see the dummy key, and `proxy` logs must show
+   `proxy-provider-forward` events with `caller:pi` / `caller:dsh` (Codex appears
+   as configured Responses traffic).
+4. Save a new API key in model settings: `proxy` logs `proxy-model-credential-set`,
+   and Brain logs show no credential file access errors.
+5. Try to add a Google Generative AI provider: saving is refused with the
+   explanation that the protocol cannot be forwarded through the model proxy.
+6. Note Brain's `docker inspect -f '{{.State.StartedAt}}' <brain>`; run
+   `docker compose restart proxy`; while it restarts, model calls fail and then
+   recover without action; Brain's `StartedAt` is unchanged and its threads keep
+   answering after the proxy is healthy.
 
 ## Upgrade and rollback
 
 Build a content-addressed or versioned image reference, then use the transaction
 tool. It checks paths, ownership, capacity, disk and rendered Compose config;
 uses a deployment lock; applies and waits for each owner in strict dependency
-order (`hands`, `brain`, `gateway`); and writes `.env` only after all three are
-healthy:
+order (`hands`, `proxy`, `brain`, `gateway`); and writes `.env` only after all four are
+healthy. A Brain that still embeds the account Core is stopped before `proxy`
+starts (see [Switching an existing installation](#switching-an-existing-installation)):
 
 ```sh
 node ../scripts/container-deployment/compose-release.mjs doctor
@@ -283,6 +340,10 @@ image:
 node ../scripts/container-deployment/compose-release.mjs rollback
 ```
 
+`rollback` keeps the current Compose files, so the previous image must already
+contain the `proxy` service entry. To return to a release older than that, follow
+the embedded-Core rollback in [Model proxy](#switching-an-existing-installation).
+
 Mutable `latest`, untagged and local development images are refused unless the
 operator explicitly passes `--allow-mutable-image`. Keep the previous digest in
 the registry. A code rollback does not undo a database migration and must never
@@ -293,8 +354,8 @@ already persisted in `.env`.
 
 Before intentionally replacing Brain, let active tasks finish. Before replacing
 Hands, close or checkpoint important live tabs; a compatible Gateway-only change
-does not replace them. `docker compose down` stops all three owners and retains
-the bind-mounted state. For a cold backup, stop all three and copy the complete
+does not replace them. `docker compose down` stops all four owners and retains
+the bind-mounted state. For a cold backup, stop all four and copy the complete
 data and workspace directories with ownership and modes preserved.
 
 ### Supervised runtime environment smoke
