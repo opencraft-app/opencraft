@@ -9,15 +9,20 @@ import { setTimeout as delay } from "node:timers/promises";
 import { CODEX_BRIDGE_PROGRAMS } from "../../apps/opencraft-daemon/src/codex-bridge-stack.js";
 
 /** Stand-in programs: each announces readiness the way the real one does and then idles. */
+const IDLE = 'setInterval(() => {}, 1000); process.on("SIGTERM", () => process.exit(0));';
 async function programs(root: string) {
-  const idle = (ready: object) =>
-    `process.stdout.write(${JSON.stringify(JSON.stringify(ready))} + "\\n"); setInterval(() => {}, 1000); process.on("SIGTERM", () => process.exit(0));`;
-  await writeFile(join(root, CODEX_BRIDGE_PROGRAMS.core), idle({ type: "codex-accounts-listening" }));
-  await writeFile(join(root, CODEX_BRIDGE_PROGRAMS.appServer), idle({ type: "codex-app-server-ready" }));
+  await writeFile(
+    join(root, CODEX_BRIDGE_PROGRAMS.core),
+    `process.stdout.write('{"type":"codex-accounts-listening"}\\n'); ${IDLE}`,
+  );
+  await writeFile(
+    join(root, CODEX_BRIDGE_PROGRAMS.appServer),
+    `process.stdout.write('{"type":"codex-app-server-ready"}\\n'); ${IDLE}`,
+  );
   // Like the real Engine Host, it runs a worker thread, which inherits the preload.
   await writeFile(
     join(root, CODEX_BRIDGE_PROGRAMS.engineHost),
-    `import { Worker } from "node:worker_threads"; const worker = new Worker("setInterval(() => {}, 1000)", { eval: true }); worker.unref(); await new Promise((accept) => setTimeout(accept, 300)); ${idle({ url: "http://127.0.0.1:1/" })}`,
+    `import { Worker } from "node:worker_threads"; const worker = new Worker("setInterval(() => {}, 1000)", { eval: true }); worker.unref(); await new Promise((accept) => setTimeout(accept, 300)); process.stdout.write('{"url":"http://127.0.0.1:1/"}\\n'); ${IDLE}`,
   );
   await writeFile(join(root, CODEX_BRIDGE_PROGRAMS.provider), "// provider stand-in\n");
   await writeFile(
