@@ -124,6 +124,8 @@ export const NewFolderIcon = glyph("new-folder", <><path d="M4 7a3 3 0 0 1 3-3h3
 export const TableIcon = glyph("table", <><rect x="4" y="4.5" width="16" height="15" rx="2.75" /><path d="M4 10h16M9 10v9.5M4 15h16" /></>);
 export const LabIcon = glyph("lab", <path d="M8 4h8m-6 0v5.5l-5 7.7a1.8 1.8 0 0 0 1.5 2.8h11a1.8 1.8 0 0 0 1.5-2.8l-5-7.7V4M7.5 14h9" />);
 export const LayersIcon = glyph("layers", <path d="m12 4 8.5 4.5L12 13 3.5 8.5 12 4ZM4 13l8 4 8-4M4 17l8 4 8-4" />);
+/** A single resource package for the Assets catalog; geometry is shared, not product-owned. */
+export const AssetsIcon = glyph("assets", <><path d="m12 3.5 8 4.6v7.8l-8 4.6-8-4.6V8.1z" /><path d="m4 8.1 8 4.6 8-4.6M12 12.7v7.8M8 5.8l8 4.6" /></>);
 export const BoxesIcon = glyph("boxes", <><path d="m12 3.5 4.5 2.3v5L12 13l-4.5-2.2v-5L12 3.5Zm-4.5 2.3L12 8l4.5-2.2M12 8v5" /><path d="m7 11-4.5 2.3v5L7 20.5l4.5-2.2M2.5 13.3 7 15.5l4.5-2.2M7 15.5v5" /><path d="m17 11 4.5 2.3v5L17 20.5l-4.5-2.2M12.5 13.3l4.5 2.2 4.5-2.2M17 15.5v5" /></>);
 export const BriefcaseIcon = glyph("briefcase", <><rect x="4" y="7" width="16" height="13" rx="2.75" /><path d="M8.5 7V5a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 .5.5v2M4 12c5 2.7 11 2.7 16 0M12 12v4" /></>);
 export const BalanceIcon = glyph("balance", <path d="M12 4v16m-5 0h10M5 7h14M5 7l-3 7h6L5 7Zm14 0-3 7h6l-3-7Z" />);
