@@ -22,6 +22,7 @@ import { CodexHostServices, codexAccountsService, codexModelsService, codexPinsS
 import { CodexNativeReader } from '@opencraft/opencraft-daemon/codex-native-reader';
 import { startCodexEngineHost } from '@opencraft/opencraft-daemon/codex-bridge-stack';
 import { resolveCodexPermissions } from '@opencraft/opencraft-daemon/codex-bridge-host';
+import { codexBridgeConversationTools, codexBridgeCreationTools } from '@opencraft/opencraft-daemon/codex-bridge-conversation-tools';
 import { openServerDatabase } from "@opencraft/storage-node/server";
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { modelPolicyHttp } from '@opencraft/model-usage-policy/http';
@@ -930,6 +931,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         // Host-wide duties (tasks first) are answered by the services front before Thread routing.
         let codexAdapterStorage = [], codexFront, codexRouting;
         const codexReader = options.codexCoreEndpoint ? new CodexNativeReader(options.codexCoreEndpoint, options.codexCoreAuthToken) : undefined;
+        // Host-owned dynamic tools (browser), for local and bridge Threads alike.
+        const codexNativeTool = (context, tool, args, signal) => browserCapabilities.invokeNative({
+          serverId: conversationExecution.serverForThread(context.threadId),
+          threadId: context.threadId,
+          execution: { turnId: context.turnId, callId: context.callId },
+        }, tool, args, signal);
         const reportLocalCodexStorage = () => storageOpened(hostId)([...codexAdapterStorage, ...(codexFront?.storage() ?? [])]);
         return anonymousDriver(new McpAppsTransport(new MachineIdentityTransport(machineIdentity, "Codex", () => codexFront = new CodexHostServices(codexRouting = createServerCodexBridge(createCodexTransport({
           historyImageResources: process.env.OPENCRAFT_HISTORY_IMAGE_RESOURCES === "1",
@@ -958,11 +965,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
             return capabilityMcp.config(session);
           },
           createThreadMetadata,
-          nativeTool: (context, tool, args, signal) => browserCapabilities.invokeNative({
-            serverId: conversationExecution.serverForThread(context.threadId),
-            threadId: context.threadId,
-            execution: { turnId: context.turnId, callId: context.callId },
-          }, tool, args, signal),
+          nativeTool: codexNativeTool,
           executionEnvironment: identity?.executionEnvironment,
           // Ingress has already authorized shared Thread participation. This
           // delegates native Turn input, not terminal access, ENV or payer identity.
@@ -1038,6 +1041,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           ...bridgeSessionMcp,
           started:(threadId,inputId,turnId)=>actorCollaboration.executionStarted(threadId,inputId,turnId),
         },{admissionPaused:()=>codexAdmissionPaused(join(dataDirectory,"codex")),
+          // Bridge Threads get the conversation tools the local Host gives its own, then the browser tools.
+          nativeTool:codexBridgeConversationTools(actorCollaboration,codexNativeTool),creationTools:codexBridgeCreationTools,
           ...(codexEngineHost&&codexReader?{adoptExisting:true,newThreads:true,
             resolvePermissions:(selection,cwd)=>resolveCodexPermissions(codexReader,selection,cwd),
             projectlessWorkspace:async()=>{

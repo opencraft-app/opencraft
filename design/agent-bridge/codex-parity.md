@@ -117,7 +117,8 @@ daemon 以 `--codex-bridge-stack <程序目录>`（`codexBridgeStack`）启动 b
    - 接线中修正：准入层在 bridge 接管全部新会话时为隐式创建分配 bridge 身份（否则首轮缺少创建时的执行配置而被拒）；匿名部署的 bridge 执行准入使用部署操作员身份（与登录用户同一授权）；原生 `list_turns is not supported yet` 在创建核对中按“尚无记录”处理。
    - 计费：服务器计费当前为演示用途，不做兼容，仅保证不出错。
    - **发送者（2026-11-22）**：bridge 会话的发送者由同一 Host 的发送者表记录（`prepareExternalInput`），历史读取与实时通知按同一记录投影；旧路径路由原样带发送者交给旧 Host；没有发送者记录者时仍拒收带发送者的输入。演练 `--identity employee`（默认，经身份适配器以登录员工发送）与 `--identity anonymous` 均通过，升级前后、回退与再升级的每条用户消息都带原发送者。
-   - 仍依赖旧路径、尚未迁移：协作与编排、对话工具与 `nativeTool` 动态工具、桌面附着、工作区钩子、线程元数据、接管会话的会话 MCP 与执行 CLI、计量查询；四容器部署（brain 中启动 Engine Host、命令在 hands 执行）尚未接线。
+   - **对话工具、动态工具与会话 MCP（2026-11-22）**：bridge 会话的动态工具调用先交给 Host 分发（`CodexProviderBridge` 的 `nativeTool`，与旧 Host 同一 `browserCapabilities.invokeNative`），不属于 Host 的才交给客户端；对话工具（`read_thread`、`send_message_to_thread`、`get_thread_delivery`）由协作 owner 应答（`codex-bridge-conversation-tools.ts`，结果格式同旧路径），新建 bridge 会话创建时声明这些工具；编排工具在 bridge 上明确回答不可用，不会悬挂在客户端。接管的旧会话在发送时先确定路由（`prepareRoute`），与 bridge 会话同样经执行准入、执行签名与会话 MCP。演练比对同一会话升级前后提供给模型的工具一致，并经 bridge 真实调用 `read_thread`（接管会话与新会话各一次）。
+   - 仍依赖旧路径、尚未迁移：线程编排工具（`thread_spawn/tell/wait/inspect`，依赖 Core 编排回调通道；新 bridge 会话缺这四个工具）、协作排队回执、桌面附着、工作区钩子、线程元数据、计量查询；四容器部署（brain 中启动 Engine Host、命令在 hands 执行）尚未接线。
 4. **SSH 远程 Codex** 不在退休范围：它与本地模式共享客户端复用、交互、工具、附件、元数据等核心，退休时只删本地模式（spawn、Core 直通、Core + overlays），保留并抽出远程所需部分。
 
 ## 顺序建议

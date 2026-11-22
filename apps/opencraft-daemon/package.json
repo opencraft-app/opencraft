@@ -48,6 +48,7 @@
     "./bridge-execution-admission": "./src/bridge-execution-admission.ts",
     "./codex-bridge-stack": "./src/codex-bridge-stack.ts",
     "./codex-bridge-host": "./src/codex-bridge-host.ts",
+    "./codex-bridge-conversation-tools": "./src/codex-bridge-conversation-tools.ts",
     "./codex-host-services": "./src/codex-host-services.ts",
     "./codex-native-reader": "./src/codex-native-reader.ts",
     "./appserver-identity-overlay": "./src/appserver-identity-overlay.ts",

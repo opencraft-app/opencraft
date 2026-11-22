@@ -152,3 +152,18 @@ test('when the bridge owns every new Thread, an implicit creation is prepared li
   await optIn.send(JSON.stringify({id:'plain',method:'thread/start',params:{}}));
   assert.equal(sent[2].params.agentBridge,undefined);assert.equal(prepared,1);
 });
+
+test('an existing local Thread the bridge adopts for a turn is admitted like a bridge Thread; one that stays local is not',async()=>{
+  const sent:any[]=[],admitted:string[]=[],routes:string[]=[];
+  const inner:any={status:{state:'open'},async connect(){},async close(){},subscribeStatus:()=>()=>{},subscribeMessage:()=>()=>{},
+    async send(raw:string){sent.push(JSON.parse(raw));},
+    async prepareRoute(method:string,threadId:string){routes.push(`${method}:${threadId}`);return threadId==='adopted';}};
+  const transport=new BridgeExecutionAdmissionTransport(inner,{async admit(threadId,inputId){admitted.push(threadId);return {serverId:'server',threadId,execution:{inputId,executionId:inputId}};},
+    sign:()=> 'signed',started(){},async sessionMcp(){return {url:'http://127.0.0.1:1/mcp'};}},true);
+  await transport.send(JSON.stringify({id:'a',method:'turn/start',params:{threadId:'adopted',clientUserMessageId:'one',input:[]}}));
+  await transport.send(JSON.stringify({id:'b',method:'turn/start',params:{threadId:'local',clientUserMessageId:'two',input:[]}}));
+  assert.deepEqual(routes,['turn/start:adopted','turn/start:local']);
+  assert.deepEqual(admitted,['adopted']);
+  assert.equal(sent[0].params.opencraftExecutionAdmission,'signed');assert.deepEqual(sent[0].params.opencraftSessionMcp,{url:'http://127.0.0.1:1/mcp'});
+  assert.equal(sent[1].params.opencraftExecutionAdmission,undefined);assert.equal(sent[1].params.opencraftSessionMcp,undefined);
+});

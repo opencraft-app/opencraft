@@ -55,7 +55,13 @@ if (process.env.DRILL_RELEASE_PROGRAMS === "1") {
   await buildCodexBridgeRuntime(bridgePrograms);
 }
 const codex = await drillCodexExecutable();
-const model = await startFakeResponsesModel();
+// The tools the model was offered with each user text: the same conversation must keep its tools.
+const offered = new Map<string, string[]>();
+const model = await startFakeResponsesModel({
+  onRequest: (entry: { text: string; title: boolean; tools: string[] }) => {
+    if (!entry.title) offered.set(entry.text, [...entry.tools].sort());
+  },
+});
 process.env.OPENCRAFT_DRILL_UPSTREAM = model.url;
 const store = new AccountPoolStore({
   databasePath: join(codexData, "account-pool.sqlite"),
@@ -285,6 +291,26 @@ async function say(client: Client, threadId: string, text: string) {
   }
   throw new Error(`${threadId} did not answer "${text}"`);
 }
+/** Send `text` and wait until the conversation's last answer satisfies `answered`. */
+async function ask(client: Client, threadId: string, text: string, answered: (answer: string) => boolean) {
+  await client.request("turn/start", {
+    threadId,
+    clientUserMessageId: `drill-${randomBytes(6).toString("hex")}`,
+    input: [{ type: "text", text, text_elements: [] }],
+  });
+  for (let attempt = 0; attempt < 240; attempt++) {
+    const answer = (await transcript(client, threadId).catch(() => [] as string[])).at(-1) ?? "";
+    if (answer.startsWith("agent: ") && answered(answer.slice(7))) return answer.slice(7);
+    await delay(500);
+  }
+  throw new Error(`${threadId} did not answer "${text}" as expected: ${(await transcript(client, threadId)).at(-1)}`);
+}
+/** A conversation reference the conversation tools accept, as the Workbench builds it. */
+async function reference(threadId: string) {
+  const { readDaemonMachineIdentity } = await import("../../../apps/opencraft-daemon/src/machine-identity.ts");
+  const { machineId } = await readDaemonMachineIdentity(data);
+  return `opencraft://conversation/v1/${encodeURIComponent(`server:${machineId}:codex`)}/${encodeURIComponent(threadId)}`;
+}
 async function listed(client: Client): Promise<string[]> {
   const page = await client.request("thread/list", { limit: 50 });
   return (page.data ?? []).map((thread: any) => thread.id);
@@ -347,12 +373,50 @@ try {
       check(JSON.stringify(await open(c, id)) === JSON.stringify(history[name]), `${name} history changed`);
     }
     const continued = await say(c, threads.projectless, "AFTER-UPGRADE");
+    const before = offered.get("LEGACY-ONE") ?? [],
+      after = offered.get("AFTER-UPGRADE") ?? [];
+    const lost = before.filter((tool) => !after.includes(tool));
+    check(
+      before.length > 0 && lost.length === 0,
+      `the conversation lost tools after the upgrade: ${JSON.stringify(lost)}`,
+    );
+    result.tools = { before, after };
     check(continued.length === history.projectless!.length + 2, "continued history does not extend the old one");
     history.projectless = continued;
+    // A conversation tool, answered by the server's collaboration owner through the bridge, on an
+    // adopted conversation (declared when it was created on the legacy path).
+    const target = await reference(threads.twoTurns!);
+    const read = await ask(c, threads.projectless, `CALL-TOOL read_thread {"reference":"${target}"}`, (answer) =>
+      answer.startsWith("tool said:"),
+    );
+    // The read is bounded: its first page holds the first message and a cursor for the rest.
+    check(
+      read.includes('"text":"LEGACY-TWO-A"') && read.includes('"nextCursor"'),
+      `read_thread did not return the other conversation: ${read.slice(0, 600)}`,
+    );
+    history.projectless = await transcript(c, threads.projectless);
     const fresh = (await c.request("thread/start", { model: "gpt-test" })).thread.id;
     check(fresh.startsWith("bridge:codex:"), `a new conversation is not on the bridge: ${fresh}`);
     await say(c, fresh, "NEW-ON-BRIDGE");
     threads.fresh = fresh;
+    // and on a new bridge conversation, which declares the conversation tools itself.
+    const freshRead = await ask(c, fresh, `CALL-TOOL read_thread {"reference":"${target}"}`, (answer) =>
+      answer.startsWith("tool said:"),
+    );
+    check(
+      freshRead.includes("LEGACY-TWO-A"),
+      `read_thread on a new bridge conversation failed: ${freshRead.slice(0, 300)}`,
+    );
+    // A new bridge conversation has the tools a new local one has, except thread orchestration,
+    // which runs through Core's orchestration lane and is not on the bridge yet.
+    const freshMissing = (offered.get("LEGACY-ONE") ?? []).filter(
+      (tool) => !(offered.get("NEW-ON-BRIDGE") ?? []).includes(tool),
+    );
+    result.freshTools = { missing: freshMissing };
+    check(
+      freshMissing.every((tool) => tool.startsWith("thread_")),
+      `a new bridge conversation lacks tools: ${JSON.stringify(freshMissing)}`,
+    );
     history.fresh = await transcript(c, fresh);
     if (identityMode === "employee")
       check(

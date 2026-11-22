@@ -32,6 +32,11 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   const ws = new WebSocketServer({ server: native });
   let nativePeer: WebSocket | undefined, starts = 0, steers = 0;
   let approvalAnswer: unknown, approvalAnswers = 0;
+  const toolReplies: any[] = [], hostToolCalls: any[] = [];
+  let startDynamicTools: any;
+  const creationTools = () => [{ type: 'function', name: 'host_declared', description: 'Host tool', inputSchema: { type: 'object' } }];
+  const nativeTool = (context: any, tool: any, args: unknown) => tool.name === 'host_tool'
+    ? (hostToolCalls.push({ context, tool, args }), Promise.resolve({ success: true, contentItems: [{ type: 'inputText', text: 'host answered' }] })) : null;
   let hasRollout=!initial,initialConfig:any;
   let loaded=true,nativeActive=false,issued=0,revoked=0,blockRetirement=cli==='timeout';const nativeConfigurations:any[]=[];
   const lifecycleCalls:any[]=[];const nativeStartInputs:unknown[]=[];const settingsCalls:any[]=[];const titleCalls:any[]=[];const oldStarts:any[]=[];const releaseCalls:string[]=[];let releaseAnswer=false;
@@ -40,6 +45,7 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     socket.on('message', raw => {
       const f = JSON.parse(String(raw));
       if (f.id === 'native-approval' && f.result) { approvalAnswer = f.result; approvalAnswers++; }
+      if (typeof f.id === 'string' && f.id.startsWith('native-tool') && f.method === undefined) { toolReplies.push(f); return; }
       const reply = (result: unknown) => socket.send(JSON.stringify({ id: f.id, result }));
       const event = (method: string, params: unknown) => socket.send(JSON.stringify({ method, params }));
       if (f.params?.threadId === 'native-old') {
@@ -56,7 +62,7 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
         else if (f.method === 'thread/goal/clear') reply({ cleared: true });
         else reply({});
       }
-      if (f.method === 'thread/start') {initialConfig=f.params.config;reply({sandbox:{type:'readOnly'},approvalPolicy:'never',approvalsReviewer:'user',thread: { id: 'native-new', cwd: root, turns: [] }});}
+      if (f.method === 'thread/start') {initialConfig=f.params.config;startDynamicTools=f.params.dynamicTools;reply({sandbox:{type:'readOnly'},approvalPolicy:'never',approvalsReviewer:'user',thread: { id: 'native-new', cwd: root, turns: [] }});}
       if(f.method==='turn/start'&&f.params.clientUserMessageId==='initial-invalid'){socket.send(JSON.stringify({id:f.id,error:{code:-32602,message:'invalid input'}}));return;}
       if (f.method === 'turn/start' && f.params.clientUserMessageId === 'unknown-start') { socket.send(JSON.stringify({ id: f.id, error: { code: -32000, message: 'Opaque native failure' } })); return; }
       if (f.method === 'turn/start') {
@@ -118,7 +124,7 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     const next=cli?createServerCodexBridge(legacy,options,{
       async admit(threadId,inputId){return {serverId:'server',threadId,execution:{inputId,executionId:inputId}};},
       sign:scope=>'signed:'+scope.execution!.inputId,...(initial?{async prepareSessionMcp(){return {configuration:{url:'http://127.0.0.1:1/mcp',http_headers:{Authorization:'Bearer platform-mcp'}}};}}:{}),sessionMcp:async()=>({url:'http://127.0.0.1:1/mcp',http_headers:{Authorization:'Bearer platform-mcp'}}),started:()=>{serverStarted++;},rejectedBeforeStart:()=>{serverReset++;},
-    },{admissionPaused:()=>paused}):new CodexProviderBridge(legacy,options,{admissionPaused:()=>paused,
+    },{admissionPaused:()=>paused,nativeTool,creationTools}):new CodexProviderBridge(legacy,options,{admissionPaused:()=>paused,nativeTool,creationTools,
       prepareInput:async(threadId,clientId,input)=>{staged.push([threadId,clientId]);return input.map((item:any)=>item.type==='mention'?{type:'text',text:`file at ${item.path}`}:item);},
       projectHistory:(method,_params,result)=>({...(result as object),projected:method}),
       observeTitle:(method,params,result)=>titleCalls.push([method,(params as any).threadId??null,(result as any).thread?.id??(result as any).turn?.id]),
@@ -134,8 +140,11 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     assert.equal(frame.error, undefined, JSON.stringify(frame.error)); return frame.result;
   };
   await request('initialize', { capabilities: { extensions: { 'opencraft/steer-evidence': { version: 1 } } } });
-  const created = await request('thread/start', { cwd: root, approvalPolicy: 'never', sandbox: 'read-only', agentBridge: { threadId: 'bridge:codex:public-new', clientRequestId: 'create' } });
+  const created = await request('thread/start', { cwd: root, approvalPolicy: 'never', sandbox: 'read-only', agentBridge: { threadId: 'bridge:codex:public-new', clientRequestId: 'create' },
+    dynamicTools: [{ type: 'function', name: 'client_declared', description: 'Client tool', inputSchema: { type: 'object' } }, { type: 'function', name: 'host_declared', description: 'Shadowed', inputSchema: { type: 'object' } }] });
   assert.equal(created.thread.id, 'bridge:codex:public-new');
+  // The Host's own tools are declared at creation, replacing a client declaration of the same name.
+  assert.deepEqual(startDynamicTools?.map((tool: any) => tool.name), ['client_declared', 'host_declared']);
   if(!cli){
     // With newThreads, a client that does not ask for the bridge still creates its Thread there.
     // (The fixture native has one session, so the Host refuses binding a second; the creation still went to the bridge.)
@@ -257,6 +266,17 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   if(cli==='initial'){assert.equal(issued,2);assert.equal(nativeConfigurations.length,0);assert.equal(initialConfig['shell_environment_policy.set'].OPENCRAFT_THREAD_CLI,'fixture');assert.equal(initialConfig['mcp_servers.opencraft_session'].http_headers.Authorization,'Bearer platform-mcp');}
   else if(cli){assert.equal(issued,cli==='timeout'?2:1);assert.equal(nativeConfigurations[0].sandbox,'read-only');assert.equal(nativeConfigurations[0].approvalPolicy,'never');assert.equal(nativeConfigurations[0].config['shell_environment_policy.set'].OPENCRAFT_THREAD_CLI,'fixture');assert.equal(nativeConfigurations[0].config['mcp_servers.opencraft_session'].http_headers.Authorization,'Bearer platform-mcp');}
   const turnId = started.turn.id; assert.notEqual(turnId, 'native-turn');
+  // A dynamic tool the Host owns is answered by the Host and never offered to clients;
+  // any other tool still goes to the client, as on the local Host.
+  nativePeer!.send(JSON.stringify({ id: 'native-tool-host', method: 'item/tool/call', params: { threadId: 'native-new', turnId: 'native-turn', callId: 'call-host', tool: 'host_tool', arguments: { q: 1 } } }));
+  const hostReply = await until(() => toolReplies.find(f => f.id === 'native-tool-host'), Boolean);
+  assert.equal(hostReply.result.contentItems[0].text, 'host answered');
+  assert.deepEqual({ ...hostToolCalls[0].context, args: hostToolCalls[0].args }, { threadId: 'bridge:codex:public-new', turnId, callId: 'call-host', args: { q: 1 } });
+  nativePeer!.send(JSON.stringify({ id: 'native-tool-client', method: 'item/tool/call', params: { threadId: 'native-new', turnId: 'native-turn', callId: 'call-client', tool: 'client_tool', arguments: {} } }));
+  const offeredTool = await until(() => frames.find(f => f.method === 'item/tool/call' && f.params?.callId === 'call-client'), Boolean);
+  assert.equal(frames.some(f => f.method === 'item/tool/call' && f.params?.callId === 'call-host'), false);
+  await transport!.send(JSON.stringify({ id: offeredTool.id, result: { success: true, contentItems: [{ type: 'inputText', text: 'client answered' }] }, [LOGICAL_CLIENT_FIELD]: 'client' }));
+  assert.equal((await until(() => toolReplies.find(f => f.id === 'native-tool-client'), Boolean)).result.contentItems[0].text, 'client answered');
   nativePeer!.send(JSON.stringify({ id: 'native-approval', method: 'item/commandExecution/requestApproval', params: { threadId: 'native-new', turnId: 'native-turn', itemId: 'tool', command: 'cat input.txt' } }));
   const approval = await until(() => frames.find(f => f.method === 'item/commandExecution/requestApproval'), Boolean);
   assert.equal(approval.params.threadId, 'bridge:codex:public-new');

@@ -6,6 +6,9 @@
 // Markers in the user text steer it:
 //   STACK-SLOW  the first such request is held open until POST /release
 //   UI-WAIT     the answer is delayed by 8 s (time to interact mid-turn)
+//   CALL-TOOL <name> <json-arguments>
+//               the model calls that function tool; once its output comes
+//               back it answers "tool said: <output>"
 //
 // As a program: node tests/fixtures/fake-responses-model.mjs <request-log> <port-file>
 import { appendFileSync, writeFileSync } from "node:fs";
@@ -95,7 +98,11 @@ export async function startFakeResponsesModel({ onRequest = () => {} } = {}) {
         .map((part) => part.text) ?? [];
     const text = texts.join("\n");
     const title = JSON.stringify(body).includes("Generate a concise UI title");
-    onRequest({ at: Date.now(), text, title });
+    // Tool names the model is offered: function names, namespaced ones as namespace.name.
+    const tools = (body.tools ?? []).flatMap((tool) =>
+      Array.isArray(tool.tools) ? tool.tools.map((inner) => `${tool.name}.${inner.name}`) : [tool.name ?? tool.type],
+    );
+    onRequest({ at: Date.now(), text, title, tools });
     const id = `resp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     response.writeHead(200, { "content-type": "text/event-stream" });
     event(response, {
@@ -106,9 +113,47 @@ export async function startFakeResponsesModel({ onRequest = () => {} } = {}) {
       held.add(response);
       return;
     }
-    const answer = title
-      ? JSON.stringify({ title: "Fake title " + text.slice(-12).replace(/\W+/gu, " ").trim() })
-      : `echo: ${texts.at(-1) ?? ""}`;
+    const last = (body.input ?? []).at(-1);
+    const call = /CALL-TOOL (\S+) (\{.*\})/u.exec(texts.at(-1) ?? "");
+    if (!title && call && last?.type !== "function_call_output") {
+      const item = {
+        type: "function_call",
+        id: `fc-${id}`,
+        call_id: `call-${id}`,
+        name: call[1],
+        arguments: call[2],
+        status: "completed",
+      };
+      event(response, {
+        type: "response.output_item.added",
+        output_index: 0,
+        item: { ...item, arguments: "", status: "in_progress" },
+      });
+      event(response, { type: "response.output_item.done", output_index: 0, item });
+      event(response, {
+        type: "response.completed",
+        response: {
+          id,
+          object: "response",
+          status: "completed",
+          output: [item],
+          usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+        },
+      });
+      return response.end();
+    }
+    const toolOutput =
+      last?.type === "function_call_output"
+        ? typeof last.output === "string"
+          ? last.output
+          : JSON.stringify(last.output)
+        : undefined;
+    const answer =
+      toolOutput !== undefined
+        ? `tool said: ${toolOutput}`
+        : title
+          ? JSON.stringify({ title: "Fake title " + text.slice(-12).replace(/\W+/gu, " ").trim() })
+          : `echo: ${texts.at(-1) ?? ""}`;
     const item = {
       type: "message",
       id: `m-${id}`,

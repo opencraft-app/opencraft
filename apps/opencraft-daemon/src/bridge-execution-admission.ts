@@ -121,7 +121,11 @@ export class BridgeExecutionAdmissionTransport implements DuplexTransport {
         } finally {if(preparing)this.preparingCreations.delete(creationKey);}
       }
     }
-    if(frame.method==='turn/start'&&typeof p.threadId==='string'&&p.threadId.startsWith('bridge:codex:')) {
+    // Bridge Threads, including an existing local Thread the bridge adopts for this turn,
+    // are admitted here; one that stays local is admitted by its own Host.
+    const bridged=frame.method==='turn/start'&&typeof p.threadId==='string'&&(p.threadId.startsWith('bridge:codex:')
+      ||await (this.inner as {prepareRoute?:(method:string,threadId:string)=>Promise<boolean>}).prepareRoute?.('turn/start',p.threadId)===true);
+    if(bridged) {
       try {
         signal?.throwIfAborted();
         if(typeof p.clientUserMessageId!=='string'||!p.clientUserMessageId)throw Error('Stable execution input required');

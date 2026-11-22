@@ -29,6 +29,14 @@ export class CodexProviderBridge implements DuplexTransport {
     prepareInput?: (threadId: string, clientId: string | undefined, input: readonly unknown[], context: TransportSubmissionContext) => Promise<unknown[]>;
     /** Add recorded attachments to history results. */
     projectHistory?: (method: string, params: Record<string, unknown>, result: unknown) => unknown;
+    /**
+     * Trusted Host dispatcher for dynamic tools (as the local Host's nativeTool). Null leaves a
+     * tool to the clients; domain authorization and effect receipts belong to the dispatcher.
+     */
+    nativeTool?: (context: { threadId: string; turnId: string; callId: string },
+      tool: { namespace: string | null; name: string }, args: unknown, signal: AbortSignal) => Promise<unknown> | null;
+    /** Dynamic tools every new bridge Thread declares (replacing same-named client declarations). */
+    creationTools?: () => readonly Record<string, unknown>[];
     /** Live notifications of a bridge Thread, enriched as projectHistory enriches reads. */
     projectNotification?: (frame: Record<string, any>) => Record<string, any>;
     /** Whether prepareInput records verified senders (and projectHistory restores them) now. */
@@ -58,6 +66,8 @@ export class CodexProviderBridge implements DuplexTransport {
       if (frame.method === 'interaction/resolved') {
         const id = object(frame.params).interactionId;
         this.interactions.delete(id);
+        // Resolved elsewhere (the Turn ended): a Host tool still running stops and answers nothing.
+        this.hostTools.get(id)?.abort(); this.hostTools.delete(id);
         for (const client of this.subscriptions.get(threadId) ?? []) this.emit({ method: 'serverRequest/resolved', params: { threadId, requestId: id } }, client);
         return;
       }
@@ -77,7 +87,45 @@ export class CodexProviderBridge implements DuplexTransport {
     });
     legacy.subscribeMessage(frame => { void this.receiveLegacy(frame).catch(() => {}); });
   }
+  /**
+   * Settle whether `method` on `threadId` runs on the bridge: an existing local Thread this
+   * bridge would adopt for it is adopted now. Execution admission asks before it admits.
+   */
+  async prepareRoute(method: string, threadId: string): Promise<boolean> {
+    const adopting = this.policy.exclusive ? !['thread/history/cancel', 'thread/unsubscribe'].includes(method) : method === 'turn/start' && this.policy.adoptExisting;
+    if (adopting && threadId && !threadId.startsWith('bridge:codex:') && !this.gateway.owns(threadId)) await this.adopt(threadId);
+    return threadId.startsWith('bridge:codex:') || this.gateway.owns(threadId);
+  }
+  /** Dynamic tool calls the trusted Host dispatcher answers itself, by interaction ID. */
+  private readonly hostTools = new Map<string, AbortController>();
+  /**
+   * Offer a dynamic tool call to the Host's dispatcher first, as the local Host
+   * does for its own Threads; a tool it does not own goes on to the clients.
+   */
+  private claimHostTool(threadId: string, frame: Record<string, any>): boolean {
+    const params = object(frame.params), interactionId = params.interactionId;
+    if (typeof interactionId !== 'string') return false;
+    if (this.hostTools.has(interactionId)) return true;
+    if (params.kind !== 'codex/dynamic-tool' || !this.policy.nativeTool) return false;
+    const call = object(this.gateway.history(threadId, object(params.payload).params));
+    const abort = new AbortController();
+    let operation: Promise<unknown> | null;
+    try {
+      operation = this.policy.nativeTool({ threadId, turnId: String(call.turnId ?? ''), callId: String(call.callId ?? '') },
+        { namespace: typeof call.namespace === 'string' ? call.namespace : null, name: String(call.tool ?? '') }, call.arguments, abort.signal);
+    } catch (error) { operation = Promise.reject(error); }
+    if (operation === null) return false;
+    this.hostTools.set(interactionId, abort);
+    void operation
+      .catch(() => ({ success: false, contentItems: [{ type: 'inputText', text: 'Tool execution unavailable or unauthorized. Inspect the existing result before retrying.' }] }))
+      .then(result => abort.signal.aborted ? undefined
+        : this.gateway.command(threadId, `interaction:${interactionId}`, 'interaction/resolve', { interactionId, result }))
+      .catch(() => {})
+      .finally(() => { if (this.hostTools.get(interactionId) === abort) this.hostTools.delete(interactionId); });
+    return true;
+  }
   private offerInteraction(threadId: string, frame: Record<string, any>, onlyClient?: string): void {
+    if (this.claimHostTool(threadId, frame)) return;
     const params = object(frame.params), payload = object(params.payload);
     const interaction = this.interactions.get(params.interactionId) ?? { threadId, clients: new Map<string, number>() };
     this.interactions.set(params.interactionId, interaction);
@@ -256,8 +304,7 @@ export class CodexProviderBridge implements DuplexTransport {
     // A native ID behind a different public bridge ID never reaches the legacy writer; an adopted one is its own public ID.
     const behind = this.gateway.publicThread(threadId);
     if (!optIn && behind !== undefined && behind !== threadId) throw Error('Use the bridge thread identity; native owner bypass refused');
-    const adopting = this.policy.exclusive ? !['thread/history/cancel', 'thread/unsubscribe'].includes(String(frame.method)) : frame.method === 'turn/start' && this.policy.adoptExisting;
-    if (!optIn && adopting && threadId && !threadId.startsWith('bridge:codex:') && !this.gateway.owns(threadId)) await this.adopt(threadId);
+    if (!optIn) await this.prepareRoute(String(frame.method), threadId);
     // Maintenance pauses new work on bridge threads exactly as on legacy ones;
     // steering, reads and approvals of admitted work continue.
     const admission = (optIn || this.gateway.owns(threadId)) && isCodexAdmission(frame.method, p);
@@ -303,7 +350,11 @@ export class CodexProviderBridge implements DuplexTransport {
       }
       if (optIn) {
         if (!threadId || typeof requestKey !== 'string' || !requestKey) throw Error('Bridge thread and client request identities required');
-        const { agentBridge: _, ...native } = p;
+        const { agentBridge: _, ...declared } = p;
+        const owned = this.policy.creationTools?.() ?? [];
+        const names = new Set(owned.map(tool => String(tool.name)));
+        const native = owned.length ? { ...declared, dynamicTools: [
+          ...(Array.isArray(declared.dynamicTools) ? declared.dynamicTools.filter((tool: unknown) => !names.has(String(object(tool).name))) : []), ...owned] } : declared;
         // A conversation without a workspace gets its own private one, as on the local Host.
         if (native.cwd == null && this.policy.projectlessWorkspace) {
           const cwd = await this.policy.projectlessWorkspace();
@@ -388,6 +439,8 @@ export class CodexProviderBridge implements DuplexTransport {
     finally { this.creations.delete(task); }
   }
   async close() {
+    for (const abort of this.hostTools.values()) abort.abort();
+    this.hostTools.clear();
     this.closed = true; if (this.poll) clearInterval(this.poll);
     await this.legacy.close(); await this.gateway.close();
   }
