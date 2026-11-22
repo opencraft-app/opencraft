@@ -98,6 +98,7 @@ export class ExecutionService {
     return this.uow.transaction(() => {
       this.works.assertCurrent(work);
       const e = this.execution(work);
+      if (this.r.executions.hasOperation(e.id, callId)) return;
       if (this.r.executions.operationCount(e.id) >= 1024)
         throw new Error("Operation record bound exceeded");
       this.r.executions.recordOperation(e.id, callId, e.work_id, tool, target, summary, this.now());

@@ -49,3 +49,24 @@ test("operations on Work that is no longer current are refused", (t) => {
   assert.throws(() => store.app.executions.recordOperation(work, "late", "environment_run", "rm -rf build"));
   assert.equal(store.db.prepare("SELECT COUNT(*) AS n FROM work_operation").get().n, 0);
 });
+
+test("operation replay at the bound is a no-op while new calls remain refused", (t) => {
+  const store = new Store(profileFor(t));
+  t.after(() => store.close());
+  const workId = store.submit("a", { text: "bounded operations" }).workId;
+  const work = store.app.workRecord(workId);
+  const record = (id, summary = "git status") =>
+    store.app.executions.recordOperation(work, id, "environment_run", summary);
+  for (let i = 0; i < 1024; i++) record(`call-${i}`);
+  const rows = () => store.db.prepare("SELECT * FROM work_operation ORDER BY call_id").all();
+  const before = rows();
+
+  assert.doesNotThrow(() => record("call-0", "must not overwrite the first attempt"));
+  assert.deepEqual(rows(), before, "replay neither adds nor overwrites an operation");
+  assert.throws(() => record("call-1024"), /Operation record bound exceeded/);
+  assert.deepEqual(rows(), before, "a new call cannot exceed the bound");
+
+  store.app.works.amend("amend", { workId, expectedRevision: 1, text: "changed" });
+  assert.throws(() => record("call-0"), /./, "replay cannot bypass the current Work check");
+  assert.deepEqual(rows(), before);
+});
