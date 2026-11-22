@@ -21,7 +21,7 @@ Create requires a human project grant from the authenticated automation grant AP
   list --children [--cursor <cursor>] [--limit <1..100>]
   profiles (assistant execution only)
   start --profile <profile> --prompt <text> --idempotency-key <key> [--title <title>]
-  spawn --prompt <text> --idempotency-key <key> [--title <title>] [--driver codex|pi|dsh|acp|claude-code] [--cwd <path>]
+  spawn --prompt <text> --title <title> --idempotency-key <key> [--driver codex|pi|dsh|acp|claude-code] [--cwd <path>]
   show <opencraft://conversation/v1/...> [--turns <1..5>]
   tell <reference> --message <text> --idempotency-key <key> [--delivery queue|steer] [--expected-turn <id>] [--reply-expectation required|none]
   wait <reference>... [--timeout <0..5000>] [--wait-for all_settled|any_settled]

@@ -88,7 +88,10 @@ test('the real executable delegates once, rediscoveries survive restart, and lat
   assert.equal(opened.context.reference,ref('parent'));assert.equal((await stat(opened.launcher)).mode&0o077,0);
   assert.equal((await stat(join(opened.launcher,'../connection.json'))).mode&0o077,0);
   assert.ok(!JSON.stringify(opened).includes('Bearer'));
-  const spawn=['spawn','--prompt','Implement isolated work','--idempotency-key','one'] as const;
+  await assert.rejects(f.run(opened.launcher,'spawn','--prompt','Missing title','--idempotency-key','no-title'),
+    (error:any)=>JSON.parse(error.stdout).error==='thread_title_required');
+  assert.equal(f.created.size,0);
+  const spawn=['spawn','--prompt','Implement isolated work','--title','Isolated work','--idempotency-key','one'] as const;
   const first=await f.run(opened.launcher,...spawn),again=await f.run(opened.launcher,...spawn);
   assert.equal(first.threadId,again.threadId);assert.equal(f.created.size,1);
   const list=await f.run(opened.launcher,'list','--children');assert.equal(list.children[0].reference,ref(first.threadId));
@@ -100,7 +103,7 @@ test('the real executable delegates once, rediscoveries survive restart, and lat
   assert.equal(tell.delivery,'queued');
   const waited=await f.run(opened.launcher,'wait',ref(first.threadId),'--timeout','1500');assert.equal(waited.settled,true);
   const output=await f.run(opened.launcher,'output',ref(first.threadId));assert.equal(output.history.entries[0].text,'Child result');
-  await assert.rejects(f.run(opened.launcher,'spawn','--prompt','Changed','--idempotency-key','one'),
+  await assert.rejects(f.run(opened.launcher,'spawn','--prompt','Changed','--title','Isolated work','--idempotency-key','one'),
     (error:any)=>JSON.parse(error.stdout).error==='orchestration_idempotency_conflict');
   await f.restart();const reopened=await f.open();
   assert.equal((await f.run(reopened.launcher,'list','--children')).children.length,1);
@@ -137,7 +140,7 @@ test('Host issuance needs an admitted execution and leaves other MCP tools avail
   await assert.rejects(f.open({...f.session,execution:{inputId:'unadmitted',executionId:'other'}}));
   const opened=await f.open();
   const context=await exec(opened.launcher,['context','--json']);assert.equal(JSON.parse(context.stdout).reference,ref('parent'));
-  const created=await f.run(opened.launcher,'spawn','--prompt','bounded work','--idempotency-key','status-one');
+  const created=await f.run(opened.launcher,'spawn','--prompt','bounded work','--title','Bounded work','--idempotency-key','status-one');
   assert.equal((await f.run(opened.launcher,'operation','show',created.operationId)).operationId,created.operationId);
   const inputStatus=await f.run(opened.launcher,'input','status',created.operationId);assert.equal(inputStatus.contextEvidence,null);assert.equal(inputStatus.delivery,'sent');
   const output=await f.run(opened.launcher,'output',ref(created.threadId));assert.equal(output.history.entries[0].text,'Child result');
