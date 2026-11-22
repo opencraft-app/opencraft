@@ -1074,7 +1074,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     await turnPush.initialize();
     // Local anonymous features remain usable. Public remote access is enabled
     // only with explicit operator opt-in; all remote sockets require a session.
-    if (host === "127.0.0.1" || options.sshPublicAccess) sshManagement = new SshManagement({
+    if (host === "127.0.0.1" || options.sshPublicAccess) sshManagement = await SshManagement.open({
       directory: join(dataDirectory, "ssh"), publicAccess: options.sshPublicAccess, accessFile: options.sshAccessFile,
       accessMode: options.sshRequireAccessKey || options.sshAccessFile ? "access-key" : "shared",
       resetConnection: id => appHostServer.resetHost(id), connectionState: id => appHostServer.hostState(id),

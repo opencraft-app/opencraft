@@ -1,10 +1,11 @@
 import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { SshServerDescriptor, SshManagementAccessMode } from "@opencraft/app-host-protocol";
-import { SshConnectionStore, SshManagementError, hostKeyFingerprint, parseSshConnectionInput, readPrivateSshFile } from "./ssh-connection-store.js";
+import { SshManagementError, hostKeyFingerprint, parseSshConnectionInput, readPrivateSshFileAsync } from "./ssh-connection-records.js";
+import { SshConnections } from "./ssh-connections.js";
 
 const COOKIE = "opencraft_ssh_session";
 const API = "/__opencraft_ssh";
@@ -53,45 +54,52 @@ export async function scanSshHostKey(hostname: string, port: number): Promise<st
 }
 
 /** Installation-owner control plane. Not a browser-owned credential/config cache. */
+export interface SshManagementOptions {
+  directory: string;
+  /** Legacy explicit alias for the default domain-independent admission policy. */
+  publicAccess?: boolean;
+  accessFile?: string;
+  /** Shared installation access by default; operators may require an additional key. */
+  accessMode?: SshManagementAccessMode;
+  sessionTtlMs?: number;
+  scanHostKey?: (hostname: string, port: number) => Promise<string>;
+  resetConnection: (serverId: string) => Promise<void>;
+  connectConnection: (serverId: string, assertAdmission: () => void) => Promise<void>;
+  connectionState?: (serverId: string) => string;
+  legacyServers?: readonly SshServerDescriptor[];
+}
+
+/** Installation-owner control plane. Not a browser-owned credential/config cache. */
 export class SshManagement {
-  readonly store: SshConnectionStore;
-  readonly accessMode: SshManagementAccessMode;
-  private readonly accessHash: Buffer | null;
   private readonly sessions = new Map<string, Session>();
   private readonly challenges = new Map<string, Challenge>();
   private readonly revocations = new Set<() => void>();
   private failedAttempts: number[] = [];
   private activeScans = 0;
-  constructor(readonly options: {
-    directory: string;
-    /** Legacy explicit alias for the default domain-independent admission policy. */
-    publicAccess?: boolean;
-    accessFile?: string;
-    /** Shared installation access by default; operators may require an additional key. */
-    accessMode?: SshManagementAccessMode;
-    sessionTtlMs?: number;
-    scanHostKey?: (hostname: string, port: number) => Promise<string>;
-    resetConnection: (serverId: string) => Promise<void>;
-    connectConnection: (serverId: string, assertAdmission: () => void) => Promise<void>;
-    connectionState?: (serverId: string) => string;
-    legacyServers?: readonly SshServerDescriptor[];
-  }) {
-    this.accessMode = options.accessMode ?? (options.accessFile ? "access-key" : "shared");
-    if (this.accessMode !== "shared" && this.accessMode !== "access-key") throw new Error("Invalid SSH management access mode");
-    if (this.accessMode === "shared" && options.accessFile) throw new Error("SSH access file requires access-key mode");
-    this.store = new SshConnectionStore(options.directory);
-    this.accessHash = null;
-    if (this.accessMode === "shared") return;
-    const accessPath = options.accessFile ?? join(options.directory, "access.key");
-    if (!options.accessFile) {
-      try { writeFileSync(accessPath, randomBytes(32).toString("base64url"), { flag: "wx", mode: 0o600 }); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") { this.store.close(); throw error; } }
-    }
+  private constructor(
+    readonly options: SshManagementOptions,
+    readonly store: SshConnections,
+    readonly accessMode: SshManagementAccessMode,
+    private readonly accessHash: Buffer | null,
+  ) {}
+
+  /** Opens the connection owner and, in access-key mode, the private access key. */
+  static async open(options: SshManagementOptions): Promise<SshManagement> {
+    const accessMode = options.accessMode ?? (options.accessFile ? "access-key" : "shared");
+    if (accessMode !== "shared" && accessMode !== "access-key") throw new Error("Invalid SSH management access mode");
+    if (accessMode === "shared" && options.accessFile) throw new Error("SSH access file requires access-key mode");
+    const store = await SshConnections.open(options.directory);
+    if (accessMode === "shared") return new SshManagement(options, store, accessMode, null);
     try {
-      const access = readPrivateSshFile(accessPath, 4096).toString().trim();
+      const accessPath = options.accessFile ?? join(options.directory, "access.key");
+      if (!options.accessFile) {
+        try { await writeFile(accessPath, randomBytes(32).toString("base64url"), { flag: "wx", mode: 0o600 }); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+      }
+      const access = (await readPrivateSshFileAsync(accessPath, 4096)).toString().trim();
       if (access.length < 32) throw new Error("SSH access key must contain at least 32 characters");
-      this.accessHash = digest(access);
-    } catch (error) { this.store.close(); throw error; }
+      return new SshManagement(options, store, accessMode, digest(access));
+    } catch (error) { await store.close(); throw error; }
   }
   sameOrigin(request: IncomingMessage, requireOrigin: boolean): boolean {
     if (request.headers["sec-fetch-site"] === "cross-site") return false;
@@ -223,7 +231,7 @@ export class SshManagement {
         json(response, 200, { ok: true }); return true;
       }
       if (request.method === "DELETE" && id) {
-        this.store.remove(id, Number(data.revision));
+        await this.store.remove(id, Number(data.revision));
         await this.options.resetConnection(id); json(response, 200, { ok: true }); return true;
       }
       if ((request.method !== "POST" || id !== null) && (request.method !== "PUT" || id === null)) throw new SshManagementError("invalid", 405);
@@ -235,7 +243,7 @@ export class SshManagement {
         hostKey = challenge.key;
       }
       const previous = id ? this.store.get(id) : null;
-      const row = this.store.save(id, Number(data.revision), input, hostKey);
+      const row = await this.store.save(id, Number(data.revision), input, hostKey);
       if (typeof data.challengeId === "string") this.challenges.delete(data.challengeId);
       // A visibility-only edit must not interrupt existing executions.
       if (id && (input.password !== undefined || hostKey !== undefined || previous!.displayName !== row.displayName
@@ -249,5 +257,5 @@ export class SshManagement {
       json(response, safe.status, { error: safe.code }); return true;
     }
   }
-  close() { this.sessions.clear(); this.challenges.clear(); this.revocations.clear(); this.accessHash?.fill(0); this.store.close(); }
+  close(): Promise<void> { this.sessions.clear(); this.challenges.clear(); this.revocations.clear(); this.accessHash?.fill(0); return this.store.close(); }
 }

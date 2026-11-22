@@ -12,7 +12,7 @@ import { WebSocketServer } from 'ws';
 import { SshManagement } from "../../../apps/opencraft-daemon/src/ssh-management.js";
 // Entirely isolated state and TLS fixture, with no live SSH/model execution.
 const directory = await mkdtemp(join(tmpdir(), 'opencraft-origin-smoke-'));
-let management = new SshManagement({ directory: join(directory, 'ssh'), publicAccess: true, resetConnection: async () => {}, connectConnection: async () => {} });
+let management = await SshManagement.open({ directory: join(directory, 'ssh'), publicAccess: true, resetConnection: async () => {}, connectConnection: async () => {} });
 let originFreeStatus = 0, grants = 0, accepted = 0, rejected = 0;
 let saturationReady = false;
 const bundled = await build({ stdin: { contents: 'export { SshConnectionsController } from "./plugins/builtin-agents/src/ssh-connections/controller.ts"; export { connectWebSocketAppHost } from "./apps/workbench-web/src/runtime/websocket-app-host.ts";', resolveDir: resolve('.') }, bundle: true, format: 'esm', platform: 'browser', write: false });
@@ -91,8 +91,8 @@ try {
     (window as any).recoveryFixture = { controller, client, transport, draft };
     await transport.connect();
   });
-  management.close();
-  management = new SshManagement({ directory: join(directory, 'ssh'), publicAccess: true, resetConnection: async () => {}, connectConnection: async () => {} });
+  await management.close();
+  management = await SshManagement.open({ directory: join(directory, 'ssh'), publicAccess: true, resetConnection: async () => {}, connectConnection: async () => {} });
   for (const ws of sockets.clients) ws.terminate();
   await page.waitForFunction(() => (window as any).recoveryFixture.transport.status.state === 'failed');
   const recovered = await page.evaluate(async () => {
@@ -166,5 +166,5 @@ try {
 } finally {
   await browser.close(); sockets.close(); plain.closeAllConnections(); secure.closeAllConnections();
   await Promise.all([new Promise<void>(r => plain.close(() => r())), new Promise<void>(r => secure.close(() => r()))]);
-  management.close(); await rm(directory, { recursive: true, force: true });
+  await management.close(); await rm(directory, { recursive: true, force: true });
 }

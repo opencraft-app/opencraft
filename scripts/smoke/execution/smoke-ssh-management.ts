@@ -33,8 +33,8 @@ const appHost = new AppHostServer({ logicalClientRouting: true, physicalHostLife
       },
     }) });
 } });
-management = new SshManagement({ directory, publicAccess, accessMode: sharedAccess ? "shared" : "access-key", scanHostKey: async () => hostKey, resetConnection: id => appHost.resetHost(id), connectConnection: (id, assertAdmission) => appHost.ensureHostConnected(id, assertAdmission), connectionState: id => appHost.hostState(id) });
-const second = management.store.save(null, 0, { displayName: "Second fixture", hostname: "fixture.invalid", port: 22, username: "fixture", enabled: false, workspaceBrowseRoots: ["/remote"], password: "synthetic" }, hostKey);
+management = await SshManagement.open({ directory, publicAccess, accessMode: sharedAccess ? "shared" : "access-key", scanHostKey: async () => hostKey, resetConnection: id => appHost.resetHost(id), connectConnection: (id, assertAdmission) => appHost.ensureHostConnected(id, assertAdmission), connectionState: id => appHost.hostState(id) });
+const second = await management.store.save(null, 0, { displayName: "Second fixture", hostname: "fixture.invalid", port: 22, username: "fixture", enabled: false, workspaceBrowseRoots: ["/remote"], password: "synthetic" }, hostKey);
 const web = await createWorkbenchWebServer({ root: resolve(webRoot), appServerTarget: null, appHostServer: appHost, loopbackOnly: !publicAccess, sshManagement: management, onAppHostDiagnostic: () => undefined });
 let browser: any;
 let activePage: any;
@@ -295,4 +295,4 @@ try {
 } catch (error) {
   console.error("Synthetic SSH management UI failure", await activePage?.locator("body").innerText().catch(() => "unavailable"));
   throw error;
-} finally { await browser?.close(); await web.close(); await appHost.close(); management.close(); }
+} finally { await browser?.close(); await web.close(); await appHost.close(); await management.close(); }

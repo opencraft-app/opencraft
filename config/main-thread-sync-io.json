@@ -8,8 +8,6 @@
     "apps/codex-core/src/bin.ts",
     "apps/codex-core/src/main.ts",
     "apps/codex-core/src/app-server-bin.ts",
-    "apps/codex-core/src/account-owner.ts",
-    "apps/codex-core/src/router-owner.ts",
     "apps/agent-bridge-host/src/main.ts",
     "apps/claude-code-bridge/src/main.ts",
     "apps/cursor-bridge/src/main.ts",
@@ -17,7 +15,6 @@
     "apps/headless-server/src/headless-server.mjs",
     "apps/headless-server/src/workbench-web-server.mjs",
     "apps/observability-service/service.mjs",
-    "apps/personal-assistant/bin/assistant.mjs",
     "scripts/server-deployment/acp-host.mjs",
     "scripts/server-deployment/dsh-host.mjs",
     "scripts/server-deployment/engine-host.mjs",
@@ -35,29 +32,8 @@
     "apps/codex-core/src/app-server-bin.ts": {
       "existsSync": 1
     },
-    "apps/codex-core/src/generation-files.ts": {
-      "chownSync": 1,
-      "execFileSync": 1,
-      "mkdirSync": 1,
-      "statSync": 2
-    },
-    "apps/codex-core/src/generation-registry.ts": {
-      "chmodSync": 2,
-      "DatabaseSync": 5,
-      "mkdirSync": 1,
-      "realpathSync": 4
-    },
     "apps/codex-core/src/operator-lease.ts": {
       "readFileSync": 2
-    },
-    "apps/codex-core/src/router-maintenance.ts": {
-      "closeSync": 1,
-      "execFileSync": 1,
-      "fstatSync": 1,
-      "lstatSync": 1,
-      "openSync": 1,
-      "readdirSync": 1,
-      "readFileSync": 6
     },
     "apps/desktop/src/codex-executable.ts": {
       "accessSync": 1
@@ -180,18 +156,6 @@
       "lstatSync": 1,
       "mkdirSync": 1
     },
-    "apps/opencraft-daemon/src/ssh-connection-store.ts": {
-      "closeSync": 4,
-      "DatabaseSync": 2,
-      "fstatSync": 3,
-      "mkdirSync": 1,
-      "openSync": 4,
-      "readFileSync": 1,
-      "writeFileSync": 2
-    },
-    "apps/opencraft-daemon/src/ssh-management.ts": {
-      "writeFileSync": 1
-    },
     "apps/opencraft-daemon/src/thread-identity-database.ts": {
       "DatabaseSync": 1
     },
@@ -207,58 +171,15 @@
     "apps/opencraft-daemon/src/token-usage-team-query.ts": {
       "DatabaseSync": 2
     },
-    "apps/personal-assistant/bin/assistant.mjs": {
-      "readFileSync": 3
-    },
     "apps/personal-assistant/src/adapters/codex/config.mjs": {
       "lstatSync": 1,
       "readFileSync": 1
-    },
-    "apps/personal-assistant/src/adapters/filesystem/atomic-file.mjs": {
-      "closeSync": 3,
-      "existsSync": 2,
-      "fsyncSync": 3,
-      "openSync": 3,
-      "readFileSync": 2,
-      "renameSync": 2,
-      "unlinkSync": 2,
-      "writeFileSync": 2
-    },
-    "apps/personal-assistant/src/adapters/filesystem/attachment-store.mjs": {
-      "closeSync": 6,
-      "fstatSync": 3,
-      "fsyncSync": 4,
-      "lstatSync": 3,
-      "mkdirSync": 2,
-      "openSync": 5,
-      "readSync": 3,
-      "unlinkSync": 3,
-      "writeFileSync": 2
-    },
-    "apps/personal-assistant/src/adapters/filesystem/knowledge-source.mjs": {
-      "closeSync": 2,
-      "fstatSync": 2,
-      "lstatSync": 3,
-      "openSync": 2,
-      "readdirSync": 2,
-      "readSync": 2,
-      "realpathSync": 3
-    },
-    "apps/personal-assistant/src/adapters/filesystem/message-delivery.mjs": {
-      "mkdirSync": 1
     },
     "apps/personal-assistant/src/adapters/local/bot-profile.mjs": {
       "existsSync": 1,
       "lstatSync": 1,
       "mkdirSync": 1,
       "realpathSync": 1
-    },
-    "apps/personal-assistant/src/adapters/local/credential-vault.mjs": {
-      "chmodSync": 2,
-      "existsSync": 3,
-      "mkdirSync": 2,
-      "readFileSync": 3,
-      "writeFileSync": 3
     },
     "apps/personal-assistant/src/adapters/local/profile.mjs": {
       "chmodSync": 2,
@@ -269,21 +190,6 @@
       "realpathSync": 4,
       "statSync": 3,
       "writeFileSync": 3
-    },
-    "apps/personal-assistant/src/adapters/local/unix-socket.mjs": {
-      "chmodSync": 1,
-      "existsSync": 1,
-      "unlinkSync": 1
-    },
-    "apps/personal-assistant/src/adapters/memory/file-authority.mjs": {
-      "closeSync": 2,
-      "existsSync": 2,
-      "fsyncSync": 2,
-      "openSync": 2,
-      "readFileSync": 2,
-      "renameSync": 2,
-      "unlinkSync": 2,
-      "writeFileSync": 2
     },
     "apps/personal-assistant/src/adapters/memory/file-store.mjs": {
       "closeSync": 6,
@@ -307,28 +213,6 @@
       "rmdirSync": 3,
       "unlinkSync": 3,
       "writeFileSync": 2
-    },
-    "apps/personal-assistant/src/adapters/sqlite/database.mjs": {
-      "chmodSync": 2,
-      "DatabaseSync": 1,
-      "existsSync": 2,
-      "lstatSync": 4,
-      "mkdirSync": 2,
-      "readFileSync": 2
-    },
-    "apps/personal-assistant/src/adapters/telemetry/local-telemetry.mjs": {
-      "closeSync": 3,
-      "existsSync": 2,
-      "fstatSync": 3,
-      "ftruncateSync": 2,
-      "lstatSync": 2,
-      "mkdirSync": 2,
-      "openSync": 3,
-      "renameSync": 2,
-      "writeSync": 2
-    },
-    "apps/personal-assistant/src/runtime/create-local-domain.mjs": {
-      "DatabaseSync": 1
     },
     "apps/personal-assistant/src/runtime/memory-browser-offline.mjs": {
       "DatabaseSync": 1,
@@ -577,5 +461,8 @@
       "readdirSync": 2,
       "readFileSync": 3
     }
+  },
+  "ownerProcesses": {
+    "apps/personal-assistant/bin/assistant.mjs": "Isolated assistant child process: owns its memory files and SQLite and talks to its Host over a bounded private socket (apps/personal-assistant/AGENTS.md)."
   }
 }

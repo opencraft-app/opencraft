@@ -48,7 +48,7 @@ export async function selectorFixture(options:{entryOrigin?:EntryOriginResolver;
     const root=options.webRoot??join(directory,id);if(!options.webRoot){await mkdir(root);await writeFile(join(root,'index.html'),`<!doctype html><html><head><title>${id}</title></head><body><h1>${id}</h1><a id="switch" href="/servers">切换服务器</a></body></html>`);}
     const oa=new FixtureRequestIdentity(req=>access.authenticate(req));cleanup.push(()=>oa.close());
     const appHost=options.appHost?.();if(appHost)cleanup.push(()=>(appHost as any).close());
-    const sshManagement=options.sshPublicAccess !== true ? null : new SshManagement({directory:join(directory,id+'-ssh'),publicAccess:options.sshPublicAccess,resetConnection:async()=>{},connectConnection:async()=>{}});
+    const sshManagement=options.sshPublicAccess !== true ? null : await SshManagement.open({directory:join(directory,id+'-ssh'),publicAccess:options.sshPublicAccess,resetConnection:async()=>{},connectConnection:async()=>{}});
     if(sshManagement)cleanup.push(()=>sshManagement.close());
     const web=await createWorkbenchWebServer({root,sshManagement,appHostServer:appHost,appServerTarget:options.appServerTarget??null,loopbackOnly:false,desktopAccess:'trusted-internal',accessService:access,identityService:oa,fileDownloads:options.fileDownloads?.()??null,
       desktopService:{accept(ws:WebSocket){ws.send('connected-'+id);ws.on('message',(data,binary)=>ws.send(data,{binary}));},close(){}}});cleanup.push(()=>web.close());
