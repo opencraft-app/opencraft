@@ -68,6 +68,7 @@ try {
       stale: { current: { version: '0.1.12', buildId: 'build-server' }, latest: null, updateAvailable: false },
     };
     let updateState = 'available';
+    const managedThreadCount = 60;
     const mobileSource = `
 import React,{useState}from'react';import{createIntlTestRoot as createRoot}from'/tests/fixtures/intl-root.tsx';
 import{QueryClient,QueryClientProvider}from'@tanstack/react-query';
@@ -81,7 +82,7 @@ import'/apps/workbench-web/src/styles/app.scss';
 initializeAppearanceTheme();
 if (navigator.maxTouchPoints > 0) document.documentElement.dataset.uiDensity = 'touch';
 const actions=[];const updateActions=[];
-const initial=Array.from({length:60},(_,i)=>({id:'t'+i,title:'Conversation '+i,project:'workspace',status:'ready',updatedAt:Date.now()/1000-i,connectionHostId:'local',connectionHostLabel:'Local',...legacyDirectServerProjectionFromHost({hostId:'local',hostKind:'local',label:'Local'})}));
+const initial=Array.from({length:${managedThreadCount}},(_,i)=>({id:'t'+i,title:'Conversation '+i,project:'workspace',status:'ready',updatedAt:Date.now()/1000-i,connectionHostId:'local',connectionHostLabel:'Local',...legacyDirectServerProjectionFromHost({hostId:'local',hostKind:'local',label:'Local'})}));
 const layout=await SidebarLayoutStore.open({load:async()=>null,save:async()=>{}});
 const threadActions={onRename:async()=>{},onFork:async()=>{},onArchive:async()=>actions.push(['archive']),onDelete:async()=>{},onSetPinned:async()=>actions.push(['pin'])};
 const capabilities=()=>({pin:true,rename:true,fork:true,archive:true,delete:true});
@@ -162,7 +163,7 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
           const rows = page.locator('.sidebar-activity-item');
           const more = page.getByRole('button', { name: 'Show more', exact: true });
           let visibleRows = await rows.count();
-          while (visibleRows < 30) {
+          while (visibleRows < managedThreadCount) {
             await more.evaluate(button => (button as HTMLButtonElement).click());
             await page.waitForFunction(previous => document.querySelectorAll('.sidebar-activity-item').length > previous, visibleRows);
             visibleRows = await rows.count();
