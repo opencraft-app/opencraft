@@ -126,6 +126,11 @@ conversation, steering, queue or credential authorization policy; those guards
 remain in force. Gateway-only installation does not update independent owners.
 
 
+## Opaque launch delivery
+
+Moving decrypted values out of Main into a single vault owner is specified in
+[execution ENV launch delivery](../execution/environment-launch-delivery.md).
+
 ## Operation effects, native control and execution provenance
 
 See [execution control](../execution/execution-control-authority.md). Goal intent, queue
