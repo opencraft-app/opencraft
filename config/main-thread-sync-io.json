@@ -158,54 +158,6 @@
     "apps/opencraft-daemon/src/token-usage-team-query.ts": {
       "DatabaseSync": 2
     },
-    "apps/personal-assistant/src/adapters/codex/config.mjs": {
-      "lstatSync": 1,
-      "readFileSync": 1
-    },
-    "apps/personal-assistant/src/adapters/local/bot-profile.mjs": {
-      "existsSync": 1,
-      "lstatSync": 1,
-      "mkdirSync": 1,
-      "realpathSync": 1
-    },
-    "apps/personal-assistant/src/adapters/local/profile.mjs": {
-      "chmodSync": 2,
-      "existsSync": 2,
-      "lstatSync": 4,
-      "mkdirSync": 3,
-      "readFileSync": 2,
-      "realpathSync": 4,
-      "statSync": 3,
-      "writeFileSync": 3
-    },
-    "apps/personal-assistant/src/adapters/memory/file-store.mjs": {
-      "closeSync": 6,
-      "existsSync": 2,
-      "fstatSync": 2,
-      "fsyncSync": 4,
-      "lstatSync": 2,
-      "mkdirSync": 3,
-      "openSync": 5,
-      "readdirSync": 3,
-      "readFileSync": 2,
-      "realpathSync": 3,
-      "renameSync": 2,
-      "unlinkSync": 3,
-      "writeFileSync": 2
-    },
-    "apps/personal-assistant/src/adapters/memory/file-transaction.mjs": {
-      "existsSync": 1,
-      "mkdirSync": 2,
-      "readFileSync": 2,
-      "rmdirSync": 3,
-      "unlinkSync": 3,
-      "writeFileSync": 2
-    },
-    "apps/personal-assistant/src/runtime/memory-browser-offline.mjs": {
-      "DatabaseSync": 1,
-      "existsSync": 4,
-      "lstatSync": 1
-    },
     "packages/access-control/src/account-management.ts": {
       "DatabaseSync": 1
     },

@@ -1,4 +1,4 @@
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useLayoutEffect, useMemo, type ReactNode } from "react";
 
 /**
  * Physical DOM owner for every Workbench overlay, menu, dialog and drag layer.
@@ -23,4 +23,25 @@ export function WorkbenchPresentationRootProvider({
 
 export function useWorkbenchPresentationRoot(): HTMLElement | null {
   return useContext(WorkbenchPresentationRootContext);
+}
+
+const OverlayPresentationContext = createContext({ active: true, current: true });
+
+/** Logical ownership survives portalling to a different DOM layer. */
+export function OverlayPresentationScope({ active, children }: { active: boolean; children: ReactNode }) {
+  const scopeActive = useOverlayPresentationActive() && active;
+  const scope = useMemo(() => ({ active: scopeActive, current: scopeActive }), [scopeActive]);
+  useLayoutEffect(() => {
+    scope.current = scope.active;
+    return () => { scope.current = false; };
+  }, [scope]);
+  return <OverlayPresentationContext.Provider value={scope}>{children}</OverlayPresentationContext.Provider>;
+}
+
+export function useOverlayPresentationScope() {
+  return useContext(OverlayPresentationContext);
+}
+
+export function useOverlayPresentationActive(): boolean {
+  return useOverlayPresentationScope().active;
 }

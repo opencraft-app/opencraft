@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -68,8 +68,42 @@ test("every package that bundles a network process builds the owner Workers besi
   const { OWNER_WORKERS } = await import("../../scripts/packaging/owner-workers.mjs");
   assert.ok(OWNER_WORKERS.some(([entry, file]) => entry.endsWith("ssh-connections.worker.ts") && file === "ssh-connections-worker.mjs"));
   assert.ok(OWNER_WORKERS.some(([entry, file]) => entry.endsWith("hub-state.worker.ts") && file === "hub-state-worker.mjs"));
-  for (const name of ["package-web-server.mjs", "package-headless-linux.mjs", "package-relay.mjs"]) {
-    const source = await readFile(join(root, "scripts", "packaging", name), "utf8");
+  assert.ok(OWNER_WORKERS.some(([, file]) => file === "memory-browser-offline-worker.mjs"));
+  for (const name of ["scripts/packaging/package-web-server.mjs", "scripts/packaging/package-headless-linux.mjs", "scripts/packaging/package-relay.mjs", "apps/opencraft-daemon/build.mjs"]) {
+    const source = await readFile(join(root, name), "utf8");
     assert.match(source, /await buildOwnerWorkers\(/, `${name} builds the owner Workers`);
+  }
+});
+
+// A Host bundles the assistant supervisor; offline memory browsing starts its
+// packaged Worker beside the bundle instead of reading SQLite on the Host thread.
+test("a bundled assistant Host reads offline memory through its packaged Worker", async () => {
+  const output = await mkdtemp(join(tmpdir(), "assistant-owner-package-"));
+  try {
+    const { buildOwnerWorkers } = await import("../../scripts/packaging/owner-workers.mjs");
+    await buildOwnerWorkers(output);
+    await build({
+      bundle: true, platform: "node", format: "esm", target: "node26", banner, logLevel: "silent",
+      entryPoints: [join(root, "apps/personal-assistant/src/runtime/host-supervisor.mjs")],
+      outfile: join(output, "host.mjs"),
+      external: ["@earendil-works/*"],
+    });
+    const { createPersonalAssistantHost } = await import(pathToFileURL(join(output, "host.mjs")).href);
+    const directory = join(output, "assistants");
+    await mkdir(directory, { mode: 0o700 });
+    const host = await createPersonalAssistantHost({
+      directory,
+      service: { attachPersonalAssistantHost: () => () => {} },
+      readConfig: async () => null,
+    });
+    try {
+      const binding = { botId: "bot-1", owner: { kind: "human", id: "fixture:user" }, grantId: "grant-1" };
+      const result = await host.memory("bot-1", 1, { action: "list" }, binding);
+      assert.ok(result && typeof result === "object", "the offline Worker answered");
+    } finally {
+      await host.close?.();
+    }
+  } finally {
+    await rm(output, { recursive: true, force: true });
   }
 });
