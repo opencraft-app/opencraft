@@ -200,7 +200,7 @@ Unix socket、锁文件、`/proc` 读取、Git 与 `/workspace` 工作目录、E
 | 依赖 | 位置 | 处理建议 |
 | --- | --- | --- |
 | `node:http` 监听（账号代理 HTTP 服务）、`undici` Agent | `server.ts`、`codex-proxy.ts` | 保留在 Node；Cloudflare 上由边缘 Worker 接收模型请求，向 AC 取短期凭据租约后直接流式转发（cloudflare-deployment §2.1） |
-| `child_process` 启动 `codex app-server --stdio` 完成 OAuth 刷新、设备登录与用量查询 | `codex-maintenance-client.ts`、`codex-auth.ts` | 最大阻碍：刷新单写者在 AC，但执行要么改为直接 `fetch` 的 OAuth 刷新／设备码流程，要么经工作区容器代办并把结果交回 AC；需先确认 provider 协议是否允许脱离 codex CLI |
+| `child_process` 启动 `codex app-server --stdio` 完成 OAuth 刷新、设备登录与用量查询 | `codex-maintenance-client.ts`、`codex-auth.ts` | 已决定（2026-11-22）：交给容器代办。AC 仍是刷新、选号与凭据写入的唯一 owner；OAuth 刷新、设备登录与用量查询由按需启动的维护容器内的原生 codex 执行，结果经受认证通道交回 AC 提交。不在 AC 内重新实现未公开的登录协议。容器只获得本次操作所需的短期材料，不长期持有凭据 |
 | `node:fs`：临时 `CODEX_HOME`、外部 `auth.json`、调用方 token 发布、维护注记 | `codex-auth.ts`、`codex-auth-file.ts`、`codex-account-service.ts`、`device-login-maintenance.ts` | 外部共享凭据与本机调用方文件只在 Node 声明；其余随上一项改造消失 |
 | `node:sqlite` 写者锁、`/proc`、`boot_id`、PID 围栏交接 | `codex-writer-lock.ts`、`account-owner.ts`、`operator-lease.ts`、`split-core.ts` | 保留在 Node；DO 单实例与输入门替代写者锁与交接 |
 | Unix socket 控制面（`node:http` 请求） | `codex-core-control.ts`、`apps/codex-core/src/main.ts` | 保留；DO 以 RPC 暴露同一操作集合 |
