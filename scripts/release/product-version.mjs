@@ -20,6 +20,15 @@ const sources = [
   { file: "deploy/web-server/package.json", path: ["version"] },
 ];
 
+// The server storage bundle records the product version it was generated for
+// (scripts/storage/compile-storage-migrations.mjs reads the root package.json).
+// `set` writes the same line `npm run generate:storage` would, and
+// `npm run check:storage` compares the whole file with a fresh generation.
+const generated = {
+  file: "packages/storage-node/src/server/migrations.generated.ts",
+  pattern: /^export const OPENCRAFT_VERSION = "([^"]*)" as const;$/mu,
+};
+
 export function parseReleaseTag(tag) {
   const match = tagPattern.exec(tag ?? "");
   if (!match) throw new Error(`Release tags are vX.Y.Z or vX.Y.Z-beta.N: ${tag}`);
@@ -36,10 +45,12 @@ function locate(document, path) {
 }
 
 export function readProductVersions(root) {
-  return sources.map(({ file, path }) => {
+  const versions = sources.map(({ file, path }) => {
     const value = locate(JSON.parse(readFileSync(join(root, file), "utf8")), path)?.[path.at(-1)];
     return { source: `${file}:${path.map((key) => key || '""').join(".")}`, version: value };
   });
+  const bundle = readFileSync(join(root, generated.file), "utf8").match(generated.pattern);
+  return [...versions, { source: `${generated.file}:OPENCRAFT_VERSION`, version: bundle?.[1] }];
 }
 
 export function productVersion(root) {
@@ -62,6 +73,12 @@ export function setProductVersion(root, version) {
     parent[path.at(-1)] = version;
   }
   for (const [file, document] of documents) writeFileSync(join(root, file), `${JSON.stringify(document, null, 2)}\n`);
+  const bundle = readFileSync(join(root, generated.file), "utf8");
+  if (!generated.pattern.test(bundle)) throw new Error(`Missing OPENCRAFT_VERSION in ${generated.file}`);
+  writeFileSync(
+    join(root, generated.file),
+    bundle.replace(generated.pattern, `export const OPENCRAFT_VERSION = ${JSON.stringify(version)} as const;`),
+  );
 }
 
 const entry = process.argv[1];

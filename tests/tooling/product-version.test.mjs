@@ -19,6 +19,7 @@ const files = [
   "apps/mobile/package.json",
   "apps/mobile/app.json",
   "deploy/web-server/package.json",
+  "packages/storage-node/src/server/migrations.generated.ts",
 ];
 
 test("the repository carries one product version everywhere", () => {
@@ -46,6 +47,10 @@ test("set rewrites every source together and check rejects any drift", (t) => {
   assert.equal(productVersion(copy), "9.8.7");
   const lock = JSON.parse(readFileSync(join(copy, "package-lock.json"), "utf8"));
   assert.equal(lock.packages["apps/mobile"].version, "9.8.7");
+  assert.match(
+    readFileSync(join(copy, "packages/storage-node/src/server/migrations.generated.ts"), "utf8"),
+    /^export const OPENCRAFT_VERSION = "9\.8\.7" as const;$/mu,
+  );
   // Only the version fields change; formatting stays as npm writes it.
   const original = readFileSync(join(root, "apps/mobile/app.json"), "utf8");
   assert.equal(
