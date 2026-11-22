@@ -1,17 +1,32 @@
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { parseArgs } from 'node:util';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url));
-const suites = {
+export const suites = {
   'core-anthropic': ['run', 'test:codex-anthropic'],
   core: ['run', 'test:codex-core'],
   assistant: ['run', 'test:assistant-runtime'],
   gate: ['run', 'gate'],
 };
+
+// Additional suites come from an explicit JSON file mapping suite names to npm
+// arguments. They extend, but never redefine, the suites above.
+export function loadSuites(file) {
+  const extra = JSON.parse(readFileSync(file, 'utf8'));
+  if (!extra || typeof extra !== 'object' || Array.isArray(extra)) throw Error('Suite configuration must be a JSON object');
+  for (const [name, args] of Object.entries(extra)) {
+    if (Object.hasOwn(suites, name)) throw Error('Suite configuration cannot redefine: ' + name);
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) throw Error('Invalid suite name: ' + name);
+    if (!Array.isArray(args) || !args.length || !args.every(arg => typeof arg === 'string' && arg))
+      throw Error('Suite arguments must be non-empty strings: ' + name);
+  }
+  return { ...suites, ...extra };
+}
 
 // Tests must never borrow a developer's production data, profiles or credentials.
 // Raw Node child processes also need the source loader; tsx's execArgv alone
@@ -56,7 +71,9 @@ export async function runIsolatedTest(command, args, { root = repository, loader
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
-  const suite = process.argv[2];
-  if (process.argv.length !== 3 || !Object.hasOwn(suites, suite)) throw Error('Select core-anthropic, core, assistant or gate');
-  process.exitCode = await runIsolatedTest(process.platform === 'win32' ? 'npm.cmd' : 'npm', suites[suite]);
+  const { values, positionals } = parseArgs({ allowPositionals: true, options: { suites: { type: 'string' } } });
+  const selectable = values.suites === undefined ? suites : loadSuites(values.suites);
+  const names = Object.keys(selectable), suite = positionals[0];
+  if (positionals.length !== 1 || !Object.hasOwn(selectable, suite)) throw Error(`Select ${names.slice(0, -1).join(', ')} or ${names.at(-1)}`);
+  process.exitCode = await runIsolatedTest(process.platform === 'win32' ? 'npm.cmd' : 'npm', selectable[suite]);
 }
