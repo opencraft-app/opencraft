@@ -26,9 +26,12 @@ if (args['health-url']) {
 } else add('entry-health-http', false, 'No --health-url supplied', 'blocked');
 
 if (args.ssh) {
-  const identity = run('ssh', [args.ssh, 'sh', '-lc', "set -o pipefail; ps -eo pid,args | grep -E 'opencraft.*(core|server)|headless-server|app-server' | grep -v grep | sed -E 's#(/data|/opt)/[^ ]*/(full/)?#<path>/#g' | head -20"]);
+  const probe = "set +e; echo '---process---'; ps -eo pid,args | grep -E 'opencraft.*(core|server)|headless-server|app-server' | grep -v grep | sed -E 's#(/data|/opt)/[^ ]*/(full/)?#<path>/#g' | head -20; echo '---ports---'; ss -ltn 2>/dev/null | grep -E ':(80|443|8080|19081|19989) ' | head -20; echo '---services---'; systemctl --no-legend --plain --type=service --state=running 2>/dev/null | grep -Ei 'opencraft|join' | wc -l; echo '---receipts---'; find /data/opencraft-deploy /opt/opencraft-server -maxdepth 5 -type f -name 'receipt.json' -print 2>/dev/null | tail -5";
+  const identity = run('ssh', [args.ssh, 'sh', '-lc', probe]);
   add('runtime-identity', Boolean(identity.trim()), identity.trim() || 'No matching runtime process');
-  add('log-window', true, 'Log/restart counters require owner-specific command; see runbook', 'blocked');
+  add('entry-health-local', /---ports---[\s\S]*:(80|443|8080|19081|19989)\s/.test(identity), 'Listening HTTP/AppServer ports from target host');
+  add('log-window', true, 'Owner log query required; baseline process/service evidence captured', 'blocked');
+  add('deployment-lock-and-rollback', /---services---/.test(identity), 'Service owner is present; exact lock and rollback command remain owner-specific', 'blocked');
 } else add('runtime-identity', false, 'No --ssh supplied', 'blocked');
 
 for (const id of ['new-session', 'existing-session', 'data-continuity', 'queue-steer']) {
