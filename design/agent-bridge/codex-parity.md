@@ -102,7 +102,7 @@ daemon 以 `--codex-bridge-stack <程序目录>`（`codexBridgeStack`）启动 b
 ### 退休旧 adapter 的剩余条件
 
 1. **桌面默认开启 bridge 栈**：需先在用户机器上用真实账号与界面验证（`OPENCRAFT_CODEX_BRIDGE=1`）。
-2. **Windows**：Core、APP Server 的控制端点与原生 AppServer 目前只用 Unix socket，Windows 只能走旧 spawn 模式。原生 Codex 支持 `--listen ws://127.0.0.1:PORT` 加 `--ws-auth capability-token`，可据此实现 Windows 传输（控制端点用命名管道）；需在 Windows 上验证。
+2. **Windows**：已实现，桌面开关同样适用。控制端点与 relay 用命名管道（按栈实例命名），原生 Codex 在 `ws://127.0.0.1:随机端口` 上以 `--ws-auth capability-token` 监听，令牌文件在私有 runtime 目录；所有客户端经 `openCodexNativeSocket`（`@opencraft/account-pool-host`）连接三种端点。子进程停止改为关闭 stdin、由预载脚本触发子进程自己的 SIGTERM 处理（Windows 没有可捕获的 SIGTERM）。Windows 专属修正：开机标识在没有 PowerShell 时退回由系统运行时长推算；写锁与恢复记录不再对目录做 fsync、不再检查 POSIX 权限位；Codex provider 用平台的 `isAbsolute` 判断工作区与文件路径。验证：`scripts/smoke/execution/smoke-codex-bridge-stack-windows.ts` 在 Wine 9.0 下用 Windows 版 Node 24.11 与 Codex 0.162.1 通过（建会话、Windows 临时工作区、经 bridge 应答、关闭无残留）；Wine 中 undici `fetch` 无法建连，演练用基于 `node:http` 的替身，产品代码未改。尚未在真实 Windows 上验证，也未覆盖命令执行与 Electron 界面。
 3. **服务器（单机与四容器）**：服务器组装依赖旧路径上的协作与编排（`collaboration`、编排控制、对话工具与 `nativeTool` 动态工具）、桌面附着、工作区钩子、线程元数据与发送者、会话 MCP 的环境注入、计量查询与模型网关计费。这些在 bridge 上都还没有 owner，迁移前服务器不能切到无旧路径组装。
 4. **SSH 远程 Codex** 不在退休范围：它与本地模式共享客户端复用、交互、工具、附件、元数据等核心，退休时只删本地模式（spawn、Core 直通、Core + overlays），保留并抽出远程所需部分。
 

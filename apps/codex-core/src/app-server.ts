@@ -1,10 +1,12 @@
 import { privateWorkspaceExecutionPolicy } from "./workspace-execution-policy.js";
 import { configureCodexExecutionSandbox, codexSandboxRequestPolicy, type CodexExecutionSandbox, type CodexWorkspaceResolver } from "./execution-sandbox.js";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { chmod, mkdir, readFile, realpath, unlink } from "node:fs/promises";
+import { chmod, mkdir, readFile, realpath, unlink, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { createServer as createNetServer } from "node:net";
 import { dirname, isAbsolute, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { acquireCodexWriter, CODEX_CORE_PROTOCOL_VERSION, CodexCoreControlClient, CodexCoreUnavailableError, type CodexAppServerHealth } from "@opencraft/account-pool-host";
+import { acquireCodexWriter, CODEX_CORE_PROTOCOL_VERSION, CodexCoreControlClient, CodexCoreUnavailableError, codexNativeListenArgs, codexNativeListener, codexNativeSocket, isNamedPipe, rememberCodexNativeToken, type CodexAppServerHealth } from "@opencraft/account-pool-host";
 import type { CodexCoreOptions } from "./main.js";
 import { startControlServer } from "./control-server.js";
 import { makeNativeFamilyKillable, nativeReady, nativeOwnerRequest, removeStaleSocket } from "./native-process.js";
@@ -40,13 +42,15 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     || Buffer.byteLength(options.workspaceAuthoritySocket) > 103))
     throw new Error("Invalid private workspace authority configuration");
   if (options.resolveWorkspace && !options.executionSandbox) throw new Error("Workspace routing requires execution sandbox policy");
-  if (process.platform === "win32" || ![options.endpoint, options.coreEndpoint, options.dataDirectory, options.runtimeDirectory].every(isAbsolute)
+  if (![options.endpoint, options.coreEndpoint, options.dataDirectory, options.runtimeDirectory].every(isAbsolute)
     || options.endpoint === options.coreEndpoint || options.authToken.length < 32) throw new Error("Invalid Codex AppServer configuration");
   const runtimeDataDirectory = options.runtimeDataDirectory ?? options.dataDirectory;
   if (!isAbsolute(runtimeDataDirectory)) throw new Error("Codex runtime directory must be absolute");
   const release = await acquireCodexWriter(runtimeDataDirectory, "runtime");
-  const nativeSocket = join(dirname(options.endpoint), "native.sock");
-  const nativeListener = join(dirname(options.endpoint), "native-internal.sock");
+  // POSIX: Unix sockets beside the control endpoint. Windows (named pipe endpoint): native
+  // Codex listens on a loopback WebSocket with a capability token; clients use the relay pipe.
+  const nativeSocket = codexNativeSocket(options.endpoint);
+  const nativeListener = codexNativeListener(options.endpoint, isNamedPipe(options.endpoint) ? await loopbackPort() : undefined);
   let relay: Awaited<ReturnType<typeof startOrchestrationCallbackRelay>> | undefined;
   let child: ChildProcessWithoutNullStreams | undefined;
   let control: Awaited<ReturnType<typeof startControlServer>> | undefined;
@@ -83,7 +87,7 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
         const timer = setTimeout(() => child?.kill("SIGKILL"), 2_000);
         child!.once("close", () => { clearTimeout(timer); resolve(); }); child!.kill("SIGTERM");
       });
-    } finally { await lifecycle?.flush(); if (ownsNative) await unlink(nativeListener).catch(() => undefined); release(); }
+    } finally { await lifecycle?.flush(); if (ownsNative && !nativeListener.startsWith("ws://")) await unlink(nativeListener).catch(() => undefined); release(); }
   })();
   try {
     const dataDirectory = await realpath(options.dataDirectory);
@@ -126,7 +130,14 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     if (options.runtimeDataDirectory && await realpath(runtimeRoot) !== runtimeRoot) throw new Error("Generation HOME must not alias another directory");
     await executionLifecycle?.initialize();
     if (options.executionSandbox) await configureCodexExecutionSandbox(runtimeRoot, options.executable, options.executionSandbox);
-    const args = ["app-server", "--listen", `unix://${nativeListener}`, ...launch.args];
+    let tokenFile: string | undefined;
+    if (nativeListener.startsWith("ws://")) {
+      const token = randomBytes(32).toString("base64url");
+      tokenFile = join(runtimeRoot, "native-listener.token");
+      await writeFile(tokenFile, token, { mode: 0o600 });
+      rememberCodexNativeToken(nativeListener, token);
+    }
+    const args = ["app-server", ...codexNativeListenArgs(nativeListener, tokenFile), ...launch.args];
     const env = { ...process.env, ...launch.env, CODEX_HOME: runtimeRoot,
       OPENAI_API_KEY: undefined, CODEX_API_KEY: undefined, CODEX_ACCESS_TOKEN: undefined };
     child = options.spawnAppServer?.({ args, cwd: options.runtimeDirectory, env })
@@ -165,7 +176,7 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     } : undefined);
     options.signal?.throwIfAborted();
     if (failed) throw new Error("Codex AppServer exited during startup");
-    await chmod(nativeSocket, 0o600);
+    if (!isNamedPipe(nativeSocket)) await chmod(nativeSocket, 0o600);
     ready = true;
     if (options.executionSandbox) {
       await executable();
@@ -174,4 +185,16 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     }
     return { endpoint: options.endpoint, close };
   } catch (error) { await close(); throw error; }
+}
+
+/** A free loopback port for native Codex's WebSocket listener (Windows). */
+async function loopbackPort(): Promise<number> {
+  const server = createNetServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const port = (server.address() as import("node:net").AddressInfo).port;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return port;
 }

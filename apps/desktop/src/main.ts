@@ -866,8 +866,9 @@ async function bootstrap(): Promise<void> {
     })),
     codexDataDirectory: desktopPaths.codexDataDirectory,
     nativeCodexHomeDirectory: process.env.CODEX_HOME?.trim() || join(homedir(), ".codex"),
-    // Opt-in until verified on real accounts: Codex through the daemon's bridge stack. Its Core needs Unix sockets.
-    ...(process.env.OPENCRAFT_CODEX_BRIDGE === "1" && process.platform !== "win32" ? {
+    // Opt-in until verified on real accounts: Codex through the daemon's bridge stack
+    // (Unix sockets; on Windows named pipes and a token-guarded loopback native listener).
+    ...(process.env.OPENCRAFT_CODEX_BRIDGE === "1" ? {
       codexBridgeStack: app.isPackaged
         ? join(process.resourcesPath, "runtime/codex-bridge")
         : join(app.getAppPath(), "../opencraft-daemon/dist/codex-bridge"),

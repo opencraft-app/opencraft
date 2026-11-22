@@ -112,7 +112,6 @@ async function stopRecordedChildren(stateDirectory: string): Promise<void> {
  * with it; there is no fallback to another execution path when one fails.
  */
 export async function startCodexBridgeStack(options: CodexBridgeStackOptions): Promise<CodexBridgeStack> {
-  if (process.platform === "win32") throw new Error("The Codex bridge stack requires Unix sockets");
   const log = options.log ?? ((line: string) => console.error(line));
   const timeout = options.startupTimeoutMs ?? 60_000;
   await mkdir(options.stateDirectory, { recursive: true, mode: 0o700 });
@@ -123,9 +122,14 @@ export async function startCodexBridgeStack(options: CodexBridgeStackOptions): P
   for (const path of Object.values(programs)) await stat(path);
 
   // Unix socket paths are short-limited (104 bytes on macOS); keep them in a short private directory.
-  const sockets = await mkdtemp(join(process.platform === "darwin" ? "/tmp" : tmpdir(), "ocb-"));
-  const coreEndpoint = join(sockets, "core.sock"),
-    appServerEndpoint = join(sockets, "app-server.sock");
+  // Unix sockets in a short private directory (paths are length-limited: 104 bytes on macOS);
+  // on Windows, named pipes unique to this stack instance.
+  const windows = process.platform === "win32";
+  const sockets = windows ? undefined : await mkdtemp(join(process.platform === "darwin" ? "/tmp" : tmpdir(), "ocb-"));
+  const instance = randomBytes(8).toString("hex");
+  const pipe = (name: string) => String.raw`\\.\pipe\opencraft-codex-` + `${instance}-${name}`;
+  const coreEndpoint = sockets ? join(sockets, "core.sock") : pipe("core"),
+    appServerEndpoint = sockets ? join(sockets, "app-server.sock") : pipe("app-server");
   const privateFile = async (name: string, content: string) => {
     const path = join(options.stateDirectory, name);
     await writeFile(path, content, { mode: 0o600 });
@@ -182,13 +186,15 @@ export async function startCodexBridgeStack(options: CodexBridgeStackOptions): P
       for (const { child } of [...children].reverse()) {
         if (child.exitCode !== null || child.signalCode !== null) continue;
         const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
-        child.kill("SIGTERM");
+        // Closing stdin asks the child to stop through its own shutdown path (see exitWithParent);
+        // Windows has no catchable SIGTERM, so this is the one graceful request on every platform.
+        child.stdin?.end();
         const forced = setTimeout(() => child.kill("SIGKILL"), 15_000);
         await exited;
         clearTimeout(forced);
       }
       await rm(join(options.stateDirectory, CHILDREN_RECORD), { force: true });
-      await rm(sockets, { recursive: true, force: true });
+      if (sockets) await rm(sockets, { recursive: true, force: true });
     })());
 
   try {

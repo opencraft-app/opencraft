@@ -5,6 +5,7 @@ import { connect, createServer, type Socket } from "node:net";
 import { chmod } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import WebSocket from "ws";
+import { openCodexNativeSocket } from "@opencraft/account-pool-host";
 import type { CodexAccountService } from "@opencraft/account-pool-host";
 
 /** A real socket outside PrivateTmp; native may publish an alias into its own /tmp. */
@@ -31,6 +32,8 @@ export async function nativeSocketRelay(endpoint: string, target: string) {
 }
 
 export async function removeStaleSocket(path: string): Promise<void> {
+  // A loopback WebSocket listener has no file; a stale port is refused by the native listener itself.
+  if (path.startsWith("ws://")) return;
   await new Promise<void>((resolve, reject) => {
     const socket = connect(path);
     socket.setTimeout(1_000);
@@ -51,7 +54,7 @@ export async function nativeReady(path: string, child: ChildProcessWithoutNullSt
     if (child.exitCode !== null || child.signalCode !== null) throw new Error("Codex AppServer exited during startup");
     try {
       return await new Promise<WebSocket>((resolve, reject) => {
-        const socket = new WebSocket(`ws+unix://${path}:/`, { handshakeTimeout: 500 });
+        const socket = openCodexNativeSocket(path, { handshakeTimeout: 500 });
         const timer = setTimeout(() => { socket.terminate(); reject(new Error("Native initialize timed out")); }, 1_000);
         socket.on("error", error => { clearTimeout(timer); reject(error); });
         socket.on("close", () => { clearTimeout(timer); reject(new Error("Native connection closed during initialize")); });

@@ -276,7 +276,8 @@ parentPort!.on('message', ({ id, op, args }) => {
     const value = operations[op]!(args);
     parentPort!.postMessage({ id, value });
   } catch (error) {
-    if (!(error instanceof Refusal)) { failed = true; try { db.close(); } finally { release(); } }
+    // Report the original failure: closing an already closed database must not replace it.
+    if (!(error instanceof Refusal)) { failed = true; try { if (db.isOpen) db.close(); } catch { /* keep the original */ } try { release(); } catch { /* keep the original */ } }
     parentPort!.postMessage({ id, error: error instanceof Error ? error.message : 'Storage failure', fatal: failed });
   }
 });

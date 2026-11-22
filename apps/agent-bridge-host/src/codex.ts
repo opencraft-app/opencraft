@@ -1,3 +1,4 @@
+import { isAbsolute } from "node:path";
 import {
   BRIDGE_THREAD_NOTIFICATIONS,
   type BridgeDelta,
@@ -44,7 +45,7 @@ function nativeInput(value: unknown, allowEmpty = false): boolean {
   return value.every((raw) => {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
     const item = raw as Record<string, unknown>,
-      path = (key: string) => typeof item[key] === "string" && (item[key] as string).startsWith("/");
+      path = (key: string) => typeof item[key] === "string" && isAbsolute(item[key] as string);
     switch (item.type) {
       case "text":
         return typeof item.text === "string";

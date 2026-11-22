@@ -1,3 +1,4 @@
+import { isAbsolute } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
   negotiateHandshake,
@@ -175,7 +176,8 @@ export class CodexBridgeRuntime {
         }
         // A fork inherits its source's workspace; only a new session must name one.
         const source = method === "session/fork" ? this.adapter.nativeSession(identifier(p.sourceThreadId)) : undefined;
-        if (!source && (typeof native.cwd !== "string" || !native.cwd.startsWith("/")))
+        // Absolute on this machine's platform (the provider runs beside native Codex): "/…" or "C:\\…".
+        if (!source && (typeof native.cwd !== "string" || !isAbsolute(native.cwd)))
           throw new CodexBridgeError("invalid", "Explicit absolute workspace required");
         this.creating.add(threadId);
         try {

@@ -1,7 +1,7 @@
 import { refreshCodexExecutionConfiguration } from "@opencraft/codex-execution";
 import WebSocket from 'ws';
 import { isDeepStrictEqual } from 'node:util';
-import { CodexCoreControlClient } from '@opencraft/account-pool-host';
+import { CodexCoreControlClient, openCodexNativeSocket } from '@opencraft/account-pool-host';
 import { codexDeclaration } from './codex-declaration.js';
 import { CodexBridgeError, type CodexOwnerPort } from './codex.js';
 
@@ -23,7 +23,7 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     const control = new CodexCoreControlClient(this.endpoint, this.token);
     const [health, auth] = await Promise.all([control.health(), control.brokerAuth()]);
     this.brokerAuth = auth;
-    this.socket = new WebSocket(`ws+unix://${health.nativeSocket}:/`, { maxPayload: 1_048_576, handshakeTimeout: 5000 });
+    this.socket = openCodexNativeSocket(health.nativeSocket, { maxPayload: 1_048_576, handshakeTimeout: 5000 });
     const socket = this.socket;
     socket.on('message', data => {
       let frame: unknown;

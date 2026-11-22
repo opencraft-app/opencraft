@@ -1,5 +1,5 @@
 import WebSocket from "ws";
-import { CodexCoreControlClient } from "@opencraft/account-pool-host";
+import { CodexCoreControlClient, openCodexNativeSocket } from "@opencraft/account-pool-host";
 
 type Value = Record<string, unknown>;
 
@@ -36,7 +36,7 @@ export class CodexNativeReader {
     if (this.socket?.readyState === WebSocket.OPEN) return Promise.resolve(this.socket);
     return (this.opening ??= (async () => {
       const [health, auth] = await Promise.all([this.control.health(), this.control.brokerAuth()]);
-      const socket = new WebSocket(`ws+unix://${health.nativeSocket}:/`, {
+      const socket = openCodexNativeSocket(health.nativeSocket, {
         maxPayload: 16 * 1024 ** 2,
         handshakeTimeout: 5000,
       });

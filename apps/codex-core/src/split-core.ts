@@ -2,7 +2,7 @@ import { ACCOUNT_CORE_STATE_MAX_BYTES } from "./account-core-limits.mjs";
 import { realpath } from "node:fs/promises";
 import { Readable } from 'node:stream';
 import { dirname, isAbsolute, join } from "node:path";
-import { accountFailure, classifyAccountFailure, logAccountFailure, acquireCodexWriter, CODEX_CORE_PROTOCOL_VERSION, CodexAccountService, CodexCoreControlClient } from "@opencraft/account-pool-host";
+import { accountFailure, classifyAccountFailure, logAccountFailure, acquireCodexWriter, CODEX_CORE_PROTOCOL_VERSION, CodexAccountService, CodexCoreControlClient, codexNativeSocket } from "@opencraft/account-pool-host";
 import type { CodexCoreOptions } from "./main.js";
 import { readControlJson, startControlServer } from "./control-server.js";
 import { AccountCoreOwner, type AccountOwnerExpectation } from "./account-owner.js";
@@ -157,6 +157,6 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
     });
     // A listening account plane can bootstrap the runtime before health becomes ready.
     return { endpoint: options.endpoint, health: { protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid,
-      codexPid: 0, nativeSocket: join(dirname(options.appServerEndpoint!), "native.sock") }, close };
+      codexPid: 0, nativeSocket: codexNativeSocket(options.appServerEndpoint!) }, close };
   } catch (error) { await close(); throw error; }
 }

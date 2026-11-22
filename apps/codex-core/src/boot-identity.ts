@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { uptime } from "node:os";
 import { promisify } from "node:util";
 
 type Run = (file: string, args: readonly string[]) => Promise<string>;
@@ -23,7 +24,10 @@ export async function bootIdentity(platform: NodeJS.Platform = process.platform,
         "-Command",
         "(Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToFileTimeUtc()",
       ],
-    );
+    ).catch(() => "");
+    // Without PowerShell/WMI: the boot time from system uptime, coarse enough to stay
+    // stable within one boot. A mismatch only makes an owner handoff refuse (fails safe).
+    if (!/^[0-9]{1,32}$/u.test(value.trim())) value = `uptime-${Math.round((Date.now() - uptime() * 1000) / 600_000)}`;
   } else throw new Error("Host boot identity is unavailable on this platform");
   value = value.trim();
   if (!/^[A-Za-z0-9-]{1,128}$/u.test(value)) throw new Error("Host boot identity is unavailable");

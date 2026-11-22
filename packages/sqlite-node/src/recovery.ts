@@ -14,11 +14,14 @@ export function durableJson(path: string, value: unknown): void {
   const temporary = `${path}.${randomUUID()}.tmp`;
   try {
     writeFileSync(temporary, JSON.stringify(value), { flag: "wx", mode: 0o600 });
-    const file = openSync(temporary, "r");
+    // Flushing needs write access on Windows; it cannot open or fsync a directory (NTFS journals the rename).
+    const file = openSync(temporary, "r+");
     try { fsyncSync(file); } finally { closeSync(file); }
     renameSync(temporary, path);
-    const directory = openSync(dirname(path), "r");
-    try { fsyncSync(directory); } finally { closeSync(directory); }
+    if (process.platform !== "win32") {
+      const directory = openSync(dirname(path), "r");
+      try { fsyncSync(directory); } finally { closeSync(directory); }
+    }
   } finally { if (existsSync(temporary)) unlinkSync(temporary); }
 }
 

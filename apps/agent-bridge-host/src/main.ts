@@ -40,7 +40,11 @@ let closing = false;
 const close = async () => {
   if (closing) return; closing = true;
   try { await gateway.close(); await host.close(); process.exitCode = 0; }
-  catch { process.stderr.write('Bridge Host cleanup unconfirmed\n'); process.exitCode = 1; }
+  catch (error) {
+    const reasons = error instanceof AggregateError ? error.errors : [error];
+    process.stderr.write(`Bridge Host cleanup unconfirmed: ${reasons.map(reason => reason instanceof Error ? reason.message : String(reason)).join('; ').slice(0, 500)}\n`);
+    process.exitCode = 1;
+  }
 };
 process.on('SIGTERM', () => void close());
 process.on('SIGINT', () => void close());

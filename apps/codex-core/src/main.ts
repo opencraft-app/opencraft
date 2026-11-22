@@ -26,12 +26,13 @@ export interface CodexCoreOptions extends CodexAccountServiceOptions {
 
 /** Execution and account ownership lives here, never in a daemon connection. */
 export async function startCodexCore(options: CodexCoreOptions) {
-  if (process.platform === "win32") throw new Error("Codex core requires Unix sockets");
   if (![options.endpoint, options.runtimeDirectory, options.dataDirectory, options.nativeCodexHomeDirectory].every(isAbsolute)) {
     throw new Error("Codex core paths must be absolute");
   }
   if (options.authToken.length < 32) throw new Error("Codex core requires a private daemon token (at least 32 characters)");
+  // Split Core (accounts and proxy; the AppServer runs native Codex) works with named pipes on Windows.
   if (options.appServerEndpoint) return startSplitCodexCore(options);
+  if (process.platform === "win32") throw new Error("The combined Codex core requires Unix sockets; use the split AppServer");
   const nativeSocket = join(dirname(options.endpoint), "native.sock");
   if (nativeSocket === options.endpoint) throw new Error("Codex core control endpoint must differ from native.sock");
   const releaseWriter = await acquireCodexWriter(options.dataDirectory);
