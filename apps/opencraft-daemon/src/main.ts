@@ -23,7 +23,8 @@ import { MachineIdentityTransport } from "./machine-transport.js";
 
 import { CodexProviderBridge } from "./codex-provider-bridge.js";
 import { codexAdmissionPaused } from "./codex-maintenance.js";
-import { CodexHostServices, codexAccountsService, codexTasksService } from "./codex-host-services.js";
+import { CodexHostServices, codexAccountsService, codexModelsService, codexPinsService, codexTasksService } from "./codex-host-services.js";
+import { CodexNativeReader } from "./codex-native-reader.js";
 import { CodexCoreControlClient } from "@opencraft/account-pool-host";
 import type { DuplexTransport } from "@opencraft/appserver-client/transport";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
@@ -220,9 +221,13 @@ export async function startOpenCraftDaemon(options: {
           } : {}),
         }) : codexAgent;
         if (!ownsHostState) return routing;
+        // With Core, Host services read native Codex over their own connection to Core's AppServer.
+        const reader = options.codexCoreEndpoint ? new CodexNativeReader(options.codexCoreEndpoint, options.authToken) : undefined;
         hostServices = new CodexHostServices(routing, clients => [
           codexTasksService(join(options.codexDataDirectory, "tasks.sqlite"), clients, reportCodexStorage),
           ...(options.codexCoreEndpoint ? [codexAccountsService(new CodexCoreControlClient(options.codexCoreEndpoint, options.authToken))] : []),
+          ...(reader ? [codexModelsService(reader), codexPinsService(reader, clients, routing instanceof CodexProviderBridge ? routing.threadIdentities() : undefined),
+            { handles: () => false, request: () => null, close: () => reader.close() }] : []),
         ]);
         return hostServices;
       }

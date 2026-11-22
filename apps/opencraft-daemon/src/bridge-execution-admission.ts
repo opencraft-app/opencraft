@@ -47,6 +47,8 @@ export class BridgeExecutionAdmissionTransport implements DuplexTransport {
   private readonly preparingCreations=new Set<string>();
   private readonly creations=new Map<string,PreparedBridgeMcp>();
   private readonly requests=new Map<string,{threadId:string;inputId:string}>();
+  /** The wrapped bridge's Thread identities, for Host services. */
+  threadIdentities(){return (this.inner as Partial<CodexProviderBridge>).threadIdentities?.();}
   constructor(private readonly inner:DuplexTransport,private readonly port:BridgeExecutionAdmissionPort) {
     inner.subscribeMessage(raw=>{
       const frame=JSON.parse(raw),p=frame.params??{};

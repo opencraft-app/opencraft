@@ -182,3 +182,87 @@ test("Core-backed accounts are relayed by the front, before initialize too, with
     await services.close();
   }
 });
+
+test("models, permission profiles and pins are read from native Codex by the front, with bridge identities", async () => {
+  const { codexModelsService, codexPinsService } =
+    await import("../../apps/opencraft-daemon/src/codex-host-services.ts");
+  const PINNED = "01984de2-8f74-7c91-a3b2-5c5e937cf318";
+  const calls: any[] = [];
+  const native = {
+    async request(method: string, params: any) {
+      calls.push([method, params]);
+      if (method === "model/list")
+        return {
+          data: [
+            { id: "gpt-x", model: "gpt-x" },
+            { id: "configured/provider-a/m", model: "configured/provider-a/m" },
+          ],
+        };
+      if (method === "permissionProfile/list")
+        return { data: [{ id: ":workspace" }, { id: ":danger-no-sandbox" }], nextCursor: null };
+      if (method === "threadSection/list") return { data: [{ id: PINNED }], nextCursor: null };
+      if (method === "thread/list")
+        return {
+          data: ["native-1", "plain"].map((id) => ({ id, cwd: "/w", updatedAt: 1, preview: "", turns: [] })),
+          nextCursor: null,
+        };
+      if (method === "thread/read") return { thread: { id: params.threadId, section: null } };
+      if (method === "thread/section/move") return {};
+      throw Object.assign(new Error("nope"), { code: -32601 });
+    },
+  };
+  const broadcasts: any[] = [];
+  const clients = { broadcast: (method: string, params: any) => broadcasts.push([method, params]) };
+  const identities = {
+    toNative: (id: string) => (id === "bridge:codex:p" ? "native-1" : undefined),
+    toPublic: (id: string) => (id === "native-1" ? "bridge:codex:p" : undefined),
+  };
+  const context = { sender: null } as any;
+  const models = codexModelsService(native),
+    pins = codexPinsService(native, clients, identities);
+  assert.equal(
+    ((await models.request("model/list", {}, context)) as any).data.length,
+    2,
+    "without a model gateway every native model is listed",
+  );
+  const profiles = (await models.request("permissionProfile/list", {}, context)) as any;
+  assert.ok(
+    Array.isArray(profiles.data) && profiles.data.length > 0,
+    "profiles are projected into the OpenCraft catalog",
+  );
+  const directory = mkdtempSync(join(tmpdir(), "gateway-"));
+  process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE = join(directory, "gateway.sqlite");
+  try {
+    // An unregistered provider stays visible; a registered, unshared one is hidden from others.
+    assert.equal(((await models.request("model/list", {}, context)) as any).data.length, 2);
+    const { ModelGatewayStore } = await import("@opencraft/account-pool-host");
+    const store = new ModelGatewayStore(join(directory, "gateway.sqlite"));
+    try {
+      store.prepareContribution("provider-a", "owner", "openai");
+    } finally {
+      store.close();
+    }
+    assert.deepEqual(
+      ((await models.request("model/list", {}, context)) as any).data.map((row: any) => row.id),
+      ["gpt-x"],
+      "a configured gateway model is hidden from whom it may not serve",
+    );
+  } finally {
+    delete process.env.OPENCRAFT_MODEL_GATEWAY_DATABASE;
+    rmSync(directory, { recursive: true, force: true });
+  }
+  assert.deepEqual(
+    ((await pins.request("opencraft/thread-pins/list", {}, context)) as any).data.map((row: any) => row.id),
+    ["bridge:codex:p", "plain"],
+  );
+  await pins.request("opencraft/thread-pins/set", { threadId: "bridge:codex:p", pinned: true }, context);
+  assert.deepEqual(
+    calls.filter((c) => c[0] === "thread/section/move").map((c) => c[1]),
+    [{ threadId: "native-1", sectionId: PINNED }],
+  );
+  assert.deepEqual(broadcasts, [["thread/pins/updated", { threadId: "bridge:codex:p" }]]);
+  await assert.rejects(
+    pins.request("opencraft/thread-pins/set", { threadId: 7 }, context),
+    (error: any) => error.code === -32000,
+  );
+});

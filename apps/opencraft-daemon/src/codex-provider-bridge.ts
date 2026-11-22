@@ -86,6 +86,10 @@ export class CodexProviderBridge implements DuplexTransport {
     this.adoptions.set(threadId, operation);
     return operation;
   }
+  /** Public and native identities of bridge Threads, for Host services that address native Codex directly. */
+  threadIdentities(): { toNative(threadId: string): string | undefined; toPublic(nativeId: string): string | undefined } {
+    return { toNative: threadId => this.gateway.owns(threadId) ? this.gateway.nativeThread(threadId) : undefined, toPublic: nativeId => this.gateway.publicThread(nativeId) };
+  }
   /** Rewrite native turn IDs in queue results to the public ones clients know. */
   private publicTurns(threadId: string, value: unknown): unknown {
     if (Array.isArray(value)) return value.map(entry => this.publicTurns(threadId, entry));

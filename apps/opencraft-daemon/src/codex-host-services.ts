@@ -6,7 +6,19 @@ import type {
 } from "@opencraft/appserver-client/transport";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import { TasksFault, TasksService } from "@opencraft/plugin-tasks/server";
-import { CodexAccountOperationError, classifyAccountFailure, logAccountFailure } from "@opencraft/account-pool-host";
+import {
+  CodexAccountOperationError,
+  classifyAccountFailure,
+  configuredModelGatewayPath,
+  logAccountFailure,
+  ModelGatewayStore,
+} from "@opencraft/account-pool-host";
+import {
+  codexPermissionMode,
+  projectPermissionProfileCatalog,
+  type OpenCraftPermissionProfile,
+} from "@opencraft/appserver-protocol";
+import { CodexThreadPins } from "./codex-thread-pins.js";
 
 type Value = Record<string, unknown>;
 const object = (value: unknown): Value =>
@@ -208,6 +220,106 @@ export function codexAccountsService(control: {
           code: -32020,
           data: { codexAccountFailure: failure.diagnostic },
         });
+      }
+    },
+    close: () => {},
+  };
+}
+
+/** Native requests a service may make; the Host's own reader connection to Core's AppServer. */
+export interface CodexNativeRequests {
+  request(method: string, params: Value): Promise<unknown>;
+}
+/** Public and native Thread identities, where Thread routing gives bridge Threads public IDs. */
+export interface CodexThreadIdentities {
+  toNative(threadId: string): string | undefined;
+  toPublic(nativeId: string): string | undefined;
+}
+const text = (value: unknown) => (typeof value === "string" ? value : "");
+
+/**
+ * Models and permission profiles, read from native Codex. A configured gateway
+ * model is listed only to whom it may serve, as the local Host did.
+ */
+export function codexModelsService(
+  native: CodexNativeRequests,
+  viewer: (context: TransportSubmissionContext) => string | null = () => null,
+): CodexHostService {
+  return {
+    handles: (method) => method === "model/list" || method === "permissionProfile/list",
+    request: async (method, params, context) => {
+      const result = object(await native.request(method, object(params)));
+      if (method === "permissionProfile/list")
+        return {
+          ...result,
+          data: Array.isArray(result.data)
+            ? projectPermissionProfileCatalog(
+                result.data.map((entry) => object(entry) as unknown as OpenCraftPermissionProfile),
+                (profile) => codexPermissionMode(text(profile.id)),
+              )
+            : result.data,
+        };
+      const gatewayPath = configuredModelGatewayPath();
+      if (!gatewayPath || !Array.isArray(result.data)) return result;
+      const ledger = new ModelGatewayStore(gatewayPath);
+      try {
+        const actor = viewer(context);
+        return {
+          ...result,
+          data: result.data.filter((item) => {
+            const id = text(object(item).model) || text(object(item).id);
+            if (!id.startsWith("configured/")) return true;
+            try {
+              return ledger.canUse(decodeURIComponent(id.slice("configured/".length).split("/")[0]!), actor);
+            } catch {
+              return false;
+            }
+          }),
+        };
+      } finally {
+        ledger.close();
+      }
+    },
+    close: () => {},
+  };
+}
+
+/** Pinned Threads, kept in native Codex's reserved section; bridge Threads by their public ID. */
+export function codexPinsService(
+  native: CodexNativeRequests,
+  clients: CodexHostServiceClients,
+  identities?: CodexThreadIdentities,
+): CodexHostService {
+  const pins = new CodexThreadPins((method, params) => native.request(method, params));
+  return {
+    handles: (method) => method === "opencraft/thread-pins/list" || method === "opencraft/thread-pins/set",
+    request: async (method, raw) => {
+      const params = object(raw);
+      try {
+        if (method === "opencraft/thread-pins/list") {
+          const listed = await pins.list();
+          return identities
+            ? {
+                ...listed,
+                data: listed.data.map((row) => {
+                  const id = text(object(row).id),
+                    visible = id ? identities.toPublic(id) : undefined;
+                  return visible ? { ...row, id: visible } : row;
+                }),
+              }
+            : listed;
+        }
+        if (typeof params.threadId !== "string" || typeof params.pinned !== "boolean")
+          throw new Error("Invalid pin command");
+        const result = await pins.set(identities?.toNative(params.threadId) ?? params.threadId, params.pinned);
+        clients.broadcast("thread/pins/updated", { threadId: params.threadId });
+        return result;
+      } catch (error) {
+        console.warn(
+          "[codex-host-services]",
+          JSON.stringify({ event: "thread-pins-failed", reason: error instanceof Error ? error.message : "unknown" }),
+        );
+        throw Object.assign(new Error("无法更新置顶会话，请刷新列表核对后重试"), { code: -32000 });
       }
     },
     close: () => {},
