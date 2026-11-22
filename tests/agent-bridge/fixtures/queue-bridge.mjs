@@ -52,6 +52,10 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     reply({ thread: { id: p.providerThreadId } });
     return;
   }
+  if (request.method === "session/release" && process.env.NO_RELEASE) {
+    output({ id: request.id, error: { code: -32601, message: "Unsupported bridge method" } });
+    return;
+  }
   if (request.method === "session/release") {
     // Handed to another provider generation; nothing ends.
     appendFileSync(process.env.EXECUTIONS, `release:${p.threadId}@${process.env.GENERATION ?? ""}\n`);

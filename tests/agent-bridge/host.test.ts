@@ -1069,3 +1069,55 @@ test("an idle Thread moves to the current provider generation at its next turn, 
     "a generation nothing uses any more is retired",
   );
 });
+
+test("after an update, a Thread whose old provider cannot hand it over moves on its first use after the restart", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-migrate-restart-"));
+  const path = join(root, "host.db"),
+    executions = join(root, "executions");
+  await writeFile(executions, "");
+  const artifact = resolve("tests/agent-bridge/fixtures/queue-bridge.mjs");
+  const provider = { ...declaration, capabilities: { ...declaration.capabilities, history: true, adoption: true } };
+  const handshake = negotiateHandshake({ protocolVersion: 1, grammarRange: { min: 1, max: 1 } }, provider);
+  assert(handshake.ok);
+  const digest = createHash("sha256")
+    .update(await readFile(artifact))
+    .digest("hex");
+  const generation = (id: string, extra: Record<string, string> = {}): Generation => ({
+    id,
+    artifact,
+    digest,
+    provider,
+    launch: {
+      command: [process.execPath, artifact],
+      cwd: root,
+      env: { HANDSHAKE: JSON.stringify(handshake.result), EXECUTIONS: executions, GENERATION: id, ...extra },
+    },
+  });
+  let host = await BridgeHost.open({ path, policy, backend: localTestBackend() });
+  t.after(async () => {
+    await host.close().catch(() => {});
+    await rm(root, { recursive: true, force: true });
+  });
+  // The old build cannot release a session it holds.
+  await host.add(generation("old", { NO_RELEASE: "1" }));
+  await host.activate("old", "");
+  await host.accept(command("create"));
+  await accepted(host, "create");
+  const delivered = await host.events(0, 256);
+  if (delivered.length) await host.ack(Math.max(...delivered.map((event: any) => event.seq)));
+  await host.close();
+  // The update: a new Host process with a new current generation.
+  host = await BridgeHost.open({ path, policy, backend: localTestBackend() });
+  await host.add(generation("new"));
+  await host.activate("new", "old");
+  await host.observe({
+    serverId: "server-1",
+    threadId: "thread-1",
+    method: "history/read",
+    params: { view: "thread" },
+  });
+  const rows = (await readFile(executions, "utf8")).split("\n").filter(Boolean);
+  assert.deepEqual(rows, ['adopt:native-["server-1","thread-1"]@new'], "only the current build takes the session");
+  const snapshot = await host.snapshot();
+  assert.equal(snapshot.routes.find((row: any) => row.route === '["server-1","thread-1"]').generation, "new");
+});

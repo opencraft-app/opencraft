@@ -75,6 +75,8 @@ interface Session {
   endedTurns: Set<string>;
   openedTurns: Set<string>;
   inputs: Map<string, Input>;
+  /** Text streams opened by deltas and not yet completed natively, by native item ID. */
+  streams?: Map<string, { nativeTurnId: string; channel: "agentMessage" | "reasoning" | "plan" }>;
 }
 /** Provider-native translation only; canonical IDs and event ordering belong to assembler. */
 export class CodexBridge {
@@ -329,6 +331,14 @@ export class CodexBridge {
       session.endedTurns.add(nativeTurnId);
       if (session.activeTurn === nativeTurnId) session.activeTurn = undefined;
       const status = turn.status === "failed" ? "failed" : turn.status === "interrupted" ? "interrupted" : "completed";
+      // Native completed the turn; a stream it never completed (a response abandoned for a steer) ends with it.
+      const abandoned: BridgeDelta[] = [];
+      for (const [nativeKey, stream] of session.streams ?? []) {
+        if (stream.nativeTurnId !== nativeTurnId) continue;
+        session.streams!.delete(nativeKey);
+        abandoned.push({ op: "item.textClose", scope, nativeTurnId, nativeKey, channel: stream.channel });
+      }
+      if (abandoned.length) this.emit(threadId, abandoned);
       // record() refuses non-objects; a completed turn carries error: null.
       const error = turn.error && typeof turn.error === "object" ? (turn.error as Record<string, unknown>) : {};
       // The native classification lets the Host's owner decide on a provider retry.
@@ -348,6 +358,7 @@ export class CodexBridge {
       const item = record(p.item),
         nativeKey = id(item.id),
         nativeTurnId = id(p.turnId);
+      if (method === "item/completed") session.streams?.delete(nativeKey);
       let shape: ItemShape;
       if (item.type === "agentMessage" && typeof item.text === "string")
         shape = { kind: "agentMessage", text: item.text };
@@ -450,6 +461,9 @@ export class CodexBridge {
       ]);
     } else if (["item/agentMessage/delta", "item/reasoning/textDelta", "item/plan/delta"].includes(method)) {
       if (typeof p.delta !== "string") throw new CodexBridgeError("invalid", "Invalid text delta");
+      const channel =
+        method === "item/plan/delta" ? "plan" : method === "item/reasoning/textDelta" ? "reasoning" : "agentMessage";
+      (session.streams ??= new Map()).set(id(p.itemId), { nativeTurnId: id(p.turnId), channel });
       this.emit(threadId, [
         {
           op: "item.textDelta",

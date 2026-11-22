@@ -118,3 +118,17 @@ test('a failed native turn carries its error classification; a completed one car
     ['failed', { message: 'busy', codexErrorInfo: 'serverOverloaded', additionalDetails: null }], ['completed', null],
   ]);
 });
+
+test('a response native abandoned (for a steer) closes with its turn; a completed one is not closed twice', () => {
+  const events: BridgeDelta[] = [];
+  const bridge = new CodexBridge({ async request() { return {}; } }, (_, deltas) => events.push(...deltas));
+  bridge.bind('route', 'native');
+  bridge.notification('turn/started', { threadId: 'native', turn: { id: 't1' } });
+  bridge.notification('item/agentMessage/delta', { threadId: 'native', turnId: 't1', itemId: 'abandoned', delta: 'partial' });
+  bridge.notification('item/agentMessage/delta', { threadId: 'native', turnId: 't1', itemId: 'final', delta: 'done' });
+  bridge.notification('item/completed', { threadId: 'native', turnId: 't1', item: { type: 'agentMessage', id: 'final', text: 'done' } });
+  bridge.notification('turn/completed', { threadId: 'native', turn: { id: 't1', status: 'completed', error: null } });
+  const closes = events.filter(e => e.op === 'item.textClose');
+  assert.deepEqual(closes.map(e => (e as any).nativeKey), ['abandoned']);
+  assert.ok(events.indexOf(closes[0]!) < events.findIndex(e => e.op === 'turn.close'));
+});

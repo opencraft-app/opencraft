@@ -373,7 +373,9 @@ export class BridgeHost {
         throw hostRefusal(command, "Resume id does not match the recorded restorable native session");
     }
     // A new turn is where an idle Thread moves to the current provider generation.
-    if (command.method === "turn/start") await this.migrate(route);
+    // A new turn, or a restarted route's first use (no provider holds it yet), moves an idle Thread
+    // to the current provider generation.
+    if (command.method === "turn/start" || this.rebinding.has(route)) await this.migrate(route);
     const result = await this.storage.call<{ receipt: Receipt; fresh: boolean }>("admit", {
       command,
       digest,
@@ -437,12 +439,14 @@ export class BridgeHost {
     const pending = this.migrations.get(route);
     if (pending) return pending;
     const operation = (async () => {
-      const state = await this.storage.call<{
-        generation: string | null;
-        current: string;
-        nativeId: string | null;
-        busy: boolean;
-      }>("migration", { route });
+      type Candidate = { generation: string | null; current: string; nativeId: string | null; busy: boolean };
+      let state = await this.storage.call<Candidate>("migration", { route });
+      // Reads and resumes the window sends just before a turn settle quickly; wait for them, not for work.
+      for (let attempt = 0; state.busy && state.generation !== state.current && attempt < 30; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        state = await this.storage.call<Candidate>("migration", { route });
+      }
+      if (state.busy && state.generation !== state.current) process.stderr.write("host-migration-skipped:busy\n");
       const from = state.generation,
         to = state.current;
       if (
@@ -461,7 +465,10 @@ export class BridgeHost {
       // A provider that never bound it in this process (Host restart) has nothing to release.
       if (old && !restarted) {
         const released = await old.request(`host-migrate:${randomUUID()}`, "session/release", { threadId: route });
-        if (!successful(released)) return;
+        if (!successful(released)) {
+          process.stderr.write(`host-migration-skipped:release:${"error" in released ? released.error.message : ""}\n`);
+          return;
+        }
       }
       const readopt = async () => {
         if (old && !restarted)
@@ -490,6 +497,9 @@ export class BridgeHost {
         })
         .catch(() => undefined);
       if (!adopted || !successful(adopted)) {
+        process.stderr.write(
+          `host-migration-skipped:adopt:${adopted && "error" in adopted ? adopted.error.message : "no answer"}\n`,
+        );
         // Back to where it was; a failed hand-back is recovered on the route's next use.
         await this.storage.call("rebindRoute", { route, from: to, to: from }).catch(() => undefined);
         await readopt();
@@ -514,6 +524,8 @@ export class BridgeHost {
   }
   /** Bind a restarted route before the queue judges whether it is idle. */
   private async recoverRoute(route: string): Promise<void> {
+    if (!this.rebinding.has(route)) return;
+    await this.migrate(route);
     if (!this.rebinding.has(route)) return;
     const binding = await this.storage.call<{ generation: string | null; epoch: number }>("observationRoute", {
       route,
@@ -792,6 +804,7 @@ export class BridgeHost {
     const params = structuredClone(object(body.params));
     if (Buffer.byteLength(stable(params)) > 512 * 1024) throw Error("Observation too large");
     const route = routeKey(identifier(body.serverId), identifier(body.threadId));
+    if (this.rebinding.has(route)) await this.migrate(route);
     const binding = await this.storage.call<{ generation: string | null; epoch: number }>("observationRoute", {
       route,
     });
