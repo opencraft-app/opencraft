@@ -193,6 +193,15 @@ input.on("line", line => {
       turns.delete(threadId);
       send({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "completed", items: [] } } });
     }, 40);
+    else if (process.env.OPENCRAFT_TEST_PACKAGED_TURN === "1") {
+      const text = message.params.input.find(item => item.type === "text")?.text;
+      const item = { type: "agentMessage", id: "packaged-reply", text: `Fixture received: ${text}` };
+      const completed = { id: turnId, status: "completed", items: [item] };
+      turns.delete(threadId);
+      threadTurns.set(threadId, [...(threadTurns.get(threadId) ?? []).slice(0, -1), completed]);
+      send({ method: "item/completed", params: { threadId, turnId, item } });
+      send({ method: "turn/completed", params: { threadId, turn: completed } });
+    }
     return;
   }
   if (message.method === "turn/steer") {
