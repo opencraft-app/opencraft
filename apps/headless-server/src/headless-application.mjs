@@ -20,6 +20,8 @@ import { waitForExecutionCliBinding } from '@opencraft/session-capabilities/exec
 import { codexAdmissionPaused,createServerCodexBridge,readCodexBridgeConfiguration,createBridgeSessionMcp } from '@opencraft/opencraft-daemon/bridge-execution-admission';
 import { CodexHostServices, codexAccountsService, codexModelsService, codexPinsService, codexTasksService } from '@opencraft/opencraft-daemon/codex-host-services';
 import { CodexNativeReader } from '@opencraft/opencraft-daemon/codex-native-reader';
+import { startCodexEngineHost } from '@opencraft/opencraft-daemon/codex-bridge-stack';
+import { resolveCodexPermissions } from '@opencraft/opencraft-daemon/codex-bridge-host';
 import { openServerDatabase } from "@opencraft/storage-node/server";
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { modelPolicyHttp } from '@opencraft/model-usage-policy/http';
@@ -43,7 +45,7 @@ import { connectBrowserOwner } from './remote-browser-owner.mjs';
 import { createObservabilityIngress } from "./observability-ingress.mjs";
 import { existsSync } from "node:fs";
 
-import { access, chmod, mkdir, stat, readFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, stat, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -152,6 +154,7 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
   let engines = ["dsh"];
   let defaultEngine;
   let codexAgentBridgeFile;
+  let codexBridgePrograms;
   let agentBridgeFile;
   let sshServersFile;
   let sshConfig;
@@ -189,6 +192,9 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
     } else if(argument==='--codex-agent-bridge-config') {
       codexAgentBridgeFile=argv[++index];
       if(!codexAgentBridgeFile||!isAbsolute(codexAgentBridgeFile))throw new Error('--codex-agent-bridge-config requires an absolute private file');
+    } else if(argument==='--codex-bridge-programs') {
+      codexBridgePrograms=argv[++index];
+      if(!codexBridgePrograms||!isAbsolute(codexBridgePrograms))throw new Error('--codex-bridge-programs requires an absolute directory');
     } else if(argument==='--agent-bridge-config') {
       agentBridgeFile=argv[++index];
       if(!agentBridgeFile||!isAbsolute(agentBridgeFile))throw new Error('--agent-bridge-config requires an absolute private file');
@@ -259,6 +265,7 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
   if (!engines.includes(defaultEngine)) throw new Error("Default engine must be enabled");
   return { help: false, host, port, ...(hubTargetPort === undefined ? {} : { hubTargetPort }), ...(engineHostDescriptor ? {engineHostDescriptor} : {}), ...(engines.length !== 1 || engines[0] !== "dsh" ? { engines, defaultEngine } : {}), dataDirectory: resolve(dataDirectory), allowUnauthenticatedPublic,
     ...(codexAgentBridgeFile ? {codexAgentBridgeFile} : {}),
+    ...(codexBridgePrograms ? {codexBridgePrograms} : {}),
     ...(agentBridgeFile ? {agentBridgeFile} : {}),
     ...(machineName ? { machineName } : {}),
     ...(isolateBrowserStorage ? { isolateBrowserStorage } : {}),
@@ -295,7 +302,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   const browserOwnerSocket = process.env.OPENCRAFT_BROWSER_OWNER_SOCKET;
   if (browserOwnerSocket && !isAbsolute(browserOwnerSocket))
     throw new Error('OPENCRAFT_BROWSER_OWNER_SOCKET must be an absolute private socket path');
-  const codexAgentBridge=options.codexAgentBridge??await readCodexBridgeConfiguration(options.codexAgentBridgeFile);
+  let codexAgentBridge=options.codexAgentBridge??await readCodexBridgeConfiguration(options.codexAgentBridgeFile);
+  // The server's own Codex Engine Host: every Codex Thread runs through the provider bridge,
+  // new ones from creation, existing ones from their next turn (their IDs and history kept).
+  if(options.codexBridgePrograms!==undefined&&(codexAgentBridge||!options.codexCoreEndpoint||!isAbsolute(options.codexBridgePrograms)))
+    throw new Error('A server Codex Engine Host requires an existing Core endpoint and no external bridge configuration');
+  let codexEngineHost;
   const agentBridge=options.agentBridge??(options.agentBridgeFile?await readPrivateJson(options.agentBridgeFile):undefined);
   if(agentBridge!==undefined&&(!agentBridge||typeof agentBridge!=='object'||Array.isArray(agentBridge)))throw new Error('Invalid private agent bridge configuration');
   if(codexAgentBridge&&!options.codexCoreEndpoint)throw new Error('Codex bridge requires an existing Core endpoint');
@@ -427,6 +439,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       await settle([() => threadOrchestration?.close()]);
       await settle([() => personalAssistantHost?.close()]);
       await settle([() => appHostServer?.close()]);
+      await settle([() => codexEngineHost?.close()]);
       for (const service of terminalServices.values()) service.close();
       terminalServices.clear();
       fileSystem?.close();
@@ -453,6 +466,13 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     return closing;
   };
   try {
+    if(options.codexBridgePrograms!==undefined) {
+      codexEngineHost=await startCodexEngineHost({programs:options.codexBridgePrograms,node:process.execPath,
+        coreEndpoint:options.codexCoreEndpoint,coreToken:options.codexCoreAuthToken,
+        runtimeDirectory:join(dataDirectory,'codex'),stateDirectory:join(dataDirectory,'codex-bridge'),
+        log:line=>console.error(line)});
+      codexAgentBridge=codexEngineHost.bridge;
+    }
     const ingressConfiguration = options.sshConfig ? await loadSshIngressConfiguration(options.sshConfig) : null;
     // Invalid configured credentials fail startup before any execution resource is created.
     const relayConfiguration = options.relayConnectFile ? await loadRelayConnection(options.relayConnectFile, composition.relayAssertionOptions) : null;
@@ -1004,8 +1024,11 @@ export async function startHeadlessServer(options = {}, composition = {}) {
             if(context.collaborationRequestId) {
               if(inputId!=='actor-input:'+context.collaborationRequestId)throw Error('Invalid admitted input');
             } else {
-              if(!context.actorContext)throw Error('Execution admission required');
-              actorCollaboration.authorizeExecution(context.actorContext,threadId,inputId,input);
+              // An anonymous deployment's input carries no actor of its own: the agent driver admits it
+              // as the deployment operator, which this admission then authorizes as it would a login.
+              const actor=context.actorContext??operator.context();
+              if(!actor)throw Error('Execution admission required');
+              actorCollaboration.authorizeExecution(actor,threadId,inputId,input);
             }
             await actorCollaboration.admittedExecution(threadId,inputId);
             return {serverId:conversationExecution.serverForThread(threadId),threadId,
@@ -1014,7 +1037,14 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           sign:session=>executionCliSourceToken(capabilityKey,session),
           ...bridgeSessionMcp,
           started:(threadId,inputId,turnId)=>actorCollaboration.executionStarted(threadId,inputId,turnId),
-        },{admissionPaused:()=>codexAdmissionPaused(join(dataDirectory,"codex"))}), clients => [codexTasksService(join(dataDirectory, "codex", "tasks.sqlite"), clients, reportLocalCodexStorage),
+        },{admissionPaused:()=>codexAdmissionPaused(join(dataDirectory,"codex")),
+          ...(codexEngineHost&&codexReader?{adoptExisting:true,newThreads:true,
+            resolvePermissions:(selection,cwd)=>resolveCodexPermissions(codexReader,selection,cwd),
+            projectlessWorkspace:async()=>{
+              const projectless=process.env.OPENCRAFT_CODEX_PROJECTLESS_DIR||join(dataDirectory,'codex','projectless-workspaces');
+              await mkdir(projectless,{recursive:true,mode:0o700});
+              return mkdtemp(join(projectless,'thread-'));
+            }}:{})}), clients => [codexTasksService(join(dataDirectory, "codex", "tasks.sqlite"), clients, reportLocalCodexStorage),
           ...(options.codexCoreEndpoint ? [codexAccountsService(new CodexCoreControlClient(options.codexCoreEndpoint, options.codexCoreAuthToken))] : []),
           ...(codexReader ? [codexModelsService(codexReader, context => context.actorContext && actorStore.isCurrent(context.actorContext) ? actorStore.get(context.actorContext.actorId)?.id ?? null : null),
             codexPinsService(codexReader, clients, { toNative: id => codexRouting?.threadIdentities?.()?.toNative(id), toPublic: id => codexRouting?.threadIdentities?.()?.toPublic(id) }),

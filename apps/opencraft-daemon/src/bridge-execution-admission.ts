@@ -1,7 +1,7 @@
 import { lstat,readFile } from 'node:fs/promises';
 import { CodexProviderBridge } from './codex-provider-bridge.js';
 import type { BridgeGatewayOptions } from '@opencraft/agent-bridge-host/gateway';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { DuplexTransport, TransportSubmissionContext } from '@opencraft/appserver-client/transport';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 import type { CapabilitySession } from '@opencraft/session-capabilities';
@@ -36,7 +36,10 @@ export function createServerCodexBridge(legacy:DuplexTransport,options:BridgeGat
   const attachments=typeof host.prepareExternalInput==='function'&&typeof host.projectExternalHistory==='function'&&typeof host.observeExternalTitle==='function'
     ?{prepareInput:host.prepareExternalInput.bind(legacy),projectHistory:host.projectExternalHistory.bind(legacy),observeTitle:host.observeExternalTitle.bind(legacy),
       ...(typeof (legacy as {releaseForAdoption?:unknown}).releaseForAdoption==='function'?{releaseForAdoption:(legacy as unknown as {releaseForAdoption:(id:string)=>Promise<boolean>}).releaseForAdoption.bind(legacy)}:{})}:{};
-  return options?new BridgeExecutionAdmissionTransport(new CodexProviderBridge(legacy,options,{...attachments,...policy}),admission):legacy;
+  // When the bridge owns every new Thread, its implicit identity is assigned here, before
+  // admission, so an implicit creation is prepared exactly as an explicit one.
+  const ownsNewThreads=!!(policy.newThreads||policy.exclusive||policy.adoptExisting);
+  return options?new BridgeExecutionAdmissionTransport(new CodexProviderBridge(legacy,options,{...attachments,...policy}),admission,ownsNewThreads):legacy;
 }
 
 /** Server-side admission only for opt-in bridge Threads. Legacy frames pass intact. */
@@ -49,7 +52,7 @@ export class BridgeExecutionAdmissionTransport implements DuplexTransport {
   private readonly requests=new Map<string,{threadId:string;inputId:string}>();
   /** The wrapped bridge's Thread identities, for Host services. */
   threadIdentities(){return (this.inner as Partial<CodexProviderBridge>).threadIdentities?.();}
-  constructor(private readonly inner:DuplexTransport,private readonly port:BridgeExecutionAdmissionPort) {
+  constructor(private readonly inner:DuplexTransport,private readonly port:BridgeExecutionAdmissionPort,private readonly ownsNewThreads=false) {
     inner.subscribeMessage(raw=>{
       const frame=JSON.parse(raw),p=frame.params??{};
       const creationKey=JSON.stringify([frame[LOGICAL_CLIENT_FIELD]??null,frame.id]);
@@ -81,7 +84,12 @@ export class BridgeExecutionAdmissionTransport implements DuplexTransport {
   send(raw:string,signal?:AbortSignal){return this.sendWithContext(raw,{sender:null},signal);}
   async sendWithContext(raw:string,context:TransportSubmissionContext,signal?:AbortSignal){
     if(this.closed)throw Error('Bridge admission owner is closed');
-    const frame=JSON.parse(raw),p=frame.params??{};
+    const frame=JSON.parse(raw);
+    if(this.ownsNewThreads&&frame.method==='thread/start'&&frame.id!==undefined&&frame.params?.agentBridge===undefined) {
+      frame.params={...frame.params,agentBridge:{threadId:randomUUID(),clientRequestId:`implicit:${randomUUID()}`}};
+      raw=JSON.stringify(frame);
+    }
+    const p=frame.params??{};
     if(frame.method==='thread/start'&&p.agentBridge&&this.port.prepareSessionMcp) {
       const seed=p.agentBridge.threadId;
       if(typeof seed==='string'&&seed) {

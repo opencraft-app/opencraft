@@ -46,6 +46,8 @@
     "./workspace-queued-context": "./src/workspace-queued-context.ts",
     "./assistant-environments": "./src/assistant-environments.ts",
     "./bridge-execution-admission": "./src/bridge-execution-admission.ts",
+    "./codex-bridge-stack": "./src/codex-bridge-stack.ts",
+    "./codex-bridge-host": "./src/codex-bridge-host.ts",
     "./codex-host-services": "./src/codex-host-services.ts",
     "./codex-native-reader": "./src/codex-native-reader.ts",
     "./appserver-identity-overlay": "./src/appserver-identity-overlay.ts",

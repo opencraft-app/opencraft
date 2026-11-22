@@ -70,7 +70,8 @@ export class CodexOwnerConnection implements CodexOwnerPort {
         this.initialConfigurations.delete(threadId);
       } catch(error) {
         current();
-        if(!(error instanceof CodexBridgeError)||error.nativeReason!=='unmaterialized')throw error;
+        // Native cannot list turns yet: no first message is recorded, as when it is unmaterialized.
+        if(!(error instanceof CodexBridgeError)||!['unmaterialized','turns-unavailable'].includes(error.nativeReason??''))throw error;
         if(this.initialConfigurations.get(threadId)===initial) {
           const mcp=sessionMcp??{enabled:false,url:'http://127.0.0.1:1/mcp'};
           const installed=initial['shell_environment_policy.set']??{};

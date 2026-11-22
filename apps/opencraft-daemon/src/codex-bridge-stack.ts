@@ -105,37 +105,24 @@ async function stopRecordedChildren(stateDirectory: string): Promise<void> {
   await rm(join(stateDirectory, CHILDREN_RECORD), { force: true });
 }
 
+interface ChildLauncherOptions {
+  readonly node: string;
+  /** Preload that stops a child once the daemon's end of its stdin closes. */
+  readonly exitWithParent: string;
+  readonly programs: string;
+  readonly runtimeDirectory: string;
+  readonly stateDirectory: string;
+  readonly timeoutMs: number;
+  readonly log: (line: string) => void;
+}
+
 /**
- * The daemon's Codex bridge stack for one desktop installation: split Codex
- * Core (accounts and model proxy), the standalone native AppServer and the
- * Engine Host with the Codex provider. They are the daemon's children and stop
- * with it; there is no fallback to another execution path when one fails.
+ * Children of this process, recorded so a successor can stop those a crash left
+ * behind, and closed in reverse start order through their stdin.
  */
-export async function startCodexBridgeStack(options: CodexBridgeStackOptions): Promise<CodexBridgeStack> {
-  const log = options.log ?? ((line: string) => console.error(line));
-  const timeout = options.startupTimeoutMs ?? 60_000;
+async function childLauncher(options: ChildLauncherOptions) {
   await mkdir(options.stateDirectory, { recursive: true, mode: 0o700 });
   await stopRecordedChildren(options.stateDirectory);
-  const programs = Object.fromEntries(
-    Object.entries(CODEX_BRIDGE_PROGRAMS).map(([key, file]) => [key, join(options.programs, file)]),
-  ) as Record<keyof typeof CODEX_BRIDGE_PROGRAMS, string>;
-  for (const path of Object.values(programs)) await stat(path);
-
-  // Unix socket paths are short-limited (104 bytes on macOS); keep them in a short private directory.
-  // Unix sockets in a short private directory (paths are length-limited: 104 bytes on macOS);
-  // on Windows, named pipes unique to this stack instance.
-  const windows = process.platform === "win32";
-  const sockets = windows ? undefined : await mkdtemp(join(process.platform === "darwin" ? "/tmp" : tmpdir(), "ocb-"));
-  const instance = randomBytes(8).toString("hex");
-  const pipe = (name: string) => String.raw`\\.\pipe\opencraft-codex-` + `${instance}-${name}`;
-  const coreEndpoint = sockets ? join(sockets, "core.sock") : pipe("core"),
-    appServerEndpoint = sockets ? join(sockets, "app-server.sock") : pipe("app-server");
-  const privateFile = async (name: string, content: string) => {
-    const path = join(options.stateDirectory, name);
-    await writeFile(path, content, { mode: 0o600 });
-    return path;
-  };
-  const tokenFile = await privateFile("control.token", `${options.authToken}\n`);
   const env = { ...process.env, ELECTRON_RUN_AS_NODE: "1" };
   const children: { child: ChildProcess; program: string }[] = [];
   const record = () =>
@@ -147,7 +134,7 @@ export async function startCodexBridgeStack(options: CodexBridgeStackOptions): P
 
   /** Start a child and resolve with its first stdout line accepted by `ready`. */
   const start = async (program: string, args: string[], ready: (line: Record<string, unknown>) => boolean) => {
-    const child = spawn(options.node, ["--require", programs.exitWithParent, program, ...args], {
+    const child = spawn(options.node, ["--require", options.exitWithParent, program, ...args], {
       cwd: options.runtimeDirectory,
       env,
       // The daemon keeps stdin open for the child's life; see CODEX_BRIDGE_PROGRAMS.exitWithParent.
@@ -157,9 +144,9 @@ export async function startCodexBridgeStack(options: CodexBridgeStackOptions): P
     children.push({ child, program });
     await record();
     const name = program.slice(options.programs.length + 1);
-    createInterface({ input: child.stderr! }).on("line", (line) => log(`[codex-bridge:${name}] ${line}`));
+    createInterface({ input: child.stderr! }).on("line", (line) => options.log(`[codex-bridge:${name}] ${line}`));
     return new Promise<Record<string, unknown>>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`${name} did not become ready`)), timeout);
+      const timer = setTimeout(() => reject(new Error(`${name} did not become ready`)), options.timeoutMs);
       child.once("exit", (code, signal) => {
         clearTimeout(timer);
         reject(new Error(`${name} exited during startup (${signal ?? code})`));
@@ -194,10 +181,159 @@ export async function startCodexBridgeStack(options: CodexBridgeStackOptions): P
         clearTimeout(forced);
       }
       await rm(join(options.stateDirectory, CHILDREN_RECORD), { force: true });
-      if (sockets) await rm(sockets, { recursive: true, force: true });
     })());
+  return { start, close };
+}
+
+const programPaths = (directory: string) =>
+  Object.fromEntries(
+    Object.entries(CODEX_BRIDGE_PROGRAMS).map(([key, file]) => [key, join(directory, file)]),
+  ) as Record<keyof typeof CODEX_BRIDGE_PROGRAMS, string>;
+
+/**
+ * Register the Codex provider generation and start the Engine Host for an
+ * existing Core. The generation is content-addressed: the same programs and
+ * launch register the same generation again, and the artifact is kept by digest
+ * so threads bound to it outlive program updates.
+ */
+async function launchEngineHost(
+  start: Awaited<ReturnType<typeof childLauncher>>["start"],
+  options: { programs: Record<keyof typeof CODEX_BRIDGE_PROGRAMS, string>; node: string; coreEndpoint: string; coreToken: string; stateDirectory: string },
+): Promise<BridgeGatewayOptions> {
+  const privateFile = async (name: string, content: string) => {
+    const path = join(options.stateDirectory, name);
+    await writeFile(path, content, { mode: 0o600 });
+    return path;
+  };
+  const providerBytes = await readFile(options.programs.provider);
+  const providerDigest = sha256(providerBytes);
+  const generations = join(options.stateDirectory, "generations");
+  await mkdir(generations, { recursive: true, mode: 0o700 });
+  const artifact = join(generations, `codex-${providerDigest}.cjs`);
+  await copyFile(options.programs.provider, artifact);
+  const attachment = await privateFile(
+    "provider-core.json",
+    JSON.stringify({ endpoint: options.coreEndpoint, token: options.coreToken }),
+  );
+  const launch = {
+    command: [options.node, artifact, attachment],
+    cwd: options.stateDirectory,
+    env: { ELECTRON_RUN_AS_NODE: "1" },
+  };
+  const generation = { digest: providerDigest, artifact, provider: codexDeclaration, launch };
+  const id = `codex-${sha256(stableJson(generation)).slice(0, 24)}`;
+  const token = randomBytes(48).toString("base64url");
+  const config = await privateFile(
+    "engine-host.json",
+    JSON.stringify({
+      database: join(options.stateDirectory, "engine-host.sqlite"),
+      token,
+      backend: "host-process",
+      backendOptions: { stateDirectory: join(options.stateDirectory, "sandbox") },
+      // host-process neither enforces resources nor contains commands beyond their process group.
+      policy: {
+        id: "desktop-codex",
+        capacity: { cpuMillis: 256_000, memoryBytes: 512 * 1024 ** 3 },
+        accept: { unenforcedResources: true, bestEffortContainment: true },
+      },
+      generations: [{ id, ...generation }],
+      activate: id,
+    }),
+  );
+  await mkdir(join(options.stateDirectory, "sandbox"), { recursive: true, mode: 0o700 });
+  const ready = await start(options.programs.engineHost, [config], (line) => typeof line.url === "string");
+  return {
+    url: String(ready.url),
+    token,
+    serverId: "local-codex",
+    inboxPath: join(options.stateDirectory, "gateway-inbox.sqlite"),
+  };
+}
+
+export interface CodexEngineHostOptions {
+  /** Directory holding {@link CODEX_BRIDGE_PROGRAMS}; only the Engine Host, provider and preload are used. */
+  readonly programs: string;
+  readonly node: string;
+  /** The running Core this Engine Host's Codex provider attaches to. */
+  readonly coreEndpoint: string;
+  readonly coreToken: string;
+  readonly runtimeDirectory: string;
+  /** Private state: Engine Host database, sandbox records, generation artifacts, gateway inbox. */
+  readonly stateDirectory: string;
+  readonly startupTimeoutMs?: number;
+  readonly log?: (line: string) => void;
+}
+
+/**
+ * The Codex Engine Host alone, for a process whose Core already runs (a
+ * server): it is this process's child and stops with it. Existing Threads keep
+ * running on the Core's native AppServer; the bridge reaches them there.
+ */
+export async function startCodexEngineHost(
+  options: CodexEngineHostOptions,
+): Promise<{ readonly bridge: BridgeGatewayOptions; close(): Promise<void> }> {
+  const programs = programPaths(options.programs);
+  for (const key of ["engineHost", "provider", "exitWithParent"] as const) await stat(programs[key]);
+  const launcher = await childLauncher({
+    node: options.node,
+    exitWithParent: programs.exitWithParent,
+    programs: options.programs,
+    runtimeDirectory: options.runtimeDirectory,
+    stateDirectory: options.stateDirectory,
+    timeoutMs: options.startupTimeoutMs ?? 60_000,
+    log: options.log ?? ((line) => console.error(line)),
+  });
+  try {
+    const bridge = await launchEngineHost(launcher.start, {
+      programs,
+      node: options.node,
+      coreEndpoint: options.coreEndpoint,
+      coreToken: options.coreToken,
+      stateDirectory: options.stateDirectory,
+    });
+    return { bridge, close: launcher.close };
+  } catch (error) {
+    await launcher.close().catch(() => undefined);
+    throw error;
+  }
+}
+
+/**
+ * The daemon's Codex bridge stack for one desktop installation: split Codex
+ * Core (accounts and model proxy), the standalone native AppServer and the
+ * Engine Host with the Codex provider. They are the daemon's children and stop
+ * with it; there is no fallback to another execution path when one fails.
+ */
+export async function startCodexBridgeStack(options: CodexBridgeStackOptions): Promise<CodexBridgeStack> {
+  const log = options.log ?? ((line: string) => console.error(line));
+  const programs = programPaths(options.programs);
+  for (const path of Object.values(programs)) await stat(path);
+
+  // Unix sockets in a short private directory (paths are length-limited: 104 bytes on macOS);
+  // on Windows, named pipes unique to this stack instance.
+  const windows = process.platform === "win32";
+  const sockets = windows ? undefined : await mkdtemp(join(process.platform === "darwin" ? "/tmp" : tmpdir(), "ocb-"));
+  const instance = randomBytes(8).toString("hex");
+  const pipe = (name: string) => String.raw`\\.\pipe\opencraft-codex-` + `${instance}-${name}`;
+  const coreEndpoint = sockets ? join(sockets, "core.sock") : pipe("core"),
+    appServerEndpoint = sockets ? join(sockets, "app-server.sock") : pipe("app-server");
+  const launcher = await childLauncher({
+    node: options.node,
+    exitWithParent: programs.exitWithParent,
+    programs: options.programs,
+    runtimeDirectory: options.runtimeDirectory,
+    stateDirectory: options.stateDirectory,
+    timeoutMs: options.startupTimeoutMs ?? 60_000,
+    log,
+  });
+  const close = async () => {
+    await launcher.close();
+    if (sockets) await rm(sockets, { recursive: true, force: true });
+  };
 
   try {
+    const tokenFile = join(options.stateDirectory, "control.token");
+    await writeFile(tokenFile, `${options.authToken}\n`, { mode: 0o600 });
     const shared = [
       "--token-file",
       tokenFile,
@@ -208,7 +344,7 @@ export async function startCodexBridgeStack(options: CodexBridgeStackOptions): P
       "--data-directory",
       options.codexDataDirectory,
     ];
-    await start(
+    await launcher.start(
       programs.core,
       [
         "--endpoint",
@@ -224,60 +360,19 @@ export async function startCodexBridgeStack(options: CodexBridgeStackOptions): P
       ],
       (line) => line.type === "codex-accounts-listening",
     );
-    await start(
+    await launcher.start(
       programs.appServer,
       ["--endpoint", appServerEndpoint, "--core-endpoint", coreEndpoint, ...shared],
       (line) => line.type === "codex-app-server-ready",
     );
-
-    // The provider generation, its artifact kept by content so threads bound to it outlive app updates.
-    const providerBytes = await readFile(programs.provider);
-    const providerDigest = sha256(providerBytes);
-    const generations = join(options.stateDirectory, "generations");
-    await mkdir(generations, { recursive: true, mode: 0o700 });
-    const artifact = join(generations, `codex-${providerDigest}.cjs`);
-    await copyFile(programs.provider, artifact);
-    const attachment = await privateFile(
-      "provider-core.json",
-      JSON.stringify({ endpoint: coreEndpoint, token: options.authToken }),
-    );
-    const launch = {
-      command: [options.node, artifact, attachment],
-      cwd: options.stateDirectory,
-      env: { ELECTRON_RUN_AS_NODE: "1" },
-    };
-    const generation = { digest: providerDigest, artifact, provider: codexDeclaration, launch };
-    const id = `codex-${sha256(stableJson(generation)).slice(0, 24)}`;
-    const token = randomBytes(48).toString("base64url");
-    const config = await privateFile(
-      "engine-host.json",
-      JSON.stringify({
-        database: join(options.stateDirectory, "engine-host.sqlite"),
-        token,
-        backend: "host-process",
-        backendOptions: { stateDirectory: join(options.stateDirectory, "sandbox") },
-        // host-process neither enforces resources nor contains commands beyond their process group.
-        policy: {
-          id: "desktop-codex",
-          capacity: { cpuMillis: 256_000, memoryBytes: 512 * 1024 ** 3 },
-          accept: { unenforcedResources: true, bestEffortContainment: true },
-        },
-        generations: [{ id, ...generation }],
-        activate: id,
-      }),
-    );
-    await mkdir(join(options.stateDirectory, "sandbox"), { recursive: true, mode: 0o700 });
-    const ready = await start(programs.engineHost, [config], (line) => typeof line.url === "string");
-    return {
+    const bridge = await launchEngineHost(launcher.start, {
+      programs,
+      node: options.node,
       coreEndpoint,
-      bridge: {
-        url: String(ready.url),
-        token,
-        serverId: "local-codex",
-        inboxPath: join(options.stateDirectory, "gateway-inbox.sqlite"),
-      },
-      close,
-    };
+      coreToken: options.authToken,
+      stateDirectory: options.stateDirectory,
+    });
+    return { coreEndpoint, bridge, close };
   } catch (error) {
     await close().catch(() => undefined);
     throw error;
