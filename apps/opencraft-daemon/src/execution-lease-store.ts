@@ -183,6 +183,18 @@ export class ExecutionLeaseStore extends ExecutionLeaseReader {
     const pending = this.db.prepare("SELECT * FROM execution_leases WHERE thread_id=? AND input_id=? AND turn_id IS NULL AND ended_at_ms IS NULL AND state IN ('pending','unknown') ORDER BY generation").all(threadId, inputId);
     if (pending.length > 1) return; // No guess between uncertain attempts.
     let target: (typeof pending)[number] | undefined = pending[0];
+    // Queue provenance identifies the sender, not a running Turn's launcher.
+    // A mid-turn queue delivery cannot claim the Turn's execution authority.
+    if (this.inputKind(threadId, inputId) === "queue") {
+      if (!target) return;
+      if (placeholder) {
+        const observed = existing!;
+        const sameBoot = target.boot_id !== null && target.boot_id === observed.boot_id
+          && target.admitted_at_boot_ms !== null && observed.admitted_at_boot_ms !== null;
+        if (sameBoot ? Number(target.admitted_at_boot_ms) > Number(observed.admitted_at_boot_ms)
+          : Number(target.admitted_at_ms) > Number(observed.admitted_at_ms)) return;
+      }
+    }
     // Queue provenance identifies the message sender, not the running Turn's
     // launcher. Mid-turn queue delivery has no new execution admission. Only a
     // lease admitted before Native observed this Turn may resolve its origin.
