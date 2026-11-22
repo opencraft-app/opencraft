@@ -47,6 +47,13 @@ const save = () => writeFile(join(out, "result.json"), JSON.stringify(result, nu
 const log = (line: string) => console.log(line);
 
 const programs = await prepareDrillPrograms(join(out, "programs"));
+// The release's own build of the Engine Host and provider (DRILL_RELEASE_PROGRAMS=1), or the daemon's.
+let bridgePrograms = programs;
+if (process.env.DRILL_RELEASE_PROGRAMS === "1") {
+  const { buildCodexBridgeRuntime } = await import("../../packaging/package-web-server.mjs");
+  bridgePrograms = join(out, "release/execution/codex-bridge");
+  await buildCodexBridgeRuntime(bridgePrograms);
+}
 const codex = await drillCodexExecutable();
 const model = await startFakeResponsesModel();
 process.env.OPENCRAFT_DRILL_UPSTREAM = model.url;
@@ -174,7 +181,7 @@ async function startServer(bridge: boolean): Promise<Server> {
       codexCoreAuthToken: token,
       codexExecutable: codex,
       runtimeDirectory: run,
-      ...(bridge ? { codexBridgePrograms: programs } : {}),
+      ...(bridge ? { codexBridgePrograms: bridgePrograms } : {}),
       startAgentHost: async () => ({ websocketUrl: "ws://127.0.0.1:9/rpc", async close() {} }),
     },
     identityMode === "employee" ? { createIdentity: signedInIdentity } : {},

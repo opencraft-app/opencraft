@@ -60,6 +60,13 @@ export function applyExecutionProfile(argv, manifest) {
   }
   return result;
 }
+/** The release's Codex bridge programs, unless the operator chose the legacy path or an external bridge. */
+export async function codexBridgePrograms(releaseRoot, options, environment = process.env) {
+  if (environment.OPENCRAFT_CODEX_BRIDGE === '0' || options.codexAgentBridgeFile || options.codexBridgePrograms) return options.codexBridgePrograms;
+  const directory = join(releaseRoot, 'execution/codex-bridge');
+  try { await stat(join(directory, 'engine-host.mjs')); return directory; }
+  catch (error) { if (error.code === 'ENOENT') return undefined; throw error; }
+}
 export async function runHeadlessGateway({ parseArguments = parseHeadlessArguments, startServer = startHeadlessServer } = {}) {
   const releaseRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
   const manifest = JSON.parse(await readFile(join(releaseRoot, 'package.json'), 'utf8'));
@@ -83,6 +90,7 @@ export async function runHeadlessGateway({ parseArguments = parseHeadlessArgumen
   const dshDescriptor = process.env.OPENCRAFT_DSH_HOST_DESCRIPTOR;
   const engineHostDescriptor = process.env.OPENCRAFT_ENGINE_HOST_DESCRIPTOR;
   if (engineHostDescriptor && manifest.opencraftExecution.independentEngineHost !== 1) throw new Error('Release cannot attach an independent execution Host');
+  const bridgePrograms = await codexBridgePrograms(releaseRoot, options);
   const app = await startServer({ ...options, ...(engineHostDescriptor ? {engineHostDescriptor} : {}), root: releaseRoot, webRoot: join(releaseRoot, 'web'),
     ...(dshDescriptor ? {
       startAgentHost: async agentOptions => {
@@ -96,6 +104,9 @@ export async function runHeadlessGateway({ parseArguments = parseHeadlessArgumen
     dshCapabilityPlugin: join(releaseRoot, 'execution/dsh-capability-plugin.mjs'),
     codexExecutable: required('OPENCRAFT_CODEX_EXECUTABLE'),
     codexCoreEndpoint: endpoint, codexCoreAuthToken: token,
+    // Codex runs through the server's own Engine Host by default; OPENCRAFT_CODEX_BRIDGE=0 returns to
+    // the legacy path (bridge-created conversations wait until it is enabled again).
+    ...(bridgePrograms ? { codexBridgePrograms: bridgePrograms } : {}),
     getExecutionHealth: async () => {
       const current = await readCurrentReleaseManifest(releaseRoot);
       const observed = await observeExecutionHealth({ version: typeof current.version === 'string' ? current.version : null,

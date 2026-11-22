@@ -51,6 +51,15 @@ queue/Goal 恢复不依赖浏览器首次重连；初始化失败时就绪检查
 执行进程真的中断后，Host 通过[被打断轮次恢复](../architecture/execution/interrupted-turn-recovery.md)自动继续已跟踪的任务；
 活跃原生轮次、用户已处理的任务及未知提交不会被盲目重发。恢复次数、系统来源与界面提示由同一持久策略管理。
 
+## Codex 默认经 provider bridge 运行
+
+带执行 payload 的 Headless 发行包附带 `execution/codex-bridge/`（Codex Engine Host 与 provider）。网关发现它时默认对同一 Core 启动自己的 Engine Host（`--codex-bridge-programs`）：新会话经 bridge 创建；已有会话在下一次发送时接管，ID、历史与发送者不变，数据仍在原 `CODEX_HOME`。Engine Host 状态在数据目录的 `codex-bridge/`，provider 代次按内容保存在其中，发行更新后旧代次的会话仍可续接。
+
+- 退回旧路径：在网关环境中设置 `OPENCRAFT_CODEX_BRIDGE=0` 后重启网关。已有会话照常可用；bridge 新建的会话在重新开启前不可用。
+- 外部 bridge 配置（`--codex-agent-bridge-config`）存在时不另起 Engine Host。
+- 四容器部署（`deploy/docker`）与无 Core 的 `opencraft-server` 安装仍走旧路径。
+- 验收：`node --import tsx scripts/smoke/server/smoke-codex-server-upgrade.ts`（可加 `DRILL_RELEASE_PROGRAMS=1` 使用发行包同一构建），见 [Codex 对齐](../../design/agent-bridge/codex-parity.md)。
+
 ## Codex 原生会话与保留数据
 
 Codex 使用原生 Thread/Turn 协议。旧 Codex Bot bridge 已删除；Headless 不再启用或

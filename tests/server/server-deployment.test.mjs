@@ -550,3 +550,18 @@ test('independent Pi owner contributes readiness without exposing dependency err
   assert.equal(missing.ok,false);assert.deepEqual(missing.engineHost,{state:'unavailable'});
   assert.equal(missing.dependencies.engineHost,'unavailable');assert.doesNotMatch(JSON.stringify(missing),/private descriptor/);
 });
+
+test('a headless release runs Codex through its own Engine Host unless the operator opts out', async () => {
+  const { codexBridgePrograms } = await import('../../scripts/server-deployment/headless-gateway-application.mjs');
+  const root = await mkdtemp(join(tmpdir(), 'codex-bridge-default-'));
+  try {
+    assert.equal(await codexBridgePrograms(root, {}, {}), undefined, 'a release without the programs stays on the legacy path');
+    const directory = join(root, 'execution/codex-bridge');
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, 'engine-host.mjs'), '');
+    assert.equal(await codexBridgePrograms(root, {}, {}), directory);
+    assert.equal(await codexBridgePrograms(root, {}, { OPENCRAFT_CODEX_BRIDGE: '0' }), undefined);
+    assert.equal(await codexBridgePrograms(root, { codexAgentBridgeFile: '/private/bridge.json' }, {}), undefined, 'an external bridge is not doubled');
+    assert.equal(await codexBridgePrograms(root, { codexBridgePrograms: '/explicit' }, {}), '/explicit');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

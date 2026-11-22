@@ -35,6 +35,24 @@ export function executionModuleOptions(format) {
     ? { define: {}, banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } }
     : { define: { 'import.meta.url': 'import_meta_url' }, banner: { js: "const import_meta_url = require('node:url').pathToFileURL(__filename).href;" } };
 }
+/**
+ * The server's own Codex Engine Host and provider (startCodexEngineHost in
+ * apps/opencraft-daemon/src/codex-bridge-stack.ts), in a directory beside the
+ * release's execution programs: node-pty resolves to the release's native copy.
+ */
+export async function buildCodexBridgeRuntime(directory) {
+  for (const [entry, target, format] of [
+    ['apps/agent-bridge-host/src/main.ts', 'engine-host.mjs', 'esm'],
+    ['apps/agent-bridge-host/src/storage.worker.ts', 'storage.worker.mjs', 'esm'],
+    ['apps/agent-bridge-host/src/codex-main.ts', 'codex.cjs', 'cjs'],
+  ]) await build({ nodePaths: [join(repositoryRoot, 'node_modules')], entryPoints: [resolve(repositoryRoot, entry)], outfile: join(directory, target),
+    bundle: true, platform: 'node', format, target: 'node22', define: executionModuleOptions(format).define,
+    external: ['bufferutil', 'utf-8-validate', 'cpu-features', '*.node'],
+    plugins: [{ name: 'execution-pty', setup(builder) { builder.onResolve({ filter: /^node-pty$/ }, () => ({ path: '../native/node-pty/lib/index.js', external: true })); } }],
+    banner: executionModuleOptions(format).banner });
+  await cp(join(repositoryRoot, 'apps/opencraft-daemon/src/codex-bridge-exit-with-parent.cjs'), join(directory, 'exit-with-parent.cjs'));
+}
+
 export async function packageWebServer({ version, webRoot = join(repositoryRoot, 'apps/workbench-web/dist'), output, execution = false, executionProfile = 'daemon', splitResources = process.env.OPENCRAFT_SPLIT_WEB_RESOURCES === '1', packageName = PACKAGE_NAME, resourcePackageName = RESOURCE_PACKAGE, registry = process.env.OPENCRAFT_NPM_REGISTRY, relayEntry = join(repositoryRoot, 'apps/relay-server/src/main.ts'), headlessGatewayEntry = join(repositoryRoot, 'scripts/server-deployment/headless-gateway.mjs'), additionalGitRuntimeEntries = [], additionalRuntimeAssets = [], fullUpgradeProfile = null, fullRelease = null, fullReleaseTrust = null, fullRuntimeEngines = undefined, completeRuntime = false, dryRun = false, prepareOnly = false }) {
   if (prepareOnly && !fullRelease) throw new Error('Prepared trees require a signed full release');
   if (completeRuntime && !fullRelease && !dryRun) throw new Error('Complete unsigned payloads are supported only for dry-run');
@@ -152,6 +170,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
         plugins: [{ name: 'execution-pty', setup(builder) { builder.onResolve({ filter: /^node-pty$/ }, () => ({ path: './native/node-pty/lib/index.js', external: true })); builder.onResolve({ filter: /^ssh2$/ }, () => ({ path: './native/node_modules/ssh2/lib/index.js', external: true })); } }],
         banner: executionModuleOptions(format).banner });
     }
+    if (executionProfile === 'headless') await buildCodexBridgeRuntime(join(packageRoot, 'execution/codex-bridge'));
     // Opt-in deployment tooling only; packaging never changes a host unit or policy.
     await cp(join(repositoryRoot, 'scripts/server-deployment/tool-memory-guard.py'), join(packageRoot, 'runtime/tool-memory-guard.py'));
     await cp(join(repositoryRoot, 'scripts/server-deployment/prepare-tool-memory-guard.mjs'), join(packageRoot, 'runtime/prepare-tool-memory-guard.mjs'));
