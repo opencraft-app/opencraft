@@ -45,3 +45,11 @@ test("web and headless release packaging both include the notification worker", 
     assert.match(source, /push-storage-worker\.mjs/);
   }
 });
+
+test("web and headless release packaging both ship the Codex bridge storage worker beside the gateway", async () => {
+  for (const name of ["package-web-server.mjs", "package-headless-linux.mjs"]) {
+    const source = await readFile(join(root, "scripts", "packaging", name), "utf8");
+    assert.match(source, /apps\/agent-bridge-host\/src\/storage\.worker\.ts/u);
+    assert.match(source, /['"]storage\.worker\.mjs['"]/u);
+  }
+});

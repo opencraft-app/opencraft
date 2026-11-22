@@ -156,6 +156,8 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
       ['apps/personal-assistant/src/runtime/assistant-server.mjs', 'assistant-server.mjs', 'esm'],
       ['packages/access-control/src/orchestration-runtime.worker.ts', 'orchestration-runtime-worker.mjs', 'esm'],
       ['packages/web-push-node/src/store.worker.ts', 'push-storage-worker.mjs', 'esm'],
+      // The gateway's Codex bridge receipt inbox (BridgeGateway) runs in this worker.
+      ['apps/agent-bridge-host/src/storage.worker.ts', 'storage.worker.mjs', 'esm'],
       ['packages/access-control/src/server-spaces.worker.ts', 'server-spaces-worker.mjs', 'esm'],
       ['packages/native-history-node/src/transcript-cache-storage.worker.ts', 'transcript-cache-storage-worker.mjs', 'esm'],
       ['apps/local-agent-host/src/dsh-capability-plugin.mjs', 'dsh-capability-plugin.mjs', 'esm'],

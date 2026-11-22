@@ -54,6 +54,8 @@ export async function buildHeadlessBundle(output, { headlessEntry = join(reposit
   await buildTranscriptCacheRuntime(dirname(output));
   await build({entryPoints:[fileURLToPath(new URL('../../packages/web-push-node/src/store.worker.ts',import.meta.url))],outfile:join(dirname(output),'push-storage-worker.mjs'),bundle:true,platform:'node',format:'esm',target:'node26',logLevel:'warning',banner:{js:"import { createRequire } from 'node:module'; const require=createRequire(import.meta.url);"}});
   await buildServerSpacesRuntime(dirname(output));
+  // The bundle's Codex bridge gateway keeps its receipt inbox in the Engine Host storage worker.
+  await build({entryPoints:[join(repositoryRoot,'apps/agent-bridge-host/src/storage.worker.ts')],outfile:join(dirname(output),'storage.worker.mjs'),bundle:true,platform:'node',format:'esm',target:'node26',logLevel:'warning',banner:{js:"import { createRequire } from 'node:module'; const require=createRequire(import.meta.url);"}});
   await buildDshRoutingRuntime(dirname(output));
   await buildConnectedAgentHistoryRuntime(dirname(output));
   await build({entryPoints:[join(repositoryRoot,'scripts/server-deployment/dsh-consumer-receipts.worker.ts')],outfile:join(dirname(output),'dsh-consumer-receipts-worker.mjs'),bundle:true,platform:'node',format:'esm',target:'node26',logLevel:'warning',banner:{js:"import { createRequire } from 'node:module'; const require=createRequire(import.meta.url);"}});
