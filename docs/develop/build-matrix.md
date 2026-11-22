@@ -399,6 +399,26 @@ to a draft, verifies the downloaded bytes, then publishes the draft and checks t
 public assets again. Rerun failed publication jobs on the original run to reuse
 its staged artifacts.
 
+### Developer self-test
+
+Self-testing uses three layers, from fastest to closest to a release:
+
+1. From source: `npm run dev:web`, `npm run dev:electron` and `npm run dev:expo`
+   (Expo Go) run the current checkout.
+2. Any branch: dispatch the [`Dev build`](../../.github/workflows/dev-build.yml)
+   workflow on the branch (`desktop` and `mobile` select the platforms). It
+   builds every app from one commit as Actions artifacts named
+   `opencraft-dev-<platform>-<sha>` (Android: `opencraft-android-internal-<sha>`,
+   iOS: `opencraft-ios-unsigned-<sha>`) with build ID
+   `dev-<run>-<sha>`. It uses no secret, tag, release or store: the Android APK
+   is the development-key `dev.opencraft.workbench`, macOS is the ad-hoc signed
+   `OpenCraft Preview` (`app.opencraft.desktop.preview`), so both install beside
+   the published apps; Linux, Windows and iOS are unsigned. The run summary lists
+   each platform's result and install notes.
+3. Betas: `vX.Y.Z-beta.N` from App release. Every release uploads to TestFlight;
+   testers in an App Store Connect internal group can install it without beta
+   review, while external testers wait for it.
+
 A lightweight credential check in the `macos-release` Environment runs before
 either native build. Client distribution runs only from `main`.
 

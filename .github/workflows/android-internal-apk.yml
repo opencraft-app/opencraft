@@ -1,7 +1,10 @@
 name: Android internal APK
 
+# The development-key APK (dev.opencraft.workbench) for self-testing; it installs
+# beside the published app.opencraft and never enters a release. Dev build calls it.
 on:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -41,7 +44,7 @@ jobs:
       - run: npm run matrix:build -- expo-android-internal-apk
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: opencraft-android-internal-apk
+          name: opencraft-android-internal-${{ github.sha }}
           path: |
             apps/mobile/release/OpenCraft-android-internal.apk
             apps/mobile/release/OpenCraft-android-internal.apk.sha256
