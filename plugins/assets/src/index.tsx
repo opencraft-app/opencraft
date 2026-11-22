@@ -7,19 +7,21 @@ export type { AssetsAccount, AssetConnections, AssetVariablesProps, AssetsViewOp
 export type { AssetProvider } from "./providers";
 export { e2bAssetProvider } from "./providers";
 
+export const ASSETS_MANIFEST = {
+  manifestVersion: 1,
+  id: ASSETS_VIEW_ID,
+  name: "Assets",
+  version: "0.1.0",
+  apiVersion: 1,
+  trust: "trusted",
+  platforms: ["web", "electron"],
+  activationEvents: ["onStartupFinished"],
+} as const;
+
 /** One provider-neutral page and navigation owner, shared by Web and Electron. */
 export function createAssetsExtension(options: AssetsViewOptions): TrustedExtensionDefinition {
   return {
-    manifest: {
-      manifestVersion: 1,
-      id: ASSETS_VIEW_ID,
-      name: "Assets",
-      version: "0.1.0",
-      apiVersion: 1,
-      trust: "trusted",
-      platforms: ["web", "electron"],
-      activationEvents: ["onStartupFinished"],
-    },
+    manifest: ASSETS_MANIFEST,
     activate(api) {
       const titleMessage = { id: "assets.title", defaultMessage: "Assets" };
       api.views.register({

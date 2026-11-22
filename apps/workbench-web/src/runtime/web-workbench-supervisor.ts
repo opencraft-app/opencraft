@@ -515,6 +515,8 @@ export async function createWebWorkbenchApplicationSupervisor(
         (await import('@opencraft/plugin-local-account/client')).createLocalAccountExtension(globalThis.fetch.bind(globalThis)));
     }
     if (headlessAppHost !== null || electronAppHost !== null) {
+      await extensions.loadOptional("opencraft.assets", async () =>
+        (await import('@opencraft/plugin-assets/client')).createServerAssetsExtension(serverFetch));
       await extensions.loadOptional("opencraft.im", async () => {
         const { createImExtension } = await import("@opencraft/plugin-im");
         const { createChannelsRpc } = await import("./channels-rpc");

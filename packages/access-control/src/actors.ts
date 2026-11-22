@@ -1,3 +1,4 @@
+import { AuthorityChanges } from "./authority-changes.js";
 import { PermissionReadCache, withPermissionWrite } from "./permission-read-cache.js";
 import { sqliteTransaction } from "@opencraft/sqlite-node";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -30,6 +31,10 @@ function actor(row: Record<string, unknown>): Actor {
 /** Server-owned identity authority. Mutation methods are trusted local operations;
  * network callers must go through ActorAccess, not call these using body-supplied identities. */
 export class ActorStore {
+  readonly #changes: AuthorityChanges;
+  /** Every committed account/permission mutation; not a login or grant. */
+  onAuthorityChanged = (listener: () => void) => this.#changes.subscribe(listener);
+
   readonly #reservationResolvers = new Set<(principal: Principal) => { alias: string; binding: Pick<Principal, 'provider' | 'subject'> | null } | null>();
   /** Installation-owned verified directory policy. A resolver cannot grant admission. */
   registerHumanReservationResolver(resolve: (principal: Principal) => { alias: string; binding: Pick<Principal, 'provider' | 'subject'> | null } | null): () => void {
@@ -104,7 +109,7 @@ export class ActorStore {
     this.#policy = options.policy ?? actorPolicyFromEnvironment();
     const managed = openServerRepository(path, "actors");
     this.#closeDatabase = managed.close;
-    this.#db = managed.database;
+    this.#db = managed.database; this.#changes = new AuthorityChanges(typeof path === "string" ? this.#db : path.database);
     this.#permissionProjectionEnabled = typeof path !== "string" && options.permissionProjection !== false;
     this.#readCache = new PermissionReadCache(() => this.#permissionRows(), { enabled: this.#permissionProjectionEnabled, owner: typeof path === "string" ? this.#db : path.database });
     this.#hasReservations = !!this.#db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='actor_human_reservations'").get();
@@ -194,7 +199,7 @@ export class ActorStore {
     });
     this.#identityChanged(owner.actorId);
   }
-  #transaction<T>(run: () => T): T { return withPermissionWrite(() => sqliteTransaction(this.#db, run), this.#readCache); }
+  #transaction<T>(run: () => T): T { const result = withPermissionWrite(() => sqliteTransaction(this.#db, run), this.#readCache); this.#changes.emit(); return result; }
   #audit(operator: string, actorId: string, action: string, resource: string | null = null) {
     if (typeof operator !== 'string' || !operator || operator.length > 512) throw new Error('Invalid actor operator');
     this.#db.prepare('INSERT INTO actor_audit(at,operator,actor_id,action,resource) VALUES(?,?,?,?,?)')
@@ -391,7 +396,7 @@ export class ActorStore {
       && !!this.#readCache.get(JSON.stringify(['grant', actorId, resource, action]), () => this.#db.prepare('SELECT 1 FROM actor_grants WHERE actor_id=? AND resource=? AND action=? AND enabled=1').get(actorId, resource, action));
   }
   audit() { return this.#db.prepare('SELECT * FROM actor_audit ORDER BY id DESC LIMIT 1000').all(); }
-  close() { this.#readCache.close(); this.#humanRegistrationListeners.clear(); this.#identityListeners.clear(); this.#closeDatabase(); }
+  close() { this.#readCache.close(); this.#changes.close(); this.#humanRegistrationListeners.clear(); this.#identityListeners.clear(); this.#closeDatabase(); }
 }
 
 export function isActorAuthorization(value: string | undefined): boolean {

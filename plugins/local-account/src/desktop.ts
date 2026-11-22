@@ -15,7 +15,8 @@ export interface NativeHumanSubmission {
 import { ActorStore } from '@opencraft/access-control/actors';
 import { HumanAccounts } from '@opencraft/access-control/human-accounts';
 import { HumanAuth } from '@opencraft/access-control/human-auth';
-import { MembershipStore } from '@opencraft/access-control';
+import { openHumanAssets } from './assets-server.js';
+import { InstanceAccess, MembershipStore } from '@opencraft/access-control';
 import { HumanAccountManagement } from '@opencraft/access-control/account-management';
 import { LocalAccountServerPlugin } from './server.js';
 import { LocalAccountApplication } from './application.js';
@@ -24,10 +25,10 @@ import { LocalAccountApplication } from './application.js';
 export async function createDesktopAccountHost(directory: string, renderLogin: (nonce: string) => string, options: { openRemote?: (origin: string) => Promise<void>; storageRole?: 'owner' | 'borrower' } = {}) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const storage=options.storageRole==='borrower'?borrowServerDatabase(directory):await openServerDatabase(directory);
-  const disposers: (() => void)[] = [];
+  const disposers: (() => void | Promise<void>)[] = [];
   const disposeAll = async () => {
     const failures: unknown[] = [];
-    for (const dispose of disposers.splice(0).reverse()) { try { dispose(); } catch (error) { failures.push(error); } }
+    for (const dispose of disposers.splice(0).reverse()) { try { await dispose(); } catch (error) { failures.push(error); } }
     try { await storage.close(); } catch(error) { failures.push(error); }
     if (failures.length) throw new AggregateError(failures, 'Desktop account shutdown failed');
   };
@@ -57,6 +58,8 @@ export async function createDesktopAccountHost(directory: string, renderLogin: (
     };
     const application = new LocalAccountApplication({ auth, management, nativeOwner, openRemote: options.openRemote });
     disposers.push(() => application.close());
+    const assets = options.storageRole === 'borrower' ? null : await openHumanAssets({ directory, auth, actors, access: new InstanceAccess(members, [auth], actors) });
+    if (assets) disposers.push(() => assets.close());
     let nativeSession = accounts.issue(management.desktopIdentity());
     return {
       browserProof,
@@ -84,6 +87,7 @@ export async function createDesktopAccountHost(directory: string, renderLogin: (
       async handle(request: IncomingMessage, response: ServerResponse) {
         if (!configuration.origin || request.headers.host !== new URL(configuration.origin).host) return false;
         const path = new URL(request.url ?? '/', configuration.origin).pathname;
+        if (assets && await assets.handle(request, response)) return true;
         if (!['/setup', '/__opencraft_account', '/__opencraft_auth'].some(base => path === base || path.startsWith(base + '/'))) return false;
         if (await application.handle(request, response)) return true;
         return auth.handle(request, response);

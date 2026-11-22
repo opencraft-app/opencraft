@@ -1,3 +1,4 @@
+import { AuthorityChanges } from "./authority-changes.js";
 import { PermissionReadCache, withPermissionWrite } from "./permission-read-cache.js";
 import { sqliteTransaction } from "@opencraft/sqlite-node";
 import type { DatabaseSync } from "node:sqlite";
@@ -17,6 +18,10 @@ export interface InstanceAdmissionPolicy {
   allowsBinding(binding: Pick<Principal, 'provider' | 'subject'>): boolean;
 }
 export class MembershipStore {
+  readonly #changes: AuthorityChanges;
+  /** Every committed account/permission mutation; not a login or grant. */
+  onAuthorityChanged = (listener: () => void) => this.#changes.subscribe(listener);
+
   readonly permissionProjectionEnabled: boolean;
   readonly #db: DatabaseSync;
   readonly #readCache: PermissionReadCache;
@@ -26,7 +31,7 @@ export class MembershipStore {
     this.permissionProjectionEnabled = typeof path !== "string" && options.permissionProjection !== false;
     const managed = openServerRepository(path, "memberships");
     this.#closeDatabase = managed.close;
-    this.#db = managed.database; this.outcome = managed.outcome;
+    this.#db = managed.database; this.#changes = new AuthorityChanges(typeof path === "string" ? this.#db : path.database); this.outcome = managed.outcome;
     this.#readCache = new PermissionReadCache(() => this.#permissionRows(), { enabled: this.permissionProjectionEnabled, owner: typeof path === "string" ? this.#db : path.database });
   }
   *#permissionRows(): Iterable<readonly [string, unknown]> {
@@ -109,8 +114,8 @@ export class MembershipStore {
       this.#db.prepare("INSERT INTO access_audit(at,operator,binding,action) VALUES(?,?,?,?)").run(Date.now(), "local-operator", source, "legacy-membership-import");
     });
   }
-  #transaction<T>(write: () => T): T { return withPermissionWrite(() => sqliteTransaction(this.#db, write), this.#readCache); }
-  close() { this.#readCache.close(); this.#closeDatabase(); }
+  #transaction<T>(write: () => T): T { const result = withPermissionWrite(() => sqliteTransaction(this.#db, write), this.#readCache); this.#changes.emit(); return result; }
+  close() { this.#readCache.close(); this.#changes.close(); this.#closeDatabase(); }
 }
 export class InstanceAccess {
   readonly #cache = new WeakMap<object, Principal | null>();

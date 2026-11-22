@@ -86,7 +86,7 @@ export async function createWorkbenchStaticServer({ root, accountService = null 
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url || "/", "http://opencraft.invalid");
-      if (url.pathname === '/setup' || url.pathname.startsWith('/__opencraft_account') || url.pathname.startsWith('/__opencraft_auth')) {
+      if (url.pathname === '/setup' || url.pathname.startsWith('/__opencraft_account') || url.pathname.startsWith('/__opencraft_auth') || url.pathname.startsWith('/__opencraft_assets/')) {
         if (accountService && await accountService.handle(request, response)) return;
         sendJson(response, 404, { error: 'missing' }); return;
       }

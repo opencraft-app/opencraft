@@ -205,5 +205,7 @@
   "tests/usage/token-usage-open-gaps.test.ts",
   "tests/workspace-preflight.test.mjs",
   "tests/extensions/assets-service.test.ts",
-  "tests/server/assets-worker-packaging.test.mjs"
+  "tests/server/assets-worker-packaging.test.mjs",
+  "tests/identity/assets-default-service.test.ts",
+  "tests/extensions/assets-default-client.test.ts"
 ]
