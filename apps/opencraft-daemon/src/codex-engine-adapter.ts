@@ -1389,9 +1389,18 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   private async sendClientMessage(message: RpcRecord, context: TransportSubmissionContext): Promise<void> {
     delete message[EXECUTION_ENVIRONMENT_FIELD]; delete record(message.params)[EXECUTION_ENVIRONMENT_FIELD];
+    const params = record(message.params);
+    // The durable collaboration ledger is the authority for this queue
+    // admission. No creator credentials exist for the internal connection;
+    // the Host verifies the request before accepting it, and dispatch later
+    // restores the original execution provenance for turn/start.
+    const collaborationQueueAdmission = message.method === 'thread/queue/add'
+      && params.mode !== 'steer'
+      && typeof context.collaborationRequestId === 'string'
+      && params.clientUserMessageId === `actor-input:${context.collaborationRequestId}`;
     try {
-      if (this.options.executionEnvironment && requiresEnvironmentAuthority(string(message.method))) {
-        const scope = this.options.executionEnvironment.scope(context, 'local-codex', record(message.params));
+      if (this.options.executionEnvironment && requiresEnvironmentAuthority(string(message.method)) && !collaborationQueueAdmission) {
+        const scope = this.options.executionEnvironment.scope(context, 'local-codex', params);
         if (requiresCurrentEnvironmentAuthority(string(message.method), message.params)) this.assertCurrentEnvironmentOwner(scope);
         else if (['turn/steer', 'thread/queue/steer'].includes(string(message.method)) && !this.options.sharedTurnInput)
           this.assertCurrentEnvironmentOwner(scope);
