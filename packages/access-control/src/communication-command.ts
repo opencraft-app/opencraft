@@ -1,5 +1,5 @@
 import { receiveChannelAttachment } from './channel-attachment-upload.js';
-import { communicationExtension } from './communication-extension.js';
+import { communicationExtension, groupCreateOptionValues } from './communication-extension.js';
 import { AssistantThreadStore } from './assistant-thread-store.js';
 import { PersonalAssistants } from './personal-assistants.js';
 import type { Actor } from '@opencraft/identity-core/actors';
@@ -74,7 +74,10 @@ export function communicationCommand(service: Collaboration, db: DatabaseSync, c
         case 'opencraft/channels/group/list-state/set':fields(p,['channelId','hidden','clientRequestId']);return service.setChannelListHidden(c,text(p.channelId),p.hidden,p.clientRequestId);
         case 'opencraft/channels/group/leave':fields(p,['channelId','clientRequestId']);service.leaveChannelGroup(c,text(p.channelId),p.clientRequestId);return null;
         case 'opencraft/channels/group/dissolve':fields(p,['channelId','expectedRevision','clientRequestId']);return service.dissolveChannelGroup(c,text(p.channelId),p.expectedRevision,p.clientRequestId);
-        case 'opencraft/channels/group/create':fields(p,['title','memberActorIds','clientRequestId']);return service.createChannelGroup(c,p.title,p.memberActorIds,p.clientRequestId);
+        case 'opencraft/channels/group/create':{fields(p,['title','memberActorIds','clientRequestId','options']);
+          // Installation options are resolved before the transaction; the hook runs only for a newly created group.
+          const options=groupCreateOptionValues(p.options),created=communicationExtension()?.groupCreated;if(!options)invalid();
+          return service.createChannelGroup(c,p.title,p.memberActorIds,p.clientRequestId,created&&((id,input)=>created(service,db,c,id,{...input,options})));}
         case 'opencraft/channels/group/member/set':fields(p,['channelId','actorId','present','clientRequestId']);service.setChannelMember(c,text(p.channelId),p.actorId,p.present,p.clientRequestId);return null;
         case 'opencraft/channels/group/rename':fields(p,['channelId','title','clientRequestId']);return service.renameChannelGroup(c,text(p.channelId),p.title,p.clientRequestId);
         case 'opencraft/channels/group/members/list':fields(p,['channelId']);return {members:service.channelMembers(c,text(p.channelId))};

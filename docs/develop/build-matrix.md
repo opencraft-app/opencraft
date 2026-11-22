@@ -56,8 +56,8 @@ fallback. The one explicit exception: until macOS and Windows have native build
 runners, their desktop packages may use stock Electron at the fork's upstream
 version when `OPENCRAFT_ELECTRON_STOCK_DESKTOP=1` is set (the fork's patches
 serve the Linux server browser runtime, which the desktop app does not call).
-The "Desktop pre-release" workflow builds Linux with the fork and macOS/Windows
-this way, unsigned, from one commit and publishes a GitHub pre-release.
+The "App release" workflow builds Linux with the fork and macOS/Windows
+this way from one commit and publishes the GitHub release.
 Every desktop package also ships the native Codex pinned in `runtime/codex`:
 `scripts/packaging/stage-codex-runtime.mjs` installs the target's official
 platform package (`npm ci --os --cpu`, so a target can be staged from another
@@ -349,10 +349,10 @@ repository-external production keystore, verifies the package ID and APK
 signature against that keystore, and writes both the APK and filing values.
 It never falls back to the internal development key. `OPENCRAFT_ANDROID_VERSION_CODE`
 overrides the `app.json` versionCode and the APK's version is verified after the
-build. `.github/workflows/desktop-prerelease.yml` calls
+build. `.github/workflows/app-release.yml` calls
 `.github/workflows/android-release-apk.yml`, which signs with the `android-release`
-Environment's key and derives the versionCode from the beta tag, so every GitHub
-pre-release carries `OpenCraft-<version>-android-arm64.apk` in its manifest.
+Environment's key and derives the versionCode from the release tag, so every GitHub
+release carries `OpenCraft-<version>-android-arm64.apk` in its manifest.
 The same release uploads its commit to TestFlight through
 `.github/workflows/ios-testflight.yml`, without waiting for beta review, and
 attaches `OpenCraft-<version>-ios-unsigned.ipa` from
@@ -377,16 +377,47 @@ assembles arm64 on `macos-15` and x64 on `macos-15-intel`. Both jobs explicitly 
 official Electron at the same pinned upstream version via
 `OPENCRAFT_ELECTRON_STOCK_DESKTOP=1`. The workflow merges both native apps,
 then signs, notarizes and packages the result in the `macos-release` Environment.
-Manual runs from `main` produce Actions artifacts. The
-[`Desktop pre-release`](../../.github/workflows/desktop-prerelease.yml) workflow
-calls the same macOS job and stages its output alongside the Linux AppImage and
-Windows installer/ZIP from that commit. Dispatch from `main` with a new
-`vX.Y.Z-beta.N` tag matching the desktop package's native version. The default
-`publish=false` stages a candidate artifact. Use `publish=true` to publish that
-run's verified candidate. The publisher checks the manifest, uploads to a
-draft, verifies the downloaded bytes, then publishes the draft and checks the
+Manual runs from `main` produce Actions artifacts.
+
+### App release
+
+OpenCraft has one product version, held identically by the root, desktop,
+mobile (`package.json` and `app.json`) and web-server manifests and the lockfile.
+`node scripts/release/product-version.mjs check` verifies it and
+`set X.Y.Z` changes every source together. The
+[`App release`](../../.github/workflows/app-release.yml) workflow is the only
+release publisher; the repository no longer publishes to public npm. Dispatch it
+from `main` with a new tag naming the product version: `vX.Y.Z-beta.N` publishes
+a GitHub pre-release, `vX.Y.Z` a stable release that requires its `## vX.Y.Z`
+section in `CHANGELOG.md`, passes the performance gate, opens its notes with that
+section and becomes the latest release. Each release calls the macOS, Android,
+TestFlight and unsigned iOS jobs and stages their output alongside the Linux
+AppImage and Windows installer/ZIP from that commit into `release-manifest.json`.
+The default `publish=false` stages a candidate artifact. Use `publish=true` to
+publish that run's verified candidate. The publisher checks the manifest, uploads
+to a draft, verifies the downloaded bytes, then publishes the draft and checks the
 public assets again. Rerun failed publication jobs on the original run to reuse
-its staged artifacts. The stable npm release keeps its own stable tag contract.
+its staged artifacts.
+
+### Developer self-test
+
+Self-testing uses three layers, from fastest to closest to a release:
+
+1. From source: `npm run dev:web`, `npm run dev:electron` and `npm run dev:expo`
+   (Expo Go) run the current checkout.
+2. Any branch: dispatch the [`Dev build`](../../.github/workflows/dev-build.yml)
+   workflow on the branch (`desktop` and `mobile` select the platforms). It
+   builds every app from one commit as Actions artifacts named
+   `opencraft-dev-<platform>-<sha>` (Android: `opencraft-android-internal-<sha>`,
+   iOS: `opencraft-ios-unsigned-<sha>`) with build ID
+   `dev-<run>-<sha>`. It uses no secret, tag, release or store: the Android APK
+   is the development-key `dev.opencraft.workbench`, macOS is the ad-hoc signed
+   `OpenCraft Preview` (`app.opencraft.desktop.preview`), so both install beside
+   the published apps; Linux, Windows and iOS are unsigned. The run summary lists
+   each platform's result and install notes.
+3. Betas: `vX.Y.Z-beta.N` from App release. Every release uploads to TestFlight;
+   testers in an App Store Connect internal group can install it without beta
+   review, while external testers wait for it.
 
 A lightweight credential check in the `macos-release` Environment runs before
 either native build. Client distribution runs only from `main`.
@@ -538,7 +569,8 @@ than a native patch marker.
 Build on a native Linux amd64 machine with the checked-in Node version and
 installed dependencies. Set `OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION` to the
 verified owned Linux browser distribution before invoking the package command.
-`release/OpenCraft-server-0.1.0-linux-amd64.tar.gz`
+`release/OpenCraft-server-<version>-linux-amd64.tar.gz` (`<version>` is the product version,
+`node scripts/release/product-version.mjs check`)
 must pass `npm run smoke:headless:linux` for both DSH and Codex initialization
 before distribution. GitHub's portable
 matrix produces and smoke-tests this archive as an Actions artifact; a PR build
@@ -552,7 +584,7 @@ successful Codex process start alone does not prove the Web Codex entry was
 included. Do not copy an existing generic `dist` into a headless archive.
 
 ```sh
-tar -xzf OpenCraft-server-0.1.0-linux-amd64.tar.gz
+tar -xzf OpenCraft-server-<version>-linux-amd64.tar.gz
 ./opencraft-server/bin/opencraft-server --port 10000 --data-dir /private/opencraft-data
 ```
 
@@ -584,9 +616,9 @@ checksum mismatch and unsafe archive entries. It never
 stops an existing preview or copies account data automatically.
 
 ```sh
-sha256sum release/OpenCraft-server-0.1.0-linux-amd64.tar.gz
+sha256sum release/OpenCraft-server-<version>-linux-amd64.tar.gz
 sudo ./scripts/packaging/install-headless-linux.sh \
-  --archive release/OpenCraft-server-0.1.0-linux-amd64.tar.gz \
+  --archive release/OpenCraft-server-<version>-linux-amd64.tar.gz \
   --sha256 '<verified 64-character digest>' \
   --port 80 \
   --state-name opencraft-server \

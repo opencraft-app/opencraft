@@ -1,6 +1,6 @@
 # Web 安装与一键更新
 
-公共 npm 包 `@opencraft-app/opencraft` 包含网站、Web 服务和更新器。公开的 0.1.17 包要求 Node.js 24.x 和 npm；安装其他精确版本时按该包的 `engines` 核对，带执行端的包还须匹配平台、架构和 Node ABI。源码模板的最低版本不代表已发布包的支持范围。默认包只包含网站；执行服务独立部署，通过 WebSocket 地址接入。带执行端 payload 的服务器包可在明确配置受管执行服务后同时升级网站、执行网关、daemon 和 DSH capability adapter；DSH 引擎、Codex core 与 CLI 仍独立维护。
+本仓库已停止向公共 npm 发布 `@opencraft-app/opencraft`，0.1.17 是最后一个公开版本（见[公共 npm 包已停止发布](#公共-npm-包已停止发布)）。该包包含网站、Web 服务和更新器。公开的 0.1.17 包要求 Node.js 24.x 和 npm；安装其他精确版本时按该包的 `engines` 核对，带执行端的包还须匹配平台、架构和 Node ABI。源码模板的最低版本不代表已发布包的支持范围。默认包只包含网站；执行服务独立部署，通过 WebSocket 地址接入。带执行端 payload 的服务器包可在明确配置受管执行服务后同时升级网站、执行网关、daemon 和 DSH capability adapter；DSH 引擎、Codex core 与 CLI 仍独立维护。
 
 发行 profile 必须明确哪些执行能力随包提供。OpenCraft 的 Pi engine 是 Local Agent Host 的内置能力；Pi-first profile 可以只包含 Pi 运行所需的 server runtime，不下载或封存独立 Codex CLI 和 DSH engine。当前 Headless gateway 仍要求一个独立 Codex Core endpoint；这属于外部 owner 依赖，不等于把 Codex CLI/Core 塞进 Pi payload。Codex CLI 和 DSH 只有在目标服务器显式启用、并且其 owner/协议/存储兼容性已经列入签名发行清单时才进入该 profile。完整发行打包入口可用 `OPENCRAFT_FULL_RUNTIME_ENGINES=pi` 选择 Pi-only payload；未设置时保留原有 Codex+DSH full-runtime 行为。这个环境变量会同时把 Headless profile 默认收敛到 `--engines pi`，显式配置其他未声明引擎会被拒绝；它不替代外部 Core 的配置，也不证明独立 owner 已经可以无人值守升级。
 
@@ -167,7 +167,7 @@ npm run smoke:server-updates:systemd
 
 首次启动会在状态目录生成权限为 `0600` 的 `admin-key`，终端只显示文件位置。“设置 → 网站更新”直接显示“检查更新”，访问者无需部署密钥即可查询公共 npm `latest`。部署管理员读取该文件并授权管理后，可以安装更新、回退上一版。管理登录有效期一小时；需要同源 JSON 请求。
 
-发布者按下文[公共 npm 发布流程](#公共-npm-发布流程)验证并上传精确 tgz。发布不会自动更新用户部署；用户点击“检查更新”读取最新版本，再点击“更新网站”安装已检查的精确版本与 integrity。npm 访问失败会在页面显示，当前网站继续运行。打包命令不执行发布。
+公共 npm 不再有新版本；更新器同样支持企业 npm 或受控源（见[公共 npm 包已停止发布](#公共-npm-包已停止发布)）。发布不会自动更新用户部署；用户点击“检查更新”读取最新版本，再点击“更新网站”安装已检查的精确版本与 integrity。npm 访问失败会在页面显示，当前网站继续运行。打包命令不执行发布。
 
 ## 可选发布前回归门禁
 
@@ -188,27 +188,11 @@ npm run gate:server-updates -- --scenario self-upgrade
 
 报告记录源码 commit、dirty 文件状态、源码指纹、Node/Codex 版本和所选场景。只选一种场景的结果不能称为完整门禁；未执行该可选门禁的发布记录标为「未运行」，而非「通过」。源码变化后需要重新回归。证据覆盖当前源码构建与隔离部署，仍需按下文核对最终发布 tgz 的身份、完整性与可分发性，不能把源码门禁替代最终归档验收。
 
-## 公共 npm 发布流程
+## 公共 npm 包已停止发布
 
-公共包使用 `@opencraft-app/opencraft`，源为 `https://registry.npmjs.org/`。首版 0.1.10 支持 Linux x64 / Node.js 24；包含网站、更新器、执行 gateway/daemon，不包含独立 Codex core、CLI 或 DSH 引擎，不是全新服务器一键安装器。
+本仓库不再向公共 npm 发布 `@opencraft-app/opencraft`；npm 发布 workflow、Trusted Publisher 配置和发布 kit 的 npm 适配均已删除，已发布的 0.1.17 及更早版本保持原样。OpenCraft 的版本统一由 [App release](../../.github/workflows/app-release.yml) 发布（桌面包、Android APK、iOS TestFlight 与未签名 IPA），版本规则见 [构建矩阵](../develop/build-matrix.md)；原先只在 npm 正式发布预检中运行的 `npm run gate:performance` 现在门禁每个正式版 App 发布。
 
-正式发布workflow为 `.github/workflows/release.yml`。在main合入提升 `deploy/web-server/package.json` 稳定版本并提交精确 `## vX.Y.Z` changelog后自动请求发布；版本未变不发布，降级、预发布号与缺失发布记录拒绝。来源清单的 `--release` 检查通过后才创建指向该main事件提交的新tag；已有同名tag只能精确指向原提交，禁止覆盖。仍可从main手动派发已有稳定tag以恢复既有发布。来源清单检查与产品隔离均已具备；首次 npm 发布按既定决定暂缓，因此实现已就绪但不等于已经在 GitHub 或 npm 真实发布。
-
-包模板版本必须与tag相同；tag必须位于main历史中。预检再次核对tag内来源清单、安装锁定依赖、执行相关测试和浏览器回归，然后构建一个execution tgz、核对公开包内容并生成SHA256 manifest。发布job只下载并发布这份归档，不重建；npm版本已存在时只接受字节完全一致的归档。最后核对npm下载/安装及GitHub Release归档、manifest和release notes。全发布workflow串行，`npm-release` Environment仍只允许main。已上传后若最终校验失败，用 `gh run rerun <run-id> --failed` 复用原归档，核对远端字节后继续，不重建或重复上传。操作技能见 [opencraft-release](../../.agents/skills/opencraft-release/SKILL.md)，迁移边界见[上游迁移](../history/upstream-transition.md)。
-
-正式发布预检还执行 `npm run gate:performance`，在打包前比较版本化基线并保留30天原始样本、JSON/Markdown报告及失败截图；回退或证据不完整阻断后续发布。该完整套件不接日常服务器更新/普通PR流水线，开发可独立执行；场景、阈值及校准流程见 [performance regression gate](../develop/startup-performance.md#formal-release-performance-regression-gate)。
-
-预检按 `package-lock.json` 缓存 npm 下载内容，仍执行 `npm ci`；按操作系统、架构与锁定的 Playwright 版本缓存浏览器，每次仍安装所需系统依赖。依赖安装、类型检查、翻译检查、各组测试、浏览器安装、打包、上传和发布后验证分别记录 Actions step 时间。浏览器回归使用 2 个 worker，各自拥有独立 registry、状态目录和动态端口。依赖审计由 security workflow 执行，不重复放在 release 的依赖安装中。
-
-npm 上传返回成功后，公开 metadata 可能延迟出现。整包 metadata 可能受 CDN 缓存影响；发布烟测显式使用 `--metadata-source version-api` 查询公共精确版本接口 `/包名/版本`，验证返回的包名和版本，并记录缓存状态、等待及安装耗时。该模式不发送 npm 凭据；需要认证或没有此接口的 registry 继续使用默认 npm CLI 查询。精确接口的 HTTP 404 最多重试 30 次、间隔 10 秒，然后仍在独立临时目录运行 `npm install 包名@版本 --prefer-online`。安装 CLI 自身仍可能读取受缓存影响的整包 metadata；仅对明确的 `ETARGET` 且错误指向本次精确版本进行同样的有界重试，认证、网络、其他包缺失、错误版本和其他安装错误立即失败。用新 workflow 复核旧 tag 时，若 tag 内的 kit 尚未提供此参数，则使用原 npm CLI 查询。已存在版本的烟测不能证明新版本上传后的同步耗时，需在下一次真实发布中观察。
-
-Trusted Publisher 的配置：GitHub Actions；组织 `opencraft-app`；仓库 `opencraft`；workflow filename `release.yml`；Environment `npm-release`。该 Environment 只允许 main。workflow 使用 OIDC，不存放长期 npm token。仓库已公开（`opencraft-app/opencraft`），发布 workflow 不额外声明 npm provenance；第三方版权与许可声明保留在仓库及归档内，不在 npm 侧另行宣称权利核实。首次真实发布需先以 npm 账号有效凭据上传本机验证过的归档，包存在后才能在 npm Settings 添加 Trusted Publisher；配置后按 npm 当前有效期要求及时通过 Actions 成功发布。
-
-```sh
-gh workflow run release.yml --repo opencraft-app/opencraft --ref main -f tag=v0.1.10
-```
-
-首次发布前选择未占用版本，在当前 checkout 使用 Node 24 构建。按任务范围完成 `npm run gate:server-updates`、typecheck、i18n、Web 更新 Playwright、独立审查。用 `OPENCRAFT_RELEASE_VERSION`、`OPENCRAFT_SOURCE_REVISION`、`OPENCRAFT_WEB_PACKAGE_OUTPUT` 记录版本、来源和独立输出，运行 `npm run package:web:server:execution`；再用 `node scripts/check/inspect-public-release.mjs /absolute/package.tgz` 验证归档。首次 CLI 发布显式指定 `--access public --tag latest --ignore-scripts --registry=https://registry.npmjs.org/`，发布精确 tgz。发布后必须查询精确版本/latest、下载校验并验证包内 buildId。上传响应不确定时先核对远端，不能直接重复发布或覆盖版本。
+使用公共 npm 源的现有部署检查更新时不会再看到新版本，当前网站继续运行。需要更新时改用 [Docker 部署](../../deploy/docker/README.md)、[从源码本地替换](web-local-deployment.md)，或把同一精确归档发布到企业 npm/受控源并相应设置 registry（见[企业 npm 更新源](managed-headless.md#企业-npm-更新源)）。打包命令与下文的连续性、回退和浏览器回归说明不变。
 
 ### 已有部署切换
 

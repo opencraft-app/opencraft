@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { androidVersionCode } from "../../scripts/release/android-version-code.mjs";
@@ -60,7 +60,7 @@ test("the Expo config applies only a valid release versionCode", (t) => {
   }
 });
 
-test("the pre-release publishes only the production-signed APK", () => {
+test("the release builds only the production-signed APK", () => {
   const android = read(".github/workflows/android-release-apk.yml");
   assert.match(android, /environment: android-release/u);
   assert.match(android, /^  workflow_dispatch:\n    inputs:\n      tag:/mu);
@@ -82,153 +82,6 @@ test("the pre-release publishes only the production-signed APK", () => {
     [["~/.gradle/wrapper/dists", "~/.gradle/caches/modules-2"]],
   );
   assert.match(android, /if: always\(\)\n\s+run: rm -rf "\$RUNNER_TEMP\/android-release-signing"/u);
-
-  const prerelease = read(".github/workflows/desktop-prerelease.yml");
-  assert.match(prerelease, /uses: \.\/\.github\/workflows\/android-release-apk\.yml/u);
-  assert.match(prerelease, /needs: \[linux, windows, macos, android, ios_testflight, ios_unsigned\]/u);
-  assert.match(prerelease, /uses: \.\/\.github\/workflows\/ios-testflight\.yml/u);
-  assert.match(prerelease, /uses: \.\/\.github\/workflows\/ios-unsigned-ipa\.yml/u);
-  assert.match(prerelease, /name: opencraft-ios-unsigned-\$\{\{ github\.sha \}\}/u);
-  assert.match(prerelease, /TESTFLIGHT_NUMBER: \$\{\{ needs\.ios_testflight\.outputs\.number \}\}/u);
-  assert.match(prerelease, /name: opencraft-android-release-\$\{\{ github\.sha \}\}/u);
-  assert.match(read("scripts/release/publish-desktop-beta.sh"), /Android arm64 APK/u);
-});
-
-test("staging binds the APK digest and publishes it under the release name", (t) => {
-  const directory = mkdtempSync(join(tmpdir(), "opencraft-stage-beta-"));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const put = (path, content) => {
-    mkdirSync(dirname(join(directory, path)), { recursive: true });
-    writeFileSync(join(directory, path), content);
-  };
-  const kit = ".github/secure-release/v1/secure_release.py";
-  mkdirSync(dirname(join(directory, kit)), { recursive: true });
-  copyFileSync(join(root, kit), join(directory, kit));
-  put("apps/desktop/package.json", JSON.stringify({ version: "0.1.0" }));
-  const git = (...args) =>
-    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.invalid", ...args], { cwd: directory });
-  git("init", "--quiet");
-  git("add", ".");
-  git("commit", "--quiet", "-m", "fixture");
-  const commit = git("rev-parse", "HEAD").toString().trim();
-
-  put("inputs/macos/OpenCraft-0.1.0-universal.dmg", "dmg");
-  put("inputs/macos/OpenCraft-0.1.0-mac-universal.zip", "zip");
-  execFileSync(
-    "bash",
-    ["-c", "sha256sum OpenCraft-0.1.0-universal.dmg OpenCraft-0.1.0-mac-universal.zip > SHA256SUMS"],
-    { cwd: join(directory, "inputs/macos") },
-  );
-  const dmgDigest = execFileSync("sha256sum", ["inputs/macos/OpenCraft-0.1.0-universal.dmg"], { cwd: directory })
-    .toString()
-    .split(" ")[0];
-  put(
-    "inputs/macos/macos-universal-smoke.json",
-    JSON.stringify({
-      passed: true,
-      hostRoundTrip: true,
-      sourceRevision: commit,
-      image: "OpenCraft-0.1.0-universal.dmg",
-      sha256: dmgDigest,
-    }),
-  );
-  put("inputs/desktop/desktop-linux-x64/OpenCraft-0.1.0-linux-x86_64.AppImage", "appimage");
-  put("inputs/desktop/desktop-windows-x64/OpenCraft-0.1.0-win-x64.zip", "winzip");
-  put("inputs/desktop/desktop-windows-x64/OpenCraft-Setup-0.1.0-x64.exe", "exe");
-  const apk = "inputs/android/OpenCraft-app.opencraft-android-release.apk";
-  put(apk, "apk");
-  const ipa = "inputs/ios/OpenCraft-ios-unsigned.ipa";
-  put(ipa, "ipa");
-  const stage = () =>
-    spawnSync("bash", [join(root, "scripts/release/stage-desktop-beta.sh"), "v0.1.0-beta.3"], {
-      cwd: directory,
-      encoding: "utf8",
-    });
-
-  const digest = (path) => execFileSync("sha256sum", [path], { cwd: directory }).toString().split(" ")[0];
-  const apkDigest = digest(apk);
-  const ipaDigest = digest(ipa);
-  const wrong = "0".repeat(64);
-  for (const [apkRecord, ipaRecord] of [
-    [wrong, ipaDigest],
-    [apkDigest, wrong],
-  ]) {
-    put(`${apk}.sha256`, `${apkRecord}  release/OpenCraft-app.opencraft-android-release.apk\n`);
-    put(`${ipa}.sha256`, `${ipaRecord}  release/OpenCraft-ios-unsigned.ipa\n`);
-    assert.notEqual(stage().status, 0, "a digest mismatch must stop staging");
-    assert.throws(
-      () => readdirSync(join(directory, "candidate")),
-      /ENOENT/u,
-      "nothing is staged before every input verifies",
-    );
-  }
-
-  put(`${apk}.sha256`, `${apkDigest}  release/OpenCraft-app.opencraft-android-release.apk\n`);
-  put(`${ipa}.sha256`, `${ipaDigest}  release/OpenCraft-ios-unsigned.ipa\n`);
-  const result = stage();
-  assert.equal(result.status, 0, result.stderr);
-  assert.ok(readdirSync(join(directory, "candidate")).includes("OpenCraft-0.1.0-beta.3-android-arm64.apk"));
-  const manifest = JSON.parse(readFileSync(join(directory, "candidate/desktop-release-manifest.json"), "utf8"));
-  assert.deepEqual(
-    manifest.artifacts.find((artifact) => artifact.name === "OpenCraft-0.1.0-beta.3-android-arm64.apk"),
-    { name: "OpenCraft-0.1.0-beta.3-android-arm64.apk", sha256: apkDigest, size: 3 },
-  );
-  assert.deepEqual(
-    manifest.artifacts.find((artifact) => artifact.name === "OpenCraft-0.1.0-beta.3-ios-unsigned.ipa"),
-    { name: "OpenCraft-0.1.0-beta.3-ios-unsigned.ipa", sha256: ipaDigest, size: 3 },
-  );
-
-  // Publishing names the TestFlight build the release uploaded. A stand-in gh
-  // keeps the notes of the release it is asked to create and stops there.
-  git("remote", "add", "origin", directory);
-  const bin = join(directory, "bin");
-  mkdirSync(bin);
-  writeFileSync(
-    join(bin, "gh"),
-    [
-      "#!/usr/bin/env bash",
-      'echo "$*" >> "$GH_LOG"',
-      'if [[ "$1 $2" == "release create" ]]; then',
-      '  while (( $# )); do if [[ "$1" == --notes-file ]]; then cp "$2" "$GH_NOTES"; fi; shift; done',
-      "fi",
-      "exit 1",
-    ].join("\n"),
-    { mode: 0o755 },
-  );
-  const publish = (testflight) => {
-    rmSync(join(directory, "gh.log"), { force: true });
-    rmSync(join(directory, "notes.md"), { force: true });
-    return spawnSync("bash", [join(root, "scripts/release/publish-desktop-beta.sh"), "v0.1.0-beta.3"], {
-      cwd: directory,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        PATH: `${bin}:${process.env.PATH}`,
-        GH_LOG: join(directory, "gh.log"),
-        GH_NOTES: join(directory, "notes.md"),
-        RUN_URL: "https://example.invalid/run",
-        ...testflight,
-      },
-    });
-  };
-  for (const invalid of [
-    {},
-    { TESTFLIGHT_VERSION: "0.1.0", TESTFLIGHT_NUMBER: "0" },
-    { TESTFLIGHT_VERSION: "0.1.0", TESTFLIGHT_NUMBER: "7", TESTFLIGHT_PUBLIC_LINK: "https://example.com/join/abc" },
-  ]) {
-    assert.notEqual(publish(invalid).status, 0, JSON.stringify(invalid));
-    assert.throws(() => readFileSync(join(directory, "gh.log")), /ENOENT/u, "no GitHub call without a valid build");
-  }
-  publish({
-    TESTFLIGHT_VERSION: "0.1.0",
-    TESTFLIGHT_NUMBER: "7",
-    TESTFLIGHT_PUBLIC_LINK: "https://testflight.apple.com/join/AbC123",
-  });
-  const notes = readFileSync(join(directory, "notes.md"), "utf8");
-  assert.match(notes, /\[TestFlight build 0\.1\.0 \(7\)\]\(https:\/\/testflight\.apple\.com\/join\/AbC123\)/u);
-  assert.match(notes, /iOS unsigned IPA is for signing with your own Apple ID/u);
-  publish({ TESTFLIGHT_VERSION: "0.1.0", TESTFLIGHT_NUMBER: "7" });
-  assert.match(readFileSync(join(directory, "notes.md"), "utf8"), /- iOS: TestFlight build 0\.1\.0 \(7\); it appears/u);
 });
 
 // Stand-in gh: answers the Environment lookup, deployment branch policies and

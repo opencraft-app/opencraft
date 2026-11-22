@@ -2,6 +2,8 @@
 
 本文件是OpenCraft服务根入口，独立GitHub checkout也必须能直接使用。独立仓库不要求不存在的父级脚本或内部文档。正式事实以当前源码、测试、生成契约和下列专题文档为准。
 
+下游 fork 若存在 `.agents/fork/AGENTS.md`，先读它：该文件只承载该 fork 的私有运维约定（如 Git 网关、发布桥与集成锁），由 fork 自行维护，不改写本文件的产品、代码与验证规则；fork 不应直接修改本文件。独立 checkout 中它不存在。
+
 ## 跨端产品与适配认知
 
 OpenCraft 同时面向触控设备与 PC：通过 Web DOM 和 React Native 技术，以移动 App、PWA 和 Web 形式覆盖手机、折叠设备、iPad 等触控设备；通过 Electron 提供桌面 App，同时提供 Web 桌面端。开发与设计必须同时考虑触控和鼠标／键盘操作，具体平台能力仍以实际实现为准。
@@ -52,7 +54,7 @@ GitHub `opencraft-app/opencraft` 是目标核心上游，产品身份来源、�
 | 已部署 OpenCraft 的小范围快速变更、局部构建与单服务更新 | [opencraft-fast-change](.agents/skills/opencraft-fast-change/SKILL.md)；以运行产物为基线，构建候选并验证实际行为，依赖/迁移/跨服务变化转正式流程 |
 | 下游产品 Agent Console 共享实现 | [历史与消费契约](docs/history/upstream-history.md)；同步边界由下游产品工作区维护 |
 | Web、Expo、Electron 构建与交付 | [build-matrix](docs/develop/build-matrix.md) |
-| 公共 npm 发布、Web 更新部署 | [Web 发布与部署](docs/operations/web-deployment.md#公共-npm-发布流程)，含包名、Trusted Publisher、精确归档与验收约定 |
+| App 发版（桌面、Android、iOS）、Web 更新部署 | App 发版按 [opencraft-release](.agents/skills/opencraft-release/SKILL.md)：同一产品版本（`scripts/release/product-version.mjs`），beta `vX.Y.Z-beta.N` 与正式 `vX.Y.Z`；Web 更新见 [Web 发布与部署](docs/operations/web-deployment.md)，公共 npm 已停止发布 |
 | 从源码打包替换服务器本地 Web | [本地替换指引](docs/operations/web-local-deployment.md)；先核对 `.local/README.md` 中的实际部署信息 |
 | 开源提交、公开发布 | [安全与发布说明](SECURITY.md)；按 [opencraft-release](.agents/skills/opencraft-release/SKILL.md) 核对实际来源、隐私、依赖、固定tag和归档；贡献PR遵循仓库当前检查 |
 | 手机容器的数据读取、会话连续性、导航容器与打包 | [Expo 局部 Agent 入口](apps/mobile/AGENTS.md#手机端细则) |

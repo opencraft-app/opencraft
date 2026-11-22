@@ -34,6 +34,7 @@ import { modelPolicyHttp } from '@opencraft/model-usage-policy/http';
 import { ModelPolicyTransport } from '@opencraft/model-usage-policy/transport';
 import { startAvailabilityNotification } from './availability-notification.mjs';
 import { ExecutionEnvironmentTransport } from './execution-environment-transport.ts';
+import { createHostEnvironmentLaunch } from './host-environment-launch.ts';
 import { composeHostTerminalSelector, createHandsTerminalService, HostTerminalSession, HostTerminalTransport, terminalResourceOwnerId } from './host-terminal-transport.js';
 import { createHostFileSystem } from './host-filesystem.js';
 import { composeHostFileSelector, HostFileSystemSession, HostFileSystemTransport } from './host-filesystem-transport.js';
@@ -771,6 +772,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     capabilityBindings = new CapabilityBindingProjection(await serverStorage.call.capabilityBindings(),
       write => serverStorage.call.applyCapabilityBinding(write),
       error => console.error('[capability-bindings] unavailable', error.message));
+    // Opaque ENV delivery needs the same live Actor/lease handoff as Git; a
+    // configured vault owner without it fails here, not at every command.
+    if (identity?.environmentLaunch && !humanGitExecution) throw new Error('Environment delivery requires execution admission');
     const capabilityKey=await capabilitySigningKey(join(dataDirectory,"session-capabilities.key"));
     capabilityMcp = new SessionCapabilityMcp(capabilities, capabilityKey, capabilityBindings, {
       descriptorPath:join(dataDirectory,'session-capabilities.json'), retainEndpoint: true,
@@ -785,6 +789,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         const grant=await humanGitExecution.handoff({hostId:'opencraft-server',threadId:session.threadId,...(session.execution.inputId?{inputId:session.execution.inputId}:{turnId:session.execution.turnId})});
         return {authority:assetsService.gitAuthority,hosts:assetsService.gitHosts,grant};
       },
+      ...(identity?.environmentLaunch ? {hostEnvironment:createHostEnvironmentLaunch({port:identity.environmentLaunch,
+        handoff:locator=>humanGitExecution.handoff(locator),
+        routes:session=>!closing&&session.serverId===conversationExecution.serverForHost('opencraft-server',session.threadId)
+          &&conversationExecution.hostForServer(session.serverId)==='opencraft-server'})} : {}),
       authorizeExecution:async session=>{
         if(session.serverId!==conversationExecution.serverForThread(session.threadId))throw new CollaborationError(403,'execution_delegation_required');
         await actorCollaboration.admittedExecution(session.threadId,session.execution.inputId);
@@ -841,7 +849,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       environmentDataDirectory: identity?.executionEnvironment ? dataDirectory : undefined,
       executionContext:identity?.executionEnvironment?'legacy':'assets',
       gitExecution:identity?.executionEnvironment?undefined:{directory:dataDirectory,machineId:machineIdentity.machineId,
-        workerFile:options.gitWorkerFile??fileURLToPath(new URL('./personal-git-worker.mjs',import.meta.url))},
+        workerFile:options.gitWorkerFile??fileURLToPath(new URL('./personal-git-worker.mjs',import.meta.url)),
+        ...(identity?.environmentLaunch?{environmentIssuer:identity.environmentLaunch.issuer}:{})},
       projectlessWorkspaceDirectory: join(dataDirectory, "workspaces"),
       skillsDirectory: join(dataDirectory, "skills"),
       taskSkillDirectories: [join(dataDirectory, "codex/runtime/skills")],

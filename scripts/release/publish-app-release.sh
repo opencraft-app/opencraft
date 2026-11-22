@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Publishes the staged candidate: vX.Y.Z-beta.N as a GitHub pre-release, or
+# vX.Y.Z as the latest stable release opening with its CHANGELOG section.
 tag="$1"
+[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[1-9][0-9]*)?$ ]]
+if [[ -n "${BASH_REMATCH[1]}" ]]; then
+  prerelease=true release_kind=(--prerelease) visibility=(--prerelease)
+else
+  prerelease=false release_kind=() visibility=(--latest)
+fi
 commit="$(git rev-parse HEAD)"
-manifest=desktop-release-manifest.json
+manifest=release-manifest.json
 kit=.github/secure-release/v1/secure_release.py
-python3 "$kit" manifest-verify --desktop-beta --tag "$tag" --manifest "candidate/$manifest" --directory candidate
+python3 "$kit" manifest-verify "${release_kind[@]}" --tag "$tag" --manifest "candidate/$manifest" --directory candidate
 
 # The release uploaded this commit to TestFlight; link the public beta when
 # the repository has configured one.
@@ -20,7 +28,11 @@ notes="$(mktemp)"
 metadata="$(mktemp)"
 remote="$(mktemp -d)"
 trap 'rm -f "$notes" "$metadata"; rm -rf "$remote"' EXIT
-cat >"$notes" <<EOF
+if [[ "$prerelease" == false ]]; then
+  python3 "$kit" changelog --tag "$tag" --changelog CHANGELOG.md --notes "$notes"
+  echo >>"$notes"
+fi
+cat >>"$notes" <<EOF
 OpenCraft $tag from commit $commit ([build and verification]($RUN_URL)).
 
 - macOS Universal DMG and ZIP support Apple Silicon and Intel. Both contain the Developer ID-signed, notarized app.
@@ -30,7 +42,7 @@ OpenCraft $tag from commit $commit ([build and verification]($RUN_URL)).
 - iOS: $testflight; it appears once Apple finishes processing and beta review.
 - iOS unsigned IPA is for signing with your own Apple ID (AltStore, SideStore).
 
-The desktop release manifest identifies the source and every published asset.
+The release manifest identifies the source and every published asset.
 EOF
 
 check_tag() {
@@ -50,16 +62,16 @@ read_release() {
 verify_download() {
   gh release download "$tag" --pattern '*' --dir "$remote"
   cmp "candidate/$manifest" "$remote/$manifest"
-  python3 "$kit" manifest-verify --desktop-beta --tag "$tag" --manifest "$remote/$manifest" --directory "$remote"
+  python3 "$kit" manifest-verify "${release_kind[@]}" --tag "$tag" --manifest "$remote/$manifest" --directory "$remote"
 }
 
 check_tag optional
 if ! read_release; then
-  gh release create "$tag" --target "$commit" --draft --prerelease --title "$tag" --notes-file "$notes"
+  gh release create "$tag" --target "$commit" --draft "${visibility[@]}" --title "$tag" --notes-file "$notes"
   read_release
 fi
-jq -e --arg commit "$commit" --rawfile notes "$notes" \
-  '.isPrerelease and .targetCommitish == $commit and (.body | rtrimstr("\n")) == ($notes | rtrimstr("\n"))' \
+jq -e --arg commit "$commit" --argjson prerelease "$prerelease" --rawfile notes "$notes" \
+  '.isPrerelease == $prerelease and .targetCommitish == $commit and (.body | rtrimstr("\n")) == ($notes | rtrimstr("\n"))' \
   "$metadata" >/dev/null
 
 if jq -e .isDraft "$metadata" >/dev/null; then
@@ -78,12 +90,12 @@ if jq -e .isDraft "$metadata" >/dev/null; then
   mkdir "$remote"
   verify_download
   check_tag optional
-  gh release edit "$tag" --draft=false
+  gh release edit "$tag" --draft=false "${visibility[@]}"
 fi
 
 check_tag required
 read_release
-jq -e '.isDraft == false and .isPrerelease == true' "$metadata" >/dev/null
+jq -e --argjson prerelease "$prerelease" '.isDraft == false and .isPrerelease == $prerelease' "$metadata" >/dev/null
 rm -r "$remote"
 mkdir "$remote"
 verify_download

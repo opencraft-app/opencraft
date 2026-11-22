@@ -15,6 +15,7 @@
     "./git-execution": "./src/git-execution.ts",
     "./execution-snapshot": "./src/execution-snapshot.ts",
     "./environment-delivery": "./src/environment-delivery.ts",
+    "./remote-environment-launch": "./src/remote-environment-launch.ts",
     "./git-keys": "./src/git-keys.ts",
     "./human-git-execution": "./src/human-git-execution.ts",
     "./remote-human-git-execution": "./src/remote-human-git-execution.ts",

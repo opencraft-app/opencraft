@@ -160,7 +160,8 @@ test("Mac ZIP matrix artifacts match electron-builder naming", async () => {
     const name = app.build.artifactName.replace("${version}", app.version)
       .replace("${os}", "mac").replace("${arch}", arch).replace("${ext}", "zip");
     const target = matrix.targets.find(target => target.id === `electron-macos-${arch}-zip`);
-    assert.deepEqual(target.artifacts, [`apps/desktop/release/${name}`]);
+    // The matrix names the product version as {version}; the root and desktop versions are one.
+    assert.deepEqual(target.artifacts.map((artifact) => artifact.replaceAll("{version}", app.version)), [`apps/desktop/release/${name}`]);
   }
 });
 

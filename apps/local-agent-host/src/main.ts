@@ -160,7 +160,9 @@ export async function startLocalAgentHost(options: {
   readonly prepareArtifact?: (artifact: import("./artifacts/catalog.js").Artifact, owner: string, signal?: AbortSignal) => Promise<import("./artifacts/catalog.js").Artifact>;
   readonly environmentDataDirectory?: string;
   readonly executionContext?: 'assets'|'legacy';
-  readonly gitExecution?: {readonly directory:string;readonly workerFile:string;readonly machineId:string};
+  readonly gitExecution?: {readonly directory:string;readonly workerFile:string;readonly machineId:string;
+    /** Pinned issuer key of the sole ENV vault owner; enables opaque ENV delivery. */
+    readonly environmentIssuer?:string};
   readonly storage?: LocalAgentStorage;
   readonly machineIdentity?: RuntimeMachineIdentity;
   readonly modelStorageDirectory?: string;

@@ -14,6 +14,7 @@ import { promisify } from "node:util";
 import WebSocket from "ws";
 import { assertHeadlessWebRelease } from "../../../apps/headless-server/src/headless-web-release.mjs";
 import { startHeadlessSmokeProcess } from "./headless-smoke-process.mjs";
+import { headlessArchivePath } from "../../packaging/package-headless-linux.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const exec = promisify(execFile);
@@ -224,7 +225,7 @@ export async function smokeHeadlessPackage(archive) {
 }
 
 if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
-  const archive = process.argv[2] || join(repositoryRoot, "release/OpenCraft-server-0.1.0-linux-amd64.tar.gz");
+  const archive = process.argv[2] || headlessArchivePath();
   smokeHeadlessPackage(resolve(archive)).catch((error) => {
     console.error(error);
     process.exitCode = 1;

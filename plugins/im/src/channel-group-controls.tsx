@@ -2,7 +2,7 @@ import { combineAbortSignals } from '@opencraft/appserver-client/transport';
 import { ModalContent } from "@opencraft/design-system-web/modal-content";
 import * as Dialog from '@radix-ui/react-dialog';
 import { Activity, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
-import type { ChannelInviteCandidate, ChannelMember, ChannelSummary } from '@opencraft/appserver-protocol';
+import type { ChannelGroupCreateOption, ChannelInviteCandidate, ChannelMember, ChannelSummary } from '@opencraft/appserver-protocol';
 import { AddIcon, MoreIcon, ChevronLeftIcon, MinusIcon } from '@opencraft/design-system-web/action-icons';
 import { Button, IconButton } from '@opencraft/design-system-web/button';
 import { SettingsGroup, SettingsNavigationRow, SettingsPanel, SettingsTextInput, SettingsRow, type ExtensionSettingsViewProps } from '@opencraft/extension-react';
@@ -104,14 +104,16 @@ function CandidatePicker({ client, channelId, revision = 0, children }: {
   </div>;
 }
 
-function CreateGroupForm({ client, busy, setBusy, reportError, onCreated }: {
-  client: ChannelsClient; busy: boolean; setBusy: (busy: boolean) => void;
+function CreateGroupForm({ client, options, busy, setBusy, reportError, onCreated }: {
+  client: ChannelsClient; options: readonly ChannelGroupCreateOption[]; busy: boolean; setBusy: (busy: boolean) => void;
   reportError: ReportError; onCreated: (group: ChannelSummary) => void;
 }) {
   const intl = useIntl();
   const formId = useId();
   const [title, setTitle] = useState('');
   const [selected, setSelected] = useState<ChannelInviteCandidate[]>([]);
+  // Installation-declared choices start from their declared default and are always submitted explicitly.
+  const [choices, setChoices] = useState<Record<string, boolean>>(() => Object.fromEntries(options.map(option => [option.id, option.defaultSelected])));
   const attempt = useRef<{ key: string; payload: string } | null>(null);
   const request = useRef<AbortController | null>(null);
   useEffect(() => () => request.current?.abort(), []);
@@ -120,14 +122,14 @@ function CreateGroupForm({ client, busy, setBusy, reportError, onCreated }: {
     const name = (title.trim() || selected.slice(0, 3).map(actor => actor.displayName).join('、')).slice(0, 128);
     if (!name || !selected.length || request.current) return;
     const ids = selected.map(actor => actor.actorId).sort();
-    const payload = JSON.stringify([name, ids]);
+    const payload = JSON.stringify([name, ids, choices]);
     const key = attempt.current?.payload === payload ? attempt.current.key : crypto.randomUUID();
     attempt.current = { key, payload };
     const owner = new AbortController();
     request.current = owner;
     setBusy(true);
     try {
-      const group = await client.createGroup(name, ids, key, owner.signal);
+      const group = await client.createGroup(name, ids, key, owner.signal, choices);
       if (!owner.signal.aborted) onCreated(group);
     } catch {
       if (!owner.signal.aborted) reportError?.({ key: 'create-channel', message: intl.formatMessage(labels.createFailed) });
@@ -143,6 +145,11 @@ function CreateGroupForm({ client, busy, setBusy, reportError, onCreated }: {
     <form id={formId} className="im-channel-group-dialog__form" onSubmit={event => { event.preventDefault(); void create(); }}>
       <label htmlFor={formId + '-name'}>{intl.formatMessage(labels.name)}</label>
       <SettingsTextInput id={formId + '-name'} value={title} maxLength={128} disabled={busy} placeholder={selected.slice(0, 3).map(actor => actor.displayName).join('、')} onChange={event => setTitle(event.currentTarget.value)} />
+      {options.map(option => <label key={option.id} className="im-channel-group-dialog__choice im-channel-group-dialog__option">
+        <input type="checkbox" checked={choices[option.id] === true} disabled={busy}
+          onChange={event => { const checked = event.currentTarget.checked; setChoices(previous => ({ ...previous, [option.id]: checked })); }} />
+        <span><span>{intl.formatMessage(option.label)}</span>{option.description && <small>{intl.formatMessage(option.description)}</small>}</span>
+      </label>)}
       {selected.length > 0 && <ul className="im-channel-group-dialog__selection" aria-label={intl.formatMessage(labels.selected, { count: selected.length })}>
         {selected.map(actor => <li key={actor.actorId}>
           <ChatAvatar id={actor.actorId} label={actor.displayName} avatar={actor.avatar} bot={actor.actorKind === 'session'} />
@@ -165,8 +172,8 @@ function CreateGroupForm({ client, busy, setBusy, reportError, onCreated }: {
   </GroupDialog>;
 }
 
-export function CreateGroupButton({ client, reportError, onCreated }: {
-  client: ChannelsClient; reportError: ReportError; onCreated: (group: ChannelSummary) => void;
+export function CreateGroupButton({ client, options = [], reportError, onCreated }: {
+  client: ChannelsClient; options?: readonly ChannelGroupCreateOption[]; reportError: ReportError; onCreated: (group: ChannelSummary) => void;
 }) {
   const intl = useIntl();
   const [open, setOpen] = useState(false);
@@ -175,7 +182,7 @@ export function CreateGroupButton({ client, reportError, onCreated }: {
     <Dialog.Trigger asChild><IconButton aria-label={intl.formatMessage(labels.create)} title={intl.formatMessage(labels.create)}>
       <AddIcon size={16} />
     </IconButton></Dialog.Trigger>
-    {open && <CreateGroupForm client={client} busy={busy} setBusy={setBusy} reportError={reportError}
+    {open && <CreateGroupForm client={client} options={options} busy={busy} setBusy={setBusy} reportError={reportError}
       onCreated={group => { setBusy(false); setOpen(false); onCreated(group); }} />}
   </Dialog.Root>;
 }

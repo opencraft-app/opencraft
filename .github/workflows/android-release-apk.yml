@@ -3,7 +3,7 @@ name: Android release APK
 # Builds the published app.opencraft APK with the repository-external production
 # key held by the android-release Environment. It never falls back to Expo's
 # development key; the manual internal APK workflow remains the only
-# development-key build. Desktop pre-release calls it to publish the APK; a
+# development-key build. App release calls it to publish the APK; a
 # manual run only produces the signed APK as an Actions artifact.
 on:
   workflow_dispatch:

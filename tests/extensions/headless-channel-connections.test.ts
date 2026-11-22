@@ -395,6 +395,30 @@ test("legacy single-transport composition retains its connection and personal no
   );
 });
 
+test("channel.link reaches only the single configured transport's link and takes no client fields", async (t) => {
+  const f = await fixture(t),
+    a = adapter("alpha");
+  const linked: string[] = [];
+  a.transport.link = async (context) => {
+    linked.push(context.actorId);
+    return { code: "fixture-proof" };
+  };
+  const service = await f.open([a.transport]);
+  assert.deepEqual(await service.operation(f.actor, { action: "channel.link" }), { code: "fixture-proof" });
+  assert.deepEqual(linked, [f.actor.actorId]);
+  await assert.rejects(service.operation(f.actor, { action: "channel.link", id: "alpha" }), /invalid_operation/);
+  assert.deepEqual(linked, [f.actor.actorId]);
+});
+
+test("channel.link is unavailable without a link-capable single transport", async (t) => {
+  for (const transports of [[adapter("alpha").transport], [adapter("alpha").transport, adapter("beta").transport]]) {
+    const f = await fixture(t);
+    const service = await f.open(transports);
+    await assert.rejects(service.operation(f.actor, { action: "channel.link" }), /invalid_operation/);
+    await service.close();
+  }
+});
+
 test("a provider can recheck the captured notification lease after asynchronous preparation", async (t) => {
   const f = await fixture(t),
     a = adapter("alpha"),

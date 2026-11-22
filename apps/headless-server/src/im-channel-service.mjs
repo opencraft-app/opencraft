@@ -21,6 +21,7 @@ import { WeComPlugin } from "@opencraft/plugin-wecom/server";
 import { SlackPlugin, slackApi } from "@opencraft/plugin-slack/server";
 import { ModelCredentialRepository } from "@opencraft/local-agent-host/model-config/repository";
 import { createImExecution } from "./im-plugins.mjs";
+import { groupCreateOptions } from "@opencraft/access-control/communication-extension";
 
 const digest = (v) => createHash("sha256").update(v).digest("hex");
 const credential = (id, key) => "IM_" + digest(id).slice(0, 32) + "_" + key;
@@ -349,6 +350,12 @@ export class ImChannelService {
       "cursor",
     ]);
     const actor = this.execution.human(context.actorId);
+    // The single configured channel transport may issue a per-person link proof
+    // (for example to associate a provider account). Never chosen by the client.
+    if (body.action === "channel.link") {
+      if (Object.keys(body).some(key => key !== "action") || !this.channelSync?.transport.link) throw Error("invalid_operation");
+      return this.channelSync.transport.link(context);
+    }
     if (body.action === "list")
       return {
         channels: this.store
@@ -694,7 +701,9 @@ export class ImChannelService {
     if (path === "/__opencraft_im/capabilities" && request.method === "GET") {
       const nativeChannels = human && this.dependencies.collaboration?.available
         && this.dependencies.actors.isCurrent(context) && (this.dependencies.admittedActor?.(context.actorId) ?? true);
-      send(200, {available:!!human,...(nativeChannels?{nativeChannels:true,channelGroupTools:true,channels:1,channelImages:true}:{})});
+      const options=nativeChannels?groupCreateOptions():[];
+      send(200, {available:!!human,...(nativeChannels?{nativeChannels:true,channelGroupTools:true,channels:1,channelImages:true,
+        ...(options.length?{groupCreateOptions:options}:{})}:{})});
       return true;
     }
     if (!human) {

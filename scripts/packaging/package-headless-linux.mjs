@@ -28,8 +28,15 @@ import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
 import { buildDshCapabilityPlugin } from './package-dsh-capability-runtime.mjs';
 import { buildConversationCli } from './build-conversation-cli.mjs';
 import { splitProductPluginPacks } from '../../apps/headless-server/src/web-deployment/product-plugin-packs.mjs';
+import { productVersion } from '../release/product-version.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+
+// The archive carries the product version, so consumers ask for its path here
+// instead of spelling a version that goes stale at the next release.
+export function headlessArchivePath(architecture = "amd64") {
+  return join(repositoryRoot, "release", `OpenCraft-server-${productVersion(repositoryRoot)}-linux-${architecture}.tar.gz`);
+}
 
 export function assertHeadlessBuildHost(platform = process.platform, arch = process.arch, architecture = 'amd64') {
   const expected = architecture === 'amd64' ? 'x64' : architecture === 'arm64' ? 'arm64' : null;
@@ -187,9 +194,8 @@ export async function packageHeadlessLinux(composition = {}) {
   });
   await assertHeadlessWebRelease(join(repositoryRoot, "apps/workbench-web/dist"));
 
-  const version = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8")).version;
-  const output = outputOverride
-    ?? join(repositoryRoot, "release", `OpenCraft-server-${version}-linux-${architecture}.tar.gz`);
+  const version = productVersion(repositoryRoot);
+  const output = outputOverride ?? headlessArchivePath(architecture);
   // stageInto: lay the tree out at <stageInto>/opencraft-server and return that
   // directory instead of an archive. The container build copies the tree into
   // its image, so compressing it only to extract it again cost about 75s.

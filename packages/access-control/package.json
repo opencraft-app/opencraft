@@ -26,7 +26,10 @@
     "./thread-orchestration-broker": "./src/thread-orchestration-broker.ts",
     "./automation-runtime": "./src/automation-runtime.ts",
     "./identity-writes": "./src/identity-writes.ts",
-    "./commit-fence": "./src/commit-fence.ts"
+    "./commit-fence": "./src/commit-fence.ts",
+    "./communication-extension": "./src/communication-extension.ts",
+    "./native-channels": "./src/native-channels.ts",
+    "./personal-assistants": "./src/personal-assistants.ts"
   },
   "dependencies": {
     "@opencraft/identity-core": "*",

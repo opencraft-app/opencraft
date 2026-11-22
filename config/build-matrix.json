@@ -38,56 +38,56 @@
       "id": "electron-macos-arm64-zip",
       "platforms": ["darwin"],
       "command": ["npm", "run", "package:electron:mac:arm64:zip"],
-      "artifacts": ["apps/desktop/release/OpenCraft-0.1.0-mac-arm64.zip"],
+      "artifacts": ["apps/desktop/release/OpenCraft-{version}-mac-arm64.zip"],
       "description": "Unsigned Apple Silicon application ZIP; build natively on an arm64 Mac"
     },
     {
       "id": "electron-macos-arm64-dmg",
       "platforms": ["darwin"],
       "command": ["npm", "run", "package:electron:mac:arm64:dmg"],
-      "artifacts": ["apps/desktop/release/OpenCraft-0.1.0-arm64.dmg"],
+      "artifacts": ["apps/desktop/release/OpenCraft-{version}-arm64.dmg"],
       "description": "Apple Silicon DMG; requires the macOS sips/disk-image toolchain"
     },
     {
       "id": "electron-macos-x64-zip",
       "platforms": ["darwin"],
       "command": ["npm", "run", "package:electron:mac:x64:zip"],
-      "artifacts": ["apps/desktop/release/OpenCraft-0.1.0-mac-x64.zip"],
+      "artifacts": ["apps/desktop/release/OpenCraft-{version}-mac-x64.zip"],
       "description": "Unsigned Intel macOS application ZIP; build natively on an x64 Mac"
     },
     {
       "id": "electron-macos-x64-dmg",
       "platforms": ["darwin"],
       "command": ["npm", "run", "package:electron:mac:x64:dmg"],
-      "artifacts": ["apps/desktop/release/OpenCraft-0.1.0-x64.dmg"],
+      "artifacts": ["apps/desktop/release/OpenCraft-{version}-x64.dmg"],
       "description": "Intel macOS DMG; requires the macOS sips/disk-image toolchain"
     },
     {
       "id": "electron-linux-x64-appimage",
       "platforms": ["linux"],
       "command": ["npm", "run", "package:electron:linux:x64:appimage"],
-      "artifacts": ["apps/desktop/release/OpenCraft-0.1.0-linux-x86_64.AppImage"],
+      "artifacts": ["apps/desktop/release/OpenCraft-{version}-linux-x86_64.AppImage"],
       "description": "Portable Linux x64 desktop application"
     },
     {
       "id": "electron-linux-x64-rpm",
       "platforms": ["linux"],
       "command": ["npm", "run", "package:electron:linux:x64:rpm"],
-      "artifacts": ["apps/desktop/release/OpenCraft-0.1.0-linux-x86_64.rpm"],
+      "artifacts": ["apps/desktop/release/OpenCraft-{version}-linux-x86_64.rpm"],
       "description": "RPM package for TencentOS, RHEL, Fedora, and compatible Linux x64 systems"
     },
     {
       "id": "electron-linux-x64-deb",
       "platforms": ["linux"],
       "command": ["npm", "run", "package:electron:linux:x64:deb"],
-      "artifacts": ["apps/desktop/release/OpenCraft-0.1.0-linux-amd64.deb"],
+      "artifacts": ["apps/desktop/release/OpenCraft-{version}-linux-amd64.deb"],
       "description": "DEB package for Debian and Ubuntu Linux x64 systems"
     },
     {
       "id": "headless-linux-amd64-tar",
       "platforms": ["linux"],
       "command": ["npm", "run", "package:headless:linux:amd64"],
-      "artifacts": ["release/OpenCraft-server-0.1.0-linux-amd64.tar.gz"],
+      "artifacts": ["release/OpenCraft-server-{version}-linux-amd64.tar.gz"],
       "description": "Headless Linux amd64 DSH/Codex Hosts and browser Workbench server archive"
     },
     {

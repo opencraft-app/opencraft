@@ -15,6 +15,11 @@ snapshot, or the formal `*-role-digests.json` produced by `ci:publish:roles`:
 node scripts/ci/export-deployment.mjs SNAPSHOT.json NEW_BUNDLE_DIRECTORY
 ```
 
+A downstream product with its own deployment template passes
+`--template DIRECTORY` (which must contain every standard file) and repeats
+`--include FILE` for each additional top-level file to copy; without these
+options the bundle is built from this directory only.
+
 Only immutable `repository@sha256:...` refs are accepted; no checkout, local image ID,
 Electron path or build context is needed on the destination. Transfer the bundle,
 copy `site.env.example` to `site.env`, and edit the project name, host directories,
