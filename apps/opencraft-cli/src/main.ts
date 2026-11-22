@@ -8,7 +8,7 @@ import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { CollaborationClient } from '@opencraft/appserver-client/collaboration';
-import { parseConversationRef, conversationLink, type ConversationRef, type ConversationMetadata } from '@opencraft/appserver-protocol/collaboration';
+import { parseConversationRef, conversationLink, encodeConversationRef, isConversationInitialPermissionMode, CONVERSATION_TAIL_MAX_TURNS, type ConversationRef, type ConversationMetadata } from '@opencraft/appserver-protocol/collaboration';
 import { CliSshTransport } from './ssh';
 import { CliError, classify } from './errors';
 import { prepareSend, sendMessage, type SendInput } from './send';
@@ -22,9 +22,10 @@ Its private launcher uses this CLI's execution mode (OPENCRAFT_THREAD_CLI_CONNEC
   connection add <name> --ssh <alias> [--instance <id>] [--default]
   status
   server list
+  thread create <message> (--project <id> | --cwd <absolute-path>) [--permission-mode read-only|accept-edits|full] [--key <key>]
   thread list [--project <id>] [--cwd <absolute-path>] [--cursor <cursor>] [--include-title]
   thread show <ref-or-link>
-  thread log <ref-or-link> [--cursor <cursor>]
+  thread log <ref-or-link> [--cursor <cursor> | --tail <turns>]
   thread send <ref-or-link> [text] [--mode queue] --key <key>
     [--message-file <file|->] [--wait delivered --timeout 30s]
     [--mode steer --expected-turn <exact-turn-id>]
@@ -34,7 +35,8 @@ Options: --connection <name> --server <id> --json --help
 SSH uses your SSH config, agent/key and known_hosts.
 show/list return metadata. log reads one bounded page.
 Non-interactive sends need --key. Pipe stdin or pass --message-file -.
-Accepted is not completed. After disconnection, use lookup; do not resend.
+Accepted is not completed. After a disconnected send, use lookup.
+Create has no lookup or safe retry.
 Attention means open the UI. Configure --web-url during connection add for links.
 `;
 const configPath = () => process.env.OPENCRAFT_CONFIG ?? join(homedir(), '.config/opencraft/connections.json');
@@ -98,7 +100,7 @@ export async function run(argv: string[]) {
   try {
     parsed = parseArgs({ args: argv, allowPositionals: true, tokens: true, options: {
       json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, connection: { type: 'string' }, server: { type: 'string' },
-      cursor: { type: 'string' }, 'include-title': { type: 'boolean' }, 'metadata-only': { type: 'boolean' },
+      cursor: { type: 'string' }, tail: { type: 'string' }, 'permission-mode': {type:'string'}, 'include-title': { type: 'boolean' }, 'metadata-only': { type: 'boolean' },
       ssh: { type: 'string' }, instance: { type: 'string' }, default: { type: 'boolean' }, 'default-server': { type: 'string' },
       'ssh-config': { type: 'string' },
       mode: { type: 'string' }, key: { type: 'string' }, 'message-file': { type: 'string' },
@@ -111,17 +113,29 @@ export async function run(argv: string[]) {
   const options = parsed.values, args = parsed.positionals;
   if (options.help || args.length === 0) return { help };
   const command = args.slice(0, args[0] === 'status' ? 1 : 2).join(' ');
-  const counts: Record<string, number> = { status: 1, 'server list': 2, 'connection add': 3, 'thread list': 2, 'thread show': 3, 'thread log': 3,
+  const counts: Record<string, number> = { status: 1, 'server list': 2, 'connection add': 3, 'thread create': 3, 'thread list': 2, 'thread show': 3, 'thread log': 3,
     'thread send': args.length === 4 ? 4 : 3, 'thread lookup': 3 };
   if (counts[command] !== args.length) throw new CliError(2, 'INVALID_ARGUMENTS', 'Check --help.');
-  const allowed = ['json', 'connection', 'server', ...(command === 'connection add' ? ['ssh','ssh-config','instance','default','default-server','web-url'] : []),
-    ...(['thread list','thread log'].includes(command) ? ['cursor'] : []), ...(command === 'thread list' ? ['include-title','metadata-only','project','cwd'] : []),
+  const allowed = ['json', 'connection', 'server', ...(command === 'thread create' ? ['key','project','cwd','permission-mode'] : []), ...(command === 'connection add' ? ['ssh','ssh-config','instance','default','default-server','web-url'] : []),
+    ...(['thread list','thread log'].includes(command) ? ['cursor'] : []), ...(command === 'thread log' ? ['tail'] : []), ...(command === 'thread list' ? ['include-title','metadata-only','project','cwd'] : []),
     ...(command === 'thread send' ? ['mode','key','message-file','wait','timeout','expected-turn'] : []),
     ...(command === 'thread lookup' ? ['key'] : []), ...(command === 'thread show' ? ['delivery','delivery-key'] : [])];
   if (Object.keys(options).some(key => !allowed.includes(key))) throw new CliError(2, 'INVALID_ARGUMENTS', 'Option is not valid for this command.');
   if (options.delivery !== undefined && options['delivery-key'] !== undefined) throw new CliError(2, 'INVALID_ARGUMENTS', 'Choose --delivery or --delivery-key.');
   if (command === 'thread lookup' && !options.key) throw new CliError(2, 'INVALID_ARGUMENTS', 'Lookup needs --key.');
   if (options.cwd !== undefined && !options.cwd.startsWith('/')) throw new CliError(2, 'INVALID_ARGUMENTS', '--cwd must be absolute on the Server.');
+  const initialPermissionMode = options['permission-mode'];
+  if (command === 'thread create') {
+    if ((!options.project && !options.cwd) || options.project === '' || options.cwd === '')
+      throw new CliError(2, 'INVALID_ARGUMENTS', 'thread create needs --project or --cwd.');
+    if (!args[2]?.trim() || args[2].length > 16384 || (options.key !== undefined && (!options.key.trim() || options.key.length > 128)))
+      throw new CliError(2, 'INVALID_ARGUMENTS', 'Check message and operation key.');
+    if (initialPermissionMode !== undefined && !isConversationInitialPermissionMode(initialPermissionMode))
+      throw new CliError(2, 'INVALID_ARGUMENTS', '--permission-mode must be read-only, accept-edits or full.');
+  }
+  const tail = options.tail === undefined ? undefined : Number(options.tail);
+  if (tail !== undefined && (options.cursor !== undefined || !/^\d+$/u.test(options.tail!) || !Number.isInteger(tail) || tail < 1 || tail > CONVERSATION_TAIL_MAX_TURNS))
+    throw new CliError(2, 'INVALID_ARGUMENTS', `--tail needs 1 to ${CONVERSATION_TAIL_MAX_TURNS} turns and cannot be combined with --cursor.`);
   const sendInput = command === 'thread send' ? await prepareSend(args[3], options['message-file'], options.key, options.mode, options.wait, options.timeout, options['expected-turn']) : null;
   const config = await load();
   let profile: Profile, selected: string, selectionSource: string;
@@ -159,7 +173,7 @@ export async function run(argv: string[]) {
       return { connection: selected, instanceId: directory.instanceId, actor: directory.actor };
     }
     if (args[0] === 'server' && args[1] === 'list' && args.length === 2) return directory;
-    const uriRef = args[0] === 'thread' && args[1] !== 'list' ? reference(args[2], options.server ?? (parseConversationRef(args[2] ?? '') ? undefined : profile.defaultServer)) : null;
+    const uriRef = args[0] === 'thread' && !['list','create'].includes(args[1]!) ? reference(args[2], options.server ?? (parseConversationRef(args[2] ?? '') ? undefined : profile.defaultServer)) : null;
     const serverId = options.server ?? uriRef?.serverId ?? profile.defaultServer;
     const candidates = directory.servers.filter(server => !serverId || server.serverId === serverId);
     if (candidates.length === 0) throw new CliError(3, 'UNKNOWN_SERVER', 'Server unavailable.');
@@ -172,6 +186,25 @@ export async function run(argv: string[]) {
       if ((options.project !== undefined || options.cwd !== undefined) && server.capabilities.discoverFilters !== true) throw new CliError(6, 'UNSUPPORTED_CAPABILITY', 'Host lacks discovery filters.');
       const result = await client.discover(server.serverId, options.cursor, options['include-title'], { projectId: options.project, cwd: options.cwd });
       return { ...result, conversations: result.conversations.map(row => withAttentionLink(row, profile)) };
+    }
+    if (command === 'thread create') {
+      if (!server.capabilities.create || (initialPermissionMode !== undefined && !server.capabilities.initialPermissionMode))
+        throw new CliError(6, 'UNSUPPORTED_CAPABILITY', 'Host lacks thread creation or the requested initial permission control.');
+      const operationKey = options.key ?? randomUUID();
+      const target = { serverId: server.serverId, projectId: options.project, cwd: options.cwd,
+        initialPermissionMode: isConversationInitialPermissionMode(initialPermissionMode) ? initialPermissionMode : undefined };
+      const unknown = (details: object) => new CliError(7, 'CREATE_OUTCOME_UNKNOWN', 'Creation or first input could not be confirmed. Inspect the server before retrying.', false, { operationKey, ...details });
+      let creation;
+      try { creation = await client.create(target, args[2]!, operationKey); }
+      catch (cause) {
+        if (classify(cause).exitCode === 7) throw unknown({});
+        throw cause;
+      }
+      const result = { ...creation, reference: creation.ref && encodeConversationRef(creation.ref) };
+      if (creation.firstMessageState === 'unknown') throw unknown(result);
+      if (creation.firstMessageState === 'rejected')
+        throw new CliError(8, 'FIRST_MESSAGE_REJECTED', 'Thread created; the engine rejected its first message.', false, result);
+      return result;
     }
     if (args[1] === 'show' && args.length === 3) {
       if (options.delivery !== undefined) return await client.delivery(uriRef!, options.delivery);
@@ -186,6 +219,10 @@ export async function run(argv: string[]) {
     }
     if (args[1] === 'log' && args.length === 3) {
       if (server.capabilities.boundedRead !== true) throw new CliError(6, 'UNSUPPORTED_CAPABILITY', 'Host lacks bounded history for this engine.');
+      if (tail !== undefined) {
+        if (server.capabilities.tailRead !== true) throw new CliError(6, 'UNSUPPORTED_CAPABILITY', 'Host lacks tail history.');
+        return await client.tail(uriRef!, tail);
+      }
       return await client.read(uriRef!, options.cursor);
     }
     throw new CliError(2, 'INVALID_ARGUMENTS', 'Check --help.');

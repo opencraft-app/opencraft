@@ -1,14 +1,27 @@
+import type { OpenCraftPermissionMode } from "./permission-modes.js";
 import type { InputCompletion } from "./input-delivery.js";
 /** Stable resource identity. Host connection paths are deliberately absent. */
 export interface ConversationRef { readonly serverId: string; readonly threadId: string }
+export type ConversationInitialPermissionMode = Exclude<OpenCraftPermissionMode, 'auto'>;
+export function isConversationInitialPermissionMode(value: unknown): value is ConversationInitialPermissionMode {
+  return value === 'read-only' || value === 'accept-edits' || value === 'full';
+}
+export const CONVERSATION_TAIL_MAX_TURNS = 5;
+export interface ConversationCreateTarget {
+  serverId: string; projectId?: string; cwd?: string; initialPermissionMode?: ConversationInitialPermissionMode;
+}
+export type ConversationCreation = { operationKey: string } & (
+  | { ref: ConversationRef; creationState: 'created'; firstMessageState: 'submitted' | 'rejected' | 'unknown' }
+  | { ref: null; creationState: 'unknown'; firstMessageState: 'unknown' }
+);
 export type CollaborationTarget = { kind: "actor"; actorId: string } | { kind: "conversation"; ref: ConversationRef };
 export const COLLABORATION_METHOD = "opencraft/collaboration";
 /** Each addition is negotiated independently; version alone grants no capability. */
 export const COLLABORATION_CAPABILITIES = { version: 1, read: true, queue: true, steer: true,
-  servers: true, metadata: true, metadataDiscovery: true, boundedRead: true, lookup: true, deliveryMetadata: true, discoverFilters: true } as const;
+  servers: true, metadata: true, metadataDiscovery: true, boundedRead: true, tailRead: true, lookup: true, deliveryMetadata: true, discoverFilters: true, create: true, initialPermissionMode: true } as const;
 export interface ConversationServer {
   serverId: string; label: string; engine: string; connectionState: 'ready' | 'unavailable' | 'unknown';
-  capabilities: { metadata: boolean; read: boolean; boundedRead: boolean; queue: boolean; steer: boolean; discoverFilters?: boolean };
+  capabilities: { metadata: boolean; read: boolean; boundedRead: boolean; tailRead?: boolean; create?: boolean; initialPermissionMode?: boolean; queue: boolean; steer: boolean; discoverFilters?: boolean };
 }
 export interface ConversationMetadata {
   ref: ConversationRef; projectId: string | null; cwd: string | null;
@@ -21,7 +34,7 @@ export interface ConversationDiscovery {
   serverId: string; cursor?: string | null; includeTitle?: boolean; projectId?: string; cwd?: string;
 }
 export interface ConversationHistory {
-  entries: { turnId: string | null; itemId: string; role: 'user' | 'assistant'; offset: number; text: string }[];
+  entries: { turnId: string | null; itemId: string; role: 'user' | 'assistant'; offset: number; text: string; partial?: boolean }[];
   nextCursor: string | null; watermark: string; truncated: boolean; latestTurnId: string | null;
 }
 export interface ConversationDirectory {
@@ -40,7 +53,7 @@ export interface CollaborationReadCommandMap {
   metadata: { request: { action: 'metadata'; reference: ConversationRef }; result: ConversationMetadata };
   discover: { request: { action: 'discover'; metadataOnly: true } & ConversationDiscovery;
     result: { conversations: ConversationMetadata[]; nextCursor: string | null } };
-  read: { request: { action: 'read'; reference: ConversationRef; bounded: true; cursor?: string };
+  read: { request: { action: 'read'; reference: ConversationRef; bounded: true } & ({ cursor?: string; tail?: never } | { tail: number; cursor?: never });
     result: { ref: ConversationRef; externalContext: boolean; history: ConversationHistory } };
 }
 const prefix = "opencraft://conversation/v1/";

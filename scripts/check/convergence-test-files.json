@@ -48,7 +48,7 @@
   "tests/execution/codex-workspace-startup.test.ts",
   "tests/execution/e2b-workspace-inspector.test.ts",
   "tests/execution/engine-host-receipts.test.ts",
-  "tests/execution/execution-runtime-bootstrap.test.ts",
+  "tests/execution/sandbox-conversation-binding.test.ts",
   "tests/execution/goal-pause-admission.test.ts",
   "tests/execution/hands-disconnect.test.ts",
   "tests/execution/hands-incarnation.test.mjs",

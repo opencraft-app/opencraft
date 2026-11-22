@@ -1,3 +1,6 @@
+import { isAbsolute } from 'node:path';
+import { CONVERSATION_TAIL_MAX_TURNS, isConversationInitialPermissionMode, type ConversationCreateTarget, type ConversationCreation, type ConversationHistory } from '@opencraft/appserver-protocol/collaboration';
+import type { TransportSubmissionContext } from '@opencraft/appserver-client/transport';
 import type { CrewContact } from './crew-contact.js';
 import type { CrewWork, CrewPass } from './crew-work.js';
 import type { InputCompletion } from "@opencraft/appserver-protocol";
@@ -46,6 +49,8 @@ export interface ConversationExecutionPort {
   discoverMetadata?(options: ConversationDiscovery): Promise<{ conversations: ConversationMetadata[]; nextCursor: string | null }>;
   read?(ref: ConversationRef, cursor: string | null): Promise<unknown>;
   readBounded?(ref: ConversationRef, cursor: string | null): Promise<unknown>;
+  readTail?(ref: ConversationRef, limit: number): Promise<ConversationHistory>;
+  create?(target: ConversationCreateTarget, content: string, operationKey: string, context: TransportSubmissionContext): Promise<ConversationCreation>;
   validate(binding: RunBinding): Promise<void>;
   receipt(binding: RunBinding, requestId: string, options?: { includeCompletion: true }): Promise<ExecutionReceipt | null>;
   /** Null is an explicit, safe deferral before any native input attempt. */
@@ -356,13 +361,51 @@ export class Collaboration {
     this.servers(context);
     return { ...result, conversations: result.conversations.filter(row => this.conversationAllowed(context, row.ref, 'conversation.discover')) };
   }
-  async readConversation(context: ActorContext, value: unknown, cursor: string | null = null, bounded = false) {
+  async readConversation(context: ActorContext, value: unknown, cursor: string | null = null, bounded = false, tail?: number) {
     const ref = this.#conversation(context, value, 'conversation.read');
-    const read = bounded ? this.execution.readBounded : this.execution.read;
-    if (!read) throw new CollaborationError(409, 'unsupported_capability');
-    const result = await read.call(this.execution, ref, cursor);
+    if (tail !== undefined && (!bounded || cursor !== null || !Number.isInteger(tail) || tail < 1 || tail > CONVERSATION_TAIL_MAX_TURNS))
+      throw new CollaborationError(400, 'invalid_tail');
+    let result: unknown;
+    if (tail === undefined) {
+      const read = bounded ? this.execution.readBounded : this.execution.read;
+      if (!read) throw new CollaborationError(409, 'unsupported_capability');
+      result = await read.call(this.execution, ref, cursor);
+    } else {
+      if (!this.execution.readTail || !this.execution.directory?.().servers.find(row => row.serverId === ref.serverId)?.capabilities.tailRead)
+        throw new CollaborationError(409, 'unsupported_capability');
+      result = await this.execution.readTail(ref, tail);
+    }
     this.#conversation(context, ref, 'conversation.read');
     return {ref, externalContext: true, history: result};
+  }
+  async createConversation(context: ActorContext, body: Record<string, unknown>, submission?: TransportSubmissionContext) {
+    fields(body, ['serverId','projectId','cwd','content','operationKey','initialPermissionMode']);
+    const serverId = text(body.serverId), content = text(body.content, 16384), operationKey = text(body.operationKey, 128);
+    const projectId = body.projectId === undefined ? undefined : text(body.projectId);
+    const cwd = body.cwd === undefined ? undefined : text(body.cwd, 4096);
+    if ((!projectId && !cwd) || (cwd && (!isAbsolute(cwd) || /[\x00-\x1f]/u.test(cwd))))
+      throw new CollaborationError(400, 'invalid_creation_target');
+    const initialPermissionMode = body.initialPermissionMode;
+    if (initialPermissionMode !== undefined && !isConversationInitialPermissionMode(initialPermissionMode))
+      throw new CollaborationError(400, 'invalid_permission_mode');
+
+    const assertCurrent = () => {
+      submission?.resourceOwner?.assertCurrent();
+      if (!this.actors.isCurrent(context) || !this.admittedActor(context.actorId))
+        throw new CollaborationError(401, 'actor_authentication_required');
+      if (this.#closed || !this.actors.allows(context, 'conversation.create', serverId) || !this.actors.allows(context, 'execution.delegate'))
+        throw new CollaborationError(403, 'conversation_action_denied');
+    };
+    assertCurrent();
+    const server = this.execution.directory?.().servers.find(row => row.serverId === serverId);
+    if (!this.#owns(serverId)) throw new CollaborationError(404, 'conversation_unavailable');
+    if (!this.execution.create || !server?.capabilities.create || (initialPermissionMode && !server.capabilities.initialPermissionMode))
+      throw new CollaborationError(409, 'unsupported_capability');
+
+    return this.execution.create({ serverId, projectId, cwd, initialPermissionMode }, content, operationKey, {
+      ...submission, sender: submission?.sender ?? null, actorContext: context, validUntil: Math.min(context.expiresAt, submission?.validUntil ?? Infinity),
+      resourceOwner: { id: submission?.resourceOwner?.id ?? 'conversation-create:' + context.actorId, assertCurrent },
+    });
   }
   async discover(context: ActorContext, search: string, cursor: string | null, suggestions?: { limit: number; sourceThreadId?: string }) {
     if (!this.actors.isCurrent(context) || !this.admittedActor(context.actorId) || !this.actors.allows(context, 'conversation.search')) throw new CollaborationError(403, 'conversation_action_denied');
@@ -704,7 +747,7 @@ export class Collaboration {
     const relation = this.orchestration.relation(threadId);
     return relation ? {parentThreadId:relation.parentThreadId,visibility:relation.visibility} : null;
   }
-  async command(context: ActorContext, body: Record<string, unknown>) {
+  async command(context: ActorContext, body: Record<string, unknown>, submission?: TransportSubmissionContext) {
     const {action,...args} = body;
     if (action === 'servers') { fields(args, []); return this.servers(context); }
     if (action === 'metadata') { fields(args, ['reference']); return this.metadata(context, args.reference); }
@@ -719,10 +762,12 @@ export class Collaboration {
     if (action === 'orchestration') { fields(args,['threadId','calls']); return this.orchestrationView(context,text(args.threadId),args.calls); }
     if (action === 'reference') { fields(args,['threadId']); return this.reference(context,text(args.threadId)); }
     if (action === 'read') {
-      fields(args,['reference','cursor','bounded']);
+      fields(args,['reference','cursor','bounded','tail']);
       if (args.bounded !== undefined && typeof args.bounded !== 'boolean') throw new CollaborationError(400, 'invalid_field');
-      return this.readConversation(context,args.reference,args.cursor === undefined ? null : text(args.cursor,4096),args.bounded === true);
+      if (args.tail !== undefined && typeof args.tail !== 'number') throw new CollaborationError(400, 'invalid_tail');
+      return this.readConversation(context,args.reference,args.cursor === undefined ? null : text(args.cursor,4096),args.bounded === true,args.tail);
     }
+    if (action === 'create') { return this.createConversation(context, args, submission); }
     if (action === 'discover') {
       fields(args,['search','cursor','suggestions','limit','sourceThreadId']);
       if (args.suggestions !== undefined && args.suggestions !== true) throw new CollaborationError(400, 'invalid_field');

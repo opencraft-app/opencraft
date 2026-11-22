@@ -1068,7 +1068,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
             inputDelegation: (thread,inputId,expected) => actorCollaboration.inputDelegation(thread,inputId,expected),
             prepare: (context,input) => actorCollaboration.referenceContext(context,input),
             canCancel: (context, id) => actorCollaboration.canCancel(context, id),
-            command: (context, body) => actorCollaboration.command(context, body),
+            command: (context, body, submission) => actorCollaboration.command(context, body, submission),
             authorize: (context, threadId, inputId, input) => actorCollaboration.authorizeExecution(context, threadId, inputId, input),
             started: (threadId, inputId, turnId) => actorCollaboration.executionStarted(threadId, inputId, turnId),
             tool: (threadId, turnId, name, args) => actorCollaboration.tool(threadId, turnId, name, args),

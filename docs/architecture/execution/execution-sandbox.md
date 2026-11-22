@@ -105,6 +105,16 @@ CreateSandbox; DSH SDK terminals are covered by the engine integration below.
 
 ## Engine execution integration
 
+Remote conversation bindings consume the preinstalled Hands Codex launcher at
+`/opt/opencraft/runtime/codex/bin/codex`; image/package/template builds own tool
+delivery. Runner startup does not download tools, extract shared archives or
+repair missing runtimes. Existing templates without this layout must be upgraded
+before selecting this runner version. A missing executable fails through the
+existing authorized process bridge without a host fallback. Process transport,
+per-session state, live authorization and cleanup retain their existing owners.
+See [Hands templates](../../hands-e2b-templates.md) for operator preparation.
+
+
 The deployment selects a private, owned `OPENCRAFT_SANDBOX_CONFIG` file (or the
 operator-installed `/etc/opencraft/sandbox.json`). Its schema names a backend,
 backend-owned options, pool capacity/defaults and an explicit environment policy.

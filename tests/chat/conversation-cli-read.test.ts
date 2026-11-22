@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readConversationPage, projectConversationMetadata } from '@opencraft/access-control/conversation-projections';
+import { readConversationPage, readConversationTail, projectConversationMetadata } from '@opencraft/access-control/conversation-projections';
 import { CollaborationClient } from '../../packages/appserver-client/src/collaboration';
 import { MemoryTransport } from '@opencraft/appserver-transport-memory';
 import { encodeJsonRpcMessage, isJsonRpcRequest } from '@opencraft/appserver-protocol';
@@ -97,4 +97,40 @@ test('a 24 MiB conversation reads through bounded pages without requesting full 
  const second=await readConversationPage(invoke,ref,first.nextCursor);
  assert.equal(second.entries[0].text.length,2000);assert.ok(second.nextCursor);
  assert.ok(Buffer.byteLength(JSON.stringify(second))<10000);assert.equal(itemReads,6);
+});
+
+test('tail reads only recent native turns and returns their bounded text in chronological order', async () => {
+  const ref = { serverId: 's', threadId: 't' };
+  const calls: { method: string; params: Record<string, unknown> }[] = [];
+  const history = await readConversationTail(async (method: string, params: Record<string, unknown>) => {
+    calls.push({ method, params });
+    if (method === 'thread/read') {
+      assert.equal(params.includeTurns, false);
+      return { thread: { id: ref.threadId } };
+    }
+    if (method === 'thread/turns/list') {
+      assert.equal(params.limit, 2);
+      assert.equal(params.sortDirection, 'desc');
+      assert.equal(params.itemsView, 'notLoaded');
+      return { data: [{ id: 'new' }, { id: 'previous' }], nextCursor: 'older' };
+    }
+    assert.equal(method, 'thread/items/list');
+    assert.equal(params.sortDirection, 'desc');
+    assert.equal(params.limit, 30);
+    const turnId = params.turnId;
+    return { data: [
+      { turnId, item: { id: 'response', type: 'agentMessage', text: turnId === 'new' ? '🦉'.repeat(2001) : 'previous response' } },
+      { turnId, item: { id: 'tool', type: 'commandExecution', aggregatedOutput: 'never returned' } },
+      { turnId, item: { id: 'prompt', type: 'userMessage', content: [{ type: 'text', text: turnId + ' prompt' }] } },
+    ], nextCursor: null };
+  }, ref, 2);
+  assert.deepEqual(calls.filter(c => c.method === 'thread/items/list').map(c => c.params.turnId), ['new', 'previous']);
+  assert.deepEqual(history.entries.map(e => [e.turnId, e.role, e.text]), [
+    ['previous', 'user', 'previous prompt'], ['previous', 'assistant', 'previous response'],
+    ['new', 'user', 'new prompt'], ['new', 'assistant', '🦉'.repeat(2000)],
+  ]);
+  assert.equal(history.entries.at(-1).offset, 1);
+  assert.equal(history.latestTurnId, 'new');
+  assert.equal(history.nextCursor, null);
+  assert.equal(history.truncated, true);
 });

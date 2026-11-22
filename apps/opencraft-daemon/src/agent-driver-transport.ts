@@ -58,7 +58,7 @@ export class AgentDriverSession {
       try {
         if (!actor || operator && !["reference", "metadata"].includes(params.action)) throw Object.assign(new Error("actor_authentication_required"), {code:"actor_authentication_required",status:401});
         context.resourceOwner?.assertCurrent();
-        const result = await this.collaboration.command(actor, params);
+        const result = await this.collaboration.command(actor, params, context);
         context.resourceOwner?.assertCurrent();
         this.emit(JSON.stringify({...envelope,result}));
       } catch (error) {

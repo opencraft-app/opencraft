@@ -1,4 +1,4 @@
-import type { ConversationRef, CollaborationReadCommandMap, ConversationReceipt, ConversationLookup } from '@opencraft/appserver-protocol/collaboration';
+import type { ConversationRef, CollaborationReadCommandMap, ConversationReceipt, ConversationLookup, ConversationCreateTarget, ConversationCreation } from '@opencraft/appserver-protocol/collaboration';
 import { COLLABORATION_METHOD } from '@opencraft/appserver-protocol/collaboration';
 import { JsonRpcAppServerClient } from './client';
 import type { DuplexTransport } from './transport';
@@ -43,6 +43,9 @@ export class CollaborationClient {
     return this.readCommand<'read'>('boundedRead',
       { action: 'read', reference: ref, bounded: true, ...(cursor ? { cursor } : {}) });
   }
+  tail(ref: ConversationRef, limit: number) {
+    return this.readCommand<'read'>('tailRead', { action: 'read', reference: ref, bounded: true, tail: limit });
+  }
   send(ref: ConversationRef, content: string, operationKey: string, execution: { mode: 'queue' } | { mode: 'steer'; expectedTurnId: string }) {
     return this.command<{ messageId: string; requestId: string; replayed: boolean }>(execution.mode,
       { action: 'send', reference: ref, content, idempotencyKey: operationKey, execution });
@@ -53,6 +56,10 @@ export class CollaborationClient {
   }
   lookup(ref: ConversationRef, operationKey: string) {
     return this.command<ConversationLookup>('lookup', { action: 'lookup', reference: ref, idempotencyKey: operationKey });
+  }
+  create(target: ConversationCreateTarget, content: string, operationKey: string) {
+    if (target.initialPermissionMode !== undefined) this.require('initialPermissionMode');
+    return this.command<ConversationCreation>('create', { action: 'create', ...target, content, operationKey }, 90_000);
   }
   close() { return this.connection.close(); }
 }
