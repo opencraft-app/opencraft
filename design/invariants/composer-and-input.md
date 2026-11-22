@@ -417,6 +417,12 @@ independent attached-rail glass and opaque accessibility fallbacks.
 Composer glass is a non-interactive background pseudo-element, never a filter on
 an ancestor of the native editor/caret. The shell owns layout, border, shadow and
 focus; material variables select ordinary/Newera and opaque accessibility fallbacks.
+The attached rail follows the same rule: its material pseudo-element carries the
+rail border and the shoulder contour mask, while the rail element itself has no
+mask, filter or opacity. Any of those would make the rail a backdrop root, so the
+material blur would see nothing behind it and transcript glyphs would show
+through crisp beneath Goal or queue rows. `smoke-composer-rail-seam.ts` asserts
+this alongside the seam paint coverage.
 Scrolling or keyboard viewport updates must not rewrite the selection, recreate the
 EditorView or blur/refocus it to repair painting.
 The material occupies the shell background plane; editable rows and command boxes

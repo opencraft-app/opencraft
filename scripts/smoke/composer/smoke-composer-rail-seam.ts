@@ -25,13 +25,15 @@ try {
     const shell=rail.nextElementSibling as HTMLElement,r=rail.getBoundingClientRect(),e=shell.getBoundingClientRect(),s=getComputedStyle(shell),p=getComputedStyle(shell,"::before");
     const railPaintBottom=r.bottom-parseFloat(getComputedStyle(rail).paddingBottom)+parseFloat(getComputedStyle(rail).getPropertyValue("--coverage-composer-material-seam"));
     const editorPaintTop=e.top+parseFloat(s.borderTopWidth)+parseFloat(p.top);
-    return{topBorder:s.borderTopColor,highlight:s.getPropertyValue("--composer-seam-highlight").trim(),paintGap:editorPaintTop-railPaintBottom,left:r.left-e.left,right:e.right-r.right,overlap:r.bottom-e.top,corner:parseFloat(s.borderTopLeftRadius),endCorner:parseFloat(s.borderTopRightRadius),bottom:parseFloat(s.borderBottomLeftRadius),materialCorner:parseFloat(p.borderTopLeftRadius),filter:getComputedStyle(rail,"::before").backdropFilter};
+    return{topBorder:s.borderTopColor,highlight:s.getPropertyValue("--composer-seam-highlight").trim(),paintGap:editorPaintTop-railPaintBottom,left:r.left-e.left,right:e.right-r.right,overlap:r.bottom-e.top,corner:parseFloat(s.borderTopLeftRadius),endCorner:parseFloat(s.borderTopRightRadius),bottom:parseFloat(s.borderBottomLeftRadius),materialCorner:parseFloat(p.borderTopLeftRadius),filter:getComputedStyle(rail,"::before").backdropFilter,railMask:getComputedStyle(rail).maskImage,railFilter:getComputedStyle(rail).filter,railOpacity:getComputedStyle(rail).opacity,materialMask:getComputedStyle(rail,"::before").maskImage};
    });
    assert.equal(geometry.topBorder,"rgba(0, 0, 0, 0)","internal seam has no second outline");assert.equal(geometry.highlight,"transparent");
    assert(geometry.paintGap>=-1,"material coverage must stay within the seam, not the full tuck");
    assert(geometry.paintGap<=0,"painted materials leave an uncovered seam: "+JSON.stringify(geometry));
    assert.equal(geometry.corner,geometry.bottom,"editor corners remain symmetric with attachments");assert.equal(geometry.endCorner,geometry.bottom);
    assert.equal(geometry.materialCorner,geometry.corner);assert.equal(geometry.overlap,geometry.corner);assert.equal(geometry.bottom,variant==="newera"?28:16);assert.match(geometry.filter,/blur/);
+   // A mask/filter/opacity on the rail would make it a backdrop root: its material blur would then see nothing and transcript glyphs would show through crisp.
+   assert.equal(geometry.railMask,"none","rail must not be a backdrop root");assert.equal(geometry.railFilter,"none");assert.equal(geometry.railOpacity,"1");assert.notEqual(geometry.materialMask,"none","material carries the contour mask");
    assert(await editor.evaluate((el,original)=>el===original,originalEditor),"same editable DOM");
    if(state==="idle" && variant==="newera" && dpr===2){
     // Probe actual paint coverage against a contrasting backdrop, including the
