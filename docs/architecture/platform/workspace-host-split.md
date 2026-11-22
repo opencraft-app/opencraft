@@ -29,27 +29,27 @@ Docker 部署（`deploy/docker/compose.yaml`）有 `gateway`、`brain`、`hands`
 | 代理调用者令牌 | `$DATA/run/proxy-callers/{pi,dsh,assistant}.json`，每类调用者一个**稳定**令牌，`baseUrl` 必须是 `127.0.0.1` | 同上发布；Pi/DSH 读取 | codex-account-service.ts:163-173；packages/account-pool-host/src/codex-proxy.ts:25；apps/local-agent-host/src/model-config/service.ts:13-19 | AC 签发、WH 分发短期租约 |
 | AppServer runtime 锁＋`/proc` 扫描 | `$DATA/codex/.codex-runtime.sqlite`；扫描所有 `app-server` 进程的 `CODEX_HOME` | brain `codex-app-server` | codex-writer-lock.ts:12、21-40；apps/codex-core/src/app-server.ts:47 | 容器（扫描只需本容器 PID 命名空间） |
 | `CODEX_HOME` | `$DATA/codex/runtime` | brain 原生 `codex app-server --listen unix://…/native-internal.sock` | app-server.ts:48-49、89-91、129-131；host.mjs:119-123 | 容器（每工作区一份） |
-| 原生 Codex 维护 home | `$DATA/native-codex` | codex-core | proxy-core.mjs:14；apps/headless-server/src/headless-application.mjs:1110 | 待定：账号维护属 AC，线程原生数据属容器 |
-| Codex Host overlays 锁 | `$DATA/codex/host-overlays-owner/` | **gateway** 内 `CodexEngineAdapter` | apps/opencraft-daemon/src/codex-engine-adapter.ts:862；headless-application.mjs:1099、1105-1107 | WH |
-| Host 状态库 | `$DATA/codex/opencraft-host-state.sqlite`（queue、message senders、bot rooms／commands／slots、ioa presence、thread creators、thread catalog、catalog sync） | gateway | apps/opencraft-daemon/src/opencraft-host-state-database.ts:16-82、197-200 | 拆分，见 §4 |
-| 暂定线程 | `thread-creations.sqlite` | gateway | apps/opencraft-daemon/src/provisional-threads.ts:25 | WH |
-| 中断恢复 | `interrupted-turn-recovery.sqlite`＋进程内 `setTimeout` | gateway | packages/host-recovery/src/index.ts:33、39、101；codex-engine-adapter.ts:1020 | WH |
-| 会话定时任务 | `conversation-schedules.sqlite`＋每 2 s `setInterval` 轮询 | gateway | packages/host-schedules/src/index.ts:50、196；codex-engine-adapter.ts:1069 | WH（Node 为 owner 定时器，DO 为 alarm） |
+| 原生 Codex 维护 home | `$DATA/native-codex` | codex-core | proxy-core.mjs:14；apps/headless-server/src/headless-application.mjs:1112 | 待定：账号维护属 AC，线程原生数据属容器 |
+| Codex Host overlays 锁 | `$DATA/codex/host-overlays-owner/` | **gateway** 内 `default` WorkspaceHost（由 `CodexEngineAdapter` 打开并消费） | apps/opencraft-daemon/src/workspace-host.ts:54；codex-engine-adapter.ts:870；headless-application.mjs:1099-1101、1107-1109 | WH（第 2 步已落地） |
+| Host 状态库 | `$DATA/codex/opencraft-host-state.sqlite`（queue、message senders、bot rooms／commands／slots、ioa presence、thread creators、thread catalog、catalog sync） | gateway（WorkspaceHost 打开整库） | apps/opencraft-daemon/src/opencraft-host-state-database.ts:16-82、197-200；workspace-host.ts:56、60 | 拆分，见 §4 |
+| 暂定线程 | `thread-creations.sqlite` | gateway（WorkspaceHost） | apps/opencraft-daemon/src/provisional-threads.ts:25；workspace-host.ts:57 | WH |
+| 中断恢复 | `interrupted-turn-recovery.sqlite`＋进程内 `setTimeout` | gateway（WorkspaceHost） | packages/host-recovery/src/index.ts:33、39、101；workspace-host.ts:64-66；端口 codex-engine-adapter.ts:3714、3740 | WH |
+| 会话定时任务 | `conversation-schedules.sqlite`＋每 2 s `setInterval` 轮询 | gateway（WorkspaceHost） | packages/host-schedules/src/index.ts:50、196；workspace-host.ts:62-63；端口 codex-engine-adapter.ts:3771 | WH（Node 为 owner 定时器，DO 为 alarm） |
 | 执行故障回执（已停用） | `execution-fault-receipts.json`，原由 Generation Router 故障驱动的 Worker 写入；写入方已删除，旧文件保留不读 | 无 | 2026-11-22 随 Router 消费端删除 | 不迁移；WH 恢复见 §4.4 |
-| Token usage | `token-usage.sqlite` | gateway | apps/opencraft-daemon/src/token-usage-state-database.ts:49；codex-engine-adapter.ts:977 | 待定（§4.2） |
-| 任务看板 | `tasks.sqlite`（`@opencraft/plugin-tasks`：tasks、task_conversations、members） | gateway | codex-engine-adapter.ts:667；plugins/tasks/src/sqlite.ts:26-41 | IC（跨会话业务记录） |
+| Token usage | `token-usage.sqlite` | gateway | apps/opencraft-daemon/src/token-usage-state-database.ts:49；codex-engine-adapter.ts:994（第 2 步仍由 adapter 打开） | 待定（§4.2） |
+| 任务看板 | `tasks.sqlite`（`@opencraft/plugin-tasks`：tasks、task_conversations、members） | gateway | codex-engine-adapter.ts:673（第 2 步仍由 adapter 打开）；plugins/tasks/src/sqlite.ts:26-41 | IC（跨会话业务记录） |
 | 服务器核心 | `$DATA/opencraft-server.sqlite` | gateway（经 SQL 端口） | packages/storage-node/src/server/index.ts:28 | IC |
 | DSH writer | `$DATA/agent/owner-writer.lock`＋本机存储 owner | brain `dsh-host.mjs` | scripts/server-deployment/dsh-host.mjs:41-43 | 容器 |
 | Pi writer | `$DATA/pi-writer.lock`＋`$DATA/pi-owner` | brain `engine-host.mjs` | scripts/server-deployment/engine-host.mjs:60-62 | 容器 |
 | 机器身份 | `$DATA` 下 daemon machine identity | dsh-host、engine-host 各自读取 | dsh-host.mjs:61；engine-host.mjs:76 | IC 定义部署身份；容器得到派生的工作区身份 |
 | Session capabilities | `$DATA/session-capabilities.json`＋key | dsh-host、engine-host | dsh-host.mjs:72；engine-host.mjs:78、166；packages/session-capabilities/src/remote.ts:29 | WH 签发、容器校验（§3.4） |
 | 模型策略 | `$DATA/model-usage-policy.sqlite`（Pi 与 DSH 同一文件） | engine-host、dsh-host | engine-host.mjs:74；dsh-host.mjs:63-64 | AC 或 IC（策略）；容器只读投影 |
-| 模型配置与**凭据** | `$DATA/models/`（`models.json`＋`credentials.json`） | gateway、Pi、DSH 共同读写 | engine-host.mjs:90；headless-application.mjs:811、846、1003 | 配置：IC；凭据：AC（§5） |
+| 模型配置与**凭据** | `$DATA/models/`（`models.json`＋`credentials.json`） | gateway、Pi、DSH 共同读写 | engine-host.mjs:90；headless-application.mjs:812、847、1004 | 配置：IC；凭据：AC（§5） |
 | Hands 化身 | `execution/exec-owner.sock` 探测 `incarnation` | brain 观察，变化时重启 AppServer | host.mjs:113-118、138-160；scripts/container-deployment/hands-incarnation.mjs | 容器内部事实，经通道上报 WH |
 | Gateway→Core | UDS `$DATA/run/codex-core.sock`＋`daemon.token` | gateway | scripts/container-deployment/paths.mjs:45-47；gateway-application.mjs:14-17、36-37 | WH↔容器通道（§3.3） |
 | Gateway→Pi/DSH | 私有描述符 `run/engine-host.json`、`run/dsh-host.json`（loopback URL＋token） | gateway | paths.mjs:48-51；gateway-application.mjs:15-16、34-35 | 同上 |
 | 回调通道 | 原生 `native.sock` 上的 orchestration callback lane，断开窗口默认 15 s | brain codex-core | app-server.ts:48；apps/codex-core/src/orchestration-callback-lane.ts:374 | 同上 |
-| 跨容器 `/proc` 校验 | gateway 读取 brain 的 `codexPid`／引擎 PID 计算化身 | gateway | codex-engine-adapter.ts:554-564；apps/opencraft-daemon/src/codex-native-core-transport.ts:34；headless-application.mjs:884-893；packages/execution-environment/src/native-execution-origin.ts:10-54 | 由通道 attested incarnation 替代（§3.4） |
+| 跨容器 `/proc` 校验 | gateway 读取 brain 的 `codexPid`／引擎 PID 计算化身 | gateway | codex-engine-adapter.ts:558-568；apps/opencraft-daemon/src/codex-native-core-transport.ts:34；headless-application.mjs:885-894；packages/execution-environment/src/native-execution-origin.ts:10-54 | 由通道 attested incarnation 替代（§3.4） |
 | Git 身份来源 | gateway 读取 `/proc/<pid>/cmdline`、children、`exe` 认定 Git 请求来源 | gateway | apps/headless-server/src/git-identity-origin.ts:24-62 | 容器内校验＋通道 attestation，或随 Git broker 进容器（待定） |
 | Codex Generation Router（已删除） | 原 `codex-generations.sqlite`＋`.codex-routing-owner.sqlite` 与每代独立 `CODEX_HOME` | 原 systemd 部署的 codex-core | 已随 systemd 完整发布装配删除 | 见 §3.5 |
 
@@ -118,7 +118,7 @@ Brain 与 Hands 在 Docker 上是否合并为一个容器也待定：合并贴�
 | 用途 | 现状 | 替代 |
 | --- | --- | --- |
 | Codex 原生进程化身 | Gateway 用 `health.codexPid` 读 `/proc`（native-execution-origin.ts:32-54） | 容器内 `codex-app-server` 自行计算并经 `control` lane 上报；WorkspaceHost 以 `containerIncarnation`＋上报的原生化身作为执行租约身份 |
-| Pi/DSH 执行化身 | headless-application.mjs:884-893 | 同上，由 engine-host／dsh-host 在容器内计算 |
+| Pi/DSH 执行化身 | headless-application.mjs:885-894 | 同上，由 engine-host／dsh-host 在容器内计算 |
 | AppServer runtime 锁的 `/proc` 扫描 | 扫描全部进程（codex-writer-lock.ts:21-40） | 不变，但只需容器自身 PID 命名空间，因为 `CODEX_HOME` 已是容器私有 |
 | Git 身份来源 | Gateway 读 `/proc/<pid>/cmdline`、children、exe（git-identity-origin.ts:24-62） | 需要决定：把来源校验移入容器并签名回执，或把 Git broker 的进程校验部分随容器部署。不得用"信任容器自报"代替现有校验强度 |
 
@@ -147,9 +147,13 @@ Generation Router 只在 systemd 完整发布装配中运行，用于 Codex 引�
 
 WorkspaceHost 的 SQL 库是**一个**按工作区的库，合并今天分散的 `opencraft-host-state`、`thread-creations`、`interrupted-turn-recovery`、`conversation-schedules`（各自迁移账本保留为同库内的独立 schema id，或在合并迁移中显式导入；不能改写已发布迁移）。这让 DO 上一个 DO 对应一个 SQL 库成立。合并与否也可以推迟：第 2 步只要求"按工作区根目录"，不要求合库。
 
+**第 2 步现状（2026-11-22）。** 生命周期核心在 `@opencraft/workspace-host`（packages/workspace-host/src/index.ts）：显式 `WorkspaceIdentity {id, root}`、可选锁端口、按登记顺序打开、失败按逆序回收并释放锁、两阶段关闭（`drain()` 逆序停止 `dispatch` owner 并等待其在途工作；`close()` 逆序关闭 `state` 存储后最后释放锁；单步失败不阻止后续关闭）、同一运行时内同一 root 只允许一个 owner。该包不依赖 Node（`types: []`），供日后每工作区 DO 复用。Node 装配在 apps/opencraft-daemon/src/workspace-host.ts：`openCodexWorkspaceHost` 以显式根打开 overlays 锁（仅在独立 core 之后）→ Host 状态库 → 暂定线程 →（执行租约挂起）→ queue（含内嵌模式旧原生队列一次性导入）→ 定时任务 → 中断恢复 → provider 重试；各 SQLite owner、文件名、迁移与线程位置不变，未改 schema。`CodexEngineAdapter` 只提供端口并消费 `stores`（codex-engine-adapter.ts:870），关闭时先 `drain()`（:2036），在 Thread 操作结算、token usage／附件／任务关闭后再 `close()`（:2084）。Gateway（headless-application.mjs:1101）与桌面 daemon（apps/opencraft-daemon/src/main.ts:163）各装配一个 `default`，根为今天的 `$DATA/codex`／`codexDataDirectory`，无数据迁移。
+
+仍留在 adapter、未进入 WorkspaceHost 的：`token-usage.sqlite`（§4.2 待定）、`tasks.sqlite`（IC）、消息附件 `opencraft-message-attachments`、置顶／标题／thread identity、转录缓存、会话 MCP、维护准入；账号池与内嵌模式的组合 writer 锁（AC）；SSH 远程 Host 的本地 Host 状态镜像（`attachmentHistoryDirectory`，非本机工作区）。Host 状态库内 senders／Bot／IOA 表（上表"待定"）随整库由 WH 打开，归属未改。WorkspaceHost 的 SQLite 仍在 Gateway 主线程同步打开（存量，登记于 `config/main-thread-sync-io.json`）；改为 Worker 承载属方案 A 的后续工作，不在本步。
+
 ### 4.2 Token usage
 
-今天 Gateway 记录 Codex 用量并提供查询（codex-engine-adapter.ts:975-1008）。用量属于计量与策略，最终消费者是 AC（配额）与管理界面（跨工作区汇总）。建议：WH 只记录本工作区的原始用量事件并可靠转交；AC 持有汇总账本。需要确认现有查询 Worker 的语义是否允许"事件先在 WH 落库、再异步转交"的延迟（8.2 节问题 7）。
+今天 Gateway 记录 Codex 用量并提供查询（codex-engine-adapter.ts:992-1024）。用量属于计量与策略，最终消费者是 AC（配额）与管理界面（跨工作区汇总）。建议：WH 只记录本工作区的原始用量事件并可靠转交；AC 持有汇总账本。需要确认现有查询 Worker 的语义是否允许"事件先在 WH 落库、再异步转交"的延迟（8.2 节问题 7）。
 
 ### 4.3 定时任务
 
@@ -218,7 +222,7 @@ $DATA/workspaces/<id>/brain/ 容器私有：codex/runtime（CODEX_HOME）、agen
 | 步 | 内容 | 在 Node 上的价值 | 验证 |
 | --- | --- | --- | --- |
 | 1 | `proxy` 服务成为 Docker 默认；补齐所有 provider 经代理或在该模式下拒绝直连 | Brain 发布不重启账号 owner；Brain 不再需要凭据文件 | 真实 Docker：删除 brain 内 `models/credentials.json` 可读性后 Pi/DSH/Codex 均能调用模型；代理重启期间 Brain 不重启 |
-| 2 | 抽出 `WorkspaceHost` 模块：把 `CodexEngineAdapter` 的 overlays（§4.1 WH 行）改为通过存储端口、以显式工作区根打开；Gateway 只装配 `default` | 所有权显式化；为 DO 准备 | 现有 host-state、恢复、定时任务、队列测试在新入口下全部通过；`check:boundaries` 计数不增 |
+| 2 | 抽出 `WorkspaceHost` 模块：把 `CodexEngineAdapter` 的 overlays（§4.1 WH 行）改为通过存储端口、以显式工作区根打开；Gateway 只装配 `default` | 所有权显式化；为 DO 准备 | 现有 host-state、恢复、定时任务、队列测试在新入口下全部通过；`check:boundaries` 计数不增。**已实现（2026-11-22，见 §4.1 第 2 步现状）**：WH 存储仍是 Node SQLite owner，尚未换成 `SqlDatabase` 端口；多根只在测试中验证，生产仍只装配 `default` |
 | 3 | 定时任务改为 owner 驱动定时器 | 去除 2 s 轮询 | 到期、重启补齐、时钟回拨、关闭排空测试 |
 | 4 | `WorkspaceLink` 与容器内 `workspace-agent`，先以本地 socket 适配器承载现有协议；Gateway 改为只经通道访问 Brain／Hands | 去掉私有描述符与 loopback 依赖 | 断开／重连同一化身不重发变更（held-promise＋丢 ack 测试）；化身变化触发恢复；Gateway 重建后续接 |
 | 5 | 化身改由通道上报；移除 Gateway 的跨容器 `/proc` 读取；解决 Git 来源校验 | 删除 `pid: host` 与 `network_mode: host`（Hands 浏览器出网需求另行评估） | 真实 Docker：去掉两项后执行租约、Git 来源、恢复冒烟通过；PID 重用测试 |

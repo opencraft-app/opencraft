@@ -24,6 +24,7 @@ import { MachineIdentityTransport } from "./machine-transport.js";
 import { CodexProviderBridge } from "./codex-provider-bridge.js";
 import type { BridgeGatewayOptions } from "@opencraft/agent-bridge-host/gateway";
 import { CodexEngineAdapter } from "./codex-engine-adapter.js";
+import { defaultWorkspace } from "./workspace-host.js";
 import { startOpenCraftDaemonServer } from "./server.js";
 import { createDesktopAccountHost } from '@opencraft/plugin-local-account/desktop';
 
@@ -158,6 +159,8 @@ export async function startOpenCraftDaemon(options: {
           executable: options.codexExecutable,
           runtimeDirectory: options.runtimeDirectory,
           dataDirectory: options.codexDataDirectory,
+          // The desktop daemon assembles exactly one WorkspaceHost: `default`, at today's Codex data root.
+          workspace: defaultWorkspace(options.codexDataDirectory),
           artifactDirectory: join(options.dataDirectory,"artifacts"),
           nativeCodexHomeDirectory: options.nativeCodexHomeDirectory,
           coreEndpoint: options.codexCoreEndpoint,

@@ -65,6 +65,7 @@ import { AppServerIdentityOverlay } from "@opencraft/opencraft-daemon/appserver-
 import { TokenUsageQuerySession, TokenUsageQueryTransport } from "@opencraft/opencraft-daemon/token-usage-query-transport";
 import { TokenUsageQueryService } from "@opencraft/opencraft-daemon/token-usage-query-service";
 import { CodexEngineAdapter } from "@opencraft/opencraft-daemon/codex-engine-adapter";
+import { defaultWorkspace } from "@opencraft/opencraft-daemon/workspace-host";
 import { MachineIdentityTransport } from "@opencraft/opencraft-daemon/machine-transport";
 import { ExecutionOwnershipTransport } from "@opencraft/opencraft-daemon/execution-ownership-transport";
 import { ExecutionLeaseStore } from "@opencraft/opencraft-daemon/execution-lease-store";
@@ -105,6 +106,7 @@ import { ThreadAccessStore, ThreadAccessSession } from '@opencraft/access-contro
 import { ActorAccess } from '@opencraft/access-control/actor-access';
 import { Collaboration, CollaborationError, CollaborationHttpApi } from '@opencraft/access-control/collaboration';
 import { OrchestrationRuntimeWorker } from '@opencraft/access-control/orchestration-runtime-store';
+import { communicationExtensionModule } from '@opencraft/access-control/communication-extension';
 import { ThreadOrchestrationBroker } from '@opencraft/access-control/thread-orchestration-broker';
 import { createThreadOrchestrationExecution, driverForThread } from './thread-orchestration-execution.mjs';
 import { THREAD_ORCHESTRATION_TOOLS } from '@opencraft/appserver-protocol/collaboration';
@@ -348,9 +350,11 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     cacheDirectory: process.env.OPENCRAFT_PRODUCT_PLUGIN_CACHE_DIRECTORY || join(dataDirectory, 'product-plugin-packs'),
     metadata: releaseManifest.productPlugins ?? null });
   const identityFence = createCommitFenceBuffer();
-  const serverStorage = await openServerCoreOwner(dataDirectory, { entry: ownerEntry(import.meta.url, 'server-core'), data: { identityFence } });
-  const orchestrationStorage = new OrchestrationRuntimeWorker(join(dataDirectory, 'opencraft-server.sqlite'));
-  try { await orchestrationStorage.start(); } catch (error) { await orchestrationStorage.close().catch(()=>{}); await serverStorage.close(); throw error; }
+  // One writer for opencraft-server.sqlite: orchestration, communication and
+  // Server spaces run on the owner Worker's connection, FIFO with its domains.
+  const serverStorage = await openServerCoreOwner(dataDirectory, { entry: ownerEntry(import.meta.url, 'server-core'),
+    data: { identityFence, ...(communicationExtensionModule() ? { communicationExtensionModule: communicationExtensionModule() } : {}) } });
+  const orchestrationStorage = new OrchestrationRuntimeWorker(serverStorage);
   const releaseLock = async () => { await orchestrationStorage.close(); await serverStorage.close(); };
   let agent;
   let dshAgent;
@@ -632,7 +636,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           });
         }};
       }});
-    serverSpaces = new ServerSpacesRuntime({path:join(dataDirectory,'opencraft-server.sqlite'),bootstrapInstance:true});
+    serverSpaces = new ServerSpacesRuntime({owner:serverStorage,bootstrapInstance:true});
     await serverSpaces.ready;
     threadAccess = new ThreadAccessStore(serverStorage, actorStore, { permissionOwner: serverStorage.database,
       spaces:{allows:(actorId,serverId,threadId)=>!serverSpaces.initialized||actorId&&actorStore.get(actorId)?.kind==='session'||serverSpaces.allows(actorId,serverId,threadId),subscribe:listener=>serverSpaces.subscribe(listener)} });
@@ -1096,6 +1100,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           executable: options.codexExecutable ?? join(root, "runtime/codex/bin/codex"),
           runtimeDirectory: options.runtimeDirectory ?? join(root, "runtime"),
           dataDirectory: join(dataDirectory, "codex"),
+          // The Gateway assembles exactly one WorkspaceHost: `default`, at today's `$DATA/codex` (no data migration).
+          workspace: defaultWorkspace(join(dataDirectory, "codex")),
           artifactDirectory: join(dataDirectory, "artifacts"),
           readGeneratedFile: fileSystem ? (path, signal) => fileSystem.openFile(path, false, signal ?? new AbortController().signal) : undefined,
           prepareArtifact: fileSystem ? (artifact, owner, signal) => fileSystem.prepareArtifact(artifact, owner, signal) : undefined,

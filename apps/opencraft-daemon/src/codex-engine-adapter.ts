@@ -27,7 +27,7 @@ import { serializeHistoryReply, isHistoryResponseTooLargeError, AppServerRpcErro
 import { historyLengthBucket, historyTurnCountBucket, NativeItemPaginationUnsupported, NativeItemReadScheduler, TranscriptReadCache, type HistoryReadContext, type ItemHydrationPath } from "@opencraft/native-history-node";
 import { CodexNativeStorage } from "./codex-native-storage.js";
 import type { AppServerThread } from "@opencraft/appserver-protocol";
-import { InterruptedTurnRecovery, RecoveryNotSubmitted, ProviderTurnRetry, codexProviderFailure, pooledRetryAt, type ProviderRetry, type ProviderFailure, type RecoveryTurn } from "@opencraft/host-recovery";
+import { RecoveryNotSubmitted, codexProviderFailure, pooledRetryAt, type InterruptedTurnRecovery, type ProviderTurnRetry, type ProviderRetry, type ProviderRetryPort, type ProviderFailure, type RecoveryTurn, type TurnRecoveryPort } from "@opencraft/host-recovery";
 import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
 import { nodeObserver } from "@opencraft/observability-contract/node";
 import { labelUsagePeople } from "./token-usage-people.js";
@@ -48,6 +48,7 @@ import { createInterface, type Interface as ReadLineInterface } from "node:readl
 import { join } from "node:path";
 import { OpenCraftHostQueue, type HostQueuedSubmission } from "./opencraft-host-queue.js";
 import { OpenCraftHostStateDatabase } from "./opencraft-host-state-database.js";
+import { defaultWorkspace, openCodexWorkspaceHost, type CodexWorkspaceHost, type WorkspaceIdentity } from "./workspace-host.js";
 import { OpenCraftTokenUsageLedger, type UsageSubmission } from "./token-usage-ledger.js";
 import { CodexTokenUsageRuntime } from "./token-usage-runtime.js";
 import { TokenUsageCollector } from "./token-usage-collector.js";
@@ -334,6 +335,9 @@ interface LocalCodexEngineOptions extends SharedCodexRoutingOptions {
     admission: (requestId: string | number) => CodexNativeRequestAdmission | null) => DuplexTransport;
   /** Opt in before migrating a legacy embedded writer to independently owned core storage. */
   readonly writerOwnership?: boolean;
+  /** The WorkspaceHost whose Codex Host state this engine consumes (workspace-host-split.md §4.1). Compositions
+   * pass it explicitly; omitted, it is the `default` workspace at `dataDirectory`, today's only layout. */
+  readonly workspace?: WorkspaceIdentity;
   readonly executable: string;
   readonly runtimeDirectory: string;
   readonly modelPolicyPath?: string;
@@ -595,7 +599,9 @@ export class CodexEngineAdapter implements DuplexTransport {
   private cachedHistoryWaiters = 0;
   private readonly cachedHistoryCancellations = new Map<string, { threadId: string; cancel(): void }>();
   private readonly nativeTransport: DuplexTransport | null;
-  private releaseOverlays: (() => void) | null = null;
+  /** Local engines only. Owns host state, provisional threads, queue, recovery, provider retry, schedules and the
+   * overlays lock; the fields below are views into it, nulled when this engine stops consuming them. */
+  private workspace: CodexWorkspaceHost | null = null;
   private releaseWriter: (() => void) | null = null;
   private physicalInitializePending = false;
   private physicalInitialized = false;
@@ -857,14 +863,25 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (!this.nativeCore && (this.options.writerOwnership === true || existsSync(join(dataRoot, ".codex-writer.sqlite")))) {
       this.releaseWriter = await acquireCodexWriter(dataRoot);
     }
-    // A separate kernel-held guard scopes only Host overlays. It never claims
-    // the core's account/native writer or opens its account stores.
-    if (this.nativeCore) this.releaseOverlays = await acquireCodexWriter(join(dataRoot, "host-overlays-owner"));
     const runtimeRoot = join(dataRoot, "runtime");
     await mkdir(runtimeRoot, { recursive: true, mode: 0o700 });
-    this.hostState = new OpenCraftHostStateDatabase(dataRoot);
-    this.provisionalThreads = new ProvisionalThreads(dataRoot);
-    this.executionLeases?.suspend();
+    // The WorkspaceHost opens its stores at its explicit root. Behind an independent core it also holds the separate
+    // kernel-held `host-overlays-owner` guard, which never claims the core's account/native writer.
+    const workspace = this.workspace = await openCodexWorkspaceHost(this.options.workspace ?? defaultWorkspace(dataRoot), {
+      overlaysLock: this.nativeCore !== null,
+      migrateNativeQueueFrom: this.nativeCore ? undefined : runtimeRoot,
+      recovery: this.recoveryPort(),
+      providerRetry: this.providerRetryPort(),
+      providerRetryAdmission: () => !this.closeOperation && this.physicalInitialized && this.physicalAvailable && !this.admissionPaused(),
+      schedules: this.scheduleExecutionPort(),
+      diagnostic: event => this.diagnostic(event),
+      schedulesChanged: () => {
+        for (const clientId of this.initializedClients) this.emit({ method: "opencraft/schedules/changed", params: {} }, clientId);
+      },
+    });
+    ({ hostState: this.hostState, provisionalThreads: this.provisionalThreads, queue: this.queue, recovery: this.recovery,
+      providerRetry: this.providerRetry, schedules: this.schedules } = workspace.stores);
+    if (workspace.stores.migratedNativeQueue > 0) this.diagnostic({ event: "native-queue-migrated", count: workspace.stores.migratedNativeQueue });
     const adapter = this;
     const nativeStorage = new CodexNativeStorage(() => string(record(adapter.initializeResult).codexHome) || runtimeRoot);
     const listTurnItems = async (threadId: string, turnId: string, signal?: AbortSignal, path: ItemHydrationPath = "adapter-oversize-fallback") => {
@@ -1006,69 +1023,6 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.tokenUsageState?.close();this.tokenUsageState=null;
       this.diagnostic({event:"token-usage-unavailable",category:"storage-open"});
     }
-    const queue = new OpenCraftHostQueue(dataRoot, this.hostState.database);
-    try {
-      const migrated = this.nativeCore ? 0 : queue.migrateNativeQueue(runtimeRoot);
-      if (migrated > 0) this.diagnostic({ event: "native-queue-migrated", count: migrated });
-    } catch (error) {
-      queue.close();
-      this.hostState.close();
-      this.hostState = null;
-      throw error;
-    }
-    this.queue = queue;
-    this.recovery = new InterruptedTurnRecovery(dataRoot, {
-      serialize: (threadId, operation) => this.withThreadOperation(threadId, operation),
-      inspect: turn => this.inspectInterruptedTurn(turn),
-      continue: async (turn, current, admit) => {
-        await this.prepareSessionMcp(turn.threadId);
-        if (!current()) return null;
-        const inputId = turn.inputId!;
-        this.options.collaboration?.continuing?.(turn.threadId,turn.turnId,inputId);
-        const identity: UsageSubmission = { threadId: turn.threadId, inputId, actorId: null, actorKind: "session", mode: "start", sourceKind: "system", submittedAt: Date.now() };
-        this.tokenUsage?.submission(identity);
-        const workspaceContext = await this.workspaceResumeContext(turn.threadId, undefined, turn.turnId);
-        const response = record(await this.requestPhysical("turn/start", { threadId: turn.threadId, input: [], clientUserMessageId: inputId }, 30_000, undefined, identity, admit, workspaceContext));
-        // Recovery is system work, never a continuation of a human's cost grant.
-        return string(record(response.turn).id) || null;
-      },
-      changed: (threadId, recovery) => {
-        const state = this.recovery?.snapshot(threadId);
-        if (state && ["interrupted", "preparing", "dispatching", "exhausted", "unconfirmed"].includes(state.state)) this.options.collaboration?.orchestration?.observed({
-          threadId, turnId: state.turnId, rootTurnId: state.rootTurnId, state: state.state === "exhausted" ? "exhausted" : state.state === "unconfirmed" ? "unconfirmed" : "recovering",
-        });
-        for (const clientId of this.initializedClients) this.emit({ method: "opencraft/turn-recovery/updated", params: { threadId, recovery } }, clientId);
-      },
-    });
-    this.providerRetry = new ProviderTurnRetry(dataRoot, {
-      serialize: (threadId, operation) => this.withThreadOperation(threadId, operation),
-      inspect: turn => this.inspectProviderRetry(turn),
-      continue: async (turn, current, admit) => {
-        await this.prepareSessionMcp(turn.threadId);
-        if (!current()) return null;
-        const inputId = turn.inputId!;
-        this.options.collaboration?.continuing?.(turn.threadId, turn.turnId, inputId);
-        const identity: UsageSubmission = { threadId: turn.threadId, inputId, actorId: null, actorKind: "session", mode: "start", sourceKind: "system", submittedAt: Date.now() };
-        this.tokenUsage?.submission(identity);
-        const workspaceContext = await this.workspaceResumeContext(turn.threadId, undefined, turn.turnId);
-        const result = record(await this.requestPhysical("turn/start", { threadId: turn.threadId, input: [], clientUserMessageId: inputId }, 30_000, undefined, identity, admit, workspaceContext));
-        const turnId = string(record(result.turn).id);
-        if (turnId) this.options.collaboration?.continued?.(turn.threadId, turn.turnId, turnId);
-        return turnId || null;
-      },
-      changed: threadId => {
-        const recovery = this.providerRetry?.notice(threadId) ?? null;
-        if (recovery && ["scheduled", "exhausted", "unconfirmed"].includes(recovery.state)) this.options.collaboration?.orchestration?.observed({
-          threadId, turnId: recovery.turnId, rootTurnId: recovery.rootTurnId,
-          state: recovery.state === "scheduled" ? "recovering" : recovery.state === "exhausted" ? "exhausted" : "unconfirmed",
-        });
-        this.diagnostic({ event: "provider-retry-updated", threadId, state: recovery?.state ?? "cleared", attempts: recovery?.attempts, retryAt: recovery?.retryAt });
-        for (const clientId of this.initializedClients) this.emit({ method: "opencraft/turn-recovery/updated", params: { threadId, recovery } }, clientId);
-      },
-    }, Date.now, Math.random, () => !this.closeOperation && this.physicalInitialized && this.physicalAvailable && !this.admissionPaused());
-    this.schedules = new ConversationSchedules(dataRoot, this.scheduleExecutionPort(), Date.now, event => this.diagnostic(event), () => {
-      for (const clientId of this.initializedClients) this.emit({ method: "opencraft/schedules/changed", params: {} }, clientId);
-    });
     this.messageAttachments = new OpenCraftMessageAttachments(dataRoot);
     this.installThreadMetadata();
     if (this.nativeCore) {
@@ -2074,12 +2028,13 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.closeOperation = (async () => {
       await this.executionGit?.close(); this.executionGit = undefined;
       await this.transcriptCache?.close(); this.transcriptCache = null;
-      this.provisionalThreads?.close(); this.provisionalThreads = null;
+      // Provisional threads stop being consulted here; the WorkspaceHost closes their store with its passive state.
+      this.provisionalThreads = null;
       this.catalogChanges.clear();
       this.durableCatalog?.close(); this.durableCatalog = null;
-      await this.providerRetry?.close(); this.providerRetry = null;
-      await this.recovery?.close(); this.recovery = null;
-      await this.schedules?.close(); this.schedules = null;
+      // Phase 1: provider retry, turn recovery and schedules stop dispatching and settle their flights.
+      await this.workspace?.drain();
+      this.providerRetry = null; this.recovery = null; this.schedules = null;
       for (const dispose of this.remoteDisposers.splice(0)) dispose();
       await this.nativeTransport?.close();
       this.rejectInternalRequests(new Error("Codex AppServer closed"));
@@ -2112,21 +2067,27 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.poolStore?.close();
       this.poolStore = null;
       await Promise.allSettled([...this.threadOperations.values()]);
-      this.queue?.close();
       this.queue = null;
       this.identity?.close();
       this.identity = null;
       await this.tokenUsageClosing;this.tokenUsageClosing=null;
       await this.tokenUsageAttemptWriter?.close();this.tokenUsageAttemptWriter=null;
       this.tokenUsageState?.close();this.tokenUsageState=null;this.tokenUsageStorageUnavailable=false;
-      this.hostState?.close();
-      this.hostState = null;
       this.messageAttachments?.close();
       this.messageAttachments = null;
       this.tasks?.close();
-      this.releaseWriter?.();
-      this.releaseWriter = null;
-      this.releaseOverlays?.(); this.releaseOverlays = null;
+      // Phase 2: queue, provisional threads and host state close, then the overlays lock is released. A remote
+      // engine's host state is a local mirror it owns itself.
+      const workspace = this.workspace;
+      this.workspace = null;
+      try {
+        if (workspace) await workspace.close();
+        else this.hostState?.close();
+      } finally {
+        this.hostState = null;
+        this.releaseWriter?.();
+        this.releaseWriter = null;
+      }
       for (const request of this.pending.values()) if (request.timer) clearTimeout(request.timer);
       this.pending.clear();
       this.initializeWaiters.length = 0;
@@ -3748,6 +3709,61 @@ export class CodexEngineAdapter implements DuplexTransport {
     void this.withThreadOperation(threadId, () => this.maintainQueue(threadId)).catch(error => {
       this.diagnostic({ event: "queue-maintenance-failed", threadId, reason: errorMessage(error) });
     });
+  }
+
+  private recoveryPort(): TurnRecoveryPort {
+    return {
+      serialize: (threadId, operation) => this.withThreadOperation(threadId, operation),
+      inspect: turn => this.inspectInterruptedTurn(turn),
+      continue: async (turn, current, admit) => {
+        await this.prepareSessionMcp(turn.threadId);
+        if (!current()) return null;
+        const inputId = turn.inputId!;
+        this.options.collaboration?.continuing?.(turn.threadId,turn.turnId,inputId);
+        const identity: UsageSubmission = { threadId: turn.threadId, inputId, actorId: null, actorKind: "session", mode: "start", sourceKind: "system", submittedAt: Date.now() };
+        this.tokenUsage?.submission(identity);
+        const workspaceContext = await this.workspaceResumeContext(turn.threadId, undefined, turn.turnId);
+        const response = record(await this.requestPhysical("turn/start", { threadId: turn.threadId, input: [], clientUserMessageId: inputId }, 30_000, undefined, identity, admit, workspaceContext));
+        // Recovery is system work, never a continuation of a human's cost grant.
+        return string(record(response.turn).id) || null;
+      },
+      changed: (threadId, recovery) => {
+        const state = this.recovery?.snapshot(threadId);
+        if (state && ["interrupted", "preparing", "dispatching", "exhausted", "unconfirmed"].includes(state.state)) this.options.collaboration?.orchestration?.observed({
+          threadId, turnId: state.turnId, rootTurnId: state.rootTurnId, state: state.state === "exhausted" ? "exhausted" : state.state === "unconfirmed" ? "unconfirmed" : "recovering",
+        });
+        for (const clientId of this.initializedClients) this.emit({ method: "opencraft/turn-recovery/updated", params: { threadId, recovery } }, clientId);
+      },
+    };
+  }
+
+  private providerRetryPort(): ProviderRetryPort {
+    return {
+      serialize: (threadId, operation) => this.withThreadOperation(threadId, operation),
+      inspect: turn => this.inspectProviderRetry(turn),
+      continue: async (turn, current, admit) => {
+        await this.prepareSessionMcp(turn.threadId);
+        if (!current()) return null;
+        const inputId = turn.inputId!;
+        this.options.collaboration?.continuing?.(turn.threadId, turn.turnId, inputId);
+        const identity: UsageSubmission = { threadId: turn.threadId, inputId, actorId: null, actorKind: "session", mode: "start", sourceKind: "system", submittedAt: Date.now() };
+        this.tokenUsage?.submission(identity);
+        const workspaceContext = await this.workspaceResumeContext(turn.threadId, undefined, turn.turnId);
+        const result = record(await this.requestPhysical("turn/start", { threadId: turn.threadId, input: [], clientUserMessageId: inputId }, 30_000, undefined, identity, admit, workspaceContext));
+        const turnId = string(record(result.turn).id);
+        if (turnId) this.options.collaboration?.continued?.(turn.threadId, turn.turnId, turnId);
+        return turnId || null;
+      },
+      changed: threadId => {
+        const recovery = this.providerRetry?.notice(threadId) ?? null;
+        if (recovery && ["scheduled", "exhausted", "unconfirmed"].includes(recovery.state)) this.options.collaboration?.orchestration?.observed({
+          threadId, turnId: recovery.turnId, rootTurnId: recovery.rootTurnId,
+          state: recovery.state === "scheduled" ? "recovering" : recovery.state === "exhausted" ? "exhausted" : "unconfirmed",
+        });
+        this.diagnostic({ event: "provider-retry-updated", threadId, state: recovery?.state ?? "cleared", attempts: recovery?.attempts, retryAt: recovery?.retryAt });
+        for (const clientId of this.initializedClients) this.emit({ method: "opencraft/turn-recovery/updated", params: { threadId, recovery } }, clientId);
+      },
+    };
   }
 
   /** Adapter only: scheduling policy and persistence live outside Codex. */
