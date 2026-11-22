@@ -179,3 +179,26 @@ test('a thread read in the first moments of a session answers with no turns for 
     } else assert.ok(reply.error && !reply.result,message);
   }
 });
+
+test('on Windows an empty new rollout makes even the metadata read wait, then the read answers',async()=>{
+  const empty='failed to read thread: thread-store internal error: failed to read session metadata D:\\s\\rollout.jsonl: rollout at D:\\s\\rollout.jsonl is empty';
+  const owner=new CodexOwnerConnection('/unused','unused',()=>{},()=>{},()=>{});
+  let reads=0;
+  (owner as any).write=(frame:any)=>queueMicrotask(()=>{
+    // The first three reads meet the empty rollout; then the first line is written.
+    if(++reads<=3)return (owner as any).receive({id:frame.id,error:{code:-32603,message:empty}});
+    (owner as any).receive({id:frame.id,result:{thread:{id:'native',turns:frame.params.includeTurns?[{id:'first'}]:undefined}}});
+  });
+  const frames:any[]=[];
+  const runtime=new CodexBridgeRuntime(owner,f=>frames.push(f));
+  await runtime.handle({jsonrpc:'2.0',id:'init',method:'initialize',params:{protocolVersion:1,grammarRange:{min:1,max:1}}});
+  runtime.adapter.bind('canonical','native');
+  await runtime.handle({jsonrpc:'2.0',id:'read',method:'history/read',params:{threadId:'canonical',view:'thread',includeTurns:true}});
+  // full, metadata (both empty), a pause, full (empty), metadata readable: no turns yet.
+  assert.deepEqual(frames.find(f=>f.id==='read').result.thread,{id:'native',turns:[]});
+  assert.equal(reads,4);
+  // A rollout that stays empty fails the read in the end instead of waiting forever.
+  reads=-1e6;
+  await runtime.handle({jsonrpc:'2.0',id:'stuck',method:'history/read',params:{threadId:'canonical',view:'thread',includeTurns:true}});
+  assert.ok(frames.find(f=>f.id==='stuck').error);
+});

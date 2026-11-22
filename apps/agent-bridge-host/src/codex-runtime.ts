@@ -303,15 +303,25 @@ export class CodexBridgeRuntime {
       case "history/read": {
         if (p.view === "thread") {
           const nativeId = this.adapter.nativeSession(threadId);
-          try {
-            return await this.owner.request("thread/read", { threadId: nativeId, includeTurns: p.includeTurns === true });
-          } catch (error) {
-            // Between turn/start and native recording the first user message the session has no
-            // readable turns yet; native refuses includeTurns there, which is not a failure of the read.
-            if (!(error instanceof CodexBridgeError) || !["unmaterialized", "turns-unavailable"].includes(error.nativeReason ?? ""))
-              throw error;
-            const read = object(await this.owner.request("thread/read", { threadId: nativeId, includeTurns: false }));
-            return { ...read, thread: { ...object(read.thread), turns: [] } };
+          // Between turn/start and native recording the first user message the session has no
+          // readable turns yet; native refuses includeTurns there, which is not a failure of the
+          // read. On Windows even the session metadata is unreadable while the new rollout file is
+          // still empty, so that short window is waited out (bounded) before the read fails.
+          const notYet = (error: unknown) =>
+            error instanceof CodexBridgeError && ["unmaterialized", "turns-unavailable"].includes(error.nativeReason ?? "");
+          for (let attempt = 0; ; attempt++) {
+            try {
+              return await this.owner.request("thread/read", { threadId: nativeId, includeTurns: p.includeTurns === true });
+            } catch (error) {
+              if (!notYet(error)) throw error;
+            }
+            try {
+              const read = object(await this.owner.request("thread/read", { threadId: nativeId, includeTurns: false }));
+              return { ...read, thread: { ...object(read.thread), turns: [] } };
+            } catch (error) {
+              if (!notYet(error) || attempt >= 9) throw error;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 200));
           }
         }
         const nativeId = this.adapter.nativeSession(threadId);

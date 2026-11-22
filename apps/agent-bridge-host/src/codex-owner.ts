@@ -125,8 +125,9 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     // Early in a new session native can also report its turn listing as not supported yet
     // (-32601); the history is not readable yet, but this is no evidence the session is new.
     // On Windows the new session's rollout file can exist before its first line is written.
-    const turnsUnavailable=!unmaterialized&&pending.method==='thread/read'&&pending.includeTurns===true&&(
-      error?.code===-32601&&message==='list_turns is not supported yet'
+    // Its metadata is unreadable then too, whether or not turns were asked for.
+    const turnsUnavailable=!unmaterialized&&pending.method==='thread/read'&&(
+      pending.includeTurns===true&&error?.code===-32601&&message==='list_turns is not supported yet'
       ||error?.code===-32603&&/^failed to read thread: thread-store internal error: failed to read session metadata [^\n]+: rollout at [^\n]+ is empty$/.test(message));
     const kind=stale?'stale-target':[-32600,-32601,-32602].includes(error?.code??0)?'explicit-reject':'unknown-outcome';
     if(kind==='explicit-reject'&&pending.initial&&!pending.observedTurn&&typeof pending.threadId==='string')this.initialConfigurations.set(pending.threadId,pending.initial);
