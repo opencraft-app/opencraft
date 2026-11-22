@@ -1,11 +1,21 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "lib": ["ES2023", "DOM", "DOM.Iterable"], "types": ["node"] },
+  "compilerOptions": {
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node"
+    ]
+  },
   "include": [
     "src/assets-runtime-storage.ts",
     "src/assets-runtime.worker.ts",
     "src/git-execution-authority.ts",
     "src/headless-assets-storage.ts",
-    "src/human-git-execution.ts"
+    "src/human-git-execution.ts",
+    "src/remote-human-git-execution.ts"
   ]
 }

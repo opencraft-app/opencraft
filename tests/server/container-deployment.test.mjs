@@ -51,6 +51,9 @@ test('external execution uses one absolute data identity and a separate runtime 
   assert.equal(paths.runtimeDirectory, '/srv/projects');
   assert.equal(paths.coreEndpoint, '/srv/state/run/codex-core.sock');
   assert.equal(paths.engineDescriptor, '/srv/state/run/engine-host.json');
+  assert.equal(paths.executionContext,'assets');
+  assert.equal(deploymentPaths({OPENCRAFT_DATA_DIR:'/state',OPENCRAFT_WORKSPACE_DIR:'/work',OPENCRAFT_EXECUTION_CONTEXT:'legacy'}).executionContext,'legacy');
+  assert.throws(()=>deploymentPaths({OPENCRAFT_DATA_DIR:'/state',OPENCRAFT_WORKSPACE_DIR:'/work',OPENCRAFT_EXECUTION_CONTEXT:'fallback'}),/EXECUTION_CONTEXT/);
 });
 
 test('core authentication refuses readable-by-others and empty files', async t => {

@@ -278,3 +278,26 @@ test('MCP failures correlate their safe phase without logging arguments or excep
   for(let i=0;i<110;i++)(mcp as any).diagnoseFailure('dispatch');assert.equal(records.length,100);
  }finally{await client.close();await mcp.close()}
 });
+
+test('native Host Git uses its own audience and accepts no browser-selected scope',async t=>{
+ const {hostGitToken,sessionCapabilityToken,nativeToolCapabilityToken,executionCliSourceToken}=await import('../../packages/session-capabilities/src/credentials.js');
+ const key=randomBytes(32),source={serverId:'server:fixture:pi',threadId:'pi_original',inputId:'original'};
+ let calls=0;
+ const gateway=new SessionCapabilityMcp(new SessionCapabilities(),key,undefined,{hostGit:async session=>{
+  calls++;if(session.serverId!==source.serverId||session.threadId!==source.threadId||session.execution?.inputId!==source.inputId)throw Error('denied');
+  return {opaque:'synthetic-handoff'};
+ }});await gateway.listen();t.after(()=>gateway.close());
+ const url=new URL('/host-git',gateway.cliEndpoint);
+ const session={serverId:source.serverId,threadId:source.threadId,execution:{inputId:source.inputId,executionId:'native',callId:'tool'}};
+ const request=(token:string,body:unknown={},origin?:string)=>fetch(url,{method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json',...(origin?{origin}:{})},body:JSON.stringify(body)});
+ for(const token of [sessionCapabilityToken(key,session),nativeToolCapabilityToken(key,session),executionCliSourceToken(key,session)])
+  assert.equal((await request(token)).status,401);
+ assert.equal(calls,0);
+ const token=hostGitToken(key,source);
+ assert.deepEqual(await (await request(token)).json(),{opaque:'synthetic-handoff'});
+ assert.equal((await request(token,{account:'actor:human://forged/owner'})).status,400);
+ assert.equal((await request(token,{},'https://untrusted.example')).status,403);
+ assert.equal((await request(hostGitToken(key,{...source,inputId:'other'}))).status,403);
+ assert.equal((await request(hostGitToken(key,{...source,serverId:'server:other:pi'}))).status,403);
+ assert.equal((await fetch(new URL('/mcp',url),{method:'POST',headers:{authorization:'Bearer '+token},body:'{}'})).status,401);
+});

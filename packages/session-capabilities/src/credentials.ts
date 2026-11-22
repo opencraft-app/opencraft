@@ -55,3 +55,12 @@ export function executionCliSourceSession(key:Buffer,token:string):CapabilitySes
     || !claims[3].inputId||!claims[3].executionId)throw Error('cliUnavailable');
   return {serverId:claims[1],threadId:claims[2],execution:claims[3]};
 }
+
+/** Same-UID compiled Host handoff, not an MCP or model CLI audience. The Server
+ * still derives identity and verifies the original live native input. */
+export function hostGitToken(key: Buffer, source: {serverId:string;threadId:string;inputId:string}):string {
+  const fields=[source.serverId,source.threadId,source.inputId];
+  if(key.length!==32||fields.some(v=>typeof v!=='string'||!v||v.length>512||/[\x00-\x1f\x7f]/u.test(v)))throw Error('git_execution_unavailable');
+  const payload=Buffer.from(JSON.stringify(['host-git',...fields])).toString('base64url');
+  return payload+'.'+createHmac('sha256',key).update(payload).digest('base64url');
+}

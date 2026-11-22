@@ -462,3 +462,139 @@ test("historical leases without captured Actor provenance never acquire today's 
   f.leases.started(f.locator.threadId, "legacy-turn", "legacy-input", f.native.incarnation);
   await assert.rejects(f.assets.executionGitGrant({ ...f.locator, inputId: "legacy-input" }));
 });
+
+async function remoteExecution(t:test.TestContext,f:Awaited<ReturnType<typeof fixture>>) {
+ const {SessionCapabilityMcp,capabilitySigningKey}=await import('@opencraft/session-capabilities/mcp');
+ const {SessionCapabilities}=await import('@opencraft/session-capabilities');
+ const {RemoteSessionCapabilities}=await import('@opencraft/session-capabilities/remote');
+ const {createRemoteHumanGitExecution}=await import('../../apps/headless-server/src/remote-human-git-execution.js');
+ const directory=join(f.root,'data'),descriptorPath=join(directory,'session-capabilities.json');
+ const key=await capabilitySigningKey(join(directory,'session-capabilities.key'));
+ let forcedReply:unknown;
+ const open=async()=>{
+  const gateway=new SessionCapabilityMcp(new SessionCapabilities(),key,undefined,{descriptorPath,retainEndpoint:true,hostGit:async session=>{
+   if(session.serverId!=='server:fixture:pi'||session.threadId!==f.locator.threadId||!session.execution?.inputId)throw Error('denied');
+   if(forcedReply!==undefined)return forcedReply;
+   return {authority:f.assets.gitAuthority,hosts:f.assets.gitHosts,grant:await f.execution.handoff({...f.locator,inputId:session.execution.inputId})};
+  }});await gateway.listen();return gateway;
+ };
+ let gateway=await open();
+ const remote=createRemoteHumanGitExecution({directory,runtimeDirectory:join(f.root,'remote-sockets'),workerFile:join(f.root,'runtime/personal-git-worker.mjs'),
+  capabilities:new RemoteSessionCapabilities(directory,'server:fixture:pi'),inspect:async grant=>grant.native.incarnation===f.native.incarnation});
+ t.after(async()=>{await remote.close();await gateway.close();});
+ return {remote,respond(value:unknown){forcedReply=value;},async restart(){await gateway.close();gateway=await open();},async disconnect(){await gateway.close();}};
+}
+
+test('independent native execution receives sealed Git evidence, signs a real commit and rediscovers a restarted Gateway',async t=>{
+ const f=await fixture(t),r=await remoteExecution(t,f),snapshot=await r.remote.prepare(f.locator);
+ const env={...snapshot.apply(f.base),OPENCRAFT_THREAD_ID:f.locator.threadId};
+ await writeFile(join(f.repo,'remote.txt'),'synthetic independent owner\n');await f.nativeGit('add','remote.txt');
+ const commit=await command(join(f.root,'bin/git'),['commit','-m','IndependentGit'],f.repo,env);
+ assert.equal(commit.code,0,commit.err);
+ assert.match((await f.nativeGit('cat-file','commit','HEAD')).out,/gpgsig -----BEGIN SSH SIGNATURE-----/);
+ await r.restart();
+ const open=()=>queryGitIdentityBroker(env.OPENCRAFT_GIT_BROKER_SOCKET!,{op:'open',threadId:f.locator.threadId,host:'github.com',operation:'ls-remote',capability:env.OPENCRAFT_GIT_CAPABILITY});
+ assert.equal((await open()).status,'configured','the retained execution broker reauthorizes at the successor Gateway');
+ f.setLive(false);assert.notEqual((await open()).status,'configured','persisted active rows do not replace native liveness');
+});
+
+test('independent native authorization fails closed on Gateway loss and membership revocation without opening another writable vault',async t=>{
+ const f=await fixture(t),r=await remoteExecution(t,f),snapshot=await r.remote.prepare(f.locator),env=snapshot.overlay();
+ const open=()=>queryGitIdentityBroker(env.OPENCRAFT_GIT_BROKER_SOCKET!,{op:'open',threadId:f.locator.threadId,host:'github.com',operation:'ls-remote',capability:env.OPENCRAFT_GIT_CAPABILITY});
+ const session=await open();assert.equal(session.status,'configured');
+ await r.disconnect();assert.notEqual((await open()).status,'configured');
+ await r.restart();assert.equal((await open()).status,'configured');
+ f.members.setActor(f.actorId,'member',false,'fixture');
+ assert.notEqual((await open()).status,'configured');
+ const credential=await queryGitIdentityBroker(env.OPENCRAFT_GIT_BROKER_SOCKET!,{op:'credential',sessionId:session.sessionId,protocol:'https',host:'github.com'});
+ assert.notEqual(credential.status,'configured');assert.ok(!JSON.stringify(credential).includes('synthetic-github-api-token'));
+ await assert.rejects(r.remote.prepare(f.locator));
+});
+
+test('real independent Pi owner consumes the Server handoff at its bash boundary and never opens a writable vault',async t=>{
+ const {startIndependentEngineHost}=await import('../../scripts/server-deployment/engine-host.mjs');
+ const {ModelConfigurationRepository}=await import('../../apps/local-agent-host/src/model-config/repository.js');
+ const {piModel}=await import('../../plugins/pi-engine/src/index.js');
+ const {SessionCapabilities}=await import('@opencraft/session-capabilities');
+ const {SessionCapabilityMcp,capabilitySigningKey}=await import('@opencraft/session-capabilities/mcp');
+ const {createNativeExecutionTurnInspector}=await import('@opencraft/opencraft-daemon/native-execution-inspector');
+ const f=await fixture(t),directory=join(f.root,'data');
+ let requests=0;
+ const model=createServer(async(req,res)=>{
+  for await(const _chunk of req) { /* Consume only synthetic model input. */ }
+  const first=++requests===1;
+  const delta=first?{role:'assistant',tool_calls:[{index:0,id:'native-git',type:'function',function:{name:'bash',arguments:JSON.stringify({command:'printf independent-native > independent.txt && git add independent.txt && git commit -m IndependentNativePiGit',yield_time_ms:1000})}}]}:{role:'assistant',content:'done'};
+  const chunk=(value:unknown,finish:unknown)=>'data: '+JSON.stringify({id:'synthetic-'+requests,object:'chat.completion.chunk',choices:[{index:0,delta:value,finish_reason:finish}]})+'\n\n';
+  res.writeHead(200,{'content-type':'text/event-stream'});res.write(chunk(delta,null));res.end(chunk({},first?'tool_calls':'stop')+'data: [DONE]\n\n');
+ });model.listen(0,'127.0.0.1');await once(model,'listening');
+ t.after(async()=>{model.closeAllConnections();await new Promise<void>(r=>model.close(()=>r()));});
+ await new ModelConfigurationRepository(join(directory,'models')).initialize({schemaVersion:1,revision:0,
+  defaultModel:{providerId:'synthetic',modelId:'synthetic'},providers:[{id:'synthetic',name:'Synthetic',protocol:'openai-completions',credentialRef:null,authentication:'none',baseUrl:`http://127.0.0.1:${(model.address() as {port:number}).port}/v1`,enabled:true,
+  models:[{id:'synthetic',name:'Synthetic',enabled:true,input:['text'],contextWindow:64000,maxTokens:1000,reasoningEfforts:false}]}]});
+ const descriptorPath=join(f.root,'native-host.json');
+ const host=await startIndependentEngineHost({descriptorPath,dataDirectory:directory,runtimeDirectory:f.repo,engines:['pi'],defaultEngine:'pi',executionContext:'assets',gitWorkerFile:join(f.root,'runtime/personal-git-worker.mjs')});
+ t.after(()=>host.close());
+ const descriptor=JSON.parse(await readFile(descriptorPath,'utf8'));
+ const client={notify(){},async request(){throw Error('Unexpected client tool');}};
+ const inspect=createNativeExecutionTurnInspector((method,params)=>host.pi.request(method,params,client));
+ const issuer=createHumanGitExecution({directory,runtimeDirectory:join(f.root,'unused-gateway-broker'),workerFile:join(f.root,'runtime/personal-git-worker.mjs'),hosts:f.assets.gitHosts,authority:f.assets.gitAuthority!,grant:f.assets.executionGitGrant,authorize:f.authorize,
+  inspect:async handoff=>handoff.native.incarnation===f.native.incarnation&&await inspect({threadId:handoff.scope.threadId,turnId:handoff.native.turnId,engineIncarnation:handoff.native.incarnation} as any)==='active'});
+ t.after(()=>issuer.close());
+ const key=await capabilitySigningKey(join(directory,'session-capabilities.key'));
+ const gateway=new SessionCapabilityMcp(new SessionCapabilities(),key,undefined,{descriptorPath:join(directory,'session-capabilities.json'),hostGit:async session=>{
+  if(session.serverId!==`server:${descriptor.machineId}:pi`||!session.execution?.inputId)throw Error('denied');
+  return {authority:f.assets.gitAuthority,hosts:f.assets.gitHosts,grant:await issuer.handoff({hostId:'opencraft-server',threadId:session.threadId,inputId:session.execution.inputId})};
+ }});await gateway.listen();t.after(()=>gateway.close());
+ const {thread}=await host.pi.request('thread/start',{model:piModel('synthetic','synthetic'),cwd:f.repo},client);
+ const inputId='independent-original';
+ f.leases.capture(thread.id,inputId,f.leases.getSubmission(f.locator.threadId,f.locator.inputId)!);
+ f.leases.begin(thread.id,inputId,f.native.incarnation);
+ let stop=()=>{};
+ const done=new Promise<any>((resolve,reject)=>{
+  const timer=setTimeout(()=>{stop();reject(Error('Independent native Pi did not settle'));},30000);
+  stop=host.pi.subscribe((method,params)=>{if(method==='turn/completed'&&params.threadId===thread.id){clearTimeout(timer);stop();resolve(params.turn);}});
+ });
+ const started=await host.pi.request('turn/start',{threadId:thread.id,clientUserMessageId:inputId,input:[{type:'text',text:'Create a synthetic signed commit.'}]},client);
+ f.leases.started(thread.id,started.turn.id,inputId,f.native.incarnation);
+ assert.equal((await done).status,'completed');
+ assert.equal((await f.nativeGit('log','-1','--format=%s')).out,'IndependentNativePiGit');
+ assert.match((await f.nativeGit('cat-file','commit','HEAD')).out,/gpgsig -----BEGIN SSH SIGNATURE-----/);
+ await writeFile(join(f.root,'independent-allowed-signers'),'fixture@example.test '+f.metadata.hosts['github.com'].signing.publicKey+'\n');
+ assert.equal((await f.nativeGit('-c','gpg.ssh.allowedSignersFile='+join(f.root,'independent-allowed-signers'),'verify-commit','HEAD')).code,0);
+ assert.equal(requests,2);
+ await assert.rejects(issuer.handoff({hostId:'opencraft-server',threadId:thread.id,inputId}),'completed native state overrides a stale active lease');
+});
+
+
+test('retiring an independent handoff aborts its pending read and cannot create a broker afterwards',async()=>{
+ const {createRemoteHumanGitExecution}=await import('../../apps/headless-server/src/remote-human-git-execution.js');
+ let entered!:()=>void,resume!:()=>void,signal:AbortSignal|undefined;
+ const reached=new Promise<void>(r=>entered=r),gate=new Promise<void>(r=>resume=r);
+ const execution=createRemoteHumanGitExecution({directory:'/not-opened',runtimeDirectory:'/not-opened',workerFile:'/not-opened',inspect:async()=>true,
+  capabilities:{async hostGit(_thread,_input,s){signal=s;entered();await gate;return {authority:'a'.repeat(64),hosts:['github.com'],grant:null};}}});
+ const preparing=execution.prepare({hostId:'opencraft-server',threadId:'original',inputId:'input'});
+ await reached;await execution.close();assert.equal(signal?.aborted,true);resume();
+ await assert.rejects(preparing,/git_execution_unavailable/);
+});
+
+
+test('explicit anonymous installation has no personal Git authority and is not confused with unavailable admission',async()=>{
+ const {createRemoteHumanGitExecution}=await import('../../apps/headless-server/src/remote-human-git-execution.js');
+ let response:unknown={mode:'anonymous'};
+ const execution=createRemoteHumanGitExecution({directory:'/not-opened',runtimeDirectory:'/not-opened',workerFile:'/not-opened',inspect:async()=>true,capabilities:{async hostGit(){return response;}}});
+ const input={hostId:'opencraft-server' as const,threadId:'native',inputId:'original'};
+ try {
+  assert.deepEqual((await execution.prepare(input)).overlay(),{});
+  for(response of [null,{}, {mode:'anonymous',account:'forged'}])await assert.rejects(execution.prepare(input));
+ }finally{await execution.close();}
+});
+
+
+test('an independent broker that pinned an Actor authority never downgrades to anonymous mode',async t=>{
+ const f=await fixture(t),r=await remoteExecution(t,f);
+ const snapshot=await r.remote.prepare(f.locator),env=snapshot.overlay();
+ r.respond({mode:'anonymous'});
+ await assert.rejects(r.remote.prepare(f.locator));
+ const result=await queryGitIdentityBroker(env.OPENCRAFT_GIT_BROKER_SOCKET!,{op:'open',threadId:f.locator.threadId,host:'github.com',operation:'ls-remote',capability:env.OPENCRAFT_GIT_CAPABILITY});
+ assert.notEqual(result.status,'configured');
+});

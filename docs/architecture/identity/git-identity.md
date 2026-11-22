@@ -208,11 +208,11 @@ command even if its authorization read was admitted before the write completed.
 It strips only its own Turn-scoped request-ID prefix to recover the original
 admitted input, preserves background-command ownership, and refuses unknown
 preparation rather than using the server credential. The current default wiring
-covers **in-process Headless Pi** with the packaged Git runtime. The trusted
-adapter supplies its actual Node executable for npm-style execution packages
-without a bundled `bin/node`. Independent execution Hosts, DSH and native Codex
-handoff are still follow-up integration, not implied by a saved connection or
-this first native consumer. No deployment or sandbox isolation claim is made.
+covers **in-process Headless Pi** and independently owned Pi configured with
+`executionContext: "assets"`, using the packaged Git runtime. The trusted adapter
+supplies its actual Node executable for npm-style packages without `bin/node`.
+Native DSH/Codex handoff still needs actual-boundary integration and is not implied
+by a saved connection. No deployment or sandbox isolation claim is made.
 
 `tests/identity/assets-execution-git.test.ts` uses a real Human/account and HTTP
 save, sole vault Worker, managed Git launcher, actual SSH signature verification,
@@ -220,3 +220,44 @@ and a native Pi bash tool with a synthetic model. GitHub responses are synthetic
 no real account, token or remote key is used. It also covers native-liveness loss,
 Actor/membership disable-enable cycles, the absent public grant action, retirement
 during preparation and held-provider-IO responsiveness.
+
+
+### Independently owned Pi
+
+The compiled native owner uses the existing private session-capability attachment
+and loopback listener for `/host-git`. Its `host-git` HMAC audience is distinct
+from MCP sessions, native tools and model-visible CLI credentials. The request
+contains no body scope: Server, Thread and original input come from signed Host
+claims. Gateway maps the installed Server back to its physical Host and repeats
+the same existing Actor/membership and bounded native Turn checks before returning
+only the sealed Git handoff and deployment fingerprint. No credential key, PAT or
+private signing key crosses that listener; it is not a browser endpoint or a tool.
+
+The native Pi owner retains its own read-only execution broker and checks its own
+process incarnation. On each authorization it rediscovers the current owned
+Gateway descriptor and rechecks the exact execution, Actor and membership epochs.
+It pins the authority/Host list once in use, aborts pending reads on retirement,
+and refuses mismatched successors. Gateway loss fails closed. Recovery permits a
+later explicitly invoked command with retained valid evidence; it never replays
+a running or uncertain Git operation.
+
+New container Pi assembly defaults `OPENCRAFT_EXECUTION_CONTEXT=assets`, selects
+`executionContext: "assets"` and its
+packaged Git Worker, so that owner does not open `ExecutionEnvironmentRuntime` or
+create another writable vault. An absent mode retains historical legacy product
+configuration; `OPENCRAFT_EXECUTION_CONTEXT=legacy` explicitly retains that existing
+product ENV/Git owner instead. This selects assembly, not an authorization fallback
+or an automatic credential-partition migration.
+There is no runtime sniffing, fallback between modes or shared second writer in
+Assets-mode Pi. This is a trusted same-machine, same-UID attachment, not a remote
+network credential protocol or hostile-process isolation. DSH and native Codex
+still need their own actual-boundary integration before the complete deployment
+can be described as using the single native Assets authority throughout.
+
+
+An explicitly configured anonymous installation answers with a separate
+`mode: "anonymous"` status and no credential authority. This preserves ordinary
+anonymous shells without inventing a Human grant or opening a vault on the native
+owner. It is never inferred from a missing login or failed issuer. Once a native
+broker has pinned a credential authority, an anonymous response is a refused
+downgrade, not fallback. Invalid, unavailable and revoked replies always fail.

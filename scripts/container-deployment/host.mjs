@@ -70,6 +70,7 @@ try {
   await writeFile(paths.engineConfig, JSON.stringify({
     descriptorPath: paths.engineDescriptor, dataDirectory: paths.dataDirectory,
     runtimeDirectory: paths.runtimeDirectory, engines: ['dsh', 'pi'], defaultEngine: 'pi',
+    executionContext: paths.executionContext, gitWorkerFile: join(root, 'runtime', 'personal-git-worker.mjs'),
     dshDescriptorPath: paths.dshDescriptor,
     fileSystemOwner: {endpoint:paths.fileSystemEndpoint,tokenFile:paths.fileSystemToken},
   }) + '\n', { mode: 0o600 });

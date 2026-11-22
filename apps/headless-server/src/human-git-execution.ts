@@ -4,6 +4,7 @@ import { ExecutionEnvironmentSnapshot } from "@opencraft/execution-environment/e
 import type { GitExecutionLocator, GitExecutionHandoff } from "@opencraft/execution-environment/git-execution";
 export interface HumanGitExecutionPort {
   prepare(input: GitExecutionLocator): Promise<ExecutionEnvironmentSnapshot>;
+  handoff(input: GitExecutionLocator): Promise<GitExecutionHandoff | null>;
   close(): Promise<void>;
 }
 /** Compiled host composition only. No browser route, raw credential read, or
@@ -16,24 +17,30 @@ export function createHumanGitExecution(options: {
   authority: string;
   grant(input: GitExecutionLocator): Promise<GitExecutionHandoff | null>;
   inspect(handoff: GitExecutionHandoff): Promise<boolean>;
-  authorize(scope: GitGrantScope): boolean;
+  authorize(scope: GitGrantScope): boolean | Promise<boolean>;
 }): HumanGitExecutionPort {
   let bridge: PersonalGitEnvironment | undefined,
     closed = false;
   async function current(handoff: GitExecutionHandoff) {
-    if (closed || !options.authorize(handoff.scope)) return false;
-    return (await options.inspect(handoff)) && !closed && options.authorize(handoff.scope);
+    if (closed || !(await options.authorize(handoff.scope)) || closed) return false;
+    if (!(await options.inspect(handoff)) || closed) return false;
+    return (await options.authorize(handoff.scope)) && !closed;
+  }
+  async function checkedHandoff(input: GitExecutionLocator) {
+    if (closed) throw Error("git_execution_unavailable");
+    const handoff = await options.grant(input);
+    if (closed) throw Error("git_execution_unavailable");
+    if (handoff && (handoff.authority !== options.authority || !(await current(handoff))))
+      throw Error("git_execution_unavailable");
+    if (closed) throw Error("git_execution_unavailable");
+    return handoff;
   }
   return {
+    handoff: checkedHandoff,
     async prepare(input) {
-      if (closed) throw Error("git_execution_unavailable");
-      const handoff = await options.grant(input);
-      if (closed) throw Error("git_execution_unavailable");
+      const handoff = await checkedHandoff(input);
       if (!handoff)
         return new ExecutionEnvironmentSnapshot({ account: null, ...input, projectId: input.projectId ?? null }, {});
-      if (handoff.authority !== options.authority) throw Error("git_execution_unavailable");
-      if (!(await current(handoff))) throw Error("git_execution_unavailable");
-      if (closed) throw Error("git_execution_unavailable");
       bridge ??= new PersonalGitEnvironment(
         options.directory,
         options.runtimeDirectory,

@@ -702,6 +702,16 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     capabilityMcp = new SessionCapabilityMcp(capabilities, capabilityKey, capabilityBindings, {
       descriptorPath:join(dataDirectory,'session-capabilities.json'), retainEndpoint: true,
       cliDirectory:options.threadCliDirectory ?? join(dataDirectory,'thread-cli'),
+      hostGit:async session=>{
+        if(session.serverId!==conversationExecution.serverForThread(session.threadId)
+          ||conversationExecution.hostForServer(session.serverId)!=='opencraft-server'||!session.execution?.inputId)
+          throw Error('git_execution_unavailable');
+        // Only explicit installation-level anonymous mode can run without a
+        // personal authority. Missing login/observer/issuer is never fallback.
+        if(!humanGitExecution){if(anonymousDeployment)return {mode:'anonymous'};throw Error('git_execution_unavailable');}
+        const grant=await humanGitExecution.handoff({hostId:'opencraft-server',threadId:session.threadId,inputId:session.execution.inputId});
+        return {authority:assetsService.gitAuthority,hosts:assetsService.gitHosts,grant};
+      },
       authorizeExecution:async session=>{
         if(session.serverId!==conversationExecution.serverForThread(session.threadId))throw new CollaborationError(403,'execution_delegation_required');
         await actorCollaboration.admittedExecution(session.threadId,session.execution.inputId);

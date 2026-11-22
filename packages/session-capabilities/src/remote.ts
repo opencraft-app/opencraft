@@ -4,7 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { sessionCapabilityToken } from "./mcp.js";
-import { nativeToolCapabilityToken } from './credentials.js';
+import { nativeToolCapabilityToken, hostGitToken } from './credentials.js';
 import type { CapabilityExecution, CapabilityResult, CapabilityTool, SessionCapabilityPort } from "./index.js";
 import { capabilityResultFromMcp } from "./content.js";
 
@@ -51,6 +51,19 @@ export class RemoteSessionCapabilities implements SessionCapabilityPort {
       signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]) });
     await response.body?.cancel(); if (!response.ok) throw Error('Execution admission refused');
     signal.throwIfAborted();
+  }
+  /** Compiled native owner only: no retries, no account selector, no clear Git secrets. */
+  async hostGit(threadId:string,inputId:string,signal?:AbortSignal):Promise<unknown> {
+    const {url}=await this.connection(threadId);
+    const key=await this.privateFile(join(this.directory,'session-capabilities.key'));
+    const token=hostGitToken(key,{serverId:this.serverId,threadId,inputId});
+    const response=await fetch(new URL('/host-git',url),{method:'POST',redirect:'error',
+      headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:'{}',signal:signal?AbortSignal.any([signal,AbortSignal.timeout(5000)]):AbortSignal.timeout(5000)});
+    if(!response.ok){await response.body?.cancel();throw Error('git_execution_unavailable');}
+    // The native Server owns this bounded reply; reject malformed/oversized data.
+    let size=0;const chunks:Uint8Array[]=[];
+    for await(const chunk of response.body!){size+=chunk.length;if(size>16384)throw Error('git_execution_unavailable');chunks.push(chunk);}
+    return JSON.parse(Buffer.concat(chunks).toString());
   }
   async refresh(threadId: string, execution?: CapabilityExecution, signal?: AbortSignal): Promise<void> {
     this.catalog.delete(threadId);

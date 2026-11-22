@@ -266,3 +266,13 @@ test('anonymous installation can subsequently initialize its first real administ
   const setup=await fetch(app.url+'/__opencraft_account/setup',{method:'POST',headers:{origin:anonymous.url,'content-type':'application/json'},body:JSON.stringify({proof,mode:'web',username:'owner',password:'Fixture-account-password-42'})});
   assert.equal(setup.status,200,await setup.text());
 });
+
+
+test('an explicitly anonymous native installation declares no personal Git authority rather than failing every shell',async t=>{
+ const {RemoteSessionCapabilities}=await import('../../packages/session-capabilities/src/remote.ts');
+ const f=await fixture(t);
+ const app=await startHeadlessServer({...f.options,engines:['pi'],defaultEngine:'pi'});t.after(()=>app.close());
+ const machineId=(await readFile(join(f.options.dataDirectory,'machine-id'),'utf8')).trim();
+ const remote=new RemoteSessionCapabilities(f.options.dataDirectory,`server:${machineId}:pi`);
+ assert.deepEqual(await remote.hostGit('pi_synthetic','unowned-input'),{mode:'anonymous'});
+});
