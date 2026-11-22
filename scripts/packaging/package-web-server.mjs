@@ -38,9 +38,10 @@ export function executionModuleOptions(format) {
 /**
  * The server's own Codex Engine Host and provider (startCodexEngineHost in
  * apps/opencraft-daemon/src/codex-bridge-stack.ts), in a directory beside the
- * release's execution programs: node-pty resolves to the release's native copy.
+ * release's execution programs: node-pty resolves to the release's native copy
+ * (`nodePty`, relative to that directory).
  */
-export async function buildCodexBridgeRuntime(directory) {
+export async function buildCodexBridgeRuntime(directory, { nodePty = '../native/node-pty/lib/index.js' } = {}) {
   for (const [entry, target, format] of [
     ['apps/agent-bridge-host/src/main.ts', 'engine-host.mjs', 'esm'],
     ['apps/agent-bridge-host/src/storage.worker.ts', 'storage.worker.mjs', 'esm'],
@@ -48,7 +49,7 @@ export async function buildCodexBridgeRuntime(directory) {
   ]) await build({ nodePaths: [join(repositoryRoot, 'node_modules')], entryPoints: [resolve(repositoryRoot, entry)], outfile: join(directory, target),
     bundle: true, platform: 'node', format, target: 'node22', define: executionModuleOptions(format).define,
     external: ['bufferutil', 'utf-8-validate', 'cpu-features', '*.node'],
-    plugins: [{ name: 'execution-pty', setup(builder) { builder.onResolve({ filter: /^node-pty$/ }, () => ({ path: '../native/node-pty/lib/index.js', external: true })); } }],
+    plugins: [{ name: 'execution-pty', setup(builder) { builder.onResolve({ filter: /^node-pty$/ }, () => ({ path: nodePty, external: true })); } }],
     banner: executionModuleOptions(format).banner });
   await cp(join(repositoryRoot, 'apps/opencraft-daemon/src/codex-bridge-exit-with-parent.cjs'), join(directory, 'exit-with-parent.cjs'));
 }

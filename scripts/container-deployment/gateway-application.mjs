@@ -5,7 +5,7 @@ import { parseHeadlessArguments, startHeadlessServer } from '../../apps/headless
 import { coreHealth } from '../server-deployment/execution.mjs';
 import { attachDshHost, readDshHostIdentity } from '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
 import { readEngineHostIdentity } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
-import { observeExecutionHealth } from '../server-deployment/headless-gateway-application.mjs';
+import { codexBridgePrograms, observeExecutionHealth } from '../server-deployment/headless-gateway-application.mjs';
 import { deploymentPaths, readPrivateToken } from './paths.mjs';
 
 export async function startContainerGateway(composition = {}) {
@@ -25,8 +25,12 @@ export async function startContainerGateway(composition = {}) {
   if (!home.startsWith('/')) throw new Error('Gateway home must be absolute');
   await mkdir(home, { recursive: true, mode: 0o700 });
   process.env.HOME = home;
+  // Codex runs through the Gateway's own Engine Host by default (OPENCRAFT_CODEX_BRIDGE=0 keeps the
+  // legacy path); the provider only reaches Core, native commands still run in Hands.
+  const bridgePrograms = await codexBridgePrograms(root, options, process.env, 'runtime/codex-bridge');
   const app = await startHeadlessServer({
     ...options, root, webRoot: join(root, 'web'),
+    ...(bridgePrograms ? { codexBridgePrograms: bridgePrograms } : {}),
     runtimeDirectory: paths.runtimeDirectory,
     threadCliDirectory: paths.threadCliDirectory,
     terminalOwner: { directory: paths.terminalDirectory, endpoint: paths.terminalEndpoint, tokenFile: paths.terminalToken },
