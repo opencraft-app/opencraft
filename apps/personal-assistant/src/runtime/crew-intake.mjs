@@ -105,8 +105,8 @@ export function createCrewIntake({ runner, request }) {
 
   /**
    * The Bot's desk as teammates see it: one conversation per dispatcher, its messages and the
-   * tasks it started. The owner's private conversation, delegations, tool calls and results are
-   * never part of it; those stay with the runtime like any other work observation.
+   * tasks it started, and on request the operations it made for that work. The owner's private
+   * conversation, delegations and tool results are never part of it.
    */
   /** A dispatcher's own turns are theirs; a returned reply belongs to whoever wrote it. */
   function authorOf(message, dispatcher) {
@@ -125,9 +125,10 @@ export function createCrewIntake({ runner, request }) {
       !params ||
       typeof params !== "object" ||
       Array.isArray(params) ||
-      Object.keys(params).some((k) => k !== "actorId") ||
+      Object.keys(params).some((k) => k !== "actorId" && k !== "operations") ||
       (params.actorId !== undefined &&
-        (typeof params.actorId !== "string" || !params.actorId || params.actorId.length > 256))
+        (typeof params.actorId !== "string" || !params.actorId || params.actorId.length > 256)) ||
+      (params.operations !== undefined && typeof params.operations !== "boolean")
     )
       throw Error("Invalid desk request");
     const conversations = db()
@@ -169,7 +170,34 @@ export function createCrewIntake({ runner, request }) {
             .map((w) => ({ id: w.id, title: w.text.slice(0, 512), status: w.status, updatedAt: w.updated_at })),
         }
       : null;
-    return { conversations: conversations.map(({ actorId, updatedAt }) => ({ actorId, updatedAt })), selected };
+    return {
+      conversations: conversations.map(({ actorId, updatedAt }) => ({ actorId, updatedAt })),
+      selected,
+      // Only the Core decides who may see operations; it asks for them for the Bot's owner and the team's owner.
+      ...(params.operations ? { operations: operations() } : {}),
+    };
+  }
+  /**
+   * What the Bot did with its own authority while answering crew work, newest first, each marked
+   * with the dispatcher it was done for. Work from the owner's private line is never included.
+   */
+  function operations() {
+    return db()
+      .prepare(
+        `SELECT o.call_id,o.tool,o.target,o.summary,o.at,o.work_id,m.value AS actor_id FROM work_operation o
+        JOIN conversation_work c ON c.work_id=o.work_id JOIN meta m ON m.key='crew:conversation:'||c.conversation_id
+        ORDER BY o.at DESC,o.rowid DESC LIMIT 50`,
+      )
+      .all()
+      .map((o) => ({
+        id: o.call_id,
+        tool: o.tool,
+        summary: o.summary,
+        at: o.at,
+        workId: o.work_id,
+        actorId: o.actor_id,
+        ...(o.target ? { targetId: o.target } : {}),
+      }));
   }
 
   return {

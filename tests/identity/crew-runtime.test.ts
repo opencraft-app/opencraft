@@ -119,6 +119,12 @@ test("a member messages a space Bot: the Host-run Bot takes the work, answers on
   );
   assert.match(desk.selected!.messages[0]!.text, /看看 2\.3 的发布说明/);
   assert.ok(!JSON.stringify(desk).includes("你好"));
+  assert.deepEqual(desk.operations, [], "the Bot's owner sees its operations; the fixture made none");
+  assert.equal(
+    (await service.crewDesk(bob, { botId: alan.actorId })).operations,
+    undefined,
+    "a member who owns neither the Bot nor the team does not see its operations",
+  );
   const carol = human("Carol");
   await assert.rejects(
     service.crewDesk(carol, { botId: alan.actorId }),
@@ -132,4 +138,60 @@ test("a member messages a space Bot: the Host-run Bot takes the work, answers on
     /crew_desk_unavailable/,
     "a stopped Bot shows no desk; nothing is read from its files",
   );
+});
+
+// The Core checks what a separately running Bot reports before any of it reaches a client.
+test("desk operations reach only the owner, checked and mapped by the Core", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "crew-operations-")),
+    storage = await openServerDatabase(directory),
+    actors = new ActorStore(storage),
+    service = new Collaboration(storage, actors);
+  t.after(async () => {
+    await service.close();
+    actors.close();
+    await storage.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  const human = (name: string) =>
+    actors.resolveHuman({ provider: "local", subject: name, displayName: name, expiresAt: Date.now() + 600000 })!;
+  const alice = human("Alice"),
+    bob = human("Bob"),
+    carol = human("Carol");
+  await service.personalAssistant(alice, "opencraft/personal-assistant/claim");
+  const alan = ((await service.personalAssistant(alice, "opencraft/personal-assistant/bots/create", {
+    name: "Alan", duties: "Release notes", environment: { kind: "local" }, clientRequestId: "alan",
+  })) as { assistant: { actorId: string } }).assistant;
+  const ledger = new ServerSpacesLedger(storage.database);
+  ledger.bootstrap(alice.actorId, []);
+  const team = (ledger.command(alice, { action: "create", name: "Team" }) as { spaceId: string }).spaceId;
+  for (const who of [bob, carol]) ledger.command(who, { action: "join", code: (ledger.command(alice, { action: "invite", spaceId: team }) as { code: string }).code });
+  ledger.command(alice, { action: "addBot", spaceId: team, actorId: alan.actorId });
+
+  const asked: Record<string, unknown>[] = [];
+  let reported: unknown[] = [
+    { id: "c1", tool: "environment_run", summary: "git status", at: 1, workId: "w1", actorId: carol.actorId },
+    { id: "c2", tool: "crew_message", summary: "done", at: 2, workId: "w2", actorId: "someone-who-left", targetId: carol.actorId },
+  ];
+  service.attachPersonalAssistantHost({
+    state: () => ({ phase: "running" }) as never,
+    wake: () => undefined,
+    desk: async (_botId: string, _epoch: string, params: Record<string, unknown>) => {
+      asked.push(params);
+      return { conversations: [], selected: null, operations: reported };
+    },
+  } as never);
+
+  const forAlice = await service.crewDesk(alice, { botId: alan.actorId });
+  assert.deepEqual(asked.at(-1), { operations: true }, "the owner asks the Bot for operations");
+  assert.deepEqual(forAlice.operations, [
+    { id: "c1", tool: "environment_run", summary: "git status", at: 1, onBehalfOf: { actorId: carol.actorId, displayName: "Carol", kind: "human" } },
+    { id: "c2", tool: "crew_message", summary: "done", at: 2, onBehalfOf: null, to: { actorId: carol.actorId, displayName: "Carol", kind: "human" } },
+  ]);
+  for (const member of [bob, carol]) {
+    assert.equal((await service.crewDesk(member, { botId: alan.actorId })).operations, undefined);
+    assert.deepEqual(asked.at(-1), {}, "a plain member's read does not ask for operations");
+  }
+
+  reported = [{ id: "c3", tool: "read_memory_file", summary: "notes.md", at: 3, actorId: carol.actorId }];
+  await assert.rejects(service.crewDesk(alice, { botId: alan.actorId }), /crew_desk_invalid/, "an unknown tool is refused, not passed on");
 });

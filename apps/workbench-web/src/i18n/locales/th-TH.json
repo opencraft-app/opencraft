@@ -2506,5 +2506,17 @@
   "crew.teams.joinTitle": "เข้าร่วมทีม",
   "crew.teams.joinAbout": "วางลิงก์หรือรหัสเชิญที่มีคนแชร์ให้คุณ",
   "crew.teams.joinAction": "เข้าร่วม",
-  "crew.teams.cancel": "ยกเลิก"
+  "crew.teams.cancel": "ยกเลิก",
+  "crew.desk.operations": "การดำเนินการ",
+  "crew.desk.operationsAbout": "สิ่งที่ Agent นี้ทำด้วยสิทธิ์ของตัวเองขณะทำงานให้เพื่อนร่วมทีม มีเพียงเจ้าของ Agent และเจ้าของทีมที่เห็นส่วนนี้",
+  "crew.desk.noOperations": "ยังไม่มีการดำเนินการ",
+  "crew.desk.onBehalfOf": "ทำให้ {name}",
+  "crew.desk.formerMember": "ทำให้คนที่ออกจากทีมไปแล้ว",
+  "crew.desk.tool.environmentRun": "รันคำสั่ง",
+  "crew.desk.tool.platformRead": "อ่านบทสนทนา",
+  "crew.desk.tool.threadCommand": "จัดการงาน",
+  "crew.desk.tool.crewDispatch": "ส่งต่องาน",
+  "crew.desk.tool.crewMessage": "ส่งข้อความ",
+  "crew.desk.to": "ถึง {name}",
+  "crew.desk.toFormerMember": "ถึงคนที่ออกจากทีมไปแล้ว"
 }

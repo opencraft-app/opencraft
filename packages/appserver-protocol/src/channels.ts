@@ -166,6 +166,22 @@ export interface CrewDesk {
     messages: { id: string; role: 'user' | 'assistant'; text: string; at: number; author?: CrewPhonebookEntry }[];
     works: { id: string; title: string; status: string; updatedAt: number }[];
   } | null;
+  /**
+   * Present only for the Bot's owner and the team's owner: what the Bot did with its own authority
+   * while answering crew work, newest first. `onBehalfOf` is the dispatcher, or null once they left.
+   */
+  operations?: CrewOperation[];
+}
+/** The Bot tools that act with its own authority beyond its memory, as recorded for the desk. */
+export const CREW_OPERATION_TOOLS = ['environment_run', 'platform_read', 'thread_command', 'crew_dispatch', 'crew_message'] as const;
+export interface CrewOperation {
+  id: string;
+  tool: (typeof CREW_OPERATION_TOOLS)[number];
+  summary: string;
+  at: number;
+  onBehalfOf: CrewPhonebookEntry | null;
+  /** For hand-offs and messages: who it went to, or null once they left the team. */
+  to?: CrewPhonebookEntry | null;
 }
 /** A Server space as its members see it in the Inbox. The instance-wide default space is not listed. */
 export interface CrewTeam {

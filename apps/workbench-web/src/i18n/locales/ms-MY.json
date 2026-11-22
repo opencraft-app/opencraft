@@ -2506,5 +2506,17 @@
   "crew.teams.joinTitle": "Sertai pasukan",
   "crew.teams.joinAbout": "Tampal pautan atau kod jemputan yang dikongsi dengan anda.",
   "crew.teams.joinAction": "Sertai",
-  "crew.teams.cancel": "Batal"
+  "crew.teams.cancel": "Batal",
+  "crew.desk.operations": "Operasi",
+  "crew.desk.operationsAbout": "Apa yang dilakukan Agent ini dengan aksesnya sendiri semasa bekerja untuk rakan sepasukan. Hanya pemilik Agent dan pemilik pasukan boleh melihat ini.",
+  "crew.desk.noOperations": "Belum ada operasi.",
+  "crew.desk.onBehalfOf": "Untuk {name}",
+  "crew.desk.formerMember": "Untuk seseorang yang telah meninggalkan pasukan",
+  "crew.desk.tool.environmentRun": "Menjalankan arahan",
+  "crew.desk.tool.platformRead": "Membaca perbualan",
+  "crew.desk.tool.threadCommand": "Mengendalikan tugasan",
+  "crew.desk.tool.crewDispatch": "Menyerahkan kerja",
+  "crew.desk.tool.crewMessage": "Menghantar mesej",
+  "crew.desk.to": "Kepada {name}",
+  "crew.desk.toFormerMember": "Kepada seseorang yang telah meninggalkan pasukan"
 }

@@ -18,7 +18,7 @@ import { OrchestrationRuntimeWorker } from './orchestration-runtime-store.js';
 import { updateExecutionRequest } from './execution-request-state.js';
 import { sqliteTransaction } from "@opencraft/sqlite-node";
 import { conversationRef, encodeConversationRef, parseConversationRef, type ConversationRef, type ConversationMetadata, type ConversationDiscovery, type ConversationServer, type ConversationReceipt, type ConversationLookup } from '@opencraft/appserver-protocol/collaboration';
-import { validChannelAttachment, type ChannelAttachment } from '@opencraft/appserver-protocol';
+import { validChannelAttachment, CREW_OPERATION_TOOLS, type ChannelAttachment, type CrewOperation } from '@opencraft/appserver-protocol';
 import { randomUUID, createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
@@ -1010,7 +1010,10 @@ export class Collaboration {
     const authority = await this.communicate(context, 'crew/desk-authority', { actorId: params.botId });
     const host = this.assistantHost;
     if (!host?.desk) throw new CollaborationError(503, 'crew_desk_unavailable');
-    const raw = await host.desk(authority.botId, authority.epoch, params.actorId === undefined ? {} : { actorId: text(params.actorId) })
+    const raw = await host.desk(authority.botId, authority.epoch, {
+      ...(params.actorId === undefined ? {} : { actorId: text(params.actorId) }),
+      ...(authority.audit === true ? { operations: true } : {}),
+    })
       .catch(() => { throw new CollaborationError(503, 'crew_desk_unavailable'); }) as Record<string, unknown>;
     const current = await this.communicate(context, 'crew/desk-authority', { actorId: params.botId });
     if (this.assistantHost !== host || current.epoch !== authority.epoch) throw new CollaborationError(409, 'assistant_changed');
@@ -1024,10 +1027,14 @@ export class Collaboration {
     const selected = raw?.selected as Record<string, unknown> | null | undefined;
     const messages = Array.isArray(selected?.messages) ? selected!.messages as Record<string, unknown>[] : [];
     const works = Array.isArray(selected?.works) ? selected!.works as Record<string, unknown>[] : [];
+    const operations = authority.audit === true && Array.isArray(raw?.operations) ? raw.operations as Record<string, unknown>[] : [];
     if (conversations.length > 200 || messages.length > 100 || works.length > 20
       || messages.some(m => !str(m.id, 256) || !['user', 'assistant'].includes(String(m.role)) || !str(m.text, 16384) || !time(m.at)
         || (m.authorId !== undefined && !str(m.authorId, 256)))
-      || works.some(w => !str(w.id, 256) || !str(w.title, 512) || !str(w.status, 64) || !time(w.updatedAt)))
+      || works.some(w => !str(w.id, 256) || !str(w.title, 512) || !str(w.status, 64) || !time(w.updatedAt))
+      || operations.length > 50
+      || operations.some(o => !str(o.id, 300) || !CREW_OPERATION_TOOLS.includes(o.tool as never) || !str(o.summary, 512) || !time(o.at) || !str(o.actorId, 256)
+        || (o.targetId !== undefined && !str(o.targetId, 256))))
       throw new CollaborationError(502, 'crew_desk_invalid');
     const chosen = selected ? person(selected.actorId) : undefined;
     return {
@@ -1041,6 +1048,12 @@ export class Collaboration {
           ...(m.role === 'user' ? { author: person(m.authorId) ?? chosen } : {}) })),
         works: works.map(w => ({ id: String(w.id), title: String(w.title), status: String(w.status), updatedAt: Number(w.updatedAt) })),
       } : null,
+      ...(authority.audit === true ? {
+        operations: operations.map(o => ({ id: String(o.id), tool: o.tool as CrewOperation['tool'], summary: String(o.summary), at: Number(o.at),
+          // Kept after the dispatcher leaves: the record of what was done for them stays.
+          onBehalfOf: person(o.actorId) ?? null,
+          ...(o.targetId === undefined ? {} : { to: person(o.targetId) ?? null }) })),
+      } : {}),
     };
   }
   async personalAssistant(context: ActorContext, method: string, params: Record<string,unknown> = {}): Promise<any> {

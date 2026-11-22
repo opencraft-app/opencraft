@@ -370,7 +370,7 @@ test("schema12 upgrade preserves old snapshot and memory without fabricating dat
   assert.equal(m.scope, "user");
   assert.equal(m.updatedAt, 0);
   assert.equal(m.projectId, null);
-  assert.equal(s.db.prepare("PRAGMA user_version").get().user_version, 21);
+  assert.equal(s.db.prepare("PRAGMA user_version").get().user_version, 22);
 });
 
 test("real CLI accepts calendar definitions and scoped recall through the local runner", async (t) => {
