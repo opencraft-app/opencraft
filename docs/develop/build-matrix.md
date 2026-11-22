@@ -549,7 +549,8 @@ than a native patch marker.
 Build on a native Linux amd64 machine with the checked-in Node version and
 installed dependencies. Set `OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION` to the
 verified owned Linux browser distribution before invoking the package command.
-`release/OpenCraft-server-0.1.0-linux-amd64.tar.gz`
+`release/OpenCraft-server-<version>-linux-amd64.tar.gz` (`<version>` is the product version,
+`node scripts/release/product-version.mjs check`)
 must pass `npm run smoke:headless:linux` for both DSH and Codex initialization
 before distribution. GitHub's portable
 matrix produces and smoke-tests this archive as an Actions artifact; a PR build
@@ -563,7 +564,7 @@ successful Codex process start alone does not prove the Web Codex entry was
 included. Do not copy an existing generic `dist` into a headless archive.
 
 ```sh
-tar -xzf OpenCraft-server-0.1.0-linux-amd64.tar.gz
+tar -xzf OpenCraft-server-<version>-linux-amd64.tar.gz
 ./opencraft-server/bin/opencraft-server --port 10000 --data-dir /private/opencraft-data
 ```
 
@@ -595,9 +596,9 @@ checksum mismatch and unsafe archive entries. It never
 stops an existing preview or copies account data automatically.
 
 ```sh
-sha256sum release/OpenCraft-server-0.1.0-linux-amd64.tar.gz
+sha256sum release/OpenCraft-server-<version>-linux-amd64.tar.gz
 sudo ./scripts/packaging/install-headless-linux.sh \
-  --archive release/OpenCraft-server-0.1.0-linux-amd64.tar.gz \
+  --archive release/OpenCraft-server-<version>-linux-amd64.tar.gz \
   --sha256 '<verified 64-character digest>' \
   --port 80 \
   --state-name opencraft-server \
