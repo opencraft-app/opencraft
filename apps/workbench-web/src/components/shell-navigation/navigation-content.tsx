@@ -29,7 +29,6 @@ export interface ShellSignIn {
 }
 
 export interface ShellNavigationConfig {
-  readonly layout?: "unified";
   /** The context pane owns an independent applications list destination. */
   readonly applicationsInSidebar?: boolean;
   /** Settings selects categories in-place before a category opens its route. */
@@ -40,7 +39,6 @@ export interface ShellNavigationConfig {
   readonly settingsActive?: boolean;
   readonly onOpenUpdates?: () => void;
   readonly updatesActive?: boolean;
-  readonly allowDock?: boolean;
 }
 
 export function isAnonymousShellAccount(account: ShellAccount | null): boolean {
@@ -72,25 +70,26 @@ export function AccountLeadingVisual({ account }: { account: ShellAccount | null
 }
 
 /** The same content is placed in a rail or a transient surface by the Shell. */
-export function NavigationContent({ config, surface, compact = false, includeSettings = true, tooltipSide = "right", onInvoke }: {
+export function NavigationContent({ config, surface, compact = false, includeSettings = true, shortLabel = false, tooltipSide = "right", onInvoke }: {
   config: ShellNavigationConfig;
   surface: "applications" | "account";
   compact?: boolean;
   includeSettings?: boolean;
+  shortLabel?: boolean;
   tooltipSide?: "top" | "right";
   onInvoke: (action: () => void) => void;
 }) {
   const intl = useIntl();
   const mobile = useShellPresentation()?.mobileSidebar ?? false;
   return surface === "applications" ? <Tooltip.Provider delayDuration={350} disableHoverableContent><NavigationList compact={compact && !mobile} inset={mobile ? "sidebar" : "default"} label={intl.formatMessage({ id: "navigation.applications", defaultMessage: "Applications" })} className="shell-navigation__items shell-navigation__items--applications">
-    {config.actions.filter(action => !(mobile && config.layout === "unified" && config.applicationsInSidebar && (action.id === "shell.home" || action.id === "shell.applications"))).map(action => {
+    {config.actions.filter(action => !(mobile && config.applicationsInSidebar && (action.id === "shell.home" || action.id === "shell.applications"))).map(action => {
       const { full: title, short } = shellNavigationLabels(action, intl);
       const badge = action.badge === undefined ? null : <small className="shell-navigation__beta">{action.badge}</small>;
       return <Tooltip.Root key={action.id}><Tooltip.Trigger asChild><NavigationItem compact={compact && !mobile} type="button"
         data-action-id={action.id} aria-label={title} aria-expanded={action.expanded} aria-current={action.active ? "page" : undefined} onClick={() => onInvoke(action.onInvoke)}>
         <NavigationIcon name={action.icon} selected={action.active} />
         <span className="shell-navigation__item-label">
-          {config.layout === "unified" ? <>
+          {shortLabel ? <>
             <span className="shell-navigation__item-label--short">{short}</span>
             <span className="shell-navigation__item-label--full">{title}{badge}</span>
           </> : <>{title}{!compact ? badge : null}</>}

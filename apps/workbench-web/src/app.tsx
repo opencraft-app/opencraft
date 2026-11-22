@@ -1,4 +1,5 @@
 import { AppShellStandardPage } from "./components/app-shell-standard-page";
+import { SettingsSidebarNavigation } from "./components/settings-sidebar-navigation";
 import {ConversationArchivedBadge, ConversationUnavailableState} from "./components/conversation-archived";
 import { recordQueueError } from "./runtime/queue-error-history";
 import { routeStackPresentation } from "./components/route-stack-motion";
@@ -275,10 +276,6 @@ const SettingsContent = lazy(async () => {
 const ConversationTaskMenu = lazy(async () => {
   const module = await import("./components/conversation-task-menu");
   return { default: module.ConversationTaskMenu };
-});
-const SettingsNavigation = lazy(async () => {
-  const module = await import("./components/settings-page");
-  return { default: module.SettingsNavigation };
 });
 
 function humanizeCatalogValue(value: string): string {
@@ -1855,21 +1852,20 @@ export function App({
     extensionContributions: hostCatalog.extensionContributions,
     onSectionChange: selectSettingsSection,
   });
-  const settingsNavigation = settingsOpen || sidebarDestination === "settings" ? (
-    <Suspense fallback={null}>
-      <SettingsNavigation
-        section={sidebarDestination === "settings" ? "" : settingsSection}
-        onSectionChange={selectSettingsSection}
-        extensionContributions={hostCatalog.extensionContributions}
-        profiles={hostCatalog.profiles}
-        machines={machines}
-        activeHostId={snapshot.hostId}
-        showArchivedConversations={archivedConversationsAvailable}
-        onBack={openConversationSidebar}
-        presentation={sidebarDestination === "settings" ? "sidebar" : managementSettingsOpen ? "dialog" : "sidebar"}
-      />
-    </Suspense>
-  ) : null;
+  const settingsNavigation = (
+    <SettingsSidebarNavigation
+      section={settingsOpen ? settingsSection : null}
+      choosingSection={sidebarDestination === "settings"}
+      managementOpen={managementSettingsOpen}
+      onSectionChange={selectSettingsSection}
+      extensionContributions={hostCatalog.extensionContributions}
+      profiles={hostCatalog.profiles}
+      machines={machines}
+      activeHostId={snapshot.hostId}
+      showArchivedConversations={archivedConversationsAvailable}
+      onBack={openConversationSidebar}
+    />
+  );
   const settingsContent = settingsOpen ? (
     <Suspense
       fallback={
@@ -2350,7 +2346,6 @@ export function App({
           }}
           surface={desktopBackdrop ? "application-desktop" : "default"}
           navigation={!presentation.shellNavigation ? undefined : {
-            layout: "unified",
             applicationsInSidebar: true,
             settingsInSidebar: true,
             settingsActive: sidebarDestination === "settings" || (routeSettingsOpen && !applicationsSelected),

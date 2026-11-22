@@ -1,12 +1,14 @@
-import { AgentManagement } from "./agent-management";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useIntl } from "@opencraft/i18n/react";
 import { SettingsGroup, SettingsNotice, SettingsPageHeader, SettingsRow, SettingsSwitch } from "@opencraft/extension-react";
 import { useUiPreferencesRuntime } from "../runtime/ui-preferences-runtime";
 import { useDefaultFollowUpAction } from "../runtime/use-default-follow-up-action";
 import { TurnNotificationSettings } from "./turn-notification-settings";
 
-export function ChatSettings({onOpenImSettings}: {onOpenImSettings?:()=>void} = {}) {
+export function ChatSettings({ agentManagement, onOpenImSettings }: {
+  readonly agentManagement?: ReactNode;
+  readonly onOpenImSettings?: () => void;
+} = {}) {
   const intl = useIntl();
   const preferences = useUiPreferencesRuntime();
   const defaultFollowUpAction = useDefaultFollowUpAction();
@@ -31,7 +33,7 @@ export function ChatSettings({onOpenImSettings}: {onOpenImSettings?:()=>void} = 
         }} />
       </SettingsRow>
     </SettingsGroup>
-    <AgentManagement />
+    {agentManagement}
     <TurnNotificationSettings onOpenImSettings={onOpenImSettings} />
     {saveError ? <SettingsNotice tone="error">{intl.formatMessage({ id: "settings.chat.saveError", defaultMessage: "Could not save your preference. Please try again." })}</SettingsNotice> : null}
   </>;

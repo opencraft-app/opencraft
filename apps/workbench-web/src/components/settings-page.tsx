@@ -14,6 +14,7 @@ import { LanguageSetting } from "../i18n/language-setting";
 import { TouchDensitySetting } from "./touch-density-setting";
 import { WorkbenchShortcutList } from "./workbench-shortcut-help";
 import { ChatSettings } from "./chat-settings";
+import { AgentManagement } from "./agent-management";
 import { HubNetworkSettings } from "./hub-network-settings";
 import { ServerInformationSettings } from "./server-information-settings";
 import { ExtensionLibrary } from "./extensions/extension-library";
@@ -507,7 +508,8 @@ export function SettingsContent({
                   restore={archivedConversations.restore}
                 />
               ) : section === "chat" ? (
-                <ChatSettings onOpenImSettings={extensionPages.some(page => page.id === "opencraft.im.channels") ? () => onSectionChange("opencraft.im.channels") : undefined} />
+                <ChatSettings agentManagement={activeHostId ? <AgentManagement /> : undefined}
+                  onOpenImSettings={extensionPages.some(page => page.id === "opencraft.im.channels") ? () => onSectionChange("opencraft.im.channels") : undefined} />
               ) : section === "updates" && platform === "web" && hasManagedWebUpdates() ? (
                 <WebUpdatesSettings />
               ) : section === "shortcuts" ? (
