@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { DatabaseSync } from 'node:sqlite';
+import type { SqlDatabase } from '@opencraft/sql';
 
 /** Appended to the collaboration owner's migrations; never opened independently. */
 export { ORCHESTRATION_SCHEMA } from "@opencraft/storage-node/server-legacy";
@@ -61,13 +61,8 @@ function notification(r: Row): ParentNotification {
 
 /** Trusted Hub control storage. Callers authorize before writes; this owns no execution queue or connection. */
 export class ThreadOrchestrationLedger {
-  constructor(private readonly db: DatabaseSync, private readonly now = Date.now) {}
-  transaction<T>(work: () => T): T {
-    if (this.db.isTransaction) return work();
-    this.db.exec('BEGIN IMMEDIATE');
-    try { const value = work(); this.db.exec('COMMIT'); return value; }
-    catch (error) { this.db.exec('ROLLBACK'); throw error; }
-  }
+  constructor(private readonly db: SqlDatabase, private readonly now = Date.now) {}
+  transaction<T>(work: () => T): T { return this.db.transaction(work); }
   observeRuntime(snapshot: import('@opencraft/appserver-protocol/collaboration').ThreadOrchestrationSnapshot): void {
     this.db.prepare('INSERT INTO opencraft_orchestration_runtime_views VALUES(?,?,?,?,?) ON CONFLICT(thread_id) DO UPDATE SET root_turn_id=excluded.root_turn_id,turn_id=excluded.turn_id,state=excluded.state,updated_at_ms=excluded.updated_at_ms WHERE root_turn_id IS NOT excluded.root_turn_id OR turn_id IS NOT excluded.turn_id OR state IS NOT excluded.state')
       .run(snapshot.threadId,snapshot.rootTurnId,snapshot.turnId,snapshot.state,this.now());

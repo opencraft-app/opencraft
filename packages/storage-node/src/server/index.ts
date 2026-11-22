@@ -1,7 +1,7 @@
 import { mkdirSync, existsSync, openSync, fsyncSync, closeSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
-import { openManagedDatabase, SqliteLifecycleError, acquireProcessWriter } from "@opencraft/sqlite-node";
+import { nodeSqlDatabase, openManagedDatabase, SqliteLifecycleError, acquireProcessWriter } from "@opencraft/sqlite-node";
 import type { ServerDatabaseSource } from "./repository.js";
 import { importServerData } from "./import.js";
 import { serverMigrationsFor } from "./history.js";
@@ -43,9 +43,10 @@ export async function openServerDatabase(directory: string): Promise<ServerDatab
     const imported = importServerData(managed.database, directory, contract);
     if (imported === "migrated") managed = { ...managed, outcome: { ...managed.outcome, status: "migrated" } };
     let closed = false;
-    return { ...managed, contract, async close() {
+    const opened = managed;
+    return { database: nodeSqlDatabase(opened.database), outcome: opened.outcome, location: path, contract, async close() {
       if (closed) return;
-      managed!.database.close();
+      opened.database.close();
       release();
       closed = true;
     } };

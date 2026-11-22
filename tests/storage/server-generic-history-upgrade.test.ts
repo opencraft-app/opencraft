@@ -4,7 +4,8 @@ import {createHash} from "node:crypto";
 import {mkdtemp,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {openManagedDatabase} from "@opencraft/sqlite-node";
+import {nodeSqlDatabase,openManagedDatabase} from "@opencraft/sqlite-node";
+const serverSource = (managed: { database: import('node:sqlite').DatabaseSync; outcome: import('@opencraft/sqlite-node').DatabaseOutcome }) => ({ database: nodeSqlDatabase(managed.database), outcome: managed.outcome });
 import {ActorStore} from "@opencraft/access-control/actors";
 import {openServerDatabase,SERVER_MIGRATIONS,SERVER_DATA_CONTRACT} from "@opencraft/storage-node/server";
 import {SERVER_ALTERNATE_MIGRATIONS} from "../../packages/storage-node/src/server/migrations.generated.js";
@@ -118,7 +119,7 @@ test("declared generic v19 preserves its ledger, authority, credentials and poli
  const prefix=family.migrations.slice(0,19);assert.deepEqual(identities(prefix),publishedGenericIdentity);
  const root=await mkdtemp(join(tmpdir(),"generic-owner-upgrade-"));t.after(()=>rm(root,{recursive:true,force:true}));
  const old=openManagedDatabase({path:join(root,"opencraft-server.sqlite"),migrations:prefix,legacyPolicy:"reject"});
- const actors=new ActorStore(old);const actor=actors.createSession("Synthetic migration owner","fixture-operator");
+ const actors=new ActorStore(serverSource(old));const actor=actors.createSession("Synthetic migration owner","fixture-operator");
  actors.issueCredential(actor.id,Date.now()+600_000,"fixture-operator");
  actors.setGrant(actor.id,actor.id,"message.send",true,"fixture-operator");
  old.database.prepare("INSERT INTO thread_access VALUES('fixture-host','fixture-thread',?,'private',7,1)").run(actor.id);

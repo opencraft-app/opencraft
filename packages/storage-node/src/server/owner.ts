@@ -57,6 +57,7 @@ export async function openServerCoreOwner<T = object>(
   return {
     call: owner.call,
     database: connection.database,
+    location: connection.location,
     outcome: ready.outcome,
     contract: ready.contract,
     close: () =>

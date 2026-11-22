@@ -157,69 +157,49 @@
       "SQL statement": 7
     },
     "packages/access-control/src/account-management.ts": {
-      "DatabaseSync": 1,
       "SQL statement": 12
     },
     "packages/access-control/src/actor-inbox-projection.ts": {
-      "DatabaseSync": 1,
       "SQL statement": 9
     },
     "packages/access-control/src/actors.ts": {
-      "DatabaseSync": 1,
       "SQL statement": 47
     },
     "packages/access-control/src/assistant-thread-store.ts": {
-      "DatabaseSync": 1,
       "SQL statement": 19
     },
     "packages/access-control/src/channel-mentions.ts": {
-      "DatabaseSync": 2,
       "SQL statement": 3
     },
     "packages/access-control/src/collaboration.ts": {
-      "DatabaseSync": 1,
       "SQL statement": 80
     },
-    "packages/access-control/src/communication-command.ts": {
-      "DatabaseSync": 1
-    },
-    "packages/access-control/src/communication-extension.ts": {
-      "DatabaseSync": 14
-    },
     "packages/access-control/src/execution-request-state.ts": {
-      "DatabaseSync": 1,
       "SQL statement": 1
     },
     "packages/access-control/src/human-accounts.ts": {
-      "DatabaseSync": 2,
       "SQL statement": 15
     },
     "packages/access-control/src/index.ts": {
-      "DatabaseSync": 1,
       "SQL statement": 22
     },
     "packages/access-control/src/membership-revocation.ts": {
       "SQL statement": 1
     },
     "packages/access-control/src/native-channel-sync.ts": {
-      "DatabaseSync": 2,
       "SQL statement": 48
     },
     "packages/access-control/src/native-channels.ts": {
-      "DatabaseSync": 1,
       "SQL statement": 65
     },
     "packages/access-control/src/orchestration-ledger.ts": {
-      "DatabaseSync": 1,
-      "SQL statement": 36
+      "SQL statement": 33
     },
     "packages/access-control/src/personal-assistants.ts": {
-      "DatabaseSync": 1,
       "SQL statement": 26
     },
     "packages/access-control/src/thread-access.ts": {
-      "DatabaseSync": 2,
-      "SQL statement": 8
+      "SQL statement": 5
     },
     "packages/account-pool-host/src/codex-account-service.ts": {
       "mkdirSync": 1,
@@ -331,7 +311,7 @@
       "SQL statement": 1
     },
     "packages/sqlite-node/src/migrations.ts": {
-      "DatabaseSync": 7,
+      "DatabaseSync": 6,
       "SQL statement": 8
     },
     "packages/sqlite-node/src/read-guard.ts": {
@@ -369,7 +349,6 @@
       "SQL statement": 4
     },
     "packages/storage-node/src/server/repository.ts": {
-      "DatabaseSync": 1,
       "existsSync": 2
     },
     "plugins/im/src/post-receipts.ts": {

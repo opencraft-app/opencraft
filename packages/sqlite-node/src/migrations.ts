@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
+import { isThenable, SqlAsyncTransactionError } from "@opencraft/sql";
 import { SqliteLifecycleError } from "./errors.js";
+import type { NodeSqliteConnection } from "./sql-database.js";
 
 export interface Migration { readonly version: number; readonly name: string; readonly sql: string }
 export interface HashedMigration extends Migration { readonly checksum: string }
@@ -33,12 +35,16 @@ export function validateHistory(database: DatabaseSync, migrations: readonly Has
 }
 
 let savepointSequence = 0;
-export function transaction<T>(database: DatabaseSync, action: () => T): T {
+/**
+ * The only Node implementation of the SQL port's transaction semantics: a write
+ * transaction at the outermost call, savepoints when nested, synchronous actions.
+ */
+export function transaction<T>(database: NodeSqliteConnection, action: () => T): T {
   const savepoint = database.isTransaction ? `opencraft_${++savepointSequence}` : null;
   database.exec(savepoint ? `SAVEPOINT ${savepoint}` : "BEGIN IMMEDIATE");
   try {
     const result = action();
-    if (result && typeof result === "object" && "then" in result) throw new Error("SQLite transactions must be synchronous");
+    if (isThenable(result)) throw new SqlAsyncTransactionError();
     database.exec(savepoint ? `RELEASE ${savepoint}` : "COMMIT");
     return result;
   } catch (error) {

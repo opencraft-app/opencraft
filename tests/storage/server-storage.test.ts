@@ -23,7 +23,8 @@ import { MembershipStore } from "@opencraft/access-control";
 import { Collaboration } from "../../packages/access-control/src/collaboration.js";
 import { CapabilityBindings } from "@opencraft/session-capabilities/bindings";
 import { LocalAccountServerPlugin } from "../../plugins/local-account/src/server.js";
-import { openManagedDatabase, sqliteTransaction, createSchemaValidator } from "@opencraft/sqlite-node";
+import { nodeSqlDatabase, openManagedDatabase, createSchemaValidator } from "@opencraft/sqlite-node";
+const serverSource = (managed: { database: import('node:sqlite').DatabaseSync; outcome: import('@opencraft/sqlite-node').DatabaseOutcome }) => ({ database: nodeSqlDatabase(managed.database), outcome: managed.outcome });
 
 function fixture(t: test.TestContext) {
   const root = mkdtempSync(join(tmpdir(), "opencraft-server-storage-"));
@@ -154,11 +155,11 @@ test("fresh installs have one core file; the writer fence also covers maintenanc
     assert.deepEqual(readdirSync(root).filter(f => f.endsWith(".sqlite")), ["opencraft-server.sqlite"]);
     assert.equal(storage.database.prepare("SELECT count(*) AS n FROM opencraft_server_imports WHERE source_digest='absent'").get()?.n, Object.keys(SERVER_LEGACY_MIGRATIONS).length);
     const actors = new ActorStore(storage);
-    assert.throws(() => sqliteTransaction(storage.database, () => { actors.createSession("cancelled", "test"); throw new Error("cancel"); }), /cancel/);
+    assert.throws(() => storage.database.transaction(() => { actors.createSession("cancelled", "test"); throw new Error("cancel"); }), /cancel/);
     assert.equal(actors.list().length, 0, "nested repository transaction participates in rollback"); actors.close();
     const borrowed = openServerRepository(storage, "actors");
     const statement = borrowed.database.prepare("SELECT count(*) AS n FROM actors");
-    borrowed.database.close();
+    borrowed.close();
     assert.throws(() => statement.get(), /closed/);
     assert.equal(storage.database.prepare("SELECT count(*) AS n FROM actors").get()?.n, 0);
   } finally { await storage.close(); }
@@ -254,7 +255,7 @@ test("the previous consolidated contract upgrades while preserving actors and le
   const root = fixture(t);
   const previous = openManagedDatabase({ path: join(root, "opencraft-server.sqlite"), migrations: SERVER_MIGRATIONS.slice(0, 1) });
   importServerData(previous.database, root, { productVersion: "0.1.0", hash: "previous-contract" });
-  const actors = new ActorStore(previous), session = actors.createSession("Retained actor", "fixture");
+  const actors = new ActorStore(serverSource(previous)), session = actors.createSession("Retained actor", "fixture");
   const authority = actors.authority;
   const history = previous.database.prepare("SELECT * FROM schema_migrations WHERE version=1").get();
   actors.close(); previous.database.close();
@@ -262,7 +263,7 @@ test("the previous consolidated contract upgrades while preserving actors and le
   try {
     assert.equal(current.outcome.status, "migrated");
     assert.deepEqual(current.database.prepare("SELECT * FROM schema_migrations WHERE version=1").get(), history);
-    const restored = new ActorStore(current), bindings = new CapabilityBindings(current);
+    const restored = new ActorStore(serverSource(current)), bindings = new CapabilityBindings(serverSource(current));
     assert.equal(restored.authority, authority); assert.deepEqual(restored.get(session.id), session);
     bindings.prepareExecution("new-execution", { serverId: "test", threadId: "thread" });
     assert.equal(bindings.executionId({ serverId: "test", threadId: "thread" }), "new-execution");
@@ -277,7 +278,7 @@ test("the published capability v1 upgrades only its working copy", async t => {
   previous.database.close(); const bytes = readFileSync(path);
   const current = await openServerDatabase(root);
   try {
-    const bindings = new CapabilityBindings(current);
+    const bindings = new CapabilityBindings(serverSource(current));
     assert.deepEqual(bindings.get("retained"), { serverId: "server", threadId: "thread" });
     bindings.prepareExecution("new", { serverId: "server", threadId: "thread" });
     assert.equal(bindings.executionId({ serverId: "server", threadId: "thread" }), "new");
@@ -400,7 +401,7 @@ test("creation receipts upgrade the preceding Server contract and reject a tampe
   const priorVersion = 21;
   const prior = openManagedDatabase({ path, migrations: SERVER_MIGRATIONS.slice(0, priorVersion) });
   importServerData(prior.database, root, { productVersion: "0.1.0", hash: "previous-crew-contract" });
-  const actors = new ActorStore(prior);
+  const actors = new ActorStore(serverSource(prior));
   const retained = actors.createSession("Retained session", "fixture");
   actors.close();
   const ledger = prior.database.prepare("SELECT * FROM schema_migrations ORDER BY version").all();

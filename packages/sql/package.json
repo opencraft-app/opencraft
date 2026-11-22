@@ -1,0 +1,11 @@
+{
+  "name": "@opencraft/sql",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./conformance": "./src/conformance.ts"
+  },
+  "scripts": { "typecheck": "tsc --noEmit" }
+}

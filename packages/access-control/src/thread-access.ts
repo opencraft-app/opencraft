@@ -1,7 +1,7 @@
 import { TOKEN_USAGE_QUERY } from "@opencraft/appserver-protocol/token-usage";
 import { PermissionReadCache, withPermissionWrite } from "./permission-read-cache.js";
 import { AppServerRpcError, threadUnavailableReason } from '@opencraft/appserver-client';
-import type { DatabaseSync } from 'node:sqlite';
+import type { SqlDatabase } from '@opencraft/sql';
 import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import type { ActorStore } from './actors.js';
@@ -23,10 +23,10 @@ const validId = (v: unknown): v is string => typeof v === 'string' && v.length >
 /** Hub-owned access policy. Presentation visibility and derivation are independent. */
 export class ThreadAccessStore {
   private readonly closeRepository: () => void;
-  private readonly db: DatabaseSync;
+  private readonly db: SqlDatabase;
   private readonly readCache: PermissionReadCache;
   private readonly spaceAccess?: {allows(actorId:string|undefined,serverId:string,threadId:string):boolean};
-  private readonly readPolicy: ReturnType<DatabaseSync["prepare"]>;
+  private readonly readPolicy: ReturnType<SqlDatabase["prepare"]>;
   readonly outcome;
   private readonly listeners = new Set<(policy: ThreadAccessPolicy | null) => void>();
   private readonly unsubscribeSpaces?:()=>void;
@@ -78,19 +78,15 @@ export class ThreadAccessStore {
     if (!['shared','private'].includes(String(mode)) || !Number.isSafeInteger(expected) || Number(expected) < 1) throw new ThreadAccessError(-32602,'Invalid access policy');
     const policy = this.projection(serverId,threadId,context);
     if (!policy.canChangeAccess) throw missing();
-    const next = withPermissionWrite(() => {
-      this.db.exec('BEGIN IMMEDIATE');
-      try {
-        const result = this.db.prepare('UPDATE thread_access SET access_mode=?,revision=revision+1,updated_at=? WHERE server_id=? AND thread_id=? AND creator_actor_id=? AND revision=?')
-          .run(String(mode),Date.now(),serverId,threadId,context!.actorId,Number(expected));
-        if (!result.changes) throw new ThreadAccessError(-32009,'Access policy changed; refresh and retry');
-        const next = this.read(serverId,threadId);
-        this.db.prepare('INSERT INTO thread_access_audit(server_id,thread_id,actor_id,access_mode,revision,at) VALUES(?,?,?,?,?,?)')
-          .run(serverId,threadId,context!.actorId,next.accessMode,next.revision,Date.now());
-        this.db.exec('COMMIT');
-        return next;
-      } catch (error) { if (this.db.isTransaction) this.db.exec('ROLLBACK'); throw error; }
-    }, this.readCache);
+    const next = withPermissionWrite(() => this.db.transaction(() => {
+      const result = this.db.prepare('UPDATE thread_access SET access_mode=?,revision=revision+1,updated_at=? WHERE server_id=? AND thread_id=? AND creator_actor_id=? AND revision=?')
+        .run(String(mode),Date.now(),serverId,threadId,context!.actorId,Number(expected));
+      if (!result.changes) throw new ThreadAccessError(-32009,'Access policy changed; refresh and retry');
+      const next = this.read(serverId,threadId);
+      this.db.prepare('INSERT INTO thread_access_audit(server_id,thread_id,actor_id,access_mode,revision,at) VALUES(?,?,?,?,?,?)')
+        .run(serverId,threadId,context!.actorId,next.accessMode,next.revision,Date.now());
+      return next;
+    }), this.readCache);
     for (const listener of this.listeners) { try { listener(next); } catch { /* Observers cannot undo a committed policy. */ } }
     return this.projection(serverId,threadId,context);
   }

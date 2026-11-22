@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqlDatabase } from '@opencraft/sql';
 import type { ActorContext } from "@opencraft/identity-core/actors";
 import type { ActorStore } from "./actors.js";
 
@@ -47,7 +47,7 @@ export class CrewContact {
   /** A standalone collaboration repository has no spaces; crew rules then stand aside entirely. */
   readonly #spaces: boolean;
   constructor(
-    private readonly db: DatabaseSync,
+    private readonly db: SqlDatabase,
     private readonly actors: ActorStore,
   ) {
     this.#spaces =

@@ -1,8 +1,7 @@
 import {membershipRevocationRevision} from './membership-revocation.js';
 import { AuthorityChanges } from "./authority-changes.js";
 import { PermissionReadCache, withPermissionWrite } from "./permission-read-cache.js";
-import { sqliteTransaction } from "@opencraft/sqlite-node";
-import type { DatabaseSync } from "node:sqlite";
+import type { SqlDatabase } from '@opencraft/sql';
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
 import { parsePrincipal, principalKey, type Principal } from "@opencraft/identity-core";
@@ -25,7 +24,7 @@ export class MembershipStore {
   onAuthorityChanged = (listener: () => void) => this.#changes.subscribe(listener);
 
   readonly permissionProjectionEnabled: boolean;
-  readonly #db: DatabaseSync;
+  readonly #db: SqlDatabase;
   readonly #readCache: PermissionReadCache;
   readonly outcome: DatabaseOutcome;
   readonly #closeDatabase: () => void;
@@ -117,7 +116,7 @@ export class MembershipStore {
       this.#db.prepare("INSERT INTO access_audit(at,operator,binding,action) VALUES(?,?,?,?)").run(Date.now(), "local-operator", source, "legacy-membership-import");
     });
   }
-  #transaction<T>(write: () => T): T { const result = withPermissionWrite(() => sqliteTransaction(this.#db, write), this.#readCache); this.#changes.emit(); return result; }
+  #transaction<T>(write: () => T): T { const result = withPermissionWrite(() => this.#db.transaction(write), this.#readCache); this.#changes.emit(); return result; }
   /** The storage owner committed membership writes on its own connection; republish and notify as a local write would. */
   ownerCommitted(): void { withPermissionWrite(() => undefined, this.#readCache); this.#changes.emit(); }
   close() { this.#readCache.close(); this.#changes.close(); this.#closeDatabase(); }

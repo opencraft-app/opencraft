@@ -1,8 +1,7 @@
 import { readChannelMentions } from './channel-mentions.js';
 import { communicationExtension } from './communication-extension.js';
 import { createHash, randomUUID } from 'node:crypto';
-import type { DatabaseSync } from 'node:sqlite';
-import { sqliteTransaction } from '@opencraft/sqlite-node';
+import type { SqlDatabase } from '@opencraft/sql';
 import type { Collaboration } from './collaboration.js';
 import type { NativeChannelChange } from './native-channels.js';
 import type { ActorContext } from '@opencraft/identity-core/actors';
@@ -19,7 +18,7 @@ const conflict=()=>Object.assign(Error('idempotency_conflict'),{code:'idempotenc
 
 /** Native message owner. Called only by trusted transport composition through the
  * storage Worker, never dispatched from client supplied method/context frames. */
-export function channelSyncCommand(service: Collaboration, db: DatabaseSync, command: ChannelSyncCommand): ChannelSyncResult {
+export function channelSyncCommand(service: Collaboration, db: SqlDatabase, command: ChannelSyncCommand): ChannelSyncResult {
   const changes: NativeChannelChange[]=[];
   const changed=(channelId:string)=>changes.push({channelId});
   const touch=(messageId:string)=>{
@@ -67,7 +66,7 @@ export function channelSyncCommand(service: Collaboration, db: DatabaseSync, com
     // that attempt or claim delivery after its sender's authority was revoked.
     if(!row||row.state==='unknown'&&authorized(row))throw Error('channel_attempt_retired');return row;
   };
-  const result=sqliteTransaction(db,()=>{
+  const result=db.transaction(()=>{
     const extension=communicationExtension()?.synchronize?.(service,db,command);
     if(extension){changes.push(...extension.changes);return extension.result;}
     switch(method){
@@ -230,7 +229,7 @@ export function channelSyncCommand(service: Collaboration, db: DatabaseSync, com
 
 /** Called in the same transaction as native admission. A binding does not replay
  * old local messages and external arrivals never enter this outbox. */
-export function enqueueChannelDelivery(db:DatabaseSync,service:Collaboration,context:ActorContext,channelId:string,messageId:string,body:string,image?:ChannelImage){
+export function enqueueChannelDelivery(db:SqlDatabase,service:Collaboration,context:ActorContext,channelId:string,messageId:string,body:string,image?:ChannelImage){
   const source=db.prepare('SELECT * FROM actor_channel_sources WHERE channel_id=? AND active=1').get(channelId);
   if(source){
     if(body.length>4096)throw Error('invalid_input');

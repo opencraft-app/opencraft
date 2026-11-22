@@ -1,7 +1,6 @@
 import { isDeploymentOperator } from "./deployment-operator.js";
-import { sqliteTransaction } from "@opencraft/sqlite-node";
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import type { DatabaseSync } from 'node:sqlite';
+import type { SqlDatabase } from '@opencraft/sql';
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
 import { parsePrincipal, type Principal } from '@opencraft/identity-core';
@@ -30,7 +29,7 @@ export interface AccountSetupStatus { readonly state: 'new' | 'pending' | 'compl
 
 /** Core owns one-time administration and member grants; credential plugins cannot grant access. */
 export class HumanAccountManagement {
-  readonly #db: DatabaseSync;
+  readonly #db: SqlDatabase;
   readonly #operations = new Set<string>();
   #closed = false;
   readonly #closeDatabase: () => void;
@@ -53,7 +52,7 @@ export class HumanAccountManagement {
   isDesktopOwner(actorId: string): boolean {
     this.#assertOpen(); const row = this.#row(); return row.mode === 'desktop' && row.owner_actor === actorId;
   }
-  #transaction<T>(run: () => T): T { return sqliteTransaction(this.#db, run); }
+  #transaction<T>(run: () => T): T { return this.#db.transaction(run); }
   #provider(): LocalAccountProvider {
     const provider = this.accounts.localAccounts;
     check(provider?.available && provider.createWithId, 'account_provisioning_unavailable', 503); return provider;

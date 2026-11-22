@@ -1,6 +1,5 @@
 import type { OwnerCalls } from "@opencraft/worker-owner";
 import type { ServerDatabase } from "@opencraft/storage-node/server";
-import { sqliteTransaction } from "@opencraft/sqlite-node";
 import type { Principal } from "@opencraft/identity-core";
 import type { ActorContext } from "@opencraft/identity-core/actors";
 import { ActorStore } from "./actors.js";
@@ -39,7 +38,7 @@ export class IdentityWriteOwner {
   #fenced<T>(token: number, write: () => T): T {
     const fence = this.#fence;
     if (!fence) throw new Error("Actor administration requires a commit fence");
-    return sqliteTransaction(this.owner.database, () => {
+    return this.owner.database.transaction(() => {
       fence(token);
       return write();
     });

@@ -1,5 +1,4 @@
 import { installCommunicationExtension } from './communication-extension.js';
-import { sqliteTransaction } from '@opencraft/sqlite-node';
 import { AssistantThreadStore } from './assistant-thread-store.js';
 import { ThreadAccessStore } from './thread-access.js';
 import { PersonalAssistants } from './personal-assistants.js';
@@ -12,6 +11,7 @@ import { parentPort, workerData } from 'node:worker_threads';
 import { existsSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { nodeSqlDatabase } from '@opencraft/sqlite-node';
 import { ThreadOrchestrationLedger } from './orchestration-ledger.js';
 import { AutomationLedger } from './automation-ledger.js';
 import { updateExecutionRequest } from './execution-request-state.js';
@@ -24,12 +24,13 @@ if(workerData.extensionModule) {
   installCommunicationExtension(extension.communicationExtension);
 }
 const port=parentPort;
-const db=new DatabaseSync(workerData.path);
+const connection=new DatabaseSync(workerData.path);
+const db=nodeSqlDatabase(connection);
 db.exec('PRAGMA busy_timeout=0');
 if(db.prepare('PRAGMA journal_mode').get()?.journal_mode!=='wal')throw new Error('Orchestration worker requires managed WAL storage');
 db.prepare('SELECT version FROM schema_migrations LIMIT 1').get();
 const busy=(error:unknown)=>{const code=(error as {errcode?:number})?.errcode;return typeof code==='number'&&[5,6].includes(code&255);};
-const source={database:db,outcome:{status:'up-to-date' as const,appliedVersion:Number(db.prepare('SELECT MAX(version) AS n FROM schema_migrations').get()!.n),movedAsidePaths:[]}};
+const source={database:db,location:workerData.path as string,outcome:{status:'up-to-date' as const,appliedVersion:Number(db.prepare('SELECT MAX(version) AS n FROM schema_migrations').get()!.n),movedAsidePaths:[]}};
 let communication: Collaboration | undefined;
 let actors: ActorStore | undefined;
 function communicationService() {
@@ -55,7 +56,7 @@ async function execute({id,method,payload}: {id:number;method:string;payload:any
           case 'finishTitleWrite':ledger.finish(payload.toolCallKey,payload.result);break;
           case 'inheritChildCreator': {
             const {parent,child}=payload;
-            result=sqliteTransaction(db,()=>{
+            result=db.transaction(()=>{
               // The immutable creator is attribution. Keep the existing access mode
               // of a child already published by this or an earlier process.
               db.prepare(`INSERT OR IGNORE INTO thread_access
@@ -68,7 +69,7 @@ async function execute({id,method,payload}: {id:number;method:string;payload:any
           }
           case 'personalAssistantAssignments':result=new PersonalAssistants(communicationService(),db).assignments(payload.after);break;
           case 'channelSync':result=channelSyncCommand(communicationService(),db,payload);break;
-          case 'assistantAllocation':result=sqliteTransaction(db,()=>new AssistantThreadStore(communicationService(),db).recordAllocation(payload));break;
+          case 'assistantAllocation':result=db.transaction(()=>new AssistantThreadStore(communicationService(),db).recordAllocation(payload));break;
           case 'assistantAdmissions': {
             const service=communicationService(),store=new AssistantThreadStore(service,db);
             result=db.prepare("SELECT o.thread_id,o.origin_json FROM opencraft_input_origins o JOIN actor_execution_requests r ON o.input_id='actor-input:'||r.id AND o.thread_id=r.thread_id WHERE r.state IN ('accepted','transferring','queued','unknown') LIMIT 10000").all().flatMap(row=>{
@@ -130,7 +131,7 @@ async function execute({id,method,payload}: {id:number;method:string;payload:any
           case 'work':result={waits:ledger.activeWaits(),notifications:ledger.dueNotifications()};break;
           case 'pendingAcks':result=db.prepare('SELECT operation_id FROM opencraft_orchestration_acks LIMIT 16').all().map(row=>String(row.operation_id));break;
           case 'acknowledge':db.prepare('DELETE FROM opencraft_orchestration_acks WHERE operation_id=?').run(payload.operationId);break;
-          case 'close':db.close();closed=true;break;
+          case 'close':connection.close();closed=true;break;
           default:throw new Error('Unsupported orchestration storage operation');
         }
         break;

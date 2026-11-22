@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
+import type { SqlDatabase } from '@opencraft/sql';
 import type { ActorContext } from "@opencraft/identity-core/actors";
 import type { ActorStore } from "./actors.js";
 import { CrewContact } from "./crew-contact.js";
@@ -80,7 +80,7 @@ const id = (value: unknown): string =>
  */
 export class CrewWork {
   constructor(
-    private readonly db: DatabaseSync,
+    private readonly db: SqlDatabase,
     private readonly actors: ActorStore,
     private readonly crew: CrewContact,
     private readonly now: () => number,
@@ -504,7 +504,7 @@ export class CrewWork {
  */
 export function attachCrewRules(
   collaboration: { attachCrew(contact: CrewContact, work: CrewWork): void },
-  db: DatabaseSync,
+  db: SqlDatabase,
   actors: ActorStore,
   now: () => number,
 ) {

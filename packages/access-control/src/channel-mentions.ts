@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqlDatabase } from '@opencraft/sql';
 import type {
   ChannelMention,
   ChannelMentionInput,
@@ -54,7 +54,7 @@ export function admitChannelMentions(
   });
 }
 export function persistChannelMentions(
-  db: DatabaseSync,
+  db: SqlDatabase,
   messageId: string,
   mentions: ChannelMention[],
 ) {
@@ -65,7 +65,7 @@ export function persistChannelMentions(
     write.run(messageId, m.actorId, m.start, m.end, m.displayName, m.actorKind);
 }
 export function readChannelMentions(
-  db: DatabaseSync,
+  db: SqlDatabase,
   messageId: string,
   viewer?: string,
 ): ChannelMention[] {

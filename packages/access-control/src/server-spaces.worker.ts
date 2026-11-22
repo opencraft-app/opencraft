@@ -1,7 +1,7 @@
-import { sqliteTransaction } from '@opencraft/sqlite-node';
 import { parentPort, workerData } from 'node:worker_threads';
 import { statSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
+import { nodeSqlDatabase } from '@opencraft/sqlite-node';
 import { openServerDatabase,installServerMigrationComposition } from '@opencraft/storage-node/server';
 import { ActorStore } from './actors.js';
 import { ServerSpacesLedger } from './server-spaces-ledger.js';
@@ -13,7 +13,8 @@ const port = parentPort;
 if(workerData.directory&&workerData.serverMigrationComposition!==undefined)installServerMigrationComposition(workerData.serverMigrationComposition);
 const owner = workerData.directory ? await openServerDatabase(workerData.directory) : null;
 if(!owner&&!statSync(workerData.path).isFile())throw new Error('Managed Server database unavailable');
-const db = owner?.database ?? new DatabaseSync(workerData.path);
+const connection = owner ? null : new DatabaseSync(workerData.path);
+const db = owner?.database ?? nodeSqlDatabase(connection!);
 if(!owner&&db.prepare('PRAGMA journal_mode').get()?.journal_mode!=='wal')throw new Error('Server storage requires managed WAL');
 db.exec('PRAGMA busy_timeout=5000');
 let localContext: ActorContext | undefined;
@@ -38,7 +39,7 @@ port.on('message', request => {
     try {
       if (request.method === 'close') {
         actors?.close();
-        if (owner) await owner.close(); else db.close();
+        if (owner) await owner.close(); else connection!.close();
         port.postMessage({id:request.id,result:null}); port.close(); return;
       }
       const context = localContext ?? request.context;
@@ -46,7 +47,7 @@ port.on('message', request => {
         ? ledger.assign(context,request.engineServerId,request.threadId,request.spaceId)
         : ledger.command(context,request.command);
       const mutated=['assign','legacy','bootstrap','inherit'].includes(request.method)||['create','invite','join','remove','contact','addBot'].includes(request.command?.action);
-      const result=mutated?sqliteTransaction(db,execute):execute();
+      const result=mutated?db.transaction(execute):execute();
       port.postMessage({id:request.id,result,...(mutated&&(request.method!=='legacy'||result===true)?{projection:ledger.projection()}:{})});
     } catch (error) {
       const e=error as Error & {rpcCode?:number;reason?:string};
