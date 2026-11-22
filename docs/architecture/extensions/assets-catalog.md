@@ -67,3 +67,40 @@ rewrite an existing database or create another writable credential owner.
 
 Browser fixtures are not a production identity/service integration, an Electron
 binary test or external E2B acceptance.
+
+## Server configuration owner
+
+`@opencraft/plugin-assets/server` now supplies `openAssetConfigurations(directory)`.
+It opens the existing encrypted vault **inside** a lifecycle-owned FIFO Worker,
+returns an async metadata-only store and requires an awaited `close()` to drain
+accepted requests. It preserves the existing document names, revision tombstones,
+key generations, installed-template policy and generation-pinned library records.
+No database migration, account renaming or new generic writable storage is added.
+The server/configurations, server/installed-policy and server/libraries exports
+are the synchronous domain owners for trusted runtime/Worker use, not network-loop
+entrypoints. Only the async `/server` and `/server/http` paths belong in routers.
+
+`assetConfigurationsHttp(store, authority)` implements the configuration protocol
+at `/__opencraft_assets/configurations` (or a trusted assembly-supplied path).
+An authority adapter must derive the scope, origin, expiry and independent endpoint
+and platform permissions from the existing verified Human/session and membership
+owners. Its `current()` covers all those grants; `subscribe()` must notify on
+any invalidation. **This is a required host integration, not a new auth system.**
+The request-local shared admission is withdrawn on account/role/session changes or
+response disconnect. The Worker checks admission and expiry before executing a
+queued operation, and the HTTP owner rechecks before exposing the result. An
+operation already admitted into synchronous domain execution can finish; revocation
+does not roll back a committed transaction. Unknown outcomes are never replayed.
+
+The router pins the verified origin/Host, enforces same-origin POST and JSON,
+limits bodies to 16 KiB, fences stale scopes, and returns private/no-store metadata.
+The Worker exposes only snapshot/update, never decrypted runtime credentials,
+installation adoption, arbitrary document reads or library registration. Saving
+an environment is still not execution admission or external-provider validation.
+
+Bundled consumers must place `assets-configuration-worker.mjs` beside the importer;
+`scripts/packaging/package-assets-runtime.mjs` owns that build. The packaging test
+runs the bundled owner and sibling Worker from an isolated temporary directory.
+The default Web/Electron account and route composition is **still not enabled**:
+its real session/membership invalidation bridge and single-account owner must be
+connected before advertising the service or showing a default navigation entry.

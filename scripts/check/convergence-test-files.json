@@ -203,5 +203,7 @@
   "tests/usage/model-gateway.test.ts",
   "tests/usage/token-usage-collector-worker.test.ts",
   "tests/usage/token-usage-open-gaps.test.ts",
-  "tests/workspace-preflight.test.mjs"
+  "tests/workspace-preflight.test.mjs",
+  "tests/extensions/assets-service.test.ts",
+  "tests/server/assets-worker-packaging.test.mjs"
 ]
