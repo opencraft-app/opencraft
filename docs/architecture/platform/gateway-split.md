@@ -97,7 +97,7 @@
 | 模型网关设置与策略（:968） | EW → AC | |
 | `/__opencraft_speech/*`（:971-986） | EW（流式）＋AC 凭据租约 | 与模型出口同路径（cloudflare-deployment §2.1） |
 | `/__opencraft_files`、`/__opencraft_preview/tickets`（:933-950） | EW 鉴权 → WH → 容器 `files` lane | 按 Thread 的工作区放置路由 |
-| `/appserver`、`/apphost`（:1067-1076、1180-1290） | EW 鉴权 → **Client 会话 DO**（问题 1） | 见下 |
+| `/appserver`、`/apphost`（:1067-1076、1180-1290） | EW 鉴权 → **Client DO**（按客户端实例，问题 1） | 见下 |
 | 远程浏览器媒体 WebSocket | EW → WH → 容器 `browser` lane | 第一里程碑不提供 |
 | `/__opencraft_im/*` 回调（:868、955） | EW 验签 → IC | 仅 webhook 型渠道；见问题 3 |
 | Hub 升级（:1182） | EW → RH | 第一里程碑不提供 |
@@ -106,14 +106,14 @@
 **为什么需要 Client 会话层。** 一条 `/apphost` 连接经 `AppHostServer` 的 `logicalClientRouting` 同时访问多个 Host（`local-codex`、`opencraft-server`、`channels`，HA:989-1011），并携带每连接的 `ThreadAccessSession`（HA:654-685）与 resume 状态（`ResumeRegistry`，`serve-workbench-web.mjs:23`）。若在 Cloudflare 上把每个工作区做成一个 Host，同一连接要扇出到多个 WH，所以连接不能直接终止在某个 WH。两个选项：
 
 - **A：终止在 IC。** 最简单，所有连接在一个 DO；代价是 IC 成为全部流量的单点，且 Thread 事件要经 IC 中转。
-- **B（已决定，2026-11-22）：每条 Client 连接一个会话 DO**，持有该连接的逻辑客户端路由、访问会话与 resume 状态，使用 WebSocket hibernation 接受连接；对 IC 做授权查询，对 WH 做按 Thread 的 RPC 与订阅。它承载的是已有的 Client attachment，不是新的主体或 Server 身份；DO 名取自现有连接身份。休眠唤醒后内存状态丢失，resume 窗口与访问会话需要持久化到该 DO 存储或视为重连，**需 PoC 确认**。
+- **B（已决定，2026-11-22）：每个 Client 实例一个 Client DO。** 单位是已认证的逻辑客户端实例（现有协议的客户端实例／连接代次概念），不是单条 WebSocket：连接只在该 DO 上附着和断开，生命周期跨越多次断线重连。DO 持有该客户端的访问会话、`/apphost` 逻辑路由、订阅集合与 resume 游标／未确认事件，使断线重连不丢状态；它也是共享 owner 推送事件的可寻址目标（无状态 Worker 不能作为推送目标）。连接用 WebSocket hibernation 接受；客户端实例结束（登出、过期、长时间无连接）时由 DO 自行回收（alarm）。它承载已有的 Client attachment，不是新的主体或 Server 身份；DO 名取自现有客户端实例身份。hibernation 唤醒后的 resume 与访问会话持久化成本**需 PoC 确认**。
 
 ### 3.2 身份映射（不新增身份）
 
 - **Server 身份不变。** 今天 Server 身份是 `server:<machineId>:codex`／`server:<machineId>:<engine>`（`packages/access-control/src/runtime/conversation-execution.mjs:294-295`），`machineId` 来自部署的 daemon machine identity（HA:477）。Cloudflare 装配把该 machine identity 存在 IC，所有工作区共享同一个 Server 身份；Thread 稳定身份仍是 `(serverId, threadId)`。
 - **WH 是 Host placement，不是 Server。** execution-ownership.md 规定 Host 是部署载体，更换 Host 不改变 Server 或 Thread 身份。Thread→工作区由 `thread_placement` 投影解析（workspace-host-split §8.1，真源 WH，IC 持可重建投影），不进入 Client 可见的 Server 身份。
 - **`hostId` 保持逻辑路由。** Client 仍只看到 `local-codex`／`opencraft-server` 等路由；`legacyDirectServerProjectionFromHost()`（`packages/workbench-runtime/src/client-hub-server.ts:152`）的"一 Host 一 AppServer 路由"投影保持成立，因为每工作区放置发生在 Hub 侧，不暴露为新 Host。若将来要把工作区暴露给 Client，必须先替换该兼容投影，而不是在消费者里推断。
-- **协作状态不进会话 DO。** 会话 DO 只持有该连接的身份、访问会话、逻辑路由与 resume 状态；Thread 执行、事件与队列由 WorkspaceHost 持有，频道、成员、协作命令与线程授权由 InstallationCore 持有。多人观看或协作同一对象时，各会话 DO 向同一共享 owner 订阅，由该 owner 扇出事件；这对应既有拓扑中多个 Client attachment 连接同一 Server。代价是多一跳与按观看者数量增长的扇出，而不是协作能力受限。对实时性要求更高的共享对象（例如多人同时编辑的笔记）可另设按对象划分的房间 DO，由客户端直连；这是扩展，不改变上述所有权。
+- **协作状态不进 Client DO。** Client DO 只持有该客户端实例的身份、访问会话、逻辑路由、订阅与 resume 状态；Thread 执行、事件与队列由 WorkspaceHost 持有，频道、成员、协作命令与线程授权由 InstallationCore 持有。多人观看或协作同一对象时，各 Client DO 向同一共享 owner 订阅，由该 owner 扇出事件；这对应既有拓扑中多个 Client attachment 连接同一 Server。代价是多一跳与按观看者数量增长的扇出，而不是协作能力受限。对实时性要求更高的共享对象（例如多人同时编辑的笔记）可另设按对象划分的房间 DO，由客户端直连；这是扩展，不改变上述所有权。
 - **Hub 角色。** 在 Client/Hub/Server 拓扑中，EW＋Client 会话 DO 共同扮演 Hub（准入、路由、订阅、扇出）；RH 只承载 HubLink 级联与流预算。tenant 作用域以 installation 为界（问题 2），不从 socket 推断。
 
 ## 4. 拆分方式
@@ -127,7 +127,7 @@
 | `installation` | 核心 SQL owner、主体／准入／协作／编排／spaces、ServerInformation、MCP apps、connectors、push 订阅 | Gateway 进程内（现状） | IC DO |
 | `account` | 模型策略、网关设置、凭据、订阅 | Gateway＋`proxy` | AC DO |
 | `workspace-host` | Codex overlays、执行租约、capability MCP 签发、资源生命周期、终端／文件／浏览器转发、readiness | Gateway 内 Worker（workspace-host-split §3.2 方案 A） | WH DO |
-| `client-session` | AppHost 逻辑路由、访问会话、resume、心跳 | Gateway 内每连接对象 | Client 会话 DO |
+| `client-session` | AppHost 逻辑路由、访问会话、订阅、resume、心跳 | Gateway 内每连接对象 | Client DO（按客户端实例） |
 | `edge` | HTTP 路由表、静态资源、登录页、webhook 验签 | `createWorkbenchWebServer` | EW |
 | `node-local` | SSH、本机桌面、relay、观测、可用性通知、匿名模式、本机文件 | Gateway | 不装配 |
 
@@ -181,7 +181,7 @@ P4-1（`proxy` 默认、全部 provider 经代理）是 AC 的前提，必须在
 1. EW：静态资源与发布清单、HTTP 路由表（§3.1 中 IC／AC／Client 会话三类）、模型出口流式转发。
 2. IC：核心 SQL owner（合并后）、`ActorStore`／`MembershipStore`／`InstanceAccess`／`ActorAccess`／`IdentityWrites`、`HumanAuth`＋本地账号（OIDC 可选）、`ThreadAccessStore`、`ServerSpacesRuntime`、`Collaboration`（Codex 执行准入钩子依赖它，HA:1112-1119）、编排运行时存储（`Collaboration` 构造需要，HA:687）、`ServerInformationStore`、capability 绑定与签名密钥、Assets 工作区分配中"固定一个工作区"的最小部分、machine identity。
 3. AC：模型配置读取、凭据、短期凭据租约（cloudflare-deployment §2.1）、模型策略。
-4. Client 会话 DO（或 IC，问题 1）：`/apphost`／`/appserver` 终止、逻辑路由、访问会话。
+4. Client DO（按客户端实例）：`/apphost`／`/appserver` 终止、逻辑路由、访问会话、订阅与 resume。
 5. WH（一个）：Codex Host overlays（queue、中断恢复、暂定线程；schedules 可先禁用）、执行租约、capability MCP 会话签发、容器生命周期与 `WorkspaceLink`、readiness。
 6. 容器：`codex app-server`＋`exec-server`（Hands 镜像＋Brain 运行时）、`workspace-agent`、`model-egress` lane；**只有 Codex 引擎**。
 
@@ -191,7 +191,7 @@ P4-1（`proxy` 默认、全部 provider 经代理）是 AC 的前提，必须在
 
 ## 6. 待决问题
 
-1. **Client 连接终止点**：已决定 B（每连接会话 DO，协作状态由共享 owner 持有）。PoC 验收：两个客户端同时观看同一 Thread，事件扇出正确、延迟可接受，任一方断线后 resume 不丢事件、不重复；hibernation 唤醒后 resume 与访问会话的持久化成本。
+1. **Client 连接终止点**：已决定 B（每个 Client 实例一个 Client DO，跨重连存续；协作状态由共享 owner 持有）。PoC 验收：两个客户端同时观看同一 Thread，事件扇出正确、延迟可接受，任一方断线后 resume 不丢事件、不重复；hibernation 唤醒后 resume 与访问会话的持久化成本。
 2. **租户模型**：一个 Cloudflare 部署＝一个 installation（一个 IC、一个 AC，与 Node 自托管语义一致，建议），还是一个 Worker 承载多个 installation（IC／AC 按 installation 命名）。后者需要 tenant 作用域在每个入口显式校验，现有代码未实现多租户准入（execution-ownership.md 已注明）。
 3. **IM／webhook**：WeCom 是出站长连接（`plugins/wecom/src/server.ts:16`），在 DO 上会持续占用运行时长；Slack 与通用 IM 需核实是 webhook 还是长连接。选项：Cloudflare 上只支持 webhook 型渠道；或长连接渠道留在 Node；或接受 DO 常驻成本。
 4. **有意保持 Node-only 的产品范围**：确认 SSH Servers、本机桌面、relay-connect、匿名部署、观测 ingress、可用性通知在 Cloudflare 上不提供；以及 DSH／Pi／ACP 是否在后续里程碑进入工作区容器。
