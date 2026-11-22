@@ -17,21 +17,32 @@ import { cp, mkdir, readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { build } from "esbuild";
-import { daemonDist, drillCodexExecutable, prepareDrillPrograms, repositoryRoot as root } from "./codex-bridge-drill-setup.mjs";
+import {
+  daemonDist,
+  drillCodexExecutable,
+  prepareDrillPrograms,
+  repositoryRoot as root,
+} from "./codex-bridge-drill-setup.mjs";
 
 const option = (name) => {
   const index = process.argv.indexOf(name);
   return index < 0 ? undefined : process.argv[index + 1];
 };
 const out = join(root, ".local/codex-bridge-drill", new Date().toISOString().replace(/[:.]/gu, "-"));
-const programs = join(out, "programs"), drill = join(out, "drill"), state = join(out, "state");
+const programs = join(out, "programs"),
+  drill = join(out, "drill"),
+  state = join(out, "state");
 await mkdir(drill, { recursive: true });
 await mkdir(state, { recursive: true });
 await prepareDrillPrograms(programs);
 const codex = await drillCodexExecutable();
 await build({
   entryPoints: [join(root, "scripts/smoke/execution/smoke-codex-bridge-stack-windows.ts")],
-  bundle: true, platform: "node", target: "node24", external: ["node-pty"], logLevel: "warning",
+  bundle: true,
+  platform: "node",
+  target: "node24",
+  external: ["node-pty"],
+  logLevel: "warning",
   format: "esm",
   outfile: join(drill, "drill.mjs"),
   banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" },

@@ -77,6 +77,14 @@ daemon 以 `--codex-bridge-stack <程序目录>`（`codexBridgeStack`）启动 b
 
 演练 `scripts/smoke/execution/smoke-codex-bridge-stack.ts`（真实原生 Codex 0.162.1 + 本地假模型 + 合成账号，2026-11-22 在 Node 26 与 Electron 44 以 Node 运行（Node 24.22，与打包 daemon 相同）下均通过）：旧 Host 建的会话在栈启动后以原 ID 续聊并保留历史；新线程经 bridge 应答；daemon 关闭时三个子进程全部退出；整栈重启后同一 bridge 线程续聊；每条输入只到达模型一次。Engine Host 重启后，声明 `adoption` 的 provider 在路由下次使用时续接已记录的原生会话，Host 仍记为进行中的轮次按原生结果收口（查不到记为中断），排队输入随后继续派发。
 
+可复用的验证环境（Linux 云端会话与 CI 共用，均为合成账号与本地假模型 `tests/fixtures/fake-responses-model.mjs`，输出在 `.local/`）：
+
+| 目的 | 命令 |
+|---|---|
+| 固定版本的原生 Codex | `bash scripts/ci/setup-toolchain.sh codex`（按 `runtime/codex` 锁文件 `npm ci`，打印可执行文件路径） |
+| bridge 栈演练（任意平台） | 先 `npm run build --workspace @opencraft/opencraft-daemon`，再 `node scripts/smoke/execution/run-codex-bridge-stack-drill.mjs`（Electron 自带 Node 运行） |
+| 源码桌面端到端 | 先 `npm run build:electron`，再 `node --import tsx scripts/smoke/desktop/smoke-codex-bridge-desktop.ts [--step 模块]... [--keep]`：新会话经 bridge 应答，退出后 DevTools 端口释放、该 profile 进程全部结束；无显示器的 Linux 自动用 `xvfb-run` |
+
 桌面入口（`apps/desktop/src/codex-bridge-default.ts`）：macOS 与 Linux 默认开启，`OPENCRAFT_CODEX_BRIDGE=0` 退回旧 adapter 作应急；Windows 仍需 `OPENCRAFT_CODEX_BRIDGE=1` 显式开启，待真机验证后再改默认。开启时 Main 把打包的 `runtime/codex-bridge` 传给 daemon。已在运行的 daemon 不会因开关变化而重启，需退出应用后再开。
 
 该模式下 daemon 不再组装旧 adapter，见“退休旧 adapter 时的其余 owner”。演练另覆盖：计划任务自行在 bridge 线程上运行；daemon 在轮次进行中重启后，Host 自行续跑该轮次且只续一次。
@@ -102,7 +110,7 @@ daemon 以 `--codex-bridge-stack <程序目录>`（`codexBridgeStack`）启动 b
 ### 退休旧 adapter 的剩余条件
 
 1. **桌面默认开启 bridge 栈**：macOS 与 Linux 已默认开启（2026-11-22，此前已用真实账号与界面验证）；应急开关 `OPENCRAFT_CODEX_BRIDGE=0` 在旧 adapter 退休时一并移除。
-2. **Windows**：已实现，默认仍走旧路径，`OPENCRAFT_CODEX_BRIDGE=1` 开启。控制端点与 relay 用命名管道（按栈实例命名），原生 Codex 在 `ws://127.0.0.1:随机端口` 上以 `--ws-auth capability-token` 监听，令牌文件在私有 runtime 目录；所有客户端经 `openCodexNativeSocket`（`@opencraft/account-pool-host`）连接三种端点。子进程停止改为关闭 stdin、由预载脚本触发子进程自己的 SIGTERM 处理（Windows 没有可捕获的 SIGTERM）。Windows 专属修正：开机标识在没有 PowerShell 时退回由系统运行时长推算；写锁与恢复记录不再对目录做 fsync、不再检查 POSIX 权限位；Codex provider 用平台的 `isAbsolute` 判断工作区与文件路径。验证：`scripts/smoke/execution/smoke-codex-bridge-stack-windows.ts` 在 Wine 9.0 下用 Windows 版 Node 24.11 与 Codex 0.162.1 通过（建会话、Windows 临时工作区、经 bridge 应答、关闭无残留）；Wine 中 undici `fetch` 无法建连，演练用基于 `node:http` 的替身，产品代码未改。尚未在真实 Windows 上验证，也未覆盖命令执行与 Electron 界面。
+2. **Windows**：已实现，默认仍走旧路径，`OPENCRAFT_CODEX_BRIDGE=1` 开启。控制端点与 relay 用命名管道（按栈实例命名），原生 Codex 在 `ws://127.0.0.1:随机端口` 上以 `--ws-auth capability-token` 监听，令牌文件在私有 runtime 目录；所有客户端经 `openCodexNativeSocket`（`@opencraft/account-pool-host`）连接三种端点。子进程停止改为关闭 stdin、由预载脚本触发子进程自己的 SIGTERM 处理（Windows 没有可捕获的 SIGTERM）。Windows 专属修正：开机标识在没有 PowerShell 时退回由系统运行时长推算；写锁与恢复记录不再对目录做 fsync、不再检查 POSIX 权限位；Codex provider 用平台的 `isAbsolute` 判断工作区与文件路径。验证：`.github/workflows/windows-codex-bridge.yml` 在 GitHub 的 `windows-2022` 上运行 `scripts/smoke/execution/run-codex-bridge-stack-drill.mjs`（Electron 自带 Node、`runtime/codex` 固定的 codex.exe、本地假模型；建会话、Windows 临时工作区、经 bridge 应答、关闭无残留）与 `npm run test:sqlite-node`，相关路径改动时自动触发，也可手动触发。Windows 结论只以这个任务为准；此前在 Wine 9.0 下跑通过的同一演练只算预检（Wine 的 ConPTY、命名管道与原生模块行为不代表 Windows）。命令执行与 Electron 界面尚未覆盖。
 3. **服务器（单机与四容器）**：服务器组装依赖旧路径上的协作与编排（`collaboration`、编排控制、对话工具与 `nativeTool` 动态工具）、桌面附着、工作区钩子、线程元数据与发送者、会话 MCP 的环境注入、计量查询与模型网关计费。这些在 bridge 上都还没有 owner，迁移前服务器不能切到无旧路径组装。
 4. **SSH 远程 Codex** 不在退休范围：它与本地模式共享客户端复用、交互、工具、附件、元数据等核心，退休时只删本地模式（spawn、Core 直通、Core + overlays），保留并抽出远程所需部分。
 

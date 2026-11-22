@@ -29,8 +29,13 @@ export async function prepareDrillPrograms(directory) {
   await cp(join(daemonDist, "codex-bridge"), directory, { recursive: true });
   await build({
     entryPoints: [join(repositoryRoot, "tests/fixtures/bridge-stack-core.ts")],
-    bundle: true, platform: "node", target: "node24", external: ["node-pty"], logLevel: "warning",
-    format: "cjs", outfile: join(directory, "codex-core.cjs"),
+    bundle: true,
+    platform: "node",
+    target: "node24",
+    external: ["node-pty"],
+    logLevel: "warning",
+    format: "cjs",
+    outfile: join(directory, "codex-core.cjs"),
   });
   return directory;
 }
