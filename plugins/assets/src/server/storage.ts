@@ -1,3 +1,4 @@
+import type { CreateAssetWorkspaceExecutionOwner, AssetWorkspaceExecutionOwner } from "./workspace-owner.js";
 import { InstalledWorkspaceCatalog } from "./workspace-catalog.js";
 import { adoptInstalledWorkspaceConfiguration } from "./installed-delivery.js";
 import type { ResolvedWorkspaceSelection } from "@opencraft/execution-environment/workspace-selection";
@@ -11,22 +12,28 @@ import { GitConnections, type GitConnectionProvider } from "./git-connections.js
 import { githubConnectionProvider } from "./github-provider.js";
 import type { AssetAdmission } from "./worker.js";
 
-export function createAssetsStorage(
+export async function createAssetsStorage(
   directory: string,
   providers: readonly GitConnectionProvider[] = [githubConnectionProvider()],
   execution?: GitExecutionResolver,
+  createWorkspaces?: CreateAssetWorkspaceExecutionOwner,
 ) {
   const vault = new EmployeeGitVaultStore(directory);
+  let workspaces: AssetWorkspaceExecutionOwner | undefined;
   try {
     const configurations = new SandboxConfigurations(vault);
     const workspaceCatalog = new InstalledWorkspaceCatalog(configurations);
     const workspaceBudget = new WorkspaceBudgetStore(vault, () => {
       const runtime = configurations.installedRuntime();
-      if (!runtime) throw new SandboxConfigurationError('unavailable', 503);
+      if (!runtime) throw new SandboxConfigurationError("unavailable", 503);
       return runtime.policy.capacity;
     });
     const budgetCall = <T>(operation: () => T): T => {
-      try {return operation();} catch {throw new SandboxConfigurationError('unavailable', 503);}
+      try {
+        return operation();
+      } catch {
+        throw new SandboxConfigurationError("unavailable", 503);
+      }
     };
     const git = new GitConnections(vault, providers);
     function check(access: AssetAdmission) {
@@ -60,31 +67,88 @@ export function createAssetsStorage(
         throw new SandboxConfigurationError("unavailable", 503);
       }
     }
-    const catalogContext = (access: AssetAdmission) => ({scope: access.scope, current() {
-      try {check(access); return true;} catch {return false;}
-    }});
+    workspaces = await createWorkspaces?.({
+      directory,
+      vault,
+      configurations,
+      catalog: workspaceCatalog,
+      budget: workspaceBudget,
+    });
+    const workspaceMethods = workspaces?.methods ?? {};
+    if (
+      Object.keys(workspaceMethods).some(
+        (name) =>
+          !/^workspace(?:Begin|Status|NativeReceipt|Cancel|Forget|Selection|FileScope|FileRequest|PlacementPage)$/.test(
+            name,
+          ),
+      )
+    )
+      throw new Error("Invalid compiled workspace owner");
+    const catalogContext = (access: AssetAdmission) => ({
+      scope: access.scope,
+      current() {
+        try {
+          check(access);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    });
     return {
-      concurrentReads:execution?['executionGitGrant','executionGitReservation']:[],
+      concurrentReads: execution ? ["executionGitGrant", "executionGitReservation"] : [],
       ready: {
         outcome: vault.outcome,
+        workspaceExecution: workspaces !== undefined,
         gitHosts: providers.map((p) => p.host),
         gitAuthority: execution ? vault.personalGitAuthority("actor") : null,
       },
       methods: {
+        ...Object.fromEntries(
+          Object.entries(workspaceMethods).map(([name, method]) => [
+            name,
+            async (...args: never[]) => {
+              try {
+                return await method(...args);
+              } catch {
+                throw new SandboxConfigurationError("unavailable", 503);
+              }
+            },
+          ]),
+        ),
         // Trusted installed-file delivery only; no configuration HTTP action.
-        adoptWorkspaceInstallation: (path: string) => budgetCall(async () => {
-          try {return await adoptInstalledWorkspaceConfiguration(configurations, path);}
-          catch {throw new SandboxConfigurationError('unavailable', 503);}
-        }),
-        workspaceCatalog: (access: AssetAdmission) => run(access, () => {
-          const value = workspaceCatalog.snapshot(catalogContext(access));
-          return {version: 1 as const, environments: value.environments,
-            libraries: value.libraries.map(({id, name, status, environmentIds}) => ({id, name, status, environmentIds}))};
-        }),
+        adoptWorkspaceInstallation: (path: string) =>
+          budgetCall(async () => {
+            try {
+              return await adoptInstalledWorkspaceConfiguration(configurations, path);
+            } catch {
+              throw new SandboxConfigurationError("unavailable", 503);
+            }
+          }),
+        workspaceCatalog: (access: AssetAdmission) =>
+          run(access, () => {
+            const value = workspaceCatalog.snapshot(catalogContext(access));
+            return {
+              version: 1 as const,
+              environments: value.environments,
+              libraries: value.libraries.map(({ id, name, status, environmentIds }) => ({
+                id,
+                name,
+                status,
+                environmentIds,
+              })),
+            };
+          }),
         workspaceResolveEnvironment: (access: AssetAdmission, target: unknown) =>
           run(access, () => workspaceCatalog.resolveEnvironment(catalogContext(access), target)),
-        workspaceValidateEnvironment: (access: AssetAdmission, environment: ResolvedWorkspaceSelection['environment']) =>
-          run(access, async () => {await workspaceCatalog.runtime(catalogContext(access), environment).authorize(); return true;}),
+        workspaceValidateEnvironment: (
+          access: AssetAdmission,
+          environment: ResolvedWorkspaceSelection["environment"],
+        ) =>
+          run(access, async () => {
+            await workspaceCatalog.runtime(catalogContext(access), environment).authorize();
+            return true;
+          }),
         // Compiled provider lifecycle only; never an HTTP configuration action.
         workspaceBudgetReserve: (role: WorkspaceBudgetRole, identity: SandboxIdentity, resources: SandboxResources) =>
           budgetCall(() => workspaceBudget.reserve(role, identity, resources)),
@@ -93,15 +157,28 @@ export function createAssetsStorage(
         executionGitReservation: (raw: unknown) => {
           try {
             if (!execution?.reserve) throw Error("unavailable");
-            const input=parseGitExecutionLocator(raw);
-            if(input.hostId!=="local-codex"||!input.inputId||input.turnId)throw Error("unavailable");
-            const admission=execution.reserve(input),scope=admission?.scope;
-            if(!scope)return null;
-            if(!scope.account.startsWith("actor:human://")||scope.hostId!==input.hostId
-              ||scope.threadId!==input.threadId||scope.inputId!==input.inputId
-              ||JSON.stringify(execution.reserve(input))!==JSON.stringify(admission))throw Error("unavailable");
-            return {scope,native:admission!.native,authority:vault.personalGitAuthority("actor"),capability:vault.sealPersonalGitGrant(scope)};
-          } catch {throw new SandboxConfigurationError("execution_unavailable",503);}
+            const input = parseGitExecutionLocator(raw);
+            if (input.hostId !== "local-codex" || !input.inputId || input.turnId) throw Error("unavailable");
+            const admission = execution.reserve(input),
+              scope = admission?.scope;
+            if (!scope) return null;
+            if (
+              !scope.account.startsWith("actor:human://") ||
+              scope.hostId !== input.hostId ||
+              scope.threadId !== input.threadId ||
+              scope.inputId !== input.inputId ||
+              JSON.stringify(execution.reserve(input)) !== JSON.stringify(admission)
+            )
+              throw Error("unavailable");
+            return {
+              scope,
+              native: admission!.native,
+              authority: vault.personalGitAuthority("actor"),
+              capability: vault.sealPersonalGitGrant(scope),
+            };
+          } catch {
+            throw new SandboxConfigurationError("execution_unavailable", 503);
+          }
         },
         executionGitGrant: (raw: unknown) => {
           try {
@@ -145,19 +222,27 @@ export function createAssetsStorage(
             configurations.update(access.scope, input, access.allowCustomEndpoints, access.canManagePlatform),
           ),
       },
-      close: () => {
+      close: async () => {
         try {
-          execution?.close();
+          await workspaces?.close();
         } finally {
-          vault.close();
+          try {
+            execution?.close();
+          } finally {
+            vault.close();
+          }
         }
       },
     };
   } catch (error) {
     try {
-      execution?.close();
+      await workspaces?.close();
     } finally {
-      vault.close();
+      try {
+        execution?.close();
+      } finally {
+        vault.close();
+      }
     }
     throw error;
   }

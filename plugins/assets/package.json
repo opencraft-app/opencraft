@@ -27,7 +27,8 @@
     "./server/github-provider": "./src/server/github-provider.ts",
     "./server/storage": "./src/server/storage.ts",
     "./server/workspace-budget": "./src/server/workspace-budget.ts",
-    "./server/workspace-catalog": "./src/server/workspace-catalog.ts"
+    "./server/workspace-catalog": "./src/server/workspace-catalog.ts",
+    "./server/workspace-owner": "./src/server/workspace-owner.ts"
   },
   "dependencies": {
     "@opencraft/design-system-web": "0.1.0",

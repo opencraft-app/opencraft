@@ -1,7 +1,10 @@
 import { access } from "node:fs/promises";
 import { openAssetConfigurations } from "@opencraft/plugin-assets/server";
 /** The Headless composition adds native lease reads to the same sole vault Worker. */
-export async function openHeadlessAssetsStorage(directory: string, options: { installationFile?: string } = {}) {
+export async function openHeadlessAssetsStorage(
+  directory: string,
+  options: { installationFile?: string; workspaceMachineId?: string } = {},
+) {
   let entry = new URL("./assets-runtime-worker.mjs", import.meta.url);
   try {
     await access(entry);
@@ -11,6 +14,7 @@ export async function openHeadlessAssetsStorage(directory: string, options: { in
   }
   return openAssetConfigurations(directory, {
     entry,
+    ...(options.workspaceMachineId === undefined ? {} : { workspaceMachineId: options.workspaceMachineId }),
     ...(options.installationFile === undefined ? {} : { installationFile: options.installationFile }),
   });
 }

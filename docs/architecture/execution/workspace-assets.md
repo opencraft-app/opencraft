@@ -77,10 +77,10 @@ failed/pending cleanup, late settlement, cancellation and lost acknowledgements.
 The existing packaged-owner test checks the compiled sibling Worker without a
 source-tree fallback. These are not live cloud or container acceptance tests.
 
-This is the durable budget layer, not completed default workspace execution.
-Remaining integration must connect configured environment resolution, native
-placement/admission, workspace files/artifacts, reuse and confirmed reclamation
-to the existing provider/Thread owners. That integration must preserve original
+The budget and Worker lifecycle below are implemented candidates, not completed
+default workspace execution. Remaining integration must connect the default
+Native hooks and workspace file/artifact/terminal/browser bridges to those owners.
+That integration must preserve original
 Human/Actor epochs, never infer local execution from a missing remote binding,
 and keep actual provider credentials inside their trusted execution owner.
 Do not advertise a new workspace capability solely because this ledger exists.
@@ -88,3 +88,41 @@ Do not advertise a new workspace capability solely because this ledger exists.
 The general execution primitive and actual resource enforcement boundaries are
 specified in [execution sandbox](execution-sandbox.md); native lifetime and
 transport ownership are specified in [execution ownership](execution-ownership.md).
+
+### Worker lifecycle candidate
+
+The compiled Headless Assets Worker now accepts the private `workspaceMachineId`
+composition option. It opens the existing ordinary-workspace journal and its
+single process-writer lock; the generic configuration Worker refuses this option
+rather than claiming execution support. This does not enable the default Host
+catalog or allocate provider resources at startup.
+
+The workspace owner resolves the canonical catalog and Git/library selections,
+charges the installed global budget, verifies actual mounts, and uses the existing
+conversation binding. Native preparation is a bounded opaque attempt: Worker
+returns a private execution selection, while the actual Native reply is a separate
+receipt. The Worker records a positive Thread identity before rechecking whether
+publication is still authorized. Cancellation retains unresolved creation evidence;
+unconfirmed cleanup remains charged across replacement. A live workspace resume
+still waits for a real matching Native resume, without allocating again.
+
+The attachment-local Native handoff is a narrow Worker client, not another journal
+or writable vault. It retains cancelled reply slots for late positive receipts,
+checks the original trusted context, refreshes committed placement even when
+publication fails, and never retries Native creation. Human admission comes from
+the existing Actor/member owners, with separate request and resource permits.
+Closing a View cannot revoke published compute; Actor/member revocation is
+monotonic and is independently rechecked from existing storage inside the Worker.
+
+`tests/server/assets-workspace-execution.test.ts` exercises the real Worker,
+conversation owner, journal, budget and handoff with synthetic provider/binding
+handles. The packaging test also opens the bundled Headless Worker and private
+journal without importing source-tree code or a local PTY provider. Neither test
+is evidence of real cloud provisioning, an official exec-server handshake, or
+four-role container resource enforcement.
+
+Default Headless Native hook composition, source-aware placement reconciliation,
+and the Worker file/artifact/terminal/browser bridges remain integration work in
+the same workspace change. Keep the default capability unpublished until that
+composition is complete; do not run a second legacy file-backed provider beside
+the adopted vault-backed installation.

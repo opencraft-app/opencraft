@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto';
+import { terminalResourceOwnerId } from './host-resource-identity.js';
+export { terminalResourceOwnerId } from './host-resource-identity.js';
 import { DurableHostProcessService } from '@opencraft/local-agent-host/durable-process-service';
 import { TerminalCapacityError, type PreparedProcessIdentity } from '@opencraft/local-agent-host/process-service';
 import { validateEnvironmentName } from '@opencraft/execution-environment/account-environment';
@@ -10,8 +11,6 @@ import type { EnvironmentExecutionScope, ExecutionEnvironmentRuntime } from '@op
 export const HOST_TERMINAL_METHODS = ['process/spawn', 'process/attach', 'process/list', 'process/writeStdin', 'process/resizePty', 'process/kill'] as const;
 const methods = new Set<string>(HOST_TERMINAL_METHODS);
 const object = (value: unknown): Record<string, any> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {};
-const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-export const terminalResourceOwnerId = (actorId: string, hostId: string) => digest([actorId, hostId]);
 export type HostTerminalScope = EnvironmentExecutionScope & { readonly actorId?: string };
 
 /** One private Hands client per Host. Engine switching never changes the PTY owner. */

@@ -159,3 +159,15 @@ test(
     }
   },
 );
+
+test("requesting native workspace execution from a configuration-only owner fails closed", async (t) => {
+  const f = await delivery(t);
+  await assert.rejects(openAssetConfigurations(f.directory, { workspaceMachineId: "synthetic-not-a-native-owner" }));
+  // Failed composition released its sole writer; ordinary Assets still opens.
+  const owner = await openAssetConfigurations(f.directory);
+  try {
+    assert.equal(owner.workspaceExecution, false);
+  } finally {
+    await owner.close();
+  }
+});

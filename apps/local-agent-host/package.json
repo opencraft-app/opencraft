@@ -25,7 +25,12 @@
     "./desktop/native-control": "./src/desktop/native-control.ts",
     "./model-config/repository": "./src/model-config/repository.ts",
     "./model-config/speech": "./src/model-config/speech.ts",
-    "./machine-identity": "./src/machine-identity.ts"
+    "./machine-identity": "./src/machine-identity.ts",
+    "./ordinary-conversation-owner": "./src/ordinary-conversation-owner.ts",
+    "./ordinary-workspace-store": "./src/ordinary-workspace-store.ts",
+    "./ordinary-workspace-compute": "./src/ordinary-workspace-compute.ts",
+    "./sandbox-conversation-binding": "./src/sandbox-conversation-binding.ts",
+    "./sandbox-browser-owner": "./src/sandbox-browser-owner.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
