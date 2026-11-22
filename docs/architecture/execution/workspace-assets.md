@@ -77,9 +77,10 @@ failed/pending cleanup, late settlement, cancellation and lost acknowledgements.
 The existing packaged-owner test checks the compiled sibling Worker without a
 source-tree fallback. These are not live cloud or container acceptance tests.
 
-The budget and Worker lifecycle below are implemented candidates, not completed
-default workspace execution. Remaining integration must connect the default
-Native hooks and workspace file/artifact/terminal/browser bridges to those owners.
+The budget, Worker lifecycle and default Headless Native composition are
+implemented in this workspace batch. Runtime/cloud acceptance and source-aware
+orphan/lifecycle reconciliation remain distinct work; implementation is not a
+claim of complete production acceptance.
 That integration must preserve original
 Human/Actor epochs, never infer local execution from a missing remote binding,
 and keep actual provider credentials inside their trusted execution owner.
@@ -94,8 +95,8 @@ transport ownership are specified in [execution ownership](execution-ownership.m
 The compiled Headless Assets Worker now accepts the private `workspaceMachineId`
 composition option. It opens the existing ordinary-workspace journal and its
 single process-writer lock; the generic configuration Worker refuses this option
-rather than claiming execution support. This does not enable the default Host
-catalog or allocate provider resources at startup.
+rather than claiming execution support. Only matched default Native composition enables the Host catalog; no provider
+resources are allocated at startup.
 
 The workspace owner resolves the canonical catalog and Git/library selections,
 charges the installed global budget, verifies actual mounts, and uses the existing
@@ -121,11 +122,9 @@ journal without importing source-tree code or a local PTY provider. Neither test
 is evidence of real cloud provisioning, an official exec-server handshake, or
 four-role container resource enforcement.
 
-Default Headless Native hook composition and source-aware placement
-reconciliation remain integration work in the same workspace change; the Worker
-file/artifact/terminal/browser bridges are implemented below. Keep the default capability unpublished until that
-composition is complete; do not run a second legacy file-backed provider beside
-the adopted vault-backed installation.
+Default Headless Native hooks and the Worker bridges are composed below.
+Source-aware placement reconciliation remains separate work. Do not run a second
+legacy file-backed provider beside the adopted vault-backed installation.
 
 ### Gateway Native and file composition candidate
 
@@ -198,8 +197,8 @@ artifact helpers in a temporary synthetic workspace. PTY/provider handles are
 synthetic, not evidence of an E2B connection or kernel enforcement. The bridge
 retains per-binding limits; the shared Hands admission owner described below
 supplies aggregate terminal admission, not this transport itself. Browser ports
-and default Bot/provider composition are implemented below. Default ordinary
-Headless Native activation remains unfinished.
+and default Bot/provider composition are implemented below. Default ordinary Headless Native composition is described below; production
+activation/acceptance is not implied by these source tests.
 
 ### Browser transport candidate
 
@@ -263,8 +262,8 @@ block resource retirement. Unknown creation/deletion remains charged across
 Worker replacement. Confirmed destruction alone releases that reservation.
 Closing Main observation does not count as destruction. This is implemented
 source/default Bot assembly, not live cloud, model or container acceptance.
-Default ordinary Native assembly remains unfinished in this workspace batch;
-shared local/remote terminal admission is described below.
+Default ordinary Native assembly and shared local/remote terminal admission are
+described below; live provider acceptance is not implied.
 
 ### One admission owner for local and remote UI terminals
 
@@ -301,10 +300,35 @@ Hands owner without the admission capability is not treated as equivalent. No
 configured admission means remote terminals are unavailable, not routed to a
 controller PTY; nonterminal execution is unchanged. Default ordinary Native
 startup must pass the same trusted Hands endpoint/token-file location into the
-already-owned Assets Worker. This source plumbing is implemented, but that default
-ordinary startup remains unfinished in this batch.
+already-owned Assets Worker. The default ordinary startup passes these private options as described below.
 
 Tests exercise the real private Hands socket/journal and real local PTYs alongside
 synthetic remote SDK processes, including aggregate/account limits, nonce ABA,
 lost replies, unknown SDK spawn, owner replacement and Worker-to-Hands routing.
 They do not prove real cloud PTY behavior, systemd acceptance or four-role limits.
+
+### Default Headless Native composition
+
+With the existing matched private Core authority configuration and Human instance
+admission, the public Headless entry now opens its SAME canonical Assets Worker
+with the trusted machine identity and configured Hands connection. It installs
+the generic workspace service, Native per-attachment hooks, catalog, scoped file
+and terminal selectors and central browser router. No extra identity provider,
+writable vault, Bot callback client or file-backed provider is created. An
+identity product that owns its configuration must supply its matching Native
+route instead; ownership is exclusive.
+
+An unconfigured installation returns an honest empty catalog; resolving an
+execution selection is still strict. Missing Hands ports are unavailable ports,
+not controller files or PTYs. A missing explicit local browser owner is likewise
+unavailable, while remote routing can use an admitted resource-owned browser.
+Unclassified Native Threads remain denied; catalog absence never classifies a
+Thread as local. Existing custom local selectors remain delegated only after the
+generic placement authority has positively chosen a local route.
+
+Source and packaged default-startup tests exercise real Worker, vault, private
+authority socket, HTTP/WebSocket admission, initialization, catalog and orderly
+restart, with a synthetic Native adapter and no provider/model call. They prove
+that the default composition reaches these owners, not live E2B execution or
+complete orphan/archive/provider reconciliation. Production deployment is a
+separate operation.

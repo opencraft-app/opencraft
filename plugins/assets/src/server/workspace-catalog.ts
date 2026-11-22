@@ -85,7 +85,10 @@ export class InstalledWorkspaceCatalog {
   /** Secret-free configured choices. Configured does not imply a launched lease
    * or that default conversation composition is enabled. */
   snapshot(context: WorkspaceCatalogContext) {
-    const installed = this.installed(context);
+    this.assert(context);
+    const installed = this.configurations.installedRuntime();
+    this.assert(context);
+    if (!installed || !installed.policy.persistentWorkspaces) return { environments: [], libraries: [] };
     const records = installed.records.filter(
       (r) =>
         r.policy.workspaceRoot === "/workspace" &&
