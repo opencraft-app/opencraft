@@ -61,6 +61,19 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+      # This job runs only on main, and GitHub scopes a pull request's caches
+      # to its own merge ref, so this cache holds only what main runs saved.
+      - name: Restore Gradle downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # Gradle distributions and resolved dependencies only; the build
+          # outputs stay in the fresh checkout. React Native and Expo pin the
+          # Gradle inputs through the lockfile.
+          path: |
+            ~/.gradle/wrapper/dists
+            ~/.gradle/caches/modules-2
+          key: android-gradle-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: android-gradle-${{ runner.os }}-
       - run: sdkmanager 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0' 'build-tools;35.0.0' 'ndk;27.1.12297006' 'ndk;27.0.12077973' 'cmake;3.22.1'
       - run: npm ci --no-audit --no-fund
       - name: Derive the Android versionCode from the release tag

@@ -68,6 +68,19 @@ test("the pre-release publishes only the production-signed APK", () => {
   assert.match(android, /matrix:build -- expo-android-release-apk/u);
   assert.doesNotMatch(android, /expo-android-internal-apk/u);
   assert.match(android, /package-manager-cache: false/u);
+  // The Gradle download cache is safe only because its single job runs on main,
+  // whose cache scope pull requests cannot write; it never holds build outputs.
+  assert.match(
+    android,
+    /^jobs:\n {2}apk:\n {4}if: github\.repository == 'opencraft-app\/opencraft' && github\.ref == 'refs\/heads\/main'\n/mu,
+  );
+  assert.deepEqual(android.match(/^ {2}[a-z][a-z-]*:$/gmu), ["  apk:"], "one job, gated to main");
+  assert.deepEqual(
+    [...android.matchAll(/uses: actions\/cache@[0-9a-f]{40}[^\n]*\n(?: {8}.*\n)*/gu)].map((step) =>
+      [...step[0].matchAll(/^ {12}(~\/\S+)$/gmu)].map((path) => path[1]),
+    ),
+    [["~/.gradle/wrapper/dists", "~/.gradle/caches/modules-2"]],
+  );
   assert.match(android, /if: always\(\)\n\s+run: rm -rf "\$RUNNER_TEMP\/android-release-signing"/u);
 
   const prerelease = read(".github/workflows/desktop-prerelease.yml");
