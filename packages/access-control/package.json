@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./membership-revocation": "./src/membership-revocation.ts",
     ".": "./src/index.ts",
     "./actors": "./src/actors.ts",
     "./actor-access": "./src/actor-access.ts",

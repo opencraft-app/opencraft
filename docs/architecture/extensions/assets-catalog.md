@@ -78,7 +78,7 @@ binary test or external E2B acceptance.
 
 `@opencraft/plugin-assets/server` now supplies `openAssetConfigurations(directory)`.
 It opens the existing encrypted vault **inside** a lifecycle-owned FIFO Worker,
-returns an async metadata-only store and requires an awaited `close()` to drain
+returns an async configuration port and requires an awaited `close()` to drain
 accepted requests. It preserves the existing document names, revision tombstones,
 key generations, installed-template policy and generation-pinned library records.
 No database migration, account renaming or new generic writable storage is added.
@@ -181,3 +181,15 @@ or Electron-binary acceptance test.
 Saving/verifying Git configuration is not an execution grant. The default native
 Actor's agent-execution credential handoff and cloud-workspace binding still need
 runtime/admission integration; the configuration UI does not claim those paths.
+
+
+### Native execution is a separate owner port
+
+The Headless compiled `assets-runtime-worker.mjs` adds only a private, sealed Git
+handoff method to this same owner. It is not reachable through either metadata
+HTTP route and does not return a PAT or private key. Only its synchronous grant
+read may overtake a provider network wait; configuration mutation ordering and
+close/drain semantics remain unchanged. Native admission and current membership
+still belong to the existing execution/Actor/access owners. The in-process Pi
+consumer and the remaining Host-integration boundary are documented in
+[managed Git identity](../identity/git-identity.md#native-human--actor-execution-handoff).

@@ -8,7 +8,7 @@
     "./serve-workbench-static": "./src/serve-workbench-static.mjs"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p src/remote-browser/tsconfig.json"
+    "typecheck": "tsc --noEmit -p src/remote-browser/tsconfig.json && tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@opencraft/access-control": "0.1.0",
@@ -34,6 +34,7 @@
     "@opencraft/observability-query": "0.1.0",
     "@opencraft/opencraft-daemon": "0.1.0",
     "@opencraft/personal-assistant": "0.17.0",
+    "@opencraft/plugin-assets": "0.1.0",
     "@opencraft/plugin-im": "0.1.0",
     "@opencraft/plugin-local-account": "0.1.0",
     "@opencraft/plugin-pi-engine": "0.1.0",

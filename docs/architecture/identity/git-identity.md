@@ -151,3 +151,72 @@ in-memory grants after owner loss, and does not enable server-account fallback.
 Binding inspection alone is not a Git command-path health check. Rollout needs
 matched Gateway, execution owner and wrapper builds; source tests alone do not
 establish production deployment or remote Git availability.
+
+
+## Native Human / Actor execution handoff
+
+The default Headless account composition uses the **same** encrypted Assets
+Worker for configuration and Actor-scoped Git grant issuance. Its compiled
+`assets-runtime` entry adds a read-only view of the existing immutable execution
+leases, Actor bindings and membership audit. It opens no replacement identity or
+lease store, runs no migration and creates no second vault writer. The ordinary
+Desktop Assets Worker has no execution resolver and cannot issue these grants.
+
+The private `executionGitGrant` owner method accepts only a Host, original input
+and Thread locator. It derives the canonical `actor:human://…` partition from the
+persisted original execution principal, never from JSON account/email/username.
+The existing admission path snapshots the verified Human Actor ID and generation
+alongside that provider principal in the existing submission JSON. A later login
+binding reassignment cannot transfer an old execution to its successor Human.
+Historical submissions without this original Actor provenance are not backfilled
+on replay and cannot acquire Actor-scoped Git credentials; a newly admitted input
+is required. Likewise, disabling and re-enabling an Actor requires a new input
+with the new generation, not merely preparing another capability for the old one.
+It is **not** an HTTP action or a browser tool. Its result contains only scope,
+native incarnation/Turn evidence, an authority fingerprint and a sealed
+attestation: no PAT, private signing key or vault key crosses into Gateway Main.
+The trusted Main adapter separately rechecks the existing `InstanceAccess`
+admission policy and Actor generation before and after bounded native history
+inspection; it does not invent a second membership policy or require a new
+Actor-membership row where the core already admits a verified binding.
+
+Actor attestations use the v3 authenticated envelope and bind Actor generation
+and the existing membership-revocation revision as well as exact execution ID,
+original input and lease generation. Disable/enable between polls cannot revive
+an old capability. Legacy provider-partition v2 envelopes keep their original
+format and behavior. Actor and provider-partition broker discovery use distinct
+authority fingerprints; a legacy replica cannot silently stand in for an Actor
+replica with a different account mapping.
+
+The Actor-mode broker requires a bounded parent liveness port on each open,
+credential read and signature. The parent rechecks the same sealed scope and
+reads the original native Turn, then the Worker rechecks lease, Actor/membership
+and credential revision after that await. Stale SQLite active rows, an unavailable
+parent/native observer, a successor Turn or an authority change fail closed.
+Retiring a view does not cancel an admitted Turn, but retiring the execution owner
+closes its broker and cannot start an orphan after an awaited native inspection.
+Git commands and unknown effects are never automatically replayed.
+
+The Assets Worker explicitly declares only its synchronous, non-mutating grant
+read as reentrant. It may read committed state while remote GitHub verification
+waits, without waiting behind that network request. Configuration mutations and
+ordinary snapshots remain FIFO; close drains both lanes. No SQLite transaction
+spans the provider await. A committed credential revision still retires an older
+command even if its authorization read was admitted before the write completed.
+
+`PiDurableSession` consumes this asynchronous port at the actual bash boundary.
+It strips only its own Turn-scoped request-ID prefix to recover the original
+admitted input, preserves background-command ownership, and refuses unknown
+preparation rather than using the server credential. The current default wiring
+covers **in-process Headless Pi** with the packaged Git runtime. The trusted
+adapter supplies its actual Node executable for npm-style execution packages
+without a bundled `bin/node`. Independent execution Hosts, DSH and native Codex
+handoff are still follow-up integration, not implied by a saved connection or
+this first native consumer. No deployment or sandbox isolation claim is made.
+
+`tests/identity/assets-execution-git.test.ts` uses a real Human/account and HTTP
+save, sole vault Worker, managed Git launcher, actual SSH signature verification,
+and a native Pi bash tool with a synthetic model. GitHub responses are synthetic:
+no real account, token or remote key is used. It also covers native-liveness loss,
+Actor/membership disable-enable cycles, the absent public grant action, retirement
+during preparation and held-provider-IO responsiveness.

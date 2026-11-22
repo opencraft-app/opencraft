@@ -13,6 +13,10 @@ export class WorkerOwnerFatal extends Error {
 export interface ServedOwner {
   /** Methods callers may invoke. Anything else is rejected without running. */
   readonly methods: Record<string, (...args: never[]) => unknown>;
+  /** Explicit synchronous, non-mutating reads may overtake queued work while
+   * an async operation waits. They see committed state, not pending mutations.
+   * Every other method retains FIFO. Close drains both lanes. */
+  readonly concurrentReads?: readonly string[];
   /** Value returned to `WorkerOwner.open`, such as a database outcome. */
   readonly ready?: unknown;
   /** Releases handles and locks after the last request. */
@@ -21,8 +25,8 @@ export interface ServedOwner {
 
 /**
  * Runs inside the Worker. `open` creates the owner from `workerData`; requests
- * then run one at a time in arrival order, so a synchronous store keeps the
- * same atomicity it had on the main thread.
+ * normally run in arrival order. Explicit synchronous read lanes may inspect
+ * committed state while async writes await; no store transaction is interleaved.
  */
 export function serveWorkerOwner<D>(open: (data: D) => ServedOwner | Promise<ServedOwner>): void {
   const port = parentPort;
@@ -41,34 +45,34 @@ export function serveWorkerOwner<D>(open: (data: D) => ServedOwner | Promise<Ser
       return false;
     }
   })();
-  port.on("message", (request: OwnerRequest) => {
-    queue = queue.then(async () => {
-      if (!(await start)) return;
-      if (request.method === CLOSE_METHOD) {
-        try {
-          await owner.close?.();
-          post({ id: request.id, value: undefined });
-        } catch (error) {
-          post({ id: request.id, error: serializeError(error), fatal: true });
-        }
+  let sealed=false;
+  const reads=new Set<Promise<void>>();
+  const execute=async(request:OwnerRequest,read=false)=>{
+    if(!(await start))return;
+    const method=Object.hasOwn(owner.methods,request.method)?owner.methods[request.method]:undefined;
+    if(!method){post({id:request.id,error:serializeError(new Error(`Unknown owner method ${request.method}`)),fatal:false});return;}
+    try{
+      const result=(method as(...args:readonly unknown[])=>unknown)(...request.args);
+      if(read&&result&&typeof(result as {then?:unknown}).then==='function'){void Promise.resolve(result).catch(()=>{});throw new WorkerOwnerFatal('Concurrent owner reads must be synchronous');}
+      const value=await result;post({id:request.id,value});
+    }catch(error){post({id:request.id,error:serializeError(error),fatal:error instanceof WorkerOwnerFatal});}
+  };
+  port.on('message',(request:OwnerRequest)=>{
+    if(sealed){post({id:request.id,error:serializeError(new Error('Worker owner is closed')),fatal:false});return;}
+    if(request.method===CLOSE_METHOD){
+      sealed=true;
+      queue=queue.then(async()=>{
+        if(!(await start))return;
+        await Promise.all(reads);
+        try{await owner.close?.();post({id:request.id,value:undefined});}
+        catch(error){post({id:request.id,error:serializeError(error),fatal:true});}
         port.close();
-        return;
-      }
-      const method = Object.hasOwn(owner.methods, request.method) ? owner.methods[request.method] : undefined;
-      if (!method) {
-        post({
-          id: request.id,
-          error: serializeError(new Error(`Unknown owner method ${request.method}`)),
-          fatal: false,
-        });
-        return;
-      }
-      try {
-        const value = await (method as (...args: readonly unknown[]) => unknown)(...request.args);
-        post({ id: request.id, value });
-      } catch (error) {
-        post({ id: request.id, error: serializeError(error), fatal: error instanceof WorkerOwnerFatal });
-      }
-    });
+      });
+      return;
+    }
+    if(owner?.concurrentReads?.includes(request.method)){
+      const reading=execute(request,true);reads.add(reading);
+      void reading.finally(()=>reads.delete(reading));
+    }else queue=queue.then(()=>execute(request));
   });
 }

@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import {openHeadlessAssetsStorage} from './headless-assets-storage.js';
+import {createHumanGitExecution} from './human-git-execution.js';
 import { openHumanAssets } from '@opencraft/plugin-local-account/assets-server';
 import {workspaceTurnOutputContext} from './workspace-turn-output-context.mjs';
 import { restoreWorkspaceQueuedContext } from '@opencraft/opencraft-daemon/workspace-queued-context';
@@ -362,6 +364,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let modelPolicy;
   let membership;
   let assetsService;
+  let humanGitExecution;
   let actorStore;
   const terminalServices = new Map();
   const fileSystem = options.fileSystemOwner ? createHostFileSystem(options.fileSystemOwner) : null;
@@ -439,7 +442,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       for (const dispose of [() => executionDatabase?.close(),
         () => modelPolicy?.close(), () => mcpApps?.close(), () => sshManagement?.close(), () => identity?.executionEnvironment?.close(), () => identity?.close?.(),
 
-        () => assetsService?.close(), () => composition.close?.(), () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
+        () => humanGitExecution?.close(), () => assetsService?.close(), () => composition.close?.(), () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
         () => capabilityBindings?.close(), () => actorStore?.close(), () => membership?.close()]) {
         await settle([dispose]);
       }
@@ -516,8 +519,26 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     if (membership) instanceAccess = new InstanceAccess(membership, providers, actorStore, options.accessMemberProviders ?? [], identity?.admissionPolicy);
     // An identity product that owns configurations keeps its route and legacy partitions.
     // Never start a second resource writer alongside that composition.
-    if (humanAuth && instanceAccess && !identity?.assistantEnvironmentConfigurationManaged)
-      assetsService = await openHumanAssets({ directory: dataDirectory, auth: humanAuth, actors: actorStore, access: instanceAccess });
+    if (humanAuth && instanceAccess && !identity?.assistantEnvironmentConfigurationManaged) {
+      assetsService = await openHumanAssets({ directory: dataDirectory, auth: humanAuth, actors: actorStore, access: instanceAccess,openStorage:openHeadlessAssetsStorage });
+      if(!assetsService.gitAuthority)throw Error('Assets execution authority unavailable');
+      humanGitExecution=createHumanGitExecution({directory:dataDirectory,
+        runtimeDirectory:join(dataDirectory,'git-runtime'),workerFile:join(options.runtimeDirectory??join(root,'runtime'),'personal-git-worker.mjs'),
+        hosts:assetsService.gitHosts,authority:assetsService.gitAuthority,grant:assetsService.executionGitGrant,
+        authorize:scope=>{
+          const actorId=scope.account.slice('actor:'.length),actor=actorStore.get(actorId);
+          return !closing&&actor?.enabled===true&&actor.kind==='human'&&actor.generation===scope.actorGeneration&&instanceAccess.admitsActor(actorId);
+        },
+        inspect:async handoff=>{
+          const native=await resolveExecutionNative?.(handoff.scope.threadId);
+          if(closing||!executionRecovery||!native||native.incarnation!==handoff.native.incarnation)return false;
+          const state=await executionRecovery.inspect({threadId:handoff.scope.threadId,inputId:handoff.scope.inputId,
+            executionId:handoff.scope.executionId,generation:handoff.scope.leaseGeneration,turnId:handoff.native.turnId,
+            engineIncarnation:handoff.native.incarnation,principal:null,ownership:'unknown',admittedAtMs:0,endedAtMs:null});
+          return state==='active'&&!closing&&(await resolveExecutionNative(handoff.scope.threadId))?.incarnation===native.incarnation;
+        },
+      });
+    }
     const authenticateHuman = request => {
       if (instanceAccess) return instanceAccess.authenticate(request);
       const identities = providers.map(provider => provider.authenticate(request)).filter(Boolean);
@@ -755,7 +776,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       const piModels = await createPiModelConfiguration(join(dataDirectory, "models"), join(dataDirectory, "pi"));
       const piAttachments=new LocalAttachmentStagingService(join(dataDirectory,"agent","attachments"),join(dataDirectory,"artifacts"));
       const piPrepareInput=(threadId,input)=>piAttachments.prepareInput(input,threadId,fileSystem?(artifact,owner,signal)=>fileSystem.prepareArtifact(artifact,owner,signal):undefined);
-      piEngine = new PiEngine({ executionCli: connectedExecutionCli, prepareAttachmentInput:piPrepareInput, modelPolicyPath, ...piModels, executionEnvironment: identity?.executionEnvironment, sessionCapabilities: capabilities.scoped(`server:${machineIdentity.machineId}:pi`), dataDirectory, directory: join(dataDirectory, "pi"), attachmentDirectory: join(dataDirectory, "agent", "attachments"), cwd: options.runtimeDirectory ?? join(root, "runtime") });
+      piEngine = new PiEngine({ executionCli: connectedExecutionCli, prepareAttachmentInput:piPrepareInput, modelPolicyPath, ...piModels, executionEnvironment: identity?.executionEnvironment,executionGit:humanGitExecution, sessionCapabilities: capabilities.scoped(`server:${machineIdentity.machineId}:pi`), dataDirectory, directory: join(dataDirectory, "pi"), attachmentDirectory: join(dataDirectory, "agent", "attachments"), cwd: options.runtimeDirectory ?? join(root, "runtime") });
       const closePi=piEngine.close.bind(piEngine);
       piEngine.close=async()=>{try {await closePi();} finally {await piAttachments.close();}};
       // The in-process standalone mode has the same trusted port. Shared-server

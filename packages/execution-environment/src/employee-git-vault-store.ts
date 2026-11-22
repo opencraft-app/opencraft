@@ -124,7 +124,7 @@ export class EmployeeGitVaultStore {
   }
   /** Authenticated private execution metadata, using the same key and AAD owner.
    * The envelope carries identity/scope only, never environment values. */
-  personalGitAuthority(): string { return gitGrantAuthority(this.key); }
+  personalGitAuthority(accountMode:'principal'|'actor'='principal'): string { return gitGrantAuthority(this.key,accountMode); }
   sealPersonalGitGrant(scope: GitGrantScope): string { return sealGitGrant(this.key, scope); }
   sealExecutionContext(document: unknown): string {
     return this.encrypt('platform', 'document-execution-context', document).toString('base64url');
