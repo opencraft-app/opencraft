@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { BridgeGateway, type BridgeGatewayOptions } from '@opencraft/agent-bridge-host/gateway';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 import type { DuplexTransport, TransportStatus, TransportSubmissionContext } from '@opencraft/appserver-client/transport';
-import { OPENCRAFT_STEER_EVIDENCE_NOTIFICATION, OPENCRAFT_STEER_EVIDENCE_EXTENSION } from '@opencraft/appserver-protocol';
+import { OPENCRAFT_STEER_EVIDENCE_NOTIFICATION, OPENCRAFT_STEER_EVIDENCE_EXTENSION, OPENCRAFT_THREAD_QUEUE_EXTENSION } from '@opencraft/appserver-protocol';
 import { CODEX_MAINTENANCE_READ, codexMaintenanceError, isCodexAdmission } from './codex-maintenance.js';
 const object = (v: unknown): Record<string, any> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, any> : {};
 
@@ -54,6 +54,15 @@ export class CodexProviderBridge implements DuplexTransport {
       this.emit({ id: params.interactionId, method: payload.method, params: { ...object(this.gateway.history(threadId, payload.params)), threadId } }, client);
     }
   }
+  /** Rewrite native turn IDs in queue results to the public ones clients know. */
+  private publicTurns(threadId: string, value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(entry => this.publicTurns(threadId, entry));
+    if (!value || typeof value !== 'object') return value;
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key,
+      (key === 'targetTurnId' || key === 'turnId') && typeof entry === 'string' ? this.gateway.canonicalTurn(threadId, entry) ?? entry
+        : key === 'turn' && entry && typeof entry === 'object' ? object(this.gateway.history(threadId, { turn: entry })).turn
+        : this.publicTurns(threadId, entry)]));
+  }
   /** Native sends lifecycle notifications only to the bridge's own connection; mirror them for subscribers. */
   private notify(threadId: string, method: string, params: Record<string, unknown>): void {
     for (const client of this.subscriptions.get(threadId) ?? []) this.emit({ method, params }, client);
@@ -102,7 +111,9 @@ export class CodexProviderBridge implements DuplexTransport {
           'opencraft/execution-engines': { ...object(extensions['opencraft/execution-engines']), version: 1,
             providers: [...(Array.isArray(object(extensions['opencraft/execution-engines']).providers) ? object(extensions['opencraft/execution-engines']).providers : []), {
               id: 'codex-bridge', label: 'Codex', threadPrefix: 'bridge:codex:', extensions: {
-                'opencraft/thread-follow-up': { version: 1, queue: false, steer: evidence },
+                'opencraft/thread-follow-up': { version: 1, queue: true, steer: evidence },
+                // Host-owned queue on the shared thread-queue core.
+                [OPENCRAFT_THREAD_QUEUE_EXTENSION]: { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, unconfirmedDeliveryRetry: true, perItemPause: true },
                 'opencraft/thread-lifecycle': { version: 1, fork: true, ephemeral: false, injectItems: false, rename: true, archive: true, unsubscribe: true },
                 ...(evidence ? { [OPENCRAFT_STEER_EVIDENCE_EXTENSION]: inputCapability } : {}),
               },
@@ -163,7 +174,8 @@ export class CodexProviderBridge implements DuplexTransport {
     const subscribers = this.subscriptions.get(threadId) ?? new Set<string>(); this.subscriptions.set(threadId, subscribers);
     // Opening, sending and thread operations (which a list may issue without opening) subscribe the client.
     if (optIn || ['thread/resume', 'thread/read', 'thread/turns/list', 'thread/items/list', 'turn/start', 'thread/fork', 'thread/name/set',
-      'thread/archive', 'thread/unarchive', 'thread/delete', 'thread/goal/get', 'thread/goal/set', 'thread/goal/clear'].includes(frame.method)) subscribers.add(client);
+      'thread/archive', 'thread/unarchive', 'thread/delete', 'thread/goal/get', 'thread/goal/set', 'thread/goal/clear'].includes(frame.method)
+      || String(frame.method).startsWith('thread/queue/')) subscribers.add(client);
     if (forkedId) { const forked = new Set<string>([client]); this.subscriptions.set(forkedId, forked); }
     if (!subscribers.has(client)) throw Error('Conversation subscription required');
     const requestKey = optIn ? p.agentBridge?.clientRequestId : p.clientUserMessageId;
@@ -212,6 +224,12 @@ export class CodexProviderBridge implements DuplexTransport {
         const goal = object(result).goal;
         if (goal !== undefined) this.notify(threadId, 'thread/goal/updated', { threadId, goal });
       } else if (frame.method === 'thread/goal/clear') { result = await command('goal/clear', { native: {} }); this.notify(threadId, 'thread/goal/cleared', { threadId }); }
+      else if (String(frame.method).startsWith('thread/queue/')) {
+        const { threadId: _, ...params } = p;
+        // Clients name public turns; the Host queue records native ones.
+        if (typeof params.expectedTurnId === 'string' && params.expectedTurnId !== 'unknown') params.expectedTurnId = this.gateway.nativeTurn(threadId, params.expectedTurnId);
+        result = this.publicTurns(threadId, await this.gateway.queue(threadId, frame.method, params));
+      }
       else if (frame.method === 'thread/unsubscribe') { this.revokeClient(client, threadId); result = {}; }
       else if (frame.method === 'opencraft/steer/status') result = await this.gateway.status(threadId, p.inputIds);
       else throw Object.assign(Error('Method unavailable for this bridge thread'), { code: -32601 });

@@ -44,7 +44,7 @@ bridge 协议加方法与能力声明，Engine Host 转发原生请求并投影 
 
 | 能力 | 旧路径 owner | 建议 owner | 说明 |
 |---|---|---|---|
-| 排队 `thread/queue/add|list|update|reorder|delete|start|steer|retry|collaborationReceipt` 及 `thread/queue/changed` | `OpenCraftHostQueue`（`opencraft-host-queue.ts`） | Engine Host 命令账本 | 设计已预留 `next-turn` 投递方式；轮次结束时出队派发需在 daemon 不在时继续 |
+| 排队 `thread/queue/add|list|update|reorder|delete|start|steer|retry` 及 `thread/queue/changed` | `OpenCraftHostQueue`（`opencraft-host-queue.ts`） | **已完成**：Engine Host（Host 库 v4） | 与旧路径共用 `@opencraft/thread-queue` 的存储、核对与派发；轮次结束由 Host 发出队首，daemon 不在也继续；协作输入与 `collaborationReceipt`、排队轮次的执行 CLI 凭据尚未支持 |
 | 标题生成 | `CodexThreadTitles` | daemon（观察 bridge 事件） | 不影响执行连续性 |
 | 置顶 `thread/pins/updated` | `codex-thread-pins.ts` | daemon | 纯展示状态 |
 | 线程设置 `thread/settings/update` | adapter 配置刷新 | 共享配置 owner | P7a 已让 bridge 消费同一 Codex 配置刷新 owner，需补线程设置入口 |

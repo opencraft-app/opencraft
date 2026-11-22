@@ -29,11 +29,14 @@ export interface QueueRequestPort {
 }
 
 export class QueueRequestError extends Error {
+  /** Bridge error kind for the code: a refusal changed nothing, an invalid request or an unsupported method. */
+  readonly kind: "explicit-reject" | "invalid" | "unsupported";
   constructor(
     readonly code: number,
     message: string,
   ) {
     super(message);
+    this.kind = code === -32602 ? "invalid" : code === -32601 ? "unsupported" : "explicit-reject";
   }
 }
 const refuse = (message: string, code = -32600): never => {

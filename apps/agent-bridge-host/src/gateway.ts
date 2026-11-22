@@ -170,6 +170,12 @@ export class BridgeGateway {
       ...(Array.isArray(row.data) ? { data: row.data.map(entry) } : {}),
     };
   }
+  /** Host-owned queue of a bridge Thread; changes arrive as thread/queue/changed events. */
+  async queue(threadId: string, method: string, params: Record<string, unknown>): Promise<unknown> {
+    const result = await this.rpc('/queue', { serverId: this.options.serverId, threadId, method, params });
+    await this.pull();
+    return result;
+  }
   async observe(threadId: string, params: Record<string, unknown>): Promise<unknown> {
     const result = await this.rpc('/observe', { serverId: this.options.serverId, threadId, method: 'history/read', params });
     await this.pull();

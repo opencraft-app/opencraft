@@ -158,7 +158,8 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     paused=true;
     const startsBefore=starts;
     for(const [method,params] of [['turn/start',{threadId:'bridge:codex:public-new',clientUserMessageId:'paused-input',input:[{type:'text',text:'not now'}]}],
-      ['thread/start',{cwd:root,agentBridge:{threadId:'bridge:codex:paused-new',clientRequestId:'paused-create'}}]] as const){
+      ['thread/start',{cwd:root,agentBridge:{threadId:'bridge:codex:paused-new',clientRequestId:'paused-create'}}],
+      ['thread/queue/add',{threadId:'bridge:codex:public-new',clientUserMessageId:'paused-queue',input:[{type:'text',text:'later'}]}]] as const){
       const id=++sequence;
       await transport.send(JSON.stringify({id,method,params,[LOGICAL_CLIENT_FIELD]:'client'}));
       const refusal=await until(()=>frames.find(f=>f.id===id),Boolean);
@@ -167,8 +168,18 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     assert.equal(starts,startsBefore,'no native turn started while paused');
     assert.equal(currentGateway().owns('bridge:codex:paused-new'),false,'a refused creation reserves nothing');
     const snapshot=await request('opencraft/codex/maintenance/read');
-    assert.equal(snapshot.paused,true); assert.equal(snapshot.rejectedAdmissions,4); assert.equal(snapshot.pendingAdmissions,0);
+    assert.equal(snapshot.paused,true); assert.equal(snapshot.rejectedAdmissions,5); assert.equal(snapshot.pendingAdmissions,0);
     paused=false;
+    // The queue of a bridge Thread is the Host's, reached through the gateway, and declared to clients.
+    assert.deepEqual(await request('thread/queue/list',{threadId:'bridge:codex:public-new'}),{data:[],nextCursor:null,steering:[]});
+    assert.ok(!forwarded.some(f=>String(f.method).startsWith('thread/queue/')),'bridge queues never reach the legacy owner');
+    const init=frames.find(f=>f.result?.capabilities?.extensions?.['opencraft/execution-engines']);
+    const provider=init.result.capabilities.extensions['opencraft/execution-engines'].providers.find((entry:any)=>entry.id==='codex-bridge');
+    assert.equal(provider.extensions['opencraft/thread-follow-up'].queue,true);
+    assert.equal(provider.extensions['opencraft/thread-queue'].version,2);
+    const refusal=++sequence;
+    await transport.send(JSON.stringify({id:refusal,method:'thread/queue/start',params:{threadId:'bridge:codex:public-new'},[LOGICAL_CLIENT_FIELD]:'client'}));
+    assert.match((await until(()=>frames.find(f=>f.id===refusal),Boolean)).error.message,/Queued message is unavailable/u,'Host refusals keep their message');
     // Existing thread operations reach native Codex under the bound native ID and
     // come back under public identities, with the same change notifications.
     const pub='bridge:codex:public-new', seen=()=>frames.filter(f=>f.method&&f.method.startsWith('thread/')&&f.id===undefined);
