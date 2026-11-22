@@ -159,8 +159,8 @@ test('async settings owners retain metadata, typed errors and post-await login f
     env.replace('alice', global, 0, [entry('synthetic-retained-secret')]);
     let current = true, retire = false, calls = 0;
     const api = new AccountEnvironmentHttp({
-      async list(account, scope) { calls++; await Promise.resolve(); if (retire) current = false; return env.list(account, scope); },
-      async replace(account, scope, revision, input) { calls++; const result = env.replace(account, scope, revision, input); await Promise.resolve(); if (retire) current = false; return result; },
+      async list(account, scope, assertCurrent) { calls++; await Promise.resolve(); if (retire) current = false; return env.list(account, scope, assertCurrent); },
+      async replace(account, scope, revision, input, assertCurrent) { calls++; const result = env.replace(account, scope, revision, input, assertCurrent); await Promise.resolve(); if (retire) current = false; return result; },
     });
     const server = createServer((request, response) => {
       void api.handle(request, response, { account: 'alice', current: () => current, projects: async () => [] });
@@ -183,5 +183,41 @@ test('async settings owners retain metadata, typed errors and post-await login f
     assert.equal(calls, before + 1);
     assert.equal(env.list('alice', global).revision, revision + (method === 'POST' ? 1 : 0));
     assert.equal(env.launchEnvironment('alice', global, {}).SERVICE_KEY, 'synthetic-retained-secret');
+  });
+});
+
+test('an async owner held before domain IO cannot read or mutate after original login revocation, expiry or account replacement', async t => {
+  for (const method of ['GET', 'POST']) for (const retirement of ['revoked', 'expired', 'account']) await t.test(method + '/' + retirement, async t => {
+    const { env } = await fixture(t);
+    env.replace('alice', global, 0, [entry('original-value')]);
+    let account = 'alice', admitted = true, expires = Date.now() + 60000, reads = 0;
+    let queued!: () => void, resume!: () => void;
+    const started = new Promise<void>(resolve => { queued = resolve; });
+    const held = new Promise<void>(resolve => { resume = resolve; });
+    const api = new AccountEnvironmentHttp({
+      async list(original, scope, assertCurrent) { queued(); await held; return env.list(original, scope, () => { assertCurrent(); reads++; }); },
+      async replace(original, scope, revision, input, assertCurrent) { queued(); await held; return env.replace(original, scope, revision, input, assertCurrent); },
+    });
+    const server = createServer((request, response) => {
+      void api.handle(request, response, { get account() { return account; }, current: () => admitted && expires > Date.now(), projects: async () => [] });
+    });
+    server.listen(0, '127.0.0.1'); await once(server, 'listening');
+    t.after(() => new Promise<void>(resolve => server.close(() => resolve())));
+    const address = server.address(); assert.ok(address && typeof address !== 'string');
+    const response = fetch(`http://127.0.0.1:${address.port}/environment`, { method,
+      headers: { 'x-opencraft-account-scope': 'alice', ...(method === 'POST' ? { 'content-type': 'application/json' } : {}) },
+      ...(method === 'POST' ? { body: JSON.stringify({ projectId: null, revision: 1, variables: [entry('should-never-commit')] }) } : {}),
+    });
+    await started;
+    if (retirement === 'revoked') admitted = false;
+    else if (retirement === 'expired') expires = Date.now() - 1;
+    else account = 'bob';
+    resume();
+    const result = await response;
+    assert.equal(result.status, 401); assert.deepEqual(await result.json(), { error: 'unauthenticated' });
+    assert.equal(env.list('alice', global).revision, 1);
+    assert.equal(env.launchEnvironment('alice', global, {}).SERVICE_KEY, 'original-value');
+    assert.equal(env.list('bob', global).revision, 0);
+    assert.equal(reads, 0);
   });
 });

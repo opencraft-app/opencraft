@@ -9,10 +9,14 @@ export interface EnvironmentAccount {
   projects(): Promise<readonly { id: string; name: string }[]>;
 }
 /** Metadata-only settings port. A compiled owner may implement it asynchronously;
- * launchEnvironment and decrypted saved values never belong to this interface. */
+ * launchEnvironment and decrypted saved values never belong to this interface.
+ * Async owners MUST call the original assertCurrent at their actual read/commit
+ * boundary AFTER waits, not merely before enqueueing. Cross-thread adapters must
+ * carry the original revocable admission, not serialize this callback or mint a
+ * replacement proof. A response check alone cannot fence a queued mutation. */
 export interface AccountEnvironmentSettingsPort {
-  list(account: string, scope: EnvironmentScope): EnvironmentView | Promise<EnvironmentView>;
-  replace(account: string, scope: EnvironmentScope, revision: number, input: unknown): EnvironmentView | Promise<EnvironmentView>;
+  list(account: string, scope: EnvironmentScope, assertCurrent: () => void): EnvironmentView | Promise<EnvironmentView>;
+  replace(account: string, scope: EnvironmentScope, revision: number, input: unknown, assertCurrent: () => void): EnvironmentView | Promise<EnvironmentView>;
 }
 /** Trusted product ingress owns authentication/admission and supplies the account.
  * No administrator read, account selector, decrypted diagnostic, or value export. */
@@ -23,7 +27,9 @@ export class AccountEnvironmentHttp {
     response.setHeader('cache-control', 'no-store');
     response.setHeader('x-content-type-options', 'nosniff');
     const reply = (status: number, body: unknown) => { if (!response.writableEnded && !response.destroyed) { response.statusCode = status; response.end(JSON.stringify(body)); } };
-    const current = () => !response.destroyed && identity.current() && request.headers['x-opencraft-account-scope'] === identity.account;
+    const account = identity.account;
+    const current = () => !response.destroyed && identity.account === account && identity.current() && request.headers['x-opencraft-account-scope'] === account;
+    const assertCurrent = () => { if (!current()) throw new EnvironmentError('unavailable', 401); };
     if (!current()) { reply(401, { error: 'unauthenticated' }); return; }
     if (request.headers['sec-fetch-site'] === 'cross-site') { reply(403, { error: 'forbidden' }); return; }
     if (request.headers.origin !== undefined) {
@@ -61,8 +67,8 @@ export class AccountEnvironmentHttp {
       if (!current()) { reply(401, { error: 'unauthenticated' }); return; }
       const scope = { projectId: projectId as string | null };
       const result = await (request.method === 'POST'
-        ? this.environment.replace(identity.account, scope, input.revision as number, input.variables)
-        : this.environment.list(identity.account, scope));
+        ? this.environment.replace(account, scope, input.revision as number, input.variables, assertCurrent)
+        : this.environment.list(account, scope, assertCurrent));
       // An asynchronous owner does not extend the original login's lifetime.
       // A completed mutation is neither replayed nor undone after revocation.
       if (!current()) { reply(401, { error: 'unauthenticated' }); return; }
