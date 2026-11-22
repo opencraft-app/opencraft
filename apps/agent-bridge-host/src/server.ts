@@ -46,6 +46,7 @@ export async function attachGateway(host: BridgeHost, token: string, port = 0): 
           case '/script/run': result=await host.script(body);break;
           case '/command': result = await host.accept(body); break;
           case '/observe': result = await host.observe(body); break;
+          case '/queue': result = await host.queueRequest(body); break;
           case '/ack': result = await host.ack(Number(body.cursor)); break;
           case '/generation/add': result = await host.add(body as unknown as Generation); break;
           case '/generation/activate': result = await host.activate(identifier(body.id), typeof body.expected === 'string' ? body.expected : ''); break;

@@ -10,3 +10,10 @@ export {
   type QueueReconcilePort,
   type QueueSendFailure,
 } from "./dispatch.js";
+export {
+  projectQueuedSubmission,
+  QueueRequestError,
+  threadQueueRequest,
+  type QueueRequestPort,
+  type QueueRequestStore,
+} from "./request.js";

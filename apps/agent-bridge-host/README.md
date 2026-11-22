@@ -177,6 +177,26 @@ with retained sessions still requires explicit reconciliation, as in P1b.
 The built Workbench smoke uses a synthetic native boundary; it is not real-account steer
 proof. No service, default engine or published artifact is switched by this code.
 
+## Queued follow-up input
+
+Bridge Threads queue follow-up input in the Host, using the shared
+`@opencraft/thread-queue` store, reconciliation and dispatch (the same core as
+the legacy Codex Host). The queue tables are Host database version 4; SQL runs
+in the storage worker. `POST /queue {serverId, threadId, method, params}` serves
+`thread/queue/list|add|update|delete|reorder|start|steer|retry` and appends
+`thread/queue/changed` to the Thread's outbox. When a turn closes, the Host
+records its outcome and sends the queue head through its ordinary command
+custody; each attempt has a command ID derived from the input and its delivery
+revision, so a restart cannot send it twice while an explicit retry is a new
+attempt. An explicit provider rejection pauses the item (`delivery-rejected`)
+instead of retrying in a loop; an unclear outcome stays unknown for
+reconciliation from native history.
+
+Not yet: collaboration-managed inputs and `collaborationReceipt`; queued turns
+carry no execution-CLI credential, so a Host with the execution CLI enabled
+refuses to dispatch them; routes retained after a Host restart wait for the
+existing explicit recovery before their queue moves.
+
 ## Resident-service registration and per-engine routing
 
 The private Host configuration may include `generations` (the same immutable

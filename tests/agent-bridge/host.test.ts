@@ -421,3 +421,41 @@ test('v4 thread queue migration keeps existing custody, serves the shared queue 
   database.exec("UPDATE schema_migrations SET checksum='tampered' WHERE version=4"); database.close();
   const broken = new Storage(path); await assert.rejects(broken.ready, /migration history/); await broken.close().catch(() => {});
 });
+
+test('queued input is sent by the Host itself when each turn ends, in order, and only once', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'bridge-queue-'));
+  const path = join(root, 'host.db'), executions = join(root, 'executions');
+  await writeFile(executions, '');
+  const artifact = resolve('tests/agent-bridge/fixtures/queue-bridge.mjs');
+  const provider = { ...declaration, capabilities: { ...declaration.capabilities, history: true } };
+  const handshake = negotiateHandshake({ protocolVersion: 1, grammarRange: { min: 1, max: 1 } }, provider); assert(handshake.ok);
+  const generation: Generation = { id: 'q1', artifact, digest: createHash('sha256').update(await readFile(artifact)).digest('hex'), provider,
+    launch: { command: [process.execPath, artifact], cwd: root, env: { HANDSHAKE: JSON.stringify(handshake.result), EXECUTIONS: executions } } };
+  let host = await BridgeHost.open({ path, policy, backend: localTestBackend() });
+  t.after(async () => { await host.close().catch(() => {}); await rm(root, { recursive: true, force: true }); });
+  await host.add(generation); await host.activate('q1', '');
+  await host.accept(command('create')); await accepted(host, 'create');
+  const queue = (method: string, params: Record<string, unknown> = {}) => host.queueRequest({ serverId: 'server-1', threadId: 'thread-1', method, params });
+  const text = (value: string) => [{ type: 'text', text: value }];
+  const sent = async () => (await readFile(executions, 'utf8')).split('\n').filter(Boolean);
+
+  await queue('thread/queue/add', { clientUserMessageId: 'first', input: text('one') });
+  await queue('thread/queue/add', { clientUserMessageId: 'second', input: text('two') });
+  await queue('thread/queue/add', { clientUserMessageId: 'second', input: text('two') }); // same message, queued once
+  // The idle Thread takes the head at once; the next waits for that turn to end, with no gateway involved.
+  await until(sent, rows => rows.length === 2);
+  assert.deepEqual(await sent(), ['first', 'second']);
+  const listed: any = await until(() => queue('thread/queue/list'), (value: any) => value.data.length === 0 && value.steering.length === 0);
+  assert.deepEqual(listed.data, []);
+  const events = await host.events(0);
+  assert.ok(events.some((event: any) => event.payload.method === 'thread/queue/changed'));
+  await delay(400); assert.deepEqual(await sent(), ['first', 'second'], 'nothing is sent twice');
+
+  // After a restart the Host requires explicit recovery of existing routes; queued input waits rather than running.
+  await host.close(); host = await BridgeHost.open({ path, policy, backend: localTestBackend() });
+  await queue('thread/queue/add', { clientUserMessageId: 'after-restart', input: text('three') });
+  await delay(400);
+  assert.deepEqual(await sent(), ['first', 'second']);
+  assert.equal(((await queue('thread/queue/list')) as any).data[0].clientUserMessageId, 'after-restart');
+  await assert.rejects(queue('thread/queue/frobnicate'), /Unsupported queue method/);
+});

@@ -80,6 +80,9 @@ const operations: Record<string, (args: any) => any> = {
     require(queue !== null && typeof method === 'string' && QUEUE_METHODS.has(method) && Array.isArray(args), 'Unsupported queue operation');
     return (queue as any)[method](...args);
   },
+  // Idle for queue dispatch: no turn open in the assembled state and no turn command in custody.
+  routeIdle: ({ route }: any) => !get("SELECT 1 FROM commands WHERE route=? AND method IN ('turn/start','turn/steer') AND state IN ('registered','dispatching','unknown')", route)
+    && Object.keys(checkpoint(route).openTurns).length === 0,
   queueChanged: ({ route }: any) => tx(() => {
     const binding = get('SELECT generation FROM routes WHERE route=?', route);
     require(binding, 'Queue Thread has no route');

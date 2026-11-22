@@ -6,6 +6,7 @@ import { BRIDGE_GRAMMAR_RANGE, BRIDGE_PROTOCOL_VERSION, isBridgeCommand, assertM
 import { Storage } from './storage.js';
 import { Peer, successful } from './peer.js';
 import { object, identifier, routeKey, type Command, type Generation, type Receipt } from './types.js';
+import { HostQueue } from './queue.js';
 /** Error kinds that are definitive refusals before any native write. */
 const REFUSED_BRIDGE_ERRORS = new Set(['auth', 'explicit-reject', 'frame-too-large', 'invalid', 'quota', 'stale-target', 'unsupported']);
 /** Deterministic object encoding makes the digest independent of JSON key order. */
@@ -60,10 +61,26 @@ export class BridgeHost {
   private retainedAfterCrash = new Set<string>();
   private generations = new Map<string, Generation>();
   readonly incarnation = randomUUID();
+  readonly queue: HostQueue;
   private constructor(private options: HostOptions) {
     this.storage = new Storage(options.path, 'host', () => {
       this.closing = true;
       if (this.pool) void this.pool.close().catch(() => {}); // retained cleanup promise is rechecked by close()
+    });
+    this.queue = new HostQueue(this.storage, {
+      command: async (serverId, threadId, commandId, method, params) => {
+        await this.accept({ commandId, serverId, threadId, method, params });
+        for (const deadline = Date.now() + 35_000; Date.now() < deadline; await new Promise(resolve => setTimeout(resolve, 25))) {
+          const receipt = await this.query(commandId);
+          if (receipt && ['accepted', 'rejected', 'unknown'].includes(receipt.state)) return receipt;
+        }
+        throw Error('Queued delivery outcome unknown');
+      },
+      history: (serverId, threadId, params) => this.observe({ serverId, threadId, method: 'history/read', params }),
+      dispatchable: async route => {
+        const { generation } = await this.storage.call<{ generation: string | null }>('observationRoute', { route });
+        return !this.closing && !!generation && this.generations.has(generation) && !this.retainedAfterCrash.has(generation);
+      },
     });
   }
   static async open(options: HostOptions): Promise<BridgeHost> {
@@ -74,6 +91,7 @@ export class BridgeHost {
       const snapshot = await host.storage.call('snapshot');
       for (const row of snapshot.generations) if (!row.retired) host.generations.set(row.id, row.config);
       for (const row of snapshot.routes) host.retainedAfterCrash.add(row.generation);
+      await host.queue.resume();
       return host;
     } catch (error) { await host.storage.close().catch(() => {}); throw error; }
   }
@@ -104,6 +122,7 @@ export class BridgeHost {
         const p=object(params);
         if(method==='thread/delta'&&Array.isArray(p.deltas)&&p.deltas.some((delta:any)=>delta.op==='turn.open')){const start=this.cliStarts.get(String(p.threadId));if(start)start.observed=true;}
         const closed=method==='thread/delta' && Array.isArray(p.deltas) ? p.deltas.find((delta:any)=>delta.op==='turn.close' || delta.op==='session.ended') as {nativeTurnId?:string;op:string}|undefined : undefined;
+        if(closed?.op==='turn.close'&&closed.nativeTurnId){const status=String((closed as {status?:unknown}).status??'completed');void this.queue.turnClosed(String(p.threadId),closed.nativeTurnId,status).catch(()=>{});}
         if(closed && this.cliClosedTurns.get(String(p.threadId))!==(closed.nativeTurnId??closed.op)) {
           this.cliClosedTurns.set(String(p.threadId),closed.nativeTurnId??closed.op);
           if(closed.op==='session.ended'){const reserved=this.cliReservations.get(String(p.threadId));if(reserved){this.cliReservations.delete(String(p.threadId));await reserved.lease.revoke();}}
@@ -330,6 +349,12 @@ export class BridgeHost {
     if (!('result' in response)) throw Error('Invalid observation response');
     return response.result;
   }
+  /** thread/queue/* for a bridge Thread; the queue is Host state, never a provider command. */
+  queueRequest(raw: unknown): Promise<unknown> {
+    if (this.closing) throw Error('Host closing');
+    const body = object(raw);
+    return this.queue.request(routeKey(identifier(body.serverId), identifier(body.threadId)), String(body.method), object(body.params));
+  }
   threadState(serverId: string, threadId: string): Promise<any> { return this.storage.call('threadState', { route: routeKey(serverId, threadId) }); }
   diagnostics(): unknown { return [...this.diagnosticPeers].map(([generation, peer]) => ({ generation, ...peer.diagnostic() })); }
   query(id: string): Promise<Receipt | null> { return this.storage.call('query', { id }); }
@@ -344,6 +369,7 @@ export class BridgeHost {
   }
   async close(): Promise<void> {
     this.closing = true;
+    this.queue.close();
     await Promise.allSettled([...this.admissions]);
     const cleanup = await Promise.allSettled([
       this.pool.close(),
