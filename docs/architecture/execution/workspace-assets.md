@@ -43,6 +43,32 @@ The Worker serializes all budget mutations, including writes while a provider
 request is pending outside the Worker. Its existing grant-read lane does not make
 budget writes concurrent or keep a transaction open across network awaits.
 
+## Installed delivery and immutable catalog
+
+A trusted compiled caller may pass `installationFile` to the Assets owner. The
+Worker validates private regular files, refuses symlinks/foreign ownership or
+broad permissions, reads the bounded installation/key files, and atomically
+adopts the existing configuration schema. No provider is registered or provisioned
+by this bootstrap and no API key is returned. Once adopted, the encrypted document
+is canonical: absent legacy files or a deleted environment never recreate it.
+
+`InstalledWorkspaceCatalog` resolves configured platform environments for an
+admitted Human Actor. Public projections include only logical targets, names and
+requested resources; provider URLs, key bytes, mount volumes and runtime paths
+stay private. Its revision pins the template, credential generation and installed
+resource/lease policy. Validation of an old revision rejects rather than silently
+switching it to replacement credentials or a different resource budget.
+
+The existing canonical selection encoding now lives in the shared execution
+environment package, with a compatibility export at the native Host's old entry.
+It preserves the original digest and durable selection format. Native receipt
+and placement authority are not inferred from a catalog selection.
+
+This is an explicit owner bootstrap, not automatic default Headless activation.
+The default execution assembly must still adopt it together with its native and
+provider owners, rather than keep an independent file-backed provider alongside
+the vault-backed configuration.
+
 ## Evidence and remaining integration
 
 `tests/extensions/workspace-budget.test.ts` exercises the real Assets Worker with

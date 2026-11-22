@@ -1,3 +1,6 @@
+import { InstalledWorkspaceCatalog } from "./workspace-catalog.js";
+import { adoptInstalledWorkspaceConfiguration } from "./installed-delivery.js";
+import type { ResolvedWorkspaceSelection } from "@opencraft/execution-environment/workspace-selection";
 import { WorkspaceBudgetStore, type WorkspaceBudgetRole, type WorkspaceBudgetOutcome } from "./workspace-budget.js";
 import type { SandboxIdentity, SandboxResources } from "@opencraft/sandbox";
 import { parseGitExecutionLocator, type GitExecutionResolver } from "@opencraft/execution-environment/git-execution";
@@ -16,6 +19,7 @@ export function createAssetsStorage(
   const vault = new EmployeeGitVaultStore(directory);
   try {
     const configurations = new SandboxConfigurations(vault);
+    const workspaceCatalog = new InstalledWorkspaceCatalog(configurations);
     const workspaceBudget = new WorkspaceBudgetStore(vault, () => {
       const runtime = configurations.installedRuntime();
       if (!runtime) throw new SandboxConfigurationError('unavailable', 503);
@@ -56,6 +60,9 @@ export function createAssetsStorage(
         throw new SandboxConfigurationError("unavailable", 503);
       }
     }
+    const catalogContext = (access: AssetAdmission) => ({scope: access.scope, current() {
+      try {check(access); return true;} catch {return false;}
+    }});
     return {
       concurrentReads:execution?['executionGitGrant','executionGitReservation']:[],
       ready: {
@@ -64,6 +71,20 @@ export function createAssetsStorage(
         gitAuthority: execution ? vault.personalGitAuthority("actor") : null,
       },
       methods: {
+        // Trusted installed-file delivery only; no configuration HTTP action.
+        adoptWorkspaceInstallation: (path: string) => budgetCall(async () => {
+          try {return await adoptInstalledWorkspaceConfiguration(configurations, path);}
+          catch {throw new SandboxConfigurationError('unavailable', 503);}
+        }),
+        workspaceCatalog: (access: AssetAdmission) => run(access, () => {
+          const value = workspaceCatalog.snapshot(catalogContext(access));
+          return {version: 1 as const, environments: value.environments,
+            libraries: value.libraries.map(({id, name, status, environmentIds}) => ({id, name, status, environmentIds}))};
+        }),
+        workspaceResolveEnvironment: (access: AssetAdmission, target: unknown) =>
+          run(access, () => workspaceCatalog.resolveEnvironment(catalogContext(access), target)),
+        workspaceValidateEnvironment: (access: AssetAdmission, environment: ResolvedWorkspaceSelection['environment']) =>
+          run(access, async () => {await workspaceCatalog.runtime(catalogContext(access), environment).authorize(); return true;}),
         // Compiled provider lifecycle only; never an HTTP configuration action.
         workspaceBudgetReserve: (role: WorkspaceBudgetRole, identity: SandboxIdentity, resources: SandboxResources) =>
           budgetCall(() => workspaceBudget.reserve(role, identity, resources)),

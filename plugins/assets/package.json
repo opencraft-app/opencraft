@@ -26,7 +26,8 @@
     "./server/git-connections": "./src/server/git-connections.ts",
     "./server/github-provider": "./src/server/github-provider.ts",
     "./server/storage": "./src/server/storage.ts",
-    "./server/workspace-budget": "./src/server/workspace-budget.ts"
+    "./server/workspace-budget": "./src/server/workspace-budget.ts",
+    "./server/workspace-catalog": "./src/server/workspace-catalog.ts"
   },
   "dependencies": {
     "@opencraft/design-system-web": "0.1.0",
@@ -40,6 +41,8 @@
     "@opencraft/worker-owner": "0.1.0",
     "@opencraft/sqlite-node": "0.1.0",
     "@opencraft/appserver-client": "0.1.0",
-    "@opencraft/sandbox": "0.1.0"
+    "@opencraft/sandbox": "0.1.0",
+    "@opencraft/chat-core": "0.1.0",
+    "@opencraft/appserver-protocol": "0.1.0"
   }
 }

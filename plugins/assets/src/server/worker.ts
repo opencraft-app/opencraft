@@ -1,3 +1,5 @@
+import type { WorkspaceCatalog } from "@opencraft/appserver-protocol";
+import type { ResolvedWorkspaceSelection } from "@opencraft/execution-environment/workspace-selection";
 import type { WorkspaceBudgetPort } from "./workspace-budget.js";
 import type { GitExecutionLocator, GitExecutionHandoff, GitExecutionReservation } from "@opencraft/execution-environment/git-execution";
 import type { GitConnectionsSnapshot } from "../git/contract.js";
@@ -21,6 +23,10 @@ export interface AssetConfigurationPort {
   update(access: AssetAdmission, input: unknown): Promise<SandboxConfigurationsSnapshot>;
 }
 export interface AssetStoragePort extends AssetConfigurationPort, WorkspaceBudgetPort {
+  adoptWorkspaceInstallation(path: string): Promise<boolean>;
+  workspaceCatalog(access: AssetAdmission): Promise<WorkspaceCatalog>;
+  workspaceResolveEnvironment(access: AssetAdmission, target: unknown): Promise<ResolvedWorkspaceSelection['environment']>;
+  workspaceValidateEnvironment(access: AssetAdmission, environment: ResolvedWorkspaceSelection['environment']): Promise<boolean>;
   executionGitReservation(locator: GitExecutionLocator): Promise<GitExecutionReservation | null>;
   executionGitGrant(locator: GitExecutionLocator): Promise<GitExecutionHandoff | null>;
   gitSnapshot(access: AssetAdmission): Promise<GitConnectionsSnapshot>;
@@ -33,7 +39,7 @@ interface Ready {
 }
 /** All vault opens, migrations, reads and writes belong to this FIFO Worker.
  * There is no local fallback, runtime-secret RPC or automatic mutation retry. */
-export async function openAssetConfigurations(directory: string, options: { entry?: URL } = {}) {
+export async function openAssetConfigurations(directory: string, options: { entry?: URL; installationFile?: string } = {}) {
   const { owner, ready } = await WorkerOwner.open<AssetStoragePort, Ready>(
     options.entry ?? ownerEntry(import.meta.url, "assets-configuration"),
     {
@@ -43,6 +49,13 @@ export async function openAssetConfigurations(directory: string, options: { entr
       maxPending: 128,
     },
   );
+  if (options.installationFile !== undefined) {
+    try {await owner.call.adoptWorkspaceInstallation(options.installationFile);}
+    catch (cause) {
+      try {await owner.close();} catch (cleanup) {throw new AggregateError([cause, cleanup], 'Assets bootstrap cleanup unconfirmed');}
+      throw cause;
+    }
+  }
   return {
     store: owner.call,
     outcome: ready.outcome,
