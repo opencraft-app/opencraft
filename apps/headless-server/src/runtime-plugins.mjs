@@ -5,7 +5,10 @@ import { loadRuntimePlugins, runtimePluginDirectory } from "@opencraft/runtime-p
  * Every application namespace the Headless request pipeline owns. The plugin
  * store already rejects its own reserved set; this list also covers the routes
  * the store does not know, so a plugin can never shadow a core endpoint even if
- * a later pipeline change moves the plugin mount.
+ * a later pipeline change moves the plugin mount. Namespaces core only forwards
+ * for an installation's identity composition (`/__opencraft_enterprise_identity`)
+ * are not listed: that composition protects the paths it serves through
+ * `protectedPaths`, and may host its own runtime plugins underneath.
  */
 export const HEADLESS_CORE_ROUTE_PATHS = Object.freeze([
   "/health",
@@ -24,7 +27,6 @@ export const HEADLESS_CORE_ROUTE_PATHS = Object.freeze([
     "auth",
     "browser",
     "connectors",
-    "enterprise_identity",
     "files",
     "health",
     "hub",

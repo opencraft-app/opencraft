@@ -132,6 +132,8 @@ test("core, product-protected and duplicate routes are rejected without stopping
   // Not in the store's reserved set; the Headless composition still owns it.
   await f.install("fixture.core", replying("core"), ["/__opencraft_ssh_servers"]);
   await f.install("fixture.product", replying("product"), ["/__product_session/state"]);
+  // Core has no handler here; the installation's identity composition owns the namespace.
+  await f.install("fixture.identity", replying("identity"), ["/__opencraft_enterprise_identity/fixture-reviews"]);
   const app = await startHeadlessServer(
     { ...f.options, ...id.options },
     {
@@ -149,11 +151,12 @@ test("core, product-protected and duplicate routes are rejected without stopping
     await fetch(app.url + "/__product_session/state", { headers }),
     "a protected route never reaches plugin code",
   );
-  const health = (await (await fetch(app.url + "/__opencraft_health")).json()).plugins["opencraft.runtime-plugins"];
-  assert.deepEqual(
-    health.selected.map((plugin) => plugin.id),
-    ["fixture.first"],
+  assert.equal(
+    (await (await fetch(app.url + "/__opencraft_enterprise_identity/fixture-reviews", { headers })).json()).plugin,
+    "identity",
   );
+  const health = (await (await fetch(app.url + "/__opencraft_health")).json()).plugins["opencraft.runtime-plugins"];
+  assert.deepEqual(health.selected.map((plugin) => plugin.id).sort(), ["fixture.first", "fixture.identity"]);
   assert.deepEqual(health.skipped.map((row) => [row.id, row.reason]).sort(), [
     ["fixture.core", "verification_failed"],
     ["fixture.duplicate", "activation_or_runtime_failed"],
