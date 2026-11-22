@@ -8,6 +8,9 @@ import { CODEX_MAINTENANCE_READ, codexMaintenanceError, isCodexAdmission } from 
 const object = (v: unknown): Record<string, any> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, any> : {};
 
 /** Opt-in composition around the existing Core path. No gateway child/owner. */
+/** Turn notifications usage collection follows (see the local Host's token usage runtime). */
+const USAGE_NOTIFICATIONS = new Set(['turn/started', 'turn/completed', 'thread/tokenUsage/updated', 'thread/status/changed']);
+
 export class CodexProviderBridge implements DuplexTransport {
   private gateway: BridgeGateway;
   private listeners = new Set<(frame: string) => void>();
@@ -36,6 +39,16 @@ export class CodexProviderBridge implements DuplexTransport {
      */
     nativeTool?: (context: { threadId: string; turnId: string; callId: string },
       tool: { namespace: string | null; name: string }, args: unknown, signal: AbortSignal) => Promise<unknown> | null;
+    /**
+     * Token usage of bridge Threads, recorded under their native session and turns as the
+     * local Host records its own: submissions before they are sent, their outcome once the
+     * native turn is known, and the turn notifications usage collection follows.
+     */
+    usage?: {
+      notification(method: string, params: Record<string, unknown>): void;
+      begin(nativeThreadId: string, publicThreadId: string, inputId: string, mode: 'start' | 'steer', context: TransportSubmissionContext): Promise<string | undefined>;
+      settle(attemptId: string, outcome: 'accepted' | 'rejected' | 'unknown', nativeThreadId: string, inputId: string, nativeTurnId?: string): void;
+    };
     /** Dynamic tools every new bridge Thread declares (replacing same-named client declarations). */
     creationTools?: () => readonly Record<string, unknown>[];
     /** Live notifications of a bridge Thread, enriched as projectHistory enriches reads. */
@@ -76,6 +89,7 @@ export class CodexProviderBridge implements DuplexTransport {
         this.offerInteraction(threadId, frame);
         return;
       }
+      if (this.policy.usage && USAGE_NOTIFICATIONS.has(frame.method)) this.observeUsage(threadId, frame.method, object(frame.params));
       // Forwarded native notifications name native turns; clients know public ones.
       const params = object(frame.params);
       if (typeof params.turnId === 'string') frame.params = { ...params, turnId: this.gateway.canonicalTurn(threadId, params.turnId) ?? params.turnId };
@@ -96,6 +110,54 @@ export class CodexProviderBridge implements DuplexTransport {
     const adopting = this.policy.exclusive ? !['thread/history/cancel', 'thread/unsubscribe'].includes(method) : method === 'turn/start' && this.policy.adoptExisting;
     if (adopting && threadId && !threadId.startsWith('bridge:codex:') && !this.gateway.owns(threadId)) await this.adopt(threadId);
     return threadId.startsWith('bridge:codex:') || this.gateway.owns(threadId);
+  }
+  /** Submissions whose native turn is not known yet, by public Thread and canonical turn. */
+  private readonly usageAwaitingTurn = new Map<string, { attemptId: string; inputId: string; nativeThreadId: string }>();
+  /** The native turn behind a canonical turn ID; a command result may already name the native turn. */
+  private nativeTurnOf(threadId: string, turnId: unknown): string | undefined {
+    if (typeof turnId !== 'string' || !turnId) return undefined;
+    if (this.gateway.canonicalTurn(threadId, turnId) !== undefined) return turnId;
+    try { return this.gateway.nativeTurn(threadId, turnId); } catch { return undefined; }
+  }
+  /** Turn notifications for usage collection, named by native session and turn. */
+  private observeUsage(threadId: string, method: string, params: Record<string, unknown>): void {
+    const nativeThreadId = this.gateway.nativeThread(threadId);
+    if (!nativeThreadId) return;
+    const turn = object(params.turn), canonicalTurn = typeof turn.id === 'string' ? turn.id : params.turnId;
+    const nativeTurnId = this.nativeTurnOf(threadId, canonicalTurn);
+    // A submission waits under the turn ID its command returned: canonical or already native.
+    const awaitingKey = [canonicalTurn, nativeTurnId].filter((value): value is string => typeof value === 'string')
+      .map(value => JSON.stringify([threadId, value])).find(key => this.usageAwaitingTurn.has(key));
+    const awaiting = awaitingKey ? this.usageAwaitingTurn.get(awaitingKey) : undefined;
+    if (awaiting && nativeTurnId) {
+      this.usageAwaitingTurn.delete(awaitingKey!);
+      this.policy.usage!.settle(awaiting.attemptId, 'accepted', awaiting.nativeThreadId, awaiting.inputId, nativeTurnId);
+    }
+    this.policy.usage!.notification(method, { ...params, threadId: nativeThreadId,
+      ...(typeof params.turnId === 'string' ? { turnId: this.nativeTurnOf(threadId, params.turnId) ?? params.turnId } : {}),
+      ...(typeof turn.id === 'string' ? { turn: { ...turn, id: nativeTurnId ?? turn.id } } : {}) });
+  }
+  /** Record a submission's usage attribution around its command, as the local Host does. */
+  private async withUsage<T>(threadId: string, inputId: string, mode: 'start' | 'steer', context: TransportSubmissionContext,
+    send: () => Promise<T>, acceptedTurn: (result: T) => unknown): Promise<T> {
+    // A new bridge Thread's native identity may not have been pulled yet.
+    if (this.policy.usage && !this.gateway.nativeThread(threadId)) await this.gateway.pull().catch(() => {});
+    const nativeThreadId = this.policy.usage ? this.gateway.nativeThread(threadId) : undefined;
+    const attemptId = nativeThreadId ? await this.policy.usage!.begin(nativeThreadId, threadId, inputId, mode, context) : undefined;
+    let result: T;
+    try { result = await send(); }
+    catch (error) {
+      const kind = object(error).kind;
+      if (attemptId) this.policy.usage!.settle(attemptId, ['explicit-reject', 'invalid', 'stale-target'].includes(String(kind)) ? 'rejected' : 'unknown', nativeThreadId!, inputId);
+      throw error;
+    }
+    if (attemptId) {
+      const canonical = acceptedTurn(result), nativeTurnId = this.nativeTurnOf(threadId, canonical);
+      if (nativeTurnId) this.policy.usage!.settle(attemptId, 'accepted', nativeThreadId!, inputId, nativeTurnId);
+      else if (typeof canonical === 'string' && canonical) this.usageAwaitingTurn.set(JSON.stringify([threadId, canonical]), { attemptId, inputId, nativeThreadId: nativeThreadId! });
+      else this.policy.usage!.settle(attemptId, 'unknown', nativeThreadId!, inputId);
+    }
+    return result;
   }
   /** Dynamic tool calls the trusted Host dispatcher answers itself, by interaction ID. */
   private readonly hostTools = new Map<string, AbortController>();
@@ -381,13 +443,18 @@ export class CodexProviderBridge implements DuplexTransport {
         if (!requestKey) throw Error('Stable client input identity required');
         const { threadId: _, opencraftExecutionAdmission,opencraftSessionMcp, ...native } = p;
         native.input = await prepare(native.input, String(requestKey));
-        result = await command('turn/start', { native, executionSource:opencraftExecutionAdmission,...(opencraftSessionMcp!==undefined?{sessionMcp:opencraftSessionMcp}:{}) });
+        result = await this.withUsage(threadId, String(requestKey), 'start', context,
+          () => command('turn/start', { native, executionSource:opencraftExecutionAdmission,...(opencraftSessionMcp!==undefined?{sessionMcp:opencraftSessionMcp}:{}) }),
+          value => object(object(value).turn).id);
         const nativeThread = this.gateway.nativeThread(threadId);
         if (nativeThread) this.policy.observeTitle?.('turn/start', { ...native, threadId: nativeThread }, result);
       } else if (frame.method === 'turn/steer') {
         if (!identity.evidence) throw Object.assign(Error('This client cannot represent native input admission; use a client with per-input evidence support'), { code: -32601 });
         if (!requestKey) throw Error('Stable client input identity required');
-        result = await command('turn/steer', { inputId: requestKey, clientRequestId: requestKey, expectedTurnId: this.gateway.nativeTurn(threadId, p.expectedTurnId), input: await prepare(p.input, String(requestKey)) });
+        const steerInput = await prepare(p.input, String(requestKey)), expectedTurnId = this.gateway.nativeTurn(threadId, p.expectedTurnId);
+        result = await this.withUsage(threadId, String(requestKey), 'steer', context,
+          () => command('turn/steer', { inputId: requestKey, clientRequestId: requestKey, expectedTurnId, input: steerInput }),
+          () => p.expectedTurnId);
         // Existing consumers cannot represent admission-only injection as success.
         result = { ...object(result), disposition: 'steered' };
       } else if (frame.method === 'turn/interrupt') result = await command('turn/stop', { expectedTurnId: this.gateway.nativeTurn(threadId, p.turnId) });

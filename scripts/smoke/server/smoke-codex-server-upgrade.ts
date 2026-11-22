@@ -277,11 +277,15 @@ async function open(client: Client, threadId: string): Promise<string[]> {
   await client.request("thread/resume", { threadId });
   return transcript(client, threadId);
 }
+/** The client input ID each drill text was sent with, for the usage ledger check. */
+const inputIds = new Map<string, string>();
 async function say(client: Client, threadId: string, text: string) {
   const before = (await transcript(client, threadId)).length;
+  const inputId = `drill-${randomBytes(6).toString("hex")}`;
+  inputIds.set(text, inputId);
   await client.request("turn/start", {
     threadId,
-    clientUserMessageId: `drill-${randomBytes(6).toString("hex")}`,
+    clientUserMessageId: inputId,
     input: [{ type: "text", text, text_elements: [] }],
   });
   for (let attempt = 0; attempt < 240; attempt++) {
@@ -460,6 +464,32 @@ try {
       );
     return { listed: ids.length, continued: threads.projectless, fresh };
   });
+
+  // Usage: turns sent through the bridge are recorded and admitted like local ones, with their submitter.
+  {
+    const { DatabaseSync } = await import("node:sqlite");
+    const ledger = new DatabaseSync(join(codexData, "token-usage.sqlite"), { readOnly: true });
+    try {
+      const recorded = (text: string) =>
+        ledger
+          .prepare("SELECT actor_kind, admission FROM token_usage_inputs WHERE input_id = ?")
+          .get(inputIds.get(text) ?? "") as { actor_kind: string; admission: string } | undefined;
+      const usage = Object.fromEntries(
+        ["LEGACY-ONE", "AFTER-UPGRADE", "NEW-ON-BRIDGE"].map((text) => [text, recorded(text) ?? null]),
+      );
+      result.usage = usage;
+      for (const [text, row] of Object.entries(usage)) {
+        check(
+          row?.admission === "confirmed",
+          `${text} is not an admitted turn in the usage ledger: ${JSON.stringify(row)}`,
+        );
+        if (identityMode === "employee")
+          check(row?.actor_kind === "human", `${text} is not attributed to its submitter: ${JSON.stringify(row)}`);
+      }
+    } finally {
+      ledger.close();
+    }
+  }
 
   await phase("rolled back", false, async (c) => {
     const ids = await listed(c);

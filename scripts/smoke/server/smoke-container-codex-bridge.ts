@@ -69,9 +69,28 @@ await writeFile(
   ].join("\n"),
 );
 const docker = (args: string[]) =>
-  (execFileSync("docker", args, { cwd: root, env, encoding: "utf8", timeout: 600_000, stdio: ["ignore", "pipe", "pipe"] }) ?? "").trim();
+  (
+    execFileSync("docker", args, {
+      cwd: root,
+      env,
+      encoding: "utf8",
+      timeout: 600_000,
+      stdio: ["ignore", "pipe", "pipe"],
+    }) ?? ""
+  ).trim();
 const compose = (args: string[]) =>
-  docker(["compose", "--env-file", "/dev/null", "-f", join(root, "deploy/docker/compose.yaml"), "-f", override, "-p", name, ...args]);
+  docker([
+    "compose",
+    "--env-file",
+    "/dev/null",
+    "-f",
+    join(root, "deploy/docker/compose.yaml"),
+    "-f",
+    override,
+    "-p",
+    name,
+    ...args,
+  ]);
 const processes = (service: string) => docker(["top", compose(["ps", "-q", service]), "-eo", "pid,args"]);
 const check = (condition: unknown, message: string) => {
   if (!condition) throw new Error(message);
@@ -113,7 +132,10 @@ async function client(origin: string) {
     reportFailure: () => undefined,
   });
   const rpc = new JsonRpcAppServerClient({ hostId: "local-codex", transport: host.createTransport("local-codex") });
-  await rpc.connect({ clientInfo: { name: "container-bridge-drill", version: "1" }, capabilities: { experimentalApi: true } } as any);
+  await rpc.connect({
+    clientInfo: { name: "container-bridge-drill", version: "1" },
+    capabilities: { experimentalApi: true },
+  } as any);
   const request = (method: string, params: unknown) =>
     (rpc.request(method as any, params as any) as Promise<any>).catch((error) => {
       throw new Error(`${method}: ${error instanceof Error ? error.message : String(error)}`);
@@ -129,7 +151,11 @@ async function client(origin: string) {
       ),
     ) as string[];
   const say = async (threadId: string, text: string) => {
-    await request("turn/start", { threadId, clientUserMessageId: `drill-${randomBytes(6).toString("hex")}`, input: [{ type: "text", text, text_elements: [] }] });
+    await request("turn/start", {
+      threadId,
+      clientUserMessageId: `drill-${randomBytes(6).toString("hex")}`,
+      input: [{ type: "text", text, text_elements: [] }],
+    });
     for (let attempt = 0; attempt < 240; attempt++) {
       const lines = await transcript(threadId).catch(() => [] as string[]);
       if (lines.at(-1) === `agent: echo: ${text}`) return lines;
@@ -146,17 +172,36 @@ try {
   const layout = await prepareLayout(env, { uid: process.getuid!(), gid: process.getgid!() });
   // A synthetic account for Brain's Core, in the Codex data directory it opens.
   await mkdir(join(data, "codex"), { recursive: true, mode: 0o700 });
-  const store = new AccountPoolStore({ databasePath: join(data, "codex", "account-pool.sqlite"), secretsDirectory: join(data, "codex", "secrets") });
+  const store = new AccountPoolStore({
+    databasePath: join(data, "codex", "account-pool.sqlite"),
+    secretsDirectory: join(data, "codex", "secrets"),
+  });
   store.addAccount(
-    { id: "synthetic", provider: "codex", label: "Synthetic", upstreamAccountId: "synthetic", enabled: true, priority: 0 },
+    {
+      id: "synthetic",
+      provider: "codex",
+      label: "Synthetic",
+      upstreamAccountId: "synthetic",
+      enabled: true,
+      priority: 0,
+    },
     { accessToken: "synthetic-no-upstream-access", refreshToken: null, expiresAt: null },
   );
   store.close();
-  if (process.getuid!() === 0)
-    for (const path of [directory, layout.state, layout.execution, layout.gitCredentials, layout.workspace, layout.logs,
-      join(data, "codex"), join(data, "codex", "secrets"), join(data, "codex", "account-pool.sqlite"),
-      ...["brain", "gateway", "hands"].map((service) => join(logs, service))])
+  if (process.getuid!() === 0) {
+    for (const path of [
+      directory,
+      layout.state,
+      layout.execution,
+      layout.gitCredentials,
+      layout.workspace,
+      layout.logs,
+      ...["brain", "gateway", "hands"].map((service) => join(logs, service)),
+    ])
       await chown(path, uid, gid).catch(() => undefined);
+    // The seeded account (store and secrets) belongs to the containers' user.
+    execFileSync("chown", ["-R", `${uid}:${gid}`, join(data, "codex")]);
+  }
   env.OPENCRAFT_PORT = String(await freePort());
   const origin = `http://127.0.0.1:${env.OPENCRAFT_PORT}`;
 
@@ -168,27 +213,43 @@ try {
   const legacy = (await c.request("thread/start", { model: "gpt-test" })).thread.id as string;
   const before = await c.say(legacy, "CONTAINER-LEGACY");
   c.close();
-  check(!processes("gateway").includes("codex-bridge/engine-host.mjs"), "the legacy Gateway started a Codex Engine Host");
+  check(
+    !processes("gateway").includes("codex-bridge/engine-host.mjs"),
+    "the legacy Gateway started a Codex Engine Host",
+  );
   result.legacy = { thread: legacy, history: before };
 
   // The Gateway recreated on the bridge (its default).
   env.OPENCRAFT_CODEX_BRIDGE = "1";
   compose(["up", "-d", "--no-deps", "--force-recreate", "gateway"]);
   await ready(origin);
-  check(processes("gateway").includes("codex-bridge/engine-host.mjs"), "the Gateway did not start its Codex Engine Host");
+  check(
+    processes("gateway").includes("codex-bridge/engine-host.mjs"),
+    "the Gateway did not start its Codex Engine Host",
+  );
   c = await client(origin);
   const listed = ((await c.request("thread/list", { limit: 50 })).data ?? []).map((thread: any) => thread.id);
   check(listed.includes(legacy), "the legacy conversation is missing after the upgrade");
   await c.request("thread/resume", { threadId: legacy });
-  check(JSON.stringify(await c.transcript(legacy)) === JSON.stringify(before), "the legacy conversation's history changed");
+  check(
+    JSON.stringify(await c.transcript(legacy)) === JSON.stringify(before),
+    "the legacy conversation's history changed",
+  );
   const continued = await c.say(legacy, "CONTAINER-AFTER-UPGRADE");
   const fresh = (await c.request("thread/start", { model: "gpt-test" })).thread.id as string;
   check(fresh.startsWith("bridge:codex:"), `a new conversation is not on the bridge: ${fresh}`);
   await c.say(fresh, "CONTAINER-NEW-ON-BRIDGE");
   c.close();
   for (const service of ["brain", "gateway"])
-    check(!/exec-server --listen stdio/u.test(processes(service).split("\n").filter((line) => !line.includes("sandbox-command.mjs")).join("\n")),
-      `${service} runs native Codex commands itself`);
+    check(
+      !/exec-server --listen stdio/u.test(
+        processes(service)
+          .split("\n")
+          .filter((line) => !line.includes("sandbox-command.mjs"))
+          .join("\n"),
+      ),
+      `${service} runs native Codex commands itself`,
+    );
   result.upgraded = { continued: continued.slice(-2), fresh };
 
   // Another Gateway restart: the Engine Host comes back and every conversation continues.

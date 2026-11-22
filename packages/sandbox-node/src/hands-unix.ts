@@ -124,9 +124,14 @@ export async function verifyHandsCgroup(resources: SandboxResources, root = "/sy
     [cpu, memory, tasks] = await Promise.all(["cpu.max", "memory.max", "pids.max"].map(name => readFile(join(root, name), "utf8")));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    // cgroup v1 mounts the CPU controller joined with cpuacct on most hosts, alone on others.
+    const cpuDirectory = await readFile(join(root, "cpu,cpuacct/cpu.cfs_quota_us"), "utf8").then(() => "cpu,cpuacct", (cause: NodeJS.ErrnoException) => {
+      if (cause.code !== "ENOENT") throw cause;
+      return "cpu";
+    });
     const [quota, period, memoryLimit, taskLimit] = await Promise.all([
-      readFile(join(root, "cpu,cpuacct/cpu.cfs_quota_us"), "utf8"),
-      readFile(join(root, "cpu,cpuacct/cpu.cfs_period_us"), "utf8"),
+      readFile(join(root, cpuDirectory, "cpu.cfs_quota_us"), "utf8"),
+      readFile(join(root, cpuDirectory, "cpu.cfs_period_us"), "utf8"),
       readFile(join(root, "memory/memory.limit_in_bytes"), "utf8"),
       readFile(join(root, "pids/pids.max"), "utf8"),
     ]);

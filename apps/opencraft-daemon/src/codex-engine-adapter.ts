@@ -960,7 +960,7 @@ export class CodexEngineAdapter implements DuplexTransport {
           projectLegacy:derived?false:undefined,submission:!!this.options.tokenUsage?.submission,derived:!!derived,
           ...(this.nativeCore&&this.options.coreEndpoint?{coreEndpoint:this.options.coreEndpoint,coreAuthToken:this.options.coreAuthToken??""}:{})},{
           request:(method,params)=>this.requestPhysical(method,params,5000),
-          submission:this.options.tokenUsage?.submission,
+          submission:this.usageSubmissionByRecord(),
           diagnostic:category=>this.diagnostic({event:"token-usage-partial",category}),
           invalidate:derived?(threadId,path)=>derived.invalidate(threadId,path):undefined,
           failed:()=>{this.tokenUsage=null;this.diagnostic({event:"token-usage-unavailable",category:"collector-exit"});},
@@ -968,7 +968,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       } else this.tokenUsage = new CodexTokenUsageRuntime(new OpenCraftTokenUsageLedger(this.tokenUsageState,this.options.tokenUsage?.serverId ?? "local-codex",Date.now,telemetry,{projectLegacy:this.options.tokenUsage?.derivedQueries?false:undefined}), {
         request:(method,params)=>this.requestPhysical(method,params,5000),
         source:(threadId,path)=>nativeStorage.resolve(threadId,path),
-        submission:this.options.tokenUsage?.submission,
+        submission:this.usageSubmissionByRecord(),
         diagnostic:category=>this.diagnostic({event:"token-usage-partial",category}),
         derived:this.options.tokenUsage?.derivedQueries,
       });
@@ -1901,12 +1901,9 @@ export class CodexEngineAdapter implements DuplexTransport {
           const inputId = string(params.clientUserMessageId);
           const usageRuntime=this.tokenUsage,physicalGeneration=this.sessionMcpGeneration;
           try {
-            const actor=context.actorContext ? this.options.tokenUsage?.actor(context.actorContext) : null;
-            const trusted=this.options.tokenUsage?.submission?.(string(params.threadId),inputId);
+            const mode=message.method === "turn/start" ? "start":"steer";
             pending.usageAttemptId=randomUUID();
-            await usageRuntime?.attempt(pending.usageAttemptId,string(params.threadId),inputId,message.method === "turn/start" ? "start":"steer",{threadId:string(params.threadId),inputId,actorId:trusted?.sourceKind==="system"?trusted.actorId:actor?.id??trusted?.actorId??null,
-              actorKind:trusted?.sourceKind==="system"?trusted.actorKind:actor?.kind??trusted?.actorKind??"unknown",mode:message.method === "turn/start" ? "start":"steer",
-              sourceKind:trusted?.sourceKind === "system" ? "system" : actor?.kind === "human" ? "human":actor?.kind === "session" ? "system":trusted?.sourceKind??"unknown",submittedAt:Date.now()});
+            await usageRuntime?.attempt(pending.usageAttemptId,string(params.threadId),inputId,mode,this.usageIdentity(string(params.threadId),string(params.threadId),inputId,mode,context));
           } catch { this.diagnostic({event:"token-usage-partial",category:"submission"}); }
           if(!this.initializedClients.has(clientId)||this.clientEpoch(clientId)!==requestClientEpoch||this.statusValue.state!=="open"||physicalGeneration!==this.sessionMcpGeneration){
             if(pending.usageAttemptId)usageRuntime?.attemptOutcome(pending.usageAttemptId,"rejected");return;
@@ -3579,9 +3576,43 @@ export class CodexEngineAdapter implements DuplexTransport {
   projectExternalNotification(message: RpcRecord): RpcRecord {
     return this.messageSenders ? projectThreadMessageNotification(this.projectSender, message) as RpcRecord : message;
   }
-  private externalThreadIdentities?: { toNative(threadId: string): string | undefined };
-  /** The provider bridge's public→native Thread identities, for Host duties it forwards here. */
-  bindExternalThreadIdentities(identities: { toNative(threadId: string): string | undefined }): void { this.externalThreadIdentities = identities; }
+  /** The trusted submission lookup for collection, which names bridge Threads by their native session. */
+  private usageSubmissionByRecord() {
+    const submission = this.options.tokenUsage?.submission;
+    return submission ? (threadId: string, inputId: string) => submission(this.externalThreadIdentities?.toPublic?.(threadId) ?? threadId, inputId) : undefined;
+  }
+  private externalThreadIdentities?: { toNative(threadId: string): string | undefined; toPublic?(nativeId: string): string | undefined };
+  /** The provider bridge's public↔native Thread identities, for Host duties it forwards here. */
+  bindExternalThreadIdentities(identities: { toNative(threadId: string): string | undefined; toPublic?(nativeId: string): string | undefined }): void { this.externalThreadIdentities = identities; }
+  /** Who submitted an input, for usage attribution: the trusted owner's record, else the submitting actor. */
+  private usageIdentity(recordThreadId: string, publicThreadId: string, inputId: string, mode: "start" | "steer", context: TransportSubmissionContext): UsageSubmission {
+    const actor=context.actorContext ? this.options.tokenUsage?.actor(context.actorContext) : null;
+    const trusted=this.options.tokenUsage?.submission?.(publicThreadId,inputId);
+    return {threadId:recordThreadId,inputId,actorId:trusted?.sourceKind==="system"?trusted.actorId:actor?.id??trusted?.actorId??null,
+      actorKind:trusted?.sourceKind==="system"?trusted.actorKind:actor?.kind??trusted?.actorKind??"unknown",mode,
+      sourceKind:trusted?.sourceKind === "system" ? "system" : actor?.kind === "human" ? "human":actor?.kind === "session" ? "system":trusted?.sourceKind??"unknown",submittedAt:Date.now()};
+  }
+  /** A bridge Thread's turn notification, with native session and turn identities, for usage collection. */
+  observeExternalUsage(method: string, params: RpcRecord): void {
+    try { this.tokenUsage?.notification(method, params); } catch { this.diagnostic({event:"token-usage-partial",category:"notification"}); }
+  }
+  /** A bridge Thread's input is about to be submitted: record who submitted it, under its native session. */
+  async beginExternalUsage(nativeThreadId: string, publicThreadId: string, inputId: string, mode: "start" | "steer", context: TransportSubmissionContext): Promise<string | undefined> {
+    const usage=this.tokenUsage;
+    if(!usage||!nativeThreadId||!inputId)return undefined;
+    try {
+      const attemptId=randomUUID();
+      await usage.attempt(attemptId,nativeThreadId,inputId,mode,this.usageIdentity(nativeThreadId,publicThreadId,inputId,mode,context));
+      return attemptId;
+    } catch { this.diagnostic({event:"token-usage-partial",category:"submission"}); return undefined; }
+  }
+  /** Its outcome: accepted into a native turn (and admitted to it), rejected, or unknown. */
+  settleExternalUsage(attemptId: string, outcome: "accepted" | "rejected" | "unknown", nativeThreadId: string, inputId: string, nativeTurnId?: string): void {
+    try {
+      this.tokenUsage?.attemptOutcome(attemptId,outcome,outcome==="accepted"?nativeTurnId??null:null);
+      if(outcome==="accepted"&&nativeTurnId)this.tokenUsage?.admission({threadId:nativeThreadId,turnId:nativeTurnId},inputId);
+    } catch { this.diagnostic({event:"token-usage-partial",category:"acceptance"}); }
+  }
   /** Whether this Host can record verified senders for a bridge Thread's input. */
   get externalSenderAttribution(): boolean { return !!this.identity; }
   /**

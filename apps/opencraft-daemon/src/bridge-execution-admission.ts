@@ -37,6 +37,11 @@ export function createServerCodexBridge(legacy:DuplexTransport,options:BridgeGat
     ?{prepareInput:host.prepareExternalInput.bind(legacy),projectHistory:host.projectExternalHistory.bind(legacy),observeTitle:host.observeExternalTitle.bind(legacy),
       ...(typeof (legacy as {projectExternalNotification?:unknown}).projectExternalNotification==='function'
         ?{projectNotification:(legacy as unknown as {projectExternalNotification:(frame:Record<string,any>)=>Record<string,any>}).projectExternalNotification.bind(legacy)}:{}),
+      ...(typeof (legacy as {beginExternalUsage?:unknown}).beginExternalUsage==='function'?{usage:{
+        notification:(method:string,params:Record<string,unknown>)=>(legacy as any).observeExternalUsage(method,params),
+        begin:(...args:Parameters<NonNullable<NonNullable<typeof policy>['usage']>['begin']>)=>(legacy as any).beginExternalUsage(...args),
+        settle:(...args:Parameters<NonNullable<NonNullable<typeof policy>['usage']>['settle']>)=>(legacy as any).settleExternalUsage(...args),
+      }}:{}),
       // The Host opens its sender storage when it connects, after this bridge is assembled.
       senderAttribution:()=>(legacy as {externalSenderAttribution?:boolean}).externalSenderAttribution===true,
       ...(typeof (legacy as {releaseForAdoption?:unknown}).releaseForAdoption==='function'?{releaseForAdoption:(legacy as unknown as {releaseForAdoption:(id:string)=>Promise<boolean>}).releaseForAdoption.bind(legacy)}:{})}:{};
