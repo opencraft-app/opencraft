@@ -49,7 +49,7 @@ function App() {
   useTimelineViewportHost(chrome);
   const [recovering, setRecovering] = React.useState(params.has("recovering"));
   Object.assign(window, { fixture: { controller, setRecovering } });
-  return <AppShell layoutScope="home" mainContentLayout="thread-edge-scroll" navigation={{layout:"unified",actions:[],account:null,onOpenSettings:noop}} header={<AppShellHeader
+  return <AppShell layoutScope="home" mainContentLayout="thread-edge-scroll" navigation={{actions:[],account:null,onOpenSettings:noop}} header={<AppShellHeader
     conversationHeader={!params.has("legacyHeader")} title="Home" project={null} sidebarOpen={false}
     rightPanelOpen={false} rightPanelFullWidth={false} onToggleSidebar={noop} onToggleRightPanel={noop}
     onHome={noop} canGoBack={false} canGoForward={false} onBack={noop} onForward={noop}

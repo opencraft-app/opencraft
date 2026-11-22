@@ -13,10 +13,11 @@ import{WorkbenchPresentationRootProvider}from'/apps/workbench-web/src/components
 import{initializeAppearanceTheme,setThemePreference}from'/apps/workbench-web/src/appearance-theme.ts';
 import'/apps/workbench-web/src/styles/app.scss';
 initializeAppearanceTheme();let mounts=0;const actions=[];
+const contextOnly=new URLSearchParams(location.search).has('embedded-context');
 function Context(){const [expanded,setExpanded]=useState(true);useEffect(()=>{mounts++},[]);return <div style={{height:'100%',display:'flex',flexDirection:'column'}}><input aria-label='Sidebar filter' defaultValue='Keep filter'/><button onClick={()=>setExpanded(!expanded)} aria-expanded={expanded}>Local</button><div data-scroll-list style={{overflowY:'auto',flex:1,minHeight:0}}>{expanded?Array.from({length:80},(_,i)=><div key={i} style={{padding:12}}>Task {i}</div>):null}</div></div>}
-function App(){const[open,setOpen]=useState(true);const[width,setWidth]=useState(frame.sidebarUnifiedDefaultWidth);const[context,setContext]=useState(true);const[accountName,setAccountName]=useState(null);const[signIn,setSignIn]=useState(false);const[unified,setUnified]=useState(true);
-window.fixture={setOpen,setContext,setWidth,setAccountName,setSignIn,setUnified,width,setThemePreference,mounts:()=>mounts,actions};
-return <AppShell navigation={{layout:unified?'unified':undefined,actions:[{id:'chat',title:'Chat',icon:'chat',onInvoke:()=>actions.push('Chat')}],settingsActive:false,onOpenSettings:()=>actions.push('Settings'),account:{snapshot:{phase:accountName?'authenticated':'anonymous',name:accountName,avatarUrl:null,planLabel:'Workspace member',usageRemainingPercent:null},signIn:signIn?{pending:false,error:null,options:[{id:'local',label:'Sign in locally',description:'Use workspace account'}],select:()=>actions.push('Sign in locally'),cancel:()=>{},retry:()=>{}}:null,onOpen:()=>actions.push('Sign in'),onRefresh:async()=>{},onSignOut:async()=>{}}}}
+function App(){const[open,setOpen]=useState(true);const[width,setWidth]=useState(frame.sidebarUnifiedDefaultWidth);const[context,setContext]=useState(true);const[accountName,setAccountName]=useState(null);const[signIn,setSignIn]=useState(false);
+window.fixture={setOpen,setContext,setWidth,setAccountName,setSignIn,width,setThemePreference,mounts:()=>mounts,actions};
+return <AppShell navigation={contextOnly?undefined:{actions:[{id:'chat',title:'Chat',icon:'chat',onInvoke:()=>actions.push('Chat')}],settingsActive:false,onOpenSettings:()=>actions.push('Settings'),account:{snapshot:{phase:accountName?'authenticated':'anonymous',name:accountName,avatarUrl:null,planLabel:'Workspace member',usageRemainingPercent:null},signIn:signIn?{pending:false,error:null,options:[{id:'local',label:'Sign in locally',description:'Use workspace account'}],select:()=>actions.push('Sign in locally'),cancel:()=>{},retry:()=>{}}:null,onOpen:()=>actions.push('Sign in'),onRefresh:async()=>{},onSignOut:async()=>{}}}}
 layoutScope='test' mainContentLayout='default' sidebarOpen={open} sidebarWidth={width} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} onSidebarCollapse={()=>setOpen(false)} onSidebarExpand={()=>setOpen(true)} onSidebarResizeEnd={v=>v!==null&&setWidth(v)} rightPanel={null} rightPanelOpen={false} rightPanelFullWidth={false} onRightPanelOpenChange={()=>{}}
 header={<AppShellHeader navigationBrand={<ApplicationBrand/>} title={null} project={null} sidebarOpen={open} rightPanelOpen={false} rightPanelFullWidth={false} showRightPanelAction={false} onToggleSidebar={()=>setOpen(!open)} onToggleRightPanel={()=>{}} onHome={()=>{}} canGoBack={false} canGoForward={false} onBack={()=>{}} onForward={()=>{}} navigationActions={['sidebar-toggle']}/>}
 floatingSidebarHeader={dock=><button onClick={dock}>固定侧栏</button>}
@@ -54,7 +55,9 @@ import{SidebarLayoutStore}from'@opencraft/sidebar-layout';
 import{legacyDirectServerProjectionFromHost}from'@opencraft/workbench-runtime';
 import{initializeAppearanceTheme,setThemePreference}from'/apps/workbench-web/src/appearance-theme.ts';
 import'/apps/workbench-web/src/styles/app.scss';
-initializeAppearanceTheme();const actions=[];const updateActions=[];
+initializeAppearanceTheme();
+if (navigator.maxTouchPoints > 0) document.documentElement.dataset.uiDensity = 'touch';
+const actions=[];const updateActions=[];
 const initial=Array.from({length:60},(_,i)=>({id:'t'+i,title:'Conversation '+i,project:'workspace',status:'ready',updatedAt:Date.now()/1000-i,connectionHostId:'local',connectionHostLabel:'Local',...legacyDirectServerProjectionFromHost({hostId:'local',hostKind:'local',label:'Local'})}));
 const layout=await SidebarLayoutStore.open({load:async()=>null,save:async()=>{}});
 const threadActions={onRename:async()=>{},onFork:async()=>{},onArchive:async()=>actions.push(['archive']),onDelete:async()=>{},onSetPinned:async()=>actions.push(['pin'])};
@@ -62,7 +65,7 @@ const capabilities=()=>({pin:true,rename:true,fork:true,archive:true,delete:true
 const queryClient=new QueryClient();
 function Drawer(){const[open,setOpen]=useState(true);
  window.fixture={setOpen,actions,updateActions,openUpdates:()=>updateActions.push(['openUpdates']),setUpdateState:name=>(async()=>{await fetch('/__opencraft_updates/fixture-state?state='+name,{method:'POST'});await queryClient.invalidateQueries({queryKey:['web-deployment-updates']})})()};
- return <QueryClientProvider client={queryClient}><AppShell navigation={{layout:'unified',settingsActive:false,updatesActive:false,actions:[{id:'chat',title:'Chat',icon:'chat',onInvoke:()=>actions.push(['chat'])}],account:{snapshot:{name:'OpenCraft Workspace',phase:'ready',avatarUrl:null,planLabel:'Launch',usageRemainingPercent:69},onOpen:()=>{updateActions.push(['account'])},onRefresh:async()=>{},onSignOut:async()=>{}},onOpenSettings:()=>{updateActions.push(['openSettings'])},onOpenUpdates:()=>{updateActions.push(['openUpdates'])}}} layoutScope='managed-updates' mainContentLayout='default' sidebarOpen={open} sidebarWidth={275} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} onSidebarCollapse={()=>setOpen(false)} onSidebarExpand={()=>setOpen(true)} onSidebarResizeEnd={()=>{}} onRightPanelOpenChange={()=>{}} rightPanel={null} rightPanelOpen={false} rightPanelFullWidth={false} header={<AppShellHeader title={null} project={null} sidebarOpen={open} rightPanelOpen={false} rightPanelFullWidth={false} onToggleSidebar={()=>setOpen(!open)} onToggleRightPanel={()=>{}} onHome={()=>{}} canGoBack={false} canGoForward={false} onBack={()=>{}} onForward={()=>{}} navigationActions={['sidebar-toggle']}/>} floatingSidebarHeader={dock=><AppShellNavigationControls hostRole='transient' sidebarOpen={false} canGoBack={false} canGoForward={false} onToggleSidebar={dock} onHome={()=>{}} onBack={()=>{}} onForward={()=>{}} actions={['sidebar-toggle']}/>} leftPanel={<Sidebar threads={initial} activeHostId='local' activeThreadId='t0' sidebarLayout={layout} threadActions={threadActions} threadCapabilities={capabilities} pendingTitle={()=>null} onSelectThread={(_,id)=>{actions.push(['select',id]);setOpen(false)}} onNewTask={()=>{updateActions.push(['newTask'])}} onOpenSettings={()=>{}} showFooter={false} showStart={false} showNewChat/>}><div style={{padding:24}}>Managed website content</div></AppShell></QueryClientProvider>}
+ return <QueryClientProvider client={queryClient}><AppShell navigation={{settingsActive:false,updatesActive:false,actions:[{id:'chat',title:'Chat',icon:'chat',onInvoke:()=>actions.push(['chat'])}],account:{snapshot:{name:'OpenCraft Workspace',phase:'ready',avatarUrl:null,planLabel:'Launch',usageRemainingPercent:69},onOpen:()=>{updateActions.push(['account'])},onRefresh:async()=>{},onSignOut:async()=>{}},onOpenSettings:()=>{updateActions.push(['openSettings'])},onOpenUpdates:()=>{updateActions.push(['openUpdates'])}}} layoutScope='managed-updates' mainContentLayout='default' sidebarOpen={open} sidebarWidth={275} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} onSidebarCollapse={()=>setOpen(false)} onSidebarExpand={()=>setOpen(true)} onSidebarResizeEnd={()=>{}} onRightPanelOpenChange={()=>{}} rightPanel={null} rightPanelOpen={false} rightPanelFullWidth={false} header={<AppShellHeader title={null} project={null} sidebarOpen={open} rightPanelOpen={false} rightPanelFullWidth={false} onToggleSidebar={()=>setOpen(!open)} onToggleRightPanel={()=>{}} onHome={()=>{}} canGoBack={false} canGoForward={false} onBack={()=>{}} onForward={()=>{}} navigationActions={['sidebar-toggle']}/>} floatingSidebarHeader={dock=><AppShellNavigationControls hostRole='transient' sidebarOpen={false} canGoBack={false} canGoForward={false} onToggleSidebar={dock} onHome={()=>{}} onBack={()=>{}} onForward={()=>{}} actions={['sidebar-toggle']}/>} leftPanel={<Sidebar threads={initial} activeHostId='local' activeThreadId='t0' sidebarLayout={layout} threadActions={threadActions} threadCapabilities={capabilities} pendingTitle={()=>null} onSelectThread={(_,id)=>{actions.push(['select',id]);setOpen(false)}} onNewTask={()=>{updateActions.push(['newTask'])}} onOpenSettings={()=>{}} showFooter={false} showStart={false} showNewChat/>}><div style={{padding:24}}>Managed website content</div></AppShell></QueryClientProvider>}
 createRoot(document.getElementById('root')).render(<Drawer/>);`;
     const managedVite = await createServer({ configFile: false, root: process.cwd(), publicDir: 'apps/workbench-web/public', logLevel: 'error',
       resolve: { dedupe: ['react', 'react-dom'] }, cacheDir: 'node_modules/.vite-shared-sidebar-managed', esbuild: { jsx: 'automatic' },
@@ -113,14 +116,21 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
           rightHitIsUpdateButton: updates !== null && (rightHit === updates || updates.contains(rightHit)) };
       }, next);
       for (const [width, height] of [[390, 844], [390, 568]] as const) {
-        const page = await managedBrowser.newPage({ viewport: { width, height } }); page.setDefaultTimeout(12000);
+        const page = await managedBrowser.newPage({ viewport: { width, height }, hasTouch: true });
+        page.setDefaultTimeout(20000);
         await page.addInitScript('window.__name=value=>value');
-        const scrollErrors: string[] = []; page.on('pageerror', error => scrollErrors.push(error.message));; page.on('pageerror', error => console.log('PR385-PAGEERROR', error.message)); page.on('console', message => { const text = message.text(); if (message.type() === 'error' && !text.startsWith('Failed to load resource')) console.log('PR385-CONSOLE', text.slice(0, 300)); });
+        const scrollErrors: string[] = [];
+        page.on('pageerror', error => scrollErrors.push(error.message));
+        page.on('response', response => {
+          if (response.status() >= 500) scrollErrors.push(`${response.status()} ${response.url()}`);
+        });
         try {
           await page.goto(`http://127.0.0.1:${port}/`, { timeout: 90000 });
-          await page.waitForSelector('.app-shell-root');
+          await page.locator('.app-shell-root').waitFor().catch(error => {
+            throw new Error(`Managed workbench failed to mount: ${scrollErrors.join('; ')}`, { cause: error });
+          });
           // The drawer opens through the real chrome toggle; the feed starts "available".
-          await page.locator('[data-chrome-action-id="sidebar-toggle"]').click();
+          await page.locator('[data-chrome-action-id="sidebar-toggle"]').tap();
           await page.locator('.shell-sidebar__column[data-navigation-layout="mobile"]').waitFor();
           await page.locator('.sidebar-activity-item').first().waitFor();
           await page.locator('.shell-sidebar__column[data-navigation-layout="mobile"]').waitFor();
@@ -134,8 +144,7 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
           const available = await scrollProbe(page, 'available');
           assert.ok(available.tallerThanViewport, `list must outgrow the viewport: ${JSON.stringify(available)}`);
           assert.ok(available.atBottom, `the probe must reach the real list end: ${JSON.stringify(available)}`);
-          assert.equal(available.padEnd, '144px', `notice must reserve both floating actions: ${JSON.stringify(available)}`);
-          assert.equal(available.scrollPadEnd, '144px');
+          assert.equal(available.scrollPadEnd, available.padEnd);
           assert.equal(available.updateEntranceVisible, true);
           assert.equal(available.rowHitInsideRow, true, 'last row must stay reachable by pointer: ' + JSON.stringify(available));
           assert.equal(available.rowHitIsUpdateButton, false, 'the floating update button must not cover the last row');
@@ -165,14 +174,14 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
           await page.locator('.shell-sidebar__column[data-navigation-layout="mobile"]').waitFor();
           // The stale variant replaces the download entrance with the refresh state.
           const stale = await scrollProbe(page, 'stale');
-          assert.equal(stale.padEnd, '144px'); assert.equal(stale.scrollPadEnd, '144px');
+          assert.equal(stale.padEnd, available.padEnd); assert.equal(stale.scrollPadEnd, stale.padEnd);
           assert.equal(stale.updateEntranceVisible, true);
           assert.equal(stale.rowHitInsideRow, true); assert.equal(stale.rowHitIsUpdateButton, false);
           await page.screenshot({ path: `${output}/pr385-mobile-${height}-stale.png` });
           // Removing the notice recovers the single-button space and the geometry.
           const recovered = await scrollProbe(page, 'none');
-          assert.equal(recovered.padEnd, '88px', `no notice must not keep two-button padding: ${JSON.stringify(recovered)}`);
-          assert.equal(recovered.scrollPadEnd, '88px');
+          assert.ok(parseFloat(recovered.padEnd) < parseFloat(available.padEnd), 'removing an action releases its scroll reserve');
+          assert.equal(recovered.scrollPadEnd, recovered.padEnd);
           assert.equal(recovered.updateEntranceVisible, false, 'the notice must disappear live');
           assert.equal(recovered.rowHitInsideRow, true); assert.equal(recovered.rowHitIsUpdateButton, false);
           assert.equal(recovered.tallerThanViewport, true, 'without the notice the production list still outgrows the viewport');
@@ -202,7 +211,7 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
   }
   browser = await chromium.launch({ headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE });
   const page = await browser.newPage({ viewport: { width: 1300, height: 760 }, reducedMotion: process.env.OPENCRAFT_REDUCED_MOTION === "1" ? "reduce" : "no-preference" }); page.setDefaultTimeout(8000);
-  await page.addInitScript("window.__name=value=>value;localStorage.setItem('opencraft.shell-navigation.v2',JSON.stringify({applications:true,account:false,railDetent:'expanded'}))");
+  await page.addInitScript("window.__name=value=>value");
   page.on("pageerror", (error: Error) => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}`, {timeout:90000});
   await page.waitForLoadState('networkidle');
@@ -247,8 +256,9 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
     await page.evaluate(() => { (window as any).fixture.setAccountName(null); (window as any).fixture.setSignIn(true); });
     await page.setViewportSize({ width: 1300, height: 760 });
     await page.waitForTimeout(600);
-    const signIn = page.locator('.shell-navigation__entrance[data-surface="account"]:visible');
-    await signIn.click();
+    const signIn = page.getByRole('button', { name: 'Sign in', exact: true });
+    await signIn.focus();
+    await signIn.press('Enter');
     const menu = page.locator('.shell-sign-in-menu');
     await menu.waitFor();
     assert.equal(await menu.evaluate(el => el.closest('.app-shell-sidecar') === null), true);
@@ -256,18 +266,28 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
     await menu.waitFor({ state: 'hidden' });
     assert.equal(await signIn.evaluate(el => el === document.activeElement), true);
     evidence.push({ case: 'anonymous-menu-presentation-root', passed: true });
-    await page.evaluate(() => { (window as any).fixture.setAccountName('Floating member'); (window as any).fixture.setSignIn(false); (window as any).fixture.setUnified(false); (window as any).fixture.setOpen(false); });
-    await page.waitForTimeout(700);
-    await page.mouse.move(600, 170); await page.mouse.move(2, 170);
-    const floating = page.locator('.app-shell-floating-left-panel');
+    await page.setViewportSize({ width: 580, height: 760 });
+    await page.evaluate(() => { (window as any).fixture.setAccountName('Floating member'); (window as any).fixture.setSignIn(false); (window as any).fixture.setOpen(false); });
+    await page.locator('.has-unified-sidebar [data-chrome-action-id="sidebar-toggle"]:visible').click();
+    const floating = page.locator('.app-shell-floating-left-panel:has(.shell-sidebar__column)');
     await floating.waitFor();
-    await page.mouse.move(100, 170); await page.waitForTimeout(300);
-    await floating.locator('.shell-navigation__entrance[data-surface="account"]').click();
+    const floatingAccount = floating.locator('.shell-navigation__entrance[data-surface="account"]');
+    await floatingAccount.click();
     const floatingPeek = page.locator('.shell-navigation__peek');
     await floatingPeek.waitFor();
+    assert.equal(await floatingPeek.evaluate(el => el.closest('.app-shell-floating-left-panel') === null), true);
+    await page.screenshot({ path: `${output}/account-floating-unified.png` });
+    await page.keyboard.press('Escape');
+    await floatingPeek.waitFor({ state: 'hidden' });
+    assert.equal(await floatingAccount.evaluate(el => el === document.activeElement), true);
+    await floatingAccount.click();
+    const countBefore = await page.evaluate(() => (window as any).fixture.actions.filter(action => action === 'Settings').length);
     await floatingPeek.getByRole('button', { name: 'Settings', exact: true }).click();
     await floatingPeek.waitFor({ state: 'hidden' });
+    assert.equal(await page.evaluate(() => (window as any).fixture.actions.filter(action => action === 'Settings').length), countBefore + 1);
+    assert.equal(await page.getByRole('textbox', { name: 'Main draft' }).inputValue(), 'Keep draft');
     evidence.push({ case: 'floating-sidebar-account-settings', passed: true });
+    await page.setViewportSize({ width: 1300, height: 760 });
     await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}/?embedded`, { timeout: 90000 });
     await page.waitForSelector('.app-shell-root');
     await page.evaluate(() => (window as any).fixture.setAccountName('Embedded member'));
@@ -284,6 +304,34 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
     await localPeek.getByRole('button', { name: 'Settings', exact: true }).click();
     await localPeek.waitFor({ state: 'hidden' });
     evidence.push({ case: 'supplied-presentation-root-open-resize-settings', passed: true });
+
+    // A product can supply its own presentation root and only the context pane.
+    await page.setViewportSize({ width: 1300, height: 760 });
+    await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}/?embedded-context`, { timeout: 90000 });
+    const contextFilter = page.getByRole('textbox', { name: 'Sidebar filter' });
+    const embeddedDraft = page.getByRole('textbox', { name: 'Main draft' });
+    await contextFilter.fill('Embedded context');
+    await embeddedDraft.fill('Embedded draft');
+    const embeddedToggle = page.locator('[data-chrome-action-id="sidebar-toggle"]:visible');
+    await embeddedToggle.click();
+    await contextFilter.waitFor({ state: 'hidden' });
+    await embeddedToggle.click();
+    await contextFilter.waitFor();
+    assert.equal(await contextFilter.inputValue(), 'Embedded context');
+    assert.equal(await embeddedDraft.inputValue(), 'Embedded draft');
+    assert.equal(await page.locator('.shell-navigation__footer').count(), 0);
+    assert.equal(await page.locator('.has-unified-sidebar').count(), 0);
+    await embeddedToggle.click();
+    await page.waitForFunction(() => !document.querySelector('.app-shell-left-panel'));
+    await page.mouse.move(600, 170);
+    await page.mouse.move(2, 170);
+    const embeddedDrawer = page.locator('.app-shell-floating-left-panel');
+    await embeddedDrawer.waitFor();
+    assert.equal(await embeddedDrawer.getByRole('textbox', { name: 'Sidebar filter' }).inputValue(), 'Embedded context');
+    await page.keyboard.press('Escape');
+    await embeddedDrawer.waitFor({ state: 'hidden' });
+    assert.equal(await embeddedDraft.inputValue(), 'Embedded draft');
+    evidence.push({ case: 'embedded-context-without-workbench-navigation', passed: true });
   }
   if (process.env.OPENCRAFT_ACCOUNT_TOPOLOGY_ONLY !== "1") {
   await page.setViewportSize({ width: 1300, height: 760 });
@@ -330,13 +378,15 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
   if (process.env.OPENCRAFT_HEADER_TOGGLE_ONLY !== "1" && process.env.OPENCRAFT_ACCOUNT_TOPOLOGY_ONLY !== "1") {
   const measureFooter = () => page.evaluate(() => {
     const footer = document.querySelector<HTMLElement>('.shell-navigation__footer')!;
-    const track = footer.closest('.shell-sidebar__rail-footer')!.getBoundingClientRect();
+    const track = footer.closest('.shell-sidebar__rail-footer')!;
+    const trackRect = track.getBoundingClientRect();
     const app = footer.querySelector<HTMLElement>('[data-surface="settings"]')!.getBoundingClientRect();
     const account = footer.querySelector<HTMLElement>('[data-surface="account"]')!.getBoundingClientRect();
     const style = getComputedStyle(footer);
-    return { trackWidth: track.width, rightInset: track.right - account.right, inset: parseFloat(style.paddingRight),
+    return { trackWidth: trackRect.width, rightInset: trackRect.right - account.right,
+      inset: parseFloat(getComputedStyle(track).paddingRight) + parseFloat(style.paddingRight),
       gap: Math.abs(account.y-app.y)<1 ? account.left-app.right : account.top-app.bottom,
-      expectedGap: parseFloat(style.gap), appWidth: app.width, appHeight: app.height, appX: app.x,
+      expectedGap: parseFloat(style.gap), appWidth: app.width, appHeight: app.height, appInset: trackRect.right - app.right,
       accountWidth: account.width, position: style.position,
       iconCount: footer.querySelectorAll('[data-surface="settings"] svg').length,
       sharedIcon: !!footer.querySelector('[data-surface="settings"] [data-navigation-glyph-variant]') };
@@ -352,8 +402,9 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
     await page.evaluate(name => (window as any).fixture.setAccountName(name),name);
     await page.waitForTimeout(50);const before=await assertFooter();
     await page.evaluate(() => (window as any).fixture.setWidth(425));await page.waitForTimeout(600);const after=await assertFooter();
-    assert.ok(Math.abs((after.accountWidth-before.accountWidth)-(after.trackWidth-before.trackWidth))<1);
-    assert.equal(after.appWidth,before.appWidth);assert.equal(after.appX,before.appX);
+    assert.equal(after.accountWidth, before.accountWidth);
+    assert.equal(after.appWidth, before.appWidth);
+    assert.equal(after.appInset, before.appInset);
     await page.locator('.shell-navigation__entrance[data-surface="account"]').hover();
     await page.screenshot({path:`${output}/footer-${name===null?'anonymous':name==='Jindong Zhang'?'signed-in':'long-name'}.png`});
     if(name==='Jindong Zhang') {
@@ -386,8 +437,8 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
   // Grab the in-pane part of the separator, not the main surface beside it.
   await page.mouse.move(handle.x+1,200);await page.mouse.down();await page.mouse.move(handle.x+61,200,{steps:8});
   await page.waitForTimeout(200);
-  const held=await assertFooter();assert.equal(held.appX,beforeDrag.appX);assert.equal(held.accountWidth,beforeDrag.accountWidth,"account stays in the fixed rail while list width changes");
-  const growing = await contextGeometry();assert.ok(Math.abs(growing.viewport-growing.frame)<1 && Math.abs(growing.content+48-growing.frame)<1,JSON.stringify(growing));
+  const held=await assertFooter();assert.equal(held.appInset,beforeDrag.appInset);assert.equal(held.accountWidth,beforeDrag.accountWidth,"account stays in the footer while the sidebar resizes");
+  const growing = await contextGeometry();assert.ok(Math.abs(growing.viewport-growing.frame)<1 && Math.abs(growing.content-growing.frame)<1,JSON.stringify(growing));
   assert.equal(await page.evaluate(()=>(window as any).fixture.width),323);
   await page.mouse.move(handle.x-34,200,{steps:8});await page.waitForTimeout(150);
   const shrinking = await contextGeometry();assert.equal(shrinking.committed,323);assert.ok(Math.abs(shrinking.viewport-shrinking.frame)<1 && shrinking.frame<323,JSON.stringify(shrinking));
@@ -395,14 +446,14 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
   for (const offset of [35, -20, 55, -34]) {
     await page.mouse.move(handle.x+offset,200,{steps:6});await page.waitForTimeout(100);
     const frame=await contextGeometry();assert.equal(frame.committed,323);
-    assert.ok(Math.abs(frame.viewport-frame.frame)<1 && Math.abs(frame.content+48-frame.frame)<1,JSON.stringify(frame));
+    assert.ok(Math.abs(frame.viewport-frame.frame)<1 && Math.abs(frame.content-frame.frame)<1,JSON.stringify(frame));
   }
   const beforeRelease=await contextGeometry();
   await page.mouse.up();await page.waitForTimeout(150);const released=await contextGeometry();assert.ok(Math.abs(released.frame-released.viewport)<1);
   assert.ok(Math.abs(released.viewport-beforeRelease.viewport)<1,"release must not perform deferred reflow");
   await page.evaluate(() => { (window as any).recordDragGeometry=false; });
   const dragFrames=await page.evaluate(()=>(window as any).dragGeometryFrames);
-  assert.ok(dragFrames.length>5 && dragFrames.every((frame:any)=>Math.abs(frame.viewport-frame.frame)<1 && Math.abs(frame.content+48-frame.viewport)<1));
+  assert.ok(dragFrames.length>5 && dragFrames.every((frame:any)=>Math.abs(frame.viewport-frame.frame)<1 && Math.abs(frame.content-frame.viewport)<1));
   await writeFile(`${output}/drag-geometry-frames.json`,JSON.stringify(dragFrames));
   evidence.push({case:'context-geometry-growing-contracting-and-release',passed:true,growing,shrinking,released,frames:dragFrames.length});
   await page.evaluate(() => { (window as any).fixture.setAccountName(null); (window as any).fixture.setWidth(323); });await page.waitForTimeout(600);
@@ -410,7 +461,14 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
   await page.getByLabel("Sidebar filter").fill("Preserve sidebar state"); await page.getByLabel("Main draft").fill("Preserve chat draft");
   await page.evaluate(() => { (window as any).contextNode = document.querySelector('[data-sidebar-content="context"]'); document.querySelector('[data-scroll-list]')!.scrollTop = 500; });
   await page.waitForTimeout(100); await page.screenshot({ path: `${output}/docked.png` });
-  const showFloating = async () => { await page.evaluate(() => (window as any).fixture.setOpen(false)); await page.waitForTimeout(700); await page.mouse.move(600,170); await page.waitForTimeout(50); await page.mouse.move(2, 170); await page.locator('.app-shell-floating-left-panel').waitFor(); await page.mouse.move(100, 170); await page.waitForTimeout(250); };
+  const sidebarToggle = page.locator('[data-chrome-action-id="sidebar-toggle"]:visible');
+  const showFloating = async () => {
+    await page.setViewportSize({ width: 580, height: 760 });
+    await page.evaluate(() => (window as any).fixture.setOpen(false));
+    await page.waitForFunction(() => !document.querySelector('.app-shell-left-panel'));
+    await sidebarToggle.click();
+    await page.locator('.app-shell-floating-left-panel').waitFor();
+  };
   await showFloating();
   const floating = page.locator('.app-shell-floating-left-panel');
   const floatingHandle=await floating.getByRole('separator',{name:'Resize sidebar',exact:true}).boundingBox();assert.ok(floatingHandle);
@@ -442,6 +500,7 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
   assert.deepEqual(await page.evaluate(() => (window as any).fixture.actions), ['Chat', 'Settings', 'Sign in']);
   await page.screenshot({ path: `${output}/floating.png` });
   console.log(JSON.stringify(await page.evaluate(() => ({ main: document.querySelector('.main-content-surface')?.getBoundingClientRect().toJSON(), scrollX, scrollY }))));
+  await page.setViewportSize({ width: 1300, height: 760 });
   await floating.getByRole('button', { name: '固定侧栏', exact: true }).click(); await floating.waitFor({ state: 'hidden' }); await page.waitForTimeout(700);
   assert.equal(await page.evaluate(() => (window as any).fixture.mounts()), 1);
   assert.equal(await page.locator('[data-scroll-list]').evaluate((el: Element) => el.scrollTop), 500);
@@ -507,26 +566,28 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
   await page.getByRole('button', { name: 'Show sidebar', exact: true }).click(); await floating.waitFor();
   evidence.push({ case: 'mobile-outside-dismiss-retains-content-and-consumes-tap', passed: true });
   await page.keyboard.press('Escape'); await floating.waitFor({ state: 'hidden' });
-  await page.mouse.move(530, 200); await page.mouse.move(2, 200); await floating.waitFor();
-  await page.mouse.move(100, 200); await page.keyboard.press('Escape'); await floating.waitFor({ state: 'hidden' });
+  await sidebarToggle.click(); await floating.waitFor();
+  await page.keyboard.press('Escape'); await floating.waitFor({ state: 'hidden' });
   await page.setViewportSize({ width: 1300, height: 760 }); await page.evaluate(() => (window as any).fixture.setOpen(true)); await page.waitForTimeout(700);
   assert.equal(await page.getByRole('button', { name: 'Local', exact: true }).getAttribute('aria-expanded'), 'false');
   evidence.push({ case: 'narrow-dark-escape-and-return', passed: true });
   await page.evaluate(() => (window as any).fixture.setContext(false)); await showFloating();
   for (const name of ['Chat', 'Settings']) await floating.getByRole('button', { name, exact: true }).waitFor();
   evidence.push({ case: 'navigation-only-floating', passed: true });
+  await page.setViewportSize({ width: 1300, height: 760 });
   await page.evaluate(() => (window as any).fixture.setOpen(true)); await floating.waitFor({state:'hidden'}); await page.waitForTimeout(700);
   await assertFooter(); await page.screenshot({path:`${output}/footer-navigation-only.png`});
   // Test-only CSS injection is a separate normal-theme check. The reduced-motion
   // pass tests layout/visibility without racing an injected style against reparenting.
   if(process.env.OPENCRAFT_REDUCED_MOTION!=='1') {
+    const { gap } = await assertFooter();
     await page.evaluate(() => document.documentElement.style.setProperty('--gap-control-group','12px'));
-    assert.equal((await assertFooter()).gap,4);
+    assert.equal((await assertFooter()).gap, gap);
     await page.evaluate(() => document.documentElement.style.removeProperty('--gap-control-group'));
     evidence.push({case:'rail-footer-navigation-only-and-theme-token-override',passed:true});
   }
   assert.equal(await page.getByRole('separator',{name:'Resize applications',exact:true}).count(),0);
-  assert.equal(await page.locator('.shell-sidebar__navigation').evaluate(e=>e.getBoundingClientRect().width),48);
+  assert.equal(await page.locator('[data-sidecar-pane]:visible').count(), 1);
   evidence.push({case:'unified-rail-has-no-independent-resizer',passed:true});
   }
   }

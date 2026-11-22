@@ -296,7 +296,6 @@ function App() {
         <AppShell
           routeStack={routeStackPresentation(state, "synthetic-account")}
           navigation={{
-            layout: "unified",
             account: {
               snapshot: {
                 phase: "authenticated",

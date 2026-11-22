@@ -106,7 +106,7 @@ const renderers = [side,
     return { kind: 'image', src: canvas.toDataURL() };
   } },
 ];
-const navigation = { layout: 'unified' as const, actions: [{ id: 'chat', title: 'Chat', icon: 'chat', onInvoke() {} }], settingsActive: false, onOpenSettings() {}, account: null };
+const navigation = { actions: [{ id: 'chat', title: 'Chat', icon: 'chat', onInvoke() {} }], settingsActive: false, onOpenSettings() {}, account: null };
 function App() {
   const state = useSyncExternalStore(listener => panels.subscribeOwner('scope', listener), () => panels.getOwnerSnapshot('scope'));
   const [sidebar, setSidebar] = useState(false);

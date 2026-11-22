@@ -17,31 +17,13 @@ function block(source: string, selector: string): string {
   throw new Error(`unclosed ${selector}`);
 }
 
-test("compact titlebar paint reads live motion rather than terminal pane presence", () => {
-  const tokens = read("../packages/design-system/src/tokens.web.scss");
+test("the sidebar and main surface paint their own layers", () => {
   const navigation = read("../apps/workbench-web/src/components/shell-navigation/shell-navigation.scss");
   const styles = read("../apps/workbench-web/src/styles/app.scss");
-  const shell = read("../apps/workbench-web/src/components/app-shell.tsx");
-  assert.match(tokens, /--background-shell-compact-titlebar: var\(--color-surface\)/u);
-  assert.doesNotMatch(tokens + navigation, /--(?:width|height|background)-shell-docked-edge/u);
-  assert.doesNotMatch(shell + styles + navigation, /sidecarCompactOnly|data-sidecar-compact-only/u);
-  assert.match(shell, /\[animatedNavigationWidth, animatedSidebarWidth, sidebarProgress\]/u);
-  assert.match(block(styles, '.app-shell-header::before'), /width: var\(--app-shell-titlebar-extension-width/u);
-  assert.match(block(styles, '.app-shell-header::before'), /background: var\(--background-shell-compact-titlebar\)/u);
-  assert.match(block(styles, '.app-shell-header::before'), /box-shadow: var\(--opencraft-main-surface-elevation\)/u);
-  assert.match(block(styles, '.app-shell-header::before'), /clip-path: inset\(0 0 calc\(-1 \* var\(--height-toolbar\)\) 0\)/u);
-  assert.doesNotMatch(block(styles, '.app-shell-header::before'), /transition|animation/u);
-  const horizontal = block(styles, '.app-shell-header::after');
-  assert.match(horizontal, /height: 1px/u);
-  assert.match(horizontal, /opacity: var\(--app-shell-titlebar-divider-progress/u);
-  const divider = block(navigation, '.app-shell-sidecar::after');
-  assert.match(divider, /inset: var\(--height-toolbar\) 0 0 auto/u);
-  assert.match(divider, /pointer-events: none/u);
   const sidecar = block(navigation, ".app-shell-sidecar");
   assert.doesNotMatch(sidecar, /background-image|linear-gradient/u);
   assert.doesNotMatch(sidecar, /::(?:before|after)|padding|border-right/u);
   assert.doesNotMatch(navigation, /\.app-shell-sidecar\s*\+\s*\.main-content-surface/u);
-  assert.doesNotMatch(tokens, /--elevation-shell-docked-content/u);
   assert.match(block(styles, ".main-content-surface"), /box-shadow: var\(--opencraft-main-surface-elevation\)/u);
   assert.doesNotMatch(block(styles, ".app-shell-left-panel"), /::after/u);
   assert.match(block(styles, ".app-shell-floating-left-panel__surface"), /box-shadow: var\(--elevation-sidebar\)/u);
