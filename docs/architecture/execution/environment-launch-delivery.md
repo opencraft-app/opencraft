@@ -181,14 +181,23 @@ synchronous runtime.
    `identity.executionEnvironment` for installations with a separate vault
    owner. Evidence: `check-main-thread-sync-io` count decreases.
 
-## Open questions
+## Decisions
 
-- Is the Gateway-relayed lease context sufficient as the receiver's expected
-  context, or should each engine reconstruct inputId/executionId from its own
-  durable admission record?
-- Project ENV for remote handoffs: carry the bound Project ID in the handoff, or
-  let the vault owner resolve it from Thread metadata?
-- Redaction for Codex once Main has no values: native Core-side redaction, or
-  never forwarding native diagnostics when delivery is configured?
-- Should a configured vault owner also refuse execution owners that did not
-  request a capsule (old DSH runtime), rather than leaving their ENV empty?
+Recorded after the first slice; later slices follow them.
+
+- **Expected context comes from the execution owner's own durable admission.**
+  The receiver reconstructs inputId, executionId, generation and Turn from the
+  admission it already persisted and compares the capsule against that; a
+  Gateway-relayed lease context is never the authority. Slice 1 still uses the
+  relayed context and is corrected in the next slice that touches the receiver.
+- **Project ENV is resolved by the vault owner from Thread metadata.** Handoffs do
+  not carry a Project ID; a caller cannot select another project's values.
+- **Codex redaction moves to the native Core**, which holds the values. Until a
+  native release can redact, native diagnostics are not forwarded when delivery
+  is configured.
+- **A configured vault owner refuses execution owners that do not request a
+  capsule** (for example an old DSH runtime), with an explicit upgrade error,
+  instead of launching with an empty ENV. Missing delivery must fail closed.
+- **The downstream port shape `{issuer, seal(target, context): Promise<string>}` is
+  accepted for now**; slice 3 adds a core vault-owner issuer so installations no
+  longer need to supply it.
