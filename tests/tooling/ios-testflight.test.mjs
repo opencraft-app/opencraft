@@ -21,14 +21,22 @@ test("selects only an unambiguous external TestFlight group", () => {
 });
 
 test("reports availability only for a live build in external testing and assigned to the target group", () => {
-  const ready = { upload: "COMPLETE", build: { processingState: "VALID", expired: false },
-    externalState: "IN_BETA_TESTING", group: external, listed: true };
+  const ready = {
+    upload: "COMPLETE",
+    build: { processingState: "VALID", expired: false },
+    externalState: "IN_BETA_TESTING",
+    group: external,
+    listed: true,
+  };
   assert.equal(testFlightStatus(ready), "installable");
   assert.equal(testFlightStatus({ ...ready, build: undefined }), "processing");
   assert.equal(testFlightStatus({ ...ready, build: { ...ready.build, expired: true } }), "expired");
   assert.equal(testFlightStatus({ ...ready, listed: false }), "build_not_in_external_group");
   assert.equal(testFlightStatus({ ...ready, group: undefined }), "external_group_selection_required");
-  assert.equal(testFlightStatus({ ...ready, externalState: "MISSING_EXPORT_COMPLIANCE" }), "export_compliance_required");
+  assert.equal(
+    testFlightStatus({ ...ready, externalState: "MISSING_EXPORT_COMPLIANCE" }),
+    "export_compliance_required",
+  );
   assert.equal(testFlightStatus({ ...ready, externalState: "IN_BETA_REVIEW" }), "beta_review_pending");
   assert.equal(testFlightStatus({ ...ready, externalState: "BETA_APPROVED" }), "testing_not_started");
   assert.equal(testFlightStatus({ upload: "FAILED" }), "processing_failed");
