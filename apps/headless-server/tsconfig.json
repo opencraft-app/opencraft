@@ -14,6 +14,7 @@
     "src/human-git-execution.ts",
     "src/remote-human-git-execution.ts",
     "src/workspaces/native-routing.ts",
-    "src/workspaces/execution-service.ts"
+    "src/workspaces/execution-service.ts",
+    "src/workspaces/bot-client.ts"
   ]
 }

@@ -341,7 +341,7 @@
     "test:convergence": "node scripts/check/test-convergence.mjs",
     "smoke:sidebar-row-geometry": "tsx tests/shell/sidebar-row-geometry.browser.ts",
     "smoke:assets": "tsx tests/extensions/assets-view.browser.ts",
-    "test:assets-service": "node --import tsx --test tests/extensions/assets-service.test.ts tests/extensions/git-connections.test.ts tests/server/assets-worker-packaging.test.mjs tests/extensions/workspace-budget.test.ts tests/extensions/workspace-catalog.test.ts tests/server/assets-workspace-execution.test.ts tests/server/workspace-browser-router.test.mjs tests/server/workspace-browser-service.test.mjs",
+    "test:assets-service": "node --import tsx --test tests/extensions/assets-service.test.ts tests/extensions/git-connections.test.ts tests/server/assets-worker-packaging.test.mjs tests/extensions/workspace-budget.test.ts tests/extensions/workspace-catalog.test.ts tests/server/assets-workspace-execution.test.ts tests/server/assets-workspace-bot.test.ts tests/server/workspace-browser-router.test.mjs tests/server/workspace-browser-service.test.mjs",
     "smoke:assets-default": "tsx tests/extensions/assets-default.browser.ts",
     "test:assets-default": "tsx --test tests/identity/assets-default-service.test.ts tests/extensions/assets-default-client.test.ts"
   },

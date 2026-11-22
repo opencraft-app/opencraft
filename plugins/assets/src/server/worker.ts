@@ -47,6 +47,7 @@ interface Ready {
   gitHosts: readonly string[];
   gitAuthority: string | null;
   workspaceExecution: boolean;
+  botExecution?: boolean;
 }
 /** All vault opens, migrations, reads and writes belong to this FIFO Worker.
  * There is no local fallback, runtime-secret RPC or automatic mutation retry. */
@@ -86,6 +87,7 @@ export async function openAssetConfigurations(
     gitHosts: ready.gitHosts,
     gitAuthority: ready.gitAuthority,
     workspaceExecution: ready.workspaceExecution === true,
+    botExecution: ready.botExecution === true,
     close: () => owner.close(),
   };
 }

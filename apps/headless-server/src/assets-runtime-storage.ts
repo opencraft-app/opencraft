@@ -1,3 +1,4 @@
+import { WorkspaceBotOwner } from "./workspaces/bot-owner.js";
 import { createWorkspaceExecutionOwner } from "./workspaces/execution-owner.js";
 import { createAssetsStorage } from "@opencraft/plugin-assets/server/storage";
 import type { GitConnectionProvider } from "@opencraft/plugin-assets/server/git-connections";
@@ -49,6 +50,25 @@ export function createHeadlessAssetsStorage(
       },
       close: () => authority.close(),
     },
-    workspaces ? (context) => createWorkspaceExecutionOwner(context, workspaces) : undefined,
+    async (context) => {
+      const bots = new WorkspaceBotOwner(context);
+      let ordinary;
+      try {
+        ordinary = workspaces ? await createWorkspaceExecutionOwner(context, workspaces) : undefined;
+      } catch (cause) {
+        await bots.close();
+        throw cause;
+      }
+      return {
+        workspaceExecution: ordinary !== undefined,
+        botExecution: true,
+        methods: { ...bots.methods, ...ordinary?.methods } as never,
+        async close() {
+          const outcomes = await Promise.allSettled([bots.close(), ordinary?.close()]);
+          const errors = outcomes.flatMap((r) => (r.status === "rejected" ? [r.reason] : []));
+          if (errors.length) throw new AggregateError(errors, "Headless workspace cleanup unconfirmed");
+        },
+      };
+    },
   );
 }

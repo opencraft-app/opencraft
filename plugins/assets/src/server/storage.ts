@@ -78,7 +78,7 @@ export async function createAssetsStorage(
     if (
       Object.keys(workspaceMethods).some(
         (name) =>
-          !/^workspace(?:Begin|Status|NativeReceipt|Cancel|Forget|Selection|FileScope|FileRequest|PlacementPage|ArtifactDownload|ArtifactRead|ArtifactUpload|ArtifactWrite|ArtifactFinish|ArtifactClose|TerminalOpen|TerminalProbe|TerminalRequest|TerminalStatus|TerminalForget|TerminalSnapshot|TerminalUnwatch|BrowserOpen|BrowserStatus|BrowserRead|BrowserSend|BrowserSent|BrowserForget|BrowserClose)$/.test(
+          !/^workspace(?:Begin|Status|NativeReceipt|Cancel|Forget|Selection|FileScope|FileRequest|PlacementPage|ArtifactDownload|ArtifactRead|ArtifactUpload|ArtifactWrite|ArtifactFinish|ArtifactClose|TerminalOpen|TerminalProbe|TerminalRequest|TerminalStatus|TerminalForget|TerminalSnapshot|TerminalUnwatch|BrowserOpen|BrowserStatus|BrowserRead|BrowserSend|BrowserSent|BrowserForget|BrowserClose|BotCatalog|BotValidate|BotOpen|BotStatus|BotExecute|BotOperation|BotForget|BotClose|BotCallbacks|BotReply)$/.test(
             name,
           ),
       )
@@ -99,7 +99,8 @@ export async function createAssetsStorage(
       concurrentReads: execution ? ["executionGitGrant", "executionGitReservation"] : [],
       ready: {
         outcome: vault.outcome,
-        workspaceExecution: workspaces !== undefined,
+        workspaceExecution: workspaces !== undefined && workspaces.workspaceExecution !== false,
+        botExecution: workspaces?.botExecution === true,
         gitHosts: providers.map((p) => p.host),
         gitAuthority: execution ? vault.personalGitAuthority("actor") : null,
       },

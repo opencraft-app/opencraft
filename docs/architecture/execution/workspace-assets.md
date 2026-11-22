@@ -235,3 +235,33 @@ queue overflow, pending cleanup and no local fallback. The Browser Owner in thes
 cases is synthetic; no Chromium process/cloud VM or visual media rendering is
 proved by those tests. Bot/provider unification, shared terminal admission and the
 matching default Headless startup are still required before default activation.
+
+### Bot execution in the same Worker
+
+The default unmanaged Headless composition now opens one compiled Assets Worker,
+even if no login page or installation file is configured. Human Assets HTTP and
+Bot execution share that owner. An optional private delivery file is imported
+inside Worker; after adoption, the encrypted installation is authoritative even
+when that file is removed or its environment variable is unset. A failed initial
+optional import advertises no remote Bot templates and never starts a second
+file-backed provider. Private identity compositions that explicitly own their
+configuration remain mutually exclusive.
+
+`WorkspaceBotOwner` owns the existing sandbox assistant provider, provider SDK,
+commands and pool, wrapped with the same durable outer budget as ordinary
+workspaces. The assistant brain, profile, model gateway and task ledger stay
+local. No profile/model credentials, local brain directory, provider key or SDK
+handle crosses this execution channel. Reverse callbacks invoke only the original
+Bot assignment authorization; binding and epoch checks stay in the existing
+provider. Catalogs are secret-free, allocation is lazy, and provider/configuration
+revision replacement cannot silently redirect an admitted resource.
+
+Long execution and reverse authorization never occupy the FIFO RPC lane. Opaque
+one-shot jobs are bounded; source failure cannot replay a command. Close retires
+callback tokens before cleanup; an unresponsive original authorization cannot
+block resource retirement. Unknown creation/deletion remains charged across
+Worker replacement. Confirmed destruction alone releases that reservation.
+Closing Main observation does not count as destruction. This is implemented
+source/default Bot assembly, not live cloud, model or container acceptance.
+Default ordinary Native assembly and aggregate local/remote terminal admission
+remain separate unfinished parts of this workspace batch.

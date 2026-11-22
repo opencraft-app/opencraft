@@ -10,7 +10,7 @@ import { ServerInformationStore, serverInformationHttp } from './server-informat
 import { configuredModelGatewayPath, modelGatewayHttp, CodexCoreControlClient } from "@opencraft/account-pool-host";
 import { gatewayContributions } from "@opencraft/local-agent-host/model-config";
 import { createAssistantModelSource } from '@opencraft/local-agent-host/model-config/assistant';
-import { loadAssistantEnvironments } from '@opencraft/opencraft-daemon/assistant-environments';
+import { createWorkspaceBotProvider } from './workspaces/bot-client.js';
 import { createPersonalAssistantHost } from '@opencraft/personal-assistant/host';
 import { LocalAttachmentStagingService } from '@opencraft/local-agent-host/attachments/local-staging';
 import { deploymentOperator } from "@opencraft/access-control/deployment-operator";
@@ -364,6 +364,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let modelPolicy;
   let membership;
   let assetsService;
+  let assetsStorage;
+  let installedBotProvider;
   let humanGitExecution;
   let actorStore;
   const terminalServices = new Map();
@@ -442,7 +444,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       for (const dispose of [() => executionDatabase?.close(),
         () => modelPolicy?.close(), () => mcpApps?.close(), () => sshManagement?.close(), () => identity?.executionEnvironment?.close(), () => identity?.close?.(),
 
-        () => humanGitExecution?.close(), () => assetsService?.close(), () => composition.close?.(), () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
+        () => installedBotProvider?.close(), () => humanGitExecution?.close(), () => assetsService?.close(), () => assetsStorage?.close(), () => composition.close?.(), () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
         () => capabilityBindings?.close(), () => actorStore?.close(), () => membership?.close()]) {
         await settle([dispose]);
       }
@@ -519,8 +521,19 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     if (membership) instanceAccess = new InstanceAccess(membership, providers, actorStore, options.accessMemberProviders ?? [], identity?.admissionPolicy);
     // An identity product that owns configurations keeps its route and legacy partitions.
     // Never start a second resource writer alongside that composition.
+    if (!identity?.assistantEnvironmentConfigurationManaged) {
+      assetsStorage = await openHeadlessAssetsStorage(dataDirectory);
+      if (!assetsStorage.botExecution) throw Error('Assets Bot execution owner unavailable');
+      if (process.env.OPENCRAFT_ASSISTANT_SANDBOX_CONFIG) {
+        try { await assetsStorage.store.adoptWorkspaceInstallation(process.env.OPENCRAFT_ASSISTANT_SANDBOX_CONFIG); }
+        catch { console.warn('assistant_environment_configuration_unavailable'); }
+      }
+      installedBotProvider = createWorkspaceBotProvider({port:assetsStorage.store,
+        onCleanupUnconfirmed:()=>console.warn('assistant_environment_reconciliation_required')});
+    }
     if (humanAuth && instanceAccess && !identity?.assistantEnvironmentConfigurationManaged) {
-      assetsService = await openHumanAssets({ directory: dataDirectory, auth: humanAuth, actors: actorStore, access: instanceAccess,openStorage:openHeadlessAssetsStorage });
+      assetsService = await openHumanAssets({ directory: dataDirectory, auth: humanAuth, actors: actorStore, access: instanceAccess,
+        openStorage: async () => ({...assetsStorage, close:async()=>{}}) });
       if(!assetsService.gitAuthority)throw Error('Assets execution authority unavailable');
       humanGitExecution=createHumanGitExecution({directory:dataDirectory,
         runtimeDirectory:humanGitRuntimeDirectory(join(dataDirectory,'git-runtime'),'gateway'),workerFile:options.gitWorkerFile??fileURLToPath(new URL('./personal-git-worker.mjs',import.meta.url)),
@@ -1296,11 +1309,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     if (relayConfiguration) relay = connectRelay({ ...relayConfiguration.options, targetPort: relayConfiguration.options.targetPort ?? address.port });
     hubController.node?.start(hubTargetPort ?? address.port);
     if (options.codexCoreEndpoint) codexReadiness = maintainHeadlessCodexHost(appHostServer);
-    let environmentProviders={};
-    if(!identity?.assistantEnvironmentConfigurationManaged && process.env.OPENCRAFT_ASSISTANT_SANDBOX_CONFIG){
-      try{environmentProviders=await loadAssistantEnvironments(process.env.OPENCRAFT_ASSISTANT_SANDBOX_CONFIG);}
-      catch{console.warn('assistant_environment_configuration_unavailable');}
-    }
+    const environmentProviders=installedBotProvider?{e2b:installedBotProvider}:{};
     personalAssistantHost = await createPersonalAssistantHost({directory:dataDirectory,service:actorCollaboration,environmentProviders,environmentProvidersFor:identity?.environmentProvidersFor,
       modelSource:createAssistantModelSource(join(dataDirectory,'models'),modelPolicyPath,{
         fetch:async(input,init)=>{

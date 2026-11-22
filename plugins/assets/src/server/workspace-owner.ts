@@ -13,6 +13,8 @@ export interface AssetWorkspaceOwnerContext {
   readonly budget: WorkspaceBudgetStore;
 }
 export interface AssetWorkspaceExecutionOwner {
+  readonly workspaceExecution?: boolean;
+  readonly botExecution?: boolean;
   readonly methods: Record<string, (...args: never[]) => unknown>;
   close(): Promise<void>;
 }
