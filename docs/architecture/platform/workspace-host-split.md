@@ -34,7 +34,7 @@ Docker 部署（`deploy/docker/compose.yaml`）有 `gateway`、`brain`、`hands`
 | Host 状态库 | `$DATA/codex/opencraft-host-state.sqlite`（queue、message senders、bot rooms／commands／slots、ioa presence、thread creators、thread catalog、catalog sync） | gateway（WorkspaceHost 打开整库） | apps/opencraft-daemon/src/opencraft-host-state-database.ts:16-82、197-200；workspace-host.ts:56、60 | 拆分，见 §4 |
 | 暂定线程 | `thread-creations.sqlite` | gateway（WorkspaceHost） | apps/opencraft-daemon/src/provisional-threads.ts:25；workspace-host.ts:57 | WH |
 | 中断恢复 | `interrupted-turn-recovery.sqlite`＋进程内 `setTimeout` | gateway（WorkspaceHost） | packages/host-recovery/src/index.ts:33、39、101；workspace-host.ts:64-66；端口 codex-engine-adapter.ts:3714、3740 | WH |
-| 会话定时任务 | `conversation-schedules.sqlite`＋每 2 s `setInterval` 轮询 | gateway（WorkspaceHost） | packages/host-schedules/src/index.ts:50、196；workspace-host.ts:62-63；端口 codex-engine-adapter.ts:3771 | WH（Node 为 owner 定时器，DO 为 alarm） |
+| 会话定时任务 | `conversation-schedules.sqlite`＋owner 驱动唤醒（第 3 步起不再轮询） | gateway（WorkspaceHost） | packages/host-schedules/src/index.ts；workspace-host.ts:62-63；端口 codex-engine-adapter.ts:3771 | WH（Node 为 owner 定时器，DO 为 alarm） |
 | 执行故障回执（已停用） | `execution-fault-receipts.json`，原由 Generation Router 故障驱动的 Worker 写入；写入方已删除，旧文件保留不读 | 无 | 2026-11-22 随 Router 消费端删除 | 不迁移；WH 恢复见 §4.4 |
 | Token usage | `token-usage.sqlite` | gateway | apps/opencraft-daemon/src/token-usage-state-database.ts:49；codex-engine-adapter.ts:994（第 2 步仍由 adapter 打开） | 待定（§4.2） |
 | 任务看板 | `tasks.sqlite`（`@opencraft/plugin-tasks`：tasks、task_conversations、members） | gateway | codex-engine-adapter.ts:673（第 2 步仍由 adapter 打开）；plugins/tasks/src/sqlite.ts:26-41 | IC（跨会话业务记录） |
@@ -157,7 +157,9 @@ WorkspaceHost 的 SQL 库是**一个**按工作区的库，合并今天分散的
 
 ### 4.3 定时任务
 
-`ConversationSchedules` 今天每 2 s 轮询（host-schedules/src/index.ts:196）。拆分后改为 owner 驱动：WH 在提交计划后计算"下一个到期时间"，Node 上设置单个 owner 定时器（Worker 内），DO 上设置 alarm。轮询语义不变：到期判断仍以持久状态为准，定时器只是唤醒。Gateway 不在线（方案 B）或 WH 重启后，启动时先按持久状态补齐过期计划，不依赖定时器连续性。
+`ConversationSchedules` 原先每 2 s 轮询。拆分后改为 owner 驱动：WH 在提交计划后计算"下一个到期时间"，Node 上设置单个 owner 定时器（Worker 内），DO 上设置 alarm。轮询语义不变：到期判断仍以持久状态为准，定时器只是唤醒。Gateway 不在线（方案 B）或 WH 重启后，启动时先按持久状态补齐过期计划，不依赖定时器连续性。
+
+**第 3 步现状（2026-11-22）。** 唤醒端口由 `@opencraft/workspace-host` 持有：`OwnerWakeTimer { arm(at), cancel() }`（`at` 为 owner 时钟的绝对时间，回调不早于该时刻；`arm` 替换上一次）与 `OwnerWakeTimerFactory`。Node 实现 `boundedWakeTimer(timeoutWakeClock(now), wake)`：每段相对延迟不超过 `MAX_WAKE_DELAY_MS`（60 s），到点重读墙钟，未到目标就续段——时钟回拨不会提前唤醒，前拨最迟一段内发现，远期目标不触及平台定时器上限；DO 将来以 alarm 实现同一端口。`ConversationSchedules` 在 `start()` 后不再轮询：每次提交的计划变更（save／action／suspend）与每次推进结束（含 flight 结算）都从持久状态（叠加内存中已有的重试退避）计算最早可推进时间并重新 arm；无待办时 cancel。唤醒只触发一次推进，是否到期仍在推进时读持久状态判断，过时或提前的唤醒不派发任何工作。`start()` 先按持久状态补齐过期与未完成的 occurrence（再次调用即再补齐一次，供 admission 重开／引擎重新 initialize）；`close()` 先 cancel 唤醒，再等待在途推进与 flight。admission 被 fence 时没有重开通知，若已有到期工作则按原 2 s 节奏复查而不派发，无到期工作则只在计划时间唤醒。持久 schema、occurrence ID 与并发 4 个 flight 上限不变。WH 装配经 `CodexWorkspaceHostOptions.scheduleWakeTimer` 注入（默认 Node 实现），`drain()` 关闭 schedules 时即取消唤醒。Pi 引擎（plugins/pi-engine）与 local-agent-host（DSH）共用同一 `ConversationSchedules`，以默认 Node 唤醒同样转为 owner 驱动；二者的 `resumeBackground()` 已调用 `start()`，即 admission 重开时的补齐入口，无需另改。测试见 tests/chat/conversation-schedule-wake.test.ts 与 tests/execution/workspace-host.test.ts。
 
 ### 4.4 恢复所有权
 
@@ -223,7 +225,7 @@ $DATA/workspaces/<id>/brain/ 容器私有：codex/runtime（CODEX_HOME）、agen
 | --- | --- | --- | --- |
 | 1 | `proxy` 服务成为 Docker 默认；补齐所有 provider 经代理或在该模式下拒绝直连 | Brain 发布不重启账号 owner；Brain 不再需要凭据文件 | 真实 Docker：删除 brain 内 `models/credentials.json` 可读性后 Pi/DSH/Codex 均能调用模型；代理重启期间 Brain 不重启 |
 | 2 | 抽出 `WorkspaceHost` 模块：把 `CodexEngineAdapter` 的 overlays（§4.1 WH 行）改为通过存储端口、以显式工作区根打开；Gateway 只装配 `default` | 所有权显式化；为 DO 准备 | 现有 host-state、恢复、定时任务、队列测试在新入口下全部通过；`check:boundaries` 计数不增。**已实现（2026-11-22，见 §4.1 第 2 步现状）**：WH 存储仍是 Node SQLite owner，尚未换成 `SqlDatabase` 端口；多根只在测试中验证，生产仍只装配 `default` |
-| 3 | 定时任务改为 owner 驱动定时器 | 去除 2 s 轮询 | 到期、重启补齐、时钟回拨、关闭排空测试 |
+| 3 | 定时任务改为 owner 驱动定时器 | 去除 2 s 轮询 | 到期、重启补齐、时钟回拨、关闭排空测试。**已实现（2026-11-22，见 §4.3 第 3 步现状）**：Node 唤醒仍在 Gateway 主线程（与第 2 步同），尚未移入 Worker；DO alarm 实现待 DO 装配 |
 | 4 | `WorkspaceLink` 与容器内 `workspace-agent`，先以本地 socket 适配器承载现有协议；Gateway 改为只经通道访问 Brain／Hands | 去掉私有描述符与 loopback 依赖 | 断开／重连同一化身不重发变更（held-promise＋丢 ack 测试）；化身变化触发恢复；Gateway 重建后续接 |
 | 5 | 化身改由通道上报；移除 Gateway 的跨容器 `/proc` 读取；解决 Git 来源校验 | 删除 `pid: host` 与 `network_mode: host`（Hands 浏览器出网需求另行评估） | 真实 Docker：去掉两项后执行租约、Git 来源、恢复冒烟通过；PID 重用测试 |
 | 6 | 冷迁移到 `$DATA/workspaces/default/` | 共享 `$DATA` 不再被 Brain 写入 | 从上一版本真实数据目录升级、中途 kill 后重跑、回退演练 |

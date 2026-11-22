@@ -149,3 +149,22 @@ test("two workspaces with different roots are independent owners", async t => {
     assert.equal(b.stores.provisionalThreads.get("only-b")?.phase, "created");
   } finally { await a.close(); await b.close(); }
 });
+
+test("the workspace owner gives schedules its wake-up port, and drain cancels it", async t => {
+  const directory = await root(t);
+  let now = 1800000000000;
+  const events: string[] = [];
+  const host = await openCodexWorkspaceHost(defaultWorkspace(directory), options({
+    now: () => now,
+    scheduleWakeTimer: () => ({ arm: at => { events.push(`arm:${at - now}`); }, cancel: () => { events.push("cancel"); } }),
+  }));
+  try {
+    host.stores.schedules.start();
+    await host.stores.schedules.handle("opencraft/schedules/save", { threadId: "thread", prompt: "Report", expectedRevision: 0,
+      nextRunAt: now + 60_000, intervalMinutes: null, timeZone: "UTC" }, null);
+    assert.ok(events.includes("arm:60000"), "a committed plan arms the owner wake-up for its due time");
+    events.length = 0;
+    await host.drain();
+    assert.equal(events.at(-1), "cancel");
+  } finally { await host.close(); }
+});

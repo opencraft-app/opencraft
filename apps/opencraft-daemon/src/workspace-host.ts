@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { acquireCodexWriter } from "@opencraft/account-pool-host";
 import { InterruptedTurnRecovery, ProviderTurnRetry, type ProviderRetryPort, type TurnRecoveryPort } from "@opencraft/host-recovery";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
-import { WorkspaceOwner, type WorkspaceIdentity } from "@opencraft/workspace-host";
+import { WorkspaceOwner, type OwnerWakeTimerFactory, type WorkspaceIdentity } from "@opencraft/workspace-host";
 export { DEFAULT_WORKSPACE_ID, defaultWorkspace, workspaceIdentity, type WorkspaceIdentity } from "@opencraft/workspace-host";
 import { ConversationSchedules, type ScheduleExecutionPort } from "./conversation-schedules.js";
 import { ExecutionLeaseStore } from "./execution-lease-store.js";
@@ -39,6 +39,8 @@ export interface CodexWorkspaceHostOptions {
   readonly schedulesChanged: () => void;
   readonly now?: () => number;
   readonly random?: () => number;
+  /** The schedules owner's single wake-up (§4.3). Defaults to a bounded `setTimeout` over `now`. */
+  readonly scheduleWakeTimer?: OwnerWakeTimerFactory;
 }
 
 /**
@@ -60,7 +62,8 @@ export function openCodexWorkspaceHost(identity: WorkspaceIdentity, options: Cod
     const queue = own("opencraft-host-queue", "state", new OpenCraftHostQueue(root, hostState.database), store => store.close());
     const migratedNativeQueue = options.migrateNativeQueueFrom ? queue.migrateNativeQueue(options.migrateNativeQueueFrom) : 0;
     const schedules = own("conversation-schedules", "dispatch",
-      new ConversationSchedules(root, options.schedules, now, options.diagnostic, options.schedulesChanged), store => store.close());
+      new ConversationSchedules(root, options.schedules, now, options.diagnostic, options.schedulesChanged, undefined,
+        options.scheduleWakeTimer), store => store.close());
     const recovery = own("interrupted-turn-recovery", "dispatch", new InterruptedTurnRecovery(root, options.recovery), store => store.close());
     const providerRetry = own("provider-turn-retry", "dispatch",
       new ProviderTurnRetry(root, options.providerRetry, now, options.random ?? Math.random, options.providerRetryAdmission), store => store.close());
