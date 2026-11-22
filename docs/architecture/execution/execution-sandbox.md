@@ -9,6 +9,9 @@ Node ChildProcess, local PID, IPty, systemd unit or cgroup objects.
 
 ## Ownership, resources and lifetime
 
+The durable Assets admission layer and its incomplete default-workspace wiring
+are described in [Assets workspaces and budgets](workspace-assets.md).
+
 Default requested resources are **4 vCPUs and 8 GiB per sandbox**. A provider
 must report the effective CPU/memory budget; a different budget is rejected and
 the environment reclaimed before it is exposed. A remote provider can map the

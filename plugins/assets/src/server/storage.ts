@@ -1,3 +1,5 @@
+import { WorkspaceBudgetStore, type WorkspaceBudgetRole, type WorkspaceBudgetOutcome } from "./workspace-budget.js";
+import type { SandboxIdentity, SandboxResources } from "@opencraft/sandbox";
 import { parseGitExecutionLocator, type GitExecutionResolver } from "@opencraft/execution-environment/git-execution";
 import { EmployeeGitVaultStore, GitVaultError } from "@opencraft/execution-environment/employee-git-vault-store";
 import { PLATFORM_ASSET_SCOPE } from "../contract.js";
@@ -14,6 +16,14 @@ export function createAssetsStorage(
   const vault = new EmployeeGitVaultStore(directory);
   try {
     const configurations = new SandboxConfigurations(vault);
+    const workspaceBudget = new WorkspaceBudgetStore(vault, () => {
+      const runtime = configurations.installedRuntime();
+      if (!runtime) throw new SandboxConfigurationError('unavailable', 503);
+      return runtime.policy.capacity;
+    });
+    const budgetCall = <T>(operation: () => T): T => {
+      try {return operation();} catch {throw new SandboxConfigurationError('unavailable', 503);}
+    };
     const git = new GitConnections(vault, providers);
     function check(access: AssetAdmission) {
       if (
@@ -54,6 +64,11 @@ export function createAssetsStorage(
         gitAuthority: execution ? vault.personalGitAuthority("actor") : null,
       },
       methods: {
+        // Compiled provider lifecycle only; never an HTTP configuration action.
+        workspaceBudgetReserve: (role: WorkspaceBudgetRole, identity: SandboxIdentity, resources: SandboxResources) =>
+          budgetCall(() => workspaceBudget.reserve(role, identity, resources)),
+        workspaceBudgetSettle: (key: string, outcome: WorkspaceBudgetOutcome) =>
+          budgetCall(() => workspaceBudget.settle(key, outcome)),
         executionGitReservation: (raw: unknown) => {
           try {
             if (!execution?.reserve) throw Error("unavailable");
