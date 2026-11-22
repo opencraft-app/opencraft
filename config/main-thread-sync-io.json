@@ -257,10 +257,8 @@
       "fstatSync": 2,
       "mkdirSync": 1,
       "openSync": 2,
-      "readFileSync": 1,
       "realpathSync": 1,
-      "SQL statement": 6,
-      "writeFileSync": 1
+      "SQL statement": 6
     },
     "packages/execution-environment/src/execution-environment.ts": {
       "DatabaseSync": 1,

@@ -52,7 +52,8 @@ export function fileKeyMaterial(directory: string): KeyMaterial {
       if (!info.isFile() || (process.platform !== "win32" && ((info.mode & 0o077) !== 0 || info.uid !== process.getuid?.()))) {
         throw new Error("Key material file must be private");
       }
-      return new Uint8Array(await file.readFile());
+      const raw = await file.readFile();
+      try { return new Uint8Array(raw); } finally { raw.fill(0); }
     } finally {
       await file.close();
     }
