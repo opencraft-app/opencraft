@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { CodexCoreControlClient } from "../../packages/account-pool-host/src/index.ts";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,6 +23,12 @@ const tokenPath = join(state, "daemon.token");
 const port = Number(process.env.OPENCRAFT_GATEWAY_PORT || "9988");
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid gateway port");
 
+// Codex runs through the provider bridge by default: the release's Engine Host programs are
+// started by the daemon against the same Core. OPENCRAFT_CODEX_BRIDGE=0 keeps the local Host path.
+const codexEngineHost = process.env.OPENCRAFT_CODEX_BRIDGE === "0" ? undefined
+  : await stat(join(releaseRoot, "execution/codex-bridge/engine-host.mjs")).then(() => join(releaseRoot, "execution/codex-bridge"),
+    error => { if (error.code === "ENOENT") return undefined; throw error; });
+
 const daemon = new OpenCraftDaemonClientManager({
   endpoint: join(state, "daemon.sock"),
   tokenPath,
@@ -38,6 +44,7 @@ const daemon = new OpenCraftDaemonClientManager({
   codexExecutable: "/external-core-only",
   codexDataDirectory: join(state, "codex"),
   codexCoreEndpoint: coreEndpoint,
+  ...(codexEngineHost ? { codexEngineHost } : {}),
   nativeCodexHomeDirectory: join(state, "native-codex"),
   executable: process.execPath,
 });

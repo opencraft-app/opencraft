@@ -57,7 +57,7 @@ queue/Goal 恢复不依赖浏览器首次重连；初始化失败时就绪检查
 
 - 退回旧路径：在网关环境中设置 `OPENCRAFT_CODEX_BRIDGE=0` 后重启网关。已有会话照常可用；bridge 新建的会话在重新开启前不可用。
 - 外部 bridge 配置（`--codex-agent-bridge-config`）存在时不另起 Engine Host。
-- 四容器部署（`deploy/docker`）同样默认开启：Engine Host 在 gateway 容器内运行（镜像内 `runtime/codex-bridge/`），命令仍在 hands 执行，`OPENCRAFT_CODEX_BRIDGE=0` 退回旧路径。无 Core 的 `opencraft-server` 安装仍走旧路径。
+- 四容器部署（`deploy/docker`）同样默认开启：Engine Host 在 gateway 容器内运行（镜像内 `runtime/codex-bridge/`），命令仍在 hands 执行，`OPENCRAFT_CODEX_BRIDGE=0` 退回旧路径。daemon profile 执行单元（`scripts/server-deployment/gateway.mjs`）同样默认开启，由 daemon 对已有 Core 启动 Engine Host，`OPENCRAFT_CODEX_BRIDGE=0` 退回旧路径。
 - 验收：`node --import tsx scripts/smoke/server/smoke-codex-server-upgrade.ts`（可加 `DRILL_RELEASE_PROGRAMS=1` 使用发行包同一构建），见 [Codex 对齐](../../design/agent-bridge/codex-parity.md)。
 
 ## Codex 原生会话与保留数据

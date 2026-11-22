@@ -44,6 +44,8 @@ export interface OpenCraftDaemonClientOptions {
   readonly codexCoreHostOverlays?: boolean;
   /** Program directory of the Codex bridge stack the daemon launches as its children (excludes a Core endpoint). */
   readonly codexBridgeStack?: string;
+  /** Engine Host programs started against `codexCoreEndpoint` (a server execution unit). */
+  readonly codexEngineHost?: string;
   readonly executable: string;
   /** Deployment display name for the daemon machine; desktop keeps the OS name. */
   readonly machineName?: string;
@@ -128,6 +130,7 @@ export function daemonLaunchSpec(
       ...(options.codexCoreEndpoint ? ["--codex-core-endpoint", options.codexCoreEndpoint] : []),
       ...(options.codexCoreEndpoint && options.codexCoreHostOverlays ? ["--codex-core-host-overlays"] : []),
       ...(options.codexBridgeStack && !options.codexCoreEndpoint ? ["--codex-bridge-stack", options.codexBridgeStack] : []),
+      ...(options.codexEngineHost && options.codexCoreEndpoint ? ["--codex-engine-host", options.codexEngineHost] : []),
       ...(options.machineName ? ["--machine-name", options.machineName] : []),
     ],
     options: {

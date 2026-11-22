@@ -1,4 +1,4 @@
-import { startCodexBridgeStack, type CodexBridgeStack } from "./codex-bridge-stack.js";
+import { startCodexBridgeStack, startCodexEngineHost, type CodexBridgeStack } from "./codex-bridge-stack.js";
 import { AssistantThreadCommands } from '@opencraft/access-control/assistant-thread-commands';
 import { ThreadAccessStore } from '@opencraft/access-control/thread-access';
 import { createThreadOrchestrationExecution } from '@opencraft/access-control/thread-orchestration-execution';
@@ -102,6 +102,14 @@ export async function startOpenCraftDaemon(options: {
    * Excludes an explicit Core endpoint or bridge configuration.
    */
   readonly codexBridgeStack?: { readonly programs: string };
+  /**
+   * Start a Codex Engine Host from this program directory against the existing Core
+   * (`codexCoreEndpoint`), as a server's managed execution unit does: new Threads are
+   * created on the bridge and existing ones move to it on their next turn when the
+   * local Host can vouch they are idle; the rest stay on the local Host. Excludes an
+   * explicit bridge configuration and the bridge stack.
+   */
+  readonly codexEngineHost?: { readonly programs: string };
   readonly codexWriterOwnership?: boolean;
   /** Trusted composition may replace only native startup while preserving the
    * daemon's identity, storage reporting and AppHost/IPC assembly. */
@@ -170,6 +178,27 @@ export async function startOpenCraftDaemon(options: {
     options = { ...options, codexCoreEndpoint: codexStack.coreEndpoint, codexCoreHostOverlays: true, codexAgentBridge: codexStack.bridge,
       // Existing local Threads move to the bridge on their next turn, keeping their IDs.
       codexAgentBridgeAdoptExisting: true };
+  }
+  let codexEngineHost: { close(): Promise<void> } | undefined;
+  if (options.codexEngineHost) {
+    try {
+      if (!options.codexCoreEndpoint || options.codexAgentBridge || options.codexBridgeStack) throw new Error("The Codex Engine Host needs an existing Core and owns the bridge");
+      const engineHost = await startCodexEngineHost({
+        programs: options.codexEngineHost.programs,
+        node: process.execPath,
+        coreEndpoint: options.codexCoreEndpoint,
+        coreToken: options.authToken,
+        runtimeDirectory: options.runtimeDirectory,
+        stateDirectory: join(options.dataDirectory, "codex-bridge"),
+      });
+      codexEngineHost = engineHost;
+      options = { ...options, codexAgentBridge: engineHost.bridge, codexAgentBridgeAdoptExisting: true };
+    } catch (error) {
+      await accountServer?.close();
+      try { await humanAccounts?.close(); } catch { /* keep the original failure */ }
+      try { await storage.close(); } finally { await releaseStorageOwner(); }
+      throw error;
+    }
   }
   let localAgent: Awaited<ReturnType<typeof startLocalAgentHost>> | null = null;
   let localAgentStarting: Promise<Awaited<ReturnType<typeof startLocalAgentHost>>> | null = null;
@@ -258,7 +287,7 @@ export async function startOpenCraftDaemon(options: {
           admissionPaused: () => codexAdmissionPaused(options.codexDataDirectory),
           adoptExisting: options.codexAgentBridgeAdoptExisting === true,
           // With the daemon's own bridge stack, Codex runs only through the bridge.
-          newThreads: options.codexBridgeStack !== undefined,
+          newThreads: options.codexBridgeStack !== undefined || options.codexEngineHost !== undefined,
           ...(codexAgent instanceof CodexEngineAdapter ? {
             prepareInput: (threadId, clientId, input, context) => codexAgent.prepareExternalInput(threadId, clientId, input, context),
             projectHistory: (method, params, result) => codexAgent.projectExternalHistory(method, params, result),
@@ -305,6 +334,7 @@ export async function startOpenCraftDaemon(options: {
       }
       await Promise.allSettled([...codexAgents].map(adapter => adapter.close()));
       codexAgents.clear();
+      await codexEngineHost?.close();
       await codexStack?.close();
       await collaboration?.close();
       threadAccess?.close();
@@ -345,6 +375,7 @@ export async function startOpenCraftDaemon(options: {
     await accountServer?.close();
     await humanAccounts?.close();
     await appHost.close();
+    await codexEngineHost?.close();
     await codexStack?.close();
     try { await storage.close(); } finally { await releaseStorageOwner(); }
     throw error;

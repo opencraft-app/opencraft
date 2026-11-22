@@ -173,7 +173,8 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
         plugins: [{ name: 'execution-pty', setup(builder) { builder.onResolve({ filter: /^node-pty$/ }, () => ({ path: './native/node-pty/lib/index.js', external: true })); builder.onResolve({ filter: /^ssh2$/ }, () => ({ path: './native/node_modules/ssh2/lib/index.js', external: true })); } }],
         banner: executionModuleOptions(format).banner });
     }
-    if (executionProfile === 'headless') await buildCodexBridgeRuntime(join(packageRoot, 'execution/codex-bridge'));
+    // Both execution profiles run Codex through the provider bridge by default.
+    await buildCodexBridgeRuntime(join(packageRoot, 'execution/codex-bridge'));
     // Opt-in deployment tooling only; packaging never changes a host unit or policy.
     await cp(join(repositoryRoot, 'scripts/server-deployment/tool-memory-guard.py'), join(packageRoot, 'runtime/tool-memory-guard.py'));
     await cp(join(repositoryRoot, 'scripts/server-deployment/prepare-tool-memory-guard.mjs'), join(packageRoot, 'runtime/prepare-tool-memory-guard.mjs'));
