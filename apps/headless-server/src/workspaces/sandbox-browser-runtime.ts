@@ -8,11 +8,12 @@ import {
 /** One browser Owner per admitted compute incarnation. No Web/request parameters
  * select paths or compatibility flags. Preparation must verify immutable runtime
  * bytes before returning; profile/socket remain local to this compute, not NFS.
- * TODO standardize delivery in versioned templates instead of temporary install. */
+ * Hands images/templates supply the default preinstalled layout; an explicit
+ * verified preparation callback may retain an older supported delivery layout. */
 export function createSandboxBrowserRuntime(
   options: {
     sandbox: Pick<SandboxEnvironment, "spawn">;
-    prepare(): Promise<{ directory: string }>;
+    prepare?(): Promise<{ directory: string }>;
     /** Explicit deployment policy, NOT a fallback after sandboxed launch failure. */
     isolation: "chromium-sandbox" | "isolated-vm-compatibility";
     authorize(): Promise<void>;
@@ -54,9 +55,10 @@ export function createSandboxBrowserRuntime(
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         await authorize();
-        const runtime = await options.prepare();
+        const runtime = options.prepare ? await options.prepare() : { directory: "/opt/opencraft/runtime/browser" };
         await authorize();
         if (
+          runtime.directory !== "/opt/opencraft/runtime/browser" &&
           !/^\/(?:tmp\/opencraft-browser-[a-zA-Z0-9_-]+|opt\/opencraft-browser(?:\/[a-zA-Z0-9_-]+)?)$/.test(
             runtime.directory,
           )

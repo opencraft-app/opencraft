@@ -181,6 +181,12 @@ test("environment smoke never overwrites an earlier acceptance receipt", async (
 test("the full runtime image recipe installs reviewed guest dependencies before switching to its unprivileged user", async () => {
   // source-contract: Dockerfile is the build input being validated, not a product source-code spelling proxy. Actual image builds are CI-owned.
   const recipe = await readFile(new URL("../../deploy/docker/Dockerfile", import.meta.url), "utf8");
+  const runtime = recipe.slice(recipe.indexOf("AS runtime"));
+  assert.match(
+    runtime,
+    /apt-get install[^;]*python3/u,
+    "Workspace artifact and mount helpers need the interpreter in the runtime, not only the build stage",
+  );
   const install = recipe.indexOf("RUN /bin/sh /usr/local/share/opencraft/install-sandbox-deps.sh");
   assert.ok(install > recipe.indexOf("COPY deploy/docker/install-sandbox-deps.sh"));
   assert.ok(install < recipe.indexOf("USER ${OPENCRAFT_UID}:${OPENCRAFT_GID}"));
