@@ -39,6 +39,13 @@ const admitted = (): GitExecutionHandoff => ({
   capability: "v3.synthetic",
   native: { turnId, incarnation: "native-original" },
 });
+const contextOf = (h: GitExecutionHandoff): EnvironmentLaunchContext => ({ scope: h.scope, native: h.native });
+/** The execution owner's own durable admission: never read from the relay. */
+const ownerAdmission = (state: { owned: EnvironmentLaunchContext | null; incarnation: string }) => async () => {
+  const owned = state.owned;
+  if (owned && owned.native.incarnation !== state.incarnation) throw Error("admission names another process");
+  return owned && structuredClone(owned);
+};
 
 /** Real loopback Gateway relay + a vault-owner port using the real issuer. The
  * Gateway callback never receives values; it only relays the capsule. */
@@ -49,6 +56,7 @@ async function fixture(t: test.TestContext, serverId = attachment) {
   const vault = new EnvironmentLaunchIssuer();
   const state = {
     lease: admitted() as GitExecutionHandoff | null,
+    owned: contextOf(admitted()) as EnvironmentLaunchContext | null,
     incarnation: "native-original",
     values: { SERVICE_KEY: SECRET } as Record<string, string>,
     afterSeal: () => {},
@@ -97,7 +105,7 @@ async function fixture(t: test.TestContext, serverId = attachment) {
     instance: serverId,
     issuer: vault.key,
     capabilities: new RemoteSessionCapabilities(directory, serverId),
-    inspect: async (context) => context.native.incarnation === state.incarnation,
+    admission: ownerAdmission(state),
   });
   t.after(() => {
     launch.close();
@@ -157,6 +165,60 @@ test("a duplicated or replayed capsule is consumed once and never becomes a seco
   await assert.rejects(f.launch.prepare(locator));
 });
 
+test("the receiver expects its own durable admission: a disagreeing relayed context is refused", async (t) => {
+  const f = await fixture(t);
+  const locator = { hostId: "opencraft-server" as const, threadId, turnId };
+  const original = admitted();
+  // Each relay below is internally consistent: the vault owner sealed exactly the
+  // context the Gateway relays. Only the owner's own admission can refuse it.
+  for (const scope of [
+    { inputId: "another-input" },
+    { executionId: "another-execution" },
+    { leaseGeneration: 2 },
+    { account: "actor:human://fixture/two" },
+    { actorGeneration: 2 },
+    { membershipRevision: 3 },
+    { projectId: "selected-by-relay" },
+  ]) {
+    f.state.lease = { ...original, scope: { ...original.scope, ...scope } };
+    await assert.rejects(
+      f.launch.prepare(locator),
+      { message: "environment_launch_unavailable" },
+      JSON.stringify(scope),
+    );
+  }
+  f.state.lease = { ...original, native: { ...original.native, incarnation: "native-relayed" } };
+  await assert.rejects(f.launch.prepare(locator));
+  // Presence must agree as well: neither side may deny the other's admission.
+  f.state.lease = null;
+  await assert.rejects(f.launch.prepare(locator));
+  f.state.lease = original;
+  f.state.owned = null;
+  await assert.rejects(f.launch.prepare(locator));
+  // The owner rereads its admission around decryption; a lease that moves while
+  // the capsule is in flight retires it even though the relay still agrees.
+  f.state.owned = contextOf(original);
+  f.state.afterSeal = () => {
+    f.state.owned = { ...contextOf(original), scope: { ...original.scope, executionId: "successor-execution" } };
+  };
+  await assert.rejects(f.launch.prepare(locator));
+  f.state.afterSeal = () => {};
+  f.state.owned = contextOf(original);
+  // An unreadable admission fails closed rather than trusting the relay.
+  const unreadable = createRemoteEnvironmentLaunch({
+    purpose: "dsh",
+    instance: attachment,
+    issuer: f.vault.key,
+    capabilities: new RemoteSessionCapabilities(f.directory, attachment),
+    admission: async () => {
+      throw Error("store unavailable");
+    },
+  });
+  t.after(() => unreadable.close());
+  await assert.rejects(unreadable.prepare(locator));
+  assert.equal((await f.launch.prepare(locator)).apply({}).SERVICE_KEY, SECRET);
+});
+
 test("revoked or late authority loses the capsule: lease change while sealing, Turn end, abort and restarted process", async (t) => {
   const f = await fixture(t);
   const locator = { hostId: "opencraft-server" as const, threadId, turnId };
@@ -192,17 +254,19 @@ test("unowned Turns receive an empty launch while a capsule for another attachme
   const f = await fixture(t);
   const locator = { hostId: "opencraft-server" as const, threadId, turnId };
   f.state.lease = null;
+  f.state.owned = null;
   const empty = await f.launch.prepare(locator);
   assert.deepEqual(empty.overlay(), {});
   assert.equal(f.state.reads, 0, "no vault read without an admitted Human lease");
   f.state.lease = admitted();
+  f.state.owned = contextOf(admitted());
   // Same token key, different attachment: the Gateway refuses to route it.
   const other = createRemoteEnvironmentLaunch({
     purpose: "dsh",
     instance: "server:fixture:pi",
     issuer: f.vault.key,
     capabilities: new RemoteSessionCapabilities(f.directory, "server:fixture:pi"),
-    inspect: async () => true,
+    admission: ownerAdmission(f.state),
   });
   t.after(() => other.close());
   await assert.rejects(other.prepare(locator));
@@ -212,7 +276,7 @@ test("unowned Turns receive an empty launch while a capsule for another attachme
     instance: attachment,
     issuer: new EnvironmentLaunchIssuer().key,
     capabilities: new RemoteSessionCapabilities(f.directory, attachment),
-    inspect: async () => true,
+    admission: ownerAdmission(f.state),
   });
   t.after(() => pinnedElsewhere.close());
   await assert.rejects(pinnedElsewhere.prepare(locator));

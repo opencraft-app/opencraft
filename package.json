@@ -303,7 +303,7 @@
     "smoke:disclosures": "tsx scripts/smoke/composer/smoke-disclosure-feedback.ts",
     "smoke:gateway-continuity": "node --import tsx scripts/smoke/execution/smoke-gateway-continuity.ts",
     "test:model-policy": "tsx --test tests/execution/model-usage-policy.test.ts",
-    "test:account-environment": "tsx --test tests/identity/account-environment.test.ts tests/identity/environment-delivery.test.ts tests/identity/environment-launch-delivery.test.ts",
+    "test:account-environment": "tsx --test tests/identity/account-environment.test.ts tests/identity/environment-delivery.test.ts tests/identity/environment-launch-delivery.test.ts tests/identity/environment-launch-owner.test.ts",
     "cli": "tsx apps/opencraft-cli/src/main.ts",
     "test:cli": "node --import tsx --test tests/chat/conversation-cli-create.test.ts tests/chat/conversation-cli-read.test.ts tests/chat/conversation-cli-send.test.ts tests/chat/conversation-cli-input.test.ts tests/chat/conversation-cli-steer.test.ts",
     "generate:storage": "node --import tsx scripts/storage/storage-migrations.mjs generate",
