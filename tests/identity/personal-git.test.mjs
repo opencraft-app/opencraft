@@ -34,8 +34,8 @@ async function fixture(t, {legacy = false} = {}) {
   setCredential();setCredential('synthetic:2',1,{...credential,identity:{...credential.identity,username:'employee-two'}});
   const actors=new DatabaseSync(join(data,'opencraft-server.sqlite'));actors.exec("CREATE TABLE actors(id TEXT,kind TEXT,enabled INTEGER);CREATE TABLE actor_bindings(binding TEXT,actor_id TEXT);CREATE TABLE actor_members(actor_id TEXT,enabled INTEGER);CREATE TABLE members(binding TEXT,enabled INTEGER);");
   for(const id of ['1','2']){actors.prepare('INSERT INTO actors VALUES(?,?,?)').run(id,'human',1);actors.prepare('INSERT INTO actor_bindings VALUES(?,?)').run(JSON.stringify(['synthetic',id]),id);actors.prepare('INSERT INTO actor_members VALUES(?,?)').run(id,1);}
-  const leases=new DatabaseSync(join(data,'codex',legacy?'codex-host-queue.sqlite':'opencraft-host-state.sqlite'));leases.exec(`CREATE TABLE execution_submissions(thread_id TEXT,input_id TEXT,principal_json TEXT,ownership TEXT,admission TEXT);CREATE TABLE execution_leases(execution_id TEXT,thread_id TEXT,input_id TEXT,generation INTEGER,state TEXT,turn_id TEXT,engine_incarnation TEXT)`);
-  for(const [thread,input,execution,subject] of [['thread-one','input-one','execution-one','1'],['thread-two','input-two','execution-two','2']]){leases.prepare('INSERT INTO execution_submissions VALUES(?,?,?,?,?)').run(thread,input,JSON.stringify({provider:'synthetic',subject}),'human','accepted');leases.prepare('INSERT INTO execution_leases VALUES(?,?,?,?,?,?,?)').run(execution,thread,input,1,'active','turn-one','engine-one');}
+  const leases=new DatabaseSync(join(data,'codex',legacy?'codex-host-queue.sqlite':'opencraft-host-state.sqlite'));leases.exec(`CREATE TABLE execution_submissions(thread_id TEXT,input_id TEXT,principal_json TEXT,ownership TEXT,admission TEXT);CREATE TABLE execution_leases(execution_id TEXT,thread_id TEXT,input_id TEXT,generation INTEGER,state TEXT,turn_id TEXT,engine_incarnation TEXT,ended_at_ms INTEGER)`);
+  for(const [thread,input,execution,subject] of [['thread-one','input-one','execution-one','1'],['thread-two','input-two','execution-two','2']]){leases.prepare('INSERT INTO execution_submissions VALUES(?,?,?,?,?)').run(thread,input,JSON.stringify({provider:'synthetic',subject}),'human','accepted');leases.prepare('INSERT INTO execution_leases(execution_id,thread_id,input_id,generation,state,turn_id,engine_incarnation) VALUES(?,?,?,?,?,?,?)').run(execution,thread,input,1,'active','turn-one','engine-one');}
   await buildGitIdentityRuntime(runtime,['personal-git','personal-git-protocol'].map(name=>({entry:resolve('packages/execution-environment/src/'+name+'.ts'),name:name+'.mjs'})));
   const {PersonalGitEnvironment}=await import(pathToFileURL(join(runtime,'personal-git.mjs')).href);
   const {sealGitGrant,gitGrantAuthority,openGitGrant,readyGitBroker}=await import(pathToFileURL(join(runtime,'personal-git-protocol.mjs')).href);
@@ -182,4 +182,12 @@ test('ambiguous storage and pending offline maintenance cannot select an authori
  await writeFile(journal,'{}',{mode:0o600});assert.equal((await f.open()).status,'unavailable');
  await rm(journal);assert.equal((await f.open()).status,'configured');
  await assert.rejects(stat(current),{code:'ENOENT'});
+});
+
+
+test('a superficially active lease with a recorded end cannot authorize Git', async t => {
+  const f = await fixture(t);
+  assert.equal((await f.open()).status, 'configured');
+  f.leases.exec('UPDATE execution_leases SET ended_at_ms=1');
+  assert.equal((await f.open()).status, 'expired');
 });
