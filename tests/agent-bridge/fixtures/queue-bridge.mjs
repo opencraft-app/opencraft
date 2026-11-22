@@ -26,6 +26,29 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     reply({ thread: { id: `native-${p.threadId}` } });
     return;
   }
+  if (request.method === "session/adopt") {
+    // A new provider process binds the session the Host recorded before restarting.
+    appendFileSync(process.env.EXECUTIONS, `adopt:${p.providerThreadId}\n`);
+    sessions.set(p.threadId, []);
+    output({
+      id: `identity:${++sequence}`,
+      method: "thread/identity",
+      params: { threadId: p.threadId, providerThreadId: p.providerThreadId, sessionRestorable: true },
+    });
+    // Turns the Host held open died with the previous provider process.
+    if (p.openTurns?.length)
+      callback(
+        p.threadId,
+        p.openTurns.map((nativeTurnId) => ({
+          op: "turn.close",
+          nativeTurnId,
+          status: "interrupted",
+          scope: { threadId: p.threadId },
+        })),
+      );
+    reply({ thread: { id: p.providerThreadId } });
+    return;
+  }
   if (request.method === "turn/start") {
     const id = `turn-${++turns}`,
       clientId = p.native?.clientUserMessageId,

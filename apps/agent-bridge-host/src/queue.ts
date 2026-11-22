@@ -47,6 +47,8 @@ export interface HostQueuePort {
     params: Record<string, unknown>,
   ): Promise<Receipt>;
   history(serverId: string, threadId: string, params: Record<string, unknown>): Promise<unknown>;
+  /** Bind a route's session again after a Host restart; settles turns that ended unobserved. */
+  recover(route: string): Promise<void>;
   /** Whether the route's generation can be started without explicit recovery. */
   dispatchable(route: string): Promise<boolean>;
 }
@@ -176,6 +178,12 @@ export class HostQueue {
     if (this.closed) return;
     void this.exclusive(route, async () => {
       if (this.closed || !(await this.port.dispatchable(route))) return;
+      // A refused recovery (for example a turn still running natively) is retried on the next trigger.
+      try {
+        await this.port.recover(route);
+      } catch {
+        return;
+      }
       await this.reconcile(route, []);
       const head = await this.store.firstAwaitingAdmission(route);
       if (!head || head.state !== "queued" || PAUSED.includes(head.pausedReason ?? "")) return;
