@@ -44,7 +44,8 @@ export class WorkerOwnerUnavailable extends Error {
 
 /**
  * Main-thread side of a Worker that owns blocking IO (SQLite, sync files).
- * Calls run in the Worker one at a time, in the order they were made. A
+ * Ordinary calls run in FIFO order. An owner may explicitly admit synchronous
+ * non-mutating reads while an async call waits; close drains both lanes. A
  * crashed or exited Worker fences the owner: pending and later calls reject,
  * and nothing falls back to running the IO on this thread.
  */

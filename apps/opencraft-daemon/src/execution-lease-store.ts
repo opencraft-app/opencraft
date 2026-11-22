@@ -3,7 +3,10 @@ import type { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import type { TransportSubmissionContext } from "@opencraft/appserver-client/transport";
 
-export type ExecutionPrincipal = NonNullable<TransportSubmissionContext["executionPrincipal"]>;
+export type ExecutionPrincipal = NonNullable<TransportSubmissionContext["executionPrincipal"]> & {
+  /** Captured only from the verified Human context; legacy records stay unknown. */
+  readonly actorId?:string;readonly actorGeneration?:number;
+};
 export type ExecutionInputKind = "start" | "queue" | "steer" | "system";
 export interface ExecutionSubmission {
   readonly principal: ExecutionPrincipal | null;
@@ -44,8 +47,12 @@ export function snapshotExecutionSubmission(context: TransportSubmissionContext)
   if (!principal) return Object.freeze({ principal: null, ownership: context.sender ? "unknown" : "unowned" });
   text(principal.provider); text(principal.subject);
   if (!Number.isFinite(context.validUntil) || context.validUntil! <= Date.now()) throw new Error("Execution identity expired");
+  const actor=context.actorContext;
+  const human=actor?.credentialId===null&&actor.actorId.startsWith('human://');
+  if(human&&(!Number.isSafeInteger(actor.generation)||actor.generation<1||!Number.isFinite(actor.expiresAt)||actor.expiresAt<=Date.now()))throw Error('Execution Actor expired');
   return Object.freeze({ principal: Object.freeze({ provider: principal.provider, subject: principal.subject,
-    ...(principal.loginName ? { loginName: text(principal.loginName) } : {}) }), ownership: "human" });
+    ...(principal.loginName ? { loginName: text(principal.loginName) } : {}),
+    ...(human?{actorId:text(actor.actorId),actorGeneration:actor.generation}:{}) }), ownership: "human" });
 }
 function submission(row: Record<string, unknown>): ExecutionSubmission {
   const p = row.principal_json === null ? null : JSON.parse(String(row.principal_json)) as ExecutionPrincipal;
@@ -127,10 +134,15 @@ export class ExecutionLeaseStore extends ExecutionLeaseReader {
     if (!["human", "unowned", "unknown"].includes(value.ownership) || (value.ownership === "human") !== (value.principal !== null))
       throw new Error("Invalid execution ownership");
     if (value.principal) { text(value.principal.provider); text(value.principal.subject); }
+    if(value.principal&&(value.principal.actorId!==undefined||value.principal.actorGeneration!==undefined)
+      &&(!/^human:\/\/[^/]+\/[^/]+$/u.test(value.principal.actorId??'')||!Number.isSafeInteger(value.principal.actorGeneration)||value.principal.actorGeneration!<1))throw Error('Invalid execution Actor');
     const existing = this.getSubmission(threadId, inputId);
     if (existing) {
       if (existing.ownership !== value.ownership || existing.principal?.provider !== value.principal?.provider
         || existing.principal?.subject !== value.principal?.subject || (this.inputKind(threadId, inputId) === "steer") !== (kind === "steer")) throw new Error("Submission execution principal is immutable");
+      if(existing.principal?.actorId&&value.principal?.actorId
+        &&(existing.principal.actorId!==value.principal.actorId||existing.principal.actorGeneration!==value.principal.actorGeneration))throw Error('Submission execution Actor is immutable');
+      // Legacy provenance is never backfilled by a later operator or browser.
       return; // A renamed display label cannot change or invalidate the original binding.
     }
     this.db.prepare(`INSERT INTO execution_submissions(thread_id,input_id,principal_json,ownership,submitted_at_ms,admission,input_kind,admission_token) VALUES(?,?,?,?,?,?,?,?)`)

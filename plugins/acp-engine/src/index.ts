@@ -425,7 +425,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       const { driver: _driver, driverKind: _kind, orchestrationTitle, orchestrationHostIncarnation: _incarnation, ...start } = frozen;
       const created = await this.request("thread/start", { ...start, __opencraftOrchestrationOperation: operationId }, client);
       if (this.preparations.delete(operationId)) await this.savePreparations();
-      if (orchestrationTitle && this.session(created.thread.id).name === null) { const session = this.session(created.thread.id); session.name = String(orchestrationTitle); await this.save(session); }
+      if (orchestrationTitle && this.session(created.thread.id).name === null) await this.setTitle(this.session(created.thread.id), String(orchestrationTitle), "manual");
       return { threadId: created.thread.id, driverKind: this.driverKind, durability: "immediate" };
     }
     if (method === "opencraft/orchestration/status") return this.snapshot(String(params.threadId));

@@ -714,6 +714,8 @@
   "sidebar.search.locating": "Opening matching message…",
   "sidebar.search.incomplete": "No matches yet · message search is incomplete",
   "sidebar.search.positionError": "The conversation opened, but the matching message could not be shown.",
+  "shortcuts.conversationPrevious": "Previous conversation",
+  "shortcuts.conversationNext": "Next conversation",
   "shortcuts.title": "Keyboard shortcuts",
   "shortcuts.sidebar": "Toggle sidebar",
   "shortcuts.panel": "Toggle tool panel",

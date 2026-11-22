@@ -15,8 +15,11 @@ export interface AgentDriverCreation {
 /** Trusted control plane contract. The independent Host owns idempotent native
  * creation and callback replay; an ordinary native mutation is never retried. */
 export interface AgentDriverContract {
+  setTitle?(operationId: string, threadId: string, title: string, canAdmit: () => boolean): Promise<void>;
   prepare?(operationId: string, sourceThreadId: string, args: Record<string, unknown>, canAdmit: () => boolean, callbackIncarnation?: string): Promise<Record<string, unknown>>;
-  create(operationId: string, sourceThreadId: string, settings: Record<string, unknown>, canAdmit: () => boolean): Promise<AgentDriverCreation | { rejected: { status: number } }>;
+  create(operationId: string, sourceThreadId: string, settings: Record<string, unknown>, canAdmit: () => boolean): Promise<AgentDriverCreation | {
+    rejected: { status: number; allocation?: AgentDriverCreation };
+  }>;
   createRoot?(operationId: string, settings: Record<string, unknown>, canAdmit: () => boolean): Promise<AgentDriverCreation | { rejected: { status: number } }>;
   /** Release native discovery only after the Hub commits private ownership. */
   publishRoot?(operationId: string): Promise<void>;

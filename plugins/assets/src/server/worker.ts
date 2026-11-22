@@ -1,3 +1,4 @@
+import type { GitExecutionLocator, GitExecutionHandoff } from "@opencraft/execution-environment/git-execution";
 import type { GitConnectionsSnapshot } from "../git/contract.js";
 import { WorkerOwner, ownerEntry } from "@opencraft/worker-owner";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
@@ -19,12 +20,14 @@ export interface AssetConfigurationPort {
   update(access: AssetAdmission, input: unknown): Promise<SandboxConfigurationsSnapshot>;
 }
 export interface AssetStoragePort extends AssetConfigurationPort {
+  executionGitGrant(locator: GitExecutionLocator): Promise<GitExecutionHandoff | null>;
   gitSnapshot(access: AssetAdmission): Promise<GitConnectionsSnapshot>;
   gitUpdate(access: AssetAdmission, input: unknown): Promise<GitConnectionsSnapshot>;
 }
 interface Ready {
   outcome: DatabaseOutcome;
   gitHosts: readonly string[];
+  gitAuthority: string | null;
 }
 /** All vault opens, migrations, reads and writes belong to this FIFO Worker.
  * There is no local fallback, runtime-secret RPC or automatic mutation retry. */
@@ -38,5 +41,11 @@ export async function openAssetConfigurations(directory: string, options: { entr
       maxPending: 128,
     },
   );
-  return { store: owner.call, outcome: ready.outcome, gitHosts: ready.gitHosts, close: () => owner.close() };
+  return {
+    store: owner.call,
+    outcome: ready.outcome,
+    gitHosts: ready.gitHosts,
+    gitAuthority: ready.gitAuthority,
+    close: () => owner.close(),
+  };
 }

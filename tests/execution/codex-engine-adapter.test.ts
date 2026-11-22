@@ -3085,3 +3085,35 @@ for (const outcome of ['confirmed', 'unconfirmed', 'stale-generation', 'missing-
       assert.equal(creation.phase, 'created');
     } finally { await rm(root, { recursive: true, force: true }); }
   });
+
+test("a delegated title cannot reach native after revocation while waiting to write", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-title-admission-"));
+  const frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  const request = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "viewer" }));
+    return (await waitFor(frames, frame => frame.id === id)).result as any;
+  };
+  const gate = Promise.withResolvers<void>();
+  try {
+    await adapter.connect();
+    await initializeClient(adapter, frames, "viewer");
+    const { thread } = await request("create", "thread/start", { cwd: root, testNoServerRequest: true });
+    const hold = (adapter as any).withThreadOperation(thread.id, () => gate.promise);
+    let allowed = true;
+    const rename = adapter.sendWithContext(JSON.stringify({
+      id: "delegated-title", method: "thread/name/set", params: { threadId: thread.id, name: "Denied title" },
+      [LOGICAL_CLIENT_FIELD]: "viewer",
+    }), { sender: null, orchestrationOperationId: "title-operation", orchestrationCanAdmit: () => allowed });
+    allowed = false;
+    gate.resolve();
+    await hold;
+    await assert.rejects(rename, /Orchestration delegation was revoked/);
+    const counts = await request("counts", "test/readMethodCounts", {});
+    assert.equal(counts["thread/name/set"] ?? 0, 0);
+  } finally {
+    gate.resolve();
+    await adapter.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});

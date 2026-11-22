@@ -63,15 +63,24 @@ export class CodexOrchestrationControl {
     catch(error){if(object(object(error).data).orchestrationRejected===true)return {rejected:{status:Number(object(error).code)||503}};throw error;}
     const thread=object(result.thread),childId=text(thread.id);
     if(!childId)throw new OrchestrationControlError(502,'Native child creation has no stable identity');
-    if(!orchestrationRoot)await this.name(operationId,childId,settings,admit);
-    return {threadId:childId,durability:'pending_first_turn'};
+    const allocation={threadId:childId,durability:'pending_first_turn' as const};
+    if(!orchestrationRoot){
+      try{await this.name(operationId,childId,settings,admit);}
+      catch(error){
+        const failure=object(error),data=object(failure.data);
+        if(data.orchestrationRejected!==true||data.resultUnknown===true)throw error;
+        const code=Number(failure.code);
+        return {rejected:{status:Number.isInteger(code)&&code>=400&&code<600?code:502,allocation}};
+      }
+    }
+    return allocation;
   }
   private async name(operationId:string,threadId:string,settings:Record<string,unknown>,admit:()=>boolean):Promise<void>{
     const {orchestrationTitle,orchestrationHostIncarnation}=settings;
     if(!orchestrationTitle)return;
     const fingerprint=createHash('sha256').update(JSON.stringify(settings)).digest('hex');
     try{await this.port.request('thread/name/set',{threadId,name:orchestrationTitle,__opencraftOrchestrationOperation:operationId+':title',__opencraftOrchestrationFingerprint:fingerprint,...(orchestrationHostIncarnation?{__opencraftOrchestrationIncarnation:orchestrationHostIncarnation}:{})},admit);}
-    catch(error){if(object(object(error).data).orchestrationRejected!==true)throw error;}
+    catch(error){if(settings.orchestrationRoot!==true || object(object(error).data).orchestrationRejected!==true)throw error;}
   }
   private async prepare(threadId:string,args:Record<string,unknown>,callbackIncarnation:string,sourceSettings?:Record<string,unknown>,sourceOnly=false):Promise<Record<string,unknown>>{
     // The source is already executing this tool. Resume without overrides reads

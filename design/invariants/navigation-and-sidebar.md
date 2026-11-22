@@ -914,3 +914,21 @@ owned by their existing layers.
 
 Evidence: thread-creation-evidence and thread-access tests; downstream sidebar
 creation regression and desktop/touch browser fixture.
+
+
+### Conversation titles in touch density
+
+Touch density retains the current conversation title beside its floating controls,
+with the existing optional project line. `thread-workspace.scss` owns this reading
+header together with Side Chat; chrome suppression must not hide its title or
+require a higher-specificity override to recover it. Long titles and project
+paths shrink with ellipsis rather than moving navigation, menu or preview targets.
+Input density is independent of viewport width and pointer capability: explicit
+Touch on a wide mouse-driven window and Compact on touch hardware retain the same
+conversation identity. A tool that occupies the primary scene hides/inerts the
+covered conversation header through Shell presentation, not a density selector.
+Changing density, title or foreground must preserve the mounted draft.
+
+Real AppShell + EditableThreadTitle browser coverage:
+`tests/shell/workbench-touch-title.browser.ts` (phone, tablet, wide pointer,
+explicit density, light/dark, long metadata, scroll and foreground restoration).

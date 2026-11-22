@@ -1,3 +1,4 @@
+import { parseGitExecutionLocator, type GitExecutionResolver } from "@opencraft/execution-environment/git-execution";
 import { EmployeeGitVaultStore, GitVaultError } from "@opencraft/execution-environment/employee-git-vault-store";
 import { PLATFORM_ASSET_SCOPE } from "../contract.js";
 import { SandboxConfigurations, SandboxConfigurationError } from "./configurations.js";
@@ -8,6 +9,7 @@ import type { AssetAdmission } from "./worker.js";
 export function createAssetsStorage(
   directory: string,
   providers: readonly GitConnectionProvider[] = [githubConnectionProvider()],
+  execution?: GitExecutionResolver,
 ) {
   const vault = new EmployeeGitVaultStore(directory);
   try {
@@ -45,8 +47,42 @@ export function createAssetsStorage(
       }
     }
     return {
-      ready: { outcome: vault.outcome, gitHosts: providers.map((p) => p.host) },
+      concurrentReads:execution?['executionGitGrant']:[],
+      ready: {
+        outcome: vault.outcome,
+        gitHosts: providers.map((p) => p.host),
+        gitAuthority: execution ? vault.personalGitAuthority("actor") : null,
+      },
       methods: {
+        executionGitGrant: (raw: unknown) => {
+          try {
+            if (!execution) throw new SandboxConfigurationError("execution_unavailable", 503);
+            const input = parseGitExecutionLocator(raw),
+              admission = execution.resolve(input);
+            const scope = admission?.scope;
+            if (!scope) return null;
+            // Freeze the exact original input, generation and canonical Human partition.
+            if (
+              !scope.account.startsWith("actor:human://") ||
+              scope.hostId !== input.hostId ||
+              scope.threadId !== input.threadId ||
+              scope.inputId !== input.inputId
+            )
+              throw new SandboxConfigurationError("execution_unavailable", 503);
+            const current = execution.resolve(input);
+            if (JSON.stringify(current) !== JSON.stringify(admission))
+              throw new SandboxConfigurationError("execution_unavailable", 503);
+            return {
+              scope,
+              native: admission!.native,
+              authority: vault.personalGitAuthority("actor"),
+              capability: vault.sealPersonalGitGrant(scope),
+            };
+          } catch (error) {
+            if (error instanceof SandboxConfigurationError) throw error;
+            throw new SandboxConfigurationError("execution_unavailable", 503);
+          }
+        },
         gitSnapshot: (access: AssetAdmission) => run(access, () => git.snapshot(access.scope)),
         gitUpdate: (access: AssetAdmission, input: unknown) =>
           run(access, (check) => git.update(access.scope, input, check)),
@@ -59,10 +95,20 @@ export function createAssetsStorage(
             configurations.update(access.scope, input, access.allowCustomEndpoints, access.canManagePlatform),
           ),
       },
-      close: () => vault.close(),
+      close: () => {
+        try {
+          execution?.close();
+        } finally {
+          vault.close();
+        }
+      },
     };
   } catch (error) {
-    vault.close();
+    try {
+      execution?.close();
+    } finally {
+      vault.close();
+    }
     throw error;
   }
 }
