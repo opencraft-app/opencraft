@@ -136,8 +136,13 @@ remote sign-in must be repeated after a view is retired. The Web validation adap
 uses normal browser iframe storage and cannot prove native cookie isolation.
 
 Self-hosted content has no injected mobile identity and no onMessage native bridge.
-Only same-origin HTTPS navigation remains in the view; validated external links
-open through the system. Android back uses remote WebView history only for this
+Same-origin HTTPS navigation remains in the view. The iOS build can configure one
+exact HTTPS site origin and its HTTPS authentication origin with
+`EXPO_PUBLIC_SELF_HOSTED_SITE_ORIGIN` and `EXPO_PUBLIC_SELF_HOSTED_AUTH_ORIGIN`.
+Only the matching user-selected site can navigate its top-level view to that
+authentication origin. Authentication and return share the same private WebKit
+data store for the lifetime of the view. Other validated external links open
+through the system. Android back uses remote WebView history only for this
 mode. Built-in content continues to use the original Web memory navigation.
 Retries create a fresh document/runtime, rejecting late messages from retired
 views. Failed documents never automatically select another source.
