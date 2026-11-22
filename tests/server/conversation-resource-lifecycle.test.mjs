@@ -23,7 +23,7 @@ test('a synchronous owner failure does not prevent other owners from releasing r
 test('archive fences immediately, retries only failed owners after restart, and preserves other hosts', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'resource-lifecycle-')), path = join(dir, 'state.json');
   const calls = [], hold = deferred();
-  let service = new ConversationResourceLifecycle(path, {
+  let service = await ConversationResourceLifecycle.open(path, {
     terminal: async row => { calls.push(['terminal', row.hostId]); await hold.promise; },
     browser: async () => { throw Error('owner offline'); },
   });
@@ -32,7 +32,7 @@ test('archive fences immediately, retries only failed owners after restart, and 
     assert.throws(() => service.assertActive('h', 't'));
     service.assertActive('other', 't'); service.assertActive('h', 'other');
     hold.resolve(); await archive; await service.close();
-    service = new ConversationResourceLifecycle(path, {
+    service = await ConversationResourceLifecycle.open(path, {
       terminal: async () => assert.fail('completed owner should not be retried'),
       browser: async row => calls.push(['browser', row.hostId]),
     });
@@ -98,7 +98,7 @@ test('a late draft binding invalidates an in-flight cleanup acknowledgement', as
 test('no-progress cleanup retries retain durable fences without rewriting the journal', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'resource-retry-')), path = join(dir, 'state.json');
   let available = false, calls = 0, writes = 0;
-  let service = new ConversationResourceLifecycle(path, { owner: () => { calls++; if (!available) throw Error('offline'); } });
+  let service = await ConversationResourceLifecycle.open(path, { owner: () => { calls++; if (!available) throw Error('offline'); } });
   const write = service.write.bind(service);
   service.write = rows => { writes++; return write(rows); };
   try {
@@ -112,7 +112,7 @@ test('no-progress cleanup retries retain durable fences without rewriting the jo
     assert.equal(await readFile(path, 'utf8'), original);
     assert.throws(() => service.assertActive('h', 't'));
     await service.close();
-    service = new ConversationResourceLifecycle(path, { owner: () => { calls++; if (!available) throw Error('offline'); } });
+    service = await ConversationResourceLifecycle.open(path, { owner: () => { calls++; if (!available) throw Error('offline'); } });
     await service.observe('h', 't', 'active');
     assert.throws(() => service.assertActive('h', 't'), 'restoration still waits for cleanup');
     assert.deepEqual(JSON.parse(await readFile(path, 'utf8')).rows[0].pending, ['owner']);
@@ -144,7 +144,7 @@ test('retry visits only pending cleanup keys and reconstructs them after restart
   const dir = await mkdtemp(join(tmpdir(), 'resource-pending-')), path = join(dir, 'state.json');
   let calls = [], online = false;
   const owner = row => { calls.push(row.threadId); if (row.threadId === 'pending' && !online) throw Error('offline'); };
-  let service = new ConversationResourceLifecycle(path, { owner });
+  let service = await ConversationResourceLifecycle.open(path, { owner });
   try {
     for (const id of ['done-a', 'done-b', 'pending', 'done-c']) await service.observe('h', id, 'archived');
     const pendingKey = JSON.stringify(['h', 'pending']);
@@ -155,7 +155,7 @@ test('retry visits only pending cleanup keys and reconstructs them after restart
     assert.deepEqual(calls, ['pending']);
     service.rows[Symbol.iterator] = iterate;
     await service.close();
-    service = new ConversationResourceLifecycle(path, { owner });
+    service = await ConversationResourceLifecycle.open(path, { owner });
     assert.deepEqual([...service.pendingKeys], [pendingKey]);
     calls = []; online = true; service.retry(); await Promise.all([...service.flights.values()]);
     assert.deepEqual(calls, ['pending']); assert.equal(service.pendingKeys.size, 0);
@@ -183,7 +183,7 @@ test('a rejected journal write cannot publish a new pending index', async () => 
   const service = new ConversationResourceLifecycle(null, { owner() { assert.fail('uncommitted cleanup cannot run'); } });
   service.write = () => { throw Error('disk unavailable'); };
   try {
-    assert.throws(() => service.observe('h', 't', 'archived'), /disk unavailable/);
+    await assert.rejects(service.observe('h', 't', 'archived'), /disk unavailable/);
     assert.equal(service.pendingKeys.size, 0);
     assert.equal(service.rows.size, 0);
     assert.throws(() => service.assertActive('h', 't'), /unavailable/);
@@ -239,4 +239,26 @@ test('each archived page takes a fresh admission view and duplicate rows remain 
     assert.deepEqual(calls, ['one', 'two']);
     assert.equal(service.pendingKeys.size, 0);
   } finally { await service.close(); }
+});
+
+// The journal is written off the event loop. While a write is in flight the
+// conversation it closes is fenced, others stay usable, owners wait for the
+// durable record, and concurrent intents are serialized without losing either.
+test('an in-flight journal write fences only its conversation and serializes concurrent intents', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'resource-async-')), path = join(dir, 'state.json');
+  const calls = [];
+  const service = await ConversationResourceLifecycle.open(path, { owner: row => { calls.push(row.threadId); } });
+  const write = service.write.bind(service), held = deferred(); let first = true;
+  service.write = async rows => { if (first) { first = false; await held.promise; } return write(rows); };
+  try {
+    const a = service.observe('h', 'a', 'archived'), b = service.observe('h', 'b', 'archived');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.throws(() => service.assertActive('h', 'a')); assert.throws(() => service.assertActive('h', 'b'));
+    service.assertActive('h', 'unrelated');
+    assert.deepEqual(calls, [], 'owners wait until the close intent is durable');
+    held.resolve(); await Promise.all([a, b]);
+    assert.deepEqual(calls.sort(), ['a', 'b']);
+    const saved = JSON.parse(await readFile(path, 'utf8')).rows.map(row => [row.threadId, row.state, row.pending]);
+    assert.deepEqual(saved.sort(), [['a', 'archived', []], ['b', 'archived', []]], 'neither intent was lost');
+  } finally { await service.close(); await rm(dir, { recursive: true, force: true }); }
 });

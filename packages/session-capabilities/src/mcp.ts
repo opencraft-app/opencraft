@@ -1,6 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import { readFileSync, lstatSync } from "node:fs";
-import { readFile, writeFile, rename, rm } from "node:fs/promises";
+import { lstat, readFile, writeFile, rename, rm } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -102,10 +101,10 @@ export class SessionCapabilityMcp {
     let port = 0;
     if (this.options.retainEndpoint && this.options.descriptorPath) {
       try {
-        const info = lstatSync(this.options.descriptorPath);
+        const info = await lstat(this.options.descriptorPath);
         if (!info.isFile() || info.isSymbolicLink() || info.uid !== process.getuid?.() || info.mode & 0o077 || info.size > 4096)
           throw new Error("Invalid capability endpoint descriptor");
-        const endpoint = new URL(JSON.parse(readFileSync(this.options.descriptorPath, "utf8")).url);
+        const endpoint = new URL(JSON.parse(await readFile(this.options.descriptorPath, "utf8")).url);
         if (endpoint.protocol !== "http:" || endpoint.hostname !== "127.0.0.1" || endpoint.pathname !== "/mcp" || !endpoint.port)
           throw new Error("Invalid capability endpoint descriptor");
         port = Number(endpoint.port);

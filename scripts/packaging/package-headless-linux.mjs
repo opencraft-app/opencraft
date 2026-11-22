@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { buildServerSpacesRuntime } from './package-server-spaces-runtime.mjs';
+import { buildOwnerWorkers } from './owner-workers.mjs';
 import { buildConnectedAgentHistoryRuntime } from './package-connected-agent-history-runtime.mjs';
 import { buildDshRoutingRuntime } from './package-dsh-routing-runtime.mjs';
 import { buildTranscriptCacheRuntime } from './package-transcript-cache-runtime.mjs';
@@ -53,7 +54,7 @@ export async function buildHeadlessBundle(output, { headlessEntry = join(reposit
   await build({ entryPoints: [join(repositoryRoot, "apps/headless-server/src/remote-browser/state.worker.ts")], outfile: join(dirname(output), "browser-state-worker.mjs"), bundle: true, platform: "node", format: "esm", target: "node26", logLevel: "warning" });
   await buildTranscriptCacheRuntime(dirname(output));
   await build({entryPoints:[fileURLToPath(new URL('../../packages/web-push-node/src/store.worker.ts',import.meta.url))],outfile:join(dirname(output),'push-storage-worker.mjs'),bundle:true,platform:'node',format:'esm',target:'node26',logLevel:'warning',banner:{js:"import { createRequire } from 'node:module'; const require=createRequire(import.meta.url);"}});
-  await build({entryPoints:[fileURLToPath(new URL('../../apps/opencraft-daemon/src/ssh-connections.worker.ts',import.meta.url))],outfile:join(dirname(output),'ssh-connections-worker.mjs'),bundle:true,platform:'node',format:'esm',target:'node26',logLevel:'warning',banner:{js:"import { createRequire } from 'node:module'; const require=createRequire(import.meta.url);"}});
+  await buildOwnerWorkers(dirname(output));
   await buildServerSpacesRuntime(dirname(output));
   await buildDshRoutingRuntime(dirname(output));
   await buildConnectedAgentHistoryRuntime(dirname(output));

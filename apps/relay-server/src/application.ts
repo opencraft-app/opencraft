@@ -8,7 +8,8 @@ import type { RelayServerDirectory } from './server.js';
 import type { EntryOriginResolver } from './authentication.js';
 import { readFile } from 'node:fs/promises';
 import { createPrivateKey, createPublicKey, createHash } from 'node:crypto';
-import { HubNetwork } from '@opencraft/hub-network/node';
+import type { HubNetwork } from '@opencraft/hub-network/node';
+import { openHubNetwork } from '@opencraft/hub-network/open';
 import { HUB_CONTROL_PATH, HUB_DATA_PATH, publicOrigin } from '@opencraft/hub-network';
 import { parseSelectionDefaults, parseServerPaths, type ServerPaths } from './selection.js';
 import { RelayRedis, readRelayRedisConfiguration } from './redis.js';
@@ -112,7 +113,7 @@ export async function startRelayApplication(input: unknown, composition: RelayCo
   if (auth && !composition.createIdentity) throw new Error('Configured identity gateway requires a server identity adapter');
   if (!auth && composition.createIdentity) throw new Error('Identity adapter requires explicit gateway configuration');
   const selectionDefaults = config.serverSelectionDefaultsFile ? parseSelectionDefaults(await readPrivateJson(config.serverSelectionDefaultsFile)) : undefined;
-  let identity: RelayIdentityAdapter | undefined, hub: HubNetwork | undefined;
+  let identity: RelayIdentityAdapter | undefined, hub: HubNetwork | undefined, hubOwner: { close(): Promise<void> } | undefined;
   let redis: RelayRedis | undefined, cluster: RedisRelayCluster | undefined;
   let app: ReturnType<typeof createRelayServer> | undefined, listener: Server | undefined, peerListener: Server | undefined;
   let ingress: RelayIngress | undefined;
@@ -124,7 +125,7 @@ export async function startRelayApplication(input: unknown, composition: RelayCo
     const failures: unknown[] = [];
     try { await app?.close(); } catch (error) { failures.push(error); }
     try { await ingress?.close?.(); } catch (error) { failures.push(error); }
-    try { hub?.close(); } catch (error) { failures.push(error); }
+    try { await hubOwner?.close(); } catch (error) { failures.push(error); }
     for (const result of await Promise.allSettled([cluster?.close(), closeServer(peerListener), listener !== app?.server ? closeServer(listener) : undefined])) {
       if (result.status === 'rejected') failures.push(result.reason);
     }
@@ -176,8 +177,18 @@ export async function startRelayApplication(input: unknown, composition: RelayCo
       cluster = new RedisRelayCluster(redis, { nodeId: process.env.OPENCRAFT_RELAY_NODE_ID ?? '', advertiseHost: process.env.OPENCRAFT_RELAY_ADVERTISE_HOST ?? '',
         publicPort: config.port, stateFile: network!.stateFile, configurationHash: createHash('sha256').update(JSON.stringify(config)).digest('hex'),
         ...(authority ? { authority } : {}), ...(network!.caFile ? { ca: await readFile(network!.caFile, 'utf8') } : {}) });
-    } else hub = network ? new HubNetwork(network.stateFile, { ...(authority ? { authority } : {}), localService: false, ...(network.caFile ? { ca: await readFile(network.caFile, 'utf8') } : {}) }) : undefined;
-    const relayHub = cluster?.hub ?? hub;
+    } else if (network) {
+      const opened = await openHubNetwork(network.stateFile, { ...(authority ? { authority } : {}), localService: false, ...(network.caFile ? { ca: await readFile(network.caFile, 'utf8') } : {}) });
+      hubOwner = opened; hub = opened.node;
+    }
+    // A single-node Hub persists through its owner Worker, so operator changes are durable commands.
+    const localHub = hub;
+    const relayHub: RelayHub | undefined = cluster?.hub ?? (localHub && {
+      snapshot: () => localHub.snapshot(), routes: () => localHub.routes(),
+      open: (...args: Parameters<HubNetwork['open']>) => localHub.open(...args),
+      handleUpgrade: (...args: Parameters<HubNetwork['handleUpgrade']>) => localHub.handleUpgrade(...args),
+      command: (input: Record<string, unknown>, operator: string) => localHub.apply(input, operator),
+    });
     const openHubStream: OpenRelayHubStream | undefined = relayHub && (async ({ hubId, origin }, signal) => {
       signal.throwIfAborted();
       if (!relayHub.routes().some(route => route.service.hubId === hubId && route.service.origin === origin)) {

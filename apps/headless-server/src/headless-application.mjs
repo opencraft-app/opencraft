@@ -39,7 +39,6 @@ import { createBrowserGrantResolver } from './remote-browser/execution-grant.ts'
 import { connectBrowserOwner } from './remote-browser-owner.mjs';
 
 import { createObservabilityIngress } from "./observability-ingress.mjs";
-import { existsSync } from "node:fs";
 
 import { access, chmod, mkdir, stat, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -672,7 +671,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       },
     }));
     capabilityBindings = new CapabilityBindings(serverStorage);
-    const capabilityKey=capabilitySigningKey(join(dataDirectory,"session-capabilities.key"));
+    const capabilityKey=await capabilitySigningKey(join(dataDirectory,"session-capabilities.key"));
     capabilityMcp = new SessionCapabilityMcp(capabilities, capabilityKey, capabilityBindings, {
       descriptorPath:join(dataDirectory,'session-capabilities.json'), retainEndpoint: true,
       cliDirectory:options.threadCliDirectory ?? join(dataDirectory,'thread-cli'),
@@ -816,10 +815,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     mcpApps = new McpAppsService(join(dataDirectory, "mcp-apps.sqlite"));
     // Reuse the deployment's existing Codex ledger without starting a Codex
     // transport or opening/migrating its writer from the DSH/Pi entry.
+    // Packages bundle the query worker beside this module; source runs use the TypeScript entry.
+    const bundledQueryWorker = fileURLToPath(new URL('./token-usage-query-worker.mjs', import.meta.url));
+    const tokenUsageQueryWorkerEntry = await access(bundledQueryWorker).then(() => bundledQueryWorker,
+      () => fileURLToPath(new URL('../../opencraft-daemon/src/token-usage-query-worker.ts', import.meta.url)));
     usageQueries = new TokenUsageQueryService({
-      entry: existsSync(fileURLToPath(new URL('./token-usage-query-worker.mjs', import.meta.url)))
-        ? fileURLToPath(new URL('./token-usage-query-worker.mjs', import.meta.url))
-        : fileURLToPath(new URL('../../opencraft-daemon/src/token-usage-query-worker.ts', import.meta.url)),
+      entry: tokenUsageQueryWorkerEntry,
       databasePath: join(dataDirectory, 'codex', 'token-usage.sqlite'),
       serverId: `server:${machineIdentity.machineId}:codex`,
       ...(process.env.OPENCRAFT_TOKEN_USAGE_SOURCE === 'ledger' ? {} : {rollout:{nativeHome:join(dataDirectory,'codex','runtime'),
@@ -833,7 +834,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       }
       return service;
     };
-    conversationResources = new ConversationResourceLifecycle(join(dataDirectory, 'conversation-resources.json'), {
+    conversationResources = await ConversationResourceLifecycle.open(join(dataDirectory, 'conversation-resources.json'), {
       terminal: async row => {
         if (options.terminalOwner) {
           if (!remoteBrowser) throw Error('Resource bindings are starting');
@@ -942,9 +943,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           sharedTurnInput: true,
           modelActor: context => actorStore.isCurrent(context) ? actorStore.get(context.actorId) : null,
           tokenUsage: {
-            queryWorkerEntry: existsSync(fileURLToPath(new URL('./token-usage-query-worker.mjs',import.meta.url)))
-              ? fileURLToPath(new URL('./token-usage-query-worker.mjs',import.meta.url))
-              : fileURLToPath(new URL('../../opencraft-daemon/src/token-usage-query-worker.ts',import.meta.url)),
+            queryWorkerEntry: tokenUsageQueryWorkerEntry,
             serverId: `server:${machineIdentity.machineId}:codex`,
             ...(process.env.OPENCRAFT_TOKEN_USAGE_SOURCE === 'ledger' ? {} : {derivedQueries:usageQueries}),
             actor: context => actorStore.isCurrent(context) ? actorStore.get(context.actorId) : null,

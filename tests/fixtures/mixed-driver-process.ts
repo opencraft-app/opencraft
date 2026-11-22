@@ -101,7 +101,7 @@ if (kind === "pi" || kind === "dsh-acp") {
   service = new Collaboration(join(shared, "collaboration.sqlite"), actors, native);
   const execution = createThreadOrchestrationExecution(() => appHost, { enabled: ["codex", "pi", "dsh-acp"], prepared: (id: string) => service.spawnPreparation(id) });
   broker = new ThreadOrchestrationBroker(service, execution); service.start();
-  const mcp = new SessionCapabilityMcp(new SessionCapabilities(), capabilitySigningKey(join(shared, "session-capabilities.key")), undefined, { descriptorPath: join(shared, "session-capabilities.json"),
+  const mcp = new SessionCapabilityMcp(new SessionCapabilities(), await capabilitySigningKey(join(shared, "session-capabilities.key")), undefined, { descriptorPath: join(shared, "session-capabilities.json"),
     async orchestration(session, request) {
       // Same envelope validation/binding as headless-application.mjs. The real
       // production MCP server authenticates this synthetic native session.

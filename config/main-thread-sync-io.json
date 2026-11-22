@@ -71,19 +71,6 @@
     "apps/desktop/src/ui-preferences-store.ts": {
       "DatabaseSync": 1
     },
-    "apps/headless-server/src/conversation-resource-lifecycle.mjs": {
-      "closeSync": 3,
-      "fsyncSync": 2,
-      "mkdirSync": 1,
-      "openSync": 2,
-      "readFileSync": 1,
-      "renameSync": 1,
-      "unlinkSync": 1,
-      "writeFileSync": 1
-    },
-    "apps/headless-server/src/headless-application.mjs": {
-      "existsSync": 2
-    },
     "apps/local-agent-host/src/artifacts/catalog.ts": {
       "chmodSync": 1,
       "DatabaseSync": 2,
@@ -321,36 +308,11 @@
       "DatabaseSync": 1,
       "existsSync": 3
     },
-    "packages/hub-network/src/controller.ts": {
-      "lstatSync": 1
-    },
-    "packages/hub-network/src/store.ts": {
-      "closeSync": 2,
-      "fsyncSync": 1,
-      "lstatSync": 2,
-      "mkdirSync": 1,
-      "openSync": 2,
-      "readFileSync": 1,
-      "renameSync": 1,
-      "writeFileSync": 1
-    },
     "packages/mcp-apps/src/store.ts": {
       "mkdirSync": 1
     },
     "packages/model-usage-policy/src/native.mjs": {
       "DatabaseSync": 2
-    },
-    "packages/session-capabilities/src/credentials.ts": {
-      "closeSync": 1,
-      "mkdirSync": 1,
-      "openSync": 1,
-      "readFileSync": 1,
-      "statSync": 1,
-      "writeFileSync": 1
-    },
-    "packages/session-capabilities/src/mcp.ts": {
-      "lstatSync": 1,
-      "readFileSync": 1
     },
     "packages/sqlite-node/src/backup.ts": {
       "chmodSync": 1,

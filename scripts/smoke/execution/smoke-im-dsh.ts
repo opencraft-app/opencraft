@@ -57,7 +57,7 @@ try{
  appHost=new AppHostServer({physicalHostLifetime:'server',logicalClientRouting:true,createTransport:()=>new WebSocketTransport({url:host.websocketUrl,createSocket:url=>new WebSocket(url)})});
  const execution=createRoutedConversationExecution(()=>appHost,{machineId:'fixture',engines:['dsh'],getInputs:async()=>attachment.inputs});
  collaboration=new Collaboration(join(directory,'collaboration.sqlite'),actors,execution);
- const key=capabilitySigningKey(join(directory,'session-capabilities.key'));
+ const key=await capabilitySigningKey(join(directory,'session-capabilities.key'));
  const mcpOptions={descriptorPath:join(directory,'session-capabilities.json'),authorizeInput:(session:any,inputId:string)=>collaboration!.authorizeInput(session.threadId,inputId,'queue',undefined,session.serverId)};
  mcp=new SessionCapabilityMcp(capabilities,key,undefined,mcpOptions);await mcp.listen();
  const created=await callConversationHost(appHost,{hostId:'opencraft-server',threadId:''},'fixture','thread/start',{permissions:'danger-full-access'});

@@ -7,14 +7,17 @@
     ".": "./src/contract.ts",
     "./node": "./src/node.ts",
     "./store": "./src/store.ts",
-    "./controller": "./src/controller.ts"
+    "./controller": "./src/controller.ts",
+    "./store-file": "./src/store-file.ts",
+    "./open": "./src/open.ts"
   },
   "dependencies": {
     "@opencraft/sqlite-node": "*",
     "@opencraft/identity-core": "*",
     "@opencraft/relay-protocol": "*",
     "ws": "^8.22.1",
-    "proper-lockfile": "^4.1.2"
+    "proper-lockfile": "^4.1.2",
+    "@opencraft/worker-owner": "*"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

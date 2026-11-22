@@ -1,3 +1,4 @@
+import { HubStore } from '../../packages/hub-network/src/store-file.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
@@ -21,19 +22,19 @@ async function fixture() {
   return {root,options:{root,webRoot,dataDirectory:join(root,'data'),port:0,startAgentHost:async()=>({websocketUrl:'ws://127.0.0.1:9/rpc',close:async()=>{}})}};
 }
 async function bounded(operation,ms,label) {let timer;try{return await Promise.race([operation,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(label)),ms);})]);}finally{clearTimeout(timer);}}
-const command=(node,input)=>node.command({revision:node.store.state.revision,...input},'fixture-administrator');
+const command=(node,input)=>node.apply({revision:node.store.state.revision,...input},'fixture-administrator');
 
 test('a real admitted Hub peer cannot hold Headless HTTP shutdown open', {timeout:15000}, async()=>{
   const f=await fixture();let app,peer,server,hub;
   try {
     app=await startHeadlessServer({...f.options,createWebServer:async options=>{hub=options.hubService.node;return createWorkbenchWebServer(options);}});
-    peer=new HubNetwork(join(f.root,'peer.json'));
+    peer=new HubNetwork(new HubStore(join(f.root,'peer.json')));
     server=createServer((_req,res)=>res.end('{}'));server.on('upgrade',(req,socket,head)=>{if(!peer.handleUpgrade(req,socket,head))socket.destroy();});
     server.listen(0,'127.0.0.1');await once(server,'listening');peer.start(server.address().port);
     for(const [node,endpoint] of [[hub,app.url],[peer,`http://127.0.0.1:${server.address().port}`]])
-      command(node,{action:'configure',name:'Fixture Hub',endpoint,origin:'',accepting:true,forwarding:true});
-    const {invitation}=command(hub,{action:'invite',origins:['http://fixture.test'],allowTransit:true});
-    command(peer,{action:'connect',invitation,trustIdentity:true});
+      await command(node,{action:'configure',name:'Fixture Hub',endpoint,origin:'',accepting:true,forwarding:true});
+    const {invitation}=await command(hub,{action:'invite',origins:['http://fixture.test'],allowTransit:true});
+    await command(peer,{action:'connect',invitation,trustIdentity:true});
     const end=Date.now()+5000;while(!hub.links.size&&Date.now()<end)await new Promise(done=>setTimeout(done,20));
     assert.equal(hub.links.size,1,'the real Hub control WebSocket is admitted');
     await bounded(app.close(),1500,'Headless shutdown waited on its own Hub peer');
