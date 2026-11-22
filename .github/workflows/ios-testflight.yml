@@ -116,7 +116,7 @@ jobs:
             --bundle-short-version-string "$APP_VERSION" --bundle-version "$OPENCRAFT_IOS_BUILD_NUMBER" \
             --api-key "$ASC_API_KEY_ID" --api-issuer "$ASC_API_ISSUER_ID" --p8-file-path "$api_key" \
             --wait --output-format json
-          printf 'Uploaded **OpenCraft %s (%s)** for `%s`.\n' "$APP_VERSION" "$OPENCRAFT_IOS_BUILD_NUMBER" "$BUNDLE_ID" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Uploaded **OpenCraft %s (%s)** for %s.\n' "$APP_VERSION" "$OPENCRAFT_IOS_BUILD_NUMBER" "$BUNDLE_ID" >> "$GITHUB_STEP_SUMMARY"
       - name: Remove the temporary signing keychain
         if: always()
         run: |
