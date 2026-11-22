@@ -171,3 +171,23 @@ test("requesting native workspace execution from a configuration-only owner fail
     await owner.close();
   }
 });
+
+test("legacy installation IDs outside the logical workspace contract remain editable but are never offered for Native execution", async (t) => {
+  const f = await delivery(t);
+  const config = { ...f.config, templates: [{ ...f.config.templates[0]!, id: "_legacy-template" }] };
+  await writeFile(f.configPath, JSON.stringify(config), { mode: 0o600 });
+  const owner = await openAssetConfigurations(f.directory, { installationFile: f.configPath });
+  try {
+    assert.equal((await owner.store.snapshot(access())).environments.length, 1);
+    assert.deepEqual((await owner.store.workspaceCatalog(access())).environments, []);
+    await assert.rejects(
+      owner.store.workspaceResolveEnvironment(access(), {
+        version: 1,
+        configurationId: "legacy",
+        templateId: "_legacy-template",
+      }),
+    );
+  } finally {
+    await owner.close();
+  }
+});

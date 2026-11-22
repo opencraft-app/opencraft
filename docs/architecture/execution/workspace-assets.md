@@ -126,3 +126,40 @@ and the Worker file/artifact/terminal/browser bridges remain integration work in
 the same workspace change. Keep the default capability unpublished until that
 composition is complete; do not run a second legacy file-backed provider beside
 the adopted vault-backed installation.
+
+### Gateway Native and file composition candidate
+
+`openWorkspaceExecutionService` composes an already owned Assets Worker with the
+existing private one-shot Core authority. It does not open another store or
+allocate compute. Each physical Native attachment gets its own bounded handoff;
+creation and restoration wait for the actual identity receipt before refreshing
+committed placement. Provisional empty Threads require the adapter's existing
+fresh Native confirmation, not replayed creation. Scoped file requests resolve a
+live Worker binding, pin its generation and propagate cancellation independently
+of the resource lifetime. A missing remote file binding never selects Host files.
+
+The synchronous placement projection is initialized from complete Worker pages,
+including retained idle Threads. Refresh failure fences classification instead
+of replacing it with an empty local-looking map. Actual private Native metadata
+can also establish a remote selection before a Worker receipt exists. That
+read-only remote observation survives a journal refresh; it is not another
+writable identity ledger or authorization grant. Local file scope requires an
+explicit Native `opencraft` selection, not an absent workspace row or cached cwd;
+physical reconnect withdraws those local observations.
+
+When the matched private workspace policy is installed, Core independently reads
+Native's own current `Thread.environments` before accepting local turns or forks.
+A remote, missing, empty, mixed, or unavailable selection is not local execution
+proof, even if the caller supplies a local cwd. An unloaded rollout can only be
+resumed without cwd/environment/root overrides to discover its Native selection;
+it still cannot execute locally until the selection is explicitly confirmed.
+Logical `workspacePlacement` and the private grant are removed before Native.
+Legacy template IDs that cannot satisfy the logical target contract remain
+editable in Assets but are not advertised as executable workspace choices.
+
+The physical routing tests exercise Worker preparation, actual private ticket
+consumption, Core policy, receipt barriers, duplicate suppression, source-aware
+placement and scoped files. Providers and Native replies in those tests remain
+synthetic. The default Headless startup still needs the matching Native service
+installation, remaining artifact/terminal/browser ports and a single Bot/provider
+configuration owner; this candidate does not publish default workspace capability.

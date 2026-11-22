@@ -86,16 +86,23 @@ export class InstalledWorkspaceCatalog {
    * or that default conversation composition is enabled. */
   snapshot(context: WorkspaceCatalogContext) {
     const installed = this.installed(context);
-    const environments = installed.records
-      .filter((r) => r.policy.workspaceRoot === "/workspace")
-      .map((r) => ({
-        target: { version: 1 as const, configurationId: r.environment.id, templateId: r.environment.templateId },
-        name: r.environment.name,
-        status: "configured" as const,
-        resources: { ...r.policy.resources },
-      }));
+    const records = installed.records.filter(
+      (r) =>
+        r.policy.workspaceRoot === "/workspace" &&
+        isComposerSandboxTarget({
+          version: 1,
+          configurationId: r.environment.id,
+          templateId: r.environment.templateId,
+        }),
+    );
+    const environments = records.map((r) => ({
+      target: { version: 1 as const, configurationId: r.environment.id, templateId: r.environment.templateId },
+      name: r.environment.name,
+      status: "configured" as const,
+      resources: { ...r.policy.resources },
+    }));
     const libraries = new ManagedNfsLibraries(this.configurations.vault).snapshot(
-      installed.records.map((r) => ({
+      records.map((r) => ({
         environmentId: r.environment.id,
         templateId: r.environment.templateId,
         credentialId: r.credential.id,

@@ -152,6 +152,10 @@ export class WorkspaceNativeHandoff {
       }
     }
   }
+  /** Receipt correlation only, never a durable placement or delivery claim. */
+  retainsReceipt(id: string | number): boolean {
+    return this.attempts.has(this.key(id));
+  }
   async abort(id: string | number) {
     const attempt = this.attempts.get(this.key(id));
     if (!attempt) return;

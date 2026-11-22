@@ -1,3 +1,9 @@
+import { openWorkspaceExecutionService } from "../../apps/headless-server/src/workspaces/execution-service.js";
+import { createWorkspaceNativeRouting } from "../../apps/headless-server/src/workspaces/native-routing.js";
+import { WorkspacePlacementProjection } from "../../apps/headless-server/src/workspaces/placement-projection.js";
+import { createWorkspaceExecutionAuthority } from "@opencraft/sandbox-node/workspace-execution-channel";
+import { privateWorkspaceExecutionPolicy } from "../../apps/codex-core/src/workspace-execution-policy.js";
+import type { DuplexTransport } from "@opencraft/appserver-client/transport";
 import { WorkspaceNativeAdmission } from "../../apps/headless-server/src/workspaces/native-admission.js";
 import { WorkspaceNativeHandoff } from "../../apps/headless-server/src/workspaces/native-handoff.js";
 import type { TransportSubmissionContext } from "@opencraft/appserver-client/transport";
@@ -332,4 +338,270 @@ test("trusted Native admission separates login/request expiry from monotonic Act
     owner.close();
   }
   assert.equal(listeners.size, 0);
+});
+
+test("physical Native routing composes Worker allocation, one-shot Core policy, exact receipts and resumed generation", async (t) => {
+  const f = await fixture(t),
+    directory = await mkdtemp(join(tmpdir(), "workspace-physical-routing-"));
+  const socketPath = join(directory, "authority.sock"),
+    token = "synthetic-physical-workspace-authority";
+  const authority = await createWorkspaceExecutionAuthority({ socketPath, token });
+  t.after(async () => {
+    await authority.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  const placement = new WorkspacePlacementProjection(f.port);
+  assert.throws(() => placement.has("native-physical"), "Uninitialized placement cannot imply local");
+  await placement.refresh();
+  const context: TransportSubmissionContext = { sender: null };
+  const hooks = createWorkspaceNativeRouting({
+    port: f.port,
+    placement,
+    authority,
+    admit: () => f.access(),
+    onCleanupUnconfirmed() {},
+  });
+  const calls: { method: unknown; params: Record<string, unknown> }[] = [],
+    registrations: unknown[] = [];
+  const policy = privateWorkspaceExecutionPolicy({
+    socketPath,
+    token,
+    readThread: async () => {
+      throw Error("Must not infer local");
+    },
+    nativeRequest: async (_method, params) => {
+      registrations.push(params);
+      return {};
+    },
+  });
+  const nativeObservers = new Set<(frame: string) => void>();
+  const native: DuplexTransport = {
+    status: { state: "open" },
+    async connect() {},
+    async close() {},
+    subscribeStatus: () => () => {},
+    subscribeMessage: (listener) => {
+      nativeObservers.add(listener);
+      return () => {
+        nativeObservers.delete(listener);
+      };
+    },
+    async send(frame) {
+      const message = JSON.parse(frame);
+      calls.push({ method: message.method, params: await policy(message.method, message.params) });
+    },
+  };
+  const methods = new Map<string | number, string>();
+  const transport = hooks.decorateNativeTransport!(native, (requestId) =>
+    methods.has(requestId) ? { method: methods.get(requestId)!, context: () => context } : null,
+  );
+  t.after(async () => {
+    await transport.close();
+    placement.close();
+  });
+  const environment = await f.target(),
+    send = async (id: number, method: string, params: unknown) => {
+      methods.set(id, method);
+      await transport.send(JSON.stringify({ id, method, params }));
+    };
+  await send(1, "thread/start", { workspacePlacement: { version: 1, intentId: "physical-create", environment } });
+  assert.equal(
+    hooks.requiresWorkspaceResume!("native-physical"),
+    false,
+    "Provider preparation is not a durable Native identity",
+  );
+  assert.equal(calls[0]!.params.cwd, "/workspace");
+  assert.deepEqual(calls[0]!.params.runtimeWorkspaceRoots, ["/workspace"]);
+  assert.equal(
+    (calls[0]!.params.environments as { environmentId: string }[])[0]!.environmentId.startsWith("workspace-"),
+    true,
+  );
+  assert.equal(registrations.length, 1);
+  await hooks.finalizeNativeCreation!({
+    requestId: 1,
+    context,
+    params: {},
+    result: { thread: { id: "native-physical" } },
+  });
+  assert.equal(hooks.requiresWorkspaceResume!("native-physical"), true);
+  await send(2, "turn/start", { threadId: "native-physical", input: [{ text: "synthetic-no-model-call" }] });
+  await send(3, "thread/resume", { threadId: "native-physical", path: "/old/cached/rollout" });
+  await hooks.finalizeNativeResume!({
+    requestId: 3,
+    context,
+    params: {},
+    result: { thread: { id: "native-physical" } },
+  });
+  assert.equal((await f.port.fixtureCounters()).allocated, 1);
+  assert.equal(registrations.length, 1, "No redundant Native environment upsert");
+  for (let id = 10; id < 75; id++)
+    await assert.rejects(
+      send(id, "thread/start", {
+        workspacePlacement: { version: 1, intentId: "physical-create", environment },
+      }),
+      /already created/,
+      "Confirmed duplicate preparation must not consume unresolved receipt capacity",
+    );
+
+  let confirmed = 0;
+  await hooks.restoreProvisionalWorkspace!({
+    threadId: "native-physical",
+    context,
+    confirm: async () => {
+      confirmed++;
+      return { thread: { id: "native-physical" } };
+    },
+  });
+  assert.equal(confirmed, 1, "Empty Thread restore requires actual retained Native evidence");
+  assert.equal(calls.length, 3, "Provisional restore never replays Native creation");
+  await assert.rejects(send(4, "thread/fork", { threadId: "native-physical" }));
+  await assert.rejects(
+    send(5, "thread/start", {
+      ephemeral: true,
+      workspacePlacement: { version: 1, intentId: "ephemeral-denied", environment },
+    }),
+  );
+  for (const observe of nativeObservers)
+    observe(
+      JSON.stringify({
+        id: 100,
+        result: { thread: { id: "native-orphan", environments: [{ environmentId: "workspace-ws-orphan" }] } },
+      }),
+    );
+  assert.equal(hooks.requiresWorkspaceResume!("native-orphan"), true);
+  const beforeOrphan = calls.length;
+  await assert.rejects(send(6, "turn/start", { threadId: "native-orphan", cwd: "/local" }));
+  assert.equal(
+    calls.length,
+    beforeOrphan,
+    "Actual Native remote evidence without Worker placement cannot become local input",
+  );
+  assert.doesNotMatch(JSON.stringify(calls), /synthetic-worker-execution-key|__opencraft_workspace_grant/);
+});
+
+test("placement projection keeps classification fenced on refresh failure and advances only complete committed pages", async () => {
+  let fail = false,
+    calls = 0;
+  const projection = new WorkspacePlacementProjection({
+    workspacePlacementPage: async (cursor) => {
+      calls++;
+      if (fail) throw Error("Synthetic owner unavailable");
+      return cursor === undefined
+        ? { items: [{ workspaceId: "ws-a", hostId: "local-codex", threadId: "remote-a" }], next: "ws-a" }
+        : { items: [{ workspaceId: "ws-b", hostId: "local-codex", threadId: "remote-b" }], next: null };
+    },
+  });
+  await projection.refresh();
+  assert.equal(calls, 2);
+  assert.equal(projection.has("remote-a"), true);
+  assert.equal(projection.has("remote-b"), true);
+  fail = true;
+  await assert.rejects(projection.refresh());
+  assert.throws(() => projection.has("remote-a"));
+  assert.throws(() => projection.has("other-local"));
+  fail = false;
+  await projection.refresh();
+  assert.equal(projection.has("remote-a"), true);
+  projection.observeNativeThread({ id: "orphan-remote", environments: [{ environmentId: "workspace-ws-orphan" }] });
+  projection.observeNativeThread({ id: "known-local", environments: [{ environmentId: "opencraft" }] });
+  assert.equal(projection.has("orphan-remote"), true);
+  assert.equal(projection.isKnownLocal("known-local"), true);
+  await projection.refresh();
+  assert.equal(projection.has("orphan-remote"), true, "Journal absence cannot erase actual Native remote evidence");
+  projection.observeNativeThread({ id: "orphan-remote", environments: [{ environmentId: "opencraft" }] });
+  assert.equal(projection.isKnownLocal("orphan-remote"), false, "A new selection cannot silently reconcile an orphan");
+  projection.forgetNativeLocal();
+  assert.equal(projection.isKnownLocal("known-local"), false);
+  projection.close();
+  assert.throws(() => projection.has("remote-a"));
+});
+
+test("Gateway workspace service composes the existing Worker catalog and scoped files without opening another resource writer", async (t) => {
+  const f = await fixture(t),
+    actor = f.access(),
+    environment = await f.target();
+  const token = await f.port.workspaceBegin(actor, { kind: "start", intentId: "gateway-service", environment });
+  await settled(f.port, token, "native-ready");
+  await f.port.workspaceNativeReceipt(token, { result: { thread: { id: "native-gateway-service" } } });
+  const directory = await mkdtemp(join(tmpdir(), "workspace-gateway-service-"));
+  let live = true,
+    localCalls = 0;
+  const service = await openWorkspaceExecutionService({
+    port: f.port,
+    socketPath: join(directory, "authority.sock"),
+    token: "synthetic-gateway-service-authority",
+    actors: {
+      get: (id) =>
+        id === actor.actorId
+          ? {
+              id,
+              kind: "human",
+              enabled: true,
+              generation: actor.generation,
+              displayName: "Fixture",
+              createdAt: 0,
+              createdBy: null,
+            }
+          : null,
+      isCurrent: (context) =>
+        live &&
+        context.actorId === actor.actorId &&
+        context.generation === actor.generation &&
+        context.expiresAt > Date.now(),
+      bindings: () => [{ provider: "local", subject: "fixture" }],
+      onAuthorityChanged: () => () => {},
+    },
+    access: { admitsActor: () => true, store: { revocationRevision: () => 0, onAuthorityChanged: () => () => {} } },
+    onCleanupUnconfirmed() {},
+  });
+  t.after(async () => {
+    await service.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  const context: TransportSubmissionContext = {
+    sender: null,
+    actorContext: {
+      actorId: actor.actorId,
+      generation: actor.generation,
+      credentialId: null,
+      expiresAt: Date.now() + 60000,
+    },
+  };
+  assert.equal((await service.readCatalog("local-codex", context)).environments.length, 1);
+  assert.deepEqual(await service.readFileScope("local-codex", context, "native-gateway-service"), {
+    kind: "workspace",
+    threadId: "native-gateway-service",
+    root: "/workspace",
+  });
+  assert.equal(
+    service.createCodexWorkspaceHooks({ hostId: "local-codex" }).requiresWorkspaceResume!("native-gateway-service"),
+    true,
+  );
+  const local = async () => {
+    localCalls++;
+    return { files: { request: async () => ({ local: true }) }, assertCurrent() {} };
+  };
+  const files = await service.selectHostFiles(
+    "local-codex",
+    context,
+    { workspaceThreadId: "native-gateway-service" },
+    local,
+  );
+  assert.deepEqual(await files.files.request("fs/readDirectory", { path: "/workspace" }), { entries: [] });
+  await assert.rejects(service.selectHostFiles("local-codex", context, { workspaceThreadId: "unknown-thread" }, local));
+  assert.equal(localCalls, 0, "An unresolved remote scope never becomes controller files");
+  await assert.rejects(
+    service.readFileScope("local-codex", context, "unknown-thread"),
+    "A journal absence alone cannot authorize local file scope",
+  );
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(files.files.request("fs/readDirectory", { path: "/workspace" }, controller.signal));
+  live = false;
+  await assert.rejects(files.assertCurrent());
+  await assert.rejects(service.readCatalog("local-codex", context));
+  assert.equal((await f.port.fixtureCounters()).allocated, 1);
+  await service.close();
+  await assert.rejects(service.readFileScope("local-codex", context, "native-gateway-service"));
+  assert.equal((await f.port.fixtureCounters()).retained, 1, "The composition does not own/close the caller Worker");
 });
