@@ -6,8 +6,15 @@ import { createCrewIntake } from "../src/runtime/crew-intake.mjs";
 
 const bob = { actorId: "bob", displayName: "Bob", kind: "human" };
 const alice = { actorId: "alice", displayName: "Alice", kind: "human" };
-const work = (id, requesterId, chain, request = "tidy the release") =>
-  ({ id, state: "open", origin: "member", requesterId, chain, request, openChildren: 0 });
+const work = (id, requesterId, chain, request = "tidy the release") => ({
+  id,
+  state: "open",
+  origin: "member",
+  requesterId,
+  chain,
+  request,
+  openChildren: 0,
+});
 
 /** Stands in for the Core crew ledger as the Host would forward it. */
 function core(works, replies = []) {
@@ -26,7 +33,15 @@ function core(works, replies = []) {
       }
       if (method === "opencraft/crew/work/message") return { messageId: "sent:" + params.idempotencyKey };
       if (method === "opencraft/crew/work/attachment")
-        return { file: { name: "notes.txt", type: "text/plain", size: 5, next: null, base64: Buffer.from("draft").toString("base64") } };
+        return {
+          file: {
+            name: "notes.txt",
+            type: "text/plain",
+            size: 5,
+            next: null,
+            base64: Buffer.from("draft").toString("base64"),
+          },
+        };
       throw Error("unexpected " + method);
     },
   };
@@ -38,9 +53,14 @@ function setup(t, ledger) {
   t.after(() => store.close());
   const runner = () => ({ uow: store.uow, profile: store.profile, dispatch: (r) => store.app.dispatch(r) });
   return {
-    get store() { return store; },
+    get store() {
+      return store;
+    },
     intake: () => createCrewIntake({ runner: runner(), request: ledger.request }),
-    reopen() { store.close(); store = new Store(profile); },
+    reopen() {
+      store.close();
+      store = new Store(profile);
+    },
   };
 }
 
@@ -61,24 +81,40 @@ test("crew work becomes a turn in its dispatcher's conversation and closes only 
 
   const receipt = await crew.deliver({ id: "m1", conversation_id: turn.conversation_id }, "which branch?");
   assert.equal(receipt.messageId, "sent:m1");
-  assert.deepEqual(ledger.calls.at(-1), ["opencraft/crew/work/message",
-    { workId: "w1", targetActorId: "bob", content: "which branch?", idempotencyKey: "m1", asks: false }]);
-  await crew.deliver({ id: "m1q", conversation_id: turn.conversation_id, body: { type: "question", question: { prompt: "2.3 or 2.3.1?" } } }, "2.3 or 2.3.1?");
+  assert.deepEqual(ledger.calls.at(-1), [
+    "opencraft/crew/work/message",
+    { workId: "w1", targetActorId: "bob", content: "which branch?", idempotencyKey: "m1", asks: false },
+  ]);
+  await crew.deliver(
+    {
+      id: "m1q",
+      conversation_id: turn.conversation_id,
+      body: { type: "question", question: { prompt: "2.3 or 2.3.1?" } },
+    },
+    "2.3 or 2.3.1?",
+  );
   assert.equal(ledger.calls.at(-1)[1].asks, true, "an Interaction question waits on the person it asks");
 
   ledger.works.push(work("w2", "bob", [bob, alice], "main, please"));
   s.reopen();
   crew = s.intake();
   await crew.poll(() => false);
-  assert.equal(s.store.app.reception.turn("crew:w2").conversation_id, turn.conversation_id,
-    "a follow-up from the same dispatcher lands in the same conversation after a restart");
+  assert.equal(
+    s.store.app.reception.turn("crew:w2").conversation_id,
+    turn.conversation_id,
+    "a follow-up from the same dispatcher lands in the same conversation after a restart",
+  );
 
   s.store.db.prepare("UPDATE reception SET status='settled' WHERE id='crew:w1'").run();
   await crew.poll(() => false);
   assert.equal(ledger.works[0].state, "open", "the dispatcher's follow-up is still queued in the same conversation");
   s.store.db.prepare("UPDATE reception SET status='settled' WHERE id='crew:w2'").run();
   await crew.poll(() => false);
-  assert.deepEqual(ledger.works.map((w) => w.state), ["closed", "closed"], "settled and quiet closes the work");
+  assert.deepEqual(
+    ledger.works.map((w) => w.state),
+    ["closed", "closed"],
+    "settled and quiet closes the work",
+  );
 });
 
 test("work whose dispatcher left before intake is closed without starting", async (t) => {
@@ -112,7 +148,16 @@ test("a reply from a Bot it handed work to returns to the conversation of the wo
   assert.equal(ledger.works[0].state, "open", "work with an open hand-off stays open");
 
   const zhe = { actorId: "zhe", displayName: "Zhe", kind: "session" };
-  ledger.replies.push({ seq: 1, messageId: "r1", workId: "root", requesterId: "bob", state: "open", fromWorkId: "child", from: zhe, content: "signatures look fine" });
+  ledger.replies.push({
+    seq: 1,
+    messageId: "r1",
+    workId: "root",
+    requesterId: "bob",
+    state: "open",
+    fromWorkId: "child",
+    from: zhe,
+    content: "signatures look fine",
+  });
   ledger.works[0].openChildren = 0;
   await crew.poll(() => false);
   const turn = s.store.app.reception.turn("crew-reply:r1");
@@ -121,7 +166,11 @@ test("a reply from a Bot it handed work to returns to the conversation of the wo
   assert.equal(ledger.works[0].state, "open", "the returned reply is still to be handled");
 
   await crew.poll(() => false);
-  assert.equal(ledger.calls.filter(([m, p]) => m === "opencraft/crew/work/replies" && p.after === 1).length > 0, true, "the cursor moved past the reply");
+  assert.equal(
+    ledger.calls.filter(([m, p]) => m === "opencraft/crew/work/replies" && p.after === 1).length > 0,
+    true,
+    "the cursor moved past the reply",
+  );
   s.store.db.prepare("UPDATE reception SET status='settled' WHERE id='crew-reply:r1'").run();
   await crew.poll(() => false);
   assert.equal(ledger.works[0].state, "closed");
@@ -136,7 +185,9 @@ test("a reply that never reached its dispatcher keeps the work open", async (t) 
   s.store.db.prepare("UPDATE reception SET status='settled' WHERE id='crew:w1'").run();
   // A synthetic outbox row standing for a reply whose five delivery attempts all failed.
   s.store.db.exec("PRAGMA foreign_keys=OFF");
-  s.store.db.prepare("INSERT INTO user_message(id,conversation_id,body_json,state,created_at) VALUES('lost',?,'{}','failed',?)").run(turn.conversation_id, Date.now() + 1000);
+  s.store.db
+    .prepare("INSERT INTO user_message(id,conversation_id,body_json,state,created_at) VALUES('lost',?,'{}','failed',?)")
+    .run(turn.conversation_id, Date.now() + 1000);
   s.store.db.exec("PRAGMA foreign_keys=ON");
   await crew.poll(() => false);
   assert.equal(ledger.works[0].state, "open");
@@ -160,7 +211,12 @@ test("when the dispatcher leaves after work started, its running Work is cancell
 });
 
 test("a file sent with the dispatch comes in with the turn", async (t) => {
-  const ledger = core([{ ...work("w1", "bob", [bob, alice], "tidy this up"), attachment: { name: "notes.txt", type: "text/plain", size: 5 } }]);
+  const ledger = core([
+    {
+      ...work("w1", "bob", [bob, alice], "tidy this up"),
+      attachment: { name: "notes.txt", type: "text/plain", size: 5 },
+    },
+  ]);
   const s = setup(t, ledger);
   await s.intake().poll(() => false);
   const turn = s.store.app.reception.turn("crew:w1");
@@ -182,9 +238,19 @@ test("the desk shows each dispatcher's conversation and tasks, never the owner's
 
   const desk = crew.desk({ actorId: "bob" });
   assert.deepEqual(desk.conversations.map((c) => c.actorId).sort(), ["alice", "bob"]);
-  assert.deepEqual(desk.selected.messages.map((m) => [m.role, m.text]), [["user", "Bob:\ntidy the release"]]);
-  assert.deepEqual(desk.selected.works.map((w) => [w.id, w.title, w.status]), [[workId, "整理发布说明", "queued"]]);
+  assert.deepEqual(
+    desk.selected.messages.map((m) => [m.role, m.text]),
+    [["user", "Bob:\ntidy the release"]],
+  );
+  assert.deepEqual(
+    desk.selected.works.map((w) => [w.id, w.title, w.status]),
+    [[workId, "整理发布说明", "queued"]],
+  );
   assert.ok(!JSON.stringify(crew.desk()).includes("私事"), "the owner's conversation is not on the desk");
   assert.equal(crew.desk({ actorId: "carol" }).selected, null);
-  assert.throws(() => crew.desk({ conversationId }), /Invalid desk request/, "a desk is read by dispatcher, not by raw conversation");
+  assert.throws(
+    () => crew.desk({ conversationId }),
+    /Invalid desk request/,
+    "a desk is read by dispatcher, not by raw conversation",
+  );
 });

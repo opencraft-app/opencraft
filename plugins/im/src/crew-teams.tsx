@@ -9,9 +9,9 @@ import { CrewDeskButton } from "./crew-desk-button";
 import "./crew-teams.scss";
 
 // The desk and the settings dialog bring heavier code; they load when first opened.
-const CrewDesk = lazy(() => import("./crew-desk").then(m => ({ default: m.CrewDesk })));
-const CrewTeamSettings = lazy(() => import("./crew-team-settings").then(m => ({ default: m.CrewTeamSettings })));
-const CrewTeamStart = lazy(() => import("./crew-team-settings").then(m => ({ default: m.CrewTeamStart })));
+const CrewDesk = lazy(() => import("./crew-desk").then((m) => ({ default: m.CrewDesk })));
+const CrewTeamSettings = lazy(() => import("./crew-team-settings").then((m) => ({ default: m.CrewTeamSettings })));
+const CrewTeamStart = lazy(() => import("./crew-team-settings").then((m) => ({ default: m.CrewTeamStart })));
 
 const messages = {
   count: { id: "crew.teams.count", defaultMessage: "{count, plural, one {# member} other {# members}}" },
@@ -28,7 +28,13 @@ export type CrewTeamPerson = CrewPhonebookEntry;
  * and Agents. The Core decides membership and who may manage a team; this view only groups it.
  * Without team support on the Host it renders nothing and the plain member list stays as it was.
  */
-export function CrewTeams({ rpc, signal, renderMember, onTeamed, reportError }: {
+export function CrewTeams({
+  rpc,
+  signal,
+  renderMember,
+  onTeamed,
+  reportError,
+}: {
   rpc: ChannelRpc;
   signal: AbortSignal;
   /** The Members tab's own row, so people look the same in and out of a team. */
@@ -56,47 +62,107 @@ export function CrewTeams({ rpc, signal, renderMember, onTeamed, reportError }: 
     }
   }
   useEffect(() => {
-    const c = new AbortController(), retire = () => c.abort();
+    const c = new AbortController(),
+      retire = () => c.abort();
     life.current = c;
     signal.addEventListener("abort", retire, { once: true });
     void load();
     const timer = setInterval(() => void load(), REFRESH_MS);
-    return () => { clearInterval(timer); signal.removeEventListener("abort", retire); c.abort(); life.current = null; };
+    return () => {
+      clearInterval(timer);
+      signal.removeEventListener("abort", retire);
+      c.abort();
+      life.current = null;
+    };
   }, [rpc, signal]);
   useEffect(() => {
-    onTeamed(new Set((teams ?? []).flatMap(team => team.members.map(member => member.actorId))));
+    onTeamed(new Set((teams ?? []).flatMap((team) => team.members.map((member) => member.actorId))));
   }, [teams]);
 
   // No answer yet, or a Host without teams: the Members tab stays as it was.
   if (!teams) return null;
-  const open = teams.find(team => team.id === managing) ?? null;
-  return <>
-    {teams.map(team => <section className="crew-team" key={team.id} aria-label={team.name}>
-      <header className="crew-team__header">
-        <h3>{team.name}<small>{intl.formatMessage(messages.count, { count: team.members.length })}</small></h3>
-        {team.role === "owner" ? <IconButton variant="ghost" size="accessory" aria-label={intl.formatMessage(messages.settings, { name: team.name })}
-          onClick={() => setManaging(team.id)}><SettingsGearIcon /></IconButton> : null}
-      </header>
-      <div className="people-members">
-        {team.members.map(member => {
-          // Agents of your team are always reachable; people are when the team lets members contact each other.
-          const reachable = member.kind === "session" || team.openContact;
-          return <div className="crew-team__row" key={member.actorId}>
-            {renderMember(member, reachable, member.kind === "session" ? <CrewDeskButton bot={member} onOpen={() => setDesk(member)} /> : undefined)}
-          </div>;
-        })}
+  const open = teams.find((team) => team.id === managing) ?? null;
+  return (
+    <>
+      {teams.map((team) => (
+        <section className="crew-team" key={team.id} aria-label={team.name}>
+          <header className="crew-team__header">
+            <h3>
+              {team.name}
+              <small>{intl.formatMessage(messages.count, { count: team.members.length })}</small>
+            </h3>
+            {team.role === "owner" ? (
+              <IconButton
+                variant="ghost"
+                size="accessory"
+                aria-label={intl.formatMessage(messages.settings, { name: team.name })}
+                onClick={() => setManaging(team.id)}
+              >
+                <SettingsGearIcon />
+              </IconButton>
+            ) : null}
+          </header>
+          <div className="people-members">
+            {team.members.map((member) => {
+              // Agents of your team are always reachable; people are when the team lets members contact each other.
+              const reachable = member.kind === "session" || team.openContact;
+              return (
+                <div className="crew-team__row" key={member.actorId}>
+                  {renderMember(
+                    member,
+                    reachable,
+                    member.kind === "session" ? (
+                      <CrewDeskButton bot={member} onOpen={() => setDesk(member)} />
+                    ) : undefined,
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+      <div className="crew-team__start">
+        <SettingsButton variant="quiet" onClick={() => setStarting("create")}>
+          {intl.formatMessage(messages.create)}
+        </SettingsButton>
+        <SettingsButton variant="quiet" onClick={() => setStarting("join")}>
+          {intl.formatMessage(messages.join)}
+        </SettingsButton>
       </div>
-    </section>)}
-    <div className="crew-team__start">
-      <SettingsButton variant="quiet" onClick={() => setStarting("create")}>{intl.formatMessage(messages.create)}</SettingsButton>
-      <SettingsButton variant="quiet" onClick={() => setStarting("join")}>{intl.formatMessage(messages.join)}</SettingsButton>
-    </div>
-    {starting ? <Suspense fallback={null}>
-      <CrewTeamStart rpc={rpc} mode={starting} reportError={reportError} onChanged={setTeams} onClose={() => setStarting(null)} />
-    </Suspense> : null}
-    {open ? <Suspense fallback={null}>
-      <CrewTeamSettings rpc={rpc} team={open} reportError={reportError} onChanged={setTeams} onClose={() => setManaging(null)} />
-    </Suspense> : null}
-    {desk ? <Suspense fallback={null}><CrewDesk rpc={rpc} bot={desk} open onOpenChange={next => { if (!next) setDesk(null); }} /></Suspense> : null}
-  </>;
+      {starting ? (
+        <Suspense fallback={null}>
+          <CrewTeamStart
+            rpc={rpc}
+            mode={starting}
+            reportError={reportError}
+            onChanged={setTeams}
+            onClose={() => setStarting(null)}
+          />
+        </Suspense>
+      ) : null}
+      {open ? (
+        <Suspense fallback={null}>
+          <CrewTeamSettings
+            rpc={rpc}
+            team={open}
+            reportError={reportError}
+            onChanged={setTeams}
+            onClose={() => setManaging(null)}
+          />
+        </Suspense>
+      ) : null}
+      {desk ? (
+        <Suspense fallback={null}>
+          <CrewDesk
+            rpc={rpc}
+            bot={desk}
+            open
+            onOpenChange={(next) => {
+              if (!next) setDesk(null);
+            }}
+          />
+        </Suspense>
+      ) : null}
+    </>
+  );
 }

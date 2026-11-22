@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { SettingsGroup, SettingsRow, SettingsSection, SettingsSwitch, type ExtensionSettingsViewProps } from "@opencraft/extension-react";
+import {
+  SettingsGroup,
+  SettingsRow,
+  SettingsSection,
+  SettingsSwitch,
+  type ExtensionSettingsViewProps,
+} from "@opencraft/extension-react";
 import type { CrewPhonebook as Phonebook } from "@opencraft/appserver-protocol";
 import { useIntl } from "@opencraft/i18n/react";
 import type { ChannelRpc } from "./channel-client";
@@ -9,7 +15,8 @@ const messages = {
   title: { id: "crew.phonebook.title", defaultMessage: "Contacts" },
   about: {
     id: "crew.phonebook.about",
-    defaultMessage: "The people and Agents in its Server this assistant may contact on its own. Whoever gives it work can always hear back.",
+    defaultMessage:
+      "The people and Agents in its Server this assistant may contact on its own. Whoever gives it work can always hear back.",
   },
   readOnly: { id: "crew.phonebook.readOnly", defaultMessage: "Only the Server owner can change contacts." },
   agent: { id: "crew.phonebook.agent", defaultMessage: "Agent" },
@@ -23,7 +30,11 @@ const messages = {
  * who may edit; this view only projects them. A Bot outside every Server has no phonebook and
  * the section is not shown.
  */
-export function CrewPhonebook({ rpc, botId, reportError }: {
+export function CrewPhonebook({
+  rpc,
+  botId,
+  reportError,
+}: {
   rpc: ChannelRpc;
   botId: string;
   reportError: ExtensionSettingsViewProps["reportError"];
@@ -47,36 +58,50 @@ export function CrewPhonebook({ rpc, botId, reportError }: {
         // Not in a Server, or unreachable: there is no phonebook to show.
       }
     })();
-    return () => { c.abort(); life.current = null; };
+    return () => {
+      c.abort();
+      life.current = null;
+    };
   }, [rpc, botId]);
 
   async function toggle(actorId: string, present: boolean) {
     const c = life.current;
     if (!c || pending.has(actorId)) return;
-    setPending(previous => new Set(previous).add(actorId));
+    setPending((previous) => new Set(previous).add(actorId));
     try {
       const result = await rpc.request("opencraft/crew/phonebook/set", { botId, actorId, present }, c.signal);
       if (!c.signal.aborted) setBook(result);
     } catch {
       if (!c.signal.aborted) reportError?.({ key: "crew-phonebook", message: f("error") });
     } finally {
-      if (!c.signal.aborted) setPending(previous => { const next = new Set(previous); next.delete(actorId); return next; });
+      if (!c.signal.aborted)
+        setPending((previous) => {
+          const next = new Set(previous);
+          next.delete(actorId);
+          return next;
+        });
     }
   }
 
   if (!book) return null;
-  const listed = new Set(book.entries.map(entry => entry.actorId));
+  const listed = new Set(book.entries.map((entry) => entry.actorId));
   return (
     <SettingsSection title={f("title")} description={book.editable ? f("about") : `${f("about")} ${f("readOnly")}`}>
-      {book.members.length === 0 ? <p className="crew-phonebook__empty">{f("empty")}</p> : (
+      {book.members.length === 0 ? (
+        <p className="crew-phonebook__empty">{f("empty")}</p>
+      ) : (
         <SettingsGroup>
-          {book.members.map(member => (
-            <SettingsRow key={member.actorId} label={member.displayName} description={f(member.kind === "session" ? "agent" : "member")}>
+          {book.members.map((member) => (
+            <SettingsRow
+              key={member.actorId}
+              label={member.displayName}
+              description={f(member.kind === "session" ? "agent" : "member")}
+            >
               <SettingsSwitch
                 label={member.displayName}
                 checked={listed.has(member.actorId)}
                 disabled={!book.editable || pending.has(member.actorId)}
-                onCheckedChange={present => void toggle(member.actorId, present)}
+                onCheckedChange={(present) => void toggle(member.actorId, present)}
               />
             </SettingsRow>
           ))}

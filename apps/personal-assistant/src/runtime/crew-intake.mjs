@@ -47,22 +47,46 @@ export function createCrewIntake({ runner, request }) {
     const turn = db().prepare("SELECT status,created_at FROM reception WHERE id=?").get(inputId(work.id));
     if (!turn || turn.status !== "settled") return false;
     // A reply returned to this conversation is a turn of its own; wait for it as well.
-    if (db().prepare("SELECT 1 FROM reception WHERE conversation_id=? AND status IN ('queued','running') LIMIT 1").get(conversationId)) return false;
+    if (
+      db()
+        .prepare("SELECT 1 FROM reception WHERE conversation_id=? AND status IN ('queued','running') LIMIT 1")
+        .get(conversationId)
+    )
+      return false;
     const marks = ACTIVE_WORK.map(() => "?").join(",");
-    if (db().prepare(`SELECT 1 FROM work w JOIN conversation_work c ON c.work_id=w.id WHERE c.conversation_id=? AND w.status IN (${marks}) LIMIT 1`)
-      .get(conversationId, ...ACTIVE_WORK)) return false;
-    if (db().prepare("SELECT 1 FROM user_message WHERE conversation_id=? AND state='pending' LIMIT 1").get(conversationId)) return false;
+    if (
+      db()
+        .prepare(
+          `SELECT 1 FROM work w JOIN conversation_work c ON c.work_id=w.id WHERE c.conversation_id=? AND w.status IN (${marks}) LIMIT 1`,
+        )
+        .get(conversationId, ...ACTIVE_WORK)
+    )
+      return false;
+    if (
+      db().prepare("SELECT 1 FROM user_message WHERE conversation_id=? AND state='pending' LIMIT 1").get(conversationId)
+    )
+      return false;
     // A reply that could not be delivered leaves the work open, visibly stuck, instead of closing unanswered.
-    return !db().prepare("SELECT 1 FROM user_message WHERE conversation_id=? AND state='failed' AND created_at>=? LIMIT 1").get(conversationId, turn.created_at);
+    return !db()
+      .prepare("SELECT 1 FROM user_message WHERE conversation_id=? AND state='failed' AND created_at>=? LIMIT 1")
+      .get(conversationId, turn.created_at);
   }
 
   const answersTo = (work) => work.chain.some((p) => p.actorId === work.requesterId);
   async function stop(conversationId, crewWorkId) {
     const marks = ACTIVE_WORK.map(() => "?").join(",");
-    const active = db().prepare(`SELECT w.id,w.revision FROM work w JOIN conversation_work c ON c.work_id=w.id
-      WHERE c.conversation_id=? AND w.status IN (${marks})`).all(conversationId, ...ACTIVE_WORK);
+    const active = db()
+      .prepare(
+        `SELECT w.id,w.revision FROM work w JOIN conversation_work c ON c.work_id=w.id
+      WHERE c.conversation_id=? AND w.status IN (${marks})`,
+      )
+      .all(conversationId, ...ACTIVE_WORK);
     for (const w of active) {
-      const response = await runner.dispatch({ op: "cancel", id: `crew-stop:${crewWorkId}:${w.id}`, params: { workId: w.id, expectedRevision: w.revision } });
+      const response = await runner.dispatch({
+        op: "cancel",
+        id: `crew-stop:${crewWorkId}:${w.id}`,
+        params: { workId: w.id, expectedRevision: w.revision },
+      });
       if (response?.ok === false) throw Error("Crew stop rejected");
     }
   }
@@ -70,7 +94,9 @@ export function createCrewIntake({ runner, request }) {
 
   /** The dispatcher whose conversation a runner Work belongs to, or null for any other Work. */
   const requesterOf = (workId) => {
-    for (const { conversation_id } of db().prepare("SELECT conversation_id FROM conversation_work WHERE work_id=?").all(workId)) {
+    for (const { conversation_id } of db()
+      .prepare("SELECT conversation_id FROM conversation_work WHERE work_id=?")
+      .all(workId)) {
       const actorId = meta(conversationKey(conversation_id));
       if (actorId) return actorId;
     }
@@ -85,30 +111,64 @@ export function createCrewIntake({ runner, request }) {
   /** A dispatcher's own turns are theirs; a returned reply belongs to whoever wrote it. */
   function authorOf(message, dispatcher) {
     let inputId;
-    try { inputId = JSON.parse(message.data)?.inputId; } catch { inputId = undefined; }
+    try {
+      inputId = JSON.parse(message.data)?.inputId;
+    } catch {
+      inputId = undefined;
+    }
     return typeof inputId === "string" && inputId.startsWith("crew-reply:")
-      ? meta("crew:reply-from:" + inputId.slice("crew-reply:".length)) ?? dispatcher
+      ? (meta("crew:reply-from:" + inputId.slice("crew-reply:".length)) ?? dispatcher)
       : dispatcher;
   }
   function desk(params = {}) {
-    if (!params || typeof params !== "object" || Array.isArray(params) || Object.keys(params).some((k) => k !== "actorId")
-      || (params.actorId !== undefined && (typeof params.actorId !== "string" || !params.actorId || params.actorId.length > 256)))
+    if (
+      !params ||
+      typeof params !== "object" ||
+      Array.isArray(params) ||
+      Object.keys(params).some((k) => k !== "actorId") ||
+      (params.actorId !== undefined &&
+        (typeof params.actorId !== "string" || !params.actorId || params.actorId.length > 256))
+    )
       throw Error("Invalid desk request");
-    const conversations = db().prepare("SELECT key,value FROM meta WHERE key LIKE 'crew:peer:%'").all().map(({ key, value }) => ({
-      actorId: key.slice("crew:peer:".length),
-      conversationId: value,
-      updatedAt: Number(db().prepare("SELECT MAX(at) AS at FROM conversation_message WHERE conversation_id=?").get(value)?.at ?? 0),
-    })).sort((a, b) => b.updatedAt - a.updatedAt);
-    const chosen = params.actorId === undefined ? conversations[0] : conversations.find((c) => c.actorId === params.actorId);
-    const selected = chosen ? {
-      actorId: chosen.actorId,
-      messages: db().prepare(`SELECT id,role,text,at,data FROM conversation_message WHERE conversation_id=? AND role IN ('user','assistant')
-        ORDER BY seq DESC LIMIT 100`).all(chosen.conversationId).reverse()
-        .map((m) => ({ id: m.id, role: m.role, text: m.text.slice(0, 16384), at: m.at, ...(m.role === "user" ? { authorId: authorOf(m, chosen.actorId) } : {}) })),
-      works: db().prepare(`SELECT w.id,w.text,w.status,w.updated_at FROM work w JOIN conversation_work c ON c.work_id=w.id
-        WHERE c.conversation_id=? ORDER BY w.updated_at DESC LIMIT 20`).all(chosen.conversationId)
-        .map((w) => ({ id: w.id, title: w.text.slice(0, 512), status: w.status, updatedAt: w.updated_at })),
-    } : null;
+    const conversations = db()
+      .prepare("SELECT key,value FROM meta WHERE key LIKE 'crew:peer:%'")
+      .all()
+      .map(({ key, value }) => ({
+        actorId: key.slice("crew:peer:".length),
+        conversationId: value,
+        updatedAt: Number(
+          db().prepare("SELECT MAX(at) AS at FROM conversation_message WHERE conversation_id=?").get(value)?.at ?? 0,
+        ),
+      }))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+    const chosen =
+      params.actorId === undefined ? conversations[0] : conversations.find((c) => c.actorId === params.actorId);
+    const selected = chosen
+      ? {
+          actorId: chosen.actorId,
+          messages: db()
+            .prepare(
+              `SELECT id,role,text,at,data FROM conversation_message WHERE conversation_id=? AND role IN ('user','assistant')
+        ORDER BY seq DESC LIMIT 100`,
+            )
+            .all(chosen.conversationId)
+            .reverse()
+            .map((m) => ({
+              id: m.id,
+              role: m.role,
+              text: m.text.slice(0, 16384),
+              at: m.at,
+              ...(m.role === "user" ? { authorId: authorOf(m, chosen.actorId) } : {}),
+            })),
+          works: db()
+            .prepare(
+              `SELECT w.id,w.text,w.status,w.updated_at FROM work w JOIN conversation_work c ON c.work_id=w.id
+        WHERE c.conversation_id=? ORDER BY w.updated_at DESC LIMIT 20`,
+            )
+            .all(chosen.conversationId)
+            .map((w) => ({ id: w.id, title: w.text.slice(0, 512), status: w.status, updatedAt: w.updated_at })),
+        }
+      : null;
     return { conversations: conversations.map(({ actorId, updatedAt }) => ({ actorId, updatedAt })), selected };
   }
 
@@ -136,12 +196,19 @@ export function createCrewIntake({ runner, request }) {
         // A reply to work that already closed, or that this runner never took in, has no turn to join.
         if (reply.state === "open" && conversationId) {
           // The desk shows who actually wrote a returned reply, not only whose conversation holds it.
-          runner.uow.transaction(() => db().prepare(UPSERT).run("crew:reply-from:" + reply.messageId, reply.from.actorId));
+          runner.uow.transaction(() =>
+            db()
+              .prepare(UPSERT)
+              .run("crew:reply-from:" + reply.messageId, reply.from.actorId),
+          );
           const response = await runner.dispatch({
             op: "say",
             id: "crew-reply:" + reply.messageId,
             // The hand-off it came from lets the Bot answer back down with crew_message.
-            params: { conversationId, text: `${reply.from.displayName} (${reply.from.actorId}, work ${reply.fromWorkId}):\n${reply.content}` },
+            params: {
+              conversationId,
+              text: `${reply.from.displayName} (${reply.from.actorId}, work ${reply.fromWorkId}):\n${reply.content}`,
+            },
           });
           if (response?.ok === false) throw Error("Crew reply rejected");
         }
@@ -160,7 +227,12 @@ export function createCrewIntake({ runner, request }) {
           const conversationId = await conversationFor(work.requesterId);
           const from = work.chain.find((p) => p.actorId === work.requesterId).displayName;
           const attachments = work.attachment
-            ? [await downloadAttachment(runner.profile.path, async (offset) => (await request("opencraft/crew/work/attachment", { workId: work.id, offset })).file)]
+            ? [
+                await downloadAttachment(
+                  runner.profile.path,
+                  async (offset) => (await request("opencraft/crew/work/attachment", { workId: work.id, offset })).file,
+                ),
+              ]
             : undefined;
           const response = await runner.dispatch({
             op: "say",
@@ -178,7 +250,8 @@ export function createCrewIntake({ runner, request }) {
           await request("opencraft/crew/work/finish", { workId: work.id });
           continue;
         }
-        if (conversationId && quiet(work, conversationId)) await request("opencraft/crew/work/finish", { workId: work.id });
+        if (conversationId && quiet(work, conversationId))
+          await request("opencraft/crew/work/finish", { workId: work.id });
       }
     },
 
@@ -192,8 +265,17 @@ export function createCrewIntake({ runner, request }) {
       const work = works.find((w) => w.requesterId === actorId && w.chain.length);
       if (!work) throw Error("No open crew work for this conversation");
       // A question the Bot put to someone through its Interaction service waits on them until answered.
-      return request("opencraft/crew/work/message",
-        { workId: work.id, targetActorId: work.chain[0].actorId, content: text, idempotencyKey: message.id, asks: !!message.body?.question }, signal);
+      return request(
+        "opencraft/crew/work/message",
+        {
+          workId: work.id,
+          targetActorId: work.chain[0].actorId,
+          content: text,
+          idempotencyKey: message.id,
+          asks: !!message.body?.question,
+        },
+        signal,
+      );
     },
   };
 }

@@ -22,8 +22,10 @@ const fixture = process.argv.includes("--fixture");
 const port = Number(process.env.OPENCRAFT_CREW_PREVIEW_PORT ?? 10010);
 const origin = `http://127.0.0.1:${port}`;
 const home = resolve(process.env.OPENCRAFT_CREW_PREVIEW_DATA ?? join(homedir(), ".opencraft", "crew-preview"));
-const dataDirectory = join(home, "server"), privateDirectory = join(home, "private");
-const accountsFile = join(privateDirectory, "accounts.json"), authFile = join(privateDirectory, "auth.json");
+const dataDirectory = join(home, "server"),
+  privateDirectory = join(home, "private");
+const accountsFile = join(privateDirectory, "accounts.json"),
+  authFile = join(privateDirectory, "auth.json");
 const webRoot = join(root, "apps/workbench-web/dist");
 
 if (process.argv.includes("--reset")) await rm(home, { recursive: true, force: true });
@@ -32,15 +34,26 @@ for (const directory of [home, dataDirectory, privateDirectory]) {
   await chmod(directory, 0o700);
 }
 // The pinned execution engine the Headless server expects; idempotent, as in npm run dev.
-if (spawnSync("npm", ["run", "prepare:dsh-runtime"], { cwd: root, stdio: "inherit" }).status !== 0) throw Error("Engine preparation failed");
+if (spawnSync("npm", ["run", "prepare:dsh-runtime"], { cwd: root, stdio: "inherit" }).status !== 0)
+  throw Error("Engine preparation failed");
 // The Headless server serves only a headless Web build; build one the same way deployment does.
 const headlessBuild = async () => {
-  try { return JSON.parse(await readFile(join(webRoot, "version.json"), "utf8"))?.headlessServer === true; } catch { return false; }
+  try {
+    return JSON.parse(await readFile(join(webRoot, "version.json"), "utf8"))?.headlessServer === true;
+  } catch {
+    return false;
+  }
 };
-if (!await headlessBuild() || process.argv.includes("--rebuild")) {
+if (!(await headlessBuild()) || process.argv.includes("--rebuild")) {
   console.log("Building the headless Workbench for the preview…");
-  const env = { ...process.env, OPENCRAFT_HEADLESS_SERVER_BUILD: "true", VITE_HYPERNODE_PLUGIN: "disabled", VITE_APPSERVER_HOSTS_JSON: JSON.stringify(headlessWebHostDefinitions()) };
-  if (spawnSync("npm", ["run", "build:web:release"], { cwd: root, stdio: "inherit", env }).status !== 0) throw Error("Workbench build failed");
+  const env = {
+    ...process.env,
+    OPENCRAFT_HEADLESS_SERVER_BUILD: "true",
+    VITE_HYPERNODE_PLUGIN: "disabled",
+    VITE_APPSERVER_HOSTS_JSON: JSON.stringify(headlessWebHostDefinitions()),
+  };
+  if (spawnSync("npm", ["run", "build:web:release"], { cwd: root, stdio: "inherit", env }).status !== 0)
+    throw Error("Workbench build failed");
 }
 
 // Local sign-in for this loopback origin only.
@@ -54,31 +67,52 @@ if (existsSync(accountsFile)) accounts = JSON.parse(await readFile(accountsFile,
 else {
   accounts = { alice: randomBytes(12).toString("base64url"), bob: randomBytes(12).toString("base64url") };
   const operator = (...args: string[]) => {
-    const result = spawnSync("npx", ["tsx", "scripts/admin/human-account.ts", dataDirectory, ...args], { cwd: root, stdio: "inherit" });
+    const result = spawnSync("npx", ["tsx", "scripts/admin/human-account.ts", dataDirectory, ...args], {
+      cwd: root,
+      stdio: "inherit",
+    });
     if (result.status !== 0) throw Error("Preview account setup failed");
   };
-  for (const [user, role] of [["alice", "admin"], ["bob", "member"]] as const) {
+  for (const [user, role] of [
+    ["alice", "admin"],
+    ["bob", "member"],
+  ] as const) {
     const passwordFile = join(privateDirectory, `${user}.password.json`);
     await writeFile(passwordFile, JSON.stringify({ password: accounts[user] }), { mode: 0o600 });
-    try { operator("create", user, passwordFile); operator("grant", user, role); } finally { await rm(passwordFile, { force: true }); }
+    try {
+      operator("create", user, passwordFile);
+      operator("grant", user, role);
+    } finally {
+      await rm(passwordFile, { force: true });
+    }
   }
   await writeFile(accountsFile, JSON.stringify(accounts), { mode: 0o600 });
 }
 
-const server = await startHeadlessServer({
-  root,
-  webRoot,
-  dataDirectory,
-  host: "127.0.0.1",
-  port,
-  humanAuthConfig: authFile,
-  accessControl: true,
-  dshCapabilityPlugin: join(root, "apps/local-agent-host/src/dsh-capability-plugin.mjs"),
-  codexExecutable: process.env.OPENCRAFT_CODEX_EXECUTABLE ?? join(root, "runtime/codex/bin/codex"),
-}, fixture ? {
-  // The deterministic reception fixture stands in for a model; it shows the flow, not intelligence.
-  personalAssistantHost: { readConfig: async () => ({ maxRuntimes: 8, profileOptions: { mode: "fixture", telemetry: { enabled: false } } }) },
-} : {});
+const server = await startHeadlessServer(
+  {
+    root,
+    webRoot,
+    dataDirectory,
+    host: "127.0.0.1",
+    port,
+    humanAuthConfig: authFile,
+    accessControl: true,
+    dshCapabilityPlugin: join(root, "apps/local-agent-host/src/dsh-capability-plugin.mjs"),
+    codexExecutable: process.env.OPENCRAFT_CODEX_EXECUTABLE ?? join(root, "runtime/codex/bin/codex"),
+  },
+  fixture
+    ? {
+        // The deterministic reception fixture stands in for a model; it shows the flow, not intelligence.
+        personalAssistantHost: {
+          readConfig: async () => ({
+            maxRuntimes: 8,
+            profileOptions: { mode: "fixture", telemetry: { enabled: false } },
+          }),
+        },
+      }
+    : {},
+);
 
 console.log(`
 OpenCraft crew preview: ${server.url ?? origin}
