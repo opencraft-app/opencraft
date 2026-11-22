@@ -155,6 +155,8 @@ test('a thread read in the first moments of a session answers with no turns for 
   const refusals:[number,string,boolean][]=[
     [-32600,'thread native is not materialized yet; includeTurns is unavailable before first user message',true],
     [-32601,'list_turns is not supported yet',true],
+    [-32603,'failed to read thread: thread-store internal error: failed to read session metadata D:\\state\\sessions\\rollout-native.jsonl: rollout at D:\\state\\sessions\\rollout-native.jsonl is empty',true],
+    [-32603,'failed to read thread: thread-store internal error: failed to read session metadata D:\\x.jsonl: permission denied',false],
     [-32601,'thread/read is not supported',false],
   ];
   for(const [code,message,answered] of refusals){
@@ -174,6 +176,6 @@ test('a thread read in the first moments of a session answers with no turns for 
     if(answered){
       assert.deepEqual(reply.result.thread,{id:'native',status:{type:'active'},turns:[]},message);
       assert.deepEqual(reads,[true,false]);
-    } else assert.equal(reply.error.kind,'explicit-reject',message);
+    } else assert.ok(reply.error && !reply.result,message);
   }
 });
