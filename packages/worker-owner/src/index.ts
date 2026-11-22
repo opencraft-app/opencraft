@@ -67,7 +67,8 @@ export class WorkerOwner<T> {
     const source = entry.pathname.endsWith(".ts");
     this.worker = new Worker(entry, {
       workerData: options.workerData,
-      execArgv: source ? ["--import", "tsx"] : [],
+      // A TypeScript entry needs tsx; any other entry inherits the parent's loader flags.
+      ...(source ? { execArgv: ["--import", "tsx"] } : {}),
       ...(options.resourceLimits ? { resourceLimits: options.resourceLimits } : {}),
     });
     this.worker.on("message", (reply: OwnerReply) => this.receive(reply));
