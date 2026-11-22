@@ -65,15 +65,26 @@ async function nativeReads(coreEndpoint: string, token: string): Promise<string>
       capabilities: { experimentalApi: true },
     });
     socket.send(JSON.stringify({ method: "initialized", params: {} }));
+    // Loaded threads include a new session native has not listed yet (no recorded message).
     const listed = await call("thread/list", { limit: 5 });
-    const ids: string[] = (listed.result?.data ?? []).map((thread: any) => thread.id);
+    const loaded = await call("thread/loaded/list", {});
+    const ids: string[] = [
+      ...new Set(
+        [...(listed.result?.data ?? []), ...(loaded.result?.data ?? [])].map((thread: any) =>
+          typeof thread === "string" ? thread : thread.id,
+        ),
+      ),
+    ];
     const reads = [];
     for (const id of ids) {
       const read = await call("thread/read", { threadId: id, includeTurns: true });
       reads.push({ id, error: read.error, turns: read.result?.thread?.turns?.length });
     }
     socket.close();
-    return JSON.stringify({ list: listed.error ?? ids.length, reads }).slice(0, 1500);
+    return JSON.stringify({ list: listed.error ?? ids.length, loaded: loaded.error ?? loaded.result, reads }).slice(
+      0,
+      1500,
+    );
   } catch (error) {
     return `probe failed: ${error instanceof Error ? error.message : String(error)}`;
   }
