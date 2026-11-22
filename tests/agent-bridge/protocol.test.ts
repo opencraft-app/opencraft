@@ -270,13 +270,13 @@ test('input evidence status parsing rejects malformed facets and isolates transp
 
 test("thread operations need their own capability, and a declaration that predates them supports none", () => {
   // `capabilities` above predates lifecycle/goals and declares no fork.
-  for (const method of ["session/fork", "session/rename", "session/archive", "session/unarchive", "session/delete", "goal/get", "goal/set", "goal/clear"] as const)
+  for (const method of ["session/fork", "session/rename", "session/archive", "session/unarchive", "session/delete", "goal/get", "goal/set", "goal/clear", "session/settings"] as const)
     assert.equal(assertMethodAllowed(effectiveCapabilities(declaration), method).ok, false, method);
   const effective = effectiveCapabilities(declaration);
   assert.equal(effective.lifecycle, false); assert.equal(effective.goals, false);
 
-  const capable = effectiveCapabilities({ ...declaration, capabilities: { ...capabilities, forkCheckpoint: true, lifecycle: true, goals: true } });
-  for (const method of ["session/fork", "session/rename", "session/delete", "goal/set"] as const) assert.equal(assertMethodAllowed(capable, method).ok, true, method);
+  const capable = effectiveCapabilities({ ...declaration, capabilities: { ...capabilities, forkCheckpoint: true, lifecycle: true, goals: true, settings: true } });
+  for (const method of ["session/fork", "session/rename", "session/delete", "goal/set", "session/settings"] as const) assert.equal(assertMethodAllowed(capable, method).ok, true, method);
   const narrowed = effectiveCapabilities({ ...declaration, capabilities: { ...capabilities, lifecycle: true, goals: true } }, { disabledCapabilities: ["goals"] });
   assert.equal(narrowed.lifecycle, true); assert.equal(narrowed.goals, false);
   assert.equal(assertMethodAllowed(narrowed, "goal/get").ok, false);

@@ -34,7 +34,7 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   let approvalAnswer: unknown, approvalAnswers = 0;
   let hasRollout=!initial,initialConfig:any;
   let loaded=true,nativeActive=false,issued=0,revoked=0,blockRetirement=cli==='timeout';const nativeConfigurations:any[]=[];
-  const lifecycleCalls:any[]=[];const nativeStartInputs:unknown[]=[];
+  const lifecycleCalls:any[]=[];const nativeStartInputs:unknown[]=[];const settingsCalls:any[]=[];const titleCalls:any[]=[];
   ws.on('connection', socket => {
     nativePeer = socket;
     socket.on('message', raw => {
@@ -77,7 +77,7 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
         reply({ data: [{ id: 'native-turn', status: nativeActive ? 'inProgress' : 'completed', items: [] }], nextCursor: 'older-turn' });
       }
       if(f.method==='thread/unsubscribe'){if(!blockRetirement)loaded=false;reply({});}
-      if(f.method==='thread/settings/update')reply({});
+      if(f.method==='thread/settings/update'){settingsCalls.push(f.params);reply({});}
       if(f.method==='thread/resume'&&!hasRollout){socket.send(JSON.stringify({id:f.id,error:{code:-32600,message:'no rollout found'}}));return;}
       if (f.method === 'thread/resume') {loaded=true;if(f.params.config)nativeConfigurations.push(f.params);reply({sandbox:{type:'readOnly'},approvalPolicy:'never',thread: { id: 'native-new', turns: [] }});}
     });
@@ -115,7 +115,8 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
       sign:scope=>'signed:'+scope.execution!.inputId,...(initial?{async prepareSessionMcp(){return {configuration:{url:'http://127.0.0.1:1/mcp',http_headers:{Authorization:'Bearer platform-mcp'}}};}}:{}),sessionMcp:async()=>({url:'http://127.0.0.1:1/mcp',http_headers:{Authorization:'Bearer platform-mcp'}}),started:()=>{serverStarted++;},rejectedBeforeStart:()=>{serverReset++;},
     },{admissionPaused:()=>paused}):new CodexProviderBridge(legacy,options,{admissionPaused:()=>paused,
       prepareInput:async(threadId,clientId,input)=>{staged.push([threadId,clientId]);return input.map((item:any)=>item.type==='mention'?{type:'text',text:`file at ${item.path}`}:item);},
-      projectHistory:(method,_params,result)=>({...(result as object),projected:method})});
+      projectHistory:(method,_params,result)=>({...(result as object),projected:method}),
+      observeTitle:(method,params,result)=>titleCalls.push([method,(params as any).threadId??null,(result as any).thread?.id??(result as any).turn?.id])});
     next.subscribeMessage(raw => frames.push(JSON.parse(raw))); await next.connect(); return next;
   };
   transport = await createTransport();
@@ -184,9 +185,28 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     const refusal=++sequence;
     await transport.send(JSON.stringify({id:refusal,method:'thread/queue/start',params:{threadId:'bridge:codex:public-new'},[LOGICAL_CLIENT_FIELD]:'client'}));
     assert.match((await until(()=>frames.find(f=>f.id===refusal),Boolean)).error.message,/Queued message is unavailable/u,'Host refusals keep their message');
+    // Settings, pins, history cancellation and native-initiated metadata reach clients by public identity.
+    const publicId='bridge:codex:public-new';
+    await request('thread/settings/update',{threadId:publicId,model:'gpt-fixture'});
+    assert.deepEqual(settingsCalls.at(-1),{model:'gpt-fixture',threadId:'native-new'});
+    nativePeer!.send(JSON.stringify({method:'thread/settings/updated',params:{threadId:'native-new',threadSettings:{model:'gpt-fixture'}}}));
+    nativePeer!.send(JSON.stringify({method:'thread/goal/updated',params:{threadId:'native-new',goal:{objective:'model-set',status:'active'}}}));
+    nativePeer!.send(JSON.stringify({method:'thread/status/changed',params:{threadId:'native-new',status:{type:'idle'}}}));
+    const forwardedSettings=await until(()=>frames.find(f=>f.method==='thread/settings/updated'),Boolean);
+    assert.equal(forwardedSettings.params.threadId,publicId); assert.deepEqual(forwardedSettings.params.threadSettings,{model:'gpt-fixture'});
+    const forwardedGoal=await until(()=>frames.find(f=>f.method==='thread/goal/updated'&&f.params.goal?.objective==='model-set'),Boolean);
+    assert.equal(forwardedGoal.params.threadId,publicId);
+    assert.ok(!frames.some(f=>f.method==='thread/status/changed'&&f.params?.threadId==='native-new'),'only allow-listed metadata is forwarded');
+    assert.deepEqual(await request('thread/history/cancel',{threadId:publicId,historyReadId:'read-1'}),{cancelled:false});
+    await request('opencraft/thread-pins/set',{threadId:publicId,pinned:true});
+    assert.deepEqual(forwarded.filter(f=>f.method==='opencraft/thread-pins/set').map(f=>f.params),[{threadId:'native-new',pinned:true}]);
+    assert.deepEqual((await request('opencraft/thread-pins/list')).data.map((row:any)=>row.id),['native-old',publicId]);
+    legacyListener(JSON.stringify({method:'thread/pins/updated',params:{threadId:'native-new'},[LOGICAL_CLIENT_FIELD]:'client'}));
+    assert.equal((await until(()=>frames.find(f=>f.method==='thread/pins/updated'),Boolean)).params.threadId,publicId);
+    assert.deepEqual(titleCalls[0],['thread/start',null,'native-new'],'the title generator saw the creation by native identity');
     // Existing thread operations reach native Codex under the bound native ID and
     // come back under public identities, with the same change notifications.
-    const pub='bridge:codex:public-new', seen=()=>frames.filter(f=>f.method&&f.method.startsWith('thread/')&&f.id===undefined);
+    const lifecycleFrom=frames.length, pub='bridge:codex:public-new', seen=()=>frames.slice(lifecycleFrom).filter(f=>f.method&&f.method.startsWith('thread/')&&f.id===undefined);
     await request('thread/name/set',{threadId:pub,name:'Renamed'});
     await request('thread/goal/set',{threadId:pub,objective:'ship it'});
     assert.deepEqual((await request('thread/goal/get',{threadId:pub})).goal,{objective:'ship it',status:'active'});
@@ -214,6 +234,7 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     // Attachments are staged by the composition before native Codex sees the input.
     assert.deepEqual(nativeStartInputs.at(-1),[{type:'text',text:'read'},{type:'text',text:'file at /work/input.txt'}]);
     assert.deepEqual(staged.at(-1),['bridge:codex:public-new','start']);
+    assert.deepEqual(titleCalls.at(-1),['turn/start','native-new','native-turn'],'and the first turn');
   }
   const latest = await request('thread/turns/list', { threadId: 'bridge:codex:public-new', limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' });
   assert.equal(latest.data.length, 1); assert.equal(latest.data[0].id, started.turn.id); assert.equal(latest.data[0].status, 'inProgress');

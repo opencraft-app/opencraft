@@ -32,9 +32,9 @@ export interface BridgeExecutionAdmissionPort {
 export { codexAdmissionPaused } from './codex-maintenance.js';
 export function createServerCodexBridge(legacy:DuplexTransport,options:BridgeGatewayOptions|undefined,admission:BridgeExecutionAdmissionPort,policy:ConstructorParameters<typeof CodexProviderBridge>[2]={}):DuplexTransport {
   // A local Codex Host stages bridge attachments exactly as it does its own.
-  const host=legacy as Partial<{prepareExternalInput:NonNullable<typeof policy>['prepareInput'];projectExternalHistory:NonNullable<typeof policy>['projectHistory']}>;
-  const attachments=typeof host.prepareExternalInput==='function'&&typeof host.projectExternalHistory==='function'
-    ?{prepareInput:host.prepareExternalInput.bind(legacy),projectHistory:host.projectExternalHistory.bind(legacy)}:{};
+  const host=legacy as Partial<{prepareExternalInput:NonNullable<typeof policy>['prepareInput'];projectExternalHistory:NonNullable<typeof policy>['projectHistory'];observeExternalTitle:NonNullable<typeof policy>['observeTitle']}>;
+  const attachments=typeof host.prepareExternalInput==='function'&&typeof host.projectExternalHistory==='function'&&typeof host.observeExternalTitle==='function'
+    ?{prepareInput:host.prepareExternalInput.bind(legacy),projectHistory:host.projectExternalHistory.bind(legacy),observeTitle:host.observeExternalTitle.bind(legacy)}:{};
   return options?new BridgeExecutionAdmissionTransport(new CodexProviderBridge(legacy,options,{...attachments,...policy}),admission):legacy;
 }
 

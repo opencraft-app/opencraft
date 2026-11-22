@@ -29,6 +29,7 @@ export const BRIDGE_COMMANDS = Object.freeze({
   goalGet: "goal/get",
   goalSet: "goal/set",
   goalClear: "goal/clear",
+  sessionSettings: "session/settings",
 } as const);
 
 export const BRIDGE_CALLBACKS = Object.freeze({
@@ -37,6 +38,8 @@ export const BRIDGE_CALLBACKS = Object.freeze({
   interactionRequest: "interaction/request",
   interactionResolved: "interaction/resolved",
   providerRecovery: "provider/recovery",
+  /** A native thread-metadata notification (name, goal, settings, archive) for one Thread. */
+  threadNotification: "thread/notification",
 } as const);
 
 export type BridgeCommand = (typeof BRIDGE_COMMANDS)[keyof typeof BRIDGE_COMMANDS];
@@ -67,6 +70,7 @@ export type CapabilityKey =
   | "installation"
   | "lifecycle"
   | "goals"
+  | "settings"
   | "steer";
 
 /**
@@ -100,4 +104,10 @@ export const BRIDGE_COMMAND_REQUIREMENTS: Readonly<Record<BridgeCommand, Capabil
   "goal/get": "goals",
   "goal/set": "goals",
   "goal/clear": "goals",
+  "session/settings": "settings",
 });
+
+/** Native notifications a provider may forward through `thread/notification`. */
+export const BRIDGE_THREAD_NOTIFICATIONS: ReadonlySet<string> = new Set([
+  "thread/name/updated", "thread/goal/updated", "thread/goal/cleared", "thread/settings/updated", "thread/archived", "thread/unarchived",
+]);

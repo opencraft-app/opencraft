@@ -297,8 +297,11 @@ session with settled inputs; delete removes the binding only after native
 deletion succeeds. The daemon mirrors the native change notifications
 (`thread/name/updated`, `thread/archived`, `thread/unarchived`,
 `thread/deleted`, `thread/goal/updated|cleared`) to subscribers when an
-operation succeeds. Notifications that native Codex raises on its own, such as
-a goal updated by the model during a turn, are not yet forwarded.
+operation succeeds. Notifications native Codex raises on its own (thread name,
+goal, settings, archive) reach clients through the `thread/notification`
+callback: the provider forwards only allow-listed thread metadata, and the Host
+writes it to the Thread's outbox under the public route. `session/settings`
+(`settings` capability) updates model, reasoning and permission settings.
 
 ### P7a: Implementation decisions
 

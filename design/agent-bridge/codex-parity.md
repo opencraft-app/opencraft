@@ -45,14 +45,14 @@ bridge 协议加方法与能力声明，Engine Host 转发原生请求并投影 
 | 能力 | 旧路径 owner | 建议 owner | 说明 |
 |---|---|---|---|
 | 排队 `thread/queue/add|list|update|reorder|delete|start|steer|retry` 及 `thread/queue/changed` | `OpenCraftHostQueue`（`opencraft-host-queue.ts`） | **已完成**：Engine Host（Host 库 v4） | 与旧路径共用 `@opencraft/thread-queue` 的存储、核对与派发；轮次结束由 Host 发出队首，daemon 不在也继续；协作输入与 `collaborationReceipt`、排队轮次的执行 CLI 凭据尚未支持 |
-| 标题生成 | `CodexThreadTitles` | daemon（观察 bridge 事件） | 不影响执行连续性 |
-| 置顶 `thread/pins/updated` | `codex-thread-pins.ts` | daemon | 纯展示状态 |
-| 线程设置 `thread/settings/update` | adapter 配置刷新 | 共享配置 owner | P7a 已让 bridge 消费同一 Codex 配置刷新 owner，需补线程设置入口 |
+| 标题生成 | `CodexThreadTitles` | **已接线**：daemon | bridge 路由把新建与第一轮按原生身份交给本地标题生成器；生成器经同一原生 AppServer 写入名称，通知映射回公开 ID。依赖 Core Host overlays（见“桌面接线时注意”） |
+| 置顶 `thread/pins/updated` | `codex-thread-pins.ts` | **已接线**：daemon | 设置时公开 ID 换成原生 ID 交给旧 Host（只改原生分组元数据，同一原生 AppServer，无第二写者）；列表与通知映射回公开 ID |
+| 线程设置 `thread/settings/update` | adapter 配置刷新 | **已接线**：`session/settings`（新 `settings` 能力） | 原生 `thread/settings/updated` 经通知转发通道到客户端 |
 | 附件暂存 | `LocalAttachmentStagingService` | **已完成**：daemon，与本地线程同一暂存 | 由装配注入：发送、steer、排队添加/编辑前暂存（排队在添加时暂存，因为 Host 自行发送），按公开线程与客户端消息记录，历史读取时投影附件 |
 | 维护准入（`codex-admission.paused`） | adapter 检查 | **已补**：`CodexProviderBridge` | 新建与发送等准入（与旧路径同一 `isCodexAdmission` 判定）在暂停时以同一维护错误拒绝；steer、读取、审批继续；维护快照合并 bridge 在途与拒绝计数。daemon 与服务器装配均传入同一暂停开关 |
 | 模型使用策略 | adapter 在 `turn/start`、goal 激活时检查 | **无需补**：服务器的 `ModelPolicyTransport` 包在 bridge 外层，经 bridge 的 `thread/read` 同样校验 bridge 线程；桌面 daemon 两条路径都未配置 Codex 模型策略 | 新接入 goal 等准入方法时须在该外层覆盖范围内 |
 | 模型网关准入（花费授权） | adapter `admitModelExecution`：按人类授权者登记执行，轮次结束结算 | daemon 路由层，需观察 bridge 轮次结束 | 仅在设置 `OPENCRAFT_MODEL_GATEWAY_DATABASE` 的服务器生效；bridge 线程目前不登记，属漏洞，桌面不受影响 |
-| 历史读取取消 `thread/history/cancel` | adapter | daemon | 长历史读取的取消 |
+| 历史读取取消 `thread/history/cancel` | adapter | **已接线**：daemon | bridge 历史读取没有可取消的在途请求，如实返回 `cancelled: false` |
 | 待建线程 | `ProvisionalThreads` | 由 bridge 的 `session/create` 幂等语义取代，需核实 UI 依赖 | |
 | 编排 / 协作回执 | adapter 与 orchestration | P7a 执行 CLI 已覆盖 spawn/tell/wait；queue follow-up 待做 | 见 P7a 剩余范围 |
 
@@ -78,7 +78,7 @@ daemon 经 Core 运行旧 adapter 时，只有开启 Core Host overlays 才会�
 ## 顺序建议
 
 1. ~~维护准入~~（已补）；模型使用策略核实为已覆盖。另：模型网关准入（`OPENCRAFT_MODEL_GATEWAY_DATABASE`，仅服务器）对 bridge 线程尚未生效，见 B。
-2. ~~A 中的分叉、重命名、归档、删除、目标~~（已接线，2026-11-21，仅替身原生验证）。剩余：原生自发的线程通知（如模型更新目标）需要 provider→Host 的转发通道。
+2. ~~A 中的分叉、重命名、归档、删除、目标~~（已接线，2026-11-21，仅替身原生验证）。原生自发的线程元信息通知（名称、目标、设置、归档）已有转发通道：provider 的 `thread/notification` 回调按白名单写入 Host 事件流。
 3. 排队（Engine Host 落地）、图片输入与附件。
-4. 标题、置顶、线程设置、历史取消。
+4. ~~标题、置顶、线程设置、历史取消~~（已接线）。
 5. 已有会话接管、线程无关能力的 owner 拆分，然后才能进入 P8。

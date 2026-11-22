@@ -1,4 +1,4 @@
-import type { BridgeDelta, BridgeErrorKind, ItemShape } from '@opencraft/agent-bridge-protocol';
+import { BRIDGE_THREAD_NOTIFICATIONS, type BridgeDelta, type BridgeErrorKind, type ItemShape } from '@opencraft/agent-bridge-protocol';
 
 /** The connection is supplied by the existing Core owner. This adapter never
  * launches Codex, opens CODEX_HOME, or owns account/exec-server lifecycle. */
@@ -38,7 +38,8 @@ interface Session { nativeId: string; starting?: boolean; activeTurn?: string; u
 /** Provider-native translation only; canonical IDs and event ordering belong to assembler. */
 export class CodexBridge {
   private sessions = new Map<string, Session>();
-  constructor(private owner: CodexOwnerPort, private emit: (threadId: string, deltas: BridgeDelta[]) => void) {}
+  constructor(private owner: CodexOwnerPort, private emit: (threadId: string, deltas: BridgeDelta[]) => void,
+    private forward: (threadId: string, method: string, params: Record<string, unknown>) => void = () => {}) {}
   bind(threadId: string, nativeId: string): void {
     id(threadId); id(nativeId);
     if (this.sessions.has(threadId) || [...this.sessions.values()].some(s => s.nativeId === nativeId)) throw new CodexBridgeError('explicit-reject', 'Session already bound');
@@ -138,6 +139,11 @@ export class CodexBridge {
   }
   /** Consume the native stream once. Foreign/legacy sessions are ignored. */
   notification(method: string, raw: unknown): void {
+    if (BRIDGE_THREAD_NOTIFICATIONS.has(method)) {
+      const p = record(raw), entry = [...this.sessions].find(([, s]) => s.nativeId === p.threadId);
+      if (entry) this.forward(entry[0], method, { ...p, threadId: entry[0] });
+      return;
+    }
     if (!['turn/started', 'turn/completed', 'item/started', 'item/completed', 'thread/tokenUsage/updated', 'item/agentMessage/delta', 'item/reasoning/textDelta', 'item/plan/delta'].includes(method)) return;
     const p = record(raw);
     const entry = [...this.sessions].find(([, s]) => s.nativeId === p.threadId);

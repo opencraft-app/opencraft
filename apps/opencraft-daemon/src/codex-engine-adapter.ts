@@ -3563,6 +3563,8 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (clientId && prepared.attachments.length > 0 && this.messageAttachments) this.messageAttachments.record(threadId, clientId, prepared.attachments);
     return prepared.input;
   }
+  /** Title generation for a bridge Thread, observed by its native identity. */
+  observeExternalTitle(method: string, params: RpcRecord, result: unknown): void { this.threadTitles?.observeResult(method, params, result); }
   /** Attachments recorded by prepareExternalInput, projected onto that Thread's history. */
   projectExternalHistory(method: string, params: RpcRecord, result: unknown): unknown {
     return this.messageAttachments ? projectThreadAttachmentResult(this.messageAttachments, method, params, result) : result;

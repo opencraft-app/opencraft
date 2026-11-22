@@ -29,6 +29,8 @@ export class CodexProviderBridge implements DuplexTransport {
     prepareInput?: (threadId: string, clientId: string | undefined, input: readonly unknown[], context: TransportSubmissionContext) => Promise<unknown[]>;
     /** Add recorded attachments to history results. */
     projectHistory?: (method: string, params: Record<string, unknown>, result: unknown) => unknown;
+    /** Let the local title generator see a bridge Thread's creation and first turn, by native identity. */
+    observeTitle?: (method: string, params: Record<string, unknown>, result: unknown) => void;
   } = {}) {
     this.gateway = new BridgeGateway(options, (threadId, value) => {
       const frame = object(value);
@@ -42,6 +44,9 @@ export class CodexProviderBridge implements DuplexTransport {
         this.offerInteraction(threadId, frame);
         return;
       }
+      // Forwarded native notifications name native turns; clients know public ones.
+      const params = object(frame.params);
+      if (typeof params.turnId === 'string') frame.params = { ...params, turnId: this.gateway.canonicalTurn(threadId, params.turnId) ?? params.turnId };
       for (const client of this.subscriptions.get(threadId) ?? []) {
         if (frame.method === OPENCRAFT_STEER_EVIDENCE_NOTIFICATION && !this.clients.get(client)?.evidence) continue;
         this.emit(frame, client);
@@ -98,7 +103,13 @@ export class CodexProviderBridge implements DuplexTransport {
     if (this.creations.size) await Promise.allSettled([...this.creations]);
     const frame = object(JSON.parse(raw)), params = object(frame.params);
     if (frame.method === 'account/chatgptAuthTokens/refresh') return; // existing Core account owner handles broker authentication
-    if (typeof params.threadId === 'string' && this.gateway.publicThread(params.threadId)) return;
+    const bridgeThread = typeof params.threadId === 'string' ? this.gateway.publicThread(params.threadId) : undefined;
+    // Pins and generated titles of bridge Threads are written by the local Host by native identity.
+    if (bridgeThread && ['thread/name/updated', 'thread/pins/updated'].includes(String(frame.method))) {
+      this.emit({ ...frame, params: { ...params, threadId: bridgeThread } });
+      return;
+    }
+    if (bridgeThread) return;
     if (typeof object(params.thread).id === 'string' && this.gateway.publicThread(params.thread.id)) return;
     const key = JSON.stringify([frame[LOGICAL_CLIENT_FIELD], frame.id]), pending = this.pending.get(key);
     if (pending && ('result' in frame || 'error' in frame)) {
@@ -127,7 +138,7 @@ export class CodexProviderBridge implements DuplexTransport {
           },
         } };
       }
-      if (pending.method === 'thread/list' && Array.isArray(frame.result?.data)) frame.result.data = frame.result.data.map((thread: any) => {
+      if ((pending.method === 'thread/list' || pending.method === 'opencraft/thread-pins/list') && Array.isArray(frame.result?.data)) frame.result.data = frame.result.data.map((thread: any) => {
         const route = this.gateway.publicThread(thread.id); return route ? this.gateway.history(route, thread) : thread;
       });
     }
@@ -151,6 +162,13 @@ export class CodexProviderBridge implements DuplexTransport {
       if (interaction.clients.get(client) !== this.clients.get(client)?.epoch || !this.clients.has(client) || !this.subscriptions.get(interaction.threadId)?.has(client) || !('result' in frame)) throw Error('Interaction subscription required');
       await this.gateway.command(interaction.threadId, `interaction:${frame.id}`, 'interaction/resolve', { interactionId: frame.id, result: frame.result });
       this.interactions.delete(frame.id); return;
+    }
+    if (frame.method === 'opencraft/thread-pins/set' && typeof p.threadId === 'string' && this.gateway.owns(p.threadId)) {
+      const native = this.gateway.nativeThread(p.threadId);
+      if (!native) throw Error('Bridge thread has no native session yet');
+      if (frame.id !== undefined) this.pending.set(JSON.stringify([client, frame.id]), { method: frame.method, client });
+      const pinned = JSON.stringify({ ...frame, params: { ...p, threadId: native } });
+      return this.legacy.sendWithContext ? this.legacy.sendWithContext(pinned, context) : this.legacy.send(pinned);
     }
     const optIn = frame.method === 'thread/start' && p.agentBridge !== undefined;
     const seed = String(p.agentBridge?.threadId ?? '');
@@ -181,7 +199,7 @@ export class CodexProviderBridge implements DuplexTransport {
     // Opening, sending and thread operations (which a list may issue without opening) subscribe the client.
     if (optIn || ['thread/resume', 'thread/read', 'thread/turns/list', 'thread/items/list', 'turn/start', 'thread/fork', 'thread/name/set',
       'thread/archive', 'thread/unarchive', 'thread/delete', 'thread/goal/get', 'thread/goal/set', 'thread/goal/clear'].includes(frame.method)
-      || String(frame.method).startsWith('thread/queue/')) subscribers.add(client);
+      || String(frame.method).startsWith('thread/queue/') || ['thread/settings/update', 'thread/history/cancel'].includes(frame.method)) subscribers.add(client);
     if (forkedId) { const forked = new Set<string>([client]); this.subscriptions.set(forkedId, forked); }
     if (!subscribers.has(client)) throw Error('Conversation subscription required');
     const requestKey = optIn ? p.agentBridge?.clientRequestId : p.clientUserMessageId;
@@ -195,11 +213,14 @@ export class CodexProviderBridge implements DuplexTransport {
         if (!threadId || typeof requestKey !== 'string' || !requestKey) throw Error('Bridge thread and client request identities required');
         const { agentBridge: _, ...native } = p;
         result = await command('session/create', { native });
+        this.policy.observeTitle?.('thread/start', native, result);
       } else if (frame.method === 'turn/start') {
         if (!requestKey) throw Error('Stable client input identity required');
         const { threadId: _, opencraftExecutionAdmission,opencraftSessionMcp, ...native } = p;
         native.input = await prepare(native.input, String(requestKey));
         result = await command('turn/start', { native, executionSource:opencraftExecutionAdmission,...(opencraftSessionMcp!==undefined?{sessionMcp:opencraftSessionMcp}:{}) });
+        const nativeThread = this.gateway.nativeThread(threadId);
+        if (nativeThread) this.policy.observeTitle?.('turn/start', { ...native, threadId: nativeThread }, result);
       } else if (frame.method === 'turn/steer') {
         if (!identity.evidence) throw Object.assign(Error('This client cannot represent native input admission; use a client with per-input evidence support'), { code: -32601 });
         if (!requestKey) throw Error('Stable client input identity required');
@@ -233,6 +254,9 @@ export class CodexProviderBridge implements DuplexTransport {
         const goal = object(result).goal;
         if (goal !== undefined) this.notify(threadId, 'thread/goal/updated', { threadId, goal });
       } else if (frame.method === 'thread/goal/clear') { result = await command('goal/clear', { native: {} }); this.notify(threadId, 'thread/goal/cleared', { threadId }); }
+      else if (frame.method === 'thread/settings/update') { const { threadId: _, ...native } = p; result = await command('session/settings', { native }); }
+      // Bridge history reads have no cancellable in-flight work in this Host.
+      else if (frame.method === 'thread/history/cancel') result = { cancelled: false };
       else if (String(frame.method).startsWith('thread/queue/')) {
         const { threadId: _, ...params } = p;
         // Clients name public turns; the Host queue records native ones.

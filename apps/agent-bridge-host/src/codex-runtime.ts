@@ -19,7 +19,8 @@ export class CodexBridgeRuntime {
   private creating = new Set<string>();
   private interactions = new Map<string, { threadId: string; nativeId: string | number }>();
   constructor(private owner: CodexRuntimeOwner, private send: (message: BridgeWireMessage) => void) {
-    this.adapter = new CodexBridge(owner, (threadId, deltas) => this.callback('thread/delta', { threadId, deltas }));
+    this.adapter = new CodexBridge(owner, (threadId, deltas) => this.callback('thread/delta', { threadId, deltas }),
+      (threadId, method, params) => this.callback('thread/notification', { threadId, method, params }));
   }
   private callback(method: string, params: unknown): void {
     this.send({ jsonrpc: '2.0', id: `codex-event:${randomUUID()}`, method, params });
@@ -109,6 +110,8 @@ export class CodexBridgeRuntime {
       case 'session/archive': return this.owner.request('thread/archive', { threadId: this.adapter.idle(threadId, 'archive').nativeId });
       case 'session/unarchive': return this.owner.request('thread/unarchive', { threadId: this.adapter.nativeSession(threadId) });
       case 'session/delete': return this.adapter.delete(threadId);
+      case 'session/settings':
+        return this.owner.request('thread/settings/update', { ...object(p.native), threadId: this.adapter.nativeSession(threadId) });
       case 'goal/get':
       case 'goal/set':
       case 'goal/clear':

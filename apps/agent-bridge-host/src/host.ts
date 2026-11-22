@@ -153,7 +153,7 @@ export class BridgeHost {
         for (const key of ['model','reasoning','history','usage','approval','cliExecutable','forkCheckpoint','skills','installation'] as const)
           if (typeof caps[key] !== 'boolean' || caps[key] && !upper[key]) throw Error('Bridge widened capabilities');
         // Added later: an older bridge artifact omits them, which means unsupported.
-        for (const key of ['lifecycle','goals'] as const) {
+        for (const key of ['lifecycle','goals','settings'] as const) {
           caps[key] ??= false;
           if (typeof caps[key] !== 'boolean' || caps[key] && !upper[key]) throw Error('Bridge widened capabilities');
         }

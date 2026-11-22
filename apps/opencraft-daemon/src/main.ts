@@ -187,6 +187,7 @@ export async function startOpenCraftDaemon(options: {
           ...(codexAgent instanceof CodexEngineAdapter ? {
             prepareInput: (threadId, clientId, input, context) => codexAgent.prepareExternalInput(threadId, clientId, input, context),
             projectHistory: (method, params, result) => codexAgent.projectExternalHistory(method, params, result),
+            observeTitle: (method, params, result) => codexAgent.observeExternalTitle(method, params, result),
           } : {}),
         }) : codexAgent;
       }

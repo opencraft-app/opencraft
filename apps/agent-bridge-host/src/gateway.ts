@@ -56,6 +56,8 @@ export class BridgeGateway {
   }
   reserve(threadId: string): void { this.pinned.add(threadId); }
   owns(threadId: string): boolean { return this.pinned.has(threadId); }
+  /** Native session of a bridge Thread, once its identity has been pulled. */
+  nativeThread(threadId: string): string | undefined { return this.routes.get(threadId); }
   publicThread(nativeId: string): string | undefined { return [...this.routes].find(([, native]) => native === nativeId)?.[0]; }
   private consume(row: OutboxEvent, publish: boolean): void {
     const [serverId, threadId] = JSON.parse(row.route);
