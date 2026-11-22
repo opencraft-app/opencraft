@@ -547,6 +547,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         if (!assetsStorage.workspaceExecution) throw Error('Assets Native execution owner unavailable');
         ownedWorkspaceRouting = await openWorkspaceExecutionService({port:assetsStorage.store,
           actors:actorStore, access:instanceAccess, ...workspaceExecution,
+          assertThreadActive:threadId=>{if(!conversationResources)throw Error('Workspace lifecycle is starting');conversationResources.assertActive('local-codex',threadId);},
           onCleanupUnconfirmed:()=>console.warn('workspace_cleanup_unconfirmed')});
         workspaceRouting = ownedWorkspaceRouting;
       }
@@ -934,7 +935,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         if (!remoteBrowser) throw Error('Browser owner is starting');
         await remoteBrowser.releaseThread(row.hostId, row.threadId);
       },
-    }, { diagnose: value => console.warn('[conversation-resources]', JSON.stringify(value)) });
+      ...(ownedWorkspaceRouting ? {workspace:row=>ownedWorkspaceRouting.releaseConversation(row)} : {}),
+    }, { diagnose: value => console.warn('[conversation-resources]', JSON.stringify(value)),
+      ...(ownedWorkspaceRouting ? {dependencies:{workspace:['browser']},replayOwners:['browser','workspace']} : {}),
+    });
     if (remoteBrowser) remoteBrowser.conversationLifecycle = conversationResources;
     const resourceAuthority = context => {
       context.resourceOwner?.assertCurrent();
@@ -1313,7 +1317,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       if (closing || resourceInventoryRunning) return;
       resourceInventoryRunning = true;
       try {
-        const scopes = [...await remoteBrowser.threadScopes(),
+        const scopes = [...await remoteBrowser.threadScopes(), ...(ownedWorkspaceRouting?.conversationScopes() ?? []),
           ...(options.terminalOwner ? await terminalService('local-codex').threadScopes() : [])];
         const hosts = new Set(scopes.map(scope => scope.hostId).filter(id => ['local-codex', 'opencraft-server'].includes(id)));
         // No resources means no reason to cold-start an execution engine merely

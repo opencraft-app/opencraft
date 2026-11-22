@@ -464,6 +464,10 @@ export class InstalledOrdinaryConversationRuntime {
       }
     });
   }
+  /** Committed system lifecycle, never an end-user resource selector. */
+  applyThreadLifecycle(row: Parameters<OrdinaryConversationOwner["applyThreadLifecycle"]>[0]) {
+    return this.owner.applyThreadLifecycle(row);
+  }
   private track<T>(run: () => Promise<T>): Promise<T> {
     if (this.closed) return Promise.reject(Error("Ordinary runtime closed"));
     const operation = run();

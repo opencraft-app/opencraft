@@ -1,6 +1,8 @@
+import { workspaceArtifactReader } from "../../apps/headless-server/src/workspaces/workspace-artifact-reader.js";
 import { startTerminalPtyOwner } from "../../apps/local-agent-host/src/terminal-pty-owner.js";
 import { DurableHostProcessService } from "@opencraft/local-agent-host/durable-process-service";
 import { terminalResourceOwnerId } from "../../apps/headless-server/src/host-resource-identity.js";
+import { ConversationResourceLifecycle } from "../../apps/headless-server/src/conversation-resource-lifecycle.mjs";
 import { RemoteBrowserService } from "../../apps/headless-server/src/remote-browser-service.mjs";
 import { WorkspaceBrowserClient } from "../../apps/headless-server/src/workspaces/browser-client.js";
 import { WorkspaceTerminalClient } from "../../apps/headless-server/src/workspaces/terminal-client.js";
@@ -56,9 +58,11 @@ async function fixture(t: test.TestContext, terminalOwner?: TerminalOwner) {
     );
   let { owner, ready } = await open();
   const cleanup: (() => Promise<void>)[] = [];
+  let expectUnconfirmedClose = false;
   t.after(async () => {
     for (const close of [...cleanup].reverse()) await close();
-    await owner.close();
+    if (expectUnconfirmedClose) await assert.rejects(owner.close());
+    else await owner.close();
     await rm(directory, { recursive: true, force: true });
   });
   const access = (): WorkspaceActorAdmission => ({
@@ -85,6 +89,9 @@ async function fixture(t: test.TestContext, terminalOwner?: TerminalOwner) {
     },
     access,
     target,
+    expectUnconfirmedShutdown() {
+      expectUnconfirmedClose = true;
+    },
     defer(close: () => Promise<void>) {
       cleanup.push(close);
     },
@@ -732,6 +739,57 @@ test("real Worker artifact credits preserve bounded chunks, do not block the FIF
   );
 });
 
+for (const code of [0, 1])
+  test(`artifact final receipt requires actual exit ${code}, not an already-closed stdin acknowledgement`, async () => {
+    const bytes = Buffer.from("synthetic-final-output"),
+      digest = createHash("sha256").update(bytes).digest("hex");
+    let closeStdinCalls = 0,
+      credits = 0;
+    let finish!: (exit: { code: number }) => void;
+    const exited = new Promise<{ code: number }>((resolve) => {
+      finish = resolve;
+    });
+    const read = workspaceArtifactReader({
+      authorize: async () => {},
+      onCleanupUnconfirmed() {
+        throw Error("Unexpected cleanup failure");
+      },
+      sandbox: {
+        async spawn(_command, output) {
+          return {
+            kind: "process",
+            id: "synthetic-fast-exit",
+            exited,
+            async writeStdin() {
+              const frame =
+                credits++ === 0 ? { data: bytes.toString("base64") } : { size: bytes.length, sha256: digest };
+              output?.({ stream: "stdout", data: Buffer.from(JSON.stringify(frame) + "\n") });
+              if (credits === 2) finish({ code });
+            },
+            async closeStdin() {
+              closeStdinCalls++;
+              throw Object.assign(Error("Already closed"), { code: "EPIPE" });
+            },
+            async terminate() {},
+          };
+        },
+      },
+    });
+    const stream = await read("/workspace/result.bin");
+    try {
+      const collect = async () => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of stream.body) chunks.push(Buffer.from(chunk));
+        return Buffer.concat(chunks);
+      };
+      if (code === 0) assert.deepEqual(await collect(), bytes);
+      else await assert.rejects(collect(), /Workspace output failed/);
+      assert.equal(closeStdinCalls, 0);
+    } finally {
+      await stream.dispose();
+    }
+  });
+
 test("Worker artifact uploads cross only byte credits, verify the remote hash receipt, and preserve the Native resource after cancellation", async (t) => {
   const f = await artifactFixture(t),
     client = new WorkspaceArtifactClient(f.port),
@@ -1057,91 +1115,177 @@ test("Main browser proxy preserves result/media routing and detaches on overflow
   assert.equal((await f.port.fixtureBrowserStats()).owners, 1);
 });
 
-test("central durable browser service selects one actual Worker channel for two tabs and never reaches the local browser fallback", async (t) => {
-  const f = await artifactFixture(t),
-    access = f.access(),
-    directory = await mkdtemp(join(tmpdir(), "workspace-browser-composition-"));
-  let allowed = true,
-    local = 0;
-  const workspace = await openWorkspaceExecutionService({
-    port: f.port,
-    socketPath: join(directory, "authority.sock"),
-    token: "synthetic-browser-service-authority",
-    actors: {
-      get: (id) =>
-        id === access.actorId
-          ? {
-              id,
-              kind: "human",
-              enabled: true,
-              generation: access.generation,
-              displayName: "Fixture",
-              createdAt: 0,
-              createdBy: null,
-            }
-          : null,
-      isCurrent: (ctx) =>
-        ctx.actorId === access.actorId && ctx.generation === access.generation && ctx.expiresAt > Date.now(),
-      bindings: () => [{ provider: "local", subject: "fixture" }],
-      onAuthorityChanged: () => () => {},
-    },
-    access: { admitsActor: () => true, store: { revocationRevision: () => 0, onAuthorityChanged: () => () => {} } },
-    onCleanupUnconfirmed() {},
-  });
-  const browser = new RemoteBrowserService({
-    root: directory,
-    dataDirectory: directory,
-    ownerAvailable: async () => true,
-    ownerConnector: async () => {
-      local++;
-      throw Error("Controller browser fallback is forbidden");
-    },
-    spawnImpl() {
-      throw Error("No Chromium process in this synthetic test");
-    },
-  });
-  f.defer(async () => {
+for (const withLifecycle of [false, true])
+  test(`central browser/Worker ${withLifecycle ? "archive/unarchive lifecycle" : "plain detach"} preserves resource ownership without a local fallback`, async (t) => {
+    const f = await artifactFixture(t),
+      access = f.access(),
+      directory = await mkdtemp(join(tmpdir(), "workspace-browser-composition-"));
+    let allowed = true,
+      local = 0;
+    let lifecycle: ConversationResourceLifecycle | undefined;
+    const workspace = await openWorkspaceExecutionService({
+      port: f.port,
+      socketPath: join(directory, "authority.sock"),
+      token: "synthetic-browser-service-authority",
+      actors: {
+        get: (id) =>
+          id === access.actorId
+            ? {
+                id,
+                kind: "human",
+                enabled: true,
+                generation: access.generation,
+                displayName: "Fixture",
+                createdAt: 0,
+                createdBy: null,
+              }
+            : null,
+        isCurrent: (ctx) =>
+          ctx.actorId === access.actorId && ctx.generation === access.generation && ctx.expiresAt > Date.now(),
+        bindings: () => [{ provider: "local", subject: "fixture" }],
+        onAuthorityChanged: () => () => {},
+      },
+      access: { admitsActor: () => true, store: { revocationRevision: () => 0, onAuthorityChanged: () => () => {} } },
+      assertThreadActive: (threadId) => lifecycle?.assertActive("local-codex", threadId),
+      onCleanupUnconfirmed() {},
+    });
+    const browser = new RemoteBrowserService({
+      root: directory,
+      dataDirectory: directory,
+      ownerAvailable: async () => true,
+      ownerConnector: async () => {
+        local++;
+        throw Error("Controller browser fallback is forbidden");
+      },
+      spawnImpl() {
+        throw Error("No Chromium process in this synthetic test");
+      },
+    });
+    if (withLifecycle) {
+      lifecycle = await ConversationResourceLifecycle.open(
+        join(directory, "resources.json"),
+        {
+          browser: (row) => browser.releaseThread(row.hostId, row.threadId),
+          workspace: (row) => workspace.releaseConversation(row),
+        },
+        { dependencies: { workspace: ["browser"] }, replayOwners: ["browser", "workspace"] },
+      );
+      browser.conversationLifecycle = lifecycle;
+    }
+    f.defer(async () => {
+      await lifecycle?.close();
+      await browser.close();
+      await workspace.close();
+      await rm(directory, { recursive: true, force: true });
+    });
+    workspace.connectBrowserRouting({
+      service: browser,
+      assertThreadAccess: (descriptor) => {
+        if (!allowed || descriptor.ownerId !== access.actorId || descriptor.threadId !== "native-artifacts")
+          throw Error("Synthetic Thread grant revoked");
+      },
+    });
+    const binding = (callId: string) => ({
+      ownerId: access.actorId,
+      hostId: "local-codex",
+      threadId: "native-artifacts",
+      turnId: "synthetic-turn",
+      callId,
+      authorize() {
+        if (!allowed) throw Error("Synthetic browser authority revoked");
+      },
+    });
+    const first = await browser.createTab(binding("first"), { url: "https://example.test/" });
+    const second = await browser.createTab(binding("second"), { url: "https://example.test/" });
+    assert.notEqual(first.tabId, second.tabId);
+    assert.equal(local, 0);
+    assert.equal((await f.port.fixtureBrowserStats()).attached, 1);
+    assert.equal(
+      (await browser.conversationTabs(access.actorId, "local-codex", "native-artifacts", () => {})).length,
+      2,
+    );
+    await browser.closeTab(binding("close-first"), { tabId: first.tabId });
+    assert.equal(
+      (await browser.conversationTabs(access.actorId, "local-codex", "native-artifacts", () => {})).length,
+      1,
+    );
+    if (lifecycle) {
+      await lifecycle.observe("local-codex", "native-artifacts", "archived");
+      assert.deepEqual(lifecycle.rows.get(JSON.stringify(["local-codex", "native-artifacts"])).pending, []);
+      assert.equal((await f.port.fixtureCounters()).deleted, 1);
+      assert.equal((await f.port.fixtureBrowserStats()).owners, 0);
+      assert.ok(
+        browser.store.current.pages.every((p) => p.runtime?.kind === "absent"),
+        JSON.stringify(browser.store.current.pages.map((p) => p.runtime)),
+      );
+      assert.ok(
+        [...browser.pages.values()].every((page) => !page.creating),
+        "Settled creation cannot survive as an in-flight operation",
+      );
+      const recordsBeforeDenied = browser.store.current.pages.length;
+      await assert.rejects(browser.createTab(binding("archived-deny"), { url: "https://example.test/" }));
+      assert.equal(
+        browser.store.current.pages.length,
+        recordsBeforeDenied,
+        "An archived invocation cannot commit a new starting tab before failing its runtime admission",
+      );
+      const context: TransportSubmissionContext = {
+        sender: null,
+        actorContext: {
+          actorId: access.actorId,
+          generation: access.generation,
+          credentialId: null,
+          expiresAt: Date.now() + 60000,
+        },
+      };
+      await assert.rejects(
+        workspace.selectHostFiles("local-codex", context, { workspaceThreadId: "native-artifacts" }, async () => {
+          throw Error("No local fallback");
+        }),
+      );
+      let confirmed = 0;
+      await assert.rejects(
+        workspace.createCodexWorkspaceHooks({ hostId: "local-codex" }).restoreProvisionalWorkspace!({
+          threadId: "native-artifacts",
+          context,
+          confirm: async () => {
+            confirmed++;
+            return { thread: { id: "native-artifacts" } };
+          },
+        } as any),
+      );
+      assert.equal(confirmed, 0);
+      await lifecycle.observe("local-codex", "native-artifacts", "active");
+      assert.deepEqual(
+        lifecycle.rows.get(JSON.stringify(["local-codex", "native-artifacts"])).pending,
+        [],
+        JSON.stringify(browser.store.current.pages.map((p) => ({ lifecycle: p.lifecycle, runtime: p.runtime }))),
+      );
+      lifecycle.assertActive("local-codex", "native-artifacts");
+      assert.equal(
+        (await f.port.fixtureCounters()).allocated,
+        1,
+        "Unarchive cannot restart a browser/VM command itself",
+      );
+      const restore = await f.port.workspaceBegin(f.access(), { kind: "restore", threadId: "native-artifacts" });
+      await settled(f.port, restore, "native-ready");
+      await f.port.workspaceNativeReceipt(restore, { result: { thread: { id: "native-artifacts" } } });
+      const fresh = await browser.createTab(binding("after-unarchive"), { url: "https://example.test/" });
+      assert.ok(fresh.tabId);
+      assert.equal(local, 0);
+    }
+    allowed = false;
+    await assert.rejects(browser.createTab(binding("denied"), { url: "https://example.test/" }));
+    assert.equal(local, 0);
     await browser.close();
     await workspace.close();
-    await rm(directory, { recursive: true, force: true });
+    assert.equal((await f.port.fixtureBrowserStats()).attached, 0);
+    assert.equal(
+      (await f.port.fixtureBrowserStats()).owners,
+      1,
+      "Central/transport shutdown does not kill the resource-owned Browser Owner",
+    );
   });
-  workspace.connectBrowserRouting({
-    service: browser,
-    assertThreadAccess: (descriptor) => {
-      if (!allowed || descriptor.ownerId !== access.actorId || descriptor.threadId !== "native-artifacts")
-        throw Error("Synthetic Thread grant revoked");
-    },
-  });
-  const binding = (callId: string) => ({
-    ownerId: access.actorId,
-    hostId: "local-codex",
-    threadId: "native-artifacts",
-    turnId: "synthetic-turn",
-    callId,
-    authorize() {
-      if (!allowed) throw Error("Synthetic browser authority revoked");
-    },
-  });
-  const first = await browser.createTab(binding("first"), { url: "https://example.test/" });
-  const second = await browser.createTab(binding("second"), { url: "https://example.test/" });
-  assert.notEqual(first.tabId, second.tabId);
-  assert.equal(local, 0);
-  assert.equal((await f.port.fixtureBrowserStats()).attached, 1);
-  assert.equal((await browser.conversationTabs(access.actorId, "local-codex", "native-artifacts", () => {})).length, 2);
-  await browser.closeTab(binding("close-first"), { tabId: first.tabId });
-  assert.equal((await browser.conversationTabs(access.actorId, "local-codex", "native-artifacts", () => {})).length, 1);
-  allowed = false;
-  await assert.rejects(browser.createTab(binding("denied"), { url: "https://example.test/" }));
-  assert.equal(local, 0);
-  await browser.close();
-  await workspace.close();
-  assert.equal((await f.port.fixtureBrowserStats()).attached, 0);
-  assert.equal(
-    (await f.port.fixtureBrowserStats()).owners,
-    1,
-    "Central/transport shutdown does not kill the resource-owned Browser Owner",
-  );
-});
 
 test("actual workspace Worker and local PTY use the same private Hands quota without transferring SDK handles", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "worker-hands-quota-")),
@@ -1151,16 +1295,14 @@ test("actual workspace Worker and local PTY use the same private Hands quota wit
   const stop = await startTerminalPtyOwner(directory, endpoint, {
     token: "synthetic-hands-worker-admission-token-123456",
   });
-  let hands: DurableHostProcessService | undefined;
   t.after(async () => {
-    hands?.close();
     await stop();
     await rm(directory, { recursive: true, force: true });
   });
   const f = await artifactFixture(t, { directory, endpoint, tokenFile }),
     actor = f.access(),
     quotaOwner = terminalResourceOwnerId(actor.actorId, "local-codex");
-  hands = new DurableHostProcessService(directory, undefined, {
+  const hands = new DurableHostProcessService(directory, undefined, {
     endpoint,
     tokenFile,
     prepare: () => ({
@@ -1170,6 +1312,7 @@ test("actual workspace Worker and local PTY use the same private Hands quota wit
       env: { PATH: "/usr/bin:/bin" },
     }),
   });
+  t.after(() => hands.close());
   const held: string[] = [];
   for (let i = 0; i < 14; i++) held.push(await hands.reserveTerminal(quotaOwner, "fixture-reserved", "op-" + i));
   await hands.dispatch("process/spawn", {
@@ -1229,4 +1372,159 @@ test("completed artifact streams reach EOF while asynchronous owner cleanup drai
   assert.equal(output.body.readableEnded, true);
   await output.dispose();
   assert.equal(closing, 2);
+});
+
+async function lifecycleResult(port: Port, token: string) {
+  for (let i = 0; i < 800; i++) {
+    const value = await port.workspaceLifecycleStatus(token);
+    if (value.state !== "pending") {
+      await port.workspaceLifecycleForget(token);
+      return value;
+    }
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  throw Error("Lifecycle cleanup did not settle");
+}
+test("committed archive retires only the exact Worker binding and compute; unarchive is a fence change, never command replay", async (t) => {
+  const f = await artifactFixture(t),
+    actor = f.access(),
+    selection = await f.port.workspaceSelection(actor, "native-artifacts");
+  if (selection.kind !== "bound") throw Error("unreachable");
+  const watch = await f.port.workspaceTerminalOpen(actor, "native-artifacts", {
+    workspaceId: selection.workspaceId,
+    generation: selection.generation,
+  });
+  await terminalOperation(
+    f.port,
+    await f.port.workspaceTerminalRequest(watch, f.access(), "process/spawn", {
+      processHandle: "archived-terminal",
+      command: ["/bin/sh"],
+      tty: true,
+      size: { cols: 80, rows: 24 },
+    }),
+  );
+  const row = { hostId: "local-codex", threadId: "native-artifacts", generation: 1, state: "archived" as const };
+  assert.deepEqual(await lifecycleResult(f.port, await f.port.workspaceLifecycleBegin(row)), {
+    state: "complete",
+    managed: true,
+  });
+  assert.equal((await f.port.fixtureCounters()).deleted, 1);
+  assert.equal((await f.port.fixtureTerminalStats()).active, 0);
+  await assert.rejects(f.port.workspaceSelection(f.access(), "native-artifacts"));
+  assert.deepEqual(await lifecycleResult(f.port, await f.port.workspaceLifecycleBegin(row)), {
+    state: "complete",
+    managed: true,
+  });
+  assert.equal((await f.port.fixtureCounters()).deleted, 1);
+  await f.port.workspaceBegin(f.access(), { kind: "restore", threadId: "native-artifacts" }).then(async (token) => {
+    assert.equal((await settled(f.port, token, "failed")).state, "failed");
+  });
+  assert.deepEqual(
+    await lifecycleResult(f.port, await f.port.workspaceLifecycleBegin({ ...row, generation: 2, state: "active" })),
+    { state: "complete", managed: true },
+  );
+  assert.equal(
+    (await f.port.fixtureCounters()).allocated,
+    1,
+    "Unarchive itself must not allocate or restart a command",
+  );
+  const next = await f.port.workspaceBegin(f.access(), { kind: "restore", threadId: "native-artifacts" });
+  const ready = await settled(f.port, next, "native-ready");
+  assert.equal(ready.state, "native-ready");
+  await f.port.workspaceNativeReceipt(next, { result: { thread: { id: "native-artifacts" } } });
+  assert.equal((await f.port.fixtureCounters()).allocated, 2);
+  const stale = await f.port.workspaceLifecycleBegin(row);
+  assert.deepEqual(await lifecycleResult(f.port, stale), { state: "failed" });
+  assert.equal((await f.port.fixtureCounters()).deleted, 1, "Old archive cannot retire the new incarnation");
+  const deleted = { ...row, generation: 3, state: "deleted" as const };
+  assert.equal((await lifecycleResult(f.port, await f.port.workspaceLifecycleBegin(deleted))).state, "complete");
+  assert.equal((await f.port.fixtureCounters()).deleted, 2);
+  assert.equal(
+    (await lifecycleResult(f.port, await f.port.workspaceLifecycleBegin({ ...row, generation: 4, state: "active" })))
+      .state,
+    "failed",
+  );
+});
+
+test("lifecycle cancels a pending Native restore without blocking the Worker FIFO or losing its original cleanup receipt", async (t) => {
+  const f = await artifactFixture(t),
+    restore = await f.port.workspaceBegin(f.access(), { kind: "restore", threadId: "native-artifacts" });
+  await settled(f.port, restore, "native-ready");
+  const closing = await f.port.workspaceLifecycleBegin({
+    hostId: "local-codex",
+    threadId: "native-artifacts",
+    generation: 1,
+    state: "archived",
+  });
+  assert.equal((await f.port.workspacePlacementPage()).items.length, 1);
+  assert.deepEqual(await lifecycleResult(f.port, closing), { state: "complete", managed: true });
+  assert.equal((await f.port.fixtureCounters()).deleted, 1);
+  await assert.rejects(f.port.workspaceNativeReceipt(restore, { result: { thread: { id: "native-artifacts" } } }));
+  assert.equal((await f.port.workspaceStatus(restore)).state, "failed");
+  assert.equal((await f.port.fixtureCounters()).deleted, 1);
+});
+
+test("a late positive Native creation is persisted after archive, but cannot publish compute or turn absence into local execution", async (t) => {
+  const f = await fixture(t),
+    start = await f.port.workspaceBegin(f.access(), {
+      kind: "start",
+      intentId: "late-archived",
+      environment: await f.target(),
+    });
+  await settled(f.port, start, "native-ready");
+  const row = { hostId: "local-codex", threadId: "late-native", generation: 1, state: "archived" as const };
+  const directory = await mkdtemp(join(tmpdir(), "late-native-lifecycle-"));
+  const service = await openWorkspaceExecutionService({
+    port: f.port,
+    socketPath: join(directory, "authority.sock"),
+    token: "synthetic-late-native-authority-123456",
+    actors: { get: () => null, isCurrent: () => false, bindings: () => [], onAuthorityChanged: () => () => {} },
+    access: { admitsActor: () => false, store: { revocationRevision: () => 0, onAuthorityChanged: () => () => {} } },
+    onCleanupUnconfirmed() {},
+  });
+  f.defer(async () => {
+    await service.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  assert.deepEqual(service.conversationScopes(), [], "No positive Native receipt has published placement yet");
+  await service.releaseConversation(row);
+  assert.equal((await f.port.fixtureCounters()).deleted, 0, "No unknown Native identity is blindly destroyed");
+  await assert.rejects(f.port.workspaceNativeReceipt(start, { result: { thread: { id: "late-native" } } }));
+  assert.equal((await f.port.fixtureCounters()).deleted, 1);
+  assert.equal((await f.port.workspacePlacementPage()).items[0]!.threadId, "late-native");
+  assert.equal(
+    (await f.port.workspaceFileScope(f.access(), "late-native")).kind,
+    "workspace",
+    "A retained/idle remote placement must never become host-local",
+  );
+  await assert.rejects(
+    f.port.workspaceFileRequest(f.access(), "late-native", "fs/readDirectory", { path: "/workspace" }),
+  );
+  assert.deepEqual(
+    await lifecycleResult(f.port, await f.port.workspaceLifecycleBegin(row)),
+    { state: "complete", managed: true },
+    "Retry reads the late original idle proof, not another physical close",
+  );
+});
+
+test("unknown delete stays charged and fenced; after Worker replacement a foreign retained member is not killed or adopted", async (t) => {
+  const f = await artifactFixture(t);
+  await f.port.fixtureFailCleanup();
+  const row = { hostId: "local-codex", threadId: "native-artifacts", generation: 1, state: "archived" as const };
+  assert.equal((await lifecycleResult(f.port, await f.port.workspaceLifecycleBegin(row))).state, "failed");
+  assert.equal((await lifecycleResult(f.port, await f.port.workspaceLifecycleBegin(row))).state, "failed");
+  assert.equal((await f.port.fixtureCounters()).retained, 1);
+  await f.replaceAfterUnconfirmed();
+  const token = await f.port.workspaceLifecycleBegin(row);
+  assert.equal((await lifecycleResult(f.port, token)).state, "failed");
+  assert.equal((await f.port.fixtureCounters()).deleted, 0);
+  assert.equal((await f.port.fixtureCounters()).retained, 1);
+  const start = await f.port.workspaceBegin(f.access(), {
+    kind: "start",
+    intentId: "no-refund-after-archive",
+    environment: await f.target(),
+  });
+  await settled(f.port, start, "failed");
+  assert.equal((await f.port.fixtureCounters()).allocated, 0);
+  f.expectUnconfirmedShutdown();
 });

@@ -1,3 +1,4 @@
+import { WorkspaceLifecycleJobs, type WorkspaceLifecyclePort } from "./lifecycle-jobs.js";
 import { DurableHostProcessService } from "@opencraft/local-agent-host/durable-process-service";
 import { WorkspaceBrowserTransfers, type WorkspaceBrowserPort } from "./browser-transports.js";
 import { WorkspaceTerminalTransfers, type WorkspaceTerminalPort } from "./terminal-transports.js";
@@ -30,7 +31,8 @@ export type WorkspacePreparationStatus =
   | { state: "native-ready"; fields: Fields; selection: WorkspaceExecutionSelection }
   | { state: "complete"; receipt: { workspaceId: string; threadId: string } }
   | { state: "failed" };
-export interface WorkspaceExecutionPort extends WorkspaceArtifactPort, WorkspaceTerminalPort, WorkspaceBrowserPort {
+export interface WorkspaceExecutionPort
+  extends WorkspaceArtifactPort, WorkspaceTerminalPort, WorkspaceBrowserPort, WorkspaceLifecyclePort {
   workspaceBegin(access: WorkspaceActorAdmission, request: WorkspacePreparation): Promise<string>;
   workspaceStatus(token: string): Promise<WorkspacePreparationStatus>;
   workspaceNativeReceipt(
@@ -172,7 +174,29 @@ export async function createWorkspaceExecutionOwner(
     current: (access, pending) => current(access, pending),
     binding: (access, threadId) => owned.bindingFor(admission(access, undefined, true), threadId),
   });
+  const lifecycle = new WorkspaceLifecycleJobs(async (row) => {
+    if (closed) throw Error("Workspace owner closed");
+    if (row.hostId !== "local-codex") throw Error("Invalid workspace lifecycle Host");
+    return owned.applyThreadLifecycle(row);
+  });
   const methods: WorkspaceExecutionPort = {
+    async workspaceLifecycleBegin(row) {
+      const token = lifecycle.begin(row);
+      // Cancellation retains existing receipt correlations. A late start still
+      // persists its positive Native identity, then the owner refuses publication.
+      for (const state of attempts.values())
+        if (state.kind === "restore" && state.expectedThreadId === row.threadId && !state.published) {
+          state.active = false;
+          state.native.reject(Error("Workspace lifecycle changed"));
+        }
+      return token;
+    },
+    async workspaceLifecycleStatus(token) {
+      return lifecycle.status(token);
+    },
+    async workspaceLifecycleForget(token) {
+      lifecycle.forget(token);
+    },
     async workspaceBrowserOpen(raw, threadId, lease) {
       return browsers.open(workspaceAdmission(raw), threadId, lease);
     },
@@ -449,6 +473,7 @@ export async function createWorkspaceExecutionOwner(
         } catch (error) {
           errors.push(error);
         }
+        await lifecycle.close();
         terminalAdmission?.close();
         actors.close();
         try {

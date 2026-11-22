@@ -26,6 +26,7 @@ export async function openWorkspaceExecutionService(options: {
   access: ConstructorParameters<typeof WorkspaceNativeAdmission>[0]["access"];
   socketPath: string;
   token: string;
+  assertThreadActive?(threadId: string): void;
   onCleanupUnconfirmed(): void;
 }) {
   const admission = new WorkspaceNativeAdmission(options),
@@ -63,6 +64,43 @@ export async function openWorkspaceExecutionService(options: {
     };
   };
   return {
+    conversationScopes: () => placement.conversationScopes(),
+    async releaseConversation(row: {
+      hostId: string;
+      threadId: string;
+      generation: number;
+      state: "active" | "archived" | "deleted";
+    }) {
+      if (row.hostId !== "local-codex") return;
+      check(row.hostId);
+      // Even an unknown Native start can later reveal this Thread ID. Install
+      // the private fence before consulting placement; absence is not permission
+      // for a late positive receipt to publish archived compute.
+      const token = await options.port.workspaceLifecycleBegin({
+        hostId: row.hostId,
+        threadId: row.threadId,
+        generation: row.generation,
+        state: row.state,
+      });
+      let settled = false;
+      try {
+        for (;;) {
+          const result = await options.port.workspaceLifecycleStatus(token);
+          if (result.state === "pending") {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            continue;
+          }
+          settled = true;
+          if (result.state !== "complete") throw Error("Workspace cleanup unconfirmed");
+          await placement.refresh();
+          if (!result.managed && placement.has(row.threadId))
+            throw Error("Workspace source/cleanup requires reconciliation");
+          return;
+        }
+      } finally {
+        if (settled) await options.port.workspaceLifecycleForget(token);
+      }
+    },
     connectBrowserRouting({
       service,
       assertThreadAccess,
@@ -131,8 +169,7 @@ export async function openWorkspaceExecutionService(options: {
                 authorize();
                 if (peer?.connected) return Promise.resolve(peer);
                 if (connecting) return connecting;
-                let work!: Promise<WorkspaceBrowserClient>;
-                work = (async () => {
+                const work: Promise<WorkspaceBrowserClient> = (async () => {
                   await peer?.close();
                   const current = admission.admitResource(access.actorId);
                   authorize();
@@ -187,9 +224,11 @@ export async function openWorkspaceExecutionService(options: {
         authority: ownedAuthority,
         admit: admission.admit,
         onCleanupUnconfirmed: options.onCleanupUnconfirmed,
+        assertThreadActive: options.assertThreadActive,
         readWorkspaceArtifact: async (threadId, path, context, signal) => {
           check(hostId);
           if (!placement.has(threadId)) throw Error("Workspace output has no remote placement");
+          options.assertThreadActive?.(threadId);
           const access = admission.admit(context);
           return artifacts.read(
             access,
@@ -197,6 +236,7 @@ export async function openWorkspaceExecutionService(options: {
             path,
             () => {
               check(hostId);
+              options.assertThreadActive?.(threadId);
               admission.admit(context);
             },
             signal,
@@ -208,6 +248,7 @@ export async function openWorkspaceExecutionService(options: {
             if (!placement.isKnownLocal(threadId)) throw Error("Native attachment placement unavailable");
             return null;
           }
+          options.assertThreadActive?.(threadId);
           if (!context) throw Error("Workspace attachment authority unavailable");
           const access = admission.admit(context);
           const delivered = await artifacts.upload(
@@ -216,11 +257,13 @@ export async function openWorkspaceExecutionService(options: {
             artifact,
             () => {
               check(hostId);
+              options.assertThreadActive?.(threadId);
               admission.admit(context);
             },
             signal,
           );
           check(hostId);
+          options.assertThreadActive?.(threadId);
           admission.admit(context);
           return delivered;
         },
@@ -236,6 +279,7 @@ export async function openWorkspaceExecutionService(options: {
     },
     async readFileScope(hostId: string, context: TransportSubmissionContext, threadId: string) {
       check(hostId);
+      options.assertThreadActive?.(threadId);
       const access = admission.admit(context);
       if (!placement.has(threadId)) {
         if (!placement.isKnownLocal(threadId)) throw Error("Native file placement unavailable");
@@ -310,12 +354,14 @@ export async function openWorkspaceExecutionService(options: {
       check(hostId);
       const threadId = (params as { workspaceThreadId: unknown }).workspaceThreadId;
       if (typeof threadId !== "string" || !placement.has(threadId)) throw Error("Workspace file placement unavailable");
+      options.assertThreadActive?.(threadId);
       const access = admission.admit(context),
         selected = await options.port.workspaceSelection(access, threadId);
       if (selected.kind !== "bound") throw Error("Workspace files cannot become local");
       const assertCurrent = async () => {
         check(hostId);
         admission.admit(context);
+        options.assertThreadActive?.(threadId);
         const current = await options.port.workspaceSelection(access, threadId);
         if (JSON.stringify(current) !== JSON.stringify(selected)) throw Error("Workspace file generation changed");
       };

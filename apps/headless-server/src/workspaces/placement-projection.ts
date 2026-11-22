@@ -14,6 +14,13 @@ export class WorkspacePlacementProjection {
   private tail: Promise<void> = Promise.resolve();
   private pending = 0;
   constructor(private readonly port: Pick<WorkspaceExecutionPort, "workspacePlacementPage">) {}
+  conversationScopes() {
+    if (this.closed || !this.ready) throw Error("Workspace placement unavailable");
+    return [...new Set([...this.threads, ...this.observedRemote])].map((threadId) => ({
+      hostId: "local-codex",
+      threadId,
+    }));
+  }
   refresh(): Promise<void> {
     if (this.closed || this.pending >= 64) {
       this.invalidate();

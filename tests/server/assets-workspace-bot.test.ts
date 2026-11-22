@@ -126,7 +126,7 @@ test("Bot source assignment is reauthorized; swapped epochs and provider loss ca
   let revoked = false;
   const h = await client.spawn(environment, {
     ...original,
-    request: async (method, params) => {
+    request: async (method, _params) => {
       const a = await original.request(method);
       return { ...a, epoch: revoked ? "epoch-2" : a.epoch };
     },

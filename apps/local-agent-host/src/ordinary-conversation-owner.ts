@@ -50,6 +50,10 @@ export interface OrdinaryRestoreOptions extends Omit<OrdinaryCreationOptions, 'i
 /** Host lifecycle composition. Product admission and the private Native route must
  * be installed by the deployment; constructing this class does not expose a UI
  * capability. Close this owner before closing its journal. No automatic replay. */
+export interface OrdinaryThreadLifecycle {
+  hostId: string; threadId: string; generation: number; state: 'active'|'archived'|'deleted';
+}
+type LifecycleEntry = {row: OrdinaryThreadLifecycle; pending: boolean; managed: boolean; ready: boolean; work: Promise<{managed:boolean}>};
 export class OrdinaryConversationOwner {
   private readonly compute: OrdinaryWorkspaceCompute;
   private closed = false;
@@ -58,10 +62,61 @@ export class OrdinaryConversationOwner {
   private active = new Set<() => Promise<void>>();
   private cleanupFailed = false;
   private restoring = new Set<string>();
-  private bindings = new Map<string, { binding: OrdinaryExecutionBinding; authorize(): Promise<void> }>();
+  private bindings = new Map<string, { binding: OrdinaryExecutionBinding; authorize(): Promise<void>; retire(): Promise<void> }>();
+  private lifecycles = new Map<string, LifecycleEntry>();
+  private pendingThreads = new Map<string, Set<Promise<unknown>>>();
+  private assertThreadActive(hostId: string, threadId: string) {
+    const current = this.lifecycles.get(JSON.stringify([hostId, threadId]));
+    if (current && (!current.ready || current.pending || current.row.state !== 'active')) throw Error('Workspace conversation is retired');
+  }
+  private trackThread(authority: WorkspaceAuthority, threadId: string, work: Promise<unknown>) {
+    const key = this.key(authority, threadId), pending = this.pendingThreads.get(key) ?? new Set();
+    this.pendingThreads.set(key, pending); pending.add(work);
+    const finish = () => {pending.delete(work); if (!pending.size && this.pendingThreads.get(key) === pending) this.pendingThreads.delete(key);};
+    void work.then(finish, finish);
+  }
+  /** Canonical lifecycle is the Gateway's existing committed journal. This is
+   * its private monotonic projection, not a second writable lifecycle ledger. */
+  applyThreadLifecycle(row: OrdinaryThreadLifecycle): Promise<{managed:boolean}> {
+    if (this.closed || !row || ![row.hostId,row.threadId].every(v => typeof v === 'string' && !!v && v.length <= 512 && !/[\x00-\x1f\x7f]/u.test(v))
+      || !Number.isSafeInteger(row.generation) || row.generation < 1 || !['active','archived','deleted'].includes(row.state)) return Promise.reject(Error('Invalid workspace lifecycle'));
+    const snapshot = {...row}, key = JSON.stringify([row.hostId,row.threadId]), prior = this.lifecycles.get(key);
+    if (prior && (row.generation < prior.row.generation || row.generation === prior.row.generation && row.state !== prior.row.state
+      || prior.row.state === 'deleted' && row.state !== 'deleted')) return Promise.reject(Error('Stale workspace lifecycle'));
+    if (prior && row.generation === prior.row.generation) {
+      if (prior.pending || prior.managed) return prior.work;
+      // A late positive Native receipt may have arrived after the first cleanup
+      // observation. Recheck committed idle proof; never replay physical close.
+      const rows = this.store.lifecycleForThread(row.hostId,row.threadId);
+      if (!rows.length) return Promise.resolve({managed:false});
+      if (rows.some(r => r.phase !== 'idle')) return Promise.reject(Error('Workspace cleanup requires reconciliation'));
+      prior.managed = true; prior.ready = true; prior.work = Promise.resolve({managed:true}); return prior.work;
+    }
+    if (!prior && this.lifecycles.size >= 100000) return Promise.reject(Error('Too many workspace lifecycle scopes'));
+    const entry: LifecycleEntry = {row:snapshot,pending:true,managed:false,ready:false,work:undefined!};
+    this.lifecycles.set(key,entry); // Fence before any await or teardown.
+    const matches = (bindingKey: string) => {const value = JSON.parse(bindingKey);return value[1] === snapshot.hostId && value[2] === snapshot.threadId;};
+    entry.work = (async()=>{
+      // A newer committed generation cannot overtake an earlier physical close.
+      // Its result may be unknown, but it must not run a second destroy attempt.
+      if (prior) await prior.work.catch(()=>{});
+      await Promise.allSettled([...this.pendingThreads].filter(([k])=>matches(k)).flatMap(([,pending])=>[...pending]));
+      const owned = [...this.bindings].filter(([k])=>matches(k)).map(([,value])=>value);
+      entry.managed = owned.length > 0;
+      const outcomes = await Promise.allSettled(owned.map(value=>value.retire()));
+      if (outcomes.some(r=>r.status === 'rejected')) throw Error('Workspace cleanup unconfirmed');
+      const rows = this.store.lifecycleForThread(snapshot.hostId,snapshot.threadId);
+      entry.managed ||= rows.length > 0;
+      if (rows.some(r=>r.phase !== 'idle')) throw Error('Retained workspace requires reconciliation');
+      entry.ready = entry.managed;
+      return {managed:entry.managed};
+    })().finally(()=>{entry.pending = false;});
+    return entry.work;
+  }
   private key(authority: WorkspaceAuthority, threadId: string) { return JSON.stringify([authority.principalId, authority.hostId, threadId]); }
   /** Internal execution router only. Missing/restored bindings fail closed. */
   async bindingFor(authority: WorkspaceAuthority, threadId: string): Promise<OrdinaryExecutionBinding> {
+    this.assertThreadActive(authority.hostId, threadId);
     const key = this.key(authority, threadId), current = this.bindings.get(key);
     if (!current) throw Error('Ordinary execution binding unavailable');
     await current.authorize();
@@ -73,22 +128,26 @@ export class OrdinaryConversationOwner {
   start(options: OrdinaryCreationOptions): Promise<{ workspaceId: string; threadId: string }> {
     // Copy before the first await: later mutation of a request cannot change identity.
     const authority = { ...options.authority }, intentId = options.intentId;
-    let executionLost = false;
+    let executionLost = false, knownThreadId: string | undefined;
     const snapshot = encodeWorkspaceSelection(options.selection).json;
     const selection = () => JSON.parse(snapshot) as ResolvedWorkspaceSelection;
     const authorize = async () => {
       if (this.closed) throw Error('Ordinary conversation owner closed');
       if (executionLost) throw Error('Ordinary execution transport lost');
+      if (knownThreadId) this.assertThreadActive(authority.hostId, knownThreadId);
       await options.authorize(selection());
       if (this.closed) throw Error('Ordinary conversation owner closed');
       if (executionLost) throw Error('Ordinary execution transport lost');
+      if (knownThreadId) this.assertThreadActive(authority.hostId, knownThreadId);
     };
-    const operation = (async () => {
+    // The operation is assigned before the first authorization await can resume.
+    let operation!: Promise<{workspaceId:string;threadId:string}>;
+    operation = (async () => {
       await authorize();
       const admitted = this.store.admitResolved(authority, intentId, selection());
       // A successful duplicate returns its receipt, not another thread/start.
       // Restoring execution for that existing thread is a separate operation.
-      if (admitted.threadId) return { workspaceId: admitted.workspaceId, threadId: admitted.threadId };
+      if (admitted.threadId) { this.assertThreadActive(authority.hostId, admitted.threadId); return { workspaceId: admitted.workspaceId, threadId: admitted.threadId }; }
       let allocation: WorkspaceAllocation | undefined, binding: OrdinaryExecutionBinding | undefined;
       let cleanup: Promise<void> | undefined, bindingKey: string | undefined, published = false;
       const retire = () => cleanup ??= (async () => {
@@ -121,13 +180,15 @@ export class OrdinaryConversationOwner {
         const response = await options.nativeStart(fields, binding);
         const threadId = (response as { thread?: { id?: unknown } } | null)?.thread?.id;
         if (typeof threadId !== 'string' || !threadId) throw Error('Native thread creation receipt missing');
+        knownThreadId = threadId;
+        this.trackThread(authority, threadId, operation);
         // Persist positive evidence even when auth/shutdown changed during the RPC.
         this.store.confirmThreadStarted(authority, lease, threadId);
         await authorize();
         await binding.bindThread?.(threadId);
         await authorize();
         bindingKey = this.key(authority, threadId);
-        this.bindings.set(bindingKey, { binding, authorize });
+        this.bindings.set(bindingKey, { binding, authorize, retire });
         this.active.add(retire); published = true;
         return { workspaceId: admitted.workspaceId, threadId };
       } catch (error) {
@@ -156,9 +217,11 @@ export class OrdinaryConversationOwner {
       const authorize = async () => {
         if (this.closed) throw Error('Ordinary conversation owner closed');
         if (executionLost) throw Error('Ordinary execution transport lost');
+        this.assertThreadActive(authority.hostId, threadId);
         await options.authorize(selection());
         if (this.closed) throw Error('Ordinary conversation owner closed');
         if (executionLost) throw Error('Ordinary execution transport lost');
+        this.assertThreadActive(authority.hostId, threadId);
       };
       await authorize();
       if (this.bindings.has(key)) {
@@ -200,7 +263,7 @@ export class OrdinaryConversationOwner {
         await authorize();
         await binding.bindThread?.(threadId);
         await authorize();
-        this.bindings.set(key, { binding, authorize });
+        this.bindings.set(key, { binding, authorize, retire });
         this.active.add(retire); published = true;
         return { workspaceId: row.workspaceId, threadId };
       } catch (error) {
@@ -209,6 +272,7 @@ export class OrdinaryConversationOwner {
       } finally { this.restoring.delete(key); }
     })();
     this.pending.add(operation);
+    this.trackThread(authority, threadId, operation);
     void operation.then(() => this.pending.delete(operation), () => this.pending.delete(operation));
     return operation;
   }

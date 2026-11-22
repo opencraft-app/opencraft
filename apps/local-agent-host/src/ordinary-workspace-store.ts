@@ -175,6 +175,12 @@ export class OrdinaryWorkspaceStore {
     const row = this.db.prepare("SELECT * FROM ordinary_workspaces WHERE authority_key=? AND thread_id=?").get(this.authority(scope), threadId);
     return row ? binding(row) : null;
   }
+  /** Private cleanup inventory, not a user grant. Only known exact owned
+   * bindings may be destroyed; retained non-idle rows require reconciliation. */
+  lifecycleForThread(hostId: string, threadId: string): WorkspaceBinding[] {
+    if (!text(hostId) || !text(threadId)) throw Error("Invalid lifecycle scope");
+    return this.db.prepare("SELECT * FROM ordinary_workspaces WHERE host_id=? AND thread_id=?").all(hostId, threadId).map(binding);
+  }
   /** Trusted routing classification only, NOT a grant or a binding lookup.
    * Must include other principals' placements so an unauthorized remote thread
    * can never be misclassified as a local thread. No owner data is returned. */

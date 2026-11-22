@@ -152,7 +152,9 @@ export function workspaceArtifactReader(options: {
               } else {
                 if (frame.size !== size || frame.sha256 !== digest.digest("hex"))
                   throw Error("Workspace output receipt mismatch");
-                await child.closeStdin();
+                // The sender exits after its final digest receipt. Stdin may
+                // already be closed; an EPIPE here must not discard a proven
+                // complete transfer. The actual exit status remains required.
                 const exit = await child.exited;
                 await check();
                 if (exit.code !== 0) throw Error("Workspace output failed");

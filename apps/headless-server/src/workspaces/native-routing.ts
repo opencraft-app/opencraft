@@ -40,6 +40,7 @@ export function createWorkspaceNativeRouting(options: {
   placement: WorkspacePlacementProjection;
   authority: Awaited<ReturnType<typeof createWorkspaceExecutionAuthority>>;
   admit(context: TransportSubmissionContext): WorkspaceActorAdmission;
+  assertThreadActive?(threadId: string): void;
   onCleanupUnconfirmed(): void;
   readWorkspaceArtifact?: CodexWorkspaceHooks["readWorkspaceArtifact"];
   prepareWorkspaceArtifact?: CodexWorkspaceHooks["prepareWorkspaceArtifact"];
@@ -86,6 +87,7 @@ export function createWorkspaceNativeRouting(options: {
     finalizeNativeResume: finalize,
     async restoreProvisionalWorkspace(input) {
       check();
+      options.assertThreadActive?.(input.threadId);
       const requestId = "provisional:" + randomUUID();
       const prepared = await handoff.prepare(
         requestId,
@@ -95,6 +97,7 @@ export function createWorkspaceNativeRouting(options: {
             check();
             input.context.resourceOwner?.assertCurrent();
             options.admit(input.context);
+            options.assertThreadActive?.(input.threadId);
             return input.context;
           },
         },
@@ -152,9 +155,13 @@ export function createWorkspaceNativeRouting(options: {
           const operation = placement
             ? { kind: "start" as const, ...placement }
             : { kind: "restore" as const, threadId: String(params.threadId) };
+          if (operation.kind === "restore") options.assertThreadActive?.(operation.threadId);
           const ready = await handoff.prepare(physical.id, request, operation);
           if (ready.kind === "existing") throw Error("Workspace already created; resume the existing Thread");
-          return ready.resolve;
+          return async () => {
+            if (operation.kind === "restore") options.assertThreadActive?.(operation.threadId);
+            return ready.resolve();
+          };
         }
         if (method === "thread/start")
           return async () => {
@@ -164,6 +171,7 @@ export function createWorkspaceNativeRouting(options: {
           };
         if (!id(params.threadId)) throw Error("Workspace routing requires a durable Thread");
         const threadId = params.threadId;
+        options.assertThreadActive?.(threadId);
         if (!options.placement.has(threadId))
           return async () => {
             check();
@@ -180,6 +188,7 @@ export function createWorkspaceNativeRouting(options: {
           check();
           request.context();
           options.admit(request.context());
+          options.assertThreadActive?.(threadId);
           const current = await options.port.workspaceSelection(admission, threadId);
           check();
           request.context();
