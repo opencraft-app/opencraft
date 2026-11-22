@@ -3,7 +3,11 @@ import type { ActorStore } from "@opencraft/access-control/actors";
 import type { InstanceAccess } from "@opencraft/access-control";
 import type { HumanAuth } from "@opencraft/access-control/human-auth";
 import { openAssetConfigurations } from "@opencraft/plugin-assets/server";
-import { assetConfigurationsHttp, type AssetRequestAuthority } from "@opencraft/plugin-assets/server/http";
+import {
+  assetConfigurationsHttp,
+  assetMetadataHttp,
+  type AssetRequestAuthority,
+} from "@opencraft/plugin-assets/server/http";
 
 export const ASSET_STATUS_PATH = "/__opencraft_assets/status";
 /** Compose the resource with existing Human/login/member owners. This provides
@@ -13,8 +17,10 @@ export async function openHumanAssets(options: {
   auth: HumanAuth;
   actors: ActorStore;
   access: InstanceAccess;
+  /** Trusted compiled composition only; never taken from HTTP/configuration JSON. */
+  openStorage?: typeof openAssetConfigurations;
 }) {
-  const owner = await openAssetConfigurations(options.directory);
+  const owner = await (options.openStorage ?? openAssetConfigurations)(options.directory);
   let closed = false;
   const pending = new Set<() => void>();
   const resolve = (request: IncomingMessage): AssetRequestAuthority | null => {
@@ -61,11 +67,17 @@ export async function openHumanAssets(options: {
     };
   };
   const configurations = assetConfigurationsHttp(owner.store, resolve);
+  const git = assetMetadataHttp(
+    { snapshot: owner.store.gitSnapshot, update: owner.store.gitUpdate },
+    resolve,
+    "/__opencraft_assets/git-connections",
+  );
   return {
     outcome: owner.outcome,
     async handle(request: IncomingMessage, response: ServerResponse) {
       const path = new URL(request.url ?? "/", "http://assets.invalid").pathname;
-      if (path !== ASSET_STATUS_PATH) return configurations(request, response);
+      if (path !== ASSET_STATUS_PATH)
+        return (await git(request, response)) || (await configurations(request, response));
       const origin = options.auth.configuration.origin;
       const pinned =
         !!origin &&
@@ -81,7 +93,9 @@ export async function openHumanAssets(options: {
       });
       response.end(
         JSON.stringify(
-          status === 200 ? { version: 1, scope: access?.current() ? access.scope : null } : { error: "unavailable" },
+          status === 200
+            ? { version: 1, scope: access?.current() ? access.scope : null, gitHosts: owner.gitHosts }
+            : { error: "unavailable" },
         ),
       );
       return true;

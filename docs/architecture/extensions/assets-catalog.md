@@ -100,7 +100,7 @@ does not roll back a committed transaction. Unknown outcomes are never replayed.
 
 The router pins the verified origin/Host, enforces same-origin POST and JSON,
 limits bodies to 16 KiB, fences stale scopes, and returns private/no-store metadata.
-The Worker exposes only snapshot/update, never decrypted runtime credentials,
+The Worker exposes configuration/Git metadata snapshots and mutations, never decrypted runtime credentials,
 installation adoption, arbitrary document reads or library registration. Saving
 an environment is still not execution admission or external-provider validation.
 
@@ -138,3 +138,46 @@ not advertised until a real provider port is installed.
 Saving E2B configuration is not cloud provisioning, an execution grant, endpoint
 verification or a resource-budget change. Runtime workspace and Git-provider
 extraction remain independent follow-up work.
+
+## Git connections
+
+The default native/Headless account assembly advertises `gitHosts` through
+`/__opencraft_assets/status`. Only a compiled, advertised GitHub adapter installs
+its provider and editor; an older or unsupported server has no fake Git action.
+`/__opencraft_assets/git-connections` shares the same Human/session/membership
+admission, origin checks, request-local revocation and vault Worker as environment
+configuration. There is no second vault writer, login, account database or schema.
+
+The shared Git controller owns request lifetimes, per-operation error namespaces,
+strict metadata parsing and monotone revisions. The GitHub form keeps a local
+secret draft and pinned expected revision; a background read cannot overwrite an
+edited draft. Loading current data requires explicit confirmation. Failed or
+unknown mutations are never replayed. Account retirement aborts every in-flight
+response so an older successful read cannot restore withdrawn metadata.
+
+The compiled GitHub provider fixes the REST origin to `api.github.com`, rejects
+redirects and verifies account ID/login and a verified email (or the exact ID-based
+noreply address). It retains a signing generation only for the same account ID.
+Signing registration reconciles by exact public key before creating one: a lost
+POST response remains pending, and an explicit retry first checks the remote list.
+Missing signing permission is a manual-registration state, not discarded account
+configuration. Removing a binding only removes the local credential; remote keys
+and tokens must be revoked at GitHub separately.
+
+Official API contracts: [verified email addresses](https://docs.github.com/en/rest/users/emails)
+and [SSH signing keys](https://docs.github.com/en/rest/users/ssh-signing-keys).
+Provider-specific hosts, identity mappings, SSH access and unrelated tool-token
+namespaces stay in their own adapters. An adapter can reuse the shared form and
+controller without changing its existing route, vault partition or revisions.
+
+Validation uses synthetic GitHub responses, including a loopback remote reached
+from the real Worker. No managed user token is read and no real remote key is
+created. `test:assets-default` covers actual Human login/HTTP/Worker writes and
+in-flight authority withdrawal. `smoke:assets-default` exercises the registered
+view, Git save, conflict, canceled reload, explicit reconciliation and local clear.
+It is a presentation harness with the production page frame, not a full AppShell
+or Electron-binary acceptance test.
+
+Saving/verifying Git configuration is not an execution grant. The default native
+Actor's agent-execution credential handoff and cloud-workspace binding still need
+runtime/admission integration; the configuration UI does not claim those paths.

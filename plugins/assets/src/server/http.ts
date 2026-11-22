@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { AssetConfigurationPort } from "./worker.js";
+import type { AssetConfigurationPort, AssetAdmission } from "./worker.js";
 import { SandboxConfigurationError } from "./errors.js";
 
 export const ASSET_CONFIGURATIONS_PATH = "/__opencraft_assets/configurations";
@@ -16,8 +16,8 @@ export interface AssetRequestAuthority {
   current(): boolean;
   subscribe(invalidated: () => void): () => void;
 }
-export function assetConfigurationsHttp(
-  store: AssetConfigurationPort,
+export function assetMetadataHttp<T>(
+  store: { snapshot(access: AssetAdmission): Promise<T>; update(access: AssetAdmission, input: unknown): Promise<T> },
   authority: (request: IncomingMessage) => AssetRequestAuthority | null,
   path = ASSET_CONFIGURATIONS_PATH,
 ) {
@@ -74,17 +74,24 @@ export function assetConfigurationsHttp(
           throw new SandboxConfigurationError("json_required", 415);
         let size = 0;
         const chunks: Buffer[] = [];
-        for await (const chunk of request) {
-          const data = Buffer.from(chunk);
-          size += data.length;
-          if (size > 16384) throw new SandboxConfigurationError("too_large", 413);
-          chunks.push(data);
-        }
         let input: unknown;
+        let bytes: Buffer | undefined;
         try {
-          input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-        } catch {
-          throw new SandboxConfigurationError("invalid", 400);
+          for await (const chunk of request) {
+            const data = Buffer.from(chunk);
+            chunks.push(data);
+            size += data.length;
+            if (size > 16384) throw new SandboxConfigurationError("too_large", 413);
+          }
+          bytes = Buffer.concat(chunks);
+          try {
+            input = JSON.parse(bytes.toString("utf8"));
+          } catch {
+            throw new SandboxConfigurationError("invalid", 400);
+          }
+        } finally {
+          bytes?.fill(0);
+          for (const chunk of chunks) chunk.fill(0);
         }
         if (!current() || Atomics.load(permit, 0) !== 1) throw new SandboxConfigurationError("forbidden", 403);
         result = await store.update(admission, input);
@@ -102,4 +109,13 @@ export function assetConfigurationsHttp(
     }
     return true;
   };
+}
+
+/** The existing configuration route retains its exact protocol and admission owner. */
+export function assetConfigurationsHttp(
+  store: AssetConfigurationPort,
+  authority: (request: IncomingMessage) => AssetRequestAuthority | null,
+  path = ASSET_CONFIGURATIONS_PATH,
+) {
+  return assetMetadataHttp(store, authority, path);
 }

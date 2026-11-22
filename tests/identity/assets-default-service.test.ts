@@ -13,6 +13,8 @@ import { MembershipStore, InstanceAccess } from "@opencraft/access-control";
 import { HumanAccountManagement } from "@opencraft/access-control/account-management";
 import { LocalAccountServerPlugin } from "../../plugins/local-account/src/server.js";
 import { LocalAccountApplication } from "../../plugins/local-account/src/application.js";
+import { openAssetConfigurations } from "../../plugins/assets/src/server/worker.js";
+import { githubApiFixture } from "../support/github-api-fixture.js";
 import { openHumanAssets } from "../../plugins/local-account/src/assets-server.js";
 import { createDesktopAccountHost } from "../../plugins/local-account/src/desktop.js";
 import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
@@ -28,7 +30,7 @@ const credential = (revision = 0, extra = {}) => ({
   apiKey: "public-default-fixture-secret",
   ...extra,
 });
-async function fixture(t: test.TestContext, router = true) {
+async function fixture(t: test.TestContext, router = true, openStorage?: typeof openAssetConfigurations) {
   const root = await mkdtemp(join(tmpdir(), "default-assets-")),
     directory = join(root, "data");
   const storage = await openServerDatabase(directory),
@@ -41,7 +43,7 @@ async function fixture(t: test.TestContext, router = true) {
   const configuration = { origin: "", local: true, oidc: [] },
     auth = new HumanAuth(accounts, actors, configuration, () => "<title>Login</title>");
   const access = new InstanceAccess(members, [auth], actors),
-    assets = await openHumanAssets({ directory, auth, access, actors });
+    assets = await openHumanAssets({ directory, auth, access, actors, openStorage });
   const app = new LocalAccountApplication({ auth, management, setupToken: "A".repeat(43) });
   await writeFile(join(root, "index.html"), "<title>Assets integration</title>");
   let close: () => Promise<void>, origin: string;
@@ -141,7 +143,7 @@ test("default Headless router: real account setup/cookie membership reaches impl
   const f = await fixture(t);
   const capability = await f.request("/__opencraft_assets/status");
   assert.equal(capability.status, 200);
-  assert.deepEqual(await capability.json(), { version: 1, scope: f.scope });
+  assert.deepEqual(await capability.json(), { version: 1, scope: f.scope, gitHosts: ["github.com"] });
   const saved = await f.request("/__opencraft_assets/configurations", credential());
   assert.equal(saved.status, 200);
   const body = await saved.json();
@@ -254,4 +256,112 @@ test("a real role change through a borrowed repository invalidates an already-qu
     if (lock.isTransaction) lock.exec("ROLLBACK");
     lock.close();
   }
+});
+
+const gitPath = "/__opencraft_assets/git-connections";
+const gitInput = (revision = 0, extra = {}) => ({
+  host: "github.com",
+  action: "save",
+  revision,
+  username: "fixture",
+  name: "Fixture",
+  email: "fixture@example.test",
+  token: "synthetic-github-api-token",
+  ...extra,
+});
+async function gitFixture(t: test.TestContext) {
+  const remote = await githubApiFixture();
+  t.after(() => remote.close());
+  const before = process.env.OPENCRAFT_TEST_GITHUB_ORIGIN;
+  process.env.OPENCRAFT_TEST_GITHUB_ORIGIN = remote.origin;
+  try {
+    const f = await fixture(t, true, (directory) =>
+      openAssetConfigurations(directory, {
+        entry: new URL("../fixtures/assets-git-storage.worker.ts", import.meta.url),
+      }),
+    );
+    return { ...f, remote };
+  } finally {
+    if (before === undefined) delete process.env.OPENCRAFT_TEST_GITHUB_ORIGIN;
+    else process.env.OPENCRAFT_TEST_GITHUB_ORIGIN = before;
+  }
+}
+test("real default login + HTTP + Worker: advertised GitHub verifies, signs, CAS-fences and projects metadata only", async (t) => {
+  const f = await gitFixture(t);
+  assert.deepEqual((await (await f.request("/__opencraft_assets/status")).json()).gitHosts, ["github.com"]);
+  const response = await f.request(gitPath, gitInput());
+  assert.equal(response.status, 200);
+  const body = await response.json(),
+    github = body.hosts["github.com"];
+  assert.equal(body.scope, f.scope);
+  assert.equal(github.revision, 2);
+  assert.equal(github.signing.registration, "registered");
+  assert.equal(github.identity.accountId, "42");
+  assert.equal(github.tokenConfigured, true);
+  assert.ok(!JSON.stringify(body).includes("synthetic-github-api-token"));
+  assert.ok(!JSON.stringify(body).includes("privateKey"));
+  assert.equal(response.headers.get("cache-control"), "private, no-store");
+  assert.equal((await f.request(gitPath, gitInput())).status, 409);
+  const crossScope = await fetch(f.origin + gitPath, {
+    headers: { ...f.headers, "x-opencraft-account-scope": "actor:other" },
+  });
+  assert.equal(crossScope.status, 409);
+  const crossOrigin = await fetch(f.origin + gitPath, {
+    method: "POST",
+    headers: { ...f.headers, origin: "https://attacker.invalid" },
+    body: JSON.stringify(gitInput(2)),
+  });
+  assert.equal(crossOrigin.status, 403);
+  assert.equal((await f.request(gitPath, gitInput(2, { host: "git.woa.com" }))).status, 400);
+  assert.equal(f.remote.calls.filter((c) => c.method === "POST").length, 1);
+  assert.ok(
+    !(await readFile(join(f.directory, "employee-git-vault.sqlite"))).includes(
+      Buffer.from("synthetic-github-api-token"),
+    ),
+  );
+  const cleared = await f.request(gitPath, { host: "github.com", action: "clear", revision: 2 });
+  assert.equal(cleared.status, 200);
+  assert.equal((await cleared.json()).hosts["github.com"].configured, false);
+  assert.equal(f.remote.keys.length, 1, "clearing the local connection cannot revoke remote keys");
+});
+for (const mutation of ["logout", "password", "membership", "actor", "role"] as const)
+  test(`real ${mutation} revocation while GitHub verification is in flight cannot persist credentials`, async (t) => {
+    const f = await gitFixture(t),
+      pause = f.remote.pause("/user");
+    const pending = f.request(gitPath, gitInput());
+    try {
+      await pause.entered;
+      if (mutation === "logout") f.accounts.revoke(f.token);
+      else if (mutation === "password") await f.provider.resetPassword("owner", password + "-new");
+      else if (mutation === "actor") f.actors.setEnabled(f.actorId, false, "fixture");
+      else {
+        const other = new MembershipStore(f.storage);
+        other.setActor(f.actorId, "member", mutation === "role", "fixture");
+        other.close();
+      }
+    } finally {
+      pause.release();
+    }
+    assert.equal((await pending).status, 403);
+    const { EmployeeGitVaultStore } = await import("@opencraft/execution-environment/employee-git-vault-store");
+    const vault = new EmployeeGitVaultStore(f.directory);
+    try {
+      assert.equal(vault.read(f.scope, "github.com").revision, 0);
+    } finally {
+      vault.close();
+    }
+    assert.equal(f.remote.calls.length, 1, "no email/signing side effects after authority withdrawal");
+  });
+test("real HTTP + Worker: uncertain remote signing is retained and explicit retry reconciles without another POST", async (t) => {
+  const f = await gitFixture(t);
+  f.remote.setMode("unknown");
+  const saved = await f.request(gitPath, gitInput());
+  assert.equal(saved.status, 200);
+  const first = await saved.json();
+  assert.equal(first.hosts["github.com"].signing.registration, "pending");
+  f.remote.setMode("registered");
+  const retry = await f.request(gitPath, { host: "github.com", revision: 2, action: "register" });
+  assert.equal(retry.status, 200);
+  assert.equal((await retry.json()).hosts["github.com"].signing.registration, "registered");
+  assert.equal(f.remote.calls.filter((c) => c.method === "POST").length, 1);
 });

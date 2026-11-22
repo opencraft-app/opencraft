@@ -20,7 +20,12 @@
     "./server/browser-manifest": "./src/server/browser-manifest.ts",
     "./server": "./src/server/worker.ts",
     "./server/http": "./src/server/http.ts",
-    "./client": "./src/client.ts"
+    "./client": "./src/client.ts",
+    "./git/contract": "./src/git/contract.ts",
+    "./git/client": "./src/git/client.tsx",
+    "./server/git-connections": "./src/server/git-connections.ts",
+    "./server/github-provider": "./src/server/github-provider.ts",
+    "./server/storage": "./src/server/storage.ts"
   },
   "dependencies": {
     "@opencraft/design-system-web": "0.1.0",

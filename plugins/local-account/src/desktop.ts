@@ -22,7 +22,7 @@ import { LocalAccountServerPlugin } from './server.js';
 import { LocalAccountApplication } from './application.js';
 
 /** Native Main owns these stores and the private browser proof. No renderer supplies identity. */
-export async function createDesktopAccountHost(directory: string, renderLogin: (nonce: string) => string, options: { openRemote?: (origin: string) => Promise<void>; storageRole?: 'owner' | 'borrower' } = {}) {
+export async function createDesktopAccountHost(directory: string, renderLogin: (nonce: string) => string, options: { openRemote?: (origin: string) => Promise<void>; storageRole?: 'owner' | 'borrower'; assetsStorage?: Parameters<typeof openHumanAssets>[0]['openStorage'] } = {}) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const storage=options.storageRole==='borrower'?borrowServerDatabase(directory):await openServerDatabase(directory);
   const disposers: (() => void | Promise<void>)[] = [];
@@ -58,7 +58,7 @@ export async function createDesktopAccountHost(directory: string, renderLogin: (
     };
     const application = new LocalAccountApplication({ auth, management, nativeOwner, openRemote: options.openRemote });
     disposers.push(() => application.close());
-    const assets = options.storageRole === 'borrower' ? null : await openHumanAssets({ directory, auth, actors, access: new InstanceAccess(members, [auth], actors) });
+    const assets = options.storageRole === 'borrower' ? null : await openHumanAssets({ directory, auth, actors, access: new InstanceAccess(members, [auth], actors), openStorage: options.assetsStorage });
     if (assets) disposers.push(() => assets.close());
     let nativeSession = accounts.issue(management.desktopIdentity());
     return {

@@ -9,6 +9,7 @@ const STATUS_PATH = "/__opencraft_assets/status";
 export class ServerAssetsAccount implements AssetsAccount {
   private scope: string | null = null;
   private available = false;
+  private gitHosts: readonly string[] = [];
   private closed = false;
   private generation = 0;
   private readonly listeners = new Set<() => void>();
@@ -16,6 +17,7 @@ export class ServerAssetsAccount implements AssetsAccount {
   constructor(private readonly fetcher: typeof fetch) {}
   getScope = () => this.scope;
   getAvailable = () => this.available;
+  getGitHosts = () => this.gitHosts;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => {
@@ -31,6 +33,7 @@ export class ServerAssetsAccount implements AssetsAccount {
         cache: "no-store",
         signal: request.signal,
       });
+      let gitHosts: readonly string[] = [];
       let scope: string | null,
         available = false;
       if (
@@ -43,7 +46,7 @@ export class ServerAssetsAccount implements AssetsAccount {
       else {
         if (!response.ok || !response.headers.get("content-type")?.includes("application/json"))
           throw Error("assets_unavailable");
-        const input = (await response.json()) as { version?: unknown; scope?: unknown };
+        const input = (await response.json()) as { version?: unknown; scope?: unknown; gitHosts?: unknown };
         if (
           !input ||
           input.version !== 1 ||
@@ -54,11 +57,19 @@ export class ServerAssetsAccount implements AssetsAccount {
               /[\x00-\x1f\x7f]/u.test(input.scope)))
         )
           throw Error("assets_unavailable");
+        if (
+          input.gitHosts !== undefined &&
+          (!Array.isArray(input.gitHosts) ||
+            input.gitHosts.some((h) => typeof h !== "string" || !/^[a-z0-9.-]{1,253}$/u.test(h)))
+        )
+          throw Error("assets_unavailable");
+        gitHosts = Array.isArray(input.gitHosts) ? [...new Set(input.gitHosts as string[])] : [];
         scope = input.scope as string | null;
         available = true;
       }
       if (this.closed || generation !== this.generation) return;
       const changed = this.scope !== scope;
+      this.gitHosts = gitHosts;
       this.scope = scope;
       this.available = available;
       if (changed) for (const listener of this.listeners) listener();
@@ -99,11 +110,16 @@ export function createServerAssetsExtension(
       await account.refresh();
       if (disposed || !account.getAvailable()) return;
       for (const event of ["focus", "pageshow", "online"]) events?.addEventListener(event, refresh);
+      const github = account.getGitHosts().includes("github.com") ? await import("./git/client.js") : null;
+      if (disposed) return;
       return createAssetsExtension({
         account,
         fetcher,
         endpoint: "/__opencraft_assets/configurations",
-        providers: [e2bAssetProvider],
+        providers: [e2bAssetProvider, ...(github ? [github.githubAssetProvider] : [])],
+        useConnections: github
+          ? (scope, onUnauthorized) => github.useGithubAssetConnections(fetcher, scope, onUnauthorized)
+          : undefined,
       }).activate(api);
     },
   };
