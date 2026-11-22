@@ -12,7 +12,10 @@ function workspacePackages() {
     for (const entry of readdirSync(path.join(root, group), { withFileTypes: true })) {
       const manifest = path.join(root, group, entry.name, "package.json");
       if (entry.isDirectory() && existsSync(manifest)) {
-        packages.push({ directory: path.join(group, entry.name), manifest: JSON.parse(readFileSync(manifest, "utf8")) });
+        packages.push({
+          directory: path.join(group, entry.name),
+          manifest: JSON.parse(readFileSync(manifest, "utf8")),
+        });
       }
     }
   }
