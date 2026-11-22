@@ -1,7 +1,8 @@
 # Execution ENV launch delivery
 
-Status: design. No execution owner consumes `EnvironmentLaunchReceiver` yet;
-every configured consumer reads a decrypted snapshot from
+Status: slice 1 implemented. DSH in `assets` mode receives Turn ENV through
+`EnvironmentLaunchReceiver` when the identity composition supplies a vault-owner
+port; every other consumer still reads a decrypted snapshot from
 `ExecutionEnvironmentRuntime` synchronously in its own process.
 
 Related: [account environment variables](../identity/account-environment.md),

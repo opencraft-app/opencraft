@@ -13,7 +13,11 @@ export function validateHeadlessIdentity(identity) {
     || (identity.sshAccess !== undefined && (!identity.sshAccess
       || ['publicKeys', 'authorize'].some(method => typeof identity.sshAccess[method] !== 'function')))
     || (identity.admissionPolicy !== undefined && (!identity.admissionPolicy
-      || ['prepare', 'allows', 'allowsBinding'].some(method => typeof identity.admissionPolicy[method] !== 'function')))) {
+      || ['prepare', 'allows', 'allowsBinding'].some(method => typeof identity.admissionPolicy[method] !== 'function')))
+    // Opaque ENV delivery replaces, never accompanies, the synchronous runtime.
+    || (identity.environmentLaunch !== undefined && (!identity.environmentLaunch || typeof identity.environmentLaunch.seal !== 'function'
+      || typeof identity.environmentLaunch.issuer !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/u.test(identity.environmentLaunch.issuer)
+      || identity.executionEnvironment != null))) {
     throw new Error('Invalid Headless identity adapter');
   }
 }

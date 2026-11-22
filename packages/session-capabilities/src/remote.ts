@@ -4,7 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { sessionCapabilityToken } from "./mcp.js";
-import { nativeToolCapabilityToken, hostGitToken, type HostGitSource } from './credentials.js';
+import { nativeToolCapabilityToken, hostGitToken, hostEnvironmentToken, type HostGitSource } from './credentials.js';
 import type { CapabilityExecution, CapabilityResult, CapabilityTool, SessionCapabilityPort } from "./index.js";
 import { capabilityResultFromMcp } from "./content.js";
 
@@ -63,6 +63,21 @@ export class RemoteSessionCapabilities implements SessionCapabilityPort {
     // The native Server owns this bounded reply; reject malformed/oversized data.
     let size=0;const chunks:Uint8Array[]=[];
     for await(const chunk of response.body!){size+=chunk.length;if(size>16384)throw Error('git_execution_unavailable');chunks.push(chunk);}
+    return JSON.parse(Buffer.concat(chunks).toString());
+  }
+  /** Compiled execution owner only. Sends this process's receiver public key;
+   * the reply is an opaque capsule the Gateway cannot open. No retries. */
+  async hostEnvironment(threadId:string,source:HostGitSource,recipient:string,signal?:AbortSignal):Promise<unknown> {
+    const {url}=await this.connection(threadId);
+    const key=await this.privateFile(join(this.directory,'session-capabilities.key'));
+    const token=hostEnvironmentToken(key,{serverId:this.serverId,threadId,source});
+    const response=await fetch(new URL('/host-environment',url),{method:'POST',redirect:'error',
+      headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify({recipient}),
+      signal:signal?AbortSignal.any([signal,AbortSignal.timeout(10000)]):AbortSignal.timeout(10000)});
+    if(!response.ok){await response.body?.cancel();throw Error('environment_launch_unavailable');}
+    // Bounded by the receiver's capsule limit plus the admitted context.
+    let size=0;const chunks:Uint8Array[]=[];
+    for await(const chunk of response.body!){size+=chunk.length;if(size>2*1024**2+16384)throw Error('environment_launch_unavailable');chunks.push(chunk);}
     return JSON.parse(Buffer.concat(chunks).toString());
   }
   async refresh(threadId: string, execution?: CapabilityExecution, signal?: AbortSignal): Promise<void> {
