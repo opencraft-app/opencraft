@@ -201,6 +201,11 @@ test("installed browser policy accepts preinstalled isolation only and rejects a
     ],
   };
   validateInstalledPolicy(policy);
-  Object.assign(policy.templates[0]!.browser!, { manifest: { archives: [] } });
+  Object.assign(policy.templates[0]!.browser!, {
+    manifest: {
+      version: 1,
+      archives: [{ path: "/opt/opencraft/runtime-cache/browser-fixture.tgz", sha256: "1".repeat(64) }],
+    },
+  });
   assert.throws(() => validateInstalledPolicy(policy), /Invalid installed sandbox policy/);
 });
