@@ -123,7 +123,7 @@ daemon 以 `--codex-bridge-stack <程序目录>`（`codexBridgeStack`）启动 b
    - **桌面附着（2026-11-22）**：`OPENCRAFT_DESKTOP_ATTACH` 交给本地 Host，按原生 ID 读取 bridge 会话并保留公开 ID。
    - **计量（2026-11-22）**：bridge 会话的提交、结果与轮次通知按原生会话与轮次写入同一计量账本（`observeExternalUsage`、`beginExternalUsage`、`settleExternalUsage`），归属到发送者；演练核对升级前、接管后与 bridge 新会话的记录。桌面独占栈尚未记录计量（桌面从未配置计量查询）。
    - **工作区钩子与线程元数据**：核心服务器装配不提供（`createThreadMetadata` 未配置，工作区路由只由下游产品组合提供），对 bridge 会话无需迁移；下游产品启用时需在 bridge 上另行接线。
-   - **四容器**：Engine Host 在 gateway 容器内启动（发行包 `runtime/codex-bridge/`，`OPENCRAFT_CODEX_BRIDGE=0` 退回旧路径），经共享数据卷连到 brain 的 Core；原生命令仍按 AppServer 的 `OPENCRAFT_SANDBOX_CONFIG` 在 hands 执行。演练 `scripts/smoke/server/smoke-container-codex-bridge.ts`。
+   - **四容器**：Engine Host 在 gateway 容器内启动（发行包 `runtime/codex-bridge/`，`OPENCRAFT_CODEX_BRIDGE=0` 退回旧路径），经共享数据卷连到 brain 的 Core；原生命令仍按 AppServer 的 `OPENCRAFT_SANDBOX_CONFIG` 在 hands 执行。演练 `scripts/smoke/server/smoke-container-codex-bridge.ts`（打包镜像、本地假模型）2026-11-22 通过：旧路径建会话 → 开启后同一会话列表、历史一致并可续聊，新会话在 bridge。过程中修正：发行包未把 bridge 收据库的存储 worker（`storage.worker.mjs`）放在 gateway 旁，开启即退出（单机 Headless 发行包同样受影响，已一并修正）；hands 的 cgroup v1 `cpu` 单独挂载。
 4. **SSH 远程 Codex** 不在退休范围：它与本地模式共享客户端复用、交互、工具、附件、元数据等核心，退休时只删本地模式（spawn、Core 直通、Core + overlays），保留并抽出远程所需部分。
 
 ## 顺序建议
