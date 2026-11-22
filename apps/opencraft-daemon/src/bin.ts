@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { readCodexBridgeConfiguration } from "./bridge-execution-admission.js";
+import { closeInheritedDescriptors } from "./inherited-descriptors.js";
 import { startOpenCraftDaemon } from "./main.js";
 
 function argument(name: string): string | undefined {
@@ -24,6 +25,9 @@ function codexSource(value: string | undefined) {
   if (value === "explicit" || value === "builtin" || value === "user-installed" || value === "unresolved") return value;
   throw new Error("--codex-executable-source must be explicit, builtin, user-installed or unresolved");
 }
+
+// Before anything starts children: the desktop app's DevTools socket must not outlive it.
+closeInheritedDescriptors();
 
 void (async () => startOpenCraftDaemon({
   endpoint: requiredArgument("--endpoint"),
