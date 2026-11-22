@@ -12,6 +12,7 @@
 | [Storage and preferences](platform/storage-and-preferences.md) | 项目持久化、数据库诊断与 UI 偏好权威 |
 | [Storage ports](platform/storage-ports.md) | 运行时无关的 SQL、文档、对象与机密存储端口及适配器分层 |
 | [Optional Cloudflare deployment](platform/cloudflare-deployment.md) | Workers／Durable Objects／Containers 部署形态（目标设计） |
+| [Workspace host split](platform/workspace-host-split.md) | Gateway／Brain 按工作区拆分（设计草案） |
 | [Shell and navigation](platform/shell-and-navigation.md) | 嵌入式 Shell、工作区、路由与导航入口 |
 | [ClientRuntime](platform/client-runtime.md) | Web/PWA/Electron 的文档级呈现、边缘输入与宿主订阅生命周期 |
 | [Presentation and input](platform/presentation-and-input.md) | 跨端呈现、主题、字体、语音与原生输入 |
