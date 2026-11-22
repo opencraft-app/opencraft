@@ -1,19 +1,29 @@
 import { SqliteLifecycleError, type DatabaseOutcome } from "@opencraft/sqlite-node";
-import { WorkerOwner, ownerEntry } from "@opencraft/worker-owner";
+import { WorkerOwner, ownerEntry, type OwnerCalls } from "@opencraft/worker-owner";
 import { borrowServerDatabase } from "./borrow.js";
 import type { ServerDatabase } from "./index.js";
 import { installedServerMigrationComposition, type ServerDataContract } from "./migration-composition.js";
 
+/** The Server installation as a network process holds it. */
+export interface ServerCoreStorage<T = object> extends ServerDatabase {
+  /** Async ports of the domain services that run in the owner Worker. */
+  readonly call: OwnerCalls<T>;
+}
+
 /**
  * Opens the Server installation for a network process. A Worker acquires the
  * writer lock and runs migrations and the legacy import, then keeps the lock
- * for the process lifetime. This thread joins the migrated database with its
+ * for the process lifetime and serves the domains its `entry` builds
+ * (`serveServerCoreOwner`). This thread joins the migrated database with its
  * own WAL connection for the domains that still run here
- * (docs/architecture/server/server-core-owner.md, stage 1).
+ * (docs/architecture/server/server-core-owner.md).
  */
-export async function openServerCoreOwner(directory: string): Promise<ServerDatabase> {
-  const { owner, ready } = await WorkerOwner.open<object, { outcome: DatabaseOutcome; contract: ServerDataContract }>(
-    ownerEntry(import.meta.url, "server-core-owner"),
+export async function openServerCoreOwner<T = object>(
+  directory: string,
+  { entry = ownerEntry(import.meta.url, "server-core-owner") }: { entry?: URL } = {},
+): Promise<ServerCoreStorage<T>> {
+  const { owner, ready } = await WorkerOwner.open<T, { outcome: DatabaseOutcome; contract: ServerDataContract }>(
+    entry,
     {
       name: "Server storage",
       workerData: { directory, composition: installedServerMigrationComposition() },
@@ -35,6 +45,7 @@ export async function openServerCoreOwner(directory: string): Promise<ServerData
   }
   let closing: Promise<void> | undefined;
   return {
+    call: owner.call,
     database: connection.database,
     outcome: ready.outcome,
     contract: ready.contract,

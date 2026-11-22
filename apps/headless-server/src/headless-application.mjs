@@ -22,6 +22,7 @@ import { executionCliSourceToken } from '@opencraft/session-capabilities/credent
 import { waitForExecutionCliBinding } from '@opencraft/session-capabilities/execution-cli';
 import { createServerCodexBridge,readCodexBridgeConfiguration,createBridgeSessionMcp } from '@opencraft/opencraft-daemon/bridge-execution-admission';
 import { openServerCoreOwner } from "@opencraft/storage-node/server-owner";
+import { ownerEntry } from '@opencraft/worker-owner';
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { modelPolicyHttp } from '@opencraft/model-usage-policy/http';
 import { ModelPolicyTransport } from '@opencraft/model-usage-policy/transport';
@@ -98,7 +99,6 @@ import { SpeechTranscriptionService } from "./speech-transcription-service.mjs";
 import { MembershipStore, InstanceAccess } from '@opencraft/access-control';
 import { ActorStore } from '@opencraft/access-control/actors';
 import { ThreadAccessStore, ThreadAccessSession } from '@opencraft/access-control/thread-access';
-import { ThreadNoteStore } from '@opencraft/plugin-thread-summary/note-store';
 import { ActorAccess } from '@opencraft/access-control/actor-access';
 import { Collaboration, CollaborationError, CollaborationHttpApi } from '@opencraft/access-control/collaboration';
 import { OrchestrationRuntimeWorker } from '@opencraft/access-control/orchestration-runtime-store';
@@ -342,7 +342,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   const productPluginAssets = await prepareProductPluginRelease({ releaseRoot: root, webRoot,
     cacheDirectory: process.env.OPENCRAFT_PRODUCT_PLUGIN_CACHE_DIRECTORY || join(dataDirectory, 'product-plugin-packs'),
     metadata: releaseManifest.productPlugins ?? null });
-  const serverStorage = await openServerCoreOwner(dataDirectory);
+  const serverStorage = await openServerCoreOwner(dataDirectory, { entry: ownerEntry(import.meta.url, 'server-core') });
   const orchestrationStorage = new OrchestrationRuntimeWorker(join(dataDirectory, 'opencraft-server.sqlite'));
   try { await orchestrationStorage.start(); } catch (error) { await orchestrationStorage.close().catch(()=>{}); await serverStorage.close(); throw error; }
   const releaseLock = async () => { await orchestrationStorage.close(); await serverStorage.close(); };
@@ -432,7 +432,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       for (const service of terminalServices.values()) service.close();
       terminalServices.clear();
       fileSystem?.close();
-      await settle([() => threadOrchestration?.close(), () => connectorService?.close(), () => actorCollaboration?.close(), () => threadAccess?.close(), () => serverSpaces?.close(), () => threadNotes?.close()]);
+      await settle([() => threadOrchestration?.close(), () => connectorService?.close(), () => actorCollaboration?.close(), () => threadAccess?.close(), () => serverSpaces?.close()]);
       await settle([() => orchestrationStorage.close()]);
       await settle([() => agent?.close(), async () => (await dshAgent?.catch(() => undefined))?.close(), () => connectedExecutionCli?.close(), () => capabilityMcp?.close()]);
       if (releasePiOwner) await settle([() => releasePiOwner()]);
@@ -601,7 +601,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       ? new AgentDriverTransport(transport, actorCollaboration,
         threadId => conversationExecution.serverForHost(hostId, threadId), signExecutionCli, operator.context)
       : transport;
-    threadNotes = new ThreadNoteStore(serverStorage);
+    // Shared notes run in the Server owner Worker (Yjs merge and SQL off this thread).
+    threadNotes = { exchange: (serverId, threadId, update, vector) => serverStorage.call.exchangeThreadNote(serverId, threadId, update, vector) };
     const accessServerForHost = (hostId, threadId) => conversationAccessServer(conversationExecution, machineIdentity.machineId, hostId, threadId);
     const createThreadPolicySession = (hostId, context, emit) => new ThreadAccessSession(threadAccess,
       (threadId, serverId, method) => {

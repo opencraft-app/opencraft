@@ -392,9 +392,6 @@
       "DatabaseSync": 1,
       "SQL statement": 39
     },
-    "plugins/thread-summary/src/note-store.ts": {
-      "SQL statement": 5
-    },
     "scripts/server-deployment/acp-host.mjs": {
       "readFileSync": 1
     },

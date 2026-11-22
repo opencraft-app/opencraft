@@ -10,6 +10,7 @@
     "./server-legacy": "./src/server/legacy.ts",
     "./server-repository": "./src/server/repository.ts",
     "./server-owner": "./src/server/owner.ts",
+    "./server-owner-serve": "./src/server/owner-serve.ts",
     "./server-composition": "./src/server/migration-composition.ts"
   },
   "dependencies": {
