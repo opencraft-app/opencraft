@@ -10,8 +10,7 @@ function fixture() {
   let configuration: any = config(), status = "idle";
   const calls: Array<{ method: string; params: any }> = [];
   Object.assign(adapter, { ephemeralThreads: new Set(), nativeSubscribedThreads: new Set(),
-    nativeToolCalls: new Map(), queueableThreads: new Set(), generationRoutes: new Map(),
-    executionFaults: new Map(), executionFaultCommitFailures: new Map(), executionFaultCommits: new Map(),
+    nativeToolCalls: new Map(),
     environmentCreations: new Map(), executionEnvironments: new Map(), initialEnvironmentThreads: new Set(),
     options: { sessionMcp: async () => configuration }, sessionMcpConfigurations: new Map(),
     sessionMcpRefreshes: new Map(), sessionMcpCreations: new Map(), sessionMcpInitial: new Map(), sessionMcpRetirements: new Map(), sessionMcpGeneration: 0, statusListeners: new Set(), catalogChanges: { observeResult() {} }, humanInteractions: { markSourceUnavailable() {} }, cancelNativeRelease() {},
@@ -304,24 +303,6 @@ test('Codex Git native inspection checks live native status and rechecks generat
   turnStatus = 'inProgress'; threadStatus = 'idle'; assert.equal(await f.adapter.inspectGitNative(handoff), false);
   threadStatus = 'active'; replace = true; assert.equal(await f.adapter.inspectGitNative(handoff), false);
   assert.equal(await f.adapter.inspectGitNative({...handoff, native: {incarnation: 'native-one'}}), false);
-});
-
-test('Codex Git admission reads the current routed owner instead of cached generation notifications', async () => {
-  const f = fixture(); let available = true, epoch = 'owner-epoch';
-  Object.assign(f.adapter, {physicalInitialized: true, statusValue: {state: 'open'}, nativeTransport: {status: {state: 'open'}},
-    nativeCore: {control: {
-      async health() {return {routingEpoch: 'owner-epoch'};},
-      async generationDirectory(threadId: string) {
-        assert.equal(threadId, 'one');
-        return {routingEpoch: epoch, route: available ? {threadId, generationId: 'actual-generation'} : null,
-          homes: [{generationId: 'actual-generation', incarnation: 3}]};
-      },
-    }},
-  });
-  f.adapter.generationRoutes.set('one', 'stale-generation');
-  assert.equal(await f.adapter.gitNativeIncarnation('one'), JSON.stringify(['actual-generation', 3]));
-  available = false; assert.equal(await f.adapter.gitNativeIncarnation('one'), undefined);
-  available = true; epoch = 'replacement'; assert.equal(await f.adapter.gitNativeIncarnation('one'), undefined);
 });
 
 test('Codex Git never opens a pending execution lease without a verified native incarnation', async () => {

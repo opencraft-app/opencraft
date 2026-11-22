@@ -494,7 +494,6 @@ test("core owns accounts and PID across independent daemon clients and zero conn
   const f = await fixture();
   try {
     const before = await f.control.health();
-    assert.equal(await f.control.generationDirectory("legacy-thread"), null, "combined Core needs no new endpoint for legacy compatibility");
     assert.equal((await stat(f.core.endpoint)).mode & 0o777, 0o600);
     assert.equal((await stat(before.nativeSocket)).mode & 0o777, 0o600);
     await assert.rejects(new CodexCoreControlClient(f.core.endpoint, "wrong").health(), /authentication failed/);
@@ -936,7 +935,7 @@ for (const emptyHistoryUnsupported of [false, true]) test(`a never-dispatched cr
   } finally { await f.close(); }
 });
 
-for (const routingOnly of [false, true]) test(`Core refuses empty creation recovery without callbacks (routing-only=${routingOnly})`, async () => {
+test("Core refuses empty creation recovery without callbacks", async () => {
   const f = await fixture(async options => ({ ...options,
     spawnAppServer: ({ args, cwd, env }) => spawn(process.execPath,
       [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
@@ -947,14 +946,6 @@ for (const routingOnly of [false, true]) test(`Core refuses empty creation recov
     const { thread } = await a.rpc("browser", "thread/start");
     await a.engine.close();
     const b = await f.adapter(true); await b.rpc("browser", "initialize");
-    if (routingOnly) {
-      // Real transport distinguishes routing advertisement from callbackReady.
-      // A router may still point at a legacy APP with no retained lane.
-      const native = (b.engine as any).nativeCore;
-      assert.equal(native.supportsOrchestration, false);
-      native.routed = true;
-      assert.equal(native.supportsOrchestrationRouting, true);
-    }
     await assert.rejects(b.rpc("browser", "thread/resume", { threadId: thread.id }), /当前连接无法恢复空会话/);
     assert.equal((await b.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true })).thread.turns.length, 0);
     assert.equal((await b.rpc("browser", "fixture/subscribers", { threadId: thread.id })).count, 0);

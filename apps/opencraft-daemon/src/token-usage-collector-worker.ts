@@ -1,5 +1,4 @@
 import { parentPort, workerData } from "node:worker_threads";
-import { CodexCoreControlClient } from "@opencraft/account-pool-host";
 import { CodexNativeStorage } from "./codex-native-storage.js";
 import { TokenUsageStateDatabase } from "./token-usage-state-database.js";
 import { OpenCraftTokenUsageLedger, type UsageSubmission } from "./token-usage-ledger.js";
@@ -17,8 +16,7 @@ export function runTokenUsageCollectorWorker(): void {
   const telemetry = new TokenUsageTelemetry();
   const ledger = new OpenCraftTokenUsageLedger(state, workerData.serverId, Date.now, telemetry,
     { recoverPendingAttempts: false, projectLegacy: workerData.projectLegacy });
-  const storage = new CodexNativeStorage(workerData.coreEndpoint ? new CodexCoreControlClient(workerData.coreEndpoint, workerData.coreAuthToken ?? "") : null,
-    () => nativeHome);
+  const storage = new CodexNativeStorage(() => nativeHome);
   let nativeHome = "", sequence = 0, closed = false;
   const calls = new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>();
   const call = (request: CollectorCall): Promise<unknown> => {

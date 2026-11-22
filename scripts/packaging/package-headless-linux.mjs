@@ -63,7 +63,6 @@ export async function buildHeadlessBundle(output, { headlessEntry = join(reposit
   await build({entryPoints:[join(repositoryRoot,'scripts/server-deployment/dsh-consumer-receipts.worker.ts')],outfile:join(dirname(output),'dsh-consumer-receipts-worker.mjs'),bundle:true,platform:'node',format:'esm',target:'node26',logLevel:'warning',banner:{js:"import { createRequire } from 'node:module'; const require=createRequire(import.meta.url);"}});
   await buildGitIdentityRuntime(dirname(output), additionalGitRuntimeEntries);
   await buildPiShellRuntime(dirname(output));
-  await build({entryPoints:[join(repositoryRoot,"apps/opencraft-daemon/src/execution-fault.worker.ts")],outfile:join(dirname(output),"execution-fault-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning"});
   await buildTerminalOwnerRuntime(dirname(output));
   await build({entryPoints:[join(repositoryRoot,"apps/opencraft-daemon/src/token-usage-query-worker.ts")],outfile:join(dirname(output),"token-usage-query-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning",
     // The collector role reaches CJS dependencies (undici) through the core control client.

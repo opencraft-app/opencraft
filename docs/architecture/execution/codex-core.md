@@ -157,8 +157,9 @@ Core 对网关仍返回 protocolVersion 1 的 `pid/codexPid/nativeSocket`；拆�
 Router 及其 unit、维护协议与测试已于 2026-11-22 删除；Docker、Electron 与 Headless 继续运行单
 APP Server／单 `CODEX_HOME`。不中断升级的计划后继是 WorkspaceHost 按工作区固定容器镜像，见
 [工作区拆分 §3.5](../platform/workspace-host-split.md#35-generation-router已删除)。
-账号 Core 仍保留 `/generation-host` 与 `/generation-directory` 客户端协议，未连接 Router 时
-`generationDirectory()` 返回 `null`。
+账号 Core 的 `/generation-host` 与 `/generation-directory` 路由、控制客户端方法和 Host 侧的代次
+栅栏/路由/故障消费也已删除；Core health 中出现 `routingEpoch` 时，客户端按不兼容拒绝，而不是
+静默按单 HOME 继续。
 
 ## 拆分的首次上线与回退计划
 

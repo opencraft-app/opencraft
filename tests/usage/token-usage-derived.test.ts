@@ -44,28 +44,6 @@ test("rollout totals/models, duplicate counters, live provisional use the same e
  assert.equal(f.source.database.prepare("SELECT count(*) AS n FROM token_usage_sources").get()!.n,0);
 }));
 
-test("discovery and replay cover both registered HOMEs across a default switch without recounting",()=>fixture(async f=>{
- const second="019a0000-0000-7000-8000-000000000002",secondTurn="019a0000-0001-7000-8000-000000000002";
- const home=join(f.directory,"new-home");await mkdir(join(home,"archived_sessions"),{recursive:true});
- const path=join(home,"archived_sessions",`rollout-2026-10-24-${second}.jsonl`);
- await writeFile(f.path,start()+count("5","5")+line("event_msg",{type:"task_complete",turn_id:turn},2));
- await writeFile(path,line("session_meta",{id:second,model_provider:"provider"})+line("event_msg",{type:"task_started",turn_id:secondTurn})+line("turn_context",{turn_id:secondTurn,model:"model-a"})+count("9","9")+line("event_msg",{type:"task_complete",turn_id:secondTurn},2));
- f.ledger.startTurn({threadId:second,turnId:secondTurn},at,"human",true);
- f.ledger.recordInput({threadId:second,turnId:secondTurn},{inputId:"B",actorId:"B",actorKind:"human",mode:"start",admission:"confirmed"});
- let epoch=1;
- const storage=new CodexNativeStorage({async generationDirectory(id?:string){return {protocolVersion:1,routingEpoch:"owner",admissionEpoch:epoch,
-  homes:[{generationId:"old",codexHome:f.home,incarnation:1},{generationId:"new",codexHome:home,incarnation:1}],
-  // Archived file discovery is valid before the execution router learns it.
-  route:id===second?{threadId:id,generationId:"new"}:null};}},()=>f.home);
- const derived=new RolloutDerivedTokenUsage({databasePath:join(f.directory,"token-usage.sqlite"),nativeHome:f.home,serverId:"server",
-  nativeHomes:()=>storage.homes(),resolveSource:(id,path)=>storage.resolve(id,path,true)});
- try{
-  await derived.discover();await drain(derived);assert.equal(snapshot(derived).summary.tokens,"14");
-  epoch++;await derived.discover();await drain(derived);assert.equal(snapshot(derived).summary.tokens,"14");
-  assert.equal(snapshot(derived,{actorId:"B"}).summary.tokens,"9");
- }finally{derived.close();}
-}));
-
 test("cache deletion and cache semantic/schema mismatch rebuild exactly from retained rollout and trusted receipts",()=>fixture(async f=>{
  await writeFile(f.path,start()+count("900719925474099312345","900719925474099312345")+line("event_msg",{type:"task_complete",turn_id:turn},2));
  let d=f.open();await drain(d);const expected=values(d);d.close();
@@ -265,9 +243,9 @@ test("v6 cache upgrades its recency index without discarding ready projections o
 test("an unchanged complete rollout is not re-resolved through Codex Core on every pass",()=>fixture(async f=>{
  await writeFile(f.path,start()+count("5","5")+line("event_msg",{type:"task_complete",turn_id:turn},2));
  let resolves=0;
- const storage=new CodexNativeStorage(null,()=>f.home);
+ const storage=new CodexNativeStorage(()=>f.home);
  const derived=new RolloutDerivedTokenUsage({databasePath:join(f.directory,"token-usage.sqlite"),nativeHome:f.home,serverId:"server",
-  nativeHomes:()=>storage.homes(),resolveSource:(id,path)=>{resolves++;return storage.resolve(id,path,true);}});
+  nativeHomes:()=>storage.homes(),resolveSource:(id,path)=>{resolves++;return storage.resolve(id,path);}});
  try{
   await derived.discover();await drain(derived);const before=snapshot(derived).summary.tokens;assert.notEqual(before,"0");
   const settled=resolves;
@@ -287,9 +265,9 @@ for (const mode of ["truncate", "replace"] as const) {
   const text=start()+count("5","5")+line("event_msg",{type:"task_complete",turn_id:turn},2);
   await writeFile(f.path,text);
   let resolves=0;
-  const storage=new CodexNativeStorage(null,()=>f.home);
+  const storage=new CodexNativeStorage(()=>f.home);
   const d=new RolloutDerivedTokenUsage({databasePath:join(f.directory,"token-usage.sqlite"),nativeHome:f.home,serverId:"server",
-   resolveSource:(id,path)=>{resolves++;return storage.resolve(id,path,true);}});
+   resolveSource:(id,path)=>{resolves++;return storage.resolve(id,path);}});
   try{
    await drain(d);assert.equal(snapshot(d).summary.tokens,"5");const settled=resolves;
    if(mode==="truncate")await writeFile(f.path,start());
@@ -310,14 +288,14 @@ test("close during the unchanged-file stat does not access a closed database",()
 for (const rejected of [false, true]) {
  test(`close during source resolution ignores a late ${rejected ? "failure" : "success"}`,()=>fixture(async f=>{
   await writeFile(f.path,start()+count("5","5"));
-  const storage=new CodexNativeStorage(null,()=>f.home);
+  const storage=new CodexNativeStorage(()=>f.home);
   let pause=false,release!:()=>void,reached!:()=>void;
   const waiting=new Promise<void>(resolve=>{reached=resolve;});
   const gate=new Promise<void>(resolve=>{release=resolve;});
   const d=new RolloutDerivedTokenUsage({databasePath:join(f.directory,"token-usage.sqlite"),nativeHome:f.home,serverId:"server",
    resolveSource:async(id,path)=>{
     if(pause){reached();await gate;if(rejected)throw new Error("source unavailable");}
-    return storage.resolve(id,path,true);
+    return storage.resolve(id,path);
    }});
   try{
    await drain(d);pause=true;await appendFile(f.path,count("7","2",3));

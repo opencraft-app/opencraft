@@ -94,10 +94,6 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
         return fetch(`http://127.0.0.1:${options.proxyPort}${request.url}`,{method:request.method,headers,
           ...(request.method==='GET'?{}:{body:Readable.toWeb(request),duplex:'half'})} as RequestInit);
       }
-      if (request.method === "GET" && request.url?.split("?")[0] === "/generation-directory") {
-        const query = new URL(request.url, "http://local.invalid");
-        return { status: 200, value: await runtime.generationDirectory(query.searchParams.get("threadId") ?? undefined) };
-      }
       if (request.method === "GET" && request.url === "/launch") {
         if (!accounts) return { status: 503, value: { error: "Account Core writer released" } };
         return { status: 200, value: { dataDirectory, launch: accounts!.launch() } };
@@ -108,17 +104,6 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
           throw new Error("AppServer identity mismatch");
         }
         return { status: 200, value: { ...native, pid: process.pid, appServerPid: native.appServerPid ?? native.pid } };
-      }
-      if (request.method === "POST" && request.url === "/generation-host") {
-        try {
-          const value = await readControlJson(request), params = value.params as Record<string, unknown>;
-          if (!params || typeof params !== "object" || Array.isArray(params)) throw new Error("Invalid generation Host envelope");
-          if (value.operation === "claim" && typeof params.instanceId === "string" && typeof params.routingEpoch === "string") {
-            return { status: 200, value: await runtime.claimGenerationHost(params.instanceId, params.routingEpoch) };
-          }
-          if (value.operation === "state") return { status: 200, value: await runtime.publishGenerationHost(params as unknown as import("@opencraft/account-pool-host").CodexGenerationHostUsage) };
-          throw new Error("Unknown generation Host operation");
-        } catch { return { status: 503, value: { error: "Generation Host receipt unavailable" } }; }
       }
       if (request.method !== "POST" || request.url !== "/accounts") return { status: 404, value: { error: "Unknown operation" } };
       let leave;

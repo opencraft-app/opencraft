@@ -56,7 +56,7 @@ export class TokenUsageCollector {
     worker.on("error", fail); worker.on("exit", fail);
   }
   static async start(options: { entry: string; directory: string; serverId: string; projectLegacy?: boolean; submission: boolean; derived: boolean;
-    coreEndpoint?: string; coreAuthToken?: string; timeoutMs?: number }, port: TokenUsageCollector["port"]): Promise<TokenUsageCollector> {
+    timeoutMs?: number }, port: TokenUsageCollector["port"]): Promise<TokenUsageCollector> {
     const worker = new Worker(`const {workerData}=require('node:worker_threads');
       if(workerData.entry.endsWith('.ts')){require('tsx/cjs');require(workerData.entry);}
       else import(require('node:url').pathToFileURL(workerData.entry).href).catch(()=>process.exit(1));`,

@@ -965,9 +965,12 @@ A readable AppServer connection does not prove its execution environment works.
 The APP server observes official environment status independently from Native
 connectivity and reports `EXECUTION_ENVIRONMENT_UNAVAILABLE` in health. The active
 stop-and-replace recovery below was implemented only by the removed Generation
-Router's managed generations; no current deployment produces those faults, and the
-Host-side consumer described here remains for the planned WorkspaceHost successor.
-Under that removed owner, A confirmed disconnected executor records a durable fault
+Router's managed generations. Its Host-side consumer (fence/route snapshots,
+`opencraft/codex/generation/lost`, the fault-receipt Worker and per-conversation
+execution blocking in `CodexEngineAdapter`) was removed with it on 2026-11-22; the
+paragraphs below are historical. The planned WorkspaceHost successor reintroduces
+recovery from container incarnation evidence ([workspace split §4.4](../platform/workspace-host-split.md#44-恢复所有权)).
+Under that removed owner, a confirmed disconnected executor records a durable fault
 and source identity, then stops that exact instance without waiting for Native,
 Host, goal or OS work to become idle. A changed process birth or systemd
 invocation is not permission to kill a successor. Unconfirmed stops remain blocked;

@@ -13,7 +13,6 @@ await buildServerSpacesRuntime(fileURLToPath(new URL('./dist/', import.meta.url)
 await buildConnectedAgentHistoryRuntime(fileURLToPath(new URL('./dist/', import.meta.url)));
 await buildTerminalOwnerRuntime(fileURLToPath(new URL('./dist/', import.meta.url)));
 await buildOwnerWorkers(fileURLToPath(new URL('./dist/', import.meta.url)), { target: 'node26' });
-await build({entryPoints:['src/execution-fault.worker.ts'],outfile:'dist/execution-fault-worker.mjs',bundle:true,platform:'node',format:'esm',target:'node26'});
 await build(daemonMainBundle);
 
 await build({entryPoints:['../../packages/access-control/src/orchestration-runtime.worker.ts'],outfile:'dist/orchestration-runtime-worker.mjs',bundle:true,platform:'node',format:'esm',target:'node26'});

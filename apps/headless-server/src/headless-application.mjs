@@ -920,8 +920,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       entry: tokenUsageQueryWorkerEntry,
       databasePath: join(dataDirectory, 'codex', 'token-usage.sqlite'),
       serverId: `server:${machineIdentity.machineId}:codex`,
-      ...(process.env.OPENCRAFT_TOKEN_USAGE_SOURCE === 'ledger' ? {} : {rollout:{nativeHome:join(dataDirectory,'codex','runtime'),
-        ...(options.codexCoreEndpoint ? {coreEndpoint:options.codexCoreEndpoint,coreAuthToken:options.codexCoreAuthToken} : {})}}),
+      ...(process.env.OPENCRAFT_TOKEN_USAGE_SOURCE === 'ledger' ? {} : {rollout:{nativeHome:join(dataDirectory,'codex','runtime')}}),
     });
     const unavailableTerminal = {probe:async()=>{throw Error('Local Hands terminal unavailable');},
       subscribe:()=>()=>{}, dispatch:async()=>{throw Error('Local Hands terminal unavailable');}, close() {}};
