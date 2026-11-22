@@ -20,7 +20,21 @@ export class GitExecutionAuthority {
     private readonly directory: string,
     private readonly accountMode: "principal" | "actor" = "principal",
   ) {}
-  resolve(scope: GitExecutionQuery | undefined): {
+  resolve(scope: GitExecutionQuery | undefined) {
+    const current = this.resolvePhase(scope, "active");
+    return current?.turnId ? { ...current, turnId: current.turnId } : null;
+  }
+  reserve(scope: GitExecutionQuery) {
+    // Only the exact Codex input admitted before physical submission may stage
+    // environment configuration. This does not authorize a running command.
+    if (scope.hostId !== "local-codex" || !scope.inputId || scope.turnId) return null;
+    const current = this.resolvePhase(scope, "pending");
+    return current ? { ...current, turnId: null } : null;
+  }
+  private resolvePhase(
+    scope: GitExecutionQuery | undefined,
+    phase: "active" | "pending",
+  ): {
     account: string;
     principal: { provider: string; subject: string; loginName?: string };
     authority: string;
@@ -29,7 +43,7 @@ export class GitExecutionAuthority {
     membershipRevision?: number;
     inputId: string;
     executionId: string;
-    turnId: string;
+    turnId: string | null;
     incarnation: string;
   } | null {
     if (this.closed) throw Error("git_authority_store_unavailable");
@@ -52,7 +66,7 @@ export class GitExecutionAuthority {
       }
       const rows = db
         .prepare(
-          `SELECT s.principal_json,s.ownership,s.admission,l.state,l.turn_id,l.engine_incarnation,l.generation,l.execution_id,l.input_id
+          `SELECT s.principal_json,s.ownership,s.admission,l.state,l.turn_id,l.engine_incarnation,l.generation,l.execution_id,l.input_id,l.ended_at_ms
       FROM execution_leases l JOIN execution_submissions s ON s.thread_id=l.thread_id AND s.input_id=l.input_id
       WHERE l.thread_id=? AND ${scope.inputId ? "l.input_id=?" : "l.turn_id=?"} ${scope.executionId ? "AND l.execution_id=?" : ""} ORDER BY l.generation DESC LIMIT 2`,
         )
@@ -63,8 +77,9 @@ export class GitExecutionAuthority {
         !row ||
         row.ownership !== "human" ||
         row.admission !== "accepted" ||
-        row.state !== "active" ||
-        !row.turn_id ||
+        row.state !== phase ||
+        row.ended_at_ms !== null ||
+        (phase === "active" ? !row.turn_id : row.turn_id !== null) ||
         !row.engine_incarnation ||
         (scope.turnId && scope.turnId !== row.turn_id) ||
         (scope.incarnation && scope.incarnation !== row.engine_incarnation)
@@ -117,7 +132,7 @@ export class GitExecutionAuthority {
         principal,
         inputId: String(row.input_id),
         executionId: String(row.execution_id),
-        turnId: String(row.turn_id),
+        turnId: typeof row.turn_id === "string" ? row.turn_id : null,
         incarnation: String(row.engine_incarnation),
         generation: Number(row.generation),
         authority: JSON.stringify([row.turn_id, row.engine_incarnation, row.generation]),
@@ -127,9 +142,14 @@ export class GitExecutionAuthority {
     }
   }
 
-  unowned(scope: GitExecutionQuery): boolean {
+  unowned(scope: GitExecutionQuery, phase: "active" | "pending" = "active"): boolean {
     if (this.closed) throw Error("git_authority_store_unavailable");
-    if (!scope.threadId || (!scope.inputId && !scope.turnId) || !["local-codex", "opencraft-server"].includes(scope.hostId)) return false;
+    if (
+      !scope.threadId ||
+      (!scope.inputId && !scope.turnId) ||
+      !["local-codex", "opencraft-server"].includes(scope.hostId)
+    )
+      return false;
     const path =
       scope.hostId === "local-codex"
         ? ownedDatabasePath(join(this.directory, "codex"), "opencraft-host-state.sqlite", "codex-host-queue.sqlite")
@@ -142,7 +162,7 @@ export class GitExecutionAuthority {
     }
     const rows = db
       .prepare(
-        `SELECT s.ownership,s.admission,l.state,l.turn_id,l.engine_incarnation FROM execution_leases l JOIN execution_submissions s ON s.thread_id=l.thread_id AND s.input_id=l.input_id WHERE l.thread_id=? AND ${scope.inputId ? "l.input_id=?" : "l.turn_id=?"} ORDER BY l.generation DESC LIMIT 2`,
+        `SELECT s.ownership,s.admission,l.state,l.turn_id,l.engine_incarnation,l.ended_at_ms FROM execution_leases l JOIN execution_submissions s ON s.thread_id=l.thread_id AND s.input_id=l.input_id WHERE l.thread_id=? AND ${scope.inputId ? "l.input_id=?" : "l.turn_id=?"} ORDER BY l.generation DESC LIMIT 2`,
       )
       .all(scope.threadId, scope.inputId ?? scope.turnId!);
     if (!scope.inputId && rows.length !== 1) return false;
@@ -151,8 +171,9 @@ export class GitExecutionAuthority {
       !!row &&
       row.ownership === "unowned" &&
       row.admission === "accepted" &&
-      row.state === "active" &&
-      !!row.turn_id &&
+      row.state === phase &&
+      row.ended_at_ms === null &&
+      (phase === "active" ? !!row.turn_id : row.turn_id === null) &&
       !!row.engine_incarnation
     );
   }

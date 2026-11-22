@@ -16,6 +16,9 @@ import { HostInteractions, InteractionFault } from "@opencraft/app-host-server/i
 import { COLLABORATION_CAPABILITIES } from '@opencraft/appserver-protocol/collaboration';
 import { SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND, isHumanInteraction, type InteractionSourceRequest } from "@opencraft/appserver-protocol";
 import { projectThreadTopologyResult } from "./thread-orchestration-projection.js";
+import type { HumanGitExecutionPort } from '@opencraft/execution-environment/human-git-execution';
+import type { GitExecutionHandoff, GitExecutionReservation } from '@opencraft/execution-environment/git-execution';
+import { observeNativeExecutionProcess, observeStandaloneCodexExecution } from './native-execution-origin.js';
 import { ExecutionLeaseStore, type ExecutionSubmission, originalExecutionInputIds, snapshotExecutionSubmission } from "./execution-lease-store.js";
 import { EXECUTION_ENVIRONMENT_FIELD, requiresEnvironmentAuthority, requiresCurrentEnvironmentAuthority, executionEnvironmentOwner, type ExecutionEnvironmentRuntime, type ExecutionEnvironmentSnapshot, type EnvironmentExecutionScope } from '@opencraft/execution-environment';
 import { CodexOrchestrationControl, OrchestrationControlError } from "./codex-orchestration-control.js";
@@ -242,6 +245,11 @@ interface SharedCodexRoutingOptions {
   readonly nativeTool?: (context: { threadId: string; turnId: string; callId: string },
     tool: { namespace?: string | null; name: string }, args: unknown, signal: AbortSignal) => Promise<unknown> | null;
   readonly executionEnvironment?: ExecutionEnvironmentRuntime;
+  /** Compiled composition owns the sole vault; the adapter attests its actual native owner. */
+  readonly createExecutionGit?: (native: {
+    inspect(value: GitExecutionHandoff): Promise<boolean>;
+    inspectReservation(value: GitExecutionReservation): Promise<boolean>;
+  }) => Pick<HumanGitExecutionPort, 'reserve' | 'prepare' | 'close'>;
   /** Trusted composition delegates input control, never executor credentials. */
   readonly sharedTurnInput?: boolean;
   /** Trusted Host composition. Never accepted from renderer requests. */
@@ -507,6 +515,14 @@ export class CodexEngineAdapter implements DuplexTransport {
           const generation = this.generationRoutes.get(threadId), incarnation = generation ? this.generationIncarnations.get(generation) : undefined;
           store!.reconcile(threadId, matched,
             generation && incarnation !== undefined ? JSON.stringify([generation, incarnation]) : this.nativeCore?.executionIncarnation);
+          // Reattach a read-only broker to an existing native execution after
+          // Gateway replacement. Do not resume/reconfigure/restart the Turn or
+          // transfer credentials to a newer sender. Retained sealed evidence can
+          // discover this replica through its canonical authority directory.
+          for (const turn of matched) if (turn.status === 'inProgress' && this.executionGit) {
+            try { await this.executionGit.prepare({hostId: 'local-codex', threadId, turnId: turn.id}); }
+            catch { this.diagnostic({event: 'git-execution-reattachment-pending'}); }
+          }
           if (result.nextCursor == null || (!turnIds.size && !inputIds.size)) break;
           if (typeof result.nextCursor !== "string" || !result.nextCursor || seen.has(result.nextCursor)) throw new Error("Invalid execution reconciliation cursor");
           cursor = result.nextCursor; seen.add(cursor);
@@ -552,6 +568,48 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly tasks: TasksService | null;
   private readonly coreBridge: CodexCoreBridge | null;
   private readonly nativeCore: CodexNativeCoreTransport | null;
+  private executionGit: Pick<HumanGitExecutionPort, 'reserve' | 'prepare' | 'close'> | undefined;
+  /** Fresh native identity, never last sender, a cached environment or a browser PID. */
+  private async gitNativeIncarnation(threadId: string): Promise<string | undefined> {
+    if (this.closeOperation || !this.physicalAvailable || !this.physicalInitialized || this.executionBlocked(threadId)) return undefined;
+    if (this.nativeCore) {
+      const signal = AbortSignal.timeout(1500);
+      const health = await this.nativeCore.control.health(signal, 'native');
+      if (health.routingEpoch) {
+        const directory = await this.nativeCore.control.generationDirectory(threadId, signal);
+        const route = directory?.route;
+        const home = route && directory?.homes.find(home => home.generationId === route.generationId);
+        if (directory?.routingEpoch !== health.routingEpoch || !home || home.incarnation < 1) return undefined;
+        return JSON.stringify([home.generationId, home.incarnation]);
+      }
+      return (await observeStandaloneCodexExecution(health)).incarnation;
+    }
+    const child = this.child;
+    if (!child?.pid || child.exitCode !== null || child.signalCode !== null) return undefined;
+    const value = (await observeNativeExecutionProcess(child.pid)).incarnation;
+    return this.child === child && child.exitCode === null && child.signalCode === null ? value : undefined;
+  }
+  private async inspectGitNative(value: GitExecutionHandoff | GitExecutionReservation): Promise<boolean> {
+    try {
+      const threadId = value.scope.threadId, incarnation = await this.gitNativeIncarnation(threadId);
+      if (!incarnation || incarnation !== value.native.incarnation) return false;
+      if ('turnId' in value.native) {
+        const page = record(await this.requestPhysical('thread/turns/list', {
+          threadId, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded',
+        }, 1500));
+        const turn = record(Array.isArray(page.data) && page.data.length === 1 ? page.data[0] : null);
+        if (turn.id !== value.native.turnId || turn.status !== 'inProgress') return false;
+        const state = record(record(await this.requestPhysical('thread/read', {threadId, includeTurns: false}, 1500)).thread);
+        if (record(state.status).type !== 'active') return false;
+      }
+      return !this.closeOperation && await this.gitNativeIncarnation(threadId) === incarnation;
+    } catch { return false; }
+  }
+  private async beginExecution(threadId: string, inputId: string): Promise<string | undefined> {
+    const incarnation = this.executionGit ? await this.gitNativeIncarnation(threadId) : this.nativeCore?.executionIncarnation;
+    if (this.executionGit && !incarnation) throw new Error('git_execution_unavailable');
+    return this.executionLeases?.begin(threadId, inputId, incarnation);
+  }
   private transcriptCache: TranscriptReadCache | null = null;
   private readonly historyItemReadScheduler = new NativeItemReadScheduler(4);
   private readonly historyAdapterFallbackSignals = new WeakSet<AbortSignal>();
@@ -619,6 +677,14 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.coreBridge = options.kind !== "remote" && options.coreEndpoint !== undefined && !options.coreHostOverlays
       ? new CodexCoreBridge(options.coreEndpoint, options.coreAuthToken ?? "", () => this.maintenanceSnapshot(),
         (method, params, clientId) => this.admissionRejected(method, params, clientId, "maintenance")) : null;
+    if (this.coreBridge && options.createExecutionGit) throw new Error('Git execution requires native Host overlays');
+    if (options.createExecutionGit) {
+      if (options.executionEnvironment) throw new Error('Git execution cannot have two environment owners');
+      this.executionGit = options.createExecutionGit({
+        inspect: value => this.inspectGitNative(value),
+        inspectReservation: value => this.inspectGitNative(value),
+      });
+    }
     if (this.coreBridge) {
       // A core client must not create local stores or a second queue/account writer.
       this.tasks = null;
@@ -1851,7 +1917,7 @@ export class CodexEngineAdapter implements DuplexTransport {
           try {
             const threadId = string(params.threadId), inputId = string(params.clientUserMessageId);
             await this.admitModelExecution("start", params, context);
-            const executionId = this.executionLeases?.begin(threadId, inputId, this.nativeCore?.executionIncarnation);
+            const executionId = await this.beginExecution(threadId, inputId);
             await this.prepareSessionMcp(threadId, inputId, executionId);
           } catch (cause) {
             this.retireGatewayAdmission(params);
@@ -2151,6 +2217,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.remoteGoalCapability = null;
     this.revokeDesktopOwners();
     this.closeOperation = (async () => {
+      await this.executionGit?.close(); this.executionGit = undefined;
       await this.transcriptCache?.close(); this.transcriptCache = null;
       this.provisionalThreads?.close(); this.provisionalThreads = null;
       this.catalogChanges.clear();
@@ -3460,7 +3527,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       const threadId = string(params.threadId), inputId = string(params.clientUserMessageId) || `internal-input:${randomUUID()}`;
       params = { ...params, clientUserMessageId: inputId };
       await this.admitModelExecution("start", params, context);
-      const executionId = this.executionLeases?.begin(threadId, inputId, this.nativeCore?.executionIncarnation);
+      const executionId = await this.beginExecution(threadId, inputId);
       try { await this.prepareSessionMcp(threadId, inputId, executionId); }
       catch (cause) { this.retireGatewayAdmission(params);throw new RecoveryNotSubmitted(string(this.sessionMcpFailure(cause).message), { cause }); }
     }
@@ -4658,7 +4725,14 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
   }
   private async prepareSessionMcpInternal(threadId: string, inputId?: string, executionId?: string): Promise<void> {
-    if (!threadId || !this.options.sessionMcp && !this.options.executionEnvironment || this.ephemeralThreads.has(threadId)) return;
+    if (!threadId || !this.options.sessionMcp && !this.options.executionEnvironment && !this.executionGit) return;
+    if (this.ephemeralThreads.has(threadId)) {
+      if (this.executionGit && inputId) {
+        const environment = await this.executionGit.reserve({hostId: 'local-codex', threadId, inputId});
+        if (Object.keys(environment.overlay()).length) throw new Error('Git environment refresh requires a persistent native Thread');
+      }
+      return;
+    }
     let keepInitialEnvironment = !!(this.options.executionEnvironment && inputId && this.initialEnvironmentThreads.has(threadId));
     let initial = this.sessionMcpInitial.get(threadId);
     const creation = this.provisionalThreads?.get(threadId);
@@ -4690,13 +4764,13 @@ export class CodexEngineAdapter implements DuplexTransport {
         if (!applied.bindGitExecution) this.executionEnvironments.set(threadId, { ...applied, account: current.account });
       }
     }
-    if (initial && (!this.options.executionEnvironment || keepInitialEnvironment)
+    if (initial && (!this.options.executionEnvironment && !this.executionGit || keepInitialEnvironment)
       && !this.sessionMcpRetirements.has(threadId) && (!inputId || !initial.inputId || initial.inputId === inputId)) {
       if (inputId) {
         if (!executionId) throw new Error("Session tools require an attested execution");
         initial.reservation.bind(threadId, inputId, executionId); initial.inputId = inputId;
       }
-      if (!this.options.executionEnvironment || keepInitialEnvironment) return;
+      if (!this.options.executionEnvironment && !this.executionGit || keepInitialEnvironment) return;
     }
     if (keepInitialEnvironment) {
       return;
@@ -4729,7 +4803,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       stage = "resolve-tools";
       const configuration = structuredClone(await this.options.sessionMcp?.(threadId, inputId, executionId) ?? null);
       stage = "resolve-environment";
-      let environment = this.options.executionEnvironment?.snapshot(this.options.executionEnvironment.execution('local-codex', threadId, inputId));
+      let environment = this.executionGit && inputId
+        ? await this.executionGit.reserve({hostId: 'local-codex', threadId, inputId})
+        : this.options.executionEnvironment?.snapshot(this.options.executionEnvironment.execution('local-codex', threadId, inputId));
       if (environment && !await this.canInjectEnvironment(threadId)) {
         // An empty requested environment does not prove that an independent
         // Native owner has cleared credentials installed by a previous owner.
@@ -4759,6 +4835,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       const thread = record(read.thread);
       if (thread.ephemeral === true) {
         this.ephemeralThreads.add(threadId);
+        if (environment && Object.keys(environment.overlay()).length) throw new Error('Git environment refresh requires a persistent native Thread');
         return;
       }
       stage = "check-idle";
@@ -4776,7 +4853,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         // Tool-only refresh has the same asynchronous retirement boundary.
         // Allow a short reconciliation window before returning a retryable
         // refusal; the environment handoff retains its longer existing budget.
-        const deadline = Date.now() + (this.options.executionEnvironment ? 90_000 : 1_000);
+        const deadline = Date.now() + (this.options.executionEnvironment || this.executionGit ? 90_000 : 1_000);
         while (status !== "notLoaded") {
           current();
           if (Date.now() >= deadline) throw new SessionMcpRecoveryPending();
@@ -4890,7 +4967,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       const params = record(message.params), threadId = string(params.threadId);
       const inputId = string(params.clientUserMessageId) || `internal-input:${randomUUID()}`;
       message = { ...message, params: { ...params, clientUserMessageId: inputId } };
-      const executionId = this.executionLeases?.begin(threadId, inputId, this.nativeCore?.executionIncarnation);
+      const executionId = await this.beginExecution(threadId, inputId);
       try { await this.prepareSessionMcp(threadId, inputId, executionId); }
       catch (cause) { this.retireGatewayAdmission(params);throw new RecoveryNotSubmitted(string(this.sessionMcpFailure(cause).message), { cause }); }
     }

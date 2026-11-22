@@ -47,13 +47,26 @@ export function createAssetsStorage(
       }
     }
     return {
-      concurrentReads:execution?['executionGitGrant']:[],
+      concurrentReads:execution?['executionGitGrant','executionGitReservation']:[],
       ready: {
         outcome: vault.outcome,
         gitHosts: providers.map((p) => p.host),
         gitAuthority: execution ? vault.personalGitAuthority("actor") : null,
       },
       methods: {
+        executionGitReservation: (raw: unknown) => {
+          try {
+            if (!execution?.reserve) throw Error("unavailable");
+            const input=parseGitExecutionLocator(raw);
+            if(input.hostId!=="local-codex"||!input.inputId||input.turnId)throw Error("unavailable");
+            const admission=execution.reserve(input),scope=admission?.scope;
+            if(!scope)return null;
+            if(!scope.account.startsWith("actor:human://")||scope.hostId!==input.hostId
+              ||scope.threadId!==input.threadId||scope.inputId!==input.inputId
+              ||JSON.stringify(execution.reserve(input))!==JSON.stringify(admission))throw Error("unavailable");
+            return {scope,native:admission!.native,authority:vault.personalGitAuthority("actor"),capability:vault.sealPersonalGitGrant(scope)};
+          } catch {throw new SandboxConfigurationError("execution_unavailable",503);}
+        },
         executionGitGrant: (raw: unknown) => {
           try {
             if (!execution) throw new SandboxConfigurationError("execution_unavailable", 503);

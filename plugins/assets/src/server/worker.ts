@@ -1,4 +1,4 @@
-import type { GitExecutionLocator, GitExecutionHandoff } from "@opencraft/execution-environment/git-execution";
+import type { GitExecutionLocator, GitExecutionHandoff, GitExecutionReservation } from "@opencraft/execution-environment/git-execution";
 import type { GitConnectionsSnapshot } from "../git/contract.js";
 import { WorkerOwner, ownerEntry } from "@opencraft/worker-owner";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
@@ -20,6 +20,7 @@ export interface AssetConfigurationPort {
   update(access: AssetAdmission, input: unknown): Promise<SandboxConfigurationsSnapshot>;
 }
 export interface AssetStoragePort extends AssetConfigurationPort {
+  executionGitReservation(locator: GitExecutionLocator): Promise<GitExecutionReservation | null>;
   executionGitGrant(locator: GitExecutionLocator): Promise<GitExecutionHandoff | null>;
   gitSnapshot(access: AssetAdmission): Promise<GitConnectionsSnapshot>;
   gitUpdate(access: AssetAdmission, input: unknown): Promise<GitConnectionsSnapshot>;

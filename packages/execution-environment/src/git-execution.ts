@@ -13,9 +13,18 @@ export interface GitExecutionHandoff {
   readonly capability: string;
   readonly native: { readonly turnId: string; readonly incarnation: string };
 }
+/** Pre-submission configuration only. The broker cannot use this sealed scope
+ * until the same pending lease becomes an independently verified live Turn. */
+export interface GitExecutionReservation {
+  readonly scope: GitExecutionHandoff["scope"];
+  readonly authority: string;
+  readonly capability: string;
+  readonly native: { readonly incarnation: string };
+}
 export interface GitExecutionResolver {
   /** Trusted compiled owner reads the original immutable lease, not a browser identity. */
   resolve(input: GitExecutionLocator): Omit<GitExecutionHandoff, "authority" | "capability"> | null;
+  reserve?(input: GitExecutionLocator): Omit<GitExecutionReservation, "authority" | "capability"> | null;
   close(): void;
 }
 export function parseGitExecutionLocator(value: unknown): GitExecutionLocator {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import {openHeadlessAssetsStorage} from './headless-assets-storage.js';
-import {createHumanGitExecution} from './human-git-execution.js';
+import {humanGitRuntimeDirectory,createHumanGitExecution} from './human-git-execution.js';
 import { openHumanAssets } from '@opencraft/plugin-local-account/assets-server';
 import {workspaceTurnOutputContext} from './workspace-turn-output-context.mjs';
 import { restoreWorkspaceQueuedContext } from '@opencraft/opencraft-daemon/workspace-queued-context';
@@ -523,7 +523,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       assetsService = await openHumanAssets({ directory: dataDirectory, auth: humanAuth, actors: actorStore, access: instanceAccess,openStorage:openHeadlessAssetsStorage });
       if(!assetsService.gitAuthority)throw Error('Assets execution authority unavailable');
       humanGitExecution=createHumanGitExecution({directory:dataDirectory,
-        runtimeDirectory:join(dataDirectory,'git-runtime'),workerFile:options.gitWorkerFile??fileURLToPath(new URL('./personal-git-worker.mjs',import.meta.url)),
+        runtimeDirectory:humanGitRuntimeDirectory(join(dataDirectory,'git-runtime'),'gateway'),workerFile:options.gitWorkerFile??fileURLToPath(new URL('./personal-git-worker.mjs',import.meta.url)),
         hosts:assetsService.gitHosts,authority:assetsService.gitAuthority,grant:assetsService.executionGitGrant,
         authorize:scope=>{
           const actorId=scope.account.slice('actor:'.length),actor=actorStore.get(actorId);
@@ -981,6 +981,18 @@ export async function startHeadlessServer(options = {}, composition = {}) {
             execution: { turnId: context.turnId, callId: context.callId },
           }, tool, args, signal),
           executionEnvironment: identity?.executionEnvironment,
+          ...(assetsService ? {createExecutionGit: native => createHumanGitExecution({
+            directory: dataDirectory, runtimeDirectory: humanGitRuntimeDirectory(join(dataDirectory, 'codex-git-runtime'), 'codex'),
+            workerFile: options.gitWorkerFile ?? fileURLToPath(new URL('./personal-git-worker.mjs', import.meta.url)),
+            hosts: assetsService.gitHosts, authority: assetsService.gitAuthority,
+            grant: assetsService.executionGitGrant, inspect: native.inspect,
+            reservation: {grant: assetsService.executionGitReservation, inspect: native.inspectReservation},
+            authorize: scope => {
+              const actorId = scope.account.slice('actor:'.length), actor = actorStore.get(actorId);
+              return !closing && actor?.enabled === true && actor.kind === 'human'
+                && actor.generation === scope.actorGeneration && instanceAccess.admitsActor(actorId);
+            },
+          })} : {}),
           // Ingress has already authorized shared Thread participation. This
           // delegates native Turn input, not terminal access, ENV or payer identity.
           sharedTurnInput: true,
