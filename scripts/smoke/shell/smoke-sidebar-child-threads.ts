@@ -23,7 +23,7 @@ const initial=[
 {id:'parent',name:'项目改动讨论',pinned:true},
 {id:'child-review-00000001',parentThreadId:'parent',name:'Atlas',agentNickname:'Atlas'},
 {id:'child-design-00000002',parentThreadId:'parent',preview:'检查子会话标题与侧栏层级'},
-{id:'child-empty-00000003',parentThreadId:'parent',name:'reviewer · #00000003',agentRole:'reviewer'},
+{id:'child-empty-00000003',parentThreadId:'parent',agentRole:'reviewer'},
 {id:'grandchild-00000004',parentThreadId:'child-design-00000002',name:'超长子任务标题：检查触控窄侧栏下标题截断与操作按钮是否完整可达'},
 {id:'hidden',parentThreadId:'parent',visibility:'hidden',name:'隐藏子会话'}]
 .map((row,i)=>({...projectAppServerThread({name:null,preview:'',cwd:'/workspace',status:{type:'idle'},updatedAt:100-i,createdAt:90,parentThreadId:null,...row}),visibility:row.visibility,connectionHostId:'local',connectionHostLabel:'Local',...legacyDirectServerProjectionFromHost({hostId:'local',hostKind:'local',label:'Local'})}));
@@ -119,6 +119,21 @@ try {
     await page.waitForFunction(()=>document.querySelector('[data-thread-id="child-review-00000001"] > .sidebar-activity-row .sidebar-activity-item')?.classList.contains('is-selected'));
     if(touch)await settledSidebar();
     await page.screenshot({path:output+'/'+(touch?'touch':'desktop')+'-'+theme+'.png'});
+    if (!touch) {
+      const draft = page.getByLabel('Main draft');
+      await draft.focus();
+      const choose = async (key: string, id: string) => {
+        await page.keyboard.press('Control+Shift+' + key);
+        await row(id).and(page.locator('[aria-current="page"]')).waitFor();
+      };
+      await choose('ArrowDown', 'child-design-00000002');
+      await choose('ArrowDown', 'grandchild-00000004');
+      await choose('ArrowUp', 'child-design-00000002');
+      await choose('ArrowUp', 'child-review-00000001');
+      await choose('ArrowUp', 'parent');
+      await choose('ArrowUp', 'parent');
+      assert.equal(await draft.evaluate(element => element === document.activeElement), true);
+    }
     const search=page.getByRole('searchbox');await search.fill('Atlas');
     assert.equal(await page.locator('.sidebar-activity-item').count(),1);
     assert.equal(await page.locator('.sidebar-thread-tree__children').count(),0);

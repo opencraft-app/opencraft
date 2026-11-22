@@ -623,7 +623,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     }), Date.now, orchestrationStorage);
     threadOrchestration.enableAssistantThreads(threadAccess);
     await threadOrchestration.initializeAssistantThreads();
-    threadOrchestration.childScope=(parent,child)=>serverSpaces.initialized?serverSpaces.inherit(parent,child):Promise.resolve();
+    threadOrchestration.childScope = async (parent, child) => {
+      if (serverSpaces.initialized) await serverSpaces.inherit(parent, child);
+      threadAccess.acceptCreated(await orchestrationStorage.inheritChildCreator(parent, child));
+    };
     threadOrchestration.legacySchedule=async threadId=>{const serverId=conversationExecution.serverForThread(threadId),hostId=conversationExecution.hostForServer(serverId);return (await callConversationHost(appHostServer,{hostId,threadId},'automation-schedule-inspect','opencraft/schedules/read',{threadId})).schedule;};
     projectAutomations=createProjectAutomations(orchestrationStorage,threadOrchestration,actorCollaboration,codexAgentBridge);
     actorCollaborationApi=new CollaborationHttpApi(actorCollaboration,actorAccess,projectAutomations);

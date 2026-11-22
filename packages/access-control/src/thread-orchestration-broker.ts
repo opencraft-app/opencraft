@@ -10,12 +10,12 @@ import type { AutomationGrant } from './automation-ledger.js';
 import type { OrchestrationRuntimeStorage } from './orchestration-runtime-store.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { encodeConversationRef, parseConversationRef } from '@opencraft/appserver-protocol/collaboration';
+import { encodeConversationRef, parseConversationRef, parseThreadTitle } from '@opencraft/appserver-protocol/collaboration';
 import { ACTOR_INPUT_PREFIX, Collaboration, CollaborationError } from './collaboration.js';
 import type { BoundedThreadDelegation, OrchestrationMessageOrigin } from './orchestration-authority.js';
 import { canonical,type ChildOutcome,type ToolOperation } from './orchestration-ledger.js';
 
-export const ORCHESTRATION_TOOL_NAMES = ['thread_spawn','thread_tell','thread_inspect','thread_wait'] as const;
+export const ORCHESTRATION_TOOL_NAMES = ['thread_spawn','thread_set_title','thread_tell','thread_inspect','thread_wait'] as const;
 export type OrchestrationRuntimeSnapshot = import("@opencraft/appserver-protocol/collaboration").ThreadOrchestrationSnapshot;
 export type OrchestrationExecutionPort = import('@opencraft/appserver-client').AgentDriverContract;
 const text=(value:unknown,max=256)=>{
@@ -272,14 +272,20 @@ export class ThreadOrchestrationBroker {
     if(['read_thread','send_message_to_thread','get_thread_delivery'].includes(name))return this.conversationTool(threadId,turnId,key,name,args,delegationId);
     if(!ORCHESTRATION_TOOL_NAMES.includes(name as typeof ORCHESTRATION_TOOL_NAMES[number]))throw new CollaborationError(400,'unknown_orchestration_tool');
     const delegation=this.collaboration.delegation(threadId,turnId,delegationId),ledger=this.collaboration.orchestration;
-    let target:string|null=null,mode='read';
+    let target:string|null=null,mode='read',spawnTitle:string|null=null;
     if(name==='thread_spawn'){
       fields(args,['title','prompt','parentSelf','bindLifecycleToSelf','visibility','driver','model','reasoningEffort','cwd','idempotencyKey']);text(args.prompt,16384);
-      for(const field of ['title','model','reasoningEffort','cwd'])if(args[field]!==undefined)text(args[field],field==='cwd'?4096:256);
+      spawnTitle=parseThreadTitle(args.title);
+      for(const field of ['model','reasoningEffort','cwd'])if(args[field]!==undefined)text(args[field],field==='cwd'?4096:256);
       if(args.driver!==undefined&&!['codex','pi','dsh','acp','claude-code'].includes(String(args.driver)))throw new CollaborationError(400,'orchestration_driver_unsupported');
       if(args.parentSelf!==undefined&&args.parentSelf!==true||args.bindLifecycleToSelf!==undefined&&args.bindLifecycleToSelf!==true)throw new CollaborationError(400,'invalid_parent_binding');
       if(args.visibility!==undefined&&!['visible','hidden'].includes(String(args.visibility)))throw new CollaborationError(400,'invalid_thread_visibility');
       this.authorize(delegation,threadId,'execution.delegate');mode='start';
+    }else if(name==='thread_set_title'){
+      fields(args,['title','idempotencyKey']);
+      const title=parseThreadTitle(args.title);if(title===null)throw new CollaborationError(400,'thread_title_required');
+      if(!this.execution.setTitle||!this.runtimeStorage)throw new CollaborationError(409,'unsupported_capability');
+      args={...args,title};target=threadId;mode='title';this.authorize(delegation,threadId,'conversation.read');
     }else if(name==='thread_tell'){
       fields(args,['threadId','message','mode','expectedTurnId','replyExpectation','idempotencyKey']);target=text(args.threadId);text(args.message,16384);mode=args.mode===undefined?'queue':text(args.mode);
       if(!['queue','steer'].includes(mode)||mode==='steer'&&!args.expectedTurnId||mode==='queue'&&args.expectedTurnId!==undefined)throw new CollaborationError(400,'invalid_execution_mode');
@@ -302,12 +308,25 @@ export class ThreadOrchestrationBroker {
       if(args.timeoutMs!==undefined&&(!Number.isInteger(args.timeoutMs)||Number(args.timeoutMs)<0||Number(args.timeoutMs)>5000))throw new CollaborationError(400,'invalid_wait_timeout');mode='wait';
     }
     const operation=ledger.accept({toolCallKey:key,delegationId:delegation.id,issuerActorId:delegation.context.actorId,kind:name.slice(7),senderThreadId:threadId,
-      targetThreadId:target,clientMessageId:null,mode,arguments:args,...(args.idempotencyKey===undefined?{}:{idempotencyKey:text(args.idempotencyKey,128)})});
+      targetThreadId:target,clientMessageId:null,mode,arguments:args,...(args.idempotencyKey===undefined?{}:{idempotencyKey:text(args.idempotencyKey,128)})},()=>{
+      if(name==='thread_spawn'&&spawnTitle===null)throw new CollaborationError(400,'thread_title_required');
+    });
     return this.withOperation(operation,async()=>{
+    if(name==='thread_set_title'){
+      const storage=this.runtimeStorage;
+      if(!storage||!this.execution.setTitle)throw new CollaborationError(409,'unsupported_capability');
+      const result={threadId,status:'unconfirmed' as 'updated'|'unconfirmed'};
+      if(await storage.claimTitleWrite(operation.operationId)){
+        if(!this.valid(delegation,turnId))throw new CollaborationError(403,'execution_delegation_revoked');
+        try{await this.execution.setTitle(operation.operationId,threadId,String(args.title),()=>this.valid(delegation,turnId));result.status='updated';}
+        catch{/* Preserve uncertainty, including loss after the native save. */}
+      }
+      await storage.finishTitleWrite(key,result);return result;
+    }
     if(name==='thread_spawn'){
       this.collaboration.reserveSpawn(operation.operationId,delegation);
       let settings=this.collaboration.spawnPreparation(operation.operationId);
-      if(!settings){const prepared=await this.execution.prepare?.(operation.operationId,threadId,args,()=>this.valid(delegation,turnId),callbackIncarnation)??args;if(!this.valid(delegation,turnId))throw new CollaborationError(403,'execution_delegation_revoked');settings=this.collaboration.prepareSpawn(operation.operationId,prepared);}
+      if(!settings){const input=spawnTitle===null?args:{...args,title:spawnTitle};const prepared=await this.execution.prepare?.(operation.operationId,threadId,input,()=>this.valid(delegation,turnId),callbackIncarnation)??input;if(!this.valid(delegation,turnId))throw new CollaborationError(403,'execution_delegation_revoked');settings=this.collaboration.prepareSpawn(operation.operationId,prepared);}
       const scope=await this.automations?.checkDelegation(delegation.id);
       if(scope){
         if(!scope.valid || scope.grant && permissionSnapshot(settings)!==scope.grant.permissionSnapshot)throw new CollaborationError(403,'automation_permissions_changed');

@@ -713,6 +713,8 @@
   "sidebar.search.locating": "Opening matching message…",
   "sidebar.search.incomplete": "No matches yet · message search is incomplete",
   "sidebar.search.positionError": "The conversation opened, but the matching message could not be shown.",
+  "shortcuts.conversationPrevious": "การสนทนาก่อนหน้า",
+  "shortcuts.conversationNext": "การสนทนาถัดไป",
   "shortcuts.title": "แป้นพิมพ์ลัด",
   "shortcuts.sidebar": "สลับแถบด้านข้าง",
   "shortcuts.panel": "สลับแผงเครื่องมือ",

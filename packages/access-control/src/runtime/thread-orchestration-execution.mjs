@@ -24,6 +24,10 @@ export function createThreadOrchestrationExecution(getAppHost, { prepared = () =
       { sender: null, orchestrationOperationId: operationId, orchestrationCanAdmit: canAdmit });
   };
   return {
+    async setTitle(operationId, threadId, title, canAdmit) {
+      if (!canAdmit()) throw Object.assign(new Error('Orchestration delegation revoked'), { status: 403 });
+      await invoke(driverForThread(threadId), 'thread/name/set', threadId, operationId, { threadId, name: title }, canAdmit);
+    },
     async prepare(operationId, threadId, args, canAdmit, callbackIncarnation) {
       const source = driverForThread(threadId), destination = requireDriver(target(args.driver ?? source));
       if (destination === source) return { ...await invoke(source, 'opencraft/orchestration/prepare', threadId, operationId,

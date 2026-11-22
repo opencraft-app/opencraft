@@ -71,7 +71,7 @@ export class CodexOrchestrationControl {
     if(!orchestrationTitle)return;
     const fingerprint=createHash('sha256').update(JSON.stringify(settings)).digest('hex');
     try{await this.port.request('thread/name/set',{threadId,name:orchestrationTitle,__opencraftOrchestrationOperation:operationId+':title',__opencraftOrchestrationFingerprint:fingerprint,...(orchestrationHostIncarnation?{__opencraftOrchestrationIncarnation:orchestrationHostIncarnation}:{})},admit);}
-    catch(error){if(object(object(error).data).orchestrationRejected!==true)throw error;}
+    catch(error){if(settings.orchestrationRoot!==true || object(object(error).data).orchestrationRejected!==true)throw error;}
   }
   private async prepare(threadId:string,args:Record<string,unknown>,callbackIncarnation:string,sourceSettings?:Record<string,unknown>,sourceOnly=false):Promise<Record<string,unknown>>{
     // The source is already executing this tool. Resume without overrides reads

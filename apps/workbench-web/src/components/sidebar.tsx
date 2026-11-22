@@ -10,7 +10,7 @@ import { useStableEvent } from "@opencraft/react-runtime";
 import { Button } from "@opencraft/design-system-web/button";
 import { ChevronDownIcon as ChevronDown, LoadingRingIcon as LoaderCircle, ComposeIcon as SquarePen, SearchIcon as Search, CheckIcon as Check } from "@opencraft/design-system-web/action-icons";
 import { FolderIcon, SettingsGearIcon } from "@opencraft/design-system-web/action-icons";
-import { shortcutLabel, shortcutAria } from "../workbench-shortcuts";
+import { canHandleWorkbenchShortcut, matchesWorkbenchShortcut, shortcutLabel, shortcutAria } from "../workbench-shortcuts";
 import * as ContextMenu from "@opencraft/design-system-web/context-menu";
 import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
 import { ThreadListModeItems } from "./thread-list-mode-menu";
@@ -230,7 +230,7 @@ const SidebarThreadPresentation = memo(function SidebarThreadPresentation(props:
     contextMenuExtra={threadListGrouping ? <ThreadListModeItems contribution={threadListGrouping} snapshot={grouping} kind="context" /> : undefined}
     onOpenMenuChange={(kind, open) => changeOverlay(kind, open)}
     onCloseAutoFocus={event => { if (menus.getSnapshot() !== null) event.preventDefault(); }}>
-    <SidebarActivityItem activityId={activityId} active={active} selected={selected} pending={pending}
+    <SidebarActivityItem conversationKey={sidebarThreadIdentity(thread)} activityId={activityId} active={active} selected={selected} pending={pending}
       disabled={disabled} title={title} project={props.projectGrouped ? "" : metadata}
       icon={<ConversationAppearanceIcon hostId={thread.connectionHostId} threadId={thread.id} size={workbenchIconMetrics.core.settings} />}
       tooltip={[title, metadata, thread.connectionHostLabel].filter(Boolean).join(" · ")}
@@ -518,6 +518,30 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   });
   const selectedKey = JSON.stringify(pendingHostId !== null && pendingThreadId !== null
     ? [pendingHostId, pendingThreadId] : [activeHostId, activeThreadId]);
+  const onConversationShortcut = useStableEvent((event: KeyboardEvent) => {
+    if (!canHandleWorkbenchShortcut(event)) return;
+    const direction = matchesWorkbenchShortcut(event, "conversationPrevious", navigator.platform) ? -1
+      : matchesWorkbenchShortcut(event, "conversationNext", navigator.platform) ? 1 : 0;
+    if (direction === 0 || !activityList.current) return;
+
+    // The accordion and each child disclosure own what is rendered. Read the
+    // mounted conversation buttons so navigation uses that exact row order.
+    const rows = new Map<string, HTMLButtonElement>();
+    for (const button of activityList.current.querySelectorAll<HTMLButtonElement>("button[data-sidebar-conversation]:enabled")) {
+      const key = button.dataset.sidebarConversation!;
+      if (!rows.has(key)) rows.set(key, button);
+    }
+    const keys = [...rows.keys()];
+    const index = keys.indexOf(selectedKey);
+    const target = index === -1 ? (direction === 1 ? keys[0] : keys.at(-1)) : keys[index + direction];
+    if (keys.length === 0) return;
+    event.preventDefault();
+    if (target !== undefined) rows.get(target)?.click();
+  });
+  useEffect(() => {
+    window.addEventListener("keydown", onConversationShortcut);
+    return () => window.removeEventListener("keydown", onConversationShortcut);
+  }, [onConversationShortcut]);
   const selectedRootKey = tree.rootByIdentity.get(selectedKey) ?? selectedKey;
   const containsSelection = (group: typeof visibleSections[number]) => group.threads.some(ref =>
     JSON.stringify([ref.hostId, ref.threadId]) === (group.id === "scheduled" ? selectedKey : selectedRootKey));

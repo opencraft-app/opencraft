@@ -706,7 +706,12 @@ export class PiEngine {
         } else if (session.orchestrationOperation?.state !== "created") {
           await this.configure(session, start, true); session.orchestrationOperation!.state = "created"; await this.save(session);
         }
-        if (orchestrationTitle !== undefined && session.name !== orchestrationTitle) { session.name = orchestrationTitle; await this.save(session); }
+        if (orchestrationTitle !== undefined && session.name === null) {
+          session.name = orchestrationTitle;
+          try { await this.save(session); }
+          catch (error) { session.name = null; throw error; }
+          this.notify("thread/name/updated", { threadId: session.id, threadName: session.name });
+        }
         return { threadId: session.id, driverKind: "pi", generationId: this.orchestrationIncarnation, durability: "immediate" };
       })().catch(error => { this.orchestrationCreates.delete(operationId); throw error; });
       this.orchestrationCreates.set(operationId, { fingerprint, promise });

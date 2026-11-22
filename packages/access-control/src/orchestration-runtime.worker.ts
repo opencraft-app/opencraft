@@ -45,6 +45,22 @@ async function execute({id,method,payload}: {id:number;method:string;payload:any
       try{
         const ledger=new ThreadOrchestrationLedger(db,()=>payload.now??Date.now());
         switch(method){
+          // A lost acknowledgement must not replay an old title over a later one.
+          case 'claimTitleWrite':result=db.prepare("UPDATE opencraft_orchestration_operations SET state='applying' WHERE operation_id=? AND state='accepted' AND result_json IS NULL").run(payload.operationId).changes===1;break;
+          case 'finishTitleWrite':ledger.finish(payload.toolCallKey,payload.result);break;
+          case 'inheritChildCreator': {
+            const {parent,child}=payload;
+            result=sqliteTransaction(db,()=>{
+              // The immutable creator is attribution. Keep the existing access mode
+              // of a child already published by this or an earlier process.
+              db.prepare(`INSERT OR IGNORE INTO thread_access
+                SELECT ?, ?, (SELECT creator_actor_id FROM thread_access WHERE server_id=? AND thread_id=?),
+                  'shared', 1, ?`).run(child.serverId,child.threadId,parent.serverId,parent.threadId,Date.now());
+              return db.prepare(`SELECT server_id AS serverId, thread_id AS threadId, creator_actor_id AS creatorActorId,
+                access_mode AS accessMode, revision FROM thread_access WHERE server_id=? AND thread_id=?`).get(child.serverId,child.threadId);
+            });
+            break;
+          }
           case 'personalAssistantAssignments':result=new PersonalAssistants(communicationService(),db).assignments(payload.after);break;
           case 'channelSync':result=channelSyncCommand(communicationService(),db,payload);break;
           case 'assistantAllocation':result=sqliteTransaction(db,()=>new AssistantThreadStore(communicationService(),db).recordAllocation(payload));break;

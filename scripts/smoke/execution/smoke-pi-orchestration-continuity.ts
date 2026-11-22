@@ -53,7 +53,7 @@ try {
     }
     const created = await rpc("thread/start", { cwd: root, model: "pi:faux:faux-1" }), inputId = `human-${name}`;
     await gateway.rpc("authorize", { threadId: created.thread.id, inputId });
-    await call("model", { name, callId: `native-${name}`, arguments: name === "thread_spawn" ? { driver: "pi", prompt: "Complete the isolated Pi child" } : { threadId: targetThread, message: "Complete this isolated follow-up" } });
+    await call("model", { name, callId: `native-${name}`, arguments: name === "thread_spawn" ? { driver: "pi", title: "Isolated Pi child", prompt: "Complete the isolated Pi child" } : { threadId: targetThread, message: "Complete this isolated follow-up" } });
     const started = await rpc("turn/start", { threadId: created.thread.id, clientUserMessageId: inputId, input: [{ type: "text", text: "Run the authorized isolated orchestration tool" }] });
     await wait(() => readFile(join(root, "crash-marker.json"), "utf8").then(value => JSON.parse(value).name === name, () => false), "durable tool receipt before response");
     const marker = JSON.parse(await readFile(join(root, "crash-marker.json"), "utf8"));

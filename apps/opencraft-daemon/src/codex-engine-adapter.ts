@@ -1580,7 +1580,10 @@ export class CodexEngineAdapter implements DuplexTransport {
         return;
       }
       if (message.method.startsWith("opencraft/orchestration/")) {
-        try { const result = await this.orchestrationControl.handle(message.method, record(message.params), context); this.emit({ id, result }, clientId); }
+        try {
+          const result = await this.orchestrationControl.handle(message.method, record(message.params), context);
+          this.emit({ id, result }, clientId);
+        }
         catch (error) { this.emit({ id, error: { code: error instanceof OrchestrationControlError ? error.code : -32000, message: errorMessage(error) } }, clientId); }
         return;
       }
@@ -2915,6 +2918,9 @@ export class CodexEngineAdapter implements DuplexTransport {
         return this.options.collaboration.tool(string(params.threadId),string(params.turnId),string(params.tool),record(params.arguments));
       }).then(value=>respond(true,value),(error:unknown)=>{
         const status=typeof record(error).status==="number"?record(error).status:error instanceof OrchestrationControlError?error.code:503;
+        if (record(error).code === "thread_title_required") {
+          return respond(false,{error:"A nonblank, single-line title of at most 256 characters is required.",status});
+        }
         const historyTooLarge = record(error).code === "HISTORY_RESPONSE_TOO_LARGE";
         if (historyTooLarge) {
           this.diagnostic({event:"thread-orchestration-tool-failed",threadId:string(params.threadId),turnId:string(params.turnId),tool:string(params.tool),status:413,code:"HISTORY_RESPONSE_TOO_LARGE"});
@@ -4891,8 +4897,9 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
     if (this.options.collaboration && message.method === "thread/start") {
       const params = record(message.params), tools = Array.isArray(params.dynamicTools) ? params.dynamicTools : [];
-      const owned = (this.nativeCore?.supportsOrchestration || this.nativeCore?.supportsOrchestrationRouting) && this.options.collaboration.orchestration ? [...CONVERSATION_TOOLS,...THREAD_ORCHESTRATION_TOOLS] : CONVERSATION_TOOLS;
-      const names = new Set<string>(owned.map(t=>t.name));
+      const owned = (this.nativeCore?.supportsOrchestration || this.nativeCore?.supportsOrchestrationRouting) && this.options.collaboration.orchestration
+        ? [...CONVERSATION_TOOLS,...THREAD_ORCHESTRATION_TOOLS.filter(tool=>tool.name!=='thread_set_title'||this.nativeCore?.supportsThreadTitle)] : CONVERSATION_TOOLS;
+      const names = new Set<string>([...CONVERSATION_TOOLS,...THREAD_ORCHESTRATION_TOOLS].map(t=>t.name));
       message = {...message, params:{...params,dynamicTools:[...tools.filter(t=>!names.has(string(record(t).name))),...owned.map(t=>({type:"function",...t}))]}};
     }
     // Product default, not a second reasoning owner: all native starts (also

@@ -496,6 +496,14 @@ Mod+K only opens conversation search, including from the composer, and never
 also navigates home. Mod+, opens settings; Mod+\\ toggles the sidebar (Mod+B
 remains an alias); Mod+J toggles the existing right tool panel (Mod+Shift+I
 remains an alias); Mod+Shift+C focuses the current conversation composer.
+Control+Shift+Up and Control+Shift+Down (including on Apple keyboards) select the previous/next conversation in the
+sidebar's displayed section and child-tree order, through the existing sidebar
+navigation command. Collapsed sections, rows beyond the revealed page, hidden
+rows and unavailable destinations are skipped; the ends do not wrap. With no
+listed selection, Down starts at the first available row and Up at the last.
+An in-flight selection is the starting point for the next command. The binding
+continues to work when the conversation sidebar is tucked away, and preserves
+the existing Router/View/draft ownership rather than simulating history traversal.
 Settings → Keyboard shortcuts displays the shared binding list inside Settings;
 the primary sidebar has no standalone shortcuts action. Mod+/ opens the existing
 ModalSurface with the same list. Hints and accessible key metadata consume the same map.
