@@ -146,7 +146,7 @@ test("staging binds the APK digest and publishes it under the release name", (t)
   );
 });
 
-test("signing provisioning stores a usable key once and never replaces it", (t) => {
+test("signing provisioning generates or imports a usable key and never replaces a stored one", (t) => {
   const keytool = spawnSync("keytool", ["-help"], { encoding: "utf8" });
   if (keytool.error) return t.skip("keytool is not installed");
   const directory = mkdtempSync(join(tmpdir(), "opencraft-provision-"));
@@ -207,7 +207,19 @@ test("signing provisioning stores a usable key once and never replaces it", (t) 
   assert.equal(listed.status, 0, listed.stderr);
   assert.match(result.stdout, /Signing certificate SHA-256: [0-9A-F:]{95}/u);
 
-  assert.notEqual(provision(key).status, 0, "an existing key directory is never overwritten");
+  // An existing key directory is uploaded as is, never regenerated.
+  const keystoreBytes = readFileSync(join(key, "opencraft-release.p12"));
+  const imported = provision(key);
+  assert.equal(imported.status, 0, imported.stderr);
+  assert.deepEqual(readFileSync(join(key, "opencraft-release.p12")), keystoreBytes);
+  assert.deepEqual(Buffer.from(secret("ANDROID_RELEASE_KEYSTORE_BASE64"), "base64"), keystoreBytes);
+  mkdirSync(join(directory, "unrelated"));
+  assert.notEqual(provision(join(directory, "unrelated")).status, 0, "a directory without the key is refused");
+  writeFileSync(join(directory, "unrelated/opencraft-release.p12"), "not a keystore");
+  writeFileSync(join(directory, "unrelated/password.txt"), "wrong");
+  rmSync(join(state, "api"));
+  assert.notEqual(provision(join(directory, "unrelated")).status, 0, "an unreadable key is refused");
+  assert.throws(() => readFileSync(join(state, "api")), /ENOENT/u, "GitHub is untouched when the key does not open");
   writeFileSync(join(state, "existing"), "ANDROID_RELEASE_KEYSTORE_BASE64\n");
   const again = provision(join(directory, "second"));
   assert.notEqual(again.status, 0);

@@ -260,7 +260,8 @@ versionCode，否则沿用 `app.json` 的值。产物位于 `apps/mobile/release
 bash scripts/release/provision-android-signing.sh ~/opencraft-android-signing
 ```
 
-脚本在仓库外新建目录生成 PKCS12 密钥与随机密码，把 `android-release` Environment
+目录不存在时，脚本在仓库外生成 PKCS12 密钥与随机密码；目录已含
+`opencraft-release.p12` 与 `password.txt` 时直接上传这把密钥。之后它把 `android-release` Environment
 限制为只允许 main 部署并写入三个 secret；Environment 已有密钥时拒绝替换。随后立即
 备份该目录：后续 `app.opencraft` 版本都必须用这把密钥签名。versionCode 由 tag 推导
 （`scripts/release/android-version-code.mjs`：`X*1000000 + Y*10000 + Z*100`，beta N 加 N，
