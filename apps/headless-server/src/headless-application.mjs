@@ -124,7 +124,7 @@ import { IdentityWrites } from '@opencraft/access-control/identity-writes';
 import { createCommitFenceBuffer } from '@opencraft/access-control/commit-fence';
 import { humanLoginPage } from './human-login-page.ts';
 import { connectRelay, loadRelayConnection } from '@opencraft/plugin-relay-connect/server';
-import { validateHeadlessIdentity } from "./headless-identity.mjs";
+import { validateHeadlessIdentity, validateEnvironmentDelivery } from "./headless-identity.mjs";
 import { createHubController } from '@opencraft/hub-network/controller';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -375,6 +375,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let workspaceRouting;
   let ownedWorkspaceRouting;
   let humanGitExecution;
+  // The one opaque ENV vault-owner port: a downstream port or the core vault Worker.
+  let environmentLaunch;
   let actorStore;
   const terminalServices = new Map();
   const fileSystem = options.fileSystemOwner ? createHostFileSystem(options.fileSystemOwner) : null;
@@ -489,6 +491,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         validateCodexWorkspaceHooks(identity.codexWorkspaceRouting);
       for (const provider of identity?.capabilityProviders ?? []) capabilities.register(provider);
     }
+    // One installation has one ENV owner; configuring two fails here.
+    const coreEnvironmentLaunch = validateEnvironmentDelivery(options.environmentDelivery, identity);
     workspaceRouting = identity?.codexWorkspaceRouting;
     if (workspaceExecution && workspaceRouting && (typeof workspaceRouting.createCodexWorkspaceHooks !== 'function'
       || typeof workspaceRouting.readCatalog !== 'function'))
@@ -538,10 +542,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     if (!identity?.assistantEnvironmentConfigurationManaged) {
       if (workspaceExecution && !workspaceRouting && !instanceAccess)
         throw Error('Workspace execution requires Human instance authority');
-      assetsStorage = await openHeadlessAssetsStorage(dataDirectory, workspaceExecution && !workspaceRouting ? {
+      assetsStorage = await openHeadlessAssetsStorage(dataDirectory, {...(workspaceExecution && !workspaceRouting ? {
         workspaceMachineId: machineIdentity.machineId,
         ...(options.terminalOwner ? {terminalOwner: options.terminalOwner} : {}),
-      } : {});
+      } : {}), ...(coreEnvironmentLaunch ? {environmentLaunch: true} : {})});
       if (!assetsStorage.botExecution) throw Error('Assets Bot execution owner unavailable');
       if (process.env.OPENCRAFT_ASSISTANT_SANDBOX_CONFIG) {
         try { await assetsStorage.store.adoptWorkspaceInstallation(process.env.OPENCRAFT_ASSISTANT_SANDBOX_CONFIG); }
@@ -579,6 +583,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         },
       });
     }
+    environmentLaunch = identity?.environmentLaunch ?? assetsStorage?.environmentLaunch;
+    if (coreEnvironmentLaunch && !assetsStorage?.environmentLaunch) throw new Error('Environment delivery requires the sole vault owner');
     const authenticateHuman = request => {
       if (instanceAccess) return instanceAccess.authenticate(request);
       const identities = providers.map(provider => provider.authenticate(request)).filter(Boolean);
@@ -774,7 +780,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       error => console.error('[capability-bindings] unavailable', error.message));
     // Opaque ENV delivery needs the same live Actor/lease handoff as Git; a
     // configured vault owner without it fails here, not at every command.
-    if (identity?.environmentLaunch && !humanGitExecution) throw new Error('Environment delivery requires execution admission');
+    if (environmentLaunch && !humanGitExecution) throw new Error('Environment delivery requires execution admission');
     const capabilityKey=await capabilitySigningKey(join(dataDirectory,"session-capabilities.key"));
     capabilityMcp = new SessionCapabilityMcp(capabilities, capabilityKey, capabilityBindings, {
       descriptorPath:join(dataDirectory,'session-capabilities.json'), retainEndpoint: true,
@@ -789,7 +795,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         const grant=await humanGitExecution.handoff({hostId:'opencraft-server',threadId:session.threadId,...(session.execution.inputId?{inputId:session.execution.inputId}:{turnId:session.execution.turnId})});
         return {authority:assetsService.gitAuthority,hosts:assetsService.gitHosts,grant};
       },
-      ...(identity?.environmentLaunch ? {hostEnvironment:createHostEnvironmentLaunch({port:identity.environmentLaunch,
+      ...(environmentLaunch ? {hostEnvironment:createHostEnvironmentLaunch({port:environmentLaunch,
         handoff:locator=>humanGitExecution.handoff(locator),
         routes:session=>!closing&&session.serverId===conversationExecution.serverForHost('opencraft-server',session.threadId)
           &&conversationExecution.hostForServer(session.serverId)==='opencraft-server'})} : {}),
@@ -839,7 +845,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       executionContext:identity?.executionEnvironment?'legacy':'assets',
       gitExecution:identity?.executionEnvironment?undefined:{directory:dataDirectory,machineId:machineIdentity.machineId,
         workerFile:options.gitWorkerFile??fileURLToPath(new URL('./personal-git-worker.mjs',import.meta.url)),
-        ...(identity?.environmentLaunch?{environmentIssuer:identity.environmentLaunch.issuer}:{})},
+        ...(environmentLaunch?{environmentIssuer:environmentLaunch.issuer,
+          admissionWorkerFile:join(dirname(options.gitWorkerFile??fileURLToPath(new URL('./personal-git-worker.mjs',import.meta.url))),'execution-admission-worker.mjs')}:{})},
       projectlessWorkspaceDirectory: join(dataDirectory, "workspaces"),
       skillsDirectory: join(dataDirectory, "skills"),
       taskSkillDirectories: [join(dataDirectory, "codex/runtime/skills")],

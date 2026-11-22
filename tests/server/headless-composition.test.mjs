@@ -136,6 +136,20 @@ test('missing or malformed identity fails before execution and rollback releases
   assert.equal((await fetch(app.url)).status, 200);
 });
 
+test('core ENV delivery has one owner and fails at startup without execution admission', async t => {
+  const f = await fixture(t);
+  await assert.rejects(startHeadlessServer({ ...f.options, environmentDelivery: 'synchronous' }), /Invalid environment delivery/);
+  let closed = 0;
+  await assert.rejects(startHeadlessServer({ ...f.options, environmentDelivery: 'vault-owner' },
+    { createIdentity: async () => ({ providers: [], executionEnvironment: { close() {} }, close() { closed++; } }) }), /two owners/);
+  assert.equal(closed, 1);
+  // The vault Worker starts its issuer, but no Human execution admission exists.
+  await assert.rejects(startHeadlessServer({ ...f.options, environmentDelivery: 'vault-owner' }), /requires execution admission/);
+  assert.equal(f.starts(), 0);
+  const app = await startHeadlessServer(f.options); t.after(() => app.close());
+  assert.equal((await fetch(app.url)).status, 200);
+});
+
 test('public listener accepts explicit membership protection without requiring an anonymous-access acknowledgement', async t => {
   const f = await fixture(t);
   await assert.rejects(startHeadlessServer({ ...f.options, host: '0.0.0.0' }), /unauthenticated-public/);

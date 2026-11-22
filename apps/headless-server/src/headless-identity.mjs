@@ -21,3 +21,13 @@ export function validateHeadlessIdentity(identity) {
     throw new Error('Invalid Headless identity adapter');
   }
 }
+
+/** Opaque ENV delivery from the core vault Worker (`'vault-owner'`). It replaces,
+ * never accompanies, the synchronous runtime or a downstream vault-owner port. */
+export function validateEnvironmentDelivery(delivery, identity) {
+  if (delivery === undefined) return false;
+  if (delivery !== 'vault-owner') throw new Error('Invalid environment delivery');
+  if (identity?.executionEnvironment != null || identity?.environmentLaunch !== undefined)
+    throw new Error('Execution ENV cannot have two owners');
+  return true;
+}

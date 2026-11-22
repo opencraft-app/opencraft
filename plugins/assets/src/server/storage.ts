@@ -6,6 +6,11 @@ import { WorkspaceBudgetStore, type WorkspaceBudgetRole, type WorkspaceBudgetOut
 import type { SandboxIdentity, SandboxResources } from "@opencraft/sandbox";
 import { parseGitExecutionLocator, type GitExecutionResolver } from "@opencraft/execution-environment/git-execution";
 import { EmployeeGitVaultStore, GitVaultError } from "@opencraft/execution-environment/employee-git-vault-store";
+import { EnvironmentLaunchOwner } from "@opencraft/execution-environment/environment-launch-owner";
+import type {
+  EnvironmentLaunchContext,
+  EnvironmentLaunchTarget,
+} from "@opencraft/execution-environment/environment-delivery";
 import { PLATFORM_ASSET_SCOPE } from "../contract.js";
 import { SandboxConfigurations, SandboxConfigurationError } from "./configurations.js";
 import { GitConnections, type GitConnectionProvider } from "./git-connections.js";
@@ -17,10 +22,32 @@ export async function createAssetsStorage(
   providers: readonly GitConnectionProvider[] = [githubConnectionProvider()],
   execution?: GitExecutionResolver,
   createWorkspaces?: CreateAssetWorkspaceExecutionOwner,
+  /** Issue opaque execution ENV capsules from this sole vault owner. */
+  options: { environmentLaunch?: boolean } = {},
 ) {
+  // ENV for a launch needs the durable admission this owner reads itself.
+  if (options.environmentLaunch && !execution) throw new Error("Environment delivery requires execution admission");
   const vault = new EmployeeGitVaultStore(directory);
   let workspaces: AssetWorkspaceExecutionOwner | undefined;
+  let environment: EnvironmentLaunchOwner | undefined;
+  // Retire the issuer key before the admission reader and the vault close.
+  const release = async () => {
+    environment?.close();
+    try {
+      await workspaces?.close();
+    } finally {
+      try {
+        execution?.close();
+      } finally {
+        vault.close();
+      }
+    }
+  };
   try {
+    environment =
+      options.environmentLaunch && execution
+        ? new EnvironmentLaunchOwner(vault, (input) => execution.resolve(input))
+        : undefined;
     const configurations = new SandboxConfigurations(vault);
     const workspaceCatalog = new InstalledWorkspaceCatalog(configurations);
     const workspaceBudget = new WorkspaceBudgetStore(vault, () => {
@@ -96,13 +123,16 @@ export async function createAssetsStorage(
       },
     });
     return {
-      concurrentReads: execution ? ["executionGitGrant", "executionGitReservation"] : [],
+      concurrentReads: execution
+        ? ["executionGitGrant", "executionGitReservation", ...(environment ? ["executionEnvironmentLaunch"] : [])]
+        : [],
       ready: {
         outcome: vault.outcome,
         workspaceExecution: workspaces !== undefined && workspaces.workspaceExecution !== false,
         botExecution: workspaces?.botExecution === true,
         gitHosts: providers.map((p) => p.host),
         gitAuthority: execution ? vault.personalGitAuthority("actor") : null,
+        environmentIssuer: environment?.issuer ?? null,
       },
       methods: {
         ...Object.fromEntries(
@@ -211,6 +241,19 @@ export async function createAssetsStorage(
             throw new SandboxConfigurationError("execution_unavailable", 503);
           }
         },
+        // Returns only an opaque capsule for one execution process. There is no
+        // method that returns decrypted ENV values to the caller of this Worker.
+        ...(environment
+          ? {
+              executionEnvironmentLaunch: (target: EnvironmentLaunchTarget, context: EnvironmentLaunchContext) => {
+                try {
+                  return environment!.seal(target, context);
+                } catch {
+                  throw new SandboxConfigurationError("execution_unavailable", 503);
+                }
+              },
+            }
+          : {}),
         gitSnapshot: (access: AssetAdmission) => run(access, () => git.snapshot(access.scope)),
         gitUpdate: (access: AssetAdmission, input: unknown) =>
           run(access, (check) => git.update(access.scope, input, check)),
@@ -223,28 +266,10 @@ export async function createAssetsStorage(
             configurations.update(access.scope, input, access.allowCustomEndpoints, access.canManagePlatform),
           ),
       },
-      close: async () => {
-        try {
-          await workspaces?.close();
-        } finally {
-          try {
-            execution?.close();
-          } finally {
-            vault.close();
-          }
-        }
-      },
+      close: release,
     };
   } catch (error) {
-    try {
-      await workspaces?.close();
-    } finally {
-      try {
-        execution?.close();
-      } finally {
-        vault.close();
-      }
-    }
+    await release();
     throw error;
   }
 }

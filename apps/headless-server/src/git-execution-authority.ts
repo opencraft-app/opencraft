@@ -2,6 +2,11 @@ import { membershipRevocationRevision } from "@opencraft/access-control/membersh
 import { ownedDatabasePath } from "@opencraft/opencraft-daemon/owned-database-path";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import {
+  parseGitExecutionLocator,
+  type GitExecutionHandoff,
+  type GitExecutionLocator,
+} from "@opencraft/execution-environment/git-execution";
 export type GitExecutionQuery = {
   hostId: string;
   threadId: string | null;
@@ -184,4 +189,37 @@ export class GitExecutionAuthority {
     this.actors?.close();
     this.actors = undefined;
   }
+}
+
+type ResolvedExecution = Omit<NonNullable<ReturnType<GitExecutionAuthority["resolve"]>>, "turnId">;
+/** Scope of an admitted execution. The locator never selects a Project. */
+export function executionScope(input: GitExecutionLocator, current: ResolvedExecution) {
+  return {
+    account: current.account,
+    hostId: input.hostId,
+    threadId: input.threadId,
+    inputId: current.inputId,
+    executionId: current.executionId,
+    leaseGeneration: current.generation,
+    actorGeneration: current.actorGeneration,
+    membershipRevision: current.membershipRevision,
+    projectId: input.projectId ?? null,
+  };
+}
+/** The durable admission of an active Turn. `null` only for an unowned Turn;
+ * any other absence (disabled Actor, ended lease, unreadable store) throws. */
+export function resolveExecutionAdmission(
+  authority: GitExecutionAuthority,
+  raw: unknown,
+): Omit<GitExecutionHandoff, "authority" | "capability"> | null {
+  const input = parseGitExecutionLocator(raw),
+    current = authority.resolve(input);
+  if (!current) {
+    if (authority.unowned(input)) return null;
+    throw Error("git_execution_unavailable");
+  }
+  return {
+    scope: executionScope(input, current),
+    native: { turnId: current.turnId, incarnation: current.incarnation },
+  } as Omit<GitExecutionHandoff, "authority" | "capability">;
 }
