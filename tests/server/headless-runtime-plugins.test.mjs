@@ -59,8 +59,11 @@ async function fixture(t) {
 /** Plugin replies carry a marker; a route that never reached plugin code cannot contain it. */
 const notServedByPlugin = async (response, message) =>
   assert.ok(!(await response.text()).includes('"plugin"'), message);
-const replying = (body) =>
-  `export async function activate(context){return {handle(_q,r){r.setHeader('content-type','application/json');r.end(JSON.stringify({plugin:${JSON.stringify(body)},hostApi:context.hostApi}));},close(){}};}`;
+/** Generated plugin source only ever embeds a lowercase fixture name, never arbitrary text. */
+const replying = (body) => {
+  if (!/^[a-z]+$/.test(body)) throw Error("fixture plugin names are lowercase words");
+  return `export async function activate(context){return {handle(_q,r){r.setHeader('content-type','application/json');r.end(JSON.stringify({plugin:'${body}',hostApi:context.hostApi}));},close(){}};}`;
+};
 
 /** A verified external identity: members come from one provider; another provider is authenticated but not admitted. */
 function identity(events = []) {
