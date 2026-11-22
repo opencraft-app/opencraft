@@ -8,7 +8,7 @@ export type CollaborationTarget = { kind: "actor"; actorId: string } | { kind: "
 export const COLLABORATION_METHOD = "opencraft/collaboration";
 /** Each addition is negotiated independently; version alone grants no capability. */
 export const COLLABORATION_CAPABILITIES = { version: 1, read: true, queue: true, steer: true,
-  servers: true, metadata: true, metadataDiscovery: true, boundedRead: true, tailRead: true, lookup: true, deliveryMetadata: true, discoverFilters: true, create: true, createLookup: true, initialPermissionMode: true } as const;
+  servers: true, metadata: true, metadataDiscovery: true, boundedRead: true, tailRead: true, lookup: true, deliveryMetadata: true, discoverFilters: true, create: true, initialPermissionMode: true } as const;
 export interface ConversationServer {
   serverId: string; label: string; engine: string; connectionState: 'ready' | 'unavailable' | 'unknown';
   capabilities: { metadata: boolean; read: boolean; boundedRead: boolean; tailRead?: boolean; create?: boolean; createLookup?: boolean; initialPermissionMode?: boolean; queue: boolean; steer: boolean; discoverFilters?: boolean };

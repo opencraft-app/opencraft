@@ -227,7 +227,7 @@ export function createRoutedConversationExecution(getAppHost, { machineId, engin
     directory: () => ({instanceId:machineId, servers:descriptors.map(server => ({serverId:server.serverId,label:server.label,
       engine:server.engine ?? 'codex', connectionState: ['recovering','unavailable'].includes(getAppHost()?.hostExecutionState?.(server.hostId))
         ? 'unavailable' : getAppHost()?.hostState(server.hostId) === 'open' ? 'ready' : 'unknown',
-      capabilities:{metadata:true,read:!server.engine,boundedRead:!server.engine,tailRead:!server.engine,create:!server.engine,createLookup:!server.engine,initialPermissionMode:!server.engine,queue:true,steer:!server.engine,discoverFilters:!server.engine}}))}),
+      capabilities:{metadata:true,read:!server.engine,boundedRead:!server.engine,tailRead:!server.engine,create:!server.engine,initialPermissionMode:!server.engine,queue:true,steer:!server.engine,discoverFilters:!server.engine}}))}),
     metadata(ref) { const hostId = ports.get(ref.serverId)?.hostId ?? reject(); return select({...ref,hostId}).port.metadata(ref); },
     async discoverMetadata(options) {
       const port = ports.get(options.serverId); if (!port) return reject();
