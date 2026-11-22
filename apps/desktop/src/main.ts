@@ -4,7 +4,7 @@ import { basename, dirname, extname, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { isWindowAppearanceMessage, applyNativeWindowAppearance, type WindowAppearanceMessage } from "./window-appearance.js";
-import { execFileSync, execFile, spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { NativeSpeechManager } from "./native-speech.js";
@@ -25,7 +25,7 @@ import { createDesktopLocaleRuntime, requireDesktopLocale } from "./desktop-loca
 import { installBrowserGuests } from "./browser-guests.js";
 import { installBrowserAutomationIpc } from './browser-automation-ipc.js';
 import { installRemoteBrowserMenu } from './remote-browser-menu.js';
-import { createFilePrivateStorage } from "./private-storage.js";
+import { openFilePrivateStorage, type FilePrivateStorage } from "./private-storage.js";
 import { BrowserPermissionPolicy } from "./browser-permissions.js";
 import { ProjectFolderPicker } from "./project-folder-picker.js";
 import { SqliteDebugReader } from "./sqlite-debug-reader.js";
@@ -144,17 +144,20 @@ function trustedLoginCaller(event: Electron.IpcMainInvokeEvent): boolean {
 const cancelRemoteBrowserMenu = installRemoteBrowserMenu(ipcMain, trustedLoginCaller, () => mainWindow);
 app.on('browser-window-blur', () => cancelRemoteBrowserMenu());
 
-function initializeDesktopProfile(paths: DesktopDirectoryPlan): void {
+async function initializeDesktopProfile(paths: DesktopDirectoryPlan): Promise<void> {
   desktopPaths = paths;
+  browserMetadata = await openFilePrivateStorage(join(paths.userDataDirectory, "browser-metadata"));
+  speechPreferences = await openFilePrivateStorage(join(paths.userDataDirectory, "voice-input"));
+  productStorage = await openFilePrivateStorage(join(paths.userDataDirectory, "private-storage"));
   app.commandLine.appendSwitch("user-data-dir", paths.userDataDirectory);
   app.setPath("userData", paths.userDataDirectory);
   process.chdir(desktopPaths.runtimeDirectory);
   browserPermissions = new BrowserPermissionPolicy({
     read: () => {
-      const raw = createFilePrivateStorage(join(paths.userDataDirectory, "browser-metadata")).read("permissions");
+      const raw = browserMetadata.read("permissions");
       return raw ? JSON.parse(raw) : {};
     },
-    write: value => createFilePrivateStorage(join(paths.userDataDirectory, "browser-metadata")).write("permissions", JSON.stringify(value)),
+    write: value => browserMetadata.write("permissions", JSON.stringify(value)),
   }, async (origin, permission) => {
     if (!mainWindow || mainWindow.isDestroyed()) return { allow: false, remember: false };
     const labels: Record<string, string> = { camera: "摄像头", microphone: "麦克风", geolocation: "位置", notifications: "通知" };
@@ -166,10 +169,11 @@ function initializeDesktopProfile(paths: DesktopDirectoryPlan): void {
   });
   sqliteDebugReader = new SqliteDebugReader(paths.dshDataDirectory);
   uiPreferences = new DesktopUiPreferenceStore(join(paths.userDataDirectory, "opencraft-ui.sqlite"));
-  speechPreferences = createFilePrivateStorage(join(paths.userDataDirectory, "voice-input"));
+  // The product may register the login callback during activation.
+  await registerDesktopBundle().catch(error => console.error("[opencraft protocol] LaunchServices registration failed:", error));
   desktopProductSession = activateDesktopProduct(createDesktopProduct, {
     userDataDirectory: paths.userDataDirectory,
-    privateStorage: createFilePrivateStorage(join(paths.userDataDirectory, "private-storage")),
+    privateStorage: productStorage,
     openExternal: url => shell.openExternal(url),
     showWindow: ensureMainWindow,
     registerProtocol: registerDesktopProtocol,
@@ -184,7 +188,9 @@ function speechHelperPath(): string {
     ? join(process.resourcesPath, "native", "opencraft-speech-helper")
     : resolve(dirname(fileURLToPath(import.meta.url)), "../build/native/opencraft-speech-helper"));
 }
-let speechPreferences!: ReturnType<typeof createFilePrivateStorage>;
+let speechPreferences!: FilePrivateStorage;
+let browserMetadata!: FilePrivateStorage;
+let productStorage!: FilePrivateStorage;
 function validateSpeechPreferences(value: unknown): asserts value is NativeSpeechPreferences {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid speech preferences");
   const entry = value as NativeSpeechPreferences;
@@ -311,12 +317,14 @@ ipcMain.handle("opencraft:ui-preference-compare-and-set", (event, key: unknown, 
   return result;
 });
 
+/** A packaged macOS app registers its bundle with LaunchServices once at startup, off the event loop. */
+async function registerDesktopBundle(): Promise<void> {
+  if (process.platform !== "darwin" || !app.isPackaged) return;
+  await promisify(execFile)("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", [
+    "-f", dirname(dirname(dirname(process.execPath))),
+  ], { timeout: 5000 });
+}
 function registerDesktopProtocol(): void {
-  if (process.platform === "darwin" && app.isPackaged) {
-    execFileSync("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", [
-      "-f", dirname(dirname(dirname(process.execPath))),
-    ], { stdio: "ignore", timeout: 5000 });
-  }
   const registered = app.isPackaged ? app.setAsDefaultProtocolClient("opencraft")
     : app.setAsDefaultProtocolClient("opencraft", process.execPath, [app.getAppPath()]);
   if (!registered) throw new Error("Could not register the desktop login callback. Please reopen the installed app.");
@@ -324,7 +332,7 @@ function registerDesktopProtocol(): void {
 
 const browserMetadataKeys = new Set<string>(Object.values(browserMetadataIdentity));
 const readBrowserMetadata = (): Record<string, string> => {
-  const raw = createFilePrivateStorage(join(app.getPath("userData"), "browser-metadata")).read("state");
+  const raw = browserMetadata.read("state");
   if (raw === null) return {};
   const parsed = JSON.parse(raw);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid browser metadata");
@@ -337,7 +345,7 @@ ipcMain.handle("opencraft:browser-state-read", event => {
 ipcMain.handle("opencraft:browser-state-write", (event, key: unknown, value: unknown) => {
   if (!trustedLoginCaller(event) || typeof key !== "string" || !browserMetadataKeys.has(key) || typeof value !== "string") throw new Error("Invalid browser metadata write");
   JSON.parse(value);
-  createFilePrivateStorage(join(app.getPath("userData"), "browser-metadata")).write("state", JSON.stringify({ ...readBrowserMetadata(), [key]: value }));
+  browserMetadata.write("state", JSON.stringify({ ...readBrowserMetadata(), [key]: value }));
 });
 installBrowserAutomationIpc(ipcMain, { trusted: trustedLoginCaller, guests: () => browserGuests });
 ipcMain.handle("opencraft:browser-track-pointer", (event, guestId: unknown, trackingId: unknown, enabled: unknown) => {
@@ -392,7 +400,7 @@ ipcMain.handle("opencraft:browser-clear-closed-data", async event => {
   }
   const current = readBrowserMetadata();
   const remaining = (JSON.parse(current["opencraft.browser-retired-storage.v1"] ?? "[]") as string[]).filter(id => !ids.includes(id));
-  createFilePrivateStorage(join(app.getPath("userData"),"browser-metadata")).write("state",JSON.stringify({...current,"opencraft.browser-retired-storage.v1":JSON.stringify(remaining)}));
+  browserMetadata.write("state",JSON.stringify({...current,"opencraft.browser-retired-storage.v1":JSON.stringify(remaining)}));
   return {cleared};
 });
 ipcMain.handle("opencraft:skillhub-get", async (event, path: unknown) => {
@@ -750,6 +758,10 @@ const lifecycle = new DesktopLifecycle({
     const results = await Promise.allSettled([daemon?.shutdown(), loopback?.close()]);
     try { await localAccountHost?.close(); } catch (error) { productErrors.push(error); }
     localAccountHost = null;
+    // Private storage writes are persisted in the background; finish them before exit.
+    for (const storage of [productStorage, speechPreferences, browserMetadata]) {
+      try { await storage?.flush(); } catch (error) { productErrors.push(error); }
+    }
     const errors = results.filter(result => result.status === "rejected");
     if (errors.length || productErrors.length) throw new AggregateError([...productErrors, ...errors.map(result => result.reason)], "Desktop shutdown failed");
   },
@@ -761,7 +773,7 @@ const lifecycle = new DesktopLifecycle({
 async function bootstrap(): Promise<void> {
   const preparedDirectories = await prepareDesktopDirectories(directoryPlan);
   if (preparedDirectories.diagnostic) console.warn(`[opencraft directories] ${preparedDirectories.diagnostic}`);
-  initializeDesktopProfile(preparedDirectories.paths);
+  await initializeDesktopProfile(preparedDirectories.paths);
   const singleInstance = app.requestSingleInstanceLock();
   if (!singleInstance) {
     app.quit();
@@ -789,7 +801,7 @@ async function bootstrap(): Promise<void> {
     return;
   }
   if (thinServer) remoteServerOrigin(thinServer);
-  daemonManager = thinServer ? null : new OpenCraftDaemonClientManager({
+  daemonManager = thinServer ? null : await OpenCraftDaemonClientManager.open({
     endpoint: desktopPaths.daemonEndpoint,
     tokenPath: desktopPaths.daemonTokenPath,
     runtimeDirectory: desktopPaths.runtimeDirectory,
@@ -813,7 +825,7 @@ async function bootstrap(): Promise<void> {
     },
     modelStorageDirectory: process.env.OPENCRAFT_MODEL_STORAGE_DIRECTORY?.trim() || desktopPaths.productHomeDirectory,
     skillsDirectory: process.env.OPENCRAFT_SKILLS_DIRECTORY?.trim() || join(desktopPaths.productHomeDirectory, "skills"),
-    codexExecutable: resolveCodexExecutable({
+    codexExecutable: await resolveCodexExecutable({
       explicit: process.env.OPENCRAFT_CODEX_EXECUTABLE,
       bundled: app.isPackaged
         ? join(process.resourcesPath, `runtime/codex-${process.arch}/bin`, process.platform === "win32" ? "codex.exe" : "codex")

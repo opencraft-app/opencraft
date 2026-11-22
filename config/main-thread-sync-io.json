@@ -35,34 +35,8 @@
     "apps/codex-core/src/operator-lease.ts": {
       "readFileSync": 2
     },
-    "apps/desktop/src/codex-executable.ts": {
-      "accessSync": 1
-    },
     "apps/desktop/src/connector-configuration-store.ts": {
       "DatabaseSync": 1
-    },
-    "apps/desktop/src/daemon-client.ts": {
-      "chmodSync": 1,
-      "mkdirSync": 1,
-      "readFileSync": 2,
-      "writeFileSync": 1
-    },
-    "apps/desktop/src/main.ts": {
-      "execFileSync": 1
-    },
-    "apps/desktop/src/private-storage.ts": {
-      "chmodSync": 1,
-      "closeSync": 2,
-      "existsSync": 2,
-      "fstatSync": 1,
-      "fsyncSync": 1,
-      "lstatSync": 1,
-      "mkdirSync": 1,
-      "openSync": 2,
-      "readFileSync": 1,
-      "renameSync": 1,
-      "rmSync": 2,
-      "writeFileSync": 1
     },
     "apps/desktop/src/sqlite-debug-reader.ts": {
       "DatabaseSync": 2,

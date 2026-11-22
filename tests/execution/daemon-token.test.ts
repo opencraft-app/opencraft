@@ -13,10 +13,10 @@ test('server manager preserves shared token identity, permissions and ACL and re
     daemonEntry: '/unused', dshExecutable: '/unused', dataDirectory: root, codexExecutable: '/unused', codexDataDirectory: root,
     nativeCodexHomeDirectory: root, executable: process.execPath };
   try {
-    assert.throws(() => new OpenCraftDaemonClientManager(options), /ENOENT/);
+    await assert.rejects(OpenCraftDaemonClientManager.open(options), /ENOENT/);
     await assert.rejects(readFile(tokenPath), { code: 'ENOENT' });
     await writeFile(tokenPath, 'short', { mode: 0o640 });
-    assert.throws(() => new OpenCraftDaemonClientManager(options), /Invalid existing/);
+    await assert.rejects(OpenCraftDaemonClientManager.open(options), /Invalid existing/);
     assert.equal(await readFile(tokenPath, 'utf8'), 'short');
     const token = 'synthetic-' + 'x'.repeat(48); await writeFile(tokenPath, token); await chmod(tokenPath, 0o640);
     let beforeAcl: string | undefined;
@@ -25,7 +25,7 @@ test('server manager preserves shared token identity, permissions and ACL and re
       beforeAcl = execFileSync('getfacl', ['--omit-header', tokenPath], { encoding: 'utf8' });
     }
     const mode = (await stat(tokenPath)).mode;
-    new OpenCraftDaemonClientManager(options);
+    await OpenCraftDaemonClientManager.open(options);
     assert.equal(await readFile(tokenPath, 'utf8'), token); assert.equal((await stat(tokenPath)).mode, mode);
     if (beforeAcl !== undefined) assert.equal(execFileSync('getfacl', ['--omit-header', tokenPath], { encoding: 'utf8' }), beforeAcl);
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -37,7 +37,7 @@ test('shutdown during an unavailable endpoint probe never launches a replacement
   try {
     await writeFile(entry, `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'spawned');`);
     await writeFile(tokenPath, 'synthetic-' + 'x'.repeat(48));
-    const manager = new OpenCraftDaemonClientManager({ endpoint: join(root, 'missing.sock'), tokenPath, tokenMode: 'existing',
+    const manager = await OpenCraftDaemonClientManager.open({ endpoint: join(root, 'missing.sock'), tokenPath, tokenMode: 'existing',
       runtimeDirectory: root, daemonEntry: entry, dshExecutable: '/unused', dataDirectory: root, codexExecutable: '/unused',
       codexDataDirectory: root, nativeCodexHomeDirectory: root, executable: process.execPath });
     const connection = manager.connectAppHost('closing-probe');
