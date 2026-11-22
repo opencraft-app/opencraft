@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { once } from 'node:events';
-import { headlessWebHostDefinitions } from '../packaging/package-headless-linux.mjs';
+import { headlessWebBuildEnvironment } from '../packaging/headless-web-build.mjs';
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const exec = promisify(execFile);
@@ -95,7 +95,7 @@ async function gate(config) {
       'tests/execution/opencraft-daemon.test.ts', 'tests/execution/codex-core.test.ts', 'tests/storage/opencraft-host-state-database.test.ts', 'tests/tooling/controlled-release-registry.test.mjs', 'tests/server/ssh-http-ingress.test.mjs', 'tests/execution/daemon-token.test.ts']);
     const npm = process.env.npm_execpath;
     if (!npm) throw new Error('Run this gate using npm run gate:server-updates');
-    await run('build', [npm, 'run', 'build:web:release'], { OPENCRAFT_SOURCE_REVISION: report.source.commit + (report.source.dirty ? '-dirty' : ''), ...(config.profile === 'headless' ? { OPENCRAFT_HEADLESS_SERVER_BUILD: 'true', VITE_HYPERNODE_PLUGIN: 'disabled', VITE_APPSERVER_HOSTS_JSON: JSON.stringify(headlessWebHostDefinitions()) } : {}) });
+    await run('build', [npm, 'run', 'build:web:release'], { OPENCRAFT_SOURCE_REVISION: report.source.commit + (report.source.dirty ? '-dirty' : ''), ...(config.profile === 'headless' ? headlessWebBuildEnvironment() : {}) });
     for (const scenario of config.scenario === 'all' ? ['install', 'self-upgrade'] : [config.scenario]) {
       const evidence = join(directory, scenario); await mkdir(evidence);
       await run(scenario, ['--import', loader, config.profile === 'headless' ? 'scripts/smoke/server/smoke-headless-server-updates.ts' : 'scripts/smoke/server/smoke-server-updates.ts'], {

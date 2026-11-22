@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { copyAllServerRuntime } from "./package-mcp-app-runtime.mjs";
 import { copySshRuntime } from "./package-ssh-runtime.mjs";
-import { assertHeadlessWebRelease } from "../../apps/headless-server/src/headless-web-release.mjs";
+import { buildHeadlessWeb } from "./headless-web-build.mjs";
 import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
 import { buildDshCapabilityPlugin } from './package-dsh-capability-runtime.mjs';
 import { buildConversationCli } from './build-conversation-cli.mjs';
@@ -45,16 +45,7 @@ export function assertHeadlessBuildHost(platform = process.platform, arch = proc
   }
 }
 
-export function headlessWebHostDefinitions() {
-  return [{
-    hostId: "opencraft-server",
-    label: "Server",
-    kind: "durable",
-    executionLocation: "This server",
-    url: "/appserver",
-    workspaceBrowseRoots: ["/"],
-  }];
-}
+export { headlessWebHostDefinitions } from "./headless-web-build.mjs";
 
 export async function buildHeadlessBundle(output, { headlessEntry = join(repositoryRoot, "apps/headless-server/src/headless-server.mjs"), additionalGitRuntimeEntries = [], assistantEntry = join(repositoryRoot,'apps/personal-assistant/src/runtime/assistant-server.mjs') } = {}) {
   await mkdir(dirname(output), { recursive: true });
@@ -183,14 +174,7 @@ export async function packageHeadlessLinux(composition = {}) {
   const require = createRequire(import.meta.url);
   if (typeof require("node-pty").spawn !== "function") throw new Error("Linux node-pty is unavailable");
   await run("npm", ["ci", "--prefix", join(repositoryRoot, "runtime/codex"), "--workspaces=false", "--omit=dev", "--no-audit", "--no-fund"]);
-  await run("npm", ["run", process.env.OPENCRAFT_CONTAINER_WEB_SCRIPT || "build:web:release"], {
-    env: {
-      OPENCRAFT_HEADLESS_SERVER_BUILD: "true",
-      VITE_HYPERNODE_PLUGIN: "disabled",
-      VITE_APPSERVER_HOSTS_JSON: JSON.stringify(headlessWebHostDefinitions()),
-    },
-  });
-  await assertHeadlessWebRelease(join(repositoryRoot, "apps/workbench-web/dist"));
+  await buildHeadlessWeb({ script: process.env.OPENCRAFT_CONTAINER_WEB_SCRIPT || "build:web:release" });
 
   const version = productVersion(repositoryRoot);
   const output = outputOverride ?? headlessArchivePath(architecture);

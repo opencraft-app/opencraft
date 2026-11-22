@@ -5,7 +5,7 @@ import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { startHeadlessServer } from "../../apps/headless-server/src/headless-server.mjs";
-import { headlessWebHostDefinitions } from "../packaging/package-headless-linux.mjs";
+import { headlessWebBuildEnvironment } from "../packaging/headless-web-build.mjs";
 
 /**
  * Local preview of crew: the real Headless server, Core, Inbox, Server spaces and managed Bot Host,
@@ -48,9 +48,7 @@ if (!(await headlessBuild()) || process.argv.includes("--rebuild")) {
   console.log("Building the headless Workbench for the preview…");
   const env = {
     ...process.env,
-    OPENCRAFT_HEADLESS_SERVER_BUILD: "true",
-    VITE_HYPERNODE_PLUGIN: "disabled",
-    VITE_APPSERVER_HOSTS_JSON: JSON.stringify(headlessWebHostDefinitions()),
+    ...headlessWebBuildEnvironment(),
   };
   if (spawnSync("npm", ["run", "build:web:release"], { cwd: root, stdio: "inherit", env }).status !== 0)
     throw Error("Workbench build failed");

@@ -532,6 +532,13 @@ and test override; Agent/HyperNode flags can override activation. Static/Vite
 pages without injection retain their old defaults. The downstream product excludes the
 built-in Agent and HyperNode plugins; Electron Host ownership is unchanged.
 These settings views do not bundle an execution engine.
+A headless server Web release takes its build variables from
+`headlessWebBuildEnvironment()` in `scripts/packaging/headless-web-build.mjs`.
+`buildHeadlessWeb({ script })` runs a release script with them and then checks
+the result with `assertHeadlessWebRelease`; an installation that wraps
+`createWorkbenchWebConfig` passes `buildHeadlessWeb({ viteConfig })` instead and
+gets the same Web build steps and check. Installations use these helpers rather
+than copying the variables.
 Host definitions may use root-relative WebSocket paths such as `/appserver` and
 `/codex-appserver`. The browser resolves them against its current HTTP or HTTPS
 origin, so one Web build works behind both authenticated entry points.
