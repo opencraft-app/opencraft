@@ -9,7 +9,7 @@
     "./websocket-sender": "./src/websocket-sender.mjs"
   },
   "dependencies": {
-    "ws": "^8.22.1"
+    "ws": "^8.23.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
