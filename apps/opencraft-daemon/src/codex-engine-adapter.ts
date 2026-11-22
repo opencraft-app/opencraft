@@ -3570,7 +3570,8 @@ export class CodexEngineAdapter implements DuplexTransport {
    * observing it. Nothing is executed or discarded.
    */
   async releaseForAdoption(threadId: string): Promise<boolean> {
-    if (!threadId || this.closeOperation) return false;
+    // A pass-through to Core keeps no thread state here, so this Host cannot vouch that a Thread is idle.
+    if (!threadId || this.closeOperation || this.coreBridge) return false;
     return this.withThreadOperation(threadId, async () => {
       if (this.executionBlocked(threadId) || this.generationUsageSnapshot().blockedThreadIds.includes(threadId)) return false;
       if (this.nativeSubscribedThreads.has(threadId)) {
