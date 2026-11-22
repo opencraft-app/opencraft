@@ -20,6 +20,7 @@ function remoteQueue(storage: Storage): QueueRequestStore<never> {
   const methods = [
     "list",
     "find",
+    "findByClientId",
     "firstAwaitingAdmission",
     "claim",
     "settle",

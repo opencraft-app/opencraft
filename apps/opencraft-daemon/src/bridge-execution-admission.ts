@@ -44,6 +44,7 @@ export function createServerCodexBridge(legacy:DuplexTransport,options:BridgeGat
       }}:{}),
       // The Host opens its sender storage when it connects, after this bridge is assembled.
       senderAttribution:()=>(legacy as {externalSenderAttribution?:boolean}).externalSenderAttribution===true,
+      ...(typeof (legacy as {guardExternalQueue?:unknown}).guardExternalQueue==='function'?{queueGuard:(legacy as unknown as {guardExternalQueue:NonNullable<NonNullable<typeof policy>['queueGuard']>}).guardExternalQueue.bind(legacy)}:{}),
       ...(typeof (legacy as {releaseForAdoption?:unknown}).releaseForAdoption==='function'?{releaseForAdoption:(legacy as unknown as {releaseForAdoption:(id:string)=>Promise<boolean>}).releaseForAdoption.bind(legacy)}:{})}:{};
   // When the bridge owns every new Thread, its implicit identity is assigned here, before
   // admission, so an implicit creation is prepared exactly as an explicit one.

@@ -55,6 +55,13 @@ export class CodexProviderBridge implements DuplexTransport {
     projectNotification?: (frame: Record<string, any>) => Record<string, any>;
     /** Whether prepareInput records verified senders (and projectHistory restores them) now. */
     senderAttribution?: () => boolean;
+    /**
+     * Collaboration checks of a queue request (Actor input, receipts, authorization), with
+     * a finder over this Thread's queue. A reply answers the request here; null forwards it.
+     */
+    queueGuard?: (threadId: string, method: string, params: Record<string, unknown>, context: TransportSubmissionContext,
+      find: (by: { queuedSubmissionId: string } | { clientUserMessageId: string }) => Promise<{ id: string; clientUserMessageId: string; state: string; targetTurnId: string | null } | null>)
+      => Promise<{ result: Record<string, unknown> } | null>;
     /** Translate an OpenCraft permission mode into the provider's own permission fields. */
     resolvePermissions?: (selection: string, cwd: unknown) => Promise<Record<string, unknown>>;
     /** A new private directory for a Thread created without a workspace ("temporary workspace"). */
@@ -489,11 +496,15 @@ export class CodexProviderBridge implements DuplexTransport {
       else if (frame.method === 'thread/history/cancel') result = { cancelled: false };
       else if (String(frame.method).startsWith('thread/queue/')) {
         const { threadId: _, ...params } = p;
+        const guarded = this.policy.queueGuard ? await this.policy.queueGuard(threadId, frame.method, params, context, async by => {
+          const found = object(this.publicTurns(threadId, await this.gateway.queue(threadId, 'thread/queue/find', by))).queuedSubmission;
+          return found ? found as { id: string; clientUserMessageId: string; state: string; targetTurnId: string | null } : null;
+        }).catch((error: Error & { code?: number }) => { throw Object.assign(error, { kind: 'explicit-reject' }); }) : null;
         // Clients name public turns; the Host queue records native ones.
         if (typeof params.expectedTurnId === 'string' && params.expectedTurnId !== 'unknown') params.expectedTurnId = this.gateway.nativeTurn(threadId, params.expectedTurnId);
         // The Host sends queued input on its own later, so attachments are staged now.
         if (params.input !== undefined) params.input = await prepare(params.input, typeof params.clientUserMessageId === 'string' ? params.clientUserMessageId : undefined);
-        result = this.publicTurns(threadId, await this.gateway.queue(threadId, frame.method, params));
+        result = guarded ? guarded.result : this.publicTurns(threadId, await this.gateway.queue(threadId, frame.method, params));
       }
       else if (frame.method === 'thread/unsubscribe') { this.revokeClient(client, threadId); result = {}; }
       else if (frame.method === 'opencraft/steer/status') result = await this.gateway.status(threadId, p.inputIds);

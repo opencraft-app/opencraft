@@ -12,6 +12,7 @@ export interface QueueRequestStore<S> extends QueueStoreAccess<S> {
   reorder(threadId: string, ids: readonly string[]): Awaitable<void>;
   requestRetry(threadId: string, id: string, expectedTurnId: string): Awaitable<boolean>;
   discardUnknown(threadId: string, id: string, expectedTurnId: string): Awaitable<boolean>;
+  findByClientId?(threadId: string, clientId: string): Awaitable<QueuedSubmission<S> | null>;
 }
 
 /** What an owner supplies; every call is already serialized per Thread by the owner. */
@@ -72,6 +73,14 @@ export async function threadQueueRequest<S>(
 ): Promise<unknown> {
   const itemId = text(params.queuedSubmissionId);
   switch (method) {
+    case "thread/queue/find": {
+      // One input's custody, for an owner that guards managed inputs above this queue.
+      const byId = text(params.queuedSubmissionId), byClient = text(params.clientUserMessageId);
+      if (!byId === !byClient) refuse("Find requires exactly one of queuedSubmissionId or clientUserMessageId", -32602);
+      if (byClient && !queue.findByClientId) refuse("Unsupported queue method thread/queue/find", -32601);
+      const row = byId ? await queue.find(threadId, byId) : await queue.findByClientId!(threadId, byClient);
+      return { queuedSubmission: row ? { id: row.id, clientUserMessageId: row.clientUserMessageId, state: row.state, targetTurnId: row.targetTurnId } : null };
+    }
     case "thread/queue/list": {
       const cursor = params.cursor == null ? 0 : Number(params.cursor);
       const limit = params.limit == null ? 50 : Number(params.limit);

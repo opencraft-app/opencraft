@@ -108,7 +108,7 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   await host.activate('codex-1', '');
   const frames: any[] = [], forwarded: any[] = [];
   let paused = false;
-  const staged:unknown[]=[];
+  const staged:unknown[]=[];const guarded:[string,string][]=[];
   let legacyListener: (frame: string) => void = () => {};
   const createTransport = async () => {
     const legacy = {
@@ -128,7 +128,13 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
       prepareInput:async(threadId,clientId,input)=>{staged.push([threadId,clientId]);return input.map((item:any)=>item.type==='mention'?{type:'text',text:`file at ${item.path}`}:item);},
       projectHistory:(method,_params,result)=>({...(result as object),projected:method}),
       observeTitle:(method,params,result)=>titleCalls.push([method,(params as any).threadId??null,(result as any).thread?.id??(result as any).turn?.id]),
-      adoptExisting:true,newThreads:true,releaseForAdoption:async threadId=>{releaseCalls.push(threadId);return releaseAnswer;}});
+      adoptExisting:true,newThreads:true,releaseForAdoption:async threadId=>{releaseCalls.push(threadId);return releaseAnswer;},
+      queueGuard:async(threadId,method,params,_context,find)=>{
+        guarded.push([threadId,method]);
+        if(params.clientUserMessageId==='actor-input:forged')throw Object.assign(Error('Actor input requires its trusted admission'),{code:-32600});
+        if(method==='thread/queue/collaborationReceipt'){const row=await find({clientUserMessageId:'guarded-queue'});return {result:{receipt:row&&{id:row.id,state:row.state,targetTurnId:row.targetTurnId}}};}
+        return null;
+      }});
     next.subscribeMessage(raw => frames.push(JSON.parse(raw))); await next.connect(); return next;
   };
   transport = await createTransport();
@@ -209,6 +215,16 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     const refusal=++sequence;
     await transport.send(JSON.stringify({id:refusal,method:'thread/queue/start',params:{threadId:'bridge:codex:public-new'},[LOGICAL_CLIENT_FIELD]:'client'}));
     assert.match((await until(()=>frames.find(f=>f.id===refusal),Boolean)).error.message,/Queued message is unavailable/u,'Host refusals keep their message');
+    // Collaboration checks run before the Host queue sees a request; a refusal is explicit and queues nothing,
+    // and receipts are answered by the guard from the Host queue's own rows.
+    const forged=++sequence;
+    await transport.send(JSON.stringify({id:forged,method:'thread/queue/add',params:{threadId:'bridge:codex:public-new',clientUserMessageId:'actor-input:forged',input:[{type:'text',text:'forged'}]},[LOGICAL_CLIENT_FIELD]:'client'}));
+    const forgedReply=await until(()=>frames.find(f=>f.id===forged),Boolean);
+    assert.match(forgedReply.error.message,/trusted admission/u); assert.equal(forgedReply.error.data.submissionOutcome,'rejected');
+    // An idle Thread would start a queued input at once, so the receipt here reads a row that does not exist.
+    assert.equal((await request('thread/queue/collaborationReceipt',{threadId:'bridge:codex:public-new'})).receipt,null);
+    assert.deepEqual(guarded.map(([,method])=>method),['thread/queue/list','thread/queue/start','thread/queue/add','thread/queue/collaborationReceipt']);
+    assert.ok(guarded.every(([threadId])=>threadId==='bridge:codex:public-new'));
     // Settings, pins, history cancellation and native-initiated metadata reach clients by public identity.
     const publicId='bridge:codex:public-new';
     await request('thread/settings/update',{threadId:publicId,model:'gpt-fixture'});

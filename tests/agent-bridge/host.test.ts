@@ -902,6 +902,15 @@ test("queued input is sent by the Host itself when each turn ends, in order, and
     (value: any) => value.data.length === 0 && value.steering.length === 0,
   );
   assert.deepEqual(listed.data, []);
+  // Rows stay findable by queue or client identity after delivery (collaboration receipts read them).
+  const byClient: any = await queue("thread/queue/find", { clientUserMessageId: "first" });
+  assert.equal(byClient.queuedSubmission.clientUserMessageId, "first");
+  assert.deepEqual(
+    (await queue("thread/queue/find", { queuedSubmissionId: byClient.queuedSubmission.id }) as any).queuedSubmission,
+    byClient.queuedSubmission,
+  );
+  assert.deepEqual(await queue("thread/queue/find", { clientUserMessageId: "never" }), { queuedSubmission: null });
+  await assert.rejects(queue("thread/queue/find", {}), /exactly one/u);
   const events = await host.events(0);
   assert.ok(events.some((event: any) => event.payload.method === "thread/queue/changed"));
   await delay(400);

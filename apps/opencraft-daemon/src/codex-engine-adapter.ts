@@ -3613,6 +3613,46 @@ export class CodexEngineAdapter implements DuplexTransport {
       if(outcome==="accepted"&&nativeTurnId)this.tokenUsage?.admission({threadId:nativeThreadId,turnId:nativeTurnId},inputId);
     } catch { this.diagnostic({event:"token-usage-partial",category:"acceptance"}); }
   }
+  /**
+   * A bridge Thread's queue request, checked as this Host checks its own queue: Actor
+   * input only through its trusted admission and immutable, a person's delete of Actor
+   * input becomes a collaboration cancel, ordinary input is authorized before it is
+   * queued. Returns a reply this Host answers itself, or null to forward the request.
+   * The Engine Host dispatches queued input on its own, so authorization is checked
+   * when input is queued or steered rather than again at dispatch.
+   */
+  async guardExternalQueue(threadId: string, method: string, params: RpcRecord, context: TransportSubmissionContext,
+    find: (by: { queuedSubmissionId: string } | { clientUserMessageId: string }) => Promise<{ id: string; clientUserMessageId: string; state: string; targetTurnId: string | null } | null>): Promise<{ result: RpcRecord } | null> {
+    const actorRequest = context.collaborationRequestId;
+    const selected = string(params.queuedSubmissionId) ? await find({ queuedSubmissionId: string(params.queuedSubmissionId) }) : null;
+    const clientId = selected?.clientUserMessageId ?? string(params.clientUserMessageId);
+    const actorInput = clientId.startsWith('actor-input:');
+    if (selected && actorInput && method === 'thread/queue/delete' && !actorRequest && context.actorContext && this.options.collaboration) {
+      await this.options.collaboration.command(context.actorContext, { action: 'cancel', requestId: clientId.slice('actor-input:'.length) });
+      return { result: { deleted: true } };
+    }
+    if (actorInput && clientId !== `actor-input:${actorRequest}`) throw new OpenCraftQueueRpcError(-32600, 'Actor input requires its trusted admission');
+    if (actorInput && method === 'thread/queue/update') throw new OpenCraftQueueRpcError(-32600, 'Actor messages are immutable');
+    if (method === 'thread/queue/collaborationReceipt') {
+      if (!actorRequest) throw new OpenCraftQueueRpcError(-32600, 'Trusted Actor admission required');
+      const row = await find({ clientUserMessageId: `actor-input:${actorRequest}` });
+      return { result: { receipt: row ? { id: row.id, state: row.state, targetTurnId: row.targetTurnId } : null } };
+    }
+    if (method === 'thread/queue/add') {
+      if (actorInput) {
+        const mode = this.options.collaborationInput?.mode(clientId);
+        if (!mode) throw new OpenCraftQueueRpcError(-32600, 'Actor request unavailable');
+        if (mode === 'queue' && !this.options.collaborationInput?.authorize(threadId, clientId, mode)) throw new OpenCraftQueueRpcError(-32600, 'Actor execution authorization changed');
+      } else if (context.actorContext && this.options.collaboration) {
+        context.resourceOwner?.assertCurrent();
+        this.options.collaboration.authorize(context.actorContext, threadId, clientId, Array.isArray(params.input) ? params.input : []);
+      }
+    }
+    if (method === 'thread/queue/steer' && actorInput
+      && !this.options.collaborationInput?.authorize(threadId, clientId, 'steer', string(params.expectedTurnId) || undefined))
+      throw new OpenCraftQueueRpcError(-32600, 'Actor execution authorization changed');
+    return null;
+  }
   /** Whether this Host can record verified senders for a bridge Thread's input. */
   get externalSenderAttribution(): boolean { return !!this.identity; }
   /**
