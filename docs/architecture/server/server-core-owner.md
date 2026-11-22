@@ -1,6 +1,6 @@
 # 服务器核心数据离开网络主线程（设计）
 
-状态：设计草案，未实施。实施后以源码、测试与 `config/main-thread-sync-io.json` 的实际计数为准。
+状态：第 1 阶段已实施，其余为设计。以源码、测试与 `config/main-thread-sync-io.json` 的实际计数为准；该登记同时记录主线程可达代码中的 SQL 语句数（`SQL statement`），新增 SQL 会被守卫拦截，各阶段迁移应使其减少。
 
 ## 1. 背景
 
