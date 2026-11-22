@@ -1,7 +1,8 @@
 name: Desktop pre-release
 
-# The only publisher of OpenCraft beta releases: desktop packages and the
-# production-signed Android APK share one tag, manifest and GitHub pre-release.
+# The only publisher of OpenCraft beta releases: desktop packages, the
+# production-signed Android APK and the unsigned iOS IPA share one tag, manifest
+# and GitHub pre-release, and the same commit is uploaded to TestFlight.
 on:
   workflow_dispatch:
     inputs:
@@ -69,6 +70,23 @@ jobs:
       ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
       ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
 
+  ios_testflight:
+    needs: tag
+    uses: ./.github/workflows/ios-testflight.yml
+    # Named forwarding, as for macOS; the called job resolves ios-testflight values.
+    secrets:
+      ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+      ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+      ASC_API_PRIVATE_KEY_BASE64: ${{ secrets.ASC_API_PRIVATE_KEY_BASE64 }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+      IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+      IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+
+  ios_unsigned:
+    needs: tag
+    uses: ./.github/workflows/ios-unsigned-ipa.yml
+
   linux:
     needs: tag
     runs-on: ubuntu-24.04
@@ -132,7 +150,7 @@ jobs:
           retention-days: 14
 
   candidate:
-    needs: [linux, windows, macos, android]
+    needs: [linux, windows, macos, android, ios_testflight, ios_unsigned]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -151,6 +169,10 @@ jobs:
         with:
           name: opencraft-android-release-${{ github.sha }}
           path: inputs/android
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: opencraft-ios-unsigned-${{ github.sha }}
+          path: inputs/ios
       - name: Stage and verify the desktop release candidate
         env:
           TAG: ${{ inputs.tag }}
@@ -163,7 +185,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: candidate
+    needs: [candidate, ios_testflight]
     if: inputs.publish
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -183,4 +205,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ inputs.tag }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TESTFLIGHT_VERSION: ${{ needs.ios_testflight.outputs.version }}
+          TESTFLIGHT_NUMBER: ${{ needs.ios_testflight.outputs.number }}
+          TESTFLIGHT_PUBLIC_LINK: ${{ vars.OPENCRAFT_TESTFLIGHT_PUBLIC_LINK }}
         run: bash scripts/release/publish-desktop-beta.sh "$TAG"

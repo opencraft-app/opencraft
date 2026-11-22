@@ -158,6 +158,11 @@ then verify `IPA-SHA256SUMS.txt` in the archive directory.
 The workflow is also callable. A call uploads the build and returns its
 version and number without waiting for Beta App Review (`check_availability`
 defaults to `false` there), while a manual dispatch still waits by default.
+`Desktop pre-release` calls it for every release, so each release commit is
+uploaded to TestFlight, and attaches `OpenCraft-<version>-ios-unsigned.ipa`
+from the unsigned workflow. The release notes name the uploaded build; set the
+repository variable `OPENCRAFT_TESTFLIGHT_PUBLIC_LINK`
+(`https://testflight.apple.com/join/...`) to link the public beta there.
 
 The status job checks Apple processing, export compliance, Beta App Review and
 membership of the build in the target external group. Configure

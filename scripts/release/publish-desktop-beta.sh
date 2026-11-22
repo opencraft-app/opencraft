@@ -7,6 +7,15 @@ manifest=desktop-release-manifest.json
 kit=.github/secure-release/v1/secure_release.py
 python3 "$kit" manifest-verify --desktop-beta --tag "$tag" --manifest "candidate/$manifest" --directory candidate
 
+# The release uploaded this commit to TestFlight; link the public beta when
+# the repository has configured one.
+[[ "${TESTFLIGHT_VERSION:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "${TESTFLIGHT_NUMBER:-}" =~ ^[1-9][0-9]{0,3}$ ]]
+testflight="TestFlight build $TESTFLIGHT_VERSION ($TESTFLIGHT_NUMBER)"
+if [[ -n "${TESTFLIGHT_PUBLIC_LINK:-}" ]]; then
+  [[ "$TESTFLIGHT_PUBLIC_LINK" =~ ^https://testflight\.apple\.com/join/[A-Za-z0-9]+$ ]]
+  testflight="[$testflight]($TESTFLIGHT_PUBLIC_LINK)"
+fi
+
 notes="$(mktemp)"
 metadata="$(mktemp)"
 remote="$(mktemp -d)"
@@ -18,6 +27,8 @@ OpenCraft $tag from commit $commit ([build and verification]($RUN_URL)).
 - Linux x64 AppImage uses the repository-owned Electron build.
 - Windows x64 installer and ZIP are unsigned.
 - Android arm64 APK is signed with the OpenCraft production key.
+- iOS: $testflight; it appears once Apple finishes processing and beta review.
+- iOS unsigned IPA is for signing with your own Apple ID (AltStore, SideStore).
 
 The desktop release manifest identifies the source and every published asset.
 EOF

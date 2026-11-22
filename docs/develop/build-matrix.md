@@ -352,7 +352,11 @@ overrides the `app.json` versionCode and the APK's version is verified after the
 build. `.github/workflows/desktop-prerelease.yml` calls
 `.github/workflows/android-release-apk.yml`, which signs with the `android-release`
 Environment's key and derives the versionCode from the beta tag, so every GitHub
-pre-release carries `OpenCraft-<version>-android-arm64.apk` in its manifest. Both Android
+pre-release carries `OpenCraft-<version>-android-arm64.apk` in its manifest.
+The same release uploads its commit to TestFlight through
+`.github/workflows/ios-testflight.yml`, without waiting for beta review, and
+attaches `OpenCraft-<version>-ios-unsigned.ipa` from
+`.github/workflows/ios-unsigned-ipa.yml` for people who sign it themselves. Both Android
 workflows restore Gradle distributions and resolved dependencies keyed by the
 lockfile, so a dependency download outage does not fail a warm build. The
 release job runs only on main, and GitHub scopes pull request caches to their

@@ -24,6 +24,9 @@ shopt -u nullglob
 test "${#apks[@]}" -eq 1
 apk_digest="$(sha256sum -- "${apks[0]}" | cut -d ' ' -f 1)"
 test "$(cut -d ' ' -f 1 "${apks[0]}.sha256")" = "$apk_digest"
+# Likewise for the unsigned IPA that the iOS job checked for no signature.
+ipa=inputs/ios/OpenCraft-ios-unsigned.ipa
+test "$(cut -d ' ' -f 1 "$ipa.sha256")" = "$(sha256sum -- "$ipa" | cut -d ' ' -f 1)"
 
 mkdir candidate
 prefix="OpenCraft-${tag#v}"
@@ -37,6 +40,7 @@ mv "inputs/desktop/desktop-windows-x64/OpenCraft-$version-win-x64.zip" \
 mv "inputs/desktop/desktop-windows-x64/OpenCraft-Setup-$version-x64.exe" \
   "candidate/OpenCraft-Setup-${tag#v}-x64.exe"
 mv "${apks[0]}" "candidate/$prefix-android-arm64.apk"
+mv "$ipa" "candidate/$prefix-ios-unsigned.ipa"
 
 (cd candidate && sha256sum -- * > SHA256SUMS.txt)
 

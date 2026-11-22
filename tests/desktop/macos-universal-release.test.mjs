@@ -95,7 +95,7 @@ test("macOS release workflow isolates signing secrets from native build jobs", a
   // Staging waits for the signed macOS build; the other platforms' jobs are
   // owned by their own release tests.
   assert.match(prerelease, /candidate:\n    needs: \[[^\]\n]*\bmacos\b[^\]\n]*\]/u);
-  assert.match(prerelease, /publish:\n    needs: candidate/u);
+  assert.match(prerelease, /publish:\n    needs: (?:candidate|\[[^\]\n]*\bcandidate\b[^\]\n]*\])\n/u);
 });
 
 test("signing fails before filesystem or Apple access when credentials are absent", async () => {
