@@ -216,11 +216,18 @@ export class CodexHostServices implements DuplexTransport, CodexHostServiceClien
     if (this.initializing.delete(key) && frame.result && typeof frame.result === "object") {
       const result = object(frame.result),
         capabilities = object(result.capabilities);
-      const extensions = Object.assign(
-        {},
-        object(capabilities.extensions),
-        ...this.services.map((service) => service.capabilities?.() ?? {}),
-      );
+      const contributed = Object.assign({}, ...this.services.map((service) => service.capabilities?.() ?? {}));
+      const extensions: Value = Object.assign({}, object(capabilities.extensions), contributed);
+      // Host services serve every Thread of this Host, so each engine provider's own (complete) capability set has them too.
+      const engines = object(extensions["opencraft/execution-engines"]);
+      if (Array.isArray(engines.providers))
+        extensions["opencraft/execution-engines"] = {
+          ...engines,
+          providers: engines.providers.map((entry) => {
+            const provider = object(entry);
+            return { ...provider, extensions: { ...object(provider.extensions), ...contributed } };
+          }),
+        };
       frame = { ...frame, result: { ...result, capabilities: { ...capabilities, extensions } } };
       for (const listener of this.listeners) listener(JSON.stringify(frame));
       return;

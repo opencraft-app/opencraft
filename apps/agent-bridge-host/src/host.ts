@@ -347,7 +347,11 @@ export class BridgeHost {
     identifier(command.serverId);
     identifier(command.threadId);
     object(command.params);
-    if (!isBridgeCommand(command.method) || (command.method as string) === "initialize")
+    if (
+      !isBridgeCommand(command.method) ||
+      (command.method as string) === "initialize" ||
+      command.method === "session/release"
+    )
       throw Error("Unsupported command");
     // An adopted session keeps its identity: the public Thread is the native session it names.
     if (command.method === "session/adopt" && command.params.providerThreadId !== command.threadId)
@@ -368,6 +372,8 @@ export class BridgeHost {
       if (requested !== undefined && native.native_id !== requested)
         throw hostRefusal(command, "Resume id does not match the recorded restorable native session");
     }
+    // A new turn is where an idle Thread moves to the current provider generation.
+    if (command.method === "turn/start") await this.migrate(route);
     const result = await this.storage.call<{ receipt: Receipt; fresh: boolean }>("admit", {
       command,
       digest,
@@ -417,6 +423,93 @@ export class BridgeHost {
       this.rebinding.delete(route);
     })().finally(() => this.rebinds.delete(route));
     this.rebinds.set(route, operation);
+    return operation;
+  }
+  private readonly migrations = new Map<string, Promise<void>>();
+  /**
+   * Move an idle route from an older generation to the current one, so provider
+   * updates reach existing Threads: the old provider releases the native
+   * session (nothing ends), the current one adopts it, then the binding moves.
+   * Both generations must declare adoption. Any refusal leaves the route where
+   * it is; it simply runs on its generation and is tried again at its next turn.
+   */
+  private migrate(route: string): Promise<void> {
+    const pending = this.migrations.get(route);
+    if (pending) return pending;
+    const operation = (async () => {
+      const state = await this.storage.call<{
+        generation: string | null;
+        current: string;
+        nativeId: string | null;
+        busy: boolean;
+      }>("migration", { route });
+      const from = state.generation,
+        to = state.current;
+      if (
+        !from ||
+        !to ||
+        from === to ||
+        state.busy ||
+        !state.nativeId ||
+        !this.recoverable(from) ||
+        !this.recoverable(to)
+      )
+        return;
+      const previous = this.peers.get(from);
+      const old = previous ? await previous.catch(() => undefined) : undefined;
+      const restarted = this.rebinding.has(route);
+      // A provider that never bound it in this process (Host restart) has nothing to release.
+      if (old && !restarted) {
+        const released = await old.request(`host-migrate:${randomUUID()}`, "session/release", { threadId: route });
+        if (!successful(released)) return;
+      }
+      const readopt = async () => {
+        if (old && !restarted)
+          await old
+            .request(`host-migrate:${randomUUID()}`, "session/adopt", {
+              threadId: route,
+              providerThreadId: state.nativeId,
+              openTurns: [],
+            })
+            .catch(() => undefined);
+      };
+      // The binding moves first: the adopting provider's identity callback must come from the owner.
+      try {
+        await this.storage.call("rebindRoute", { route, from, to });
+      } catch {
+        await readopt();
+        return;
+      }
+      const current = await this.peer(to);
+      const adopted = await current
+        .request(`host-migrate:${randomUUID()}`, "session/adopt", {
+          threadId: route,
+          providerThreadId: state.nativeId,
+          openTurns: [],
+          executionEpoch: (await this.storage.call<{ epoch: number }>("observationRoute", { route })).epoch,
+        })
+        .catch(() => undefined);
+      if (!adopted || !successful(adopted)) {
+        // Back to where it was; a failed hand-back is recovered on the route's next use.
+        await this.storage.call("rebindRoute", { route, from: to, to: from }).catch(() => undefined);
+        await readopt();
+        return;
+      }
+      this.rebinding.delete(route);
+      if (await this.storage.call<boolean>("retireUnused", { id: from }).catch(() => false)) {
+        const retired = this.peers.get(from);
+        this.peers.delete(from);
+        this.generations.delete(from);
+        if (retired) await (await retired.catch(() => undefined))?.close().catch(() => undefined);
+      }
+    })()
+      .catch((error) => {
+        process.stderr.write(
+          `host-migration-skipped:${error instanceof Error ? error.message.slice(0, 200) : "unknown"}\n`,
+        );
+      })
+      .finally(() => this.migrations.delete(route));
+    this.migrations.set(route, operation);
     return operation;
   }
   /** Bind a restarted route before the queue judges whether it is idle. */

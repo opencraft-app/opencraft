@@ -31,6 +31,7 @@ export const BRIDGE_COMMANDS = Object.freeze({
   goalClear: "goal/clear",
   sessionSettings: "session/settings",
   sessionAdopt: "session/adopt",
+  sessionRelease: "session/release",
 } as const);
 
 export const BRIDGE_CALLBACKS = Object.freeze({
@@ -109,6 +110,8 @@ export const BRIDGE_COMMAND_REQUIREMENTS: Readonly<Record<BridgeCommand, Capabil
   "session/settings": "settings",
   // Take over an existing native session under its own ID, once its previous owner released it.
   "session/adopt": "adoption",
+  // Hand an idle session back without ending it (the Host moves it to another provider generation).
+  "session/release": "adoption",
 });
 
 /** Native notifications a provider may forward through `thread/notification`. */

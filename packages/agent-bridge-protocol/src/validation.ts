@@ -57,7 +57,9 @@ function isItemShape(value: unknown): boolean {
   if (!isRecord(value) || !isString(value.kind)) return false;
   switch (value.kind) {
     case "userMessage":
-      return isString(value.text) && (value.clientId === undefined || value.clientId === null || isString(value.clientId));
+      return isString(value.text) && (value.clientId === undefined || value.clientId === null || isString(value.clientId))
+        && (value.content === undefined || Array.isArray(value.content) && value.content.every(part => isRecord(part) && isString(part.type))
+          && JSON.stringify(value.content).length <= 65_536);
     case "agentMessage":
     case "reasoning":
     case "plan":

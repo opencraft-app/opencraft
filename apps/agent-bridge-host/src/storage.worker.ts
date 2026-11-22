@@ -80,6 +80,24 @@ const operations: Record<string, (args: any) => any> = {
     require(queue !== null && typeof method === 'string' && QUEUE_METHODS.has(method) && Array.isArray(args), 'Unsupported queue operation');
     return (queue as any)[method](...args);
   },
+  // A route on an older generation that could move to the current one: nothing open, in custody or waiting.
+  migration: ({ route }: any) => {
+    const binding = get('SELECT generation FROM routes WHERE route=?', route);
+    const native = get('SELECT native_id,restorable FROM native_sessions WHERE route=?', route);
+    return { generation: binding?.generation ?? null, current: meta('current'), nativeId: native?.restorable === 1 ? native.native_id : null, busy: busy(route) };
+  },
+  rebindRoute: ({ route, from, to }: any) => tx(() => {
+    require(get('SELECT generation FROM routes WHERE route=?', route)?.generation === from, 'Route moved meanwhile');
+    require(get('SELECT 1 FROM generations WHERE id=? AND retired=0', to), 'Generation unavailable');
+    require(!busy(route), 'Route became busy');
+    run('UPDATE routes SET generation=? WHERE route=?', to, route);
+  }),
+  // A generation nothing is bound to any more, and whose events are acknowledged, is retired.
+  retireUnused: ({ id }: any) => tx(() => {
+    if (meta('current') === id || get('SELECT 1 FROM routes WHERE generation=?', id) || get('SELECT 1 FROM outbox WHERE generation=?', id)) return false;
+    run('UPDATE generations SET retired=1 WHERE id=?', id);
+    return true;
+  }),
   // Idle for queue dispatch: no turn open in the assembled state and no turn command in custody.
   routeIdle: ({ route }: any) => !get("SELECT 1 FROM commands WHERE route=? AND method IN ('turn/start','turn/steer') AND state IN ('registered','dispatching','unknown')", route)
     && Object.keys(checkpoint(route).openTurns).length === 0,

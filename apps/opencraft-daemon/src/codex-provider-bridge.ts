@@ -29,6 +29,10 @@ export class CodexProviderBridge implements DuplexTransport {
     prepareInput?: (threadId: string, clientId: string | undefined, input: readonly unknown[], context: TransportSubmissionContext) => Promise<unknown[]>;
     /** Add recorded attachments to history results. */
     projectHistory?: (method: string, params: Record<string, unknown>, result: unknown) => unknown;
+    /** Translate an OpenCraft permission mode into the provider's own permission fields. */
+    resolvePermissions?: (selection: string, cwd: unknown) => Promise<Record<string, unknown>>;
+    /** A new private directory for a Thread created without a workspace ("temporary workspace"). */
+    projectlessWorkspace?: () => Promise<string>;
     /** Create every new Thread through the bridge, also for clients that do not ask for it. Off by default. */
     newThreads?: boolean;
     /**
@@ -197,7 +201,10 @@ export class CodexProviderBridge implements DuplexTransport {
           ...(evidence ? { [OPENCRAFT_STEER_EVIDENCE_EXTENSION]: inputCapability } : {}),
           'opencraft/execution-engines': { ...object(extensions['opencraft/execution-engines']), version: 1,
             providers: [...(Array.isArray(object(extensions['opencraft/execution-engines']).providers) ? object(extensions['opencraft/execution-engines']).providers : []), {
-              id: 'codex-bridge', label: 'Codex', threadPrefix: 'bridge:codex:', extensions: threadCapabilities,
+              // A provider entry is the complete capability set of its Threads; owning every Thread, it is the Host's.
+              id: 'codex-bridge', label: 'Codex', threadPrefix: 'bridge:codex:', extensions: this.policy.exclusive
+                ? { ...Object.fromEntries(Object.entries(extensions).filter(([key]) => !['opencraft/execution-engines', 'opencraft/agent-bridge'].includes(key))), ...threadCapabilities }
+                : threadCapabilities,
             }],
           },
         } };
@@ -281,9 +288,18 @@ export class CodexProviderBridge implements DuplexTransport {
       this.policy.prepareInput && Array.isArray(input) ? this.policy.prepareInput(threadId, clientId, input, context) : input;
     const execute = async () => {
       let result: unknown;
+      if (typeof p.permissions === 'string' && this.policy.resolvePermissions) {
+        try { p = { ...p, ...await this.policy.resolvePermissions(p.permissions, p.cwd) }; }
+        catch (error) { throw Object.assign(Error(error instanceof Error ? error.message : 'Permission mode unavailable'), { code: -32602, kind: 'invalid' }); }
+      }
       if (optIn) {
         if (!threadId || typeof requestKey !== 'string' || !requestKey) throw Error('Bridge thread and client request identities required');
         const { agentBridge: _, ...native } = p;
+        // A conversation without a workspace gets its own private one, as on the local Host.
+        if (native.cwd == null && this.policy.projectlessWorkspace) {
+          const cwd = await this.policy.projectlessWorkspace();
+          Object.assign(native, { cwd, runtimeWorkspaceRoots: [cwd] });
+        }
         result = await command('session/create', { native });
         this.policy.observeTitle?.('thread/start', native, result);
       } else if (frame.method === 'turn/start') {

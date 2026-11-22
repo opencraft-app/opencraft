@@ -76,7 +76,10 @@ function toThreadItem(item: CanonicalItem): ThreadItem {
         type: "userMessage",
         id: item.itemId,
         clientId: shape.clientId ?? null,
-        content: [{ type: "text", text: shape.text, text_elements: [] }],
+        // The provider's own parts keep display elements (hidden locators) and mentions.
+        content: shape.content
+          ? (shape.content as unknown as Extract<ThreadItem, { type: "userMessage" }>["content"])
+          : [{ type: "text", text: shape.text, text_elements: [] }],
       };
     case "agentMessage":
       return {

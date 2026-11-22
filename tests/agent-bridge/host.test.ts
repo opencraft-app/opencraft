@@ -993,3 +993,79 @@ test("after a restart, a provider that adopts sessions takes back the recorded o
   });
   assert.equal((await sent()).filter((row) => row.startsWith("adopt:")).length, 1);
 });
+
+test("an idle Thread moves to the current provider generation at its next turn, so provider updates reach it", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-migrate-"));
+  const executions = join(root, "executions");
+  await writeFile(executions, "");
+  const artifact = resolve("tests/agent-bridge/fixtures/queue-bridge.mjs");
+  const provider = { ...declaration, capabilities: { ...declaration.capabilities, history: true, adoption: true } };
+  const handshake = negotiateHandshake({ protocolVersion: 1, grammarRange: { min: 1, max: 1 } }, provider);
+  assert(handshake.ok);
+  const digest = createHash("sha256")
+    .update(await readFile(artifact))
+    .digest("hex");
+  const generation = (id: string): Generation => ({
+    id,
+    artifact,
+    digest,
+    provider,
+    launch: {
+      command: [process.execPath, artifact],
+      cwd: root,
+      env: { HANDSHAKE: JSON.stringify(handshake.result), EXECUTIONS: executions, GENERATION: id },
+    },
+  });
+  const host = await BridgeHost.open({ path: join(root, "host.db"), policy, backend: localTestBackend() });
+  t.after(async () => {
+    await host.close().catch(() => {});
+    await rm(root, { recursive: true, force: true });
+  });
+  await host.add(generation("old"));
+  await host.activate("old", "");
+  await host.accept(command("create"));
+  await accepted(host, "create");
+  const sent = async () => (await readFile(executions, "utf8")).split("\n").filter(Boolean);
+  await host.accept({
+    ...command("first"),
+    method: "turn/start",
+    params: { native: { clientUserMessageId: "first", input: [{ type: "text", text: "one" }] } },
+  });
+  await until(sent, (rows) => rows.includes("first"));
+  await until(
+    () => host.query("first"),
+    (receipt: any) => receipt?.state === "accepted",
+  );
+  // An update: a new generation becomes current while the Thread is idle.
+  await host.add(generation("new"));
+  await host.activate("new", "old");
+  await until(async () => (await host.snapshot()).generations.length === 2, Boolean);
+  // Wait until the first turn has closed in the Host, then start the next one.
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const state = await host.threadState("server-1", "thread-1");
+    if (Object.keys(state.state.openTurns ?? {}).length === 0) break;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  // The gateway has delivered everything the old generation produced.
+  const delivered = await host.events(0, 256);
+  if (delivered.length) await host.ack(Math.max(...delivered.map((event: any) => event.seq)));
+  await host.accept({
+    ...command("second"),
+    method: "turn/start",
+    params: { native: { clientUserMessageId: "second", input: [{ type: "text", text: "two" }] } },
+  });
+  const rows = await until(sent, (rows) => rows.includes("second"));
+  assert.deepEqual(rows, [
+    "first",
+    'release:["server-1","thread-1"]@old',
+    'adopt:native-["server-1","thread-1"]@new',
+    "second",
+  ]);
+  const snapshot = await host.snapshot();
+  assert.equal(snapshot.routes.find((row: any) => row.route === '["server-1","thread-1"]').generation, "new");
+  assert.equal(
+    snapshot.generations.find((row: any) => row.id === "old").retired,
+    1,
+    "a generation nothing uses any more is retired",
+  );
+});

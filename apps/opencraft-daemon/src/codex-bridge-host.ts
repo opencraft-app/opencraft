@@ -1,5 +1,7 @@
+import { mkdir, mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
 import { CodexCoreControlClient } from "@opencraft/account-pool-host";
+import { codexPermissionMode, parsePermissionModeProfileId } from "@opencraft/appserver-protocol";
 import type { BridgeGatewayOptions } from "@opencraft/agent-bridge-host/gateway";
 import { codexAttachmentsService } from "./codex-attachments-service.js";
 import { codexContinuationService, type CodexContinuationService } from "./codex-continuation-service.js";
@@ -62,6 +64,12 @@ export function createCodexBridgeHost(options: CodexBridgeHostOptions): CodexHos
   });
   const bridge = new CodexProviderBridge(new CodexNativeFallback(reader), options.bridge, {
     exclusive: true,
+    resolvePermissions: (selection, cwd) => resolveCodexPermissions(reader, selection, cwd),
+    projectlessWorkspace: async () => {
+      const root = join(directory, "projectless-workspaces");
+      await mkdir(root, { recursive: true, mode: 0o700 });
+      return mkdtemp(join(root, "thread-"));
+    },
     admissionPaused: paused,
     prepareInput: (threadId, clientId, input) => attachments.prepareInput(threadId, clientId, input),
     projectHistory: (method, params, result) => attachments.projectHistory(method, params, result),
@@ -104,4 +112,39 @@ export function createCodexBridgeHost(options: CodexBridgeHostOptions): CodexHos
     },
     (listener) => bridge.observeEvents(listener),
   );
+}
+
+/**
+ * An OpenCraft permission mode (`opencraft:permission-mode:*`) names the native
+ * profile with that mode and binds approvals with it, as the local Host did;
+ * any other selection is a native profile ID and passes unchanged.
+ */
+export async function resolveCodexPermissions(
+  native: { request(method: string, params: Value): Promise<unknown> },
+  selection: string,
+  cwd: unknown,
+): Promise<Value> {
+  const mode = parsePermissionModeProfileId(selection);
+  if (mode === null) return { permissions: selection };
+  let cursor: string | null = null;
+  for (let page = 0; page < 10; page++) {
+    const result = object(
+      await native.request("permissionProfile/list", {
+        cursor,
+        limit: 100,
+        ...(typeof cwd === "string" ? { cwd } : {}),
+      }),
+    );
+    if (!Array.isArray(result.data)) throw new Error("Codex permission catalog is unavailable");
+    for (const entry of result.data.map(object)) {
+      if (codexPermissionMode(String(entry.id ?? "")) !== mode) continue;
+      if (entry.allowed !== true) throw new Error(`Permission mode is disabled by Codex requirements: ${mode}`);
+      return { permissions: entry.id, approvalPolicy: mode === "full" ? "never" : "on-request" };
+    }
+    if (result.nextCursor == null) break;
+    if (typeof result.nextCursor !== "string" || result.nextCursor === cursor)
+      throw new Error("Codex permission catalog did not advance");
+    cursor = result.nextCursor;
+  }
+  throw new Error(`Permission mode is unavailable on this Codex Host: ${mode}`);
 }

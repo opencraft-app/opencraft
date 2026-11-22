@@ -131,6 +131,12 @@ export class CodexBridge {
     this.sessions.delete(threadId);
     this.emit(threadId, [{ op: "session.ended", scope: { threadId } }]);
   }
+  /** Hand an idle session over to another owner: native stops reporting it here; nothing ends. */
+  async release(threadId: string): Promise<void> {
+    const session = this.idle(threadId, "release");
+    await this.owner.request("thread/unsubscribe", { threadId: session.nativeId });
+    this.sessions.delete(threadId);
+  }
   /** After recovery: turns the Host still held open ended while unobserved; report their native outcome. */
   recovered(threadId: string, turns: readonly { nativeTurnId: string; status: string }[]): void {
     const session = this.session(threadId),
@@ -365,6 +371,18 @@ export class CodexBridge {
             })
             .join(""),
           clientId: typeof item.clientId === "string" ? item.clientId : undefined,
+          // Native parts as recorded (hidden locator text, file mentions, images), when bounded.
+          ...(JSON.stringify(item.content).length <= 65_536
+            ? {
+                content: item.content.filter(
+                  (c): c is Record<string, unknown> =>
+                    !!c &&
+                    typeof c === "object" &&
+                    !Array.isArray(c) &&
+                    typeof (c as Record<string, unknown>).type === "string",
+                ),
+              }
+            : {}),
         };
         // Only an explicit echoed client ID is usable. Native item IDs and
         // identical text alone do not identify an injected input.

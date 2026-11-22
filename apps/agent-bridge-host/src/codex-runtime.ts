@@ -78,6 +78,8 @@ export class CodexBridgeRuntime {
         "item/fileChange/requestApproval",
         "item/tool/requestUserInput",
         "mcpServer/elicitation/request",
+        // The client's own dynamic tools (declared at thread/start) are answered by that client.
+        "item/tool/call",
       ].includes(method)
     ) {
       this.owner.reject?.(nativeId);
@@ -94,7 +96,11 @@ export class CodexBridgeRuntime {
     this.callback("interaction/request", {
       threadId,
       interactionId,
-      kind: method.endsWith("/requestApproval") ? "approval" : "question",
+      kind: method.endsWith("/requestApproval")
+        ? "approval"
+        : method === "item/tool/call"
+          ? "codex/dynamic-tool"
+          : "question",
       payload: { method, params },
       providerNativeIds: true,
     });
@@ -262,6 +268,9 @@ export class CodexBridgeRuntime {
       }
       case "session/close":
         await this.adapter.close(threadId);
+        return {};
+      case "session/release":
+        await this.adapter.release(threadId);
         return {};
       case "turn/start": {
         const environment = p.cliEnvironment === undefined ? undefined : object(p.cliEnvironment);

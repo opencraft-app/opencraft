@@ -28,7 +28,10 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   }
   if (request.method === "session/adopt") {
     // A new provider process binds the session the Host recorded before restarting.
-    appendFileSync(process.env.EXECUTIONS, `adopt:${p.providerThreadId}\n`);
+    appendFileSync(
+      process.env.EXECUTIONS,
+      `adopt:${p.providerThreadId}${process.env.GENERATION ? `@${process.env.GENERATION}` : ""}\n`,
+    );
     sessions.set(p.threadId, []);
     output({
       id: `identity:${++sequence}`,
@@ -47,6 +50,13 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         })),
       );
     reply({ thread: { id: p.providerThreadId } });
+    return;
+  }
+  if (request.method === "session/release") {
+    // Handed to another provider generation; nothing ends.
+    appendFileSync(process.env.EXECUTIONS, `release:${p.threadId}@${process.env.GENERATION ?? ""}\n`);
+    sessions.delete(p.threadId);
+    reply({});
     return;
   }
   if (request.method === "turn/start") {
