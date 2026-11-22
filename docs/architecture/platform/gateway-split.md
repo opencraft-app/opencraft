@@ -114,7 +114,7 @@
 - **WH 是 Host placement，不是 Server。** execution-ownership.md 规定 Host 是部署载体，更换 Host 不改变 Server 或 Thread 身份。Thread→工作区由 `thread_placement` 投影解析（workspace-host-split §8.1，真源 WH，IC 持可重建投影），不进入 Client 可见的 Server 身份。
 - **`hostId` 保持逻辑路由。** Client 仍只看到 `local-codex`／`opencraft-server` 等路由；`legacyDirectServerProjectionFromHost()`（`packages/workbench-runtime/src/client-hub-server.ts:152`）的"一 Host 一 AppServer 路由"投影保持成立，因为每工作区放置发生在 Hub 侧，不暴露为新 Host。若将来要把工作区暴露给 Client，必须先替换该兼容投影，而不是在消费者里推断。
 - **协作状态不进 Client DO。** Client DO 只持有该客户端实例的身份、访问会话、逻辑路由、订阅与 resume 状态；Thread 执行、事件与队列由 WorkspaceHost 持有，频道、成员、协作命令与线程授权由 InstallationCore 持有。多人观看或协作同一对象时，各 Client DO 向同一共享 owner 订阅，由该 owner 扇出事件；这对应既有拓扑中多个 Client attachment 连接同一 Server。代价是多一跳与按观看者数量增长的扇出，而不是协作能力受限。对实时性要求更高的共享对象（例如多人同时编辑的笔记）可另设按对象划分的房间 DO，由客户端直连；这是扩展，不改变上述所有权。
-- **Hub 角色。** 在 Client/Hub/Server 拓扑中，EW＋Client 会话 DO 共同扮演 Hub（准入、路由、订阅、扇出）；RH 只承载 HubLink 级联与流预算。tenant 作用域以 installation 为界（问题 2），不从 socket 推断。
+- **Hub 角色。** 在 Client/Hub/Server 拓扑中，EW＋Client DO 共同扮演 Hub（准入、路由、订阅、扇出）；RH 只承载 HubLink 级联与流预算。tenant 作用域以 installation 为界（问题 2），不从 socket 推断。
 
 ## 4. 拆分方式
 
