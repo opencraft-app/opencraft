@@ -17,7 +17,8 @@ export function coldHomeValidator(options: { directory: string; socketParentDire
   const historyFailures = nativeHistoryFailures(options.nativeHistoryFailures);
   const socketParent = options.socketParentDirectory ?? "/tmp";
   const pendingPath = (id: string) => join(options.directory, `${id}.pending.json`);
-  const syncDirectory = async () => { const directory = await open(options.directory, "r"); try { await directory.sync(); } finally { await directory.close(); } };
+  // Windows cannot open or flush a directory; NTFS journals the rename itself.
+  const syncDirectory = async () => { if (process.platform === "win32") return; const directory = await open(options.directory, "r"); try { await directory.sync(); } finally { await directory.close(); } };
   const recoverOne = async (old: GenerationRecord): Promise<void> => {
     let pending: { version: number; validationId: string; runtimeDataDirectory: string; socketDirectory: string };
     try { pending = JSON.parse(await readFile(pendingPath(old.id), "utf8")); }

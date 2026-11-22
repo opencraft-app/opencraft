@@ -147,7 +147,7 @@ export class ArtifactCatalog {
       await pipeline(body,check,createWriteStream(path,{flags:'wx',mode:0o600}),{signal:options.signal});
       const sha256 = hash.digest('hex');
       if (options.size !== undefined && size !== options.size || options.sha256 !== undefined && sha256 !== options.sha256) throw Error('Artifact content mismatch');
-      const file = await open(path,'r'); try { await file.sync(); } finally { await file.close(); }
+      const file = await open(path,'r+'); try { await file.sync(); } finally { await file.close(); }
       if (process.platform !== 'win32') {
         const directory=await open(join(this.root,'content'),'r');try {await directory.sync();}finally{await directory.close();}
       }

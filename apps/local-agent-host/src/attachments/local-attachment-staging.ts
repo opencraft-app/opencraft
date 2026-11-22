@@ -211,8 +211,9 @@ export class LocalAttachmentStagingService {
         { flag: "wx", mode: 0o600 },
       );
       await rename(manifestPart, manifestPath);
-      for(const durablePath of [filePath,manifestPath,...(process.platform==='win32'?[]:[directory,this.root])]) {
-        const handle=await open(durablePath,'r');try{await handle.sync();}finally{await handle.close();}
+      // Flushing a file needs write access on Windows, which also cannot open a directory.
+      for(const [durablePath,mode] of [[filePath,'r+'],[manifestPath,'r+'],...(process.platform==='win32'?[]:[[directory,'r'],[this.root,'r']])]) {
+        const handle=await open(durablePath,mode);try{await handle.sync();}finally{await handle.close();}
       }
       await this.registerArtifact(ref, contentSha256);
       return { ref };

@@ -354,7 +354,8 @@ export class AccountCoreOwner {
     try {
       file = await open(temporary, "wx", 0o600); await file.writeFile(bytes); await file.sync(); await file.close(); file = undefined;
       await rename(temporary, this.path);
-      const dir = await open(this.options.dataDirectory, "r"); try { await dir.sync(); } finally { await dir.close(); }
+      // Windows cannot open or flush a directory; NTFS journals the rename itself.
+      if (process.platform !== "win32") { const dir = await open(this.options.dataDirectory, "r"); try { await dir.sync(); } finally { await dir.close(); } }
       this.state = state;
     } catch (error) { this.failed = true; throw error; }
     finally { await file?.close(); await unlink(temporary).catch(error => { if (error.code !== "ENOENT") throw error; }); }

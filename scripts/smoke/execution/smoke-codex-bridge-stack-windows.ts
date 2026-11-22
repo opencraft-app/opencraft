@@ -193,6 +193,35 @@ try {
     if (attempt > 240) throw new Error(`no completed answer: ${JSON.stringify(last)?.slice(0, 400)}`);
     await delay(500);
   }
+  // A command through native Codex's own shell tool (ConPTY / Windows shell): the model
+  // calls exec_command, any approval it asks for is granted, and the command's output
+  // comes back in the answer.
+  const commandTurns = (await request("thread/read", { threadId, includeTurns: true })).thread.turns.length;
+  host.subscribeMessage((raw) => {
+    const frame = JSON.parse(raw);
+    if (frame.id === undefined || frame.method === undefined || !/requestApproval$/u.test(frame.method)) return;
+    log(`approval asked: ${frame.method}`);
+    void host?.send(JSON.stringify({ id: frame.id, result: { decision: "accept" }, [LOGICAL_CLIENT_FIELD]: "drill" }));
+  });
+  await request("turn/start", {
+    threadId,
+    clientUserMessageId: "win-exec",
+    input: [{ type: "text", text: `CALL-TOOL exec_command ${JSON.stringify({ cmd: "echo WIN-EXEC-OK" })}`, text_elements: [] }],
+  });
+  for (let attempt = 0; ; attempt++) {
+    const read: any = await request("thread/read", { threadId, includeTurns: true });
+    const last = read.thread.turns?.at(-1);
+    const reply = last?.items?.find((item: any) => item.type === "agentMessage")?.text;
+    if (read.thread.turns.length > commandTurns && last?.status === "completed" && reply) {
+      log(`command reply: ${String(reply).slice(0, 300)}`);
+      const command = last.items.find((item: any) => item.type === "commandExecution");
+      log(`command item: ${JSON.stringify(command ?? null)?.slice(0, 400)}`);
+      if (!String(reply).includes("WIN-EXEC-OK")) throw new Error("the command's output did not come back");
+      break;
+    }
+    if (attempt > 240) throw new Error(`no completed command turn: ${JSON.stringify(last)?.slice(0, 400)}`);
+    await delay(500);
+  }
   await delay(5000);
   const health = await fetch(new URL("/health", stack.bridge.url), {
     headers: { authorization: `Bearer ${stack.bridge.token}` },
