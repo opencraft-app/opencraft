@@ -124,9 +124,13 @@ Brain 与 Hands 在 Docker 上是否合并为一个容器也待定：合并贴�
 
 化身字符串格式会变化（今天是 `["process", bootId, pid, startTicks]`），所以已持久化的执行租约与 Git 来源租约在切换时视为旧化身：按现有规则失效并走恢复，不做格式转换。
 
-### 3.5 与 Generation Router 的关系
+### 3.5 Generation Router 的去留（计划退役）
 
-Generation Router 解决"同一工作区内 AppServer 版本滚动"，WorkspaceHost 解决"工作区之间隔离"。二者正交：每个工作区容器可以只运行一个 AppServer（Docker 现状），也可以在容器内运行 Router。是否让每工作区复用 Router 的 registry 语义，或继续只在 systemd 装配中使用，待定（8.2 节问题 6）。
+Generation Router 目前只在 systemd 完整发布装配中运行（`deploy/web-server/opencraft-codex-generations.service.example`），职责是 Codex 引擎**不中断升级**：并行运行多个 AppServer 版本，registry 记录 Thread 所属版本，新 Thread 进入新版本，旧 Thread 在旧版本完成后退役；另含多 `CODEX_HOME` 路由、冷恢复与维护检查。Docker 装配不使用它。
+
+按工作区拆分后，这一职责由 WorkspaceHost 持有：每个工作区容器记录所运行的镜像版本；升级时新 Thread 在新镜像上启动容器，旧容器完成当前 Turn 后在下一次空闲或重连时退役。采用"每 Thread 专属工作区"默认策略时，这与 Router 的 Thread 级版本固定语义等价，不再需要独立的 generation registry 与路由。
+
+退役条件：WorkspaceHost 的"镜像版本固定＋旧容器排空"步骤（第 7 节）在真实部署上验收，且沿用 Router 现有的不中断、不重放未确认输入与故障停止规则及其测试。在此之前 Router 保留，是 systemd 部署唯一安全的升级路径；之后整体删除（`apps/codex-core/src/generation-*`、registry Worker、systemd 发布中的 bundle、service 示例与相关 smoke）。若已无运行中的 systemd 完整发布部署，可提前到第 1 步之后删除（待用户确认）。
 
 ## 4. Codex Host 状态拆分
 
@@ -226,6 +230,8 @@ $DATA/workspaces/<id>/brain/ 容器私有：codex/runtime（CODEX_HOME）、agen
 | 8 | 跨工作区会话列表投影与 token usage 转交 | 侧栏与计量跨工作区正确 | 投影重建、转交延迟与重复 |
 
 第 5 阶段（Cloudflare 适配器）只在第 2–4 步完成后开始。
+
+补充步骤（Router 退役前置）：WorkspaceHost 固定工作区容器镜像版本，升级时新 Thread 使用新镜像、旧容器排空后退役；验收覆盖进行中 Turn 不被中断、未确认输入不重放、故障停止。完成并在真实部署验收后删除 Generation Router（见 3.5 节）。
 
 ## 8. 待决问题
 
