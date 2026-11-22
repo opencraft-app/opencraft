@@ -121,9 +121,9 @@ journal without importing source-tree code or a local PTY provider. Neither test
 is evidence of real cloud provisioning, an official exec-server handshake, or
 four-role container resource enforcement.
 
-Default Headless Native hook composition, source-aware placement reconciliation,
-and the Worker file/artifact/terminal/browser bridges remain integration work in
-the same workspace change. Keep the default capability unpublished until that
+Default Headless Native hook composition and source-aware placement
+reconciliation remain integration work in the same workspace change; the Worker
+file/artifact/terminal/browser bridges are implemented below. Keep the default capability unpublished until that
 composition is complete; do not run a second legacy file-backed provider beside
 the adopted vault-backed installation.
 
@@ -195,11 +195,11 @@ processes; binding or resource shutdown belongs to their existing owner.
 
 The transport tests use real Worker/journal/budget owners and real scoped Python
 artifact helpers in a temporary synthetic workspace. PTY/provider handles are
-synthetic, not evidence of an E2B connection or kernel enforcement. The bridge reuses per-binding limits; shared terminal admission across bindings
-and Hands is not wired by this change. That still needs its actual admission
-owner and conservative uncertain-incarnation accounting, rather than treating
-this transport as an installation-wide process quota. Default Headless activation, the browser port,
-and the single Bot/provider configuration composition remain unfinished.
+synthetic, not evidence of an E2B connection or kernel enforcement. The bridge
+retains per-binding limits; the shared Hands admission owner described below
+supplies aggregate terminal admission, not this transport itself. Browser ports
+and default Bot/provider composition are implemented below. Default ordinary
+Headless Native activation remains unfinished.
 
 ### Browser transport candidate
 
@@ -263,5 +263,48 @@ block resource retirement. Unknown creation/deletion remains charged across
 Worker replacement. Confirmed destruction alone releases that reservation.
 Closing Main observation does not count as destruction. This is implemented
 source/default Bot assembly, not live cloud, model or container acceptance.
-Default ordinary Native assembly and aggregate local/remote terminal admission
-remain separate unfinished parts of this workspace batch.
+Default ordinary Native assembly remains unfinished in this workspace batch;
+shared local/remote terminal admission is described below.
+
+### One admission owner for local and remote UI terminals
+
+CPU/memory environment capacity remains in the Assets vault; UI terminal counts
+are owned by the existing independent Hands PTY owner. These are different
+resources. Its private `TerminalAdmissionStore` now arbitrates both local PTY
+starts and remote SDK terminals: 16 active terminals per Actor/Host key and 64
+across that owner. Existing per-binding/process-service limits are additional
+bounds, not separate sources of installation-wide capacity.
+
+The private journal belongs to one subordinate storage Worker in the existing
+Hands owner. Its permanent kernel writer lock cannot expire while Hands is paused;
+the network/PTY IPC loop performs no synchronous store IO. The packaged and
+retained runtime includes that exact companion Worker, with integrity hashing. A reservation is durably committed before physical spawn. Each settlement
+uses a fresh nonce; duplicate/stale releases cannot free a later incarnation.
+Malformed/non-private state fails closed without replacement. A known validation
+failure before local spawn releases its reservation; an entered spawn with unknown
+outcome does not. Normal PTY exit is positive terminal-process evidence, not a
+claim that all environment tasks or descendants are gone. Existing independent
+owner shutdown still drains its process sessions.
+
+`withRemoteTerminalAdmission` uses only compiled private Hands IPC. SDK creation
+runs in Worker, rechecks resource authorization after asynchronous admission, and
+never retries an uncertain spawn. Only actual child exit or confirmed destruction
+of the exact workspace generation/instance releases its terminal count; kill
+acknowledgement, View detach, a lost reserve reply and either owner's restart do
+not. Confirmed full resource deletion can settle a lost reservation reply by the
+same exact resource identity. Uncertain rows stay charged, including after owner
+replacement; this deliberately favors capacity safety over automatic recovery.
+Unproven old local reservations are not reset just because inventory is empty.
+
+Private quota methods are excluded from the public process catalog. A legacy
+Hands owner without the admission capability is not treated as equivalent. No
+configured admission means remote terminals are unavailable, not routed to a
+controller PTY; nonterminal execution is unchanged. Default ordinary Native
+startup must pass the same trusted Hands endpoint/token-file location into the
+already-owned Assets Worker. This source plumbing is implemented, but that default
+ordinary startup remains unfinished in this batch.
+
+Tests exercise the real private Hands socket/journal and real local PTYs alongside
+synthetic remote SDK processes, including aggregate/account limits, nonce ABA,
+lost replies, unknown SDK spawn, owner replacement and Worker-to-Hands routing.
+They do not prove real cloud PTY behavior, systemd acceptance or four-role limits.

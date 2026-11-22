@@ -1,3 +1,4 @@
+import { DurableHostProcessService } from "@opencraft/local-agent-host/durable-process-service";
 import { EventEmitter } from "node:events";
 import type { SandboxBrowserOwnerTransport } from "@opencraft/local-agent-host/sandbox-browser-owner";
 import { SandboxProcessService } from "@opencraft/local-agent-host/sandbox-process-service";
@@ -25,7 +26,8 @@ import { workspaceArtifactSender } from "../../apps/headless-server/src/workspac
 import { workspaceArtifactReceiver } from "../../apps/headless-server/src/workspaces/workspace-artifact-transfer.js";
 
 const resources = { cpuMillis: 4000, memoryBytes: 8 * 1024 ** 3 };
-serveWorkerOwner<{ directory: string }>(async ({ directory }) => {
+type FixtureData = { directory: string; terminalOwner?: { directory: string; endpoint: string; tokenFile: string } };
+serveWorkerOwner<FixtureData>(async ({ directory, terminalOwner }) => {
   // Bootstrap the synthetic Actor and installation serially, then close both
   // writers before the sole runtime vault owner/read-only Actor reader opens.
   const server = await openServerDatabase(directory),
@@ -166,6 +168,14 @@ serveWorkerOwner<{ directory: string }>(async ({ directory }) => {
     };
   };
 
+  const hands = terminalOwner
+    ? new DurableHostProcessService(terminalOwner.directory, undefined, {
+        ...terminalOwner,
+        prepare() {
+          throw Error("Private quota only");
+        },
+      })
+    : undefined;
   const storage = await createAssetsStorage(directory, [], undefined, (context) =>
     createWorkspaceExecutionOwner(context, {
       machineId: "synthetic-machine",
@@ -175,6 +185,14 @@ serveWorkerOwner<{ directory: string }>(async ({ directory }) => {
           owner.catalog,
           new InstalledOrdinaryWorkspaceSources(owner.catalog, new PublishedOrdinaryGitSources(owner.vault)),
           {
+            // This fixture exercises Worker bridges, not global Hands admission.
+            // The real shared owner/protocol is covered by workspace-terminal-admission.
+            terminalAdmission: hands ?? {
+              probeTerminalAdmission: async () => {},
+              reserveTerminal: async () => randomUUID(),
+              releaseTerminal: async () => {},
+              confirmTerminalResourceDestroyed: async () => {},
+            },
             // Synthetic provider/binding only: no real E2B or exec-server claim.
             allocator: {
               async allocate(input) {
@@ -340,6 +358,7 @@ serveWorkerOwner<{ directory: string }>(async ({ directory }) => {
                     cwd: "/workspace",
                     context: { threadId, projectId: null, resourceOwnerId: options.processContext!.resourceOwnerId },
                     authorize: options.authorize,
+                    probeTerminalAdmission: options.probeTerminalAdmission,
                     onCleanupUnconfirmed: options.onCleanupUnconfirmed,
                   });
                 },
@@ -363,6 +382,13 @@ serveWorkerOwner<{ directory: string }>(async ({ directory }) => {
   );
   return {
     ...storage,
+    async close() {
+      try {
+        await storage.close();
+      } finally {
+        hands?.close();
+      }
+    },
     ready: { ...storage.ready, actorId: actor.id, generation: actor.generation },
     methods: {
       ...storage.methods,

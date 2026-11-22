@@ -53,7 +53,12 @@ interface Ready {
  * There is no local fallback, runtime-secret RPC or automatic mutation retry. */
 export async function openAssetConfigurations(
   directory: string,
-  options: { entry?: URL; installationFile?: string; workspaceMachineId?: string } = {},
+  options: {
+    entry?: URL;
+    installationFile?: string;
+    workspaceMachineId?: string;
+    terminalOwner?: { directory: string; endpoint: string; tokenFile: string };
+  } = {},
 ) {
   const { owner, ready } = await WorkerOwner.open<AssetStoragePort, Ready>(
     options.entry ?? ownerEntry(import.meta.url, "assets-configuration"),
@@ -61,15 +66,23 @@ export async function openAssetConfigurations(
       name: "Asset configuration storage",
       workerData: {
         directory,
+        ...(options.terminalOwner === undefined ? {} : { terminalOwner: options.terminalOwner }),
         ...(options.workspaceMachineId === undefined ? {} : { workspaceMachineId: options.workspaceMachineId }),
       },
       errors: [SandboxConfigurationError],
       maxPending: 128,
     },
   );
-  if (options.installationFile !== undefined || options.workspaceMachineId !== undefined) {
+  if (
+    options.installationFile !== undefined ||
+    options.workspaceMachineId !== undefined ||
+    options.terminalOwner !== undefined
+  ) {
     try {
-      if (options.workspaceMachineId !== undefined && ready.workspaceExecution !== true)
+      if (
+        (options.workspaceMachineId !== undefined || options.terminalOwner !== undefined) &&
+        ready.workspaceExecution !== true
+      )
         throw new SandboxConfigurationError("unavailable", 503);
       if (options.installationFile !== undefined) await owner.call.adoptWorkspaceInstallation(options.installationFile);
     } catch (cause) {

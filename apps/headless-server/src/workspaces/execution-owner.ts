@@ -1,3 +1,4 @@
+import { DurableHostProcessService } from "@opencraft/local-agent-host/durable-process-service";
 import { WorkspaceBrowserTransfers, type WorkspaceBrowserPort } from "./browser-transports.js";
 import { WorkspaceTerminalTransfers, type WorkspaceTerminalPort } from "./terminal-transports.js";
 import { WorkspaceArtifactTransfers, type WorkspaceArtifactPort } from "./artifact-transports.js";
@@ -82,6 +83,7 @@ export async function createWorkspaceExecutionOwner(
   context: AssetWorkspaceOwnerContext,
   options: {
     machineId: string;
+    terminalOwner?: { directory: string; endpoint: string; tokenFile: string };
     runtime?: (
       store: OrdinaryWorkspaceStore,
       context: AssetWorkspaceOwnerContext,
@@ -95,6 +97,14 @@ export async function createWorkspaceExecutionOwner(
   let store: OrdinaryWorkspaceStore | undefined, runtime: InstalledOrdinaryConversationRuntime | undefined;
   const actors = new WorkspaceActorAuthority(context.directory),
     attempts = new Map<string, Attempt>();
+  const terminalAdmission = options.terminalOwner
+    ? new DurableHostProcessService(options.terminalOwner.directory, undefined, {
+        ...options.terminalOwner,
+        prepare() {
+          throw Error("Only private terminal admission is allowed");
+        },
+      })
+    : undefined;
   let closed = false,
     closing: Promise<void> | undefined;
   try {
@@ -106,6 +116,7 @@ export async function createWorkspaceExecutionOwner(
         context.catalog,
         new InstalledOrdinaryWorkspaceSources(context.catalog, new PublishedOrdinaryGitSources(context.vault)),
         {
+          terminalAdmission,
           allocator: new InstalledOrdinarySandboxAllocator(context.catalog, {
             backend: (input) =>
               withWorkspaceBudget(
@@ -120,6 +131,7 @@ export async function createWorkspaceExecutionOwner(
         },
       );
   } catch (cause) {
+    terminalAdmission?.close();
     store?.close();
     actors.close();
     release();
@@ -437,6 +449,7 @@ export async function createWorkspaceExecutionOwner(
         } catch (error) {
           errors.push(error);
         }
+        terminalAdmission?.close();
         actors.close();
         try {
           journal.close();

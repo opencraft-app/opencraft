@@ -15,6 +15,6 @@ export async function buildAssetsRuntime(directory,{headless=false}={}) {
     format: "esm",
     target: "node26",
     logLevel: "warning",
-    banner: { js: "import {createRequire} from 'node:module';const require=createRequire(import.meta.url);" },
+    banner: { js: "import {createRequire as createAssetsWorkerRequire} from 'node:module';const require=createAssetsWorkerRequire(import.meta.url);" },
   });
 }

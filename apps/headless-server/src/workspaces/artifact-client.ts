@@ -29,13 +29,16 @@ export class WorkspaceArtifactClient {
     const abort = () => Atomics.store(access.requestPermit, 0, 0);
     signal?.addEventListener("abort", abort, { once: true });
     let body: Readable | undefined;
-    const dispose = () =>
+    const cleanup = () =>
       (closing ??= (async () => {
         abort();
         signal?.removeEventListener("abort", abort);
-        body?.destroy();
         await this.close(token);
       })());
+    const dispose = () => {
+      body?.destroy();
+      return cleanup();
+    };
     const check = () => {
       signal?.throwIfAborted();
       authorize();
@@ -72,7 +75,9 @@ export class WorkspaceArtifactClient {
               yield Buffer.from(chunk.data);
             }
           } finally {
-            await dispose();
+            // Natural EOF must not destroy its own Readable before `end`.
+            // Explicit cancellation/dispose still destroys the consumer stream.
+            await cleanup();
             if (completed) check();
           }
         })(),

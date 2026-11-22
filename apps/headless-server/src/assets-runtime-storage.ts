@@ -8,7 +8,7 @@ import { parseGitExecutionLocator } from "@opencraft/execution-environment/git-e
 export function createHeadlessAssetsStorage(
   directory: string,
   providers?: readonly GitConnectionProvider[],
-  workspaces?: { machineId: string },
+  workspaces?: { machineId: string; terminalOwner?: { directory: string; endpoint: string; tokenFile: string } },
 ) {
   const authority = new GitExecutionAuthority(directory, "actor");
   const scope = (

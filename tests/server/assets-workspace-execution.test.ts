@@ -1,3 +1,6 @@
+import { startTerminalPtyOwner } from "../../apps/local-agent-host/src/terminal-pty-owner.js";
+import { DurableHostProcessService } from "@opencraft/local-agent-host/durable-process-service";
+import { terminalResourceOwnerId } from "../../apps/headless-server/src/host-resource-identity.js";
 import { RemoteBrowserService } from "../../apps/headless-server/src/remote-browser-service.mjs";
 import { WorkspaceBrowserClient } from "../../apps/headless-server/src/workspaces/browser-client.js";
 import { WorkspaceTerminalClient } from "../../apps/headless-server/src/workspaces/terminal-client.js";
@@ -39,12 +42,17 @@ const flag = () => {
   Atomics.store(value, 0, 1);
   return value;
 };
-async function fixture(t: test.TestContext) {
+type TerminalOwner = { directory: string; endpoint: string; tokenFile: string };
+async function fixture(t: test.TestContext, terminalOwner?: TerminalOwner) {
   const directory = await mkdtemp(join(tmpdir(), "workspace-native-owner-"));
   const open = () =>
     WorkerOwner.open<Port, { actorId: string; generation: number }>(
       new URL("../fixtures/assets-workspace-execution.worker.ts", import.meta.url),
-      { name: "Synthetic workspace owner", workerData: { directory }, errors: [SandboxConfigurationError] },
+      {
+        name: "Synthetic workspace owner",
+        workerData: { directory, terminalOwner },
+        errors: [SandboxConfigurationError],
+      },
     );
   let { owner, ready } = await open();
   const cleanup: (() => Promise<void>)[] = [];
@@ -663,8 +671,8 @@ async function artifactClose(port: Port, token: string) {
   }
   throw Error("Artifact cleanup did not settle");
 }
-async function artifactFixture(t: test.TestContext) {
-  const f = await fixture(t),
+async function artifactFixture(t: test.TestContext, terminalOwner?: TerminalOwner) {
+  const f = await fixture(t, terminalOwner),
     token = await f.port.workspaceBegin(f.access(), {
       kind: "start",
       intentId: "artifacts",
@@ -1133,4 +1141,92 @@ test("central durable browser service selects one actual Worker channel for two 
     1,
     "Central/transport shutdown does not kill the resource-owned Browser Owner",
   );
+});
+
+test("actual workspace Worker and local PTY use the same private Hands quota without transferring SDK handles", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "worker-hands-quota-")),
+    endpoint = join(directory, "owner.sock"),
+    tokenFile = join(directory, "token");
+  await writeFile(tokenFile, "synthetic-hands-worker-admission-token-123456", { mode: 0o600 });
+  const stop = await startTerminalPtyOwner(directory, endpoint, {
+    token: "synthetic-hands-worker-admission-token-123456",
+  });
+  let hands: DurableHostProcessService | undefined;
+  t.after(async () => {
+    hands?.close();
+    await stop();
+    await rm(directory, { recursive: true, force: true });
+  });
+  const f = await artifactFixture(t, { directory, endpoint, tokenFile }),
+    actor = f.access(),
+    quotaOwner = terminalResourceOwnerId(actor.actorId, "local-codex");
+  hands = new DurableHostProcessService(directory, undefined, {
+    endpoint,
+    tokenFile,
+    prepare: () => ({
+      owner: quotaOwner,
+      quotaOwner,
+      scope: { account: actor.actorId, hostId: "local-codex", threadId: null, projectId: null },
+      env: { PATH: "/usr/bin:/bin" },
+    }),
+  });
+  const held: string[] = [];
+  for (let i = 0; i < 14; i++) held.push(await hands.reserveTerminal(quotaOwner, "fixture-reserved", "op-" + i));
+  await hands.dispatch("process/spawn", {
+    processHandle: "local-real",
+    command: ["/bin/bash", "--noprofile", "--norc"],
+    tty: true,
+    cwd: "/tmp",
+    size: { cols: 80, rows: 24 },
+  });
+  const selection = await f.port.workspaceSelection(actor, "native-artifacts");
+  if (selection.kind !== "bound") throw Error("unreachable");
+  const watch = await f.port.workspaceTerminalOpen(actor, "native-artifacts", {
+    workspaceId: selection.workspaceId,
+    generation: selection.generation,
+  });
+  const spawn = (handle: string) =>
+    f.port.workspaceTerminalRequest(watch, f.access(), "process/spawn", {
+      processHandle: handle,
+      command: ["/bin/sh"],
+      tty: true,
+      size: { cols: 80, rows: 24 },
+    });
+  await terminalOperation(f.port, await spawn("remote-sdk"));
+  assert.equal((await f.port.fixtureTerminalStats()).active, 1);
+  await assert.rejects(terminalOperation(f.port, await spawn("over-remote")));
+  assert.equal((await f.port.fixtureTerminalStats()).active, 1);
+  await assert.rejects(hands.reserveTerminal(quotaOwner, "extra", "deny"), /limit reached/);
+  // Close the actual Worker owner while Hands remains available. Its positively
+  // deleted synthetic resource settles the same durable quota; replacing Worker
+  // cannot itself refund the still-live local PTY or other resource reservations.
+  await f.reopen();
+  const slot = await hands.reserveTerminal(quotaOwner, "after-positive-delete", "ok");
+  await hands.releaseTerminal(slot, "not-created");
+  for (const token of held) await hands.releaseTerminal(token, "not-created");
+});
+
+test("completed artifact streams reach EOF while asynchronous owner cleanup drains, without destroying their own readable", async () => {
+  let closing = 0;
+  const port = {
+    workspaceArtifactDownload: async () => "token",
+    workspaceArtifactRead: async (_token: string, sequence: number) =>
+      sequence === 0 ? { state: "chunk", sequence: 0, data: Buffer.from("complete") } : { state: "done" },
+    workspaceArtifactClose: async () => (++closing === 1 ? "pending" : "closed"),
+  } as unknown as ConstructorParameters<typeof WorkspaceArtifactClient>[0];
+  const access: WorkspaceActorAdmission = {
+    actorId: "human://local/artifact",
+    generation: 1,
+    membershipRevision: 0,
+    expiresAt: Date.now() + 60000,
+    requestPermit: flag(),
+    resourcePermit: flag(),
+  };
+  const output = await new WorkspaceArtifactClient(port).read(access, "thread", "/workspace/file", () => {});
+  const chunks: Buffer[] = [];
+  for await (const chunk of output.body) chunks.push(Buffer.from(chunk));
+  assert.equal(Buffer.concat(chunks).toString(), "complete");
+  assert.equal(output.body.readableEnded, true);
+  await output.dispose();
+  assert.equal(closing, 2);
 });

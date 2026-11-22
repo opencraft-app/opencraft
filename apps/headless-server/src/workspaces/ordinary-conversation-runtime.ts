@@ -1,3 +1,4 @@
+import { withRemoteTerminalAdmission, type TerminalAdmissionPort } from "./terminal-admission.js";
 import { workspaceArtifactReader } from "./workspace-artifact-reader";
 import type { GeneratedFileReader } from "@opencraft/local-agent-host/artifacts/generated-output";
 import { transferWorkspaceArtifact } from "./workspace-artifact-transfer";
@@ -73,6 +74,7 @@ export class InstalledOrdinaryConversationRuntime {
     private readonly sources: OrdinaryWorkspaceSources,
     private readonly dependencies: {
       allocator?: Pick<InstalledOrdinarySandboxAllocator, "allocate" | "inspect" | "close">;
+      terminalAdmission?: TerminalAdmissionPort;
       verifyMounts?: typeof verifyOrdinaryWorkspaceMounts;
       bind?: (options: Parameters<typeof createSandboxConversationBinding>[0]) => Promise<OrdinaryExecutionBinding>;
       /** Trusted deployment delivery. Absent means browser unsupported, not local fallback. */
@@ -134,14 +136,35 @@ export class InstalledOrdinaryConversationRuntime {
     return {
       authority: admission.authority,
       authorize,
-      allocate: (lease: Parameters<OrdinaryCreationOptions["allocate"]>[0]) =>
-        this.allocator.allocate({
+      allocate: async (lease: Parameters<OrdinaryCreationOptions["allocate"]>[0]) => {
+        const allocation = await this.allocator.allocate({
           context: admission.catalog,
           environment: selection().environment,
           lease,
           authorize,
           onLost,
-        }),
+        });
+        const terminals = withRemoteTerminalAdmission(allocation.environment, {
+          port: this.dependencies.terminalAdmission,
+          authorize,
+          quotaOwner: terminalResourceOwnerId(admission.authority.principalId, admission.authority.hostId),
+          resource: JSON.stringify([lease.workspaceId, lease.generation, allocation.instanceId]),
+          onCleanupUnconfirmed: () => {
+            this.cleanupUnconfirmed = true;
+          },
+        });
+        let closing: Promise<void> | undefined;
+        return {
+          ...allocation,
+          environment: terminals.environment,
+          close: () =>
+            (closing ??= (async () => {
+              terminals.retire();
+              await allocation.close();
+              await terminals.confirmDestroyed();
+            })()),
+        };
+      },
       prepare: async (
         allocation: Parameters<OrdinaryCreationOptions["prepare"]>[0],
         ownerAuthorize: () => Promise<void>,
@@ -209,6 +232,11 @@ export class InstalledOrdinaryConversationRuntime {
             : undefined);
         const binding = await (this.dependencies.bind ?? createSandboxConversationBinding)({
           sandbox: allocation.environment,
+          terminalSupported: allocation.environment.capabilities.terminal,
+          probeTerminalAdmission: async () => {
+            if (!this.dependencies.terminalAdmission) throw Error("Shared Hands terminal admission unavailable");
+            await this.dependencies.terminalAdmission.probeTerminalAdmission();
+          },
           cwd,
           environmentId: workspace.environmentId,
           workspaceLease: { workspaceId: workspace.workspaceId, generation: workspace.generation },

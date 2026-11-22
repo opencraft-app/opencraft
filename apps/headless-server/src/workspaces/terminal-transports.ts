@@ -117,6 +117,8 @@ export class WorkspaceTerminalTransfers {
     }
   }
   async probe(token: string) {
+    const watch = await this.get(token);
+    await watch.binding.processes!.probe();
     await this.get(token);
   }
   async begin(token: string, access: WorkspaceActorAdmission, method: string, params: unknown): Promise<string> {
