@@ -27,4 +27,7 @@ test("the local Codex Host releases only an idle Thread for adoption, and stops 
   assert.equal(calls.length, 1);
   adapter.closeOperation = Promise.resolve();
   assert.equal(await adapter.releaseForAdoption("idle"), false, "a closing Host releases nothing");
+  adapter.closeOperation = null;
+  adapter.coreBridge = {};
+  assert.equal(await adapter.releaseForAdoption("never-loaded"), false, "a pass-through to Core cannot vouch for idleness");
 });
