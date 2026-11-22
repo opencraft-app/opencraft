@@ -47,7 +47,7 @@ OpenCraft 自有 SQLite 共两类，全部经 `openManagedDatabase` 打开并在
 | **桌面 daemon**（服务端角色，随托盘常驻） | `userData/human-account/opencraft-server.sqlite` | Server 核心 | v20 | daemon 启动、监听 IPC 之前打开、迁移并持有 `server.lock`，同时提供本机账号服务；Electron Main 不打开该库，只把账号路由转发给 daemon，见[桌面服务端角色](#桌面服务端角色与账号服务) |
 | **codex-core**（`apps/codex-core`，独立升级） | `account-pool.sqlite` | account-pool-host | v4 | 账号 Core 启动时 |
 | | `codex-generations.sqlite` | generation-registry | v2 | generation 路由服务启动时 |
-| **其他独立进程** | agent-bridge-host 配置的库路径 | agent-bridge-host | v3 | 进程启动时 |
+| **其他独立进程** | agent-bridge-host 配置的库路径 | agent-bridge-host | v4（含共享线程排队表） | 进程启动时 |
 | | `observe.sqlite` | observability | v6 | observability-service 启动时 |
 | | `owner-handoff/consumer-receipts.sqlite` | dsh-consumer-receipts | v1 | dsh-host 启动时 |
 | | `employee-git-vault.sqlite` | employee-git-vault-store | v1 | 执行环境插件启动时（DSH、Pi、ACP Host） |

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, primaryKey, foreignKey } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, primaryKey, foreignKey, index, unique, check } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
 export const table_meta = sqliteTable("meta", {
@@ -101,4 +101,47 @@ export const table_automation_scripts = sqliteTable("automation_scripts", {
   "result": text("result"),
 }, table => [
   primaryKey({ columns: [table["key"]] }),
+]);
+
+// Shared thread queue (@opencraft/thread-queue) for bridge Threads.
+export const table_opencraft_host_queue = sqliteTable("opencraft_host_queue", {
+  "id": text("id").notNull(),
+  "thread_id": text("thread_id").notNull(),
+  "client_id": text("client_id").notNull(),
+  "input_json": text("input_json").notNull(),
+  "position": integer("position").notNull(),
+  "created_at_ms": integer("created_at_ms").notNull(),
+  "updated_at_ms": integer("updated_at_ms").notNull(),
+  "state": text("state").notNull(),
+  "target_turn_id": text("target_turn_id"),
+  "paused_reason": text("paused_reason"),
+}, table => [
+  primaryKey({ columns: [table["id"]] }),
+  index("opencraft_host_queue_state").on(table["state"], table["thread_id"]),
+  index("opencraft_host_queue_turn").on(table["thread_id"], table["target_turn_id"], table["state"]),
+  index("opencraft_host_queue_order").on(table["thread_id"], table["position"], table["created_at_ms"]),
+  unique("opencraft_host_queue_client").on(table["thread_id"], table["client_id"]),
+  check("opencraft_host_queue_check_0", sql`state IN ('queued','dispatching','steering','unknown','delivered','discarded','closed')`),
+]);
+
+export const table_opencraft_input_delivery = sqliteTable("opencraft_input_delivery", {
+  "thread_id": text("thread_id").notNull(),
+  "client_id": text("client_id").notNull(),
+  "native_admission": text("native_admission").notNull(),
+  "context_state": text("context_state").notNull(),
+  "revision": integer("revision").notNull(),
+}, table => [
+  primaryKey({ columns: [table.thread_id, table.client_id] }),
+  foreignKey({ columns: [table.thread_id, table.client_id], foreignColumns: [table_opencraft_host_queue.thread_id, table_opencraft_host_queue.client_id] }),
+  check("opencraft_input_delivery_check_0", sql`native_admission IN ('pending','accepted','unknown','rejected')`),
+  check("opencraft_input_delivery_check_1", sql`context_state IN ('unobserved','recorded')`),
+]);
+export const table_opencraft_turn_delivery = sqliteTable("opencraft_turn_delivery", {
+  "thread_id": text("thread_id").notNull(),
+  "turn_id": text("turn_id").notNull(),
+  "outcome": text("outcome").notNull(),
+  "observed_at_ms": integer("observed_at_ms").notNull(),
+}, table => [
+  primaryKey({ columns: [table.thread_id, table.turn_id] }),
+  check("opencraft_turn_delivery_check_0", sql`outcome IN ('completed','interrupted','failed')`),
 ]);

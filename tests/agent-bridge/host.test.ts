@@ -396,3 +396,28 @@ test('closing an empty native allocation revokes its unbound CLI namespace',asyn
   await host.accept(command('close','session/close'));await accepted(host,'close');
   await until(async()=>revoked,n=>n===1);await assert.rejects(readFile(join(root,'executions')));
 });
+
+test('v4 thread queue migration keeps existing custody, serves the shared queue and refuses a tampered history', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'bridge-queue-migration-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const path = join(root, 'host.db');
+  // A Host database exactly as the previous release left it: the three legacy migrations.
+  let { database } = openManagedDatabase({ path, migrations });
+  database.exec("INSERT INTO generations(id,config) VALUES ('g','{}')");
+  database.exec("INSERT INTO routes VALUES ('[\"server\",\"thread\"]','g')");
+  database.exec("INSERT INTO commands VALUES ('original','digest',4,'[\"server\",\"thread\"]','g','turn/start','accepted',NULL)"); database.close();
+  const route = '["server","thread"]';
+  const store = new Storage(path); assert.equal((await store.ready).status, 'migrated');
+  assert.equal((await store.call('query', { id: 'original' })).state, 'accepted', 'existing command custody is preserved');
+  const added = await store.call('queue', { method: 'add', args: [route, 'client-1', [{ type: 'text', text: 'next' }]] });
+  assert.equal(added.state, 'queued');
+  assert.equal((await store.call('queue', { method: 'firstAwaitingAdmission', args: [route] })).id, added.id);
+  await store.call('queueChanged', { route });
+  const events = await store.call('events', { cursor: 0, limit: 10 });
+  assert.deepEqual(events.at(-1).payload, { method: 'thread/queue/changed', params: { threadId: route } });
+  await assert.rejects(store.call('queue', { method: 'close', args: [] }), /Unsupported queue operation/);
+  await store.close();
+  database = new DatabaseSync(path);
+  assert.deepEqual(database.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map(row => row.version), [1, 2, 3, 4]);
+  database.exec("UPDATE schema_migrations SET checksum='tampered' WHERE version=4"); database.close();
+  const broken = new Storage(path); await assert.rejects(broken.ready, /migration history/); await broken.close().catch(() => {});
+});

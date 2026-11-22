@@ -6,5 +6,13 @@
     "sqlChecksum": "7e19f7cf155d3c37c77865bd0d520b3a08aa7e3a9c320ceec37b95ada33c3e53",
     "snapshotChecksum": "83bf50cf9163e6dd989fc0ca7f38082fb94bbed03acd764acc04fe76ceb7acdb",
     "compiledChecksum": null
+  },
+  {
+    "tag": "0001_thread_queue",
+    "when": 1795309645427,
+    "version": 4,
+    "sqlChecksum": "679269c6d2c5a0a5ba83f07a7785f7e678192efbcfecb421a524c227b6d25390",
+    "snapshotChecksum": "48e561dbd72f6dc90c5dc618feeadcbbed12bd95af804e5d5bf271be12d54552",
+    "compiledChecksum": "dcf35e8f452adfa8707354e989b3683febd04747b583b074d85b93e15e799bde"
   }
 ]

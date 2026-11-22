@@ -28,7 +28,13 @@ export const STORE_MIGRATIONS = {
         "checksum": "c062b2629d1059fb1cfd3fdcb04881781c401001f58c0355beba52d541ef2bb7"
       }
     ],
-    "migrations": []
+    "migrations": [
+      {
+        "version": 4,
+        "name": "0001_thread_queue",
+        "sql": "CREATE TABLE `opencraft_host_queue` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`thread_id` text NOT NULL,\n\t`client_id` text NOT NULL,\n\t`input_json` text NOT NULL,\n\t`position` integer NOT NULL,\n\t`created_at_ms` integer NOT NULL,\n\t`updated_at_ms` integer NOT NULL,\n\t`state` text NOT NULL,\n\t`target_turn_id` text,\n\t`paused_reason` text,\n\tCONSTRAINT \"opencraft_host_queue_check_0\" CHECK(state IN ('queued','dispatching','steering','unknown','delivered','discarded','closed'))\n) STRICT;\n--> statement-breakpoint\nCREATE INDEX `opencraft_host_queue_state` ON `opencraft_host_queue` (`state`, `thread_id`);--> statement-breakpoint\nCREATE INDEX `opencraft_host_queue_turn` ON `opencraft_host_queue` (`thread_id`, `target_turn_id`, `state`);--> statement-breakpoint\nCREATE INDEX `opencraft_host_queue_order` ON `opencraft_host_queue` (`thread_id`, `position`, `created_at_ms`);--> statement-breakpoint\nCREATE UNIQUE INDEX `opencraft_host_queue_client` ON `opencraft_host_queue` (`thread_id`, `client_id`);--> statement-breakpoint\nCREATE TABLE `opencraft_input_delivery` (\n\t`thread_id` text NOT NULL,\n\t`client_id` text NOT NULL,\n\t`native_admission` text NOT NULL,\n\t`context_state` text NOT NULL,\n\t`revision` integer NOT NULL,\n\tPRIMARY KEY(`thread_id`, `client_id`),\n\tFOREIGN KEY (`thread_id`,`client_id`) REFERENCES `opencraft_host_queue`(`thread_id`,`client_id`) ON UPDATE no action ON DELETE no action,\n\tCONSTRAINT \"opencraft_input_delivery_check_0\" CHECK(native_admission IN ('pending','accepted','unknown','rejected')),\n\tCONSTRAINT \"opencraft_input_delivery_check_1\" CHECK(context_state IN ('unobserved','recorded'))\n) STRICT;\n--> statement-breakpoint\nCREATE TABLE `opencraft_turn_delivery` (\n\t`thread_id` text NOT NULL,\n\t`turn_id` text NOT NULL,\n\t`outcome` text NOT NULL,\n\t`observed_at_ms` integer NOT NULL,\n\tPRIMARY KEY(`thread_id`, `turn_id`),\n\tCONSTRAINT \"opencraft_turn_delivery_check_0\" CHECK(outcome IN ('completed','interrupted','failed'))\n) STRICT;\n"
+      }
+    ]
   },
   "tasks": {
     "baseline": [

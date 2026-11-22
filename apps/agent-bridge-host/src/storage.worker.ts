@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { openManagedDatabase, acquireProcessWriter, sqliteTransaction } from '@opencraft/sqlite-node';
 import { projectToAppServer, assemble, createAssemblerState, type AssemblerState, type CanonicalInputState } from '@opencraft/agent-bridge-assembler';
 import { parseThreadDeltaParams } from '@opencraft/agent-bridge-protocol';
+import { ThreadQueueStore } from '@opencraft/thread-queue';
 import { migrations } from './migrations.js';
 import type { Receipt, Generation, OutboxEvent } from './types.js';
 /** Commands that bring a Thread route into existence, and that end its native session. */
@@ -32,6 +33,11 @@ if (workerData.role === 'host') tx(() => {
   run("UPDATE commands SET state='unknown' WHERE state='dispatching'");
   run("UPDATE automation_scripts SET state='unknown' WHERE state IN ('admitted','running')");
 });
+// Queued follow-up input of bridge Threads, keyed by Host route. Inputs left
+// mid-dispatch by the previous process become unknown, as commands do.
+const queue = workerData.role === 'host' ? new ThreadQueueStore(db) : null;
+const QUEUE_METHODS = new Set(['add', 'list', 'find', 'findByClientId', 'firstAwaitingAdmission', 'update', 'delete', 'reorder', 'claim', 'settle',
+  'requestRetry', 'resumeRequestedRetry', 'discardUnknown', 'discardThread', 'recordInput', 'finishTurn', 'receipt', 'pendingThreads', 'maintenanceCounts', 'interruptExecution']);
 const receipt = (id: string): Receipt | null => {
   const row = get('SELECT * FROM commands WHERE id=?', id);
   return row ? { commandId: row.id, digest: row.digest, epoch: row.epoch, route: row.route, generation: row.generation, method: row.method, state: row.state,
@@ -70,6 +76,15 @@ const operations: Record<string, (args: any) => any> = {
     run("UPDATE automation_scripts SET state=?,result=? WHERE key=? AND state IN ('admitted','running')",state,JSON.stringify(result??null),key);
   },
   ready: () => outcome,
+  queue: ({ method, args }: any) => {
+    require(queue !== null && typeof method === 'string' && QUEUE_METHODS.has(method) && Array.isArray(args), 'Unsupported queue operation');
+    return (queue as any)[method](...args);
+  },
+  queueChanged: ({ route }: any) => tx(() => {
+    const binding = get('SELECT generation FROM routes WHERE route=?', route);
+    require(binding, 'Queue Thread has no route');
+    run('INSERT INTO outbox(route,generation,payload) VALUES (?,?,?)', route, binding.generation, JSON.stringify({ method: 'thread/queue/changed', params: { threadId: route } }));
+  }),
   snapshot: () => ({ epoch: Number(meta('epoch')), current: meta('current'), ack: Number(meta('ack')),
     generations: all('SELECT * FROM generations').map(row => ({ ...row, config: JSON.parse(row.config) })), routes: all('SELECT * FROM routes'), nativeSessions: all('SELECT * FROM native_sessions'), interactions: all('SELECT * FROM interactions') }),
   add: (config: Generation) => tx(() => {
