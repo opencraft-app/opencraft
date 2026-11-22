@@ -27,28 +27,38 @@
   // Their floating popovers remain in the existing Shell/Radix portals.
   .sidebar-activity-group__items {
     isolation: isolate;
-    // Rows keep their local avatar ordering. Native scroll/sticky composition
-    // owns occlusion; no whole-group clip follows scroll on the main thread.
     :where(button, a[href], [tabindex]) {
       scroll-margin-block-start: max(var(--height-sidebar-group-heading), var(--size-control-hit-min));
     }
   }
-  .sidebar-thread-group-heading {
-    // The section bounds its own disclosure. Desktop scrolls the activity list;
-    // mobile scrolls the outer navigation track, with no extra scroll owner.
+  .sidebar-activity-group[data-sidebar-sticky] {
+    position: relative;
+    .sidebar-thread-group-heading {
+      position: sticky;
+      inset-block-start: 0;
+      align-self: start;
+      z-index: 2;
+    }
+  }
+  .sidebar-activity-group__occlusion {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    // Only paint where the title and this group's content intersect. The clip
+    // moves with the section; the fill sticks with the title in the same scrollport.
+    clip-path: inset(calc(var(--sidebar-group-heading-block-size) + var(--gap-sidebar-group-items)) 0 0);
+  }
+  .sidebar-activity-group__occlusion-fill {
+    display: block;
     position: sticky;
     inset-block-start: 0;
-    align-self: start;
-    // Local to the isolated activity list, below Shell chrome and portals.
-    z-index: 1;
-    // An opaque projection of the existing Shell material prevents row tint
-    // without a second local backdrop filter or a scroll-dependent mask.
+    block-size: var(--sidebar-group-heading-block-size);
     background: var(--opencraft-sidebar-sticky-background, var(--color-surface));
-    // Keep legacy theme context/heading paints in their existing order, over
-    // the opaque backing. CSS backgrounds may be colors or images; alpha never
-    // reveals moving rows. Sticky's own stacking context bounds both layers.
+    // Keep explicit context and heading paints above the opaque backing.
     &::before, &::after {
-      content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+      content: ""; position: absolute; inset: 0;
     }
     &::before { background: var(--opencraft-sidebar-context-background, transparent); }
     &::after { background: var(--opencraft-sidebar-heading-background, transparent); }
