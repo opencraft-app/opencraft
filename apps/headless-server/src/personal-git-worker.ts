@@ -1,5 +1,6 @@
 import { GitExecutionAuthority, type GitExecutionQuery } from "./git-execution-authority.js";
 import {
+  createPersonalGitSocketDirectory, personalGitSocketPaths, removePersonalGitSocketDirectory,
   gitGrantAuthority,
   openGitGrant,
   type GitGrantScope,
@@ -39,6 +40,9 @@ if (
 )
   throw Error("personal_git_trust_unavailable");
 await mkdir(privateDirectory, { mode: 0o700 });
+const socketPaths=personalGitSocketPaths(runtime,(await import("node:path")).basename(privateDirectory),process.getuid!());
+await createPersonalGitSocketDirectory(socketPaths,process.getuid!());
+if(socketPaths.root)parentPort!.postMessage({type:"socket-directory-created"});
 type OpenEntry = {
   promise: Promise<Record<string, unknown>>;
   result?: Record<string, unknown>;
@@ -179,8 +183,8 @@ async function request(input: unknown): Promise<Record<string, unknown>> {
     try {
       const check = () => authorized(session);
       if (c.sshAuth && ["push", "fetch", "pull", "ls-remote", "clone"].includes(String(r.operation)))
-        session.auth = await createMemoryGitAuthenticator(c.sshAuth, privateDirectory, 300_000, check);
-      if (c.signing) session.signer = await createMemoryGitSigner(c.signing, privateDirectory, 300_000, check);
+        session.auth = await createMemoryGitAuthenticator(c.sshAuth, socketPaths.directory, 300_000, check);
+      if (c.signing) session.signer = await createMemoryGitSigner(c.signing, socketPaths.directory, 300_000, check);
       if (closed) {
         await session.auth?.close();
         await session.signer?.close();
@@ -356,6 +360,7 @@ async function close() {
   vault.close();
   key.fill(0);
   await rm(privateDirectory, { recursive: true, force: true });
+  await removePersonalGitSocketDirectory(socketPaths);
   parentPort?.close();
 }
 const timer = setInterval(() => {
@@ -420,16 +425,16 @@ parentPort!.on("message", (message) => {
 });
 await new Promise<void>((resolve, reject) => {
   server.once("error", reject);
-  server.listen(join(privateDirectory, "broker.sock"), () => resolve());
+  server.listen(socketPaths.socket, () => resolve());
 });
-await chmod(join(privateDirectory, "broker.sock"), 0o600);
+await chmod(socketPaths.socket, 0o600);
 if (workerData.serveExecution)
   await writeFile(
     join(privateDirectory, "ready.json"),
     JSON.stringify({
       protocol: 2,
       authority: gitGrantAuthority(key, workerData.accountMode ?? "principal"),
-      socket: join(privateDirectory, "broker.sock"),
+      socket: socketPaths.socket,
     }),
     { mode: 0o600, flag: "wx" },
   );

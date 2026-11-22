@@ -227,6 +227,16 @@ during preparation and held-provider-IO responsiveness.
 
 ### Independently owned Pi and DSH
 
+Unix IPC has a byte-length limit independent of deployment directory length.
+The broker budgets the complete UTF-8 signer socket path, not just `broker.sock`.
+When necessary, only its IPC endpoints move to a deterministic, UID-scoped
+0700 namespace under `/tmp`; encrypted data, trust policy and authority-checked
+discovery metadata remain in the canonical runtime. Symlink/foreign/permissive
+roots and an already claimed owner are refused. Closing an owner removes its
+socket directory, without removing a live peer. Consumers must share the IPC
+filesystem namespace; container deployments should mount the canonical runtime
+at a short shared path rather than depend on another container's private `/tmp`.
+
 The compiled native owner uses the existing private session-capability attachment
 and loopback listener for `/host-git`. Its `host-git` HMAC audience is distinct
 from MCP sessions, native tools and model-visible CLI credentials. The request

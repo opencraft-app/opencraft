@@ -271,6 +271,31 @@ test("handoff is not an HTTP action; Actor revocation and unknown/rejected input
   assert.equal(credential.status, "expired");
 });
 
+test('deep Unicode deployment paths retain canonical broker discovery and real signed Git with bounded sockets', async t => {
+  const {dirname} = await import('node:path');
+  const {stat, readdir} = await import('node:fs/promises');
+  const f = await fixture(t), runtimeDirectory = join(f.root, '执行目录'.repeat(20), 'git-runtime');
+  const execution = createHumanGitExecution({directory: join(f.root, 'data'), runtimeDirectory,
+    workerFile: join(f.root, 'runtime/personal-git-worker.mjs'), hosts: f.assets.gitHosts, authority: f.assets.gitAuthority!,
+    grant: f.assets.executionGitGrant, authorize: f.authorize,
+    inspect: async grant => grant.native.incarnation === f.native.incarnation,
+  }); f.defer(() => execution.close());
+  const snapshot = await execution.prepare(f.locator), env = {...snapshot.apply(f.base), OPENCRAFT_THREAD_ID: f.locator.threadId};
+  const socket = snapshot.overlay().OPENCRAFT_GIT_BROKER_SOCKET!;
+  assert.ok(Buffer.byteLength(socket) <= 100);
+  assert.notEqual(dirname(socket), runtimeDirectory);
+  assert.ok((await readdir(runtimeDirectory)).some(name => name.startsWith('owner-')));
+  // Recovery must discover the short endpoint through the original private
+  // metadata/authority, not through a guessed /tmp path or newest socket.
+  env.OPENCRAFT_GIT_BROKER_SOCKET = join(f.root, 'absent.sock');
+  const commit = await command(join(f.root, 'bin/git'), ['commit', '--allow-empty', '-m', 'DeepUnicodeGit'], f.repo, env);
+  assert.equal(commit.code, 0, commit.err);
+  await writeFile(join(f.root, 'deep-signers'), 'fixture@example.test ' + f.metadata.hosts['github.com'].signing.publicKey + '\n');
+  assert.equal((await f.nativeGit('-c', 'gpg.ssh.allowedSignersFile=' + join(f.root, 'deep-signers'), 'verify-commit', 'HEAD')).code, 0);
+  await execution.close();
+  await assert.rejects(stat(dirname(socket)), {code: 'ENOENT'});
+});
+
 test('exact native Turn resolves its original Human despite a later steer; missing, ended and mixed selectors deny', async t => {
   const f = await fixture(t);
   const turnId = 'pi_synthetic:turn:client:original-input';
