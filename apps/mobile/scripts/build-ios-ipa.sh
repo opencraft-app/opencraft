@@ -11,11 +11,6 @@ if ! command -v pod >/dev/null 2>&1; then
   echo "CocoaPods is required to build the iOS native dependencies." >&2
   exit 1
 fi
-if [[ -z "${APPLE_TEAM_ID:-}" ]]; then
-  echo "Set APPLE_TEAM_ID to the Apple Developer team used for signing." >&2
-  exit 1
-fi
-
 export NODE_ENV=production
 export OPENCRAFT_IOS_EXPORT_METHOD="${OPENCRAFT_IOS_EXPORT_METHOD:-development}"
 export_method="$OPENCRAFT_IOS_EXPORT_METHOD"
@@ -25,6 +20,11 @@ archive_signing=(CODE_SIGN_STYLE=Automatic -allowProvisioningUpdates)
 provisioning_updates=(-allowProvisioningUpdates)
 case "$export_method" in
   development|ad-hoc) ;;
+  unsigned)
+    # For people who sign with their own Apple ID (AltStore, SideStore). It
+    # keeps the default app.json identity and needs no Apple team or profile.
+    artifact_kind="unsigned"
+    ;;
   app-store-connect)
     if [[ "${OPENCRAFT_IOS_RELEASE:-0}" != "1" ]]; then
       echo "An App Store export requires OPENCRAFT_IOS_RELEASE=1 and a clean native project." >&2
@@ -41,6 +41,10 @@ case "$export_method" in
     ;;
   *) echo "Unsupported OPENCRAFT_IOS_EXPORT_METHOD: $export_method" >&2; exit 1 ;;
 esac
+if [[ "$export_method" != "unsigned" && -z "${APPLE_TEAM_ID:-}" ]]; then
+  echo "Set APPLE_TEAM_ID to the Apple Developer team used for signing." >&2
+  exit 1
+fi
 
 if [[ "${OPENCRAFT_IOS_RELEASE:-0}" == "1" ]]; then
   if [[ -e ios || -L ios ]]; then
@@ -70,6 +74,26 @@ artifact_dir="$(mktemp -d "$PWD/release/${product_name}-ios-export.XXXXXX")"
 
 export_options="$(mktemp -t opencraft-ios-export.XXXXXX.plist)"
 trap 'rm -f "$export_options"; rm -r "$artifact_dir"' EXIT
+artifact="release/${product_name}-ios-${artifact_kind}.ipa"
+if [[ "$export_method" == "unsigned" ]]; then
+  xcodebuild archive \
+    -workspace "$workspace" \
+    -scheme "$scheme" \
+    -configuration Release \
+    -destination 'generic/platform=iOS' \
+    -archivePath "$archive" \
+    CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+  application="$(find "$archive/Products/Applications" -maxdepth 1 -type d -name '*.app' -print -quit)"
+  [[ -n "$application" ]] || { echo "The archive does not contain an application." >&2; exit 1; }
+  mkdir "$artifact_dir/Payload"
+  ditto "$application" "$artifact_dir/Payload/$(basename "$application")"
+  # An IPA is a zip whose root holds Payload/<name>.app.
+  (cd "$artifact_dir" && ditto -c -k --keepParent Payload unsigned.ipa)
+  cp "$artifact_dir/unsigned.ipa" "$artifact"
+  shasum -a 256 "$artifact" > "$artifact.sha256"
+  echo "Built $artifact"
+  exit 0
+fi
 xcodebuild archive \
   -workspace "$workspace" \
   -scheme "$scheme" \
@@ -103,7 +127,6 @@ if [[ -z "$ipa" ]]; then
   echo "Xcode export succeeded but did not produce an IPA." >&2
   exit 1
 fi
-artifact="release/${product_name}-ios-${artifact_kind}.ipa"
 cp "$ipa" "$artifact"
 shasum -a 256 "$artifact" > "$artifact.sha256"
 echo "Built $artifact"

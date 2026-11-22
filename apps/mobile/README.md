@@ -121,8 +121,13 @@ APPLE_TEAM_ID=YOUR_TEAM_ID npm run build:expo:ios:ipa
 
 The shared script prebuilds iOS, archives a Release build and exports
 `apps/mobile/release/OpenCraft-ios-internal.ipa` with a SHA-256 file.
-`OPENCRAFT_IOS_EXPORT_METHOD` accepts `development` (default) or `ad-hoc`;
-ad-hoc installation needs registered device UDIDs and a matching profile.
+`OPENCRAFT_IOS_EXPORT_METHOD` accepts `development` (default), `ad-hoc` or
+`unsigned`; ad-hoc installation needs registered device UDIDs and a matching
+profile. `unsigned` needs no Apple team: it archives without signing and writes
+`OpenCraft-ios-unsigned.ipa` with the default `app.json` identity, for people
+who sign it with their own Apple ID in AltStore or SideStore. The
+[iOS unsigned IPA workflow](../../.github/workflows/ios-unsigned-ipa.yml) builds
+and checks it (no signature, no provisioning profile) from any branch.
 `OPENCRAFT_IOS_RELEASE=1` requires a clean checkout without a generated `ios/`
 project. `OPENCRAFT_NATIVE_ARTIFACT_NAME` changes the output prefix for an
 explicit product build. Product Bundle IDs, schemes, icons, permission copy
@@ -149,6 +154,10 @@ the base64-encoded PEM recipient certificate for the IPA archive. Back up its
 private key outside GitHub. Recover the IPA with
 `openssl cms -decrypt -binary -inform DER -in ARCHIVE.ipa.cms -recip CERT.pem -inkey KEY.pem -out ARCHIVE.ipa`,
 then verify `IPA-SHA256SUMS.txt` in the archive directory.
+
+The workflow is also callable. A call uploads the build and returns its
+version and number without waiting for Beta App Review (`check_availability`
+defaults to `false` there), while a manual dispatch still waits by default.
 
 The status job checks Apple processing, export compliance, Beta App Review and
 membership of the build in the target external group. Configure

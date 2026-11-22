@@ -121,3 +121,9 @@ test('Android APKs carry only arm64 native libraries unless other ABIs are reque
   assert.ok(both.includes('-PreactNativeArchitectures=arm64-v8a,armeabi-v7a'));
   assert.throws(() => capturePrebuild('build-android-apk.sh', false, { throughGradle: true, env: { OPENCRAFT_ANDROID_ARCHITECTURES: 'arm64-v8a;rm -rf' } }));
 });
+
+test('an unsigned iOS IPA needs no Apple team, while signed exports still do', { skip: process.platform === 'win32' }, () => {
+  const unsigned = capturePrebuild('build-ios-ipa.sh', true, { env: { APPLE_TEAM_ID: '', OPENCRAFT_IOS_EXPORT_METHOD: 'unsigned' } });
+  assert.equal(unsigned.args.at(-1), '--clean');
+  assert.throws(() => capturePrebuild('build-ios-ipa.sh', true, { env: { APPLE_TEAM_ID: '', OPENCRAFT_IOS_EXPORT_METHOD: 'development' } }), /Set APPLE_TEAM_ID/u);
+});
