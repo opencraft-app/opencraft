@@ -19,9 +19,8 @@ export interface GitVaultStatus {
   sshAuth: Omit<NonNullable<GitVaultCredential['sshAuth']>, 'privateKey'> | null;
   tokenConfigured: boolean; signing: Omit<NonNullable<GitVaultCredential['signing']>, 'privateKey'> | null;
 }
-export class GitVaultError extends Error {
-  constructor(readonly code: 'invalid' | 'conflict' | 'unavailable', readonly status = 400) { super(code); }
-}
+import { GitVaultError } from './git-vault-error.js';
+export { GitVaultError } from './git-vault-error.js';
 const PRIVATE_KEY_HEADER = '-----BEGIN PRIVATE KEY-----';
 const SCHEMA = 'CREATE TABLE employee_git_credentials (account TEXT NOT NULL, host TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), credential BLOB, PRIMARY KEY(account,host)) STRICT';
 export const EMPLOYEE_GIT_VAULT_MIGRATIONS = [{ version: 1, name: 'employee-git-credentials', sql: SCHEMA }] as const;
@@ -124,7 +123,7 @@ export class EmployeeGitVaultStore {
   }
   /** Authenticated private execution metadata, using the same key and AAD owner.
    * The envelope carries identity/scope only, never environment values. */
-  personalGitAuthority(): string { return gitGrantAuthority(this.key); }
+  personalGitAuthority(accountMode:'principal'|'actor'='principal'): string { return gitGrantAuthority(this.key,accountMode); }
   sealPersonalGitGrant(scope: GitGrantScope): string { return sealGitGrant(this.key, scope); }
   sealExecutionContext(document: unknown): string {
     return this.encrypt('platform', 'document-execution-context', document).toString('base64url');

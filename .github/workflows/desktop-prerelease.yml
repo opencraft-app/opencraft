@@ -1,12 +1,8 @@
 name: Desktop pre-release
 
-# Builds OpenCraft Desktop from one commit and publishes a GitHub pre-release:
-# Linux x64 with the repository-owned Electron fork (restored from a verified
-# native artifacts run), and macOS arm64/x64 and Windows x64 with stock Electron
-# at the fork's upstream version (OPENCRAFT_ELECTRON_STOCK_DESKTOP=1), unsigned.
-# The fork's patches serve the Linux server browser runtime, which the desktop
-# app does not use; macOS and Windows move to the fork once they have native
-# build runners.
+# The only publisher of OpenCraft beta releases: desktop packages, the
+# production-signed Android APK and the unsigned iOS IPA share one tag, manifest
+# and GitHub pre-release, and the same commit is uploaded to TestFlight.
 on:
   workflow_dispatch:
     inputs:
@@ -17,7 +13,7 @@ on:
       publish:
         description: Publish the GitHub pre-release (otherwise only build the packages)
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
@@ -29,17 +25,67 @@ concurrency:
 
 jobs:
   tag:
+    if: github.repository == 'opencraft-app/opencraft' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require a pre-release tag
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Match the beta tag to this checkout's desktop and mobile versions
         env:
           TAG: ${{ inputs.tag }}
         run: |
-          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*$ ]]; then
-            echo "::error::Use a pre-release tag such as v0.1.0-beta.1; stable releases go through release.yml." >&2
-            exit 1
-          fi
+          version="$(jq -er .version apps/desktop/package.json)"
+          [[ "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-beta\.[1-9][0-9]*$ ]]
+          test "v$version" = "${TAG%-beta.*}"
+          test "$(jq -er .expo.version apps/mobile/app.json)" = "$version"
+          node --test tests/tooling/android-release.test.mjs
+          node scripts/release/android-version-code.mjs "$TAG"
+
+  macos:
+    needs: tag
+    uses: ./.github/workflows/macos-universal-release.yml
+    # GitHub requires named forwarding for environment secrets in reusable
+    # workflows. The called macos-release jobs resolve the environment values.
+    secrets:
+      MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+  android:
+    needs: tag
+    uses: ./.github/workflows/android-release-apk.yml
+    with:
+      tag: ${{ inputs.tag }}
+    # Named forwarding, as for macOS; the called job resolves android-release values.
+    secrets:
+      ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+      ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+      ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+
+  ios_testflight:
+    needs: tag
+    uses: ./.github/workflows/ios-testflight.yml
+    # Named forwarding, as for macOS; the called job resolves ios-testflight values.
+    secrets:
+      ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+      ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+      ASC_API_PRIVATE_KEY_BASE64: ${{ secrets.ASC_API_PRIVATE_KEY_BASE64 }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+      IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+      IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+
+  ios_unsigned:
+    needs: tag
+    uses: ./.github/workflows/ios-unsigned-ipa.yml
 
   linux:
     needs: tag
@@ -68,22 +114,9 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  stock:
+  windows:
     needs: tag
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - id: macos-arm64
-            runner: macos-15
-            packages: package:mac:arm64:dmg package:mac:arm64:zip
-          - id: macos-x64
-            runner: macos-15-intel
-            packages: package:mac:x64:dmg package:mac:x64:zip
-          - id: windows-x64
-            runner: windows-latest
-            packages: package:win:x64
-    runs-on: ${{ matrix.runner }}
+    runs-on: windows-latest
     timeout-minutes: 60
     defaults:
       run:
@@ -91,7 +124,6 @@ jobs:
     env:
       OPENCRAFT_ELECTRON_STOCK_DESKTOP: '1'
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      PACKAGES: ${{ matrix.packages }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -103,53 +135,77 @@ jobs:
       - name: Run npm scripts with Git Bash on Windows
         # Package scripts set variables POSIX-style (NAME=value command),
         # which cmd.exe, npm's default Windows script shell, cannot run.
-        if: runner.os == 'Windows'
         run: echo 'npm_config_script_shell=C:/Program Files/Git/bin/bash.exe' >> "$GITHUB_ENV"
       - run: npm ci --no-audit --no-fund
       - run: npm run build:electron:release
       - name: Package with stock Electron
-        run: |
-          for package in $PACKAGES; do
-            npm run "$package" --workspace @opencraft/desktop
-          done
+        run: npm run package:win:x64 --workspace @opencraft/desktop
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: desktop-${{ matrix.id }}
+          name: desktop-windows-x64
           path: |
-            apps/desktop/release/*.dmg
             apps/desktop/release/*.zip
             apps/desktop/release/*.exe
           if-no-files-found: error
           retention-days: 14
 
-  publish:
-    needs: [linux, stock]
-    if: inputs.publish
+  candidate:
+    needs: [linux, windows, macos, android, ios_testflight, ios_unsigned]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: write
+    timeout-minutes: 30
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: desktop-*
-          path: dist
-          merge-multiple: true
-      - name: Create the GitHub pre-release
+          path: inputs/desktop
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: opencraft-macos-universal-${{ github.sha }}
+          path: inputs/macos
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: opencraft-android-release-${{ github.sha }}
+          path: inputs/android
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: opencraft-ios-unsigned-${{ github.sha }}
+          path: inputs/ios
+      - name: Stage and verify the desktop release candidate
+        env:
+          TAG: ${{ inputs.tag }}
+        run: bash scripts/release/stage-desktop-beta.sh "$TAG"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-beta-${{ github.sha }}
+          path: candidate/
+          retention-days: 30
+          if-no-files-found: error
+
+  publish:
+    needs: [candidate, ios_testflight]
+    if: inputs.publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: desktop-beta-${{ github.sha }}
+          path: candidate
+      - name: Publish the verified desktop beta
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ inputs.tag }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          cd dist
-          sha256sum -- * > SHA256SUMS.txt
-          cat > ../notes.md <<NOTES
-          Test build of OpenCraft Desktop from \`${GITHUB_SHA}\` ([build run](${RUN_URL})).
-
-          - **Linux x64** (AppImage): repository-owned Electron fork.
-          - **macOS arm64 / x64** (DMG, ZIP) and **Windows x64** (installer, ZIP): stock Electron at the fork's upstream version. These builds are **not code-signed**: on macOS, right-click the app and choose Open (or run \`xattr -dr com.apple.quarantine /Applications/OpenCraft.app\`); on Windows, choose "More info" then "Run anyway" in SmartScreen.
-
-          Checksums are in SHA256SUMS.txt. No npm package is published.
-          NOTES
-          gh release create "$TAG" --target "$GITHUB_SHA" --prerelease --title "$TAG" --notes-file ../notes.md ./*
+          TESTFLIGHT_VERSION: ${{ needs.ios_testflight.outputs.version }}
+          TESTFLIGHT_NUMBER: ${{ needs.ios_testflight.outputs.number }}
+          TESTFLIGHT_PUBLIC_LINK: ${{ vars.OPENCRAFT_TESTFLIGHT_PUBLIC_LINK }}
+        run: bash scripts/release/publish-desktop-beta.sh "$TAG"

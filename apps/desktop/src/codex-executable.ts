@@ -1,4 +1,5 @@
-import { constants, accessSync } from "node:fs";
+import { constants } from "node:fs";
+import { access } from "node:fs/promises";
 import { delimiter, isAbsolute, join, resolve } from "node:path";
 
 /**
@@ -9,8 +10,8 @@ import { delimiter, isAbsolute, join, resolve } from "node:path";
 /** Where the Codex the desktop starts came from. Builtin is the pinned bundled Codex. */
 export type CodexExecutableSource = "explicit" | "builtin" | "user-installed" | "unresolved";
 
-export function resolveCodexExecutable(options: Parameters<typeof resolveCodexLaunch>[0]): string {
-  return resolveCodexLaunch(options).executable;
+export async function resolveCodexExecutable(options: Parameters<typeof resolveCodexLaunch>[0]): Promise<string> {
+  return (await resolveCodexLaunch(options)).executable;
 }
 
 /**
@@ -18,20 +19,18 @@ export function resolveCodexExecutable(options: Parameters<typeof resolveCodexLa
  * app whose bundled Codex is missing falls back to a user-installed one; the
  * source keeps that visible instead of treating it as the builtin Codex.
  */
-export function resolveCodexLaunch(options: {
+export async function resolveCodexLaunch(options: {
   readonly explicit?: string | null;
   readonly bundled?: string | null;
   readonly path?: string | null;
   readonly homeDirectory: string;
   readonly platform?: NodeJS.Platform;
-  readonly isExecutable?: (path: string) => boolean;
-}): { readonly executable: string; readonly source: CodexExecutableSource } {
-  const isExecutable = options.isExecutable ?? ((path: string) => {
-    try { accessSync(path, constants.X_OK); return true; } catch { return false; }
-  });
+  readonly isExecutable?: (path: string) => boolean | Promise<boolean>;
+}): Promise<{ readonly executable: string; readonly source: CodexExecutableSource }> {
+  const isExecutable = options.isExecutable ?? ((path: string) => access(path, constants.X_OK).then(() => true, () => false));
   const explicit = options.explicit?.trim();
   if (explicit) return { executable: isAbsolute(explicit) ? resolve(explicit) : explicit, source: "explicit" };
-  if (options.bundled && isExecutable(options.bundled)) return { executable: options.bundled, source: "builtin" };
+  if (options.bundled && await isExecutable(options.bundled)) return { executable: options.bundled, source: "builtin" };
   const executableName = (options.platform ?? process.platform) === "win32" ? "codex.exe" : "codex";
   const candidates = [
     ...(options.path ?? "").split(delimiter).filter(Boolean).map(directory => join(directory, executableName)),
@@ -39,6 +38,6 @@ export function resolveCodexLaunch(options: {
     "/opt/homebrew/bin/codex",
     "/usr/local/bin/codex",
   ];
-  const found = candidates.find(isExecutable);
-  return found ? { executable: found, source: "user-installed" } : { executable: executableName, source: "unresolved" };
+  for (const candidate of candidates) if (await isExecutable(candidate)) return { executable: candidate, source: "user-installed" };
+  return { executable: executableName, source: "unresolved" };
 }

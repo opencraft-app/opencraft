@@ -159,6 +159,8 @@ export async function startLocalAgentHost(options: {
   readonly artifactDirectory?: string;
   readonly prepareArtifact?: (artifact: import("./artifacts/catalog.js").Artifact, owner: string, signal?: AbortSignal) => Promise<import("./artifacts/catalog.js").Artifact>;
   readonly environmentDataDirectory?: string;
+  readonly executionContext?: 'assets'|'legacy';
+  readonly gitExecution?: {readonly directory:string;readonly workerFile:string;readonly machineId:string};
   readonly storage?: LocalAgentStorage;
   readonly machineIdentity?: RuntimeMachineIdentity;
   readonly modelStorageDirectory?: string;
@@ -248,7 +250,7 @@ export async function startLocalAgentHost(options: {
       { id: "session-persistence-jsonl", name: resolve(dirname(plugin), "dsh-thread-persistence-plugin.mjs"), config: { moduleUrl: engineModule("dsh-session-persistence-jsonl") } },
       { id: "session-projection-cache", name: resolve(dirname(plugin), "dsh-thread-projection-plugin.mjs"), config: { moduleUrl: engineModule("dsh-session-projection-cache") } },
       { insert: [{ id: "opencraft-capability", name: nativePlugin, config: {
-      modelPolicyPath: options.modelPolicyPath, environmentDataDirectory: options.environmentDataDirectory, token: bridgeToken, ownerRequired: !!options.ownerHandoff,
+      modelPolicyPath: options.modelPolicyPath, environmentDataDirectory: options.environmentDataDirectory, executionContext:options.executionContext, gitExecution:options.gitExecution, token: bridgeToken, ownerRequired: !!options.ownerHandoff,
       skillsRoot: join(bridgeDirectory, "skills"),
       persistentSkillsRoot,
       taskSkillsRoot: join(productDataRoot, "task-agent"),
@@ -1115,15 +1117,21 @@ export async function startLocalAgentHost(options: {
     await skillRefresh.changed().catch(() => undefined);
   }
   client.sealBootstrap();
-  if (options.ownerHandoff) await capabilityLink!.nativeOwner("seal-bootstrap");
-  if (options.ownerHandoff?.open()) await capabilityLink!.nativeOwner("resume");
+  if (options.ownerHandoff && dshInstalled) await capabilityLink!.nativeOwner("seal-bootstrap");
+  if (options.ownerHandoff?.open() && dshInstalled) await capabilityLink!.nativeOwner("resume");
   schedules.start();
   interrupted.recovery.wake();
   const websocketUrl = `ws://127.0.0.1:${address.port}/rpc?token=${encodeURIComponent(token)}`;
   return {
     websocketUrl,
     inputs,
-    nativeOwner: (action: "inspect" | "fence" | "resume" | "seal-release" | "abort-release") => capabilityLink!.nativeOwner(action),
+    // Without an installed DSH there is no native writer to fence: report an
+    // empty, complete native owner so Host storage handoff proceeds unchanged.
+    nativeOwner: (action: "inspect" | "fence" | "resume" | "seal-release" | "abort-release") => dshInstalled
+      ? capabilityLink!.nativeOwner(action)
+      : Promise.resolve(action === "inspect"
+        ? { owner: "absent", pid: null, configuration: null, coverage: "complete", activeCount: 0, records: [] }
+        : {}),
     async handoffObservation(native: {id:string;turns:[string,string][];rpcInputs:[string,string][]}[] = []) {
       const schedulesState = schedules.handoffObservation(), recovery = interrupted.recovery.handoffObservation();
       const executions = authority.handoffObservation(native.flatMap(record => {

@@ -1,0 +1,7 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+.crew-work__group + .crew-work__group { margin-block-start: calc(4 * var(--spacing)); }
+.crew-work__heading { margin: 0; padding-block: calc(2 * var(--spacing)); @include typography.role(metadata, secondary); }
+// A question waiting on the reader reads at full strength; everything else stays secondary.
+.crew-work [data-crew-waiting] { color: var(--color-text); }
+.crew-work .people-group-entry { display: flex; align-items: center; gap: var(--spacing); }
+.crew-work .people-group-entry > .people-group { flex: 1; min-inline-size: 0; }

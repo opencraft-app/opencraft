@@ -75,7 +75,7 @@ export class DshOwnerHandoff {
   async inspect(sealing = false) {
     try {
       const native = await this.host.nativeOwner('inspect'), local = await this.host.handoffObservation(native.records);
-      const os = this.inspectOsWork([this.host.engineProcessId]);
+      const os = this.inspectOsWork([this.host.engineProcessId].filter(pid => pid !== null && pid !== undefined));
       const consumer = this.receipts.observation();
       const complete = this.authority.snapshot().persistence === 'ready' && native.pid === this.host.engineProcessId && typeof native.owner === 'string'
         && [native,local,os,consumer].every(row=>Number.isSafeInteger(row.activeCount) && row.activeCount >= 0) && consumer.coverage === 'complete' && native.coverage === 'complete' && local.coverage === 'complete' && os.coverage === 'complete';

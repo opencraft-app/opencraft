@@ -35,3 +35,5 @@ repositories.mjs按业务资源分Repository；这些是存取实现，不是新
 2026-11-09 用户授权BM25实验：SqliteMemoryIndex在原连接创建TEMP FTS5缓存及TEMP触发器，索引key与正文的统一词元；开连接时重建，更新/删除随原事务回滚。不迁移main schema，不改Markdown权威或显式literal/terms语义。内部text召回以OR候选＋BM25排序，scope过滤在LIMIT之前；FTS5不可用时初始化报错，不静默返回空结果。
 
 0.17/schema19-20：execution 解除旧(work_id,revision)唯一键，增加 attempt/predecessor_id/session_root，Work 增加有效执行引用；新增 work_directive、goal、goal_work、work_dependency、execution_dependency。旧ID、快照、报告及外键保留，检查 foreign_key_check；不把旧 Work 伪造为 Goal。新 Goal 查询分页且不暴露资源 grants，SELECT-only。升级前备份改为 schemaN-before-coordination.sqlite，历史夹具用 legacyCoordinationFixture 恢复真实旧表布局。
+
+schema22：新增 work_operation（execution_id+call_id 主键、work_id、tool、target（转派/消息的接收者 actor）、summary≤512、at），记录 Bot 用自身权限的工具操作，供 crew 工作台操作摘要读取；调用前写入，同一原生调用重放不重复，每个 execution 上限1024条，不记录结果。schema21 升级保留旧数据，旧 schema 夹具须删除 work_operation。

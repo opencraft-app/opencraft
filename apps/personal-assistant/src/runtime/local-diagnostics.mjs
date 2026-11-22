@@ -1,6 +1,7 @@
 import { ModelCatalog } from "../adapters/models/model-catalog.mjs";
 import { DirectoryKnowledgeSource } from "../adapters/filesystem/knowledge-source.mjs";
-import { resolveHarnesses, readCodexKey } from "../adapters/codex/config.mjs";
+import { resolveHarnesses } from "../adapters/codex/config.mjs";
+import { readCodexKey } from "../adapters/codex/credential-file.mjs";
 
 /** Offline configuration probe. Never submits a model request or reads shared credential files. */
 export async function inspectLocalConfiguration(

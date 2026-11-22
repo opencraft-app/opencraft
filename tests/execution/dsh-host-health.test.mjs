@@ -27,7 +27,10 @@ test('independent DSH identity is observable before any lazy engine attachment',
     const attachedRequests = requests; await attachment.close(); assert.equal(requests, attachedRequests);
     health = { ...health, enginePid: 23 };
     assert.deepEqual(await readDshHostIdentity(path), { pid: 21, enginePid: 23 }, 'observations remain fresh for installer continuity checks');
-    for (const invalid of [{ ...health, ok: false }, { ...health, pid: 24 }, { ...health, enginePid: 0 }]) {
+    health = { ...health, enginePid: null };
+    assert.deepEqual(await readDshHostIdentity(path), { pid: 21, enginePid: null }, 'a Host without an installed DSH is healthy');
+    health = { ...health, enginePid: 23 };
+    for (const invalid of [{ ...health, ok: false }, { ...health, pid: 24 }, { ...health, enginePid: 0 }, { ...health, enginePid: undefined }]) {
       health = invalid;
       await assert.rejects(readDshHostIdentity(path), /unavailable/);
     }

@@ -1,0 +1,39 @@
+.git-connection {
+  container: git-connection-card / inline-size;
+}
+.git-connection__actions {
+  padding-block: calc(var(--spacing) * 2);
+}
+.git-connection__keyline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--gap-control-group);
+  width: 100%;
+}
+.git-connection__keyline > .settings-control-input {
+  flex: 1 1 16rem;
+  min-width: min(100%, 12rem);
+  overflow: hidden;
+  font: var(--typography-code-font);
+  letter-spacing: var(--typography-code-tracking);
+  text-overflow: ellipsis;
+}
+.git-connection__keylink {
+  color: var(--color-text-accent);
+  white-space: nowrap;
+}
+
+.git-connection__status {
+  color: var(--color-text-secondary);
+  font: var(--typography-metadata-font);
+  letter-spacing: var(--typography-metadata-tracking);
+  white-space: nowrap;
+}
+
+// Grouped page form; the compact utility-panel form would remove card row insets.
+.git-connection__form {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing) * 4);
+}

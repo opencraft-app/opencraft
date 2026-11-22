@@ -27,7 +27,7 @@ function Fixture() {
  useTimelineViewportHost(chrome);
  const [mounted, setMounted] = useState(true);
  Object.assign(window, {uploadFixture: {controller, runtime, ready, setMounted, getSubmissionCount: () => submissions}});
- return <AppShell layoutScope="thread" mainContentLayout="thread-edge-scroll" navigation={{layout: "unified", actions: [], account: null, onOpenSettings: noop}}
+ return <AppShell layoutScope="thread" mainContentLayout="thread-edge-scroll" navigation={{actions: [], account: null, onOpenSettings: noop}}
    header={<AppShellHeader conversationHeader title="Attachments" project={null} sidebarOpen={false} rightPanelOpen={false} rightPanelFullWidth={false}
      onToggleSidebar={noop} onToggleRightPanel={noop} onHome={noop} canGoBack={false} canGoForward={false} onBack={noop} onForward={noop} navigationActions={["sidebar-toggle"]} />}
    windowChrome={chrome} sidebarOpen={false} sidebarWidth={275} onSidebarCollapse={noop} onSidebarExpand={noop} onSidebarResizeEnd={noop}

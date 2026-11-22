@@ -3,6 +3,8 @@ dist/
 dist
 dist-*/
 release/
+# Build outputs use release/; the release tooling source is tracked.
+!scripts/release/
 releases/
 build/
 Pods/

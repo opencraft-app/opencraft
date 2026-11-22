@@ -1,6 +1,7 @@
 import { ProgressIndicator } from "@opencraft/design-system-web/progress";
 import { DisclosureButton, IconButton } from "@opencraft/design-system-web/button";
 import { TouchContactScope } from "@opencraft/design-system-web/touch-contact";
+import { useOverlayPresentationActive } from "@opencraft/design-system-web/presentation-root";
 import { parseConversationRef, encodeConversationRef } from "@opencraft/appserver-protocol/collaboration";
 import { useConversationReferences } from "./conversation-references";
 import { ComposerModelPicker } from "./composer-model-picker";
@@ -1064,6 +1065,7 @@ export const OpenCraftComposer = forwardRef<
   const [editingController, setEditingController] = useState<ComposerController | null>(null);
   const editingActive = editingController === controller;
   const auxiliaryMenuOpen = openPicker !== null || addMenuOpen;
+  const overlayPresentationActive = useOverlayPresentationActive();
   useEffect(() => {
     if (openPicker !== "intelligence") setAgentCycleRequest(null);
   }, [openPicker]);
@@ -1098,6 +1100,7 @@ export const OpenCraftComposer = forwardRef<
     return () => window.removeEventListener("keydown", handleAgentCycle, true);
   }, [resolveAgentCycleShortcut, openPicker, addMenuOpen, disabled, modelDisplayOnly, modelSelectionPolicy, selectionCatalog]);
   useLayoutEffect(() => {
+    if (!overlayPresentationActive) { menuFocusPending.current = false; return; }
     if (auxiliaryMenuOpen) { menuFocusPending.current = true; return; }
     if (!editingActive) return;
     const root = stackRef.current;
@@ -1127,7 +1130,7 @@ export const OpenCraftComposer = forwardRef<
       doc.removeEventListener("focusin", settle);
       doc.removeEventListener("focusout", settle);
     };
-  }, [controller, editingActive, auxiliaryMenuOpen]);
+  }, [controller, editingActive, auxiliaryMenuOpen, overlayPresentationActive]);
   const footerLayout = useMeasuredComposerFooterLayout();
   const inputInteraction = useSyncExternalStore(controller.subscribeInputInteraction, controller.getInputInteractionSnapshot, controller.getInputInteractionSnapshot);
   const voiceActive = inputInteraction !== null;

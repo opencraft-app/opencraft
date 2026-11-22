@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { buildOwnerWorkers } from './owner-workers.mjs';
 import { buildTerminalOwnerRuntime } from './package-terminal-runtime.mjs';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { packageBrowserRuntime } from './package-browser-runtime.mjs';
@@ -147,6 +148,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
       [executionProfile === 'headless' ? headlessGatewayEntry : 'scripts/server-deployment/gateway.mjs', 'gateway.mjs', 'esm'],
       ['apps/opencraft-daemon/src/bin.ts', 'daemon.cjs', 'cjs'],
       ['apps/headless-server/src/remote-browser/state.worker.ts', 'browser-state-worker.mjs', 'esm'],
+      ['apps/headless-server/src/assets-runtime.worker.ts','assets-runtime-worker.mjs','esm'],
       ['apps/codex-core/src/router-evidence.worker.ts', 'router-evidence-worker.mjs', 'esm'],
       ['apps/opencraft-daemon/src/execution-fault.worker.ts', 'execution-fault-worker.mjs', 'esm'],
       ['apps/codex-core/src/generation-registry.worker.ts', 'generation-registry-worker.mjs', 'esm'],
@@ -158,6 +160,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
       ['packages/web-push-node/src/store.worker.ts', 'push-storage-worker.mjs', 'esm'],
       // The gateway's Codex bridge receipt inbox (BridgeGateway) runs in this worker.
       ['apps/agent-bridge-host/src/storage.worker.ts', 'storage.worker.mjs', 'esm'],
+      ['plugins/assets/src/server/assets-configuration.worker.ts', 'assets-configuration-worker.mjs', 'esm'],
       ['packages/access-control/src/server-spaces.worker.ts', 'server-spaces-worker.mjs', 'esm'],
       ['packages/native-history-node/src/transcript-cache-storage.worker.ts', 'transcript-cache-storage-worker.mjs', 'esm'],
       ['apps/local-agent-host/src/dsh-capability-plugin.mjs', 'dsh-capability-plugin.mjs', 'esm'],
@@ -175,6 +178,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
     }
     // Both execution profiles run Codex through the provider bridge by default.
     await buildCodexBridgeRuntime(join(packageRoot, 'execution/codex-bridge'));
+    await buildOwnerWorkers(join(packageRoot, 'execution'), { target: 'node22' });
     // Opt-in deployment tooling only; packaging never changes a host unit or policy.
     await cp(join(repositoryRoot, 'scripts/server-deployment/tool-memory-guard.py'), join(packageRoot, 'runtime/tool-memory-guard.py'));
     await cp(join(repositoryRoot, 'scripts/server-deployment/prepare-tool-memory-guard.mjs'), join(packageRoot, 'runtime/prepare-tool-memory-guard.mjs'));

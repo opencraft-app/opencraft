@@ -18,6 +18,6 @@ export async function buildGitIdentityRuntime(directory, additionalEntries = [])
   await cp(join(root, 'apps/headless-server/src/git-identity-peer-bridge.py'), join(directory, 'git-identity-peer-bridge.py'));
   await cp(join(root, 'apps/headless-server/src/git-identity-shell-env.sh'), join(directory, 'git-identity-shell-env.sh'));
   const bin = join(dirname(directory), 'bin'); await mkdir(bin, { recursive: true });
-  await writeFile(join(bin, 'git'), '#!/bin/sh\nexport OPENCRAFT_GIT_NATIVE=/usr/bin/git\nexec "$(dirname "$0")/node" "$(dirname "$0")/../runtime/git-identity-wrapper.mjs" \"$@\"\n', { mode: 0o755 });
+  await writeFile(join(bin, 'git'), '#!/bin/sh\nexport OPENCRAFT_GIT_NATIVE=/usr/bin/git\nexec "${OPENCRAFT_GIT_NODE:-$(dirname "$0")/node}" "$(dirname "$0")/../runtime/git-identity-wrapper.mjs" \"$@\"\n', { mode: 0o755 });
   await chmod(join(bin, 'git'), 0o755);
 }

@@ -9,6 +9,8 @@ export const workbenchShortcuts = {
   help: [{ key: "/" }],
   agentNext: [{ key: "p", alt: true }],
   agentPrevious: [{ key: "p", alt: true, shift: true }],
+  conversationPrevious: [{ key: "arrowup", ctrl: true, shift: true }],
+  conversationNext: [{ key: "arrowdown", ctrl: true, shift: true }],
 } satisfies Record<string, readonly ShortcutBinding[]>;
 export type WorkbenchShortcutCommand = keyof typeof workbenchShortcuts;
 interface ShortcutBinding {
@@ -16,6 +18,8 @@ interface ShortcutBinding {
   readonly shift?: boolean;
   /** Alt-only command; it intentionally does not combine with the platform modifier. */
   readonly alt?: boolean;
+  /** Explicit Control on every platform, including Apple keyboards. */
+  readonly ctrl?: boolean;
 }
 type KeyInput = Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey" | "isComposing"> & { readonly code?: string };
 export function isMacKeyboard(platform: string): boolean { return /Mac|iPhone|iPad/.test(platform); }
@@ -37,6 +41,7 @@ function shortcutKey(event: KeyInput, preferPhysicalKey: boolean): string {
 function matchesBinding(event: KeyInput, binding: ShortcutBinding, platform: string): boolean {
   const modifier = binding.alt
     ? event.altKey && !event.metaKey && !event.ctrlKey
+    : binding.ctrl ? event.ctrlKey && !event.metaKey && !event.altKey
     : (isMacKeyboard(platform) ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey) && !event.altKey;
   return modifier && shortcutKey(event, binding.alt === true) === binding.key && event.shiftKey === (binding.shift ?? false);
 }
@@ -58,11 +63,13 @@ export function canHandleWorkbenchShortcut(event: KeyboardEvent, ownedDialog?: s
 export function shortcutLabel(command: WorkbenchShortcutCommand, platform = navigator.platform, index = 0): string {
   const binding: ShortcutBinding = workbenchShortcuts[command][index]!;
   const shift = binding.shift ? "⇧" : "";
+  const key = ({ arrowup: "↑", arrowdown: "↓" } as Record<string, string>)[binding.key] ?? binding.key.toUpperCase();
   return isMacKeyboard(platform)
-    ? binding.alt ? `⌥${shift}${binding.key.toUpperCase()}` : `⌘${shift}${binding.key.toUpperCase()}`
-    : `${binding.alt ? "Alt" : "Ctrl"}+${binding.shift ? "Shift+" : ""}${binding.key.toUpperCase()}`;
+    ? binding.alt ? `⌥${shift}${key}` : binding.ctrl ? `⌃${shift}${key}` : `⌘${shift}${key}`
+    : `${binding.alt ? "Alt" : "Ctrl"}+${binding.shift ? "Shift+" : ""}${key}`;
 }
 export function shortcutAria(command: WorkbenchShortcutCommand, platform = navigator.platform, index = 0): string {
   const binding: ShortcutBinding = workbenchShortcuts[command][index]!;
-  return `${binding.alt ? "Alt" : isMacKeyboard(platform) ? "Meta" : "Control"}+${binding.shift ? "Shift+" : ""}${binding.key.toUpperCase()}`;
+  const key = ({ arrowup: "ArrowUp", arrowdown: "ArrowDown" } as Record<string, string>)[binding.key] ?? binding.key.toUpperCase();
+  return `${binding.alt ? "Alt" : binding.ctrl ? "Control" : isMacKeyboard(platform) ? "Meta" : "Control"}+${binding.shift ? "Shift+" : ""}${key}`;
 }

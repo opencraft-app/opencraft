@@ -173,7 +173,7 @@ test("legacy phase-1 database migrates without discarding work, memory or input 
   db.close();
   const store = new Store(profile);
   t.after(() => store.close());
-  assert.equal(store.db.prepare("PRAGMA user_version").get().user_version, 21);
+  assert.equal(store.db.prepare("PRAGMA user_version").get().user_version, 22);
   assert.equal(store.work("legacy-work").text, "preserved");
   assert.equal(store.memories()[0].value, "上海");
   assert.equal(
@@ -295,7 +295,7 @@ test("phase-2 data upgrades to Interaction schema without expanding an existing 
   t.after(() => migrated.close());
   assert.equal(
     migrated.db.prepare("PRAGMA user_version").get().user_version,
-    21,
+    22,
   );
   assert.equal(migrated.work(original.workId).delegation_json, grant);
   assert.equal(

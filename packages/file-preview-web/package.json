@@ -14,17 +14,17 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/cordis": "4.1.0",
     "@opencraft/file-preview-core": "0.1.0",
     "@opencraft/i18n": "0.1.0",
     "react": "19.3.1",
     "@opencraft/design-system-web": "0.1.0",
     "react-dom": "19.3.1",
-    "pdfjs-dist": "6.4.299"
+    "pdfjs-dist": "6.5.438"
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
     "@types/react-dom": "~19.3.0",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   }
 }

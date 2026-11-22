@@ -11,14 +11,14 @@ The independent RN workbench has been retired, and `apps/mobile` has no downstre
 
 | Owner | Responsibilities |
 | --- | --- |
-| Web Application | Connections, authentication, navigation, Scope/View, drafts, caches, extensions and panels |
-| Expo container | Packaged document, safe area, native foreground/background, Android back and external navigation |
+| Web Application | Connections, authentication, navigation, Scope/View, drafts, caches, extensions, panels and device safe areas |
+| Expo container | Packaged document, full-screen WebView, native foreground/background, Android back and external navigation |
 | Shared mobile contract | Versioned, runtime-scoped capability messages; no conversation-state replication |
 
 Native back invokes Web's memory history, not WebView URL back or a second route
 stack. Resize/foreground events do not replace the source or remount the app.
-Web visualViewport owns keyboard/Composer geometry; native applies the outer
-safe area once, without a second keyboard-avoidance transform.
+Web visualViewport owns keyboard/Composer geometry and the content applies the
+device safe area once; native adds neither an inset nor a keyboard-avoidance transform.
 `@opencraft/client-product/mobile-container` is a trusted-container contract,
 independent of private Bot/account bridges. Browser/Electron clients without a
 container retain normal startup, navigation and lifecycle behavior.
@@ -136,19 +136,30 @@ remote sign-in must be repeated after a view is retired. The Web validation adap
 uses normal browser iframe storage and cannot prove native cookie isolation.
 
 Self-hosted content has no injected mobile identity and no onMessage native bridge.
-Only same-origin HTTPS navigation remains in the view; validated external links
-open through the system. Android back uses remote WebView history only for this
+Same-origin HTTPS navigation remains in the view. The iOS build can configure one
+exact HTTPS site origin and its HTTPS authentication origin with
+`EXPO_PUBLIC_SELF_HOSTED_SITE_ORIGIN` and `EXPO_PUBLIC_SELF_HOSTED_AUTH_ORIGIN`.
+Only the matching user-selected site can navigate its top-level view to that
+authentication origin. Authentication and return share the same private WebKit
+data store for the lifetime of the view. Other validated external links open
+through the system. Android back uses remote WebView history only for this
 mode. Built-in content continues to use the original Web memory navigation.
 Retries create a fresh document/runtime, rejecting late messages from retired
 views. Failed documents never automatically select another source.
 
-Built-in content opens source selection from the existing Web Appearance
-settings. Once ready it uses the full safe-area viewport without a permanent
-native source toolbar. Startup, failure and self-hosted mode retain a native
-source control independent of Web content. Saving an unchanged source preserves
-the document, draft and appearance.
+Every source has one presentation. The WebView fills the screen behind the
+status bar and home indicator on every platform, and the content reads safe-area
+geometry itself (`viewport-fit=cover`, `env(safe-area-inset-*)`). The container
+adds no inset of its own and does not branch on source kind or platform.
 
-Native recovery toolbar surfaces use Expo GlassEffect when available and fall back to
+Built-in content opens source selection from the existing Web Appearance
+settings. Until content reports ready (startup, failure, and a self-hosted site,
+which never reports it), one native source control floats at the right edge with
+its own safe inset. It occupies no space in the WebView layout and remains
+available on failure. Saving an unchanged source preserves the document, draft
+and appearance. Rotation updates both geometries without replacing the document.
+
+The native source control uses Expo GlassEffect when available and falls back to
 shared semantic surfaces. This container material never creates a second
 Workbench navigation state or duplicates Web controls. External website mode
 is a technical capability for user-operated services, not an App Store acceptance

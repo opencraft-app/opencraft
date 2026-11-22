@@ -1,3 +1,5 @@
+import { openTerminalAdmission } from './terminal-admission-owner.js';
+import { randomBytes } from 'node:crypto';
 import { createServer, type Socket } from 'node:net';
 import { chmod, unlink } from 'node:fs/promises';
 import lockfile from 'proper-lockfile';
@@ -12,6 +14,10 @@ export async function startTerminalPtyOwner(directory: string, endpoint: string,
   onIdle?: () => void; idleMs?: number;
 } = {}) {
   const release = await lockfile.lock(directory, { realpath: true, stale: 30_000, update: 5000, retries: 0 });
+  let admission: Awaited<ReturnType<typeof openTerminalAdmission>>;
+  try { admission = await openTerminalAdmission(directory); } catch (error) { await release(); throw error; }
+  const incarnation = randomBytes(32).toString('hex');
+  let admissionFailed = false;
   const processes = new HostProcessService(), peers = new Set<Socket>(), admittedPeers = new Set<Socket>();
   const server = createServer(socket => {
     if (peers.size >= 32) { socket.destroy(); return; }
@@ -33,17 +39,47 @@ export async function startTerminalPtyOwner(directory: string, endpoint: string,
           sendOwnerFrame(socket, { type: 'incompatible' }); socket.end(); return;
         }
         admitted = true; admittedPeers.add(socket); clearTimeout(timer); idleCheck();
-        sendOwnerFrame(socket, { type: 'attached', protocol: TERMINAL_OWNER_PROTOCOL, pid: process.pid }); return;
+        sendOwnerFrame(socket, { type: 'attached', protocol: TERMINAL_OWNER_PROTOCOL, pid: process.pid, terminalAdmission: 1 }); return;
       }
       if (!Number.isSafeInteger(message?.id) || message.id < 1 || typeof message.method !== 'string' || !message.method.startsWith('process/')
         || !message.identity || typeof message.identity.quotaOwner !== 'string') { socket.destroy(); return; }
       if (++requests > 128) { socket.destroy(); return; }
       void (async () => {
         try {
-          const identity = options.prepare ? await options.prepare(message.method, message.params, message.identity) : message.identity;
+          // Private quota control has no cwd, environment or executable. It uses
+          // the authenticated owner socket, never the product's process adapter.
+          // Actual local spawns still pass that adapter before any reservation.
+          const quotaControl = message.method.startsWith('process/quota');
+          const identity = !quotaControl && options.prepare ? await options.prepare(message.method, message.params, message.identity) : message.identity;
           if (socket.destroyed) return;
-          const result = processes.dispatchPrepared(message.method, message.params, identity);
-          sendOwnerFrame(socket, { id: message.id, result });
+          if (identity.lifecycleAuthority === true && message.method.startsWith('process/quota')) {
+            const p = message.params;
+            let result: unknown;
+            if (message.method === 'process/quotaProbe') result = await admission.probe();
+            else if (message.method === 'process/quotaReserve') result = await admission.reserve('remote', identity.quotaOwner, p?.resource, p?.operation);
+            else if (message.method === 'process/quotaRelease' && ['exited','not-created'].includes(p?.proof)) result = await admission.release(p.token);
+            else if (message.method === 'process/quotaResourceDestroyed') result = await admission.destroyRemoteResource(identity.quotaOwner, p?.resource);
+            else throw Error('Invalid terminal admission operation');
+            sendOwnerFrame(socket, { id: message.id, result }); return;
+          }
+          if (message.method.startsWith('process/quota')) throw Error('Private terminal admission required');
+          let token: string | undefined, physical = false;
+          if (message.method === 'process/spawn') {
+            token = await admission.reserve('local', identity.quotaOwner, incarnation, message.params?.processHandle);
+            // A disconnected requester cannot authorize a later physical spawn.
+            if (socket.destroyed) { await admission.release(token); return; }
+          }
+          try {
+            const receipt = token;
+            const result = processes.dispatchPrepared(message.method, message.params, identity, receipt ? {
+              started: () => { physical = true; },
+              exited: () => { void admission.release(receipt).catch(() => { admissionFailed = true; }); },
+            } : undefined);
+            sendOwnerFrame(socket, { id: message.id, result });
+          } catch (error) {
+            if (token && !physical) await admission.release(token);
+            throw error;
+          }
         } catch (error) {
           sendOwnerFrame(socket, { id: message.id, error: error instanceof TerminalCapacityError ? 'capacity' : 'unavailable' });
         } finally { requests--; }
@@ -69,13 +105,14 @@ export async function startTerminalPtyOwner(directory: string, endpoint: string,
     await unlink(endpoint).catch(error => { if (error.code !== 'ENOENT') throw error; });
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(endpoint, () => { server.removeListener('error', reject); resolve(); }); });
     if (process.platform !== 'win32') await chmod(endpoint, 0o600);
-  } catch (error) { processes.close(); await release(); throw error; }
+  } catch (error) { processes.close(); await admission.close(); await release(); throw error; }
   idleCheck();
   return async () => {
     if (stopping) return; stopping = true; clearTimeout(idleTimer);
     await processes.shutdown(); for (const peer of peers) peer.destroy();
     await new Promise<void>(resolve => server.close(() => resolve()));
-    await unlink(endpoint).catch(() => {}); await release();
+    await unlink(endpoint).catch(() => {});
+    try { await admission.close(); if (admissionFailed) throw Error('Terminal admission settlement unconfirmed'); } finally { await release(); }
   };
 }
 

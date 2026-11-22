@@ -2,39 +2,10 @@ import { terminalProcessSession, drainTerminalProcessSessions, type TerminalProc
 import { homedir } from "node:os";
 import { spawn, type IPty } from "node-pty";
 import { TERMINAL_RESOURCE_LIMITS, type ProcessContext, type ProcessOutput, type ProcessSnapshot } from "@opencraft/appserver-protocol";
-import { validateEnvironmentName } from '@opencraft/execution-environment/account-environment';
 import type { ExecutionEnvironmentRuntime, EnvironmentExecutionScope } from '@opencraft/execution-environment';
+import { TerminalCapacityError, prepareProcessIdentity, type PreparedProcessIdentity } from './process-identity.js';
 
-export class TerminalCapacityError extends Error {
-  constructor() { super("Terminal limit reached. Close an existing terminal before creating another."); }
-}
-export interface PreparedProcessIdentity {
-  owner?: string;
-  quotaOwner: string;
-  scope?: EnvironmentExecutionScope;
-  env?: Record<string, string>;
-  /** Private owner IPC; never accepted from a public process request. */
-  lifecycleAuthority?: boolean;
-}
-
-export function prepareProcessIdentity(environment: ExecutionEnvironmentRuntime | undefined, scope: EnvironmentExecutionScope | undefined, method: string, raw: unknown): PreparedProcessIdentity {
-  if (environment && !scope) throw new Error("Environment execution identity required");
-  const snapshot = scope && environment?.snapshot(scope);
-  const identity: PreparedProcessIdentity = { owner: snapshot?.owner, quotaOwner: JSON.stringify([scope?.account ?? null, scope?.hostId ?? "local"]), scope };
-  if (method !== "process/spawn") return identity;
-  const p = object(raw ?? {}), env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(snapshot?.apply(process.env) ?? process.env)) if (value !== undefined) env[key] = value;
-  for (const [key, value] of Object.entries(p.env == null ? {} : object(p.env))) {
-    if (snapshot) validateEnvironmentName(key);
-    if (snapshot && Object.hasOwn(snapshot.overlay(), key)) throw new Error("Managed environment cannot be overridden");
-    if (value === null) delete env[key];
-    else if (typeof value === "string") env[key] = value;
-    else throw new Error("Invalid process environment");
-  }
-  env.TERM = "xterm-256color";
-  identity.env = env;
-  return identity;
-}
+export { TerminalCapacityError, prepareProcessIdentity, type PreparedProcessIdentity } from './process-identity.js';
 
 interface Session {
   context: ProcessContext;
@@ -88,7 +59,8 @@ export class HostProcessService {
     return this.dispatchPrepared(method, raw, prepareProcessIdentity(this.environment, scope, method, raw));
   }
   /** Trusted local owner IPC only. Browser callers must use the Host admission path. */
-  dispatchPrepared(method: string, raw: unknown, identity: PreparedProcessIdentity): unknown {
+  dispatchPrepared(method: string, raw: unknown, identity: PreparedProcessIdentity,
+    physical?: { started(): void; exited(): void }): unknown {
     if (this.closed) throw new Error("Process service is closed");
     const p = object(raw ?? {});
     const { scope, owner, quotaOwner } = identity;
@@ -140,6 +112,7 @@ export class HostProcessService {
       if (p.cwd != null && typeof p.cwd !== "string") throw new Error("Invalid working directory");
       if (!identity.env) throw new Error("Missing prepared process environment");
       const env = identity.env;
+      physical?.started();
       const pty = spawn(p.command[0] as string, p.command.slice(1) as string[], { ...dimensions, cwd: p.cwd as string ?? homedir(), env, name: "xterm-256color" });
       while (this.sessions.size >= TERMINAL_RESOURCE_LIMITS.retainedPerHost) {
         const exited = [...this.sessions].find(([, s]) => s.phase === "exited");
@@ -168,6 +141,7 @@ export class HostProcessService {
       });
       pty.onExit(({ exitCode }) => {
         session.phase = "exited"; session.exitCode = exitCode;
+        physical?.exited();
         clearTimeout(session.killTimer);
         this.emit("process/exited", { processHandle: id, exitCode });
       });

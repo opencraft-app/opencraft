@@ -1,5 +1,7 @@
 #!/usr/bin/env node
+import { buildAssetsRuntime } from './package-assets-runtime.mjs';
 import { buildServerSpacesRuntime } from './package-server-spaces-runtime.mjs';
+import { buildOwnerWorkers } from './owner-workers.mjs';
 import { buildConnectedAgentHistoryRuntime } from './package-connected-agent-history-runtime.mjs';
 import { buildDshRoutingRuntime } from './package-dsh-routing-runtime.mjs';
 import { buildTranscriptCacheRuntime } from './package-transcript-cache-runtime.mjs';
@@ -49,10 +51,12 @@ export function headlessWebHostDefinitions() {
 
 export async function buildHeadlessBundle(output, { headlessEntry = join(repositoryRoot, "apps/headless-server/src/headless-server.mjs"), additionalGitRuntimeEntries = [], assistantEntry = join(repositoryRoot,'apps/personal-assistant/src/runtime/assistant-server.mjs') } = {}) {
   await mkdir(dirname(output), { recursive: true });
+  await buildAssetsRuntime(dirname(output),{headless:true});
   await cp(join(repositoryRoot, 'scripts/packaging/craft-plugin.mjs'), join(dirname(output), 'craft-plugin.mjs'));
   await build({ entryPoints: [join(repositoryRoot, "apps/headless-server/src/remote-browser/state.worker.ts")], outfile: join(dirname(output), "browser-state-worker.mjs"), bundle: true, platform: "node", format: "esm", target: "node26", logLevel: "warning" });
   await buildTranscriptCacheRuntime(dirname(output));
   await build({entryPoints:[fileURLToPath(new URL('../../packages/web-push-node/src/store.worker.ts',import.meta.url))],outfile:join(dirname(output),'push-storage-worker.mjs'),bundle:true,platform:'node',format:'esm',target:'node26',logLevel:'warning',banner:{js:"import { createRequire } from 'node:module'; const require=createRequire(import.meta.url);"}});
+  await buildOwnerWorkers(dirname(output));
   await buildServerSpacesRuntime(dirname(output));
   // The bundle's Codex bridge gateway keeps its receipt inbox in the Engine Host storage worker.
   await build({entryPoints:[join(repositoryRoot,'apps/agent-bridge-host/src/storage.worker.ts')],outfile:join(dirname(output),'storage.worker.mjs'),bundle:true,platform:'node',format:'esm',target:'node26',logLevel:'warning',banner:{js:"import { createRequire } from 'node:module'; const require=createRequire(import.meta.url);"}});
@@ -119,13 +123,9 @@ async function copyRuntimeModules(stageRoot) {
     await mkdir(dirname(target), { recursive: true });
     await cp(resolve(sourceBase, entry.from), target);
   }
+  // The DSH bridge ships; the DSH runtime does not. A server that installs DSH
+  // points OPENCRAFT_DSH_EXECUTABLE at it; otherwise the Host runs without it.
   await buildDshCapabilityPlugin(join(stageRoot, 'runtime/dsh/opencraft-capability-plugin.mjs'));
-  await cp(join(repositoryRoot, "runtime/dsh/package.json"), join(stageRoot, "runtime/dsh/package.json"));
-  await cp(join(repositoryRoot, "runtime/dsh/package-lock.json"), join(stageRoot, "runtime/dsh/package-lock.json"));
-  await cp(join(repositoryRoot, "runtime/dsh/node_modules"), join(stageRoot, "runtime/dsh/node_modules"), {
-    recursive: true,
-    verbatimSymlinks: true,
-  });
   await mkdir(join(stageRoot, "runtime/node_modules"), { recursive: true });
   await cp(join(repositoryRoot, "node_modules/node-pty"), join(stageRoot, "runtime/node_modules/node-pty"), {
     recursive: true,
@@ -177,7 +177,6 @@ export async function packageHeadlessLinux(composition = {}) {
   }
   const require = createRequire(import.meta.url);
   if (typeof require("node-pty").spawn !== "function") throw new Error("Linux node-pty is unavailable");
-  await run("npm", ["run", "prepare:dsh-runtime"]);
   await run("npm", ["ci", "--prefix", join(repositoryRoot, "runtime/codex"), "--workspaces=false", "--omit=dev", "--no-audit", "--no-fund"]);
   await run("npm", ["run", process.env.OPENCRAFT_CONTAINER_WEB_SCRIPT || "build:web:release"], {
     env: {

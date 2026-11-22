@@ -1,14 +1,18 @@
-import { closeSync, readdirSync, readFileSync, readlinkSync } from "node:fs";
+import { close as closeDescriptor } from "node:fs";
+import { readdir, readFile, readlink } from "node:fs/promises";
+import { promisify } from "node:util";
+
+const closeFd = promisify(closeDescriptor);
 
 const O_CLOEXEC = 0o2000000;
 
 /** Inodes of listening TCP sockets on this host; none is the daemon's own before it listens. */
-function tcpListeners(proc: string): Set<string> {
+async function tcpListeners(proc: string): Promise<Set<string>> {
   const inodes = new Set<string>();
   for (const table of [`${proc}/net/tcp`, `${proc}/net/tcp6`]) {
     let lines: string[];
     try {
-      lines = readFileSync(table, "utf8").split("\n").slice(1);
+      lines = (await readFile(table, "utf8")).split("\n").slice(1);
     } catch {
       continue;
     }
@@ -33,11 +37,11 @@ function tcpListeners(proc: string): Set<string> {
  * macOS spawns with POSIX_SPAWN_CLOEXEC_DEFAULT and inherits nothing extra.
  * Returns the descriptors it closed.
  */
-export function closeInheritedDescriptors(platform: NodeJS.Platform = process.platform, proc = "/proc"): number[] {
+export async function closeInheritedDescriptors(platform: NodeJS.Platform = process.platform, proc = "/proc"): Promise<number[]> {
   if (platform !== "linux") return [];
   let entries: string[];
   try {
-    entries = readdirSync(`${proc}/self/fdinfo`);
+    entries = await readdir(`${proc}/self/fdinfo`);
   } catch {
     return [];
   }
@@ -48,7 +52,7 @@ export function closeInheritedDescriptors(platform: NodeJS.Platform = process.pl
     if (!Number.isSafeInteger(fd) || fd <= 2) continue;
     let flags: number;
     try {
-      const match = /^flags:\s*([0-7]+)$/mu.exec(readFileSync(`${proc}/self/fdinfo/${fd}`, "utf8"));
+      const match = /^flags:\s*([0-7]+)$/mu.exec(await readFile(`${proc}/self/fdinfo/${fd}`, "utf8"));
       if (!match) continue;
       flags = Number.parseInt(match[1]!, 8);
     } catch {
@@ -57,15 +61,15 @@ export function closeInheritedDescriptors(platform: NodeJS.Platform = process.pl
     if (flags & O_CLOEXEC) {
       let target: string;
       try {
-        target = readlinkSync(`${proc}/self/fd/${fd}`);
+        target = await readlink(`${proc}/self/fd/${fd}`);
       } catch {
         continue;
       }
       const socket = /^socket:\[(\d+)\]$/u.exec(target)?.[1];
-      if (!socket || !(listeners ??= tcpListeners(proc)).has(socket)) continue;
+      if (!socket || !(listeners ??= await tcpListeners(proc)).has(socket)) continue;
     }
     try {
-      closeSync(fd);
+      await closeFd(fd);
       closed.push(fd);
     } catch {
       /* already closed */

@@ -342,11 +342,26 @@ and downloadable Actions artifact after this subtree reaches the standalone
 GitHub mirror; the nested workflow does not run downstream. The local
 requirements and install command are in `apps/mobile/README.md`.
 
-The public Android release target uses the public Expo configuration (the legacy
-development identifier remains `dev.opencraft.workbench`). It requires a
+The public Android release target builds the published application ID
+`app.opencraft`, the same identifier as the iOS TestFlight app; development-key
+builds keep `dev.opencraft.workbench` as a separate installation. It requires a
 repository-external production keystore, verifies the package ID and APK
 signature against that keystore, and writes both the APK and filing values.
-It never falls back to the internal development key. Private the downstream product release IDs,
+It never falls back to the internal development key. `OPENCRAFT_ANDROID_VERSION_CODE`
+overrides the `app.json` versionCode and the APK's version is verified after the
+build. `.github/workflows/desktop-prerelease.yml` calls
+`.github/workflows/android-release-apk.yml`, which signs with the `android-release`
+Environment's key and derives the versionCode from the beta tag, so every GitHub
+pre-release carries `OpenCraft-<version>-android-arm64.apk` in its manifest.
+The same release uploads its commit to TestFlight through
+`.github/workflows/ios-testflight.yml`, without waiting for beta review, and
+attaches `OpenCraft-<version>-ios-unsigned.ipa` from
+`.github/workflows/ios-unsigned-ipa.yml` for people who sign it themselves. Both Android
+workflows restore Gradle distributions and resolved dependencies keyed by the
+lockfile, so a dependency download outage does not fail a warm build. The
+release job runs only on main, and GitHub scopes pull request caches to their
+own merge ref, so it restores only what main runs saved; build outputs are
+never cached. Private the downstream product release IDs,
 edition selection and original artifact names belong to the explicit downstream
 `products/<product>` build commands; public APK/IPA commands do not select that product.
 `OPENCRAFT_NATIVE_ARTIFACT_NAME` is an optional trusted filename prefix, defaulting
@@ -358,13 +373,23 @@ signing; `expo-ios-bundle` does not produce an IPA.
 
 `electron-macos-universal-release` is an orchestrated delivery target rather
 than a single-host matrix command. `.github/workflows/macos-universal-release.yml`
-assembles arm64 on `macos-15` and x64 on `macos-15-intel`, merges only after both
-native packages pass, then enters the `macos-release` Environment for signing,
-notarization and final packaging. Manual runs are accepted only from `main`;
-version tags matching `v*` additionally publish a GitHub Release. A lightweight
-credential check in the same Environment runs before either native build, so
-missing Secrets fail without consuming macOS build time. Configure the Environment
-to allow only the `main` branch and `v*` tags.
+assembles arm64 on `macos-15` and x64 on `macos-15-intel`. Both jobs explicitly use
+official Electron at the same pinned upstream version via
+`OPENCRAFT_ELECTRON_STOCK_DESKTOP=1`. The workflow merges both native apps,
+then signs, notarizes and packages the result in the `macos-release` Environment.
+Manual runs from `main` produce Actions artifacts. The
+[`Desktop pre-release`](../../.github/workflows/desktop-prerelease.yml) workflow
+calls the same macOS job and stages its output alongside the Linux AppImage and
+Windows installer/ZIP from that commit. Dispatch from `main` with a new
+`vX.Y.Z-beta.N` tag matching the desktop package's native version. The default
+`publish=false` stages a candidate artifact. Use `publish=true` to publish that
+run's verified candidate. The publisher checks the manifest, uploads to a
+draft, verifies the downloaded bytes, then publishes the draft and checks the
+public assets again. Rerun failed publication jobs on the original run to reuse
+its staged artifacts. The stable npm release keeps its own stable tag contract.
+
+A lightweight credential check in the `macos-release` Environment runs before
+either native build. Client distribution runs only from `main`.
 
 The standalone core must not resolve downstream-parent `file:` dependencies. The downstream agent, chat-client and Collaboration snapshots now
 belong to downstream `products/<product>/packages`, with their generator and checks in
@@ -424,8 +449,10 @@ Developer ID signature, stapled notarization ticket, Gatekeeper assessment,
 DMG signature/image and ZIP integrity, then emits SHA-256 checksums. The final
 signed DMG is separately submitted to Apple; only an `Accepted` result permits
 stapling. Its ticket and Gatekeeper assessment must pass before checksums and
-artifact upload. The same final-DMG smoke test copies the app to an isolated
-profile, checks its real renderer and retains logs/a screenshot as
+artifact upload. The final-DMG smoke test copies the app to an isolated
+profile, checks its bundled Codex executable and sends a complete turn through
+the real renderer port and packaged Daemon using an isolated Codex fixture.
+It records the verified DMG hash and retains logs and a screenshot as
 `opencraft-macos-universal-smoke-<sha>` for three days. Only the final DMG,
 app ZIP and their checksums are delivered;
 intermediate update metadata/blockmaps are not published by this workflow.

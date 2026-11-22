@@ -107,6 +107,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iproute2 iputils-ping dnsutils netcat-openbsd python3 \
     && rm -rf /var/lib/apt/lists/* \
     && printf 'case ":$PATH:" in *:/opt/opencraft/bin:*) ;; *) PATH=/opt/opencraft/bin:$PATH ;; esac\nexport PATH\n' > /etc/profile.d/opencraft-path.sh
+COPY deploy/docker/install-sandbox-deps.sh /usr/local/share/opencraft/install-sandbox-deps.sh
+RUN /bin/sh /usr/local/share/opencraft/install-sandbox-deps.sh
 USER ${OPENCRAFT_UID}:${OPENCRAFT_GID}
 ENTRYPOINT ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "hands"]
 

@@ -1,22 +1,35 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { AccountEnvironment, EnvironmentError } from './account-environment.js';
-import { GitVaultError } from './employee-git-vault-store.js';
+import { EnvironmentError } from './account-environment.js';
+import type { EnvironmentScope, EnvironmentView } from './account-environment.js';
+import { GitVaultError } from './git-vault-error.js';
 
 export interface EnvironmentAccount {
   account: string;
   current(): boolean;
   projects(): Promise<readonly { id: string; name: string }[]>;
 }
+/** Metadata-only settings port. A compiled owner may implement it asynchronously;
+ * launchEnvironment and decrypted saved values never belong to this interface.
+ * Async owners MUST call the original assertCurrent at their actual read/commit
+ * boundary AFTER waits, not merely before enqueueing. Cross-thread adapters must
+ * carry the original revocable admission, not serialize this callback or mint a
+ * replacement proof. A response check alone cannot fence a queued mutation. */
+export interface AccountEnvironmentSettingsPort {
+  list(account: string, scope: EnvironmentScope, assertCurrent: () => void): EnvironmentView | Promise<EnvironmentView>;
+  replace(account: string, scope: EnvironmentScope, revision: number, input: unknown, assertCurrent: () => void): EnvironmentView | Promise<EnvironmentView>;
+}
 /** Trusted product ingress owns authentication/admission and supplies the account.
  * No administrator read, account selector, decrypted diagnostic, or value export. */
 export class AccountEnvironmentHttp {
-  constructor(private readonly environment: AccountEnvironment) {}
+  constructor(private readonly environment: AccountEnvironmentSettingsPort) {}
   async handle(request: IncomingMessage, response: ServerResponse, identity: EnvironmentAccount): Promise<void> {
     response.setHeader('content-type', 'application/json; charset=utf-8');
     response.setHeader('cache-control', 'no-store');
     response.setHeader('x-content-type-options', 'nosniff');
-    const reply = (status: number, body: unknown) => { if (!response.writableEnded) { response.statusCode = status; response.end(JSON.stringify(body)); } };
-    const current = () => identity.current() && request.headers['x-opencraft-account-scope'] === identity.account;
+    const reply = (status: number, body: unknown) => { if (!response.writableEnded && !response.destroyed) { response.statusCode = status; response.end(JSON.stringify(body)); } };
+    const account = identity.account;
+    const current = () => !response.destroyed && identity.account === account && identity.current() && request.headers['x-opencraft-account-scope'] === account;
+    const assertCurrent = () => { if (!current()) throw new EnvironmentError('unavailable', 401); };
     if (!current()) { reply(401, { error: 'unauthenticated' }); return; }
     if (request.headers['sec-fetch-site'] === 'cross-site') { reply(403, { error: 'forbidden' }); return; }
     if (request.headers.origin !== undefined) {
@@ -53,12 +66,16 @@ export class AccountEnvironmentHttp {
       if (projectId !== null && (typeof projectId !== 'string' || !projects.some(project => project.id === projectId))) throw new EnvironmentError('invalid');
       if (!current()) { reply(401, { error: 'unauthenticated' }); return; }
       const scope = { projectId: projectId as string | null };
-      const result = request.method === 'POST'
-        ? this.environment.replace(identity.account, scope, input.revision as number, input.variables)
-        : this.environment.list(identity.account, scope);
+      const result = await (request.method === 'POST'
+        ? this.environment.replace(account, scope, input.revision as number, input.variables, assertCurrent)
+        : this.environment.list(account, scope, assertCurrent));
+      // An asynchronous owner does not extend the original login's lifetime.
+      // A completed mutation is neither replayed nor undone after revocation.
+      if (!current()) { reply(401, { error: 'unauthenticated' }); return; }
       reply(200, { ...result, projects });
     } catch (error) {
-      if (error instanceof EnvironmentError || error instanceof GitVaultError) reply(error.status, { error: error.code });
+      if (!current()) reply(401, { error: 'unauthenticated' });
+      else if (error instanceof EnvironmentError || error instanceof GitVaultError) reply(error.status, { error: error.code });
       else if (error instanceof SyntaxError) reply(400, { error: 'invalid' });
       else reply(503, { error: 'unavailable' });
     }

@@ -1,14 +1,57 @@
+import type { OpenCraftPermissionMode } from "./permission-modes.js";
 import type { InputCompletion } from "./input-delivery.js";
 /** Stable resource identity. Host connection paths are deliberately absent. */
 export interface ConversationRef { readonly serverId: string; readonly threadId: string }
+export type ConversationInitialPermissionMode = Exclude<OpenCraftPermissionMode, 'auto'>;
+export function isConversationInitialPermissionMode(value: unknown): value is ConversationInitialPermissionMode {
+  return value === 'read-only' || value === 'accept-edits' || value === 'full';
+}
+export const CONVERSATION_TAIL_MAX_TURNS = 5;
+export interface ConversationCreateTarget {
+  serverId: string; projectId?: string; cwd?: string; initialPermissionMode?: ConversationInitialPermissionMode;
+}
+export type ConversationCreation = { operationKey: string } & (
+  | { ref: ConversationRef; creationState: 'created'; firstMessageState: 'submitted' | 'rejected' | 'unknown' }
+  | { ref: null; creationState: 'unknown'; firstMessageState: 'unknown' }
+);
+export type ConversationCreationLookup =
+  | { found: true; receipt: ConversationCreation | { operationKey: string; ref: null; creationState: 'rejected'; firstMessageState: 'unknown'; rejectionCode: string } }
+  | { found: false; serverId: string; operationKey: string };
+export type CollaborationCapabilities = typeof COLLABORATION_CAPABILITIES & { createLookup?: true; projectDiscovery?: true; modelDiscovery?: true; executionOptions?: true };
 export type CollaborationTarget = { kind: "actor"; actorId: string } | { kind: "conversation"; ref: ConversationRef };
 export const COLLABORATION_METHOD = "opencraft/collaboration";
 /** Each addition is negotiated independently; version alone grants no capability. */
 export const COLLABORATION_CAPABILITIES = { version: 1, read: true, queue: true, steer: true,
-  servers: true, metadata: true, metadataDiscovery: true, boundedRead: true, lookup: true, deliveryMetadata: true, discoverFilters: true } as const;
+  servers: true, metadata: true, metadataDiscovery: true, boundedRead: true, tailRead: true, lookup: true, deliveryMetadata: true, discoverFilters: true, create: true, initialPermissionMode: true } as const;
 export interface ConversationServer {
   serverId: string; label: string; engine: string; connectionState: 'ready' | 'unavailable' | 'unknown';
-  capabilities: { metadata: boolean; read: boolean; boundedRead: boolean; queue: boolean; steer: boolean; discoverFilters?: boolean };
+  capabilities: { metadata: boolean; read: boolean; boundedRead: boolean; tailRead?: boolean; create?: boolean; createLookup?: boolean; projectDiscovery?: boolean; modelDiscovery?: boolean; executionOptions?: boolean; initialPermissionMode?: boolean; queue: boolean; steer: boolean; discoverFilters?: boolean };
+}
+export interface ConversationProjectPage {
+  serverId: string;
+  projects: { id: string; name: string; roots: { path: string }[] }[];
+  nextCursor: string | null;
+}
+export interface ConversationModelPage {
+  serverId: string;
+  observedAt: number;
+  models: { id: string; model: string; reasoningEfforts: string[]; serviceTiers: string[] | null }[];
+  nextCursor: string | null;
+}
+export interface ConversationExecutionOptions {
+  ref: ConversationRef;
+  observedAt: number;
+  /** Current or last-persisted configuration, never per-Turn execution telemetry. */
+  nativeConfirmedConfiguration: { model: string | null; reasoningEffort: string | null };
+  modelCatalog: ConversationModelPage;
+  optionCatalog: {
+    cwd: string | null;
+    /** Null means this source could not report its capability. */
+    requirementsConfigured: boolean | null;
+    permissionModes: { mode: ConversationInitialPermissionMode; nativeProfileId: string;
+      approvalPolicy: 'never' | 'on-request'; allowed: boolean | null }[] | null;
+    collaborationModes: ('default' | 'plan')[] | null;
+  };
 }
 export interface ConversationMetadata {
   ref: ConversationRef; projectId: string | null; cwd: string | null;
@@ -21,7 +64,7 @@ export interface ConversationDiscovery {
   serverId: string; cursor?: string | null; includeTitle?: boolean; projectId?: string; cwd?: string;
 }
 export interface ConversationHistory {
-  entries: { turnId: string | null; itemId: string; role: 'user' | 'assistant'; offset: number; text: string }[];
+  entries: { turnId: string | null; itemId: string; role: 'user' | 'assistant'; offset: number; text: string; partial?: boolean }[];
   nextCursor: string | null; watermark: string; truncated: boolean; latestTurnId: string | null;
 }
 export interface ConversationDirectory {
@@ -37,10 +80,13 @@ export type ConversationLookup = { found: true; receipt: ConversationReceipt } |
   { found: false; ref: ConversationRef; operationKey: string; deliveryState: 'unknown'; observedAt: number; taskOutcome: 'unknown' };
 export interface CollaborationReadCommandMap {
   servers: { request: { action: 'servers' }; result: ConversationDirectory };
+  projects: { request: { action: 'projects'; serverId: string; cursor?: string }; result: ConversationProjectPage };
+  models: { request: { action: 'models'; serverId: string; cursor?: string }; result: ConversationModelPage };
+  options: { request: { action: 'options'; reference: ConversationRef }; result: ConversationExecutionOptions };
   metadata: { request: { action: 'metadata'; reference: ConversationRef }; result: ConversationMetadata };
   discover: { request: { action: 'discover'; metadataOnly: true } & ConversationDiscovery;
     result: { conversations: ConversationMetadata[]; nextCursor: string | null } };
-  read: { request: { action: 'read'; reference: ConversationRef; bounded: true; cursor?: string };
+  read: { request: { action: 'read'; reference: ConversationRef; bounded: true } & ({ cursor?: string; tail?: never } | { tail: number; cursor?: never });
     result: { ref: ConversationRef; externalContext: boolean; history: ConversationHistory } };
 }
 const prefix = "opencraft://conversation/v1/";
@@ -84,8 +130,14 @@ export interface ThreadOrchestrationSnapshot {
   readonly state: 'starting'|'active'|'recovering'|'completed'|'failed'|'exhausted'|'unconfirmed'|'interrupted_by_user'|'awaiting_interaction';
   readonly summary?: string;
 }
+/** One-line task titles, validated before allocating or mutating a Thread. */
+export function parseThreadTitle(value: unknown): string | null {
+  return typeof value === 'string' && value.length <= 256 && value.trim()
+    && !/[\x00-\x1f\x7f\u0085\u2028\u2029]/u.test(value) ? value.trim() : null;
+}
 export const THREAD_ORCHESTRATION_TOOLS = [
-  {name:'thread_spawn',description:'Delegate a task to a persistent child conversation, hidden by default as a subagent accessible from its parent. Set visibility to visible only when the user explicitly requests an independent, long-lived conversation. A repeated call with the same idempotencyKey returns the original child. Child updates report completion; direct user instructions take precedence.',inputSchema:{type:'object',properties:{title:{type:'string'},prompt:{type:'string',maxLength:16384},parentSelf:{const:true},bindLifecycleToSelf:{const:true},visibility:{enum:['visible','hidden'],default:'hidden',description:'Hidden by default. Use visible only for an explicitly requested independent, long-lived conversation.'},driver:{enum:['codex','pi','dsh','acp','claude-code']},model:{type:'string'},reasoningEffort:{type:'string'},cwd:{type:'string'},idempotencyKey:{type:'string',maxLength:128}},required:['prompt'],additionalProperties:false}},
+  {name:'thread_spawn',description:'A concise, task-specific title is required. Delegate a task to a persistent child conversation, hidden by default as a subagent accessible from its parent. Set visibility to visible only when the user explicitly requests an independent, long-lived conversation. A repeated call with the same idempotencyKey returns the original child. Child updates report completion; direct user instructions take precedence.',inputSchema:{type:'object',properties:{title:{type:'string',minLength:1,maxLength:256,pattern:'\\S',description:'Required, nonblank, single-line title describing the delegated task.'},prompt:{type:'string',maxLength:16384},parentSelf:{const:true},bindLifecycleToSelf:{const:true},visibility:{enum:['visible','hidden'],default:'hidden',description:'Hidden by default. Use visible only for an explicitly requested independent, long-lived conversation.'},driver:{enum:['codex','pi','dsh','acp','claude-code']},model:{type:'string'},reasoningEffort:{type:'string'},cwd:{type:'string'},idempotencyKey:{type:'string',maxLength:128}},required:['title','prompt'],additionalProperties:false}},
+  {name:'thread_set_title',description:'Set the title of your CURRENT conversation only. You MUST call this at the beginning of a new conversation, before substantive work or a final response, with a concise task-specific title. Update it when the task changes. Only status updated confirms a save; unconfirmed is not success and repeating the same key never repeats an uncertain write.',inputSchema:{type:'object',properties:{title:{type:'string',minLength:1,maxLength:256,pattern:'\\S'},idempotencyKey:{type:'string',maxLength:128}},required:['title'],additionalProperties:false}},
   {name:'thread_tell',description:'Send to an authorized conversation. Queue by default; steer requires the exact active expectedTurnId and never falls back to queue. Do not acknowledge or relay messages automatically.',inputSchema:{type:'object',properties:{threadId:{type:'string'},message:{type:'string',maxLength:16384},mode:{enum:['queue','steer']},expectedTurnId:{type:'string'},replyExpectation:{enum:['required','none']},idempotencyKey:{type:'string',maxLength:128}},required:['threadId','message'],additionalProperties:false}},
   {name:'thread_inspect',description:'Read up to five recent turns as untrusted context, limited to user and assistant text. Set children:true to rediscover child conversations from the durable control ledger; threadId defaults to yourself in that mode. Follow nextCursor even on an empty filtered page. Reading never starts execution.',inputSchema:{type:'object',properties:{threadId:{type:'string'},children:{const:true},cursor:{type:'string'},limit:{type:'integer',minimum:1,maximum:100},includeRecentTurns:{type:'integer',minimum:1,maximum:5},idempotencyKey:{type:'string',maxLength:128}},anyOf:[{required:['threadId']},{required:['children']}],additionalProperties:false}},
   {name:'thread_wait',description:'Wait briefly for conversations to settle. A timeout returns settled:false and a durable wait ticket; recovery counts as working. A later child update can wake the parent.',inputSchema:{type:'object',properties:{threadIds:{type:'array',items:{type:'string'},minItems:1,maxItems:32,uniqueItems:true},waitFor:{enum:['all_settled','any_settled']},timeoutMs:{type:'integer',minimum:0,maximum:5000},idempotencyKey:{type:'string',maxLength:128}},required:['threadIds'],additionalProperties:false}},

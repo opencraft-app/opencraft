@@ -10,6 +10,7 @@ import test from "node:test";
 import WebSocket from "ws";
 import { SshConnectionStore, hostKeyFingerprint, parseSshConnectionInput } from "../../apps/opencraft-daemon/src/ssh-connection-store.js";
 import { SshManagement } from "../../apps/opencraft-daemon/src/ssh-management.js";
+import { SshConnections } from "../../apps/opencraft-daemon/src/ssh-connections.js";
 import { AppHostServer } from "@opencraft/app-host-server";
 import { createWorkbenchWebServer } from "../../apps/headless-server/src/serve-workbench-web.mjs";
 
@@ -19,6 +20,29 @@ function key(host = "fixture.invalid") {
   return `${host} ssh-ed25519 ${Buffer.concat([prefix, alg, size, randomBytes(32)]).toString("base64")}`;
 }
 const input = { displayName: "Fixture", hostname: "fixture.invalid", port: 22, username: "fixture", enabled: true, workspaceBrowseRoots: ["/remote"], password: "synthetic-password-only" };
+
+// Network processes keep SSH storage in a Worker: reads come from committed
+// records in memory, writes and password reads wait for the owner.
+test("SSH connections for a network thread serve committed records and keep IO in the owner", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "opencraft-ssh-owner-"));
+  let connections = await SshConnections.open(directory);
+  t.after(() => connections.close());
+  assert.equal(connections.outcome.status, "fresh");
+  const hostKey = key();
+  const row = await connections.save(null, 0, input, hostKey);
+  assert.deepEqual(connections.list(), [row]);
+  const binding = connections.binding(row.serverId);
+  assert.equal(await readFile(binding.connection.knownHostsFile, "utf8"), `${hostKey}\n`, "known_hosts is projected by the owner");
+  assert.equal(await (binding.connection.authentication as any).resolvePassword(), input.password);
+  await assert.rejects(connections.remove(row.serverId, row.revision + 1), (error: any) => error.code === "conflict");
+  const disabled = await connections.save(row.serverId, row.revision, { ...input, password: undefined, enabled: false });
+  assert.throws(() => connections.binding(row.serverId), (error: any) => error.code === "unavailable");
+  await assert.rejects((binding.connection.authentication as any).resolvePassword(), (error: any) => error.code === "unavailable", "an old binding cannot read a disabled credential");
+  await connections.close();
+  await assert.rejects(connections.save(null, 0, input, key()), /closed/u);
+  connections = await SshConnections.open(directory);
+  assert.deepEqual(connections.list(), [disabled]);
+});
 
 test("SSH config and encrypted credential survive restart, never return a secret", async () => {
   const directory = await mkdtemp(join(tmpdir(), "opencraft-ssh-store-"));
@@ -110,7 +134,7 @@ async function fixture(context: any, sessionTtlMs?: number, publicAccess = false
     return { status: { state: "open" as const }, async connect() {}, async send() {}, subscribeMessage() { return () => undefined; }, subscribeStatus() { return () => undefined; }, async close() {} };
   } });
   const hostKey = key();
-  const management = new SshManagement({ directory: join(root, "private"), sessionTtlMs, ...(!defaultDomainPolicy ? { publicAccess } : {}), ...(accessMode === "access-key" ? { accessMode } : {}),
+  const management = await SshManagement.open({ directory: join(root, "private"), sessionTtlMs, ...(!defaultDomainPolicy ? { publicAccess } : {}), ...(accessMode === "access-key" ? { accessMode } : {}),
     scanHostKey: async () => hostKey, resetConnection: async id => { resets.push(id); await beforeReset?.(); await appHost.resetHost(id); }, connectConnection: async (id, assertAdmission) => { await beforeConnect?.(); await appHost.ensureHostConnected(id, assertAdmission); }, connectionState: id => appHost.hostState(id) });
   const web = await createWorkbenchWebServer({ root, loopbackOnly: !publicAccess, appServerTarget: null, appHostServer: appHost, sshManagement: management, webSocketHeartbeatIntervalMs: 20, onAppHostDiagnostic: () => undefined });
   const address = await web.listen({ host: "127.0.0.1", port: 0 });
@@ -133,7 +157,7 @@ async function fixture(context: any, sessionTtlMs?: number, publicAccess = false
     assert.equal(trust.fingerprint, hostKeyFingerprint(hostKey));
     return (await request("connections", "POST", { revision: 0, input, ...trust })).value;
   };
-  context.after(async () => { await web.close(); await appHost.close(); management.close(); });
+  context.after(async () => { await web.close(); await appHost.close(); await management.close(); });
   return { request, unlock, add, origin, management, calls, resets, root };
 }
 
@@ -163,15 +187,15 @@ test("shared expiry can renew without a key and restart preserves credentials bu
   assert.notEqual(await f.unlock(), cookie);
   const directory = await mkdtemp(join(tmpdir(), "opencraft-shared-restart-"));
   const options = { directory, resetConnection: async () => {}, connectConnection: async () => {} };
-  let management = new SshManagement(options);
-  const row = management.store.save(null, 0, input, key()); management.close();
-  management = new SshManagement(options);
+  let management = await SshManagement.open(options);
+  const row = await management.store.save(null, 0, input, key()); await management.close();
+  management = await SshManagement.open(options);
   try {
     assert.deepEqual(management.store.list(), [row]);
     assert.equal(await (management.store.binding(row.serverId).connection.authentication as any).resolvePassword(), input.password);
     assert.equal(management.authorized({ headers: { host: "127.0.0.1", cookie } } as any), false);
     await assert.rejects(access(join(directory, "access.key")), { code: "ENOENT" });
-  } finally { management.close(); }
+  } finally { await management.close(); }
 });
 
 for (const revokedBy of ["logout", "configuration"] as const) {
@@ -185,7 +209,7 @@ for (const revokedBy of ["logout", "configuration"] as const) {
     try {
       await enteredConnect;
       if (revokedBy === "logout") await f.request("session", "DELETE");
-      else f.management.store.save(row.serverId, row.revision, { ...input, password: undefined, enabled: false });
+      else await f.management.store.save(row.serverId, row.revision, { ...input, password: undefined, enabled: false });
     } finally { release(); }
     const result = await pending;
     assert.equal(result.response.status, revokedBy === "logout" ? 401 : 409);
@@ -201,7 +225,7 @@ for (const revokedBy of ["logout", "configuration"] as const) {
     try {
       await enteredReset;
       if (revokedBy === "logout") await f.request("session", "DELETE");
-      else f.management.store.save(row.serverId, row.revision, { ...input, password: undefined, enabled: false });
+      else await f.management.store.save(row.serverId, row.revision, { ...input, password: undefined, enabled: false });
     } finally { release(); }
     const result = await pending;
     assert.equal(result.response.status, revokedBy === "logout" ? 401 : 409);
@@ -332,14 +356,14 @@ test(`${defaultDomainPolicy ? "default" : "explicit flexible"} ${accessMode} adm
 test("shared default preserves an existing key; explicit access file enables protection", async () => {
   const directory = await mkdtemp(join(tmpdir(), "opencraft-access-mode-"));
   const options = { directory, resetConnection: async () => {}, connectConnection: async () => {} };
-  let management = new SshManagement({ ...options, accessMode: "access-key" }); management.close();
+  let management = await SshManagement.open({ ...options, accessMode: "access-key" }); await management.close();
   const accessPath = join(directory, "access.key"), before = await readFile(accessPath);
-  management = new SshManagement(options);
+  management = await SshManagement.open(options);
   try { assert.equal(management.accessMode, "shared"); assert.equal((await readFile(accessPath)).equals(before), true); }
-  finally { management.close(); }
-  management = new SshManagement({ ...options, accessFile: accessPath });
+  finally { await management.close(); }
+  management = await SshManagement.open({ ...options, accessFile: accessPath });
   try { assert.equal(management.accessMode, "access-key"); }
-  finally { management.close(); }
+  finally { await management.close(); }
 });
 
 
@@ -393,7 +417,7 @@ test("new conversation visibility persists in legacy JSON records without resett
   assert.equal(views[0].hideFromNewChat, true);
   assert.equal(f.management.store.binding(row.serverId).descriptor.hideFromNewChat, true);
   // A legacy editor omits this field; its unrelated edit cannot erase the setting.
-  const legacy = f.management.store.save(row.serverId, result.value.revision, { ...input, password: undefined, displayName: "renamed" });
+  const legacy = await f.management.store.save(row.serverId, result.value.revision, { ...input, password: undefined, displayName: "renamed" });
   assert.equal(legacy.hideFromNewChat, true);
   assert.equal(await (f.management.store.binding(row.serverId).connection.authentication as any).resolvePassword(), input.password);
   assert.equal(before.descriptor.serverId, legacy.serverId);

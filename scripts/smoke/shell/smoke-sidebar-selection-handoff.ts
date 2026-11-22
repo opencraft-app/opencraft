@@ -43,7 +43,7 @@ const returnProbe=${returnProbe};
 const contributions={subscribe:()=>()=>{},getSnapshot:()=>emptyContributions},emptyContributions={settingsPages:[],views:[],navigation:[]};
 const renderers={subscribe:()=>()=>{},getSnapshot:()=>emptyContributions,resolve:()=>null};
 const navigationPresentation=returnProbe?{...nav,attachDeparture(driver){return nav.attachDeparture((id,prepared)=>{const result=driver(id,prepared);if(!window.holdReturn)return result;return new Promise(resolve=>{window.releaseReturn=()=>result.then(resolve);});});}}:nav;
-const navigation={layout:'unified',actions:[{id:'chat',title:'Chat',icon:'chat',onInvoke:()=>{}}],settingsActive:false,onOpenSettings:()=>nav.openSettings(),account:{snapshot:{phase:'anonymous',name:null,avatarUrl:null},onOpen:()=>{},onRefresh:async()=>{},onSignOut:async()=>{}}};
+const navigation={actions:[{id:'chat',title:'Chat',icon:'chat',onInvoke:()=>{}}],settingsActive:false,onOpenSettings:()=>nav.openSettings(),account:{snapshot:{phase:'anonymous',name:null,avatarUrl:null},onOpen:()=>{},onRefresh:async()=>{},onSignOut:async()=>{}}};
 function App(){
  const route=useSyncExternalStore(nav.subscribe,nav.getSnapshot);
  const pending=useSyncExternalStore(nav.subscribePendingLocation,nav.getPendingLocation);

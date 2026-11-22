@@ -4,12 +4,13 @@ import { readFile } from 'node:fs/promises';
 import { readPrivateJson } from '../../packages/identity-core/src/node.js';
 import { HubNetwork } from '../../packages/hub-network/src/node.js';
 
+import { HubStore } from '../../packages/hub-network/src/store-file.js';
 // Offline machine-owner recovery/bootstrap. The running owner holds an exclusive
 // state lock; this command never races or impersonates a browser administrator.
 const [statePath, commandFile] = process.argv.slice(2);
 if (!statePath || statePath !== resolve(statePath)) throw new Error('Usage: hub-admin /absolute/hub-network.json [/absolute/private-command.json]');
 const input = commandFile ? await readPrivateJson(commandFile) as Record<string, unknown> : null;
-const node = new HubNetwork(statePath);
+const node = new HubNetwork(new HubStore(statePath));
 try {
   if (input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid Hub command');

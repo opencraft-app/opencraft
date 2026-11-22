@@ -1,12 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { constants, existsSync } from 'node:fs';
+import { constants } from 'node:fs';
 import { access, cp, lstat, mkdir, readdir, readFile, rename, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const exists = (path: URL | string) => access(path).then(() => true, () => false);
 async function privateDirectory(path: string) {
   await mkdir(path, { recursive: true, mode: 0o700 });
   const info = await lstat(path);
@@ -36,35 +37,41 @@ async function treeIdentity(directory: string, hash: ReturnType<typeof createHas
     else throw new Error('Unsupported terminal runtime asset');
   }
 }
+function runtimeHash(entry: Uint8Array, worker: Uint8Array) {
+  return createHash('sha256').update('terminal-pty-owner.mjs\0' + entry.byteLength + '\0').update(entry)
+    .update('terminal-admission-worker.mjs\0' + worker.byteLength + '\0').update(worker);
+}
 /** Retain the full native closure outside removable release directories. */
 export async function terminalOwnerCommand(directory: string) {
   const bundled = new URL('./terminal-pty-owner.mjs', import.meta.url);
-  if (!existsSync(bundled)) {
+  if (!await exists(bundled)) {
     const source = new URL('./terminal-pty-owner.ts', import.meta.url);
     await access(source, constants.R_OK);
     return ['--import', 'tsx', fileURLToPath(source), '--terminal-pty-owner'];
   }
   let native: string | undefined;
   const candidates = [new URL('./native/node-pty/package.json', import.meta.url), new URL('./node_modules/node-pty/package.json', import.meta.url)];
-  for (const candidate of candidates) if (existsSync(candidate)) { native = dirname(fileURLToPath(candidate)); break; }
+  for (const candidate of candidates) if (await exists(candidate)) { native = dirname(fileURLToPath(candidate)); break; }
   native ??= dirname(createRequire(import.meta.url).resolve('node-pty/package.json'));
-  const entry = await readFile(bundled), hash = createHash('sha256').update(entry);
+  const companion = new URL('./terminal-admission-worker.mjs', import.meta.url);
+  const entry = await readFile(bundled), worker = await readFile(companion), hash = runtimeHash(entry, worker);
   await treeIdentity(native, hash);
   const identity = hash.digest('hex'), root = join(directory, 'runtimes'), destination = join(root, identity);
   await mkdir(root, { recursive: true, mode: 0o700 });
-  if (!existsSync(destination)) {
+  if (!await exists(destination)) {
     const temporary = join(root, '.stage-' + randomUUID());
     await mkdir(join(temporary, 'node_modules'), { recursive: true, mode: 0o700 });
     try {
       await cp(fileURLToPath(bundled), join(temporary, 'terminal-pty-owner.mjs'));
+      await cp(fileURLToPath(companion), join(temporary, 'terminal-admission-worker.mjs'));
       await cp(native, join(temporary, 'node_modules/node-pty'), { recursive: true });
-      const verify = createHash('sha256').update(await readFile(join(temporary, 'terminal-pty-owner.mjs')));
+      const verify = runtimeHash(await readFile(join(temporary, 'terminal-pty-owner.mjs')), await readFile(join(temporary, 'terminal-admission-worker.mjs')));
       await treeIdentity(join(temporary, 'node_modules/node-pty'), verify);
       if (verify.digest('hex') !== identity) throw new Error('Terminal owner runtime changed during publication');
       await rename(temporary, destination).catch(error => { if (!['EEXIST', 'ENOTEMPTY'].includes(error.code)) throw error; });
     } finally { await rm(temporary, { recursive: true, force: true }); }
   }
-  const retained = createHash('sha256').update(await readFile(join(destination, 'terminal-pty-owner.mjs')));
+  const retained = runtimeHash(await readFile(join(destination, 'terminal-pty-owner.mjs')), await readFile(join(destination, 'terminal-admission-worker.mjs')));
   await treeIdentity(join(destination, 'node_modules/node-pty'), retained);
   if (retained.digest('hex') !== identity) throw new Error('Terminal owner runtime integrity check failed');
   return [join(destination, 'terminal-pty-owner.mjs'), '--terminal-pty-owner'];

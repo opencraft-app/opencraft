@@ -23,10 +23,12 @@ const initial=[
 {id:'parent',name:'项目改动讨论',pinned:true},
 {id:'child-review-00000001',parentThreadId:'parent',name:'Atlas',agentNickname:'Atlas'},
 {id:'child-design-00000002',parentThreadId:'parent',preview:'检查子会话标题与侧栏层级'},
-{id:'child-empty-00000003',parentThreadId:'parent',name:'reviewer · #00000003',agentRole:'reviewer'},
+{id:'child-empty-00000003',parentThreadId:'parent',agentRole:'reviewer'},
 {id:'grandchild-00000004',parentThreadId:'child-design-00000002',name:'超长子任务标题：检查触控窄侧栏下标题截断与操作按钮是否完整可达'},
-{id:'hidden',parentThreadId:'parent',visibility:'hidden',name:'隐藏子会话'}]
-.map((row,i)=>({...projectAppServerThread({name:null,preview:'',cwd:'/workspace',status:{type:'idle'},updatedAt:100-i,createdAt:90,parentThreadId:null,...row}),visibility:row.visibility,connectionHostId:'local',connectionHostLabel:'Local',...legacyDirectServerProjectionFromHost({hostId:'local',hostKind:'local',label:'Local'})}));
+{id:'hidden',parentThreadId:'parent',visibility:'hidden',name:'隐藏子会话'},
+{id:'disabled',name:'Unavailable pinned thread',pinned:true,interactionAvailable:false},
+{id:'other-section',name:'Conversation in collapsed Recent'}]
+.map((row,i)=>({...projectAppServerThread({name:null,preview:'',cwd:'/workspace',status:{type:'idle'},updatedAt:100-i,createdAt:90,parentThreadId:null,...row}),visibility:row.visibility,interactionAvailable:row.interactionAvailable,connectionHostId:'local',connectionHostLabel:'Local',...legacyDirectServerProjectionFromHost({hostId:'local',hostKind:'local',label:'Local'})}));
 const dates=location.search.includes('dates');
 const dateRows=[
 {id:'daily-parent',name:'每日处理',pinned:true},
@@ -40,7 +42,7 @@ const dateRows=[
 .map((row,i)=>({...projectAppServerThread({preview:'',cwd:'/workspace',status:{type:'idle'},updatedAt:100+i,createdAt:90,parentThreadId:null,...row}),connectionHostId:'local',connectionHostLabel:'Local',...legacyDirectServerProjectionFromHost({hostId:'local',hostKind:'local',label:'Local'})}));
 function Fixture(){const[open,setOpen]=useState(true),[active,setActive]=useState('parent');
 Object.assign(window,{selectChild:(id)=>setActive(id)});
-return <UiPreferencesProvider runtime={preferences}><AppShell navigation={{layout:'unified',settingsActive:false,onOpenSettings:()=>{},account:{snapshot:{phase:'anonymous',name:null,avatarUrl:null},onOpen:()=>{},onRefresh:async()=>{},onSignOut:async()=>{}},actions:[{id:'shell.home',title:'首页',icon:'home',onInvoke:()=>{}}]}} layoutScope='child-threads' sidebarOpen={open} sidebarWidth={335} onSidebarCollapse={()=>setOpen(false)} onSidebarExpand={()=>setOpen(true)} onSidebarResizeEnd={()=>{}} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} rightPanel={null} rightPanelOpen={false} rightPanelFullWidth={false} onRightPanelOpenChange={()=>{}}
+return <UiPreferencesProvider runtime={preferences}><AppShell navigation={{settingsActive:false,onOpenSettings:()=>{},account:{snapshot:{phase:'anonymous',name:null,avatarUrl:null},onOpen:()=>{},onRefresh:async()=>{},onSignOut:async()=>{}},actions:[{id:'shell.home',title:'首页',icon:'home',onInvoke:()=>{}}]}} layoutScope='child-threads' sidebarOpen={open} sidebarWidth={335} onSidebarCollapse={()=>setOpen(false)} onSidebarExpand={()=>setOpen(true)} onSidebarResizeEnd={()=>{}} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} rightPanel={null} rightPanelOpen={false} rightPanelFullWidth={false} onRightPanelOpenChange={()=>{}}
 header={<AppShellHeader title={null} project={null} sidebarOpen={open} rightPanelOpen={false} rightPanelFullWidth={false} showRightPanelAction={false} onToggleSidebar={()=>setOpen(!open)} onToggleRightPanel={()=>{}} onHome={()=>{}} canGoBack={false} canGoForward={false} onBack={()=>{}} onForward={()=>{}} navigationActions={['sidebar-toggle']}/>}
 floatingSidebarHeader={dock=><AppShellNavigationControls hostRole='transient' sidebarOpen={false} canGoBack={false} canGoForward={false} onToggleSidebar={dock} onHome={()=>{}} onBack={()=>{}} onForward={()=>{}} actions={['sidebar-toggle']}/>}
 leftPanel={<Sidebar threads={dates?dateRows:initial} activeHostId='local' activeThreadId={active} sidebarLayout={layout} onSelectThread={(_,id)=>setActive(id)} onNewTask={()=>{}} onOpenSettings={()=>{}} showStart={false} showFooter={false} showNewChat/>}>
@@ -119,6 +121,27 @@ try {
     await page.waitForFunction(()=>document.querySelector('[data-thread-id="child-review-00000001"] > .sidebar-activity-row .sidebar-activity-item')?.classList.contains('is-selected'));
     if(touch)await settledSidebar();
     await page.screenshot({path:output+'/'+(touch?'touch':'desktop')+'-'+theme+'.png'});
+    if (!touch) {
+      const draft = page.getByLabel('Main draft');
+      await draft.focus();
+      const choose = async (key: string, id: string) => {
+        await page.keyboard.press('Control+Shift+' + key);
+        await row(id).and(page.locator('[aria-current="page"]')).waitFor();
+      };
+      await choose('ArrowDown', 'child-design-00000002');
+      await choose('ArrowDown', 'grandchild-00000004');
+      await choose('ArrowDown', 'child-empty-00000003');
+      assert.equal(await row('disabled').isDisabled(), true);
+      assert.equal(await row('other-section').count(), 1);
+      assert.equal(await row('other-section').isVisible(), false);
+      await choose('ArrowDown', 'child-empty-00000003');
+      await choose('ArrowUp', 'grandchild-00000004');
+      await choose('ArrowUp', 'child-design-00000002');
+      await choose('ArrowUp', 'child-review-00000001');
+      await choose('ArrowUp', 'parent');
+      await choose('ArrowUp', 'parent');
+      assert.equal(await draft.evaluate(element => element === document.activeElement), true);
+    }
     const search=page.getByRole('searchbox');await search.fill('Atlas');
     assert.equal(await page.locator('.sidebar-activity-item').count(),1);
     assert.equal(await page.locator('.sidebar-thread-tree__children').count(),0);

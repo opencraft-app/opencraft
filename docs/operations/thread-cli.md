@@ -24,7 +24,7 @@ opencraft thread input status '<operation-id>'
 opencraft thread wait 'opencraft://conversation/v1/server/thread' --timeout 3000
 ```
 
-Output is JSON. Writes require an explicit idempotency key. After an uncertain response, reuse that key with identical arguments; a changed request is rejected. A queued/submitted receipt does not mean the task succeeded. Short waits return a durable ticket when unsettled; the existing parent notification machinery handles later outcomes.
+New spawn requests require a nonblank, single-line `--title`. Output is JSON. Writes require an explicit idempotency key. After an uncertain response, reuse that key with identical arguments; a changed request is rejected. A queued/submitted receipt does not mean the task succeeded. Short waits return a durable ticket when unsettled; the existing parent notification machinery handles later outcomes.
 
 `list --children` reads Broker parentage across drivers, including hidden children. It returns metadata only, never transcript bodies, and does not start or resume an engine. Pagination scans a bounded page and filters child read permission before returning metadata. Follow `nextCursor` even when a page is empty after authorization filtering; null marks the end. Cursors are bound to the parent. Runtime is the last observed authoritative snapshot, with `observedAt`; it is not inferred from tool completion.
 

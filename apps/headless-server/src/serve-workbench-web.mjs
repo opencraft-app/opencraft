@@ -768,6 +768,7 @@ export async function createWorkbenchWebServer({
   remoteBrowserService = null,
   /** @type {import('@opencraft/app-host-server').WorkbenchRequestIdentity | null} */
   modelPolicyService = null,
+  assetsService = null,
   identityService = null,
   localAccess = null,
   accessService = null,
@@ -965,6 +966,7 @@ export async function createWorkbenchWebServer({
         response.writeHead(204, { "cache-control": "private, no-store" }); response.end(); return;
       }
       if (modelPolicyService && await modelPolicyService(request, response)) return;
+      if (assetsService && await assetsService.handle(request, response)) return;
       if (identityService && await identityService.handle(request, response)) return;
       if (url.pathname.startsWith("/__opencraft_speech/")) {
         if (speechService === null) {

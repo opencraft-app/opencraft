@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   openManagedDatabase,
   createSchemaValidator,
+  resolveStoreMigrations,
 } from "@opencraft/sqlite-node";
 import {
   conversationRef,
@@ -26,6 +27,9 @@ ALTER TABLE im_messages ADD COLUMN reply_ref TEXT;
 ALTER TABLE im_messages ADD COLUMN reply_expires_at INTEGER;
 CREATE UNIQUE INDEX im_messages_reply_ref ON im_messages(reply_ref) WHERE reply_ref IS NOT NULL;
 `;
+export type ReplyClaimKind = "tool" | "final" | "resend";
+export interface ReplyAttempt { readonly token: string; }
+export type ReplyOutcome = "delivered" | "reply_unknown" | "reply_failed";
 export const switchboardMigrations = [
   { version: 1, name: "im-switchboard", sql: schema },
   { version: 2, name: "im-programmable-routing", sql: v2 },
@@ -62,6 +66,7 @@ export interface StoredMessage {
   reply_address: string | null;
   reply_text: string | null;
   reply_mode: "final" | "tool";
+  reply_attempt: string | null;
   reply_ref: string | null;
   reply_expires_at: number | null;
   state: string;
@@ -70,6 +75,11 @@ export interface StoredMessage {
   updated_at: number;
 }
 
+/** Routing fields of an explicit-reply message; a network thread keeps these in memory. */
+export type ReplyAnchor = Pick<
+  StoredMessage,
+  "id" | "channel_id" | "actor_id" | "source" | "state" | "reply_mode" | "reply_ref" | "reply_expires_at" | "conversation_ref" | "created_at"
+>;
 /** The IM plugin owns only current bindings; native conversations retain their history. */
 export class SwitchboardStore {
   private readonly managed;
@@ -78,7 +88,7 @@ export class SwitchboardStore {
       path,
       legacyPolicy: "reject",
       migrations: switchboardMigrations,
-      validateSchema: createSchemaValidator(schema + v2 + v3),
+      validateSchema: createSchemaValidator(resolveStoreMigrations("im", switchboardMigrations).map(m => m.sql).join(";\n")),
     });
   }
   get outcome() {
@@ -268,6 +278,13 @@ export class SwitchboardStore {
       Date.now() + 300_000,
     );
   }
+  /** The actor a pending challenge would link, without consuming it. */
+  peekChallenge(hash: string, id: string): string | null {
+    const r = this.managed.database
+      .prepare("SELECT actor_id FROM im_identity_challenges WHERE hash=? AND channel_id=? AND expires_at>?")
+      .get(hash, id, Date.now());
+    return r ? String(r.actor_id) : null;
+  }
   consumeChallenge(
     hash: string,
     id: string,
@@ -385,9 +402,31 @@ export class SwitchboardStore {
     return this.managed.database.prepare("SELECT * FROM im_messages WHERE conversation_ref=? AND reply_mode='tool' AND (state IN ('delivered','reply_unknown') OR (reply_expires_at>? AND state IN ('accepted','submitted','reply_attempting'))) ORDER BY created_at DESC LIMIT 1024")
       .all(reference, Date.now()) as unknown as StoredMessage[];
   }
-  claimReply(id: string, text: string): boolean {
-    return this.managed.database.prepare("UPDATE im_messages SET state='reply_attempting',reply_text=?,updated_at=? WHERE id=? AND reply_mode='tool' AND state IN ('accepted','submitted') AND reply_expires_at>?")
-      .run(text, Date.now(), id, Date.now()).changes === 1;
+  /** A late result cannot overwrite another sender's durable claim or outcome. */
+  prepareReply(id: string, requestId: string, text: string): boolean {
+    return this.managed.database.prepare("UPDATE im_messages SET state='reply_pending',reply_text=?,updated_at=? WHERE id=? AND request_id=? AND reply_mode='final' AND state='submitted'")
+      .run(text, Date.now(), id, requestId).changes === 1;
+  }
+  /** Claims one physical attempt in the existing message journal, before I/O.
+   * Automatic final/tool sends never claim unknown outcomes; only explicit
+   * operator resend may do so. The nonce fences every subsequent acknowledgement. */
+  claimReply(id: string, text: string, kind: ReplyClaimKind = "tool"): ReplyAttempt | null {
+    const m = this.message(id);
+    if (!m || typeof text !== "string" || !["tool","final","resend"].includes(kind)) return null;
+    const eligible = kind === "tool"
+      ? m.reply_mode === "tool" && ["accepted","submitted"].includes(m.state)
+      : m.reply_text === text && (kind === "final"
+        ? m.reply_mode === "final" && m.state === "reply_pending"
+        : ["reply_unknown","reply_failed"].includes(m.state));
+    if (!eligible || m.reply_mode === "tool" && (m.reply_expires_at === null || m.reply_expires_at <= Date.now())) return null;
+    const token = randomUUID();
+    return this.managed.database.prepare("UPDATE im_messages SET state='reply_attempting',reply_text=?,reply_attempt=?,error=NULL,updated_at=? WHERE id=? AND state=? AND reply_attempt IS ?")
+      .run(text, token, Date.now(), id, m.state, m.reply_attempt).changes === 1 ? {token} : null;
+  }
+  settleReply(id: string, token: string, state: ReplyOutcome, error: string | null): boolean {
+    if (!["delivered","reply_unknown","reply_failed"].includes(state) || typeof token !== "string" || !token) throw Error("Invalid reply outcome");
+    return this.managed.database.prepare("UPDATE im_messages SET state=?,error=?,updated_at=? WHERE id=? AND reply_attempt=? AND state IN ('reply_attempting','reply_unknown')")
+      .run(state, error, Date.now(), id, token).changes === 1;
   }
   /** Filter the authority boundary before the retention bound, never scan other senders. */
   readableMessages(reference: string, channelId: string, actorId: string): StoredMessage[] {
@@ -424,15 +463,36 @@ export class SwitchboardStore {
       )
       .run();
   }
-  prune() {
+  /** Returns the number of rows changed, so a projection reloads only when needed. */
+  prune(): number {
     const db = this.managed.database;
-    db.prepare("UPDATE im_messages SET state='reply_failed',error='reply_expired',updated_at=? WHERE reply_mode='tool' AND state IN ('accepted','submitted') AND reply_expires_at<=?").run(Date.now(), Date.now());
-    db.prepare(
+    let changes = Number(db.prepare("UPDATE im_messages SET state='reply_failed',error='reply_expired',updated_at=? WHERE reply_mode='tool' AND state IN ('accepted','submitted') AND reply_expires_at<=?").run(Date.now(), Date.now()).changes);
+    changes += Number(db.prepare(
       "DELETE FROM im_messages WHERE state IN ('delivered','ignored','failed','reply_failed','reply_unknown','unknown') AND created_at<?",
-    ).run(Date.now() - 7 * 86_400_000);
-    db.prepare(
+    ).run(Date.now() - 7 * 86_400_000).changes);
+    changes += Number(db.prepare(
       "DELETE FROM im_messages WHERE id IN (SELECT id FROM im_messages WHERE state IN ('delivered','ignored','failed','reply_failed','reply_unknown','unknown') ORDER BY created_at DESC LIMIT -1 OFFSET 10000)",
-    ).run();
+    ).run().changes);
+    return changes;
+  }
+  /** Every channel id ever saved, including deleted ones (`hasChannel`). */
+  channelIds(): string[] {
+    return this.managed.database.prepare("SELECT id FROM im_channels").all().map((row) => String(row.id));
+  }
+  /** Sender links of every channel. */
+  allSenderLinks(): Record<string, Record<string, string>> {
+    const links: Record<string, Record<string, string>> = {};
+    for (const row of this.managed.database.prepare("SELECT channel_id,sender_id,actor_id FROM im_sender_links").all())
+      (links[String(row.channel_id)] ??= {})[String(row.sender_id)] = String(row.actor_id);
+    return links;
+  }
+  /** Tool-reply anchors: the routing fields (never text) of explicit-reply messages within retention. */
+  anchors(id?: string): ReplyAnchor[] {
+    const filter = "reply_mode='tool' AND reply_ref IS NOT NULL AND conversation_ref IS NOT NULL";
+    const columns = "id,channel_id,actor_id,source,state,reply_mode,reply_ref,reply_expires_at,conversation_ref,created_at";
+    return (id === undefined
+      ? this.managed.database.prepare(`SELECT ${columns} FROM im_messages WHERE ${filter} AND created_at>=?`).all(Date.now() - 7 * 86_400_000)
+      : this.managed.database.prepare(`SELECT ${columns} FROM im_messages WHERE ${filter} AND id=?`).all(id)) as unknown as ReplyAnchor[];
   }
   close() {
     this.managed.database.close();

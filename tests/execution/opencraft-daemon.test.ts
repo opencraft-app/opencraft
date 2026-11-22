@@ -243,7 +243,7 @@ for (const failing of [true, false]) test(`daemon storage ${failing ? "failure p
     } else {
       daemon = await startOpenCraftDaemon(options);
       const tokenPath = join(directory, "token"); await writeFile(tokenPath, token);
-      const manager = new OpenCraftDaemonClientManager({ ...options, tokenPath, tokenMode: "existing", daemonEntry: "unused", executable: process.execPath });
+      const manager = await OpenCraftDaemonClientManager.open({ ...options, tokenPath, tokenMode: "existing", daemonEntry: "unused", executable: process.execPath });
       const connection = await manager.connectAppHost("storage-summary");
       try {
         assert.deepEqual(connection.storage?.map(item => item.status), ["migrated", "migrated", "fresh", "fresh", "adopted", "fresh"]);
@@ -344,7 +344,7 @@ test("daemon wire keeps the old five-name projection and exposes complete scoped
     assert.deepEqual(ready?.storage?.map(row=>row.name),rows.slice(0,5).map(row=>row.name));
     assert.deepEqual(ready?.storageOutcomes,storage);old.close();
     const tokenPath=join(root,"token");await writeFile(tokenPath,token);
-    const manager=new OpenCraftDaemonClientManager({endpoint,tokenPath,tokenMode:"existing",daemonEntry:"unused",executable:process.execPath,runtimeDirectory:root,dataDirectory:root,dshExecutable:"unused",codexExecutable:"unused",codexDataDirectory:join(root,"codex"),nativeCodexHomeDirectory:join(root,"native")});
+    const manager=await OpenCraftDaemonClientManager.open({endpoint,tokenPath,tokenMode:"existing",daemonEntry:"unused",executable:process.execPath,runtimeDirectory:root,dataDirectory:root,dshExecutable:"unused",codexExecutable:"unused",codexDataDirectory:join(root,"codex"),nativeCodexHomeDirectory:join(root,"native")});
     const connection=await manager.connectAppHost("new-client");assert.deepEqual(connection.storage,storage);connection.close();
   }finally{await server.close();await appHost.close();await rm(root,{recursive:true,force:true});}
 });
@@ -385,7 +385,7 @@ test("Main forwards account routes to the daemon-owned account service and opens
       codexExecutable: "unused", codexDataDirectory: join(directory, "codex"), nativeCodexHomeDirectory: join(directory, "native"),
       humanAccountDirectory: join(directory, "human-account") };
     daemon = await startOpenCraftDaemon(options);
-    const manager = new OpenCraftDaemonClientManager({ ...options, tokenPath, tokenMode: "existing", daemonEntry: "unused", executable: process.execPath });
+    const manager = await OpenCraftDaemonClientManager.open({ ...options, tokenPath, tokenMode: "existing", daemonEntry: "unused", executable: process.execPath });
     // Main's side: the renderer server forwards account routes to the attached daemon endpoint.
     const renderer = join(directory, "renderer"); await mkdir(renderer); await writeFile(join(renderer, "index.html"), "<!doctype html>");
     let endpointForMain: string | null = null;
@@ -429,13 +429,12 @@ test("Main forwards account routes to the daemon-owned account service and opens
 
 test("the daemon log is private and keeps one previous generation once large", async () => {
   const root = await mkdtemp(join(tmpdir(), "oc-daemon-log-"));
-  const { closeSync, writeSync } = await import("node:fs");
   try {
     const runtime = join(root, "runtime");
-    let fd = openDaemonLog(runtime); writeSync(fd, "first\n"); closeSync(fd);
+    let log = await openDaemonLog(runtime); await log.write("first\n"); await log.close();
     assert.equal((await stat(daemonLogPath(runtime))).mode & 0o777, 0o600);
     await writeFile(daemonLogPath(runtime), "x".repeat(5 * 1024 * 1024 + 1));
-    fd = openDaemonLog(runtime); writeSync(fd, "second\n"); closeSync(fd);
+    log = await openDaemonLog(runtime); await log.write("second\n"); await log.close();
     assert.equal(await readFile(daemonLogPath(runtime), "utf8"), "second\n");
     assert.equal((await stat(daemonLogPath(runtime) + ".1")).size, 5 * 1024 * 1024 + 1);
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -448,7 +447,7 @@ test("a daemon that fails to start leaves its output in the log the error names"
     await writeFile(entry, 'process.stderr.write("synthetic daemon startup failure\\n"); process.exit(1);');
     const runtimeDirectory = join(root, "runtime"), tokenPath = join(root, "token");
     await writeFile(tokenPath, "synthetic-" + "x".repeat(48));
-    const manager = new OpenCraftDaemonClientManager({ endpoint: join(root, "daemon.sock"), tokenPath, tokenMode: "existing", daemonEntry: entry,
+    const manager = await OpenCraftDaemonClientManager.open({ endpoint: join(root, "daemon.sock"), tokenPath, tokenMode: "existing", daemonEntry: entry,
       executable: process.execPath, runtimeDirectory, dataDirectory: join(root, "data"), dshExecutable: "unused", codexExecutable: "unused",
       codexDataDirectory: join(root, "codex"), nativeCodexHomeDirectory: join(root, "native") });
     await assert.rejects(manager.ensureStarted(), error => error instanceof Error && error.message.includes(daemonLogPath(runtimeDirectory)));
@@ -481,7 +480,7 @@ test("a daemon left by another build is stopped and a compatible daemon is adopt
   });
   await new Promise<void>(resolve => old.listen(endpoint, resolve));
   try {
-    const manager = new OpenCraftDaemonClientManager({ endpoint, tokenPath, tokenMode: "existing", daemonEntry: "unused", executable: process.execPath,
+    const manager = await OpenCraftDaemonClientManager.open({ endpoint, tokenPath, tokenMode: "existing", daemonEntry: "unused", executable: process.execPath,
       runtimeDirectory: root, dataDirectory: root, dshExecutable: "unused", codexExecutable: "unused", codexDataDirectory: join(root, "codex"),
       nativeCodexHomeDirectory: join(root, "native") });
     await manager.ensureStarted();

@@ -15,6 +15,7 @@ import { SessionCapabilities } from "../../packages/session-capabilities/src/ind
 import { SessionCapabilityMcp } from "../../packages/session-capabilities/src/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { Switchboard } from "../../plugins/im/src/switchboard.js";
 
 const ref = { serverId: "server", threadId: "thread" },
   signal = () => new AbortController().signal;
@@ -87,7 +88,7 @@ async function fixture(t: test.TestContext) {
   let valid = true,
     member = true,
     tokens = 0,
-    hook: ((path: string) => void) | undefined;
+    hook: ((path: string) => void | Promise<void>) | undefined;
   let sendResponse = async () => json({ post_id: "created-post" });
   const requests: { path: string; body: any }[] = [];
   const post = {
@@ -192,16 +193,16 @@ async function fixture(t: test.TestContext) {
           next_cursor: "search-page-2",
         };
       else if (path === "topic/send_post") {
-        hook?.(path);
+        await hook?.(path);
         return sendResponse();
       }
       else throw Error("unexpected endpoint");
-      hook?.(path);
+      await hook?.(path);
       return json(response);
     },
-  });
+  }, await Switchboard.open(join(dir, "im-switchboard.sqlite")));
   t.after(() => service.close());
-  service.store.saveChannel(
+  await service.store.saveChannel(
     {
       id: "bot",
       provider: "wecom",
@@ -213,14 +214,14 @@ async function fixture(t: test.TestContext) {
     true,
     null,
   );
-  service.store.linkSender("bot", "sender", "human");
+  await service.store.linkSender("bot", "sender", "human");
   const unregister = service.im.register({
     id: "bot",
     ownerId: "human",
     senders: {},
     groupScope: "sender",
   });
-  service.store.accept({
+  await service.store.accept({
     id: "a".repeat(64),
     channel_id: "bot",
     fingerprint: "f",
@@ -235,7 +236,7 @@ async function fixture(t: test.TestContext) {
     decision: null,
     reply_address: null,
   });
-  service.store.patch("a".repeat(64), {
+  await service.store.patch("a".repeat(64), {
     conversation_ref: JSON.stringify(ref),
     state: "delivered",
     reply_mode: "tool",
@@ -290,7 +291,7 @@ test("native discovery requires no link, hides nonmember channels and never trea
 });
 test("native reads return earlier posts and comments with exact IDs and honest bounded coverage; store is unchanged", async (t) => {
   const f = await fixture(t),
-    before = f.service.store.message("a".repeat(64));
+    before = await f.service.store.message("a".repeat(64));
   const result = await f.call("wecom_read_channel");
   assert.equal(result.posts[0].id, "post-1");
   assert.deepEqual(result.posts[0].author, {
@@ -314,7 +315,7 @@ test("native reads return earlier posts and comments with exact IDs and honest b
   const post = await f.call("wecom_read_post", { postId: "post-1" });
   assert.equal(post.replies[0].content.text, "历史评论");
   assert.equal(post.replies[1].content.text, "");
-  assert.deepEqual(f.service.store.message("a".repeat(64)), before);
+  assert.deepEqual(await f.service.store.message("a".repeat(64)), before);
 });
 test("provider search is restricted to exactly one selected channel, carries job pagination and bounds previews", async (t) => {
   const f = await fixture(t),
@@ -377,8 +378,8 @@ test("cursor tampering, injected scope, Unicode byte excess, wrong conversation 
     ),
     /denied/,
   );
-  f.service.store.unlinkSender("bot", "sender");
-  f.service.store.linkSender("bot", "sender", "other");
+  await f.service.store.unlinkSender("bot", "sender");
+  await f.service.store.linkSender("bot", "sender", "other");
   await assert.rejects(f.call("wecom_read_channel"), /denied/);
   assert.equal(f.service.wecomHistory.available(ref), false);
 });
@@ -448,16 +449,16 @@ test("production signed MCP exposes and invokes all four native read tools preau
 test("channel configuration changes during a read invalidate both the result and old pagination", async (t) => {
   const f = await fixture(t),
     page = await f.call("wecom_read_channel");
-  const change = () => {
+  const change = async () => {
     const c = f.service.store.channel("bot");
-    f.service.store.saveChannel(
+    await f.service.store.saveChannel(
       { ...c, botId: "replacement-bot" },
       true,
       c.revision,
     );
   };
-  f.hook((path) => {
-    if (path === "topic/get_post_list") change();
+  f.hook(async (path) => {
+    if (path === "topic/get_post_list") await change();
   });
   await assert.rejects(f.call("wecom_read_channel"), /denied_or_invalid/);
   f.hook(undefined);
@@ -469,7 +470,7 @@ test("channel configuration changes during a read invalidate both the result and
 
 
 test("standalone posting uses only the official endpoint and selected topic; identical retries deduplicate without consuming callback replies", async (t) => {
-  const f = await fixture(t), before = f.service.store.message("a".repeat(64));
+  const f = await fixture(t), before = await f.service.store.message("a".repeat(64));
   const result = await f.send();
   assert.deepEqual(result, { status: "delivered", topicId: "selected", postId: "created-post", requestId: "intent-1", deduplicated: false });
   assert.deepEqual(f.requests.find(r => r.path === "topic/send_post")?.body, { topic_id: "selected", content: "独立频道帖" });
@@ -477,7 +478,7 @@ test("standalone posting uses only the official endpoint and selected topic; ide
   assert.equal(f.requests.filter(r => r.path === "topic/send_post").length, 1);
   await assert.rejects(f.send({ text: "changed" }), /request_conflict/);
   await assert.rejects(f.send({ topicId: "different" }), /request_conflict/);
-  assert.deepEqual(f.service.store.message("a".repeat(64)), before);
+  assert.deepEqual(await f.service.store.message("a".repeat(64)), before);
   assert.doesNotMatch(JSON.stringify(result), /private-token|fixture-secret|独立频道帖/);
 });
 test("post validation and current authority prevent sends after injected selectors, byte overflow, revocation, changed config and lost membership", async (t) => {
@@ -492,9 +493,9 @@ test("post validation and current authority prevent sends after injected selecto
   await assert.rejects(f.send(), /denied/);
   assert.equal(f.requests.filter(r => r.path === "topic/send_post").length, 0);
   const g = await fixture(t);
-  g.hook(path => { if (path === "topic/get_topic_member_list") {
+  g.hook(async path => { if (path === "topic/get_topic_member_list") {
     const c = g.service.store.channel("bot");
-    g.service.store.saveChannel({ ...c, botId: "replacement" }, true, c.revision);
+    await g.service.store.saveChannel({ ...c, botId: "replacement" }, true, c.revision);
   }});
   await assert.rejects(g.send(), /denied_or_invalid/);
   assert.equal(g.requests.filter(r => r.path === "topic/send_post").length, 0);

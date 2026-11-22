@@ -6,6 +6,7 @@ import { PersonalAssistants } from './personal-assistants.js';
 import { channelSyncCommand } from "./native-channel-sync.js";
 import { ActorStore } from './actors.js';
 import { Collaboration } from './collaboration.js';
+import { attachCrewRules } from './crew-work.js';
 import { communicationCommand } from './communication-command.js';
 import { parentPort, workerData } from 'node:worker_threads';
 import { existsSync } from 'node:fs';
@@ -32,8 +33,12 @@ const source={database:db,outcome:{status:'up-to-date' as const,appliedVersion:N
 let communication: Collaboration | undefined;
 let actors: ActorStore | undefined;
 function communicationService() {
-  return communication ??= new Collaboration(source,actors ??= new ActorStore(source,Date.now,{permissionProjection:false}),undefined,Date.now,
+  if (communication) return communication;
+  communication = new Collaboration(source,actors ??= new ActorStore(source,Date.now,{permissionProjection:false}),undefined,Date.now,
     actorId=>db.prepare('SELECT enabled FROM actor_members WHERE actor_id=?').get(actorId)?.enabled!==0);
+  // Crew rules use this Worker's connection; the network thread never loads them.
+  attachCrewRules(communication, db, actors, Date.now);
+  return communication;
 }
 let tail=Promise.resolve();
 let closed=false;
@@ -45,6 +50,22 @@ async function execute({id,method,payload}: {id:number;method:string;payload:any
       try{
         const ledger=new ThreadOrchestrationLedger(db,()=>payload.now??Date.now());
         switch(method){
+          // A lost acknowledgement must not replay an old title over a later one.
+          case 'claimTitleWrite':result=db.prepare("UPDATE opencraft_orchestration_operations SET state='applying' WHERE operation_id=? AND state='accepted' AND result_json IS NULL").run(payload.operationId).changes===1;break;
+          case 'finishTitleWrite':ledger.finish(payload.toolCallKey,payload.result);break;
+          case 'inheritChildCreator': {
+            const {parent,child}=payload;
+            result=sqliteTransaction(db,()=>{
+              // The immutable creator is attribution. Keep the existing access mode
+              // of a child already published by this or an earlier process.
+              db.prepare(`INSERT OR IGNORE INTO thread_access
+                SELECT ?, ?, (SELECT creator_actor_id FROM thread_access WHERE server_id=? AND thread_id=?),
+                  'shared', 1, ?`).run(child.serverId,child.threadId,parent.serverId,parent.threadId,Date.now());
+              return db.prepare(`SELECT server_id AS serverId, thread_id AS threadId, creator_actor_id AS creatorActorId,
+                access_mode AS accessMode, revision FROM thread_access WHERE server_id=? AND thread_id=?`).get(child.serverId,child.threadId);
+            });
+            break;
+          }
           case 'personalAssistantAssignments':result=new PersonalAssistants(communicationService(),db).assignments(payload.after);break;
           case 'channelSync':result=channelSyncCommand(communicationService(),db,payload);break;
           case 'assistantAllocation':result=sqliteTransaction(db,()=>new AssistantThreadStore(communicationService(),db).recordAllocation(payload));break;
@@ -61,6 +82,7 @@ async function execute({id,method,payload}: {id:number;method:string;payload:any
             const access=new ThreadAccessStore(source,actorStore,{projection:false});
             const unsupported=async()=>{throw Error('Storage cannot call an engine');};
             const scoped=new Collaboration(source,actorStore,{serverId:scope.serverId,hostId:scope.hostId,serverForThread:()=>scope.serverId,hostForServer:id=>id===scope.serverId?scope.hostId:null,validate:unsupported,receipt:unsupported,add:unsupported,steer:unsupported,cancel:unsupported},Date.now,id=>db.prepare('SELECT enabled FROM actor_members WHERE actor_id=?').get(id)?.enabled!==0,undefined,(c,r)=>access.allows(r.serverId,r.threadId,c));
+            attachCrewRules(scoped,db,actorStore,Date.now);
             try{result=communicationCommand(scoped,db,payload);}finally{await scoped.close();access.close();}break;
           }
           case 'automation': {

@@ -6,6 +6,7 @@ import { readPrivateJson, type IdentityProvider, type IdentityRequest } from '@o
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import { HumanAccounts, type HumanLogin } from './human-accounts.js';
 import type { ActorStore } from './actors.js';
+import type { IdentityWrites } from './identity-writes.js';
 
 const BASE = '/__opencraft_auth';
 const SESSION = 'oc_human', TRANSACTION = 'oc_human_flow';
@@ -74,6 +75,9 @@ export class HumanAuth implements IdentityProvider {
   readonly #clients = new Map<string, Promise<oidc.Configuration>>();
   readonly #attempts = new Map<string, { until: number; count: number }>();
   #globalAttempts = { until: 0, count: 0 };
+  #writes: IdentityWrites | null = null;
+  /** Login, logout and identity binding writes go to the Server owner from now on. */
+  useOwnerWrites(writes: IdentityWrites): void { this.#writes = writes; }
   constructor(readonly accounts: HumanAccounts, readonly actors: ActorStore, readonly configuration: HumanAuthConfiguration,
     readonly renderPage: (nonce: string) => string,
     readonly externalHuman: (request: IdentityRequest) => Principal | null = () => null, readonly now = Date.now) {
@@ -88,8 +92,9 @@ export class HumanAuth implements IdentityProvider {
   currentLogin(request: IdentityRequest): HumanLogin | null {
     const value = cookie(request, SESSION); return value ? this.accounts.authenticate(value) : null;
   }
-  issueSession(principal: Principal, request: IncomingMessage, response: ServerResponse): void {
-    this.#issue(principal, request, response);
+  /** Resolves after the login committed; send the response only afterwards. */
+  issueSession(principal: Principal, request: IncomingMessage, response: ServerResponse): Promise<void> {
+    return this.#issue(principal, request, response);
   }
   hasSessionCookie(request: IdentityRequest): boolean {
     return typeof request.headers.cookie === 'string' && request.headers.cookie.split(';').some(part => part.trim().startsWith(SESSION + '='));
@@ -155,12 +160,19 @@ export class HumanAuth implements IdentityProvider {
     }
     return pending;
   }
-  #issue(principal: Principal, request: IncomingMessage, response: ServerResponse) {
+  async #issue(principal: Principal, request: IncomingMessage, response: ServerResponse) {
     const token = cookie(request, SESSION);
-    const issued = this.accounts.issue(principal);
-    if (token) this.accounts.revoke(token);
+    const issued = this.#writes ? await this.#writes.issueLogin(principal) : this.accounts.issue(principal);
+    if (token) await this.#revoke(token);
     response.setHeader('set-cookie', [this.#cookie(SESSION, issued.token, Math.max(1, Math.floor((issued.login.context.expiresAt - this.now()) / 1000))),
       this.#cookie(TRANSACTION, '', 0)]);
+  }
+  #revoke(token: string): Promise<void> | void {
+    return this.#writes ? this.#writes.revokeLogin(token) : this.accounts.revoke(token);
+  }
+  #bind(owner: ActorContext, principal: Principal): Promise<void> | void {
+    if (this.#writes) return this.#writes.bindHuman(owner, principal);
+    this.actors.bindHuman(owner, principal);
   }
   async handle(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
     const url = new URL(request.url ?? '/', this.configuration.origin), path = url.pathname;
@@ -200,11 +212,12 @@ export class HumanAuth implements IdentityProvider {
         const subject = digest(JSON.stringify([claims.iss, claims.sub]));
         const displayName = typeof claims.name === 'string' && claims.name.trim() && claims.name.length <= 256 && !/[\x00-\x1f]/u.test(claims.name) ? claims.name : flow.provider.label;
         const principal = parsePrincipal({ provider: 'oidc', subject, displayName, expiresAt: Math.min(claims.exp * 1000, this.now() + 8 * 3600_000) });
-        if (flow.owner) this.actors.bindHuman(flow.owner.context, principal);
-        this.#issue(principal, request, response);
+        if (flow.owner) await this.#bind(flow.owner.context, principal);
+        await this.#issue(principal, request, response);
         const username = typeof claims.preferred_username === 'string' && claims.preferred_username.trim()
           && claims.preferred_username.length <= 256 && !/[\x00-\x1f]/u.test(claims.preferred_username) ? claims.preferred_username : displayName;
-        this.accounts.rememberLabel(principal, flow.provider.label + ' · ' + username);
+        const label = flow.provider.label + ' · ' + username;
+        if (this.#writes) await this.#writes.rememberLabel(principal, label); else this.accounts.rememberLabel(principal, label);
         response.writeHead(303, { location: flow.returnTo, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' }); response.end();
       } catch {
         response.setHeader('set-cookie', this.#cookie(TRANSACTION, '', 0));
@@ -234,7 +247,7 @@ export class HumanAuth implements IdentityProvider {
       if (path === BASE + '/logout' || path === BASE + '/cancel') {
         this.#cancel(request);
         const token = cookie(request, SESSION);
-        if (path.endsWith('/logout') && token) this.accounts.revoke(token);
+        if (path.endsWith('/logout') && token) await this.#revoke(token);
         response.setHeader('set-cookie', [this.#cookie(TRANSACTION, '', 0), ...(path.endsWith('/logout') ? [this.#cookie(SESSION, '', 0)] : [])]);
         send(200, { ok: true }); return true;
       }
@@ -252,16 +265,16 @@ export class HumanAuth implements IdentityProvider {
         if (this.accounts.localAccounts !== localAccounts || localAccounts.verifiedVersion(principal) === null) throw new Error('Local account plugin changed');
         if (owner) {
           if (!this.#sameOwner(request, owner)) throw new Error('Owner changed');
-          this.actors.bindHuman(owner.context, principal);
+          await this.#bind(owner.context, principal);
         }
-        this.#cancel(request); this.#issue(principal, request, response); send(200, { ok: true }); return true;
+        this.#cancel(request); await this.#issue(principal, request, response); send(200, { ok: true }); return true;
       }
       if (path === BASE + '/unbind') {
         const owner = this.#owner(request);
         if (!owner) { send(401, { error: 'recent_login_required' }); return true; }
         const binding = parsePrincipal({ provider: body.provider, subject: body.subject, displayName: 'binding', expiresAt: this.now() + 1000 });
-        this.actors.unbindHuman(owner.context, binding);
-        const token = cookie(request, SESSION); if (token) this.accounts.revoke(token);
+        if (this.#writes) await this.#writes.unbindHuman(owner.context, binding); else this.actors.unbindHuman(owner.context, binding);
+        const token = cookie(request, SESSION); if (token) await this.#revoke(token);
         this.#cancel(request); response.setHeader('set-cookie', [this.#cookie(SESSION, '', 0), this.#cookie(TRANSACTION, '', 0)]);
         send(200, { ok: true }); return true;
       }

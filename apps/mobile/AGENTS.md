@@ -3,7 +3,7 @@
 Follow the core AGENTS.md, design.md and docs/architecture/mobile/mobile-workbench-container.md.
 The only public entry packages the actual Web Workbench. Do not restore a parallel
 RN chat, composer, settings or workbench state tree. Expo owns native lifecycle,
-safe area, recovery, source selection and device adapters, never conversations.
+recovery, source selection and device adapters, never conversations or insets.
 
 The default code is bundled. The user may explicitly select a self-hosted HTTPS
 website in native settings. This is not an automatic fallback. Validate the URL,
@@ -17,7 +17,8 @@ material/permissions have runtime capability fallbacks. Do not require a custom
 native client for the basic workbench. Protocol tests, browser rendering, native
 JS bundles, signed binaries and physical devices are distinct evidence.
 
-Web owns keyboard geometry and memory navigation. Apply outer safe area once;
+Web owns keyboard geometry, safe areas and memory navigation. Every source fills
+the screen; the container adds no inset and never branches on source or platform;
 Android back uses Web navigation for bundled content and WebView history only in
 website mode. Resize/foreground must not remount the working app.
 
@@ -43,5 +44,5 @@ unverified hardware/auth/model paths honestly.
 - 当需求指定 HeroUI Native/NextUI Native 的抽屉、弹层或其他交互控件时，要求涵盖**容器本身**的手势、遮罩、关闭、可访问性和动画；仅在手写 `Animated.View`、`PanResponder` 或普通 `View` 里放 HeroUI 按钮，不算使用该原生控件。实现前核对当前安装版本实际导出的组件及 Expo Go 支持；若库没有对应控件，选用可在 Expo Go 运行的成熟原生交互原语，并在 Task Pack 与交接中明确组件来源及例外，不能把它标为 HeroUI Native 抽屉。禁止引入 Unistyles。
 - iOS 页面前进和返回统一经过可复用的原生导航页面容器：按钮返回与左边缘右滑必须走同一完成路径；拖动要跟手、未达阈值回弹、松手后补完动画。按当前**容器**宽度计算位移和阈值，窗口尺寸变化后重新测量，不能写死 iPhone 宽度或假定所有页面都是手机全屏 Stack。尊重系统减少动态效果设置，动画期间保留底层页面和 Bot runtime；从侧栏进入个人与设置时还必须保留侧栏的打开状态，返回应露出原侧栏，不能先关闭再推页面。状态栏与 Home Indicator 属于同一移动页面，不得留下独立横条。新增页面先复用这一层，再选择具体的手机、iPad 或折叠屏呈现方式。
 - iPhone 外网预览提供完整明文 `exps://` 链接，在 Safari 打开并跳转 Expo Go；Metro 与 Cloudflare Tunnel 必须持续运行。为加快迭代，新链接只做轻量可用性检查（Metro 监听、隧道连接和 iOS manifest 响应），**不下载完整 bundle 校验**；源码的 Expo 类型检查和 iOS 打包仍按改动风险运行。链接失效时重新生成并做同样的轻量检查；不要把服务端检查表述为真机已验证。
-- Android 内测包为 `dev.opencraft.workbench`，使用开发签名；正式包为 `app.opencraft.workbench`，必须使用仓库外的正式密钥。iOS 测试 IPA 须在有 Xcode 和 Apple 签名的 Mac 上构建。更换包名或密钥后，从**新成品**重新提取备案值。
+- Android 内测包为 `dev.opencraft.workbench`，使用开发签名；正式包为 `app.opencraft`（与 iOS TestFlight Bundle ID 一致），必须使用仓库外的正式密钥。iOS 测试 IPA 须在有 Xcode 和 Apple 签名的 Mac 上构建。更换包名或密钥后，从**新成品**重新提取备案值。
 - 本地 APK/IPA 打包、备案资料和临时局域网下载不等于 GitOps 发布。交接时分别报告源码 checkout、包名、签名证书摘要、APK 文件摘要、安装验证和下载进程状态；私钥与密码不得进入仓库、日志或下载目录。

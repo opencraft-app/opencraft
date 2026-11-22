@@ -97,7 +97,7 @@ if (kind === "host") {
     inspect: (threadId, limit) => rpc("opencraft/orchestration/inspect", { operationId: `inspect:${randomUUID()}`, threadId, limit }),
   };
   const broker = new ThreadOrchestrationBroker(service, execution);
-  const key = capabilitySigningKey(join(data, "session-capabilities.key"));
+  const key = await capabilitySigningKey(join(data, "session-capabilities.key"));
   const mcp = new SessionCapabilityMcp(new SessionCapabilities(), key, undefined, { descriptorPath: join(data, "session-capabilities.json"),
     async orchestration(session, request) {
       if (session.serverId !== serverId) throw new Error("Wrong synthetic scope");

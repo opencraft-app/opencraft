@@ -85,6 +85,25 @@ export class ExecutionService {
       return this.r.executions.nativeCall(e.id, callId);
     });
   }
+  /**
+   * What a tool did with this assistant's authority, recorded before the tool acts so a crash
+   * mid-call still leaves the attempt visible. Keyed by the native call, so a replay adds nothing.
+   */
+  recordOperation(work, callId, tool, summary, target = null) {
+    requireText(callId, "operation call id", 300);
+    requireText(tool, "operation tool", 160);
+    if (typeof summary !== "string" || summary.length > 512)
+      throw new Error("Invalid operation summary");
+    if (target !== null) requireText(target, "operation target", 256);
+    return this.uow.transaction(() => {
+      this.works.assertCurrent(work);
+      const e = this.execution(work);
+      if (this.r.executions.hasOperation(e.id, callId)) return;
+      if (this.r.executions.operationCount(e.id) >= 1024)
+        throw new Error("Operation record bound exceeded");
+      this.r.executions.recordOperation(e.id, callId, e.work_id, tool, target, summary, this.now());
+    });
+  }
   nativeOutcome(work, callId, state, output) {
     if (
       !["waiting", "completed"].includes(state) ||
@@ -312,6 +331,13 @@ export class ExecutionService {
         );
       }
     });
+  }
+  assertCrewAction(work, tool) {
+    const resource = this.scope
+      .forWork(work)
+      .record.resources.find((r) => r.id === "crew.work");
+    if (!resource) throw Error("Work has no captured crew binding");
+    this.assertAction(work, tool, resource);
   }
   assertThreadAction(work) {
     const resource = this.scope

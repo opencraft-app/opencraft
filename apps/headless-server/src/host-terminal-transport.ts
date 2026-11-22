@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto';
+import { terminalResourceOwnerId } from './host-resource-identity.js';
+export { terminalResourceOwnerId } from './host-resource-identity.js';
 import { DurableHostProcessService } from '@opencraft/local-agent-host/durable-process-service';
 import { TerminalCapacityError, type PreparedProcessIdentity } from '@opencraft/local-agent-host/process-service';
 import { validateEnvironmentName } from '@opencraft/execution-environment/account-environment';
@@ -10,8 +11,6 @@ import type { EnvironmentExecutionScope, ExecutionEnvironmentRuntime } from '@op
 export const HOST_TERMINAL_METHODS = ['process/spawn', 'process/attach', 'process/list', 'process/writeStdin', 'process/resizePty', 'process/kill'] as const;
 const methods = new Set<string>(HOST_TERMINAL_METHODS);
 const object = (value: unknown): Record<string, any> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {};
-const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-export const terminalResourceOwnerId = (actorId: string, hostId: string) => digest([actorId, hostId]);
 export type HostTerminalScope = EnvironmentExecutionScope & { readonly actorId?: string };
 
 /** One private Hands client per Host. Engine switching never changes the PTY owner. */
@@ -41,7 +40,11 @@ export function createHandsTerminalService(options: { directory: string; endpoin
 
 /** Structural service port: local durable owner or one already-admitted sandbox.
  * Selection is trusted composition, never a service ID accepted from an RPC. */
-export type HostTerminalService = Pick<DurableHostProcessService, 'probe' | 'subscribe' | 'dispatch'>;
+export type HostTerminalService = Pick<DurableHostProcessService, 'probe' | 'subscribe'> & {
+  dispatch(method:string,params:unknown,scope?:EnvironmentExecutionScope,assertCurrent?:()=>void,onAccepted?:()=>void,
+    /** Original trusted ingress for this operation, never the last subscriber. */
+    context?:TransportSubmissionContext):Promise<unknown>;
+};
 /** Context is the private authenticated ingress object, never process params. */
 export type HostTerminalServiceSelector = (scope: EnvironmentExecutionScope, context: TransportSubmissionContext) => Promise<HostTerminalService>;
 
@@ -146,7 +149,7 @@ export class HostTerminalSession {
         if (typeof params.processHandle !== 'string' || !['process/spawn', 'process/attach'].includes(value.method)) return;
         const watchers = this.watched.get(params.processHandle) ?? new Map();
         watchers.set(JSON.stringify([clientId ?? '', scope]), { context, params, scope, clientId, service }); this.watched.set(params.processHandle, watchers);
-      });
+      }, context);
       current(); this.emit({ id: value.id, result, [LOGICAL_CLIENT_FIELD]: clientId });
     } catch (error) {
       if (this.closed) return true;

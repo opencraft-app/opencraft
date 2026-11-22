@@ -9,7 +9,10 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { AccountEnvironment, EnvironmentError } from '@opencraft/execution-environment/account-environment';
 import { AccountEnvironmentHttp } from '@opencraft/execution-environment/account-environment-http';
-import { EmployeeGitVaultStore } from '@opencraft/execution-environment/employee-git-vault-store';
+import { EmployeeGitVaultStore, GitVaultError } from '@opencraft/execution-environment/employee-git-vault-store';
+import { GitVaultError as MetadataGitVaultError } from '../../packages/execution-environment/src/git-vault-error';
+import { build } from 'esbuild';
+import { fileURLToPath } from 'node:url';
 import { parseEnvironmentDocument } from '../../packages/workbench-runtime/src/account-environment';
 
 async function fixture(t: any) {
@@ -19,6 +22,15 @@ async function fixture(t: any) {
 }
 const global = { projectId: null }, a = { projectId: 'project-a' }, b = { projectId: 'project-b' };
 const entry = (value: string, secret = true, name = 'SERVICE_KEY') => ({ name, value, secret });
+
+test('metadata HTTP bundles without the vault implementation and keeps the original domain error identity', async () => {
+  assert.equal(MetadataGitVaultError, GitVaultError);
+  const result = await build({
+    entryPoints: [fileURLToPath(new URL('../../packages/execution-environment/src/account-environment-http.ts', import.meta.url))],
+    bundle: true, platform: 'node', format: 'esm', target: 'node26', write: false, metafile: true, logLevel: 'silent',
+  });
+  assert.ok(!Object.keys(result.metafile!.inputs).some(path => path.includes('employee-git-vault-store')));
+});
 
 test('two employees and two projects remain separate; project deletion restores the personal default', async t => {
   const { env } = await fixture(t);
@@ -139,4 +151,73 @@ test('identity changes while awaiting project lookup cannot read or modify a pre
   server.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(() => new Promise<void>(resolve => server.close(() => resolve())));
   const url = `http://127.0.0.1:${(server.address() as any).port}/environment`;
   const response = await fetch(url, { headers: { 'x-opencraft-account-scope': 'alice' } }); assert.equal(response.status, 401);
+});
+
+test('async settings owners retain metadata, typed errors and post-await login fences without mutation replay', async t => {
+  for (const method of ['GET', 'POST']) await t.test(method, async t => {
+    const { env } = await fixture(t);
+    env.replace('alice', global, 0, [entry('synthetic-retained-secret')]);
+    let current = true, retire = false, calls = 0;
+    const api = new AccountEnvironmentHttp({
+      async list(account, scope, assertCurrent) { calls++; await Promise.resolve(); if (retire) current = false; return env.list(account, scope, assertCurrent); },
+      async replace(account, scope, revision, input, assertCurrent) { calls++; const result = env.replace(account, scope, revision, input, assertCurrent); await Promise.resolve(); if (retire) current = false; return result; },
+    });
+    const server = createServer((request, response) => {
+      void api.handle(request, response, { account: 'alice', current: () => current, projects: async () => [] });
+    });
+    server.listen(0, '127.0.0.1'); await once(server, 'listening');
+    t.after(() => new Promise<void>(resolve => server.close(() => resolve())));
+    const address = server.address(); assert.ok(address && typeof address !== 'string');
+    const request = (revision = 1) => fetch(`http://127.0.0.1:${address.port}/environment`, { method,
+      headers: { 'x-opencraft-account-scope': 'alice', ...(method === 'POST' ? { 'content-type': 'application/json' } : {}) },
+      ...(method === 'POST' ? { body: JSON.stringify({ projectId: null, revision, variables: [{ name: 'SERVICE_KEY', value: null, secret: true }] }) } : {}),
+    });
+    let response = await request(); assert.equal(response.status, 200);
+    const body = await response.json(); assert.equal(body.variables[0].value, null);
+    assert.ok(!JSON.stringify(body).includes('synthetic-retained-secret'));
+    if (method === 'POST') { response = await request(0); assert.equal(response.status, 409); }
+    const before = calls, revision = env.list('alice', global).revision;
+    retire = true;
+    response = await request(revision); assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { error: 'unauthenticated' });
+    assert.equal(calls, before + 1);
+    assert.equal(env.list('alice', global).revision, revision + (method === 'POST' ? 1 : 0));
+    assert.equal(env.launchEnvironment('alice', global, {}).SERVICE_KEY, 'synthetic-retained-secret');
+  });
+});
+
+test('an async owner held before domain IO cannot read or mutate after original login revocation, expiry or account replacement', async t => {
+  for (const method of ['GET', 'POST']) for (const retirement of ['revoked', 'expired', 'account']) await t.test(method + '/' + retirement, async t => {
+    const { env } = await fixture(t);
+    env.replace('alice', global, 0, [entry('original-value')]);
+    let account = 'alice', admitted = true, expires = Date.now() + 60000, reads = 0;
+    let queued!: () => void, resume!: () => void;
+    const started = new Promise<void>(resolve => { queued = resolve; });
+    const held = new Promise<void>(resolve => { resume = resolve; });
+    const api = new AccountEnvironmentHttp({
+      async list(original, scope, assertCurrent) { queued(); await held; return env.list(original, scope, () => { assertCurrent(); reads++; }); },
+      async replace(original, scope, revision, input, assertCurrent) { queued(); await held; return env.replace(original, scope, revision, input, assertCurrent); },
+    });
+    const server = createServer((request, response) => {
+      void api.handle(request, response, { get account() { return account; }, current: () => admitted && expires > Date.now(), projects: async () => [] });
+    });
+    server.listen(0, '127.0.0.1'); await once(server, 'listening');
+    t.after(() => new Promise<void>(resolve => server.close(() => resolve())));
+    const address = server.address(); assert.ok(address && typeof address !== 'string');
+    const response = fetch(`http://127.0.0.1:${address.port}/environment`, { method,
+      headers: { 'x-opencraft-account-scope': 'alice', ...(method === 'POST' ? { 'content-type': 'application/json' } : {}) },
+      ...(method === 'POST' ? { body: JSON.stringify({ projectId: null, revision: 1, variables: [entry('should-never-commit')] }) } : {}),
+    });
+    await started;
+    if (retirement === 'revoked') admitted = false;
+    else if (retirement === 'expired') expires = Date.now() - 1;
+    else account = 'bob';
+    resume();
+    const result = await response;
+    assert.equal(result.status, 401); assert.deepEqual(await result.json(), { error: 'unauthenticated' });
+    assert.equal(env.list('alice', global).revision, 1);
+    assert.equal(env.launchEnvironment('alice', global, {}).SERVICE_KEY, 'original-value');
+    assert.equal(env.list('bob', global).revision, 0);
+    assert.equal(reads, 0);
+  });
 });

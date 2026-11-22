@@ -3,7 +3,8 @@ import { once } from "node:events";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { validateCodexConfig, readCodexKey } from "./config.mjs";
+import { validateCodexConfig } from "./config.mjs";
+import { readCodexKey } from "./credential-file.mjs";
 export const SUPPORTED_CODEX_VERSION = "codex-cli 0.162.1";
 export const nativeUsage = (u) =>
   u

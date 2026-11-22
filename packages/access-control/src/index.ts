@@ -1,3 +1,5 @@
+import {membershipRevocationRevision} from './membership-revocation.js';
+import { AuthorityChanges } from "./authority-changes.js";
 import { PermissionReadCache, withPermissionWrite } from "./permission-read-cache.js";
 import { sqliteTransaction } from "@opencraft/sqlite-node";
 import type { DatabaseSync } from "node:sqlite";
@@ -7,6 +9,7 @@ import { parsePrincipal, principalKey, type Principal } from "@opencraft/identit
 import type { IdentityProvider, IdentityRequest } from "@opencraft/identity-core/node";
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ActorStore } from './actors.js';
+import type { IdentityWrites } from './identity-writes.js';
 
 
 export type MemberRole = "admin" | "member";
@@ -17,6 +20,10 @@ export interface InstanceAdmissionPolicy {
   allowsBinding(binding: Pick<Principal, 'provider' | 'subject'>): boolean;
 }
 export class MembershipStore {
+  readonly #changes: AuthorityChanges;
+  /** Every committed account/permission mutation; not a login or grant. */
+  onAuthorityChanged = (listener: () => void) => this.#changes.subscribe(listener);
+
   readonly permissionProjectionEnabled: boolean;
   readonly #db: DatabaseSync;
   readonly #readCache: PermissionReadCache;
@@ -26,7 +33,7 @@ export class MembershipStore {
     this.permissionProjectionEnabled = typeof path !== "string" && options.permissionProjection !== false;
     const managed = openServerRepository(path, "memberships");
     this.#closeDatabase = managed.close;
-    this.#db = managed.database; this.outcome = managed.outcome;
+    this.#db = managed.database; this.#changes = new AuthorityChanges(typeof path === "string" ? this.#db : path.database); this.outcome = managed.outcome;
     this.#readCache = new PermissionReadCache(() => this.#permissionRows(), { enabled: this.permissionProjectionEnabled, owner: typeof path === "string" ? this.#db : path.database });
   }
   *#permissionRows(): Iterable<readonly [string, unknown]> {
@@ -47,6 +54,9 @@ export class MembershipStore {
     const binding = principalKey(p);
     // An explicit stable-subject grant/revocation always wins over a legacy name.
     if (this.#db.prepare('SELECT binding FROM members WHERE binding=?').get(binding)) return;
+    // Authentication runs this on every request: without an enabled legacy alias
+    // there is nothing to move, so take no writer lock and publish nothing.
+    if (!(p.aliases ?? []).some(subject => this.membership({ provider: p.provider, subject })?.enabled)) return;
     this.#transaction(() => {
       for (const subject of p.aliases ?? []) {
         const alias = principalKey({ provider: p.provider, subject });
@@ -67,9 +77,7 @@ export class MembershipStore {
   }
   /** A disable/enable cycle retires employee credentials even between polls. */
   revocationRevision(actorId: string, bindings: readonly Pick<Principal, 'provider' | 'subject'>[]): number {
-    return Math.max(0, ...[actorId, ...bindings.map(principalKey)].map(key =>
-      Number(this.#db.prepare(`SELECT COALESCE(MAX(id),0) AS revision FROM access_audit WHERE binding=?
-        AND CASE WHEN json_valid(action) THEN json_extract(action,'$.enabled') END = 0`).get(key)!.revision)));
+    return membershipRevocationRevision(this.#db,actorId,bindings.map(principalKey));
   }
   importActorMembership(actorId: string, role: MemberRole) {
     this.#transaction(() => {
@@ -109,10 +117,15 @@ export class MembershipStore {
       this.#db.prepare("INSERT INTO access_audit(at,operator,binding,action) VALUES(?,?,?,?)").run(Date.now(), "local-operator", source, "legacy-membership-import");
     });
   }
-  #transaction<T>(write: () => T): T { return withPermissionWrite(() => sqliteTransaction(this.#db, write), this.#readCache); }
-  close() { this.#readCache.close(); this.#closeDatabase(); }
+  #transaction<T>(write: () => T): T { const result = withPermissionWrite(() => sqliteTransaction(this.#db, write), this.#readCache); this.#changes.emit(); return result; }
+  /** The storage owner committed membership writes on its own connection; republish and notify as a local write would. */
+  ownerCommitted(): void { withPermissionWrite(() => undefined, this.#readCache); this.#changes.emit(); }
+  close() { this.#readCache.close(); this.#changes.close(); this.#closeDatabase(); }
 }
 export class InstanceAccess {
+  #writes: IdentityWrites | null = null;
+  /** Membership administration writes go to the Server owner from now on. */
+  useOwnerWrites(writes: IdentityWrites): void { this.#writes = writes; }
   readonly #cache = new WeakMap<object, Principal | null>();
   readonly #sources = new WeakMap<Principal, IdentityProvider>();
   private readonly authenticatedMemberProviders: ReadonlySet<string>;
@@ -228,18 +241,26 @@ export class InstanceAccess {
       let body = ''; for await (const chunk of request) { body += chunk.toString(); if (Buffer.byteLength(body) > 16_384) { send(413, { error: 'too_large' }); return true; } }
       const change = JSON.parse(body);
       if (this.role(identity) !== 'admin') { send(403, { error: 'administrator_required' }); return true; }
+      // With an owner Worker, administration is rechecked under its writer lock before commit.
+      const authorize = () => { const current = this.authenticate(request); return !!current && this.role(current) === 'admin'; };
       if (change && typeof change.actorId === 'string' && this.actors) {
         if (Object.keys(change).some(k => !['actorId', 'role', 'enabled'].includes(k)) || this.actors.get(change.actorId)?.kind !== 'human') throw new Error('Invalid member');
         if (this.actors.findHuman(identity)?.id === change.actorId && (!change.enabled || change.role !== 'admin')) { send(409, { error: 'cannot_remove_own_administration' }); return true; }
-        this.store.setActor(change.actorId, change.role, change.enabled, principalKey(identity)); send(200, { ok: true }); return true;
+        if (this.#writes) await this.#writes.setActorMembership(authorize, change.actorId, change.role, change.enabled, principalKey(identity));
+        else this.store.setActor(change.actorId, change.role, change.enabled, principalKey(identity));
+        send(200, { ok: true }); return true;
       }
       if (Object.keys(change).some(k => !['provider', 'subject', 'role', 'enabled'].includes(k))) throw new Error('Invalid member');
       // Local administration remains the recovery path; prevent self-removal in the remote API.
       if (principalKey(change) === principalKey(identity) && (!change.enabled || change.role !== 'admin')) { send(409, { error: 'cannot_remove_own_administration' }); return true; }
       const targetActor = this.actors?.findHuman(change);
       if (targetActor && targetActor.id === this.actors?.findHuman(identity)?.id && (!change.enabled || change.role !== 'admin')) { send(409, { error: 'cannot_remove_own_administration' }); return true; }
-      this.store.set(change, change.role, change.enabled, principalKey(identity));
-      if (targetActor) this.store.setActor(targetActor.id, change.role, change.enabled, principalKey(identity));
+      if (this.#writes) await this.#writes.setMembership(authorize, { provider: change.provider, subject: change.subject }, change.role, change.enabled,
+        principalKey(identity), targetActor?.id ?? null);
+      else {
+        this.store.set(change, change.role, change.enabled, principalKey(identity));
+        if (targetActor) this.store.setActor(targetActor.id, change.role, change.enabled, principalKey(identity));
+      }
       send(200, { ok: true });
     } catch { send(400, { error: 'invalid_membership_change' }); }
     return true;

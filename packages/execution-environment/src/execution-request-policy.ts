@@ -5,6 +5,12 @@ export type ExecutionRequestEffect =
   | "active-turn-input" | "configured-execution";
 
 export function executionRequestEffect(method: string): ExecutionRequestEffect {
+  // The collaboration receipt is a read-only projection of an already
+  // admitted request.  It must remain available while the target account is
+  // bound to a different execution environment; treating the queue
+  // namespace as a write here makes the internal handoff unable to observe
+  // its own durable request.
+  if (method === "thread/queue/collaborationReceipt") return "none";
   if (["turn/start", "thread/queue/add", "thread/queue/start"].includes(method)) return "admit-input";
   if (["turn/steer", "thread/queue/steer"].includes(method)) return "active-turn-input";
   // Native Goal intent and stop do not acquire the editor's personal ENV.

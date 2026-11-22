@@ -4,50 +4,17 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID }
 import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SshCodexServerBinding } from "./ssh-codex-connections.js";
-import { validateSshConnection } from "./ssh-connection.js";
+import {
+  SshManagementError,
+  hostKeyFingerprint,
+  knownHostsPath,
+  parseSshConnectionInput,
+  sshBinding,
+  type SshConnectionInput,
+  type SshConnectionRecord,
+} from "./ssh-connection-records.js";
 
-export interface SshConnectionRecord {
-  serverId: string;
-  revision: number;
-  displayName: string;
-  hostname: string;
-  port: number;
-  username: string;
-  enabled: boolean;
-  hideFromNewChat?: boolean;
-  workspaceBrowseRoots: string[];
-  fingerprint: string;
-}
-export interface SshConnectionInput {
-  displayName: string;
-  hostname: string;
-  port: number;
-  username: string;
-  enabled: boolean;
-  hideFromNewChat?: boolean;
-  workspaceBrowseRoots: string[];
-  password?: string;
-}
-export class SshManagementError extends Error {
-  constructor(readonly code: "invalid" | "conflict" | "missing" | "locked" | "unavailable" | "trust", readonly status = 400) {
-    super(code); this.name = "SshManagementError";
-  }
-}
-
-export function parseSshConnectionInput(value: unknown): SshConnectionInput {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new SshManagementError("invalid");
-  const row = value as Record<string, unknown>;
-  if (Object.keys(row).some(k => !["displayName", "hostname", "port", "username", "enabled", "workspaceBrowseRoots", "password", "hideFromNewChat"].includes(k))) throw new SshManagementError("invalid");
-  const { displayName, hostname, port, username, enabled, workspaceBrowseRoots, password, hideFromNewChat } = row;
-  if (typeof displayName !== "string" || !displayName.trim() || displayName.length > 100 || /[\r\n\0]/u.test(displayName)
-    || typeof hostname !== "string" || hostname.length > 253 || !/^[a-zA-Z0-9][a-zA-Z0-9.:-]*$/u.test(hostname)
-    || typeof username !== "string" || !/^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,63}$/u.test(username)
-    || !Number.isInteger(port) || Number(port) < 1 || Number(port) > 65535 || typeof enabled !== "boolean"
-    || !Array.isArray(workspaceBrowseRoots) || workspaceBrowseRoots.length > 16 || workspaceBrowseRoots.some(p => typeof p !== "string" || !p.startsWith("/") || p.length > 4096 || /[\r\n\0]/u.test(p))
-    || (hideFromNewChat !== undefined && typeof hideFromNewChat !== "boolean")
-    || (password !== undefined && (typeof password !== "string" || !password || password.length > 4096 || /[\r\n\0]/u.test(password)))) throw new SshManagementError("invalid");
-  return { displayName: displayName.trim(), hostname, port: Number(port), username, enabled, workspaceBrowseRoots: [...workspaceBrowseRoots] as string[], ...(hideFromNewChat === undefined ? {} : { hideFromNewChat: hideFromNewChat as boolean }), ...(password === undefined ? {} : { password: password as string }) };
-}
+export * from "./ssh-connection-records.js";
 
 /** No-follow owner-only reads, including key and legacy credential references. */
 export function readPrivateSshFile(path: string, maxBytes: number): Buffer {
@@ -66,14 +33,6 @@ function privateKey(path: string, mayCreate: boolean): Buffer {
   const key = readPrivateSshFile(path, 32);
   if (key.length !== 32) throw new Error("Invalid SSH credential key");
   return key;
-}
-export function hostKeyFingerprint(hostKey: string): string {
-  const fields = hostKey.trim().split(/\s+/u);
-  if (fields.length !== 3 || fields[1] !== "ssh-ed25519" || !/^[a-zA-Z0-9+/]+={0,2}$/u.test(fields[2]!)) throw new SshManagementError("trust");
-  const decoded = Buffer.from(fields[2]!, "base64");
-  if (decoded.length !== 51 || decoded.toString("base64") !== fields[2]
-    || decoded.readUInt32BE(0) !== 11 || decoded.subarray(4, 15).toString() !== "ssh-ed25519" || decoded.readUInt32BE(15) !== 32) throw new SshManagementError("trust");
-  return `SHA256:${createHash("sha256").update(decoded).digest("base64").replace(/=+$/u, "")}`;
 }
 const SCHEMA = "CREATE TABLE ssh_connections (server_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, config_json TEXT NOT NULL, host_key TEXT NOT NULL, credential BLOB NOT NULL) STRICT";
 /** Published SQL is also consumed by the bounded legacy fallback builder. */
@@ -172,24 +131,24 @@ export class SshConnectionStore {
   binding(serverId: string): SshCodexServerBinding {
     const config = this.get(serverId);
     if (!config.enabled) throw new SshManagementError("unavailable", 409);
-    const row = this.db.prepare("SELECT host_key FROM ssh_connections WHERE server_id=?").get(serverId)!;
-    const trustPath = join(this.directory, `${serverId.slice(4)}.known_hosts`);
-    // DB is authority; this is a private, replaceable OpenSSH projection.
-    const fd = openSync(trustPath, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o600);
+    this.writeKnownHosts(serverId);
+    return sshBinding(this.directory, config, async () => this.password(serverId, config.revision));
+  }
+  /** DB is authority; known_hosts is a private, replaceable OpenSSH projection of it. */
+  writeKnownHosts(serverId: string): void {
+    const row = this.db.prepare("SELECT host_key FROM ssh_connections WHERE server_id=?").get(serverId);
+    if (!row) throw new SshManagementError("missing", 404);
+    const fd = openSync(knownHostsPath(this.directory, serverId), constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o600);
     try { writeFileSync(fd, `${row.host_key}\n`); } finally { closeSync(fd); }
-    const connection = {
-      hostname: config.hostname, port: config.port, username: config.username, knownHostsFile: trustPath,
-      authentication: { kind: "password" as const, resolvePassword: async () => {
-        const current = this.db.prepare("SELECT * FROM ssh_connections WHERE server_id=?").get(serverId);
-        if (!current) throw new SshManagementError("missing", 404);
-        const recipe = this.record(current);
-        if (!recipe.enabled) throw new SshManagementError("unavailable", 409);
-        if (recipe.revision !== config.revision) throw new SshManagementError("conflict", 409);
-        return this.decrypt(serverId, current.credential as Uint8Array);
-      } },
-    };
-    validateSshConnection(connection);
-    return { descriptor: { serverId, displayName: config.displayName, workspaceBrowseRoots: config.workspaceBrowseRoots, ...(config.hideFromNewChat === undefined ? {} : { hideFromNewChat: config.hideFromNewChat }) }, connection };
+  }
+  /** The stored password, only while the connection is enabled at the revision the binding was made for. */
+  password(serverId: string, revision: number): string {
+    const current = this.db.prepare("SELECT * FROM ssh_connections WHERE server_id=?").get(serverId);
+    if (!current) throw new SshManagementError("missing", 404);
+    const recipe = this.record(current);
+    if (!recipe.enabled) throw new SshManagementError("unavailable", 409);
+    if (recipe.revision !== revision) throw new SshManagementError("conflict", 409);
+    return this.decrypt(serverId, current.credential as Uint8Array);
   }
   close() { this.db.close(); this.key.fill(0); }
   private record(row: Record<string, unknown>): SshConnectionRecord {

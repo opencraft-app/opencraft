@@ -11,7 +11,7 @@ import { CodexRouterOwner } from "../../apps/codex-core/src/router-owner.js";
 import { CodexGenerationRegistry, type GenerationTicket } from "../../apps/codex-core/src/generation-registry.js";
 import { CodexGenerationRouter, startGenerationSocket, type GenerationRuntimeDirectory } from "../../apps/codex-core/src/generation-router.js";
 
-async function fixture(callbacks:Record<string,boolean>={},replay=false,handoff=false,workspaceCapabilities:Record<string,boolean>={}) {
+async function fixture(callbacks:Record<string,boolean>={},replay=false,handoff=false,workspaceCapabilities:Record<string,boolean>={},titleCapabilities:Record<string,boolean>={}) {
   const root = await mkdtemp(join(tmpdir(), "oc-gen-router-")), registry = new CodexGenerationRegistry(root);
   const servers: WebSocketServer[] = [], sockets: WebSocket[] = [];
   const relays=new Map<string,Awaited<ReturnType<typeof startOrchestrationCallbackRelay>>>(),fenced=new Set<string>();
@@ -58,7 +58,7 @@ async function fixture(callbacks:Record<string,boolean>={},replay=false,handoff=
   registry.activate("old", 0);
   const owner = handoff ? new CodexRouterOwner(registry) : undefined; await owner?.ready;
   const runtime: GenerationRuntimeDirectory = { registry, owner,
-    async ensure(id) { return { ...(workspaceCapabilities[id]?{workspaceExecutionVersion:1 as const}:{}), protocolVersion: 1, pid: 1, codexPid: 2, dataDirectory: root, proxyBaseUrl: "http://127.0.0.1:1", nativeSocket: join(root, id, replay&&callbacks[id]?"callback.sock":"native.sock"),...(callbacks[id]?{callbackProtocolVersion:1 as const,pendingCallbacks:0,pendingOrchestrationMutations:0}:{}) }; },
+    async ensure(id) { return { ...(titleCapabilities[id]?{threadTitleToolVersion:1 as const}:{}), ...(workspaceCapabilities[id]?{workspaceExecutionVersion:1 as const}:{}), protocolVersion: 1, pid: 1, codexPid: 2, dataDirectory: root, proxyBaseUrl: "http://127.0.0.1:1", nativeSocket: join(root, id, replay&&callbacks[id]?"callback.sock":"native.sock"),...(callbacks[id]?{callbackProtocolVersion:1 as const,pendingCallbacks:0,pendingOrchestrationMutations:0}:{}) }; },
     admit(ticket: GenerationTicket) { assert.equal(registry.valid(ticket), true);if(fenced.has(ticket.generationId))throw Error('Generation retirement fenced');return () => {}; }, observe() {}, };
   const router = new CodexGenerationRouter(runtime), listener = await startGenerationSocket(join(root, "router.sock"), router);
   let client = new WebSocket(`ws+unix://${join(root, "router.sock")}:/${replay?'?opencraftLane=fixture-gateway':''}`);const messages: any[] = [];
@@ -269,7 +269,7 @@ test("successful delete without a notification removes only the cold-history req
 test("mixed APP capabilities filter new tools and private metadata for legacy Threads",async()=>{
   const f=await fixture({new:true});
   try{
-    const tools=[{name:"read_thread"},{name:"thread_spawn"},{name:"thread_tell"},{name:"thread_inspect"},{name:"thread_wait"}];
+    const tools=[{name:"thread_set_title"},{name:"read_thread"},{name:"thread_spawn"},{name:"thread_tell"},{name:"thread_inspect"},{name:"thread_wait"}];
     await f.rpc("thread/start",{dynamicTools:tools});
     assert.deepEqual(f.calls.filter(call=>call.method==="thread/start").at(-1)!.params.dynamicTools,[{name:"read_thread"}]);
     f.registry.activate("new",1);await f.rpc("thread/start",{dynamicTools:tools});
@@ -566,4 +566,15 @@ test("execution fault retires router callback and connection custody while prese
     assert.ok(unknown.length >= 3);
     assert.ok(unknown.every((row: any) => row.phase === "released" && row.uncertainty), "release of custody does not claim Native success or erase uncertainty");
   } finally {held?.release(); await f.close();}
+});
+
+test("a title-capable APP retains the title tool while a replay-only APP filters it",async()=>{
+ const f=await fixture({old:true,new:true},false,false,{}, {new:true});
+ try{
+  const dynamicTools=[{name:'thread_spawn'},{name:'thread_set_title'}];
+  await f.rpc('thread/start',{dynamicTools});
+  assert.deepEqual(f.calls.filter(c=>c.method==='thread/start').at(-1)!.params.dynamicTools,[{name:'thread_spawn'}]);
+  f.registry.activate('new',1);await f.rpc('thread/start',{dynamicTools});
+  assert.deepEqual(f.calls.filter(c=>c.method==='thread/start').at(-1)!.params.dynamicTools,dynamicTools);
+ }finally{await f.close();}
 });

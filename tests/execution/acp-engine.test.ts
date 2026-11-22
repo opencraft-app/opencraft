@@ -902,3 +902,14 @@ test("observed restricted Codex policy preserves workspace, network and reviewer
   assert.deepEqual(prepared.config.sandbox_workspace_write,{writable_roots:[f.root],network_access:false,exclude_tmpdir_env_var:false,exclude_slash_tmp:false});
   assert.equal(prepared.permissions,undefined,"no untranslatable custom profile overrides the actual sandbox");
 });
+
+test('ACP publishes the persisted title after creation and self rename',async t=>{
+ const f=await fixture(t),notices:any[]=[];f.engine.subscribe((method,params)=>{if(method==='thread/name/updated')notices.push(params);});
+ const settings=await f.engine.request('opencraft/orchestration/prepare',{operationId:'titled-child',arguments:{title:'Initial task'},sourceSettings:{cwd:f.root}},client);
+ const child=await f.engine.request('opencraft/orchestration/create',{operationId:'titled-child',settings},client);
+ assert.deepEqual(notices.at(-1),{threadId:child.threadId,threadName:'Initial task'});
+ assert.equal((await f.engine.request('thread/read',{threadId:child.threadId},client)).thread.name,'Initial task');
+ await f.engine.request('thread/name/set',{threadId:child.threadId,name:'Updated task'},client);
+ assert.deepEqual(notices.at(-1),{threadId:child.threadId,threadName:'Updated task'});
+ assert.equal((await f.engine.request('thread/read',{threadId:child.threadId},client)).thread.name,'Updated task');
+});

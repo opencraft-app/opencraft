@@ -13,9 +13,12 @@ import { assertModelPolicy, readPolicy, resolvePolicySelection, ModelPolicyError
 import { ProvisionalThreads } from "./provisional-threads.js";
 import { nativeEmptyCreation } from "./native-empty-creation.js";
 import { HostInteractions, InteractionFault } from "@opencraft/app-host-server/interactions";
-import { COLLABORATION_CAPABILITIES } from '@opencraft/appserver-protocol/collaboration';
+import { COLLABORATION_CAPABILITIES, type CollaborationCapabilities } from '@opencraft/appserver-protocol/collaboration';
 import { SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND, isHumanInteraction, type InteractionSourceRequest } from "@opencraft/appserver-protocol";
 import { projectThreadTopologyResult } from "./thread-orchestration-projection.js";
+import type { HumanGitExecutionPort } from '@opencraft/execution-environment/human-git-execution';
+import type { GitExecutionHandoff, GitExecutionReservation } from '@opencraft/execution-environment/git-execution';
+import { observeNativeExecutionProcess, observeStandaloneCodexExecution } from './native-execution-origin.js';
 import { ExecutionLeaseStore, type ExecutionSubmission, originalExecutionInputIds, snapshotExecutionSubmission } from "./execution-lease-store.js";
 import { EXECUTION_ENVIRONMENT_FIELD, requiresEnvironmentAuthority, requiresCurrentEnvironmentAuthority, executionEnvironmentOwner, type ExecutionEnvironmentRuntime, type ExecutionEnvironmentSnapshot, type EnvironmentExecutionScope } from '@opencraft/execution-environment';
 import { CodexOrchestrationControl, OrchestrationControlError } from "./codex-orchestration-control.js";
@@ -243,6 +246,11 @@ interface SharedCodexRoutingOptions {
   readonly nativeTool?: (context: { threadId: string; turnId: string; callId: string },
     tool: { namespace?: string | null; name: string }, args: unknown, signal: AbortSignal) => Promise<unknown> | null;
   readonly executionEnvironment?: ExecutionEnvironmentRuntime;
+  /** Compiled composition owns the sole vault; the adapter attests its actual native owner. */
+  readonly createExecutionGit?: (native: {
+    inspect(value: GitExecutionHandoff): Promise<boolean>;
+    inspectReservation(value: GitExecutionReservation): Promise<boolean>;
+  }) => Pick<HumanGitExecutionPort, 'reserve' | 'prepare' | 'close'>;
   /** Trusted composition delegates input control, never executor credentials. */
   readonly sharedTurnInput?: boolean;
   /** Trusted Host composition. Never accepted from renderer requests. */
@@ -262,7 +270,10 @@ interface SharedCodexRoutingOptions {
     /** Shared deployment owner; its lifetime belongs to Headless, not a transport. */
     readonly derivedQueries?: TokenUsageQueryService;
   };
+  /** Headless observes gateway model grants in its Server owner Worker. */
+  readonly filterGatewayModelCatalog?: (path: string, actorId: string | null, models: unknown[]) => Promise<unknown[]>;
   readonly collaboration?: {
+    readonly capabilities?: CollaborationCapabilities;
     modelExecutionAuthority?(threadId:string,inputId:string):{authorizer:string;executor:string|null;expiresAt:number;authorityId?:string;parentAuthorityId?:string};
     topology?(threadId: string): {parentThreadId:string|null;visibility:"visible"|"hidden"} | null;
     queuedContext?(threadId: string, inputId: string, input: readonly unknown[]): Promise<unknown>;
@@ -273,7 +284,7 @@ interface SharedCodexRoutingOptions {
     inputDelegation?(threadId:string,inputId:string,expectedTurnId?:string):string|null;
     prepare?(context: NonNullable<TransportSubmissionContext["actorContext"]>, input: readonly unknown[]): Promise<unknown>;
     canCancel?(context: NonNullable<TransportSubmissionContext["actorContext"]>, requestId: string): boolean;
-    command(context: NonNullable<TransportSubmissionContext["actorContext"]>, body: Record<string, unknown>): Promise<unknown>;
+    command(context: NonNullable<TransportSubmissionContext["actorContext"]>, body: Record<string, unknown>, submission?: TransportSubmissionContext): Promise<unknown>;
     authorize(context: NonNullable<TransportSubmissionContext["actorContext"]>, threadId: string, inputId: string, input?: readonly unknown[]): void;
     orchestration?: { available?():boolean; tool(threadId:string,turnId:string,key:string,name:string,args:Record<string,unknown>,delegationId?:string,callbackIncarnation?:string):Promise<unknown>; observed(snapshot:ThreadOrchestrationSnapshot):void };
     started(threadId: string, inputId: string, turnId: string): void;
@@ -373,7 +384,7 @@ class OpenCraftQueueRpcError extends Error {
   constructor(readonly code: number, message: string, readonly data?: unknown) { super(message); }
 }
 
-function withCodexHostCapabilities(value: unknown, attachmentStaging: AttachmentStagingCapability, desktop?: HostDesktopCapability, collaboration = false): RpcRecord {
+function withCodexHostCapabilities(value: unknown, attachmentStaging: AttachmentStagingCapability, desktop?: HostDesktopCapability, collaboration?: CollaborationCapabilities): RpcRecord {
   const result = record(value);
   const capabilities = record(result.capabilities);
   const extensions = { ...record(capabilities.extensions) };
@@ -384,7 +395,7 @@ function withCodexHostCapabilities(value: unknown, attachmentStaging: Attachment
       ...capabilities,
       extensions: {
         ...extensions,
-        ...(collaboration ? {"opencraft/collaboration": COLLABORATION_CAPABILITIES} : {}),
+        ...(collaboration ? {"opencraft/collaboration": collaboration} : {}),
         [OPENCRAFT_THREAD_PINS_EXTENSION]: OPENCRAFT_THREAD_PINS_CAPABILITY,
         [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: attachmentStaging,
         ...(desktop ? { [OPENCRAFT_DESKTOP_EXTENSION]: desktop } : {}),
@@ -512,6 +523,14 @@ export class CodexEngineAdapter implements DuplexTransport {
           const generation = this.generationRoutes.get(threadId), incarnation = generation ? this.generationIncarnations.get(generation) : undefined;
           store!.reconcile(threadId, matched,
             generation && incarnation !== undefined ? JSON.stringify([generation, incarnation]) : this.nativeCore?.executionIncarnation);
+          // Reattach a read-only broker to an existing native execution after
+          // Gateway replacement. Do not resume/reconfigure/restart the Turn or
+          // transfer credentials to a newer sender. Retained sealed evidence can
+          // discover this replica through its canonical authority directory.
+          for (const turn of matched) if (turn.status === 'inProgress' && this.executionGit) {
+            try { await this.executionGit.prepare({hostId: 'local-codex', threadId, turnId: turn.id}); }
+            catch { this.diagnostic({event: 'git-execution-reattachment-pending'}); }
+          }
           if (result.nextCursor == null || (!turnIds.size && !inputIds.size)) break;
           if (typeof result.nextCursor !== "string" || !result.nextCursor || seen.has(result.nextCursor)) throw new Error("Invalid execution reconciliation cursor");
           cursor = result.nextCursor; seen.add(cursor);
@@ -557,6 +576,48 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly tasks: TasksService | null;
   private readonly coreBridge: CodexCoreBridge | null;
   private readonly nativeCore: CodexNativeCoreTransport | null;
+  private executionGit: Pick<HumanGitExecutionPort, 'reserve' | 'prepare' | 'close'> | undefined;
+  /** Fresh native identity, never last sender, a cached environment or a browser PID. */
+  private async gitNativeIncarnation(threadId: string): Promise<string | undefined> {
+    if (this.closeOperation || !this.physicalAvailable || !this.physicalInitialized || this.executionBlocked(threadId)) return undefined;
+    if (this.nativeCore) {
+      const signal = AbortSignal.timeout(1500);
+      const health = await this.nativeCore.control.health(signal, 'native');
+      if (health.routingEpoch) {
+        const directory = await this.nativeCore.control.generationDirectory(threadId, signal);
+        const route = directory?.route;
+        const home = route && directory?.homes.find(home => home.generationId === route.generationId);
+        if (directory?.routingEpoch !== health.routingEpoch || !home || home.incarnation < 1) return undefined;
+        return JSON.stringify([home.generationId, home.incarnation]);
+      }
+      return (await observeStandaloneCodexExecution(health)).incarnation;
+    }
+    const child = this.child;
+    if (!child?.pid || child.exitCode !== null || child.signalCode !== null) return undefined;
+    const value = (await observeNativeExecutionProcess(child.pid)).incarnation;
+    return this.child === child && child.exitCode === null && child.signalCode === null ? value : undefined;
+  }
+  private async inspectGitNative(value: GitExecutionHandoff | GitExecutionReservation): Promise<boolean> {
+    try {
+      const threadId = value.scope.threadId, incarnation = await this.gitNativeIncarnation(threadId);
+      if (!incarnation || incarnation !== value.native.incarnation) return false;
+      if ('turnId' in value.native) {
+        const page = record(await this.requestPhysical('thread/turns/list', {
+          threadId, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded',
+        }, 1500));
+        const turn = record(Array.isArray(page.data) && page.data.length === 1 ? page.data[0] : null);
+        if (turn.id !== value.native.turnId || turn.status !== 'inProgress') return false;
+        const state = record(record(await this.requestPhysical('thread/read', {threadId, includeTurns: false}, 1500)).thread);
+        if (record(state.status).type !== 'active') return false;
+      }
+      return !this.closeOperation && await this.gitNativeIncarnation(threadId) === incarnation;
+    } catch { return false; }
+  }
+  private async beginExecution(threadId: string, inputId: string): Promise<string | undefined> {
+    const incarnation = this.executionGit ? await this.gitNativeIncarnation(threadId) : this.nativeCore?.executionIncarnation;
+    if (this.executionGit && !incarnation) throw new Error('git_execution_unavailable');
+    return this.executionLeases?.begin(threadId, inputId, incarnation);
+  }
   private transcriptCache: TranscriptReadCache | null = null;
   private readonly historyItemReadScheduler = new NativeItemReadScheduler(4);
   private readonly historyAdapterFallbackSignals = new WeakSet<AbortSignal>();
@@ -624,6 +685,14 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.coreBridge = options.kind !== "remote" && options.coreEndpoint !== undefined && !options.coreHostOverlays
       ? new CodexCoreBridge(options.coreEndpoint, options.coreAuthToken ?? "", () => this.maintenanceSnapshot(),
         (method, params, clientId) => this.admissionRejected(method, params, clientId, "maintenance")) : null;
+    if (this.coreBridge && options.createExecutionGit) throw new Error('Git execution requires native Host overlays');
+    if (options.createExecutionGit) {
+      if (options.executionEnvironment) throw new Error('Git execution cannot have two environment owners');
+      this.executionGit = options.createExecutionGit({
+        inspect: value => this.inspectGitNative(value),
+        inspectReservation: value => this.inspectGitNative(value),
+      });
+    }
     if (this.coreBridge) {
       // A core client must not create local stores or a second queue/account writer.
       this.tasks = null;
@@ -1329,9 +1398,18 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   private async sendClientMessage(message: RpcRecord, context: TransportSubmissionContext): Promise<void> {
     delete message[EXECUTION_ENVIRONMENT_FIELD]; delete record(message.params)[EXECUTION_ENVIRONMENT_FIELD];
+    const params = record(message.params);
+    // The durable collaboration ledger is the authority for this queue
+    // admission. No creator credentials exist for the internal connection;
+    // the Host verifies the request before accepting it, and dispatch later
+    // restores the original execution provenance for turn/start.
+    const collaborationQueueAdmission = message.method === 'thread/queue/add'
+      && params.mode !== 'steer'
+      && typeof context.collaborationRequestId === 'string'
+      && params.clientUserMessageId === `actor-input:${context.collaborationRequestId}`;
     try {
-      if (this.options.executionEnvironment && requiresEnvironmentAuthority(string(message.method))) {
-        const scope = this.options.executionEnvironment.scope(context, 'local-codex', record(message.params));
+      if (this.options.executionEnvironment && requiresEnvironmentAuthority(string(message.method)) && !collaborationQueueAdmission) {
+        const scope = this.options.executionEnvironment.scope(context, 'local-codex', params);
         if (requiresCurrentEnvironmentAuthority(string(message.method), message.params)) this.assertCurrentEnvironmentOwner(scope);
         else if (['turn/steer', 'thread/queue/steer'].includes(string(message.method)) && !this.options.sharedTurnInput)
           this.assertCurrentEnvironmentOwner(scope);
@@ -1587,7 +1665,10 @@ export class CodexEngineAdapter implements DuplexTransport {
         return;
       }
       if (message.method.startsWith("opencraft/orchestration/")) {
-        try { const result = await this.orchestrationControl.handle(message.method, record(message.params), context); this.emit({ id, result }, clientId); }
+        try {
+          const result = await this.orchestrationControl.handle(message.method, record(message.params), context);
+          this.emit({ id, result }, clientId);
+        }
         catch (error) { this.emit({ id, error: { code: error instanceof OrchestrationControlError ? error.code : -32000, message: errorMessage(error) } }, clientId); }
         return;
       }
@@ -1616,7 +1697,7 @@ export class CodexEngineAdapter implements DuplexTransport {
           if (!this.options.collaboration) throw Object.assign(new Error('unsupported_capability'), {status:409,code:'unsupported_capability'});
           if (!context.actorContext) throw Object.assign(new Error('actor_authentication_required'), {status:401,code:'actor_authentication_required'});
           context.resourceOwner?.assertCurrent();
-          const result = await this.options.collaboration.command(context.actorContext, record(message.params));
+          const result = await this.options.collaboration.command(context.actorContext, record(message.params), context);
           context.resourceOwner?.assertCurrent();
           if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch) this.emit({id,result},clientId);
         } catch (error) {
@@ -1856,7 +1937,7 @@ export class CodexEngineAdapter implements DuplexTransport {
           try {
             const threadId = string(params.threadId), inputId = string(params.clientUserMessageId);
             await this.admitModelExecution("start", params, context);
-            const executionId = this.executionLeases?.begin(threadId, inputId, this.nativeCore?.executionIncarnation);
+            const executionId = await this.beginExecution(threadId, inputId);
             await this.prepareSessionMcp(threadId, inputId, executionId);
           } catch (cause) {
             this.retireGatewayAdmission(params);
@@ -1874,7 +1955,14 @@ export class CodexEngineAdapter implements DuplexTransport {
             const actor = (this.options.modelActor ?? this.options.tokenUsage?.actor)?.(context.actorContext);
             return actor?.kind === 'human' ? actor.id : null;
           } } : {}),
-          ...(message.method === "model/list" ? {gatewayViewer:()=>context.actorContext ? this.options.tokenUsage?.actor(context.actorContext)?.id??null:null}:{}),
+          ...(message.method === "model/list" ? { gatewayViewer: () => {
+            if (this.options.filterGatewayModelCatalog) {
+              this.validateSubmissionContext(context);
+              context.resourceOwner?.assertCurrent();
+            }
+            const resolve = this.options.modelActor ?? this.options.tokenUsage?.actor;
+            return context.actorContext ? resolve?.(context.actorContext)?.id ?? null : null;
+          } } : {}),
           executionAuthorityAdmitted,
           ...(["thread/read", "thread/turns/list"].includes(string(message.method)) ? { historyTiming: { pairId: randomUUID(), started: receivedAt } } : {}),
           ...((message.method === "thread/start" || message.method === "thread/fork") ? { metadataSender: context.sender } : {}) };
@@ -1942,6 +2030,9 @@ export class CodexEngineAdapter implements DuplexTransport {
         if (pending.historyTiming) pending.historyTiming.nativeStarted = performance.now();
         try{await this.writePhysical({ ...message, id: physicalId }, () => {
           this.validateSubmissionContext(context);
+          if (message.method === "thread/name/set" && context.orchestrationOperationId && context.orchestrationCanAdmit?.() !== true) {
+            throw new OrchestrationControlError(403, "Orchestration delegation was revoked");
+          }
           const owned = ownsRequest();
           resumeStage("native-dispatch", owned ? "attempted" : "client-replaced");
           return owned;
@@ -2150,6 +2241,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.remoteGoalCapability = null;
     this.revokeDesktopOwners();
     this.closeOperation = (async () => {
+      await this.executionGit?.close(); this.executionGit = undefined;
       await this.transcriptCache?.close(); this.transcriptCache = null;
       this.provisionalThreads?.close(); this.provisionalThreads = null;
       this.catalogChanges.clear();
@@ -2328,7 +2420,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         } else this.initializeResult = shared;
       } else {
         this.initializeResult = this.attachmentStaging
-          ? withCodexHostCapabilities(message.result, this.attachmentStaging.capability, this.desktopService?.capability(), !!this.options.collaboration)
+          ? withCodexHostCapabilities(message.result, this.attachmentStaging.capability, this.desktopService?.capability(), (this.options.collaboration?.capabilities ?? (this.options.collaboration ? COLLABORATION_CAPABILITIES : undefined)))
           : projectSharedNativeCodexInitialize(message.result);
       }
       if (this.threadMetadata) {
@@ -2570,6 +2662,27 @@ export class CodexEngineAdapter implements DuplexTransport {
         });
         const gatewayPath=configuredModelGatewayPath();
         if(pending.method==="model/list" && gatewayPath && Array.isArray(record(message.result).data)) {
+          const filter = this.options.filterGatewayModelCatalog;
+          if (filter) {
+            const generation = this.sessionMcpGeneration, routing = this.generationRoutingEpoch;
+            const result = record(message.result);
+            this.pending.delete(String(id));
+            if (pending.timer) clearTimeout(pending.timer);
+            const failure = () => {
+              if (this.validClientRequest(pending)) this.emit({ id: pending.originalId,
+                error: { code: -32043, message: "Model catalog is unavailable" } }, pending.clientId);
+            };
+            let actor: string | null;
+            try { actor = pending.gatewayViewer?.() ?? null; }
+            catch { failure(); return; }
+            void filter(gatewayPath, actor, result.data as unknown[]).then(data => {
+              if (!this.validClientRequest(pending)) return;
+              if (generation !== this.sessionMcpGeneration || routing !== this.generationRoutingEpoch
+                || (pending.gatewayViewer?.() ?? null) !== actor) { failure(); return; }
+              this.emit({ ...message, id: pending.originalId, result: { ...result, data } }, pending.clientId, pending.method);
+            }).catch(failure);
+            return;
+          }
           const ledger=new ModelGatewayStore(gatewayPath);
           try { const actor=pending.gatewayViewer?.()??null;
             message={...message,result:{...record(message.result),data:(record(message.result).data as unknown[]).filter(item=>{
@@ -2920,6 +3033,9 @@ export class CodexEngineAdapter implements DuplexTransport {
         return this.options.collaboration.tool(string(params.threadId),string(params.turnId),string(params.tool),record(params.arguments));
       }).then(value=>respond(true,value),(error:unknown)=>{
         const status=typeof record(error).status==="number"?record(error).status:error instanceof OrchestrationControlError?error.code:503;
+        if (record(error).code === "thread_title_required") {
+          return respond(false,{error:"A nonblank, single-line title of at most 256 characters is required.",status});
+        }
         const historyTooLarge = record(error).code === "HISTORY_RESPONSE_TOO_LARGE";
         if (historyTooLarge) {
           this.diagnostic({event:"thread-orchestration-tool-failed",threadId:string(params.threadId),turnId:string(params.turnId),tool:string(params.tool),status:413,code:"HISTORY_RESPONSE_TOO_LARGE"});
@@ -3458,7 +3574,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       const threadId = string(params.threadId), inputId = string(params.clientUserMessageId) || `internal-input:${randomUUID()}`;
       params = { ...params, clientUserMessageId: inputId };
       await this.admitModelExecution("start", params, context);
-      const executionId = this.executionLeases?.begin(threadId, inputId, this.nativeCore?.executionIncarnation);
+      const executionId = await this.beginExecution(threadId, inputId);
       try { await this.prepareSessionMcp(threadId, inputId, executionId); }
       catch (cause) { this.retireGatewayAdmission(params);throw new RecoveryNotSubmitted(string(this.sessionMcpFailure(cause).message), { cause }); }
     }
@@ -4722,7 +4838,14 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
   }
   private async prepareSessionMcpInternal(threadId: string, inputId?: string, executionId?: string): Promise<void> {
-    if (!threadId || !this.options.sessionMcp && !this.options.executionEnvironment || this.ephemeralThreads.has(threadId)) return;
+    if (!threadId || !this.options.sessionMcp && !this.options.executionEnvironment && !this.executionGit) return;
+    if (this.ephemeralThreads.has(threadId)) {
+      if (this.executionGit && inputId) {
+        const environment = await this.executionGit.reserve({hostId: 'local-codex', threadId, inputId});
+        if (Object.keys(environment.overlay()).length) throw new Error('Git environment refresh requires a persistent native Thread');
+      }
+      return;
+    }
     let keepInitialEnvironment = !!(this.options.executionEnvironment && inputId && this.initialEnvironmentThreads.has(threadId));
     let initial = this.sessionMcpInitial.get(threadId);
     const creation = this.provisionalThreads?.get(threadId);
@@ -4754,13 +4877,13 @@ export class CodexEngineAdapter implements DuplexTransport {
         if (!applied.bindGitExecution) this.executionEnvironments.set(threadId, { ...applied, account: current.account });
       }
     }
-    if (initial && (!this.options.executionEnvironment || keepInitialEnvironment)
+    if (initial && (!this.options.executionEnvironment && !this.executionGit || keepInitialEnvironment)
       && !this.sessionMcpRetirements.has(threadId) && (!inputId || !initial.inputId || initial.inputId === inputId)) {
       if (inputId) {
         if (!executionId) throw new Error("Session tools require an attested execution");
         initial.reservation.bind(threadId, inputId, executionId); initial.inputId = inputId;
       }
-      if (!this.options.executionEnvironment || keepInitialEnvironment) return;
+      if (!this.options.executionEnvironment && !this.executionGit || keepInitialEnvironment) return;
     }
     if (keepInitialEnvironment) {
       return;
@@ -4793,7 +4916,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       stage = "resolve-tools";
       const configuration = structuredClone(await this.options.sessionMcp?.(threadId, inputId, executionId) ?? null);
       stage = "resolve-environment";
-      let environment = this.options.executionEnvironment?.snapshot(this.options.executionEnvironment.execution('local-codex', threadId, inputId));
+      let environment = this.executionGit && inputId
+        ? await this.executionGit.reserve({hostId: 'local-codex', threadId, inputId})
+        : this.options.executionEnvironment?.snapshot(this.options.executionEnvironment.execution('local-codex', threadId, inputId));
       if (environment && !await this.canInjectEnvironment(threadId)) {
         // An empty requested environment does not prove that an independent
         // Native owner has cleared credentials installed by a previous owner.
@@ -4823,6 +4948,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       const thread = record(read.thread);
       if (thread.ephemeral === true) {
         this.ephemeralThreads.add(threadId);
+        if (environment && Object.keys(environment.overlay()).length) throw new Error('Git environment refresh requires a persistent native Thread');
         return;
       }
       stage = "check-idle";
@@ -4840,7 +4966,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         // Tool-only refresh has the same asynchronous retirement boundary.
         // Allow a short reconciliation window before returning a retryable
         // refusal; the environment handoff retains its longer existing budget.
-        const deadline = Date.now() + (this.options.executionEnvironment ? 90_000 : 1_000);
+        const deadline = Date.now() + (this.options.executionEnvironment || this.executionGit ? 90_000 : 1_000);
         while (status !== "notLoaded") {
           current();
           if (Date.now() >= deadline) throw new SessionMcpRecoveryPending();
@@ -4954,7 +5080,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       const params = record(message.params), threadId = string(params.threadId);
       const inputId = string(params.clientUserMessageId) || `internal-input:${randomUUID()}`;
       message = { ...message, params: { ...params, clientUserMessageId: inputId } };
-      const executionId = this.executionLeases?.begin(threadId, inputId, this.nativeCore?.executionIncarnation);
+      const executionId = await this.beginExecution(threadId, inputId);
       try { await this.prepareSessionMcp(threadId, inputId, executionId); }
       catch (cause) { this.retireGatewayAdmission(params);throw new RecoveryNotSubmitted(string(this.sessionMcpFailure(cause).message), { cause }); }
     }
@@ -4964,8 +5090,9 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
     if (this.options.collaboration && message.method === "thread/start") {
       const params = record(message.params), tools = Array.isArray(params.dynamicTools) ? params.dynamicTools : [];
-      const owned = (this.nativeCore?.supportsOrchestration || this.nativeCore?.supportsOrchestrationRouting) && this.options.collaboration.orchestration ? [...CONVERSATION_TOOLS,...THREAD_ORCHESTRATION_TOOLS] : CONVERSATION_TOOLS;
-      const names = new Set<string>(owned.map(t=>t.name));
+      const owned = (this.nativeCore?.supportsOrchestration || this.nativeCore?.supportsOrchestrationRouting) && this.options.collaboration.orchestration
+        ? [...CONVERSATION_TOOLS,...THREAD_ORCHESTRATION_TOOLS.filter(tool=>tool.name!=='thread_set_title'||this.nativeCore?.supportsThreadTitle)] : CONVERSATION_TOOLS;
+      const names = new Set<string>([...CONVERSATION_TOOLS,...THREAD_ORCHESTRATION_TOOLS].map(t=>t.name));
       message = {...message, params:{...params,dynamicTools:[...tools.filter(t=>!names.has(string(record(t).name))),...owned.map(t=>({type:"function",...t}))]}};
     }
     // Product default, not a second reasoning owner: all native starts (also

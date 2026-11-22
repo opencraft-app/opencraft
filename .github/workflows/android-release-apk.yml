@@ -1,0 +1,115 @@
+name: Android release APK
+
+# Builds the published app.opencraft APK with the repository-external production
+# key held by the android-release Environment. It never falls back to Expo's
+# development key; the manual internal APK workflow remains the only
+# development-key build. Desktop pre-release calls it to publish the APK; a
+# manual run only produces the signed APK as an Actions artifact.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Version the APK carries, such as v0.1.0-beta.7 (must match apps/mobile/app.json)
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag whose version and versionCode the APK carries
+        required: true
+        type: string
+    secrets:
+      ANDROID_RELEASE_KEYSTORE_BASE64:
+        required: true
+      ANDROID_RELEASE_KEYSTORE_PASSWORD:
+        required: true
+      ANDROID_RELEASE_KEY_ALIAS:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    if: github.repository == 'opencraft-app/opencraft' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    # Includes the Android SDK/NDK download and a cold Gradle build.
+    timeout-minutes: 60
+    environment: android-release
+    steps:
+      - name: Check release credentials
+        env:
+          ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+        run: |
+          missing=0
+          for name in ANDROID_RELEASE_KEYSTORE_BASE64 ANDROID_RELEASE_KEYSTORE_PASSWORD ANDROID_RELEASE_KEY_ALIAS; do
+            if test -z "${!name}"; then echo "Missing android-release secret: ${name}"; missing=1; fi
+          done
+          test "$missing" -eq 0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          # Release packages must not depend on a cache a pull request could write.
+          package-manager-cache: false
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+      # This job runs only on main, and GitHub scopes a pull request's caches
+      # to its own merge ref, so this cache holds only what main runs saved.
+      - name: Restore Gradle downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # Gradle distributions and resolved dependencies only; the build
+          # outputs stay in the fresh checkout. React Native and Expo pin the
+          # Gradle inputs through the lockfile.
+          path: |
+            ~/.gradle/wrapper/dists
+            ~/.gradle/caches/modules-2
+          key: android-gradle-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: android-gradle-${{ runner.os }}-
+      - run: sdkmanager 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0' 'build-tools;35.0.0' 'ndk;27.1.12297006' 'ndk;27.0.12077973' 'cmake;3.22.1'
+      - run: npm ci --no-audit --no-fund
+      - name: Derive the Android versionCode from the release tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          version_code="$(node scripts/release/android-version-code.mjs "$TAG")"
+          version="${TAG#v}"
+          test "$(jq -er .expo.version apps/mobile/app.json)" = "${version%-beta.*}"
+          echo "OPENCRAFT_ANDROID_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
+      - name: Materialize the production key outside the checkout
+        env:
+          ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+        run: |
+          signing="$RUNNER_TEMP/android-release-signing"
+          install -d -m 700 "$signing"
+          (umask 077
+            base64 --decode <<<"$ANDROID_RELEASE_KEYSTORE_BASE64" > "$signing/release.p12"
+            printf '%s' "$ANDROID_RELEASE_KEYSTORE_PASSWORD" > "$signing/password.txt")
+          {
+            echo "OPENCRAFT_ANDROID_RELEASE_KEYSTORE=$signing/release.p12"
+            echo "OPENCRAFT_ANDROID_RELEASE_PASSWORD_FILE=$signing/password.txt"
+          } >> "$GITHUB_ENV"
+      - name: Build and verify the signed APK
+        env:
+          OPENCRAFT_ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+        run: npm run matrix:build -- expo-android-release-apk
+      - name: Remove the production key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/android-release-signing"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: opencraft-android-release-${{ github.sha }}
+          path: |
+            apps/mobile/release/OpenCraft-*-android-release.apk
+            apps/mobile/release/OpenCraft-*-android-release.apk.sha256
+          if-no-files-found: error
+          retention-days: 14

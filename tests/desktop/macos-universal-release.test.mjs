@@ -83,8 +83,19 @@ test("macOS release workflow isolates signing secrets from native build jobs", a
   assert.match(workflow, /sign-notarize-macos\.mjs/u);
   assert.match(workflow, /builder_identity="\$\{CSC_NAME#Developer ID Application: \}"/u);
   assert.match(workflow, /--config\.mac\.identity="\$builder_identity"/u);
-  assert.match(workflow, /publish:\n/u);
-  assert.match(workflow, /permissions:\n      contents: write/u);
+  assert.match(workflow, /workflow_call:/u);
+  assert.doesNotMatch(workflow, /contents: write/u);
+  const prerelease = await readFile(new URL("../../.github/workflows/desktop-prerelease.yml", import.meta.url), "utf8");
+  assert.match(prerelease, /uses: \.\/\.github\/workflows\/macos-universal-release\.yml/u);
+  const signingCredentialNames = ["MACOS_CERTIFICATE_P12_BASE64", "MACOS_CERTIFICATE_PASSWORD", "APPLE_ID", "APPLE_APP_SPECIFIC_PASSWORD", "APPLE_TEAM_ID"];
+  for (const name of signingCredentialNames) {
+    assert.ok(workflow.includes(`      ${name}:\n        required: true`));
+    assert.ok(prerelease.includes(`      ${name}: \${{ secrets.${name} }}`));
+  }
+  // Staging waits for the signed macOS build; the other platforms' jobs are
+  // owned by their own release tests.
+  assert.match(prerelease, /candidate:\n    needs: \[[^\]\n]*\bmacos\b[^\]\n]*\]/u);
+  assert.match(prerelease, /publish:\n    needs: (?:candidate|\[[^\]\n]*\bcandidate\b[^\]\n]*\])\n/u);
 });
 
 test("signing fails before filesystem or Apple access when credentials are absent", async () => {
@@ -232,5 +243,6 @@ test("release checks credentials before native builds and verifies the final DMG
   assert.match(workflow, /arm64:\n    needs: credentials/u);
   assert.match(workflow, /x64:\n    needs: credentials/u);
   assert.ok(workflow.indexOf("notarize-macos-dmg.mjs") < workflow.indexOf('xcrun stapler validate "$dmg"'));
-  assert.ok(workflow.indexOf('xcrun stapler validate "$dmg"') < workflow.indexOf('shasum -a 256 "$dmg"'));
+  assert.ok(workflow.indexOf('xcrun stapler validate "$dmg"') < workflow.indexOf('shasum -a 256 ./*.dmg ./*.zip'));
+  assert.ok(workflow.indexOf('smoke-macos-dmg.mjs') < workflow.indexOf('name: opencraft-macos-universal-${{ github.sha }}'));
 });

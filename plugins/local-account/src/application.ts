@@ -114,7 +114,7 @@ export class LocalAccountApplication {
         const principal = await this.options.management.initialize({ mode: body.mode,
           username: body.username as string, password: body.password as string });
         if (this.#closed) error('account_service_retired', 503);
-        this.options.auth.issueSession(principal, request, response); send(200, { ok: true }); return true;
+        await this.options.auth.issueSession(principal, request, response); send(200, { ok: true }); return true;
       }
       if (suffix === '/connect') {
         if (!native || !this.options.openRemote) error('native_owner_required', 403);
@@ -125,18 +125,18 @@ export class LocalAccountApplication {
       if (suffix === '/native') {
         if (!native) error('native_owner_required', 403);
         const principal = this.options.management.desktopIdentity();
-        this.options.auth.issueSession(principal, request, response); send(200, { ok: true }); return true;
+        await this.options.auth.issueSession(principal, request, response); send(200, { ok: true }); return true;
       }
       if (suffix === '/accept') {
         if (typeof body.code !== 'string' || typeof body.username !== 'string' || typeof body.password !== 'string') error('invalid_request');
         const principal = await this.options.management.accept({ code: body.code, username: body.username, password: body.password });
         if (this.#closed) error('account_service_retired', 503);
-        this.options.auth.issueSession(principal, request, response); send(201, { ok: true }); return true;
+        await this.options.auth.issueSession(principal, request, response); send(201, { ok: true }); return true;
       }
       const owner = this.#owner(request, true);
       if (suffix === '/invitations') { send(201, this.options.management.invite(owner)); return true; }
       if (suffix === '/members') {
-        this.options.management.setMember(owner, body.actorId as string, body.role as 'admin' | 'member', body.enabled as boolean);
+        await this.options.management.setMember(owner, body.actorId as string, body.role as 'admin' | 'member', body.enabled as boolean);
         send(200, { ok: true }); return true;
       }
       if (suffix === '/password') {

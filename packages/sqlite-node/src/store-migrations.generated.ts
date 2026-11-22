@@ -130,7 +130,13 @@ export const STORE_MIGRATIONS = {
         "checksum": "baf1fc4c2d92aa4e49ca7111bf0be98835369f5c7a0baa130eadf6d998fffee8"
       }
     ],
-    "migrations": []
+    "migrations": [
+      {
+        "version": 4,
+        "name": "0001_reply_attempts",
+        "sql": "ALTER TABLE `im_messages` ADD `reply_attempt` text;"
+      }
+    ]
   },
   "observability": {
     "baseline": [

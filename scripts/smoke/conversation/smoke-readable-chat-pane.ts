@@ -16,7 +16,7 @@ initializeAppearanceTheme();const ctx=new Context();await ctx.plugin(WorkbenchPa
 panels.register({kind:'terminal',createTab:({id})=>({id,resource:id,kind:'terminal',region:'right',title:'Terminal '+id,icon:'terminal',closable:true,preview:false})});
 for(let i=0;i<12;i++)panels.open('scope','terminal',{id:String(i)});
 const subscribe=f=>panels.subscribeOwner('scope',f),get=()=>panels.getOwnerSnapshot('scope');
-const navigation={layout:'unified',actions:[{id:'chat',title:'Chat',icon:'chat',onInvoke:()=>{}}],settingsActive:false,onOpenSettings:()=>{},account:{snapshot:{phase:'anonymous',name:null,avatarUrl:null},onOpen:()=>{},onRefresh:async()=>{},onSignOut:async()=>{}}};
+const navigation={actions:[{id:'chat',title:'Chat',icon:'chat',onInvoke:()=>{}}],settingsActive:false,onOpenSettings:()=>{},account:{snapshot:{phase:'anonymous',name:null,avatarUrl:null},onOpen:()=>{},onRefresh:async()=>{},onSignOut:async()=>{}}};
 panels.dispatch('scope',{type:'set-region-open',region:'right',open:false});
 function App(){const state=useSyncExternalStore(subscribe,get);const [sidebar,setSidebar]=useState(false);window.fixture={panels,setThemePreference};
 const action={id:'terminal',region:'right',icon:'terminal',label:'New terminal',creationLabel:'Terminal',run:()=>panels.open('scope','terminal',{id:crypto.randomUUID()})};

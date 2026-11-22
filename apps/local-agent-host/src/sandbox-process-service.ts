@@ -30,9 +30,10 @@ export class SandboxProcessService {
     cwd: string;
     context: Pick<ProcessContext, "threadId" | "projectId" | "resourceOwnerId">;
     authorize(): Promise<void>;
+    probeTerminalAdmission?(): Promise<void>;
     onCleanupUnconfirmed(): void;
   }) {}
-  async probe(): Promise<void> { await this.authorize(); }
+  async probe(): Promise<void> { await this.options.probeTerminalAdmission?.(); await this.authorize(); }
   /** HostTerminalSession calls this only after its trusted binding selector has
    * authorized the account/Host. Scope metadata cannot select another service. */
   async dispatch(method: string, params: unknown,

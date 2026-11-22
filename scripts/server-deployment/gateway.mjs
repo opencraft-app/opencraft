@@ -29,7 +29,7 @@ const codexEngineHost = process.env.OPENCRAFT_CODEX_BRIDGE === "0" ? undefined
   : await stat(join(releaseRoot, "execution/codex-bridge/engine-host.mjs")).then(() => join(releaseRoot, "execution/codex-bridge"),
     error => { if (error.code === "ENOENT") return undefined; throw error; });
 
-const daemon = new OpenCraftDaemonClientManager({
+const daemon = await OpenCraftDaemonClientManager.open({
   endpoint: join(state, "daemon.sock"),
   tokenPath,
   tokenMode: "existing",

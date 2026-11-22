@@ -271,10 +271,8 @@ button {
   @include application-desktop.wallpaper;
   --app-shell-page-paint: var(--application-desktop-paint);
   --opencraft-header-surface-paint: transparent;
-  --background-shell-compact-titlebar: transparent;
   --opencraft-main-surface-elevation: none;
-  // Wallpaper is one plane, including its titlebar. Theme-owned reading-pane
-  // edges must not project an upper lip or shadow across this surface.
+  // Wallpaper is one plane, including its titlebar.
   --opencraft-header-content-elevation: none;
   --opencraft-content-depth-elevation: none;
   --opencraft-unified-frame-elevation: none;
@@ -284,7 +282,6 @@ button {
   .main-content-surface, .main-content-frame, .main-content-viewport, .main-content-slot, .extension-view-route { background: transparent; }
   .main-content-top-fade { display: none; }
   :is(.app-shell-header, .shell-chrome) { --color-icon-primary: var(--desktop-foreground); --color-icon-secondary: var(--desktop-foreground); --color-text: var(--desktop-foreground); --color-text-secondary: var(--desktop-foreground); --color-text-tertiary: var(--desktop-foreground); color: var(--desktop-foreground); background: transparent; }
-  .app-shell-header::after { opacity: 0; }
   @media (forced-colors: active) { --app-shell-page-paint: Canvas; background: Canvas; .app-shell-header { color: CanvasText; } }
 }
 
@@ -353,7 +350,6 @@ html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-reque
   --opencraft-panel-toolbar-background: transparent;
   --opencraft-panel-divider-top: var(--height-toolbar);
   --opencraft-panel-divider-clip: inset(0 -100% -100% -100%);
-  --background-shell-compact-titlebar: transparent;
 
   .app-shell-sidecar {
     // The native plane continues across the complete titlebar. Explicit opaque
@@ -366,7 +362,6 @@ html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-reque
   // Panel content keeps its own opaque reading surface below the native
   // titlebar. Neither the nested chassis nor its divider paints over chrome.
   .app-shell-right-panel__surface { border-left: 0; }
-  .app-shell-header::before { box-shadow: none; }
   .main-content-surface { background: transparent; box-shadow: none; }
   .main-content-frame { background: var(--material-reading-background); }
   &:not(.has-unified-sidebar) { --opencraft-content-depth-elevation: var(--opencraft-main-surface-elevation); }
@@ -542,7 +537,6 @@ html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-reque
 .sidecar-shared-content[data-sidebar-content="footer"] { height: auto; }
 .sidecar-shared-content:not([data-sidebar-content="footer"]) > * { width: 100%; min-width: 0; min-height: 0; flex: 1 1 auto; }
 .floating-sidebar-panes { display: flex; height: 100%; min-height: 0; }
-.floating-sidebar-primary { flex: 0 0 auto; min-width: 0; min-height: 0; border-right: 1px solid var(--color-border-subtle); box-sizing: border-box; }
 .floating-sidebar-context { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 .floating-sidebar-context__viewport { height: 100%; min-height: 0; }
 
@@ -705,38 +699,6 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   }
 }
 
-// The main surface's upper lip keeps moving left across the compact rail. Only
-// this overhang is painted: main content retains its own surface/edge-scroll
-// policy. Existing Header owns native controls, drag regions and hit testing.
-.app-shell-header::before {
-  position: absolute;
-  z-index: -1;
-  inset-block: 0;
-  left: var(--app-shell-titlebar-extension-left, 0px);
-  width: var(--app-shell-titlebar-extension-width, 0px);
-  background: var(--background-shell-compact-titlebar);
-  // This lip belongs to the same raised main surface. Reveal its lower edge
-  // toward Sidecar only; its joining edge must not draw a second white seam.
-  box-shadow: var(--opencraft-main-surface-elevation);
-  clip-path: inset(0 0 calc(-1 * var(--height-toolbar)) 0);
-  content: "";
-  pointer-events: none;
-}
-
-.app-shell-header::after {
-  position: absolute;
-  z-index: -1;
-  right: 0;
-  bottom: 0;
-  left: var(--app-shell-titlebar-extension-left, 0px);
-  height: 1px;
-  background: var(--color-border-subtle);
-  opacity: var(--app-shell-titlebar-divider-progress, 0);
-  content: "";
-  pointer-events: none;
-  @media (forced-colors: active) { background: CanvasText; }
-}
-
 .app-shell-header__window-controls {
   display: flex;
   width: var(--app-shell-header-left-slot-width);
@@ -804,11 +766,6 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
     // transparent. One pane projection drives paint, resizing and animation.
     background: var(--opencraft-header-surface-paint, linear-gradient(to top, var(--color-border-subtle) 1px, var(--color-surface) 1px)) left / var(--app-shell-header-leading-paint-width, 100%) 100% no-repeat,
       var(--opencraft-header-surface-paint, linear-gradient(to top, var(--color-border-subtle) 1px, var(--color-surface) 1px)) right / var(--app-shell-header-trailing-paint-width, 0px) 100% no-repeat;
-  }
-  &[data-opencraft-window-type="browser"] .app-shell-header::before { display: none; }
-  &[data-opencraft-window-type="browser"] .app-shell-header::after {
-    background: var(--opencraft-header-divider-color, var(--color-border-subtle));
-    @media (forced-colors: active) { background: CanvasText; }
   }
   &[data-opencraft-window-type="browser"] .app-shell-header__content-edge {
     // Project the reading plane's upper edge into the recessed titlebar.
@@ -1550,8 +1507,11 @@ svg[data-sidebar-toggle-icon-state] {
 }
 
 .sidebar-activity-group {
-  gap: 2px;
+  --gap-sidebar-group-items: 2px;
+  gap: var(--gap-sidebar-group-items);
 }
+
+.sidebar-activity-group__occlusion { display: none; }
 
 // A folded heading has no list to separate from its next sibling.
 .sidebar-activity-group[data-collapsed="false"] + .sidebar-activity-group {
@@ -2375,13 +2335,6 @@ svg[data-sidebar-toggle-icon-state] {
   background: var(--color-background-surface);
   box-shadow: 0 8px 24px color-mix(in srgb, var(--color-text) 7%, transparent);
 }
-.hostless-empty-view__connection-actions {
-  display: grid;
-  gap: calc(var(--spacing) * 2);
-  width: min(280px, 100%);
-  margin-block-start: calc(var(--spacing) * 5);
-}
-
 .hostless-empty-view__actions {
   width: 100%;
   margin-top: 20px;
@@ -8630,7 +8583,9 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   margin-bottom: calc(-1 * var(--overlap-composer-rail));
   padding-bottom: var(--overlap-composer-rail);
   overflow: clip;
-  border: var(--width-composer-rail-border) solid var(--color-border-composer-rail);
+  // The rail keeps the border's geometry; the material layer paints it so the
+  // contour mask can live there too (see ::before).
+  border: var(--width-composer-rail-border) solid transparent;
   border-bottom: 0;
   border-radius: var(--radius-composer-rail) var(--radius-composer-rail) 0 0;
   --composer-rail-background: var(--color-background-composer-rail);
@@ -8644,18 +8599,26 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     linear-gradient(#000 0 0) top / 100% calc(100% - var(--overlap-composer-rail) + var(--coverage-composer-material-seam)) no-repeat,
     radial-gradient(circle var(--radius-composer-shell) at 100% calc(100% + var(--coverage-composer-material-seam)), transparent var(--rail-shoulder-cut), #000 var(--rail-shoulder-cut)) left bottom / var(--rail-shoulder-width) var(--overlap-composer-rail) no-repeat,
     radial-gradient(circle var(--radius-composer-shell) at 0 calc(100% + var(--coverage-composer-material-seam)), transparent var(--rail-shoulder-cut), #000 var(--rail-shoulder-cut)) right bottom / var(--rail-shoulder-width) var(--overlap-composer-rail) no-repeat;
-  -webkit-mask: var(--composer-rail-contour-mask);
-  mask: var(--composer-rail-contour-mask);
   &::before {
     content: "";
     position: absolute;
-    // The rail mask owns the mating curve; material is never a second slab
+    // The contour mask owns the mating curve; material is never a second slab
     // behind the editor's glass. Native editable content remains outside it.
-    inset: 0;
+    // A mask on the rail itself would make it a backdrop root, so the blur
+    // below would see nothing and transcript glyphs would show through crisp.
+    // The material therefore covers the rail's border box and carries both
+    // the border and the mask.
+    inset: calc(-1 * var(--width-composer-rail-border));
+    inset-block-end: 0;
     z-index: -1;
     pointer-events: none;
+    border: var(--width-composer-rail-border) solid var(--color-border-composer-rail);
+    border-bottom: 0;
     border-radius: inherit;
+    -webkit-mask: var(--composer-rail-contour-mask);
+    mask: var(--composer-rail-contour-mask);
     background: var(--composer-rail-background);
+    background-clip: padding-box;
     -webkit-backdrop-filter: var(--composer-rail-filter);
     backdrop-filter: var(--composer-rail-filter);
   }
@@ -11613,8 +11576,8 @@ html[data-window-host="browser"] body {
       gap: var(--gap-material-liquid-group);
       padding: var(--padding-material-liquid-group);
     }
+    // Touch reading titles remain owned by thread-workspace, not chrome suppression.
     .app-shell-header__route,
-    .thread-header-title,
     .application-brand,
     [data-app-shell-window-action]:not([data-app-shell-window-action="sidebar-toggle"]):not([data-navigation-return]) {
       display: none;
@@ -12003,7 +11966,7 @@ html[data-window-host="browser"] body {
   background: transparent;
   > .app-shell-row { background: var(--app-shell-page-paint); }
   .app-shell-header { background: transparent; }
-  .app-shell-header::before, .app-shell-header::after, .app-shell-header__content-edge, .app-shell-content-depth { display: none; }
+  .app-shell-header__content-edge, .app-shell-content-depth { display: none; }
   .main-content-surface { background: transparent; box-shadow: none; }
   // Persistent Shell navigation stays reachable above the first card row.
   .right-panel-view { background: transparent; padding-block-start: var(--height-toolbar); box-sizing: border-box; }

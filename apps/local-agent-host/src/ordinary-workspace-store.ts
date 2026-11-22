@@ -175,6 +175,12 @@ export class OrdinaryWorkspaceStore {
     const row = this.db.prepare("SELECT * FROM ordinary_workspaces WHERE authority_key=? AND thread_id=?").get(this.authority(scope), threadId);
     return row ? binding(row) : null;
   }
+  /** Private cleanup inventory, not a user grant. Only known exact owned
+   * bindings may be destroyed; retained non-idle rows require reconciliation. */
+  lifecycleForThread(hostId: string, threadId: string): WorkspaceBinding[] {
+    if (!text(hostId) || !text(threadId)) throw Error("Invalid lifecycle scope");
+    return this.db.prepare("SELECT * FROM ordinary_workspaces WHERE host_id=? AND thread_id=?").all(hostId, threadId).map(binding);
+  }
   /** Trusted routing classification only, NOT a grant or a binding lookup.
    * Must include other principals' placements so an unauthorized remote thread
    * can never be misclassified as a local thread. No owner data is returned. */
@@ -244,6 +250,13 @@ export class OrdinaryWorkspaceStore {
       || (afterWorkspaceId !== "" && !/^ws-[a-f0-9]{32}$/.test(afterWorkspaceId))) throw Error("Invalid journal inventory cursor");
     return this.db.prepare("SELECT * FROM ordinary_workspaces WHERE host_id=? AND phase!='idle' AND workspace_id>? ORDER BY workspace_id LIMIT ?")
       .all(hostId, afterWorkspaceId, limit).map((row: any) => ({ authority: { principalId: row.principal_id, hostId: row.host_id }, binding: binding(row) }));
+  }
+  /** Read-only placement inventory; idle retained workspaces are still remote. */
+  placementPage(hostId: string, afterWorkspaceId = "", limit = 256): {workspaceId: string; hostId: string; threadId: string}[] {
+    if (!text(hostId) || !Number.isInteger(limit) || limit < 1 || limit > 500
+      || afterWorkspaceId !== "" && !/^ws-[a-f0-9]{32}$/.test(afterWorkspaceId)) throw Error("Invalid placement cursor");
+    return this.db.prepare("SELECT workspace_id,host_id,thread_id FROM ordinary_workspaces WHERE host_id=? AND thread_id IS NOT NULL AND workspace_id>? ORDER BY workspace_id LIMIT ?")
+      .all(hostId, afterWorkspaceId, limit).map(row => ({workspaceId: String(row.workspace_id), hostId: String(row.host_id), threadId: String(row.thread_id)}));
   }
   close() { this.db.close(); }
 }

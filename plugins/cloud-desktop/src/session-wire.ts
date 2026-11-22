@@ -28,7 +28,7 @@ class MediaChannel extends EventTarget {
   onmessage: ((event: MessageEvent) => void) | null = null;
   constructor(private readonly socket: WebSocket, private readonly retire: () => void) { super(); }
   get bufferedAmount(): number { return this.socket.bufferedAmount; }
-  send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+  send(data: Parameters<WebSocket["send"]>[0]): void {
     if (this.readyState !== 1 || typeof data === "string" || this.socket.bufferedAmount > 1 << 20) {
       this.retire(); throw new Error("Desktop channel unavailable");
     }

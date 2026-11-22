@@ -26,10 +26,20 @@ test("real desktop bundles exclude private accounts by default and package selec
     // optional private product identity composition.
     const sourceRoots = ["apps/desktop/src/", "packages/", "plugins/local-account/src/", "node_modules/"];
     const coreScripts = new Set(["apps/headless-server/src/serve-workbench-static.mjs", "apps/headless-server/src/human-login-page.ts", "apps/headless-server/src/web-asset-cache.mjs"]);
+    // These three public Assets modules carry only async RPC, metadata errors and
+    // authenticated routing. The encrypted storage implementation stays in its Worker.
+    for (const file of ["errors.ts", "worker.ts", "http.ts"]) coreScripts.add("plugins/assets/src/server/" + file);
     const unexpectedInputs = Object.keys(result.metafile.inputs).filter(file =>
       !coreScripts.has(file) && !sourceRoots.some(root => file.startsWith(root)));
     assert.deepEqual(unexpectedInputs, [], "Standalone desktop bundles only its core owners and dependencies");
   }
+  const mainInputs = Object.keys(plain.main.metafile.inputs);
+  for (const file of ["errors.ts", "worker.ts", "http.ts"])
+    assert.ok(mainInputs.includes("plugins/assets/src/server/" + file), "Default Assets async owner must be bundled");
+  assert.ok(!mainInputs.some(file => /employee-git-vault-store|assets-configuration\.worker|server\/configurations/.test(file)),
+    "Main must not open or decrypt the Assets vault; its sibling Worker owns that IO");
+  const worker = await readFile(join(directory,"plain","assets-configuration-worker.mjs"),"utf8");
+  assert.ok(worker.length>0,"The actual storage Worker must be shipped beside Main");
   const loadPreload = async name => {
     const exports = {};
     const context = vm.createContext({ process: { platform: "linux", versions: { electron: "fixture" } },

@@ -113,6 +113,11 @@ export class LocalRunner {
           platformReads: overrides.platformChannelPort
             ? { query: (...args) => runner.platformChannels.query(...args) }
             : null,
+          // Crew work arrives from the Bot's teammates. Whether this Bot is in a space at all is the
+          // Core's decision; the tools appear only in Work that answers crew work.
+          crewWork: overrides.platformChannelPort && overrides.crewPort
+            ? { id: "crew.work", binding: JSON.stringify(profile.config.botBinding) }
+            : null,
           assertAuthority: runner.authority
             ? () => runner.authority.assertCurrent()
             : undefined,
@@ -220,6 +225,19 @@ export class LocalRunner {
           ? {
               resource: overrides.executionEnvironment,
               run: overrides.runEnvironment,
+            }
+          : undefined,
+        overrides.crewPort && runner.authority
+          ? {
+              ...overrides.crewPort,
+              request: async (method, params, signal) => {
+                runner.authority.assertCurrent();
+                runner.uow.assertWriter();
+                const result = await overrides.crewPort.request(method, params, signal);
+                runner.authority.assertCurrent();
+                runner.uow.assertWriter();
+                return result;
+              },
             }
           : undefined,
       );

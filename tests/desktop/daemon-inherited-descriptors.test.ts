@@ -25,7 +25,7 @@ test(
       await writeFile(join(proc, "self", "fdinfo", String(inherited)), "pos:\t0\nflags:\t0100000\n");
       await writeFile(join(proc, "self", "fdinfo", String(own)), "pos:\t0\nflags:\t02100000\n");
       await writeFile(join(proc, "self", "fdinfo", "2"), "pos:\t0\nflags:\t0100002\n");
-      assert.deepEqual(closeInheritedDescriptors("linux", proc), [inherited]);
+      assert.deepEqual(await closeInheritedDescriptors("linux", proc), [inherited]);
       assert.throws(() => fstatSync(inherited), { code: "EBADF" });
       fstatSync(own);
       fstatSync(2);
@@ -36,9 +36,9 @@ test(
   },
 );
 
-test("other platforms are left alone", () => {
-  assert.deepEqual(closeInheritedDescriptors("darwin"), []);
-  assert.deepEqual(closeInheritedDescriptors("win32"), []);
+test("other platforms are left alone", async () => {
+  assert.deepEqual(await closeInheritedDescriptors("darwin"), []);
+  assert.deepEqual(await closeInheritedDescriptors("win32"), []);
 });
 
 test(
@@ -51,10 +51,11 @@ test(
     const script = `
     const { fstatSync } = require("node:fs");
     const { closeInheritedDescriptors } = require(${JSON.stringify(module)});
-    const closed = closeInheritedDescriptors();
+    closeInheritedDescriptors().then(closed => {
     let inherited = "open";
     try { fstatSync(3); } catch (error) { inherited = error.code; }
     process.stdout.write(JSON.stringify({ closed, inherited }));
+    });
   `;
     // Passed as the child's fd 3, the way Electron's DevTools listener reaches the daemon.
     const child = spawn(process.execPath, ["--import", "tsx", "-e", script], {

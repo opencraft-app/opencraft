@@ -12,10 +12,8 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CodexStructuredHarness } from "../src/adapters/codex/structured-harness.mjs";
-import {
-  resolveHarnesses,
-  readCodexKey,
-} from "../src/adapters/codex/config.mjs";
+import { resolveHarnesses } from "../src/adapters/codex/config.mjs";
+import { readCodexKey, readCodexKeyAsync } from "../src/adapters/codex/credential-file.mjs";
 import {
   outputSchema,
   decodeOutput,
@@ -408,8 +406,10 @@ test("private credentials are explicit, owner-only, and not persisted into profi
     const file = join(root, "key");
     writeFileSync(file, "synthetic-only", { mode: 0o600 });
     assert.equal(readCodexKey({ credentialFile: file }), "synthetic-only");
+    assert.equal(await readCodexKeyAsync({ credentialFile: file }), "synthetic-only");
     chmodSync(file, 0o644);
     assert.throws(() => readCodexKey({ credentialFile: file }), /owner-only/);
+    await assert.rejects(readCodexKeyAsync({ credentialFile: file }), /owner-only/);
     const p = initProfile(join(root, "profile"), "test");
     const before = readFileSync(join(p.path, "profile.json"), "utf8");
     loadProfile(p.path);

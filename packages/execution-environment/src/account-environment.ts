@@ -52,13 +52,17 @@ export class AccountEnvironment {
     try { return { revision, variables: variables(document) }; }
     catch { throw new EnvironmentError('unavailable', 503); }
   }
-  list(account: string, scope: EnvironmentScope): EnvironmentView {
+  list(account: string, scope: EnvironmentScope, assertCurrent?: () => void): EnvironmentView {
+    assertCurrent?.();
     const own = this.read(account, scope);
-    return { projectId: scope.projectId, revision: own.revision, variables: view(own.variables),
+    const result = { projectId: scope.projectId, revision: own.revision, variables: view(own.variables),
       inherited: scope.projectId === null ? [] : view(this.read(account, projectScope(null)).variables) };
+    assertCurrent?.();
+    return result;
   }
   /** null means retain a saved secret. Downgrading it requires a replacement. */
-  replace(account: string, scope: EnvironmentScope, revision: number, input: unknown): EnvironmentView {
+  replace(account: string, scope: EnvironmentScope, revision: number, input: unknown, assertCurrent?: () => void): EnvironmentView {
+    assertCurrent?.();
     if (!Number.isSafeInteger(revision) || revision < 0 || !Array.isArray(input)) throw new EnvironmentError('invalid');
     const previous = this.read(account, scope);
     if (previous.revision !== revision) throw new EnvironmentError('conflict', 409);
@@ -69,8 +73,9 @@ export class AccountEnvironment {
       if (!saved?.secret || item.secret !== true) throw new EnvironmentError('invalid');
       return { ...item, value: saved.value };
     }));
+    assertCurrent?.();
     this.vault.writeDocument(account, scopeKey(scope), revision, next);
-    return this.list(account, scope);
+    return this.list(account, scope, assertCurrent);
   }
   /** Internal launch port: called only after account/project execution admission.
    * Never serialize its return value into a client response or thread config. */

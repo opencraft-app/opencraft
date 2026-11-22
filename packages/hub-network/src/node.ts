@@ -7,7 +7,7 @@ import { AssertionProvider, type IdentityProvider, type IdentityRequest } from '
 import { MAX_STREAMS } from '@opencraft/relay-protocol';
 import { HUB_CONTROL_PATH, HUB_DATA_PATH, HUB_PROTOCOL, MAX_HOPS, publicOrigin, transportEndpoint, validHubId,
   type HubNetworkSnapshot, type HubRoute, type IdentityAuthority } from './contract.js';
-import { HubStore, authority, digest, hubId, parseInvitation, random, signed, verified, type Invitation, type InvitePayload, type Peer, type State, type HubStateOwner } from './store.js';
+import { authority, digest, hubId, parseInvitation, random, signed, verified, type Invitation, type InvitePayload, type Peer, type State, type HubStateOwner } from './store.js';
 import { HubRouting } from './routing.js';
 import { createLocalIngress } from './local-ingress.js';
 import { requestHubEnrollment } from './enrollment.js';
@@ -50,9 +50,9 @@ export class HubNetwork implements IdentityProvider {
   #mutations: Promise<unknown> = Promise.resolve();
   readonly #enrollments = new Set<AbortController>();
   readonly #local = createLocalIngress(() => ({ port: this.#targetPort, origin: this.store.state.origin }));
-  constructor(path: string | HubStateOwner, readonly options: { ca?: string; authority?: IdentityAuthority; onRoutes?: () => void; localService?: boolean;
+  constructor(store: HubStateOwner, readonly options: { ca?: string; authority?: IdentityAuthority; onRoutes?: () => void; localService?: boolean;
     persist?: (state: Readonly<State>) => Promise<void> } = {}) {
-    this.store = typeof path === 'string' ? new HubStore(path) : path; this.routing = new HubRouting(this.store.id);
+    this.store = store; this.routing = new HubRouting(this.store.id);
     try {
       if (options.authority) {
         const a = authority(options.authority);
@@ -88,6 +88,10 @@ export class HubNetwork implements IdentityProvider {
   command(input: Record<string, unknown>, operator: string) {
     if (this.options.persist) throw new Error('Shared Hub changes require durableCommand');
     return this.#transaction(input, operator);
+  }
+  /** An operator change, acknowledged after it is durable when a persistence owner is attached. */
+  async apply(input: Record<string, unknown>, operator: string) {
+    return this.options.persist ? this.durableCommand(input, operator) : this.command(input, operator);
   }
   /** A shared owner acknowledges changes only after its fenced durable write succeeds. */
   durableCommand(input: Record<string, unknown>, operator: string) {

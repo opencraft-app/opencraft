@@ -1170,3 +1170,6 @@ History acknowledgement reconciliation is unnecessary when the local outbox has
 no custody. Once asynchronous storage restoration supplies pending entries, the
 same authoritative reconciliation runs again; the optimization must not strand
 restored unknown outcomes or convert absence in history into non-execution proof.
+
+
+Queued input consumed inside an already running native goal Turn remains steering input, even when Native history omits the steering marker. Its sender cannot resolve the Turn's unknown launch identity; queue reconciliation requires an independently admitted lease from before that Turn was observed.

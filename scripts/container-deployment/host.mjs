@@ -70,15 +70,17 @@ try {
   await writeFile(paths.engineConfig, JSON.stringify({
     descriptorPath: paths.engineDescriptor, dataDirectory: paths.dataDirectory,
     runtimeDirectory: paths.runtimeDirectory, engines: ['dsh', 'pi'], defaultEngine: 'pi',
+    executionContext: paths.executionContext, gitWorkerFile: join(root, 'runtime', 'personal-git-worker.mjs'),
     dshDescriptorPath: paths.dshDescriptor,
     fileSystemOwner: {endpoint:paths.fileSystemEndpoint,tokenFile:paths.fileSystemToken},
   }) + '\n', { mode: 0o600 });
   await writeFile(paths.dshConfig, JSON.stringify({
+    executionContext:paths.executionContext,
     fileSystemOwner: {endpoint:paths.fileSystemEndpoint,tokenFile:paths.fileSystemToken},
     artifactDirectory: join(paths.dataDirectory,"artifacts"),
     descriptorPath: paths.dshDescriptor, dataDirectory: join(paths.dataDirectory, 'agent'),
     machineIdentityDirectory: paths.dataDirectory, runtimeDirectory: paths.runtimeDirectory,
-    dshExecutable: join(root, 'runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'),
+    dshExecutable: process.env.OPENCRAFT_DSH_EXECUTABLE?.trim() || join(root, 'runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'),
     dshCapabilityPlugin: join(root, 'runtime/dsh/opencraft-capability-plugin.mjs'),
     modelStorageDirectory: join(paths.dataDirectory, 'models'), speechModelManagement: true,
     projectStorageDirectory: join(paths.dataDirectory, 'projects'),

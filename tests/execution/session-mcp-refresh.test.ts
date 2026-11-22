@@ -9,9 +9,9 @@ function fixture() {
   const adapter: any = Object.create(CodexEngineAdapter.prototype);
   let configuration: any = config(), status = "idle";
   const calls: Array<{ method: string; params: any }> = [];
-  Object.assign(adapter, { ephemeralThreads: new Set(), queueableThreads: new Set(), nativeSubscribedThreads: new Set(),
-    generationRoutes: new Map(), executionFaults: new Map(), executionFaultCommitFailures: new Map(), executionFaultCommits: new Map(),
-    nativeToolCalls: new Map(), humanInteractions: { markSourceUnavailable() {} },
+  Object.assign(adapter, { ephemeralThreads: new Set(), nativeSubscribedThreads: new Set(),
+    nativeToolCalls: new Map(), queueableThreads: new Set(), generationRoutes: new Map(),
+    executionFaults: new Map(), executionFaultCommitFailures: new Map(), executionFaultCommits: new Map(),
     environmentCreations: new Map(), executionEnvironments: new Map(), initialEnvironmentThreads: new Set(),
     options: { sessionMcp: async () => configuration }, sessionMcpConfigurations: new Map(),
     sessionMcpRefreshes: new Map(), sessionMcpCreations: new Map(), sessionMcpInitial: new Map(), sessionMcpRetirements: new Map(), sessionMcpGeneration: 0, statusListeners: new Set(), catalogChanges: { observeResult() {} }, humanInteractions: { markSourceUnavailable() {} }, cancelNativeRelease() {},
@@ -201,7 +201,7 @@ test("queued input tool-preflight failure is definitely not dispatched, never an
 
 test("a queued retry resumes abandoned tool retirement without an observation resume", async () => {
   const f = fixture(); f.setStatus("notLoaded");
-  f.adapter.sessionMcpRetirements.set("one", { model: "preserved" });
+  f.adapter.sessionMcpRetirements.set("one", { settings: { model: "preserved", activePermissionProfile: { id: "profile" } }, phase: "retiring" });
   Object.assign(f.adapter, {
     activeTurns: new Map(), pending: new Map(),
     queueStore: () => ({ firstAwaitingAdmission: () => ({ id: "queued", state: "queued", pausedReason: "session-tools-recovering", clientUserMessageId: "same-input" }) }),
@@ -236,4 +236,103 @@ for (const cancelled of [false, true]) test(`physical delivery timeout starts af
   if (cancelled) controller.abort();
   gate.resolve(); await outcome;
   assert.equal(sends, cancelled ? 0 : 1);
+});
+
+test('Assets Git reservation refreshes the original input even with an existing creation tool reservation', async () => {
+  const {ExecutionEnvironmentSnapshot} = await import('@opencraft/execution-environment/execution-snapshot');
+  const f = fixture(), inputs: string[] = [];
+  let bound = 0, cancelled = 0;
+  f.adapter.executionGit = {async reserve(locator: any) {
+    inputs.push(locator.inputId);
+    return new ExecutionEnvironmentSnapshot({account: 'actor:synthetic', hostId: 'local-codex', threadId: locator.threadId, projectId: null},
+      {SYNTHETIC_EXECUTION_ORIGIN: locator.inputId});
+  }};
+  f.adapter.sessionMcpInitial.set('one', {reservation: {bind() {bound++;}, cancel() {cancelled++;}}});
+  await f.adapter.prepareSessionMcp('one', 'original-input', 'original-lease');
+  assert.deepEqual(inputs, ['original-input']);
+  assert.equal(bound, 0, 'a creation reservation cannot bypass per-input Git preparation');
+  assert.equal(cancelled, 1);
+  assert.equal(applied(f)[0]!.params.config['shell_environment_policy.set'].SYNTHETIC_EXECUTION_ORIGIN, 'original-input');
+  await f.adapter.prepareSessionMcp('one', 'next-input', 'next-lease');
+  assert.equal(applied(f).length, 2);
+  assert.equal(applied(f)[1]!.params.config['shell_environment_policy.set'].SYNTHETIC_EXECUTION_ORIGIN, 'next-input');
+  assert.equal(applied(f)[1]!.params.permissions, 'profile');
+});
+
+test('Assets Git preparation cannot apply after connection retirement', async () => {
+  const {ExecutionEnvironmentSnapshot} = await import('@opencraft/execution-environment/execution-snapshot');
+  const f = fixture(), gate = deferred(), entered = deferred();
+  f.adapter.executionGit = {async reserve() {
+    entered.resolve(); await gate.promise;
+    return new ExecutionEnvironmentSnapshot({account: null, hostId: 'local-codex', threadId: 'one', projectId: null}, {});
+  }};
+  const preparing = f.adapter.prepareSessionMcp('one', 'original-input', 'lease');
+  const rejected = assert.rejects(preparing, /expired connection/);
+  await entered.promise; f.adapter.sessionMcpGeneration++; gate.resolve(); await rejected;
+  assert.equal(applied(f).length, 0);
+});
+
+test('ephemeral native threads never silently accept a personal Git overlay that cannot be installed', async () => {
+  const {ExecutionEnvironmentSnapshot} = await import('@opencraft/execution-environment/execution-snapshot');
+  const f = fixture(); f.adapter.ephemeralThreads.add('one');
+  let owned = true;
+  f.adapter.executionGit = {async reserve() {
+    return new ExecutionEnvironmentSnapshot({account: owned ? 'actor:synthetic' : null, hostId: 'local-codex', threadId: 'one', projectId: null},
+      owned ? {SYNTHETIC_EXECUTION_ORIGIN: 'original'} : {});
+  }};
+  await assert.rejects(f.adapter.prepareSessionMcp('one', 'original', 'lease'), /persistent native Thread/);
+  owned = false;
+  await f.adapter.prepareSessionMcp('one', 'internal-title', 'unowned-lease');
+  assert.equal(applied(f).length, 0);
+});
+
+test('Codex Git native inspection checks live native status and rechecks generation after history reads', async () => {
+  const f = fixture(); let incarnation = 'native-one', turnStatus = 'inProgress', threadStatus = 'active', replace = false;
+  f.adapter.gitNativeIncarnation = async () => incarnation;
+  f.adapter.requestPhysical = async (method: string, params: any) => {
+    if (method === 'thread/turns/list') {
+      assert.equal(params.limit, 1); assert.equal(params.itemsView, 'notLoaded');
+      if (replace) incarnation = 'native-two';
+      return {data: [{id: 'exact-turn', status: turnStatus}]};
+    }
+    assert.equal(method, 'thread/read'); assert.equal(params.includeTurns, false);
+    return {thread: {status: {type: threadStatus}}};
+  };
+  const handoff = {scope: {threadId: 'one'}, native: {incarnation: 'native-one', turnId: 'exact-turn'}};
+  assert.equal(await f.adapter.inspectGitNative(handoff), true);
+  turnStatus = 'completed'; assert.equal(await f.adapter.inspectGitNative(handoff), false);
+  turnStatus = 'inProgress'; threadStatus = 'idle'; assert.equal(await f.adapter.inspectGitNative(handoff), false);
+  threadStatus = 'active'; replace = true; assert.equal(await f.adapter.inspectGitNative(handoff), false);
+  assert.equal(await f.adapter.inspectGitNative({...handoff, native: {incarnation: 'native-one'}}), false);
+});
+
+test('Codex Git admission reads the current routed owner instead of cached generation notifications', async () => {
+  const f = fixture(); let available = true, epoch = 'owner-epoch';
+  Object.assign(f.adapter, {physicalInitialized: true, statusValue: {state: 'open'}, nativeTransport: {status: {state: 'open'}},
+    nativeCore: {control: {
+      async health() {return {routingEpoch: 'owner-epoch'};},
+      async generationDirectory(threadId: string) {
+        assert.equal(threadId, 'one');
+        return {routingEpoch: epoch, route: available ? {threadId, generationId: 'actual-generation'} : null,
+          homes: [{generationId: 'actual-generation', incarnation: 3}]};
+      },
+    }},
+  });
+  f.adapter.generationRoutes.set('one', 'stale-generation');
+  assert.equal(await f.adapter.gitNativeIncarnation('one'), JSON.stringify(['actual-generation', 3]));
+  available = false; assert.equal(await f.adapter.gitNativeIncarnation('one'), undefined);
+  available = true; epoch = 'replacement'; assert.equal(await f.adapter.gitNativeIncarnation('one'), undefined);
+});
+
+test('Codex Git never opens a pending execution lease without a verified native incarnation', async () => {
+  const f = fixture(), beginnings: unknown[][] = [];
+  let incarnation: string | undefined;
+  f.adapter.executionGit = {};
+  f.adapter.gitNativeIncarnation = async () => incarnation;
+  Object.defineProperty(f.adapter, 'executionLeases', {value: {begin(...args: unknown[]) {beginnings.push(args); return 'lease';}}});
+  await assert.rejects(f.adapter.beginExecution('one', 'original'), /git_execution_unavailable/);
+  assert.equal(beginnings.length, 0);
+  incarnation = 'verified-native';
+  assert.equal(await f.adapter.beginExecution('one', 'original'), 'lease');
+  assert.deepEqual(beginnings, [['one', 'original', 'verified-native']]);
 });

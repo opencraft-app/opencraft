@@ -1,11 +1,12 @@
-import { readyGitBroker, type GitGrantScope } from './personal-git-protocol.js';
+import { personalGitSocketPaths, removePersonalGitSocketDirectory } from './personal-git-sockets.js';
+import { readyGitBroker, validGitGrantScope, type GitGrantScope } from './personal-git-protocol.js';
 import { randomBytes } from 'node:crypto';
 import { rm } from 'node:fs/promises';
-import { dirname, isAbsolute, join } from 'node:path';
+import { basename, dirname, isAbsolute, join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import type { EnvironmentExecutionScope } from './execution-environment.js';
 
-export interface PersonalGitScope extends EnvironmentExecutionScope { readonly inputId?: string; readonly executionId?: string; readonly leaseGeneration?: number }
+export interface PersonalGitScope extends EnvironmentExecutionScope { readonly inputId?: string; readonly executionId?: string; readonly leaseGeneration?: number; readonly actorGeneration?:number;readonly membershipRevision?:number }
 export interface PersonalGitGrant {
   readonly ready: Promise<void>;
   readonly environment: Readonly<Record<string, string>>;
@@ -21,15 +22,21 @@ export class PersonalGitEnvironment {
   private unavailable = false;
   private closed = false;
   private closePromise?: Promise<void>;
+  private exited = false;
+  private cleanup = Promise.resolve();
   private readonly ready: Promise<void>;
   private rejectReady!: (error: Error) => void;
   private readonly pending = new Map<string, { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>();
-  constructor(directory: string, private readonly runtime: string, private readonly workerFile: string, private readonly hosts: readonly string[], private readonly issuer?: { authority: string; seal(scope: GitGrantScope): string }, private readonly mode: 'execution' | 'issuer' | 'status' = issuer ? 'execution' : 'status') {
+  constructor(directory: string, private readonly runtime: string, private readonly workerFile: string, private readonly hosts: readonly string[], private readonly issuer?: { authority: string; seal(scope: GitGrantScope): string }, private readonly mode: 'execution' | 'issuer' | 'status' = issuer ? 'execution' : 'status', private readonly executionOptions:{accountMode?:'principal'|'actor';authorize?:(scope:GitGrantScope)=>Promise<boolean>}={}) {
+    const accountMode=executionOptions.accountMode??'principal';
+    if(accountMode==='actor'&&!executionOptions.authorize)throw Error('personal_git_live_authority_required');
     if (![directory, runtime, workerFile].every(isAbsolute) || !hosts.length || hosts.some(h => !/^[a-z0-9.-]{1,253}$/u.test(h))) throw Error('Invalid personal Git deployment');
     const privateDirectory = join(runtime, 'owner-' + randomBytes(6).toString('hex'));
-    this.socket = join(privateDirectory, 'broker.sock');
+    const socketPaths=mode==='issuer'?{directory:privateDirectory,socket:join(privateDirectory,'broker.sock'),root:null}:personalGitSocketPaths(runtime,basename(privateDirectory),process.getuid?.()??-1);
+    this.socket=socketPaths.socket;
+    let ownsSocketDirectory=false;
     if (mode === 'issuer') { this.ready = Promise.resolve(); this.rejectReady = () => {}; return; }
-    this.worker = new Worker(workerFile, { workerData: { directory, privateDirectory, hosts, serveExecution: mode === 'execution' } });
+    this.worker = new Worker(workerFile, { workerData: { directory, privateDirectory, hosts, serveExecution: mode === 'execution', accountMode } });
     this.ready = new Promise<void>((resolve, reject) => {
       this.rejectReady = error => { clearTimeout(timer); reject(error); };
       const timer = setTimeout(() => reject(Error('personal_git_bridge_start_timeout')), 10_000); timer.unref();
@@ -38,20 +45,51 @@ export class PersonalGitEnvironment {
     void this.ready.catch(() => {});
     this.worker.on('error' , () => { this.unavailable = true; this.rejectReady(Error('personal_git_bridge_failed')); for (const entry of this.pending.values()) { clearTimeout(entry.timer); entry.reject(Error('personal_git_bridge_unavailable')); } this.pending.clear(); });
     this.worker.on('message', message => {
+      if(message?.type==='socket-directory-created'){ownsSocketDirectory=true;return;}
+
+      if(message?.type==='authorize-execution'){
+        if(!validGitGrantScope(message.scope)||!Number.isSafeInteger(message.id))return;
+        void Promise.resolve().then(()=>{
+          if(this.closed||this.unavailable||!this.executionOptions.authorize)throw Error('unavailable');
+          return this.executionOptions.authorize(message.scope);
+        }).then(current=>{
+          if(!this.closed&&!this.unavailable)this.worker!.postMessage({type:'execution-authorized',id:message.id,current});
+        },()=>{if(!this.closed&&!this.unavailable)this.worker!.postMessage({type:'execution-authorized',id:message.id,error:true});});
+        return;
+      }
       const entry = this.pending.get(message.id); if (!entry) return;
       this.pending.delete(message.id); clearTimeout(entry.timer);
       if (message.error) entry.reject(Error('personal_git_execution_unavailable')); else entry.resolve(message.result);
     });
-    this.worker.on('exit', () => { this.unavailable = true; this.rejectReady(Error('personal_git_bridge_exited')); for (const entry of this.pending.values()) { clearTimeout(entry.timer); entry.reject(Error('personal_git_bridge_unavailable')); } this.pending.clear(); void rm(privateDirectory, { recursive: true, force: true }).catch(() => {}); });
+    this.worker.on('exit', () => {
+      this.exited = true;
+      this.unavailable = true;
+      this.rejectReady(Error('personal_git_bridge_exited'));
+      for (const entry of this.pending.values()) {clearTimeout(entry.timer);entry.reject(Error('personal_git_bridge_unavailable'));}
+      this.pending.clear();
+      this.cleanup=Promise.all([rm(privateDirectory,{recursive:true,force:true}),
+        ...(ownsSocketDirectory&&socketPaths.root?[removePersonalGitSocketDirectory(socketPaths)]:[])]).then(()=>{});
+      void this.cleanup.catch(()=>{});
+    });
     this.worker.unref();
   }
   grant(scope: PersonalGitScope, _options?: { creation?: boolean }): PersonalGitGrant | undefined {
     if (!scope.account || !scope.threadId || !scope.inputId || !scope.executionId) return undefined;
     if (!this.issuer) throw Error('personal_git_issuer_unavailable');
     if (this.unavailable || this.closed) throw Error('personal_git_bridge_unavailable');
-    const id = scope.threadId && scope.inputId ? JSON.stringify([scope.account, scope.hostId, scope.threadId, scope.inputId, scope.executionId, scope.leaseGeneration]) : null;
+    const id = scope.threadId && scope.inputId ? JSON.stringify([scope.account, scope.hostId, scope.threadId, scope.inputId, scope.executionId, scope.leaseGeneration,scope.actorGeneration,scope.membershipRevision]) : null;
     if (id && this.grants.has(id)) return this.grants.get(id)!;
     const capability = this.issuer.seal(scope as GitGrantScope);
+    return this.grantSealed(scope,capability,this.issuer.authority);
+  }
+  /** Trusted asynchronous issuer supplies an opaque attestation, never its key.
+   * Broker admission still verifies the original live execution and account. */
+  grantSealed(scope:PersonalGitScope,capability:string,authority:string):PersonalGitGrant {
+    if(!validGitGrantScope(scope)||!this.issuer||authority!==this.issuer.authority
+      ||!/^v[23]\.[A-Za-z0-9_-]+$/u.test(capability)||capability.length>8192||this.unavailable||this.closed)
+      throw Error('personal_git_execution_unavailable');
+    const id=JSON.stringify([scope.account,scope.hostId,scope.threadId,scope.inputId,scope.executionId,scope.leaseGeneration,scope.actorGeneration,scope.membershipRevision]);
+    const previous=this.grants.get(id);if(previous)return previous;
     let current = { ...scope };
     // Sealed evidence is recoverable by another ready replica; no mutable grant map.
     const root = dirname(dirname(String(this.workerFile)));
@@ -102,11 +140,12 @@ export class PersonalGitEnvironment {
     if (this.closePromise) return this.closePromise;
     this.closed = true;
     this.grants.clear();
-    this.closePromise = this.unavailable || !this.worker ? Promise.resolve() : new Promise<void>(resolve => {
-      const timer = setTimeout(() => { void this.worker!.terminate().then(() => resolve()); }, 5000); timer.unref();
-      this.worker!.once('exit', () => { clearTimeout(timer); resolve(); });
-      this.worker!.postMessage({ type: 'close' });
+    const exited = !this.worker || this.exited ? Promise.resolve() : new Promise<void>((resolve,reject) => {
+      const timer = setTimeout(() => {void this.worker!.terminate().then(()=>resolve(),reject);},5000);timer.unref();
+      this.worker!.once('exit',()=>{clearTimeout(timer);resolve();});
+      this.worker!.postMessage({type:'close'});
     });
+    this.closePromise=exited.then(()=>this.cleanup);
     return this.closePromise;
   }
 }

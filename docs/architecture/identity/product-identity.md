@@ -48,11 +48,15 @@ Installation IDs are owned by each build configuration:
 |---|---|---|
 | Desktop installed app | `app.opencraft.desktop` | `apps/desktop/package.json` |
 | macOS local Preview | `app.opencraft.desktop.preview` | `scripts/packaging/package-macos-preview.mjs` |
-| Standalone Expo Android and iOS | `dev.opencraft.workbench` | `apps/mobile/app.json` |
+| Expo development, Expo Go and internal APK/IPA | `dev.opencraft.workbench` | `apps/mobile/app.json` |
+| Published Expo app (TestFlight and production-key APK) | `app.opencraft` | `apps/mobile/app.config.js` |
 
 `apps/mobile/app.config.js` preserves the public open-source notices in the final
-manifest. It has no downstream product configuration hook and does not select an
-identity from `OPENCRAFT_ANDROID_RELEASE` or `OPENCRAFT_IOS_RELEASE`.
+manifest and has no downstream product configuration hook. It selects the published
+identity only for the two publication paths: the TestFlight export profile
+(`OPENCRAFT_IOS_EXPORT_METHOD=app-store-connect`) and the production-key APK build
+(`OPENCRAFT_ANDROID_RELEASE=1`). Internal IPA builds (`OPENCRAFT_IOS_RELEASE`) keep
+the development identity.
 
 Desktop installers and Preview bundles must match their compiled host identity.
 An old installation identifier in a migration or mismatch fixture is historical

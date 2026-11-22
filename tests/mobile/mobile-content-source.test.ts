@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { BUNDLED_SOURCE, decodeContentSource, encodeContentSource, isSelfHostedNavigation, selfHostedSource } from "../../apps/mobile/src/runtime/content-source";
+import { BUNDLED_SOURCE, decodeContentSource, encodeContentSource, isSelfHostedNavigation, selfHostedAuthentication, selfHostedSource } from "../../apps/mobile/src/runtime/content-source";
 
 test("source defaults to packaged code and persists only an explicitly selected HTTPS website", () => {
   assert.deepEqual(decodeContentSource(null), BUNDLED_SOURCE);
@@ -29,4 +29,29 @@ test("self-hosted view admits only its own HTTPS origin; credentials and foreign
     assert.equal(isSelfHostedNavigation(source, url), false, url);
   }
   assert.equal(isSelfHostedNavigation(BUNDLED_SOURCE, "https://server.example/"), false);
+});
+
+test("configured web authentication can leave and return to the selected HTTPS site in the same view", () => {
+  const source = selfHostedSource("https://server.example/workspace");
+  const authentication = selfHostedAuthentication(" https://SERVER.example/ ", "https://login.example");
+  assert.ok(authentication);
+  const signIn = "https://login.example/signin?state=issued-by-server&login_hint=user@example.com";
+  assert.equal(isSelfHostedNavigation(source, signIn, authentication), true);
+  assert.equal(isSelfHostedNavigation(source, "https://server.example/callback?code=issued-by-server", authentication), true);
+  assert.equal(isSelfHostedNavigation(source, signIn), false);
+  assert.equal(isSelfHostedNavigation(selfHostedSource("https://other.example"), signIn, authentication), false);
+  assert.equal(isSelfHostedNavigation(BUNDLED_SOURCE, signIn, authentication), false);
+  for (const target of ["http://login.example", "https://login.example:444", "https://login.example.other.test", "https://user@login.example", "https://login.example\\@other.example", "https://other.example"]) {
+    assert.equal(isSelfHostedNavigation(source, target, authentication), false, target);
+  }
+});
+
+test("an incomplete or invalid authentication configuration leaves self-hosted navigation same-origin", () => {
+  const source = selfHostedSource("https://server.example");
+  for (const invalid of [undefined, "", "http://login.example", "https://login.example/path", "https://login.example/?", "https://login.example/#fragment", "https://user@login.example", "*"]) {
+    const authentication = selfHostedAuthentication("https://server.example", invalid);
+    assert.equal(authentication, undefined, String(invalid));
+    assert.equal(isSelfHostedNavigation(source, "https://login.example", authentication), false);
+    assert.equal(selfHostedAuthentication(invalid, "https://login.example"), undefined, String(invalid));
+  }
 });

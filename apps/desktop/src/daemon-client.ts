@@ -1,6 +1,6 @@
 import { spawn, type SpawnOptions } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { chmod, mkdir, open, readFile, rename, stat, writeFile, type FileHandle } from "node:fs/promises";
 import { connect } from "node:net";
 import { dirname, join } from "node:path";
 
@@ -63,14 +63,14 @@ export function daemonLogPath(runtimeDirectory: string): string {
 }
 
 /** Open the daemon log for one launch, keeping one previous generation once it grows large. */
-export function openDaemonLog(runtimeDirectory: string): number {
+export async function openDaemonLog(runtimeDirectory: string): Promise<FileHandle> {
   const path = daemonLogPath(runtimeDirectory);
-  mkdirSync(runtimeDirectory, { recursive: true, mode: 0o700 });
-  try { if (statSync(path).size > DAEMON_LOG_LIMIT) renameSync(path, `${path}.1`); }
+  await mkdir(runtimeDirectory, { recursive: true, mode: 0o700 });
+  try { if ((await stat(path)).size > DAEMON_LOG_LIMIT) await rename(path, `${path}.1`); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  const fd = openSync(path, "a", 0o600);
-  try { chmodSync(path, 0o600); } catch (error) { closeSync(fd); throw error; }
-  return fd;
+  const handle = await open(path, "a", 0o600);
+  try { await chmod(path, 0o600); } catch (error) { await handle.close(); throw error; }
+  return handle;
 }
 
 export interface DesktopAccountAttachment {
@@ -91,19 +91,19 @@ export function isDaemonEndpointUnavailable(error: unknown): boolean {
   return code === "ENOENT" || code === "ECONNREFUSED" || code === "EPIPE";
 }
 
-function loadOrCreateToken(path: string): string {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+async function loadOrCreateToken(path: string): Promise<string> {
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   try {
-    const existing = readFileSync(path, "utf8").trim();
+    const existing = (await readFile(path, "utf8")).trim();
     if (existing.length >= 32) {
-      if (process.platform !== "win32") chmodSync(path, 0o600);
+      if (process.platform !== "win32") await chmod(path, 0o600);
       return existing;
     }
   } catch {
     // First launch owns token creation.
   }
   const token = randomBytes(48).toString("base64url");
-  writeFileSync(path, `${token}\n`, { encoding: "utf8", mode: 0o600 });
+  await writeFile(path, `${token}\n`, { encoding: "utf8", mode: 0o600 });
   return token;
 }
 
@@ -173,13 +173,17 @@ export class OpenCraftDaemonClientManager {
   private ensureOperation: Promise<void> | null = null;
   private shuttingDown = false;
 
-  constructor(private readonly options: OpenCraftDaemonClientOptions) {
+  private constructor(private readonly options: OpenCraftDaemonClientOptions, authToken: string) {
     this.endpoint = options.endpoint;
-    if (options.tokenMode === "existing") {
-      const token = readFileSync(options.tokenPath, "utf8").trim();
-      if (token.length < 32) throw new Error("Invalid existing daemon token");
-      this.authToken = token;
-    } else this.authToken = loadOrCreateToken(options.tokenPath);
+    this.authToken = authToken;
+  }
+
+  /** Reads (or, unless the token must already exist, creates) the daemon token without blocking. */
+  static async open(options: OpenCraftDaemonClientOptions): Promise<OpenCraftDaemonClientManager> {
+    if (options.tokenMode !== "existing") return new OpenCraftDaemonClientManager(options, await loadOrCreateToken(options.tokenPath));
+    const token = (await readFile(options.tokenPath, "utf8")).trim();
+    if (token.length < 32) throw new Error("Invalid existing daemon token");
+    return new OpenCraftDaemonClientManager(options, token);
   }
 
   /** Start or adopt the daemon and wait until it has opened its owned storage. */
@@ -322,7 +326,7 @@ export class OpenCraftDaemonClientManager {
       }
     }
     if (this.shuttingDown) throw new Error("OpenCraft Daemon is shutting down");
-    this.spawnDaemon();
+    await this.spawnDaemon();
     const deadline = Date.now() + 12_000;
     let lastError: unknown = null;
     while (Date.now() < deadline) {
@@ -383,14 +387,14 @@ export class OpenCraftDaemonClientManager {
     throw new Error(`An OpenCraft Daemon from another build did not stop: ${original.message}`, { cause: original });
   }
 
-  private spawnDaemon(): void {
+  private async spawnDaemon(): Promise<void> {
     const launch = daemonLaunchSpec(this.options, this.authToken);
     // The daemon outlives Main, so its output goes to a private file instead of a pipe.
-    const log = openDaemonLog(this.options.runtimeDirectory);
+    const log = await openDaemonLog(this.options.runtimeDirectory);
     try {
-      const child = spawn(launch.executable, launch.args, { ...launch.options, stdio: ["ignore", log, log] });
+      const child = spawn(launch.executable, launch.args, { ...launch.options, stdio: ["ignore", log.fd, log.fd] });
       child.unref();
-    } finally { closeSync(log); }
+    } finally { await log.close(); }
   }
 
   private open(role: "app-host" | "control", connectionId: string): Promise<ConnectedDaemonChannel> {

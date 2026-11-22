@@ -341,7 +341,6 @@
   );
   --opencraft-main-surface-elevation: var(--elevation-prominent);
   // Compact navigation does not divide the native titlebar reservation.
-  --background-shell-compact-titlebar: var(--color-surface);
   // AppShell owns the material; Sidebar content never owns opacity. On the
   // web this emulates the native macOS sidebar material, while Electron lets
   // the BrowserWindow vibrancy surface show through directly.

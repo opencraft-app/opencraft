@@ -23,8 +23,10 @@ not a general remote shell: other executables and argument vectors are rejected.
 ## First installation
 
 The default image follows upstream and packages the pinned stock Electron runtime.
-Node, Codex and DSH are pinned by this checkout and lockfile; no account or model
-credential is included. Native Linux amd64 and arm64 build hosts are supported.
+Node and Codex are pinned by this checkout and lockfile; no account or model
+credential is included. The image does not ship DeepSeek Harness (DSH): Brain
+starts without it, and a DSH installed in the image can be bridged by setting
+`OPENCRAFT_DSH_EXECUTABLE` to its `lib/bin.js`. Native Linux amd64 and arm64 build hosts are supported.
 Docker Desktop runs these Linux containers inside its VM.
 
 Internal builds can opt into a verified custom browser by setting
@@ -294,6 +296,31 @@ Hands, close or checkpoint important live tabs; a compatible Gateway-only change
 does not replace them. `docker compose down` stops all three owners and retains
 the bind-mounted state. For a cold backup, stop all three and copy the complete
 data and workspace directories with ownership and modes preserved.
+
+### Supervised runtime environment smoke
+
+After an authorized upgrade, an operator may separately inspect the existing
+supervised runtime and service counters without changing them:
+
+```sh
+npm run smoke:upgrade:environment -- /private/environment.json /private/new-report.json
+```
+
+The private input names an already configured `sshAlias`, loopback `port`,
+absolute `coreProgram`, systemd `units`, journal `since`, optional Docker
+`containers`, and optional `expectedIdentity` fields (`buildId`, `coreSha256`,
+`webSourceRevision`, `webBuildId`, `version`). The selected health endpoint must
+expose the supervised `core.pid`; this is not a fallback for unrelated health
+schemas. The target requires Python 3.11+, systemd and Docker when container
+checks are requested. Do not put SSH keys or passwords in the input.
+
+The probe checks actual process identity before hashing its executable, records
+bounded service counters rather than full command lines/journal contents, and
+writes a new owner-only report without overwriting an earlier one. All three
+probe categories must return valid results; missing or malformed results cannot
+pass acceptance. Service restart/error counters are observations, not a promise
+that their values are zero. This read-only probe neither deploys nor restarts
+services and cannot by itself verify model execution or full task continuity.
 
 ## Local scheduled builds from GitHub
 

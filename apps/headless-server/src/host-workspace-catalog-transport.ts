@@ -3,7 +3,7 @@ import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 import { WORKSPACE_CATALOG_METHOD, WORKSPACE_PLACEMENT_EXTENSION, OPENCRAFT_METHOD_ACCESS_EXTENSION,
   WORKSPACE_FILE_SCOPE_METHOD, type WorkspaceFileLocation, type WorkspaceCatalog } from '@opencraft/appserver-protocol';
 
-/** Installed only with identity-owned Native routing and the matched private
+/** Installed only with matched Native routing and the private
  * authority. Capability describes the protocol, not available compute capacity. */
 export class HostWorkspaceCatalogTransport implements DuplexTransport {
   private readonly listeners = new Set<(frame:string)=>void>();

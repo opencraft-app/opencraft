@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { ModelPolicyStore,assertModelPolicy,projectModels,createDshPolicyBoundary } from '@opencraft/model-usage-policy';
 import { modelPolicyHttp } from '@opencraft/model-usage-policy/http';
-import { ModelPolicyTransport } from '@opencraft/model-usage-policy/transport';
+import { ModelPolicyTransport, projectModelCatalog } from '@opencraft/model-usage-policy/transport';
 import { PiEngine,piModel } from '../../plugins/pi-engine/src/index.js';
 import { createModels } from '@earendil-works/pi-ai';
 import { fauxAssistantMessage, fauxToolCall, fauxProvider } from '@earendil-works/pi-ai/providers/faux';
@@ -37,7 +37,7 @@ test('gateway rejects webpage/API/IM/orchestration/goal requests and queue dispa
  const f=await fixture(t);f.store.write(0,[{engine:'codex',model:'blocked'}],'admin');
  const received:any[]=[];let listener:(s:string)=>void=()=>{};
  const inner:any={status:{state:'open'},connect:async()=>{},close:async()=>{},subscribeStatus:()=>()=>{},subscribeMessage:(fn:any)=>{listener=fn;return()=>{};},async send(frame:string){const m=JSON.parse(frame);received.push(m);if(String(m.id).startsWith('model-policy:'))listener(JSON.stringify({id:m.id,result:m.method==='thread/read'?{thread:{model:'blocked',reasoningEffort:'high'}}:{data:[{model:'allowed',defaultReasoningEffort:'high'}]}}));}};
- const gateway=new ModelPolicyTransport(inner,f.path);const replies:any[]=[];gateway.subscribeMessage(s=>replies.push(JSON.parse(s)));t.after(()=>gateway.close());
+ const gateway=new ModelPolicyTransport(inner,f.path,"codex",async (...args)=>projectModelCatalog(...args));const replies:any[]=[];gateway.subscribeMessage(s=>replies.push(JSON.parse(s)));t.after(()=>gateway.close());
  for(const source of ['web','api','im','orchestration','goal'])for(const method of ['turn/start','turn/steer','thread/queue/start','thread/queue/steer'])await gateway.send(JSON.stringify({id:source+method,method,params:{threadId:'t'}}));
  await gateway.send(JSON.stringify({id:'collaboration',method:'turn/start',params:{threadId:'t',model:'allowed',collaborationMode:{mode:'default',settings:{model:'blocked',reasoning_effort:'high'}}}}));
  assert.equal(replies.length,21);assert.ok(replies.every(r=>r.error.data.code==='model_usage_restricted'&&r.error.data.alternatives.includes('allowed')));
@@ -125,4 +125,47 @@ test('ACP config updates while idle are authoritative and cold model selection r
  assert.equal(result.turn.status,'inProgress');
  assert.equal((await restored.request('thread/read',{threadId:thread.id},client)).thread.model,'acp:allowed-native');
  await restored.close();
+});
+
+test("model-list replies wait for the policy owner and cannot escape their connection", async () => {
+  let receive: (frame: string) => void = () => {};
+  let publishStatus: Parameters<ModelPolicyTransport["subscribeStatus"]>[0] = () => {};
+  const projections = Array.from({ length: 3 }, () => Promise.withResolvers<Record<string, unknown>[]>());
+  let requests = 0;
+  const transport = new ModelPolicyTransport({
+    status: { state: "open" },
+    async connect() {},
+    async close() {},
+    subscribeStatus(listener) { publishStatus = listener; return () => {}; },
+    subscribeMessage(listener) { receive = listener; return () => {}; },
+    async send(raw) {
+      const { id, method } = JSON.parse(raw);
+      receive(JSON.stringify({ id, result: method === "model/list" ? { data: [{ id: "unfiltered" }], nextCursor: "native" } : {} }));
+    },
+  }, "/policy", "codex", async (_path, engine, models) => {
+    assert.equal(engine, "codex");
+    assert.deepEqual(models, [{ id: "unfiltered" }]);
+    return projections[requests++]!.promise;
+  });
+  const responses: unknown[] = [];
+  transport.subscribeMessage(raw => responses.push(JSON.parse(raw)));
+  await transport.send(JSON.stringify({ id: 1, method: "model/list" }));
+  await transport.send(JSON.stringify({ id: 2, method: "thread/read" }));
+  assert.deepEqual(responses, [{ id: 2, result: {} }]);
+  assert.equal(requests, 1);
+  projections[0]!.resolve([{ id: "policy-projected" }]);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.deepEqual(responses[1], { id: 1, result: { data: [{ id: "policy-projected" }], nextCursor: "native" } });
+  await transport.send(JSON.stringify({ id: 3, method: "model/list" }));
+  publishStatus({ state: "failed" });
+  publishStatus({ state: "open" });
+  projections[1]!.resolve([{ id: "old-connection" }]);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(responses.length, 2, "reconnecting fences a delayed model projection");
+
+  await transport.send(JSON.stringify({ id: 4, method: "model/list" }));
+  await transport.close();
+  projections[2]!.resolve([{ id: "closed-connection" }]);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(responses.length, 2, "closing fences a delayed model projection");
 });

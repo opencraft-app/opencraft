@@ -2,6 +2,7 @@ import { executionCliInstructions, type ExecutionCliLease, type ScopedExecutionC
 import { threadCliLabel } from "@opencraft/session-capabilities/thread-cli-instruction";
 import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 import { queueProjection, type PiQueuedInput } from "./queue.js";
+import type {ExecutionGitPort} from '@opencraft/execution-environment/execution-snapshot';
 import type { ExecutionEnvironmentRuntime } from '@opencraft/execution-environment';
 import { createPiTranscriptCache, readPiSnapshot } from "./read-history.js";
 import { nodeObserver } from "@opencraft/observability-contract/node";
@@ -119,7 +120,7 @@ export class PiEngine {
   private resolvedModels?: Awaited<ReturnType<typeof createPiModels>>;
   private readonly transcriptCache: ReturnType<typeof createPiTranscriptCache>;
   private readonly cliLeases = new Map<string, ExecutionCliLease>();
-  constructor(private readonly options: { executionCli?: ScopedExecutionCliPort; modelPolicyPath?: string; dataDirectory?: string; directory: string; cwd: string; executionEnvironment?: ExecutionEnvironmentRuntime; modelDirectory?: string; models?: Awaited<ReturnType<typeof createPiModels>>; configuration?: PiModelConfiguration; sessionCapabilities?: SessionCapabilityPort; attachmentDirectory?: string; prepareAttachmentInput?: (threadId: string, input: Value[]) => Promise<Value[]>; admission?: { open(): boolean; run<T>(operation: () => Promise<T>, reconciliation?: boolean): Promise<T> } }) {
+  constructor(private readonly options: { executionCli?: ScopedExecutionCliPort; modelPolicyPath?: string; dataDirectory?: string; directory: string; cwd: string; executionEnvironment?: ExecutionEnvironmentRuntime; executionGit?:ExecutionGitPort; modelDirectory?: string; models?: Awaited<ReturnType<typeof createPiModels>>; configuration?: PiModelConfiguration; sessionCapabilities?: SessionCapabilityPort; attachmentDirectory?: string; prepareAttachmentInput?: (threadId: string, input: Value[]) => Promise<Value[]>; admission?: { open(): boolean; run<T>(operation: () => Promise<T>, reconciliation?: boolean): Promise<T> } }) {
     nodeObserver("pi", { processResources: false });
     this.modelsRuntime = (options.models ? Promise.resolve(options.models) : createPiModels(options.modelDirectory ?? options.directory))
       .then(models => { this.resolvedModels = models; return models; });
@@ -259,7 +260,7 @@ export class PiEngine {
     if (session.ephemeral && session.failed) throw new Error("Temporary Pi session is no longer available");
     return session.starting ??= (async () => {
       const native = await PiDurableSession.open({ threadId: session.id, cwd: session.cwd, file: join(this.options.directory, `${session.id}.sqlite`),
-        executionEnvironment: this.options.executionEnvironment, projectId: session.projectId ?? null,
+        executionEnvironment: this.options.executionEnvironment, executionGit:this.options.executionGit, projectId: session.projectId ?? null,
         ephemeral: session.ephemeral, inherited: session.inherited, admissionOpen: this.admissionOpen, onPolicyDenied: error => this.notify("warning",{threadId:session.id,message:error.message}),
         modelPolicyPath: this.options.modelPolicyPath, policyCatalog: () => this.models(), admitBackground: operation => this.admit(async () => {
           assertModelPolicy(this.options.modelPolicyPath, "pi", session.model, session.effort, await this.models());
@@ -706,7 +707,12 @@ export class PiEngine {
         } else if (session.orchestrationOperation?.state !== "created") {
           await this.configure(session, start, true); session.orchestrationOperation!.state = "created"; await this.save(session);
         }
-        if (orchestrationTitle !== undefined && session.name !== orchestrationTitle) { session.name = orchestrationTitle; await this.save(session); }
+        if (orchestrationTitle !== undefined && session.name === null) {
+          session.name = orchestrationTitle;
+          try { await this.save(session); }
+          catch (error) { session.name = null; throw error; }
+          this.notify("thread/name/updated", { threadId: session.id, threadName: session.name });
+        }
         return { threadId: session.id, driverKind: "pi", generationId: this.orchestrationIncarnation, durability: "immediate" };
       })().catch(error => { this.orchestrationCreates.delete(operationId); throw error; });
       this.orchestrationCreates.set(operationId, { fingerprint, promise });

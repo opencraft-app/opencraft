@@ -48,7 +48,7 @@
   "tests/execution/codex-workspace-startup.test.ts",
   "tests/execution/e2b-workspace-inspector.test.ts",
   "tests/execution/engine-host-receipts.test.ts",
-  "tests/execution/execution-runtime-bootstrap.test.ts",
+  "tests/execution/sandbox-conversation-binding.test.ts",
   "tests/execution/goal-pause-admission.test.ts",
   "tests/execution/hands-disconnect.test.ts",
   "tests/execution/hands-incarnation.test.mjs",
@@ -73,6 +73,8 @@
   "tests/execution/sandbox-workspace-files.test.ts",
   "tests/execution/thread-publication-native.test.ts",
   "tests/execution/workspace-execution-channel.test.ts",
+  "tests/extensions/assets-catalog.test.ts",
+  "tests/extensions/assets-extension.test.ts",
   "tests/extensions/assistant-memory-drafts.test.ts",
   "tests/extensions/channel-attachment-file.test.ts",
   "tests/extensions/channel-attachments.test.ts",
@@ -201,5 +203,9 @@
   "tests/usage/model-gateway.test.ts",
   "tests/usage/token-usage-collector-worker.test.ts",
   "tests/usage/token-usage-open-gaps.test.ts",
-  "tests/workspace-preflight.test.mjs"
+  "tests/workspace-preflight.test.mjs",
+  "tests/extensions/assets-service.test.ts",
+  "tests/server/assets-worker-packaging.test.mjs",
+  "tests/identity/assets-default-service.test.ts",
+  "tests/extensions/assets-default-client.test.ts"
 ]

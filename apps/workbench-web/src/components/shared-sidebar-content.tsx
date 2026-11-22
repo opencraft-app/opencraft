@@ -105,13 +105,13 @@ export function SidebarContentPortal({ target, children, name, scrollViewport }:
   return createPortal(children, container);
 }
 
-export function SharedSidebarContent({ primary, context, footer }: {
-  primary: { target: HTMLElement | null; content: ReactNode };
+export function SharedSidebarContent({ navigation, context, footer }: {
+  navigation: { target: HTMLElement | null; content: ReactNode };
   context: { target: HTMLElement | null; content: ReactNode; scrollViewport?: SidebarScrollViewport };
   footer: { target: HTMLElement | null; content: ReactNode };
 }) {
   return <>
-    <SidebarContentPortal name="applications" target={primary.target}>{primary.content}</SidebarContentPortal>
+    <SidebarContentPortal name="applications" target={navigation.target}>{navigation.content}</SidebarContentPortal>
     <SidebarContentPortal name="context" target={context.target} scrollViewport={context.scrollViewport}>{context.content}</SidebarContentPortal>
     <SidebarContentPortal name="footer" target={footer.target}>{footer.content}</SidebarContentPortal>
   </>;

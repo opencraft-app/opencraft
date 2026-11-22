@@ -1,4 +1,12 @@
-import {readOfflineMemory} from './memory-browser-offline.mjs';
+import { WorkerOwner, ownerEntry } from '@opencraft/worker-owner';
+import { MemoryBrowserError } from '../application/memory-browser-view.mjs';
+
+/** Reads a stopped assistant's memory in a short-lived Worker, never on the Host's event loop. */
+async function readOfflineMemory(root, binding, params) {
+  const { owner } = await WorkerOwner.open(ownerEntry(import.meta.url, 'memory-browser-offline'), { name: 'Offline assistant memory', errors: [MemoryBrowserError] });
+  try { return await owner.call.read(root, binding, params); }
+  finally { await owner.close(); }
+}
 import { assistantHostExtension } from './host-extension.mjs';
 import { readWorkObservation } from './work-observation.mjs';
 import { readFile, lstat, access, realpath } from 'node:fs/promises';
@@ -7,15 +15,18 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createStdioPeer } from '../adapters/local/stdio-peer.mjs';
 import lockfile from 'proper-lockfile';
-import { privateDirectory } from '../adapters/local/bot-profile.mjs';
-import { validateCodexConfig, readCodexKey } from '../adapters/codex/config.mjs';
+import { privateDirectoryAsync } from '../adapters/local/private-directory-async.mjs';
+import { validateCodexConfig } from '../adapters/codex/config.mjs';
+import { readCodexKeyAsync } from '../adapters/codex/credential-file-async.mjs';
 
 const modelPurposes=new Set(['reception','context-summary','execution','memory-propose','memory-verify']);
+/** Crew work the Bot holds. The Core judges every call as the Bot itself; the Host only forwards. */
+const crewMethods = new Set([...['list','get','message','finish','replies','dispatch','attachment'].map(s=>'opencraft/crew/work/'+s),'opencraft/crew/phonebook/list']);
 const platformMethods = new Set(['authorize','threads/command','groups/list','groups/history','groups/search','conversations/list','conversations/history'].map(s=>'opencraft/personal-assistant/'+s));
 /** Installation-owned runtime handles. Assignment facts and message cursors remain durable owners.
  * No renderer, Human cookie or model-selected destination crosses this boundary. */
 export async function createPersonalAssistantHost({ directory, service, spawn = spawnAssistant, readConfig = readHostConfig, modelSource, codexBinary, intervalMs = 2000, now = Date.now, environmentProviders = {}, environmentProvidersFor }) {
-  const root = privateDirectory(await realpath(directory)), entries = new Map();
+  const root = await privateDirectoryAsync(await realpath(directory)), entries = new Map();
   let stopping = false, busy, release, detach, timer, closing;
   const providersFor = async context => ({...environmentProviders,...(await environmentProvidersFor?.(context) ?? {})});
   const validateEnvironment = async (environment, context) => {
@@ -45,6 +56,15 @@ export async function createPersonalAssistantHost({ directory, service, spawn = 
       await handle.ready;
       if(stopping||entries.get(botId)!==e||e.handle!==handle)throw Error('Assistant retired');
       const result=await handle.memory(params);
+      if(stopping||entries.get(botId)!==e||e.handle!==handle||e.epoch!==epoch)throw Error('Assistant retired');
+      return result;
+    },
+    /** Only a running Bot shows its desk; nothing is read from its files while it is stopped. */
+    async desk(botId,epoch,params) {
+      const e=entries.get(botId),handle=e?.handle;
+      if(stopping||!e||e.epoch!==epoch||!handle?.desk||handle.failed())throw Object.assign(Error('crew_desk_unavailable'),{status:503});
+      await handle.ready;
+      const result=await handle.desk(params);
       if(stopping||entries.get(botId)!==e||e.handle!==handle||e.epoch!==epoch)throw Error('Assistant retired');
       return result;
     },
@@ -151,6 +171,7 @@ export async function createPersonalAssistantHost({ directory, service, spawn = 
           if(extension)return extension.result;
           if(platformMethods.has(method))return service.personalAssistant(context,method,params);
           if(method==='own-messages'||method==='reply'||method==='attachment')return service.communicate(context,'personal-assistant/'+method,params);
+          if(crewMethods.has(method))return service.communicate(context,method,params);
           throw Error('Unsupported assistant Host operation');
         };
         const environment=a.assistant.environment??{kind:'local'};
@@ -187,7 +208,7 @@ export async function readHostConfig(directory) {
   const value=JSON.parse(await readFile(file,'utf8'));
   if(!value||Object.keys(value).some(k=>!['codex','backgroundCodex','maxRuntimes','timeZone'].includes(k)))throw Error('Invalid assistant Host configuration');
   validateCodexConfig(value.codex);if(value.backgroundCodex)validateCodexConfig(value.backgroundCodex);
-  for(const config of [value.codex,value.backgroundCodex].filter(Boolean)){await access(config.binary,1);readCodexKey(config);}
+  for(const config of [value.codex,value.backgroundCodex].filter(Boolean)){await access(config.binary,1);await readCodexKeyAsync(config);}
   const maxRuntimes=value.maxRuntimes??8;
   if(!Number.isSafeInteger(maxRuntimes)||maxRuntimes<1||maxRuntimes>64)throw Error('Invalid assistant capacity');
   return {maxRuntimes,profileOptions:{mode:'model',harnesses:{assistant:'codex',execution:'codex',codex:value.codex,...(value.backgroundCodex?{backgroundCodex:value.backgroundCodex}:{})},...(value.timeZone?{timeZone:value.timeZone}:{})}};
@@ -230,7 +251,8 @@ export function spawnAssistant({directory,profileOptions,request,executionEnviro
  const ready=peer.request('initialize',{protocolVersion:1,directory,profileOptions,...(executionEnvironment?{executionEnvironment}:{})},{timeoutMs:30000}).then(result=>{
   if(result?.protocolVersion!==1)throw Error('Assistant protocol mismatch');initializing=false;
  }).catch(error=>{fail(error);child.kill();throw error;});void ready.catch(()=>{});
- return {ready,pid:child.pid,memory:params=>{if(failure||closing)throw Error('Assistant retired');return peer.request('memory',params,{timeoutMs:15000});},works:()=>!failure&&!closing&&activity&&Date.now()-activity.at<5000?activity.works:undefined,
+ return {ready,pid:child.pid,memory:params=>{if(failure||closing)throw Error('Assistant retired');return peer.request('memory',params,{timeoutMs:15000});},
+ desk:params=>{if(failure||closing)throw Error('Assistant retired');return peer.request('desk',params,{timeoutMs:15000});},works:()=>!failure&&!closing&&activity&&Date.now()-activity.at<5000?activity.works:undefined,
  activity:()=>!failure&&!closing&&activity&&Date.now()-activity.at<5000?{...activity.value}:undefined,failed:()=>!!failure,
  close:()=>closing??=(async()=>{
   if(!exited){

@@ -130,6 +130,77 @@ export interface ChannelChanged {
 }
 
 export interface ChannelPerson { actorId: string; displayName: string; kind: 'human' | 'bot'; canMessage: boolean; avatar?: ChannelIdentityAvatar }
+/** Someone a space Bot may proactively reach (one-way); `session` entries are Bots. */
+export interface CrewPhonebookEntry { actorId: string; displayName: string; kind: 'human' | 'session' }
+/** A Bot's phonebook as one member sees it: entries, the space members who could be entries, and edit rights. */
+export interface CrewPhonebook { entries: CrewPhonebookEntry[]; members: CrewPhonebookEntry[]; editable: boolean }
+/** One piece of crew work and the people it answers to, nearest first, the space owner last. */
+export interface CrewWorkView {
+  id: string; state: 'open' | 'closed'; origin: 'member' | 'bot' | 'routine';
+  assigneeId: string; requesterId: string; parentId: string | null; rootId: string; messageId: string | null;
+  chain: CrewPhonebookEntry[]; budget: { used: number; limit: number };
+  /** Dispatch text, visible to the assignee and the requester only; null otherwise or for routine work. */
+  request: string | null;
+  /** Work handed on from this one that is still open. */
+  openChildren: number;
+  assignee: CrewPhonebookEntry;
+  /** A file sent with the dispatch; assignee and requester only. */
+  attachment: { name: string; type: string; size: number } | null;
+}
+/** One row of a person's crew Inbox. `waiting` is the latest unanswered question to them on this work. */
+export interface CrewInboxItem {
+  work: CrewWorkView;
+  waiting: { from: CrewPhonebookEntry; content: string; at: number } | null;
+  updatedAt: number;
+}
+/** A Bot's desk as its teammates see it: its setup, one conversation per dispatcher and that conversation's tasks. */
+export interface CrewDesk {
+  environment: { kind: 'local' } | { kind: 'sandbox'; backendId: string; templateId: string };
+  model: { providerId: string; modelId: string } | null;
+  /** How many people and Agents the Bot may reach on its own. */
+  contacts: number;
+  conversations: { actor: CrewPhonebookEntry; updatedAt: number }[];
+  selected: {
+    actor: CrewPhonebookEntry;
+    /** `author` is set on the Bot's incoming turns: the dispatcher, or the teammate whose reply came back. */
+    messages: { id: string; role: 'user' | 'assistant'; text: string; at: number; author?: CrewPhonebookEntry }[];
+    works: { id: string; title: string; status: string; updatedAt: number }[];
+  } | null;
+  /**
+   * Present only for the Bot's owner and the team's owner: what the Bot did with its own authority
+   * while answering crew work, newest first. `onBehalfOf` is the dispatcher, or null once they left.
+   */
+  operations?: CrewOperation[];
+}
+/** The Bot tools that act with its own authority beyond its memory, as recorded for the desk. */
+export const CREW_OPERATION_TOOLS = ['environment_run', 'platform_read', 'thread_command', 'crew_dispatch', 'crew_message'] as const;
+export interface CrewOperation {
+  id: string;
+  tool: (typeof CREW_OPERATION_TOOLS)[number];
+  summary: string;
+  at: number;
+  onBehalfOf: CrewPhonebookEntry | null;
+  /** For hand-offs and messages: who it went to, or null once they left the team. */
+  to?: CrewPhonebookEntry | null;
+}
+/** A Server space as its members see it in the Inbox. The instance-wide default space is not listed. */
+export interface CrewTeam {
+  id: string; name: string; role: 'owner' | 'member'; openContact: boolean;
+  members: (CrewPhonebookEntry & { role: 'owner' | 'member' })[];
+}
+/** Owner-only team management from the Inbox; people still join by invitation. */
+export type CrewTeamCommand =
+  | { action: 'create'; name: string }
+  | { action: 'join'; code: string }
+  | { action: 'invite'; spaceId: string }
+  | { action: 'candidates'; spaceId: string }
+  | { action: 'addAgent' | 'removeAgent'; spaceId: string; actorId: string }
+  | { action: 'contact'; spaceId: string; open: boolean };
+/** A reply that reached a Bot inside crew work, filed against that Bot's own work. */
+export interface CrewReply {
+  seq: number; messageId: string; workId: string; requesterId: string; state: 'open' | 'closed';
+  fromWorkId: string; from: CrewPhonebookEntry; content: string;
+}
 export interface ChannelsMethodMap {
   'opencraft/channels/group/get': {params:{channelId:string};result:ChannelSummary};
   'opencraft/channels/group/list-state/set': {params:{channelId:string;hidden:boolean;clientRequestId:string};result:ChannelSummary};
@@ -150,6 +221,24 @@ export interface ChannelsMethodMap {
   "opencraft/channels/read": {params:{channelId:string;throughSequence:number};result:null};
   "opencraft/channels/list": { params: Record<string, never>; result: { groups: ChannelSummary[] } };
   "opencraft/channels/direct/open": { params: { actorId: string }; result: ChannelSummary };
+  /** Readable by members of the Bot's space; only the space owner edits it, with members of that space. */
+  "opencraft/crew/phonebook/list": { params: { botId: string }; result: CrewPhonebook };
+  "opencraft/crew/phonebook/set": { params: { botId: string; actorId: string; present: boolean }; result: CrewPhonebook };
+  /** Members (same space) or Bots (phonebook, under an open parent) hand work to a space Bot. */
+  "opencraft/crew/work/dispatch": { params: { targetActorId: string; content: string; idempotencyKey: string; parentWorkId?: string }; result: { messageId: string; workId: string; work: CrewWorkView } };
+  /** The assignee of open work reaches anyone on its chain, or the space owner. */
+  /** `asks` marks a question; it waits on a person until they answer it, and their answer opens no new work. */
+  "opencraft/crew/work/message": { params: { workId: string; targetActorId: string; content: string; idempotencyKey: string; asks?: boolean }; result: { messageId: string } };
+  "opencraft/crew/work/start": { params: Record<string, never>; result: { work: CrewWorkView } };
+  "opencraft/crew/work/finish": { params: { workId: string }; result: { work: CrewWorkView } };
+  "opencraft/crew/work/get": { params: { workId: string }; result: { work: CrewWorkView } };
+  "opencraft/crew/work/list": { params: Record<string, never>; result: { works: CrewWorkView[] } };
+  "opencraft/crew/work/replies": { params: { after: number }; result: { replies: CrewReply[] } };
+  "opencraft/crew/work/attachment": { params: { workId: string; offset?: number }; result: { file: { name: string; type: string; size: number; next: number | null; base64: string } | null } };
+  "opencraft/crew/teams": { params: Record<string, never>; result: { teams: CrewTeam[] } };
+  "opencraft/crew/team": { params: CrewTeamCommand; result: { teams: CrewTeam[] } | { bots: { actorId: string; displayName: string }[] } | { code: string; expiresAt: number } };
+  "opencraft/crew/desk": { params: { botId: string; actorId?: string }; result: CrewDesk };
+  "opencraft/crew/work/inbox": { params: Record<string, never>; result: { items: CrewInboxItem[] } };
   "opencraft/channels/group/create": {
     params: { title: string; memberActorIds: string[]; clientRequestId: string };
     result: ChannelSummary;

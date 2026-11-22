@@ -1,4 +1,4 @@
-import type { ConversationRef, CollaborationReadCommandMap, ConversationReceipt, ConversationLookup } from '@opencraft/appserver-protocol/collaboration';
+import type { ConversationRef, CollaborationReadCommandMap, ConversationReceipt, ConversationLookup, ConversationCreateTarget, ConversationCreation, ConversationCreationLookup } from '@opencraft/appserver-protocol/collaboration';
 import { COLLABORATION_METHOD } from '@opencraft/appserver-protocol/collaboration';
 import { JsonRpcAppServerClient } from './client';
 import type { DuplexTransport } from './transport';
@@ -33,6 +33,15 @@ export class CollaborationClient {
     return this.command(capability, { ...params }, timeoutMs);
   }
   servers() { return this.readCommand<'servers'>('servers', { action: 'servers' }); }
+  projects(serverId: string, cursor?: string) {
+    return this.readCommand<'projects'>('projectDiscovery', { action: 'projects', serverId, ...(cursor ? { cursor } : {}) });
+  }
+  models(serverId: string, cursor?: string) {
+    return this.readCommand<'models'>('modelDiscovery', { action: 'models', serverId, ...(cursor ? { cursor } : {}) });
+  }
+  options(ref: ConversationRef) {
+    return this.readCommand<'options'>('executionOptions', { action: 'options', reference: ref });
+  }
   metadata(ref: ConversationRef, timeoutMs?: number) { return this.readCommand<'metadata'>('metadata', { action: 'metadata', reference: ref }, timeoutMs); }
   discover(serverId: string, cursor?: string, includeTitle = false, filters: { projectId?: string; cwd?: string } = {}) {
     if (filters.projectId !== undefined || filters.cwd !== undefined) this.require('discoverFilters');
@@ -42,6 +51,9 @@ export class CollaborationClient {
   read(ref: ConversationRef, cursor?: string) {
     return this.readCommand<'read'>('boundedRead',
       { action: 'read', reference: ref, bounded: true, ...(cursor ? { cursor } : {}) });
+  }
+  tail(ref: ConversationRef, limit: number) {
+    return this.readCommand<'read'>('tailRead', { action: 'read', reference: ref, bounded: true, tail: limit });
   }
   send(ref: ConversationRef, content: string, operationKey: string, execution: { mode: 'queue' } | { mode: 'steer'; expectedTurnId: string }) {
     return this.command<{ messageId: string; requestId: string; replayed: boolean }>(execution.mode,
@@ -53,6 +65,13 @@ export class CollaborationClient {
   }
   lookup(ref: ConversationRef, operationKey: string) {
     return this.command<ConversationLookup>('lookup', { action: 'lookup', reference: ref, idempotencyKey: operationKey });
+  }
+  create(target: ConversationCreateTarget, content: string, operationKey: string) {
+    if (target.initialPermissionMode !== undefined) this.require('initialPermissionMode');
+    return this.command<ConversationCreation>('create', { action: 'create', ...target, content, operationKey }, 90_000);
+  }
+  lookupCreation(serverId: string, operationKey: string) {
+    return this.command<ConversationCreationLookup>('createLookup', { action: 'createLookup', serverId, operationKey });
   }
   close() { return this.connection.close(); }
 }

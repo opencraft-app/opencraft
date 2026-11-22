@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { OpenCraftHostQueue } from "./opencraft-host-queue.js";
 import { OpenCraftHostStateDatabase } from "./opencraft-host-state-database.js";
@@ -25,8 +25,12 @@ export async function handOffLegacyQueue(
   clients: Pick<CodexHostServiceClients, "request">,
 ): Promise<CodexLegacyQueueHandoff> {
   const result = { moved: 0, uncertain: 0 };
-  if (!["opencraft-host-state.sqlite", "codex-host-queue.sqlite"].some((name) => existsSync(join(directory, name))))
-    return result;
+  const present = await Promise.all(
+    ["opencraft-host-state.sqlite", "codex-host-queue.sqlite"].map((name) =>
+      access(join(directory, name)).then(() => true, () => false),
+    ),
+  );
+  if (!present.includes(true)) return result;
   const state = new OpenCraftHostStateDatabase(directory);
   try {
     const queue = new OpenCraftHostQueue(directory, state.database, { recoverPending: false });

@@ -1,0 +1,87 @@
+// Shell owns the viewport; this document owns one inset reading/scrolling axis.
+.asset-catalog__sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-collection-sections);
+  min-inline-size: 0;
+}
+.asset-catalog__field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--gap-control-group);
+  min-inline-size: 0;
+  inline-size: 100%;
+}
+.asset-catalog__subtle {
+  margin: 0;
+  font: var(--typography-metadata-font);
+  letter-spacing: var(--typography-metadata-tracking);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+.asset-catalog__feedback {
+  color: var(--color-text-secondary);
+  font: var(--typography-metadata-font);
+}
+.asset-catalog__feedback:empty {
+  display: none;
+}
+.asset-catalog [hidden] {
+  display: none;
+}
+.asset-catalog .settings-control-list-item__copy {
+  overflow-wrap: anywhere;
+}
+.asset-catalog > * {
+  flex-shrink: 0;
+}
+.asset-catalog form {
+  display: flex;
+  flex-direction: column;
+  gap: calc(4 * var(--spacing));
+}
+
+.asset-catalog__collection {
+  display: flex;
+  flex-direction: column;
+  gap: calc(3 * var(--spacing));
+  min-inline-size: 0;
+}
+.asset-catalog__sections > .settings-control-section,
+.asset-catalog__sections > .asset-details {
+  min-inline-size: 0;
+}
+.asset-catalog .settings-control-list-item__icon > svg {
+  inline-size: var(--size-application-navigation-icon);
+  block-size: var(--size-application-navigation-icon);
+}
+
+.asset-catalog__editor {
+  gap: calc(2 * var(--spacing));
+}
+
+.asset-catalog__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(2 * var(--spacing));
+  padding: var(--padding-token-settings-panel);
+  text-align: center;
+  color: var(--color-text-secondary);
+  font: var(--typography-body-font);
+  letter-spacing: var(--typography-body-tracking);
+  p {
+    margin: 0;
+  }
+}
+.asset-catalog__provider-groups {
+  display: flex;
+  flex-direction: column;
+  gap: calc(5 * var(--spacing));
+  padding-block-start: calc(4 * var(--spacing));
+}
+
+.asset-catalog__description {
+  margin: 0;
+}

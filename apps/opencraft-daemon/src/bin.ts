@@ -26,10 +26,10 @@ function codexSource(value: string | undefined) {
   throw new Error("--codex-executable-source must be explicit, builtin, user-installed or unresolved");
 }
 
-// Before anything starts children: the desktop app's DevTools socket must not outlive it.
-closeInheritedDescriptors();
-
-void (async () => startOpenCraftDaemon({
+void (async () => {
+  // Before anything starts children: the desktop app's DevTools socket must not outlive it.
+  await closeInheritedDescriptors();
+  return startOpenCraftDaemon({
   endpoint: requiredArgument("--endpoint"),
   runtimeDirectory: requiredArgument("--runtime-directory"),
   authToken: requiredEnvironment("OPENCRAFT_DAEMON_AUTH_TOKEN"),
@@ -51,7 +51,8 @@ void (async () => startOpenCraftDaemon({
   ...(argument("--codex-engine-host") ? { codexEngineHost: { programs: requiredArgument("--codex-engine-host") } } : {}),
   codexWriterOwnership: process.argv.includes("--codex-writer-ownership"),
   machineName: argument("--machine-name"),
-}))().then((daemon) => {
+  });
+})().then((daemon) => {
   process.stdout.write(`${JSON.stringify({ type: "opencraft-daemon-ready", endpoint: daemon.endpoint, pid: process.pid })}\n`);
   const shutdown = () => void daemon.close().finally(() => process.exit(0));
   process.once("SIGINT", shutdown);

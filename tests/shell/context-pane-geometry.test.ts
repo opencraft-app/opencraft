@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { previewContextGeometry, settledContextGeometry } from "../../apps/workbench-web/src/components/context-pane-geometry";
-import { beginSidecarPrimaryResize, previewSidecarPrimaryResize, primaryViewportWidth } from "../../apps/workbench-web/src/components/sidecar-primary-resize";
 
 test("growing a contextual frame grows its content in the same projection", () => {
   const state = settledContextGeometry(275);
@@ -24,15 +23,6 @@ test("release commits but does not move the content viewport", () => {
   assert.equal(released.viewportWidth, held.viewportWidth);
   assert.equal(released.frameWidth, held.frameWidth);
   assert.equal(released.committedWidth, 260);
-});
-test("primary layout follows ordinary resize and uses a floor only for compact/hidden transitions", () => {
-  for (const width of [137, 130, 126, 129, 135]) assert.equal(primaryViewportWidth(width, 126), width);
-  for (const width of [125, 90, 52, 20, 0]) assert.equal(primaryViewportWidth(width, 126), 126);
-});
-test("a new drag takes over the actual settling frame instead of jumping to the saved target", () => {
-  const transaction = beginSidecarPrimaryResize({ clientX: 200, detent: "expanded", expandedWidth: 137, compactWidth: 52, currentWidth: 110 });
-  const preview = previewSidecarPrimaryResize({ transaction, clientX: 201, compactWidth: 52, expandedMinimumWidth: 126, maximumWidth: 137 });
-  assert.equal(preview.frameWidth, 111);
 });
 test("cancel restores origin and invalid geometry is rejected", () => {
   const preview = previewContextGeometry(settledContextGeometry(275), 400);

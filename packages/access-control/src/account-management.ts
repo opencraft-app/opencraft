@@ -8,6 +8,7 @@ import { parsePrincipal, type Principal } from '@opencraft/identity-core';
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import type { LocalAccountProvider } from '@opencraft/identity-core/local-account';
 import type { ActorStore } from './actors.js';
+import type { IdentityWrites } from './identity-writes.js';
 import type { HumanAccounts } from './human-accounts.js';
 import type { MembershipStore } from './index.js';
 
@@ -155,11 +156,17 @@ export class HumanAccountManagement {
     await provider.resetPassword(username(name), password, () => this.requireAdministrator(context));
     this.#assertOpen(); check(this.accounts.localAccounts === provider, 'account_service_retired', 503);
   }
-  setMember(context: ActorContext, actorId: string, role: 'admin' | 'member', enabled: boolean) {
+  #writes: IdentityWrites | null = null;
+  /** Membership administration writes go to the Server owner from now on. */
+  useOwnerWrites(writes: IdentityWrites): void { this.#writes = writes; }
+  async setMember(context: ActorContext, actorId: string, role: 'admin' | 'member', enabled: boolean): Promise<void> {
     this.requireAdministrator(context);
     check(actorId !== context.actorId || (enabled && role === 'admin'), 'cannot_remove_own_administration');
     check(this.actors.get(actorId)?.kind === 'human' && ['admin', 'member'].includes(role) && typeof enabled === 'boolean', 'invalid_member', 400);
-    this.members.setActor(actorId, role, enabled, context.actorId);
+    if (!this.#writes) { this.members.setActor(actorId, role, enabled, context.actorId); return; }
+    // Administration is rechecked under the owner's writer lock before commit.
+    const authorize = () => { try { this.requireAdministrator(context); return true; } catch { return false; } };
+    await this.#writes.setActorMembership(authorize, actorId, role, enabled, context.actorId);
   }
   close() { if (this.#closed) return; this.#closed = true; this.#closeDatabase(); }
 }

@@ -362,6 +362,21 @@ export class ExecutionRepository extends Repository {
       )
       .run(id, callId, tool, stable(args));
   }
+  operationCount(id) {
+    return this.db
+      .prepare("SELECT COUNT(*) AS n FROM work_operation WHERE execution_id=?")
+      .get(id).n;
+  }
+  hasOperation(id, callId) {
+    return !!this.db.prepare("SELECT 1 FROM work_operation WHERE execution_id=? AND call_id=?").get(id, callId);
+  }
+  recordOperation(id, callId, workId, tool, target, summary, at) {
+    this.db
+      .prepare(
+        "INSERT OR IGNORE INTO work_operation(execution_id,call_id,work_id,tool,target,summary,at) VALUES(?,?,?,?,?,?,?)",
+      )
+      .run(id, callId, workId, tool, target, summary, at);
+  }
   nativeOutcome(id, callId, state, output) {
     this.db
       .prepare(

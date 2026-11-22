@@ -1,3 +1,5 @@
+export { createPersonalGitSocketDirectory, personalGitSocketPaths, removePersonalGitSocketDirectory } from './personal-git-sockets.js';
+import { assertPersonalGitSocketDirectory, personalGitSocketPaths } from './personal-git-sockets.js';
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
 import { lstat, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -5,30 +7,34 @@ import { queryGitIdentityBroker } from './git-identity-ipc.js';
 
 export const PERSONAL_GIT_PROTOCOL = 2;
 const aad = Buffer.from('opencraft.personal-git.execution.v2');
+const actorAad=Buffer.from('opencraft.personal-git.actor-execution.v3');
 export interface GitGrantScope {
   readonly account: string; readonly hostId: 'local-codex' | 'opencraft-server';
   readonly threadId: string; readonly inputId: string; readonly executionId: string; readonly leaseGeneration: number;
+  readonly actorGeneration?:number;readonly membershipRevision?:number;
 }
 export function validGitGrantScope(value: unknown): value is GitGrantScope {
   const s = value as GitGrantScope | null;
   return !!s && typeof s === 'object' && ['account','threadId','inputId','executionId'].every(k => typeof (s as any)[k] === 'string' && (s as any)[k].length > 0 && (s as any)[k].length <= 512 && !/[\0\r\n]/u.test((s as any)[k]))
-    && ['local-codex','opencraft-server'].includes(s.hostId) && Number.isSafeInteger(s.leaseGeneration) && s.leaseGeneration > 0;
+    && ['local-codex','opencraft-server'].includes(s.hostId) && Number.isSafeInteger(s.leaseGeneration) && s.leaseGeneration > 0
+    && (!s.account.startsWith('actor:human://') || Number.isSafeInteger(s.actorGeneration)&&s.actorGeneration!>0&&Number.isSafeInteger(s.membershipRevision)&&s.membershipRevision!>=0);
 }
-export function gitGrantAuthority(key: Uint8Array): string { return createHmac('sha256', key).update(aad).digest('hex'); }
+export function gitGrantAuthority(key: Uint8Array, accountMode:'principal'|'actor'='principal'): string { return createHmac('sha256', key).update(accountMode==='actor'?actorAad:aad).digest('hex'); }
 export function sealGitGrant(key: Uint8Array, scope: GitGrantScope): string {
   if (!validGitGrantScope(scope)) throw Error('git_execution_attestation_missing');
-  const { account, hostId, threadId, inputId, executionId, leaseGeneration } = scope;
-  const iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm', key, iv); cipher.setAAD(aad);
-  return 'v2.' + Buffer.concat([iv, cipher.update(JSON.stringify({ account, hostId, threadId, inputId, executionId, leaseGeneration })), cipher.final(), cipher.getAuthTag()]).toString('base64url');
+  const { account, hostId, threadId, inputId, executionId, leaseGeneration,actorGeneration,membershipRevision } = scope;
+  const actor=account.startsWith("actor:human://");
+  const iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm', key, iv); cipher.setAAD(actor?actorAad:aad);
+  return (actor?'v3.':'v2.') + Buffer.concat([iv, cipher.update(JSON.stringify({ account, hostId, threadId, inputId, executionId, leaseGeneration,...(actor?{actorGeneration,membershipRevision}:{}) })), cipher.final(), cipher.getAuthTag()]).toString('base64url');
 }
 export function openGitGrant(key: Uint8Array, token: unknown): GitGrantScope | null {
-  if (typeof token !== 'string' || token.length > 8192 || !/^v2\.[A-Za-z0-9_-]+$/u.test(token)) return null;
+  if (typeof token !== 'string' || token.length > 8192 || !/^v[23]\.[A-Za-z0-9_-]+$/u.test(token)) return null;
   let clear: Buffer | undefined;
   try {
     const data = Buffer.from(token.slice(3), 'base64url'); if (data.length < 29 || data.toString('base64url') !== token.slice(3)) return null;
-    const decipher = createDecipheriv('aes-256-gcm', key, data.subarray(0,12)); decipher.setAAD(aad); decipher.setAuthTag(data.subarray(-16));
+    const decipher = createDecipheriv('aes-256-gcm', key, data.subarray(0,12)); decipher.setAAD(token.startsWith('v3.')?actorAad:aad); decipher.setAuthTag(data.subarray(-16));
     clear = Buffer.concat([decipher.update(data.subarray(12,-16)), decipher.final()]);
-    const value: unknown = JSON.parse(clear.toString()); return validGitGrantScope(value) ? Object.freeze(value) : null;
+    const value: unknown = JSON.parse(clear.toString()); return validGitGrantScope(value)&&token.startsWith('v3.')===value.account.startsWith('actor:human://') ? Object.freeze(value) : null;
   } catch { return null; } finally { clear?.fill(0); }
 }
 /** Ready endpoints are replicas of one attestation authority, not "the newest socket".
@@ -41,8 +47,9 @@ export async function readyGitBroker(runtime: string, authority: string, uid: nu
     if (root && (!root.isDirectory() || root.uid !== uid || (root.mode & 0o077))) throw Error('git_broker_locator_invalid');
     const paths: string[] = [];
     for (const name of (await readdir(runtime).catch(() => [])).filter(n => /^owner-[a-f0-9]{12}$/u.test(n)).sort()) {
-      const dir = join(runtime,name), descriptor = join(dir,'ready.json'), socket = join(dir,'broker.sock');
+      const dir = join(runtime,name), descriptor = join(dir,'ready.json'), socketPaths=personalGitSocketPaths(runtime,name,uid), socket=socketPaths.socket;
       try {
+        if(socketPaths.root){await assertPersonalGitSocketDirectory(socketPaths.root,uid);await assertPersonalGitSocketDirectory(socketPaths.directory,uid);}
         const [d,f,s] = await Promise.all([lstat(dir),lstat(descriptor),lstat(socket)]);
         if (!d.isDirectory() || !f.isFile() || f.size > 2048 || !s.isSocket() || [d,f,s].some(x => x.uid !== uid || (x.mode & 0o077))) continue;
         const v = JSON.parse(await readFile(descriptor,'utf8'));

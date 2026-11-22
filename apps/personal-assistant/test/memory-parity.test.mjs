@@ -548,7 +548,7 @@ test("schema13 upgrade preserves explicit provenance, original dates and queued 
   s.close();
   s = new Store(profile);
   t.after(() => s.close());
-  assert.equal(s.db.prepare("PRAGMA user_version").get().user_version, 21);
+  assert.equal(s.db.prepare("PRAGMA user_version").get().user_version, 22);
   assert.equal(s.app.memory.list()[0].updatedAt, before.updatedAt);
   assert.equal(s.app.memory.learningSnapshot().facts[0].origin, "explicit");
   assert.equal(s.app.memoryLearning.get(job.id).state, "proposed");

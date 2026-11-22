@@ -11,13 +11,22 @@
     "./personal-git": "./src/personal-git.ts",
     "./personal-git-protocol": "./src/personal-git-protocol.ts",
     "./employee-git-vault-store": "./src/employee-git-vault-store.ts",
-    "./git-identity-ipc": "./src/git-identity-ipc.ts"
+    "./git-identity-ipc": "./src/git-identity-ipc.ts",
+    "./git-execution": "./src/git-execution.ts",
+    "./execution-snapshot": "./src/execution-snapshot.ts",
+    "./environment-delivery": "./src/environment-delivery.ts",
+    "./git-keys": "./src/git-keys.ts",
+    "./human-git-execution": "./src/human-git-execution.ts",
+    "./remote-human-git-execution": "./src/remote-human-git-execution.ts",
+    "./native-execution-origin": "./src/native-execution-origin.ts",
+    "./workspace-selection": "./src/workspace-selection.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@opencraft/appserver-client": "0.1.0",
+    "@opencraft/session-capabilities": "0.1.0",
     "@opencraft/workbench-runtime": "0.1.0"
   }
 }

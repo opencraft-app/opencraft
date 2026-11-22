@@ -53,7 +53,10 @@ human membership does not issue or inherit Session credentials.
 ## Protocol
 
 `opencraft/server-spaces` capability version 1 and the same-named RPC provide
-`list`, `create`, `select`, `members`, `invite`, `join` and `remove`. Server
+`list`, `create`, `select`, `members`, `invite`, `join` and `remove`, plus the
+owner-only `contact` and `addBot` described in [Crew](crew.md). Directory spaces
+carry `openContact` and members carry `kind`; clients treat a missing field from
+an older Host as closed contact and a human member. Server
 selection is per logical client; creating another Server does not change the
 selected Host or impersonate its human. `opencraft/server-spaces/changed` is a
 title-free invalidation. Older Hosts return unsupported and retain their prior

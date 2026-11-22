@@ -27,7 +27,7 @@ const noop=()=>{};const threads=['investment','writing'].map((id,i)=>({id,title:
 const layout=await SidebarLayoutStore.open({load:async()=>null,save:async(_scope,value)=>value});
 function App(){const [scope,setScope]=useState('alice');const [route,setRoute]=useState('investment');const [sidebar,setSidebar]=useState(true);const title=threads.find(t=>t.id===route).title;
 window.fixture={writes:()=>writes,preferences,setScope,setRoute,setSidebar,setThemePreference,setAppearanceThemeId,fail:value=>fail=value,hold:()=>release=true,release:()=>{const done=release;release=null;done?.()}};
-return <ConversationAppearanceProvider scope={scope} routeKey={route}><AppShell navigation={{layout:'unified',actions:[],onOpenSettings:noop,account:{snapshot:{phase:'anonymous'},onOpen:noop}}}
+return <ConversationAppearanceProvider scope={scope} routeKey={route}><AppShell navigation={{actions:[],onOpenSettings:noop,account:{snapshot:{phase:'anonymous'},onOpen:noop}}}
  layoutScope='appearance' mainContentLayout='default' sidebarOpen={sidebar} sidebarWidth={275} onSidebarCollapse={()=>setSidebar(false)} onSidebarExpand={()=>setSidebar(true)} onSidebarResizeEnd={noop}
  rightPanel={null} rightPanelOpen={false} rightPanelFullWidth={false} onRightPanelOpenChange={noop} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} floatingSidebarHeader={()=>null}
  leftPanel={<Sidebar threads={threads} activeHostId='local' activeThreadId={route} sidebarLayout={layout} onSelectThread={(_host,id)=>setRoute(id)} onNewTask={noop} onOpenSettings={noop} showFooter={false}

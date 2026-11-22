@@ -110,7 +110,7 @@ export class ThreadAccessSession {
     private readonly context: ActorContext | undefined, private readonly emit: (frame: string) => void,
     private readonly restoreCreator?: (threadId: string) => Promise<void>,
     private readonly assertCurrent: () => void = () => {},
-    private readonly notes?: { exchange(serverId: string, threadId: string, update: string, vector: string): {update: string} },
+    private readonly notes?: { exchange(serverId: string, threadId: string, update: string, vector: string): {update: string} | Promise<{update: string}> },
     private readonly admittedCatalogOwner = false,
     private readonly anonymousHandoff: () => boolean = () => false) {
     this.unsubscribe = store.subscribe(policy => {
@@ -174,7 +174,7 @@ export class ThreadAccessSession {
         const serverId = this.server(params.threadId);
         this.store.projection(serverId,params.threadId,this.context);
         this.track(params.threadId);
-        const result = this.notes.exchange(serverId,params.threadId,params.update,params.vector);
+        const result = await this.notes.exchange(serverId,params.threadId,params.update,params.vector);
         this.assertCurrent();
         this.emit(JSON.stringify({...envelope,result}));
       } catch (error) {

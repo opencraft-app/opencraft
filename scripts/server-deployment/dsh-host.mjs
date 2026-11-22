@@ -34,7 +34,9 @@ export async function startIndependentDshHost(configuration) {
     if (!taskCoreToken) throw new Error('Task Core catalog token is empty');
   }
   if (!options.dshExecutable || !options.dshCapabilityPlugin) throw new Error("DSH handoff requires pinned executable and plugin paths");
-  await verifyDshOwnerAdmission(resolve(dirname(options.dshExecutable),"../../../.."));
+  // OpenCraft bridges DSH but does not ship it. Only an installed runtime has a
+  // native writer whose owner admission must be verified before handoff.
+  if (existsSyncEntry(options.dshExecutable)) await verifyDshOwnerAdmission(resolve(dirname(options.dshExecutable),"../../../.."));
   await mkdir(join(options.dataDirectory,'owner-handoff'),{recursive:true,mode:0o700});
   const releaseKernel = await acquireLock(join(options.dataDirectory,'owner-writer.lock')).catch(error=>{throw new Error('DSH writer already owned or unavailable',{cause:error});});
   let release;
@@ -61,7 +63,11 @@ export async function startIndependentDshHost(configuration) {
     options.modelPolicyPath ??= join(dirname(options.dataDirectory), "model-usage-policy.sqlite");
     new ModelPolicyStore(options.modelPolicyPath).close();
     options.machineIdentity = machineIdentity;
-    options.environmentDataDirectory ??= machineIdentityDirectory ?? dirname(options.dataDirectory);
+    const executionContext=options.executionContext??'legacy';
+    if(!['assets','legacy'].includes(executionContext))throw Error('Invalid execution context');
+    if(executionContext==='legacy')options.environmentDataDirectory ??= machineIdentityDirectory ?? dirname(options.dataDirectory);
+    else options.gitExecution??={directory:machineIdentityDirectory??dirname(options.dataDirectory),machineId:machineIdentity.machineId,
+      workerFile:fileURLToPath(new URL('../runtime/personal-git-worker.mjs',import.meta.url))};
     runtime.machineId = machineIdentity.machineId;
     const sessionCapabilities = new RemoteSessionCapabilities(dirname(options.dataDirectory), `server:${machineIdentity.machineId}:dsh`);
     options.sessionCapabilities ??= sessionCapabilities;
