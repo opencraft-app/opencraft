@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, mkdir, rm, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, symlink, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
+import { execFile } from "node:child_process";
+import { once } from "node:events";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
+import { WebSocketServer } from "ws";
 import { AppHostServer } from "@opencraft/app-host-server";
 import { createRoutedConversationExecution } from "@opencraft/access-control/conversation-execution";
 import { ActorStore } from "../../packages/access-control/src/actors";
@@ -179,6 +184,16 @@ test("create resolves Server project roots, preserves the Actor lane and returns
   await assert.rejects(client.create(target, "first message", "three"));
   assert.equal(creates, 3, "a transport loss does not trigger a lookup or mutation retry");
   assert.equal(operations.filter((row) => row.method === "thread/start").length, 3);
+  let revoked = false;
+  await assert.rejects(execution.create!({ serverId, cwd: root }, "revoked", "fenced", {
+    sender: null, actorContext: actor,
+    resourceOwner: { id: "fixture", assertCurrent() {
+      if (revoked) throw Object.assign(Error("expired"), { status: 403 });
+    } },
+  }, async () => { revoked = true; }), { status: 403 });
+  assert.equal(operations.filter((row) => row.method === "thread/start").length, 4);
+  assert.equal(operations.filter((row) => row.method === "turn/start").length, 3, "local revocation never dispatches or fakes a native reply");
+
 });
 
 test("create and tail reject invalid arguments before opening an SSH profile", async () => {
@@ -200,10 +215,12 @@ test("creation lookup records Actor-scoped custody before first input and never 
   const principal = (subject: string) => ({
     provider: "local", subject, displayName: subject, expiresAt: Date.now() + 60_000,
   });
+  const allocationPending = Promise.withResolvers<void>();
+  const releaseAllocation = Promise.withResolvers<void>();
   const firstPending = Promise.withResolvers<void>();
   const releaseFirst = Promise.withResolvers<void>();
   let createCount = 0, inputCount = 0, readable = true, admitted = true;
-  let mode: "held" | "normal" | "unknown" | "lost-first" = "held";
+  let mode: "held" | "normal" | "unknown" | "lost-first" | "local-fence" | "allocation-rejected" | "first-rejected" = "held";
   const capabilities = { metadata: true, read: true, boundedRead: true, create: true, queue: true, steer: true };
   const execution: ConversationExecutionPort = {
     hostId: "fixture",
@@ -212,8 +229,17 @@ test("creation lookup records Actor-scoped custody before first input and never 
     directory: () => ({ instanceId: "fixture", servers: [serverId, otherServer].map(id => ({
       serverId: id, label: "Fixture", engine: "codex", connectionState: "ready", capabilities,
     })) }),
-    async create(target, content, operationKey, _context, rememberThread) {
+    async create(target, content, operationKey, context, rememberThread) {
       createCount++;
+      if (mode === "held") {
+        allocationPending.resolve();
+        await releaseAllocation.promise;
+      }
+      if (mode === "local-fence") {
+        admitted = false;
+        context.resourceOwner!.assertCurrent();
+      }
+      if (mode === "allocation-rejected") throw Object.assign(Error("conversation_unavailable"), { status: 404, code: "conversation_unavailable" });
       if (mode === "unknown") return { operationKey, ref: null, creationState: "unknown", firstMessageState: "unknown" };
       const ref = { serverId: target.serverId, threadId: "thread-" + createCount };
       assert.equal(content, "synthetic input");
@@ -223,7 +249,7 @@ test("creation lookup records Actor-scoped custody before first input and never 
         firstPending.resolve();
         await releaseFirst.promise;
       }
-      return { operationKey, ref, creationState: "created", firstMessageState: mode === "lost-first" ? "unknown" : "submitted" };
+      return { operationKey, ref, creationState: "created", firstMessageState: mode === "lost-first" ? "unknown" : mode === "first-rejected" ? "rejected" : "submitted" };
     },
     async validate() {},
     async receipt() { return null; },
@@ -241,6 +267,7 @@ test("creation lookup records Actor-scoped custody before first input and never 
   };
   let deployment = await open();
   t.after(async () => {
+    releaseAllocation.resolve();
     releaseFirst.resolve();
     await deployment.close();
     await rm(root, { recursive: true, force: true });
@@ -251,6 +278,15 @@ test("creation lookup records Actor-scoped custody before first input and never 
   assert.equal(service.capabilities.createLookup, true);
   assert.equal(service.servers(actor).servers[0]!.capabilities.createLookup, true);
   const started = service.command(actor, create("same"));
+  await allocationPending.promise;
+  const claimed = await service.command(actor, lookup("same"));
+  assert.deepEqual(claimed.receipt, { operationKey: "same", ref: null, creationState: "unknown", firstMessageState: "unknown" });
+  assert.deepEqual(await service.command(actor, create("same")), claimed.receipt);
+  await assert.rejects(service.command(actor, { ...create("same"), content: "different" }), { code: "idempotency_key_reused" });
+  await assert.rejects(service.command(actor, { ...create("same"), serverId: otherServer }), { code: "idempotency_key_reused" });
+  assert.equal(createCount, 1);
+  assert.equal(inputCount, 0);
+  releaseAllocation.resolve();
   await firstPending.promise;
   const checkpoint = await service.command(actor, lookup("same"));
   assert.equal(checkpoint.receipt.creationState, "created");
@@ -275,18 +311,131 @@ test("creation lookup records Actor-scoped custody before first input and never 
   const firstLost = await service.command(actor, create("first-lost"));
   assert.equal(firstLost.creationState, "created");
   assert.equal(firstLost.firstMessageState, "unknown");
-  assert.deepEqual([createCount, inputCount], [4, 3]);
+  mode = "local-fence";
+  await assert.rejects(service.command(actor, create("local-fence")), { status: 401 });
+  admitted = true;
+  const localFence = (await service.command(actor, lookup("local-fence"))).receipt;
+  assert.equal(localFence.creationState, "unknown");
+  mode = "allocation-rejected";
+  await assert.rejects(service.command(actor, create("allocation-rejected")), { status: 404, code: "conversation_unavailable" });
+  mode = "first-rejected";
+  const firstRejected = await service.command(actor, create("first-rejected"));
+  assert.equal(firstRejected.firstMessageState, "rejected");
+  assert.deepEqual([createCount, inputCount], [7, 4]);
   await deployment.close();
   deployment = await open();
 
   const restarted = deployment.service, restored = deployment.actor;
-  for (const [key, result] of [["same", settled], ["allocate-lost", unknown], ["first-lost", firstLost]]) {
+  for (const [key, result] of [["same", settled], ["allocate-lost", unknown], ["first-lost", firstLost], ["local-fence", localFence], ["first-rejected", firstRejected]]) {
     assert.deepEqual(await restarted.command(restored, lookup(key)), { found: true, receipt: result });
     assert.deepEqual(await restarted.command(restored, create(key)), result);
   }
-  assert.deepEqual([createCount, inputCount], [4, 3], "restart or lookup never resumes a mutation");
+  assert.deepEqual(await restarted.command(restored, lookup("allocation-rejected")), { found: true, receipt: {
+    operationKey: "allocation-rejected", ref: null, creationState: "rejected", firstMessageState: "unknown", rejectionCode: "conversation_unavailable",
+  } });
+  await assert.rejects(restarted.command(restored, create("allocation-rejected")), { status: 404, code: "conversation_unavailable" });
+  assert.deepEqual([createCount, inputCount], [7, 4], "restart or lookup never resumes a mutation");
   readable = false;
   await assert.rejects(restarted.command(restored, lookup("same")), { status: 403 });
   admitted = false;
   await assert.rejects(restarted.command(restored, lookup("first-lost")), { status: 401 });
+});
+
+test("the CLI saves generated creation keys and reads a disconnected operation without a reference", { skip: process.platform === "win32" }, async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "cli-create-wire-"));
+  const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+  t.after(async () => {
+    for (const socket of server.clients) socket.terminate();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await rm(root, { recursive: true, force: true });
+  });
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  await writeFile(join(root, "ssh"), `#!/usr/bin/env node
+const socket = require("node:net").connect(${address.port}, "127.0.0.1");
+process.stdin.pipe(socket).pipe(process.stdout);
+socket.on("error", () => process.exit(1));
+`, { mode: 0o700 });
+  const configPath = join(root, "connections.json");
+  await writeFile(configPath, JSON.stringify({ schemaVersion: 1, defaultConnection: "fixture", connections: {
+    fixture: { sshAlias: "cli-fixture", instanceId: "fixture", defaultServer: "codex" },
+  } }));
+  const env = { ...process.env, PATH: [root, process.env.PATH].join(delimiter), OPENCRAFT_CONFIG: configPath };
+  delete env.OPENCRAFT_THREAD_CLI;
+  delete env.OPENCRAFT_THREAD_CLI_CONNECTION;
+  const invoke = promisify(execFile);
+  const cli = async (args: string[], expected = 0) => {
+    const processArgs = ["--import", "tsx", fileURLToPath(new URL("../../apps/opencraft-cli/src/main.ts", import.meta.url)), ...args, "--json"];
+    try {
+      const { stdout } = await invoke(process.execPath, processArgs, { env, timeout: 10_000 });
+      assert.equal(expected, 0);
+      return JSON.parse(stdout).data;
+    } catch (cause) {
+      const error = cause as { code: number; stdout: string; stderr: string };
+      assert.equal(error.code, expected, error.stderr);
+      return JSON.parse(error.stdout).error;
+    }
+  };
+  let drop = true, legacy = false, actor = "first", createCalls = 0, allocations = 0;
+  const ref = { serverId: "codex", threadId: "known-thread" };
+  const receipts = new Map<string, object>();
+  const seenRecords: string[] = [];
+  server.on("connection", socket => {
+    socket.on("message", async raw => {
+      const request = JSON.parse(raw.toString());
+      if (request.id === undefined) return;
+      const result = (value: unknown) => socket.send(JSON.stringify({ id: request.id, result: value }));
+      if (request.method === "initialize") {
+        result({ capabilities: { extensions: { "opencraft/collaboration": { ...COLLABORATION_CAPABILITIES, ...(!legacy ? { createLookup: true } : {}) } } } });
+        return;
+      }
+      const params = request.params;
+      if (params.action === "servers") {
+        result({ instanceId: "fixture", actor: { id: actor }, servers: [{ serverId: "codex", capabilities: { create: true, createLookup: !legacy } }] });
+        return;
+      }
+      const key = actor + ":" + params.operationKey;
+      if (params.action === "createLookup") {
+        result(receipts.has(key) ? { found: true, receipt: receipts.get(key) } : { found: false });
+        return;
+      }
+      createCalls++;
+      const stored = receipts.get(key);
+      if (stored) { result(stored); return; }
+      allocations++;
+      const receipt = { operationKey: params.operationKey, ref, creationState: "created", firstMessageState: params.operationKey === "reject-first" ? "rejected" : "submitted" };
+      receipts.set(key, receipt);
+      if (drop) {
+        const path = join(root, "operations", "create-" + params.operationKey + ".json");
+        seenRecords.push(await readFile(path, "utf8").catch(() => ""));
+        socket.terminate();
+      } else result(receipt);
+    });
+  });
+
+  const create = ["thread", "create", "synthetic first input", "--cwd", root];
+  const lost = await cli(create, 7);
+  assert.equal(lost.code, "CREATE_OUTCOME_UNKNOWN");
+  const key = lost.details.operationKey;
+  assert.deepEqual(await readdir(join(root, "operations")), ["create-" + key + ".json"]);
+  assert.equal(seenRecords.length, 1);
+  assert.equal(JSON.parse(seenRecords[0]!).operationKey, key);
+  assert.equal(seenRecords[0]!.includes("synthetic first input"), false);
+  const lookup = ["thread", "lookup", "--key", key];
+  assert.equal((await cli(lookup)).receipt.reference, "opencraft://conversation/v1/codex/known-thread");
+  actor = "other";
+  assert.equal((await cli(lookup)).found, false);
+  actor = "first";
+  drop = false;
+  assert.deepEqual((await cli([...create, "--key", key])).ref, ref);
+  assert.deepEqual([createCalls, allocations], [2, 1]);
+  const rejected = await cli([...create, "--key", "reject-first"], 8);
+  assert.equal(rejected.code, "FIRST_MESSAGE_REJECTED");
+  assert.deepEqual(rejected.details.ref, ref);
+
+  legacy = true;
+  assert.equal((await cli(create)).firstMessageState, "submitted");
+  assert.equal((await cli(lookup, 6)).code, "UNSUPPORTED_CAPABILITY");
+  assert.deepEqual(await readdir(join(root, "operations")), ["create-" + key + ".json"]);
 });

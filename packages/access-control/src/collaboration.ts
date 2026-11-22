@@ -459,9 +459,14 @@ export class Collaboration {
       });
     } catch (cause) {
       const fault = cause as { status?: number; code?: unknown };
-      if (!allocated && fault.status && [400, 401, 403, 404, 409].includes(fault.status)
-        && typeof fault.code === 'string' && /^[a-z_]{1,80}$/u.test(fault.code))
-        await store.rejectConversationAllocation(key, fault.status, fault.code);
+      // Only the allocation port's explicit workspace/engine rejection is
+      // terminal. A local admission fence also throws 401/403; it must leave
+      // the already committed claim unconfirmed.
+      if (!allocated && (
+        fault.status === 400 && (fault.code === 'invalid_cwd' || fault.code === 'creation_rejected')
+        || fault.status === 403 && fault.code === 'creation_forbidden'
+        || fault.status === 404 && fault.code === 'conversation_unavailable'
+      )) await store.rejectConversationAllocation(key, fault.status, String(fault.code));
       throw cause;
     }
     if (result.creationState === 'created') {
