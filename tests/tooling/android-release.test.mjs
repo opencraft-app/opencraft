@@ -146,8 +146,9 @@ test("staging binds the APK digest and publishes it under the release name", (t)
   );
 });
 
-// Stand-in gh: answers the Environment lookup and secret listing from fixture
-// state, keeps secret values, and records every mutating API call. A
+// Stand-in gh: answers the Environment lookup, deployment branch policies and
+// secret listing from fixture state, keeps secret values, and records every
+// mutating API call; a created main policy joins the listing. A
 // keytool stand-in, when requested, records that it ran and does nothing else.
 function provisioningFixture(t, { stubKeytool = false } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "opencraft-provision-"));
@@ -161,25 +162,38 @@ function provisioningFixture(t, { stubKeytool = false } = {}) {
     [
       "#!/usr/bin/env bash",
       'state="$GH_FIXTURE"',
-      'if [[ "$1" == api && "$2" == repos/owner/repo/environments/android-release && $# -eq 2 ]]; then',
+      'if [[ "$1" == api && "$2" == repos/owner/repo/environments/android-release && "$*" != *--method* ]]; then',
       '  if [[ -f "$state/lookup-error" ]]; then cat "$state/lookup-error" >&2; exit 1; fi',
       '  if [[ -f "$state/environment-missing" ]]; then echo "gh: Not Found (HTTP 404)" >&2; exit 1; fi',
-      "  exit 0",
+      '  cat "$state/branch-policy" 2>/dev/null || echo "false true"; exit 0',
+      "fi",
+      'if [[ "$1 $2" == "api --paginate" ]]; then',
+      '  if [[ -f "$state/policies-fail" ]]; then echo "HTTP 502" >&2; exit 1; fi',
+      '  cat "$state/policies" 2>/dev/null; exit 0',
       "fi",
       'if [[ "$1 $2" == "secret list" ]]; then',
       '  if [[ -f "$state/list-fails" ]]; then echo "HTTP 403" >&2; exit 1; fi',
       '  cat "$state/existing" 2>/dev/null; exit 0',
       "fi",
       'if [[ "$1 $2" == "secret set" ]]; then cat > "$state/secret-$3"; exit 0; fi',
-      'if [[ "$*" == *deployment-branch-policies* && "$*" != *POST* ]]; then exit 0; fi',
+      'if [[ "$*" == *"--method POST"*deployment-branch-policies* ]]; then echo "branch main" >> "$state/policies"; fi',
       'cat > /dev/null; echo "$*" >> "$state/api"',
     ].join("\n"),
     { mode: 0o755 },
   );
   if (stubKeytool) {
-    writeFileSync(join(bin, "keytool"), `#!/usr/bin/env bash\necho ran >> "${join(state, "keytool")}"\n`, {
-      mode: 0o755,
-    });
+    // Records that it ran, creates the requested keystore file and reports a
+    // fixed fingerprint, so full provisioning flows run without a JDK.
+    writeFileSync(
+      join(bin, "keytool"),
+      [
+        "#!/usr/bin/env bash",
+        `echo ran >> "${join(state, "keytool")}"`,
+        'while (( $# )); do if [[ "$1" == -keystore ]]; then touch "$2"; fi; shift; done',
+        "echo 'Certificate fingerprint (SHA-256): AA:BB'",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
   }
   const provision = (target) =>
     spawnSync("bash", [join(root, "scripts/release/provision-android-signing.sh"), target, "owner/repo"], {
@@ -195,6 +209,8 @@ test("signing provisioning generates or imports a usable key and never replaces 
   if (keytool.error) return t.skip("keytool is not installed");
   const { directory, state, provision } = provisioningFixture(t);
   const key = join(directory, "key");
+  // First run: the Environment does not exist yet, so it is created main-only.
+  writeFileSync(join(state, "environment-missing"), "");
   const result = provision(key);
   assert.equal(result.status, 0, result.stderr);
   const api = readFileSync(join(state, "api"), "utf8");
@@ -226,9 +242,13 @@ test("signing provisioning generates or imports a usable key and never replaces 
   assert.match(result.stdout, /Signing certificate SHA-256: [0-9A-F:]{95}/u);
 
   // An existing key directory is uploaded as is, never regenerated.
+  // The Environment now exists with exactly the main policy; it is used as is.
   const keystoreBytes = readFileSync(join(key, "opencraft-release.p12"));
+  rmSync(join(state, "environment-missing"));
+  writeFileSync(join(state, "api"), "");
   const imported = provision(key);
   assert.equal(imported.status, 0, imported.stderr);
+  assert.equal(readFileSync(join(state, "api"), "utf8"), "", "an existing main-only Environment is not reconfigured");
   assert.deepEqual(readFileSync(join(key, "opencraft-release.p12")), keystoreBytes);
   assert.deepEqual(Buffer.from(secret("ANDROID_RELEASE_KEYSTORE_BASE64"), "base64"), keystoreBytes);
   mkdirSync(join(directory, "unrelated"));
@@ -246,7 +266,7 @@ test("signing provisioning generates or imports a usable key and never replaces 
   assert.notEqual(provision(join(root, "scratch-key")).status, 0, "keys never land inside a Git checkout");
 });
 
-test("signing provisioning stops before any change when the key inventory is unknown", (t) => {
+test("signing provisioning stops before any change when the key inventory or branch policy is unsafe", (t) => {
   const { directory, state, provision } = provisioningFixture(t, { stubKeytool: true });
   const untouched = (label, expected) => {
     const result = provision(join(directory, label));
@@ -274,8 +294,35 @@ test("signing provisioning stops before any change when the key inventory is unk
   untouched("stored-key", /refusing to replace/u);
   rmSync(join(state, "existing"));
 
-  // A verified missing Environment is an empty inventory: provisioning goes on.
+  // An existing Environment is never reconfigured: any branch beyond main, or
+  // a policy set that cannot be read, stops before the key exists anywhere.
+  writeFileSync(join(state, "branch-policy"), "unrestricted\n");
+  untouched("all-branches", /does not limit deployments to selected branches/u);
+  writeFileSync(join(state, "branch-policy"), "true false\n");
+  untouched("protected-branches", /does not limit deployments to selected branches/u);
+  rmSync(join(state, "branch-policy"));
+  writeFileSync(join(state, "policies"), "branch main\nbranch *\n");
+  untouched("broad-pattern", /also allows deployments from:\nbranch \*/u);
+  writeFileSync(join(state, "policies"), "tag v*\n");
+  untouched("tag-policy", /also allows deployments from:\ntag v\*/u);
+  rmSync(join(state, "policies"));
+  writeFileSync(join(state, "policies-fail"), "");
+  untouched("policy-listing-failure", /Cannot read the android-release deployment branch policies/u);
+
+  // A new Environment whose policies cannot be confirmed after creation gets no secrets.
   writeFileSync(join(state, "environment-missing"), "");
+  const unconfirmed = provision(join(directory, "unconfirmed"));
+  assert.notEqual(unconfirmed.status, 0);
+  assert.match(unconfirmed.stderr, /not exactly main; no secrets were written/u);
+  assert.deepEqual(
+    readdirSync(state).filter((name) => name.startsWith("secret-")),
+    [],
+  );
+  rmSync(join(state, "policies-fail"));
+  rmSync(join(state, "api"));
+  rmSync(join(state, "keytool"));
+
+  // A verified missing Environment is an empty inventory: provisioning goes on.
   provision(join(directory, "missing-environment"));
   assert.ok(
     readFileSync(join(state, "keytool"), "utf8").length > 0,

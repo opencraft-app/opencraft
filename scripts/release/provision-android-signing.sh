@@ -29,13 +29,23 @@ if git -C "$parent" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 1
 fi
 
-# Replacing an existing key would make every installed app unable to update, so
-# continue only when the inventory is known: a missing Environment (HTTP 404)
-# or a readable secret list without the key. Any other failure stops here,
-# before a key, policy or secret changes.
+policies_url="repos/$repository/environments/$environment/deployment-branch-policies"
+# Every deployment branch policy as "<type> <name>", across all pages. Callers
+# treat a listing failure as unknown, never as an empty set.
+list_policies() {
+  gh api --paginate "$policies_url" --jq '.branch_policies[] | "\(.type // "branch") \(.name)"'
+}
+
+# Continue only when the Environment's state is known, and never change an
+# existing Environment's configuration: a stored key must not be replaced
+# (installed apps could no longer update) and the key must not reach any
+# branch but main. Every refusal happens before a key, policy or secret changes.
 lookup_error="$(mktemp)"
 trap 'rm -f "$lookup_error"' EXIT
-if gh api "repos/$repository/environments/$environment" >/dev/null 2>"$lookup_error"; then
+if branch_policy="$(gh api "repos/$repository/environments/$environment" \
+  --jq '.deployment_branch_policy | if . == null then "unrestricted" else "\(.protected_branches) \(.custom_branch_policies)" end' \
+  2>"$lookup_error")"; then
+  environment_exists=1
   if ! names="$(gh secret list --env "$environment" --repo "$repository" --json name --jq '.[].name')"; then
     echo "Cannot read the $environment secrets; refusing to continue without knowing whether a key exists." >&2
     exit 1
@@ -44,7 +54,25 @@ if gh api "repos/$repository/environments/$environment" >/dev/null 2>"$lookup_er
     echo "The $environment Environment already holds a signing key; refusing to replace it." >&2
     exit 1
   fi
-elif ! grep -q 'HTTP 404' "$lookup_error"; then
+  if [[ "$branch_policy" != "false true" ]]; then
+    echo "The existing $environment Environment does not limit deployments to selected branches ($branch_policy)." >&2
+    echo "Set Deployment branches to \"Selected branches\" with only main, then run this again." >&2
+    exit 1
+  fi
+  if ! existing_policies="$(list_policies)"; then
+    echo "Cannot read the $environment deployment branch policies; refusing to continue." >&2
+    exit 1
+  fi
+  if [[ -n "$existing_policies" && "$existing_policies" != "branch main" ]]; then
+    printf 'The existing %s Environment also allows deployments from:\n%s\n' "$environment" \
+      "$(grep -vx 'branch main' <<<"$existing_policies")" >&2
+    echo "Remove every policy except branch main, then run this again." >&2
+    exit 1
+  fi
+elif grep -q 'HTTP 404' "$lookup_error"; then
+  environment_exists=0
+  existing_policies=""
+else
   cat "$lookup_error" >&2
   echo "Cannot verify the $environment Environment; refusing to continue." >&2
   exit 1
@@ -71,14 +99,18 @@ fingerprint="$(keytool -list -keystore "$keystore" -storetype PKCS12 -storepass:
   -alias "$alias" | sed -n 's/^Certificate fingerprint (SHA-256): //p')"
 [[ -n "$fingerprint" ]] || { echo "The keystore does not open with password.txt and alias $alias." >&2; exit 1; }
 
-gh api --method PUT "repos/$repository/environments/$environment" --input - >/dev/null <<'EOF'
+if (( ! environment_exists )); then
+  gh api --method PUT "repos/$repository/environments/$environment" --input - >/dev/null <<'EOF'
 {"deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}}
 EOF
-policies="$(gh api "repos/$repository/environments/$environment/deployment-branch-policies" \
-  --jq '.branch_policies[].name')"
-if ! grep -qx main <<<"$policies"; then
-  gh api --method POST "repos/$repository/environments/$environment/deployment-branch-policies" \
-    -f name=main -f type=branch >/dev/null
+fi
+if [[ -z "$existing_policies" ]]; then
+  gh api --method POST "$policies_url" -f name=main -f type=branch >/dev/null
+fi
+# Write secrets only once the complete policy set is exactly main.
+if ! final_policies="$(list_policies)" || [[ "$final_policies" != "branch main" ]]; then
+  echo "The $environment deployment branch policies are not exactly main; no secrets were written." >&2
+  exit 1
 fi
 
 base64 < "$keystore" | tr -d '\n' \

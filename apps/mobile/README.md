@@ -261,8 +261,10 @@ bash scripts/release/provision-android-signing.sh ~/opencraft-android-signing
 ```
 
 目录不存在时，脚本在仓库外生成 PKCS12 密钥与随机密码；目录已含
-`opencraft-release.p12` 与 `password.txt` 时直接上传这把密钥。之后它把 `android-release` Environment
-限制为只允许 main 部署并写入三个 secret；Environment 已有密钥时拒绝替换。随后立即
+`opencraft-release.p12` 与 `password.txt` 时直接上传这把密钥。Environment 不存在时，
+脚本创建它并只允许 main 部署；已存在时只读取、不修改配置，若已有密钥、允许 main 以外的
+分支或标签、或策略无法完整读取，就在生成密钥和写入 secret 之前停止。确认部署策略恰好只有
+main 后才写入三个 secret。随后立即
 备份该目录：后续 `app.opencraft` 版本都必须用这把密钥签名。versionCode 由 tag 推导
 （`scripts/release/android-version-code.mjs`：`X*1000000 + Y*10000 + Z*100`，beta N 加 N，
 正式版加 99），保证后续版本可覆盖安装。手动的 `Android internal APK` 工作流只产出
