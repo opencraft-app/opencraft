@@ -14,7 +14,8 @@
     "./read-tools": "./src/read-tools.ts",
     "./post-receipts": "./src/post-receipts.ts",
     "./channel-sync": "./src/channel-sync.ts",
-    "./routing": "./src/routing.ts"
+    "./routing": "./src/routing.ts",
+    "./channel-group-sync": "./src/channel-group-sync.tsx"
   },
   "dependencies": {
     "@opencraft/appserver-client": "0.1.0",

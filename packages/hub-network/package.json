@@ -9,7 +9,8 @@
     "./store": "./src/store.ts",
     "./controller": "./src/controller.ts",
     "./store-file": "./src/store-file.ts",
-    "./open": "./src/open.ts"
+    "./open": "./src/open.ts",
+    "./enrollment": "./src/enrollment.ts"
   },
   "dependencies": {
     "@opencraft/sqlite-node": "*",

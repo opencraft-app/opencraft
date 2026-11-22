@@ -63,6 +63,7 @@
     "./host-file-downloads": "./src/host-file-downloads.ts",
     "./owned-database-path": "./src/owned-database-path.ts",
     "./codex-native-core-transport": "./src/codex-native-core-transport.ts",
-    "./workspace-execution-transport": "./src/workspace-execution-transport.ts"
+    "./workspace-execution-transport": "./src/workspace-execution-transport.ts",
+    "./opencraft-host-state-database": "./src/opencraft-host-state-database.ts"
   }
 }

@@ -24,6 +24,7 @@
   },
   "exports": {
     "./operator-lease": "./src/operator-lease.ts",
-    "./account-core-limits": "./src/account-core-limits.mjs"
+    "./account-core-limits": "./src/account-core-limits.mjs",
+    "./main": "./src/main.ts"
   }
 }
