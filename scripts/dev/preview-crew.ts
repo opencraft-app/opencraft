@@ -90,12 +90,12 @@ Sign in with two browser profiles (or one normal and one private window):
   bob   / ${accounts.bob}   (member)
 
 Try it:
-  1. As alice: Agents → New assistant (create one or two, e.g. Alan and Zhe).
-  2. As alice: Servers → Create Server → Invite members, and open the link as bob.
-  3. As alice: Servers → Members → Add Agent; turn on "Members can contact each other".
-  4. As alice: an assistant's Settings → Contacts, to let Alan reach Zhe.
-  5. As bob: Inbox → message Alan. That message is the dispatch.
-  6. Inbox → Work shows it; the screen icon on a row opens Alan's desk.
+  1. As alice: Assistants → New assistant (create one or two, e.g. Alan and Zhe).
+  2. As alice: Inbox → Members → New team; then the team's settings (gear) to add the assistants
+     as Agents, set each Agent's contacts and create an invitation link.
+  3. As bob: Inbox → Members → Join a team, and paste the link.
+  4. As bob: message an Agent from the team. That message is the dispatch.
+  5. Inbox → Work shows it; the screen icon on a row opens the Agent's desk.
 `);
 let closing = false;
 const shutdown = async () => {

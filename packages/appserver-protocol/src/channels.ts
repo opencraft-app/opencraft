@@ -167,6 +167,19 @@ export interface CrewDesk {
     works: { id: string; title: string; status: string; updatedAt: number }[];
   } | null;
 }
+/** A Server space as its members see it in the Inbox. The instance-wide default space is not listed. */
+export interface CrewTeam {
+  id: string; name: string; role: 'owner' | 'member'; openContact: boolean;
+  members: (CrewPhonebookEntry & { role: 'owner' | 'member' })[];
+}
+/** Owner-only team management from the Inbox; people still join by invitation. */
+export type CrewTeamCommand =
+  | { action: 'create'; name: string }
+  | { action: 'join'; code: string }
+  | { action: 'invite'; spaceId: string }
+  | { action: 'candidates'; spaceId: string }
+  | { action: 'addAgent' | 'removeAgent'; spaceId: string; actorId: string }
+  | { action: 'contact'; spaceId: string; open: boolean };
 /** A reply that reached a Bot inside crew work, filed against that Bot's own work. */
 export interface CrewReply {
   seq: number; messageId: string; workId: string; requesterId: string; state: 'open' | 'closed';
@@ -206,6 +219,8 @@ export interface ChannelsMethodMap {
   "opencraft/crew/work/list": { params: Record<string, never>; result: { works: CrewWorkView[] } };
   "opencraft/crew/work/replies": { params: { after: number }; result: { replies: CrewReply[] } };
   "opencraft/crew/work/attachment": { params: { workId: string; offset?: number }; result: { file: { name: string; type: string; size: number; next: number | null; base64: string } | null } };
+  "opencraft/crew/teams": { params: Record<string, never>; result: { teams: CrewTeam[] } };
+  "opencraft/crew/team": { params: CrewTeamCommand; result: { teams: CrewTeam[] } | { bots: { actorId: string; displayName: string }[] } | { code: string; expiresAt: number } };
   "opencraft/crew/desk": { params: { botId: string; actorId?: string }; result: CrewDesk };
   "opencraft/crew/work/inbox": { params: Record<string, never>; result: { items: CrewInboxItem[] } };
   "opencraft/channels/group/create": {

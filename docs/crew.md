@@ -80,6 +80,8 @@ Who on the chain is actually asked, and whether that member can decide, is the r
 | `opencraft/crew/work/message` `{workId,targetActorId,content,idempotencyKey,asks?}` | the work's assignee; its requester | reply: the assignee to anyone on its chain, the requester to the assignee |
 | `opencraft/crew/work/replies` `{after}` | a Bot | replies filed against its work, after a cursor |
 | `opencraft/crew/work/attachment` `{workId,offset?}` | the Bot holding the work | the dispatch file, in 64 KiB chunks |
+| `opencraft/crew/teams` `{}` | a person | the teams they belong to and their members |
+| `opencraft/crew/team` `{action,...}` | `create`, `join`: anyone; the rest: the team owner | `create {name}`, `join {code}`, `invite {spaceId}`, `candidates {spaceId}`, `addAgent`/`removeAgent {spaceId,actorId}`, `contact {spaceId,open}`, forwarded to the space ledger |
 | `opencraft/crew/desk` `{botId,actorId?}` | members of the Bot's space | the Bot's setup and, for one dispatcher, its conversation and tasks; only while the Bot runs |
 | `opencraft/crew/work/inbox` `{}` | a person | work they handed over, work that asked them something, and for a space owner all work in the space; open or closed in the last week, with the latest unanswered question to them |
 | `opencraft/crew/work/start` `{}` | space Bots | open routine work |
@@ -111,8 +113,7 @@ Removing a Bot uses the existing `remove` action.
 | Dispatching from the reception turn without a Work (`dispatch` / `message` decisions) | not yet |
 | Routine work started by a Bot | core only; no runtime trigger yet |
 | Files sent with a dispatch | implemented: the work view names the file for its assignee and requester, `crew/work/attachment` serves it in chunks to the Bot holding the work, and the runtime brings it in with the turn under the same 8 MiB bound as the owner's private line |
-| Crew UI: space members | implemented in the Server panel: Agents are labelled, the owner switches open contact and adds their own assistants (`bots`, `addBot`) |
-| Crew UI: phonebook | implemented in the assistant settings dialog: one switch per space member; members read it, only the owner edits |
+| Crew UI: teams | implemented in the Inbox Members tab: each team (Server space, the instance-wide default space excluded) with its people and Agents; Agent rows open the desk. Anyone can start a team or join one with an invitation link. The owner manages a team there: contact switch, invitation links, adding their own assistants as Agents, removing Agents and each Agent's phonebook. Reads use `crew/teams` in the storage Worker; changes use `crew/team`, which the Core forwards to the Server space ledger, the only writer of membership. Hosts without the ledger (it is attached in the Headless server) keep the plain member list |
 | Crew UI: dispatching from the Inbox | implemented by rule 10: an ordinary direct message is the dispatch. Inbox → Members lists the Agents of Servers you share (someone else's assistant stays private otherwise) and opens a direct conversation with anyone you may message |
 | Crew UI: work in the Inbox | implemented as a Work tab grouped Waiting on you, In progress and Done recently; a row opens the conversation with whoever asked, or with the Agent. Questions (`asks`) from a Bot to a person are filed in `crew_messages` and wait until that person answers; the answer closes the question instead of opening work. This is where escalations wait when the owner is away (rule 13) |
 | Desk (rule 4) | implemented. `crew/desk` lets any member of a Bot's space see its environment, model and how many contacts it has, plus one conversation per dispatcher exactly as the Bot sees it (rendered with the Chat timeline and document renderer) and the tasks each conversation started. The Core authorizes in its storage owner and asks the Host; only a running Bot shows its desk, and nothing is read from its files while it is stopped. The owner's private conversation, delegations, tool calls and results are never on the desk. Opened from each row of the Inbox Work tab |
@@ -129,9 +130,9 @@ Workbench after pulling new code. Bots use the model chosen for each assistant; 
 reception fixture so the flow can be tried without a model (its replies are canned). The fixture is passed through an
 explicit `composition.personalAssistantHost` that the Headless CLI never sets.
 
-Walkthrough: as alice create assistants (Assistants), create a Server and invite bob (Servers drawer), add the
-assistants as Agents and set their contacts; as bob open Inbox → Members, message an Agent, then watch Inbox → Work and
-open its desk.
+Walkthrough: as alice create assistants (Assistants), then in Inbox → Members start a team, open its settings to add
+the assistants as Agents, set their contacts and create an invitation link; as bob choose Join a team in Inbox → Members,
+paste the link, message an Agent from the team, then watch Inbox → Work and open its desk.
 
 Core: `CrewContact` and `CrewWork` read and write SQLite, so only the communication storage Worker
 loads them (`attachCrewRules`); a `Collaboration` on a network thread has no crew rules and they
@@ -142,7 +143,7 @@ conversation belongs to which dispatcher, stored in the runner `meta` table.
 
 Verification: `tests/identity/crew-contact.test.ts`, `tests/identity/server-spaces.test.ts`,
 `apps/personal-assistant/test/crew-intake.test.mjs`, `apps/personal-assistant/test/crew-tools.test.mjs`,
-`tests/shell/server-spaces-crew.test.tsx`, `tests/shell/crew-phonebook.test.tsx`, `tests/shell/crew-work-view.test.tsx`, `tests/shell/crew-desk.test.tsx`.
+`tests/shell/crew-teams.test.tsx`, `tests/shell/crew-phonebook.test.tsx`, `tests/shell/crew-work-view.test.tsx`, `tests/shell/crew-desk.test.tsx`.
 
 End to end, `tests/identity/crew-runtime.test.ts` runs the real Host, which spawns the real assistant
 process against the real Core with the deterministic reception fixture in place of a model: a

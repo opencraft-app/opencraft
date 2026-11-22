@@ -293,3 +293,34 @@ test("the Bot owner's answer to a crew question travels as crew, not on the priv
   const replies = ((await f.call(f.alan.context as never, 'opencraft/crew/work/replies', { after: 0 })) as { replies: { workId: string; content: string }[] }).replies;
   assert.deepEqual(replies.map(r => [r.workId, r.content]), [[work.workId, 'approved']]);
 });
+
+test('the Inbox lists teams to their members and lets only the owner manage Agents and contact', async t => {
+  const f = await fixture(t);
+  type Team = { id: string; name: string; role: string; openContact: boolean; members: { actorId: string; kind: string; role: string }[] };
+  const teams = async (who: object) => ((await f.call(('context' in who ? who.context : who) as never, 'opencraft/crew/teams', {})) as { teams: Team[] }).teams;
+  const [team] = await teams(f.bob);
+  assert.equal(team!.id, f.team);
+  assert.equal(team!.role, 'member');
+  assert.deepEqual(team!.members.map(m => [m.kind, m.role]).sort(), [['human', 'member'], ['human', 'owner'], ['session', 'member'], ['session', 'member']]);
+  assert.equal((await teams(f.alice)).length, 1, 'the instance-wide default space is not a team');
+  assert.deepEqual(await teams(f.carol), []);
+
+  await assert.rejects(f.service.crewTeam(f.alice, { action: 'contact', spaceId: f.team, open: false }), /crew_teams_unavailable/, 'without the space ledger there is no team management');
+  f.service.attachSpaces({ command: async (context, command) => f.ledger.command(context as never, command as never) });
+  await assert.rejects(f.service.crewTeam(f.bob, { action: 'contact', spaceId: f.team, open: false }), /crew_work_denied/, 'members do not manage the team');
+  assert.equal(((await f.service.crewTeam(f.alice, { action: 'contact', spaceId: f.team, open: false })) as { teams: Team[] }).teams[0]!.openContact, false);
+  await assert.rejects(f.service.crewTeam(f.alice, { action: 'removeAgent', spaceId: f.team, actorId: f.bob.actorId }), /invalid_input/, 'people leave by other means, not as Agents');
+  const removed = (await f.service.crewTeam(f.alice, { action: 'removeAgent', spaceId: f.team, actorId: f.zhe.id })) as { teams: Team[] };
+  assert.equal(removed.teams[0]!.members.some(m => m.actorId === f.zhe.id), false);
+  const added = (await f.service.crewTeam(f.alice, { action: 'addAgent', spaceId: f.team, actorId: f.zhe.id })) as { teams: Team[] };
+  assert.equal(added.teams[0]!.members.find(m => m.actorId === f.zhe.id)?.kind, 'session');
+  assert.deepEqual(((await f.service.crewTeam(f.alice, { action: 'candidates', spaceId: f.team })) as { bots: unknown[] }).bots, []);
+
+  // A team can be started, and people invited and joined, from the Inbox too.
+  await assert.rejects(f.service.crewTeam(f.bob, { action: 'invite', spaceId: f.team }), /crew_work_denied/, 'only the owner invites');
+  const { code } = (await f.service.crewTeam(f.alice, { action: 'invite', spaceId: f.team })) as { code: string };
+  const joined = (await f.service.crewTeam(f.carol, { action: 'join', code })) as { teams: Team[] };
+  assert.deepEqual(joined.teams.map(t => [t.id, t.role]), [[f.team, 'member']]);
+  const started = (await f.service.crewTeam(f.carol, { action: 'create', name: 'Design' })) as { teams: Team[] };
+  assert.deepEqual(started.teams.map(t => [t.name, t.role]).sort(), [['Design', 'owner'], ['Team', 'member']]);
+});

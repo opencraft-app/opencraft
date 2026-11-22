@@ -7,6 +7,9 @@ export const PHONEBOOK_ACTIONS = ['message.send', 'execution.queue'] as const;
 export interface PhonebookEntry { actorId: string; displayName: string; kind: 'human' | 'session' }
 /** What a member sees when opening a Bot's phonebook: its entries, who could be added, and whether they may edit. */
 export interface PhonebookView { entries: PhonebookEntry[]; members: PhonebookEntry[]; editable: boolean }
+export interface CrewTeamMember extends PhonebookEntry { role: 'owner' | 'member' }
+/** A space as its members see it in the Inbox: who is in it, and whether the caller runs it. */
+export interface CrewTeam { id: string; name: string; role: 'owner' | 'member'; openContact: boolean; members: CrewTeamMember[] }
 
 const denied = (): never => { throw Object.assign(Error('channel_denied'), { status: 403, code: 'channel_denied' }); };
 const invalid = (): never => { throw Object.assign(Error('invalid_input'), { status: 400, code: 'invalid_input' }); };
@@ -77,6 +80,22 @@ export class CrewContact {
       JOIN actors a ON a.id=m.actor_id WHERE m.space_id=? AND m.actor_id<>? AND a.enabled=1 ORDER BY a.display_name,a.id`).all(space, String(botId)) as unknown as PhonebookEntry[];
     const operator = this.actors.get(context.actorId);
     return { entries, members, editable: operator?.kind === 'human' && this.#role(space, context.actorId) === 'owner' };
+  }
+
+  /** The spaces the caller belongs to, with their members; the instance-wide default space is left out. */
+  teams(context: ActorContext): CrewTeam[] {
+    if (!this.#spaces) return [];
+    const spaces = this.db.prepare(`SELECT s.id,s.name,s.open_contact,m.role FROM collaboration_spaces s
+      JOIN collaboration_space_members m ON m.space_id=s.id AND m.actor_id=?
+      WHERE s.id<>'myself' ORDER BY s.created_at,s.id`).all(context.actorId);
+    return spaces.map(space => ({
+      id: String(space.id), name: String(space.name), role: space.role === 'owner' ? 'owner' as const : 'member' as const,
+      openContact: Number(space.open_contact) === 1,
+      members: this.db.prepare(`SELECT a.id AS actorId,a.display_name AS displayName,a.kind,m.role FROM collaboration_space_members m
+        JOIN actors a ON a.id=m.actor_id WHERE m.space_id=? AND a.enabled=1 ORDER BY m.role='owner' DESC,a.kind='session',a.display_name,a.id`).all(String(space.id))
+        .map(r => ({ actorId: String(r.actorId), displayName: String(r.displayName), kind: r.kind === 'human' ? 'human' as const : 'session' as const,
+          role: r.role === 'owner' ? 'owner' as const : 'member' as const })),
+    }));
   }
 
   /** Only the space owner edits a Bot's phonebook, and only with members of that space. */

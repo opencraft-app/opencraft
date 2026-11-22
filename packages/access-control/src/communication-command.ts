@@ -57,6 +57,7 @@ export function communicationCommand(service: Collaboration, db: DatabaseSync, c
         case 'opencraft/channels/people/list':fields(p,['after','query']);return service.channels.people(c,p.query===undefined?'':text(p.query),p.after===undefined?'':text(p.after));
         case 'opencraft/channels/list': fields(p,[]);return {groups:service.channels.list(c)};
         case 'opencraft/channels/direct/open': fields(p,['actorId']);return service.openChannelDirect(c,p.actorId);
+        case 'opencraft/crew/teams':fields(p,[]);return {teams:service.crew.teams(c)};
         case 'opencraft/crew/phonebook/list':fields(p,['botId']);return service.crew.view(c,p.botId);
         case 'opencraft/crew/phonebook/set':fields(p,['botId','actorId','present']);service.crew.setPhonebook(c,p.botId,p.actorId,p.present);return service.crew.view(c,p.botId);
         case 'opencraft/crew/work/dispatch':return service.crewDispatch(c,p);

@@ -4,14 +4,12 @@ import { useIntl } from '@opencraft/i18n/react';
 import { Button, IconButton } from '@opencraft/design-system-web/button';
 import { NavigationList, NavigationItem } from '@opencraft/design-system-web/navigation';
 import { ServerIcon, PeopleIcon, AddIcon, ChevronLeftIcon, ChevronRightIcon, CheckIcon } from '@opencraft/design-system-web/action-icons';
-import { SettingsTextInput, SettingsSwitch } from '@opencraft/extension-react';
-import { CompanionAvatar } from '@opencraft/design-system-web/companion-avatar';
+import { SettingsTextInput } from '@opencraft/extension-react';
 import { DEFAULT_SERVER_SPACE, type ServerSpaceMember } from '@opencraft/appserver-protocol/server-spaces';
 import type { ServerSpacesController } from '../runtime/use-server-spaces';
 import './server-spaces-sidebar.scss';
 
-type View = 'servers'|'create'|'members'|'join'|'invite'|'bots';
-type Candidate = {actorId:string;displayName:string};
+type View = 'servers'|'create'|'members'|'join'|'invite';
 export function ServerSpacesContent({controller,open,onSelected,onClose}:{controller:ServerSpacesController;open:boolean;onSelected(spaceId:string):void;onClose():void}) {
   const intl=useIntl(),inputId=useId();
   const [view,setView]=useState<View>('servers');
@@ -20,7 +18,6 @@ export function ServerSpacesContent({controller,open,onSelected,onClose}:{contro
   const members=memberLists[controller.selected]??[];
   const [busy,setBusy]=useState(false),[error,setError]=useState(false),[copied,setCopied]=useState(false);
   const [invitation,setInvitation]=useState<string|null>(null);
-  const [candidates,setCandidates]=useState<Candidate[]|null>(null);
   const frame=useRef<HTMLDivElement>(null);
   const intent=useRef(0),mounted=useRef(true);
   const depth=view==='servers'?0:1;
@@ -34,7 +31,7 @@ export function ServerSpacesContent({controller,open,onSelected,onClose}:{contro
     heading?.focus({preventScroll:true});
   },[view,depth]);
   const go=(next:View)=>{intent.current++;setError(false);setBusy(false);setView(next);};
-  const back=()=>{if(view==='bots')go('members');else if(depth>0)go('servers');else onClose();};
+  const back=()=>{if(depth>0)go('servers');else onClose();};
   const run=async(action:(current:()=>boolean)=>Promise<void>)=>{
     if(busy)return;const current=++intent.current;setBusy(true);setError(false);
     try {await action(()=>mounted.current&&intent.current===current);}catch {if(mounted.current&&intent.current===current)setError(true);}
@@ -42,19 +39,6 @@ export function ServerSpacesContent({controller,open,onSelected,onClose}:{contro
   };
   const choose=(id:string)=>run(async()=>{if(await controller.select(id)){go('servers');onSelected(id);}});
   const showMembers=()=>{go('members');void run(async current=>{const list=await controller.members(controller.selected);if(current())setMemberLists(previous=>({...previous,[controller.selected]:list}));});};
-  const reloadMembers=async(current:()=>boolean)=>{const spaceId=controller.selected,list=await controller.members(spaceId);if(current())setMemberLists(previous=>({...previous,[spaceId]:list}));};
-  // A Bot joins as a peer member; the owner can place only their own additional assistants.
-  const showBots=()=>{go('bots');setCandidates(null);void run(async current=>{
-    const result=await controller.command({action:'bots',spaceId:controller.selected}) as {bots:Candidate[]};
-    if(!Array.isArray(result.bots)||result.bots.some(b=>typeof b.actorId!=='string'||typeof b.displayName!=='string'))throw new Error('Invalid assistants');
-    if(current())setCandidates(result.bots);
-  });};
-  const addBot=(actorId:string)=>run(async current=>{
-    await controller.command({action:'addBot',spaceId:controller.selected,actorId});
-    // Refresh before leaving: changing view starts a new intent and retires this one.
-    await reloadMembers(current);if(current())go('members');
-  });
-  const setContact=(open:boolean)=>run(async()=>{await controller.command({action:'contact',spaceId:controller.selected,open});});
   const invite=()=>{go('invite');setInvitation(null);setCopied(false);void run(async current=>{
     const result=await controller.command({action:'invite',spaceId:controller.selected}) as {code:string;expiresAt:number};
     if(typeof result.code!=='string'||!Number.isFinite(result.expiresAt))throw new Error('Invalid invitation');
@@ -79,8 +63,7 @@ export function ServerSpacesContent({controller,open,onSelected,onClose}:{contro
 
   const heading=view==='create'?intl.formatMessage({id:'serverSpaces.create',defaultMessage:'Create Server'}):view==='join'
     ?intl.formatMessage({id:'serverSpaces.join',defaultMessage:'Join Server'}):view==='invite'
-      ?intl.formatMessage({id:'serverSpaces.invite',defaultMessage:'Invite members'}):view==='bots'
-        ?intl.formatMessage({id:'serverSpaces.addAgent',defaultMessage:'Add Agent'}):intl.formatMessage({id:'serverSpaces.members',defaultMessage:'Members'});
+      ?intl.formatMessage({id:'serverSpaces.invite',defaultMessage:'Invite members'}):intl.formatMessage({id:'serverSpaces.members',defaultMessage:'Members'});
   const surface=<div className="server-spaces" ref={frame} data-server-view={view} onKeyDown={event=>{
     if(event.key==='Escape'){event.preventDefault();event.stopPropagation();back();}
   }}>
@@ -110,27 +93,7 @@ export function ServerSpacesContent({controller,open,onSelected,onClose}:{contro
             <SettingsTextInput id={inputId} value={name} onChange={event=>setName(event.target.value)} maxLength={80} autoComplete="off" disabled={busy}/>
             <Button type="submit" variant="primary" disabled={busy||!name.trim()} aria-busy={busy}>{intl.formatMessage({id:'serverSpaces.create',defaultMessage:'Create Server'})}</Button>
           </form>:null}
-          {view==='members'?<>
-            <p>{space?.name}</p>
-            {space?.role==='owner'?<div className="server-spaces__setting">
-              <span>{intl.formatMessage({id:'serverSpaces.openContact',defaultMessage:'Members can contact each other'})}<small>{intl.formatMessage({id:'serverSpaces.openContactDescription',defaultMessage:'Anyone in this Server can message any member. Agents still reach only the people in their contacts.'})}</small></span>
-              <SettingsSwitch checked={space.openContact} disabled={busy} label={intl.formatMessage({id:'serverSpaces.openContact',defaultMessage:'Members can contact each other'})} onCheckedChange={open=>void setContact(open)}/>
-            </div>:null}
-            <ul className="server-spaces__members">{members.map(member=><li key={member.actorId}>
-              <span className="server-spaces__mark" aria-hidden="true">{member.kind==='session'?<CompanionAvatar id={member.actorId}/>:<PeopleIcon size={18}/>}</span>
-              <span>{member.displayName}<small>{intl.formatMessage(member.role==='owner'?{id:'serverSpaces.owner',defaultMessage:'Owner'}:member.kind==='session'?{id:'serverSpaces.agent',defaultMessage:'Agent'}:{id:'serverSpaces.member',defaultMessage:'Member'})}</small></span>
-              {space?.role==='owner'&&member.role!=='owner'?<Button variant="ghost" disabled={busy} onClick={()=>void run(async current=>{await controller.command({action:'remove',spaceId:controller.selected,actorId:member.actorId});await reloadMembers(current);})}>{intl.formatMessage({id:'serverSpaces.remove',defaultMessage:'Remove'})}</Button>:null}
-            </li>)}</ul>
-            {space?.role==='owner'?<Button variant="ghost" contentLayout="row" disabled={busy} onClick={showBots}><AddIcon size={17}/>{intl.formatMessage({id:'serverSpaces.addAgent',defaultMessage:'Add Agent'})}</Button>:null}
-          </>:null}
-          {view==='bots'?<>
-            <p>{intl.formatMessage({id:'serverSpaces.addAgentDescription',defaultMessage:'An Agent joins as a member of one Server. Members can give it work; it reaches only the people in its contacts.'})}</p>
-            {candidates?.length===0?<p>{intl.formatMessage({id:'serverSpaces.noAgents',defaultMessage:'All your assistants are already in a Server. Create another assistant in Settings first.'})}</p>:null}
-            <ul className="server-spaces__members">{candidates?.map(bot=><li key={bot.actorId}>
-              <span className="server-spaces__mark" aria-hidden="true"><CompanionAvatar id={bot.actorId}/></span><span>{bot.displayName}</span>
-              <Button variant="ghost" disabled={busy} onClick={()=>void addBot(bot.actorId)}>{intl.formatMessage({id:'serverSpaces.add',defaultMessage:'Add'})}</Button>
-            </li>)}</ul>
-          </>:null}
+          {view==='members'?<><p>{space?.name}</p><ul className="server-spaces__members">{members.map(member=><li key={member.actorId}><PeopleIcon size={18}/><span>{member.displayName}<small>{intl.formatMessage(member.role==='owner'?{id:'serverSpaces.owner',defaultMessage:'Owner'}:{id:'serverSpaces.member',defaultMessage:'Member'})}</small></span>{space?.role==='owner'&&member.role!=='owner'?<Button variant="ghost" disabled={busy} onClick={()=>void run(async()=>{await controller.command({action:'remove',spaceId:controller.selected,actorId:member.actorId});const list=await controller.members(controller.selected);setMemberLists(previous=>({...previous,[controller.selected]:list}));})}>{intl.formatMessage({id:'serverSpaces.remove',defaultMessage:'Remove'})}</Button>:null}</li>)}</ul></>:null}
           {view==='invite'?<><p>{intl.formatMessage({id:'serverSpaces.invitationDescription',defaultMessage:'Share this invitation with someone who can sign in to this deployment. It expires in 24 hours and can be accepted by one person.'})}</p><p>{intl.formatMessage({id:'serverSpaces.sharing',defaultMessage:'Members can access the Agents and shared conversations in this Server.'})}</p>{invitation?<><SettingsTextInput aria-label={intl.formatMessage({id:'serverSpaces.invitationLink',defaultMessage:'Invitation link'})} value={invitation} readOnly onFocus={event=>event.target.select()}/><Button variant="primary" onClick={()=>void run(async current=>{await navigator.clipboard.writeText(invitation);if(current())setCopied(true);})}>{intl.formatMessage(copied?{id:'serverSpaces.copied',defaultMessage:'Copied'}:{id:'serverSpaces.copy',defaultMessage:'Copy invitation'})}</Button></>:null}</>:null}
           {view==='join'?<form onSubmit={event=>{event.preventDefault();void join();}}><p>{intl.formatMessage({id:'serverSpaces.joinDescription',defaultMessage:'Sign in to this deployment, then enter an invitation link or code to join its Server.'})}</p><label htmlFor={`${inputId}-join`}>{intl.formatMessage({id:'serverSpaces.invitationLink',defaultMessage:'Invitation link'})}</label><SettingsTextInput id={`${inputId}-join`} value={code} onChange={event=>setCode(event.target.value)} autoComplete="off" disabled={busy}/><Button type="submit" variant="primary" disabled={busy||!code.trim()}>{intl.formatMessage({id:'serverSpaces.join',defaultMessage:'Join Server'})}</Button></form>:null}
           {busy?<p role="status">{intl.formatMessage({id:'serverSpaces.working',defaultMessage:'Working…'})}</p>:null}

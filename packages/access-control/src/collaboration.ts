@@ -131,6 +131,54 @@ export class Collaboration {
   // Crew rules read and write SQLite, so they live only where the communication storage owner runs
   // (its Worker attaches them). An instance on a network thread has none and the rules stand aside.
   #crew?: { contact: CrewContact; work: CrewWork };
+  // The Server space ledger owns team membership; Inbox team commands are forwarded to it, never written here.
+  #spaces?: { command(context: ActorContext, command: Record<string, unknown>): Promise<unknown> };
+  attachSpaces(spaces: NonNullable<Collaboration['spaces']>) {
+    if (this.#spaces) throw Error('Server spaces already attached');
+    this.#spaces = spaces;
+    return () => { if (this.#spaces === spaces) this.#spaces = undefined; };
+  }
+  get spaces() { return this.#spaces; }
+  /**
+   * Team management from the Inbox. Only Agents are added or removed here (people join by
+   * invitation); the ledger checks that the caller owns the space and, for an Agent, manages it.
+   */
+  async crewTeam(context: ActorContext, params: Record<string, unknown> = {}) {
+    fields(params, ['action', 'spaceId', 'actorId', 'open', 'name', 'code']);
+    const spaces = this.#spaces;
+    if (!spaces) throw new CollaborationError(503, 'crew_teams_unavailable');
+    // Starting a team and joining one by invitation need no team yet; the ledger checks the caller.
+    if (params.action === 'create') {
+      await spaces.command(context, { action: 'create', name: text(params.name, 80) });
+      return this.communicate(context, 'opencraft/crew/teams', {});
+    }
+    if (params.action === 'join') {
+      await spaces.command(context, { action: 'join', code: text(params.code, 128) });
+      return this.communicate(context, 'opencraft/crew/teams', {});
+    }
+    const spaceId = text(params.spaceId);
+    const teams = (await this.communicate(context, 'opencraft/crew/teams', {})).teams as import('./crew-contact.js').CrewTeam[];
+    const team = teams.find(t => t.id === spaceId);
+    if (!team || team.role !== 'owner') throw new CollaborationError(403, 'crew_work_denied');
+    switch (params.action) {
+      case 'candidates': return { bots: ((await spaces.command(context, { action: 'bots', spaceId })) as { bots: unknown[] }).bots };
+      case 'invite': {
+        const invitation = (await spaces.command(context, { action: 'invite', spaceId })) as { code: string; expiresAt: number };
+        return { code: invitation.code, expiresAt: invitation.expiresAt };
+      }
+      case 'addAgent': await spaces.command(context, { action: 'addBot', spaceId, actorId: text(params.actorId) }); break;
+      case 'removeAgent': {
+        const actorId = text(params.actorId);
+        if (team.members.find(m => m.actorId === actorId)?.kind !== 'session') throw new CollaborationError(400, 'invalid_input');
+        await spaces.command(context, { action: 'remove', spaceId, actorId }); break;
+      }
+      case 'contact':
+        if (typeof params.open !== 'boolean') throw new CollaborationError(400, 'invalid_input');
+        await spaces.command(context, { action: 'contact', spaceId, open: params.open }); break;
+      default: throw new CollaborationError(400, 'invalid_input');
+    }
+    return this.communicate(context, 'opencraft/crew/teams', {});
+  }
   attachCrew(contact: CrewContact, work: CrewWork) {
     if (this.#crew) throw Error('Crew rules already attached');
     this.#crew = { contact, work };
