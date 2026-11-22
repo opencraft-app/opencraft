@@ -21,7 +21,7 @@ export class CodexBridgeError extends Error {
   constructor(
     readonly kind: BridgeErrorKind,
     message: string,
-    readonly nativeReason?: "unmaterialized",
+    readonly nativeReason?: "unmaterialized" | "turns-unavailable",
   ) {
     super(message);
   }

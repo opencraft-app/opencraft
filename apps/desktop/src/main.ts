@@ -872,7 +872,8 @@ async function bootstrap(): Promise<void> {
     ...(codexBridgeStackEnabled(process.platform, process.env.OPENCRAFT_CODEX_BRIDGE) ? {
       codexBridgeStack: app.isPackaged
         ? join(process.resourcesPath, "runtime/codex-bridge")
-        : join(app.getAppPath(), "../opencraft-daemon/dist/codex-bridge"),
+        // Source runs only: drills substitute a programs copy whose Core talks to a local model.
+        : process.env.OPENCRAFT_CODEX_BRIDGE_PROGRAMS?.trim() || join(app.getAppPath(), "../opencraft-daemon/dist/codex-bridge"),
     } : {}),
     executable: process.execPath,
   });

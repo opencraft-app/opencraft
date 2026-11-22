@@ -122,9 +122,13 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     const stale = pending.method === 'turn/steer' && (/^no active turn to steer[.!]?$/i.test(message) || /^expected active turn id\b/i.test(message));
     const unmaterialized=pending.method==='thread/read'&&pending.includeTurns===true&&typeof pending.threadId==='string'&&error?.code===-32600
       &&message===`thread ${pending.threadId} is not materialized yet; includeTurns is unavailable before first user message`;
+    // Early in a new session native can also report its turn listing as not supported yet
+    // (-32601); the history is not readable yet, but this is no evidence the session is new.
+    const turnsUnavailable=!unmaterialized&&pending.method==='thread/read'&&pending.includeTurns===true&&error?.code===-32601
+      &&message==='list_turns is not supported yet';
     const kind=stale?'stale-target':[-32600,-32601,-32602].includes(error?.code??0)?'explicit-reject':'unknown-outcome';
     if(kind==='explicit-reject'&&pending.initial&&!pending.observedTurn&&typeof pending.threadId==='string')this.initialConfigurations.set(pending.threadId,pending.initial);
-    pending.reject(new CodexBridgeError(stale ? 'stale-target' : [-32600, -32601, -32602].includes(error?.code ?? 0) ? 'explicit-reject' : 'unknown-outcome', stale ? 'Target turn is no longer active' : 'Native request refused; query its outcome',unmaterialized?'unmaterialized':undefined));
+    pending.reject(new CodexBridgeError(stale ? 'stale-target' : [-32600, -32601, -32602].includes(error?.code ?? 0) ? 'explicit-reject' : 'unknown-outcome', stale ? 'Target turn is no longer active' : 'Native request refused; query its outcome',unmaterialized?'unmaterialized':turnsUnavailable?'turns-unavailable':undefined));
   }
   private write(value: unknown): void {
     if (this.failed || this.socket?.readyState !== WebSocket.OPEN) throw new CodexBridgeError('unknown-outcome', 'Core connection unavailable');

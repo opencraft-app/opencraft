@@ -5,6 +5,8 @@
 #   setup-toolchain.sh node     Node from .nvmrc; prints the bin directory to use
 #   setup-toolchain.sh deps     npm ci, skipped while the manifests are unchanged
 #   setup-toolchain.sh all      all three, in that order
+#   setup-toolchain.sh codex    the pinned native Codex (runtime/codex) for drills; prints its path.
+#                               On demand only: real-Codex drills need it, ordinary tests do not.
 #
 # CI keeps actions/setup-node (it caches) and calls `system`. Cloud sessions
 # call `all` from .claude/hooks/session-start.sh. Versions live in .nvmrc and in
@@ -74,10 +76,25 @@ ensure_deps() {
   printf '%s' "$current" > "$stamp"
 }
 
+# Stages runtime/codex for this host (npm ci against its lock, so the binary is
+# the one the desktop packages) and prints the executable.
+ensure_codex() {
+  # npm ci reports on stdout; the path leaves on fd 3 so stdout carries it alone.
+  { (cd "$root" && node --input-type=module -e '
+    import { writeSync } from "node:fs";
+    import { join } from "node:path";
+    import { codexExecutableName, stageCodexRuntime } from "./scripts/packaging/stage-codex-runtime.mjs";
+    const staged = await stageCodexRuntime({ platform: process.platform, arch: process.arch });
+    console.error(`setup-toolchain: Codex ${staged.version} (${staged.target})`);
+    writeSync(3, join(staged.output, "bin", codexExecutableName(process.platform)) + "\n");
+  ' 3>&1 1>&2); }
+}
+
 case "${1:-}" in
   system) ensure_system ;;
   node) ensure_node ;;
   deps) ensure_deps ;;
+  codex) ensure_codex ;;
   all)
     ensure_system
     bin="$(ensure_node)"
@@ -85,5 +102,5 @@ case "${1:-}" in
     ensure_deps
     echo "$bin"
     ;;
-  *) echo "usage: $0 system|node|deps|all" >&2; exit 2 ;;
+  *) echo "usage: $0 system|node|deps|all|codex" >&2; exit 2 ;;
 esac

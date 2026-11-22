@@ -1,13 +1,16 @@
-// Windows drill of the desktop Codex bridge stack, run with Windows Node (on
-// Windows, or under Wine): the stack as the daemon starts it (split Core and
-// AppServer on named pipes, native Codex on a token-guarded loopback
-// WebSocket, the Engine Host with the host-process backend), the Host chain on
-// top, and one conversation answered by a local model. Synthetic account only.
+// Windows drill of the desktop Codex bridge stack: the stack as the daemon
+// starts it (split Core and AppServer on named pipes, native Codex on a
+// token-guarded loopback WebSocket, the Engine Host with the host-process
+// backend), the Host chain on top, and one conversation answered by a local
+// stand-in model. Synthetic account only. The same drill runs on Linux and
+// macOS over Unix sockets.
 //
-// Bundle with esbuild (platform node, cjs, external node-pty) and run:
-//   node drill.cjs <programs-dir> <codex.exe> <state-root> <upstream-url> <result-file>
-// The programs directory holds the daemon's codex-bridge bundle with the Core
-// replaced by tests/fixtures/bridge-stack-core.ts (local upstream only).
+// Run it through scripts/smoke/execution/run-codex-bridge-stack-drill.mjs,
+// which builds the bundle, the programs directory (the daemon's codex-bridge
+// bundle with the Core replaced by tests/fixtures/bridge-stack-core.ts) and the
+// pinned native Codex, then starts it on Electron's own Node:
+//   drill.mjs <programs-dir> <codex-executable> <state-root> <result-file> [upstream-url]
+// Without an upstream URL the drill starts tests/fixtures/fake-responses-model.mjs itself.
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -15,14 +18,17 @@ import { AccountPoolStore } from "@opencraft/account-pool-host";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { startCodexBridgeStack } from "../../../apps/opencraft-daemon/src/codex-bridge-stack.js";
 import { createCodexBridgeHost } from "../../../apps/opencraft-daemon/src/codex-bridge-host.js";
+import { startFakeResponsesModel } from "../../../tests/fixtures/fake-responses-model.mjs";
 
-const [programs, codexExecutable, root, upstream, resultFile] = process.argv.slice(2) as [
+const [programs, codexExecutable, root, resultFile, explicitUpstream] = process.argv.slice(2) as [
   string,
   string,
   string,
   string,
-  string,
+  string | undefined,
 ];
+const localModel = explicitUpstream ? undefined : await startFakeResponsesModel();
+const upstream = explicitUpstream ?? localModel!.url;
 const steps: string[] = [];
 const report = async (result: string, error?: unknown) => {
   steps.push(`${result}${error ? `: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}` : ""}`);
@@ -145,11 +151,13 @@ try {
   log("closing the stack");
   await stack.close();
   stack = undefined;
+  await localModel?.close();
   await report("PASS");
   process.exit(0);
 } catch (error) {
   await host?.close().catch(() => undefined);
   await stack?.close().catch(() => undefined);
+  await localModel?.close();
   await report("FAIL", error);
   process.exit(1);
 }

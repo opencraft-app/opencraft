@@ -301,11 +301,19 @@ export class CodexBridgeRuntime {
       case "input/withdraw":
         throw new CodexBridgeError("unsupported", "Native input withdrawal is unavailable");
       case "history/read": {
-        if (p.view === "thread")
-          return this.owner.request("thread/read", {
-            threadId: this.adapter.nativeSession(threadId),
-            includeTurns: p.includeTurns === true,
-          });
+        if (p.view === "thread") {
+          const nativeId = this.adapter.nativeSession(threadId);
+          try {
+            return await this.owner.request("thread/read", { threadId: nativeId, includeTurns: p.includeTurns === true });
+          } catch (error) {
+            // Between turn/start and native recording the first user message the session has no
+            // readable turns yet; native refuses includeTurns there, which is not a failure of the read.
+            if (!(error instanceof CodexBridgeError) || !["unmaterialized", "turns-unavailable"].includes(error.nativeReason ?? ""))
+              throw error;
+            const read = object(await this.owner.request("thread/read", { threadId: nativeId, includeTurns: false }));
+            return { ...read, thread: { ...object(read.thread), turns: [] } };
+          }
+        }
         const nativeId = this.adapter.nativeSession(threadId);
         if (p.turnId !== undefined)
           return this.owner.request("thread/items/list", {
