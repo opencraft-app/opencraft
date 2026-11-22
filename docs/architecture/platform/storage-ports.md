@@ -60,11 +60,11 @@ interface SqlDatabase {
 - **BLOB 统一为 `Uint8Array`。** DO 返回的 `ArrayBuffer` 由适配器转换。
 - **身份稳定。** 同一底层连接只对应一个 `SqlDatabase` 实例（Node 适配器以 `WeakMap` 缓存），因为 `AuthorityChanges` 与 `PermissionReadCache` 以连接对象作为分组身份。
 - **借用作用域。** `scopedSqlDatabase()` 把 owner 连接借给 repository；借用方 `close()` 后，经它发出的调用（包括先前取得的语句）全部失败，owner 与其他借用方不受影响。
-- **端口不包含** `close`、文件位置、PRAGMA 配置、备份或迁移执行。它们属于打开连接的 owner。
+- **端口不包含** `close`、文件位置、PRAGMA 配置、备份或迁移执行。它们属于打开连接的 owner；迁移账本规则以端口之上的函数提供（见下），由 owner 调用。
 
 #### 生命周期仍归 owner
 
-迁移账本（`schema_migrations`、连续版本、SHA-256 校验）的语义是跨运行时的；下列能力属于 Node owner，保留在 `@opencraft/sqlite-node` 与 `@opencraft/storage-node`，DO owner 另行实现精简版本：
+迁移账本（`schema_migrations`、连续版本、SHA-256 校验）的语义是跨运行时的，唯一实现是 `@opencraft/sql/migrations`：`hashSqlMigrations`（哈希函数由 owner 提供，Node 与 workerd `nodejs_compat` 均用 `node:crypto`）、`validateMigrationHistory`（版本、名称或 checksum 不符拒绝为 `history-mismatch`，账本超出声明链拒绝为 `newer-schema`）、`applySqlMigrations`（每个待执行迁移一次 `transaction()`，在事务内重新校验账本，原样 `exec` 已发布 SQL，最后一个迁移在记录账本前执行可选 schema 校验）。owner 可传入自己的错误类型：`@opencraft/sqlite-node` 的 `prepareMigrations`／`validateHistory`／`applyMigrations` 委托这些函数并继续抛 `SqliteLifecycleError`，已发布 SQL、名称与 checksum 不变。DO owner 的精简生命周期是 `@opencraft/storage-node/server-sql` 的 `migrateServerSqlDatabase(database)`：只做上述账本与迁移，有对象但无账本的库拒绝采纳，返回 `{ database, outcome, contract }`，不含 `location`（见[InstallationCore 原型状态](cloudflare-deployment.md#5-installationcore-原型状态)）。下列能力属于 Node owner，保留在 `@opencraft/sqlite-node` 与 `@opencraft/storage-node`：
 
 | 能力 | Node | DO |
 | --- | --- | --- |
@@ -76,7 +76,7 @@ interface SqlDatabase {
 
 #### 伴随 Worker 的位置
 
-Node Headless 当前由 `Collaboration` 按数据库文件路径启动 `OrchestrationRuntimeWorker`。文件路径是 Node 拓扑事实，不属于 SQL 端口：`ServerDatabaseSource` 的对象形式以可选 `location` 显式携带它，只有 Node owner 填写。DO 中同一 owner 直接执行这些命令，不存在伴随 Worker。
+Node Headless 当前由 `Collaboration` 按数据库文件路径启动 `OrchestrationRuntimeWorker`。文件路径是 Node 拓扑事实，不属于 SQL 端口：`ServerDatabaseSource` 的对象形式以可选 `location` 显式携带它，只有 Node owner 填写。DO 中同一 owner 直接执行这些命令，不存在伴随 Worker。`@opencraft/storage-node/server-repository` 在 `workerd` 导出条件下解析为只接受 owner 句柄的实现（`repository.workerd.ts`），不引入 `node:sqlite` 与文件系统；两种实现共享 `repository-handle.ts` 的借用逻辑。
 
 ### 3.2 `StateDocumentStore`
 

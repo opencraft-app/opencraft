@@ -8,7 +8,8 @@
     "./server-borrow": "./src/server/borrow.ts",
     "./server": "./src/server/index.ts",
     "./server-legacy": "./src/server/legacy.ts",
-    "./server-repository": "./src/server/repository.ts",
+    "./server-repository": { "workerd": "./src/server/repository.workerd.ts", "default": "./src/server/repository.ts" },
+    "./server-sql": "./src/server/sql-owner.ts",
     "./server-owner": "./src/server/owner.ts",
     "./server-owner-serve": "./src/server/owner-serve.ts",
     "./server-composition": "./src/server/migration-composition.ts"

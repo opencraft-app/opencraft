@@ -2,7 +2,7 @@
 
 [Architecture index](../README.md) · [存储端口](storage-ports.md) · [执行沙盒](../execution/execution-sandbox.md) · [Docker 三角色部署](../../../deploy/docker/README.md)
 
-状态：目标设计。只有存储端口的 Cloudflare 适配器已在本地 workerd 中通过一致性测试（见[存储端口第 6 节](storage-ports.md#6-cloudflare-适配器第-5-阶段本地-workerd-验证)）；本页不代表任何 Cloudflare 组件已可部署。Node 自托管（Docker／systemd／Electron）始终是一等公民；Cloudflare 是部署装配选项之一，不替换 Node 路径。
+状态：目标设计。只有存储端口的 Cloudflare 适配器已在本地 workerd 中通过一致性测试（见[存储端口第 6 节](storage-ports.md#6-cloudflare-适配器第-5-阶段本地-workerd-验证)），`InstallationCore` 有一个仅限测试的本地 workerd 原型（见第 5 节）；本页不代表任何 Cloudflare 组件已可部署。Node 自托管（Docker／systemd／Electron）始终是一等公民；Cloudflare 是部署装配选项之一，不替换 Node 路径。
 
 ## 1. 现状约束
 
@@ -55,3 +55,37 @@
 | 成本 | 冷启动时间、容器常驻与 DO 时长成本 |
 
 单实例资源上限为 4 vCPU／12 GiB／20 GB 磁盘，满足当前默认 4 vCPU／8 GiB 契约。
+
+## 5. InstallationCore 原型状态
+
+状态：**仅测试原型，本地 workerd 验证**。`tests/storage/workerd/installation-core-worker.ts` 是一个 SQLite-backed DO，由 `npm run test:installation-core:workerd`（`tests/storage/installation-core-workerd.test.ts`）经 esbuild（`workerd` 导出条件）打包、在 Miniflare（`workerd@1.20260730.1`，兼容日期 `2026-07-30`，`nodejs_compat`）中运行；无网络、无 Cloudflare 账号，未加入 `gate`，也未在真实 Cloudflare 上运行。它不放进包里：还没有部署装配、路由、认证前门与投影分发，正式包会成为无人消费的运行时形态。DO 外壳只有几十行，迁移与领域代码全部来自生产包。
+
+### 5.1 已证明
+
+- **精简生命周期**：DO 在 `blockConcurrencyWhile` 内执行 `migrateServerSqlDatabase(durableObjectSqlDatabase(ctx.storage))`（`@opencraft/storage-node/server-sql`），只做账本校验、checksum 拒绝和按序迁移（每个迁移一次 `transaction()`）；不含进程锁、`VACUUM INTO` 备份、`ATTACH` 旧六库导入、替代谱系采纳与 `:memory:` 校验器（见[存储端口 3.1](storage-ports.md#31-sqldatabase)）。账本规则与 Node `openManagedDatabase` 是同一份实现（`@opencraft/sql/migrations`）。有对象但无账本的库被拒绝而非采纳（`_cf_` 前缀的 workerd 内部表除外）。打开失败时对象保持关闭，之后每个调用都失败，不读旧状态。
+- **测试覆盖**：新对象应用全部 22 个已发布 Server 迁移，schema（含触发器）与 node:sqlite 全新库逐项相同；在持久化存储上重启后结果为 `up-to-date`，账本逐行不变；改写一行 checksum 后重启被拒绝；只装前 5 个迁移的"旧版本"对象重启后只补后续迁移，已有账本行不变、最终 schema 与 Node 相同；新版本迁移过的对象被旧版本以 `newer-schema` 拒绝；`ActorStore`（`resolveHuman`、`createSession`、`issueCredential`、`authenticateSession`、撤销、停用）、`MembershipStore`／`InstanceAccess`（授予、撤销、认证、角色与准入状态、撤销修订号）与 `ThreadAccessStore`（创建、`set` 的 CAS、`allows`／`allowsActor`）经 DO RPC 的结果在归一化随机 ID、密钥和时间后，与同一调用序列在临时目录 node:sqlite owner 上的结果完全相同。
+- **已发布迁移在 DO 中可执行，无需改动**：`--> statement-breakpoint` 是 SQL 注释，DO 的多语句 `exec` 依次执行全部语句；`0005_native_channels` 的 `CREATE TRIGGER … BEGIN … END` 被当作 schema 接受，不被当作事务控制拒绝；`ALTER TABLE … ADD`、`INSERT … SELECT`、`randomblob()` 正常。当前 22 个迁移不含 `PRAGMA`、`ATTACH`、`VACUUM` 或 drizzle 表重建。外键：node:sqlite 的 owner 连接默认开启外键，DO 也默认开启，两者一致（Node 的借用连接可关闭外键，DO 中不存在借用连接）。本地 workerd 接受 `PRAGMA foreign_keys=OFF`，若将来出现 drizzle 表重建式迁移，需在真实 Cloudflare 上复核该 PRAGMA 后才可依赖。
+
+### 5.2 Node 专属依赖
+
+| 依赖 | 来源 | 处理 |
+| --- | --- | --- |
+| `node:sqlite`、`node:fs`、`node:path` | `@opencraft/storage-node/server-repository` 的文件打开路径 | 隔离：该导出增加 `workerd` 条件，指向只接受 owner 句柄的 `repository.workerd.ts`；共享的借用逻辑在 `repository-handle.ts`，Node 实现行为不变 |
+| `node:crypto`（`createHash`、`randomBytes`、`randomUUID`、`timingSafeEqual`） | `actors.ts`、迁移组合与 checksum | `nodejs_compat` 下可用，凭据签发与校验已在测试中运行 |
+| 全局 `Buffer` | `permission-read-cache.ts`、`actors.ts` | `nodejs_compat` 下可用 |
+| `process.env` | `ActorStore` 未传 `policy` 时读取 `OPENCRAFT_ACTOR_POLICY` | `nodejs_compat` 下可读（为空即人类策略）；正式装配应显式传入 `policy` |
+| `setInterval(...).unref()` | `InstanceAccess.watch` | 探针确认可用；原型未调用。DO 中定时撤销应改由 alarm 或连接 owner 承担 |
+| `node:http` 请求与流式读取 | `InstanceAccess.handle` 的成员管理接口 | 仅类型导入，原型未调用；DO 前门应以 `fetch`／RPC 重新装配 |
+| `worker_threads`、`isMainThread` 断言、`SharedArrayBuffer`＋`Atomics` 提交栅栏 | `identity-writes.ts`、`commit-fence.ts`、`automation-ledger.ts`、`orchestration-runtime-store.ts`、`server-spaces-runtime.ts` | 未被原型打包：DO 直接在唯一 owner 上构造领域类 |
+
+### 5.3 单一 owner 的含义
+
+Node 上同一个 `opencraft-server.sqlite` 由三条连接打开：核心 owner、`OrchestrationRuntimeWorker`、`ServerSpacesRuntime`（见[服务器核心 owner](../server/server-core-owner.md)）。DO 中只有一个 owner 与一个 `SqlDatabase`，这意味着：
+
+- 没有跨连接锁等待与 `busy_timeout`；也不再需要把其他连接的提交转发给 owner 以刷新权限投影——所有写入都经同一连接对象，`AuthorityChanges`／`PermissionReadCache` 的分组天然覆盖全部写入。
+- 提交栅栏不再需要：授权复核与写入在同一同步回合、同一 `transaction()` 内完成，DO 输入门保证期间没有其他请求交错。正式实现应以此替代 `IdentityWrites` 的 Worker＋栅栏路径，而不是移植 `Atomics`。
+- `ServerDatabaseHandle` 没有 `location`，`Collaboration` 无法按文件启动伴随 Worker；编排与空间领域需由同一 DO 直接执行，所有 Server 核心工作在一个 DO 线程上串行，与认证热路径争用 CPU。是否把无事务耦合的领域拆到其他 DO，需按 CPU 与时延实测决定。
+
+### 5.4 生产 InstallationCore 仍缺
+
+部署装配（wrangler 配置、绑定、边缘 Worker 路由）；认证前门（OIDC／本地账号经 `fetch`，替代 Node HTTP 的 `IdentityProvider`）；投影发布给边缘 Worker 与 Client DO；`Collaboration`、编排、空间、自动化等其余领域的 DO 装配；`AccountCore` 与 `WorkspaceHost` 的协作；DO 版迁移后 schema 校验（DO 内不能另开 `:memory:` 库）；备份与恢复改用 PITR 的运维流程；`SecretStore` 的信封加密；真实 Cloudflare 上的 SQL 语义、CPU 与冷启动复核。

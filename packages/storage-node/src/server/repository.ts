@@ -1,33 +1,13 @@
-import { scopedSqlDatabase, type SqlDatabase } from "@opencraft/sql";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { nodeSqlDatabase, openManagedDatabase, SqliteLifecycleError, type DatabaseOutcome } from "@opencraft/sqlite-node";
+import { nodeSqlDatabase, openManagedDatabase, SqliteLifecycleError } from "@opencraft/sqlite-node";
 import { serverLegacyOptions, type ServerStoreId } from "./legacy.js";
+import { borrowServerRepository, type ServerDatabaseSource, type ServerRepository } from "./repository-handle.js";
 
-/** An owner's open Server installation, lent through the runtime-neutral SQL port. */
-export interface ServerDatabaseHandle {
-  readonly database: SqlDatabase;
-  readonly outcome: DatabaseOutcome;
-  /**
-   * File of a Node-owned installation. Only Node compositions use it, to start
-   * companion Workers on the same file; the SQL port itself has no location.
-   */
-  readonly location?: string;
-}
-/** A trusted owner lends its connection; repositories never close borrowed handles. */
-export type ServerDatabaseSource = string | ServerDatabaseHandle;
-export interface ServerRepository {
-  readonly database: SqlDatabase;
-  readonly outcome: DatabaseOutcome;
-  /** Node file backing this repository, when there is one (see ServerDatabaseHandle.location). */
-  readonly location?: string;
-  close(): void;
-}
+export { borrowServerRepository, type ServerDatabaseHandle, type ServerDatabaseSource, type ServerRepository } from "./repository-handle.js";
+
 export function openServerRepository(source: ServerDatabaseSource, store: ServerStoreId): ServerRepository {
-  if (typeof source !== "string") {
-    const lease = scopedSqlDatabase(source.database, "Server repository");
-    return { database: lease.database, outcome: source.outcome, ...(source.location ? { location: source.location } : {}), close: lease.close };
-  }
+  if (typeof source !== "string") return borrowServerRepository(source);
   if (source !== ":memory:" && (existsSync(join(dirname(source), "opencraft-server.sqlite")) || existsSync(join(dirname(source), ".server-import")))) {
     throw new SqliteLifecycleError("unsupported-legacy", "Server data is consolidated; use the Server storage owner");
   }

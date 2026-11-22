@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "reason": "Recorded debt: synchronous file, process and SQLite calls, and SQL statements passed as literals to prepare/exec, in code that network processes load on their main thread (AGENTS.md 网络主线程不得阻塞). Counts may only shrink: move the work into a Worker or an async API, then run `node scripts/check/check-main-thread-sync-io.mjs --update`. Startup-only calls are recorded too; they still block a restarted process before it serves.",
+  "reason": "Recorded debt: synchronous file, process and SQLite calls, and SQL statements passed as literals to prepare/exec, in code that network processes load on their main thread (AGENTS.md \u7f51\u7edc\u4e3b\u7ebf\u7a0b\u4e0d\u5f97\u963b\u585e). Counts may only shrink: move the work into a Worker or an async API, then run `node scripts/check/check-main-thread-sync-io.mjs --update`. Startup-only calls are recorded too; they still block a restarted process before it serves.",
   "entries": [
     "apps/opencraft-daemon/src/bin.ts",
     "apps/desktop/src/main.ts",
@@ -285,6 +285,9 @@
       "DatabaseSync": 2,
       "SQL statement": 4
     },
+    "packages/sql/src/migrations.ts": {
+      "SQL statement": 3
+    },
     "packages/sqlite-node/src/backup.ts": {
       "chmodSync": 1,
       "DatabaseSync": 1,
@@ -310,7 +313,7 @@
     },
     "packages/sqlite-node/src/migrations.ts": {
       "DatabaseSync": 6,
-      "SQL statement": 8
+      "SQL statement": 5
     },
     "packages/sqlite-node/src/read-guard.ts": {
       "DatabaseSync": 1,
