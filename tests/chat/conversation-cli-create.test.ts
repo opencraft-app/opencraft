@@ -87,7 +87,23 @@ test("create resolves Server project roots, preserves the Actor lane and returns
     },
   });
   const execution = createRoutedConversationExecution(() => host, { machineId: "fixture", engines: ["pi"] });
-  const service = new Collaboration(join(dir, "collaboration.sqlite"), actors, execution, Date.now, () => admitted);
+  const foreignServer = "server:foreign:codex";
+  let foreignRequests = 0;
+  const service = new Collaboration(join(dir, "collaboration.sqlite"), actors, {
+    ...execution,
+    directory() {
+      const directory = execution.directory();
+      const primary = directory.servers.find(server => server.serverId === serverId)!;
+      return { ...directory, servers: [...directory.servers, { ...primary, serverId: foreignServer }] };
+    },
+    async projects(requestedServer, cursor, context) {
+      if (requestedServer === foreignServer) {
+        foreignRequests++;
+        return { serverId: requestedServer, projects: [{ id: "foreign", name: "Foreign", roots: [{ path: root }] }], nextCursor: null };
+      }
+      return execution.projects!(requestedServer, cursor, context);
+    },
+  }, Date.now, () => admitted);
   t.after(async () => {
     await service.close();
     await host.close();
@@ -100,6 +116,9 @@ test("create resolves Server project roots, preserves the Actor lane and returns
   assert.deepEqual(operations.map(row => [row.hostId, row.method, row.actorId]), [["opencraft-server", "project/list", actor.actorId]]);
   operations.length = 0;
   await assert.rejects(service.command(actor, { action: "projects", serverId: "server:fixture:pi" }), { code: "unsupported_capability" });
+  assert.equal(service.servers(actor).servers.some(server => server.serverId === foreignServer), true);
+  await assert.rejects(service.command(actor, { action: "projects", serverId: foreignServer }), { status: 404, code: "conversation_unavailable" });
+  assert.equal(foreignRequests, 0);
   const body = {
     action: "create",
     serverId,
@@ -347,8 +366,8 @@ test("creation lookup records Actor-scoped custody before first input and never 
   await assert.rejects(restarted.command(restored, lookup("first-lost")), { status: 401 });
 });
 
-test("the CLI saves generated creation keys and reads a disconnected operation without a reference", { skip: process.platform === "win32" }, async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "cli-create-wire-"));
+async function openCliHarness(t: test.TestContext) {
+  const root = await mkdtemp(join(tmpdir(), "conversation-cli-wire-"));
   const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
   t.after(async () => {
     for (const socket of server.clients) socket.terminate();
@@ -383,6 +402,44 @@ socket.on("error", () => process.exit(1));
       return JSON.parse(error.stdout).error;
     }
   };
+  return { cli, root, server };
+}
+
+test("project list requests continuation pages and rejects Servers without discovery", { skip: process.platform === "win32" }, async (t) => {
+  const { cli, root, server } = await openCliHarness(t);
+  const requests: unknown[] = [];
+  const first = { serverId: "codex", projects: [{ id: "p1", name: "One", roots: [{ path: root }] }], nextCursor: "continuation" };
+  const last = { serverId: "codex", projects: [{ id: "p2", name: "Two", roots: [{ path: root }] }], nextCursor: null };
+  let legacy = false;
+  server.on("connection", socket => socket.on("message", raw => {
+    const { id, method, params } = JSON.parse(raw.toString());
+    if (id === undefined) return;
+    const respond = (result: unknown) => socket.send(JSON.stringify({ id, result }));
+    if (method === "initialize") {
+      respond({ capabilities: { extensions: { "opencraft/collaboration": { ...COLLABORATION_CAPABILITIES, ...(!legacy ? { projectDiscovery: true } : {}) } } } });
+    } else if (params.action === "servers") {
+      respond({ instanceId: "fixture", servers: [
+        { serverId: "codex", capabilities: { projectDiscovery: true } },
+        { serverId: "pi", capabilities: { projectDiscovery: false } },
+      ] });
+    } else {
+      requests.push({ method, params });
+      respond(params.cursor === "continuation" ? last : first);
+    }
+  }));
+  assert.deepEqual(await cli(["project", "list", "--server", "codex"]), first);
+  assert.deepEqual(await cli(["project", "list", "--server", "codex", "--cursor", first.nextCursor]), last);
+  assert.equal((await cli(["project", "list", "--server", "pi"], 6)).code, "UNSUPPORTED_CAPABILITY");
+  legacy = true;
+  assert.equal((await cli(["project", "list", "--server", "codex"], 6)).code, "UNSUPPORTED_CAPABILITY");
+  assert.deepEqual(requests, [
+    { method: "opencraft/collaboration", params: { action: "projects", serverId: "codex" } },
+    { method: "opencraft/collaboration", params: { action: "projects", serverId: "codex", cursor: "continuation" } },
+  ]);
+});
+
+test("the CLI saves generated creation keys and reads a disconnected operation without a reference", { skip: process.platform === "win32" }, async (t) => {
+  const { cli, root, server } = await openCliHarness(t);
   let drop = true, legacy = false, actor = "first", createCalls = 0, allocations = 0;
   const ref = { serverId: "codex", threadId: "known-thread" };
   const receipts = new Map<string, object>();

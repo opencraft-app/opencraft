@@ -404,7 +404,7 @@ export class Collaboration {
     const assertCurrent = () => {
       submission?.resourceOwner?.assertCurrent();
       const server = this.servers(context).servers.find(server => server.serverId === serverId);
-      if (!server) throw new CollaborationError(404, 'conversation_unavailable');
+      if (!server || !this.#owns(serverId)) throw new CollaborationError(404, 'conversation_unavailable');
       if (!server.capabilities.projectDiscovery || !this.execution.projects)
         throw new CollaborationError(409, 'unsupported_capability');
     };
