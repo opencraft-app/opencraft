@@ -358,9 +358,11 @@ signing; `expo-ios-bundle` does not produce an IPA.
 
 `electron-macos-universal-release` is an orchestrated delivery target rather
 than a single-host matrix command. `.github/workflows/macos-universal-release.yml`
-assembles arm64 on `macos-15` and x64 on `macos-15-intel`, merges only after both
-native packages pass, then enters the `macos-release` Environment for signing,
-notarization and final packaging. Manual runs are accepted only from `main`;
+assembles arm64 on `macos-15` and x64 on `macos-15-intel`. Both jobs explicitly use
+official Electron at the same pinned upstream version via
+`OPENCRAFT_ELECTRON_STOCK_DESKTOP=1`. The workflow merges both native apps,
+then signs, notarizes and packages the result in the `macos-release` Environment.
+Manual runs are accepted only from `main`;
 version tags matching `v*` additionally publish a GitHub Release. A lightweight
 credential check in the same Environment runs before either native build, so
 missing Secrets fail without consuming macOS build time. Configure the Environment

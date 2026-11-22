@@ -1,0 +1,2 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+.crew-phonebook__empty {margin:0; @include typography.role(metadata,secondary);}

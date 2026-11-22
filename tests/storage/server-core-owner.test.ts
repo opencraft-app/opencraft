@@ -55,3 +55,37 @@ test("an installation the owner cannot open fails with its lifecycle error and l
   const storage = await openServerCoreOwner(directory);
   await storage.close();
 });
+
+// Domain services moved off the network thread run in the Headless owner
+// Worker on the owner connection; the network thread only awaits their port.
+test("the Headless owner Worker serves shared notes durably through its async port", async (t) => {
+  const Y = await import("yjs");
+  const directory = await mkdtemp(join(tmpdir(), "server-core-notes-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const entry = new URL("../../apps/headless-server/src/server-core-worker.mjs", import.meta.url);
+  type Notes = {
+    exchangeThreadNote(serverId: string, threadId: string, update: string, vector: string): { update: string };
+  };
+  const encode = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");
+  const empty = encode(Y.encodeStateVector(new Y.Doc()));
+  const doc = new Y.Doc();
+  doc.getText("markdown").insert(0, "shared");
+
+  let storage = await openServerCoreOwner<Notes>(directory, { entry });
+  await storage.call.exchangeThreadNote("server", "thread", encode(Y.encodeStateAsUpdate(doc)), empty);
+  await assert.rejects(
+    storage.call.exchangeThreadNote("server", "thread", "not base64!", empty),
+    /Invalid note update/,
+  );
+  await storage.close();
+
+  storage = await openServerCoreOwner<Notes>(directory, { entry });
+  try {
+    const { update } = await storage.call.exchangeThreadNote("server", "thread", "", empty);
+    const reader = new Y.Doc();
+    Y.applyUpdate(reader, Buffer.from(update, "base64"));
+    assert.equal(reader.getText("markdown").toString(), "shared");
+  } finally {
+    await storage.close();
+  }
+});

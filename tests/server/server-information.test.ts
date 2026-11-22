@@ -7,7 +7,8 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { ServerInformationStore, serverInformationHttp, normalizePublicEntry, SERVER_INFORMATION_PATH } from '../../apps/headless-server/src/server-information.mjs';
 import { isHeadlessBackendPath } from '../../apps/headless-server/src/web-deployment/headless-backend.mjs';
-import { PushStore, TurnPushService, type PushBinding } from '@opencraft/web-push-node';
+import { TurnPushService, type PushBinding } from '@opencraft/web-push-node';
+import { PushStore } from '@opencraft/web-push-node/store';
 const binding: PushBinding = { context: { actorId: 'admin-a', credentialId: null, generation: 1, expiresAt: Date.now() + 86400000 } };
 const messages = { completed: 'Done', failed: 'Failed', interrupted: 'Stopped', body: 'Return to conversation', test: 'Test' };
 async function fixture(t: test.TestContext) { const root = await mkdtemp(join(tmpdir(), 'server-information-')); t.after(() => rm(root, { recursive: true, force: true })); return { root, path: join(root, 'server-information.json') }; }

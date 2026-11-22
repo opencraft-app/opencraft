@@ -69,6 +69,8 @@ test("every package that bundles a network process builds the owner Workers besi
   assert.ok(OWNER_WORKERS.some(([entry, file]) => entry.endsWith("ssh-connections.worker.ts") && file === "ssh-connections-worker.mjs"));
   assert.ok(OWNER_WORKERS.some(([entry, file]) => entry.endsWith("hub-state.worker.ts") && file === "hub-state-worker.mjs"));
   assert.ok(OWNER_WORKERS.some(([, file]) => file === "memory-browser-offline-worker.mjs"));
+  assert.ok(OWNER_WORKERS.some(([entry, file]) => entry.endsWith("headless-server/src/server-core-worker.mjs") && file === "server-core-worker.mjs"));
+  assert.ok(OWNER_WORKERS.some(([entry, file]) => entry.endsWith("plugins/im/src/switchboard.worker.ts") && file === "switchboard-worker.mjs"));
   for (const name of ["scripts/packaging/package-web-server.mjs", "scripts/packaging/package-headless-linux.mjs", "scripts/packaging/package-relay.mjs", "apps/opencraft-daemon/build.mjs"]) {
     const source = await readFile(join(root, name), "utf8");
     assert.match(source, /await buildOwnerWorkers\(/, `${name} builds the owner Workers`);
@@ -102,6 +104,71 @@ test("a bundled assistant Host reads offline memory through its packaged Worker"
       assert.ok(result && typeof result === "object", "the offline Worker answered");
     } finally {
       await host.close?.();
+    }
+  } finally {
+    await rm(output, { recursive: true, force: true });
+  }
+});
+
+// Headless starts its Server owner Worker beside its bundle, as it does from source.
+test("a bundled Headless caller serves Server domains from its packaged owner Worker", async () => {
+  const output = await mkdtemp(join(tmpdir(), "server-core-owner-package-"));
+  try {
+    const { buildOwnerWorkers } = await import("../../scripts/packaging/owner-workers.mjs");
+    await buildOwnerWorkers(output);
+    await build({
+      bundle: true, platform: "node", format: "esm", target: "node26", banner, logLevel: "silent",
+      nodePaths: [join(root, "node_modules")],
+      stdin: {
+        resolveDir: root,
+        sourcefile: "server-core-caller.mjs",
+        contents: [
+          'import { openServerCoreOwner } from "@opencraft/storage-node/server-owner";',
+          'import { ownerEntry } from "@opencraft/worker-owner";',
+          "export const open = (directory) => openServerCoreOwner(directory, { entry: ownerEntry(import.meta.url, 'server-core') });",
+        ].join("\n"),
+      },
+      outfile: join(output, "caller.mjs"),
+    });
+    const { open } = await import(pathToFileURL(join(output, "caller.mjs")).href);
+    const directory = join(output, "data");
+    await mkdir(directory, { mode: 0o700 });
+    const storage = await open(directory);
+    try {
+      const result = await storage.call.exchangeThreadNote("server", "thread", "", "AA==");
+      assert.equal(typeof result.update, "string", "the packaged owner Worker answered");
+    } finally {
+      await storage.close();
+    }
+  } finally {
+    await rm(output, { recursive: true, force: true });
+  }
+});
+
+// The IM switchboard is opened by code bundled into Headless; its Worker ships beside the bundle.
+test("a bundled IM caller opens the switchboard in its packaged owner Worker", async () => {
+  const output = await mkdtemp(join(tmpdir(), "switchboard-package-"));
+  try {
+    const { buildOwnerWorkers } = await import("../../scripts/packaging/owner-workers.mjs");
+    await buildOwnerWorkers(output);
+    await build({
+      bundle: true, platform: "node", format: "esm", target: "node26", banner, logLevel: "silent",
+      nodePaths: [join(root, "node_modules")],
+      stdin: {
+        resolveDir: root,
+        sourcefile: "switchboard-caller.mjs",
+        contents: 'export { Switchboard } from "@opencraft/plugin-im/switchboard";',
+      },
+      outfile: join(output, "caller.mjs"),
+    });
+    const { Switchboard } = await import(pathToFileURL(join(output, "caller.mjs")).href);
+    const board = await Switchboard.open(join(output, "im.sqlite"));
+    try {
+      const config = { id: "bot", provider: "wecom", ownerId: "owner", name: "bot", groupScope: "chat" };
+      await board.saveChannel(config, true, null);
+      assert.equal(board.channel("bot")?.enabled, true, "the packaged owner committed and returned the projection");
+    } finally {
+      await board.close();
     }
   } finally {
     await rm(output, { recursive: true, force: true });

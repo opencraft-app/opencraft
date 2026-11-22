@@ -85,7 +85,7 @@ export class ServerSpacesRuntime {
     const {actorId}=this.context(context);
     const memberships=new Map(this.projection.members.filter(m=>m.actorId===actorId).map(m=>[m.spaceId,m.role]));
     if(this.failed)throw new Error('Server storage unavailable');
-    return {actorId,spaces:this.projection.spaces.filter(s=>memberships.has(s.id)).map(s=>({id:s.id,name:s.name,role:memberships.get(s.id)!,memberCount:this.projection.members.filter(m=>m.spaceId===s.id).length})),
+    return {actorId,spaces:this.projection.spaces.filter(s=>memberships.has(s.id)).map(s=>({id:s.id,name:s.name,role:memberships.get(s.id)!,memberCount:this.projection.members.filter(m=>m.spaceId===s.id).length,openContact:s.openContact})),
       assignments:this.projection.assignments.filter(a=>memberships.has(a.spaceId))};
   }
   subscribe(listener:()=>void):()=>void {this.listeners.add(listener);return()=>this.listeners.delete(listener);}

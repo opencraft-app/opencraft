@@ -99,6 +99,11 @@ export const SERVER_MIGRATIONS = [
     "version": 20,
     "name": "0019_channel_connection_ownership",
     "sql": "CREATE TABLE `actor_channel_connections` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`incarnation` text NOT NULL,\n\t`active` integer NOT NULL\n) STRICT;\n--> statement-breakpoint\nCREATE TABLE `actor_channel_source_owners` (\n\t`source` text PRIMARY KEY NOT NULL,\n\t`connection_id` text NOT NULL,\n\tFOREIGN KEY (`source`) REFERENCES `actor_channel_sources`(`source`) ON UPDATE no action ON DELETE cascade,\n\tFOREIGN KEY (`connection_id`) REFERENCES `actor_channel_connections`(`id`) ON UPDATE no action ON DELETE no action\n) STRICT;\n"
+  },
+  {
+    "version": 21,
+    "name": "0020_crew",
+    "sql": "CREATE TABLE `crew_messages` (\n\t`seq` integer PRIMARY KEY AUTOINCREMENT NOT NULL,\n\t`message_id` text NOT NULL,\n\t`recipient_id` text NOT NULL,\n\t`work_id` text NOT NULL,\n\t`from_work_id` text NOT NULL,\n\t`created_at` integer NOT NULL,\n\t`asks` integer DEFAULT 0 NOT NULL,\n\t`answers` text\n) STRICT;\n--> statement-breakpoint\nCREATE UNIQUE INDEX `crew_messages_message_id_unique` ON `crew_messages` (`message_id`);--> statement-breakpoint\nCREATE INDEX `crew_messages_recipient` ON `crew_messages` (`recipient_id`,`seq`);--> statement-breakpoint\nCREATE TABLE `crew_work` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`space_id` text NOT NULL,\n\t`assignee_id` text NOT NULL,\n\t`requester_id` text NOT NULL,\n\t`parent_id` text,\n\t`root_id` text NOT NULL,\n\t`origin` text NOT NULL,\n\t`message_id` text,\n\t`state` text NOT NULL,\n\t`dispatches` integer DEFAULT 0 NOT NULL,\n\t`created_at` integer NOT NULL,\n\t`closed_at` integer,\n\tCONSTRAINT \"crew_work_origin\" CHECK(origin IN ('member','bot','routine')),\n\tCONSTRAINT \"crew_work_state\" CHECK(state IN ('open','closed'))\n) STRICT;\n--> statement-breakpoint\nCREATE INDEX `crew_work_assignee` ON `crew_work` (`assignee_id`,`state`);--> statement-breakpoint\nCREATE INDEX `crew_work_root` ON `crew_work` (`root_id`);--> statement-breakpoint\nALTER TABLE `collaboration_spaces` ADD `open_contact` integer DEFAULT 0 NOT NULL;"
   }
 ] as const;
 export const SERVER_ALTERNATE_MIGRATIONS = [
@@ -204,9 +209,14 @@ export const SERVER_ALTERNATE_MIGRATIONS = [
         "version": 20,
         "name": "converge_0019_channel_connection_ownership",
         "sql": SERVER_MIGRATIONS[19].sql
+      },
+      {
+        "version": 21,
+        "name": "converge_0020_crew",
+        "sql": SERVER_MIGRATIONS[20].sql
       }
     ]
   }
 ] as const;
-export const SERVER_MIGRATION_CONTRACT_HASH = "9905d8945d189f6632fd2912a839e2269c34a47f68758778c87dd596919e6969" as const;
+export const SERVER_MIGRATION_CONTRACT_HASH = "fadbaf648487b6c952a03d1c0d32f09ffc08421663573b2d5a20bb02d51d87f5" as const;
 export const OPENCRAFT_VERSION = "0.1.0" as const;

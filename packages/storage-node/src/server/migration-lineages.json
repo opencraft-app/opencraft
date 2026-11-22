@@ -120,6 +120,12 @@
       "name": "0019_channel_connection_ownership",
       "checksum": "593cf8932f993973e210bb42bb0205e289c0426d61a096ab31e1b350ab79c2eb",
       "snapshotChecksum": "2fdf91c7ba2588f43e436595bd29c0f908dd5ac037391f2e9505ffecbd5f9b51"
+    },
+    {
+      "version": 21,
+      "name": "0020_crew",
+      "checksum": "e0704b6252e9a75983c992f06dbcdaea98c740323100f27396070ef7ef8fc6f6",
+      "snapshotChecksum": "829a843c1a78c6d3d718d143e538540101811b6938a271250119accbda2106ba"
     }
   ],
   "alternates": [
@@ -292,6 +298,11 @@
           "version": 20,
           "name": "converge_0019_channel_connection_ownership",
           "checksum": "593cf8932f993973e210bb42bb0205e289c0426d61a096ab31e1b350ab79c2eb"
+        },
+        {
+          "version": 21,
+          "name": "converge_0020_crew",
+          "checksum": "e0704b6252e9a75983c992f06dbcdaea98c740323100f27396070ef7ef8fc6f6"
         }
       ]
     }

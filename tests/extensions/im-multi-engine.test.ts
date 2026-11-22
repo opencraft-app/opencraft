@@ -23,6 +23,7 @@ import { createRoutedConversationExecution } from '../../apps/headless-server/sr
 import { createImExecution } from '../../apps/headless-server/src/im-plugins.mjs';
 import WebSocket from 'ws';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
+import { localSwitchboard } from "../../plugins/im/src/switchboard-local.js";
 
 const signal = () => new AbortController().signal;
 async function root(t: test.TestContext, consolidated = false) {
@@ -58,7 +59,7 @@ test('Pi IM uses native durable input and both browser/Host tools; final and dup
   const ref = {serverId:'server:fixture:pi',threadId:thread.id};
   store.saveChannel({id:'bot',provider:'wecom',ownerId:human.actorId,name:'Fixture',groupScope:'chat',botId:'synthetic'},true,null);
   store.route('bot',1,stewardRoute(encodeConversationRef(ref)),true);
-  const im = new ImPlugin(store,createImExecution({actors,collaboration,getAppHost:()=>appHost}),1024,true);
+  const im = new ImPlugin(localSwitchboard(store),createImExecution({actors,collaboration,getAppHost:()=>appHost}),1024,true);
   im.register({id:'bot',ownerId:human.actorId,senders:{sender:human.actorId},groupScope:'chat'});
   t.after(()=>im.close());
   const identity = (session: typeof ref) => ({ serverId: session.serverId, threadId: session.threadId });

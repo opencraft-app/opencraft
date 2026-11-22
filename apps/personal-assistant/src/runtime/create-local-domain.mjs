@@ -26,6 +26,7 @@ export function createLocalDomain(
     assertAuthority,
     platformReads = null,
     platformThreads = null,
+    crewWork = null,
     executionEnvironment = null,
   } = {},
 ) {
@@ -35,6 +36,7 @@ export function createLocalDomain(
       [
         ...(knowledgeSource ? [knowledgeSource.reference()] : []),
         ...(platformThreads ? [platformThreads] : []),
+        ...(crewWork ? [crewWork] : []),
         ...(executionEnvironment ? [executionEnvironment] : []),
         ...(platformReads && profile.config.botBinding
           ? [

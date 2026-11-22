@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "reason": "Recorded debt: synchronous file, process and SQLite calls in code that network processes load on their main thread (AGENTS.md 网络主线程不得阻塞). Counts may only shrink: move the work into a Worker or an async API, then run `node scripts/check/check-main-thread-sync-io.mjs --update`. Startup-only calls are recorded too; they still block a restarted process before it serves.",
+  "reason": "Recorded debt: synchronous file, process and SQLite calls, and SQL statements passed as literals to prepare/exec, in code that network processes load on their main thread (AGENTS.md 网络主线程不得阻塞). Counts may only shrink: move the work into a Worker or an async API, then run `node scripts/check/check-main-thread-sync-io.mjs --update`. Startup-only calls are recorded too; they still block a restarted process before it serves.",
   "entries": [
     "apps/opencraft-daemon/src/bin.ts",
     "apps/desktop/src/main.ts",
@@ -27,7 +27,8 @@
       "statSync": 1
     },
     "apps/codex-core/src/account-owner.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 7
     },
     "apps/codex-core/src/app-server-bin.ts": {
       "existsSync": 1
@@ -36,32 +37,51 @@
       "readFileSync": 2
     },
     "apps/desktop/src/connector-configuration-store.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 6
     },
     "apps/desktop/src/sqlite-debug-reader.ts": {
       "DatabaseSync": 2,
+      "SQL statement": 8,
       "statSync": 1
     },
     "apps/desktop/src/ui-preferences-store.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 8
     },
     "apps/local-agent-host/src/artifacts/catalog.ts": {
       "chmodSync": 1,
       "DatabaseSync": 2,
-      "mkdirSync": 1
+      "mkdirSync": 1,
+      "SQL statement": 29
     },
     "apps/local-agent-host/src/dsh-execution-authority.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 16
     },
     "apps/local-agent-host/src/dsh-session-routing.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 11
+    },
+    "apps/local-agent-host/src/hypernode/execution-authority.js": {
+      "SQL statement": 12
+    },
+    "apps/local-agent-host/src/hypernode/thread-queue.js": {
+      "SQL statement": 17
     },
     "apps/local-agent-host/src/terminal-process-session.ts": {
       "readdirSync": 1,
       "readFileSync": 1
     },
     "apps/local-agent-host/src/thread-catalog.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 6
+    },
+    "apps/observability-service/service.mjs": {
+      "SQL statement": 2
+    },
+    "apps/observability-service/store.ts": {
+      "SQL statement": 39
     },
     "apps/opencraft-daemon/src/codex-engine-adapter.ts": {
       "DatabaseSync": 1,
@@ -72,10 +92,12 @@
     },
     "apps/opencraft-daemon/src/execution-lease-store.ts": {
       "DatabaseSync": 1,
-      "readFileSync": 2
+      "readFileSync": 2,
+      "SQL statement": 29
     },
     "apps/opencraft-daemon/src/input-delivery-store.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 11
     },
     "apps/opencraft-daemon/src/native-empty-creation.ts": {
       "lstatSync": 1,
@@ -83,16 +105,20 @@
     },
     "apps/opencraft-daemon/src/opencraft-host-queue.ts": {
       "DatabaseSync": 3,
-      "existsSync": 1
+      "existsSync": 1,
+      "SQL statement": 44
     },
     "apps/opencraft-daemon/src/opencraft-host-state-database.ts": {
-      "DatabaseSync": 2
+      "DatabaseSync": 2,
+      "SQL statement": 7
     },
     "apps/opencraft-daemon/src/opencraft-message-attachments.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 7
     },
     "apps/opencraft-daemon/src/opencraft-message-senders.ts": {
-      "DatabaseSync": 2
+      "DatabaseSync": 2,
+      "SQL statement": 10
     },
     "apps/opencraft-daemon/src/owned-database-path.ts": {
       "lstatSync": 1
@@ -101,7 +127,11 @@
       "chmodSync": 1,
       "DatabaseSync": 1,
       "lstatSync": 1,
-      "mkdirSync": 1
+      "mkdirSync": 1,
+      "SQL statement": 5
+    },
+    "apps/opencraft-daemon/src/provisional-threads.ts": {
+      "SQL statement": 14
     },
     "apps/opencraft-daemon/src/thread-identity-database.ts": {
       "DatabaseSync": 1
@@ -109,32 +139,46 @@
     "apps/opencraft-daemon/src/thread-identity.ts": {
       "DatabaseSync": 2
     },
+    "apps/opencraft-daemon/src/token-usage-ledger.ts": {
+      "SQL statement": 2
+    },
     "apps/opencraft-daemon/src/token-usage-query-service.ts": {
       "existsSync": 1
     },
+    "apps/opencraft-daemon/src/token-usage-query.ts": {
+      "SQL statement": 2
+    },
     "apps/opencraft-daemon/src/token-usage-state-database.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 28
     },
     "apps/opencraft-daemon/src/token-usage-team-query.ts": {
-      "DatabaseSync": 2
+      "DatabaseSync": 2,
+      "SQL statement": 7
     },
     "packages/access-control/src/account-management.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 12
     },
     "packages/access-control/src/actor-inbox-projection.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 9
     },
     "packages/access-control/src/actors.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 47
     },
     "packages/access-control/src/assistant-thread-store.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 19
     },
     "packages/access-control/src/channel-mentions.ts": {
-      "DatabaseSync": 2
+      "DatabaseSync": 2,
+      "SQL statement": 3
     },
     "packages/access-control/src/collaboration.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 80
     },
     "packages/access-control/src/communication-command.ts": {
       "DatabaseSync": 1
@@ -143,28 +187,39 @@
       "DatabaseSync": 14
     },
     "packages/access-control/src/execution-request-state.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 1
     },
     "packages/access-control/src/human-accounts.ts": {
-      "DatabaseSync": 2
+      "DatabaseSync": 2,
+      "SQL statement": 15
     },
     "packages/access-control/src/index.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 22
+    },
+    "packages/access-control/src/membership-revocation.ts": {
+      "SQL statement": 1
     },
     "packages/access-control/src/native-channel-sync.ts": {
-      "DatabaseSync": 2
+      "DatabaseSync": 2,
+      "SQL statement": 48
     },
     "packages/access-control/src/native-channels.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 65
     },
     "packages/access-control/src/orchestration-ledger.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 36
     },
     "packages/access-control/src/personal-assistants.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 26
     },
     "packages/access-control/src/thread-access.ts": {
-      "DatabaseSync": 2
+      "DatabaseSync": 2,
+      "SQL statement": 8
     },
     "packages/account-pool-host/src/codex-account-service.ts": {
       "mkdirSync": 1,
@@ -175,7 +230,11 @@
       "readFileSync": 1
     },
     "packages/account-pool-host/src/codex-writer-lock.ts": {
-      "DatabaseSync": 2
+      "DatabaseSync": 2,
+      "SQL statement": 1
+    },
+    "packages/account-pool-host/src/model-gateway-store.ts": {
+      "SQL statement": 50
     },
     "packages/account-pool-host/src/store.ts": {
       "chmodSync": 4,
@@ -186,25 +245,31 @@
       "readFileSync": 9,
       "renameSync": 5,
       "rmSync": 5,
+      "SQL statement": 34,
       "writeFileSync": 3
     },
     "packages/app-host-server/src/thread-directory/index.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 33
     },
     "packages/app-host-server/src/thread-directory/snapshot-reader.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 13
     },
     "packages/connector-host/src/headless.ts": {
       "mkdirSync": 1
     },
     "packages/connector-host/src/store.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 18
     },
     "packages/document-storage/src/client-resources-sqlite.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 12
     },
     "packages/document-storage/src/sqlite.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 7
     },
     "packages/execution-environment/src/employee-git-vault-store.ts": {
       "closeSync": 2,
@@ -214,42 +279,64 @@
       "openSync": 2,
       "readFileSync": 1,
       "realpathSync": 1,
+      "SQL statement": 6,
       "writeFileSync": 1
     },
     "packages/execution-environment/src/execution-environment.ts": {
       "DatabaseSync": 1,
-      "existsSync": 3
+      "existsSync": 3,
+      "SQL statement": 2
+    },
+    "packages/host-recovery/src/index.ts": {
+      "SQL statement": 4
+    },
+    "packages/host-recovery/src/provider-retry.ts": {
+      "SQL statement": 3
+    },
+    "packages/host-schedules/src/index.ts": {
+      "SQL statement": 12
     },
     "packages/mcp-apps/src/store.ts": {
-      "mkdirSync": 1
+      "mkdirSync": 1,
+      "SQL statement": 16
+    },
+    "packages/model-usage-policy/src/index.ts": {
+      "SQL statement": 8
     },
     "packages/model-usage-policy/src/native.mjs": {
-      "DatabaseSync": 2
+      "DatabaseSync": 2,
+      "SQL statement": 4
     },
     "packages/sqlite-node/src/backup.ts": {
       "chmodSync": 1,
       "DatabaseSync": 1,
       "existsSync": 1,
       "readdirSync": 1,
+      "SQL statement": 1,
       "unlinkSync": 2,
       "writeFileSync": 1
     },
     "packages/sqlite-node/src/connection.ts": {
       "chmodSync": 2,
       "DatabaseSync": 2,
-      "mkdirSync": 1
+      "mkdirSync": 1,
+      "SQL statement": 1
     },
     "packages/sqlite-node/src/history-selection.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 1
     },
     "packages/sqlite-node/src/lifecycle.ts": {
-      "DatabaseSync": 8
+      "DatabaseSync": 8,
+      "SQL statement": 1
     },
     "packages/sqlite-node/src/migrations.ts": {
-      "DatabaseSync": 7
+      "DatabaseSync": 7,
+      "SQL statement": 8
     },
     "packages/sqlite-node/src/read-guard.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 2
     },
     "packages/sqlite-node/src/recovery.ts": {
       "closeSync": 2,
@@ -260,6 +347,7 @@
       "readdirSync": 1,
       "readFileSync": 1,
       "renameSync": 1,
+      "SQL statement": 2,
       "unlinkSync": 2,
       "writeFileSync": 1
     },
@@ -272,30 +360,34 @@
       "openSync": 4,
       "readFileSync": 3,
       "renameSync": 1,
+      "SQL statement": 1,
       "unlinkSync": 1,
       "writeFileSync": 1
     },
     "packages/storage-node/src/server/borrow.ts": {
-      "DatabaseSync": 2
+      "DatabaseSync": 2,
+      "SQL statement": 4
     },
     "packages/storage-node/src/server/repository.ts": {
       "DatabaseSync": 1,
       "existsSync": 2
     },
-    "packages/web-push-node/src/store.ts": {
-      "DatabaseSync": 1
+    "plugins/im/src/post-receipts.ts": {
+      "SQL statement": 4
     },
     "plugins/pi-engine/src/read-history.ts": {
       "DatabaseSync": 1
     },
     "plugins/tasks/src/sqlite.ts": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 39
     },
     "scripts/server-deployment/acp-host.mjs": {
       "readFileSync": 1
     },
     "scripts/server-deployment/dsh-cold-resources.mjs": {
-      "DatabaseSync": 1
+      "DatabaseSync": 1,
+      "SQL statement": 3
     },
     "scripts/server-deployment/dsh-owner-handoff.mjs": {
       "closeSync": 2,

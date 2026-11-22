@@ -9,8 +9,10 @@ function directory(value: unknown): ServerSpaceDirectory {
   const d=value as ServerSpaceDirectory;
   if(!d||!Array.isArray(d.spaces)||!Array.isArray(d.assignments)||typeof d.actorId!=='string'
     ||d.spaces.some(s=>typeof s.id!=='string'||typeof s.name!=='string'||!['owner','member'].includes(s.role)||!Number.isSafeInteger(s.memberCount))
+    ||d.spaces.some(s=>s.openContact!==undefined&&typeof s.openContact!=='boolean')
     ||d.assignments.some(a=>typeof a.engineServerId!=='string'||typeof a.threadId!=='string'||typeof a.spaceId!=='string'))throw new Error('Invalid server directory');
-  return d;
+  // A Server from before the open-contact switch never opened contact: it keeps per-target grants.
+  return {...d,spaces:d.spaces.map(s=>({...s,openContact:s.openContact===true}))};
 }
 export function useServerSpaces(hostId:string) {
   const queryClient=useQueryClient();
@@ -61,8 +63,10 @@ export function useServerSpaces(hostId:string) {
     loading:query.isPending,error:query.error,unavailable:(query.error as {code?:number}|null)?.code===-32601,
     async members(spaceId:string):Promise<ServerSpaceMember[]> {
       const result=await request({action:'members',spaceId}) as {members:ServerSpaceMember[]};
-      if(!Array.isArray(result.members)||result.members.some(m=>typeof m.actorId!=='string'||typeof m.displayName!=='string'||!['owner','member'].includes(m.role)))throw new Error('Invalid members');
-      return result.members;
+      if(!Array.isArray(result.members)||result.members.some(m=>typeof m.actorId!=='string'||typeof m.displayName!=='string'||!['owner','member'].includes(m.role)
+        ||m.kind!==undefined&&!['human','session'].includes(m.kind)))throw new Error('Invalid members');
+      // A Server from before Bot members listed humans only.
+      return result.members.map(m=>({...m,kind:m.kind??'human'}));
     }};
 }
 export type ServerSpacesController=ReturnType<typeof useServerSpaces>;

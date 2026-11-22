@@ -209,6 +209,8 @@ export class CodexExecutionAdapter {
             "request_intervention",
             "thread_command",
             "environment_run",
+            "crew_dispatch",
+            "crew_message",
           ].includes(name)
         )
           throw new Error(
@@ -253,6 +255,8 @@ export class CodexExecutionAdapter {
             "ask_user",
             "request_intervention",
             "environment_run",
+            "crew_dispatch",
+            "crew_message",
           ].includes(name)
             ? output
             : { success: true, read: true, outputHash: digest(output) },

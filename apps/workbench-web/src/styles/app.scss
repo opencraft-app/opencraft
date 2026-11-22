@@ -1507,8 +1507,11 @@ svg[data-sidebar-toggle-icon-state] {
 }
 
 .sidebar-activity-group {
-  gap: 2px;
+  --gap-sidebar-group-items: 2px;
+  gap: var(--gap-sidebar-group-items);
 }
+
+.sidebar-activity-group__occlusion { display: none; }
 
 // A folded heading has no list to separate from its next sibling.
 .sidebar-activity-group[data-collapsed="false"] + .sidebar-activity-group {

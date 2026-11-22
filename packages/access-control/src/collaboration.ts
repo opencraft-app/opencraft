@@ -1,3 +1,5 @@
+import type { CrewContact } from './crew-contact.js';
+import type { CrewWork, CrewPass } from './crew-work.js';
 import type { InputCompletion } from "@opencraft/appserver-protocol";
 import { ReceiptReconciliation } from './receipt-reconciliation.js';
 import { ConversationFailureDiagnostics } from './conversation-failure-diagnostics.mjs';
@@ -102,6 +104,7 @@ export class Collaboration {
   /** Storage-worker-only authority check. */
   assistantThreadGuard(c:ActorContext,id:string,revision?:number,epoch?:string){return new AssistantThreadStore(this,this.database).guard(c,id,revision,epoch);}
   private assistantHost?: { memory?(botId:string,epoch:string,params:Record<string,unknown>,binding:import('@opencraft/appserver-protocol').PersonalAssistantBinding):Promise<unknown>; state(botId: string): PersonalAssistantRuntimeState; wake(botId?: string): void;
+    desk?(botId:string,epoch:string,params:{actorId?:string}):Promise<unknown>;
     environments?(context:ActorContext):Promise<import('@opencraft/appserver-protocol').BotEnvironmentCatalog>;
     validateEnvironment?(environment:import('@opencraft/appserver-protocol').BotEnvironment,context:ActorContext):Promise<void>;
     models?(): Promise<import('@opencraft/appserver-protocol').PersonalAssistantModelCatalog>;
@@ -125,6 +128,67 @@ export class Collaboration {
   // Timer pumps re-read an unchanged receipt with backoff: "queued" 500 ms -> 5 s, "unknown"
   // (awaits human review) 500 ms -> 30 s. A paused queue head or an unconfirmed handoff otherwise
   // costs one engine logical client every 500 ms for as long as it stays.
+  // Crew rules read and write SQLite, so they live only where the communication storage owner runs
+  // (its Worker attaches them). An instance on a network thread has none and the rules stand aside.
+  #crew?: { contact: CrewContact; work: CrewWork };
+  // The Server space ledger owns team membership; Inbox team commands are forwarded to it, never written here.
+  #spaces?: { command(context: ActorContext, command: Record<string, unknown>): Promise<unknown> };
+  attachSpaces(spaces: NonNullable<Collaboration['spaces']>) {
+    if (this.#spaces) throw Error('Server spaces already attached');
+    this.#spaces = spaces;
+    return () => { if (this.#spaces === spaces) this.#spaces = undefined; };
+  }
+  get spaces() { return this.#spaces; }
+  /**
+   * Team management from the Inbox. Only Agents are added or removed here (people join by
+   * invitation); the ledger checks that the caller owns the space and, for an Agent, manages it.
+   */
+  async crewTeam(context: ActorContext, params: Record<string, unknown> = {}) {
+    fields(params, ['action', 'spaceId', 'actorId', 'open', 'name', 'code']);
+    const spaces = this.#spaces;
+    if (!spaces) throw new CollaborationError(503, 'crew_teams_unavailable');
+    // Starting a team and joining one by invitation need no team yet; the ledger checks the caller.
+    if (params.action === 'create') {
+      await spaces.command(context, { action: 'create', name: text(params.name, 80) });
+      return this.communicate(context, 'opencraft/crew/teams', {});
+    }
+    if (params.action === 'join') {
+      await spaces.command(context, { action: 'join', code: text(params.code, 128) });
+      return this.communicate(context, 'opencraft/crew/teams', {});
+    }
+    const spaceId = text(params.spaceId);
+    const teams = (await this.communicate(context, 'opencraft/crew/teams', {})).teams as import('./crew-contact.js').CrewTeam[];
+    const team = teams.find(t => t.id === spaceId);
+    if (!team || team.role !== 'owner') throw new CollaborationError(403, 'crew_work_denied');
+    switch (params.action) {
+      case 'candidates': return { bots: ((await spaces.command(context, { action: 'bots', spaceId })) as { bots: unknown[] }).bots };
+      case 'invite': {
+        const invitation = (await spaces.command(context, { action: 'invite', spaceId })) as { code: string; expiresAt: number };
+        return { code: invitation.code, expiresAt: invitation.expiresAt };
+      }
+      case 'addAgent': await spaces.command(context, { action: 'addBot', spaceId, actorId: text(params.actorId) }); break;
+      case 'removeAgent': {
+        const actorId = text(params.actorId);
+        if (team.members.find(m => m.actorId === actorId)?.kind !== 'session') throw new CollaborationError(400, 'invalid_input');
+        await spaces.command(context, { action: 'remove', spaceId, actorId }); break;
+      }
+      case 'contact':
+        if (typeof params.open !== 'boolean') throw new CollaborationError(400, 'invalid_input');
+        await spaces.command(context, { action: 'contact', spaceId, open: params.open }); break;
+      default: throw new CollaborationError(400, 'invalid_input');
+    }
+    return this.communicate(context, 'opencraft/crew/teams', {});
+  }
+  /** Whether a message to a Bot reaches it through crew intake rather than its owner's private line. */
+  crewOwnsMessage(messageId: string): boolean { return this.#crew?.work.ownsMessage(messageId) ?? false; }
+  attachCrew(contact: CrewContact, work: CrewWork) {
+    if (this.#crew) throw Error('Crew rules already attached');
+    this.#crew = { contact, work };
+  }
+  /** Crew contact rules over spaces and phonebook grants; it decides, it does not own either. */
+  get crew(): CrewContact { return this.#crew?.contact ?? (() => { throw new CollaborationError(503, 'crew_unavailable'); })(); }
+  /** Crew work and its dispatch chain; Collaboration is the ledger's only writer. */
+  get crewWork(): CrewWork { return this.#crew?.work ?? (() => { throw new CollaborationError(503, 'crew_unavailable'); })(); }
   readonly #receiptPacing = new Map<string, { key: string; unchanged: number; dueAt: number }>();
   #operations: Promise<unknown> = Promise.resolve();
   #timer: ReturnType<typeof setInterval> | null = null;
@@ -137,7 +201,7 @@ export class Collaboration {
     this.database = managed.database; this.outcome = managed.outcome;
     this.orchestration = new ThreadOrchestrationLedger(this.database, now);
     this.channels = new NativeChannels(this.database, actors, actorId => !this.#closed && admittedActor(actorId),
-      (c,target)=>new PersonalAssistants(this,this.database).canMessage(c,target));
+      (c,target)=>this.#allows(c,target,'message.send'),()=>this.#crew?.contact.hasSpaces ?? false);
     this.channels.groupDisplayTitle = id => communicationExtension()?.groupDisplayTitle?.(this,this.database,id) ?? null;
     this.channels.avatarForSender = (subject,scope) => communicationExtension()?.avatar?.(this,this.database,subject,scope) ?? null;
     this.channels.humanForExternalSender = (subject,scope) => communicationExtension()?.senderHuman?.(this,this.database,subject,scope) ?? null;
@@ -186,8 +250,16 @@ export class Collaboration {
   }
   #request(id: string): Row | null { return this.database.prepare('SELECT * FROM actor_execution_requests WHERE id=?').get(id) ?? null; }
   #message(id: string): Row | null { return this.database.prepare('SELECT * FROM actor_messages WHERE id=?').get(id) ?? null; }
+  /** Crew rules decide first; outside them the exact grant (or a personal assistant pair) applies. */
+  #allows(context: ActorContext, target: string, action: string): boolean {
+    // A claimed Bot and its owner keep their private line whatever the crew rules say.
+    const privateLine = () => action === 'message.send' && new PersonalAssistants(this,this.database).canMessage(context,target);
+    const crew = this.#crew?.contact.decide(context, target, action) ?? null;
+    if (crew !== null) return crew || privateLine();
+    return this.actors.can(context, target, action) || privateLine();
+  }
   #require(context: ActorContext, target: string, action: string) {
-    if (this.#closed || !this.actors.isCurrent(context) || !this.actors.get(target)?.enabled || !(this.actors.can(context, target, action) || (action === 'message.send' && new PersonalAssistants(this,this.database).canMessage(context,target)))) throw new CollaborationError(403, 'actor_action_denied');
+    if (this.#closed || !this.actors.isCurrent(context) || !this.actors.get(target)?.enabled || !this.#allows(context, target, action)) throw new CollaborationError(403, 'actor_action_denied');
   }
   #createRequest(context: ActorContext, target: string, messageIds: string[], execution: unknown): string {
     const intent = record(execution); fields(intent, ['mode', 'expectedTurnId']);
@@ -669,11 +741,14 @@ export class Collaboration {
     if (action === 'cancel') { fields(args,['requestId']); await this.cancel(context,text(args.requestId),()=>{if(!this.actors.isCurrent(context)) throw new CollaborationError(401,'actor_authentication_required');}); return {cancelled:true}; }
     throw new CollaborationError(400,'unknown_collaboration_action');
   }
-  send(context: ActorContext, body: Record<string, unknown>, attachment?: ChannelAttachment) {
+  send(context: ActorContext, body: Record<string, unknown>, attachment?: ChannelAttachment, pass?: CrewPass) {
     fields(body, ['targetActorId', 'content', 'replyTo', 'idempotencyKey', 'execution']);
     if(attachment&&!validChannelAttachment(attachment))throw Error('invalid_input');
     const target = text(body.targetActorId), content = text(body.content, 16_384), reply = body.replyTo === undefined ? null : text(body.replyTo);
-    this.#require(context, target, 'message.send');
+    // A crew pass reaches the people an open piece of work answers to; everything else needs the usual permission.
+    if (pass?.allows(target, 'message.send')) {
+      if (this.#closed || !this.actors.isCurrent(context) || !this.actors.get(target)?.enabled) throw new CollaborationError(403, 'actor_action_denied');
+    } else this.#require(context, target, 'message.send');
     const intent = body.execution === undefined ? null : executionIntent(body.execution);
     if (intent) this.#require(context, target, 'execution.' + intent.mode);
     const channelId = actorChannelId(context.actorId, target);
@@ -687,10 +762,32 @@ export class Collaboration {
         .run(id,seq,channelId,context.actorId,target,content,reply,now,this.actors.get(context.actorId)!.displayName);
       if(attachment)this.database.prepare('INSERT INTO actor_channel_attachments(message_id,name,mime,bytes) VALUES(?,?,?,?)').run(id,attachment.name,attachment.type,attachment.bytes);
       this.database.prepare("INSERT INTO actor_deliveries VALUES(?,?,'received',?,NULL)").run(id, target, now);
+      // An answer to a Bot's open question goes back on that work; anything else to a space Bot is a dispatch.
+      if (!pass && this.#crew && !this.#crew.work.answerOpenQuestion(context, target, id, reply)) this.#crew.work.openForDirect(context, target, id);
       return { messageId: id, requestId: intent ? this.#createRequest(context, target, [id], intent) : null };
     });
     if (!result.replayed) this.channels.changed({ channelId, directory: created });
     return result;
+  }
+  /** Hands work to a space Bot: one message, and the work it opens, in one transaction. */
+  crewDispatch(context: ActorContext, body: Record<string, unknown>) {
+    fields(body, ['targetActorId', 'content', 'idempotencyKey', 'parentWorkId']);
+    const target = text(body.targetActorId);
+    const sent = this.send(context, { targetActorId: target, content: body.content, idempotencyKey: body.idempotencyKey });
+    const workId = this.crewWork.forMessage(String(sent.messageId)) ?? this.crewWork.open(context, target, String(sent.messageId), body.parentWorkId);
+    return { messageId: sent.messageId, workId, work: this.crewWork.view(context, workId) };
+  }
+  /**
+   * A reply inside open work: its assignee reaches anyone the work answers to, whatever its
+   * phonebook, and its requester answers the assignee. Replies open no work and spend no budget.
+   */
+  crewMessage(context: ActorContext, body: Record<string, unknown>) {
+    fields(body, ['workId', 'targetActorId', 'content', 'idempotencyKey', 'asks']);
+    if (body.asks !== undefined && typeof body.asks !== 'boolean') throw new CollaborationError(400, 'invalid_input');
+    const target = text(body.targetActorId), route = this.crewWork.route(context, body.workId, target);
+    const sent = this.send(context, { targetActorId: target, content: body.content, idempotencyKey: body.idempotencyKey }, undefined, route.pass);
+    if (route.recipientWorkId) this.crewWork.file(String(sent.messageId), target, route.recipientWorkId, String(body.workId), body.asks === true);
+    return { messageId: sent.messageId };
   }
   openChannelDirect(context: ActorContext, targetActorId: unknown) {
     const target = text(targetActorId);
@@ -859,6 +956,48 @@ export class Collaboration {
   }
   /** Public personal-assistant entry shared by native and network transports.
    * Public callers cannot request internal authority projections or select a Human. */
+  /**
+   * A Bot's desk for a member of its space. The storage owner authorizes and describes the Bot;
+   * only a running Bot can show its session, so an idle one reports itself unavailable.
+   */
+  async crewDesk(context: ActorContext, params: Record<string, unknown> = {}): Promise<import('@opencraft/appserver-protocol').CrewDesk> {
+    fields(params, ['botId', 'actorId']);
+    const authority = await this.communicate(context, 'crew/desk-authority', { actorId: params.botId });
+    const host = this.assistantHost;
+    if (!host?.desk) throw new CollaborationError(503, 'crew_desk_unavailable');
+    const raw = await host.desk(authority.botId, authority.epoch, params.actorId === undefined ? {} : { actorId: text(params.actorId) })
+      .catch(() => { throw new CollaborationError(503, 'crew_desk_unavailable'); }) as Record<string, unknown>;
+    const current = await this.communicate(context, 'crew/desk-authority', { actorId: params.botId });
+    if (this.assistantHost !== host || current.epoch !== authority.epoch) throw new CollaborationError(409, 'assistant_changed');
+    // The runtime is a separate process: check its answer before it reaches a client.
+    const people = new Map<string, { actorId: string; displayName: string; kind: 'human' | 'session' }>(
+      (authority.members as { actorId: string; displayName: string; kind: 'human' | 'session' }[]).map(m => [m.actorId, m]));
+    const person = (actorId: unknown) => typeof actorId === 'string' ? people.get(actorId) : undefined;
+    const str = (value: unknown, max: number) => typeof value === 'string' && value.length <= max;
+    const time = (value: unknown) => Number.isSafeInteger(value) && Number(value) >= 0;
+    const conversations = Array.isArray(raw?.conversations) ? raw.conversations : [];
+    const selected = raw?.selected as Record<string, unknown> | null | undefined;
+    const messages = Array.isArray(selected?.messages) ? selected!.messages as Record<string, unknown>[] : [];
+    const works = Array.isArray(selected?.works) ? selected!.works as Record<string, unknown>[] : [];
+    if (conversations.length > 200 || messages.length > 100 || works.length > 20
+      || messages.some(m => !str(m.id, 256) || !['user', 'assistant'].includes(String(m.role)) || !str(m.text, 16384) || !time(m.at)
+        || (m.authorId !== undefined && !str(m.authorId, 256)))
+      || works.some(w => !str(w.id, 256) || !str(w.title, 512) || !str(w.status, 64) || !time(w.updatedAt)))
+      throw new CollaborationError(502, 'crew_desk_invalid');
+    const chosen = selected ? person(selected.actorId) : undefined;
+    return {
+      environment: authority.environment, model: authority.model, contacts: authority.contacts,
+      // A dispatcher who has since left the space drops off the desk.
+      conversations: conversations.flatMap((c: Record<string, unknown>) => { const actor = person(c.actorId); return actor && time(c.updatedAt) ? [{ actor, updatedAt: Number(c.updatedAt) }] : []; }),
+      selected: chosen ? {
+        actor: chosen,
+        // An author who is not a member of the space any more is shown as the dispatcher's conversation.
+        messages: messages.map(m => ({ id: String(m.id), role: m.role as 'user' | 'assistant', text: String(m.text), at: Number(m.at),
+          ...(m.role === 'user' ? { author: person(m.authorId) ?? chosen } : {}) })),
+        works: works.map(w => ({ id: String(w.id), title: String(w.title), status: String(w.status), updatedAt: Number(w.updatedAt) })),
+      } : null,
+    };
+  }
   async personalAssistant(context: ActorContext, method: string, params: Record<string,unknown> = {}): Promise<any> {
     if (!(PERSONAL_ASSISTANT_METHODS as readonly string[]).includes(method)) throw new CollaborationError(404,'method_not_found');
     if(method==='opencraft/personal-assistant/environments'){

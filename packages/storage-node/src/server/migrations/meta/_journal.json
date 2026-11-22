@@ -141,6 +141,13 @@
       "when": 1795240148486,
       "tag": "0019_channel_connection_ownership",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1795325848579,
+      "tag": "0020_crew",
+      "breakpoints": true
     }
   ]
 }
