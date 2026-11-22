@@ -1,6 +1,9 @@
 const stableEventNotice = require("../../packages/react-runtime/NOTICE.json");
 
-const bundleIdentifier = "app.opencraft";
+// The published app is app.opencraft in App Store Connect and on Android.
+// app.json keeps dev.opencraft.workbench for development-key and Expo Go builds,
+// so internal and published installs stay separate apps with separate data.
+const publishedApplicationId = "app.opencraft";
 const profileName = "OpenCraft TestFlight CI";
 
 module.exports = ({ config }) => {
@@ -13,6 +16,18 @@ module.exports = ({ config }) => {
       openSourceNotices: [...(config.extra?.openSourceNotices ?? []), stableEventNotice],
     },
   };
+  const androidVersionCode = process.env.OPENCRAFT_ANDROID_VERSION_CODE;
+  if (androidVersionCode !== undefined) {
+    // Published APKs take a tag-derived code (scripts/release/android-version-code.mjs).
+    if (!/^[1-9][0-9]{0,9}$/.test(androidVersionCode) || Number(androidVersionCode) > 2_100_000_000) {
+      throw new Error("OPENCRAFT_ANDROID_VERSION_CODE must be a positive integer no greater than 2100000000");
+    }
+    config = { ...config, android: { ...config.android, versionCode: Number(androidVersionCode) } };
+  }
+  // Set only by the production-key APK build (scripts/build-android-release-apk.sh).
+  if (process.env.OPENCRAFT_ANDROID_RELEASE === "1") {
+    config = { ...config, android: { ...config.android, package: publishedApplicationId } };
+  }
   if (process.env.OPENCRAFT_IOS_EXPORT_METHOD !== "app-store-connect") return config;
 
   const buildNumber = process.env.OPENCRAFT_IOS_BUILD_NUMBER;
@@ -23,7 +38,7 @@ module.exports = ({ config }) => {
   if (!/^[A-Z0-9]{10}$/.test(teamId ?? "")) throw new Error("TestFlight requires a valid APPLE_TEAM_ID");
 
   const { withXcodeProject } = require("expo/config-plugins");
-  return withXcodeProject({ ...config, ios: { ...config.ios, bundleIdentifier, buildNumber } }, (signed) => {
+  return withXcodeProject({ ...config, ios: { ...config.ios, bundleIdentifier: publishedApplicationId, buildNumber } }, (signed) => {
     const project = signed.modResults;
     const { uuid, firstTarget: target } = project.getFirstTarget();
     const attributes = project.getFirstProject().firstProject.attributes;

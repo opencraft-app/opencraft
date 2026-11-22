@@ -51,7 +51,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-      - run: node --test tests/tooling/ci-plan.test.mjs tests/tooling/ci-workflows.test.mjs tests/tooling/source-text-tests.test.mjs tests/tooling/electron-artifact-run.test.mjs tests/tooling/lockfile-platforms.test.mjs
+      - run: node --test tests/tooling/ci-plan.test.mjs tests/tooling/ci-workflows.test.mjs tests/tooling/source-text-tests.test.mjs tests/tooling/electron-artifact-run.test.mjs tests/tooling/lockfile-platforms.test.mjs tests/tooling/android-release.test.mjs
       - id: select
         env:
           CI_FULL_MATRIX: ${{ inputs.full-matrix }}

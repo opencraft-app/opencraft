@@ -12,11 +12,12 @@ metadata="$(mktemp)"
 remote="$(mktemp -d)"
 trap 'rm -f "$notes" "$metadata"; rm -rf "$remote"' EXIT
 cat >"$notes" <<EOF
-OpenCraft Desktop $tag from commit $commit ([build and verification]($RUN_URL)).
+OpenCraft $tag from commit $commit ([build and verification]($RUN_URL)).
 
 - macOS Universal DMG and ZIP support Apple Silicon and Intel. Both contain the Developer ID-signed, notarized app.
 - Linux x64 AppImage uses the repository-owned Electron build.
 - Windows x64 installer and ZIP are unsigned.
+- Android arm64 APK is signed with the OpenCraft production key.
 
 The desktop release manifest identifies the source and every published asset.
 EOF

@@ -31,9 +31,11 @@ export class ExecutionEnvironmentRuntime {
   private readonly disposers = new Set<() => void>();
   private readonly consumed = new Map<string, number>();
   private readonly snapshots = new Set<WeakRef<ExecutionEnvironmentSnapshot>>();
-  constructor(readonly directory: string, private readonly vault: EmployeeGitVaultStore, private readonly ownsVault = false, gitMode: 'execution' | 'issuer' = 'execution') {
+  constructor(readonly directory: string, private readonly vault: EmployeeGitVaultStore, private readonly ownsVault = false, gitMode: 'execution' | 'issuer' | 'disabled' = 'execution') {
     this.environment = new AccountEnvironment(vault);
-    this.git = PersonalGitEnvironment.fromEnvironment(directory, { authority: vault.personalGitAuthority(), seal: scope => vault.sealPersonalGitGrant(scope) }, gitMode);
+    // Compiled ENV delivery may borrow the sole vault without constructing a
+    // second Git bridge. Existing execution/issuer callers remain unchanged.
+    this.git = gitMode === 'disabled' ? undefined : PersonalGitEnvironment.fromEnvironment(directory, { authority: vault.personalGitAuthority(), seal: scope => vault.sealPersonalGitGrant(scope) }, gitMode);
   }
   static open(directory: string, options?: { create?: boolean }): ExecutionEnvironmentRuntime | undefined {
     // Independent execution owners can boot before the identity gateway. They

@@ -109,9 +109,12 @@ try {
     const hasEditor = await editor.count() > 0;
     assert.equal(hasEditor, configured, "only an explicit Host should offer a Composer");
     if (hasEditor) await editor.fill("Keep this mobile draft · 保留输入");
-    const connect = shell.getByRole("button", { name: "Connect a server", exact: true });
+    const welcome = shell.getByRole("region", { name: "Welcome to OpenCraft" });
+    const connect = welcome.getByRole("button", { name: "Connect a server", exact: true });
+    const explore = welcome.getByRole("button", { name: "Explore without a server", exact: true });
     if (!hasEditor) {
       await connect.waitFor();
+      await explore.waitFor();
       assert.equal((await page.locator("body").innerText()).includes("HyperNode"), false);
     }
     await page.screenshot({ path: path.join(output, `${label}-draft.png`) });
@@ -132,7 +135,13 @@ try {
       await page.getByRole("button", { name: section, exact: true }).tap();
       await page.getByRole("heading", { name: section, exact: true }).waitFor();
     }
-    await openSettings("Appearance");
+    if (hasEditor) {
+      await openSettings("Appearance");
+    } else {
+      await explore.tap();
+      await page.getByRole("heading", { name: "Appearance", exact: true }).waitFor();
+      assert.deepEqual(websocketRequests, [], "exploring preferences does not open a server connection");
+    }
     await page.screenshot({ path: path.join(output, `${label}-settings.png`) });
     console.log("Source control bounds", await page.getByRole("button", { name: "Workspace source", exact: true }).boundingBox(), page.viewportSize());
     await page.getByRole("button", { name: "Workspace source", exact: true }).click();
@@ -145,11 +154,24 @@ try {
       assert.equal(await editor.innerText(), "Keep this mobile draft · 保留输入");
     } else {
       await connect.waitFor();
+      await explore.tap();
+      const language = page.locator("#workbench-language");
+      await language.focus();
+      await language.selectOption("zh-CN");
+      await page.getByRole("heading", { name: "外观", exact: true }).waitFor();
+      assert.equal(await language.evaluate(select => document.activeElement === select), true);
+      await page.evaluate(identity => window.dispatchEvent(new CustomEvent("opencraft-mobile", { detail: { ...identity, type: "back" } })), identity);
+      await page.getByRole("button", { name: "先体验，无需服务器", exact: true }).tap();
+      await language.selectOption("en-US");
+      await page.getByRole("heading", { name: "Appearance", exact: true }).waitFor();
+      await page.evaluate(identity => window.dispatchEvent(new CustomEvent("opencraft-mobile", { detail: { ...identity, type: "back" } })), identity);
+      await connect.waitFor();
       await openSettings("Chat");
       await page.getByRole("switch", { name: "Follow up immediately while responding" }).waitFor();
       await page.evaluate(identity => window.dispatchEvent(new CustomEvent("opencraft-mobile", { detail: { ...identity, type: "back" } })), identity);
       await connect.waitFor();
-      await connect.click();
+      await connect.tap();
+      await page.getByText("Use the full secure WebSocket address provided by your server administrator.", { exact: true }).waitFor();
       await page.getByRole("textbox", { name: "Secure WebSocket address" }).fill("https://example.org");
       await page.locator("form").getByRole("button", { name: "Connect a server", exact: true }).click();
       await page.getByText("The connection could not be saved. Check the address and try again.", { exact: true }).waitFor();
