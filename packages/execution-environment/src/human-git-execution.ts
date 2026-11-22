@@ -1,3 +1,5 @@
+import { isAbsolute, join } from "node:path";
+import { personalGitSocketPaths } from "./personal-git-sockets.js";
 import type { GitGrantScope } from "@opencraft/execution-environment/personal-git-protocol";
 import { PersonalGitEnvironment, type PersonalGitGrant } from "@opencraft/execution-environment/personal-git";
 import { ExecutionEnvironmentSnapshot } from "@opencraft/execution-environment/execution-snapshot";
@@ -6,6 +8,25 @@ import type {
   GitExecutionHandoff,
   GitExecutionReservation,
 } from "@opencraft/execution-environment/git-execution";
+/** Compiled deployment assembly: a configured shared IPC mount must remain
+ * visible at the same absolute path in the command execution namespace. Owner
+ * categories avoid discovering a broker with a different native observer. */
+export function humanGitRuntimeDirectory(
+  fallback: string,
+  owner: "gateway" | "codex" | "pi" | "dsh",
+  configured = process.env.OPENCRAFT_GIT_RUNTIME_DIRECTORY,
+): string {
+  if (configured === undefined) return fallback;
+  if (!["gateway", "codex", "pi", "dsh"].includes(owner) || !isAbsolute(configured) || configured.includes("\0"))
+    throw Error("git_ipc_directory_unavailable");
+  const directory = join(configured, owner);
+  // A private /tmp fallback cannot cross container mount namespaces. Reject an
+  // overlong explicitly shared directory instead of silently selecting it.
+  if (personalGitSocketPaths(directory, "owner-000000000000", process.getuid?.() ?? 0).root)
+    throw Error("git_shared_ipc_directory_too_long");
+  return directory;
+}
+
 export interface HumanGitExecutionPort {
   prepare(input: GitExecutionLocator): Promise<ExecutionEnvironmentSnapshot>;
   reserve(input: GitExecutionLocator): Promise<ExecutionEnvironmentSnapshot>;

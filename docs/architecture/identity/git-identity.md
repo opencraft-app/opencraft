@@ -214,8 +214,9 @@ covers **in-process Headless Pi** and independently owned Pi configured with
 `executionContext: "assets"`, using the packaged Git runtime. The trusted adapter
 supplies its actual Node executable for npm-style packages without `bin/node`.
 DSH uses the same port at its native bash/PTY boundaries as described below.
-Native Codex handoff still needs actual-boundary integration and is not implied
-by a saved connection. No deployment or sandbox isolation claim is made.
+Native Codex consumes a pre-submission reservation through its existing native
+shell environment policy, as described below. A saved connection alone does not
+prove deployment support. No deployment or sandbox isolation claim is made.
 
 `tests/identity/assets-execution-git.test.ts` uses a real Human/account and HTTP
 save, sole vault Worker, managed Git launcher, actual SSH signature verification,
@@ -264,9 +265,9 @@ product ENV/Git owner instead. This selects assembly, not an authorization fallb
 or an automatic credential-partition migration.
 There is no runtime sniffing, fallback between modes or shared second writer in
 Assets-mode Pi or DSH. This is a trusted same-machine, same-UID attachment, not a remote
-network credential protocol or hostile-process isolation. Native Codex
-still needs its own actual-boundary integration before the complete deployment
-can be described as using the single native Assets authority throughout.
+network credential protocol or hostile-process isolation. Native Codex stock
+combined-Core execution is covered below; routed/four-role acceptance is separate
+and must not be inferred from same-namespace verification.
 
 DSH's existing generation resolver projects the exact live Agent's open native
 Turn to its public `dsh-turn-<thread>-<turn>` alias. It never takes a later steer,
@@ -320,7 +321,31 @@ Git-bearing ephemeral Threads are explicitly refused until their native owner
 can install this policy without a persistent-thread resume; unowned internal
 Threads do not borrow another participant's Git configuration.
 
-This source wiring and focused reservation tests are not complete native Codex
-acceptance. Stock-native signed Git execution, independent Core/Gateway lifetime,
-and actual four-role IPC namespace visibility remain to be verified before
-claiming all Codex deployments use Assets Git end to end.
+Installed stock Codex can be verified with `OPENCRAFT_TEST_NATIVE_CLI` pointing to
+an installation matching `runtime/codex/package.json`, then running
+`npm run test:git-identity`. The opt-in tests use synthetic model/account responses
+and the real native `exec_command`, create and verify SSH-signed commits, retain
+the original Human after Gateway replacement without restarting Core/Turn, and
+deny retained credentials after native completion. No real provider account or
+GitHub token is used. Verification deliberately selects unrestricted fixture
+permissions; it does not assert sandbox containment.
+
+Gateway replacement reattaches a read-only broker only after reconciling the
+existing original lease against live native history. It never replays an input,
+resumes or reconfigures an active Turn, or binds a newer sender. Credentials deny
+while the broker/authorization owner is unavailable; this is not a guarantee of
+Git availability throughout Gateway downtime.
+
+When `OPENCRAFT_GIT_RUNTIME_DIRECTORY` configures the shared mount, Assets brokers
+use stable per-observer `gateway`, `codex`, `pi` and `dsh` subdirectories. This
+makes retained command paths visible at the same absolute path in Hands without
+mounting the vault there, and avoids selecting another native observer's broker.
+An explicitly shared directory whose full signer socket path exceeds the budget
+is refused, not silently moved into container-private `/tmp`. Local installations
+without that setting retain their existing directory/fallback behavior. The
+existing `compose.personal-git.yaml` overlay supplies the shared mount; it does
+not transfer the vault or keys to Hands.
+
+Actual four-role namespaces, routed native generation replacement, and ephemeral
+personal Git remain separate acceptance work. A combined-Core stock test is not
+proof that every Codex deployment uses Assets Git end to end.

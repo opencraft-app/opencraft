@@ -1,3 +1,4 @@
+import {humanGitRuntimeDirectory} from '../../apps/headless-server/src/human-git-execution.ts';
 import {createRemoteHumanGitExecution} from '../../apps/headless-server/src/remote-human-git-execution.ts';
 import {observeNativeExecutionProcess} from '../../apps/opencraft-daemon/src/native-execution-origin.ts';
 import { createHostFileSystem } from '../../apps/headless-server/src/host-filesystem.ts';
@@ -73,7 +74,7 @@ export async function startIndependentEngineHost(options) {
     const scope = `server:${machine.machineId}:pi`;
     const capabilities = new RemoteSessionCapabilities(dataDirectory, scope);
     if(executionContext==='assets')executionGit=createRemoteHumanGitExecution({
-      directory:dataDirectory,runtimeDirectory:join(dataDirectory,'git-runtime'),
+      directory:dataDirectory,runtimeDirectory:humanGitRuntimeDirectory(join(dataDirectory,'git-runtime'),'pi'),
       workerFile:options.gitWorkerFile??fileURLToPath(new URL('../runtime/personal-git-worker.mjs',import.meta.url)),
       capabilities,inspect:async grant=>{
         if(!pi?.ownsThread(grant.scope.threadId))return false;

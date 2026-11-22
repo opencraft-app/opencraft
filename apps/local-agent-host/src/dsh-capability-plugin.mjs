@@ -1,3 +1,4 @@
+import {humanGitRuntimeDirectory} from '@opencraft/execution-environment/human-git-execution';
 import { createDshPolicyBoundary } from '@opencraft/model-usage-policy/native';
 import { ExecutionEnvironmentRuntime } from "@opencraft/execution-environment";
 import {createRemoteHumanGitExecution} from '@opencraft/execution-environment/remote-human-git-execution';
@@ -72,7 +73,7 @@ export async function apply(ctx, config) {
   if(!['assets','legacy'].includes(mode))throw Error('Invalid execution context');
   if(mode==='assets'&&(!config.gitExecution||![config.gitExecution.directory,config.gitExecution.workerFile].every(p=>typeof p==='string'&&isAbsolute(p))||typeof config.gitExecution.machineId!=='string'||!config.gitExecution.machineId))throw Error('Native Git attachment unavailable');
   const git=mode==='assets'?createRemoteHumanGitExecution({directory:config.gitExecution.directory,
-    runtimeDirectory:join(config.gitExecution.directory,'git-runtime'),workerFile:config.gitExecution.workerFile,
+    runtimeDirectory:humanGitRuntimeDirectory(join(config.gitExecution.directory,'git-runtime'),'dsh'),workerFile:config.gitExecution.workerFile,
     capabilities:new RemoteSessionCapabilities(config.gitExecution.directory,`server:${config.gitExecution.machineId}:dsh`),
     inspect:async grant=>(await observeNativeExecutionProcess(process.pid)).incarnation===grant.native.incarnation,
   }):undefined;

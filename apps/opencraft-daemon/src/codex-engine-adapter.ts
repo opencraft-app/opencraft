@@ -249,7 +249,7 @@ interface SharedCodexRoutingOptions {
   readonly createExecutionGit?: (native: {
     inspect(value: GitExecutionHandoff): Promise<boolean>;
     inspectReservation(value: GitExecutionReservation): Promise<boolean>;
-  }) => Pick<HumanGitExecutionPort, 'reserve' | 'close'>;
+  }) => Pick<HumanGitExecutionPort, 'reserve' | 'prepare' | 'close'>;
   /** Trusted composition delegates input control, never executor credentials. */
   readonly sharedTurnInput?: boolean;
   /** Trusted Host composition. Never accepted from renderer requests. */
@@ -515,6 +515,14 @@ export class CodexEngineAdapter implements DuplexTransport {
           const generation = this.generationRoutes.get(threadId), incarnation = generation ? this.generationIncarnations.get(generation) : undefined;
           store!.reconcile(threadId, matched,
             generation && incarnation !== undefined ? JSON.stringify([generation, incarnation]) : this.nativeCore?.executionIncarnation);
+          // Reattach a read-only broker to an existing native execution after
+          // Gateway replacement. Do not resume/reconfigure/restart the Turn or
+          // transfer credentials to a newer sender. Retained sealed evidence can
+          // discover this replica through its canonical authority directory.
+          for (const turn of matched) if (turn.status === 'inProgress' && this.executionGit) {
+            try { await this.executionGit.prepare({hostId: 'local-codex', threadId, turnId: turn.id}); }
+            catch { this.diagnostic({event: 'git-execution-reattachment-pending'}); }
+          }
           if (result.nextCursor == null || (!turnIds.size && !inputIds.size)) break;
           if (typeof result.nextCursor !== "string" || !result.nextCursor || seen.has(result.nextCursor)) throw new Error("Invalid execution reconciliation cursor");
           cursor = result.nextCursor; seen.add(cursor);
@@ -560,7 +568,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly tasks: TasksService | null;
   private readonly coreBridge: CodexCoreBridge | null;
   private readonly nativeCore: CodexNativeCoreTransport | null;
-  private executionGit: Pick<HumanGitExecutionPort, 'reserve' | 'close'> | undefined;
+  private executionGit: Pick<HumanGitExecutionPort, 'reserve' | 'prepare' | 'close'> | undefined;
   /** Fresh native identity, never last sender, a cached environment or a browser PID. */
   private async gitNativeIncarnation(threadId: string): Promise<string | undefined> {
     if (this.closeOperation || !this.physicalAvailable || !this.physicalInitialized || this.executionBlocked(threadId)) return undefined;

@@ -15,7 +15,7 @@ import { HumanAccountManagement } from "@opencraft/access-control/account-manage
 import { LocalAccountServerPlugin } from "../../plugins/local-account/src/server.js";
 import { openHumanAssets } from "../../plugins/local-account/src/assets-server.js";
 import { openAssetConfigurations } from "../../plugins/assets/src/server/worker.js";
-import { createHumanGitExecution } from "../../apps/headless-server/src/human-git-execution.js";
+import { humanGitRuntimeDirectory, createHumanGitExecution } from "../../apps/headless-server/src/human-git-execution.js";
 import { ThreadIdentityDatabase } from "@opencraft/opencraft-daemon/thread-identity-database";
 import { ExecutionLeaseStore, snapshotExecutionSubmission } from "@opencraft/opencraft-daemon/execution-lease-store";
 import { observeNativeExecutionProcess } from "@opencraft/opencraft-daemon/native-execution-origin";
@@ -182,6 +182,7 @@ async function fixture(t: test.TestContext) {
     remote,
     storage,
     principal,
+    context: {sender: null, executionPrincipal: principal, actorContext: login.login.context, validUntil: principal.expiresAt},
     access,
     authorize,
     assets,
@@ -894,4 +895,147 @@ test('an independent broker that pinned an Actor authority never downgrades to a
  await assert.rejects(r.remote.prepare(f.locator));
  const result=await queryGitIdentityBroker(env.OPENCRAFT_GIT_BROKER_SOCKET!,{op:'open',threadId:f.locator.threadId,host:'github.com',operation:'ls-remote',capability:env.OPENCRAFT_GIT_CAPABILITY});
  assert.notEqual(result.status,'configured');
+});
+
+
+// Opt-in installed stock-native boundary, synthetic model and account only.
+for (const replaceGateway of [false, true]) test(`stock independent Codex signs from the original Assets admission (Gateway replacement=${replaceGateway})`, {
+  skip: !process.env.OPENCRAFT_TEST_NATIVE_CLI,
+  timeout: 60000,
+}, async t => {
+  const f = await fixture(t);
+  const {startCodexCore} = await import('../../apps/codex-core/src/main.js');
+  const {decodeResponsesRequestBody} = await import('../../packages/account-pool-host/src/configured-forward.js');
+  const {CodexEngineAdapter} = await import('../../apps/opencraft-daemon/src/codex-engine-adapter.js');
+  const {LOGICAL_CLIENT_FIELD} = await import('@opencraft/app-host-protocol');
+  const {CodexCoreControlClient} = await import('@opencraft/account-pool-host');
+  const token = 'synthetic-git-core-owner-token-'.repeat(3), dataDirectory = join(f.root, 'data/codex');
+  let modelPosts = 0;
+  let releaseModel!: () => void;
+  const modelGate = new Promise<void>(resolve => {releaseModel = resolve;});
+  const requested = Promise.withResolvers<void>(), reattached = Promise.withResolvers<void>();
+  let prepared: {apply(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv} | undefined;
+  const bounded = <T>(value: Promise<T>) => Promise.race([value, new Promise<never>((_, reject) => {
+    const timer = setTimeout(() => reject(Error('Native Git lifecycle fixture did not settle')), 8000); timer.unref();
+  })]);
+  const toolOutputs: string[] = [];
+  const core = await startCodexCore({
+    endpoint: join(f.root, 'core.sock'), authToken: token,
+    executable: process.env.OPENCRAFT_TEST_NATIVE_CLI!, runtimeDirectory: f.repo,
+    dataDirectory, nativeCodexHomeDirectory: join(f.root, 'native-codex'),
+    fetch: async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      if (init?.method !== 'POST' || !url.pathname.endsWith('/responses')) return Response.json({plan_type: 'pro'});
+      modelPosts++;
+      const raw = typeof init.body === 'string' ? Buffer.from(init.body) : new Uint8Array(init.body as Uint8Array);
+      const decoded = await decodeResponsesRequestBody(new Headers(init.headers).get('content-encoding'), raw);
+      if (decoded instanceof Response) return decoded;
+      const body = JSON.parse(Buffer.from(decoded).toString('utf8'));
+      for (const item of body.input ?? []) if (item.type === 'function_call_output') toolOutputs.push(String(item.output));
+      const tools = (body.tools ?? []).map((value: any) => value.name ?? value.function?.name);
+      let item: any;
+      if (modelPosts === 1) {
+        requested.resolve(); if (replaceGateway) await modelGate;
+        assert.ok(tools.includes('exec_command'), 'The stock native tool surface must provide exec_command: ' + tools.join(','));
+        item = {type: 'function_call', id: 'fc_native_git', call_id: 'call_native_git', name: 'exec_command',
+          arguments: JSON.stringify({cmd: 'git commit --allow-empty -m NativeCodexAssets', workdir: f.repo, yield_time_ms: 1000, max_output_tokens: 1000}), status: 'completed'};
+      } else {
+        assert.ok(modelPosts <= 2, 'No model request retry or accidental new Turn');
+        item = {type: 'message', id: 'msg_native_git', role: 'assistant', status: 'completed',
+          content: [{type: 'output_text', text: 'Synthetic native Git completed.', annotations: []}]};
+      }
+      const response = {id: 'resp_native_git_' + modelPosts, object: 'response', status: 'in_progress', output: []};
+      const events = [{type: 'response.created', response},
+        {type: 'response.output_item.added', output_index: 0, item: {...item, status: 'in_progress'}},
+        {type: 'response.output_item.done', output_index: 0, item},
+        {type: 'response.completed', response: {...response, status: 'completed', output: [item],
+          usage: {input_tokens: 1, output_tokens: 1, total_tokens: 2}}}];
+      return new Response(events.map(value => 'data: ' + JSON.stringify(value) + '\n\n').join(''), {headers: {'content-type': 'text/event-stream'}});
+    },
+  }); f.defer(() => core.close()); f.defer(() => releaseModel());
+  const control = new CodexCoreControlClient(core.endpoint, token), before = await control.health();
+  const makeEngine = () => new CodexEngineAdapter({executable: process.env.OPENCRAFT_TEST_NATIVE_CLI!, runtimeDirectory: f.repo,
+    dataDirectory, nativeCodexHomeDirectory: join(f.root, 'native-codex'), coreEndpoint: core.endpoint, coreAuthToken: token, coreHostOverlays: true,
+    logDiagnostic() {},
+    createExecutionGit: native => {
+      const execution = createHumanGitExecution({directory: join(f.root, 'data'), runtimeDirectory: join(f.root, 'codex-ipc'),
+        workerFile: join(f.root, 'runtime/personal-git-worker.mjs'), hosts: f.assets.gitHosts, authority: f.assets.gitAuthority!,
+        grant: f.assets.executionGitGrant, inspect: native.inspect, authorize: f.authorize,
+        reservation: {grant: f.assets.executionGitReservation, inspect: native.inspectReservation}});
+      return {...execution,
+        async reserve(input) {const snapshot = await execution.reserve(input); prepared = snapshot; return snapshot;},
+        async prepare(input) {const snapshot = await execution.prepare(input); assert.equal(snapshot.account, f.scope); reattached.resolve(); return snapshot;},
+      };
+    },
+  });
+  const frames: any[] = [];
+  let engine = makeEngine(); f.defer(() => engine.close());
+  const connect = async () => {engine.subscribeMessage(frame => frames.push(JSON.parse(frame))); await engine.connect();};
+  await connect();
+  let sequence = 0;
+  const rpc = async (method: string, params: object = {}, original = false) => {
+    const id = ++sequence, frame = JSON.stringify({id, method, params, [LOGICAL_CLIENT_FIELD]: 'native-git'});
+    if (original) await engine.sendWithContext(frame, f.context); else await engine.send(frame);
+    const deadline = Date.now() + 15000;
+    while (Date.now() < deadline) {
+      const reply = frames.find(value => value.id === id && !value.method && value[LOGICAL_CLIENT_FIELD] === 'native-git');
+      if (reply) {if (reply.error) throw Error(method + ': ' + reply.error.message); return reply.result;}
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    throw Error('Timed out awaiting native Git fixture ' + method);
+  };
+  await rpc('initialize', {clientInfo: {name: 'synthetic-native-git', version: '1'}, capabilities: {experimentalApi: true}});
+  await mkdir(join(f.root, 'native-codex'), {recursive: true});
+  const access = Buffer.from('{}').toString('base64url') + '.' + Buffer.from(JSON.stringify({exp: Math.floor(Date.now() / 1000) + 3600,
+    'https://api.openai.com/auth': {chatgpt_account_id: 'synthetic-git-account'}})).toString('base64url') + '.synthetic';
+  await writeFile(join(f.root, 'native-codex/auth.json'), JSON.stringify({auth_mode: 'chatgpt',
+    tokens: {access_token: access, refresh_token: 'synthetic', account_id: 'synthetic-git-account'}}));
+  await rpc('opencraft/codex/accounts/import');
+  // Deliberate fixture permission, not a product default or sandbox fallback.
+  const {thread} = await rpc('thread/start', {cwd: f.repo, ephemeral: false, model: 'gpt-5.3-codex', sandbox: 'danger-full-access', approvalPolicy: 'never'});
+  const started = await rpc('turn/start', {threadId: thread.id, model: 'gpt-5.3-codex', clientUserMessageId: 'original-native-codex',
+    input: [{type: 'text', text: 'Create the synthetic signed Git commit.'}]}, true);
+  await bounded(requested.promise);
+  assert.ok(prepared);
+  const originalEnvironment = prepared;
+  if (replaceGateway) {
+    await engine.close();
+    assert.equal((await control.health()).codexPid, before.codexPid);
+    engine = makeEngine(); await connect();
+    await rpc('initialize', {clientInfo: {name: 'synthetic-replacement', version: '1'}, capabilities: {experimentalApi: true}});
+    await bounded(reattached.promise);
+    releaseModel();
+  }
+  const deadline = Date.now() + 20000;
+  let status: string | undefined;
+  while (Date.now() < deadline) {
+    const latest = (await rpc('thread/turns/list', {threadId: thread.id, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded'})).data?.[0];
+    if (latest?.id === started.turn.id) status = latest.status;
+    if (status === 'completed' || status === 'failed' || status === 'interrupted') break;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  assert.equal(status, 'completed');
+  assert.equal((await f.nativeGit('log', '-1', '--format=%s')).out, 'NativeCodexAssets', toolOutputs.join('\n'));
+  assert.equal(modelPosts, 2);
+  await writeFile(join(f.root, 'native-codex-signers'), 'fixture@example.test ' + f.metadata.hosts['github.com'].signing.publicKey + '\n');
+  assert.equal((await f.nativeGit('-c', 'gpg.ssh.allowedSignersFile=' + join(f.root, 'native-codex-signers'), 'verify-commit', 'HEAD')).code, 0);
+  assert.equal((await control.health()).codexPid, before.codexPid, 'The existing native owner executes Git; no replacement executor');
+  const beforeEndedAttempt = (await f.nativeGit('rev-parse', 'HEAD')).out;
+  const ended = await command(join(f.root, 'bin/git'), ['commit', '--allow-empty', '-m', 'MustNotReuseFinishedNativeCodex'], f.repo,
+    {...originalEnvironment.apply(f.base), CODEX_THREAD_ID: thread.id});
+  assert.notEqual(ended.code, 0, 'A persisted lease is not enough after Native completion');
+  assert.equal((await f.nativeGit('rev-parse', 'HEAD')).out, beforeEndedAttempt);
+});
+
+
+test('Assets Git uses the configured shared IPC mount without a container-private fallback or observer mixing', () => {
+  const directories = new Set<string>();
+  for (const owner of ['gateway', 'codex', 'pi', 'dsh'] as const) {
+    assert.equal(humanGitRuntimeDirectory('/tmp/local-git', owner, '/var/lib/opencraft/git-credentials'), '/var/lib/opencraft/git-credentials/' + owner);
+    directories.add(humanGitRuntimeDirectory('/tmp/local-git', owner, '/run/ocg'));
+    for (const invalid of ['', 'relative/path', '/tmp/invalid\0directory'])
+      assert.throws(() => humanGitRuntimeDirectory('/tmp/local-git', owner, invalid), /git_ipc_directory_unavailable/);
+    assert.throws(() => humanGitRuntimeDirectory('/tmp/local-git', owner, '/tmp/' + '目录'.repeat(40)), /git_shared_ipc_directory_too_long/);
+  }
+  assert.equal(directories.size, 4, 'Each native observer owns its own broker discovery namespace');
 });
