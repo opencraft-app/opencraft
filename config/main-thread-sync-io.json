@@ -307,9 +307,6 @@
       "DatabaseSync": 2,
       "SQL statement": 4
     },
-    "packages/session-capabilities/src/bindings.ts": {
-      "SQL statement": 8
-    },
     "packages/sqlite-node/src/backup.ts": {
       "chmodSync": 1,
       "DatabaseSync": 1,

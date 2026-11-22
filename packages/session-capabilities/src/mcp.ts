@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import type { CapabilityBindings } from "./bindings.js";
+import type { CapabilityBindingStore } from "./bindings.js";
 import { SessionCapabilities, type CapabilitySession, type CapabilityTool } from "./index.js";
 import { capabilityResultToMcp } from "./content.js";
 
@@ -37,7 +37,7 @@ export class SessionCapabilityMcp {
     bound: Promise<CapabilitySession>; resolve(session: CapabilitySession): void;
     session?: CapabilitySession; scope?: CapabilitySession; expiresAt: number; memoryOnly?: boolean;
   }>();
-  constructor(readonly capabilities: SessionCapabilities, private readonly key: Buffer, private readonly bindings?: CapabilityBindings,
+  constructor(readonly capabilities: SessionCapabilities, private readonly key: Buffer, private readonly bindings?: CapabilityBindingStore,
     private readonly options: { descriptorPath?: string; retainEndpoint?: boolean; authorizeInput?: (session: CapabilitySession, inputId: string) => boolean;
       authorizeExecution?: (session:CapabilitySession)=>Promise<void>;
       orchestration?: (session: CapabilitySession, request: Record<string, unknown>) => Promise<unknown>;

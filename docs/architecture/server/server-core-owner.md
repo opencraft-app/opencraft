@@ -99,7 +99,7 @@
 5. **协作**：`Collaboration`（`command` 已是异步）及其内部的沟通扩展、频道、提及、个人助手台账整体迁入 Worker。
 6. **收尾**：移除主线程过渡连接；`access-control`、`storage-node`、`sqlite-node` 从 Headless 主线程可达图消失，守卫登记对应计数归零。
 
-**领域迁入方式（已实施，以共享备注为首例）**：存储包提供 Worker 侧的 `serveServerCoreOwner(domains)`，在 owner 连接上构造领域服务并按方法名暴露；Headless 的 owner 入口是 `apps/headless-server/src/server-core-worker.mjs`，经 `openServerCoreOwner(dir, { entry })` 启动，网络线程通过 `storage.call.<方法>` 异步调用。访问判定仍在网络线程完成，Worker 只执行已授权的读写。`ThreadNoteStore`（Yjs 合并与 SQL）是第一个迁入的领域；没有事务耦合的领域都可按此方式单独迁入，打包时入口登记在 `scripts/packaging/owner-workers.mjs`。
+**领域迁入方式（已实施，以共享备注为首例）**：存储包提供 Worker 侧的 `serveServerCoreOwner(domains)`，在 owner 连接上构造领域服务并按方法名暴露；Headless 的 owner 入口是 `apps/headless-server/src/server-core-worker.mjs`，经 `openServerCoreOwner(dir, { entry })` 启动，网络线程通过 `storage.call.<方法>` 异步调用。访问判定仍在网络线程完成，Worker 只执行已授权的读写。`ThreadNoteStore`（Yjs 合并与 SQL）是第一个迁入的领域。调用方需要同步读取的领域改用投影：能力绑定（`CapabilityBindingProjection`）启动时从 Worker 读入全部行，读走内存；写入先按与表相同的唯一约束在内存校验并应用，再由 Worker 按序提交。存储因此总是这段写入历史的某个前缀，崩溃丢失的写入等同于进程更早停止；任一提交失败后投影整体失效，凭据一律拒绝。没有事务耦合的领域都可按此方式单独迁入，打包时入口登记在 `scripts/packaging/owner-workers.mjs`。
 
 下游消费者：`access-control` 的同步类仍保留并在 Worker 内使用；对外新增的是异步门面。实施前需核对下游产品插件是否直接构造这些类，若有则在对应阶段提供异步门面并更新下游。
 

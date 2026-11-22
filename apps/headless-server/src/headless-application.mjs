@@ -32,7 +32,7 @@ import { composeHostTerminalSelector, createHandsTerminalService, HostTerminalSe
 import { createHostFileSystem } from './host-filesystem.js';
 import { composeHostFileSelector, HostFileSystemSession, HostFileSystemTransport } from './host-filesystem-transport.js';
 import { HeadlessConnectors } from "@opencraft/connector-host/headless";
-import { CapabilityBindings } from "@opencraft/session-capabilities/bindings";
+import { CapabilityBindingProjection } from "@opencraft/session-capabilities/binding-projection";
 import { SessionCapabilities } from "@opencraft/session-capabilities";
 import { SessionCapabilityMcp, capabilitySigningKey } from "@opencraft/session-capabilities/mcp";
 import { ConversationResourceLifecycle } from './conversation-resource-lifecycle.mjs';
@@ -701,7 +701,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         return readConversationCurrentTurn(appHostServer, { hostId, threadId }, { sender: null, actorContext: context });
       },
     }));
-    capabilityBindings = new CapabilityBindings(serverStorage);
+    // Bindings are read from memory; the Server owner Worker commits each write in order.
+    capabilityBindings = new CapabilityBindingProjection(await serverStorage.call.capabilityBindings(),
+      write => serverStorage.call.applyCapabilityBinding(write),
+      error => console.error('[capability-bindings] unavailable', error.message));
     const capabilityKey=await capabilitySigningKey(join(dataDirectory,"session-capabilities.key"));
     capabilityMcp = new SessionCapabilityMcp(capabilities, capabilityKey, capabilityBindings, {
       descriptorPath:join(dataDirectory,'session-capabilities.json'), retainEndpoint: true,
