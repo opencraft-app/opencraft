@@ -131,3 +131,29 @@ test('native external resolution and owner loss retire the exact interaction wit
   assert(frames.some(frame => frame.method === 'interaction/resolved' && frame.params.interactionId === second && frame.params.reason === 'connection-lost'));
   assert.deepEqual(answers, []);
 });
+
+test('an idle existing native session is adopted under its own ID; an active or mismatched one is refused', async () => {
+  const calls: any[] = [], frames: any[] = [];
+  const status: Record<string, string> = { idle: 'notLoaded', busy: 'active', moved: 'idle' };
+  const runtime = new CodexBridgeRuntime({ async request(method, params) {
+    calls.push({ method, threadId: params.threadId });
+    if (method === 'thread/read') return { thread: { id: params.threadId, status: { type: status[String(params.threadId)] } } };
+    if (method === 'thread/resume') return { thread: { id: params.threadId === 'moved' ? 'elsewhere' : params.threadId } };
+    return {};
+  }, resolve() {} }, frame => frames.push(frame));
+  await runtime.handle({ jsonrpc: '2.0', id: 'init', method: 'initialize', params: { protocolVersion: 1, grammarRange: { min: 1, max: 1 } } });
+  let attempt = 0;
+  const adopt = async (id: string) => {
+    const requestId = `adopt-${++attempt}`;
+    await runtime.handle({ jsonrpc: '2.0', id: requestId, method: 'session/adopt', params: { threadId: id, providerThreadId: id } });
+    return frames.find(f => f.id === requestId);
+  };
+  assert.equal((await adopt('idle')).result.thread.id, 'idle');
+  assert.equal(runtime.adapter.nativeSession('idle'), 'idle');
+  assert.ok(frames.some(f => f.method === 'thread/identity' && f.params.threadId === 'idle' && f.params.providerThreadId === 'idle'));
+  assert.equal((await adopt('busy')).error.kind, 'explicit-reject', 'a session with a turn running stays where it is');
+  assert.ok(!calls.some(c => c.method === 'thread/resume' && c.threadId === 'busy'));
+  assert.equal((await adopt('moved')).error.kind, 'explicit-reject');
+  assert.throws(() => runtime.adapter.nativeSession('moved'), /not bound/u);
+  assert.equal((await adopt('idle')).error.kind, 'explicit-reject', 'adopting twice is refused');
+});

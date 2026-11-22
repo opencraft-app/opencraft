@@ -62,6 +62,8 @@ export interface DeclaredCapabilities {
   readonly goals?: boolean;
   /** Update a session's model, reasoning and permission settings. Absent means unsupported. */
   readonly settings?: boolean;
+  /** Adopt an existing native session released by its previous owner. Absent means unsupported. */
+  readonly adoption?: boolean;
   readonly steer: SteerDeclaration;
 }
 
@@ -130,6 +132,7 @@ export function effectiveCapabilities(
     lifecycle: declared.lifecycle === true && !off("lifecycle"),
     goals: declared.goals === true && !off("goals"),
     settings: declared.settings === true && !off("settings"),
+    adoption: declared.adoption === true && !off("adoption"),
     steer: {
       deliveryMethods: steer.deliveryMethods.filter(
         (method) => !has(probe.steerDisabledMethods as readonly string[] | undefined, method),
@@ -189,6 +192,7 @@ function capabilityEnabled(capabilities: DeclaredCapabilities, key: CapabilityKe
     case "lifecycle": return capabilities.lifecycle === true;
     case "goals": return capabilities.goals === true;
     case "settings": return capabilities.settings === true;
+    case "adoption": return capabilities.adoption === true;
     // Any still-declared delivery path (native-inject, next-turn, or
     // interrupt-replace) is enough. Probing away native-inject while a queue
     // or interrupt path remains must not disable turn/steer.

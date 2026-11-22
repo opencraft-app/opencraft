@@ -29,6 +29,10 @@ export class CodexProviderBridge implements DuplexTransport {
     prepareInput?: (threadId: string, clientId: string | undefined, input: readonly unknown[], context: TransportSubmissionContext) => Promise<unknown[]>;
     /** Add recorded attachments to history results. */
     projectHistory?: (method: string, params: Record<string, unknown>, result: unknown) => unknown;
+    /** Move an existing local Thread to the bridge on its next turn/start, keeping its ID. Off by default. */
+    adoptExisting?: boolean;
+    /** The local Host releases an idle Thread for adoption, or declines. */
+    releaseForAdoption?: (threadId: string) => Promise<boolean>;
     /** Let the local title generator see a bridge Thread's creation and first turn, by native identity. */
     observeTitle?: (method: string, params: Record<string, unknown>, result: unknown) => void;
   } = {}) {
@@ -64,6 +68,23 @@ export class CodexProviderBridge implements DuplexTransport {
       interaction.clients.set(client, identity.epoch);
       this.emit({ id: params.interactionId, method: payload.method, params: { ...object(this.gateway.history(threadId, payload.params)), threadId } }, client);
     }
+  }
+  private adoptions = new Map<string, Promise<void>>();
+  /**
+   * Move an idle local Thread to the bridge under its own ID. The local Host
+   * releases it first; if it declines or the Host refuses, the Thread simply
+   * stays local. Nothing is executed before the Host has bound it.
+   */
+  private adopt(threadId: string): Promise<void> {
+    const pending = this.adoptions.get(threadId);
+    if (pending) return pending;
+    const operation = (async () => {
+      if (!(await this.policy.releaseForAdoption?.(threadId))) return;
+      try { await this.gateway.command(threadId, `bridge-adopt:${randomUUID()}`, 'session/adopt', { providerThreadId: threadId }); }
+      catch (error) { console.warn('[codex-bridge]', JSON.stringify({ event: 'adoption-declined', reason: error instanceof Error ? error.message : 'unknown' })); }
+    })().finally(() => this.adoptions.delete(threadId));
+    this.adoptions.set(threadId, operation);
+    return operation;
   }
   /** Rewrite native turn IDs in queue results to the public ones clients know. */
   private publicTurns(threadId: string, value: unknown): unknown {
@@ -173,7 +194,10 @@ export class CodexProviderBridge implements DuplexTransport {
     const optIn = frame.method === 'thread/start' && p.agentBridge !== undefined;
     const seed = String(p.agentBridge?.threadId ?? '');
     const threadId = optIn ? seed ? seed.startsWith('bridge:codex:') ? seed : `bridge:codex:${seed}` : '' : String(p.threadId ?? '');
-    if (!optIn && this.gateway.publicThread(threadId)) throw Error('Use the bridge thread identity; native owner bypass refused');
+    // A native ID behind a different public bridge ID never reaches the legacy writer; an adopted one is its own public ID.
+    const behind = this.gateway.publicThread(threadId);
+    if (!optIn && behind !== undefined && behind !== threadId) throw Error('Use the bridge thread identity; native owner bypass refused');
+    if (!optIn && frame.method === 'turn/start' && threadId && !threadId.startsWith('bridge:codex:') && !this.gateway.owns(threadId) && this.policy.adoptExisting) await this.adopt(threadId);
     // Maintenance pauses new work on bridge threads exactly as on legacy ones;
     // steering, reads and approvals of admitted work continue.
     const admission = (optIn || this.gateway.owns(threadId)) && isCodexAdmission(frame.method, p);

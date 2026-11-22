@@ -73,6 +73,8 @@ export async function startOpenCraftDaemon(options: {
   readonly nativeCodexHomeDirectory: string;
   readonly codexCoreEndpoint?: string;
   readonly codexAgentBridge?: BridgeGatewayOptions;
+  /** Move existing local Codex Threads to the bridge on their next turn. */
+  readonly codexAgentBridgeAdoptExisting?: boolean;
   readonly codexWriterOwnership?: boolean;
   /** Trusted composition may replace only native startup while preserving the
    * daemon's identity, storage reporting and AppHost/IPC assembly. */
@@ -184,10 +186,12 @@ export async function startOpenCraftDaemon(options: {
         if (options.codexAgentBridge && !options.codexCoreEndpoint) throw Error("Bridge requires existing Core endpoint");
         return options.codexAgentBridge ? new CodexProviderBridge(codexAgent, options.codexAgentBridge, {
           admissionPaused: () => codexAdmissionPaused(options.codexDataDirectory),
+          adoptExisting: options.codexAgentBridgeAdoptExisting === true,
           ...(codexAgent instanceof CodexEngineAdapter ? {
             prepareInput: (threadId, clientId, input, context) => codexAgent.prepareExternalInput(threadId, clientId, input, context),
             projectHistory: (method, params, result) => codexAgent.projectExternalHistory(method, params, result),
             observeTitle: (method, params, result) => codexAgent.observeExternalTitle(method, params, result),
+            releaseForAdoption: threadId => codexAgent.releaseForAdoption(threadId),
           } : {}),
         }) : codexAgent;
       }

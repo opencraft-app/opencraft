@@ -103,6 +103,24 @@ export class CodexBridgeRuntime {
           return result;
         } finally { this.creating.delete(threadId); }
       }
+      case 'session/adopt': {
+        // Only an idle session its previous owner released; the Host pins the public ID to it.
+        if (this.creating.has(threadId)) throw new CodexBridgeError('explicit-reject', 'Session creation already pending');
+        try { this.adapter.nativeSession(threadId); throw new CodexBridgeError('explicit-reject', 'Session already exists'); }
+        catch (error) { if (!(error instanceof CodexBridgeError) || error.message !== 'Session is not bound') throw error; }
+        const nativeId = identifier(p.providerThreadId);
+        this.creating.add(threadId);
+        try {
+          const read = object(object(await this.owner.request('thread/read', { threadId: nativeId, includeTurns: false })).thread);
+          const status = object(read.status).type;
+          if (read.id !== nativeId || !['idle', 'notLoaded'].includes(String(status))) throw new CodexBridgeError('explicit-reject', 'Only an idle existing session can be adopted');
+          const result = object(await this.owner.request('thread/resume', { threadId: nativeId, excludeTurns: true }));
+          if (object(result.thread).id !== nativeId) throw new CodexBridgeError('explicit-reject', 'Native session identity changed during adoption');
+          this.adapter.bind(threadId, nativeId);
+          this.callback('thread/identity', { threadId, providerThreadId: nativeId, sessionRestorable: true });
+          return result;
+        } finally { this.creating.delete(threadId); }
+      }
       case 'session/rename': {
         if (typeof p.name !== 'string' || p.name.length > 1024) throw new CodexBridgeError('invalid', 'Invalid session name');
         return this.owner.request('thread/name/set', { threadId: this.adapter.nativeSession(threadId), name: p.name });

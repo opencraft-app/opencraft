@@ -459,3 +459,11 @@ test('queued input is sent by the Host itself when each turn ends, in order, and
   assert.equal(((await queue('thread/queue/list')) as any).data[0].clientUserMessageId, 'after-restart');
   await assert.rejects(queue('thread/queue/frobnicate'), /Unsupported queue method/);
 });
+
+test('an adoption must keep the Thread ID and needs the provider to declare adoption', async t => {
+  const { host } = await setup(t);
+  await assert.rejects(host.accept(command('adopt-other', 'session/adopt', { providerThreadId: 'someone-else' }, 'thread-9')), /keeps its own Thread ID/);
+  // The fixture provider declares no adoption: the command is refused before reaching it, and the route is released.
+  await host.accept(command('adopt-plain', 'session/adopt', { providerThreadId: 'thread-9' }, 'thread-9'));
+  assert.equal((await until(() => host.query('adopt-plain'), r => r?.state === 'rejected'))?.state, 'rejected');
+});

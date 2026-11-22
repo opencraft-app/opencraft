@@ -30,6 +30,7 @@ export const BRIDGE_COMMANDS = Object.freeze({
   goalSet: "goal/set",
   goalClear: "goal/clear",
   sessionSettings: "session/settings",
+  sessionAdopt: "session/adopt",
 } as const);
 
 export const BRIDGE_CALLBACKS = Object.freeze({
@@ -71,6 +72,7 @@ export type CapabilityKey =
   | "lifecycle"
   | "goals"
   | "settings"
+  | "adoption"
   | "steer";
 
 /**
@@ -105,6 +107,8 @@ export const BRIDGE_COMMAND_REQUIREMENTS: Readonly<Record<BridgeCommand, Capabil
   "goal/set": "goals",
   "goal/clear": "goals",
   "session/settings": "settings",
+  // Take over an existing native session under its own ID, once its previous owner released it.
+  "session/adopt": "adoption",
 });
 
 /** Native notifications a provider may forward through `thread/notification`. */

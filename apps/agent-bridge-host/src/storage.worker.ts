@@ -9,7 +9,7 @@ import { ThreadQueueStore } from '@opencraft/thread-queue';
 import { migrations } from './migrations.js';
 import type { Receipt, Generation, OutboxEvent } from './types.js';
 /** Commands that bring a Thread route into existence, and that end its native session. */
-const CREATES: readonly string[] = ['session/create', 'session/fork'];
+const CREATES: readonly string[] = ['session/create', 'session/fork', 'session/adopt'];
 const ENDS: readonly string[] = ['session/close', 'session/delete'];
 if (isMainThread) throw Error('Bridge SQL must run in a Worker');
 mkdirSync(dirname(workerData.path), { recursive: true, mode: 0o700 });

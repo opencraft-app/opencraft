@@ -34,7 +34,7 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   let approvalAnswer: unknown, approvalAnswers = 0;
   let hasRollout=!initial,initialConfig:any;
   let loaded=true,nativeActive=false,issued=0,revoked=0,blockRetirement=cli==='timeout';const nativeConfigurations:any[]=[];
-  const lifecycleCalls:any[]=[];const nativeStartInputs:unknown[]=[];const settingsCalls:any[]=[];const titleCalls:any[]=[];
+  const lifecycleCalls:any[]=[];const nativeStartInputs:unknown[]=[];const settingsCalls:any[]=[];const titleCalls:any[]=[];const oldStarts:any[]=[];const releaseCalls:string[]=[];let releaseAnswer=false;
   ws.on('connection', socket => {
     nativePeer = socket;
     socket.on('message', raw => {
@@ -42,6 +42,11 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
       if (f.id === 'native-approval' && f.result) { approvalAnswer = f.result; approvalAnswers++; }
       const reply = (result: unknown) => socket.send(JSON.stringify({ id: f.id, result }));
       const event = (method: string, params: unknown) => socket.send(JSON.stringify({ method, params }));
+      if (f.params?.threadId === 'native-old') {
+        if (f.method === 'thread/read') { reply({ thread: { id: 'native-old', status: { type: 'notLoaded' }, turns: [] } }); return; }
+        if (f.method === 'thread/resume') { reply({ thread: { id: 'native-old', turns: [] } }); return; }
+        if (f.method === 'turn/start') { oldStarts.push(f.params); reply({ turn: { id: 'old-turn-1' } }); return; }
+      }
       if (f.method === 'initialize') reply({ userAgent: 'codex/0.167.0' });
       if (['thread/fork','thread/name/set','thread/archive','thread/unarchive','thread/delete','thread/goal/get','thread/goal/set','thread/goal/clear'].includes(f.method)) {
         lifecycleCalls.push({method:f.method,params:f.params});
@@ -116,7 +121,8 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     },{admissionPaused:()=>paused}):new CodexProviderBridge(legacy,options,{admissionPaused:()=>paused,
       prepareInput:async(threadId,clientId,input)=>{staged.push([threadId,clientId]);return input.map((item:any)=>item.type==='mention'?{type:'text',text:`file at ${item.path}`}:item);},
       projectHistory:(method,_params,result)=>({...(result as object),projected:method}),
-      observeTitle:(method,params,result)=>titleCalls.push([method,(params as any).threadId??null,(result as any).thread?.id??(result as any).turn?.id])});
+      observeTitle:(method,params,result)=>titleCalls.push([method,(params as any).threadId??null,(result as any).thread?.id??(result as any).turn?.id]),
+      adoptExisting:true,releaseForAdoption:async threadId=>{releaseCalls.push(threadId);return releaseAnswer;}});
     next.subscribeMessage(raw => frames.push(JSON.parse(raw))); await next.connect(); return next;
   };
   transport = await createTransport();
@@ -315,6 +321,23 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   assert.equal(frames.find(f => f.id === unknownId)?.error?.data?.retryable, false);
   assert.match(frames.find(f => f.id === unknownId)?.error?.data?.bridgeCommandId, /^bridge-mutation:[a-f0-9]{64}$/);
   assert(!forwarded.some(f => f.method === 'turn/start' || f.method === 'turn/steer'));
+  if(cli===false){
+    const startsToLegacy=()=>forwarded.filter(f=>f.method==='turn/start'&&f.params.threadId==='native-old').length;
+    // Declined: the local Host keeps a busy Thread, and its turn goes there.
+    await request('turn/start',{threadId:'native-old',clientUserMessageId:'old-1',input:[{type:'text',text:'still local'}]});
+    assert.equal(startsToLegacy(),1); assert.equal(currentGateway().owns('native-old'),false); assert.equal(oldStarts.length,0);
+    // Released: the bridge adopts the Thread under the same ID; the turn reaches native Codex through the bridge.
+    releaseAnswer=true;
+    await request('turn/start',{threadId:'native-old',clientUserMessageId:'old-2',input:[{type:'text',text:'now bridged'}]});
+    assert.equal(currentGateway().owns('native-old'),true);
+    assert.equal(startsToLegacy(),1,'the adopted turn never reaches the local Host');
+    assert.equal(oldStarts.at(-1).threadId,'native-old'); assert.equal(oldStarts.at(-1).clientUserMessageId,'old-2');
+    assert.deepEqual(releaseCalls,['native-old','native-old']);
+    const adoptedRead=await request('thread/read',{threadId:'native-old'});
+    assert.equal(adoptedRead.thread.id,'native-old','the public ID is unchanged');
+    await request('turn/start',{threadId:'native-old',clientUserMessageId:'old-3',input:[{type:'text',text:'again'}]}).catch(()=>{});
+    assert.deepEqual(releaseCalls,['native-old','native-old'],'an adopted Thread is not adopted again');
+  }
   nativePeer!.send(JSON.stringify({ id: 'lost-approval', method: 'item/commandExecution/requestApproval', params: { threadId: 'native-new', turnId: 'native-turn', itemId: 'tool' } }));
   const lost = await until(() => frames.find(f => f.method === 'item/commandExecution/requestApproval' && f.id !== approval.id && f.id !== external.id), Boolean);
   nativePeer!.terminate();

@@ -7,7 +7,7 @@ export const codexDeclaration: BridgeDeclaration = {
   capabilities: {
     model: true, reasoning: false, history: true, usage: true, approval: true,
     inputContentTypes: ['text', 'image', 'localImage', 'mention'], cliExecutable: true, forkCheckpoint: true, skills: false, installation: false,
-    lifecycle: true, goals: true, settings: true,
+    lifecycle: true, goals: true, settings: true, adoption: true,
     steer: { deliveryMethods: ['native-inject'], evidenceKinds: ['admission', 'native-input-id'], withdrawal: 'none',
       contentLimits: { maxBytes: 65536, allowedContentTypes: ['text', 'image', 'localImage', 'mention'] }, maxPendingWithoutNativeId: 1, fallbackPolicy: 'reject-unknown' },
   },

@@ -41,6 +41,7 @@ void (async () => startOpenCraftDaemon({
   nativeCodexHomeDirectory: requiredArgument("--native-codex-home-directory"),
   codexCoreEndpoint: argument("--codex-core-endpoint"),
   codexAgentBridge: await readCodexBridgeConfiguration(argument('--codex-agent-bridge-config')),
+  codexAgentBridgeAdoptExisting: process.argv.includes('--codex-agent-bridge-adopt-existing'),
   codexWriterOwnership: process.argv.includes("--codex-writer-ownership"),
   machineName: argument("--machine-name"),
 }))().then((daemon) => {

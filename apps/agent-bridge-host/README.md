@@ -177,6 +177,16 @@ with retained sessions still requires explicit reconciliation, as in P1b.
 The built Workbench smoke uses a synthetic native boundary; it is not real-account steer
 proof. No service, default engine or published artifact is switched by this code.
 
+## Adopting existing sessions
+
+`session/adopt` (`adoption` capability) is a creating command that binds a route
+to an existing native session under its own ID: the Host refuses it unless
+`providerThreadId` equals the Thread ID, and the Codex provider adopts only a
+session that native reports idle or unloaded, checking the identity it resumed.
+The daemon triggers it, when `--codex-agent-bridge-adopt-existing` is set, on the
+next `turn/start` of a local Codex Thread that the local Host has released.
+Without that flag existing Threads stay on their current owner.
+
 ## Queued follow-up input
 
 Bridge Threads queue follow-up input in the Host, using the shared

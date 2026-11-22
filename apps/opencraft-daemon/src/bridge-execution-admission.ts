@@ -34,7 +34,8 @@ export function createServerCodexBridge(legacy:DuplexTransport,options:BridgeGat
   // A local Codex Host stages bridge attachments exactly as it does its own.
   const host=legacy as Partial<{prepareExternalInput:NonNullable<typeof policy>['prepareInput'];projectExternalHistory:NonNullable<typeof policy>['projectHistory'];observeExternalTitle:NonNullable<typeof policy>['observeTitle']}>;
   const attachments=typeof host.prepareExternalInput==='function'&&typeof host.projectExternalHistory==='function'&&typeof host.observeExternalTitle==='function'
-    ?{prepareInput:host.prepareExternalInput.bind(legacy),projectHistory:host.projectExternalHistory.bind(legacy),observeTitle:host.observeExternalTitle.bind(legacy)}:{};
+    ?{prepareInput:host.prepareExternalInput.bind(legacy),projectHistory:host.projectExternalHistory.bind(legacy),observeTitle:host.observeExternalTitle.bind(legacy),
+      ...(typeof (legacy as {releaseForAdoption?:unknown}).releaseForAdoption==='function'?{releaseForAdoption:(legacy as unknown as {releaseForAdoption:(id:string)=>Promise<boolean>}).releaseForAdoption.bind(legacy)}:{})}:{};
   return options?new BridgeExecutionAdmissionTransport(new CodexProviderBridge(legacy,options,{...attachments,...policy}),admission):legacy;
 }
 

@@ -3563,6 +3563,23 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (clientId && prepared.attachments.length > 0 && this.messageAttachments) this.messageAttachments.record(threadId, clientId, prepared.attachments);
     return prepared.input;
   }
+  /**
+   * Let the bridge adopt one of this Host's Threads. Only a Thread with no turn,
+   * queued or unknown input, goal, retry, recovery, title job, active schedule,
+   * pending approval or admission in flight is released; this Host then stops
+   * observing it. Nothing is executed or discarded.
+   */
+  async releaseForAdoption(threadId: string): Promise<boolean> {
+    if (!threadId || this.closeOperation) return false;
+    return this.withThreadOperation(threadId, async () => {
+      if (this.executionBlocked(threadId) || this.generationUsageSnapshot().blockedThreadIds.includes(threadId)) return false;
+      if (this.nativeSubscribedThreads.has(threadId)) {
+        await this.requestPhysical("thread/unsubscribe", { threadId });
+        this.nativeSubscribedThreads.delete(threadId);
+      }
+      return true;
+    });
+  }
   /** Title generation for a bridge Thread, observed by its native identity. */
   observeExternalTitle(method: string, params: RpcRecord, result: unknown): void { this.threadTitles?.observeResult(method, params, result); }
   /** Attachments recorded by prepareExternalInput, projected onto that Thread's history. */

@@ -153,7 +153,7 @@ export class BridgeHost {
         for (const key of ['model','reasoning','history','usage','approval','cliExecutable','forkCheckpoint','skills','installation'] as const)
           if (typeof caps[key] !== 'boolean' || caps[key] && !upper[key]) throw Error('Bridge widened capabilities');
         // Added later: an older bridge artifact omits them, which means unsupported.
-        for (const key of ['lifecycle','goals','settings'] as const) {
+        for (const key of ['lifecycle','goals','settings','adoption'] as const) {
           caps[key] ??= false;
           if (typeof caps[key] !== 'boolean' || caps[key] && !upper[key]) throw Error('Bridge widened capabilities');
         }
@@ -184,6 +184,8 @@ export class BridgeHost {
     const command = structuredClone(object(raw)) as unknown as Command;
     identifier(command.commandId); identifier(command.serverId); identifier(command.threadId); object(command.params);
     if (!isBridgeCommand(command.method) || (command.method as string) === 'initialize') throw Error('Unsupported command');
+    // An adopted session keeps its identity: the public Thread is the native session it names.
+    if (command.method === 'session/adopt' && command.params.providerThreadId !== command.threadId) throw hostRefusal(command, 'An adopted session keeps its own Thread ID');
     const serialized = stable(command);
     if (Buffer.byteLength(serialized) > 512 * 1024) throw Error('Command too large');
     const digest = createHash('sha256').update(serialized).digest('hex');
@@ -213,7 +215,7 @@ export class BridgeHost {
         await this.storage.call('settle', { id: command.commandId, state: 'rejected' }); return;
       }
       let cliEnvironment: Readonly<Record<string,string>> | undefined;
-      if((command.method==='session/create'||command.method==='session/fork')&&this.options.executionCli?.reserve&&this.capabilities.get(receipt.generation)?.cliExecutable) {
+      if(['session/create','session/fork','session/adopt'].includes(command.method)&&this.options.executionCli?.reserve&&this.capabilities.get(receipt.generation)?.cliExecutable) {
         try {
           const lease=await this.options.executionCli.reserve({serverId:command.serverId,threadId:command.threadId});
           if(this.closing||peer.diagnostic().failed){await lease.revoke();throw Error('CLI owner unavailable');}
@@ -249,11 +251,11 @@ export class BridgeHost {
       if(start&&this.cliStarts.get(receipt.route)===start)this.cliStarts.delete(receipt.route);
       if(state==='rejected'&&start?.observed)state='unknown';
       await this.storage.call('settle', { id: command.commandId, response, state, interactionId: command.params.interactionId });
-      if((command.method==='session/create'||command.method==='session/fork')&&state==='rejected'||(command.method==='session/close'||command.method==='session/delete')&&state==='accepted') {
+      if(['session/create','session/fork','session/adopt'].includes(command.method)&&state==='rejected'||(command.method==='session/close'||command.method==='session/delete')&&state==='accepted') {
         const reserved=this.cliReservations.get(receipt.route);
         if(reserved){this.cliReservations.delete(receipt.route);await reserved.lease.revoke();}
       }
-      if (state === 'rejected' && (command.method === 'session/create' || command.method === 'session/fork')) {
+      if (state === 'rejected' && ['session/create', 'session/fork', 'session/adopt'].includes(command.method)) {
         const failure = 'error' in response ? (response.error.data as { failure?: unknown } | undefined)?.failure : undefined;
         // Only failures that leave no resumable native session release the
         // fresh route binding. pending/exists/locked/orphaned keep it so the
