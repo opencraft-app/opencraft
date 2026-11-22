@@ -27,7 +27,7 @@ OpenCraft 服务端需要在两类运行时上运行同一份领域逻辑：
 | 端口 | 契约包 | 语义 | Node 适配器 | Cloudflare 适配器（设计） |
 | --- | --- | --- | --- | --- |
 | `SqlDatabase` | `@opencraft/sql` | owner 内同步关系存储、事务 | `@opencraft/sqlite-node` 的 `nodeSqlDatabase()` | DO `ctx.storage.sql` 与 `transactionSync` |
-| `DocumentStore` | `@opencraft/document-storage` | ≤1 MiB JSON 文档、revision CAS、提交后通知 | SQLite／原子文件 | DO storage |
+| `StateDocumentStore` | `@opencraft/document-storage/state` | 按键 JSON 状态文档、原子读-改-写 | `/state-file`：每键一个文件 | DO storage |
 | `BlobStore` | 待定 | 流式不可变对象、sha256 校验、分块上传 | tmp＋fsync＋rename | R2（multipart） |
 | `SecretStore` | 待定 | 只读机密配置、一次性生成密钥、加密可变凭据 | 0600 私有文件 | Secrets binding＋DO 内密文 |
 
@@ -77,9 +77,17 @@ interface SqlDatabase {
 
 Node Headless 当前由 `Collaboration` 按数据库文件路径启动 `OrchestrationRuntimeWorker`。文件路径是 Node 拓扑事实，不属于 SQL 端口：`ServerDatabaseSource` 的对象形式以可选 `location` 显式携带它，只有 Node owner 填写。DO 中同一 owner 直接执行这些命令，不存在伴随 Worker。
 
-### 3.2 `DocumentStore`
+### 3.2 `StateDocumentStore`
 
-升级现有 `DocumentPersistence`（`packages/document-storage/src/contract.ts`）为服务端端口，承接整文件重写的 JSON 状态：`models/*.json`、`projects.json`、`server-information.json`、`hub-network.json`、`session-capabilities.json` 等。迁移时修正 `json-file.ts` 未 fsync 的问题。凭据文件不进入此端口，进入 `SecretStore`。
+`read(key)` 与 `update(key, change)`。`change` 同步执行，返回 `{ result }`（不写）或 `{ result, next }`（原子替换）；抛错则不写。同一键的更新串行。业务 revision、schema 版本与校验留在文档和所属仓储内，端口不再包一层记录格式。
+
+不复用插件文档 API `DocumentPersistence`：它的 `{revision, version, value}` 记录格式会改变既有文件的磁盘格式。两者同属 `@opencraft/document-storage`，契约分开。
+
+Node 适配器 `fileStateDocumentStore(directory)` 每键一个文件，保持原有缩进格式与 proper-lockfile 锁，新旧进程仍在同一文件上串行；同进程按绝对路径先排队，再取文件锁；写入经临时文件、fsync、rename 与目录 fsync（修正旧 `json-file.ts` 未 fsync 的问题）。
+
+**跨 await 的不变量不能依赖端口锁。** 需要在提交前执行异步操作（例如写凭据）的仓储，必须把异步副作用设计成可被 CAS 安全丢弃。图片配置替换密钥时写入新的唯一引用，再由文档 CAS 切换指向，落败方删除自己的引用，成功后回收旧引用；已提交的声明只会指向为它写入的密钥。
+
+已迁移：`models.json`、`image-generation.json`、Pi 的 `model-provider-bindings.json` 与旧 `models.json` 读取、`projects.json`。待迁移：`server-information.json`、`hub-network.json`、`session-capabilities.json`、`conversation-resources.json` 等。凭据文件不进入此端口，进入 `SecretStore`。
 
 事务性账本（`conversation-resources.json`、Git broker 账本）不是 KV 语义，并入 SQL 核心。
 
@@ -98,7 +106,7 @@ Unix socket、锁文件、`/proc` 读取、Git 与 `/workspace` 工作目录、E
 ## 4. 分阶段
 
 1. **SQL 端口与 Node 适配器（服务器核心数据）。** 新增 `@opencraft/sql` 与一致性测试；`@opencraft/sqlite-node` 提供 `nodeSqlDatabase()`；`ServerDatabaseSource`／`openServerRepository()` 改为交付 `SqlDatabase`；`access-control` 的领域类、函数与 `CommunicationExtension` 插件契约不再依赖 `DatabaseSync`；手写事务改为 `transaction()`；`Collaboration` 不再从连接推导文件路径。
-2. **`DocumentStore`、`BlobStore`、`SecretStore` 与 Node 适配器**，迁移第 3.2–3.4 节所列使用方。
+2. **`StateDocumentStore`（已实施首批使用方）、`BlobStore`、`SecretStore` 与 Node 适配器**，迁移第 3.2–3.4 节所列使用方。
 3. **沙盒 provider 泛化**：共享 broker 协议与帧解析、provider 注册、按 provider 分型的安装配置与凭据、可选持久工作区能力。见[执行沙盒](../execution/execution-sandbox.md)。
 4. **Gateway／Brain 按工作区拆分**：Codex Host 状态成为独立 owner；`CODEX_HOME`、Pi、DSH writer 按工作区实例化；去除对 `pid: host` 与共享 `$DATA` 的依赖。
 5. **Cloudflare 适配器**：DO SQL、DO 文档、R2、Secrets 与 `sandbox-cloudflare`，均通过同一套一致性测试。

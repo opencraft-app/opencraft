@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -11,8 +12,9 @@ import { SpeechTranscriptionService, validateSpeechWav } from "../../../apps/hea
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const directory = await mkdtemp(join(tmpdir(), "opencraft-speech-model-ui-"));
 delete process.env.OPENCRAFT_DSH_URL; delete process.env.OPENCRAFT_DSH_REPOSITORY;
-const repository = new ModelConfigurationRepository(join(directory, "models"));
-const credentials = new ModelCredentialRepository(repository.directory);
+const modelDirectory = join(directory, "models");
+const repository = new ModelConfigurationRepository(fileStateDocumentStore(modelDirectory));
+const credentials = new ModelCredentialRepository(modelDirectory);
 let host: Awaited<ReturnType<typeof startLocalAgentHost>> | undefined, vite: Awaited<ReturnType<typeof createServer>> | undefined, browser: any;
 let expectedKey = "", paidCalls = 0;
 const speech = new SpeechTranscriptionService({ configuration: new SpeechModelConfiguration(repository, credentials), fetch: async (_url: string, init: RequestInit) => {
@@ -23,7 +25,7 @@ const speech = new SpeechTranscriptionService({ configuration: new SpeechModelCo
 try {
   await credentials.set("CHAT_FIXTURE", "synthetic-chat-key");
   await repository.initialize({ schemaVersion: 1, revision: 0, providers: [{ id: "deepseek-official", catalogId: "deepseek", name: "DeepSeek", protocol: "openai-completions", baseUrl: "https://api.deepseek.com", enabled: true, credentialRef: "CHAT_FIXTURE", models: [{ id: "deepseek-v4-flash", enabled: true }] }], defaultModel: { providerId: "deepseek-official", modelId: "deepseek-v4-flash" } });
-  host = await startLocalAgentHost({ dataDirectory: join(directory, "agent"), modelStorageDirectory: repository.directory,
+  host = await startLocalAgentHost({ dataDirectory: join(directory, "agent"), modelStorageDirectory: modelDirectory,
     speechModelManagement: true, dshExecutable: resolve("runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js") });
   const entry = `
     import React,{useState,useEffect} from 'react';import {createIntlTestRoot as createRoot} from '/tests/fixtures/intl-root.tsx';

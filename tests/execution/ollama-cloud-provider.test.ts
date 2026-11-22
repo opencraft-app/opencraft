@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -13,7 +14,7 @@ import { LocalAgentSettingsService, type HostProtocolRequest } from "../../plugi
 test("Ollama Cloud is offered with a working default connection and persists through the normal provider path", async () => {
   const directory = await mkdtemp(join(tmpdir(), "opencraft-ollama-cloud-"));
   try {
-    const repository = new ModelConfigurationRepository(directory);
+    const repository = new ModelConfigurationRepository(fileStateDocumentStore(directory));
     const credentials = new ModelCredentialRepository(directory);
     let projected = false;
     const dsh = { async call<T>(method: string): Promise<T> {
@@ -69,7 +70,7 @@ test("Ollama Cloud is offered with a working default connection and persists thr
       baseURL: draft.baseURL, credential: { kind: "replace", value: "synthetic-ollama-key" },
     });
     assert.notEqual((await repository.read()).providers[0]?.credentialRef, "OLLAMA_API_KEY");
-    assert.doesNotMatch(await readFile(repository.path, "utf8"), /synthetic-ollama-key/);
+    assert.doesNotMatch(await readFile(join(directory, "models.json"), "utf8"), /synthetic-ollama-key/);
     assert.equal((await providers.list()).providers.find(provider => provider.provider === "ollama-cloud")?.declared, false);
     client.dispose();
   } finally {

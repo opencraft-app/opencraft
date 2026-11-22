@@ -44,6 +44,8 @@ import { DshRoutedClient } from "./dsh-routed-client.js";
 import { AbsentDshClient } from "./dsh-absent-client.js";
 import { DurableHostProcessService } from "./durable-process-service.js";
 import { ProjectRepository } from "./project-repository.js";
+import { memoryStateDocumentStore } from "@opencraft/document-storage/state";
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import { ThreadCatalogPublisher } from "@opencraft/app-host-server/thread-catalog";
 import { ThreadLifecycle } from "./thread-lifecycle.js";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
@@ -310,8 +312,8 @@ export async function startLocalAgentHost(options: {
     const {ModelConfigurationService}=await import('./model-config/service.js');
     const {DshModelEngineAdapter,DshModelConfigurationBridge}=await import('./model-config/dsh-adapter.js');
     const {migrateDshModels}=await import('./model-config/migrate-dsh.js');
-    const repository=new ModelConfigurationRepository(options.modelStorageDirectory),credentials=new ModelCredentialRepository(options.modelStorageDirectory);
-    if(options.dataDirectory)await migrateDshModels(repository,credentials,options.dataDirectory,await client.call('settings.describe'));
+    const repository=new ModelConfigurationRepository(fileStateDocumentStore(options.modelStorageDirectory)),credentials=new ModelCredentialRepository(options.modelStorageDirectory);
+    if(options.dataDirectory)await migrateDshModels(repository,credentials,options.dataDirectory,options.modelStorageDirectory,await client.call('settings.describe'));
     modelConfiguration=new DshModelConfigurationBridge(client,new ModelConfigurationService(repository,credentials,new DshModelEngineAdapter(client)));
     await modelConfiguration.initialize();
   }
@@ -607,7 +609,8 @@ export async function startLocalAgentHost(options: {
     for (const client of websocketServer.clients) send(client, { jsonrpc: "2.0", method: "opencraft/tasks/changed", params: {} });
   }, storage.tasks);
   cleanup.push(() => tasks.close());
-  const projects = new ProjectRepository(options.projectStorageDirectory ?? options.modelStorageDirectory ?? options.dataDirectory);
+  const projectDirectory = options.projectStorageDirectory ?? options.modelStorageDirectory ?? options.dataDirectory;
+  const projects = new ProjectRepository(projectDirectory ? fileStateDocumentStore(projectDirectory) : memoryStateDocumentStore());
   const token = options.token ?? randomBytes(24).toString("base64url");
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");

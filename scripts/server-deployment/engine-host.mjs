@@ -23,6 +23,8 @@ import { RemoteEngineProvider } from '../../apps/local-agent-host/src/remote-eng
 import { attachEngineHost } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
 import { handleHostInput } from '../../apps/local-agent-host/src/host-input-http.ts';
 import { createPiModelConfiguration } from '../../apps/local-agent-host/src/model-config/pi-adapter.ts';
+import { ModelConfigurationRepository, ModelCredentialRepository } from '../../apps/local-agent-host/src/model-config/repository.ts';
+import { fileStateDocumentStore } from '@opencraft/document-storage/state-file';
 import { PiEngine, piHandoffReconciliation } from '../../plugins/pi-engine/src/index.ts';
 import { BridgeEngineProvider } from '../../apps/local-agent-host/src/bridge-engine-provider.ts';
 import { RemoteSessionCapabilities } from '../../packages/session-capabilities/src/remote.ts';
@@ -84,7 +86,7 @@ export async function startIndependentEngineHost(options) {
     else executionEnvironment=ExecutionEnvironmentRuntime.open(dataDirectory,{create:true});
     pi = new PiEngine({
       prepareAttachmentInput:(threadId,input)=>artifactInputs.prepareInput(input,threadId,artifactFiles?(artifact,owner,signal)=>artifactFiles.prepareArtifact(artifact,owner,signal):undefined),
-      ...(await createPiModelConfiguration(join(dataDirectory, 'models'), join(dataDirectory, 'pi'))),
+      ...(await createPiModelConfiguration(new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory, 'models'))), new ModelCredentialRepository(join(dataDirectory, 'models')), fileStateDocumentStore(join(dataDirectory, 'pi')))),
       modelPolicyPath: join(dataDirectory, "model-usage-policy.sqlite"),
       executionEnvironment, executionGit, admission: handoff, dataDirectory, directory: join(dataDirectory, 'pi'),
       attachmentDirectory: join(dataDirectory, 'agent', 'attachments'),

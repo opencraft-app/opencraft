@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import { configuredModelGatewayPath, ModelGatewayStore } from "@opencraft/account-pool-host";
 import { createHash } from 'node:crypto';
 import { ModelConfigurationRepository, ModelCredentialRepository } from "./repository.js";
@@ -84,7 +85,7 @@ function eligible(provider: ConfiguredProvider, model: ConfiguredModel, protocol
  * Engines never copy endpoints or keys into their own stores; every execution resolves again.
  */
 export function createEngineModelSource(directory: string, options: { readonly protocols: readonly EngineModelProtocol[]; readonly meteredContributions?: boolean; readonly allowInsecureLocalNetwork?: boolean }) {
-  const repository = new ModelConfigurationRepository(directory), credentials = new ModelCredentialRepository(directory);
+  const repository = new ModelConfigurationRepository(fileStateDocumentStore(directory)), credentials = new ModelCredentialRepository(directory);
 
   async function route(document: ModelDocument, provider: ConfiguredProvider, model: ConfiguredModel): Promise<EngineModelRoute> {
     if (!eligible(provider, model, options.protocols, options.allowInsecureLocalNetwork === true)) throw new EngineModelError("unavailable");

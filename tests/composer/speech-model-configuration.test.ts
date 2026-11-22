@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdtemp, readFile, rm, writeFile, chmod, symlink } from "node:fs/promises";
@@ -20,7 +21,7 @@ import type { DshClient } from "../../apps/local-agent-host/src/dsh-client";
 async function fixture(t: any) {
   const dir = await mkdtemp(join(tmpdir(), "opencraft-speech-models-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const repository = new ModelConfigurationRepository(dir), credentials = new ModelCredentialRepository(dir);
+  const repository = new ModelConfigurationRepository(fileStateDocumentStore(dir)), credentials = new ModelCredentialRepository(dir);
   const configuration = new SpeechModelConfiguration(repository, credentials);
   await repository.initialize();
   return { dir, repository, credentials, configuration };
@@ -41,7 +42,7 @@ test("explicit migration shares the model credential repository, is idempotent a
   assert.equal(await f.credentials.resolve(speech.credentialRef!), legacy.OPENCRAFT_SPEECH_API_KEY);
   assert.deepEqual(doc.defaultModel, { providerId: "chat", modelId: "text" });
   assert.deepEqual(doc.defaultSpeechModel, { providerId: speech.id, modelId: "ep-hyasr3" });
-  assert.doesNotMatch(await readFile(f.repository.path, "utf8"), /synthetic-speech-secret|apiKeyEnv/);
+  assert.doesNotMatch(await readFile(join(f.dir, "models.json"), "utf8"), /synthetic-speech-secret|apiKeyEnv/);
   assert.deepEqual(await migrateSpeechEnvironment(f.repository, f.credentials, { ...legacy, OPENCRAFT_SPEECH_API_KEY: "another-secret" }), { migrated: false });
   assert.deepEqual(await f.repository.read(), doc);
   await assert.rejects(f.repository.update(doc.revision, draft => { draft.defaultModel = draft.defaultSpeechModel!; }), /聊天/);
@@ -170,7 +171,7 @@ test("migration CLI reads private source by path only, emits no key, and refuses
   const run = (path: string) => promisify(execFile)(process.execPath, ["--import", "tsx", "scripts/admin/migrate-speech-models.ts", "--source", path, "--models", target]);
   const first = await run(source); assert.match(first.stdout, /已导入/); assert.doesNotMatch(first.stdout + first.stderr, /synthetic-speech-secret/);
   const again = await run(source); assert.match(again.stdout, /未重复/);
-  assert.equal((await new ModelConfigurationRepository(target).read()).providers[0]?.models[0]?.type, "asr");
+  assert.equal((await new ModelConfigurationRepository(fileStateDocumentStore(target)).read()).providers[0]?.models[0]?.type, "asr");
   await chmod(source, 0o644);
   await assert.rejects(run(source), (error: any) => !String(error.stdout + error.stderr).includes(legacy.OPENCRAFT_SPEECH_API_KEY));
   await chmod(source, 0o600); const link = join(f.dir, "link.env"); await symlink(source, link);

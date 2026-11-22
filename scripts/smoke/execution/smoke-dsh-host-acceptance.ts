@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -76,7 +77,7 @@ try {
   const port = (endpoint.address() as { port: number }).port;
   const directory = join(root, "models");
   await new ModelCredentialRepository(directory).set("FIXTURE_KEY", "synthetic-key");
-  await new ModelConfigurationRepository(directory).initialize({
+  await new ModelConfigurationRepository(fileStateDocumentStore(directory)).initialize({
     schemaVersion: 1, revision: 0,
     providers: [{ id: "fixture-provider", name: "Fixture", protocol: "openai-completions", baseUrl: `http://127.0.0.1:${port}/v1`, credentialRef: "FIXTURE_KEY", enabled: true,
       models: [{ id: "fixture", enabled: true, input: ["text", "image"] }] }],

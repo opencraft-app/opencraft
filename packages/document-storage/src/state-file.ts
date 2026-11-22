@@ -1,13 +1,24 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import lockfile from "proper-lockfile";
 import { stateChangeOutcome, StateDocumentCorruptError, validateStateKey, type StateDocumentStore } from "./state.js";
+
+/** In-process FIFO per absolute file, shared by every store instance over the same directory. */
+const fileTails = new Map<string, Promise<unknown>>();
+function serialize<T>(file: string, run: () => Promise<T>): Promise<T> {
+  const next = (fileTails.get(file) ?? Promise.resolve()).then(run);
+  const tail = next.then(() => undefined, () => undefined);
+  fileTails.set(file, tail);
+  void tail.then(() => { if (fileTails.get(file) === tail) fileTails.delete(file); });
+  return next;
+}
 
 /**
  * Node adapter: one pretty-printed JSON file per key in `directory`.
  * Updates take the same proper-lockfile lock the previous helpers used, so
- * processes on older and newer code still serialize on one file. Writes go
+ * processes on older and newer code still serialize on one file; updates in
+ * one process queue first, so they never compete for the lock. Writes go
  * through a temporary file, fsync, rename and a directory fsync.
  */
 export function fileStateDocumentStore(directory: string): StateDocumentStore {
@@ -44,17 +55,19 @@ export function fileStateDocumentStore(directory: string): StateDocumentStore {
   };
   return {
     read: (key) => load(key),
-    async update(key, change) {
+    update(key, change) {
       const target = path(key);
-      await mkdir(directory, { recursive: true, mode: 0o700 });
-      const release = await lockfile.lock(target, { realpath: false, retries: { retries: 20, minTimeout: 20, maxTimeout: 200 } });
-      try {
-        const outcome = stateChangeOutcome(change(await load(key)));
-        if (outcome.json !== undefined) await commit(key, outcome.json);
-        return outcome.result;
-      } finally {
-        await release();
-      }
+      return serialize(resolve(target), async () => {
+        await mkdir(directory, { recursive: true, mode: 0o700 });
+        const release = await lockfile.lock(target, { realpath: false, retries: { retries: 20, minTimeout: 20, maxTimeout: 200 } });
+        try {
+          const outcome = stateChangeOutcome(change(await load(key)));
+          if (outcome.json !== undefined) await commit(key, outcome.json);
+          return outcome.result;
+        } finally {
+          await release();
+        }
+      });
     },
   };
 }

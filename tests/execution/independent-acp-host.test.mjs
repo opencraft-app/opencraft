@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -100,7 +101,7 @@ test('production multi-engine entry aggregates Pi and two independently rooted A
     gateway?.socket.close(); await aggregate?.close();
     await Promise.all(owners.map(owner => owner.host.close())); await capability.close(); await rm(root, { recursive: true, force: true });
   });
-  await new ModelConfigurationRepository(join(piRoot, 'models')).initialize({ schemaVersion: 1, revision: 0, providers: [], defaultModel: null });
+  await new ModelConfigurationRepository(fileStateDocumentStore(join(piRoot, 'models'))).initialize({ schemaVersion: 1, revision: 0, providers: [], defaultModel: null });
   for (const id of ['acp', 'claude-code']) {
     const configPath = join(root, `${id}-generation.json`), dataDirectory = join(root, id);
     await writeFile(configPath, JSON.stringify({ command: process.execPath, args: [resolve('tests/fixtures/acp-engine-peer.mjs')], cwd: root, permission: 'allow-once', env: { ACP_TEST_TRACE: join(root, `${id}-native-trace.jsonl`) } }), { mode: 0o600 });

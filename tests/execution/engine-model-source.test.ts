@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -12,7 +13,7 @@ import { AccountPoolStore, CodexAccountPoolProxy } from "../../packages/account-
 async function fixture(t: test.TestContext) {
   const directory = await mkdtemp(join(tmpdir(), "engine-models-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const repository = new ModelConfigurationRepository(directory), credentials = new ModelCredentialRepository(directory);
+  const repository = new ModelConfigurationRepository(fileStateDocumentStore(directory)), credentials = new ModelCredentialRepository(directory);
   await credentials.set("RESPONSES_KEY", "responses-secret");
   await credentials.set("ANTHROPIC_KEY", "anthropic-secret");
   await repository.initialize({ schemaVersion: 1, revision: 0, defaultModel: null, providers: [

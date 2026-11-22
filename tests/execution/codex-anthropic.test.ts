@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -223,7 +224,7 @@ test("HTTP provider diagnostics preserve actionable errors while redacting crede
 
 test("configured Anthropic route uses only its own credential, no OAuth fallback or automatic retry", async () => {
   const directory = await mkdtemp(join(tmpdir(), "codex-anthropic-"));
-  const repository = new ModelConfigurationRepository(directory), credentials = new ModelCredentialRepository(directory);
+  const repository = new ModelConfigurationRepository(fileStateDocumentStore(directory)), credentials = new ModelCredentialRepository(directory);
   const pool = new AccountPoolStore({ databasePath: join(directory, "pool.sqlite"), secretsDirectory: join(directory, "secrets") });
   try {
     await credentials.set("ANTHROPIC_FIXTURE", "private-fixture");
@@ -290,7 +291,7 @@ test("thinking-free resend removes every thinking block and keeps the conversati
 
 async function configuredProxy(respond: (body: any, call: number) => Response) {
   const directory = await mkdtemp(join(tmpdir(), "codex-anthropic-"));
-  const repository = new ModelConfigurationRepository(directory), credentials = new ModelCredentialRepository(directory);
+  const repository = new ModelConfigurationRepository(fileStateDocumentStore(directory)), credentials = new ModelCredentialRepository(directory);
   const pool = new AccountPoolStore({ databasePath: join(directory, "pool.sqlite"), secretsDirectory: join(directory, "secrets") });
   await credentials.set("ANTHROPIC_FIXTURE", "private-fixture");
   await repository.initialize({ schemaVersion: 1, revision: 0, defaultModel: null, providers: [{ id: "test", name: "Messages", protocol: "anthropic-messages",

@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdtemp, rm, writeFile, symlink } from "node:fs/promises";
@@ -79,7 +80,7 @@ const start = async () => {
 try {
   await new Promise<void>(resolve => endpoint.listen(0, "127.0.0.1", resolve));
   await new ModelCredentialRepository(join(root, "models")).set("FIXTURE", "synthetic");
-  await new ModelConfigurationRepository(join(root, "models")).initialize({ schemaVersion: 1, revision: 0, providers: [{ id: "fixture", name: "Fixture", protocol: "openai-completions",
+  await new ModelConfigurationRepository(fileStateDocumentStore(join(root, "models"))).initialize({ schemaVersion: 1, revision: 0, providers: [{ id: "fixture", name: "Fixture", protocol: "openai-completions",
     baseUrl: `http://127.0.0.1:${(endpoint.address() as any).port}/v1`, credentialRef: "FIXTURE", enabled: true, models: [{ id: "fixture", enabled: true, input: ["text"] }] }], defaultModel: { providerId: "fixture", modelId: "fixture" } });
   await start(); const model = (await call("model/list")).data[0].model;
   const create = async () => (await call("thread/start", { cwd: root, model, permissions: "opencraft:permission-mode:full" })).thread.id;

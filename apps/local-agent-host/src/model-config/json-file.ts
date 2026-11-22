@@ -2,10 +2,11 @@ import {mkdir,readFile,writeFile,rename,unlink} from 'node:fs/promises';
 import {dirname} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import lockfile from 'proper-lockfile';
+import {CORRUPT_CONFIGURATION_MESSAGE} from './state-documents.js';
 
 export async function readJson(path:string):Promise<unknown|null>{
   let text:string;try{text=await readFile(path,'utf8')}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error}
-  try{const value=JSON.parse(text);if(value===null)throw new Error();return value}catch{throw new Error('配置 JSON 损坏，未覆盖原文件')}
+  try{const value=JSON.parse(text);if(value===null)throw new Error();return value}catch{throw new Error(CORRUPT_CONFIGURATION_MESSAGE)}
 }
 export async function writeJson(path:string,value:unknown){
   await mkdir(dirname(path),{recursive:true,mode:0o700});

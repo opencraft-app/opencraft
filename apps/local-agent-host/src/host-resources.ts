@@ -2,6 +2,8 @@ import { readFile, readdir, stat, lstat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { ProjectRepository } from "./project-repository.js";
+import { memoryStateDocumentStore } from "@opencraft/document-storage/state";
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import { LocalAttachmentStagingService } from "./attachments/local-attachment-staging.js";
 import { OPENCRAFT_ATTACHMENT_STAGING_EXTENSION } from "@opencraft/appserver-protocol";
 
@@ -41,7 +43,7 @@ export class LocalHostResources {
   private readonly projects: ProjectRepository;
   private readonly attachments?: LocalAttachmentStagingService;
   constructor(options: { projectDirectory?: string; attachmentDirectory?: string; artifactDirectory?: string } = {}) {
-    this.projects = new ProjectRepository(options.projectDirectory);
+    this.projects = new ProjectRepository(options.projectDirectory ? fileStateDocumentStore(options.projectDirectory) : memoryStateDocumentStore());
     if (options.attachmentDirectory) this.attachments = new LocalAttachmentStagingService(options.attachmentDirectory,options.artifactDirectory);
   }
   get extensions() { return this.attachments ? { [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: this.attachments.capability } : {}; }

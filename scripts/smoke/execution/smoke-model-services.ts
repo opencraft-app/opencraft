@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
@@ -26,7 +27,7 @@ try {
   const endpointPort = (endpoint.address() as { port: number }).port;
   const modelStorageDirectory=resolve(dataDirectory,'product');
   if(modelStorageDirectory){
-    const repository=new ModelConfigurationRepository(modelStorageDirectory),credentials=new ModelCredentialRepository(modelStorageDirectory);
+    const repository=new ModelConfigurationRepository(fileStateDocumentStore(modelStorageDirectory)),credentials=new ModelCredentialRepository(modelStorageDirectory);
     await credentials.set('TEST_NATIVE_KEY','synthetic-model-key');
     await repository.initialize({schemaVersion:1,revision:0,providers:[{id:'deepseek-official',name:'DeepSeek',catalogId:'deepseek',protocol:'openai-completions',baseUrl:'https://api.deepseek.com',credentialRef:'TEST_NATIVE_KEY',enabled:true,models:[{id:'deepseek-v4-flash',name:'DeepSeek-V4-Flash',enabled:true},{id:'deepseek-v4-pro',name:'DeepSeek-V4-Pro',enabled:true},{id:'deepseek-v4-flash-vision-exp',name:'DeepSeek-V4-Flash-Vision-Exp',enabled:true}]}],defaultModel:{providerId:'deepseek-official',modelId:'deepseek-v4-flash'}});
   }

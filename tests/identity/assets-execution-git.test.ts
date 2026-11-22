@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
@@ -652,7 +653,7 @@ test('real independent Pi owner consumes the Server handoff at its bash boundary
   res.writeHead(200,{'content-type':'text/event-stream'});res.write(chunk(delta,null));res.end(chunk({},first?'tool_calls':'stop')+'data: [DONE]\n\n');
  });model.listen(0,'127.0.0.1');await once(model,'listening');
  f.defer(async()=>{model.closeAllConnections();await new Promise<void>(r=>model.close(()=>r()));});
- await new ModelConfigurationRepository(join(directory,'models')).initialize({schemaVersion:1,revision:0,
+ await new ModelConfigurationRepository(fileStateDocumentStore(join(directory,'models'))).initialize({schemaVersion:1,revision:0,
   defaultModel:{providerId:'synthetic',modelId:'synthetic'},providers:[{id:'synthetic',name:'Synthetic',protocol:'openai-completions',credentialRef:null,authentication:'none',baseUrl:`http://127.0.0.1:${(model.address() as {port:number}).port}/v1`,enabled:true,
   models:[{id:'synthetic',name:'Synthetic',enabled:true,input:['text'],contextWindow:64000,maxTokens:1000,reasoningEfforts:false}]}]});
  const descriptorPath=join(f.root,'native-host.json');
@@ -795,7 +796,7 @@ test('real independent DSH process consumes the compiled Assets handoff without 
   }); endpoint.listen(0, '127.0.0.1'); await once(endpoint, 'listening');
   f.defer(async () => {endpoint.closeAllConnections(); await new Promise<void>(r => endpoint.close(() => r()));});
   const models = join(f.root, 'models');
-  await new ModelConfigurationRepository(models).initialize({schemaVersion: 1, revision: 0, defaultModel: {providerId: 'synthetic', modelId: 'synthetic'},
+  await new ModelConfigurationRepository(fileStateDocumentStore(models)).initialize({schemaVersion: 1, revision: 0, defaultModel: {providerId: 'synthetic', modelId: 'synthetic'},
     providers: [{id: 'synthetic', name: 'Synthetic', protocol: 'openai-completions', authentication: 'none', credentialRef: null, enabled: true,
       baseUrl: `http://127.0.0.1:${(endpoint.address() as {port: number}).port}/v1`, models: [{id: 'synthetic', name: 'Synthetic', enabled: true, input: ['text'], contextWindow: 64000, maxTokens: 1000, reasoningEfforts: false}]}]});
   const machine = await readHostMachineIdentity(directory);

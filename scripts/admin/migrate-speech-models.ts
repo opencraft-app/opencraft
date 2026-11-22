@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import { open } from "node:fs/promises";
 import { constants } from "node:fs";
 import { isAbsolute } from "node:path";
@@ -29,7 +30,7 @@ async function main() {
     if (typeof value !== "string") throw new Error("导入源格式无效");
     source[match[1]!] = value;
   }
-  const result = await migrateSpeechEnvironment(new ModelConfigurationRepository(args[3]!), new ModelCredentialRepository(args[3]!), source);
+  const result = await migrateSpeechEnvironment(new ModelConfigurationRepository(fileStateDocumentStore(args[3]!)), new ModelCredentialRepository(args[3]!), source);
   console.log(result.migrated ? "语音配置已导入模型服务；旧文件保留，请核对后移除旧密钥部署配置。" : "已有语音选择，未重复导入或覆盖。");
 }
 void main().catch(() => { console.error("语音导入失败，未确认的配置请在模型服务中核对。密钥不会输出。"); process.exitCode = 1; });

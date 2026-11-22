@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import { openManagedDatabase } from "@opencraft/sqlite-node";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -151,7 +152,7 @@ test("human contributions reuse the credential repository, require consent, and 
   const {path,root,store}=await fixture(t);environment(t,path);
   const directory=join(root,'models'),contributions=gatewayContributions(directory,path);
   const input={name:'My shared model',baseUrl:'https://provider.invalid/v1',protocol:'openai-responses',model:'model',apiKey:'synthetic-secret',shareWithTeam:true};
-  const repository=new ModelConfigurationRepository(directory);
+  const repository=new ModelConfigurationRepository(fileStateDocumentStore(directory));
   await repository.update(0,draft=>draft.providers.push({id:'approved-service',name:'Approved service',baseUrl:input.baseUrl,protocol:input.protocol,credentialRef:null,enabled:false,models:[{id:'model',enabled:false}]}));
   await assert.rejects(contributions.contribute('human-a',{...input,scope:'team',shareWithTeam:false}),/invalid_gateway_contribution/);
   await assert.rejects(contributions.contribute('human-a',{...input,baseUrl:'https://unapproved.invalid/v1'}),/not_approved/);
@@ -205,7 +206,7 @@ test("personal keys default to owner-only across Codex, descendants and assistan
   store.bind('thread-b','human-b'); store.bind('child-a',null,'thread-a');
   const directory=join(root,'models'),contributions=gatewayContributions(directory,path);
   const input={name:'Personal',baseUrl:'https://provider.invalid/v1',protocol:'openai-responses',model:'model',apiKey:'synthetic-personal-key'};
-  const repository=new ModelConfigurationRepository(directory);
+  const repository=new ModelConfigurationRepository(fileStateDocumentStore(directory));
   await repository.update(0,d=>d.providers.push({id:'approved',name:'Approved',baseUrl:input.baseUrl,protocol:input.protocol,credentialRef:null,enabled:false,models:[{id:'model',enabled:false}]}));
   let origin='';
   const handler=modelGatewayHttp({path,authority:()=>({actor:'human-a',administrator:false,origin}),...contributions});

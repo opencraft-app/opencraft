@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,rm,writeFile} from 'node:fs/promises';
@@ -12,7 +13,7 @@ const root=process.cwd(),scratch=await mkdtemp(join(tmpdir(),'personal-model-ui-
 const out=process.env.OPENCRAFT_SMOKE_OUTPUT??join(scratch,'evidence');await mkdir(out,{recursive:true});
 const path=join(scratch,'gateway.sqlite'),models=join(scratch,'models'),ledger=new ModelGatewayStore(path);
 ledger.configure('alice',{monthlyTokens:2_000_000,requestTokens:1000,concurrency:4},0,'admin');
-const repository=new ModelConfigurationRepository(models);
+const repository=new ModelConfigurationRepository(fileStateDocumentStore(models));
 await repository.initialize({schemaVersion:1,revision:0,providers:[{id:'approved',name:'编程模型服务',protocol:'openai-responses',baseUrl:'https://model.invalid/v1',credentialRef:null,enabled:false,models:[{id:'coding-model',name:'编程模型',enabled:true}]}],defaultModel:null});
 const contributions=gatewayContributions(models,path);
 let origin='',identity='alice',failSave=false;

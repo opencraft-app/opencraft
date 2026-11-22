@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createServer} from 'node:http';
@@ -23,10 +24,10 @@ async function fixture(t: test.TestContext, document = seed(), legacy?: unknown)
   const dir = await mkdtemp(join(tmpdir(), 'pi-model-config-')); t.after(() => rm(dir, {recursive: true, force: true}));
   const directory = join(dir, 'pi'); await mkdir(directory);
   if (legacy) await writeFile(join(directory, 'models.json'), JSON.stringify(legacy));
-  const repository = new ModelConfigurationRepository(join(dir, 'models'));
+  const repository = new ModelConfigurationRepository(fileStateDocumentStore(join(dir, 'models')));
   await repository.initialize(document);
   const credentials = new ModelCredentialRepository(join(dir, 'models')); await credentials.set('EXAMPLE_CREDENTIAL', 'test-key-in-memory');
-  const config = await createPiModelConfiguration(join(dir, 'models'), directory);
+  const config = await createPiModelConfiguration(repository, credentials, fileStateDocumentStore(directory));
   const engine = new PiEngine({...config, directory, cwd: dir}); t.after(() => engine.close()); await engine.start();
   return {dir, directory, repository, credentials, config, engine,
     update: async (change: (draft: ModelDocument) => void) => repository.update((await repository.read()).revision, change)};
@@ -76,7 +77,7 @@ test('legacy alias is a one-time unique metadata match and survives rename, rest
   assert.equal((await f.engine.models())[0].model, id);
   assert.equal((await readFile(join(f.directory, 'models.json'), 'utf8')), JSON.stringify(legacy));
   await writeFile(join(f.directory, 'models.json'), '{invalid legacy JSON after migration');
-  const reopened = await createPiModelConfiguration(join(f.dir, 'models'), f.directory); await reopened.configuration.synchronize();
+  const reopened = await createPiModelConfiguration(new ModelConfigurationRepository(fileStateDocumentStore(join(f.dir, 'models'))), new ModelCredentialRepository(join(f.dir, 'models')), fileStateDocumentStore(f.directory)); await reopened.configuration.synchronize();
   assert.ok(reopened.models.getModel('legacy-alias', 'arbitrary-model')!.input.includes('image'));
   assert.equal(reopened.models.getModel('custom-stable', 'arbitrary-model'), undefined);
 });
@@ -100,7 +101,7 @@ test('bad configuration fails closed and can recover at the same revision; speec
   const f = await fixture(t);
   await f.update(doc => {doc.providers.push({id: 'speech-only', name: 'Speech', protocol: 'hunyuan-asr', baseUrl: 'https://tokenhub.tencentmaas.com', credentialRef: 'EXAMPLE_CREDENTIAL', enabled: true, models: [{id: 'arbitrary-asr', type: 'asr', enabled: true}]});});
   assert.equal((await f.engine.models()).length, 1);
-  const path = f.repository.path; const original = await readFile(path, 'utf8');
+  const path = join(f.dir, 'models', 'models.json'); const original = await readFile(path, 'utf8');
   await writeFile(path, '{broken'); await assert.rejects(f.engine.models());
   await assert.rejects(f.engine.request('thread/start', {model: piModel('custom-stable', 'arbitrary-model')}, client));
   await writeFile(path, original); assert.equal((await f.engine.models()).length, 1);

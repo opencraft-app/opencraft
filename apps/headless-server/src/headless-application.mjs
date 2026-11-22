@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import {openWorkspaceExecutionService} from './workspaces/execution-service.js';
 import {openHeadlessAssetsStorage} from './headless-assets-storage.js';
 import {humanGitRuntimeDirectory,createHumanGitExecution} from './human-git-execution.js';
@@ -841,7 +842,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       agent = independentEngine;
     } else if (engines.includes("pi")) {
       releasePiOwner = await lockfile.lock(join(dataDirectory, "pi-owner"), {realpath:false,retries:0});
-      const piModels = await createPiModelConfiguration(join(dataDirectory, "models"), join(dataDirectory, "pi"));
+      const piModels = await createPiModelConfiguration(new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory, "models"))), new ModelCredentialRepository(join(dataDirectory, "models")), fileStateDocumentStore(join(dataDirectory, "pi")));
       const piAttachments=new LocalAttachmentStagingService(join(dataDirectory,"agent","attachments"),join(dataDirectory,"artifacts"));
       const piPrepareInput=(threadId,input)=>piAttachments.prepareInput(input,threadId,fileSystem?(artifact,owner,signal)=>fileSystem.prepareArtifact(artifact,owner,signal):undefined);
       piEngine = new PiEngine({ executionCli: connectedExecutionCli, prepareAttachmentInput:piPrepareInput, modelPolicyPath, ...piModels, executionEnvironment: identity?.executionEnvironment,executionGit:humanGitExecution, sessionCapabilities: capabilities.scoped(`server:${machineIdentity.machineId}:pi`), dataDirectory, directory: join(dataDirectory, "pi"), attachmentDirectory: join(dataDirectory, "agent", "attachments"), cwd: options.runtimeDirectory ?? join(root, "runtime") });
@@ -998,7 +999,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
             createSocket: url => new WebSocket(url),
           });
           const transport = agentIdentity?.wrapTransport(engine) ?? engine;
-          return new AgentDriverTransport(new ExecutionOwnershipTransport(new ModelCapabilityTransport(new ImageModelTransport(transport, new ImageGenerationConfiguration(join(dataDirectory,'models'), new ModelCredentialRepository(join(dataDirectory,'models')))), {read:()=>new ModelConfigurationRepository(join(dataDirectory,'models')).read(),credential:async ref=>(await new ModelCredentialRepository(join(dataDirectory,'models')).resolve(ref))??process.env[ref]}), executionStore, resolveExecutionNative), actorCollaboration,
+          return new AgentDriverTransport(new ExecutionOwnershipTransport(new ModelCapabilityTransport(new ImageModelTransport(transport, new ImageGenerationConfiguration(fileStateDocumentStore(join(dataDirectory,'models')), new ModelCredentialRepository(join(dataDirectory,'models')))), {read:()=>new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory,'models'))).read(),credential:async ref=>(await new ModelCredentialRepository(join(dataDirectory,'models')).resolve(ref))??process.env[ref]}), executionStore, resolveExecutionNative), actorCollaboration,
             threadId => conversationExecution.serverForHost('opencraft-server', threadId), signExecutionCli, operator.context);
         }), usageQueries, actorId => actorStore.get(actorId));
         const remote = remoteServers.get(hostId);
@@ -1321,7 +1322,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       hubService: hubController,
       remoteBrowserService: remoteBrowser,
       speechService: new SpeechTranscriptionService({ configuration: new SpeechModelConfiguration(
-        new ModelConfigurationRepository(join(dataDirectory, "models")), new ModelCredentialRepository(join(dataDirectory, "models"))) }),
+        new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory, "models"))), new ModelCredentialRepository(join(dataDirectory, "models"))) }),
     });
     conversationResources.retry();
     const reconciledResourceHosts = new Map();

@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -48,7 +49,7 @@ const endpoint=createServer(async(request,response)=>{
 try{
  await new Promise<void>(resolve=>endpoint.listen(0,'127.0.0.1',resolve));
  const models=join(directory,'models');await new ModelCredentialRepository(models).set('FIXTURE','synthetic-key');
- await new ModelConfigurationRepository(models).initialize({schemaVersion:1,revision:0,providers:[{id:'fixture',name:'Fixture',protocol:'openai-completions',baseUrl:`http://127.0.0.1:${(endpoint.address() as any).port}/v1`,credentialRef:'FIXTURE',enabled:true,models:[{id:'fixture',enabled:true,input:['text']}]}],defaultModel:{providerId:'fixture',modelId:'fixture'}});
+ await new ModelConfigurationRepository(fileStateDocumentStore(models)).initialize({schemaVersion:1,revision:0,providers:[{id:'fixture',name:'Fixture',protocol:'openai-completions',baseUrl:`http://127.0.0.1:${(endpoint.address() as any).port}/v1`,credentialRef:'FIXTURE',enabled:true,models:[{id:'fixture',enabled:true,input:['text']}]}],defaultModel:{providerId:'fixture',modelId:'fixture'}});
  const machineIdentity={machineId:'fixture',machineName:'Fixture'};
  const options={descriptorPath:join(directory,'connection.json'),machineIdentity,dataDirectory:join(directory,'agent'),modelStorageDirectory:models,skillsDirectory:join(directory,'skills'),projectlessWorkspaceDirectory:join(directory,'workspaces'),runtimeDirectory:directory,dshExecutable:resolve('runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'),dshCapabilityPlugin:resolve('apps/local-agent-host/src/dsh-capability-plugin.mjs')};
  const capabilities=new SessionCapabilities();actors=new ActorStore(join(directory,'actors.sqlite'));

@@ -1,15 +1,24 @@
 import {join} from 'node:path';
 import {stat} from 'node:fs/promises';
+import type {StateDocumentStore} from '@opencraft/document-storage/state';
 import {emptyModelDocument,validateModelDocument,type ModelDocument} from './model-document.js';
 import {readJson,writeJson,locked} from './json-file.js';
+import {configurationDocument} from './state-documents.js';
 
+export const MODEL_DOCUMENT_KEY='models.json';
 export class ModelConfigurationConflict extends Error {readonly code='settings-conflict';constructor(){super('模型配置已在其他窗口更新，请刷新后重试')}}
 export class ModelConfigurationRepository {
-  readonly path:string;
-  constructor(readonly directory:string){this.path=join(directory,'models.json')}
-  async read():Promise<ModelDocument>{const value=await readJson(this.path);if(value===null)return emptyModelDocument();validateModelDocument(value);return value;}
-  async initialize(seed:ModelDocument=emptyModelDocument()){return locked(this.path,async()=>{if(await readJson(this.path)!==null)return this.read();validateModelDocument(seed);await writeJson(this.path,seed);return seed})}
-  async update(expectedRevision:number,change:(draft:ModelDocument)=>void){return locked(this.path,async()=>{const current=await this.read();if(current.revision!==expectedRevision)throw new ModelConfigurationConflict();const next=structuredClone(current);change(next);next.revision=current.revision+1;validateModelDocument(next);await writeJson(this.path,next);return next})}
+  constructor(readonly documents:StateDocumentStore){}
+  async read():Promise<ModelDocument>{const value=await configurationDocument(this.documents.read(MODEL_DOCUMENT_KEY));if(value===null)return emptyModelDocument();validateModelDocument(value);return value;}
+  async initialize(seed:ModelDocument=emptyModelDocument()){return configurationDocument(this.documents.update(MODEL_DOCUMENT_KEY,(current):{result:ModelDocument}|{result:ModelDocument;next:ModelDocument}=>{
+    if(current!==null){validateModelDocument(current);return {result:current};}
+    validateModelDocument(seed);return {result:seed,next:seed};
+  }))}
+  async update(expectedRevision:number,change:(draft:ModelDocument)=>void){return configurationDocument(this.documents.update(MODEL_DOCUMENT_KEY,current=>{
+    const base=current===null?emptyModelDocument():current;validateModelDocument(base);
+    if(base.revision!==expectedRevision)throw new ModelConfigurationConflict();
+    const next=structuredClone(base);change(next);next.revision=base.revision+1;validateModelDocument(next);return {result:next,next};
+  }))}
 }
 
 /** No secret readback API; adapters receive values only at the execution boundary. */
