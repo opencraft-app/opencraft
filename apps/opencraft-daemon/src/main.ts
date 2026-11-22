@@ -182,8 +182,13 @@ export async function startOpenCraftDaemon(options: {
         });
         codexAgents.add(codexAgent);
         if (options.codexAgentBridge && !options.codexCoreEndpoint) throw Error("Bridge requires existing Core endpoint");
-        return options.codexAgentBridge ? new CodexProviderBridge(codexAgent, options.codexAgentBridge,
-          { admissionPaused: () => codexAdmissionPaused(options.codexDataDirectory) }) : codexAgent;
+        return options.codexAgentBridge ? new CodexProviderBridge(codexAgent, options.codexAgentBridge, {
+          admissionPaused: () => codexAdmissionPaused(options.codexDataDirectory),
+          ...(codexAgent instanceof CodexEngineAdapter ? {
+            prepareInput: (threadId, clientId, input, context) => codexAgent.prepareExternalInput(threadId, clientId, input, context),
+            projectHistory: (method, params, result) => codexAgent.projectExternalHistory(method, params, result),
+          } : {}),
+        }) : codexAgent;
       }
       throw new Error(`OpenCraft Daemon does not own Host ${hostId}`);
       });

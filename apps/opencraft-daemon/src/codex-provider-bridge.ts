@@ -23,7 +23,13 @@ export class CodexProviderBridge implements DuplexTransport {
   private admissionsInFlight = 0;
   private rejectedAdmissions = 0;
   /** `admissionPaused` is the same maintenance switch the legacy Host obeys. */
-  constructor(private legacy: DuplexTransport, options: BridgeGatewayOptions, private readonly policy: { admissionPaused?: () => boolean } = {}) {
+  constructor(private legacy: DuplexTransport, options: BridgeGatewayOptions, private readonly policy: {
+    admissionPaused?: () => boolean;
+    /** Stage attachments into model-readable input, recording them for display under this client message. */
+    prepareInput?: (threadId: string, clientId: string | undefined, input: readonly unknown[], context: TransportSubmissionContext) => Promise<unknown[]>;
+    /** Add recorded attachments to history results. */
+    projectHistory?: (method: string, params: Record<string, unknown>, result: unknown) => unknown;
+  } = {}) {
     this.gateway = new BridgeGateway(options, (threadId, value) => {
       const frame = object(value);
       if (frame.method === 'interaction/resolved') {
@@ -181,6 +187,8 @@ export class CodexProviderBridge implements DuplexTransport {
     const requestKey = optIn ? p.agentBridge?.clientRequestId : p.clientUserMessageId;
     const commandId = typeof requestKey === 'string' && requestKey ? `bridge-mutation:${createHash('sha256').update(JSON.stringify([threadId, frame.method, requestKey])).digest('hex')}` : `bridge-query:${randomUUID()}`;
     const command = (method: string, params: Record<string, unknown>) => this.gateway.command(threadId, commandId, method, params);
+    const prepare = async (input: unknown, clientId: string | undefined) =>
+      this.policy.prepareInput && Array.isArray(input) ? this.policy.prepareInput(threadId, clientId, input, context) : input;
     const execute = async () => {
       let result: unknown;
       if (optIn) {
@@ -190,11 +198,12 @@ export class CodexProviderBridge implements DuplexTransport {
       } else if (frame.method === 'turn/start') {
         if (!requestKey) throw Error('Stable client input identity required');
         const { threadId: _, opencraftExecutionAdmission,opencraftSessionMcp, ...native } = p;
+        native.input = await prepare(native.input, String(requestKey));
         result = await command('turn/start', { native, executionSource:opencraftExecutionAdmission,...(opencraftSessionMcp!==undefined?{sessionMcp:opencraftSessionMcp}:{}) });
       } else if (frame.method === 'turn/steer') {
         if (!identity.evidence) throw Object.assign(Error('This client cannot represent native input admission; use a client with per-input evidence support'), { code: -32601 });
         if (!requestKey) throw Error('Stable client input identity required');
-        result = await command('turn/steer', { inputId: requestKey, clientRequestId: requestKey, expectedTurnId: this.gateway.nativeTurn(threadId, p.expectedTurnId), input: p.input });
+        result = await command('turn/steer', { inputId: requestKey, clientRequestId: requestKey, expectedTurnId: this.gateway.nativeTurn(threadId, p.expectedTurnId), input: await prepare(p.input, String(requestKey)) });
         // Existing consumers cannot represent admission-only injection as success.
         result = { ...object(result), disposition: 'steered' };
       } else if (frame.method === 'turn/interrupt') result = await command('turn/stop', { expectedTurnId: this.gateway.nativeTurn(threadId, p.turnId) });
@@ -228,6 +237,8 @@ export class CodexProviderBridge implements DuplexTransport {
         const { threadId: _, ...params } = p;
         // Clients name public turns; the Host queue records native ones.
         if (typeof params.expectedTurnId === 'string' && params.expectedTurnId !== 'unknown') params.expectedTurnId = this.gateway.nativeTurn(threadId, params.expectedTurnId);
+        // The Host sends queued input on its own later, so attachments are staged now.
+        if (params.input !== undefined) params.input = await prepare(params.input, typeof params.clientUserMessageId === 'string' ? params.clientUserMessageId : undefined);
         result = this.publicTurns(threadId, await this.gateway.queue(threadId, frame.method, params));
       }
       else if (frame.method === 'thread/unsubscribe') { this.revokeClient(client, threadId); result = {}; }
@@ -235,7 +246,9 @@ export class CodexProviderBridge implements DuplexTransport {
       else throw Object.assign(Error('Method unavailable for this bridge thread'), { code: -32601 });
       const pendingInteractions = ['thread/resume', 'thread/read'].includes(frame.method) ? await this.gateway.pendingInteractions(threadId) : [];
       if (this.clients.get(client) === identity) {
-        this.emit({ id: frame.id, result: this.gateway.history(forkedId ?? threadId, result) }, client);
+        const visible = this.gateway.history(forkedId ?? threadId, result);
+        this.emit({ id: frame.id, result: this.policy.projectHistory && ['thread/read', 'thread/turns/list', 'thread/items/list'].includes(frame.method)
+          ? this.policy.projectHistory(frame.method, { ...p, threadId }, visible) : visible }, client);
         for (const pending of pendingInteractions) {
           if (this.clients.get(client) !== identity) break;
           this.offerInteraction(threadId, object(pending), client);

@@ -79,3 +79,24 @@ test('CLI preparation rejection never poisons an unsent native Turn',async()=>{
     await bridge.start('route',input,environment);assert.equal(starts,1);
   }
 });
+
+test('native image, local image and file mention input pass through; anything else is refused before sending', async () => {
+  const sent: any[] = [];
+  const bridge = new CodexBridge({ async request(method, params) {
+    sent.push({ method, params });
+    return method === 'turn/start' ? { turn: { id: `turn-${sent.length}` } } : { turnId: 'turn-1' };
+  } }, () => {});
+  bridge.bind('route', 'native');
+  const rich = [{ type: 'text', text: 'look' }, { type: 'image', url: 'data:image/png;base64,AAAA' }, { type: 'localImage', path: '/tmp/a.png' },
+    { type: 'mention', name: 'notes.md', path: '/work/notes.md' }];
+  await bridge.start('route', { input: rich, clientUserMessageId: 'rich' });
+  assert.deepEqual(sent[0].params.input, rich);
+  bridge.notification('turn/started', { threadId: 'native', turn: { id: 'turn-1' } });
+  await bridge.steer('route', { inputId: 'more', clientRequestId: 'more', expectedTurnId: 'turn-1', input: [{ type: 'localImage', path: '/tmp/b.png' }] });
+  assert.equal(sent[1].method, 'turn/steer');
+  bridge.notification('turn/completed', { threadId: 'native', turn: { id: 'turn-1', status: 'completed' } });
+  for (const input of [[{ type: 'skill', name: 'x', path: '/x' }], [{ type: 'localImage', path: 'relative.png' }], [{ type: 'image', url: 'http://plain/a.png' }],
+    [{ type: 'text', text: 'x'.repeat(70_000) }], []])
+    await assert.rejects(bridge.start('route', { input }), (e: unknown) => e instanceof CodexBridgeError && e.kind === 'unsupported', JSON.stringify(input).slice(0, 60));
+  assert.equal(sent.length, 2, 'refused input is never sent');
+});

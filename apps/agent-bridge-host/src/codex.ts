@@ -17,6 +17,22 @@ function id(value: unknown): string {
   if (typeof value !== 'string' || !value || value.length > 512) throw new CodexBridgeError('invalid', 'Expected identifier');
   return value;
 }
+/** Native user input the bridge forwards: text, images by URL or local path, and file mentions. */
+export const CODEX_INPUT_TYPES = ['text', 'image', 'localImage', 'mention'] as const;
+function nativeInput(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length === 0 || Buffer.byteLength(JSON.stringify(value)) > 65536) return false;
+  return value.every(raw => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+    const item = raw as Record<string, unknown>, path = (key: string) => typeof item[key] === 'string' && (item[key] as string).startsWith('/');
+    switch (item.type) {
+      case 'text': return typeof item.text === 'string';
+      case 'image': return typeof item.url === 'string' && /^(https:|data:image\/)/u.test(item.url);
+      case 'localImage': return path('path');
+      case 'mention': return typeof item.name === 'string' && path('path');
+      default: return false;
+    }
+  });
+}
 interface Input { inputId: string; clientRequestId: string; turnId: string; nativeId: string; state: 'dispatching' | 'accepted' | 'unknown' | 'rejected'; evidence?: string }
 interface Session { nativeId: string; starting?: boolean; activeTurn?: string; uncertainStart?: boolean; endedTurns: Set<string>; openedTurns: Set<string>; inputs: Map<string, Input> }
 /** Provider-native translation only; canonical IDs and event ordering belong to assembler. */
@@ -65,9 +81,7 @@ export class CodexBridge {
   async start(threadId: string, params: Record<string, unknown>, cliEnvironment?: Readonly<Record<string,string>>,cliPreparationDeadlineMs?:number,sessionMcp?:Record<string,unknown>|null): Promise<unknown> {
     const session = this.session(threadId);
     if (session.activeTurn || session.starting || session.uncertainStart) throw new CodexBridgeError('explicit-reject', 'Turn already active');
-    if (!Array.isArray(params.input) || params.input.length === 0 || !params.input.every(value => {
-      const content = record(value); return content.type === 'text' && typeof content.text === 'string';
-    }) || Buffer.byteLength(JSON.stringify(params.input)) > 65536) throw new CodexBridgeError('unsupported', 'Only bounded text input is available');
+    if (!nativeInput(params.input)) throw new CodexBridgeError('unsupported', 'Input must be bounded text, image, local image or file mention');
     // Permission/environment preparation remains the existing owner's responsibility.
     session.starting = true;
     let nativeStartAttempted=false;
@@ -96,9 +110,7 @@ export class CodexBridge {
     const inputId = id(p.inputId), clientRequestId = id(p.clientRequestId), expectedTurnId = id(p.expectedTurnId);
     if (expectedTurnId !== session.activeTurn) throw new CodexBridgeError('stale-target', 'Target turn is no longer active');
     if (p.deliveryMethod !== undefined && p.deliveryMethod !== 'native-inject') throw new CodexBridgeError('unsupported', 'Only native injection is available');
-    if (!Array.isArray(p.input) || p.input.length !== 1) throw new CodexBridgeError('invalid', 'One text input required');
-    const content = record(p.input[0]);
-    if (content.type !== 'text' || typeof content.text !== 'string' || Buffer.byteLength(content.text) > 65536) throw new CodexBridgeError('unsupported', 'Unsupported steer content');
+    if (!nativeInput(p.input)) throw new CodexBridgeError('unsupported', 'Unsupported steer content');
     if (session.inputs.has(inputId) || [...session.inputs.values()].some(i => i.clientRequestId === clientRequestId) || [...session.inputs.values()].some(i => i.state !== 'rejected' && !i.evidence)) throw new CodexBridgeError('explicit-reject', 'Input already pending; query its status');
     // Native client identity, rather than text matching, joins events even if
     // the input event arrives before the RPC response.

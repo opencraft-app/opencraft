@@ -35,7 +35,7 @@ bridge 协议加方法与能力声明，Engine Host 转发原生请求并投影 
 | 归档 / 取消归档 | `thread/archive`、`thread/unarchive` 及通知 | 有 | **已接线**：`session/archive|unarchive`（`lifecycle`）；归档要求会话空闲、输入已结算，会话保持绑定，取消归档后可直接续用 |
 | 删除 | `thread/delete`、`thread/deleted` | 有 | **已接线**：`session/delete`（`lifecycle`）；先原生删除成功再解除绑定，Host 按结束会话处理租约与审批 |
 | 目标（goal） | `thread/goal/get|set|clear` 及通知 | 有 | **已接线**：`goal/get|set|clear`（`goals`）；设置/清除成功后发 `thread/goal/updated|cleared`。模型在轮次中自行更新目标产生的原生通知尚未转发，见下 |
-| 图片输入 | `turn/start` 的 `localImage` / `image` | 有 | bridge 声明 `inputContentTypes: ["text"]`；附件暂存见 B |
+| 图片输入 | `turn/start` 的 `localImage` / `image` | 有 | **已接线**：Codex bridge 接受并校验 text、`image`（https 或 data:image）、`localImage`、`mention`（绝对路径），64 KB 上限，start 与 steer 一致；其它类型在发送前拒绝 |
 | 压缩上下文 | `thread/compact/start` | 未暴露 | 非对齐必需，按产品需要 |
 
 ## B. OpenCraft 自有能力，需要在 bridge 侧确定 owner
@@ -48,7 +48,7 @@ bridge 协议加方法与能力声明，Engine Host 转发原生请求并投影 
 | 标题生成 | `CodexThreadTitles` | daemon（观察 bridge 事件） | 不影响执行连续性 |
 | 置顶 `thread/pins/updated` | `codex-thread-pins.ts` | daemon | 纯展示状态 |
 | 线程设置 `thread/settings/update` | adapter 配置刷新 | 共享配置 owner | P7a 已让 bridge 消费同一 Codex 配置刷新 owner，需补线程设置入口 |
-| 附件暂存 | `LocalAttachmentStagingService` | daemon 暂存后以本地路径传入 | 与图片输入一起做 |
+| 附件暂存 | `LocalAttachmentStagingService` | **已完成**：daemon，与本地线程同一暂存 | 由装配注入：发送、steer、排队添加/编辑前暂存（排队在添加时暂存，因为 Host 自行发送），按公开线程与客户端消息记录，历史读取时投影附件 |
 | 维护准入（`codex-admission.paused`） | adapter 检查 | **已补**：`CodexProviderBridge` | 新建与发送等准入（与旧路径同一 `isCodexAdmission` 判定）在暂停时以同一维护错误拒绝；steer、读取、审批继续；维护快照合并 bridge 在途与拒绝计数。daemon 与服务器装配均传入同一暂停开关 |
 | 模型使用策略 | adapter 在 `turn/start`、goal 激活时检查 | **无需补**：服务器的 `ModelPolicyTransport` 包在 bridge 外层，经 bridge 的 `thread/read` 同样校验 bridge 线程；桌面 daemon 两条路径都未配置 Codex 模型策略 | 新接入 goal 等准入方法时须在该外层覆盖范围内 |
 | 模型网关准入（花费授权） | adapter `admitModelExecution`：按人类授权者登记执行，轮次结束结算 | daemon 路由层，需观察 bridge 轮次结束 | 仅在设置 `OPENCRAFT_MODEL_GATEWAY_DATABASE` 的服务器生效；bridge 线程目前不登记，属漏洞，桌面不受影响 |
@@ -66,6 +66,10 @@ bridge 协议加方法与能力声明，Engine Host 转发原生请求并投影 
 - 并存期：账号 Core 与 APP Server 使用桌面现有 `codexDataDirectory`（同一 `CODEX_HOME` 与账号库），已有会话不迁移数据。路由按线程 ID 前缀，非 `bridge:codex:` 的已有会话继续由旧 adapter 经 Core 读写。
 - 关闭 bridge：已有会话不受影响；开启期间创建的 `bridge:codex:` 会话因“native fallback refused”暂不可用，原生数据仍在 `CODEX_HOME`，重新开启即恢复。开关说明须写明。
 - 退休前必需：**接管已有会话**。当前规则是线程 owner 由创建前缀决定、永不 adoption，旧 adapter 退休后已有会话将无 owner。须新增：以原线程 ID 在 bridge 内续接原生会话（原生 `thread/resume`），Engine Host 账本补登记，公开 ID 不变；只在会话空闲时接管，活动轮次与排队输入先在旧路径结算。未完成此项不得退休旧 adapter。
+
+## 桌面接线时注意
+
+daemon 经 Core 运行旧 adapter 时，只有开启 Core Host overlays 才会暂存附件和保存附件记录；服务器装配已开启，桌面尚未。桌面接入 bridge（原第 4 步）时必须同时开启，否则已有会话会失去附件处理，bridge 会话的附件也不会被记录。
 
 ## 退休旧 adapter 时的其余 owner
 

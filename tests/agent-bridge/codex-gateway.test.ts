@@ -34,7 +34,7 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   let approvalAnswer: unknown, approvalAnswers = 0;
   let hasRollout=!initial,initialConfig:any;
   let loaded=true,nativeActive=false,issued=0,revoked=0,blockRetirement=cli==='timeout';const nativeConfigurations:any[]=[];
-  const lifecycleCalls:any[]=[];
+  const lifecycleCalls:any[]=[];const nativeStartInputs:unknown[]=[];
   ws.on('connection', socket => {
     nativePeer = socket;
     socket.on('message', raw => {
@@ -56,6 +56,7 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
       if (f.method === 'turn/start' && f.params.clientUserMessageId === 'unknown-start') { socket.send(JSON.stringify({ id: f.id, error: { code: -32000, message: 'Opaque native failure' } })); return; }
       if (f.method === 'turn/start') {
         assert.equal(f.params.opencraftExecutionAdmission,undefined);assert.equal(f.params.executionSource,undefined);assert.equal(f.params.opencraftSessionMcp,undefined);
+        nativeStartInputs.push(f.params.input);
         hasRollout=true;nativeActive=true;starts++; event('turn/started', { threadId: 'native-new', turn: { id: 'native-turn' } });
         event('item/started', { threadId: 'native-new', turnId: 'native-turn', item: { type: 'commandExecution', id: 'tool', command: 'cat input.txt', cwd: root, status: 'inProgress' } });
         if(String(cli).includes('contradiction')){
@@ -96,6 +97,7 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   await host.activate('codex-1', '');
   const frames: any[] = [], forwarded: any[] = [];
   let paused = false;
+  const staged:unknown[]=[];
   let legacyListener: (frame: string) => void = () => {};
   const createTransport = async () => {
     const legacy = {
@@ -111,7 +113,9 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     const next=cli?createServerCodexBridge(legacy,options,{
       async admit(threadId,inputId){return {serverId:'server',threadId,execution:{inputId,executionId:inputId}};},
       sign:scope=>'signed:'+scope.execution!.inputId,...(initial?{async prepareSessionMcp(){return {configuration:{url:'http://127.0.0.1:1/mcp',http_headers:{Authorization:'Bearer platform-mcp'}}};}}:{}),sessionMcp:async()=>({url:'http://127.0.0.1:1/mcp',http_headers:{Authorization:'Bearer platform-mcp'}}),started:()=>{serverStarted++;},rejectedBeforeStart:()=>{serverReset++;},
-    },{admissionPaused:()=>paused}):new CodexProviderBridge(legacy,options,{admissionPaused:()=>paused});
+    },{admissionPaused:()=>paused}):new CodexProviderBridge(legacy,options,{admissionPaused:()=>paused,
+      prepareInput:async(threadId,clientId,input)=>{staged.push([threadId,clientId]);return input.map((item:any)=>item.type==='mention'?{type:'text',text:`file at ${item.path}`}:item);},
+      projectHistory:(method,_params,result)=>({...(result as object),projected:method})});
     next.subscribeMessage(raw => frames.push(JSON.parse(raw))); await next.connect(); return next;
   };
   transport = await createTransport();
@@ -204,7 +208,13 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     await transport.send(JSON.stringify({id:gone,method:'thread/name/set',params:{threadId:forked,name:'late'},[LOGICAL_CLIENT_FIELD]:'client'}));
     assert.equal((await until(()=>frames.find(f=>f.id===gone),Boolean)).error.data.submissionOutcome,'rejected');
   }
-  const started = await request('turn/start', { threadId: 'bridge:codex:public-new', clientUserMessageId: 'start', input: [{ type: 'text', text: 'read' }] });
+  const started = await request('turn/start', { threadId: 'bridge:codex:public-new', clientUserMessageId: 'start', input: [{ type: 'text', text: 'read' },
+    ...(cli===false?[{ type: 'mention', name: 'input.txt', path: '/work/input.txt' }]:[])] });
+  if(cli===false){
+    // Attachments are staged by the composition before native Codex sees the input.
+    assert.deepEqual(nativeStartInputs.at(-1),[{type:'text',text:'read'},{type:'text',text:'file at /work/input.txt'}]);
+    assert.deepEqual(staged.at(-1),['bridge:codex:public-new','start']);
+  }
   const latest = await request('thread/turns/list', { threadId: 'bridge:codex:public-new', limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' });
   assert.equal(latest.data.length, 1); assert.equal(latest.data[0].id, started.turn.id); assert.equal(latest.data[0].status, 'inProgress');
   assert.equal(latest.nextCursor, 'older-turn');
@@ -275,6 +285,7 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   assert.equal(frames.filter(f => f.method === 'turn/started').length, beforeRestart);
   const read = await request('thread/read', { threadId: 'bridge:codex:public-new', includeTurns: true });
   assert.equal(read.thread.id, 'bridge:codex:public-new'); assert.equal(read.thread.turns[0].id, turnId);
+  if(cli===false)assert.equal(read.projected,'thread/read','history reads carry recorded attachments');
   assert.deepEqual(read.thread.turns[0].items[0].commandActions, [{ type: 'business-data', threadId: 'business-thread', id: 'native-turn' }]);
   const list = await request('thread/list'); assert.deepEqual(list.data.map((t: any) => t.id), ['native-old', 'bridge:codex:public-new']);
   const unknownId = ++sequence;

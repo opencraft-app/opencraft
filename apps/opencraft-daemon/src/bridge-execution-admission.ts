@@ -30,8 +30,12 @@ export interface BridgeExecutionAdmissionPort {
 }
 /** Keep signing and the bridge consumer adjacent; legacy traffic stays untouched. */
 export { codexAdmissionPaused } from './codex-maintenance.js';
-export function createServerCodexBridge(legacy:DuplexTransport,options:BridgeGatewayOptions|undefined,admission:BridgeExecutionAdmissionPort,policy:{admissionPaused?:()=>boolean}={}):DuplexTransport {
-  return options?new BridgeExecutionAdmissionTransport(new CodexProviderBridge(legacy,options,policy),admission):legacy;
+export function createServerCodexBridge(legacy:DuplexTransport,options:BridgeGatewayOptions|undefined,admission:BridgeExecutionAdmissionPort,policy:ConstructorParameters<typeof CodexProviderBridge>[2]={}):DuplexTransport {
+  // A local Codex Host stages bridge attachments exactly as it does its own.
+  const host=legacy as Partial<{prepareExternalInput:NonNullable<typeof policy>['prepareInput'];projectExternalHistory:NonNullable<typeof policy>['projectHistory']}>;
+  const attachments=typeof host.prepareExternalInput==='function'&&typeof host.projectExternalHistory==='function'
+    ?{prepareInput:host.prepareExternalInput.bind(legacy),projectHistory:host.projectExternalHistory.bind(legacy)}:{};
+  return options?new BridgeExecutionAdmissionTransport(new CodexProviderBridge(legacy,options,{...attachments,...policy}),admission):legacy;
 }
 
 /** Server-side admission only for opt-in bridge Threads. Legacy frames pass intact. */

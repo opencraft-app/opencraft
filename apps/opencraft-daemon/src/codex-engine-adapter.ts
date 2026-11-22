@@ -3554,6 +3554,20 @@ export class CodexEngineAdapter implements DuplexTransport {
     return this.queue;
   }
 
+  /**
+   * Stage attachments for a Thread this Host does not execute (a bridge Thread):
+   * the same model-readable locator as local Threads, recorded for display.
+   */
+  async prepareExternalInput(threadId: string, clientId: string | undefined, input: readonly unknown[], context?: TransportSubmissionContext): Promise<unknown[]> {
+    const prepared = await this.modelVisibleAttachmentInput(input, threadId, clientId, context);
+    if (clientId && prepared.attachments.length > 0 && this.messageAttachments) this.messageAttachments.record(threadId, clientId, prepared.attachments);
+    return prepared.input;
+  }
+  /** Attachments recorded by prepareExternalInput, projected onto that Thread's history. */
+  projectExternalHistory(method: string, params: RpcRecord, result: unknown): unknown {
+    return this.messageAttachments ? projectThreadAttachmentResult(this.messageAttachments, method, params, result) : result;
+  }
+
   private attachmentRecords(): OpenCraftMessageAttachments {
     if (!this.messageAttachments) throw new Error("Message attachment storage is unavailable");
     return this.messageAttachments;
