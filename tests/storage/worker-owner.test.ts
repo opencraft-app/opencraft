@@ -74,3 +74,21 @@ test("an owner that fails to open rejects open with its error", async () => {
   assert.ok(error instanceof CounterError);
   assert.equal(error.status, 503);
 });
+
+// A storage owner left open (for example, deliberately retained until process
+// exit) must not keep the process alive by itself, as a SQLite handle would not.
+test("an idle owner does not keep the process alive; a call in flight does", async () => {
+  const { spawn } = await import("node:child_process");
+  const script = `
+    const { WorkerOwner } = await import(${JSON.stringify(new URL("../../packages/worker-owner/src/index.ts", import.meta.url).href)});
+    const { owner } = await WorkerOwner.open(new URL(${JSON.stringify(entry.href)}), { name: "Counter storage" });
+    const value = await owner.call.slowAdd(2, 200);
+    console.log("answered " + value);
+  `;
+  const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script], { stdio: ["ignore", "pipe", "inherit"] });
+  let output = "";
+  child.stdout.on("data", (chunk) => (output += chunk));
+  const code = await new Promise((resolve) => child.once("exit", resolve));
+  assert.equal(output.trim(), "answered 2", "the in-flight call kept the process alive until it answered");
+  assert.equal(code, 0, "the idle owner then let the process exit");
+});

@@ -1,4 +1,4 @@
-import { openServerDatabase } from '@opencraft/storage-node/server';
+import { openServerCoreOwner } from '@opencraft/storage-node/server-owner';
 import { borrowServerDatabase } from '@opencraft/storage-node/server-borrow';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
@@ -24,7 +24,7 @@ import { LocalAccountApplication } from './application.js';
 /** Native Main owns these stores and the private browser proof. No renderer supplies identity. */
 export async function createDesktopAccountHost(directory: string, renderLogin: (nonce: string) => string, options: { openRemote?: (origin: string) => Promise<void>; storageRole?: 'owner' | 'borrower'; assetsStorage?: Parameters<typeof openHumanAssets>[0]['openStorage'] } = {}) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  const storage=options.storageRole==='borrower'?borrowServerDatabase(directory):await openServerDatabase(directory);
+  const storage=options.storageRole==='borrower'?borrowServerDatabase(directory):await openServerCoreOwner(directory);
   const disposers: (() => void | Promise<void>)[] = [];
   const disposeAll = async () => {
     const failures: unknown[] = [];

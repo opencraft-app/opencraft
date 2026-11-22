@@ -21,7 +21,7 @@ import { createProjectAutomations } from './project-automations.mjs';
 import { executionCliSourceToken } from '@opencraft/session-capabilities/credentials';
 import { waitForExecutionCliBinding } from '@opencraft/session-capabilities/execution-cli';
 import { createServerCodexBridge,readCodexBridgeConfiguration,createBridgeSessionMcp } from '@opencraft/opencraft-daemon/bridge-execution-admission';
-import { openServerDatabase } from "@opencraft/storage-node/server";
+import { openServerCoreOwner } from "@opencraft/storage-node/server-owner";
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { modelPolicyHttp } from '@opencraft/model-usage-policy/http';
 import { ModelPolicyTransport } from '@opencraft/model-usage-policy/transport';
@@ -342,7 +342,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   const productPluginAssets = await prepareProductPluginRelease({ releaseRoot: root, webRoot,
     cacheDirectory: process.env.OPENCRAFT_PRODUCT_PLUGIN_CACHE_DIRECTORY || join(dataDirectory, 'product-plugin-packs'),
     metadata: releaseManifest.productPlugins ?? null });
-  const serverStorage = await openServerDatabase(dataDirectory);
+  const serverStorage = await openServerCoreOwner(dataDirectory);
   const orchestrationStorage = new OrchestrationRuntimeWorker(join(dataDirectory, 'opencraft-server.sqlite'));
   try { await orchestrationStorage.start(); } catch (error) { await orchestrationStorage.close().catch(()=>{}); await serverStorage.close(); throw error; }
   const releaseLock = async () => { await orchestrationStorage.close(); await serverStorage.close(); };

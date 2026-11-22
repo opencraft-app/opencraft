@@ -103,7 +103,9 @@ export class WorkerOwner<T> {
     const owner = new WorkerOwner<T>(entry, options);
     owner.ready = settle;
     try {
-      return { owner, ready: (await ready) as R };
+      const value = (await ready) as R;
+      owner.settle();
+      return { owner, ready: value };
     } catch (error) {
       owner.closed = true;
       await owner.worker.terminate();
@@ -138,6 +140,15 @@ export class WorkerOwner<T> {
     })());
   }
 
+  /**
+   * An idle owner does not keep the process alive, like the synchronous handle
+   * it replaces; while a call (or opening) is in flight it does.
+   */
+  private settle(): void {
+    if (this.pending.size) this.worker.ref();
+    else this.worker.unref();
+  }
+
   private request(method: string, args: readonly unknown[]): Promise<never> {
     if (this.failure) return Promise.reject(this.failure);
     if (this.sealed || this.closed) return Promise.reject(new WorkerOwnerUnavailable(`${this.options.name} is closed`));
@@ -146,10 +157,12 @@ export class WorkerOwner<T> {
     const id = ++this.sequence;
     return new Promise<never>((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
+      this.worker.ref();
       try {
         this.worker.postMessage({ id, method, args });
       } catch (error) {
         this.pending.delete(id);
+        this.settle();
         reject(new WorkerOwnerUnavailable(`${this.options.name} could not receive the call`, { cause: error }));
       }
     });
@@ -164,6 +177,7 @@ export class WorkerOwner<T> {
     const call = this.pending.get(reply.id);
     if (!call) return;
     this.pending.delete(reply.id);
+    this.settle();
     if (!("error" in reply)) {
       call.resolve(reply.value);
       return;

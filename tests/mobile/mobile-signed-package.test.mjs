@@ -12,10 +12,13 @@ const configureExpo = require(join(expoRoot, "app.config.js"));
 
 const publicNotice = require("../../packages/react-runtime/NOTICE.json");
 
-const withBuildInputs = ({ android = false, ios = false }, run) => {
+const withBuildInputs = ({ android = false, ios = false, testflight = false, buildNumber = "1" }, run) => {
   const inputs = {
     OPENCRAFT_ANDROID_RELEASE: android ? "1" : undefined,
     OPENCRAFT_IOS_RELEASE: ios ? "1" : undefined,
+    OPENCRAFT_IOS_EXPORT_METHOD: testflight ? "app-store-connect" : undefined,
+    OPENCRAFT_IOS_BUILD_NUMBER: testflight ? buildNumber : undefined,
+    APPLE_TEAM_ID: testflight ? "ABCDE12345" : undefined,
   };
   const saved = Object.fromEntries(Object.keys(inputs).map(key => [key, process.env[key]]));
   try {
@@ -57,6 +60,15 @@ test("mobile identities ignore release flags and retain license notices", () => 
       assert.deepEqual(base, original, "building must not mutate the input manifest");
     }
   }
+});
+
+test("the TestFlight profile resolves the production iOS identity and selected build number", () => {
+  const base = standaloneConfig();
+  const config = withBuildInputs({ ios: true, testflight: true, buildNumber: "42" }, () => configureExpo({ config: base }));
+  assert.deepEqual(config.ios, { ...base.ios, bundleIdentifier: "app.opencraft", buildNumber: "42" });
+  assert.deepEqual(config.android, base.android);
+  assertNotices(config, base);
+  assert.throws(() => withBuildInputs({ testflight: true, buildNumber: "1;invalid" }, () => configureExpo({ config: base })), /OPENCRAFT_IOS_BUILD_NUMBER/);
 });
 
 test("release signing only replaces the generated Gradle release identity", () => {
