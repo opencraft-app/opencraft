@@ -43,7 +43,11 @@ export function createServerCodexBridge(legacy:DuplexTransport,options:BridgeGat
   // When the bridge owns every new Thread, its implicit identity is assigned here, before
   // admission, so an implicit creation is prepared exactly as an explicit one.
   const ownsNewThreads=!!(policy.newThreads||policy.exclusive||policy.adoptExisting);
-  return options?new BridgeExecutionAdmissionTransport(new CodexProviderBridge(legacy,options,{...attachments,...policy}),admission,ownsNewThreads):legacy;
+  if(!options)return legacy;
+  const bridge=new CodexProviderBridge(legacy,options,{...attachments,...policy});
+  // Host duties forwarded to the local Host (desktop) read a bridge Thread by its native session.
+  (legacy as {bindExternalThreadIdentities?:(identities:ReturnType<CodexProviderBridge['threadIdentities']>)=>void}).bindExternalThreadIdentities?.(bridge.threadIdentities());
+  return new BridgeExecutionAdmissionTransport(bridge,admission,ownsNewThreads);
 }
 
 /** Server-side admission only for opt-in bridge Threads. Legacy frames pass intact. */

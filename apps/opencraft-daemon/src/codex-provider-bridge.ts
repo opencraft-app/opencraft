@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { OPENCRAFT_DESKTOP_ATTACH } from '@opencraft/appserver-protocol/desktop';
 import { BridgeGateway, type BridgeGatewayOptions } from '@opencraft/agent-bridge-host/gateway';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 import type { DuplexTransport, TransportStatus, TransportSubmissionContext } from '@opencraft/appserver-client/transport';
@@ -297,6 +298,11 @@ export class CodexProviderBridge implements DuplexTransport {
       if (frame.id !== undefined) this.pending.set(JSON.stringify([client, frame.id]), { method: frame.method, client });
       const pinned = JSON.stringify({ ...frame, params: { ...p, threadId: native } });
       return this.legacy.sendWithContext ? this.legacy.sendWithContext(pinned, context) : this.legacy.send(pinned);
+    }
+    // The local Host's desktop serves bridge Threads too: it reads the Thread by its native session.
+    if (frame.method === OPENCRAFT_DESKTOP_ATTACH && typeof p.threadId === 'string' && this.gateway.owns(p.threadId)) {
+      if (frame.id !== undefined) this.pending.set(JSON.stringify([client, frame.id]), { method: frame.method, client });
+      return this.legacy.sendWithContext ? this.legacy.sendWithContext(raw, context) : this.legacy.send(raw);
     }
     // Thread orchestration control is a trusted lane of the local Host over Core's orchestration
     // channel, independent of Thread routing: a bridge parent is named by its native session.

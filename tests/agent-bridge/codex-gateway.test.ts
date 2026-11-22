@@ -266,6 +266,9 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   if(cli==='initial'){assert.equal(issued,2);assert.equal(nativeConfigurations.length,0);assert.equal(initialConfig['shell_environment_policy.set'].OPENCRAFT_THREAD_CLI,'fixture');assert.equal(initialConfig['mcp_servers.opencraft_session'].http_headers.Authorization,'Bearer platform-mcp');}
   else if(cli){assert.equal(issued,cli==='timeout'?2:1);assert.equal(nativeConfigurations[0].sandbox,'read-only');assert.equal(nativeConfigurations[0].approvalPolicy,'never');assert.equal(nativeConfigurations[0].config['shell_environment_policy.set'].OPENCRAFT_THREAD_CLI,'fixture');assert.equal(nativeConfigurations[0].config['mcp_servers.opencraft_session'].http_headers.Authorization,'Bearer platform-mcp');}
   const turnId = started.turn.id; assert.notEqual(turnId, 'native-turn');
+  // The local Host's desktop serves a bridge Thread: the request reaches it with the public identity.
+  await request('opencraft/desktop/attachment/create', { threadId: 'bridge:codex:public-new' });
+  assert.equal(forwarded.find(f => f.method === 'opencraft/desktop/attachment/create').params.threadId, 'bridge:codex:public-new');
   // Thread orchestration control goes to the local Host's trusted lane; a bridge parent is named natively.
   await request('opencraft/orchestration/prepare', { operationId: 'operation', threadId: 'bridge:codex:public-new', arguments: {} });
   const orchestration = forwarded.find(f => f.method === 'opencraft/orchestration/prepare');

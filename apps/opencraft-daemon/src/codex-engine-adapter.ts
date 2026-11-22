@@ -3210,9 +3210,11 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (method === OPENCRAFT_DESKTOP_ATTACH) {
         if (Object.keys(params).length !== 1 || typeof params.threadId !== "string") throw new Error();
         const owner: LocalDesktopOwner = { key, isCurrent: current, readThread: async threadId => {
-          const response = record(await this.requestPhysical("thread/read", { threadId, includeTurns: false }, 5_000));
+          // A bridge Thread is read by its native session; the binding keeps its public identity.
+          const nativeId = this.externalThreadIdentities?.toNative(threadId) ?? threadId;
+          const response = record(await this.requestPhysical("thread/read", { threadId: nativeId, includeTurns: false }, 5_000));
           const thread = record(response.thread);
-          if (thread.id !== threadId || typeof thread.path !== "string" || typeof thread.createdAt !== "number") throw new Error();
+          if (thread.id !== nativeId || typeof thread.path !== "string" || typeof thread.createdAt !== "number") throw new Error();
           return { id: threadId, path: thread.path, createdAt: thread.createdAt };
         } };
         const credential = await service.prepare(owner, params.threadId);
@@ -3577,6 +3579,9 @@ export class CodexEngineAdapter implements DuplexTransport {
   projectExternalNotification(message: RpcRecord): RpcRecord {
     return this.messageSenders ? projectThreadMessageNotification(this.projectSender, message) as RpcRecord : message;
   }
+  private externalThreadIdentities?: { toNative(threadId: string): string | undefined };
+  /** The provider bridge's public→native Thread identities, for Host duties it forwards here. */
+  bindExternalThreadIdentities(identities: { toNative(threadId: string): string | undefined }): void { this.externalThreadIdentities = identities; }
   /** Whether this Host can record verified senders for a bridge Thread's input. */
   get externalSenderAttribution(): boolean { return !!this.identity; }
   /**
