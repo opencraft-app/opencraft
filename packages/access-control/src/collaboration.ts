@@ -46,6 +46,7 @@ export interface ConversationExecutionPort {
   discoverMetadata?(options: ConversationDiscovery): Promise<{ conversations: ConversationMetadata[]; nextCursor: string | null }>;
   read?(ref: ConversationRef, cursor: string | null): Promise<unknown>;
   readBounded?(ref: ConversationRef, cursor: string | null): Promise<unknown>;
+  create?(target: import('@opencraft/appserver-protocol/collaboration').ConversationCreateTarget, content: string, operationKey: string): Promise<import('@opencraft/appserver-protocol/collaboration').ConversationCreation>;
   validate(binding: RunBinding): Promise<void>;
   receipt(binding: RunBinding, requestId: string, options?: { includeCompletion: true }): Promise<ExecutionReceipt | null>;
   /** Null is an explicit, safe deferral before any native input attempt. */
@@ -368,6 +369,13 @@ export class Collaboration {
     }
     this.#conversation(context, ref, 'conversation.read');
     return {ref, externalContext: true, history: result};
+  }
+  async createConversation(context: ActorContext, body: Record<string, unknown>) {
+    fields(body, ['serverId','projectId','cwd','content','idempotencyKey','initialPermissionMode']);
+    if (!this.actors.isCurrent(context) || !this.admittedActor(context.actorId)) throw new CollaborationError(401, 'actor_authentication_required');
+    if (!this.execution.create) throw new CollaborationError(409, 'unsupported_capability');
+    const target = { serverId: text(body.serverId), ...(body.projectId === undefined ? {} : {projectId:text(body.projectId)}), ...(body.cwd === undefined ? {} : {cwd:text(body.cwd,4096)}), ...(body.initialPermissionMode === undefined ? {} : {initialPermissionMode:text(body.initialPermissionMode)}) };
+    return this.execution.create(target, text(body.content,16384), text(body.idempotencyKey,128));
   }
   async discover(context: ActorContext, search: string, cursor: string | null, suggestions?: { limit: number; sourceThreadId?: string }) {
     if (!this.actors.isCurrent(context) || !this.admittedActor(context.actorId) || !this.actors.allows(context, 'conversation.search')) throw new CollaborationError(403, 'conversation_action_denied');
@@ -728,6 +736,7 @@ export class Collaboration {
       if (args.bounded !== undefined && typeof args.bounded !== 'boolean') throw new CollaborationError(400, 'invalid_field');
       return this.readConversation(context,args.reference,args.cursor === undefined ? null : text(args.cursor,4096),args.bounded === true,args.tail === undefined ? undefined : Number(args.tail));
     }
+    if (action === 'create') { return this.createConversation(context, args); }
     if (action === 'discover') {
       fields(args,['search','cursor','suggestions','limit','sourceThreadId']);
       if (args.suggestions !== undefined && args.suggestions !== true) throw new CollaborationError(400, 'invalid_field');

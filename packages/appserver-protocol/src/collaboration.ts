@@ -1,14 +1,17 @@
 import type { InputCompletion } from "./input-delivery.js";
 /** Stable resource identity. Host connection paths are deliberately absent. */
 export interface ConversationRef { readonly serverId: string; readonly threadId: string }
+export interface ConversationCreateTarget { serverId: string; projectId?: string; cwd?: string; initialPermissionMode?: string }
+export interface ConversationCreation { operationKey: string; ref: ConversationRef; creationState: 'created'|'rejected'|'unknown'; firstMessageState: 'submitted'|'rejected'|'unknown' }
+export interface ConversationCreationLookup { found: boolean; operation?: ConversationCreation }
 export type CollaborationTarget = { kind: "actor"; actorId: string } | { kind: "conversation"; ref: ConversationRef };
 export const COLLABORATION_METHOD = "opencraft/collaboration";
 /** Each addition is negotiated independently; version alone grants no capability. */
 export const COLLABORATION_CAPABILITIES = { version: 1, read: true, queue: true, steer: true,
-  servers: true, metadata: true, metadataDiscovery: true, boundedRead: true, tailRead: true, lookup: true, deliveryMetadata: true, discoverFilters: true } as const;
+  servers: true, metadata: true, metadataDiscovery: true, boundedRead: true, tailRead: true, lookup: true, deliveryMetadata: true, discoverFilters: true, create: true, createLookup: true, initialPermissionMode: true } as const;
 export interface ConversationServer {
   serverId: string; label: string; engine: string; connectionState: 'ready' | 'unavailable' | 'unknown';
-  capabilities: { metadata: boolean; read: boolean; boundedRead: boolean; tailRead?: boolean; queue: boolean; steer: boolean; discoverFilters?: boolean };
+  capabilities: { metadata: boolean; read: boolean; boundedRead: boolean; tailRead?: boolean; create?: boolean; createLookup?: boolean; initialPermissionMode?: boolean; queue: boolean; steer: boolean; discoverFilters?: boolean };
 }
 export interface ConversationMetadata {
   ref: ConversationRef; projectId: string | null; cwd: string | null;

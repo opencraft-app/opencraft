@@ -1,4 +1,4 @@
-import type { ConversationRef, CollaborationReadCommandMap, ConversationReceipt, ConversationLookup } from '@opencraft/appserver-protocol/collaboration';
+import type { ConversationRef, CollaborationReadCommandMap, ConversationReceipt, ConversationLookup, ConversationCreateTarget, ConversationCreation } from '@opencraft/appserver-protocol/collaboration';
 import { COLLABORATION_METHOD } from '@opencraft/appserver-protocol/collaboration';
 import { JsonRpcAppServerClient } from './client';
 import type { DuplexTransport } from './transport';
@@ -56,6 +56,10 @@ export class CollaborationClient {
   }
   lookup(ref: ConversationRef, operationKey: string) {
     return this.command<ConversationLookup>('lookup', { action: 'lookup', reference: ref, idempotencyKey: operationKey });
+  }
+  create(target: ConversationCreateTarget, content: string, operationKey: string) {
+    this.require('create');
+    return this.command<ConversationCreation>('create', { action: 'create', ...target, content, idempotencyKey: operationKey });
   }
   close() { return this.connection.close(); }
 }

@@ -98,7 +98,7 @@ export async function run(argv: string[]) {
   try {
     parsed = parseArgs({ args: argv, allowPositionals: true, tokens: true, options: {
       json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, connection: { type: 'string' }, server: { type: 'string' },
-      cursor: { type: 'string' }, tail: { type: 'string' }, 'include-title': { type: 'boolean' }, 'metadata-only': { type: 'boolean' },
+      cursor: { type: 'string' }, tail: { type: 'string' }, 'permission-mode': {type:'string'}, 'include-title': { type: 'boolean' }, 'metadata-only': { type: 'boolean' },
       ssh: { type: 'string' }, instance: { type: 'string' }, default: { type: 'boolean' }, 'default-server': { type: 'string' },
       'ssh-config': { type: 'string' },
       mode: { type: 'string' }, key: { type: 'string' }, 'message-file': { type: 'string' },
@@ -111,10 +111,10 @@ export async function run(argv: string[]) {
   const options = parsed.values, args = parsed.positionals;
   if (options.help || args.length === 0) return { help };
   const command = args.slice(0, args[0] === 'status' ? 1 : 2).join(' ');
-  const counts: Record<string, number> = { status: 1, 'server list': 2, 'connection add': 3, 'thread list': 2, 'thread show': 3, 'thread log': 3,
+  const counts: Record<string, number> = { status: 1, 'server list': 2, 'connection add': 3, 'thread create': 3, 'thread list': 2, 'thread show': 3, 'thread log': 3,
     'thread send': args.length === 4 ? 4 : 3, 'thread lookup': 3 };
   if (counts[command] !== args.length) throw new CliError(2, 'INVALID_ARGUMENTS', 'Check --help.');
-  const allowed = ['json', 'connection', 'server', ...(command === 'connection add' ? ['ssh','ssh-config','instance','default','default-server','web-url'] : []),
+  const allowed = ['json', 'connection', 'server', ...(command === 'thread create' ? ['key','project','cwd','permission-mode'] : []), ...(command === 'connection add' ? ['ssh','ssh-config','instance','default','default-server','web-url'] : []),
     ...(['thread list','thread log'].includes(command) ? ['cursor'] : []), ...(command === 'thread log' ? ['tail'] : []), ...(command === 'thread list' ? ['include-title','metadata-only','project','cwd'] : []),
     ...(command === 'thread send' ? ['mode','key','message-file','wait','timeout','expected-turn'] : []),
     ...(command === 'thread lookup' ? ['key'] : []), ...(command === 'thread show' ? ['delivery','delivery-key'] : [])];
@@ -172,6 +172,12 @@ export async function run(argv: string[]) {
       if ((options.project !== undefined || options.cwd !== undefined) && server.capabilities.discoverFilters !== true) throw new CliError(6, 'UNSUPPORTED_CAPABILITY', 'Host lacks discovery filters.');
       const result = await client.discover(server.serverId, options.cursor, options['include-title'], { projectId: options.project, cwd: options.cwd });
       return { ...result, conversations: result.conversations.map(row => withAttentionLink(row, profile)) };
+    }
+    if (args[1] === 'create' && args.length === 3) {
+      if (server.capabilities.create !== true) throw new CliError(6, 'UNSUPPORTED_CAPABILITY', 'Host lacks thread creation.');
+      const key = options.key ?? randomUUID();
+      if (!options.project && !options.cwd) throw new CliError(2, 'INVALID_ARGUMENTS', 'thread create needs --project or --cwd.');
+      return await client.create({serverId:server.serverId, ...(options.project ? {projectId:options.project} : {}), ...(options.cwd ? {cwd:options.cwd} : {}), ...(options['permission-mode'] ? {initialPermissionMode:options['permission-mode']} : {})}, args[2]!, key);
     }
     if (args[1] === 'show' && args.length === 3) {
       if (options.delivery !== undefined) return await client.delivery(uriRef!, options.delivery);
