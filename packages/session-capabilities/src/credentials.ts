@@ -1,20 +1,23 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { mkdirSync, openSync, readFileSync, closeSync, writeFileSync, statSync } from "node:fs";
+import { mkdir, open } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { CapabilitySession } from "./index.js";
 
 /** A stable signing key, never a model-visible global credential. Tokens bind a
  * single server/thread/execution. Domain providers reauthorize independently on each call.
  */
-export function capabilitySigningKey(path: string): Buffer {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  let fd: number | undefined;
-  try { fd = openSync(path, "wx", 0o600); writeFileSync(fd, randomBytes(32)); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
-  finally { if (fd !== undefined) closeSync(fd); }
-  const key = readFileSync(path), info = statSync(path);
-  if (!info.isFile() || (info.mode & 0o077) || key.length !== 32) throw new Error("Invalid capability signing key");
-  return key;
+export async function capabilitySigningKey(path: string): Promise<Buffer> {
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  try {
+    const created = await open(path, "wx", 0o600);
+    try { await created.writeFile(randomBytes(32)); } finally { await created.close(); }
+  } catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+  const handle = await open(path, "r");
+  try {
+    const [key, info] = [await handle.readFile(), await handle.stat()];
+    if (!info.isFile() || (info.mode & 0o077) || key.length !== 32) throw new Error("Invalid capability signing key");
+    return key;
+  } finally { await handle.close(); }
 }
 export function sessionCapabilityToken(key: Buffer, session: CapabilitySession): string {
   const payload = Buffer.from(JSON.stringify(session.execution ? ["execution", session.serverId, session.threadId, session.execution] : ["session", session.serverId, session.threadId])).toString("base64url");

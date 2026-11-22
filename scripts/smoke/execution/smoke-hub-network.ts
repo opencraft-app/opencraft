@@ -8,6 +8,7 @@ import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { chromium } from '@playwright/test';
 import WebSocket from 'ws';
 import { HubNetwork } from "../../../packages/hub-network/src/node";
+import { HubStore } from '../../../packages/hub-network/src/store-file.js';
 import { MembershipStore, InstanceAccess } from "../../../packages/access-control/src";
 import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
 import { AssertionSigner } from "../../../packages/identity-core/src/node";
@@ -49,7 +50,7 @@ try {
   };
   let a = await operator(); await operator({ revision: a.revision, action: 'configure', name: 'Entry A', endpoint: `https://127.0.0.1:${tlsPort}`, origin: '', accepting: true, forwarding: true });
   a = await operator(); const ab = await operator({ revision: a.revision, action: 'invite', origins: [origin], allowTransit: true });
-  const b = new HubNetwork(join(privateRoot, 'b.json'), { ca: await readFile(join(privateRoot, 'ca.crt'), 'utf8') }), c = new HubNetwork(join(privateRoot, 'c.json')); cleanup.push(() => b.close(), () => c.close());
+  const b = new HubNetwork(new HubStore(join(privateRoot, 'b.json')), { ca: await readFile(join(privateRoot, 'ca.crt'), 'utf8') }), c = new HubNetwork(new HubStore(join(privateRoot, 'c.json'))); cleanup.push(() => b.close(), () => c.close());
   const mutate = (node: HubNetwork, input: Record<string, unknown>) => node.command({ revision: node.store.state.revision, ...input }, 'fixture-administrator');
   mutate(b, { action: 'connect', invitation: ab.invitation, trustIdentity: true });
   // The department uses a normal certificate trusted through an explicit invitation CA.

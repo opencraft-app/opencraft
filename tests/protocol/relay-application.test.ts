@@ -7,11 +7,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createPublicKey, generateKeyPairSync, randomBytes } from 'node:crypto';
 import { build } from 'esbuild';
+import { buildOwnerWorkers } from '../../scripts/packaging/owner-workers.mjs';
 import { pathToFileURL } from 'node:url';
 import { parseRelayConfiguration, startRelayApplication, type RelayComposition } from '../../apps/relay-server/src/application';
 import { AssertionProvider } from '../../packages/identity-core/src/node';
 import { connectRelay } from '../../plugins/relay-connect/src/server';
 import { HubNetwork } from '../../packages/hub-network/src/node';
+import { HubStore } from '../../packages/hub-network/src/store-file.js';
 import { selectionIdentity } from '../../apps/relay-server/src/selection';
 
 const token = () => randomBytes(32).toString('base64url');
@@ -115,7 +117,7 @@ test('listen failure retires identity and releases the Hub state lock', async t 
     createIdentity: async () => ({ provider: { authenticate: () => null }, close: () => { closed++; } }),
   }), { code: 'EADDRINUSE' });
   assert.equal(closed, 1);
-  const reopened = new HubNetwork(state); reopened.close();
+  const reopened = new HubNetwork(new HubStore(state)); reopened.close();
 });
 
 test('certificate failure after resource acquisition rolls back every owner even if identity close fails', async t => {
@@ -127,7 +129,7 @@ test('certificate failure after resource acquisition rolls back every owner even
     hubNetwork: { stateFile: state, operatorCredentialFile: file } }, {
     createIdentity: async () => ({ provider: { authenticate: () => null }, close: () => { closed++; throw new Error('Synthetic close failure'); } }),
   }), /startup and rollback failed/);
-  assert.equal(closed, 1); const reopened = new HubNetwork(state); reopened.close(); await assert.rejects(get(input.port));
+  assert.equal(closed, 1); const reopened = new HubNetwork(new HubStore(state)); reopened.close(); await assert.rejects(get(input.port));
 });
 
 test('generic independently bundled application has no enterprise implementation and runs a transit Hub', async t => {
@@ -135,6 +137,7 @@ test('generic independently bundled application has no enterprise implementation
   const bundle = join(dir, 'application.mjs');
   const result = await build({ entryPoints: ['apps/relay-server/src/application.ts'], outfile: bundle, bundle: true, metafile: true,
     platform: 'node', format: 'esm', target: 'node24', banner: { js: "import {createRequire} from 'node:module';const require=createRequire(import.meta.url);" } });
+  await buildOwnerWorkers(dir);
   const sourceRoots = ['apps/relay-server/src/', 'packages/', 'node_modules/'];
   assert.deepEqual(Object.keys(result.metafile!.inputs).filter(path => !sourceRoots.some(root => path.startsWith(root))), [],
     'Standalone Relay bundles only its own application, shared packages and dependencies');

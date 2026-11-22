@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { build } from 'esbuild';
+import { buildOwnerWorkers } from './owner-workers.mjs';
 import { mkdir, writeFile, copyFile } from 'node:fs/promises';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +21,7 @@ export async function packageRelay({ output = join(root, 'dist/relay'), relayEnt
       define: { 'process.env.OPENCRAFT_RELAY_SOURCE_REVISION': JSON.stringify(revision), 'process.env.OPENCRAFT_RELAY_BUILD_ID': JSON.stringify(buildId) },
       banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" } });
   }
+  await buildOwnerWorkers(output);
   await writeFile(join(output, 'package.json'), JSON.stringify({ name: '@opencraft/relay-deployment', version: '0.1.0', private: true, type: 'module', engines: { node: '>=24' } }, null, 2));
   await copyFile(join(root, 'docs/operations/relay-deployment.md'), join(output, 'README.md'));
   console.log(output);

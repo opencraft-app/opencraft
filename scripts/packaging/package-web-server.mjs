@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { buildOwnerWorkers } from './owner-workers.mjs';
 import { buildTerminalOwnerRuntime } from './package-terminal-runtime.mjs';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { packageBrowserRuntime } from './package-browser-runtime.mjs';
@@ -137,7 +138,6 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
       ['apps/personal-assistant/src/runtime/assistant-server.mjs', 'assistant-server.mjs', 'esm'],
       ['packages/access-control/src/orchestration-runtime.worker.ts', 'orchestration-runtime-worker.mjs', 'esm'],
       ['packages/web-push-node/src/store.worker.ts', 'push-storage-worker.mjs', 'esm'],
-      ['apps/opencraft-daemon/src/ssh-connections.worker.ts', 'ssh-connections-worker.mjs', 'esm'],
       ['packages/access-control/src/server-spaces.worker.ts', 'server-spaces-worker.mjs', 'esm'],
       ['packages/native-history-node/src/transcript-cache-storage.worker.ts', 'transcript-cache-storage-worker.mjs', 'esm'],
       ['apps/local-agent-host/src/dsh-capability-plugin.mjs', 'dsh-capability-plugin.mjs', 'esm'],
@@ -153,6 +153,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
         plugins: [{ name: 'execution-pty', setup(builder) { builder.onResolve({ filter: /^node-pty$/ }, () => ({ path: './native/node-pty/lib/index.js', external: true })); builder.onResolve({ filter: /^ssh2$/ }, () => ({ path: './native/node_modules/ssh2/lib/index.js', external: true })); } }],
         banner: executionModuleOptions(format).banner });
     }
+    await buildOwnerWorkers(join(packageRoot, 'execution'), { target: 'node22' });
     // Opt-in deployment tooling only; packaging never changes a host unit or policy.
     await cp(join(repositoryRoot, 'scripts/server-deployment/tool-memory-guard.py'), join(packageRoot, 'runtime/tool-memory-guard.py'));
     await cp(join(repositoryRoot, 'scripts/server-deployment/prepare-tool-memory-guard.mjs'), join(packageRoot, 'runtime/prepare-tool-memory-guard.mjs'));

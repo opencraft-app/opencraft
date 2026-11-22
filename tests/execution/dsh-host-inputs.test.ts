@@ -23,7 +23,7 @@ test('independent DSH consumes signed session tools, preserves browser owner and
  const capabilities=new SessionCapabilities();let allowed=true,calls=0;
  const tool={name:'im_reply',description:'Reply',inputSchema:{type:'object',properties:{}}};
  capabilities.register({id:'im.reply',tools:session=>allowed&&session.serverId==='server:fixture:dsh'&&session.threadId==='same'?[tool]:[],async call(){calls++;return {delivered:true};}});
- const key=capabilitySigningKey(join(directory,'session-capabilities.key'));
+ const key=await capabilitySigningKey(join(directory,'session-capabilities.key'));
  const options={descriptorPath:join(directory,'session-capabilities.json'),authorizeInput:(session:any,id:string)=>allowed&&session.serverId==='server:fixture:dsh'&&session.threadId==='same'&&id==='actor-input:one'};
  let mcp=new SessionCapabilityMcp(capabilities,key,undefined,options);await mcp.listen();t.after(()=>mcp.close());
  const remote=new RemoteSessionCapabilities(directory,'server:fixture:dsh');await remote.refresh('same');assert.equal(remote.tools('same')[0]?.name,'im_reply');

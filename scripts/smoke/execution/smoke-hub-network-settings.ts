@@ -7,6 +7,7 @@ import { generateKeyPairSync } from 'node:crypto';
 import { createServer } from 'vite';
 import { chromium } from '@playwright/test';
 import { HubNetwork } from "../../../packages/hub-network/src/node";
+import { HubStore } from '../../../packages/hub-network/src/store-file.js';
 import { createHubController } from "../../../packages/hub-network/src/controller";
 
 const output = resolve(process.env.OPENCRAFT_HUB_SMOKE_DIRECTORY ?? '.local/hub-network-settings'); await mkdir(output, { recursive: true });
@@ -14,7 +15,7 @@ const directory = await mkdtemp(join(output, 'private-')), cleanups: (() => unkn
 let operator: string | null = '["fixture","administrator"]', failReads = false;
 try {
   const controller = await createHubController(join(directory, 'controller.json'), join(directory, 'node.json')); cleanups.push(() => controller.close());
-  const pair = generateKeyPairSync('ed25519'), other = new HubNetwork(join(directory, 'other.json'), { authority: { issuer: 'fixture-login', publicKey: pair.publicKey.export({ format: 'pem', type: 'spki' }).toString(), providers: ['enterprise-identity'] } }); cleanups.push(() => other.close());
+  const pair = generateKeyPairSync('ed25519'), other = new HubNetwork(new HubStore(join(directory, 'other.json')), { authority: { issuer: 'fixture-login', publicKey: pair.publicKey.export({ format: 'pem', type: 'spki' }).toString(), providers: ['enterprise-identity'] } }); cleanups.push(() => other.close());
   const peer = createHttpServer((_req, res) => { res.writeHead(404); res.end(); }); peer.on('upgrade', (req, socket, head) => { if (!other.handleUpgrade(req, socket, head)) socket.destroy(); });
   peer.listen(0, '127.0.0.1'); await once(peer, 'listening'); const peerPort = (peer.address() as { port: number }).port; other.start(peerPort);
   cleanups.unshift(() => new Promise<void>(r => { peer.close(() => r()); peer.closeAllConnections(); }));

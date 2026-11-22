@@ -64,10 +64,12 @@ test("a bundled SSH connections owner starts its packaged Worker beside the bund
   }
 });
 
-test("web and headless release packaging both include the SSH connections worker", async () => {
-  for (const name of ["package-web-server.mjs", "package-headless-linux.mjs"]) {
+test("every package that bundles a network process builds the owner Workers beside it", async () => {
+  const { OWNER_WORKERS } = await import("../../scripts/packaging/owner-workers.mjs");
+  assert.ok(OWNER_WORKERS.some(([entry, file]) => entry.endsWith("ssh-connections.worker.ts") && file === "ssh-connections-worker.mjs"));
+  assert.ok(OWNER_WORKERS.some(([entry, file]) => entry.endsWith("hub-state.worker.ts") && file === "hub-state-worker.mjs"));
+  for (const name of ["package-web-server.mjs", "package-headless-linux.mjs", "package-relay.mjs"]) {
     const source = await readFile(join(root, "scripts", "packaging", name), "utf8");
-    assert.match(source, /apps\/opencraft-daemon\/src\/ssh-connections\.worker\.ts/);
-    assert.match(source, /ssh-connections-worker\.mjs/);
+    assert.match(source, /await buildOwnerWorkers\(/, `${name} builds the owner Workers`);
   }
 });
