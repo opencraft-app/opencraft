@@ -96,8 +96,12 @@ test.beforeEach(async ({ page }) => {
   // administrator form.
   await expect.poll(async () => { const s = await status(page); return !!s.checkedAt && !s.checking; }, { timeout: 15_000 }).toBe(true);
 });
-test.afterEach(async () => {
+test.afterEach(async ({ page }) => {
   releaseLookup?.(); releaseDownload?.(); fixture.holdLookup(null); fixture.holdDownload(null);
+  // This fixture owns the client as well as the server. Release browser-held
+  // requests/tunnels before awaiting graceful server shutdown; Playwright's
+  // automatic page disposal otherwise happens only after this hook returns.
+  await page.close();
   await app?.close(); app = null;
   for (const socket of backend?.clients ?? []) socket.terminate();
   if (backend) await new Promise(done => backend.close(done));
