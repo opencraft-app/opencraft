@@ -157,13 +157,16 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
           await page.locator('.shell-sidebar__column[data-navigation-layout="mobile"]').waitFor();
           await page.locator('.sidebar-activity-item').first().waitFor();
           await page.locator('.shell-sidebar__column[data-navigation-layout="mobile"]').waitFor();
-          // Reveal the whole production list through real pagination callbacks.
-          while (await page.getByRole('button', { name: 'Show more', exact: true }).count()) {
-            await page.getByRole('button', { name: 'Show more', exact: true }).click();
-            await page.waitForTimeout(250);
+          // Expand through the production pagination handler without moving
+          // the viewport. The actual pointer and tap checks run at the end.
+          const rows = page.locator('.sidebar-activity-item');
+          const more = page.getByRole('button', { name: 'Show more', exact: true });
+          let visibleRows = await rows.count();
+          while (visibleRows < 30) {
+            await more.evaluate(button => (button as HTMLButtonElement).click());
+            await page.waitForFunction(previous => document.querySelectorAll('.sidebar-activity-item').length > previous, visibleRows);
+            visibleRows = await rows.count();
           }
-          const visibleRows = await page.locator('.sidebar-activity-item').count();
-          assert.ok(visibleRows >= 30, `expected the production list to show at least 30 rows, got ${visibleRows}`);
           const available = await scrollProbe(page, 'available');
           assert.ok(available.tallerThanViewport, `list must outgrow the viewport: ${JSON.stringify(available)}`);
           assert.ok(available.atBottom, `the probe must reach the real list end: ${JSON.stringify(available)}`);
