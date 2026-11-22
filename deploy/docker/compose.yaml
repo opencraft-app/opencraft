@@ -111,9 +111,11 @@ services:
     entrypoint: ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "brain"]
     environment:
       <<: *environment
-      # Brain waits for the proxy service instead of embedding the account Core.
-      OPENCRAFT_PROXY_MODE: external
-      OPENCRAFT_PROXY_PORT: ${OPENCRAFT_PROXY_PORT:-45071}
+      # Brain waits for the proxy service instead of embedding the account Core. Only compose-release's automatic
+      # restore after a failed switch from an embedded-Core release sets OPENCRAFT_BRAIN_PROXY_MODE=embedded and an
+      # empty OPENCRAFT_BRAIN_PROXY_PORT (the embedded Core then picks a free loopback port, as before the switch).
+      OPENCRAFT_PROXY_MODE: ${OPENCRAFT_BRAIN_PROXY_MODE:-external}
+      OPENCRAFT_PROXY_PORT: ${OPENCRAFT_BRAIN_PROXY_PORT-${OPENCRAFT_PROXY_PORT:-45071}}
       # Brain opens Hands execution leases with this budget; Hands rejects any other.
       OPENCRAFT_HANDS_CPUS: ${OPENCRAFT_HANDS_CPUS:-4.0}
       OPENCRAFT_HANDS_MEMORY_BYTES: ${OPENCRAFT_HANDS_MEMORY_BYTES:-8589934592}

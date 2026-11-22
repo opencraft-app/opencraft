@@ -27,7 +27,10 @@ The default image follows upstream and packages the pinned stock Electron runtim
 Node and Codex are pinned by this checkout and lockfile; no account or model
 credential is included. The image does not ship DeepSeek Harness (DSH): Brain
 starts without it, and a DSH installed in the image can be bridged by setting
-`OPENCRAFT_DSH_EXECUTABLE` to its `lib/bin.js`. Native Linux amd64 and arm64 build hosts are supported.
+`OPENCRAFT_DSH_EXECUTABLE` to its `lib/bin.js`. Model settings do not depend on
+DSH: adding providers, choosing models and saving keys work without it, because
+Pi and Codex configured providers read the same `models/models.json`. Native
+Linux amd64 and arm64 build hosts are supported.
 Docker Desktop runs these Linux containers inside its VM.
 
 Internal builds can opt into a verified custom browser by setting
@@ -85,7 +88,11 @@ an operator decision, not a production sizing recommendation. If the Hands
 budget is changed, Compose, Brain admission and the kernel verification all
 consume the same two values and reject disagreement.
 
-Open `http://127.0.0.1:10000`. The default listener is loopback-only. An
+Open `http://127.0.0.1:10000`. A first conversation starts on the built-in
+Codex (Host `local-codex`); the other server Host (`opencraft-server`) runs Pi by
+default (`--default-engine pi`) and DSH when installed, and stays selectable in
+the composer. A route or a previously selected Host takes precedence. The default
+listener is loopback-only. An
 Internet-facing installation still needs the existing HTTPS and admission
 configuration; do not expose a shared instance merely by changing the listener
 to `0.0.0.0`.
@@ -320,7 +327,10 @@ keys). Replace `$DATA` with the host data directory.
 ## Upgrade and rollback
 
 Build a content-addressed or versioned image reference, then use the transaction
-tool. It checks paths, ownership, capacity, disk and rendered Compose config;
+tool. It checks paths, ownership, capacity, disk and rendered Compose config,
+and that the deployment UID can write `deploy/docker/` (for `.env`) and
+`$OPENCRAFT_HOST_DATA_DIR/deployment/` (for `compose-state.json`), so a release
+never fails after replacing every owner;
 uses a deployment lock; applies and waits for each owner in strict dependency
 order (`hands`, `proxy`, `brain`, `gateway`); and writes `.env` only after all four are
 healthy. A Brain that still embeds the account Core is stopped before `proxy`
@@ -333,6 +343,15 @@ node ../scripts/container-deployment/compose-release.mjs upgrade \
 ```
 
 If a stage fails, the tool reapplies the previous image in the same owner order.
+If the failed release was the first switch from a Brain that embedded the account
+Core, the tool restores that topology rather than only the image: it stops Brain,
+removes the `proxy` container, starts the previous image's Brain with the
+embedded Core on a free loopback port (`OPENCRAFT_BRAIN_PROXY_MODE=embedded` and an
+empty `OPENCRAFT_BRAIN_PROXY_PORT`, set only for that restore), then recreates
+Gateway. Data stays in place. Fix the cause and run `upgrade` again; it performs
+the switch. Until then do not run a plain `docker compose up`, which would start
+`proxy` beside the embedded Core. The two `OPENCRAFT_BRAIN_PROXY_*` variables are
+not deployment settings; `doctor` refuses them in `.env`.
 After a successful change, this explicit command reuses the recorded previous
 image:
 

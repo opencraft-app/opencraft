@@ -11,6 +11,7 @@ const object=(v:unknown):Record<string,any>=>v&&typeof v==='object'&&!Array.isAr
 const modelNamespaces=new Set(['llm-pi-ai','llm-deepseek','agent-default-model']);
 const native=(p:ConfiguredProvider)=>p.id==='deepseek-official'&&p.catalogId==='deepseek';
 const OLLAMA_CLOUD_ID='ollama-cloud';
+const REASONING_ORDER=['off','minimal','low','medium','high','xhigh','max'] as const;
 function withOllamaCloud(directory:RuntimeProvidersListResponse):RuntimeProvidersListResponse{
   if(directory.providers.some(provider=>provider.provider===OLLAMA_CLOUD_ID))return {...directory,providers:directory.providers.map(provider=>
     provider.provider===OLLAMA_CLOUD_ID?{...provider,declared:false}:provider)};
@@ -40,15 +41,27 @@ export function fromDshProfile(id:string,value:unknown,disabled:unknown,catalogI
     models:(Array.isArray(p.models)?p.models:[]).map((m:any)=>({id:m.id,...(m.type?{type:m.type}:{}),...(m.name?{name:m.name}:{}),enabled:!off.has(m.id),...(m.contextWindow?{contextWindow:m.contextWindow}:{}),...(m.maxTokens?{maxTokens:m.maxTokens}:{}),...((m.input??m.inputModalities)?.length?{input:m.input??m.inputModalities}:{}),...(m.reasoningEfforts!==undefined?{reasoningEfforts:m.reasoningEfforts}:{})}))};
 }
 
+/** Execution-facing view shared by every host composition: Core-owned contributions removed, document validated. */
+function executionDocument(doc:ModelDocument):ModelDocument{
+  doc={...doc,providers:doc.providers.filter(p=>!p.catalogId?.startsWith('opencraft-human-'))};
+  if(doc.defaultModel&&!doc.providers.some(p=>p.id===doc.defaultModel!.providerId))doc={...doc,defaultModel:null};
+  for(const provider of doc.providers){
+    const issue=modelBaseUrlError(provider.baseUrl);if(issue)throw new Error(issue);
+    if(provider.enabled&&!provider.models.some(model=>model.enabled))throw new ModelConfigurationApplyError(`“${provider.name}”没有已启用模型。请先获取模型，并启用至少一个模型。`);
+  }
+  return doc;
+}
+
+/** Host without DSH: models.json stays the product authority that Pi and Codex resolve on every execution, so there is
+ * no engine-native projection to write. Applying only validates; it never resolves a credential (proxy mode included). */
+export class ProductModelEngine implements ModelEnginePort {
+  async apply(doc:ModelDocument){executionDocument(doc);}
+}
+
 export class DshModelEngineAdapter implements ModelEnginePort {
   constructor(private readonly client:Pick<DshClient,'call'>){}
   async apply(doc:ModelDocument,credentials:ModelCredentialResolver){
-    doc={...doc,providers:doc.providers.filter(p=>!p.catalogId?.startsWith('opencraft-human-'))};
-    if(doc.defaultModel&&!doc.providers.some(p=>p.id===doc.defaultModel!.providerId))doc={...doc,defaultModel:null};
-    for(const provider of doc.providers){
-      const issue=modelBaseUrlError(provider.baseUrl);if(issue)throw new Error(issue);
-      if(provider.enabled&&!provider.models.some(model=>model.enabled))throw new ModelConfigurationApplyError(`“${provider.name}”没有已启用模型。请先获取模型，并启用至少一个模型。`);
-    }
+    doc=executionDocument(doc);
     const raw=await this.client.call<RuntimeSettingsDescribeResponse>('settings.describe');
     // Resolve everything before changing engine configuration. Values never enter the product document.
     const execution=structuredClone(doc);
@@ -79,12 +92,17 @@ export class DshModelEngineAdapter implements ModelEnginePort {
 export class DshModelConfigurationBridge {
   private rawSettings:RuntimeSettingsDescribeResponse={writable:true,hasDocument:false,namespaces:[]};
   private rawProviders:RuntimeProvidersListResponse={providers:[]};
-  constructor(private readonly client:Pick<DshClient,'call'>,readonly config:ModelConfigurationService){}
+  /** `engineInstalled` false: no DSH is installed. The bridge then owns the model namespaces itself (projected from
+   * models.json) and answers the settings model catalog from the document instead of an engine that does not exist. */
+  constructor(private readonly client:Pick<DshClient,'call'>,readonly config:ModelConfigurationService,readonly engineInstalled=true){}
   async initialize(){await this.config.repository.initialize();this.rawSettings=await this.client.call('settings.describe');this.rawProviders=withOllamaCloud(await this.client.call('llm.providers'));await this.config.synchronize();}
   private async describe(){
     try{this.rawSettings=await this.client.call('settings.describe')}catch{/* Product configuration remains readable if execution fails. */}
     const doc=await this.config.repository.read(), values=sections(doc,this.rawSettings);
-    return {...this.rawSettings,writable:true,hasDocument:true,namespaces:this.rawSettings.namespaces.map(n=>modelNamespaces.has(n.ns)?{...n,revision:doc.revision,value:values[n.ns as keyof typeof values],user:values[n.ns as keyof typeof values]}:n)};
+    const namespaces:RuntimeSettingsNamespaceView[]=this.rawSettings.namespaces.map(n=>modelNamespaces.has(n.ns)?{...n,revision:doc.revision,value:values[n.ns as keyof typeof values],user:values[n.ns as keyof typeof values]}:n);
+    if(!this.engineInstalled)for(const ns of modelNamespaces)if(!namespaces.some(n=>n.ns===ns))
+      namespaces.push({ns,schema:null,base:{},applies:'live',secrets:[],revision:doc.revision,value:values[ns as keyof typeof values],user:values[ns as keyof typeof values]});
+    return {...this.rawSettings,writable:true,hasDocument:true,namespaces};
   }
   async call<T>(method:string,payload:Record<string,any>={}):Promise<T>{
     if(method==='credentials.describe'){
@@ -125,6 +143,12 @@ export class DshModelConfigurationBridge {
       return {providers} as T;
     }
     if(method==='llm.models'&&this.config.application.state!=='applied')return {groups:[]} as T;
+    if(method==='llm.models'&&!this.engineInstalled){
+      const doc=await this.config.repository.read();
+      return {failures:[],groups:doc.providers.filter(p=>p.enabled&&p.protocol!=='hunyuan-asr'&&!p.catalogId?.startsWith('opencraft-human-')).map(p=>({id:p.id,name:p.name,
+        models:p.models.filter(m=>m.enabled&&m.type!=='asr').map(m=>({id:m.id,name:m.name??m.id,...(m.contextWindow?{contextWindow:m.contextWindow}:{}),...(m.maxTokens?{maxTokens:m.maxTokens}:{}),...(m.input?.length?{input:m.input}:{}),...(m.reasoningEfforts?{reasoning:{efforts:REASONING_ORDER.filter(level=>Object.hasOwn(m.reasoningEfforts as object,level)).map(id=>({id,name:id}))}}:{})}))}))
+        .filter(group=>group.models.length)} as T;
+    }
     return this.client.call<T>(method,payload);
   }
 }

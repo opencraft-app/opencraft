@@ -307,16 +307,20 @@ export async function startLocalAgentHost(options: {
     });
   drainThreads = () => lifecycle.close();
   let modelConfiguration: import('./model-config/dsh-adapter.js').DshModelConfigurationBridge | undefined;
-  if(options.modelStorageDirectory && dshInstalled){
+  // Model configuration is owned by the model storage, not by DSH: Pi and Codex resolve the same models.json, so the
+  // settings surface is mounted whenever storage exists. Only the DSH projection and legacy import depend on DSH.
+  if(options.modelStorageDirectory){
     const {ModelConfigurationRepository}=await import('./model-config/repository.js');
     const {ModelConfigurationService}=await import('./model-config/service.js');
     const {engineModelCredentials}=await import('./model-config/engine-credentials.js');
-    const {DshModelEngineAdapter,DshModelConfigurationBridge}=await import('./model-config/dsh-adapter.js');
-    const {migrateDshModels}=await import('./model-config/migrate-dsh.js');
+    const {DshModelEngineAdapter,DshModelConfigurationBridge,ProductModelEngine}=await import('./model-config/dsh-adapter.js');
     // Proxy mode (OPENCRAFT_PROXY_CALLER_FILE): no SecretStore over credentials.json is constructed here.
     const repository=new ModelConfigurationRepository(fileStateDocumentStore(options.modelStorageDirectory)),{credentials,caller}=await engineModelCredentials(options.modelStorageDirectory);
-    if(options.dataDirectory)await migrateDshModels(repository,credentials,options.dataDirectory,options.modelStorageDirectory,await client.call('settings.describe'));
-    modelConfiguration=new DshModelConfigurationBridge(client,new ModelConfigurationService(repository,credentials,new DshModelEngineAdapter(client),caller));
+    if(dshInstalled&&options.dataDirectory){
+      const {migrateDshModels}=await import('./model-config/migrate-dsh.js');
+      await migrateDshModels(repository,credentials,options.dataDirectory,options.modelStorageDirectory,await client.call('settings.describe'));
+    }
+    modelConfiguration=new DshModelConfigurationBridge(client,new ModelConfigurationService(repository,credentials,dshInstalled?new DshModelEngineAdapter(client):new ProductModelEngine(),caller),dshInstalled);
     await modelConfiguration.initialize();
   }
   const authority = storage.executions;

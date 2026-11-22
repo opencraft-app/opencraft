@@ -12,6 +12,7 @@ import { IndexedDbHostConnectionProfileStore } from "../../apps/workbench-web/sr
 
 import { ServerManagedProfileStore } from "../../apps/workbench-web/src/runtime/server-managed-profile-store";
 import { machineRole } from "../../apps/workbench-web/src/runtime/work-in-presentation";
+import { chooseInitialConversationHost, HEADLESS_DEFAULT_CONVERSATION_HOST } from "../../apps/workbench-web/src/runtime/initial-conversation-host";
 
 const machine = { machineId: "12345678-1234-4123-8123-123456789abc", name: "build-machine", platform: "macos" as const };
 export function profile(hostId: string, identity: typeof machine | null = machine): HostConnectionProfile {
@@ -199,6 +200,28 @@ test("new conversation fallback prefers the deployment over alphabetically leadi
   assert.equal(chooseNewConversationHost([remote, server], remote.hostId)?.hostId, remote.hostId, "explicit remembered visible selection still wins");
 });
 
+
+test("the headless Gateway starts a first conversation on its built-in Codex Host", async () => {
+  // The Gateway seeds opencraft-server (DSH/Pi); the server extension contributes local-codex. Both are "Server".
+  const server = { ...profile("opencraft-server", null), displayName: "Server", hostKind: "durable" as const, agent: null };
+  const codex = { ...profile("local-codex", null), displayName: "Server", hostKind: "durable" as const, agent: null };
+  const store = await IndexedDbHostConnectionProfileStore.open({ factory: indexedDB, databaseName: `headless-default-${crypto.randomUUID()}`, seed: [server], ephemeral: [codex] });
+  try {
+    const profiles = store.getSnapshot().profiles;
+    assert.deepEqual(profiles.map(host => host.hostId), ["opencraft-server", "local-codex"], "the deployment order alone selects the DSH/Pi Host");
+    assert.equal(chooseInitialConversationHost({ profiles, persistedHostId: null, persistedHasThread: false }), "opencraft-server");
+    assert.equal(chooseInitialConversationHost({ profiles, persistedHostId: null, persistedHasThread: false,
+      deploymentDefaultHostId: HEADLESS_DEFAULT_CONVERSATION_HOST }), "local-codex");
+    // An explicit route and a remembered selection still win over the deployment default.
+    assert.equal(chooseInitialConversationHost({ profiles, requestedHostId: "opencraft-server", persistedHostId: null, persistedHasThread: false,
+      deploymentDefaultHostId: HEADLESS_DEFAULT_CONVERSATION_HOST }), "opencraft-server");
+    assert.equal(chooseInitialConversationHost({ profiles, persistedHostId: "opencraft-server", persistedHasThread: false,
+      deploymentDefaultHostId: HEADLESS_DEFAULT_CONVERSATION_HOST }), "opencraft-server");
+    // Without the Codex Host (or hidden from new chat) the default falls back to the deployment Host.
+    assert.equal(chooseInitialConversationHost({ profiles: [server, { ...codex, hideFromNewChat: true }], persistedHostId: null, persistedHasThread: false,
+      deploymentDefaultHostId: HEADLESS_DEFAULT_CONVERSATION_HOST }), "opencraft-server");
+  } finally { store.close(); }
+});
 
 test("malformed persisted machine identity is rejected rather than replaced", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oc-machine-invalid-"));

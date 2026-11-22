@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
@@ -10,7 +10,7 @@ import { ModelConfigurationRepository, ModelCredentialRepository } from "../../a
 import { PROXY_MODE_CREDENTIAL_MESSAGE, ProxyModelCredentials, engineModelCredentials } from "../../apps/local-agent-host/src/model-config/engine-credentials.js";
 import { fileModelCredentials } from "../../apps/local-agent-host/src/model-config/engine-models.js";
 import { createPiModelConfiguration } from "../../apps/local-agent-host/src/model-config/pi-adapter.js";
-import { DshModelConfigurationBridge, DshModelEngineAdapter } from "../../apps/local-agent-host/src/model-config/dsh-adapter.js";
+import { DshModelConfigurationBridge, DshModelEngineAdapter, ProductModelEngine } from "../../apps/local-agent-host/src/model-config/dsh-adapter.js";
 import { fileSecretStore } from "@opencraft/secret-storage/file";
 import type { ModelDocument } from "../../apps/local-agent-host/src/model-config/model-document.js";
 
@@ -166,4 +166,50 @@ test("the DSH settings bridge turns a proxy-mode refusal into a definitive setti
     value: { displayName: "Gemini", api: "google-generative-ai", baseURL: "https://generativelanguage.googleapis.com/v1beta", apiKeyEnv: "GEMINI_KEY", models: [{ id: "g" }] } }] }),
     (error: any) => error.code === "settings-rejected" && /连接协议不能经模型代理转发/u.test(error.message));
   assert.equal((await f.repository.read()).revision, 0, "nothing was committed");
+});
+
+test("without DSH the settings bridge keeps proxy-mode ownership: keys reach only the account Core, unroutable providers are refused", async t => {
+  const f = await documents(t, { schemaVersion: 1, revision: 0, defaultModel: null, providers: [] } as any);
+  const writes: any[] = [];
+  // The account Core's write-only endpoint; it never returns a value and is the only place a key may go.
+  const core = (async (url: any, init: any) => {
+    assert.equal(String(url), caller.baseUrl + "/model-credentials");
+    assert.equal(init.headers.authorization, "Bearer " + caller.token);
+    const body = JSON.parse(init.body); writes.push(body);
+    return new Response(JSON.stringify(body.op === "describe" ? { configured: Object.fromEntries(body.refs.map((ref: string) => [ref, writes.some(w => w.op === "set" && w.ref === ref)])) } : {}), { status: 200 });
+  }) as typeof fetch;
+  const credentials = new ProxyModelCredentials(caller, core);
+  const engineCalls: string[] = [];
+  const absent = { call: async (method: string) => { engineCalls.push(method);
+    if (method === "settings.describe") return { namespaces: [] };
+    if (method === "llm.providers") return { providers: [] };
+    throw Object.assign(new Error("DSH is not installed"), { code: "DSH_UNAVAILABLE" }); } };
+  const bridge = new DshModelConfigurationBridge(absent as any, new ModelConfigurationService(f.repository, credentials, new ProductModelEngine(), caller), false);
+  await bridge.initialize();
+  assert.equal(bridge.config.application.state, "applied");
+  const described = await bridge.call<any>("settings.describe");
+  assert.equal(described.writable, true);
+  assert.deepEqual(described.namespaces.map((n: any) => n.ns).sort(), ["agent-default-model", "llm-deepseek", "llm-pi-ai"]);
+
+  // The proxy rejection matrix is enforced on the no-DSH path as well, before anything is committed.
+  for (const [label, extra, expected] of MATRIX) {
+    if (extra.catalogId || extra.protocol === "hunyuan-asr") continue; // catalog/Core/speech kinds are not created through llm-pi-ai profiles
+    const id = "m" + MATRIX.findIndex(row => row[0] === label);
+    const before = (await f.repository.read()).revision;
+    const profile = { displayName: label, api: extra.protocol ?? "openai-completions", baseURL: extra.baseUrl ?? "https://api.example/v1", enabled: true,
+      ...(extra.authentication === "none" ? { authentication: "none" } : extra.credentialRef === null ? {} : { apiKeyEnv: "KEY_" + id }), models: [{ id: "m" }] };
+    const attempt = bridge.call("settings.mutate", { ns: "llm-pi-ai", expectedRevision: before, ops: [{ op: "set", path: ["providers", id], value: profile }] });
+    if (expected === "rejected") {
+      await assert.rejects(attempt, (error: any) => error.code === "settings-rejected", label);
+      assert.equal((await f.repository.read()).revision, before, `${label}: nothing committed`);
+    } else { await attempt; assert.equal((await f.repository.read()).revision, before + 1, label); }
+  }
+
+  await bridge.call("credentials.set", { ref: "KEY_m2", value: "sk-provider-secret" });
+  assert.deepEqual(writes.filter(w => w.op === "set"), [{ op: "set", ref: "KEY_m2", value: "sk-provider-secret" }], "the key went to the Core only");
+  assert.equal((await bridge.call<any>("credentials.describe", { refs: ["KEY_m2"] })).credentials.KEY_m2.configured, true);
+  await assert.rejects(stat(join(f.models, "credentials.json")), { code: "ENOENT" }, "the engine host never writes a local key file");
+  await bridge.call("settings.describe");
+  assert.equal(bridge.config.application.state, "applied", "a key change re-applies without an engine");
+  assert.ok(!engineCalls.some(method => method.startsWith("credentials.")), "no key is projected to an absent engine");
 });

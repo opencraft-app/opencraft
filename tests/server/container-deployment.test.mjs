@@ -4,9 +4,9 @@ import { mkdtemp, readFile, writeFile, chmod, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { deploymentPaths, readPrivateToken } from '../../scripts/container-deployment/paths.mjs';
+import { deploymentPaths, proxyConfiguration, readPrivateToken } from '../../scripts/container-deployment/paths.mjs';
 import { handsResources } from '../../scripts/container-deployment/resources.mjs';
-import { OWNER_ORDER, brainEmbedsAccountCore, ownerSteps, assertImageReference, deploymentIdentity, parseEnvironment, setEnvironmentValue } from '../../scripts/container-deployment/compose-release.mjs';
+import { OWNER_ORDER, RESTORE_PROXY_MODE_VARIABLE, RESTORE_PROXY_PORT_VARIABLE, EMBEDDED_CORE_ENVIRONMENT, brainEmbedsAccountCore, ownerSteps, restoreSteps, assertImageReference, deploymentIdentity, parseEnvironment, setEnvironmentValue } from '../../scripts/container-deployment/compose-release.mjs';
 import { legacyLayoutValues } from '../../scripts/container-deployment/layout.mjs';
 
 const composeExecutable = process.env.OPENCRAFT_COMPOSE_EXECUTABLE ?? 'docker';
@@ -79,6 +79,73 @@ test('the first proxy-default release stops an embedded-Core Brain before the pr
   assert.equal(brainEmbedsAccountCore(['OPENCRAFT_PROXY_MODE=embedded']), true);
   assert.equal(brainEmbedsAccountCore(['OPENCRAFT_PROXY_MODE=external', 'OPENCRAFT_PROXY_PORT=45071']), false);
   assert.equal(brainEmbedsAccountCore(null), false, 'no Brain container: nothing holds the writer');
+});
+
+test('a failed switch from an embedded-Core release restores that topology, not only the previous image', t => {
+  // The previous release had no proxy owner (and its image may not provide one): remove it and embed the Core again.
+  const steps = restoreSteps({ embeddedCoreBefore: true });
+  // Gateway is recreated: when the failed release never reached it, its health may already be failing after Brain stopped.
+  assert.deepEqual(steps, [['stop', 'brain'], ['remove', 'proxy'], ['up', 'hands'], ['up-embedded', 'brain'], ['recreate', 'gateway']]);
+  assert.ok(steps.findIndex(([a]) => a === 'remove') < steps.findIndex(([a]) => a === 'up-embedded'), 'the proxy releases the account writer first');
+  assert.equal(steps.some(([a, s]) => a.startsWith('up') && s === 'proxy'), false);
+  // A release that already ran the proxy topology restores the same four owners in order.
+  assert.deepEqual(restoreSteps({ embeddedCoreBefore: false }), OWNER_ORDER.map(service => ['up', service]));
+  if (!composeAvailable()) return t.skip('Docker Compose CLI is unavailable');
+  const render = extra => JSON.parse(compose(['-f', 'deploy/docker/compose.yaml', 'config', '--format', 'json', 'brain'], {
+    cwd: new URL('../..', import.meta.url), encoding: 'utf8',
+    env: { ...process.env, OPENCRAFT_UID: '1234', OPENCRAFT_GID: '2345', OPENCRAFT_HOST_DATA_DIR: '/srv/opencraft/state',
+      OPENCRAFT_DATA_DIR: '/var/lib/opencraft', OPENCRAFT_HOST_WORKSPACE_DIR: '/srv/opencraft/workspaces', OPENCRAFT_WORKSPACE_DIR: '/workspace', ...extra },
+  })).services.brain.environment;
+  const restored = render({ ...EMBEDDED_CORE_ENVIRONMENT, OPENCRAFT_PROXY_PORT: '45931' });
+  assert.equal(restored.OPENCRAFT_PROXY_MODE, 'embedded');
+  // No fixed port: the embedded Core picks a free one, as before the switch, even if a failed proxy still holds it.
+  assert.equal(restored.OPENCRAFT_PROXY_PORT ?? '', '');
+  assert.deepEqual(proxyConfiguration(restored), { proxyMode: 'embedded', proxyPort: null });
+  assert.equal(brainEmbedsAccountCore(Object.entries(restored).map(([k, v]) => `${k}=${v}`)), true, 'the next upgrade switches it again');
+  const normal = render({ OPENCRAFT_PROXY_PORT: '45931' });
+  assert.deepEqual(proxyConfiguration(normal), { proxyMode: 'external', proxyPort: 45931 });
+  assert.deepEqual(proxyConfiguration(render({})), { proxyMode: 'external', proxyPort: 45071 });
+});
+
+test('doctor refuses a restore-only proxy mode persisted in .env', async () => {
+  const { doctor } = await import('../../scripts/container-deployment/compose-release.mjs');
+  for (const [name, value] of [[RESTORE_PROXY_MODE_VARIABLE, 'embedded'], [RESTORE_PROXY_PORT_VARIABLE, '']])
+    await assert.rejects(doctor({ OPENCRAFT_HOST_DATA_DIR: '/srv/s', OPENCRAFT_DATA_DIR: '/var/lib/opencraft', OPENCRAFT_HOST_WORKSPACE_DIR: '/srv/w',
+      OPENCRAFT_WORKSPACE_DIR: '/workspace', OPENCRAFT_UID: '1000', OPENCRAFT_GID: '1000', [name]: value }), new RegExp(`Remove ${name}`));
+});
+
+test('doctor fails before any release step when .env or deployment state cannot be committed by the deployment UID', async t => {
+  // A release writes .env and compose-state.json by atomic rename only after all four owners were applied.
+  const root_ = process.getuid() === 0;
+  // The unprivileged child must traverse every ancestor; an isolated test TMPDIR may be private to root.
+  const root = await mkdtemp(join(root_ ? '/tmp' : tmpdir(), 'opencraft-doctor-writable-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  // access(2) ignores modes for root, so the check runs as an unprivileged deployment identity.
+  const uid = root_ ? 65534 : process.getuid(), gid = root_ ? 65534 : process.getgid();
+  const { mkdir, chown } = await import('node:fs/promises');
+  const own = async (path, mode) => { await mkdir(path, { recursive: true, mode }); await chmod(path, mode); if (root_) await chown(path, uid, gid); };
+  await chmod(root, 0o755);
+  const state = join(root, 'state'), deploy = join(root, 'deploy');
+  for (const path of [state, join(state, 'execution'), join(state, 'execution', 'git-credentials'), join(state, 'logs'),
+    ...['brain', 'gateway', 'hands', 'proxy'].map(service => join(state, 'logs', service)), join(root, 'work'), deploy]) await own(path, 0o700);
+  const environment = { OPENCRAFT_HOST_DATA_DIR: state, OPENCRAFT_DATA_DIR: '/var/lib/opencraft', OPENCRAFT_HOST_WORKSPACE_DIR: join(root, 'work'),
+    OPENCRAFT_WORKSPACE_DIR: '/workspace', OPENCRAFT_UID: String(uid), OPENCRAFT_GID: String(gid) };
+  const doctorAs = () => spawnSync(process.execPath, ['--input-type=module', '-e', `
+    import { doctor } from ${JSON.stringify(new URL('../../scripts/container-deployment/compose-release.mjs', import.meta.url).href)};
+    try { await doctor(${JSON.stringify(environment)}, { allowOversubscription: true, deployDirectory: ${JSON.stringify(deploy)} }); console.log('doctor-passed-writable'); }
+    catch (error) { console.log(/not writable/.test(error.message) ? 'doctor-refused ' + error.message : 'doctor-later ' + error.message); }
+  `], { encoding: 'utf8', ...(root_ ? { uid, gid } : {}) });
+  const outcome = () => { const result = doctorAs(); assert.equal(result.status, 0, String(result.stderr)); return result.stdout.trim(); };
+  if (root_ && doctorAs().error?.code === 'EACCES') return t.skip('this Node executable is not runnable by an unprivileged deployment UID');
+  // Writable: the check passes (any later failure, e.g. Compose rendering in this sandbox, is a different check).
+  assert.doesNotMatch(outcome(), /^doctor-refused/);
+  await chmod(deploy, 0o500);
+  assert.match(outcome(), /^doctor-refused .*deploy.*\.env/);
+  await chmod(deploy, 0o700);
+  await own(join(state, 'deployment'), 0o500);
+  assert.match(outcome(), /^doctor-refused .*deployment.*compose-state\.json/);
+  await chmod(join(state, 'deployment'), 0o700);
+  assert.doesNotMatch(outcome(), /^doctor-refused/);
 });
 
 test('Brain and Hands render the same non-default execution budget', t => {
