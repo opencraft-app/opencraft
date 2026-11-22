@@ -178,3 +178,17 @@ test("daemon launch consumes resolver-owned endpoint, token and runtime cwd", ()
   }, "secret");
   assert.deepEqual(named.args.slice(-2), ["--machine-name", "我的服务器"]);
 });
+
+test("the desktop asks for local Codex Host overlays only together with a Core endpoint", () => {
+  const base = {
+    endpoint: "/state/daemon.sock", tokenPath: "/state/daemon.token", runtimeDirectory: "/state/runtime", daemonEntry: "/app/daemon.cjs",
+    dshExecutable: "/app/dsh", dshCapabilityPlugin: "/app/plugin.mjs", dataDirectory: "/state/dsh", codexExecutable: "/app/codex",
+    codexDataDirectory: "/state/codex", nativeCodexHomeDirectory: "/home/.codex", executable: "/app/OpenCraft",
+  } as Parameters<typeof daemonLaunchSpec>[0];
+  const args = (options: Partial<Parameters<typeof daemonLaunchSpec>[0]>) => daemonLaunchSpec({ ...base, ...options }, "token").args;
+  const withCore = args({ codexCoreEndpoint: "/state/core.sock", codexCoreHostOverlays: true });
+  assert.ok(withCore.includes("--codex-core-host-overlays"));
+  assert.equal(withCore[withCore.indexOf("--codex-core-endpoint") + 1], "/state/core.sock");
+  assert.ok(!args({ codexCoreEndpoint: "/state/core.sock" }).includes("--codex-core-host-overlays"), "pass-through stays the default");
+  assert.ok(!args({ codexCoreHostOverlays: true }).includes("--codex-core-host-overlays"), "no overlays without Core");
+});

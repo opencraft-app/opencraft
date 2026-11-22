@@ -40,6 +40,8 @@ export interface OpenCraftDaemonClientOptions {
   readonly codexDataDirectory: string;
   readonly nativeCodexHomeDirectory: string;
   readonly codexCoreEndpoint?: string;
+  /** Run the local Codex Host's own overlays (queue, tasks, schedules, attachments, titles) over Core. */
+  readonly codexCoreHostOverlays?: boolean;
   readonly executable: string;
   /** Deployment display name for the daemon machine; desktop keeps the OS name. */
   readonly machineName?: string;
@@ -122,6 +124,7 @@ export function daemonLaunchSpec(
       "--codex-data-directory", options.codexDataDirectory,
       "--native-codex-home-directory", options.nativeCodexHomeDirectory,
       ...(options.codexCoreEndpoint ? ["--codex-core-endpoint", options.codexCoreEndpoint] : []),
+      ...(options.codexCoreEndpoint && options.codexCoreHostOverlays ? ["--codex-core-host-overlays"] : []),
       ...(options.machineName ? ["--machine-name", options.machineName] : []),
     ],
     options: {

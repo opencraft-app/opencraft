@@ -57,6 +57,13 @@ async function removeStaleSocket(endpoint: string): Promise<void> {
   await unlink(endpoint).catch(() => undefined);
 }
 
+/** How the daemon's local Codex Host reaches Core: pass-through, or with its own overlays. */
+export function codexCoreOptions(options: { codexCoreEndpoint?: string; codexCoreHostOverlays?: boolean; authToken: string }) {
+  if (options.codexCoreHostOverlays && !options.codexCoreEndpoint) throw new Error("Codex Host overlays require a Codex Core endpoint");
+  return { coreEndpoint: options.codexCoreEndpoint, coreAuthToken: options.authToken,
+    ...(options.codexCoreEndpoint && options.codexCoreHostOverlays ? { coreHostOverlays: true } : {}) };
+}
+
 export async function startOpenCraftDaemon(options: {
   readonly endpoint: string;
   readonly runtimeDirectory: string;
@@ -72,6 +79,13 @@ export async function startOpenCraftDaemon(options: {
   readonly codexDataDirectory: string;
   readonly nativeCodexHomeDirectory: string;
   readonly codexCoreEndpoint?: string;
+  /**
+   * With a Core endpoint, keep the local Host overlays (queue, tasks, schedules,
+   * attachments, titles, recovery) instead of passing everything through to Core.
+   * Only one overlay owner may use a Codex data directory: a deployment whose
+   * gateway already runs overlays on it must leave this off.
+   */
+  readonly codexCoreHostOverlays?: boolean;
   readonly codexAgentBridge?: BridgeGatewayOptions;
   /** Move existing local Codex Threads to the bridge on their next turn. */
   readonly codexAgentBridgeAdoptExisting?: boolean;
@@ -82,6 +96,7 @@ export async function startOpenCraftDaemon(options: {
   /** Deployment display name; defaults to the OS computer name. */
   readonly machineName?: string;
 }) {
+  codexCoreOptions(options); // Reject an invalid Core composition before owning any storage.
   nodeObserver("gateway");
   const machineIdentity = await readDaemonMachineIdentity(options.dataDirectory, options.machineName);
   process.chdir(options.runtimeDirectory);
@@ -178,8 +193,7 @@ export async function startOpenCraftDaemon(options: {
           dataDirectory: options.codexDataDirectory,
           artifactDirectory: join(options.dataDirectory,"artifacts"),
           nativeCodexHomeDirectory: options.nativeCodexHomeDirectory,
-          coreEndpoint: options.codexCoreEndpoint,
-          coreAuthToken: options.authToken,
+          ...codexCoreOptions(options),
           writerOwnership: options.codexWriterOwnership,
         });
         codexAgents.add(codexAgent);

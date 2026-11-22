@@ -69,7 +69,7 @@ bridge 协议加方法与能力声明，Engine Host 转发原生请求并投影 
 
 ## 桌面接线时注意
 
-daemon 经 Core 运行旧 adapter 时，只有开启 Core Host overlays 才会暂存附件和保存附件记录；服务器装配已开启，桌面尚未。桌面接入 bridge（原第 4 步）时必须同时开启，否则已有会话会失去附件处理，bridge 会话的附件也不会被记录。
+daemon 经 Core 运行旧 adapter 时，只有开启 Core Host overlays 才会暂存附件、保存附件记录、生成标题，也才能可信地判断会话空闲（接管前提）。默认是直通 Core。daemon 现有显式开关 `--codex-core-host-overlays`（`codexCoreHostOverlays`，须同时给 Core 地址；桌面启动参数 `codexCoreHostOverlays`）。桌面接入 Core 时必须打开；服务器的 web-server 部署由网关在同一 Codex 数据目录上运行 overlays，daemon 必须保持关闭，否则两个 overlay owner 争用同一锁。已用真实 Codex 0.162.1 的拆分 Core 验证：该模式下本地任务、定时、附件、排队、恢复、计量等库正常打开并服务。
 
 ## 退休旧 adapter 时的其余 owner
 
