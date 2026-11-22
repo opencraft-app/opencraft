@@ -82,20 +82,6 @@
     "apps/local-agent-host/src/dsh-session-routing.ts": {
       "DatabaseSync": 1
     },
-    "apps/local-agent-host/src/model-config/service.ts": {
-      "readFileSync": 1
-    },
-    "apps/local-agent-host/src/storage/daemon-storage-owner.ts": {
-      "mkdirSync": 1,
-      "readFileSync": 1,
-      "renameSync": 1,
-      "rmSync": 1,
-      "unlinkSync": 1,
-      "writeFileSync": 1
-    },
-    "apps/local-agent-host/src/terminal-owner-runtime.ts": {
-      "existsSync": 3
-    },
     "apps/local-agent-host/src/terminal-process-session.ts": {
       "readdirSync": 1,
       "readFileSync": 1
