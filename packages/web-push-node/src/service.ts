@@ -6,7 +6,7 @@ import { AppServerRpcError } from '@opencraft/appserver-client';
 import type { PushStorePort } from './async-store';
 import { DeliveryError, parseTarget, targetLabel, sendDestination, type NotificationMessage } from './destinations';
 import type { NotificationTarget } from './store';
-import { type PushBinding, type PushDevice, type PushSubscriptionData, type PushWatch } from './store';
+import type { PushBinding, PushDevice, PushSubscriptionData, PushWatch } from './store';
 
 export interface TurnPushOptions {
   authenticate(request: IncomingMessage): PushBinding | null;

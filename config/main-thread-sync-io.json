@@ -372,10 +372,6 @@
       "DatabaseSync": 1,
       "existsSync": 2
     },
-    "packages/web-push-node/src/store.ts": {
-      "DatabaseSync": 1,
-      "SQL statement": 38
-    },
     "plugins/im/src/post-receipts.ts": {
       "SQL statement": 4
     },
