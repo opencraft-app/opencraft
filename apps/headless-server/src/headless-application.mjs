@@ -981,6 +981,18 @@ export async function startHeadlessServer(options = {}, composition = {}) {
             execution: { turnId: context.turnId, callId: context.callId },
           }, tool, args, signal),
           executionEnvironment: identity?.executionEnvironment,
+          ...(assetsService ? {createExecutionGit: native => createHumanGitExecution({
+            directory: dataDirectory, runtimeDirectory: join(dataDirectory, 'codex-git-runtime'),
+            workerFile: options.gitWorkerFile ?? fileURLToPath(new URL('./personal-git-worker.mjs', import.meta.url)),
+            hosts: assetsService.gitHosts, authority: assetsService.gitAuthority,
+            grant: assetsService.executionGitGrant, inspect: native.inspect,
+            reservation: {grant: assetsService.executionGitReservation, inspect: native.inspectReservation},
+            authorize: scope => {
+              const actorId = scope.account.slice('actor:'.length), actor = actorStore.get(actorId);
+              return !closing && actor?.enabled === true && actor.kind === 'human'
+                && actor.generation === scope.actorGeneration && instanceAccess.admitsActor(actorId);
+            },
+          })} : {}),
           // Ingress has already authorized shared Thread participation. This
           // delegates native Turn input, not terminal access, ENV or payer identity.
           sharedTurnInput: true,

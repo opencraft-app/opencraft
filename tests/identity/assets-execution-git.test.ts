@@ -327,6 +327,69 @@ test('exact native unowned Turn grants no personal identity and never borrows a 
   await assert.rejects(f.assets.executionGitGrant({hostId: 'opencraft-server', threadId, turnId: 'missing'}));
 });
 
+async function pendingCodex(t: test.TestContext) {
+  const f = await fixture(t);
+  const {OpenCraftHostStateDatabase} = await import('../../apps/opencraft-daemon/src/opencraft-host-state-database.js');
+  const state = new OpenCraftHostStateDatabase(join(f.root, 'data/codex')); f.defer(() => state.close());
+  const leases = new ExecutionLeaseStore(state.database), locator = {hostId: 'local-codex' as const, threadId: 'codex-original', inputId: 'codex-input'};
+  leases.capture(locator.threadId, locator.inputId, f.leases.getSubmission(f.locator.threadId, f.locator.inputId)!);
+  leases.begin(locator.threadId, locator.inputId, f.native.incarnation);
+  const execution = createHumanGitExecution({directory: join(f.root, 'data'), runtimeDirectory: join(f.root, 'codex-sockets'),
+    workerFile: join(f.root, 'runtime/personal-git-worker.mjs'), hosts: f.assets.gitHosts, authority: f.assets.gitAuthority!,
+    grant: f.assets.executionGitGrant, authorize: f.authorize,
+    inspect: async value => value.native.incarnation === f.native.incarnation && value.native.turnId === 'codex-turn',
+    reservation: {grant: f.assets.executionGitReservation, inspect: async value => value.native.incarnation === (await observeNativeExecutionProcess(process.pid)).incarnation},
+  }); f.defer(() => execution.close());
+  return {...f, state, leases, locator, execution};
+}
+
+test('Codex configuration reservation cannot open Git until the exact original native lease is active', async t => {
+  const f = await pendingCodex(t), reserved = await f.assets.executionGitReservation(f.locator);
+  assert.ok(reserved); assert.equal(reserved.scope.account, f.scope);
+  assert.deepEqual(reserved.native, {incarnation: f.native.incarnation});
+  assert(!JSON.stringify(reserved).includes('synthetic-github-api-token'));
+  await assert.rejects(f.assets.executionGitGrant(f.locator));
+  const prepared = await f.execution.reserve(f.locator), overlay = prepared.overlay();
+  const open = () => queryGitIdentityBroker(overlay.OPENCRAFT_GIT_BROKER_SOCKET!, {op: 'open',
+    threadId: f.locator.threadId, host: 'github.com', operation: 'commit', capability: overlay.OPENCRAFT_GIT_CAPABILITY});
+  assert.equal((await open()).status, 'expired', 'Readiness is not running command authority');
+  f.leases.started(f.locator.threadId, 'codex-turn', f.locator.inputId, f.native.incarnation);
+  assert.equal((await open()).status, 'configured', 'The same staged scope becomes usable only after native binding');
+  const env = {...prepared.apply(f.base), CODEX_THREAD_ID: f.locator.threadId};
+  const result = await command(join(f.root, 'bin/git'), ['commit', '--allow-empty', '-m', 'OriginalCodexReservation'], f.repo, env);
+  assert.equal(result.code, 0, result.err);
+  await writeFile(join(f.root, 'codex-signers'), 'fixture@example.test ' + f.metadata.hosts['github.com'].signing.publicKey + '\n');
+  assert.equal((await f.nativeGit('-c', 'gpg.ssh.allowedSignersFile=' + join(f.root, 'codex-signers'), 'verify-commit', 'HEAD')).code, 0);
+  await assert.rejects(f.execution.reserve(f.locator), 'An active execution cannot masquerade as pending setup');
+  const before = (await f.nativeGit('rev-parse', 'HEAD')).out;
+  f.leases.finished(f.locator.threadId, 'codex-turn');
+  assert.equal((await open()).status, 'expired');
+  const ended = await command(join(f.root, 'bin/git'), ['commit', '--allow-empty', '-m', 'MustNotReuseEndedReservation'], f.repo, env);
+  assert.notEqual(ended.code, 0); assert.equal((await f.nativeGit('rev-parse', 'HEAD')).out, before);
+});
+
+test('a logically pending but ended native admission cannot reserve Git configuration', async t => {
+  const f = await pendingCodex(t);
+  f.state.database.prepare('UPDATE execution_leases SET ended_at_ms=? WHERE thread_id=?').run(Date.now(), f.locator.threadId);
+  await assert.rejects(f.assets.executionGitReservation(f.locator));
+});
+
+test('pending Git reservation rejects foreign, forged and missing origins and is not a public action', async t => {
+  const f = await pendingCodex(t);
+  for (const invalid of [{...f.locator, account: f.scope}, {...f.locator, turnId: 'forged'},
+    {...f.locator, hostId: 'opencraft-server'}, {...f.locator, inputId: 'missing'}]) {
+    await assert.rejects(f.assets.executionGitReservation(invalid as any));
+  }
+  const publicAttempt = await f.request({host: 'github.com', action: 'executionGitReservation', ...f.locator});
+  assert.equal(publicAttempt.status, 400);
+  const prepared = await f.execution.reserve(f.locator);
+  f.actors.setEnabled(f.actorId, false, "fixture");
+  await assert.rejects(f.execution.reserve(f.locator));
+  f.leases.started(f.locator.threadId, 'codex-turn', f.locator.inputId, f.native.incarnation);
+  assert.equal((await queryGitIdentityBroker(prepared.overlay().OPENCRAFT_GIT_BROKER_SOCKET!, {op: 'open',
+    threadId: f.locator.threadId, host: 'github.com', operation: 'commit', capability: prepared.overlay().OPENCRAFT_GIT_CAPABILITY})).status, 'expired');
+});
+
 test("disable/enable cycles cannot revive an older Actor execution capability", async (t) => {
   const f = await fixture(t),
     snapshot = await f.execution.prepare(f.locator),

@@ -299,3 +299,28 @@ anonymous shells without inventing a Human grant or opening a vault on the nativ
 owner. It is never inferred from a missing login or failed issuer. Once a native
 broker has pinned a credential authority, an anonymous response is a refused
 downgrade, not fallback. Invalid, unavailable and revoked replies always fail.
+
+### Codex pre-submission configuration
+
+Codex installs shell environment policy before `turn/start`, unlike the Pi/DSH
+per-tool boundary. The compiled Host may reserve a sealed Git scope for the exact
+accepted original input's **pending** lease and verified native incarnation.
+Reservation is not execution authority: every actual broker operation still
+requires that same lease to have an independently verified active native Turn,
+with current Actor/member epochs. Pending, ended, revoked and replaced scopes
+cannot obtain credentials or signatures. No additional identity ledger or vault
+writer is introduced, and reservation is not a browser-facing Assets action.
+
+The adapter derives its native identity from the managed child process, or fresh
+authenticated Core health/generation-directory observations; cached environment
+configuration and last-sender state are not provenance. A configuration refresh
+uses the existing native unsubscribe/resume lifecycle and preserves permissions,
+model settings and sandbox policy. It never launches a substitute executor.
+Git-bearing ephemeral Threads are explicitly refused until their native owner
+can install this policy without a persistent-thread resume; unowned internal
+Threads do not borrow another participant's Git configuration.
+
+This source wiring and focused reservation tests are not complete native Codex
+acceptance. Stock-native signed Git execution, independent Core/Gateway lifetime,
+and actual four-role IPC namespace visibility remain to be verified before
+claiming all Codex deployments use Assets Git end to end.
