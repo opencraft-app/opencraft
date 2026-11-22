@@ -155,3 +155,40 @@ test('an upload registered by one engine can be attached through another without
     assert.deepEqual(await codex.remove({id:ref.id}),{removed:false});
   }finally{await codex.close();await agent.close();}
 });
+
+test('content written before the blob store keeps its path and absorbs a repeated ingestion',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'artifact-legacy-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const {mkdir}=await import('node:fs/promises');
+  await mkdir(join(root,'content'),{recursive:true});
+  const legacyPath=join(root,'content','0b6a1c9e-legacy-ingestion');
+  await writeFile(legacyPath,'abc',{mode:0o600});
+  const identity={scope:'a',key:'legacy'};
+  let catalog=new ArtifactCatalog(root);
+  const {sha256,size}=await inspectArtifactFile(legacyPath);
+  const legacy=catalog.register(identity,{...metadata,path:legacyPath,size,sha256},options.reference);
+  catalog.close();catalog=new ArtifactCatalog(root);
+  try{
+    assert.deepEqual(catalog.get(legacy.id),legacy);
+    const repeated=await catalog.ingest(identity,metadata,Readable.from(['abc']),options);
+    assert.equal(repeated.path,legacyPath);
+    assert.deepEqual(await readdir(join(root,'content')),['0b6a1c9e-legacy-ingestion']);
+    assert.equal(await readFile(legacyPath,'utf8'),'abc');
+  }finally{catalog.close();}
+});
+
+test('ingestion publishes through the injected blob store and leaves nothing on a digest mismatch',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'artifact-blobs-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const {hostFileBlobStore}=await import('../../apps/local-agent-host/src/storage/host-file-blobs.js');
+  const content=hostFileBlobStore(root),keys:string[]=[];
+  const upload=content.blobs.upload.bind(content.blobs);
+  const catalog=new ArtifactCatalog(root,{...content,blobs:{...content.blobs,upload:(key,limit)=>{keys.push(key);return upload(key,limit);}}});
+  try{
+    await assert.rejects(catalog.ingest({scope:'a',key:'bad'},metadata,Readable.from(['abc']),{...options,sha256:'0'.repeat(64)}),/mismatch/);
+    const stored=await catalog.ingest({scope:'a',key:'good'},metadata,Readable.from(['abc']),options);
+    assert.match(keys[1]!,/^content\/[0-9a-f-]{36}$/);
+    assert.equal(stored.path,content.path(keys[1]!));
+    assert.deepEqual(await content.blobs.head(keys[1]!),{key:keys[1],size:3});
+    assert.equal(await content.blobs.head(keys[0]!),null);
+    assert.deepEqual(await readdir(join(root,'.staging')),[]);
+  }finally{catalog.close();}
+});

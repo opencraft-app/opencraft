@@ -10,7 +10,9 @@ import {
 
 const STAGING = ".staging";
 
+/** Directory handles cannot be fsynced on Windows; rename/link durability there is the file system's. */
 async function syncDirectory(directory: string) {
+  if (process.platform === "win32") return;
   const handle = await open(directory, "r");
   try { await handle.sync(); } finally { await handle.close(); }
 }

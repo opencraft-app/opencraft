@@ -4,6 +4,13 @@ import { join, resolve } from "node:path";
 import lockfile from "proper-lockfile";
 import { stateChangeOutcome, StateDocumentCorruptError, validateStateKey, type StateDocumentStore } from "./state.js";
 
+/** Directory handles cannot be fsynced on Windows; rename/link durability there is the file system's. */
+async function syncDirectory(directory: string) {
+  if (process.platform === "win32") return;
+  const handle = await open(directory, "r");
+  try { await handle.sync(); } finally { await handle.close(); }
+}
+
 /** In-process FIFO per absolute file, shared by every store instance over the same directory. */
 const fileTails = new Map<string, Promise<unknown>>();
 function serialize<T>(file: string, run: () => Promise<T>): Promise<T> {
@@ -20,8 +27,11 @@ function serialize<T>(file: string, run: () => Promise<T>): Promise<T> {
  * processes on older and newer code still serialize on one file; updates in
  * one process queue first, so they never compete for the lock. Writes go
  * through a temporary file, fsync, rename and a directory fsync.
+ *
+ * `lockfilePath` relocates the proper-lockfile lock (default `<file>.lock`)
+ * for owners whose `<file>.lock` already holds another fence.
  */
-export function fileStateDocumentStore(directory: string): StateDocumentStore {
+export function fileStateDocumentStore(directory: string, options: { lockfilePath?(file: string): string } = {}): StateDocumentStore {
   const path = (key: string) => (validateStateKey(key), join(directory, key));
   const load = async (key: string): Promise<unknown | null> => {
     let text: string;
@@ -50,8 +60,7 @@ export function fileStateDocumentStore(directory: string): StateDocumentStore {
     } finally {
       await unlink(temporary).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
     }
-    const parent = await open(directory, "r");
-    try { await parent.sync(); } finally { await parent.close(); }
+    await syncDirectory(directory);
   };
   return {
     read: (key) => load(key),
@@ -59,7 +68,8 @@ export function fileStateDocumentStore(directory: string): StateDocumentStore {
       const target = path(key);
       return serialize(resolve(target), async () => {
         await mkdir(directory, { recursive: true, mode: 0o700 });
-        const release = await lockfile.lock(target, { realpath: false, retries: { retries: 20, minTimeout: 20, maxTimeout: 200 } });
+        const release = await lockfile.lock(target, { realpath: false, retries: { retries: 20, minTimeout: 20, maxTimeout: 200 },
+          ...(options.lockfilePath ? { lockfilePath: options.lockfilePath(target) } : {}) });
         try {
           const outcome = stateChangeOutcome(change(await load(key)));
           if (outcome.json !== undefined) await commit(key, outcome.json);
