@@ -53,7 +53,10 @@ const sync = await ChannelSync.open(transport, existingCollaboration);
 Headless accepts one of `channelSync`, `createChannelSync(context)`,
 `channelSyncs`, or `createChannelSyncs(context)`. Existing single-transport
 composition remains supported; plural factories return an array (including an
-explicit empty array). Factories receive the existing `collaboration` owner.
+explicit empty array). Factories receive a read-only context with the existing
+`collaboration` owner and, only when the server was started with
+`--relay-connect-file`, the already validated `relayConnectFile` path; it is
+absent otherwise. Factories must not parse the process arguments themselves.
 Never install competing factories/values; they are rejected before invoking a factory.
 
 ```ts

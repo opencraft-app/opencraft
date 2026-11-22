@@ -106,6 +106,15 @@ export function createImExecution({actors,collaboration,getAppHost,prepareCapabi
   };
 }
 
+/**
+ * Read-only context for channel sync factories: the collaboration owner and,
+ * when the server was started with one, the relay connection file path that
+ * startup already loaded and validated.
+ */
+export function channelSyncContext({ collaboration, relayConnectFile }) {
+  return Object.freeze({ collaboration, ...(relayConnectFile ? { relayConnectFile } : {}) });
+}
+
 /** Only one trusted installation composition form may own channel transports. */
 export async function createChannelSyncDependencies(composition, context) {
   const keys=['channelSync','channelSyncs','createChannelSync','createChannelSyncs'].filter(key=>composition[key]!=null);
