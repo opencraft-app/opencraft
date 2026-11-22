@@ -116,6 +116,48 @@
 - **协作状态不进 Client DO。** Client DO 只持有该客户端实例的身份、访问会话、逻辑路由、订阅与 resume 状态；Thread 执行、事件与队列由 WorkspaceHost 持有，频道、成员、协作命令与线程授权由 InstallationCore 持有。多人观看或协作同一对象时，各 Client DO 向同一共享 owner 订阅，由该 owner 扇出事件；这对应既有拓扑中多个 Client attachment 连接同一 Server。代价是多一跳与按观看者数量增长的扇出，而不是协作能力受限。对实时性要求更高的共享对象（例如多人同时编辑的笔记）可另设按对象划分的房间 DO，由客户端直连；这是扩展，不改变上述所有权。
 - **Hub 角色。** 在 Client/Hub/Server 拓扑中，EW＋Client DO 共同扮演 Hub（准入、路由、订阅、扇出）；RH 只承载 HubLink 级联与流预算。tenant 作用域以 installation 为界（问题 2），不从 socket 推断。
 
+### 3.3 Client DO 原型结果
+
+本地原型（2026-11-22）验证 §3.1 选项 B 的状态划分与 resume 语义，只在 workerd／Miniflare 中运行，不是部署装配。源码：`tests/protocol/workerd/client-do-worker.ts`；测试：`npm run test:client-do:workerd`（`tests/protocol/client-do-workerd.test.ts`）。
+
+**组成。**
+
+- **EW（边缘 Worker）**：校验测试 token（HMAC，代替 IC 签发的访问会话），拒绝缺失、伪造与过期 token；按已认证的 client instance id 用 `idFromName` 选 Client DO，只通过边缘写入的身份头转发 WebSocket upgrade，丢弃客户端自带的同名头。
+- **ClientDO**：每个客户端实例一个，用 Hibernatable WebSockets API（`ctx.acceptWebSocket`、`serializeAttachment`）接受连接。DO storage 持有访问会话、连接代次、订阅集合，以及每 Thread 的 `acked ≤ delivered` 两个游标；**不持有事件正文**，补发一律从 WorkspaceHost 日志读取。内存里只有串行化队列与计数器，丢失无影响。新附着关闭同一实例的旧 socket（4000 superseded）。
+- **WorkspaceHostDO（假）**：每工作区一个，持有每 Thread 只追加的事件日志（单调 `seq`）和订阅者集合；先提交事件，再对每个订阅的 Client DO 发一次 `deliver` RPC。
+
+**协议（原型帧，JSON 文本）。** 客户端 → DO：`client/hello {v, cursors: {"<workspace>/<thread>": lastAckedSeq}}`、`thread/subscribe {after}`、`thread/unsubscribe`、`event/ack {seq}`、`client/logout`。DO → 客户端：`thread/subscribed {head}`、`thread/event {workspaceId, threadId, seq, event}`、`client/ready {generation, subscriptions}`、`resume/failed {failures: [{thread, reason}]}`、`error`。规则：
+
+- socket 在 `hello` 处理完之前不接收实时事件；`hello` 对每个已存订阅从游标起向 WH 读日志补发，再发 `client/ready`，之后转为实时。补发与实时 `deliver` 在 DO 内串行，重复（`seq ≤ delivered`）丢弃，缺口（`seq > delivered+1`）从日志补齐。
+- 游标只在 `acked ≤ cursor ≤ delivered` 内接受：更低为 `stale`（客户端旧副本），更高为 `forged`（从未送达），未知 Thread 为 `unknown-subscription`；拒绝时不改任何状态，客户端须重新订阅。`event/ack` 越过 `delivered` 同样拒绝。已送达但未确认的区间正是"socket 半开、send 静默失败"时需要重发的部分，因此 DO 必须持久化 `delivered`，而不是只信 WH head。
+- 无就绪 socket 时 `deliver` 返回 `detached` 且不推进游标；事件已在 WH 日志中，resume 时送达，不会丢失。
+- 回收：alarm 取 `min(会话过期, 最后断开 + DETACH_MS)`；到期、长时间无连接或 `client/logout` 时，先逐个向 WH 注销订阅，再关闭 socket（4001）并 `deleteAll()`。已回收实例对迟到 `deliver` 答 `unsubscribed`，WH 据此再剪除一次。
+
+**映射到现有 AppHost 协议。** 原型只验证所有权与游标语义，不替换现有线格式：
+
+- `@opencraft/app-host-resume` 的 `ResumeLink`／`ResumeRegistry` 是**每传输会话**一条序列，在服务器内存中保留未确认帧（`RESUME_SESSION_MAX_BYTES`），进程重启即失效。Client DO 上它仍可作为 socket 级重传层（`connection/ack`、`connection/resumed` 不变），但 `ResumeSession` 的保留缓冲不能跨 hibernation；跨 hibernation／驱逐的连续性改由本节的每 Thread 游标承担，补发数据源是 WH 日志。原型复用了其 `RESUME_PROTOCOL_VERSION` 与 `isAcknowledgement` 校验。
+- `resume-failed` 的 `unknown-session`／`gap`／`invalid` 原因分别对应 `unknown-subscription`／WH 日志截断（`read` 返回 null）／`stale`、`forged`。
+- `/apphost` 逻辑路由（`LOGICAL_CLIENT_FIELD` 打标、`logicalClientRouting`）留在 Client DO：每个逻辑客户端（`local-codex`、`opencraft-server`、`channels`）的订阅按其 Host 路由到对应共享 owner；`ThreadAccessSession` 的授权判定仍由 IC 持有，原型对已认证客户端放行订阅，**未**接 IC。
+- 连接代次对应现有"客户端实例／连接代次"：同一实例的新附着递增代次并淘汰旧 socket。
+
+**已证明（本地）。**
+
+- 两个 Client DO 观看同一 Thread，50 个事件双方均按序完整收到；稳态每事件每观看者恰好 1 次 WH→ClientDO RPC，无日志补读。
+- 断线后事件继续，WH 对断线方得到 `detached`；以游标重连只收到缺失事件，补发在 `client/ready` 之前完成，转实时后无重复。客户端报告"已收未确认"的游标时不重发已收部分。
+- `ctx.abort()` 驱逐与 Miniflare 整体重启（同一持久化目录）后，新实例从 storage 恢复会话、订阅与游标，WH 订阅仍在，重连后补发正确。
+- alarm 在会话过期（socket 仍连接）与长时间断线两种情况下回收实例并从 WH 移除订阅；登出立即回收；回收后旧游标被拒为 `unknown-subscription`。
+
+**本地测量（仅 workerd／Miniflare 单进程，不代表 Cloudflare）。** append→两个 socket 都收到：p50 约 5–9 ms，p95 约 13–25 ms（含 Node→Miniflare 的测试驱动请求与轮询）。每事件 RPC 跳数：边缘→WH 1 次（追加，真实系统由执行侧在 WH 内产生，为 0）＋ WH→ClientDO 每观看者 1 次；ClientDO→socket 不是 RPC。
+
+**成本与限制。**
+
+- **扇出**：每事件 N 个观看者＝N 次 DO 调用（请求计费）＋每个 Client DO 1 次 storage 写（持久化 `delivered`）。流式 token 增量若逐条走此路径，成本随"事件数 × 观看者"线性增长；真实实现应在 WH 侧合并增量批量 `deliver`，或改为只推送"head 已前进"通知、由 Client DO 按批读取。
+- **hibernation**：Miniflare 不会自行 hibernate，原型用 `ctx.abort()` 模拟"新实例、同一 storage"；workerd 中 abort 会断开 socket，而真实 hibernation 保留 socket。设计上已不依赖内存（附着信息在 `serializeAttachment`，其余在 storage），但每次 `deliver` 都会唤醒 Client DO，活跃 Thread 的观看者实际上不会进入 hibernation；只有空闲客户端受益。
+- **顺序**：WH 对不同订阅者的 RPC 并发，单个订阅者的乱序由 Client DO 的去重与缺口补读兜底；未测大规模并发追加。
+- **未覆盖**：多 Host 逻辑路由、IC 线程授权、WH 日志截断与快照、背压与慢消费者、多个工作区的扇入、跨区域放置。
+
+**需在真实 Cloudflare 上确认。** hibernation 后唤醒 `webSocketMessage` 与 alarm 的冷启动延迟；跨 colo 的 WH→ClientDO RPC 延迟与 Client DO 放置（首个请求就近放置，用户移动后不迁移）；每事件 DO 请求与 storage 写入计费在流式输出下的量级；单 WH 扇出上限（并发出站子请求数、CPU 时间）；`ctx.abort()` 与平台驱逐、部署更新对 hibernatable socket 的实际影响；alarm 的触发精度与重试语义。
+
 ## 4. 拆分方式
 
 ### 4.1 组合根按角色分开，owner 共享
