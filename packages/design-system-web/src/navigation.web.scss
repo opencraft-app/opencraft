@@ -1,5 +1,16 @@
 @use "@opencraft/design-system/icons.web" as icons;
 
+@mixin sidebar-navigation-metrics {
+  --height-navigation-row: var(--height-sidebar-navigation-row);
+  --gap-navigation-rows: var(--gap-sidebar-navigation-rows);
+  gap: var(--gap-sidebar-navigation-rows);
+  --size-icon-navigation: var(--size-sidebar-navigation-icon);
+  --stroke-icon-navigation: var(--stroke-sidebar-navigation-icon);
+  --size-navigation-leading-slot: var(--size-sidebar-navigation-leading-slot);
+  --gap-navigation-row-content: var(--gap-sidebar-navigation-icon-label);
+  --padding-navigation-row-inline: var(--padding-sidebar-navigation-row-inline);
+}
+
 .ui-navigation-list {
   display: flex;
   min-width: 0;
@@ -12,14 +23,7 @@
 // The list owns the Shell surface inset; consumers must not add a second gutter.
 .ui-navigation-list:is([data-navigation-inset="sidebar"], [data-navigation-inset="contained"]) {
   padding-inline: var(--padding-sidebar-content-inline);
-  --height-navigation-row: var(--height-sidebar-navigation-row);
-  --gap-navigation-rows: var(--gap-sidebar-navigation-rows);
-  gap: var(--gap-sidebar-navigation-rows);
-  --size-icon-navigation: var(--size-sidebar-navigation-icon);
-  --stroke-icon-navigation: var(--stroke-sidebar-navigation-icon);
-  --size-navigation-leading-slot: var(--size-sidebar-navigation-leading-slot);
-  --gap-navigation-row-content: var(--gap-sidebar-navigation-icon-label);
-  --padding-navigation-row-inline: var(--padding-sidebar-navigation-row-inline);
+  @include sidebar-navigation-metrics;
   // Evaluate row geometry in the current density/presentation, not at :root.
   --offset-navigation-content-inline: var(--padding-navigation-row-inline);
   // Artwork may retain its semantic size; labels still start in one column.
@@ -137,6 +141,8 @@
 // Standalone sidebar actions share the list row's layout and reading axis,
 // without introducing a second navigation landmark or a second outer gutter.
 .ui-button.ui-navigation-item[data-navigation-inset="sidebar"][data-content-layout="row"] {
+  @include sidebar-navigation-metrics;
+  --offset-navigation-content-inline: var(--padding-navigation-row-inline);
   display: grid;
   grid-template-columns: var(--size-sidebar-navigation-leading-slot) minmax(0, 1fr) auto;
   align-items: center;
@@ -145,4 +151,10 @@
   padding: 0 var(--padding-sidebar-navigation-row-inline);
   justify-content: stretch;
   text-align: start;
+  > svg.ui-action-glyph {
+    margin-inline: 0;
+    justify-self: start;
+    color: var(--color-sidebar-navigation-icon);
+    stroke-width: var(--stroke-sidebar-navigation-icon);
+  }
 }
