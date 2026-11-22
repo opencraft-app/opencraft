@@ -79,7 +79,9 @@ test('planned restart reaches a browser through the real outbound relay as 1012'
     relay.server.listen(0,'127.0.0.1');await once(relay.server,'listening');
     const url=`http://127.0.0.1:${relay.server.address().port}`,file=join(f.root,'relay.json');
     await writeFile(file,JSON.stringify({schemaVersion:1,...scope,credential,publicKey,relay:url,allowLoopbackInsecure:true}),{mode:0o600});
-    app=await startHeadlessServer({...f.options,relayConnectFile:file,accessMemberProviders:['fixture-directory']});
+    let channelContext;
+    app=await startHeadlessServer({...f.options,relayConnectFile:file,accessMemberProviders:['fixture-directory']},{createChannelSyncs:async context=>{channelContext=context;return [];}});
+    assert.equal(channelContext?.relayConnectFile,file,'channel factories see the validated relay connection file');
     const end=Date.now()+5000;while(!relay.connected('fixture')&&Date.now()<end)await new Promise(done=>setTimeout(done,20));
     assert.equal(relay.connected('fixture'),true);
     socket=new WebSocket(url.replace('http','ws')+'/apphost',{origin:scope.origin,headers:{host:'fixture.test'}});await once(socket,'open');

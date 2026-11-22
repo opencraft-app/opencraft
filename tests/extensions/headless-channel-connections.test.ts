@@ -7,7 +7,7 @@ import { openServerDatabase } from "@opencraft/storage-node/server";
 import { ActorStore } from "../../packages/access-control/src/actors";
 import { Collaboration } from "../../packages/access-control/src/collaboration";
 import { ImChannelService } from "../../apps/headless-server/src/im-channel-service.mjs";
-import { createChannelSyncDependencies } from "../../apps/headless-server/src/im-plugins.mjs";
+import { channelSyncContext, createChannelSyncDependencies } from "../../apps/headless-server/src/im-plugins.mjs";
 import { startHeadlessServer } from "../../apps/headless-server/src/headless-server.mjs";
 import type { ChannelSyncTransport, ChannelArrival } from "../../plugins/im/src/channel-sync";
 
@@ -374,6 +374,29 @@ test("trusted composition supports legacy and plural factories without invoking 
     createChannelSyncDependencies({ createChannelSyncs: async () => undefined }, context),
     /Invalid channel composition/,
   );
+});
+
+test("channel sync factories receive the validated relay connection file only when configured", async () => {
+  const collaboration = {};
+  const seen: unknown[] = [];
+  const composition = {
+    createChannelSyncs: async (value: unknown) => {
+      seen.push(value);
+      return [];
+    },
+  };
+  await createChannelSyncDependencies(composition, channelSyncContext({ collaboration, relayConnectFile: "/private/relay.json" }));
+  await createChannelSyncDependencies(composition, channelSyncContext({ collaboration, relayConnectFile: undefined }));
+  const [configured, unset] = seen as Record<string, unknown>[];
+  assert.equal(configured.collaboration, collaboration);
+  assert.equal(configured.relayConnectFile, "/private/relay.json");
+  assert.ok(Object.isFrozen(configured));
+  assert.throws(() => {
+    configured.relayConnectFile = "/other.json";
+  }, TypeError);
+  assert.equal(unset.collaboration, collaboration);
+  assert.equal("relayConnectFile" in unset, false);
+  assert.deepEqual(Object.keys(unset), ["collaboration"]);
 });
 
 test("legacy single-transport composition retains its connection and personal notification port", async (t) => {
