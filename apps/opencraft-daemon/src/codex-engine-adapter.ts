@@ -45,6 +45,7 @@ import { mkdir, stat } from "node:fs/promises";
 import { createInterface, type Interface as ReadLineInterface } from "node:readline";
 import { join } from "node:path";
 import { OpenCraftHostQueue, type HostQueuedSubmission } from "./opencraft-host-queue.js";
+import { dispatchQueuedStart, dispatchQueuedSteer, reconcileThreadQueue } from "@opencraft/thread-queue";
 import { OpenCraftHostStateDatabase } from "./opencraft-host-state-database.js";
 import { OpenCraftTokenUsageLedger, type UsageSubmission } from "./token-usage-ledger.js";
 import { CodexTokenUsageRuntime } from "./token-usage-runtime.js";
@@ -4062,56 +4063,13 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private async reconcileQueue(threadId: string, receiptTurnIds?: readonly string[]): Promise<void> {
-    const queue = this.queueStore();
-    const unsettled = queue.list(threadId,receiptTurnIds).filter(row => row.state === "unknown" || row.state === "steering" || row.state === "closed");
-    const terminal = new Map<string,Promise<RpcRecord|undefined>>();
-    let idle: boolean | undefined;
-    for (const row of unsettled) {
-      if (row.pausedReason === "delivery-retry-requested" && (row.delivery?.nativeAdmission === "accepted" || row.delivery?.context === "recorded")) {
-        queue.resumeRequestedRetry(threadId,row.id); // Positive evidence retires the retry, never requeues it.
-        this.emitQueueChanged(threadId);
-      }
-      const target = row.targetTurnId === "unknown" ? null : row.targetTurnId;
-      if (await this.historyHasClientMessage(threadId,row.clientUserMessageId,target)) {
-        queue.deliveries.recorded(threadId,row.clientUserMessageId);
-        queue.settle(threadId,row.id,"delivered");
-        this.emitQueueChanged(threadId);
-        continue;
-      } else if ((row.state === "unknown" || row.state === "closed") && row.pausedReason === "delivery-retry-requested"
-          && row.delivery?.nativeAdmission !== "accepted"
-          && await this.queueThreadIsIdle(threadId)) {
-        // Only this explicit retry can re-enter the queue. Recheck final history
-        // after idle; a positive native ACK is never a retry authorization.
-        if (await this.historyHasClientMessage(threadId,row.clientUserMessageId,target)) {
-          queue.deliveries.recorded(threadId,row.clientUserMessageId);
-          queue.settle(threadId,row.id,"delivered");
-        } else {
-          // Idle alone is insufficient. If the terminal notification was lost,
-          // recover its exact Turn before consuming the durable retry intent.
-          if (!inputExecutionEnded(row.delivery) && target) {
-            const turn=await this.findScheduledTurn(threadId,target);
-            if (turn && ['completed','failed','interrupted'].includes(string(turn.status))) queue.deliveries.finish(threadId,target,string(turn.status));
-          }
-          queue.resumeRequestedRetry(threadId,row.id);
-        }
-        this.emitQueueChanged(threadId);
-        continue;
-      }
-      if (inputExecutionEnded(row.delivery)) continue;
-      // Idle by itself says nothing about a particular attempt. Recover its
-      // exact terminal Turn, including after a lost notification/restart.
-      idle ??= await this.queueThreadIsIdle(threadId);
-      if (!idle || !target) continue;
-      let lookup=terminal.get(target);
-      if (!lookup) { lookup=this.findScheduledTurn(threadId,target); terminal.set(target,lookup); }
-      const turn=await lookup;
-      if (turn && ['completed','failed','interrupted'].includes(string(turn.status))) {
-        if (this.activeTurns.get(threadId)===target) this.activeTurns.delete(threadId);
-        if (queue.deliveries.finish(threadId,target,string(turn.status))) this.emitQueueChanged(threadId);
-      }
-      // No positive context evidence is fabricated. A closed attempt survives
-      // as Host-authored transcript content, and no longer fences later input.
-    }
+    await reconcileThreadQueue(this.queueStore(), threadId, {
+      historyHasInput: (clientId, target) => this.historyHasClientMessage(threadId, clientId, target),
+      isIdle: () => this.queueThreadIsIdle(threadId),
+      findTurn: target => this.findScheduledTurn(threadId, target),
+      turnEnded: target => { if (this.activeTurns.get(threadId) === target) this.activeTurns.delete(threadId); },
+      changed: () => this.emitQueueChanged(threadId),
+    }, receiptTurnIds);
   }
 
   private actorInput(row: HostQueuedSubmission, mode: 'queue' | 'steer', expectedTurnId?: string): void {
@@ -4167,51 +4125,46 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
   private async dispatchQueuedStart(threadId: string, id: string, context?:TransportSubmissionContext): Promise<RpcRecord> {
     if (this.executionBlocked(threadId)) throw new RecoveryNotSubmitted("Execution is recovering before queue dispatch");
-    const queue = this.queueStore();
-    const head = queue.firstAwaitingAdmission(threadId);
-    if (head?.state === "unknown") throw new OpenCraftQueueRpcError(-32600, "Managed input delivery or execution recovery is still unconfirmed");
-    if (head?.state === "dispatching") throw new OpenCraftQueueRpcError(-32600, "Earlier delivery is still being sent");
-    const queued = queue.find(threadId, id);
-    if (queued && !queued.executionSubmission) this.executionLeases?.capture(threadId, queued.clientUserMessageId, { principal: null, ownership: "unknown" });
-    if (!queued) throw new OpenCraftQueueRpcError(-32600, "Queued message is unavailable");
-    if (!context && this.options.requiresWorkspaceResume?.(threadId)) {
-      const restore = this.options.collaboration?.restoreWorkspaceSubmission;
-      if (!restore) throw new OpenCraftQueueRpcError(-32600, 'Workspace queued execution authority unavailable');
-      context = await restore(threadId, queued.clientUserMessageId, queued.executionSubmission ?? undefined);
-      context.resourceOwner?.assertCurrent();
-    }
-    const prepared = await this.modelVisibleAttachmentInput(queued.input, threadId, undefined, context);
-    if (prepared.attachments.length > 0) this.attachmentRecords().record(
-      threadId, queued.clientUserMessageId, prepared.attachments);
-    const referenceContext = await this.options.collaboration?.queuedContext?.(threadId, queued.clientUserMessageId, prepared.input);
-    this.actorInput(queued, 'queue');
-    const selection = this.schedules?.executionPermissions(threadId, queued.clientUserMessageId);
-    const thread = selection ? record(record(await this.requestPhysical("thread/read", { threadId, includeTurns: false })).thread) : null;
-    const permissions = selection ? await this.resolvePermissionSelection(selection, thread?.cwd) : {};
-    const row = queue.claim(threadId, id, "unknown");
-    if (!row) throw new OpenCraftQueueRpcError(-32600, "Queued message is already being dispatched");
-    this.emitQueueChanged(threadId);
-    try {
-      const response = record(await this.requestPhysical("turn/start", {
-        threadId, input: prepared.input, clientUserMessageId: row.clientUserMessageId,
-        ...permissions,
-        ...(referenceContext ? {additionalContext:{"opencraft.conversations":{kind:"untrusted",value:JSON.stringify(referenceContext)}}} : {}),
-      },30_000,undefined,this.queuedUsageIdentity(context,threadId,row.clientUserMessageId,"start"),undefined,context));
-      if (!string(record(response.turn).id)) throw new Error("Codex returned an invalid turn/start acknowledgement");
-      queue.settle(threadId, id, "delivered", null, string(record(response.turn).id));
-      this.emitQueueChanged(threadId);
-      return response;
-    } catch (error) {
-      const unsent = error instanceof RecoveryNotSubmitted;
-      const preparation = unsent && error.cause instanceof SessionMcpPreparationFailure ? error.cause : null;
-      const retryable = unsent && (!preparation || sessionMcpRetryable(preparation.cause));
-      queue.settle(threadId, id, unsent || error instanceof ModelPolicyError ? "queued" : "unknown",
-        error instanceof ModelPolicyError ? "model-restricted" : unsent && this.executionBlocked(threadId) ? "execution-recovering" : unsent
-          ? retryable ? "session-tools-recovering" : "session-tools-unavailable" : "steer-delivery-unconfirmed");
-      if (retryable) this.scheduleQueuePreparationRetry(threadId);
-      this.emitQueueChanged(threadId);
-      throw error;
-    }
+    return dispatchQueuedStart(this.queueStore(), threadId, id, {
+      refuse: message => { throw new OpenCraftQueueRpcError(-32600, message); },
+      prepare: async queued => {
+        if (!queued.executionSubmission) this.executionLeases?.capture(threadId, queued.clientUserMessageId, { principal: null, ownership: "unknown" });
+        if (!context && this.options.requiresWorkspaceResume?.(threadId)) {
+          const restore = this.options.collaboration?.restoreWorkspaceSubmission;
+          if (!restore) throw new OpenCraftQueueRpcError(-32600, 'Workspace queued execution authority unavailable');
+          context = await restore(threadId, queued.clientUserMessageId, queued.executionSubmission ?? undefined);
+          context.resourceOwner?.assertCurrent();
+        }
+        const prepared = await this.modelVisibleAttachmentInput(queued.input, threadId, undefined, context);
+        if (prepared.attachments.length > 0) this.attachmentRecords().record(
+          threadId, queued.clientUserMessageId, prepared.attachments);
+        const referenceContext = await this.options.collaboration?.queuedContext?.(threadId, queued.clientUserMessageId, prepared.input);
+        this.actorInput(queued, 'queue');
+        const selection = this.schedules?.executionPermissions(threadId, queued.clientUserMessageId);
+        const thread = selection ? record(record(await this.requestPhysical("thread/read", { threadId, includeTurns: false })).thread) : null;
+        const permissions = selection ? await this.resolvePermissionSelection(selection, thread?.cwd) : {};
+        return { input: prepared.input, referenceContext, permissions };
+      },
+      send: async (row, prepared) => {
+        const response = record(await this.requestPhysical("turn/start", {
+          threadId, input: prepared.input, clientUserMessageId: row.clientUserMessageId,
+          ...prepared.permissions,
+          ...(prepared.referenceContext ? {additionalContext:{"opencraft.conversations":{kind:"untrusted",value:JSON.stringify(prepared.referenceContext)}}} : {}),
+        },30_000,undefined,this.queuedUsageIdentity(context,threadId,row.clientUserMessageId,"start"),undefined,context));
+        if (!string(record(response.turn).id)) throw new Error("Codex returned an invalid turn/start acknowledgement");
+        return { turnId: string(record(response.turn).id), response };
+      },
+      failed: error => {
+        const unsent = error instanceof RecoveryNotSubmitted;
+        const preparation = unsent && error.cause instanceof SessionMcpPreparationFailure ? error.cause : null;
+        const retryable = unsent && (!preparation || sessionMcpRetryable(preparation.cause));
+        return { state: unsent || error instanceof ModelPolicyError ? "queued" : "unknown",
+          reason: error instanceof ModelPolicyError ? "model-restricted" : unsent && this.executionBlocked(threadId) ? "execution-recovering" : unsent
+            ? retryable ? "session-tools-recovering" : "session-tools-unavailable" : "steer-delivery-unconfirmed",
+          ...(retryable ? { after: () => this.scheduleQueuePreparationRetry(threadId) } : {}) };
+      },
+      changed: () => this.emitQueueChanged(threadId),
+    });
   }
 
   /** This fence is only for commands that consume installed personal ENV.
@@ -4254,76 +4207,63 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private async dispatchQueuedSteer(threadId: string, id: string, expectedTurnId: string, context?:TransportSubmissionContext, additionalContext?: unknown, canDispatch?:()=>boolean): Promise<RpcRecord> {
-    const queue = this.queueStore();
-    const previous=queue.find(threadId,id);
-    if (previous && (previous.delivery?.nativeAdmission==='accepted' || inputExecutionEnded(previous.delivery))) {
-      if (previous.targetTurnId!==expectedTurnId) throw new OpenCraftQueueRpcError(-32600,"Message identity already belongs to another Turn");
-      return {turnId:expectedTurnId,delivery:previous.delivery};
-    }
-    if (queue.firstAwaitingAdmission(threadId)?.state === "unknown") await this.reconcileQueue(threadId,[]);
-    const head = queue.firstAwaitingAdmission(threadId);
-    if (head?.state === "unknown") throw new OpenCraftQueueRpcError(-32600, "Managed input delivery is still unconfirmed");
-    if (head?.state === "dispatching") throw new OpenCraftQueueRpcError(-32600, "Earlier delivery is still being sent");
-    const queued = queue.find(threadId, id);
-    if (!queued) throw new OpenCraftQueueRpcError(-32600, "Queued message is unavailable");
-    if (this.options.executionEnvironment) {
-      const submission = queued.executionSubmission;
-      if (!submission || submission.ownership === 'unknown') throw new OpenCraftQueueRpcError(-32600, 'Execution identity is unavailable',
-        { notSubmitted: true, submissionOutcome: 'rejected', retryable: false });
-      // The queued input's provenance is independent of the target executor.
-      // Do not manufacture or replace either identity from an ENV cache.
-    }
-    if (!context && this.options.requiresWorkspaceResume?.(threadId)) {
-      const restore = this.options.collaboration?.restoreWorkspaceSubmission;
-      if (!restore) throw new OpenCraftQueueRpcError(-32600, 'Workspace queued execution authority unavailable');
-      context = await restore(threadId, queued.clientUserMessageId, queued.executionSubmission ?? undefined);
-      context.resourceOwner?.assertCurrent();
-    }
-    const prepared = await this.modelVisibleAttachmentInput(queued.input, threadId, undefined, context);
-    if (prepared.attachments.length > 0) this.attachmentRecords().record(
-      threadId, queued.clientUserMessageId, prepared.attachments);
-    if (context) {
-      this.validateSubmissionContext(context);
-      if (context.actorContext && this.options.collaboration?.prepare) {
-        const referenceContext=await this.options.collaboration.prepare(context.actorContext,prepared.input);
-        if (referenceContext) additionalContext={...record(additionalContext),'opencraft.conversations':{kind:'untrusted',value:JSON.stringify(referenceContext)}};
-      }
-      this.validateSubmissionContext(context);
-      if (context.actorContext && this.options.collaboration) {
-        context.resourceOwner?.assertCurrent();
-        this.options.collaboration.authorize(context.actorContext,threadId,queued.clientUserMessageId,prepared.input);
-      }
-    }
-    if (this.options.sharedTurnInput) await this.assertNativeTurnInputReady(threadId);
-    if (context) this.validateSubmissionContext(context);
-    if (canDispatch?.()===false) throw new RecoveryNotSubmitted('Sending client was replaced before native submission');
-    if (inputExecutionEnded(queue.deliveries.receipt(threadId,queued.clientUserMessageId,expectedTurnId)))
-      throw new OpenCraftQueueRpcError(-32600,"no active turn to steer");
-    this.actorInput(queued, 'steer', expectedTurnId);
-    const row = queue.claim(threadId, id, expectedTurnId);
-    if (!row) throw new OpenCraftQueueRpcError(-32600, "Queued message is already being dispatched");
-    this.emitQueueChanged(threadId);
-    try {
-      const response = record(await this.requestPhysical("turn/steer", {
-        threadId, expectedTurnId, input: prepared.input, clientUserMessageId: row.clientUserMessageId,
-        ...(additionalContext === undefined ? {} : {additionalContext}),
-      },30_000,undefined,this.queuedUsageIdentity(context,threadId,row.clientUserMessageId,"steer"),()=>{
-        if(context)this.validateSubmissionContext(context);
-        return canDispatch?.()!==false;
-      },context));
-      const turnId = string(response.turnId) || string(record(response.turn).id);
-      if (turnId !== expectedTurnId) throw new Error("Codex returned an invalid steer acknowledgement");
-      queue.settle(threadId, id, "steering");
-      this.emitQueueChanged(threadId);
-      return { turnId, delivery: queue.find(threadId,id)?.delivery };
-    } catch (error) {
-      const unsent = error instanceof RecoveryNotSubmitted;
-      const rejected = unsent || this.definitiveSteerRejection(error);
-      queue.settle(threadId, id, rejected ? "queued" : "unknown",
-        unsent && this.executionBlocked(threadId) ? "execution-recovering" : rejected ? null : "steer-delivery-unconfirmed");
-      this.emitQueueChanged(threadId);
-      throw error;
-    }
+    return dispatchQueuedSteer(this.queueStore(), threadId, id, expectedTurnId, {
+      refuse: message => { throw new OpenCraftQueueRpcError(-32600, message); },
+      prepare: async queued => {
+        if (this.options.executionEnvironment) {
+          const submission = queued.executionSubmission;
+          if (!submission || submission.ownership === 'unknown') throw new OpenCraftQueueRpcError(-32600, 'Execution identity is unavailable',
+            { notSubmitted: true, submissionOutcome: 'rejected', retryable: false });
+          // The queued input's provenance is independent of the target executor.
+          // Do not manufacture or replace either identity from an ENV cache.
+        }
+        if (!context && this.options.requiresWorkspaceResume?.(threadId)) {
+          const restore = this.options.collaboration?.restoreWorkspaceSubmission;
+          if (!restore) throw new OpenCraftQueueRpcError(-32600, 'Workspace queued execution authority unavailable');
+          context = await restore(threadId, queued.clientUserMessageId, queued.executionSubmission ?? undefined);
+          context.resourceOwner?.assertCurrent();
+        }
+        const prepared = await this.modelVisibleAttachmentInput(queued.input, threadId, undefined, context);
+        if (prepared.attachments.length > 0) this.attachmentRecords().record(
+          threadId, queued.clientUserMessageId, prepared.attachments);
+        if (context) {
+          this.validateSubmissionContext(context);
+          if (context.actorContext && this.options.collaboration?.prepare) {
+            const referenceContext=await this.options.collaboration.prepare(context.actorContext,prepared.input);
+            if (referenceContext) additionalContext={...record(additionalContext),'opencraft.conversations':{kind:'untrusted',value:JSON.stringify(referenceContext)}};
+          }
+          this.validateSubmissionContext(context);
+          if (context.actorContext && this.options.collaboration) {
+            context.resourceOwner?.assertCurrent();
+            this.options.collaboration.authorize(context.actorContext,threadId,queued.clientUserMessageId,prepared.input);
+          }
+        }
+        if (this.options.sharedTurnInput) await this.assertNativeTurnInputReady(threadId);
+        if (context) this.validateSubmissionContext(context);
+        if (canDispatch?.()===false) throw new RecoveryNotSubmitted('Sending client was replaced before native submission');
+        return prepared.input;
+      },
+      beforeClaim: queued => this.actorInput(queued, 'steer', expectedTurnId),
+      send: async (row, input) => {
+        const response = record(await this.requestPhysical("turn/steer", {
+          threadId, expectedTurnId, input, clientUserMessageId: row.clientUserMessageId,
+          ...(additionalContext === undefined ? {} : {additionalContext}),
+        },30_000,undefined,this.queuedUsageIdentity(context,threadId,row.clientUserMessageId,"steer"),()=>{
+          if(context)this.validateSubmissionContext(context);
+          return canDispatch?.()!==false;
+        },context));
+        const turnId = string(response.turnId) || string(record(response.turn).id);
+        if (turnId !== expectedTurnId) throw new Error("Codex returned an invalid steer acknowledgement");
+        return { turnId, response };
+      },
+      failed: error => {
+        const unsent = error instanceof RecoveryNotSubmitted;
+        const rejected = unsent || this.definitiveSteerRejection(error);
+        return { state: rejected ? "queued" : "unknown",
+          reason: unsent && this.executionBlocked(threadId) ? "execution-recovering" : rejected ? null : "steer-delivery-unconfirmed" };
+      },
+      changed: () => this.emitQueueChanged(threadId),
+    }, () => this.reconcileQueue(threadId, []));
   }
 
   private async handleQueueRequest(clientId: string, id: string | number, method: string, params: RpcRecord, context: TransportSubmissionContext): Promise<void> {
