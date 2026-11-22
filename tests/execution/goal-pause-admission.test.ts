@@ -67,7 +67,7 @@ class NativeFixture implements DuplexTransport {
 
 async function fixture(t: test.TestContext, writable = true) {
   const root = await mkdtemp(join(tmpdir(), 'goal-pause-admission-'));
-  const vault = new EmployeeGitVaultStore(root), runtime = new ExecutionEnvironmentRuntime(root, vault);
+  const vault = await EmployeeGitVaultStore.open(root), runtime = new ExecutionEnvironmentRuntime(root, vault);
   runtime.bindCreator(runtime.scope(context(), 'local-codex', {}), pause.threadId);
   const physical = new NativeFixture(), frames: any[] = [], diagnostics: any[] = [];
   physical.writable = writable;

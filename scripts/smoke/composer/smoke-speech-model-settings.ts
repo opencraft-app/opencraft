@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { createServer } from "vite";
 import { startLocalAgentHost } from "../../../apps/local-agent-host/src/main";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "../../../apps/local-agent-host/src/model-config/repository";
-import { documentSecretStore } from "@opencraft/secret-storage/documents";
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 import { SpeechModelConfiguration } from "../../../apps/local-agent-host/src/model-config/speech";
 import { SpeechTranscriptionService, validateSpeechWav } from "../../../apps/headless-server/src/speech-transcription-service.mjs";
 
@@ -15,7 +15,7 @@ const directory = await mkdtemp(join(tmpdir(), "opencraft-speech-model-ui-"));
 delete process.env.OPENCRAFT_DSH_URL; delete process.env.OPENCRAFT_DSH_REPOSITORY;
 const modelDirectory = join(directory, "models");
 const repository = new ModelConfigurationRepository(fileStateDocumentStore(modelDirectory));
-const credentials = new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(modelDirectory)));
+const credentials = new ModelCredentialRepository(fileSecretStore(modelDirectory));
 let host: Awaited<ReturnType<typeof startLocalAgentHost>> | undefined, vite: Awaited<ReturnType<typeof createServer>> | undefined, browser: any;
 let expectedKey = "", paidCalls = 0;
 const speech = new SpeechTranscriptionService({ configuration: new SpeechModelConfiguration(repository, credentials), fetch: async (_url: string, init: RequestInit) => {

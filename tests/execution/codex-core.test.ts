@@ -992,7 +992,7 @@ for (const scopeChange of ["none", "account", "project", "unknown", "no-mcp"] as
       [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
       { cwd, env: { ...env, FAKE_REQUIRE_DURABLE_RESUME: "1", FAKE_UNLOAD_ON_UNSUBSCRIBE: "1" }, stdio: ["pipe", "pipe", "pipe"] }),
   }));
-  const vault = new EmployeeGitVaultStore(f.root), runtime = new ExecutionEnvironmentRuntime(f.root, vault);
+  const vault = await EmployeeGitVaultStore.open(f.root), runtime = new ExecutionEnvironmentRuntime(f.root, vault);
   const methods: string[] = []; let restored = 0; const bound = new Set<string>(), hosts: CodexEngineAdapter[] = [];
   const reservation = () => ({ configuration: { url: "http://127.0.0.1:1/mcp" }, bindThread() {}, bind(threadId: string, inputId: string, executionId: string) { bound.add(JSON.stringify([threadId, inputId, executionId])); }, cancel() {} });
   const options = { dataDirectory: join(f.root, "codex"), executionEnvironment: runtime,
@@ -1091,7 +1091,7 @@ for (const scopeChange of ["none", "account", "project", "unknown", "no-mcp"] as
         [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
         { cwd, env: { ...env, FAKE_PAGINATED_EMPTY_INDEX: "1", FAKE_REQUIRE_DURABLE_RESUME: "1", FAKE_UNLOAD_ON_UNSUBSCRIBE: "1" }, stdio: ["pipe", "pipe", "pipe"] }),
     }));
-    const vault = new EmployeeGitVaultStore(f.root), runtime = new ExecutionEnvironmentRuntime(f.root, vault);
+    const vault = await EmployeeGitVaultStore.open(f.root), runtime = new ExecutionEnvironmentRuntime(f.root, vault);
     const environment = new AccountEnvironment(vault);
     const hosts: CodexEngineAdapter[] = [], writes: any[] = [], restored: Array<{ bound: number; cancelled: number }> = [];
     const context = (user: string) => ({ sender: { kind: "employee" as const, loginName: user },

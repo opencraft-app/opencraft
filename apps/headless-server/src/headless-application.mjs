@@ -37,7 +37,7 @@ import { HeadlessConnectors } from "@opencraft/connector-host/headless";
 import { CapabilityBindingProjection } from "@opencraft/session-capabilities/binding-projection";
 import { SessionCapabilities } from "@opencraft/session-capabilities";
 import { SessionCapabilityMcp, capabilitySigningKey } from "@opencraft/session-capabilities/mcp";
-import { fileKeyMaterial } from "@opencraft/secret-storage/file";
+import { fileKeyMaterial, fileSecretStore } from "@opencraft/secret-storage/file";
 import { ConversationResourceLifecycle } from './conversation-resource-lifecycle.mjs';
 import { ConversationResourceTransport } from './conversation-resource-transport.js';
 import { RemoteBrowserService } from './remote-browser-service.mjs';
@@ -97,7 +97,6 @@ import { LocalDesktopService } from "@opencraft/local-agent-host/desktop";
 import { createNativeObserver, localDesktopMachineIdentity } from "@opencraft/local-agent-host/desktop-native";
 import { createNativeDesktopControl } from "@opencraft/local-agent-host/desktop/native-control";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "@opencraft/local-agent-host/model-config/repository";
-import { documentSecretStore } from "@opencraft/secret-storage/documents";
 import { SpeechModelConfiguration } from "@opencraft/local-agent-host/model-config/speech";
 import { SpeechTranscriptionService } from "./speech-transcription-service.mjs";
 import { MembershipStore, InstanceAccess } from '@opencraft/access-control';
@@ -844,7 +843,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       agent = independentEngine;
     } else if (engines.includes("pi")) {
       releasePiOwner = await lockfile.lock(join(dataDirectory, "pi-owner"), {realpath:false,retries:0});
-      const piModels = await createPiModelConfiguration(new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory, "models"))), new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(join(dataDirectory, "models")))), fileStateDocumentStore(join(dataDirectory, "pi")));
+      const piModels = await createPiModelConfiguration(new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory, "models"))), new ModelCredentialRepository(fileSecretStore(join(dataDirectory, "models"))), fileStateDocumentStore(join(dataDirectory, "pi")));
       const piAttachments=new LocalAttachmentStagingService(join(dataDirectory,"agent","attachments"),join(dataDirectory,"artifacts"));
       const piPrepareInput=(threadId,input)=>piAttachments.prepareInput(input,threadId,fileSystem?(artifact,owner,signal)=>fileSystem.prepareArtifact(artifact,owner,signal):undefined);
       piEngine = new PiEngine({ executionCli: connectedExecutionCli, prepareAttachmentInput:piPrepareInput, modelPolicyPath, ...piModels, executionEnvironment: identity?.executionEnvironment,executionGit:humanGitExecution, sessionCapabilities: capabilities.scoped(`server:${machineIdentity.machineId}:pi`), dataDirectory, directory: join(dataDirectory, "pi"), attachmentDirectory: join(dataDirectory, "agent", "attachments"), cwd: options.runtimeDirectory ?? join(root, "runtime") });
@@ -1001,7 +1000,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
             createSocket: url => new WebSocket(url),
           });
           const transport = agentIdentity?.wrapTransport(engine) ?? engine;
-          return new AgentDriverTransport(new ExecutionOwnershipTransport(new ModelCapabilityTransport(new ImageModelTransport(transport, new ImageGenerationConfiguration(fileStateDocumentStore(join(dataDirectory,'models')), new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(join(dataDirectory,'models')))))), {read:()=>new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory,'models'))).read(),credential:async ref=>(await new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(join(dataDirectory,'models')))).resolve(ref))??process.env[ref]}), executionStore, resolveExecutionNative), actorCollaboration,
+          return new AgentDriverTransport(new ExecutionOwnershipTransport(new ModelCapabilityTransport(new ImageModelTransport(transport, new ImageGenerationConfiguration(fileStateDocumentStore(join(dataDirectory,'models')), new ModelCredentialRepository(fileSecretStore(join(dataDirectory,'models'))))), {read:()=>new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory,'models'))).read(),credential:async ref=>(await new ModelCredentialRepository(fileSecretStore(join(dataDirectory,'models'))).resolve(ref))??process.env[ref]}), executionStore, resolveExecutionNative), actorCollaboration,
             threadId => conversationExecution.serverForHost('opencraft-server', threadId), signExecutionCli, operator.context);
         }), usageQueries, actorId => actorStore.get(actorId));
         const remote = remoteServers.get(hostId);
@@ -1324,7 +1323,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       hubService: hubController,
       remoteBrowserService: remoteBrowser,
       speechService: new SpeechTranscriptionService({ configuration: new SpeechModelConfiguration(
-        new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory, "models"))), new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(join(dataDirectory, "models"))))) }),
+        new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory, "models"))), new ModelCredentialRepository(fileSecretStore(join(dataDirectory, "models")))) }),
     });
     conversationResources.retry();
     const reconciledResourceHosts = new Map();

@@ -18,7 +18,7 @@ export async function createAssetsStorage(
   execution?: GitExecutionResolver,
   createWorkspaces?: CreateAssetWorkspaceExecutionOwner,
 ) {
-  const vault = new EmployeeGitVaultStore(directory);
+  const vault = await EmployeeGitVaultStore.open(directory);
   let workspaces: AssetWorkspaceExecutionOwner | undefined;
   try {
     const configurations = new SandboxConfigurations(vault);

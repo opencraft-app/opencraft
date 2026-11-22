@@ -2,7 +2,27 @@ import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { link, mkdir, open, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { validateKeyName, type KeyMaterial } from "./contract.js";
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
+import { validateKeyName, type KeyMaterial, type SecretStore } from "./contract.js";
+import { documentSecretStore } from "./documents.js";
+
+/**
+ * Upper bound for a secrets document read in private mode. Entries are single
+ * line API keys and tokens of at most a few KiB each, so 1 MiB holds hundreds
+ * of them; a larger file is refused rather than read into memory.
+ */
+const SECRET_DOCUMENT_MAX_BYTES = 1_048_576;
+
+/**
+ * Node composition of `documentSecretStore` over a private
+ * `fileStateDocumentStore`: reads refuse symlinks (`ELOOP`) and throw
+ * `StateDocumentNotPrivateError` unless the file is a regular file of at most
+ * 1 MiB owned by this user with no group or other permission bits; writes are
+ * atomic and 0600.
+ */
+export function fileSecretStore(directory: string, key = "credentials.json"): SecretStore {
+  return documentSecretStore(fileStateDocumentStore(directory, { private: { maxBytes: SECRET_DOCUMENT_MAX_BYTES } }), key);
+}
 
 /** Directory handles cannot be fsynced on Windows; rename/link durability there is the file system's. */
 async function syncDirectory(directory: string) {

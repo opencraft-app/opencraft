@@ -5,7 +5,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "../../apps/local-agent-host/src/model-config/repository.js";
-import { documentSecretStore } from "@opencraft/secret-storage/documents";
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 import { createEngineModelSource, engineEndpointAllowed, EngineModelError } from "../../apps/local-agent-host/src/model-config/engine-models.js";
 import { createAssistantModelSource } from "../../apps/local-agent-host/src/model-config/assistant.js";
 import { createConfiguredCodexResponses, configuredCodexModelId } from "../../apps/codex-core/src/configured-responses.js";
@@ -14,7 +14,7 @@ import { AccountPoolStore, CodexAccountPoolProxy } from "../../packages/account-
 async function fixture(t: test.TestContext) {
   const directory = await mkdtemp(join(tmpdir(), "engine-models-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const repository = new ModelConfigurationRepository(fileStateDocumentStore(directory)), credentials = new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(directory)));
+  const repository = new ModelConfigurationRepository(fileStateDocumentStore(directory)), credentials = new ModelCredentialRepository(fileSecretStore(directory));
   await credentials.set("RESPONSES_KEY", "responses-secret");
   await credentials.set("ANTHROPIC_KEY", "anthropic-secret");
   await repository.initialize({ schemaVersion: 1, revision: 0, defaultModel: null, providers: [

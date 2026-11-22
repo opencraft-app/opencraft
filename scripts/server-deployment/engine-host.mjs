@@ -24,7 +24,7 @@ import { attachEngineHost } from '../../apps/headless-server/src/server-deployme
 import { handleHostInput } from '../../apps/local-agent-host/src/host-input-http.ts';
 import { createPiModelConfiguration } from '../../apps/local-agent-host/src/model-config/pi-adapter.ts';
 import { ModelConfigurationRepository, ModelCredentialRepository } from '../../apps/local-agent-host/src/model-config/repository.ts';
-import { documentSecretStore } from "@opencraft/secret-storage/documents";
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 import { fileStateDocumentStore } from '@opencraft/document-storage/state-file';
 import { PiEngine, piHandoffReconciliation } from '../../plugins/pi-engine/src/index.ts';
 import { BridgeEngineProvider } from '../../apps/local-agent-host/src/bridge-engine-provider.ts';
@@ -84,10 +84,10 @@ export async function startIndependentEngineHost(options) {
         return (await observeNativeExecutionProcess(process.pid)).incarnation===grant.native.incarnation;
       },
     });
-    else executionEnvironment=ExecutionEnvironmentRuntime.open(dataDirectory,{create:true});
+    else executionEnvironment=await ExecutionEnvironmentRuntime.open(dataDirectory,{create:true});
     pi = new PiEngine({
       prepareAttachmentInput:(threadId,input)=>artifactInputs.prepareInput(input,threadId,artifactFiles?(artifact,owner,signal)=>artifactFiles.prepareArtifact(artifact,owner,signal):undefined),
-      ...(await createPiModelConfiguration(new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory, 'models'))), new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(join(dataDirectory, 'models')))), fileStateDocumentStore(join(dataDirectory, 'pi')))),
+      ...(await createPiModelConfiguration(new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory, 'models'))), new ModelCredentialRepository(fileSecretStore(join(dataDirectory, 'models'))), fileStateDocumentStore(join(dataDirectory, 'pi')))),
       modelPolicyPath: join(dataDirectory, "model-usage-policy.sqlite"),
       executionEnvironment, executionGit, admission: handoff, dataDirectory, directory: join(dataDirectory, 'pi'),
       attachmentDirectory: join(dataDirectory, 'agent', 'attachments'),

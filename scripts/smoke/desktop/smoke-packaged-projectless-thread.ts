@@ -8,7 +8,7 @@ import {
   ModelConfigurationRepository,
   ModelCredentialRepository,
 } from "../../../apps/local-agent-host/src/model-config/repository.js";
-import { documentSecretStore } from "@opencraft/secret-storage/documents";
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 
 const executablePath = process.env.OPENCRAFT_PACKAGED_PROJECTLESS_EXECUTABLE;
 if (!executablePath) throw new Error("Set OPENCRAFT_PACKAGED_PROJECTLESS_EXECUTABLE");
@@ -48,7 +48,7 @@ const model = createServer(async (request, response) => {
 await new Promise<void>((resolveListen) => model.listen(0, "127.0.0.1", resolveListen));
 const address = model.address();
 if (address === null || typeof address === "string") throw new Error("Fixture model did not bind");
-await new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(modelDirectory))).set("FIXTURE_KEY", "synthetic-only");
+await new ModelCredentialRepository(fileSecretStore(modelDirectory)).set("FIXTURE_KEY", "synthetic-only");
 await new ModelConfigurationRepository(fileStateDocumentStore(modelDirectory)).initialize({
   schemaVersion: 1,
   revision: 0,

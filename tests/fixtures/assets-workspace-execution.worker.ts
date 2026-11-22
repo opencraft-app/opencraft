@@ -49,7 +49,7 @@ serveWorkerOwner<FixtureData>(async ({ directory, terminalOwner }) => {
     actors.close();
     await server.close();
   }
-  const vault = new EmployeeGitVaultStore(directory);
+  const vault = await EmployeeGitVaultStore.open(directory);
   try {
     new SandboxConfigurations(vault).adoptInstallation(
       {

@@ -3,10 +3,10 @@ import test from 'node:test';import assert from 'node:assert/strict';
 import {mkdtemp,readFile} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {ImageGenerationConfiguration,IMAGE_GENERATION} from '../../apps/local-agent-host/src/model-config/image-generation';
 import {ModelCredentialRepository} from '../../apps/local-agent-host/src/model-config/repository';
-import { documentSecretStore } from "@opencraft/secret-storage/documents";
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 import {ImageModelTransport} from '../../apps/local-agent-host/src/image-model-transport';
 import {LOGICAL_CLIENT_FIELD} from '@opencraft/app-host-protocol';
-async function fixture(){const dir=await mkdtemp(join(tmpdir(),'image-config-'));const credentials=new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(dir)));return{dir,credentials,config:new ImageGenerationConfiguration(fileStateDocumentStore(dir),credentials)};}
+async function fixture(){const dir=await mkdtemp(join(tmpdir(),'image-config-'));const credentials=new ModelCredentialRepository(fileSecretStore(dir));return{dir,credentials,config:new ImageGenerationConfiguration(fileStateDocumentStore(dir),credentials)};}
 test('image configuration separates chat defaults, uses CAS and never persists credential values in declarations',async()=>{
   const f=await fixture();await f.config.apply({target:{kind:'create',id:'image-test'},expectedRevision:0,api:IMAGE_GENERATION.api,baseURL:IMAGE_GENERATION.baseURL,displayName:'Image',credential:{kind:'replace',value:'test-only-secret'},enabled:true,models:[{id:'ep-test',type:'image'}]});
   await f.config.select(1,{provider:'image-test',model:'ep-test'});assert.equal((await f.config.resolve())?.model.id,'ep-test');assert.doesNotMatch(await readFile(join(f.dir,'image-generation.json'),'utf8'),/test-only-secret/);

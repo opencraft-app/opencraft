@@ -20,8 +20,7 @@ import {
 import { WeComPlugin } from "@opencraft/plugin-wecom/server";
 import { SlackPlugin, slackApi } from "@opencraft/plugin-slack/server";
 import { ModelCredentialRepository } from "@opencraft/local-agent-host/model-config/repository";
-import { documentSecretStore } from "@opencraft/secret-storage/documents";
-import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 import { createImExecution } from "./im-plugins.mjs";
 
 const digest = (v) => createHash("sha256").update(v).digest("hex");
@@ -150,7 +149,7 @@ export class ImChannelService {
     this.store = store;
     this.credentials =
       dependencies.credentials ??
-      new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(join(dependencies.dataDirectory, "models"))));
+      new ModelCredentialRepository(fileSecretStore(join(dependencies.dataDirectory, "models")));
     this.execution = createImExecution(dependencies);
     this.im = new ImPlugin(this.store, this.execution, 1024, !!dependencies.capabilities);
     this.wecomHistory = new ImWeComHistory(this.im, this.store, this.credentials, dependencies.wecomHistoryFetch);

@@ -77,7 +77,7 @@ export async function apply(ctx, config) {
     capabilities:new RemoteSessionCapabilities(config.gitExecution.directory,`server:${config.gitExecution.machineId}:dsh`),
     inspect:async grant=>(await observeNativeExecutionProcess(process.pid)).incarnation===grant.native.incarnation,
   }):undefined;
-  const environmentRuntime = mode==='legacy'&&config.environmentDataDirectory ? ExecutionEnvironmentRuntime.open(config.environmentDataDirectory, { create: true }) : undefined;
+  const environmentRuntime = mode==='legacy'&&config.environmentDataDirectory ? await ExecutionEnvironmentRuntime.open(config.environmentDataDirectory, { create: true }) : undefined;
   ctx.on("dispose", async () => {await git?.close();environmentRuntime?.close();});
   registerDshExecutionEnvironment(ctx, nativeId => generations.get(nativeId)?.logicalSessionId ?? nativeId, environmentRuntime,git);
   ctx.on("session/event", (session, event) => {

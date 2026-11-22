@@ -193,7 +193,7 @@ for (const mutation of ["logout", "password", "membership", "binding", "actor", 
     res.resume();
     // Verify through the real encrypted domain after the network Worker drains.
     const { EmployeeGitVaultStore } = await import("@opencraft/execution-environment/employee-git-vault-store");
-    const vault = new EmployeeGitVaultStore(f.directory);
+    const vault = await EmployeeGitVaultStore.open(f.directory);
     try {
       assert.equal(vault.readDocument(f.scope, "document-sandbox-configurations").revision, 0);
       assert.equal(
@@ -344,7 +344,7 @@ for (const mutation of ["logout", "password", "membership", "actor", "role"] as 
     }
     assert.equal((await pending).status, 403);
     const { EmployeeGitVaultStore } = await import("@opencraft/execution-environment/employee-git-vault-store");
-    const vault = new EmployeeGitVaultStore(f.directory);
+    const vault = await EmployeeGitVaultStore.open(f.directory);
     try {
       assert.equal(vault.read(f.scope, "github.com").revision, 0);
     } finally {

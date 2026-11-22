@@ -2551,7 +2551,7 @@ test('internal orchestration creation persists an unowned environment before its
  const {EmployeeGitVaultStore}=await import('@opencraft/execution-environment/employee-git-vault-store');
  const {ExecutionEnvironmentRuntime}=await import('@opencraft/execution-environment');
  const {AccountEnvironment}=await import('@opencraft/execution-environment/account-environment');
- const vault=new EmployeeGitVaultStore(root),runtime=new ExecutionEnvironmentRuntime(root,vault),adapter=createRoutingAdapter(root,frames),internal=adapter as any;
+ const vault=await EmployeeGitVaultStore.open(root),runtime=new ExecutionEnvironmentRuntime(root,vault),adapter=createRoutingAdapter(root,frames),internal=adapter as any;
  internal.options.executionEnvironment=runtime;
  internal.options.spawnAppServer=({cwd,env}:any)=>spawn(process.execPath,[new URL('../fixtures/fake-codex-stdio-appserver.mjs',import.meta.url).pathname],{cwd,env:{...env,OPENCRAFT_TEST_UNLOAD_ON_UNSUBSCRIBE:'1'},stdio:['pipe','pipe','pipe']});
  new AccountEnvironment(vault).replace('employee:alice',{projectId:null},0,[{name:'SERVICE_KEY',value:'synthetic-parent-secret',secret:true}]);
@@ -2681,7 +2681,7 @@ async function sharedCredentialAdapter(t: test.TestContext, withMcp = false) {
   const { EmployeeGitVaultStore } = await import('@opencraft/execution-environment/employee-git-vault-store');
   const { ExecutionEnvironmentRuntime } = await import('@opencraft/execution-environment');
   const { AccountEnvironment } = await import('@opencraft/execution-environment/account-environment');
-  const vault = new EmployeeGitVaultStore(root), runtime = new ExecutionEnvironmentRuntime(root, vault);
+  const vault = await EmployeeGitVaultStore.open(root), runtime = new ExecutionEnvironmentRuntime(root, vault);
   for (const user of ['alice', 'bob']) new AccountEnvironment(vault).replace('employee:' + user, { projectId: null }, 0, [{ name: 'SERVICE_KEY', value: 'synthetic-' + user, secret: true }]);
   const reservations = { bound: 0, cancelled: 0 };
   const reservation = { configuration: { url: 'http://fixture/creation' }, bind() { reservations.bound++; }, cancel() { reservations.cancelled = 1; } };

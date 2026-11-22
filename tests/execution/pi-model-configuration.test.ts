@@ -10,7 +10,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createPiModelConfiguration} from '../../apps/local-agent-host/src/model-config/pi-adapter.js';
 import {ModelConfigurationRepository, ModelCredentialRepository} from '../../apps/local-agent-host/src/model-config/repository.js';
-import { documentSecretStore } from "@opencraft/secret-storage/documents";
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 import {PiEngine, piModel} from '../../plugins/pi-engine/src/index.js';
 import {getSupportedThinkingLevels} from '@earendil-works/pi-ai/models';
 import type {ModelDocument} from '../../apps/local-agent-host/src/model-config/model-document.js';
@@ -27,7 +27,7 @@ async function fixture(t: test.TestContext, document = seed(), legacy?: unknown)
   if (legacy) await writeFile(join(directory, 'models.json'), JSON.stringify(legacy));
   const repository = new ModelConfigurationRepository(fileStateDocumentStore(join(dir, 'models')));
   await repository.initialize(document);
-  const credentials = new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(join(dir, 'models')))); await credentials.set('EXAMPLE_CREDENTIAL', 'test-key-in-memory');
+  const credentials = new ModelCredentialRepository(fileSecretStore(join(dir, 'models'))); await credentials.set('EXAMPLE_CREDENTIAL', 'test-key-in-memory');
   const config = await createPiModelConfiguration(repository, credentials, fileStateDocumentStore(directory));
   const engine = new PiEngine({...config, directory, cwd: dir}); t.after(() => engine.close()); await engine.start();
   return {dir, directory, repository, credentials, config, engine,
@@ -78,7 +78,7 @@ test('legacy alias is a one-time unique metadata match and survives rename, rest
   assert.equal((await f.engine.models())[0].model, id);
   assert.equal((await readFile(join(f.directory, 'models.json'), 'utf8')), JSON.stringify(legacy));
   await writeFile(join(f.directory, 'models.json'), '{invalid legacy JSON after migration');
-  const reopened = await createPiModelConfiguration(new ModelConfigurationRepository(fileStateDocumentStore(join(f.dir, 'models'))), new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(join(f.dir, 'models')))), fileStateDocumentStore(f.directory)); await reopened.configuration.synchronize();
+  const reopened = await createPiModelConfiguration(new ModelConfigurationRepository(fileStateDocumentStore(join(f.dir, 'models'))), new ModelCredentialRepository(fileSecretStore(join(f.dir, 'models'))), fileStateDocumentStore(f.directory)); await reopened.configuration.synchronize();
   assert.ok(reopened.models.getModel('legacy-alias', 'arbitrary-model')!.input.includes('image'));
   assert.equal(reopened.models.getModel('custom-stable', 'arbitrary-model'), undefined);
 });

@@ -72,7 +72,7 @@ function remote() {
 }
 async function fixture(t: test.TestContext) {
   const directory = await mkdtemp(join(tmpdir(), "git-connections-"));
-  const vault = new EmployeeGitVaultStore(directory),
+  const vault = await EmployeeGitVaultStore.open(directory),
     upstream = remote(),
     store = new GitConnections(vault, [githubConnectionProvider(upstream.fetcher)]);
   t.after(async () => {

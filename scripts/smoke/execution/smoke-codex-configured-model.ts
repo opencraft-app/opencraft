@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { AccountPoolStore, CodexAccountPoolProxy, startCodexAccountPoolServer, createCodexAccountPoolLaunch } from "../../../packages/account-pool-host/src/index.js";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "../../../apps/local-agent-host/src/model-config/repository.js";
-import { documentSecretStore } from "@opencraft/secret-storage/documents";
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 import { createConfiguredCodexResponses, configuredCodexModelId } from "../../../apps/codex-core/src/configured-responses.js";
 
 const executable = process.env.OPENCRAFT_CODEX_EXECUTABLE;
@@ -26,7 +26,7 @@ await repository.initialize({ schemaVersion: 1, revision: 0, defaultModel: null,
   credentialRef: anthropic ? "SMOKE_ANTHROPIC" : null, ...(anthropic ? {} : { authentication: "none" as const }),
   enabled: true, models: [{ id: "ep-test", enabled: true, input: ["text"] }],
 }] });
-if (anthropic) await new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(modelDirectory))).set("SMOKE_ANTHROPIC", "fixture");
+if (anthropic) await new ModelCredentialRepository(fileSecretStore(modelDirectory)).set("SMOKE_ANTHROPIC", "fixture");
 const alias = configuredCodexModelId("fixture", "ep-test");
 let inferenceCalls = 0;
 let nativeToolCalls = 0;

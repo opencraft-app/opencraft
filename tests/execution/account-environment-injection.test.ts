@@ -23,7 +23,7 @@ const program = "process.stdout.write(require('node:crypto').createHash('sha256'
 const entry = (value: string) => ({ name: 'SERVICE_KEY', value, secret: true });
 const scope = (account = 'employee:alice', projectId: string | null = 'a', threadId: string | null = null): EnvironmentExecutionScope => ({ account, projectId, threadId, hostId: 'opencraft-server' });
 async function fixture(t: test.TestContext) {
-  const root = await mkdtemp(join(tmpdir(), 'environment-injection-')), vault = new EmployeeGitVaultStore(root);
+  const root = await mkdtemp(join(tmpdir(), 'environment-injection-')), vault = await EmployeeGitVaultStore.open(root);
   const runtime = new ExecutionEnvironmentRuntime(root, vault), environment = new AccountEnvironment(vault);
   const directory = join(root, 'thread-identities', 'opencraft-server'); await mkdir(directory, { recursive: true });
   const database = new ThreadIdentityDatabase(directory), leases = new ExecutionLeaseStore(database.database);

@@ -2,7 +2,7 @@ import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import { configuredModelGatewayPath, ModelGatewayStore } from "@opencraft/account-pool-host";
 import { createHash } from 'node:crypto';
 import { ModelConfigurationRepository, ModelCredentialRepository } from "./repository.js";
-import { documentSecretStore } from "@opencraft/secret-storage/documents";
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 import type { ConfiguredModel, ConfiguredProvider, ModelDocument } from "./model-document.js";
 
 /** Chat wire protocols an engine adapter can carry. Each consumer declares its own subset. */
@@ -86,7 +86,7 @@ function eligible(provider: ConfiguredProvider, model: ConfiguredModel, protocol
  * Engines never copy endpoints or keys into their own stores; every execution resolves again.
  */
 export function createEngineModelSource(directory: string, options: { readonly protocols: readonly EngineModelProtocol[]; readonly meteredContributions?: boolean; readonly allowInsecureLocalNetwork?: boolean }) {
-  const repository = new ModelConfigurationRepository(fileStateDocumentStore(directory)), credentials = new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(directory)));
+  const repository = new ModelConfigurationRepository(fileStateDocumentStore(directory)), credentials = new ModelCredentialRepository(fileSecretStore(directory));
 
   async function route(document: ModelDocument, provider: ConfiguredProvider, model: ConfiguredModel): Promise<EngineModelRoute> {
     if (!eligible(provider, model, options.protocols, options.allowInsecureLocalNetwork === true)) throw new EngineModelError("unavailable");

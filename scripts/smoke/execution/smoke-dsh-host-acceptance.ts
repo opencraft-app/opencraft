@@ -7,7 +7,7 @@ import { join, resolve } from "node:path";
 import WebSocket from "ws";
 import { startLocalAgentHost } from "../../../apps/local-agent-host/src/main.js";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "../../../apps/local-agent-host/src/model-config/repository.js";
-import { documentSecretStore } from "@opencraft/secret-storage/documents";
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 
 const root = await mkdtemp(join(tmpdir(), "opencraft-host-acceptance-"));
 const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
@@ -77,7 +77,7 @@ try {
   await new Promise<void>(resolvePromise => endpoint.listen(0, "127.0.0.1", resolvePromise));
   const port = (endpoint.address() as { port: number }).port;
   const directory = join(root, "models");
-  await new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(directory))).set("FIXTURE_KEY", "synthetic-key");
+  await new ModelCredentialRepository(fileSecretStore(directory)).set("FIXTURE_KEY", "synthetic-key");
   await new ModelConfigurationRepository(fileStateDocumentStore(directory)).initialize({
     schemaVersion: 1, revision: 0,
     providers: [{ id: "fixture-provider", name: "Fixture", protocol: "openai-completions", baseUrl: `http://127.0.0.1:${port}/v1`, credentialRef: "FIXTURE_KEY", enabled: true,

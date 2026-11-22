@@ -24,7 +24,7 @@ const test = process.platform === 'linux' ? nodeTest : nodeTest.skip;
 
 async function fixture(t: any, httpsCredentialHosts?: readonly string[]) {
   const root = await mkdtemp(join(tmpdir(), 'git-broker-test-'));
-  const store = new EmployeeGitVaultStore(root); let identity: GitExecutionIdentity = { status: 'active', account: 'synthetic:1', executionId: 'turn1' };
+  const store = await EmployeeGitVaultStore.open(root); let identity: GitExecutionIdentity = { status: 'active', account: 'synthetic:1', executionId: 'turn1' };
   const broker = new GitIdentityBroker({ store, httpsCredentialHosts, hosts: ['github.com', 'git.example.test', 'unconfigured.example.test'], runtimeDirectory: root, resolve: async () => identity });
   const opens: string[] = []; let credentials = 0;
   const request = broker.request.bind(broker);
@@ -72,7 +72,7 @@ test('an entirely unbound host keeps server Git available when origin lookup is 
 });
 test('an unbound host answers before a stalled execution origin lookup', async t => {
   const root = await mkdtemp(join(tmpdir(), 'git-unbound-stalled-'));
-  const store = new EmployeeGitVaultStore(root); let lookups = 0;
+  const store = await EmployeeGitVaultStore.open(root); let lookups = 0;
   const broker = new GitIdentityBroker({ store, hosts: ['github.com'], runtimeDirectory: root,
     resolve: async () => { lookups++; return new Promise(() => {}); } });
   const socket = join(root, 'broker.sock'), ipc = await serveGitIdentityBroker(broker, socket, resolve('apps/headless-server/src/git-identity-peer-bridge.py'));

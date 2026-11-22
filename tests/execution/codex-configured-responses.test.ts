@@ -6,13 +6,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync, zstdCompressSync, brotliCompressSync } from "node:zlib";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "../../apps/local-agent-host/src/model-config/repository.js";
-import { documentSecretStore } from "@opencraft/secret-storage/documents";
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 import { createConfiguredCodexResponses, configuredCodexModelId } from "../../apps/codex-core/src/configured-responses.js";
 import { AccountPoolStore, CodexAccountPoolProxy } from "../../packages/account-pool-host/src/index.js";
 
 test("configured Responses models project into Codex without moving credentials or choosing defaults", async () => {
   const directory = await mkdtemp(join(tmpdir(), "codex-configured-"));
-  const repository = new ModelConfigurationRepository(fileStateDocumentStore(directory)), credentials = new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(directory)));
+  const repository = new ModelConfigurationRepository(fileStateDocumentStore(directory)), credentials = new ModelCredentialRepository(fileSecretStore(directory));
   const pool = new AccountPoolStore({ databasePath: join(directory, "pool.sqlite"), secretsDirectory: join(directory, "secrets") });
   try {
     await credentials.set("TEST_TOKENHUB", "external-key");
@@ -132,7 +132,7 @@ test("real loopback HTTP ingress decodes native requests, isolates credentials a
     await new Promise<void>((resolve, reject) => provider.close(error => error ? reject(error) : resolve()));
     await rm(directory, { recursive: true, force: true });
   });
-  const repository = new ModelConfigurationRepository(fileStateDocumentStore(directory)), credentials = new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(directory)));
+  const repository = new ModelConfigurationRepository(fileStateDocumentStore(directory)), credentials = new ModelCredentialRepository(fileSecretStore(directory));
   await credentials.set("HTTP_TEST_KEY", "http-provider-secret");
   await repository.initialize({ schemaVersion: 1, revision: 0, defaultModel: null, providers: [{
     id: "http", name: "HTTP fixture", protocol: "anthropic-messages", baseUrl: `http://127.0.0.1:${address.port}/v1`,

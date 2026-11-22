@@ -1,4 +1,5 @@
 import type {StateDocumentStore} from '@opencraft/document-storage/state';
+import {StateDocumentNotPrivateError} from '@opencraft/document-storage/state-file';
 import {SecretStoreCorruptError,validateSecretName,validateSecretValue,type SecretStore} from '@opencraft/secret-storage';
 import {emptyModelDocument,validateModelDocument,type ModelDocument} from './model-document.js';
 import {configurationDocument} from './state-documents.js';
@@ -21,9 +22,13 @@ export class ModelConfigurationRepository {
 
 /** User-visible over RPC; kept identical to the previous file repository's messages. */
 export const INVALID_CREDENTIAL_MESSAGE='凭据格式无效',CORRUPT_CREDENTIALS_MESSAGE='凭据存储格式无效';
+/** The credentials file is a symlink, not this user's private (0600) regular file, or oversized; it is neither read nor overwritten. */
+export const UNSAFE_CREDENTIALS_MESSAGE='凭据文件权限不安全，未读取';
 async function credentialStorage<T>(operation:Promise<T>):Promise<T>{
   try{return await configurationDocument(operation)}catch(error){
     if(error instanceof SecretStoreCorruptError)throw new Error(CORRUPT_CREDENTIALS_MESSAGE,{cause:error});
+    // Private reads open with O_NOFOLLOW, so a symlinked file fails with ELOOP before any check.
+    if(error instanceof StateDocumentNotPrivateError||(error as NodeJS.ErrnoException|null)?.code==='ELOOP')throw new Error(UNSAFE_CREDENTIALS_MESSAGE,{cause:error});
     throw error;
   }
 }

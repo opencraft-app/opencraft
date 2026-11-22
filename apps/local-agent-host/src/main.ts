@@ -46,7 +46,7 @@ import { DurableHostProcessService } from "./durable-process-service.js";
 import { ProjectRepository } from "./project-repository.js";
 import { memoryStateDocumentStore } from "@opencraft/document-storage/state";
 import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
-import { documentSecretStore } from "@opencraft/secret-storage/documents";
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 import { ThreadCatalogPublisher } from "@opencraft/app-host-server/thread-catalog";
 import { ThreadLifecycle } from "./thread-lifecycle.js";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
@@ -313,7 +313,7 @@ export async function startLocalAgentHost(options: {
     const {ModelConfigurationService}=await import('./model-config/service.js');
     const {DshModelEngineAdapter,DshModelConfigurationBridge}=await import('./model-config/dsh-adapter.js');
     const {migrateDshModels}=await import('./model-config/migrate-dsh.js');
-    const repository=new ModelConfigurationRepository(fileStateDocumentStore(options.modelStorageDirectory)),credentials=new ModelCredentialRepository(documentSecretStore(fileStateDocumentStore(options.modelStorageDirectory)));
+    const repository=new ModelConfigurationRepository(fileStateDocumentStore(options.modelStorageDirectory)),credentials=new ModelCredentialRepository(fileSecretStore(options.modelStorageDirectory));
     if(options.dataDirectory)await migrateDshModels(repository,credentials,options.dataDirectory,options.modelStorageDirectory,await client.call('settings.describe'));
     modelConfiguration=new DshModelConfigurationBridge(client,new ModelConfigurationService(repository,credentials,new DshModelEngineAdapter(client)));
     await modelConfiguration.initialize();

@@ -1,9 +1,10 @@
 import { gitGrantAuthority, sealGitGrant, type GitGrantScope } from './personal-git-protocol.js';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, fstatSync, mkdirSync, openSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { createSchemaValidator, openManagedDatabase, type DatabaseOutcome } from '@opencraft/sqlite-node';
+import { fileKeyMaterial } from '@opencraft/secret-storage/file';
 
 export type SigningRegistration = 'unregistered' | 'pending' | 'registered' | 'manual_required';
 export interface GitVaultCredential {
@@ -26,13 +27,13 @@ const PRIVATE_KEY_HEADER = '-----BEGIN PRIVATE KEY-----';
 const SCHEMA = 'CREATE TABLE employee_git_credentials (account TEXT NOT NULL, host TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), credential BLOB, PRIMARY KEY(account,host)) STRICT';
 export const EMPLOYEE_GIT_VAULT_MIGRATIONS = [{ version: 1, name: 'employee-git-credentials', sql: SCHEMA }] as const;
 
-function privateFile(path: string, create = false): { bytes: Buffer; fresh: boolean } {
-  const fd = openSync(path, constants.O_NOFOLLOW | (create ? constants.O_RDWR | constants.O_CREAT : constants.O_RDONLY), 0o600);
+/** Opens (creating when absent) the private database file and reports whether it is still empty. */
+function privateFile(path: string): { fresh: boolean } {
+  const fd = openSync(path, constants.O_NOFOLLOW | constants.O_RDWR | constants.O_CREAT, 0o600);
   try {
     const st = fstatSync(fd);
     if (!st.isFile() || st.uid !== process.getuid?.() || (st.mode & 0o077) !== 0) throw new GitVaultError('unavailable', 503);
-    if (!create && st.size !== 32) throw new GitVaultError('unavailable', 503);
-    return { bytes: create ? Buffer.alloc(0) : readFileSync(fd), fresh: st.size === 0 };
+    return { fresh: st.size === 0 };
   } finally { closeSync(fd); }
 }
 function validateKey(account: string, host: string): void {
@@ -51,12 +52,20 @@ export function validateGitVaultCredential(value: GitVaultCredential): void {
     || !value.signing.privateKey.startsWith(PRIVATE_KEY_HEADER) || value.signing.privateKey.length > 4096)) throw new GitVaultError('invalid');
 }
 
+/** Installation key for this vault, stored beside the database through the KeyMaterial port. */
+export const EMPLOYEE_GIT_VAULT_KEY = 'employee-git-vault.key';
+
 /** Opaque account scope is supplied by the verified identity provider, never by a browser body. */
 export class EmployeeGitVaultStore {
   private readonly db: DatabaseSync;
   private readonly key: Buffer;
   readonly outcome: DatabaseOutcome;
-  constructor(directory: string) {
+  /**
+   * The key is resolved before the database is opened: a freshly created
+   * database may create it once; an existing database only reads it, so a
+   * missing key is a recovery error and never orphans encrypted rows.
+   */
+  static async open(directory: string): Promise<EmployeeGitVaultStore> {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     // Managed deployments may retain a data-directory alias after migration.
     // Pin its canonical directory once; key/database files still use NOFOLLOW.
@@ -67,17 +76,20 @@ export class EmployeeGitVaultStore {
       if (!st.isDirectory() || st.uid !== process.getuid?.() || (st.mode & 0o077) !== 0) throw new GitVaultError('unavailable', 503);
     } finally { closeSync(dir); }
     const path = join(physicalDirectory, 'employee-git-vault.sqlite');
-    const { fresh } = privateFile(path, true);
-    const keyPath = join(physicalDirectory, 'employee-git-vault.key');
-    // A nonempty database without its original key is a recovery error.
-    if (fresh) {
-      const candidate = randomBytes(32);
-      try { writeFileSync(keyPath, candidate, { mode: 0o600, flag: 'wx' }); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
-      finally { candidate.fill(0); }
-    }
-    this.key = privateFile(keyPath).bytes;
-    if (this.key.length !== 32) { this.key.fill(0); throw new GitVaultError('unavailable', 503); }
+    const { fresh } = privateFile(path);
+    const keys = fileKeyMaterial(physicalDirectory);
+    let material: Uint8Array | undefined;
+    try {
+      // A nonempty database without its original key is a recovery error.
+      material = fresh ? await keys.ensure(EMPLOYEE_GIT_VAULT_KEY, () => randomBytes(32)) : await keys.read(EMPLOYEE_GIT_VAULT_KEY);
+    } catch (cause) { throw Object.assign(new GitVaultError('unavailable', 503), { cause }); }
+    if (!material) throw new GitVaultError('unavailable', 503);
+    const key = Buffer.from(material.buffer, material.byteOffset, material.byteLength);
+    if (key.length !== 32) { key.fill(0); throw new GitVaultError('unavailable', 503); }
+    return new EmployeeGitVaultStore(path, key);
+  }
+  private constructor(path: string, key: Buffer) {
+    this.key = key;
     try {
       const managed = openManagedDatabase({ schemaId: "employee-git-vault-store", path, migrations: EMPLOYEE_GIT_VAULT_MIGRATIONS,
         validateSchema: createSchemaValidator(SCHEMA), legacyPolicy: 'reject' });
