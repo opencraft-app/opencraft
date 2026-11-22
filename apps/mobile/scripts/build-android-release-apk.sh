@@ -22,7 +22,10 @@ fi
 }
 
 export NODE_ENV=production OPENCRAFT_ANDROID_RELEASE=1
-expected_package="$(node -e 'const config = require("./app.config.js")({ config: require("./app.json").expo }); process.stdout.write(config.android.package)')"
+read -r expected_package expected_version_code expected_version_name < <(node -e '
+  const config = require("./app.config.js")({ config: require("./app.json").expo });
+  process.stdout.write(`${config.android.package} ${config.android.versionCode} ${config.version}\n`);
+')
 if [[ -e android || -L android ]]; then
   echo "The Android native project already exists; use a clean checkout for the release build." >&2
   exit 1
@@ -64,6 +67,10 @@ badging="$("$aapt" dump badging "$source_apk")"
 package_line="${badging%%$'\n'*}"
 [[ "$package_line" == "package: name='$expected_package' "* ]] || {
   echo "The APK does not have the production application ID." >&2
+  exit 1
+}
+[[ "$package_line" == *" versionCode='$expected_version_code' versionName='$expected_version_name' "* ]] || {
+  echo "The APK version does not match versionCode $expected_version_code and versionName $expected_version_name." >&2
   exit 1
 }
 

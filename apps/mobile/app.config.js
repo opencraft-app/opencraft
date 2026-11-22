@@ -13,6 +13,14 @@ module.exports = ({ config }) => {
       openSourceNotices: [...(config.extra?.openSourceNotices ?? []), stableEventNotice],
     },
   };
+  const androidVersionCode = process.env.OPENCRAFT_ANDROID_VERSION_CODE;
+  if (androidVersionCode !== undefined) {
+    // Published APKs take a tag-derived code (scripts/release/android-version-code.mjs).
+    if (!/^[1-9][0-9]{0,9}$/.test(androidVersionCode) || Number(androidVersionCode) > 2_100_000_000) {
+      throw new Error("OPENCRAFT_ANDROID_VERSION_CODE must be a positive integer no greater than 2100000000");
+    }
+    config = { ...config, android: { ...config.android, versionCode: Number(androidVersionCode) } };
+  }
   if (process.env.OPENCRAFT_IOS_EXPORT_METHOD !== "app-store-connect") return config;
 
   const buildNumber = process.env.OPENCRAFT_IOS_BUILD_NUMBER;

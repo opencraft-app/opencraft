@@ -235,13 +235,26 @@ npm --prefix apps/mobile run build:android:release
 每个包的签名资料从其实际 APK 读取。
 
 构建会重新生成忽略的 `android/` 工程，将 release variant 改为正式签名，
-校验 APK 的包名和签名证书。产物位于 `apps/mobile/release/`：
+校验 APK 的包名、版本和签名证书。设置 `OPENCRAFT_ANDROID_VERSION_CODE` 时使用该
+versionCode，否则沿用 `app.json` 的值。产物位于 `apps/mobile/release/`：
 
 - `OpenCraft-dev.opencraft.workbench-android-release.apk`：默认可安装包，旁边有 SHA-256 文件。
 - `OpenCraft-dev.opencraft.workbench-filing.txt`：包名、**签名证书 MD5**、**APK 文件 MD5**、Base64 公钥。
 - `OpenCraft-dev.opencraft.workbench-public-key.pem` 和 `-signing-cert.der`：可交接的公钥与公开证书，均不包含私钥。
 
 产品构建的文件名使用产品前缀和实际包名。
+
+### GitHub 预发布
+
+`Desktop pre-release` 工作流在同一 beta tag 下同时发布桌面包和
+`OpenCraft-<版本>-android-arm64.apk`。APK 由
+`.github/workflows/android-release-apk.yml` 使用 `android-release` Environment 的
+`ANDROID_RELEASE_KEYSTORE_BASE64`（PKCS12 的 Base64）、
+`ANDROID_RELEASE_KEYSTORE_PASSWORD` 和 `ANDROID_RELEASE_KEY_ALIAS` 构建；缺少任一项时
+整个预发布失败，不回退开发密钥。versionCode 由 tag 推导
+（`scripts/release/android-version-code.mjs`：`X*1000000 + Y*10000 + Z*100`，beta N 加 N，
+正式版加 99），保证后续版本可覆盖安装。手动的 `Android internal APK` 工作流只产出
+使用 Expo 开发密钥的 Actions 构件，仅限内测，不进入 Release。
 
 备案表若只写“MD5”，先确认要求的是签名证书还是 APK 文件；两者不同。
 更换密钥或重新构建 APK 后，应重新从新产物读取这些值，不沿用旧资料。
