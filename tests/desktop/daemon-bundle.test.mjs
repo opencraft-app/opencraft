@@ -47,6 +47,8 @@ test("the desktop package copies every daemon worker beside the daemon", async (
   assert.deepEqual(resources, [
     { from: "../opencraft-daemon/dist", to: "runtime", filter: ["*.mjs", "schema.sql"] },
     { from: "../opencraft-daemon/dist/main.cjs", to: "runtime/opencraft-daemon.cjs" },
+    // The Codex bridge stack's programs and their workers, launched by the daemon.
+    { from: "../opencraft-daemon/dist/codex-bridge", to: "runtime/codex-bridge", filter: ["**/*"] },
   ]);
 });
 
