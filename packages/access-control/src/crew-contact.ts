@@ -31,6 +31,9 @@ export class CrewContact {
       && !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='collaboration_space_members'").get();
   }
 
+  /** Whether this store has Server spaces at all; without them crew rules stand aside. */
+  get hasSpaces(): boolean { return this.#spaces; }
+
   /** The one space a Bot belongs to, or null for a Bot outside every space. */
   botSpace(actorId: string): string | null {
     if (!this.#spaces) return null;

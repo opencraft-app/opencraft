@@ -32,7 +32,9 @@ export class NativeChannels {
   constructor(private readonly db: DatabaseSync, private readonly actors: ActorStore,
     private readonly admitted: (actorId: string) => boolean,
     /** The owner's complete direct-message decision; projections never re-derive it. */
-    private readonly canMessage: (c: ActorContext, target: string) => boolean = (c, target) => actors.can(c, target, 'message.send')) {}
+    private readonly canMessage: (c: ActorContext, target: string) => boolean = (c, target) => actors.can(c, target, 'message.send'),
+    /** Whether crew teams exist here; their owner decides it, so the directory never probes the schema. */
+    private readonly sharesSpaces: () => boolean = () => false) {}
 
   onChange(listener: (change: NativeChannelChange) => void) {
     this.#listeners.add(listener);
@@ -183,7 +185,7 @@ export class NativeChannels {
     this.assertStanding(context, 'people.directory');
     if(typeof query!=='string'||query.length>128||typeof after!=='string'||after.length>128)throw Error('invalid_input');
     // Someone else's assistant stays private unless it is a crew member of a space the caller shares.
-    const spaces=!!this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='collaboration_space_members'").get();
+    const spaces=this.sharesSpaces();
     const rows=this.db.prepare(`SELECT a.*,(SELECT owner_human_id FROM personal_assistants WHERE actor_id=a.id) AS personal_owner_id FROM actors a WHERE a.enabled=1 AND a.id>? AND instr(lower(a.display_name),lower(?))>0
       AND (a.kind='human' OR NOT EXISTS(SELECT 1 FROM personal_assistants WHERE actor_id=a.id) OR EXISTS(SELECT 1 FROM personal_assistants p JOIN actors o ON o.id=p.owner_human_id
         WHERE p.actor_id=a.id AND p.owner_human_id=? AND p.state='claimed' AND o.enabled=1 AND o.generation=p.owner_generation)

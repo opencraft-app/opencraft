@@ -179,6 +179,8 @@ export class Collaboration {
     }
     return this.communicate(context, 'opencraft/crew/teams', {});
   }
+  /** Whether a message to a Bot reaches it through crew intake rather than its owner's private line. */
+  crewOwnsMessage(messageId: string): boolean { return this.#crew?.work.ownsMessage(messageId) ?? false; }
   attachCrew(contact: CrewContact, work: CrewWork) {
     if (this.#crew) throw Error('Crew rules already attached');
     this.#crew = { contact, work };
@@ -199,7 +201,7 @@ export class Collaboration {
     this.database = managed.database; this.outcome = managed.outcome;
     this.orchestration = new ThreadOrchestrationLedger(this.database, now);
     this.channels = new NativeChannels(this.database, actors, actorId => !this.#closed && admittedActor(actorId),
-      (c,target)=>this.#allows(c,target,'message.send'));
+      (c,target)=>this.#allows(c,target,'message.send'),()=>this.#crew?.contact.hasSpaces ?? false);
     this.channels.groupDisplayTitle = id => communicationExtension()?.groupDisplayTitle?.(this,this.database,id) ?? null;
     this.channels.avatarForSender = (subject,scope) => communicationExtension()?.avatar?.(this,this.database,subject,scope) ?? null;
     this.channels.humanForExternalSender = (subject,scope) => communicationExtension()?.senderHuman?.(this,this.database,subject,scope) ?? null;

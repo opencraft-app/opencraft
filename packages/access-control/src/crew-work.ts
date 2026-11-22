@@ -264,6 +264,12 @@ export class CrewWork {
     return this.view(context, String(row.id));
   }
 
+  /** A message the Bot receives through crew intake: a dispatch, or an answer to its question. */
+  ownsMessage(messageId: string): boolean {
+    return !!this.db.prepare(`SELECT 1 FROM crew_work WHERE message_id=?
+      UNION ALL SELECT 1 FROM crew_messages WHERE message_id=? AND answers IS NOT NULL LIMIT 1`).get(messageId, messageId);
+  }
+
   forMessage(messageId: string): string | null {
     const row = this.db.prepare('SELECT id FROM crew_work WHERE message_id=?').get(messageId);
     return row ? String(row.id) : null;
