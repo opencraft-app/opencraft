@@ -19,7 +19,9 @@ export const ASSETS_MANIFEST = {
 } as const;
 
 /** One provider-neutral page and navigation owner, shared by Web and Electron. */
-export function createAssetsExtension(options: AssetsViewOptions): TrustedExtensionDefinition {
+export function createAssetsExtension(
+  options: AssetsViewOptions | (() => Promise<AssetsViewOptions>),
+): TrustedExtensionDefinition {
   return {
     manifest: ASSETS_MANIFEST,
     activate(api) {
@@ -49,7 +51,10 @@ export function createAssetsExtension(options: AssetsViewOptions): TrustedExtens
       api.internal.register("platformViewRenderer", { viewType: ASSETS_VIEW_ID + ".entry", Component: AssetsEntry });
       api.internal.register("platformViewRenderer", {
         viewType: ASSETS_VIEW_ID,
-        Component: createDeferredView(async () => (await import("./view")).createAssetsView(options)),
+        Component: createDeferredView(async () => {
+          const resolved = typeof options === "function" ? await options() : options;
+          return (await import("./view")).createAssetsView(resolved);
+        }),
       });
     },
   };

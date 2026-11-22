@@ -110,16 +110,22 @@ export function createServerAssetsExtension(
       await account.refresh();
       if (disposed || !account.getAvailable()) return;
       for (const event of ["focus", "pageshow", "online"]) events?.addEventListener(event, refresh);
-      const github = account.getGitHosts().includes("github.com") ? await import("./git/client.js") : null;
-      if (disposed) return;
-      return createAssetsExtension({
-        account,
-        fetcher,
-        endpoint: "/__opencraft_assets/configurations",
-        providers: [e2bAssetProvider, ...(github ? [github.githubAssetProvider] : [])],
-        useConnections: github
-          ? (scope, onUnauthorized) => github.useGithubAssetConnections(fetcher, scope, onUnauthorized)
-          : undefined,
+      // Registration stays light. The concrete form/controller are only loaded
+      // when the host actually mounts this deferred page, not on startup.
+      const githubAvailable = account.getGitHosts().includes("github.com");
+      return createAssetsExtension(async () => {
+        if (disposed) throw Error("Assets extension retired");
+        const github = githubAvailable ? await import("./git/client.js") : null;
+        if (disposed) throw Error("Assets extension retired");
+        return {
+          account,
+          fetcher,
+          endpoint: "/__opencraft_assets/configurations",
+          providers: [e2bAssetProvider, ...(github ? [github.githubAssetProvider] : [])],
+          useConnections: github
+            ? (scope, onUnauthorized) => github.useGithubAssetConnections(fetcher, scope, onUnauthorized)
+            : undefined,
+        };
       }).activate(api);
     },
   };

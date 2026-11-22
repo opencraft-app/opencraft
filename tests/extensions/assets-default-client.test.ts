@@ -73,3 +73,23 @@ test("late account reads cannot restore another Human; transient failures retain
   await late;
   assert.equal(account.getScope(), null);
 });
+
+for (const platform of ["web", "electron"] as const)
+  test(`advertised GitHub stays demand-loaded during default ${platform} registration`, async () => {
+    const reads: unknown[] = [];
+    const owner = new ExtensionSupervisor({
+      platform,
+      internalContributions: { platformViewRenderer: { prepare: () => ({ commit: () => () => {} }) } },
+    });
+    await owner.activate(
+      createServerAssetsExtension(async (path) => {
+        reads.push(path);
+        return Response.json({ version: 1, scope, gitHosts: ["github.com"] });
+      }),
+    );
+    // Importing the concrete Git form here would also load its CSS, which this
+    // source-only Node test deliberately cannot load. Registration needs neither.
+    assert.deepEqual(reads, ["/__opencraft_assets/status"]);
+    assert.equal(owner.contributions.getSnapshot().views.length, 2);
+    await owner.deactivate("opencraft.assets");
+  });
