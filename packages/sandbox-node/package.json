@@ -21,7 +21,7 @@
   "dependencies": {
     "@opencraft/sandbox": "0.1.0",
     "node-pty": "1.1.0",
-    "ws": "^8.22.1"
+    "ws": "^8.23.0"
   },
   "devDependencies": {
     "@types/ws": "^8.18.2"
