@@ -54,6 +54,10 @@ or new user-facing capability is registered.
   being rebound to another generation; it is not an idle suspend/resume action.
 - `GET /health` exposes Host PID/incarnation without storage IO; `/snapshot`
   exposes the managed database outcome and durable generation/routing state.
+- `GET /maintenance` counts the inputs the Host still holds (queued, unknown,
+  in flight) for an operator draining before maintenance.
+- A request refused without a typed bridge error is logged on stderr as
+  `host-request-refused:<path>:<reason>`; the caller only learns to query custody.
 
 `(serverId,threadId)` is encoded as a collision-free JSON pair for internal bridge
 session scope; callbacks and their deltas must use that exact scope. The Server

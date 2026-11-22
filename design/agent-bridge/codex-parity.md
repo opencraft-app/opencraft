@@ -79,6 +79,8 @@ daemon 以 `--codex-bridge-stack <程序目录>`（`codexBridgeStack`）启动 b
 
 桌面开启入口：环境变量 `OPENCRAFT_CODEX_BRIDGE=1`（Windows 不提供），Main 把打包的 `runtime/codex-bridge` 传给 daemon。已在运行的 daemon 不会因此重启，需退出应用后再开。
 
+该模式下 daemon 不再组装旧 adapter，见“退休旧 adapter 时的其余 owner”。演练另覆盖：计划任务自行在 bridge 线程上运行；daemon 在轮次进行中重启后，Host 自行续跑该轮次且只续一次。
+
 未完成：打包产物验收（macOS 签名包内的 `runtime/codex-bridge`）；Windows（Core 目前只支持 Unix socket）；真实账号与界面需在用户机器验证；栈中子进程意外退出后的重启策略（当前 daemon 不自动重启，Codex 请求失败可见）。
 
 ## 退休旧 adapter 时的其余 owner
@@ -93,9 +95,16 @@ daemon 以 `--codex-bridge-stack <程序目录>`（`codexBridgeStack`）启动 b
 | S2′ 维护状态汇总、计量查询与配置 | 并入 S5：维护计数主要来自线程执行，计量的查询、配置与收集共用一份账本，单独搬会产生两个 owner |
 | S3 原生元信息连接：模型（含网关过滤）、权限档案、置顶 | 完成（有 Core 时；前台经 `CodexNativeReader` 自连 Core 的 AppServer，无 Core 时原生连接是旧 Host 独占的 stdio，仍由它服务） |
 | S3′ 线程列表合并、独立命令 | 线程列表依赖旧 Host 的待建线程等创建状态，随旧路径退休处理；`command/exec` 属执行，归 S5 的按线程派发与准入 |
-| S4 初始化能力声明集中到前台 | 待做 |
-| S5 作用于线程的后台职责改走“按线程派发”：定时、恢复、重试、目标、标题、计量收集 | 待做 |
-| S6 旧 adapter 只剩旧线程执行，批量接管后退休 | 待做 |
+| S4 初始化能力声明按层组合 | 完成（桌面 bridge 栈）：底层 `CodexNativeFallback` 给原生 initialize（去掉本机专属扩展，加 read-history、首轮持久化、execution-engines 基础声明）；bridge 在独占模式下把线程能力（生命周期含删除、队列 v2、跟进、目标、steer 证据）声明为整个 Host 的；各前台服务声明自己的扩展（置顶、权限模式、附件、计划任务、轮次恢复与容量重试、维护） |
+| S5 作用于线程的后台职责改走“按线程派发” | 桌面完成：前台服务以 Host 自己的客户端身份经 bridge 作用于线程（与客户端同一准入、队列与命令账本），并经 bridge 新增的全线程事件流看到每个线程的事件。轮次恢复、容量重试、目标续跑（`codex-continuation-service.ts`）、计划任务（`codex-schedules-service.ts`，以运行 ID 作客户端消息 ID，重复提交即账本重放）、附件（暂存、消息记录、历史投影、分叉继承、生成文件收集，`codex-attachments-service.ts`）、标题、维护快照（含 Host 新增 `/maintenance` 队列计数）。计量：桌面 daemon 从未配置计量查询，收集无人可读，未迁移；服务器的计量与模型网关计费随服务器迁移处理 |
+| S6 旧 adapter 退休 | 桌面 bridge 栈模式已不组装旧 adapter（`codex-bridge-host.ts`）；旧 Host 队列中仍排队的输入一次性交给对应线程的 Host 队列（`codex-legacy-handoff.ts`，两侧按客户端消息 ID 幂等），恢复、重试、计划、附件、任务记录由新 owner 打开同一存储，无需迁移。旧 adapter 代码仍在：桌面默认（未开启 bridge）与 Windows 走 spawn 模式，服务器走 Core + overlays，SSH 远程走 remote 模式。退休条件见下 |
+
+### 退休旧 adapter 的剩余条件
+
+1. **桌面默认开启 bridge 栈**：需先在用户机器上用真实账号与界面验证（`OPENCRAFT_CODEX_BRIDGE=1`）。
+2. **Windows**：Core、APP Server 的控制端点与原生 AppServer 目前只用 Unix socket，Windows 只能走旧 spawn 模式。原生 Codex 支持 `--listen ws://127.0.0.1:PORT` 加 `--ws-auth capability-token`，可据此实现 Windows 传输（控制端点用命名管道）；需在 Windows 上验证。
+3. **服务器（单机与四容器）**：服务器组装依赖旧路径上的协作与编排（`collaboration`、编排控制、对话工具与 `nativeTool` 动态工具）、桌面附着、工作区钩子、线程元数据与发送者、会话 MCP 的环境注入、计量查询与模型网关计费。这些在 bridge 上都还没有 owner，迁移前服务器不能切到无旧路径组装。
+4. **SSH 远程 Codex** 不在退休范围：它与本地模式共享客户端复用、交互、工具、附件、元数据等核心，退休时只删本地模式（spawn、Core 直通、Core + overlays），保留并抽出远程所需部分。
 
 ## 顺序建议
 
