@@ -41,6 +41,14 @@ jobs:
   macos:
     needs: tag
     uses: ./.github/workflows/macos-universal-release.yml
+    # GitHub requires named forwarding for environment secrets in reusable
+    # workflows. The called macos-release jobs resolve the environment values.
+    secrets:
+      MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
   linux:
     needs: tag
