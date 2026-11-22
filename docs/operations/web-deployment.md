@@ -430,7 +430,7 @@ that every running backend component has switched versions. Those capabilities
 require separate owner/transaction contracts.
 
 A complete signed release (`updater.bridge: false`) also carries `full/core/`
-(the account Core, APP server and generation router bundles), `full/codex/`
+(the account Core and APP server bundles; the generation router bundle was removed), `full/codex/`
 (the exact locked CLI with its platform vendor) and `full/dsh/` (the separately
 locked engine). Pi, MCP, ACP Hosts, broker and native payloads remain in their
 existing runtime locations. These are immutable payloads; independent owners

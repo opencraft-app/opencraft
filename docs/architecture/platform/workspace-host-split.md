@@ -51,12 +51,12 @@ Docker 部署（`deploy/docker/compose.yaml`）有 `gateway`、`brain`、`hands`
 | 回调通道 | 原生 `native.sock` 上的 orchestration callback lane，断开窗口默认 15 s | brain codex-core | app-server.ts:48；apps/codex-core/src/orchestration-callback-lane.ts:374 | 同上 |
 | 跨容器 `/proc` 校验 | gateway 读取 brain 的 `codexPid`／引擎 PID 计算化身 | gateway | codex-engine-adapter.ts:584-592；apps/opencraft-daemon/src/codex-native-core-transport.ts:41；headless-application.mjs:884-893；packages/execution-environment/src/native-execution-origin.ts:10-54 | 由通道 attested incarnation 替代（§3.4） |
 | Git 身份来源 | gateway 读取 `/proc/<pid>/cmdline`、children、`exe` 认定 Git 请求来源 | gateway | apps/headless-server/src/git-identity-origin.ts:24-62 | 容器内校验＋通道 attestation，或随 Git broker 进容器（待定） |
-| Codex Generation Router | `codex-generations.sqlite`＋`.codex-routing-owner.sqlite`；每个 generation 独立 `runtimeDataDirectory/runtime` 作为 `CODEX_HOME` | systemd 部署的 codex-core | apps/codex-core/src/generation-registry.ts:76-84、104-110；generation-runtime.ts:159-187 | 见 §3.5 |
+| Codex Generation Router（已删除） | 原 `codex-generations.sqlite`＋`.codex-routing-owner.sqlite` 与每代独立 `CODEX_HOME` | 原 systemd 部署的 codex-core | 已随 systemd 完整发布装配删除 | 见 §3.5 |
 
 另外两点与"Brain 按工作区"直接相关：
 
 - **Hands 已部分按工作区分配。** `CodexAppServer` 支持 `resolveWorkspace`／`workspaceAuthoritySocket`，把执行路由到按工作区分配的沙盒环境（app-server.ts:27-42、153-161）；Headless 的 Assets 工作区 owner 按会话分配 E2B 等环境（apps/headless-server/src/workspaces/execution-owner.ts；[Assets 工作区](../execution/workspace-assets.md)）。即今天是**共享 Brain＋按工作区 Hands**；本设计把 Brain 也纳入工作区。
-- **多 `CODEX_HOME` 已有先例。** Generation Router 在同一部署内运行多个 AppServer、各自独立 HOME，并以 registry 持久化路由（execution-ownership.md §"Generation Router 的存储与提交边界"）。它按**版本代次**而非工作区划分，且只在 systemd 装配中使用，不在 Docker。
+- **多 `CODEX_HOME` 曾有先例。** 已删除的 Generation Router 曾在同一部署内运行多个 AppServer、各自独立 HOME，并以 registry 持久化路由（见 execution-ownership.md "Generation Router（已删除）"）。它按**版本代次**而非工作区划分；其不中断升级语义由 §3.5 的镜像版本固定承接。
 
 ## 3. 目标拓扑
 

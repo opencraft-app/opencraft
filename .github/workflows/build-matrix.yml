@@ -207,8 +207,8 @@ jobs:
         run: npm run test:appserver-client
       - name: DSH routing Worker persistence and network liveness
         run: npx tsx --test tests/execution/dsh-session-routing-worker.test.ts
-      - name: Codex Router storage Worker and lifecycle
-        run: npx tsx --test --test-concurrency=3 tests/execution/codex-generation-*.test.ts tests/execution/codex-router-*.test.ts tests/execution/fence-operator-lease.test.ts
+      - name: Codex account Core operator lease
+        run: npx tsx --test tests/execution/fence-operator-lease.test.ts
       - run: npm run test:headless-server
       - uses: ./.github/actions/owned-electron
         if: needs.plan.outputs.headless-package == 'true'
@@ -288,6 +288,9 @@ jobs:
         if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'static'
         timeout-minutes: 10
       - run: npm run test:cli
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
+        timeout-minutes: 10
+      - run: npm run test:storage-ports
         if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
         timeout-minutes: 10
       - run: npm run test:sqlite-node

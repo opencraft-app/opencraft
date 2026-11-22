@@ -37,7 +37,6 @@ Server 存储入口复用 Headless 的 `server.lock` 内核进程锁，离线管
 | `opencraft-executions.sqlite` | daemon 内 Local Agent Host：[dsh-execution-authority](../../../apps/local-agent-host/src/dsh-execution-authority.ts) | Host `dataDirectory` | epoch、执行日志、输入及队列 |
 | `opencraft-host-documents.sqlite` | daemon 内 Local Agent Host：[document-storage/sqlite](../../../packages/document-storage/src/sqlite.ts) | Host `dataDirectory` | Host 通用文档；与 client-local 物理分离 |
 | `opencraft-managed-connectors.sqlite` | daemon 内 Local Agent Host：[connector-host/store](../../../packages/connector-host/src/store.ts) | Host `dataDirectory` | 实例、凭据与 OAuth 事务 |
-| `codex-generations.sqlite` | 可选独立 generation routing owner：[generation-registry](../../../apps/codex-core/src/generation-registry.ts) | 显式 registry directory | schema v1：默认代/接纳 epoch、Thread 归属、未知创建与退休回执；不持有账号/Host/native 数据 |
 | `account-pool.sqlite` | 独立 codex-core：[account-pool-host/store](../../../packages/account-pool-host/src/store.ts)、[account service](../../../packages/account-pool-host/src/codex-account-service.ts) | codex-core `dataDirectory` | 账户元数据、亲和性与配额；secret 文件由同一 owner 管理 |
 | `tasks.sqlite` | [TasksSqliteStore](../../../plugins/tasks/src/sqlite.ts)；Local Agent 启动 owner / Codex 功能私有 owner | 原 Host 目录；各实例各自独占，不跨目录合库 | Tasks、关联、revision/CAS；原 `tasks-rows` v1 SQL/hash 不变 |
 | `opencraft-host-state.sqlite`（旧目录沿用 `codex-host-queue.sqlite`） | [OpenCraftHostStateDatabase](../../../apps/opencraft-daemon/src/opencraft-host-state-database.ts)；CodexEngineAdapter | 原 Codex 目录；SSH 为原 `ssh-servers/<binding hash>` 目录 | durable queue、message_senders、企业身份 presence/state/completion 与远端会话目录/同步水位共用一个迁移/连接/事务 owner |
@@ -158,7 +157,7 @@ Server schema 在 `storage-node/src/server/schema.ts`，明文迁移与 Drizzle 
 Drizzle 管理 schema 不要求物理合库。`packages/storage-node/stores.json` 注册31组
 OpenCraft 自有独立 SQLite：Host 状态/附件/身份/路由/执行/计量、Agent Bridge 命令托管、客户端偏好/文档/资源、
 Tasks/IM、连接/模型策略/MCP Apps/定时/恢复、Web push、Git vault、观测及
-OpenCraft 自有 generation registry/account pool 元数据。各声明位于
+OpenCraft 自有 account pool 元数据。Generation Router 的 `codex-generations.sqlite` 已随 Router 删除，不再登记或打开。各声明位于
 `storage-node/src/stores/<id>/schema.ts`，沿现有 owner、文件、独占锁和生命周期执行。
 这不管理 Codex/Pi/DSH 的原生私有数据库，也不将 IndexedDB 转为 SQLite。
 退休六域旧库只作已冻结导入源，不能重新注册成业务写 owner。

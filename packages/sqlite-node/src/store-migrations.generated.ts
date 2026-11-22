@@ -81,21 +81,6 @@ export const STORE_MIGRATIONS = {
       }
     ]
   },
-  "generation-registry": {
-    "baseline": [
-      {
-        "version": 1,
-        "name": "codex-generation-routing",
-        "checksum": "7475f6579835fe5d0cf471a6b31913b3b5f26725f31dbecef8910b95a14c273e"
-      },
-      {
-        "version": 2,
-        "name": "orchestration-creation-incarnation",
-        "checksum": "8e9a9d91dc73a06840ee47d3bbcbe298bf4c70cb2e81f721130546e8511dabc1"
-      }
-    ],
-    "migrations": []
-  },
   "post-receipts": {
     "baseline": [
       {

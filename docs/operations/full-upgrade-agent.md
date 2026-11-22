@@ -1,7 +1,7 @@
 # Persistent upgrade control (P2b)
 
 P2b supplies a Linux/systemd agent, a narrow helper and an independent handoff
-watchdog. P2c adds generation-only Codex/ACP operations; P2d connects the existing
+watchdog. P2c adds generation-only ACP operations (the Codex Generation Router adapter was removed); P2d connects the existing
 Settings update page to an administrator-only projection and official Web child
 receipts. P3 owner fences and handoffs remain unavailable, so the full-stack plan
 is read-only and blocked. Official Web installation remains the existing owner.

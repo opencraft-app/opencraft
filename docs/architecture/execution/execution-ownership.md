@@ -8,20 +8,13 @@ Host 拥有的资源执行原语、默认 4 vCPU / 8 GiB 预算、Linux 后端�
 
 身份与协作的上位原则见[原生主体与 Hub 协作设计纲领](../identity/actor-collaboration.md)：人类与持久 Agent/Bot/Session 都是主体，权限大小不决定主体性。本文继续规定执行对象、连接与租约的所有权；Runtime 的执行所有权不替代 Session 的主体身份。目标设计中的身份准入、Channel 与跨 Hub 授权仍待实现。
 
-## Generation Router 的存储与提交边界
+## Generation Router（已删除）
 
-Generation Router 的生产服务通过 `CodexGenerationRuntime.open()` 启动独立
-Registry Worker。SQLite 连接、写入者锁和事务只由该 Worker 持有；网络线程只读
-已提交投影。租约受理、发送前证据、路由发现和释放均等待持久化确认，不能用
-投影更新或排队成功代替提交。Worker 退出或提交结果不明时关闭准入，拒绝等待者，
-不回退到主线程 SQLite，也不重放可能已发送的原生操作。
-
-投影以连续 revision 确认元数据增量；纯租约提交复用路由索引，不扫描或传输全部
-历史记录。历史责任校验只在历史键或引用变化时重算，并仍逐次检查当前责任约束。
-删除、事务回滚和外部 SQLite 提交会使相应缓存失效；缓存不能授予写入权。
-冷数据库检查和维护进程身份检查也在 Worker 内进行。关闭先停止请求生产者、
-结清已受理责任，再关闭存储。队列有上限，过载明确拒绝；无变化的元数据不产生
-重复 WAL 写入。该边界只覆盖 Generation Router，不能据此宣称所有服务均无同步 I/O。
+原 systemd 完整发布装配中的 Codex Generation Router（独立 `generations.cjs`、
+`codex-generations.sqlite` Registry Worker、按代次路由与退休协议）已于 2026-11-22
+删除，当前没有部署使用它。Docker、Electron 与 Headless 仍按单 APP Server／单
+`CODEX_HOME` 运行。Codex 不中断升级的计划后继是 WorkspaceHost 按工作区固定容器镜像，
+见[工作区拆分 §3.5](../platform/workspace-host-split.md#35-generation-router已删除)。
 
 ## Client / Hub / Server 拓扑
 
@@ -227,7 +220,7 @@ Turn 保持隔离，终结后复用 wire ID 创建新请求，不复活旧回答
 Codex APP callback lane 保留人类请求，网关离线期间的新请求也留存；网关重连初始化
 后重放原身份与提交阶段，不自动回答、超时取消或重新执行已提交响应。该保障跨 Gateway
 生命周期，尚不声称跨 APP/Native 进程重启的永久日志；原生恢复仍须重新建立真实 pending。
-生产升级必须分别核验 Gateway、router 与 APP payload，不能只用 Web sourceRevision
+生产升级必须分别核验 Gateway 与 APP payload，不能只用 Web sourceRevision
 声称旧 APP 已热更新。
 
 协商新协议的页面只消费被动快照，避免多个原始 RPC handler 同时作答。旧客户端保留
@@ -969,8 +962,12 @@ existing synchronous SQLite implementation remains a separate concern.
 ### Codex execution failure recovery
 
 A readable AppServer connection does not prove its execution environment works.
-Managed Codex generations observe official environment status independently from
-Native connectivity. A confirmed disconnected executor records a durable fault
+The APP server observes official environment status independently from Native
+connectivity and reports `EXECUTION_ENVIRONMENT_UNAVAILABLE` in health. The active
+stop-and-replace recovery below was implemented only by the removed Generation
+Router's managed generations; no current deployment produces those faults, and the
+Host-side consumer described here remains for the planned WorkspaceHost successor.
+Under that removed owner, A confirmed disconnected executor records a durable fault
 and source identity, then stops that exact instance without waiting for Native,
 Host, goal or OS work to become idle. A changed process birth or systemd
 invocation is not permission to kill a successor. Unconfirmed stops remain blocked;
@@ -988,14 +985,6 @@ IDs for retained generations. Existing Views and newly attached Views receive
 the same status; history and Composer stay mounted. Attach-only external servers
 retain their external lifecycle owner. See the [specification](codex-execution-health-and-recovery.md)
 and [decision](../../adr/0001-codex-execution-fault-recovery.md).
-
-Fault recovery may retire Router custody for the exact source generation and
-incarnation while keeping the original unknown lease records and recovery ID.
-This is distinct from observing Native completion. On controller restart, the
-Router first validates these records against the durable fault journal; it does
-not accept an unattributed or unrelated uncertainty. Recovering generations start
-through the fault monitor rather than ordinary ensure, including when the source
-unit is still deactivating. Stored retry deadlines remain authoritative.
 
 ### DSH generation routing storage owner
 

@@ -177,9 +177,8 @@ flowchart TB
 `ThreadOrchestrationBroker` and `ThreadOrchestrationLedger` share the existing
 collaboration database owner and native Host input queue. The Codex APP Host owns
 `orchestration-callback-lane.ts`; the gateway merely attaches, replays and
-acknowledges stable callbacks. The generation registry remains the only writer
-of Thread ownership and admission epochs. Both single APP and generation routing
-use capability discovery; a gateway upgrade alone cannot advertise the four
+acknowledges stable callbacks. The single APP Host uses capability discovery
+(the removed Generation Router no longer participates); a gateway upgrade alone cannot advertise the four
 orchestration tools against an older execution Host.
 
 The execution port prepares and persists effective source settings before a

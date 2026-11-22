@@ -2,7 +2,6 @@ import { DatabaseSync } from "node:sqlite";
 import { chmod } from "node:fs/promises";
 import { startControlServer, readControlJson } from "../../apps/codex-core/src/control-server.js";
 import { accountCoreOwner } from "../../scripts/full-upgrade/account-core-owner.mjs";
-import { codexRouterOwner } from "../../scripts/full-upgrade/codex-router-owner.mjs";
 import { writeFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -14,22 +13,17 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 import { AccountCoreOwner } from "../../apps/codex-core/src/account-owner.js";
-import { CodexRouterOwner } from "../../apps/codex-core/src/router-owner.js";
-import { CodexGenerationRegistry } from "../../apps/codex-core/src/generation-registry.js";
 
 async function claim(pid: number, ttlMs = 1000) {
   const fields = (await readFile(`/proc/${pid}/stat`, "utf8")).split(") ").at(-1)!.split(" ");
   return { version: 1 as const, id: randomUUID(), controller: { pid, startTime: fields[19]!, bootId: (await readFile("/proc/sys/kernel/random/boot_id", "utf8")).trim() }, ttlMs };
 }
-async function fixture(kind: "core" | "router", seed = true) {
+async function fixture(_kind: "core", seed = true) {
   const directory = await mkdtemp(join(tmpdir(), "oc-fence-lease-"));
-  let registry: CodexGenerationRegistry | undefined;
-  const owner = kind === "core" ? new AccountCoreOwner({ executable: process.execPath, dataDirectory: directory,
+  const owner = new AccountCoreOwner({ executable: process.execPath, dataDirectory: directory,
     runtimeDirectory: directory, nativeCodexHomeDirectory: join(directory, "native"), endpoint: join(directory, "core.sock"),
-    appServerEndpoint: join(directory, "app.sock"), authToken: "synthetic-operator-lease-token", proxyPort: 12345 })
-    : new CodexRouterOwner(registry = new CodexGenerationRegistry(directory));
-  if (owner instanceof AccountCoreOwner) { await owner.load(); if (seed) await owner.uncertain("/v1/responses"); }
-  else { await owner.ready; if (seed) { const pending = await owner.enter(); await pending.unknown("consumer-disconnected"); } }
+    appServerEndpoint: join(directory, "app.sock"), authToken: "synthetic-operator-lease-token", proxyPort: 12345 });
+  await owner.load(); if (seed) await owner.uncertain("/v1/responses");
   const snapshot = (): any => structuredClone(owner.snapshot());
   const responsibility = () => {
     const s = snapshot(); return { uncertain: s.uncertain, pending: s.pending, currentUncertain: s.currentUncertain,
@@ -40,15 +34,15 @@ async function fixture(kind: "core" | "router", seed = true) {
     historicalUnknownSha256: snapshot().historicalUnknownSha256, operatorLease });
   const fence = async (lease?: Awaited<ReturnType<typeof claim>>) => await owner.fence(input(lease));
   return { owner, directory, snapshot, responsibility, input, fence,
-    async close() { await (owner as any).dispose?.(); if (owner instanceof CodexRouterOwner) await owner.drain().catch(() => {}); registry?.close(); await rm(directory, { recursive: true, force: true }); },
-    async durable() { return kind === "core" ? JSON.parse(await readFile(join(directory, "account-handoff.json"), "utf8")) : registry!.metadata("router-handoff"); } };
+    async close() { await (owner as any).dispose?.(); await rm(directory, { recursive: true, force: true }); },
+    async durable() { return JSON.parse(await readFile(join(directory, "account-handoff.json"), "utf8")); } };
 }
 async function waitOpen(snapshot: () => any) {
   const end = Date.now() + 2200;
   while (snapshot().phase !== "open" && Date.now() < end) await delay(25);
   assert.equal(snapshot().phase, "open");
 }
-for (const kind of ["core", "router"] as const) {
+for (const kind of ["core"] as const) {
   test(`${kind}: killed real operator aborts source fence and durably preserves unknown`, async () => {
     const f = await fixture(kind), child = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], { stdio: "ignore" });
     try {
@@ -70,7 +64,7 @@ for (const kind of ["core", "router"] as const) {
     try { const lease = await claim(process.pid); await f.fence(lease);
       const end = Date.now() + 1700;
       while (Date.now() < end) { await delay(200); await (f.owner as any).renewOperatorLease(f.input(lease)); assert.equal(f.snapshot().phase, "fenced"); }
-      if (f.owner instanceof AccountCoreOwner) await f.owner.abortFence(f.input(lease)); else await f.owner.abort(f.input(lease));
+      await f.owner.abortFence(f.input(lease));
       assert.equal(f.snapshot().phase, "open"); assert.equal((await f.durable() as any).operatorLeaseAborts?.length ?? 0, 0);
     } finally { await f.close(); }
   });
@@ -81,7 +75,7 @@ for (const kind of ["core", "router"] as const) {
   });
 }
 
-for (const kind of ["core", "router"] as const) {
+for (const kind of ["core"] as const) {
   test(`${kind}: wrong process identity and a stale renewal cannot close or resurrect admission`, async () => {
     const f = await fixture(kind);
     try {
@@ -103,19 +97,16 @@ for (const kind of ["core", "router"] as const) {
   test(`${kind}: lease renewal preserves the exact drain proof and released owner never auto-opens`, async () => {
     const f = await fixture(kind, false);
     try {
-      if (kind === "core") {
-        const path = join(f.directory, "account-pool.sqlite"), db = new DatabaseSync(path);
-        db.exec("CREATE TABLE pool_affinity(id TEXT)"); db.close(); await chmod(path, 0o600);
-      }
+      const path = join(f.directory, "account-pool.sqlite"), db = new DatabaseSync(path);
+      db.exec("CREATE TABLE pool_affinity(id TEXT)"); db.close(); await chmod(path, 0o600);
       const lease = await claim(process.pid); await f.fence(lease);
       const observation = { coverage: "complete" as const, activeCount: 0, historicalCount: 0, counts: {} };
-      const proof = f.owner instanceof AccountCoreOwner ? f.owner.inspect(observation) : await f.owner.inspect(f.input(), observation);
+      const proof = f.owner.inspect(observation);
       const durable = await f.durable();
       await f.owner.renewOperatorLease(f.input(lease));
       assert.deepEqual(await f.durable(), durable, "renewal does not change cold data or the persisted fence");
       const input = { ...f.input(), proof: proof.identity };
-      if (f.owner instanceof AccountCoreOwner) await f.owner.release(input, observation, () => ({ imageAffinities: [], resetReceipts: [], loginReceipts: [] }), async () => { await delay(1200); });
-      else await f.owner.release(input, observation, "configuration");
+      await f.owner.release(input, observation, () => ({ imageAffinities: [], resetReceipts: [], loginReceipts: [] }), async () => { await delay(1200); });
       await delay(1100);
       assert.equal(f.snapshot().phase, "released");
       assert.equal(f.snapshot().operatorLeaseAborts?.length ?? 0, 0);
@@ -124,8 +115,7 @@ for (const kind of ["core", "router"] as const) {
 
   test(`${kind}: public controller adapter renews the real owner and abort restores the same unknown responsibility`, async () => {
     const f = await fixture(kind), token = "synthetic-lease-wire-control-token", endpoint = join(f.directory, "wire.sock");
-    const tokenFile = join(f.directory, "token"), descriptor = join(f.directory, "descriptor.json");
-    await writeFile(tokenFile, token, { mode: 0o600 });
+    const descriptor = join(f.directory, "descriptor.json");
     await writeFile(descriptor, JSON.stringify({ schemaVersion: 1, endpoint, pid: process.pid, token }), { mode: 0o600 });
     const actions: string[] = [];
     const control = await startControlServer(endpoint, token, async request => {
@@ -134,14 +124,14 @@ for (const kind of ["core", "router"] as const) {
           const input: any = await readControlJson(request); actions.push(input.action);
           if (input.action === "fence") await f.owner.fence(input);
           else if (input.action === "renew-operator-lease") await f.owner.renewOperatorLease(input);
-          else if (input.action === "abort") { if (f.owner instanceof AccountCoreOwner) await f.owner.abortFence(input); else await f.owner.abort(input); }
+          else if (input.action === "abort") await f.owner.abortFence(input);
           else throw Error("Unexpected fixture action");
         }
         return { status: 200, value: { pid: process.pid, handoff: f.snapshot() } };
       };
       return perform();
     });
-    const adapter = kind === "core" ? accountCoreOwner(descriptor, { ttlMs: 1000, renewMs: 150 }) : codexRouterOwner(endpoint, tokenFile, { ttlMs: 1000, renewMs: 150 });
+    const adapter = accountCoreOwner(descriptor, { ttlMs: 1000, renewMs: 150 });
     try {
       const before = f.responsibility(); await adapter.acquireFence(f.input()); await delay(1500);
       assert.equal(f.snapshot().phase, "fenced"); assert.ok(actions.filter(a => a === "renew-operator-lease").length >= 3);
@@ -151,7 +141,7 @@ for (const kind of ["core", "router"] as const) {
   });
 }
 
-for (const kind of ["core", "router"] as const) test(`${kind}: mutable snapshot copies cannot alter live bindings or their terminal receipt`, async () => {
+for (const kind of ["core"] as const) test(`${kind}: mutable snapshot copies cannot alter live bindings or their terminal receipt`, async () => {
   const f = await fixture(kind);
   try {
     const lease = await claim(process.pid); await f.fence(lease);

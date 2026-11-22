@@ -24,7 +24,6 @@
 
 | 资源 | 唯一 owner | 生命周期 |
 |---|---|---|
-| 可选 generation registry、稳定 native socket | 独立 routing owner | 固定 Thread 归属/接纳 epoch；CLI 升级不重启路由进程；路由进程自身维护先排空 PTY lease |
 | 原生 CLI | 兼容 core 或独立 APP Server owner | 网站/Headless 断开不终止原 turn；拆分后账号 Core 重启不停止 native |
 | account-pool、OAuth、账户代理 | 账号 core | 独立单写；拆分升级先排空已接收代理流与凭据写入 |
 | Host queue、sender、企业身份、附件、私有 Tasks、pins 投影 | Headless 的 CodexEngineAdapter | 原生 transport 只提供帧，不绕过 overlay；实例关闭释放存储 |
