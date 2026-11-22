@@ -96,6 +96,8 @@
   "tests/extensions/im-channel-resources.test.ts",
   "tests/extensions/im-notifications.test.ts",
   "tests/extensions/native-channel-author-projection.test.ts",
+  "tests/extensions/group-create-option-declaration.test.ts",
+  "tests/extensions/native-channel-group-create-options.test.ts",
   "tests/extensions/native-channel-group-creation-owner.test.ts",
   "tests/extensions/native-channel-sync.test.ts",
   "tests/extensions/view-route-family.test.ts",

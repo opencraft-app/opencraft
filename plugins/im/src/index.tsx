@@ -1,5 +1,6 @@
 import { combineAbortSignals } from '@opencraft/appserver-client/transport';
 import { CHANNEL_SEARCH_CONTRIBUTION } from './channel-search';
+import { parseGroupCreateOptions } from './channel-group-options';
 export type { ChannelSearchContribution } from './channel-search';
 export { channelResource } from './channel-search';
 import type { TrustedExtensionDefinition } from "@opencraft/extension-runtime";
@@ -70,7 +71,8 @@ export function createImExtension(
       const {getChannelRuntime}=await import('./channel-runtime');
       const runtime=getChannelRuntime(fetcher,channels,api.signal);
       let peopleViews: Promise<ReturnType<typeof import('./people-view').createPeopleViews>> | undefined;
-      const people=()=>peopleViews??=import('./people-view').then(m=>m.createPeopleViews(channels,api.signal,CHANNEL_CHAT_VIEW_ID,runtime));
+      const groupCreateOptions=parseGroupCreateOptions(capabilities.groupCreateOptions);
+      const people=()=>peopleViews??=import('./people-view').then(m=>m.createPeopleViews(channels,api.signal,CHANNEL_CHAT_VIEW_ID,runtime,groupCreateOptions));
       const groupTools = channels !== undefined && capabilities.channelGroupTools === true;
       let viewsPromise: Promise<ReturnType<typeof import("./channel-chat-view").createChannelChatViews>> | undefined;
       const views = () => (viewsPromise ??= import("./channel-chat-view").then(module =>

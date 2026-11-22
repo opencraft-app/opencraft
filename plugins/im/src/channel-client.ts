@@ -186,8 +186,8 @@ export class ChannelsClient extends ImClient {
     }
   }
 
-  createGroup(title: string, memberActorIds: string[], clientRequestId: string, signal: AbortSignal) {
-    return this.command('opencraft/channels/group/create', { title, memberActorIds, clientRequestId }, signal);
+  createGroup(title: string, memberActorIds: string[], clientRequestId: string, signal: AbortSignal, options: Record<string, boolean> = {}) {
+    return this.command('opencraft/channels/group/create', { title, memberActorIds, clientRequestId, ...(Object.keys(options).length ? { options } : {}) }, signal);
   }
 
   rename(channelId: string, title: string, clientRequestId: string, signal: AbortSignal) {

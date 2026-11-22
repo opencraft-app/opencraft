@@ -452,6 +452,7 @@
   > details { grid-column: 1 / -1; margin-top: calc(2 * var(--spacing)); }
 }
 .im-channel-group-dialog__card .im-channel-group-dialog__members > li:last-child { border-bottom: 0; }
+.im-channel-group-dialog__option { align-items: flex-start; padding-block: calc(2 * var(--spacing)); > span { display: grid; gap: 2px; } small { color: var(--color-text-secondary); font: var(--typography-metadata-font); } }
 
 
 .im-message-action-dialog { max-inline-size: min(28rem, calc(100vw - 4 * var(--spacing))); }

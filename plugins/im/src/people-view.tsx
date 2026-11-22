@@ -9,7 +9,7 @@ import { AssistantMemory } from './assistant-memory';
 import { AssistantThreadSettings } from './assistant-thread-settings';
 import { PeopleIcon, AgentIcon, SettingsGearIcon } from '@opencraft/design-system-web/action-icons';
 import { lazy, Suspense, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type { ChannelPerson, PersonalAssistantStatus, PersonalAssistantModelCatalog } from '@opencraft/appserver-protocol';
+import type { ChannelGroupCreateOption, ChannelPerson, PersonalAssistantStatus, PersonalAssistantModelCatalog } from '@opencraft/appserver-protocol';
 import { CompanionAvatar } from '@opencraft/design-system-web/companion-avatar';
 import { ObjectRowButton } from '@opencraft/design-system-web/button';
 import { NavigationList, NavigationItem } from '@opencraft/design-system-web/navigation';
@@ -108,7 +108,7 @@ function SkeletonRows({count,variant}:{count:number;variant:'group'|'member'|'ca
 }
 
 /** One directory replica per authenticated extension lifetime. No claim on mount/login. */
-export function createPeopleViews(transport:ChannelRpc, activation:AbortSignal, chatViewId:string, runtime:ChannelRuntime=getChannelRuntime(fetch,transport,activation)) {
+export function createPeopleViews(transport:ChannelRpc, activation:AbortSignal, chatViewId:string, runtime:ChannelRuntime=getChannelRuntime(fetch,transport,activation), groupCreateOptions:readonly ChannelGroupCreateOption[]=[]) {
   const {rpc,signal}=runtime;
   let snapshot:{people:ChannelPerson[];loaded:boolean;failed:boolean}={people:[],loaded:false,failed:false};
   const listeners=new Set<()=>void>();let refreshing:Promise<void>|undefined;
@@ -228,7 +228,7 @@ export function createPeopleViews(transport:ChannelRpc, activation:AbortSignal, 
       {mode==='agents'?<p className="people-page__description">{f('agentsAbout')}</p>:null}
       {mode==='inbox'?<div className="people-toolbar">
         <div className="people-toolbar-search"><SettingsTextInput aria-label={f('searchAll')} placeholder={f('searchAll')} value={query} onChange={e=>setQuery(e.target.value)} maxLength={128}/>
-        <CreateGroupButton client={runtime.client} reportError={reportError} onCreated={group=>{void groupsResource.refresh();host.openView(chatViewId,'opencraft-channel:'+group.id);}}/></div>
+        <CreateGroupButton client={runtime.client} options={groupCreateOptions} reportError={reportError} onCreated={group=>{void groupsResource.refresh();host.openView(chatViewId,'opencraft-channel:'+group.id);}}/></div>
         <SegmentedControl appearance="toolbar" width="content" label={intl.formatMessage(title)} value={tab} onValueChange={setTab} options={[{value:'groups',label:f('groups')},{value:'work',label:intl.formatMessage({id:'crew.work.label',defaultMessage:'Work'})},{value:'members',label:f('members')}]}/>
       </div>:null}
       {mode==='agents'?<ManagedBots rpc={rpc} signal={signal} onOpen={id=>host.openView(chatViewId,'opencraft-channel:'+id)}/>:null}
