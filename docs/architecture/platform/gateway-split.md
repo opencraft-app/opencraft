@@ -24,7 +24,7 @@
 | `OrchestrationRuntimeWorker` | 编排运行时、通信与自动化账本的异步门面；Headless 中在核心 owner 连接上执行（`orchestrationRuntimeOwnerMethods`），不再另开连接 | 无（门面）；独立 `worker_threads` 模式只留给测试与无 owner 的组合 | HA:278 | IC | 已与核心 owner 合并为单一写入者（G2） |
 | `ServerSpacesRuntime` | Server space 账本的异步门面与投影；Headless 中在核心 owner 连接上执行（`serverSpacesOwnerMethods`） | 无（门面）；本机 Host 的 `directory` 模式仍是独立 Worker | HA:635-636 | IC | 同上 |
 | `ActorStore`／`MembershipStore`／`InstanceAccess`／`ActorAccess`／`IdentityWrites` | 主体、成员、准入投影；写入经核心 owner | HTTP 处理签名为 `node:http` 类型（`actor-access.ts:1`、`access-control/src/index.ts:9`） | HA:476、481、535、589-608 | IC（状态）＋EW（无状态鉴权读取见 §3.2） | 部署级唯一写者；读取投影可在 IC 内存 |
-| `HumanAuth`＋本地账号＋OIDC | 登录会话、身份绑定、OIDC discovery 与回调 | `node:http` 类型（`human-auth.ts:2`）；本地账号 `scrypt`（`plugins/local-account/src/server.ts:1、10`，workerd 兼容待核实）；setup token 私有文件 | HA:515-533；登录页 `human-login-page.ts` | IC（会话与账号写入）＋EW（页面与 OIDC 重定向） | 登录态是 IC 数据；外部 HTTP 往返适合 EW |
+| `HumanAuth`＋本地账号＋OIDC | 登录会话、身份绑定、OIDC discovery 与回调 | `node:http` 类型（`human-auth.ts:2`）；本地账号 `scrypt`（`plugins/local-account/src/server.ts:1、10`，workerd 本地可用、线上内存待确认，见 §3.4）；setup token 私有文件 | HA:515-533；登录页 `human-login-page.ts` | IC（会话与账号写入）＋EW（页面与 OIDC 重定向） | 登录态是 IC 数据；外部 HTTP 往返适合 EW |
 | `ThreadAccessStore`／`ThreadAccessSession`／`ServerSpacesSession` | Thread 访问授权与每连接投影 | 无（经核心 owner） | HA:637-685 | IC（授权）；会话对象随 Client 连接（§3.1） | 授权是部署级；会话是每连接的 |
 | `Collaboration`＋`CollaborationHttpApi` | 主体协作、输入授权、执行准入、用量提交 | `node:http` 类型（`collaboration.ts:22`） | HA:686-690、703 | IC | Codex adapter 的 `collaboration`／`collaborationInput` 钩子依赖它（HA:1068-1094），是执行准入权威 |
 | `ThreadOrchestrationBroker`＋`createProjectAutomations` | 父子编排、助理线程、项目自动化 | 定时依赖 `automation-ledger.ts:5`（`isMainThread`） | HA:692-706 | IC（账本）；到期唤醒用 alarm | 跨工作区编排需部署级 owner |
@@ -158,6 +158,58 @@
 
 **需在真实 Cloudflare 上确认。** hibernation 后唤醒 `webSocketMessage` 与 alarm 的冷启动延迟；跨 colo 的 WH→ClientDO RPC 延迟与 Client DO 放置（首个请求就近放置，用户移动后不迁移）；每事件 DO 请求与 storage 写入计费在流式输出下的量级；单 WH 扇出上限（并发出站子请求数、CPU 时间）；`ctx.abort()` 与平台驱逐、部署更新对 hibernatable socket 的实际影响；alarm 的触发精度与重试语义。
 
+### 3.4 登录入口原型结果
+
+本地原型（2026-11-22）验证 §2.1 `HumanAuth`＋本地账号能否在 InstallationCore 上运行，并回答问题 7。只在 workerd／Miniflare（`nodejs_compat`，compatibility date 2026-07-30，workerd 1.20260730.1）中运行，不是部署装配。源码：`tests/identity/workerd/login-entry-worker.ts`、`tests/identity/workerd/node-http-exchange.ts`；测试：`npm run test:login-entry:workerd`（`tests/identity/login-entry-workerd.test.ts`）。
+
+**现状事实（Node）。**
+
+- 本地账号（`plugins/local-account/src/server.ts`）：`scrypt(password, salt, 32, {N: 131072, r: 8, p: 1, maxmem: 192 MiB})`；salt 为 32 字节随机数的 64 位 hex 字符串，**按 UTF-8 文本**传入 scrypt（不解码）；摘要存 hex；无 pepper。未知用户名也用固定占位 salt 计算一次再比较（`timingSafeEqual`），之后复读账号确认 `enabled` 与 `version` 未变。单进程最多 2 个并发哈希，超出直接拒绝。
+- 登录态（`HumanAccounts`）：`randomBytes(32)` base64url（43 字符）作为 token，库中只存 `sha256(token)` hex（`human_logins`，带 Actor 代次、本地账号 `version`、`expires_at`＝最多 8 小时）。验证时要求 Actor 当前、绑定未变，本地账号版本与登录时一致——禁用、改密都会使旧登录失效；登出删除该行。
+- 浏览器载体（`HumanAuth`）：Cookie `oc_human`（`Path=/; HttpOnly; SameSite=Lax; Max-Age`，HTTPS origin 加 `Secure`）；OIDC 事务 Cookie `oc_human_flow`（`Path=/__opencraft_auth`）。CSRF 依赖：`Host` 等于配置 origin、POST 要求 `Origin` 精确同源且 `content-type: application/json`、拒绝带 `Authorization` 的请求、字段白名单、16 KiB 正文上限；登录尝试全局 60 次／分钟、每地址 12 次／分钟（内存计数）。
+- 受保护请求走 `InstanceAccess.authenticate`／`admissionStatus`（204／401／403），`HumanAuth` 是其中一个 `IdentityProvider`。
+
+**scrypt 结论。** workerd `nodejs_compat` 的 `node:crypto.scrypt`／`scryptSync` 可用，参数不变即可互通：
+
+- Node 创建的账号记录写入 DO 后，原样由 workerd 中的 `LocalAccountServerPlugin.verify` 验证通过（错误密码拒绝）；workerd 创建的记录由 Node 验证通过，且其摘要与 Node `scryptSync` 用同一参数重算的结果逐字节相同。已存哈希无需换算法或重算。
+- 本地单次验证（中位数，开发容器）：workerd 约 250–260 ms，未知用户名路径约 250 ms（占位哈希仍执行，时间特征一致），Node 约 280 ms。workerd 的回调式 `scrypt` 在 isolate 线程上同步计算（两个并发调用耗时约为两倍），即每次验证让所在 DO 忙约 0.25 s CPU。
+- 依据的 Cloudflare 限制（官方文档，2026-11 读取）：Workers 每请求 CPU，Free 10 ms，Paid 默认 30 s、可配置到 5 min；Durable Object 每个传入请求／WebSocket 消息把可用 CPU 重置为 30 s（可配置到 5 min）；每 isolate 内存 128 MB，文档写明包含 JS 堆与 WebAssembly 分配，**未说明运行时原生分配是否计入**。结论：Paid 计划下 CPU 余量约 100 倍；**Free 计划无法运行**（单次验证超出 10 ms 约 25 倍）。
+- **内存是主要未决风险。** 该参数的 scrypt 工作区为 `128·N·r` = 128 MiB，恰等于 isolate 上限。`node:crypto` 由运行时原生实现，本地 Miniflare 不执行内存上限，能否在线上不被判超限只能在真实账号上确认。
+- WebCrypto 没有 scrypt。用 WebCrypto PBKDF2-SHA256＋纯 JS Salsa20/8 实现的 scrypt（不启用 `nodejs_compat`）在本地得到相同摘要，但约 1.16 s，且需要 128 MiB 的 `Int32Array`，必然计入 JS 堆而超出 128 MB 上限；Wasm 实现同理。所以不存在"不依赖原生 scrypt、仍能在 Worker 内验证已存哈希"的替代。若线上原生 scrypt 被判超限，校验只能移到能分配 128 MiB 的位置（容器内的验证服务，或保留 Node），而不是改参数；对已有账号做"登录成功后用新参数重哈希"属于更换算法，需另行决定。
+
+**登录入口原型。** `LoginCore` DO 以 DO SQL 迁移 Server 核心后，原样装配 Node 部署中的 `ActorStore`、`HumanAccounts`、`LocalAccountServerPlugin`、`MembershipStore`、`HumanAuth` 与 `InstanceAccess`。公开入口是 fetch：`/__opencraft_auth/*` 交给真实的 `HumanAuth.handle`，受保护探针 `/api/me` 走真实的 `InstanceAccess.admissionStatus`。同一请求序列分别打到该 DO 与真实 `node:http` 服务器（node:sqlite），归一化随机 id、token 与 Max-Age 后两边逐项相等：
+
+- 错误密码、未知用户、已禁用账号登录 → 401 `invalid_credentials`；跨源或非 JSON POST → 403 `same_origin_json_required`；带 `Authorization` → 403 `origin_required`；多余字段 → 400 `login_failed`。
+- 登录成功 → 200 `{ok: true}`，`Set-Cookie` 与 Node 完全同形（`oc_human=<43 字符>; Path=/; HttpOnly; SameSite=Lax; Max-Age=28800`，并清空 `oc_human_flow`）。
+- 携带该 token：未授予成员时 403，授予后 200；篡改 token、登出后、账号禁用后（重新启用后仍失效，因版本已变）、8 小时过期后均 401。
+
+**Node-only 胶水与 Request／Response 端口提议。** 登录链路上的 Node 依赖只有 HTTP 形状，领域代码不需要改：
+
+| 位置 | Node-only 部分 | workerd 中的情况 |
+| --- | --- | --- |
+| `human-auth.ts` `handle`／`issueSession` | `IncomingMessage`（`url`、`method`、`headers`、`socket.remoteAddress`、异步迭代正文）、`ServerResponse`（`writeHead`、`setHeader('set-cookie', [...])`、`end`、`headersSent`、`destroyed`） | 原型用 `node-http-exchange.ts` 适配，真实代码不变 |
+| `local-account/src/application.ts` | 同上，另有 `nativeOwner(request)` | 未在原型中运行；同一适配可用 |
+| `identity-core/src/node.ts` `readPrivateJson` | `node:fs` 读取 setup token 与认证配置私有文件 | 应改由 Worker secret／绑定提供，不读文件 |
+| `local-account/src/server.ts`、`human-accounts.ts`、`account-management.ts` | `node:crypto`（`scrypt`、`randomBytes`、`createHash`、`timingSafeEqual`）与 `Buffer` | `nodejs_compat` 已提供，原样运行 |
+
+提议把适配器覆盖的面收成一个运行时中立端口，`HumanAuth.handle` 与 `LocalAccountApplication.handle` 改为消费它，Node 与 Workers 各写一个薄适配：
+
+- 请求：`method`、`path`（含 query）、小写单值 `headers` 加原始头列表（重复头检测）、`clientAddress`（Node 为 socket 地址，Workers 为 `CF-Connecting-IP`）、`readBody(limit): Promise<Uint8Array>`（流式计数，超限即停）、`signal`（替代 `response.destroyed` 判断客户端已断开）。
+- 应答：`{status, headers: [name, value][], body}`，允许多条 `set-cookie`；`issueSession` 返回要追加的 Cookie，而不是直接写 `ServerResponse`。
+- `Host` 校验在 Workers 上取路由 URL 的 host（由平台按 zone／route 保证），Node 仍取请求头。
+
+**放置建议。** 登录写入（`human_logins`、账号版本）必须在 IC。若 scrypt 也在 IC 中计算，全局 60 次／分钟的尝试上限下最坏约占 IC 每分钟 15 s CPU，且 IC 是全部部署级授权的单点。可选的拆分：EW 向 IC 取 salt（未知用户返回由 IC 密钥派生的稳定占位 salt，避免枚举），在 EW 计算摘要，再交给 IC 用 `timingSafeEqual` 比较、复核版本并签发登录；密码明文不进 IC，摘要不出 IC。这需要把 `LocalAccountServerPlugin.verify` 拆成"派生"与"比较＋复核"两步，属于后续工作，原型未实现。尝试计数目前是进程内存，在 IC 内可沿用；放在无状态 EW 时需改用 IC 计数或 Workers Rate Limiting 绑定。
+
+**OIDC（未实现，Worker 需要的条件）。**
+
+- `openid-client` 6.9.0（基于 `oauth4webapi`，只用 `fetch` 与 WebCrypto）可被 esbuild 打进 workerd bundle 并完成模块求值（原型 bundle 已包含 `human-auth.ts` 的顶层 `import * as oidc`）；discovery、授权码交换与 ID Token 验签尚未在 workerd 中跑通，需用模拟 issuer 测试。workerd WebCrypto 支持 RS256／ES256／EdDSA 验签；`timeout` 依赖 `AbortSignal.timeout`；`allowInsecureRequests` 只用于 HTTP 回环测试 issuer。
+- discovery 结果与 JWKS 目前缓存在 `HumanAuth.#clients` 的 `Configuration` 内存中（按 provider，未知 `kid` 时由库重取）。DO 驱逐后重新 discovery 即可；若放在 EW，每个 isolate 各自缓存，需接受冷启动多一次 discovery＋JWKS 往返，或由 IC 缓存元数据。
+- state、nonce、PKCE verifier 与发起浏览器摘要现存于 `HumanAuth.#flows`（内存，10 分钟，一次性）。Node 重启丢失事务是既定语义；在 Cloudflare 上必须由 IC（或专用 DO）持有，EW 不能保存，因为回调可能落到另一个 isolate。若要跨 DO 驱逐保留，需写入 DO storage 并保持"一次性消费"。
+- 回调中 `response.destroyed` 判断改用请求 `signal`；`claims.exp` 与流程过期依赖 `Date.now()`，Workers 在请求内冻结时钟（I/O 后推进），对分钟级窗口无影响。
+- 客户端密钥来自 Worker secret，而非 `readPrivateJson` 私有文件。
+
+**需在真实 Cloudflare 上确认。** 原生 scrypt 128 MiB 工作区是否触发 isolate 内存上限（决定问题 7 的最终答案）；线上单次验证 CPU 时间（本地约 0.25 s）；IC 在并发登录下的排队延迟；`CF-Connecting-IP` 作为限流键；OIDC 对真实 issuer 的 discovery、出站超时与 JWKS 轮换。
+
 ## 4. 拆分方式
 
 ### 4.1 组合根按角色分开，owner 共享
@@ -239,5 +291,5 @@ P4-1（`proxy` 默认、全部 provider 经代理）是 AC 的前提，必须在
 4. **有意保持 Node-only 的产品范围**：确认 SSH Servers、本机桌面、relay-connect、匿名部署、观测 ingress、可用性通知在 Cloudflare 上不提供；以及 DSH／Pi／ACP 是否在后续里程碑进入工作区容器。
 5. **个人助理**：其 `codex` 子进程放进专属工作区容器，还是 Cloudflare 上不提供。
 6. **远程浏览器**：媒体流经 EW→WH→容器会占用 DO 带宽与时长；是否在 Cloudflare 上提供、提供时是否让客户端直连容器暴露的端点（需要新的鉴权票据设计）。Chromium 沙盒可用性仍待 PoC（cloudflare-deployment §4）。
-7. **本地账号密码哈希**：`scrypt` 在 workerd `node:crypto` 中的可用性与性能待核实；若不可用，登录校验需留在可运行 `scrypt` 的位置，不能更换已存储哈希的算法。
+7. **本地账号密码哈希**：本地已核实（§3.4）：workerd `nodejs_compat` 的 `node:crypto.scrypt` 可用，Node 与 workerd 产生的哈希双向验证通过，参数不变，单次验证本地约 0.25 s CPU（Paid 计划 30 s 默认上限内；Free 计划 10 ms 不可行）。仍待真实账号确认：N=2^17、r=8 需 128 MiB 工作区，等于 isolate 128 MB 上限，原生分配是否计入未见文档；纯 JS／Wasm 实现必然超限。若线上超限，登录校验需留在可分配该内存的位置（容器或 Node），不能更换已存储哈希的算法。
 8. **出站 SSRF 校验**：connectors 与 push 依赖 `node:dns`／`node:net` 做地址检查；Cloudflare 上用什么等价机制。

@@ -232,7 +232,7 @@ OIDC 身份键为完整 `[issuer, sub]` 元组的 SHA-256，避免不透明 sub 
 
 浏览器使用 host-only、HttpOnly、SameSite=Lax 的不透明 cookie；HTTPS 配置加 Secure。数据库只保存 token 摘要，登录最长八小时，OIDC 登录还受 ID Token 到期约束。每个 Actor 最多保留最近三十二个浏览器登录态。退出撤销当前 OpenCraft 登录态；企业 SSO 平台的会话由该平台管理。
 
-OIDC 事务保存在认证 owner 内存中，十分钟过期、绑定发起浏览器且只能消费一次；取消、退出、原账号变化或服务重启均不能通过迟到回调建立绑定。写接口要求精确同源 JSON，密码验证有全局并发和尝试次数上限，密码使用 scrypt（N=131072、r=8、p=1、独立随机 salt）。实际部署仍需可信 TLS 入口。
+OIDC 事务保存在认证 owner 内存中，十分钟过期、绑定发起浏览器且只能消费一次；取消、退出、原账号变化或服务重启均不能通过迟到回调建立绑定。写接口要求精确同源 JSON，密码验证有全局并发和尝试次数上限，密码使用 scrypt（N=131072、r=8、p=1、独立随机 salt）。实际部署仍需可信 TLS 入口。Cloudflare InstallationCore 上同一哈希与登录态格式的本地验证结果见 [登录入口原型结果](../platform/gateway-split.md#34-登录入口原型结果)。
 
 身份绑定、凭据与浏览器会话、Actor 成员资格在 `opencraft-server.sqlite` 的独立领域表中，由同一 Server storage owner 管理连接和迁移；旧六库只作为已记录的迁入来源。旧身份级授权在可信身份首次使用时导入 Actor，旧授权不覆盖已有 Actor 撤权。兼容 `access-admin` 和成员 HTTP API 可按旧稳定身份更新对应 Actor；新 API 也接受 `{actorId, role, enabled}`。资源权限、Session Actor 凭据及业务资源 owner 保持各自权威。
 
