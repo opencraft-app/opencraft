@@ -139,7 +139,7 @@ test('packaged /setup enables membership, claims one administrator and preserves
   assert.equal((await browser.call('/__opencraft_account/setup', { proof, mode: 'web', username: 'other', password })).status, 409);
   await app.close();
   app = await startHeadlessServer(options, { createIdentity: async () => ({ assistantEnvironmentConfigurationManaged: true,
-    providers: [], service: { admissionStatus: () => 204, connectionContext: () => ({ sender: null }), handle: () => false } }) });
+    providers: [], close() {}, service: { admissionStatus: () => 204, connectionContext: () => ({ sender: null }), handle: () => false } }) });
   const managedAssets = await browser.call('/__opencraft_assets/status');
   assert.equal(managedAssets.status, 404, 'a product-owned configuration service must not acquire a second public writer');
 
