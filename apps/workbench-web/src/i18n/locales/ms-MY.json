@@ -713,6 +713,8 @@
   "sidebar.search.locating": "Opening matching message…",
   "sidebar.search.incomplete": "No matches yet · message search is incomplete",
   "sidebar.search.positionError": "The conversation opened, but the matching message could not be shown.",
+  "shortcuts.conversationPrevious": "Perbualan sebelumnya",
+  "shortcuts.conversationNext": "Perbualan seterusnya",
   "shortcuts.title": "Pintasan papan kekunci",
   "shortcuts.sidebar": "Togol bar sisi",
   "shortcuts.panel": "Togol panel alat",

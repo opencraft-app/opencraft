@@ -18,6 +18,7 @@ export function conversationAccessServer(execution, machineId, hostId, threadId)
 export function callConversationHost(appHost, binding, requestId, method, params, submissionContext, timeoutMs = 35_000, selectRequest) {
   const clientId = `actor-service:${randomUUID()}`, leaseId = randomUUID();
   const controls = new Set(['prepare','create','publish','finalize','ack','status','inspect','interrupt'].map(name=>'opencraft/orchestration/'+name));
+  controls.add('thread/name/set');
   // Only a server-created, operation-bound admission may use the existing service
   // lane. A null Human sender is not an anonymous browser or a new Thread grant.
   const trustedOrchestration = controls.has(method) && submissionContext?.orchestrationOperationId === requestId
@@ -67,6 +68,8 @@ export function callConversationHost(appHost, binding, requestId, method, params
                     : [-32600,-32601,-32602].includes(frame.error.code) ? {status:400} : {}
                   : {}) })); }
               if (frame.id === 'init') {
+                if(trustedOrchestration && method==='thread/name/set' && !submissionContext.orchestrationCanAdmit())
+                  return finish(Object.assign(new Error('Orchestration delegation revoked'),{status:403}));
                 const selected = selectRequest?.(frame.result) ?? { method, params };
                 stage = 'request';
                 send('operation', selected.method, { ...selected.params, ...(binding.threadId ? {threadId: binding.threadId} : {}) });

@@ -11570,8 +11570,8 @@ html[data-window-host="browser"] body {
       gap: var(--gap-material-liquid-group);
       padding: var(--padding-material-liquid-group);
     }
+    // Touch reading titles remain owned by thread-workspace, not chrome suppression.
     .app-shell-header__route,
-    .thread-header-title,
     .application-brand,
     [data-app-shell-window-action]:not([data-app-shell-window-action="sidebar-toggle"]):not([data-navigation-return]) {
       display: none;

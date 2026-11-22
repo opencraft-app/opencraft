@@ -151,7 +151,7 @@ export class ThreadOrchestrationLedger {
   operation(toolCallKey: string): ToolOperation | null {
     const row = this.db.prepare('SELECT o.* FROM opencraft_orchestration_operations o JOIN opencraft_orchestration_tool_calls c ON c.operation_id=o.operation_id WHERE c.tool_call_key=?').get(toolCallKey); return row ? operation(row) : null;
   }
-  accept(value: Omit<ToolOperation,'operationId'|'state'|'waitingOn'|'result'> & {idempotencyKey?: string}): ToolOperation {
+  accept(value: Omit<ToolOperation,'operationId'|'state'|'waitingOn'|'result'> & {idempotencyKey?: string}, validateNew?: () => void): ToolOperation {
     return this.transaction(() => {
       const {toolCallKey, arguments: args, idempotencyKey, ...identity} = value;
       const fingerprint = createHash('sha256').update(JSON.stringify(canonical({identity,args}))).digest('hex');
@@ -163,6 +163,7 @@ export class ThreadOrchestrationLedger {
         this.db.prepare('INSERT OR IGNORE INTO opencraft_orchestration_tool_calls VALUES(?,?)').run(toolCallKey,String(prior[0]!.operation_id));
         return operation(prior[0]!);
       }
+      validateNew?.();
       const id = randomUUID(), now = this.now();
       this.db.prepare("INSERT INTO opencraft_orchestration_operations(operation_id,tool_call_key,idempotency_key,fingerprint,arguments_json,delegation_id,issuer_actor_id,kind,sender_thread_id,target_thread_id,client_message_id,mode,state,waiting_on,result_json,created_at_ms,updated_at_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'accepted',NULL,NULL,?,?)").run(
         id,toolCallKey,scopedKey,fingerprint,JSON.stringify(args),value.delegationId,value.issuerActorId,value.kind,value.senderThreadId,value.targetThreadId,value.clientMessageId,value.mode,now,now);

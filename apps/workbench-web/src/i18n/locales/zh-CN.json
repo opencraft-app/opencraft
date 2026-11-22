@@ -742,6 +742,8 @@
   "sidebar.search.locating": "正在打开匹配消息…",
   "sidebar.search.incomplete": "暂未找到匹配 · 消息搜索尚未完成",
   "sidebar.search.positionError": "会话已打开，但未能显示匹配消息。",
+  "shortcuts.conversationPrevious": "上一个会话",
+  "shortcuts.conversationNext": "下一个会话",
   "shortcuts.title": "键盘快捷键",
   "shortcuts.sidebar": "切换侧栏",
   "shortcuts.panel": "切换工具面板",
