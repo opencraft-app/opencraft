@@ -2,7 +2,7 @@
 
 [Architecture index](../README.md) · [可选 Cloudflare 部署](cloudflare-deployment.md) · [服务器核心 owner](../server/server-core-owner.md) · [SQLite 生命周期](../server/sqlite-lifecycle.md)
 
-状态：第 1 阶段（SQL 端口与 Node 适配器，服务器核心数据）已实施；其余端口与 Cloudflare 适配器为设计。以源码、测试与 `config/main-thread-sync-io.json` 为准。
+状态：第 1、2 阶段（全部四类端口、Node 适配器与首批使用方）已实施；第 3–6 阶段与 Cloudflare 适配器为设计。以源码、测试与 `config/main-thread-sync-io.json` 为准。
 
 ## 1. 目的
 
@@ -28,8 +28,8 @@ OpenCraft 服务端需要在两类运行时上运行同一份领域逻辑：
 | --- | --- | --- | --- | --- |
 | `SqlDatabase` | `@opencraft/sql` | owner 内同步关系存储、事务 | `@opencraft/sqlite-node` 的 `nodeSqlDatabase()` | DO `ctx.storage.sql` 与 `transactionSync` |
 | `StateDocumentStore` | `@opencraft/document-storage/state` | 按键 JSON 状态文档、原子读-改-写 | `/state-file`：每键一个文件 | DO storage |
-| `BlobStore` | 待定 | 流式不可变对象、sha256 校验、分块上传 | tmp＋fsync＋rename | R2（multipart） |
-| `SecretStore` | 待定 | 只读机密配置、一次性生成密钥、加密可变凭据 | 0600 私有文件 | Secrets binding＋DO 内密文 |
+| `BlobStore` | `@opencraft/blob-storage` | 不可变对象、大小与摘要校验、顺序上传 | `/file`：暂存＋fsync＋链接发布 | R2（multipart） |
+| `SecretStore`／`KeyMaterial` | `@opencraft/secret-storage` | 命名密钥、一次性安装密钥 | `/documents`＋私有文件 | Secrets binding＋DO 内密文 |
 
 ### 3.1 `SqlDatabase`
 
@@ -95,20 +95,33 @@ Node 适配器 `fileStateDocumentStore(directory)` 每键一个文件，保持�
 
 ### 3.3 `BlobStore`
 
-`put(stream, { sha256, maxBytes }) → ref`、`get(ref, range?)`、`head(ref)`、`delete(ref)` 与分块上传会话。对象索引留在 SQL，沿用 `ArtifactCatalog` 的 ingestion → 写对象 → committed 两阶段；未提交对象由 owner 清理。承接附件、Artifact 内容、按内容寻址的插件包与 Web 资源。
+`@opencraft/blob-storage`：不可变对象。`put(key, ReadableStream | Uint8Array, { maxBytes, sha256? })` 与顺序上传 `upload(key, { maxBytes })`（`write` / `complete({ sha256? })` / `abort`，完成前不可见）；`get(key, range?)`、`head(key)`、`delete(key)`。已存在的键拒绝写入；替换内容是写新键、在 owner 索引中切换引用、再删除旧键。`put`／`complete` 返回 SHA-256，读取不重新计算；摘要由索引 owner（通常是 SQL）保存。
 
-### 3.4 `SecretStore`
+Node 适配器 `fileBlobStore(root)` 每键一个私有文件，字节先写入 `root/.staging` 并 fsync，再以只创建的硬链接发布并 fsync 目录，键要么不存在要么完整。
 
-三类：只读机密配置（现 `readPrivateJson`）、一次性生成密钥（Git vault key、能力 HMAC key、SSH key）、可变凭据（现明文 `models/credentials.json`、账号池凭据）。Cloudflare 上可变凭据以 Secrets binding 中的密钥加密后存入 owner DO。
+已迁移：`ArtifactCatalog` 内容（键 `content/<ingestionId>`，与原路径相同；SQL 两阶段 ingestion 不变）与分块附件上传暂存。Host 的执行引擎与 `AttachmentRef` 的 `host-file` 位置按主机路径读取，所以 Host 使用 `HostFileBlobStore`（提交后的键仍是主机文件，并可取得其路径），这是 Host 部署的能力要求，不是通用契约。
+
+未迁移：已提交附件保持 `<id>/content-<name>` 与 `manifest.json` 布局，因为路径属于协议、客户端草稿与 SSH 暂存契约，文件名可含任意 Unicode；按内容寻址的插件包、Web 发布资源与远程浏览器运行时副本留给 Cloudflare 装配阶段。
+
+### 3.4 `SecretStore` 与 `KeyMaterial`
+
+`@opencraft/secret-storage`：
+
+- `SecretStore`：按名称 `get`／`set`／`delete`，无列举与批量读出；`stamp()` 是进程内随机密钥的 HMAC，只在密钥内容变化时变化，只能在同一进程内比较，不暴露凭据哈希。`documentSecretStore(stateDocuments)` 沿用 `credentials.json` 的 `{schemaVersion: 1, entries}` 格式。
+- `KeyMaterial`：安装级密钥只创建一次，并发创建者收敛到第一份。`fileKeyMaterial(directory)` 读取失败即关闭：不跟随符号链接，要求属主为当前用户、无组与其他用户权限位。
+
+已迁移：模型凭据（`ModelCredentialRepository` 包装 `SecretStore`，用户可见消息不变）、`session-capabilities.key`、`ssh/access.key`、文件服务 token，以及 Git vault key 的读取方。图片配置替换密钥仍用"新引用＋文档 CAS 切换＋回收"的设计，因为凭据与声明是两个存储。
+
+后续：Git vault key 写入方（同步构造器，"新库创建、旧库缺失须报错"）需改为异步工厂；`hub-network.json` 中的节点私钥移入 `KeyMaterial`；`credentials.json` 改用私有读取模式；只读运营配置（`readPrivateJson`）在 Cloudflare 上对应 Secrets binding。
 
 ### 3.5 不进入存储端口
 
-Unix socket、锁文件、`/proc` 读取、Git 与 `/workspace` 工作目录、Electron profile、Codex 原生 home 与 rollout、主机文件 RPC 与分块上传临时文件。它们是容器或本机内部资源，由执行环境 owner 管理。Codex、Pi、DSH 引擎自身的 SQLite 随引擎运行在 Node 容器内，不迁移到 SQL 端口。
+Unix socket、锁文件、`/proc` 读取、Git 与 `/workspace` 工作目录、Electron profile、Codex 原生 home 与 rollout、主机文件 RPC。它们是容器或本机内部资源，由执行环境 owner 管理。Codex、Pi、DSH 引擎自身的 SQLite 随引擎运行在 Node 容器内，不迁移到 SQL 端口。
 
 ## 4. 分阶段
 
 1. **SQL 端口与 Node 适配器（服务器核心数据）。** 新增 `@opencraft/sql` 与一致性测试；`@opencraft/sqlite-node` 提供 `nodeSqlDatabase()`；`ServerDatabaseSource`／`openServerRepository()` 改为交付 `SqlDatabase`；`access-control` 的领域类、函数与 `CommunicationExtension` 插件契约不再依赖 `DatabaseSync`；手写事务改为 `transaction()`；`Collaboration` 不再从连接推导文件路径。
-2. **`StateDocumentStore`（已实施首批使用方）、`BlobStore`、`SecretStore` 与 Node 适配器**，迁移第 3.2–3.4 节所列使用方。
+2. **`StateDocumentStore`、`BlobStore`、`SecretStore`／`KeyMaterial` 与 Node 适配器（已实施）**，迁移第 3.2–3.4 节所列使用方；剩余项见各节"未迁移"与"后续"。
 3. **沙盒 provider 泛化**：共享 broker 协议与帧解析、provider 注册、按 provider 分型的安装配置与凭据、可选持久工作区能力。见[执行沙盒](../execution/execution-sandbox.md)。
 4. **Gateway／Brain 按工作区拆分**：Codex Host 状态成为独立 owner；`CODEX_HOME`、Pi、DSH writer 按工作区实例化；去除对 `pid: host` 与共享 `$DATA` 的依赖。
 5. **Cloudflare 适配器**：DO SQL、DO 文档、R2、Secrets 与 `sandbox-cloudflare`，均通过同一套一致性测试。
