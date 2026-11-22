@@ -25,6 +25,8 @@
     "electron-winstaller@5.4.0": false
   },
   "scripts": {
+    "e2b:hands": "node scripts/e2b/hands-template.mjs",
+    "test:e2b:hands": "node --test tests/server/hands-e2b-template.test.mjs",
     "gate:performance": "node scripts/performance/run.mjs",
     "test:performance-gate": "node --test tests/tooling/performance-gate.test.mjs",
     "smoke:conversation-header-ownership": "tsx scripts/smoke/conversation/smoke-conversation-header-ownership.ts",

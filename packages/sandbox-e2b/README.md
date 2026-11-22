@@ -95,3 +95,16 @@ Existing temporary workspaces are not migrated. Do not clone a deployment identi
 into an independent installation or use user-supplied workspace IDs.
 
 The optional read-only inspector requires a schemaVersion 2 workspace/volume API supplied by that extension. It returns unknown on unsupported schemas, authorization loss, changed generations or unconfirmed volumes. An observation is not an allocation lock; creation must still honor the provider occupancy fence. Neither extension is enabled by default.
+
+
+## Hands image templates
+
+Use the [Hands template build entry](../../docs/hands-e2b-templates.md) to derive
+a template from an immutable released Hands image. The build and verification
+receipts keep image, template and build identity separate. These operator tools
+do not switch the installed catalogue or migrate running environments.
+
+Remote conversation bindings require the preinstalled Hands Codex launcher at
+`/opt/opencraft/runtime/codex/bin/codex`. Prepare and verify a compatible template
+before upgrading the runner. Missing tools fail startup without downloading,
+extracting shared archives or falling back to host execution.

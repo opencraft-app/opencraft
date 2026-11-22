@@ -12,7 +12,6 @@
     "./engine": "./src/engine.ts",
     "./hands-unix": "./src/hands-unix.ts",
     "./json-rpc-bridge": "./src/json-rpc-bridge.ts",
-    "./execution-runtime-bootstrap": "./src/execution-runtime-bootstrap.ts",
     "./workspace-execution-channel": "./src/workspace-execution-channel.ts"
   },
   "scripts": {
