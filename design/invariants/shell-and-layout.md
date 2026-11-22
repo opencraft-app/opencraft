@@ -745,6 +745,14 @@ raising individual z-index values or listening for sidebar progress themselves.
 Menus and dialogs retain their existing Workbench presentation root and input
 priority. This contract does not move a browser resource between DOM parents.
 
+Shared dropdown and context menus inherit the logical presentation activity of
+their owner even when portalled outside its DOM subtree. With an active owner,
+Radix keeps the usual dismissal and exit animation. When that owner becomes
+inactive, the menu leaves in the same commit, retires its open request and skips
+focus restoration from that presentation. Returning to a retained page restores
+its content, while opening another menu requires a fresh request. The same
+contract applies to Web, Electron, installed PWA and the Expo WebView.
+
 Acceptance uses the real AppShell, Composer and Browser components in
 `scripts/smoke/shell/smoke-workspace-presentation.ts --page-presentation`, alongside
 the existing mobile and desktop workspace consumers. Held movement, reversal,
