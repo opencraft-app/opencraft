@@ -29,7 +29,16 @@ export interface WorkspaceBotPort {
   workspaceBotReply(token: string, response: { result: unknown } | { error: true }): Promise<void>;
 }
 type ProviderOptions = Parameters<typeof createSandboxAssistantProvider>[0];
-type Installed = NonNullable<ReturnType<AssetWorkspaceOwnerContext["configurations"]["installedRuntime"]>>;
+/** Compiled owner composition, never an executable selected by RPC/data.
+ * Sources retain their own authority, credential readers and pool lifetime. */
+export interface WorkspaceBotSource {
+  catalog(): { revision: string; templates: { id: string; name: string }[] };
+  validate(revision: string, environment: Environment): void;
+  createProvider(
+    revision: string,
+    spawnLocal: NonNullable<ProviderOptions["spawnLocal"]>,
+  ): Promise<AssistantEnvironmentProvider & { close(): Promise<void> }>;
+}
 interface Entry {
   active: boolean;
   status: BotStatus;
@@ -64,7 +73,7 @@ export class WorkspaceBotOwner {
   private readonly timer: ReturnType<typeof setInterval>;
   constructor(
     private readonly context: AssetWorkspaceOwnerContext,
-    private readonly options: { backend?: ProviderOptions["createBackend"] } = {},
+    private readonly options: { backend?: ProviderOptions["createBackend"]; source?: WorkspaceBotSource } = {},
   ) {
     this.timer = setInterval(() => {
       for (const [token, job] of this.jobs)
@@ -80,6 +89,8 @@ export class WorkspaceBotOwner {
     return { installed, revision };
   }
   catalog() {
+    if (this.closed) throw unavailable();
+    if (this.options.source) return structuredClone(this.options.source.catalog());
     const { installed, revision } = this.installed();
     return {
       revision,
@@ -91,7 +102,18 @@ export class WorkspaceBotOwner {
     if (value.revision !== revision || !value.installed) throw unavailable();
     return value.installed;
   }
+  private assertRevision(revision: string) {
+    if (this.closed) throw unavailable();
+    if (this.options.source) {
+      if (this.options.source.catalog().revision !== revision) throw unavailable();
+    } else this.current(revision);
+  }
   validate(revision: string, environment: Environment) {
+    if (this.options.source) {
+      this.assertRevision(revision);
+      this.options.source.validate(revision, environment);
+      return;
+    }
     const installed = this.current(revision);
     if (
       !environment ||
@@ -115,10 +137,27 @@ export class WorkspaceBotOwner {
       this.callbacks.set(token, { entry, resolve, reject, timer });
     });
   }
-  private provider(revision: string, installed: Installed) {
+  private provider(revision: string) {
     let provider = this.providers.get(revision);
     if (provider) return provider;
     if (this.providers.size >= 8) throw unavailable();
+    const spawnLocal: NonNullable<ProviderOptions["spawnLocal"]> = (raw) => {
+      const entry = this.entries.get(raw.directory);
+      if (!entry?.active || !raw.executionEnvironment || raw.executionEnvironment.id !== "execution.environment")
+        throw unavailable();
+      entry.run = raw.request;
+      entry.status = {
+        state: "ready",
+        descriptor: { ...structuredClone(raw.executionEnvironment), id: "execution.environment" },
+      };
+      return { ready: Promise.resolve(null), failed: () => false, close: async () => {} };
+    };
+    if (this.options.source) {
+      provider = this.options.source.createProvider(revision, spawnLocal);
+      this.providers.set(revision, provider);
+      return provider;
+    }
+    const installed = this.current(revision);
     provider = createSandboxAssistantProvider({
       backendId: "e2b",
       templates: installed.records.map((r) => ({
@@ -177,17 +216,7 @@ export class WorkspaceBotOwner {
       },
       // The real brain is spawned in Main with its original options. Never send
       // profile/model credentials, local paths, or arbitrary callbacks to Worker.
-      spawnLocal: (raw) => {
-        const entry = this.entries.get(raw.directory);
-        if (!entry?.active || !raw.executionEnvironment || raw.executionEnvironment.id !== "execution.environment")
-          throw unavailable();
-        entry.run = raw.request;
-        entry.status = {
-          state: "ready",
-          descriptor: { ...structuredClone(raw.executionEnvironment), id: "execution.environment" },
-        };
-        return { ready: Promise.resolve(null), failed: () => false, close: async () => {} };
-      },
+      spawnLocal,
     });
     this.providers.set(revision, provider);
     return provider;
@@ -195,22 +224,21 @@ export class WorkspaceBotOwner {
   open(revision: string, environment: Environment) {
     this.validate(revision, environment);
     if (this.entries.size >= 64) throw unavailable();
-    const installed = this.current(revision),
-      token = nonce(),
+    const token = nonce(),
       entry: Entry = { active: true, status: { state: "starting" }, starting: undefined! };
     this.entries.set(token, entry);
     entry.starting = (async () => {
       try {
-        const provider = await this.provider(revision, installed);
+        const provider = await this.provider(revision);
         if (!entry.active) throw unavailable();
         entry.handle = await provider.spawn(environment, {
           directory: token,
           profileOptions: {},
           request: async (method) => {
             if (method !== "opencraft/personal-assistant/authorize") throw unavailable();
-            this.current(revision);
+            this.assertRevision(revision);
             const result = await this.authorize(token);
-            this.current(revision);
+            this.assertRevision(revision);
             return result;
           },
         });
