@@ -192,7 +192,7 @@ P4-1（`proxy` 默认、全部 provider 经代理）是 AC 的前提，必须在
 ## 6. 待决问题
 
 1. **Client 连接终止点**：已决定 B（每个 Client 实例一个 Client DO，跨重连存续；协作状态由共享 owner 持有）。PoC 验收：两个客户端同时观看同一 Thread，事件扇出正确、延迟可接受，任一方断线后 resume 不丢事件、不重复；hibernation 唤醒后 resume 与访问会话的持久化成本。
-2. **租户模型**：一个 Cloudflare 部署＝一个 installation（一个 IC、一个 AC，与 Node 自托管语义一致，建议），还是一个 Worker 承载多个 installation（IC／AC 按 installation 命名）。后者需要 tenant 作用域在每个入口显式校验，现有代码未实现多租户准入（execution-ownership.md 已注明）。
+2. **租户模型**：已决定（2026-11-22）：一个 Cloudflare 部署＝一个 installation（一个 IC、一个 AC），与 Node 自托管语义一致；一个 Worker 承载多个 installation 需要多租户准入，不在当前范围。
 3. **IM／webhook**：WeCom 是出站长连接（`plugins/wecom/src/server.ts:16`），在 DO 上会持续占用运行时长；Slack 与通用 IM 需核实是 webhook 还是长连接。选项：Cloudflare 上只支持 webhook 型渠道；或长连接渠道留在 Node；或接受 DO 常驻成本。
 4. **有意保持 Node-only 的产品范围**：确认 SSH Servers、本机桌面、relay-connect、匿名部署、观测 ingress、可用性通知在 Cloudflare 上不提供；以及 DSH／Pi／ACP 是否在后续里程碑进入工作区容器。
 5. **个人助理**：其 `codex` 子进程放进专属工作区容器，还是 Cloudflare 上不提供。
