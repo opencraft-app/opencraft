@@ -27,7 +27,10 @@ export async function handOffLegacyQueue(
   const result = { moved: 0, uncertain: 0 };
   const present = await Promise.all(
     ["opencraft-host-state.sqlite", "codex-host-queue.sqlite"].map((name) =>
-      access(join(directory, name)).then(() => true, () => false),
+      access(join(directory, name)).then(
+        () => true,
+        () => false,
+      ),
     ),
   );
   if (!present.includes(true)) return result;

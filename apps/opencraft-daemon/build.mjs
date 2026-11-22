@@ -7,12 +7,15 @@ import { build } from 'esbuild';
 import { daemonMainBundle } from './main-bundle.mjs';
 import { buildTerminalOwnerRuntime } from '../../scripts/packaging/package-terminal-runtime.mjs';
 import { buildOwnerWorkers } from '../../scripts/packaging/owner-workers.mjs';
+import { buildAssetsRuntime } from '../../scripts/packaging/package-assets-runtime.mjs';
 await buildTranscriptCacheRuntime(fileURLToPath(new URL('./dist/', import.meta.url)));
 await buildDshRoutingRuntime(fileURLToPath(new URL('./dist/', import.meta.url)));
 await buildServerSpacesRuntime(fileURLToPath(new URL('./dist/', import.meta.url)));
 await buildConnectedAgentHistoryRuntime(fileURLToPath(new URL('./dist/', import.meta.url)));
 await buildTerminalOwnerRuntime(fileURLToPath(new URL('./dist/', import.meta.url)));
 await buildOwnerWorkers(fileURLToPath(new URL('./dist/', import.meta.url)), { target: 'node26' });
+// The desktop account service the daemon hosts serves Assets; its vault Worker lives beside the daemon.
+await buildAssetsRuntime(fileURLToPath(new URL('./dist/', import.meta.url)));
 await build({entryPoints:['src/execution-fault.worker.ts'],outfile:'dist/execution-fault-worker.mjs',bundle:true,platform:'node',format:'esm',target:'node26'});
 await build(daemonMainBundle);
 

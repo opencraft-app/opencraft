@@ -3,7 +3,7 @@ import test from "node:test";
 import { createServer } from "node:http";
 import { mkdtemp, mkdir, readFile, readlink, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createManagedWebServer } from "../../scripts/web-deployment/server.mjs";
 import { createExecutionDeployment } from "../../scripts/server-deployment/execution.mjs";

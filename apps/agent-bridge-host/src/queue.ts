@@ -54,12 +54,16 @@ export interface HostQueuePort {
   dispatchable(route: string): Promise<boolean>;
 }
 
-const object = (value: unknown): Record<string, any> =>
-  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, any>) : {};
+type HistoryTurn = { id?: string; status?: unknown; items?: unknown };
+type HistoryItem = { type?: unknown; clientId?: unknown };
+const object = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+const turns = (thread: Record<string, unknown>): HistoryTurn[] =>
+  Array.isArray(thread.turns) ? (thread.turns as HistoryTurn[]) : [];
 const PAUSED = ["delivery-rejected"];
-const items = (thread: Record<string, any>) =>
-  (Array.isArray(thread.turns) ? thread.turns : []).flatMap((turn: any) =>
-    (Array.isArray(turn?.items) ? turn.items : []).map((item: any) => ({ turnId: turn.id, item })),
+const items = (thread: Record<string, unknown>) =>
+  turns(thread).flatMap((turn) =>
+    (Array.isArray(turn?.items) ? (turn.items as HistoryItem[]) : []).map((item) => ({ turnId: turn.id, item })),
   );
 
 /**
@@ -101,7 +105,7 @@ export class HostQueue {
     const [serverId, threadId] = JSON.parse(route) as [string, string];
     return [serverId, threadId];
   }
-  private async thread(route: string): Promise<Record<string, any>> {
+  private async thread(route: string): Promise<Record<string, unknown>> {
     const [serverId, threadId] = this.parts(route);
     return object(object(await this.port.history(serverId, threadId, { view: "thread", includeTurns: true })).thread);
   }
@@ -118,7 +122,7 @@ export class HostQueue {
       {
         historyHasInput: (clientId, target) => this.historyHasInput(route, clientId, target),
         isIdle: () => this.storage.call("routeIdle", { route }),
-        findTurn: async (target) => (await this.thread(route)).turns?.find((turn: any) => turn?.id === target),
+        findTurn: async (target) => turns(await this.thread(route)).find((turn) => turn?.id === target),
         changed: () => this.changed(route),
       },
       receiptTurnIds,
@@ -156,7 +160,7 @@ export class HostQueue {
         );
         const response = object(receipt.response);
         if (receipt.state !== "accepted")
-          throw Object.assign(Error(object(response.error).message ?? "Queued delivery was not accepted"), {
+          throw Object.assign(Error(String(object(response.error).message ?? "Queued delivery was not accepted")), {
             settlement: receipt.state,
           });
         const result = object(response.result),

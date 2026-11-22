@@ -35,7 +35,7 @@ export async function startDesktopAccountServer(
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
   }
-  const server = createServer(async (request, response) => {
+  const respond = async (request: IncomingMessage, response: ServerResponse) => {
     try {
       if (await handle(request, response)) return;
       response.writeHead(404, { "content-type": "application/json" });
@@ -47,7 +47,8 @@ export async function startDesktopAccountServer(
         response.end();
       } else response.destroy();
     }
-  });
+  };
+  const server = createServer((request, response) => void respond(request, response));
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(endpoint, () => {

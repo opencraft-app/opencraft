@@ -37,7 +37,10 @@ async function tcpListeners(proc: string): Promise<Set<string>> {
  * macOS spawns with POSIX_SPAWN_CLOEXEC_DEFAULT and inherits nothing extra.
  * Returns the descriptors it closed.
  */
-export async function closeInheritedDescriptors(platform: NodeJS.Platform = process.platform, proc = "/proc"): Promise<number[]> {
+export async function closeInheritedDescriptors(
+  platform: NodeJS.Platform = process.platform,
+  proc = "/proc",
+): Promise<number[]> {
   if (platform !== "linux") return [];
   let entries: string[];
   try {

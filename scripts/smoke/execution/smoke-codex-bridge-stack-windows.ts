@@ -206,7 +206,13 @@ try {
   await request("turn/start", {
     threadId,
     clientUserMessageId: "win-exec",
-    input: [{ type: "text", text: `CALL-TOOL exec_command ${JSON.stringify({ cmd: "echo WIN-EXEC-OK" })}`, text_elements: [] }],
+    input: [
+      {
+        type: "text",
+        text: `CALL-TOOL exec_command ${JSON.stringify({ cmd: "echo WIN-EXEC-OK" })}`,
+        text_elements: [],
+      },
+    ],
   });
   for (let attempt = 0; ; attempt++) {
     const read: any = await request("thread/read", { threadId, includeTurns: true });
