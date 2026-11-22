@@ -11,6 +11,12 @@ export type { CreationReceipt, CreationReceiptMethods } from "./conversation-cre
 export interface ServerCoreStorage<T = object> extends ServerDatabase {
   /** Async ports of the domain services that run in the owner Worker. */
   readonly call: OwnerCalls<T & CreationReceiptMethods>;
+  /**
+   * Reports, once, that the owner Worker was lost (crash, exit or a fatal
+   * error). Every pending and later call already rejects; projections built
+   * from owner replies use this to fail closed before their next call.
+   */
+  onUnavailable(listener: (error: Error) => void): () => void;
 }
 
 /**
@@ -32,6 +38,8 @@ export async function openServerCoreOwner<T = object>(
     data?: Record<string, unknown>;
   } = {},
 ): Promise<ServerCoreStorage<T>> {
+  const unavailable = new Set<(error: Error) => void>();
+  let lost: Error | undefined;
   const { owner, ready } = await WorkerOwner.open<
     T & CreationReceiptMethods,
     { outcome: DatabaseOutcome; contract: ServerDataContract }
@@ -39,6 +47,16 @@ export async function openServerCoreOwner<T = object>(
     name: "Server storage",
     workerData: { directory, composition: installedServerMigrationComposition(), data },
     errors: [SqliteLifecycleError],
+    onFailure: (error) => {
+      lost = error;
+      for (const listener of [...unavailable]) {
+        try {
+          listener(error);
+        } catch {
+          // A listener only revokes its own projection; others still run.
+        }
+      }
+    },
   });
   let connection: ReturnType<typeof borrowServerDatabase>;
   try {
@@ -56,6 +74,14 @@ export async function openServerCoreOwner<T = object>(
   let closing: Promise<void> | undefined;
   return {
     call: owner.call,
+    onUnavailable: (listener) => {
+      if (lost) {
+        listener(lost);
+        return () => {};
+      }
+      unavailable.add(listener);
+      return () => unavailable.delete(listener);
+    },
     database: connection.database,
     location: connection.location,
     outcome: ready.outcome,

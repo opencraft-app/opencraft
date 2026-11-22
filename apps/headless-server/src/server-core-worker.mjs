@@ -8,12 +8,25 @@ import { ModelGatewayStore } from "@opencraft/account-pool-host";
 import { projectModelCatalog } from "@opencraft/model-usage-policy/transport";
 import { CapabilityBindings } from "@opencraft/session-capabilities/bindings";
 import { IdentityWriteOwner, identityWriteMethods } from "@opencraft/access-control/identity-writes";
+import { orchestrationRuntimeOwnerMethods } from "@opencraft/access-control/orchestration-runtime-domain";
+import { serverSpacesOwnerMethods } from "@opencraft/access-control/server-spaces-domain";
+import { installCommunicationExtension } from "@opencraft/access-control/communication-extension";
+import { workerData } from "node:worker_threads";
+
+// The network thread's communication extension, as the standalone orchestration
+// Worker installed it. Trusted parent-owned data; no request selects the module.
+const extensionModule = workerData?.data?.communicationExtensionModule;
+if (typeof extensionModule === "string") installCommunicationExtension((await import(extensionModule)).communicationExtension);
 
 serveServerCoreOwner((owner, data) => {
   const notes = new ThreadNoteStore(owner);
   const capabilityBindings = new CapabilityBindings(owner);
   // The commit fence lets the network thread recheck Actor administration under this writer lock.
   const identity = new IdentityWriteOwner(owner, data.identityFence);
+  // Orchestration runtime, communication and automation ledgers, and the Server
+  // space ledger: one writer on this connection, in FIFO with every domain here.
+  const orchestration = orchestrationRuntimeOwnerMethods(owner);
+  const spaces = serverSpacesOwnerMethods(owner);
   const readConversationOwner = owner.database.prepare(
     "SELECT server_id AS serverId, owner_actor_id AS ownerActorId FROM opencraft_thread_relations WHERE thread_id=?",
   );
@@ -21,6 +34,8 @@ serveServerCoreOwner((owner, data) => {
     methods: {
       // Login sessions, identity bindings and Actor administration (IdentityWrites).
       ...identityWriteMethods(identity),
+      ...orchestration.methods,
+      ...spaces.methods,
       /** Merges a shared note update; access was checked on the network thread. */
       exchangeThreadNote: (serverId, threadId, update, vector) => notes.exchange(serverId, threadId, update, vector),
       /** Every capability binding, loaded once into the network thread's projection. */
@@ -46,14 +61,18 @@ serveServerCoreOwner((owner, data) => {
         }
       },
     },
-    close: () => {
+    close: async () => {
       try {
-        identity.close();
+        await orchestration.close();
       } finally {
         try {
-          capabilityBindings.close();
+          identity.close();
         } finally {
-          notes.close();
+          try {
+            capabilityBindings.close();
+          } finally {
+            notes.close();
+          }
         }
       }
     },

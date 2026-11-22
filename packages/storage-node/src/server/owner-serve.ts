@@ -8,7 +8,7 @@ export interface ServerCoreDomains {
   /** Async ports the network thread calls; each runs in this Worker in FIFO order. */
   readonly methods: Record<string, (...args: never[]) => unknown>;
   /** Releases domain resources before the owner connection and writer lock. */
-  close?(): void;
+  close?(): void | Promise<void>;
 }
 
 /**
@@ -48,7 +48,7 @@ export function serveServerCoreOwner(
         methods: { ...served.methods, ...creation },
         close: async () => {
           try {
-            served.close?.();
+            await served.close?.();
           } finally {
             await owner.close();
           }

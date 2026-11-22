@@ -21,8 +21,8 @@
 | 服务 | 持有 | Node 依赖 | 位置 | 目标 | 理由 |
 | --- | --- | --- | --- | --- | --- |
 | 服务器核心 owner `openServerCoreOwner` | `opencraft-server.sqlite` 单写者 Worker、identity commit fence | `worker_threads`（`@opencraft/worker-owner`）、`node:sqlite` | HA:276-277 | IC | 已经过 `SqlDatabase` 端口；DO SQL 适配器已在 workerd 通过一致性测试（storage-ports §6） |
-| `OrchestrationRuntimeWorker` | **同一个** `opencraft-server.sqlite` 的第二条连接（编排运行时、自动化账本） | `worker_threads`（`orchestration-runtime-store.ts:31`） | HA:278 | IC | 必须与核心 owner 合并为单一连接（cloudflare-deployment §2 已要求） |
-| `ServerSpacesRuntime` | **同一个** sqlite 的第三条连接（Server space 账本） | `worker_threads`（`server-spaces-runtime.ts:4`） | HA:635-636 | IC | 同上 |
+| `OrchestrationRuntimeWorker` | 编排运行时、通信与自动化账本的异步门面；Headless 中在核心 owner 连接上执行（`orchestrationRuntimeOwnerMethods`），不再另开连接 | 无（门面）；独立 `worker_threads` 模式只留给测试与无 owner 的组合 | HA:278 | IC | 已与核心 owner 合并为单一写入者（G2） |
+| `ServerSpacesRuntime` | Server space 账本的异步门面与投影；Headless 中在核心 owner 连接上执行（`serverSpacesOwnerMethods`） | 无（门面）；本机 Host 的 `directory` 模式仍是独立 Worker | HA:635-636 | IC | 同上 |
 | `ActorStore`／`MembershipStore`／`InstanceAccess`／`ActorAccess`／`IdentityWrites` | 主体、成员、准入投影；写入经核心 owner | HTTP 处理签名为 `node:http` 类型（`actor-access.ts:1`、`access-control/src/index.ts:9`） | HA:476、481、535、589-608 | IC（状态）＋EW（无状态鉴权读取见 §3.2） | 部署级唯一写者；读取投影可在 IC 内存 |
 | `HumanAuth`＋本地账号＋OIDC | 登录会话、身份绑定、OIDC discovery 与回调 | `node:http` 类型（`human-auth.ts:2`）；本地账号 `scrypt`（`plugins/local-account/src/server.ts:1、10`，workerd 兼容待核实）；setup token 私有文件 | HA:515-533；登录页 `human-login-page.ts` | IC（会话与账号写入）＋EW（页面与 OIDC 重定向） | 登录态是 IC 数据；外部 HTTP 往返适合 EW |
 | `ThreadAccessStore`／`ThreadAccessSession`／`ServerSpacesSession` | Thread 访问授权与每连接投影 | 无（经核心 owner） | HA:637-685 | IC（授权）；会话对象随 Client 连接（§3.1） | 授权是部署级；会话是每连接的 |
@@ -199,7 +199,7 @@
 | 步 | 内容 | Node 价值 | 依赖 |
 | --- | --- | --- | --- |
 | G1 | 把 `HA` 按 §4.1 拆成装配模块，行为与关闭顺序不变 | 组合根可测、可读；嵌入方（Docker gateway）复用模块 | 无 |
-| G2 | 合并 `opencraft-server.sqlite` 的三条连接（HA:277、278、635）到核心 owner | 消除同库多写入者；减少主线程同步 IO 登记 | G1 |
+| G2 | 合并 `opencraft-server.sqlite` 的编排与空间连接到核心 owner（已实施，见 [server-core-owner §4](../server/server-core-owner.md#4-分阶段实施)）；网络线程过渡连接随 server-core-owner 第 2–6 阶段移除 | 消除同库多 Worker 写入者；减少主线程同步 IO 登记 | G1 |
 | G3 | 剩余直接 `node:sqlite` 的部署级库（模型策略、MCP apps、push、connectors）迁到 `SqlDatabase` 端口 | 统一迁移与 outcome 报告 | 存储端口第 1–2 阶段（已实施） |
 | G4 | HTTP 处理改为 `Request`→`Response` 端口，Node 包装 | 服务单测不需要真实监听 | G1 |
 | G5 | 定时器端口；资源对账、心跳、观测改为 owner 定时器 | 关闭排空与时钟回拨可测 | G1；与 P4-3 同一抽象 |

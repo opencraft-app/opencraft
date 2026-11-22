@@ -4,9 +4,12 @@ import { DatabaseSync } from 'node:sqlite';
 import { nodeSqlDatabase } from '@opencraft/sqlite-node';
 import { openServerDatabase,installServerMigrationComposition } from '@opencraft/storage-node/server';
 import { ActorStore } from './actors.js';
-import { ServerSpacesLedger } from './server-spaces-ledger.js';
+import { serverSpacesDomain } from './server-spaces-domain.js';
 import type { ActorContext } from '@opencraft/identity-core/actors';
 
+// Standalone Server space storage: the local Host owns its own installation
+// (`directory`), and tests may borrow a migrated file (`path`). Headless serves
+// the same domain on its Server core owner connection instead.
 if (!parentPort) throw new Error('Server space storage needs a Worker');
 const port = parentPort;
 // Trusted parent-owned data only; no request/module path selects migration code.
@@ -16,6 +19,7 @@ if(!owner&&!statSync(workerData.path).isFile())throw new Error('Managed Server d
 const connection = owner ? null : new DatabaseSync(workerData.path);
 const db = owner?.database ?? nodeSqlDatabase(connection!);
 if(!owner&&db.prepare('PRAGMA journal_mode').get()?.journal_mode!=='wal')throw new Error('Server storage requires managed WAL');
+// A borrowed file has other writers; wait for their locks inside this Worker.
 db.exec('PRAGMA busy_timeout=5000');
 let localContext: ActorContext | undefined;
 let actors: ActorStore | undefined;
@@ -25,34 +29,22 @@ if (owner) {
   localContext = actors.resolveHuman({provider:'desktop',subject:'development-owner',displayName:'Local user',expiresAt:Number.MAX_SAFE_INTEGER}) ?? undefined;
   if (!localContext) throw new Error('Local human could not be established');
 }
-const ledger = new ServerSpacesLedger(db);
-if (localContext) ledger.bootstrap(localContext.actorId);
-else if (workerData.ownerActorId) ledger.bootstrap(workerData.ownerActorId,workerData.members ?? []);
-else if(workerData.bootstrapInstance){
-  const members=db.prepare("SELECT m.actor_id,m.role FROM actor_members m JOIN actors a ON a.id=m.actor_id WHERE m.enabled=1 AND a.enabled=1 AND a.kind='human' ORDER BY m.actor_id").all();
-  const administrator=members.find(member=>member.role==='admin');
-  if(administrator)ledger.bootstrap(String(administrator.actor_id),members.map(member=>String(member.actor_id)));
-}
+const domain = serverSpacesDomain(db, workerData, localContext);
 let tail = Promise.resolve();
 port.on('message', request => {
   tail = tail.then(async () => {
-    try {
-      if (request.method === 'close') {
+    if (request.method === 'close') {
+      try {
         actors?.close();
         if (owner) await owner.close(); else connection!.close();
-        port.postMessage({id:request.id,result:null}); port.close(); return;
+        port.postMessage({id:request.id,result:null}); port.close();
+      } catch (error) {
+        const e=error as Error & {rpcCode?:number;reason?:string};
+        port.postMessage({id:request.id,error:{rpcCode:e.rpcCode ?? -32004,reason:e.reason ?? 'unavailable',message:'Server action unavailable'}});
       }
-      const context = localContext ?? request.context;
-      const execute = () => request.method === 'inherit' ? ledger.inherit(request.parent.serverId,request.parent.threadId,request.child.serverId,request.child.threadId) : request.method === 'bootstrap' ? ledger.bootstrap(request.ownerActorId,request.members ?? []) : request.method==='legacy' ? ledger.adoptLegacy(context,request.engineServerId,request.threads) : request.method === 'assign'
-        ? ledger.assign(context,request.engineServerId,request.threadId,request.spaceId)
-        : ledger.command(context,request.command);
-      const mutated=['assign','legacy','bootstrap','inherit'].includes(request.method)||['create','invite','join','remove','contact','addBot'].includes(request.command?.action);
-      const result=mutated?db.transaction(execute):execute();
-      port.postMessage({id:request.id,result,...(mutated&&(request.method!=='legacy'||result===true)?{projection:ledger.projection()}:{})});
-    } catch (error) {
-      const e=error as Error & {rpcCode?:number;reason?:string};
-      port.postMessage({id:request.id,error:{rpcCode:e.rpcCode ?? -32004,reason:e.reason ?? 'unavailable',message:'Server action unavailable'}});
+      return;
     }
+    port.postMessage({id:request.id,...domain.execute(request)});
   });
 });
-port.postMessage({type:'ready',projection:ledger.projection(),localContext,outcome:owner?.outcome??null});
+port.postMessage({type:'ready',projection:domain.projection(),localContext,outcome:owner?.outcome??null});

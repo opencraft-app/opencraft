@@ -1,6 +1,6 @@
 # 服务器核心数据离开网络主线程（设计）
 
-状态：第 1 阶段已实施，其余为设计。以源码、测试与 `config/main-thread-sync-io.json` 的实际计数为准；该登记同时记录主线程可达代码中的 SQL 语句数（`SQL statement`），新增 SQL 会被守卫拦截，各阶段迁移应使其减少。
+状态：第 1 阶段已实施；编排运行时与 Server space 已并入 owner Worker（见第 4 节）；其余为设计。以源码、测试与 `config/main-thread-sync-io.json` 的实际计数为准；该登记同时记录主线程可达代码中的 SQL 语句数（`SQL statement`），新增 SQL 会被守卫拦截，各阶段迁移应使其减少。
 
 ## 1. 背景
 
@@ -21,7 +21,7 @@
   | `ThreadNoteStore`、`CapabilityBindings`    | —                                            | 线程备注、能力绑定                                           |
   | 沟通扩展、频道、个人助手台账               | `communication-extension.ts` 等              | 由 Collaboration 内部调用                                    |
 
-- 同一个 `opencraft-server.sqlite` 还有两个 Worker 打开的**第二、第三条 WAL 连接**：`OrchestrationRuntimeWorker` 与 `server-spaces.worker`。
+- 同一个 `opencraft-server.sqlite` 曾由另外两个 Worker 打开**第二、第三条 WAL 连接**：`OrchestrationRuntimeWorker` 与 `server-spaces.worker`（`Collaboration` 还会按文件再起一个通信 Worker）。这些领域现已在 owner Worker 的连接上执行（第 4 节）。
 - owner 连接设置了 `busy_timeout=5000`。任一 Worker 写事务持锁时，主线程上的同步 SQL 可能等待最长 5 秒，期间所有连接、定时器与消息分发停止。这是本设计要消除的具体风险，不只是计数。
 
 ### 可复用的现有机制
@@ -55,7 +55,7 @@
 - 在 Worker 内执行 `openServerDatabase`：写锁、迁移、导入、`openManagedDatabase` outcome 全部在 Worker 内完成，主线程只收到 outcome 与契约摘要（用于 `/__opencraft_health`）。
 - 领域服务（第 1 节表格）实例化在 Worker 内，继续使用现有同步实现；它们之间仍共享同一 owner 连接与 `AuthorityChanges` 分组，事务边界不变。
 - 主线程拿到的是**端口**：每个领域一个异步门面（`actors`、`membership`、`threadAccess`、`accounts`、`collaboration`……），方法签名与现有同步方法一一对应，只是写入与非热路径读取返回 Promise。
-- `OrchestrationRuntimeWorker`、`server-spaces.worker` 暂保留各自连接；它们的提交通过第 3.3 节的变更通知进入 owner。
+- 编排运行时（含通信、自动化账本）与 Server space 账本在 owner Worker 内、owner 连接上执行（已实施，见第 4 节），与其他领域同一 FIFO；不再有其他 Worker 写同一个库。
 
 ### 3.2 读：投影
 
@@ -79,7 +79,7 @@
 - 写入经端口进入 Worker，按 FIFO 执行，事务、CAS、唯一约束都在 Worker 内照旧。
 - Worker 在同一回复中返回：领域结果 + 受影响投影的新快照 + 新 revision。主线程**先安装投影、再 resolve 调用**，保证"写后读"在同一线程立即可见。
 - `AuthorityChanges` 的观察者（如撤销已建立的会话、关闭远程 socket）改为在主线程订阅：owner 回复或推送中携带"权限已变化"信号，主线程在安装投影后触发观察者。观察者仍只能撤销，不能授予。
-- 其他连接的提交（orchestration、server-spaces）：这些 Worker 已经通过现有消息回到主线程；主线程把"可能影响权限"的提交转发给 owner，owner 重新加载相应投影并发布。在 owner 确认之前，主线程不扩大授权（只可能因旧投影多拒绝，不会多放行，因为这两条连接不授予主体或成员资格——实施时需逐条核对）。
+- 编排与 Server space 的提交已在 owner 内完成，不再需要跨连接转发。Server space 投影随 owner 回复一并返回，门面先安装投影、通知订阅者，再 resolve 调用；owner 丢失时门面立即把投影标为不可用（`ServerCoreStorage.onUnavailable`），`allows` 一律拒绝。
 
 ### 3.4 失败语义
 
@@ -100,6 +100,10 @@
 6. **收尾**：移除主线程过渡连接；`access-control`、`storage-node`、`sqlite-node` 从 Headless 主线程可达图消失，守卫登记对应计数归零。
 
 **领域迁入方式（已实施，以共享备注为首例）**：存储包提供 Worker 侧的 `serveServerCoreOwner(domains)`，在 owner 连接上构造领域服务并按方法名暴露；Headless 的 owner 入口是 `apps/headless-server/src/server-core-worker.mjs`，经 `openServerCoreOwner(dir, { entry })` 启动，网络线程通过 `storage.call.<方法>` 异步调用。访问判定仍在网络线程完成，Worker 只执行已授权的读写。`ThreadNoteStore`（Yjs 合并与 SQL）是第一个迁入的领域。调用方需要同步读取的领域改用投影：能力绑定（`CapabilityBindingProjection`）启动时从 Worker 读入全部行，读走内存；写入先按与表相同的唯一约束在内存校验并应用，再由 Worker 按序提交。存储因此总是这段写入历史的某个前缀，崩溃丢失的写入等同于进程更早停止；任一提交失败后投影整体失效，凭据一律拒绝。没有事务耦合的领域都可按此方式单独迁入，打包时入口登记在 `scripts/packaging/owner-workers.mjs`。
+
+**编排运行时与 Server space（已实施）**：Headless 的 `opencraft-server.sqlite` 不再由多个 Worker 打开。`orchestrationRuntimeOwnerMethods`（`@opencraft/access-control/orchestration-runtime-domain`）与 `serverSpacesOwnerMethods`（`server-spaces-domain`）在 owner Worker 的连接上注册，Headless 入口 `server-core-worker.mjs` 把它们与备注、身份写入等领域放进同一 FIFO。网络线程的 API 不变：`new OrchestrationRuntimeWorker(serverStorage)` 与 `new ServerSpacesRuntime({owner: serverStorage, ...})` 是 owner 调用之上的异步门面，`Collaboration`、`ThreadOrchestrationBroker`、项目自动化与 `ServerSpacesSession` 照旧调用；`Collaboration` 收到这样的运行时存储时，通信命令也走它，不再按文件另起通信 Worker。每个命令仍是 owner 内的一个事务（空间变更在 `transaction()` 内、CAS 与唯一约束照旧），回复在提交之后才到达网络线程；错误码不变（编排失败重建为 `AutomationError`，空间失败为带 `rpcCode`／`reason` 的 `Server action unavailable`）。owner 连接只等待网络线程过渡连接的锁（`busy_timeout=5000`，在 Worker 内），编排 Worker 的 `busy_timeout=0`＋异步重试与空间 Worker 的借用连接设置在 Headless 中随之退出。关闭顺序：门面先封口并排空已发出的调用，再由 `serverStorage.close()` 排空 owner 队列、关闭领域、释放写锁。按文件路径构造的独立 Worker（`OrchestrationRuntimeWorker(path)`、`ServerSpacesRuntime({path})`）只留给测试、smoke 与无 owner 的组合，它们面对多个写入者，所以保留各自的锁等待；本机 Host 的 `ServerSpacesRuntime({directory})` 拥有自己的协作库，不在此列。
+
+**网络线程过渡连接（仍保留）**：`openServerCoreOwner` 返回的 `database` 仍是网络线程上的读写 WAL 连接，因为下列领域尚在网络线程并直接执行 SQL：`ActorStore`（含权限投影的重建）、`MembershipStore`／`InstanceAccess`、`HumanAccounts`／`HumanAccountManagement` 的读取与尚未迁移的写入（部署操作员引导、账号初始化、邀请与本地账号创建）、`ThreadAccessStore`（`permissionOwner` 即此连接）、网络线程上的 `Collaboration` 实例（请求台账、收件箱读取与执行状态推进）。这些属于第 2–5 阶段；在它们迁入 owner 之前不能移除该连接（第 6 阶段）。
 
 **身份写入（已实施）**：Headless 的登录会话、身份绑定与 Actor 管理写入（`IdentityWrites`，`@opencraft/access-control/identity-writes`）在所有者 Worker 的连接上提交；网络线程的读取仍走权限投影与 WAL 读，WAL 下读不等待写锁。每个写入在提交后由网络线程重新发布同连接上的全部权限投影并通知观察者，因此 await 之后的读取可见写入。需要本进程注册状态的校验（本地账号版本、资源授权方）先在网络线程完成，Worker 只执行已校验的写入；Actor 管理写入的授权（调用方当前的管理权限）可能在 Worker 排队期间被撤销或过期，因此 Worker 先取得写锁，再经提交栅栏（`commit-fence`，SharedArrayBuffer + Atomics）请网络线程用原请求重新判定，获准后才写入并提交，拒绝或超时即回滚；写锁期间其他连接无法提交权限变化，排在前面的写入的回复也先于栅栏请求到达网络线程。网络线程注册了 Worker 无法执行的注册钩子（预留解析、注册监听）时，登录仍在本线程写入，语义不变。成员管理写入（实例成员接口与账号管理的 `setMember`）同样经提交栅栏在 Worker 提交。认证时的旧名迁移（`bindLegacyAlias`）只在确有启用的旧名时才开写事务，不再为每个请求取写锁。尚在网络线程的写入：部署操作员引导（启动时）、账号初始化、邀请与本地账号创建（低频流程）。
 
@@ -122,7 +126,7 @@
 ## 6. 风险与开放问题
 
 - **投影体量**：大型部署的主体/成员/线程授权行数需要实测，决定投影上限与退回策略。
-- **跨连接提交的权限影响**：需逐条核对 orchestration 与 server-spaces 的写入是否会扩大授权；如会，则这些写入必须经 owner 确认后才生效，或并入 owner Worker。
+- **跨连接提交的权限影响**：已通过把 orchestration 与 server-spaces 并入 owner Worker 消除；剩余的第二个写入者只是网络线程过渡连接（第 6 阶段移除）。
 - **下游契约**：`access-control` 若被下游产品直接以同步方式使用，需要在相应阶段协调。
 - **`execution-environment`**：其执行身份查询读取引擎宿主状态库（`busy_timeout=1000`），与本设计无关，随引擎侧改造另行处理。
 

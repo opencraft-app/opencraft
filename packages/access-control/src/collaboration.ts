@@ -130,9 +130,8 @@ export class Collaboration {
   async personalAssistantAssignments(after = '') {
     if(this.#closed)throw Error('Personal assistant Host closed');
     if(!this.managedStorage)return new PersonalAssistants(this,this.database).assignments(after);
-    const path=this.#storageLocation;if(!path)throw Error('communication_storage_unavailable');
-    this.communicationStorage ??= new OrchestrationRuntimeWorker(path);
-    return this.communicationStorage.personalAssistantAssignments(after);
+    const storage=this.#communicationStorage();if(!storage)throw Error('communication_storage_unavailable');
+    return storage.personalAssistantAssignments(after);
   }
   #closed = false;
   #creations = new Set<Promise<unknown>>();
@@ -1329,10 +1328,9 @@ export class Collaboration {
     const command: CommunicationCommand = { context, method, params, ...(method.startsWith('assistant-thread/')&&this.hasExecution?{executionScope:{serverId:this.execution.serverId!,hostId:this.execution.hostForServer?.(this.execution.serverId!)??this.execution.hostId}}:{}) };
     let packet;
     if (this.managedStorage) {
-      const path = this.#storageLocation;
-      if (!path) throw new CollaborationError(503, 'communication_storage_unavailable');
-      this.communicationStorage ??= new OrchestrationRuntimeWorker(path);
-      try { packet = await this.communicationStorage.communicate(command); }
+      const storage = this.#communicationStorage();
+      if (!storage) throw new CollaborationError(503, 'communication_storage_unavailable');
+      try { packet = await storage.communicate(command); }
       catch(error) {
         const fault=error as {status?:number;code?:string;message?:string};
         if(fault.status && fault.code) throw new CollaborationError(fault.status,fault.code);
@@ -1361,9 +1359,8 @@ export class Collaboration {
     if(owned!==undefined)return owned.result;
     let packet;
     if(this.managedStorage){
-      const path=this.#storageLocation;if(!path)throw Error('communication_storage_unavailable');
-      this.communicationStorage ??= new OrchestrationRuntimeWorker(path);
-      packet=await this.communicationStorage.synchronizeChannels(command);
+      const storage=this.#communicationStorage();if(!storage)throw Error('communication_storage_unavailable');
+      packet=await storage.synchronizeChannels(command);
     }else packet=channelSyncCommand(this,this.database,command);
     if(command.method==='reserveHuman')this.actors.acceptReservedHuman(packet.result);
     for(const change of packet.changes)this.channels.changed(change);
@@ -1468,6 +1465,14 @@ export class Collaboration {
   }
   #update(id: string, state: string, reason: string | null = null, receipt?: ExecutionReceipt) {
     updateExecutionRequest(this.database, {id,state,reason,queueId:receipt?.id??null,turnId:receipt?.targetTurnId??null,now:this.now()});
+  }
+  /** The composition's runtime storage also serves communication (Headless: the
+   * Server core owner); otherwise this service starts its own file-backed Worker. */
+  #communicationStorage(): OrchestrationRuntimeWorker | undefined {
+    if (this.executionStorage instanceof OrchestrationRuntimeWorker) return this.executionStorage;
+    const path = this.#storageLocation;
+    if (!path) return undefined;
+    return this.communicationStorage ??= new OrchestrationRuntimeWorker(path);
   }
   async #runtimeStorage() {
     if (!this.executionStorage) {

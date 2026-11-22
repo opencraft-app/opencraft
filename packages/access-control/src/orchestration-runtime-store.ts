@@ -17,26 +17,44 @@ export interface OrchestrationRuntimeStorage {
   pendingAcks(): Promise<string[]>;
   acknowledge(operationId: string): Promise<void>;
 }
-/** Child of the fenced Server owner. It borrows the existing WAL database, never
- * imports/migrates it, and must drain before that owner releases its fence. */
+/** The Server core owner's port for the orchestration runtime domain
+ * (`orchestrationRuntimeOwnerMethods`), e.g. `openServerCoreOwner(...)`. */
+export interface OrchestrationRuntimeOwner {
+  readonly call: { orchestrationRuntime(method: string, payload: unknown): Promise<unknown> };
+}
+/**
+ * Async port of the orchestration runtime storage. Given the Server core owner,
+ * every command runs on the owner connection in FIFO order with the other
+ * owner domains (Headless). Given a file path, a standalone child Worker
+ * borrows the existing WAL database, never imports/migrates it, and must drain
+ * before that owner releases its fence (tests and file-backed compositions).
+ */
 export class OrchestrationRuntimeWorker implements OrchestrationRuntimeStorage {
-  private readonly worker: Worker;
+  private readonly worker?: Worker;
+  private readonly owner?: OrchestrationRuntimeOwner;
   private readonly pending = new Map<number, { resolve(value: any): void; reject(error: Error): void }>();
+  private readonly inFlight = new Set<Promise<unknown>>();
   private readonly ready: Promise<void>;
   private failure?: Error;
   private closing?: Promise<void>;
   private stopping = false;
   private nextId = 0;
-  constructor(path: string) {
-    this.worker = new Worker(new URL('./orchestration-runtime-worker.mjs', import.meta.url), {workerData:{path,extensionModule:communicationExtensionModule()},execArgv:[]});
+  constructor(source: string | OrchestrationRuntimeOwner) {
+    if (typeof source !== 'string') {
+      this.owner = source;
+      this.ready = Promise.resolve();
+      return;
+    }
+    const path = source;
+    const worker = this.worker = new Worker(new URL('./orchestration-runtime-worker.mjs', import.meta.url), {workerData:{path,extensionModule:communicationExtensionModule()},execArgv:[]});
     this.ready = new Promise<void>((resolve,reject)=>{
       const failed=(error:Error)=>{this.failure??=error;reject(error);for(const request of this.pending.values())request.reject(error);this.pending.clear();};
-      this.worker.on('error',failed);
-      this.worker.on('exit',code=>{if(!this.stopping||code!==0||this.pending.size)failed(new Error('Orchestration storage worker exited'));});
-      this.worker.on('message',packet=>{
+      worker.on('error',failed);
+      worker.on('exit',code=>{if(!this.stopping||code!==0||this.pending.size)failed(new Error('Orchestration storage worker exited'));});
+      worker.on('message',packet=>{
         if(packet.type==='ready'){resolve();return;}
         const request=this.pending.get(packet.id);if(!request)return;this.pending.delete(packet.id);
-        if(packet.error)request.reject(typeof packet.error.status==='number'&&typeof packet.error.code==='string'?new AutomationError(packet.error.code,packet.error.status):Object.assign(new Error(packet.error.message),{code:packet.error.code}));
+        if(packet.error)request.reject(domainError(packet.error));
         else request.resolve(packet.result);
       });
     });
@@ -51,11 +69,17 @@ export class OrchestrationRuntimeWorker implements OrchestrationRuntimeStorage {
   private async request<T>(method: string, payload: unknown = {}, closing = false): Promise<T> {
     if(this.stopping&&!closing)throw new Error('Orchestration storage is closing');
     await this.ready;if(this.failure)throw this.failure;
-    if(this.pending.size>=128&&!closing)throw new Error('Orchestration storage queue is full');
+    if((this.owner?this.inFlight.size:this.pending.size)>=(this.owner?256:128)&&!closing)throw new Error('Orchestration storage queue is full');
+    if(this.owner){
+      // The owner reply arrives after its transaction committed (or rolled back).
+      const call=this.owner.call.orchestrationRuntime(method,payload).catch(error=>{throw domainError(error);});
+      this.inFlight.add(call);void call.catch(()=>{}).finally(()=>this.inFlight.delete(call));
+      return call as Promise<T>;
+    }
     const id=++this.nextId;
     return new Promise<T>((resolve,reject)=>{
       this.pending.set(id,{resolve,reject});
-      try{this.worker.postMessage({id,method,payload});}catch(error){this.pending.delete(id);reject(error);}
+      try{this.worker!.postMessage({id,method,payload});}catch(error){this.pending.delete(id);reject(error);}
     });
   }
   automation<T = any>(operation: string, input: unknown, now: number): Promise<T> {return this.request('automation',{operation,input,now});}
@@ -75,7 +99,15 @@ export class OrchestrationRuntimeWorker implements OrchestrationRuntimeStorage {
   close():Promise<void>{
     return this.closing??=(async()=>{
       this.stopping=true;
-      try{await this.request('close',{},true);}finally{await this.worker.terminate();}
+      // The owner belongs to its composition: drain this port's calls, never close the owner.
+      if(this.owner){await Promise.allSettled([...this.inFlight]);return;}
+      try{await this.request('close',{},true);}finally{await this.worker!.terminate();}
     })();
   }
+}
+/** Rebuilds the automation error class callers match; other failures keep message and code. */
+function domainError(error: {message?: string; code?: unknown; status?: unknown}): Error {
+  if(typeof error.status==='number'&&typeof error.code==='string')return new AutomationError(error.code,error.status);
+  if(error instanceof Error)return error;
+  return Object.assign(new Error(error.message),{code:error.code});
 }
