@@ -32,6 +32,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && if ! getent group "${OPENCRAFT_GID}" >/dev/null; then groupadd --gid "${OPENCRAFT_GID}" opencraft; fi \
     && if ! getent passwd "${OPENCRAFT_UID}" >/dev/null; then useradd --uid "${OPENCRAFT_UID}" --gid "${OPENCRAFT_GID}" --no-create-home opencraft; fi
+COPY deploy/docker/install-sandbox-deps.sh /usr/local/share/opencraft/install-sandbox-deps.sh
+RUN /bin/sh /usr/local/share/opencraft/install-sandbox-deps.sh
 COPY --from=build /out/opencraft-server /opt/opencraft
 LABEL org.opencontainers.image.title="OpenCraft" \
       org.opencontainers.image.description="OpenCraft self-hosted Gateway, Brain and Hands runtime" \
