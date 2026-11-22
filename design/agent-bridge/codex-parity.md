@@ -44,7 +44,7 @@ bridge 协议加方法与能力声明，Engine Host 转发原生请求并投影 
 
 | 能力 | 旧路径 owner | 建议 owner | 说明 |
 |---|---|---|---|
-| 排队 `thread/queue/add|list|update|reorder|delete|start|steer|retry` 及 `thread/queue/changed` | `OpenCraftHostQueue`（`opencraft-host-queue.ts`） | **已完成**：Engine Host（Host 库 v4） | 与旧路径共用 `@opencraft/thread-queue` 的存储、核对与派发；轮次结束由 Host 发出队首，daemon 不在也继续；协作输入与 `collaborationReceipt`、排队轮次的执行 CLI 凭据尚未支持 |
+| 排队 `thread/queue/add|list|update|reorder|delete|start|steer|retry` 及 `thread/queue/changed` | `OpenCraftHostQueue`（`opencraft-host-queue.ts`） | **已完成**：Engine Host（Host 库 v4） | 与旧路径共用 `@opencraft/thread-queue` 的存储、核对与派发；轮次结束由 Host 发出队首，daemon 不在也继续；协作输入与 `collaborationReceipt` 已支持（见下）；Host 自行派发的排队轮次不带执行 CLI 凭据 |
 | 标题生成 | `CodexThreadTitles` | **已接线**：daemon | bridge 路由把新建与第一轮按原生身份交给本地标题生成器；生成器经同一原生 AppServer 写入名称，通知映射回公开 ID。依赖 Core Host overlays（见“桌面接线时注意”） |
 | 置顶 `thread/pins/updated` | `codex-thread-pins.ts` | **已接线**：daemon | 设置时公开 ID 换成原生 ID 交给旧 Host（只改原生分组元数据，同一原生 AppServer，无第二写者）；列表与通知映射回公开 ID |
 | 线程设置 `thread/settings/update` | adapter 配置刷新 | **已接线**：`session/settings`（新 `settings` 能力） | 原生 `thread/settings/updated` 经通知转发通道到客户端 |
@@ -54,7 +54,7 @@ bridge 协议加方法与能力声明，Engine Host 转发原生请求并投影 
 | 模型网关准入（花费授权） | adapter `admitModelExecution`：按人类授权者登记执行，轮次结束结算 | daemon 路由层，需观察 bridge 轮次结束 | 仅在设置 `OPENCRAFT_MODEL_GATEWAY_DATABASE` 的服务器生效；bridge 线程目前不登记，属漏洞，桌面不受影响 |
 | 历史读取取消 `thread/history/cancel` | adapter | **已接线**：daemon | bridge 历史读取没有可取消的在途请求，如实返回 `cancelled: false` |
 | 待建线程 | `ProvisionalThreads` | 由 bridge 的 `session/create` 幂等语义取代，需核实 UI 依赖 | |
-| 编排 / 协作回执 | adapter 与 orchestration | P7a 执行 CLI 已覆盖 spawn/tell/wait；queue follow-up 待做 | 见 P7a 剩余范围 |
+| 编排 / 协作回执 | adapter 与 orchestration | **已完成（服务器）**：编排经 P7a 执行 CLI；协作排队检查与回执由本地 Host 的 `guardExternalQueue` 在 Host 队列之前完成 | 见“服务器”一节 |
 
 ## C. 不需要在 bridge 内对齐
 
@@ -112,14 +112,18 @@ daemon 以 `--codex-bridge-stack <程序目录>`（`codexBridgeStack`）启动 b
 1. **桌面默认开启 bridge 栈**：macOS 与 Linux 已默认开启（2026-11-22，此前已用真实账号与界面验证）；应急开关 `OPENCRAFT_CODEX_BRIDGE=0` 在旧 adapter 退休时一并移除。
 2. **Windows**：已实现，默认仍走旧路径，`OPENCRAFT_CODEX_BRIDGE=1` 开启。控制端点与 relay 用命名管道（按栈实例命名），原生 Codex 在 `ws://127.0.0.1:随机端口` 上以 `--ws-auth capability-token` 监听，令牌文件在私有 runtime 目录；所有客户端经 `openCodexNativeSocket`（`@opencraft/account-pool-host`）连接三种端点。子进程停止改为关闭 stdin、由预载脚本触发子进程自己的 SIGTERM 处理（Windows 没有可捕获的 SIGTERM）。Windows 专属修正：开机标识在没有 PowerShell 时退回由系统运行时长推算；写锁与恢复记录不再对目录做 fsync、不再检查 POSIX 权限位；Codex provider 用平台的 `isAbsolute` 判断工作区与文件路径。验证：`.github/workflows/windows-codex-bridge.yml` 在 GitHub 的 `windows-2022` 上运行 `scripts/smoke/execution/run-codex-bridge-stack-drill.mjs`（Electron 自带 Node、`runtime/codex` 固定的 codex.exe、本地假模型；建会话、Windows 临时工作区、经 bridge 应答、关闭无残留），相关路径改动时自动触发，也可手动触发。2026-11-22 在 `windows-2022` 上通过：三个子进程经命名管道启动、初始化、建会话（Windows 临时工作区）、经 bridge 应答、关闭无残留。过程中修正：新会话首条消息落盘前读取会话被原生拒绝（Windows 上为 rollout 文件已建但为空，连会话元数据都读不出），读取现等待该窗口（最多约 2 秒）后按“暂无轮次”回答；演练在读取被拒时记录原生 Codex 的原始错误。同次运行的 SQLite 全套测试在 Windows 上有 77 项失败，已知原因：Windows 检出把迁移 SQL 与快照转成 CRLF 导致基线校验不符（已用 `.gitattributes` 统一 LF 修正，Windows 构建的安装包同样受影响）；约十处目录 fsync 在 Windows 上 EPERM（含桌面会走到的 codex-core 账号、产物目录、daemon 计量归档）；测试本身断言 POSIX 权限位与拼接路径。后两项待单独处理，在此之前 Windows 任务不跑 SQLite 全套。命令执行、终端（ConPTY）与 Electron 界面尚未在 Windows 上验证。Windows 结论只以这个任务为准；此前在 Wine 9.0 下跑通过的同一演练只算预检（Wine 的 ConPTY、命名管道与原生模块行为不代表 Windows）。
 3. **服务器（单机与四容器）**：
-   - **默认开启（2026-11-22，受管单机）**：Headless 发行包附带 `execution/codex-bridge/`（`buildCodexBridgeRuntime`），网关在其存在时默认启动 Engine Host；`OPENCRAFT_CODEX_BRIDGE=0` 退回旧路径。四容器与无 Core 的 `opencraft-server` 安装仍走旧路径。见 [受管 Headless](../../docs/operations/managed-headless.md#codex-默认经-provider-bridge-运行)。
+   - **默认开启（2026-11-22，受管单机）**：Headless 发行包附带 `execution/codex-bridge/`（`buildCodexBridgeRuntime`），网关在其存在时默认启动 Engine Host；`OPENCRAFT_CODEX_BRIDGE=0` 退回旧路径。四容器同样默认开启（见下）；无 Core 的 `opencraft-server` 安装仍走旧路径。见 [受管 Headless](../../docs/operations/managed-headless.md#codex-默认经-provider-bridge-运行)。
    - **会话连续性（2026-11-22，单机）**：`--codex-bridge-programs <目录>`（`codexBridgePrograms`）让服务器对已有 Core 自行启动 Codex Engine Host（`startCodexEngineHost`，与桌面栈共用启动与代次注册），新会话经 bridge 创建，已有会话在下一次发送时接管（ID 与历史不变）；关掉该参数即回到旧路径。演练 `scripts/smoke/server/smoke-codex-server-upgrade.ts`（真实原生 Codex、服务器的拆分 Core/AppServer、本地假模型、网页端同一 App Host 连接）通过：旧路径建三类会话（无项目、多轮、带项目）→ 升级后列表、历史一致并可续聊，新会话在 bridge → 回退后旧会话照常打开续聊 → 再次升级全部可用。回退期间 bridge 新建的会话不以原公开 ID 出现，重新升级后恢复。
    - 接线中修正：准入层在 bridge 接管全部新会话时为隐式创建分配 bridge 身份（否则首轮缺少创建时的执行配置而被拒）；匿名部署的 bridge 执行准入使用部署操作员身份（与登录用户同一授权）；原生 `list_turns is not supported yet` 在创建核对中按“尚无记录”处理。
    - 计费：服务器计费当前为演示用途，不做兼容，仅保证不出错。
    - **发送者（2026-11-22）**：bridge 会话的发送者由同一 Host 的发送者表记录（`prepareExternalInput`），历史读取与实时通知按同一记录投影；旧路径路由原样带发送者交给旧 Host；没有发送者记录者时仍拒收带发送者的输入。演练 `--identity employee`（默认，经身份适配器以登录员工发送）与 `--identity anonymous` 均通过，升级前后、回退与再升级的每条用户消息都带原发送者。
    - **对话工具、动态工具与会话 MCP（2026-11-22）**：bridge 会话的动态工具调用先交给 Host 分发（`CodexProviderBridge` 的 `nativeTool`，与旧 Host 同一 `browserCapabilities.invokeNative`），不属于 Host 的才交给客户端；对话工具（`read_thread`、`send_message_to_thread`、`get_thread_delivery`）由协作 owner 应答（`codex-bridge-conversation-tools.ts`，结果格式同旧路径），新建 bridge 会话创建时声明这些工具；编排工具在 bridge 上明确回答不可用，不会悬挂在客户端。接管的旧会话在发送时先确定路由（`prepareRoute`），与 bridge 会话同样经执行准入、执行签名与会话 MCP。演练比对同一会话升级前后提供给模型的工具一致，并经 bridge 真实调用 `read_thread`（接管会话与新会话各一次）。
    - **线程编排（2026-11-22）**：按 P7a 设计经执行 CLI：服务器自起的 Engine Host 带 `cli` 配置（服务器能力签名密钥、`/thread-cli`、服务器会话 ID 作为 bridge `serverId`），每个 bridge 轮次（含接管会话）获得仅限本次输入的 `opencraft thread` 命令；`opencraft/orchestration/*` 控制请求交给本地 Host 的可信编排通道（bridge 父会话以原生 ID 命名），子会话经旧 Host 创建、下一次发送时被接管。Host 队列派发不带凭据，作为不含 CLI 的普通轮次发送（凭据不落盘），其他缺凭据的 `turn/start` 仍拒绝。旧路径建会话声明的 `thread_*` 动态工具在 bridge 上提示改用 CLI。演练在 bridge 会话的 shell 里 `opencraft thread spawn`，子会话收到并应答。
-   - 仍依赖旧路径、尚未迁移：协作排队回执、桌面附着、工作区钩子、线程元数据、计量查询；四容器部署（brain 中启动 Engine Host、命令在 hands 执行）尚未接线。
+   - **协作排队（2026-11-22）**：bridge 会话的 `thread/queue/*` 先经本地 Host 的 `guardExternalQueue`（与旧 Host 队列同一检查）：Actor 输入只能由其可信准入排队或 steer，不可编辑；人删除 Actor 输入改为取消协作请求；普通排队输入在进入 Engine Host 队列前按发送者授权；`thread/queue/collaborationReceipt` 由 Engine Host 队列新增的 `thread/queue/find`（按队列 ID 或客户端消息 ID）回答，轮次 ID 映射为公开 ID。与旧路径的差别：Engine Host 自行派发排队输入，授权在排队与 steer 时检查，派发时不再复查；排队轮次开始的通知不直接回调协作 owner，协作状态由其按回执轮询推进（与旧路径的兜底相同）。
+   - **桌面附着（2026-11-22）**：`OPENCRAFT_DESKTOP_ATTACH` 交给本地 Host，按原生 ID 读取 bridge 会话并保留公开 ID。
+   - **计量（2026-11-22）**：bridge 会话的提交、结果与轮次通知按原生会话与轮次写入同一计量账本（`observeExternalUsage`、`beginExternalUsage`、`settleExternalUsage`），归属到发送者；演练核对升级前、接管后与 bridge 新会话的记录。桌面独占栈尚未记录计量（桌面从未配置计量查询）。
+   - **工作区钩子与线程元数据**：核心服务器装配不提供（`createThreadMetadata` 未配置，工作区路由只由下游产品组合提供），对 bridge 会话无需迁移；下游产品启用时需在 bridge 上另行接线。
+   - **四容器**：Engine Host 在 gateway 容器内启动（发行包 `runtime/codex-bridge/`，`OPENCRAFT_CODEX_BRIDGE=0` 退回旧路径），经共享数据卷连到 brain 的 Core；原生命令仍按 AppServer 的 `OPENCRAFT_SANDBOX_CONFIG` 在 hands 执行。演练 `scripts/smoke/server/smoke-container-codex-bridge.ts`。
 4. **SSH 远程 Codex** 不在退休范围：它与本地模式共享客户端复用、交互、工具、附件、元数据等核心，退休时只删本地模式（spawn、Core 直通、Core + overlays），保留并抽出远程所需部分。
 
 ## 顺序建议
