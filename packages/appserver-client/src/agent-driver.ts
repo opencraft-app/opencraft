@@ -17,7 +17,9 @@ export interface AgentDriverCreation {
 export interface AgentDriverContract {
   setTitle?(operationId: string, threadId: string, title: string, canAdmit: () => boolean): Promise<void>;
   prepare?(operationId: string, sourceThreadId: string, args: Record<string, unknown>, canAdmit: () => boolean, callbackIncarnation?: string): Promise<Record<string, unknown>>;
-  create(operationId: string, sourceThreadId: string, settings: Record<string, unknown>, canAdmit: () => boolean): Promise<AgentDriverCreation | { rejected: { status: number } }>;
+  create(operationId: string, sourceThreadId: string, settings: Record<string, unknown>, canAdmit: () => boolean): Promise<AgentDriverCreation | {
+    rejected: { status: number; allocation?: AgentDriverCreation };
+  }>;
   createRoot?(operationId: string, settings: Record<string, unknown>, canAdmit: () => boolean): Promise<AgentDriverCreation | { rejected: { status: number } }>;
   /** Release native discovery only after the Hub commits private ownership. */
   publishRoot?(operationId: string): Promise<void>;

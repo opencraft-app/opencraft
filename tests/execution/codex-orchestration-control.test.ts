@@ -197,6 +197,14 @@ test('Codex never reports successful child creation after a rejected title save'
     if(method==='thread/name/set')throw Object.assign(Error('Title denied'),{code:403,data:{orchestrationRejected:true}});
     return native(method,params,admit);
   };
-  await assert.rejects(f.invoke('create',{settings:{cwd:'/workspace',orchestrationTitle:'Required title'}}),/Title denied/);
+  const params={settings:{cwd:'/workspace',orchestrationTitle:'Required title'}};
+  assert.deepEqual(await f.invoke('create',params), {
+    rejected:{status:403,allocation:{threadId:'child',durability:'pending_first_turn'}},
+  });
   assert.equal(f.requests.filter(r=>r.method==='thread/start').length,1);
+  f.port.request=async(method,input,admit)=>{
+    if(method==='thread/name/set')throw Object.assign(Error('Title receipt lost'),{data:{resultUnknown:true}});
+    return native(method,input,admit);
+  };
+  await assert.rejects(f.invoke('create',params),/Title receipt lost/);
 });

@@ -522,12 +522,14 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     if (!canHandleWorkbenchShortcut(event)) return;
     const direction = matchesWorkbenchShortcut(event, "conversationPrevious", navigator.platform) ? -1
       : matchesWorkbenchShortcut(event, "conversationNext", navigator.platform) ? 1 : 0;
-    if (direction === 0 || !activityList.current) return;
+    const list = activityList.current;
+    if (direction === 0 || !list) return;
 
     // The accordion and each child disclosure own what is rendered. Read the
-    // mounted conversation buttons so navigation uses that exact row order.
+    // shown conversation buttons so navigation uses that exact row order.
     const rows = new Map<string, HTMLButtonElement>();
-    for (const button of activityList.current.querySelectorAll<HTMLButtonElement>("button[data-sidebar-conversation]:enabled")) {
+    for (const button of list.querySelectorAll<HTMLButtonElement>("button[data-sidebar-conversation]:enabled")) {
+      if (list.contains(button.closest("[hidden]"))) continue;
       const key = button.dataset.sidebarConversation!;
       if (!rows.has(key)) rows.set(key, button);
     }

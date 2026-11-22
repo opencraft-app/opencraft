@@ -168,7 +168,7 @@ Thread、Turn 与 native call ID；权限仍从持久输入委托派生，Host �
 ### 3.1 五个内置工具契约
 1. **`thread_spawn`**：
    - 输入：`{ title, prompt, parentSelf?: true, bindLifecycleToSelf?: true, visibility?: "visible"|"hidden", driver?, model?, reasoningEffort?, cwd?, idempotencyKey? }`
-   - `title` 必填、去首尾空白后非空、单行、最多256个UTF-16码元；Schema 声明约束，Broker 校验新请求。升级前已受理的请求仍可按原参数恢复。标题保存未确认时不得将创建报告为成功或派发首条输入。
+   - `title` 必填、去首尾空白后非空、单行、最多256个UTF-16码元；Schema 声明约束，Broker 校验新请求。升级前已受理的请求仍可按原参数恢复。标题保存未确认时不得将创建报告为成功或派发首条输入。若 Host 明确拒绝标题保存，Broker 记录失败并确认 Host 回执，已分配的子会话保持隐藏。
    - 默认 `visibility: "hidden"`，作为 subagent 仅从父对话进入；只有用户明确要求独立、长期会话才传 `visible`。已有关系不迁移，历史表默认值保留兼容，Broker 显式写入新默认。
    - 权限：新建子会话的 `ownerActorId` 继承 `delegation.issuerActorId`；可信创建归属从父会话已持久化的创建者继承；消耗配额 1 次；首轮输入标记 `usageSourceKind: "system"`。
    - 返回：`{ operationId, threadId, status: "starting", durability: "immediate" | "pending_first_turn", delivery: "sent" }`。

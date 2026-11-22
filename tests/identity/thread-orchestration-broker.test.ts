@@ -193,6 +193,23 @@ test('a definitive Native creation rejection has a durable failure and ACKs its 
  await assert.rejects(call(),error=>error instanceof CollaborationError&&error.status===400);assert.equal(rejected,1);assert.ok(acks>=1);assert.equal(f.service.orchestration.threads().length,0);
 });
 
+test('a rejected title retains the hidden allocation, never submits the prompt, and ACKs after restart',async t=>{
+ const f=await fixture(t);let calls=0,canAck=false;const acks:string[]=[];
+ f.execution.create=async()=>{calls++;return {rejected:{status:403,allocation:{threadId:'unnamed-child'}}};};
+ f.execution.acknowledge=async id=>{if(!canAck)return false;acks.push(id);return true;};
+ const key='rejected-title',call=()=>f.invoke(key,'thread_spawn',{title:'Delegated review',prompt:'Never submitted',visibility:'visible'});
+ await assert.rejects(call(),error=>error instanceof CollaborationError&&error.status===403);
+ const receipt=f.service.orchestration.operation('parent:parent-turn:'+key)!;
+ assert.equal(receipt.state,'failed');assert.equal(receipt.targetThreadId,'unnamed-child');
+ assert.equal(f.service.orchestration.relation('unnamed-child')?.visibility,'hidden');
+ await f.restart();
+ await assert.rejects(call(),error=>error instanceof CollaborationError&&error.status===403);
+ await f.service.pump();assert.equal(f.inputs.length,0);assert.equal(calls,1);
+ assert.deepEqual(f.service.pendingOrchestrationAcks(),[receipt.operationId]);
+ canAck=true;await f.broker.reconcile();assert.deepEqual(acks,[receipt.operationId]);
+ assert.deepEqual(f.service.pendingOrchestrationAcks(),[]);
+});
+
 test('a timed-out wait on a readable non-child survives restart and wakes its caller once',async t=>{
  const f=await fixture(t);f.states.set('peer',{threadId:'peer',turnId:'peer-turn',rootTurnId:'peer-root',state:'active'});
  const waited=await f.invoke('peer-wait','thread_wait',{threadIds:['peer'],timeoutMs:1});assert.equal(waited.settled,false);await f.restart();

@@ -332,26 +332,29 @@ export class ThreadOrchestrationBroker {
         if(!scope.valid || scope.grant && permissionSnapshot(settings)!==scope.grant.permissionSnapshot)throw new CollaborationError(403,'automation_permissions_changed');
       }
       const created=await this.execution.create(operation.operationId,threadId,settings,()=>this.valid(delegation,turnId));
-      if('rejected' in created){
-        ledger.transaction(()=>{ledger.finish(key,{orchestrationFailure:{status:created.rejected.status}},'failed');this.collaboration.queueOrchestrationAck(operation.operationId);});
-        void this.reconcileAcks();throw new CollaborationError(created.rejected.status,'native_child_creation_rejected');
+      const rejection='rejected' in created?created.rejected:null;
+      const allocation='rejected' in created?created.rejected.allocation:created;
+      if(!allocation){
+        const status=rejection!.status;
+        ledger.transaction(()=>{ledger.finish(key,{orchestrationFailure:{status}},'failed');this.collaboration.queueOrchestrationAck(operation.operationId);});
+        void this.reconcileAcks();throw new CollaborationError(status,'native_child_creation_rejected');
       }
-      const childId=text(created.threadId),parent=ledger.relation(threadId);
+      const childId=text(allocation.threadId),parent=ledger.relation(threadId);
       await this.childScope?.(this.reference(threadId),this.reference(childId));
       ledger.transaction(()=>{
-        ledger.createThread({threadId:childId,serverId:this.reference(childId).serverId,driverKind:created.driverKind??String(settings.driver??args.driver??'codex'),ownerActorId:delegation.context.actorId,parentThreadId:threadId,
-          lifecycleOwnerThreadId:threadId,forkedFromId:null,visibility:args.visibility==='visible'?'visible':'hidden',engineHostGeneration:created.generationId??null,nativeSessionId:childId,
-          runtimeStatus:'starting',rootTurnId:null,turnId:null,delegationRevision:delegation.context.generation,autoExchangeDepth:(parent?.autoExchangeDepth??0)+1,hasDirectUserInput:false,userInputExcerpt:null});
-        if(!this.valid(delegation,turnId)){
-          ledger.runtime(childId,{runtimeStatus:'error',rootTurnId:null,turnId:null});
-          ledger.finish(key,{orchestrationFailure:{status:403}},'failed',childId);this.collaboration.queueOrchestrationAck(operation.operationId);return;
+        const failedStatus=rejection?.status??(this.valid(delegation,turnId)?null:403);
+        ledger.createThread({threadId:childId,serverId:this.reference(childId).serverId,driverKind:allocation.driverKind??String(settings.driver??args.driver??'codex'),ownerActorId:delegation.context.actorId,parentThreadId:threadId,
+          lifecycleOwnerThreadId:threadId,forkedFromId:null,visibility:!rejection&&args.visibility==='visible'?'visible':'hidden',engineHostGeneration:allocation.generationId??null,nativeSessionId:childId,
+          runtimeStatus:failedStatus===null?'starting':'error',rootTurnId:null,turnId:null,delegationRevision:delegation.context.generation,autoExchangeDepth:(parent?.autoExchangeDepth??0)+1,hasDirectUserInput:false,userInputExcerpt:null});
+        if(failedStatus!==null){
+          ledger.finish(key,{orchestrationFailure:{status:failedStatus}},'failed',childId);this.collaboration.queueOrchestrationAck(operation.operationId);return;
         }
         const sent=this.collaboration.sendConversation(delegation.context,{reference:this.reference(childId),content:args.prompt,
           idempotencyKey:`spawn:${operation.operationId}`,execution:{mode:'queue'}},this.reference(threadId),delegation.id,false,scope?.grant?key:undefined);
         const inputId=ACTOR_INPUT_PREFIX+sent.requestId;
         this.collaboration.authorizeChild(delegation,childId,inputId);
         if(!scope?.grant)this.collaboration.recordInputOrigin(childId,inputId,this.origin(delegation,operation,inputId,turnId));
-        ledger.finish(key,{operationId:operation.operationId,threadId:childId,status:'starting',durability:created.durability??'pending_first_turn',delivery:'sent'},'completed',childId,inputId);
+        ledger.finish(key,{operationId:operation.operationId,threadId:childId,status:'starting',durability:allocation.durability??'pending_first_turn',delivery:'sent'},'completed',childId,inputId);
         this.collaboration.queueOrchestrationAck(operation.operationId);
       });
       void this.reconcileAcks();void this.collaboration.pump().catch(()=>{});

@@ -25,8 +25,10 @@ const initial=[
 {id:'child-design-00000002',parentThreadId:'parent',preview:'检查子会话标题与侧栏层级'},
 {id:'child-empty-00000003',parentThreadId:'parent',agentRole:'reviewer'},
 {id:'grandchild-00000004',parentThreadId:'child-design-00000002',name:'超长子任务标题：检查触控窄侧栏下标题截断与操作按钮是否完整可达'},
-{id:'hidden',parentThreadId:'parent',visibility:'hidden',name:'隐藏子会话'}]
-.map((row,i)=>({...projectAppServerThread({name:null,preview:'',cwd:'/workspace',status:{type:'idle'},updatedAt:100-i,createdAt:90,parentThreadId:null,...row}),visibility:row.visibility,connectionHostId:'local',connectionHostLabel:'Local',...legacyDirectServerProjectionFromHost({hostId:'local',hostKind:'local',label:'Local'})}));
+{id:'hidden',parentThreadId:'parent',visibility:'hidden',name:'隐藏子会话'},
+{id:'disabled',name:'Unavailable pinned thread',pinned:true,interactionAvailable:false},
+{id:'other-section',name:'Conversation in collapsed Recent'}]
+.map((row,i)=>({...projectAppServerThread({name:null,preview:'',cwd:'/workspace',status:{type:'idle'},updatedAt:100-i,createdAt:90,parentThreadId:null,...row}),visibility:row.visibility,interactionAvailable:row.interactionAvailable,connectionHostId:'local',connectionHostLabel:'Local',...legacyDirectServerProjectionFromHost({hostId:'local',hostKind:'local',label:'Local'})}));
 const dates=location.search.includes('dates');
 const dateRows=[
 {id:'daily-parent',name:'每日处理',pinned:true},
@@ -128,6 +130,12 @@ try {
       };
       await choose('ArrowDown', 'child-design-00000002');
       await choose('ArrowDown', 'grandchild-00000004');
+      await choose('ArrowDown', 'child-empty-00000003');
+      assert.equal(await row('disabled').isDisabled(), true);
+      assert.equal(await row('other-section').count(), 1);
+      assert.equal(await row('other-section').isVisible(), false);
+      await choose('ArrowDown', 'child-empty-00000003');
+      await choose('ArrowUp', 'grandchild-00000004');
       await choose('ArrowUp', 'child-design-00000002');
       await choose('ArrowUp', 'child-review-00000001');
       await choose('ArrowUp', 'parent');

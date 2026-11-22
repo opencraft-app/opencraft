@@ -1940,6 +1940,9 @@ export class CodexEngineAdapter implements DuplexTransport {
         if (pending.historyTiming) pending.historyTiming.nativeStarted = performance.now();
         try{await this.writePhysical({ ...message, id: physicalId }, () => {
           this.validateSubmissionContext(context);
+          if (message.method === "thread/name/set" && context.orchestrationOperationId && context.orchestrationCanAdmit?.() !== true) {
+            throw new OrchestrationControlError(403, "Orchestration delegation was revoked");
+          }
           const owned = ownsRequest();
           resumeStage("native-dispatch", owned ? "attempted" : "client-replaced");
           return owned;
