@@ -375,9 +375,6 @@
     "plugins/im/src/post-receipts.ts": {
       "SQL statement": 4
     },
-    "plugins/im/src/store.ts": {
-      "SQL statement": 50
-    },
     "plugins/pi-engine/src/read-history.ts": {
       "DatabaseSync": 1
     },

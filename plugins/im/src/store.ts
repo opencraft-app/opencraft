@@ -70,6 +70,11 @@ export interface StoredMessage {
   updated_at: number;
 }
 
+/** Routing fields of an explicit-reply message; a network thread keeps these in memory. */
+export type ReplyAnchor = Pick<
+  StoredMessage,
+  "id" | "channel_id" | "actor_id" | "source" | "state" | "reply_mode" | "reply_ref" | "reply_expires_at" | "conversation_ref" | "created_at"
+>;
 /** The IM plugin owns only current bindings; native conversations retain their history. */
 export class SwitchboardStore {
   private readonly managed;
@@ -268,6 +273,13 @@ export class SwitchboardStore {
       Date.now() + 300_000,
     );
   }
+  /** The actor a pending challenge would link, without consuming it. */
+  peekChallenge(hash: string, id: string): string | null {
+    const r = this.managed.database
+      .prepare("SELECT actor_id FROM im_identity_challenges WHERE hash=? AND channel_id=? AND expires_at>?")
+      .get(hash, id, Date.now());
+    return r ? String(r.actor_id) : null;
+  }
   consumeChallenge(
     hash: string,
     id: string,
@@ -424,15 +436,36 @@ export class SwitchboardStore {
       )
       .run();
   }
-  prune() {
+  /** Returns the number of rows changed, so a projection reloads only when needed. */
+  prune(): number {
     const db = this.managed.database;
-    db.prepare("UPDATE im_messages SET state='reply_failed',error='reply_expired',updated_at=? WHERE reply_mode='tool' AND state IN ('accepted','submitted') AND reply_expires_at<=?").run(Date.now(), Date.now());
-    db.prepare(
+    let changes = Number(db.prepare("UPDATE im_messages SET state='reply_failed',error='reply_expired',updated_at=? WHERE reply_mode='tool' AND state IN ('accepted','submitted') AND reply_expires_at<=?").run(Date.now(), Date.now()).changes);
+    changes += Number(db.prepare(
       "DELETE FROM im_messages WHERE state IN ('delivered','ignored','failed','reply_failed','reply_unknown','unknown') AND created_at<?",
-    ).run(Date.now() - 7 * 86_400_000);
-    db.prepare(
+    ).run(Date.now() - 7 * 86_400_000).changes);
+    changes += Number(db.prepare(
       "DELETE FROM im_messages WHERE id IN (SELECT id FROM im_messages WHERE state IN ('delivered','ignored','failed','reply_failed','reply_unknown','unknown') ORDER BY created_at DESC LIMIT -1 OFFSET 10000)",
-    ).run();
+    ).run().changes);
+    return changes;
+  }
+  /** Every channel id ever saved, including deleted ones (`hasChannel`). */
+  channelIds(): string[] {
+    return this.managed.database.prepare("SELECT id FROM im_channels").all().map((row) => String(row.id));
+  }
+  /** Sender links of every channel. */
+  allSenderLinks(): Record<string, Record<string, string>> {
+    const links: Record<string, Record<string, string>> = {};
+    for (const row of this.managed.database.prepare("SELECT channel_id,sender_id,actor_id FROM im_sender_links").all())
+      (links[String(row.channel_id)] ??= {})[String(row.sender_id)] = String(row.actor_id);
+    return links;
+  }
+  /** Tool-reply anchors: the routing fields (never text) of explicit-reply messages within retention. */
+  anchors(id?: string): ReplyAnchor[] {
+    const filter = "reply_mode='tool' AND reply_ref IS NOT NULL AND conversation_ref IS NOT NULL";
+    const columns = "id,channel_id,actor_id,source,state,reply_mode,reply_ref,reply_expires_at,conversation_ref,created_at";
+    return (id === undefined
+      ? this.managed.database.prepare(`SELECT ${columns} FROM im_messages WHERE ${filter} AND created_at>=?`).all(Date.now() - 7 * 86_400_000)
+      : this.managed.database.prepare(`SELECT ${columns} FROM im_messages WHERE ${filter} AND id=?`).all(id)) as unknown as ReplyAnchor[];
   }
   close() {
     this.managed.database.close();

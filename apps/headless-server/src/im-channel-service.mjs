@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
-import { SwitchboardStore } from "@opencraft/plugin-im/store";
+import { Switchboard } from "@opencraft/plugin-im/switchboard";
 import { IM_REPLY_TOOL } from "@opencraft/plugin-im/reply-tool";
 import { IM_READ_TOOLS } from "@opencraft/plugin-im/read-tools";
 import { ImPostReceipts } from "@opencraft/plugin-im/post-receipts";
@@ -83,7 +83,14 @@ export class ImChannelService {
     let service;
     let attempted = 0;
     try {
-      service = new ImChannelService(dependencies);
+      // The switchboard database is owned by a Worker; this thread reads its projection.
+      const store = await Switchboard.open(join(dependencies.dataDirectory, "im-switchboard.sqlite"));
+      try {
+        service = new ImChannelService(dependencies, store);
+      } catch (error) {
+        await store.close().catch(() => {});
+        throw error;
+      }
       for (const transport of transports) {
         attempted++;
         service.channelSyncs.push(await ChannelSync.open(transport, dependencies.collaboration));
@@ -98,7 +105,7 @@ export class ImChannelService {
             credential(endpoint.id, "secret"),
             endpoint.secret,
           );
-          service.store.saveChannel(
+          await service.store.saveChannel(
             {
               id: endpoint.id,
               provider: "wecom",
@@ -111,7 +118,7 @@ export class ImChannelService {
             null,
           );
           for (const [sender, actor] of Object.entries(endpoint.senders))
-            service.store.linkSender(endpoint.id, sender, actor);
+            await service.store.linkSender(endpoint.id, sender, actor);
         }
       }
       service.im.setDelivery((channel, address, text) => {
@@ -135,11 +142,10 @@ export class ImChannelService {
       throw error;
     }
   }
-  constructor(dependencies) {
+  /** `store` is the switchboard this service owns and closes. */
+  constructor(dependencies, store) {
     this.dependencies = dependencies;
-    this.store = new SwitchboardStore(
-      join(dependencies.dataDirectory, "im-switchboard.sqlite"),
-    );
+    this.store = store;
     this.credentials =
       dependencies.credentials ??
       new ModelCredentialRepository(join(dependencies.dataDirectory, "models"));
@@ -213,7 +219,7 @@ export class ImChannelService {
         const code = message.text.trim().slice("/identify".length).trim();
         if (!/^[a-f0-9]{32}$/u.test(code))
           throw Error("invalid_identity_challenge");
-        const actor = this.store.consumeChallenge(
+        const actor = await this.store.consumeChallenge(
           digest(code),
           c.id,
           message.source.senderId,
@@ -230,7 +236,7 @@ export class ImChannelService {
       return this.im.receive(c.id, message);
     };
     const onState = (state) => {
-      if (state === "ready" && !this.closed) this.im.resume(c.id);
+      if (state === "ready" && !this.closed) void this.im.resume(c.id).catch(() => {});
     };
     try {
       let adapter;
@@ -269,7 +275,7 @@ export class ImChannelService {
           throw Error("slack_installation_mismatch");
         if (!c.workspaceId || !c.botUserId) {
           c = { ...c, workspaceId: auth.team_id, botUserId: auth.user_id };
-          this.store.saveChannel(c, c.enabled, c.revision);
+          await this.store.saveChannel(c, c.enabled, c.revision);
         }
         adapter =
           this.dependencies.createSlack?.({
@@ -384,7 +390,7 @@ export class ImChannelService {
           !Object.values(this.store.senderLinks(c.id)).includes(actor.actorId)
         )
           continue;
-        for (const m of this.store.messages(c.id, 500)) {
+        for (const m of await this.store.messages(c.id, 500)) {
           if (c.ownerId !== actor.actorId && m.actor_id !== actor.actorId)
             continue;
           if (!m.conversation_ref) continue;
@@ -451,9 +457,9 @@ export class ImChannelService {
           body.credentials[key],
         );
       this.execution.authorize(actor);
-      this.store.saveChannel(c, true, null);
+      await this.store.saveChannel(c, true, null);
       // Existing installations preserve legacy tuples; newly created channels explicitly select the new default.
-      this.store.route(c.id, 1, sourceRoute, true);
+      await this.store.route(c.id, 1, sourceRoute, true);
       try {
         await this.connect(this.store.channel(c.id));
       } catch {
@@ -475,7 +481,7 @@ export class ImChannelService {
     if (body.action === "identity") {
       // Possession of a channel identifier grants no conversation access. The challenge binds this human only.
       const code = randomBytes(16).toString("hex");
-      this.store.challenge(digest(code), c.id, actor.actorId);
+      await this.store.challenge(digest(code), c.id, actor.actorId);
       return { command: "/identify " + code, expiresAt: Date.now() + 300_000 };
     }
     if (!uses) throw Error("channel_denied");
@@ -483,14 +489,13 @@ export class ImChannelService {
       const sender = id(body.senderId);
       if (!manages && this.store.senderLinks(c.id)[sender] !== actor.actorId)
         throw Error("channel_denied");
-      this.store.unlinkSender(c.id, sender);
+      await this.store.unlinkSender(c.id, sender);
       this.adapters.get(c.id)?.notificationSenders?.delete(sender);
       return { ok: true };
     }
     if (body.action === "messages")
       return {
-        messages: this.store
-          .messages(c.id)
+        messages: (await this.store.messages(c.id))
           .filter((m) => manages || m.actor_id === actor.actorId)
           .map(({ reply_address, fingerprint, text, reply_text, ...m }) => m),
       };
@@ -552,7 +557,7 @@ export class ImChannelService {
     if (body.action === "route") {
       if (body.source !== null) await compileRoute(routeSource(body.source));
       this.execution.authorize(actor);
-      const next = this.store.route(
+      const next = await this.store.route(
         c.id,
         body.revision,
         body.source,
@@ -573,7 +578,7 @@ export class ImChannelService {
         if (value)
           await this.credentials.set(credential(c.id, key), secret(value));
       this.execution.authorize(actor);
-      const next = this.store.saveChannel(
+      const next = await this.store.saveChannel(
         { ...c, name: id(body.config.name) },
         body.config.enabled,
         c.revision,
@@ -605,17 +610,17 @@ export class ImChannelService {
     }
     if (body.action === "delete") {
       this.disconnect(c.id);
-      this.store.removeChannel(c.id);
+      await this.store.removeChannel(c.id);
       for (const key of ["secret", "botToken", "appToken"])
         await this.credentials.remove(credential(c.id, key));
       return { ok: true };
     }
     if (body.action === "resume") {
-      this.im.resume(c.id);
+      await this.im.resume(c.id);
       return { ok: true };
     }
     if (body.action === "resend") {
-      const m = this.store.message(id(body.messageId));
+      const m = await this.store.message(id(body.messageId));
       if (m?.channel_id !== c.id) throw Error("invalid_delivery");
       await this.im.resend(m.id);
       return { ok: true };
