@@ -39,7 +39,7 @@ subprocess.check_output=output
 sys.stdin=io.StringIO(raw)
 exec(compile(command[2],'<actual-environment-probe>','exec'),{'__name__':'__main__'})
 `;
-async function fixture(t, { health = true, expected = {}, broken = false, output } = {}) {
+async function fixture(t, { health = true, expected = {}, broken = false, output, probeEntry = entry } = {}) {
   const root = await mkdtemp(join(tmpdir(), "upgrade-environment-"));
   const bin = join(root, "bin"),
     capture = join(root, "capture.json"),
@@ -86,7 +86,7 @@ async function fixture(t, { health = true, expected = {}, broken = false, output
   const run = async () => {
     try {
       return {
-        ...(await exec(process.execPath, [entry, configPath, report], {
+        ...(await exec(process.execPath, [probeEntry, configPath, report], {
           env: {
             ...process.env,
             PATH: bin + ":" + process.env.PATH,
@@ -208,3 +208,13 @@ for (const output of [
     const report = JSON.parse(await readFile(f.report, "utf8"));
     assert.equal(report.checks.transport.status, "fail");
   });
+
+test("the domain entry rejects an empty SSH receipt instead of accepting zero checks", async (t) => {
+  const f = await fixture(t, {
+    output: {},
+    probeEntry: fileURLToPath(new URL("../../scripts/smoke/server/smoke-upgrade-environment.mjs", import.meta.url)),
+  });
+  const result = await f.run();
+  assert.equal(result.code, 1);
+  assert.equal(JSON.parse(await readFile(f.report, "utf8")).checks.transport.status, "fail");
+});

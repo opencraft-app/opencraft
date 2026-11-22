@@ -70,9 +70,30 @@ try {
       input: JSON.stringify(config),
       encoding: "utf8",
       timeout: 90000,
+      maxBuffer: 256 * 1024,
       stdio: ["pipe", "pipe", "pipe"],
     }),
   );
+  const names = ["health", "runtimeIdentity", "serviceCounters"];
+  if (
+    !checks ||
+    typeof checks !== "object" ||
+    Array.isArray(checks) ||
+    Object.keys(checks).sort().join() !== names.sort().join() ||
+    Object.values(checks).some(
+      (check) =>
+        !check ||
+        typeof check !== "object" ||
+        Array.isArray(check) ||
+        Object.keys(check).sort().join() !== "evidence,status" ||
+        !["pass", "fail"].includes(check.status) ||
+        !check.evidence ||
+        typeof check.evidence !== "object" ||
+        Array.isArray(check.evidence),
+    )
+  ) {
+    throw Error("Invalid environment probe receipt");
+  }
 } catch {
   checks = { transport: { status: "fail", evidence: { reason: "Target probe failed or timed out" } } };
 }
