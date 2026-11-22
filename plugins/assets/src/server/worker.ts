@@ -7,6 +7,10 @@ import type {
   GitExecutionReservation,
 } from "@opencraft/execution-environment/git-execution";
 import type { GitConnectionsSnapshot } from "../git/contract.js";
+import type {
+  EnvironmentLaunchContext,
+  EnvironmentLaunchTarget,
+} from "@opencraft/execution-environment/environment-delivery";
 import { WorkerOwner, ownerEntry } from "@opencraft/worker-owner";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import type { SandboxConfigurationsSnapshot } from "../contract.js";
@@ -39,6 +43,7 @@ export interface AssetStoragePort extends AssetConfigurationPort, WorkspaceBudge
   ): Promise<boolean>;
   executionGitReservation(locator: GitExecutionLocator): Promise<GitExecutionReservation | null>;
   executionGitGrant(locator: GitExecutionLocator): Promise<GitExecutionHandoff | null>;
+  executionEnvironmentLaunch(target: EnvironmentLaunchTarget, context: EnvironmentLaunchContext): Promise<string>;
   gitSnapshot(access: AssetAdmission): Promise<GitConnectionsSnapshot>;
   gitUpdate(access: AssetAdmission, input: unknown): Promise<GitConnectionsSnapshot>;
 }
@@ -46,6 +51,7 @@ interface Ready {
   outcome: DatabaseOutcome;
   gitHosts: readonly string[];
   gitAuthority: string | null;
+  environmentIssuer?: string | null;
   workspaceExecution: boolean;
   botExecution?: boolean;
 }
@@ -58,6 +64,8 @@ export async function openAssetConfigurations(
     installationFile?: string;
     workspaceMachineId?: string;
     terminalOwner?: { directory: string; endpoint: string; tokenFile: string };
+    /** This Worker also issues opaque execution ENV capsules (core vault owner). */
+    environmentLaunch?: boolean;
   } = {},
 ) {
   const { owner, ready } = await WorkerOwner.open<AssetStoragePort, Ready>(
@@ -68,6 +76,7 @@ export async function openAssetConfigurations(
         directory,
         ...(options.terminalOwner === undefined ? {} : { terminalOwner: options.terminalOwner }),
         ...(options.workspaceMachineId === undefined ? {} : { workspaceMachineId: options.workspaceMachineId }),
+        ...(options.environmentLaunch ? { environmentLaunch: true } : {}),
       },
       errors: [SandboxConfigurationError],
       maxPending: 128,
@@ -76,9 +85,13 @@ export async function openAssetConfigurations(
   if (
     options.installationFile !== undefined ||
     options.workspaceMachineId !== undefined ||
-    options.terminalOwner !== undefined
+    options.terminalOwner !== undefined ||
+    options.environmentLaunch
   ) {
     try {
+      // A requested issuer that the Worker did not start is a startup failure.
+      if (options.environmentLaunch && typeof ready.environmentIssuer !== "string")
+        throw new SandboxConfigurationError("unavailable", 503);
       if (
         (options.workspaceMachineId !== undefined || options.terminalOwner !== undefined) &&
         ready.workspaceExecution !== true
@@ -101,6 +114,16 @@ export async function openAssetConfigurations(
     gitAuthority: ready.gitAuthority,
     workspaceExecution: ready.workspaceExecution === true,
     botExecution: ready.botExecution === true,
+    /** Vault-owner port for `/host-environment`: only routing metadata goes in
+     * and only an opaque capsule comes back to this thread. */
+    environmentLaunch:
+      typeof ready.environmentIssuer === "string"
+        ? Object.freeze({
+            issuer: ready.environmentIssuer,
+            seal: (target: EnvironmentLaunchTarget, context: EnvironmentLaunchContext) =>
+              owner.call.executionEnvironmentLaunch(target, context),
+          })
+        : undefined,
     close: () => owner.close(),
   };
 }

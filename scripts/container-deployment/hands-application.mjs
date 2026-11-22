@@ -4,6 +4,22 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deploymentPaths } from './paths.mjs';
 
+/**
+ * Owner processes Hands starts, in start order. `role` is the stable identity a
+ * composition uses for per-owner policy (for example dropping privileges for the
+ * browser); entry paths are packaging details and may change.
+ */
+export const HANDS_OWNER_PROCESSES = Object.freeze([
+  Object.freeze({ role: 'browser', entry: 'browser/owner.cjs', args: Object.freeze([]) }),
+  Object.freeze({ role: 'execution', entry: 'hands-execution-owner.mjs', args: Object.freeze([]) }),
+  Object.freeze({ role: 'terminal', entry: 'hands-terminal-owner.mjs', args: Object.freeze(['--hands-terminal-owner']) }),
+  Object.freeze({ role: 'files', entry: 'hands-files-owner.mjs', args: Object.freeze([]) }),
+]);
+
+/**
+ * `spawnOwner(command, args, options, { role })` defaults to `child_process.spawn`,
+ * which ignores the fourth argument; wrappers should select policy by `role`.
+ */
 export async function startContainerHands({ startServices = async () => [], spawnOwner = spawn } = {}) {
 const data = process.env.OPENCRAFT_BROWSER_DATA_DIR;
 if (!data || !data.startsWith('/')) throw new Error('Set OPENCRAFT_BROWSER_DATA_DIR to an absolute path');
@@ -25,8 +41,8 @@ const stop = code => stopping ??= (async () => {
 services = await startServices(() => { failed = true; if (!starting) void stop(1); });
 starting = false;
 if (failed) { await stop(1); return; }
-for (const entry of ['browser/owner.cjs', 'hands-execution-owner.mjs', 'hands-terminal-owner.mjs', 'hands-files-owner.mjs']) {
-  const child = spawnOwner(join(root, 'bin/node'), [join(root, 'runtime', entry), ...(entry === 'hands-terminal-owner.mjs' ? ['--hands-terminal-owner'] : [])], { cwd: process.env.OPENCRAFT_WORKSPACE_DIR, env: process.env, stdio: 'inherit', shell: false });
+for (const { role, entry, args } of HANDS_OWNER_PROCESSES) {
+  const child = spawnOwner(join(root, 'bin/node'), [join(root, 'runtime', entry), ...args], { cwd: process.env.OPENCRAFT_WORKSPACE_DIR, env: process.env, stdio: 'inherit', shell: false }, { role });
   child.once('error', () => void stop(1)); child.once('exit', () => { if (!stopping) void stop(1); }); children.push(child);
 }
 process.once('SIGINT', () => void stop(0)); process.once('SIGTERM', () => void stop(0));

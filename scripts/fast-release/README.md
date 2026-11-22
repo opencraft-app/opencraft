@@ -1,6 +1,6 @@
 # 本地开发与快速发布
 
-本环境按“本次改动提交或合入 `env/local` → 固定 commit SHA → 从该提交构建候选 → 发布 → 验证”的顺序更新。该分支跟踪 origin/env/local，推送只指向内部 origin，提交本身不会自动触发部署。每次候选和计划的 `sourceRevision` 绑定该分支中的明确 commit；保留其他任务的未提交改动，不从未提交补丁直接发布。已获授权更新本环境时，合入后继续完成发布与验证。变更依赖、协议或数据库时回到正式交付流程。
+本环境按“本次改动提交或合入本部署约定的发布源码分支 → 固定 commit SHA → 从该提交构建候选 → 发布 → 验证”的顺序更新。仓库不规定该分支的名称或远端：`publish.mjs` 只要求 `sourceRevision` 是完整 SHA 且在 `sourceRepository` 中存在（`git cat-file -e`），不检查所在分支；分支由各部署自行选定并记录。这些脚本不 push，提交本身也不会自动触发部署。每次候选和计划的 `sourceRevision` 绑定该分支中的明确 commit；保留其他任务的未提交改动，不从未提交补丁直接发布。已获授权更新本环境时，合入后继续完成发布与验证。变更依赖、协议或数据库时回到正式交付流程。
 
 `publish.sh PLAN.json DEPLOYMENT_LOCK` 在宿主机运行；需要 Bash、flock、Docker Compose、Git 和 Node。通过 `OPENCRAFT_NODE` 指定 Node。所有入口必须使用同一部署锁；锁覆盖基线核验、配置切换、健康/行为验证与回滚，并发调用立即以 75 退出。候选构建可并行，基线变化的候选不能发布。
 
