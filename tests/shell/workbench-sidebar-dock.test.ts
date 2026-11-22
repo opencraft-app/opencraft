@@ -16,12 +16,6 @@ import {
   SIDEBAR_MINIMUM_WIDTH,
 } from "../../apps/workbench-web/src/components/sidebar-resize-handle";
 import {
-  beginSidecarPrimaryResize,
-  previewSidecarPrimaryResize,
-  resolveSidecarPrimarySettleTarget,
-} from "../../apps/workbench-web/src/components/sidecar-primary-resize";
-import { shellNavigationMetrics } from "../../packages/workbench-runtime/src/shell-navigation";
-import {
   ChromeActionFocusRegistry,
   type ChromeActionFocusHost,
 } from "../../apps/workbench-web/src/chrome-actions/focus-registry";
@@ -52,28 +46,7 @@ const designTokens = readFileSync(
   "utf8",
 );
 
-test("Applications has a content cap during held drag as well as release", () => {
-  const { compactWidth, expandedMinimumWidth, expandedMaximumWidth } = shellNavigationMetrics;
-  const transaction = beginSidecarPrimaryResize({clientX: 200, detent: "expanded", expandedWidth: 137, compactWidth});
-  const preview = (clientX: number) => previewSidecarPrimaryResize({clientX, compactWidth, expandedMinimumWidth, maximumWidth: expandedMaximumWidth, transaction});
-  for (const x of [200, 210, 400, 900]) {
-    assert.equal(preview(x).frameWidth, 137);
-    assert.equal(preview(x).candidateDetent, "expanded");
-  }
-  assert.equal(preview(190).frameWidth, 127, "dragging back inside the cap remains continuous");
-  assert.equal(resolveSidecarPrimarySettleTarget({compactWidth, expandedMinimumWidth, maximumWidth: expandedMaximumWidth, detent: "expanded", expandedWidth: 520}), 137);
-  assert.equal(preview(100).candidateDetent, "compact", "the cap does not remove collapse detents");
-});
-
-test("visibility owns the primary exit; hidden projection cannot zero its base geometry", () => {
-  const motion = readFileSync(new URL("../../apps/workbench-web/src/components/use-sidecar-primary-motion.ts", import.meta.url), "utf8");
-  const shell = readFileSync(new URL("../../apps/workbench-web/src/components/app-shell.tsx", import.meta.url), "utf8");
-  assert.match(motion, /if \(!input\.isVisible \|\| phaseRef\.current !== "idle"\) return;\s*frameWidth\.set\(input\.committedFrameWidth\)/);
-  assert.match(shell, /useSidecarPrimaryMotion\(\{\s*isVisible: navigationOpen,/);
-  assert.match(shell, /navigationOpen \? navigationController : lastDockController\.current/);
-});
-
-test("one Sidecar owns two platform panes with independent frame, clip, and viewport geometry", () => {
+test("one Sidecar owns the shared pane frame, clip, and viewport geometry", () => {
   const appShellSource = readFileSync(
     new URL(
       "../../apps/workbench-web/src/components/app-shell.tsx",
@@ -119,14 +92,12 @@ test("one Sidecar owns two platform panes with independent frame, clip, and view
 
   assert.equal(
     appShellSource.match(/<SidecarPane\b/gu)?.length,
-    2,
-    "primary and context content use the same Sidecar pane primitive",
+    1,
+    "the application and context slots share one Sidecar pane",
   );
   assert.equal(appShellSource.match(/<Sidecar\b/gu)?.length, 1);
-  assert.match(appShellSource, /contentOpacity=\{navigationAnimation\}/u);
   assert.match(appShellSource, /contentOpacity=\{sidebarProgress\}/u);
-  assert.doesNotMatch(appShellSource, /navigationContentOpacity/u);
-  assert.match(appShellSource, /viewportSize=\{primaryMotion\.viewportWidth\}/u);
+  assert.match(appShellSource, /viewportSize=\{contextViewportWidth\}/u);
   assert.match(sidecarSource, /<motion\.section[\s\S]*?sidecar-pane__clip[\s\S]*?<motion\.div/u);
   assert.match(
     sidecarSource,
@@ -142,15 +113,10 @@ test("one Sidecar owns two platform panes with independent frame, clip, and view
     /\.sidecar-pane__viewport\s*\{[\s\S]*?> \*\s*\{[\s\S]*?width:\s*100%;[\s\S]*?flex:\s*1 1 auto;/u,
     "feature content stretches through its pane instead of choosing intrinsic geometry",
   );
-  assert.match(navigationSource, /data-shell-navigation-motion="geometry"/u);
-  assert.match(navigationSource, /isAnonymousShellAccount\(config\.account\)/u);
-  assert.match(navigationSource, /config\.account\?\.onOpen\(\)/u);
+  assert.match(navigationSource, /isAnonymousShellAccount\(account\)/u);
+  assert.match(navigationSource, /onClick: account\.onOpen/u);
   assert.doesNotMatch(navigationSource, /Keep in sidebar|Unpin from sidebar/u);
-  assert.match(navigationSource, /dispatch\(\{ type: "pin", surface, pinned: true \}\)/u);
   assert.match(navigationContentSource, /id: "account\.signIn", defaultMessage: "Sign in"/u);
-  assert.match(navigationSource, /useTransform\(\s*\[progress, expandedWidth\]/u);
-  assert.match(navigationSource, /data-surface=\{surface\}/u);
-  assert.match(navigationSource, /useUiPreferencesRuntime\(\)/u);
   assert.doesNotMatch(navigationSource, /localStorage\.(?:getItem|setItem)/u,
     "Shell Navigation delegates durable state to UiPreferencesRuntime");
   const appSource = readFileSync(new URL("../../apps/workbench-web/src/app.tsx", import.meta.url), "utf8");
@@ -162,13 +128,9 @@ test("one Sidecar owns two platform panes with independent frame, clip, and view
     assert.match(source, /usePersistedSidebarWidth\((?:presentation\.shellNavigation)?\)/u);
     assert.doesNotMatch(source, /localStorage\.getItem\("sidebar-width"\)|localStorage\.setItem\("sidebar-width"/u);
   }
-  assert.match(navigationSource, /<NavigationIcon name="applications" selected=\{projection\.docked\.applications \|\| projection\.peek === "applications"\} \/>/u,
-    "the Applications entrance consumes the shared semantic app-grid glyph and open-state projection");
-  assert.match(navigationStyles, /--shell-navigation-label-opacity/u);
   assert.match(navigationStyles, /--sidebar-leading-slot-size:\s*28px/u);
   assert.doesNotMatch(navigationStyles, /&:last-child/u,
     "portal children cannot change Footer trigger geometry through structural selectors");
-  assert.doesNotMatch(navigationStyles, /data-shell-navigation-pane-mode[\s\S]*?display:\s*none/u);
 });
 
 test("context sidebar actions share one stable leading slot after account moves to the Sidecar footer", () => {
@@ -220,9 +182,11 @@ test("device settings replace shared context/content slots without a private lay
     assert.doesNotMatch(source, /useSettingsPresentation|settingsPresentation/);
     assert.doesNotMatch(source, /allowDock: !routeSettingsOpen|sidebar(?:TransientEnabled|Resizable|Collapsible)=\{!routeSettingsOpen\}/);
     assert.match(source, /settingsActive: sidebarDestination === "settings" \|\| \(routeSettingsOpen && !applicationsSelected\)/);
-    assert.match(source, /presentation=\{sidebarDestination === "settings" \? "sidebar" : managementSettingsOpen \? "dialog" : "sidebar"\}/);
+    assert.match(source, /<SettingsSidebarNavigation\b/u);
     assert.match(source, /routeSettingsOpen \? settingsNavigation/);
   }
+  const navigation = readFileSync(new URL("../../apps/workbench-web/src/components/settings-sidebar-navigation.tsx", import.meta.url), "utf8");
+  assert.match(navigation, /presentation=\{!choosingSection && managementOpen \? "dialog" : "sidebar"\}/u);
 });
 
 const floatingIntent = (
@@ -347,78 +311,6 @@ test("layout resize preserves the 120px collapse shelf", () => {
     magnetized: true,
     width: SIDEBAR_MINIMUM_WIDTH,
   });
-});
-
-test("application pane keeps pointer frames continuous while selecting only an adjacent detent", () => {
-  const maximum = getSidebarMaximumWidth(1440);
-  const expanded = beginSidecarPrimaryResize({
-    clientX: 260,
-    detent: "expanded",
-    expandedWidth: 260,
-    compactWidth: 72,
-  });
-  assert.deepEqual(previewSidecarPrimaryResize({
-    clientX: 20,
-    compactWidth: 72,
-    expandedMinimumWidth: 240,
-    maximumWidth: maximum,
-    transaction: expanded,
-  }), {
-    candidateDetent: "compact",
-    frameWidth: 72,
-    magnetized: true,
-  }, "one expanded drag cannot skip the compact shelf");
-  assert.deepEqual(previewSidecarPrimaryResize({
-    clientX: 140,
-    compactWidth: 72,
-    expandedMinimumWidth: 240,
-    maximumWidth: maximum,
-    transaction: expanded,
-  }), {
-    candidateDetent: "compact",
-    frameWidth: 140,
-    magnetized: true,
-  }, "the magnetic candidate does not quantize a held pointer frame");
-  const compact = beginSidecarPrimaryResize({
-    clientX: 72,
-    detent: "compact",
-    expandedWidth: 340,
-    compactWidth: 72,
-  });
-  assert.deepEqual(previewSidecarPrimaryResize({
-    clientX: 20,
-    compactWidth: 72,
-    expandedMinimumWidth: 240,
-    maximumWidth: maximum,
-    transaction: compact,
-  }), {
-    candidateDetent: "hidden",
-    frameWidth: 20,
-    magnetized: true,
-  }, "a second drag may preview hidden without mutating the committed origin");
-  assert.deepEqual(previewSidecarPrimaryResize({
-    clientX: 100,
-    compactWidth: 72,
-    expandedMinimumWidth: 240,
-    maximumWidth: maximum,
-    transaction: compact,
-  }), {
-    candidateDetent: "compact",
-    frameWidth: 100,
-    magnetized: true,
-  }, "compact-origin motion also follows the pointer before release");
-});
-
-test("application pane release targets are resolved independently from pointer preview", () => {
-  const common = {
-    compactWidth: 72,
-    expandedMinimumWidth: 240,
-    maximumWidth: 520,
-  };
-  assert.equal(resolveSidecarPrimarySettleTarget({ ...common, detent: "hidden", expandedWidth: null }), 0);
-  assert.equal(resolveSidecarPrimarySettleTarget({ ...common, detent: "compact", expandedWidth: null }), 72);
-  assert.equal(resolveSidecarPrimarySettleTarget({ ...common, detent: "expanded", expandedWidth: 172 }), 240);
-  assert.equal(resolveSidecarPrimarySettleTarget({ ...common, detent: "expanded", expandedWidth: 340 }), 340);
 });
 
 test("focus follows a Chrome action when its floating host is removed", () => {

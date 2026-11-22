@@ -39,7 +39,7 @@ try {
   await externalClick("external");
   assert.equal(await page.locator("iframe").count(), 0);
   await externalClick("lookalike");
-  await externalClick("external", { modifiers: ["Control"] });
+  await externalClick("external", { modifiers: ["ControlOrMeta"] });
   await externalClick("external", { button: "middle" });
   const menuPopupEvent = context.waitForEvent("page");
   await page.getByRole("link", { name: "external", exact: true }).click({ button: "right" });
@@ -71,7 +71,7 @@ try {
   assert.equal(await page.locator("iframe").count(), 2);
   await checkDraft();
   assert.deepEqual(errors, []);
-  console.log("PASS embedded real link clicks (normal/Ctrl/middle/context menu), lookalike domains, two allowed iframe destinations, address navigation, opener isolation and retained draft");
+  console.log("PASS embedded real link clicks (normal/modifier/middle/context menu), lookalike domains, two allowed iframe destinations, address navigation, opener isolation and retained draft");
   const standalone = await context.newPage();
   await standalone.goto(`${origin}/?standalone`);
   const standalonePopupEvent = context.waitForEvent("page");

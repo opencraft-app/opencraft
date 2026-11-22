@@ -136,8 +136,13 @@ remote sign-in must be repeated after a view is retired. The Web validation adap
 uses normal browser iframe storage and cannot prove native cookie isolation.
 
 Self-hosted content has no injected mobile identity and no onMessage native bridge.
-Only same-origin HTTPS navigation remains in the view; validated external links
-open through the system. Android back uses remote WebView history only for this
+Same-origin HTTPS navigation remains in the view. The iOS build can configure one
+exact HTTPS site origin and its HTTPS authentication origin with
+`EXPO_PUBLIC_SELF_HOSTED_SITE_ORIGIN` and `EXPO_PUBLIC_SELF_HOSTED_AUTH_ORIGIN`.
+Only the matching user-selected site can navigate its top-level view to that
+authentication origin. Authentication and return share the same private WebKit
+data store for the lifetime of the view. Other validated external links open
+through the system. Android back uses remote WebView history only for this
 mode. Built-in content continues to use the original Web memory navigation.
 Retries create a fresh document/runtime, rejecting late messages from retired
 views. Failed documents never automatically select another source.
@@ -147,6 +152,12 @@ settings. Once ready it uses the full safe-area viewport without a permanent
 native source toolbar. Startup, failure and self-hosted mode retain a native
 source control independent of Web content. Saving an unchanged source preserves
 the document, draft and appearance.
+
+In iOS self-hosted mode, the WebView fills the screen behind the status bar and
+home indicator. WebKit supplies safe-area geometry to the site. The native
+source control floats at the right edge with its own safe inset and remains
+available on failure. It occupies no space in the WebView layout. Rotation
+updates both geometries without replacing the website document.
 
 Native recovery toolbar surfaces use Expo GlassEffect when available and fall back to
 shared semantic surfaces. This container material never creates a second

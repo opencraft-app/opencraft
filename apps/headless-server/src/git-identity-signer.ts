@@ -1,21 +1,11 @@
-import { createHash, createPrivateKey, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
+import { createHash, createPrivateKey, sign } from 'node:crypto';
 import { chmod, mkdtemp, rm } from 'node:fs/promises';
 import { createServer, type Socket } from 'node:net';
 import { join } from 'node:path';
 import type { GitVaultCredential } from '@opencraft/execution-environment/employee-git-vault-store';
 
-export function sshString(value: string | Uint8Array): Buffer {
-  const bytes = Buffer.from(value), size = Buffer.alloc(4); size.writeUInt32BE(bytes.length);
-  return Buffer.concat([size, bytes]);
-}
-export function generateGitSigningKey(): NonNullable<GitVaultCredential['signing']> {
-  const pair = generateKeyPairSync('ed25519');
-  const publicJwk = pair.publicKey.export({ format: 'jwk' });
-  const blob = Buffer.concat([sshString('ssh-ed25519'), sshString(Buffer.from(publicJwk.x!, 'base64url'))]);
-  return { generation: randomUUID(), publicKey: `ssh-ed25519 ${blob.toString('base64')}`,
-    fingerprint: `SHA256:${createHash('sha256').update(blob).digest('base64').replace(/=+$/u, '')}`,
-    privateKey: pair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(), registration: 'pending' };
-}
+import { sshString } from "@opencraft/execution-environment/git-keys";
+export { sshString, generateGitSigningKey } from "@opencraft/execution-environment/git-keys";
 function field(bytes: Buffer, offset: number): [Buffer, number] {
   if (offset + 4 > bytes.length) throw new Error('invalid');
   const size = bytes.readUInt32BE(offset), end = offset + 4 + size;

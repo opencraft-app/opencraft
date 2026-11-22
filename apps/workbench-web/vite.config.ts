@@ -523,6 +523,9 @@ export function createWorkbenchWebConfig(
           // Isolate stable third-party runtime from application/plugin hash churn.
           codeSplitting: { groups: [
             ...startupLeafGroups,
+            // This requested queue UI shares tiny control leaves with Main.
+            // Keep it separate as lazy Settings consumers change chunk grouping.
+            { name: "local-queued-messages", test: /\/packages\/composer-editor\/src\/local-queued-messages\.tsx$/, includeDependenciesRecursively: false },
             // Keep file artwork and link menus on their demand-only paths;
             // small-chunk merging must not hoist them back into bootstrap.
             { name: "chat-link-presentations", test: /(?:\/packages\/chat-render-web\/src\/renderers\/resource-link\/(?:resource-chip|external-url-link)\.(?:tsx|scss)(?:\?.*)?$|\/packages\/chat-render-react\/src\/file-resource-presentation\.ts$)/, includeDependenciesRecursively: false },

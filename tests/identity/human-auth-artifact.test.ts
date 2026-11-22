@@ -121,9 +121,26 @@ test('packaged /setup enables membership, claims one administrator and preserves
   assert.equal((await browser.call('/__opencraft_account/setup', { proof, mode: 'web', username: 'owner', password })).status, 200);
   const first = await (await browser.call('/__opencraft_account/status')).json() as any;
   assert.equal(first.administrator, true); assert.ok(first.actor.id);
+  const assetsScope = `actor:${first.actor.id}`;
+  assert.deepEqual(await (await browser.call('/__opencraft_assets/status')).json(), { version: 1, scope: assetsScope, gitHosts: ["github.com"] });
+  const savedAssets = await browser.call('/__opencraft_assets/configurations', { action: 'save-credential', revision: 0,
+    name: 'Bundled default assets', apiUrl: 'https://api.e2b.dev', sandboxUrl: 'https://e2b.dev', apiKey: 'bundled-default-fixture-key' },
+    { 'x-opencraft-account-scope': assetsScope });
+  assert.equal(savedAssets.status, 200);
+  assert.ok(!JSON.stringify(await savedAssets.json()).includes('bundled-default-fixture-key'));
+
   await app.close(); app = await startHeadlessServer(options);
   const restored = await (await browser.call('/__opencraft_account/status')).json() as any;
   assert.equal(restored.actor.id, first.actor.id); assert.equal(restored.setup.state, 'complete');
+  const restoredAssets = await browser.call('/__opencraft_assets/configurations', undefined, { 'x-opencraft-account-scope': assetsScope });
+  assert.equal(restoredAssets.status, 200); assert.equal((await restoredAssets.json() as { revision: number }).revision, 1);
+
   assert.equal((await browser.call('/setup')).status, 303);
   assert.equal((await browser.call('/__opencraft_account/setup', { proof, mode: 'web', username: 'other', password })).status, 409);
+  await app.close();
+  app = await startHeadlessServer(options, { createIdentity: async () => ({ assistantEnvironmentConfigurationManaged: true,
+    providers: [], close() {}, service: { admissionStatus: () => 204, connectionContext: () => ({ sender: null }), handle: () => false } }) });
+  const managedAssets = await browser.call('/__opencraft_assets/status');
+  assert.equal(managedAssets.status, 404, 'a product-owned configuration service must not acquire a second public writer');
+
 });

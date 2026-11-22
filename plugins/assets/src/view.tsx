@@ -879,7 +879,9 @@ function AccountAssets({
               {catalogReadError ? <SettingsNotice tone="error">{catalogReadError}</SettingsNotice> : null}
               {git.readError ? <SettingsNotice tone="error">{git.readError}</SettingsNotice> : null}
             </div>
-            <SettingsCollectionFooter>{f("codeAccountShort")}</SettingsCollectionFooter>
+            {gitProviders.length && git.available ? (
+              <SettingsCollectionFooter>{f("codeAccountShort")}</SettingsCollectionFooter>
+            ) : null}
           </SettingsCollectionSection>
           {VariablesEditor ? (
             <SettingsCollectionSection title={f("envVariables")}>

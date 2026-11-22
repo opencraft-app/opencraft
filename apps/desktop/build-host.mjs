@@ -1,3 +1,4 @@
+import { buildAssetsRuntime } from '../../scripts/packaging/package-assets-runtime.mjs';
 import { buildServerSpacesRuntime } from '../../scripts/packaging/package-server-spaces-runtime.mjs';
 import { buildTranscriptCacheRuntime } from '../../scripts/packaging/package-transcript-cache-runtime.mjs';
 import { readFileSync, statSync } from "node:fs";
@@ -46,6 +47,7 @@ export function resolveDesktopIdentityConfig(environment = process.env) {
 
 /** Pure JS bundling only; native helpers and daemon remain owned by build:host. */
 export async function bundleDesktopHost({ environment = process.env, outdir = resolve(appRoot, "dist-host") } = {}) {
+  await buildAssetsRuntime(outdir);
   await buildTranscriptCacheRuntime(outdir);
   await buildServerSpacesRuntime(outdir);
   await buildTerminalOwnerRuntime(outdir);

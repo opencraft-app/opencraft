@@ -46,7 +46,7 @@ function App(){const[right,setRight]=useState(false),[full,setFull]=useState(fal
  useTimelineViewportHost({kind:'browser',platform:'linux',safeArea:{left:0,right:0}});
  const summary=useConversationSummary(scope,true);
  window.fixture={configureDock:()=>preferences.set("shell.toolbarDocks",{[JSON.stringify(["a","conversation-header"])]:["share-link","rename","pin","fork"]}),setRight,setFull,setForeground,setSidebar,setScope,setThemePreference,setAppearanceThemeId,coreThemeId,setDensity:value=>preferences.set('interface.touchFriendly',value)};
- return <AppShell navigation={{layout:'unified',actions:[],onOpenSettings:noop,account:{snapshot:{phase:'anonymous'},onOpen:noop}}}
+ return <AppShell navigation={{actions:[],onOpenSettings:noop,account:{snapshot:{phase:'anonymous'},onOpen:noop}}}
  layoutScope='ownership' sceneOwnerId='ownership' mainContentLayout='thread-edge-scroll' sidebarOpen={sidebar} sidebarWidth={275} onSidebarCollapse={()=>setSidebar(false)} onSidebarExpand={()=>setSidebar(true)} onSidebarResizeEnd={noop}
  foreground={foreground} onForegroundChange={setForeground} rightPanel={<div data-tool style={{height:'100%'}}>Browser / terminal / file viewport<input aria-label='Tool state' defaultValue='Alive'/></div>} rightPanelKeepMounted rightPanelOpen={right} rightPanelFullWidth={full} onRightPanelOpenChange={setRight}
  windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} floatingSidebarHeader={()=>null} leftPanel={<div>Conversations</div>}

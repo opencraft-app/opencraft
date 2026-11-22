@@ -18,7 +18,6 @@ interface FloatingLeftPanelProps {
   readonly unified?: boolean;
   readonly children: ReactNode;
   readonly header: ReactNode;
-  readonly footer?: ReactNode;
   readonly visible: boolean;
   readonly onExitComplete?: () => void;
   readonly width: number;
@@ -46,7 +45,6 @@ export function FloatingLeftPanel({
 function FloatingLeftPanelContent({
   children,
   header,
-  footer,
   unified,
   width,
   widthPx,
@@ -112,7 +110,6 @@ function FloatingLeftPanelContent({
             {header}
           </motion.div>
           <div className="app-shell-floating-left-panel__body">{children}</div>
-          {footer ? <div className="app-shell-sidecar__footer">{footer}</div> : null}
         </SafeLayout>
         {mobile ? null : (
           <SidebarResizeHandle

@@ -11,12 +11,18 @@ the /view, /entry, /catalog, /contract and /details building blocks. A compositi
 can use the standard opencraft.assets view/navigation IDs or reuse the view under
 existing IDs. Do not register both entrances for the same installation.
 
-The extension is **not automatically enabled by the default Web/Electron
-assembly**. A deployment must first supply its verified account owner and an
-implemented, independently authorized configuration service. Shipping a menu
-without those services does not enable asset management. The public default
-service/desktop wiring remains separate work; this change does not claim that an
-unmodified desktop release already contains a functional Assets entrance.
+The default public Web/Electron workbench discovers the implemented assets service
+at `/__opencraft_assets/status` during extension activation. A supporting host has
+one shared `opencraft.assets` navigation/view owner. Missing/unsupported services
+advertise no menu; no provider configuration or cached account hint grants access.
+
+Headless starts the configuration Worker when the existing Human authentication
+and instance-membership owners are configured. The bundled local-account/OIDC
+Human login and existing instance admission decide access. A product that already
+owns assistant environment configuration opts out through its existing managed
+composition flag, retaining its route, data partitions and UI adapter. Electron's
+native account host owns its service; the daemon's borrowed account host does not
+start a second configuration writer.
 
 ## Ownership
 
@@ -94,13 +100,84 @@ does not roll back a committed transaction. Unknown outcomes are never replayed.
 
 The router pins the verified origin/Host, enforces same-origin POST and JSON,
 limits bodies to 16 KiB, fences stale scopes, and returns private/no-store metadata.
-The Worker exposes only snapshot/update, never decrypted runtime credentials,
+The Worker exposes configuration/Git metadata snapshots and mutations, never decrypted runtime credentials,
 installation adoption, arbitrary document reads or library registration. Saving
 an environment is still not execution admission or external-provider validation.
 
 Bundled consumers must place `assets-configuration-worker.mjs` beside the importer;
 `scripts/packaging/package-assets-runtime.mjs` owns that build. The packaging test
 runs the bundled owner and sibling Worker from an isolated temporary directory.
-The default Web/Electron account and route composition is **still not enabled**:
-its real session/membership invalidation bridge and single-account owner must be
-connected before advertising the service or showing a default navigation entry.
+The default host composition is implemented by
+`@opencraft/plugin-local-account/assets-server`: it consumes the existing HumanAuth,
+ActorStore, HumanAccounts and InstanceAccess owners. Account/password/session,
+Actor/binding and membership/role changes withdraw request-local admission before
+queued writes. Repositories borrowing the same owner share change notifications;
+these notifications grant nothing. This does not claim that legacy authentication
+storage IO has itself been migrated off the network thread.
+
+The client-side ServerAssetsAccount is only a resource-scope projection, not a
+second login provider or credential store. It fences late replies, clears on
+verified account withdrawal, preserves drafts across transient network failures,
+and releases subscriptions on extension retirement. Every data request is still
+authenticated, scope-fenced and authorized on the server. Code-account editors are
+not advertised until a real provider port is installed.
+
+## Default-entry acceptance
+
+- `npm run test:assets-default`: actual Headless router with local setup and
+  HttpOnly login cookie, actual native account host/static origin, encrypted
+  Worker writes, CAS, and account/password/membership/binding/Actor/role withdrawal.
+- `npm run test:human-auth`: includes bundled Headless setup/save/restart/readback,
+  using the packaged sibling Worker, alongside the existing login regressions.
+- `npm run smoke:assets-default`: real default extension discovery and registered
+  navigation/lazy renderer with a real native Human account and Worker backend,
+  touch Web/light and desktop-platform/dark, secret-free save and reload.
+  The harness supplies the normal view-selection port. It is not an Electron
+  binary launch or a complete AppShell/agent-execution test.
+
+Saving E2B configuration is not cloud provisioning, an execution grant, endpoint
+verification or a resource-budget change. Runtime workspace and Git-provider
+extraction remain independent follow-up work.
+
+## Git connections
+
+The default native/Headless account assembly advertises `gitHosts` through
+`/__opencraft_assets/status`. Only a compiled, advertised GitHub adapter installs
+its provider and editor; an older or unsupported server has no fake Git action.
+`/__opencraft_assets/git-connections` shares the same Human/session/membership
+admission, origin checks, request-local revocation and vault Worker as environment
+configuration. There is no second vault writer, login, account database or schema.
+
+The shared Git controller owns request lifetimes, per-operation error namespaces,
+strict metadata parsing and monotone revisions. The GitHub form keeps a local
+secret draft and pinned expected revision; a background read cannot overwrite an
+edited draft. Loading current data requires explicit confirmation. Failed or
+unknown mutations are never replayed. Account retirement aborts every in-flight
+response so an older successful read cannot restore withdrawn metadata.
+
+The compiled GitHub provider fixes the REST origin to `api.github.com`, rejects
+redirects and verifies account ID/login and a verified email (or the exact ID-based
+noreply address). It retains a signing generation only for the same account ID.
+Signing registration reconciles by exact public key before creating one: a lost
+POST response remains pending, and an explicit retry first checks the remote list.
+Missing signing permission is a manual-registration state, not discarded account
+configuration. Removing a binding only removes the local credential; remote keys
+and tokens must be revoked at GitHub separately.
+
+Official API contracts: [verified email addresses](https://docs.github.com/en/rest/users/emails)
+and [SSH signing keys](https://docs.github.com/en/rest/users/ssh-signing-keys).
+Provider-specific hosts, identity mappings, SSH access and unrelated tool-token
+namespaces stay in their own adapters. An adapter can reuse the shared form and
+controller without changing its existing route, vault partition or revisions.
+
+Validation uses synthetic GitHub responses, including a loopback remote reached
+from the real Worker. No managed user token is read and no real remote key is
+created. `test:assets-default` covers actual Human login/HTTP/Worker writes and
+in-flight authority withdrawal. `smoke:assets-default` exercises the registered
+view, Git save, conflict, canceled reload, explicit reconciliation and local clear.
+It is a presentation harness with the production page frame, not a full AppShell
+or Electron-binary acceptance test.
+
+Saving/verifying Git configuration is not an execution grant. The default native
+Actor's agent-execution credential handoff and cloud-workspace binding still need
+runtime/admission integration; the configuration UI does not claim those paths.

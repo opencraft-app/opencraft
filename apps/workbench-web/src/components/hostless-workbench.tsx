@@ -1,4 +1,5 @@
 import { AppShellStandardPage } from "./app-shell-standard-page";
+import { SettingsSidebarNavigation } from "./settings-sidebar-navigation";
 import { DEFAULT_APPLICATION_BRANDING } from "@opencraft/extension-contract";
 import { ApplicationBrand } from "./application-brand";
 import { browserServerContext } from "../runtime/server-context";
@@ -68,10 +69,6 @@ import { WelcomeChoices } from "./desktop-welcome";
 const SettingsContent = lazy(async () => {
   const module = await import("./settings-page");
   return { default: module.SettingsContent };
-});
-const SettingsNavigation = lazy(async () => {
-  const module = await import("./settings-page");
-  return { default: module.SettingsNavigation };
 });
 
 const EMPTY_SCHEDULE_CATALOG: ScheduledTaskCatalog = {
@@ -230,20 +227,19 @@ export function HostlessWorkbench({
       routeHeaderHostRef={routeHeader.hostRef}
     />
   );
-  const settingsNavigation = settingsOpen || sidebarDestination === "settings" ? (
-    <Suspense fallback={null}>
-      <SettingsNavigation
-        section={sidebarDestination === "settings" ? "" : settingsSection ?? "appearance"}
-        onSectionChange={selectSettingsSection}
-        extensionContributions={supervisor.extensions.contributions}
-        profiles={profileSnapshot.profiles}
-        machines={machines}
-        activeHostId=""
-        onBack={openConversationSidebar}
-        presentation={sidebarDestination === "settings" ? "sidebar" : managementSettingsOpen ? "dialog" : "sidebar"}
-      />
-    </Suspense>
-  ) : null;
+  const settingsNavigation = (
+    <SettingsSidebarNavigation
+      section={settingsSection}
+      choosingSection={sidebarDestination === "settings"}
+      managementOpen={managementSettingsOpen}
+      onSectionChange={selectSettingsSection}
+      extensionContributions={supervisor.extensions.contributions}
+      profiles={profileSnapshot.profiles}
+      machines={machines}
+      activeHostId=""
+      onBack={openConversationSidebar}
+    />
+  );
   const miniAppSettingsOpen = projectMiniApps(settingsContributionSnapshot, extensionHost.platform, internalDeveloperMode,
     type => supervisor.platformViewRenderers.resolve(type) !== null).some(app => app.target.kind === "settings"
       && applicationRoute.kind === "settings" && app.target.pageId === applicationRoute.slug);

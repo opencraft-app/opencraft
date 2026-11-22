@@ -9,9 +9,13 @@ import { randomUUID } from "expo-crypto";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, AppState, BackHandler, Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import WebView from "react-native-webview";
-import { isSelfHostedNavigation, type MobileContentSource } from "../runtime/content-source";
+import { isSelfHostedNavigation, selfHostedAuthentication, type MobileContentSource } from "../runtime/content-source";
 import { mobileMessages as m } from "../runtime/mobile-messages";
 const packagedResources = require("../../assets/mobile-resources.cjs") as Record<string, number>;
+const iosSelfHostedAuthentication = Platform.OS === "ios" ? selfHostedAuthentication(
+  process.env.EXPO_PUBLIC_SELF_HOSTED_SITE_ORIGIN,
+  process.env.EXPO_PUBLIC_SELF_HOSTED_AUTH_ORIGIN,
+) : undefined;
 
 async function readPackaged(module: number): Promise<string> {
   const packaged = Asset.fromModule(module);
@@ -97,8 +101,9 @@ export function WorkspaceSurface({ source: content, dark, onAppearance, onReady,
         onShouldStartLoadWithRequest={request => {
           if (!active.current) return false;
           if (!bundled) {
-            if (isSelfHostedNavigation(content, request.url)) return true;
-            if (request.isTopFrame !== false) openExternal(request.url);
+            const topFrame = request.isTopFrame !== false;
+            if (isSelfHostedNavigation(content, request.url, topFrame ? iosSelfHostedAuthentication : undefined)) return true;
+            if (topFrame) openExternal(request.url);
             return false;
           }
           const decision = mobileNavigationDisposition(request.url, request.isTopFrame !== false, !ready.current);

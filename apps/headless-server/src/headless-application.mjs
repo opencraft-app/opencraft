@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { openHumanAssets } from '@opencraft/plugin-local-account/assets-server';
 import {workspaceTurnOutputContext} from './workspace-turn-output-context.mjs';
 import { restoreWorkspaceQueuedContext } from '@opencraft/opencraft-daemon/workspace-queued-context';
 import { HostWorkspaceCatalogTransport } from './host-workspace-catalog-transport.ts';
@@ -360,6 +361,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let instanceAccess;
   let modelPolicy;
   let membership;
+  let assetsService;
   let actorStore;
   const terminalServices = new Map();
   const fileSystem = options.fileSystemOwner ? createHostFileSystem(options.fileSystemOwner) : null;
@@ -437,7 +439,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       for (const dispose of [() => executionDatabase?.close(),
         () => modelPolicy?.close(), () => mcpApps?.close(), () => sshManagement?.close(), () => identity?.executionEnvironment?.close(), () => identity?.close?.(),
 
-        () => composition.close?.(), () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
+        () => assetsService?.close(), () => composition.close?.(), () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
         () => capabilityBindings?.close(), () => actorStore?.close(), () => membership?.close()]) {
         await settle([dispose]);
       }
@@ -512,6 +514,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     }
     const providers = [...(humanAuth ? [humanAuth] : []), ...externalProviders];
     if (membership) instanceAccess = new InstanceAccess(membership, providers, actorStore, options.accessMemberProviders ?? [], identity?.admissionPolicy);
+    // An identity product that owns configurations keeps its route and legacy partitions.
+    // Never start a second resource writer alongside that composition.
+    if (humanAuth && instanceAccess && !identity?.assistantEnvironmentConfigurationManaged)
+      assetsService = await openHumanAssets({ directory: dataDirectory, auth: humanAuth, actors: actorStore, access: instanceAccess });
     const authenticateHuman = request => {
       if (instanceAccess) return instanceAccess.authenticate(request);
       const identities = providers.map(provider => provider.authenticate(request)).filter(Boolean);
@@ -1183,6 +1189,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         });
         return async (request,response) => gateway && await gateway(request,response) || await policy(request,response);
       })(),
+      assetsService,
       identityService: identity?.service ?? null,
       accessService: instanceAccess ?? null,
       actorService: actorAccess,

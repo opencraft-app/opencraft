@@ -25,11 +25,11 @@ export const labels = {
   clearFilters: "Clear filters",
   connectionSaveHint: "Saving stores this configuration; it does not check whether E2B is reachable.",
 
-  codeAccountShort: "Code accounts currently work on this server.",
+  codeAccountShort: "Code account bindings are saved for this server.",
   codeAccessRole: "Access code services",
   provisioningRole: "Create cloud environments",
   codeAccountHint:
-    "Code service connections currently support code access on this server. Binding these accounts to cloud environments is not available yet.",
+    "Code account bindings are scoped to this server. Binding these accounts to cloud environments is not available yet.",
   creationConnectionHint:
     "Used to create the cloud environment and bill its usage, not to choose a code repository account.",
   chooseAssistant: "Choose an assistant",

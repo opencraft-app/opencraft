@@ -118,18 +118,6 @@
       "count": 2
     },
     {
-      "file": "apps/workbench-web/src/components/app-shell.tsx",
-      "kind": "label",
-      "text": "Pinned navigation",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/app-shell.tsx",
-      "kind": "label",
-      "text": "Resize applications",
-      "count": 1
-    },
-    {
       "file": "apps/workbench-web/src/components/connectors/connector-library.tsx",
       "kind": "jsx-text",
       "text": "连接器",

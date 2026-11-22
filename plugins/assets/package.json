@@ -19,7 +19,13 @@
     "./server/installed-policy": "./src/server/installed-policy.ts",
     "./server/browser-manifest": "./src/server/browser-manifest.ts",
     "./server": "./src/server/worker.ts",
-    "./server/http": "./src/server/http.ts"
+    "./server/http": "./src/server/http.ts",
+    "./client": "./src/client.ts",
+    "./git/contract": "./src/git/contract.ts",
+    "./git/client": "./src/git/client.tsx",
+    "./server/git-connections": "./src/server/git-connections.ts",
+    "./server/github-provider": "./src/server/github-provider.ts",
+    "./server/storage": "./src/server/storage.ts"
   },
   "dependencies": {
     "@opencraft/design-system-web": "0.1.0",
@@ -31,6 +37,7 @@
     "react": "19.3.1",
     "@opencraft/execution-environment": "0.1.0",
     "@opencraft/worker-owner": "0.1.0",
-    "@opencraft/sqlite-node": "0.1.0"
+    "@opencraft/sqlite-node": "0.1.0",
+    "@opencraft/appserver-client": "0.1.0"
   }
 }

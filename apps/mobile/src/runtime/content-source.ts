@@ -1,4 +1,5 @@
 export type MobileContentSource = Readonly<{ kind: "bundled" }> | Readonly<{ kind: "self-hosted"; url: string }>;
+type SelfHostedAuthentication = Readonly<{ siteOrigin: string; authOrigin: string }>;
 export const BUNDLED_SOURCE: MobileContentSource = Object.freeze({ kind: "bundled" });
 export const CONTENT_SOURCE_KEY = "opencraft.mobile.content-source.v1";
 
@@ -25,11 +26,35 @@ export function encodeContentSource(source: MobileContentSource): string {
   return JSON.stringify({ version: 1, ...source });
 }
 
-/** Remote sites never acquire the packaged document's privileged origin/bridge. */
-export function isSelfHostedNavigation(source: MobileContentSource, input: string): boolean {
-  if (source.kind !== "self-hosted") return false;
+function httpsNavigationOrigin(input: string): string | undefined {
+  // Parse just the authority. The React Native URL implementation can mistake
+  // an @ in the path or query for URL credentials.
+  const authority = /^https:\/\/([^/?#\\@\s]+)(?:[/?#]|$)/i.exec(input)?.[1];
+  if (!authority) return undefined;
   try {
-    const url = new URL(input);
-    return url.protocol === "https:" && !url.username && !url.password && url.origin === new URL(source.url).origin;
-  } catch { return false; }
+    return new URL(`https://${authority.toLowerCase().replace(/:0*443$/, "")}/`).origin;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseHttpsOrigin(input: string | undefined): string | undefined {
+  const value = input?.trim();
+  if (value && /^https:\/\/[^/?#]+\/?$/i.test(value)) return httpsNavigationOrigin(value);
+}
+
+export function selfHostedAuthentication(site: string | undefined, auth: string | undefined): SelfHostedAuthentication | undefined {
+  const siteOrigin = parseHttpsOrigin(site);
+  const authOrigin = parseHttpsOrigin(auth);
+  if (siteOrigin && authOrigin && siteOrigin !== authOrigin) return { siteOrigin, authOrigin };
+  return undefined;
+}
+
+/** Remote sites never acquire the packaged document's privileged origin/bridge. */
+export function isSelfHostedNavigation(source: MobileContentSource, input: string, authentication?: SelfHostedAuthentication): boolean {
+  if (source.kind !== "self-hosted") return false;
+  const origin = httpsNavigationOrigin(input);
+  if (!origin) return false;
+  const sourceOrigin = httpsNavigationOrigin(source.url);
+  return origin === sourceOrigin || (authentication?.siteOrigin === sourceOrigin && origin === authentication?.authOrigin);
 }
