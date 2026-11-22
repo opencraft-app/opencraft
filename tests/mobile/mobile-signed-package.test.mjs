@@ -47,15 +47,15 @@ const assertNotices = (actual, base) => {
   assert.equal(actual.extra.fixture, "preserved");
 };
 
-test("mobile identities ignore release flags and retain license notices", () => {
+test("only the production-key APK takes the published identity; notices are retained", () => {
   const base = standaloneConfig();
   const original = structuredClone(base);
   for (const android of [false, true]) {
     for (const ios of [false, true]) {
       const result = withBuildInputs({ android, ios }, () => configureExpo({ config: base }));
       assert.equal(result.name, "OpenCraft");
-      assert.deepEqual(result.android, original.android);
-      assert.deepEqual(result.ios, original.ios);
+      assert.deepEqual(result.android, android ? { ...original.android, package: "app.opencraft" } : original.android);
+      assert.deepEqual(result.ios, original.ios, "only the TestFlight profile selects the published iOS identity");
       assertNotices(result, original);
       assert.deepEqual(base, original, "building must not mutate the input manifest");
     }

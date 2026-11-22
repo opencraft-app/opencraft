@@ -342,8 +342,9 @@ and downloadable Actions artifact after this subtree reaches the standalone
 GitHub mirror; the nested workflow does not run downstream. The local
 requirements and install command are in `apps/mobile/README.md`.
 
-The public Android release target uses the public Expo configuration (the legacy
-development identifier remains `dev.opencraft.workbench`). It requires a
+The public Android release target builds the published application ID
+`app.opencraft`, the same identifier as the iOS TestFlight app; development-key
+builds keep `dev.opencraft.workbench` as a separate installation. It requires a
 repository-external production keystore, verifies the package ID and APK
 signature against that keystore, and writes both the APK and filing values.
 It never falls back to the internal development key. `OPENCRAFT_ANDROID_VERSION_CODE`

@@ -116,7 +116,7 @@ test("staging binds the APK digest and publishes it under the release name", (t)
   put("inputs/desktop/desktop-linux-x64/OpenCraft-0.1.0-linux-x86_64.AppImage", "appimage");
   put("inputs/desktop/desktop-windows-x64/OpenCraft-0.1.0-win-x64.zip", "winzip");
   put("inputs/desktop/desktop-windows-x64/OpenCraft-Setup-0.1.0-x64.exe", "exe");
-  const apk = "inputs/android/OpenCraft-dev.opencraft.workbench-android-release.apk";
+  const apk = "inputs/android/OpenCraft-app.opencraft-android-release.apk";
   put(apk, "apk");
   const stage = () =>
     spawnSync("bash", [join(root, "scripts/release/stage-desktop-beta.sh"), "v0.1.0-beta.3"], {
@@ -124,7 +124,7 @@ test("staging binds the APK digest and publishes it under the release name", (t)
       encoding: "utf8",
     });
 
-  put(`${apk}.sha256`, `${"0".repeat(64)}  release/OpenCraft-dev.opencraft.workbench-android-release.apk\n`);
+  put(`${apk}.sha256`, `${"0".repeat(64)}  release/OpenCraft-app.opencraft-android-release.apk\n`);
   assert.notEqual(stage().status, 0, "a digest mismatch must stop staging");
   assert.throws(
     () => readdirSync(join(directory, "candidate")),
@@ -133,7 +133,7 @@ test("staging binds the APK digest and publishes it under the release name", (t)
   );
 
   const apkDigest = execFileSync("sha256sum", [apk], { cwd: directory }).toString().split(" ")[0];
-  put(`${apk}.sha256`, `${apkDigest}  release/OpenCraft-dev.opencraft.workbench-android-release.apk\n`);
+  put(`${apk}.sha256`, `${apkDigest}  release/OpenCraft-app.opencraft-android-release.apk\n`);
   const result = stage();
   assert.equal(result.status, 0, result.stderr);
   assert.ok(readdirSync(join(directory, "candidate")).includes("OpenCraft-0.1.0-beta.3-android-arm64.apk"));

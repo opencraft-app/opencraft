@@ -59,7 +59,7 @@ consumes core through published packages.
 |---|---|---|
 | iPhone 体验当前代码 | Expo Go 临时预览，依赖持续运行的 Metro | [真机快速体验](#iphone-真机快速体验) |
 | Android 内测安装 | `dev.opencraft.workbench`，开发签名 APK | [Android 内测 APK](#android-internal-apk) |
-| Android 正式包与资料 | 公开默认 `dev.opencraft.workbench`；下游产品自行声明正式包名，分别生成签名与包资料 | [Android 正式 APK](#android-release-apk) |
+| Android 正式包与资料 | 正式签名包为 `app.opencraft`（与 iOS TestFlight 相同）；下游产品自行声明正式包名，分别生成签名与包资料 | [Android 正式 APK](#android-release-apk) |
 | iOS 可安装测试包 | 公开默认 `dev.opencraft.workbench`；产品包由显式产品配置声明 | [iOS IPA](#ios-site-shell-and-simulator) |
 
 Expo Go 链接、Android APK 和 iOS IPA 是不同交付物。每次交付都从当前
@@ -216,7 +216,9 @@ Metro; using the Workbench still requires a reachable configured Host.
 
 ## Android release APK
 
-公开默认构建使用 `dev.opencraft.workbench`。下游产品可通过显式 Expo 产品配置
+正式密钥构建使用发布包名 `app.opencraft`，与 iOS TestFlight 的 Bundle ID 一致；
+开发密钥内测包与 Expo Go 保持 `dev.opencraft.workbench`，两者在同一设备上是互不覆盖的独立应用。
+下游产品可通过显式 Expo 产品配置
 提供自己的包名、显示名称和图标；产物文件名前缀由
 `OPENCRAFT_NATIVE_ARTIFACT_NAME` 指定，默认是 `OpenCraft`。
 正式签名 PKCS12 密钥库和密码文件必须保存在仓库外，并由负责人安全备份；
@@ -238,9 +240,9 @@ npm --prefix apps/mobile run build:android:release
 校验 APK 的包名、版本和签名证书。设置 `OPENCRAFT_ANDROID_VERSION_CODE` 时使用该
 versionCode，否则沿用 `app.json` 的值。产物位于 `apps/mobile/release/`：
 
-- `OpenCraft-dev.opencraft.workbench-android-release.apk`：默认可安装包，旁边有 SHA-256 文件。
-- `OpenCraft-dev.opencraft.workbench-filing.txt`：包名、**签名证书 MD5**、**APK 文件 MD5**、Base64 公钥。
-- `OpenCraft-dev.opencraft.workbench-public-key.pem` 和 `-signing-cert.der`：可交接的公钥与公开证书，均不包含私钥。
+- `OpenCraft-app.opencraft-android-release.apk`：默认可安装包，旁边有 SHA-256 文件。
+- `OpenCraft-app.opencraft-filing.txt`：包名、**签名证书 MD5**、**APK 文件 MD5**、Base64 公钥。
+- `OpenCraft-app.opencraft-public-key.pem` 和 `-signing-cert.der`：可交接的公钥与公开证书，均不包含私钥。
 
 产品构建的文件名使用产品前缀和实际包名。
 
@@ -261,21 +263,21 @@ versionCode，否则沿用 `app.json` 的值。产物位于 `apps/mobile/release
 在有 Android 设备时安装新包验证：
 
 ```bash
-adb install -r apps/mobile/release/OpenCraft-dev.opencraft.workbench-android-release.apk
+adb install -r apps/mobile/release/OpenCraft-app.opencraft-android-release.apk
 ```
 
 需要在局域网提供临时下载链接时，让服务在持续运行的终端中启动：
 
 ```bash
 python3 apps/mobile/scripts/serve-android-release-apk.py \
-  --apk apps/mobile/release/OpenCraft-dev.opencraft.workbench-android-release.apk \
+  --apk apps/mobile/release/OpenCraft-app.opencraft-android-release.apk \
   --bind 0.0.0.0 --port 8765
 ```
 
 提供产品包时将 `--apk` 指向对应 APK。下载路径为所选文件的文件名。
 
 用 `hostname -I` 找到可达的局域网 IP，将
-`http://<局域网 IP>:8765/OpenCraft-dev.opencraft.workbench-android-release.apk` 发给测试者。
+`http://<局域网 IP>:8765/OpenCraft-app.opencraft-android-release.apk` 发给测试者。
 先用 `curl -I` 检查 HTTP 200 和文件长度，再下载核对 SHA-256。
 服务只开放这一个 APK 路径；签名密钥和密码不得放进下载目录。
 关闭终端或服务器进程后，链接即失效。该流程不执行上架或公开发布。
