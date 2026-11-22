@@ -119,6 +119,11 @@ export class CodexHostServices implements DuplexTransport, CodexHostServiceClien
         ? this.routing.sendWithContext(raw, context, signal)
         : this.routing.send(raw, signal);
     if (frame.id === undefined) return;
+    // As the local Codex Host did: Host services answer only initialized clients.
+    if (!this.clients.has(client)) {
+      this.emit({ id: frame.id, error: { code: -32600, message: "Client is not initialized" } }, client || undefined);
+      return;
+    }
     try {
       this.emit(
         { id: frame.id, result: (await service.request(method, frame.params, context)) ?? null },

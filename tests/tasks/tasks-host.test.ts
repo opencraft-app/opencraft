@@ -207,3 +207,40 @@ test("local Codex adapter owns Tasks RPC instead of forwarding it to native Code
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("the Codex Host services front owns Tasks while a spawn-mode Codex adapter opts out", async () => {
+  const { CodexHostServices, codexTasksService } = await import("../../apps/opencraft-daemon/src/codex-host-services");
+  const root = await mkdtemp(join(tmpdir(), "oc-tasks-front-"));
+  const adapter = new CodexEngineAdapter({
+    executable: process.execPath, runtimeDirectory: root, dataDirectory: join(root, "data"), nativeCodexHomeDirectory: join(root, "native"),
+    upstreamBaseUrl: "http://127.0.0.1:9", fetch: async () => Response.json({}), externalTasks: true,
+    spawnAppServer: ({ cwd, env }) => spawn(process.execPath, [new URL("../fixtures/fake-codex-stdio-appserver.mjs", import.meta.url).pathname], { cwd, env, stdio: ["pipe", "pipe", "pipe"] }),
+    createMaintenanceClient: async () => { throw new Error("unused"); }, logDiagnostic: () => {},
+  });
+  const front = new CodexHostServices(adapter, clients => [codexTasksService(join(root, "data", "tasks.sqlite"), clients)]);
+  let sequence = 0;
+  const call = (target: { send(frame: string): Promise<void>; subscribeMessage(listener: (frame: string) => void): () => void }, method: string, params: unknown): Promise<any> => {
+    const id = ++sequence;
+    const reply = new Promise<any>((resolve, reject) => {
+      const timer = setTimeout(() => { remove(); reject(new Error("timeout")); }, 4000);
+      const remove = target.subscribeMessage(frame => {
+        const response = JSON.parse(frame); if (response.id !== id) return;
+        clearTimeout(timer); remove(); response.error ? reject(response.error) : resolve(response.result);
+      });
+    });
+    return target.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "tasks-test" })).then(() => reply);
+  };
+  try {
+    await front.connect();
+    await assert.rejects(call(front, TASKS.list, {}), (error: any) => error.code === -32600);
+    await call(front, "initialize", {});
+    await call(front, TASKS.create, { id: "front", title: "Front", description: "", status: "todo", projectServerId: null, projectId: null });
+    assert.equal((await call(front, TASKS.list, {})).tasks[0].id, "front");
+    // The adapter opened no tasks store and refuses a stray request.
+    assert.ok(!adapter.storageOutcomes.some(row => row.name === "tasks"));
+    await assert.rejects(call(adapter, TASKS.list, {}), (error: any) => error.code === -32601);
+  } finally {
+    await front.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});

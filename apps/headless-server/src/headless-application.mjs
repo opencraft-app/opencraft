@@ -18,6 +18,7 @@ import { createProjectAutomations } from './project-automations.mjs';
 import { executionCliSourceToken } from '@opencraft/session-capabilities/credentials';
 import { waitForExecutionCliBinding } from '@opencraft/session-capabilities/execution-cli';
 import { codexAdmissionPaused,createServerCodexBridge,readCodexBridgeConfiguration,createBridgeSessionMcp } from '@opencraft/opencraft-daemon/bridge-execution-admission';
+import { CodexHostServices, codexTasksService } from '@opencraft/opencraft-daemon/codex-host-services';
 import { openServerDatabase } from "@opencraft/storage-node/server";
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { modelPolicyHttp } from '@opencraft/model-usage-policy/http';
@@ -905,8 +906,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           return new MachineIdentityTransport(null, "Codex", () => createRemoteCodexTransport(binding, hostId));
         }
         if (hostId !== "local-codex") throw new Error(`Unknown server Host ${hostId}`);
-        return anonymousDriver(new McpAppsTransport(new MachineIdentityTransport(machineIdentity, "Codex", () => createServerCodexBridge(createCodexTransport({
+        // Host-wide duties (tasks first) are answered by the services front before Thread routing.
+        let codexAdapterStorage = [], codexFront;
+        const reportLocalCodexStorage = () => storageOpened(hostId)([...codexAdapterStorage, ...(codexFront?.storage() ?? [])]);
+        return anonymousDriver(new McpAppsTransport(new MachineIdentityTransport(machineIdentity, "Codex", () => codexFront = new CodexHostServices(createServerCodexBridge(createCodexTransport({
           historyImageResources: process.env.OPENCRAFT_HISTORY_IMAGE_RESOURCES === "1",
+          externalTasks: true,
           createSessionMcp: async () => {
             await capabilitiesReady;
             const reservation = capabilityMcp.prepareExecution();
@@ -977,7 +982,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
             mode: id => actorCollaboration.inputMode(id),
             authorize: (threadId, id, mode, expectedTurnId) => actorCollaboration.authorizeInput(threadId, id, mode, expectedTurnId),
           },
-          onStorageOpened: storageOpened(hostId),
+          onStorageOpened: outcomes => { codexAdapterStorage = outcomes; reportLocalCodexStorage(); },
           executable: options.codexExecutable ?? join(root, "runtime/codex/bin/codex"),
           runtimeDirectory: options.runtimeDirectory ?? join(root, "runtime"),
           dataDirectory: join(dataDirectory, "codex"),
@@ -1007,7 +1012,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           sign:session=>executionCliSourceToken(capabilityKey,session),
           ...bridgeSessionMcp,
           started:(threadId,inputId,turnId)=>actorCollaboration.executionStarted(threadId,inputId,turnId),
-        },{admissionPaused:()=>codexAdmissionPaused(join(dataDirectory,"codex"))})), mcpApps), hostId);
+        },{admissionPaused:()=>codexAdmissionPaused(join(dataDirectory,"codex"))}), clients => [codexTasksService(join(dataDirectory, "codex", "tasks.sqlite"), clients, reportLocalCodexStorage)])), mcpApps), hostId);
         })(), modelPolicyPath, hostId === 'opencraft-server' ? 'dsh' : 'codex');
         let scopedTransport = identity?.executionEnvironment && ['local-codex', 'opencraft-server'].includes(hostId)
           ? new ExecutionEnvironmentTransport(transport, identity.executionEnvironment, hostId) : transport;

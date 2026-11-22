@@ -46,6 +46,7 @@
     "./workspace-queued-context": "./src/workspace-queued-context.ts",
     "./assistant-environments": "./src/assistant-environments.ts",
     "./bridge-execution-admission": "./src/bridge-execution-admission.ts",
+    "./codex-host-services": "./src/codex-host-services.ts",
     "./appserver-identity-overlay": "./src/appserver-identity-overlay.ts",
     "./token-usage-query-transport": "./src/token-usage-query-transport.ts",
     "./token-usage-query-service": "./src/token-usage-query-service.ts",

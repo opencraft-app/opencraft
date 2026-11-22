@@ -76,6 +76,11 @@ test("Host-wide duties are answered by the front; Thread work goes to routing un
     return frames.find((frame) => frame.id === id);
   };
   try {
+    assert.equal(
+      (await send(90, "opencraft/tasks/list", {}, "early")).error.code,
+      -32600,
+      "an uninitialized client is refused, as before",
+    );
     const init = await send(1, "initialize", { clientInfo: { name: "t", version: "1" } });
     assert.deepEqual(
       init.result.capabilities.extensions,
