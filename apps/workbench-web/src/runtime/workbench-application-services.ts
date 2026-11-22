@@ -633,6 +633,8 @@ export function createWebWorkbenchCommands(input: {
   readonly navigation: WorkbenchNavigationTransaction<AppServerWorkbenchRuntime>;
   readonly queryClient: QueryClient;
   readonly hostProfiles: HostConnectionProfileStore;
+  /** Deployment default Host for a new conversation when the current Host cannot start one. */
+  readonly deploymentDefaultHostId?: string | null;
   readonly createHostRegistration: (
     profile: HostConnectionProfile,
   ) => HostRuntimeRegistration<AppServerWorkbenchRuntime>;
@@ -833,7 +835,7 @@ export function createWebWorkbenchCommands(input: {
       assertTarget(options.execution.hostId);
       let execution = options.execution;
       if (presentation.executionSelection === "selectable" && !options.draftId) {
-        const target = chooseNewConversationHost(input.hostProfiles.getSnapshot().profiles, execution.hostId);
+        const target = chooseNewConversationHost(input.hostProfiles.getSnapshot().profiles, execution.hostId, input.deploymentDefaultHostId);
         if (!target) throw new Error("没有可用于新建聊天的连接。");
         // A different Host cannot inherit a remote filesystem/project identity.
         if (target.hostId !== execution.hostId) {

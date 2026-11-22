@@ -1,8 +1,17 @@
 import { chooseNewConversationHost, type HostConnectionProfile } from "@opencraft/workbench-runtime";
 
-/** Host of the headless Gateway's built-in Codex. It is the product default engine for a first conversation;
- * `opencraft-server` carries the optional DSH/Pi engines and stays selectable. */
-export const HEADLESS_DEFAULT_CONVERSATION_HOST = "local-codex";
+/** Host of the built-in Codex engine. The Electron Daemon and the headless Gateway both expose it as `local-codex`;
+ * the DSH/Pi Host (`local` on desktop, `opencraft-server` on headless) stays selectable and is the fallback. */
+export const BUILTIN_CODEX_CONVERSATION_HOST = "local-codex";
+
+/** Deployment default for new conversations. Only deployments that ship the built-in Codex Host name it; a plain Web
+ * build with configured AppServer Hosts keeps the deployment order. */
+export function conversationDeploymentDefaultHost(deployment: {
+  readonly platform: "web" | "electron";
+  readonly headlessAppHost: boolean;
+}): string | null {
+  return deployment.platform === "electron" || deployment.headlessAppHost ? BUILTIN_CODEX_CONVERSATION_HOST : null;
+}
 
 /** Startup Host: an explicit route wins, then the remembered selection, then the deployment default. */
 export function chooseInitialConversationHost(input: {
@@ -15,5 +24,5 @@ export function chooseInitialConversationHost(input: {
   const { profiles, requestedHostId, persistedHostId } = input;
   if (requestedHostId !== undefined && profiles.some(host => host.hostId === requestedHostId)) return requestedHostId;
   if (profiles.some(host => host.hostId === persistedHostId && (host.hideFromNewChat !== true || input.persistedHasThread))) return persistedHostId!;
-  return chooseNewConversationHost(profiles, input.deploymentDefaultHostId)?.hostId;
+  return chooseNewConversationHost(profiles, null, input.deploymentDefaultHostId)?.hostId;
 }

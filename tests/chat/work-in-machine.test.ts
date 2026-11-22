@@ -12,7 +12,7 @@ import { IndexedDbHostConnectionProfileStore } from "../../apps/workbench-web/sr
 
 import { ServerManagedProfileStore } from "../../apps/workbench-web/src/runtime/server-managed-profile-store";
 import { machineRole } from "../../apps/workbench-web/src/runtime/work-in-presentation";
-import { chooseInitialConversationHost, HEADLESS_DEFAULT_CONVERSATION_HOST } from "../../apps/workbench-web/src/runtime/initial-conversation-host";
+import { BUILTIN_CODEX_CONVERSATION_HOST, chooseInitialConversationHost, conversationDeploymentDefaultHost } from "../../apps/workbench-web/src/runtime/initial-conversation-host";
 
 const machine = { machineId: "12345678-1234-4123-8123-123456789abc", name: "build-machine", platform: "macos" as const };
 export function profile(hostId: string, identity: typeof machine | null = machine): HostConnectionProfile {
@@ -211,16 +211,42 @@ test("the headless Gateway starts a first conversation on its built-in Codex Hos
     assert.deepEqual(profiles.map(host => host.hostId), ["opencraft-server", "local-codex"], "the deployment order alone selects the DSH/Pi Host");
     assert.equal(chooseInitialConversationHost({ profiles, persistedHostId: null, persistedHasThread: false }), "opencraft-server");
     assert.equal(chooseInitialConversationHost({ profiles, persistedHostId: null, persistedHasThread: false,
-      deploymentDefaultHostId: HEADLESS_DEFAULT_CONVERSATION_HOST }), "local-codex");
+      deploymentDefaultHostId: conversationDeploymentDefaultHost({ platform: "web", headlessAppHost: true }) }), "local-codex");
     // An explicit route and a remembered selection still win over the deployment default.
     assert.equal(chooseInitialConversationHost({ profiles, requestedHostId: "opencraft-server", persistedHostId: null, persistedHasThread: false,
-      deploymentDefaultHostId: HEADLESS_DEFAULT_CONVERSATION_HOST }), "opencraft-server");
+      deploymentDefaultHostId: conversationDeploymentDefaultHost({ platform: "web", headlessAppHost: true }) }), "opencraft-server");
     assert.equal(chooseInitialConversationHost({ profiles, persistedHostId: "opencraft-server", persistedHasThread: false,
-      deploymentDefaultHostId: HEADLESS_DEFAULT_CONVERSATION_HOST }), "opencraft-server");
+      deploymentDefaultHostId: conversationDeploymentDefaultHost({ platform: "web", headlessAppHost: true }) }), "opencraft-server");
     // Without the Codex Host (or hidden from new chat) the default falls back to the deployment Host.
     assert.equal(chooseInitialConversationHost({ profiles: [server, { ...codex, hideFromNewChat: true }], persistedHostId: null, persistedHasThread: false,
-      deploymentDefaultHostId: HEADLESS_DEFAULT_CONVERSATION_HOST }), "opencraft-server");
+      deploymentDefaultHostId: conversationDeploymentDefaultHost({ platform: "web", headlessAppHost: true }) }), "opencraft-server");
   } finally { store.close(); }
+});
+
+test("the desktop starts a new conversation on the built-in Codex Host unless a choice or availability says otherwise", () => {
+  // Electron's built-in Agents extension contributes the DSH/Pi Host first, then the built-in Codex Host.
+  const local = { ...profile("local", null), displayName: "OpenCraft", hostKind: "local" as const, agent: null };
+  const codex = { ...profile("local-codex", null), displayName: "Server", hostKind: "local" as const, agent: null };
+  const profiles = [local, codex];
+  const deploymentDefaultHostId = conversationDeploymentDefaultHost({ platform: "electron", headlessAppHost: false });
+  assert.equal(deploymentDefaultHostId, BUILTIN_CODEX_CONVERSATION_HOST);
+  assert.equal(conversationDeploymentDefaultHost({ platform: "web", headlessAppHost: false }), null, "a configured Web build keeps its deployment order");
+  const initial = (overrides: Partial<Parameters<typeof chooseInitialConversationHost>[0]> = {}) => chooseInitialConversationHost({
+    profiles, persistedHostId: null, persistedHasThread: false, deploymentDefaultHostId, ...overrides });
+  assert.equal(chooseInitialConversationHost({ profiles, persistedHostId: null, persistedHasThread: false }), "local", "without a deployment default the order selects DSH/Pi");
+  assert.equal(initial(), "local-codex", "fresh profile");
+  assert.equal(initial({ requestedHostId: "local" }), "local", "explicit route wins");
+  assert.equal(initial({ requestedHostId: "local-codex", persistedHostId: "local" }), "local-codex");
+  assert.equal(initial({ persistedHostId: "local" }), "local", "remembered local choice wins over the deployment default");
+  assert.equal(initial({ persistedHostId: "ssh:gone" }), "local-codex", "a stale remembered Host falls through to the deployment default");
+  assert.equal(initial({ profiles: [local] }), "local", "no Codex Host keeps today's local fallback");
+  assert.equal(initial({ profiles: [local, { ...codex, hideFromNewChat: true }] }), "local", "hidden Codex Host is not a new-chat default");
+  assert.equal(initial({ profiles: [local, { ...codex, enabled: false }] }), "local", "disabled Codex Host is not a new-chat default");
+  // New conversation from the current Host keeps that Host; only an ineligible current Host falls back to the default.
+  assert.equal(chooseNewConversationHost(profiles, "local", deploymentDefaultHostId)?.hostId, "local");
+  const hidden = { ...profile("ssh:old", null), hostKind: "remote-ssh" as const, hideFromNewChat: true };
+  assert.equal(chooseNewConversationHost([hidden, ...profiles], hidden.hostId, deploymentDefaultHostId)?.hostId, "local-codex");
+  assert.equal(chooseNewConversationHost([hidden, local], hidden.hostId, deploymentDefaultHostId)?.hostId, "local");
 });
 
 test("malformed persisted machine identity is rejected rather than replaced", async () => {
