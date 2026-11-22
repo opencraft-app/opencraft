@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "reason": "Recorded debt: synchronous file, process and SQLite calls, and SQL statements passed as literals to prepare/exec, in code that network processes load on their main thread (AGENTS.md \u7f51\u7edc\u4e3b\u7ebf\u7a0b\u4e0d\u5f97\u963b\u585e). Counts may only shrink: move the work into a Worker or an async API, then run `node scripts/check/check-main-thread-sync-io.mjs --update`. Startup-only calls are recorded too; they still block a restarted process before it serves.",
+  "reason": "Recorded debt: synchronous file, process and SQLite calls, and SQL statements passed as literals to prepare/exec, in code that network processes load on their main thread (AGENTS.md 网络主线程不得阻塞). Counts may only shrink: move the work into a Worker or an async API, then run `node scripts/check/check-main-thread-sync-io.mjs --update`. Startup-only calls are recorded too; they still block a restarted process before it serves.",
   "entries": [
     "apps/opencraft-daemon/src/bin.ts",
     "apps/desktop/src/main.ts",
@@ -201,6 +201,9 @@
     "packages/access-control/src/thread-access.ts": {
       "SQL statement": 5
     },
+    "packages/account-pool-host/src/account-pool.ts": {
+      "SQL statement": 28
+    },
     "packages/account-pool-host/src/codex-account-service.ts": {
       "mkdirSync": 1,
       "renameSync": 1,
@@ -214,19 +217,19 @@
       "SQL statement": 1
     },
     "packages/account-pool-host/src/model-gateway-store.ts": {
-      "SQL statement": 50
+      "SQL statement": 47
     },
     "packages/account-pool-host/src/store.ts": {
-      "chmodSync": 4,
-      "DatabaseSync": 3,
-      "existsSync": 5,
+      "chmodSync": 3,
+      "DatabaseSync": 2,
+      "existsSync": 4,
       "mkdirSync": 2,
       "readdirSync": 2,
-      "readFileSync": 9,
-      "renameSync": 5,
-      "rmSync": 5,
-      "SQL statement": 34,
-      "writeFileSync": 3
+      "readFileSync": 5,
+      "renameSync": 4,
+      "rmSync": 4,
+      "SQL statement": 3,
+      "writeFileSync": 2
     },
     "packages/app-host-server/src/thread-directory/index.ts": {
       "DatabaseSync": 1,
@@ -279,7 +282,7 @@
       "SQL statement": 16
     },
     "packages/model-usage-policy/src/index.ts": {
-      "SQL statement": 8
+      "SQL statement": 5
     },
     "packages/model-usage-policy/src/native.mjs": {
       "DatabaseSync": 2,

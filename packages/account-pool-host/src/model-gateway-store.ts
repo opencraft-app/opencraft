@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { isAbsolute } from "node:path";
-import { openManagedDatabase, createSchemaValidator } from "@opencraft/sqlite-node";
+import type { SqlDatabase } from "@opencraft/sql";
+import { openManagedDatabase, createSchemaValidator, nodeSqlDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
 
 const schema = `
 CREATE TABLE gateway_limits(actor TEXT PRIMARY KEY, monthly_tokens INTEGER NOT NULL CHECK(monthly_tokens>=0), request_tokens INTEGER NOT NULL CHECK(request_tokens>0), concurrency INTEGER NOT NULL CHECK(concurrency>0), revision INTEGER NOT NULL) STRICT;
@@ -70,26 +71,38 @@ const count = (n: number, minimum = 0) => {
   return n;
 };
 
+/** A migrated model-gateway database handed over by the owner that opened it. */
+export interface ModelGatewayDatabase {
+  readonly database: SqlDatabase;
+  readonly outcome: DatabaseOutcome;
+  close(): void;
+}
+
+/** Node owner: the shared local SQLite file, with a busy timeout for the other processes using it. */
+function openModelGatewayDatabase(path: string): ModelGatewayDatabase {
+  if (path !== ":memory:" && !isAbsolute(path)) throw new ModelGatewayError("gateway_path_must_be_absolute", 503);
+  const managed = openManagedDatabase({ schemaId: "model-gateway", path, migrations: [{ version: 1, name: "model-gateway", sql: schema }, { version: 2, name: "personal-keys", sql: scopeMigration }, {version: 3, name: "execution-authority", sql: executionMigration}, {version: 4, name: "conversation-model-binding", sql: conversationModelMigration}],
+    legacyPolicy: "reject", validateSchema: createSchemaValidator(schema + scopeMigration + executionMigration + conversationModelMigration) });
+  managed.database.exec("PRAGMA busy_timeout=5000");
+  return { database: nodeSqlDatabase(managed.database), outcome: managed.outcome, close: () => managed.database.close() };
+}
+
 /** Admission ledger, deliberately separate from participant-allocation analytics.
- * Every process uses the same local SQLite file. BEGIN IMMEDIATE serializes
- * admission with policy changes; unknown upstream outcomes retain their hold.
+ * Every process uses the same local SQLite file. Each write transaction is
+ * BEGIN IMMEDIATE on Node, which serializes admission with policy changes;
+ * unknown upstream outcomes retain their hold.
  */
 export class ModelGatewayStore {
-  private readonly managed;
-  private readonly db;
-  constructor(path: string, private readonly now = Date.now) {
-    if (path !== ":memory:" && !isAbsolute(path)) throw new ModelGatewayError("gateway_path_must_be_absolute", 503);
-    this.managed = openManagedDatabase({ schemaId: "model-gateway", path, migrations: [{ version: 1, name: "model-gateway", sql: schema }, { version: 2, name: "personal-keys", sql: scopeMigration }, {version: 3, name: "execution-authority", sql: executionMigration}, {version: 4, name: "conversation-model-binding", sql: conversationModelMigration}],
-      legacyPolicy: "reject", validateSchema: createSchemaValidator(schema + scopeMigration + executionMigration + conversationModelMigration) });
-    this.db = this.managed.database;
-    this.db.exec("PRAGMA busy_timeout=5000");
+  private readonly storage: ModelGatewayDatabase;
+  private readonly db: SqlDatabase;
+  constructor(path: string | ModelGatewayDatabase, private readonly now = Date.now) {
+    this.storage = typeof path === "string" ? openModelGatewayDatabase(path) : path;
+    this.db = this.storage.database;
   }
-  get outcome() { return this.managed.outcome; }
-  close() { this.db.close(); }
+  get outcome() { return this.storage.outcome; }
+  close() { this.storage.close(); }
   private transaction<T>(operation: () => T): T {
-    this.db.exec("BEGIN IMMEDIATE");
-    try { const result = operation(); this.db.exec("COMMIT"); return result; }
-    catch (error) { this.db.exec("ROLLBACK"); throw error; }
+    return this.db.transaction(operation);
   }
   private audit(actor: string, action: string, subject: string, detail: unknown) {
     this.db.prepare("INSERT INTO gateway_audit(actor,action,subject,detail,at) VALUES(?,?,?,?,?)")

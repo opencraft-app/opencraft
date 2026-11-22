@@ -1,5 +1,6 @@
 # 可选 Cloudflare 部署
 
+`AccountCore` 的存储准备（SQL 端口、凭据记录端口、持久化清单与 Node 专属阻碍）见[存储端口第 7 节](storage-ports.md#7-accountcore-存储)。
 [Architecture index](../README.md) · [存储端口](storage-ports.md) · [执行沙盒](../execution/execution-sandbox.md) · [Docker 三角色部署](../../../deploy/docker/README.md)
 
 状态：目标设计。只有存储端口的 Cloudflare 适配器已在本地 workerd 中通过一致性测试（见[存储端口第 6 节](storage-ports.md#6-cloudflare-适配器第-5-阶段本地-workerd-验证)），`InstallationCore` 有一个仅限测试的本地 workerd 原型（见第 5 节）；本页不代表任何 Cloudflare 组件已可部署。Node 自托管（Docker／systemd／Electron）始终是一等公民；Cloudflare 是部署装配选项之一，不替换 Node 路径。

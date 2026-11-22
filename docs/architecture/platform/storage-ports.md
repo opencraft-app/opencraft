@@ -169,3 +169,43 @@ Unix socket、锁文件、`/proc` 读取、Git 与 `/workspace` 工作目录、E
 - **multipart 的已存在键拒绝不是 R2 原子条件。** Workers binding 的 `R2MultipartUpload.complete()` 不接受条件（S3 API 的 `CompleteMultipartUpload` 支持 `If-None-Match: *`）。适配器在同一 store 实例内按键串行执行 `head`＋`complete`，同一 owner 的并发写入只会成功一个（已由 workerd 测试覆盖）；owner 之外的写入者仍可竞争。由于 Blob 键由索引 owner 分配且每个前缀只属于一个 owner，契约已写明"已存在键的拒绝针对已提交对象与同一 owner 的并发写入；跨 owner 写同一键不属于端口语义"，一致性测试未削弱；若 binding 将来支持完成条件，改为原子条件。
 - **整数范围**：见第 3.1 节；建议把"INTEGER 限于安全整数"写入 SQL 契约，并为 Node 与 DO 都增加"绑定范围外 `bigint` 被拒绝"的一致性用例；读取侧的静默取整无法由 DO 适配器检测，只能由数据约定避免。
 - **`stamp()` 的进程范围**：workerd 中等价于 isolate；DO 被逐出后 stamp 会变化，符合"只在同一进程内比较"。HMAC 密钥改为首次使用时生成，因为 workerd 禁止在全局作用域生成随机值。
+
+## 7. AccountCore 存储
+
+状态：**Node 侧准备已实施，DO 未实现。** 目标是让[可选 Cloudflare 部署](cloudflare-deployment.md#2-目标拓扑)中每部署一个的 `AccountCore` DO 直接持有现有领域代码；Node 行为、文件名、格式、权限、迁移与 checksum 均不变，写者锁与 owner 进程拓扑保持原样。行号以 2026-11-22 源码为准。
+
+### 7.1 持久化清单
+
+| 位置 | 持有 | 归类 | 现状 |
+| --- | --- | --- | --- |
+| `$DATA/codex/account-pool.sqlite`：`packages/account-pool-host/src/store.ts:134`（`openManagedDatabase`，schema `account-pool-host`） | 账号、配额、亲和、活动账号、`owner_actor` | SQL 端口 | 领域类 `AccountPool`（`account-pool.ts:282`）只依赖 `SqlDatabase`；事务经 `transaction()`（`account-pool.ts:853`），手写 `BEGIN IMMEDIATE`／`COMMIT` 已删除。迁移 v1–3 文本移到 `account-pool-schema.ts`（runtime-neutral，`check:storage` 经导入绑定读取），v4 仍来自生成注册表；`PRAGMA foreign_keys=ON` 与无账本旧库采纳（`legacyAccountPoolMigration`，需 `:memory:` 对照库）留在 Node owner |
+| `secrets/account-<id>.json`（托管 OAuth 凭据或外部 `auth.json` 引用）与 `secrets/host-<sha256>.json`（Host／调用方 token）：`store.ts:72` | 凭据记录 | 凭据记录端口 `AccountCredentialRecords`（`account-pool.ts:220`） | Node 适配器 `fileAccountCredentialRecords()` 保持 0700 目录、0600 文件、临时文件＋rename 原子写、删除时的 tombstone 回滚 |
+| 外部 `auth.json`（`codex login` 写入，运维者持有） | 引用目标，只读 | Node 专属 | 经 `readExternalFile()`；DO 适配器应拒绝（外部共享文件只存在于主机） |
+| `$DATA/model-gateway.sqlite`（`OPENCRAFT_MODEL_GATEWAY_DATABASE`）：`model-gateway-store.ts:84` | 准入账本、限额、贡献、执行授权、计量 | SQL 端口 | `ModelGatewayStore` 领域方法只依赖 `SqlDatabase`；构造参数可为路径（Node owner，含 `busy_timeout=5000`）或已迁移的 `ModelGatewayDatabase` |
+| `model-usage-policy.sqlite`：`packages/model-usage-policy/src/index.ts:11` | 模型使用策略与审计 | SQL 端口 | 同上，`ModelPolicyStore` 接受路径或 `ModelPolicyDatabase`；`write()` 改为 `transaction()` |
+| `native.mjs:22、45` 的只读 `DatabaseSync` | Daemon／DSH 插件跨进程读取策略与网关贡献 | Node 专属（消费方） | 不迁移；Cloudflare 上改由 AC 投影或 RPC 提供 |
+| `.codex-writer.sqlite`／`.codex-runtime.sqlite`：`codex-writer-lock.ts:14` | 内核释放的 `BEGIN EXCLUSIVE` 写者锁＋`/proc` 扫描 | Node 专属进程所有权 | 保留；DO 的单实例语义替代 |
+| `account-handoff.json` 与只读封存检查：`apps/codex-core/src/account-owner.ts:96、164` | 围栏交接状态、`boot_id`／PID、物理文件摘要与权限校验 | Node 专属进程所有权 | 保留；只读快照需要 deferred `BEGIN`，不适用 `transaction()`（写事务） |
+| `run/proxy-callers/<caller>.json`：`codex-account-service.ts:166` | 本机调用方（Pi／DSH）的代理 URL 与 token | Node 专属发布 | 保留；Cloudflare 上 token 经边缘 Worker 签发 |
+| `refresh/`、`login/`、`personal-logins/<sha>/`、`device-login-maintenance/`：`codex-account-service.ts:73–87`、`codex-auth.ts`、`device-login-maintenance.ts` | 刷新与设备登录的临时 `CODEX_HOME`、恢复导入、维护注记 | Node 专属（原生 codex 进程工作目录） | 保留；见 7.3 |
+
+未改用 `SecretStore`：它是异步、按名称的单文档（`credentials.json`），既不能保持每账号文件布局，也不能在选号的同步 SQL 事务内读取凭据。因此新增同步的 `AccountCredentialRecords`；DO 适配器应把凭据记录存入同一 DO 的 SQL 表，用 `KeyMaterial`（或 Secrets binding）派生的密钥做信封加密，使"预留亲和＋读取凭据""写入行＋写入凭据"在同一存储事务内完成。
+
+### 7.2 验证
+
+`tests/storage/account-pool-sql-port.test.ts`（已加入 `test:storage-ports`）把同一组用例分别跑在 Node 文件 owner（`AccountPoolStore`）与"`nodeSqlDatabase(:memory:)`＋`@opencraft/sql/migrations` 精简账本＋内存凭据记录"上：账号与凭据、选号与亲和、配额耗尽轮换、删除级联、Host token、Human owner 隔离；另验证凭据写入失败时账号行经端口事务回滚、精简账本与托管 owner 的 schema 指纹相同、非法设置会关闭交入的存储。尚未在 Miniflare DO 中运行。
+
+### 7.3 阻碍 DO 的 Node 依赖
+
+| 依赖 | 位置 | 处理建议 |
+| --- | --- | --- |
+| `node:http` 监听（账号代理 HTTP 服务）、`undici` Agent | `server.ts`、`codex-proxy.ts` | 保留在 Node；Cloudflare 上由边缘 Worker 接收模型请求，向 AC 取短期凭据租约后直接流式转发（cloudflare-deployment §2.1） |
+| `child_process` 启动 `codex app-server --stdio` 完成 OAuth 刷新、设备登录与用量查询 | `codex-maintenance-client.ts`、`codex-auth.ts` | 最大阻碍：刷新单写者在 AC，但执行要么改为直接 `fetch` 的 OAuth 刷新／设备码流程，要么经工作区容器代办并把结果交回 AC；需先确认 provider 协议是否允许脱离 codex CLI |
+| `node:fs`：临时 `CODEX_HOME`、外部 `auth.json`、调用方 token 发布、维护注记 | `codex-auth.ts`、`codex-auth-file.ts`、`codex-account-service.ts`、`device-login-maintenance.ts` | 外部共享凭据与本机调用方文件只在 Node 声明；其余随上一项改造消失 |
+| `node:sqlite` 写者锁、`/proc`、`boot_id`、PID 围栏交接 | `codex-writer-lock.ts`、`account-owner.ts`、`operator-lease.ts`、`split-core.ts` | 保留在 Node；DO 单实例与输入门替代写者锁与交接 |
+| Unix socket 控制面（`node:http` 请求） | `codex-core-control.ts`、`apps/codex-core/src/main.ts` | 保留；DO 以 RPC 暴露同一操作集合 |
+| `setInterval`／`setTimeout`（用量轮询、设备码过期、诊断） | `codex-usage.ts`、`codex-auth.ts`、`server.ts`、`split-core.ts` | DO 中改由 alarm |
+| `node:crypto`、`Buffer`、`node:zlib`（`configured-forward.ts` 解压） | 多处 | `nodejs_compat` 预期可用，待在 workerd 中核实 |
+| `@opencraft/sqlite-node` 值导入 | `store.ts`、`model-gateway-store.ts`、`model-usage-policy/src/index.ts` | `AccountPool` 已与 Node owner 分文件；网关与策略的 owner 打开仍与领域类同文件，DO 装配前需拆分或加 `workerd` 导出条件 |
+
+DO 仍缺：账本迁移的 DO 包装（沿用 `InstallationCore` 原型的精简生命周期）、加密凭据记录适配器、刷新执行方式的决定、边缘 Worker 凭据租约协议与 RPC 面。
