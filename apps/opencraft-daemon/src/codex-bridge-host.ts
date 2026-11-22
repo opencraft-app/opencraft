@@ -18,6 +18,7 @@ import { CodexNativeFallback } from "./codex-native-fallback.js";
 import { CodexNativeReader } from "./codex-native-reader.js";
 import { CodexProviderBridge } from "./codex-provider-bridge.js";
 import { codexSchedulesService } from "./codex-schedules-service.js";
+import { codexLegacyHandoffService } from "./codex-legacy-handoff.js";
 
 type Value = Record<string, unknown>;
 const object = (value: unknown): Value =>
@@ -95,6 +96,8 @@ export function createCodexBridgeHost(options: CodexBridgeHostOptions): CodexHos
           continuation: () => continuation!.counts(),
           pendingTitles: () => titles!.pendingCount(),
         }),
+        // Inputs the local Host still had queued move to the Host queue of their Thread.
+        codexLegacyHandoffService(directory, clients),
         { handles: () => false, request: () => null, close: () => reader.close() },
       ];
       return services;
