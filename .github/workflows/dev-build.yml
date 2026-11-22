@@ -148,10 +148,12 @@ jobs:
             echo '|---|---|'
             jq -r 'to_entries[] | "| \(.key) | \(.value.result) |"' <<<"$RESULTS"
             echo
-            echo '- Android: the development app `dev.opencraft.workbench`, installs beside the published app.'
-            echo '- macOS: OpenCraft Preview, ad-hoc signed and separate from OpenCraft; open it with right-click > Open the first time.'
-            echo '- Windows: unsigned; SmartScreen asks before the first launch.'
-            echo '- iOS: unsigned; sign it with your own Apple ID (AltStore, SideStore), or use the TestFlight internal group.'
+            cat <<'NOTES'
+          - Android: the development app `dev.opencraft.workbench`, installs beside the published app.
+          - macOS: OpenCraft Preview, ad-hoc signed and separate from OpenCraft; open it with right-click > Open the first time.
+          - Windows: unsigned; SmartScreen asks before the first launch.
+          - iOS: unsigned; sign it with your own Apple ID (AltStore, SideStore), or use the TestFlight internal group.
+          NOTES
           } >> "$GITHUB_STEP_SUMMARY"
           # The run fails when any selected platform failed.
           jq -e 'all(.[]; .result == "success" or .result == "skipped")' <<<"$RESULTS" >/dev/null
