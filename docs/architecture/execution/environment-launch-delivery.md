@@ -1,9 +1,11 @@
 # Execution ENV launch delivery
 
-Status: slice 1 implemented. DSH in `assets` mode receives Turn ENV through
-`EnvironmentLaunchReceiver` when the identity composition supplies a vault-owner
-port; every other consumer still reads a decrypted snapshot from
-`ExecutionEnvironmentRuntime` synchronously in its own process.
+Status: slice 1 implemented, with the receiver taking its expected context from
+the execution owner's own durable admission (Decision 1). DSH in `assets` mode
+receives Turn ENV through `EnvironmentLaunchReceiver` when the identity
+composition supplies a vault-owner port; every other consumer still reads a
+decrypted snapshot from `ExecutionEnvironmentRuntime` synchronously in its own
+process.
 
 Related: [account environment variables](../identity/account-environment.md),
 [execution control](execution-control-authority.md),
@@ -69,7 +71,8 @@ vault owner: EnvironmentLaunchIssuer.seal(target, context, read, assertCurrent)
         ▼
 Gateway: reread handoff; discard unless unchanged; reply {context, capsule}
         ▼
-execution owner: check context against its own Turn observer, then receiver.open
+execution owner: read its own durable admission (Worker), require the relayed
+  context to equal it, then receiver.open against the OWNER's context
 ```
 
 - **Issuer.** The sole vault owner. Its X25519 key is pinned into execution
@@ -82,9 +85,16 @@ execution owner: check context against its own Turn observer, then receiver.open
   only the receiver public key.
 - **Context.** The existing `GitExecutionHandoff` scope and native identity:
   Actor account and generations, membership revision, lease generation, input
-  and execution IDs, Project ID, native Turn and incarnation. The receiver
-  compares the sealed context with the Gateway reply, and the execution owner
-  compares the reply with its own observer (Thread, Turn, process incarnation).
+  and execution IDs, Project ID (always `null` from a handoff), native Turn and
+  incarnation. The execution owner reconstructs the expected context from its
+  own durable admission (`createRemoteEnvironmentLaunch({admission})`); the
+  relayed context must equal it field by field, the capsule is opened against
+  the owner's context, and the admission is reread before and after decryption.
+  A Gateway that reports no admission while the owner holds one, or the
+  reverse, is refused. For DSH the admission is the `opencraft-server`
+  execution lease and Actor store, read read-only by
+  `execution-admission-worker.mjs` in a Worker of the DSH process (the same
+  projection its Git broker uses), plus the live process incarnation.
 - **Opening.** One capsule per launch preparation. It is opened after the
   owner's own Turn check and before the command is spawned. The resulting
   snapshot lives only in the execution process.
@@ -188,8 +198,8 @@ Recorded after the first slice; later slices follow them.
 - **Expected context comes from the execution owner's own durable admission.**
   The receiver reconstructs inputId, executionId, generation and Turn from the
   admission it already persisted and compares the capsule against that; a
-  Gateway-relayed lease context is never the authority. Slice 1 still uses the
-  relayed context and is corrected in the next slice that touches the receiver.
+  Gateway-relayed lease context is never the authority. Implemented for DSH;
+  `tests/identity/environment-launch-owner.test.ts` reads a real lease store.
 - **Project ENV is resolved by the vault owner from Thread metadata.** Handoffs do
   not carry a Project ID; a caller cannot select another project's values.
 - **Codex redaction moves to the native Core**, which holds the values. Until a

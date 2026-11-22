@@ -2,7 +2,7 @@ import { WorkspaceBotOwner } from "./workspaces/bot-owner.js";
 import { createWorkspaceExecutionOwner } from "./workspaces/execution-owner.js";
 import { createAssetsStorage } from "@opencraft/plugin-assets/server/storage";
 import type { GitConnectionProvider } from "@opencraft/plugin-assets/server/git-connections";
-import { GitExecutionAuthority } from "./git-execution-authority.js";
+import { GitExecutionAuthority, executionScope, resolveExecutionAdmission } from "./git-execution-authority.js";
 import { parseGitExecutionLocator } from "@opencraft/execution-environment/git-execution";
 /** Only this compiled native host adds execution admission to the shared vault owner. */
 export function createHeadlessAssetsStorage(
@@ -11,33 +11,11 @@ export function createHeadlessAssetsStorage(
   workspaces?: { machineId: string; terminalOwner?: { directory: string; endpoint: string; tokenFile: string } },
 ) {
   const authority = new GitExecutionAuthority(directory, "actor");
-  const scope = (
-    input: ReturnType<typeof parseGitExecutionLocator>,
-    current: Omit<NonNullable<ReturnType<GitExecutionAuthority["resolve"]>>, "turnId">,
-  ) => ({
-    account: current.account,
-    hostId: input.hostId,
-    threadId: input.threadId,
-    inputId: current.inputId,
-    executionId: current.executionId,
-    leaseGeneration: current.generation,
-    actorGeneration: current.actorGeneration,
-    membershipRevision: current.membershipRevision,
-    projectId: input.projectId ?? null,
-  });
   return createAssetsStorage(
     directory,
     providers,
     {
-      resolve(raw) {
-        const input = parseGitExecutionLocator(raw),
-          current = authority.resolve(input);
-        if (!current) {
-          if (authority.unowned(input)) return null;
-          throw Error("git_execution_unavailable");
-        }
-        return { scope: scope(input, current), native: { turnId: current.turnId, incarnation: current.incarnation } };
-      },
+      resolve: (raw) => resolveExecutionAdmission(authority, raw),
       reserve(raw) {
         const input = parseGitExecutionLocator(raw);
         if (input.hostId !== "local-codex" || !input.inputId || input.turnId) throw Error("git_execution_unavailable");
@@ -46,7 +24,7 @@ export function createHeadlessAssetsStorage(
           if (authority.unowned(input, "pending")) return null;
           throw Error("git_execution_unavailable");
         }
-        return { scope: scope(input, current), native: { incarnation: current.incarnation } };
+        return { scope: executionScope(input, current), native: { incarnation: current.incarnation } };
       },
       close: () => authority.close(),
     },
