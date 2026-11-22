@@ -1,0 +1,29 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+
+.mobile-workbench-welcome {
+  box-sizing: border-box;
+  width: min(100%, 440px);
+  margin: auto;
+  padding: calc(var(--spacing) * 8) calc(var(--spacing) * 6);
+  color: var(--color-text);
+
+  h1 {
+    @include typography.role(display-title);
+    margin: 0 0 calc(var(--spacing) * 6);
+  }
+}
+
+.mobile-workbench-welcome__choices {
+  display: grid;
+  gap: calc(var(--spacing) * 5);
+}
+
+.mobile-workbench-welcome__choice {
+  display: grid;
+  gap: calc(var(--spacing) * 2);
+
+  p {
+    @include typography.role(body, secondary);
+    margin: 0;
+  }
+}
