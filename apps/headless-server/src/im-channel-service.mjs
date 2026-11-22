@@ -55,14 +55,41 @@ const secret = (v) => {
   return v;
 };
 
+function channelTransports(dependencies) {
+  if(dependencies.channelSync != null && dependencies.channelSyncs != null)throw Error('Conflicting channel composition');
+  const transports=dependencies.channelSyncs ?? (dependencies.channelSync ? [dependencies.channelSync] : []);
+  if(!Array.isArray(transports))throw Error('Invalid channel composition');
+  const ids=new Set(),routes=new Set(),sources=new Set(),channels=new Set();
+  for(const transport of transports) {
+    const connectionId=ChannelSync.validateTransport(transport);
+    if(ids.has(connectionId))throw Error('Duplicate channel connection ID');
+    ids.add(connectionId);
+    if(transport.callback) {
+      if(routes.has(transport.callback.path))throw Error('Duplicate channel callback route');
+      routes.add(transport.callback.path);
+    }
+    for(const binding of transport.bindings) {
+      if(sources.has(binding.source)||channels.has(binding.channelId))throw Error('Duplicate channel source binding');
+      sources.add(binding.source);channels.add(binding.channelId);
+    }
+  }
+  return [...transports];
+}
+
 /** Composition owns credentials and platform transports. IM sees only verified humans and delivery ports. */
 export class ImChannelService {
   static async open(endpoints, dependencies) {
-    const service = new ImChannelService(dependencies);
+    const transports = channelTransports(dependencies);
+    let service;
+    let attempted = 0;
     try {
-      if (dependencies.channelSync) {
-        service.channelSync = await ChannelSync.open(dependencies.channelSync, dependencies.collaboration);
-      } else if(dependencies.collaboration?.synchronizeChannels) {
+      service = new ImChannelService(dependencies);
+      for (const transport of transports) {
+        attempted++;
+        service.channelSyncs.push(await ChannelSync.open(transport, dependencies.collaboration));
+        if(transport.callback)service.channelCallbacks.set(transport.callback.path,transport.callback.handle.bind(transport.callback));
+      }
+      if (!transports.length && dependencies.collaboration?.synchronizeChannels) {
         await dependencies.collaboration.synchronizeChannels({method:'configure',params:{incarnation:randomUUID(),bindings:[],images:false}});
       }
       for (const endpoint of endpoints) {
@@ -102,7 +129,9 @@ export class ImChannelService {
           }
       return service;
     } catch (error) {
-      await service.close();
+      // The failing ChannelSync owns its own cleanup; release every unstarted port too.
+      await Promise.allSettled(transports.slice(attempted).map(transport => Promise.resolve().then(() => transport.close?.())));
+      await service?.close().catch(() => {});
       throw error;
     }
   }
@@ -143,10 +172,14 @@ export class ImChannelService {
         return this.im.reply(ref, args, signal);
       },
     });
+    this.channelSyncs = [];
+    this.channelCallbacks = new Map();
     this.adapters = new Map();
     this.serial = Promise.resolve();
     this.closed = false;
   }
+  // Compatibility for installation-level actions; never select an arbitrary connection.
+  get channelSync() { return this.channelSyncs.length === 1 ? this.channelSyncs[0] : undefined; }
   get postOutcome() { return this.wecomPosts.receipts.outcome; }
   get outcome() {
     return this.store.outcome;
@@ -589,39 +622,44 @@ export class ImChannelService {
     }
     throw Error("invalid_operation");
   }
-  notificationTargets(actorId) {
+  notificationEntries(actorId) {
     const actor=this.dependencies.actors.get(actorId);
-    if(!actor?.enabled || actor.kind!=='human' || this.dependencies.admittedActor?.(actorId)===false)return [];
-    const ordinary=[...this.adapters.entries()].filter(([,entry])=>typeof entry.adapter?.sendDirect==='function')
+    if(this.closed || !actor?.enabled || actor.kind!=='human' || this.dependencies.admittedActor?.(actorId)===false)return [];
+    const entries=[...this.adapters.entries()].filter(([,entry])=>typeof entry.adapter?.sendDirect==='function')
       .flatMap(([channelId,entry])=>[...entry.notificationSenders.entries()].filter(([,owner])=>owner===actorId)
-        .map(([senderId])=>({channelId,senderId,label:entry.name+' · '+senderId})));
-    // A product connection contributes verified personal targets through its existing
-    // transport owner. No provider credentials, arbitrary recipient or chat binding.
-    let contributed=[];
-    try { contributed=this.channelSync?.transport.notifications?.targets(actorId)??[]; } catch {}
-    return [...ordinary,...contributed.filter(target=>!this.adapters.has(target.channelId))];
+        .map(([senderId])=>({target:{channelId,senderId,label:entry.name+' · '+senderId},adapter:entry.adapter})));
+    for (const sync of this.channelSyncs ?? []) {
+      const contribution=sync.transport.notifications;
+      try {
+        for (const target of contribution?.targets(actorId) ?? []) entries.push({target,sync,contribution});
+      } catch { /* An unavailable provider cannot contribute a verified target. */ }
+    }
+    // The existing notification contract addresses a (channelId,senderId) pair.
+    // Ambiguous provider claims must fail closed, never select by installation order.
+    const counts=new Map();
+    const key=target=>JSON.stringify([target.channelId,target.senderId]);
+    for(const {target} of entries)counts.set(key(target),(counts.get(key(target))??0)+1);
+    return entries.filter(({target})=>counts.get(key(target))===1);
+  }
+  notificationTargets(actorId) {
+    return this.notificationEntries(actorId).map(entry=>entry.target);
   }
   prepareDirectNotification(channelId,senderId,actorId) {
-    const selected=this.notificationTargets(actorId).find(target=>target.channelId===channelId && target.senderId===senderId);
+    const find=()=>this.notificationEntries(actorId).find(({target})=>target.channelId===channelId && target.senderId===senderId);
+    const selected=find();
     if(!selected)throw Error('notification_binding_denied');
-    const contribution=this.channelSync?.transport.notifications;
+    const assertCurrent=()=>{
+      const current=find();
+      if(!current || current.sync!==selected.sync || current.contribution!==selected.contribution || current.adapter!==selected.adapter)throw Error('notification_binding_denied');
+    };
     return async (content,requestId)=>{
-      // Recheck the binding at delivery, not only at configuration time.
-      if(!this.notificationTargets(actorId).some(target=>target.channelId===channelId && target.senderId===senderId))throw Error('notification_binding_denied');
-      const contributed=contribution;
-      if(selected.methodId) {
-        if(!contributed?.send||this.channelSync?.transport.notifications!==contributed)throw Error('notification_binding_denied');
-        const assertCurrent=()=>{
-          if(this.channelSync?.transport.notifications!==contributed || !this.notificationTargets(actorId).some(target=>target.channelId===channelId && target.senderId===senderId))throw Error('notification_binding_denied');
-        };
-        assertCurrent();return contributed.send(actorId,{channelId,senderId},content,requestId,assertCurrent);
-      }
-      const adapter=this.adapters.get(channelId)?.adapter;
-      if(!adapter?.sendDirect || adapter.state!=='ready')throw Object.assign(Error('notification_unavailable'),{deliveryState:'not_sent'});
-      const assertCurrent=()=>{
-        if(this.adapters.get(channelId)?.adapter!==adapter || !this.notificationTargets(actorId).some(target=>target.channelId===channelId && target.senderId===senderId))throw Error('notification_binding_denied');
-      };
       assertCurrent();
+      if(selected.contribution) {
+        if(!selected.contribution.send)throw Error('notification_binding_denied');
+        return selected.contribution.send(actorId,{channelId,senderId},content,requestId,assertCurrent);
+      }
+      const adapter=selected.adapter;
+      if(!adapter?.sendDirect || adapter.state!=='ready')throw Object.assign(Error('notification_unavailable'),{deliveryState:'not_sent'});
       return adapter.sendDirect(senderId,content,requestId,assertCurrent);
     };
   }
@@ -769,20 +807,31 @@ export class ImChannelService {
     return true;
   }
   async handleChannelCallback(request, response, pathname) {
-    const callback = this.channelSync?.transport.callback;
-    if (this.closed || request.method !== 'POST' || !callback || pathname !== callback.path) return false;
-    await callback.handle(request, response);
+    if (this.closed || request.method !== 'POST') return false;
+    const callback = this.channelCallbacks.get(pathname);
+    if (!callback) return false;
+    await callback(request, response);
     return true;
   }
-  async close() {
-    if (this.closed) return;
+  close() {
+    if (this.closing) return this.closing;
     this.closed = true;
-    this.unregisterCapabilities?.();
-    await this.channelSync?.close();
+    this.channelCallbacks.clear();
+    this.closing = this.closeConnections();
+    return this.closing;
+  }
+  async closeConnections() {
+    const failures=[];
+    const cleanup=async action=>{try { await action(); } catch(error) { failures.push(error); }};
+    await cleanup(()=>this.unregisterCapabilities?.());
+    const connections=this.channelSyncs.splice(0);
+    for(const result of await Promise.allSettled(connections.map(sync=>sync.close())))
+      if(result.status==='rejected')failures.push(result.reason);
     await this.serial.catch(() => {});
-    for (const id of this.adapters.keys()) this.disconnect(id);
-    await this.wecomPosts.close();
-    this.wecomHistory.close();
-    await this.im.close();
+    for (const id of this.adapters.keys()) await cleanup(()=>this.disconnect(id));
+    await cleanup(()=>this.wecomPosts.close());
+    await cleanup(()=>this.wecomHistory.close());
+    await cleanup(()=>this.im.close());
+    if(failures.length)throw new AggregateError(failures,'IM connection shutdown failed');
   }
 }

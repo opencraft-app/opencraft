@@ -9,7 +9,7 @@ import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import { createManagedWebServer } from '../../web-deployment/server.mjs';
-import { packageWebServer } from '../../package-web-server.mjs';
+import { packageWebServer } from '../../packaging/package-web-server.mjs';
 import { startIndependentEngineHost } from '../../server-deployment/engine-host.mjs';
 import { startIndependentDshHost } from '../../server-deployment/dsh-host.mjs';
 import { attachDshHost } from '../../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';

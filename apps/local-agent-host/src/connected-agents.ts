@@ -4,8 +4,7 @@ import type { ExecutionEngineClient } from "@opencraft/appserver-client";
 import { permissionModeProfileId } from "@opencraft/appserver-protocol";
 import { AcpEngine } from "@opencraft/plugin-acp-engine";
 import { ConnectedAgentHistory } from "./connected-agent-history.js";
-import { PiEngine } from "@opencraft/plugin-pi-engine";
-import { createConnectedPi } from "./connected-pi.js";
+import type { PiEngine } from "@opencraft/plugin-pi-engine";
 import { AgentProviderUsageService } from "./agent-provider-usage.js";
 import type { BridgeEngineProvider } from "./bridge-engine-provider.js";
 import type { AgentConversationUsage, AgentUsageSnapshot } from "@opencraft/appserver-protocol";
@@ -391,6 +390,9 @@ export class ConnectedAgentHost {
     const directory = join(this.root, engineId);
     await mkdir(directory, { recursive: true, mode: 0o700 });
     if (engineId === "pi") {
+      // Pi and its ESM-only runtime load only when a Pi agent is used, so hosts
+      // that do not ship them (the desktop daemon) still start.
+      const { createConnectedPi } = await import("./connected-pi.js");
       const engine = await createConnectedPi(directory, this.deps.homedir, this.deps, this.options.modelPolicyPath, this.options.executionCli);
       engine.subscribe((method, params) => { for (const listener of this.listeners) listener(method, params); });
       this.engines.set(engineId, engine);

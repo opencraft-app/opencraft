@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { createServer } from "vite";
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
+const retirementOnly = process.argv.includes("--navigation-retirement");
 const output = process.env.OPENCRAFT_MODEL_BROWSER_OUTPUT ?? "/tmp/opencraft-model-browser";
 const vite = await createServer({ configFile: false, root: process.cwd(), logLevel: "error",
   optimizeDeps: { entries: ["tests/fixtures/composer-model-browser.tsx"] },
@@ -17,7 +18,7 @@ try {
   await mkdir(output, { recursive: true }); await vite.listen();
   browser = await chromium.launch({ headless: true, ...(process.env.OPENCRAFT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE } : {}) });
   const base = `http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}`;
-  for (const touch of [false, true]) {
+  for (const touch of retirementOnly ? [] : [false, true]) {
     const context = await browser.newContext({ viewport: { width: touch ? 390 : 1200, height: 900 }, hasTouch: touch, isMobile: touch, reducedMotion: "reduce" });
     const p = await context.newPage(); p.setDefaultTimeout(20_000); const errors: string[] = []; p.on("pageerror", (error: Error) => errors.push(error.message));
     await p.goto(base, { waitUntil: "domcontentloaded", timeout: 60_000 }); const editor = p.locator(".opencraft-composer-editor"); await editor.fill("Keep this model selection draft");
@@ -213,7 +214,7 @@ try {
     }
     assert.deepEqual(errors, []); await context.close();
   }
-  for (const touch of [false, true]) {
+  for (const touch of retirementOnly ? [] : [false, true]) {
     const context = await browser.newContext({ viewport: { width: touch ? 390 : 1200, height: 900 }, hasTouch: touch, isMobile: touch, reducedMotion: "reduce" });
     const p = await context.newPage(); p.setDefaultTimeout(20_000); const errors: string[] = []; p.on("pageerror", (error: Error) => errors.push(error.message));
     await p.goto(`${base}?thread=1`); const editor = p.locator(".opencraft-composer-editor"); await editor.fill("Continue this thread");
@@ -271,7 +272,7 @@ try {
     await p.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-existing-handoff.png` });
     assert.deepEqual(errors, []); await context.close();
   }
-  for (const touch of [false, true]) {
+  for (const touch of retirementOnly ? [] : [false, true]) {
     const context = await browser.newContext({ viewport: { width: touch ? 390 : 1200, height: 900 }, hasTouch: touch, isMobile: touch, reducedMotion: "reduce" });
     const p = await context.newPage(); p.setDefaultTimeout(20_000);
     await p.goto(`${base}?thread=1&single=1&handoff=0`);
@@ -292,7 +293,7 @@ try {
     await p.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-single-agent.png` });
     await context.close();
   }
-  {
+  if (!retirementOnly) {
     const context = await browser.newContext({ viewport: { width: 1200, height: 900 }, reducedMotion: "reduce" });
     const p = await context.newPage(); p.setDefaultTimeout(20_000);
     await p.goto(`${base}?thread=1&locale=zh-CN`);
@@ -302,5 +303,66 @@ try {
     assert.equal(await p.getByRole("tab", { name: "Agent：Codex，当前会话", exact: true }).count(), 1, "accessible Agent names come from the active Intl catalog");
     await context.close();
   }
-  console.log(`PASS model browser: icon-only Agent tabs with a visible current name, compact reasoning slider layer, touch and keyboard effort, search/empty, existing-thread handoff, localized names, themes and bounded lists. Screenshots: ${output}. Inference boundary simulated.`);
+  for (const touch of [false, true]) {
+    const context = await browser.newContext({ viewport: { width: touch ? 390 : 1067, height: 814 }, hasTouch: touch, isMobile: touch, reducedMotion: "no-preference" });
+    const p = await context.newPage();
+    await p.addInitScript(() => { (window as any).__name = (value: unknown) => value; });
+    await p.goto(`${base}?retire=1`);
+    const editor = p.locator(".opencraft-composer-editor");
+    await editor.fill("Keep the original draft across settings");
+    await p.evaluate(() => {
+      (window as any).originalModelBrowserEditor = document.querySelector(".opencraft-composer-editor");
+      (window as any).modelBrowserFixture.setDisabledAgents(["api", "cursor", "codex"]);
+    });
+    const trigger = p.locator(".opencraft-composer-mode--intelligence");
+    const menu = p.locator(".opencraft-composer-model-browser-surface");
+    const open = () => touch ? trigger.tap() : trigger.press("Enter");
+    await open();
+    const configure = menu.getByRole("menuitem", { name: /^(Configure models|Manage models…)$/ });
+    await configure.waitFor();
+    await menu.evaluate(element => {
+      (window as any).normalMenuExit = new Promise<boolean>(resolve => {
+        element.addEventListener("animationstart", event => {
+          if (event.animationName === "menu-surface-exit") resolve(true);
+        });
+        element.addEventListener("animationend", event => {
+          if (event.animationName === "menu-surface-exit") resolve(true);
+        });
+        setTimeout(() => resolve(false), 500);
+      });
+    });
+    await p.keyboard.press("Escape");
+    assert.equal(await p.evaluate(() => (window as any).normalMenuExit), true, "ordinary close still animates in its active page");
+    await menu.waitFor({ state: "detached" });
+    await open();
+    await configure.waitFor();
+    await p.evaluate(() => {
+      const chat = document.querySelector<HTMLElement>("[data-fixture-chat]")!;
+      const surface = document.querySelector<HTMLElement>(".opencraft-composer-model-browser-surface")!;
+      (window as any).firstRetiredMenuFrame = new Promise<boolean>(resolve => {
+        requestAnimationFrame(function sample() {
+          if (!chat.hidden) { requestAnimationFrame(sample); return; }
+          resolve(surface.isConnected);
+        });
+      });
+    });
+    if (touch) await configure.tap(); else await configure.click();
+    const destination = p.getByRole("button", { name: "Return to chat" });
+    await destination.waitFor();
+    assert.equal(await p.evaluate(() => (window as any).firstRetiredMenuFrame), false, "no portalled surface survives the first frame after its page retires");
+    assert.equal(await destination.evaluate(element => element === document.activeElement), true, "old menu focus cleanup leaves the new page in control");
+    await destination.click();
+    await editor.waitFor();
+    assert.equal(await menu.count(), 0, "returning does not revive the closed menu");
+    assert.equal(await editor.innerText(), "Keep the original draft across settings");
+    assert.equal(await editor.evaluate(el => el === (window as any).originalModelBrowserEditor), true);
+    await open();
+    await configure.waitFor();
+    await p.evaluate(() => (window as any).modelBrowserFixture.setChatActive(false));
+    await menu.waitFor({ state: "detached" });
+    await destination.click();
+    assert.equal(await trigger.getAttribute("aria-expanded"), "false", "owner retirement clears a controlled open request without selecting a menu item");
+    await context.close();
+  }
+  console.log(`PASS model browser: ${retirementOnly ? "navigation retirement and retained drafts with keyboard and touch" : "desktop and touch, search and empty results, effort controls, themes, navigation retirement and retained drafts"}. Screenshots: ${output}. Inference boundary simulated.`);
 } finally { await browser?.close(); await vite.close(); }

@@ -15,10 +15,12 @@ export function WorkbenchShortcutList() {
     ["composer", intl.formatMessage({ id: "shortcuts.composer", defaultMessage: "Focus message input" })],
     ["agentNext", intl.formatMessage({ id: "shortcuts.agentNext", defaultMessage: "Next Agent" })],
     ["agentPrevious", intl.formatMessage({ id: "shortcuts.agentPrevious", defaultMessage: "Previous Agent" })],
+    ["conversationPrevious", intl.formatMessage({ id: "shortcuts.conversationPrevious", defaultMessage: "Previous conversation" })],
+    ["conversationNext", intl.formatMessage({ id: "shortcuts.conversationNext", defaultMessage: "Next conversation" })],
     ["help", intl.formatMessage({ id: "shortcuts.title", defaultMessage: "Keyboard shortcuts" })],
   ];
   return <div className="workbench-shortcut-list">
-    <SettingsGroup>{rows.map(([command, label]) => <SettingsRow key={command} label={label}><kbd>{shortcutLabel(command)}</kbd></SettingsRow>)}</SettingsGroup>
+    <SettingsGroup>{rows.map(([command, label]) => <SettingsRow key={command} label={label} controlWidth="compact"><kbd>{shortcutLabel(command)}</kbd></SettingsRow>)}</SettingsGroup>
     <p>{intl.formatMessage({ id: "shortcuts.aliases", defaultMessage: "Also supported: {sidebar} for the sidebar and {panel} for the tool panel." }, {
       sidebar: shortcutLabel("sidebar", navigator.platform, 1), panel: shortcutLabel("panel", navigator.platform, 1),
     })}</p>

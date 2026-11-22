@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { inspectStyle, inspectTypescript, classify, scanRepository } from "../../scripts/check-ui-typography.mjs";
+import { inspectStyle, inspectTypescript, classify, scanRepository } from "../../scripts/check/check-ui-typography.mjs";
 import { typographyRegistry, typographyRole, nativeMonoFontFamily } from "@opencraft/design-system/typography";
 
 const read = (path: string) => readFileSync(new URL(path, new URL("../", import.meta.url)), "utf8");

@@ -12,7 +12,7 @@ import { TokenUsageStateDatabase } from "../../apps/opencraft-daemon/src/token-u
 import { OpenCraftTokenUsageLedger } from "../../apps/opencraft-daemon/src/token-usage-ledger.js";
 
 const execute = promisify(execFile);
-const script = fileURLToPath(new URL("../../scripts/backfill-token-usage-models.ts", import.meta.url));
+const script = fileURLToPath(new URL("../../scripts/admin/backfill-token-usage-models.ts", import.meta.url));
 const loader = new URL("../../node_modules/tsx/dist/loader.mjs", import.meta.url).href;
 const at = Date.parse("2026-10-22T08:00:00Z");
 const serverId = "server:fixture";

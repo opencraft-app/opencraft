@@ -1,6 +1,6 @@
 # Platform: Architecture and topology
 
-[Architecture index](../../platform-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](../README.md) · [Documentation index](../../README.md)
 
 
 While a `turn/start` or `thread/resume` request is pending, an authoritative
@@ -14,13 +14,13 @@ loss and close still reject the exact pending request. The Host owns preparation
 and must stop before its deadline; the client never retries or replays the input.
 
 The proposed cross-cutting observation plane is specified in
-[Observability V1](../../observability-platform.md), with a separate
-[functional and nonfunctional acceptance matrix](../../observability-acceptance.md).
+[Observability V1](../../operations/observability-platform.md), with a separate
+[functional and nonfunctional acceptance matrix](../../operations/observability-acceptance.md).
 It observes existing owners and does not own execution, recovery or history.
 This is an implementation specification, not a claim that the optional stack,
 CLI or runtime Skill has already been deployed.
 
-Optional Headless [IM and WeCom server plugins](../../im-switchboard.md) share existing
+Optional Headless [IM and WeCom server plugins](../extensions/im-switchboard.md) share existing
 human authorization, Collaboration input receipts and the Host queue. IM owns
 durable `switchboard` bindings and runtime reply context; WeCom owns its protocol
 connection. Source keys are not grants; replies never follow a later binding.
@@ -48,7 +48,7 @@ account creation, extension definitions and configured-Host preflight. Public
 clients do not implicitly create a product account or a private brand. Product
 sessions may declare managed builtins using resolved deployment defaults; the
 existing extension manager retains persisted enablement and lifetime authority. See
-[client product composition](../../plugin-architecture.md) for selection and cache scope
+[client product composition](../extensions/plugin-architecture.md) for selection and cache scope
 boundaries; this does not claim remaining native/private sources are extracted.
 The downstream product owns its client and Collaboration plugin workspaces and
 their tests. Their existing package exports and runtime implementations remain
@@ -75,7 +75,7 @@ HTML entry and trusted embedded product loader finish the shared curated
 ECMAScript compatibility module before dynamically importing application/product
 code. Product dependencies cannot race shim installation through static module
 evaluation. The policy and real minimum-engine startup regression are documented
-in [browser compatibility](../../build-matrix.md#browser-compatibility). This boundary
+in [browser compatibility](../../develop/build-matrix.md#browser-compatibility). This boundary
 does not emulate DOM/device capabilities, cover Workers or relax owned-source
 compatibility checks.
 
@@ -103,7 +103,7 @@ Go discovery, the Expo tunnel can retain the manifest and list entry while
 redirecting bundle downloads to a faster HTTPS origin for the same Metro server.
 
 The target identity and collaboration model is defined in the
-[native actors and Hub collaboration charter](../actor-collaboration.md).
+[native actors and Hub collaboration charter](../identity/actor-collaboration.md).
 Humans and persistent Agent/Bot/Sessions are addressable actors; subjecthood is
 independent of permission size. The top-level concepts are Actor, Hub, Resource
 and Permission. A Hub is a logical network node with its own identity and one or
@@ -119,13 +119,13 @@ resource authority checks the requested operation. This is a target design, not 
 that cross-Hub trust or tenant isolation is implemented. The initial persistent human /
 session Actor registry now provides verified identity binding, revocable Session credentials
 and explicit local Actor grants; legacy execution interfaces remain unscoped and reject
-these Session bearers. See the charter’s [implementation slice](../actor-collaboration.md#首期主体核心自然人与-session).
-The charter's [core and plugin boundary](../actor-collaboration.md#核心与插件的边界)
+these Session bearers. See the charter’s [implementation slice](../identity/actor-collaboration.md#首期主体核心自然人与-session).
+The charter's [core and plugin boundary](../identity/actor-collaboration.md#核心与插件的边界)
 puts actors, authorization and Hub dispatch in the required core. Identity
 sources, execution engines and communication channels enter through plugin
 adapters; they do not own the caller's permissions or bypass target authority.
 
-The [human authentication principle](../actor-collaboration.md#多种登录方式绑定同一自然人)
+The [human authentication principle](../identity/actor-collaboration.md#多种登录方式绑定同一自然人)
 makes the human Actor the stable identity and local accounts, OIDC and enterprise identity
 verified identity bindings. One human may have several sign-in methods; each
 login identity binds to one human within its identity authority. Permissions,
@@ -134,7 +134,7 @@ addresses never authorize automatic account merging. Identity adapters verify
 their proof; core owns binding, authenticated sessions, admission and authorization.
 Client login sessions remain distinct from persistent Bot/Session actors and credentials.
 Trusted identity adapters may supply the optional admission port described in
-[relay deployment](../../relay-deployment.md#optional-provider-admission-policy).
+[relay deployment](../../operations/relay-deployment.md#optional-provider-admission-policy).
 The gateway prepares verified identities asynchronously; core role, connection
 revocation and durable human admission share its synchronous decision. The port
 does not replace identity verification, membership or resource authorization.
@@ -146,7 +146,7 @@ core storage port; core retains the existing v1 database, login tokens and Actor
 authority. Deactivation revokes local logins without changing admission or OIDC
 identity grants, while ordinary process restart preserves valid sessions.
 The authentication owner keeps credentials and browser sessions separate from Actor
-bindings and instance membership. See [server authentication](../../server-authentication.md)
+bindings and instance membership. See [server authentication](../identity/server-authentication.md)
 for private configuration, operator bootstrap, expiry/revocation and migration boundaries.
 Enabling login does not itself change anonymous workspace admission or product-service accounts.
 
@@ -170,7 +170,7 @@ manages the one authoritative node state; the relay app reuses this core rather
 than defining a second federation model. Links, identity issuer trust, forwarding
 eligibility and final membership remain separate decisions. This is the Web
 transport slice of the charter, not general Actor/resource federation. See
-[relay deployment](../../relay-deployment.md).
+[relay deployment](../../operations/relay-deployment.md).
 
 The existing connection and execution contract is `Client / Hub / Server`. A Client is a
 protocol participant and may use an Electron renderer, a static Web page or
@@ -237,15 +237,15 @@ contract or Sidebar presentation again.
 
 ## Package ownership
 
-The related contracts are grouped in the [architecture index](../../platform-architecture.md).
+The related contracts are grouped in the [architecture index](../README.md).
 
 ## Deliberate reuse boundary
 
-The related contracts are grouped in the [architecture index](../../platform-architecture.md).
+The related contracts are grouped in the [architecture index](../README.md).
 
 ## Next feature rule
 
-The related contracts are grouped in the [architecture index](../../platform-architecture.md).
+The related contracts are grouped in the [architecture index](../README.md).
 
 
 ## Network event loop and orchestration storage

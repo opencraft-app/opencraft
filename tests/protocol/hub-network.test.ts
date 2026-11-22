@@ -8,10 +8,12 @@ import { createServer, request, type Server } from 'node:http';
 import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto';
 import WebSocket from 'ws';
 import { HubNetwork } from '../../packages/hub-network/src/node';
+import { HubStore } from '../../packages/hub-network/src/store-file.js';
 import { HUB_CONTROL_PATH, HUB_PROTOCOL, MAX_HOPS } from '../../packages/hub-network/src/contract';
 import { HubRouting } from '../../packages/hub-network/src/routing';
-import { HubStore, parseInvitation, signed } from '../../packages/hub-network/src/store';
+import { parseInvitation, signed } from '../../packages/hub-network/src/store';
 import { createHubController } from '../../packages/hub-network/src/controller';
+import { openHubNetwork } from '../../packages/hub-network/src/open';
 import { createRelayServer } from '../../apps/relay-server/src/server';
 import { AssertionSigner } from '../../packages/identity-core/src/node';
 import { MembershipStore, InstanceAccess } from '../../packages/access-control/src/index';
@@ -31,11 +33,33 @@ async function virtualGet(base: string, path: string, auth = true) {
     }); req.on('error', reject); req.end();
   });
 }
+// Network processes keep the Hub state file and its writer lock in a Worker;
+// a change is acknowledged only after the Worker wrote it.
+test('a network-process Hub persists through its owner and releases the state lock on close', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'hub-owner-')), path = join(dir, 'hub.json');
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const pair = keys(), authority = { issuer: 'owner-login', publicKey: pair.publicKey, providers: ['enterprise-identity'] };
+  let opened = await openHubNetwork(path, { authority });
+  const { node } = opened;
+  assert.deepEqual(JSON.parse(await readFile(path, 'utf8')).authority, authority, 'configuring the authority at open is persisted');
+  assert.throws(() => command(node, { action: 'configure', name: 'Durable Hub', endpoint: '', origin: '', accepting: false, forwarding: false }), /durableCommand/);
+  const result = await node.apply({ revision: node.store.state.revision, action: 'configure', name: 'Durable Hub', endpoint: '', origin: '', accepting: false, forwarding: false }, 'test-administrator');
+  assert.equal('conflict' in result, false);
+  assert.equal(JSON.parse(await readFile(path, 'utf8')).name, 'Durable Hub', 'acknowledged after the owner wrote it');
+  assert.throws(() => new HubStore(path), 'the owner holds the process writer lock');
+  await opened.close();
+  opened = await openHubNetwork(path);
+  try {
+    assert.equal(opened.node.store.state.name, 'Durable Hub');
+    assert.equal(opened.node.store.id, node.store.id);
+  } finally { await opened.close(); }
+});
+
 test('three real Hub nodes stream HTTP and WS; target owns membership; withdraw and reconnect preserve identity', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'hub-network-')), cleanup: (() => unknown)[] = [];
   t.after(async () => { for (const close of cleanup.reverse()) await close(); await rm(dir, { recursive: true, force: true }); });
   const pair = keys(), authority = { issuer: 'network-auth', publicKey: pair.publicKey, providers: ['enterprise-identity'] };
-  const a = new HubNetwork(join(dir, 'a.json'), { authority }), b = new HubNetwork(join(dir, 'b.json'), { authority }), c = new HubNetwork(join(dir, 'c.json'), { authority });
+  const a = new HubNetwork(new HubStore(join(dir, 'a.json')), { authority }), b = new HubNetwork(new HubStore(join(dir, 'b.json')), { authority }), c = new HubNetwork(new HubStore(join(dir, 'c.json')), { authority });
   cleanup.push(() => a.close(), () => b.close(), () => c.close());
   const store = new MembershipStore(join(dir, 'members.sqlite')); cleanup.push(() => store.close()); store.set(principal, 'member', true, 'test');
   const root = join(dir, 'web'); await mkdir(root); await writeFile(join(root, 'index.html'), 'Team C private workbench');
@@ -104,7 +128,7 @@ test('three real Hub nodes stream HTTP and WS; target owns membership; withdraw 
   configure(b, `http://127.0.0.1:${bp}`, { forwarding: true }); await waitFor(() => a.routes().length === 1);
   const id = c.store.id; c.close(); await waitFor(() => a.routes().length === 0);
   assert.equal((await virtualGet(base, '/')).status, 403, 'withdrawn public host has no route');
-  const cAgain = new HubNetwork(join(dir, 'c.json')); cleanup.push(() => cAgain.close()); assert.equal(cAgain.store.id, id);
+  const cAgain = new HubNetwork(new HubStore(join(dir, 'c.json'))); cleanup.push(() => cAgain.close()); assert.equal(cAgain.store.id, id);
   cServer.removeAllListeners('upgrade'); cServer.on('upgrade', (req, sock, head) => { if (!cAgain.handleUpgrade(req, sock, head)) sock.destroy(); });
   // Target membership uses the replacement authority owner after a real process lifecycle.
   const core2 = await createWorkbenchWebServer({ root, loopbackOnly: false, accessService: new InstanceAccess(store, [cAgain]) }); cleanup.push(() => core2.close());
@@ -133,7 +157,7 @@ test('settings require instance administrator, same-origin JSON and retain true 
 
 test('private persistence, invitation signature/expiry, CAS, explicit identity trust and origin scope', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'hub-state-')); t.after(() => rm(dir, { recursive: true, force: true }));
-  const pair = keys(), a = new HubNetwork(join(dir, 'a.json'), { authority: { issuer: 'auth', publicKey: pair.publicKey, providers: ['enterprise-identity'] } }), b = new HubNetwork(join(dir, 'b.json'));
+  const pair = keys(), a = new HubNetwork(new HubStore(join(dir, 'a.json')), { authority: { issuer: 'auth', publicKey: pair.publicKey, providers: ['enterprise-identity'] } }), b = new HubNetwork(new HubStore(join(dir, 'b.json')));
   t.after(() => { a.close(); b.close(); }); configure(a, 'http://127.0.0.1:9999');
   assert.equal((await stat(join(dir, 'a.json'))).mode & 0o077, 0);
   assert.throws(() => new HubStore(join(dir, 'a.json')), /lock/i);
@@ -161,7 +185,7 @@ test('private persistence, invitation signature/expiry, CAS, explicit identity t
 
 test('redeemed invitation pins the peer key; challenge replay and revocation during enrollment are rejected', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'hub-handshake-'));
-  const a = new HubNetwork(join(dir, 'a.json')), b = new HubStore(join(dir, 'b.json')), attacker = new HubStore(join(dir, 'attacker.json'));
+  const a = new HubNetwork(new HubStore(join(dir, 'a.json'))), b = new HubStore(join(dir, 'b.json')), attacker = new HubStore(join(dir, 'attacker.json'));
   const server = createServer((_req, res) => res.end());
   server.on('upgrade', (req, socket, head) => { if (!a.handleUpgrade(req, socket, head)) socket.destroy(); });
   const port = await listen(server), endpoint = `http://127.0.0.1:${port}`; a.start(port); configure(a, endpoint);
@@ -187,7 +211,7 @@ test('redeemed invitation pins the peer key; challenge replay and revocation dur
 });
 
 test('packaged offline enrollment boots a token-free Headless team with pinned Hub identity and core admission', { timeout: 30000 }, async t => {
-  const { build } = await import('esbuild'), { buildHeadlessBundle } = await import('../../scripts/package-headless-linux.mjs');
+  const { build } = await import('esbuild'), { buildHeadlessBundle } = await import('../../scripts/packaging/package-headless-linux.mjs');
   const { execFile } = await import('node:child_process'), { promisify } = await import('node:util');
   const { pathToFileURL } = await import('node:url');
   await mkdir(join(process.cwd(), '.runtime'), { recursive: true });
@@ -195,9 +219,9 @@ test('packaged offline enrollment boots a token-free Headless team with pinned H
   await mkdir(data, { mode: 0o700 }); await mkdir(web); await writeFile(join(web, 'index.html'), 'Bootstrapped private team');
   await writeFile(join(web, 'version.json'), JSON.stringify({ schemaVersion: 1, buildId: 'hub-bootstrap-fixture', headlessServer: true, headlessHostId: 'opencraft-server' }));
   const operator = join(dir, 'hub-admin.mjs'), bundle = join(dir, 'headless.mjs');
-  await build({ entryPoints: [join(process.cwd(), 'scripts/hub-admin.ts')], outfile: operator, bundle: true, platform: 'node', format: 'esm', target: 'node24', banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" } });
+  await build({ entryPoints: [join(process.cwd(), 'scripts/admin/hub-admin.ts')], outfile: operator, bundle: true, platform: 'node', format: 'esm', target: 'node24', banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" } });
   await buildHeadlessBundle(bundle);
-  const pair = keys(), a = new HubNetwork(join(dir, 'a.json'), { authority: { issuer: 'bootstrap-login', publicKey: pair.publicKey, providers: ['enterprise-identity'] } }); configure(a, 'http://127.0.0.1:9');
+  const pair = keys(), a = new HubNetwork(new HubStore(join(dir, 'a.json')), { authority: { issuer: 'bootstrap-login', publicKey: pair.publicKey, providers: ['enterprise-identity'] } }); configure(a, 'http://127.0.0.1:9');
   const invitation = invite(a, ['http://bootstrap-team.test']), file = join(dir, 'command.json'), state = join(data, 'hub-network.json');
   await writeFile(file, JSON.stringify({ action: 'connect', invitation, trustIdentity: true, publishOrigin: 'http://bootstrap-team.test' }), { mode: 0o600 });
   const result = await promisify(execFile)(process.execPath, [operator, state, file]);
@@ -229,7 +253,7 @@ test('Headless publishes its managed Web entry through the real Hub transport', 
   await writeFile(join(web, 'index.html'), 'backend static assets');
   await writeFile(join(web, 'version.json'), JSON.stringify({schemaVersion:1,buildId:'fixture',headlessServer:true,headlessHostId:'opencraft-server'}));
   const pair = keys(), authority = {issuer:'managed-entry-fixture',publicKey:pair.publicKey,providers:['enterprise-identity']};
-  const upstream = new HubNetwork(join(dir, 'upstream.json'), {authority});
+  const upstream = new HubNetwork(new HubStore(join(dir, 'upstream.json')), {authority});
   const provider = {authenticate:(req: any) => req.headers['x-test-auth'] === 'yes' ? principal : null};
   const relay = createRelayServer([], {hub:upstream,networkRoute:service => ({hubId:service.hubId,instanceId:service.hubId,origin:service.origin,credential:'',identityProvider:provider,
     signer:new AssertionSigner({issuer:authority.issuer,instanceId:service.hubId,origin:service.origin},pair.privateKey)})});
@@ -244,7 +268,7 @@ test('Headless publishes its managed Web entry through the real Hub transport', 
   const entryPort = await listen(entry), upstreamPort = await listen(relay.server);
   const base = `http://127.0.0.1:${upstreamPort}`;
   configure(upstream,base); upstream.start(upstreamPort);
-  const bootstrap = new HubNetwork(join(data,'hub-network.json'));
+  const bootstrap = new HubNetwork(new HubStore(join(data,'hub-network.json')));
   try {
     command(bootstrap,{action:'connect',invitation:invite(upstream,['http://team-c.test'],false),trustIdentity:true,publishOrigin:'http://team-c.test'});
   } finally {bootstrap.close();}
@@ -260,7 +284,7 @@ test('Headless publishes its managed Web entry through the real Hub transport', 
 test('revoking a peer also retires data retained after its control transport disappeared', {timeout:10000}, async t => {
   const dir = await mkdtemp(join(tmpdir(), 'hub-detached-revoke-'));
   const authority = {issuer:'retained-test',publicKey:keys().publicKey,providers:['fixture']};
-  const a = new HubNetwork(join(dir,'a.json'),{authority}), b = new HubNetwork(join(dir,'b.json'),{authority});
+  const a = new HubNetwork(new HubStore(join(dir,'a.json')),{authority}), b = new HubNetwork(new HubStore(join(dir,'b.json')),{authority});
   const ingress = createServer(), target = createServer((_req,res) => { res.write('held'); });
   ingress.on('upgrade',(req,socket,head) => { if (!a.handleUpgrade(req,socket,head)) socket.destroy(); });
   const ap = await listen(ingress), bp = await listen(target);

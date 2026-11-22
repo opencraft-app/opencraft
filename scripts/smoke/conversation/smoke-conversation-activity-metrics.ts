@@ -3,7 +3,7 @@ import { createServer } from "vite";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { typographyRole } from "@opencraft/design-system/typography";
-import { assertBrowserRuntimeDependencies } from "../../browser-smoke-preflight.mjs";
+import { assertBrowserRuntimeDependencies } from "../../check/browser-smoke-preflight.mjs";
 
 const { chromium } = await import("playwright");
 assertBrowserRuntimeDependencies(process.env.OPENCRAFT_CHROMIUM_EXECUTABLE ?? chromium.executablePath());

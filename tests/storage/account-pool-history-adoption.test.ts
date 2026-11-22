@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { AccountPoolStore } from "../../packages/account-pool-host/src/store.js";
 import { openManagedDatabase, resolveStoreMigrations, type Migration } from "../../packages/sqlite-node/src/index.js";
-import { readOwnerMigrations } from "../../scripts/storage-owner-source.mjs";
+import { readOwnerMigrations } from "../../scripts/storage/storage-owner-source.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const legacy: readonly Migration[] = await readOwnerMigrations(root, { id: "account-pool-host", owner: "packages/account-pool-host/src/store.ts" });

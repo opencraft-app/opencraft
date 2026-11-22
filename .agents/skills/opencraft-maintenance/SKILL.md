@@ -40,20 +40,20 @@ description: 创建、修改或评审 OpenCraft 界面（设置页、列表、�
 
 本文中的路径均相对 **OpenCraft 仓库根目录**（包含 `AGENTS.md`、独立 `package.json` 和 `docs/` 的 checkout），不依赖 checkout 的目录名称或当前终端目录。
 
-1. 从OpenCraft服务根的 `AGENTS.md` 进入；独立GitHub仓库不依赖任何下游或父级脚本与目录。GitHub目标上游及切换状态读 `docs/upstream-transition.md`，不把过渡中的混合源码当已完成开源。
-2. 架构修改读 `docs/platform-architecture.md`；按下面路由只读触及的专题。正式文档和当前源码/测试是事实依据，本 Skill 是维护方法，不建立平行真源。
+1. 从OpenCraft服务根的 `AGENTS.md` 进入；独立GitHub仓库不依赖任何下游或父级脚本与目录。GitHub目标上游及切换状态读 `docs/history/upstream-transition.md`，不把过渡中的混合源码当已完成开源。
+2. 架构修改读 `docs/architecture/README.md`；按下面路由只读触及的专题。正式文档和当前源码/测试是事实依据，本 Skill 是维护方法，不建立平行真源。
 3. 当前源码、旧总结、参考产品不一致时先核对版本与实际调用链。测试预期也可能错误：以用户明确的产品行为重新审查不变量，不靠旧测试给错误行为背书。
 
 | 本次任务 | 首选事实入口 |
 |---|---|
 | 新增/修改/评审 UI，包括设置、列表、表单、弹窗和插件界面 | `design.md` → 本 Skill 的 `references/ui-design.md`；专项由 `design/ui/README.md` 按需加载 |
-| 应用生命周期、Host、扩展、Cordis、Shell | `docs/platform-architecture.md`、`docs/plugin-architecture.md` |
-| Chat、Composer、流式内容、滚动与恢复 | `docs/chat-ui-architecture.md`；相关 core/runtime 与视图适配代码 |
-| Browser、Terminal、远程回环地址 | `docs/browser-workbench-architecture.md`；Host 路由与资源 owner |
-| 登录、账户、环境目录 | `docs/platform-architecture.md` 的认证、环境和 Sidecar 部分 |
-| 自定义模型与默认模型 | `docs/local-agent-custom-providers.md` |
-| 上游复用、生成闭包 | `docs/upstream-history.md`；根入口指向的 upstream 规则 |
-| 打包、桌面预览、多端交付 | `docs/build-matrix.md`、`config/build-matrix.json` |
+| 应用生命周期、Host、扩展、Cordis、Shell | `docs/architecture/README.md`、`docs/architecture/extensions/plugin-architecture.md` |
+| Chat、Composer、流式内容、滚动与恢复 | `docs/architecture/chat-ui/chat-ui-architecture.md`；相关 core/runtime 与视图适配代码 |
+| Browser、Terminal、远程回环地址 | `docs/architecture/browser/browser-workbench-architecture.md`；Host 路由与资源 owner |
+| 登录、账户、环境目录 | `docs/architecture/README.md` 的认证、环境和 Sidecar 部分 |
+| 自定义模型与默认模型 | `docs/architecture/execution/local-agent-custom-providers.md` |
+| 上游复用、生成闭包 | `docs/history/upstream-history.md`；根入口指向的 upstream 规则 |
+| 打包、桌面预览、多端交付 | `docs/develop/build-matrix.md`、`config/build-matrix.json` |
 
 ## 每次维护先定四件事
 

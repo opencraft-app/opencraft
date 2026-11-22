@@ -1,6 +1,6 @@
 # Platform: Identity and access
 
-[Architecture index](../../platform-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](../README.md) · [Documentation index](../../README.md)
 
 ### Shared-origin relay server context
 
@@ -13,7 +13,7 @@ receive a fetch port and contain no relay-path or company deployment assumptions
 Changing the browser choice creates a new page lifetime, without transferring
 permissions or cancelling server execution. Per-identity remembered selection is
 a navigation preference, never an authorization credential. See
-[shared entry selection](../../relay-deployment.md#shared-entry-server-selection) for
+[shared entry selection](../../operations/relay-deployment.md#shared-entry-server-selection) for
 configuration, cookie handling, rollout and the shared-origin trust boundary.
 
 ### Account read receipt authority
@@ -85,7 +85,7 @@ the Host records inherited message origins atomically with cloned sender binding
 and exposes an optional inherited-message query to its metadata provider. A product
 participant projection can exclude inherited messages. Origin records survive restart and nested
 forks in the same Host-state database (additive migration v4).
-See [external identity and provenance](../../enterprise-authentication.md).
+See [external identity and provenance](../identity/enterprise-authentication.md).
 
 The hostless and configured-Host Application supervisors share one explicit
 service-disposal plan, including the client extension persistence backend and
@@ -194,7 +194,7 @@ Downstream desktop login is selected through paired trusted local Main/Preload
 entries; the public desktop does not create a private account. Core owns profile,
 window, protocol and IPC admission. The product owns random state, PKCE, timeout,
 cancellation, single-use exchange and its per-profile application-owned private
-file session storage (not OS encryption). See [desktop product composition](../../desktop-product-composition.md).
+file session storage (not OS encryption). See [desktop product composition](../workbench/desktop-product-composition.md).
 Only the trusted
 top-level renderer may invoke the narrow preload account port. A callback received
 by another profile is forwarded to its live owner through a state-addressed local
@@ -228,7 +228,7 @@ Expanded/context materials remain unchanged. The adjacent main surface keeps
 its theme-owned stroke/elevation, including soft and flat variants; titlebar
 paint must not override it. Floating overlays keep their own elevation.
 This is paint-only: pane geometry, resize targets, content identity and focus
-ownership do not change. See `docs/workbench-design-language.md`.
+ownership do not change. See `docs/architecture/workbench/workbench-design-language.md`.
 Those children do not paint additional backgrounds or stack backdrop filters:
 this avoids both a white entrance strip and exposed gray window material under
 the neighboring context pane. Floating footer rows inherit their owner's surface.
@@ -480,6 +480,6 @@ Personal Composer model/effort defaults are account data, separate from installa
 
 ### 单 Hub 主体协作
 
-Headless 将 `access-control/collaboration` 作为 ActorStore / ActorAccess 后的协作权威，拥有独立托管 SQLite 中的私聊消息、投递、运行绑定与执行交接记录。`apps/headless-server/src/conversation-execution.mjs` 是有限的进程内 AppHost 适配；OpenCraftHostQueue 仍唯一拥有执行领取，并在领取前调用当前 Actor 授权校验。Wire 字段不构成可信调用上下文。契约及未隔离边界见[主体协作接口](../../actor-collaboration-api.md)。
+Headless 将 `access-control/collaboration` 作为 ActorStore / ActorAccess 后的协作权威，拥有独立托管 SQLite 中的私聊消息、投递、运行绑定与执行交接记录。`apps/headless-server/src/conversation-execution.mjs` 是有限的进程内 AppHost 适配；OpenCraftHostQueue 仍唯一拥有执行领取，并在领取前调用当前 Actor 授权校验。Wire 字段不构成可信调用上下文。契约及未隔离边界见[主体协作接口](../identity/actor-collaboration-api.md)。
 
 [会话引用、读取与投递](../conversation-interoperability.md)将Actor和Conversation资源分开，统一Collaboration接纳与交接，目标Host继续拥有执行队列。Headless本地Codex已接通稳定引用、按需历史、原始输入委托的服务端工具；其他引擎与跨Server投递须有实际适配，不因协议类型而自动可用。

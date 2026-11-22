@@ -16,7 +16,7 @@ import{initializeAppearanceTheme,setThemePreference}from'/apps/workbench-web/src
 import'/apps/workbench-web/src/styles/app.scss';
 initializeAppearanceTheme();
 const fixture=window.fixture={setThemePreference};const noop=()=>{};
-const navigation={layout:'unified',actions:[],onOpenSettings:noop,account:{snapshot:{phase:'authenticated',name:'Synthetic employee',avatarUrl:null},onOpen:noop,onRefresh:async()=>{}}};
+const navigation={actions:[],onOpenSettings:noop,account:{snapshot:{phase:'authenticated',name:'Synthetic employee',avatarUrl:null},onOpen:noop,onRefresh:async()=>{}}};
 function Receipt(){const{headerLeftFitWidth}=useAppShellLayoutMotion();fixture.readFitWidth=()=>headerLeftFitWidth.get();return null}
 function App(){const[open,setOpen]=useState(false),[revision,setRevision]=useState(0),[brand,setBrand]=useState('Brand'),[actions,setActions]=useState(['sidebar-toggle']);Object.assign(fixture,{setOpen,setBrand,setActions,rerender:()=>setRevision(n=>n+1)});
 return <AppShell layoutScope='measurement' navigation={navigation} mainContentLayout='default' sidebarOpen={open} sidebarWidth={335} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} onSidebarCollapse={()=>setOpen(false)} onSidebarExpand={()=>setOpen(true)} onSidebarResizeEnd={noop} rightPanel={null} rightPanelOpen={false} rightPanelFullWidth={false} onRightPanelOpenChange={noop}

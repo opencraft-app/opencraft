@@ -1,10 +1,10 @@
 # Platform: Execution and models
 
-[Architecture index](../../platform-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](../README.md) · [Documentation index](../../README.md)
 
 ### Human model admission and personal/team credentials
 
-The optional [human model gateway](../../model-gateway.md) adds explicit key
+The optional [human model gateway](../execution/model-gateway.md) adds explicit key
 contributions (personal by default, team sharing by explicit consent), bounded
 Human task authorization with actual executor identity, transactional token reservations and
 receipt-based settlement to the existing Codex/assistant proxies. Its budget
@@ -262,7 +262,7 @@ logical-client/product-protocol adapter and closes only its own native connectio
 the final page leaving or the execution service restarting does not stop Codex
 work. The account service is shared with the default desktop embedded path, not
 duplicated in remote daemons. Both owners acquire the same data-directory writer
-lock. See [Codex core operations](../../codex-core.md) for authentication, independent
+lock. See [Codex core operations](../execution/codex-core.md) for authentication, independent
 systemd units, migration and the interrupting CLI/proxy maintenance boundary.
 Web/gateway readiness is independent of this Host's protocol compatibility:
 Headless serves HTTP and other Hosts while its Codex connection initializes in
@@ -560,8 +560,8 @@ history. Per-conversation bounded flights keep slow admissions from holding peer
 completion. History RPC serialization fails oversized results within the request
 without retiring the shared connection. Configuration snapshots are confirmed
 only after native installation in each adapter. The detailed ownership and
-limits are in [execution ownership](../../execution-ownership.md#bounded-history-replies)
-and [session capabilities](../../session-capabilities.md).
+limits are in [execution ownership](../execution/execution-ownership.md#bounded-history-replies)
+and [session capabilities](../execution/session-capabilities.md).
 
 ### Connector HTTP recovery and consumers
 
@@ -649,7 +649,7 @@ materializes Item bodies only for the requested page. This keeps the complete
 count and stable cursor ordering without transferring hidden tool output before
 first paint. The paired header/Item port is optional; older native protocols and
 other engines retain their full-page path. Disposable projection schema 2 fences
-old readers from lazy placeholders; see [SQLite lifecycle](../../sqlite-lifecycle.md).
+old readers from lazy placeholders; see [SQLite lifecycle](../server/sqlite-lifecycle.md).
 The isolated native regression is documented in
 [history cold reproduction](../../../scripts/performance/README.md).
 

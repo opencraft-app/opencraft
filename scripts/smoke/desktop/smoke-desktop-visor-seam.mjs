@@ -3,7 +3,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { compile } from 'sass';
-import { assertBrowserRuntimeDependencies } from "../../browser-smoke-preflight.mjs";
+import { assertBrowserRuntimeDependencies } from "../../check/browser-smoke-preflight.mjs";
 
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? 'playwright');
 assertBrowserRuntimeDependencies(process.env.OPENCRAFT_CHROMIUM_EXECUTABLE ?? chromium.executablePath());

@@ -25,20 +25,21 @@
     "@earendil-works/chord": "1.3.0",
     "@earendil-works/pi-ai": "1.3.0",
     "@earendil-works/pi-durable": "1.3.0",
-    "@opentelemetry/api": "1.9.0",
-    "@opentelemetry/api-logs": "0.201.1",
+    "@opencraft/appserver-protocol": "0.1.0",
+    "@opencraft/identity-core": "0.1.0",
+    "@opencraft/sandbox": "0.1.0",
+    "@opencraft/worker-owner": "0.1.0",
+    "@opentelemetry/api": "1.10.0",
+    "@opentelemetry/api-logs": "0.223.0",
     "@opentelemetry/context-async-hooks": "2.0.1",
-    "@opentelemetry/otlp-transformer": "0.201.1",
+    "@opentelemetry/otlp-transformer": "0.301.2",
     "@opentelemetry/resources": "2.0.1",
     "@opentelemetry/sdk-logs": "0.201.1",
-    "@opentelemetry/sdk-trace-node": "2.0.1",
-    "proper-lockfile": "4.1.2",
-    "@opencraft/identity-core": "0.1.0",
-    "@opencraft/appserver-protocol": "0.1.0",
-    "@opencraft/sandbox": "0.1.0"
+    "@opentelemetry/sdk-trace-node": "2.12.0",
+    "proper-lockfile": "4.1.2"
   },
   "devDependencies": {
-    "prettier": "3.6.2"
+    "prettier": "3.10.1"
   },
   "bin": {
     "opencraft-assistant": "./bin/assistant.mjs"

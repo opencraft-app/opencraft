@@ -70,6 +70,8 @@ export interface StartupResourcePolicy {
   readonly demandOnlyModules?: readonly RegExp[];
 }
 const demandOnlyPatterns = [
+  /\/plugins\/assets\/src\/(?:view\.tsx|git\/client\.tsx)$/,
+  /\/packages\/composer-editor\/src\/local-queued-messages\.tsx$/,
   // Desktop capability/attachment owners start synchronously; media is connect-only.
   /\/plugins\/cloud-desktop\/src\/(?:rfb|rfb-client|pointer-input|trackpad-input|text-input|clipboard-input|frame-preview)\.ts$/,
   /\/packages\/workbench-runtime\/src\/side-chat\/policy\.ts$/,

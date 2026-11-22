@@ -77,7 +77,7 @@ jobs:
         env:
           NPM_AUDIT_REPORT_ONLY: 'true'
           NPM_AUDIT_REPORT: ${{ runner.temp }}/npm-audit.json
-        run: node "$GITHUB_WORKSPACE/scripts/dependency-audit.mjs"
+        run: node "$GITHUB_WORKSPACE/scripts/check/dependency-audit.mjs"
       - name: Retain complete dependency audit
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

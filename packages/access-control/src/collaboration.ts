@@ -1,5 +1,5 @@
-import { CrewContact } from './crew-contact.js';
-import { CrewWork, type CrewPass } from './crew-work.js';
+import type { CrewContact } from './crew-contact.js';
+import type { CrewWork, CrewPass } from './crew-work.js';
 import type { InputCompletion } from "@opencraft/appserver-protocol";
 import { ReceiptReconciliation } from './receipt-reconciliation.js';
 import { ConversationFailureDiagnostics } from './conversation-failure-diagnostics.mjs';
@@ -128,10 +128,17 @@ export class Collaboration {
   // Timer pumps re-read an unchanged receipt with backoff: "queued" 500 ms -> 5 s, "unknown"
   // (awaits human review) 500 ms -> 30 s. A paused queue head or an unconfirmed handoff otherwise
   // costs one engine logical client every 500 ms for as long as it stays.
+  // Crew rules read and write SQLite, so they live only where the communication storage owner runs
+  // (its Worker attaches them). An instance on a network thread has none and the rules stand aside.
+  #crew?: { contact: CrewContact; work: CrewWork };
+  attachCrew(contact: CrewContact, work: CrewWork) {
+    if (this.#crew) throw Error('Crew rules already attached');
+    this.#crew = { contact, work };
+  }
   /** Crew contact rules over spaces and phonebook grants; it decides, it does not own either. */
-  readonly crew: CrewContact;
+  get crew(): CrewContact { return this.#crew?.contact ?? (() => { throw new CollaborationError(503, 'crew_unavailable'); })(); }
   /** Crew work and its dispatch chain; Collaboration is the ledger's only writer. */
-  readonly crewWork: CrewWork;
+  get crewWork(): CrewWork { return this.#crew?.work ?? (() => { throw new CollaborationError(503, 'crew_unavailable'); })(); }
   readonly #receiptPacing = new Map<string, { key: string; unchanged: number; dueAt: number }>();
   #operations: Promise<unknown> = Promise.resolve();
   #timer: ReturnType<typeof setInterval> | null = null;
@@ -143,8 +150,6 @@ export class Collaboration {
     this.#closeDatabase = managed.close;
     this.database = managed.database; this.outcome = managed.outcome;
     this.orchestration = new ThreadOrchestrationLedger(this.database, now);
-    this.crew = new CrewContact(this.database, actors);
-    this.crewWork = new CrewWork(this.database, actors, this.crew, now);
     this.channels = new NativeChannels(this.database, actors, actorId => !this.#closed && admittedActor(actorId),
       (c,target)=>this.#allows(c,target,'message.send'));
     this.channels.groupDisplayTitle = id => communicationExtension()?.groupDisplayTitle?.(this,this.database,id) ?? null;
@@ -199,7 +204,7 @@ export class Collaboration {
   #allows(context: ActorContext, target: string, action: string): boolean {
     // A claimed Bot and its owner keep their private line whatever the crew rules say.
     const privateLine = () => action === 'message.send' && new PersonalAssistants(this,this.database).canMessage(context,target);
-    const crew = this.crew.decide(context, target, action);
+    const crew = this.#crew?.contact.decide(context, target, action) ?? null;
     if (crew !== null) return crew || privateLine();
     return this.actors.can(context, target, action) || privateLine();
   }
@@ -708,7 +713,7 @@ export class Collaboration {
       if(attachment)this.database.prepare('INSERT INTO actor_channel_attachments(message_id,name,mime,bytes) VALUES(?,?,?,?)').run(id,attachment.name,attachment.type,attachment.bytes);
       this.database.prepare("INSERT INTO actor_deliveries VALUES(?,?,'received',?,NULL)").run(id, target, now);
       // An answer to a Bot's open question goes back on that work; anything else to a space Bot is a dispatch.
-      if (!pass && !this.crewWork.answerOpenQuestion(context, target, id, reply)) this.crewWork.openForDirect(context, target, id);
+      if (!pass && this.#crew && !this.#crew.work.answerOpenQuestion(context, target, id, reply)) this.#crew.work.openForDirect(context, target, id);
       return { messageId: id, requestId: intent ? this.#createRequest(context, target, [id], intent) : null };
     });
     if (!result.replayed) this.channels.changed({ channelId, directory: created });

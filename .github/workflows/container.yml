@@ -40,7 +40,7 @@ jobs:
       - name: Build identified container candidate
         run: |
           source_date_epoch="$(git show -s --format=%ct HEAD)"
-          docker buildx build -f docker/Dockerfile.owned-electron \
+          docker buildx build -f deploy/docker/Dockerfile.owned-electron \
             --build-context "owned-electron=$OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION" \
             --platform "linux/${{ matrix.architecture }}" \
             --build-arg "OPENCRAFT_BUILD_ID=github-${GITHUB_SHA}" \

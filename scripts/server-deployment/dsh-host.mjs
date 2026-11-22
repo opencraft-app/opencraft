@@ -1,7 +1,7 @@
 import { createHostFileSystem } from '../../apps/headless-server/src/host-filesystem.ts';
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
-import { verifyDshOwnerAdmission } from '../patch-dsh-owner-admission.mjs';
+import { verifyDshOwnerAdmission } from '../postinstall/patch-dsh-owner-admission.mjs';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -34,7 +34,9 @@ export async function startIndependentDshHost(configuration) {
     if (!taskCoreToken) throw new Error('Task Core catalog token is empty');
   }
   if (!options.dshExecutable || !options.dshCapabilityPlugin) throw new Error("DSH handoff requires pinned executable and plugin paths");
-  await verifyDshOwnerAdmission(resolve(dirname(options.dshExecutable),"../../../.."));
+  // OpenCraft bridges DSH but does not ship it. Only an installed runtime has a
+  // native writer whose owner admission must be verified before handoff.
+  if (existsSyncEntry(options.dshExecutable)) await verifyDshOwnerAdmission(resolve(dirname(options.dshExecutable),"../../../.."));
   await mkdir(join(options.dataDirectory,'owner-handoff'),{recursive:true,mode:0o700});
   const releaseKernel = await acquireLock(join(options.dataDirectory,'owner-writer.lock')).catch(error=>{throw new Error('DSH writer already owned or unavailable',{cause:error});});
   let release;

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { patchDshThreadEnvironment, threadEnvironmentEdit, terminalThreadEnvironmentEdit } from '../../scripts/patch-dsh-thread-environment.mjs';
+import { patchDshThreadEnvironment, threadEnvironmentEdit, terminalThreadEnvironmentEdit } from '../../scripts/postinstall/patch-dsh-thread-environment.mjs';
 
 test('DSH thread environment patch is idempotent and rejects drift before write', async t => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-thread-env-')); t.after(() => rm(root, {recursive:true,force:true}));

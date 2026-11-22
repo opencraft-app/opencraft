@@ -35,7 +35,10 @@ try {
   await page.keyboard.press('Escape');await page.locator('.conversation-search').waitFor({state:'hidden'});
   assert.equal(await editor.textContent(),'Keep shortcut draft');
   await page.keyboard.press(mod+'+/');await page.locator('.workbench-shortcut-help').waitFor();
-  assert.equal(await page.locator('.workbench-shortcut-help kbd').count(),7);
+  assert.equal(await page.locator('.workbench-shortcut-help kbd').count(),11);
+  const keys = await page.locator('.workbench-shortcut-help kbd').allTextContents();
+  assert.ok(keys.includes(platform === 'MacIntel' ? '⌃⇧↑' : 'Ctrl+Shift+↑'));
+  assert.ok(keys.includes(platform === 'MacIntel' ? '⌃⇧↓' : 'Ctrl+Shift+↓'));
   await page.screenshot({path:`${output}/${platform}-${dark?'dark':'light'}.png`});
   await page.keyboard.press('Escape');await page.locator('.workbench-shortcut-help').waitFor({state:'hidden'});
   assert.equal(await editor.textContent(),'Keep shortcut draft');
@@ -48,7 +51,7 @@ try {
   const shortcutsEntry=page.locator('.settings-page__navigation button').filter({has:page.locator('svg')}).filter({hasText:/Keyboard shortcuts|快捷键/});
   await shortcutsEntry.click();
   await page.locator('.settings-page__content .workbench-shortcut-list').waitFor();
-  assert.equal(await page.locator('.settings-page__content .workbench-shortcut-list kbd').count(),7);
+  assert.equal(await page.locator('.settings-page__content .workbench-shortcut-list kbd').count(),11);
   assert.equal(await shortcutsEntry.getAttribute('aria-current'),'page');
   await page.screenshot({path:`${output}/${platform}-${dark?'dark':'light'}-settings.png`});
   await page.setViewportSize({width:390,height:844});
@@ -57,7 +60,7 @@ try {
   await page.keyboard.press('Escape');
   const settingsList=page.locator('.settings-page__content .workbench-shortcut-list');
   await page.waitForFunction(()=>{const box=document.querySelector('.settings-page__content .workbench-shortcut-list')!.getBoundingClientRect();return box.x>=0&&box.right<=innerWidth+1});
-  assert.equal(await settingsList.locator('dl > div').evaluateAll((rows:Element[])=>rows.every(row=>{const label=row.querySelector('dt')!.getBoundingClientRect(),key=row.querySelector('dd')!.getBoundingClientRect();return label.right<=key.left&&label.width>0&&key.width>0})),true);
+  assert.equal(await settingsList.locator('.settings-control-row').evaluateAll((rows:Element[])=>rows.length===11&&rows.every(row=>{const bounds=row.getBoundingClientRect(),label=row.querySelector('.settings-control-row__label')!.getBoundingClientRect(),key=row.querySelector('kbd')!.getBoundingClientRect();return label.width>0&&key.width>0&&key.right<=bounds.right&&label.left>=bounds.left&&(label.right<=key.left||label.bottom<=key.top)})),true);
   await page.screenshot({path:`${output}/${platform}-${dark?'dark':'light'}-settings-narrow.png`});
   await page.setViewportSize({width:1280,height:850});
   const settingsUrl=page.url();await page.keyboard.press(mod+'+k');await page.locator('.conversation-search').waitFor();assert.equal(page.url(),settingsUrl);await page.keyboard.press('Escape');
@@ -71,9 +74,9 @@ try {
   await page.setViewportSize({width:390,height:844});await page.keyboard.press(mod+'+/');await page.locator('.workbench-shortcut-help').waitFor();
   const box=await page.locator('.workbench-shortcut-help').boundingBox();assert.ok(box&&box.x>=0&&box.x+box.width<=391);
   assert.equal(await page.locator('.workbench-shortcut-help').evaluate((e:Element)=>getComputedStyle(e).flexDirection),'column');
-  assert.equal(await page.locator('.workbench-shortcut-help dl > div').evaluateAll((rows:Element[])=>rows.every(row=>{const label=row.querySelector('dt')!.getBoundingClientRect(),key=row.querySelector('dd')!.getBoundingClientRect();return label.right<=key.left&&label.width>0&&key.width>0})),true);
+  assert.equal(await page.locator('.workbench-shortcut-help .settings-control-row').evaluateAll((rows:Element[])=>rows.length===11&&rows.every(row=>{const bounds=row.getBoundingClientRect(),label=row.querySelector('.settings-control-row__label')!.getBoundingClientRect(),key=row.querySelector('kbd')!.getBoundingClientRect();return label.width>0&&key.width>0&&key.right<=bounds.right&&label.left>=bounds.left&&(label.right<=key.left||label.bottom<=key.top)})),true);
   await page.screenshot({path:`${output}/${platform}-${dark?'dark':'light'}-narrow.png`});
-  assert.deepEqual(errors,[]);results.push({platform,dark,searchPreservedDraft:true,modalOwnership:true,helpRows:7,sidebarAliases:true,settingsAndNewChat:true,settingsShortcutPage:true,noPrimaryShortcutAction:true,narrowContained:true,pageerrors:0});
+  assert.deepEqual(errors,[]);results.push({platform,dark,searchPreservedDraft:true,modalOwnership:true,helpRows:11,sidebarAliases:true,settingsAndNewChat:true,settingsShortcutPage:true,noPrimaryShortcutAction:true,narrowContained:true,pageerrors:0});
   await context.close();
  }
  await writeFile(output+'/results.json',JSON.stringify(results,null,2));console.log(JSON.stringify(results));

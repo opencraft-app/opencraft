@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "vite";
-import { assertBrowserRuntimeDependencies } from "../../browser-smoke-preflight.mjs";
+import { assertBrowserRuntimeDependencies } from "../../check/browser-smoke-preflight.mjs";
 
 const output = process.env.OPENCRAFT_INFO_REPORT ?? ".local/session-info-sheet";
 const source = `

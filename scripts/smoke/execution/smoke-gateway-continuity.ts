@@ -10,7 +10,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { AppHostServer } from '../../../packages/app-host-server/src/index.ts';
 import { WebSocketTransport } from '../../../packages/appserver-transport-websocket/src/index.ts';
 import { createWorkbenchWebServer } from '../../../apps/headless-server/src/serve-workbench-web.mjs';
-import { createHeadlessBackendProxy } from '../../web-deployment/headless-backend.mjs';
+import { createHeadlessBackendProxy } from '../../../apps/headless-server/src/web-deployment/headless-backend.mjs';
 
 const webRoot=resolve(process.env.OPENCRAFT_CONTINUITY_WEB_ROOT??'apps/workbench-web/dist');
 const output=resolve(process.env.OPENCRAFT_CONTINUITY_OUTPUT??'.local/gateway-continuity');await mkdir(output,{recursive:true});

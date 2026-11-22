@@ -22,7 +22,7 @@ for(let i=0;i<12;i++)panels.open('scope','terminal',{id:String(i)});
 // Opening tools now selects tools foreground; this fixture starts from the conversation to edit its draft.
 panels.dispatch('scope',{type:'select-foreground',foreground:'primary'});
 const subscribe=f=>panels.subscribeOwner('scope',f),get=()=>panels.getOwnerSnapshot('scope');
-const navigation={layout:'unified',actions:[{id:'chat',title:'Chat',icon:'chat',onInvoke:()=>{}}],settingsActive:false,onOpenSettings:()=>{},account:{snapshot:{phase:'anonymous',name:null,avatarUrl:null},onOpen:()=>{},onRefresh:async()=>{},onSignOut:async()=>{}}};
+const navigation={actions:[{id:'chat',title:'Chat',icon:'chat',onInvoke:()=>{}}],settingsActive:false,onOpenSettings:()=>{},account:{snapshot:{phase:'anonymous',name:null,avatarUrl:null},onOpen:()=>{},onRefresh:async()=>{},onSignOut:async()=>{}}};
 function App(){const state=useSyncExternalStore(subscribe,get);const [sidebar,setSidebar]=useState(false);window.fixture={panels,setThemePreference};
 const action={id:'terminal',region:'right',icon:'terminal',label:'New terminal',creationLabel:'Terminal',run:()=>panels.open('scope','terminal',{id:crypto.randomUUID()})};
 return <AppShell sceneOwnerId='scope' foreground={state.foreground} onForegroundChange={foreground=>panels.dispatch('scope',{type:'select-foreground',foreground})} layoutScope='toolbar-ownership' mainContentLayout='default' navigation={navigation} sidebarOpen={sidebar} sidebarWidth={275} onSidebarCollapse={()=>setSidebar(false)} onSidebarExpand={()=>setSidebar(true)} onSidebarResizeEnd={()=>{}} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}}

@@ -4,11 +4,11 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, stat } from 'node:fs/
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { sealCraftPlugin } from '../../scripts/craft-plugin.mjs';
+import { sealCraftPlugin } from '../../scripts/packaging/craft-plugin.mjs';
 import { createUserPluginCatalog, discoverCraftPlugins } from '../../apps/headless-server/src/web-deployment/craft-plugins.mjs';
 import { loadUserPlugins, userPluginAsset } from '../../apps/headless-server/src/web-deployment/user-plugins.mjs';
 import { createWorkbenchWebServer as gateway } from '../../apps/headless-server/src/serve-workbench-web.mjs';
-import { createWorkbenchWebServer as worker } from '../../scripts/workbench-web-server.mjs';
+import { createWorkbenchWebServer as worker } from '../../apps/headless-server/src/workbench-web-server.mjs';
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'hands-craft-'));

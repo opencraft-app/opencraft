@@ -8,12 +8,9 @@
     "tests/composer/opencraft-composer-attachment-focus.test.ts",
     "tests/execution/codex-accounts-settings.test.ts",
     "tests/execution/codex-engine-adapter.test.ts",
-    "tests/execution/independent-acp-host.test.mjs",
     "tests/execution/opencraft-daemon.test.ts",
     "tests/identity/product-identity.test.ts",
-    "tests/identity/thread-cli.test.ts",
     "tests/mobile/embedded-paint-before-connect.test.ts",
-    "tests/server/observability.test.mjs",
     "tests/server/workbench-web-release.test.mjs",
     "tests/shell/shared-control-standards.test.ts",
     "tests/shell/theme-material-capabilities.test.ts",
@@ -36,7 +33,6 @@
     "tests/shell/workbench-turn-diff-review.test.ts",
     "tests/shell/workbench-user-message-layout.test.ts",
     "tests/shell/workbench-window-chrome.test.ts",
-    "tests/shell/workbench-workspace-directory.test.ts",
-    "tests/tooling/browser-compatibility-graph.test.mjs"
+    "tests/shell/workbench-workspace-directory.test.ts"
   ]
 }

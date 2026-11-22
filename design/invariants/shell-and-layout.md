@@ -227,7 +227,7 @@ Downstream product assembly remains independent. Packaged modules load lazily
 through a fixed native asset registry, never an arbitrary file or remote-code
 reader. The built-in ready surface uses the full safe-area viewport; source
 selection lives in Web settings with independent native startup/error recovery. Packaging, bridge and acceptance boundaries are owned by
-[Mobile Workbench container](../../docs/mobile-workbench-container.md).
+[Mobile Workbench container](../../docs/architecture/mobile/mobile-workbench-container.md).
 
 A Settings destination invoked from the floating applications drawer uses the
 same Shell `onInvoke` dismissal as other destinations. Do not leave the former
@@ -471,7 +471,7 @@ Other Shell, navigation, style and spring implementations retain their owners.
 应用目录的开关位于导航栏 Home 紧右侧，使用共享 grid 图标和 aria-expanded；开关仅折叠或展开同一侧栏目录，不导航或关闭触控抽屉。目录不再显示顶部重复「应用」按钮。sidebar-primary 扩展入口与 miniapp 同列显示，sidebar-footer 保留在导航栏；平台监控沿既有命令打开监控页，权限与能力探测不变。折叠、主题和路由切换保留聊天草稿及上下文实例。
 
 
-2026-10-14 主工作台导航拓扑更新：Web/Electron 的应用入口与当前页面上下文合并为单个 Sidebar（`ShellNavigationConfig.layout=unified`），桌面内部60px图标栏承载Home/扩展目的地，既有移动抽屉信号下同一组入口改为列表上方纵向全宽菜单（新建/设置在底部悬浮、列表全宽），桌面邻接列承载会话或设置列表，Settings/账户在竖栏底部。在任务等未提供上下文列表的桌面页面，Sidebar 仅保留图标栏宽度，主区域紧邻图标栏填满释放的空间；不显示空上下文的 resize 入口，不写回会话列表的保存宽度，切回会话恢复原宽度。窄屏保留完整抽屉与同一组应用导航动作，新建与设置在底部独立悬浮，隐藏个人头像/账号入口且不保留底板。整个 Sidebar 只有一个宽度、一个显隐入口；不显示独立 Applications 抽屉、Pin 或 compact 应用栏。旧 rail 偏好不参与该布局的空间预算，也不改写它们。浮动/固定呈现移动同一组 portal 内容，不复制上下文、草稿或滚动 owner；窄屏选择目的地关闭浮层。此条替代主工作台原有并排 Primary/Context 呈现，嵌入产品无 Shell 导航时沿用原契约。单一 leftPanelSlot 保留现有路由、扩展与空间策略。
+2026-10-14 主工作台导航拓扑更新：Web/Electron 的应用入口与当前页面上下文合并为单个 Sidebar（由 `AppShell.navigation` 提供应用导航），桌面内部60px图标栏承载Home/扩展目的地，既有移动抽屉信号下同一组入口改为列表上方纵向全宽菜单（新建/设置在底部悬浮、列表全宽），桌面邻接列承载会话或设置列表，Settings/账户在竖栏底部。在任务等未提供上下文列表的桌面页面，Sidebar 仅保留图标栏宽度，主区域紧邻图标栏填满释放的空间；不显示空上下文的 resize 入口，不写回会话列表的保存宽度，切回会话恢复原宽度。窄屏保留完整抽屉与同一组应用导航动作，新建与设置在底部独立悬浮，隐藏个人头像/账号入口且不保留底板。整个 Sidebar 只有一个宽度、一个显隐入口；不显示独立 Applications 抽屉、Pin 或 compact 应用栏。旧 rail 偏好不参与该布局的空间预算，也不改写它们。浮动/固定呈现移动同一组 portal 内容，不复制上下文、草稿或滚动 owner；窄屏选择目的地关闭浮层。此条替代主工作台原有并排 Primary/Context 呈现，嵌入产品无 Shell 导航时沿用原契约。单一 leftPanelSlot 保留现有路由、扩展与空间策略。
 
 
 | ID | 不变量 | 实现责任与证据 |
@@ -672,7 +672,7 @@ storage. A selected installation owns its version checks and error reports. WebK
 failures may try one fresh resource graph; even a newer reported build must not repeatedly navigate
 an already recovered document. Persistent failures retain the explicit retry surface. This does not
 change viewport geometry or turn storage/evaluation failures into resource retries. The serving
-contract is documented in [Web resource recovery](../../docs/web-local-deployment.md#保留本地数据的模块资源恢复).
+contract is documented in [Web resource recovery](../../docs/operations/web-local-deployment.md#保留本地数据的模块资源恢复).
 
 
 ## Anchored footer surfaces in embedded presentations
@@ -744,6 +744,14 @@ plane. The Shell owns these layer relationships; features cannot compensate by
 raising individual z-index values or listening for sidebar progress themselves.
 Menus and dialogs retain their existing Workbench presentation root and input
 priority. This contract does not move a browser resource between DOM parents.
+
+Shared dropdown and context menus inherit the logical presentation activity of
+their owner even when portalled outside its DOM subtree. With an active owner,
+Radix keeps the usual dismissal and exit animation. When that owner becomes
+inactive, the menu leaves in the same commit, retires its open request and skips
+focus restoration from that presentation. Returning to a retained page restores
+its content, while opening another menu requires a fresh request. The same
+contract applies to Web, Electron, installed PWA and the Expo WebView.
 
 Acceptance uses the real AppShell, Composer and Browser components in
 `scripts/smoke/shell/smoke-workspace-presentation.ts --page-presentation`, alongside

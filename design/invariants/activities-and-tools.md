@@ -33,7 +33,7 @@ or reserve a notification-center action slot. Transient Toast feedback remains
 independent of any history consumer. The provider retains bounded history, which is
 in-memory per Workbench instance and cleared by disposal/reload; it is neither
 a cross-device inbox nor the approval/failure task-attention model. Details and
-consumer contract: [Toast notifications](../../docs/toast-notifications.md).
+consumer contract: [Toast notifications](../../docs/architecture/workbench/toast-notifications.md).
 
 ## Reasoning presentation work
 
@@ -43,7 +43,7 @@ plain reasoning presentations by Item, selected source and active grammar mode;
 reprojection reuses unchanged history while edits and completion invalidate the
 affected Item. The full canonical body, disclosure identity, explicit user
 choices, drafts, focus and scroll ownership remain unchanged. No process-global
-private-text cache or truncation is introduced. See [ChatUI reasoning](../../docs/chat-ui-architecture.md).
+private-text cache or truncation is introduced. See [ChatUI reasoning](../../docs/architecture/chat-ui/chat-ui-architecture.md).
 
 ## Activity icon rendering
 

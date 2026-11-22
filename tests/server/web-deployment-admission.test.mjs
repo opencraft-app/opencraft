@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, request } from 'node:http';
 import { once } from 'node:events';
-import { createHeadlessBackendProxy, isHeadlessBackendPath, validHeadlessBackendRoutes, headlessBackendRoutes } from '../../scripts/web-deployment/headless-backend.mjs';
+import { createHeadlessBackendProxy, isHeadlessBackendPath, validHeadlessBackendRoutes, headlessBackendRoutes } from '../../apps/headless-server/src/web-deployment/headless-backend.mjs';
 
 test('a bodyless admission probe strips POST framing and preserves a reused HTTP connection', async t => {
   const errors = [], calls = [], framing = [];

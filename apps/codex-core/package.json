@@ -11,7 +11,7 @@
   "dependencies": {
     "@opencraft/local-agent-host": "0.1.0",
     "@opencraft/account-pool-host": "0.1.0",
-    "ws": "^8.22.1",
+    "ws": "^8.23.0",
     "@opencraft/sqlite-node": "0.1.0",
     "@opencraft/appserver-protocol": "0.1.0",
     "@opencraft/sandbox-node": "0.1.0"
@@ -20,9 +20,10 @@
     "@types/node": "^26.6.6",
     "@types/ws": "^8.18.2",
     "esbuild": "0.28.2",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   },
   "exports": {
-    "./operator-lease": "./src/operator-lease.ts"
+    "./operator-lease": "./src/operator-lease.ts",
+    "./account-core-limits": "./src/account-core-limits.mjs"
   }
 }

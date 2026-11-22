@@ -75,7 +75,7 @@ Headless 的 Model Services 在现有添加提供商表单中选择用途，复�
 
 应用语音服务固定读取安装级 models 目录，切换 SSH/Thread/Bot 不更换该所有者。录音开始捕获不可读的绑定票据；它以进程私有 HMAC 绑定所选连接、模型和当前凭据。提交前读取一致快照并比较票据，配置变更/服务更换时拒绝旧录音，不转投新模型或新密钥。改名不退休录音；显式重试不改变票据。正在执行的转写继续使用提交时捕获的配置，不宣称可撤回供应商计费。票据不提供凭据散列、密钥读回或跨重启持久性。
 
-旧 OPENCRAFT_SPEECH_API_KEY/MODEL 只允许通过显式迁移命令一次性导入；服务启动不导入、不回退读取环境密钥。已配置选择不覆盖，导入保留旧文件并提示核对后移除旧密钥部署配置。OPENCRAFT_SPEECH_PUBLIC_ACCESS 仅为部署准入策略，不是模型真源。实装与验收见 [cloud-dictation.md](../docs/cloud-dictation.md)。
+旧 OPENCRAFT_SPEECH_API_KEY/MODEL 只允许通过显式迁移命令一次性导入；服务启动不导入、不回退读取环境密钥。已配置选择不覆盖，导入保留旧文件并提示核对后移除旧密钥部署配置。OPENCRAFT_SPEECH_PUBLIC_ACCESS 仅为部署准入策略，不是模型真源。实装与验收见 [cloud-dictation.md](../docs/architecture/workbench/cloud-dictation.md)。
 
 ## 聊天引擎提交与应用
 

@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { inspectSource, scanProject, compareCopy } from "../../scripts/i18n-source.mjs";
+import { inspectSource, scanProject, compareCopy } from "../../scripts/check/i18n-source.mjs";
 
 const inspect = source => inspectSource("plugins/example/src/view.tsx", source);
 

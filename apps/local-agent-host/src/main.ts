@@ -41,6 +41,7 @@ import {
 } from "./dsh-capability-link.js";
 import { requestLoopback } from "./loopback-http.js";
 import { DshRoutedClient } from "./dsh-routed-client.js";
+import { AbsentDshClient } from "./dsh-absent-client.js";
 import { DurableHostProcessService } from "./durable-process-service.js";
 import { ProjectRepository } from "./project-repository.js";
 import { ThreadCatalogPublisher } from "@opencraft/app-host-server/thread-catalog";
@@ -217,7 +218,12 @@ export async function startLocalAgentHost(options: {
   let bridgeDirectory: string | undefined;
   cleanup.push(async () => { if (bridgeDirectory) await rm(bridgeDirectory, { recursive: true, force: true }); });
   const patches: string[] = [];
-  if (!options.dshUrl && !process.env.OPENCRAFT_DSH_URL?.trim()) {
+  // OpenCraft does not distribute DSH. Without an installed runtime the host
+  // still serves its other engines; DSH threads report that it is missing.
+  const dshInstalled = Boolean(options.dshUrl) || await new DshSupervisor({
+    executable: options.dshExecutable, repository: options.dshRepository, runtimeDirectory: options.runtimeDirectory,
+  }).available();
+  if (dshInstalled && !options.dshUrl && !process.env.OPENCRAFT_DSH_URL?.trim()) {
     const executable = resolve(options.dshExecutable ?? process.env.OPENCRAFT_DSH_EXECUTABLE ?? "runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js");
     const bundled = resolve(dirname(executable), "../../../../opencraft-capability-plugin.mjs");
     let plugin = resolve(options.dshCapabilityPlugin ?? bundled);
@@ -269,9 +275,11 @@ export async function startLocalAgentHost(options: {
     onCapabilityBridge: url => { bridgeUrl = url; capabilityLink?.attach(url); },
   });
   cleanup.push(() => supervisor.stop());
-  const dshUrl = options.dshUrl ?? await supervisor.start();
+  const dshUrl = options.dshUrl ?? (dshInstalled ? await supervisor.start() : null);
   const routing = storage.routing;
-  const client = new DshRoutedClient(dshUrl, routing, options.ownerHandoff ? bridgeToken : undefined);
+  const client = dshUrl === null
+    ? new AbsentDshClient(routing)
+    : new DshRoutedClient(dshUrl, routing, options.ownerHandoff ? bridgeToken : undefined);
   const socketClients = new Map<WebSocket, Map<string, LogicalClient>>();
   const catalogChanges = new ThreadCatalogPublisher((method, params) => {
     for (const [socket, clients] of socketClients) for (const state of clients.values()) {
@@ -295,7 +303,7 @@ export async function startLocalAgentHost(options: {
     });
   drainThreads = () => lifecycle.close();
   let modelConfiguration: import('./model-config/dsh-adapter.js').DshModelConfigurationBridge | undefined;
-  if(options.modelStorageDirectory){
+  if(options.modelStorageDirectory && dshInstalled){
     const {ModelConfigurationRepository,ModelCredentialRepository}=await import('./model-config/repository.js');
     const {ModelConfigurationService}=await import('./model-config/service.js');
     const {DshModelEngineAdapter,DshModelConfigurationBridge}=await import('./model-config/dsh-adapter.js');
@@ -501,6 +509,7 @@ export async function startLocalAgentHost(options: {
     if (options.ownerHandoff && !recoveringOwner) return Promise.reject(new Error("Protocol-owned DSH requires fenced process handoff"));
     if (closing) return Promise.reject(new Error("Local host is closing"));
     if (options.dshUrl || process.env.OPENCRAFT_DSH_URL?.trim()) return Promise.reject(new Error("Externally managed DSH must be restarted by its owner"));
+    if (!dshInstalled) return Promise.reject(new Error("DeepSeek Harness (DSH) is not installed on this computer"));
     if (restartOperation) return restartOperation;
     if (automatic) restartBudget.begin(); else restartBudget.reset();
     engineStatus = "restarting";
@@ -1106,15 +1115,21 @@ export async function startLocalAgentHost(options: {
     await skillRefresh.changed().catch(() => undefined);
   }
   client.sealBootstrap();
-  if (options.ownerHandoff) await capabilityLink!.nativeOwner("seal-bootstrap");
-  if (options.ownerHandoff?.open()) await capabilityLink!.nativeOwner("resume");
+  if (options.ownerHandoff && dshInstalled) await capabilityLink!.nativeOwner("seal-bootstrap");
+  if (options.ownerHandoff?.open() && dshInstalled) await capabilityLink!.nativeOwner("resume");
   schedules.start();
   interrupted.recovery.wake();
   const websocketUrl = `ws://127.0.0.1:${address.port}/rpc?token=${encodeURIComponent(token)}`;
   return {
     websocketUrl,
     inputs,
-    nativeOwner: (action: "inspect" | "fence" | "resume" | "seal-release" | "abort-release") => capabilityLink!.nativeOwner(action),
+    // Without an installed DSH there is no native writer to fence: report an
+    // empty, complete native owner so Host storage handoff proceeds unchanged.
+    nativeOwner: (action: "inspect" | "fence" | "resume" | "seal-release" | "abort-release") => dshInstalled
+      ? capabilityLink!.nativeOwner(action)
+      : Promise.resolve(action === "inspect"
+        ? { owner: "absent", pid: null, configuration: null, coverage: "complete", activeCount: 0, records: [] }
+        : {}),
     async handoffObservation(native: {id:string;turns:[string,string][];rpcInputs:[string,string][]}[] = []) {
       const schedulesState = schedules.handoffObservation(), recovery = interrupted.recovery.handoffObservation();
       const executions = authority.handoffObservation(native.flatMap(record => {

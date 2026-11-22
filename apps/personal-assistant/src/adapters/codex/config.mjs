@@ -1,5 +1,4 @@
 import { isAbsolute } from "node:path";
-import { lstatSync, readFileSync } from "node:fs";
 
 /** Validated role selection; no credential reads during profile loading. */
 export function resolveHarnesses(config = {}) {
@@ -103,21 +102,4 @@ export function validateCodexConfig(config) {
   )
     throw new Error("A private absolute Codex credentialFile is required");
   return config;
-}
-export function readCodexKey(config) {
-  if (!config.credentialFile) return undefined;
-  const stat = lstatSync(config.credentialFile);
-  if (
-    !stat.isFile() ||
-    stat.mode & 0o077 ||
-    (process.getuid && stat.uid !== process.getuid()) ||
-    stat.size > 4096
-  )
-    throw new Error(
-      "Codex credentialFile must be an owner-only regular file (0600)",
-    );
-  const key = readFileSync(config.credentialFile, "utf8").trim();
-  if (!key || /\s/.test(key))
-    throw new Error("Codex credentialFile must contain only the API key");
-  return key;
 }

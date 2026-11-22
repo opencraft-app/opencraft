@@ -19,9 +19,9 @@ features with UI use the same path. Load only the relevant topics below.
 | Configuration and preferences | Related sections, aligned label/description/control rows, quiet actions | [Settings page](apps/workbench-web/src/components/settings-page.tsx), [Settings controls](packages/extension-react/src/settings-controls.tsx) |
 | Utility dialogs and configuration forms | Shared modal presentation with compact panel content, adjacent labels/inputs and stable validation | [Settings panel](packages/extension-react/src/settings-panel.tsx), [modal owner](apps/workbench-web/src/components/modal/modal-surface.tsx); keep package boundaries when consuming their public contracts |
 | Browsing tasks, schedules or other managed objects | Scannable object rows, meaningful groups, one clear destination and subordinate actions | [Collection composition](design/ui/collections.md), Settings list primitives and route container in the references above |
-| Reading, input and results | One reading axis, bounded width, separate content/process hierarchy, stable input and result slots | [Chat architecture](docs/chat-ui-architecture.md), [Workbench language](docs/workbench-design-language.md) |
+| Reading, input and results | One reading axis, bounded width, separate content/process hierarchy, stable input and result slots | [Chat architecture](docs/architecture/chat-ui/chat-ui-architecture.md), [Workbench language](docs/architecture/workbench/workbench-design-language.md) |
 | Navigation and grouped choices | Shared icon/text alignment, section rhythm, distinct hover/current/pressed states | [Sidebar item](apps/workbench-web/src/components/sidebar-navigation-item.tsx), [shared controls](packages/design-system/src/controls.web.scss) |
-| Inline utility or calculator | Compact inputs and result/selection, one primary action, natural height inside the existing frame | [MCP App authoring](docs/mcp-app-builder.md#visual-authoring-in-the-conversation) |
+| Inline utility or calculator | Compact inputs and result/selection, one primary action, natural height inside the existing frame | [MCP App authoring](docs/architecture/extensions/mcp-app-builder.md#visual-authoring-in-the-conversation) |
 
 Combine patterns when appropriate. Start with content and actions; use spacing,
 alignment and a small text hierarchy to organize them. Keep ordinary labels quiet;
@@ -253,7 +253,7 @@ opaque-origin iframe: it does not inherit host CSS, fonts, React components or
 token variables. The current host exposes theme changes, not `styles.variables`.
 Do not output undefined host variables and assume they resolve inside the frame.
 
-Use the portable guidance and self-contained example in [MCP App authoring](docs/mcp-app-builder.md#visual-authoring-in-the-conversation).
+Use the portable guidance and self-contained example in [MCP App authoring](docs/architecture/extensions/mcp-app-builder.md#visual-authoring-in-the-conversation).
 Choose the same configuration / input-result / selection composition; provide
 local semantic styles with explicit light/dark fallbacks and preserve inputs on
 theme updates. Builder `help` supplies essential rules without repository access.

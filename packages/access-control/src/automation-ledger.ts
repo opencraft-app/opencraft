@@ -1,3 +1,4 @@
+import { attachCrewRules } from './crew-work.js';
 import { Collaboration } from './collaboration.js';
 import { ActorStore } from './actors.js';
 import { createHash, randomUUID } from 'node:crypto';
@@ -228,6 +229,7 @@ export class AutomationLedger {
       const actors=new ActorStore(source,()=>this.now);
       const collaboration=new Collaboration(source,actors,{serverId:grant.serverId,hostId:target.environment,
         async validate(){},async receipt(){return null;},async add(){return null;},async steer(){},async cancel(){return false;},},()=>this.now);
+      attachCrewRules(collaboration,this.db,actors,()=>this.now);
       try {
         const sent=collaboration.sendConversation(context,{reference:{serverId:grant.serverId,threadId},content:target.prompt,idempotencyKey:key,execution:{mode:'queue'}},null,id,true,key);
         if(!sent.requestId)throw new AutomationError('automation_input_unavailable',503);

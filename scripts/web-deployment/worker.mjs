@@ -1,8 +1,8 @@
-import { headlessBackendRoutes } from './headless-backend.mjs';
+import { headlessBackendRoutes } from '../../apps/headless-server/src/web-deployment/headless-backend.mjs';
 import { resolve, dirname, join } from 'node:path';
 import { createOptionalResources } from './optional-resources.mjs';
 import { readFile } from 'node:fs/promises';
-import { createWorkbenchWebServer } from '../workbench-web-server.mjs';
+import { createWorkbenchWebServer } from '../../apps/headless-server/src/workbench-web-server.mjs';
 import { inspectRelease } from './releases.mjs';
 import { prepareProductPluginRelease } from '../../apps/headless-server/src/web-deployment/product-plugin-packs.mjs';
 const identity = await inspectRelease(process.env.OPENCRAFT_RELEASE_ROOT);

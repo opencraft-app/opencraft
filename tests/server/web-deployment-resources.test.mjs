@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { c } from 'tar';
 import { createOptionalResources, RESOURCE_PACKAGE, parseResources } from '../../scripts/web-deployment/optional-resources.mjs';
-import { createWorkbenchWebServer } from '../../scripts/workbench-web-server.mjs';
+import { createWorkbenchWebServer } from '../../apps/headless-server/src/workbench-web-server.mjs';
 
 async function fixture(root, buildId, { unsafe = false, file = `assets/preview-${buildId}.js` } = {}) {
   const releaseRoot = join(root, buildId); const payload = join(root, `${buildId}-payload`);

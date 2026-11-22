@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { inspectHoverStyles, inspectHoverHandlers, inspectHoverSource } from "../../scripts/check-hover-policy.mjs";
+import { inspectHoverStyles, inspectHoverHandlers, inspectHoverSource } from "../../scripts/check/check-hover-policy.mjs";
 const styles = source => inspectHoverStyles(source, "fixture.scss");
 test("rejects bare and capability-only hover, including nested selectors", () => {
   for (const source of ["a:hover{color:red}", "@media(hover:hover) and (pointer:fine){a:hover{color:red}}", ".a { &:not(:disabled):hover {color:red} }"]) assert.equal(styles(source).length, 1);

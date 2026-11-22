@@ -117,27 +117,15 @@
     },
     {
       "version": 20,
-      "name": "0019_space_open_contact",
-      "checksum": "f24d3a7376e87f596d08ddfd11075bae3585e10ca5238bb376610d9759ae073d",
-      "snapshotChecksum": "563ec8b947cd8c542f5237ea1a2149f31f0094c987405023311ba64a10e8c145"
+      "name": "0019_channel_connection_ownership",
+      "checksum": "593cf8932f993973e210bb42bb0205e289c0426d61a096ab31e1b350ab79c2eb",
+      "snapshotChecksum": "2fdf91c7ba2588f43e436595bd29c0f908dd5ac037391f2e9505ffecbd5f9b51"
     },
     {
       "version": 21,
-      "name": "0020_crew_work",
-      "checksum": "402048a73f9d3a5377595de00ddee96ff30a34a2fb66301399b37d49b67110aa",
-      "snapshotChecksum": "64738e315b1d5b3883548231ce7043eb08eaa9b7660e9e39fa76024f2d5eb24a"
-    },
-    {
-      "version": 22,
-      "name": "0021_crew_messages",
-      "checksum": "dffd4e69be838ac0a449c63b60dda8160d7e022aee14e89e24a6c990fc63796b",
-      "snapshotChecksum": "acc124a06f2c82c1cff1bb19329f04982c24e3330bb671369c533d686e672c02"
-    },
-    {
-      "version": 23,
-      "name": "0022_crew_questions",
-      "checksum": "52099c4481b4a661ce5d9149ba88b076117a69f08c5e04977cbf554f9b646770",
-      "snapshotChecksum": "f194ea2f035a08179031006f19e1093aff7170afcb11f526f99a83f60b618f83"
+      "name": "0020_crew",
+      "checksum": "e0704b6252e9a75983c992f06dbcdaea98c740323100f27396070ef7ef8fc6f6",
+      "snapshotChecksum": "829a843c1a78c6d3d718d143e538540101811b6938a271250119accbda2106ba"
     }
   ],
   "alternates": [
@@ -308,23 +296,13 @@
         },
         {
           "version": 20,
-          "name": "converge_0019_space_open_contact",
-          "checksum": "f24d3a7376e87f596d08ddfd11075bae3585e10ca5238bb376610d9759ae073d"
+          "name": "converge_0019_channel_connection_ownership",
+          "checksum": "593cf8932f993973e210bb42bb0205e289c0426d61a096ab31e1b350ab79c2eb"
         },
         {
           "version": 21,
-          "name": "converge_0020_crew_work",
-          "checksum": "402048a73f9d3a5377595de00ddee96ff30a34a2fb66301399b37d49b67110aa"
-        },
-        {
-          "version": 22,
-          "name": "converge_0021_crew_messages",
-          "checksum": "dffd4e69be838ac0a449c63b60dda8160d7e022aee14e89e24a6c990fc63796b"
-        },
-        {
-          "version": 23,
-          "name": "converge_0022_crew_questions",
-          "checksum": "52099c4481b4a661ce5d9149ba88b076117a69f08c5e04977cbf554f9b646770"
+          "name": "converge_0020_crew",
+          "checksum": "e0704b6252e9a75983c992f06dbcdaea98c740323100f27396070ef7ef8fc6f6"
         }
       ]
     }

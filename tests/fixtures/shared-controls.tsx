@@ -43,7 +43,7 @@ function Fixture() {
     setPending(false);
   };
   return <QueryClientProvider client={queryClient}><AppShell layoutScope="shared-controls"
-    navigation={{ layout: "unified", actions: [
+    navigation={{ actions: [
       { id: "shell.home", title: "Home", icon: "home", active: true, onInvoke: noop },
       { id: "shell.applications", title: "Applications", icon: "grid", active: false, onInvoke: noop },
     ], onOpenSettings: noop, account: null }}

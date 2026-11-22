@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { electronLaunchSpec } from "../../start-electron.mjs";
+import { electronLaunchSpec } from "../../dev/start-electron.mjs";
 
 // Actual repository Main + Preload + Renderer, isolated profile; no remote login.
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");

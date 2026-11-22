@@ -5,7 +5,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { updateLocalServer, observeLocalUpdate, shouldCleanupTemporaryOutput } from '../../scripts/update-server-local.mjs';
+import { updateLocalServer, observeLocalUpdate, shouldCleanupTemporaryOutput } from '../../scripts/admin/update-server-local.mjs';
 
 for (const transport of ['slow headers', 'slow body', 'disconnected status']) test(`local updater observes ${transport} without a second installation`, { timeout: 5000 }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'update-observation-'));

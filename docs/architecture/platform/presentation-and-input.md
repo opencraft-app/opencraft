@@ -1,6 +1,6 @@
 # Platform: Presentation and input
 
-[Architecture index](../../platform-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](../README.md) · [Documentation index](../../README.md)
 
 ### Conversation desktop plugin
 
@@ -9,7 +9,7 @@ The application may inject an authorized backend/media adapter pair; absence
 means no advertised desktop capability. Conversation owns tab identity, the
 explicitly resident desktop presentation owns its transient viewing connection, and the backend
 owns the remote desktop incarnation and exclusive input authorization. Closing
-the viewer cannot stop the desktop or Agent. See the [desktop plugin contract](../../cloud-desktop-plugin.md)
+the viewer cannot stop the desktop or Agent. See the [desktop plugin contract](../extensions/cloud-desktop-plugin.md)
 for framework invariants and the remaining production integration boundaries.
 
 The mounted presentation captures one physical activation's fixed control action;
@@ -63,7 +63,7 @@ read-only native observation and Thread/Client-bound grants. Neither mode is
 public DevCloud authentication. Hosts without either explicit mode do not
 advertise it. Viewer teardown cannot stop Codex or
 desktop processes. Full lifecycle and bounds are in the
-[local authority contract](../../cloud-desktop-plugin.md#local-execution-server-authority).
+[local authority contract](../extensions/cloud-desktop-plugin.md#local-execution-server-authority).
 
 An explicit native installer can bind an existing non-root Xvnc/Xtigervnc/Xvfb
 display without replacing its VNC or windows. Root-private configuration and
@@ -77,7 +77,7 @@ confirmation, while the native executor owns physical exclusivity, renewable
 leases and held-key/button cleanup. Bounded RFB input decoding retains the grant
 at each message's first byte, including fragments. Viewing recovery never
 reacquires control; clipboard is explicitly unavailable in this local composition.
-See [native control authority](../../cloud-desktop-plugin.md#local-native-control-authority).
+See [native control authority](../extensions/cloud-desktop-plugin.md#local-native-control-authority).
 SSH bindings do not inherit the local desktop service: the shared-native
 initialize projection removes any upstream desktop extension, and desktop
 attachment RPCs cannot be forwarded through the remote binding.
@@ -86,13 +86,13 @@ Local viewing recovery opts in only because preparing a new attachment cannot
 replay resource creation or Agent work. Wire/media classify established transport
 loss; the viewing controller owns bounded backoff and fresh-grant replacement,
 never inherited input. the downstream product preparation remains manual on failure. See the
-[viewing recovery contract](../../cloud-desktop-plugin.md#bounded-viewing-recovery).
+[viewing recovery contract](../extensions/cloud-desktop-plugin.md#bounded-viewing-recovery).
 Local viewer expiry is renewable through explicit discovery plus wire capability,
 not a removed timeout: the dedicated viewing socket requests reauthorization,
 the Host rechecks native Thread/Client/incarnation, and a matching confirmation
 re-arms both expiry owners. Failure remains bounded and cannot reacquire control.
 Legacy and the downstream product providers are not implicitly opted in. See
-[confirmed viewing renewal](../../cloud-desktop-plugin.md#confirmed-viewing-renewal).
+[confirmed viewing renewal](../extensions/cloud-desktop-plugin.md#confirmed-viewing-renewal).
 
 ### Typography ownership
 
@@ -100,7 +100,7 @@ Typography is a design-system protocol, not feature CSS. The checked-in
 `packages/design-system/src/typography/typography.tokens.json` registry is the
 single data authority for font-family roles and per-platform semantic metrics.
 `typography.shared.ts` projects that registry to TypeScript/Native, while
-`scripts/generate-typography.mjs` deterministically creates the Web custom
+`scripts/packaging/generate-typography.mjs` deterministically creates the Web custom
 properties in `_generated.web.scss`. Generated output is checked but never
 hand-edited.
 
@@ -291,7 +291,7 @@ Every retry gets a new attempt identity. Failure settles any old send completion
 negatively: retry alone can insert, never revive the failed send intent. Cancel,
 target/View loss, expiry or extension disposal releases the audio and fences
 late results. UI retry/status replaces the existing Footer slots and does not
-remount the editor. Deployment and acceptance are in [cloud dictation](../../cloud-dictation.md).
+remount the editor. Deployment and acceptance are in [cloud dictation](../workbench/cloud-dictation.md).
 
 Input device UID and optional recognition language are client/profile preferences
 in Main's private JSON storage, independent of model configuration and DSH.
@@ -307,7 +307,7 @@ that acceptance is reported separately in [the native speech plan](../../../desi
 
 ### Internationalization authority
 
-The [project-wide authoring and coverage contract](../../internationalization.md) applies
+The [project-wide authoring and coverage contract](../../develop/internationalization.md) applies
 to every first-party app, shared UI and bundled plugin. Source discovery is no
 longer limited to migrated Web feature folders: `check:i18n` also checks literal
 JSX/accessibility/branch/template copy against an explicit legacy inventory and
@@ -527,7 +527,7 @@ Workbench resource panel. `file-preview-core` owns engine leases without rendere
 imports; `file-preview-web` owns DOM attachment and the built-in adapter registry.
 `plugins/office-preview` receives authorized Blob bytes, lazily parses legacy DOC/DOCX/PPTX and spreadsheet formats
 and owns third-party renderer cleanup. This is a trusted built-in service boundary,
-not an additional public extension ABI. See [file previews](../../file-preview.md).
+not an additional public extension ABI. See [file previews](../workbench/file-preview.md).
 
 
 ### MCP App Web/Electron host
@@ -540,7 +540,7 @@ Automatic height distinguishes content invalidation from a height-only response 
 
 References: [MCP Apps specification](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx).
 
-The Headless gateway supplies an actor-owned [MCP App builder](../../mcp-app-builder.md).
+The Headless gateway supplies an actor-owned [MCP App builder](../extensions/mcp-app-builder.md).
 It reuses the existing dynamic-tool channel and MCP host, with one managed store
 for definitions/releases, CAS publication and immutable runtime revisions. Generated
 handlers execute in bounded QuickJS workers, not Node's application realm. The
@@ -559,7 +559,7 @@ and protocol. Each invocation rechecks profile/runtime ownership, acquires the
 same provider instance and releases that per-call lease on success or failure.
 Retirement publishes removal immediately and drains already accepted calls.
 No command registry or asynchronous lookup of the selected Host is introduced.
-See [Composer semantics](../../chat-ui-architecture.md).
+See [Composer semantics](../chat-ui/chat-ui-architecture.md).
 
 
 ## Downloadable browser diagnostics

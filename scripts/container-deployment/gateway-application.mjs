@@ -18,7 +18,7 @@ export async function startContainerGateway(composition = {}) {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   const manifest = JSON.parse(await readFile(join(root, 'manifest.json'), 'utf8'));
   const options = parseHeadlessArguments(process.argv.slice(2));
-  if (options.help) throw new Error('Configure this deployment through docker/compose.yaml; see docker/README.md');
+  if (options.help) throw new Error('Configure this deployment through deploy/docker/compose.yaml; see deploy/docker/README.md');
   if (options.dataDirectory !== paths.dataDirectory || (options.engines ?? ['dsh']).join() !== 'dsh,pi')
     throw new Error('The container gateway requires the shared data directory and external execution Hosts');
   const home = process.env.OPENCRAFT_GATEWAY_HOME ?? join(paths.dataDirectory, 'home', 'gateway');

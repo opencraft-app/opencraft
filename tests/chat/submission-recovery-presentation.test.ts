@@ -22,6 +22,6 @@ test('recovery belongs to the exact message once, including pending-to-queue han
 test('hidden history retains a recovery entry; confirmed or server-owned items do not get local actions', () => {
   const view = submissionRecoveryPresentation([], [queue({}), queue({ commandId: 'server', serverSubmissionId: 'server-one' }),
     queue({ commandId: 'confirmed', state: 'queued' }), queue({ commandId: 'failed', state: 'failed', pausedReason: 'outbox-failed' })], null);
-  assert.deepEqual(view.detached.map(row => row.commandId), ['one', 'failed']);
+  assert.deepEqual(view.detached.map(row => row.commandId), ['one'], 'failed outbox messages are rendered once by the local pending-message owner');
   assert.equal(submissionRecoveryPresentation([{ ...pending, state: 'accepted' }], [], timeline('message-one')).byClientId.size, 0);
 });

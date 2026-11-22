@@ -1,6 +1,6 @@
 # 持久化实现差距审查
 
-日期：2026-09-18。范围：当前源码相对 docs/plugin-persistence.md 与 docs/sqlite-lifecycle.md。结论：待实施；不能作为新契约已交付验收。没有修改实现、依赖或用户数据。
+日期：2026-09-18。范围：当前源码相对 docs/architecture/extensions/plugin-persistence.md 与 docs/architecture/server/sqlite-lifecycle.md。结论：待实施；不能作为新契约已交付验收。没有修改实现、依赖或用户数据。
 
 ## 现有问题，优先修复
 

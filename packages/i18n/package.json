@@ -7,5 +7,5 @@
   "scripts": { "typecheck": "tsc --noEmit" },
   "dependencies": { "react-intl": "7.1.14" },
   "peerDependencies": { "react": "^19.0.0" },
-  "devDependencies": { "@types/react": "~19.3.0", "typescript": "^5.9.3" }
+  "devDependencies": { "@types/react": "~19.3.0", "typescript": "^6.0.3" }
 }

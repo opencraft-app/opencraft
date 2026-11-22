@@ -22,24 +22,24 @@
     "@opencraft/workbench-runtime": "0.1.0",
     "@opencraft/sqlite-node": "0.1.0",
     "@opencraft/plugin-local-account": "0.1.0",
-    "ws": "^8.22.1",
+    "ws": "^8.23.0",
     "@opencraft/headless-server": "0.1.0"
   },
   "scripts": {
     "build:host": "node build-tray.mjs && node build-native-speech.mjs && npm run build --workspace @opencraft/opencraft-daemon && node build-host.mjs",
     "typecheck": "tsc --noEmit",
-    "start": "npm run build:host && node ../../scripts/start-electron.mjs",
-    "package:mac:arm64:zip": "node ../../scripts/package-electron-desktop.mjs --mac zip --arm64",
-    "package:mac:arm64:preview": "node ../../scripts/package-macos-preview.mjs arm64",
-    "package:mac:arm64:dmg": "node ../../scripts/package-electron-desktop.mjs --mac dmg --arm64",
-    "package:mac:x64:zip": "node ../../scripts/package-electron-desktop.mjs --mac zip --x64",
-    "package:mac:x64:preview": "node ../../scripts/package-macos-preview.mjs x64",
-    "package:mac:x64:dmg": "node ../../scripts/package-electron-desktop.mjs --mac dmg --x64",
-    "package:linux:x64:appimage": "node ../../scripts/package-electron-desktop.mjs --linux AppImage --x64",
-    "package:linux:x64:rpm": "node ../../scripts/package-electron-desktop.mjs --linux rpm --x64",
-    "package:linux:x64:deb": "node ../../scripts/package-electron-desktop.mjs --linux deb --x64",
-    "package:linux:x64": "node ../../scripts/package-electron-desktop.mjs --linux AppImage rpm deb --x64",
-    "package:win:x64": "node ../../scripts/package-electron-desktop.mjs --win nsis zip --x64"
+    "start": "npm run build:host && node ../../scripts/dev/start-electron.mjs",
+    "package:mac:arm64:zip": "node ../../scripts/packaging/package-electron-desktop.mjs --mac zip --arm64",
+    "package:mac:arm64:preview": "node ../../scripts/packaging/package-macos-preview.mjs arm64",
+    "package:mac:arm64:dmg": "node ../../scripts/packaging/package-electron-desktop.mjs --mac dmg --arm64",
+    "package:mac:x64:zip": "node ../../scripts/packaging/package-electron-desktop.mjs --mac zip --x64",
+    "package:mac:x64:preview": "node ../../scripts/packaging/package-macos-preview.mjs x64",
+    "package:mac:x64:dmg": "node ../../scripts/packaging/package-electron-desktop.mjs --mac dmg --x64",
+    "package:linux:x64:appimage": "node ../../scripts/packaging/package-electron-desktop.mjs --linux AppImage --x64",
+    "package:linux:x64:rpm": "node ../../scripts/packaging/package-electron-desktop.mjs --linux rpm --x64",
+    "package:linux:x64:deb": "node ../../scripts/packaging/package-electron-desktop.mjs --linux deb --x64",
+    "package:linux:x64": "node ../../scripts/packaging/package-electron-desktop.mjs --linux AppImage rpm deb --x64",
+    "package:win:x64": "node ../../scripts/packaging/package-electron-desktop.mjs --win nsis zip --x64"
   },
   "devDependencies": {
     "@electron/notarize": "2.5.0",
@@ -50,7 +50,7 @@
     "electron": "44.9.1",
     "electron-builder": "26.18.0",
     "esbuild": "0.28.2",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   },
   "build": {
     "appId": "app.opencraft.desktop",
@@ -64,15 +64,16 @@
       }
     ],
     "asar": true,
-    "afterPack": "../../scripts/prepare-packaged-pty.cjs",
+    "afterPack": "../../scripts/packaging/prepare-packaged-pty.cjs",
     "npmRebuild": false,
-    "beforePack": "../../scripts/check-desktop-target.cjs",
+    "beforePack": "../../scripts/check/check-desktop-target.cjs",
     "directories": {
       "output": "release"
     },
     "files": [
       "dist-host/**/*",
-      "package.json"
+      "package.json",
+      "!**/node_modules/**/*"
     ],
     "extraResources": [
       {
@@ -157,16 +158,12 @@
         ]
       },
       {
-        "from": "../opencraft-daemon/dist/terminal-pty-owner.mjs",
-        "to": "runtime/terminal-pty-owner.mjs"
-      },
-      {
-        "from": "../opencraft-daemon/dist/dsh-session-routing-worker.mjs",
-        "to": "runtime/dsh-session-routing-worker.mjs"
-      },
-      {
-        "from": "../opencraft-daemon/dist/connected-agent-history-worker.mjs",
-        "to": "runtime/connected-agent-history-worker.mjs"
+        "from": "../opencraft-daemon/dist",
+        "to": "runtime",
+        "filter": [
+          "*.mjs",
+          "schema.sql"
+        ]
       },
       {
         "from": "../opencraft-daemon/dist/main.cjs",
@@ -181,31 +178,11 @@
         ]
       },
       {
-        "from": "../../runtime/dsh",
-        "to": "runtime/dsh",
-        "filter": [
-          "package.json",
-          "package-lock.json"
-        ]
-      },
-      {
-        "from": "../../runtime/dsh/node_modules",
-        "to": "runtime/dsh/node_modules",
+        "from": "build/codex-runtime",
+        "to": "runtime",
         "filter": [
           "**/*"
         ]
-      },
-      {
-        "from": "../opencraft-daemon/dist/assistant-server.mjs",
-        "to": "runtime/assistant-server.mjs"
-      },
-      {
-        "from": "../opencraft-daemon/dist/schema.sql",
-        "to": "runtime/schema.sql"
-      },
-      {
-        "from": "../opencraft-daemon/dist/orchestration-runtime-worker.mjs",
-        "to": "runtime/orchestration-runtime-worker.mjs"
       }
     ],
     "mac": {

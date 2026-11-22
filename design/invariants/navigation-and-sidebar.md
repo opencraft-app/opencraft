@@ -914,3 +914,35 @@ owned by their existing layers.
 
 Evidence: thread-creation-evidence and thread-access tests; downstream sidebar
 creation regression and desktop/touch browser fixture.
+
+
+### Conversation titles in touch density
+
+Touch density retains the current conversation title beside its floating controls,
+with the existing optional project line. `thread-workspace.scss` owns this reading
+header together with Side Chat; chrome suppression must not hide its title or
+require a higher-specificity override to recover it. Long titles and project
+paths shrink with ellipsis rather than moving navigation, menu or preview targets.
+Input density is independent of viewport width and pointer capability: explicit
+Touch on a wide mouse-driven window and Compact on touch hardware retain the same
+conversation identity. A tool that occupies the primary scene hides/inerts the
+covered conversation header through Shell presentation, not a density selector.
+Changing density, title or foreground must preserve the mounted draft.
+
+Real AppShell + EditableThreadTitle browser coverage:
+`tests/shell/workbench-touch-title.browser.ts` (phone, tablet, wide pointer,
+explicit density, light/dark, long metadata, scroll and foreground restoration).
+
+### Reading header edge in touch density
+
+The touch reading header's blur band begins at the reading plane's physical top.
+When the primary transcript bleeds under a device top inset (Home Screen PWA,
+full-screen iOS WebView), the status area belongs to that same band; the header
+controls keep their safe origin. The extent comes from
+`--shell-conversation-top-bleed`, never from host or platform names, so a browser
+tab without an inset keeps the original geometry. Side Chat keeps its panel
+origin. The band stays nearly solid through the controls and dissolves below
+them; reduced transparency and forced colors use the opaque surface without blur.
+
+Evidence: `tests/shell/workbench-touch-title.browser.ts` (simulated 47px top inset;
+the band must cover from viewport top through below the header).

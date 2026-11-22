@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import type { ActorStore } from './actors.js';
-import type { CrewContact } from './crew-contact.js';
+import { CrewContact } from './crew-contact.js';
 
 /** Bot-to-Bot hand-offs allowed under one root before the work must be escalated. */
 export const CREW_DISPATCH_BUDGET = 8;
@@ -295,4 +295,13 @@ export class CrewWork {
     return this.db.prepare("SELECT id FROM crew_work WHERE assignee_id=? AND state='open' ORDER BY created_at,id").all(context.actorId)
       .filter(row => this.#member(this.#row(row.id).space_id, context.actorId)).map(row => this.view(context, row.id));
   }
+}
+
+/**
+ * Gives a storage-owner Collaboration its crew rules over that owner's own connection. Only Worker
+ * code calls this; an instance on a network thread has no crew rules and they stand aside there.
+ */
+export function attachCrewRules(collaboration: { attachCrew(contact: CrewContact, work: CrewWork): void }, db: DatabaseSync, actors: ActorStore, now: () => number) {
+  const contact = new CrewContact(db, actors);
+  collaboration.attachCrew(contact, new CrewWork(db, actors, contact, now));
 }

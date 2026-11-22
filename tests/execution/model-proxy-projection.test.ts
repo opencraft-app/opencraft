@@ -24,10 +24,10 @@ test("authenticated providers with explicit endpoints are projected through the 
 test("caller records are validated; the engine receives the projection and the caller token, never the provider key", async t => {
   const dir = await mkdtemp(join(tmpdir(), "opencraft-proxy-caller-")); t.after(() => rm(dir, { recursive: true, force: true }));
   const file = join(dir, "pi.json");
-  assert.equal(readProxyCaller({}), null);
-  await writeFile(file, JSON.stringify({ ...caller, baseUrl: "http://evil.example:1" })); assert.throws(() => readProxyCaller({ OPENCRAFT_PROXY_CALLER_FILE: file }));
+  assert.equal(await readProxyCaller({}), null);
+  await writeFile(file, JSON.stringify({ ...caller, baseUrl: "http://evil.example:1" })); await assert.rejects(readProxyCaller({ OPENCRAFT_PROXY_CALLER_FILE: file }));
   await writeFile(file, JSON.stringify({ ...caller, baseUrl: caller.baseUrl + "/" }));
-  assert.deepEqual(readProxyCaller({ OPENCRAFT_PROXY_CALLER_FILE: file }), caller);
+  assert.deepEqual(await readProxyCaller({ OPENCRAFT_PROXY_CALLER_FILE: file }), caller);
   const applied: any[] = [];
   const previous = process.env.OPENCRAFT_PROXY_CALLER_FILE; process.env.OPENCRAFT_PROXY_CALLER_FILE = file;
   t.after(() => { if (previous === undefined) delete process.env.OPENCRAFT_PROXY_CALLER_FILE; else process.env.OPENCRAFT_PROXY_CALLER_FILE = previous; });

@@ -3,7 +3,7 @@ import test from 'node:test';
 import { run, sendWithAttention } from '../../apps/opencraft-cli/src/main';
 import type { CollaborationClient } from '../../packages/appserver-client/src/collaboration';
 import { createConversationExecution, createRoutedConversationExecution } from '../../apps/headless-server/src/conversation-execution.mjs';
-import { projectConversationMetadata } from '../../scripts/conversation-projections.mjs';
+import { projectConversationMetadata } from '@opencraft/access-control/conversation-projections';
 
 test('steer requires an exact expected Turn and never silently selects queue', async () => {
   await assert.rejects(run(['thread','send','ref','input','--key','k','--mode','steer']), /Steer needs exact --expected-turn/);

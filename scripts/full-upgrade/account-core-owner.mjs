@@ -1,7 +1,7 @@
 import { leasedOwner } from "./operator-lease.mjs";
 import { request } from 'node:http';
 import { readPrivateJson, invariant } from './durable.mjs';
-import { ACCOUNT_CORE_RESPONSE_MAX_BYTES } from './account-core-limits.mjs';
+import { ACCOUNT_CORE_RESPONSE_MAX_BYTES } from '@opencraft/codex-core/account-core-limits';
 
 /** Local split-account adapter. Caller owns signed recipes, deployment lock and supervision. */
 export function accountCoreOwner(descriptorPath, leaseOptions) {

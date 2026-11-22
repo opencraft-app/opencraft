@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 // Root tests drop to nobody; nonroot runners instead create owner-unreadable fixtures.
 const privateMode = process.getuid?.() === 0 ? 0o600 : 0o000;
-const code = readFileSync(new URL('../docker/deploy/workspace-preflight.mjs', import.meta.url), 'utf8');
+const code = readFileSync(new URL('../deploy/docker/deploy/workspace-preflight.mjs', import.meta.url), 'utf8');
 function fixture(t) {
   const root = mkdtempSync(join(process.getuid?.() === 0 ? '/var/tmp' : tmpdir(), 'retained-workspace-')); chmodSync(root, 0o755);
   const cwd = join(root, 'work'); mkdirSync(cwd, { mode: 0o777 }); chmodSync(cwd, 0o777);

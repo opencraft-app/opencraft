@@ -6,8 +6,8 @@ description: Prepare, validate, publish or recover an OpenCraft GitHub/npm relea
 # OpenCraft upstream release
 
 Paths are relative to the standalone OpenCraft repository. Read `AGENTS.md`,
-`SECURITY.md` and the public npm section of `docs/web-deployment.md`.
-`docs/upstream-transition.md` records migration state; do not confuse a planned
+`SECURITY.md` and the public npm section of `docs/operations/web-deployment.md`.
+`docs/history/upstream-transition.md` records migration state; do not confuse a planned
 upstream with a completed source cutover.
 
 1. Fetch main and tags in a clean isolated feature checkout. Confirm the
@@ -19,7 +19,7 @@ upstream with a completed source cutover.
    unresolved rights have been cleared. Scan the actual candidate/history with
    the verified Gitleaks version in the security workflow.
 3. Prepare a release PR with a strictly increased stable version in
-   `packaging/web-server/package.json` and its exact `## vX.Y.Z` section in
+   `deploy/web-server/package.json` and its exact `## vX.Y.Z` section in
    `CHANGELOG.md`. Keep the lockfile in sync if the packaging contract changes.
    Run the affected product tests and the release workflow's local checks.
 4. Merging that version change into main triggers `.github/workflows/release.yml`.

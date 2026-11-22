@@ -112,7 +112,7 @@ test("chaos CLI: replay reports the artifact seed, including zero, rather than i
   try {
     const trace=path.join(directory,"trace.json"),output=path.join(directory,"output");
     await writeFile(trace,JSON.stringify({seed:0,events:[]}));
-    execFileSync(process.execPath,["--import","tsx","scripts/recovery-chaos.ts","--replay",trace,"--output",output],{
+    execFileSync(process.execPath,["--import","tsx","scripts/diagnose/recovery-chaos.ts","--replay",trace,"--output",output],{
       cwd:fileURLToPath(new URL("../../",import.meta.url)),stdio:"pipe",timeout:10_000,
     });
     const result=JSON.parse(await readFile(path.join(output,"results.json"),"utf8"));

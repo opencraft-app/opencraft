@@ -34,9 +34,16 @@ closes its private session. Native source settings remain outside the WebView,
 so a failed server or terminated WebView cannot trap the user. App Store policy
 acceptance is separate from technical preview/build success.
 
+For iOS deployments whose self-hosted site uses an external web sign-in,
+set `EXPO_PUBLIC_SELF_HOSTED_SITE_ORIGIN` to the selected site's HTTPS origin and
+`EXPO_PUBLIC_SELF_HOSTED_AUTH_ORIGIN` to its login provider's HTTPS origin before
+starting Metro or packaging the client. Supply origins without paths, query
+parameters, fragments or credentials. The selected site and its provider can
+then complete top-level redirects in the same private WebView.
+
 Native material uses Expo GlassEffect where the SDK/device supports it and the
 shared semantic surface elsewhere. Workbench state stays with the Web owner.
-See [container design](../../docs/mobile-workbench-container.md).
+See [container design](../../docs/architecture/mobile/mobile-workbench-container.md).
 
 ## No downstream product entry
 
@@ -132,7 +139,7 @@ This emits `apps/mobile/dist/ios/main.jsbundle` and its assets. It does
 not compile CocoaPods, sign an IPA or prove an Apple binary runs.
 
 For shared container and lifecycle invariants see
-[packaged Web Workbench](../../docs/mobile-workbench-container.md).
+[packaged Web Workbench](../../docs/architecture/mobile/mobile-workbench-container.md).
 
 Update bundled dependency license metadata with
 `npm run licenses:generate --workspace @opencraft/mobile` after dependency

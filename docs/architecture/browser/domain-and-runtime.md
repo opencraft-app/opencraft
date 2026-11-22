@@ -1,6 +1,6 @@
 # Browser: Domain and runtime
 
-[Architecture index](../../browser-workbench-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](browser-workbench-architecture.md) · [Documentation index](../../README.md)
 
 ## 7. Browser Domain 最小契约
 
@@ -220,12 +220,12 @@ Browser Runtime 暴露的 capability/command Port；插件不能取得 BrowserSe
 Engine、Presentation Coordinator 或物理 Surface 的直接引用。公共 SDK 不暴露 Cordis
 Context；本地可信插件可同进程运行，Restricted channel 才要求真实隔离。普通同源 Worker
 只能承担调度/故障隔离，不能被宣传成安全沙箱。完整插件模型见
-[`plugin-architecture.md`](../../plugin-architecture.md)。
+[`plugin-architecture.md`](../extensions/plugin-architecture.md)。
 
 Agent 不直接调用 Extension 或 Browser Adapter。`AgentCapabilityRuntime` 把 Browser 操作投影为
 稳定 Capability，经 task-scoped Lease 与 Execution Router 调用；每次导航、交互、截图或
 远端控制仍遵守本文的 Session/Authority/Presentation owner 和 generation fencing。完整
-AI 原生模型见 [`agent-capability-fabric.md`](../../agent-capability-fabric.md)。
+AI 原生模型见 [`agent-capability-fabric.md`](../execution/agent-capability-fabric.md)。
 
 ### 9.2 允许多个 Context
 

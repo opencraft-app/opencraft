@@ -1,6 +1,6 @@
 import { spawn, type SpawnOptions } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { connect } from "node:net";
 import { dirname } from "node:path";
 
@@ -52,19 +52,19 @@ export function isDaemonEndpointUnavailable(error: unknown): boolean {
   return code === "ENOENT" || code === "ECONNREFUSED" || code === "EPIPE";
 }
 
-function loadOrCreateToken(path: string): string {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+async function loadOrCreateToken(path: string): Promise<string> {
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   try {
-    const existing = readFileSync(path, "utf8").trim();
+    const existing = (await readFile(path, "utf8")).trim();
     if (existing.length >= 32) {
-      if (process.platform !== "win32") chmodSync(path, 0o600);
+      if (process.platform !== "win32") await chmod(path, 0o600);
       return existing;
     }
   } catch {
     // First launch owns token creation.
   }
   const token = randomBytes(48).toString("base64url");
-  writeFileSync(path, `${token}\n`, { encoding: "utf8", mode: 0o600 });
+  await writeFile(path, `${token}\n`, { encoding: "utf8", mode: 0o600 });
   return token;
 }
 
@@ -130,13 +130,17 @@ export class OpenCraftDaemonClientManager {
   private ensureOperation: Promise<void> | null = null;
   private shuttingDown = false;
 
-  constructor(private readonly options: OpenCraftDaemonClientOptions) {
+  private constructor(private readonly options: OpenCraftDaemonClientOptions, authToken: string) {
     this.endpoint = options.endpoint;
-    if (options.tokenMode === "existing") {
-      const token = readFileSync(options.tokenPath, "utf8").trim();
-      if (token.length < 32) throw new Error("Invalid existing daemon token");
-      this.authToken = token;
-    } else this.authToken = loadOrCreateToken(options.tokenPath);
+    this.authToken = authToken;
+  }
+
+  /** Reads (or, unless the token must already exist, creates) the daemon token without blocking. */
+  static async open(options: OpenCraftDaemonClientOptions): Promise<OpenCraftDaemonClientManager> {
+    if (options.tokenMode !== "existing") return new OpenCraftDaemonClientManager(options, await loadOrCreateToken(options.tokenPath));
+    const token = (await readFile(options.tokenPath, "utf8")).trim();
+    if (token.length < 32) throw new Error("Invalid existing daemon token");
+    return new OpenCraftDaemonClientManager(options, token);
   }
 
   async connectAppHost(connectionId: string): Promise<OpenCraftDaemonAppHostConnection> {

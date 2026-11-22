@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { access, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { packageBrowserRuntime } from '../../scripts/package-browser-runtime.mjs';
-import { packageHeadlessLinux } from '../../scripts/package-headless-linux.mjs';
-import { forkUpstreamElectronVersion, packageBuilderArguments } from '../../scripts/package-electron-desktop.mjs';
-import checkDesktopTarget from '../../scripts/check-desktop-target.cjs';
+import { packageBrowserRuntime } from '../../scripts/packaging/package-browser-runtime.mjs';
+import { packageHeadlessLinux } from '../../scripts/packaging/package-headless-linux.mjs';
+import { forkUpstreamElectronVersion, packageBuilderArguments } from '../../scripts/packaging/package-electron-desktop.mjs';
+import checkDesktopTarget from '../../scripts/check/check-desktop-target.cjs';
 import { ownedDesktopFixture } from '../fixtures/owned-electron.mjs';
 
 test('browser packaging with an invalid explicit owned distribution fails before creating output', async t => {

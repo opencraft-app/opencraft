@@ -1,7 +1,0 @@
-**
-!scripts/
-!scripts/install-owned-browser-runtime.mjs
-!scripts/remote-browser-artifact.mjs
-!vendor/
-!vendor/electron/
-!vendor/electron/fork.json

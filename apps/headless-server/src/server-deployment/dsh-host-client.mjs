@@ -23,7 +23,8 @@ async function readDshHost(path, expectedDataDirectory, expectedMachineId) {
   const response = await fetch(new URL('/health', url.origin.replace('ws:', 'http:')), { signal: AbortSignal.timeout(5000) });
   const health = await response.json();
   if (!response.ok || health.ok !== true || health.engine !== 'dsh' || health.pid !== descriptor.pid
-    || !Number.isSafeInteger(health.enginePid) || health.enginePid < 1)
+    // A Host bridges DSH only when it is installed; without it the Host runs with no native engine.
+    || (health.enginePid !== null && (!Number.isSafeInteger(health.enginePid) || health.enginePid < 1)))
     throw new Error('Independent DSH Host is unavailable');
   return { websocketUrl: descriptor.websocketUrl, storageOutcomes: health.storage, hostInputs: health.hostInputs === 1,
     identity: { pid: health.pid, enginePid: health.enginePid } };

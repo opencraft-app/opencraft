@@ -106,6 +106,20 @@ export function createImExecution({actors,collaboration,getAppHost,prepareCapabi
   };
 }
 
+/** Only one trusted installation composition form may own channel transports. */
+export async function createChannelSyncDependencies(composition, context) {
+  const keys=['channelSync','channelSyncs','createChannelSync','createChannelSyncs'].filter(key=>composition[key]!=null);
+  if(keys.length>1)throw Error('Conflicting channel composition');
+  const key=keys[0];
+  if(key==='createChannelSyncs') {
+    const channelSyncs=await composition.createChannelSyncs(context);
+    if(!Array.isArray(channelSyncs))throw Error('Invalid channel composition');
+    return {channelSyncs};
+  }
+  if(key==='createChannelSync')return {channelSync:await composition.createChannelSync(context)};
+  return key ? {[key]:composition[key]} : {};
+}
+
 export async function startImPlugins(endpoints, dependencies) {
   const { ImChannelService } = await import('./im-channel-service.mjs');
   return ImChannelService.open(endpoints??[],dependencies);

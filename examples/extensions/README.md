@@ -1,7 +1,7 @@
 # Trusted extension example
 
 `hello.mjs` is a self-contained module using only the public extension contract.
-Start with the [boundary and compatibility guide](../../docs/extension-development.md)
+Start with the [boundary and compatibility guide](../../docs/develop/extension-development.md)
 if you are choosing between a client Extension, product composition or Host plugin.
 
 From the repository root, using the pinned Node version:

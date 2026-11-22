@@ -51,7 +51,7 @@ function Fixture() {
     patch: (id: string, changes: Partial<SidebarThread>) => setRows(rows => rows.map(row => row.id === id ? { ...row, ...changes } : row)),
   };
   return <UiPreferencesProvider runtime={preferences}><AppShell
-    navigation={{ layout: "unified", settingsActive: false, onOpenSettings() {}, account: { snapshot: { phase: "anonymous", name: null, avatarUrl: null }, onOpen() {}, onRefresh: async () => {}, onSignOut: async () => {} }, actions: [] }}
+    navigation={{ settingsActive: false, onOpenSettings() {}, account: { snapshot: { phase: "anonymous", name: null, avatarUrl: null }, onOpen() {}, onRefresh: async () => {}, onSignOut: async () => {} }, actions: [] }}
     layoutScope="sidebar-summary" sidebarOpen={open} sidebarWidth={335} onSidebarCollapse={() => setOpen(false)} onSidebarExpand={() => setOpen(true)} onSidebarResizeEnd={() => {}}
     windowChrome={{ kind: "browser", platform: "linux", safeArea: { left: 0, right: 0 } }}
     rightPanel={null} rightPanelOpen={false} rightPanelFullWidth={false} onRightPanelOpenChange={() => {}}

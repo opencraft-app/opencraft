@@ -1,6 +1,6 @@
 # ChatUI: Activities and tools
 
-[Architecture index](../../chat-ui-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](chat-ui-architecture.md) · [Documentation index](../../README.md)
 
 ### Activity closure and disclosure authority
 

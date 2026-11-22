@@ -78,10 +78,8 @@ in `scripts/smoke/conversation/smoke-disclosure-reflow.ts`.
 Bot 的空展示页与历史耗尽分开：仍有更早源记录时，视口可在没有滚动手势的情况下
 按一次恢复意图最多推进三页，串行且有界；额度耗尽或失败在原状态槽提供继续／重试，
 不呈现新会话欢迎页、不自动排空全历史。重同步保留有持久锚点的已加载前缀及独立
-本地提交，不以展示缓存恢复执行权限。协议所有权见
-[Hermes message windows](../../docs/architecture/chat-ui/history-and-recovery.md#hermes-message-windows-and-bot-history-continuity)；
-`hermes-bot-history-integration.test.ts` 和 `smoke-hermes-bot-history.ts` 验证真实组件与模拟远端端口，
-不代表已替换运行预览或实测远端 Hermes。
+本地提交，不以展示缓存恢复执行权限。Hermes 消息窗口协议及其集成验证由下游 Hermes
+产品持有，不在公开核心中。
 
 ## 会话生命周期补充（2026-09-15）
 
@@ -93,7 +91,7 @@ The conversation runtime owns turn filtering, all-settled cancellation sequencin
 interrupt provenance and failure cleanup. No UI view or response factory grants
 permissions or removes pending requests.
 
-Connector 交互不变量：Composer 入口消费应用级 Manager；授权完成、连接、会话选择与写审批分别表达用户意图。面板卸载不销毁已就绪共享连接；审批由共享 Modal/Radix 管理焦点和层级，配置恢复不恢复执行授权。见 [Connector 设计](../../docs/platform-connectors.md) 与 `smoke:connector-controls`。
+Connector 交互不变量：Composer 入口消费应用级 Manager；授权完成、连接、会话选择与写审批分别表达用户意图。面板卸载不销毁已就绪共享连接；审批由共享 Modal/Radix 管理焦点和层级，配置恢复不恢复执行授权。见 [Connector 设计](../../docs/architecture/extensions/platform-connectors.md) 与 `smoke:connector-controls`。
 
 Connector 目录属于 Skills 能力页的同级 Tab；配置弹窗复用 Settings 原语，不另建页面专属 UI 框架。共享 SettingsListItem 显式投影是否有图标，无图标不能保留空图标列挤压正文；配置弹窗内容按本征高度滚动，检测结果不能压掉必填字段。凭据不出现在会话、Skill 或持久 UI 状态里；第三方服务运行结果与静态目录说明分别呈现。
 
@@ -200,7 +198,7 @@ Missing sources/results/people are unknown, never manufactured successes or zero
 Current state, latest completion date, archive retention and period activity are independent
 dimensions. A creator is not automatically a participant. The tab cannot send/resume a turn
 or mutate tasks, and source/account lifecycle changes revoke late projections.
-See [Conversation overview](../../docs/tasks-model.md#conversation-overview).
+See [Conversation overview](../../docs/architecture/extensions/tasks-model.md#conversation-overview).
 
 
 ### Optional statistics loading

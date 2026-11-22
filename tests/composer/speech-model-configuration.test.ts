@@ -167,7 +167,7 @@ test("recording and explicit retry keep start binding despite later discovery ch
 test("migration CLI reads private source by path only, emits no key, and refuses permissive files/symlinks", async t => {
   const f = await fixture(t), source = join(f.dir, "legacy.env"), target = join(f.dir, "imported");
   await writeFile(source, `OPENCRAFT_SPEECH_API_KEY='${legacy.OPENCRAFT_SPEECH_API_KEY}'\nOPENCRAFT_SPEECH_MODEL=ep-hyasr3\nOPENCRAFT_SPEECH_PUBLIC_ACCESS=1\n`, { mode: 0o600 });
-  const run = (path: string) => promisify(execFile)(process.execPath, ["--import", "tsx", "scripts/migrate-speech-models.ts", "--source", path, "--models", target]);
+  const run = (path: string) => promisify(execFile)(process.execPath, ["--import", "tsx", "scripts/admin/migrate-speech-models.ts", "--source", path, "--models", target]);
   const first = await run(source); assert.match(first.stdout, /已导入/); assert.doesNotMatch(first.stdout + first.stderr, /synthetic-speech-secret/);
   const again = await run(source); assert.match(again.stdout, /未重复/);
   assert.equal((await new ModelConfigurationRepository(target).read()).providers[0]?.models[0]?.type, "asr");

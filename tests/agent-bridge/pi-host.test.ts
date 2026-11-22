@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BridgeHost } from "../../apps/agent-bridge-host/src/index.js";
 import { PI_BRIDGE_DECLARATION } from "../../plugins/pi-bridge/src/bridge.js";
-import { buildPiBridge } from "../../scripts/build-pi-bridge.mjs";
+import { buildPiBridge } from "../../scripts/packaging/build-pi-bridge.mjs";
 import { localTestBackend } from "./fixtures/local-backend.js";
 
 const MODELS = JSON.stringify({

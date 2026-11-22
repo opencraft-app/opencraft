@@ -13,7 +13,7 @@ import { promisify } from "node:util";
 
 import WebSocket from "ws";
 import { assertHeadlessWebRelease } from "../../../apps/headless-server/src/headless-web-release.mjs";
-import { startHeadlessSmokeProcess } from "../../headless-smoke-process.mjs";
+import { startHeadlessSmokeProcess } from "./headless-smoke-process.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const exec = promisify(execFile);

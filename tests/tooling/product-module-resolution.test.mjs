@@ -5,12 +5,12 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "vite";
-import { isBareModuleSpecifier, isExternalWorkspaceSource } from "../../scripts/workspace-dependencies.mjs";
+import { isBareModuleSpecifier, isExternalWorkspaceSource } from "../../scripts/packaging/workspace-dependencies.mjs";
 import { workspaceDependencies } from "../../apps/workbench-web/workspace-dependencies.vite.ts";
-import { buildHeadlessBundle } from "../../scripts/package-headless-linux.mjs";
-import { packageRelay } from "../../scripts/package-relay.mjs";
-import { packageWebServer } from "../../scripts/package-web-server.mjs";
-import { checkBrowserCompatibility } from "../../scripts/browser-compatibility-checker.mjs";
+import { buildHeadlessBundle } from "../../scripts/packaging/package-headless-linux.mjs";
+import { packageRelay } from "../../scripts/packaging/package-relay.mjs";
+import { packageWebServer } from "../../scripts/packaging/package-web-server.mjs";
+import { checkBrowserCompatibility } from "../../scripts/check/browser-compatibility-checker.mjs";
 
 const core = fileURLToPath(new URL("../../", import.meta.url));
 test("fallback only applies to bare dependencies of external filesystem sources", () => {

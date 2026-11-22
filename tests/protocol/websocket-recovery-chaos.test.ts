@@ -114,7 +114,7 @@ test('WebSocket chaos: a falsely ready but unwritable route fails the independen
 
 test('WebSocket chaos CLI: failure artifact contains seed zero, evidence and a replayable minimal trace', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'websocket-chaos-cli-'));
-  const run = (args: string[]) => spawnSync(process.execPath, ['--import', 'tsx', 'scripts/recovery-chaos.ts', ...args], {
+  const run = (args: string[]) => spawnSync(process.execPath, ['--import', 'tsx', 'scripts/diagnose/recovery-chaos.ts', ...args], {
     cwd: fileURLToPath(new URL('../../', import.meta.url)), encoding: 'utf8', timeout: 15_000,
   });
   try {

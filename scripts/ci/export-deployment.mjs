@@ -17,7 +17,7 @@ export function exportDeployment(snapshot, output) {
   const refs = imageReferences(snapshot);
   // Exclusive directory creation: never overwrite an operator's site.env/data.
   mkdirSync(output, { mode: 0o700 });
-  const template = resolve(dirname(fileURLToPath(import.meta.url)), '../../docker/deploy');
+  const template = resolve(dirname(fileURLToPath(import.meta.url)), '../../deploy/docker/deploy');
   for (const file of ['compose.yaml', 'compose.root-hands.yaml', 'compose.personal-git.yaml', 'deploy.py', 'files-smoke.mjs', 'workspace-preflight.mjs', 'site.env.example', 'README.md']) cpSync(join(template, file), join(output, file));
   writeFileSync(join(output, 'images.env'), roles.map(role => `OPENCRAFT_${role.toUpperCase()}_IMAGE=${refs[role]}`).join('\n') + '\n', { mode: 0o600 });
   writeFileSync(join(output, 'release.json'), JSON.stringify({ schemaVersion: 1, images: refs,

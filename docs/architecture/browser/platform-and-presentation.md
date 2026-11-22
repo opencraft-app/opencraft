@@ -1,6 +1,6 @@
 # Browser: Platform and presentation
 
-[Architecture index](../../browser-workbench-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](browser-workbench-architecture.md) · [Documentation index](../../README.md)
 
 ## 11. Workbench Resource 与平台布局
 

@@ -163,7 +163,7 @@ test("Electron Main is a process bridge and no longer owns Agent or physical App
   const source = await readFile(new URL("../../apps/desktop/src/main.ts", import.meta.url), "utf8");
   assert.match(source, /OpenCraftDaemonClientManager/u);
   assert.match(source, /dshCapabilityPlugin:/u);
-  assert.match(source, /serve-workbench-static\.mjs/u);
+  assert.match(source, /@opencraft\/headless-server\/serve-workbench-static/u);
   assert.doesNotMatch(source, /AppHostServerSession|AppHostServer\b|WebSocketTransport|startLocalAgentHost/u);
   assert.doesNotMatch(source, /serve-workbench-web\.mjs|OPENCRAFT_APPSERVER_URL|function appServerTarget/u);
 });
@@ -243,7 +243,7 @@ for (const failing of [true, false]) test(`daemon storage ${failing ? "failure p
     } else {
       daemon = await startOpenCraftDaemon(options);
       const tokenPath = join(directory, "token"); await writeFile(tokenPath, token);
-      const manager = new OpenCraftDaemonClientManager({ ...options, tokenPath, tokenMode: "existing", daemonEntry: "unused", executable: process.execPath });
+      const manager = await OpenCraftDaemonClientManager.open({ ...options, tokenPath, tokenMode: "existing", daemonEntry: "unused", executable: process.execPath });
       const connection = await manager.connectAppHost("storage-summary");
       try {
         assert.deepEqual(connection.storage?.map(item => item.status), ["migrated", "migrated", "fresh", "fresh", "adopted", "fresh"]);
@@ -344,7 +344,7 @@ test("daemon wire keeps the old five-name projection and exposes complete scoped
     assert.deepEqual(ready?.storage?.map(row=>row.name),rows.slice(0,5).map(row=>row.name));
     assert.deepEqual(ready?.storageOutcomes,storage);old.close();
     const tokenPath=join(root,"token");await writeFile(tokenPath,token);
-    const manager=new OpenCraftDaemonClientManager({endpoint,tokenPath,tokenMode:"existing",daemonEntry:"unused",executable:process.execPath,runtimeDirectory:root,dataDirectory:root,dshExecutable:"unused",codexExecutable:"unused",codexDataDirectory:join(root,"codex"),nativeCodexHomeDirectory:join(root,"native")});
+    const manager=await OpenCraftDaemonClientManager.open({endpoint,tokenPath,tokenMode:"existing",daemonEntry:"unused",executable:process.execPath,runtimeDirectory:root,dataDirectory:root,dshExecutable:"unused",codexExecutable:"unused",codexDataDirectory:join(root,"codex"),nativeCodexHomeDirectory:join(root,"native")});
     const connection=await manager.connectAppHost("new-client");assert.deepEqual(connection.storage,storage);connection.close();
   }finally{await server.close();await appHost.close();await rm(root,{recursive:true,force:true});}
 });

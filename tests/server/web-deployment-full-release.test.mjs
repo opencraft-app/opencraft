@@ -34,7 +34,8 @@ const signed = record => signBytes(bytes(record), privateKey, keyId);
 test('full runtime profiles can ship Pi without bundling independent Codex or DSH runtimes', () => {
   assert.deepEqual(normalizeFullRuntimeEngines(['pi']), ['pi']);
   assert.deepEqual(normalizeFullRuntimeEngines(['pi', 'pi']), ['pi']);
-  assert.deepEqual(normalizeFullRuntimeEngines(), ['codex', 'dsh']);
+  assert.deepEqual(normalizeFullRuntimeEngines(), ['codex', 'pi']);
+  assert.throws(() => normalizeFullRuntimeEngines(['codex', 'dsh']), /Unsupported/, 'DSH is bridged, not distributed');
   assert.throws(() => normalizeFullRuntimeEngines([]), /at least one engine/);
   assert.throws(() => normalizeFullRuntimeEngines(['pi', 'unknown']), /Unsupported/);
 });

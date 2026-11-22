@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
 import { startHeadlessServer } from '../../apps/headless-server/src/headless-server.mjs';
 import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
-import { createWorkbenchWebServer as createWebWorkerServer } from '../../scripts/workbench-web-server.mjs';
+import { createWorkbenchWebServer as createWebWorkerServer } from '../../apps/headless-server/src/workbench-web-server.mjs';
 import { assertInstalledPlugins } from '../support/assert-user-plugins.ts';
 import { injectUserPluginBootstrap } from '../../apps/headless-server/src/web-deployment/user-plugins.mjs';
 

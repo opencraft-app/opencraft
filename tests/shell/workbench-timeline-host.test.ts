@@ -1019,15 +1019,15 @@ test("right-panel maximize is one semantic-to-motion geometry transaction", () =
   );
   assert.match(
     appShellSource,
-    /const headerLeftFitWidth = useMotionValue\([\s\S]*?getHeaderStartMinimumWidth\(windowChrome,\s*sidebarOpen\)[\s\S]*?const fullWidthTabBarLeftInset = useTransform\(\s*\[totalLeftWidth, headerLeftFitWidth\][\s\S]*?Number\(startMinimumWidth\) - Number\(leftWidth\)[\s\S]*?const rightPanelTabBarLeftInset = rightPanelFullWidth/u,
+    /const headerLeftFitWidth = useMotionValue\([\s\S]*?getHeaderStartMinimumWidth\(windowChrome,\s*sidebarOpen\)[\s\S]*?const fullWidthTabBarLeftInset = useTransform\(\s*\[animatedSidebarWidth, headerLeftFitWidth\][\s\S]*?Number\(startMinimumWidth\) - Number\(leftWidth\)[\s\S]*?const rightPanelTabBarLeftInset = rightPanelFullWidth/u,
   );
   assert.match(
     appShellSource,
-    /const headerLeftSlotWidth = useTransform\(\s*totalLeftWidth/u,
+    /const headerLeftSlotWidth = useTransform\(\s*animatedSidebarWidth/u,
   );
   assert.doesNotMatch(appShellSource, /headerLeftFitWidthPx/u);
-  assert.match(appShellSource, /const totalLeftWidth = useTransform\(\s*\[animatedNavigationWidth, animatedSidebarWidth\]/u);
-  assert.match(appShellSource, /const mainContentWidth = useTransform\(\s*\[shellWidth, totalLeftWidth\]/u);
+  assert.match(appShellSource, /<Sidecar animatedWidth=\{animatedSidebarWidth\}>/u);
+  assert.match(appShellSource, /const mainContentWidth = useTransform\(\s*\[shellWidth, animatedSidebarWidth\]/u);
   assert.match(
     appShellHeaderSource,
     /hostRole !== "persistent"[\s\S]*?headerLeftFitWidth\.set\(width\)[\s\S]*?updateWidth\(measure\.getBoundingClientRect\(\)\.width\)/u,

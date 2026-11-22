@@ -1,6 +1,6 @@
 /// <reference path="./novnc.d.ts" />
 /** Public noVNC 1.5.0 API + reviewed media events and managed pointer port.
- * Installation verifies scripts/patch-novnc-desktop-events.mjs. No private fields. */
+ * Installation verifies scripts/postinstall/patch-novnc-desktop-events.mjs. No private fields. */
 export interface RfbClient extends EventTarget {
   viewOnly: boolean;
   scaleViewport: boolean;

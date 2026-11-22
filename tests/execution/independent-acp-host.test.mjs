@@ -88,7 +88,7 @@ test('production multi-engine entry aggregates Pi and two independently rooted A
   const { readDaemonMachineIdentity } = await import('../../apps/opencraft-daemon/src/machine-identity.ts');
   const root = await mkdtemp(join(tmpdir(), 'acp-production-aggregation-test-')), piRoot = join(root, 'pi');
   const machine = await readDaemonMachineIdentity(piRoot), authorizations = [], owners = [];
-  const capability = new SessionCapabilityMcp(new SessionCapabilities(), capabilitySigningKey(join(piRoot, 'session-capabilities.key')), undefined, {
+  const capability = new SessionCapabilityMcp(new SessionCapabilities(), await capabilitySigningKey(join(piRoot, 'session-capabilities.key')), undefined, {
     descriptorPath: join(piRoot, 'session-capabilities.json'), authorizeInput(session, inputId) {
       authorizations.push({ ...session, inputId });
       return ['acp', 'claude-code'].some(id => session.serverId === `server:${machine.machineId}:${id}` && inputId === `actor-input:${id}-accepted`);

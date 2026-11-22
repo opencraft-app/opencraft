@@ -7,7 +7,7 @@ import { request } from 'node:http';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { buildTerminalOwnerRuntime } from '../../scripts/package-terminal-runtime.mjs';
+import { buildTerminalOwnerRuntime } from '../../scripts/packaging/package-terminal-runtime.mjs';
 
 const require = createRequire(import.meta.url), root = resolve('.');
 const scope = { account: 'alice', hostId: 'host', projectId: 'project', threadId: 'thread' };

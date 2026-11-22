@@ -9,7 +9,7 @@ const root = resolve(import.meta.dirname, "../..");
 
 test("external input tools fail with actionable usage before reading files", () => {
   const env = { ...process.env };
-  for (const [script, required] of [["export-hermes-connector-catalog.mjs", "marketplace-directory"]]) {
+  for (const [script, required] of [["packaging/export-hermes-connector-catalog.mjs", "marketplace-directory"]]) {
     const result = spawnSync(process.execPath, [join(root, "scripts", script)], { cwd: tmpdir(), env, encoding: "utf8", timeout: 15_000 });
     assert.equal(result.error, undefined, script);
     assert.equal(result.status, 1, script);
@@ -26,7 +26,7 @@ test("catalog export accepts an external snapshot without a machine-specific che
   await writeFile(join(directory, ".codebuddy-connector/connectors.json"), JSON.stringify({ connectors: [{ id: "example", name: "Example", type: "mcp" }] }));
   await writeFile(join(directory, "icons/example.svg"), "<svg/>");
   const before = await readFile(join(directory, ".codebuddy-connector/connectors.json"), "utf8");
-  const result = spawnSync(process.execPath, [join(root, "scripts/export-hermes-connector-catalog.mjs"), directory], { cwd: tmpdir(), encoding: "utf8", timeout: 15_000 });
+  const result = spawnSync(process.execPath, [join(root, "scripts/packaging/export-hermes-connector-catalog.mjs"), directory], { cwd: tmpdir(), encoding: "utf8", timeout: 15_000 });
   assert.equal(result.error, undefined);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /"id":"example"/);

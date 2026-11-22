@@ -5,7 +5,7 @@ import { isAbsolute, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { AccountPoolUncertainDiagnostic, CodexAccountRetainedState, CodexAccountServiceOptions } from "@opencraft/account-pool-host";
 import { acquireCodexWriter, parseCodexAuthFile, parseCodexAuthFileReference } from "@opencraft/account-pool-host";
-import { ACCOUNT_CORE_STATE_MAX_BYTES } from "../../../scripts/full-upgrade/account-core-limits.mjs";
+import { ACCOUNT_CORE_STATE_MAX_BYTES } from "./account-core-limits.mjs";
 
 import { OperatorLease, type OperatorLeaseClaim, type OperatorLeaseAbort, type OperatorLeaseEnd } from "./operator-lease.js";
 

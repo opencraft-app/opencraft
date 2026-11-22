@@ -271,10 +271,8 @@ button {
   @include application-desktop.wallpaper;
   --app-shell-page-paint: var(--application-desktop-paint);
   --opencraft-header-surface-paint: transparent;
-  --background-shell-compact-titlebar: transparent;
   --opencraft-main-surface-elevation: none;
-  // Wallpaper is one plane, including its titlebar. Theme-owned reading-pane
-  // edges must not project an upper lip or shadow across this surface.
+  // Wallpaper is one plane, including its titlebar.
   --opencraft-header-content-elevation: none;
   --opencraft-content-depth-elevation: none;
   --opencraft-unified-frame-elevation: none;
@@ -284,7 +282,6 @@ button {
   .main-content-surface, .main-content-frame, .main-content-viewport, .main-content-slot, .extension-view-route { background: transparent; }
   .main-content-top-fade { display: none; }
   :is(.app-shell-header, .shell-chrome) { --color-icon-primary: var(--desktop-foreground); --color-icon-secondary: var(--desktop-foreground); --color-text: var(--desktop-foreground); --color-text-secondary: var(--desktop-foreground); --color-text-tertiary: var(--desktop-foreground); color: var(--desktop-foreground); background: transparent; }
-  .app-shell-header::after { opacity: 0; }
   @media (forced-colors: active) { --app-shell-page-paint: Canvas; background: Canvas; .app-shell-header { color: CanvasText; } }
 }
 
@@ -353,7 +350,6 @@ html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-reque
   --opencraft-panel-toolbar-background: transparent;
   --opencraft-panel-divider-top: var(--height-toolbar);
   --opencraft-panel-divider-clip: inset(0 -100% -100% -100%);
-  --background-shell-compact-titlebar: transparent;
 
   .app-shell-sidecar {
     // The native plane continues across the complete titlebar. Explicit opaque
@@ -366,7 +362,6 @@ html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-reque
   // Panel content keeps its own opaque reading surface below the native
   // titlebar. Neither the nested chassis nor its divider paints over chrome.
   .app-shell-right-panel__surface { border-left: 0; }
-  .app-shell-header::before { box-shadow: none; }
   .main-content-surface { background: transparent; box-shadow: none; }
   .main-content-frame { background: var(--material-reading-background); }
   &:not(.has-unified-sidebar) { --opencraft-content-depth-elevation: var(--opencraft-main-surface-elevation); }
@@ -542,7 +537,6 @@ html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-reque
 .sidecar-shared-content[data-sidebar-content="footer"] { height: auto; }
 .sidecar-shared-content:not([data-sidebar-content="footer"]) > * { width: 100%; min-width: 0; min-height: 0; flex: 1 1 auto; }
 .floating-sidebar-panes { display: flex; height: 100%; min-height: 0; }
-.floating-sidebar-primary { flex: 0 0 auto; min-width: 0; min-height: 0; border-right: 1px solid var(--color-border-subtle); box-sizing: border-box; }
 .floating-sidebar-context { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 .floating-sidebar-context__viewport { height: 100%; min-height: 0; }
 
@@ -705,38 +699,6 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   }
 }
 
-// The main surface's upper lip keeps moving left across the compact rail. Only
-// this overhang is painted: main content retains its own surface/edge-scroll
-// policy. Existing Header owns native controls, drag regions and hit testing.
-.app-shell-header::before {
-  position: absolute;
-  z-index: -1;
-  inset-block: 0;
-  left: var(--app-shell-titlebar-extension-left, 0px);
-  width: var(--app-shell-titlebar-extension-width, 0px);
-  background: var(--background-shell-compact-titlebar);
-  // This lip belongs to the same raised main surface. Reveal its lower edge
-  // toward Sidecar only; its joining edge must not draw a second white seam.
-  box-shadow: var(--opencraft-main-surface-elevation);
-  clip-path: inset(0 0 calc(-1 * var(--height-toolbar)) 0);
-  content: "";
-  pointer-events: none;
-}
-
-.app-shell-header::after {
-  position: absolute;
-  z-index: -1;
-  right: 0;
-  bottom: 0;
-  left: var(--app-shell-titlebar-extension-left, 0px);
-  height: 1px;
-  background: var(--color-border-subtle);
-  opacity: var(--app-shell-titlebar-divider-progress, 0);
-  content: "";
-  pointer-events: none;
-  @media (forced-colors: active) { background: CanvasText; }
-}
-
 .app-shell-header__window-controls {
   display: flex;
   width: var(--app-shell-header-left-slot-width);
@@ -804,11 +766,6 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
     // transparent. One pane projection drives paint, resizing and animation.
     background: var(--opencraft-header-surface-paint, linear-gradient(to top, var(--color-border-subtle) 1px, var(--color-surface) 1px)) left / var(--app-shell-header-leading-paint-width, 100%) 100% no-repeat,
       var(--opencraft-header-surface-paint, linear-gradient(to top, var(--color-border-subtle) 1px, var(--color-surface) 1px)) right / var(--app-shell-header-trailing-paint-width, 0px) 100% no-repeat;
-  }
-  &[data-opencraft-window-type="browser"] .app-shell-header::before { display: none; }
-  &[data-opencraft-window-type="browser"] .app-shell-header::after {
-    background: var(--opencraft-header-divider-color, var(--color-border-subtle));
-    @media (forced-colors: active) { background: CanvasText; }
   }
   &[data-opencraft-window-type="browser"] .app-shell-header__content-edge {
     // Project the reading plane's upper edge into the recessed titlebar.
@@ -4124,6 +4081,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     text-align: end;
     letter-spacing: var(--typography-metadata-tracking);
   }
+
 
   &__sender-avatar {
     display: inline-grid;
@@ -9193,12 +9151,13 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   column-gap: max(var(--gap-toolbar-dock), var(--gap-control-density-min));
   align-items: end;
   > .opencraft-composer-floating-content { grid-column: 1; grid-row: 1; }
-  > .opencraft-composer-attached-rail { grid-column: 1; grid-row: 2; }
-  > .opencraft-composer-shell { grid-column: 1; grid-row: 3; }
+  > .opencraft-local-messages { grid-column: 1; grid-row: 2; }
+  > .opencraft-composer-attached-rail { grid-column: 1; grid-row: 3; }
+  > .opencraft-composer-shell { grid-column: 1; grid-row: 4; }
   > .opencraft-composer-navigation {
     display: flex;
     grid-column: 2;
-    grid-row: 3;
+    grid-row: 4;
     align-self: end;
   }
 }
@@ -11611,8 +11570,8 @@ html[data-window-host="browser"] body {
       gap: var(--gap-material-liquid-group);
       padding: var(--padding-material-liquid-group);
     }
+    // Touch reading titles remain owned by thread-workspace, not chrome suppression.
     .app-shell-header__route,
-    .thread-header-title,
     .application-brand,
     [data-app-shell-window-action]:not([data-app-shell-window-action="sidebar-toggle"]):not([data-navigation-return]) {
       display: none;
@@ -12001,7 +11960,7 @@ html[data-window-host="browser"] body {
   background: transparent;
   > .app-shell-row { background: var(--app-shell-page-paint); }
   .app-shell-header { background: transparent; }
-  .app-shell-header::before, .app-shell-header::after, .app-shell-header__content-edge, .app-shell-content-depth { display: none; }
+  .app-shell-header__content-edge, .app-shell-content-depth { display: none; }
   .main-content-surface { background: transparent; box-shadow: none; }
   // Persistent Shell navigation stays reachable above the first card row.
   .right-panel-view { background: transparent; padding-block-start: var(--height-toolbar); box-sizing: border-box; }
@@ -12021,4 +11980,52 @@ html[data-window-host="browser"] body {
   &__title { margin: 0; padding: calc(var(--spacing) * 3) var(--padding-sidebar-activity-row-inline); @include typography.role(body, secondary); }
   [data-native-project] .sidebar-thread-group-toggle { gap: calc(var(--spacing) * 2); }
   [data-native-project] .sidebar-activity-group__items { padding-inline-start: calc(var(--spacing) * 4); }
+}
+
+// Client-owned submitted messages are separate from both the draft and Host queue.
+.opencraft-local-messages {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing) * 3);
+  margin-block-end: calc(var(--spacing) * 4);
+  max-height: 40dvh;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.opencraft-local-message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
+  padding-inline: var(--spacing);
+}
+.opencraft-local-message__body {
+  max-width: min(85%, 60ch);
+  border-radius: calc(var(--spacing) * 4);
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
+  background: color-mix(in srgb, var(--color-text) 5%, transparent);
+  color: var(--color-text-primary);
+  font: var(--typography-body-font);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.opencraft-local-message__meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  gap: var(--spacing);
+  max-width: 100%;
+}
+.opencraft-local-message__status {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing);
+  min-width: 0;
+  padding-block: var(--spacing);
+  color: var(--color-text-tertiary);
+  font: var(--typography-metadata-font);
+  letter-spacing: var(--typography-metadata-tracking);
+  overflow-wrap: anywhere;
+  svg { flex-shrink: 0; }
 }

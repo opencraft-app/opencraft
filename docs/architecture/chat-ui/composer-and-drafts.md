@@ -1,6 +1,6 @@
 # ChatUI: Composer and drafts
 
-[Architecture index](../../chat-ui-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](chat-ui-architecture.md) · [Documentation index](../../README.md)
 
 ## Workspace selection
 
@@ -122,6 +122,25 @@ Reopening a document/process restores locally accepted input when its Runtime is
 reacquired; this is not cross-device delivery, and Web storage may be evicted.
 Background open conversations remain resident for recovery.
 
+### Draft and submitted local-message presentation
+
+Unsubmitted content stays in the Composer and never sends because a connection
+recovers. Locally admitted messages render as separate user-message bubbles above
+the editable surface, with per-message waiting/sending status. They do not share
+the Host queue's paused banner, warning avatar or disabled send/edit controls.
+The existing delivery-reconciliation owner handles uncertain outcomes once;
+failed local messages offer a quiet retry icon instead of a prominent retry button.
+
+Waiting and definitively failed local input can move back to an empty Composer.
+The Composer reserves that Draft identity and persists the original structured
+content before the outbox's serialized removal. Storage failure or a dispatch race
+leaves queue custody intact and restores the empty input. Typing and submission
+cannot overwrite a reserved Draft; navigation restores only the originating cached
+target and never takes focus in another conversation. Existing input disables this
+action. Sending and unconfirmed input cannot be withdrawn. Recovery after an
+interruption between the two local stores may retain both a draft and a queue
+copy; restoring a draft never itself submits it.
+
 ## Queue-to-Steer admission continuity
 
 A live authoritative conversation accepts Steer intent on an in-flight queue
@@ -223,7 +242,7 @@ do not log content. Mounted Views do not subscribe to cross-tab changes.
 Tests: `tests/chat/chat-browser-drafts.test.ts`.
 
 Thread identity, execution activation, capability leases and revocation follow
-the [execution ownership contract](../../execution-ownership.md), including its
+the [execution ownership contract](../execution/execution-ownership.md), including its
 explicit distinction between implemented coordination and pending delivery guarantees.
 
 ## 跨桌面、手机和平板的会话连续性

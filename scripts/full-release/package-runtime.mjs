@@ -9,18 +9,17 @@ import { createHash } from 'node:crypto';
 import { copyDependencyClosure } from './closure.mjs';
 import { cachedRuntime } from './runtime-cache.mjs';
 import { COMPONENT_LIMITS } from './components.mjs';
-import { prepareDshRuntime } from '../prepare-dsh-runtime.mjs';
 const exec = promisify(execFile);
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
-const SUPPORTED_FULL_RUNTIME_ENGINES = Object.freeze(['pi', 'codex', 'dsh']);
+const SUPPORTED_FULL_RUNTIME_ENGINES = Object.freeze(['pi', 'codex']);
 
 /**
  * Normalize the engines represented by the optional full-runtime payload.
- * Pi is already part of the server execution owner; Codex and DSH are
- * independent runtimes and are included only when the selected release
- * profile explicitly asks for them.
+ * Pi is already part of the server execution owner; Codex is an independent
+ * runtime included when the release profile asks for it. OpenCraft bridges a
+ * DSH the server installs but does not distribute it.
  */
-export function normalizeFullRuntimeEngines(value = ['codex', 'dsh']) {
+export function normalizeFullRuntimeEngines(value = ['codex', 'pi']) {
   if (!Array.isArray(value) || value.length === 0) throw new Error('Full runtime requires at least one engine');
   const engines = [...new Set(value)];
   if (engines.some(engine => !SUPPORTED_FULL_RUNTIME_ENGINES.includes(engine))) throw new Error('Unsupported full runtime engine');
@@ -31,7 +30,7 @@ async function installRuntime(runtime, ignoreScripts = false) {
   catch { throw new Error('Locked runtime installation failed; inspect the build environment'); }
 }
 
-export async function packageFullRuntime({ repositoryRoot, packageRoot, sourceRevision, buildId, engines = ['codex', 'dsh'] }) {
+export async function packageFullRuntime({ repositoryRoot, packageRoot, sourceRevision, buildId, engines = ['codex', 'pi'] }) {
   if (process.platform !== 'linux' || process.arch !== 'x64') throw new Error('Full runtime currently requires Linux x64');
   const selectedEngines = normalizeFullRuntimeEngines(engines);
   const enabled = new Set(selectedEngines);
@@ -68,12 +67,11 @@ export async function packageFullRuntime({ repositoryRoot, packageRoot, sourceRe
   }
   const records = [];
   await mkdir(join(packageRoot, 'release/locks'), { recursive: true });
-  for (const [name, roots] of [['codex', ['@openai/codex']], ['dsh', ['@deepseek-ai/dsh', 'ajv']]]) {
+  for (const [name, roots] of [['codex', ['@openai/codex']]]) {
     if (!enabled.has(name)) continue;
     const source = join(repositoryRoot, 'runtime', name), target = join(full, name);
     const versions = await cachedRuntime({ repositoryRoot, name, destination: target, build: async destination => {
-      if (name === 'dsh') await prepareDshRuntime({ root: repositoryRoot, log: () => {}, install: runtime => installRuntime(runtime) });
-      else await installRuntime(codex, true);
+      await installRuntime(codex, true);
       return copyDependencyClosure(join(destination, 'node_modules'), roots, createRequire(join(source, 'package.json')), source);
     } });
     const lock = await readFile(join(source, 'package-lock.json'));

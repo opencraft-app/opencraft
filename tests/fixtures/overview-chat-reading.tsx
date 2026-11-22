@@ -56,7 +56,7 @@ function Chat() {
 }
 function FileView() { return <div data-reading-tool style={{ height: '100%', paddingTop: 80, boxSizing: 'border-box' }}>File preview <PanelOverviewButton /></div>; }
 const renderers = [{ kind: 'document', Component: FileView, preview: () => ({ kind: 'text' as const, text: 'Open document' }) }];
-const navigation = { layout: 'unified' as const, actions: [{ id: 'chat', title: 'Chat', icon: 'chat', onInvoke() {} }], settingsActive: false, onOpenSettings() {}, account: null };
+const navigation = { actions: [{ id: 'chat', title: 'Chat', icon: 'chat', onInvoke() {} }], settingsActive: false, onOpenSettings() {}, account: null };
 function App() {
   const state = useSyncExternalStore(listener => panels.subscribeOwner('scope', listener), () => panels.getOwnerSnapshot('scope'));
   const [sidebar, setSidebar] = useState(false);

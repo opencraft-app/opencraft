@@ -173,6 +173,10 @@ test("actual SSH transport + shared broker + Runtime restores paginated items, o
       assert.equal(lease.getSnapshot().authoritative, true);
       assert.equal(lease.getSnapshot().error, null);
       assert.match(JSON.stringify(lease.getSnapshot().timeline), /Historical remote answer/);
+      // The fixture reports calls through IPC independently of the stdout RPC reply.
+      for (let attempt = 0; !(calls.includes("thread/turns/list") && calls.includes("thread/items/list")) && attempt < 100; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
       assert.ok(calls.includes("thread/turns/list") && calls.includes("thread/items/list"));
       await lease.loadOlder();
       const timeline = JSON.stringify(lease.getSnapshot().timeline);

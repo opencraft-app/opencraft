@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { createIntlTestRoot } from "./intl-root";
 import { createComposerController } from "@opencraft/composer-core";
 import { OpenCraftComposer, type ComposerAgentModelGroup, type ComposerModelOption } from "@opencraft/composer-editor";
+import { WorkbenchPresentationActivityProvider } from "../../apps/workbench-web/src/components/workbench-presentation-activity";
 import { initializeAppearanceTheme, setThemePreference, setAppearanceThemeId } from "../../apps/workbench-web/src/appearance-theme";
 import "../../apps/workbench-web/src/styles/app.scss";
 
@@ -33,10 +34,11 @@ const models: ComposerModelOption[] = [
 const sent: unknown[] = [], remembered: unknown[] = [], handoffs: string[] = [];
 const cycleAgentShortcut = (event: KeyboardEvent) => event.altKey && (event.code === "KeyP" || event.key.toLowerCase() === "p") ? event.shiftKey ? -1 : 1 : 0;
 function Fixture() {
+  const [chatActive, setChatActive] = useState(true);
   const [disabledAgents, setDisabledAgents] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isFetching, setFetching] = useState(false);
-  Object.assign(window, { modelBrowserFixture: { controller, models, sent, remembered, handoffs, existingThread, singleAgent, handoffEnabled, setError, setFetching, setDisabledAgents,
+  Object.assign(window, { modelBrowserFixture: { controller, models, sent, remembered, handoffs, existingThread, singleAgent, handoffEnabled, setError, setFetching, setDisabledAgents, setChatActive,
     setThemePreference, setAppearanceThemeId,
     selections: () => controller.getSnapshot().draft.selections,
   } });
@@ -47,16 +49,25 @@ function Fixture() {
       if (existingThread) return;
     },
   };
-  return <OpenCraftComposer controller={controller} resolveAgentCycleShortcut={cycleAgentShortcut}
+  const composer = <OpenCraftComposer controller={controller} resolveAgentCycleShortcut={cycleAgentShortcut}
     selectionCatalog={{ agentsDisabled: disabledAgents.length > 0, models: available, permissionProfiles: [], modelError: error,
       ...(existingThread ? {
         agentGroups: [agentGroup], currentAgentId: "codex", currentAgentLabel: "Codex",
         ...(handoffEnabled ? { agentContinuation: { startsNewThread: true } } : {}),
       } : {}),
       onConfigureAgents: () => remembered.push("agents"),
-      isFetching, retryModels: () => { setError(null); setFetching(false); }, onConfigureModels: () => remembered.push("configure"),
+      isFetching, retryModels: () => { setError(null); setFetching(false); }, onConfigureModels: () => {
+        remembered.push("configure");
+        if (params.has("retire")) setChatActive(false);
+      },
       onRememberModelDefaults: value => remembered.push(value),
     }} onSubmit={intent => { sent.push(intent.selections); return false; }} />;
+  return <>
+    <WorkbenchPresentationActivityProvider active={chatActive}>
+      <div data-fixture-chat hidden={!chatActive} inert={!chatActive || undefined}>{composer}</div>
+    </WorkbenchPresentationActivityProvider>
+    {!chatActive ? <button type="button" autoFocus onClick={() => setChatActive(true)}>Return to chat</button> : null}
+  </>;
 }
 const locale = params.get("locale") ?? "en-US";
 createIntlTestRoot(document.getElementById("root")!, undefined, locale).render(<Fixture />);

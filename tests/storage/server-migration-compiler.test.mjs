@@ -9,12 +9,12 @@ import {randomUUID} from 'node:crypto';
 const source=fileURLToPath(new URL('../../',import.meta.url));
 function fixture(t){
  const root=mkdtempSync(join(tmpdir(),'server-compiler-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
- const server=join(root,'packages/storage-node/src/server');mkdirSync(server,{recursive:true});mkdirSync(join(root,'scripts'));
+ const server=join(root,'packages/storage-node/src/server');mkdirSync(server,{recursive:true});mkdirSync(join(root,'scripts/storage'),{recursive:true});
  cpSync(join(source,'packages/storage-node/src/server/migrations'),join(server,'migrations'),{recursive:true});
  for(const name of ['migration-lineages.json','migrations.generated.ts'])copyFileSync(join(source,'packages/storage-node/src/server',name),join(server,name));
- for(const name of ['compile-storage-migrations.mjs','storage-migration-tools.mjs'])copyFileSync(join(source,'scripts',name),join(root,'scripts',name));
+ for(const name of ['compile-storage-migrations.mjs','storage-migration-tools.mjs'])copyFileSync(join(source,'scripts/storage',name),join(root,'scripts/storage',name));
  writeFileSync(join(root,'package.json'),JSON.stringify({version:JSON.parse(readFileSync(join(source,'package.json'),'utf8')).version}));
- const run=(...args)=>spawnSync(process.execPath,['scripts/compile-storage-migrations.mjs',...args],{cwd:root,encoding:'utf8'});
+ const run=(...args)=>spawnSync(process.execPath,['scripts/storage/compile-storage-migrations.mjs',...args],{cwd:root,encoding:'utf8'});
  return{root,server,run};
 }
 test('Server compiler frozen family reproduces reviewed output without edits',t=>{
@@ -42,7 +42,7 @@ test('imported Server compiler checks an explicit owner without touching the def
  const f=fixture(t),privateRoot=join(f.root,'private-server');cpSync(f.server,privateRoot,{recursive:true});
  const journal=JSON.parse(readFileSync(join(f.server,'migrations/meta/_journal.json'),'utf8'));writeFileSync(join(f.server,'migrations',journal.entries[0].tag+'.sql'),'SELECT 0; -- intentionally invalid default owner');
  const output=readFileSync(join(privateRoot,'migrations.generated.ts'),'utf8');
- const code=`import {compileServerMigrations} from './scripts/compile-storage-migrations.mjs';compileServerMigrations({root:${JSON.stringify(privateRoot)},check:true});`;
+ const code=`import {compileServerMigrations} from './scripts/storage/compile-storage-migrations.mjs';compileServerMigrations({root:${JSON.stringify(privateRoot)},check:true});`;
  const result=spawnSync(process.execPath,['--input-type=module','-e',code],{cwd:f.root,encoding:'utf8'});assert.equal(result.status,0,result.stderr);assert.equal(readFileSync(join(privateRoot,'migrations.generated.ts'),'utf8'),output);
  assert.match(readFileSync(join(f.server,'migrations',journal.entries[0].tag+'.sql'),'utf8'),/intentionally invalid/);
 });

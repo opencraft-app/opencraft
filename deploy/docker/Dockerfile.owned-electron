@@ -1,0 +1,123 @@
+# syntax=docker/dockerfile:1
+ARG NODE_IMAGE=node:26.7.0-bookworm-slim@sha256:4db36457f406501e6f608802e5da617e5fbd0e80b75901b6a09de1ae5a667d32
+ARG RUNTIME_IMAGE=debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
+# Override with --build-context owned-electron=/absolute/verified/browser.
+# An omitted context is empty and fails provenance validation, never downloads stock.
+FROM scratch AS owned-electron
+FROM ${NODE_IMAGE} AS browser-input
+WORKDIR /src
+COPY scripts/packaging/remote-browser-artifact.mjs scripts/packaging/remote-browser-artifact.mjs
+COPY vendor/electron/fork.json vendor/electron/fork.json
+RUN --mount=type=bind,from=owned-electron,target=/opt/owned-electron,ro \
+    node scripts/packaging/remote-browser-artifact.mjs /opt/owned-electron vendor/electron/fork.json
+
+FROM ${NODE_IMAGE} AS build-dependencies
+ARG OPENCRAFT_CONTAINER_WEB_SCRIPT=build:web:release
+ARG OPENCRAFT_CONTAINER_GATEWAY_ENTRY=scripts/container-deployment/gateway.mjs
+ARG OPENCRAFT_CONTAINER_GATEWAY_BUILD_SCRIPT
+ARG OPENCRAFT_CONTAINER_HANDS_ENTRY=scripts/container-deployment/hands.mjs
+ARG OPENCRAFT_BUILD_ID=development
+ARG OPENCRAFT_SOURCE_REVISION=unknown
+ARG SOURCE_DATE_EPOCH
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
+ENV NODE_OPTIONS=--max-old-space-size=4096
+WORKDIR /src
+COPY . .
+RUN test "$(node --version)" = "v$(cat .nvmrc)"
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+FROM build-dependencies AS build-control
+RUN --mount=type=cache,target=/root/.npm node scripts/packaging/package-container.mjs /out --without-browser
+
+FROM build-dependencies AS build
+RUN --mount=type=bind,from=browser-input,source=/src,target=/verified-browser-input,ro \
+    --mount=type=cache,target=/root/.npm \
+    --mount=type=bind,from=owned-electron,target=/opt/owned-electron,ro \
+    OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION=/opt/owned-electron node scripts/packaging/package-container.mjs /out
+
+# Export with --target host-artifact --output type=local,dest=./.local/docker-host.
+FROM scratch AS host-artifact
+COPY --from=build /out/opencraft-server/ /
+
+FROM ${RUNTIME_IMAGE} AS control-runtime
+ARG OPENCRAFT_UID=1000
+ARG OPENCRAFT_GID=1000
+ARG OPENCRAFT_BUILD_ID
+ARG OPENCRAFT_SOURCE_REVISION
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git openssh-client libatomic1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && if ! getent group "${OPENCRAFT_GID}" >/dev/null; then groupadd --gid "${OPENCRAFT_GID}" opencraft; fi \
+    && if ! getent passwd "${OPENCRAFT_UID}" >/dev/null; then useradd --uid "${OPENCRAFT_UID}" --gid "${OPENCRAFT_GID}" --no-create-home opencraft; fi
+COPY --from=build-control /out/opencraft-server /opt/opencraft
+LABEL org.opencontainers.image.revision="${OPENCRAFT_SOURCE_REVISION}" \
+      org.opencontainers.image.version="${OPENCRAFT_BUILD_ID}" \
+      org.opencontainers.image.licenses="Apache-2.0"
+ENV PATH=/opt/opencraft/bin:$PATH
+ARG OPENCRAFT_GIT_HOSTS=github.com
+ENV OPENCRAFT_GIT_HOSTS=${OPENCRAFT_GIT_HOSTS}
+ENV OPENCRAFT_GIT_RUNTIME_DIRECTORY=/var/lib/opencraft/git-credentials
+ENV OPENCRAFT_GIT_WORKER_FILE=/opt/opencraft/runtime/personal-git-worker.mjs
+WORKDIR /opt/opencraft
+USER ${OPENCRAFT_UID}:${OPENCRAFT_GID}
+
+FROM ${RUNTIME_IMAGE} AS runtime
+ARG OPENCRAFT_UID=1000
+ARG OPENCRAFT_GID=1000
+ARG OPENCRAFT_BUILD_ID=development
+ARG OPENCRAFT_SOURCE_REVISION=unknown
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates git openssh-client libatomic1 libasound2 libatk-bridge2.0-0 libatk1.0-0 \
+    fonts-noto-cjk fonts-noto-color-emoji \
+    libatspi2.0-0 libcups2 libdbus-1-3 libdrm2 libgbm1 libgtk-3-0 libnspr4 libnss3 \
+    libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2 \
+    && rm -rf /var/lib/apt/lists/* \
+    && if ! getent group "${OPENCRAFT_GID}" >/dev/null; then groupadd --gid "${OPENCRAFT_GID}" opencraft; fi \
+    && if ! getent passwd "${OPENCRAFT_UID}" >/dev/null; then useradd --uid "${OPENCRAFT_UID}" --gid "${OPENCRAFT_GID}" --no-create-home opencraft; fi
+COPY --from=build /out/opencraft-server /opt/opencraft
+LABEL org.opencontainers.image.title="OpenCraft" \
+      org.opencontainers.image.description="OpenCraft self-hosted Gateway, Brain and Hands runtime" \
+      org.opencontainers.image.source="https://github.com/opencraft-app/opencraft" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.version="${OPENCRAFT_BUILD_ID}" \
+      org.opencontainers.image.revision="${OPENCRAFT_SOURCE_REVISION}"
+RUN chown root:root /opt/opencraft/runtime/browser/electron/chrome-sandbox \
+    && chmod 4755 /opt/opencraft/runtime/browser/electron/chrome-sandbox
+ENV PATH=/opt/opencraft/bin:$PATH
+ARG OPENCRAFT_GIT_HOSTS=github.com
+ENV OPENCRAFT_GIT_HOSTS=${OPENCRAFT_GIT_HOSTS}
+ENV OPENCRAFT_GIT_RUNTIME_DIRECTORY=/var/lib/opencraft/git-credentials
+ENV OPENCRAFT_GIT_WORKER_FILE=/opt/opencraft/runtime/personal-git-worker.mjs
+WORKDIR /opt/opencraft
+USER ${OPENCRAFT_UID}:${OPENCRAFT_GID}
+ENTRYPOINT ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "gateway"]
+
+FROM control-runtime AS brain
+LABEL org.opencraft.role=brain
+ENTRYPOINT ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "brain"]
+
+FROM runtime AS hands
+LABEL org.opencraft.role=hands
+# Agent shells need ordinary diagnostics; login shells reset PATH on Debian.
+ARG OPENCRAFT_UID=1000
+ARG OPENCRAFT_GID=1000
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl wget jq ripgrep procps less vim-tiny tree file unzip zip xz-utils \
+    iproute2 iputils-ping dnsutils netcat-openbsd python3 \
+    && rm -rf /var/lib/apt/lists/* \
+    && printf 'case ":$PATH:" in *:/opt/opencraft/bin:*) ;; *) PATH=/opt/opencraft/bin:$PATH ;; esac\nexport PATH\n' > /etc/profile.d/opencraft-path.sh
+USER ${OPENCRAFT_UID}:${OPENCRAFT_GID}
+ENTRYPOINT ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "hands"]
+
+FROM control-runtime AS gateway
+LABEL org.opencraft.role=gateway
+ENTRYPOINT ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "gateway"]
+
+FROM control-runtime AS proxy
+LABEL org.opencraft.role=proxy
+ENTRYPOINT ["/opt/opencraft/bin/node", "/opt/opencraft/runtime/container-service.mjs", "proxy"]
+
+# The default full image still supports Compose overriding its entrypoint.
+FROM runtime AS full
+LABEL org.opencraft.role=gateway

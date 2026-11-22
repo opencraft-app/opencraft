@@ -48,7 +48,7 @@ export async function selectorFixture(options:{entryOrigin?:EntryOriginResolver;
     const root=options.webRoot??join(directory,id);if(!options.webRoot){await mkdir(root);await writeFile(join(root,'index.html'),`<!doctype html><html><head><title>${id}</title></head><body><h1>${id}</h1><a id="switch" href="/servers">切换服务器</a></body></html>`);}
     const oa=new FixtureRequestIdentity(req=>access.authenticate(req));cleanup.push(()=>oa.close());
     const appHost=options.appHost?.();if(appHost)cleanup.push(()=>(appHost as any).close());
-    const sshManagement=options.sshPublicAccess !== true ? null : new SshManagement({directory:join(directory,id+'-ssh'),publicAccess:options.sshPublicAccess,resetConnection:async()=>{},connectConnection:async()=>{}});
+    const sshManagement=options.sshPublicAccess !== true ? null : await SshManagement.open({directory:join(directory,id+'-ssh'),publicAccess:options.sshPublicAccess,resetConnection:async()=>{},connectConnection:async()=>{}});
     if(sshManagement)cleanup.push(()=>sshManagement.close());
     const web=await createWorkbenchWebServer({root,sshManagement,appHostServer:appHost,appServerTarget:options.appServerTarget??null,loopbackOnly:false,desktopAccess:'trusted-internal',accessService:access,identityService:oa,fileDownloads:options.fileDownloads?.()??null,
       desktopService:{accept(ws:WebSocket){ws.send('connected-'+id);ws.on('message',(data,binary)=>ws.send(data,{binary}));},close(){}}});cleanup.push(()=>web.close());
@@ -68,7 +68,7 @@ export async function selectorFixture(options:{entryOrigin?:EntryOriginResolver;
       const upstream=request(`http://127.0.0.1:${address.port}${req.url}`,{method:req.method,headers:req.headers},result=>{res.writeHead(result.statusCode!,result.headers);result.pipe(res);});upstream.on('error',()=>res.destroy());req.pipe(upstream);
     });
     // The frontend forwards HTTP only; real WS is tunnelled directly to the core.
-    const { createHeadlessBackendProxy }=await import('../../scripts/web-deployment/headless-backend.mjs');
+    const { createHeadlessBackendProxy }=await import('../../apps/headless-server/src/web-deployment/headless-backend.mjs');
     const proxy=createHeadlessBackendProxy(`http://127.0.0.1:${address.port}`);target.on('upgrade',(req,socket,head)=>proxy.upgrade(req,socket,head,()=>{},new Set()));
     target.listen(0,'127.0.0.1');await once(target,'listening');cleanup.push(()=>new Promise<void>(r=>{target.close(()=>r());target.closeAllConnections();}));
     const route={...scope,name:id==='join'?(options.entryName??'Server'):'Lighthouse',credential:randomBytes(32).toString('base64url'),signer:new AssertionSigner(scope,privateKey),identityProvider:provider};routes.push(route);targets.push((target.address() as any).port);

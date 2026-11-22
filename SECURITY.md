@@ -16,7 +16,7 @@ should be upgraded or assessed against the current code before reporting.
   audits select changed npm installation roots; main pushes, weekly and manual
   runs audit all three roots. Managed Web regression/Playwright runs when update
   or deployment inputs change. The selection policy and stable aggregate checks
-  are documented in [Build Matrix](docs/build-matrix.md#pull-request-ci-selection).
+  are documented in [Build Matrix](docs/develop/build-matrix.md#pull-request-ci-selection).
 - Dependabot covers the root workspace, isolated DSH runtime, `apps/bridges/hermes` and
   GitHub Actions. Credentials belong to a deployment user's private configuration.
 - The CodeQL workflow analyzes JavaScript/TypeScript when the repository is public.

@@ -49,7 +49,11 @@ export function queuedSubmissionPresentation(
   avatars: IdentityAvatarContribution | null = null,
   intl?: IntlShape,
 ): ComposerQueuedSubmissionPresentation {
-  const statusMessage = submission.pausedReason === "execution-recovering"
+  const deliveryState = !submission.local ? "server-queue" : submission.state === "submitting" ? "local-sending"
+    : submission.state === "unknown" ? "local-unconfirmed" : submission.state === "failed" ? "local-failed" : "local-waiting";
+  const statusMessage = deliveryState === "local-sending"
+    ? { id: "chat.outbox.sending", defaultMessage: "Sending…" }
+    : submission.pausedReason === "execution-recovering"
     ? { id: "chat.queue.executionRecovering", defaultMessage: "Waiting for execution to recover" }
     : submission.pausedReason === "execution-fault-unconfirmed" || submission.pausedReason === "execution-interrupted"
       ? { id: "chat.queue.executionInterrupted", defaultMessage: "Execution interrupted · outcome unknown" }
@@ -58,16 +62,17 @@ export function queuedSubmissionPresentation(
     : submission.pausedReason === "session-tools-unavailable"
       ? { id: "chat.queue.pausedAfterFailure", defaultMessage: "Message not sent. Resume to try again." }
       : submission.pausedReason === "outbox-waiting"
-    ? { id: "chat.outbox.waiting", defaultMessage: "Saved locally · sends automatically after reconnect" }
+    ? { id: "chat.outbox.waiting", defaultMessage: "Waiting for connection · sends automatically" }
     : submission.pausedReason === "outbox-unconfirmed"
       ? { id: "chat.outbox.unconfirmed", defaultMessage: "Delivery unconfirmed · check the conversation before sending again" }
       : submission.pausedReason === "outbox-failed"
-        ? { id: "chat.outbox.failed", defaultMessage: "Message not sent · remove it and retry after reconnect" }
+        ? { id: "chat.outbox.failed", defaultMessage: "Not sent" }
         : submission.pausedReason === "user-stopped"
           ? { id: "chat.queue.pausedAfterStop", defaultMessage: "Paused after stopping. Resume when ready." }
           : submission.pausedReason === "delivery-failed"
             ? { id: "chat.queue.pausedAfterFailure", defaultMessage: "Message not sent. Resume to try again." } : null;
   return {
+    deliveryState,
     sender: queueSenderPresentation(submission.sender, avatars),
     id: submission.serverSubmissionId ?? submission.commandId,
     renderKey: submission.clientMessageId,
@@ -77,10 +82,10 @@ export function queuedSubmissionPresentation(
     actionable: submission.serverSubmissionId !== null && submission.actions?.edit !== false,
     deletable: submission.serverSubmissionId !== null && submission.actions?.delete !== false,
     steerable: submission.actions?.start === false || ["execution-recovering", "execution-fault-unconfirmed", "execution-interrupted"].includes(submission.pausedReason ?? "") ? false : submission.steerable,
-    resumable: !["execution-recovering", "execution-fault-unconfirmed", "execution-interrupted"].includes(submission.pausedReason ?? ""),
+    resumable: !submission.local && !["execution-recovering", "execution-fault-unconfirmed", "execution-interrupted", "session-tools-recovering"].includes(submission.pausedReason ?? ""),
     dismissible: (submission.local === true && submission.state !== "submitting" && submission.state !== "unknown") || (submission.state === "failed" && submission.serverSubmissionId === null),
     reorderable: !submission.local && reorderable && submission.actions?.reorder !== false,
-    editableContent: restoreQueuedInput(submission.input),
+    editableContent: submission.localIntent ?? restoreQueuedInput(submission.input),
     pausedReason: statusMessage ? intl?.formatMessage(statusMessage) ?? statusMessage.defaultMessage : submission.pausedReason,
     error: submission.error?.message ?? null,
   };

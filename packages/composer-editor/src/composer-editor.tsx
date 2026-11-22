@@ -1,6 +1,7 @@
 import { ProgressIndicator } from "@opencraft/design-system-web/progress";
 import { DisclosureButton, IconButton } from "@opencraft/design-system-web/button";
 import { TouchContactScope } from "@opencraft/design-system-web/touch-contact";
+import { useOverlayPresentationActive } from "@opencraft/design-system-web/presentation-root";
 import { parseConversationRef, encodeConversationRef } from "@opencraft/appserver-protocol/collaboration";
 import { useConversationReferences } from "./conversation-references";
 import { ComposerModelPicker } from "./composer-model-picker";
@@ -68,6 +69,7 @@ import {
 
 import {
   createClientId,
+  isComposerDocumentEmpty,
   encodeComposerTarget,
   composerTrailingControls,
   invertComposerFollowUpAction,
@@ -90,6 +92,7 @@ import {
 } from "./prosemirror-codec";
 import type { ComposerQueueSender, ComposerQueueImageLoader } from "./queue-tray";
 import { canSteerQueueItem } from "./queue-policy";
+const LocalQueuedMessages = lazy(() => import("./local-queued-messages").then(module => ({ default: module.LocalQueuedMessages })));
 const ComposerQueueTray = lazy(() => import("./queue-tray").then(module => ({ default: module.ComposerQueueTray })));
 import { useMeasuredComposerFooterLayout } from "./responsive-footer";
 
@@ -730,6 +733,7 @@ export interface OpenCraftComposerHandle {
 }
 
 export interface ComposerQueuedSubmissionPresentation {
+  readonly deliveryState?: "server-queue" | "local-waiting" | "local-sending" | "local-unconfirmed" | "local-failed";
   readonly sender?: ComposerQueueSender | null;
   /** Stable message identity across local admission and the server queue ID. */
   readonly renderKey?: string;
@@ -764,10 +768,8 @@ export interface ComposerQueuedSubmissionContent {
  * must not hide that content or show a blank material slab on a cold connection. */
 function QueuedSubmissionLoadingPreview({ items }: { readonly items: readonly ComposerQueuedSubmissionPresentation[] }) {
   const intl = useIntl();
-  const pausedReason = items.find(item => !item.unconfirmedTargetTurnId && item.pausedReason)?.pausedReason ?? null;
   return <div className="opencraft-composer-queue-tray" data-queue-loading-preview="true" data-queue-size={items.length}
     aria-busy="true" aria-label={intl.formatMessage({ id: "chat.queue.followUps", defaultMessage: "Queued follow-ups" })}>
-    {pausedReason !== null ? <div className="opencraft-composer-queue-tray__heading"><CircleAlert size={13} aria-hidden="true" /><span>{pausedReason}</span></div> : null}
     <div className="opencraft-composer-queue-tray__items">{items.map(item => {
       const text = composerDocumentToPlainText(item.editableContent.document).trim() || item.preview.trim();
       const names = item.editableContent.attachments.map(attachment => attachment.name);
@@ -844,6 +846,8 @@ export interface OpenCraftComposerProps {
   availableFollowUpActions?: readonly ComposerFollowUpAction[];
   /** Thread-owned queue projection. The Composer only renders this state. */
   queuedSubmissions?: readonly ComposerQueuedSubmissionPresentation[];
+  onRetryLocalQueuedSubmission?: (id: string) => Promise<void>;
+  onWithdrawQueuedSubmission?: (id: string) => Promise<unknown>;
   /** Resolves queued file-backed photos through the active Host. */
   loadQueuedImage?: ComposerQueueImageLoader;
   /** Local custody can fail before acceptance; keep the draft until it settles. */
@@ -919,6 +923,8 @@ export const OpenCraftComposer = forwardRef<
     defaultFollowUpAction: preferredFollowUpAction = "queue",
     availableFollowUpActions,
     queuedSubmissions = [],
+    onRetryLocalQueuedSubmission,
+    onWithdrawQueuedSubmission,
     loadQueuedImage,
     awaitSubmission = false,
     supportsQueuedSteer = false,
@@ -1059,6 +1065,7 @@ export const OpenCraftComposer = forwardRef<
   const [editingController, setEditingController] = useState<ComposerController | null>(null);
   const editingActive = editingController === controller;
   const auxiliaryMenuOpen = openPicker !== null || addMenuOpen;
+  const overlayPresentationActive = useOverlayPresentationActive();
   useEffect(() => {
     if (openPicker !== "intelligence") setAgentCycleRequest(null);
   }, [openPicker]);
@@ -1093,6 +1100,7 @@ export const OpenCraftComposer = forwardRef<
     return () => window.removeEventListener("keydown", handleAgentCycle, true);
   }, [resolveAgentCycleShortcut, openPicker, addMenuOpen, disabled, modelDisplayOnly, modelSelectionPolicy, selectionCatalog]);
   useLayoutEffect(() => {
+    if (!overlayPresentationActive) { menuFocusPending.current = false; return; }
     if (auxiliaryMenuOpen) { menuFocusPending.current = true; return; }
     if (!editingActive) return;
     const root = stackRef.current;
@@ -1122,7 +1130,7 @@ export const OpenCraftComposer = forwardRef<
       doc.removeEventListener("focusin", settle);
       doc.removeEventListener("focusout", settle);
     };
-  }, [controller, editingActive, auxiliaryMenuOpen]);
+  }, [controller, editingActive, auxiliaryMenuOpen, overlayPresentationActive]);
   const footerLayout = useMeasuredComposerFooterLayout();
   const inputInteraction = useSyncExternalStore(controller.subscribeInputInteraction, controller.getInputInteractionSnapshot, controller.getInputInteractionSnapshot);
   const voiceActive = inputInteraction !== null;
@@ -1431,6 +1439,18 @@ export const OpenCraftComposer = forwardRef<
     },
     [controller],
   );
+
+  const withdrawLocalMessage = useCallback(async (id: string) => {
+    const item = queuedSubmissions.find(row => row.id === id);
+    if (!item || !onWithdrawQueuedSubmission || !["local-waiting", "local-failed"].includes(item.deliveryState ?? "")) return;
+    const active = await controller.restoreQueuedContent(item.editableContent, () => onWithdrawQueuedSubmission(id));
+    if (active && editorControllerRef.current === controller) controller.focus();
+  }, [controller, queuedSubmissions, onWithdrawQueuedSubmission]);
+  const localQueuedMessages = queuedSubmissions.filter(item => item.deliveryState?.startsWith("local-"));
+  const serverQueuedMessages = queuedSubmissions.filter(item => !item.deliveryState?.startsWith("local-"));
+  const canWithdrawLocalMessage = isComposerDocumentEmpty(composerSnapshot.draft.document)
+    && composerSnapshot.draft.attachments.length === 0 && composerSnapshot.draft.context.length === 0
+    && composerSnapshot.draft.lifecycle.phase !== "submitting" && inputInteraction === null;
 
   const finishQueueEdit = useCallback(() => {
     queueEditOriginRef.current = null;
@@ -2420,17 +2440,22 @@ export const OpenCraftComposer = forwardRef<
       data-composer-has-header={chromeHeader != null ? "true" : "false"}
       data-composer-phase={composerSnapshot.draft.lifecycle.phase}
       data-composer-has-top-tray={
-        queuedSubmissions.length > 0 ? "true" : undefined
+        serverQueuedMessages.length > 0 ? "true" : undefined
       }
       aria-busy={composerSnapshot.draft.lifecycle.phase === "submitting"}
     >
       {floatingContent != null ? <div className="opencraft-composer-floating-content">{floatingContent}</div> : null}
+      {localQueuedMessages.length > 0 ? <Suspense fallback={<div className="opencraft-local-messages">{localQueuedMessages.map(item => <div className="opencraft-local-message" key={item.renderKey ?? item.id}><div className="opencraft-local-message__body">{item.preview}</div><div className="opencraft-local-message__status">{item.pausedReason}</div></div>)}</div>}>
+        <LocalQueuedMessages items={localQueuedMessages} canWithdraw={canWithdrawLocalMessage}
+          onWithdraw={onWithdrawQueuedSubmission ? withdrawLocalMessage : undefined} onCancel={onDeleteQueuedSubmission}
+          onRetry={onRetryLocalQueuedSubmission} portalContainer={portalContainer} />
+      </Suspense> : null}
       <ComposerAttachedRail>
-        {queuedSubmissions.length > 0 ? <Suspense fallback={<QueuedSubmissionLoadingPreview items={queuedSubmissions} />}>
+        {serverQueuedMessages.length > 0 ? <Suspense fallback={<QueuedSubmissionLoadingPreview items={serverQueuedMessages} />}>
         <ComposerQueueTray
           loadImage={loadQueuedImage}
           portalContainer={portalContainer}
-          items={queuedSubmissions.map((item) => ({
+          items={serverQueuedMessages.map((item) => ({
             ...item,
             imageSources: item.editableContent.attachments.filter(attachment => attachment.mimeType.startsWith("image/") && attachment.uri !== null).map(attachment => attachment.uri!),
             preview: item.editableContent.attachments.some(attachment => attachment.mimeType.startsWith("image/"))

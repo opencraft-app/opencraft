@@ -21,7 +21,7 @@ const pairs = [
 ];
 const loader = new URL("../../node_modules/tsx/dist/loader.mjs", import.meta.url).href;
 const moduleUrl = new URL("../../apps/opencraft-daemon/src/owned-storage-move.ts", import.meta.url).href;
-const cliPath = fileURLToPath(new URL("../../scripts/move-owned-host-storage.ts", import.meta.url));
+const cliPath = fileURLToPath(new URL("../../scripts/admin/move-owned-host-storage.ts", import.meta.url));
 
 function fixture(t: test.TestContext, populate = true) {
   const directory = mkdtempSync(join(tmpdir(), "opencraft-storage-move-"));

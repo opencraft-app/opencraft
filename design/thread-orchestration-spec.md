@@ -1,6 +1,6 @@
 # OpenCraft 跨会话编排、3+1 驱动与可重建读取缓存实施规范 (Spec)
 
-> 状态：Stage 0、Codex Stage 1 与 Stage 3 独立宿主驱动已接入；Stage 2 UI 已实现。实际可用性仍由独立宿主的能力握手与部署验收决定。已实现接口以[协作契约](../docs/actor-collaboration-api.md#thread-orchestration-control-ledger)和[Core 契约](../docs/codex-core.md)为准（对应架构文档：[thread-orchestration-architecture.md](thread-orchestration-architecture.md)）
+> 状态：Stage 0、Codex Stage 1 与 Stage 3 独立宿主驱动已接入；Stage 2 UI 已实现。实际可用性仍由独立宿主的能力握手与部署验收决定。已实现接口以[协作契约](../docs/architecture/identity/actor-collaboration-api.md#thread-orchestration-control-ledger)和[Core 契约](../docs/architecture/execution/codex-core.md)为准（对应架构文档：[thread-orchestration-architecture.md](thread-orchestration-architecture.md)）
 > 目标：在遵循“执行侧平滑升级（引擎进程由长驻宿主持有）”、“原生日志为唯一正文真源”、“多人 `identity-core` 有界委托与 Token Spec 系统来源归属”的前提下，提供可直接编码与验收的接口契约、SQLite 表结构、缓存重建规则及分阶段实施计划。
 
 ---
@@ -117,7 +117,7 @@ export interface ServerToolInvocationEnvelope {
   readonly turnId: string;
   readonly callId: string;
   readonly delegationId: string;
-  readonly toolName: "thread_spawn" | "thread_tell" | "thread_inspect" | "thread_wait";
+  readonly toolName: "thread_spawn" | "thread_set_title" | "thread_tell" | "thread_inspect" | "thread_wait";
   readonly arguments: Record<string, unknown>;
 }
 ```
@@ -165,11 +165,12 @@ Thread、Turn 与 native call ID；权限仍从持久输入委托派生，Host �
 - **幂等承诺**：网关 Broker 在执行任何副作用前，先以 `toolCallKey` 写入 SQLite。若网关在执行后、返回响应前重启，Engine Host 重连重放同一 `toolCallKey` 时，新网关直接返回已落盘的 `result_json`，确保子会话不重复创建、消息不重复投递、工具不因网关重启报错。
 - **权限承诺**：每次调用强制校验 `delegationId` 对应的自然人 `issuerActorId` 是否有效、未撤销、未超配额（默认每委托最多 8 次跨会话写操作），并向 `access-control/collaboration` 核验目标会话权限。
 
-### 3.1 四个内置工具契约
+### 3.1 五个内置工具契约
 1. **`thread_spawn`**：
-   - 输入：`{ title?, prompt, parentSelf?: true, bindLifecycleToSelf?: true, visibility?: "visible"|"hidden", driver?, model?, reasoningEffort?, cwd?, idempotencyKey? }`
+   - 输入：`{ title, prompt, parentSelf?: true, bindLifecycleToSelf?: true, visibility?: "visible"|"hidden", driver?, model?, reasoningEffort?, cwd?, idempotencyKey? }`
+   - `title` 必填、去首尾空白后非空、单行、最多256个UTF-16码元；Schema 声明约束，Broker 校验新请求。升级前已受理的请求仍可按原参数恢复。标题保存未确认时不得将创建报告为成功或派发首条输入。若 Host 明确拒绝标题保存，Broker 记录失败并确认 Host 回执，已分配的子会话保持隐藏。
    - 默认 `visibility: "hidden"`，作为 subagent 仅从父对话进入；只有用户明确要求独立、长期会话才传 `visible`。已有关系不迁移，历史表默认值保留兼容，Broker 显式写入新默认。
-   - 权限：新建子会话的 `ownerActorId` 继承 `delegation.issuerActorId`；消耗配额 1 次；首轮输入标记 `usageSourceKind: "system"`。
+   - 权限：新建子会话的 `ownerActorId` 继承 `delegation.issuerActorId`；可信创建归属从父会话已持久化的创建者继承；消耗配额 1 次；首轮输入标记 `usageSourceKind: "system"`。
    - 返回：`{ operationId, threadId, status: "starting", durability: "immediate" | "pending_first_turn", delivery: "sent" }`。
 2. **`thread_tell`**：
    - 输入：`{ threadId, message, mode?: "queue"|"steer", expectedTurnId?, replyExpectation?: "required"|"none", idempotencyKey? }`
@@ -182,11 +183,17 @@ Thread、Turn 与 native call ID；权限仍从持久输入委托派生，Host �
    - 输入：`{ threadIds: string[], waitFor?: "all_settled"|"any_settled", timeoutMs?: 0..5000 }`
    - 行为：在 SQLite 登记持久 `waitTicket` 并立即释放当前会话串行锁；最多等待 `timeoutMs`（默认 3000ms）。若超时仍未完成（或子会话正处于 `@opencraft/host-recovery` 自动续跑中），返回 `{ settled: false, waitTicketId, threads }`，由后续 `parent_system_notice` 异步唤醒父会话。
 
+5. **`thread_set_title`**：
+   - 输入：`{ title, idempotencyKey? }`，仅改当前有有效委托的来源会话，不接受目标Thread参数；沿已有 `thread/name/set` 保存。
+   - 工具指令要求主会话和子会话在新会话开始、实质工作或最终回复前调用；任务改变时更新。模型遵循这条指令与服务器强制spawn标题必填分开记录，不能声称平台已拦截所有原生工具或无标题的原生Turn结束。
+   - 返回：`{threadId,status:"updated"|"unconfirmed"}`；仅updated证明本次保存确认。
+   - Worker在原操作账本上先持久声明写入意图。网关重启或结果丢失保持unconfirmed，同键不重放旧写入覆盖用户/Agent后来设置的标题；已完成请求重放原回执。无新增表或迁移，无新增网络主线程SQL。
+
 ---
 
 ## 4. 控制账本与可重建读取缓存规格
 
-所有文件均位于 `docs/architecture/product-identity.md` 与 `docs/sqlite-lifecycle.md` 解析出的受管 Host `dataDirectory` 下（严禁使用 `~/.opencraft`）。
+所有文件均位于 `docs/architecture/identity/product-identity.md` 与 `docs/architecture/server/sqlite-lifecycle.md` 解析出的受管 Host `dataDirectory` 下（严禁使用 `~/.opencraft`）。
 
 ### 4.1 控制账本增量表（归属 `actor-collaboration.sqlite` v3 迁移 / `opencraft-threads.sqlite`）
 
@@ -261,7 +268,7 @@ CREATE TABLE IF NOT EXISTS opencraft_wait_tickets (
 
 当前缓存实现位于 `packages/native-history-node/`。Codex 复用 Token 统计的 rollout 字节增量读取器，交给原生只读分页器投影 Turn；Pi 只读 SQLite/WAL 快照，DSH 通过原生 persistence 的 list/locate 定位全部会话代日志，再以规范只读投影对共享缓存做稳定前缀差分。缓存命中只核原生水位，不创建 Pi Harness 或 DSH 执行 owner。追加与未完成尾轮更新保持分页 epoch；来源替换、历史前缀改写或投影版本变化重建。完整 Item 响应沿用当前 wire contract，磁盘 Blob 在请求该页时还原；单独的预览与 Blob 拉取协议留待后续阶段。
 
-按照 `docs/sqlite-lifecycle.md` 第 1 节“可重建的副本/索引”管理，独立于权威控制库，随时可整库/整目录删除重建：
+按照 `docs/architecture/server/sqlite-lifecycle.md` 第 1 节“可重建的副本/索引”管理，独立于权威控制库，随时可整库/整目录删除重建：
 
 ```sql
 CREATE TABLE IF NOT EXISTS opencraft_cache_meta (

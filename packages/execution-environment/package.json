@@ -11,7 +11,10 @@
     "./personal-git": "./src/personal-git.ts",
     "./personal-git-protocol": "./src/personal-git-protocol.ts",
     "./employee-git-vault-store": "./src/employee-git-vault-store.ts",
-    "./git-identity-ipc": "./src/git-identity-ipc.ts"
+    "./git-identity-ipc": "./src/git-identity-ipc.ts",
+    "./git-execution": "./src/git-execution.ts",
+    "./execution-snapshot": "./src/execution-snapshot.ts",
+    "./git-keys": "./src/git-keys.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

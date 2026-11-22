@@ -1,6 +1,6 @@
 # ChatUI: Architecture and acceptance
 
-[Architecture index](../../chat-ui-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](chat-ui-architecture.md) · [Documentation index](../../README.md)
 
 ## Target
 
@@ -40,7 +40,7 @@ permissions or own pending-request removal.
 
 ## Non-negotiable boundaries
 
-The related contracts are grouped in the [architecture index](../../chat-ui-architecture.md).
+The related contracts are grouped in the [architecture index](chat-ui-architecture.md).
 
 ## Package ownership
 
@@ -184,7 +184,7 @@ operation Promise long enough to expose pending and failure state.
 
 ## Current migration ledger
 
-The related contracts are grouped in the [architecture index](../../chat-ui-architecture.md).
+The related contracts are grouped in the [architecture index](chat-ui-architecture.md).
 
 ### Established
 

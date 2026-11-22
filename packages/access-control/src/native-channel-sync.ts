@@ -28,8 +28,27 @@ export function channelSyncCommand(service: Collaboration, db: DatabaseSync, com
     if(row)changed(String(row.channel_id));
   };
   const {method,params:p}=command;
+  const connection=()=>{
+    const id=p.connectionId??'legacy';
+    if(typeof id!=='string'||!/^[a-z0-9][a-z0-9._:-]{0,127}$/u.test(id))throw Error('invalid_channel_connection');
+    return id;
+  };
+  const currentConnection=(legacyBootstrap=false)=>{
+    const id=connection();text(p.incarnation);
+    // Pre-scope trusted transports could attach their first source directly.
+    // Bootstrap only an absent legacy owner; never replace a live/retired owner,
+    // and never infer an explicit connection from an unnegotiated old caller.
+    if(legacyBootstrap&&p.connectionId===undefined&&id==='legacy'&&!db.prepare('SELECT 1 FROM actor_channel_connections WHERE id=?').get(id))
+      db.prepare('INSERT INTO actor_channel_connections(id,incarnation,active) VALUES(?,?,1)').run(id,p.incarnation);
+    if(!db.prepare('SELECT 1 FROM actor_channel_connections WHERE id=? AND incarnation=? AND active=1').get(id,p.incarnation))throw Error('channel_connection_retired');
+    return id;
+  };
+  // Sources created by older trusted adapters have no owner row and stay in the
+  // legacy singleton scope. Explicit connections never implicitly adopt them.
+  const ownedSources=`SELECT s.source FROM actor_channel_sources s LEFT JOIN actor_channel_source_owners own ON own.source=s.source WHERE COALESCE(own.connection_id,'legacy')=?`;
+  const bindOwner=(source:string,id:string)=>db.prepare('INSERT INTO actor_channel_source_owners(source,connection_id) VALUES(?,?) ON CONFLICT(source) DO NOTHING').run(source,id);
   const source=()=>{
-    const row=db.prepare('SELECT * FROM actor_channel_sources WHERE source=? AND active=1 AND incarnation=?').get(text(p.source),text(p.incarnation));
+    const row=db.prepare('SELECT * FROM actor_channel_sources WHERE source=? AND active=1 AND incarnation=? AND source IN ('+ownedSources+')').get(text(p.source),text(p.incarnation),currentConnection());
     if(!row||!service.channels.isActive(String(row.channel_id)))throw Error('channel_source_retired');return row;
   };
   const authorized=(row:Record<string,unknown>)=>{
@@ -52,52 +71,60 @@ export function channelSyncCommand(service: Collaboration, db: DatabaseSync, com
     const extension=communicationExtension()?.synchronize?.(service,db,command);
     if(extension){changes.push(...extension.changes);return extension.result;}
     switch(method){
+      case 'connectionCapabilities':return {version:1};
       case 'reserveHuman': return service.actors.reserveHuman(p.reservation);
       case 'retireSource': {
         const s=db.prepare('SELECT * FROM actor_channel_sources WHERE source=?').get(text(p.source));
         if(!s)return null;
-        if(p.incarnation!==undefined && s.incarnation!==p.incarnation)throw Error('channel_source_retired');
+        if(!db.prepare('SELECT 1 FROM actor_channel_sources WHERE source=? AND source IN ('+ownedSources+')').get(p.source,connection()) || p.incarnation!==undefined && s.incarnation!==p.incarnation)throw Error('channel_source_retired');
         db.prepare("UPDATE actor_channel_outbox SET state='rejected' WHERE source=? AND state IN ('queued','sending')").run(p.source);
         if(p.messageId!==undefined)db.prepare("UPDATE actor_channel_outbox SET state='delivered' WHERE message_id=? AND source=? AND source_epoch=?").run(text(p.messageId),p.source,s.epoch);
         if(service.channels.isActive(String(s.channel_id)))db.prepare('DELETE FROM actor_channel_sources WHERE source=?').run(p.source);
         else db.prepare('UPDATE actor_channel_sources SET active=0 WHERE source=?').run(p.source);changed(String(s.channel_id));return null;
       }
       case 'addSource': {
-        const binding=p.binding;text(binding?.source);text(binding?.channelId);text(p.incarnation);
+        const id=currentConnection(true),binding=p.binding;text(binding?.source);text(binding?.channelId);
         if(!db.prepare('SELECT 1 FROM actor_channels WHERE id=? AND peer_id IS NULL').get(binding.channelId))throw Error('invalid_channel_binding');
         if(!service.channels.isActive(binding.channelId))throw Error('channel_dissolved');
-        const old=db.prepare('SELECT channel_id FROM actor_channel_sources WHERE source=?').get(binding.source);
+        const old=db.prepare("SELECT s.channel_id,COALESCE(own.connection_id,'legacy') AS connection_id FROM actor_channel_sources s LEFT JOIN actor_channel_source_owners own ON own.source=s.source WHERE s.source=?").get(binding.source);
+        if(old&&old.connection_id!==id)throw Error('channel_connection_conflict');
         if(old&&old.channel_id!==binding.channelId)throw Error('channel_binding_conflict');
         db.prepare(`INSERT INTO actor_channel_sources VALUES(?,?,?,?,1,?) ON CONFLICT(source) DO UPDATE SET active=1,incarnation=excluded.incarnation,images=excluded.images`).run(binding.source,binding.channelId,randomUUID(),p.incarnation,p.images===true?1:0);
-        return null;
+        bindOwner(binding.source,id);return null;
       }
       case 'configure': {
-        text(p.incarnation);
+        const id=connection();text(p.incarnation);
         if(!Array.isArray(p.bindings)||p.bindings.length>256)throw Error('invalid_input');
         const sources=new Set(),channels=new Set();
         for(const b of p.bindings){
           text(b.source);text(b.channelId);
           if(sources.has(b.source)||channels.has(b.channelId)||!db.prepare('SELECT 1 FROM actor_channels WHERE id=? AND peer_id IS NULL').get(b.channelId))throw Error('invalid_channel_binding');
           sources.add(b.source);channels.add(b.channelId);
-          const old=db.prepare('SELECT channel_id FROM actor_channel_sources WHERE source=?').get(b.source);
+          const old=db.prepare("SELECT s.channel_id,COALESCE(own.connection_id,'legacy') AS connection_id FROM actor_channel_sources s LEFT JOIN actor_channel_source_owners own ON own.source=s.source WHERE s.source=?").get(b.source);
+          if(old&&old.connection_id!==id)throw Error('channel_connection_conflict');
           // Retargeting an established source requires explicit administration, not config replay.
           if(old&&old.channel_id!==b.channelId)throw Error('channel_binding_conflict');
         }
-        const pending=db.prepare("SELECT message_id FROM actor_channel_outbox WHERE state IN ('sending','queued')").all();
-        db.prepare("UPDATE actor_channel_outbox SET state='unknown' WHERE state='sending'").run();
-        db.prepare("UPDATE actor_channel_images SET attribution='unknown' WHERE attribution='sending'").run();
-        db.prepare('UPDATE actor_channel_sources SET active=0').run();
-        for(const b of p.bindings)if(service.channels.isActive(b.channelId))db.prepare(`INSERT INTO actor_channel_sources VALUES(?,?,?,?,1,?)
-          ON CONFLICT(source) DO UPDATE SET active=1,incarnation=excluded.incarnation,images=excluded.images`).run(b.source,b.channelId,randomUUID(),p.incarnation,p.images===true?1:0);
-        db.prepare("UPDATE actor_channel_outbox SET state='rejected' WHERE state='queued' AND source NOT IN (SELECT source FROM actor_channel_sources WHERE active=1)").run();
-        for(const row of pending)touch(String(row.message_id));
-        return null;
+        const pending=db.prepare("SELECT message_id FROM actor_channel_outbox WHERE state IN ('sending','queued') AND source IN ("+ownedSources+")").all(id);
+        db.prepare("UPDATE actor_channel_outbox SET state='unknown' WHERE state='sending' AND source IN ("+ownedSources+")").run(id);
+        db.prepare("UPDATE actor_channel_images SET attribution='unknown' WHERE attribution='sending' AND (source IN ("+ownedSources+") OR message_id IN (SELECT message_id FROM actor_channel_outbox WHERE source IN ("+ownedSources+")))").run(id,id);
+        db.prepare('UPDATE actor_channel_sources SET active=0 WHERE source IN ('+ownedSources+')').run(id);
+        db.prepare('INSERT INTO actor_channel_connections(id,incarnation,active) VALUES(?,?,1) ON CONFLICT(id) DO UPDATE SET incarnation=excluded.incarnation,active=1').run(id,p.incarnation);
+        for(const b of p.bindings)if(service.channels.isActive(b.channelId)){
+          db.prepare(`INSERT INTO actor_channel_sources VALUES(?,?,?,?,1,?) ON CONFLICT(source) DO UPDATE SET active=1,incarnation=excluded.incarnation,images=excluded.images`).run(b.source,b.channelId,randomUUID(),p.incarnation,p.images===true?1:0);
+          bindOwner(b.source,id);
+        }
+        db.prepare("UPDATE actor_channel_outbox SET state='rejected' WHERE state='queued' AND source IN (SELECT s.source FROM actor_channel_sources s WHERE s.active=0 AND s.source IN ("+ownedSources+"))").run(id);
+        for(const row of pending)touch(String(row.message_id));return null;
       }
-      case 'deactivate':
-        db.prepare('UPDATE actor_channel_sources SET active=0 WHERE incarnation=?').run(text(p.incarnation));return null;
+      case 'deactivate': {
+        const id=connection();
+        db.prepare('UPDATE actor_channel_connections SET active=0 WHERE id=? AND incarnation=?').run(id,text(p.incarnation));
+        db.prepare('UPDATE actor_channel_sources SET active=0 WHERE incarnation=? AND source IN ('+ownedSources+')').run(p.incarnation,id);return null;
+      }
       case 'externalHistory': {
         // Bounded, read-only migration projection for a trusted channel transport.
-        const s=db.prepare('SELECT 1 FROM actor_channel_sources WHERE source=? AND active=1').get(text(p.source));
+        const s=db.prepare('SELECT 1 FROM actor_channel_sources WHERE source=? AND active=1 AND source IN ('+ownedSources+')').get(text(p.source),connection());
         if(!s||!Number.isSafeInteger(p.after)||p.after<0)throw Error('invalid_input');
         text(p.query,256);
         return db.prepare('SELECT e.external_id AS externalId,m.id AS messageId,m.content,m.seq FROM actor_channel_external_messages e JOIN actor_messages m ON m.id=e.message_id WHERE e.source=? AND m.seq>? AND instr(m.content,?)>0 ORDER BY m.seq LIMIT 32').all(p.source,p.after,p.query);
@@ -105,7 +132,7 @@ export function channelSyncCommand(service: Collaboration, db: DatabaseSync, com
       case 'received': {
         // Trusted transport recovery only, not a client RPC. Reuse the accepted derived
         // text only when the immutable sender/time/media/extension identity still matches.
-        const s=db.prepare('SELECT channel_id FROM actor_channel_sources WHERE source=? AND active=1').get(text(p.source));
+        const s=db.prepare('SELECT channel_id FROM actor_channel_sources WHERE source=? AND active=1 AND source IN ('+ownedSources+')').get(text(p.source),connection());
         const a=p.arrival as ChannelArrival;
         if(!s||!service.channels.isActive(String(s.channel_id))||a.source!==p.source||!Number.isSafeInteger(a.at)||a.at<0)throw Error('invalid_input');
         text(a.id,256);text(a.author,256);
@@ -139,11 +166,11 @@ export function channelSyncCommand(service: Collaboration, db: DatabaseSync, com
         changed(String(s.channel_id));return {messageId};
       }
       case 'claim': {
-        text(p.incarnation);
+        const id=currentConnection();
         for(let i=0;i<32;i++){
           const row=db.prepare(`SELECT o.*,m.channel_id,m.author_id,m.content,m.author_display_name,s.incarnation,s.active,s.epoch,
             i.mime,i.bytes,a.name AS attachment_name,a.mime AS attachment_type,length(a.bytes) AS attachment_size FROM actor_channel_outbox o JOIN actor_messages m ON m.id=o.message_id JOIN actor_channel_sources s ON s.source=o.source
-            LEFT JOIN actor_channel_images i ON i.message_id=m.id LEFT JOIN actor_channel_attachments a ON a.message_id=m.id WHERE o.state='queued' AND s.incarnation=? ORDER BY m.seq LIMIT 1`).get(p.incarnation);
+            LEFT JOIN actor_channel_images i ON i.message_id=m.id LEFT JOIN actor_channel_attachments a ON a.message_id=m.id WHERE o.state='queued' AND s.incarnation=? AND s.source IN (${ownedSources}) ORDER BY m.seq LIMIT 1`).get(p.incarnation,id);
           if(!row)return null;
           if(!row.active||row.epoch!==row.source_epoch||!authorized(row)){
             db.prepare("UPDATE actor_channel_outbox SET state='rejected' WHERE message_id=?").run(row.message_id!);touch(String(row.message_id));continue;
@@ -181,7 +208,7 @@ export function channelSyncCommand(service: Collaboration, db: DatabaseSync, com
       }
       case 'pendingImage':
         return db.prepare(`SELECT i.message_id AS messageId,i.media_id AS mediaId,i.source FROM actor_channel_images i
-          JOIN actor_channel_sources s ON s.source=i.source WHERE i.state='pending' AND s.active=1 AND s.images=1 AND s.incarnation=? LIMIT 1`).get(text(p.incarnation))??null;
+          JOIN actor_channel_sources s ON s.source=i.source WHERE i.state='pending' AND s.active=1 AND s.images=1 AND s.incarnation=? AND s.source IN (${ownedSources}) LIMIT 1`).get(text(p.incarnation),currentConnection())??null;
       case 'imageReady': {
         source();
         const type=p.bytes&&channelImageType(p.bytes);

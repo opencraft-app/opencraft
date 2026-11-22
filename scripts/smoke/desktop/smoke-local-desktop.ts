@@ -14,7 +14,7 @@ import { LocalDesktopService } from "../../../apps/local-agent-host/src/desktop/
 import { createNativeObserver, localDesktopMachineIdentity } from "../../../apps/local-agent-host/src/desktop/native-observer.js";
 import { createNativeDesktopControl } from "../../../apps/local-agent-host/src/desktop/native-control.js";
 import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
-import { assertBrowserRuntimeDependencies } from "../../browser-smoke-preflight.mjs";
+import { assertBrowserRuntimeDependencies } from "../../check/browser-smoke-preflight.mjs";
 
 if (!process.env.OPENCRAFT_CODEX_EXECUTABLE || !process.env.OPENCRAFT_PLAYWRIGHT_MODULE) {
   throw new Error("Explicit Codex executable and Playwright module required; installed observer must already be running");

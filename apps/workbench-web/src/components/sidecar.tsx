@@ -9,24 +9,19 @@ type SidecarSize = number | MotionValue<number>;
 
 export function Sidecar({
   animatedWidth,
-  dividerProgress,
   children,
-  footer,
 }: {
   readonly animatedWidth: MotionValue<number>;
-  readonly dividerProgress?: MotionValue<number>;
   readonly children: ReactNode;
-  readonly footer?: ReactNode;
 }) {
   return (
     <motion.aside
       aria-label="Sidecar"
       className="app-shell-sidecar"
       data-sidecar="true"
-      style={{ width: animatedWidth, "--app-shell-titlebar-divider-progress": dividerProgress } as MotionStyle}
+      style={{ width: animatedWidth }}
     >
       <div className="app-shell-sidecar__panes">{children}</div>
-      {footer}
     </motion.aside>
   );
 }

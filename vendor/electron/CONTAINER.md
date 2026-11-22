@@ -10,7 +10,7 @@ Build the toolchain image from a clean, selected OpenCraft commit:
 
 ```sh
 docker buildx build --platform linux/amd64 --load \
-  -f docker/electron-builder.Dockerfile \
+  -f deploy/docker/electron-builder.Dockerfile \
   -t opencraft-electron-builder:local .
 docker image inspect opencraft-electron-builder:local --format '{{.Id}}'
 ```
@@ -156,17 +156,17 @@ markers, the exact fork definition and every file before installing application
 dependencies. There is no stock-runtime fallback:
 
 ```sh
-docker buildx build --load -f docker/Dockerfile \
+docker buildx build --load -f deploy/docker/Dockerfile \
   --build-context "owned-electron=/absolute/path/to/verified/browser" \
   --target runtime -t opencraft:local .
 ```
 
 For `docker compose build`, persist the same host directory as
-`OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION` in `docker/.env`; Compose supplies the
+`OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION` in `deploy/docker/.env`; Compose supplies the
 named context to all three service builds. Its default lookup directory is
 `.local/owned-electron/browser` at the repository root. Missing input fails;
 building a runtime never starts a second Electron compilation implicitly.
-See [Compose deployment](../../docker/README.md). Prebuilt image users do not
+See [Compose deployment](../../deploy/docker/README.md). Prebuilt image users do not
 need a distribution directory on their runtime host.
 
 `Electron fork native artifacts` now also probes a fresh Linux browser
@@ -178,12 +178,12 @@ action validates executable permissions, versions, fork identity and full file
 inventory before packaging. A run ID does not bypass provenance checks.
 
 For a component update to an existing OpenCraft Linux x64 image, use
-`docker/browser-runtime.Dockerfile`. Pin the selected base image ID, tag that
+`deploy/docker/browser-runtime.Dockerfile`. Pin the selected base image ID, tag that
 local image for the build, and supply the verified distribution as a named
 BuildKit context:
 
 ```sh
-docker buildx build --load -f docker/browser-runtime.Dockerfile \
+docker buildx build --load -f deploy/docker/browser-runtime.Dockerfile \
   --build-context "owned-electron=/absolute/path/to/verified/browser" \
   --build-arg BASE_IMAGE=opencraft:pinned-base \
   --build-arg OPENCRAFT_BASE_IMAGE_ID=sha256:FULL_BASE_IMAGE_ID \

@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./human-login-page": "./src/human-login-page.ts"
+    "./human-login-page": "./src/human-login-page.ts",
+    "./serve-workbench-static": "./src/serve-workbench-static.mjs"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p src/remote-browser/tsconfig.json"
+    "typecheck": "tsc --noEmit -p src/remote-browser/tsconfig.json && tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@opencraft/access-control": "0.1.0",
@@ -33,6 +34,7 @@
     "@opencraft/observability-query": "0.1.0",
     "@opencraft/opencraft-daemon": "0.1.0",
     "@opencraft/personal-assistant": "0.17.0",
+    "@opencraft/plugin-assets": "0.1.0",
     "@opencraft/plugin-im": "0.1.0",
     "@opencraft/plugin-local-account": "0.1.0",
     "@opencraft/plugin-pi-engine": "0.1.0",
@@ -49,9 +51,9 @@
     "@opencraft/web-push-node": "0.1.0",
     "@opencraft/workbench-runtime": "0.1.0",
     "acorn": "8.19.0",
-    "parse5": "^8.0.1",
+    "parse5": "^8.1.1",
     "proper-lockfile": "^4.1.2",
-    "ws": "^8.22.1"
+    "ws": "^8.23.0"
   },
   "devDependencies": {
     "tsx": "^4.23.15"

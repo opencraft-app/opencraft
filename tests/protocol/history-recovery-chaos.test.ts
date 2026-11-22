@@ -90,7 +90,7 @@ test("history CLI: artifact selects its suite, preserves seed zero and rejects a
  try {
   const trace=path.join(directory,"trace.json"),output=path.join(directory,"output");
   await writeFile(trace,JSON.stringify({suite:"history",seed:0,events:queuedDisposal}));
-  const command=["--import","tsx","scripts/recovery-chaos.ts","--replay",trace,"--output",output];
+  const command=["--import","tsx","scripts/diagnose/recovery-chaos.ts","--replay",trace,"--output",output];
   execFileSync(process.execPath,command,{cwd,stdio:"pipe",timeout:10_000});
   const result=JSON.parse(await readFile(path.join(output,"results.json"),"utf8"));
   assert.equal(result.suite,"history");assert.equal(result.seed,0);assert.equal(result.passed,true);

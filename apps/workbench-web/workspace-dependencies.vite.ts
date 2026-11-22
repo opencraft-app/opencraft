@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { Plugin } from "vite";
-import { isBareModuleSpecifier, isExternalWorkspaceSource } from "../../scripts/workspace-dependencies.mjs";
+import { isBareModuleSpecifier, isExternalWorkspaceSource } from "../../scripts/packaging/workspace-dependencies.mjs";
 
 /** Trusted product source can reuse this build's dependencies. Its own valid
  * dependency always wins; virtual, relative and package-import IDs keep their

@@ -5,6 +5,8 @@ export const IDENTITY_AVATAR_CHANNEL = "identityAvatar";
 export interface IdentityAvatarContribution {
   readonly id: string;
   resolve(kind: string, name: string): string | null;
+  /** User-invoked contact navigation supplied by the identity product. */
+  contactLink?(kind: string, name: string): { readonly href: string; readonly label: string } | null;
 }
 export const IdentityAvatarContext = createContext<IdentityAvatarContribution | null>(null);
 

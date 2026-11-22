@@ -9,7 +9,8 @@
     "./desktop": "./src/desktop.ts",
     "./client": "./src/client.tsx",
     "./client-scope": "./src/client-scope.ts",
-    "./connections": "./src/connections.ts"
+    "./connections": "./src/connections.ts",
+    "./assets-server": "./src/assets-server.ts"
   },
   "dependencies": {
     "@opencraft/design-system": "*",
@@ -21,7 +22,8 @@
     "@opencraft/client-product": "*",
     "@opencraft/workbench-runtime": "*",
     "react": "19.3.1",
-    "@opencraft/storage-node": "*"
+    "@opencraft/storage-node": "*",
+    "@opencraft/plugin-assets": "0.1.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

@@ -5,10 +5,10 @@ on:
     paths:
       - vendor/electron/**
       - apps/headless-server/src/remote-browser/focus.cjs
-      - scripts/electron-distribution.mjs
-      - scripts/remote-browser-artifact.mjs
+      - scripts/packaging/electron-distribution.mjs
+      - scripts/packaging/remote-browser-artifact.mjs
       - .github/actions/owned-electron/**
-      - docker/electron-builder.Dockerfile*
+      - deploy/docker/electron-builder.Dockerfile*
       - .github/workflows/electron-fork.yml
       - .github/workflows/electron-native-artifacts.yml
       - .gitattributes
@@ -17,10 +17,10 @@ on:
     paths:
       - vendor/electron/**
       - apps/headless-server/src/remote-browser/focus.cjs
-      - scripts/electron-distribution.mjs
-      - scripts/remote-browser-artifact.mjs
+      - scripts/packaging/electron-distribution.mjs
+      - scripts/packaging/remote-browser-artifact.mjs
       - .github/actions/owned-electron/**
-      - docker/electron-builder.Dockerfile*
+      - deploy/docker/electron-builder.Dockerfile*
       - .github/workflows/electron-fork.yml
       - .github/workflows/electron-native-artifacts.yml
       - .gitattributes

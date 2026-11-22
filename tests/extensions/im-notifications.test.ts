@@ -37,11 +37,11 @@ test('connection-owned notification methods join the existing personal port with
   service.adapters=new Map();
   port={targets:(actorId:string)=>linked&&actorId==='human-a'?[{channelId:'product.channel',senderId:'self',label:'My account',methodId:'product.notifications',methodLabel:'Product channel'}]:[],
     async send(actorId:string,target:any,content:string,id:string,assertCurrent:()=>void){assertCurrent();calls.push({actorId,target,content,id});}};
-  service.channelSync={transport:{notifications:port}};
+  service.channelSyncs=[{transport:{notifications:port}}];
   assert.equal(service.notificationTargets('human-b').length,0);
   assert.equal(service.notificationTargets('human-a')[0].methodLabel,'Product channel');
   assert.throws(()=>service.prepareDirectNotification('product.channel','other','human-a'));
   const send=service.prepareDirectNotification('product.channel','self','human-a');await send('Finished','once');assert.equal(calls.length,1);
   linked=false;await assert.rejects(send('Finished','revoked'));assert.equal(calls.length,1);
-  linked=true;service.channelSync.transport.notifications={...port};await assert.rejects(send('Finished','replaced'));assert.equal(calls.length,1);
+  linked=true;service.channelSyncs[0].transport.notifications={...port};await assert.rejects(send('Finished','replaced'));assert.equal(calls.length,1);
 });

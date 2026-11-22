@@ -121,7 +121,7 @@ to the original column and checks active capacity. Search uses bounded server
 pages and discards late queries. UI/CLI require the actual archive capability.
 Archive never executes or terminates a linked conversation and upgrades never
 rewrite old columns or migration history. Rollback uses the strict declared-v5
-reader and retains subsequent data. See docs/tasks-model.md.
+reader and retains subsequent data. See docs/architecture/extensions/tasks-model.md.
 
 The Simplified Chinese Sidebar conversation-list heading is “协同对话”, scoped to sidebar.conversations; list grouping, filters and other conversation terminology are unaffected.
 
@@ -132,7 +132,7 @@ Only a successful authority snapshot permits task counts and empty states.
 Cold capability/list reads show static geometry in the current Board/List mode;
 cold failure exposes retry in the same content region. Cached refreshes keep
 existing cards and references, including a successfully loaded empty list.
-See [Tasks initial loading](../../docs/workbench-design-language.md#tasks-initial-loading).
+See [Tasks initial loading](../../docs/architecture/workbench/workbench-design-language.md#tasks-initial-loading).
 
 
 ## Tasks first-round research disposition
@@ -143,7 +143,7 @@ filters and the existing editor draft. An unassessed default is distinct from
 missing context or a pending human decision. Assessment changes never create a
 conversation, claim a research result or start decision-wait timing. Capability
 absence hides unsupported controls; saved rationale and disposition survive
-legacy edits and view changes. See docs/tasks-model.md.
+legacy edits and view changes. See docs/architecture/extensions/tasks-model.md.
 
 
 ## Tasks morning overview

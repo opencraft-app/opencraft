@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import {openHeadlessAssetsStorage} from './headless-assets-storage.js';
+import {createHumanGitExecution} from './human-git-execution.js';
+import { openHumanAssets } from '@opencraft/plugin-local-account/assets-server';
 import {workspaceTurnOutputContext} from './workspace-turn-output-context.mjs';
 import { restoreWorkspaceQueuedContext } from '@opencraft/opencraft-daemon/workspace-queued-context';
 import { HostWorkspaceCatalogTransport } from './host-workspace-catalog-transport.ts';
@@ -39,7 +42,6 @@ import { createBrowserGrantResolver } from './remote-browser/execution-grant.ts'
 import { connectBrowserOwner } from './remote-browser-owner.mjs';
 
 import { createObservabilityIngress } from "./observability-ingress.mjs";
-import { existsSync } from "node:fs";
 
 import { access, chmod, mkdir, stat, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -106,7 +108,7 @@ import { THREAD_ORCHESTRATION_TOOLS } from '@opencraft/appserver-protocol/collab
 import { createRoutedConversationExecution, conversationAccessServer, callConversationHost, readConversationCurrentTurn } from './conversation-execution.mjs';
 import { openPushStore, TurnPushService, PushObservationTransport } from '@opencraft/web-push-node';
 import { NativeExecutionAuthority } from './native-execution-authority.ts';
-import { readImConfiguration, startImPlugins } from './im-plugins.mjs';
+import { readImConfiguration, startImPlugins, createChannelSyncDependencies } from './im-plugins.mjs';
 import { ImChannelsAppServer } from './im-channels-appserver.mjs';
 import { CHANNELS_HOST_ID } from '@opencraft/appserver-protocol/channels';
 import { HumanAccounts } from '@opencraft/access-control/human-accounts';
@@ -361,6 +363,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let instanceAccess;
   let modelPolicy;
   let membership;
+  let assetsService;
+  let humanGitExecution;
   let actorStore;
   const terminalServices = new Map();
   const fileSystem = options.fileSystemOwner ? createHostFileSystem(options.fileSystemOwner) : null;
@@ -438,7 +442,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       for (const dispose of [() => executionDatabase?.close(),
         () => modelPolicy?.close(), () => mcpApps?.close(), () => sshManagement?.close(), () => identity?.executionEnvironment?.close(), () => identity?.close?.(),
 
-        () => composition.close?.(), () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
+        () => humanGitExecution?.close(), () => assetsService?.close(), () => composition.close?.(), () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
         () => capabilityBindings?.close(), () => actorStore?.close(), () => membership?.close()]) {
         await settle([dispose]);
       }
@@ -513,6 +517,28 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     }
     const providers = [...(humanAuth ? [humanAuth] : []), ...externalProviders];
     if (membership) instanceAccess = new InstanceAccess(membership, providers, actorStore, options.accessMemberProviders ?? [], identity?.admissionPolicy);
+    // An identity product that owns configurations keeps its route and legacy partitions.
+    // Never start a second resource writer alongside that composition.
+    if (humanAuth && instanceAccess && !identity?.assistantEnvironmentConfigurationManaged) {
+      assetsService = await openHumanAssets({ directory: dataDirectory, auth: humanAuth, actors: actorStore, access: instanceAccess,openStorage:openHeadlessAssetsStorage });
+      if(!assetsService.gitAuthority)throw Error('Assets execution authority unavailable');
+      humanGitExecution=createHumanGitExecution({directory:dataDirectory,
+        runtimeDirectory:join(dataDirectory,'git-runtime'),workerFile:join(options.runtimeDirectory??join(root,'runtime'),'personal-git-worker.mjs'),
+        hosts:assetsService.gitHosts,authority:assetsService.gitAuthority,grant:assetsService.executionGitGrant,
+        authorize:scope=>{
+          const actorId=scope.account.slice('actor:'.length),actor=actorStore.get(actorId);
+          return !closing&&actor?.enabled===true&&actor.kind==='human'&&actor.generation===scope.actorGeneration&&instanceAccess.admitsActor(actorId);
+        },
+        inspect:async handoff=>{
+          const native=await resolveExecutionNative?.(handoff.scope.threadId);
+          if(closing||!executionRecovery||!native||native.incarnation!==handoff.native.incarnation)return false;
+          const state=await executionRecovery.inspect({threadId:handoff.scope.threadId,inputId:handoff.scope.inputId,
+            executionId:handoff.scope.executionId,generation:handoff.scope.leaseGeneration,turnId:handoff.native.turnId,
+            engineIncarnation:handoff.native.incarnation,principal:null,ownership:'unknown',admittedAtMs:0,endedAtMs:null});
+          return state==='active'&&!closing&&(await resolveExecutionNative(handoff.scope.threadId))?.incarnation===native.incarnation;
+        },
+      });
+    }
     const authenticateHuman = request => {
       if (instanceAccess) return instanceAccess.authenticate(request);
       const identities = providers.map(provider => provider.authenticate(request)).filter(Boolean);
@@ -618,7 +644,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     }), Date.now, orchestrationStorage);
     threadOrchestration.enableAssistantThreads(threadAccess);
     await threadOrchestration.initializeAssistantThreads();
-    threadOrchestration.childScope=(parent,child)=>serverSpaces.initialized?serverSpaces.inherit(parent,child):Promise.resolve();
+    threadOrchestration.childScope = async (parent, child) => {
+      if (serverSpaces.initialized) await serverSpaces.inherit(parent, child);
+      threadAccess.acceptCreated(await orchestrationStorage.inheritChildCreator(parent, child));
+    };
     threadOrchestration.legacySchedule=async threadId=>{const serverId=conversationExecution.serverForThread(threadId),hostId=conversationExecution.hostForServer(serverId);return (await callConversationHost(appHostServer,{hostId,threadId},'automation-schedule-inspect','opencraft/schedules/read',{threadId})).schedule;};
     projectAutomations=createProjectAutomations(orchestrationStorage,threadOrchestration,actorCollaboration,codexAgentBridge);
     actorCollaborationApi=new CollaborationHttpApi(actorCollaboration,actorAccess,projectAutomations);
@@ -672,7 +701,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       },
     }));
     capabilityBindings = new CapabilityBindings(serverStorage);
-    const capabilityKey=capabilitySigningKey(join(dataDirectory,"session-capabilities.key"));
+    const capabilityKey=await capabilitySigningKey(join(dataDirectory,"session-capabilities.key"));
     capabilityMcp = new SessionCapabilityMcp(capabilities, capabilityKey, capabilityBindings, {
       descriptorPath:join(dataDirectory,'session-capabilities.json'), retainEndpoint: true,
       cliDirectory:options.threadCliDirectory ?? join(dataDirectory,'thread-cli'),
@@ -709,7 +738,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       modelPolicyPath,
       nativePi: !engines.includes("pi"),
       sessionCapabilities: capabilities.scoped(`server:${machineIdentity.machineId}:dsh`),
-      dshExecutable: options.dshExecutable ?? join(root, "runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js"),
+      dshExecutable: options.dshExecutable ?? (process.env.OPENCRAFT_DSH_EXECUTABLE?.trim() || join(root, "runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js")),
       dshCapabilityPlugin: options.dshCapabilityPlugin ?? join(root, "runtime/dsh/opencraft-capability-plugin.mjs"),
       runtimeDirectory: options.runtimeDirectory ?? join(root, "runtime"),
       dataDirectory: join(dataDirectory, "agent"),
@@ -750,7 +779,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       const piModels = await createPiModelConfiguration(join(dataDirectory, "models"), join(dataDirectory, "pi"));
       const piAttachments=new LocalAttachmentStagingService(join(dataDirectory,"agent","attachments"),join(dataDirectory,"artifacts"));
       const piPrepareInput=(threadId,input)=>piAttachments.prepareInput(input,threadId,fileSystem?(artifact,owner,signal)=>fileSystem.prepareArtifact(artifact,owner,signal):undefined);
-      piEngine = new PiEngine({ executionCli: connectedExecutionCli, prepareAttachmentInput:piPrepareInput, modelPolicyPath, ...piModels, executionEnvironment: identity?.executionEnvironment, sessionCapabilities: capabilities.scoped(`server:${machineIdentity.machineId}:pi`), dataDirectory, directory: join(dataDirectory, "pi"), attachmentDirectory: join(dataDirectory, "agent", "attachments"), cwd: options.runtimeDirectory ?? join(root, "runtime") });
+      piEngine = new PiEngine({ executionCli: connectedExecutionCli, prepareAttachmentInput:piPrepareInput, modelPolicyPath, ...piModels, executionEnvironment: identity?.executionEnvironment,executionGit:humanGitExecution, sessionCapabilities: capabilities.scoped(`server:${machineIdentity.machineId}:pi`), dataDirectory, directory: join(dataDirectory, "pi"), attachmentDirectory: join(dataDirectory, "agent", "attachments"), cwd: options.runtimeDirectory ?? join(root, "runtime") });
       const closePi=piEngine.close.bind(piEngine);
       piEngine.close=async()=>{try {await closePi();} finally {await piAttachments.close();}};
       // The in-process standalone mode has the same trusted port. Shared-server
@@ -816,10 +845,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     mcpApps = new McpAppsService(join(dataDirectory, "mcp-apps.sqlite"));
     // Reuse the deployment's existing Codex ledger without starting a Codex
     // transport or opening/migrating its writer from the DSH/Pi entry.
+    // Packages bundle the query worker beside this module; source runs use the TypeScript entry.
+    const bundledQueryWorker = fileURLToPath(new URL('./token-usage-query-worker.mjs', import.meta.url));
+    const tokenUsageQueryWorkerEntry = await access(bundledQueryWorker).then(() => bundledQueryWorker,
+      () => fileURLToPath(new URL('../../opencraft-daemon/src/token-usage-query-worker.ts', import.meta.url)));
     usageQueries = new TokenUsageQueryService({
-      entry: existsSync(fileURLToPath(new URL('./token-usage-query-worker.mjs', import.meta.url)))
-        ? fileURLToPath(new URL('./token-usage-query-worker.mjs', import.meta.url))
-        : fileURLToPath(new URL('../../opencraft-daemon/src/token-usage-query-worker.ts', import.meta.url)),
+      entry: tokenUsageQueryWorkerEntry,
       databasePath: join(dataDirectory, 'codex', 'token-usage.sqlite'),
       serverId: `server:${machineIdentity.machineId}:codex`,
       ...(process.env.OPENCRAFT_TOKEN_USAGE_SOURCE === 'ledger' ? {} : {rollout:{nativeHome:join(dataDirectory,'codex','runtime'),
@@ -833,7 +864,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       }
       return service;
     };
-    conversationResources = new ConversationResourceLifecycle(join(dataDirectory, 'conversation-resources.json'), {
+    conversationResources = await ConversationResourceLifecycle.open(join(dataDirectory, 'conversation-resources.json'), {
       terminal: async row => {
         if (options.terminalOwner) {
           if (!remoteBrowser) throw Error('Resource bindings are starting');
@@ -942,9 +973,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           sharedTurnInput: true,
           modelActor: context => actorStore.isCurrent(context) ? actorStore.get(context.actorId) : null,
           tokenUsage: {
-            queryWorkerEntry: existsSync(fileURLToPath(new URL('./token-usage-query-worker.mjs',import.meta.url)))
-              ? fileURLToPath(new URL('./token-usage-query-worker.mjs',import.meta.url))
-              : fileURLToPath(new URL('../../opencraft-daemon/src/token-usage-query-worker.ts',import.meta.url)),
+            queryWorkerEntry: tokenUsageQueryWorkerEntry,
             serverId: `server:${machineIdentity.machineId}:codex`,
             ...(process.env.OPENCRAFT_TOKEN_USAGE_SOURCE === 'ledger' ? {} : {derivedQueries:usageQueries}),
             actor: context => actorStore.isCurrent(context) ? actorStore.get(context.actorId) : null,
@@ -1074,7 +1103,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     await turnPush.initialize();
     // Local anonymous features remain usable. Public remote access is enabled
     // only with explicit operator opt-in; all remote sockets require a session.
-    if (host === "127.0.0.1" || options.sshPublicAccess) sshManagement = new SshManagement({
+    if (host === "127.0.0.1" || options.sshPublicAccess) sshManagement = await SshManagement.open({
       directory: join(dataDirectory, "ssh"), publicAccess: options.sshPublicAccess, accessFile: options.sshAccessFile,
       accessMode: options.sshRequireAccessKey || options.sshAccessFile ? "access-key" : "shared",
       resetConnection: id => appHostServer.resetHost(id), connectionState: id => appHostServer.hostState(id),
@@ -1184,6 +1213,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         });
         return async (request,response) => gateway && await gateway(request,response) || await policy(request,response);
       })(),
+      assetsService,
       identityService: identity?.service ?? null,
       accessService: instanceAccess ?? null,
       actorService: actorAccess,
@@ -1256,9 +1286,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         },
       }),
       codexBinary:options.codexExecutable ?? join(root,'runtime/codex/bin/codex'),
-      // Explicit local preview composition only (scripts/preview-crew.ts); the CLI never sets it.
+      // Explicit local preview composition only (scripts/dev/preview-crew.ts); the CLI never sets it.
       ...(composition.personalAssistantHost ?? {})});
-    imPlugins = await startImPlugins(imConfiguration,{dataDirectory,capabilities,prepareCapabilities: tools => capabilityMcp.prepare(tools),actors:actorStore,collaboration:actorCollaboration,actorAccess,getAppHost:() => appHostServer,admittedActor:actorId => !instanceAccess || instanceAccess.admitsActor(actorId),channelSync:composition.createChannelSync ? await composition.createChannelSync({collaboration:actorCollaboration}) : composition.channelSync});
+    imPlugins = await startImPlugins(imConfiguration,{dataDirectory,capabilities,prepareCapabilities: tools => capabilityMcp.prepare(tools),actors:actorStore,collaboration:actorCollaboration,actorAccess,getAppHost:() => appHostServer,admittedActor:actorId => !instanceAccess || instanceAccess.admitsActor(actorId),...await createChannelSyncDependencies(composition,{collaboration:actorCollaboration})});
     try { availabilityNotification = await startAvailabilityNotification(process.env.OPENCRAFT_AVAILABILITY_NOTIFICATION_CONFIG, () => imPlugins); }
     catch { console.warn('[availability-notification] startup-unavailable'); }
     capabilitiesReadyResolve();

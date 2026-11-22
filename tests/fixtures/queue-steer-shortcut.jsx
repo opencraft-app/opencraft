@@ -36,7 +36,7 @@ function App() {
     switchThread:()=>{setController(makeController('two'));setRows([item('new-top','New thread queue')])},
     attachment:lifecycle=>controller.dispatch({type:'add-attachment',attachment:{id:'file',name:'notes.txt',mimeType:'text/plain',size:3,uri:lifecycle==='ready'?'data:text/plain,abc':null,lifecycle,error:null}}),
   };
-  return <AppShell layoutScope="thread" mainContentLayout="thread-edge-scroll" navigation={{layout: "unified", actions: [], account: null, onOpenSettings: noop}}
+  return <AppShell layoutScope="thread" mainContentLayout="thread-edge-scroll" navigation={{actions: [], account: null, onOpenSettings: noop}}
     header={<AppShellHeader conversationHeader title="Queued messages" project={null} sidebarOpen={false} rightPanelOpen={false} rightPanelFullWidth={false}
       onToggleSidebar={noop} onToggleRightPanel={noop} onHome={noop} canGoBack={false} canGoForward={false} onBack={noop} onForward={noop} navigationActions={["sidebar-toggle"]} />}
     windowChrome={chrome} sidebarOpen={false} sidebarWidth={275} onSidebarCollapse={noop} onSidebarExpand={noop} onSidebarResizeEnd={noop}

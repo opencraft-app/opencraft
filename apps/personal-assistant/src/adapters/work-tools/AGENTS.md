@@ -14,4 +14,4 @@
 
 2026-11-13：platform_read 仅在新 Delegation 捕获 platform.reads 且 Host port 已装配时暴露。工具固定当前 Work，参数不能指定 owner/权限；读取结果及分页来自平台，证据经 CompletionService 保存，旧快照不扩权。见 ../../../../../docs/architecture/personal-assistant.md。
 
-2026-11-16：environment_run 仅在安装方配置的隔离环境和新 Delegation 捕获 execution.environment 时装配，固定 Work/环境 binding，不能访问 Host Shell 或继承 Host 凭据。它是 replay: once 的非幂等动作；未知效果保留原 native receipt 并停止回合，不能自动换 call ID 重跑。当前仅 Codex 路径支持，Pi/旧本机 profile 不增权。见根 docs/managed-bots.md 和 tests/identity/assistant-environment-roundtrip.test.ts。
+2026-11-16：environment_run 仅在安装方配置的隔离环境和新 Delegation 捕获 execution.environment 时装配，固定 Work/环境 binding，不能访问 Host Shell 或继承 Host 凭据。它是 replay: once 的非幂等动作；未知效果保留原 native receipt 并停止回合，不能自动换 call ID 重跑。当前仅 Codex 路径支持，Pi/旧本机 profile 不增权。见根 docs/architecture/identity/managed-bots.md 和 tests/identity/assistant-environment-roundtrip.test.ts。

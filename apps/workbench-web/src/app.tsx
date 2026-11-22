@@ -1,4 +1,5 @@
 import { AppShellStandardPage } from "./components/app-shell-standard-page";
+import { SettingsSidebarNavigation } from "./components/settings-sidebar-navigation";
 import {ConversationArchivedBadge, ConversationUnavailableState} from "./components/conversation-archived";
 import { recordQueueError } from "./runtime/queue-error-history";
 import { routeStackPresentation } from "./components/route-stack-motion";
@@ -275,10 +276,6 @@ const SettingsContent = lazy(async () => {
 const ConversationTaskMenu = lazy(async () => {
   const module = await import("./components/conversation-task-menu");
   return { default: module.ConversationTaskMenu };
-});
-const SettingsNavigation = lazy(async () => {
-  const module = await import("./components/settings-page");
-  return { default: module.SettingsNavigation };
 });
 
 function humanizeCatalogValue(value: string): string {
@@ -1374,6 +1371,10 @@ export function App({
         return;
       }
       if (decision.kind === "external") {
+        if (!/^(?:https?:)?\/\//iu.test(target)) {
+          window.open(target, "_blank", "noopener,noreferrer");
+          return;
+        }
         if (chatLinkOpensExternally(extensionPlatform, intent, browserWorkbench.isRecognizedInternalUrl(target))) {
           window.open(target, "_blank", "noopener,noreferrer");
           return;
@@ -1851,21 +1852,20 @@ export function App({
     extensionContributions: hostCatalog.extensionContributions,
     onSectionChange: selectSettingsSection,
   });
-  const settingsNavigation = settingsOpen || sidebarDestination === "settings" ? (
-    <Suspense fallback={null}>
-      <SettingsNavigation
-        section={sidebarDestination === "settings" ? "" : settingsSection}
-        onSectionChange={selectSettingsSection}
-        extensionContributions={hostCatalog.extensionContributions}
-        profiles={hostCatalog.profiles}
-        machines={machines}
-        activeHostId={snapshot.hostId}
-        showArchivedConversations={archivedConversationsAvailable}
-        onBack={openConversationSidebar}
-        presentation={sidebarDestination === "settings" ? "sidebar" : managementSettingsOpen ? "dialog" : "sidebar"}
-      />
-    </Suspense>
-  ) : null;
+  const settingsNavigation = (
+    <SettingsSidebarNavigation
+      section={settingsOpen ? settingsSection : null}
+      choosingSection={sidebarDestination === "settings"}
+      managementOpen={managementSettingsOpen}
+      onSectionChange={selectSettingsSection}
+      extensionContributions={hostCatalog.extensionContributions}
+      profiles={hostCatalog.profiles}
+      machines={machines}
+      activeHostId={snapshot.hostId}
+      showArchivedConversations={archivedConversationsAvailable}
+      onBack={openConversationSidebar}
+    />
+  );
   const settingsContent = settingsOpen ? (
     <Suspense
       fallback={
@@ -2346,7 +2346,6 @@ export function App({
           }}
           surface={desktopBackdrop ? "application-desktop" : "default"}
           navigation={!presentation.shellNavigation ? undefined : {
-            layout: "unified",
             applicationsInSidebar: true,
             settingsInSidebar: true,
             settingsActive: sidebarDestination === "settings" || (routeSettingsOpen && !applicationsSelected),
@@ -2789,7 +2788,8 @@ export function App({
                         loadQueuedImage={loadQueuedImage}
                         queuedSubmissions={[
                           ...visibleQueuedSubmissions(snapshot.conversation?.queuedSubmissions ?? localQueuedSubmissions,
-                            visibleTimeline).filter(submission => !deliveryRecovery.byClientId.has(submission.clientMessageId)).map((submission) =>
+                            visibleTimeline).filter(submission => !deliveryRecovery.byClientId.has(submission.clientMessageId)
+                              && !deliveryRecovery.detached.some(row => row.clientMessageId === submission.clientMessageId)).map((submission) =>
                             queuedSubmissionPresentation(submission, queueReorderable, identityAvatar, intl)),
                           ...(snapshot.conversation?.unconfirmedSteers ?? []).map((claim) => ({
                             id: claim.id,
@@ -2806,6 +2806,12 @@ export function App({
                             retryable: claim.retryable === true,
                           })),
                         ]}
+                        onWithdrawQueuedSubmission={(id) => queueOperation("withdraw", id, async () => {
+                          if (activeThreadLease) await activeThreadLease.withdrawQueuedSubmission(id);
+                          else if (localOutbox) await localOutbox.withdraw(id);
+                          else throw new Error("No local message owner");
+                        })}
+                        onRetryLocalQueuedSubmission={(id) => queueOperation("retry", id, () => deliveryRecoveryActions.onRetry(id))}
                         onUpdateQueuedSubmission={(id, intent) => queueOperation("update", id, () => updateQueuedSubmission(id, intent))}
                         onDeleteQueuedSubmission={(id) => queueOperation("delete", id, () => deleteQueuedSubmission(id))}
                         onRetryUnconfirmedSteer={queueUnconfirmedDeliveryRetry ? (id,turnId)=>queueOperation("retry-unconfirmed-steer",id,()=>retryUnconfirmedSteer(id,turnId)) : undefined}

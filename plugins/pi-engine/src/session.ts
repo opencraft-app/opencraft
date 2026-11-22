@@ -1,6 +1,7 @@
 import { piModel } from './contract.js';
 import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 
+import type {ExecutionGitPort} from "@opencraft/execution-environment/execution-snapshot";
 import type { ExecutionEnvironmentRuntime, ExecutionEnvironmentSnapshot } from "@opencraft/execution-environment";
 import { createHash, randomUUID } from "node:crypto";
 import { PiPrivateCallsDoc, type PiPrivateCalls } from "./private-calls.js";
@@ -79,7 +80,7 @@ export class PiDurableSession {
     modelPolicyPath?: string;
     policyCatalog?():Promise<Value[]>;
     onPolicyDenied?(error:ModelPolicyError):void;
-    ephemeral?: boolean; inherited?: PiForkContext; executionEnvironment?: ExecutionEnvironmentRuntime; projectId?: string | null;
+    ephemeral?: boolean; inherited?: PiForkContext; executionEnvironment?: ExecutionEnvironmentRuntime; executionGit?:ExecutionGitPort; projectId?: string | null;
     /** Bridge-owned sessions use the ordinary coding bash tool, not the PTY worker. */
     shell?: boolean;
     /** Lock acquisition attempts against another writer; the native default is 12. */
@@ -257,11 +258,16 @@ export class PiDurableSession {
   private async executeShell(args: Value, api: Value, ctx: Context, waitMs: number | undefined = undefined) {
     if (this.options.shell === false) throw new Error("Pi shell worker is disabled for this bridge session");
     if (this.closed || ctx.abortSignal?.aborted) throw new Error("Pi shell call cancelled");
-    const inputId = this.options.executionEnvironment ? await this.root.commit(async tx => {
+    const inputId = (this.options.executionEnvironment||this.options.executionGit) ? await this.root.commit(async tx => {
       const live = await tx.doc(LiveDoc, this.root.id);
-      return live.run?.inputs[0] === undefined ? null : (await this.storage.submission(live.run.inputs[0], ctx))?.requestId ?? null;
+      const requestId=live.run?.inputs[0]===undefined?null:(await this.storage.submission(live.run.inputs[0],ctx))?.requestId??null;
+      const prefix=`${this.options.threadId}:turn:client:`;
+      return requestId?.startsWith(prefix)?requestId.slice(prefix.length):requestId;
     }, ctx) : null;
-    const environment = this.environmentSnapshot(inputId ?? undefined);
+    const environment = this.options.executionGit
+      ? inputId ? await this.options.executionGit.prepare({hostId:'opencraft-server',threadId:this.options.threadId,inputId,projectId:this.options.projectId??null}) : (()=>{throw Error('Git execution admission unavailable');})()
+      : this.environmentSnapshot(inputId ?? undefined);
+    if(this.closed||ctx.abortSignal?.aborted)throw Error('Pi shell call cancelled');
     let shell = await this.environmentWorker(environment);
     const isLaunch = typeof args.command === "string" || args.spawn != null || args.mode === "monitor" && args.sessionId == null;
     if (isLaunch && this.shellLaunches >= 8) throw new Error("Too many concurrent shell launches");

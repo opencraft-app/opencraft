@@ -74,7 +74,7 @@ for (const profile of [
         expect((await readState('new')).active).toBe(false);
         expect(await page.evaluate(() => navigator.serviceWorker.controller.scriptURL)).toContain('build=old');
         // Resource fetches carry same-origin credentials, so deployments that gate static files
-        // behind a session cookie can still install the offline shell (docs/offline-shell-installation.md).
+        // behind a session cookie can still install the offline shell (docs/operations/offline-shell-installation.md).
         expect(requests.filter(x => x.path.startsWith(basePath + 'assets/')).every(x => x.cookie)).toBe(true);
         const observer = await context.newPage(); await observer.goto(origin + '/observer');
         await page.close();

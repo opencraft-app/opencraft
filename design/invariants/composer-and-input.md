@@ -144,7 +144,7 @@ Surface消费Shell的同一逻辑active投影：隐藏立即退出模拟光标�
 重新展开保留媒体连接但不抢焦点或恢复控制；只有新确认授权才挂载最新形状。
 此规则不清除远端画面内已有的光标像素；重复启用不能清空仍有效的光标附件。
 模型/真实decoder浏览器验收不等于iPhone系统键盘或原生执行器验收，详见
-[桌面输入策略](../../docs/cloud-desktop-plugin.md#pointer-viewing-gestures-and-mobile-text-input)。
+[桌面输入策略](../../docs/architecture/extensions/cloud-desktop-plugin.md#pointer-viewing-gestures-and-mobile-text-input)。
 
 Confirmed coarse-pointer desktop control may expose a relative trackpad through
 the mounted media capability. The pad interprets gestures only; media owns the
@@ -496,6 +496,14 @@ Mod+K only opens conversation search, including from the composer, and never
 also navigates home. Mod+, opens settings; Mod+\\ toggles the sidebar (Mod+B
 remains an alias); Mod+J toggles the existing right tool panel (Mod+Shift+I
 remains an alias); Mod+Shift+C focuses the current conversation composer.
+Control+Shift+Up and Control+Shift+Down (including on Apple keyboards) select the previous/next conversation in the
+sidebar's displayed section and child-tree order, through the existing sidebar
+navigation command. Collapsed sections, rows beyond the revealed page, hidden
+rows and unavailable destinations are skipped; the ends do not wrap. With no
+listed selection, Down starts at the first available row and Up at the last.
+An in-flight selection is the starting point for the next command. The binding
+continues to work when the conversation sidebar is tucked away, and preserves
+the existing Router/View/draft ownership rather than simulating history traversal.
 Settings → Keyboard shortcuts displays the shared binding list inside Settings;
 the primary sidebar has no standalone shortcuts action. Mod+/ opens the existing
 ModalSurface with the same list. Hints and accessible key metadata consume the same map.

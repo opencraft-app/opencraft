@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readConversationPage, projectConversationMetadata } from '../../scripts/conversation-projections.mjs';
+import { readConversationPage, projectConversationMetadata } from '@opencraft/access-control/conversation-projections';
 import { CollaborationClient } from '../../packages/appserver-client/src/collaboration';
 import { MemoryTransport } from '@opencraft/appserver-transport-memory';
 import { encodeJsonRpcMessage, isJsonRpcRequest } from '@opencraft/appserver-protocol';

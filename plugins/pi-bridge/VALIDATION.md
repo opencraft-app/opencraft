@@ -15,7 +15,7 @@ artifact and no existing engine selects it.
 | `npm run typecheck --workspace @opencraft/agent-bridge-host` | passed (unchanged) |
 | `npm run test:agent-bridge` | **162 passed**, 10 consecutive full runs. 22 new Pi/Host-settlement cases plus 140 tests already on main (P1a/P1b/P2a/P2c/P3/P3c) |
 | `npm run check:boundaries` | passed |
-| `node scripts/build-pi-bridge.mjs` | `plugins/pi-bridge/dist/main.mjs`, 9,005,011 bytes, SHA-256 `76236bd6d5362e220630b69064f257fb2212c0d73e2c8b3d104926bc879e354a` |
+| `node scripts/packaging/build-pi-bridge.mjs` | `plugins/pi-bridge/dist/main.mjs`, 9,005,011 bytes, SHA-256 `76236bd6d5362e220630b69064f257fb2212c0d73e2c8b3d104926bc879e354a` |
 | `PI_BRIDGE_KEEP=1 node --import tsx scripts/smoke/execution/smoke-pi-bridge.ts` | passed on the real local Pi account; details below |
 
 ## New deterministic cases

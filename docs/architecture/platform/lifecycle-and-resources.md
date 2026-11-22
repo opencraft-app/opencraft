@@ -1,6 +1,6 @@
 # Platform: Lifecycle and resources
 
-[Architecture index](../../platform-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](../README.md) · [Documentation index](../../README.md)
 
 ### Client cache and presentation resource policy
 
@@ -298,7 +298,7 @@ Results render escaped message snippets. Selection resolves the first native vis
 
 生成的 Agent Console 字典由同步器的 renderer 适配策略管理：保留全部语种的字面量动态导入，在管理页显示前准备当前字典；同一加载合并、失败删除 pending、语言代次屏蔽旧切换。不得仅设置区域编译常量而把国际站字典裁掉。Next SSR 真源行为不变，Metro 不引入 top-level await。
 
-页面样式随页面代码进入；Shell 与会话样式由主入口持有。嵌入式 shadow root 通过 `bindShadowFeatureStyles` 镜像 Workbench 资源前缀下的延迟样式，文档副本服务文档级 portal；不复制宿主站点 CSS，随元素销毁断开 observer。包体门禁与静态协商见 [启动资源治理](../../startup-performance.md)。
+页面样式随页面代码进入；Shell 与会话样式由主入口持有。嵌入式 shadow root 通过 `bindShadowFeatureStyles` 镜像 Workbench 资源前缀下的延迟样式，文档副本服务文档级 portal；不复制宿主站点 CSS，随元素销毁断开 observer。包体门禁与静态协商见 [启动资源治理](../../develop/startup-performance.md)。
 
 启动装配入口是 `runtime/web-workbench-supervisor.ts`；命令、配置与共享服务类型在 `workbench-application-services.ts`，React Context/Provider/hooks 在 `appserver-runtime-context.tsx`。旧 Context 导入保持具名导出兼容，composition root 直接消费 supervisor。共享呈现 chunk 不再持有扩展动态导入映射，避免一个可选插件的新哈希让所有上下文消费者失去缓存。不得重新把插件装配放回跨页面使用的 hook 模块。
 

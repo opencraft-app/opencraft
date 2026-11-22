@@ -63,7 +63,7 @@ The cleanup changes owned symbols, live table names and fresh-store paths. It pr
 - Existing `codex-host-queue.sqlite` and `codex-message-attachments.sqlite` file paths as explicit compatibility inputs,
   and all published migration names, versions and SQL checksums. Host-state v13
   and attachment v2 migrate active tables and indices to `opencraft_*`; see
-  [the storage upgrade contract](../sqlite-lifecycle.md#owned-live-table-names).
+  [the storage upgrade contract](server/sqlite-lifecycle.md#owned-live-table-names).
 - Host-state v14 also preserves historical Bot records under `opencraft_bot_*`;
   the original table spelling remains only in immutable migrations and upgrade
   inputs. Old managed readers reject v14; old unguarded writers must stay stopped.
@@ -74,7 +74,7 @@ The cleanup changes owned symbols, live table names and fresh-store paths. It pr
 
 Current active storage names describe OpenCraft ownership. New stores use `opencraft-host-state.sqlite` and `opencraft-message-attachments.sqlite`.
 Existing old files stay in place on ordinary open. The separate
-[offline maintenance command](../sqlite-lifecycle.md#两个-host-自有文件的离线改名)
+[offline maintenance command](server/sqlite-lifecycle.md#两个-host-自有文件的离线改名)
 can relocate their physical names after all owners stop. These legacy names are
 not native engine contracts; code delivery does not mean installed data moved.
 The engine-specific classes above describe actual integrations. Future generic

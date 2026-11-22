@@ -17,7 +17,7 @@ import { AcpEngine } from '../../plugins/acp-engine/src/index.js';
 import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { EXECUTION_ENVIRONMENT_FIELD } from '@opencraft/execution-environment';
-import { buildDshCapabilityPlugin } from '../../scripts/package-dsh-capability-runtime.mjs';
+import { buildDshCapabilityPlugin } from '../../scripts/packaging/package-dsh-capability-runtime.mjs';
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const program = "process.stdout.write(require('node:crypto').createHash('sha256').update(process.env.SERVICE_KEY??'missing').digest('hex'))";
 const entry = (value: string) => ({ name: 'SERVICE_KEY', value, secret: true });
@@ -175,7 +175,7 @@ test('pinned DSH bash and terminal spawn boundaries inject only the admitted emp
   const { existsSync } = await import('node:fs');
   const pinned = resolve(process.env.OPENCRAFT_DSH_RUNTIME ?? 'runtime/dsh');
   if (!existsSync(join(pinned, 'node_modules/@deepseek-ai/dsh-bash-local/lib/index.js'))) { t.skip('Pinned DSH runtime is not installed'); return; }
-  const { patchDshThreadEnvironment } = await import('../../scripts/patch-dsh-thread-environment.mjs');
+  const { patchDshThreadEnvironment } = await import('../../scripts/postinstall/patch-dsh-thread-environment.mjs');
   const { registerDshExecutionEnvironment } = await import('../../apps/local-agent-host/src/dsh-execution-environment.mjs');
   const { pathToFileURL } = await import('node:url'); const { build } = await import('esbuild');
   const isolated = join(f.root, 'pinned');

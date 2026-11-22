@@ -24,7 +24,8 @@
     "./model-config/pi-adapter": "./src/model-config/pi-adapter.ts",
     "./desktop/native-control": "./src/desktop/native-control.ts",
     "./model-config/repository": "./src/model-config/repository.ts",
-    "./model-config/speech": "./src/model-config/speech.ts"
+    "./model-config/speech": "./src/model-config/speech.ts",
+    "./machine-identity": "./src/machine-identity.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -39,7 +40,7 @@
     "@opencraft/composer-core": "^0.1.0",
     "node-pty": "1.1.0",
     "proper-lockfile": "^4.1.2",
-    "ws": "^8.22.1",
+    "ws": "^8.23.0",
     "yaml": "^2.9.1",
     "@opencraft/sqlite-node": "0.1.0",
     "@opencraft/host-schedules": "0.1.0",
@@ -63,6 +64,6 @@
     "@types/node": "^26.6.6",
     "@types/proper-lockfile": "^4.1.4",
     "@types/ws": "^8.18.2",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   }
 }

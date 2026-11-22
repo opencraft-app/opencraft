@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { createConnection } from 'node:net';
 import { createInterface } from 'node:readline';
 
-/** The broker surface the IPC bridge drives; implemented by scripts/git-identity-broker.ts. */
+/** The broker surface the IPC bridge drives; implemented by apps/headless-server/src/git-identity-broker.ts. */
 export interface GitIdentityBrokerEndpoint {
   request(peer: { readonly pid: number; readonly uid: number }, input: unknown): Promise<Record<string, unknown>>;
   close(): Promise<void>;

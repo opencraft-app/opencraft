@@ -6,7 +6,7 @@ updates:
       interval: weekly
     open-pull-requests-limit: 4
     ignore:
-      # Pinned: scripts/patch-novnc-desktop-events.mjs patches this exact release
+      # Pinned: scripts/postinstall/patch-novnc-desktop-events.mjs patches this exact release
       # (checked by hash). Upgrade it by hand together with that patch and a
       # cloud-desktop check, never as part of a grouped bump.
       - dependency-name: "@novnc/novnc"

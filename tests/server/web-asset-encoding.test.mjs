@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { gzipSync, brotliCompressSync, gunzipSync, brotliDecompressSync } from 'node:zlib';
 import { request } from 'node:http';
-import { createWorkbenchWebServer } from '../../scripts/workbench-web-server.mjs';
+import { createWorkbenchWebServer } from '../../apps/headless-server/src/workbench-web-server.mjs';
 import { createWorkbenchWebServer as createIntegratedWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
 const get = (url, encoding, method = 'GET', headers = {}) => new Promise((resolve, reject) => {
   const req = request(url, { method, headers: { 'accept-encoding': encoding, ...headers } }, res => {

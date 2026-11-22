@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { headlessWebHostDefinitions } from '../package-headless-linux.mjs';
+import { headlessWebHostDefinitions } from '../packaging/package-headless-linux.mjs';
 
 // Always build the current source. An existing dist or caller-supplied root
 // cannot silently substitute a previously fast release into the formal gate.

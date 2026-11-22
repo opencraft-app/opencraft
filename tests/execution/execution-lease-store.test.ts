@@ -135,6 +135,42 @@ test("display sender alone is unknown; authenticated snapshot is detached and ex
   assert.equal(snapshotExecutionSubmission({ sender: { kind: "employee", loginName: "alice" } }).ownership, "unknown");
   assert.throws(() => snapshotExecutionSubmission({ sender: null, executionPrincipal: p, validUntil: 1 }), /expired/);
 });
+test("execution Actor provenance comes only from the verified Human context", () => {
+  const principal = { provider: "fixture", subject: "original", actorId: "human://forged/actor", actorGeneration: 999 };
+  const context = { executionPrincipal: principal, validUntil: Date.now() + 60000 };
+  assert.deepEqual(snapshotExecutionSubmission(context).principal, { provider: "fixture", subject: "original" });
+  const actor = { actorId: "human://fixture/original", generation: 7, credentialId: null, expiresAt: Date.now() + 60000 };
+  const snapshot = snapshotExecutionSubmission({ ...context, actorContext: actor });
+  assert.deepEqual(snapshot.principal, { provider: "fixture", subject: "original", actorId: actor.actorId, actorGeneration: 7 });
+  actor.generation = 8;
+  assert.equal(snapshot.principal?.actorGeneration, 7, "later context mutation cannot change the original grant");
+  for (const expiresAt of [0, NaN, Infinity])
+    assert.throws(() => snapshotExecutionSubmission({ ...context, actorContext: { ...actor, expiresAt } }), /Actor expired/);
+  for (const generation of [0, -1, 1.5, NaN])
+    assert.throws(() => snapshotExecutionSubmission({ ...context, actorContext: { ...actor, generation } }), /Actor expired/);
+  assert.equal(snapshotExecutionSubmission({ ...context, actorContext: { ...actor, credentialId: "agent-credential" } }).principal?.actorId, undefined);
+});
+test("original Actor identity and generation survive restart and cannot be reassigned", t => {
+  const f = fixture(t);
+  const original = { principal: { ...A.principal, actorId: "human://fixture/original", actorGeneration: 3 }, ownership: "human" as const };
+  f.store.capture("t", "original", original);
+  f.restart();
+  assert.deepEqual(f.store.getSubmission("t", "original"), original);
+  for (const principal of [
+    { ...original.principal, actorId: "human://fixture/successor" },
+    { ...original.principal, actorGeneration: 4 },
+  ]) assert.throws(() => f.store.capture("t", "original", { ...original, principal }), /Actor is immutable/);
+  f.store.capture("t", "original", A);
+  assert.deepEqual(f.store.getSubmission("t", "original"), original, "a legacy replay cannot remove existing Actor provenance");
+  f.store.capture("t", "legacy", A);
+  f.store.capture("t", "legacy", original);
+  assert.deepEqual(f.store.getSubmission("t", "legacy"), A, "a retry cannot backfill historical Actor authority");
+  for (const principal of [
+    { ...A.principal, actorId: "human://fixture/original" },
+    { ...A.principal, actorGeneration: 3 },
+    { ...original.principal, actorGeneration: 0 },
+  ]) assert.throws(() => f.store.capture("t", "invalid", { principal, ownership: "human" }), /Invalid execution Actor/);
+});
 test("v14 upgrades preserving queue and checksums; corrupt published history rejects", t => {
   const dir = mkdtempSync(join(tmpdir(), "oc-execution-v14-")); t.after(() => rmSync(dir, { recursive: true, force: true }));
   const path = join(dir, "opencraft-host-state.sqlite");

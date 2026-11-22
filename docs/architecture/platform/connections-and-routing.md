@@ -1,6 +1,6 @@
 # Platform: Connections and routing
 
-[Architecture index](../../platform-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](../README.md) · [Documentation index](../../README.md)
 
 ### Backend SSH Codex connections
 
@@ -218,7 +218,7 @@ read-only compatibility source. This is single-installation administrator access
 not member-specific Server sharing. Reset has a physical close/claim barrier.
 Closing a page or proxy does not stop the remote daemon, and reconnection does not
 replay mutations. Scope, configuration, compatibility gates and limitations are
-specified in [SSH Codex Servers](../../ssh-codex-servers.md).
+specified in [SSH Codex Servers](../../operations/ssh-codex-servers.md).
 
 ### Hub-owned remote conversation directory
 

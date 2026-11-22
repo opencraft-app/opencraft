@@ -7,7 +7,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { startHeadlessServer } from '../../apps/headless-server/src/headless-server.mjs';
 import { createWorkbenchWebServer } from '../../apps/headless-server/src/serve-workbench-web.mjs';
-import { buildHeadlessBundle } from '../../scripts/package-headless-linux.mjs';
+import { buildHeadlessBundle } from '../../scripts/packaging/package-headless-linux.mjs';
 import { loadLocalMachineAccess } from '../../apps/headless-server/src/local-machine-access.mjs';
 import { randomBytes } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
@@ -71,6 +71,29 @@ test('public Headless artifact has no enterprise implementation and its CLI reje
   assert.equal(storage.movedAside, false);
   assert.equal((await fetch(app.url)).status, 200);
   assert.equal((await fetch(app.url + '/__opencraft_actors/me')).status, 401);
+  // Reopen the packaged application with its real default Human composition.
+  // No source loader or injected storage factory may supply the execution Worker.
+  await app.close();
+  const proof = randomBytes(32).toString('base64url');
+  const proofPath = join(f.root, 'packaged-setup-token'), configPath = join(f.root, 'packaged-human-auth.json');
+  await writeFile(proofPath, JSON.stringify({ token: proof }), { mode: 0o600 });
+  await writeFile(configPath, JSON.stringify({ origin: app.url, local: true, oidc: [], setupTokenFile: proofPath }), { mode: 0o600 });
+  const human = await api.startHeadlessServer({ ...f.options, port: Number(new URL(app.url).port), humanAuthConfig: configPath });
+  t.after(() => human.close());
+  assert.equal((await stat(join(f.root, 'assets-runtime-worker.mjs'))).isFile(), true);
+  const setup = await fetch(human.url + '/__opencraft_account/setup', { method: 'POST',
+    headers: { origin: human.url, 'content-type': 'application/json' },
+    body: JSON.stringify({ proof, mode: 'web', username: 'owner', password: 'Synthetic-packaged-password-42' }) });
+  assert.equal(setup.status, 200, await setup.text());
+  const cookie = setup.headers.get('set-cookie')?.split(';')[0];
+  assert.ok(cookie);
+  const status = await fetch(human.url + '/__opencraft_account/status', { headers: { cookie } }).then(r => r.json());
+  assert.match(status.actor.id, /^human:\/\//);
+  const git = await fetch(human.url + '/__opencraft_assets/git-connections', { headers: { cookie, 'x-opencraft-account-scope': 'actor:' + status.actor.id } });
+  assert.equal(git.status, 200, await git.clone().text());
+  assert.deepEqual(Object.keys((await git.json()).hosts), ['github.com']);
+  assert.equal((await fetch(human.url + '/__opencraft_assets/executionGitGrant', { method: 'POST',
+    headers: { cookie, origin: human.url, 'content-type': 'application/json' }, body: '{}' })).status, 404);
 });
 
 test('verified external human identity does not require an enterprise provider name or numeric identifier', async t => {

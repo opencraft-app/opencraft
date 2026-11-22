@@ -37,6 +37,8 @@ export interface QueuedSubmission {
   readonly actions?: QueuedSubmissionActions;
   /** Browser-owned, never accepted by the Host yet. */
   readonly local?: boolean;
+  /** Exact client-owned content, independent of the flattened queue preview. */
+  readonly localIntent?: import("@opencraft/composer-core").SubmitIntent;
   /** Runtime can accept a promotion while normal queue admission is in flight. */
   readonly steerable?: boolean;
   readonly sender?: MessageSender | null;

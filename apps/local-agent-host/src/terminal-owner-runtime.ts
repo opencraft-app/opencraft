@@ -1,12 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { constants, existsSync } from 'node:fs';
+import { constants } from 'node:fs';
 import { access, cp, lstat, mkdir, readdir, readFile, rename, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const exists = (path: URL | string) => access(path).then(() => true, () => false);
 async function privateDirectory(path: string) {
   await mkdir(path, { recursive: true, mode: 0o700 });
   const info = await lstat(path);
@@ -39,20 +40,20 @@ async function treeIdentity(directory: string, hash: ReturnType<typeof createHas
 /** Retain the full native closure outside removable release directories. */
 export async function terminalOwnerCommand(directory: string) {
   const bundled = new URL('./terminal-pty-owner.mjs', import.meta.url);
-  if (!existsSync(bundled)) {
+  if (!await exists(bundled)) {
     const source = new URL('./terminal-pty-owner.ts', import.meta.url);
     await access(source, constants.R_OK);
     return ['--import', 'tsx', fileURLToPath(source), '--terminal-pty-owner'];
   }
   let native: string | undefined;
   const candidates = [new URL('./native/node-pty/package.json', import.meta.url), new URL('./node_modules/node-pty/package.json', import.meta.url)];
-  for (const candidate of candidates) if (existsSync(candidate)) { native = dirname(fileURLToPath(candidate)); break; }
+  for (const candidate of candidates) if (await exists(candidate)) { native = dirname(fileURLToPath(candidate)); break; }
   native ??= dirname(createRequire(import.meta.url).resolve('node-pty/package.json'));
   const entry = await readFile(bundled), hash = createHash('sha256').update(entry);
   await treeIdentity(native, hash);
   const identity = hash.digest('hex'), root = join(directory, 'runtimes'), destination = join(root, identity);
   await mkdir(root, { recursive: true, mode: 0o700 });
-  if (!existsSync(destination)) {
+  if (!await exists(destination)) {
     const temporary = join(root, '.stage-' + randomUUID());
     await mkdir(join(temporary, 'node_modules'), { recursive: true, mode: 0o700 });
     try {

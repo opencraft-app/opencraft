@@ -216,6 +216,7 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
     project(): readonly QueuedSubmission[] {
       return entries.map(entry => ({
         local: true,
+        localIntent: entry.intent,
         commandId: entry.intent.commandId,
         clientMessageId: entry.intent.clientMessageId,
         serverSubmissionId: null,
@@ -282,6 +283,20 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
       });
       if (retried) { dispatch?.retire([id]); notify(); wake(); }
       return retried;
+    },
+    /** Remove only positively undispatched input and return its original content. */
+    async withdraw(id: string): Promise<SubmitIntent> {
+      let intent: SubmitIntent | undefined;
+      await commit(() => {
+        const entry = entries.find(item => item.intent.commandId === id);
+        if (!entry || (entry.state !== "waiting" && entry.state !== "failed"))
+          throw new Error("Only an unsent local message can be withdrawn");
+        intent = entry.intent;
+        return entries.filter(item => item !== entry);
+      });
+      dispatch?.retire([id]);
+      notify(); wake();
+      return intent!;
     },
     async remove(id: string): Promise<boolean> {
       const owner = generation;

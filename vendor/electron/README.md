@@ -70,7 +70,7 @@ native probes, with an explicitly mounted persistent workspace and pinned
 toolchain inputs; it does not depend on a specific host layout.
 
 On a provisioned Linux build volume, the optional
-[build workspace entry](../../docs/build-workspace.md) routes the commands below
+[build workspace entry](../../docs/develop/build-workspace.md) routes the commands below
 to a fork-hash-specific source root, shared build lock, per-user caches and
 volume-backed temporary/log directories. It checks the mount before writing;
 the native toolchain and functional probes remain required.

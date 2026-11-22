@@ -2,7 +2,7 @@
 
 独立服务承载原生 Codex 执行，使页面、网关与 daemon 的生命周期不再决定活动
 Turn、原生 queue 或 goal 的生命周期。Codex 在这里是实际执行引擎名称。
-当前构建、启动、维护、回退与验证契约见[服务器 Codex 核心服务](../../docs/codex-core.md)。
+当前构建、启动、维护、回退与验证契约见[服务器 Codex 核心服务](../../docs/architecture/execution/codex-core.md)。
 
 ## 所有权
 
@@ -23,5 +23,5 @@ Turn、原生 queue 或 goal 的生命周期。Codex 在这里是实际执行引
 
 核心验证应覆盖零客户端生命周期、账户控制鉴权、重复 writer 拒绝、订阅隔离、
 不可用时不回退，以及隔离真实 CLI 和本地合成模型下跨 daemon 重启的任务连续性。
-具体命令和验收证据要求由[当前服务文档](../../docs/codex-core.md#验证)维护。
+具体命令和验收证据要求由[当前服务文档](../../docs/architecture/execution/codex-core.md#验证)维护。
 本设计说明不代表当前版本或某个实际部署已经通过这些验收。

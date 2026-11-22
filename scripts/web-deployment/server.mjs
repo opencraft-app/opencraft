@@ -15,7 +15,7 @@ import { join, resolve, dirname } from 'node:path';
 import { createLocalTreeReleaseSource } from './local-tree-release.mjs';
 import { createLocalReleaseSource } from './local-release.mjs';
 import semver from 'semver';
-import { createHeadlessBackendProxy, isHeadlessBackendPath, validHeadlessBackendRoutes } from './headless-backend.mjs';
+import { createHeadlessBackendProxy, isHeadlessBackendPath, validHeadlessBackendRoutes } from '../../apps/headless-server/src/web-deployment/headless-backend.mjs';
 import { loadLocalMachineAccess } from '../../apps/headless-server/src/local-machine-access.mjs';
 import { acquireDeploymentLock } from './lock.mjs';
 import { resolveExecutionProfile } from '../server-deployment/execution.mjs';

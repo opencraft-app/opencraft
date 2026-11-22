@@ -1,4 +1,4 @@
-import { ACCOUNT_CORE_STATE_MAX_BYTES } from "../../../scripts/full-upgrade/account-core-limits.mjs";
+import { ACCOUNT_CORE_STATE_MAX_BYTES } from "./account-core-limits.mjs";
 import { realpath } from "node:fs/promises";
 import { Readable } from 'node:stream';
 import { dirname, isAbsolute, join } from "node:path";

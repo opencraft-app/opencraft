@@ -36,7 +36,7 @@ The sidebar resize separator keeps its existing themed one-pixel gradient visibl
 
 ### Browser capability compatibility
 
-Core browser flows target the baseline in [build-matrix](../../docs/build-matrix.md#browser-compatibility); optional APIs require detection and a fallback. Plan-step disclosures use the existing Radix Popover and the Workbench presentation-local portal, retaining touch/keyboard activation, Escape/outside dismissal and collision handling without requiring native Popover support.
+Core browser flows target the baseline in [build-matrix](../../docs/develop/build-matrix.md#browser-compatibility); optional APIs require detection and a fallback. Plan-step disclosures use the existing Radix Popover and the Workbench presentation-local portal, retaining touch/keyboard activation, Escape/outside dismissal and collision handling without requiring native Popover support.
 
 
 ## Browser presentation handoff leases (2026-10-20)

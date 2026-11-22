@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { auditOutcome } from '../../scripts/dependency-audit.mjs';
+import { auditOutcome } from '../../scripts/check/dependency-audit.mjs';
 
 const report = (high = 1, critical = 0) => ({ auditReportVersion: 2, vulnerabilities: {},
   metadata: { vulnerabilities: { info: 0, low: 0, moderate: 0, high, critical, total: high + critical } } });
@@ -29,7 +29,7 @@ test('upstream policy preserves advisory findings across repository visibility c
   const workflow = readFileSync(new URL('../../.github/workflows/security.yml', import.meta.url), 'utf8');
   assert.match(workflow, /NPM_AUDIT_REPORT_ONLY: 'true'/);
   assert.doesNotMatch(workflow, /PRIVATE_MIGRATION_AUDIT_REPORT_ONLY|github\.event\.repository\.private/);
-  assert.match(workflow, /node "\$GITHUB_WORKSPACE\/scripts\/dependency-audit\.mjs"/);
+  assert.match(workflow, /node "\$GITHUB_WORKSPACE\/scripts\/check\/dependency-audit\.mjs"/);
   assert.doesNotMatch(workflow, /continue-on-error|npm audit.*\|\| true/);
   assert.match(workflow, /SECRETS_RESULT: \$\{\{ needs\.secrets\.result \}\}/);
 });

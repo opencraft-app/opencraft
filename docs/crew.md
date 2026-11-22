@@ -33,7 +33,7 @@ space tables it stands aside and the existing grant rule applies.
 ## Work and its chain
 
 Every hand-off to a space Bot is a piece of **work** in the `crew_work` ledger (migration
-`0020_crew_work`), written only by `Collaboration` inside the communication transaction, so a
+`0020_crew`), written only by `Collaboration` inside the communication transaction, so a
 message and the work it opens commit or roll back together. Work records its assignee, who
 handed it over, the work it was split from and its root. `origin` is `member` (a person asked),
 `bot` (another Bot handed it on) or `routine` (a Bot started it on its own).
@@ -44,9 +44,9 @@ handed it over, the work it was split from and its root. `origin` is `member` (a
   their phonebook, and only under open work they hold (`parentWorkId`).
 - **Replies are not dispatches.** `crew/work/message` carries a reply: the assignee writes up its
   chain, or the requester answers the assignee. A reply opens no work and spends no budget.
-  When it reaches a Bot it is filed in `crew_messages` (migration `0021_crew_messages`) against
+  When it reaches a Bot it is filed in `crew_messages` (migration `0020_crew`) against
   that Bot's own work in the tree, and the Bot reads it with `crew/work/replies`.
-- **Questions and answers.** A reply marked `asks` is a question (migration `0022_crew_questions`);
+- **Questions and answers.** A reply marked `asks` is a question (columns `asks` and `answers`);
   the runtime marks the questions its Interaction service puts to people, and the `crew_message`
   tool takes `asks`. Only an open question waits in a person's Inbox; reports and notices never do.
   A person's direct message to a Bot that has an open question for them is the answer: it is filed
@@ -94,7 +94,7 @@ Removing a Bot uses the existing `remove` action.
 | Rule | State |
 | --- | --- |
 | Bots as space members, one space each | implemented (`addBot`) |
-| Same-space humans reach any member, with a per-space switch | implemented; migration `0019_space_open_contact` adds `open_contact` (existing rows 0) |
+| Same-space humans reach any member, with a per-space switch | implemented; migration `0020_crew` adds `open_contact` (existing rows 0) |
 | Space Bots limited to their phonebook inside their space | implemented for direct messages and `execution.queue` |
 | Owner-managed phonebook | implemented |
 | Work ledger, chain pass, owner for routine work | implemented in core |
@@ -132,6 +132,10 @@ explicit `composition.personalAssistantHost` that the Headless CLI never sets.
 Walkthrough: as alice create assistants (Assistants), create a Server and invite bob (Servers drawer), add the
 assistants as Agents and set their contacts; as bob open Inbox → Members, message an Agent, then watch Inbox → Work and
 open its desk.
+
+Core: `CrewContact` and `CrewWork` read and write SQLite, so only the communication storage Worker
+loads them (`attachCrewRules`); a `Collaboration` on a network thread has no crew rules and they
+stand aside there, as they do in a store without spaces.
 
 Runtime: `apps/personal-assistant/src/runtime/crew-intake.mjs`. Its only local fact is which runner
 conversation belongs to which dispatcher, stored in the runner `meta` table.

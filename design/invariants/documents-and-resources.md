@@ -197,7 +197,7 @@ Actual layout and source visibility are verified by
   detached views release thumbnail work; close/replacement cancels all handles.
 - Evidence: `tests/resources/file-preview-core.test.ts`, `tests/resources/structured-preview.test.ts`,
   `scripts/smoke/resources/smoke-office-preview.ts`, `scripts/smoke/resources/smoke-structured-preview.ts`;
-  detailed boundaries and limits: [file previews](../../docs/file-preview.md).
+  detailed boundaries and limits: [file previews](../../docs/architecture/workbench/file-preview.md).
 
 
 ## Code caption paint continuity (2026-10-21)

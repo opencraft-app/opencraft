@@ -4,8 +4,8 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { AppHostServer } from "../../../packages/app-host-server/src/index";
 import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
-import { createWorkbenchWebServer as createStaticServer } from "../../workbench-web-server.mjs";
-import { createHeadlessBackendProxy } from "../../web-deployment/headless-backend.mjs";
+import { createWorkbenchWebServer as createStaticServer } from "../../../apps/headless-server/src/workbench-web-server.mjs";
+import { createHeadlessBackendProxy } from "../../../apps/headless-server/src/web-deployment/headless-backend.mjs";
 
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const root = resolve(process.env.OPENCRAFT_OFFLINE_WEB_ROOT ?? "apps/workbench-web/dist");

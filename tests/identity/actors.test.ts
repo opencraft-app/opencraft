@@ -16,7 +16,7 @@ import { once } from 'node:events';
 import { createCipheriv, createHash, randomBytes } from 'node:crypto';
 import { releaseFixture } from "../support/web-deployment-fixture.mjs";
 import { createManagedWebServer } from "../../scripts/web-deployment/server.mjs";
-import { buildHeadlessBundle } from "../../scripts/package-headless-linux.mjs";
+import { buildHeadlessBundle } from "../../scripts/packaging/package-headless-linux.mjs";
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const cleanups = new WeakMap<object, Array<() => unknown>>();

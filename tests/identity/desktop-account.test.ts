@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDesktopAccountHost } from '../../plugins/local-account/src/desktop';
-import { createWorkbenchStaticServer } from '../../scripts/serve-workbench-static.mjs';
+import { createWorkbenchStaticServer } from '../../apps/headless-server/src/serve-workbench-static.mjs';
 import { MembershipStore } from '../../packages/access-control/src/index';
 import { startOpenCraftDaemonServer } from '../../apps/opencraft-daemon/src/server';
 import { AppHostServer } from '@opencraft/app-host-server';
@@ -19,7 +19,7 @@ test('real desktop static entry uses Main-held HttpOnly proof, shares one Human 
   const host = await createDesktopAccountHost(join(root, 'account'), humanLoginPage, { async openRemote(origin) { opened.push(origin); } });
   const web = await createWorkbenchStaticServer({ root, accountService: host });
   const address = await web.listen({ host: '127.0.0.1', port: 0 }), origin = `http://127.0.0.1:${address.port}`;
-  host.setOrigin(origin); t.after(async () => { await web.close(); host.close(); });
+  host.setOrigin(origin); t.after(async () => { await web.close(); await host.close(); });
   const proof = `oc_desktop_owner=${host.browserProof}; oc_human=${host.browserSessionToken}`;
   const state = await (await fetch(origin + '/__opencraft_account/status', { headers: { cookie: proof } })).json() as any;
   assert.equal(state.administrator, true); assert.equal(state.desktopOwner, true); assert.equal(state.native, true);

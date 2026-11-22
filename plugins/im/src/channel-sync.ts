@@ -5,6 +5,9 @@ import type { ActorContext } from '@opencraft/identity-core/actors';
 export interface ChannelSourceBinding { source: string; channelId: string }
 export interface ChannelArrival { source: string; id: string; author: string; sender?: {id:string;displayName:string}; text:string; at:number; mediaId?:string; mediaIdentity?:string; inlineImage?:Uint8Array }
 export interface ChannelSyncTransport {
+  /** Stable operator-selected connection ID. Omitted IDs share the legacy singleton scope.
+   * This is installation metadata, not a tenant or an authorization credential. */
+  readonly connectionId?: string;
   /** Optional connection-owned personal Turn notification adapter. No group selection or credentials. */
   notifications?: {
     targets(actorId:string):Array<{channelId:string;senderId:string;label:string;methodId:string;methodLabel:string}>;
@@ -37,6 +40,7 @@ export interface NativeChannelSyncPort {
  * claims durable sends and publishes all timeline changes through its Worker. */
 export class ChannelSync {
   private readonly incarnation=randomUUID();
+  private readonly connectionId:string;
   private readonly abort=new AbortController();
   private readonly pending=new Set<Promise<unknown>>();
   private unsubscribe?:()=>void;
@@ -45,13 +49,28 @@ export class ChannelSync {
   private pumping?:Promise<void>;
   private downloading?:Promise<void>;
   private wakePending=false;
-  private constructor(readonly transport:ChannelSyncTransport,private readonly port:NativeChannelSyncPort){}
-  static async open(transport:ChannelSyncTransport,port:NativeChannelSyncPort){
-    if(!port?.synchronizeChannels)throw Error('Native channels required');
-    // Callbacks belong to the generic channel transport namespace.
+  private closing?:Promise<void>;
+  private configurationAttempted=false;
+  private constructor(readonly transport:ChannelSyncTransport,private readonly port:NativeChannelSyncPort){
+    this.connectionId=ChannelSync.validateTransport(transport);
+  }
+  /** Preflight is side-effect free so composition can reject collisions before configure. */
+  static validateTransport(transport:ChannelSyncTransport){
+    const connectionId=transport?.connectionId??'legacy';
+    if(!transport||typeof connectionId!=='string'||!/^[a-z0-9][a-z0-9._:-]{0,127}$/u.test(connectionId))throw Error('Invalid channel connection ID');
     if(transport.callback&&!/^\/__opencraft_im\/channel-callback\/[a-z0-9_-]{1,64}$/.test(transport.callback.path))throw Error('Invalid channel callback route');
+    return connectionId;
+  }
+  static async open(transport:ChannelSyncTransport,port:NativeChannelSyncPort){
     const sync=new ChannelSync(transport,port);
     try{
+      if(!port?.synchronizeChannels)throw Error('Native channels required');
+      // Do not silently fall back to deployment-wide resets on an older owner.
+      if(transport.connectionId!==undefined){
+        const capability=await port.synchronizeChannels({method:'connectionCapabilities',params:{}});
+        if(capability?.version!==1)throw Error('Channel connection isolation unavailable');
+      }
+      sync.configurationAttempted=true;
       await sync.call('configure',{bindings:transport.bindings,images:!!transport.images});
       sync.unsubscribe=transport.subscribeWithReceipt
         ? transport.subscribeWithReceipt(arrival=>sync.track(sync.ingest(arrival)))
@@ -59,10 +78,10 @@ export class ChannelSync {
       sync.unwatch=port.channels.onChange(()=>sync.wake());
       sync.timer=setInterval(()=>sync.wake(),1000);sync.timer.unref();sync.wake();
       return sync;
-    }catch(error){await sync.close();throw error;}
+    }catch(error){await sync.close().catch(()=>{});throw error;}
   }
   private call(method:string,params:Record<string,unknown>={}){
-    return this.port.synchronizeChannels({method,params:{...params,incarnation:this.incarnation}});
+    return this.port.synchronizeChannels({method,params:{...params,connectionId:this.connectionId,incarnation:this.incarnation}});
   }
   private track<T>(promise:Promise<T>):Promise<T>{
     this.pending.add(promise);void promise.then(()=>this.pending.delete(promise),()=>this.pending.delete(promise));return promise;
@@ -158,11 +177,18 @@ export class ChannelSync {
       await this.call('imageReady',{source:item.source,messageId:item.messageId,bytes});
     }
   }
-  async close(){
-    if(this.abort.signal.aborted)return;
-    this.abort.abort();clearInterval(this.timer);this.unsubscribe?.();this.unwatch?.();
+  close(){
+    return this.closing??=this.dispose();
+  }
+  private async dispose(){
+    this.abort.abort();clearInterval(this.timer);
+    const failures:unknown[]=[];
+    for(const cleanup of [this.unsubscribe,this.unwatch]) {
+      try { cleanup?.(); } catch(error) { failures.push(error); }
+    }
     await Promise.allSettled([...this.pending,this.pumping,this.downloading]);
-    await this.transport.close?.();
-    await this.call('deactivate').catch(()=>{});
+    try { await this.transport.close?.(); } catch(error) { failures.push(error); }
+    if(this.configurationAttempted)await this.call('deactivate').catch(()=>{});
+    if(failures.length)throw new AggregateError(failures,'Channel connection shutdown failed');
   }
 }

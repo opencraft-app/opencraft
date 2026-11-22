@@ -1,21 +1,16 @@
 import * as Primitive from "@radix-ui/react-context-menu";
-import { forwardRef, useContext, useLayoutEffect, useRef, useState, type ComponentPropsWithoutRef } from "react";
-import { MenuInteraction } from "./menu-interaction";
+import { forwardRef, useContext, useLayoutEffect, useRef, type ComponentPropsWithoutRef } from "react";
+import { MenuInteraction, useScopedMenu, useScopedMenuContent } from "./menu-interaction";
 
 export * from "@radix-ui/react-context-menu";
 
 export type ContextMenuProps = Omit<ComponentPropsWithoutRef<typeof Primitive.Root>, "modal">;
 
 export function Root({ open: controlled, onOpenChange, children, ...props }: ContextMenuProps) {
-  const [local, setLocal] = useState(false);
-  const open = controlled ?? local;
-  const change = (next: boolean) => {
-    if (controlled === undefined) setLocal(next);
-    onOpenChange?.(next);
-  };
+  const menu = useScopedMenu(controlled, false, onOpenChange);
   // Native outside dismissal, matching DropdownMenu without a page-wide blocker.
-  return <Primitive.Root {...props} modal={false} open={open} onOpenChange={change}>
-    <MenuInteraction.Provider value={{ open, change }}>{children}</MenuInteraction.Provider>
+  return <Primitive.Root {...props} modal={false} open={menu.open} onOpenChange={menu.change}>
+    <MenuInteraction.Provider value={menu}>{children}</MenuInteraction.Provider>
   </Primitive.Root>;
 }
 
@@ -59,6 +54,11 @@ export const Trigger = forwardRef<HTMLSpanElement, ComponentPropsWithoutRef<type
   />;
 });
 
-export const Content = Primitive.Content;
+export const Content = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<typeof Primitive.Content>>(function Content(
+  { onCloseAutoFocus, ...props }, ref,
+) {
+  const presentation = useScopedMenuContent(onCloseAutoFocus);
+  return presentation.active ? <Primitive.Content {...props} ref={ref} onCloseAutoFocus={presentation.onCloseAutoFocus} /> : null;
+});
 
 export { Root as ContextMenu, Trigger as ContextMenuTrigger, Content as ContextMenuContent };

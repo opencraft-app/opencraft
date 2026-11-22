@@ -46,7 +46,7 @@ No remote requests contain the image during compression; only codec assets load.
 
 Verification: `node --import tsx --test tests/resources/image-processing.test.ts
 tests/shell/workbench-attachment-resolver.test.ts` from repository root, plus
-`node --import tsx scripts/test-image-processing-browser.ts` (Playwright env
+`node --import tsx scripts/dev/test-image-processing-browser.ts` (Playwright env
 overrides supported). The browser test builds production assets, checks WASM
 HTTP success, exact PNG pixels including alpha, JPEG sizing, cancellation and
 the actual attachment data URL.

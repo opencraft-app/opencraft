@@ -10,7 +10,7 @@ import { hostLayout, inspectPrivateDirectory, inspectWorkspaceDirectory, SERVICE
 
 export const OWNER_ORDER = Object.freeze(['hands', 'brain', 'gateway']);
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const dockerDirectory = join(repository, 'docker');
+const dockerDirectory = join(repository, 'deploy', 'docker');
 
 export function parseEnvironment(text) {
   const result = {};

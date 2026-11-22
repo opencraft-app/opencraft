@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, renameSync, readFileSync
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
-import { changedPaths, planChanges, portableTargets } from "../../scripts/ci-plan.mjs";
+import { changedPaths, planChanges, portableTargets } from "../../scripts/ci/ci-plan.mjs";
 
 const webTargets = ['web-browser'];
 const emptyPlan = { targets: [], audits: [], managedWeb: false, native: false, headlessTests: false, headlessPackage: false, extensions: false };
@@ -18,7 +18,7 @@ test('visual-only changes build Web without native packaging, server tests or up
   });
 });
 test('docs-only and empty diffs need no build; main and weekly runs still audit unchanged dependencies', () => {
-  for (const paths of [[], ['docs/build-matrix.md', 'README.md', 'design/invariants.md']]) {
+  for (const paths of [[], ['docs/develop/build-matrix.md', 'README.md', 'design/invariants.md']]) {
     assert.deepEqual(planChanges(paths), emptyPlan);
   }
   for (const event of ['push', 'schedule']) {
@@ -43,7 +43,7 @@ test('shared contracts and unknown build inputs retain Web and server coverage',
 });
 test('root toolchain, lockfile, workflow and selector changes stay on Web/Linux', () => {
   for (const path of ['package.json', 'package-lock.json', '.nvmrc', '.npmrc', 'tsconfig.base.json',
-    'config/build-matrix.json', '.github/workflows/ci-plan.yml', 'scripts/ci-plan.mjs', 'tests/tooling/ci-plan.test.mjs']) {
+    'config/build-matrix.json', '.github/workflows/ci-plan.yml', 'scripts/ci/ci-plan.mjs', 'tests/tooling/ci-plan.test.mjs']) {
     const plan = planChanges([path]);
     assert.deepEqual(plan.targets, webTargets, path);
     assert.deepEqual(plan.audits, ['.', 'runtime/dsh', 'apps/bridges/hermes'], path);
@@ -58,10 +58,10 @@ test('server runtime changes test without packaging; archive inputs also build a
     assert.equal(plan.headlessTests, true, path);
     assert.equal(plan.headlessPackage, false, path);
   }
-  for (const path of ['scripts/package-headless-linux.mjs', 'scripts/install-headless-linux.sh',
-    'scripts/headless-codex-launcher.sh', 'scripts/headless-server-launcher.sh', 'apps/headless-server/src/headless-web-release.mjs',
+  for (const path of ['scripts/packaging/package-headless-linux.mjs', 'scripts/packaging/install-headless-linux.sh',
+    'scripts/packaging/headless-codex-launcher.sh', 'scripts/packaging/headless-server-launcher.sh', 'apps/headless-server/src/headless-web-release.mjs',
     'scripts/smoke/server/smoke-headless-package.mjs', 'scripts/server-deployment/service.mjs',
-    'tests/server/headless-installer.test.mjs', 'tests/server/server-deployment.test.mjs', 'packaging/web-server/package.json']) {
+    'tests/server/headless-installer.test.mjs', 'tests/server/server-deployment.test.mjs', 'deploy/web-server/package.json']) {
     const plan = planChanges([path]);
     assert.equal(plan.headlessTests, true, path);
     assert.equal(plan.headlessPackage, true, path);
@@ -80,7 +80,7 @@ test('managed Web is selected for update UI, deployment, protocol and Vite chang
     'apps/workbench-web/vite.config.ts', 'apps/workbench-web/public/opencraft-host-proxy-sw.js',
     'scripts/web-deployment/server.mjs', 'scripts/server-deployment/gateway.mjs',
     'packages/web-update-protocol/src/index.mjs', 'tests/server/web-deployment-source.test.mjs',
-    'config/playwright.web-updates.config.mjs', 'config/playwright.web-updates.live.config.mjs', 'packaging/web-server/package.json']) {
+    'config/playwright.web-updates.config.mjs', 'config/playwright.web-updates.live.config.mjs', 'deploy/web-server/package.json']) {
     assert.equal(planChanges([path]).managedWeb, true, path);
   }
 });
@@ -129,7 +129,7 @@ test('CLI writes machine-readable outputs and falls back when a base commit is u
   try {
     const eventPath = join(cwd, 'event.json'), output = join(cwd, 'output'), summary = join(cwd, 'summary');
     writeFileSync(eventPath, JSON.stringify({ before: '0'.repeat(40), after: 'a'.repeat(40) }));
-    execFileSync(process.execPath, [resolve('scripts/ci-plan.mjs')], { cwd,
+    execFileSync(process.execPath, [resolve('scripts/ci/ci-plan.mjs')], { cwd,
       env: { ...process.env, GITHUB_EVENT_NAME: 'push', GITHUB_EVENT_PATH: eventPath, GITHUB_OUTPUT: output, GITHUB_STEP_SUMMARY: summary },
       stdio: 'pipe',
     });
@@ -156,7 +156,7 @@ test('CLI propagates explicit manual full-matrix requests without widening PRs',
       ['pull_request', 'true', webTargets, 'false'],
     ]) {
       const output = join(cwd, `output-${event}-${full}`);
-      execFileSync(process.execPath, [resolve('scripts/ci-plan.mjs')], { cwd,
+      execFileSync(process.execPath, [resolve('scripts/ci/ci-plan.mjs')], { cwd,
         env: { ...process.env, GITHUB_EVENT_NAME: event, GITHUB_EVENT_PATH: eventPath,
           CI_FULL_MATRIX: full, GITHUB_OUTPUT: output, GITHUB_STEP_SUMMARY: '' }, stdio: 'pipe' });
       const values = Object.fromEntries(readFileSync(output, 'utf8').trim().split('\n').map(line => {
@@ -172,7 +172,7 @@ test('CLI propagates explicit manual full-matrix requests without widening PRs',
 
 
 test('extension guide and example select contract tests without platform builds', () => {
-  for (const path of ['CONTRIBUTING.md', 'docs/extension-development.md', 'docs/plugin-architecture.md',
+  for (const path of ['CONTRIBUTING.md', 'docs/develop/extension-development.md', 'docs/architecture/extensions/plugin-architecture.md',
     'docs/architecture/extensions/architecture-and-lifecycle.md',
     'docs/architecture/extensions/manifest-and-contributions.md',
     'docs/architecture/extensions/identity-and-execution.md',

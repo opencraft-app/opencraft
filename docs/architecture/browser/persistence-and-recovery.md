@@ -1,6 +1,6 @@
 # Browser: Persistence and recovery
 
-[Architecture index](../../browser-workbench-architecture.md) · [Documentation index](../../README.md)
+[Architecture index](browser-workbench-architecture.md) · [Documentation index](../../README.md)
 
 ## 14. Replica、Checkpoint 与安全
 
