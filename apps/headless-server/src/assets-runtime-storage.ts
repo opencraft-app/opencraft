@@ -4,6 +4,7 @@ import { createAssetsStorage } from "@opencraft/plugin-assets/server/storage";
 import type { GitConnectionProvider } from "@opencraft/plugin-assets/server/git-connections";
 import { GitExecutionAuthority } from "./git-execution-authority.js";
 import { parseGitExecutionLocator } from "@opencraft/execution-environment/git-execution";
+import { createHeadlessSandboxProviders } from "./sandbox-providers.js";
 /** Only this compiled native host adds execution admission to the shared vault owner. */
 export function createHeadlessAssetsStorage(
   directory: string,
@@ -51,10 +52,11 @@ export function createHeadlessAssetsStorage(
       close: () => authority.close(),
     },
     async (context) => {
-      const bots = new WorkspaceBotOwner(context);
+      const providers = createHeadlessSandboxProviders();
+      const bots = new WorkspaceBotOwner(context, { providers });
       let ordinary;
       try {
-        ordinary = workspaces ? await createWorkspaceExecutionOwner(context, workspaces) : undefined;
+        ordinary = workspaces ? await createWorkspaceExecutionOwner(context, { ...workspaces, providers }) : undefined;
       } catch (cause) {
         await bots.close();
         throw cause;
@@ -62,6 +64,7 @@ export function createHeadlessAssetsStorage(
       return {
         workspaceExecution: ordinary !== undefined,
         botExecution: true,
+        botBackends: providers.ids(),
         methods: { ...bots.methods, ...ordinary?.methods } as never,
         async close() {
           const outcomes = await Promise.allSettled([bots.close(), ordinary?.close()]);

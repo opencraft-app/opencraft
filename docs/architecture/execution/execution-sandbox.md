@@ -94,10 +94,58 @@ not echo commands, credentials or environment values.
 Deployment assembly explicitly selects the provider and policy for engine execution.
 Unconfigured Hosts retain existing behavior and do not claim sandbox containment.
 A selected uninstalled provider rejects execution instead of falling back to host
-execution. An optional `@opencraft/sandbox-e2b` execution adapter is included, but is not
-automatically registered in engine or Bot assembly. Its transport, resource and
+execution. An optional `@opencraft/sandbox-e2b` execution adapter is included; it is not
+registered in engine assembly, and Bot/workspace assembly registers it only
+through the provider registry described below. Its transport, resource and
 lifetime scope is documented in [the E2B adapter](../../../packages/sandbox-e2b/README.md).
 Provider tests must not be described as complete production Bot integration.
+
+### Provider registry, shared broker and persistent workspaces
+
+Remote providers are pluggable without touching workspace or Bot owners. Only
+E2B is implemented; no Cloudflare or other non-E2B provider exists yet, and a
+registry entry alone is not a claim of compatibility.
+
+- **Registry.** `@opencraft/sandbox/providers` defines a provider as
+  `{ id, createBackend(request) → SandboxBackend, persistentWorkspaces? }`.
+  Deployment assembly (`apps/headless-server/src/sandbox-providers.ts` in the
+  Assets Worker; `apps/opencraft-daemon/src/assistant-environments.ts`) registers
+  providers explicitly. Consumers resolve by the installation's configured
+  `backend`; an unknown or unregistered ID fails closed with
+  `SANDBOX_UNAVAILABLE`, never falling back to local execution or E2B. Provider
+  IDs are at most 23 characters so the per-provider pool ID stays valid. The
+  headless Worker reports its registered IDs (`botBackends`) to Main, which keys
+  Bot environment providers by them.
+- **Request.** `createBackend` receives the secret-free provider-typed
+  installation, an installation-owned `readSecret()`, template, interpreter,
+  timeouts, and optional workspace binding, creation receipt and bounded lease
+  callbacks. Credentials and endpoints never come from Bot or task input.
+- **Shared broker.** `@opencraft/sandbox/broker` owns the Python NDJSON broker
+  program and the host-side framing and process state machine: `start`, `stdin`,
+  `resize`, `eof` and `terminate` frames to the broker; `started`, `output`, `exit`
+  and `error` frames back; base64 payloads; 400000-byte broker lines; one PTY output
+  stream; process-group SIGKILL; no reconnect or replay after transport loss; an
+  unacknowledged termination retires the environment. It has no Node, vendor SDK
+  or E2B types. A provider supplies only a launch port that starts
+  `python3 -u <broker>` and returns `{ write(frame), ended }` plus stdout text
+  chunks. E2B keeps only the upload (`files.write`) and launch
+  (`commands.run(..., stdin)`) calls; fault codes and messages are unchanged.
+- **Persistent workspaces.** The optional `PersistentWorkspaceProvider`
+  capability supplies `receipt()` (sole instance member plus stable private volume
+  ID after create), `inspect(binding)` (`absent`/`present`/`unknown`, never an
+  allocation lock) and `verifyMounts(environment)` (never mounts). The ordinary
+  allocator and Bot owner require it whenever the installation enables persistent
+  workspaces; a provider without it cannot be selected. E2B's implementation keeps
+  its existing schemaVersion 2 workspace/volume API calls and NFS `/workspace` and
+  `/shared` rules.
+- **Configuration compatibility.** Installation files and vault credentials are
+  provider-typed by a `backend` discriminant; the E2B variant keeps its fields.
+  A schemaVersion 1 installation file or version-1 vault credential without
+  `backend` is E2B. E2B credentials are still stored without `backend`, so existing
+  documents are rewritten only by existing write paths and in the same shape.
+  Workspace configuration revisions keep the E2B endpoint facts in their original
+  positions, so persisted selections stay valid. Resource checks, unknown-creation
+  retention, confirmed destruction, lease renewal and error codes are unchanged.
 
 The independent durable terminal owner keeps its existing process RPC and lifetime.
 This integration does not route that separate Workbench terminal owner through

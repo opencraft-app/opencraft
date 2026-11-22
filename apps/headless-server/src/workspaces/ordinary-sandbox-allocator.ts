@@ -5,11 +5,8 @@ import {
   type SandboxPool,
   type SandboxPoolPolicy,
 } from "@opencraft/sandbox";
-import {
-  e2bSandboxBackend,
-  createE2BPersistentWorkspaceInspector,
-  type E2BSandboxOptions,
-} from "@opencraft/sandbox-e2b";
+import type { PersistentWorkspaceProvider } from "@opencraft/sandbox/providers";
+import type { SandboxInstallation } from "@opencraft/plugin-assets/server/sandbox-installations";
 import {
   OrdinaryWorkspaceAdmissionRejected,
   type WorkspaceAllocation,
@@ -17,6 +14,7 @@ import {
 import type { WorkspaceLease } from "@opencraft/local-agent-host/ordinary-workspace-store";
 import type { ResolvedWorkspaceSelection } from "@opencraft/execution-environment/workspace-selection";
 import { InstalledOrdinaryEnvironmentCatalog, type OrdinaryCatalogContext } from "./ordinary-environment-catalog";
+import type { HeadlessSandboxProviders } from "../sandbox-providers.js";
 
 type Admission = {
   context: OrdinaryCatalogContext;
@@ -28,6 +26,7 @@ type Admission = {
 type Runtime = ReturnType<InstalledOrdinaryEnvironmentCatalog["runtime"]>;
 type Entry = {
   runtime: Runtime;
+  persistent: PersistentWorkspaceProvider<SandboxInstallation>;
   lease: WorkspaceLease;
   authorize(): Promise<void>;
   onLost(): void;
@@ -50,79 +49,37 @@ export class InstalledOrdinarySandboxAllocator {
   constructor(
     private readonly catalog: InstalledOrdinaryEnvironmentCatalog,
     private readonly dependencies: {
-      backend?: (options: E2BSandboxOptions) => SandboxBackend;
-      request?: typeof fetch;
-    } = {},
+      /** Deployment-registered providers; the installation's backend selects one. */
+      providers: HeadlessSandboxProviders;
+      /** Composition wrapper around each provider backend (for example the global budget). */
+      wrap?: (backend: SandboxBackend) => SandboxBackend;
+    },
   ) {}
-  private async metadata(entry: Entry, instanceId: string) {
-    await entry.authorize();
-    const key = await entry.runtime.readApiKey();
-    const response = await (this.dependencies.request ?? fetch)(
-      entry.runtime.apiUrl + "/workspaces/" + entry.lease.workspaceId,
-      { headers: { "X-API-Key": key }, redirect: "error", signal: AbortSignal.timeout(15000) },
-    );
-    if (!response.ok || !response.body) {
-      await response.body?.cancel();
-      throw unavailable();
-    }
-    const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let bytes = 0;
-    let decoded: unknown;
-    try {
-      for (;;) {
-        const part = await reader.read();
-        if (part.done) break;
-        bytes += part.value.byteLength;
-        if (bytes > 65536) throw unavailable();
-        chunks.push(part.value);
-      }
-      decoded = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-    } finally {
-      await reader.cancel().catch(() => {});
-      reader.releaseLock();
-    }
-    if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) throw unavailable();
-    const value = decoded as Record<string, unknown>;
-    if (
-      value.schemaVersion !== 2 ||
-      value.workspaceID !== entry.lease.workspaceId ||
-      typeof value.privateVolumeID !== "string" ||
-      !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value.privateVolumeID) ||
-      !Array.isArray(value.members) ||
-      value.members.length !== 1 ||
-      !value.members[0] ||
-      typeof value.members[0] !== "object" ||
-      value.members[0].sandboxID !== instanceId
-    )
-      throw unavailable();
-    await entry.authorize();
-    return { instanceId, privateVolumeId: value.privateVolumeID };
-  }
   private ready(runtime: Runtime) {
-    const key = JSON.stringify([runtime.policy.capacity.cpuMillis, runtime.policy.capacity.memoryBytes]);
+    const backendId = runtime.installation.backend;
+    // One pool per Worker: a different provider or budget fails closed rather than sharing it.
+    const key = JSON.stringify([runtime.policy.capacity.cpuMillis, runtime.policy.capacity.memoryBytes, backendId]);
     if (this.stopped || (this.capacity && this.capacity !== key)) throw unavailable();
     if (!this.pool) {
       this.capacity = key;
       this.policy = {
-        id: "ordinary-e2b",
+        id: "ordinary-" + backendId,
         capacity: runtime.policy.capacity,
         defaults: runtime.template.resources,
         queueLimit: 0,
       };
       const backend: SandboxBackend = {
-        id: "e2b",
+        id: backendId,
         initialize: async () => {},
         create: async (identity, resources, signal) => {
           const entry = this.entries.get(identity.owner);
           if (!entry || this.stopped) throw new SandboxCreationFault("not-created");
           const { runtime } = entry;
-          const provider = (this.dependencies.backend ?? e2bSandboxBackend)({
-            apiUrl: runtime.apiUrl,
-            sandboxUrl: runtime.sandboxUrl,
+          const created = this.dependencies.providers.resolve(runtime.installation).createBackend({
+            installation: runtime.installation,
+            readSecret: runtime.readSecret,
             templateId: runtime.templateId,
-            python: runtime.template.python,
-            readApiKey: runtime.readApiKey,
+            ...(runtime.template.python === undefined ? {} : { python: runtime.template.python }),
             readWorkspaceId: async () => {
               await entry.authorize();
               return entry.lease.workspaceId;
@@ -132,10 +89,17 @@ export class InstalledOrdinarySandboxAllocator {
             onCreated: async (receipt) => {
               if (receipt.workspaceId !== entry.lease.workspaceId || receipt.identity.owner !== identity.owner)
                 throw unavailable();
-              entry.receipt = await this.metadata(entry, receipt.instanceId);
+              entry.receipt = await entry.persistent.receipt({
+                installation: runtime.installation,
+                readSecret: runtime.readSecret,
+                authorize: entry.authorize,
+                workspaceId: entry.lease.workspaceId,
+                instanceId: receipt.instanceId,
+              });
             },
             lease: { ...runtime.policy.lease, authorize: entry.authorize, onLost: entry.onLost },
           });
+          const provider = this.dependencies.wrap?.(created) ?? created;
           this.backends.add(provider);
           let submitted = false;
           try {
@@ -181,9 +145,11 @@ export class InstalledOrdinarySandboxAllocator {
       this.entries.has(lease.owner)
     )
       throw unavailable();
-    let runtime: Runtime;
+    let runtime: Runtime, persistent: PersistentWorkspaceProvider<SandboxInstallation>;
     try {
       runtime = this.catalog.runtime(input.context, input.environment);
+      // A provider without the persistent-workspace capability is never selected here.
+      persistent = this.dependencies.providers.persistent(runtime.installation);
     } catch {
       throw new OrdinaryWorkspaceAdmissionRejected(lease);
     }
@@ -196,6 +162,7 @@ export class InstalledOrdinarySandboxAllocator {
     };
     const entry: Entry = {
       runtime,
+      persistent,
       lease,
       authorize,
       providerCreateStarted: false,
@@ -247,19 +214,29 @@ export class InstalledOrdinarySandboxAllocator {
     authorize: () => Promise<void>,
   ) {
     const runtime = this.catalog.runtime(context, environment);
-    const inspect = createE2BPersistentWorkspaceInspector(
-      {
-        apiUrl: runtime.apiUrl,
-        readApiKey: runtime.readApiKey,
-        authorize: async (workspaceId) => {
-          if (this.stopped || workspaceId !== binding.workspaceId) throw unavailable();
-          await authorize();
-          await runtime.authorize();
-        },
+    return this.dependencies.providers.persistent(runtime.installation).inspect({
+      installation: runtime.installation,
+      readSecret: runtime.readSecret,
+      binding: { ...binding },
+      authorize: async () => {
+        if (this.stopped) throw unavailable();
+        await authorize();
+        await runtime.authorize();
       },
-      this.dependencies.request ?? fetch,
-    );
-    return inspect({ ...binding });
+    });
+  }
+  /** The selected provider verifies its own volume mounts in the live environment. */
+  async verifyMounts(
+    context: OrdinaryCatalogContext,
+    environment: ResolvedWorkspaceSelection["environment"],
+    input: Omit<Parameters<PersistentWorkspaceProvider<SandboxInstallation>["verifyMounts"]>[0], "installation" | "readSecret">,
+  ) {
+    const runtime = this.catalog.runtime(context, environment);
+    return this.dependencies.providers.persistent(runtime.installation).verifyMounts({
+      ...input,
+      installation: runtime.installation,
+      readSecret: runtime.readSecret,
+    });
   }
   close() {
     return (this.closing ??= (async () => {

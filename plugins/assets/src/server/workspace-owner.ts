@@ -15,6 +15,8 @@ export interface AssetWorkspaceOwnerContext {
 export interface AssetWorkspaceExecutionOwner {
   readonly workspaceExecution?: boolean;
   readonly botExecution?: boolean;
+  /** Sandbox backend IDs this deployment registered for Bot environments. */
+  readonly botBackends?: readonly string[];
   readonly methods: Record<string, (...args: never[]) => unknown>;
   close(): Promise<void>;
 }

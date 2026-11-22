@@ -2,7 +2,7 @@
 
 [Architecture index](../README.md) · [可选 Cloudflare 部署](cloudflare-deployment.md) · [服务器核心 owner](../server/server-core-owner.md) · [SQLite 生命周期](../server/sqlite-lifecycle.md)
 
-状态：第 1、2 阶段（全部四类端口、Node 适配器与首批使用方）已实施；第 3–6 阶段与 Cloudflare 适配器为设计。以源码、测试与 `config/main-thread-sync-io.json` 为准。
+状态：第 1、2 阶段（全部四类端口、Node 适配器与首批使用方）与第 3 阶段（沙盒 provider 泛化，仅 E2B provider）已实施；第 4–6 阶段与 Cloudflare 适配器为设计。以源码、测试与 `config/main-thread-sync-io.json` 为准。
 
 ## 1. 目的
 
@@ -126,7 +126,7 @@ Unix socket、锁文件、`/proc` 读取、Git 与 `/workspace` 工作目录、E
 
 1. **SQL 端口与 Node 适配器（服务器核心数据）。** 新增 `@opencraft/sql` 与一致性测试；`@opencraft/sqlite-node` 提供 `nodeSqlDatabase()`；`ServerDatabaseSource`／`openServerRepository()` 改为交付 `SqlDatabase`；`access-control` 的领域类、函数与 `CommunicationExtension` 插件契约不再依赖 `DatabaseSync`；手写事务改为 `transaction()`；`Collaboration` 不再从连接推导文件路径。
 2. **`StateDocumentStore`、`BlobStore`、`SecretStore`／`KeyMaterial` 与 Node 适配器（已实施）**，迁移第 3.2–3.4 节所列使用方；剩余项见各节"未迁移"与"后续"。
-3. **沙盒 provider 泛化**：共享 broker 协议与帧解析、provider 注册、按 provider 分型的安装配置与凭据、可选持久工作区能力。见[执行沙盒](../execution/execution-sandbox.md)。
+3. **沙盒 provider 泛化（已实施）**：`@opencraft/sandbox/broker` 持有共享 broker 程序与帧解析，`@opencraft/sandbox/providers` 提供 provider 注册（部署装配显式注册，未知 backend 拒绝执行）与可选 `PersistentWorkspaceProvider`；安装配置与凭据按 `backend` 分型，缺省 `backend` 的 schemaVersion 1 安装文件与 version 1 凭据仍为 E2B，修订摘要不变。目前只实现 E2B provider。见[执行沙盒](../execution/execution-sandbox.md#provider-registry-shared-broker-and-persistent-workspaces)。
 4. **Gateway／Brain 按工作区拆分**：Codex Host 状态成为独立 owner；`CODEX_HOME`、Pi、DSH writer 按工作区实例化；去除对 `pid: host` 与共享 `$DATA` 的依赖。
 5. **Cloudflare 适配器**：DO SQL、DO 文档、R2、Secrets 与 `sandbox-cloudflare`，均通过同一套一致性测试。
 6. **Cloudflare 部署装配**。见[可选 Cloudflare 部署](cloudflare-deployment.md)。

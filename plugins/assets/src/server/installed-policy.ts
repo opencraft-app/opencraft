@@ -1,6 +1,8 @@
 import { isAbsolute } from "node:path";
+import { isSandboxBackendId, type SandboxBackendId } from "./sandbox-installations.js";
 export interface InstalledSandboxPolicy {
-  backendId: "e2b";
+  /** The one provider selected for this installation; every template credential uses it. */
+  backendId: SandboxBackendId;
   capacity: { cpuMillis: number; memoryBytes: number };
   lease: { timeoutMs: number; renewEveryMs: number; maxLifetimeMs: number };
   maxCommandMs: number;
@@ -20,7 +22,7 @@ const invalid = () => {
 export function validateInstalledPolicy(p: InstalledSandboxPolicy) {
   if (
     !p ||
-    p.backendId !== "e2b" ||
+    !isSandboxBackendId(p.backendId) ||
     Object.keys(p).some(
       (k) => !["backendId", "capacity", "lease", "maxCommandMs", "persistentWorkspaces", "templates"].includes(k),
     ) ||

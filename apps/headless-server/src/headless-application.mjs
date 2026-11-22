@@ -1368,7 +1368,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     if (relayConfiguration) relay = connectRelay({ ...relayConfiguration.options, targetPort: relayConfiguration.options.targetPort ?? address.port });
     hubController.node?.start(hubTargetPort ?? address.port);
     if (options.codexCoreEndpoint) codexReadiness = maintainHeadlessCodexHost(appHostServer);
-    const environmentProviders=installedBotProvider?{e2b:installedBotProvider}:{};
+    // The Worker's deployment-registered backends; the installation selects one of them.
+    const environmentProviders=installedBotProvider?Object.fromEntries(assetsStorage.botBackends.map(id=>[id,installedBotProvider])):{};
     personalAssistantHost = await createPersonalAssistantHost({directory:dataDirectory,service:actorCollaboration,environmentProviders,environmentProvidersFor:identity?.environmentProvidersFor,
       modelSource:createAssistantModelSource(join(dataDirectory,'models'),modelPolicyPath,{
         fetch:async(input,init)=>{

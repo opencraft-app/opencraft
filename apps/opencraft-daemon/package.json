@@ -31,6 +31,7 @@
     "@opencraft/personal-assistant": "*",
     "@opencraft/agent-bridge-host": "0.1.0",
     "@opencraft/codex-execution": "0.1.0",
+    "@opencraft/sandbox": "0.1.0",
     "@opencraft/sandbox-e2b": "0.1.0",
     "@opencraft/observability-contract": "0.1.0",
     "@opencraft/access-control": "0.1.0",

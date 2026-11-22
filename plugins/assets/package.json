@@ -17,6 +17,7 @@
     "./server/configurations": "./src/server/configurations.ts",
     "./server/libraries": "./src/server/libraries.ts",
     "./server/installed-policy": "./src/server/installed-policy.ts",
+    "./server/sandbox-installations": "./src/server/sandbox-installations.ts",
     "./server": "./src/server/worker.ts",
     "./server/http": "./src/server/http.ts",
     "./client": "./src/client.ts",

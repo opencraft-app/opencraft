@@ -5,20 +5,22 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { EmployeeGitVaultStore } from "@opencraft/execution-environment/employee-git-vault-store";
 import type { E2BCredential, SandboxConfiguration, SandboxConfigurationsSnapshot } from "../contract.js";
 import { PLATFORM_ASSET_SCOPE, type AssetSource } from "../contract.js";
+import {
+  storedCredential,
+  storedCredentialBackend,
+  type SandboxCredential,
+  type SandboxInstallation,
+} from "./sandbox-installations.js";
 /** Validated installation delivery; never accepted from an HTTP body. */
-export interface InstalledSandboxConfiguration {
-  apiUrl: string;
-  sandboxUrl: string;
+export type InstalledSandboxConfiguration = SandboxInstallation & {
   capacity: InstalledSandboxPolicy["capacity"];
   lease: InstalledSandboxPolicy["lease"];
   maxCommandMs?: number;
   persistentWorkspaces?: boolean;
   templates: (Omit<InstalledSandboxPolicy["templates"][number], "environmentId"> & { id: string; name: string })[];
-}
+};
 const namespace = "document-sandbox-configurations";
-interface PrivateCredential extends E2BCredential {
-  apiKey: string;
-}
+type PrivateCredential = SandboxCredential;
 interface Document {
   version: 1;
   installation?: InstalledSandboxPolicy;
@@ -65,9 +67,10 @@ export class SandboxConfigurations {
         revision: stored.revision,
         document: { version: 1, credentials: [], environments: [] },
       };
-    const doc = object(stored.document) as unknown as Document;
+    const doc = object(stored.document) as unknown as Omit<Document, "credentials"> & { credentials: unknown[] };
     if (doc.version !== 1 || !Array.isArray(doc.credentials) || !Array.isArray(doc.environments))
       fail("unavailable", 503);
+    const credentials: PrivateCredential[] = [];
     try {
       if (
         Object.keys(doc).some((k) => !["version", "credentials", "environments", "installation"].includes(k)) ||
@@ -80,24 +83,37 @@ export class SandboxConfigurations {
         validateInstalledPolicy(doc.installation);
       }
       const ids = new Set<string>();
-      for (const c of doc.credentials) {
+      for (const raw of doc.credentials) {
+        const c = object(raw);
+        // Version-1 credentials have no `backend`; they are E2B (see sandbox-installations).
+        const backend = storedCredentialBackend(c);
         if (
-          Object.keys(object(c)).some(
-            (k) => !["id", "name", "apiUrl", "sandboxUrl", "generation", "apiKey"].includes(k),
+          Object.keys(c).some(
+            (k) => !["backend", "id", "name", "apiUrl", "sandboxUrl", "generation", "apiKey"].includes(k),
           )
         )
           fail();
-        if (ids.has(text(c.id, 64))) fail();
-        ids.add(c.id);
+        const id = text(c.id, 64);
+        if (ids.has(id)) fail();
+        ids.add(id);
         text(c.name);
         text(c.generation, 64);
         if (
           e2bEndpoint(c.apiUrl) !== c.apiUrl ||
           e2bEndpoint(c.sandboxUrl) !== c.sandboxUrl ||
           !text(c.apiKey, 4096) ||
-          /\s/u.test(c.apiKey)
+          /\s/u.test(c.apiKey as string)
         )
           fail();
+        credentials.push({
+          backend,
+          id: c.id as string,
+          name: c.name as string,
+          apiUrl: c.apiUrl as string,
+          sandboxUrl: c.sandboxUrl as string,
+          generation: c.generation as string,
+          apiKey: c.apiKey as string,
+        });
       }
       const environments = new Set<string>();
       for (const e of doc.environments) {
@@ -114,7 +130,13 @@ export class SandboxConfigurations {
     } catch {
       fail("unavailable", 503);
     }
-    return { revision: stored.revision, document: structuredClone(doc) };
+    return { revision: stored.revision, document: { ...structuredClone(doc), credentials } };
+  }
+  private write(scope: string, revision: number, document: Document) {
+    this.vault.writeDocument(scope, namespace, revision, {
+      ...document,
+      credentials: document.credentials.map(storedCredential),
+    });
   }
   hasInstallation() {
     return !!this.read(PLATFORM_ASSET_SCOPE).document.installation;
@@ -125,14 +147,22 @@ export class SandboxConfigurations {
     if (document.installation) return false;
     const credentialId = randomUUID();
     if (!apiKey || /\s/u.test(apiKey)) fail("key_required");
-    const credential = {
-      id: credentialId,
-      name: "E2B",
-      apiUrl: e2bEndpoint(config.apiUrl),
-      sandboxUrl: e2bEndpoint(config.sandboxUrl),
-      apiKey,
-      generation: randomUUID(),
-    };
+    let credential: PrivateCredential;
+    switch (config.backend) {
+      case "e2b":
+        credential = {
+          backend: "e2b",
+          id: credentialId,
+          name: "E2B",
+          apiUrl: e2bEndpoint(config.apiUrl),
+          sandboxUrl: e2bEndpoint(config.sandboxUrl),
+          apiKey,
+          generation: randomUUID(),
+        };
+        break;
+      default:
+        return fail();
+    }
     const templates = config.templates.map((t) => {
       const environmentId = "installed-" + createHash("sha256").update(t.id).digest("hex").slice(0, 32);
       if (document.environments.some((e) => e.id === environmentId)) fail("conflict", 409);
@@ -151,7 +181,7 @@ export class SandboxConfigurations {
       };
     });
     document.installation = {
-      backendId: "e2b",
+      backendId: credential.backend,
       capacity: config.capacity,
       lease: config.lease,
       maxCommandMs: config.maxCommandMs ?? 60000,
@@ -161,7 +191,7 @@ export class SandboxConfigurations {
     validateInstalledPolicy(document.installation);
     document.credentials.push(credential);
     if (document.credentials.length > 32 || document.environments.length > 32) fail("limit");
-    this.vault.writeDocument(PLATFORM_ASSET_SCOPE, namespace, revision, document);
+    this.write(PLATFORM_ASSET_SCOPE, revision, document);
     return true;
   }
   /** Host-only view: secret bytes never enter snapshot/HTTP responses. */
@@ -172,7 +202,10 @@ export class SandboxConfigurations {
     const records = policy.templates.flatMap((t) => {
       const environment = document.environments.find((e) => e.id === t.environmentId);
       const credential = environment && document.credentials.find((c) => c.id === environment.credentialId);
-      return environment && credential ? [{ environment, credential, policy: t }] : [];
+      // An installation selects exactly one provider; never mix credentials of another backend.
+      return environment && credential && credential.backend === policy.backendId
+        ? [{ environment, credential, policy: t }]
+        : [];
     });
     return { policy, records };
   }
@@ -253,7 +286,10 @@ export class SandboxConfigurations {
       if (previous && (previous.apiUrl !== apiUrl || previous.sandboxUrl !== sandboxUrl)) fail("audience_changed");
       const apiKey = input.apiKey === undefined || input.apiKey === "" ? previous?.apiKey : text(input.apiKey, 4096);
       if (!apiKey || /\s/u.test(apiKey)) fail("key_required");
-      const credential = {
+      // The settings editor manages E2B credentials only.
+      if (previous && previous.backend !== "e2b") fail("audience_changed");
+      const credential: PrivateCredential = {
+        backend: "e2b",
         id,
         name: text(input.name),
         apiUrl,
@@ -287,7 +323,7 @@ export class SandboxConfigurations {
       const templates = document.environments.filter((e) => ids.includes(e.id)).map((e) => e.templateId);
       if (new Set(templates).size !== templates.length) fail("duplicate_template");
     }
-    this.vault.writeDocument(target, namespace, revision, document);
+    this.write(target, revision, document);
     return this.snapshot(scope, allowCustomEndpoints, canManagePlatform);
   }
   /** Host-only projection. A saved configuration never creates a sandbox. */

@@ -13,7 +13,7 @@ import type {
   AssetWorkspaceExecutionOwner,
 } from "@opencraft/plugin-assets/server/workspace-owner";
 import { withWorkspaceBudget } from "@opencraft/plugin-assets/server/workspace-budget";
-import { e2bSandboxBackend } from "@opencraft/sandbox-e2b";
+import type { HeadlessSandboxProviders } from "../sandbox-providers.js";
 import { OrdinaryWorkspaceStore, type WorkspaceLease } from "@opencraft/local-agent-host/ordinary-workspace-store";
 import {
   InstalledOrdinaryConversationRuntime,
@@ -85,6 +85,8 @@ export async function createWorkspaceExecutionOwner(
   context: AssetWorkspaceOwnerContext,
   options: {
     machineId: string;
+    /** Deployment-registered sandbox providers; selected by the installation's backend. */
+    providers: HeadlessSandboxProviders;
     terminalOwner?: { directory: string; endpoint: string; tokenFile: string };
     runtime?: (
       store: OrdinaryWorkspaceStore,
@@ -120,14 +122,15 @@ export async function createWorkspaceExecutionOwner(
         {
           terminalAdmission,
           allocator: new InstalledOrdinarySandboxAllocator(context.catalog, {
-            backend: (input) =>
+            providers: options.providers,
+            wrap: (backend) =>
               withWorkspaceBudget(
                 {
                   workspaceBudgetReserve: async (...args) => context.budget.reserve(...args),
                   workspaceBudgetSettle: async (...args) => context.budget.settle(...args),
                 },
                 "ordinary",
-                e2bSandboxBackend(input),
+                backend,
               ),
           }),
         },

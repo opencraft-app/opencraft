@@ -101,6 +101,7 @@ export async function createAssetsStorage(
         outcome: vault.outcome,
         workspaceExecution: workspaces !== undefined && workspaces.workspaceExecution !== false,
         botExecution: workspaces?.botExecution === true,
+        botBackends: workspaces?.botExecution === true ? [...(workspaces.botBackends ?? [])] : [],
         gitHosts: providers.map((p) => p.host),
         gitAuthority: execution ? vault.personalGitAuthority("actor") : null,
       },

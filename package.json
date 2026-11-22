@@ -308,7 +308,7 @@
     "test:cli": "node --import tsx --test tests/chat/conversation-cli-create.test.ts tests/chat/conversation-cli-read.test.ts tests/chat/conversation-cli-send.test.ts tests/chat/conversation-cli-input.test.ts tests/chat/conversation-cli-steer.test.ts",
     "generate:storage": "node --import tsx scripts/storage/storage-migrations.mjs generate",
     "check:storage": "node --import tsx scripts/storage/storage-migrations.mjs check && node --import tsx scripts/check/check-remote-browser-migrations.mjs",
-    "test:sandbox": "node --import tsx --test tests/execution/sandbox-primitive.test.ts tests/execution/sandbox-engine-runtime.test.ts",
+    "test:sandbox": "node --import tsx --test tests/execution/sandbox-primitive.test.ts tests/execution/sandbox-engine-runtime.test.ts tests/execution/sandbox-broker.test.ts",
     "smoke:sandbox": "node --import tsx scripts/smoke/execution/smoke-sandbox.ts",
     "test:notification-destinations": "node --import tsx --test tests/server/notification-destinations.test.ts tests/extensions/im-notifications.test.ts tests/shell/notification-destinations.test.ts",
     "smoke:notification-destinations": "node --import tsx scripts/smoke/conversation/smoke-notification-destinations.ts",
@@ -348,7 +348,7 @@
     "test:convergence": "node scripts/check/test-convergence.mjs",
     "smoke:sidebar-row-geometry": "tsx tests/shell/sidebar-row-geometry.browser.ts",
     "smoke:assets": "tsx tests/extensions/assets-view.browser.ts",
-    "test:assets-service": "node --import tsx --test tests/extensions/assets-service.test.ts tests/extensions/git-connections.test.ts tests/server/assets-worker-packaging.test.mjs tests/server/headless-default-workspaces.test.ts tests/extensions/workspace-budget.test.ts tests/extensions/workspace-catalog.test.ts tests/server/assets-workspace-execution.test.ts tests/server/assets-workspace-bot.test.ts tests/server/workspace-terminal-admission.test.ts tests/server/workspace-browser-router.test.mjs tests/server/workspace-browser-service.test.mjs tests/server/workspace-preinstalled-browser.test.ts",
+    "test:assets-service": "node --import tsx --test tests/extensions/assets-service.test.ts tests/extensions/git-connections.test.ts tests/server/assets-worker-packaging.test.mjs tests/server/headless-default-workspaces.test.ts tests/extensions/workspace-budget.test.ts tests/extensions/workspace-catalog.test.ts tests/extensions/sandbox-installation-compat.test.ts tests/server/assets-workspace-execution.test.ts tests/server/assets-workspace-bot.test.ts tests/server/workspace-terminal-admission.test.ts tests/server/workspace-browser-router.test.mjs tests/server/workspace-browser-service.test.mjs tests/server/workspace-preinstalled-browser.test.ts",
     "smoke:assets-default": "tsx tests/extensions/assets-default.browser.ts",
     "test:assets-default": "tsx --test tests/identity/assets-default-service.test.ts tests/extensions/assets-default-client.test.ts"
   },

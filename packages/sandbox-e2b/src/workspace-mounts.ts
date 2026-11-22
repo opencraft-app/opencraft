@@ -10,7 +10,7 @@ type Mount = { mount: string; root: string; fs: string; source: string };
 type Receipt = { mounts: Mount[]; workspace: string; library: string | null; directory: boolean };
 
 /** A provider declaration alone is not evidence of a mounted filesystem. */
-export function validateOrdinaryMountReceipt(
+export function validateE2BMountReceipt(
   value: unknown,
   expected: { privateName: string; sharedName?: string; relativePath?: string },
 ) {
@@ -48,7 +48,7 @@ export function validateOrdinaryMountReceipt(
   return { cwd: "/workspace" as const };
 }
 
-export const ordinaryMountProbe = String.raw`
+export const e2bMountProbe = String.raw`
 import sys,json,os,re,signal
 signal.alarm(15)
 def decode(s):return re.sub(r'\\([0-7]{3})',lambda m:chr(int(m.group(1),8)),s)
@@ -65,7 +65,7 @@ print(json.dumps({'mounts':mounts,'workspace':os.path.realpath('/workspace'),
 /** Call only with current owner/allocation and authorized library binding. Never
  * mounts, remounts, writes to NFS or changes volume lifecycle. Volume API tokens
  * are discarded; only exact name/ID correspondence is consumed. */
-export async function verifyOrdinaryWorkspaceMounts(input: {
+export async function verifyE2BWorkspaceMounts(input: {
   sandbox: Pick<SandboxEnvironment, "spawn">;
   workspaceId: string;
   instanceId: string;
@@ -172,7 +172,7 @@ export async function verifyOrdinaryWorkspaceMounts(input: {
     if (expired) throw unavailable();
     child = await input.sandbox.spawn(
       {
-        command: ["/usr/bin/python3", "-c", ordinaryMountProbe, selected],
+        command: ["/usr/bin/python3", "-c", e2bMountProbe, selected],
         cwd: "/workspace",
         env: { PATH: "/usr/bin:/bin" },
       },
@@ -193,7 +193,7 @@ export async function verifyOrdinaryWorkspaceMounts(input: {
     if (expired || exit.code !== 0 || bytes > 65536) throw unavailable();
     await input.authorize();
     if (expired) throw unavailable();
-    return validateOrdinaryMountReceipt(JSON.parse(output), {
+    return validateE2BMountReceipt(JSON.parse(output), {
       privateName,
       sharedName,
       relativePath: library?.relativePath,

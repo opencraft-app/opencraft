@@ -22,6 +22,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import type { SandboxCommand, SandboxOutput, SandboxProcess } from "@opencraft/sandbox";
+import { createSandboxProviderRegistry } from "@opencraft/sandbox/providers";
 import { workspaceArtifactSender } from "../../apps/headless-server/src/workspaces/workspace-artifact-reader.js";
 import { workspaceArtifactReceiver } from "../../apps/headless-server/src/workspaces/workspace-artifact-transfer.js";
 
@@ -53,6 +54,7 @@ serveWorkerOwner<FixtureData>(async ({ directory, terminalOwner }) => {
   try {
     new SandboxConfigurations(vault).adoptInstallation(
       {
+        backend: "e2b",
         apiUrl: "https://api.e2b.dev",
         sandboxUrl: "https://e2b.dev",
         capacity: resources,
@@ -179,6 +181,8 @@ serveWorkerOwner<FixtureData>(async ({ directory, terminalOwner }) => {
   const storage = await createAssetsStorage(directory, [], undefined, (context) =>
     createWorkspaceExecutionOwner(context, {
       machineId: "synthetic-machine",
+      // The synthetic runtime below supplies its own allocator.
+      providers: createSandboxProviderRegistry({}),
       runtime: (store, owner) =>
         new InstalledOrdinaryConversationRuntime(
           store,
@@ -245,10 +249,10 @@ serveWorkerOwner<FixtureData>(async ({ directory, terminalOwner }) => {
                 await authorize();
                 return retained[binding.workspaceId] ? "present" : "absent";
               },
+              async verifyMounts() {
+                return { cwd: "/workspace" as const };
+              },
               async close() {},
-            },
-            async verifyMounts() {
-              return { cwd: "/workspace" };
             },
             async bind(options) {
               let current = true;

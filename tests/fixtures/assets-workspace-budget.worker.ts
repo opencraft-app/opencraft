@@ -10,6 +10,7 @@ serveWorkerOwner<{ directory: string }>(async ({ directory }) => {
   try {
     new SandboxConfigurations(bootstrap).adoptInstallation(
       {
+        backend: "e2b",
         apiUrl: "https://api.e2b.dev",
         sandboxUrl: "https://e2b.dev",
         capacity: { cpuMillis: 4000, memoryBytes: 8 * 1024 ** 3 },
