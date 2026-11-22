@@ -41,6 +41,7 @@ import { ConversationResourceLifecycle } from './conversation-resource-lifecycle
 import { ConversationResourceTransport } from './conversation-resource-transport.js';
 import { RemoteBrowserService } from './remote-browser-service.mjs';
 import { RemoteBrowserCapabilities } from './remote-browser/capabilities.ts';
+import { createCapabilityContextResolver } from './capability-execution-context.ts';
 import { createBrowserGrantResolver } from './remote-browser/execution-grant.ts';
 import { connectBrowserOwner } from './remote-browser-owner.mjs';
 
@@ -749,6 +750,23 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       currentTurn: async (hostId, threadId, context) => {
         return readConversationCurrentTurn(appHostServer, { hostId, threadId }, { sender: null, actorContext: context });
       },
+    }));
+    // Providers read the run's Host, verified human Actor and active lease from
+    // these owners instead of parsing serverId or opening execution stores.
+    capabilities.resolveContext(createCapabilityContextResolver({
+      route: (serverId, threadId) => {
+        const remote = remoteExecutionAuthorities.get(serverId);
+        if (remote) return { hostId: remote.hostId, engine: 'codex' };
+        const server = conversationExecution.servers.find(row => row.serverId === serverId);
+        try { if (!server || conversationExecution.serverForHost(server.hostId, threadId) !== serverId) return undefined; } catch { return undefined; }
+        return { hostId: server.hostId, engine: server.engine ?? 'codex' };
+      },
+      source: async (serverId, threadId, execution) => remoteExecutionAuthorities.has(serverId)
+        ? remoteExecutionAuthorities.get(serverId).authority.source(threadId, execution)
+        : actorCollaboration.executionContext(threadId, execution),
+      current: (context, serverId, threadId) => { try { authorizeBrowserExecution(context, serverId, threadId); return true; } catch { return false; } },
+      bindings: actorId => actorStore.bindings(actorId),
+      lease: async locator => humanGitExecution ? humanGitExecution.handoff(locator) : null,
     }));
     // Bindings are read from memory; the Server owner Worker commits each write in order.
     capabilityBindings = new CapabilityBindingProjection(await serverStorage.call.capabilityBindings(),

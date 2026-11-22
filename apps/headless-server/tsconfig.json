@@ -16,6 +16,7 @@
     "src/workspaces/native-routing.ts",
     "src/workspaces/execution-service.ts",
     "src/workspaces/bot-client.ts",
-    "src/host-environment-launch.ts"
+    "src/host-environment-launch.ts",
+    "src/capability-execution-context.ts"
   ]
 }
