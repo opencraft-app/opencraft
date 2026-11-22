@@ -141,20 +141,43 @@ try {
     assert.equal(await heading.evaluate(el => getComputedStyle(el).backdropFilter), "none");
     // Existing theme roles still own explicit colors, rather than being silently
     // bypassed by the new backing. Exercise the actual rendered legacy contract.
-    if (!c.touch && c.mode === "light" && c.palette === "porcelain") {
+    if (c.mode === "light" && c.palette === "porcelain") {
+      const plainHeading = async (section: typeof recent) => {
+        assert.equal(await section.locator(".sidebar-activity-group__occlusion").count(), 0);
+        assert.equal(await section.locator(".sidebar-thread-group-heading").evaluate(el => getComputedStyle(el).backgroundColor), "rgba(0, 0, 0, 0)");
+      };
+      await plainHeading(page.getByRole("region", { name: "Private", exact: true }));
       const previous = await page.evaluate(() => {
         const root=document.documentElement;
         const values=["--opencraft-sidebar-context-background","--opencraft-sidebar-heading-background"].map(k=>[k,root.style.getPropertyValue(k)]);
         root.style.setProperty("--opencraft-sidebar-context-background","#315171");
         root.style.setProperty("--opencraft-sidebar-heading-background","transparent"); return values;
       });
-      const pixel = async () => { const png=await heading.screenshot(); return page.evaluate(async s=>{
-        const image=new Image();image.src="data:image/png;base64,"+s;await image.decode();const canvas=document.createElement("canvas");canvas.width=image.width;canvas.height=image.height;const g=canvas.getContext("2d")!;g.drawImage(image,0,0);return [...g.getImageData(2,2,1,1).data];
-      },png.toString("base64")); };
+      const pixel = async (edge: "top" | "bottom" = "top") => {
+        const png = await heading.screenshot();
+        return page.evaluate(async ([bytes, edge]) => {
+          const image = new Image(); image.src = "data:image/png;base64," + bytes; await image.decode();
+          const canvas = document.createElement("canvas"); canvas.width = image.width; canvas.height = image.height;
+          const ctx = canvas.getContext("2d")!; ctx.drawImage(image, 0, 0);
+          return [...ctx.getImageData(2, edge === "top" ? 2 : image.height - 3, 1, 1).data];
+        }, [png.toString("base64"), edge] as const);
+      };
       assert.deepEqual(await pixel(),[49,81,113,255],"explicit context surface remains authoritative");
       await page.evaluate(()=>document.documentElement.style.setProperty("--opencraft-sidebar-heading-background","#154365"));
       assert.deepEqual(await pixel(),[21,67,101,255],"explicit heading surface stays above its context");
+      const partialScroll = await track.evaluate(el => {
+        const group = el.querySelector('[aria-label="Recent"]')!;
+        const heading = group.querySelector(".sidebar-thread-group-heading")!.getBoundingClientRect();
+        const content = group.querySelector(".sidebar-activity-group__items")!.getBoundingClientRect();
+        return el.scrollTop + content.top - (heading.top + heading.height / 2);
+      });
+      await track.evaluate((el, top) => { el.scrollTop = top; }, partialScroll);
+      assert.notDeepEqual(await pixel(), [21,67,101,255], "the portion above its content remains clear");
+      assert.deepEqual(await pixel("bottom"), [21,67,101,255], "the overlapping portion covers moving rows");
+      await track.evaluate(el => { el.scrollTop = 0; });
+      assert.notDeepEqual(await pixel(), [21,67,101,255], "the normal-flow heading has no occlusion paint");
       await page.evaluate(values=>{for(const[k,v]of values)document.documentElement.style.setProperty(k,v)},previous);
+      await track.evaluate(el => { el.scrollTop = 500; });
     }
     // Explicit selection, keyboard focus, menus and resize must stay usable.
     await page.evaluate(() => (window as any).fixture.setActive("row16"));
@@ -188,7 +211,9 @@ try {
     await page.getByRole("menu").waitFor();
     assert.ok((await page.getByRole("menu").boundingBox())!.height > 0, "row menu escapes the scroll viewport through its existing portal");
     await page.keyboard.press("Escape");
-    await heading.getByRole("button").click(); await heading.getByRole("button").click();
+    await heading.getByRole("button").click();
+    assert.equal(await recent.locator(".sidebar-activity-group__occlusion").count(), 0, "folded populated groups have no paint layer");
+    await heading.getByRole("button").click();
     assert.equal(await recent.locator(".sidebar-activity-item").first().evaluate((el, old) => el === old, first), true);
     assert.equal(await page.getByLabel("Main draft").evaluate((el, old) => el === old, draft), true);
     assert.equal(await page.getByLabel("Main draft").inputValue(), "Keep this draft");
@@ -206,6 +231,14 @@ try {
       const returned=all.locator(".sidebar-activity-item.is-selected");await returned.waitFor();
       const back=await returned.evaluate(el=>({row:el.getBoundingClientRect().top,heading:el.closest(".sidebar-activity-group")!.querySelector(".sidebar-thread-group-heading")!.getBoundingClientRect().bottom}));
       assert.ok(back.row>=back.heading-1,"re-selected row clears a newly re-stuck heading: "+JSON.stringify(back));
+      for (const name of ["Other group 0", "Private"]) {
+        const empty = page.getByRole("region", { name, exact: true });
+        const disclosure = empty.getByRole("button", { name, exact: true });
+        if (c.touch) await disclosure.tap(); else await disclosure.click();
+        assert.equal(await disclosure.getAttribute("aria-expanded"), "true");
+        assert.equal(await empty.locator(".sidebar-activity-group__occlusion").count(), 0, "expanded empty groups have no paint layer");
+        assert.equal(await empty.locator(".sidebar-thread-group-heading").evaluate(el => getComputedStyle(el).position), "static");
+      }
     }
     await page.setViewportSize({ width: c.touch ? 420 : 900, height: 650 });
     await page.screenshot({ path: join(output, `${c.touch}-${c.mode}-${c.palette}.png`) });
