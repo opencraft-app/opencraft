@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { realpathSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 // Android installs an update only when its versionCode is not lower than the
 // installed one, so every published APK derives it from its release tag:
@@ -10,7 +10,7 @@ const tagPattern = /^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-beta\
 const maximumVersionCode = 2_100_000_000;
 
 export function androidVersionCode(tag) {
-  const match = tagPattern.exec(tag ?? '');
+  const match = tagPattern.exec(tag ?? "");
   if (!match) throw new Error(`Android releases need a vX.Y.Z or vX.Y.Z-beta.N tag: ${tag}`);
   const [major, minor, patch] = match.slice(1, 4).map(Number);
   const beta = match[4] === undefined ? undefined : Number(match[4]);
