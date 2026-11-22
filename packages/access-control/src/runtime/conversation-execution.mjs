@@ -3,7 +3,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { normalize, isAbsolute, relative, sep } from 'node:path';
 import { realpath, stat } from 'node:fs/promises';
 import { APP_HOST_PROTOCOL_VERSION } from '@opencraft/app-host-protocol/version';
-import { projectConversationMetadata, readConversationPage, readConversationTail } from './conversation-projections.mjs';
+import { projectConversationMetadata, readConversationPage, readConversationTail, readConversationProjectPage } from './conversation-projections.mjs';
 import { parseTurnRecoveryNotice, permissionModeProfileId } from '@opencraft/appserver-protocol';
 import { executionEngineExtension } from '@opencraft/appserver-client';
 
@@ -181,6 +181,13 @@ export function createConversationExecution(getAppHost, {serverId, hostId, engin
       return {conversations:rows.map(t=>({ref:{serverId,threadId:t.id},title:String(t.name || t.preview || t.id).slice(0,240),
         ...(suggestions ? {cwd:typeof t.cwd==='string'?t.cwd.slice(0,1024):null,updatedAt:t.updatedAt} : {})})),nextCursor:suggestions ? null : result.nextCursor ?? null};
     },
+    async projects(requestedServer, cursor, context) {
+      if (requestedServer !== serverId || engine) throw fault(409, 'unsupported_capability');
+      return readConversationProjectPage((method, params) =>
+        callConversationHost(getAppHost(), { hostId: projectHostId, threadId: '' }, 'project-discovery', method, params, context, 10_000)
+          .catch(error => { if (error.code === -32601) throw fault(409, 'unsupported_capability'); throw error; }),
+        serverId, cursor);
+    },
     async create(target, content, operationKey, context, rememberThread) {
       if (target.serverId !== serverId || engine) throw fault(409, 'unsupported_capability');
       const assertCurrent = () => context.resourceOwner.assertCurrent();
@@ -299,7 +306,7 @@ export function createRoutedConversationExecution(getAppHost, { machineId, engin
     directory: () => ({instanceId:machineId, servers:descriptors.map(server => ({serverId:server.serverId,label:server.label,
       engine:server.engine ?? 'codex', connectionState: ['recovering','unavailable'].includes(getAppHost()?.hostExecutionState?.(server.hostId))
         ? 'unavailable' : getAppHost()?.hostState(server.hostId) === 'open' ? 'ready' : 'unknown',
-      capabilities:{metadata:true,read:!server.engine,boundedRead:!server.engine,tailRead:!server.engine,create:!server.engine,initialPermissionMode:!server.engine,queue:true,steer:!server.engine,discoverFilters:!server.engine}}))}),
+      capabilities:{metadata:true,read:!server.engine,boundedRead:!server.engine,tailRead:!server.engine,create:!server.engine,projectDiscovery:!server.engine,initialPermissionMode:!server.engine,queue:true,steer:!server.engine,discoverFilters:!server.engine}}))}),
     metadata(ref) { const hostId = ports.get(ref.serverId)?.hostId ?? reject(); return select({...ref,hostId}).port.metadata(ref); },
     async discoverMetadata(options) {
       const port = ports.get(options.serverId); if (!port) return reject();

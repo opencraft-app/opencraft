@@ -9,6 +9,8 @@ continue to use their installed runtime entry.
 ```sh
 opencraft connection add work --ssh my-opencraft --default --json
 opencraft server list --json
+opencraft project list --server '<server-id>' --json
+opencraft project list --server '<server-id>' --cursor '<nextCursor>' --json
 opencraft status --server '<server-id>' --json
 opencraft thread list --server '<server-id>' --json
 opencraft thread create 'Start a review' --cwd /remote/repo --permission-mode read-only --json
@@ -40,6 +42,11 @@ in the selected Server's filesystem and is normalized there; the caller's cwd
 is not substituted. Each request remains a bounded native catalog page. Filters
 are negotiated independently; this release supports Codex filters, and other
 engines explicitly return unsupported rather than ignore a filter.
+
+On the Codex Server, `project list` returns IDs, names and workspace roots
+from the same Server catalog used for creation. Follow `nextCursor` for
+another bounded page. Use the exact project ID in `thread create --project`;
+the catalog does not grant access to a workspace or a conversation.
 
 On the Codex Server, `thread create` starts a thread and submits its first
 message using the authenticated Actor. Pass an absolute Server-side `--cwd`,

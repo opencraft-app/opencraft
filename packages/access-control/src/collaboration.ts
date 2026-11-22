@@ -1,5 +1,5 @@
 import { isAbsolute } from 'node:path';
-import { COLLABORATION_CAPABILITIES, CONVERSATION_TAIL_MAX_TURNS, type CollaborationCapabilities, type ConversationCreationLookup, isConversationInitialPermissionMode, type ConversationCreateTarget, type ConversationCreation, type ConversationHistory } from '@opencraft/appserver-protocol/collaboration';
+import { COLLABORATION_CAPABILITIES, CONVERSATION_TAIL_MAX_TURNS, type CollaborationCapabilities, type ConversationCreationLookup, type ConversationProjectPage, isConversationInitialPermissionMode, type ConversationCreateTarget, type ConversationCreation, type ConversationHistory } from '@opencraft/appserver-protocol/collaboration';
 import type { TransportSubmissionContext } from '@opencraft/appserver-client/transport';
 import type { CrewContact } from './crew-contact.js';
 import type { CrewWork, CrewPass } from './crew-work.js';
@@ -46,6 +46,7 @@ export interface ConversationExecutionPort {
   serverForThread?(threadId: string): string;
   discover?(search: string, cursor: string | null, suggestions?: { limit: number; sourceThreadId?: string }): Promise<{ conversations: { ref: ConversationRef; title: string; cwd?: string | null; updatedAt?: number }[]; nextCursor: string | null }>;
   directory?(): { instanceId: string; servers: ConversationServer[] };
+  projects?(serverId: string, cursor: string | null, context: TransportSubmissionContext): Promise<ConversationProjectPage>;
   metadata?(ref: ConversationRef): Promise<ConversationMetadata>;
   discoverMetadata?(options: ConversationDiscovery): Promise<{ conversations: ConversationMetadata[]; nextCursor: string | null }>;
   read?(ref: ConversationRef, cursor: string | null): Promise<unknown>;
@@ -239,9 +240,11 @@ export class Collaboration {
   }
   get available() { return !this.#closed; }
   get capabilities(): CollaborationCapabilities {
-    return this.creationReceipts && this.executionPort?.create
-      ? { ...COLLABORATION_CAPABILITIES, createLookup: true }
-      : COLLABORATION_CAPABILITIES;
+    return {
+      ...COLLABORATION_CAPABILITIES,
+      ...(this.creationReceipts && this.executionPort?.create ? { createLookup: true } : {}),
+      ...(this.executionPort?.projects ? { projectDiscovery: true } : {}),
+    };
   }
   binding(actorId: string): RunBinding | null {
     const r = this.database.prepare('SELECT * FROM actor_run_bindings WHERE actor_id=?').get(actorId);
@@ -394,6 +397,24 @@ export class Collaboration {
     }
     this.#conversation(context, ref, 'conversation.read');
     return {ref, externalContext: true, history: result};
+  }
+  async projects(context: ActorContext, args: Record<string, unknown>, submission?: TransportSubmissionContext) {
+    fields(args, ['serverId', 'cursor']);
+    const serverId = text(args.serverId), cursor = args.cursor === undefined ? null : text(args.cursor, 4096);
+    const assertCurrent = () => {
+      submission?.resourceOwner?.assertCurrent();
+      const server = this.servers(context).servers.find(server => server.serverId === serverId);
+      if (!server) throw new CollaborationError(404, 'conversation_unavailable');
+      if (!server.capabilities.projectDiscovery || !this.execution.projects)
+        throw new CollaborationError(409, 'unsupported_capability');
+    };
+    assertCurrent();
+    const result = await this.execution.projects!(serverId, cursor, {
+      ...submission, sender: submission?.sender ?? null, actorContext: context,
+      resourceOwner: { id: submission?.resourceOwner?.id ?? 'conversation-projects:' + context.actorId, assertCurrent },
+    });
+    assertCurrent();
+    return result;
   }
   async createConversation(context: ActorContext, body: Record<string, unknown>, submission?: TransportSubmissionContext) {
     fields(body, ['serverId','projectId','cwd','content','operationKey','initialPermissionMode']);
@@ -843,6 +864,7 @@ export class Collaboration {
   async command(context: ActorContext, body: Record<string, unknown>, submission?: TransportSubmissionContext) {
     const {action,...args} = body;
     if (action === 'servers') { fields(args, []); return this.servers(context); }
+    if (action === 'projects') return this.projects(context, args, submission);
     if (action === 'metadata') { fields(args, ['reference']); return this.metadata(context, args.reference); }
     if (action === 'discover' && args.metadataOnly === true) {
       fields(args, ['serverId', 'cursor', 'includeTitle', 'metadataOnly', 'projectId', 'cwd']);

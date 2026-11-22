@@ -54,7 +54,7 @@ test("create resolves Server project roots, preserves the Actor lane and returns
         if (method !== "initialize") operations.push({ hostId, method, params, actorId });
         const result =
           method === "project/list"
-            ? { data: [{ id: "project", roots: [{ path: root }] }], nextCursor: null }
+            ? { data: [{ id: "project", name: "Fixture project", roots: [{ path: root }] }], nextCursor: null }
             : method === "thread/start"
               ? { thread: { id: "created-thread", ephemeral: false } }
               : method === "turn/start"
@@ -94,6 +94,12 @@ test("create resolves Server project roots, preserves the Actor lane and returns
     actors.close();
     await rm(dir, { recursive: true, force: true });
   });
+  assert.equal(service.capabilities.projectDiscovery, true);
+  const catalog = await service.command(actor, { action: "projects", serverId });
+  assert.deepEqual(catalog.projects, [{ id: "project", name: "Fixture project", roots: [{ path: root }] }]);
+  assert.deepEqual(operations.map(row => [row.hostId, row.method, row.actorId]), [["opencraft-server", "project/list", actor.actorId]]);
+  operations.length = 0;
+  await assert.rejects(service.command(actor, { action: "projects", serverId: "server:fixture:pi" }), { code: "unsupported_capability" });
   const body = {
     action: "create",
     serverId,

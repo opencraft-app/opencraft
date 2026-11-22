@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readConversationPage, readConversationTail, projectConversationMetadata } from '@opencraft/access-control/conversation-projections';
+import { readConversationPage, readConversationTail, readConversationProjectPage, projectConversationMetadata } from '@opencraft/access-control/conversation-projections';
 import { CollaborationClient } from '../../packages/appserver-client/src/collaboration';
 import { MemoryTransport } from '@opencraft/appserver-transport-memory';
 import { encodeJsonRpcMessage, isJsonRpcRequest } from '@opencraft/appserver-protocol';
@@ -53,6 +53,7 @@ test('old Host capabilities fail before issuing content reads or mutations', asy
     await client.connect();
     await assert.rejects(client.metadata({ serverId: 's', threadId: 't' }), { code: 'UNSUPPORTED_CAPABILITY' });
     await assert.rejects(client.read({ serverId: 's', threadId: 't' }), { code: 'UNSUPPORTED_CAPABILITY' });
+    await assert.rejects(client.projects('s'), { code: 'UNSUPPORTED_CAPABILITY' });
     assert.throws(() => client.discover('s', undefined, false, { projectId: 'p' }), { code: 'UNSUPPORTED_CAPABILITY' });
     assert.deepEqual(methods, ['initialize']);
   } finally { await client.close(); }
@@ -73,7 +74,7 @@ test('CLI help and invalid arguments return one versioned JSON value with stable
     fileURLToPath(new URL('../../apps/opencraft-cli/src/main.ts', import.meta.url)), ...args, '--json']);
   const help = JSON.parse((await invoke('--help')).stdout);
   assert.equal(help.schemaVersion, 1); assert.equal(help.ok, true);
-  for (const args of [['unknown'], ['thread','show'], ['thread','show','ref','--cursor','bad']]) {
+  for (const args of [['unknown'], ['thread','show'], ['thread','show','ref','--cursor','bad'], ['project','list','--include-title']]) {
     await assert.rejects(invoke(...args), (error: any) => {
       assert.equal(error.code, 2); const output = JSON.parse(error.stdout);
       assert.equal(output.ok, false); assert.equal(output.error.code, 'INVALID_ARGUMENTS');
@@ -133,4 +134,29 @@ test('tail reads only recent native turns and returns their bounded text in chro
   assert.equal(history.latestTurnId, 'new');
   assert.equal(history.nextCursor, null);
   assert.equal(history.truncated, true);
+});
+
+test('project discovery issues a bounded native page and exposes only stable project IDs, names and roots', async () => {
+  const calls: unknown[] = [];
+  const invoke = async (method: string, params: { limit: number; cursor: string | null }) => {
+    calls.push([method, params]);
+    return params.cursor ? { data: [], nextCursor: null } : {
+      data: [{ id: 'project-id', name: 'Fixture project', roots: [{ path: '/workspace/example', internal: 'private' }], metadata: { value: 'not visible' } }],
+      nextCursor: '30',
+    };
+  };
+  const first = await readConversationProjectPage(invoke, 'server:one:codex', null);
+  assert.deepEqual(first.projects, [{ id: 'project-id', name: 'Fixture project', roots: [{ path: '/workspace/example' }] }]);
+  assert.ok(first.nextCursor);
+  await assert.rejects(readConversationProjectPage(invoke, 'server:other:codex', first.nextCursor), { code: 'invalid_cursor' });
+  await assert.rejects(readConversationProjectPage(invoke, 'server:one:codex', '30'), { code: 'invalid_cursor' });
+  const last = await readConversationProjectPage(invoke, 'server:one:codex', first.nextCursor);
+  assert.deepEqual(last, { serverId: 'server:one:codex', projects: [], nextCursor: null });
+  assert.deepEqual(calls, [
+    ['project/list', { limit: 30, cursor: null }],
+    ['project/list', { limit: 30, cursor: '30' }],
+  ]);
+  await assert.rejects(readConversationProjectPage(async () => ({
+    data: [{ id: 'project-id', name: 'Fixture project', roots: [{ path: '../relative' }] }],
+  }), 'server:one:codex', null), { code: 'project_catalog_unavailable' });
 });
