@@ -1,0 +1,18 @@
+{
+  "name": "@opencraft/secret-storage",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/contract.ts",
+    "./documents": "./src/documents.ts",
+    "./file": "./src/file.ts",
+    "./conformance": "./src/conformance.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/document-storage": "0.1.0"
+  }
+}
