@@ -92,7 +92,9 @@ test("macOS release workflow isolates signing secrets from native build jobs", a
     assert.ok(workflow.includes(`      ${name}:\n        required: true`));
     assert.ok(prerelease.includes(`      ${name}: \${{ secrets.${name} }}`));
   }
-  assert.match(prerelease, /candidate:\n    needs: \[linux, windows, macos\]/u);
+  // Staging waits for the signed macOS build; the other platforms' jobs are
+  // owned by their own release tests.
+  assert.match(prerelease, /candidate:\n    needs: \[[^\]\n]*\bmacos\b[^\]\n]*\]/u);
   assert.match(prerelease, /publish:\n    needs: candidate/u);
 });
 
