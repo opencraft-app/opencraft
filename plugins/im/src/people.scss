@@ -344,3 +344,9 @@
 }
 
 .people-page__description { margin: 0; color: var(--color-text-secondary); }
+
+// A member you can message is a full-width row button with the same geometry as a plain row.
+.people-member.people-member--open.ui-object-row-button {
+  gap: calc(3 * var(--spacing)); padding-block: calc(3 * var(--spacing)); border-radius: 0;
+  border-block-end: 1px solid var(--color-border-subtle);
+}

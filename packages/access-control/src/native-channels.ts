@@ -31,7 +31,10 @@ export class NativeChannels {
   readonly #listeners = new Set<(change: NativeChannelChange) => void>();
   constructor(private readonly db: DatabaseSync, private readonly actors: ActorStore,
     private readonly admitted: (actorId: string) => boolean,
-    private readonly personalCanSend: (c: ActorContext, target: string) => boolean = () => false) {}
+    /** The owner's complete direct-message decision; projections never re-derive it. */
+    private readonly canMessage: (c: ActorContext, target: string) => boolean = (c, target) => actors.can(c, target, 'message.send'),
+    /** Whether crew teams exist here; their owner decides it, so the directory never probes the schema. */
+    private readonly sharesSpaces: () => boolean = () => false) {}
 
   onChange(listener: (change: NativeChannelChange) => void) {
     this.#listeners.add(listener);
@@ -151,7 +154,7 @@ export class NativeChannels {
     const peer = this.actors.get(peerId);
     return { id: String(row.id), title: peer?.displayName ?? peerId, kind: 'direct',
       participants: peer ? [project(peer)] : [],
-      canSend: !!peer?.enabled && this.admitted(peerId) && (this.actors.can(context, peerId, 'message.send') || this.personalCanSend(context,peerId)) };
+      canSend: !!peer?.enabled && this.admitted(peerId) && this.canMessage(context, peerId) };
   }
 
   private peer(context: ActorContext, row: Row): string | null {
@@ -181,15 +184,18 @@ export class NativeChannels {
   people(context: ActorContext, query = '', after = '') {
     this.assertStanding(context, 'people.directory');
     if(typeof query!=='string'||query.length>128||typeof after!=='string'||after.length>128)throw Error('invalid_input');
+    // Someone else's assistant stays private unless it is a crew member of a space the caller shares.
+    const spaces=this.sharesSpaces();
     const rows=this.db.prepare(`SELECT a.*,(SELECT owner_human_id FROM personal_assistants WHERE actor_id=a.id) AS personal_owner_id FROM actors a WHERE a.enabled=1 AND a.id>? AND instr(lower(a.display_name),lower(?))>0
       AND (a.kind='human' OR NOT EXISTS(SELECT 1 FROM personal_assistants WHERE actor_id=a.id) OR EXISTS(SELECT 1 FROM personal_assistants p JOIN actors o ON o.id=p.owner_human_id
-        WHERE p.actor_id=a.id AND p.owner_human_id=? AND p.state='claimed' AND o.enabled=1 AND o.generation=p.owner_generation))
-      ORDER BY a.id LIMIT 100`).all(after,query,context.actorId);
+        WHERE p.actor_id=a.id AND p.owner_human_id=? AND p.state='claimed' AND o.enabled=1 AND o.generation=p.owner_generation)
+        ${spaces?`OR EXISTS(SELECT 1 FROM collaboration_space_members x JOIN collaboration_space_members y ON y.space_id=x.space_id WHERE x.actor_id=a.id AND y.actor_id=?)`:''})
+      ORDER BY a.id LIMIT 100`).all(after,query,context.actorId,...(spaces?[context.actorId]:[]));
     const scope: AvatarReadScope = new Map();
     return {people:rows.filter(r=>this.admitted(String(r.id))&&(!r.personal_owner_id||this.admitted(String(r.personal_owner_id)))).map(r=>{
       const avatar=this.avatar({actorId:String(r.id)},scope);
       return {actorId:String(r.id),displayName:String(r.display_name),kind:r.kind==='human'?'human' as const:'bot' as const,
-      ...(avatar?{avatar}:{}),canMessage:r.id!==context.actorId&&(this.actors.can(context,String(r.id),'message.send')||this.personalCanSend(context,String(r.id)))};}),
+      ...(avatar?{avatar}:{}),canMessage:r.id!==context.actorId&&this.canMessage(context,String(r.id))};}),
       next:rows.length===100?String(rows.at(-1)!.id):null};
   }
   inviteCandidates(context: ActorContext, query: string, channelId?: string): ChannelInviteCandidate[] {

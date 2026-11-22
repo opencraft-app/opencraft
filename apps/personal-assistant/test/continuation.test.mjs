@@ -761,7 +761,7 @@ test("schema10 upgrade preserves an old snapshot and routine receipt without fab
   d.uow.close();
   d = createLocalDomain(profile);
   t.after(() => d.uow.close());
-  assert.equal(d.uow.db.prepare("PRAGMA user_version").get().user_version, 21);
+  assert.equal(d.uow.db.prepare("PRAGMA user_version").get().user_version, 22);
   assert.deepEqual(
     d.app.executions.snapshot(d.app.workRecord(work.id)),
     snapshot,

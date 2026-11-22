@@ -6,12 +6,13 @@ import { tmpdir } from "node:os";
 import { SwitchboardStore, switchboardMigrations } from "../../plugins/im/src/store.js";
 import { ImPlugin, type ImExecutionPort } from "../../plugins/im/src/server.js";
 import { openManagedDatabase } from "@opencraft/sqlite-node";
+import { localSwitchboard } from "../../plugins/im/src/switchboard-local.js";
 const ref={serverId:"server",threadId:"thread"};
 async function fixture(t:test.TestContext,send:(text:string)=>Promise<void>=async()=>{}){
  const dir=await mkdtemp(join(tmpdir(),"im-tools-"));t.after(()=>rm(dir,{recursive:true,force:true}));
  const store=new SwitchboardStore(join(dir,"im.sqlite"));let current=true,results=0,submitted="";
  const execution:ImExecutionPort={human:actorId=>({actorId,generation:1,credentialId:null,expiresAt:Number.MAX_SAFE_INTEGER}),authorize(){if(!current)throw Error("denied");},async create(){return ref;},async validate(){},async submit(_c,_r,_id,text){submitted=text;return "request";},async result(){results++;return "must not send";}};
- const im=new ImPlugin(store,execution,1024,true);im.register({id:"bot",ownerId:"owner",senders:{sender:"human"},groupScope:"chat"});
+ const im=new ImPlugin(localSwitchboard(store),execution,1024,true);im.register({id:"bot",ownerId:"owner",senders:{sender:"human"},groupScope:"chat"});
  im.setDelivery(async(_id,address,text)=>{assert.equal(address.chat,"original");await send(text);});t.after(()=>im.close());
  const receive=(id="message",expiresAt=Date.now()+60_000)=>im.receive("bot",{id,source:{chatId:"original",chatType:"direct",senderId:"sender"},text:"hello",replyAddress:{chat:"original",expiresAt},async accepted(){throw Error("stream feedback must not run");},async reply(){throw Error("auto final must not run");}});
  return {im,store,receive,revoke:()=>{current=false;},results:()=>results,submitted:()=>submitted};
@@ -34,6 +35,6 @@ test("uncertain/expired replies never resend automatically",async t=>{
 test("v2 upgrade keeps automatic in-flight mode and rejects checksum drift",async t=>{
  const dir=await mkdtemp(join(tmpdir(),"im-tools-upgrade-"));t.after(()=>rm(dir,{recursive:true,force:true}));const path=join(dir,"im.sqlite");const old=openManagedDatabase({path,legacyPolicy:"reject",migrations:switchboardMigrations.slice(0,2)});
  old.database.prepare("INSERT INTO im_messages(id,channel_id,fingerprint,actor_id,source,text,route_revision,state,created_at,updated_at) VALUES('old','c','f','a','{}','old',1,'submitted',1,1)").run();old.database.close();
- const store=new SwitchboardStore(path);assert.equal(store.message("old")?.reply_mode,"final");assert.equal(store.outcome.appliedVersion,3);store.close();
+ const store=new SwitchboardStore(path);assert.equal(store.message("old")?.reply_mode,"final");assert.equal(store.outcome.appliedVersion,4);store.close();
  assert.throws(()=>openManagedDatabase({path,legacyPolicy:"reject",migrations:[...switchboardMigrations.slice(0,2),{...switchboardMigrations[2],sql:switchboardMigrations[2].sql+" -- drift"}]}));
 });

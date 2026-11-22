@@ -1,3 +1,4 @@
+import {membershipRevocationRevision} from './membership-revocation.js';
 import { AuthorityChanges } from "./authority-changes.js";
 import { PermissionReadCache, withPermissionWrite } from "./permission-read-cache.js";
 import { sqliteTransaction } from "@opencraft/sqlite-node";
@@ -72,9 +73,7 @@ export class MembershipStore {
   }
   /** A disable/enable cycle retires employee credentials even between polls. */
   revocationRevision(actorId: string, bindings: readonly Pick<Principal, 'provider' | 'subject'>[]): number {
-    return Math.max(0, ...[actorId, ...bindings.map(principalKey)].map(key =>
-      Number(this.#db.prepare(`SELECT COALESCE(MAX(id),0) AS revision FROM access_audit WHERE binding=?
-        AND CASE WHEN json_valid(action) THEN json_extract(action,'$.enabled') END = 0`).get(key)!.revision)));
+    return membershipRevocationRevision(this.#db,actorId,bindings.map(principalKey));
   }
   importActorMembership(actorId: string, role: MemberRole) {
     this.#transaction(() => {

@@ -217,7 +217,10 @@ export class RemoteBrowserService {
   async releaseThread(hostId, threadId) {
     await this.load();
     const matches = [...this.pages.values()].filter(page => {
-      const state = this.states.get(page.ownerId), record = this.store.current.pages.find(p => p.key === page.key);
+      const state = this.states.get(page.ownerId), record = this.store.accounts.page(page.key);
+      // A committed positive absence needs no command against a retired owner.
+      // Unknown/starting/stopping pages are still reconciled, never inferred gone.
+      if (!page.live && !page.creating && record?.runtime?.kind === 'absent') return false;
       const owner = browserConversation(state, sessionLink(state, JSON.parse(page.key)[1]) ?? record?.link);
       return owner?.hostId === hostId && owner.threadId === threadId;
     });

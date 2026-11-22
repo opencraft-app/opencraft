@@ -174,6 +174,27 @@ else:
         self.assertNotEqual(extra.returncode, 0)
         self.assertIn("artifact set mismatch", extra.stderr)
 
+    def test_desktop_beta_manifest_is_explicit_and_bound_to_its_candidate(self) -> None:
+        artifact = self.repo / "OpenCraft-1.2.3-beta.4-universal.dmg"
+        artifact.write_bytes(b"desktop candidate")
+        manifest = self.repo / "manifest.json"
+        create = (
+            "manifest-create", "--tag", "v1.2.3-beta.4", "--version", "1.2.3-beta.4",
+            "--artifact", str(artifact), "--output", str(manifest),
+        )
+        self.assertNotEqual(self.cli(*create).returncode, 0)
+        created = self.cli(*create, "--desktop-beta")
+        self.assertEqual(created.returncode, 0, created.stderr)
+        candidate = self.repo / "candidate"
+        candidate.mkdir()
+        artifact.rename(candidate / artifact.name)
+        manifest = manifest.rename(candidate / manifest.name)
+        verify = ("manifest-verify", "--manifest", str(manifest), "--directory", str(candidate))
+        self.assertNotEqual(self.cli(*verify).returncode, 0)
+        verified = self.cli(*verify, "--desktop-beta", "--tag", "v1.2.3-beta.4")
+        self.assertEqual(verified.returncode, 0, verified.stderr)
+        self.assertNotEqual(self.cli(*verify, "--desktop-beta", "--tag", "v1.2.3-beta.5").returncode, 0)
+
     def test_changelog_extracts_only_exact_tag_section(self) -> None:
         changelog = self.repo / "CHANGELOG.md"
         changelog.write_text(

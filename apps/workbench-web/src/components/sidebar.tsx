@@ -10,7 +10,7 @@ import { useStableEvent } from "@opencraft/react-runtime";
 import { Button } from "@opencraft/design-system-web/button";
 import { ChevronDownIcon as ChevronDown, LoadingRingIcon as LoaderCircle, ComposeIcon as SquarePen, SearchIcon as Search, CheckIcon as Check } from "@opencraft/design-system-web/action-icons";
 import { FolderIcon, SettingsGearIcon } from "@opencraft/design-system-web/action-icons";
-import { shortcutLabel, shortcutAria } from "../workbench-shortcuts";
+import { canHandleWorkbenchShortcut, matchesWorkbenchShortcut, shortcutLabel, shortcutAria } from "../workbench-shortcuts";
 import * as ContextMenu from "@opencraft/design-system-web/context-menu";
 import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
 import { ThreadListModeItems } from "./thread-list-mode-menu";
@@ -99,6 +99,45 @@ interface SidebarProps {
   onRetryThreadCatalog?(hostId: string): void;
   threadCatalogDiscovery?: "loading" | "error" | null;
   onRetryThreadCatalogDiscovery?(): void;
+}
+
+function SidebarConversationGroup({
+  title, contentId, collapsed, hasRows, nativeProject, heading, children,
+}: {
+  title: string;
+  contentId: string;
+  collapsed: boolean;
+  hasRows: boolean;
+  nativeProject?: boolean;
+  heading: ReactNode;
+  children: ReactNode;
+}) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const occlusionRef = useRef<HTMLSpanElement>(null);
+  const canOcclude = !collapsed && hasRows;
+
+  useLayoutEffect(() => {
+    const heading = headingRef.current;
+    const occlusion = occlusionRef.current;
+    if (!heading || !occlusion) return;
+    const sizeOcclusion = () => {
+      occlusion.style.setProperty("--sidebar-group-heading-block-size", `${heading.getBoundingClientRect().height}px`);
+    };
+    sizeOcclusion();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(sizeOcclusion);
+    observer.observe(heading, { box: "border-box" });
+    return () => observer.disconnect();
+  }, [canOcclude]);
+
+  return <section className="sidebar-activity-group" aria-label={title} data-collapsed={collapsed}
+    data-native-project={nativeProject || undefined} data-sidebar-sticky={canOcclude || undefined}>
+    <h3 ref={headingRef} className="sidebar-thread-group-heading">{heading}</h3>
+    <div className="sidebar-activity-group__items" id={contentId} hidden={collapsed}>{children}</div>
+    {canOcclude ? <span aria-hidden="true" ref={occlusionRef} className="sidebar-activity-group__occlusion">
+      <span className="sidebar-activity-group__occlusion-fill" />
+    </span> : null}
+  </section>;
 }
 
 
@@ -230,7 +269,7 @@ const SidebarThreadPresentation = memo(function SidebarThreadPresentation(props:
     contextMenuExtra={threadListGrouping ? <ThreadListModeItems contribution={threadListGrouping} snapshot={grouping} kind="context" /> : undefined}
     onOpenMenuChange={(kind, open) => changeOverlay(kind, open)}
     onCloseAutoFocus={event => { if (menus.getSnapshot() !== null) event.preventDefault(); }}>
-    <SidebarActivityItem activityId={activityId} active={active} selected={selected} pending={pending}
+    <SidebarActivityItem conversationKey={sidebarThreadIdentity(thread)} activityId={activityId} active={active} selected={selected} pending={pending}
       disabled={disabled} title={title} project={props.projectGrouped ? "" : metadata}
       icon={<ConversationAppearanceIcon hostId={thread.connectionHostId} threadId={thread.id} size={workbenchIconMetrics.core.settings} />}
       tooltip={[title, metadata, thread.connectionHostLabel].filter(Boolean).join(" · ")}
@@ -463,14 +502,15 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
       : null;
     const summaryId = `${rowIdPrefix}-summary-${key}`;
     const hasSummary = counts !== null && (counts.unread + counts.attention + counts.running) > 0;
-    return <section key={key} className="sidebar-activity-group" aria-label={title} data-collapsed={collapsed} data-native-project={nativeProject || undefined}>
-      <h3 className="sidebar-thread-group-heading"><button type="button" className="sidebar-thread-group-toggle" aria-expanded={!collapsed} aria-controls={`${rowIdPrefix}-flow-${key}`}
+    const contentId = `${rowIdPrefix}-flow-${key}`;
+    return <SidebarConversationGroup key={key} title={title} contentId={contentId}
+      collapsed={collapsed} hasRows={visible.length > 0} nativeProject={nativeProject}
+      heading={<button type="button" className="sidebar-thread-group-toggle" aria-expanded={!collapsed} aria-controls={contentId}
         aria-label={title} aria-describedby={hasSummary ? summaryId : undefined}
         onClick={event => toggleSection(key, event.currentTarget)}>
         {nativeProject ? <span className="sidebar-native-project-icon" aria-hidden="true"><FolderIcon size={16} /></span> : <SidebarSectionIcon section={key} />}<span className="sidebar-thread-group-label">{title}</span><ChevronDown size={12} data-group-disclosure="" className={collapsed ? "is-collapsed" : undefined} />
         {counts ? <SidebarActivitySummary id={summaryId} counts={counts} /> : null}
-      </button></h3>
-      <div className="sidebar-activity-group__items" id={`${rowIdPrefix}-flow-${key}`} hidden={collapsed}>
+      </button>}>
         {key === "mine" && !rows.length ? <NavigationEmpty className="sidebar-activity-empty"><SidebarEmptyIcon />{text("sidebar.access.empty", "No private conversations yet")}</NavigationEmpty> : null}
         {visible.map(thread => {
           const heading = headings?.get(thread);
@@ -483,8 +523,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
         })}
         {limit !== undefined && update ? <SidebarPagination total={rows.length} visibleCount={limit}
           pageSize={nativeProject ? 6 : key === "pinned" || key === "scheduled" ? PINNED_PAGE_SIZE : RECENT_PAGE_SIZE} onChange={update} pullToLoad={key === "recent"} /> : null}
-      </div>
-    </section>;
+    </SidebarConversationGroup>;
   };
   const visibleSections = [
     ...(groupedSections?.map(group => ({ ...group, collapsed: accordion.collapsed(groupKey(group.id)) })) ?? Object.entries({...taskFlow,recent:recentWithoutProjects}).filter(([id]) => id !== "mine" && id !== "scheduled").map(([id, rows]) => ({
@@ -518,6 +557,32 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   });
   const selectedKey = JSON.stringify(pendingHostId !== null && pendingThreadId !== null
     ? [pendingHostId, pendingThreadId] : [activeHostId, activeThreadId]);
+  const onConversationShortcut = useStableEvent((event: KeyboardEvent) => {
+    if (!canHandleWorkbenchShortcut(event)) return;
+    const direction = matchesWorkbenchShortcut(event, "conversationPrevious", navigator.platform) ? -1
+      : matchesWorkbenchShortcut(event, "conversationNext", navigator.platform) ? 1 : 0;
+    const list = activityList.current;
+    if (direction === 0 || !list) return;
+
+    // The accordion and each child disclosure own what is rendered. Read the
+    // shown conversation buttons so navigation uses that exact row order.
+    const rows = new Map<string, HTMLButtonElement>();
+    for (const button of list.querySelectorAll<HTMLButtonElement>("button[data-sidebar-conversation]:enabled")) {
+      if (list.contains(button.closest("[hidden]"))) continue;
+      const key = button.dataset.sidebarConversation!;
+      if (!rows.has(key)) rows.set(key, button);
+    }
+    const keys = [...rows.keys()];
+    const index = keys.indexOf(selectedKey);
+    const target = index === -1 ? (direction === 1 ? keys[0] : keys.at(-1)) : keys[index + direction];
+    if (keys.length === 0) return;
+    event.preventDefault();
+    if (target !== undefined) rows.get(target)?.click();
+  });
+  useEffect(() => {
+    window.addEventListener("keydown", onConversationShortcut);
+    return () => window.removeEventListener("keydown", onConversationShortcut);
+  }, [onConversationShortcut]);
   const selectedRootKey = tree.rootByIdentity.get(selectedKey) ?? selectedKey;
   const containsSelection = (group: typeof visibleSections[number]) => group.threads.some(ref =>
     JSON.stringify([ref.hostId, ref.threadId]) === (group.id === "scheduled" ? selectedKey : selectedRootKey));
@@ -599,21 +664,30 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
           <div className="sidebar-activity-list" ref={activityList}>
             {grouping.notice ? <NavigationEmpty className="sidebar-activity-empty">{label(grouping.notice)}</NavigationEmpty> : null}
             {renderFlowSection("scheduled", text("schedules.catalog.title", "Scheduled tasks"), taskFlow.scheduled, scheduledLimit, setScheduledLimit)}
-            {groupedSections ? groupedSections.map(group => <section key={group.id} className="sidebar-activity-group" aria-label={label(group.label)} data-collapsed={accordion.collapsed(groupKey(group.id))}>
-              <h3 className="sidebar-thread-group-heading"><button type="button" className="sidebar-thread-group-toggle" aria-expanded={!accordion.collapsed(groupKey(group.id))} aria-controls={`${rowIdPrefix}-group-${encodeURIComponent(group.id)}`} onClick={event => {
-                const next = accordion.toggle(groupKey(group.id), event.currentTarget);
-                if (accordion.openKey === flowKey("scheduled")) void preferences.set("sidebar.scheduledCollapsed", true);
-                // Product-owned preferences remain product-owned; Shell projects
-                // their initial intent into its exclusive disclosure layout.
-                if ((next !== groupKey(group.id)) !== group.collapsed) threadListGrouping?.toggleGroup(group.id);
-              }}>
-                <span className="sidebar-thread-group-avatar" aria-hidden="true"><AvatarImage src={group.avatarUrl} fallback={<UserRound size={14} />} /></span>
-                <span className="sidebar-thread-group-label">{label(group.label)}</span><ChevronDown size={12} data-group-disclosure="" className={accordion.collapsed(groupKey(group.id)) ? "is-collapsed" : undefined} />
-              </button></h3>
-              <div className="sidebar-activity-group__items" id={`${rowIdPrefix}-group-${encodeURIComponent(group.id)}`} hidden={accordion.collapsed(groupKey(group.id))}>
-                {!accordion.collapsed(groupKey(group.id)) && group.threads.map(ref => { const thread = matchingById.get(JSON.stringify([ref.hostId, ref.threadId])); return thread ? <div key={identity(thread)}>{renderThreadTree(thread)}</div> : null; })}
-              </div>
-            </section>) : <>
+            {groupedSections ? groupedSections.map(group => {
+              const key = groupKey(group.id);
+              const collapsed = accordion.collapsed(key);
+              const contentId = `${rowIdPrefix}-group-${encodeURIComponent(group.id)}`;
+              const title = label(group.label);
+              const rows = collapsed ? [] : group.threads.flatMap(ref => {
+                const thread = matchingById.get(JSON.stringify([ref.hostId, ref.threadId]));
+                return thread ? [thread] : [];
+              });
+              return <SidebarConversationGroup key={group.id} title={title} contentId={contentId}
+                collapsed={collapsed} hasRows={rows.length > 0}
+                heading={<button type="button" className="sidebar-thread-group-toggle" aria-expanded={!collapsed} aria-controls={contentId} onClick={event => {
+                  const next = accordion.toggle(key, event.currentTarget);
+                  if (accordion.openKey === flowKey("scheduled")) void preferences.set("sidebar.scheduledCollapsed", true);
+                  // Product-owned preferences remain product-owned; Shell projects
+                  // their initial intent into its exclusive disclosure layout.
+                  if ((next !== key) !== group.collapsed) threadListGrouping?.toggleGroup(group.id);
+                }}>
+                  <span className="sidebar-thread-group-avatar" aria-hidden="true"><AvatarImage src={group.avatarUrl} fallback={<UserRound size={14} />} /></span>
+                  <span className="sidebar-thread-group-label">{title}</span><ChevronDown size={12} data-group-disclosure="" className={collapsed ? "is-collapsed" : undefined} />
+                </button>}>
+                {rows.map(thread => <div key={identity(thread)}>{renderThreadTree(thread)}</div>)}
+              </SidebarConversationGroup>;
+            }) : <>
               {renderFlowSection("attention", text("sidebar.flow.attention", "Needs your attention"), taskFlow.attention)}
               {renderFlowSection("pinned", text("sidebar.flow.pinned", "Pinned"), taskFlow.pinned, pinnedLimit, setPinnedLimit)}
             </>}

@@ -148,7 +148,7 @@ export class ActorStore {
       .map(row => { const [provider, subject] = JSON.parse(row.binding as string); return { provider, subject }; });
   }
   /** Both arguments must come from trusted, independently verified authentication. */
-  bindHuman(owner: ActorContext, verified: Principal): void {
+  bindHuman(owner: ActorContext, verified: Principal): boolean {
     const p = parsePrincipal(verified);
     let changed = false;
     this.#transaction(() => {
@@ -186,6 +186,7 @@ export class ActorStore {
       }
     });
     if (changed) this.#identityChanged(owner.actorId);
+    return changed;
   }
   unbindHuman(owner: ActorContext, binding: Pick<Principal, 'provider' | 'subject'>): void {
     this.#transaction(() => {
@@ -354,17 +355,38 @@ export class ActorStore {
     return a.kind === 'session' && !!row && row.actor_id === a.id && row.enabled === 1
       && row.generation === a.generation && (row.expires_at as number) >= context.expiresAt;
   }
-  setGrant(id: string, resource: string, action: string, enabled: boolean, operator: string) {
-    permission(resource, action);
-    if (!this.get(id) || typeof enabled !== 'boolean') throw new Error('Invalid actor grant');
-    // This store owns its registry and local Actor resources. It cannot grant a
-    // foreign Hub's resources or an engine's workspace permissions on their behalf.
-    if (resource !== this.managementResource && !this.get(resource) && ![...this.#resourceAuthorities].some(owns => owns(resource))) throw new Error('Resource authority required');
+  setGrant(id: string, resource: string, action: string, enabled: boolean, operator: string, { authorityChecked = false }: { authorityChecked?: boolean } = {}) {
+    if (!authorityChecked) this.checkGrant(id, resource, action, enabled);
     this.#transaction(() => {
       this.#db.prepare('INSERT INTO actor_grants VALUES(?,?,?,?) ON CONFLICT(actor_id,resource,action) DO UPDATE SET enabled=excluded.enabled')
         .run(id, resource, action, enabled ? 1 : 0);
       this.#audit(operator, id, enabled ? 'grant:' + action : 'revoke:' + action, resource);
     });
+  }
+  /**
+   * Validates a grant against this store's registry and the resource authorities
+   * registered on this thread. A storage owner elsewhere writes it afterwards.
+   */
+  checkGrant(id: string, resource: string, action: string, enabled: boolean): void {
+    permission(resource, action);
+    if (!this.get(id) || typeof enabled !== 'boolean') throw new Error('Invalid actor grant');
+    // This store owns its registry and local Actor resources. It cannot grant a
+    // foreign Hub's resources or an engine's workspace permissions on their behalf.
+    if (resource !== this.managementResource && !this.get(resource) && ![...this.#resourceAuthorities].some(owns => owns(resource))) throw new Error('Resource authority required');
+  }
+  /** Whether this thread registered hooks that a storage owner on another thread would not run. */
+  get hasLocalRegistrationHooks(): boolean {
+    return this.#reservationResolvers.size > 0 || this.#humanRegistrationListeners.size > 0;
+  }
+  /**
+   * The storage owner committed actor writes on its own connection: republish
+   * every permission projection on this connection and notify observers, as a
+   * local mutation would.
+   */
+  ownerCommitted(identityChanged?: string): void {
+    withPermissionWrite(() => undefined, this.#readCache);
+    this.#changes.emit();
+    if (identityChanged) this.#identityChanged(identityChanged);
   }
   can(context: ActorContext, resource: string, action: string): boolean {
     permission(resource, action);

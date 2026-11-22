@@ -1,0 +1,153 @@
+# Crew: Bots as peer members of a space
+
+Status: first core slice. The rules below are the target model; the "Implemented" table
+says which parts exist in source. Design rationale and the full rule set live in the
+product design document; this page records the contract.
+
+A team is a [collaboration space](server-spaces.md); one person alone is also a team.
+Bots are Session Actors that join a space as peer members of its humans. A Bot belongs to
+exactly one space.
+
+## Contact rules
+
+- **Humans** in a space whose contact is open may message any member, human or Bot,
+  without a per-target grant. A space's `openContact` defaults to on for new spaces and
+  off for the historical default space and every space that existed before this change,
+  which keep the per-target `message.send` grant rule.
+- **Space Bots** proactively reach only their **phonebook**: exact `message.send` grants
+  whose target is a member of the Bot's own space, also inside the space. A phonebook is
+  one-way: being in Alan's phonebook does not let you be reached by, or reach, anyone else.
+- **Bots outside every space** keep the existing per-target grant rule unchanged.
+
+A phonebook entry carries `message.send` and `execution.queue` together: finding someone
+includes handing them work. It is a projection of grants owned by `ActorStore`; there is no
+second store. Only the space owner edits a Bot's phonebook, and only with members of that
+space. Any member of the Bot's space can read it.
+
+`CrewContact` (`packages/access-control/src/crew-contact.ts`) is the single decision used by
+`Collaboration` for direct messages and execution requests and by the native channel
+projections (`canSend`, `canMessage`). It reads spaces and grants inside the caller's
+transaction and writes nothing itself. In a standalone collaboration repository without
+space tables it stands aside and the existing grant rule applies.
+
+## Work and its chain
+
+Every hand-off to a space Bot is a piece of **work** in the `crew_work` ledger (migration
+`0020_crew`), written only by `Collaboration` inside the communication transaction, so a
+message and the work it opens commit or roll back together. Work records its assignee, who
+handed it over, the work it was split from and its root. `origin` is `member` (a person asked),
+`bot` (another Bot handed it on) or `routine` (a Bot started it on its own).
+
+- **Dispatch.** Every direct message a member sends to a Bot of their space opens work, in the
+  same transaction as the message (`send` and `crew/work/dispatch` alike). The one exception is a
+  Bot's own owner, whose direct chat with it stays their private line. Bots dispatch only to
+  their phonebook, and only under open work they hold (`parentWorkId`).
+- **Replies are not dispatches.** `crew/work/message` carries a reply: the assignee writes up its
+  chain, or the requester answers the assignee. A reply opens no work and spends no budget.
+  When it reaches a Bot it is filed in `crew_messages` (migration `0020_crew`) against
+  that Bot's own work in the tree, and the Bot reads it with `crew/work/replies`.
+- **Questions and answers.** A reply marked `asks` is a question (columns `asks` and `answers`);
+  the runtime marks the questions its Interaction service puts to people, and the `crew_message`
+  tool takes `asks`. Only an open question waits in a person's Inbox; reports and notices never do.
+  A person's direct message to a Bot that has an open question for them is the answer: it is filed
+  against the work the question was asked under, closes that question and opens no new work. A
+  reply to one question answers that one, otherwise the Bot's latest open question. With no open
+  question, a direct message is a dispatch again (rule 10). The Bot's owner answering a crew
+  question goes through crew too, not the private line.
+- **Chain pass.** While work is open, its assignee may message everyone the work answers to:
+  each requester up the tree, nearest first, then the space owner. This ignores the phonebook,
+  covers messages only, and ends when the assignee calls `finish`. Routine work answers to
+  the owner only.
+- **Budget.** A root allows 8 Bot-to-Bot hand-offs in its whole tree
+  (`CREW_DISPATCH_BUDGET`). The next one is rejected with `crew_budget_exhausted`; the Bot
+  escalates instead. A rejected hand-off leaves no message.
+- **Departures.** A member who left the space is skipped on the chain. A Bot removed from its
+  space (or disabled) no longer holds any work, so its pass ends at once.
+
+The core does not decide when work is done: the assignee's runtime reports it with `finish`.
+Who on the chain is actually asked, and whether that member can decide, is the runtime's job.
+
+## Protocol
+
+| Method | Who | Effect |
+| --- | --- | --- |
+| `opencraft/server-spaces` `{action:'contact',spaceId,open}` | space owner | switch open contact |
+| `opencraft/server-spaces` `{action:'addBot',spaceId,actorId}` | space owner | add one of the owner's own Bots as a member; it may not belong to another space |
+| `opencraft/server-spaces` `{action:'bots',spaceId}` | space owner | the owner's additional assistants that are not yet in any space |
+| `opencraft/crew/phonebook/list` `{botId}` | members of the Bot's space | entries, the space members that could be entries, and whether the caller may edit |
+| `opencraft/crew/phonebook/set` `{botId,actorId,present}` | space owner | add or remove an entry; adding requires a member of the space |
+| `opencraft/crew/work/dispatch` `{targetActorId,content,idempotencyKey,parentWorkId?}` | members; Bots under open work | send and open work |
+| `opencraft/crew/work/message` `{workId,targetActorId,content,idempotencyKey,asks?}` | the work's assignee; its requester | reply: the assignee to anyone on its chain, the requester to the assignee |
+| `opencraft/crew/work/replies` `{after}` | a Bot | replies filed against its work, after a cursor |
+| `opencraft/crew/work/attachment` `{workId,offset?}` | the Bot holding the work | the dispatch file, in 64 KiB chunks |
+| `opencraft/crew/teams` `{}` | a person | the teams they belong to and their members |
+| `opencraft/crew/team` `{action,...}` | `create`, `join`: anyone; the rest: the team owner | `create {name}`, `join {code}`, `invite {spaceId}`, `candidates {spaceId}`, `addAgent`/`removeAgent {spaceId,actorId}`, `contact {spaceId,open}`, forwarded to the space ledger |
+| `opencraft/crew/desk` `{botId,actorId?}` | members of the Bot's space | the Bot's setup and, for one dispatcher, its conversation and tasks; for the Bot's owner and the team's owner also its operations; only while the Bot runs |
+| `opencraft/crew/work/inbox` `{}` | a person | work they handed over, work that asked them something, and for a space owner all work in the space; open or closed in the last week, with the latest unanswered question to them |
+| `opencraft/crew/work/start` `{}` | space Bots | open routine work |
+| `opencraft/crew/work/finish` `{workId}` | the work's assignee | close it; the chain pass ends |
+| `opencraft/crew/work/get` `{workId}` | assignee, requester, chain | the work with its chain and budget; `request` (the dispatch text) only for the assignee and requester |
+| `opencraft/crew/work/list` `{}` | a Bot | its open work |
+
+Removing a Bot uses the existing `remove` action.
+
+## Implemented
+
+| Rule | State |
+| --- | --- |
+| Bots as space members, one space each | implemented (`addBot`) |
+| Same-space humans reach any member, with a per-space switch | implemented; migration `0020_crew` adds `open_contact` (existing rows 0) |
+| Space Bots limited to their phonebook inside their space | implemented for direct messages and `execution.queue` |
+| Owner-managed phonebook | implemented |
+| Work ledger, chain pass, owner for routine work | implemented in core |
+| Budget of 8 Bot-to-Bot hand-offs per root | implemented in core |
+| Departed members skipped, removed Bots hold no work | implemented in core |
+| Managed Bot runtime takes crew work | implemented: the Host forwards `crew/work/list`, `get`, `message` and `finish` as the Bot; each dispatcher gets one runner conversation; replies go to the nearest person left on the chain |
+| Asking upward on the Bot's own judgment | implemented by the same path: a question goes to the immediate dispatcher, which decides or asks its own dispatcher |
+| Finishing work | the runtime closes work once its turn settled, no Work linked to that conversation is active and its outbox is empty; a blocked turn stays open |
+| Cancelling unstarted work of someone who left | implemented in the runtime: closed before intake without a reply |
+| Stopping started work after the current step when its dispatcher leaves | implemented in the runtime: the active Work in that dispatcher's conversation is cancelled (the step in flight finishes and is not replayed; no later step runs) and the crew work is closed. Hand-offs it already made keep running; their replies to closed work are dropped |
+| Direct messages from members as dispatch (rule 10) | implemented in core; the Bot owner's private line is exempt |
+| Replies between Bots without budget, returned to the work they answer | implemented in core and in the runtime intake; work with open hand-offs is not finished |
+| Bots dispatching to their phonebook and answering down the tree | implemented as Work tools for both execution engines (Pi and Codex): `crew_contacts`, `crew_dispatch`, `crew_message`. They appear only in Work that answers crew work; the crew work is taken from the Work's conversation, never from the model, and idempotency keys come from the Work and native call |
+| Dispatching from the reception turn without a Work (`dispatch` / `message` decisions) | not yet |
+| Routine work started by a Bot | core only; no runtime trigger yet |
+| Files sent with a dispatch | implemented: the work view names the file for its assignee and requester, `crew/work/attachment` serves it in chunks to the Bot holding the work, and the runtime brings it in with the turn under the same 8 MiB bound as the owner's private line |
+| Crew UI: teams | implemented in the Inbox Members tab: each team (Server space, the instance-wide default space excluded) with its people and Agents; Agent rows open the desk. Anyone can start a team or join one with an invitation link. The owner manages a team there: contact switch, invitation links, adding their own assistants as Agents, removing Agents and each Agent's phonebook. Reads use `crew/teams` in the storage Worker; changes use `crew/team`, which the Core forwards to the Server space ledger, the only writer of membership. Hosts without the ledger (it is attached in the Headless server) keep the plain member list |
+| Crew UI: dispatching from the Inbox | implemented by rule 10: an ordinary direct message is the dispatch. Inbox → Members lists the Agents of Servers you share (someone else's assistant stays private otherwise) and opens a direct conversation with anyone you may message |
+| Crew UI: work in the Inbox | implemented as a Work tab grouped Waiting on you, In progress and Done recently; a row opens the conversation with whoever asked, or with the Agent. Questions (`asks`) from a Bot to a person are filed in `crew_messages` and wait until that person answers; the answer closes the question instead of opening work. This is where escalations wait when the owner is away (rule 13) |
+| Desk (rule 4) | implemented. `crew/desk` lets any member of a Bot's space see its environment, model and how many contacts it has, plus one conversation per dispatcher exactly as the Bot sees it (rendered with the Chat timeline and document renderer) and the tasks each conversation started. The Core authorizes in its storage owner and asks the Host; only a running Bot shows its desk, and nothing is read from its files while it is stopped. The owner's private conversation, delegations, tool calls and results are never on the desk. Opened from each row of the Inbox Work tab |
+| Desk operations | implemented. Because anyone who can reach a Bot borrows its authority, the Bot's owner and the team's owner can see what it did with it: the latest 50 operations made while answering crew work, each marked with the dispatcher it was for (kept, as "someone who left the team", after they leave). Recorded tools are those that act beyond the Bot's own memory: `environment_run`, `platform_read`, `thread_command`, `crew_dispatch`, `crew_message`; each is written to the runner's `work_operation` table after its permission check and before it acts, keyed by the native call so a replay adds nothing, with a summary of at most 512 characters (command line, read target, or message text); for hand-offs and messages the recipient is kept apart and shown by name. Results are not recorded. Operations on the owner's private line are not shown. The Core decides who sees them (`audit` in `crew/desk-authority`), asks the Bot for them only then, and checks each row before it reaches a client |
+| Editing the desk | through the existing assistant settings (environment, model) and the phonebook; there is no separate desk editor |
+| Chain detail (the whole hand-off tree of one piece of work) | not yet |
+
+## Trying it locally
+
+`npm run preview:crew` starts the real Headless server (Core, Inbox, Server spaces and the managed Bot Host) on
+`http://127.0.0.1:10010` with local sign-in, and on first run creates two accounts, `alice` (instance admin) and `bob`
+(member), whose passwords it prints. Use two browser profiles to play both. Data persists in
+`~/.opencraft/crew-preview` (`OPENCRAFT_CREW_PREVIEW_DATA`); `--reset` starts over and `--rebuild` rebuilds the headless
+Workbench after pulling new code. Bots use the model chosen for each assistant; `--fixture` swaps in the deterministic
+reception fixture so the flow can be tried without a model (its replies are canned). The fixture is passed through an
+explicit `composition.personalAssistantHost` that the Headless CLI never sets.
+
+Walkthrough: as alice create assistants (Assistants), then in Inbox → Members start a team, open its settings to add
+the assistants as Agents, set their contacts and create an invitation link; as bob choose Join a team in Inbox → Members,
+paste the link, message an Agent from the team, then watch Inbox → Work and open its desk.
+
+Core: `CrewContact` and `CrewWork` read and write SQLite, so only the communication storage Worker
+loads them (`attachCrewRules`); a `Collaboration` on a network thread has no crew rules and they
+stand aside there, as they do in a store without spaces.
+
+Runtime: `apps/personal-assistant/src/runtime/crew-intake.mjs`. Its only local fact is which runner
+conversation belongs to which dispatcher, stored in the runner `meta` table.
+
+Verification: `tests/identity/crew-contact.test.ts`, `tests/identity/server-spaces.test.ts`,
+`apps/personal-assistant/test/crew-intake.test.mjs`, `apps/personal-assistant/test/crew-tools.test.mjs`,
+`tests/shell/crew-teams.test.tsx`, `tests/shell/crew-phonebook.test.tsx`, `tests/shell/crew-work-view.test.tsx`, `tests/shell/crew-desk.test.tsx`.
+
+End to end, `tests/identity/crew-runtime.test.ts` runs the real Host, which spawns the real assistant
+process against the real Core with the deterministic reception fixture in place of a model: a
+member's message opens work, the Bot answers that member on the chain and the work closes, while
+the Bot's owner keeps their private line. Not covered: a real model choosing the crew tools, and
+the Web or Electron client.

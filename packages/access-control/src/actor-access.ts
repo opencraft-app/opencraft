@@ -3,6 +3,7 @@ import type { Principal } from '@opencraft/identity-core';
 import type { IdentityRequest } from '@opencraft/identity-core/node';
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import { ActorStore, isActorAuthorization } from './actors.js';
+import type { IdentityWrites } from './identity-writes.js';
 
 export interface ActorAccessOptions {
   /** Only verified HUMAN providers belong here. Session proofs use their own credential path. */
@@ -16,6 +17,9 @@ export interface ActorAccessOptions {
 }
 export class ActorAccess {
   readonly #requests = new WeakMap<object, { context: ActorContext | null; principal: Principal | null }>();
+  #writes: IdentityWrites | null = null;
+  /** Actor administration writes go to the Server owner from now on. */
+  useOwnerWrites(writes: IdentityWrites): void { this.#writes = writes; }
   constructor(readonly store: ActorStore, readonly options: ActorAccessOptions) {}
   authenticate(request: IdentityRequest): ActorContext | null {
     let entry = this.#requests.get(request);
@@ -119,13 +123,23 @@ export class ActorAccess {
       const allowed = fields[path]!;
       if (!value || typeof value !== 'object' || Array.isArray(value)
         || Object.keys(value).length !== allowed.length || Object.keys(value).some(k => !allowed.includes(k))) throw new Error('Invalid actor operation');
-      if (path === '/__opencraft_actors/sessions') send(201, { actor: this.store.createSession(value.displayName, context.actorId) });
-      else if (path === '/__opencraft_actors/credentials') send(201, this.store.issueCredential(value.actorId, value.expiresAt, context.actorId));
-      else if (path === '/__opencraft_actors/credentials/revoke') { this.store.revokeCredential(value.credentialId, context.actorId); send(200, { ok: true }); }
-      else if (path === '/__opencraft_actors/grants') { this.store.setGrant(value.actorId, value.resource, value.action, value.enabled, context.actorId); send(200, { ok: true }); }
-      else if (path === '/__opencraft_actors/state') {
+      // With an owner Worker, the same authority is rechecked under its writer lock before commit.
+      const writes = this.#writes, authorize = () => !!this.authenticate(request) && this.manages(request, context);
+      if (path === '/__opencraft_actors/sessions') send(201, { actor: writes ? await writes.createSession(authorize, value.displayName, context.actorId)
+        : this.store.createSession(value.displayName, context.actorId) });
+      else if (path === '/__opencraft_actors/credentials') send(201, writes ? await writes.issueCredential(authorize, value.actorId, value.expiresAt, context.actorId)
+        : this.store.issueCredential(value.actorId, value.expiresAt, context.actorId));
+      else if (path === '/__opencraft_actors/credentials/revoke') {
+        if (writes) await writes.revokeCredential(authorize, value.credentialId, context.actorId); else this.store.revokeCredential(value.credentialId, context.actorId);
+        send(200, { ok: true });
+      } else if (path === '/__opencraft_actors/grants') {
+        if (writes) await writes.setGrant(authorize, value.actorId, value.resource, value.action, value.enabled, context.actorId);
+        else this.store.setGrant(value.actorId, value.resource, value.action, value.enabled, context.actorId);
+        send(200, { ok: true });
+      } else if (path === '/__opencraft_actors/state') {
         if (value.actorId === context.actorId && value.enabled === false) { send(409, { error: 'cannot_disable_own_actor' }); return true; }
-        this.store.setEnabled(value.actorId, value.enabled, context.actorId); send(200, { ok: true });
+        if (writes) await writes.setEnabled(authorize, value.actorId, value.enabled, context.actorId); else this.store.setEnabled(value.actorId, value.enabled, context.actorId);
+        send(200, { ok: true });
       }
     } catch { send(400, { error: 'invalid_actor_operation' }); }
     return true;

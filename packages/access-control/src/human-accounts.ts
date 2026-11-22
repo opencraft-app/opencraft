@@ -85,8 +85,18 @@ export class HumanAccounts {
     const row = this.#db.prepare('SELECT label FROM human_identity_labels WHERE binding=?').get(JSON.stringify([binding.provider, binding.subject]));
     return row ? row.label as string : '企业账号 · ' + binding.subject;
   }
-  issue(verified: Principal): { token: string; login: HumanLogin } {
+  /** The local account version a login records; throws when a local login cannot be verified on this thread. */
+  loginAccountVersion(verified: Principal): number | null {
     const accountVersion = verified.provider === 'local' ? this.localAccounts?.verifiedVersion(verified) ?? null : null;
+    if (verified.provider === 'local' && accountVersion === null) throw new Error('Local account verification unavailable or changed');
+    return accountVersion;
+  }
+  /** The storage owner committed login writes on its own connection; notify observers as a local write would. */
+  ownerCommitted(): void {
+    this.#changes.emit();
+  }
+  /** `accountVersion` is supplied by a caller that verified the local account on its own thread. */
+  issue(verified: Principal, accountVersion: number | null = this.loginAccountVersion(verified)): { token: string; login: HumanLogin } {
     if (verified.provider === 'local' && accountVersion === null) throw new Error('Local account verification unavailable or changed');
     const context = this.actors.resolveHuman(verified);
     if (!context) throw new Error('Human unavailable');

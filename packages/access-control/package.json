@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./membership-revocation": "./src/membership-revocation.ts",
     ".": "./src/index.ts",
     "./actors": "./src/actors.ts",
     "./actor-access": "./src/actor-access.ts",
@@ -23,7 +24,9 @@
     "./deployment-operator": "./src/deployment-operator.ts",
     "./orchestration-runtime-store": "./src/orchestration-runtime-store.ts",
     "./thread-orchestration-broker": "./src/thread-orchestration-broker.ts",
-    "./automation-runtime": "./src/automation-runtime.ts"
+    "./automation-runtime": "./src/automation-runtime.ts",
+    "./identity-writes": "./src/identity-writes.ts",
+    "./commit-fence": "./src/commit-fence.ts"
   },
   "dependencies": {
     "@opencraft/identity-core": "*",
@@ -32,6 +35,7 @@
     "@opencraft/appserver-protocol": "0.1.0",
     "@opencraft/appserver-client": "0.1.0",
     "@opencraft/storage-node": "0.1.0",
+    "@opencraft/worker-owner": "0.1.0",
     "@opencraft/app-host-protocol": "0.1.0",
     "@opencraft/app-host-server": "0.1.0"
   },

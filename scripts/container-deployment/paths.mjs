@@ -28,9 +28,11 @@ export function deploymentPaths(env = process.env) {
     if (!isAbsolute(value) || resolve(value) === '/') throw new Error(`${name} must be an absolute non-root path`);
     return resolve(value);
   };
+  const executionContext=env.OPENCRAFT_EXECUTION_CONTEXT??'assets';
+  if(!['assets','legacy'].includes(executionContext))throw Error('OPENCRAFT_EXECUTION_CONTEXT must be assets or legacy');
   const executionDirectory = absolute('OPENCRAFT_EXECUTION_DIR', join(dataDirectory, 'execution'));
   return {
-    dataDirectory, runtimeDirectory, executionDirectory, ...proxyConfiguration(env),
+    dataDirectory, runtimeDirectory, executionDirectory, executionContext, ...proxyConfiguration(env),
     threadCliDirectory: join(executionDirectory, 'cli'),
     terminalDirectory: join(executionDirectory, 'terminal'),
     terminalEndpoint: join(executionDirectory, 'terminal.sock'),

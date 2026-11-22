@@ -3,7 +3,8 @@
 // synchronous IO (AGENTS.md "网络主线程不得阻塞"). This check finds the source
 // each network process loads on its main thread, by following imports from
 // the process entries in config/main-thread-sync-io.json, and counts the
-// synchronous file, process and SQLite calls in it. Worker modules start from
+// synchronous file, process and SQLite calls in it, plus the SQL statements it
+// prepares or executes (each one runs synchronously in SQLite on that thread). Worker modules start from
 // a URL, not an import, so code that runs only in a Worker is not reached.
 //
 // Existing calls are recorded per file in the same config and may only
@@ -74,7 +75,29 @@ export function countBlockingCalls(text) {
       continue;
     for (const [, name] of line.matchAll(callPattern)) counts[name] = (counts[name] ?? 0) + 1;
   }
+  const statements = countSqlStatements(text);
+  if (statements) counts[SQL_STATEMENT] = statements;
   return counts;
+}
+
+/** Recorded name for SQL run through a connection the module holds on its thread. */
+export const SQL_STATEMENT = "SQL statement";
+
+const sqlPattern = new RegExp(
+  "\\.(?:prepare|exec)\\s*\\(\\s*[`'\"]\\s*(?:" +
+    "SELECT|INSERT|UPDATE|DELETE|REPLACE|WITH|PRAGMA|BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|" +
+    "CREATE|ALTER|DROP|VACUUM|ATTACH|DETACH|ANALYZE|REINDEX" +
+    ")\\b",
+  "gi",
+);
+
+/**
+ * Counts SQL text handed to `.prepare(` or `.exec(` as a literal. Each one is a
+ * synchronous round trip into SQLite on this thread, so new statements are
+ * debt like new sync calls. SQL built in a variable is not seen.
+ */
+export function countSqlStatements(text) {
+  return [...stripComments(text).matchAll(sqlPattern)].length;
 }
 
 const loaders = Object.fromEntries(
@@ -167,12 +190,14 @@ async function main() {
     );
     process.exit(1);
   }
-  const sites = Object.values(current).reduce(
-    (sum, counts) => sum + Object.values(counts).reduce((a, b) => a + b, 0),
-    0,
-  );
+  let sites = 0;
+  let statements = 0;
+  for (const counts of Object.values(current))
+    for (const [name, count] of Object.entries(counts))
+      if (name === SQL_STATEMENT) statements += count;
+      else sites += count;
   console.log(
-    `Main-thread synchronous IO: ${sites} recorded use(s) in ${Object.keys(current).length} file(s); none added.`,
+    `Main-thread synchronous IO: ${sites} recorded call(s) and ${statements} SQL statement(s) in ${Object.keys(current).length} file(s); none added.`,
   );
 }
 

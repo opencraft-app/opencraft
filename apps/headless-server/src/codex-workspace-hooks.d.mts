@@ -12,6 +12,7 @@ export interface CodexWorkspaceComposition {
   requiresCodexWorkspaceResume?: CodexWorkspaceHooks['requiresWorkspaceResume'];
   restoreCodexProvisionalWorkspace?: CodexWorkspaceHooks['restoreProvisionalWorkspace'];
 }
+export function hasCodexWorkspaceHooks(composition: CodexWorkspaceComposition): boolean;
 export function validateCodexWorkspaceHooks(composition: CodexWorkspaceComposition): void;
 export function createCodexWorkspaceHooks(composition: CodexWorkspaceComposition, hostId: string): Readonly<CodexWorkspaceHooks>;
 

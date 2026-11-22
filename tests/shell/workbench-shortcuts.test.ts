@@ -31,6 +31,20 @@ test("Agent cycling uses Alt-only bindings and normalizes Option layouts", () =>
   assert.equal(shortcutLabel("agentPrevious", "Win32"), "Alt+Shift+P");
   assert.equal(shortcutAria("agentNext", "Win32"), "Alt+P");
 });
+test("conversation navigation uses exact Control+Shift+Up/Down on every platform", () => {
+  for (const platform of ["MacIntel", "Win32", "Linux x86_64"]) {
+    for (const [command, arrow] of [["conversationPrevious", "ArrowUp"], ["conversationNext", "ArrowDown"]] as const) {
+      const input = { ...key, key: arrow, code: arrow, ctrlKey: true, shiftKey: true };
+      assert.equal(matchesWorkbenchShortcut(input, command, platform), true);
+      for (const extra of [{ shiftKey: false }, { metaKey: true }, { ctrlKey: false }, { altKey: true }, { isComposing: true }]) {
+        assert.equal(matchesWorkbenchShortcut({ ...input, ...extra }, command, platform), false);
+      }
+    }
+  }
+  assert.equal(shortcutLabel("conversationPrevious", "MacIntel"), "⌃⇧↑");
+  assert.equal(shortcutLabel("conversationNext", "Win32"), "Ctrl+Shift+↓");
+  assert.equal(shortcutAria("conversationPrevious", "MacIntel"), "Control+Shift+ArrowUp");
+});
 test("composed input ownership preserves overlays, remote input and handled/IME/repeat events", () => {
   const dom = new JSDOM('<body><textarea></textarea></body>');
   const previous = Object.getOwnPropertyDescriptor(globalThis,'Element');

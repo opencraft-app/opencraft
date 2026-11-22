@@ -22,6 +22,8 @@ test("bundled assets owner opens its sibling Worker, persists and drains without
     });
     const { openAssetConfigurations } = await import(pathToFileURL(join(output, "assets-api.mjs")).href);
     const owner = await openAssetConfigurations(join(output, "data"));
+    assert.equal(owner.botExecution, false);
+    assert.equal(owner.workspaceExecution, false);
     try {
       const permit = new Int32Array(new SharedArrayBuffer(4));
       Atomics.store(permit, 0, 1);
@@ -43,6 +45,36 @@ test("bundled assets owner opens its sibling Worker, persists and drains without
       });
       assert.equal(saved.revision, 1);
       assert.ok(!JSON.stringify(saved).includes("bundled-fixture-not-real"));
+    } finally {
+      await owner.close();
+    }
+  } finally {
+    await rm(output, { recursive: true, force: true });
+  }
+});
+
+test("bundled Headless workspace owner opens the same vault and private journal without source fallback or provider IO", async () => {
+  const output = await mkdtemp(join(tmpdir(), "assets-headless-workspace-package-"));
+  try {
+    await buildAssetsRuntime(output, { headless: true });
+    await build({
+      entryPoints: [join(root, "apps/headless-server/src/headless-assets-storage.ts")],
+      outfile: join(output, "headless-api.mjs"),
+      bundle: true,
+      platform: "node",
+      format: "esm",
+      target: "node26",
+      logLevel: "silent",
+    });
+    const { openHeadlessAssetsStorage } = await import(pathToFileURL(join(output, "headless-api.mjs")).href);
+    const owner = await openHeadlessAssetsStorage(join(output, "data"), {
+      workspaceMachineId: "synthetic-bundled-machine",
+    });
+    try {
+      assert.equal(owner.workspaceExecution, true);
+      assert.equal(owner.botExecution, true);
+      assert.deepEqual((await owner.store.workspaceBotCatalog()).templates, []);
+      assert.deepEqual(await owner.store.workspacePlacementPage(), { items: [], next: null });
     } finally {
       await owner.close();
     }

@@ -13,12 +13,13 @@ export class DurableHostProcessService {
   private connecting?: Promise<Socket>;
   private closed = false;
   private next = 0;
+  private terminalAdmission = false;
   private readonly pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>();
   constructor(private readonly directory: string, private readonly environment?: ExecutionEnvironmentRuntime,
     private readonly external?: { endpoint: string; tokenFile: string;
       prepare(method: string, params: unknown, scope?: EnvironmentExecutionScope): PreparedProcessIdentity }) {}
   subscribe(listener: (method: string, params: unknown) => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
-  async probe(): Promise<void> { await this.connection(); }
+  async probe(): Promise<void> { await this.connection(); if (this.terminalAdmission) await this.probeTerminalAdmission(); }
   private async connection(): Promise<Socket> {
     if (this.closed) throw new Error('Process service is closed');
     if (this.socket && !this.socket.destroyed) return this.socket;
@@ -59,7 +60,7 @@ export class DurableHostProcessService {
         clearTimeout(timer);
         if (!attached) reject(new Error('Terminal owner attach closed'));
         if (this.socket !== socket) return;
-        this.socket = undefined; this.watched.clear();
+        this.socket = undefined; this.terminalAdmission = false; this.watched.clear();
         for (const request of this.pending.values()) { clearTimeout(request.timer); request.reject(new Error('Terminal owner disconnected; operation outcome may be unknown')); }
         this.pending.clear();
       });
@@ -69,7 +70,7 @@ export class DurableHostProcessService {
           if (message?.type !== 'attached' || message.protocol !== TERMINAL_OWNER_PROTOCOL || this.closed) {
             clearTimeout(timer); reject(new Error('Terminal owner protocol incompatible or Host closed')); socket.destroy(); return;
           }
-          attached = true; clearTimeout(timer); this.socket = socket; resolve(socket); return;
+          attached = true; this.terminalAdmission = message.terminalAdmission === 1; clearTimeout(timer); this.socket = socket; resolve(socket); return;
         }
         if (typeof message.method === 'string') {
           if (this.watched.has(message.params?.processHandle)) for (const listener of this.listeners) listener(message.method, message.params);
@@ -83,6 +84,25 @@ export class DurableHostProcessService {
         else request.resolve(message.result);
       });
     });
+  }
+  async probeTerminalAdmission(): Promise<void> {
+    await this.connection(); if (!this.terminalAdmission) throw Error('Hands terminal admission unavailable');
+    await this.dispatchIdentity('process/quotaProbe', {}, {quotaOwner:'server-terminal-admission', lifecycleAuthority:true});
+  }
+  /** Compiled provider/owner IPC only; excluded from the public method catalog. */
+  async reserveTerminal(quotaOwner: string, resource: string, operation: string): Promise<string> {
+    await this.connection(); if (!this.terminalAdmission) throw Error('Hands terminal admission unavailable');
+    const token = await this.dispatchIdentity('process/quotaReserve', {resource, operation}, {quotaOwner, lifecycleAuthority:true});
+    if (typeof token !== 'string' || !/^[a-f0-9]{64}$/u.test(token)) throw Error('Invalid terminal admission receipt');
+    return token;
+  }
+  async releaseTerminal(token: string, proof: 'exited'|'not-created'): Promise<void> {
+    await this.connection(); if (!this.terminalAdmission) throw Error('Hands terminal admission unavailable');
+    await this.dispatchIdentity('process/quotaRelease', {token, proof}, {quotaOwner:'server-terminal-admission', lifecycleAuthority:true});
+  }
+  async confirmTerminalResourceDestroyed(quotaOwner: string, resource: string): Promise<void> {
+    await this.connection(); if (!this.terminalAdmission) throw Error('Hands terminal admission unavailable');
+    await this.dispatchIdentity('process/quotaResourceDestroyed', {resource}, {quotaOwner, lifecycleAuthority:true});
   }
   async threadScopes(): Promise<{hostId: string; threadId: string}[]> {
     return await this.dispatchIdentity('process/threadScopes', {}, { quotaOwner: 'server-lifecycle', lifecycleAuthority: true }) as {hostId: string; threadId: string}[];

@@ -36,7 +36,11 @@ export class PersonalAssistants {
   ownMessages(c: ActorContext, p: Record<string, unknown>) {
     fields(p,['after']);const r=this.row(c);
     if(!Number.isSafeInteger(p.after)||Number(p.after)<0)fail('invalid_input',400);
+    // A message that opened crew work reaches the Bot through crew intake; the runtime skips it here
+    // but still advances its cursor past it.
     return this.service.messages(c,String(r.owner_human_id),Number(p.after),50).map(row=>({...row,
+      // A dispatch, or an answer to the Bot's crew question, reaches it through crew intake instead.
+      crewWork: this.service.crewOwnsMessage(String(row.id)),
       attachment: this.db.prepare('SELECT name,mime AS type,length(bytes) AS size FROM actor_channel_attachments WHERE message_id=?').get(String(row.id)) ?? null,
     }));
   }

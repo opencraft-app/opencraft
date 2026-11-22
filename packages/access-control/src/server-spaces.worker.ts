@@ -45,7 +45,7 @@ port.on('message', request => {
       const execute = () => request.method === 'inherit' ? ledger.inherit(request.parent.serverId,request.parent.threadId,request.child.serverId,request.child.threadId) : request.method === 'bootstrap' ? ledger.bootstrap(request.ownerActorId,request.members ?? []) : request.method==='legacy' ? ledger.adoptLegacy(context,request.engineServerId,request.threads) : request.method === 'assign'
         ? ledger.assign(context,request.engineServerId,request.threadId,request.spaceId)
         : ledger.command(context,request.command);
-      const mutated=['assign','legacy','bootstrap','inherit'].includes(request.method)||['create','invite','join','remove'].includes(request.command?.action);
+      const mutated=['assign','legacy','bootstrap','inherit'].includes(request.method)||['create','invite','join','remove','contact','addBot'].includes(request.command?.action);
       const result=mutated?sqliteTransaction(db,execute):execute();
       port.postMessage({id:request.id,result,...(mutated&&(request.method!=='legacy'||result===true)?{projection:ledger.projection()}:{})});
     } catch (error) {

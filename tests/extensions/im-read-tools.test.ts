@@ -12,6 +12,9 @@ import { SessionCapabilityMcp } from "../../packages/session-capabilities/src/mc
 import { ImChannelService } from "../../apps/headless-server/src/im-channel-service.mjs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { localSwitchboard } from "../../plugins/im/src/switchboard-local.js";
+import { Switchboard } from "../../plugins/im/src/switchboard.js";
+const openSwitchboard = (dir: string) => Switchboard.open(join(dir, "im-switchboard.sqlite"));
 
 const ref = { serverId: "server", threadId: "thread" };
 const signal = () => new AbortController().signal;
@@ -26,7 +29,7 @@ async function fixture(t: test.TestContext) {
     async create() { return target; }, async validate() {}, async submit() { return "request"; },
     async result() { throw Error("unexpected inference"); },
   };
-  const im = new ImPlugin(store, execution, 1024, true);
+  const im = new ImPlugin(localSwitchboard(store), execution, 1024, true);
   const unregister = im.register({ id: "bot", ownerId: "owner", senders: { sender: "human", other: "other-human" }, groupScope: "sender" });
   im.register({ id: "other-bot", ownerId: "owner", senders: { sender: "human" }, groupScope: "sender" });
   t.after(() => im.close());
@@ -70,6 +73,7 @@ test("equal-timestamp pagination is stable, time bounds are inclusive and Unicod
   for (let i = 0; i < 5; i++) rows.push(await f.receive("同一秒 " + i + " 中".repeat(1200)));
   const db = (f.store as any).managed.database;
   db.prepare("UPDATE im_messages SET created_at=?").run(time);
+  await f.im.store.refresh();
   let cursor: string | undefined, ids: string[] = [];
   do {
     const page = await f.im.read(ref, "im_read_context", { replyRef: rows[0].reply_ref, limit: 2, ...(cursor ? { cursor } : {}), from: time, until: time }, signal());
@@ -84,7 +88,7 @@ test("equal-timestamp pagination is stable, time bounds are inclusive and Unicod
 
 test("retained expired replies remain readable without changing delivery state; revocation and input limits fail closed", async t => {
   const f = await fixture(t), m = await f.receive("已收到");
-  f.store.patch(m.id, { state: "reply_failed", error: "reply_expired", reply_expires_at: Date.now() - 1 });
+  await f.im.store.patch(m.id, { state: "reply_failed", error: "reply_expired", reply_expires_at: Date.now() - 1 });
   const before = f.store.message(m.id);
   await f.im.read(ref, "im_read_context", { replyRef: m.reply_ref }, signal());
   assert.deepEqual(f.store.message(m.id), before); assert.equal(f.sends(), 0);
@@ -94,16 +98,17 @@ test("retained expired replies remain readable without changing delivery state; 
     await assert.rejects(f.im.read(ref, "im_search_messages", { replyRef: m.reply_ref, query }, signal()), /invalid_message/);
   const aborted = new AbortController(); aborted.abort();
   await assert.rejects(f.im.read(ref, "im_read_context", { replyRef: m.reply_ref }, aborted.signal), /abort/i);
-  f.store.linkSender("bot", "sender", "different-human");
+  await f.im.store.linkSender("bot", "sender", "different-human");
   assert.equal(f.im.readAvailable(ref), false);
   await assert.rejects(f.im.read(ref, "im_read_context", { replyRef: m.reply_ref }, signal()), /denied/);
-  f.store.unlinkSender("bot", "sender"); f.revoke();
+  await f.im.store.unlinkSender("bot", "sender"); f.revoke();
   await assert.rejects(f.im.read(ref, "im_read_context", { replyRef: m.reply_ref }, signal()), /denied/);
 });
 
 test("seven-day read boundary and endpoint withdrawal apply even when the caller kept its anchor", async t => {
   const f = await fixture(t), old = await f.receive("old"), fresh = await f.receive("fresh");
   (f.store as any).managed.database.prepare("UPDATE im_messages SET created_at=? WHERE id=?").run(Date.now() - 8 * 86400000, old.id);
+  await f.im.store.refresh();
   await assert.rejects(f.im.read(ref, "im_read_context", { replyRef: old.reply_ref }, signal()), /denied/);
   assert.deepEqual((await f.im.read(ref, "im_read_context", { replyRef: fresh.reply_ref }, signal())).messages.map(m => m.content.text), ["fresh"]);
   f.unregister(); assert.equal(f.im.readAvailable(ref), false);
@@ -117,11 +122,11 @@ test("production Headless provider exposes read tools through signed MCP with ex
   const caps = new SessionCapabilities();
   const service = new ImChannelService({ dataDirectory: dir, capabilities: caps,
     credentials: {}, actors: { get: () => human, isCurrent: () => valid },
-    collaboration: { execution: { serverId: "server", hostId: "host" }, conversationAllowed: () => valid }, getAppHost: () => null });
+    collaboration: { execution: { serverId: "server", hostId: "host" }, conversationAllowed: () => valid }, getAppHost: () => null }, await openSwitchboard(dir));
   t.after(() => service.close());
   service.im.register({ id: "bot", ownerId: "human", senders: { sender: "human" }, groupScope: "sender" });
-  service.store.accept({ id: "a".repeat(64), channel_id: "bot", fingerprint: "f", actor_id: "human", source: JSON.stringify({ chatId: "wecom-channel:post", chatType: "group", senderId: "sender" }), text: "known history", route_revision: 1, decision: null, reply_address: null });
-  service.store.patch("a".repeat(64), { conversation_ref: JSON.stringify(ref), state: "delivered", reply_mode: "tool", reply_ref: "opaque-anchor", reply_expires_at: Date.now() + 1000 });
+  await service.store.accept({ id: "a".repeat(64), channel_id: "bot", fingerprint: "f", actor_id: "human", source: JSON.stringify({ chatId: "wecom-channel:post", chatType: "group", senderId: "sender" }), text: "known history", route_revision: 1, decision: null, reply_address: null });
+  await service.store.patch("a".repeat(64), { conversation_ref: JSON.stringify(ref), state: "delivered", reply_mode: "tool", reply_ref: "opaque-anchor", reply_expires_at: Date.now() + 1000 });
   const mcp = new SessionCapabilityMcp(caps, randomBytes(32)); await mcp.listen(); t.after(() => mcp.close());
   const session = { ...ref, execution: { inputId: "input", executionId: "execution" } };
   assert.deepEqual(caps.tools(session), caps.tools(ref));
@@ -147,7 +152,7 @@ test("ordinary execution sessions keep their provenance when the IM provider has
   t.after(() => rm(dir, { recursive: true, force: true }));
   const caps = new SessionCapabilities();
   const service = new ImChannelService({ dataDirectory: dir, capabilities: caps, credentials: {},
-    actors: {}, collaboration: { execution: { serverId: "server", hostId: "host" } }, getAppHost: () => null });
+    actors: {}, collaboration: { execution: { serverId: "server", hostId: "host" } }, getAppHost: () => null }, await openSwitchboard(dir));
   t.after(() => service.close());
   const session = { ...ref, execution: { inputId: "input", executionId: "execution" } };
   const seen: unknown[] = [];

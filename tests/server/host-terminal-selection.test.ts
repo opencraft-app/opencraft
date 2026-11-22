@@ -46,3 +46,25 @@ test('selector receives the exact authenticated context, never forged process id
   params:{threadId:'a',processHandle:'same',actorContext:{actorId:'mallory'},account:'mallory',hostId:'forged'}}),trusted);
  assert.equal(seen,1);assert.deepEqual(remote.calls,['process/spawn']);assert.deepEqual(local.calls,[]);s.close();
 });
+
+test('terminal dispatch receives the exact original ingress independently for each operation',async()=>{
+ const local=service(),remote=service(),first=context('alice'),second=context('alice');
+ const seen:unknown[]=[];
+ remote.port.dispatch=async(_method,_params,_scope,current,accepted,original)=>{current?.();seen.push(original);accepted?.();return {processHandle:'same'};};
+ const session=new HostTerminalSession(local.port,(c,p)=>scope(c.actorContext!.actorId,p.threadId),async()=>remote.port);
+ await session.connect();await init(session,'client');
+ await session.receive(frame('client','process/spawn','a'),first);
+ await session.receive(JSON.stringify({id:3,method:'process/writeStdin',[LOGICAL_CLIENT_FIELD]:'client',params:{threadId:'a',processHandle:'same',context:{actorId:'forged'}}}),second);
+ assert.equal(seen.length,2);assert.strictEqual(seen[0],first);assert.strictEqual(seen[1],second);session.close();
+});
+
+test('private quota methods cannot be forged through the public process transport',async()=>{
+ const local=service(),messages:any[]=[];
+ const session=new HostTerminalSession(local.port,(c,p)=>scope(c.actorContext!.actorId,p.threadId));
+ session.subscribeMessage(frame=>messages.push(JSON.parse(frame)));await session.connect();await init(session,'client');
+ for(const method of ['process/quotaProbe','process/quotaReserve','process/quotaRelease','process/quotaResourceDestroyed']){
+  await session.receive(JSON.stringify({id:2,method,[LOGICAL_CLIENT_FIELD]:'client',params:{lifecycleAuthority:true,quotaOwner:'forged',resource:'other',token:'a'.repeat(64)}}),context('alice'));
+  assert.ok(messages.at(-1).error);
+ }
+ assert.deepEqual(local.calls,[]);session.close();
+});

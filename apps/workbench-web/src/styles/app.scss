@@ -1507,8 +1507,11 @@ svg[data-sidebar-toggle-icon-state] {
 }
 
 .sidebar-activity-group {
-  gap: 2px;
+  --gap-sidebar-group-items: 2px;
+  gap: var(--gap-sidebar-group-items);
 }
+
+.sidebar-activity-group__occlusion { display: none; }
 
 // A folded heading has no list to separate from its next sibling.
 .sidebar-activity-group[data-collapsed="false"] + .sidebar-activity-group {
@@ -8587,7 +8590,9 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   margin-bottom: calc(-1 * var(--overlap-composer-rail));
   padding-bottom: var(--overlap-composer-rail);
   overflow: clip;
-  border: var(--width-composer-rail-border) solid var(--color-border-composer-rail);
+  // The rail keeps the border's geometry; the material layer paints it so the
+  // contour mask can live there too (see ::before).
+  border: var(--width-composer-rail-border) solid transparent;
   border-bottom: 0;
   border-radius: var(--radius-composer-rail) var(--radius-composer-rail) 0 0;
   --composer-rail-background: var(--color-background-composer-rail);
@@ -8601,18 +8606,26 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     linear-gradient(#000 0 0) top / 100% calc(100% - var(--overlap-composer-rail) + var(--coverage-composer-material-seam)) no-repeat,
     radial-gradient(circle var(--radius-composer-shell) at 100% calc(100% + var(--coverage-composer-material-seam)), transparent var(--rail-shoulder-cut), #000 var(--rail-shoulder-cut)) left bottom / var(--rail-shoulder-width) var(--overlap-composer-rail) no-repeat,
     radial-gradient(circle var(--radius-composer-shell) at 0 calc(100% + var(--coverage-composer-material-seam)), transparent var(--rail-shoulder-cut), #000 var(--rail-shoulder-cut)) right bottom / var(--rail-shoulder-width) var(--overlap-composer-rail) no-repeat;
-  -webkit-mask: var(--composer-rail-contour-mask);
-  mask: var(--composer-rail-contour-mask);
   &::before {
     content: "";
     position: absolute;
-    // The rail mask owns the mating curve; material is never a second slab
+    // The contour mask owns the mating curve; material is never a second slab
     // behind the editor's glass. Native editable content remains outside it.
-    inset: 0;
+    // A mask on the rail itself would make it a backdrop root, so the blur
+    // below would see nothing and transcript glyphs would show through crisp.
+    // The material therefore covers the rail's border box and carries both
+    // the border and the mask.
+    inset: calc(-1 * var(--width-composer-rail-border));
+    inset-block-end: 0;
     z-index: -1;
     pointer-events: none;
+    border: var(--width-composer-rail-border) solid var(--color-border-composer-rail);
+    border-bottom: 0;
     border-radius: inherit;
+    -webkit-mask: var(--composer-rail-contour-mask);
+    mask: var(--composer-rail-contour-mask);
     background: var(--composer-rail-background);
+    background-clip: padding-box;
     -webkit-backdrop-filter: var(--composer-rail-filter);
     backdrop-filter: var(--composer-rail-filter);
   }
@@ -11570,8 +11583,8 @@ html[data-window-host="browser"] body {
       gap: var(--gap-material-liquid-group);
       padding: var(--padding-material-liquid-group);
     }
+    // Touch reading titles remain owned by thread-workspace, not chrome suppression.
     .app-shell-header__route,
-    .thread-header-title,
     .application-brand,
     [data-app-shell-window-action]:not([data-app-shell-window-action="sidebar-toggle"]):not([data-navigation-return]) {
       display: none;

@@ -358,13 +358,23 @@ signing; `expo-ios-bundle` does not produce an IPA.
 
 `electron-macos-universal-release` is an orchestrated delivery target rather
 than a single-host matrix command. `.github/workflows/macos-universal-release.yml`
-assembles arm64 on `macos-15` and x64 on `macos-15-intel`, merges only after both
-native packages pass, then enters the `macos-release` Environment for signing,
-notarization and final packaging. Manual runs are accepted only from `main`;
-version tags matching `v*` additionally publish a GitHub Release. A lightweight
-credential check in the same Environment runs before either native build, so
-missing Secrets fail without consuming macOS build time. Configure the Environment
-to allow only the `main` branch and `v*` tags.
+assembles arm64 on `macos-15` and x64 on `macos-15-intel`. Both jobs explicitly use
+official Electron at the same pinned upstream version via
+`OPENCRAFT_ELECTRON_STOCK_DESKTOP=1`. The workflow merges both native apps,
+then signs, notarizes and packages the result in the `macos-release` Environment.
+Manual runs from `main` produce Actions artifacts. The
+[`Desktop pre-release`](../../.github/workflows/desktop-prerelease.yml) workflow
+calls the same macOS job and stages its output alongside the Linux AppImage and
+Windows installer/ZIP from that commit. Dispatch from `main` with a new
+`vX.Y.Z-beta.N` tag matching the desktop package's native version. The default
+`publish=false` stages a candidate artifact. Use `publish=true` to publish that
+run's verified candidate. The publisher checks the manifest, uploads to a
+draft, verifies the downloaded bytes, then publishes the draft and checks the
+public assets again. Rerun failed publication jobs on the original run to reuse
+its staged artifacts. The stable npm release keeps its own stable tag contract.
+
+A lightweight credential check in the `macos-release` Environment runs before
+either native build. Client distribution runs only from `main`.
 
 The standalone core must not resolve downstream-parent `file:` dependencies. The downstream agent, chat-client and Collaboration snapshots now
 belong to downstream `products/<product>/packages`, with their generator and checks in
@@ -424,8 +434,10 @@ Developer ID signature, stapled notarization ticket, Gatekeeper assessment,
 DMG signature/image and ZIP integrity, then emits SHA-256 checksums. The final
 signed DMG is separately submitted to Apple; only an `Accepted` result permits
 stapling. Its ticket and Gatekeeper assessment must pass before checksums and
-artifact upload. The same final-DMG smoke test copies the app to an isolated
-profile, checks its real renderer and retains logs/a screenshot as
+artifact upload. The final-DMG smoke test copies the app to an isolated
+profile, checks its bundled Codex executable and sends a complete turn through
+the real renderer port and packaged Daemon using an isolated Codex fixture.
+It records the verified DMG hash and retains logs and a screenshot as
 `opencraft-macos-universal-smoke-<sha>` for three days. Only the final DMG,
 app ZIP and their checksums are delivered;
 intermediate update metadata/blockmaps are not published by this workflow.

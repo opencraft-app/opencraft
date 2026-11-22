@@ -115,7 +115,7 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
       value: healthy
         ? { environmentVariablesVersion: 1, ...(options.workspaceAuthoritySocket ? { workspaceExecutionVersion: 1 as const } : {}), protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, codexPid: child!.pid!, nativeSocket,
           dataDirectory, runtimeDataDirectory: runtimeOwnerRoot, codexHome: runtimeRoot, proxyBaseUrl,
-          callbackProtocolVersion: 1, callbackIncarnation: relay?.incarnation, pendingCallbacks: relay?.pendingCallbacks ?? 0, pendingOrchestrationMutations: relay?.pendingMutations ?? 0 } satisfies CodexAppServerHealth
+          callbackProtocolVersion: 1, threadTitleToolVersion: 1, callbackIncarnation: relay?.incarnation, pendingCallbacks: relay?.pendingCallbacks ?? 0, pendingOrchestrationMutations: relay?.pendingMutations ?? 0 } satisfies CodexAppServerHealth
         : { error: ready && !failed && options.executionSandbox ? "Execution environment unavailable" : "Codex AppServer unavailable",
           ...(ready && !failed && options.executionSandbox ? {code: "EXECUTION_ENVIRONMENT_UNAVAILABLE", executionStatus} : {}) },
       };

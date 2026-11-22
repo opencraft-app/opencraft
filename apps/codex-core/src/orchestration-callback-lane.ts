@@ -10,7 +10,7 @@ import { ExecutionPreparationError, reportExecutionPreparationFailure } from './
 import { projectNativeModelCatalog } from './native-model-catalog.js';
 
 const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
-const tools = new Set(['thread_spawn','thread_tell','thread_inspect','thread_wait','read_thread','send_message_to_thread','get_thread_delivery']);
+const tools = new Set(['thread_spawn','thread_set_title','thread_tell','thread_inspect','thread_wait','read_thread','send_message_to_thread','get_thread_delivery']);
 // Only these native methods are known not to acquire execution ownership.
 // Unknown methods retain the lane until authoritative lifecycle evidence exists.
 const transientNativeReads = new Set(['initialize','model/list','thread/list','thread/loaded/list','thread/read']);

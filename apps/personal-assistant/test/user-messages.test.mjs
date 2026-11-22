@@ -687,7 +687,7 @@ test("schema16 migration keeps historical conversations unchanged and does not r
   t.after(() => reopened.close());
   assert.equal(
     reopened.db.prepare("PRAGMA user_version").get().user_version,
-    21,
+    22,
   );
   assert.deepEqual(
     reopened.db.prepare("SELECT * FROM conversation_message").all(),

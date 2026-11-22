@@ -1,7 +1,6 @@
 import { validateWorkspaceExecutionSelection } from "@opencraft/sandbox-node/workspace-execution-channel";
 import { randomUUID } from "node:crypto";
 import type { SandboxEnvironment } from "@opencraft/sandbox";
-import { createExecutionRuntimePreparer } from "@opencraft/sandbox-node/execution-runtime-bootstrap";
 import { createSandboxJsonRpcBridge } from "@opencraft/sandbox-node/json-rpc-bridge";
 import { SandboxProcessService } from "./sandbox-process-service.js";
 import type { ProcessContext } from "@opencraft/appserver-protocol";
@@ -19,6 +18,8 @@ export async function createSandboxConversationBinding(options: {
   workspaceLease?: { workspaceId: string; generation: number };
   /** Trusted admission context, never copied from process request metadata. */
   processContext?: Pick<ProcessContext, "projectId" | "resourceOwnerId"> & { threadId?: string | null };
+  terminalSupported?: boolean;
+  probeTerminalAdmission?(): Promise<void>;
   authorize(): Promise<void>;
   onLost(): void;
   onCleanupUnconfirmed(): void;
@@ -37,18 +38,17 @@ export async function createSandboxConversationBinding(options: {
     await options.authorize();
     if (closed) throw new Error("Sandbox conversation binding expired");
   };
-  // Validate the resolved root before installing or registering any executable.
+  // Validate the resolved root before registering the preinstalled executable.
   const files = new SandboxWorkspaceFiles({ sandbox: options.sandbox, root: options.cwd,
     python: "/usr/bin/python3", writable: true, authorize,
     onCleanupUnconfirmed: options.onCleanupUnconfirmed });
   const processContext = options.processContext ? { ...options.processContext } : undefined;
-  let processes = processContext?.threadId ? new SandboxProcessService({ ...options,
+  let processes = processContext?.threadId && options.terminalSupported !== false ? new SandboxProcessService({ ...options,
     context: { ...processContext, threadId: processContext.threadId }, authorize }) : undefined;
   let boundThreadId = processContext?.threadId ?? null;
-  const runtime = await createExecutionRuntimePreparer({ ...options, authorize }).prepare();
   const bridge = await createSandboxJsonRpcBridge({ sandbox: options.sandbox,
-    command: { command: [runtime.executable, "exec-server", "--listen", "stdio"], cwd: options.cwd,
-      env: { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/home/user" } }, authorize,
+    command: { command: ["/opt/opencraft/runtime/codex/bin/codex", "exec-server", "--listen", "stdio"], cwd: options.cwd,
+      env: { PATH: "/opt/opencraft/bin:/usr/local/bin:/usr/bin:/bin", HOME: "/home/user" } }, authorize,
     onLost() { closed = true; void processes?.close().catch(() => options.onCleanupUnconfirmed()); options.onLost(); } });
   type NativeRequest = (method: string, params: Record<string, unknown>) => Promise<unknown>;
   // Each target is an actual Native owner channel. A router channel is not a
@@ -96,7 +96,7 @@ export async function createSandboxConversationBinding(options: {
       if (typeof threadId !== "string" || !threadId || threadId.length > 512 || /[\x00-\x1f]/u.test(threadId))
         throw Error("Invalid sandbox thread identity");
       if (boundThreadId && boundThreadId !== threadId) throw Error("Sandbox thread binding conflict");
-      if (processContext && !processes) processes = new SandboxProcessService({ ...options,
+      if (processContext && !processes && options.terminalSupported !== false) processes = new SandboxProcessService({ ...options,
         context: { ...processContext, threadId }, authorize });
       boundThreadId = threadId;
     },

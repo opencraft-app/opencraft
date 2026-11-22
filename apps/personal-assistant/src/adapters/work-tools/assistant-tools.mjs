@@ -3,6 +3,7 @@ import { interventionTool } from "./intervention-tools.mjs";
 import { skillTools } from "./skill-tools.mjs";
 import { Type } from "@earendil-works/pi-ai";
 const defineTool = (definition) => definition;
+const clip = (text, max) => (text.length > max ? text.slice(0, max - 1) + "…" : text);
 import { setTimeout as delay } from "node:timers/promises";
 
 export function assistantTools({
@@ -20,6 +21,12 @@ export function assistantTools({
       onBoundaryError(error);
       throw error;
     }
+  };
+  // What a tool does with this assistant's authority, kept for the desk's operation summary.
+  // A recipient is kept apart from the summary so the Core can show who it was, not a raw ID.
+  const record = (tool, api, summary, target = null) => {
+    if (ports.recordOperation && typeof api?.callId === "string" && api.callId)
+      ports.recordOperation(tool, api.callId, clip(summary, 512), target);
   };
   const tools = [
     ...(ports.environmentRun &&
@@ -47,6 +54,7 @@ export function assistantTools({
                   (r) => r.id === "execution.environment",
                 ),
               );
+              record("environment_run", api, args.argv.join(" "));
               const result = await ports.environmentRun(
                 args,
                 api.callId,
@@ -55,6 +63,56 @@ export function assistantTools({
               return {
                 output: [{ type: "text", text: JSON.stringify(result) }],
               };
+            },
+          }),
+        ]
+      : []),
+    ...(ports.crewDispatch && snapshot.delegation.tools.includes("crew_dispatch")
+      ? [
+          defineTool({
+            name: "crew_contacts",
+            replay: "safe",
+            description:
+              "List who this work lets you reach: contacts (your phonebook, the only people and Agents you may hand work to) and answersTo (who this work answers to, nearest first; you may always report or ask them). Also returns the remaining hand-off budget for this work's tree.",
+            parameters: Type.Object({}),
+            execute: async (_args, _api, { abortSignal } = {}) => {
+              guard("crew_contacts");
+              const result = await ports.crewContacts(abortSignal);
+              return { output: [{ type: "text", text: JSON.stringify(result) }] };
+            },
+          }),
+          defineTool({
+            name: "crew_dispatch",
+            replay: "safe",
+            description:
+              "Hand part of this work to someone in your contacts (actorId from crew_contacts). They receive it as new work answering to you. Each hand-off spends one unit of a budget shared by the whole tree; when it is exhausted, ask whoever this work answers to instead. Their replies come back to you as new turns; do not poll. Returns the new workId; keep it to answer their questions with crew_message.",
+            parameters: Type.Object({
+              to: Type.String({ maxLength: 256 }),
+              text: Type.String({ maxLength: 16384 }),
+            }),
+            execute: async (args, api, { abortSignal } = {}) => {
+              guard("crew_dispatch");
+              record("crew_dispatch", api, args.text, args.to);
+              const result = await ports.crewDispatch(args, api.callId, abortSignal);
+              return { output: [{ type: "text", text: JSON.stringify(result) }] };
+            },
+          }),
+          defineTool({
+            name: "crew_message",
+            replay: "safe",
+            description:
+              "Reply inside crew work; this opens no new work and spends no budget. Without workId, write to someone in answersTo: decide what you can yourself, and ask the nearest person only what you cannot. Set asks to true only for a question you need answered; it then waits in their Inbox until they reply, and their reply comes back to you. Reports and notices leave asks unset. With workId of a hand-off you made, answer the Agent you handed it to.",
+            parameters: Type.Object({
+              to: Type.String({ maxLength: 256 }),
+              text: Type.String({ maxLength: 16384 }),
+              workId: Type.Optional(Type.String({ maxLength: 256 })),
+              asks: Type.Optional(Type.Boolean()),
+            }),
+            execute: async (args, api, { abortSignal } = {}) => {
+              guard("crew_message");
+              record("crew_message", api, args.text, args.to);
+              const result = await ports.crewMessage(args, api.callId, abortSignal);
+              return { output: [{ type: "text", text: JSON.stringify(result) }] };
             },
           }),
         ]
@@ -86,8 +144,9 @@ export function assistantTools({
                 limit: Type.Optional(Type.Integer()),
               }),
             }),
-            execute: async (args, _context, { abortSignal } = {}) => {
+            execute: async (args, api, { abortSignal } = {}) => {
               guard("platform_read");
+              record("platform_read", api, [args.name, args.params.channelId ?? args.params.reference, args.params.query].filter(Boolean).join(" "));
               const result = await ports.platformRead(args, abortSignal);
               return {
                 output: [{ type: "text", text: JSON.stringify(result) }],
@@ -110,8 +169,9 @@ export function assistantTools({
                 maxItems: 64,
               }),
             }),
-            execute: async (args, _context, { abortSignal } = {}) => {
+            execute: async (args, api, { abortSignal } = {}) => {
               guard("thread_command");
+              record("thread_command", api, args.argv.join(" "));
               const result = await ports.threadCommand(args.argv, abortSignal);
               return {
                 output: [{ type: "text", text: JSON.stringify(result) }],

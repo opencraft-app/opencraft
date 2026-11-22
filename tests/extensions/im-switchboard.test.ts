@@ -9,6 +9,7 @@ import { SwitchboardStore } from '../../plugins/im/src/store';
 import type { ConversationRef } from '../../packages/appserver-protocol/src/collaboration';
 import { encodeConversationRef } from '../../packages/appserver-protocol/src/collaboration';
 import { readImConfiguration } from '../../apps/headless-server/src/im-plugins.mjs';
+import { localSwitchboard } from "../../plugins/im/src/switchboard-local.js";
 
 function deferred<T>() { let resolve!: (value:T) => void; const promise = new Promise<T>(r => {resolve=r;}); return {promise,resolve}; }
 
@@ -37,7 +38,7 @@ async function fixture(t: any) {
       })]);
     },
   };
-  const im = new ImPlugin(store,execution);
+  const im = new ImPlugin(localSwitchboard(store),execution);
   im.register({id:'bot',ownerId:'owner',senders:{external:'sender'},groupScope:'chat'});
   t.after(async () => { await im.close(); await rm(root,{recursive:true,force:true}); });
   const source = {chatId:'chat',chatType:'group' as const,senderId:'external'};

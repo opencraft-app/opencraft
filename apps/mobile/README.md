@@ -126,8 +126,39 @@ ad-hoc installation needs registered device UDIDs and a matching profile.
 `OPENCRAFT_IOS_RELEASE=1` requires a clean checkout without a generated `ios/`
 project. `OPENCRAFT_NATIVE_ARTIFACT_NAME` changes the output prefix for an
 explicit product build. Product Bundle IDs, schemes, icons, permission copy
-and regional release selectors belong to that product's config, not core
-build targets. This script does not export an App Store distribution IPA.
+and regional release selectors belong to that product's config. The default
+IPA path is the internal build.
+
+### OpenCraft TestFlight
+
+The [iOS TestFlight workflow](../../.github/workflows/ios-testflight.yml) runs
+from `main`. Dispatch without inputs to build and upload. It allocates the next
+number for the iOS marketing version from both Apple build and upload records.
+It packages the bundled Workbench as `app.opencraft`, verifies the export using
+the `OpenCraft TestFlight CI` distribution profile, retains the encrypted IPA and
+SHA-256 manifest for 30 days, and uploads the original IPA to App Store Connect.
+The development build keeps its existing bundle identifier.
+
+The `ios-testflight` GitHub environment holds `APPLE_TEAM_ID`,
+`IOS_CERTIFICATE_P12_BASE64`, `IOS_CERTIFICATE_PASSWORD`,
+`IOS_PROVISIONING_PROFILE_BASE64`, `ASC_API_KEY_ID`, `ASC_API_ISSUER_ID`, and
+`ASC_API_PRIVATE_KEY_BASE64`. The signing and upload credentials are separate.
+Set the environment variable `OPENCRAFT_IOS_APP_STORE_APP_ID` to the numeric
+App Store Connect app ID. Set `OPENCRAFT_IOS_IPA_ARCHIVE_CERTIFICATE_BASE64` to
+the base64-encoded PEM recipient certificate for the IPA archive. Back up its
+private key outside GitHub. Recover the IPA with
+`openssl cms -decrypt -binary -inform DER -in ARCHIVE.ipa.cms -recip CERT.pem -inkey KEY.pem -out ARCHIVE.ipa`,
+then verify `IPA-SHA256SUMS.txt` in the archive directory.
+
+The status job checks Apple processing, export compliance, Beta App Review and
+membership of the build in the target external group. Configure
+`OPENCRAFT_TESTFLIGHT_GROUP` with the group's exact name when the app has
+multiple external groups. A successful status job means Apple reports the
+non-expired build in external testing and the build is assigned to that group.
+An upload receipt alone does not establish availability. For a pending or
+blocked build, resolve the action in App Store Connect and rerun the status
+job or dispatch with `check_build` and optional `check_version`; this only
+checks the existing build.
 
 Linux and CI can verify JavaScript packaging without Xcode:
 

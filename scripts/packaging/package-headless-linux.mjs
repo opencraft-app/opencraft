@@ -51,7 +51,7 @@ export function headlessWebHostDefinitions() {
 
 export async function buildHeadlessBundle(output, { headlessEntry = join(repositoryRoot, "apps/headless-server/src/headless-server.mjs"), additionalGitRuntimeEntries = [], assistantEntry = join(repositoryRoot,'apps/personal-assistant/src/runtime/assistant-server.mjs') } = {}) {
   await mkdir(dirname(output), { recursive: true });
-  await buildAssetsRuntime(dirname(output));
+  await buildAssetsRuntime(dirname(output),{headless:true});
   await cp(join(repositoryRoot, 'scripts/packaging/craft-plugin.mjs'), join(dirname(output), 'craft-plugin.mjs'));
   await build({ entryPoints: [join(repositoryRoot, "apps/headless-server/src/remote-browser/state.worker.ts")], outfile: join(dirname(output), "browser-state-worker.mjs"), bundle: true, platform: "node", format: "esm", target: "node26", logLevel: "warning" });
   await buildTranscriptCacheRuntime(dirname(output));

@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   compare,
   countBlockingCalls,
+  countSqlStatements,
   mainThreadModules,
   scan,
 } from "../../scripts/check/check-main-thread-sync-io.mjs";
@@ -36,6 +37,21 @@ test("only growth beyond the record fails; removed calls must shrink the record"
   const { growth, stale } = compare(recorded, { "a.ts": { readFileSync: 3 }, "c.ts": { DatabaseSync: 1 } });
   assert.deepEqual(growth, ["a.ts: readFileSync ×3 (recorded 2)", "c.ts: DatabaseSync ×1 (recorded 0)"]);
   assert.deepEqual(stale, ["b.ts: execSync ×0 (recorded 1)"]);
+});
+
+test("counts SQL statements prepared or executed as literals, not other prepare/exec calls", () => {
+  const text = [
+    'const row = db.prepare("SELECT * FROM actors WHERE id = ?").get(id);',
+    "this.#db.prepare(",
+    "  `INSERT INTO members (id) VALUES (?)`,",
+    ").run(id);",
+    'database.exec("BEGIN IMMEDIATE"); database.exec(`commit`);',
+    '// db.prepare("DELETE FROM gone")',
+    "session.prepare(frame); admissionPolicy.prepare(identity);",
+    '/^a/.exec("abc"); db.prepare(sql); pattern.exec("selected");',
+  ].join("\n");
+  assert.equal(countSqlStatements(text), 4);
+  assert.deepEqual(countBlockingCalls(text), { "SQL statement": 4 });
 });
 
 // A Worker starts from a URL, so its module (and what only it imports) never

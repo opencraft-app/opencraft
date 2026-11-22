@@ -3,7 +3,8 @@ import test from 'node:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PushStore, TurnPushService, type TurnPushOptions } from '@opencraft/web-push-node';
+import { TurnPushService, type TurnPushOptions } from '@opencraft/web-push-node';
+import { PushStore } from '@opencraft/web-push-node/store';
 import { AppServerRpcError } from '@opencraft/appserver-client';
 import { serializeHistoryReply } from '../../packages/appserver-client/src/bounded-history';
 

@@ -63,7 +63,11 @@ export async function startIndependentDshHost(configuration) {
     options.modelPolicyPath ??= join(dirname(options.dataDirectory), "model-usage-policy.sqlite");
     new ModelPolicyStore(options.modelPolicyPath).close();
     options.machineIdentity = machineIdentity;
-    options.environmentDataDirectory ??= machineIdentityDirectory ?? dirname(options.dataDirectory);
+    const executionContext=options.executionContext??'legacy';
+    if(!['assets','legacy'].includes(executionContext))throw Error('Invalid execution context');
+    if(executionContext==='legacy')options.environmentDataDirectory ??= machineIdentityDirectory ?? dirname(options.dataDirectory);
+    else options.gitExecution??={directory:machineIdentityDirectory??dirname(options.dataDirectory),machineId:machineIdentity.machineId,
+      workerFile:fileURLToPath(new URL('../runtime/personal-git-worker.mjs',import.meta.url))};
     runtime.machineId = machineIdentity.machineId;
     const sessionCapabilities = new RemoteSessionCapabilities(dirname(options.dataDirectory), `server:${machineIdentity.machineId}:dsh`);
     options.sessionCapabilities ??= sessionCapabilities;

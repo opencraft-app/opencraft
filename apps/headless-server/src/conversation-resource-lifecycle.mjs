@@ -18,11 +18,32 @@ export class ConversationResourceLifecycle {
     let saved;
     try { saved = JSON.parse(await readFile(path, 'utf8')); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
-    return new ConversationResourceLifecycle(path, owners, { ...options, saved });
+    const lifecycle = new ConversationResourceLifecycle(path, owners, { ...options, saved });
+    try {
+      const replay = options.replayOwners ?? [];
+      if (!Array.isArray(replay) || replay.some(name => !Object.hasOwn(owners, name))) throw Error('Invalid resource replay owners');
+      if (replay.length) await lifecycle.commit(rows => {
+        let changed = false; const next = new Map(rows);
+        for (const [key,row] of rows) if (row.state !== 'active') {
+          const pending = [...new Set([...row.pending,...replay])];
+          if (pending.length !== row.pending.length) {changed = true; next.set(key,{...row,pending});}
+        }
+        return changed ? next : null;
+      });
+      return lifecycle;
+    } catch (error) { await lifecycle.close(); throw error; }
   }
 
-  constructor(path, owners, { retryMs = 5000, diagnose = () => {}, saved } = {}) {
+  constructor(path, owners, { retryMs = 5000, diagnose = () => {}, saved, dependencies = {} } = {}) {
     this.path = path; this.owners = owners; this.diagnose = diagnose;
+    this.dependencies = {};
+    for (const [name,after] of Object.entries(dependencies)) {
+      if (!Object.hasOwn(owners,name) || !Array.isArray(after) || after.some(dep => typeof dep !== 'string' || !Object.hasOwn(owners,dep))) throw Error('Invalid resource owner dependency');
+      this.dependencies[name] = [...new Set(after)];
+    }
+    const visited = new Set(), visiting = new Set();
+    const visit = name => {if (visiting.has(name)) throw Error('Cyclic resource owner dependency'); if (visited.has(name)) return; visiting.add(name); for(const dep of this.dependencies[name] ?? []) visit(dep); visiting.delete(name);visited.add(name);};
+    for(const name of Object.keys(owners)) visit(name);
     this.poisoned = false; this.reconciliations = new Map();
     this.hostRevisions = new Map();
     this.rows = new Map(); this.pendingKeys = new Set(); this.flights = new Map(); this.closed = false;
@@ -145,7 +166,15 @@ export class ConversationResourceLifecycle {
         const row = this.rows.get(key);
         if (!row?.pending.length || this.closed) return;
         const pending = [...row.pending];
-        const results = await Promise.allSettled(pending.map(name => Promise.resolve().then(() => this.owners[name](row))));
+        const jobs = new Map();
+        const runOwner = name => {
+          if (!jobs.has(name)) jobs.set(name,Promise.resolve().then(async () => {
+            for (const dependency of this.dependencies[name] ?? []) if (pending.includes(dependency)) await runOwner(dependency);
+            return this.owners[name](row);
+          }));
+          return jobs.get(name);
+        };
+        const results = await Promise.allSettled(pending.map(runOwner));
         if (this.closed) return;
         const current = this.rows.get(key);
         if (current.generation !== row.generation) continue; // old ACK cannot clear a new close intent

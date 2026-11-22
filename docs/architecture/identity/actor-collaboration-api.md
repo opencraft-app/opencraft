@@ -106,9 +106,11 @@ Notifications retain per-root outcome deduplication after delivery; pending batc
 coalesce for two seconds with a five-second maximum deadline and preserve direct
 user intervention. A gateway restart reloads remaining deadlines from the ledger.
 
-The Codex Stage 1 Broker now exposes `thread_spawn`, `thread_tell`,
-`thread_inspect` and `thread_wait` only when the independent APP Host advertises
-callback protocol v1. Older Hosts retain the existing conversation tools.
+The Codex Stage 1 Broker exposes `thread_spawn`, `thread_tell`, `thread_inspect`
+and `thread_wait` on independent APP Hosts with callback protocol v1. APP Hosts
+that also advertise title tool version 1 expose `thread_set_title` for the
+current delegated conversation. Hosts without callback replay retain the
+existing conversation tools.
 Schema v4 adds immutable spawn settings, exact input provenance, continuation
 bindings and a shared root delegation budget; published v1–v3 SQL is unchanged.
 
@@ -188,7 +190,9 @@ required attention precede active work; missing evidence stays unconfirmed.
 Tool completion and wait timeout cannot finish a child. New `thread_spawn` calls
 default to hidden subagents, reachable from their parent. Use explicit `visible`
 only for a user-requested independent, long-lived conversation; existing rows
-keep their stored visibility.
+keep their stored visibility. Newly accepted spawns require a single-line,
+nonblank title before allocation. Child creator attribution is copied from the
+durable access record of the exact parent, independent of execution authority.
 
 ### 跨驱动准备与失败诊断
 

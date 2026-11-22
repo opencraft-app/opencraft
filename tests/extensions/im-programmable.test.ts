@@ -15,6 +15,7 @@ import {
 } from "../../plugins/im/src/routing";
 import { ImPlugin, type ImExecutionPort } from "../../plugins/im/src/server";
 import { ImChannelService } from "../../apps/headless-server/src/im-channel-service.mjs";
+import { localSwitchboard } from "../../plugins/im/src/switchboard-local.js";
 
 const event = {
   id: "event",
@@ -143,7 +144,7 @@ test("captured target, route and reply survive restart; an uncertain send is nev
       );
     },
   };
-  let im = new ImPlugin(store, execution);
+  let im = new ImPlugin(localSwitchboard(store), execution);
   im.register({ ...config, senders: { U1: "human" } });
   const message = {
     id: "event",
@@ -164,7 +165,7 @@ test("captured target, route and reply survive restart; an uncertain send is nev
   store = new SwitchboardStore(path);
   store.route(config.id, 2, 'function route(){return {key:["new"]};}', true);
   stop = true;
-  im = new ImPlugin(store, execution);
+  im = new ImPlugin(localSwitchboard(store), execution);
   im.register({ ...config, senders: { U1: "human" } });
   im.setDelivery(async (_id, address, text) => {
     assert.equal(address.provider, "fixture");

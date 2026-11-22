@@ -262,3 +262,15 @@ test('an in-flight journal write fences only its conversation and serializes con
     assert.deepEqual(saved.sort(), [['a', 'archived', []], ['b', 'archived', []]], 'neither intent was lost');
   } finally { await service.close(); await rm(dir, { recursive: true, force: true }); }
 });
+
+ test('dependent workspace cleanup waits for positive browser cleanup; unrelated owners remain independent',async()=>{
+ const entered=deferred(),hold=deferred(),calls=[];let fail=true;const service=new ConversationResourceLifecycle(null,{terminal:async()=>{calls.push('terminal');},browser:async()=>{calls.push('browser');entered.resolve();await hold.promise;if(fail)throw Error('unknown page');},workspace:async()=>{calls.push('workspace');}}, {dependencies:{workspace:['browser']}});
+ try{const work=service.observe('h','t','archived');await entered.promise;assert.ok(calls.includes('terminal'));assert.ok(!calls.includes('workspace'));hold.resolve();await work;assert.ok(!calls.includes('workspace'));assert.deepEqual(service.rows.get(JSON.stringify(['h','t'])).pending,['browser','workspace']);fail=false;await service.observe('h','t','archived');assert.equal(calls.at(-1),'workspace');}finally{await service.close();}
+ });
+ test('startup replays newly installed cleanup owners on completed closed rows, never active rows, without resetting the canonical generation',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'resource-owner-replay-')),path=join(dir,'state.json');let service=await ConversationResourceLifecycle.open(path,{browser:async()=>{}});
+ try{await service.observe('h','closed','archived');await service.observe('h','open','active');await service.close();const calls=[];service=await ConversationResourceLifecycle.open(path,{browser:async r=>calls.push(['browser',r.threadId]),workspace:async r=>calls.push(['workspace',r.threadId])},{replayOwners:['browser','workspace'],dependencies:{workspace:['browser']}});assert.equal(service.rows.get(JSON.stringify(['h','closed'])).generation,1);await service.observe('h','closed','archived');assert.deepEqual(calls,[['browser','closed'],['workspace','closed']]);service.assertActive('h','open');}finally{await service.close();await rm(dir,{recursive:true,force:true});}
+ });
+ test('cyclic or unknown resource-owner dependencies fail closed',()=>{
+ assert.throws(()=>new ConversationResourceLifecycle(null,{a:async()=>{},b:async()=>{}},{dependencies:{a:['b'],b:['a']}}),/Cyclic/);assert.throws(()=>new ConversationResourceLifecycle(null,{a:async()=>{}},{dependencies:{a:['missing']}}),/Invalid/);
+ });

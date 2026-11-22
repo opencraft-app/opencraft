@@ -47,6 +47,7 @@ function ThreadActivity({
 
 export function SidebarActivityItem({
   activityId,
+  conversationKey,
   icon,
   active,
   disabled = false,
@@ -66,6 +67,7 @@ export function SidebarActivityItem({
   unread,
 }: {
   readonly activityId?: string;
+  readonly conversationKey?: string;
   readonly icon?: ReactNode;
   readonly schedule?: import("@opencraft/appserver-protocol").ConversationScheduleSummary;
   readonly active: boolean;
@@ -96,6 +98,7 @@ export function SidebarActivityItem({
   return (
     <div className="sidebar-activity-item-container" data-has-badge={badge ? "true" : undefined} data-badge-placement={titleOnly ? "title" : metadataBadge ? "metadata" : undefined} data-row-lines={!titleOnly && (metadataBadge || twoLine || project) ? "two" : "one"}><button
       type="button"
+      data-sidebar-conversation={conversationKey}
       disabled={disabled}
       className={[
         "sidebar-activity-item",

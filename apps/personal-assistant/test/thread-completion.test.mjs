@@ -370,10 +370,10 @@ test("schema20 upgrade preserves old data and creates only Execution-owned relat
   const f = fixture(t),
     before = f.app.workRecord(f.work.id);
   f.uow.db.exec(
-    "DROP TABLE execution_thread_answer; DROP TABLE execution_thread_link; PRAGMA user_version=20;",
+    "DROP TABLE work_operation; DROP TABLE execution_thread_answer; DROP TABLE execution_thread_link; PRAGMA user_version=20;",
   );
   const { app, uow } = f.reopen();
-  assert.equal(uow.db.prepare("PRAGMA user_version").get().user_version, 21);
+  assert.equal(uow.db.prepare("PRAGMA user_version").get().user_version, 22);
   assert.deepEqual(app.workRecord(f.work.id), before);
   assert.equal(uow.db.prepare("pragma quick_check").get().quick_check, "ok");
   assert.deepEqual(uow.db.prepare("pragma foreign_key_check").all(), []);

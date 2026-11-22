@@ -13,6 +13,7 @@ import {ActorAccess} from '../../packages/access-control/src/actor-access';
 import {ThreadAccessStore, ThreadAccessSession} from '../../packages/access-control/src/thread-access';
 import {CodexEngineAdapter} from '../../apps/opencraft-daemon/src/codex-engine-adapter';
 import {AccountPoolStore, CodexAccountPoolProxy, ModelGatewayStore, startCodexAccountPoolServer} from '@opencraft/account-pool-host';
+import {openServerCoreOwner} from '@opencraft/storage-node/server-owner';
 import {createWorkbenchWebServer} from '../../apps/headless-server/src/serve-workbench-web.mjs';
 import {EmployeeGitVaultStore} from '@opencraft/execution-environment/employee-git-vault-store';
 import {AccountEnvironment} from '@opencraft/execution-environment/account-environment';
@@ -40,6 +41,9 @@ async function fixture(t: test.TestContext) {
   const actors = new ActorStore(join(root, 'actors.sqlite')); cleanup.push(() => actors.close());
   const permissions = new ThreadAccessStore(join(root, 'access.sqlite'), actors); cleanup.push(() => permissions.close());
   const ledger = new ModelGatewayStore(ledgerPath); cleanup.push(() => ledger.close());
+  const owner = await openServerCoreOwner<{ filterGatewayModelCatalog(path: string, actorId: string | null, models: unknown[]): unknown[] }>(
+    join(root, 'server'), { entry: new URL('../../apps/headless-server/src/server-core-worker.mjs', import.meta.url) });
+  cleanup.push(() => owner.close());
   const vault = new EmployeeGitVaultStore(root); cleanup.push(() => vault.close());
   const environments = new AccountEnvironment(vault);
   const runtime = new ExecutionEnvironmentRuntime(root, vault); cleanup.push(() => runtime.close());
@@ -124,6 +128,7 @@ createInterface({input:process.stdin}).on('line',raw=>{
       return child;
     }, createMaintenanceClient: async () => {throw Error('Fixture maintenance not used');},
     modelActor: context => actors.isCurrent(context) ? actors.get(context.actorId) : null,
+    filterGatewayModelCatalog: owner.call.filterGatewayModelCatalog,
     logDiagnostic: () => {}});
   // tokenUsage identity/query composition is omitted: model admission has its own identity resolver.
   const host = new AppHostServer({logicalClientRouting: true, physicalHostLifetime: 'server',
@@ -194,8 +199,9 @@ test('HTTP/WS creator binding and real proxy dispatch keep Key, Actor and exact 
   assert.deepEqual(f.ledger.conversationModel(thread), {creator: f.aliceId, provider: 'alice-key', revision: 0});
   assert.equal(f.ledger.canUse('alice-key', f.bobId), false);
   assert.ok((await f.bob.rpc('thread/resume', {threadId: thread, model, creatorActorId: f.bobId})).result);
-  const catalog = await f.bob.rpc('model/list');
-  assert.ok(catalog.result); assert.ok(!catalog.result.data.some((row: any) => row.id === model));
+  const [ownerCatalog, guestCatalog] = await Promise.all([f.alice.rpc('model/list'), f.bob.rpc('model/list')]);
+  assert.deepEqual(ownerCatalog.result?.data.map((row: any) => row.id), [model, 'platform-model']);
+  assert.deepEqual(guestCatalog.result?.data.map((row: any) => row.id), ['platform-model']);
   let previousTurn: string | null = null;
   for (const [page, authorizer, account, env] of [[f.alice, f.aliceId, 'fixture:alice', 'synthetic-env-alice'],
     [f.bob, f.bobId, 'fixture:bob', 'synthetic-env-bob']] as const) {

@@ -9,4 +9,6 @@ test('effects separate input admission, shared control and use of configured cre
   for (const method of ['thread/queue/update','thread/queue/delete','thread/queue/reorder']) assert.equal(effect(method),'queued-intent');
   for (const method of ['thread/shellCommand','thread/settings/update','review/start','thread/realtime/start','thread/backgroundTerminals/kill','turn/futureOperation']) {assert.equal(effect(method),'configured-execution');assert.ok(requiresCurrentEnvironmentAuthority(method));}
   for (const method of ['thread/read','thread/goal/get','thread/queue/list','thread/backgroundTerminals/list']) assert.equal(effect(method),'none');
+  assert.equal(effect('thread/queue/collaborationReceipt'),'none');
+  assert.ok(!requiresEnvironmentAuthority('thread/queue/collaborationReceipt'));
 });

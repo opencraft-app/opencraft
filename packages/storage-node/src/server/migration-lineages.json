@@ -120,6 +120,18 @@
       "name": "0019_channel_connection_ownership",
       "checksum": "593cf8932f993973e210bb42bb0205e289c0426d61a096ab31e1b350ab79c2eb",
       "snapshotChecksum": "2fdf91c7ba2588f43e436595bd29c0f908dd5ac037391f2e9505ffecbd5f9b51"
+    },
+    {
+      "version": 21,
+      "name": "0020_crew",
+      "checksum": "e0704b6252e9a75983c992f06dbcdaea98c740323100f27396070ef7ef8fc6f6",
+      "snapshotChecksum": "829a843c1a78c6d3d718d143e538540101811b6938a271250119accbda2106ba"
+    },
+    {
+      "version": 22,
+      "name": "0021_known_ken_ellis",
+      "checksum": "8c2f92eda4ee57da5ad8374441885d0ac6505f02f6373d9417a6fb68c0f66b53",
+      "snapshotChecksum": "198368b47fbb78ea2db8953ac880a144a7a1512f27a9e4869a88eaac6e799a5f"
     }
   ],
   "alternates": [
@@ -292,6 +304,16 @@
           "version": 20,
           "name": "converge_0019_channel_connection_ownership",
           "checksum": "593cf8932f993973e210bb42bb0205e289c0426d61a096ab31e1b350ab79c2eb"
+        },
+        {
+          "version": 21,
+          "name": "converge_0020_crew",
+          "checksum": "e0704b6252e9a75983c992f06dbcdaea98c740323100f27396070ef7ef8fc6f6"
+        },
+        {
+          "version": 22,
+          "name": "converge_0021_known_ken_ellis",
+          "checksum": "8c2f92eda4ee57da5ad8374441885d0ac6505f02f6373d9417a6fb68c0f66b53"
         }
       ]
     }

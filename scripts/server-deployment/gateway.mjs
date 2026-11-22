@@ -23,7 +23,7 @@ const tokenPath = join(state, "daemon.token");
 const port = Number(process.env.OPENCRAFT_GATEWAY_PORT || "9988");
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid gateway port");
 
-const daemon = new OpenCraftDaemonClientManager({
+const daemon = await OpenCraftDaemonClientManager.open({
   endpoint: join(state, "daemon.sock"),
   tokenPath,
   tokenMode: "existing",

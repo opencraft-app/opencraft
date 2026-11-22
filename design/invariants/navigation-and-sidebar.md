@@ -416,34 +416,35 @@ the chevron visible, with a 44px mobile target. Existing aria-expanded/controls,
 collapse persistence and plugin grouping ownership remain authoritative. Real consumer coverage:
 scripts/smoke/shell/smoke-sidebar-thread-catalog.ts.
 
-In unified Shell, each collapsible group heading sticks to the top of the current
-native scrollport only while its own section passes through it. The next group
-takes over without stacking headings. Desktop uses the activity-list scrollport;
+In unified Shell, the heading of an expanded group with visible rows sticks to the
+top of the current native scrollport while its own section passes through it.
+Empty and folded groups keep their ordinary disclosure without sticky paint.
+The next group takes over without stacking headings. Desktop uses the activity-list scrollport;
 mobile uses the shared navigation scroll track, so Home and other navigation rows
 still scroll away. Its floating brand header is reserved once by the scrollport's
 block-start padding; sticky headings retain zero additional block-start inset.
 The active heading's visible top equals the real header's bottom, not the
 scrollport origin plus a second toolbar height. Tests measure that chrome edge
 independently and sample continuous scroll phases to catch blank gaps or row bleed.
-The original disclosure remains the interactive owner, stacked below Shell
-chrome. Its occluding background is a theme-owned opaque projection of Sidebar
-material over Window material, not the Chat surface or another backdrop filter.
-Existing explicit context and heading background paints remain above that backing,
-including alpha and image paints; they cannot expose moving row pixels.
-Only the sticky disclosure needs this backing; the surrounding Shell and native
-vibrancy retain their existing ownership. Each group's item container keeps its
-isolated avatar stacking context, but has no scroll-dependent clip, mask or
-geometry observer. Native scroll/sticky composition owns the moving boundary,
-including reversals while the main thread is busy. Row badges and avatar stacks
-cannot tint or paint over the disclosure. Participant popover portals retain their
+The original disclosure remains the interactive owner, stacked below Shell chrome.
+It has a clear background in normal flow. A separate pointer-transparent paint
+layer sticks with the title and is clipped to the group's content bounds, so it
+is visible only where the title overlaps that content. The backing uses the
+theme's opaque Sidebar-over-Window material with explicit context and heading
+paints above it. The surrounding Shell and native vibrancy retain their existing
+ownership. The paint layer measures title size on layout changes. Native sticky
+positioning and clipping keep the two layers aligned during scrolling and reversals
+without a per-scroll geometry update or clipping any interactive row.
+Row badges and avatar stacks cannot tint or paint over the disclosure.
+Participant popover portals retain their
 existing floating-surface ownership. There are no duplicate headings or extra
 scrollports. Keyboard reveal reserves the disclosure height for every row control, including
 menus, participants and tree controls. Explicit selection reveal reserves that
 height even if the group will only become sticky after the reveal; reading itself
 does not write scroll position.
 Real Sidebar coverage in `scripts/smoke/shell/smoke-sidebar-heading-plane.ts`
-checks immediate reverse-scroll hit testing before rAF, native wheel sequences,
-heading-pixel independence, themes, touch input, disclosure and retained rows.
+checks ordinary and occluding heading paint, immediate reverse-scroll hit testing
+before rAF, native wheel sequences, themes, touch input, disclosure and retained rows.
 Historical Shell coverage used `OPENCRAFT_SIDEBAR_STICKY_ONLY=1` in
 `scripts/smoke-sidebar-topology.ts`. That probe is absent from this standalone
 checkout; this record does not establish a current passing sticky-geometry check.
@@ -914,3 +915,35 @@ owned by their existing layers.
 
 Evidence: thread-creation-evidence and thread-access tests; downstream sidebar
 creation regression and desktop/touch browser fixture.
+
+
+### Conversation titles in touch density
+
+Touch density retains the current conversation title beside its floating controls,
+with the existing optional project line. `thread-workspace.scss` owns this reading
+header together with Side Chat; chrome suppression must not hide its title or
+require a higher-specificity override to recover it. Long titles and project
+paths shrink with ellipsis rather than moving navigation, menu or preview targets.
+Input density is independent of viewport width and pointer capability: explicit
+Touch on a wide mouse-driven window and Compact on touch hardware retain the same
+conversation identity. A tool that occupies the primary scene hides/inerts the
+covered conversation header through Shell presentation, not a density selector.
+Changing density, title or foreground must preserve the mounted draft.
+
+Real AppShell + EditableThreadTitle browser coverage:
+`tests/shell/workbench-touch-title.browser.ts` (phone, tablet, wide pointer,
+explicit density, light/dark, long metadata, scroll and foreground restoration).
+
+### Reading header edge in touch density
+
+The touch reading header's blur band begins at the reading plane's physical top.
+When the primary transcript bleeds under a device top inset (Home Screen PWA,
+full-screen iOS WebView), the status area belongs to that same band; the header
+controls keep their safe origin. The extent comes from
+`--shell-conversation-top-bleed`, never from host or platform names, so a browser
+tab without an inset keeps the original geometry. Side Chat keeps its panel
+origin. The band stays nearly solid through the controls and dissolves below
+them; reduced transparency and forced colors use the opaque surface without blur.
+
+Evidence: `tests/shell/workbench-touch-title.browser.ts` (simulated 47px top inset;
+the band must cover from viewport top through below the header).
