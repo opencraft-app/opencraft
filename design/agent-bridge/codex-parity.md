@@ -73,7 +73,17 @@ daemon 经 Core 运行旧 adapter 时，只有开启 Core Host overlays 才会�
 
 ## 退休旧 adapter 时的其余 owner
 
-线程无关的能力目前借旧 adapter 的连接：账号管理、任务、定时、`command/exec`、模型列表、`thread/list` 合并。退休 adapter 前，需要一个不持有线程执行的 Codex 控制 owner（直接连 Core 控制接口）接住它们。
+线程无关的职责（账号、任务、定时、计量、附件暂存、置顶列表、模型与线程列表、初始化能力、维护状态等）移到 Thread 路由之前的 Host 服务前台 `CodexHostServices`（`apps/opencraft-daemon/src/codex-host-services.ts`）；只在旧 Host 本来就持有本地状态时（无 Core，或 Core + Host overlays）由前台接管，直通 Core 时不接管，避免同一数据目录出现两个写者。部署形态：桌面在 daemon 进程内；单机服务器在服务进程内；四容器在 gateway。
+
+| 步骤 | 状态 |
+|---|---|
+| S0 桌面可开 Host overlays | 完成（显式开关，默认关闭） |
+| S1 前台骨架 + 任务 | 完成：daemon 装配；服务器装配待接 |
+| S2 账号、维护状态汇总、计量查询与配置 | 待做 |
+| S3 原生元信息连接：模型、权限档案、线程列表、置顶、独立命令 | 待做 |
+| S4 初始化能力声明集中到前台 | 待做 |
+| S5 作用于线程的后台职责改走“按线程派发”：定时、恢复、重试、目标、标题、计量收集 | 待做 |
+| S6 旧 adapter 只剩旧线程执行，批量接管后退休 | 待做 |
 
 ## 顺序建议
 

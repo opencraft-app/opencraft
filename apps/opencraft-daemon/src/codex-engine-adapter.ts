@@ -325,6 +325,8 @@ interface LocalCodexEngineOptions extends SharedCodexRoutingOptions {
     admission: (requestId: string | number) => CodexNativeRequestAdmission | null) => DuplexTransport;
   /** Opt in before migrating a legacy embedded writer to independently owned core storage. */
   readonly writerOwnership?: boolean;
+  /** Tasks belong to a Host services front; this Host opens no tasks store. */
+  readonly externalTasks?: boolean;
   readonly executable: string;
   /** Builtin (bundled, pinned), user-installed, explicit or unresolved; diagnostics only. */
   readonly executableSource?: "explicit" | "builtin" | "user-installed" | "unresolved";
@@ -628,7 +630,8 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.attachmentStaging = null;
       return;
     }
-    this.tasks = new TasksService(options.kind === "remote" ? null : join(options.dataDirectory, "tasks.sqlite"), () => {
+    // A Host services front may own tasks; then this Host opens no tasks store.
+    this.tasks = options.kind !== "remote" && options.externalTasks ? null : new TasksService(options.kind === "remote" ? null : join(options.dataDirectory, "tasks.sqlite"), () => {
       for (const subscriber of this.initializedClients) this.emit({ method: "opencraft/tasks/changed", params: {} }, subscriber);
     });
     this.attachmentStaging = options.kind === "remote"
@@ -1643,7 +1646,8 @@ export class CodexEngineAdapter implements DuplexTransport {
       }
       if (message.method.startsWith("opencraft/tasks/")) {
         try {
-          const result = this.tasks!.handle(message.method, message.params);
+          if (!this.tasks) throw new TasksFault(-32601, "Tasks are served by this Host's services layer");
+          const result = this.tasks.handle(message.method, message.params);
           this.reportStorage();
           this.emit({ id, result }, clientId);
         } catch (error) {

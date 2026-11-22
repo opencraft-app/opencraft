@@ -23,6 +23,9 @@ import { MachineIdentityTransport } from "./machine-transport.js";
 
 import { CodexProviderBridge } from "./codex-provider-bridge.js";
 import { codexAdmissionPaused } from "./codex-maintenance.js";
+import { CodexHostServices, codexTasksService } from "./codex-host-services.js";
+import type { DuplexTransport } from "@opencraft/appserver-client/transport";
+import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import type { BridgeGatewayOptions } from "@opencraft/agent-bridge-host/gateway";
 import { CodexEngineAdapter } from "./codex-engine-adapter.js";
 import { startOpenCraftDaemonServer } from "./server.js";
@@ -178,15 +181,22 @@ export async function startOpenCraftDaemon(options: {
         });
       }
       if (hostId === "local-codex") {
+        // The Host services front owns Host-wide stores exactly where the local Codex Host
+        // would have (no Core, or Core with overlays); a pass-through to Core owns none.
+        const ownsHostState = !options.codexCoreEndpoint || options.codexCoreHostOverlays === true;
+        let hostServices: CodexHostServices | undefined;
+        let adapterOutcomes: readonly { name: string; outcome: DatabaseOutcome }[] = [];
+        const reportCodexStorage = () => {
+          const retained = storageSummary.filter(row => row.hostId !== "local-codex");
+          storageSummary.splice(0, storageSummary.length, ...retained, ...[...adapterOutcomes, ...(hostServices?.storage() ?? [])].map(({ name, outcome }) => ({
+            hostId: "local-codex", name, status: outcome.status, appliedVersion: outcome.appliedVersion,
+            backupPath: outcome.backupPath, movedAside: outcome.movedAsidePaths.length > 0,
+          })));
+        };
         const codexAgent = (options.createCodexTransport ?? (configuration => new CodexEngineAdapter(configuration)))({
           historyImageResources: process.env.OPENCRAFT_HISTORY_IMAGE_RESOURCES === "1",
-          onStorageOpened: outcomes => {
-            const retained = storageSummary.filter(row => row.hostId !== "local-codex");
-            storageSummary.splice(0, storageSummary.length, ...retained, ...outcomes.map(({ name, outcome }) => ({
-              hostId: "local-codex", name, status: outcome.status, appliedVersion: outcome.appliedVersion,
-              backupPath: outcome.backupPath, movedAside: outcome.movedAsidePaths.length > 0,
-            })));
-          },
+          onStorageOpened: outcomes => { adapterOutcomes = outcomes; reportCodexStorage(); },
+          ...(ownsHostState ? { externalTasks: true } : {}),
           executable: options.codexExecutable,
           ...(options.codexExecutableSource ? { executableSource: options.codexExecutableSource } : {}),
           runtimeDirectory: options.runtimeDirectory,
@@ -198,7 +208,7 @@ export async function startOpenCraftDaemon(options: {
         });
         codexAgents.add(codexAgent);
         if (options.codexAgentBridge && !options.codexCoreEndpoint) throw Error("Bridge requires existing Core endpoint");
-        return options.codexAgentBridge ? new CodexProviderBridge(codexAgent, options.codexAgentBridge, {
+        const routing: DuplexTransport = options.codexAgentBridge ? new CodexProviderBridge(codexAgent, options.codexAgentBridge, {
           admissionPaused: () => codexAdmissionPaused(options.codexDataDirectory),
           adoptExisting: options.codexAgentBridgeAdoptExisting === true,
           ...(codexAgent instanceof CodexEngineAdapter ? {
@@ -208,6 +218,11 @@ export async function startOpenCraftDaemon(options: {
             releaseForAdoption: threadId => codexAgent.releaseForAdoption(threadId),
           } : {}),
         }) : codexAgent;
+        if (!ownsHostState) return routing;
+        hostServices = new CodexHostServices(routing, clients => [
+          codexTasksService(join(options.codexDataDirectory, "tasks.sqlite"), clients, reportCodexStorage),
+        ]);
+        return hostServices;
       }
       throw new Error(`OpenCraft Daemon does not own Host ${hostId}`);
       });
