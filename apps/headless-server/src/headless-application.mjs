@@ -598,7 +598,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       throw new Error('ACP and Claude execution require an independent Engine Host descriptor');
     let piEngine;
     let independentEngine;
-    const conversationExecution = createRoutedConversationExecution(() => appHostServer, {machineId:machineIdentity.machineId,engines,
+    const conversationExecution = createRoutedConversationExecution(() => appHostServer, {machineId:machineIdentity.machineId,engines,modelCatalog:true,
       connectedAgentsOwner: engines.includes('dsh') ? 'dsh' : undefined,
       getInputs:async engine => {
         const inputs = engine !== 'dsh' ? (independentEngine?.inputs ?? (engine === 'pi' ? piEngine?.inputs : undefined)) : (await startDsh()).inputs;
@@ -672,7 +672,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     };
     actorCollaboration = new Collaboration(serverStorage, actorStore,
       conversationExecution, Date.now, actorId => operator.owns(actorId) ? anonymousHandoff() : !instanceAccess || instanceAccess.admitsActor(actorId), orchestrationStorage,
-      (context, ref) => threadAccess.allows(ref.serverId, ref.threadId, operator.owns(context.actorId) ? undefined : context), serverStorage.call);
+      (context, ref) => threadAccess.allows(ref.serverId, ref.threadId, operator.owns(context.actorId) ? undefined : context), serverStorage.call, serverStorage.call.readConversationOwner);
     // Inbox team commands go to the Server space ledger, the only writer of team membership.
     actorCollaboration.attachSpaces({command:(context,command)=>serverSpaces.command(context,command)});
 
@@ -1088,6 +1088,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           readGeneratedFile: fileSystem ? (path, signal) => fileSystem.openFile(path, false, signal ?? new AbortController().signal) : undefined,
           prepareArtifact: fileSystem ? (artifact, owner, signal) => fileSystem.prepareArtifact(artifact, owner, signal) : undefined,
           modelPolicyPath,
+          filterGatewayModelCatalog: serverStorage.call.filterGatewayModelCatalog,
           coreEndpoint: options.codexCoreEndpoint,
           coreAuthToken: options.codexCoreAuthToken,
           coreHostOverlays: options.codexCoreEndpoint !== undefined,
@@ -1111,7 +1112,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           ...bridgeSessionMcp,
           started:(threadId,inputId,turnId)=>actorCollaboration.executionStarted(threadId,inputId,turnId),
         })), mcpApps), hostId);
-        })(), modelPolicyPath, hostId === 'opencraft-server' ? 'dsh' : 'codex');
+        })(), modelPolicyPath, hostId === 'opencraft-server' ? 'dsh' : 'codex', serverStorage.call.projectModelCatalog);
         let scopedTransport = identity?.executionEnvironment && ['local-codex', 'opencraft-server'].includes(hostId)
           ? new ExecutionEnvironmentTransport(transport, identity.executionEnvironment, hostId) : transport;
         if (hostId === 'local-codex' && workspaceRouting)

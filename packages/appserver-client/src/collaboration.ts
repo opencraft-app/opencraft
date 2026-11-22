@@ -36,6 +36,12 @@ export class CollaborationClient {
   projects(serverId: string, cursor?: string) {
     return this.readCommand<'projects'>('projectDiscovery', { action: 'projects', serverId, ...(cursor ? { cursor } : {}) });
   }
+  models(serverId: string, cursor?: string) {
+    return this.readCommand<'models'>('modelDiscovery', { action: 'models', serverId, ...(cursor ? { cursor } : {}) });
+  }
+  options(ref: ConversationRef) {
+    return this.readCommand<'options'>('executionOptions', { action: 'options', reference: ref });
+  }
   metadata(ref: ConversationRef, timeoutMs?: number) { return this.readCommand<'metadata'>('metadata', { action: 'metadata', reference: ref }, timeoutMs); }
   discover(serverId: string, cursor?: string, includeTitle = false, filters: { projectId?: string; cwd?: string } = {}) {
     if (filters.projectId !== undefined || filters.cwd !== undefined) this.require('discoverFilters');

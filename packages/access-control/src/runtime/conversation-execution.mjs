@@ -3,7 +3,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { normalize, isAbsolute, relative, sep } from 'node:path';
 import { realpath, stat } from 'node:fs/promises';
 import { APP_HOST_PROTOCOL_VERSION } from '@opencraft/app-host-protocol/version';
-import { projectConversationMetadata, readConversationPage, readConversationTail, readConversationProjectPage } from './conversation-projections.mjs';
+import { projectConversationMetadata, readConversationPage, readConversationTail, readConversationProjectPage, readConversationModelPage, readConversationOptions } from './conversation-projections.mjs';
 import { parseTurnRecoveryNotice, permissionModeProfileId } from '@opencraft/appserver-protocol';
 import { executionEngineExtension } from '@opencraft/appserver-client';
 
@@ -146,7 +146,7 @@ async function prepareCreation(invokeProject, { projectId, cwd }) {
   }
 }
 
-export function createConversationExecution(getAppHost, {serverId, hostId, engine, projectHostId = hostId}) {
+export function createConversationExecution(getAppHost, {serverId, hostId, engine, projectHostId = hostId, modelCatalog = false}) {
   if (typeof hostId !== 'string' || !hostId.trim() || hostId.length > 256 || /[\x00-\x1f]/u.test(hostId)) throw new Error('Conversation execution Host required');
   const invoke = (binding, id, method, params, timeoutMs) => {
     if (binding.hostId !== hostId) throw new Error('Unsupported Actor execution Host');
@@ -188,6 +188,24 @@ export function createConversationExecution(getAppHost, {serverId, hostId, engin
           .catch(error => { if (error.code === -32601) throw fault(409, 'unsupported_capability'); throw error; }),
         serverId, cursor);
     },
+    ...(modelCatalog && !engine ? {
+      async models(requestedServer, cursor, context) {
+        if (requestedServer !== serverId) throw fault(409, 'unsupported_capability');
+        return readConversationModelPage((method, params) =>
+          callConversationHost(getAppHost(), binding(''), 'model-discovery', method, params, context, 10_000), serverId, cursor);
+      },
+      async options(ref, context) {
+        if (ref.serverId !== serverId) throw fault(409, 'unsupported_capability');
+        const deadline = performance.now() + 11_000;
+        return readConversationOptions((method, params) => {
+          const left = Math.ceil(deadline - performance.now());
+          if (left <= 0) throw fault(503, 'discovery_unavailable');
+          context.resourceOwner.assertCurrent();
+          return callConversationHost(getAppHost(), binding(method === 'thread/read' ? ref.threadId : ''),
+            'execution-options', method, params, context, left);
+        }, ref);
+      },
+    } : {}),
     async create(target, content, operationKey, context, rememberThread) {
       if (target.serverId !== serverId || engine) throw fault(409, 'unsupported_capability');
       const assertCurrent = () => context.resourceOwner.assertCurrent();
@@ -270,10 +288,10 @@ export function createConversationExecution(getAppHost, {serverId, hostId, engin
 
 /** Full conversation identity selects the native engine. Actor run bindings and
  * delegation stay on the default Codex authority until explicitly extended. */
-export function createRoutedConversationExecution(getAppHost, { machineId, engines, getInputs, connectedAgentsOwner, agentHostId = 'opencraft-server' }) {
+export function createRoutedConversationExecution(getAppHost, { machineId, engines, getInputs, connectedAgentsOwner, agentHostId = 'opencraft-server', modelCatalog = false }) {
   const agentEngine = threadId => threadId.startsWith('dsh_acp_') ? 'dsh-acp' : threadId.startsWith('pi_') ? 'pi'
     : threadId.startsWith('claude_') ? 'claude-code' : threadId.startsWith('acp_') ? 'acp' : 'dsh';
-  const descriptors = [{ serverId: `server:${machineId}:codex`, hostId: 'local-codex', projectHostId: agentHostId, label:'Codex' },
+  const descriptors = [{ serverId: `server:${machineId}:codex`, hostId: 'local-codex', projectHostId: agentHostId, modelCatalog, label:'Codex' },
     ...engines.map(engine => ({ serverId: `server:${machineId}:${engine}`, hostId: agentHostId, engine, label:engine==='pi'?'Pi':'DSH' }))];
   const ports = new Map(descriptors.map(server => [server.serverId, createConversationExecution(getAppHost, server)]));
   const primary = ports.get(descriptors[0].serverId);
@@ -306,7 +324,7 @@ export function createRoutedConversationExecution(getAppHost, { machineId, engin
     directory: () => ({instanceId:machineId, servers:descriptors.map(server => ({serverId:server.serverId,label:server.label,
       engine:server.engine ?? 'codex', connectionState: ['recovering','unavailable'].includes(getAppHost()?.hostExecutionState?.(server.hostId))
         ? 'unavailable' : getAppHost()?.hostState(server.hostId) === 'open' ? 'ready' : 'unknown',
-      capabilities:{metadata:true,read:!server.engine,boundedRead:!server.engine,tailRead:!server.engine,create:!server.engine,projectDiscovery:!server.engine,initialPermissionMode:!server.engine,queue:true,steer:!server.engine,discoverFilters:!server.engine}}))}),
+      capabilities:{metadata:true,read:!server.engine,boundedRead:!server.engine,tailRead:!server.engine,create:!server.engine,projectDiscovery:!server.engine,modelDiscovery:!server.engine && modelCatalog,executionOptions:!server.engine && modelCatalog,initialPermissionMode:!server.engine,queue:true,steer:!server.engine,discoverFilters:!server.engine}}))}),
     metadata(ref) { const hostId = ports.get(ref.serverId)?.hostId ?? reject(); return select({...ref,hostId}).port.metadata(ref); },
     async discoverMetadata(options) {
       const port = ports.get(options.serverId); if (!port) return reject();

@@ -11,6 +11,8 @@ opencraft connection add work --ssh my-opencraft --default --json
 opencraft server list --json
 opencraft project list --server '<server-id>' --json
 opencraft project list --server '<server-id>' --cursor '<nextCursor>' --json
+opencraft server models --server '<server-id>' --json
+opencraft thread options '<conversation-uri-or-https-link>' --json
 opencraft status --server '<server-id>' --json
 opencraft thread list --server '<server-id>' --json
 opencraft thread create 'Start a review' --cwd /remote/repo --permission-mode read-only --json
@@ -47,6 +49,20 @@ On the Codex Server, `project list` returns IDs, names and workspace roots
 from the same Server catalog used for creation. Follow `nextCursor` for
 another bounded page. Use the exact project ID in `thread create --project`;
 the catalog does not grant access to a workspace or a conversation.
+
+On a Headless Codex Server, `server models` returns one bounded page of
+currently visible model IDs, supported reasoning efforts and advertised service
+tiers after Server and Actor model policy. Follow `nextCursor` with
+`server models --cursor`, including when a page was filtered to zero rows.
+An installation without a configured model source may return an empty page.
+Catalog entries describe availability and do not establish model use.
+
+`thread options` reads the thread's current or last persisted model and reasoning
+effort, its first model catalog page, and observed permission and collaboration
+modes for its Server workspace. A null source or allowed value means the Server
+could not confirm that observation. Policy and profile checks inform the
+permission list; it cannot grant execution authority. This command neither
+loads conversation messages nor changes a thread's settings.
 
 On the Codex Server, `thread create` starts a thread and submits its first
 message using the authenticated Actor. Pass an absolute Server-side `--cwd`,

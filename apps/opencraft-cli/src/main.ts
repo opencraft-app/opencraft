@@ -22,10 +22,12 @@ Its private launcher uses this CLI's execution mode (OPENCRAFT_THREAD_CLI_CONNEC
   connection add <name> --ssh <alias> [--instance <id>] [--default]
   status
   server list
+  server models [--cursor <cursor>]
   project list [--cursor <cursor>]
   thread create <message> (--project <id> | --cwd <absolute-path>) [--permission-mode read-only|accept-edits|full] [--key <key>]
   thread list [--project <id>] [--cwd <absolute-path>] [--cursor <cursor>] [--include-title]
   thread show <ref-or-link>
+  thread options <ref-or-link>
   thread log <ref-or-link> [--cursor <cursor> | --tail <turns>]
   thread send <ref-or-link> [text] [--mode queue] --key <key>
     [--message-file <file|->] [--wait delivered --timeout 30s]
@@ -114,11 +116,11 @@ export async function run(argv: string[]) {
   const options = parsed.values, args = parsed.positionals;
   if (options.help || args.length === 0) return { help };
   const command = args.slice(0, args[0] === 'status' ? 1 : 2).join(' ');
-  const counts: Record<string, number> = { status: 1, 'server list': 2, 'project list': 2, 'connection add': 3, 'thread create': 3, 'thread list': 2, 'thread show': 3, 'thread log': 3,
+  const counts: Record<string, number> = { status: 1, 'server list': 2, 'server models': 2, 'project list': 2, 'connection add': 3, 'thread create': 3, 'thread list': 2, 'thread show': 3, 'thread options': 3, 'thread log': 3,
     'thread send': args.length === 4 ? 4 : 3, 'thread lookup': args.length === 2 ? 2 : 3 };
   if (counts[command] !== args.length) throw new CliError(2, 'INVALID_ARGUMENTS', 'Check --help.');
   const allowed = ['json', 'connection', 'server', ...(command === 'thread create' ? ['key','project','cwd','permission-mode'] : []), ...(command === 'connection add' ? ['ssh','ssh-config','instance','default','default-server','web-url'] : []),
-    ...(['thread list','thread log','project list'].includes(command) ? ['cursor'] : []), ...(command === 'thread log' ? ['tail'] : []), ...(command === 'thread list' ? ['include-title','metadata-only','project','cwd'] : []),
+    ...(['thread list','thread log','project list','server models'].includes(command) ? ['cursor'] : []), ...(command === 'thread log' ? ['tail'] : []), ...(command === 'thread list' ? ['include-title','metadata-only','project','cwd'] : []),
     ...(command === 'thread send' ? ['mode','key','message-file','wait','timeout','expected-turn'] : []),
     ...(command === 'thread lookup' ? ['key'] : []), ...(command === 'thread show' ? ['delivery','delivery-key'] : [])];
   if (Object.keys(options).some(key => !allowed.includes(key))) throw new CliError(2, 'INVALID_ARGUMENTS', 'Option is not valid for this command.');
@@ -183,6 +185,14 @@ export async function run(argv: string[]) {
     const server = candidates[0]!;
     if (args[0] === 'status' && args.length === 1) return { connection: selected, selectionSource, instanceId: directory.instanceId,
       actor: directory.actor, server, connectionState: server.connectionState };
+    if (command === 'server models') {
+      if (server.capabilities.modelDiscovery !== true) throw new CliError(6, 'UNSUPPORTED_CAPABILITY', 'Host lacks model discovery.');
+      return await client.models(server.serverId, options.cursor);
+    }
+    if (command === 'thread options') {
+      if (server.capabilities.executionOptions !== true) throw new CliError(6, 'UNSUPPORTED_CAPABILITY', 'Host lacks execution options.');
+      return await client.options(uriRef!);
+    }
     if (command === 'project list') {
       if (server.capabilities.projectDiscovery !== true) throw new CliError(6, 'UNSUPPORTED_CAPABILITY', 'Host lacks project discovery.');
       return await client.projects(server.serverId, options.cursor);

@@ -104,6 +104,31 @@ input.on("line", line => {
   if (message.method === "account/login/start" && process.env.OPENCRAFT_TEST_REJECT_POOL_AUTH) {
     send({ id: message.id, error: { code: -32000, message: "Native external auth rejected" } }); return;
   }
+  if (process.env.OPENCRAFT_TEST_CLI_MODEL_OPTIONS === "1") {
+    if (message.method === "model/list") {
+      const ids = ["fixture-model", "fixture-hidden-by-policy", ...Array.from({ length: 29 }, (_, i) => `fixture-model-${i + 1}`)];
+      const offset = Number(message.params.cursor ?? 0), limit = message.params.limit ?? 30;
+      const data = ids.slice(offset, offset + limit).map(id => ({
+        id, model: id, hidden: false, isDefault: id === "fixture-model",
+        supportedReasoningEfforts: [{ reasoningEffort: "medium" }, { reasoningEffort: "high" }],
+        defaultReasoningEffort: "medium",
+        serviceTiers: [{ id: "fast", name: "Fast", description: "synthetic" }],
+      }));
+      send({ id: message.id, result: { data, nextCursor: offset + limit < ids.length ? String(offset + limit) : null } });
+      return;
+    }
+    if (message.method === "configRequirements/read") {
+      send({ id: message.id, result: { requirements: {
+        allowedApprovalPolicies: ["on-request"], allowedSandboxModes: ["read-only", "workspace-write"],
+        allowedPermissionProfiles: null, additionalDeveloperInstructions: "private fixture settings",
+      } } });
+      return;
+    }
+    if (message.method === "collaborationMode/list") {
+      send({ id: message.id, result: { data: [{ mode: "default" }, { mode: "plan" }] } });
+      return;
+    }
+  }
   if (message.method === "model/list" && process.env.OPENCRAFT_TEST_AUTO_TITLES) {
     send({ id: message.id, result: { data: [{ model: "gpt-6-luna" }], nextCursor: null } });
     return;
@@ -323,6 +348,9 @@ input.on("line", line => {
       const title = process.env.OPENCRAFT_TEST_AUTO_TITLES && message.params.threadSource === "thread_title";
       const thread = { id: title ? `title-thread-${++nextTitleThread}` : "fixture-thread-1", preview: "", ephemeral: message.params.ephemeral === true, modelProvider: "opencraft-account-pool", createdAt: 1, updatedAt: 1, status: { type: "idle" }, turns: [] };
       if (title) titleThreads.add(thread.id);
+      if (process.env.OPENCRAFT_TEST_CLI_MODEL_OPTIONS === "1") {
+        threadMetadata.set(thread.id, { cwd: message.params.cwd, model: "fixture-model", reasoningEffort: "medium" });
+      }
       loadedThreads.add(thread.id);
       subscribedThreads.add(thread.id);
       send({ id: message.id, result: { thread, model: "gpt-test", modelProvider: "opencraft-account-pool", cwd: message.params.cwd, approvalPolicy: "never", approvalsReviewer: "user", sandbox: { type: "dangerFullAccess" }, serviceTier: null, testNativePermission: message.params.permissions ?? null } });

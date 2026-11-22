@@ -17,7 +17,7 @@ export type ConversationCreation = { operationKey: string } & (
 export type ConversationCreationLookup =
   | { found: true; receipt: ConversationCreation | { operationKey: string; ref: null; creationState: 'rejected'; firstMessageState: 'unknown'; rejectionCode: string } }
   | { found: false; serverId: string; operationKey: string };
-export type CollaborationCapabilities = typeof COLLABORATION_CAPABILITIES & { createLookup?: true; projectDiscovery?: true };
+export type CollaborationCapabilities = typeof COLLABORATION_CAPABILITIES & { createLookup?: true; projectDiscovery?: true; modelDiscovery?: true; executionOptions?: true };
 export type CollaborationTarget = { kind: "actor"; actorId: string } | { kind: "conversation"; ref: ConversationRef };
 export const COLLABORATION_METHOD = "opencraft/collaboration";
 /** Each addition is negotiated independently; version alone grants no capability. */
@@ -25,12 +25,33 @@ export const COLLABORATION_CAPABILITIES = { version: 1, read: true, queue: true,
   servers: true, metadata: true, metadataDiscovery: true, boundedRead: true, tailRead: true, lookup: true, deliveryMetadata: true, discoverFilters: true, create: true, initialPermissionMode: true } as const;
 export interface ConversationServer {
   serverId: string; label: string; engine: string; connectionState: 'ready' | 'unavailable' | 'unknown';
-  capabilities: { metadata: boolean; read: boolean; boundedRead: boolean; tailRead?: boolean; create?: boolean; createLookup?: boolean; projectDiscovery?: boolean; initialPermissionMode?: boolean; queue: boolean; steer: boolean; discoverFilters?: boolean };
+  capabilities: { metadata: boolean; read: boolean; boundedRead: boolean; tailRead?: boolean; create?: boolean; createLookup?: boolean; projectDiscovery?: boolean; modelDiscovery?: boolean; executionOptions?: boolean; initialPermissionMode?: boolean; queue: boolean; steer: boolean; discoverFilters?: boolean };
 }
 export interface ConversationProjectPage {
   serverId: string;
   projects: { id: string; name: string; roots: { path: string }[] }[];
   nextCursor: string | null;
+}
+export interface ConversationModelPage {
+  serverId: string;
+  observedAt: number;
+  models: { id: string; model: string; reasoningEfforts: string[]; serviceTiers: string[] | null }[];
+  nextCursor: string | null;
+}
+export interface ConversationExecutionOptions {
+  ref: ConversationRef;
+  observedAt: number;
+  /** Current or last-persisted configuration, never per-Turn execution telemetry. */
+  nativeConfirmedConfiguration: { model: string | null; reasoningEffort: string | null };
+  modelCatalog: ConversationModelPage;
+  optionCatalog: {
+    cwd: string | null;
+    /** Null means this source could not report its capability. */
+    requirementsConfigured: boolean | null;
+    permissionModes: { mode: ConversationInitialPermissionMode; nativeProfileId: string;
+      approvalPolicy: 'never' | 'on-request'; allowed: boolean | null }[] | null;
+    collaborationModes: ('default' | 'plan')[] | null;
+  };
 }
 export interface ConversationMetadata {
   ref: ConversationRef; projectId: string | null; cwd: string | null;
@@ -60,6 +81,8 @@ export type ConversationLookup = { found: true; receipt: ConversationReceipt } |
 export interface CollaborationReadCommandMap {
   servers: { request: { action: 'servers' }; result: ConversationDirectory };
   projects: { request: { action: 'projects'; serverId: string; cursor?: string }; result: ConversationProjectPage };
+  models: { request: { action: 'models'; serverId: string; cursor?: string }; result: ConversationModelPage };
+  options: { request: { action: 'options'; reference: ConversationRef }; result: ConversationExecutionOptions };
   metadata: { request: { action: 'metadata'; reference: ConversationRef }; result: ConversationMetadata };
   discover: { request: { action: 'discover'; metadataOnly: true } & ConversationDiscovery;
     result: { conversations: ConversationMetadata[]; nextCursor: string | null } };

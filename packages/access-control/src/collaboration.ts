@@ -1,5 +1,5 @@
 import { isAbsolute } from 'node:path';
-import { COLLABORATION_CAPABILITIES, CONVERSATION_TAIL_MAX_TURNS, type CollaborationCapabilities, type ConversationCreationLookup, type ConversationProjectPage, isConversationInitialPermissionMode, type ConversationCreateTarget, type ConversationCreation, type ConversationHistory } from '@opencraft/appserver-protocol/collaboration';
+import { COLLABORATION_CAPABILITIES, CONVERSATION_TAIL_MAX_TURNS, type CollaborationCapabilities, type ConversationCreationLookup, type ConversationProjectPage, type ConversationModelPage, type ConversationExecutionOptions, isConversationInitialPermissionMode, type ConversationCreateTarget, type ConversationCreation, type ConversationHistory } from '@opencraft/appserver-protocol/collaboration';
 import type { TransportSubmissionContext } from '@opencraft/appserver-client/transport';
 import type { CrewContact } from './crew-contact.js';
 import type { CrewWork, CrewPass } from './crew-work.js';
@@ -47,6 +47,8 @@ export interface ConversationExecutionPort {
   discover?(search: string, cursor: string | null, suggestions?: { limit: number; sourceThreadId?: string }): Promise<{ conversations: { ref: ConversationRef; title: string; cwd?: string | null; updatedAt?: number }[]; nextCursor: string | null }>;
   directory?(): { instanceId: string; servers: ConversationServer[] };
   projects?(serverId: string, cursor: string | null, context: TransportSubmissionContext): Promise<ConversationProjectPage>;
+  models?(serverId: string, cursor: string | null, context: TransportSubmissionContext): Promise<ConversationModelPage>;
+  options?(ref: ConversationRef, context: TransportSubmissionContext): Promise<ConversationExecutionOptions>;
   metadata?(ref: ConversationRef): Promise<ConversationMetadata>;
   discoverMetadata?(options: ConversationDiscovery): Promise<{ conversations: ConversationMetadata[]; nextCursor: string | null }>;
   read?(ref: ConversationRef, cursor: string | null): Promise<unknown>;
@@ -206,7 +208,8 @@ export class Collaboration {
   #operations: Promise<unknown> = Promise.resolve();
   #timer: ReturnType<typeof setInterval> | null = null;
   readonly #closeDatabase: () => void;
-  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, private readonly executionPort?: ConversationExecutionPort, readonly now = Date.now, readonly admittedActor: (actorId: string) => boolean = () => true, private executionStorage?: Pick<OrchestrationRuntimeWorker, "updateExecution"> & Partial<Pick<OrchestrationRuntimeWorker,"admission"|"executionAuthority">>, readonly resourceAccess: (context: ActorContext, ref: ConversationRef) => boolean = () => true, private readonly creationReceipts?: ServerCoreStorage["call"]) {
+  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, private readonly executionPort?: ConversationExecutionPort, readonly now = Date.now, readonly admittedActor: (actorId: string) => boolean = () => true, private executionStorage?: Pick<OrchestrationRuntimeWorker, "updateExecution"> & Partial<Pick<OrchestrationRuntimeWorker,"admission"|"executionAuthority">>, readonly resourceAccess: (context: ActorContext, ref: ConversationRef) => boolean = () => true, private readonly creationReceipts?: ServerCoreStorage["call"],
+    private readonly readConversationOwner?: (threadId: string) => Promise<{ serverId: string; ownerActorId: string } | null>) {
     if (executionPort !== undefined && (!executionPort || typeof executionPort.hostId !== 'string' || !executionPort.hostId.trim() || executionPort.hostId.length > 256 || /[\x00-\x1f]/u.test(executionPort.hostId))) throw new CollaborationError(500, 'execution_host_required');
     this.managedStorage = typeof path !== "string";
     const managed = openServerRepository(path, "actor-collaboration");
@@ -244,6 +247,8 @@ export class Collaboration {
       ...COLLABORATION_CAPABILITIES,
       ...(this.creationReceipts && this.executionPort?.create ? { createLookup: true } : {}),
       ...(this.executionPort?.projects ? { projectDiscovery: true } : {}),
+      ...(this.executionPort?.models ? { modelDiscovery: true } : {}),
+      ...(this.executionPort?.options && this.readConversationOwner ? { executionOptions: true } : {}),
     };
   }
   binding(actorId: string): RunBinding | null {
@@ -344,10 +349,15 @@ export class Collaboration {
     return { actorId: String(row.target_id), hostId: serverId ? this.execution.hostForServer?.(serverId) ?? this.execution.hostId : String(row.host_id ?? legacyRequestHostId),
       threadId: String(row.thread_id), epoch: Number(row.binding_epoch), mode: row.mode as InputMode, ...(serverId ? { serverId } : {}) };
   }
-  #conversation(context: ActorContext, value: unknown, action: string): ConversationRef {
-    let ref: ConversationRef;
-    try { ref = typeof value === 'string' ? parseConversationRef(value)! : conversationRef(value); } catch { throw new CollaborationError(400, 'invalid_reference'); }
+  #parseConversation(value: unknown): ConversationRef {
+    let ref: ConversationRef | null;
+    try { ref = typeof value === 'string' ? parseConversationRef(value) : conversationRef(value); }
+    catch { throw new CollaborationError(400, 'invalid_reference'); }
     if (!ref) throw new CollaborationError(400, 'invalid_reference');
+    return ref;
+  }
+  #conversation(context: ActorContext, value: unknown, action: string): ConversationRef {
+    const ref = this.#parseConversation(value);
     if (!this.conversationAllowed(context, ref, action)) throw new CollaborationError(403, 'conversation_action_denied');
     return ref;
   }
@@ -413,6 +423,52 @@ export class Collaboration {
       ...submission, sender: submission?.sender ?? null, actorContext: context,
       resourceOwner: { id: submission?.resourceOwner?.id ?? 'conversation-projects:' + context.actorId, assertCurrent },
     });
+    assertCurrent();
+    return result;
+  }
+  async models(context: ActorContext, args: Record<string, unknown>, submission?: TransportSubmissionContext) {
+    fields(args, ['serverId', 'cursor']);
+    const serverId = text(args.serverId), cursor = args.cursor === undefined ? null : text(args.cursor, 4096);
+    const assertCurrent = () => {
+      submission?.resourceOwner?.assertCurrent();
+      const server = this.servers(context).servers.find(server => server.serverId === serverId);
+      if (!server || !this.#owns(serverId)) throw new CollaborationError(404, 'conversation_unavailable');
+      if (!server.capabilities.modelDiscovery || !this.execution.models)
+        throw new CollaborationError(409, 'unsupported_capability');
+    };
+    assertCurrent();
+    const result = await this.execution.models!(serverId, cursor, {
+      ...submission, sender: submission?.sender ?? null, actorContext: context,
+      resourceOwner: { id: submission?.resourceOwner?.id ?? 'conversation-models:' + context.actorId, assertCurrent },
+    });
+    assertCurrent();
+    return result;
+  }
+  async executionOptions(context: ActorContext, args: Record<string, unknown>, submission?: TransportSubmissionContext) {
+    fields(args, ['reference']);
+    const ref = this.#parseConversation(args.reference);
+    const assertScope = () => {
+      submission?.resourceOwner?.assertCurrent();
+      if (!this.#conversationBaseAllowed(context, ref)) throw new CollaborationError(403, 'conversation_action_denied');
+      if (!this.execution.options || !this.readConversationOwner
+        || !this.execution.directory?.().servers.find(server => server.serverId === ref.serverId)?.capabilities.executionOptions)
+        throw new CollaborationError(409, 'unsupported_capability');
+    };
+    assertScope();
+    let owner = await this.readConversationOwner!(ref.threadId);
+    const assertCurrent = () => {
+      assertScope();
+      if (!this.#conversationOwnerAllowed(context, ref, 'conversation.read', owner))
+        throw new CollaborationError(403, 'conversation_action_denied');
+    };
+    assertCurrent();
+    const result = await this.execution.options!(ref, {
+      ...submission, sender: submission?.sender ?? null, actorContext: context,
+      resourceOwner: { id: submission?.resourceOwner?.id ?? 'conversation-options:' + context.actorId, assertCurrent },
+    });
+    // A known owner snapshot guides the native reads; a fresh owner fact is
+    // required to return results if resource custody changed while awaiting them.
+    owner = await this.readConversationOwner!(ref.threadId);
     assertCurrent();
     return result;
   }
@@ -865,6 +921,8 @@ export class Collaboration {
     const {action,...args} = body;
     if (action === 'servers') { fields(args, []); return this.servers(context); }
     if (action === 'projects') return this.projects(context, args, submission);
+    if (action === 'models') return this.models(context, args, submission);
+    if (action === 'options') return this.executionOptions(context, args, submission);
     if (action === 'metadata') { fields(args, ['reference']); return this.metadata(context, args.reference); }
     if (action === 'discover' && args.metadataOnly === true) {
       fields(args, ['serverId', 'cursor', 'includeTitle', 'metadataOnly', 'projectId', 'cwd']);

@@ -269,6 +269,8 @@ interface SharedCodexRoutingOptions {
     /** Shared deployment owner; its lifetime belongs to Headless, not a transport. */
     readonly derivedQueries?: TokenUsageQueryService;
   };
+  /** Headless observes gateway model grants in its Server owner Worker. */
+  readonly filterGatewayModelCatalog?: (path: string, actorId: string | null, models: unknown[]) => Promise<unknown[]>;
   readonly collaboration?: {
     readonly capabilities?: CollaborationCapabilities;
     modelExecutionAuthority?(threadId:string,inputId:string):{authorizer:string;executor:string|null;expiresAt:number;authorityId?:string;parentAuthorityId?:string};
@@ -1936,7 +1938,14 @@ export class CodexEngineAdapter implements DuplexTransport {
             const actor = (this.options.modelActor ?? this.options.tokenUsage?.actor)?.(context.actorContext);
             return actor?.kind === 'human' ? actor.id : null;
           } } : {}),
-          ...(message.method === "model/list" ? {gatewayViewer:()=>context.actorContext ? this.options.tokenUsage?.actor(context.actorContext)?.id??null:null}:{}),
+          ...(message.method === "model/list" ? { gatewayViewer: () => {
+            if (this.options.filterGatewayModelCatalog) {
+              this.validateSubmissionContext(context);
+              context.resourceOwner?.assertCurrent();
+            }
+            const resolve = this.options.modelActor ?? this.options.tokenUsage?.actor;
+            return context.actorContext ? resolve?.(context.actorContext)?.id ?? null : null;
+          } } : {}),
           executionAuthorityAdmitted,
           ...(["thread/read", "thread/turns/list"].includes(string(message.method)) ? { historyTiming: { pairId: randomUUID(), started: receivedAt } } : {}),
           ...((message.method === "thread/start" || message.method === "thread/fork") ? { metadataSender: context.sender } : {}) };
@@ -2639,6 +2648,27 @@ export class CodexEngineAdapter implements DuplexTransport {
         });
         const gatewayPath=configuredModelGatewayPath();
         if(pending.method==="model/list" && gatewayPath && Array.isArray(record(message.result).data)) {
+          const filter = this.options.filterGatewayModelCatalog;
+          if (filter) {
+            const generation = this.sessionMcpGeneration, routing = this.generationRoutingEpoch;
+            const result = record(message.result);
+            this.pending.delete(String(id));
+            if (pending.timer) clearTimeout(pending.timer);
+            const failure = () => {
+              if (this.validClientRequest(pending)) this.emit({ id: pending.originalId,
+                error: { code: -32043, message: "Model catalog is unavailable" } }, pending.clientId);
+            };
+            let actor: string | null;
+            try { actor = pending.gatewayViewer?.() ?? null; }
+            catch { failure(); return; }
+            void filter(gatewayPath, actor, result.data as unknown[]).then(data => {
+              if (!this.validClientRequest(pending)) return;
+              if (generation !== this.sessionMcpGeneration || routing !== this.generationRoutingEpoch
+                || (pending.gatewayViewer?.() ?? null) !== actor) { failure(); return; }
+              this.emit({ ...message, id: pending.originalId, result: { ...result, data } }, pending.clientId, pending.method);
+            }).catch(failure);
+            return;
+          }
           const ledger=new ModelGatewayStore(gatewayPath);
           try { const actor=pending.gatewayViewer?.()??null;
             message={...message,result:{...record(message.result),data:(record(message.result).data as unknown[]).filter(item=>{

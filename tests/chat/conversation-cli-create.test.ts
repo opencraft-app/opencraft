@@ -438,6 +438,48 @@ test("project list requests continuation pages and rejects Servers without disco
   ]);
 });
 
+test("server models and thread options send read-only requests to the selected Server", { skip: process.platform === "win32" }, async (t) => {
+  const { cli, server } = await openCliHarness(t);
+  const requests: unknown[] = [];
+  const ref = { serverId: "codex", threadId: "t" };
+  const first = { serverId: ref.serverId, models: [], nextCursor: "next-models", observedAt: 1 };
+  const last = { serverId: ref.serverId, models: [{ id: "m", model: "selected", reasoningEfforts: ["medium"], serviceTiers: null }], nextCursor: null, observedAt: 2 };
+  const options = { ref, observedAt: 3, nativeConfirmedConfiguration: { model: "selected", reasoningEffort: "medium" },
+    modelCatalog: first, optionCatalog: { cwd: null, requirementsConfigured: null, permissionModes: null, collaborationModes: null } };
+  let legacy = false;
+  server.on("connection", socket => socket.on("message", raw => {
+    const { id, method, params } = JSON.parse(raw.toString());
+    if (id === undefined) return;
+    const respond = (result: unknown) => socket.send(JSON.stringify({ id, result }));
+    if (method === "initialize") {
+      respond({ capabilities: { extensions: { "opencraft/collaboration": {
+        ...COLLABORATION_CAPABILITIES, ...(!legacy ? { modelDiscovery: true, executionOptions: true } : {}),
+      } } } });
+    } else if (params.action === "servers") {
+      respond({ instanceId: "fixture", servers: [
+        { serverId: "codex", capabilities: { modelDiscovery: true, executionOptions: true } },
+        { serverId: "pi", capabilities: { modelDiscovery: false, executionOptions: false } },
+      ] });
+    } else {
+      requests.push({ method, params });
+      respond(params.action === "options" ? options : params.cursor === first.nextCursor ? last : first);
+    }
+  }));
+  assert.deepEqual(await cli(["server", "models", "--server", "codex"]), first);
+  assert.deepEqual(await cli(["server", "models", "--server", "codex", "--cursor", first.nextCursor]), last);
+  assert.deepEqual(await cli(["thread", "options", "opencraft://conversation/v1/codex/t"]), options);
+  assert.equal((await cli(["server", "models", "--server", "pi"], 6)).code, "UNSUPPORTED_CAPABILITY");
+  assert.equal((await cli(["thread", "options", "opencraft://conversation/v1/pi/t"], 6)).code, "UNSUPPORTED_CAPABILITY");
+  legacy = true;
+  assert.equal((await cli(["server", "models", "--server", "codex"], 6)).code, "UNSUPPORTED_CAPABILITY");
+  assert.equal((await cli(["thread", "options", "opencraft://conversation/v1/codex/t"], 6)).code, "UNSUPPORTED_CAPABILITY");
+  assert.deepEqual(requests, [
+    { method: "opencraft/collaboration", params: { action: "models", serverId: "codex" } },
+    { method: "opencraft/collaboration", params: { action: "models", serverId: "codex", cursor: "next-models" } },
+    { method: "opencraft/collaboration", params: { action: "options", reference: ref } },
+  ]);
+});
+
 test("the CLI saves generated creation keys and reads a disconnected operation without a reference", { skip: process.platform === "win32" }, async (t) => {
   const { cli, root, server } = await openCliHarness(t);
   let drop = true, legacy = false, actor = "first", createCalls = 0, allocations = 0;

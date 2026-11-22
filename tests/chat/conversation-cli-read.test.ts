@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readConversationPage, readConversationTail, readConversationProjectPage, projectConversationMetadata } from '@opencraft/access-control/conversation-projections';
+import { readConversationPage, readConversationTail, readConversationProjectPage, readConversationModelPage, readConversationOptions, projectConversationMetadata } from '@opencraft/access-control/conversation-projections';
 import { CollaborationClient } from '../../packages/appserver-client/src/collaboration';
 import { MemoryTransport } from '@opencraft/appserver-transport-memory';
 import { encodeJsonRpcMessage, isJsonRpcRequest } from '@opencraft/appserver-protocol';
 import { execFile } from 'node:child_process';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { ActorStore } from '@opencraft/access-control/actors';
+import { Collaboration, type ConversationExecutionPort } from '@opencraft/access-control/collaboration';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { createRoutedConversationExecution } from '../../apps/headless-server/src/conversation-execution.mjs';
@@ -54,6 +59,8 @@ test('old Host capabilities fail before issuing content reads or mutations', asy
     await assert.rejects(client.metadata({ serverId: 's', threadId: 't' }), { code: 'UNSUPPORTED_CAPABILITY' });
     await assert.rejects(client.read({ serverId: 's', threadId: 't' }), { code: 'UNSUPPORTED_CAPABILITY' });
     await assert.rejects(client.projects('s'), { code: 'UNSUPPORTED_CAPABILITY' });
+    await assert.rejects(client.models('s'), { code: 'UNSUPPORTED_CAPABILITY' });
+    await assert.rejects(client.options({ serverId: 's', threadId: 't' }), { code: 'UNSUPPORTED_CAPABILITY' });
     assert.throws(() => client.discover('s', undefined, false, { projectId: 'p' }), { code: 'UNSUPPORTED_CAPABILITY' });
     assert.deepEqual(methods, ['initialize']);
   } finally { await client.close(); }
@@ -159,4 +166,124 @@ test('project discovery issues a bounded native page and exposes only stable pro
   await assert.rejects(readConversationProjectPage(async () => ({
     data: [{ id: 'project-id', name: 'Fixture project', roots: [{ path: '../relative' }] }],
   }), 'server:one:codex', null), { code: 'project_catalog_unavailable' });
+});
+
+test('model pages preserve bounded policy-filtered continuation and allowlist advertised options', async () => {
+  const model = { id: 'id', model: 'engine-model', supportedReasoningEfforts: [{ reasoningEffort: 'medium', hidden: 'private' }],
+    serviceTiers: [{ id: 'fast', description: 'private' }], providerCredentials: 'private' };
+  const seen: (string | null)[] = [];
+  const invoke = async (method: string, params: { limit: number; includeHidden: boolean; cursor: string | null }) => {
+    assert.equal(method, 'model/list');
+    assert.equal(params.limit, 30);
+    assert.equal(params.includeHidden, false);
+    seen.push(params.cursor);
+    return params.cursor
+      ? { data: [model, { ...model, model: 'unselectable', policySelectable: false }], nextCursor: null }
+      : { data: [{ ...model, hidden: true }], nextCursor: 'native:30' };
+  };
+  const first = await readConversationModelPage(invoke, 'codex', null);
+  assert.deepEqual(first.models, []);
+  assert.ok(first.nextCursor);
+  await assert.rejects(readConversationModelPage(invoke, 'other', first.nextCursor), { code: 'invalid_cursor' });
+  await assert.rejects(readConversationProjectPage(invoke, 'codex', first.nextCursor), { code: 'invalid_cursor' });
+  const second = await readConversationModelPage(invoke, 'codex', first.nextCursor);
+  assert.deepEqual(second.models, [{ id: 'id', model: 'engine-model', reasoningEfforts: ['medium'], serviceTiers: ['fast'] }]);
+  assert.equal(second.nextCursor, null);
+  assert.deepEqual(seen, [null, 'native:30']);
+});
+
+test('execution options are read-only observations of the exact thread and native requirements', async () => {
+  const ref = { serverId: 'codex', threadId: 'target' };
+  let optionalSupported = true;
+  const invoke = async (method: string, params: Record<string, unknown>) => {
+    if (method === 'thread/read') {
+      assert.equal(params.includeTurns, false);
+      return { thread: { id: ref.threadId, cwd: '/repo', model: 'engine-model', reasoningEffort: 'medium',
+        preview: 'private', turns: [{ text: 'private' }] } };
+    }
+    if (method === 'model/list') return { data: [], nextCursor: null };
+    if (method === 'configRequirements/read') {
+      if (!optionalSupported) throw Object.assign(Error('unsupported'), { code: -32601 });
+      return { requirements: { allowedApprovalPolicies: ['on-request'], allowedSandboxModes: ['read-only'],
+        allowedPermissionProfiles: null, additionalDeveloperInstructions: 'private' } };
+    }
+    if (method === 'permissionProfile/list') {
+      assert.equal(params.cwd, '/repo');
+      return { data: [
+        { id: 'opencraft:permission-mode:read-only', openCraftNativeProfileId: ':read-only', openCraftMode: 'read-only', allowed: true },
+        { id: ':danger-full-access', allowed: true }, { id: 'unknown-private-profile', allowed: true },
+      ], nextCursor: null };
+    }
+    if (method === 'collaborationMode/list') {
+      if (!optionalSupported) throw Object.assign(Error('unsupported'), { code: -32601 });
+      return { data: [{ mode: 'plan' }, { mode: 'default' }, { mode: 'private' }] };
+    }
+    throw Error('unexpected method: ' + method);
+  };
+  const options = await readConversationOptions(invoke, ref);
+  assert.deepEqual(options.nativeConfirmedConfiguration, { model: 'engine-model', reasoningEffort: 'medium' });
+  assert.deepEqual(options.optionCatalog.permissionModes?.map(({ mode, allowed }) => ({ mode, allowed })), [
+    { mode: 'read-only', allowed: true }, { mode: 'full', allowed: false },
+  ]);
+  assert.deepEqual(options.optionCatalog.collaborationModes, ['plan', 'default']);
+  assert.doesNotMatch(JSON.stringify(options), /private/);
+  optionalSupported = false;
+  const partial = await readConversationOptions(invoke, ref);
+  assert.equal(partial.optionCatalog.requirementsConfigured, null);
+  assert.equal(partial.optionCatalog.permissionModes?.[0].allowed, null);
+  assert.equal(partial.optionCatalog.collaborationModes, null);
+});
+
+test('thread options require current conversation ownership both before and after native observations', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'cli-options-access-'));
+  const actors = new ActorStore(join(dir, 'actors.sqlite'), Date.now, { policy: () => true });
+  const actor = actors.resolveHuman({ provider: 'local', subject: 'fixture', displayName: 'Viewer', expiresAt: Date.now() + 60_000 })!;
+  const ref = { serverId: 'fixture', threadId: 'target' };
+  let ownerActorId = actor.actorId, changeOwner = true, reads = 0, modelReads = 0;
+  const foreign = 'foreign';
+  const observedAt = Date.now();
+  const port: ConversationExecutionPort = {
+    serverId: ref.serverId, hostId: 'local-codex',
+    directory: () => ({ instanceId: 'fixture', servers: [ref.serverId, foreign].map(serverId => ({ serverId, engine: 'codex',
+      label: 'Codex', connectionState: 'ready', capabilities: {
+        metadata: true, read: true, boundedRead: true, queue: true, steer: true, executionOptions: true, modelDiscovery: true,
+      } })) }),
+    async models(serverId) {
+      modelReads++;
+      return { serverId, models: [], nextCursor: null, observedAt };
+    },
+    async options(target, context) {
+      reads++;
+      assert.deepEqual(target, ref);
+      assert.equal(context.actorContext?.actorId, actor.actorId);
+      if (changeOwner) ownerActorId = 'other';
+      return { ref, observedAt, nativeConfirmedConfiguration: { model: 'fixture-model', reasoningEffort: null },
+        modelCatalog: { serverId: ref.serverId, models: [], nextCursor: null, observedAt },
+        optionCatalog: { cwd: null, requirementsConfigured: null, permissionModes: null, collaborationModes: null } };
+    },
+    async validate() {}, async receipt() { return null; }, async add() { return null; }, async steer() {}, async cancel() { return false; },
+  };
+  const service = new Collaboration(join(dir,'collaboration.sqlite'), actors, port, Date.now, () => true, undefined,
+    () => true, undefined, async threadId => {
+      assert.equal(threadId, ref.threadId);
+      return { serverId: ref.serverId, ownerActorId };
+    });
+  t.after(async () => {
+    await service.close();
+    actors.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+  assert.equal(service.capabilities.modelDiscovery, true);
+  assert.equal((await service.command(actor, { action: 'models', serverId: ref.serverId })).serverId, ref.serverId);
+  await assert.rejects(service.command(actor, { action: 'models', serverId: foreign }), { status: 404 });
+  assert.equal(modelReads, 1);
+  assert.equal(service.capabilities.executionOptions, true);
+  await assert.rejects(service.command(actor, { action: 'options', reference: ref }), { status: 403 });
+  await assert.rejects(service.command(actor, { action: 'options', reference: ref }), { status: 403 });
+  assert.equal(reads, 1, 'after losing access, another read cannot reach native');
+  ownerActorId = actor.actorId;
+  changeOwner = false;
+  const result = await service.command(actor, { action: 'options', reference: ref });
+  assert.equal(result.nativeConfirmedConfiguration.model, 'fixture-model');
+  assert.equal(reads, 2);
 });
