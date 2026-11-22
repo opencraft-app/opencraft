@@ -11,8 +11,11 @@ opencraft connection add work --ssh my-opencraft --default --json
 opencraft server list --json
 opencraft status --server '<server-id>' --json
 opencraft thread list --server '<server-id>' --json
+opencraft thread create 'Start a review' --cwd /remote/repo --permission-mode read-only --json
+opencraft thread create 'Start a review' --project '<project-id>' --json
 opencraft thread show '<conversation-uri-or-https-link>' --json
 opencraft thread log '<conversation-uri>' --json
+opencraft thread log '<conversation-uri>' --tail 2 --json
 opencraft thread log '<conversation-uri>' --cursor '<nextCursor>' --json
 opencraft thread send '<conversation-uri>' 'Review this change' --mode queue --key review-01 --json
 opencraft thread send '<conversation-uri>' --message-file ./message.txt --key review-02 --wait delivered --timeout 30s --json
@@ -36,6 +39,21 @@ in the selected Server's filesystem and is normalized there; the caller's cwd
 is not substituted. Each request remains a bounded native catalog page. Filters
 are negotiated independently; this release supports Codex filters, and other
 engines explicitly return unsupported rather than ignore a filter.
+
+On the Codex Server, `thread create` starts a thread and submits its first
+message using the authenticated Actor. Pass an absolute Server-side `--cwd`,
+an existing `--project` ID, or both. A project alone uses its first root; with
+both options the Server checks that the resolved directory is inside a project
+root. The default permission mode is `read-only`. `--permission-mode` also
+accepts `accept-edits` and `full` when permitted by the Codex Host.
+The response includes a `reference` for subsequent commands. Submitted
+means the first Turn was accepted. It does not establish task completion.
+
+Create's `--key` is for correlation only; a key is generated when omitted.
+The Server has no creation lookup or deduplication receipt yet. An uncertain
+creation or first message exits 7 with the key and any known reference. If the
+engine explicitly rejects the first message after creating the thread, the
+CLI exits 8 with that reference. Inspect the Server before trying again.
 
 Steer requires `--mode steer --expected-turn <exact-turn-id>`. It targets only
 that running Turn; stale/finished Turns are rejected without queue fallback.
@@ -65,7 +83,11 @@ reads user/assistant text, one bounded native item per page and at most 2,000
 Unicode characters per chunk; follow `nextCursor` to preserve long-message tails.
 Tool items can produce an empty page with a continuation. A changed watermark
 requires a new read without a cursor. The CLI never resumes a conversation.
-This first CLI release supports bounded logs on Codex. Other engines report
+`log --tail 1` through `--tail 5` reads the last N turns in chronological
+order with the same text-only projection. It cannot be combined with
+`--cursor`. The tail has no continuation; `truncated` means older history or
+text was omitted from this bounded window.
+The CLI supports bounded logs on Codex. Other engines report
 `read:false` and `boundedRead:false` in the directory and reject CLI logs with
 `UNSUPPORTED_CAPABILITY`. Their existing conversation readers remain available
 through their original consumers; the CLI never selects those readers.

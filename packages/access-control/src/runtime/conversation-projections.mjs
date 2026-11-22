@@ -55,3 +55,38 @@ export async function readConversationPage(invoke, ref, cursor) {
     role: item.type === 'userMessage' ? 'user' : 'assistant', offset: position.offset, text }],
     watermark, latestTurnId: tail.data?.[0]?.turnId ?? null, nextCursor, truncated: nextCursor !== null };
 }
+
+/** Read a window of recent turns. Native pages, the response and each text
+ * item have independent limits; no full history or resume is needed. */
+export async function readConversationTail(invoke, ref, limit) {
+  const metadata = (await invoke('thread/read', { includeTurns: false })).thread;
+  if (metadata?.id !== ref.threadId) throw fault(404, 'conversation_unavailable');
+  const turns = await invoke('thread/turns/list', { limit, sortDirection: 'desc', itemsView: 'notLoaded', cursor: null });
+  if (!Array.isArray(turns.data) || turns.data.length > limit || turns.data.some(turn => typeof turn?.id !== 'string'))
+    throw fault(503, 'invalid_history_page');
+
+  const entries = [];
+  let bytes = 2, truncated = turns.nextCursor != null;
+  turns: for (const { id: turnId } of turns.data) {
+    const page = await invoke('thread/items/list', { turnId, limit: 30, sortDirection: 'desc', cursor: null });
+    if (!Array.isArray(page.data) || page.data.length > 30) throw fault(503, 'invalid_history_page');
+    truncated ||= page.nextCursor != null;
+    for (const source of page.data) {
+      const item = source?.item;
+      if (!item || !['userMessage', 'agentMessage'].includes(item.type)) continue;
+      if (source.turnId !== turnId || typeof item.id !== 'string') throw fault(503, 'invalid_history_page');
+      const content = item.type === 'agentMessage' ? item.text : item.content?.filter(part => part.type === 'text').map(part => part.text).join('\n');
+      if (typeof content !== 'string') throw fault(503, 'invalid_history_page');
+      const points = Array.from(content), offset = Math.max(0, points.length - 2000);
+      const entry = { turnId, itemId: item.id, role: item.type === 'userMessage' ? 'user' : 'assistant',
+        offset, text: points.slice(offset).join(''), ...(offset ? { partial: true } : {}) };
+      const size = Buffer.byteLength(JSON.stringify(entry)) + (entries.length ? 1 : 0);
+      if (bytes + size > 24_000) { truncated = true; break turns; }
+      bytes += size;
+      truncated ||= offset > 0;
+      entries.push(entry);
+    }
+  }
+  entries.reverse();
+  return { entries, nextCursor: null, watermark: digest([ref, entries]), latestTurnId: turns.data[0]?.id ?? null, truncated };
+}

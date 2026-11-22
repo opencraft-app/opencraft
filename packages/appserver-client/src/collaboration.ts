@@ -58,8 +58,8 @@ export class CollaborationClient {
     return this.command<ConversationLookup>('lookup', { action: 'lookup', reference: ref, idempotencyKey: operationKey });
   }
   create(target: ConversationCreateTarget, content: string, operationKey: string) {
-    this.require('create');
-    return this.command<ConversationCreation>('create', { action: 'create', ...target, content, idempotencyKey: operationKey });
+    if (target.initialPermissionMode !== undefined) this.require('initialPermissionMode');
+    return this.command<ConversationCreation>('create', { action: 'create', ...target, content, operationKey }, 90_000);
   }
   close() { return this.connection.close(); }
 }

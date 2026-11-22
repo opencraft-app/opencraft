@@ -280,7 +280,7 @@ interface SharedCodexRoutingOptions {
     inputDelegation?(threadId:string,inputId:string,expectedTurnId?:string):string|null;
     prepare?(context: NonNullable<TransportSubmissionContext["actorContext"]>, input: readonly unknown[]): Promise<unknown>;
     canCancel?(context: NonNullable<TransportSubmissionContext["actorContext"]>, requestId: string): boolean;
-    command(context: NonNullable<TransportSubmissionContext["actorContext"]>, body: Record<string, unknown>): Promise<unknown>;
+    command(context: NonNullable<TransportSubmissionContext["actorContext"]>, body: Record<string, unknown>, submission?: TransportSubmissionContext): Promise<unknown>;
     authorize(context: NonNullable<TransportSubmissionContext["actorContext"]>, threadId: string, inputId: string, input?: readonly unknown[]): void;
     orchestration?: { available?():boolean; tool(threadId:string,turnId:string,key:string,name:string,args:Record<string,unknown>,delegationId?:string,callbackIncarnation?:string):Promise<unknown>; observed(snapshot:ThreadOrchestrationSnapshot):void };
     started(threadId: string, inputId: string, turnId: string): void;
@@ -1678,7 +1678,7 @@ export class CodexEngineAdapter implements DuplexTransport {
           if (!this.options.collaboration) throw Object.assign(new Error('unsupported_capability'), {status:409,code:'unsupported_capability'});
           if (!context.actorContext) throw Object.assign(new Error('actor_authentication_required'), {status:401,code:'actor_authentication_required'});
           context.resourceOwner?.assertCurrent();
-          const result = await this.options.collaboration.command(context.actorContext, record(message.params));
+          const result = await this.options.collaboration.command(context.actorContext, record(message.params), context);
           context.resourceOwner?.assertCurrent();
           if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch) this.emit({id,result},clientId);
         } catch (error) {

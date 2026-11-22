@@ -188,6 +188,15 @@ input.on("line", line => {
     }
     send({ id: message.id, result: { turn: { id: turnId, status: "inProgress", items: [] } } });
     send({ method: "turn/started", params: { threadId, turn: { id: turnId, status: "inProgress", items: [] } } });
+    if (process.env.OPENCRAFT_TEST_CLI_ROUNDTRIP === "1") setTimeout(() => {
+      const item = { type: "agentMessage", id: `assistant-${turnId}`, text: `fixture reply ${turnId}` };
+      history.set(threadId, [...(history.get(threadId) ?? []), { turnId, item }]);
+      const turn = threadTurns.get(threadId).find(row => row.id === turnId);
+      turn.status = "completed";
+      turns.delete(threadId);
+      send({ method: "item/completed", params: { threadId, turnId, item } });
+      send({ method: "turn/completed", params: { threadId, turn } });
+    }, 40);
     if (titleThreads.has(threadId)) setTimeout(() => {
       send({ method: "item/completed", params: { threadId, turnId, item: { type: "agentMessage", id: "title-output", text: '{"title":"修复自动会话标题"}' } } });
       turns.delete(threadId);
@@ -309,7 +318,7 @@ input.on("line", line => {
       subscribedThreads.add(thread.id);
       send({ id: message.id, result: { thread, model: "gpt-test", modelProvider: "opencraft-account-pool", cwd: message.params.cwd, approvalPolicy: "never", approvalsReviewer: "user", sandbox: { type: "dangerFullAccess" }, serviceTier: null, testNativePermission: message.params.permissions ?? null } });
       send({ method: "thread/started", params: { thread } });
-      if (!title && !message.params.testNoServerRequest) send({ id: 900, method: "item/tool/requestUserInput", params: { threadId: thread.id, turnId: null, itemId: "question-1", questions: [] } });
+      if (!title && !message.params.testNoServerRequest && process.env.OPENCRAFT_TEST_CLI_ROUNDTRIP !== "1") send({ id: 900, method: "item/tool/requestUserInput", params: { threadId: thread.id, turnId: null, itemId: "question-1", questions: [] } });
       if (message.params.testDelayMs) send({ method: "test/delayedResponseSent", params: { requestId: message.id } });
     };
     if (message.params.testDelayMs) setTimeout(respond, message.params.testDelayMs);

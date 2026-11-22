@@ -1,9 +1,10 @@
 import { conversationFailure } from '../conversation-failure-diagnostics.mjs';
 import { randomUUID, createHash } from 'node:crypto';
-import { normalize } from 'node:path';
+import { normalize, isAbsolute, relative, sep } from 'node:path';
+import { realpath, stat } from 'node:fs/promises';
 import { APP_HOST_PROTOCOL_VERSION } from '@opencraft/app-host-protocol/version';
-import { projectConversationMetadata, readConversationPage } from './conversation-projections.mjs';
-import { parseTurnRecoveryNotice } from '@opencraft/appserver-protocol';
+import { projectConversationMetadata, readConversationPage, readConversationTail } from './conversation-projections.mjs';
+import { parseTurnRecoveryNotice, permissionModeProfileId } from '@opencraft/appserver-protocol';
 import { executionEngineExtension } from '@opencraft/appserver-client';
 
 /** Resource identity is broader than delegated execution support. The Host is
@@ -106,7 +107,46 @@ export async function readConversationCurrentTurn(appHost, binding, submissionCo
     || typeof turn.status !== 'string' || !turn.status || turn.status.length > 128) throw Error('Invalid current execution identity');
   return { id: turn.id, status: turn.status };
 }
-export function createConversationExecution(getAppHost, {serverId, hostId, engine}) {
+const fault = (status, code) => Object.assign(new Error(code), { status, code });
+
+async function prepareCreation(invokeProject, { projectId, cwd }) {
+  let roots;
+  if (projectId) {
+    let cursor = null, project;
+    for (let page = 0; page < 20; page++) {
+      const result = await invokeProject({ limit: 100, cursor });
+      if (!Array.isArray(result?.data)) throw fault(503, 'project_catalog_unavailable');
+      project = result.data.find(row => row.id === projectId);
+      if (project || result.nextCursor == null) break;
+      if (typeof result.nextCursor !== 'string' || result.nextCursor === cursor) throw fault(503, 'project_catalog_unavailable');
+      cursor = result.nextCursor;
+      if (page === 19) throw fault(503, 'project_catalog_unavailable');
+    }
+    if (!project) throw fault(404, 'conversation_unavailable');
+    if (!Array.isArray(project.roots) || !project.roots.length) throw fault(400, 'invalid_cwd');
+    roots = project.roots.map(root => root?.path);
+  }
+
+  const directory = async path => {
+    if (typeof path !== 'string' || !isAbsolute(path)) throw fault(400, 'invalid_cwd');
+    const canonical = await realpath(path);
+    if (!(await stat(canonical)).isDirectory()) throw fault(400, 'invalid_cwd');
+    return canonical;
+  };
+  try {
+    const path = await directory(cwd ?? roots?.[0]);
+    const runtimeWorkspaceRoots = roots ? [...new Set(await Promise.all(roots.map(directory)))] : [path];
+    if (!runtimeWorkspaceRoots.some(root => {
+      const fromRoot = relative(root, path);
+      return fromRoot !== '..' && !fromRoot.startsWith('..' + sep) && !isAbsolute(fromRoot);
+    })) throw fault(400, 'invalid_cwd');
+    return { cwd: path, runtimeWorkspaceRoots, ...(projectId ? { projectId } : {}) };
+  } catch {
+    throw fault(400, 'invalid_cwd');
+  }
+}
+
+export function createConversationExecution(getAppHost, {serverId, hostId, engine, projectHostId = hostId}) {
   if (typeof hostId !== 'string' || !hostId.trim() || hostId.length > 256 || /[\x00-\x1f]/u.test(hostId)) throw new Error('Conversation execution Host required');
   const invoke = (binding, id, method, params, timeoutMs) => {
     if (binding.hostId !== hostId) throw new Error('Unsupported Actor execution Host');
@@ -141,14 +181,45 @@ export function createConversationExecution(getAppHost, {serverId, hostId, engin
       return {conversations:rows.map(t=>({ref:{serverId,threadId:t.id},title:String(t.name || t.preview || t.id).slice(0,240),
         ...(suggestions ? {cwd:typeof t.cwd==='string'?t.cwd.slice(0,1024):null,updatedAt:t.updatedAt} : {})})),nextCursor:suggestions ? null : result.nextCursor ?? null};
     },
-    async create(target, content, operationKey) {
-      if (target.serverId !== serverId) throw new Error('Unknown conversation server');
-      const params = { cwd: target.cwd ?? process.cwd(), ...(target.projectId ? {projectId: target.projectId} : {}), ...(target.initialPermissionMode ? {approvalPolicy: target.initialPermissionMode} : {}), idempotencyKey: operationKey };
-      const result = await invoke(binding(''), 'create', 'thread/start', params);
-      const id = result?.thread?.id ?? result?.threadId ?? result?.id;
-      if (typeof id !== 'string' || !id) throw new Error('Conversation creation returned no thread id');
-      if (content) await invoke(binding(id), 'create-first-message', 'turn/start', { input: [{type:'text', text:content}], idempotencyKey: operationKey });
-      return { operationKey, ref: {serverId, threadId:id}, creationState:'created', firstMessageState:'submitted' };
+    async create(target, content, operationKey, context) {
+      if (target.serverId !== serverId || engine) throw fault(409, 'unsupported_capability');
+      const assertCurrent = () => context.resourceOwner.assertCurrent();
+      const scoped = (hostId, threadId, control, method, params, timeoutMs) =>
+        callConversationHost(getAppHost(), { hostId, threadId }, control, method, params, context, timeoutMs);
+      const workspace = await prepareCreation(params => scoped(projectHostId, '', 'create-project', 'project/list', params, 5_000), target);
+      assertCurrent();
+      const permission = permissionModeProfileId(target.initialPermissionMode ?? 'read-only');
+      let ref;
+      try {
+        const result = await scoped(hostId, '', 'create', 'thread/start', { ...workspace, permissions: permission });
+        const thread = result?.thread;
+        if (typeof thread?.id === 'string' && thread.id && thread.ephemeral !== true)
+          ref = { serverId, threadId: thread.id };
+      } catch (error) {
+        if (error.status === 400) throw fault(400, 'creation_rejected');
+        if (error.status === 403) throw fault(403, 'conversation_action_denied');
+      }
+      if (!ref) return { operationKey, ref: null, creationState: 'unknown', firstMessageState: 'unknown' };
+      let firstMessageState = 'unknown';
+      try {
+        assertCurrent();
+        const result = await scoped(hostId, ref.threadId, 'create-first-message', 'turn/start', {
+          clientUserMessageId: 'input:' + randomUUID(), input: [{ type: 'text', text: content }],
+        });
+        if (typeof result?.turn?.id === 'string' && result.turn.id) firstMessageState = 'submitted';
+      } catch (error) {
+        if ([400, 401, 403, 404].includes(error.status)) firstMessageState = 'rejected';
+      }
+      return { operationKey, ref, creationState: 'created', firstMessageState };
+    },
+    async readTail(ref, limit) {
+      if (ref.serverId !== serverId || engine) throw fault(409, 'unsupported_capability');
+      const deadline = performance.now() + 10_000;
+      return readConversationTail((method, params) => {
+        const left = Math.ceil(deadline - performance.now());
+        if (left <= 0) throw fault(503, 'history_unavailable');
+        return invoke(binding(ref.threadId), 'history-tail', method, params, left);
+      }, ref, limit);
     },
     async read(ref, cursor) {
       if(ref.serverId !== serverId) throw new Error('Unknown conversation server');
@@ -194,7 +265,7 @@ export function createConversationExecution(getAppHost, {serverId, hostId, engin
 export function createRoutedConversationExecution(getAppHost, { machineId, engines, getInputs, connectedAgentsOwner, agentHostId = 'opencraft-server' }) {
   const agentEngine = threadId => threadId.startsWith('dsh_acp_') ? 'dsh-acp' : threadId.startsWith('pi_') ? 'pi'
     : threadId.startsWith('claude_') ? 'claude-code' : threadId.startsWith('acp_') ? 'acp' : 'dsh';
-  const descriptors = [{ serverId: `server:${machineId}:codex`, hostId: 'local-codex', label:'Codex' },
+  const descriptors = [{ serverId: `server:${machineId}:codex`, hostId: 'local-codex', projectHostId: agentHostId, label:'Codex' },
     ...engines.map(engine => ({ serverId: `server:${machineId}:${engine}`, hostId: agentHostId, engine, label:engine==='pi'?'Pi':'DSH' }))];
   const ports = new Map(descriptors.map(server => [server.serverId, createConversationExecution(getAppHost, server)]));
   const primary = ports.get(descriptors[0].serverId);
@@ -269,6 +340,10 @@ export function createRoutedConversationExecution(getAppHost, { machineId, engin
       const hostId=ports.get(ref.serverId)?.hostId ?? reject(), selected=select({...ref,hostId});
       if(selected.engine) throw Object.assign(new Error('unsupported_capability'), {status:409,code:'unsupported_capability'});
       return selected.port.readBounded(ref,cursor);
+    },
+    readTail(ref,limit) {
+      const hostId = ports.get(ref.serverId)?.hostId ?? reject();
+      return select({...ref,hostId}).port.readTail(ref,limit);
     },
     validate(binding) { return select(binding).port.validate(binding); },
     receipt:(binding,id,options)=>native(binding,id,'receipt',options),
