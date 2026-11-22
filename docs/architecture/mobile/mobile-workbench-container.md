@@ -148,6 +148,12 @@ native source toolbar. Startup, failure and self-hosted mode retain a native
 source control independent of Web content. Saving an unchanged source preserves
 the document, draft and appearance.
 
+In iOS self-hosted mode, the WebView fills the screen behind the status bar and
+home indicator. WebKit supplies safe-area geometry to the site. The native
+source control floats at the right edge with its own safe inset and remains
+available on failure. It occupies no space in the WebView layout. Rotation
+updates both geometries without replacing the website document.
+
 Native recovery toolbar surfaces use Expo GlassEffect when available and fall back to
 shared semantic surfaces. This container material never creates a second
 Workbench navigation state or duplicates Web controls. External website mode
