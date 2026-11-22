@@ -103,6 +103,7 @@
     "package:container": "node scripts/packaging/package-container.mjs",
     "test:container": "node --test tests/server/container-deployment.test.mjs tests/server/container-service.test.mjs",
     "smoke:container": "node scripts/smoke/server/smoke-container.mjs",
+    "smoke:upgrade:environment": "node scripts/smoke/server/smoke-upgrade-environment.mjs",
     "smoke:upgrade": "node scripts/smoke/server/smoke-upgrade.mjs",
     "test:hands-filesystem": "node --import tsx --test tests/server/hands-filesystem.test.ts tests/resources/host-file-downloads.test.ts",
     "test:terminal-lifecycle": "node --import tsx --test tests/server/hands-terminal.test.ts tests/execution/terminal-pty-owner.test.ts tests/execution/terminal-process-session.test.ts tests/execution/terminal-resource-limits.test.ts tests/execution/terminal-owner-module-formats.test.ts tests/execution/terminal-owner-packaging.test.mjs tests/chat/conversation-terminal.test.ts tests/shell/panel-conversation-ownership.test.ts tests/shell/workbench-terminal.test.ts tests/shell/terminal-recovery.test.ts tests/shell/workbench-panels.test.ts",
