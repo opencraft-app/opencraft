@@ -66,4 +66,4 @@ clearTimeout(timer);
 const result = await readFile(resultFile, "utf8").catch(() => "(no result file)\n");
 process.stdout.write(result);
 console.log(`drill process exited with ${exitSignal ?? exitCode}`);
-process.exit(code === 0 && result.startsWith("PASS") ? 0 : 1);
+process.exit(code === 0 && result.trimEnd().split("\n").at(-1) === "PASS" ? 0 : 1);
