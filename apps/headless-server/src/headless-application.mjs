@@ -467,13 +467,6 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     return closing;
   };
   try {
-    if(options.codexBridgePrograms!==undefined) {
-      codexEngineHost=await startCodexEngineHost({programs:options.codexBridgePrograms,node:process.execPath,
-        coreEndpoint:options.codexCoreEndpoint,coreToken:options.codexCoreAuthToken,
-        runtimeDirectory:join(dataDirectory,'codex'),stateDirectory:join(dataDirectory,'codex-bridge'),
-        log:line=>console.error(line)});
-      codexAgentBridge=codexEngineHost.bridge;
-    }
     const ingressConfiguration = options.sshConfig ? await loadSshIngressConfiguration(options.sshConfig) : null;
     // Invalid configured credentials fail startup before any execution resource is created.
     const relayConfiguration = options.relayConnectFile ? await loadRelayConnection(options.relayConnectFile, composition.relayAssertionOptions) : null;
@@ -643,7 +636,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     await threadOrchestration.initializeAssistantThreads();
     threadOrchestration.childScope=(parent,child)=>serverSpaces.initialized?serverSpaces.inherit(parent,child):Promise.resolve();
     threadOrchestration.legacySchedule=async threadId=>{const serverId=conversationExecution.serverForThread(threadId),hostId=conversationExecution.hostForServer(serverId);return (await callConversationHost(appHostServer,{hostId,threadId},'automation-schedule-inspect','opencraft/schedules/read',{threadId})).schedule;};
-    projectAutomations=createProjectAutomations(orchestrationStorage,threadOrchestration,actorCollaboration,codexAgentBridge);
+    // The server's own Engine Host starts later (after the capability listener); automations reach it when they run.
+    projectAutomations=createProjectAutomations(orchestrationStorage,threadOrchestration,actorCollaboration,
+      options.codexBridgePrograms!==undefined?{get url(){return codexAgentBridge?.url??'http://127.0.0.1:1/';},get token(){return codexAgentBridge?.token??'';}}:codexAgentBridge);
     actorCollaborationApi=new CollaborationHttpApi(actorCollaboration,actorAccess,projectAutomations);
     await projectAutomations.start();
     actorCollaboration.start();
@@ -723,6 +718,17 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     });
     await capabilityMcp.listen();
     connectedExecutionCli = await localExecutionCli({directory:join(dataDirectory,"connected-execution-cli"),endpoint:capabilityMcp.cliEndpoint,key:capabilityKey});
+    if(options.codexBridgePrograms!==undefined) {
+      // After the capability listener: the Engine Host forwards its execution CLI (thread
+      // spawn/tell/wait from a turn's shell) to this Server's /thread-cli, signed by its key.
+      codexEngineHost=await startCodexEngineHost({programs:options.codexBridgePrograms,node:process.execPath,
+        coreEndpoint:options.codexCoreEndpoint,coreToken:options.codexCoreAuthToken,
+        runtimeDirectory:join(dataDirectory,'codex'),stateDirectory:join(dataDirectory,'codex-bridge'),
+        cli:{directory:join(dataDirectory,'codex-bridge','cli'),signingKey:join(dataDirectory,'session-capabilities.key'),endpoint:capabilityMcp.cliEndpoint},
+        serverId:`server:${machineIdentity.machineId}:codex`,
+        log:line=>console.error(line)});
+      codexAgentBridge=codexEngineHost.bridge;
+    }
     const bridgeSessionMcp=createBridgeSessionMcp(capabilityMcp,
       threadId=>({serverId:conversationExecution.serverForThread(threadId),threadId}),
       session=>capabilities.refresh(session));

@@ -266,6 +266,10 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
   if(cli==='initial'){assert.equal(issued,2);assert.equal(nativeConfigurations.length,0);assert.equal(initialConfig['shell_environment_policy.set'].OPENCRAFT_THREAD_CLI,'fixture');assert.equal(initialConfig['mcp_servers.opencraft_session'].http_headers.Authorization,'Bearer platform-mcp');}
   else if(cli){assert.equal(issued,cli==='timeout'?2:1);assert.equal(nativeConfigurations[0].sandbox,'read-only');assert.equal(nativeConfigurations[0].approvalPolicy,'never');assert.equal(nativeConfigurations[0].config['shell_environment_policy.set'].OPENCRAFT_THREAD_CLI,'fixture');assert.equal(nativeConfigurations[0].config['mcp_servers.opencraft_session'].http_headers.Authorization,'Bearer platform-mcp');}
   const turnId = started.turn.id; assert.notEqual(turnId, 'native-turn');
+  // Thread orchestration control goes to the local Host's trusted lane; a bridge parent is named natively.
+  await request('opencraft/orchestration/prepare', { operationId: 'operation', threadId: 'bridge:codex:public-new', arguments: {} });
+  const orchestration = forwarded.find(f => f.method === 'opencraft/orchestration/prepare');
+  assert.equal(orchestration.params.threadId, 'native-new');
   // A dynamic tool the Host owns is answered by the Host and never offered to clients;
   // any other tool still goes to the client, as on the local Host.
   nativePeer!.send(JSON.stringify({ id: 'native-tool-host', method: 'item/tool/call', params: { threadId: 'native-new', turnId: 'native-turn', callId: 'call-host', tool: 'host_tool', arguments: { q: 1 } } }));

@@ -594,10 +594,16 @@ export class BridgeHost {
           return;
         }
       }
+      // The Host's own queue delivery carries no execution-CLI credential (signed credentials are
+      // never persisted): it runs as an ordinary turn without the CLI rather than being refused.
+      // Every other turn/start still requires its credential and fails closed without it.
+      const queuedWithoutSource =
+        command.commandId.startsWith("queue-start:") && command.params.executionSource === undefined;
       if (
         command.method === "turn/start" &&
         this.options.executionCli &&
-        this.capabilities.get(receipt.generation)?.cliExecutable
+        this.capabilities.get(receipt.generation)?.cliExecutable &&
+        !queuedWithoutSource
       ) {
         try {
           const credential = command.params.executionSource;

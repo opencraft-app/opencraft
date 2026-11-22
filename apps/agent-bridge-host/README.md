@@ -210,10 +210,12 @@ attempt. An explicit provider rejection pauses the item (`delivery-rejected`)
 instead of retrying in a loop; an unclear outcome stays unknown for
 reconciliation from native history.
 
-Not yet: collaboration-managed inputs and `collaborationReceipt`; queued turns
-carry no execution-CLI credential, so a Host with the execution CLI enabled
-refuses to dispatch them; routes retained after a Host restart wait for the
-existing explicit recovery before their queue moves.
+Queued turns carry no execution-CLI credential (signed credentials are never
+persisted), so with the execution CLI enabled the Host delivers them as ordinary
+turns without the CLI; any other `turn/start` without its credential still fails
+closed. Not yet: collaboration-managed inputs and `collaborationReceipt`; routes
+retained after a Host restart wait for the existing explicit recovery before
+their queue moves.
 
 ## Resident-service registration and per-engine routing
 

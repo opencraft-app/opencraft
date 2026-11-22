@@ -1121,3 +1121,35 @@ test("after an update, a Thread whose old provider cannot hand it over moves on 
   const snapshot = await host.snapshot();
   assert.equal(snapshot.routes.find((row: any) => row.route === '["server-1","thread-1"]').generation, "new");
 });
+
+test("with the execution CLI enabled, the Host still delivers its queue (without the CLI); a direct turn without proof is refused", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bridge-queue-cli-"));
+  const executions = join(root, "executions");
+  await writeFile(executions, "");
+  const artifact = resolve("tests/agent-bridge/fixtures/queue-bridge.mjs");
+  const provider = { ...declaration, capabilities: { ...declaration.capabilities, history: true, cliExecutable: true } };
+  const handshake = negotiateHandshake({ protocolVersion: 1, grammarRange: { min: 1, max: 1 } }, provider);
+  assert(handshake.ok);
+  let issued = 0;
+  const host = await BridgeHost.open({
+    path: join(root, "host.db"), policy, backend: localTestBackend(),
+    executionCli: { async issue() { issued++; return { environment: {}, async revoke() {} }; } },
+  });
+  t.after(async () => {
+    await host.close().catch(() => {});
+    await rm(root, { recursive: true, force: true });
+  });
+  await host.add({
+    id: "q1", artifact, digest: createHash("sha256").update(await readFile(artifact)).digest("hex"), provider,
+    launch: { command: [process.execPath, artifact], cwd: root, env: { HANDSHAKE: JSON.stringify(handshake.result), EXECUTIONS: executions } },
+  });
+  await host.activate("q1", "");
+  await host.accept(command("create"));
+  await accepted(host, "create");
+  await host.accept(command("direct", "turn/start"));
+  assert.equal(((await until(() => host.query("direct"), (r) => r?.state === "rejected"))!.response as any).error.message, "cliUnavailable");
+  await host.queueRequest({ serverId: "server-1", threadId: "thread-1", method: "thread/queue/add",
+    params: { clientUserMessageId: "queued", input: [{ type: "text", text: "one" }] } });
+  await until(async () => (await readFile(executions, "utf8")).split("\n").filter(Boolean), (rows) => rows.includes("queued"));
+  assert.equal(issued, 0, "no credential was issued for the queued turn");
+});

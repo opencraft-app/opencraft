@@ -198,7 +198,15 @@ const programPaths = (directory: string) =>
  */
 async function launchEngineHost(
   start: Awaited<ReturnType<typeof childLauncher>>["start"],
-  options: { programs: Record<keyof typeof CODEX_BRIDGE_PROGRAMS, string>; node: string; coreEndpoint: string; coreToken: string; stateDirectory: string },
+  options: {
+    programs: Record<keyof typeof CODEX_BRIDGE_PROGRAMS, string>;
+    node: string;
+    coreEndpoint: string;
+    coreToken: string;
+    stateDirectory: string;
+    cli?: CodexEngineHostOptions["cli"];
+    serverId?: string;
+  },
 ): Promise<BridgeGatewayOptions> {
   const privateFile = async (name: string, content: string) => {
     const path = join(options.stateDirectory, name);
@@ -238,6 +246,7 @@ async function launchEngineHost(
       },
       generations: [{ id, ...generation }],
       activate: id,
+      ...(options.cli ? { cli: options.cli } : {}),
     }),
   );
   await mkdir(join(options.stateDirectory, "sandbox"), { recursive: true, mode: 0o700 });
@@ -245,7 +254,7 @@ async function launchEngineHost(
   return {
     url: String(ready.url),
     token,
-    serverId: "local-codex",
+    serverId: options.serverId ?? "local-codex",
     inboxPath: join(options.stateDirectory, "gateway-inbox.sqlite"),
   };
 }
@@ -262,6 +271,13 @@ export interface CodexEngineHostOptions {
   readonly stateDirectory: string;
   readonly startupTimeoutMs?: number;
   readonly log?: (line: string) => void;
+  /**
+   * The execution CLI (thread spawn/tell/wait from a turn's shell): the Server's private
+   * signing key file, its loopback `/thread-cli` endpoint and a private launcher directory.
+   */
+  readonly cli?: { readonly directory: string; readonly signingKey: string; readonly endpoint: string };
+  /** The conversation server these Threads belong to; execution credentials are signed for it. */
+  readonly serverId?: string;
 }
 
 /**
@@ -290,6 +306,8 @@ export async function startCodexEngineHost(
       coreEndpoint: options.coreEndpoint,
       coreToken: options.coreToken,
       stateDirectory: options.stateDirectory,
+      ...(options.cli ? { cli: options.cli } : {}),
+      ...(options.serverId ? { serverId: options.serverId } : {}),
     });
     return { bridge, close: launcher.close };
   } catch (error) {

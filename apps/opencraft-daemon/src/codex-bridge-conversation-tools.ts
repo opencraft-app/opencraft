@@ -19,9 +19,10 @@ export function codexBridgeCreationTools(): Record<string, unknown>[] {
 /**
  * Host dispatcher for a bridge Thread's dynamic tools: conversation tools are
  * answered by the collaboration owner with the local Host's result shape;
- * orchestration tools, which need Core's orchestration callback lane, answer as
- * unavailable instead of reaching a client that cannot run them; anything else
- * goes to `next` (browser tools) and then to the clients.
+ * orchestration tools (declared by Threads created on the legacy path) point
+ * the model to the execution CLI, which is how bridge turns orchestrate,
+ * instead of reaching a client that cannot run them; anything else goes to
+ * `next` (browser tools) and then to the clients.
  */
 export function codexBridgeConversationTools(
   collaboration: { tool(threadId: string, turnId: string, name: string, args: Record<string, unknown>): unknown },
@@ -52,7 +53,8 @@ export function codexBridgeConversationTools(
     if (!tool.namespace && THREAD_ORCHESTRATION_TOOLS.some((candidate) => candidate.name === tool.name))
       return Promise.resolve(
         text(false, {
-          error: "Thread orchestration requires an independent callback-capable Engine Host",
+          error:
+            "Thread orchestration tools are unavailable in this conversation; use the execution-scoped `opencraft thread` CLI from this turn's shell (see `opencraft thread --help`).",
           status: 503,
         }),
       );

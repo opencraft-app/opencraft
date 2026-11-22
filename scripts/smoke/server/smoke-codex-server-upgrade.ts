@@ -407,6 +407,39 @@ try {
       freshRead.includes("LEGACY-TWO-A"),
       `read_thread on a new bridge conversation failed: ${freshRead.slice(0, 300)}`,
     );
+    // Thread orchestration from a bridge turn's shell: the execution CLI the server's Engine Host
+    // issues for this input spawns a child conversation through the server's /thread-cli.
+    const orchestrator = (
+      await c.request("thread/start", { model: "gpt-test", sandbox: "danger-full-access", approvalPolicy: "never" })
+    ).thread.id;
+    const spawnCommand = `opencraft thread spawn --prompt CHILD-HELLO --idempotency-key drill-spawn-${randomBytes(4).toString("hex")} --json`;
+    const spawned = await ask(
+      c,
+      orchestrator,
+      `CALL-TOOL exec_command ${JSON.stringify({ cmd: spawnCommand })}`,
+      (answer) => answer.startsWith("tool said:"),
+    );
+    const child = /"threadId":"([^"]+)"/u.exec(spawned)?.[1];
+    result.orchestration = { output: spawned.slice(0, 600) };
+    check(
+      !!child && spawned.includes('"delivery":"sent"'),
+      `thread spawn did not create a child: ${spawned.slice(0, 600)}`,
+    );
+    // The child runs its task and answers.
+    let childLines: string[] = [];
+    for (
+      let attempt = 0;
+      attempt < 120 && !childLines.some((line) => line.startsWith("agent:") && line.includes("CHILD-HELLO"));
+      attempt++
+    ) {
+      await delay(500);
+      childLines = await transcript(c, child!).catch(() => []);
+    }
+    check(
+      childLines.some((line) => line.startsWith("agent:") && line.includes("CHILD-HELLO")),
+      `the spawned child did not answer: ${JSON.stringify(childLines).slice(0, 400)}`,
+    );
+    (result.orchestration as Record<string, unknown>).child = childLines.slice(-2);
     // A new bridge conversation has the tools a new local one has, except thread orchestration,
     // which runs through Core's orchestration lane and is not on the bridge yet.
     const freshMissing = (offered.get("LEGACY-ONE") ?? []).filter(

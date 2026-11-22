@@ -118,7 +118,8 @@ daemon 以 `--codex-bridge-stack <程序目录>`（`codexBridgeStack`）启动 b
    - 计费：服务器计费当前为演示用途，不做兼容，仅保证不出错。
    - **发送者（2026-11-22）**：bridge 会话的发送者由同一 Host 的发送者表记录（`prepareExternalInput`），历史读取与实时通知按同一记录投影；旧路径路由原样带发送者交给旧 Host；没有发送者记录者时仍拒收带发送者的输入。演练 `--identity employee`（默认，经身份适配器以登录员工发送）与 `--identity anonymous` 均通过，升级前后、回退与再升级的每条用户消息都带原发送者。
    - **对话工具、动态工具与会话 MCP（2026-11-22）**：bridge 会话的动态工具调用先交给 Host 分发（`CodexProviderBridge` 的 `nativeTool`，与旧 Host 同一 `browserCapabilities.invokeNative`），不属于 Host 的才交给客户端；对话工具（`read_thread`、`send_message_to_thread`、`get_thread_delivery`）由协作 owner 应答（`codex-bridge-conversation-tools.ts`，结果格式同旧路径），新建 bridge 会话创建时声明这些工具；编排工具在 bridge 上明确回答不可用，不会悬挂在客户端。接管的旧会话在发送时先确定路由（`prepareRoute`），与 bridge 会话同样经执行准入、执行签名与会话 MCP。演练比对同一会话升级前后提供给模型的工具一致，并经 bridge 真实调用 `read_thread`（接管会话与新会话各一次）。
-   - 仍依赖旧路径、尚未迁移：线程编排工具（`thread_spawn/tell/wait/inspect`，依赖 Core 编排回调通道；新 bridge 会话缺这四个工具）、协作排队回执、桌面附着、工作区钩子、线程元数据、计量查询；四容器部署（brain 中启动 Engine Host、命令在 hands 执行）尚未接线。
+   - **线程编排（2026-11-22）**：按 P7a 设计经执行 CLI：服务器自起的 Engine Host 带 `cli` 配置（服务器能力签名密钥、`/thread-cli`、服务器会话 ID 作为 bridge `serverId`），每个 bridge 轮次（含接管会话）获得仅限本次输入的 `opencraft thread` 命令；`opencraft/orchestration/*` 控制请求交给本地 Host 的可信编排通道（bridge 父会话以原生 ID 命名），子会话经旧 Host 创建、下一次发送时被接管。Host 队列派发不带凭据，作为不含 CLI 的普通轮次发送（凭据不落盘），其他缺凭据的 `turn/start` 仍拒绝。旧路径建会话声明的 `thread_*` 动态工具在 bridge 上提示改用 CLI。演练在 bridge 会话的 shell 里 `opencraft thread spawn`，子会话收到并应答。
+   - 仍依赖旧路径、尚未迁移：协作排队回执、桌面附着、工作区钩子、线程元数据、计量查询；四容器部署（brain 中启动 Engine Host、命令在 hands 执行）尚未接线。
 4. **SSH 远程 Codex** 不在退休范围：它与本地模式共享客户端复用、交互、工具、附件、元数据等核心，退休时只删本地模式（spawn、Core 直通、Core + overlays），保留并抽出远程所需部分。
 
 ## 顺序建议

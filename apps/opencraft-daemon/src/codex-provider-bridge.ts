@@ -298,6 +298,15 @@ export class CodexProviderBridge implements DuplexTransport {
       const pinned = JSON.stringify({ ...frame, params: { ...p, threadId: native } });
       return this.legacy.sendWithContext ? this.legacy.sendWithContext(pinned, context) : this.legacy.send(pinned);
     }
+    // Thread orchestration control is a trusted lane of the local Host over Core's orchestration
+    // channel, independent of Thread routing: a bridge parent is named by its native session.
+    if (typeof frame.method === 'string' && frame.method.startsWith('opencraft/orchestration/')) {
+      const parent = typeof p.threadId === 'string' && this.gateway.owns(p.threadId) ? this.gateway.nativeThread(p.threadId) : undefined;
+      if (typeof p.threadId === 'string' && this.gateway.owns(p.threadId) && !parent) throw Error('Bridge thread has no native session yet');
+      const routed = parent ? JSON.stringify({ ...frame, params: { ...p, threadId: parent } }) : raw;
+      if (frame.id !== undefined) this.pending.set(JSON.stringify([client, frame.id]), { method: frame.method, client });
+      return this.legacy.sendWithContext ? this.legacy.sendWithContext(routed, context) : this.legacy.send(routed);
+    }
     const optIn = frame.method === 'thread/start' && p.agentBridge !== undefined;
     const seed = String(p.agentBridge?.threadId ?? '');
     const threadId = optIn ? seed ? seed.startsWith('bridge:codex:') ? seed : `bridge:codex:${seed}` : '' : String(p.threadId ?? '');
