@@ -24,14 +24,9 @@ test('DSH thread environment patch is idempotent and rejects drift before write'
 // Optional integration input is an existing pinned runtime; normal unit tests do
 // not install one or modify its shared node_modules.
 if (process.env.OPENCRAFT_DSH_RUNTIME) test('real pinned DSH spawn boundary injects per-call Thread ID and clears missing identity', async t => {
-  const { build } = await import('esbuild');
+  const { dshGitRuntime } = await import('../support/dsh-git-runtime.mjs');
+  const { executor: { LocalBashExecutor } } = await dshGitRuntime(t);
   const root = await mkdtemp(join(tmpdir(), 'dsh-native-thread-env-')); t.after(() => rm(root,{recursive:true,force:true}));
-  const sourcePath = join(process.env.OPENCRAFT_DSH_RUNTIME,'node_modules/@deepseek-ai/dsh-bash-local/lib/index.js');
-  const source = await readFile(sourcePath,'utf8');
-  assert.equal(source.split(threadEnvironmentEdit[0]).length,2);
-  const output = join(root,'executor.mjs');
-  await build({stdin:{contents:source.replace(...threadEnvironmentEdit),sourcefile:sourcePath,resolveDir:join(sourcePath,'..')},outfile:output,bundle:true,platform:'node',format:'esm',logLevel:'silent'});
-  const { LocalBashExecutor } = await import(pathToFileURL(output).href);
   for (const threadId of ['thread-A','thread-B',null]) {
     const spec = LocalBashExecutor.prototype.spawnSpec.call({config:{maxSpillBytes:10000,maxOutputBytes:10000,graceMs:100}},
       {workdir:root,env:{OPENCRAFT_THREAD_ID:'stale'},dshEnv:threadId?{DSH_SESSION_ID:`native-${threadId}`,DSH_OPENCRAFT_THREAD_ID:threadId}:{}}, ['unused'],10000);

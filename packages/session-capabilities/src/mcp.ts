@@ -9,7 +9,7 @@ import { SessionCapabilities, type CapabilitySession, type CapabilityTool } from
 import { capabilityResultToMcp } from "./content.js";
 
 export { capabilitySigningKey, sessionCapabilityToken } from "./credentials.js";
-import { sessionCapabilityToken,executionCliSourceSession } from "./credentials.js";
+import { sessionCapabilityToken,executionCliSourceSession,parseHostGitSource } from "./credentials.js";
 interface McpClientSession {
   credential: string; server: Server; transport: StreamableHTTPServerTransport;
   authenticate(request: IncomingMessage): void; touched: number; active: number;
@@ -41,7 +41,8 @@ export class SessionCapabilityMcp {
     private readonly options: { descriptorPath?: string; retainEndpoint?: boolean; authorizeInput?: (session: CapabilitySession, inputId: string) => boolean;
       authorizeExecution?: (session:CapabilitySession)=>Promise<void>;
       orchestration?: (session: CapabilitySession, request: Record<string, unknown>) => Promise<unknown>;
-      threadCli?: (session: CapabilitySession, request: Record<string,unknown>) => Promise<unknown> } = {}) {
+      threadCli?: (session: CapabilitySession, request: Record<string,unknown>) => Promise<unknown>;
+      hostGit?: (session: CapabilitySession) => Promise<unknown> } = {}) {
     this.server = createServer((request, response) => { void this.handle(request, response).catch(() => {
       if (!response.headersSent) response.writeHead(500); response.end();
     }); });
@@ -69,6 +70,11 @@ export class SessionCapabilityMcp {
     try {
       const pair = JSON.parse(Buffer.from(parts[0]!, "base64url").toString());
       if (!Array.isArray(pair)) return null;
+      if(pair[0]==='host-git') {
+        if(request.url!=='/host-git'||pair.length!==4||pair.slice(1,3).some(v=>typeof v!=='string'||!v||v.length>512||/[\x00-\x1f\x7f]/u.test(v)))return null;
+        return {session:Object.freeze({serverId:pair[1],threadId:pair[2],execution:parseHostGitSource(pair[3])})};
+      }
+      if(request.url==='/host-git')return null;
       const cliRoute=request.url==='/thread-cli'||request.url==='/execution-admission';
       if(pair[0]==='execution-cli')return cliRoute?{session:executionCliSourceSession(this.key,auth.slice(7))}:null;
       if(cliRoute)return null;
@@ -228,7 +234,7 @@ export class SessionCapabilityMcp {
     response.setHeader("cache-control", "no-store");
     // This dedicated loopback listener uses session bearer auth, never ambient
     // browser cookies or an untrusted callerSessionId in tool arguments.
-    if (!["/mcp", "/execution-admission", "/admission", "/orchestration", "/thread-cli"].includes(request.url ?? "")) { response.writeHead(404); response.end(); return; }
+    if (!["/mcp", "/execution-admission", "/admission", "/orchestration", "/thread-cli", "/host-git"].includes(request.url ?? "")) { response.writeHead(404); response.end(); return; }
     if (request.headers.origin !== undefined) { response.writeHead(403); response.end(); return; }
     let authenticated = this.authenticate(request);
     if (!authenticated) { response.writeHead(401); response.end(); return; }
@@ -260,6 +266,15 @@ export class SessionCapabilityMcp {
     }
     authenticated = current;
     if (clientSession) clientSession.authenticate(request);
+    if(request.url==='/host-git') {
+      if(!authenticated.session||!this.options.hostGit){response.writeHead(403);response.end();return;}
+      if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length){response.writeHead(400);response.end();return;}
+      try {
+        const result=await this.options.hostGit(authenticated.session);
+        response.writeHead(200,{'content-type':'application/json'});response.end(JSON.stringify(result));
+      }catch{response.writeHead(403);response.end();}
+      return;
+    }
     if (request.url === "/orchestration" || request.url === "/thread-cli") {
       const callback=request.url==='/thread-cli'?this.options.threadCli:this.options.orchestration;
       if (!authenticated.session || !callback || request.url==='/thread-cli'&&!authenticated.session.execution) { response.writeHead(403); response.end(); return; }

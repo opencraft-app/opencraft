@@ -1,5 +1,8 @@
 import { createDshPolicyBoundary } from '@opencraft/model-usage-policy/native';
 import { ExecutionEnvironmentRuntime } from "@opencraft/execution-environment";
+import {createRemoteHumanGitExecution} from '@opencraft/execution-environment/remote-human-git-execution';
+import {RemoteSessionCapabilities} from '@opencraft/session-capabilities/remote';
+import {observeNativeExecutionProcess} from '@opencraft/execution-environment/native-execution-origin';
 import { createDshNativeOwner } from "./dsh-native-owner.mjs";
 import { registerDshSubprocessSandbox } from "./dsh-subprocess-sandbox.mjs";
 import { registerDshExecutionEnvironment } from "./dsh-execution-environment.mjs";
@@ -65,9 +68,17 @@ export async function apply(ctx, config) {
   if (checkpoints) for (const checkpoint of await checkpoints.list()) {
     generations.set(checkpoint.sourceSessionId, { logicalSessionId: checkpoint.logicalSessionId, generation: checkpoint.generation });
   }
-  const environmentRuntime = config.environmentDataDirectory ? ExecutionEnvironmentRuntime.open(config.environmentDataDirectory, { create: true }) : undefined;
-  ctx.on("dispose", () => environmentRuntime?.close());
-  registerDshExecutionEnvironment(ctx, nativeId => generations.get(nativeId)?.logicalSessionId ?? nativeId, environmentRuntime);
+  const mode=config.executionContext??'legacy';
+  if(!['assets','legacy'].includes(mode))throw Error('Invalid execution context');
+  if(mode==='assets'&&(!config.gitExecution||![config.gitExecution.directory,config.gitExecution.workerFile].every(p=>typeof p==='string'&&isAbsolute(p))||typeof config.gitExecution.machineId!=='string'||!config.gitExecution.machineId))throw Error('Native Git attachment unavailable');
+  const git=mode==='assets'?createRemoteHumanGitExecution({directory:config.gitExecution.directory,
+    runtimeDirectory:join(config.gitExecution.directory,'git-runtime'),workerFile:config.gitExecution.workerFile,
+    capabilities:new RemoteSessionCapabilities(config.gitExecution.directory,`server:${config.gitExecution.machineId}:dsh`),
+    inspect:async grant=>(await observeNativeExecutionProcess(process.pid)).incarnation===grant.native.incarnation,
+  }):undefined;
+  const environmentRuntime = mode==='legacy'&&config.environmentDataDirectory ? ExecutionEnvironmentRuntime.open(config.environmentDataDirectory, { create: true }) : undefined;
+  ctx.on("dispose", async () => {await git?.close();environmentRuntime?.close();});
+  registerDshExecutionEnvironment(ctx, nativeId => generations.get(nativeId)?.logicalSessionId ?? nativeId, environmentRuntime,git);
   ctx.on("session/event", (session, event) => {
     if (nativeOwner && event.type === "turn/end") void ctx.sessions.flush(session)
       .then(() => nativeOwner.commitPrivateTurn(String(session.id ?? session.header.id),event.data.turn))

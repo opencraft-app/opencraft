@@ -126,8 +126,26 @@ ad-hoc installation needs registered device UDIDs and a matching profile.
 `OPENCRAFT_IOS_RELEASE=1` requires a clean checkout without a generated `ios/`
 project. `OPENCRAFT_NATIVE_ARTIFACT_NAME` changes the output prefix for an
 explicit product build. Product Bundle IDs, schemes, icons, permission copy
-and regional release selectors belong to that product's config, not core
-build targets. This script does not export an App Store distribution IPA.
+and regional release selectors belong to that product's config. The default
+IPA path is the internal build.
+
+### OpenCraft TestFlight
+
+The [iOS TestFlight workflow](../../.github/workflows/ios-testflight.yml) runs
+from `main`. Dispatch it with an unused numeric build number for the app version.
+It packages the bundled Workbench as `app.opencraft`, archives a Release build
+with the `OpenCraft TestFlight CI` App Store Connect profile, verifies the IPA,
+and uploads it to the OpenCraft TestFlight record. The development build keeps
+its existing bundle identifier.
+
+The `ios-testflight` GitHub environment holds `APPLE_TEAM_ID`,
+`IOS_CERTIFICATE_P12_BASE64`, `IOS_CERTIFICATE_PASSWORD`,
+`IOS_PROVISIONING_PROFILE_BASE64`, `ASC_API_KEY_ID`, `ASC_API_ISSUER_ID`, and
+`ASC_API_PRIVATE_KEY_BASE64`. The signing and upload credentials are separate.
+Set the environment variable `OPENCRAFT_IOS_APP_STORE_APP_ID` to the numeric
+Apple ID of the App Store Connect record. An accepted upload is followed by
+App Store Connect processing and TestFlight
+availability for the intended testing group.
 
 Linux and CI can verify JavaScript packaging without Xcode:
 

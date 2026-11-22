@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {patchDshGitExecution} from '../postinstall/patch-dsh-git-execution.mjs';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
@@ -72,6 +73,7 @@ export async function prepareDshRuntime({ root = repositoryRoot, install = insta
   // Reapply/verify on every build, including an already installed runtime.
   await patchDshProviderLifecycle(runtime);
   await patchDshThreadEnvironment(runtime);
+  await patchDshGitExecution(runtime);
   await patchDshOwnerAdmission(runtime);
   log(`[opencraft] DSH runtime ${version} verified at ${runtime}`);
   return executable;
