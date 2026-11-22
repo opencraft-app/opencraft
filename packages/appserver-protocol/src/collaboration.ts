@@ -5,10 +5,10 @@ export type CollaborationTarget = { kind: "actor"; actorId: string } | { kind: "
 export const COLLABORATION_METHOD = "opencraft/collaboration";
 /** Each addition is negotiated independently; version alone grants no capability. */
 export const COLLABORATION_CAPABILITIES = { version: 1, read: true, queue: true, steer: true,
-  servers: true, metadata: true, metadataDiscovery: true, boundedRead: true, lookup: true, deliveryMetadata: true, discoverFilters: true } as const;
+  servers: true, metadata: true, metadataDiscovery: true, boundedRead: true, tailRead: true, lookup: true, deliveryMetadata: true, discoverFilters: true } as const;
 export interface ConversationServer {
   serverId: string; label: string; engine: string; connectionState: 'ready' | 'unavailable' | 'unknown';
-  capabilities: { metadata: boolean; read: boolean; boundedRead: boolean; queue: boolean; steer: boolean; discoverFilters?: boolean };
+  capabilities: { metadata: boolean; read: boolean; boundedRead: boolean; tailRead?: boolean; queue: boolean; steer: boolean; discoverFilters?: boolean };
 }
 export interface ConversationMetadata {
   ref: ConversationRef; projectId: string | null; cwd: string | null;
@@ -40,7 +40,7 @@ export interface CollaborationReadCommandMap {
   metadata: { request: { action: 'metadata'; reference: ConversationRef }; result: ConversationMetadata };
   discover: { request: { action: 'discover'; metadataOnly: true } & ConversationDiscovery;
     result: { conversations: ConversationMetadata[]; nextCursor: string | null } };
-  read: { request: { action: 'read'; reference: ConversationRef; bounded: true; cursor?: string };
+  read: { request: { action: 'read'; reference: ConversationRef; bounded: true; cursor?: string; tail?: number };
     result: { ref: ConversationRef; externalContext: boolean; history: ConversationHistory } };
 }
 const prefix = "opencraft://conversation/v1/";

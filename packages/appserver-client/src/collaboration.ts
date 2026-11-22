@@ -43,6 +43,9 @@ export class CollaborationClient {
     return this.readCommand<'read'>('boundedRead',
       { action: 'read', reference: ref, bounded: true, ...(cursor ? { cursor } : {}) });
   }
+  tail(ref: ConversationRef, limit: number) {
+    return this.readCommand<'read'>('tailRead', { action: 'read', reference: ref, bounded: true, tail: limit });
+  }
   send(ref: ConversationRef, content: string, operationKey: string, execution: { mode: 'queue' } | { mode: 'steer'; expectedTurnId: string }) {
     return this.command<{ messageId: string; requestId: string; replayed: boolean }>(execution.mode,
       { action: 'send', reference: ref, content, idempotencyKey: operationKey, execution });

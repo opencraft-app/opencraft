@@ -356,11 +356,16 @@ export class Collaboration {
     this.servers(context);
     return { ...result, conversations: result.conversations.filter(row => this.conversationAllowed(context, row.ref, 'conversation.discover')) };
   }
-  async readConversation(context: ActorContext, value: unknown, cursor: string | null = null, bounded = false) {
+  async readConversation(context: ActorContext, value: unknown, cursor: string | null = null, bounded = false, tail?: number) {
     const ref = this.#conversation(context, value, 'conversation.read');
     const read = bounded ? this.execution.readBounded : this.execution.read;
     if (!read) throw new CollaborationError(409, 'unsupported_capability');
-    const result = await read.call(this.execution, ref, cursor);
+    const result = await read.call(this.execution, ref, cursor) as any;
+    if (tail !== undefined) {
+      if (!Number.isSafeInteger(tail) || tail < 1 || tail > 100) throw new CollaborationError(400, 'invalid_tail');
+      result.entries = Array.isArray(result.entries) ? result.entries.slice(-tail) : [];
+      result.nextCursor = null; result.truncated = false;
+    }
     this.#conversation(context, ref, 'conversation.read');
     return {ref, externalContext: true, history: result};
   }
@@ -719,9 +724,9 @@ export class Collaboration {
     if (action === 'orchestration') { fields(args,['threadId','calls']); return this.orchestrationView(context,text(args.threadId),args.calls); }
     if (action === 'reference') { fields(args,['threadId']); return this.reference(context,text(args.threadId)); }
     if (action === 'read') {
-      fields(args,['reference','cursor','bounded']);
+      fields(args,['reference','cursor','bounded','tail']);
       if (args.bounded !== undefined && typeof args.bounded !== 'boolean') throw new CollaborationError(400, 'invalid_field');
-      return this.readConversation(context,args.reference,args.cursor === undefined ? null : text(args.cursor,4096),args.bounded === true);
+      return this.readConversation(context,args.reference,args.cursor === undefined ? null : text(args.cursor,4096),args.bounded === true,args.tail === undefined ? undefined : Number(args.tail));
     }
     if (action === 'discover') {
       fields(args,['search','cursor','suggestions','limit','sourceThreadId']);

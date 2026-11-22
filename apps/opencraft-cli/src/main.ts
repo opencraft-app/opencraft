@@ -24,7 +24,7 @@ Its private launcher uses this CLI's execution mode (OPENCRAFT_THREAD_CLI_CONNEC
   server list
   thread list [--project <id>] [--cwd <absolute-path>] [--cursor <cursor>] [--include-title]
   thread show <ref-or-link>
-  thread log <ref-or-link> [--cursor <cursor>]
+  thread log <ref-or-link> [--cursor <cursor>] [--tail <count>]
   thread send <ref-or-link> [text] [--mode queue] --key <key>
     [--message-file <file|->] [--wait delivered --timeout 30s]
     [--mode steer --expected-turn <exact-turn-id>]
@@ -98,7 +98,7 @@ export async function run(argv: string[]) {
   try {
     parsed = parseArgs({ args: argv, allowPositionals: true, tokens: true, options: {
       json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, connection: { type: 'string' }, server: { type: 'string' },
-      cursor: { type: 'string' }, 'include-title': { type: 'boolean' }, 'metadata-only': { type: 'boolean' },
+      cursor: { type: 'string' }, tail: { type: 'string' }, 'include-title': { type: 'boolean' }, 'metadata-only': { type: 'boolean' },
       ssh: { type: 'string' }, instance: { type: 'string' }, default: { type: 'boolean' }, 'default-server': { type: 'string' },
       'ssh-config': { type: 'string' },
       mode: { type: 'string' }, key: { type: 'string' }, 'message-file': { type: 'string' },
@@ -115,7 +115,7 @@ export async function run(argv: string[]) {
     'thread send': args.length === 4 ? 4 : 3, 'thread lookup': 3 };
   if (counts[command] !== args.length) throw new CliError(2, 'INVALID_ARGUMENTS', 'Check --help.');
   const allowed = ['json', 'connection', 'server', ...(command === 'connection add' ? ['ssh','ssh-config','instance','default','default-server','web-url'] : []),
-    ...(['thread list','thread log'].includes(command) ? ['cursor'] : []), ...(command === 'thread list' ? ['include-title','metadata-only','project','cwd'] : []),
+    ...(['thread list','thread log'].includes(command) ? ['cursor'] : []), ...(command === 'thread log' ? ['tail'] : []), ...(command === 'thread list' ? ['include-title','metadata-only','project','cwd'] : []),
     ...(command === 'thread send' ? ['mode','key','message-file','wait','timeout','expected-turn'] : []),
     ...(command === 'thread lookup' ? ['key'] : []), ...(command === 'thread show' ? ['delivery','delivery-key'] : [])];
   if (Object.keys(options).some(key => !allowed.includes(key))) throw new CliError(2, 'INVALID_ARGUMENTS', 'Option is not valid for this command.');
@@ -186,6 +186,12 @@ export async function run(argv: string[]) {
     }
     if (args[1] === 'log' && args.length === 3) {
       if (server.capabilities.boundedRead !== true) throw new CliError(6, 'UNSUPPORTED_CAPABILITY', 'Host lacks bounded history for this engine.');
+      if (options.tail !== undefined) {
+        const tail = Number(options.tail);
+        if (!Number.isSafeInteger(tail) || tail < 1 || tail > 100) throw new CliError(2, 'INVALID_ARGUMENTS', '--tail must be an integer between 1 and 100.');
+        if (server.capabilities.tailRead !== true) throw new CliError(6, 'UNSUPPORTED_CAPABILITY', 'Host lacks tail history.');
+        return await client.tail(uriRef!, tail);
+      }
       return await client.read(uriRef!, options.cursor);
     }
     throw new CliError(2, 'INVALID_ARGUMENTS', 'Check --help.');
