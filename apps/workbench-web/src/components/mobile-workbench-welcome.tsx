@@ -4,7 +4,10 @@ import { Button } from "@opencraft/design-system-web/button";
 import { mobileConnectionMessages } from "./mobile-connection-messages";
 import "./mobile-workbench-welcome.scss";
 
-export function MobileWorkbenchWelcome({ onConnect, onExplore }: {
+export function MobileWorkbenchWelcome({
+  onConnect,
+  onExplore,
+}: {
   readonly onConnect: () => void;
   readonly onExplore: () => void;
 }) {
@@ -21,19 +24,24 @@ export function MobileWorkbenchWelcome({ onConnect, onExplore }: {
           <Button variant="primary" aria-describedby={connectDescriptionId} onClick={onConnect}>
             {intl.formatMessage(mobileConnectionMessages.title)}
           </Button>
-          <p id={connectDescriptionId}>{intl.formatMessage({
-            id: "mobile.welcome.connectDescription",
-            defaultMessage: "Use your OpenCraft server to chat and run agents.",
-          })}</p>
+          <p id={connectDescriptionId}>
+            {intl.formatMessage({
+              id: "mobile.welcome.connectDescription",
+              defaultMessage: "Use your OpenCraft server to chat and run agents.",
+            })}
+          </p>
         </div>
         <div className="mobile-workbench-welcome__choice">
           <Button variant="secondary" aria-describedby={exploreDescriptionId} onClick={onExplore}>
             {intl.formatMessage({ id: "mobile.welcome.explore", defaultMessage: "Explore without a server" })}
           </Button>
-          <p id={exploreDescriptionId}>{intl.formatMessage({
-            id: "mobile.welcome.exploreDescription",
-            defaultMessage: "Browse the workspace and customize its appearance. You can connect a server later in Settings.",
-          })}</p>
+          <p id={exploreDescriptionId}>
+            {intl.formatMessage({
+              id: "mobile.welcome.exploreDescription",
+              defaultMessage:
+                "Browse the workspace and customize its appearance. You can connect a server later in Settings.",
+            })}
+          </p>
         </div>
       </div>
     </section>
