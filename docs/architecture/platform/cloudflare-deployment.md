@@ -2,7 +2,7 @@
 
 [Architecture index](../README.md) · [存储端口](storage-ports.md) · [执行沙盒](../execution/execution-sandbox.md) · [Docker 三角色部署](../../../deploy/docker/README.md)
 
-状态：目标设计，尚未实现。本页不代表任何 Cloudflare 组件已可部署。Node 自托管（Docker／systemd／Electron）始终是一等公民；Cloudflare 是部署装配选项之一，不替换 Node 路径。
+状态：目标设计。只有存储端口的 Cloudflare 适配器已在本地 workerd 中通过一致性测试（见[存储端口第 6 节](storage-ports.md#6-cloudflare-适配器第-5-阶段本地-workerd-验证)）；本页不代表任何 Cloudflare 组件已可部署。Node 自托管（Docker／systemd／Electron）始终是一等公民；Cloudflare 是部署装配选项之一，不替换 Node 路径。
 
 ## 1. 现状约束
 
@@ -50,7 +50,7 @@
 | 浏览器 | Chromium 沙盒在容器隔离模型下是否可用 |
 | 生命周期 | 能否确认实例已销毁；能否读取实际生效 CPU／内存；休眠、重启与最长运行时间语义 |
 | 持久化 | R2 FUSE／备份／快照用于 Git 工作区时的性能与一致性 |
-| SQL 语义 | DO 中 `changes()`、嵌套 `transactionSync`、多语句 `exec`、`sqlite_master` 读取与 Node 一致性测试是否等价 |
+| SQL 语义 | **已在本地 workerd（`workerd@1.20260730.1`）回答**：`SELECT changes()` 返回语句直接修改的行数，与 Node 一致；游标 `rowsWritten` 含索引与触发器写入（带索引和审计触发器的表上，修改两行的 UPDATE 为 6），不能用于 CAS。嵌套 `transactionSync` 是 savepoint：内层抛错只回滚内层，外层抛错丢弃全部。多语句 `exec` 依次执行全部语句。`sqlite_master` 与 `PRAGMA foreign_keys`（值为 1）可读。`BEGIN`／`SAVEPOINT`／`COMMIT` 文本被拒绝。BLOB 以 `ArrayBuffer` 返回；`bigint` 不能绑定，范围外 INTEGER 读取时静默取整。`SQL_CONFORMANCE_CASES` 全部通过。仍需在真实 Cloudflare 上复核 |
 | 网络 | 出站限制到边缘 Worker；Gateway 到容器的连接方式 |
 | 成本 | 冷启动时间、容器常驻与 DO 时长成本 |
 

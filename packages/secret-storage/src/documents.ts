@@ -13,9 +13,12 @@ function parse(value: unknown): SecretDocument {
   return { schemaVersion: 1, entries: { ...(doc.entries as Record<string, string>) } };
 }
 
-// Stamps are keyed per process so a stamp never becomes an offline oracle for
-// the secrets it covers; they are comparable only within one process.
-const stampKey = crypto.subtle.generateKey({ name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+// Stamps are keyed per process (per isolate in workerd) so a stamp never
+// becomes an offline oracle for the secrets it covers; they are comparable only
+// within one process. The key is created on first use because workerd forbids
+// generating random values in global scope.
+let stampKey: Promise<CryptoKey> | undefined;
+const stampingKey = () => (stampKey ??= crypto.subtle.generateKey({ name: "HMAC", hash: "SHA-256" }, false, ["sign"]) as Promise<CryptoKey>);
 
 /**
  * Secrets as one `{schemaVersion: 1, entries}` state document (the existing
@@ -49,7 +52,7 @@ export function documentSecretStore(documents: StateDocumentStore, key = "creden
     async stamp() {
       const value = await documents.read(key);
       if (value === null) return "absent";
-      const digest = await crypto.subtle.sign("HMAC", await stampKey, new TextEncoder().encode(JSON.stringify(parse(value).entries)));
+      const digest = await crypto.subtle.sign("HMAC", await stampingKey(), new TextEncoder().encode(JSON.stringify(parse(value).entries)));
       return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
     },
   };

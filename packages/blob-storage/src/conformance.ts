@@ -20,7 +20,10 @@ const bytes = (text: string) => new TextEncoder().encode(text);
 async function text(body: ReadableStream<Uint8Array>) {
   const chunks: Uint8Array[] = [];
   for await (const chunk of body as unknown as AsyncIterable<Uint8Array>) chunks.push(chunk);
-  return new TextDecoder().decode(Buffer.concat(chunks));
+  const all = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.byteLength, 0));
+  let offset = 0;
+  for (const chunk of chunks) { all.set(chunk, offset); offset += chunk.byteLength; }
+  return new TextDecoder().decode(all);
 }
 const stream = (...parts: string[]) => new ReadableStream<Uint8Array>({ start(controller) { for (const part of parts) controller.enqueue(bytes(part)); controller.close(); } });
 // SHA-256("hello world")

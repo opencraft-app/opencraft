@@ -2,7 +2,7 @@
 
 [Architecture index](../README.md) · [可选 Cloudflare 部署](cloudflare-deployment.md) · [服务器核心 owner](../server/server-core-owner.md) · [SQLite 生命周期](../server/sqlite-lifecycle.md)
 
-状态：第 1、2 阶段（全部四类端口、Node 适配器与首批使用方）与第 3 阶段（沙盒 provider 泛化，仅 E2B provider）已实施；第 4–6 阶段与 Cloudflare 适配器为设计。以源码、测试与 `config/main-thread-sync-io.json` 为准。
+状态：第 1、2 阶段（全部四类端口、Node 适配器与首批使用方）与第 3 阶段（沙盒 provider 泛化，仅 E2B provider）已实施；第 5 阶段的存储适配器（`@opencraft/storage-cloudflare`）已在本地 workerd 中通过全部共享一致性测试，尚未接入任何部署装配，也未在 Cloudflare 账号上运行（见第 6 节）；第 4、6 阶段与 `sandbox-cloudflare` 为设计。以源码、测试与 `config/main-thread-sync-io.json` 为准。
 
 ## 1. 目的
 
@@ -24,12 +24,12 @@ OpenCraft 服务端需要在两类运行时上运行同一份领域逻辑：
 
 ## 3. 端口
 
-| 端口 | 契约包 | 语义 | Node 适配器 | Cloudflare 适配器（设计） |
+| 端口 | 契约包 | 语义 | Node 适配器 | Cloudflare 适配器（`@opencraft/storage-cloudflare`，本地 workerd 已通过） |
 | --- | --- | --- | --- | --- |
-| `SqlDatabase` | `@opencraft/sql` | owner 内同步关系存储、事务 | `@opencraft/sqlite-node` 的 `nodeSqlDatabase()` | DO `ctx.storage.sql` 与 `transactionSync` |
-| `StateDocumentStore` | `@opencraft/document-storage/state` | 按键 JSON 状态文档、原子读-改-写 | `/state-file`：每键一个文件 | DO storage |
-| `BlobStore` | `@opencraft/blob-storage` | 不可变对象、大小与摘要校验、顺序上传 | `/file`：暂存＋fsync＋链接发布 | R2（multipart） |
-| `SecretStore`／`KeyMaterial` | `@opencraft/secret-storage` | 命名密钥、一次性安装密钥 | `/documents`＋私有文件 | Secrets binding＋DO 内密文 |
+| `SqlDatabase` | `@opencraft/sql` | owner 内同步关系存储、事务 | `@opencraft/sqlite-node` 的 `nodeSqlDatabase()` | `/sql` 的 `durableObjectSqlDatabase(ctx.storage)`：`sql.exec` 与 `transactionSync` |
+| `StateDocumentStore` | `@opencraft/document-storage/state` | 按键 JSON 状态文档、原子读-改-写 | `/state-file`：每键一个文件 | `/state` 的 `durableObjectStateDocumentStore(ctx.storage)`：DO 同步 KV |
+| `BlobStore` | `@opencraft/blob-storage` | 不可变对象、大小与摘要校验、顺序上传 | `/file`：暂存＋fsync＋链接发布 | `/blob` 的 `r2BlobStore(bucket, { prefix })`：条件 `put`／multipart |
+| `SecretStore`／`KeyMaterial` | `@opencraft/secret-storage` | 命名密钥、一次性安装密钥 | `/documents`＋私有文件 | `/secrets` 的 `durableObjectSecretStore`／`durableObjectKeyMaterial`：DO 同步 KV；Secrets binding 信封加密待做 |
 
 ### 3.1 `SqlDatabase`
 
@@ -53,9 +53,10 @@ interface SqlDatabase {
 ```
 
 - **语句对象是"SQL＋绑定"的可复用句柄**，不是原生 prepared statement 的承诺。领域代码可以缓存它；DO 适配器在每次调用时执行 `sql.exec(sql, ...params)`。
+- **整数限于 JavaScript 安全整数范围。** DO 只能绑定 number，适配器拒绝范围外的 `bigint`；但 workerd 读取范围外的 INTEGER 时静默取整（Node 适配器则报错）。领域数据不得依赖超过 2^53 的整数；需要时以 TEXT 或 BLOB 保存。
 - **只支持位置参数。** 不支持命名参数、`lastInsertRowid` 与 `RETURNING` 以外的扩展；现有服务端核心代码均未使用。
 - **`transaction(action)` 是唯一事务入口。** 最外层是写事务（Node 为 `BEGIN IMMEDIATE`），嵌套调用是 savepoint：内层失败只回滚内层，异常继续向外传播。回调必须同步，返回 thenable 视为错误并回滚。领域代码不得执行 `BEGIN`／`COMMIT`／`ROLLBACK`／`SAVEPOINT` 文本，DO 也禁止这些语句。
-- **`changes`** 是该语句直接修改的行数，用于 CAS 判断；不得用 DO 的 `rowsWritten`（含索引写入）代替。DO 适配器需验证 `changes()` 等价性后才可宣称支持。
+- **`changes`** 是该语句直接修改的行数，用于 CAS 判断；不得用 DO 的 `rowsWritten`（含索引写入）代替。DO 适配器在语句后读取 SQLite `changes()`，workerd 测试证明它与 Node 一致而 `rowsWritten` 更大（见第 6 节）。
 - **BLOB 统一为 `Uint8Array`。** DO 返回的 `ArrayBuffer` 由适配器转换。
 - **身份稳定。** 同一底层连接只对应一个 `SqlDatabase` 实例（Node 适配器以 `WeakMap` 缓存），因为 `AuthorityChanges` 与 `PermissionReadCache` 以连接对象作为分组身份。
 - **借用作用域。** `scopedSqlDatabase()` 把 owner 连接借给 repository；借用方 `close()` 后，经它发出的调用（包括先前取得的语句）全部失败，owner 与其他借用方不受影响。
@@ -149,3 +150,22 @@ Unix socket、锁文件、`/proc` 读取、Git 与 `/workspace` 工作目录、E
 - `Collaboration` 从 repository 的 `location` 取得伴随 Worker 的文件，不再调用 `DatabaseSync.location()`。
 - **下游插件契约变化：** `CommunicationExtension` 钩子的 `db` 参数类型从 `DatabaseSync` 改为 `SqlDatabase`。实现方若只用 `prepare`／`exec`／语句方法无需改动逻辑；使用 `isTransaction` 的改为 `inTransaction`，手写事务改为 `db.transaction()`。
 - 主线程同步 IO 登记减少 20 处调用，删除手写事务文本使相关文件的 SQL 语句计数下降；表结构、迁移、已发布 SQL 与备份恢复契约未改变。
+
+## 6. Cloudflare 适配器（第 5 阶段，本地 workerd 验证）
+
+`@opencraft/storage-cloudflare` 只依赖契约包，并以 `src/bindings.ts` 声明所消费的 workerd 绑定结构子集，不导入 `cloudflare:*` 或 `@cloudflare/workers-types` 全局类型。部署装配把真实的 `ctx.storage`（SQLite-backed DO）与 R2 bucket 传入。
+
+验证：`npm run test:storage-ports:workerd` 用 esbuild 打包 `tests/storage/workerd/conformance-worker.ts`，在 Miniflare（`miniflare@4.20260730.0`，内置 `workerd@1.20260730.1`，兼容日期 `2026-07-30`）的 SQLite-backed DO 与本地 R2 中运行 `SQL_CONFORMANCE_CASES`、`STATE_DOCUMENT_CONFORMANCE_CASES`（含损坏文档用例）、`SECRET_CONFORMANCE_CASES` 与 `BLOB_CONFORMANCE_CASES`，每个用例使用新的 DO 实例或 R2 前缀；另有语义探针。全程内存存储、无网络、无 Cloudflare 账号；本地 workerd 不等于生产 Cloudflare，生产行为仍需在第 6 阶段装配时复核。尚未加入 `gate`。
+
+| 端口 | 结果 | 实现与保证 |
+| --- | --- | --- |
+| `SqlDatabase` | 10/10 | 语句每次执行 `sql.exec`；`run()` 先读完游标，再读 `SELECT changes()`。`transaction()` 调用 `transactionSync`，workerd 中嵌套调用即 savepoint（内层失败只回滚内层，外层失败丢弃已完成的内层）；返回 thenable 时在回调内抛出 `SqlAsyncTransactionError` 使其回滚。`inTransaction` 由适配器计数。BLOB 的 `ArrayBuffer` 转为 `Uint8Array`；`WeakMap` 保证每个 storage 对象一个端口对象。 |
+| `StateDocumentStore` | 8/8 | 文档 JSON 文本存于同步 KV 的 `state/<key>`；读-改-写在一次 `transactionSync` 内完成，DO 单线程使同键更新串行；返回前 `await storage.sync()`。 |
+| `SecretStore`／`KeyMaterial` | 5/5 | 密钥沿用 `documentSecretStore`，文档位于独立前缀 `secret/credentials.json`；安装密钥存于 `key/<name>`，`ensure` 在 `transactionSync` 内检查并创建。目前依赖 DO 平台静态加密，尚未用 Secrets binding 中的密钥做信封加密，这是装配阶段的后续步骤。 |
+| `BlobStore` | 6/6 | 边接收边用 `crypto.DigestStream` 计算 SHA-256，最多缓存一个分片（默认 8 MiB，R2 要求非末分片至少 5 MiB 且等长）。单分片内的对象用一次 `put`，带已校验的 `sha256`（R2 复核）与 `onlyIf: { etagDoesNotMatch: "*" }`，已存在的键由 R2 原子拒绝。更大的对象走 multipart：`complete()` 前不可见，大小与摘要先校验，失败或放弃即 abort（未 abort 的由 R2 未完成上传生命周期回收）。范围读取到末尾之后或长度为 0 时，R2 报 416，适配器按契约返回空内容。 |
+
+已知差距与契约建议：
+
+- **multipart 的已存在键拒绝不是 R2 原子条件。** Workers binding 的 `R2MultipartUpload.complete()` 不接受条件（S3 API 的 `CompleteMultipartUpload` 支持 `If-None-Match: *`）。适配器在同一 store 实例内按键串行执行 `head`＋`complete`，同一 owner 的并发写入只会成功一个（已由 workerd 测试覆盖）；owner 之外的写入者仍可竞争。由于 Blob 键由索引 owner 分配且每个前缀只属于一个 owner，契约已写明"已存在键的拒绝针对已提交对象与同一 owner 的并发写入；跨 owner 写同一键不属于端口语义"，一致性测试未削弱；若 binding 将来支持完成条件，改为原子条件。
+- **整数范围**：见第 3.1 节；建议把"INTEGER 限于安全整数"写入 SQL 契约，并为 Node 与 DO 都增加"绑定范围外 `bigint` 被拒绝"的一致性用例；读取侧的静默取整无法由 DO 适配器检测，只能由数据约定避免。
+- **`stamp()` 的进程范围**：workerd 中等价于 isolate；DO 被逐出后 stamp 会变化，符合"只在同一进程内比较"。HMAC 密钥改为首次使用时生成，因为 workerd 禁止在全局作用域生成随机值。

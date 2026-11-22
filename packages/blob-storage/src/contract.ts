@@ -45,7 +45,12 @@ export interface BlobUpload {
 }
 
 export interface BlobStore {
-  /** Stores a new object. An existing key is rejected with BlobExistsError. */
+  /**
+   * Stores a new object. An existing key is rejected with BlobExistsError.
+   * The guarantee covers committed objects and concurrent writes through one
+   * owner; each key prefix has a single owner, so writes to the same key from
+   * different owners are outside this contract.
+   */
   put(key: string, body: ReadableStream<Uint8Array> | Uint8Array, options: BlobPutOptions): Promise<BlobInfo>;
   /** Starts a sequential upload for a new key with the same limits as `put`. */
   upload(key: string, options: { readonly maxBytes: number }): Promise<BlobUpload>;

@@ -3,7 +3,12 @@
  * See docs/architecture/platform/storage-ports.md.
  */
 
-/** Values accepted as positional parameters and returned in rows. BLOBs are always Uint8Array. */
+/**
+ * Values accepted as positional parameters and returned in rows. BLOBs are
+ * always Uint8Array. INTEGER values must stay within the safe integer range
+ * (±2^53−1): Durable Object SQL cannot bind bigint and rounds larger stored
+ * integers on read, so portable code never relies on wider integers.
+ */
 export type SqlValue = null | number | bigint | string | Uint8Array;
 
 export type SqlRow = Record<string, SqlValue>;
