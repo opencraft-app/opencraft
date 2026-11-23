@@ -19,6 +19,26 @@ export function engineHostConfiguration(paths, root, issuer) {
   };
 }
 
+/** The split Codex AppServer's ENV delivery configuration
+ * (`--environment-launch-config`): the pinned issuer key, this owner's
+ * attachment and the server data directory whose durable admission (the Codex
+ * input lease, the creation reservation) its own Worker reads. */
+export function codexAppServerEnvironmentLaunch(paths, root, machineId, issuer) {
+  if (typeof machineId !== "string" || !/^[0-9a-f-]{36}$/iu.test(machineId))
+    throw new Error("The Codex AppServer attachment requires the deployment machine ID");
+  return {
+    issuer,
+    instance: `server:${machineId}:codex`,
+    admissionWorkerFile: join(root, "runtime", "execution-admission-worker.mjs"),
+    directory: paths.dataDirectory,
+  };
+}
+
+/** AppServer arguments for ENV delivery: none without it. */
+export function codexAppServerEnvironmentArguments(paths) {
+  return paths.environmentDelivery ? ["--environment-launch-config", paths.codexEnvironmentLaunchConfig] : [];
+}
+
 /** DSH host configuration. `issuer` is set only with ENV delivery. */
 export function dshHostConfiguration(paths, root, env, issuer) {
   return {
@@ -54,11 +74,20 @@ async function writePrivate(path, value) {
   }
 }
 
-/** Write both execution host configurations. Only while neither host runs:
- * DSH treats its configuration as an immutable attachment of its lifetime. */
-export async function writeExecutionHostConfigurations(paths, root, env, issuer) {
+/** Write the execution host configurations. Only while none of their owners
+ * runs: DSH treats its configuration as an immutable attachment of its
+ * lifetime, and the Codex AppServer reads its delivery file once at launch.
+ * With ENV delivery (`issuer` set) the AppServer's file pins the same key;
+ * without it no such file exists. */
+export async function writeExecutionHostConfigurations(paths, root, env, issuer, machineId) {
   await writePrivate(paths.engineConfig, engineHostConfiguration(paths, root, issuer));
   await writePrivate(paths.dshConfig, dshHostConfiguration(paths, root, env, issuer));
+  if (issuer === undefined) await rm(paths.codexEnvironmentLaunchConfig, { force: true });
+  else
+    await writePrivate(
+      paths.codexEnvironmentLaunchConfig,
+      codexAppServerEnvironmentLaunch(paths, root, machineId, issuer),
+    );
 }
 
 /** The issuer Brain pins at launch. Without ENV delivery: none, and the host
@@ -71,14 +100,16 @@ export async function executionHostIssuer(paths, log = (message) => console.erro
   return pinned.issuer;
 }
 
-/** With ENV delivery, relaunch DSH and Pi whenever the vault owner publishes a
- * new key (first enablement or explicit rotation). `relaunch(configure)` stops
- * both hosts, awaits `configure()` and starts them again. Until it completes,
- * the hosts stay pinned to the previous key and deliveries fail closed. */
+/** With ENV delivery, relaunch DSH, Pi and the Codex AppServer whenever the
+ * vault owner publishes a new key (first enablement or explicit rotation).
+ * `relaunch(configure)` stops them, awaits `configure()` and starts them again.
+ * Until it completes, they stay pinned to the previous key and deliveries fail
+ * closed. */
 export function relaunchOnIssuerChange({
   paths,
   root,
   env,
+  machineId,
   pinned,
   signal,
   relaunch,
@@ -94,7 +125,7 @@ export function relaunchOnIssuerChange({
     interval,
     log,
     replace: async (issuer) => {
-      await relaunch(() => writeExecutionHostConfigurations(paths, root, env, issuer));
+      await relaunch(() => writeExecutionHostConfigurations(paths, root, env, issuer, machineId));
       log(JSON.stringify({ type: "environment-issuer-pinned" }));
     },
   });

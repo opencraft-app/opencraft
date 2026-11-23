@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { engineSandboxConfiguration } from "@opencraft/sandbox-node/engine";
 import { readFile } from "node:fs/promises";
 import { startCodexAppServer } from "./app-server.js";
+import { readEnvironmentLaunchConfiguration } from "./environment-launch-config.js";
 
 function argument(name: string): string {
   const index = process.argv.indexOf(name), value = index < 0 ? undefined : process.argv[index + 1]?.trim();
@@ -32,10 +33,11 @@ async function main() {
     dataDirectory: argument("--data-directory"), runtimeDirectory: argument("--runtime-directory"),
     runtimeDataDirectory: process.argv.includes("--runtime-data-directory") ? argument("--runtime-data-directory") : undefined,
     executable: argument("--codex-executable"),
-    // Trusted private file: the pinned issuer key, this owner's attachment and
-    // where it reads its own durable admission. Omitted: no delivery.
+    // Trusted private file: the pinned issuer key (or the vault owner's
+    // publication, read once here), this owner's attachment and where it reads
+    // its own durable admission. Omitted: no delivery.
     environmentLaunch: process.argv.includes("--environment-launch-config")
-      ? JSON.parse(await readFile(argument("--environment-launch-config"), "utf8")) : undefined,
+      ? await readEnvironmentLaunchConfiguration(argument("--environment-launch-config")) : undefined,
     waitForCore: true, signal: startup.signal,
     onFailure: error => { console.error(error.message); void shutdown?.(1); },
   });

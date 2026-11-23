@@ -1,0 +1,10 @@
+# Install only with ENV delivery (OPENCRAFT_ENVIRONMENT_DELIVERY=vault-owner) as
+# /etc/systemd/system/opencraft-codex-appserver.service.d/environment.conf.
+# The owner-only (0600) launch file comes from
+# opencraft-codex-appserver-environment.json.example: it names the vault
+# owner's publication, read once at launch; MACHINE_ID is the content of
+# /var/lib/opencraft/machine-id. opencraft-environment-issuer.service restarts
+# this unit when the publication changes.
+[Service]
+ExecStart=
+ExecStart=/usr/bin/node /opt/opencraft/codex-appserver/app-server.cjs --endpoint /run/opencraft-codex-appserver/control.sock --core-endpoint /run/opencraft-codex-core/control.sock --token-file /var/lib/opencraft/daemon.token --codex-executable /usr/local/bin/codex --runtime-directory /srv/opencraft --data-directory /var/lib/opencraft/codex --environment-launch-config /etc/opencraft-codex-appserver/environment-launch.json

@@ -288,27 +288,35 @@ access to them is a deployment decision outside this option.
 
 ## Optional account ENV delivery
 
-With `OPENCRAFT_ENVIRONMENT_DELIVERY=vault-owner` (Assets context only), DSH and
-Pi receive account ENV as opaque capsules from the Gateway's vault owner instead
+With `OPENCRAFT_ENVIRONMENT_DELIVERY=vault-owner` (Assets context only), DSH,
+Pi and Codex receive account ENV as opaque capsules from the Gateway's vault owner instead
 of running without it. The vault owner keeps its issuer key sealed in the vault,
 so the key survives Gateway restarts and updates, and publishes the public key
 to `$OPENCRAFT_DATA_DIR/run/environment-issuer.json` (owner-only file, rewritten
-only when the key changes). Brain pins that key into the DSH and Pi host
-configurations at launch and watches the file:
+only when the key changes). Brain starts before the Gateway, so it pins that
+stable key into the DSH and Pi host configurations and into
+`$OPENCRAFT_DATA_DIR/run/codex-app-server-environment.json`, which it passes to
+the split Codex AppServer as `--environment-launch-config` (with the attachment
+`server:<machine-id>:codex`, the `runtime/execution-admission-worker.mjs`
+shipped in the image and the data directory). It then watches the file:
 
 - No published key yet (first enablement): Brain pins a key nobody can issue
   for, so personal ENV deliveries fail closed. When the Gateway publishes its
-  key, Brain stops Pi and DSH, rewrites both configurations and starts them
-  again. Running DSH and Pi turns end with that relaunch.
+  key, Brain stops Pi, DSH and the Codex AppServer, rewrites their
+  configurations and starts them again. Running DSH, Pi and Codex turns end
+  with that relaunch.
 - Rotation is explicit: change `OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION` and
-  recreate the Gateway. It seals a new key and publishes it; Brain relaunches DSH
-  and Pi. Until then they hold the previous key and deliveries fail closed.
+  recreate the Gateway. It seals a new key and publishes it; Brain relaunches DSH,
+  Pi and the Codex AppServer. Until then they hold the previous key and
+  deliveries fail closed. A Gateway restart or update keeps the key and
+  relaunches nothing.
 - A publication that is not an owner-only regular file with exactly one valid
   key is ignored; the key never comes from a Gateway reply, a Host descriptor
   or a request.
 
-Without the variable nothing changes: no issuer, no publication, and the host
-configurations are written exactly as before.
+Without the variable nothing changes: no issuer, no publication, the host
+configurations are written exactly as before and the AppServer starts without
+`--environment-launch-config`.
 
 ## Optional separate model proxy
 

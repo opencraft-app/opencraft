@@ -13,7 +13,8 @@ import { readDshHostIdentity } from '../../apps/headless-server/src/server-deplo
 import { readEngineHostIdentity } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
 import { readHandsIncarnation, watchHandsIncarnation } from './hands-incarnation.mjs';
 import { codexCoreArguments, waitForProxy } from './proxy-core.mjs';
-import { executionHostIssuer, relaunchOnIssuerChange, writeExecutionHostConfigurations } from './execution-hosts.mjs';
+import { codexAppServerEnvironmentArguments, executionHostIssuer, relaunchOnIssuerChange, writeExecutionHostConfigurations } from './execution-hosts.mjs';
+import { readDaemonMachineIdentity } from '../../apps/opencraft-daemon/src/machine-identity.ts';
 
 // Run this launcher as the independent Brain owner, outside Gateway's lifecycle.
 if (process.platform !== 'linux' || !['x64', 'arm64'].includes(process.arch))
@@ -68,9 +69,13 @@ try {
   try { await writeFile(paths.tokenPath, randomBytes(32).toString('hex') + '\n', { mode: 0o600, flag: 'wx' }); }
   catch (error) { if (error.code !== 'EEXIST') throw error; }
   await readPrivateToken(paths.tokenPath);
-  // With ENV delivery, DSH and Pi pin the vault owner's published issuer key.
+  // With ENV delivery, DSH, Pi and the Codex AppServer pin the vault owner's
+  // published issuer key. Brain starts before the Gateway's vault owner, so only
+  // the stable published key (or an unissuable one until it exists) can be pinned.
   const pinnedIssuer = await executionHostIssuer(paths);
-  await writeExecutionHostConfigurations(paths, root, process.env, pinnedIssuer);
+  // The AppServer's attachment names the machine the Gateway reads from the same data directory.
+  const machineId = paths.environmentDelivery ? (await readDaemonMachineIdentity(paths.dataDirectory)).machineId : undefined;
+  await writeExecutionHostConfigurations(paths, root, process.env, pinnedIssuer, machineId);
   await writeFile(paths.sandboxConfig, JSON.stringify({
     schemaVersion: 1,
     backend: { id: 'hands-unix', options: { endpoint: paths.handsExecutionEndpoint, tokenFile: paths.handsExecutionToken } },
@@ -103,9 +108,30 @@ try {
     '--endpoint', paths.appServerEndpoint, '--core-endpoint', paths.coreEndpoint,
     '--token-file', paths.tokenPath, '--codex-executable', join(root, 'runtime/codex/bin/codex'),
     '--runtime-directory', paths.runtimeDirectory, '--data-directory', join(paths.dataDirectory, 'codex'),
+    ...codexAppServerEnvironmentArguments(paths),
   ];
   const appServerEnv = { OPENCRAFT_SANDBOX_CONFIG: paths.sandboxConfig, OPENCRAFT_CODEX_PROJECTLESS_DIR: paths.codexProjectlessDirectory };
   let appServer = start('codex-app-server.cjs', appServerArgs, appServerEnv);
+  // AppServer replacements (Hands rebinding, issuer rotation) run one at a time.
+  let replacing = Promise.resolve();
+  const serially = operation => (replacing = replacing.catch(() => {}).then(operation));
+  const stopAppServer = async () => {
+    // Native caches stdio execution connections for its process lifetime.
+    // End the old process and its requests before admitting a replacement.
+    appServer.replacing = true;
+    appServer.signal('SIGTERM');
+    const timer = setTimeout(() => appServer.signal('SIGKILL'), 10_000);
+    try { await appServer.exited; } finally { clearTimeout(timer); }
+    children.splice(children.indexOf(appServer), 1);
+  };
+  const startAppServer = async () => {
+    appServer = start('codex-app-server.cjs', appServerArgs, appServerEnv);
+    for (let attempt = 0; attempt < 60 && !stopping; attempt++) {
+      try { await coreHealth(paths.coreEndpoint, paths.tokenPath); return true; }
+      catch { await new Promise(accept => setTimeout(accept, 500)); }
+    }
+    return false;
+  };
   // With an external proxy, engines reach configured providers through it with their own caller token.
   const callerFile = name => paths.proxyMode === 'external' ? { OPENCRAFT_PROXY_CALLER_FILE: join(paths.runDirectory, 'proxy-callers', name + '.json') } : {};
   const startExecutionHosts = () => [
@@ -127,40 +153,31 @@ try {
     initial: handsIncarnation,
     signal: lifecycle.signal,
     probe: () => readHandsIncarnation(paths.handsExecutionEndpoint, { signal: lifecycle.signal }),
-    replace: async () => {
-      // Native caches stdio execution connections for its process lifetime.
-      // End the old process and its requests before admitting a replacement.
-      appServer.replacing = true;
-      appServer.signal('SIGTERM');
-      const timer = setTimeout(() => appServer.signal('SIGKILL'), 10_000);
-      try { await appServer.exited; } finally { clearTimeout(timer); }
-      children.splice(children.indexOf(appServer), 1);
+    replace: () => serially(async () => {
+      await stopAppServer();
       if (stopping) return;
-      appServer = start('codex-app-server.cjs', appServerArgs, appServerEnv);
-      let available = false;
-      for (let attempt = 0; attempt < 60 && !stopping; attempt++) {
-        try { await coreHealth(paths.coreEndpoint, paths.tokenPath); available = true; break; }
-        catch { await new Promise(accept => setTimeout(accept, 500)); }
-      }
-      if (!available && !stopping) throw new Error('Codex execution owner did not reconnect');
+      if (!await startAppServer() && !stopping) throw new Error('Codex execution owner did not reconnect');
       console.log(JSON.stringify({ type: 'codex-hands-owner-rebound' }));
-    },
+    }),
   }).catch(() => { failed = true; void stop(1); });
-  // A new vault-owner key (first enablement or explicit rotation) relaunches DSH
-  // and Pi with it: Pi first, since it attaches DSH, then DSH.
-  void relaunchOnIssuerChange({ paths, root, env: process.env, pinned: pinnedIssuer, signal: lifecycle.signal,
-    relaunch: async configure => {
+  // A new vault-owner key (first enablement or explicit rotation) relaunches
+  // DSH, Pi and the Codex AppServer with it: Pi first, since it attaches DSH,
+  // then DSH, then the AppServer. All three start again from the new files.
+  void relaunchOnIssuerChange({ paths, root, env: process.env, machineId, pinned: pinnedIssuer, signal: lifecycle.signal,
+    relaunch: configure => serially(async () => {
       for (const host of [engineHost, dshHost]) {
         host.replacing = true; host.signal('SIGTERM');
         const timer = setTimeout(() => host.signal('SIGKILL'), 30_000);
         try { await host.exited; } finally { clearTimeout(timer); }
         children.splice(children.indexOf(host), 1);
       }
+      await stopAppServer();
       if (stopping) return;
       await configure();
+      if (!await startAppServer() && !stopping) throw new Error('Codex execution owner did not relaunch');
       [dshHost, engineHost] = startExecutionHosts();
       if (!await executionHostsReady() && !stopping) throw new Error('Execution Hosts did not relaunch');
-    },
+    }),
   }).catch(() => { failed = true; void stop(1); });
   console.log('OpenCraft native execution Hosts ready; start docker compose in a separate terminal.');
 } catch (error) {

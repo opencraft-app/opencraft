@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deploymentPaths } from "../../scripts/container-deployment/paths.mjs";
 import {
+  codexAppServerEnvironmentArguments,
+  codexAppServerEnvironmentLaunch,
   dshHostConfiguration,
   engineHostConfiguration,
   executionHostIssuer,
@@ -18,9 +20,16 @@ import {
   resolveEnvironmentIssuer,
   watchEnvironmentIssuer,
 } from "../../scripts/server-deployment/environment-issuer.mjs";
+import { readEnvironmentLaunchConfiguration } from "../../apps/codex-core/src/environment-launch-config.ts";
 
 const key = () => generateKeyPairSync("x25519").publicKey.export({ type: "spki", format: "der" }).toString("base64url");
 const quiet = () => {};
+const machineId = "0f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a";
+const exists = (path) =>
+  stat(path).then(
+    () => true,
+    () => false,
+  );
 
 async function deployment(t, extra = {}) {
   const root = await mkdtemp(join(tmpdir(), "opencraft-issuer-"));
@@ -54,6 +63,13 @@ test("without ENV delivery Brain writes exactly the previous host configurations
   });
   assert.ok(!("environmentIssuer" in dsh));
   assert.equal(dsh.descriptorPath, paths.dshDescriptor);
+  // The Codex AppServer starts exactly as before: no flag and no launch file,
+  // and a stale file from an earlier delivery is removed.
+  assert.deepEqual(codexAppServerEnvironmentArguments(paths), []);
+  assert.equal(await exists(paths.codexEnvironmentLaunchConfig), false);
+  await writeFile(paths.codexEnvironmentLaunchConfig, "{}", { mode: 0o600 });
+  await writeExecutionHostConfigurations(paths, "/opt/opencraft", env, undefined, machineId);
+  assert.equal(await exists(paths.codexEnvironmentLaunchConfig), false);
   for (const path of [paths.engineConfig, paths.dshConfig]) assert.equal((await stat(path)).mode & 0o777, 0o600);
   // The watcher is not even started without delivery.
   let watched = false;
@@ -86,13 +102,13 @@ test("ENV delivery is a deployment setting that needs the Assets context and the
     assert.throws(() => deploymentPaths({ ...base, ...extra }), JSON.stringify(extra));
 });
 
-test("Brain pins the published issuer into both DSH and Pi host configurations", async (t) => {
+test("Brain pins the published issuer into the DSH, Pi and Codex AppServer configurations", async (t) => {
   const { env, paths } = await deployment(t, { OPENCRAFT_ENVIRONMENT_DELIVERY: "vault-owner" });
   const issuer = key();
   await publish(paths.environmentIssuerFile, issuer);
   const pinned = await executionHostIssuer(paths, quiet);
   assert.equal(pinned, issuer);
-  await writeExecutionHostConfigurations(paths, "/opt/opencraft", env, pinned);
+  await writeExecutionHostConfigurations(paths, "/opt/opencraft", env, pinned, machineId);
   assert.equal((await readJson(paths.engineConfig)).environmentIssuer, issuer);
   assert.equal((await readJson(paths.dshConfig)).environmentIssuer, issuer);
   assert.deepEqual(engineHostConfiguration(paths, "/opt/opencraft", issuer), {
@@ -103,6 +119,28 @@ test("Brain pins the published issuer into both DSH and Pi host configurations",
     ...dshHostConfiguration(paths, "/opt/opencraft", env),
     environmentIssuer: issuer,
   });
+  // The split Codex AppServer: the same stable key, its own attachment, the
+  // admission Worker shipped in Brain's runtime and the server data directory.
+  assert.deepEqual(await readJson(paths.codexEnvironmentLaunchConfig), {
+    issuer,
+    instance: `server:${machineId}:codex`,
+    admissionWorkerFile: "/opt/opencraft/runtime/execution-admission-worker.mjs",
+    directory: paths.dataDirectory,
+  });
+  assert.equal((await stat(paths.codexEnvironmentLaunchConfig)).mode & 0o777, 0o600);
+  assert.equal(paths.codexEnvironmentLaunchConfig, join(paths.runDirectory, "codex-app-server-environment.json"));
+  assert.deepEqual(codexAppServerEnvironmentArguments(paths), [
+    "--environment-launch-config",
+    paths.codexEnvironmentLaunchConfig,
+  ]);
+  // The AppServer reads it as configured: a pinned key passes through unchanged.
+  assert.deepEqual(
+    await readEnvironmentLaunchConfiguration(paths.codexEnvironmentLaunchConfig, quiet),
+    await readJson(paths.codexEnvironmentLaunchConfig),
+  );
+  // Without the machine the Gateway reads, the attachment cannot be named.
+  for (const bad of [undefined, "", "../machine"])
+    assert.throws(() => codexAppServerEnvironmentLaunch(paths, "/opt/opencraft", bad, issuer));
 });
 
 test("a missing or untrusted publication never supplies a key: hosts pin an unissuable key", async (t) => {
@@ -113,6 +151,8 @@ test("a missing or untrusted publication never supplies a key: hosts pin an unis
   assert.match(missing, /^[A-Za-z0-9_-]+$/u);
   assert.notEqual(missing, await executionHostIssuer(paths, quiet));
   assert.deepEqual(logs, [{ type: "environment-issuer-unavailable", reason: "missing" }]);
+  await writeExecutionHostConfigurations(paths, "/opt/opencraft", {}, missing, machineId);
+  assert.equal((await readJson(paths.codexEnvironmentLaunchConfig)).issuer, missing);
   assert.equal(await readPublishedEnvironmentIssuer(paths.environmentIssuerFile), null);
   const forged = key(),
     path = paths.environmentIssuerFile;
@@ -176,13 +216,13 @@ test("launch-time pinning under systemd reads only the named publication", async
   assert.equal(logs.length, 1);
 });
 
-test("a vault-owner restart with a new key relaunches DSH and Pi with it; until then they keep the old pin", async (t) => {
+test("a rotated key relaunches DSH, Pi and the Codex AppServer with it; until then they keep the old pin", async (t) => {
   const { env, paths } = await deployment(t, { OPENCRAFT_ENVIRONMENT_DELIVERY: "vault-owner" });
   const first = key(),
     second = key();
   await publish(paths.environmentIssuerFile, first);
   const pinned = await executionHostIssuer(paths, quiet);
-  await writeExecutionHostConfigurations(paths, "/opt/opencraft", env, pinned);
+  await writeExecutionHostConfigurations(paths, "/opt/opencraft", env, pinned, machineId);
   // Fake process supervisor: records the order and the configuration each start sees.
   const events = [];
   let running = true;
@@ -195,12 +235,17 @@ test("a vault-owner restart with a new key relaunches DSH and Pi with it; until 
     paths,
     root: "/opt/opencraft",
     env,
+    machineId,
     pinned,
     signal: controller.signal,
     interval: 5,
     log: quiet,
     relaunch: async (configure) => {
-      events.push(["stop", (await readJson(paths.engineConfig)).environmentIssuer]);
+      events.push([
+        "stop",
+        (await readJson(paths.engineConfig)).environmentIssuer,
+        (await readJson(paths.codexEnvironmentLaunchConfig)).issuer,
+      ]);
       running = false;
       await configure();
       running = true;
@@ -208,6 +253,7 @@ test("a vault-owner restart with a new key relaunches DSH and Pi with it; until 
         "start",
         (await readJson(paths.engineConfig)).environmentIssuer,
         (await readJson(paths.dshConfig)).environmentIssuer,
+        (await readJson(paths.codexEnvironmentLaunchConfig)).issuer,
       ]);
       relaunched();
     },
@@ -226,9 +272,10 @@ test("a vault-owner restart with a new key relaunches DSH and Pi with it; until 
   await watching;
   assert.equal(running, true);
   assert.deepEqual(events, [
-    ["stop", first],
-    ["start", second, second],
+    ["stop", first, first],
+    ["start", second, second, second],
   ]);
+  assert.equal((await readJson(paths.codexEnvironmentLaunchConfig)).instance, `server:${machineId}:codex`);
 });
 
 test("a failed relaunch stops the supervisor loop instead of leaving hosts half configured", async () => {
@@ -248,4 +295,65 @@ test("a failed relaunch stops the supervisor loop instead of leaving hosts half 
     }),
     /relaunch failed/,
   );
+});
+
+test("the Codex AppServer resolves a named publication once at launch with the same rules", async (t) => {
+  const { root, paths } = await deployment(t);
+  const issuer = key();
+  const launch = {
+    instance: `server:${machineId}:codex`,
+    admissionWorkerFile: "/opt/opencraft-engine-host/runtime/execution-admission-worker.mjs",
+    directory: paths.dataDirectory,
+  };
+  const file = join(root, "environment-launch.json");
+  await writeFile(file, JSON.stringify({ ...launch, environmentIssuerFile: paths.environmentIssuerFile }), {
+    mode: 0o600,
+  });
+  // Missing publication: a valid key nothing can issue for (fail closed).
+  const logs = [];
+  const pending = await readEnvironmentLaunchConfiguration(file, (m) => logs.push(JSON.parse(m)));
+  assert.deepEqual(Object.keys(pending).sort(), ["admissionWorkerFile", "directory", "instance", "issuer"]);
+  assert.match(pending.issuer, /^[A-Za-z0-9_-]+$/u);
+  assert.deepEqual(logs, [{ type: "environment-issuer-unavailable", reason: "missing" }]);
+  await publish(paths.environmentIssuerFile, issuer);
+  assert.deepEqual(await readEnvironmentLaunchConfiguration(file, quiet), { ...launch, issuer });
+  // A publication another user could change is refused, never used.
+  await chmod(paths.environmentIssuerFile, 0o644);
+  const refused = await readEnvironmentLaunchConfiguration(file, quiet);
+  assert.notEqual(refused.issuer, issuer);
+  // A pinned key and a publication together, or a non-object, are refused.
+  await writeFile(file, JSON.stringify({ ...launch, issuer, environmentIssuerFile: paths.environmentIssuerFile }), {
+    mode: 0o600,
+  });
+  await assert.rejects(readEnvironmentLaunchConfiguration(file, quiet));
+  await writeFile(file, "[]", { mode: 0o600 });
+  await assert.rejects(readEnvironmentLaunchConfiguration(file, quiet));
+});
+
+test("Brain passes the launch file to the AppServer, relaunches it on rotation and ships its admission Worker", async () => {
+  const read = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
+  const [host, packager, gitRuntime, unitService, dropIn, example] = await Promise.all([
+    read("scripts/container-deployment/host.mjs"),
+    read("scripts/packaging/package-container.mjs"),
+    read("scripts/packaging/package-git-identity-runtime.mjs"),
+    read("deploy/web-server/opencraft-environment-issuer.service.example"),
+    read("deploy/web-server/opencraft-codex-appserver-environment.conf.example"),
+    read("deploy/web-server/opencraft-codex-appserver-environment.json.example"),
+  ]);
+  assert.match(host, /\.\.\.codexAppServerEnvironmentArguments\(paths\)/u);
+  assert.match(host, /relaunchOnIssuerChange\(\{[^}]*machineId/u);
+  // The rotation relaunch stops and restarts the AppServer like DSH and Pi.
+  const relaunch = host.slice(host.indexOf("relaunchOnIssuerChange("));
+  assert.ok(relaunch.indexOf("stopAppServer()") > 0 && relaunch.indexOf("startAppServer()") > 0);
+  // Brain's runtime ships the Worker its owners name by configuration.
+  assert.match(packager, /'execution-admission-worker\.mjs'/u);
+  assert.match(packager, /access\(join\(root, 'runtime', name\)\)/u);
+  assert.match(gitRuntime, /execution-admission\.worker\.ts'\), name: 'execution-admission-worker\.mjs'/u);
+  // systemd: the path unit's service also restarts the AppServer, whose drop-in
+  // passes a launch file that names the publication rather than a key.
+  assert.match(unitService, /try-restart[^\n]*opencraft-codex-appserver\.service/u);
+  assert.match(dropIn, /--environment-launch-config \/etc\/opencraft-codex-appserver\/environment-launch\.json$/mu);
+  const launch = JSON.parse(example);
+  assert.equal(launch.environmentIssuerFile, "/var/lib/opencraft/run/environment-issuer.json");
+  assert.ok(!("issuer" in launch));
 });

@@ -330,8 +330,9 @@ supply or select it.
 
 ## Supervisor wiring
 
-Independent execution owners pin the issuer from their own configuration. The
-configuration gets the key from the vault owner's publication only:
+Independent execution owners (DSH, Pi and the split Codex AppServer) pin the
+issuer from their own configuration. The configuration gets the key from the
+vault owner's publication only:
 
 - **Publication.** With `environmentIssuer.publish` (deployment variable
   `OPENCRAFT_ENVIRONMENT_ISSUER_FILE`), the vault-owner Worker writes
@@ -340,7 +341,9 @@ configuration gets the key from the vault owner's publication only:
   only when its content changes. It never contains the private key. Main does
   not write it. A Headless Gateway with core delivery and an independent engine
   host refuses to start without a publication path.
-- **Reading.** `readPublishedEnvironmentIssuer` accepts only a regular file (no
+- **Reading.** `readPublishedEnvironmentIssuer`
+  (`@opencraft/execution-environment/environment-issuer-publication`, shared by
+  the deployment supervisors and Codex Core) accepts only a regular file (no
   symlink) owned by the same user with no group or other access, exactly the
   two fields and a well-formed key. Anything else is refused. A Gateway reply, a
   Host descriptor, a request or an environment variable never supplies a key.
@@ -351,17 +354,32 @@ configuration gets the key from the vault owner's publication only:
 - **Container (Brain).** `deploymentPaths` reads `OPENCRAFT_ENVIRONMENT_DELIVERY`
   (Assets context only) and fixes the publication at `run/environment-issuer.json`
   in the data directory. The Gateway passes that path to the vault owner. Brain
-  writes `environmentIssuer` into the DSH and Pi host configurations before it
-  starts them and polls the publication. When a valid key differs from the
-  pinned one, Brain stops Pi, then DSH, rewrites both configurations and starts
-  them again. Until that completes both keep the previous key and deliveries
-  fail closed. A failed relaunch stops Brain.
+  starts before the Gateway's vault owner exists, so only this stable published
+  key (or an unissuable one until it is published) can be pinned. Brain writes
+  `environmentIssuer` into the DSH and Pi host configurations and
+  `run/codex-app-server-environment.json` for the split Codex AppServer
+  (`{issuer, instance: "server:<machine>:codex", admissionWorkerFile, directory}`:
+  the same key, the machine read from the shared data directory's `machine-id`,
+  `runtime/execution-admission-worker.mjs` of the Brain payload and the data
+  directory), passes that file as `--environment-launch-config`, then starts
+  them and polls the publication. When a valid key differs from the pinned
+  one, Brain stops Pi, DSH and the AppServer, rewrites all three files and
+  starts the AppServer, then DSH and Pi again. AppServer replacements (this one
+  and a Hands rebinding) run one at a time. Until that completes all three keep
+  the previous key and deliveries fail closed. A failed relaunch stops Brain.
+  The container packaging checks that the admission Worker is in the payload.
 - **systemd.** The engine and DSH host configurations name the publication as
   `environmentIssuerFile`. Each host resolves it once at launch, with the same
-  rules, into `environmentIssuer`. `opencraft-environment-issuer.path.example`
-  restarts both units when the publication changes.
-- **Unchanged path.** Without delivery there is no publication, no watcher and
-  no `environmentIssuer` in any host configuration.
+  rules, into `environmentIssuer`. The AppServer's launch file
+  (`opencraft-codex-appserver-environment.json.example`, passed by the drop-in
+  `opencraft-codex-appserver-environment.conf.example`) names it as
+  `environmentIssuerFile` too; `app-server-bin` resolves it once at launch into
+  `issuer`, and names a pinned payload's `execution-admission-worker.mjs`.
+  `opencraft-environment-issuer.path.example` restarts the three units when the
+  publication changes.
+- **Unchanged path.** Without delivery there is no publication, no watcher, no
+  `environmentIssuer` in any host configuration and no AppServer launch file or
+  flag.
 
 ## Compatibility
 
@@ -449,15 +467,18 @@ synchronous runtime.
    combine refusals, in-process refusal, unconfigured compatibility, a durable
    admission read by input, and an engine host booting with a pinned issuer.
 
-   Supervisor wiring (implemented after slice 2). The deployment supervisors
-   write the vault owner's published key into the DSH and Pi host
-   configurations and relaunch both when it changes (see
+   Supervisor wiring (implemented after slice 2, extended to slice 7). The
+   deployment supervisors write the vault owner's published key into the DSH
+   and Pi host configurations and the split Codex AppServer's launch file, and
+   relaunch all three when it changes (see
    [Supervisor wiring](#supervisor-wiring)). The independent DSH host accepts
    the same top-level `environmentIssuer`. Tests
    (`environment-issuer-supervision.test.mjs`, `environment-launch-owner.test.ts`,
-   `independent-engine-host.test.mjs`, `headless-composition.test.mjs`): both
-   configurations carry the key, a changed publication relaunches both hosts
-   and an identical one relaunches nothing, untrusted publications are refused,
+   `independent-engine-host.test.mjs`, `headless-composition.test.mjs`): all
+   three configurations carry the key, the AppServer's with its attachment,
+   admission Worker and data directory, a changed publication relaunches all
+   three and an identical one relaunches nothing, the AppServer resolves a
+   named publication with the same rules, untrusted publications are refused,
    a missing key pins an unissuable key under which a Human Turn fails closed,
    the sealed key survives a vault-owner restart, explicit rotation, and an
    unconfigured deployment writes the previous configurations.
@@ -505,7 +526,8 @@ synchronous runtime.
    OpenCraft's own Codex Core process that owns `codex app-server` (the split
    AppServer, `startCodexAppServer({ environmentLaunch })`, configured by
    `--environment-launch-config` with the pinned issuer key, its attachment
-   `server:<machine>:codex` and the server data directory). No native Codex
+   `server:<machine>:codex` and the server data directory; the supervisors
+   write it, see [Supervisor wiring](#supervisor-wiring)). No native Codex
    release is needed: the native server keeps receiving
    `shell_environment_policy.set`, now from Codex Core.
    - The Codex adapter (Main) relays only opaque capsules and record locators.

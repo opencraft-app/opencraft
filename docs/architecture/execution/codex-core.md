@@ -12,7 +12,7 @@
 - `GET /health` 与 `POST /accounts` 位于独立 Unix HTTP 控制 socket；后者接受 `{method, params}`，仅转发 `opencraft/codex/accounts/*`。两者要求 `Authorization: Bearer <daemon token>`，与 daemon 共用私有 token 文件。无远程 shutdown 接口。
 - socket 目录必须为 0700，控制与原生 socket 均为 0600；原生 listener 依靠 Unix 文件权限限制访问。CLI 可能把原生路径建为符号链接，验收应使用 `stat -L` 检查实际 socket，不能把符号链接自身的 0777 当作目标权限。不要将原生 socket 通过公开网关暴露。
 - 健康检查返回协议版本、core PID、所选 Codex 子进程 PID 与原生 socket。官方 npm CLI 可能有 Node wrapper，部署验收还须记录其实际 native 子进程 PID，不能只比较 wrapper。
-- 执行 ENV 投递（[launch delivery 第 7 片](environment-launch-delivery.md#slices)）的接收方是拆分形态中持有 `codex app-server` 的 APP Server 进程：`--environment-launch-config` 固定签发方公钥、本 owner 的 attachment 与服务器数据目录。daemon 只转发不透明 capsule 与记录定位符；APP Server 在自身 Worker 中读取持久准入（待提交 Codex 输入的 lease 或 Server 的创建预留），打开 capsule 后经 `shell_environment_policy.set` 写入原生 Thread，并在转发原生错误前脱敏。组合形态与多代路由形态没有接收方，配置投递时失败关闭。
+- 执行 ENV 投递（[launch delivery 第 7 片](environment-launch-delivery.md#slices)）的接收方是拆分形态中持有 `codex app-server` 的 APP Server 进程：`--environment-launch-config` 固定签发方公钥、本 owner 的 attachment 与服务器数据目录。公钥是 vault owner 加密保存在 vault 中的稳定签发密钥，只来自其属主私有发布文件，不来自网关或请求（[Supervisor wiring](environment-launch-delivery.md#supervisor-wiring)）：容器中 Brain 先于网关启动，把该公钥、`server:<machine>:codex`、Brain 包内 `runtime/execution-admission-worker.mjs` 与数据目录写入 `run/codex-app-server-environment.json` 并传给 APP Server，发布变化（首次启用或显式轮换）时与 DSH、Pi 一并重启 APP Server；systemd 下配置写 `environmentIssuerFile`，APP Server 启动时按同一规则读取，由 issuer path unit 重启。发布缺失或被拒绝时固定一把无人能签发的公钥，投递失败关闭；网关重启或更新不改变公钥，也不重启 APP Server。daemon 只转发不透明 capsule 与记录定位符；APP Server 在自身 Worker 中读取持久准入（待提交 Codex 输入的 lease 或 Server 的创建预留），打开 capsule 后经 `shell_environment_policy.set` 写入原生 Thread，并在转发原生错误前脱敏。组合形态与多代路由形态没有接收方，配置投递时失败关闭。
 - 核心服务不可用时 daemon 明确失败，不创建第二个 writer，不重放结果未知的 mutation。Host overlay 主动重连并核对原生执行状态；已确认被打断的任务按[恢复策略](interrupted-turn-recovery.md)系统续跑，不依赖页面点击继续。
 - 设备码授权由核心服务的独立维护 CLI 等待上游结果；成功通知直接触发一次入池与额度刷新，不依赖网页继续 poll。网页返回或重载通过账户列表恢复已完成账号，原页面的短期完成回执可重复查询；pending 会话不跨 core 重启恢复；启动时先由同一账户owner恢复临时profile内原生已写出的可复用授权，全部提交后才清理，存储失败保留文件以便重试。授权完成中的入池先排空，再关闭用量维护和存储。
 - 兼容模式正常维护关闭时先结束 CLI；拆分模式不向 APP Server 发送信号。两种形态均等待账户 RPC、用量维护和代理已接收请求的异步处理结束，最后关闭存储并释放 writer 锁。HTTP 断连不等于其 OAuth 刷新已完成；刷新中的新凭据仍须落盘。
@@ -238,7 +238,7 @@ loaded/Turn/工具状态，不能把私有 Core health 或页面连接数当成�
 
 回退先关闭新任务准入并排空原生任务；停独立 APP Server 后停账号 Core，确认两把锁释放，再恢复**兼容当前数据版本**的未拆分 bundle/unit，保留当前账号和 native 数据，恢复原 gateway endpoint。验收原会话与新任务读取/完成；不恢复旧数据库快照、不同时运行两种形态。账号 Core 单独升级失败时只退兼容账号 bundle，APP Server 保持；首次拆分失败才使用整体维护回退。固定旧 reader 若拒绝新 schema，继续前向恢复，不能删除迁移账本。
 
-模板见 `deploy/web-server/opencraft-codex-appserver.service` 和 `opencraft-codex-accounts.service.example`；后者需明确安装为既有 Core unit，而不是额外启动第二账号服务。模板路径/端口必须现场填写，包构建不会安装 unit。
+模板见 `deploy/web-server/opencraft-codex-appserver.service` 和 `opencraft-codex-accounts.service.example`（启用 ENV 投递时另加 `opencraft-codex-appserver-environment.conf.example` drop-in 与 `.json.example` 启动配置，见[网站部署](../../operations/web-deployment.md)）；后者需明确安装为既有 Core unit，而不是额外启动第二账号服务。模板路径/端口必须现场填写，包构建不会安装 unit。
 
 ## 拆分隔离演练
 

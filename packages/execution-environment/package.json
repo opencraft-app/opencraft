@@ -21,6 +21,7 @@
     "./environment-account": "./src/environment-account.ts",
     "./environment-launch-owner": "./src/environment-launch-owner.ts",
     "./environment-launch-receiver": "./src/environment-launch-receiver.ts",
+    "./environment-issuer-publication": "./src/environment-issuer-publication.ts",
     "./environment-metadata": "./src/environment-metadata.ts",
     "./git-keys": "./src/git-keys.ts",
     "./human-git-execution": "./src/human-git-execution.ts",

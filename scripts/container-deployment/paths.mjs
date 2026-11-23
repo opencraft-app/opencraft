@@ -33,7 +33,7 @@ export function deploymentPaths(env = process.env) {
   if(!['assets','legacy'].includes(executionContext))throw Error('OPENCRAFT_EXECUTION_CONTEXT must be assets or legacy');
   const executionDirectory = absolute('OPENCRAFT_EXECUTION_DIR', join(dataDirectory, 'execution'));
   // Opaque ENV delivery: Gateway's vault owner publishes its issuer here and
-  // Brain pins it into DSH and Pi. Unset keeps every path unchanged.
+  // Brain pins it into DSH, Pi and the Codex AppServer. Unset keeps every path unchanged.
   const environmentIssuerFile = join(dataDirectory, 'run', 'environment-issuer.json');
   const delivery = environmentDeliveryOptions(env);
   if (delivery.environmentDelivery && executionContext !== 'assets')
@@ -60,6 +60,8 @@ export function deploymentPaths(env = process.env) {
     dshDescriptor: join(dataDirectory, 'run', 'dsh-host.json'),
     dshConfig: join(dataDirectory, 'run', 'dsh-host-config.json'),
     sandboxConfig: join(dataDirectory, 'run', 'codex-hands-sandbox.json'),
+    // The split Codex AppServer's `--environment-launch-config` (ENV delivery only).
+    codexEnvironmentLaunchConfig: join(dataDirectory, 'run', 'codex-app-server-environment.json'),
     handsExecutionEndpoint: join(executionDirectory, 'exec-owner.sock'),
     handsExecutionToken: join(executionDirectory, 'exec-owner.token'),
     codexProjectlessDirectory: absolute('OPENCRAFT_CODEX_PROJECTLESS_DIR', codexProjectlessDirectory(runtimeDirectory)),
