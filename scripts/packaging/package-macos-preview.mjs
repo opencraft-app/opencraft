@@ -6,6 +6,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { packageBuilderArguments } from './package-electron-desktop.mjs';
 import { stageCodexRuntime } from './stage-codex-runtime.mjs';
+import { verifyWorkspaceLinks } from './workspace-links.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const electronAppRoot = resolve(repositoryRoot, "apps/desktop");
@@ -51,5 +52,6 @@ export async function packageMacosPreview(arch, { spawnImpl = spawn, stageCodex 
 }
 
 if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
+  verifyWorkspaceLinks();
   await packageMacosPreview(process.argv[2] || process.arch);
 }

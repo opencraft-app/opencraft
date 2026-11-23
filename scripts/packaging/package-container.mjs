@@ -7,8 +7,10 @@ import { join, resolve, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { packageHeadlessLinux, buildHeadlessBundle } from './package-headless-linux.mjs';
 import { buildCodexBridgeRuntime } from './package-web-server.mjs';
+import { verifyWorkspaceLinks } from './workspace-links.mjs';
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+verifyWorkspaceLinks(repository);
 const output = resolve(process.argv[2] ?? '/out');
 await mkdir(output, { recursive: true });
 console.log('Building the verified Headless tree and native runtimes');
