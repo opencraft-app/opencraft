@@ -7,7 +7,9 @@
 //    real HumanAuth routes, LocalAccountServerPlugin verification,
 //    HumanAccounts token issue and InstanceAccess authenticate path, and
 //    answers the same statuses, error codes and cookie shape as the Node
-//    node:http entry for the same request sequence.
+//    node:http entry for the same request sequence. Both entries run the same
+//    HumanAuth.handle on the HTTP exchange port: Fetch adapter in workerd,
+//    node:http adapter in Node.
 // See docs/architecture/platform/gateway-split.md ("登录入口原型结果").
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
@@ -25,6 +27,7 @@ import { HumanAuth } from "@opencraft/access-control/human-auth";
 import { InstanceAccess, MembershipStore, type MemberRole } from "@opencraft/access-control";
 import type { LocalAccountRecord } from "@opencraft/identity-core/local-account";
 import { LocalAccountServerPlugin } from "@opencraft/plugin-local-account/server";
+import { serveNodeHttpExchange } from "@opencraft/identity-core/http-exchange-node";
 import { createNodePasswordHasher } from "@opencraft/plugin-local-account/password-hash-node";
 import { parseArgon2id } from "@opencraft/plugin-local-account/password-hash";
 
@@ -171,7 +174,7 @@ async function nodeEntry(): Promise<Entry> {
       );
       return;
     }
-    if (!(await auth.handle(request, response))) {
+    if (!(await serveNodeHttpExchange(request, response, (exchange) => auth.handle(exchange)))) {
       response.writeHead(404, { "content-type": "application/json" });
       response.end(JSON.stringify({ error: "missing" }));
     }

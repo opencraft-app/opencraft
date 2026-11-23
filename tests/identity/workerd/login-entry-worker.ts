@@ -5,10 +5,9 @@
 // lifecycle and runs the unchanged identity stack over it: ActorStore,
 // HumanAccounts (browser logins), the bundled local-account plugin (Argon2id
 // through the portable pure-JS hasher), MembershipStore, HumanAuth (login routes)
-// and InstanceAccess (the authenticate/admission path). HumanAuth.handle is
-// still written against node:http, so a fetch Request/Response is adapted to
-// the narrow IncomingMessage/ServerResponse surface it actually touches; that
-// surface is the proposed Request/Response port. Bundled with esbuild and
+// and InstanceAccess (the authenticate/admission path). HumanAuth.handle runs
+// on the runtime-neutral HTTP exchange port through the production Fetch
+// adapter (@opencraft/identity-core/http-exchange-fetch). Bundled with esbuild and
 // driven through Miniflare by tests/identity/login-entry-workerd.test.ts.
 // Test-only: no deployment assembly, rate-limit store, OIDC or setup page.
 import { DurableObject } from "cloudflare:workers";
@@ -22,7 +21,7 @@ import { InstanceAccess, MembershipStore, type MemberRole } from "@opencraft/acc
 import type { LocalAccountRecord } from "@opencraft/identity-core/local-account";
 import { LocalAccountServerPlugin } from "@opencraft/plugin-local-account/server";
 import { createPortablePasswordHasher } from "@opencraft/plugin-local-account/password-hash-portable";
-import { handleNodeStyle, identityRequest } from "./node-http-exchange.js";
+import { fetchIdentityRequest, serveFetchHttpExchange } from "@opencraft/identity-core/http-exchange-fetch";
 
 interface Env {
   readonly ORIGIN: string;
@@ -81,7 +80,7 @@ export class LoginCore extends DurableObject<Env> {
     const { auth, access, actors } = this.#open();
     const url = new URL(request.url);
     if (url.pathname === "/api/me") {
-      const identity = identityRequest(request);
+      const identity = fetchIdentityRequest(request);
       const status = access.admissionStatus(identity);
       const principal = access.authenticate(identity);
       const actor = principal ? actors.findHuman(principal) : null;
@@ -90,7 +89,10 @@ export class LoginCore extends DurableObject<Env> {
         { status: status === 204 ? 200 : status },
       );
     }
-    const response = await handleNodeStyle(request, (req, res) => auth.handle(req, res));
+    // Cloudflare's edge sets CF-Connecting-IP; the composition, not the adapter, chooses to trust it.
+    const response = await serveFetchHttpExchange(request, (exchange) => auth.handle(exchange), {
+      clientAddress: request.headers.get("cf-connecting-ip"),
+    });
     return response ?? Response.json({ error: "missing" }, { status: 404 });
   }
 

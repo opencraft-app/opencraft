@@ -5,6 +5,8 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ActorContext } from '@opencraft/identity-core/actors';
+import type { IdentityRequest } from '@opencraft/identity-core/node';
+import { serveNodeHttpExchange } from '@opencraft/identity-core/http-exchange-node';
 
 export interface NativeHumanSubmission {
   readonly sender: null;
@@ -49,7 +51,7 @@ export async function createDesktopAccountHost(directory: string, renderLogin: (
     const auth = new HumanAuth(accounts, actors, configuration, renderLogin);
     disposers.push(() => auth.close());
     const browserProof = randomBytes(32).toString('base64url');
-    const nativeOwner = (request: IncomingMessage) => {
+    const nativeOwner = (request: IdentityRequest) => {
       const raw = request.headers.cookie;
       if (typeof raw !== 'string' || raw.length > 16_384) return false;
       const values = raw.split(';').map(value => value.trim()).filter(value => value.startsWith('oc_desktop_owner='));
@@ -90,8 +92,8 @@ export async function createDesktopAccountHost(directory: string, renderLogin: (
         const path = new URL(request.url ?? '/', configuration.origin).pathname;
         if (assets && await assets.handle(request, response)) return true;
         if (!['/setup', '/__opencraft_account', '/__opencraft_auth'].some(base => path === base || path.startsWith(base + '/'))) return false;
-        if (await application.handle(request, response)) return true;
-        return auth.handle(request, response);
+        // The private loopback listener is node:http; the account routes run on the HTTP exchange port.
+        return serveNodeHttpExchange(request, response, async exchange => await application.handle(exchange) ?? auth.handle(exchange));
       },
       close: disposeAll,
     };

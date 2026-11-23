@@ -24,7 +24,7 @@
 | `OrchestrationRuntimeWorker` | 编排运行时、通信与自动化账本的异步门面；Headless 中在核心 owner 连接上执行（`orchestrationRuntimeOwnerMethods`），不再另开连接 | 无（门面）；独立 `worker_threads` 模式只留给测试与无 owner 的组合 | HA:278 | IC | 已与核心 owner 合并为单一写入者（G2） |
 | `ServerSpacesRuntime` | Server space 账本的异步门面与投影；Headless 中在核心 owner 连接上执行（`serverSpacesOwnerMethods`） | 无（门面）；本机 Host 的 `directory` 模式仍是独立 Worker | HA:635-636 | IC | 同上 |
 | `ActorStore`／`MembershipStore`／`InstanceAccess`／`ActorAccess`／`IdentityWrites` | 主体、成员、准入投影；写入经核心 owner | HTTP 处理签名为 `node:http` 类型（`actor-access.ts:1`、`access-control/src/index.ts:9`） | HA:476、481、535、589-608 | IC（状态）＋EW（无状态鉴权读取见 §3.2） | 部署级唯一写者；读取投影可在 IC 内存 |
-| `HumanAuth`＋本地账号＋OIDC | 登录会话、身份绑定、OIDC discovery 与回调 | `node:http` 类型（`human-auth.ts:2`）；本地账号 Argon2id，经组合根选择的 `PasswordHasher`（Node 原生 `node:crypto.argon2`；Workers 纯 JS `@noble/hashes`，见 §3.4）；setup token 私有文件 | HA:515-533；登录页 `human-login-page.ts` | IC（会话与账号写入）＋EW（页面与 OIDC 重定向） | 登录态是 IC 数据；外部 HTTP 往返适合 EW |
+| `HumanAuth`＋本地账号＋OIDC | 登录会话、身份绑定、OIDC discovery 与回调 | HTTP 经运行时中立交换端口（§3.4，已无 `node:http`）；本地账号 Argon2id，经组合根选择的 `PasswordHasher`（Node 原生 `node:crypto.argon2`；Workers 纯 JS `@noble/hashes`，见 §3.4）；setup token 私有文件 | HA:515-533；登录页 `human-login-page.ts` | IC（会话与账号写入）＋EW（页面与 OIDC 重定向） | 登录态是 IC 数据；外部 HTTP 往返适合 EW |
 | `ThreadAccessStore`／`ThreadAccessSession`／`ServerSpacesSession` | Thread 访问授权与每连接投影 | 无（经核心 owner） | HA:637-685 | IC（授权）；会话对象随 Client 连接（§3.1） | 授权是部署级；会话是每连接的 |
 | `Collaboration`＋`CollaborationHttpApi` | 主体协作、输入授权、执行准入、用量提交 | `node:http` 类型（`collaboration.ts:22`） | HA:686-690、703 | IC | Codex adapter 的 `collaboration`／`collaborationInput` 钩子依赖它（HA:1068-1094），是执行准入权威 |
 | `ThreadOrchestrationBroker`＋`createProjectAutomations` | 父子编排、助理线程、项目自动化 | 定时依赖 `automation-ledger.ts:5`（`isMainThread`） | HA:692-706 | IC（账本）；到期唤醒用 alarm | 跨工作区编排需部署级 owner |
@@ -160,7 +160,7 @@
 
 ### 3.4 登录入口原型结果
 
-本地原型（2026-11-22）验证 §2.1 `HumanAuth`＋本地账号能否在 InstallationCore 上运行，并回答问题 7。只在 workerd／Miniflare（`nodejs_compat`，compatibility date 2026-07-30，workerd 1.20260730.1）中运行，不是部署装配。源码：`tests/identity/workerd/login-entry-worker.ts`、`tests/identity/workerd/node-http-exchange.ts`；测试：`npm run test:login-entry:workerd`（`tests/identity/login-entry-workerd.test.ts`）。
+本地原型（2026-11-22）验证 §2.1 `HumanAuth`＋本地账号能否在 InstallationCore 上运行，并回答问题 7。只在 workerd／Miniflare（`nodejs_compat`，compatibility date 2026-07-30，workerd 1.20260730.1）中运行，不是部署装配。源码：`tests/identity/workerd/login-entry-worker.ts`（经生产 Fetch 适配器 `@opencraft/identity-core/http-exchange-fetch`，原型期的测试专用 `node-http-exchange.ts` 已删除）；测试：`npm run test:login-entry:workerd`（`tests/identity/login-entry-workerd.test.ts`）。
 
 **现状事实（Node）。**
 
@@ -180,26 +180,30 @@
 - 交叉验证：`tests/identity/login-entry-workerd.test.ts` 中 Node 建的 PHC 记录在 workerd 验证通过、workerd 建的记录在 Node 验证通过，错误密码拒绝；当前参数记录不被重写；workerd 拒绝 scrypt 记录。升级、并发改密与解析上限见 `tests/identity/local-account-plugin.test.ts`。
 - Cloudflare 限制（官方文档，2026-11 读取）：Workers 每请求 CPU，Free 10 ms，Paid 默认 30 s、可配置到 5 min；Durable Object 每个传入请求／WebSocket 消息把可用 CPU 重置为 30 s；每 isolate 内存 128 MB，含 JS 堆与 WebAssembly。结论：Paid 计划 CPU 余量约 170 倍，内存余量充足；**Free 计划仍无法运行**（单次验证超出 10 ms 约 17 倍）。
 
-**登录入口原型。** `LoginCore` DO 以 DO SQL 迁移 Server 核心后，原样装配 Node 部署中的 `ActorStore`、`HumanAccounts`、`LocalAccountServerPlugin`、`MembershipStore`、`HumanAuth` 与 `InstanceAccess`。公开入口是 fetch：`/__opencraft_auth/*` 交给真实的 `HumanAuth.handle`，受保护探针 `/api/me` 走真实的 `InstanceAccess.admissionStatus`。同一请求序列分别打到该 DO 与真实 `node:http` 服务器（node:sqlite），归一化随机 id、token 与 Max-Age 后两边逐项相等：
+**登录入口原型。** `LoginCore` DO 以 DO SQL 迁移 Server 核心后，原样装配 Node 部署中的 `ActorStore`、`HumanAccounts`、`LocalAccountServerPlugin`、`MembershipStore`、`HumanAuth` 与 `InstanceAccess`。公开入口是 fetch：`/__opencraft_auth/*` 经 Fetch 适配器交给真实的 `HumanAuth.handle`（Node 侧经 `node:http` 适配器调用同一处理器），受保护探针 `/api/me` 走真实的 `InstanceAccess.admissionStatus`。同一请求序列分别打到该 DO 与真实 `node:http` 服务器（node:sqlite），归一化随机 id、token 与 Max-Age 后两边逐项相等：
 
 - 错误密码、未知用户、已禁用账号登录 → 401 `invalid_credentials`；跨源或非 JSON POST → 403 `same_origin_json_required`；带 `Authorization` → 403 `origin_required`；多余字段 → 400 `login_failed`。
 - 登录成功 → 200 `{ok: true}`，`Set-Cookie` 与 Node 完全同形（`oc_human=<43 字符>; Path=/; HttpOnly; SameSite=Lax; Max-Age=28800`，并清空 `oc_human_flow`）。
 - 携带该 token：未授予成员时 403，授予后 200；篡改 token、登出后、账号禁用后（重新启用后仍失效，因版本已变）、8 小时过期后均 401。
 
-**Node-only 胶水与 Request／Response 端口提议。** 登录链路上的 Node 依赖只有 HTTP 形状，领域代码不需要改：
+**Node-only 胶水与 HTTP 交换端口（2026-11-23 已实现）。** 原型证明登录链路上的 Node 依赖只有 HTTP 形状；该形状现已收成运行时中立端口，处理器不再引用 `node:http`：
 
-| 位置 | Node-only 部分 | workerd 中的情况 |
+| 位置 | 原 Node-only 部分 | 现状 |
 | --- | --- | --- |
-| `human-auth.ts` `handle`／`issueSession` | `IncomingMessage`（`url`、`method`、`headers`、`socket.remoteAddress`、异步迭代正文）、`ServerResponse`（`writeHead`、`setHeader('set-cookie', [...])`、`end`、`headersSent`、`destroyed`） | 原型用 `node-http-exchange.ts` 适配，真实代码不变 |
-| `local-account/src/application.ts` | 同上，另有 `nativeOwner(request)` | 未在原型中运行；同一适配可用 |
-| `identity-core/src/node.ts` `readPrivateJson` | `node:fs` 读取 setup token 与认证配置私有文件 | 应改由 Worker secret／绑定提供，不读文件 |
-| `local-account/src/server.ts`、`human-accounts.ts`、`account-management.ts` | `node:crypto`（`randomUUID`、`randomBytes`、`createHash`）与 `Buffer`；密码哈希经 `PasswordHasher` 端口，Node 组合用原生 `argon2` | `nodejs_compat` 提供前者；哈希由组合根换成纯 JS `password-hash-portable` |
+| `human-auth.ts` `handle`／`issueSession` | `IncomingMessage`／`ServerResponse` | `handle(HttpExchangeRequest) → HttpExchangeResponse \| null`；`issueSession(principal, identity)` 返回要追加的 `set-cookie` |
+| `local-account/src/application.ts` | 同上，另有 `nativeOwner(request)` | 同上；`nativeOwner` 接收 `identity` 视图 |
+| `access-control` `InstanceAccess.handle`（成员管理）、`ActorAccess.handle`（Actor 管理） | 同上 | 同上 |
+| `identity-core/src/node.ts` `readPrivateJson` | `node:fs` 读取 setup token 与认证配置私有文件 | 未变：应改由 Worker secret／绑定提供，不读文件 |
+| `local-account/src/server.ts`、`human-accounts.ts`、`account-management.ts` | `node:crypto`（`randomUUID`、`randomBytes`、`createHash`）与 `Buffer`；密码哈希经 `PasswordHasher` 端口 | 未变：`nodejs_compat` 提供前者；哈希由组合根换成纯 JS `password-hash-portable` |
+| `app-host-server` `WorkbenchRequestIdentity.handle` | 下游身份产品的 `node:http` 装配端口 | 未迁移：属于下游 ABI，随 G4 另行决定 |
 
-提议把适配器覆盖的面收成一个运行时中立端口，`HumanAuth.handle` 与 `LocalAccountApplication.handle` 改为消费它，Node 与 Workers 各写一个薄适配：
+端口在 `@opencraft/identity-core/http-exchange`（无运行时导入）。放在 identity-core 而非新包：它的消费者都是身份／准入处理器，且请求必须携带交给 `IdentityProvider` 的 `identity` 视图，而这些类型已由 identity-core 持有；新 workspace 包会改动锁文件却没有第二类消费者。G4 把其他 HTTP 服务迁过来时若出现非身份消费者，再把与身份无关的部分拆成独立包。
 
-- 请求：`method`、`path`（含 query）、小写单值 `headers` 加原始头列表（重复头检测）、`clientAddress`（Node 为 socket 地址，Workers 为 `CF-Connecting-IP`）、`readBody(limit): Promise<Uint8Array>`（流式计数，超限即停）、`signal`（替代 `response.destroyed` 判断客户端已断开）。
-- 应答：`{status, headers: [name, value][], body}`，允许多条 `set-cookie`；`issueSession` 返回要追加的 Cookie，而不是直接写 `ServerResponse`。
-- `Host` 校验在 Workers 上取路由 URL 的 host（由平台按 zone／route 保证），Node 仍取请求头。
+- 请求：`method`、`path`（含 query）、小写单值 `headers` 加原始头列表 `rawHeaders`（重复头检测）、`clientAddress`（Node 为 socket 地址；Fetch 由组合根从可信边缘传入，Cloudflare 为 `CF-Connecting-IP`，适配器自身不信任请求头）、`readBody(limit): Promise<Uint8Array>`（流式计数，超限抛 `HttpBodyTooLarge` 并停止读取）、`signal`（替代 `response.destroyed`）、`identity`（传输层同一请求对象，Node 即 `IncomingMessage`，使一次性中继断言与准入缓存仍按同一对象命中）。
+- 应答：`{status, headers: [name, value][], body}`，允许多条 `set-cookie`；`null` 表示不拥有该路由；`HttpExchangeAborted` 表示已提交的应答无法完成（Node 断开连接，Fetch 让请求失败）。
+- `Host`：Fetch 适配器取路由 URL 的 host（由平台按 zone／route 保证），Node 仍取请求头。
+- 适配器：`http-exchange-node`（Headless `serve-workbench-web.mjs` 与桌面 `createDesktopAccountHost` 使用）按列表顺序 `setHeader`、再 `writeHead`／`end`，超限请求流在应答写出后释放；`http-exchange-fetch`（workerd 登录入口使用）把字符串正文按字节发送，避免 `Response` 隐式加 `content-type`。Fetch `Headers` 保持 `set-cookie` 顺序，其他头名按其规范顺序迭代。
+- 等价证据：迁移前后对 Headless 网关同一 77 个请求序列（登录页、session、跨源／非 JSON／`Authorization`／多余字段／超长正文／坏 JSON、账号页与 `/setup`、初始化、邀请与接受、改密、成员与审计、Actor 管理、登出、两类尝试上限）抓取原始应答字节，归一化日期、token、nonce 与 UUID 后逐字节相同。共享一致性测试 `tests/identity/http-exchange-conformance.test.ts` 对两个适配器各跑 8 项（方法／路径／头／host／地址、头顺序与多条 `set-cookie`、空正文与 303、正文上限内读取与重复读取、跨块 UTF-8、超限 413、客户端断开触发 `signal`、`HttpExchangeAborted`）。唯一有意差异：`InstanceAccess` 原先逐块 `toString()` 拼接正文，跨块的多字节 UTF-8 会被拆坏，现在整体解码。
 
 **放置建议。** 登录写入（`human_logins`、账号版本）必须在 IC。若 Argon2id 也在 IC 中计算，全局 60 次／分钟的尝试上限下最坏约占 IC 每分钟 10 s CPU（旧 scrypt 估算为 15 s），且 IC 是全部部署级授权的单点。可选的拆分：EW 向 IC 取 PHC 参数与 salt（未知用户返回由 IC 密钥派生的稳定占位 salt，避免枚举），在 EW 计算摘要，再交给 IC 常量时间比较、复核版本并签发登录；密码明文不进 IC，摘要不出 IC。这需要把 `LocalAccountServerPlugin.verify` 拆成"派生"与"比较＋复核"两步，属于后续工作，原型未实现。尝试计数目前是进程内存，在 IC 内可沿用；放在无状态 EW 时需改用 IC 计数或 Workers Rate Limiting 绑定。
 
@@ -208,7 +212,7 @@
 - `openid-client` 6.9.0（基于 `oauth4webapi`，只用 `fetch` 与 WebCrypto）可被 esbuild 打进 workerd bundle 并完成模块求值（原型 bundle 已包含 `human-auth.ts` 的顶层 `import * as oidc`）；discovery、授权码交换与 ID Token 验签尚未在 workerd 中跑通，需用模拟 issuer 测试。workerd WebCrypto 支持 RS256／ES256／EdDSA 验签；`timeout` 依赖 `AbortSignal.timeout`；`allowInsecureRequests` 只用于 HTTP 回环测试 issuer。
 - discovery 结果与 JWKS 目前缓存在 `HumanAuth.#clients` 的 `Configuration` 内存中（按 provider，未知 `kid` 时由库重取）。DO 驱逐后重新 discovery 即可；若放在 EW，每个 isolate 各自缓存，需接受冷启动多一次 discovery＋JWKS 往返，或由 IC 缓存元数据。
 - state、nonce、PKCE verifier 与发起浏览器摘要现存于 `HumanAuth.#flows`（内存，10 分钟，一次性）。Node 重启丢失事务是既定语义；在 Cloudflare 上必须由 IC（或专用 DO）持有，EW 不能保存，因为回调可能落到另一个 isolate。若要跨 DO 驱逐保留，需写入 DO storage 并保持"一次性消费"。
-- 回调中 `response.destroyed` 判断改用请求 `signal`；`claims.exp` 与流程过期依赖 `Date.now()`，Workers 在请求内冻结时钟（I/O 后推进），对分钟级窗口无影响。
+- 回调中 `response.destroyed` 判断已改用交换请求的 `signal`；`claims.exp` 与流程过期依赖 `Date.now()`，Workers 在请求内冻结时钟（I/O 后推进），对分钟级窗口无影响。
 - 客户端密钥来自 Worker secret，而非 `readPrivateJson` 私有文件。
 
 **需在真实 Cloudflare 上确认。** 线上纯 JS Argon2id 单次验证 CPU 时间（本地约 0.17 s）；IC 在并发登录下的排队延迟；`CF-Connecting-IP` 作为限流键；OIDC 对真实 issuer 的 discovery、出站超时与 JWKS 轮换。
@@ -234,7 +238,7 @@
 
 | 端口 | 现状 | Node 适配器 | Cloudflare 适配器 |
 | --- | --- | --- | --- |
-| HTTP 处理 | 各服务 `handle(IncomingMessage, ServerResponse)`（`human-auth.ts:2`、`actor-access.ts:1`、`collaboration.ts:22`、`app-host-server/src/index.ts:11`、`hub-network` 等） | `Request`/`Response` ↔ `node:http` 包装 | 原生 `fetch` |
+| HTTP 处理 | 身份与准入处理器（`HumanAuth`、`LocalAccountApplication`、`InstanceAccess`、`ActorAccess`）已改为 `@opencraft/identity-core/http-exchange` 端口（§3.4）；其余服务仍是 `handle(IncomingMessage, ServerResponse)`（`collaboration.ts:22`、`app-host-server/src/index.ts:11`、`hub-network` 等） | `http-exchange-node`（已实现） | `http-exchange-fetch`（已实现，workerd 登录入口使用） |
 | WebSocket 会话 | `ws` 对象直接进入会话逻辑（`serve-workbench-web.mjs:1180-1290`） | `ws` 包装 | DO hibernation WebSocket |
 | 定时器 | `setInterval`（HA:1350；`conversation-resource-lifecycle.mjs:64`；`observability-ingress.mjs:49`；`serve-workbench-web.mjs:397`；host-schedules 2 s 轮询） | owner 定时器 | DO alarm（每 DO 单个，需要合并到"下一个到期时间"） |
 | 单写者 owner | `worker_threads` Worker（核心 owner、编排、spaces、assets vault、token usage 查询、push） | `@opencraft/worker-owner` | DO 本身即单写者，`SqlDatabase` 同步调用（storage-ports §6） |
@@ -256,7 +260,7 @@
 | G1 | 把 `HA` 按 §4.1 拆成装配模块，行为与关闭顺序不变 | 组合根可测、可读；嵌入方（Docker gateway）复用模块 | 无 |
 | G2 | 合并 `opencraft-server.sqlite` 的编排与空间连接到核心 owner（已实施，见 [server-core-owner §4](../server/server-core-owner.md#4-分阶段实施)）；网络线程过渡连接随 server-core-owner 第 2–6 阶段移除 | 消除同库多 Worker 写入者；减少主线程同步 IO 登记 | G1 |
 | G3 | 剩余直接 `node:sqlite` 的部署级库（模型策略、MCP apps、push、connectors）迁到 `SqlDatabase` 端口 | 统一迁移与 outcome 报告 | 存储端口第 1–2 阶段（已实施） |
-| G4 | HTTP 处理改为 `Request`→`Response` 端口，Node 包装 | 服务单测不需要真实监听 | G1 |
+| G4 | HTTP 处理改为 `Request`→`Response` 端口，Node 包装（身份与准入处理器已完成，§3.4；其余服务待迁） | 服务单测不需要真实监听 | G1 |
 | G5 | 定时器端口；资源对账、心跳、观测改为 owner 定时器 | 关闭排空与时钟回拨可测 | G1；与 P4-3 同一抽象 |
 | G6 | 拆出 `client-session`：AppHost 逻辑路由与访问会话脱离 `ws` | 连接逻辑可用内存 transport 测试 | G4 |
 | P4-2 | 抽出 `WorkspaceHost`（Codex overlays 以工作区根打开） | 见原文 | G1 |
