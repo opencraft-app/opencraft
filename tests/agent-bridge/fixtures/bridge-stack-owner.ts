@@ -19,5 +19,6 @@ const stack = await startCodexBridgeStack({
 const children = JSON.parse(await readFile(join(root, "state/children.json"), "utf8")).map(
   (row: { pid: number }) => row.pid,
 );
-process.stdout.write(`${JSON.stringify({ children, url: stack.bridge.url })}\n`);
+// Handle SIGTERM before reporting: the test may signal as soon as it reads the report.
 process.once("SIGTERM", () => void stack.close().then(() => process.exit(0)));
+process.stdout.write(`${JSON.stringify({ children, url: stack.bridge.url })}\n`);
