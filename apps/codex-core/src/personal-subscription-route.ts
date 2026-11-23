@@ -24,7 +24,8 @@ export function personalSubscriptionTarget(
 ): URL {
   const origin = new URL(upstream).origin;
   if (!/^[a-f0-9]{64}$/u.test(route.subscription)) throw new Error("Invalid personal subscription");
-  const target = new URL(`/personal/${route.subscription}/v1/${route.endpoint}`, origin);
+  // The request-derived part only follows the fixed path prefix, after the upstream's own origin.
+  const target = new URL(`${origin}/personal/${route.subscription}/v1/${route.endpoint}`);
   if (target.origin !== origin) throw new Error("Personal subscription target left its upstream");
   return target;
 }
