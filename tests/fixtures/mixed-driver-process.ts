@@ -59,7 +59,7 @@ if (kind === "pi" || kind === "dsh-acp") {
     else if (command === "hold" && faux) { faux.setResponses([fauxAssistantMessage("Pi held native execution. ".repeat(2000)), ...Array.from({ length: 20 }, () => fauxAssistantMessage("Synthetic Pi done."))]); result = true; }
     else throw new Error("Unknown isolated native control operation");
     response.setHeader("content-type", "application/json"); response.end(JSON.stringify({ result }));
-  })().catch(error => { response.writeHead(500, { "content-type": "application/json" }); response.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) })); }); });
+  })().catch(error => { response.writeHead(500, { "content-type": "application/json" }); response.end(JSON.stringify({ error: error instanceof Error ? error.message : "Non-error fixture failure" })); }); });
   await new Promise<void>(resolve => control.listen(0, "127.0.0.1", resolve));
   await writeFile(join(root, `${kind}-host.json`), JSON.stringify({ websocketUrl: host.websocketUrl,
     controlUrl: `http://127.0.0.1:${(control.address() as any).port}`, token }), { mode: 0o600 });

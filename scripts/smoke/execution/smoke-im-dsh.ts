@@ -45,7 +45,7 @@ const endpoint=createServer(async(request,response)=>{
   response.setHeader('content-type','text/event-stream');
   const chunk=(delta:unknown,finish_reason:string|null=null)=>`data: ${JSON.stringify({...base,object:'chat.completion.chunk',choices:[{index:0,delta,finish_reason}]})}\n\n`;
   response.end(chunk(message)+chunk({},invoke?'tool_calls':'stop')+'data: [DONE]\n\n');
- }catch(error){response.writeHead(500,{'content-type':'application/json'});response.end(JSON.stringify({error:error instanceof Error?error.message:String(error)}));}
+ }catch(error){response.writeHead(500,{'content-type':'application/json'});response.end(JSON.stringify({error:error instanceof Error?error.message:'Non-error fixture failure'}));}
 });
 try{
  await new Promise<void>(resolve=>endpoint.listen(0,'127.0.0.1',resolve));
