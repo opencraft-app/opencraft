@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "require_pinned_upstream": true,
+  "product_roots": [
+    "products/"
+  ],
+  "core_source_globs": [
+    "apps/*/src/**",
+    "packages/*/src/**",
+    "plugins/*/src/**"
+  ],
+  "core_duplicate_globs": [
+    "apps/*/src/**",
+    "packages/*/src/**",
+    "plugins/*/src/**",
+    "tests/**",
+    "deploy/**",
+    "scripts/**",
+    "config/**"
+  ],
+  "private_only_prefixes": [
+    {
+      "prefix": "products/",
+      "reason": "Private product assembly: identity, branding, enterprise integrations, deployment configuration and product-owned tests."
+    },
+    {
+      "prefix": "docs/product/",
+      "reason": "Private product operating documentation."
+    },
+    {
+      "prefix": ".ci/downstream-boundary/",
+      "reason": "This fork's boundary policy; it grants no exception to shared core."
+    }
+  ],
+  "pinned_differences": [
+    {
+      "path": "apps/workbench-web/src/example-hook.ts",
+      "upstream_entry": "100644 blob 0000000000000000000000000000000000000001",
+      "downstream_entry": "100644 blob 0000000000000000000000000000000000000002",
+      "reason": "Illustrative pin: replace with a reviewed shared-file change, or delete this entry.",
+      "upstream": "none: illustrative example entry"
+    }
+  ]
+}
