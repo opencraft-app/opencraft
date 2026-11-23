@@ -243,6 +243,49 @@ Codex chats without a selected project get a private directory per thread under
 workspace mount. DSH uses `sessions/dsh`. Later turns reuse the working directory
 persisted by the selected engine; an explicit Project cwd stays authoritative.
 
+### Optional per-owner privilege drop
+
+By default every Hands owner (`browser`, `execution`, `terminal`, `files`) runs
+with the Hands container identity, and nothing below changes that. A Hands entry
+that must run its supervisor as UID 0 (selected at image build time with
+`OPENCRAFT_CONTAINER_HANDS_ENTRY`) can keep selected owners unprivileged by
+passing a declarative policy to the core startup:
+
+```js
+import { startContainerHands } from "./hands-application.mjs";
+
+await startContainerHands({
+  ownerPrivileges: { browser: { uid: 1000, gid: 1000, home: "/var/lib/opencraft/browser-home" } },
+});
+```
+
+Keys are owner roles from `HANDS_OWNER_PROCESSES`; each entry accepts only
+numeric `uid` and `gid` and an optional `home`. The policy is validated once,
+before any service or owner starts, and any problem stops startup instead of
+leaving the owner as root:
+
+- unknown roles or settings, UID/GID 0 and non-integer identities are rejected;
+- the supervisor must itself run as UID 0;
+- `home` must be a normalized absolute path. The browser's state directory stays
+  `OPENCRAFT_BROWSER_DATA_DIR` (also the default `home`), so the health check and
+  Gateway socket path are unchanged; other roles must name `home` explicitly;
+- each directory must already exist as a real directory owned by the dropped
+  UID:GID with no group/other access, and every ancestor must be a non-link
+  directory owned by root or that UID and not writable by others (root-owned
+  sticky directories such as `/tmp` are allowed). Startup never creates, chmods or
+  re-owns these directories; provision them before switching modes.
+
+A dropped owner is spawned with that UID and GID (supplementary groups are
+cleared), `HOME` set to its home, and the supervisor's `XDG_*` user directories
+removed. A custom `spawnOwner` hook receives these options already applied and
+must pass them through. The dropped owner still needs read/execute access to the
+runtime and to `OPENCRAFT_WORKSPACE_DIR`; if spawning fails, Hands stops.
+
+The privilege drop does not change who can connect to owner sockets. A dropped
+browser creates `owner.sock` in its own directory, so Gateway should run with the
+same UID. Owners left as root create root-owned sockets; giving non-root clients
+access to them is a deployment decision outside this option.
+
 ## Optional separate model proxy
 
 `compose.proxy.yaml` runs the split Codex account Core (account pool, configured

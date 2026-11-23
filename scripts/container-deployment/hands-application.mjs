@@ -3,6 +3,7 @@ import { mkdir, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deploymentPaths } from './paths.mjs';
+import { handsOwnerSpawnOptions, resolveHandsOwnerPrivileges } from './hands-owner-privileges.mjs';
 
 /**
  * Owner processes Hands starts, in start order. `role` is the stable identity a
@@ -19,13 +20,24 @@ export const HANDS_OWNER_PROCESSES = Object.freeze([
 /**
  * `spawnOwner(command, args, options, { role })` defaults to `child_process.spawn`,
  * which ignores the fourth argument; wrappers should select policy by `role`.
+ *
+ * `ownerPrivileges` optionally runs named owner roles under an unprivileged
+ * `{ uid, gid, home? }` while the supervisor runs as UID 0 (see
+ * hands-owner-privileges.mjs). It is validated before anything starts; the
+ * resulting `uid`, `gid` and `env.HOME` are already in the options `spawnOwner`
+ * receives. Without it, every owner inherits the supervisor identity as before.
  */
-export async function startContainerHands({ startServices = async () => [], spawnOwner = spawn } = {}) {
+export async function startContainerHands({ startServices = async () => [], spawnOwner = spawn, ownerPrivileges } = {}) {
 const data = process.env.OPENCRAFT_BROWSER_DATA_DIR;
 if (!data || !data.startsWith('/')) throw new Error('Set OPENCRAFT_BROWSER_DATA_DIR to an absolute path');
-await mkdir(data, { recursive: true, mode: 0o700 });
-const info = await stat(data);
-if (info.uid !== process.getuid() || (info.mode & 0o077) !== 0) throw new Error('Hands data directory must be private and owned by this user');
+const privileges = resolveHandsOwnerPrivileges(ownerPrivileges, { roles: HANDS_OWNER_PROCESSES.map(owner => owner.role) });
+// A dropped browser keeps the declared directory it was validated against; the
+// supervisor never creates or re-owns it.
+if (!privileges.browser) {
+  await mkdir(data, { recursive: true, mode: 0o700 });
+  const info = await stat(data);
+  if (info.uid !== process.getuid() || (info.mode & 0o077) !== 0) throw new Error('Hands data directory must be private and owned by this user');
+}
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..'), children = [];
 let stopping;
 let services = [], starting = true, failed = false;
@@ -42,7 +54,8 @@ services = await startServices(() => { failed = true; if (!starting) void stop(1
 starting = false;
 if (failed) { await stop(1); return; }
 for (const { role, entry, args } of HANDS_OWNER_PROCESSES) {
-  const child = spawnOwner(join(root, 'bin/node'), [join(root, 'runtime', entry), ...args], { cwd: process.env.OPENCRAFT_WORKSPACE_DIR, env: process.env, stdio: 'inherit', shell: false }, { role });
+  const options = handsOwnerSpawnOptions({ cwd: process.env.OPENCRAFT_WORKSPACE_DIR, env: process.env, stdio: 'inherit', shell: false }, privileges[role]);
+  const child = spawnOwner(join(root, 'bin/node'), [join(root, 'runtime', entry), ...args], options, { role });
   child.once('error', () => void stop(1)); child.once('exit', () => { if (!stopping) void stop(1); }); children.push(child);
 }
 process.once('SIGINT', () => void stop(0)); process.once('SIGTERM', () => void stop(0));
