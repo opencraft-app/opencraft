@@ -32,6 +32,9 @@ import { GitConnections, describeGitProviders, type GitConnectionProvider } from
 import { githubConnectionProvider } from "./github-provider.js";
 import type { AssetAdmission } from "./worker.js";
 import type { PersonalMcpMethods, PersonalMcpOwner } from "./personal-mcp.js";
+import { AccountEnvironment } from "@opencraft/execution-environment/account-environment";
+import { WorkspaceActorAuthority, workspaceAdmission } from "@opencraft/access-control/actor-admission-reader";
+import { createActorSettings, type AssetActorAuthority } from "./actor-settings.js";
 
 /** Where this owner publishes its issuer public key for local supervisors, and
  * the explicit rotation generation of the sealed issuer key. */
@@ -66,6 +69,10 @@ export async function createAssetsStorage(
      * `personalMcp*` methods join this owner's; it closes before the
      * execution records and the vault. */
     personalMcp?: (vault: EmployeeGitVaultStore) => PersonalMcpOwner;
+    /** The committed Actor/member projection the settings methods admit a
+     * Human proof with (`createHeadlessExecutionRecords().actors`). Without
+     * it, a read-only reader over this data directory's Actor store. */
+    actors?: AssetActorAuthority;
   } = {},
 ) {
   // ENV for a launch needs the durable admission this owner reads itself.
@@ -83,8 +90,17 @@ export async function createAssetsStorage(
   let environment: EnvironmentLaunchOwner | undefined;
   let gitSeal: PersonalGitSealOwner | undefined;
   let personalMcp: PersonalMcpOwner | undefined;
+  let closed = false;
+  // Opened lazily, on the first settings call, and only without a composition's own.
+  const actorReader = options.actors ? undefined : new WorkspaceActorAuthority(directory);
+  const actors: AssetActorAuthority = options.actors ?? {
+    admit: (raw) => workspaceAdmission(raw as never),
+    current: (access, pending) => actorReader!.current(access, pending),
+    role: (access) => actorReader!.role(access.actorId),
+  };
   // Retire the issuer key before the admission reader and the vault close.
   const release = async () => {
+    closed = true;
     environment?.close();
     gitSeal?.close();
     try {
@@ -95,7 +111,11 @@ export async function createAssetsStorage(
       try {
         execution?.close();
       } finally {
-        vault.close();
+        try {
+          actorReader?.close();
+        } finally {
+          vault.close();
+        }
       }
     }
   };
@@ -168,6 +188,23 @@ export async function createAssetsStorage(
       }
     };
     const git = new GitConnections(vault, providers);
+    // Settings for an original Human proof: the Worker derives the partition
+    // and the role. Personal ENV exists where this owner issues execution ENV.
+    const actorSettings = createActorSettings({
+      actors,
+      configurations,
+      git,
+      ...(metadata
+        ? {
+            environment: {
+              values: new AccountEnvironment(vault),
+              projects: () => metadata.projects(),
+              ...(options.environmentAccounts ? { accounts: options.environmentAccounts } : {}),
+            },
+          }
+        : {}),
+      closed: () => closed,
+    });
     function check(access: AssetAdmission) {
       if (
         !access ||
@@ -230,7 +267,10 @@ export async function createAssetsStorage(
       },
     });
     return {
-      concurrentReads: execution
+      concurrentReads: [
+        // Committed remembered Project names; never behind an unrelated write.
+        ...(actorSettings.environment ? ["environmentProjects"] : []),
+        ...(execution
         ? [
             "executionGitGrant",
             "executionGitReservation",
@@ -247,7 +287,8 @@ export async function createAssetsStorage(
                 ]
               : []),
           ]
-        : [],
+        : []),
+      ],
       ready: {
         outcome: vault.outcome,
         workspaceExecution: workspaces !== undefined && workspaces.workspaceExecution !== false,
@@ -259,6 +300,7 @@ export async function createAssetsStorage(
         gitAuthority: execution ? vault.personalGitAuthority("actor") : null,
         environmentIssuer: environment?.issuer ?? null,
         environmentTerminal: !!environment && !!execution?.actor,
+        environmentSettings: actorSettings.environment !== undefined,
       },
       methods: {
         ...Object.fromEntries(
@@ -274,6 +316,8 @@ export async function createAssetsStorage(
           ]),
         ),
         ...personalMcpMethods,
+        ...actorSettings.settings,
+        ...actorSettings.environment,
         // Trusted installed-file delivery only; no configuration HTTP action.
         adoptWorkspaceInstallation: (path: string) =>
           budgetCall(async () => {

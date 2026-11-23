@@ -5,6 +5,7 @@ import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import type { UserMessageTimelineBlock } from "@opencraft/chat-core";
 import { ImagePreview, WebUserMessageDocument, resolveStandardChatResource, writeTextToClipboard } from "@opencraft/chat-render-web";
 import { AlertIcon as AlertCircle, CircleIcon as Circle, TextFileIcon as FileText, ImageIcon, MessageIcon as MessageSquare, ToolIcon as Wrench, PersonIcon as UserRound } from "@opencraft/design-system-web/action-icons";
+import { isTouchInteraction } from "@opencraft/design-system-web/input-presentation";
 import {
   type ReactNode,
   useContext,
@@ -408,9 +409,9 @@ export function UserMessageBlock({ block, hookStatsAccessory }: {
       onClick={event => {
         // Touch has no hover: focus the message after a plain-text tap. Native
         // focus then owns disclosure and dismissal, including taps elsewhere.
-        const touchInput = document.documentElement.hasAttribute("data-touch-interaction")
-          || window.matchMedia("(any-pointer: coarse), (hover: none)").matches;
-        if (!layout.hasText || !touchInput) return;
+        // The current modality describes this click; a mouse click on a
+        // touch-capable laptop keeps hover disclosure.
+        if (!layout.hasText || !isTouchInteraction(event.currentTarget.ownerDocument)) return;
         const target = event.target;
         if (!(target instanceof Element) || target.closest(USER_MESSAGE_INTERACTIVE_SELECTOR)) return;
         const selection = window.getSelection();

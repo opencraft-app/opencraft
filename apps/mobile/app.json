@@ -9,7 +9,10 @@
     "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "dev.opencraft.workbench"
+      "bundleIdentifier": "dev.opencraft.workbench",
+      "config": {
+        "usesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "dev.opencraft.workbench",

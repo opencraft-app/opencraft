@@ -13,8 +13,8 @@ import type {
   ExecutionSessionLocator,
   ExecutionSessionOwner,
   ExecutionSessionReader,
-  PersonalMcpActors,
 } from "@opencraft/plugin-assets/server/personal-mcp";
+import type { AssetActorAuthority } from "@opencraft/plugin-assets/server/actor-settings";
 
 export type { ExecutionSessionLocator, ExecutionSessionOwner } from "@opencraft/plugin-assets/server/personal-mcp";
 
@@ -36,8 +36,10 @@ export type HeadlessExecutionRecords = {
    * the same lease, Actor and member checks as Git execution admission. */
   sessions: ExecutionSessionReader;
   /** Rechecks a Main Human proof (`WorkspaceActorAdmission`) against the
-   * committed Actor and member records. */
-  actors: PersonalMcpActors;
+   * committed Actor and member records, and projects the Actor's committed
+   * role (`admin`/`member`) for role-dependent rules such as custom endpoints,
+   * so a composition never reads core's member tables itself. */
+  actors: AssetActorAuthority;
 };
 
 const text = (v: unknown) => typeof v === "string" && v.length > 0 && v.length <= 512 && !/[\x00-\x1f\x7f]/u.test(v);
@@ -134,6 +136,7 @@ export function createHeadlessExecutionRecords(options: {
     actors: {
       admit: (raw) => workspaceAdmission(raw as never),
       current: (access, pending) => actors.current(access, pending),
+      role: (access) => actors.role(access.actorId),
     },
   };
 }

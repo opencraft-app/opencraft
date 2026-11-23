@@ -1,6 +1,5 @@
 import type {HostFileDownloads} from '../../apps/opencraft-daemon/src/host-file-downloads';
 import { createServer, request } from 'node:http';
-import { createServer as createNetServer, type AddressInfo, type Socket } from 'node:net';
 import { Readable } from 'node:stream';
 import { once } from 'node:events';
 import { generateKeyPairSync, randomBytes, createHash } from 'node:crypto';
@@ -34,13 +33,9 @@ export async function virtualFetch(url:string, init:{headers?:Record<string,stri
 export async function selectorFixture(options:{entryOrigin?:EntryOriginResolver;appServerTarget?:string;webRoot?:string;appHost?:()=>unknown;defaultUsers?:readonly string[];legacyDefaultUsers?:readonly string[];entryName?:string;sshPublicAccess?:boolean;admissionFault?:(id:string)=>number|undefined;serverPaths?:ServerPaths;fileDownloads?:()=>HostFileDownloads;entryProtocol?:'http'|'https'}={}) {
   const directory=await mkdtemp(join(tmpdir(),'server-selector-')),cleanup:(()=>unknown)[]=[];
   cleanup.push(()=>rm(directory,{recursive:true,force:true}));
-  try {
   const pair=generateKeyPairSync('ed25519'),privateKey=pair.privateKey.export({format:'pem',type:'pkcs8'}).toString(),publicKey=pair.publicKey.export({format:'pem',type:'spki'}).toString();
-  // The origins embed the port before the relay exists, so the bound socket is held and its connections are handed to the relay;
-  // releasing it and listening again later would let any concurrent bind take the port in between.
-  const reserve=createNetServer(),handed=new Set<Socket>();let accept=(socket:Socket)=>{socket.destroy();};
-  reserve.on('connection',socket=>{handed.add(socket);socket.once('close',()=>handed.delete(socket));accept(socket);});
-  reserve.listen(0,'127.0.0.1');await once(reserve,'listening');const port=(reserve.address() as AddressInfo).port;cleanup.push(()=>new Promise<void>(r=>{reserve.close(()=>r());for(const socket of handed)socket.destroy();}));
+  // Hold the reserved listener until the relay adopts its handle: closing it first lets a later port-0 listen take the port.
+  const reserve=createServer();reserve.listen(0,'127.0.0.1');await once(reserve,'listening');const port=(reserve.address() as any).port;cleanup.push(()=>new Promise<void>(r=>reserve.close(()=>r())));
   const base=`http://127.0.0.1:${port}`,origin=`${options.entryProtocol??'http'}://entry.selection.test:${port}`,host=new URL(origin).host;
   const principals=Object.fromEntries(['alice','bob','carol'].map((name,index)=>[name,{provider:'enterprise-identity',subject:String(101+index),displayName:name,aliases:['login:'+name],attributes:{loginName:name},expiresAt:Date.now()+3600_000}]));
   const provider={authenticate:(req:any)=>principals[String(req.headers['x-fixture-user'])]??null};
@@ -79,7 +74,7 @@ export async function selectorFixture(options:{entryOrigin?:EntryOriginResolver;
     target.listen(0,'127.0.0.1');await once(target,'listening');cleanup.push(()=>new Promise<void>(r=>{target.close(()=>r());target.closeAllConnections();}));
     const route={...scope,name:id==='join'?(options.entryName??'Server'):'Lighthouse',credential:randomBytes(32).toString('base64url'),signer:new AssertionSigner(scope,privateKey),identityProvider:provider};routes.push(route);targets.push((target.address() as any).port);
   }
-  const relay=createRelayServer(routes,{authentication:{origin,provider},serverSelection:true,entryOrigin:options.entryOrigin,serverPaths:options.serverPaths,selectionDefaults:new Map([...(options.defaultUsers??[]).map(name=>[selectionIdentity(principals[name]!), 'join'] as const),...(options.legacyDefaultUsers??[]).map(name=>[selectionIdentity({provider:'enterprise-identity',subject:'login:'+name}), 'join'] as const)])});cleanup.push(()=>relay.close());accept=socket=>{relay.server.emit('connection',socket);};
+  const relay=createRelayServer(routes,{authentication:{origin,provider},serverSelection:true,entryOrigin:options.entryOrigin,serverPaths:options.serverPaths,selectionDefaults:new Map([...(options.defaultUsers??[]).map(name=>[selectionIdentity(principals[name]!), 'join'] as const),...(options.legacyDefaultUsers??[]).map(name=>[selectionIdentity({provider:'enterprise-identity',subject:'login:'+name}), 'join'] as const)])});relay.server.listen(reserve);await once(relay.server,'listening');cleanup.push(()=>relay.close());
   for(let i=0;i<routes.length;i++)clients.push(connectRelay({relay:base,credential:routes[i]!.credential,targetPort:targets[i],allowLoopbackInsecure:true}));cleanup.push(()=>clients.forEach(c=>c.close()));
   await waitFor(()=>routes.every(r=>relay.connected(r.instanceId)));
   const get=(path:string,headers:Record<string,string>={},method='GET',body?:Buffer)=>virtualFetch(base+path,{headers:{host,...headers},method,body});
@@ -90,5 +85,4 @@ export async function selectorFixture(options:{entryOrigin?:EntryOriginResolver;
     return session.headers.getSetCookie().find(c=>c.startsWith('opencraft-relay-session='))!.split(';')[0]!;
   };
   return {base,origin,host,principals,stores,clients,relay,get,login,async close(){for(const close of cleanup.reverse())await close();}};
-  } catch (error) { for(const close of cleanup.reverse())await close(); throw error; }
 }

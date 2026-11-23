@@ -139,6 +139,9 @@ jobs:
           test "$(plist_value CFBundleVersion)" = "$IOS_BUILD_NUMBER"
           version="$(plist_value CFBundleShortVersionString)"
           test "$version" = "$IOS_VERSION"
+          # Export compliance is declared in the app (only exempt encryption), so TestFlight
+          # does not hold each build for a manual answer.
+          test "$(plist_value ITSAppUsesNonExemptEncryption)" = "false"
           test -s "$application/main.jsbundle"
           codesign --verify --deep --strict "$application"
       - name: Seal the verified IPA for retention

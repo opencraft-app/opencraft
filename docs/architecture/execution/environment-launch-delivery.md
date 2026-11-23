@@ -234,8 +234,12 @@ Ports in this slice:
     Its reads are synchronous SQLite: call it only inside the vault Worker.
     It also returns `sessions` (which Human Actor owns a session phase, with
     the Git execution admission checks) and `actors` (the Human proof
-    recheck), which personal MCP tokens use
-    ([session capabilities](session-capabilities.md#personal-mcp-tokens)).
+    recheck and the Actor's committed `role`, `admin` or `member`), which
+    personal MCP tokens and the Assets settings methods use
+    ([session capabilities](session-capabilities.md#personal-mcp-tokens)). Pass
+    `actors` to `createAssetsStorage` so role-dependent rules (custom endpoints,
+    platform resources) are decided in the Worker; a composition does not read
+    core's member tables itself.
   - `@opencraft/headless-server/workspaces/execution-service`:
     `openWorkspaceExecutionService(options)`, the Gateway facade over that
     Worker's public workspace owner. With
@@ -254,11 +258,15 @@ Ports in this slice:
     main thread inside the trusted composition; `admitResource` is for a
     stored grant the caller has already authorized. Actor or membership
     changes and `close()` retire the permits they issued.
-  - `@opencraft/headless-server/workspaces/actor-admission`:
+  - `@opencraft/headless-server/workspaces/actor-admission` (the same module as
+    `@opencraft/access-control/actor-admission`; the Worker-side recheck is
+    `@opencraft/access-control/actor-admission-reader`):
     `openActorAdmission({ actors, membership, access })` issues the same Human
     proof without workspace execution (no `socketPath`/`token`), for a
     composition whose vault Worker also serves settings routes, Bot
-    environment providers or MCP sessions. It is the one implementation the
+    environment providers or MCP sessions. The Assets settings routes use it
+    through `openIdentityAssets`
+    ([Assets catalog](../extensions/assets-catalog.md#identity-compositions-openidentityassets)). It is the one implementation the
     execution service uses. `access` may be a function, for instance policy
     created after the identity; while it is absent nothing is admitted.
     Members: `admit(context)`; `admitPrincipal(principal, { provider? })` for

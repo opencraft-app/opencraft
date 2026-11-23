@@ -22,5 +22,7 @@ export interface ServerWorkbenchExtension {
 // The build owner can explicitly replace this entry with a product assembly.
 export const serverWorkbenchExtensions: readonly ServerWorkbenchExtension[] = [
   {id:'opencraft.account',preload:()=>import('@opencraft/plugin-local-account/client'),async load({fetcher}) { return (await import('@opencraft/plugin-local-account/client')).createLocalAccountExtension(fetcher, serverUrl('/__opencraft_account/')); }},
+  // Registers its Settings page only when the server enables the policy and the viewer administers it.
+  {id:'opencraft.login-admission',async load({fetcher}) { return (await import('@opencraft/plugin-login-admission/client')).createLoginAdmissionExtension(fetcher, serverUrl('/__opencraft_access/login-admission')); }},
   {id:'opencraft.observability',load:()=>createObservabilityExtension()},
 ];
