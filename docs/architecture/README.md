@@ -120,7 +120,7 @@
 | [`identity/`](identity/) | 登录与自然人身份、主体协作、多 Human、Git 身份与托管 Bot |
 | [`chat-ui/`](chat-ui/) | ChatUI 架构、会话呈现、滚动与视口、消息与附件 |
 | [`workbench/`](workbench/) | Workbench 设计语言、页面框架、导航、通知与文件预览 |
-| [`extensions/`](extensions/) | 插件内核与持久化、Connector、MCP App、云桌面、IM 与 Tasks |
+| [`extensions/`](extensions/) | 插件内核与持久化、Connector、MCP App、云桌面、IM、Tasks 与 [会话参与者](extensions/thread-participants.md) |
 | [`server/`](server/) | 服务器信息与协作空间、存储生命周期、服务器核心数据离开网络主线程（设计）、Web Push 与资源交付 |
 | [`browser/`](browser/) | 浏览器 Workbench 与 Browser Use 契约 |
 | [`mobile/`](mobile/) | 手机 WebView 容器与移动数据协调 |

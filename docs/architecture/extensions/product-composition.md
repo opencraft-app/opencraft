@@ -83,8 +83,10 @@ Priority-based account entrances and multi-item registries keep their own semant
 Thread adornment. Shell owns layout, identity and overlay exclusivity; the product
 owns data and content. The trailing slot takes its content width, stays right-aligned
 with the existing row-menu gap, and consumes no space for absent content. 企业身份
-uses it for the last three server-array participants plus a circular “…” on overflow;
-the full participant Popover and creator provenance remain product-owned.
+uses it for the last three server-array participants plus a circular “…” on overflow.
+The core participants badge, popover, creator grouping and their Host provider are
+owned by [Thread participants](thread-participants.md); an identity product
+registers them with its reader and photo resolver instead of keeping a copy.
 
 Codex Host accepts an optional Thread metadata factory against its existing shared
 SQLite and native-history port. The provider observes native results/notifications,
@@ -119,8 +121,9 @@ matches; unresolved metadata and ready empty creator/participants data are exclu
 Shell adds no unknown-membership status row or expansion control.
 When 企业身份 has no display identity, it omits the optional filter descriptor; Shell
 hides its chip and menu group without changing the stored preference or hiding rows.
-Product-specific creator semantics, account ordering and preference schemas stay
-in the plugin. The optional `api.localPreferences` port supplies generic
+Creator grouping itself is a core contribution (see
+[Thread participants](thread-participants.md)); a different grouping keeps its
+semantics, ordering and preference schema in its own plugin. The optional `api.localPreferences` port supplies generic
 product/extension/account isolation and activation fencing; see
 [persistence](plugin-persistence.md#8-插件的账号本地呈现偏好).
 

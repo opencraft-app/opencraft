@@ -2579,5 +2579,19 @@
   "crew.desk.tool.crewDispatch": "Handed work on",
   "crew.desk.tool.crewMessage": "Sent a message",
   "crew.desk.to": "To {name}",
-  "crew.desk.toFormerMember": "To someone who left the team"
+  "crew.desk.toFormerMember": "To someone who left the team",
+  "threadParticipants.view": "View conversation participants",
+  "threadParticipants.viewCount": "View conversation participants ({count, number})",
+  "threadParticipants.creator": "Creator",
+  "threadParticipants.heading": "Participants",
+  "threadParticipants.error": "Couldn't update participants",
+  "threadParticipants.retry": "Retry",
+  "threadParticipants.loading": "Loading…",
+  "threadParticipants.empty": "No identified participants yet",
+  "threadParticipants.grouping.creator": "By creator",
+  "threadParticipants.grouping.saveError": "Couldn't save this display preference",
+  "threadParticipants.grouping.loading": "Loading creators…",
+  "threadParticipants.grouping.unavailable": "Creator unavailable",
+  "threadParticipants.grouping.unknown": "Creator unknown",
+  "threadParticipants.filter.mine": "My conversations"
 }

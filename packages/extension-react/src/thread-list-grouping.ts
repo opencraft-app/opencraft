@@ -12,6 +12,8 @@ export interface ThreadListGroup {
   readonly id: string;
   readonly label: ThreadListLabel;
   readonly avatarUrl: string | null;
+  /** Identity whose photo the Shell resolves through IdentityAvatarContext when avatarUrl is null. */
+  readonly identity?: { readonly kind: string; readonly name: string };
   readonly collapsed: boolean;
   readonly threads: readonly ThreadListReference[];
 }
