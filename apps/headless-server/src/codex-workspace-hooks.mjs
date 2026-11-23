@@ -49,6 +49,20 @@ export function createCodexWorkspaceHooks(composition, hostId) {
   return Object.freeze(Object.fromEntries(Object.keys(legacy).map(key => [key, hooks[key]])));
 }
 
+/** The one workspace conversation-lifecycle owner: core's own routing, or an
+ * identity's `codexWorkspaceRouting` that carries both `releaseConversation`
+ * and `conversationScopes` (as the service from `openWorkspaceExecutionService`
+ * does). Routing without them keeps no workspace owner; carrying only one, or
+ * offering two owners, is refused. */
+export function workspaceLifecycleRouting(owned, identity) {
+  const members = identity ? ['releaseConversation', 'conversationScopes'].filter(key => identity[key] !== undefined) : [];
+  if (members.length && (members.length !== 2
+    || typeof identity.releaseConversation !== 'function' || typeof identity.conversationScopes !== 'function'))
+    throw Error('Identity workspace routing requires both lifecycle members');
+  if (owned && identity) throw Error('Workspace lifecycle has two owners');
+  return owned ?? (members.length ? identity : undefined);
+}
+
 /** Private deployment configuration, never a public settings or RPC payload. */
 export function configuredWorkspaceExecution(options, environment = process.env) {
   const socketPath = environment.OPENCRAFT_WORKSPACE_AUTHORITY_SOCKET;

@@ -238,7 +238,18 @@ Ports in this slice:
     `assistantEnvironmentConfigurationManaged` core opens no assets Worker and
     requires `codexWorkspaceRouting` from the identity; the composition opens
     this facade over its own Worker port and offers the result. It holds no
-    vault access; catalogs stay partitioned by `actor:<actorId>`.
+    vault access; catalogs stay partitioned by `actor:<actorId>`. Its
+    `releaseConversation` and `conversationScopes` are registered as the
+    conversation resources `workspace` owner (archive/delete cleanup, after
+    `browser`) and as archive reconciliation scopes, exactly as for core's own
+    routing: any `codexWorkspaceRouting` carrying both is that one owner;
+    carrying neither keeps no workspace owner; carrying one is refused. Its
+    `admit(context)` and `admitResource(actorId)` return the Human proof
+    (`WorkspaceActorAdmission`) the service itself sends, for the composition's
+    own calls to its Worker port, which rechecks it. They run on the Gateway
+    main thread inside the trusted composition; `admitResource` is for a
+    stored grant the caller has already authorized. Actor or membership
+    changes and `close()` retire the permits they issued.
 - Receiver: `createEnvironmentLaunchAdmissionReceiver({ purpose, instance,
 issuer, admission: { turn?, creation?, terminal? } })` (subpath
   `environment-launch-receiver`). `kinds` lists what it can admit (allowed for

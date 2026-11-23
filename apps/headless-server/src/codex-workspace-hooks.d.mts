@@ -16,5 +16,13 @@ export function hasCodexWorkspaceHooks(composition: CodexWorkspaceComposition): 
 export function validateCodexWorkspaceHooks(composition: CodexWorkspaceComposition): void;
 export function createCodexWorkspaceHooks(composition: CodexWorkspaceComposition, hostId: string): Readonly<CodexWorkspaceHooks>;
 
+export interface WorkspaceLifecycleRouting {
+  releaseConversation(row: {hostId: string; threadId: string; generation: number;
+    state: 'active' | 'archived' | 'deleted'}): Promise<void>;
+  conversationScopes(): {hostId: string; threadId: string}[];
+}
+export function workspaceLifecycleRouting<T extends object>(owned: T | undefined,
+  identity: (Partial<WorkspaceLifecycleRouting> & object) | undefined): (T | WorkspaceLifecycleRouting) | undefined;
+
 export function configuredWorkspaceExecution(options: {codexCoreEndpoint?: string; codexCoreAuthToken?: string},
   environment?: Record<string, string | undefined>): Readonly<{socketPath: string; token: string}> | undefined;

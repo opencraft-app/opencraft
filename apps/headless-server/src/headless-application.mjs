@@ -7,7 +7,7 @@ import { readPublishedEnvironmentIssuer } from '@opencraft/execution-environment
 import {workspaceTurnOutputContext} from './workspace-turn-output-context.mjs';
 import { restoreWorkspaceQueuedContext } from '@opencraft/opencraft-daemon/workspace-queued-context';
 import { HostWorkspaceCatalogTransport } from './host-workspace-catalog-transport.ts';
-import { createCodexWorkspaceHooks, validateCodexWorkspaceHooks, hasCodexWorkspaceHooks, configuredWorkspaceExecution } from './codex-workspace-hooks.mjs';
+import { createCodexWorkspaceHooks, validateCodexWorkspaceHooks, hasCodexWorkspaceHooks, configuredWorkspaceExecution, workspaceLifecycleRouting } from './codex-workspace-hooks.mjs';
 import { ServerInformationStore, serverInformationHttp } from './server-information.mjs';
 import { accountModelDefaultsHttp, humanActorAccess } from './account-model-defaults-http.ts';
 import { configuredModelGatewayPath, modelGatewayHttp, CodexCoreControlClient } from "@opencraft/account-pool-host";
@@ -543,8 +543,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         getInstanceAccess: () => instanceAccess, machineIdentity, actors: actorStore, sshIngressEnabled: !!ingressConfiguration,
         ...(environmentDelivered ? { environmentIssuer: Object.freeze({ ...options.environmentIssuer }) } : {}) });
       validateHeadlessIdentity(identity);
-      if (identity?.codexWorkspaceRouting !== undefined)
+      if (identity?.codexWorkspaceRouting !== undefined) {
         validateCodexWorkspaceHooks(identity.codexWorkspaceRouting);
+        workspaceLifecycleRouting(undefined, identity.codexWorkspaceRouting);
+      }
       for (const provider of identity?.capabilityProviders ?? []) capabilities.register(provider);
     }
     // One installation has one ENV owner; configuring two fails here. An
@@ -1093,6 +1095,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       }
       return service;
     };
+    // One workspace lifecycle owner: core's own routing, or identity routing
+    // that carries the lifecycle members. Without them, no workspace owner.
+    const workspaceLifecycle = workspaceLifecycleRouting(ownedWorkspaceRouting, identity?.codexWorkspaceRouting);
     conversationResources = await ConversationResourceLifecycle.open(join(dataDirectory, 'conversation-resources.json'), {
       terminal: async row => {
         if (options.terminalOwner) {
@@ -1106,9 +1111,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         if (!remoteBrowser) throw Error('Browser owner is starting');
         await remoteBrowser.releaseThread(row.hostId, row.threadId);
       },
-      ...(ownedWorkspaceRouting ? {workspace:row=>ownedWorkspaceRouting.releaseConversation(row)} : {}),
+      ...(workspaceLifecycle ? {workspace:row=>workspaceLifecycle.releaseConversation(row)} : {}),
     }, { diagnose: value => console.warn('[conversation-resources]', JSON.stringify(value)),
-      ...(ownedWorkspaceRouting ? {dependencies:{workspace:['browser']},replayOwners:['browser','workspace']} : {}),
+      ...(workspaceLifecycle ? {dependencies:{workspace:['browser']},replayOwners:['browser','workspace']} : {}),
     });
     if (remoteBrowser) remoteBrowser.conversationLifecycle = conversationResources;
     const resourceAuthority = context => {
@@ -1528,7 +1533,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       if (closing || resourceInventoryRunning) return;
       resourceInventoryRunning = true;
       try {
-        const scopes = [...await remoteBrowser.threadScopes(), ...(ownedWorkspaceRouting?.conversationScopes() ?? []),
+        const scopes = [...await remoteBrowser.threadScopes(), ...(workspaceLifecycle?.conversationScopes() ?? []),
           ...(options.terminalOwner ? await terminalService('local-codex').threadScopes() : [])];
         const hosts = new Set(scopes.map(scope => scope.hostId).filter(id => ['local-codex', 'opencraft-server'].includes(id)));
         // No resources means no reason to cold-start an execution engine merely

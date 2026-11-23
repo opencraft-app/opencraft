@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createCodexWorkspaceHooks,validateCodexWorkspaceHooks,configuredWorkspaceExecution} from '../../apps/headless-server/src/codex-workspace-hooks.mjs';
+import {createCodexWorkspaceHooks,validateCodexWorkspaceHooks,configuredWorkspaceExecution,workspaceLifecycleRouting} from '../../apps/headless-server/src/codex-workspace-hooks.mjs';
 const names=['decorateNativeTransport','finalizeNativeCreation','finalizeNativeResume','requiresWorkspaceResume','restoreProvisionalWorkspace'];
 test('physical hook factory separates receipts even when request IDs repeat',async()=>{
  let generation=0;const receipts=[];
@@ -50,4 +50,16 @@ test('private startup configuration never silently enables or downgrades unmatch
    assert.throws(()=>configuredWorkspaceExecution(options,{OPENCRAFT_WORKSPACE_AUTHORITY_SOCKET:path}),/matched private Core/);
  assert.throws(()=>configuredWorkspaceExecution({},environment),/matched private Core/);
  assert.throws(()=>configuredWorkspaceExecution({...options,codexCoreAuthToken:'short'},environment),/matched private Core/);
+});
+test('workspace lifecycle has one owner: core routing, or identity routing carrying both members',()=>{
+ const lifecycle={releaseConversation:async()=>{},conversationScopes:()=>[]};
+ const owned={...lifecycle,createCodexWorkspaceHooks(){}},identity={...lifecycle,createCodexWorkspaceHooks(){},readCatalog:async()=>({})};
+ assert.equal(workspaceLifecycleRouting(owned,undefined),owned);
+ assert.equal(workspaceLifecycleRouting(undefined,identity),identity);
+ assert.equal(workspaceLifecycleRouting(undefined,{createCodexWorkspaceHooks(){},readCatalog:async()=>({})}),undefined,'Routing without lifecycle members keeps no workspace owner');
+ assert.equal(workspaceLifecycleRouting(undefined,undefined),undefined);
+ assert.throws(()=>workspaceLifecycleRouting(owned,identity),/two owners/);
+ assert.throws(()=>workspaceLifecycleRouting(undefined,{releaseConversation:async()=>{}}),/both lifecycle members/);
+ assert.throws(()=>workspaceLifecycleRouting(undefined,{conversationScopes:()=>[]}),/both lifecycle members/);
+ assert.throws(()=>workspaceLifecycleRouting(undefined,{releaseConversation:1,conversationScopes:()=>[]}),/both lifecycle members/);
 });
