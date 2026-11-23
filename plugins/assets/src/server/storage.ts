@@ -28,7 +28,7 @@ import type {
 } from "@opencraft/execution-environment/environment-delivery";
 import { PLATFORM_ASSET_SCOPE } from "../contract.js";
 import { SandboxConfigurations, SandboxConfigurationError } from "./configurations.js";
-import { GitConnections, type GitConnectionProvider } from "./git-connections.js";
+import { GitConnections, describeGitProviders, type GitConnectionProvider } from "./git-connections.js";
 import { githubConnectionProvider } from "./github-provider.js";
 import type { AssetAdmission } from "./worker.js";
 
@@ -242,6 +242,7 @@ export async function createAssetsStorage(
         workspaceExecution: workspaces !== undefined && workspaces.workspaceExecution !== false,
         botExecution: workspaces?.botExecution === true,
         gitHosts: providers.map((p) => p.host),
+        gitProviders: describeGitProviders(providers),
         gitAuthority: execution ? vault.personalGitAuthority("actor") : null,
         environmentIssuer: environment?.issuer ?? null,
         environmentTerminal: !!environment && !!execution?.actor,

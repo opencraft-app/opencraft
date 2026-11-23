@@ -1,5 +1,16 @@
 import { useState, useEffect, useRef } from "react";
-import { mergeGitConnections, type GitConnectionsSnapshot } from "./contract.js";
+import { mergeGitConnections, type GitConnectionInput, type GitConnectionsSnapshot } from "./contract.js";
+/** The controller surface a Git host editor consumes. */
+export interface GitConnectionController {
+  snapshot: GitConnectionsSnapshot | null;
+  busy: boolean;
+  unauthorized: boolean;
+  operationErrors: Record<string, string>;
+  operationCodes: Record<string, string>;
+  load(input?: GitConnectionInput): Promise<boolean>;
+  getSnapshot(): GitConnectionsSnapshot | null;
+  clearHostErrors(host: string): void;
+}
 export function useGitConnectionController<
   S extends GitConnectionsSnapshot,
   I extends { host: string; revision: number; action: string },

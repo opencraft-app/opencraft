@@ -16,9 +16,44 @@ export interface GitConnectionsSnapshot {
   scope: string;
   hosts: Record<string, GitConnectionStatus>;
 }
+/** How a compiled provider authenticates Git transport. `token` providers verify an
+ * account token with the remote service; `ssh` providers keep a generated key pair
+ * in the vault and the user registers its public key on the Git host. */
+export type GitConnectionAuth = "token" | "ssh";
+/** Non-secret provider metadata a server advertises beside its Git hosts. An SSH
+ * provider's name is the deployment's product name for its host; it is shown as an
+ * entity name, not translated copy. */
+export type GitProviderDescriptor = { host: string; auth: "token" } | { host: string; auth: "ssh"; name: string };
 export type GitConnectionInput<H extends string = string> = { host: H; revision: number } & (
-  { action: "save"; username: string; name: string; email: string; token?: string } | { action: "clear" | "register" }
+  | { action: "save"; username: string; name: string; email: string; token?: string }
+  | { action: "clear" | "register" | "delete-ssh" }
+  | { action: "generate-ssh"; username?: string; name?: string; email?: string }
 );
+const GIT_HOST = /^[a-z0-9.-]{1,253}$/u;
+/** Strict parse of advertised provider metadata. Unknown fields, duplicate hosts and
+ * control characters reject the whole list instead of being partially trusted. */
+export function parseGitProviders(value: unknown): GitProviderDescriptor[] {
+  if (!Array.isArray(value) || value.length > 32) throw Error("invalid");
+  const seen = new Set<string>();
+  return value.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw Error("invalid");
+    const row = item as Record<string, unknown>;
+    if (typeof row.host !== "string" || !GIT_HOST.test(row.host) || seen.has(row.host)) throw Error("invalid");
+    seen.add(row.host);
+    if (row.auth === "token" && Object.keys(row).every((k) => k === "host" || k === "auth"))
+      return { host: row.host, auth: "token" as const };
+    if (
+      row.auth === "ssh" &&
+      Object.keys(row).every((k) => k === "host" || k === "auth" || k === "name") &&
+      typeof row.name === "string" &&
+      row.name.trim() &&
+      row.name.length <= 64 &&
+      !/[\x00-\x1f\x7f]/u.test(row.name)
+    )
+      return { host: row.host, auth: "ssh" as const, name: row.name };
+    throw Error("invalid");
+  });
+}
 /** Strict metadata projection: a provider response can never smuggle stored secret bytes into UI state. */
 export function parseGitConnections(value: unknown, scope: string, hosts: readonly string[]): GitConnectionsSnapshot {
   const object = (v: unknown): Record<string, unknown> => {

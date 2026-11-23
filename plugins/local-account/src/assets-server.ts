@@ -98,7 +98,12 @@ export async function openHumanAssets(options: {
       response.end(
         JSON.stringify(
           status === 200
-            ? { version: 1, scope: access?.current() ? access.scope : null, gitHosts: owner.gitHosts }
+            ? {
+                version: 1,
+                scope: access?.current() ? access.scope : null,
+                gitHosts: owner.gitHosts,
+                gitProviders: owner.gitProviders,
+              }
             : { error: "unavailable" },
         ),
       );
