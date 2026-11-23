@@ -129,6 +129,17 @@ export class PersonalGitEnvironment {
       this.worker!.postMessage({ type: 'status', id, scope });
     }));
   }
+  /** Binding metadata for the account a sealed grant names, checked against the
+   * same live authority as a command. Never returns credential material. */
+  grantStatus(capability: string, threadId: string): Promise<unknown> {
+    if (this.mode !== 'execution' || this.unavailable || this.closed || !this.worker) return Promise.reject(Error('personal_git_bridge_unavailable'));
+    const id = randomBytes(16).toString('hex');
+    return this.ready.then(() => new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { this.pending.delete(id); reject(Error('personal_git_bridge_unavailable')); }, 5000);
+      this.pending.set(id, { resolve, reject, timer });
+      this.worker!.postMessage({ type: 'grant-status', id, capability, threadId });
+    }));
+  }
   static fromEnvironment(directory: string, issuer?: { authority: string; seal(scope: GitGrantScope): string }, mode?: 'execution' | 'issuer' | 'status'): PersonalGitEnvironment | undefined {
     const runtime = process.env.OPENCRAFT_GIT_RUNTIME_DIRECTORY;
     if (!runtime) return undefined;

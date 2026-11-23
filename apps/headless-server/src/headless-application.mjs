@@ -48,6 +48,7 @@ import { ConversationResourceTransport } from './conversation-resource-transport
 import { RemoteBrowserService } from './remote-browser-service.mjs';
 import { RemoteBrowserCapabilities } from './remote-browser/capabilities.ts';
 import { createCapabilityContextResolver } from './capability-execution-context.ts';
+import { createGitStatusCapability } from './git-status-capability.ts';
 import { createBrowserGrantResolver } from './remote-browser/execution-grant.ts';
 import { connectBrowserOwner } from './remote-browser-owner.mjs';
 
@@ -132,6 +133,7 @@ import { humanLoginPage } from './human-login-page.ts';
 import { connectRelay, loadRelayConnection } from '@opencraft/plugin-relay-connect/server';
 import { validateHeadlessIdentity, validateEnvironmentDelivery } from "./headless-identity.mjs";
 import { startHeadlessRuntimePlugins, validateRuntimePluginOptions } from "./runtime-plugins.mjs";
+import { installHeadlessExtensions, loadHeadlessExtensions, validateHeadlessExtensions } from "./headless-extensions.mjs";
 import { createHubController } from '@opencraft/hub-network/controller';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -331,6 +333,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   if (composition.close !== undefined && typeof composition.close !== "function") throw new Error("Invalid Headless disposer");
   if (composition.isHuman !== undefined && typeof composition.isHuman !== "function") throw new Error("Invalid Headless human qualification");
   const runtimePluginConfiguration = validateRuntimePluginOptions(composition.runtimePlugins);
+  // Extension modules are imported and validated before startup creates any resource.
+  const extensions = await loadHeadlessExtensions(validateHeadlessExtensions(composition.extensions));
   const root = resolve(options.root ?? packageRoot);
   const dataDirectory = resolve(options.dataDirectory ?? join(homedir(), ".opencraft-server"));
   const webRoot = resolve(options.webRoot ?? join(root, "web"));
@@ -366,10 +370,16 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     cacheDirectory: process.env.OPENCRAFT_PRODUCT_PLUGIN_CACHE_DIRECTORY || join(dataDirectory, 'product-plugin-packs'),
     metadata: releaseManifest.productPlugins ?? null });
   const identityFence = createCommitFenceBuffer();
-  const serverStorage = await openServerCoreOwner(dataDirectory, { entry: ownerEntry(import.meta.url, 'server-core'), data: { identityFence } });
+  // Installed before the storage owners: the orchestration Worker receives the
+  // communication module, and every later owner reads the installed extensions.
+  // Released only once both owners have closed.
+  const releaseExtensions = installHeadlessExtensions(extensions);
+  let serverStorage;
+  try { serverStorage = await openServerCoreOwner(dataDirectory, { entry: ownerEntry(import.meta.url, 'server-core'), data: { identityFence } }); }
+  catch (error) { releaseExtensions(); throw error; }
   const orchestrationStorage = new OrchestrationRuntimeWorker(join(dataDirectory, 'opencraft-server.sqlite'));
-  try { await orchestrationStorage.start(); } catch (error) { await orchestrationStorage.close().catch(()=>{}); await serverStorage.close(); throw error; }
-  const releaseLock = async () => { await orchestrationStorage.close(); await serverStorage.close(); };
+  try { await orchestrationStorage.start(); } catch (error) { await orchestrationStorage.close().catch(()=>{}); await serverStorage.close(); releaseExtensions(); throw error; }
+  const releaseLock = async () => { await orchestrationStorage.close(); await serverStorage.close(); releaseExtensions(); };
   let agent;
   let dshAgent;
   let releasePiOwner;
@@ -393,6 +403,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let workspaceRouting;
   let ownedWorkspaceRouting;
   let humanGitExecution;
+  let withdrawGitStatus;
   // The one opaque ENV vault-owner port: a downstream port or the core vault Worker.
   let environmentLaunch;
   let actorStore;
@@ -449,7 +460,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       let entryClosing;
       const closeEntry = () => entryClosing ??= settle([
         () => hubController?.close(), () => relay?.close(), () => ingress?.close(), () => sshNativeRpc?.close(),
-        () => codexReadiness?.close(), () => usageQueries?.close(), async () => { await browserCapabilities?.close(); await remoteBrowser?.close(); },
+        () => codexReadiness?.close(), () => usageQueries?.close(), async () => { withdrawGitStatus?.(); await browserCapabilities?.close(); await remoteBrowser?.close(); },
         () => fileDownloads?.close(), () => desktop?.close(), () => turnPush?.close(),
         () => availabilityNotification?.close(), () => imPlugins?.close(),
       ]);
@@ -605,6 +616,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           return state==='active'&&!closing&&(await resolveExecutionNative(handoff.scope.threadId))?.incarnation===native.incarnation;
         },
       });
+      // The personal Git status tool exists only where the human Git owner does.
+      withdrawGitStatus=capabilities.register(createGitStatusCapability(humanGitExecution));
     }
     environmentLaunch = identity?.environmentLaunch ?? assetsStorage?.environmentLaunch;
     if (coreEnvironmentLaunch && !assetsStorage?.environmentLaunch) throw new Error('Environment delivery requires the sole vault owner');

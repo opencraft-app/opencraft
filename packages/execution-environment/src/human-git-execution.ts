@@ -27,10 +27,30 @@ export function humanGitRuntimeDirectory(
   return directory;
 }
 
+/** Non-secret binding state of one configured Git host for the run's Actor. */
+export interface HumanGitHostStatus {
+  readonly host: string;
+  readonly bound: boolean;
+  /** Transport the bound credential authenticates with; null when unbound. */
+  readonly transport: "ssh" | "https" | null;
+  readonly signing: boolean;
+  readonly username: string | null;
+}
+/** Binding state for the exact live lease the owner verified. */
+export interface HumanGitStatus {
+  readonly account: string;
+  readonly executionId: string;
+  readonly leaseGeneration: number;
+  readonly hosts: readonly HumanGitHostStatus[];
+}
+
 export interface HumanGitExecutionPort {
   prepare(input: GitExecutionLocator): Promise<ExecutionEnvironmentSnapshot>;
   reserve(input: GitExecutionLocator): Promise<ExecutionEnvironmentSnapshot>;
   handoff(input: GitExecutionLocator): Promise<GitExecutionHandoff | null>;
+  /** Null when the run has no personal Git authority; rejects when it cannot
+   * be verified now. */
+  status(input: GitExecutionLocator): Promise<HumanGitStatus | null>;
   close(): Promise<void>;
 }
 /** Compiled host composition only. No browser route, raw credential read, or
@@ -153,8 +173,21 @@ export function createHumanGitExecution(options: {
       throw Error("git_execution_unavailable");
     return snapshot(handoff, grant);
   }
+  async function status(input: GitExecutionLocator): Promise<HumanGitStatus | null> {
+    const handoff = await checkedHandoff(input);
+    if (!handoff) return null;
+    const value = await broker().grantStatus(handoff.capability, handoff.scope.threadId);
+    if (closed) throw Error("git_execution_unavailable");
+    return {
+      account: handoff.scope.account,
+      executionId: handoff.scope.executionId,
+      leaseGeneration: handoff.scope.leaseGeneration,
+      hosts: hostStatuses(value, options.hosts),
+    };
+  }
   return {
     handoff: checkedHandoff,
+    status,
     prepare: (input) => prepare(input, false),
     reserve: (input) => prepare(input, true),
     async close() {
@@ -162,4 +195,23 @@ export function createHumanGitExecution(options: {
       await bridge?.close();
     },
   };
+}
+
+/** Worker replies are re-validated: only the configured hosts and the known
+ * non-secret fields cross into the caller. */
+function hostStatuses(value: unknown, hosts: readonly string[]): HumanGitHostStatus[] {
+  const rows = (value as { hosts?: unknown } | null)?.hosts;
+  if (!Array.isArray(rows)) throw Error("git_execution_unavailable");
+  return hosts.map((host) => {
+    const row = rows.find((candidate) => (candidate as { host?: unknown } | null)?.host === host) as
+      | Record<string, unknown>
+      | undefined;
+    if (!row || typeof row.bound !== "boolean") throw Error("git_execution_unavailable");
+    const transport = row.bound && (row.transport === "ssh" || row.transport === "https") ? row.transport : null;
+    const username =
+      row.bound && typeof row.username === "string" && row.username.length <= 256 && !/[\x00-\x1f\x7f]/u.test(row.username)
+        ? row.username
+        : null;
+    return { host, bound: row.bound, transport, signing: row.bound && row.signing === true, username };
+  });
 }

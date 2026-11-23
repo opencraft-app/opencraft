@@ -60,10 +60,48 @@ function validateGroupCreateOptions(options:CommunicationExtension['groupCreateO
     ids.add(option.id);
   }
 }
+const EXTENSION_FUNCTIONS=['synchronizeOwner','synchronize','channelFiles','groupDisplayTitle','groupMutation','groupCreated',
+  'senderHuman','avatar','fingerprint','arrival','nativeMessage','mentionDelivery','deliveryAllowed','outboundMentions','replyTarget',
+  'outboundPresentation','command'] as const satisfies readonly (keyof CommunicationExtension)[];
+// Every member is either listed above or groupCreateOptions, so validation keeps up with the interface.
+const everyMemberValidated:[Exclude<keyof CommunicationExtension,'groupCreateOptions'|typeof EXTENSION_FUNCTIONS[number]>] extends [never]?true:never=true;
+void everyMemberValidated;
+/** Rejects anything that is not a communication extension: unknown members,
+ * non-function callbacks and malformed group creation options. */
+export function validateCommunicationExtension(value:unknown):asserts value is CommunicationExtension {
+  if(!value||typeof value!=='object'||Array.isArray(value))throw Error('Invalid communication extension: expected an object');
+  for(const [key,member] of Object.entries(value)) {
+    if(key==='groupCreateOptions')continue;
+    if(!(EXTENSION_FUNCTIONS as readonly string[]).includes(key))throw Error(`Invalid communication extension: unknown member ${key}`);
+    if(member!==undefined&&typeof member!=='function')throw Error(`Invalid communication extension: ${key} must be a function`);
+  }
+  validateGroupCreateOptions((value as CommunicationExtension).groupCreateOptions);
+}
+let composed=false;
+/** Import-time installation, kept for existing entries. Reinstalling the same
+ * value is a no-op; it never replaces a different or composition-owned extension. */
 export function installCommunicationExtension(value:CommunicationExtension,url?:string) {
+  if(composed)throw Error('Communication extension already installed by server composition');
   if(extension&&extension!==value)throw Error('Communication extension already installed');
   validateGroupCreateOptions(value.groupCreateOptions);
   extension=value;moduleURL=url;
+}
+/** Server composition installation: exclusive for one server lifetime. The module
+ * URL is re-imported by storage Workers, so it must export `communicationExtension`.
+ * Returns the release used after that server has closed its storage owners. */
+export function claimCommunicationExtension(value:unknown,url:string):()=>void {
+  validateCommunicationExtension(value);
+  if(typeof url!=='string'||!URL.canParse(url))throw Error('Invalid communication extension module URL');
+  if(extension)throw Error(extension===value
+    ?'Communication extension already installed; install it once, either through server composition or by import'
+    :'A different communication extension is already installed');
+  extension=value;moduleURL=url;composed=true;
+  let released=false;
+  return ()=>{
+    if(released)return;
+    released=true;
+    if(extension===value&&composed){extension=undefined;moduleURL=undefined;composed=false;}
+  };
 }
 /** Declared group creation options, already validated at installation. */
 export const groupCreateOptions=()=>extension?.groupCreateOptions??[];

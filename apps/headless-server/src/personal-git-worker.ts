@@ -421,8 +421,36 @@ parentPort!.on("message", (message) => {
     }
     return;
   }
+  if (message.type === "grant-status") {
+    void grantStatus(message.capability, message.threadId).then(
+      (result) => parentPort!.postMessage({ id: message.id, result }),
+      () => parentPort!.postMessage({ id: message.id, error: "personal_git_execution_unavailable" }),
+    );
+    return;
+  }
   // Grants are sealed attestations; preparing another scope cannot revoke a live lease.
 });
+/** Binding metadata for the account a live sealed grant names. Reports only
+ * which kinds of material are present; tokens and private keys never leave. */
+async function grantStatus(capability: unknown, threadId: unknown) {
+  const scope = openGitGrant(key, capability);
+  const before = authority(scope ?? undefined);
+  if (closed || !scope || typeof threadId !== "string" || scope.threadId !== threadId || !before)
+    throw Error("unavailable");
+  if (!(await liveAuthority(scope)) || closed || authority(scope) !== before) throw Error("unavailable");
+  return {
+    hosts: hosts.map((host) => {
+      const value = credential(scope.account, host).credential;
+      return {
+        host,
+        bound: !!value,
+        transport: value?.sshAuth ? "ssh" : value?.token ? "https" : null,
+        signing: !!value?.signing,
+        username: value?.identity?.username || null,
+      };
+    }),
+  };
+}
 await new Promise<void>((resolve, reject) => {
   server.once("error", reject);
   server.listen(socketPaths.socket, () => resolve());
