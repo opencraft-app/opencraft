@@ -19,6 +19,7 @@ export interface AutomationExecution {
 export class ProjectAutomations {
   private timer?: ReturnType<typeof setInterval>;
   private sweep?: Promise<void>;
+  private followUp?: Promise<void>;
   private closing = false;
   private started?:Promise<void>;
   private readonly active = new Map<string,AutomationRun>();
@@ -91,9 +92,13 @@ export class ProjectAutomations {
       await this.call('settle',{key:run.key,state:error instanceof AutomationError?'failed':'unknown',result:target.kind==='script'?{kind:'script',key:run.key,reason:'execution_outcome_unknown'}:{reason:error instanceof AutomationError?'admission_refused':'execution_outcome_unknown'}});
     }
   }
+  /** Resolves after a sweep that started at or after this call. A running sweep
+   * may already have read the clock and the ledger, so a request that arrives
+   * while one runs is served by a single shared follow-up sweep, never by it. */
   tick(): Promise<void> {
     if(this.closing)return Promise.resolve();
-    return this.sweep??=(async()=>{
+    if(this.sweep)return this.followUp??=this.sweep.catch(()=>{}).then(()=>{this.followUp=undefined;return this.tick();});
+    return this.sweep=(async()=>{
       await this.refreshProjection();
       for(const run of this.active.values()) {
         let outcome:Awaited<ReturnType<AutomationExecution['inspect']>>;
@@ -127,6 +132,6 @@ export class ProjectAutomations {
   }
   async close(): Promise<void> {
     this.closing=true;if(this.timer)clearInterval(this.timer);
-    await this.sweep;await Promise.allSettled([...this.dispatches]);
+    await this.sweep;await this.followUp;await Promise.allSettled([...this.dispatches]);
   }
 }

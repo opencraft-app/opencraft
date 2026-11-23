@@ -7,12 +7,12 @@ import { openServerDatabase, SERVER_MIGRATIONS } from '../../packages/storage-no
 import { openManagedDatabase } from '../../packages/sqlite-node/src/index';
 import { ActorStore } from '../../packages/access-control/src/actors';
 import { OrchestrationRuntimeWorker } from '../../packages/access-control/src/orchestration-runtime-store';
-import { ProjectAutomations, type AutomationExecution } from '../../packages/access-control/src/automation-runtime';
+import { ProjectAutomations, type AutomationExecution, type AutomationStorage } from '../../packages/access-control/src/automation-runtime';
 import { automationOccurrence, automationRunKey, parseAutomationSchedule } from '../../packages/access-control/src/automation';
 
 const instant=Date.parse('2026-11-10T12:00:00Z');
 const target={kind:'cron',threadId:'thread',environment:'host',prompt:'Say OK'};
-async function fixture(t:any, execution?:Partial<AutomationExecution>) {
+async function fixture(t:any, execution?:Partial<AutomationExecution>, storage=(worker:OrchestrationRuntimeWorker):AutomationStorage=>worker) {
   const root=await mkdtemp(join(tmpdir(),'oc-project-automation-'));
   const owner=await openServerDatabase(root),actors=new ActorStore(owner);
   let now=instant;
@@ -21,7 +21,7 @@ async function fixture(t:any, execution?:Partial<AutomationExecution>) {
   let worker=new OrchestrationRuntimeWorker(join(root,'opencraft-server.sqlite'));await worker.start();
   let calls=0;
   const port:AutomationExecution={async validate(){return 'permission-snapshot';},async dispatch(){calls++;return {state:'completed'};},async inspect(){return {state:'running'};},...execution};
-  let service=new ProjectAutomations(worker,port,()=>now);await service.start();
+  let service=new ProjectAutomations(storage(worker),port,()=>now);await service.start();
   const caller={context};
   const grant=await service.grant(caller,'create',{serverId:'server',projectId:'project',target,permissionProfile:'read-only'},'grant-one') as any;
   const create=async(schedule:any={kind:'cron',expression:'* * * * *',timezone:'UTC'},key='create-one')=>service.command(caller,'create',{grantId:grant.id,schedule},key) as Promise<any>;
@@ -35,7 +35,7 @@ async function fixture(t:any, execution?:Partial<AutomationExecution>) {
       }
       assert.fail('Automation dispatch did not settle its admission');
     },
-    async restart(){await service.close();await worker.close();worker=new OrchestrationRuntimeWorker(join(root,'opencraft-server.sqlite'));await worker.start();service=new ProjectAutomations(worker,port,()=>now);await service.start();},
+    async restart(){await service.close();await worker.close();worker=new OrchestrationRuntimeWorker(join(root,'opencraft-server.sqlite'));await worker.start();service=new ProjectAutomations(storage(worker),port,()=>now);await service.start();},
   };
 }
 
@@ -76,6 +76,27 @@ test('three consecutive definite failures pause; unknown immediately fences foll
   const unknown=await g.service.command(g.caller,'runs',{id:other.id}) as any;
   assert.deepEqual(unknown.items.map((run:any)=>run.state),['unknown','skipped']);
   assert.equal(unknown.items[1].result.reason,'reconciliation_required');
+});
+
+test('a tick requested while a sweep runs gets its own sweep after the clock advanced',async t=>{
+  // Force the interleaving behind the intermittent CI failure: the Server timer's
+  // sweep has read the clock and is waiting on the Worker when the clock moves
+  // to the next minute and tick() is called again.
+  let hold:Promise<void>|undefined,entered=()=>{};
+  const g=await fixture(t,{async dispatch(){return {state:'unknown'};}},worker=>({
+    async automation(operation,input,now){if(operation==='eligible'&&hold){const gate=hold;hold=undefined;entered();await gate;}return worker.automation(operation,input,now);},
+  }));
+  const automation=await g.create();
+  await g.service.tick();await g.flush();
+  let release=()=>{};hold=new Promise<void>(resolve=>{release=resolve;});
+  const reached=new Promise<void>(resolve=>{entered=resolve;});
+  const stale=g.service.tick();await reached;
+  g.advance(60_000);const current=g.service.tick();
+  release();await stale;await current;await g.flush();
+  const runs=await g.service.command(g.caller,'runs',{id:automation.id}) as any;
+  assert.deepEqual(runs.items.map((run:any)=>run.state),['unknown','skipped']);
+  assert.equal(runs.items[1].occurrenceId,'utc-'+(instant+60_000));
+  assert.equal(runs.items[1].result.reason,'reconciliation_required');
 });
 
 test('running overlap is skipped; restart creates unknown without replay',async t=>{
