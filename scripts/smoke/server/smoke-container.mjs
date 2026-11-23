@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { chown, mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chown, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -9,6 +9,9 @@ import { fileURLToPath } from 'node:url';
 import { prepareLayout, SERVICES } from '../../container-deployment/layout.mjs';
 
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
+// The model proxy is one of the four Compose services; Brain reaches every model through it.
+const composeFiles = ['-f', join(root, 'deploy/docker/compose.yaml')];
+const services = SERVICES;
 const image = process.env.OPENCRAFT_IMAGE ?? 'opencraft:local';
 const name = `opencraft-smoke-${randomBytes(5).toString('hex')}`;
 const directory = await mkdtemp(join(tmpdir(), name));
@@ -33,7 +36,7 @@ function docker(args, options = {}) {
   return (execFileSync('docker', args, { cwd: root, env, encoding: 'utf8', timeout: 600_000,
     stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], ...options }) ?? '').trim();
 }
-const compose = args => docker(['compose', '--env-file', '/dev/null', '-f', join(root, 'deploy/docker/compose.yaml'), '-p', name, ...args]);
+const compose = args => docker(['compose', '--env-file', '/dev/null', ...composeFiles, '-p', name, ...args]);
 async function freePortBelowEphemeralRange() {
   for (let attempt = 0; attempt < 50; attempt++) {
     const port = 20_000 + Math.floor(Math.random() * 12_000);
@@ -61,6 +64,8 @@ const topPid = (service, pattern) => {
   assert.ok(line, `${service} must run ${pattern}`);
   return Number(line.trim().split(/\s+/u)[0]);
 };
+const topIncludes = (service, pattern) =>
+  docker(['top', compose(['ps', '-q', service]), '-eo', 'pid,args']).split('\n').some(value => value.includes(pattern));
 const topIncludesNativeExecServer = service => {
   const id = compose(['ps', '-q', service]);
   return docker(['top', id, '-eo', 'pid,args']).split('\n').some(value =>
@@ -81,7 +86,7 @@ try {
     const response = await fetch(origin + '/health', { signal: AbortSignal.timeout(12_000) });
     return { status: response.status, body: await response.json() };
   };
-  const ready = () => waitFor(health, value => value.status === 200 && value.body.ok && value.body.hosts?.['local-codex']?.state === 'ready', 'three-owner readiness');
+  const ready = () => waitFor(health, value => value.status === 200 && value.body.ok && value.body.hosts?.['local-codex']?.state === 'ready', `${services.length}-service readiness`);
   const first = await ready();
   // Brain and Hands each run one workspace agent with a container-private run directory.
   const agent = service => JSON.parse(docker(['exec', compose(['ps', '-q', service]), '/opt/opencraft/bin/opencraft-health', 'agent']));
@@ -129,6 +134,9 @@ try {
   };
   assert.equal(topIncludesNativeExecServer('brain'), false,
     'Brain must delegate Codex native execution to Hands');
+  // The account Core runs only in the proxy service.
+  const proxy = topPid('proxy', 'codex-core.cjs');
+  assert.equal(topIncludes('brain', 'codex-core.cjs'), false, 'Brain must not start its own account Core');
   const marker = randomBytes(12).toString('hex');
   await writeFile(join(data, 'docker-smoke-marker'), marker);
 
@@ -142,6 +150,7 @@ try {
   assert.deepEqual({ owner: topPid('hands', 'owner.cjs'), worker: topPid('hands', 'worker.cjs'),
     exec: topPid('hands', 'exec-server --listen stdio') }, hands);
   assert.equal(await readFile(join(data, 'docker-smoke-marker'), 'utf8'), marker);
+  assert.equal(topPid('proxy', 'codex-core.cjs'), proxy, 'Gateway recreation must keep the proxy');
 
   // Loss is reported; Gateway never starts an embedded fallback owner.
   compose(['stop', '-t', '30', 'brain']);
@@ -150,6 +159,7 @@ try {
   const recovered = await ready();
   assert.notEqual(recovered.body.core.appServerPid, brain.core);
   assert.equal(recovered.body.core.pid, proxyCore, 'Brain restart must not restart the model proxy');
+  assert.equal(topPid('proxy', 'codex-core.cjs'), proxy, 'Brain restart must keep the proxy');
   assert.deepEqual({ owner: topPid('hands', 'owner.cjs'), worker: topPid('hands', 'worker.cjs') },
     { owner: hands.owner, worker: hands.worker });
   assert.notEqual(topPid('hands', 'exec-server --listen stdio'), hands.exec,
@@ -173,11 +183,11 @@ try {
   assert.match(await readFile(join(logs, 'brain', 'service.log'), 'utf8'), /workspace-agent-child-failed[^\n]*engine-host/);
   assert.equal(agent('hands').incarnation.id, agents.hands.incarnation.id, 'Hands is a separate agent');
   passed = true;
-  console.log(JSON.stringify({ ok: true, origin, persistence: true,
+  console.log(JSON.stringify({ ok: true, origin, services, persistence: true,
     gatewayRestartKeepsBrain: true, gatewayRestartKeepsHands: true, brainUnavailable: 503, brainRecovery: true,
     agentIncarnations: [agents.brain.incarnation.id, restarted.incarnation.id, reincarnated.incarnation.id], criticalChildExit: true }));
 } catch (error) {
-  const logs = spawnSync('docker', ['compose', '--env-file', '/dev/null', '-f', join(root, 'deploy/docker/compose.yaml'), '-p', name, 'logs', '--tail=100'],
+  const logs = spawnSync('docker', ['compose', '--env-file', '/dev/null', ...composeFiles, '-p', name, 'logs', '--tail=100'],
     { cwd: root, env, encoding: 'utf8' });
   process.stderr.write((logs.stdout ?? '') + (logs.stderr ?? ''));
   throw error;
