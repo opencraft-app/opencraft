@@ -31,6 +31,7 @@ import { SandboxConfigurations, SandboxConfigurationError } from "./configuratio
 import { GitConnections, type GitConnectionProvider } from "./git-connections.js";
 import { githubConnectionProvider } from "./github-provider.js";
 import type { AssetAdmission } from "./worker.js";
+import type { PersonalMcpMethods, PersonalMcpOwner } from "./personal-mcp.js";
 
 /** Where this owner publishes its issuer public key for local supervisors, and
  * the explicit rotation generation of the sealed issuer key. */
@@ -60,6 +61,11 @@ export async function createAssetsStorage(
     /** Where the stable issuer public key is published, and its explicit
      * rotation generation. */
     environmentIssuer?: EnvironmentIssuerOptions;
+    /** Compiled composition only: the personal MCP token owner over this
+     * vault (`createPersonalMcpOwner` from `./server/personal-mcp`). Its
+     * `personalMcp*` methods join this owner's; it closes before the
+     * execution records and the vault. */
+    personalMcp?: (vault: EmployeeGitVaultStore) => PersonalMcpOwner;
   } = {},
 ) {
   // ENV for a launch needs the durable admission this owner reads itself.
@@ -76,11 +82,14 @@ export async function createAssetsStorage(
   let workspaces: AssetWorkspaceExecutionOwner | undefined;
   let environment: EnvironmentLaunchOwner | undefined;
   let gitSeal: PersonalGitSealOwner | undefined;
+  let personalMcp: PersonalMcpOwner | undefined;
   // Retire the issuer key before the admission reader and the vault close.
   const release = async () => {
     environment?.close();
     gitSeal?.close();
     try {
+      // Personal MCP operations settle (never reject) before their readers close.
+      await personalMcp?.close();
       await workspaces?.close();
     } finally {
       try {
@@ -197,6 +206,8 @@ export async function createAssetsStorage(
       catalog: workspaceCatalog,
       budget: workspaceBudget,
     });
+    personalMcp = options.personalMcp?.(vault);
+    const personalMcpMethods: Partial<PersonalMcpMethods> = personalMcp?.methods ?? {};
     const workspaceMethods = workspaces?.methods ?? {};
     if (
       Object.keys(workspaceMethods).some(
@@ -241,6 +252,7 @@ export async function createAssetsStorage(
         outcome: vault.outcome,
         workspaceExecution: workspaces !== undefined && workspaces.workspaceExecution !== false,
         botExecution: workspaces?.botExecution === true,
+        personalMcp: personalMcp !== undefined,
         gitHosts: providers.map((p) => p.host),
         gitAuthority: execution ? vault.personalGitAuthority("actor") : null,
         environmentIssuer: environment?.issuer ?? null,
@@ -259,6 +271,7 @@ export async function createAssetsStorage(
             },
           ]),
         ),
+        ...personalMcpMethods,
         // Trusted installed-file delivery only; no configuration HTTP action.
         adoptWorkspaceInstallation: (path: string) =>
           budgetCall(async () => {
@@ -414,8 +427,10 @@ export async function createAssetsStorage(
                 metadataCall((m) => m.bind(hostId, threadId, projectId)),
               environmentMetadataBindCreator: (scope: EnvironmentExecutionScope, threadId: string) =>
                 metadataCall((m) => m.bindCreator(scope, threadId)),
-              environmentMetadataRememberProjects: (hostId: string, projects: readonly { id: string; name: string }[]) =>
-                metadataCall((m) => m.rememberProjects(hostId, projects)),
+              environmentMetadataRememberProjects: (
+                hostId: string,
+                projects: readonly { id: string; name: string }[],
+              ) => metadataCall((m) => m.rememberProjects(hostId, projects)),
             }
           : {}),
         gitSnapshot: (access: AssetAdmission) => run(access, () => git.snapshot(access.scope)),

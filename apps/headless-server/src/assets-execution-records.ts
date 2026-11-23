@@ -8,6 +8,15 @@ import {
 } from "@opencraft/execution-environment/environment-account";
 import { GitExecutionAuthority, executionScope, resolveExecutionAdmission } from "./git-execution-authority.js";
 import { codexTurnAdmission, creationAdmission } from "./environment-launch-admission.js";
+import { WorkspaceActorAuthority, workspaceAdmission } from "./workspaces/actor-authority.js";
+import type {
+  ExecutionSessionLocator,
+  ExecutionSessionOwner,
+  ExecutionSessionReader,
+  PersonalMcpActors,
+} from "@opencraft/plugin-assets/server/personal-mcp";
+
+export type { ExecutionSessionLocator, ExecutionSessionOwner } from "@opencraft/plugin-assets/server/personal-mcp";
 
 /** Core's durable records for launches without an active native Turn, and the
  * current Actor epoch they are admitted under; the shape the Assets vault
@@ -23,7 +32,39 @@ export type HeadlessExecutionRecords = {
   environmentRecords: HeadlessEnvironmentRecords;
   /** Present only when `environmentAccount` is given. */
   environmentAccounts?: EnvironmentAccountResolver;
+  /** Which Human Actor owns a Codex/Server session in a phase, re-read with
+   * the same lease, Actor and member checks as Git execution admission. */
+  sessions: ExecutionSessionReader;
+  /** Rechecks a Main Human proof (`WorkspaceActorAdmission`) against the
+   * committed Actor and member records. */
+  actors: PersonalMcpActors;
 };
+
+const text = (v: unknown) => typeof v === "string" && v.length > 0 && v.length <= 512 && !/[\x00-\x1f\x7f]/u.test(v);
+/** Strict session locator: a Host, Thread and the original input or native
+ * Turn, optionally pinned to one execution and engine incarnation. */
+function sessionLocator(raw: unknown) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const v = raw as Record<string, unknown>;
+  if (
+    Object.keys(v).some(
+      (k) => !["hostId", "threadId", "inputId", "turnId", "executionId", "incarnation"].includes(k),
+    ) ||
+    (v.hostId !== "local-codex" && v.hostId !== "opencraft-server") ||
+    !text(v.threadId) ||
+    (v.inputId === undefined && v.turnId === undefined) ||
+    ["inputId", "turnId", "executionId", "incarnation"].some((k) => v[k] !== undefined && !text(v[k]))
+  )
+    return null;
+  return {
+    hostId: v.hostId as ExecutionSessionLocator["hostId"],
+    threadId: v.threadId as string,
+    ...(v.inputId !== undefined ? { inputId: v.inputId as string } : {}),
+    ...(v.turnId !== undefined ? { turnId: v.turnId as string } : {}),
+    ...(v.executionId !== undefined ? { executionId: v.executionId as string } : {}),
+    ...(v.incarnation !== undefined ? { incarnation: v.incarnation as string } : {}),
+  };
+}
 
 /** Read-only execution records of a Headless data directory for the Worker that
  * owns the Assets vault: core's own assets Worker, or an identity composition
@@ -40,6 +81,7 @@ export function createHeadlessExecutionRecords(options: {
   environmentAccount?: EnvironmentAccountMapping;
 }): HeadlessExecutionRecords {
   const authority = new GitExecutionAuthority(options.directory, "actor");
+  const actors = new WorkspaceActorAuthority(options.directory);
   const environmentAccounts =
     options.environmentAccount === undefined
       ? undefined
@@ -64,7 +106,13 @@ export function createHeadlessExecutionRecords(options: {
         return { scope: executionScope(input, current), native: { incarnation: current.incarnation } };
       },
       actor: (account) => authority.actor(account),
-      close: () => authority.close(),
+      close: () => {
+        try {
+          authority.close();
+        } finally {
+          actors.close();
+        }
+      },
     },
     // The pending Codex input lease and the Server owner's creation
     // reservation, with the current Actor epoch.
@@ -74,5 +122,18 @@ export function createHeadlessExecutionRecords(options: {
       actorEpoch: (actorId) => authority.actorEpoch(actorId),
     },
     ...(environmentAccounts ? { environmentAccounts } : {}),
+    sessions: {
+      owner(raw, phase): ExecutionSessionOwner | null {
+        if (phase !== "active" && phase !== "pending") return null;
+        const locator = sessionLocator(raw);
+        if (!locator) return null;
+        const owner = authority.sessionOwner(locator, phase);
+        return owner ? { hostId: locator.hostId, threadId: locator.threadId, ...owner } : null;
+      },
+    },
+    actors: {
+      admit: (raw) => workspaceAdmission(raw as never),
+      current: (access, pending) => actors.current(access, pending),
+    },
   };
 }

@@ -232,6 +232,10 @@ Ports in this slice:
     and the `codexTurn`/`creation`/`actorEpoch` readers over the data
     directory's execution leases, creation reservations and Actor store).
     Its reads are synchronous SQLite: call it only inside the vault Worker.
+    It also returns `sessions` (which Human Actor owns a session phase, with
+    the Git execution admission checks) and `actors` (the Human proof
+    recheck), which personal MCP tokens use
+    ([session capabilities](session-capabilities.md#personal-mcp-tokens)).
   - `@opencraft/headless-server/workspaces/execution-service`:
     `openWorkspaceExecutionService(options)`, the Gateway facade over that
     Worker's public workspace owner. With
