@@ -330,12 +330,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let codexAgentBridge=options.codexAgentBridge??await readCodexBridgeConfiguration(options.codexAgentBridgeFile);
   // The server's own Codex Engine Host: every Codex Thread runs through the provider bridge,
   // new ones from creation, existing ones from their next turn (their IDs and history kept).
-  // Its provider reaches native Codex through the Core it attaches to, so a workspace-owned
-  // Codex runtime (reached through its own endpoint) cannot be combined with it.
+  // Its provider takes broker auth from the account Core; with a workspace-owned Codex runtime
+  // it reaches native Codex through that runtime's native endpoint instead of the Core's health.
   if(options.codexBridgePrograms!==undefined&&(codexAgentBridge||!options.codexCoreEndpoint||!isAbsolute(options.codexBridgePrograms)))
     throw new Error('A server Codex Engine Host requires an existing Core endpoint and no external bridge configuration');
-  if(options.codexBridgePrograms!==undefined&&options.codexRuntime!==undefined)
-    throw new Error('A server Codex Engine Host cannot attach to a workspace Codex runtime endpoint');
+  if(options.codexBridgePrograms!==undefined&&options.codexRuntime!==undefined&&options.codexRuntime.nativeSocket===undefined)
+    throw new Error('A server Codex Engine Host needs the workspace Codex runtime native endpoint');
   let codexEngineHost;
   const agentBridge=options.agentBridge??(options.agentBridgeFile?await readPrivateJson(options.agentBridgeFile):undefined);
   if(agentBridge!==undefined&&(!agentBridge||typeof agentBridge!=='object'||Array.isArray(agentBridge)))throw new Error('Invalid private agent bridge configuration');
@@ -962,6 +962,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       // spawn/tell/wait from a turn's shell) to this Server's /thread-cli, signed by its key.
       codexEngineHost=await startCodexEngineHost({programs:options.codexBridgePrograms,node:process.execPath,
         coreEndpoint:options.codexCoreEndpoint,coreToken:options.codexCoreAuthToken,
+        ...(options.codexRuntime?{coreNativeSocket:options.codexRuntime.nativeSocket}:{}),
         runtimeDirectory:join(dataDirectory,'codex'),stateDirectory:join(dataDirectory,'codex-bridge'),
         cli:{directory:join(dataDirectory,'codex-bridge','cli'),signingKey:join(dataDirectory,'session-capabilities.key'),endpoint:capabilityMcp.cliEndpoint},
         serverId:`server:${machineIdentity.machineId}:codex`,

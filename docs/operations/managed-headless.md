@@ -56,7 +56,7 @@ queue/Goal 恢复不依赖浏览器首次重连；初始化失败时就绪检查
 
 - 退回旧路径：在网关环境中设置 `OPENCRAFT_CODEX_BRIDGE=0` 后重启网关。已有会话照常可用；bridge 新建的会话在重新开启前不可用。
 - 外部 bridge 配置（`--codex-agent-bridge-config`）存在时不另起 Engine Host。
-- 四容器部署（`deploy/docker`）暂不启用：gateway 经工作区端点连到 brain 自己的 Codex APP Server，而 bridge provider 通过账号 Core 找 native Codex，proxy 模式下该 Core 只负责账号，因此该交付忽略 `OPENCRAFT_CODEX_BRIDGE`，会话仍走旧路径；`scripts/smoke/server/smoke-container-codex-bridge.ts` 在 provider 能接入工作区 Codex 端点之前不适用。daemon profile 执行单元（`scripts/server-deployment/gateway.mjs`）同样默认开启，由 daemon 对已有 Core 启动 Engine Host，`OPENCRAFT_CODEX_BRIDGE=0` 退回旧路径。
+- 四容器部署（`deploy/docker`）同样默认开启：Engine Host 在 gateway 容器内运行（镜像内 `runtime/codex-bridge/`），provider 从 proxy 的账号 Core 取 broker 认证，经工作区 `codex-native` 端点连到 brain 的 Codex APP Server，命令仍在 hands 执行；`OPENCRAFT_CODEX_BRIDGE=0` 退回旧路径。daemon profile 执行单元（`scripts/server-deployment/gateway.mjs`）同样默认开启，由 daemon 对已有 Core 启动 Engine Host，`OPENCRAFT_CODEX_BRIDGE=0` 退回旧路径。
 - 验收：`node --import tsx scripts/smoke/server/smoke-codex-server-upgrade.ts`（可加 `DRILL_RELEASE_PROGRAMS=1` 使用发行包同一构建），见 [Codex 对齐](../../design/agent-bridge/codex-parity.md)。
 
 ## Codex 原生会话与保留数据

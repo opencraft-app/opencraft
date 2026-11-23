@@ -5,7 +5,7 @@ import { parseHeadlessArguments, startHeadlessServer } from '../../apps/headless
 import { validateHeadlessExtensions } from '../../apps/headless-server/src/headless-extensions.mjs';
 import { attachDshHost, readDshHostIdentity } from '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
 import { readEngineHostIdentity } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
-import { observeExecutionHealth } from '../server-deployment/headless-gateway-application.mjs';
+import { codexBridgePrograms, observeExecutionHealth } from '../server-deployment/headless-gateway-application.mjs';
 import { deploymentPaths, readPrivateToken } from './paths.mjs';
 import { openGatewayWorkspace } from './gateway-workspace.mjs';
 
@@ -26,9 +26,10 @@ export async function startContainerGateway(composition = {}) {
   if (!home.startsWith('/')) throw new Error('Gateway home must be absolute');
   await mkdir(home, { recursive: true, mode: 0o700 });
   process.env.HOME = home;
-  // Codex stays on the workspace's own AppServer (Brain, reached through its endpoint) rather
-  // than the Gateway Engine Host: the bridge provider finds native Codex through the account
-  // Core, which here owns accounts only. OPENCRAFT_CODEX_BRIDGE has no effect in this delivery.
+  // Codex runs through the Gateway's own Engine Host by default (OPENCRAFT_CODEX_BRIDGE=0 keeps the
+  // legacy path). Its provider takes broker auth from the account Core and reaches the workspace's
+  // native AppServer (Brain) through the codex-native endpoint; native commands still run in Hands.
+  const bridgePrograms = await codexBridgePrograms(root, options, process.env, 'runtime/codex-bridge');
   // Brain and Hands owners are workspace endpoints, reached through the configured
   // provider; a missing or unready workspace fails startup like a missing owner did.
   const workspace = await openGatewayWorkspace({ dataDirectory: paths.dataDirectory });
@@ -49,6 +50,7 @@ export async function startContainerGateway(composition = {}) {
       codexCoreEndpoint: paths.coreEndpoint,
       codexCoreAuthToken: token,
       codexRuntime: workspace.codexRuntime,
+      ...(bridgePrograms ? { codexBridgePrograms: bridgePrograms } : {}),
       getExecutionHealth: () => observeExecutionHealth({
         version: manifest.version, buildId: manifest.buildId,
         core: async () => { await workspace.observe(); return workspace.executionHealth(paths.coreEndpoint, paths.tokenPath); },
