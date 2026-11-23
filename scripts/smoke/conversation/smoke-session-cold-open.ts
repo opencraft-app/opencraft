@@ -158,17 +158,24 @@ async function assertDateDisclosure(page: Page) {
       }, { selector, visible });
     };
     await expectVisibility(touchInput);
-    const restingBounds = await date.boundingBox();
     const frame = date.locator('xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " thread-user-message ") or contains(concat(" ", normalize-space(@class), " "), " thread-frame--assistant ")][1]');
+    // The slot is measured within its message: focus moving out of the
+    // composer may resize it and shift the whole bottom-anchored timeline.
+    const slotBounds = async () => {
+      const [own, owner] = await Promise.all([date.boundingBox(), frame.boundingBox()]);
+      assert.ok(own && owner, 'The clock and its message are laid out');
+      return { x: own.x - owner.x, y: own.y - owner.y, width: own.width, height: own.height };
+    };
+    const restingBounds = await slotBounds();
     await frame.locator('button').first().focus();
     await expectVisibility(true);
-    assert.deepEqual(await date.boundingBox(), restingBounds, 'Focus reveals a clock without moving its slot');
+    assert.deepEqual(await slotBounds(), restingBounds, 'Focus reveals a clock without moving its slot');
     await editor.focus();
     await expectVisibility(touchInput);
     if (hoverCapable) {
       await frame.hover();
       await expectVisibility(true);
-      assert.deepEqual(await date.boundingBox(), restingBounds, 'Hover reveals a clock without moving its slot');
+      assert.deepEqual(await slotBounds(), restingBounds, 'Hover reveals a clock without moving its slot');
       await page.mouse.move(0, 0);
       await expectVisibility(touchInput);
     }
