@@ -2,6 +2,7 @@ import { readFile, mkdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseHeadlessArguments, startHeadlessServer } from '../../apps/headless-server/src/headless-application.mjs';
+import { validateHeadlessExtensions } from '../../apps/headless-server/src/headless-extensions.mjs';
 import { coreHealth } from '../server-deployment/execution.mjs';
 import { attachDshHost, readDshHostIdentity } from '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
 import { readEngineHostIdentity } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
@@ -9,6 +10,8 @@ import { codexBridgePrograms, observeExecutionHealth } from '../server-deploymen
 import { deploymentPaths, readPrivateToken } from './paths.mjs';
 
 export async function startContainerGateway(composition = {}) {
+  // Malformed composition fails before any deployment owner is contacted.
+  validateHeadlessExtensions(composition.extensions);
   // This delivery attaches existing owners. It never starts an execution engine.
   const paths = deploymentPaths();
   const token = await readPrivateToken(paths.tokenPath);

@@ -2,8 +2,16 @@ import { AccountEnvironment } from "./account-environment.js";
 import type { EmployeeGitVaultStore } from "./employee-git-vault-store.js";
 import {
   EnvironmentLaunchIssuer,
+  canonicalEnvironmentLaunchAdmission,
+  environmentLaunchAdmission,
+  environmentLaunchContextV2,
+  isEnvironmentLaunchContextV2,
+  type AnyEnvironmentLaunchContext,
+  type EnvironmentCreationAdmission,
+  type EnvironmentLaunchAdmission,
   type EnvironmentLaunchContext,
   type EnvironmentLaunchTarget,
+  type EnvironmentTerminalAdmission,
 } from "./environment-delivery.js";
 import { environmentProjectId, environmentThreadProject } from "./execution-environment.js";
 import type { GitExecutionHandoff, GitExecutionLocator } from "./git-execution.js";
@@ -27,6 +35,42 @@ const canonical = (c: EnvironmentLaunchContext) =>
     c.native.incarnation,
   ]);
 
+/** A durable creation or terminal admission as the vault owner reads it from
+ * core's own record, with the Host-local Project that record binds (`null` for
+ * none). The record, never the request or relayed context, selects the Project. */
+export interface EnvironmentRecordAdmission<A extends EnvironmentLaunchAdmission> {
+  readonly admission: A;
+  readonly project: string | null;
+}
+export interface EnvironmentLaunchRecordReaders {
+  /** Pending creation reservation by Host and creation operation. */
+  creation?(locator: {
+    hostId: EnvironmentCreationAdmission["hostId"];
+    operationId: string;
+  }): EnvironmentRecordAdmission<EnvironmentCreationAdmission> | null;
+  /** Unlaunched terminal reservation by Host, resource and operation. */
+  terminal?(locator: {
+    hostId: EnvironmentTerminalAdmission["hostId"];
+    resource: string;
+    operation: string;
+  }): EnvironmentRecordAdmission<EnvironmentTerminalAdmission> | null;
+}
+/** v2 Turn admission from a handoff-shaped durable admission. */
+const turnAdmission = (a: Omit<GitExecutionHandoff, "authority" | "capability">) =>
+  environmentLaunchAdmission({
+    kind: "turn",
+    account: a.scope.account,
+    actorGeneration: a.scope.actorGeneration,
+    membershipRevision: a.scope.membershipRevision,
+    hostId: a.scope.hostId,
+    threadId: a.scope.threadId,
+    inputId: a.scope.inputId,
+    executionId: a.scope.executionId,
+    leaseGeneration: a.scope.leaseGeneration,
+    turnId: a.native.turnId,
+    incarnation: a.native.incarnation,
+  });
+
 /** Core issuer inside the sole vault owner (a Worker). It seals the values of an
  * admitted Turn for one execution process; nothing it returns contains values.
  * The caller's context is only a claim: it must equal the durable admission the
@@ -43,12 +87,15 @@ export class EnvironmentLaunchOwner {
     private readonly admission: (
       input: GitExecutionLocator,
     ) => Omit<GitExecutionHandoff, "authority" | "capability"> | null,
+    /** Durable creation and terminal records. A kind without a reader is refused. */
+    private readonly records: EnvironmentLaunchRecordReaders = {},
   ) {
     this.#environment = new AccountEnvironment(vault);
   }
 
-  seal(target: EnvironmentLaunchTarget, context: EnvironmentLaunchContext): string {
+  seal(target: EnvironmentLaunchTarget, context: AnyEnvironmentLaunchContext): string {
     try {
+      if (isEnvironmentLaunchContextV2(context)) return this.#sealV2(target, context);
       if (this.#closed || !record(context) || !record(context.scope) || !record(context.native)) return unavailable();
       const { hostId, threadId, inputId, projectId } = context.scope;
       // Codex launches before a Turn exists; it is not served by this issuer yet.
@@ -82,6 +129,63 @@ export class EnvironmentLaunchOwner {
     } catch {
       return unavailable();
     }
+  }
+
+  /** One admission check per kind; each compares the claim with the durable
+   * record this owner reads itself, rereads it around the value read, and takes
+   * the Project only from durable metadata. */
+  #sealV2(target: EnvironmentLaunchTarget, raw: unknown): string {
+    if (this.#closed) return unavailable();
+    const claim = environmentLaunchContextV2(raw).admission,
+      expected = canonicalEnvironmentLaunchAdmission(claim);
+    let read: () => { admission: EnvironmentLaunchAdmission; project: string | null } | null;
+    if (claim.kind === "turn") {
+      // Turns come from the execution lease, Project from the Thread binding.
+      // Codex Turns are not served by this issuer yet.
+      if (claim.hostId !== "opencraft-server") return unavailable();
+      const { hostId, threadId, inputId } = claim;
+      read = () => {
+        const admitted = this.admission({ hostId, threadId, inputId });
+        if (!admitted || admitted.scope.projectId !== null) return null;
+        return { admission: turnAdmission(admitted), project: environmentThreadProject(this.vault, hostId, threadId) };
+      };
+    } else if (claim.kind === "creation") {
+      const reader = this.records.creation;
+      if (!reader) return unavailable();
+      const locator = { hostId: claim.hostId, operationId: claim.operationId };
+      read = () => reader(locator);
+    } else {
+      const reader = this.records.terminal;
+      if (!reader) return unavailable();
+      const locator = { hostId: claim.hostId, resource: claim.resource, operation: claim.operation };
+      read = () => reader(locator);
+    }
+    const first = read();
+    if (!first || (first.project !== null && (typeof first.project !== "string" || !first.project)))
+      return unavailable();
+    const project = first.project;
+    const current = () => {
+      const now = read();
+      if (
+        this.#closed ||
+        !now ||
+        now.project !== project ||
+        canonicalEnvironmentLaunchAdmission(now.admission) !== expected
+      )
+        unavailable();
+    };
+    current();
+    return this.#issuer.seal(
+      target,
+      { version: 2, admission: claim },
+      () =>
+        this.#environment.launchEnvironment(
+          claim.account,
+          { projectId: project === null ? null : environmentProjectId(claim.hostId, project) },
+          {},
+        ),
+      current,
+    );
   }
 
   close() {

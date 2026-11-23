@@ -43,6 +43,16 @@ close both the Web server and the Host and release the claim. The runner uses
 `node --import tsx` so the tsx CLI signal relay cannot force termination before
 asynchronous cleanup finishes; repeated stop signals join the same cleanup.
 
+Packaging entry points (`package-headless-linux`, `package-web-server`,
+`package-relay`, `package-container`, `package-electron-desktop` and
+`package-macos-preview`) first run `scripts/packaging/workspace-links.mjs`. Every
+workspace package named by the root manifest must be installed in
+`node_modules` as a link that resolves into this checkout; a missing link, a
+copied directory or a link into another checkout stops the build before it can
+bundle the wrong sources. Run `npm ci` in the checkout to repair it, or
+`node scripts/packaging/workspace-links.mjs` to check without packaging.
+Third-party dependencies are not checked.
+
 ## Repository-owned Electron source fork
 
 [`vendor/electron`](../../vendor/electron/README.md) owns the fixed Electron source
