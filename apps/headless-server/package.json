@@ -72,6 +72,7 @@
     "@opencraft/plugin-assets": "0.1.0",
     "@opencraft/plugin-im": "0.1.0",
     "@opencraft/plugin-local-account": "0.1.0",
+    "@opencraft/plugin-login-admission": "0.1.0",
     "@opencraft/plugin-pi-engine": "0.1.0",
     "@opencraft/plugin-relay-connect": "0.1.0",
     "@opencraft/plugin-slack": "0.1.0",

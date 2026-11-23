@@ -64,6 +64,7 @@
     "@opencraft/plugin-im": "0.1.0",
     "@opencraft/plugin-image-editor": "0.1.0",
     "@opencraft/plugin-local-account": "0.1.0",
+    "@opencraft/plugin-login-admission": "0.1.0",
     "@opencraft/plugin-office-preview": "0.1.0",
     "@opencraft/plugin-structured-preview": "0.1.0",
     "@opencraft/plugin-tasks": "0.1.0",
