@@ -222,7 +222,7 @@ export class ThreadOrchestrationBroker {
     let threadId:string,inputId:string;
     if(target.kind==='once') {
       const result=await this.perform(target.sourceThreadId,'automation-control',run.key,'thread_spawn',{
-        prompt:target.prompt,driver:target.driver,model:target.model,...(target.reasoning?{reasoningEffort:target.reasoning}:{}),idempotencyKey:run.key},delegation.id) as {operationId:string;threadId:string};
+        title:automationThreadTitle(target.prompt),prompt:target.prompt,driver:target.driver,model:target.model,...(target.reasoning?{reasoningEffort:target.reasoning}:{}),idempotencyKey:run.key},delegation.id) as {operationId:string;threadId:string};
       const operation=this.collaboration.orchestration.operationById(result.operationId)!;
       threadId=result.threadId;inputId=operation.clientMessageId!;
     } else {
@@ -920,4 +920,11 @@ export class ThreadOrchestrationBroker {
       }catch(error){if(!(error instanceof CollaborationError&&error.status===403))throw error;}
     }
   }
+}
+
+/** A spawned conversation needs a title; a scheduled run takes its prompt's first line. */
+export function automationThreadTitle(prompt: string): string {
+  const line = prompt.split(/\r?\n/u).map(part => part.replace(/[\x00-\x1f\x7f\u0085\u2028\u2029]/gu, ' ').replace(/\s+/gu, ' ').trim()).find(Boolean) ?? '';
+  const title = Array.from(line).slice(0, 80).join('').trim();
+  return title || 'Scheduled task';
 }
