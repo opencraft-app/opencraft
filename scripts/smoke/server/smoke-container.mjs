@@ -9,6 +9,10 @@ import { fileURLToPath } from 'node:url';
 import { prepareLayout } from '../../container-deployment/layout.mjs';
 
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
+// --proxy adds compose.proxy.yaml: the model proxy runs as a fourth service instead of inside Brain.
+const withProxy = process.argv.includes('--proxy');
+const composeFiles = ['compose.yaml', ...(withProxy ? ['compose.proxy.yaml'] : [])].flatMap(file => ['-f', join(root, 'deploy/docker', file)]);
+const services = ['brain', 'gateway', 'hands', ...(withProxy ? ['proxy'] : [])];
 const image = process.env.OPENCRAFT_IMAGE ?? 'opencraft:local';
 const name = `opencraft-smoke-${randomBytes(5).toString('hex')}`;
 const directory = await mkdtemp(join(tmpdir(), name));
@@ -33,7 +37,7 @@ function docker(args, options = {}) {
   return (execFileSync('docker', args, { cwd: root, env, encoding: 'utf8', timeout: 600_000,
     stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], ...options }) ?? '').trim();
 }
-const compose = args => docker(['compose', '--env-file', '/dev/null', '-f', join(root, 'deploy/docker/compose.yaml'), '-p', name, ...args]);
+const compose = args => docker(['compose', '--env-file', '/dev/null', ...composeFiles, '-p', name, ...args]);
 async function freePortBelowEphemeralRange() {
   for (let attempt = 0; attempt < 50; attempt++) {
     const port = 20_000 + Math.floor(Math.random() * 12_000);
@@ -61,6 +65,8 @@ const topPid = (service, pattern) => {
   assert.ok(line, `${service} must run ${pattern}`);
   return Number(line.trim().split(/\s+/u)[0]);
 };
+const topIncludes = (service, pattern) =>
+  docker(['top', compose(['ps', '-q', service]), '-eo', 'pid,args']).split('\n').some(value => value.includes(pattern));
 const topIncludesNativeExecServer = service => {
   const id = compose(['ps', '-q', service]);
   return docker(['top', id, '-eo', 'pid,args']).split('\n').some(value =>
@@ -70,18 +76,25 @@ const topIncludesNativeExecServer = service => {
 let passed = false, origin;
 try {
   const layout = await prepareLayout(env, { uid: process.getuid(), gid: process.getgid() });
-  if (process.getuid() === 0) for (const path of [directory, layout.state, layout.execution, layout.gitCredentials, layout.workspace, layout.logs, ...['brain', 'gateway', 'hands'].map(service => join(logs, service))]) await chown(path, deploymentUid, deploymentGid);
+  // The proxy overlay binds its own log directory, which the base layout does not create.
+  if (withProxy) await mkdir(join(logs, 'proxy'), { mode: 0o700 });
+  if (process.getuid() === 0) for (const path of [directory, layout.state, layout.execution, layout.gitCredentials, layout.workspace, layout.logs, ...services.map(service => join(logs, service))]) await chown(path, deploymentUid, deploymentGid);
   // The Gateway binds this port only after Brain and Hands are healthy, and they share
   // the host network. A kernel-assigned port is from the ephemeral range, so one of
   // them can be handed it in between; probe a free port below that range instead.
   env.OPENCRAFT_PORT = String(await freePortBelowEphemeralRange());
+  if (withProxy) {
+    let port;
+    do port = await freePortBelowEphemeralRange(); while (String(port) === env.OPENCRAFT_PORT);
+    env.OPENCRAFT_PROXY_PORT = String(port);
+  }
   origin = `http://127.0.0.1:${env.OPENCRAFT_PORT}`;
   compose(['up', '-d', '--no-build', '--wait']);
   const health = async () => {
     const response = await fetch(origin + '/health', { signal: AbortSignal.timeout(12_000) });
     return { status: response.status, body: await response.json() };
   };
-  const ready = () => waitFor(health, value => value.status === 200 && value.body.ok && value.body.hosts?.['local-codex']?.state === 'ready', 'three-owner readiness');
+  const ready = () => waitFor(health, value => value.status === 200 && value.body.ok && value.body.hosts?.['local-codex']?.state === 'ready', `${services.length}-service readiness`);
   const first = await ready();
   const terminalProbe = await readFile(join(root, 'scripts/smoke/server/hands-terminal-probe.mjs'), 'utf8');
   const gatewayContainer = compose(['ps', '-q', 'gateway']);
@@ -89,7 +102,7 @@ try {
   const cgroupNamespace = service => compose(['exec', '-T', service, '/opt/opencraft/bin/node', '-p', "require('node:fs').readlinkSync('/proc/self/ns/cgroup')"]);
   assert.equal(terminal.cgroupNamespace, cgroupNamespace('hands'), 'PTY must run in the Hands container');
   for (const service of ['brain', 'gateway']) assert.notEqual(terminal.cgroupNamespace, cgroupNamespace(service), `PTY must not run in ${service}`);
-  for (const service of ['brain', 'gateway', 'hands']) {
+  for (const service of services) {
     const records = (await readFile(join(logs, service, 'service.log'), 'utf8')).trim().split('\n').map(JSON.parse);
     assert.ok(records.length > 0 && records.every(record => record.time && record.stream));
   }
@@ -108,6 +121,9 @@ try {
   };
   assert.equal(topIncludesNativeExecServer('brain'), false,
     'Brain must delegate Codex native execution to Hands');
+  // With the overlay, the account Core runs only in the proxy service.
+  const proxy = withProxy ? topPid('proxy', 'codex-core.cjs') : undefined;
+  if (withProxy) assert.equal(topIncludes('brain', 'codex-core.cjs'), false, 'Brain must not start its own account Core');
   const marker = randomBytes(12).toString('hex');
   await writeFile(join(data, 'docker-smoke-marker'), marker);
 
@@ -121,13 +137,16 @@ try {
   assert.deepEqual({ owner: topPid('hands', 'owner.cjs'), worker: topPid('hands', 'worker.cjs'),
     exec: topPid('hands', 'exec-server --listen stdio') }, hands);
   assert.equal(await readFile(join(data, 'docker-smoke-marker'), 'utf8'), marker);
+  if (withProxy) assert.equal(topPid('proxy', 'codex-core.cjs'), proxy, 'Gateway recreation must keep the proxy');
 
   // Loss is reported; Gateway never starts an embedded fallback owner.
   compose(['stop', '-t', '30', 'brain']);
   await waitFor(health, value => value.status === 503 && !value.body.ok, 'Brain loss reported');
   compose(['start', 'brain']);
   const recovered = await ready();
-  assert.notEqual(recovered.body.core.pid, brain.core);
+  // A Brain release no longer restarts the model proxy.
+  if (withProxy) assert.equal(topPid('proxy', 'codex-core.cjs'), proxy, 'Brain restart must keep the proxy');
+  else assert.notEqual(recovered.body.core.pid, brain.core);
   assert.deepEqual({ owner: topPid('hands', 'owner.cjs'), worker: topPid('hands', 'worker.cjs') },
     { owner: hands.owner, worker: hands.worker });
   assert.notEqual(topPid('hands', 'exec-server --listen stdio'), hands.exec,
@@ -135,10 +154,10 @@ try {
   assert.equal(topIncludesNativeExecServer('brain'), false,
     'Brain must not reacquire an embedded Codex exec-server');
   passed = true;
-  console.log(JSON.stringify({ ok: true, origin, persistence: true,
+  console.log(JSON.stringify({ ok: true, origin, services, persistence: true,
     gatewayRestartKeepsBrain: true, gatewayRestartKeepsHands: true, brainUnavailable: 503, brainRecovery: true }));
 } catch (error) {
-  const logs = spawnSync('docker', ['compose', '--env-file', '/dev/null', '-f', join(root, 'deploy/docker/compose.yaml'), '-p', name, 'logs', '--tail=100'],
+  const logs = spawnSync('docker', ['compose', '--env-file', '/dev/null', ...composeFiles, '-p', name, 'logs', '--tail=100'],
     { cwd: root, env, encoding: 'utf8' });
   process.stderr.write((logs.stdout ?? '') + (logs.stderr ?? ''));
   throw error;

@@ -42,6 +42,8 @@ jobs:
         run: bash scripts/ci/build-container.sh "${{ matrix.architecture }}"
       - run: node --test tests/tooling/container-publication.test.mjs
       - run: node scripts/smoke/server/smoke-container.mjs
+      # The same image with the model proxy as a fourth service (compose.proxy.yaml).
+      - run: node scripts/smoke/server/smoke-container.mjs --proxy
       - name: Export the tested image (main only)
         if: github.repository == 'opencraft-app/opencraft' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         run: docker save opencraft:local | gzip -1 > "/tmp/image.tar.gz"
