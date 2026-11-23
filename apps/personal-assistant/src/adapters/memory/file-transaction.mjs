@@ -92,7 +92,8 @@ export class MemoryFileTransaction {
               unlinkSync(join(this.lock, "owner.json"));
               rmdirSync(this.lock);
             } catch (race) {
-              if (race.code !== "ENOENT") throw race;
+              // ENOENT: another waiter removed it; ENOTEMPTY: one already claimed it.
+              if (race.code !== "ENOENT" && race.code !== "ENOTEMPTY") throw race;
             }
             // Cleanup can consume the wait budget. Once the known-dead lock is
             // gone, try to claim the now-available root before checking time.
@@ -114,11 +115,18 @@ export class MemoryFileTransaction {
     error.code = "MEMORY_BUSY";
     throw error;
   }
+  /**
+   * The lock leaves its path in one rename, owner still inside. Emptying it in
+   * place first would let a waiting claimer rename its own lock onto the empty
+   * directory, which this holder would then fail to remove (or remove later).
+   * The retired name carries this pid, so sweepStaged() reclaims it after a crash.
+   */
   release() {
     if (!this.held) return;
-    unlinkSync(join(this.lock, "owner.json"));
-    rmdirSync(this.lock);
+    const retired = `${this.lock}.${process.pid}.${randomUUID()}.released`;
+    renameSync(this.lock, retired);
     this.held = false;
+    rmSync(retired, { recursive: true, force: true });
   }
   readJournal() {
     const text = this.store.read(

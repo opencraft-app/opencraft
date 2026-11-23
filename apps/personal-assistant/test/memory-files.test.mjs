@@ -982,3 +982,25 @@ test("a lock is claimed with its owner already inside, and dead claimers' stagin
   transaction.release();
   assert.deepEqual(readdirSync(directory), []);
 });
+
+test("release never leaves an empty lock directory for a concurrent claimer to take over", async (t) => {
+  const p = profileFor(t),
+    directory = join(p.path, "lock-release");
+  mkdirSync(directory);
+  // Each child claims and releases repeatedly; any release error or overlapping holder fails it.
+  const script = `import {MemoryFileTransaction} from './src/adapters/memory/file-transaction.mjs';import {openSync,closeSync,unlinkSync} from 'node:fs';
+const dir=process.argv[1];let failures=0;
+for(let i=0;i<400;i++){const t=new MemoryFileTransaction({root:dir},{});
+try{t.acquire();}catch(e){if(e.code==='MEMORY_BUSY')continue;throw e;}
+try{closeSync(openSync(dir+'/inside','wx'));unlinkSync(dir+'/inside');}catch{failures++;}
+t.release();}
+if(failures)throw new Error(failures+' overlapping holders');`;
+  const results = await Promise.allSettled(
+    [0, 1, 2].map(() => execute(process.execPath, ["--input-type=module", "--eval", script, directory], { cwd: root })),
+  );
+  assert.ok(
+    results.every((r) => r.status === "fulfilled"),
+    JSON.stringify(results.map((r) => r.reason?.stderr ?? r.status)),
+  );
+  assert.deepEqual(readdirSync(directory), []);
+});
