@@ -9,6 +9,7 @@ import {
   writeFileSync,
   existsSync,
   symlinkSync,
+  rmSync,
 } from "node:fs";
 import { join } from "node:path";
 import { spawnSync, execFile } from "node:child_process";
@@ -980,5 +981,45 @@ test("a lock is claimed with its owner already inside, and dead claimers' stagin
   assert.throws(() => new MemoryFileTransaction({ root: directory }, {}).claim(), { code: "EEXIST" });
   assert.deepEqual(readdirSync(directory), [".write-lock"]);
   transaction.release();
+  assert.deepEqual(readdirSync(directory), []);
+});
+
+test("processes taking turns on one root never lose or remove each other's lock", async (t) => {
+  const p = profileFor(t),
+    directory = join(p.path, "lock-turns");
+  mkdirSync(directory);
+  // Releasing used to empty the lock in place; another claimer's rename could
+  // replace the empty directory, and the release then failed (ENOTEMPTY).
+  const script = `import {MemoryFileTransaction} from './src/adapters/memory/file-transaction.mjs';
+const t=new MemoryFileTransaction({root:process.argv[1]},{});
+for(let i=0;i<300;i++){try{t.acquire();}catch(e){if(e.code==='MEMORY_BUSY')continue;throw e;}t.release();}`;
+  const results = await Promise.allSettled(
+    Array.from({ length: 6 }, () =>
+      execute(process.execPath, ["--input-type=module", "--eval", script, directory], { cwd: root }),
+    ),
+  );
+  assert.ok(
+    results.every((r) => r.status === "fulfilled"),
+    JSON.stringify(results.filter((r) => r.status === "rejected").map((r) => String(r.reason?.stderr ?? r.reason))),
+  );
+  assert.deepEqual(readdirSync(directory), []);
+});
+
+test("a release never removes a lock that another owner holds at the lock path", (t) => {
+  const p = profileFor(t),
+    directory = join(p.path, "lock-takeover");
+  mkdirSync(directory);
+  const first = new MemoryFileTransaction({ root: directory }, {});
+  first.claim();
+  // Simulate a takeover: the first owner's lock is gone and another owner holds the path.
+  rmSync(join(directory, ".write-lock"), { recursive: true });
+  const second = new MemoryFileTransaction({ root: directory }, {});
+  second.claim();
+  assert.throws(() => first.release(), /taken over/);
+  assert.equal(
+    JSON.parse(readFileSync(join(directory, ".write-lock", "owner.json"), "utf8")).token,
+    second.token,
+  );
+  second.release();
   assert.deepEqual(readdirSync(directory), []);
 });

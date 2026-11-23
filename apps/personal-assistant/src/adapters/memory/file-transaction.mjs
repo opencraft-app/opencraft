@@ -5,8 +5,6 @@ import {
   readFileSync,
   renameSync,
   rmSync,
-  rmdirSync,
-  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
@@ -31,10 +29,12 @@ export class MemoryFileTransaction {
     const staged = `${this.lock}.${process.pid}.${randomUUID()}`;
     mkdirSync(staged, { mode: 0o700 });
     try {
-      writeFileSync(join(staged, "owner.json"), stable({ pid: process.pid }), {
+      const token = randomUUID();
+      writeFileSync(join(staged, "owner.json"), stable({ pid: process.pid, token }), {
         mode: 0o600,
       });
       renameSync(staged, this.lock);
+      this.token = token;
     } catch (error) {
       rmSync(staged, { recursive: true, force: true });
       // Renaming onto an existing lock directory reports it as taken.
@@ -88,12 +88,7 @@ export class MemoryFileTransaction {
           process.kill(owner.pid, 0);
         } catch (e) {
           if (e.code === "ESRCH") {
-            try {
-              unlinkSync(join(this.lock, "owner.json"));
-              rmdirSync(this.lock);
-            } catch (race) {
-              if (race.code !== "ENOENT") throw race;
-            }
+            this.removeDeadLock(owner.pid);
             // Cleanup can consume the wait budget. Once the known-dead lock is
             // gone, try to claim the now-available root before checking time.
             try {
@@ -114,11 +109,56 @@ export class MemoryFileTransaction {
     error.code = "MEMORY_BUSY";
     throw error;
   }
+  /**
+   * A lock is only ever removed after it was renamed away from the lock path.
+   * Emptying it in place would let another claimer rename its own lock onto
+   * the empty directory (rename replaces an empty directory) and then lose it
+   * to this removal. The private name carries this process's pid, so a crash
+   * before the removal is swept like a dead claimer's staging directory.
+   */
+  setAside() {
+    const aside = `${this.lock}.${process.pid}.${randomUUID()}`;
+    renameSync(this.lock, aside);
+    return aside;
+  }
+  ownerOf(directory) {
+    try {
+      return JSON.parse(readFileSync(join(directory, "owner.json"), "utf8"));
+    } catch {
+      return null;
+    }
+  }
+  /** Removes a lock whose owner is dead, unless another claimer replaced it meanwhile. */
+  removeDeadLock(pid) {
+    let aside;
+    try {
+      aside = this.setAside();
+    } catch (race) {
+      if (race.code === "ENOENT") return; // another process already removed it
+      throw race;
+    }
+    if (this.ownerOf(aside)?.pid === pid) {
+      rmSync(aside, { recursive: true, force: true });
+      return;
+    }
+    // A live claimer's lock was moved: put it back. Should yet another claimer
+    // take the path first, the moved owner finds that out when it releases.
+    try {
+      renameSync(aside, this.lock);
+    } catch {}
+  }
   release() {
     if (!this.held) return;
-    unlinkSync(join(this.lock, "owner.json"));
-    rmdirSync(this.lock);
+    const aside = this.setAside();
     this.held = false;
+    if (this.ownerOf(aside)?.token !== this.token) {
+      // Another owner's lock: this one was taken over while held. Hand it back.
+      try {
+        renameSync(aside, this.lock);
+      } catch {}
+      throw new Error("Memory root lock was taken over while held");
+    }
+    rmSync(aside, { recursive: true, force: true });
   }
   readJournal() {
     const text = this.store.read(
