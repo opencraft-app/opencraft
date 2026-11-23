@@ -286,6 +286,17 @@ browser creates `owner.sock` in its own directory, so Gateway should run with th
 same UID. Owners left as root create root-owned sockets; giving non-root clients
 access to them is a deployment decision outside this option.
 
+The standard core composition of this option is root Hands
+(`scripts/container-deployment/root-hands.mjs`), which the default Hands entry
+selects when it runs as UID 0. It drops the browser to
+`OPENCRAFT_HANDS_CLIENT_UID:GID`, keeps execution, terminal and files as root in a
+private server directory, and publishes their sockets by hardlink into a private
+client directory in the same mount (and the browser socket in reverse). Each
+owner credential has one 0600 copy per identity with the same value; startup
+creates only missing copies and empty default directories, and fails instead of
+rotating credentials or re-owning existing data. The deployment profile is
+`deploy/compose.root-hands.yaml`; see the [deployment README](deploy/README.md) for the host layout.
+
 ## Optional account ENV delivery
 
 With `OPENCRAFT_ENVIRONMENT_DELIVERY=opaque` (Assets context only; the earlier
