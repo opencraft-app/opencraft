@@ -145,9 +145,11 @@ Provider tests must not be described as complete production Bot integration.
 
 ### Provider registry, shared broker and persistent workspaces
 
-Remote providers are pluggable without touching workspace or Bot owners. Only
-E2B is implemented (plus `static-docker` for WorkspaceHost placement); no
-Cloudflare or other provider exists yet, and a registry entry alone is not a claim of
+Remote providers are pluggable without touching workspace or Bot owners. E2B,
+`static-docker` (WorkspaceHost placement) and `cloudflare`
+(`@opencraft/sandbox-cloudflare`, a container held by the WorkspaceHost Durable Object;
+no deployment assembly yet) are implemented; no other provider exists, and a registry
+entry alone is not a claim of
 compatibility.
 
 - **Registry.** `@opencraft/sandbox/providers` defines a provider as
@@ -230,7 +232,9 @@ Every backend that advertises endpoints must pass
 half-close, close from either side, back-pressure, attached failure isolation and
 validation, receipt re-attach, `workspace://` resolution); the suite runs
 in-process, local child-process, E2B adapter (vendor SDK replaced by local
-processes) and static-docker link (agent link server in-process) harnesses, plus
+processes), static-docker link (agent link server in-process) and Cloudflare (the real
+backend over an in-process `ctx.container` double, tests/execution/fixtures/cloudflare-container.ts)
+harnesses, plus
 opt-in real-container harnesses: `docker exec` + broker
 (`OPENCRAFT_SANDBOX_CONFORMANCE_DOCKER=<image with python3>`) and static-docker
 (`OPENCRAFT_SANDBOX_CONFORMANCE_STATIC_DOCKER=<opencraft runtime image>`, the image's
@@ -261,6 +265,18 @@ admits it like `create`. Attach never creates or replaces: when the provider can
 prove the receipt names the same live instance it rejects `SANDBOX_UNAVAILABLE`, and the
 owner decides whether to create a new environment and recover.
 
+A backend may also set `SandboxEnvironment.lost` (optional `Promise<SandboxLoss>`,
+`{reason: "exited" | "crashed" | "stopped", code?}`): it settles once, never rejects,
+and only when the provider observed the environment end without the owner's `close()`
+(Cloudflare `monitor()`; a later Docker provisioner's container exit). The pool passes it
+through; `WorkspaceRuntime` drops the binding at once (`released` with reason
+`lost:<reason>`) so the next use re-attaches or creates. The owner still calls `close()`
+to confirm destruction and return capacity. Backends without it (static-docker, E2B)
+are unchanged. A broker launch port may implement the optional
+`SandboxBrokerChannel.dispose()`; the shared broker calls it once when a process failed
+so the provider can end that transport (the Cloudflare backend closes exec stdin, then
+signals only an exec that has not exited).
+
 `createWorkspaceRuntime` (`@opencraft/sandbox/workspace`, no Node types) owns one
 workspace's environment bindings: per environment it re-attaches the persisted receipt
 or creates, reads the agent's identity over the `control` endpoint (`probe`:
@@ -275,6 +291,7 @@ and reports a changed incarnation. It never replays bytes.
 | `static-docker` (`@opencraft/sandbox-node/static-docker`) | the agent's link: a Unix socket in a directory mounted only into the Host and that container; per process one connection carrying the shared broker | agent incarnation | same incarnation only (link `attach` with expected incarnation) |
 | `docker-provisioner` (`@opencraft/sandbox-node/docker-provisioner`) | the same link as `static-docker` (`bindSandboxLink`), in the workspace's directory of a links volume the provisioner mounts into that container alone | `<container id>:<agent incarnation>` | provisioner `inspect` reports the same container running, then link `attach` with the expected incarnation; a stopped container is never started by `attach` |
 | `e2b` | `commands.run` + shared broker | sandbox id | `Sandbox.connect` (pinned SDK 2.x); missing/unverifiable → lost |
+| `cloudflare` (`@opencraft/sandbox-cloudflare`) | one `ctx.container.exec` per process carrying the shared broker (exec stdin is the control input) | `<incarnation label>.<kernel boot id>.<placement id>` | container running with the same `inspect()` label, boot id and placement id; otherwise lost. Never the Durable Object name |
 | in-process / local process (tests, Hands-style owners) | direct | none | not offered |
 
 static-docker link protocol (one JSON line per connection): `attach {ticket,
@@ -329,18 +346,18 @@ A backend whose provider can host several incarnations under one name, stop an
 environment on its own, or lose a process handle must still fit this contract. The
 obligations come from a real Cloudflare Containers probe (2026-11-23; measured facts
 are in [workspace-host-split §3.6](../platform/workspace-host-split.md#36-部署形态统一建模)),
-but each one applies to every provider. Status after step 4c:
+but each one applies to every provider. Status after step 7a (the `cloudflare` provider):
 
 | Obligation | Status |
 | --- | --- |
-| `receipt.instanceId` is the agent incarnation (or a provider id that changes whenever the instance restarts), never a reusable name such as a Durable Object or container name (one DO name hosts several incarnations over time) | static-docker: incarnation (implemented); docker-provisioner: container id plus incarnation (implemented); E2B: sandbox id plus incarnation comparison in `WorkspaceRuntime` (implemented); Cloudflare: required, not implemented |
-| Process transport has real backpressure and half-close (`exec` stdin/stdout or raw TCP); WebSocket without backpressure is not an endpoint transport | contract and conformance suite (implemented). Cloudflare probe: `ctx.container.exec` stdin back-pressures and the fixed relay round-trips bytes; raw TCP `getTcpPort().connect()` has backpressure and half-close; WebSocket upgrade has none. A `sandbox-cloudflare` adapter is not implemented |
-| A lost process handle must not leave orphans: every broker process runs in its own session and the broker kills that session on control-input EOF; `workspace-agent` stops every child when it stops | implemented (broker `setsid`/`killpg` on EOF, link revocation by EOF; the AppServer child is a `detached` group signalled as a group, other children are signalled directly and are expected to own their descendants). Follow-up: a provider whose handle loss does **not** EOF the process stdin (Cloudflare DO reset: processes that do not read stdin are orphaned) needs `workspace-agent` to reap the process session when its link/endpoint connection ends |
-| Termination of an already exited process is not a cleanup failure and never signals a reused PID | follow-up: check that the process still belongs to the same session before kill; an exited process counts as confirmed termination |
+| `receipt.instanceId` is the agent incarnation (or a provider id that changes whenever the instance restarts), never a reusable name such as a Durable Object or container name (one DO name hosts several incarnations over time) | static-docker: incarnation (implemented); docker-provisioner: container id plus incarnation (implemented); E2B: sandbox id plus incarnation comparison in `WorkspaceRuntime` (implemented); Cloudflare: start label + boot id + placement id (implemented; verified across a real Durable Object reset) |
+| Process transport has real backpressure and half-close (`exec` stdin/stdout or raw TCP); WebSocket without backpressure is not an endpoint transport | contract and conformance suite (implemented). Cloudflare probe: `ctx.container.exec` stdin back-pressures and the fixed relay round-trips bytes; raw TCP `getTcpPort().connect()` has backpressure and half-close; WebSocket upgrade has none. `sandbox-cloudflare` uses exec + broker + relay (conformance suite with the double; 4 MiB round trip on real Cloudflare) |
+| A lost process handle must not leave orphans: every broker process runs in its own session and the broker kills that session on control-input EOF; `workspace-agent` stops every child when it stops | implemented (broker `setsid`/`killpg` on EOF, link revocation by EOF; the AppServer child is a `detached` group signalled as a group, other children are signalled directly and are expected to own their descendants). Cloudflare: every exec is a broker that reads its control input, so a handle lost in a DO reset EOFs it and it kills its session (implemented). Follow-up: `workspace-agent` reaping its own children when a link/endpoint connection ends |
+| Termination of an already exited process is not a cleanup failure and never signals a reused PID | Cloudflare backend: an exec is signalled only while its `exitCode` is unsettled (signalling an exited exec is an internal error in the DO); broker-side PID reuse check before `killpg`: follow-up |
 | The container main process handles SIGTERM | implemented: `container-service.mjs` forwards SIGTERM/SIGINT to `workspace-agent`, which drains and stops its children (the probe container without a handler did not stop for 30 s) |
-| Environment loss reported by the provider (crash without restart, provider-initiated stop, idle backstop) | follow-up: a minimal optional loss signal on `SandboxEnvironment`, driven by the provider (Cloudflare `monitor()` rejects with the exit code; Docker container exit). Today a loss is seen only as a failed relay start (`WorkspaceRuntime` rebinds once) or by `observe()`; docker-provisioner does not yet subscribe to Docker events |
-| Native endpoint connection (`connectEndpoint(target)`, for example a container TCP port with the agent routing each connection by its first line to the endpoint socket) preferred over the relay | follow-up, optional: same semantics as the relay (backpressure, half-close, no replay); the relay stays the fallback |
-| Provider idle timers are re-armed by the owner | follow-up: Cloudflare's container inactivity timeout is not retained across DO restarts and must be set in every DO construction; it is only a backstop for the WorkspaceHost idle policy |
+| Environment loss reported by the provider (crash without restart, provider-initiated stop, idle backstop) | implemented: optional `SandboxEnvironment.lost`; Cloudflare drives it from `monitor()` (verified on real Cloudflare: agent stop → `exited` in ~140 ms, runtime released and re-created). Docker container exit: follow-up (`docker-provisioner` does not yet subscribe to Docker events) |
+| Native endpoint connection (`connectEndpoint(target)`, for example a container TCP port with the agent routing each connection by its first line to the endpoint socket) preferred over the relay | follow-up, optional (not in the contract yet; the Cloudflare backend uses the relay): same semantics as the relay (backpressure, half-close, no replay); the relay stays the fallback |
+| Provider idle timers are re-armed by the owner | Cloudflare: set after start, on attach and on backend initialization; `armCloudflareContainerTimeout` for the DO constructor (implemented). Only a backstop for the WorkspaceHost idle policy |
 | Resource limits the provider does not enforce | Cloudflare containers report `cpu.max`/`pids.max` as `max` and nofile 1048576: the default 4096 tasks and 65536 FD per process must be applied by `workspace-agent`; CPU and memory (custom 4 vCPU / 8 GiB accepted) are reported by the provider |
 
 ### Optional persistence and sleep capabilities (`sleep`/`discard` implemented for docker-provisioner; snapshots design)

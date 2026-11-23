@@ -31,6 +31,8 @@ import {
   parseDockerProvisionerPolicy,
   serveDockerProvisioner,
 } from "@opencraft/sandbox-node/docker-provisioner-service";
+import { cloudflareSandboxBackend } from "@opencraft/sandbox-cloudflare";
+import { FakeDurableObjectContainer } from "./cloudflare-container";
 
 /** Observe the commands a backend receives without changing its behaviour. */
 function recording(backend: SandboxBackend, commands: SandboxCommand[]): SandboxBackend {
@@ -470,6 +472,67 @@ export async function staticDockerLinkHarness(): Promise<EndpointHarness> {
   };
 }
 
+/** The real `cloudflare` backend and shared broker in a Durable Object whose
+ * `ctx.container` is the in-process double (fixtures/cloudflare-container.ts): exec
+ * streams with back-pressure, start env not inherited, single-process kill, labels,
+ * monitor, destroy. A Host restart is a Durable Object reset over the same container. */
+export async function cloudflareFixtureHarness(): Promise<EndpointHarness> {
+  const host = await socketHost(),
+    commands: SandboxCommand[] = [],
+    wire: SandboxCommand[] = [];
+  const container = new FakeDurableObjectContainer();
+  // Every environment teardown is a container destroy (owner close or fail-closed retirement).
+  const closes = {
+    get count() {
+      return container.destroys;
+    },
+  };
+  let partial = "";
+  const decoder = new TextDecoder();
+  container.onStdin = (chunk) => {
+    partial += decoder.decode(chunk, { stream: true });
+    for (let at = partial.indexOf("\n"); at >= 0; at = partial.indexOf("\n")) {
+      const line = partial.slice(0, at);
+      partial = partial.slice(at + 1);
+      if (line.startsWith('{"type":"start"')) wire.push(JSON.parse(line).command);
+    }
+  };
+  const make = () =>
+    recording(
+      cloudflareSandboxBackend({
+        container,
+        image: container.images.base,
+        python: "/usr/bin/python3",
+        requestTimeoutMs: 15_000,
+        inactivityTimeoutMs: 15 * 60_000,
+      }),
+      commands,
+    );
+  return {
+    name: "cloudflare-fixture",
+    python: "/usr/bin/python3",
+    resources: defaults,
+    catCommand: ["/bin/cat"],
+    commands,
+    closes: closes as { count: number },
+    wire,
+    backend: make(),
+    reconnect: () => {
+      container.resetDurableObject();
+      return make();
+    },
+    // The platform restarted the container: same Durable Object, new incarnation.
+    replaceInstance: () => container.restart(),
+    listen: host.listen,
+    missing: host.missing,
+    async dispose() {
+      await container.destroy().catch(() => {});
+      await host.dispose();
+      if (container.killAfterExit) throw Error(`signalled ${container.killAfterExit} exited process(es)`);
+    },
+  };
+}
+
 const run = promisify(execFile);
 /** A real local container reached through `docker exec -i` and the shared broker
  * (the per-process stream a docker-provisioner/static-docker provider would use).
@@ -775,7 +838,13 @@ export async function dockerProvisionerContainerHarness(image: string): Promise<
 
 export async function harnesses(): Promise<(() => Promise<EndpointHarness>)[]> {
   const only = process.env.OPENCRAFT_SANDBOX_CONFORMANCE_ONLY;
-  const list = [inProcessHarness, localProcessHarness, e2bFixtureHarness, staticDockerLinkHarness].filter(
+  const list = [
+    inProcessHarness,
+    localProcessHarness,
+    e2bFixtureHarness,
+    staticDockerLinkHarness,
+    cloudflareFixtureHarness,
+  ].filter(
     (make) => !only || make.name.toLowerCase().startsWith(only),
   );
   const image = process.env.OPENCRAFT_SANDBOX_CONFORMANCE_DOCKER,

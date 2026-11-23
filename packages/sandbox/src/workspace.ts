@@ -182,6 +182,8 @@ export type WorkspacePlacementEvent =
       readonly incarnation: string;
       readonly previous: string;
     }
+  /** `reason` is `close`, a fault code, `incarnation-changed`, or `lost:<reason>` when the
+   * provider reported the environment lost (SandboxEnvironment.lost). */
   | { readonly type: "released"; readonly environment: string; readonly reason: string };
 
 export interface WorkspaceRuntime {
@@ -301,6 +303,9 @@ export function createWorkspaceRuntime(options: {
       else emit({ type: "created", environment: slot.name, incarnation: agent.incarnation.id });
       const bound: Bound = { sandbox, agent, descriptors: new Map() };
       slot.current = bound;
+      // A provider-reported loss drops the binding at once; the next use attaches or
+      // creates again (recovery, never replay) instead of failing one relay first.
+      void sandbox.lost?.then((loss) => release(slot, bound, `lost:${loss.reason}`));
       return bound;
     })().finally(() => {
       slot.opening = undefined;

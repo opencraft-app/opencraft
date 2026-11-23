@@ -67,9 +67,21 @@ export interface SandboxReceipt {
   /** Provider instance identity (E2B sandbox id; a static provider's agent incarnation). */
   readonly instanceId: string;
 }
+/** Why a provider reports an environment lost: its main process exited (`exited`, code 0)
+ * or failed (`crashed`, with the exit code when known), or the provider stopped it for
+ * another reason (`stopped`: platform stop, idle backstop, host loss). */
+export interface SandboxLoss {
+  readonly reason: "exited" | "crashed" | "stopped";
+  readonly code?: number;
+}
 export interface SandboxEnvironment {
   /** Present when the backend can re-attach to this exact instance after a Host restart. */
   readonly receipt?: SandboxReceipt;
+  /** Optional provider-driven loss notification (e.g. Cloudflare `monitor()`, a container
+   * exit event). Settles once, never rejects, and only for a loss the owner did not cause
+   * with `close()`; without it, loss is seen only when a process cannot start. The owner
+   * still calls `close()` to confirm destruction and return capacity. */
+  readonly lost?: Promise<SandboxLoss>;
   /** Effective constraints reported by the backend; absent fields are unclaimed. */
   readonly resources: Readonly<SandboxResources>;
   readonly capabilities: { readonly terminal: boolean };
