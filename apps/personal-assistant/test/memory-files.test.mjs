@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import {
   mkdirSync,
   readFileSync,
+  readdirSync,
   writeFileSync,
   existsSync,
   symlinkSync,
@@ -959,4 +960,25 @@ test("external file conflicts are typed only after rollback, preserve disk edits
   assert.ok(!s.app.memory.list().some((m) => m.value === "must not commit"));
   set(s.app, "fresh", "fresh transaction succeeds");
   assert.ok(s.app.memory.list().some((m) => m.value === "fresh transaction succeeds"));
+});
+
+test("a lock is claimed with its owner already inside, and dead claimers' staging is swept", (t) => {
+  const p = profileFor(t),
+    directory = join(p.path, "lock-staging");
+  mkdirSync(directory);
+  // A claimer killed before renaming its staging directory into place.
+  const abandoned = join(directory, ".write-lock.2147483647.dead");
+  mkdirSync(abandoned);
+  const transaction = new MemoryFileTransaction({ root: directory }, {});
+  transaction.claim();
+  assert.equal(
+    JSON.parse(readFileSync(join(directory, ".write-lock", "owner.json"), "utf8")).pid,
+    process.pid,
+  );
+  assert.equal(existsSync(abandoned), false);
+  // A second claim onto the held lock reports it as taken and leaves no staging behind.
+  assert.throws(() => new MemoryFileTransaction({ root: directory }, {}).claim(), { code: "EEXIST" });
+  assert.deepEqual(readdirSync(directory), [".write-lock"]);
+  transaction.release();
+  assert.deepEqual(readdirSync(directory), []);
 });
