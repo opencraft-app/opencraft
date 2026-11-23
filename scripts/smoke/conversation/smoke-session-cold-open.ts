@@ -161,11 +161,14 @@ async function assertDateDisclosure(page: Page) {
     const frame = date.locator('xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " thread-user-message ") or contains(concat(" ", normalize-space(@class), " "), " thread-frame--assistant ")][1]');
     // The slot is measured within its message: focus moving out of the
     // composer may resize it and shift the whole bottom-anchored timeline.
-    const slotBounds = async () => {
-      const [own, owner] = await Promise.all([date.boundingBox(), frame.boundingBox()]);
-      assert.ok(own && owner, 'The clock and its message are laid out');
-      return { x: own.x - owner.x, y: own.y - owner.y, width: own.width, height: own.height };
-    };
+    // Both rectangles come from one synchronous read: separate round trips can
+    // straddle a timeline shift and report two different layouts.
+    const slotBounds = () => date.evaluate(element => {
+      const owner = element.closest('.thread-user-message, .thread-frame--assistant');
+      if (!owner) throw new Error('The clock has no message frame');
+      const own = element.getBoundingClientRect(), frameRect = owner.getBoundingClientRect();
+      return { x: own.x - frameRect.x, y: own.y - frameRect.y, width: own.width, height: own.height };
+    });
     const restingBounds = await slotBounds();
     await frame.locator('button').first().focus();
     await expectVisibility(true);
