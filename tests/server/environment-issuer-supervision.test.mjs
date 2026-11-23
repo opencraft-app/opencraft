@@ -56,7 +56,7 @@ test("without ENV delivery Brain writes exactly the previous host configurations
   await writeExecutionHostConfigurations(paths, "/opt/opencraft", env, undefined);
   const engine = await readJson(paths.engineConfig),
     dsh = await readJson(paths.dshConfig);
-  assert.deepEqual(engine, {
+  const previousEngine = {
     descriptorPath: paths.engineDescriptor,
     dataDirectory: paths.dataDirectory,
     runtimeDirectory: paths.runtimeDirectory,
@@ -66,9 +66,16 @@ test("without ENV delivery Brain writes exactly the previous host configurations
     gitWorkerFile: "/opt/opencraft/runtime/personal-git-worker.mjs",
     dshDescriptorPath: paths.dshDescriptor,
     fileSystemOwner: { endpoint: paths.fileSystemEndpoint, tokenFile: paths.fileSystemToken },
-  });
+  };
+  assert.deepEqual(engine, previousEngine);
   assert.ok(!("environmentIssuer" in dsh));
   assert.equal(dsh.descriptorPath, paths.dshDescriptor);
+  // Byte-identical to the configurations written before ENV delivery existed.
+  assert.equal(await readFile(paths.engineConfig, "utf8"), JSON.stringify(previousEngine) + "\n");
+  assert.equal(
+    await readFile(paths.dshConfig, "utf8"),
+    JSON.stringify(dshHostConfiguration(paths, "/opt/opencraft", env)) + "\n",
+  );
   // The Codex AppServer starts exactly as before: no flag and no launch file,
   // and a stale file from an earlier delivery is removed.
   assert.deepEqual(codexAppServerEnvironmentArguments(paths), []);
@@ -95,8 +102,10 @@ test("without ENV delivery Brain writes exactly the previous host configurations
 test("ENV delivery is a deployment setting that needs the Assets context and the deployment issuer path", async (t) => {
   const { root } = await deployment(t);
   const base = { OPENCRAFT_DATA_DIR: join(root, "state"), OPENCRAFT_WORKSPACE_DIR: join(root, "work") };
-  const paths = deploymentPaths({ ...base, OPENCRAFT_ENVIRONMENT_DELIVERY: "vault-owner" });
-  assert.equal(paths.environmentDelivery, "vault-owner");
+  const paths = deploymentPaths({ ...base, OPENCRAFT_ENVIRONMENT_DELIVERY: "opaque" });
+  assert.equal(paths.environmentDelivery, "opaque");
+  // The earlier spelling has the same meaning; neither names a vault owner.
+  assert.deepEqual(deploymentPaths({ ...base, OPENCRAFT_ENVIRONMENT_DELIVERY: "vault-owner" }), paths);
   assert.equal(paths.environmentIssuerFile, join(root, "state", "run", "environment-issuer.json"));
   assert.equal(deploymentPaths({ ...base, OPENCRAFT_ENVIRONMENT_DELIVERY: "" }).environmentDelivery, null);
   for (const extra of [
@@ -109,7 +118,7 @@ test("ENV delivery is a deployment setting that needs the Assets context and the
 });
 
 test("Brain pins the published issuer into the DSH, Pi and Codex AppServer configurations", async (t) => {
-  const { env, paths } = await deployment(t, { OPENCRAFT_ENVIRONMENT_DELIVERY: "vault-owner" });
+  const { env, paths } = await deployment(t, { OPENCRAFT_ENVIRONMENT_DELIVERY: "opaque" });
   const issuer = key();
   await publish(paths.environmentIssuerFile, issuer);
   const pinned = await executionHostIssuer(paths, quiet);
@@ -149,8 +158,29 @@ test("Brain pins the published issuer into the DSH, Pi and Codex AppServer confi
     assert.throws(() => codexAppServerEnvironmentLaunch(paths, "/opt/opencraft", bad, issuer));
 });
 
+test("with an identity-owned vault Brain pins the key that owner publishes; nothing reads the owner", async (t) => {
+  // The Gateway's owner is not part of Brain's configuration: the same
+  // deployment setting pins whichever vault owner publishes at the path.
+  const { env, paths } = await deployment(t, { OPENCRAFT_ENVIRONMENT_DELIVERY: "opaque" });
+  // The identity composition's vault Worker publishes the same file core's
+  // Worker would (createAssetsStorage environmentIssuer.publish); the Gateway
+  // side is covered by headless-composition.test.mjs.
+  const identityIssuer = key();
+  await publish(paths.environmentIssuerFile, identityIssuer);
+  const pinned = await executionHostIssuer(paths, quiet);
+  assert.equal(pinned, identityIssuer);
+  await writeExecutionHostConfigurations(paths, "/opt/opencraft", env, pinned, machineId);
+  assert.equal((await readJson(paths.engineConfig)).environmentIssuer, identityIssuer);
+  assert.equal((await readJson(paths.dshConfig)).environmentIssuer, identityIssuer);
+  assert.equal((await readJson(paths.codexEnvironmentLaunchConfig)).issuer, identityIssuer);
+  assert.deepEqual(codexAppServerEnvironmentArguments(paths), [
+    "--environment-launch-config",
+    paths.codexEnvironmentLaunchConfig,
+  ]);
+});
+
 test("a missing or untrusted publication never supplies a key: hosts pin an unissuable key", async (t) => {
-  const { root, paths } = await deployment(t, { OPENCRAFT_ENVIRONMENT_DELIVERY: "vault-owner" });
+  const { root, paths } = await deployment(t, { OPENCRAFT_ENVIRONMENT_DELIVERY: "opaque" });
   const logs = [];
   // Missing: a valid key nothing can issue for, distinct on every launch.
   const missing = await executionHostIssuer(paths, (message) => logs.push(JSON.parse(message)));
@@ -223,7 +253,7 @@ test("launch-time pinning under systemd reads only the named publication", async
 });
 
 test("a rotated key relaunches DSH, Pi and the Codex AppServer with it; until then they keep the old pin", async (t) => {
-  const { env, paths } = await deployment(t, { OPENCRAFT_ENVIRONMENT_DELIVERY: "vault-owner" });
+  const { env, paths } = await deployment(t, { OPENCRAFT_ENVIRONMENT_DELIVERY: "opaque" });
   const first = key(),
     second = key();
   await publish(paths.environmentIssuerFile, first);

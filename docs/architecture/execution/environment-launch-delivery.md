@@ -10,8 +10,9 @@ slice 7 makes Codex receive creation and Turn ENV in the split Codex Core
 process that owns `codex app-server`, with the core vault owner as issuer. DSH
 in `assets` mode receives Turn ENV through
 `EnvironmentLaunchReceiver` when either the identity composition supplies a
-vault-owner port or the installation sets `environmentDelivery: 'vault-owner'`,
-which makes the core vault Worker the issuer and the owner of ENV metadata. An
+vault-owner port or the installation sets `environmentDelivery: 'opaque'`
+without such a port, which makes the core vault Worker the issuer and the owner
+of ENV metadata (see [Supervisor wiring](#supervisor-wiring)). An
 identity composition that owns the vault itself can supply its durable
 execution admission and its metadata port with that port, and is then relayed
 on the same path (see [Compatibility](#compatibility)). Pi
@@ -100,7 +101,7 @@ execution owner: read its own durable admission (Worker), require the relayed
   owners through trusted composition (process configuration), never from a
   request or browser frame. Headless receives it either from the identity
   composition as `identity.environmentLaunch = { issuer, seal(target, context) }`
-  or, with `environmentDelivery: 'vault-owner'`, from the core issuer
+  or, with `environmentDelivery: 'opaque'` and no such port, from the core issuer
   (`EnvironmentLaunchOwner`) in the Headless assets Worker, which already is the
   only opener of `employee-git-vault.sqlite`. The core issuer key is sealed in
   that vault and survives vault-owner restarts; it changes only by explicit
@@ -282,7 +283,9 @@ AAD like every other document. `sealedEnvironmentIssuerKey` reads it at start
 or creates it once. A configured rotation generation
 (`OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION`) that differs from the stored one
 replaces the key; no generation keeps the stored key. A stored document that is
-not a valid key fails startup instead of being replaced silently.
+not a valid key fails startup instead of being replaced silently. An identity
+composition that owns its vault receives the same generation (see
+[Supervisor wiring](#supervisor-wiring)) and applies it to its own sealed key.
 
 The same Worker also serves the personal Git seal port
 (`PersonalGitSealPort` from `@opencraft/execution-environment/personal-git-seal`,
@@ -348,15 +351,35 @@ supply or select it.
 
 Independent execution owners (DSH, Pi and the split Codex AppServer) pin the
 issuer from their own configuration. The configuration gets the key from the
-vault owner's publication only:
+vault owner's publication only. Delivery and pinning are a deployment setting;
+which vault owner publishes is decided by the Gateway's composition alone:
+
+- **Setting.** `OPENCRAFT_ENVIRONMENT_DELIVERY=opaque` (option
+  `environmentDelivery: 'opaque'`) turns on ENV delivery and the published
+  issuer. It does not name an owner. The earlier value `vault-owner` is still
+  accepted with the same meaning and is normalized to `opaque`.
+- **Owner selection (Gateway).** `environmentLaunchOwner` picks exactly one
+  owner: the identity composition's `identity.environmentLaunch` when it
+  supplies one, else, with delivery, core's assets vault Worker. Delivery or
+  the port beside the synchronous runtime (`identity.executionEnvironment`) is
+  refused with `Execution ENV cannot have two owners`; nothing falls back to
+  another owner. With delivery, `createIdentity` receives
+  `environmentIssuer: { publish?, generation? }` (frozen; absent without
+  delivery): the composition passes it to its vault Worker
+  (`createAssetsStorage`'s `environmentIssuer`), so the identity owner
+  publishes at the same path and rotates with the same generation as core's
+  Worker would. Core cannot observe whether the composition applied the
+  generation; it does check the publication: with a publication path, the
+  Gateway refuses to start unless the published key equals
+  `identity.environmentLaunch.issuer` once `createIdentity` returns.
 
 - **Publication.** With `environmentIssuer.publish` (deployment variable
   `OPENCRAFT_ENVIRONMENT_ISSUER_FILE`), the vault-owner Worker writes
   `{"schemaVersion":1,"issuer":"<public key>"}` to that path: an owner-only
   (0600) regular file in the private data directory, replaced atomically and
   only when its content changes. It never contains the private key. Main does
-  not write it. A Headless Gateway with core delivery and an independent engine
-  host refuses to start without a publication path.
+  not write it. A Headless Gateway with delivery and an independent engine
+  host refuses to start without a publication path, before any owner starts.
 - **Reading.** `readPublishedEnvironmentIssuer`
   (`@opencraft/execution-environment/environment-issuer-publication`, shared by
   the deployment supervisors and Codex Core) accepts only a regular file (no
@@ -369,7 +392,10 @@ vault owner's publication only:
   (`environment_launch_unavailable`), and unowned Turns stay empty as before.
 - **Container (Brain).** `deploymentPaths` reads `OPENCRAFT_ENVIRONMENT_DELIVERY`
   (Assets context only) and fixes the publication at `run/environment-issuer.json`
-  in the data directory. The Gateway passes that path to the vault owner. Brain
+  in the data directory. Brain has no notion of the owner: it pins whatever key
+  is published there. Both services take the same value, so an installation
+  whose identity composition owns the vault sets it on both, exactly like one
+  that uses core's Worker. The Gateway passes that path to the vault owner. Brain
   starts before the Gateway's vault owner exists, so only this stable published
   key (or an unissuable one until it is published) can be pinned. Brain writes
   `environmentIssuer` into the DSH and Pi host configurations and
@@ -402,10 +428,13 @@ vault owner's publication only:
 - No `identity.environmentLaunch` and no `environmentDelivery`: every path is
   unchanged.
 - `identity.environmentLaunch` together with `identity.executionEnvironment` is
-  rejected: one installation has one ENV owner. The core issuer
-  (`environmentDelivery: 'vault-owner'`) together with either of them is
-  rejected at startup (`validateEnvironmentDelivery`), as is a core issuer
-  without the assets vault Worker or without execution admission.
+  rejected: one installation has one ENV owner. Delivery
+  (`environmentDelivery: 'opaque'`) together with `identity.executionEnvironment`
+  is rejected at startup (`environmentLaunchOwner`), as is a core issuer
+  without the assets vault Worker or without execution admission. Delivery
+  together with `identity.environmentLaunch` selects that port as the only
+  owner; core's Worker does not issue. Before this, that combination was
+  refused, so no running installation changes meaning.
 - `environmentLaunch` without an Actor/lease handoff is rejected at startup
   instead of failing every command. The handoff is core's own
   (`humanGitExecution`) or, for an identity composition that owns the vault,
@@ -610,7 +639,7 @@ synchronous runtime.
    Implemented. `EnvironmentMetadata` (`environment-metadata.ts`) is the one
    implementation of the metadata rules; `ExecutionEnvironmentRuntime` delegates
    to it, so installations without a separate vault owner are unchanged. With
-   `environmentDelivery: 'vault-owner'` the assets Worker serves it as
+   `environmentDelivery: 'opaque'` and core's Worker as owner, the assets Worker serves it as
    `EnvironmentMetadataPort` (`admit`, `project`, `bind`, `bindCreator`,
    `rememberProjects`): writes run FIFO with every other vault write, `admit` and
    `project` are committed-state reads. Scope admission is split at the process
@@ -625,7 +654,7 @@ synchronous runtime.
    binding or catalog response into an error. Close drains admitted requests and
    committing responses; the Worker drains accepted writes before it exits, and
    a restarted owner reads every committed document. `identity.executionEnvironment`
-   is refused together with the core vault owner (`validateEnvironmentDelivery`).
+   is refused together with delivery (`environmentLaunchOwner`).
    Tests (`environment-metadata-owner.test.ts`): same rules as the synchronous
    runtime, response and request ordering, fail-closed Worker loss, close drain
    and restart, Main timers running while the Worker waits on a held vault lock,
@@ -657,7 +686,7 @@ synchronous runtime.
 
 ## Hands terminal
 
-With `environmentDelivery: 'vault-owner'` the core vault owner offers
+With `environmentDelivery: 'opaque'` and no identity port, the core vault owner offers
 `terminalActor(account)` next to `seal`. Headless then composes the Hands
 terminal service with it; otherwise `prepare` is the synchronous path as
 before. A downstream `identity.environmentLaunch` port without `terminalActor`
@@ -710,7 +739,7 @@ membershipRevision, hostId, threadId, incarnation }`, only on a local
 
 Rollback plan, to an owner without delivery support:
 
-1. Remove `environmentDelivery: 'vault-owner'` (or roll back the Host); new
+1. Remove `environmentDelivery` (or roll back the Host); new
    spawns stop writing held rows.
 2. Stop the terminal owner cleanly. Held rows are released on close; launched
    rows are v1 rows already. The journal is v1.
@@ -775,7 +804,21 @@ Recorded after the first slice; later slices follow them.
   Git port alone.
 - **The downstream port shape `{issuer, seal(target, context): Promise<string>}` is
   accepted for now**; slice 3 adds a core vault-owner issuer so installations no
-  longer need to supply it. Implemented as `environmentDelivery: 'vault-owner'`.
+  longer need to supply it. Implemented as `environmentDelivery: 'opaque'`
+  (originally spelled `'vault-owner'`).
+- **Delivery is separate from the choice of vault owner.** Delivery used to
+  mean "core's Worker issues", so an identity composition that owns its vault
+  could get Brain to pin its published key only by setting the variable on
+  Brain and not on the Gateway. Two options were compared: (a) one deployment
+  setting that turns on delivery and pinning, with the Gateway choosing the
+  owner from its composition; (b) a separate pin-only setting next to the
+  owner setting. We chose (a): the owner is already determined by the
+  composition (the port is supplied or not), so a second setting would only
+  add combinations that must be refused, while the publication path and
+  generation are the same for either owner. The value was renamed to the
+  neutral `opaque`; `vault-owner` keeps being accepted with the same meaning,
+  because the only combination whose behaviour changed (delivery beside an
+  identity port) was refused before.
 - **v2 is a separate domain, selected by the receiver.** The version label is
   part of the authenticated header and the owner's expected context picks the
   version. v1 stays unchanged so already pinned execution owners keep working;

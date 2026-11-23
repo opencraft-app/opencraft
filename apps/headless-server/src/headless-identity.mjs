@@ -50,31 +50,43 @@ export function validGitExecutionOwner(git) {
     && typeof git.grant === 'function' && typeof git.reservation === 'function';
 }
 
-/** Opaque ENV delivery from the core vault Worker (`'vault-owner'`). It replaces,
- * never accompanies, the synchronous runtime or a downstream vault-owner port. */
-export function validateEnvironmentDelivery(delivery, identity) {
-  if (delivery === undefined) return false;
-  if (delivery !== 'vault-owner') throw new Error('Invalid environment delivery');
-  if (identity?.executionEnvironment != null || identity?.environmentLaunch !== undefined)
+/** Opaque ENV delivery is a deployment setting (`'opaque'`): the vault owner
+ * publishes its issuer and independent execution owners pin it. It does not
+ * name the owner. `'vault-owner'` is the earlier spelling with the same
+ * meaning and stays accepted; it is normalized to `'opaque'`. */
+export const ENVIRONMENT_DELIVERY = 'opaque';
+const ENVIRONMENT_DELIVERY_VALUES = new Set([ENVIRONMENT_DELIVERY, 'vault-owner']);
+
+/** The one ENV vault owner of an installation: `'identity'` when the identity
+ * composition supplies `environmentLaunch` (with or without deployment
+ * delivery, as before), else `'core'` (core's assets vault Worker) when
+ * delivery is on, else `null`. Never both: delivery beside the synchronous
+ * runtime is refused, and `validateHeadlessIdentity` already refuses
+ * `environmentLaunch` beside it. Nothing falls back to another owner. */
+export function environmentLaunchOwner(delivery, identity) {
+  if (delivery !== undefined && !ENVIRONMENT_DELIVERY_VALUES.has(delivery)) throw new Error('Invalid environment delivery');
+  if (identity?.executionEnvironment != null && (delivery !== undefined || identity.environmentLaunch !== undefined))
     throw new Error('Execution ENV cannot have two owners');
-  return true;
+  if (identity?.environmentLaunch !== undefined) return 'identity';
+  return delivery === undefined ? null : 'core';
 }
 
-/** Deployment configuration of core ENV delivery. `OPENCRAFT_ENVIRONMENT_ISSUER_FILE`
- * is where the vault owner publishes its issuer public key for the supervisor of
- * independent execution owners; `..._GENERATION` rotates the sealed key
- * explicitly. Empty values are unset; nothing here selects a key. */
+/** Deployment configuration of ENV delivery. `OPENCRAFT_ENVIRONMENT_ISSUER_FILE`
+ * is where the vault owner (whichever it is) publishes its issuer public key for
+ * the supervisor of independent execution owners; `..._GENERATION` rotates that
+ * owner's sealed key explicitly. Empty values are unset; nothing here selects a
+ * key or an owner. */
 export function environmentDeliveryOptions(env) {
   const delivery = env.OPENCRAFT_ENVIRONMENT_DELIVERY || undefined,
     publish = env.OPENCRAFT_ENVIRONMENT_ISSUER_FILE || undefined,
     generation = env.OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION || undefined;
   if (delivery === undefined) {
-    if (publish !== undefined || generation !== undefined) throw new Error('The ENV issuer requires OPENCRAFT_ENVIRONMENT_DELIVERY=vault-owner');
+    if (publish !== undefined || generation !== undefined) throw new Error('The ENV issuer requires OPENCRAFT_ENVIRONMENT_DELIVERY=opaque');
     return {};
   }
-  if (delivery !== 'vault-owner') throw new Error('OPENCRAFT_ENVIRONMENT_DELIVERY must be vault-owner');
+  if (!ENVIRONMENT_DELIVERY_VALUES.has(delivery)) throw new Error('OPENCRAFT_ENVIRONMENT_DELIVERY must be opaque');
   if (publish !== undefined && (!publish.startsWith('/') || publish.length > 4096)) throw new Error('OPENCRAFT_ENVIRONMENT_ISSUER_FILE must be absolute');
   if (generation !== undefined && !/^[A-Za-z0-9._-]{1,64}$/u.test(generation)) throw new Error('Invalid OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION');
-  return { environmentDelivery: delivery, ...(publish || generation ? { environmentIssuer: {
+  return { environmentDelivery: ENVIRONMENT_DELIVERY, ...(publish || generation ? { environmentIssuer: {
     ...(publish ? { publish } : {}), ...(generation ? { generation } : {}) } } : {}) };
 }
