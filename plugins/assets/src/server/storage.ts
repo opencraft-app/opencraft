@@ -201,7 +201,7 @@ export async function createAssetsStorage(
     if (
       Object.keys(workspaceMethods).some(
         (name) =>
-          !/^workspace(?:Begin|Status|NativeReceipt|Cancel|Forget|Selection|FileScope|FileRequest|PlacementPage|ArtifactDownload|ArtifactRead|ArtifactUpload|ArtifactWrite|ArtifactFinish|ArtifactClose|TerminalOpen|TerminalProbe|TerminalRequest|TerminalStatus|TerminalForget|TerminalSnapshot|TerminalUnwatch|BrowserOpen|BrowserStatus|BrowserRead|BrowserSend|BrowserSent|BrowserForget|BrowserClose|LifecycleBegin|LifecycleStatus|LifecycleForget|BotCatalog|BotValidate|BotOpen|BotStatus|BotExecute|BotOperation|BotForget|BotClose|BotCallbacks|BotReply)$/.test(
+          !/^workspace(?:Begin|Status|NativeReceipt|Cancel|Forget|Selection|FileScope|FileRequest|PlacementPage|ArtifactDownload|ArtifactRead|ArtifactUpload|ArtifactWrite|ArtifactFinish|ArtifactClose|TerminalOpen|TerminalProbe|TerminalRequest|TerminalStatus|TerminalForget|TerminalSnapshot|TerminalUnwatch|BrowserOpen|BrowserStatus|BrowserRead|BrowserSend|BrowserSent|BrowserForget|BrowserClose|LifecycleBegin|LifecycleStatus|LifecycleForget|BotCatalog|BotValidate|BotOpen|BotSources|BotSourceValidate|BotSourceOpen|BotStatus|BotExecute|BotOperation|BotForget|BotClose|BotCallbacks|BotReply)$/.test(
             name,
           ),
       )
