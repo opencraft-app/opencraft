@@ -8,6 +8,13 @@ import test from "node:test";
 import { collectCgroupPids, serviceCgroupRoot } from "../../scripts/server-deployment/owner-cgroup.mjs";
 import { collectInventory } from "../../scripts/full-upgrade/inventory.mjs";
 const exec = promisify(execFile);
+// The delegated owner receives its paths as argv; generated code and shell text stay constant.
+const DELEGATED_OWNER_SCRIPT = `import {spawn} from 'node:child_process'; import {writeFileSync} from 'node:fs';
+const [inspector, marker, coverage] = process.argv.slice(2);
+const {inspectOwnerCgroup} = await import(inspector);
+spawn('/bin/sh', ['-c', 'sleep 90 & echo $! > "$1"', 'owner-tool', marker], {stdio: 'ignore'});
+setTimeout(() => writeFileSync(coverage, JSON.stringify(inspectOwnerCgroup([]))), 300); setInterval(() => {}, 1000);
+`;
 
 test("owner membership covers nested tools and refuses incomplete coverage", async () => {
   const root = await mkdtemp(join(tmpdir(), "oc-cgroup-"));
@@ -30,9 +37,9 @@ test("delegated occupancy and inventory see orphan tools; owner stop kills them"
   const unit = `oc-delegated-test-${process.pid}-${Date.now()}.service`;
   const script = join(root, "owner.mjs"), marker = join(root, "orphan");
   const inspector = new URL("../../scripts/server-deployment/owner-cgroup.mjs", import.meta.url).href;
-  await writeFile(script, `import {spawn} from 'node:child_process'; import {writeFileSync} from 'node:fs'; import {inspectOwnerCgroup} from ${JSON.stringify(inspector)}; spawn('/bin/sh',['-c',${JSON.stringify(`sleep 90 & echo $! > '${marker}'`)}],{stdio:'ignore'}); setTimeout(()=>writeFileSync(${JSON.stringify(join(root,"coverage"))},JSON.stringify(inspectOwnerCgroup([]))),300); setInterval(()=>{},1000);`);
+  await writeFile(script, DELEGATED_OWNER_SCRIPT);
   try {
-    await exec("systemd-run", ["--quiet", `--unit=${unit}`, "--property=Delegate=yes", "--property=DelegateSubgroup=app", process.execPath, script]);
+    await exec("systemd-run", ["--quiet", `--unit=${unit}`, "--property=Delegate=yes", "--property=DelegateSubgroup=app", process.execPath, script, inspector, marker, join(root, "coverage")]);
     let tool = 0;
     for (let n=0; n<200; n++) { try { tool=Number((await readFile(marker,"utf8")).trim()); if(tool) break; } catch {} await new Promise(r=>setTimeout(r,10)); }
     assert.ok(tool > 0);

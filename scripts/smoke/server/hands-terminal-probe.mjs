@@ -47,6 +47,9 @@ const wait = async (id, after, pattern) => {
 try {
   await admitted;
   const previous = process.argv[4] ? JSON.parse(process.argv[4]) : null;
+  // The resume descriptor arrives on argv: accept only the shape the start phase prints.
+  if (previous && (typeof previous.id !== 'string' || !/^\d+$/.test(previous.pid) || !Number.isSafeInteger(previous.cursor)))
+    throw new Error('Invalid terminal resume descriptor');
   const id = previous?.id ?? 'container-smoke:' + randomUUID();
   if (!previous) {
     await call('process/spawn', { processHandle: id, command: ['/bin/bash', '--noprofile', '--norc'], cwd: process.argv[3], tty: true, size: { cols: 80, rows: 24 } });
@@ -64,7 +67,7 @@ try {
     await call('process/resizePty', { processHandle: id, size: { cols: 103, rows: 31 } });
     await call('process/writeStdin', { processHandle: id, deltaBase64: Buffer.from("printf 'RECOVERED_PID=%s VALUE=%s\\n' $$ \"$PTY_SMOKE\"; stty size\n").toString('base64') });
     const result = await wait(id, previous.cursor, /31 103/);
-    assert.match(decode(result), new RegExp(`RECOVERED_PID=${previous.pid} VALUE=preserved`));
+    assert.ok(decode(result).includes(`RECOVERED_PID=${previous.pid} VALUE=preserved`), 'resumed PTY must keep its shell and environment');
     await call('process/kill', { processHandle: id });
     console.log(JSON.stringify({ ok: true, pid: previous.pid, preserved: true, resized: true, terminated: true }));
   }
