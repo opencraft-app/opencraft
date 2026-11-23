@@ -75,7 +75,7 @@ try {
       const before = requests.length; const page = await browser.newPage({ viewport: { width: 1100, height: 850 } });
       const errors: string[] = []; page.on('pageerror', (error: Error) => { errors.push(error.message); console.error(error.message); }); await page.addInitScript('window.__name=value=>value');
       await page.goto(`${origin}/?legacy=${legacy ? 1 : 0}`);
-      await page.locator('.sidebar-activity-item').first().waitFor();
+      await page.locator('.sidebar-activity-item:visible').first().waitFor();
       const firstVisible = await page.evaluate(() => performance.now() - (window as any).catalogEntry.started);
       await page.waitForFunction(() => { const state = (window as any).catalogEntry?.snapshot(); return state && !state.fetching && state.status === 'success'; });
       const state = await page.evaluate(() => ({ observations: (window as any).catalogEntry.observations, count: (window as any).catalogEntry.cached().data.length }));
@@ -87,12 +87,14 @@ try {
       hold = true; fail = false; release = undefined;
       const page = await browser.newPage({ viewport: { width, height: 850 }, hasTouch: width === 390 });
       const errors: string[] = []; page.on('pageerror', (error: Error) => { errors.push(error.message); console.error(error.message); }); await page.addInitScript('window.__name=value=>value');
-      await page.goto(`${origin}/?theme=${theme}`); await page.locator('.sidebar-activity-item').first().waitFor();
+      await page.goto(`${origin}/?theme=${theme}`); await page.locator('.sidebar-activity-item:visible').first().waitFor();
       await page.waitForFunction(() => (window as any).catalogEntry?.snapshot().partial);
       assert.ok((await page.evaluate(() => (window as any).catalogEntry.cached()?.data.length)) > 0);
       assert.equal(await page.locator('.sidebar-tasks').getAttribute('aria-busy'), 'true');
+      // The sidebar is an accordion that opens Recent; open Pinned to watch the pinned row.
+      await page.getByRole('button', { name: 'Pinned', exact: true }).click();
       await page.getByText('Conversation 221', { exact: true }).waitFor();
-      await page.locator('.sidebar-activity-item').first().click();
+      await page.locator('.sidebar-activity-item:visible').first().click();
       assert.equal((await page.evaluate(() => (window as any).catalogEntry.actions)).length, 1);
       const before = await page.evaluate(() => (window as any).catalogEntry.snapshot());
       const pinnedTop = (await page.getByText('Conversation 221', { exact: true }).boundingBox())!.y;

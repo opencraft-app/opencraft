@@ -420,7 +420,10 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
       : taskFlow.pinned.length ? "pinned" : taskFlow.attention.length ? "attention" : "mine";
     initialSection=flowKey(selectedFlow ?? (selectedProject ? `native-project:${selectedProject.key}` : fallback));
   }
-  const accordion = useSidebarAccordion(JSON.stringify([threadListGrouping?.id ?? null, grouping.mode]), initialSection, contentViewport, activityList);
+  // Searching is its own disclosure scope: the open group follows the matches
+  // (selection first, then the first non-empty section) instead of a browsing
+  // choice the filter may have emptied, which would leave every result hidden.
+  const accordion = useSidebarAccordion(JSON.stringify([threadListGrouping?.id ?? null, grouping.mode, Boolean(needle)]), initialSection, contentViewport, activityList);
   const sectionCollapsed = (key: string) => accordion.collapsed(flowKey(key));
   const toggleSection = (key: string, button: HTMLElement) => {
     const next = accordion.toggle(flowKey(key), button);
