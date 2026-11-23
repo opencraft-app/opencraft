@@ -537,6 +537,22 @@ export async function serveDockerProvisioner(options: DockerProvisionerServiceOp
     if (!Number.isSafeInteger(value.issuedAt)) throw new Refusal("malformed", "Invalid timestamp");
     return value as unknown as DockerProvisionerRequest;
   };
+  // Each operation is named explicitly, so a request can only reach the four
+  // handlers above, never another property of the table.
+  const dispatch = (op: DockerProvisionerOperation, workspace: string, image?: string) => {
+    switch (op) {
+      case "ensure":
+        return operations.ensure(workspace, image);
+      case "inspect":
+        return operations.inspect(workspace);
+      case "stop":
+        return operations.stop(workspace);
+      case "destroy":
+        return operations.destroy(workspace);
+      default:
+        throw new Refusal("malformed", "Unknown operation");
+    }
+  };
   const handle = async (line: string) => {
     const startedAt = now();
     let request: DockerProvisionerRequest | undefined;
@@ -549,7 +565,7 @@ export async function serveDockerProvisioner(options: DockerProvisionerServiceOp
       if (!remember(request.nonce, request.issuedAt))
         throw new Refusal("unauthenticated", "Request nonce was already used or the replay cache is full");
       const { op, workspace, image } = request;
-      const container = await serially(workspace, () => operations[op](workspace, image));
+      const container = await serially(workspace, () => dispatch(op, workspace, image));
       log({
         type: "docker-provisioner-audit",
         op,
