@@ -32,6 +32,8 @@ import type {
 import type { WorkspaceActorAdmission } from "../../apps/headless-server/src/workspaces/actor-authority.js";
 type Port = AssetStoragePort &
   WorkspaceExecutionPort & {
+    fixtureBeginFork(threadId: string): Promise<void>;
+    fixtureConfirmFork(threadId: string): Promise<void>;
     fixtureCounters(): Promise<{ allocated: number; deleted: number; retained: number }>;
     fixtureFailCleanup(): Promise<void>;
     fixtureDisableActor(): Promise<void>;
@@ -45,14 +47,14 @@ const flag = () => {
   return value;
 };
 type TerminalOwner = { directory: string; endpoint: string; tokenFile: string };
-async function fixture(t: test.TestContext, terminalOwner?: TerminalOwner) {
+async function fixture(t: test.TestContext, terminalOwner?: TerminalOwner, sharedViews = false) {
   const directory = await mkdtemp(join(tmpdir(), "workspace-native-owner-"));
   const open = () =>
     WorkerOwner.open<Port, { actorId: string; generation: number }>(
       new URL("../fixtures/assets-workspace-execution.worker.ts", import.meta.url),
       {
         name: "Synthetic workspace owner",
-        workerData: { directory, terminalOwner },
+        workerData: { directory, terminalOwner, sharedViews },
         errors: [SandboxConfigurationError],
       },
     );
@@ -116,6 +118,54 @@ async function settled(port: Port, token: string, desired: WorkspacePreparationS
   }
   throw Error("Workspace phase did not settle");
 }
+
+test("Worker fences unknown fork descendants and projects the confirmed shared child", async (t) => {
+  const f=await fixture(t), token=await f.port.workspaceBegin(f.access(), {kind:"start",intentId:"fork-parent",environment:await f.target()});
+  await settled(f.port,token,"native-ready");
+  await f.port.workspaceNativeReceipt(token,{result:{thread:{id:"parent"}}});
+  await f.port.workspaceForget(token);
+  await f.port.fixtureBeginFork("parent");
+  await assert.rejects(f.port.workspacePlacementPage(), (error: unknown) =>
+    error instanceof SandboxConfigurationError && error.code === "unavailable");
+  await f.port.fixtureConfirmFork("child");
+  const page=await f.port.workspacePlacementPage();
+  assert.deepEqual(page.items.map(row=>row.threadId).sort(),["child","parent"]);
+  assert.equal(page.items[0]!.workspaceId,page.items[1]!.workspaceId);
+});
+
+test("Worker restores a shared child and archives members without closing a sibling", async (t) => {
+  const f=await fixture(t,undefined,true), parent=await f.port.workspaceBegin(f.access(), {kind:"start",intentId:"shared-parent",environment:await f.target()});
+  await settled(f.port,parent,"native-ready");
+  await f.port.workspaceNativeReceipt(parent,{result:{thread:{id:"parent"}}});await f.port.workspaceForget(parent);
+  await f.port.fixtureBeginFork("parent");await f.port.fixtureConfirmFork("child");
+  const child=await f.port.workspaceBegin(f.access(),{kind:"restore",threadId:"child"});
+  await settled(f.port,child,"native-ready");await f.port.workspaceNativeReceipt(child,{result:{thread:{id:"child"}}});await f.port.workspaceForget(child);
+  assert.equal((await f.port.fixtureCounters()).allocated,1);
+  const row={hostId:"local-codex",threadId:"parent",state:"archived" as const,generation:1};
+  assert.deepEqual(await lifecycleResult(f.port,await f.port.workspaceLifecycleBegin(row)),{state:"complete",managed:true});
+  await assert.rejects(f.port.workspaceSelection(f.access(),"parent"));
+  assert.equal((await f.port.workspaceSelection(f.access(),"child")).kind,"bound");
+  assert.equal((await f.port.fixtureCounters()).deleted,0);
+  assert.deepEqual(await lifecycleResult(f.port,await f.port.workspaceLifecycleBegin({...row,threadId:"child"})),{state:"complete",managed:true});
+  assert.equal((await f.port.fixtureCounters()).deleted,1);
+});
+
+test("Worker commits a shared Native fork once and preserves a late receipt after cancellation", async (t) => {
+ const f=await fixture(t,undefined,true), parent=await f.port.workspaceBegin(f.access(),{kind:"start",intentId:"fork-owner",environment:await f.target()});
+ await settled(f.port,parent,"native-ready");await f.port.workspaceNativeReceipt(parent,{result:{thread:{id:"parent"}}});await f.port.workspaceForget(parent);
+ const fork=await f.port.workspaceBegin(f.access(),{kind:"fork",parentThreadId:"parent",intentId:"side-one"});
+ const ready=await settled(f.port,fork,"native-ready");assert.equal(ready.state,"native-ready");
+ await assert.rejects(f.port.workspacePlacementPage());
+ const receipt=await f.port.workspaceNativeReceipt(fork,{result:{thread:{id:"child"}}});await f.port.workspaceForget(fork);
+ assert.equal(receipt.threadId,"child");assert.equal((await f.port.fixtureCounters()).allocated,1);
+ assert.deepEqual((await f.port.workspacePlacementPage()).items.map(x=>x.threadId).sort(),["child","parent"]);
+ assert.equal((await f.port.workspaceSelection(f.access(),"child")).kind,"bound");
+ const uncertain=await f.port.workspaceBegin(f.access(),{kind:"fork",parentThreadId:"parent",intentId:"side-late"});
+ await settled(f.port,uncertain,"native-ready");await f.port.workspaceCancel(uncertain);await settled(f.port,uncertain,"failed");
+ await assert.rejects(f.port.workspaceForget(uncertain));
+ await assert.rejects(f.port.workspaceNativeReceipt(uncertain,{result:{thread:{id:"late-child"}}}));
+ assert.deepEqual((await f.port.workspacePlacementPage()).items.map(x=>x.threadId).sort(),["child","late-child","parent"]);
+});
 
 test("Worker creates once, binds actual Native receipt, and retains resource authority beyond View/request lifetime", async (t) => {
   const f = await fixture(t),
@@ -369,7 +419,7 @@ test("trusted Native admission separates login/request expiry from monotonic Act
 });
 
 test("physical Native routing composes Worker allocation, one-shot Core policy, exact receipts and resumed generation", async (t) => {
-  const f = await fixture(t),
+  const f = await fixture(t, undefined, true),
     directory = await mkdtemp(join(tmpdir(), "workspace-physical-routing-"));
   const socketPath = join(directory, "authority.sock"),
     token = "synthetic-physical-workspace-authority";
@@ -483,6 +533,14 @@ test("physical Native routing composes Worker allocation, one-shot Core policy, 
   assert.equal(confirmed, 1, "Empty Thread restore requires actual retained Native evidence");
   assert.equal(calls.length, 3, "Provisional restore never replays Native creation");
   await assert.rejects(send(4, "thread/fork", { threadId: "native-physical" }));
+  await send(7, "thread/fork", { threadId: "native-physical", workspaceFork: {kind:"side-chat",intentId:"side-physical"} });
+  assert.equal(calls.at(-1)!.method,"thread/fork");
+  assert.equal(calls.at(-1)!.params.cwd,"/workspace");
+  assert.equal(Object.hasOwn(calls.at(-1)!.params,"workspaceFork"),false);
+  await hooks.finalizeNativeFork!({requestId:7,context,params:{},result:{thread:{id:"native-child"}}});
+  assert.equal(hooks.requiresWorkspaceResume!("native-child"),true);
+  await send(8,"turn/start",{threadId:"native-child",input:[{text:"synthetic"}]});
+  assert.equal((await f.port.fixtureCounters()).allocated,1);
   await assert.rejects(
     send(5, "thread/start", {
       ephemeral: true,
@@ -515,7 +573,7 @@ test("placement projection keeps classification fenced on refresh failure and ad
       calls++;
       if (fail) throw Error("Synthetic owner unavailable");
       return cursor === undefined
-        ? { items: [{ workspaceId: "ws-a", hostId: "local-codex", threadId: "remote-a" }], next: "ws-a" }
+        ? { items: [{ workspaceId: "ws-a", hostId: "local-codex", threadId: "remote-a" }], next: "ws-a.72656d6f74652d61" }
         : { items: [{ workspaceId: "ws-b", hostId: "local-codex", threadId: "remote-b" }], next: null };
     },
   });

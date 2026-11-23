@@ -337,8 +337,6 @@ export class WebConversationViewportOwner {
     this.scrollElementRef.current?.style.removeProperty("--thread-footer-height");
     this.scrollElementRef.current?.style.removeProperty("--thread-composer-occlusion-height");
     this.scrollElementRef.current?.style.removeProperty("--thread-reading-bottom-inset");
-    this.scrollElementRef.current?.style.removeProperty("--thread-reading-clip-left");
-    this.scrollElementRef.current?.style.removeProperty("--thread-reading-clip-right");
     this.scrollFrameDiagnosticsDispose?.();
     this.scrollFrameDiagnosticsDispose = null;
     this.scrollElementRef.current = element;
@@ -360,13 +358,18 @@ export class WebConversationViewportOwner {
     this.rebindFooterObservation();
   };
 
+  getReadingViewportInsetPx(): number {
+    const scroll = this.scrollElementRef.current;
+    if (!scroll || !(Number.parseFloat(scroll.style.getPropertyValue("--thread-reading-bottom-inset")) > 0)) return 0;
+    // The scrollport's presentation decides whether the measured inset applies.
+    const style = scroll.ownerDocument.defaultView?.getComputedStyle(scroll);
+    return Number.parseFloat(style?.getPropertyValue("--thread-reading-viewport-inset") ?? "") || 0;
+  }
+
   getFooterScrollPaddingPx(): number {
-    const value = Number.parseFloat(
-      this.scrollElementRef.current?.style.getPropertyValue(
-        "--thread-scroll-padding-bottom",
-      ) ?? "",
-    );
-    return Number.isFinite(value) ? Math.max(0, value) : 0;
+    const scroll = this.scrollElementRef.current;
+    const padding = Number.parseFloat(scroll?.style.getPropertyValue("--thread-scroll-padding-bottom") ?? "") || 0;
+    return Math.max(0, padding - this.getReadingViewportInsetPx());
   }
 
   setFooterResizeViewportPreserveDisabled(disabled: boolean): void {
@@ -853,8 +856,6 @@ export class WebConversationViewportOwner {
     this.scrollElementRef.current?.style.removeProperty("--thread-footer-height");
     this.scrollElementRef.current?.style.removeProperty("--thread-composer-occlusion-height");
     this.scrollElementRef.current?.style.removeProperty("--thread-reading-bottom-inset");
-    this.scrollElementRef.current?.style.removeProperty("--thread-reading-clip-left");
-    this.scrollElementRef.current?.style.removeProperty("--thread-reading-clip-right");
     for (const dispose of [...this.platformResources]) dispose();
     this.platformResources.clear();
     this.resizeObserver?.disconnect();
@@ -868,13 +869,12 @@ export class WebConversationViewportOwner {
 
   private projectFooterInsets(): void {
     const scroll = this.scrollElementRef.current;
-    if (this.disposed || scroll === null || scroll.clientWidth === 0) return;
+    const footer = this.footerElement;
+    if (this.disposed || scroll === null || footer === null || scroll.clientWidth === 0) return;
     // Physical edges follow the native scrollbar side. Overlay scrollbars
     // contribute zero; reuse the existing viewport owner and observation.
     const right = Math.max(0, scroll.offsetWidth - scroll.clientWidth - scroll.clientLeft);
-    scroll.style.setProperty("--thread-reading-clip-left", `${scroll.clientLeft}px`);
-    scroll.style.setProperty("--thread-reading-clip-right", `${right}px`);
-    this.footerElement?.style.setProperty("inset", `auto ${right}px 0 ${scroll.clientLeft}px`);
+    footer.style.setProperty("inset", `auto ${right}px 0 ${scroll.clientLeft}px`);
   }
 
   private rebindFooterObservation(): void {
@@ -888,8 +888,6 @@ export class WebConversationViewportOwner {
       scrollElement?.style.removeProperty("--thread-footer-height");
       scrollElement?.style.removeProperty("--thread-composer-occlusion-height");
       scrollElement?.style.removeProperty("--thread-reading-bottom-inset");
-      scrollElement?.style.removeProperty("--thread-reading-clip-left");
-      scrollElement?.style.removeProperty("--thread-reading-clip-right");
       this.footerElement?.style.removeProperty("inset");
       return;
     }
@@ -928,7 +926,7 @@ export class WebConversationViewportOwner {
         ));
         // Stop transcript paint at the start of the lower arc, not at the
         // footer's top: upper corners stay real, lower corners/gaps stay quiet.
-        bottomInsetPx = Math.max(0, (scrollElement.getBoundingClientRect().bottom - editorBounds.bottom) / scale + radius);
+        bottomInsetPx = Math.max(0, (footerBottom - editorBounds.bottom) / scale + radius);
       }
       scrollElement.style.setProperty("--thread-reading-bottom-inset", `${bottomInsetPx}px`);
       const previousHeightPx = this.footerHeightPx;

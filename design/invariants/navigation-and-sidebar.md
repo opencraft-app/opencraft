@@ -328,12 +328,11 @@ ready/running feedback, including gaps between Turns. Opening a Thread and
 backend review/error feedback retain priority. Paused, limited, blocked, complete
 or cleared Goals return to ordinary activity feedback. The icon is a read-only
 projection, never a Goal scheduler or a read receipt.
-The Target has a subtle 3.2-second mask shimmer with 65–100% opacity, without
-rotation, scaling or row movement. The shared 15/16px glyph material samples the
-200%-wide mask in 64 positions per cycle (20Hz), limiting visually redundant
-subpixel repaints. This decorative cadence must never throttle Goal updates,
-spinner feedback or directly manipulated drawer motion. Reduced motion renders the unmasked static
-glyph; inert or aria-hidden hosts pause the animation.
+The Target has a subtle 3.2-second opacity animation from 100% to 75% and back.
+The shared 15/16px glyph keeps its position and scale. Opacity lets the
+compositor animate the glyph without repainting its artwork on each change.
+Reduced motion renders the full static glyph. Inert or aria-hidden hosts pause
+the animation.
 The Composer Goal row uses the same Design System glyph motion while active;
 paused, blocked, limited and completed rows remain static. The row's text and
 geometry never animate with the Target.

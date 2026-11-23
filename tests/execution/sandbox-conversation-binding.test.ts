@@ -97,3 +97,23 @@ test("missing preinstalled exec-server retires binding without a bootstrap or ho
   assert.equal(attempts, 1);
   assert.equal(losses, 1);
 });
+
+
+test("shared conversation views isolate thread resources and preserve the workspace bridge", async () => {
+  const binding = await createSandboxConversationBinding({
+    cwd: "/workspace", workspaceLease:{workspaceId:"ws-fixture",generation:1},
+    environmentId:"workspace-ws-fixture", processContext:{projectId:null,resourceOwnerId:"fixture"},
+    terminalSupported:false, authorize:async()=>{},onLost(){},onCleanupUnconfirmed(){assert.fail("cleanup")},
+    sandbox:{async spawn(){throw Error("unexpected spawn")}},
+  });
+  await binding.bindThread("parent");
+  const parent=await binding.forThread("parent"),child=await binding.forThread("child");
+  assert.notEqual(parent,child);assert.equal(parent.processes,undefined);assert.equal(child.processes,undefined);
+  assert.deepEqual(await parent.executionFields(),await child.executionFields());
+  await binding.closeThread("child");
+  assert.equal(child.isCurrent?.(),false);assert.equal(parent.isCurrent?.(),true);
+  await binding.closeThread("parent");
+  assert.equal(parent.isCurrent?.(),false);await assert.rejects(parent.executionFields(),/expired/);
+  assert.notEqual(await binding.forThread("child"),child);
+  await binding.close();assert.equal(parent.isCurrent?.(),false);
+});

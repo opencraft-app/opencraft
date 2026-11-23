@@ -1,7 +1,7 @@
 import type { CodexEngineAdapter } from '../../opencraft-daemon/src/codex-engine-adapter.js';
 type LocalOptions = Exclude<ConstructorParameters<typeof CodexEngineAdapter>[0], {kind: 'remote'}>;
 export type CodexWorkspaceHooks = Pick<LocalOptions, 'decorateNativeTransport' | 'finalizeNativeCreation'
-  | 'readWorkspaceArtifact' | 'prepareWorkspaceArtifact' | 'finalizeNativeResume' | 'requiresWorkspaceResume' | 'restoreProvisionalWorkspace'>;
+  | 'readWorkspaceArtifact' | 'prepareWorkspaceArtifact' | 'finalizeNativeResume' | 'finalizeNativeFork' | 'requiresWorkspaceResume' | 'restoreProvisionalWorkspace'>;
 export interface CodexWorkspaceComposition {
   createCodexWorkspaceHooks?(input: Readonly<{hostId: string}>): CodexWorkspaceHooks;
   readCodexWorkspaceArtifact?: CodexWorkspaceHooks['readWorkspaceArtifact'];
@@ -9,6 +9,7 @@ export interface CodexWorkspaceComposition {
   decorateCodexNativeTransport?: CodexWorkspaceHooks['decorateNativeTransport'];
   finalizeCodexNativeCreation?: CodexWorkspaceHooks['finalizeNativeCreation'];
   finalizeCodexNativeResume?: CodexWorkspaceHooks['finalizeNativeResume'];
+  finalizeCodexNativeFork?: CodexWorkspaceHooks['finalizeNativeFork'];
   requiresCodexWorkspaceResume?: CodexWorkspaceHooks['requiresWorkspaceResume'];
   restoreCodexProvisionalWorkspace?: CodexWorkspaceHooks['restoreProvisionalWorkspace'];
 }
