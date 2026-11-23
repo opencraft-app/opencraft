@@ -130,6 +130,50 @@ test("transport loss before exit fails the process, retires the environment and 
   assert.equal(t.frames.length, before);
 });
 
+test("attached process: transport loss, startup failure and unacknowledged terminate end only that process", async () => {
+  const attached: SandboxCommand = { ...pipe, attached: true };
+  const t = fakeTransport();
+  t.on((frame) => {
+    if (frame.type === "start") queueMicrotask(() => t.emit({ type: "started" }));
+  });
+  const process = await startBrokerProcess(t.options(attached, []));
+  // Host-side lifetime only: the guest broker receives the plain command.
+  assert.deepEqual(t.frames[0], { type: "start", command: pipe });
+  t.end();
+  await assert.rejects(process.exited, (e) => e instanceof SandboxFault && e.code === "SANDBOX_START");
+  await tick();
+  assert.equal(t.closes, 0, "attached transport loss never retires the environment");
+  await assert.rejects(process.writeStdin(new Uint8Array([1])), (e) => e instanceof SandboxFault && e.code === "SANDBOX_CLOSED");
+
+  const malformed = fakeTransport();
+  malformed.on((frame) => {
+    if (frame.type === "start") queueMicrotask(() => malformed.raw("not-json\n"));
+  });
+  await assert.rejects(startBrokerProcess(malformed.options(attached, [])), (e) => e instanceof SandboxFault && e.code === "SANDBOX_START");
+  await tick();
+  assert.equal(malformed.closes, 0);
+
+  const u = fakeTransport({ reject: (frame) => frame.type === "terminate" });
+  u.on((frame) => {
+    if (frame.type === "start") queueMicrotask(() => u.emit({ type: "started" }));
+  });
+  const stuck = await startBrokerProcess(u.options(attached, [], 1000));
+  await assert.rejects(stuck.terminate(), (e) => e instanceof SandboxFault && e.code === "SANDBOX_CLEANUP");
+  await assert.rejects(stuck.exited, (e) => e instanceof SandboxFault);
+  await tick();
+  assert.equal(u.closes, 0, "unconfirmed attached termination is reported, not escalated to environment teardown");
+
+  // The default lifetime keeps failing closed on the same transport loss.
+  const strict = fakeTransport();
+  strict.on((frame) => {
+    if (frame.type === "start") queueMicrotask(() => strict.emit({ type: "started" }));
+  });
+  await startBrokerProcess(strict.options(pipe, []));
+  strict.end();
+  await tick();
+  assert.equal(strict.closes, 1);
+});
+
 test("malformed or out-of-order broker frames and oversized start fail closed", async () => {
   for (const reply of ['{"type":"output","stream":"stdout","data":"YQ=="}\n', "not-json\n", '{"type":"exit","code":"x"}\n']) {
     const t = fakeTransport();

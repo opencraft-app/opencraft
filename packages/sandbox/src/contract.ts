@@ -23,6 +23,13 @@ export interface SandboxCommand {
   readonly cwd: string;
   readonly env: Readonly<Record<string, string>>;
   readonly terminal?: { readonly cols: number; readonly rows: number };
+  /** Connection-scoped lifetime for relay processes (non-terminal only). Loss of an
+   * attached process's transport, or its unacknowledged termination, ends only that
+   * process: `exited` rejects and `terminate()` rejects with SANDBOX_CLEANUP, but the
+   * environment and its other processes stay alive; environment close still reclaims
+   * it. Absent: a backend that cannot account for a lost process retires the whole
+   * environment (fail closed). Host-side lifetime only; never sent to the guest. */
+  readonly attached?: true;
 }
 export interface SandboxOutput { readonly stream: "stdout" | "stderr"; readonly data: Uint8Array }
 export interface SandboxExit { readonly code: number | null; readonly signal?: string }

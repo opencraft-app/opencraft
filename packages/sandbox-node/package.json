@@ -12,7 +12,8 @@
     "./engine": "./src/engine.ts",
     "./hands-unix": "./src/hands-unix.ts",
     "./json-rpc-bridge": "./src/json-rpc-bridge.ts",
-    "./workspace-execution-channel": "./src/workspace-execution-channel.ts"
+    "./workspace-execution-channel": "./src/workspace-execution-channel.ts",
+    "./endpoint-listener": "./src/endpoint-listener.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

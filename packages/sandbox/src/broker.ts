@@ -107,7 +107,8 @@ export interface SandboxBrokerOptions {
   /** Provider name used only in fault messages. */
   readonly label: string;
   readonly launch: SandboxBrokerLaunch;
-  /** Retires the whole environment after transport loss or unacknowledged termination. */
+  /** Retires the whole environment after transport loss or unacknowledged termination
+   * of a non-attached process. Never called for `command.attached` processes. */
   closeEnvironment(): Promise<void>;
 }
 
@@ -130,6 +131,9 @@ const encoder = new TextEncoder();
  * replays input; the caller still owns environment close and admission capacity. */
 export async function startBrokerProcess(options: SandboxBrokerOptions): Promise<SandboxProcess> {
   const { id, command, onOutput, requestTimeoutMs, label, closeEnvironment } = options;
+  // `attached` is Host-side lifetime only; the guest broker receives the plain command.
+  const { attached: attachedFlag, ...wireCommand } = command;
+  const attached = attachedFlag === true;
   let resolveStart!: () => void,
     rejectStart!: (error: Error) => void,
     resolveExit!: (exit: SandboxExit) => void,
@@ -156,6 +160,9 @@ export async function startBrokerProcess(options: SandboxBrokerOptions): Promise
     rejectStart(error);
     rejectExit(error);
     // Do not reconnect or replay process input. The caller still owns close()/capacity.
+    // An attached relay ends alone: losing its control stream EOFs the guest broker,
+    // which kills its process group; environment close reclaims anything left.
+    if (attached) return;
     // Defer until the pending launch leaves the environment's tracked set.
     setTimeout(() => {
       void closeEnvironment().catch(() => {});
@@ -206,7 +213,7 @@ export async function startBrokerProcess(options: SandboxBrokerOptions): Promise
       if (!finished) failure();
     }, failure);
     timer = setTimeout(failure, Math.min(requestTimeoutMs, 15000));
-    const input = encodeBrokerFrame({ type: "start", command });
+    const input = encodeBrokerFrame({ type: "start", command: wireCommand });
     if (encoder.encode(input).byteLength > 384 * 1024) throw Error();
     await channel.write(input);
     await ready;
@@ -286,6 +293,10 @@ export async function startBrokerProcess(options: SandboxBrokerOptions): Promise
           }),
         ]);
       } catch {
+        if (attached) {
+          failure();
+          throw fault("SANDBOX_CLEANUP", label + " attached process termination was not acknowledged; environment close reclaims it");
+        }
         await closeEnvironment();
         throw fault("SANDBOX_START", label + " process termination required environment teardown");
       } finally {

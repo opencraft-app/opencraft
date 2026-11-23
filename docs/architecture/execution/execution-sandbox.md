@@ -124,8 +124,10 @@ registry entry alone is not a claim of compatibility.
   program and the host-side framing and process state machine: `start`, `stdin`,
   `resize`, `eof` and `terminate` frames to the broker; `started`, `output`, `exit`
   and `error` frames back; base64 payloads; 400000-byte broker lines; one PTY output
-  stream; process-group SIGKILL; no reconnect or replay after transport loss; an
-  unacknowledged termination retires the environment. It has no Node, vendor SDK
+  stream; process-group SIGKILL; no reconnect or replay after transport loss; for
+  ordinary processes transport loss or an unacknowledged termination retires the
+  environment. `attached` processes are the exception described below; the flag
+  is Host-side lifetime and is never sent to the broker. It has no Node, vendor SDK
   or E2B types. A provider supplies only a launch port that starts
   `python3 -u <broker>` and returns `{ write(frame), ended }` plus stdout text
   chunks. E2B keeps only the upload (`files.write`) and launch
@@ -146,6 +148,35 @@ registry entry alone is not a claim of compatibility.
   Workspace configuration revisions keep the E2B endpoint facts in their original
   positions, so persisted selections stay valid. Resource checks, unknown-creation
   retention, confirmed destruction, lease renewal and error codes are unchanged.
+
+### Endpoints and attached processes
+
+`SandboxCommand.attached: true` (pipe processes only; `createSandbox` rejects it
+with a terminal) marks a connection-scoped relay. Its transport loss, startup
+failure or unacknowledged termination ends only that process: `exited` rejects,
+`terminate()` rejects with `SANDBOX_CLEANUP`, and the environment and its other
+processes stay alive. Environment close still reclaims it; capacity rules are
+unchanged. Without the flag a backend that cannot account for a lost process
+retires the environment as before.
+
+`openSandboxEndpoint(environment, { target: { unix }, onData })`
+(`@opencraft/sandbox/endpoint`, no Node types) is the provider-neutral byte
+connection to a stream socket inside an environment: one attached process running
+a fixed Python relay per connection, with `write` (resolves when the provider
+accepted the bytes), `end` (half-close), idempotent `close` and a `closed` outcome
+(`ended`/`failed`). There is no reconnect or replay. The process contract has no
+output flow control, so consumers must bound undrained output.
+`createSandboxEndpointListener` (`@opencraft/sandbox-node/endpoint-listener`)
+exposes an endpoint as a Unix socket in a private 0700 directory for clients that
+dial a path; it authorizes each connection, back-pressures local input on the
+provider, closes a connection whose undrained output exceeds its bound, and
+reports unconfirmed relay cleanup. The browser owner attachment uses the endpoint.
+Every backend that advertises endpoints must pass
+`tests/execution/sandbox-endpoint-conformance.test.ts` (binary round trip,
+half-close, close from either side, back-pressure, attached failure isolation and
+validation); the suite currently runs in-process, local child-process and E2B
+adapter fixtures, plus an opt-in real `docker exec` harness. Placement use and
+measurements are in [workspace-host-split](../platform/workspace-host-split.md).
 
 The independent durable terminal owner keeps its existing process RPC and lifetime.
 This integration does not route that separate Workbench terminal owner through

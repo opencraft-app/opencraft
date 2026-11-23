@@ -1,0 +1,297 @@
+/** SandboxBackend harnesses for the endpoint/attached conformance suite and its
+ * measurement script. Every harness exposes the same shape: a backend, the
+ * interpreter path inside its environments, and a way to host a stream-socket
+ * target that environments can reach by path. A new provider adds a harness here
+ * and must pass tests/execution/sandbox-endpoint-conformance.test.ts unchanged. */
+import { spawn, execFile, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { once } from "node:events";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createConnection, createServer, type Server, type Socket } from "node:net";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
+import { promisify } from "node:util";
+import { randomUUID } from "node:crypto";
+import {
+  SandboxFault,
+  type SandboxBackend,
+  type SandboxCommand,
+  type SandboxEnvironment,
+  type SandboxExit,
+  type SandboxOutput,
+  type SandboxProcess,
+} from "@opencraft/sandbox";
+import { brokerSource, startBrokerProcess } from "@opencraft/sandbox/broker";
+import { SandboxNotFoundError } from "e2b";
+import { e2bSandboxBackend, type E2BConnection } from "../../../packages/sandbox-e2b/src/index";
+
+/** Observe the commands a backend receives without changing its behaviour. */
+function recording(backend: SandboxBackend, commands: SandboxCommand[]): SandboxBackend {
+  return {
+    id: backend.id,
+    initialize: (policy, signal) => backend.initialize(policy, signal),
+    close: () => backend.close(),
+    async create(identity, resources, signal) {
+      const environment = await backend.create(identity, resources, signal);
+      return {
+        resources: environment.resources, capabilities: environment.capabilities,
+        ...(environment.processLimits ? { processLimits: environment.processLimits } : {}),
+        spawn(command, onOutput) { commands.push(command); return environment.spawn(command, onOutput); },
+        close: () => environment.close(),
+      };
+    },
+  };
+}
+
+export interface EndpointHarness {
+  readonly name: string;
+  readonly backend: SandboxBackend;
+  /** Interpreter path inside the environment. */
+  readonly python: string;
+  /** Effective resources the backend reports (pool capacity/defaults). */
+  readonly resources: { cpuMillis: number; memoryBytes: number };
+  /** A long-running non-attached pipe process (reads stdin, echoes it). */
+  readonly catCommand: readonly string[];
+  /** Listen on a stream socket reachable from environments; returns its in-environment path. */
+  listen(handler: (socket: Socket) => void): Promise<string>;
+  /** A path where nothing listens. */
+  missing(): string;
+  /** Commands the backend has received, in order. */
+  readonly commands: SandboxCommand[];
+  /** Environment closes the backend performed (any reason). */
+  readonly closes: { count: number };
+  /** Commands as the guest received them, for broker-based harnesses. */
+  readonly wire?: SandboxCommand[];
+  dispose(): Promise<void>;
+}
+
+const defaults = { cpuMillis: 4000, memoryBytes: 8 * 1024 ** 3 };
+
+async function socketHost(mount?: { host: string; guest: string }) {
+  const directory = mount?.host ?? await mkdtemp(join(tmpdir(), "oc-ep-"));
+  const servers: Server[] = [], sockets = new Set<Socket>();
+  return {
+    directory,
+    async listen(handler: (socket: Socket) => void) {
+      const name = randomUUID().slice(0, 8) + ".sock", path = join(directory, name);
+      const server = createServer({ allowHalfOpen: true }, socket => {
+        sockets.add(socket);
+        socket.once("close", () => sockets.delete(socket));
+        handler(socket);
+      });
+      servers.push(server);
+      await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(path, () => resolve()); });
+      return mount ? mount.guest + "/" + name : path;
+    },
+    missing: () => (mount ? mount.guest : directory) + "/missing.sock",
+    async dispose() {
+      for (const socket of sockets) socket.destroy();
+      await Promise.all(servers.map(server => new Promise<void>(resolve => server.close(() => resolve()))));
+      if (!mount) await rm(directory, { recursive: true, force: true });
+    },
+  };
+}
+
+/** In-process backend: implements the relay's semantics with Node sockets and no
+ * guest interpreter. It models a backend whose processes never need environment
+ * retirement (e.g. a supervised local owner). */
+export async function inProcessHarness(): Promise<EndpointHarness> {
+  const host = await socketHost(), commands: SandboxCommand[] = [], closes = { count: 0 };
+  const environment = (): SandboxEnvironment => {
+    let ended = false;
+    const live = new Set<() => void>();
+    return {
+      resources: defaults, capabilities: { terminal: false },
+      async spawn(command, onOutput) {
+        if (ended) throw new SandboxFault("SANDBOX_CLOSED", "closed");
+        commands.push(command);
+        let resolveExit!: (exit: SandboxExit) => void;
+        const exited = new Promise<SandboxExit>(resolve => { resolveExit = resolve; });
+        let done = false;
+        const finish = (code: number | null) => { if (!done) { done = true; live.delete(kill); resolveExit({ code }); } };
+        const kill = () => { socket?.destroy(); finish(null); };
+        live.add(kill);
+        let socket: Socket | undefined;
+        if (command.command.includes("-c") && command.command.at(-2)?.startsWith("import os,select,socket")) {
+          socket = createConnection({ path: command.command.at(-1)!, allowHalfOpen: true });
+          socket.on("data", (data: Buffer) => onOutput?.({ stream: "stdout", data: new Uint8Array(data) }));
+          socket.on("end", () => { socket!.destroy(); finish(0); });
+          socket.on("error", () => finish(1));
+          await once(socket, "connect").catch(() => {});
+        }
+        const process: SandboxProcess = {
+          id: randomUUID(), kind: "process", exited,
+          async writeStdin(data) {
+            if (done) throw new SandboxFault("SANDBOX_CLOSED", "closed");
+            if (socket) await new Promise<void>((resolve, reject) => socket!.write(data, error => error ? reject(error) : resolve()));
+            else onOutput?.({ stream: "stdout", data });
+          },
+          async closeStdin() { if (!done) socket?.end(); },
+          async terminate() { kill(); },
+        };
+        return process;
+      },
+      async close() { if (!ended) { ended = true; closes.count++; for (const kill of [...live]) kill(); } },
+    };
+  };
+  return {
+    name: "in-process", python: "/usr/bin/python3", resources: defaults, catCommand: ["cat"], commands, closes,
+    backend: { id: "in-process", async initialize() {}, async create() { return environment(); }, async close() {} },
+    listen: host.listen, missing: host.missing, dispose: host.dispose,
+  };
+}
+
+function childProcess(child: ChildProcessWithoutNullStreams, onOutput?: (output: SandboxOutput) => void): SandboxProcess {
+  const exited = new Promise<SandboxExit>(resolve => child.once("close", (code, signal) => resolve({ code, ...(signal ? { signal } : {}) })));
+  child.stdout.on("data", (data: Buffer) => onOutput?.({ stream: "stdout", data: new Uint8Array(data) }));
+  child.stderr.on("data", (data: Buffer) => onOutput?.({ stream: "stderr", data: new Uint8Array(data) }));
+  child.stdin.on("error", () => {});
+  return {
+    id: randomUUID(), kind: "process", exited,
+    writeStdin: data => new Promise<void>((resolve, reject) => child.stdin.write(data, error => error ? reject(error) : resolve())),
+    async closeStdin() { child.stdin.end(); },
+    async terminate() { if (child.exitCode === null && child.signalCode === null) { child.kill("SIGKILL"); await exited; } },
+  };
+}
+
+/** Local child processes without the broker (a Hands-style local owner). */
+export async function localProcessHarness(): Promise<EndpointHarness> {
+  const host = await socketHost(), commands: SandboxCommand[] = [], closes = { count: 0 };
+  return {
+    name: "local-process", python: "/usr/bin/python3", resources: defaults, catCommand: ["/bin/cat"], commands, closes,
+    backend: {
+      id: "local-process", async initialize() {}, async close() {},
+      async create() {
+        const children = new Set<ChildProcessWithoutNullStreams>();
+        let ended = false;
+        return {
+          resources: defaults, capabilities: { terminal: false },
+          async spawn(command, onOutput) {
+            if (ended) throw new SandboxFault("SANDBOX_CLOSED", "closed");
+            commands.push(command);
+            const child = spawn(command.command[0]!, command.command.slice(1), { cwd: command.cwd, env: command.env, stdio: ["pipe", "pipe", "pipe"] });
+            children.add(child); child.once("close", () => children.delete(child));
+            await once(child, "spawn");
+            return childProcess(child, onOutput);
+          },
+          async close() {
+            if (ended) return;
+            ended = true; closes.count++;
+            await Promise.all([...children].map(async child => { child.kill("SIGKILL"); await once(child, "close").catch(() => {}); }));
+          },
+        };
+      },
+    },
+    listen: host.listen, missing: host.missing, dispose: host.dispose,
+  };
+}
+
+/** Real E2B adapter and shared broker; only the vendor SDK is replaced by local processes. */
+export async function e2bFixtureHarness(): Promise<EndpointHarness> {
+  const host = await socketHost(), commands: SandboxCommand[] = [], closes = { count: 0 };
+  const wire: SandboxCommand[] = [];
+  const directory = await mkdtemp(join(tmpdir(), "oc-e2b-")), children = new Set<ChildProcessWithoutNullStreams>();
+  const instance = () => {
+  let gone = false;
+  const owned = new Set<ChildProcessWithoutNullStreams>();
+  return {
+    sandboxId: "endpoint-conformance-" + randomUUID(),
+    async getInfo() { if (gone) throw new SandboxNotFoundError("gone"); return { cpuCount: 4, memoryMB: 8192 }; },
+    async kill() { if (!gone) { gone = true; closes.count++; } for (const child of owned) child.kill("SIGKILL"); },
+    async setTimeout() {},
+    files: { async write(path: string, data: string) { await writeFile(join(directory, basename(path)), data); } },
+    commands: {
+      async run(command: string, options: any) {
+        const child = spawn("/bin/sh", ["-c", command.replace(/\/tmp\/opencraft-exec-/g, directory + "/opencraft-exec-")], { stdio: ["pipe", "pipe", "pipe"] });
+        children.add(child); owned.add(child);
+        const done = once(child, "close");
+        void done.then(() => { children.delete(child); owned.delete(child); });
+        child.stdin.on("error", () => {});
+        child.stdout.on("data", data => options.onStdout(data.toString("ascii")));
+        child.stderr.on("data", data => options.onStderr(data.toString("utf8")));
+        return {
+          sendStdin: (data: string) => {
+            for (const line of data.split("\n")) if (line.startsWith('{"type":"start"')) wire.push(JSON.parse(line).command);
+            return new Promise<void>((resolve, reject) => child.stdin.write(data, error => error ? reject(error) : resolve()));
+          },
+          wait: async () => { const [code] = await done; if (code !== 0) throw Error("transport stopped"); return { exitCode: code }; },
+        };
+      },
+    },
+  };
+  };
+  const driver = { async create() { return instance(); } } as unknown as E2BConnection;
+  return {
+    name: "e2b-fixture", python: "/usr/bin/python3", resources: defaults, catCommand: ["/bin/cat"], commands, closes,
+    backend: recording(e2bSandboxBackend({ apiUrl: "https://api.example.test", sandboxUrl: "https://proxy.example.test", templateId: "endpoint-conformance", readApiKey: async () => "synthetic" }, driver), commands),
+    wire,
+    listen: host.listen, missing: host.missing,
+    async dispose() {
+      for (const child of children) child.kill("SIGKILL");
+      await host.dispose();
+      await rm(directory, { recursive: true, force: true });
+    },
+  };
+}
+
+const run = promisify(execFile);
+/** A real local container reached through `docker exec -i` and the shared broker
+ * (the per-process stream a docker-provisioner/static-docker provider would use).
+ * Opt-in: OPENCRAFT_SANDBOX_CONFORMANCE_DOCKER=<image with python3>. */
+export async function dockerHarness(image: string): Promise<EndpointHarness> {
+  const mountDirectory = await mkdtemp(join(tmpdir(), "oc-docker-"));
+  const host = await socketHost({ host: mountDirectory, guest: "/endpoint" });
+  const commands: SandboxCommand[] = [], closes = { count: 0 };
+  const python = (await run("docker", ["run", "--rm", "--entrypoint", "sh", image, "-c", "command -v python3"])).stdout.trim();
+  const containers = new Set<string>();
+  return {
+    name: "docker-exec", python, resources: defaults, catCommand: ["cat"], commands, closes,
+    backend: {
+      id: "docker-exec", async initialize() {}, async close() {},
+      async create() {
+        const id = (await run("docker", ["run", "-d", "--rm", "--cpus", "4", "--memory", "8g", "-v", mountDirectory + ":/endpoint", "--entrypoint", "sleep", image, "infinity"])).stdout.trim();
+        containers.add(id);
+        let ended = false;
+        const environment: SandboxEnvironment = {
+          resources: defaults, capabilities: { terminal: true },
+          async spawn(command, onOutput) {
+            if (ended) throw new SandboxFault("SANDBOX_CLOSED", "closed");
+            commands.push(command);
+            return startBrokerProcess({
+              id: randomUUID(), command, onOutput, requestTimeoutMs: 15000, label: "Docker",
+              closeEnvironment: () => environment.close(),
+              async launch(onStdout) {
+                const child = spawn("docker", ["exec", "-i", id, python, "-u", "-c", brokerSource], { stdio: ["pipe", "pipe", "ignore"] });
+                child.stdin.on("error", () => {});
+                child.stdout.setEncoding("ascii").on("data", onStdout);
+                await once(child, "spawn");
+                return {
+                  ended: once(child, "close"),
+                  write: frame => new Promise<void>((resolve, reject) => child.stdin.write(frame, error => error ? reject(error) : resolve())),
+                };
+              },
+            });
+          },
+          async close() {
+            if (ended) return;
+            ended = true; closes.count++; containers.delete(id);
+            await run("docker", ["rm", "-f", id]);
+          },
+        };
+        return environment;
+      },
+    },
+    listen: host.listen, missing: host.missing,
+    async dispose() {
+      for (const id of containers) await run("docker", ["rm", "-f", id]).catch(() => {});
+      await host.dispose();
+      await rm(mountDirectory, { recursive: true, force: true });
+    },
+  };
+}
+
+export async function harnesses(): Promise<(() => Promise<EndpointHarness>)[]> {
+  const only = process.env.OPENCRAFT_SANDBOX_CONFORMANCE_ONLY;
+  const list = [inProcessHarness, localProcessHarness, e2bFixtureHarness].filter(make => !only || make.name.toLowerCase().startsWith(only));
+  const image = process.env.OPENCRAFT_SANDBOX_CONFORMANCE_DOCKER;
+  return image ? [...list, () => dockerHarness(image)] : list;
+}

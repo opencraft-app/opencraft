@@ -1,5 +1,6 @@
 import { DEFAULT_SANDBOX_RESOURCES, SandboxCreationFault, SandboxFault, type Sandbox, type SandboxBackend, type SandboxCommand, type SandboxEnvironment, type SandboxPoolPolicy, type SandboxResources } from "./contract.js";
 export * from "./contract.js";
+export * from "./endpoint.js";
 const dimensions = ["cpuMillis", "memoryBytes"] as const;
 const fault = (code: ConstructorParameters<typeof SandboxFault>[0], message: string) => new SandboxFault(code, message);
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
@@ -18,10 +19,12 @@ function command(input: SandboxCommand) {
   if (!Array.isArray(input.command) || !input.command.length || !input.command[0] || input.command.some(v => typeof v !== "string" || v.includes("\0"))
     || typeof input.cwd !== "string" || !input.cwd || input.cwd.includes("\0") || !input.env
     || Object.entries(input.env).some(([k, v]) => !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(k) || typeof v !== "string" || v.includes("\0"))
-    || input.terminal && ![input.terminal.cols, input.terminal.rows].every(v => Number.isInteger(v) && v > 0 && v <= 1000)) {
+    || input.terminal && ![input.terminal.cols, input.terminal.rows].every(v => Number.isInteger(v) && v > 0 && v <= 1000)
+    || input.attached !== undefined && (input.attached !== true || input.terminal)) {
     throw fault("SANDBOX_POLICY", "Invalid sandbox command, environment or terminal");
   }
-  return { command: [...input.command], cwd: input.cwd, env: { ...input.env }, ...(input.terminal ? { terminal: { ...input.terminal } } : {}) };
+  return { command: [...input.command], cwd: input.cwd, env: { ...input.env }, ...(input.terminal ? { terminal: { ...input.terminal } } : {}),
+    ...(input.attached ? { attached: true as const } : {}) };
 }
 interface Request {
   owner: string; resources: SandboxResources; signal?: AbortSignal; controller: AbortController;
