@@ -404,13 +404,13 @@ test("Brain's workspace agent passes the launch file to the AppServer, relaunche
   ]);
   const brain = roles.slice(roles.indexOf("export const brainRole"), roles.indexOf("export const HANDS_OWNER_PROCESSES"));
   assert.match(brain, /\.\.\.codexAppServerEnvironmentArguments\(paths\)/u);
-  assert.match(brain, /writeExecutionHostConfigurations\(paths, root, env, pinnedIssuer, machineId\)/u);
+  assert.match(brain, /writeExecutionHostConfigurations\(\s*paths,\s*root,\s*env,\s*pinnedIssuer,\s*machineId,?\s*\)/u);
   assert.match(brain, /relaunchOnIssuerChange\(\{[^}]*machineId/u);
   // The rotation relaunch goes through the supervisor (behaviour: workspace-agent.test.mjs),
   // serialised with Hands rebinding; no process is signalled outside it.
   const relaunch = brain.slice(brain.indexOf("relaunchOnIssuerChange("));
-  assert.match(relaunch, /serially\(\(\) => relaunchBrainOwners\(agent, owners/u);
-  assert.doesNotMatch(brain, /\.signal\('SIG/u);
+  assert.match(relaunch, /serially\(\s*\(\)\s*=>\s*relaunchBrainOwners\(\s*agent,\s*owners/u);
+  assert.doesNotMatch(brain, /\.signal\(\s*['"`]SIG/u);
   // Brain's runtime ships the Worker its owners name by configuration.
   assert.match(packager, /'execution-admission-worker\.mjs'/u);
   assert.match(packager, /access\(join\(root, 'runtime', name\)\)/u);
