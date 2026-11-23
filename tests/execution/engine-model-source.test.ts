@@ -72,7 +72,9 @@ test("each engine declares its protocols over one resolver; Codex and the assist
   assert.deepEqual((await codex.catalog()).map(m => m.slug),
     [configuredCodexModelId("responses", "r1"), configuredCodexModelId("anthropic", "a1")]);
   assert.equal((await codex.resolve(configuredCodexModelId("anthropic", "a1")))?.protocol, "anthropic-messages");
-  assert.equal(await codex.resolve(configuredCodexModelId("completions", "c1")), null);
+  // Chat Completions is excluded from the Codex catalog but resolves for engine provider passthrough; the
+  // Responses route rejects it by protocol (codex-proxy), so Codex itself never uses it.
+  assert.equal((await codex.resolve(configuredCodexModelId("completions", "c1")))?.protocol, "openai-completions");
   assert.equal(await codex.resolve("configured/responses/r1/extra"), null);
 });
 
