@@ -157,7 +157,10 @@ docker compose -f compose.yaml -f compose.role-images.yaml up -d --no-build --wa
 ```
 
 The overlay selects prebuilt images and inherits service commands, health checks
-and mounts from the base file. To roll back this configuration, restore the
+and mounts from the base file. The [portable bundle](deploy/README.md) is this same pair of
+files, exported byte for byte, plus `deploy/compose.portable.yaml` (project name
+and Gateway listener only); change the deployment model here, never in a bundle
+template. To roll back this configuration, restore the
 previous three image references and repeat the commands. The single-image
 transaction command below manages deployments using `OPENCRAFT_IMAGE`.
 
@@ -212,7 +215,11 @@ connection preserves the PTY; restarting Hands ends it. Terminal readiness is
 part of the Hands health check. See [terminal semantics](../../docs/architecture/platform/presentation-and-input.md#conversation-terminal-semantics).
 
 `OPENCRAFT_HOST_DATA_DIR` is mounted as `OPENCRAFT_DATA_DIR` in Brain and
-Gateway. Hands receives only the `execution/` subdirectory and keeps browser and
+Gateway. The execution directory (`OPENCRAFT_HOST_EXECUTION_DIR`, default
+`$OPENCRAFT_HOST_DATA_DIR/execution`) is mounted explicitly at
+`OPENCRAFT_EXECUTION_DIR` in Gateway, Brain and Hands, so a separate host directory
+(such as a root Hands client directory) is the same directory in all three. Hands
+receives only that directory and keeps browser and
 exec-server sockets plus their private token there; it cannot read the account,
 conversation or engine state beside that directory. `OPENCRAFT_HOST_WORKSPACE_DIR` is mounted
 as `OPENCRAFT_WORKSPACE_DIR` in all three containers: Brain uses it for DSH/Pi,

@@ -259,4 +259,4 @@ export const SERVER_ALTERNATE_MIGRATIONS = [
   }
 ] as const;
 export const SERVER_MIGRATION_CONTRACT_HASH = "2ed80cbc12927521e1d03da6a46692b26b309795d2eaca286487362e315fa341" as const;
-export const OPENCRAFT_VERSION = "0.2.0" as const;
+export const OPENCRAFT_VERSION = "0.3.0" as const;

@@ -20,7 +20,8 @@
     "scripts/server-deployment/engine-host.mjs",
     "scripts/server-deployment/gateway.mjs",
     "scripts/container-deployment/workspace-agent.mjs",
-    "scripts/container-deployment/hands.mjs"
+    "scripts/container-deployment/hands.mjs",
+    "plugins/thread-participants/src/server.ts"
   ],
   "files": {
     "apps/claude-code-bridge/src/executable.ts": {

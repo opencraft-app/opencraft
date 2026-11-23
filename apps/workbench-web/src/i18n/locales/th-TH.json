@@ -2570,5 +2570,19 @@
   "crew.desk.tool.crewDispatch": "ส่งต่องาน",
   "crew.desk.tool.crewMessage": "ส่งข้อความ",
   "crew.desk.to": "ถึง {name}",
-  "crew.desk.toFormerMember": "ถึงคนที่ออกจากทีมไปแล้ว"
+  "crew.desk.toFormerMember": "ถึงคนที่ออกจากทีมไปแล้ว",
+  "threadParticipants.view": "ดูผู้เข้าร่วมการสนทนา",
+  "threadParticipants.viewCount": "ดูผู้เข้าร่วมการสนทนา ({count, number})",
+  "threadParticipants.creator": "ผู้สร้าง",
+  "threadParticipants.heading": "ผู้เข้าร่วม",
+  "threadParticipants.error": "ไม่สามารถอัปเดตผู้เข้าร่วมได้",
+  "threadParticipants.retry": "ลองอีกครั้ง",
+  "threadParticipants.loading": "กำลังโหลด…",
+  "threadParticipants.empty": "ยังไม่มีผู้เข้าร่วมที่ระบุตัวตนได้",
+  "threadParticipants.grouping.creator": "ตามผู้สร้าง",
+  "threadParticipants.grouping.saveError": "ไม่สามารถบันทึกการตั้งค่าการแสดงผลนี้ได้",
+  "threadParticipants.grouping.loading": "กำลังโหลดผู้สร้าง…",
+  "threadParticipants.grouping.unavailable": "ไม่มีข้อมูลผู้สร้าง",
+  "threadParticipants.grouping.unknown": "ไม่ทราบผู้สร้าง",
+  "threadParticipants.filter.mine": "การสนทนาของฉัน"
 }

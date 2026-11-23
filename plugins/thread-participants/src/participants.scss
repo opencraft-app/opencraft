@@ -1,0 +1,60 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+@use "@opencraft/design-system/menu.web" as menu;
+
+$participant-size: 20px;
+
+// Fixed-size artwork keeps the title accessory stable while loading. The
+// trigger itself is a shared DisclosureButton: it owns paint and feedback.
+.thread-participants__avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 $participant-size;
+  width: $participant-size;
+  height: $participant-size;
+  overflow: hidden;
+  border: 1px solid var(--color-background);
+  border-radius: 50%;
+  color: var(--color-text-secondary);
+  background: var(--color-background-control);
+  img { width: 100%; height: 100%; object-fit: cover; }
+}
+.thread-participants__badge {
+  column-gap: 0;
+  min-width: 0;
+  max-width: 100%;
+}
+.thread-participants__stack {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+.thread-participants__total {
+  @include typography.role(count-badge, tertiary);
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  // A circle for short counts; long localized counts grow into a pill instead of clipping.
+  min-width: $participant-size;
+  height: $participant-size;
+  padding-inline: 3px;
+  border: 1px solid var(--color-border);
+  border-radius: calc($participant-size / 2);
+  background: var(--color-background-control);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.thread-participants__popover {
+  @include menu.material;
+  @include typography.role(body, primary);
+  z-index: 100;
+  min-width: 180px;
+  max-width: min(300px, calc(100vw - 24px));
+  padding: 12px;
+  p { margin: 4px 0 0; }
+  ul { margin: 0; padding: 0; list-style: none; max-height: 260px; overflow-y: auto; }
+  .thread-participants__heading { @include typography.role(navigation-title, primary); }
+  .thread-participants__person { display: flex; align-items: center; gap: 8px; padding: 5px 0; overflow-wrap: anywhere; }
+  .thread-participants__creator-section { margin-block-end: 6px; padding-block-end: 10px; border-block-end: 1px solid var(--color-border); }
+  .thread-participants__notice { @include typography.role(metadata, secondary); }
+}

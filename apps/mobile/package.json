@@ -1,7 +1,7 @@
 {
   "name": "@opencraft/mobile",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "main": "index.ts",
   "scripts": {
     "build:web-workbench": "node --import tsx scripts/build-web-workbench.mts",

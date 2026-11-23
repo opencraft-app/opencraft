@@ -52,8 +52,10 @@ existing `codex-host-queue.sqlite` retained in place) and `thread-identity.sqlit
 `ioa_*` tables and migration names from the original downstream integration.
 Their SQL, version numbers and checksums remain part of the upgrade contract
 even when the provider is absent. The core does not use those tables to verify
-an employee or grant access. A downstream participant provider currently uses
-them through the Host or Hub's existing SQLite transaction owner. Moving that
+an employee or grant access. The core participants provider
+([Thread participants](../extensions/thread-participants.md)) writes them from its
+own storage Worker, on a WAL connection borrowed from the Host or Hub database
+after that owner migrated it, when an identity adapter installs it. Moving that
 derived data to plugin-owned storage requires an additive, data-preserving
 migration and coordinated product verification; renaming or deleting the old
 migrations would reject deployed databases. See [SQLite lifecycle](../server/sqlite-lifecycle.md).

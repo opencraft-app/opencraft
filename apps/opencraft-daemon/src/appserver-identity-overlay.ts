@@ -32,7 +32,7 @@ export class AppServerIdentityOverlay {
     this.executionTracker = new ExecutionLeaseTracker(this.executions);
     try {
       this.identity = new ThreadIdentity(this.store.database, {
-        createMetadata: options.createMetadata,
+        createMetadata: options.createMetadata, databasePath: this.store.path,
         readMessageIds: (threadId, turnId, signal) => readThreadMessageIds(async (method, params, signal) => {
           const reader = await this.historyReader();
           return reader.requestRaw(method, params, { signal });
@@ -118,7 +118,7 @@ export class AppServerIdentityOverlay {
     if (this.closed) return;
     this.closed = true;
     for (const session of [...this.sessions]) session.close();
-    this.identity.close();
+    await this.identity.close().catch(() => {});
     await this.reader?.close();
     await this.reading?.catch(() => {});
     this.store.close();

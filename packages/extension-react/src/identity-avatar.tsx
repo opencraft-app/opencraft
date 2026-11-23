@@ -1,4 +1,4 @@
-import { createContext, useCallback, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 
 export const IDENTITY_AVATAR_CHANNEL = "identityAvatar";
 /** Products resolve identity photos; the Shell owns layout and fallback rendering. */
@@ -9,6 +9,12 @@ export interface IdentityAvatarContribution {
   contactLink?(kind: string, name: string): { readonly href: string; readonly label: string } | null;
 }
 export const IdentityAvatarContext = createContext<IdentityAvatarContribution | null>(null);
+
+/** Provider-neutral photo lookup through the installed resolver; null renders the caller's fallback. */
+export function useIdentityAvatarUrl(kind: string, name: string | null | undefined): string | null {
+  const avatars = useContext(IdentityAvatarContext);
+  return name ? avatars?.resolve(kind, name) ?? null : null;
+}
 
 /** Missing/failed photos use the caller's fallback, not photos still loading. */
 export function AvatarImage({ src, fallback }: { src: string | null; fallback: ReactNode }) {

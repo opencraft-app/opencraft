@@ -2570,5 +2570,19 @@
   "crew.desk.tool.crewDispatch": "Menyerahkan kerja",
   "crew.desk.tool.crewMessage": "Menghantar mesej",
   "crew.desk.to": "Kepada {name}",
-  "crew.desk.toFormerMember": "Kepada seseorang yang telah meninggalkan pasukan"
+  "crew.desk.toFormerMember": "Kepada seseorang yang telah meninggalkan pasukan",
+  "threadParticipants.view": "Lihat peserta perbualan",
+  "threadParticipants.viewCount": "Lihat peserta perbualan ({count, number})",
+  "threadParticipants.creator": "Pencipta",
+  "threadParticipants.heading": "Peserta",
+  "threadParticipants.error": "Tidak dapat mengemas kini peserta",
+  "threadParticipants.retry": "Cuba semula",
+  "threadParticipants.loading": "Memuatkan…",
+  "threadParticipants.empty": "Belum ada peserta yang dikenal pasti",
+  "threadParticipants.grouping.creator": "Mengikut pencipta",
+  "threadParticipants.grouping.saveError": "Tidak dapat menyimpan pilihan paparan ini",
+  "threadParticipants.grouping.loading": "Memuatkan pencipta…",
+  "threadParticipants.grouping.unavailable": "Pencipta tidak tersedia",
+  "threadParticipants.grouping.unknown": "Pencipta tidak diketahui",
+  "threadParticipants.filter.mine": "Perbualan saya"
 }
