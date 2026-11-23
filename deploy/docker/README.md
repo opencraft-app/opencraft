@@ -26,7 +26,8 @@ The default image follows upstream and packages the pinned stock Electron runtim
 Node and Codex are pinned by this checkout and lockfile; no account or model
 credential is included. The image does not ship DeepSeek Harness (DSH): Brain
 starts without it, and a DSH installed in the image can be bridged by setting
-`OPENCRAFT_DSH_EXECUTABLE` to its `lib/bin.js`. Native Linux amd64 and arm64 build hosts are supported.
+`OPENCRAFT_DSH_EXECUTABLE` to its `lib/bin.js` (the owned-browser Dockerfile
+can package it into the Brain image, see below). Native Linux amd64 and arm64 build hosts are supported.
 Docker Desktop runs these Linux containers inside its VM.
 
 Internal builds can opt into a verified custom browser by setting
@@ -34,6 +35,23 @@ Internal builds can opt into a verified custom browser by setting
 `docker compose -f compose.yaml -f compose.owned-electron.yaml build`.
 That path uses `Dockerfile.owned-electron` and requires Docker Compose 2.17+.
 Custom artifacts retain their provenance and native probe checks.
+
+`Dockerfile.owned-electron` has two more opt-in build arguments; their defaults
+leave every image as before:
+
+- `OPENCRAFT_BRAIN_DSH=packaged` gives the `brain` target the separately locked
+  `runtime/dsh` installation, prepared and patched by
+  `scripts/packaging/prepare-dsh-runtime.mjs`, and sets
+  `OPENCRAFT_DSH_EXECUTABLE` to it. The default `none` builds the same Brain
+  image as before, without DSH.
+- `OPENCRAFT_PRODUCT_PREFIX=<relative directory>` names a distribution's own npm
+  project inside the build context, with its own `package.json` and
+  `package-lock.json`. The dependency stage runs `npm ci --prefix` for it after
+  the core install, and the container Web build runs
+  `OPENCRAFT_CONTAINER_WEB_SCRIPT` in that project instead of at the root. The
+  core lock and root manifest stay as committed. Combine it with
+  `OPENCRAFT_CONTAINER_GATEWAY_ENTRY`, `OPENCRAFT_CONTAINER_GATEWAY_BUILD_SCRIPT`
+  and `OPENCRAFT_CONTAINER_HANDS_ENTRY` to compose a downstream product.
 
 ```sh
 cd docker

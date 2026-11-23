@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   buildHeadlessWeb,
+  resolveProductPrefix,
   headlessWebBuildEnvironment,
   headlessWebHostDefinitions,
   workbenchWebBuildSteps,
@@ -89,6 +92,46 @@ test("an installation Vite config runs core's Web build steps with that config",
     });
   }
   assert.equal(fake.verified.length, 1);
+});
+
+test("a product prefix runs that project's Web script, not a root one", async () => {
+  const fake = recorder();
+  // runtime/dsh is a committed separately locked project, so it serves as a prefix fixture.
+  await buildHeadlessWeb({ script: "build:web", prefix: "runtime/dsh", run: fake.run, verify: fake.verify });
+  assert.deepEqual(fake.calls[0].args, ["--prefix", new URL("runtime/dsh", root).pathname, "run", "build:web"]);
+  assert.equal(new URL(`file://${fake.calls[0].cwd}/`).href, root.href);
+  assert.deepEqual(fake.verified, [new URL("apps/workbench-web/dist", root).pathname]);
+  await assert.rejects(
+    buildHeadlessWeb({ prefix: "runtime/dsh", viteConfig: "/a.mjs", run: fake.run }),
+    /prefix selects a script/,
+  );
+});
+
+test("a product prefix must be a locked project inside the repository", async (t) => {
+  const repository = await mkdtemp(join(tmpdir(), "opencraft-product-prefix-"));
+  t.after(() => rm(repository, { recursive: true, force: true }));
+  const project = async (path, files = ["package.json", "package-lock.json"]) => {
+    await mkdir(join(repository, path), { recursive: true });
+    for (const file of files) await writeFile(join(repository, path, file), "{}");
+  };
+  await project("products/example");
+  await project("products/unlocked", ["package.json"]);
+  await project("outside");
+  await symlink(join(repository, "outside"), join(repository, "products/linked"));
+  assert.equal(resolveProductPrefix("products/example", repository), join(repository, "products/example"));
+  for (const prefix of [
+    "",
+    ".",
+    "/products/example",
+    "products/example/",
+    "products/../products/example",
+    "products//example",
+    "../outside",
+    "products/unlocked",
+    "products/missing",
+    "products/linked",
+  ])
+    assert.throws(() => resolveProductPrefix(prefix, repository), undefined, prefix);
 });
 
 test("core Web build steps stay equal to the workspace build script", async () => {
