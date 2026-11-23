@@ -23,7 +23,13 @@ import { AccountEnvironment } from "@opencraft/execution-environment/account-env
 import { ExecutionEnvironmentRuntime, environmentProjectId } from "@opencraft/execution-environment";
 import { LocalAccountServerPlugin } from "../../plugins/local-account/src/server.js";
 import { openHeadlessAssetsStorage } from "../../apps/headless-server/src/headless-assets-storage.js";
-import { coreCodexEnvironmentLaunch } from "../../apps/headless-server/src/codex-environment-launch.ts";
+import {
+  codexExecutionGit,
+  coreCodexEnvironmentLaunch,
+} from "../../apps/headless-server/src/codex-environment-launch.ts";
+import { validateHeadlessIdentity } from "../../apps/headless-server/src/headless-identity.mjs";
+import { buildGitIdentityRuntime } from "../../scripts/packaging/package-git-identity-runtime.mjs";
+import type { GitExecutionLocator } from "@opencraft/execution-environment/git-execution";
 import { environmentCreationReservationMethods } from "../../packages/storage-node/src/server/environment-creation-reservations.js";
 import { createCodexEnvironmentLaunch } from "../../apps/codex-core/src/environment-launch.js";
 import { startOrchestrationCallbackRelay } from "../../apps/codex-core/src/orchestration-callback-lane.js";
@@ -69,6 +75,12 @@ async function durable(t: test.TestContext) {
   const login = accounts.issue(principal);
   const codex = new OpenCraftHostStateDatabase(join(directory, "codex")),
     leases = new ExecutionLeaseStore(codex.database);
+  let hostStateOpen = true;
+  // A test whose adapter owns the Codex lease store releases this copy first.
+  const closeHostState = () => {
+    if (hostStateOpen) codex.close();
+    hostStateOpen = false;
+  };
   const native = await observeNativeExecutionProcess(process.pid);
   const context = {
     sender: null,
@@ -96,7 +108,7 @@ async function durable(t: test.TestContext) {
   }
   const reservations = environmentCreationReservationMethods(storage.database);
   t.after(async () => {
-    codex.close();
+    closeHostState();
     management.close();
     accounts.close();
     members.close();
@@ -116,6 +128,7 @@ async function durable(t: test.TestContext) {
     reservations,
     context,
     storage,
+    closeHostState,
     generation: login.login.context.generation,
   };
 }
@@ -457,7 +470,7 @@ test("wrong purpose, kind, recipient, attachment or native process are refused; 
   });
 });
 
-test("the Codex adapter requires one ENV owner, a Codex Core and the Git owner for delivery; the composition offers it only for the core vault owner", () => {
+test("the Codex adapter requires one ENV owner, a Codex Core and the Git owner for delivery; the composition offers it only for a vault owner with record readers", () => {
   const port = {
     instance: INSTANCE,
     launch: async () => ({ context: null }),
@@ -480,7 +493,7 @@ test("the Codex adapter requires one ENV owner, a Codex Core and the Git owner f
   const server = { call: { reserveEnvironmentCreation: async () => {}, settleEnvironmentCreation: async () => true } };
   const core = { launch: async () => ({ context: null }) as const, admitCreation: async () => ({}) as never };
   assert.equal(coreCodexEnvironmentLaunch(undefined, server, "/core.sock", INSTANCE), undefined);
-  // A downstream issuer port seals Turns only; it has no durable record reader.
+  // A port without the record readers (`launch`, `admitCreation`) seals Turns only.
   assert.equal(coreCodexEnvironmentLaunch({}, server, "/core.sock", INSTANCE), undefined);
   assert.equal(coreCodexEnvironmentLaunch(core, server, undefined, INSTANCE), undefined, "no Codex Core, no receiver");
   assert.equal(coreCodexEnvironmentLaunch(core, server, "/core.sock", INSTANCE)?.instance, INSTANCE);
@@ -605,4 +618,310 @@ test("the Codex adapter reserves a Human creation and forwards only a staged cap
   assert.equal(anonymous.error, undefined);
   assert.equal(relayed.length, 1);
   assert.equal(requests.filter((m) => m.method === "thread/start").at(-1).params.config?.[POLICY], undefined);
+});
+
+/** The vault owner of an identity composition that owns its vault: a Worker
+ * that seals capsules and grants. Main receives only this port, shaped like
+ * `identity.environmentLaunch` with the Codex record readers and Git owner. */
+async function identityVaultOwner(t: test.TestContext, f: Awaited<ReturnType<typeof durable>>) {
+  const vault = await openHeadlessAssetsStorage(f.directory, { environmentLaunch: true });
+  const reader = openExecutionAdmission({ workerFile: admissionWorker, directory: f.directory });
+  t.after(async () => {
+    await reader.close();
+    await vault.close();
+  });
+  const owner = vault.environmentLaunch!;
+  const environmentLaunch = {
+    issuer: owner.issuer,
+    seal: owner.seal,
+    launch: owner.launch,
+    admitCreation: owner.admitCreation,
+    git: {
+      hosts: vault.gitHosts,
+      authority: vault.gitAuthority!,
+      grant: (locator: GitExecutionLocator) => vault.store.executionGitGrant(locator),
+      reservation: (locator: GitExecutionLocator) => vault.store.executionGitReservation(locator),
+    },
+  };
+  // Core's live Actor check, as Headless composes it around every await.
+  const authorize = (scope: { account: string; actorGeneration?: number }) => {
+    const actor = f.actors.get(scope.account.slice("actor:".length));
+    return actor?.enabled === true && actor.kind === "human" && actor.generation === scope.actorGeneration;
+  };
+  const server = {
+    call: {
+      reserveEnvironmentCreation: async (record: Parameters<typeof f.reservations.reserveEnvironmentCreation>[0]) =>
+        f.reservations.reserveEnvironmentCreation(record),
+      settleEnvironmentCreation: async (hostId: string, operationId: string, outcome: "launched" | "abandoned") =>
+        f.reservations.settleEnvironmentCreation(hostId, operationId, outcome),
+    },
+  };
+  const port = coreCodexEnvironmentLaunch(
+    environmentLaunch,
+    server as never,
+    "/fixture/codex-core.sock",
+    INSTANCE,
+    (actor) => authorize({ account: `actor:${actor.actorId}`, actorGeneration: actor.actorGeneration }),
+  )!;
+  return { vault, reader, environmentLaunch, authorize, port };
+}
+
+/** Records every vault access on this (Main) thread from now on. */
+function spyVault(t: test.TestContext) {
+  const calls: string[] = [],
+    prototype = EmployeeGitVaultStore.prototype as unknown as Record<string, unknown>;
+  for (const name of Object.getOwnPropertyNames(prototype)) {
+    const original = prototype[name];
+    if (name === "constructor" || typeof original !== "function") continue;
+    prototype[name] = function (this: unknown, ...args: unknown[]) {
+      calls.push(name);
+      return (original as (...a: unknown[]) => unknown).apply(this, args);
+    };
+    t.after(() => {
+      prototype[name] = original;
+    });
+  }
+  return calls;
+}
+
+test(
+  "an identity vault port drives a human Codex creation and Turn: ENV and a personal Git grant reach native, Main holds no value and opens no vault",
+  { timeout: 60_000 },
+  async (t) => {
+    const f = await durable(t);
+    // The adapter owns the Codex lease store the vault owner and receiver read.
+    f.closeHostState();
+    const runtime = join(f.root, "git-runtime");
+    await buildGitIdentityRuntime(runtime);
+    const { reader, environmentLaunch, authorize, port } = await identityVaultOwner(t, f);
+    assert.doesNotThrow(() => validateHeadlessIdentity({ providers: [], close() {}, environmentLaunch }));
+    const child = spawn("sleep", ["60"], { stdio: "ignore" });
+    t.after(() => child.kill("SIGKILL"));
+    const incarnation = (await observeNativeExecutionProcess(child.pid!)).incarnation;
+    const environment = createCodexEnvironmentLaunch({
+      issuer: environmentLaunch.issuer,
+      instance: INSTANCE,
+      admission: (locator) => reader.admission(locator),
+      incarnation: async () => incarnation,
+    });
+    t.after(() => environment.close());
+    const nativePath = join(f.root, "identity-native.sock"),
+      proxy = join(f.root, "identity-relay.sock"),
+      endpoint = join(f.root, "identity-control.sock");
+    const http = createServer(),
+      wss = new WebSocketServer({ server: http }),
+      requests: any[] = [],
+      status = new Map<string, string>();
+    await new Promise<void>((resolve) => http.listen(nativePath, resolve));
+    wss.on("connection", (socket) =>
+      socket.on("message", (frame) => {
+        const message = JSON.parse(String(frame)),
+          params = message.params ?? {};
+        requests.push(message);
+        if (message.id === undefined) return;
+        const thread = (id: string) => ({
+          id,
+          cwd: f.root,
+          turns: [],
+          status: { type: status.get(id) ?? "notLoaded" },
+        });
+        let result: unknown = {};
+        if (message.method === "initialize")
+          result = { userAgent: "fixture", platformFamily: "unix", capabilities: { extensions: {} } };
+        else if (message.method === "thread/start") {
+          status.set("identity-thread", "idle");
+          result = { thread: thread("identity-thread") };
+        } else if (message.method === "thread/list") result = { data: [], nextCursor: null };
+        else if (message.method === "thread/read") result = { thread: thread(params.threadId) };
+        else if (message.method === "thread/unsubscribe") status.set(params.threadId, "notLoaded");
+        else if (message.method === "thread/resume") {
+          if (params.config) status.set(params.threadId, "idle");
+          result = { thread: thread(params.threadId), model: "fixture", sandbox: { type: "workspaceWrite" } };
+        } else if (message.method === "turn/start") {
+          status.set(params.threadId, "active");
+          result = { turn: { id: "identity-turn", status: "inProgress", items: [] } };
+        }
+        socket.send(JSON.stringify({ id: message.id, result }));
+      }),
+    );
+    const relay = await startOrchestrationCallbackRelay(proxy, nativePath, { environment });
+    const token = "synthetic-" + randomUUID();
+    const control = await startControlServer(endpoint, token, async () => ({
+      status: 200,
+      value: {
+        protocolVersion: 1,
+        pid: process.pid,
+        codexPid: child.pid,
+        nativeSocket: proxy,
+        environmentVariablesVersion: 1,
+        environmentLaunchVersion: 1,
+        dataDirectory: join(f.root, "codex-core"),
+        proxyBaseUrl: "http://127.0.0.1:9",
+      },
+    }));
+    const relayed: unknown[] = [];
+    const observed = {
+      ...port,
+      launch: async (...args: Parameters<typeof port.launch>) => {
+        const reply = await port.launch(...args);
+        relayed.push(reply);
+        return reply;
+      },
+    };
+    const vaultCalls = spyVault(t);
+    const adapter = new CodexEngineAdapter({
+      executable: process.execPath,
+      runtimeDirectory: f.root,
+      // The Codex lease store core's durable admission reads.
+      dataDirectory: join(f.directory, "codex"),
+      coreEndpoint: endpoint,
+      coreAuthToken: token,
+      coreHostOverlays: true,
+      environmentLaunch: observed,
+      // Headless's composition of the identity's Git execution owner.
+      createExecutionGit: codexExecutionGit(environmentLaunch.git, {
+        directory: f.directory,
+        runtimeDirectory: join(f.root, "codex-git"),
+        workerFile: join(runtime, "personal-git-worker.mjs"),
+        authorize,
+      }),
+      logDiagnostic() {},
+    });
+    const frames: any[] = [];
+    adapter.subscribeMessage((frame) => frames.push(JSON.parse(frame)));
+    t.after(async () => {
+      await adapter.close();
+      await control.close();
+      await relay.close();
+      for (const socket of wss.clients) socket.terminate();
+      wss.close();
+      await new Promise<void>((resolve) => http.close(() => resolve()));
+    });
+    let sequence = 0;
+    const call = async (method: string, params: object) => {
+      const id = ++sequence;
+      await adapter.sendWithContext(
+        JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "client" }),
+        f.context as never,
+      );
+      await until(() => frames.some((frame) => frame.id === id));
+      return frames.find((frame) => frame.id === id);
+    };
+    await adapter.connect();
+    await call("initialize", {});
+
+    // Creation: reserved through the identity's admission, opened by Codex Core.
+    const created = await call("thread/start", { cwd: f.root, projectId: "alpha" });
+    assert.equal(created.error, undefined, JSON.stringify(created.error));
+    const start = requests.find((m) => m.method === "thread/start");
+    assert.equal(start.params.config[POLICY].SERVICE_KEY, SECRET);
+    assert.equal(start.params.config[POLICY].PROJECT_KEY, PROJECT_VALUE);
+
+    // Turn: the pending lease admits the Git reservation and the ENV capsule.
+    const turn = await call("turn/start", {
+      threadId: "identity-thread",
+      clientUserMessageId: "identity-input",
+      input: [{ type: "text", text: "synthetic" }],
+    });
+    assert.equal(turn.error, undefined, JSON.stringify(turn.error));
+    const reload = requests.find((m) => m.method === "thread/resume" && m.params.config);
+    assert.equal(reload.params.__opencraftEnvironmentLaunch, undefined);
+    const installed = reload.params.config[POLICY];
+    assert.equal(installed.SERVICE_KEY, SECRET);
+    assert.match(
+      installed.OPENCRAFT_GIT_CAPABILITY,
+      /^v3\./u,
+      "a personal Git grant sealed by the identity vault owner",
+    );
+    assert.equal(installed.OPENCRAFT_GIT_BROKER_AUTHORITY, environmentLaunch.git.authority);
+    assert.ok(requests.some((m) => m.method === "turn/start" && m.params.clientUserMessageId === "identity-input"));
+    // The Turn restages before dispatch; an unchanged digest does not reload twice.
+    assert.ok(relayed.length >= 2, "capsules for the creation and the Turn");
+    assert.equal(requests.filter((m) => m.method === "thread/resume" && m.params.config).length, 1);
+    noPlaintext([...relayed, ...frames]);
+    assert.deepEqual(vaultCalls, [], "Main never opens the vault");
+  },
+);
+
+test("identity vault ports are rechecked after every await: a revoked Actor or a replaced lease is refused", async (t) => {
+  const f = await durable(t);
+  const { environmentLaunch, authorize, port } = await identityVaultOwner(t, f);
+  const creation = (operationId: string) => ({
+    operationId,
+    actorId: f.actorId,
+    actorGeneration: f.generation,
+    source: null,
+    incarnation: f.native.incarnation,
+    projectId: null,
+  });
+  // The vault owner answers for exactly the request; a substituted record is refused.
+  const substituted = coreCodexEnvironmentLaunch(
+    {
+      ...environmentLaunch,
+      admitCreation: async (request) => ({ ...(await environmentLaunch.admitCreation(request)), operationId: "other" }),
+    },
+    {
+      call: {
+        reserveEnvironmentCreation: async () => assert.fail("not written"),
+        settleEnvironmentCreation: async () => true,
+      },
+    } as never,
+    "/core.sock",
+    INSTANCE,
+  )!;
+  await assert.rejects(substituted.reserveCreation(creation("substituted")), /environment_launch_unavailable/u);
+
+  // Revoked while the identity's vault owner answers: core refuses after the await.
+  let revoke = false;
+  const racing = coreCodexEnvironmentLaunch(
+    {
+      ...environmentLaunch,
+      admitCreation: async (request) => {
+        const record = await environmentLaunch.admitCreation(request);
+        if (revoke) f.actors.setEnabled(f.actorId, false, "fixture");
+        return record;
+      },
+    },
+    {
+      call: {
+        reserveEnvironmentCreation: async () => assert.fail("not written"),
+        settleEnvironmentCreation: async () => true,
+      },
+    } as never,
+    "/core.sock",
+    INSTANCE,
+    (actor) => authorize({ account: `actor:${actor.actorId}`, actorGeneration: actor.actorGeneration }),
+  )!;
+
+  // A pending Codex lease, its Git reservation handed off before revocation.
+  f.pending("thread", "input");
+  const locator = { hostId: "local-codex" as const, threadId: "thread", inputId: "input" };
+  const held = await environmentLaunch.git.reservation(locator);
+  assert.ok(held, "the identity's Git owner admits the pending lease");
+  await port.reserveCreation(creation("admitted"));
+  let live = true;
+  const git = codexExecutionGit(
+    { ...environmentLaunch.git, reservation: async () => held },
+    {
+      directory: f.directory,
+      runtimeDirectory: join(f.root, "unused-git"),
+      workerFile: join(f.root, "unused.mjs"),
+      authorize,
+    },
+  )({ inspect: async () => live, inspectReservation: async () => live });
+  t.after(() => git.close());
+  // The native process holding the lease was replaced: the stale handoff is refused.
+  live = false;
+  await assert.rejects(git.reserve(locator), /git_execution_unavailable/u);
+  live = true;
+
+  revoke = true;
+  await assert.rejects(racing.reserveCreation(creation("revoked-during")), /environment_launch_unavailable/u);
+  await assert.rejects(port.reserveCreation(creation("revoked-before")), /environment_launch_unavailable/u);
+  await assert.rejects(git.reserve(locator), /git_execution_unavailable/u);
+  const written = f.storage.database
+    .prepare("SELECT operation_id AS id FROM environment_creation_reservations")
+    .all()
+    .map((row) => row.id);
+  assert.deepEqual(written, ["admitted"]);
 });
