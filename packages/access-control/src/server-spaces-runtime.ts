@@ -5,13 +5,14 @@ import { Worker } from 'node:worker_threads';
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import type { ServerSpaceCommand, ServerSpaceDirectory } from '@opencraft/appserver-protocol/server-spaces';
 import type { SpaceProjection } from './server-spaces-ledger.js';
+import type { ServerSpacesRequest } from './server-spaces-domain.js';
 
 /** The Server core owner's port for the space ledger (`serverSpacesOwnerMethods`),
  * e.g. `openServerCoreOwner(...)`. `onUnavailable` reports a lost owner. */
 export interface ServerSpacesOwner {
   readonly call: {
     serverSpacesOpen(bootstrap: {ownerActorId?:string;members?:readonly string[];bootstrapInstance?:boolean}): Promise<{projection:SpaceProjection}>;
-    serverSpaces(request: Record<string,unknown>): Promise<{result?:unknown;projection?:SpaceProjection;error?:Record<string,unknown>}>;
+    serverSpaces(request: ServerSpacesRequest): Promise<{result?:unknown;projection?:SpaceProjection;error?:Record<string,unknown>}>;
   };
   onUnavailable?(listener: (error: Error) => void): () => void;
 }
@@ -84,11 +85,12 @@ export class ServerSpacesRuntime {
     }
     request.resolve(message.result);
   }
-  private async call(payload: Record<string,unknown>): Promise<any> {
+  private async call(payload: ServerSpacesRequest | {method:'close'}): Promise<any> {
     await this.ready;
     if(this.failed || this.closing && payload.method !== 'close')throw new Error('Server storage unavailable');
     if(this.pending.size+this.inFlight.size>=256)throw new Error('Server storage busy');
-    if(this.owner){
+    // `close` only reaches a standalone Worker; the owner belongs to its composition.
+    if(this.owner&&payload.method!=='close'){
       const owner=this.owner;
       const reply=new Promise((resolve,reject)=>{
         owner.call.serverSpaces(payload).then(message=>this.settle({resolve,reject},message),cause=>{

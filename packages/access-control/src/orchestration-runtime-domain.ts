@@ -10,6 +10,7 @@ import { ThreadOrchestrationLedger } from './orchestration-ledger.js';
 import { AutomationLedger } from './automation-ledger.js';
 import { updateExecutionRequest } from './execution-request-state.js';
 import type { ServerDatabaseSource } from '@opencraft/storage-node/server-repository';
+import { orchestrationRuntimeRequest, type OrchestrationRuntimeRequest } from './orchestration-runtime-contract.js';
 
 /** The connection the orchestration runtime commits on. Without a `location`,
  * no service built here can start a companion Worker on the same file. */
@@ -36,9 +37,11 @@ export function orchestrationRuntimeDomain(source: OrchestrationRuntimeSource) {
     return communication;
   };
   return {
-    async execute(method: string, payload: any): Promise<unknown> {
+    /** Runs one request the owner entry already turned into the contract's union. */
+    async execute(request: OrchestrationRuntimeRequest): Promise<unknown> {
       let result: unknown;
-      const ledger=new ThreadOrchestrationLedger(db,()=>payload.now??Date.now());
+      const {method,payload}=request;
+      const ledger=new ThreadOrchestrationLedger(db,()=>('now' in payload&&typeof payload.now==='number'?payload.now:undefined)??Date.now());
       switch(method){
         // A lost acknowledgement must not replay an old title over a later one.
         case 'claimTitleWrite':result=db.prepare("UPDATE opencraft_orchestration_operations SET state='applying' WHERE operation_id=? AND state='accepted' AND result_json IS NULL").run(payload.operationId).changes===1;break;
@@ -71,14 +74,15 @@ export function orchestrationRuntimeDomain(source: OrchestrationRuntimeSource) {
           const scope=payload.executionScope,actorStore=actors??=new ActorStore(source,Date.now,{permissionProjection:false});
           const access=new ThreadAccessStore(source,actorStore,{projection:false});
           const unsupported=async()=>{throw Error('Storage cannot call an engine');};
-          const scoped=new Collaboration(source,actorStore,{serverId:scope.serverId,hostId:scope.hostId,serverForThread:()=>scope.serverId,hostForServer:id=>id===scope.serverId?scope.hostId:null,validate:unsupported,receipt:unsupported,add:unsupported,steer:unsupported,cancel:unsupported},Date.now,id=>db.prepare('SELECT enabled FROM actor_members WHERE actor_id=?').get(id)?.enabled!==0,undefined,(c,r)=>access.allows(r.serverId,r.threadId,c));
+          // Every Server resolves to the scope's Host, as the fallback to `hostId` did.
+          const scoped=new Collaboration(source,actorStore,{serverId:scope.serverId,hostId:scope.hostId,serverForThread:()=>scope.serverId,hostForServer:()=>scope.hostId,validate:unsupported,receipt:unsupported,add:unsupported,steer:unsupported,cancel:unsupported},Date.now,id=>db.prepare('SELECT enabled FROM actor_members WHERE actor_id=?').get(id)?.enabled!==0,undefined,(c,r)=>access.allows(r.serverId,r.threadId,c));
           attachCrewRules(scoped,db,actorStore,Date.now);
           try{result=communicationCommand(scoped,db,payload);}finally{await scoped.close();access.close();}break;
         }
         case 'automation': {
           const automation=new AutomationLedger(db,payload.now);
-          const input=payload.input;
-          switch(payload.operation){
+          const {operation,input}=payload;
+          switch(operation){
             case 'command': result=automation.command(input.caller,input.command,input.body,input.key);break;
             case 'grantReplay': result=automation.grantReplay(input.caller,input.command,input.body,input.key);break;
             case 'grant': result=automation.grantCommand(input.caller,input.command,input.body,input.key);break;
@@ -141,7 +145,9 @@ export function orchestrationRuntimeOwnerMethods(owner: OrchestrationRuntimeSour
   const domain = orchestrationRuntimeDomain({ database: owner.database, outcome: owner.outcome });
   return {
     methods: {
-      orchestrationRuntime: (method: string, payload: unknown) => domain.execute(method, payload),
+      // Owner entry: the network thread's `OrchestrationRuntimeWorker` is the
+      // only caller on this in-process owner port (see `orchestrationRuntimeRequest`).
+      orchestrationRuntime: async (method: unknown, payload: unknown) => domain.execute(orchestrationRuntimeRequest(method, payload)),
     },
     close: () => domain.close(),
   };

@@ -5,6 +5,7 @@ import { isAbsolute } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { nodeSqlDatabase } from '@opencraft/sqlite-node';
 import { orchestrationRuntimeDomain } from './orchestration-runtime-domain.js';
+import { orchestrationRuntimeRequest } from './orchestration-runtime-contract.js';
 
 // Standalone orchestration storage for compositions without a Server core
 // owner Worker (tests, smoke fixtures, file-backed Collaboration). Headless
@@ -28,18 +29,23 @@ const busy=(error:unknown)=>{const code=(error as {errcode?:number})?.errcode;re
 const domain=orchestrationRuntimeDomain({database:db,location:workerData.path as string,outcome:{status:'up-to-date' as const,appliedVersion:Number(db.prepare('SELECT MAX(version) AS n FROM schema_migrations').get()!.n),movedAsidePaths:[]}});
 let tail=Promise.resolve();
 let closed=false;
-async function execute({id,method,payload}: {id:number;method:string;payload:any}) {
+async function execute({id,method,payload}: {id:number;method:unknown;payload:unknown}) {
   try {
     if(closed)throw new Error('Orchestration storage is closed');
     const started=performance.now();let result:unknown;
     if(method==='close'){try{await domain.close();}finally{connection.close();closed=true;}}
-    else for(;;){
-      try{result=await domain.execute(method,payload);break;}
-      catch(error){
-        // Each observation rolls its transaction back before the asynchronous
-        // retry. Never block or ask the gateway for work while holding a lock.
-        if(!busy(error)||performance.now()-started>=5000)throw error;
-        await new Promise(resolve=>setTimeout(resolve,5));
+    else {
+      // Owner entry: the parent `OrchestrationRuntimeWorker` is the only writer
+      // to this Worker port (see `orchestrationRuntimeRequest`).
+      const request=orchestrationRuntimeRequest(method,payload);
+      for(;;){
+        try{result=await domain.execute(request);break;}
+        catch(error){
+          // Each observation rolls its transaction back before the asynchronous
+          // retry. Never block or ask the gateway for work while holding a lock.
+          if(!busy(error)||performance.now()-started>=5000)throw error;
+          await new Promise(resolve=>setTimeout(resolve,5));
+        }
       }
     }
     port.postMessage({id,result});if(closed)port.close();

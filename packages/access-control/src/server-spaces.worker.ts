@@ -44,7 +44,8 @@ port.on('message', request => {
       }
       return;
     }
-    port.postMessage({id:request.id,...domain.execute(request)});
+    // Owner entry: the parent `ServerSpacesRuntime` is the only writer to this port.
+    port.postMessage({id:request.id,...domain.receive(request)});
   });
 });
 port.postMessage({type:'ready',projection:domain.projection(),localContext,outcome:owner?.outcome??null});
