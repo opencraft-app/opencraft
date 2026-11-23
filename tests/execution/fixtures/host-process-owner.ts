@@ -11,11 +11,16 @@ const pool = await createSandboxPool(
   hostProcessSandboxBackend({ stateDirectory: process.argv[2]! }),
 );
 const sandbox = await pool.createSandbox({ owner: "crash-test" });
-let reported = false;
+let first = "";
+let report: () => void = () => {};
+const reported = new Promise<void>((resolve) => (report = resolve));
 await sandbox.spawn({ command: ["/bin/sh", "-c", "sleep 300 & echo $!; sleep 300"], cwd: "/", env: {} }, (event) => {
-  if (!reported) {
-    reported = true;
-    process.stdout.write(Buffer.from(event.data).toString());
+  if (!first) {
+    first = Buffer.from(event.data).toString();
+    report();
   }
 });
+// Output can arrive before spawn resolves; report only once the backend has recorded the command for recovery.
+await reported;
+process.stdout.write(first);
 setInterval(() => {}, 1000);
