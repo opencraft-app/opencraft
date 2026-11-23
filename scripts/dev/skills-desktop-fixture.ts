@@ -1,9 +1,11 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import { createServer } from "node:http";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "../../apps/local-agent-host/src/model-config/repository.js";
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 import { electronLaunchSpec } from "./start-electron.mjs";
 
 // Manual desktop acceptance fixture. No user credentials, model calls or Skill
@@ -37,8 +39,8 @@ const endpoint = createServer(async (req, res) => {
 await new Promise<void>(resolve => endpoint.listen(0, "127.0.0.1", resolve));
 const port = (endpoint.address() as {port: number}).port;
 const product = join(root, "models");
-await new ModelCredentialRepository(product).set("DESKTOP_FIXTURE", "synthetic-only");
-await new ModelConfigurationRepository(product).initialize({ schemaVersion: 1, revision: 0,
+await new ModelCredentialRepository(fileSecretStore(product)).set("DESKTOP_FIXTURE", "synthetic-only");
+await new ModelConfigurationRepository(fileStateDocumentStore(product)).initialize({ schemaVersion: 1, revision: 0,
   providers: [{ id: "desktop-fixture", name: "Desktop fixture", protocol: "openai-completions", baseUrl: `http://127.0.0.1:${port}/v1`, credentialRef: "DESKTOP_FIXTURE", enabled: true, models: [{ id: "fixture", enabled: true }] }],
   defaultModel: { providerId: "desktop-fixture", modelId: "fixture" },
 });

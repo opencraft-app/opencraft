@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 
 import WebSocket, { WebSocketServer } from "ws";
 import { createWebSocketSender } from "@opencraft/relay-protocol/websocket-sender";
+import { serveNodeHttpExchange } from "@opencraft/identity-core/http-exchange-node";
 import { RESUME_ACK_DELAY_MS, isAcknowledgement, isResumeAttempt, isSequence, parseResumeAttempt } from "@opencraft/app-host-resume";
 import { ResumeRegistry, ResumeSessionCapacityError } from "@opencraft/app-host-resume/server";
 import { trackSocketHeartbeat } from "./websocket-heartbeat.mjs";
@@ -65,7 +66,8 @@ function normalizeTarget(target) {
   const url = new URL(target);
   if (url.protocol === "http:") url.protocol = "ws:";
   if (url.protocol === "https:") url.protocol = "wss:";
-  if (url.protocol !== "ws:" && url.protocol !== "wss:") {
+  // ws+unix: a private local socket (e.g. a workspace endpoint listener for an engine Host).
+  if (url.protocol !== "ws:" && url.protocol !== "wss:" && url.protocol !== "ws+unix:") {
     throw new Error(`Unsupported AppServer WebSocket protocol: ${url.protocol}`);
   }
   return url.href;
@@ -880,11 +882,11 @@ export async function createWorkbenchWebServer({
       if (!local && !["/health", "/__opencraft_health"].includes(url.pathname)) await accessService?.prepare?.(request);
       // Login/callback endpoints must remain reachable before instance admission.
       if (url.pathname === '/setup' || url.pathname === '/__opencraft_account' || url.pathname.startsWith('/__opencraft_account/')) {
-        if (accountService && await accountService.handle(request, response)) return;
+        if (accountService && await serveNodeHttpExchange(request, response, exchange => accountService.handle(exchange))) return;
         sendJson(response, 404, { error: 'missing' }); return;
       }
       if (url.pathname === '/__opencraft_auth' || url.pathname.startsWith('/__opencraft_auth/')) {
-        if (authService && await authService.handle(request, response)) return;
+        if (authService && await serveNodeHttpExchange(request, response, exchange => authService.handle(exchange))) return;
         sendJson(response, 404, { error: 'missing' }); return;
       }
       if (url.pathname.startsWith('/__opencraft_actors/collaboration/')) {
@@ -894,7 +896,7 @@ export async function createWorkbenchWebServer({
       // Actor API has its own verified admission. A Session credential is never a
       // substitute for membership on the legacy unscoped execution interfaces.
       if (url.pathname === '/__opencraft_actors' || url.pathname.startsWith('/__opencraft_actors/')) {
-        if (actorService && await actorService.handle(request, response)) return;
+        if (actorService && await serveNodeHttpExchange(request, response, exchange => actorService.handle(exchange))) return;
         sendJson(response, 404, { error: 'missing' }); return;
       }
       if (url.pathname === "/__opencraft_connectors") {
@@ -941,7 +943,7 @@ export async function createWorkbenchWebServer({
       if (accessService) {
         const identity = accessService.authenticate(request);
         if (identity) { const unwatch = accessService.watch(identity, () => response.destroy()); response.once('close', unwatch); }
-        if (await accessService.handle(request, response)) return;
+        if (await serveNodeHttpExchange(request, response, exchange => accessService.handle(exchange))) return;
       }
       if (url.pathname === "/__opencraft_files" || url.pathname === "/__opencraft_preview/tickets") {
         if (!fileDownloads) { sendJson(response, 404, { error: "missing" }); return; }

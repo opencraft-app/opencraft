@@ -27,15 +27,12 @@ export async function observeNativeExecutionProcess(pid: number): Promise<Native
   return Object.freeze({ pid, startTicks: before, incarnation: JSON.stringify(["process", bootId, pid, before]) });
 }
 
-/** Authenticated standalone Core health attests its direct native child. Routed
- * deployments must use their generation registry instead of this process key. */
+/** Authenticated standalone Core health attests its direct native child. */
 export async function observeStandaloneCodexExecution(health: {
   pid: number;
   codexPid: number;
   appServerPid?: number;
-  routingEpoch?: string;
 }): Promise<NativeExecutionProcess> {
-  if (health.routingEpoch) throw new Error("Routed Codex requires generation execution identity");
   const owner = await observeNativeExecutionProcess(health.appServerPid ?? health.pid);
   const native = await observeNativeExecutionProcess(health.codexPid);
   const stat = await readFile(`/proc/${native.pid}/stat`, "utf8");

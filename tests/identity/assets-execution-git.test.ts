@@ -1,3 +1,5 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
+import { fileKeyMaterial } from "@opencraft/secret-storage/file";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
@@ -13,6 +15,7 @@ import { HumanAuth } from "@opencraft/access-control/human-auth";
 import { MembershipStore, InstanceAccess } from "@opencraft/access-control";
 import { HumanAccountManagement } from "@opencraft/access-control/account-management";
 import { LocalAccountServerPlugin } from "../../plugins/local-account/src/server.js";
+import { createNodePasswordHasher } from "../../plugins/local-account/src/password-hash-node.js";
 import { openHumanAssets } from "../../plugins/local-account/src/assets-server.js";
 import { openAssetConfigurations } from "../../plugins/assets/src/server/worker.js";
 import { humanGitRuntimeDirectory, createHumanGitExecution } from "../../apps/headless-server/src/human-git-execution.js";
@@ -40,7 +43,7 @@ async function fixture(t: test.TestContext, worker = "../fixtures/assets-git-exe
     actors = new ActorStore(storage),
     accounts = new HumanAccounts(storage, actors),
     members = new MembershipStore(storage);
-  const provider = new LocalAccountServerPlugin(accounts.localAccountRepository);
+  const provider = new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher());
   accounts.registerLocalAccounts(provider);
   const management = new HumanAccountManagement(storage, accounts, actors, members);
   const principal = await management.initialize({
@@ -680,7 +683,7 @@ async function remoteExecution(t:test.TestContext,f:Awaited<ReturnType<typeof fi
  const {RemoteSessionCapabilities}=await import('@opencraft/session-capabilities/remote');
  const {createRemoteHumanGitExecution}=await import('../../apps/headless-server/src/remote-human-git-execution.js');
  const directory=join(f.root,'data'),descriptorPath=join(directory,'session-capabilities.json');
- const key=await capabilitySigningKey(join(directory,'session-capabilities.key'));
+ const key=await capabilitySigningKey(fileKeyMaterial(directory));
  let forcedReply:unknown;
  const open=async()=>{
   const gateway=new SessionCapabilityMcp(new SessionCapabilities(),key,undefined,{descriptorPath,retainEndpoint:true,hostGit:async session=>{
@@ -739,7 +742,7 @@ test('real independent Pi owner consumes the Server handoff at its bash boundary
   res.writeHead(200,{'content-type':'text/event-stream'});res.write(chunk(delta,null));res.end(chunk({},first?'tool_calls':'stop')+'data: [DONE]\n\n');
  });model.listen(0,'127.0.0.1');await once(model,'listening');
  f.defer(async()=>{model.closeAllConnections();await new Promise<void>(r=>model.close(()=>r()));});
- await new ModelConfigurationRepository(join(directory,'models')).initialize({schemaVersion:1,revision:0,
+ await new ModelConfigurationRepository(fileStateDocumentStore(join(directory,'models'))).initialize({schemaVersion:1,revision:0,
   defaultModel:{providerId:'synthetic',modelId:'synthetic'},providers:[{id:'synthetic',name:'Synthetic',protocol:'openai-completions',credentialRef:null,authentication:'none',baseUrl:`http://127.0.0.1:${(model.address() as {port:number}).port}/v1`,enabled:true,
   models:[{id:'synthetic',name:'Synthetic',enabled:true,input:['text'],contextWindow:64000,maxTokens:1000,reasoningEfforts:false}]}]});
  const descriptorPath=join(f.root,'native-host.json');
@@ -751,7 +754,7 @@ test('real independent Pi owner consumes the Server handoff at its bash boundary
  const issuer=createHumanGitExecution({directory,runtimeDirectory:join(f.root,'unused-gateway-broker'),workerFile:join(f.root,'runtime/personal-git-worker.mjs'),hosts:f.assets.gitHosts,authority:f.assets.gitAuthority!,grant:f.assets.executionGitGrant,authorize:f.authorize,
   inspect:async handoff=>handoff.native.incarnation===f.native.incarnation&&await inspect({threadId:handoff.scope.threadId,turnId:handoff.native.turnId,engineIncarnation:handoff.native.incarnation} as any)==='active'});
  f.defer(()=>issuer.close());
- const key=await capabilitySigningKey(join(directory,'session-capabilities.key'));
+ const key=await capabilitySigningKey(fileKeyMaterial(directory));
  const gateway=new SessionCapabilityMcp(new SessionCapabilities(),key,undefined,{descriptorPath:join(directory,'session-capabilities.json'),hostGit:async session=>{
   if(session.serverId!==`server:${descriptor.machineId}:pi`||!session.execution?.inputId)throw Error('denied');
   return {authority:f.assets.gitAuthority,hosts:f.assets.gitHosts,grant:await issuer.handoff({hostId:'opencraft-server',threadId:session.threadId,inputId:session.execution.inputId})};
@@ -799,7 +802,7 @@ test('pinned DSH foreground/background and persistent PTY sign through original 
     inspect: async grant => grant.native.incarnation === f.native.incarnation && grant.native.turnId === turnId && agent.status === 'running'
       && agent.session.events.filter(e => e.type === 'turn/start' || e.type === 'turn/end').at(-1)?.type === 'turn/start',
   }); f.defer(() => issuer.close());
-  const key = await capabilitySigningKey(join(directory, 'session-capabilities.key'));
+  const key = await capabilitySigningKey(fileKeyMaterial(directory));
   const gateway = new SessionCapabilityMcp(new SessionCapabilities(), key, undefined, {
     descriptorPath: join(directory, 'session-capabilities.json'), hostGit: async session => {
       if (session.serverId !== 'server:fixture:dsh' || session.threadId !== threadId || !session.execution) throw Error('denied');
@@ -882,7 +885,7 @@ test('real independent DSH process consumes the compiled Assets handoff without 
   }); endpoint.listen(0, '127.0.0.1'); await once(endpoint, 'listening');
   f.defer(async () => {endpoint.closeAllConnections(); await new Promise<void>(r => endpoint.close(() => r()));});
   const models = join(f.root, 'models');
-  await new ModelConfigurationRepository(models).initialize({schemaVersion: 1, revision: 0, defaultModel: {providerId: 'synthetic', modelId: 'synthetic'},
+  await new ModelConfigurationRepository(fileStateDocumentStore(models)).initialize({schemaVersion: 1, revision: 0, defaultModel: {providerId: 'synthetic', modelId: 'synthetic'},
     providers: [{id: 'synthetic', name: 'Synthetic', protocol: 'openai-completions', authentication: 'none', credentialRef: null, enabled: true,
       baseUrl: `http://127.0.0.1:${(endpoint.address() as {port: number}).port}/v1`, models: [{id: 'synthetic', name: 'Synthetic', enabled: true, input: ['text'], contextWindow: 64000, maxTokens: 1000, reasoningEfforts: false}]}]});
   const machine = await readHostMachineIdentity(directory);
@@ -899,7 +902,7 @@ test('real independent DSH process consumes the compiled Assets handoff without 
       return await inspector.inspect({threadId: grant.scope.threadId, turnId: grant.native.turnId, engineIncarnation: grant.native.incarnation} as any) === 'active';
     },
   }); f.defer(() => issuer.close());
-  const key = await capabilitySigningKey(join(directory, 'session-capabilities.key'));
+  const key = await capabilitySigningKey(fileKeyMaterial(directory));
   const gateway = new SessionCapabilityMcp(new SessionCapabilities(), key, undefined, {descriptorPath: join(directory, 'session-capabilities.json'), hostGit: async session => {
     if (session.serverId !== `server:${machine.machineId}:dsh` || !session.execution) throw Error('denied');
     return {authority: f.assets.gitAuthority, hosts: f.assets.gitHosts, grant: await issuer.handoff({hostId: 'opencraft-server', threadId: session.threadId,

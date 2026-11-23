@@ -1,9 +1,8 @@
 import { WorkspaceBotOwner, type BotBackendIdentity } from "./workspaces/bot-owner.js";
-import type { E2BSandboxOptions } from "@opencraft/sandbox-e2b";
-import type { SandboxBackend } from "@opencraft/sandbox";
 import { createWorkspaceExecutionOwner } from "./workspaces/execution-owner.js";
 import { createAssetsStorage } from "@opencraft/plugin-assets/server/storage";
 import type { GitConnectionProvider } from "@opencraft/plugin-assets/server/git-connections";
+import { createHeadlessSandboxProviders, type HeadlessSandboxProviders } from "./sandbox-providers.js";
 import type { EnvironmentAccountMapping } from "@opencraft/execution-environment/environment-account";
 import { createHeadlessExecutionRecords } from "./assets-execution-records.js";
 /** Only this compiled native host adds execution admission to the shared vault owner. */
@@ -24,11 +23,12 @@ export function createHeadlessAssetsStorage(
      * backend IDs are derived from, so Bots bound to IDs of an older account
      * partition keep their backend. Default: the Actor's canonical partition. */
     botBackendIdentity?: BotBackendIdentity;
-    /** Compiled E2B backend factory for every Bot source (tests, wrappers). */
-    botBackend?: (options: E2BSandboxOptions) => SandboxBackend;
+    /** Compiled sandbox provider registry for the Bot and ordinary workspace
+     * owners (tests, wrappers); default the deployment registry. Never from data. */
+    sandboxProviders?: HeadlessSandboxProviders;
   } = {},
 ) {
-  const { environmentAccount, botBackendIdentity, botBackend, ...storageOptions } = options;
+  const { environmentAccount, botBackendIdentity, sandboxProviders, ...storageOptions } = options;
   const { execution, environmentRecords, environmentAccounts } = createHeadlessExecutionRecords({
     directory,
     ...(environmentAccount ? { environmentAccount } : {}),
@@ -38,14 +38,16 @@ export function createHeadlessAssetsStorage(
     providers,
     execution,
     async (context) => {
-      // Personal, platform and installed Bot environments per admitted Actor.
+      // Personal, platform and installed Bot environments per admitted Actor;
+      // each source's credential selects a provider from this registry.
+      const providers = sandboxProviders ?? createHeadlessSandboxProviders();
       const bots = new WorkspaceBotOwner(context, {
+        providers,
         ...(botBackendIdentity ? { backendIdentity: botBackendIdentity } : {}),
-        ...(botBackend ? { e2b: botBackend } : {}),
       });
       let ordinary;
       try {
-        ordinary = workspaces ? await createWorkspaceExecutionOwner(context, workspaces) : undefined;
+        ordinary = workspaces ? await createWorkspaceExecutionOwner(context, { ...workspaces, providers }) : undefined;
       } catch (cause) {
         await bots.close();
         throw cause;
@@ -53,6 +55,7 @@ export function createHeadlessAssetsStorage(
       return {
         workspaceExecution: ordinary !== undefined,
         botExecution: true,
+        botBackends: providers.ids(),
         methods: { ...bots.methods, ...ordinary?.methods } as never,
         async close() {
           const outcomes = await Promise.allSettled([bots.close(), ordinary?.close()]);

@@ -50,7 +50,7 @@ async function fixture(t: test.TestContext, worker: { legacy?: boolean } = {}) {
     member = actors.resolveHuman(principal("member"))!;
   members.setActor(admin.actorId, "admin", true, "fixture");
   members.setActor(member.actorId, "member", true, "fixture");
-  const vault = new EmployeeGitVaultStore(directory),
+  const vault = await EmployeeGitVaultStore.open(directory),
     config = new SandboxConfigurations(vault);
   const seed = (scope: string, name: string, apiKey: string, endpoints = standard) => {
     const platform = scope === PLATFORM_ASSET_SCOPE,
@@ -89,6 +89,7 @@ async function fixture(t: test.TestContext, worker: { legacy?: boolean } = {}) {
   };
   config.adoptInstallation(
     {
+      backend: "e2b",
       ...standard,
       capacity: { cpuMillis: 4000, memoryBytes: 8 * 1024 ** 3 },
       lease: { timeoutMs: 60000, renewEveryMs: 10000, maxLifetimeMs: 3600000 },

@@ -4,16 +4,16 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { openManagedDatabase } from '../../packages/sqlite-node/src/index';
+import { nodeSqlDatabase, openManagedDatabase } from '../../packages/sqlite-node/src/index';
 import { COLLABORATION_MIGRATIONS } from '../../packages/access-control/src/collaboration';
 import { ThreadOrchestrationLedger, type ThreadRelation } from '../../packages/access-control/src/orchestration-ledger';
 
 function fixture(t: any) {
   const root=mkdtempSync(join(tmpdir(),'orchestration-')), path=join(root,'actor-collaboration.sqlite');
   let clock=1000, db=openManagedDatabase({path,migrations:COLLABORATION_MIGRATIONS}).database;
-  let ledger=new ThreadOrchestrationLedger(db,()=>clock);
+  let ledger=new ThreadOrchestrationLedger(nodeSqlDatabase(db),()=>clock);
   t.after(()=>{ db.close();rmSync(root,{recursive:true,force:true}); });
-  return {path, get db(){return db;},get ledger(){return ledger;}, at(value:number){clock=value;}, restart(){db.close();db=openManagedDatabase({path,migrations:COLLABORATION_MIGRATIONS}).database;ledger=new ThreadOrchestrationLedger(db,()=>clock);} };
+  return {path, get db(){return db;},get ledger(){return ledger;}, at(value:number){clock=value;}, restart(){db.close();db=openManagedDatabase({path,migrations:COLLABORATION_MIGRATIONS}).database;ledger=new ThreadOrchestrationLedger(nodeSqlDatabase(db),()=>clock);} };
 }
 const relation=(threadId:string,parentThreadId:string|null=null):ThreadRelation=>({threadId,serverId:'server',driverKind:'codex',ownerActorId:'human://local/a',
   parentThreadId,lifecycleOwnerThreadId:parentThreadId,forkedFromId:null,visibility:'visible',engineHostGeneration:'generation-1',nativeSessionId:threadId,

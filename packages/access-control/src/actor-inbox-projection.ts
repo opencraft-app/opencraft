@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { DatabaseSync } from 'node:sqlite';
-import { sqliteTransaction } from '@opencraft/sqlite-node';
+import type { SqlDatabase } from '@opencraft/sql';
 import type { ActorInboxItem, ActorInboxPage } from '@opencraft/appserver-protocol/collaboration';
 
 export interface InboxSyncRequest { actorId: string; generation: number; cursor?: string; limit: number }
@@ -17,12 +16,12 @@ function decode(value: string): Cursor {
 /** Runs only in a storage Worker. Communication facts remain the source of truth.
  * Reconciliation and page selection share a transaction, including read-only polls.
  * Sparse revisions describe current rows, not delivery events or read-through cursors. */
-export function syncActorInbox(db: DatabaseSync, request: InboxSyncRequest): ActorInboxPage {
+export function syncActorInbox(db: SqlDatabase, request: InboxSyncRequest): ActorInboxPage {
   const { actorId, generation, limit } = request;
   if (!actorId || !Number.isSafeInteger(generation) || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('invalid_inbox_request');
   const supplied = request.cursor === undefined ? null : decode(request.cursor);
   if (supplied && (supplied.actorId !== actorId || supplied.generation !== generation)) return invalidCursor();
-  return sqliteTransaction(db, () => {
+  return db.transaction(() => {
     let clock = db.prepare('SELECT epoch,revision FROM actor_inbox_clock WHERE id=1').get();
     if (!clock) {
       db.prepare('INSERT INTO actor_inbox_clock VALUES(1,?,0)').run(randomUUID());

@@ -1,6 +1,10 @@
 import type { Principal } from './index.js';
 
-/** Trusted server storage port; password material never crosses the browser API. */
+/**
+ * Trusted server storage port; password material never crosses the browser API.
+ * `passwordDigest` is an Argon2id PHC string with an empty `salt`, or a pre-Argon2id
+ * scrypt record (non-empty salt text, 64 hex digits) kept readable until the next login.
+ */
 export interface LocalAccountRecord {
   readonly id: string;
   readonly username: string;
@@ -17,6 +21,16 @@ export interface LocalAccountRepository {
   insert(account: LocalAccountRecord): void;
   updatePassword(id: string, salt: string, passwordDigest: string): boolean;
   setEnabled(id: string, enabled: boolean): boolean;
+}
+
+export type LocalAccountPasswordExpectation = Pick<LocalAccountRecord, 'version' | 'salt' | 'passwordDigest'>;
+/**
+ * Login-time upgrade of a proven password to a stronger record, committed by the storage owner.
+ * Same password, so no version bump; resolves false when the account was disabled or its
+ * version or record changed since `expected` was read (a concurrent password change wins).
+ */
+export interface LocalAccountPasswordUpgrades {
+  upgradeLocalPassword(id: string, expected: LocalAccountPasswordExpectation, salt: string, passwordDigest: string): Promise<boolean>;
 }
 
 /** Credential authority only. Actor binding, login tokens and grants belong to core. */

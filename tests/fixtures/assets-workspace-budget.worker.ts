@@ -3,13 +3,14 @@ import { EmployeeGitVaultStore } from "@opencraft/execution-environment/employee
 import { SandboxConfigurations } from "@opencraft/plugin-assets/server/configurations";
 import { createAssetsStorage } from "@opencraft/plugin-assets/server/storage";
 
-serveWorkerOwner<{ directory: string }>(({ directory }) => {
+serveWorkerOwner<{ directory: string }>(async ({ directory }) => {
   // Synthetic installation fixture, serial bootstrap before the runtime owner
   // opens the vault. Never two simultaneous writable connections.
-  const bootstrap = new EmployeeGitVaultStore(directory);
+  const bootstrap = await EmployeeGitVaultStore.open(directory);
   try {
     new SandboxConfigurations(bootstrap).adoptInstallation(
       {
+        backend: "e2b",
         apiUrl: "https://api.e2b.dev",
         sandboxUrl: "https://e2b.dev",
         capacity: { cpuMillis: 4000, memoryBytes: 8 * 1024 ** 3 },

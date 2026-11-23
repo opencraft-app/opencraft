@@ -12,13 +12,12 @@ import {
   type SandboxBackend,
   type SandboxCommand,
   type SandboxEnvironment,
-  type SandboxExit,
   type SandboxIdentity,
   type SandboxOutput,
   type SandboxPoolPolicy,
   type SandboxProcess,
 } from "@opencraft/sandbox";
-import { brokerSource } from "./broker.js";
+import { brokerSource, startBrokerProcess } from "@opencraft/sandbox/broker";
 
 export interface E2BSandboxOptions {
   /** Trusted installation endpoints. Never accepted from Bot/task input. */
@@ -54,6 +53,11 @@ export interface E2BConnection {
     template: string,
     options: Parameters<typeof E2BSandbox.create>[1],
   ) => Promise<Remote>;
+  /** Reconnects to an existing sandbox by id (`Sandbox.connect`); never creates one. */
+  connect?: (
+    sandboxId: string,
+    options: Parameters<typeof E2BSandbox.connect>[1],
+  ) => Promise<Remote>;
 }
 const fault = (
   code: ConstructorParameters<typeof SandboxFault>[0],
@@ -80,10 +84,6 @@ const endpoint = (raw: string) => {
   return url.origin;
 };
 const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
-const frame = (value: unknown) =>
-  JSON.stringify(value)
-    .replaceAll("\u2028", "\\u2028")
-    .replaceAll("\u2029", "\\u2029") + "\n";
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Optional E2B provider for the existing createSandboxPool/createSandbox contract.
@@ -92,6 +92,7 @@ export function e2bSandboxBackend(
   options: E2BSandboxOptions,
   driver: E2BConnection = {
     create: (template, opts) => E2BSandbox.create(template, opts),
+    connect: (sandboxId, opts) => E2BSandbox.connect(sandboxId, opts),
   },
 ): SandboxBackend {
   const templateId = options.templateId,
@@ -146,6 +147,85 @@ export function e2bSandboxBackend(
       if (i < 2) await delay(100);
     }
     throw fault("SANDBOX_CLEANUP", "E2B destruction is unconfirmed");
+  }
+  /** One live instance (created or re-attached): broker processes, lease, close. */
+  function environmentFor(remote: Remote, identity: SandboxIdentity, info: Awaited<ReturnType<Remote["getInfo"]>>): SandboxEnvironment {
+    const pending = new Set<Promise<SandboxProcess>>();
+    let closing: Promise<void> | undefined,
+      renewal: Promise<void> | undefined,
+      timer: ReturnType<typeof setTimeout> | undefined,
+      ended = false;
+    const deadline = Date.now() + (lease?.maxLifetimeMs ?? timeoutMs);
+    const environment: SandboxEnvironment = {
+      receipt: Object.freeze({ backend: "e2b", instanceId: remote.sandboxId }),
+      resources: {
+        cpuMillis: info.cpuCount * 1000,
+        memoryBytes: info.memoryMB * 1024 ** 2,
+      },
+      capabilities: { terminal: true },
+      spawn(command, onOutput) {
+        if (ended)
+          return Promise.reject(
+            fault("SANDBOX_START", "E2B execution is unavailable"),
+          );
+        const operation = startProcess(
+          remote,
+          identity,
+          command,
+          onOutput,
+          python,
+          requestTimeoutMs,
+          () => environment.close(),
+        );
+        pending.add(operation);
+        void operation
+          .finally(() => pending.delete(operation))
+          .catch(() => {});
+        return operation;
+      },
+      close() {
+        if (closing) return closing;
+        ended = true;
+        clearTimeout(timer);
+        return (closing = (async () => {
+          await renewal?.catch(() => {});
+          await Promise.allSettled([...pending]);
+          await destroy(remote);
+        })());
+      },
+    };
+    if (lease) {
+      const schedule = () => {
+        if (ended) return;
+        timer = setTimeout(
+          () => {
+            renewal = (async () => {
+              try {
+                if (Date.now() >= deadline) throw Error();
+                await lease.authorize(identity);
+                if (ended) return;
+                await remote.setTimeout(
+                  Math.min(timeoutMs, Math.max(1000, deadline - Date.now())),
+                  requestOptions,
+                );
+                if (!ended) schedule();
+              } catch {
+                if (!ended) {
+                  try {
+                    lease.onLost(identity);
+                  } catch {}
+                  void environment.close().catch(() => {});
+                }
+              }
+            })();
+          },
+          Math.max(1, Math.min(lease.renewEveryMs, deadline - Date.now())),
+        );
+        timer.unref();
+      };
+      schedule();
+    }
+    return environment;
   }
   return {
     id: "e2b",
@@ -225,81 +305,25 @@ export function e2bSandboxBackend(
         }
         throw new SandboxCreationFault("not-created");
       }
-      const pending = new Set<Promise<SandboxProcess>>();
-      let closing: Promise<void> | undefined,
-        renewal: Promise<void> | undefined,
-        timer: ReturnType<typeof setTimeout> | undefined,
-        ended = false;
-      const deadline = Date.now() + (lease?.maxLifetimeMs ?? timeoutMs);
-      const environment: SandboxEnvironment = {
-        resources: {
-          cpuMillis: info.cpuCount * 1000,
-          memoryBytes: info.memoryMB * 1024 ** 2,
-        },
-        capabilities: { terminal: true },
-        spawn(command, onOutput) {
-          if (ended)
-            return Promise.reject(
-              fault("SANDBOX_START", "E2B execution is unavailable"),
-            );
-          const operation = startProcess(
-            remote,
-            identity,
-            command,
-            onOutput,
-            python,
-            requestTimeoutMs,
-            () => environment.close(),
-          );
-          pending.add(operation);
-          void operation
-            .finally(() => pending.delete(operation))
-            .catch(() => {});
-          return operation;
-        },
-        close() {
-          if (closing) return closing;
-          ended = true;
-          clearTimeout(timer);
-          return (closing = (async () => {
-            await renewal?.catch(() => {});
-            await Promise.allSettled([...pending]);
-            await destroy(remote);
-          })());
-        },
-      };
-      if (lease) {
-        const schedule = () => {
-          if (ended) return;
-          timer = setTimeout(
-            () => {
-              renewal = (async () => {
-                try {
-                  if (Date.now() >= deadline) throw Error();
-                  await lease.authorize(identity);
-                  if (ended) return;
-                  await remote.setTimeout(
-                    Math.min(timeoutMs, Math.max(1000, deadline - Date.now())),
-                    requestOptions,
-                  );
-                  if (!ended) schedule();
-                } catch {
-                  if (!ended) {
-                    try {
-                      lease.onLost(identity);
-                    } catch {}
-                    void environment.close().catch(() => {});
-                  }
-                }
-              })();
-            },
-            Math.max(1, Math.min(lease.renewEveryMs, deadline - Date.now())),
-          );
-          timer.unref();
-        };
-        schedule();
+      return environmentFor(remote, identity, info);
+    },
+    /** Re-attach by receipt via `Sandbox.connect`. A missing or unverifiable instance
+     * is lost (SANDBOX_UNAVAILABLE), never replaced. Connecting may resume a paused
+     * sandbox; it never creates one. */
+    async attach(identity, receipt, _resources, signal) {
+      if (!initialized || closed || signal.aborted || !driver.connect)
+        throw fault("SANDBOX_UNAVAILABLE", "E2B re-attach is unavailable");
+      if (receipt?.backend !== "e2b" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/u.test(receipt.instanceId))
+        throw fault("SANDBOX_UNAVAILABLE", "Receipt belongs to another provider");
+      let remote: Remote, info: Awaited<ReturnType<Remote["getInfo"]>>;
+      try {
+        remote = await driver.connect(receipt.instanceId, { apiUrl, sandboxUrl, apiKey, requestTimeoutMs });
+        info = await remote.getInfo(requestOptions);
+        if (remote.sandboxId !== receipt.instanceId) throw Error("Different instance");
+      } catch {
+        throw fault("SANDBOX_UNAVAILABLE", "E2B instance is gone or cannot be verified");
       }
-      return environment;
+      return environmentFor(remote, identity, info);
     },
     async close() {
       closed = true;
@@ -308,7 +332,9 @@ export function e2bSandboxBackend(
   };
 }
 
-async function startProcess(
+/** E2B supplies only the upload and launch of the shared broker; framing, process
+ * state, termination and transport-loss semantics belong to @opencraft/sandbox/broker. */
+function startProcess(
   remote: Remote,
   identity: SandboxIdentity,
   command: SandboxCommand,
@@ -319,211 +345,34 @@ async function startProcess(
 ): Promise<SandboxProcess> {
   const id = randomUUID(),
     path = "/tmp/opencraft-exec-" + identity.id + "-" + id + ".py";
-  let resolveStart!: () => void,
-    rejectStart!: (error: Error) => void,
-    resolveExit!: (exit: SandboxExit) => void,
-    rejectExit!: (error: Error) => void;
-  let started = false,
-    finished = false,
-    broken = false,
-    buffer = "",
-    stdinClosed = false;
-  const ready = new Promise<void>((resolve, reject) => {
-    resolveStart = resolve;
-    rejectStart = reject;
-  });
-  const exited = new Promise<SandboxExit>((resolve, reject) => {
-    resolveExit = resolve;
-    rejectExit = reject;
-  });
-  void ready.catch(() => {});
-  void exited.catch(() => {});
-  const failure = () => {
-    if (broken || finished) return;
-    broken = true;
-    const error = fault("SANDBOX_START", "E2B execution transport failed");
-    rejectStart(error);
-    rejectExit(error);
-    // Do not reconnect or replay process input. The caller still owns close()/capacity.
-    // Defer until the pending launch leaves the environment's tracked set.
-    setTimeout(() => {
-      void closeEnvironment().catch(() => {});
-    }, 0);
-  };
-  const accept = (chunk: string) => {
-    if (broken) return;
-    buffer += chunk;
-    for (;;) {
-      const at = buffer.indexOf("\n");
-      if (at < 0) break;
-      if (at > 512 * 1024) {
-        failure();
-        return;
-      }
-      const line = buffer.slice(0, at);
-      buffer = buffer.slice(at + 1);
-      try {
-        const value = JSON.parse(line);
-        if (value.type === "started" && !started) {
-          started = true;
-          resolveStart();
-        } else if (
-          value.type === "output" &&
-          started &&
-          !finished &&
-          (value.stream === "stdout" || value.stream === "stderr") &&
-          typeof value.data === "string"
-        )
-          onOutput?.({
-            stream: value.stream,
-            data: Buffer.from(value.data, "base64"),
-          });
-        else if (
-          value.type === "exit" &&
-          started &&
-          !finished &&
-          (value.code === null || Number.isSafeInteger(value.code))
-        ) {
-          finished = true;
-          resolveExit({
-            code: value.code,
-            ...(value.signal ? { signal: String(value.signal) } : {}),
-          });
-        } else throw Error();
-      } catch {
-        failure();
-        return;
-      }
-    }
-    if (buffer.length > 512 * 1024) failure();
-  };
-  let handle: Awaited<ReturnType<Remote["commands"]["run"]>>;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    await remote.files.write(path, brokerSource, { requestTimeoutMs });
-    // Broker receives argv/cwd/payload environment privately through stdin, not shell argv.
-    handle = await remote.commands.run(
-      "exec " + quote(python) + " -u " + quote(path),
-      {
+  return startBrokerProcess({
+    id,
+    command,
+    onOutput,
+    requestTimeoutMs,
+    label: "E2B",
+    closeEnvironment,
+    async launch(onStdout) {
+      await remote.files.write(path, brokerSource, { requestTimeoutMs });
+      const handle = await remote.commands.run("exec " + quote(python) + " -u " + quote(path), {
         background: true,
         stdin: true,
         timeoutMs: 0,
         requestTimeoutMs,
         shell: ["/bin/sh", "-c"],
         retainOutput: false,
-        onStdout: accept,
+        onStdout,
         onStderr: () => {},
-      },
-    );
-    void handle.wait().then(() => {
-      if (!finished) failure();
-    }, failure);
-    timer = setTimeout(failure, Math.min(requestTimeoutMs, 15000));
-    const input = frame({ type: "start", command });
-    if (Buffer.byteLength(input) > 384 * 1024) throw Error();
-    await handle.sendStdin(input, { requestTimeoutMs });
-    await ready;
-  } catch {
-    failure();
-    throw fault("SANDBOX_START", "E2B process could not start");
-  } finally {
-    clearTimeout(timer);
-  }
-  let input = Promise.resolve();
-  const enqueue = (operation: () => Promise<void>) => {
-    const next = input.then(operation);
-    input = next.catch(() => {});
-    return next;
-  };
-  const sendFrame = async (value: unknown, reconcileEofExit = false) => {
-    if (broken || finished)
-      throw fault("SANDBOX_CLOSED", "E2B process is closed");
-    try {
-      await handle.sendStdin(frame(value), { requestTimeoutMs });
-    } catch {
-      // The SDK can reject EOF after a short-lived broker has exited while
-      // its final stdout frame is still in flight. Only that framed exit is
-      // authoritative; SDK absence alone cannot confirm completion. Never
-      // retry EOF, acknowledge ordinary input this way, or revive a broken pipe.
-      if (reconcileEofExit && !broken) {
-        let deadline: ReturnType<typeof setTimeout> | undefined;
-        try {
-          await Promise.race([
-            exited.catch(() => {}),
-            new Promise<void>(resolve => { deadline = setTimeout(resolve, Math.min(1000, requestTimeoutMs)); }),
-          ]);
-        } finally { clearTimeout(deadline); }
-        if (finished && !broken) return;
-      }
-      failure();
-      throw fault("SANDBOX_START", "E2B input transport failed");
-    }
-  };
-  const process = {
-    id,
-    exited,
-    async writeStdin(data: Uint8Array) {
-      if (stdinClosed)
-        throw fault("SANDBOX_CLOSED", "E2B process stdin is closed");
-      // One bounded chunk at a time; preserve ordering against concurrent writes/EOF.
-      return enqueue(async () => {
-        for (let offset = 0; offset < data.length; offset += 128 * 1024)
-          await sendFrame({
-            type: "stdin",
-            data: Buffer.from(
-              data.subarray(offset, offset + 128 * 1024),
-            ).toString("base64"),
-          });
       });
+      return {
+        ended: handle.wait(),
+        write: async (frame) => {
+          await handle.sendStdin(frame, { requestTimeoutMs });
+        },
+      };
     },
-    async closeStdin() {
-      if (stdinClosed || finished) return;
-      stdinClosed = true;
-      await enqueue(async () => {
-        if (finished) return;
-        try { await sendFrame({ type: "eof" }, true); }
-        catch (error) { if (!finished) throw error; }
-      });
-    },
-    async terminate() {
-      if (finished) return;
-      let timeout: ReturnType<typeof setTimeout> | undefined;
-      try {
-        await Promise.race([
-          enqueue(() => sendFrame({ type: "terminate" })).then(() => exited),
-          new Promise<never>((_, reject) => {
-            timeout = setTimeout(
-              () =>
-                reject(
-                  fault(
-                    "SANDBOX_START",
-                    "E2B termination was not acknowledged",
-                  ),
-                ),
-              Math.min(requestTimeoutMs, 15000),
-            );
-          }),
-        ]);
-      } catch {
-        await closeEnvironment();
-        throw fault(
-          "SANDBOX_START",
-          "E2B process termination required environment teardown",
-        );
-      } finally {
-        clearTimeout(timeout);
-      }
-    },
-  };
-  if (!command.terminal) return { kind: "process", ...process };
-  const { closeStdin: _closeStdin, ...terminal } = process;
-  return { kind: "terminal", ...terminal,
-    async resize(size: { cols: number; rows: number }) {
-      if (![size.cols, size.rows].every(v => Number.isInteger(v) && v > 0 && v <= 1000))
-        throw fault("SANDBOX_POLICY", "Invalid terminal size");
-      await enqueue(() => sendFrame({ type: "resize", size }));
-    },
-  };
+  });
 }
 
 export { createE2BPersistentWorkspaceInspector } from "./workspace-inspector.js";
+export { e2bSandboxProvider, type E2BInstallation, type E2BProviderOptions } from "./provider.js";

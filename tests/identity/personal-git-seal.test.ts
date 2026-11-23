@@ -23,6 +23,7 @@ import {
   type PersonalGitSealPort,
 } from "@opencraft/execution-environment/personal-git-seal";
 import { LocalAccountServerPlugin } from "../../plugins/local-account/src/server.js";
+import { createNodePasswordHasher } from "../../plugins/local-account/src/password-hash-node.js";
 import { openHeadlessAssetsStorage } from "../../apps/headless-server/src/headless-assets-storage.js";
 
 const admissionWorker = fileURLToPath(
@@ -37,7 +38,7 @@ async function durable(t: test.TestContext) {
     actors = new ActorStore(storage),
     accounts = new HumanAccounts(storage, actors),
     members = new MembershipStore(storage);
-  accounts.registerLocalAccounts(new LocalAccountServerPlugin(accounts.localAccountRepository));
+  accounts.registerLocalAccounts(new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher()));
   const management = new HumanAccountManagement(storage, accounts, actors, members);
   const principal = await management.initialize({
     mode: "web",
@@ -61,7 +62,7 @@ async function durable(t: test.TestContext) {
     return executionId;
   };
   // The vault and its key exist before the owner Worker opens them.
-  new EmployeeGitVaultStore(directory).close();
+  (await EmployeeGitVaultStore.open(directory)).close();
   const reader = openExecutionAdmission({ workerFile: admissionWorker, directory });
   t.after(async () => {
     await reader.close();
@@ -96,14 +97,14 @@ function spyWorkers(t: test.TestContext) {
 }
 
 /** An in-process issuer-mode runtime, as an identity composition constructs it. */
-function runtime(t: test.TestContext, directory: string, root: string, gitSeal?: PersonalGitSealPort) {
+async function runtime(t: test.TestContext, directory: string, root: string, gitSeal?: PersonalGitSealPort) {
   const previous = {
     runtime: process.env.OPENCRAFT_GIT_RUNTIME_DIRECTORY,
     worker: process.env.OPENCRAFT_GIT_WORKER_FILE,
   };
   process.env.OPENCRAFT_GIT_RUNTIME_DIRECTORY = join(root, "git-runtime");
   process.env.OPENCRAFT_GIT_WORKER_FILE = join(root, "unused-worker.mjs");
-  const vault = new EmployeeGitVaultStore(directory);
+  const vault = await EmployeeGitVaultStore.open(directory);
   const value = new ExecutionEnvironmentRuntime(directory, vault, false, "issuer", gitSeal ? { gitSeal } : {});
   for (const [name, item] of [
     ["OPENCRAFT_GIT_RUNTIME_DIRECTORY", previous.runtime],
@@ -127,7 +128,7 @@ test("a grant the vault-owner Worker seals verifies exactly like one sealed in-p
   f.admit(threadId, "alpha-input", turnId);
   const scope = await f.admitted(threadId, turnId);
   // The synchronous in-process issuer, as before this port.
-  const local = new EmployeeGitVaultStore(f.directory);
+  const local = await EmployeeGitVaultStore.open(f.directory);
   const inProcess = local.sealPersonalGitGrant(personalGitGrantFields(scope)),
     authority = local.personalGitAuthority("actor");
   local.close();
@@ -146,7 +147,7 @@ test("a grant the vault-owner Worker seals verifies exactly like one sealed in-p
   assert.deepEqual(openGitGrant(key, sealed), personalGitGrantFields(scope));
 
   // An issuer-mode bridge accepts the Worker's grant and advertises the same authority.
-  const owner = runtime(t, f.directory, f.root, port);
+  const owner = await runtime(t, f.directory, f.root, port);
   const snapshot = await owner.prepare(executionScope(scope));
   const environment = snapshot.overlay();
   assert.equal(environment.OPENCRAFT_GIT_BROKER_AUTHORITY, authority);
@@ -202,7 +203,7 @@ test("issuance follows admission and every await is rechecked: a revoked lease o
       return `v3.${"A".repeat(43)}${scope.inputId.length}`;
     },
   };
-  const owner = runtime(t, f.directory, f.root, held);
+  const owner = await runtime(t, f.directory, f.root, held);
   const pending = owner.prepare(executionScope(lease));
   owner.close();
   release();
@@ -217,7 +218,7 @@ test("a failed vault owner fails closed: no synchronous fallback, no grant", asy
   const assets = await openHeadlessAssetsStorage(f.directory, { environmentLaunch: true });
   t.after(() => assets.close().catch(() => {}));
   const port = assets.personalGitSeal!;
-  const owner = runtime(t, f.directory, f.root, port);
+  const owner = await runtime(t, f.directory, f.root, port);
   // The synchronous snapshot never signs with the local vault key instead.
   assert.throws(() => owner.snapshot(executionScope(scope)), { message: "personal_git_async_issuer_required" });
   assert.ok((await owner.prepare(executionScope(scope))).overlay().OPENCRAFT_GIT_CAPABILITY);
@@ -261,7 +262,7 @@ test("without a separate vault owner every path is unchanged", async (t) => {
   const key = await readFile(join(f.directory, "employee-git-vault.key"));
   // The synchronous issuer: snapshot and prepare both sign in-process.
   await mkdir(join(f.root, "git-runtime"), { recursive: true, mode: 0o700 });
-  const owner = runtime(t, f.directory, f.root);
+  const owner = await runtime(t, f.directory, f.root);
   for (const snapshot of [owner.snapshot(executionScope(scope)), await owner.prepare(executionScope(scope))])
     assert.deepEqual(openGitGrant(key, snapshot.overlay().OPENCRAFT_GIT_CAPABILITY), personalGitGrantFields(scope));
   // An owner without ENV delivery serves no seal port.

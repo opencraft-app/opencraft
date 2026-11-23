@@ -1,4 +1,4 @@
-import { lstatSync } from "node:fs";
+import { lstat } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 
 /**
@@ -43,12 +43,14 @@ function absoluteDirectoryPath(role, name, value) {
 /**
  * The directory must exist, be a real directory owned by the dropped identity,
  * grant nothing to group or others, and be reachable only through directories
- * that another unprivileged user cannot replace.
+ * that another unprivileged user cannot replace. Ancestors may belong to root or to
+ * `ancestorUid` (default: the owner); root Hands also accepts its client identity's
+ * ancestors for its root-owned server directory.
  */
-export function assertPrivateOwnedDirectory(path, { uid, gid }, label, stat = lstatSync) {
+export async function assertPrivateOwnedDirectory(path, { uid, gid, ancestorUid = uid }, label, stat = lstat) {
   let info;
   try {
-    info = stat(path);
+    info = await stat(path);
   } catch (error) {
     throw new Error(`${label} ${path} is not accessible (${error.code ?? error.message})`);
   }
@@ -56,13 +58,13 @@ export function assertPrivateOwnedDirectory(path, { uid, gid }, label, stat = ls
   if (info.uid !== uid || info.gid !== gid) throw new Error(`${label} ${path} must be owned by ${uid}:${gid}`);
   if (info.mode & 0o077) throw new Error(`${label} ${path} must not be accessible to group or others`);
   for (let current = dirname(path); ; current = dirname(current)) {
-    const parent = stat(current);
+    const parent = await stat(current);
     if (parent.isSymbolicLink() || !parent.isDirectory())
       throw new Error(`${label} ancestor ${current} must be a directory, not a link`);
     // A group/other-writable ancestor lets someone swap the path, unless it is a
     // root-owned sticky directory such as /tmp.
     const replaceable = (parent.mode & 0o022) !== 0 && !(parent.uid === 0 && (parent.mode & 0o1000) !== 0);
-    if (replaceable || (parent.uid !== 0 && parent.uid !== uid))
+    if (replaceable || (parent.uid !== 0 && parent.uid !== ancestorUid))
       throw new Error(`${label} ancestor ${current} must not be replaceable by another user`);
     if (current === dirname(current)) break;
   }
@@ -70,12 +72,12 @@ export function assertPrivateOwnedDirectory(path, { uid, gid }, label, stat = ls
 
 /**
  * Validates `policy` against the known owner roles and the current filesystem.
- * Returns a frozen map from role to `{ uid, gid, home }`; an absent or empty
+ * Resolves to a frozen map from role to `{ uid, gid, home }`; an absent or empty
  * policy returns an empty map and changes nothing.
  */
-export function resolveHandsOwnerPrivileges(
+export async function resolveHandsOwnerPrivileges(
   policy,
-  { roles, environment = process.env, currentUid = process.getuid?.(), stat = lstatSync },
+  { roles, environment = process.env, currentUid = process.getuid?.(), stat = lstat },
 ) {
   if (policy === undefined) return Object.freeze({});
   if (policy === null || typeof policy !== "object" || Array.isArray(policy))
@@ -104,9 +106,9 @@ export function resolveHandsOwnerPrivileges(
   if (currentUid !== 0) throw new Error("Hands owner privilege drops require the Hands supervisor to run as UID 0");
   for (const [role, privilege] of Object.entries(resolved)) {
     if (privilege.stateDirectory)
-      assertPrivateOwnedDirectory(privilege.stateDirectory, privilege, `Hands owner "${role}" state directory`, stat);
+      await assertPrivateOwnedDirectory(privilege.stateDirectory, privilege, `Hands owner "${role}" state directory`, stat);
     if (privilege.home !== privilege.stateDirectory)
-      assertPrivateOwnedDirectory(privilege.home, privilege, `Hands owner "${role}" home`, stat);
+      await assertPrivateOwnedDirectory(privilege.home, privilege, `Hands owner "${role}" home`, stat);
   }
   return Object.freeze(resolved);
 }

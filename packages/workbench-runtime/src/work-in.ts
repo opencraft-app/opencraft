@@ -78,9 +78,12 @@ export function isNewConversationHost(host: HostConnectionProfile): boolean {
   return host.enabled && host.hideFromNewChat !== true;
 }
 
-export function chooseNewConversationHost(profiles: readonly HostConnectionProfile[], preferredHostId?: string | null): HostConnectionProfile | undefined {
+/** New conversation target: the current/remembered selection, then the deployment default (e.g. the built-in
+ * Codex Host), then the deployment's own local/durable Host. Hidden or disabled Hosts are never chosen. */
+export function chooseNewConversationHost(profiles: readonly HostConnectionProfile[], preferredHostId?: string | null, deploymentDefaultHostId?: string | null): HostConnectionProfile | undefined {
   const visible = profiles.filter(isNewConversationHost);
   return visible.find(host => host.hostId === preferredHostId)
+    ?? visible.find(host => host.hostId === deploymentDefaultHostId)
     ?? visible.find(host => host.hostId === "local")
     ?? visible.find(host => host.hostKind === "local" || host.hostKind === "durable") ?? visible[0];
 }

@@ -2,11 +2,14 @@ import { request } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-/** Arguments for the split account Core (model proxy): one definition for the embedded Brain and the proxy service. */
-export function codexCoreArguments(paths, root, proxyPort) {
+/** Arguments for the split account Core (model proxy): one definition for the embedded Brain and the proxy service.
+ * The proxy service is account-only: the AppServer is a workspace owner whose health its
+ * WorkspaceHost reads through the `codex-control` endpoint. Only the embedded Core (in
+ * the Brain container) forwards health to that container's AppServer. */
+export function codexCoreArguments(paths, root, proxyPort, { runtimeEndpoint } = {}) {
   if (!Number.isSafeInteger(proxyPort) || proxyPort < 1 || proxyPort > 65535) throw new Error('Invalid model proxy port');
   return [
-    '--app-server-endpoint', paths.appServerEndpoint, '--proxy-port', String(proxyPort),
+    ...(runtimeEndpoint ? ['--app-server-endpoint', runtimeEndpoint] : ['--accounts-only']), '--proxy-port', String(proxyPort),
     '--endpoint', paths.coreEndpoint, '--token-file', paths.tokenPath,
     '--codex-executable', join(root, 'runtime/codex/bin/codex'),
     '--runtime-directory', paths.runtimeDirectory,

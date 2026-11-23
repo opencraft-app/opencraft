@@ -200,6 +200,31 @@ test("installation configuration is private, optional, and never accepts credent
   await providers.e2b.close?.();
 });
 
+test("a schemaVersion 1 configuration without backend is E2B; other backends fail closed", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "assistant-env-backend-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const key = join(directory, "key"),
+    file = join(directory, "config.json");
+  await writeFile(key, "synthetic-only-key", { mode: 0o600 });
+  const config = {
+    schemaVersion: 1,
+    apiUrl: "https://example.test",
+    sandboxUrl: "https://example.test",
+    apiKeyFile: key,
+    capacity: resources,
+    templates: [{ id: "approved", name: "Approved", resources, workspaceRoot: "/home/user/work" }],
+    lease: { timeoutMs: 30000, renewEveryMs: 5000, maxLifetimeMs: 60000 },
+  };
+  await writeFile(file, JSON.stringify(config), { mode: 0o600 });
+  const providers = await loadAssistantEnvironments(file);
+  assert.deepEqual(Object.keys(providers), ["e2b"]);
+  await providers.e2b.close?.();
+  for (const backend of ["cloudflare", "local", ""]) {
+    await writeFile(file, JSON.stringify({ ...config, backend }), { mode: 0o600 });
+    await assert.rejects(loadAssistantEnvironments(file), /configuration unavailable/);
+  }
+});
+
 test("unknown creation is reported with correlation, retains admission and cannot respawn or retry", async () => {
   const reports: any[] = [],
     access = {

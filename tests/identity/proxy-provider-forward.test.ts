@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AccountPoolStore, CodexAccountPoolProxy, PROXY_CALLERS } from "../../packages/account-pool-host/src/index.js";
 
-async function fixture(t: any, fetchImpl: typeof fetch, protocol: "anthropic-messages" | "openai-responses" = "anthropic-messages") {
+async function fixture(t: any, fetchImpl: typeof fetch, protocol: "anthropic-messages" | "openai-responses" | "openai-completions" = "anthropic-messages") {
   const root = await mkdtemp(join(tmpdir(), "opencraft-proxy-provider-"));
   const store = new AccountPoolStore({ databasePath: join(root, "pool.sqlite"), secretsDirectory: join(root, "secrets") });
   t.after(async () => { store.close(); await rm(root, { recursive: true, force: true }); });
@@ -65,4 +65,27 @@ test("caller tokens cannot reach the ChatGPT subscription account pool", async t
     assert.equal((await f.proxy.handle(request)).status, 401);
   assert.equal(calls, 0);
   assert.deepEqual([...PROXY_CALLERS], ["caller:pi", "caller:dsh", "caller:assistant"]);
+});
+
+test("Chat Completions connections pass through natively for engine callers but are never a Codex model", async t => {
+  const seen: { url: string; headers: Headers; body: any }[] = [];
+  const f = await fixture(t, (async (url: any, init: any) => {
+    seen.push({ url: String(url), headers: new Headers(init.headers), body: JSON.parse(init.body) });
+    return new Response("data: {}\n\n", { status: 200, headers: { "content-type": "text/event-stream" } });
+  }) as typeof fetch, "openai-completions");
+  const token = f.store.issueHostToken("caller:dsh");
+  for (const path of ["/providers/tokenhub/v1/chat/completions", "/providers/tokenhub/chat/completions"]) {
+    const response = await f.proxy.handle(post(path, { authorization: "Bearer " + token }, { model: "claude-x", stream: true, messages: [] }));
+    assert.equal(response.status, 200, path); assert.equal(await response.text(), "data: {}\n\n");
+  }
+  assert.equal(seen[0]!.url, "https://provider.example/v1/chat/completions");
+  assert.equal(seen[0]!.headers.get("authorization"), "Bearer provider-secret");
+  assert.deepEqual(seen[0]!.body, { model: "upstream-claude", stream: true, messages: [] });
+  // Protocol must match the connection.
+  assert.equal((await f.proxy.handle(post("/providers/tokenhub/v1/responses", { authorization: "Bearer " + token }, { model: "claude-x" }))).status, 400);
+  // Codex (Host token on /v1/responses) cannot select a Chat Completions connection.
+  const host = f.store.issueHostToken("local-codex");
+  const codex = await f.proxy.handle(post("/v1/responses", { "x-opencraft-account-pool-token": host }, { model: "configured/tokenhub/claude-x", input: [] }));
+  assert.equal(codex.status, 404);
+  assert.equal(seen.length, 2);
 });

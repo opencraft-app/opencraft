@@ -7,11 +7,14 @@ import test from "node:test";
 import { ATTACHMENT_MAX_BYTES, ATTACHMENT_CHUNK_BYTES, parseAttachmentStagingCapability } from "@opencraft/appserver-protocol";
 import { LocalAttachmentStagingService } from "../../apps/local-agent-host/src/attachments/local-attachment-staging";
 import { AttachmentUploadStore } from "../../apps/local-agent-host/src/attachments/attachment-upload-store";
+import { hostFileBlobStore } from "../../apps/local-agent-host/src/storage/host-file-blobs";
 import { resolveBrowserAttachment } from "../../apps/workbench-web/src/runtime/browser-attachment-resolver";
 import { uploadAttachmentChunks } from "../../packages/workbench-runtime/src/attachment-upload";
 
 const metadata = { clientAttachmentId: "movie", name: "movie.mp4", mimeType: "video/mp4", size: 3 * 1024 * 1024 + 17 };
 const params = (uploadId = randomUUID()) => ({ ...metadata, uploadId, offset: 0, dataBase64: "AQ==" });
+/** Files left in an upload spool; the blob store's empty staging directory is not a leftover. */
+const leftovers = async (directory: string) => (await readdir(directory, { recursive: true })).filter(entry => entry !== ".staging");
 
 test("new Host capability advertises 1024 MiB and chunks; old capability stays compatible", async t => {
   const root = await mkdtemp(join(tmpdir(), "attachment-chunks-"));
@@ -38,13 +41,13 @@ test("new Host capability advertises 1024 MiB and chunks; old capability stays c
   const stored = await readFile(decodeURIComponent(resolved.uri!.replace("file://", "")));
   assert.equal(stored.length, blob.size);
   assert(stored.every(byte => byte === 71));
-  assert.deepEqual(await readdir(join(root, ".uploads")), []);
+  assert.deepEqual(await leftovers(join(root, ".uploads")), []);
 });
 
 test("upload validation rejects oversized files, oversized chunks and mismatched offsets", async t => {
   const root = await mkdtemp(join(tmpdir(), "attachment-chunks-"));
   let commits = 0;
-  const store = new AttachmentUploadStore(root, async () => { commits++; throw new Error("Unexpected commit"); });
+  const store = new AttachmentUploadStore(hostFileBlobStore(root), async () => { commits++; throw new Error("Unexpected commit"); });
   t.after(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
   await assert.rejects(store.chunk({ ...params(), size: ATTACHMENT_MAX_BYTES + 1 }), /metadata or size/);
   await assert.rejects(store.chunk({ ...params(), offset: 2 }), /offset/);
@@ -56,18 +59,18 @@ test("upload validation rejects oversized files, oversized chunks and mismatched
   await assert.rejects(store.chunk({ ...request, dataBase64: "Ag==", retry: true }), /replay/);
   await assert.rejects(store.chunk({ ...request, offset: 1, name: "replacement" }), /metadata/);
   assert.deepEqual(await store.cancel(request.uploadId), { removed: true });
-  assert.deepEqual(await readdir(root), []);
+  assert.deepEqual(await leftovers(root), []);
   assert.equal(commits, 0);
 });
 
 test("concurrent admissions stay bounded and close removes partial files", async t => {
   const root = await mkdtemp(join(tmpdir(), "attachment-chunks-"));
-  const store = new AttachmentUploadStore(root, async () => { throw new Error("Unexpected commit"); });
+  const store = new AttachmentUploadStore(hostFileBlobStore(root), async () => { throw new Error("Unexpected commit"); });
   t.after(() => rm(root, { recursive: true, force: true }));
   const results = await Promise.allSettled(Array.from({ length: 12 }, () => store.chunk(params())));
   assert.equal(results.filter(r => r.status === "fulfilled").length, 8);
   await store.close();
-  assert.deepEqual(await readdir(root), []);
+  assert.deepEqual(await leftovers(root), []);
   await assert.rejects(store.chunk(params()), /closed/);
 });
 
@@ -99,10 +102,10 @@ test("over-limit browser files are rejected before reading", async () => {
 
 test("failed final commit removes its spool and allows a fresh upload", async t => {
   const root = await mkdtemp(join(tmpdir(), "attachment-chunks-"));
-  const store = new AttachmentUploadStore(root, async () => { throw new Error("Synthetic storage failure"); });
+  const store = new AttachmentUploadStore(hostFileBlobStore(root), async () => { throw new Error("Synthetic storage failure"); });
   t.after(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
   await assert.rejects(store.chunk({ ...params(), size: 1 }), /storage failure/);
-  assert.deepEqual(await readdir(root), []);
+  assert.deepEqual(await leftovers(root), []);
   const next = params();
   assert.equal((await store.chunk(next)).receivedBytes, 1);
   await store.cancel(next.uploadId);
@@ -166,7 +169,7 @@ test("lost final acknowledgement replays one commit; expired replay cannot recre
   const root = await mkdtemp(join(tmpdir(), "attachment-replay-"));
   let commits = 0;
   const ref = { id: "receipt", name: "one", mimeType: "text/plain", size: 1, location: { kind: "host-file" as const, path: "/one" } };
-  const store = new AttachmentUploadStore(root, async () => { commits++; return { ref }; });
+  const store = new AttachmentUploadStore(hostFileBlobStore(root), async () => { commits++; return { ref }; });
   t.after(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
   let calls = 0;
   const result = await uploadAttachmentChunks({ clientAttachmentId: "one", name: "one", mimeType: "text/plain", size: 1 },

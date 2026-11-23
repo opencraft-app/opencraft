@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import {AssistantThreadCommands} from '../../../packages/access-control/src/assistant-thread-commands';
 import {ThreadAccessStore} from '../../../packages/access-control/src/thread-access';
 import {createAssistantModelSource} from '../../../apps/local-agent-host/src/model-config/assistant';
@@ -31,7 +32,7 @@ actors.setGrant(human.actorId,bot.id,'message.send',true,'fixture');
 const service=new Collaboration(storage,actors,{hostId:'local-codex',serverId:'fixture',hostForServer:()=> 'local-codex',async discover(){return {conversations:[{ref:{serverId:'fixture',threadId:'task-source'},title:'Project task settings'}],nextCursor:null};},async validate(){},async receipt(){return null;},async add(){throw Error('fixture execution unavailable');},async steer(){throw Error('fixture execution unavailable');},async cancel(){return false;}});
 const threadAccess=new ThreadAccessStore(storage,actors);threadAccess.created('fixture','task-source',human,'private');
 const threadCommands=new AssistantThreadCommands(service,{async prepare(){return {cwd:'/project',model:'granted',sandbox:'read-only'};},async create(){throw Error('not used');},async createRoot(){throw Error('not used');},async snapshot(threadId){return {threadId,rootTurnId:null,turnId:null,state:'completed'};}},threadAccess);await threadCommands.initialize();
-const models=new ModelConfigurationRepository(join(root,'models'));await models.initialize();
+const models=new ModelConfigurationRepository(fileStateDocumentStore(join(root,'models')));await models.initialize();
 await models.update(0,d=>{d.providers=[{id:'smoke',name:'Local test',enabled:true,protocol:'openai-responses',baseUrl:'http://127.0.0.1:1/v1',authentication:'none',credentialRef:null,models:[{id:'model-a',name:'Assistant A',enabled:true},{id:'model-b',name:'Assistant B',enabled:true}]}];});
 const assistantHost=await createPersonalAssistantHost({directory:root,service,codexBinary:process.execPath,modelSource:createAssistantModelSource(join(root,'models')),intervalMs:50,spawn:()=>({ready:Promise.resolve(),failed:()=>false,async close(){}})});
 const seeded=[];

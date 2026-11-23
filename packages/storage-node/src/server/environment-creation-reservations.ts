@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import type { SqlDatabase } from "@opencraft/sql";
 
 /**
  * A durable creation reservation for execution ENV delivery. The Actor epoch is the
@@ -66,7 +67,7 @@ function validReservation(value: EnvironmentCreationReservation): EnvironmentCre
  * the one recorded at admission, which the caller must compare with the current one.
  */
 export function readEnvironmentCreationReservation(
-  db: Pick<DatabaseSync, "prepare">,
+  db: Pick<SqlDatabase, "prepare"> | Pick<DatabaseSync, "prepare">,
   hostId: string,
   operationId: string,
   now = Date.now(),
@@ -92,7 +93,7 @@ export function readEnvironmentCreationReservation(
 }
 
 /** Invoked only in the Server owner Worker; the network thread reaches it through async calls. */
-export function environmentCreationReservationMethods(db: DatabaseSync): EnvironmentCreationReservationMethods {
+export function environmentCreationReservationMethods(db: SqlDatabase): EnvironmentCreationReservationMethods {
   const insert = db.prepare(`INSERT INTO environment_creation_reservations
     (host_id,operation_id,actor_id,actor_generation,membership_revision,source,incarnation,project,state,created_at,expires_at)
     VALUES(?,?,?,?,?,?,?,?,'pending',?,?)`);

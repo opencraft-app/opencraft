@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqlDatabase } from "@opencraft/sql";
 import type { InputDeliveryReceipt } from "@opencraft/appserver-protocol";
 
 /**
@@ -8,7 +8,7 @@ import type { InputDeliveryReceipt } from "@opencraft/appserver-protocol";
  * `opencraft_turn_delivery` in its own migrations.
  */
 export class InputDeliveryStore {
-  constructor(private readonly db: DatabaseSync) {}
+  constructor(private readonly db: SqlDatabase) {}
 
   register(threadId: string, clientId: string): void {
     this.db
@@ -50,9 +50,7 @@ export class InputDeliveryStore {
   finish(threadId: string, turnId: string, outcome: string): boolean {
     if (!turnId || turnId === "unknown" || !["completed", "interrupted", "failed"].includes(outcome)) return false;
     // First terminal observation is immutable. Later stale frames never resurrect it.
-    const ownsTransaction = !this.db.isTransaction;
-    if (ownsTransaction) this.db.exec("BEGIN IMMEDIATE");
-    try {
+    return this.db.transaction(() => {
       const changed =
         this.db
           .prepare("INSERT OR IGNORE INTO opencraft_turn_delivery VALUES(?,?,?,?)")
@@ -63,12 +61,8 @@ export class InputDeliveryStore {
         WHERE thread_id=? AND target_turn_id=? AND state IN ('dispatching','steering','unknown')`,
         )
         .run(Date.now(), threadId, turnId);
-      if (ownsTransaction) this.db.exec("COMMIT");
       return changed;
-    } catch (error) {
-      if (ownsTransaction) this.db.exec("ROLLBACK");
-      throw error;
-    }
+    });
   }
 
   receipt(threadId: string, clientId: string, targetTurnId: string | null): InputDeliveryReceipt {

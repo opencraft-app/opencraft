@@ -599,7 +599,7 @@ test("creation and its durable mutations do not execute SQL on the connection ev
 test("storage contention leaves connection timers responsive and commits the same request after unlock", async (t) => {
   const f = await fixture(t);
   await f.grant();
-  const lock = new DatabaseSync(f.service.database.location()!);
+  const lock = new DatabaseSync(f.storage.location!);
   lock.exec("BEGIN IMMEDIATE");
   let ticks = 0;
   const timer = setInterval(() => ticks++, 5),

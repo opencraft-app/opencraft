@@ -25,6 +25,7 @@ import {
   environmentTerminalRecords,
 } from "@opencraft/execution-environment/environment-launch-owner";
 import { LocalAccountServerPlugin } from "../../plugins/local-account/src/server.js";
+import { createNodePasswordHasher } from "../../plugins/local-account/src/password-hash-node.js";
 import { openHeadlessAssetsStorage } from "../../apps/headless-server/src/headless-assets-storage.js";
 import {
   createHandsTerminalService,
@@ -153,7 +154,7 @@ async function actors(t: test.TestContext) {
     store = new ActorStore(storage),
     accounts = new HumanAccounts(storage, store),
     members = new MembershipStore(storage);
-  accounts.registerLocalAccounts(new LocalAccountServerPlugin(accounts.localAccountRepository));
+  accounts.registerLocalAccounts(new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher()));
   const management = new HumanAccountManagement(storage, accounts, store, members);
   const principal = await management.initialize({
     mode: "web",
@@ -170,7 +171,7 @@ async function actors(t: test.TestContext) {
     await rm(root, { recursive: true, force: true });
   });
   const account = `actor:${login.login.context.actorId}`;
-  const vault = new EmployeeGitVaultStore(directory);
+  const vault = await EmployeeGitVaultStore.open(directory);
   try {
     const environment = new AccountEnvironment(vault);
     environment.replace(account, { projectId: null }, 0, [
@@ -581,7 +582,7 @@ test("without delivery the synchronous path is unchanged, and a delivery Host re
 
 test("the vault owner seals a terminal claim only under the current Actor epoch, with the Thread's Project", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "term-env-issuer-"));
-  const vault = new EmployeeGitVaultStore(directory);
+  const vault = await EmployeeGitVaultStore.open(directory);
   t.after(async () => {
     vault.close();
     await rm(directory, { recursive: true, force: true });

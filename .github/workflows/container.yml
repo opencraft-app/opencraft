@@ -30,7 +30,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - run: node --import tsx --test tests/server/container-deployment.test.mjs tests/server/environment-issuer-supervision.test.mjs tests/browser/remote-browser-owner.test.mjs tests/server/upgrade-environment.test.mjs tests/server/root-hands.test.mjs
+      - run: node --import tsx --test tests/server/container-deployment.test.mjs tests/server/environment-issuer-supervision.test.mjs tests/browser/remote-browser-owner.test.mjs tests/server/upgrade-environment.test.mjs tests/server/workspace-agent.test.mjs tests/server/root-hands.test.mjs
       - run: node --test tests/browser/remote-browser-artifact.test.mjs tests/browser/install-owned-browser-runtime.test.mjs tests/browser/owned-electron-packaging.test.mjs
       - run: node --import tsx --test tests/execution/hands-unix-sandbox.test.ts
       - uses: ./.github/actions/owned-electron
@@ -42,8 +42,6 @@ jobs:
         run: bash scripts/ci/build-container.sh "${{ matrix.architecture }}"
       - run: node --test tests/tooling/container-publication.test.mjs
       - run: node scripts/smoke/server/smoke-container.mjs
-      # The same image with the model proxy as a fourth service (compose.proxy.yaml).
-      - run: node scripts/smoke/server/smoke-container.mjs --proxy
       - name: Export the tested image (main only)
         if: github.repository == 'opencraft-app/opencraft' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         run: docker save opencraft:local | gzip -1 > "/tmp/image.tar.gz"

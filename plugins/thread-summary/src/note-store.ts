@@ -21,21 +21,18 @@ export class ThreadNoteStore {
   exchange(serverId: string, threadId: string, update: string, vector: string): { update: string } {
     const incoming = decode(update), stateVector = decode(vector);
     const doc = new Y.Doc();
-    this.db.exec("BEGIN IMMEDIATE");
     try {
-      const row = this.db.prepare("SELECT state FROM thread_notes WHERE server_id=? AND thread_id=?").get(serverId, threadId);
-      if (row) Y.applyUpdate(doc, row.state as Uint8Array);
-      const before = Y.encodeStateAsUpdate(doc);
-      if (incoming.length) Y.applyUpdate(doc, incoming);
-      const state = Y.encodeStateAsUpdate(doc);
-      if (state.length > limit || doc.getText("markdown").length > 64 * 1024) throw new Error("Note is too large");
-      const result = { update: Buffer.from(Y.encodeStateAsUpdate(doc, stateVector)).toString("base64") };
-      if (!Buffer.from(before).equals(state)) this.db.prepare("INSERT INTO thread_notes VALUES(?,?,?,?) ON CONFLICT(server_id,thread_id) DO UPDATE SET state=excluded.state,updated_at=excluded.updated_at").run(serverId, threadId, state, Date.now());
-      this.db.exec("COMMIT");
-      return result;
-    } catch (error) {
-      if (this.db.isTransaction) this.db.exec("ROLLBACK");
-      throw error;
+      return this.db.transaction(() => {
+        const row = this.db.prepare("SELECT state FROM thread_notes WHERE server_id=? AND thread_id=?").get(serverId, threadId);
+        if (row) Y.applyUpdate(doc, row.state as Uint8Array);
+        const before = Y.encodeStateAsUpdate(doc);
+        if (incoming.length) Y.applyUpdate(doc, incoming);
+        const state = Y.encodeStateAsUpdate(doc);
+        if (state.length > limit || doc.getText("markdown").length > 64 * 1024) throw new Error("Note is too large");
+        const result = { update: Buffer.from(Y.encodeStateAsUpdate(doc, stateVector)).toString("base64") };
+        if (!Buffer.from(before).equals(state)) this.db.prepare("INSERT INTO thread_notes VALUES(?,?,?,?) ON CONFLICT(server_id,thread_id) DO UPDATE SET state=excluded.state,updated_at=excluded.updated_at").run(serverId, threadId, state, Date.now());
+        return result;
+      });
     } finally { doc.destroy(); }
   }
   close() { this.closeRepository(); }

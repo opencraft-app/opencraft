@@ -42,7 +42,8 @@ LABEL org.opencontainers.image.title="OpenCraft" \
       org.opencontainers.image.version="${OPENCRAFT_BUILD_ID}" \
       org.opencontainers.image.revision="${OPENCRAFT_SOURCE_REVISION}"
 RUN chown root:root /opt/opencraft/runtime/browser/electron/chrome-sandbox \
-    && chmod 4755 /opt/opencraft/runtime/browser/electron/chrome-sandbox
+    && chmod 4755 /opt/opencraft/runtime/browser/electron/chrome-sandbox \
+    && install -d -o "${OPENCRAFT_UID}" -g "${OPENCRAFT_GID}" -m 0700 /run/opencraft-agent
 ENV PATH=/opt/opencraft/bin:$PATH
 WORKDIR /opt/opencraft
 USER ${OPENCRAFT_UID}:${OPENCRAFT_GID}

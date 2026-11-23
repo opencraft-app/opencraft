@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { ActorStore } from '../../packages/access-control/src/actors';
 import { HumanAccounts } from '../../packages/access-control/src/human-accounts';
 import { LocalAccountServerPlugin } from '../../plugins/local-account/src/server';
+import { createNodePasswordHasher } from '../../plugins/local-account/src/password-hash-node';
 import { HumanAuth } from '../../packages/access-control/src/human-auth';
 import { ActorAccess } from '../../packages/access-control/src/actor-access';
 import { InstanceAccess, MembershipStore } from '../../packages/access-control/src/index';
@@ -91,7 +92,7 @@ export async function humanAuthFixture(t: any, protectedInstance = true, appServ
   const issuer = await mockIssuer();
   const actors = new ActorStore(join(directory, 'actors.sqlite'));
   const accounts = new HumanAccounts(join(directory, 'human-logins.sqlite'), actors);
-  const localAccounts = new LocalAccountServerPlugin(accounts.localAccountRepository);
+  const localAccounts = new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher());
   const deactivateLocal = accounts.registerLocalAccounts(localAccounts);
   const members = new MembershipStore(join(directory, 'memberships.sqlite'));
   const configuration = { origin: 'http://127.0.0.1', local: true, oidc: [{ id: 'enterprise', label: '企业单点登录', issuer: issuer.origin,

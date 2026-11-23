@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { inspect, promisify } from 'node:util';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { EmployeeGitVaultStore } from '@opencraft/execution-environment/employee-git-vault-store';
 import { AccountEnvironment } from '@opencraft/execution-environment/account-environment';
 import { ExecutionEnvironmentRuntime, environmentProjectId, type EnvironmentExecutionScope } from '@opencraft/execution-environment';
@@ -23,7 +23,7 @@ const program = "process.stdout.write(require('node:crypto').createHash('sha256'
 const entry = (value: string) => ({ name: 'SERVICE_KEY', value, secret: true });
 const scope = (account = 'employee:alice', projectId: string | null = 'a', threadId: string | null = null): EnvironmentExecutionScope => ({ account, projectId, threadId, hostId: 'opencraft-server' });
 async function fixture(t: test.TestContext) {
-  const root = await mkdtemp(join(tmpdir(), 'environment-injection-')), vault = new EmployeeGitVaultStore(root);
+  const root = await mkdtemp(join(tmpdir(), 'environment-injection-')), vault = await EmployeeGitVaultStore.open(root);
   const runtime = new ExecutionEnvironmentRuntime(root, vault), environment = new AccountEnvironment(vault);
   const directory = join(root, 'thread-identities', 'opencraft-server'); await mkdir(directory, { recursive: true });
   const database = new ThreadIdentityDatabase(directory), leases = new ExecutionLeaseStore(database.database);
@@ -247,8 +247,10 @@ test('Pi durable tools follow the admitted input across employees and register e
   } finally { await native.close(); }
 });
 
-test('a legacy Codex router admits an initial empty creation but fences later turns without an attested environment handoff', async t => {
+test('a legacy Codex owner admits an initial empty creation but fences later turns without an attested environment handoff', async t => {
   const f = await fixture(t);
+  // Standalone health attests a direct native child of the runtime owner.
+  const nativeChild = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' }); t.after(() => { nativeChild.kill(); });
   const { createServer } = await import('node:http'); const { WebSocketServer } = await import('ws');
   const { startControlServer } = await import('../../apps/codex-core/src/control-server.js');
   const { CodexEngineAdapter } = await import('../../apps/opencraft-daemon/src/codex-engine-adapter.js');
@@ -271,8 +273,8 @@ test('a legacy Codex router admits an initial empty creation but fences later tu
   await new Promise<void>(resolve => server.listen(nativeSocket, resolve));
   const token = 'synthetic-' + randomUUID();
   const control = await startControlServer(endpoint, token, async request => ({ status: 200, value: request.url === '/health'
-    ? { protocolVersion: 1, pid: process.pid, codexPid: process.pid, nativeSocket, dataDirectory: join(f.root, 'codex'), proxyBaseUrl: 'http://127.0.0.1:9', routingEpoch: 'legacy' }
-    : { lease: 'legacy-lease', routingEpoch: 'legacy', fenceEpoch: 0, fencedGenerationIds: [], routes: [] } }));
+    ? { protocolVersion: 1, pid: process.pid, codexPid: nativeChild.pid, nativeSocket, dataDirectory: join(f.root, 'codex'), proxyBaseUrl: 'http://127.0.0.1:9' }
+    : {} }));
   const adapter = new CodexEngineAdapter({ executable: process.execPath, runtimeDirectory: f.root, dataDirectory: join(f.root, 'codex'), coreEndpoint: endpoint, coreAuthToken: token, coreHostOverlays: true, executionEnvironment: f.runtime, logDiagnostic() {} });
   const frames: any[] = []; adapter.subscribeMessage(frame => frames.push(JSON.parse(frame))); let sequence = 0;
   const call = async (method: string, params: object, account = 'charlie') => {
@@ -290,7 +292,7 @@ test('a legacy Codex router admits an initial empty creation but fences later tu
     // cleared a previous execution's credentials. Do not bypass this fence.
     await assert.rejects(call('turn/start', { threadId: created.thread.id, clientUserMessageId: 'two', input: [{ type: 'text', text: 'next' }] }), /owner.*environment|environment.*handoff/i);
     assert.equal(methods.filter(method => method === 'turn/start').length, 1, 'refused input never reaches Native');
-    assert.equal(methods.includes('opencraft/environment/capability'), false, 'an old router must not receive an unsupported capability request');
+    assert.equal(methods.includes('opencraft/environment/capability'), false, 'a legacy owner must not receive an unsupported capability request');
     await assert.rejects(call('thread/start', {}, 'alice'), /owner handoff/);
   } finally {
     await adapter.close(); await control.close(); for (const socket of sockets.clients) socket.terminate(); sockets.close();

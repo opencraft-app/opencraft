@@ -26,6 +26,13 @@ import { WorkerOwner, ownerEntry } from "@opencraft/worker-owner";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import type { SandboxConfigurationsSnapshot } from "../contract.js";
 import { SandboxConfigurationError } from "./errors.js";
+/** Worker-reported Bot backend IDs; malformed reports fail closed to none. */
+function botBackends(ready: Ready): readonly string[] {
+  const ids = ready.botExecution === true ? ready.botBackends : undefined;
+  if (!Array.isArray(ids) || ids.length > 16 || ids.some((id) => typeof id !== "string" || !/^[a-z0-9][a-z0-9-]{0,22}$/u.test(id)))
+    return [];
+  return Object.freeze([...new Set(ids)]);
+}
 
 /** A request-local revocable admission, not an identity supplied by HTTP input.
  * The authenticated owner invalidates permit[0] on account/role/session changes.
@@ -89,6 +96,7 @@ interface Ready {
   environmentTerminal?: boolean;
   workspaceExecution: boolean;
   botExecution?: boolean;
+  botBackends?: readonly string[];
 }
 /** All vault opens, migrations, reads and writes belong to this FIFO Worker.
  * There is no local fallback, runtime-secret RPC or automatic mutation retry. */
@@ -158,6 +166,7 @@ export async function openAssetConfigurations(
     gitAuthority: ready.gitAuthority,
     workspaceExecution: ready.workspaceExecution === true,
     botExecution: ready.botExecution === true,
+    botBackends: botBackends(ready),
     /** Vault-owner port for `/host-environment`: only routing metadata goes in
      * and only an opaque capsule comes back to this thread. */
     environmentLaunch:

@@ -23,6 +23,7 @@ test("bundled assets owner opens its sibling Worker, persists and drains without
     const { openAssetConfigurations } = await import(pathToFileURL(join(output, "assets-api.mjs")).href);
     const owner = await openAssetConfigurations(join(output, "data"));
     assert.equal(owner.botExecution, false);
+    assert.deepEqual(owner.botBackends, []);
     assert.equal(owner.workspaceExecution, false);
     try {
       const permit = new Int32Array(new SharedArrayBuffer(4));
@@ -73,6 +74,8 @@ test("bundled Headless workspace owner opens the same vault and private journal 
     try {
       assert.equal(owner.workspaceExecution, true);
       assert.equal(owner.botExecution, true);
+      // The bundled Worker reports its deployment-registered sandbox providers.
+      assert.deepEqual(owner.botBackends, ["e2b"]);
       assert.deepEqual((await owner.store.workspaceBotCatalog()).templates, []);
       assert.deepEqual(await owner.store.workspacePlacementPage(), { items: [], next: null });
     } finally {

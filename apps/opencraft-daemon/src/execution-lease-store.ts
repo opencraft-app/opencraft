@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import type { DatabaseSync } from "node:sqlite";
+import type { SqlDatabase } from "@opencraft/sql";
+import { sqlPort, type SqlConnection } from "./sql-connection.js";
 import { randomUUID } from "node:crypto";
 import type { TransportSubmissionContext } from "@opencraft/appserver-client/transport";
 
@@ -73,21 +74,27 @@ function resolution(row: Record<string, unknown> | undefined): ExecutionLeaseRes
   return { status: row.ownership === "unowned" ? "unowned" : "active", lease: value };
 }
 
+/** Boot-relative clock of the machine whose broker attests native job ancestry. `null` when unavailable: rows then
+ * carry no boot evidence and readers fall back to strict wall-clock matching. */
+export type ExecutionBootClock = () => { bootId: string; at: number } | null;
 /** Linux boot-relative clock shares the broker's /proc startTicks time base.
  * Its 10ms quantization is included in strict reader boundary checks. */
-function bootClock(): {bootId:string; at:number} | null {
+export const linuxBootClock: ExecutionBootClock = () => {
   if (process.platform !== "linux") return null;
   try {
     const bootId=readFileSync("/proc/sys/kernel/random/boot_id","utf8").trim();
     const at=Number(readFileSync("/proc/uptime","utf8").split(" ")[0])*1000;
     return bootId && Number.isFinite(at) && at>=0 ? {bootId,at} : null;
   } catch { return null; }
-}
+};
 
 /** Read-only broker port. The caller selects a trusted Host DB, never a Renderer path. */
 export class ExecutionLeaseReader {
   readonly originClock = "boot-monotonic-v1" as const;
-  constructor(protected readonly db: DatabaseSync) {}
+  protected readonly db: SqlDatabase;
+  /** Borrows the owner's SQL port. The boot clock is a fact of the machine running the engine; Node defaults to
+   * this machine's Linux clock, another host (a WorkspaceHost Durable Object) supplies the container's. */
+  constructor(database: SqlConnection, protected readonly bootClock: ExecutionBootClock = linuxBootClock) { this.db = sqlPort(database); }
   resolve(input: { threadId: string; executionId: string; generation?: number }): ExecutionLeaseResolution {
     const row = this.db.prepare(`${SELECT} WHERE l.thread_id=? AND l.execution_id=?`).get(text(input.threadId), text(input.executionId));
     if (row && input.generation !== undefined && row.generation !== input.generation) return { status: "unknown" };
@@ -163,7 +170,7 @@ export class ExecutionLeaseStore extends ExecutionLeaseReader {
     if (this.inputKind(threadId, inputId) === "steer") throw new Error("A steer cannot acquire an execution lease");
     const pending = this.db.prepare("SELECT execution_id FROM execution_leases WHERE thread_id=? AND input_id=? AND (state='pending' OR turn_id IS NOT NULL) ORDER BY generation LIMIT 1").get(threadId, inputId);
     if (pending) return String(pending.execution_id);
-    const executionId = randomUUID(), clock=bootClock();
+    const executionId = randomUUID(), clock=this.bootClock();
     this.db.prepare(`INSERT INTO execution_leases(execution_id,thread_id,input_id,generation,state,admitted_at_ms,engine_incarnation,boot_id,admitted_at_boot_ms)
       VALUES(?,?,?,(SELECT COALESCE(MAX(generation),0)+1 FROM execution_leases WHERE thread_id=?),'pending',?,?,?,?)`)
       .run(executionId, threadId, inputId, threadId, Date.now(), engineIncarnation ?? null, clock?.bootId ?? null, clock?.at ?? null);
@@ -173,13 +180,7 @@ export class ExecutionLeaseStore extends ExecutionLeaseReader {
     if (!threadId || !turnId) return;
     if (!inputId) { this.observedStart(threadId, turnId, engineIncarnation); return; }
     if (this.inputKind(threadId, inputId) === "steer") return;
-    this.db.exec("SAVEPOINT execution_lease_binding");
-    try {
-      this.bindExactInput(threadId, turnId, inputId, engineIncarnation);
-      this.db.exec("RELEASE execution_lease_binding");
-    } catch (error) {
-      this.db.exec("ROLLBACK TO execution_lease_binding; RELEASE execution_lease_binding"); throw error;
-    }
+    this.db.transaction(() => this.bindExactInput(threadId, turnId, inputId, engineIncarnation));
   }
   private bindExactInput(threadId: string, turnId: string, inputId: string, incarnation?: string): void {
     let existing = this.db.prepare("SELECT * FROM execution_leases WHERE thread_id=? AND turn_id=?").get(threadId, turnId);
@@ -236,7 +237,7 @@ export class ExecutionLeaseStore extends ExecutionLeaseReader {
       this.db.prepare("UPDATE execution_leases SET turn_id=NULL,state='rejected',ended_at_ms=admitted_at_ms,ended_at_boot_ms=admitted_at_boot_ms WHERE execution_id=?")
         .run(existing!.execution_id!);
     }
-    const clock=bootClock();
+    const clock=this.bootClock();
     this.db.prepare("UPDATE execution_leases SET state='ended',ended_at_ms=?,ended_at_boot_ms=? WHERE thread_id=? AND execution_id!=? AND turn_id IS NOT NULL AND state IN ('active','unknown') AND ended_at_ms IS NULL")
       .run(Date.now(), clock?.at ?? null, threadId, target.execution_id!);
     this.db.prepare("UPDATE execution_leases SET input_id=?,turn_id=?,engine_incarnation=COALESCE(engine_incarnation,?),state=?,ended_at_ms=?,ended_at_boot_ms=? WHERE execution_id=?")
@@ -294,7 +295,7 @@ export class ExecutionLeaseStore extends ExecutionLeaseReader {
   }
   outcome(threadId: string, inputId: string, rejected: boolean): void {
     this.db.prepare("UPDATE execution_leases SET state=?,ended_at_ms=?,ended_at_boot_ms=? WHERE thread_id=? AND input_id=? AND state='pending'")
-      .run(rejected ? "rejected" : "unknown", rejected ? Date.now() : null, rejected ? bootClock()?.at ?? null : null, threadId, inputId);
+      .run(rejected ? "rejected" : "unknown", rejected ? Date.now() : null, rejected ? this.bootClock()?.at ?? null : null, threadId, inputId);
   }
   suspend(threadId?: string): void {
     this.db.prepare(`UPDATE execution_leases SET state='unknown' WHERE ended_at_ms IS NULL AND state IN ('active','pending')${threadId ? " AND thread_id=?" : ""}`)
@@ -320,7 +321,7 @@ export class ExecutionLeaseStore extends ExecutionLeaseReader {
   }
   finished(threadId: string, turnId: string): void {
     this.db.prepare("UPDATE execution_leases SET state='ended',ended_at_ms=?,ended_at_boot_ms=? WHERE thread_id=? AND turn_id=? AND state IN ('active','unknown','pending')")
-      .run(Date.now(), bootClock()?.at ?? null, threadId, turnId);
+      .run(Date.now(), this.bootClock()?.at ?? null, threadId, turnId);
   }
 }
 

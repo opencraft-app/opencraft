@@ -10,7 +10,7 @@ import { Collaboration,CollaborationError,COLLABORATION_MIGRATIONS,type Conversa
 import { ThreadOrchestrationBroker,type OrchestrationRuntimeSnapshot,type OrchestrationExecutionPort } from '../../packages/access-control/src/thread-orchestration-broker';
 import { parsePrincipal } from '../../packages/identity-core/src/index';
 import { encodeConversationRef } from '../../packages/appserver-protocol/src/collaboration';
-import { openManagedDatabase } from '../../packages/sqlite-node/src/index';
+import { nodeSqlDatabase, openManagedDatabase } from '../../packages/sqlite-node/src/index';
 import { ThreadOrchestrationLedger,type ThreadRelation } from '../../packages/access-control/src/orchestration-ledger';
 const relation=(id:string,owner:string):ThreadRelation=>({threadId:id,serverId:'server',driverKind:'codex',ownerActorId:owner,parentThreadId:null,lifecycleOwnerThreadId:null,
  forkedFromId:null,visibility:'visible',engineHostGeneration:null,nativeSessionId:id,runtimeStatus:'idle',rootTurnId:null,turnId:null,delegationRevision:1,autoExchangeDepth:0,hasDirectUserInput:false,userInputExcerpt:null});
@@ -67,11 +67,11 @@ async function fixture(t:any){
 
 test('v3 control facts survive v4 authority upgrade without rewriting migration hashes',async t=>{
  const root=await mkdtemp(join(tmpdir(),'oc-broker-upgrade-'));t.after(()=>rm(root,{recursive:true,force:true}));const path=join(root,'collaboration.sqlite');
- const before=openManagedDatabase({path,migrations:COLLABORATION_MIGRATIONS.slice(0,3)}).database,ledger=new ThreadOrchestrationLedger(before);
+ const before=openManagedDatabase({path,migrations:COLLABORATION_MIGRATIONS.slice(0,3)}).database,ledger=new ThreadOrchestrationLedger(nodeSqlDatabase(before));
  ledger.createThread(relation('kept','human://local/a'));const op=ledger.accept({toolCallKey:'k',delegationId:'d',issuerActorId:'human://local/a',kind:'tell',senderThreadId:'s',targetThreadId:'t',clientMessageId:null,mode:'queue',arguments:{message:'kept'}});ledger.finish('k',{done:true});
  const hashes=before.prepare('SELECT version,checksum FROM schema_migrations').all();before.close();
  const after=openManagedDatabase({path,migrations:COLLABORATION_MIGRATIONS}).database;assert.deepEqual(after.prepare('SELECT version,checksum FROM schema_migrations WHERE version<=3').all(),hashes);
- assert.equal(new ThreadOrchestrationLedger(after).relation('kept')?.ownerActorId,'human://local/a');assert.equal(new ThreadOrchestrationLedger(after).operation('k')?.operationId,op.operationId);after.close();
+ assert.equal(new ThreadOrchestrationLedger(nodeSqlDatabase(after)).relation('kept')?.ownerActorId,'human://local/a');assert.equal(new ThreadOrchestrationLedger(nodeSqlDatabase(after)).operation('k')?.operationId,op.operationId);after.close();
  const changed=new DatabaseSync(path);changed.exec("UPDATE schema_migrations SET checksum='changed' WHERE version=4");changed.close();assert.throws(()=>openManagedDatabase({path,migrations:COLLABORATION_MIGRATIONS}));
 });
 
@@ -289,17 +289,17 @@ test('ordinary authorized wait targets retain independent runtime facts after po
 
 test('v4 to v5 display migration preserves receipts and rejects a changed v5 checksum',async t=>{
  const root=await mkdtemp(join(tmpdir(),'oc-view-upgrade-'));t.after(()=>rm(root,{recursive:true,force:true}));const path=join(root,'collaboration.sqlite');
- const old=openManagedDatabase({path,migrations:COLLABORATION_MIGRATIONS.slice(0,4)}).database,ledger=new ThreadOrchestrationLedger(old);
+ const old=openManagedDatabase({path,migrations:COLLABORATION_MIGRATIONS.slice(0,4)}).database,ledger=new ThreadOrchestrationLedger(nodeSqlDatabase(old));
  ledger.createThread(relation('kept','owner'));
  const op=ledger.accept({toolCallKey:'call',delegationId:'delegation',issuerActorId:'owner',kind:'wait',senderThreadId:'kept',targetThreadId:null,clientMessageId:null,mode:'wait',arguments:{threadIds:['ordinary']}});
  ledger.finish('call',{settled:false});const hashes=old.prepare('SELECT version,checksum FROM schema_migrations').all();old.close();
  const current=openManagedDatabase({path,migrations:COLLABORATION_MIGRATIONS}).database;
  assert.deepEqual(current.prepare('SELECT version,checksum FROM schema_migrations WHERE version<=4').all(),hashes);
- const views=new ThreadOrchestrationLedger(current);assert.deepEqual(views.operationById(op.operationId)?.result,{settled:false});
+ const views=new ThreadOrchestrationLedger(nodeSqlDatabase(current));assert.deepEqual(views.operationById(op.operationId)?.result,{settled:false});
  views.observeRuntime({threadId:'ordinary',rootTurnId:'root',turnId:'turn',state:'active'});
  assert.equal(views.runtimeSnapshot('ordinary')?.state,'active');current.close();
  const reopen=openManagedDatabase({path,migrations:COLLABORATION_MIGRATIONS}).database;
- assert.equal(new ThreadOrchestrationLedger(reopen).runtimeSnapshot('ordinary')?.rootTurnId,'root');
+ assert.equal(new ThreadOrchestrationLedger(nodeSqlDatabase(reopen)).runtimeSnapshot('ordinary')?.rootTurnId,'root');
  reopen.exec("UPDATE schema_migrations SET checksum='changed' WHERE version=5");reopen.close();
  assert.throws(()=>openManagedDatabase({path,migrations:COLLABORATION_MIGRATIONS}));
 });

@@ -3,9 +3,8 @@ import { communicationExtension, groupCreateOptionValues } from './communication
 import { AssistantThreadStore } from './assistant-thread-store.js';
 import { PersonalAssistants } from './personal-assistants.js';
 import type { Actor } from '@opencraft/identity-core/actors';
-import type { DatabaseSync } from 'node:sqlite';
+import type { SqlDatabase } from '@opencraft/sql';
 import type { ActorContext } from '@opencraft/identity-core/actors';
-import { sqliteTransaction } from '@opencraft/sqlite-node';
 import type { Collaboration } from './collaboration.js';
 import type { NativeChannelChange } from './native-channels.js';
 import { syncActorInbox } from './actor-inbox-projection.js';
@@ -17,14 +16,14 @@ function fields(p: Record<string,unknown>, allowed: string[]) { if (!p || Array.
 function text(value: unknown): string { if(typeof value!=='string'||!value||value.length>2048)invalid();return value; }
 /** One transactional command surface for HTTP and AppServer. No socket, engine,
  * or UI dependency. Execution intents use durable bindings, never call a Host. */
-export function communicationCommand(service: Collaboration, db: DatabaseSync, command: CommunicationCommand): CommunicationResult {
+export function communicationCommand(service: Collaboration, db: SqlDatabase, command: CommunicationCommand): CommunicationResult {
   const changes: NativeChannelChange[] = [];
   const createdActors: Actor[] = [];
   let personalReadGuard: CommunicationResult["personalReadGuard"];
   let createdCredential: CommunicationResult["createdCredential"];
   const unwatch=service.channels.onChange(change=>changes.push(change));
   try {
-    const result=sqliteTransaction(db,()=>{
+    const result=db.transaction(()=>{
       const {context:c,method,params:p}=command;
       if(!service.available||!service.actors.isCurrent(c))throw Object.assign(Error('actor_authentication_required'),{status:401,code:'actor_authentication_required'});
       if(!service.admittedActor(c.actorId))throw Object.assign(Error('channel_denied'),{status:403,code:'channel_denied'});

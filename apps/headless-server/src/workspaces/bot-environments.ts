@@ -45,7 +45,11 @@ export type ResolvedBotEnvironment =
       templates: { id: string; name: string }[];
       record: RuntimeRecord;
     }
-  | { source: "installed"; backendId: "e2b"; fingerprint: string; templates: { id: string; name: string }[] };
+  | { source: "installed"; backendId: string; fingerprint: string; templates: { id: string; name: string }[] };
+/** Deployment-registered sandbox provider IDs. A source whose backend is not
+ * registered is not published; creation resolves the same registry and fails
+ * closed, so neither path falls back to another provider. */
+export type BotBackendSupport = (backend: string) => boolean;
 export interface BotEnvironmentCatalog {
   revision: string;
   environments: ResolvedBotEnvironment[];
@@ -115,17 +119,20 @@ export function platformBotRecords(configurations: Configurations) {
 
 /** Secret-free catalogue for one Actor. Order and precedence:
  *  1. personal records of `owner.scope`, custom endpoints only for administrators,
- *     each as `e2b-<40 hex>` derived from the backend identity partition, the
+ *     each as `<backend>-<40 hex>` derived from the backend identity partition, the
  *     Actor generation and the record fingerprint;
- *  2. platform records not part of the installation, each as `e2b-shared-<40 hex>`
+ *  2. platform records not part of the installation, each as `<backend>-shared-<40 hex>`
  *     derived from the record fingerprint only, so one pool serves every member;
- *  3. the installed source as `e2b`, all its templates in one pool.
- * The three ID namespaces are disjoint. Listing never creates a resource. */
+ *  3. the installed source as its installation's `<backend>`, all its templates in one pool.
+ * `<backend>` is the record's registered provider ID (`e2b` today); records of an
+ * unregistered backend are omitted. The three ID namespaces are disjoint.
+ * Listing never creates a resource. */
 export function resolveBotEnvironments(
   configurations: Configurations,
   owner: BotEnvironmentOwner,
   actor: BotEnvironmentActor,
   backendIdentity: BotBackendIdentity = defaultBotBackendIdentity,
+  supports: BotBackendSupport = () => false,
 ): BotEnvironmentCatalog {
   const environments: ResolvedBotEnvironment[] = [];
   const seen = new Set<string>();
@@ -135,31 +142,33 @@ export function resolveBotEnvironments(
     environments.push(value);
   };
   for (const record of configurations.runtime(owner.scope, owner.custom)) {
+    if (!supports(record.credential.backend)) continue;
     const fingerprint = botRecordFingerprint(record, "personal");
     const identity = identityOf(backendIdentity, record, actor);
     add({
       source: "personal",
-      backendId: "e2b-" + hash([identity, actor.generation, fingerprint]).slice(0, 40),
+      backendId: record.credential.backend + "-" + hash([identity, actor.generation, fingerprint]).slice(0, 40),
       fingerprint,
       templates: [{ id: record.environment.templateId, name: record.environment.name }],
       record,
     });
   }
   for (const record of platformBotRecords(configurations)) {
+    if (!supports(record.credential.backend)) continue;
     const fingerprint = botRecordFingerprint(record, "platform");
     add({
       source: "platform",
-      backendId: "e2b-shared-" + hash([fingerprint]).slice(0, 40),
+      backendId: record.credential.backend + "-shared-" + hash([fingerprint]).slice(0, 40),
       fingerprint,
       templates: [{ id: record.environment.templateId, name: record.environment.name }],
       record,
     });
   }
   const installed = configurations.installedRuntime();
-  if (installed?.records.length)
+  if (installed?.records.length && supports(installed.policy.backendId))
     add({
       source: "installed",
-      backendId: "e2b",
+      backendId: installed.policy.backendId,
       fingerprint: installedBotFingerprint(installed),
       templates: installed.records.map((r) => ({ id: r.environment.templateId, name: r.environment.name })),
     });

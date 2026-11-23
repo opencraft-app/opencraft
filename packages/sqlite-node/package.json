@@ -7,5 +7,6 @@
     ".": "./src/index.ts",
     "./writer-lock": "./src/writer-lock.ts"
   },
-  "scripts": { "typecheck": "tsc --noEmit" }
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": { "@opencraft/sql": "0.1.0" }
 }

@@ -6,11 +6,12 @@ import {
   type GitGrantScope,
 } from "@opencraft/execution-environment/personal-git-protocol";
 import { createDecipheriv, randomBytes } from "node:crypto";
-import { readFile, lstat, chmod, rm, mkdir, writeFile } from "node:fs/promises";
+import { lstat, chmod, rm, mkdir, writeFile } from "node:fs/promises";
 import { createServer, type Socket } from "node:net";
 import { join } from "node:path";
 import { parentPort, workerData } from "node:worker_threads";
 import { DatabaseSync } from "node:sqlite";
+import { fileKeyMaterial } from "@opencraft/secret-storage/file";
 import { createMemoryGitAuthenticator, createMemoryGitSigner } from "./git-identity-signer.js";
 import type { GitVaultCredential } from "@opencraft/execution-environment/employee-git-vault-store";
 import type { PersonalGitScope } from "@opencraft/execution-environment/personal-git";
@@ -64,15 +65,15 @@ type Session = {
 const sessions = new Map<string, Session>(),
   clients = new Set<Socket>();
 let closed = false;
-const vaultPath = join(directory, "employee-git-vault.sqlite"),
-  keyPath = join(directory, "employee-git-vault.key");
-for (const path of [vaultPath, keyPath]) {
-  const info = await lstat(path);
-  if (!info.isFile() || info.uid !== process.getuid?.() || info.mode & 0o077)
-    throw Error("personal_git_vault_unavailable");
-}
-const key = await readFile(keyPath);
-if (key.length !== 32) throw Error("personal_git_vault_unavailable");
+const vaultPath = join(directory, "employee-git-vault.sqlite");
+const vaultInfo = await lstat(vaultPath);
+if (!vaultInfo.isFile() || vaultInfo.uid !== process.getuid?.() || vaultInfo.mode & 0o077)
+  throw Error("personal_git_vault_unavailable");
+// Read only: the vault owner creates this key with its database; private-file checks live in the port.
+const key = await fileKeyMaterial(directory)
+  .read("employee-git-vault.key")
+  .then((value) => (value?.length === 32 ? Buffer.from(value) : undefined), () => undefined)
+  .then((value) => value ?? Promise.reject(Error("personal_git_vault_unavailable")));
 const vault = new DatabaseSync(vaultPath, { readOnly: true });
 vault.exec("PRAGMA query_only=ON; PRAGMA busy_timeout=1000");
 const executionAuthority = new GitExecutionAuthority(directory, workerData.accountMode ?? "principal");

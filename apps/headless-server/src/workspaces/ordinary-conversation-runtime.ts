@@ -3,7 +3,6 @@ import { workspaceArtifactReader } from "./workspace-artifact-reader";
 import type { GeneratedFileReader } from "@opencraft/local-agent-host/artifacts/generated-output";
 import { transferWorkspaceArtifact } from "./workspace-artifact-transfer";
 import type { Artifact } from "@opencraft/local-agent-host/artifacts";
-import { verifyOrdinaryWorkspaceMounts } from "./ordinary-workspace-mounts";
 import { createSandboxBrowserRuntime } from "./sandbox-browser-runtime";
 import { terminalResourceOwnerId } from "../host-resource-identity.js";
 import {
@@ -19,9 +18,10 @@ import {
 } from "@opencraft/execution-environment/workspace-selection";
 import { createSandboxConversationBinding } from "@opencraft/local-agent-host/sandbox-conversation-binding";
 import { InstalledOrdinaryEnvironmentCatalog, type OrdinaryCatalogContext } from "./ordinary-environment-catalog";
-import { InstalledOrdinarySandboxAllocator } from "./ordinary-sandbox-allocator";
+import type { InstalledOrdinarySandboxAllocator } from "./ordinary-sandbox-allocator";
 
 type Selection = ResolvedWorkspaceSelection;
+type OrdinaryAllocator = Pick<InstalledOrdinarySandboxAllocator, "allocate" | "inspect" | "verifyMounts" | "close">;
 /** Constructed only after business admission; never a renderer request schema. */
 export interface OrdinaryRuntimeAdmission {
   authority: WorkspaceAuthority;
@@ -62,7 +62,7 @@ export class InstalledOrdinaryConversationRuntime {
     OrdinaryExecutionBinding,
     (artifact: Artifact, signal?: AbortSignal, body?: AsyncIterable<Uint8Array>) => Promise<Artifact>
   >();
-  private readonly allocator: Pick<InstalledOrdinarySandboxAllocator, "allocate" | "inspect" | "close">;
+  private readonly allocator: OrdinaryAllocator;
   private closing?: Promise<void>;
   private closed = false;
   private readonly pending = new Set<Promise<unknown>>();
@@ -72,18 +72,18 @@ export class InstalledOrdinaryConversationRuntime {
     private readonly catalog: InstalledOrdinaryEnvironmentCatalog,
     private readonly sources: OrdinaryWorkspaceSources,
     private readonly dependencies: {
-      allocator?: Pick<InstalledOrdinarySandboxAllocator, "allocate" | "inspect" | "close">;
+      /** Provider-selecting allocator; it also owns persistent-workspace inspection and mount checks. */
+      allocator: OrdinaryAllocator;
       terminalAdmission?: TerminalAdmissionPort;
-      verifyMounts?: typeof verifyOrdinaryWorkspaceMounts;
       bind?: (options: Parameters<typeof createSandboxConversationBinding>[0]) => Promise<OrdinaryExecutionBinding>;
       /** Trusted deployment policy for the preinstalled Hands browser runtime. */
       browser?: {
         isolation: Parameters<typeof createSandboxBrowserRuntime>[0]["isolation"];
       };
-    } = {},
+    },
   ) {
     this.owner = new OrdinaryConversationOwner(store);
-    this.allocator = dependencies.allocator ?? new InstalledOrdinarySandboxAllocator(catalog);
+    this.allocator = dependencies.allocator;
   }
   private admission(input: OrdinaryRuntimeAdmission): OrdinaryRuntimeAdmission {
     const authority = Object.freeze({ principalId: input.authority.principalId, hostId: input.authority.hostId }),
@@ -164,8 +164,7 @@ export class InstalledOrdinaryConversationRuntime {
       ) => {
         notifyLoss = workspace.onLost;
         await ownerAuthorize();
-        const selected = selection(),
-          installed = this.catalog.runtime(admission.catalog, selected.environment);
+        const selected = selection();
         let library: { volumeId: string; relativePath: string } | undefined;
         if (selected.source.kind !== "empty") {
           const reference =
@@ -181,14 +180,12 @@ export class InstalledOrdinaryConversationRuntime {
           library = { volumeId: declared.volumeId, relativePath: declared.relativePath };
         }
         if (!allocation.privateVolumeId) throw Error("Ordinary private volume receipt unavailable");
-        await (this.dependencies.verifyMounts ?? verifyOrdinaryWorkspaceMounts)({
+        await this.allocator.verifyMounts(admission.catalog, selected.environment, {
           sandbox: allocation.environment,
           workspaceId: workspace.workspaceId,
           instanceId: allocation.instanceId,
           privateVolumeId: allocation.privateVolumeId,
-          library,
-          apiUrl: installed.apiUrl,
-          readApiKey: installed.readApiKey,
+          ...(library ? { library } : {}),
           authorize: ownerAuthorize,
           onCleanupUnconfirmed: () => {
             this.cleanupUnconfirmed = true;

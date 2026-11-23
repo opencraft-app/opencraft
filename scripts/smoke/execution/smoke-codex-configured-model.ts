@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
@@ -6,6 +7,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { AccountPoolStore, CodexAccountPoolProxy, startCodexAccountPoolServer, createCodexAccountPoolLaunch } from "../../../packages/account-pool-host/src/index.js";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "../../../apps/local-agent-host/src/model-config/repository.js";
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 import { createConfiguredCodexResponses, configuredCodexModelId } from "../../../apps/codex-core/src/configured-responses.js";
 
 const executable = process.env.OPENCRAFT_CODEX_EXECUTABLE;
@@ -17,17 +19,18 @@ if (!executable) throw Error("Set OPENCRAFT_CODEX_EXECUTABLE");
 const root = await mkdtemp(join(tmpdir(), "codex-configured-native-")), home = join(root, "home");
 await mkdir(home);
 const store = new AccountPoolStore({ databasePath: join(root, "pool.sqlite"), secretsDirectory: join(root, "secrets") });
-const repository = new ModelConfigurationRepository(join(root, "models"));
+const modelDirectory = join(root, "models");
+const repository = new ModelConfigurationRepository(fileStateDocumentStore(modelDirectory));
 await repository.initialize({ schemaVersion: 1, revision: 0, defaultModel: null, providers: [{
   id: "fixture", name: "Configured fixture", protocol: anthropic ? "anthropic-messages" : "openai-responses", baseUrl: "http://127.0.0.1/v1",
   credentialRef: anthropic ? "SMOKE_ANTHROPIC" : null, ...(anthropic ? {} : { authentication: "none" as const }),
   enabled: true, models: [{ id: "ep-test", enabled: true, input: ["text"] }],
 }] });
-if (anthropic) await new ModelCredentialRepository(repository.directory).set("SMOKE_ANTHROPIC", "fixture");
+if (anthropic) await new ModelCredentialRepository(fileSecretStore(modelDirectory)).set("SMOKE_ANTHROPIC", "fixture");
 const alias = configuredCodexModelId("fixture", "ep-test");
 let inferenceCalls = 0;
 let nativeToolCalls = 0;
-const proxy = new CodexAccountPoolProxy({ store, upstreamBaseUrl: "http://oauth.test/codex", configuredResponses: createConfiguredCodexResponses(repository.directory),
+const proxy = new CodexAccountPoolProxy({ store, upstreamBaseUrl: "http://oauth.test/codex", configuredResponses: createConfiguredCodexResponses(modelDirectory),
   fetch: (async (url, options) => {
     assert.equal(String(url), "http://127.0.0.1/v1/" + (anthropic ? "messages" : "responses"));
     assert.equal(JSON.parse(String(options?.body)).model, "ep-test");

@@ -1,7 +1,7 @@
 import { privateWorkspaceExecutionPolicy } from "./workspace-execution-policy.js";
 import { configureCodexExecutionSandbox, codexSandboxRequestPolicy, type CodexExecutionSandbox, type CodexWorkspaceResolver } from "./execution-sandbox.js";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { chmod, mkdir, readFile, realpath, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, realpath, stat, unlink, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { createServer as createNetServer } from "node:net";
 import { dirname, isAbsolute, join } from "node:path";
@@ -21,10 +21,16 @@ export interface CodexAppServerOptions {
   readonly endpoint: string;
   readonly coreEndpoint: string;
   readonly authToken: string;
+  /** Bearer for this owner's own control endpoint when it differs from the account
+   * Core token (a workspace-private credential handed out only through the agent). */
+  readonly controlToken?: string;
   readonly dataDirectory: string;
   /** Generation-local owner root. Account identity still uses dataDirectory. */
   readonly runtimeDataDirectory?: string;
   readonly runtimeDirectory: string;
+  /** Owner-private directory for the native listener (never reached by other owners).
+   * Defaults to the control endpoint's directory. */
+  readonly privateDirectory?: string;
   readonly executable: string;
   readonly executionSandbox?: CodexExecutionSandbox;
   readonly projectlessWorkspaceDirectory?: string;
@@ -60,14 +66,21 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     || !/^[\x21-\x7e]{1,256}$/u.test(launch.instance) || ![launch.admissionWorkerFile, launch.directory].every(path => typeof path === "string" && isAbsolute(path))))
     throw new Error("Invalid execution environment delivery configuration");
   if (![options.endpoint, options.coreEndpoint, options.dataDirectory, options.runtimeDirectory].every(isAbsolute)
-    || options.endpoint === options.coreEndpoint || options.authToken.length < 32) throw new Error("Invalid Codex AppServer configuration");
+    || options.endpoint === options.coreEndpoint || options.authToken.length < 32
+    || options.controlToken !== undefined && options.controlToken.length < 32) throw new Error("Invalid Codex AppServer configuration");
   const runtimeDataDirectory = options.runtimeDataDirectory ?? options.dataDirectory;
   if (!isAbsolute(runtimeDataDirectory)) throw new Error("Codex runtime directory must be absolute");
   const release = await acquireCodexWriter(runtimeDataDirectory, "runtime");
   // POSIX: Unix sockets beside the control endpoint. Windows (named pipe endpoint): native
   // Codex listens on a loopback WebSocket with a capability token; clients use the relay pipe.
   const nativeSocket = codexNativeSocket(options.endpoint);
-  const nativeListener = codexNativeListener(options.endpoint, isNamedPipe(options.endpoint) ? await loopbackPort() : undefined);
+  // An owner-private directory holds the POSIX native listener (never reached by other owners).
+  if (options.privateDirectory !== undefined && (!isAbsolute(options.privateDirectory) || options.privateDirectory.includes("\0")
+    || isNamedPipe(options.endpoint)))
+    throw new Error("Invalid Codex AppServer private directory");
+  const nativeListener = options.privateDirectory !== undefined
+    ? join(options.privateDirectory, "native-internal.sock")
+    : codexNativeListener(options.endpoint, isNamedPipe(options.endpoint) ? await loopbackPort() : undefined);
   let relay: Awaited<ReturnType<typeof startOrchestrationCallbackRelay>> | undefined;
   let child: ChildProcessWithoutNullStreams | undefined;
   let control: Awaited<ReturnType<typeof startControlServer>> | undefined;
@@ -131,7 +144,7 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     if (!baseSetting) throw new Error("Codex proxy URL is missing");
     const proxyBaseUrl: string = JSON.parse(baseSetting.slice(baseSetting.indexOf("=") + 1));
     // startControlServer validates the private parent before spawning the native listener.
-    control = await startControlServer(options.endpoint, options.authToken, async request => {
+    control = await startControlServer(options.endpoint, options.controlToken ?? options.authToken, async request => {
       const nativeOnly = request.url === "/native-health";
       const healthy = request.method === "GET" && (request.url === "/health" || nativeOnly) && !failed && ready && (nativeOnly || await executable());
       return { status: healthy ? 200 : 503,
@@ -144,6 +157,11 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
       };
     });
     if (nativeSocket === options.endpoint) throw new Error("AppServer control endpoint must differ from native.sock");
+    if (options.privateDirectory) {
+      await mkdir(options.privateDirectory, { recursive: true, mode: 0o700 });
+      const info = await stat(options.privateDirectory);
+      if (!info.isDirectory() || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0) throw new Error("Codex AppServer private directory must be private");
+    }
     await removeStaleSocket(nativeListener);
     await mkdir(runtimeRoot, { recursive: true, mode: 0o700 });
     if (options.runtimeDataDirectory && await realpath(runtimeRoot) !== runtimeRoot) throw new Error("Generation HOME must not alias another directory");

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { nodeSqlDatabase } from "@opencraft/sqlite-node";
 import test from "node:test";
 import {
   dispatchQueuedStart,
@@ -15,7 +16,7 @@ class Refused extends Error {}
 function queue() {
   const db = new DatabaseSync(":memory:");
   db.exec(THREAD_QUEUE_SCHEMA);
-  return new ThreadQueueStore(db);
+  return new ThreadQueueStore(nodeSqlDatabase(db));
 }
 function port(
   send: QueueDispatchPort<never, string, { ok: true }>["send"],

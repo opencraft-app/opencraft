@@ -1,3 +1,4 @@
+import { hostFileBlobStore } from "../storage/host-file-blobs.js";
 import { ArtifactCatalog, inspectArtifactFile, prepareLocalArtifact, type Artifact } from "../artifacts/catalog.js";
 import { AttachmentUploadStore } from "./attachment-upload-store.js";
 import { ATTACHMENT_MAX_BYTES, ATTACHMENT_LEGACY_MAX_BYTES } from "@opencraft/appserver-protocol";
@@ -117,7 +118,7 @@ export class LocalAttachmentStagingService {
 
   constructor(root: string, private readonly catalogDirectory?: string) {
     this.root = resolve(root);
-    this.uploads = new AttachmentUploadStore(join(this.root, ".uploads"), (request, path, hash) => this.commitFile(request, hash, path));
+    this.uploads = new AttachmentUploadStore(hostFileBlobStore(join(this.root, ".uploads")), (request, path, hash) => this.commitFile(request, hash, path));
   }
 
   /** Resolve only a file this staging owner actually committed. Other mentions are not ours. */
@@ -302,3 +303,4 @@ export class LocalAttachmentStagingService {
 }
 
 export { AttachmentUploadStore };
+export { hostFileBlobStore, type HostFileBlobStore } from "../storage/host-file-blobs.js";

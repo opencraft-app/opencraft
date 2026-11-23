@@ -16,7 +16,7 @@ import {ExecutionEnvironmentRuntime,EXECUTION_ENVIRONMENT_FIELD} from '@opencraf
 import {ExecutionEnvironmentTransport} from '../../apps/headless-server/src/execution-environment-transport';
 async function fixture(t:any){
  const root=await mkdtemp(join(tmpdir(),'thread-env-gateway-'));await writeFile(join(root,'index.html'),'<!doctype html><title>Fixture</title>');
- const actors=new ActorStore(join(root,'actors.sqlite')),store=new ThreadAccessStore(join(root,'access.sqlite'),actors),vault=new EmployeeGitVaultStore(root),runtime=new ExecutionEnvironmentRuntime(root,vault),env=new AccountEnvironment(vault);
+ const actors=new ActorStore(join(root,'actors.sqlite')),store=new ThreadAccessStore(join(root,'access.sqlite'),actors),vault=await EmployeeGitVaultStore.open(root),runtime=new ExecutionEnvironmentRuntime(root,vault),env=new AccountEnvironment(vault);
  for(const user of ['alice','bob'])env.replace('fixture:'+user,{projectId:null},0,[{name:'SERVICE_KEY',value:'synthetic-'+user,secret:true}]);
  const principals=(request:any)=>({provider:'fixture',subject:String(request.headers['x-fixture-user']??'anonymous'),displayName:'Fixture',expiresAt:Date.now()+60000});
  const revoked=new Set<string>();

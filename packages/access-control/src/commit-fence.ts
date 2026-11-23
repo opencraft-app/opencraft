@@ -5,6 +5,11 @@
  * network thread never does) and refuses the write unless the network thread
  * approved that exact request in time.
  *
+ * The network thread may defer an answer, e.g. until its projection applied
+ * every write the owner committed before the request; the Worker keeps
+ * blocking until its timeout, and a late answer is never taken for a later
+ * request.
+ *
  * Layout: [state, request token, approval, answered token].
  */
 const IDLE = 0,
@@ -32,8 +37,14 @@ export class CommitFenceDenied extends Error {
   }
 }
 
-/** Network-thread side: answers each fence request with `check(token)`. */
-export function serveCommitFence(buffer: SharedArrayBuffer, check: (token: number) => boolean): () => void {
+/**
+ * Network-thread side: answers each fence request with `check(token)`. A check
+ * that returns a promise defers the answer until it settles; a rejection denies.
+ */
+export function serveCommitFence(
+  buffer: SharedArrayBuffer,
+  check: (token: number) => boolean | Promise<boolean>,
+): () => void {
   const state = new Int32Array(buffer);
   let stopped = false;
   void (async () => {
@@ -43,13 +54,18 @@ export function serveCommitFence(buffer: SharedArrayBuffer, check: (token: numbe
         const token = Atomics.load(state, TOKEN);
         let approved = false;
         try {
-          approved = check(token) === true;
+          const verdict = check(token);
+          approved = (typeof verdict === "boolean" ? verdict : await verdict) === true;
         } catch {
           /* A failing check denies. */
         }
+        if (stopped) break;
+        // A deferred answer is for this request only: the Worker may have timed
+        // out meanwhile and asked again with another token.
+        if (Atomics.load(state, STATE) !== REQUEST || Atomics.load(state, TOKEN) !== token) continue;
         Atomics.store(state, APPROVED, approved ? 1 : 0);
         Atomics.store(state, ANSWERED, token);
-        Atomics.store(state, STATE, ANSWER);
+        Atomics.compareExchange(state, STATE, REQUEST, ANSWER);
         Atomics.notify(state, STATE);
         continue;
       }

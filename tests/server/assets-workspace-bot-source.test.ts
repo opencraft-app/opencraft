@@ -7,6 +7,7 @@ import { createAssetsStorage } from "@opencraft/plugin-assets/server/storage";
 import type { AssetWorkspaceOwnerContext } from "@opencraft/plugin-assets/server/workspace-owner";
 import { createSandboxAssistantProvider } from "@opencraft/personal-assistant/sandbox";
 import { WorkspaceBotOwner } from "../../apps/headless-server/src/workspaces/bot-owner.js";
+import { createSandboxProviderRegistry } from "@opencraft/sandbox/providers";
 
 const environment = { kind: "sandbox" as const, backendId: "compiled-cloud", templateId: "worker-template" };
 const resources = { cpuMillis: 2000, memoryBytes: 2 * 1024 ** 3 };
@@ -22,6 +23,8 @@ async function fixture(t: test.TestContext) {
     allocated = 0,
     closed = 0;
   const owner = new WorkspaceBotOwner(context, {
+    // A compiled source supplies its own provider; no installed provider is registered.
+    providers: createSandboxProviderRegistry({}),
     source: {
       catalog: () => ({ revision, templates: [{ id: environment.templateId, name: "Compiled" }] }),
       validate: (expected, input) => {

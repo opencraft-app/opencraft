@@ -17,13 +17,17 @@ export class CodexOwnerConnection implements CodexOwnerPort {
   constructor(private endpoint: string, private token: string,
     private notify: (method: string, params: unknown) => void,
     private interaction: (id: string | number, method: string, params: unknown) => void,
-    private lost: (fault?: { method: string; reason: 'invalid-frame' | 'translation' | 'connection' }) => void) {}
+    private lost: (fault?: { method: string; reason: 'invalid-frame' | 'translation' | 'connection' }) => void,
+    /** Native socket named by the deployment; otherwise the Core's health reports it. */
+    private nativeSocket?: string) {}
   async connect(): Promise<void> {
     if (this.socket || this.failed) throw new Error('Connection already used');
     const control = new CodexCoreControlClient(this.endpoint, this.token);
-    const [health, auth] = await Promise.all([control.health(), control.brokerAuth()]);
+    // An accounts-only Core serves broker auth but no runtime health.
+    const [nativeSocket, auth] = await Promise.all([
+      this.nativeSocket ?? control.health().then(health => health.nativeSocket), control.brokerAuth()]);
     this.brokerAuth = auth;
-    this.socket = openCodexNativeSocket(health.nativeSocket, { maxPayload: 1_048_576, handshakeTimeout: 5000 });
+    this.socket = openCodexNativeSocket(nativeSocket, { maxPayload: 1_048_576, handshakeTimeout: 5000 });
     const socket = this.socket;
     socket.on('message', data => {
       let frame: unknown;

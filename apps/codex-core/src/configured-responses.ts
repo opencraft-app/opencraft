@@ -40,10 +40,12 @@ function parseConfiguredCodexModelId(id: string): { providerId: string; modelId:
 
 /** Codex projection of the shared engine model source used by every engine adapter. */
 export function createConfiguredCodexResponses(directory: string, options: { readonly allowInsecureLocalNetwork?: boolean } = {}): ConfiguredCodexResponses {
-  const source = createEngineModelSource(directory, { protocols: ["openai-responses", "anthropic-messages"], allowInsecureLocalNetwork: options.allowInsecureLocalNetwork, meteredContributions: true });
+  // Chat Completions connections resolve only for engine provider passthrough; Codex lists and uses Responses/Messages.
+  const source = createEngineModelSource(directory, { protocols: ["openai-responses", "anthropic-messages", "openai-completions"], allowInsecureLocalNetwork: options.allowInsecureLocalNetwork, meteredContributions: true });
   return {
     async catalog() {
-      return (await source.list()).map(route => metadata(route.provider, route.model, route.defaultReasoningEffort));
+      return (await source.list()).filter(route => route.protocol !== "openai-completions")
+        .map(route => metadata(route.provider, route.model, route.defaultReasoningEffort));
     },
     async resolve(id) {
       const reference = parseConfiguredCodexModelId(id);

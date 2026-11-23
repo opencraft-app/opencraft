@@ -1,10 +1,11 @@
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import type { BoundedThreadDelegation } from './orchestration-authority.js';
 import type { AutomationCaller, AutomationGrant } from './automation-ledger.js';
+import type { AutomationInput, AutomationOperation, AutomationResult } from './orchestration-runtime-contract.js';
 import { AutomationError, automationOccurrence, automationRecord, automationText, automationFields, parseAutomationTarget, type Automation, type AutomationRun } from './automation.js';
 
 export interface AutomationStorage {
-  automation<T = any>(operation: string, input: unknown, now: number): Promise<T>;
+  automation<O extends AutomationOperation>(operation: O, input: AutomationInput<O>, now: number): Promise<AutomationResult<O>>;
 }
 export interface AutomationExecution {
   /** Validate project membership, effective permissions and current resource access. */
@@ -23,11 +24,11 @@ export class ProjectAutomations {
   private readonly active = new Map<string,AutomationRun>();
   private readonly dispatches = new Set<Promise<unknown>>();
   constructor(private readonly storage: AutomationStorage, private readonly execution: AutomationExecution, private readonly now=Date.now) {}
-  private call<T = any>(operation: string, input: unknown = {}): Promise<T> {return this.storage.automation<T>(operation,input,this.now());}
+  private call<O extends AutomationOperation>(operation: O, input: AutomationInput<O>): Promise<AutomationResult<O>> {return this.storage.automation(operation,input,this.now());}
   start(): Promise<void> {
-    return this.started??=(async()=>{await this.call('recover');await this.refreshProjection();if(this.closing)return;this.timer=setInterval(()=>{void this.tick().catch(()=>{});},1000);this.timer.unref();})();
+    return this.started??=(async()=>{await this.call('recover',{});await this.refreshProjection();if(this.closing)return;this.timer=setInterval(()=>{void this.tick().catch(()=>{});},1000);this.timer.unref();})();
   }
-  private async refreshProjection():Promise<void>{this.execution.projection?.(await this.call('projection'));}
+  private async refreshProjection():Promise<void>{this.execution.projection?.(await this.call('projection',{}));}
   async grant(caller: AutomationCaller, command: string, input: unknown, key: unknown): Promise<unknown> {
     const body=automationRecord(input);
     const previous=await this.call('grantReplay',{caller,command,body,key});if(previous)return previous;
@@ -39,7 +40,8 @@ export class ProjectAutomations {
       const permissionSnapshot=await this.execution.validate(grant,caller.context);
       return this.call('grant',{caller,command,body:{...body,permissionSnapshot},key});
     }
-    const result=await this.call<AutomationGrant>('grant',{caller,command,body,key});
+    // Grant commands return the stored grant.
+    const result=await this.call('grant',{caller,command,body,key}) as AutomationGrant;
     if(command==='revoke'){this.execution.revoke?.(result.id);await this.refreshProjection();}
     return result;
   }
@@ -50,14 +52,17 @@ export class ProjectAutomations {
     if(this.closing)throw new AutomationError('automation_closed',503);
     const result=await this.call('command',{caller,command,body:automationRecord(input),key});
     if(command==='run') {
-      return this.launch(result.automation,result.occurrenceId);
+      // `run` returns the definition and the occurrence it fixed.
+      const run=result as {automation:Automation;occurrenceId:string};
+      return this.launch(run.automation,run.occurrenceId);
     }
     return result;
   }
   private async launch(automation: Automation, occurrenceId: string): Promise<AutomationRun> {
     const claim=await this.call('claim',{id:automation.id,revision:automation.revision,occurrenceId});
     if(!claim.fresh)return claim.run;
-    const task=this.dispatch(claim.automation,claim.run,claim.grant);
+    // A fresh claim always carries the definition and its current grant.
+    const task=this.dispatch(claim.automation!,claim.run,claim.grant!);
     this.dispatches.add(task);void task.finally(()=>this.dispatches.delete(task)).catch(()=>{});
     return claim.run;
   }
@@ -79,7 +84,7 @@ export class ProjectAutomations {
     }catch{await this.call('settle',{key:run.key,state:'failed',result:{reason:'preparation_refused'}});return;}
     try {
       const outcome=await this.execution.dispatch(automation,run,grant,delegation);
-      const settled=await this.call<AutomationRun>('settle',{key:run.key,...outcome});
+      const settled=await this.call('settle',{key:run.key,...outcome});
       if(settled.state==='running')this.active.set(run.key,settled);
     } catch(error) {
       // Any error after execution may have been attempted is ambiguous.
@@ -97,10 +102,10 @@ export class ProjectAutomations {
           await this.call('settle',{key:run.key,...outcome});this.active.delete(run.key);
         }
       }
-      for(const run of await this.call<AutomationRun[]>('unknownRuns')){
+      for(const run of await this.call('unknownRuns',{})){
         try {const outcome=await this.execution.inspect(run);if(outcome.state==='completed'||outcome.state==='failed')await this.call('settle',{key:run.key,...outcome,proof:'native-inspection'});}catch{/* Keep the durable fence until native evidence is available. */}
       }
-      const now=this.now(),values=await this.call<Automation[]>('eligible');
+      const now=this.now(),values=await this.call('eligible',{});
       for(const value of values) {
         if(this.closing)break;
         const occurrence=automationOccurrence(value.schedule,now);
@@ -111,7 +116,7 @@ export class ProjectAutomations {
   /** Authenticated owner asks for provider proof. This path never dispatches. */
   async reconcile(caller:AutomationCaller,id:string):Promise<unknown> {
     const value=await this.command(caller,'show',{id});
-    const runs=await this.call<AutomationRun[]>('unknownRuns');
+    const runs=await this.call('unknownRuns',{});
     const results=[];
     for(const run of runs.filter(run=>run.automationId===(value as Automation).id)) {
       const outcome=await this.execution.inspect(run);

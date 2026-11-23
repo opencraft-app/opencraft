@@ -31,7 +31,7 @@ export type CodexWorkspaceNativeRequest = (method: string, params: Record<string
 export type CodexWorkspaceResolver = (
   method: "thread/start" | "thread/resume" | "turn/start", params: Readonly<Record<string, unknown>>,
 ) => Promise<{ kind: "local" } | { kind: "bound"; binding: {
-  /** Register on the final Native generation, never through the generation router. */
+  /** Register on the final Native target that owns the Thread. */
   registerExecutionEnvironment?(request: CodexWorkspaceNativeRequest): Promise<void>;
   /** Reauthorizes the principal and checks the live compute incarnation. */
   executionFields(): Promise<{ cwd: string; environments: { environmentId: string; cwd: string }[] }>;

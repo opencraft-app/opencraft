@@ -245,14 +245,14 @@ test("a compiled Human identity adapter preserves a legacy library domain withou
     const raw = { ...access(), scope };
     await assert.rejects(owner.methods.workspaceCatalog(raw));
     const runtime = adapter.runtime(context, environment);
-    assert.equal(await runtime.readApiKey(), key);
+    assert.equal(await runtime.readSecret(), key);
     const secret = owner.methods.snapshot({ ...access(true), scope });
     assert.ok(!JSON.stringify(await secret).includes(key));
     // The domain retains the exact selected legacy scope; it is not rebound to
     // a new Actor partition merely because a compiled adapter was installed.
     assert.equal(adapter.resolveLibrary(context,environment,{version:1,kind:"library-reference",libraryId:"shared",relativePath:"other"}).authorizationDomain,expectedDomain);
     active = false;
-    await assert.rejects(runtime.readApiKey());
+    await assert.rejects(runtime.readSecret());
   } finally {
     await owner.close();
   }

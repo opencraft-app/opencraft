@@ -1,9 +1,11 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "../../apps/local-agent-host/src/model-config/repository.js";
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 import { createEngineModelSource, engineEndpointAllowed, EngineModelError } from "../../apps/local-agent-host/src/model-config/engine-models.js";
 import { createAssistantModelSource } from "../../apps/local-agent-host/src/model-config/assistant.js";
 import { createConfiguredCodexResponses, configuredCodexModelId } from "../../apps/codex-core/src/configured-responses.js";
@@ -12,7 +14,7 @@ import { AccountPoolStore, CodexAccountPoolProxy } from "../../packages/account-
 async function fixture(t: test.TestContext) {
   const directory = await mkdtemp(join(tmpdir(), "engine-models-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const repository = new ModelConfigurationRepository(directory), credentials = new ModelCredentialRepository(directory);
+  const repository = new ModelConfigurationRepository(fileStateDocumentStore(directory)), credentials = new ModelCredentialRepository(fileSecretStore(directory));
   await credentials.set("RESPONSES_KEY", "responses-secret");
   await credentials.set("ANTHROPIC_KEY", "anthropic-secret");
   await repository.initialize({ schemaVersion: 1, revision: 0, defaultModel: null, providers: [
@@ -70,7 +72,9 @@ test("each engine declares its protocols over one resolver; Codex and the assist
   assert.deepEqual((await codex.catalog()).map(m => m.slug),
     [configuredCodexModelId("responses", "r1"), configuredCodexModelId("anthropic", "a1")]);
   assert.equal((await codex.resolve(configuredCodexModelId("anthropic", "a1")))?.protocol, "anthropic-messages");
-  assert.equal(await codex.resolve(configuredCodexModelId("completions", "c1")), null);
+  // Chat Completions is excluded from the Codex catalog but resolves for engine provider passthrough; the
+  // Responses route rejects it by protocol (codex-proxy), so Codex itself never uses it.
+  assert.equal((await codex.resolve(configuredCodexModelId("completions", "c1")))?.protocol, "openai-completions");
   assert.equal(await codex.resolve("configured/responses/r1/extra"), null);
 });
 

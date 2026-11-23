@@ -1,6 +1,8 @@
 import { serveWorkerOwner } from "@opencraft/worker-owner/serve";
 import { installServerMigrationComposition, openServerDatabase, type ServerDatabase } from "./index.js";
 import { conversationCreationReceiptMethods } from "./conversation-creation-receipts.js";
+import { conversationResourceMethods } from "./conversation-resources.js";
+import { conversationResourceLegacyJournal } from "./conversation-resource-journal.js";
 import { accountModelDefaultsMethods } from "./account-model-defaults.js";
 import { environmentCreationReservationMethods } from "./environment-creation-reservations.js";
 import type { ServerMigrationComposition } from "./migration-composition.js";
@@ -10,7 +12,7 @@ export interface ServerCoreDomains {
   /** Async ports the network thread calls; each runs in this Worker in FIFO order. */
   readonly methods: Record<string, (...args: never[]) => unknown>;
   /** Releases domain resources before the owner connection and writer lock. */
-  close?(): void;
+  close?(): void | Promise<void>;
 }
 
 /**
@@ -38,10 +40,14 @@ export function serveServerCoreOwner(
       const owner = await openServerDatabase(directory);
       let served: ServerCoreDomains;
       let creation: ReturnType<typeof conversationCreationReceiptMethods>;
+      let resources: ReturnType<typeof conversationResourceMethods>;
       let modelDefaults: ReturnType<typeof accountModelDefaultsMethods>;
       let reservations: ReturnType<typeof environmentCreationReservationMethods>;
       try {
         creation = conversationCreationReceiptMethods(owner.database);
+        // The retired journal lives beside the database; it is imported when the
+        // lifecycle opens, not here, because only the lifecycle knows its owners.
+        resources = conversationResourceMethods(owner.database, conversationResourceLegacyJournal(directory));
         modelDefaults = accountModelDefaultsMethods(owner.database);
         reservations = environmentCreationReservationMethods(owner.database);
         served = domains?.(owner, data ?? {}) ?? { methods: {} };
@@ -51,10 +57,10 @@ export function serveServerCoreOwner(
       }
       return {
         ready: { outcome: owner.outcome, contract: owner.contract },
-        methods: { ...served.methods, ...creation, ...modelDefaults, ...reservations },
+        methods: { ...served.methods, ...creation, ...resources, ...modelDefaults, ...reservations },
         close: async () => {
           try {
-            served.close?.();
+            await served.close?.();
           } finally {
             await owner.close();
           }

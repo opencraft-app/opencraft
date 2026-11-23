@@ -11,7 +11,6 @@ export class OrchestrationControlError extends Error {constructor(readonly code:
 export interface CodexOrchestrationControlPort {
   supported():boolean;
   incarnation?():string|null;
-  routed?():boolean;
   request(method:string,params:Record<string,unknown>,admit?:()=>boolean):Promise<unknown>;
   materialize?(threadId:string):Promise<void>;
   read(threadId:string,limit:number):Promise<{thread:AppServerThread}>;
@@ -30,7 +29,7 @@ export class CodexOrchestrationControl {
     const threadId=text(params.threadId);
     if(method==='opencraft/orchestration/status')return this.snapshot(threadId);
     if(method==='opencraft/orchestration/inspect')return {entries:await this.preview(threadId,Number(params.limit??1))};
-    if(!this.port.supported()&&!this.port.routed?.())throw new OrchestrationControlError(503,'The independent Engine Host does not support callback replay');
+    if(!this.port.supported())throw new OrchestrationControlError(503,'The independent Engine Host does not support callback replay');
     if(method==='opencraft/orchestration/prepare')return this.prepare(threadId,object(params.arguments),text(params.callbackIncarnation),params.sourceSettings===undefined?undefined:object(params.sourceSettings),params.sourceOnly===true);
     if(method==='opencraft/orchestration/publish'){
       const result=object(await this.port.request(method,{operationId,creationOperationId:operationId}));

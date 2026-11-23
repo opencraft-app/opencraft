@@ -1980,6 +1980,8 @@ export class DshAppServerAdapter {
         return {};
       }
       case "model/list": {
+        // Model settings stay available without DSH (Pi and Codex use them); DSH execution models do not.
+        if (this.modelConfiguration?.engineInstalled === false) return page([], value.cursor, value.limit);
         const [catalog, selection] = await Promise.all([this.providers.models(), this.defaultModel()]);
         return page(mapModels(catalog, selection ?? undefined), value.cursor, value.limit);
       }

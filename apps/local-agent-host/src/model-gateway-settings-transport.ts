@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import {LOGICAL_CLIENT_FIELD} from '@opencraft/app-host-protocol';
 import {captureTransportMessageScope,type DuplexTransport,type TransportSubmissionContext} from '@opencraft/appserver-client/transport';
 import {ModelGatewayStore} from '@opencraft/account-pool-host';
@@ -29,7 +30,7 @@ export class ModelGatewaySettingsTransport implements DuplexTransport {
   private failure(value:Record<string,any>){this.emit(JSON.stringify({id:value.id,...(value[LOGICAL_CLIENT_FIELD]?{[LOGICAL_CLIENT_FIELD]:value[LOGICAL_CLIENT_FIELD]}:{}),error:{code:-32003,message:'模型设置不可用或没有权限；个人连接请在模型服务中管理。'}}));}
   private current(context:TransportSubmissionContext){context.resourceOwner?.assertCurrent();const identity=this.authority(context);if(!identity)throw Error('authority');return identity;}
   private async protectedConnections(actor:string,all=false){
-    const doc=await new ModelConfigurationRepository(this.directory).read(),store=new ModelGatewayStore(this.path);
+    const doc=await new ModelConfigurationRepository(fileStateDocumentStore(this.directory)).read(),store=new ModelGatewayStore(this.path);
     try{return doc.providers.filter(p=>p.catalogId?.startsWith('opencraft-human-')&&(all||!store.canUse(p.id,actor))).flatMap(p=>[p.id,...(p.credentialRef?[p.credentialRef]:[])]);}finally{store.close();}
   }
   private async reply(value:Record<string,any>,request:{context:TransportSubmissionContext;method:string},current:()=>boolean){

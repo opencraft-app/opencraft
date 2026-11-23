@@ -144,6 +144,12 @@
       "name": "0023_environment_creation_reservations",
       "checksum": "946453b7d89222b527166ed15c14f9eef116623353b614049e6f04af0f22de66",
       "snapshotChecksum": "614b13fe7f59738dafa61b61f4f27e4e97bb88140e3162c0fdddcb6072fa8a1f"
+    },
+    {
+      "version": 25,
+      "name": "0024_conversation_resources",
+      "checksum": "df9c88ffea4c88af2ed097f5f2c1a494c075992da1331e20abb991ade72ac8c7",
+      "snapshotChecksum": "aa11274745c955a23f6ef0fa4bac5654d157b4b7aa805d3b27c5876361db20c6"
     }
   ],
   "alternates": [
@@ -336,6 +342,11 @@
           "version": 24,
           "name": "converge_0023_environment_creation_reservations",
           "checksum": "946453b7d89222b527166ed15c14f9eef116623353b614049e6f04af0f22de66"
+        },
+        {
+          "version": 25,
+          "name": "converge_0024_conversation_resources",
+          "checksum": "df9c88ffea4c88af2ed097f5f2c1a494c075992da1331e20abb991ade72ac8c7"
         }
       ]
     }

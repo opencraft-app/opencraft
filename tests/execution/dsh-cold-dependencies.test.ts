@@ -61,3 +61,15 @@ test('missing live targets and links outside declarations still reject cold proo
   await rm(external, { recursive: true });
   await assert.rejects(readDshColdResources({ skills, dependencyRoots: [external] }), { code: 'ENOENT' });
 });
+
+test('proxy-mode cold reads never open the model credentials file but still cover the model document', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'cold-models-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const models = join(root, 'models'); await mkdir(models);
+  await writeFile(join(models, 'models.json'), '{"revision":1}');
+  // A symlink to nowhere: any read attempt fails.
+  await symlink(join(root, 'missing-credentials'), join(models, 'credentials.json'));
+  await assert.rejects(readDshColdResources({ models }));
+  const files = await readDshColdResources({ models, excluded: [join(models, 'credentials.json')] });
+  assert.deepEqual(files.map(file => file.name), ['models/models.json']);
+});

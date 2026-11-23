@@ -1,4 +1,4 @@
-import type { DatabaseSync as MembershipConnection } from "node:sqlite";
+import type { SqlDatabase as MembershipConnection } from '@opencraft/sql';
 /** Read-only epoch from the existing audit owner. Disable/enable between polls
  * cannot revive an older admitted credential context. Never writes audit data. */
 export function membershipRevocationRevision(

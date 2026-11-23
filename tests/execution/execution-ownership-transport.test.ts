@@ -217,9 +217,8 @@ test('a historical queue receipt cannot acquire a new principal through a plausi
   assert.equal(f.store().resolve({threadId:'t',executionId:String(row.execution_id)}).status,'unknown');
 });
 
-test("standalone Codex rejects unrelated processes and routing health", async () => {
+test("standalone Codex rejects unrelated processes", async () => {
   await assert.rejects(observeStandaloneCodexExecution({pid:process.pid,codexPid:process.pid}));
-  await assert.rejects(observeStandaloneCodexExecution({pid:process.pid,codexPid:process.pid,routingEpoch:"routed"}));
 });
 
 test("split Core attests the independent runtime's direct native child", { skip: process.platform !== "linux" ? "Requires Linux /proc process incarnation evidence" : false }, async () => {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
+import type { SqlDatabase } from "@opencraft/sql";
 import { inputExecutionEnded, type InputDeliveryReceipt } from "@opencraft/appserver-protocol";
 import { InputDeliveryStore } from "./delivery-store.js";
 
@@ -60,9 +60,10 @@ function parseInput(value: unknown): readonly unknown[] {
 }
 
 /**
- * Durable per-thread input queue with delivery receipts. The database owner
- * creates `opencraft_host_queue`, `opencraft_input_delivery` and
- * `opencraft_turn_delivery`; this class only reads and writes them.
+ * Durable per-thread input queue with delivery receipts, over the SQL port. The
+ * database owner creates `opencraft_host_queue`, `opencraft_input_delivery` and
+ * `opencraft_turn_delivery`; this class only reads and writes them and never
+ * migrates or closes the connection it borrows.
  */
 export class ThreadQueueStore<S = never> {
   readonly deliveries: InputDeliveryStore;
@@ -70,7 +71,7 @@ export class ThreadQueueStore<S = never> {
   private readonly prefix: string | undefined;
 
   constructor(
-    protected readonly db: DatabaseSync,
+    protected readonly db: SqlDatabase,
     private readonly options: ThreadQueueOptions<S> = {},
   ) {
     const prefix = options.ownerReconciledPrefix;
@@ -95,17 +96,9 @@ export class ThreadQueueStore<S = never> {
     return this.prefix !== undefined && clientId.startsWith(this.prefix);
   }
 
+  /** The port's only transaction entry: outermost write transaction, nested savepoints. */
   protected atomic<T>(write: () => T): T {
-    const ownsTransaction = !this.db.isTransaction;
-    if (ownsTransaction) this.db.exec("BEGIN IMMEDIATE");
-    try {
-      const result = write();
-      if (ownsTransaction) this.db.exec("COMMIT");
-      return result;
-    } catch (error) {
-      if (ownsTransaction) this.db.exec("ROLLBACK");
-      throw error;
-    }
+    return this.db.transaction(write);
   }
 
   private project(row: Record<string, unknown>): QueuedSubmission<S> {
@@ -300,17 +293,12 @@ export class ThreadQueueStore<S = never> {
     ) {
       throw new Error("Queue order must contain each queued item exactly once");
     }
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
+    this.atomic(() => {
       const update = this.db.prepare(
         "UPDATE opencraft_host_queue SET position=?,updated_at_ms=? WHERE thread_id=? AND id=? AND state='queued'",
       );
       for (const [index, id] of ids.entries()) update.run(index + 1, Date.now(), threadId, id);
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
+    });
   }
 
   claim(threadId: string, id: string, targetTurnId: string | null): QueuedSubmission<S> | null {

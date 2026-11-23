@@ -1,13 +1,12 @@
 import {membershipRevocationRevision} from './membership-revocation.js';
 import { AuthorityChanges } from "./authority-changes.js";
 import { PermissionReadCache, withPermissionWrite } from "./permission-read-cache.js";
-import { sqliteTransaction } from "@opencraft/sqlite-node";
-import type { DatabaseSync } from "node:sqlite";
+import type { SqlDatabase } from '@opencraft/sql';
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
 import { parsePrincipal, principalKey, type Principal } from "@opencraft/identity-core";
 import type { IdentityProvider, IdentityRequest } from "@opencraft/identity-core/node";
-import type { IncomingMessage, ServerResponse } from 'node:http';
+import { HttpBodyTooLarge, decodeUtf8, jsonResponse, type HttpExchangeRequest, type HttpExchangeResponse } from '@opencraft/identity-core/http-exchange';
 import type { ActorStore } from './actors.js';
 import type { IdentityWrites } from './identity-writes.js';
 
@@ -25,7 +24,7 @@ export class MembershipStore {
   onAuthorityChanged = (listener: () => void) => this.#changes.subscribe(listener);
 
   readonly permissionProjectionEnabled: boolean;
-  readonly #db: DatabaseSync;
+  readonly #db: SqlDatabase;
   readonly #readCache: PermissionReadCache;
   readonly outcome: DatabaseOutcome;
   readonly #closeDatabase: () => void;
@@ -117,7 +116,7 @@ export class MembershipStore {
       this.#db.prepare("INSERT INTO access_audit(at,operator,binding,action) VALUES(?,?,?,?)").run(Date.now(), "local-operator", source, "legacy-membership-import");
     });
   }
-  #transaction<T>(write: () => T): T { const result = withPermissionWrite(() => sqliteTransaction(this.#db, write), this.#readCache); this.#changes.emit(); return result; }
+  #transaction<T>(write: () => T): T { const result = withPermissionWrite(() => this.#db.transaction(write), this.#readCache); this.#changes.emit(); return result; }
   /** The storage owner committed membership writes on its own connection; republish and notify as a local write would. */
   ownerCommitted(): void { withPermissionWrite(() => undefined, this.#readCache); this.#changes.emit(); }
   close() { this.#readCache.close(); this.#changes.close(); this.#closeDatabase(); }
@@ -223,46 +222,47 @@ export class InstanceAccess {
     }, 500); timer.unref();
     return () => clearInterval(timer);
   }
-  async handle(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
-    const path = new URL(request.url ?? '/', 'http://access.invalid').pathname;
-    if (!path.startsWith('/__opencraft_access/')) return false;
-    const send = (status: number, body: unknown) => { response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'private, no-store' }); response.end(JSON.stringify(body)); };
-    if (path === '/__opencraft_access/admission' && request.method === 'GET') { response.writeHead(204, { 'cache-control': 'no-store' }); response.end(); return true; }
-    const identity = this.authenticate(request);
-    if (path === '/__opencraft_access/session' && request.method === 'GET') { send(200, { principal: identity, role: identity ? this.role(identity) : null }); return true; }
-    if (!identity || this.role(identity) !== 'admin') { send(403, { error: 'administrator_required' }); return true; }
-    if (path === '/__opencraft_access/members' && request.method === 'GET') { send(200, { members: this.store.list(), actors: this.store.listActors() }); return true; }
-    if (path === '/__opencraft_access/audit' && request.method === 'GET') { send(200, { events: this.store.audit() }); return true; }
-    if (path !== '/__opencraft_access/members' || request.method !== 'POST') { send(404, { error: 'missing' }); return true; }
+  /** Membership administration under `/__opencraft_access/`; null for any other path. */
+  async handle(request: HttpExchangeRequest): Promise<HttpExchangeResponse | null> {
+    const path = new URL(request.path, 'http://access.invalid').pathname;
+    if (!path.startsWith('/__opencraft_access/')) return null;
+    const send = (status: number, body: unknown) => jsonResponse(status, body, [['content-type', 'application/json'], ['cache-control', 'private, no-store']]);
+    if (path === '/__opencraft_access/admission' && request.method === 'GET') return { status: 204, headers: [['cache-control', 'no-store']], body: null };
+    const identity = this.authenticate(request.identity);
+    if (path === '/__opencraft_access/session' && request.method === 'GET') return send(200, { principal: identity, role: identity ? this.role(identity) : null });
+    if (!identity || this.role(identity) !== 'admin') return send(403, { error: 'administrator_required' });
+    if (path === '/__opencraft_access/members' && request.method === 'GET') return send(200, { members: this.store.list(), actors: this.store.listActors() });
+    if (path === '/__opencraft_access/audit' && request.method === 'GET') return send(200, { events: this.store.audit() });
+    if (path !== '/__opencraft_access/members' || request.method !== 'POST') return send(404, { error: 'missing' });
     const origin = request.headers.origin;
     if (typeof origin !== 'string' || !['http:', 'https:'].some(scheme => origin === scheme + '//' + request.headers.host)
-      || request.headers['content-type']?.split(';')[0] !== 'application/json') { send(403, { error: 'same_origin_json_required' }); return true; }
+      || request.headers['content-type']?.split(';')[0] !== 'application/json') return send(403, { error: 'same_origin_json_required' });
     try {
-      let body = ''; for await (const chunk of request) { body += chunk.toString(); if (Buffer.byteLength(body) > 16_384) { send(413, { error: 'too_large' }); return true; } }
-      const change = JSON.parse(body);
-      if (this.role(identity) !== 'admin') { send(403, { error: 'administrator_required' }); return true; }
+      const change = JSON.parse(decodeUtf8(await request.readBody(16_384)));
+      if (this.role(identity) !== 'admin') return send(403, { error: 'administrator_required' });
       // With an owner Worker, administration is rechecked under its writer lock before commit.
-      const authorize = () => { const current = this.authenticate(request); return !!current && this.role(current) === 'admin'; };
+      const authorize = () => { const current = this.authenticate(request.identity); return !!current && this.role(current) === 'admin'; };
       if (change && typeof change.actorId === 'string' && this.actors) {
         if (Object.keys(change).some(k => !['actorId', 'role', 'enabled'].includes(k)) || this.actors.get(change.actorId)?.kind !== 'human') throw new Error('Invalid member');
-        if (this.actors.findHuman(identity)?.id === change.actorId && (!change.enabled || change.role !== 'admin')) { send(409, { error: 'cannot_remove_own_administration' }); return true; }
+        if (this.actors.findHuman(identity)?.id === change.actorId && (!change.enabled || change.role !== 'admin')) return send(409, { error: 'cannot_remove_own_administration' });
         if (this.#writes) await this.#writes.setActorMembership(authorize, change.actorId, change.role, change.enabled, principalKey(identity));
         else this.store.setActor(change.actorId, change.role, change.enabled, principalKey(identity));
-        send(200, { ok: true }); return true;
+        return send(200, { ok: true });
       }
       if (Object.keys(change).some(k => !['provider', 'subject', 'role', 'enabled'].includes(k))) throw new Error('Invalid member');
       // Local administration remains the recovery path; prevent self-removal in the remote API.
-      if (principalKey(change) === principalKey(identity) && (!change.enabled || change.role !== 'admin')) { send(409, { error: 'cannot_remove_own_administration' }); return true; }
+      if (principalKey(change) === principalKey(identity) && (!change.enabled || change.role !== 'admin')) return send(409, { error: 'cannot_remove_own_administration' });
       const targetActor = this.actors?.findHuman(change);
-      if (targetActor && targetActor.id === this.actors?.findHuman(identity)?.id && (!change.enabled || change.role !== 'admin')) { send(409, { error: 'cannot_remove_own_administration' }); return true; }
+      if (targetActor && targetActor.id === this.actors?.findHuman(identity)?.id && (!change.enabled || change.role !== 'admin')) return send(409, { error: 'cannot_remove_own_administration' });
       if (this.#writes) await this.#writes.setMembership(authorize, { provider: change.provider, subject: change.subject }, change.role, change.enabled,
         principalKey(identity), targetActor?.id ?? null);
       else {
         this.store.set(change, change.role, change.enabled, principalKey(identity));
         if (targetActor) this.store.setActor(targetActor.id, change.role, change.enabled, principalKey(identity));
       }
-      send(200, { ok: true });
-    } catch { send(400, { error: 'invalid_membership_change' }); }
-    return true;
+      return send(200, { ok: true });
+    } catch (error) {
+      return error instanceof HttpBodyTooLarge ? send(413, { error: 'too_large' }) : send(400, { error: 'invalid_membership_change' });
+    }
   }
 }

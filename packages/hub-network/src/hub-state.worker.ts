@@ -1,12 +1,12 @@
 import { serveWorkerOwner } from "@opencraft/worker-owner/serve";
-import { HubStore } from "./store-file.js";
+import { HubStateFile } from "./store-file.js";
 
 /** Owns the Hub's private state file and its process writer lock. */
-serveWorkerOwner(({ path }: { path: string }) => {
-  const store = new HubStore(path);
+serveWorkerOwner(async ({ path }: { path: string }) => {
+  const file = await HubStateFile.open(path);
   return {
-    ready: { state: store.state },
-    methods: { save: (state: unknown) => store.replace(state) },
-    close: () => store.close(),
+    ready: { state: file.state },
+    methods: { save: (state: unknown) => file.save(state) },
+    close: () => file.close(),
   };
 });

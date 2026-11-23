@@ -494,7 +494,6 @@ test("core owns accounts and PID across independent daemon clients and zero conn
   const f = await fixture();
   try {
     const before = await f.control.health();
-    assert.equal(await f.control.generationDirectory("legacy-thread"), null, "combined Core needs no new endpoint for legacy compatibility");
     assert.equal((await stat(f.core.endpoint)).mode & 0o777, 0o600);
     assert.equal((await stat(before.nativeSocket)).mode & 0o777, 0o600);
     await assert.rejects(new CodexCoreControlClient(f.core.endpoint, "wrong").health(), /authentication failed/);
@@ -936,7 +935,7 @@ for (const emptyHistoryUnsupported of [false, true]) test(`a never-dispatched cr
   } finally { await f.close(); }
 });
 
-for (const routingOnly of [false, true]) test(`Core refuses empty creation recovery without callbacks (routing-only=${routingOnly})`, async () => {
+test("Core refuses empty creation recovery without callbacks", async () => {
   const f = await fixture(async options => ({ ...options,
     spawnAppServer: ({ args, cwd, env }) => spawn(process.execPath,
       [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
@@ -947,14 +946,6 @@ for (const routingOnly of [false, true]) test(`Core refuses empty creation recov
     const { thread } = await a.rpc("browser", "thread/start");
     await a.engine.close();
     const b = await f.adapter(true); await b.rpc("browser", "initialize");
-    if (routingOnly) {
-      // Real transport distinguishes routing advertisement from callbackReady.
-      // A router may still point at a legacy APP with no retained lane.
-      const native = (b.engine as any).nativeCore;
-      assert.equal(native.supportsOrchestration, false);
-      native.routed = true;
-      assert.equal(native.supportsOrchestrationRouting, true);
-    }
     await assert.rejects(b.rpc("browser", "thread/resume", { threadId: thread.id }), /当前连接无法恢复空会话/);
     assert.equal((await b.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true })).thread.turns.length, 0);
     assert.equal((await b.rpc("browser", "fixture/subscribers", { threadId: thread.id })).count, 0);
@@ -992,7 +983,7 @@ for (const scopeChange of ["none", "account", "project", "unknown", "no-mcp"] as
       [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
       { cwd, env: { ...env, FAKE_REQUIRE_DURABLE_RESUME: "1", FAKE_UNLOAD_ON_UNSUBSCRIBE: "1" }, stdio: ["pipe", "pipe", "pipe"] }),
   }));
-  const vault = new EmployeeGitVaultStore(f.root), runtime = new ExecutionEnvironmentRuntime(f.root, vault);
+  const vault = await EmployeeGitVaultStore.open(f.root), runtime = new ExecutionEnvironmentRuntime(f.root, vault);
   const methods: string[] = []; let restored = 0; const bound = new Set<string>(), hosts: CodexEngineAdapter[] = [];
   const reservation = () => ({ configuration: { url: "http://127.0.0.1:1/mcp" }, bindThread() {}, bind(threadId: string, inputId: string, executionId: string) { bound.add(JSON.stringify([threadId, inputId, executionId])); }, cancel() {} });
   const options = { dataDirectory: join(f.root, "codex"), executionEnvironment: runtime,
@@ -1091,7 +1082,7 @@ for (const scopeChange of ["none", "account", "project", "unknown", "no-mcp"] as
         [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
         { cwd, env: { ...env, FAKE_PAGINATED_EMPTY_INDEX: "1", FAKE_REQUIRE_DURABLE_RESUME: "1", FAKE_UNLOAD_ON_UNSUBSCRIBE: "1" }, stdio: ["pipe", "pipe", "pipe"] }),
     }));
-    const vault = new EmployeeGitVaultStore(f.root), runtime = new ExecutionEnvironmentRuntime(f.root, vault);
+    const vault = await EmployeeGitVaultStore.open(f.root), runtime = new ExecutionEnvironmentRuntime(f.root, vault);
     const environment = new AccountEnvironment(vault);
     const hosts: CodexEngineAdapter[] = [], writes: any[] = [], restored: Array<{ bound: number; cancelled: number }> = [];
     const context = (user: string) => ({ sender: { kind: "employee" as const, loginName: user },

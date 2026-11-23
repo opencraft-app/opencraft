@@ -17,7 +17,6 @@ await buildTerminalOwnerRuntime(fileURLToPath(new URL('./dist/', import.meta.url
 await buildOwnerWorkers(fileURLToPath(new URL('./dist/', import.meta.url)), { target: 'node26' });
 // The desktop account service the daemon hosts serves Assets; its vault Worker lives beside the daemon.
 await buildAssetsRuntime(fileURLToPath(new URL('./dist/', import.meta.url)));
-await build({entryPoints:['src/execution-fault.worker.ts'],outfile:'dist/execution-fault-worker.mjs',bundle:true,platform:'node',format:'esm',target:'node26'});
 await build(daemonMainBundle);
 
 await build({entryPoints:['../../packages/access-control/src/orchestration-runtime.worker.ts'],outfile:'dist/orchestration-runtime-worker.mjs',bundle:true,platform:'node',format:'esm',target:'node26'});
@@ -32,8 +31,6 @@ const requireBanner = { js: "import { createRequire as __createRequire } from 'n
 for (const [source, target, format] of [
   ['../codex-core/src/bin.ts', 'codex-core.cjs', 'cjs'],
   ['../codex-core/src/app-server-bin.ts', 'codex-app-server.cjs', 'cjs'],
-  ['../codex-core/src/generation-registry.worker.ts', 'generation-registry-worker.mjs', 'esm'],
-  ['../codex-core/src/router-evidence.worker.ts', 'router-evidence-worker.mjs', 'esm'],
   ['../agent-bridge-host/src/main.ts', 'engine-host.mjs', 'esm'],
   ['../agent-bridge-host/src/storage.worker.ts', 'storage.worker.mjs', 'esm'],
   ['../agent-bridge-host/src/codex-main.ts', 'codex.cjs', 'cjs'],

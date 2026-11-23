@@ -13,18 +13,12 @@ export interface CodexCoreHealth {
   readonly nativeSocket: string;
   /** Present only when a separate runtime owner is configured. */
   readonly appServerPid?: number;
-  readonly routingPid?: number;
-  readonly routingEpoch?: string;
-  readonly generationId?: string;
-  readonly admissionEpoch?: number;
   readonly environmentVariablesVersion?: 1;
   /** The owner opens opaque ENV launch capsules itself (no plaintext from the adapter). */
   readonly environmentLaunchVersion?: 1;
-  /** Strict private Gateway placement admission, checked for the actual target generation. */
+  /** Strict private Gateway placement admission. */
   readonly workspaceExecutionVersion?: 1;
-  readonly environmentRoutingVersion?: 1;
   readonly callbackProtocolVersion?: 1;
-  readonly orchestrationRoutingVersion?: 1;
   readonly callbackIncarnation?: string;
   readonly pendingCallbacks?: number;
   readonly pendingOrchestrationMutations?: number;
@@ -42,35 +36,6 @@ export interface CodexAppServerHealth extends CodexCoreHealth {
   readonly codexHome?: string;
 }
 
-export interface CodexGenerationHostUsage {
-  readonly routingEpoch: string;
-  readonly lease: string;
-  readonly sequence: number;
-  readonly blockedThreadIds: readonly string[];
-  readonly unscopedBusy: boolean;
-  readonly discoveryComplete: boolean;
-  readonly acknowledgedFenceEpoch: number;
-}
-
-export interface CodexGenerationFenceState {
-  readonly executionRecoveries?: readonly { id: string; generationId: string; incarnation: number; state: "recovering" | "recovered"; threadIds?: readonly string[] }[];
-  readonly routingEpoch: string;
-  readonly fenceEpoch: number;
-  readonly fencedGenerationIds: readonly string[];
-  readonly legacyGenerationId: string | null;
-  readonly defaultGenerationId: string | null;
-  readonly routes?: readonly { threadId: string; generationId: string }[];
-}
-
-/** Trusted native-storage locations, owned by the routing registry, without file contents. */
-export interface CodexGenerationDirectory {
-  readonly protocolVersion: typeof CODEX_CORE_PROTOCOL_VERSION;
-  readonly routingEpoch: string;
-  readonly admissionEpoch: number;
-  readonly homes: readonly { generationId: string; codexHome: string; incarnation: number }[];
-  readonly route: { threadId: string; generationId: string } | null;
-}
-
 /** Temporary control-plane outage; callers may wait before starting execution. */
 export class CodexCoreUnavailableError extends Error { override name = "CodexCoreUnavailableError"; }
 class CodexCoreHttpError extends Error {
@@ -84,9 +49,6 @@ export class CodexExecutionUnavailableError extends CodexCoreUnavailableError {
 
 /** Local authenticated control plane. Requests are never retried: mutations may have committed. */
 export class CodexCoreControlClient {
-  // Pin identity only, never a health result or a directory snapshot. Every read
-  // still asks the authenticated owner for current routes and incarnations.
-  private directoryEpoch: string | undefined;
   private healthFlight: { operation: Promise<CodexCoreHealth>; controller: AbortController;
     readers: number; settled: boolean; observation: "execution" | "native" } | null = null;
   constructor(private readonly endpoint: string, private readonly authToken: string) {
@@ -134,8 +96,7 @@ export class CodexCoreControlClient {
     const current = flight;
     current.readers++;
     // A recovery burst needs one live health observation, not one recursive
-    // Core -> router -> AppServer probe for each browser/read slot. No completed
-    // result is cached; directory requests still perform their own epoch check.
+    // Core -> AppServer probe for each browser/read slot. No completed result is cached.
     return new Promise((resolve, reject) => {
       let settled = false;
       const release = () => {
@@ -172,12 +133,14 @@ export class CodexCoreControlClient {
     if (!value || value.protocolVersion !== CODEX_CORE_PROTOCOL_VERSION
       || !Number.isSafeInteger(value.pid) || !Number.isSafeInteger(value.codexPid)
       || (value.appServerPid !== undefined && (!Number.isSafeInteger(value.appServerPid) || value.appServerPid < 1))
-      || value.orchestrationRoutingVersion !== undefined && value.orchestrationRoutingVersion !== 1
       || value.threadTitleToolVersion !== undefined && value.threadTitleToolVersion !== 1
       || value.callbackIncarnation !== undefined && (typeof value.callbackIncarnation !== "string" || !value.callbackIncarnation)
       || value.callbackProtocolVersion !== undefined && (value.callbackProtocolVersion !== 1 || !Number.isSafeInteger(value.pendingCallbacks) || value.pendingCallbacks! < 0
         || !Number.isSafeInteger(value.pendingOrchestrationMutations) || value.pendingOrchestrationMutations! < 0)
-      || typeof value.nativeSocket !== "string" || !isAbsolute(value.nativeSocket)) {
+      || typeof value.nativeSocket !== "string" || !isAbsolute(value.nativeSocket)
+      // Multi-generation routing (Generation Router) was removed. A routed owner
+      // would require per-generation HOME and execution identity; fail closed.
+      || Object.hasOwn(value, "routingEpoch")) {
       throw new Error("Codex core returned an incompatible health response");
     }
     return value as CodexCoreHealth;
@@ -211,45 +174,6 @@ export class CodexCoreControlClient {
       throw new Error("Incompatible Codex AppServer owner");
     }
     return value;
-  }
-
-  async claimGenerationHost(instanceId: string, routingEpoch: string, signal?: AbortSignal): Promise<{ lease: string; routingEpoch: string }> {
-    const value = await this.request("POST", "/generation-host", { operation: "claim", params: { instanceId, routingEpoch } }, signal) as { lease: string; routingEpoch: string };
-    if (!value || typeof value.lease !== "string" || value.routingEpoch !== routingEpoch) throw new Error("Invalid generation Host lease");
-    return value;
-  }
-  publishGenerationHost(value: CodexGenerationHostUsage, signal?: AbortSignal): Promise<CodexGenerationFenceState> {
-    return this.request("POST", "/generation-host", { operation: "state", params: value }, signal) as Promise<CodexGenerationFenceState>;
-  }
-
-  /** A read never claims the Host lease or starts a retired native HOME. Legacy owners return null. */
-  async generationDirectory(threadId?: string, signal?: AbortSignal): Promise<CodexGenerationDirectory | null> {
-    let epoch = this.directoryEpoch;
-    if (epoch === undefined) {
-      const health = await this.health(signal, "native");
-      if (!health.routingEpoch) return null;
-      epoch = health.routingEpoch;
-      this.directoryEpoch = epoch;
-    }
-    const path = "/generation-directory" + (threadId === undefined ? "" : `?threadId=${encodeURIComponent(threadId)}`);
-    try {
-      const value = await this.request("GET", path, undefined, signal) as CodexGenerationDirectory | null;
-      if (value?.routingEpoch !== epoch) throw new CodexCoreUnavailableError("Codex routing owner changed during directory read");
-      if (value.protocolVersion !== CODEX_CORE_PROTOCOL_VERSION || !Number.isSafeInteger(value.admissionEpoch) || value.admissionEpoch < 1
-        || !Array.isArray(value.homes) || !value.homes.every(home => home && typeof home.generationId === "string"
-          && typeof home.codexHome === "string" && isAbsolute(home.codexHome) && Number.isSafeInteger(home.incarnation) && home.incarnation >= 0)
-        || new Set(value.homes.map(home => home.generationId)).size !== value.homes.length
-        || new Set(value.homes.map(home => home.codexHome)).size !== value.homes.length
-        || (value.route !== null && (!value.route || value.route.threadId !== threadId || !value.homes.some(home => home.generationId === value.route!.generationId)))) {
-        throw new Error("Incompatible Codex generation directory");
-      }
-      return value;
-    } catch (error) {
-      // A successor must establish its own identity. Do not let an old failed
-      // request clear an identity established by a newer request.
-      if (this.directoryEpoch === epoch) this.directoryEpoch = undefined;
-      throw error;
-    }
   }
 
   private request(method: string, path: string, payload?: unknown, signal?: AbortSignal): Promise<unknown> {

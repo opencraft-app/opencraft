@@ -313,7 +313,7 @@ cannot obtain credentials or signatures. No additional identity ledger or vault
 writer is introduced, and reservation is not a browser-facing Assets action.
 
 The adapter derives its native identity from the managed child process, or fresh
-authenticated Core health/generation-directory observations; cached environment
+authenticated Core health observations; cached environment
 configuration and last-sender state are not provenance. A configuration refresh
 uses the existing native unsubscribe/resume lifecycle and preserves permissions,
 model settings and sandbox policy. It never launches a substitute executor.

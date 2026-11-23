@@ -16,12 +16,11 @@ import type { ProjectAutomations } from './automation-runtime.js';
 import { AutomationError } from './automation.js';
 import { OrchestrationRuntimeWorker } from './orchestration-runtime-store.js';
 import { updateExecutionRequest } from './execution-request-state.js';
-import { sqliteTransaction } from "@opencraft/sqlite-node";
 import { conversationRef, encodeConversationRef, parseConversationRef, type ConversationRef, type ConversationMetadata, type ConversationDiscovery, type ConversationServer, type ConversationReceipt, type ConversationLookup } from '@opencraft/appserver-protocol/collaboration';
 import { validChannelAttachment, CREW_OPERATION_TOOLS, type ChannelAttachment, type CrewOperation } from '@opencraft/appserver-protocol';
 import { randomUUID, createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { DatabaseSync } from 'node:sqlite';
+import type { SqlDatabase } from '@opencraft/sql';
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
 import type { CreationReceipt, ServerCoreStorage } from '@opencraft/storage-node/server-owner';
@@ -104,7 +103,7 @@ export function actorChannelId(a: string, b: string): string {
 
 /** Single-Hub collaboration authority. Stores communication facts, never a second runnable queue. */
 export class Collaboration {
-  private readonly database: DatabaseSync;
+  private readonly database: SqlDatabase;
   readonly #unregisterAuthority: () => void;
   readonly #unsubscribeIdentity: () => void;
   readonly outcome;
@@ -131,9 +130,8 @@ export class Collaboration {
   async personalAssistantAssignments(after = '') {
     if(this.#closed)throw Error('Personal assistant Host closed');
     if(!this.managedStorage)return new PersonalAssistants(this,this.database).assignments(after);
-    const path=this.database.location();if(!path)throw Error('communication_storage_unavailable');
-    this.communicationStorage ??= new OrchestrationRuntimeWorker(path);
-    return this.communicationStorage.personalAssistantAssignments(after);
+    const storage=this.#communicationStorage();if(!storage)throw Error('communication_storage_unavailable');
+    return storage.personalAssistantAssignments(after);
   }
   #closed = false;
   #creations = new Set<Promise<unknown>>();
@@ -208,13 +206,15 @@ export class Collaboration {
   #operations: Promise<unknown> = Promise.resolve();
   #timer: ReturnType<typeof setInterval> | null = null;
   readonly #closeDatabase: () => void;
+  /** Node file backing this service; companion Workers open it. Absent for in-memory or non-file storage. */
+  readonly #storageLocation: string | undefined;
   constructor(path: ServerDatabaseSource, readonly actors: ActorStore, private readonly executionPort?: ConversationExecutionPort, readonly now = Date.now, readonly admittedActor: (actorId: string) => boolean = () => true, private executionStorage?: Pick<OrchestrationRuntimeWorker, "updateExecution"> & Partial<Pick<OrchestrationRuntimeWorker,"admission"|"executionAuthority">>, readonly resourceAccess: (context: ActorContext, ref: ConversationRef) => boolean = () => true, private readonly creationReceipts?: ServerCoreStorage["call"],
     private readonly readConversationOwner?: (threadId: string) => Promise<{ serverId: string; ownerActorId: string } | null>) {
     if (executionPort !== undefined && (!executionPort || typeof executionPort.hostId !== 'string' || !executionPort.hostId.trim() || executionPort.hostId.length > 256 || /[\x00-\x1f]/u.test(executionPort.hostId))) throw new CollaborationError(500, 'execution_host_required');
     this.managedStorage = typeof path !== "string";
     const managed = openServerRepository(path, "actor-collaboration");
     this.#closeDatabase = managed.close;
-    this.database = managed.database; this.outcome = managed.outcome;
+    this.database = managed.database; this.outcome = managed.outcome; this.#storageLocation = managed.location;
     this.orchestration = new ThreadOrchestrationLedger(this.database, now);
     this.channels = new NativeChannels(this.database, actors, actorId => !this.#closed && admittedActor(actorId),
       (c,target)=>this.#allows(c,target,'message.send'),()=>this.#crew?.contact.hasSpaces ?? false);
@@ -224,7 +224,7 @@ export class Collaboration {
     this.#unsubscribeIdentity = actors.onIdentityChanged(actorId => this.channels.identityChanged(actorId));
     this.#unregisterAuthority = actors.registerResourceAuthority(resource => { const ref = parseConversationRef(resource); return !!ref && this.#owns(ref.serverId); });
   }
-  #transaction<T>(operation: () => T): T { return sqliteTransaction(this.database, operation); }
+  #transaction<T>(operation: () => T): T { return this.database.transaction(operation); }
   get hasExecution() { return this.executionPort !== undefined; }
   get execution(): ConversationExecutionPort {
     if (!this.executionPort) throw new CollaborationError(409, "execution_unavailable");
@@ -1328,10 +1328,9 @@ export class Collaboration {
     const command: CommunicationCommand = { context, method, params, ...(method.startsWith('assistant-thread/')&&this.hasExecution?{executionScope:{serverId:this.execution.serverId!,hostId:this.execution.hostForServer?.(this.execution.serverId!)??this.execution.hostId}}:{}) };
     let packet;
     if (this.managedStorage) {
-      const path = this.database.location();
-      if (!path) throw new CollaborationError(503, 'communication_storage_unavailable');
-      this.communicationStorage ??= new OrchestrationRuntimeWorker(path);
-      try { packet = await this.communicationStorage.communicate(command); }
+      const storage = this.#communicationStorage();
+      if (!storage) throw new CollaborationError(503, 'communication_storage_unavailable');
+      try { packet = await storage.communicate(command); }
       catch(error) {
         const fault=error as {status?:number;code?:string;message?:string};
         if(fault.status && fault.code) throw new CollaborationError(fault.status,fault.code);
@@ -1360,9 +1359,8 @@ export class Collaboration {
     if(owned!==undefined)return owned.result;
     let packet;
     if(this.managedStorage){
-      const path=this.database.location();if(!path)throw Error('communication_storage_unavailable');
-      this.communicationStorage ??= new OrchestrationRuntimeWorker(path);
-      packet=await this.communicationStorage.synchronizeChannels(command);
+      const storage=this.#communicationStorage();if(!storage)throw Error('communication_storage_unavailable');
+      packet=await storage.synchronizeChannels(command);
     }else packet=channelSyncCommand(this,this.database,command);
     if(command.method==='reserveHuman')this.actors.acceptReservedHuman(packet.result);
     for(const change of packet.changes)this.channels.changed(change);
@@ -1468,9 +1466,17 @@ export class Collaboration {
   #update(id: string, state: string, reason: string | null = null, receipt?: ExecutionReceipt) {
     updateExecutionRequest(this.database, {id,state,reason,queueId:receipt?.id??null,turnId:receipt?.targetTurnId??null,now:this.now()});
   }
+  /** The composition's runtime storage also serves communication (Headless: the
+   * Server core owner); otherwise this service starts its own file-backed Worker. */
+  #communicationStorage(): OrchestrationRuntimeWorker | undefined {
+    if (this.executionStorage instanceof OrchestrationRuntimeWorker) return this.executionStorage;
+    const path = this.#storageLocation;
+    if (!path) return undefined;
+    return this.communicationStorage ??= new OrchestrationRuntimeWorker(path);
+  }
   async #runtimeStorage() {
     if (!this.executionStorage) {
-      const path = this.database.location();
+      const path = this.#storageLocation;
       if (!path) throw new Error('Execution polling requires file-backed Worker storage');
       this.ownedExecutionStorage = new OrchestrationRuntimeWorker(path);
       this.executionStorage = this.ownedExecutionStorage;

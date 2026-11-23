@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'vite';
 import { chromium } from 'playwright';
+import { fileStateDocumentStore } from '@opencraft/document-storage/state-file';
 import { ServerInformationStore, serverInformationHttp } from '../../../apps/headless-server/src/server-information.mjs';
 
 // Real React Settings primitives, locale, server-scoped fetch, HTTP API and durable
@@ -29,7 +30,7 @@ try {
   browser = await chromium.launch({ headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE, args: ['--no-sandbox'] });
   for (const touch of [false, true]) for (const theme of ['light', 'dark']) {
     const locale = touch ? 'zh-CN' : 'en-US', name = `${touch ? 'touch' : 'pointer'}-${theme}`;
-    store = new ServerInformationStore(join(directory, name + '.json')); administrator = true; expired = false; failRead = false;
+    store = new ServerInformationStore(fileStateDocumentStore(join(directory, name))); administrator = true; expired = false; failRead = false;
     const context = await browser.newContext({ viewport: touch ? { width: 390, height: 844 } : { width: 1280, height: 900 }, hasTouch: touch, isMobile: touch });
     const page = await context.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message)); await page.addInitScript('window.__name = value => value');
     await page.goto(publicOrigin + '/?locale=' + locale + '&theme=' + theme);

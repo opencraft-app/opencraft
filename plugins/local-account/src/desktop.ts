@@ -1,10 +1,14 @@
 import { openServerCoreOwner } from '@opencraft/storage-node/server-owner';
 import { borrowServerDatabase } from '@opencraft/storage-node/server-borrow';
+import { ownerEntry } from '@opencraft/worker-owner';
+import type { localAccountPasswordUpgrade } from '@opencraft/access-control/local-account-upgrade-owner';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ActorContext } from '@opencraft/identity-core/actors';
+import type { IdentityRequest } from '@opencraft/identity-core/node';
+import { serveNodeHttpExchange } from '@opencraft/identity-core/http-exchange-node';
 
 export interface NativeHumanSubmission {
   readonly sender: null;
@@ -19,13 +23,21 @@ import { openHumanAssets } from './assets-server.js';
 import { InstanceAccess, MembershipStore } from '@opencraft/access-control';
 import { HumanAccountManagement } from '@opencraft/access-control/account-management';
 import { LocalAccountServerPlugin } from './server.js';
+import { createNodePasswordHasher } from './password-hash-node.js';
 import { LocalAccountApplication } from './application.js';
+
+/** Methods `desktop-account-owner.worker.ts` serves on the owner connection. */
+type DesktopAccountOwner = { upgradeLocalPassword: ReturnType<typeof localAccountPasswordUpgrade> };
 
 /** The desktop daemon owns these stores and serves the account routes (`storageRole: 'owner'`);
  * Electron Main forwards those routes and installs the browser proof as a cookie. No renderer supplies identity. */
 export async function createDesktopAccountHost(directory: string, renderLogin: (nonce: string) => string, options: { openRemote?: (origin: string) => Promise<void>; storageRole?: 'owner' | 'borrower'; assetsStorage?: Parameters<typeof openHumanAssets>[0]['openStorage'] } = {}) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  const storage=options.storageRole==='borrower'?borrowServerDatabase(directory):await openServerCoreOwner(directory);
+  // The owner Worker holds the writer lock and commits login-time password upgrades
+  // (compare-and-set SQL off the owning thread); a borrower never upgrades.
+  const owned = options.storageRole === 'borrower' ? null
+    : await openServerCoreOwner<DesktopAccountOwner>(directory, { entry: ownerEntry(import.meta.url, 'desktop-account-owner') });
+  const storage = owned ?? borrowServerDatabase(directory);
   const disposers: (() => void | Promise<void>)[] = [];
   const disposeAll = async () => {
     const failures: unknown[] = [];
@@ -38,7 +50,9 @@ export async function createDesktopAccountHost(directory: string, renderLogin: (
     disposers.push(() => actors.close());
     const accounts = new HumanAccounts(storage, actors);
     disposers.push(() => accounts.close());
-    accounts.registerLocalAccounts(new LocalAccountServerPlugin(accounts.localAccountRepository));
+    const localAccounts = new LocalAccountServerPlugin(accounts.localAccountRepository, createNodePasswordHasher());
+    if (owned) localAccounts.useOwnerWrites({ upgradeLocalPassword: (...args) => owned.call.upgradeLocalPassword(...args) });
+    accounts.registerLocalAccounts(localAccounts);
     const members = new MembershipStore(storage,{permissionProjection:false});
     disposers.push(() => members.close());
     const management = new HumanAccountManagement(storage, accounts, actors, members);
@@ -49,7 +63,7 @@ export async function createDesktopAccountHost(directory: string, renderLogin: (
     const auth = new HumanAuth(accounts, actors, configuration, renderLogin);
     disposers.push(() => auth.close());
     const browserProof = randomBytes(32).toString('base64url');
-    const nativeOwner = (request: IncomingMessage) => {
+    const nativeOwner = (request: IdentityRequest) => {
       const raw = request.headers.cookie;
       if (typeof raw !== 'string' || raw.length > 16_384) return false;
       const values = raw.split(';').map(value => value.trim()).filter(value => value.startsWith('oc_desktop_owner='));
@@ -91,8 +105,8 @@ export async function createDesktopAccountHost(directory: string, renderLogin: (
         const path = new URL(request.url ?? '/', configuration.origin).pathname;
         if (assets && await assets.handle(request, response)) return true;
         if (!['/setup', '/__opencraft_account', '/__opencraft_auth'].some(base => path === base || path.startsWith(base + '/'))) return false;
-        if (await application.handle(request, response)) return true;
-        return auth.handle(request, response);
+        // The private loopback listener is node:http; the account routes run on the HTTP exchange port.
+        return serveNodeHttpExchange(request, response, async exchange => await application.handle(exchange) ?? auth.handle(exchange));
       },
       close: disposeAll,
     };

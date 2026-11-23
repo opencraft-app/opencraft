@@ -1,11 +1,13 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import { randomUUID, createHash } from "node:crypto";
 import { ModelGatewayError, ModelGatewayStore } from "@opencraft/account-pool-host";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "./repository.js";
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 
 /** A contribution reuses Model Services' credential owner. The gateway ledger
  * stores only ownership/consent, never a second copy of a key. */
 export function gatewayContributions(directory: string, path: string) {
-  const models = new ModelConfigurationRepository(directory), credentials = new ModelCredentialRepository(directory);
+  const models = new ModelConfigurationRepository(fileStateDocumentStore(directory)), credentials = new ModelCredentialRepository(fileSecretStore(directory));
   return {
     async directory(actor: string) {
       const current=await models.read(),store=new ModelGatewayStore(path);

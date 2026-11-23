@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createSandboxAssistantProvider } from "@opencraft/personal-assistant/sandbox";
-import { e2bSandboxBackend, type E2BSandboxOptions } from "@opencraft/sandbox-e2b";
-import type { SandboxBackend } from "@opencraft/sandbox";
+import { credentialInstallation } from "@opencraft/plugin-assets/server/sandbox-installations";
+import type { HeadlessSandboxProviders } from "../sandbox-providers.js";
 import { withWorkspaceBudget } from "@opencraft/plugin-assets/server/workspace-budget";
 import type { AssetWorkspaceOwnerContext } from "@opencraft/plugin-assets/server/workspace-owner";
 import type { AssistantEnvironmentProvider } from "@opencraft/personal-assistant/host";
@@ -120,14 +120,13 @@ export class WorkspaceBotOwner {
   constructor(
     private readonly context: AssetWorkspaceOwnerContext,
     private readonly options: {
-      /** Installed source only: replaces the whole backend (tests). */
-      backend?: ProviderOptions["createBackend"];
+      /** Deployment-registered sandbox providers; every source's credential
+       * selects one of them by its installation's backend (tests inject a registry). */
+      providers: HeadlessSandboxProviders;
       source?: WorkspaceBotSource;
-      /** E2B backend factory for every source; defaults to the SDK backend. */
-      e2b?: (options: E2BSandboxOptions) => SandboxBackend;
       /** Identity partition of personal backend IDs; default the Actor partition. */
       backendIdentity?: BotBackendIdentity;
-    } = {},
+    },
   ) {
     this.actors = new BotEnvironmentAuthority(context.directory);
     this.timer = setInterval(() => {
@@ -174,7 +173,11 @@ export class WorkspaceBotOwner {
       !environment ||
       Object.keys(environment).some((k) => !["kind", "backendId", "templateId"].includes(k)) ||
       environment.kind !== "sandbox" ||
-      environment.backendId !== "e2b" ||
+      environment.backendId !== installed.policy.backendId ||
+      !this.options.providers.supports(
+        installed.policy.backendId,
+        installed.policy.persistentWorkspaces ? "persistentWorkspaces" : undefined,
+      ) ||
       !installed.records.some((r) => r.environment.templateId === environment.templateId)
     )
       throw unavailable();
@@ -217,7 +220,7 @@ export class WorkspaceBotOwner {
     }
     const installed = this.current(revision);
     provider = createSandboxAssistantProvider({
-      backendId: "e2b",
+      backendId: installed.policy.backendId,
       templates: installed.records.map((r) => ({
         id: r.environment.templateId,
         name: r.environment.name,
@@ -243,26 +246,27 @@ export class WorkspaceBotOwner {
           },
         };
         const record = installed.records.find((r) => r.environment.templateId === template.id)!;
-        const backend = await (this.options.backend?.(template, scoped) ??
-          (this.options.e2b ?? e2bSandboxBackend)({
-            apiUrl: record.credential.apiUrl,
-            sandboxUrl: record.credential.sandboxUrl,
-            templateId: template.id,
-            python: template.python,
-            readApiKey: async () => {
-              const current = this.current(revision).records.find((r) => r.environment.templateId === template.id);
-              if (!current) throw unavailable();
-              return current.credential.apiKey;
-            },
-            readWorkspaceId: scoped.workspaceId,
-            timeoutMs: installed.policy.lease.timeoutMs,
-            requestTimeoutMs: 15000,
-            lease: {
-              renewEveryMs: installed.policy.lease.renewEveryMs,
-              maxLifetimeMs: installed.policy.lease.maxLifetimeMs,
-              ...scoped,
-            },
-          }));
+        const installation = credentialInstallation(record.credential);
+        // Unknown or unregistered backends fail closed; there is no local or E2B fallback.
+        const backend = this.options.providers.resolve(installation).createBackend({
+          installation,
+          readSecret: async () => {
+            const current = this.current(revision).records.find((r) => r.environment.templateId === template.id);
+            if (!current) throw unavailable();
+            return current.credential.apiKey;
+          },
+          templateId: template.id,
+          ...(template.python === undefined ? {} : { python: template.python }),
+          readWorkspaceId: scoped.workspaceId,
+          timeoutMs: installed.policy.lease.timeoutMs,
+          requestTimeoutMs: 15000,
+          lease: {
+            renewEveryMs: installed.policy.lease.renewEveryMs,
+            maxLifetimeMs: installed.policy.lease.maxLifetimeMs,
+            authorize: scoped.authorize,
+            onLost: scoped.onLost,
+          },
+        });
         return withWorkspaceBudget(
           {
             workspaceBudgetReserve: async (...args) => this.context.budget.reserve(...args),
@@ -328,7 +332,13 @@ export class WorkspaceBotOwner {
       if (this.closed) throw unavailable();
       const current = this.actors.owner(access, pending);
       if (current.scope !== owner.scope) throw unavailable();
-      return resolveBotEnvironments(this.context.configurations, current, actor, this.options.backendIdentity);
+      return resolveBotEnvironments(
+        this.context.configurations,
+        current,
+        actor,
+        this.options.backendIdentity,
+        (backend) => this.options.providers.supports(backend),
+      );
     };
     return { access, scope: owner.scope, resolve, catalog: resolve(true) };
   }
@@ -410,6 +420,10 @@ export class WorkspaceBotOwner {
       return match;
     };
     const record = selected.record;
+    // Each source's credential selects its deployment-registered provider.
+    // Unknown or unregistered backends fail closed; there is no E2B fallback.
+    const installation = credentialInstallation(record.credential);
+    const definition = this.options.providers.resolve(installation);
     const budget = {
       workspaceBudgetReserve: async (...args: Parameters<typeof this.context.budget.reserve>) =>
         this.context.budget.reserve(...args),
@@ -432,11 +446,11 @@ export class WorkspaceBotOwner {
         withWorkspaceBudget(
           budget,
           "bot",
-          (this.options.e2b ?? e2bSandboxBackend)({
-            apiUrl: record.credential.apiUrl,
-            sandboxUrl: record.credential.sandboxUrl,
+          definition.createBackend({
+            installation,
             templateId: template.id,
-            readApiKey: async () => live().credential.apiKey,
+            // Read from the current matching record, never the one captured here.
+            readSecret: async () => live().credential.apiKey,
             timeoutMs: BOT_SOURCE_POLICY.lease.timeoutMs,
             requestTimeoutMs: 15000,
             lease: {

@@ -7,8 +7,8 @@ import { once } from 'node:events';
 import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { chromium } from '@playwright/test';
 import WebSocket from 'ws';
-import { HubNetwork } from "../../../packages/hub-network/src/node";
-import { HubStore } from '../../../packages/hub-network/src/store-file.js';
+import type { HubNetwork } from "../../../packages/hub-network/src/node";
+import { openLocalHubNetwork } from '../../../packages/hub-network/src/store-file.js';
 import { MembershipStore, InstanceAccess } from "../../../packages/access-control/src";
 import { createWorkbenchWebServer } from "../../../apps/headless-server/src/serve-workbench-web.mjs";
 import { AssertionSigner } from "../../../packages/identity-core/src/node";
@@ -50,12 +50,12 @@ try {
   };
   let a = await operator(); await operator({ revision: a.revision, action: 'configure', name: 'Entry A', endpoint: `https://127.0.0.1:${tlsPort}`, origin: '', accepting: true, forwarding: true });
   a = await operator(); const ab = await operator({ revision: a.revision, action: 'invite', origins: [origin], allowTransit: true });
-  const b = new HubNetwork(new HubStore(join(privateRoot, 'b.json')), { ca: await readFile(join(privateRoot, 'ca.crt'), 'utf8') }), c = new HubNetwork(new HubStore(join(privateRoot, 'c.json'))); cleanup.push(() => b.close(), () => c.close());
-  const mutate = (node: HubNetwork, input: Record<string, unknown>) => node.command({ revision: node.store.state.revision, ...input }, 'fixture-administrator');
-  mutate(b, { action: 'connect', invitation: ab.invitation, trustIdentity: true });
+  const b = await openLocalHubNetwork(join(privateRoot, 'b.json'), { ca: await readFile(join(privateRoot, 'ca.crt'), 'utf8') }), c = await openLocalHubNetwork(join(privateRoot, 'c.json')); cleanup.push(() => b.close(), () => c.close());
+  const mutate = (node: HubNetwork, input: Record<string, unknown>) => node.apply({ revision: node.store.state.revision, ...input }, 'fixture-administrator');
+  await mutate(b, { action: 'connect', invitation: ab.invitation, trustIdentity: true });
   // The department uses a normal certificate trusted through an explicit invitation CA.
-  mutate(b, { action: 'configure', name: 'Department B', endpoint: `https://127.0.0.1:${bPort}`, origin: '', accepting: true, forwarding: true });
-  const bc = mutate(b, { action: 'invite', origins: [origin], allowTransit: false }) as { invitation: string };
+  await mutate(b, { action: 'configure', name: 'Department B', endpoint: `https://127.0.0.1:${bPort}`, origin: '', accepting: true, forwarding: true });
+  const bc = await mutate(b, { action: 'invite', origins: [origin], allowTransit: false }) as { invitation: string };
   b.close();
   const bAdminPort = await freePort();
   await save('department.json', { schemaVersion: 1, host: '127.0.0.1', port: bAdminPort, routes: [],
@@ -65,7 +65,7 @@ try {
   department.stdout!.on('data', chunk => departmentLog += chunk); department.stderr!.on('data', chunk => departmentLog += chunk);
   cleanup.unshift(async () => { if (department.exitCode === null) { department.kill('SIGTERM'); await once(department, 'exit'); } await writeFile(join(output, 'department-process.log'), departmentLog); });
   await waitFor(async () => { if (department.exitCode !== null) throw new Error('Department relay failed'); try { return (await fetch(`http://127.0.0.1:${bAdminPort}/__opencraft_relay/health`)).ok; } catch { return false; } });
-  mutate(c, { action: 'connect', invitation: bc.invitation, trustIdentity: true, publishOrigin: origin });
+  await mutate(c, { action: 'connect', invitation: bc.invitation, trustIdentity: true, publishOrigin: origin });
   const store = new MembershipStore(join(privateRoot, 'members.sqlite')); cleanup.push(() => store.close());
   const principal = { provider: 'fixture', subject: '123', displayName: 'Network member', expiresAt: Date.now() + 3600_000 }; store.set(principal, 'member', true, 'fixture');
   const root = join(privateRoot, 'web'); await mkdir(root); await writeFile(join(root, 'index.html'), '<!doctype html><html><head><title>Team C</title></head><body><h1>Team C through two Hubs</h1></body></html>');

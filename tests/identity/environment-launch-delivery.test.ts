@@ -12,6 +12,7 @@ import {
 import { createRemoteEnvironmentLaunch } from "@opencraft/execution-environment/remote-environment-launch";
 import type { GitExecutionHandoff } from "@opencraft/execution-environment/git-execution";
 import { SessionCapabilityMcp, capabilitySigningKey } from "@opencraft/session-capabilities/mcp";
+import { fileKeyMaterial } from "@opencraft/secret-storage/file";
 import { SessionCapabilities } from "@opencraft/session-capabilities";
 import { RemoteSessionCapabilities } from "@opencraft/session-capabilities/remote";
 import { hostEnvironmentToken, hostGitToken } from "../../packages/session-capabilities/src/credentials.js";
@@ -52,7 +53,7 @@ const ownerAdmission = (state: { owned: EnvironmentLaunchContext | null; incarna
 async function fixture(t: test.TestContext, serverId = attachment) {
   const directory = await mkdtemp(join(tmpdir(), "env-launch-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const key = await capabilitySigningKey(join(directory, "session-capabilities.key"));
+  const key = await capabilitySigningKey(fileKeyMaterial(directory));
   const vault = new EnvironmentLaunchIssuer();
   const state = {
     lease: admitted() as GitExecutionHandoff | null,

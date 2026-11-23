@@ -30,8 +30,10 @@ async function main() {
     projectlessWorkspaceDirectory: process.env.OPENCRAFT_CODEX_PROJECTLESS_DIR,
     endpoint: argument("--endpoint"), coreEndpoint: argument("--core-endpoint"),
     authToken: (await readFile(argument("--token-file"), "utf8")).trim(),
+    ...(process.argv.includes("--control-token-file") ? { controlToken: (await readFile(argument("--control-token-file"), "utf8")).trim() } : {}),
     dataDirectory: argument("--data-directory"), runtimeDirectory: argument("--runtime-directory"),
     runtimeDataDirectory: process.argv.includes("--runtime-data-directory") ? argument("--runtime-data-directory") : undefined,
+    privateDirectory: process.argv.includes("--private-directory") ? argument("--private-directory") : undefined,
     executable: argument("--codex-executable"),
     // Trusted private file: the pinned issuer key (or the vault owner's
     // publication, read once here), this owner's attachment and where it reads

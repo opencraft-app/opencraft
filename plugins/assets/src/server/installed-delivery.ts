@@ -45,7 +45,8 @@ export async function adoptInstalledWorkspaceConfiguration(
     Array.isArray(config) ||
     Object.keys(config).some((k) => !keys.includes(k)) ||
     config.schemaVersion !== 1 ||
-    config.backend !== "e2b" ||
+    // schemaVersion 1 predates provider selection: an absent backend is E2B.
+    (config.backend !== undefined && config.backend !== "e2b") ||
     typeof config.apiKeyFile !== "string" ||
     !Array.isArray(config.templates) ||
     config.templates.length > 32
@@ -66,6 +67,7 @@ export async function adoptInstalledWorkspaceConfiguration(
   }
   const key = (await privateText(config.apiKeyFile, 4096)).trim();
   const delivery: InstalledSandboxConfiguration = {
+    backend: "e2b",
     apiUrl: config.apiUrl,
     sandboxUrl: config.sandboxUrl,
     capacity: config.capacity,

@@ -1,3 +1,4 @@
+import { fileStateDocumentStore } from "@opencraft/document-storage/state-file";
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -8,6 +9,7 @@ import { pathToFileURL } from "node:url";
 import WebSocket from "ws";
 import { startLocalAgentHost } from "../../../apps/local-agent-host/src/main.js";
 import { ModelConfigurationRepository, ModelCredentialRepository } from "../../../apps/local-agent-host/src/model-config/repository.js";
+import { fileSecretStore } from "@opencraft/secret-storage/file";
 
 // Real locked DSH + Host + JSON-RPC + persistence. Only inference is local,
 // synthetic and free; no user credentials, sessions or model service are used.
@@ -74,8 +76,8 @@ const start = async () => {
 };
 try {
   await new Promise<void>(resolve => endpoint.listen(0, "127.0.0.1", resolve));
-  await new ModelCredentialRepository(directory).set("FIXTURE_KEY", "synthetic-key");
-  await new ModelConfigurationRepository(directory).initialize({ schemaVersion: 1, revision: 0,
+  await new ModelCredentialRepository(fileSecretStore(directory)).set("FIXTURE_KEY", "synthetic-key");
+  await new ModelConfigurationRepository(fileStateDocumentStore(directory)).initialize({ schemaVersion: 1, revision: 0,
     providers: [{ id: "fixture", name: "Fixture", protocol: "openai-completions",
       baseUrl: `http://127.0.0.1:${(endpoint.address() as any).port}/v1`, credentialRef: "FIXTURE_KEY", enabled: true,
       models: [{ id: "fixture", enabled: true, input: ["text"] }] }],

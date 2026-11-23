@@ -13,7 +13,7 @@ import { ExecutionEnvironmentRuntime, environmentProjectId } from '../../executi
 import { EmployeeGitVaultStore } from '../../employee-git-vault-store.js';
 
 const root = await mkdtemp(join(tmpdir(), 'codex-environment-smoke-'));
-const vault = new EmployeeGitVaultStore(root), environment = new AccountEnvironment(vault), runtime = new ExecutionEnvironmentRuntime(root, vault);
+const vault = await EmployeeGitVaultStore.open(root), environment = new AccountEnvironment(vault), runtime = new ExecutionEnvironmentRuntime(root, vault);
 const projectId = 'project-placeholder';
 const secret = 'synthetic-environment-' + crypto.randomUUID();
 const expected = createHash('sha256').update(secret).digest('hex');

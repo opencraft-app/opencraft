@@ -8,7 +8,8 @@ import { OPENCRAFT_HOST_TOKEN_USAGE_COUNTERS } from "./token-usage-counter-schem
 import { ownedDatabasePath } from "./owned-database-path.js";
 import { acquireOwnedStorageLease } from "./owned-storage-lease.js";
 import type { DatabaseSync } from "node:sqlite";
-import { openManagedDatabase, resolveStoreMigrations, createSchemaValidator, createMissingLegacyObjects, type DatabaseOutcome } from "@opencraft/sqlite-node";
+import type { SqlDatabase } from "@opencraft/sql";
+import { nodeSqlDatabase, openManagedDatabase, resolveStoreMigrations, createSchemaValidator, createMissingLegacyObjects, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import { OPENCRAFT_HOST_TOKEN_USAGE } from "./token-usage-schema.js";
 import { OPENCRAFT_HOST_TOKEN_USAGE_RUNTIME } from "./token-usage-runtime-schema.js";
 
@@ -189,7 +190,10 @@ export const OPENCRAFT_HOST_STATE_CURRENT_MIGRATIONS = resolveStoreMigrations(
 );
 
 export class OpenCraftHostStateDatabase {
+  /** Node connection for lifecycle and the borrowers not yet on the port (token usage, thread directory, IOA metadata). */
   readonly database: DatabaseSync;
+  /** The SQL port the WorkspaceHost stores borrow (queue, input delivery, execution leases, senders). */
+  readonly sql: SqlDatabase;
   readonly outcome: DatabaseOutcome;
   readonly path: string;
   private readonly releaseLease: () => void;
@@ -201,13 +205,11 @@ export class OpenCraftHostStateDatabase {
       const managed = openManagedDatabase({ schemaId: "opencraft-host-state-database", path, legacyPolicy: "reject-unknown", validateSchema: createSchemaValidator(FULL_SCHEMA),
         migrations: OPENCRAFT_HOST_STATE_MIGRATIONS, legacyMigration });
       this.database = managed.database;
+      this.sql = nodeSqlDatabase(managed.database);
       this.outcome = managed.outcome;
     } catch (error) { this.releaseLease(); throw error; }
   }
-  transaction<T>(write: () => T): T {
-    this.database.exec("BEGIN IMMEDIATE");
-    try { const result = write(); this.database.exec("COMMIT"); return result; }
-    catch (error) { this.database.exec("ROLLBACK"); throw error; }
-  }
+  /** Outermost call is a write transaction; nested calls are savepoints. */
+  transaction<T>(write: () => T): T { return this.sql.transaction(write); }
   close(): void { try { this.database.close(); } finally { this.releaseLease(); } }
 }

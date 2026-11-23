@@ -1,4 +1,4 @@
-import type { IncomingMessage, ServerResponse } from 'node:http';
+import { HttpBodyTooLarge, decodeUtf8, jsonResponse, type HttpExchangeRequest, type HttpExchangeResponse } from '@opencraft/identity-core/http-exchange';
 import type { Principal } from '@opencraft/identity-core';
 import type { IdentityRequest } from '@opencraft/identity-core/node';
 import type { ActorContext } from '@opencraft/identity-core/actors';
@@ -78,21 +78,21 @@ export class ActorAccess {
     timer.unref();
     return () => clearInterval(timer);
   }
-  async handle(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
-    const path = new URL(request.url ?? '/', 'http://actors.invalid').pathname;
-    if (!path.startsWith('/__opencraft_actors/')) return false;
-    const send = (status: number, value: unknown) => {
-      response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff' });
-      response.end(JSON.stringify(value));
-    };
+  /** Actor administration under `/__opencraft_actors/`; null for any other path. */
+  async handle(exchange: HttpExchangeRequest): Promise<HttpExchangeResponse | null> {
+    const path = new URL(exchange.path, 'http://actors.invalid').pathname;
+    if (!path.startsWith('/__opencraft_actors/')) return null;
+    // Per-request authority is cached on the transport's request view.
+    const request = exchange.identity;
+    const send = (status: number, value: unknown) =>
+      jsonResponse(status, value, [['content-type', 'application/json'], ['cache-control', 'private, no-store'], ['x-content-type-options', 'nosniff']]);
     const context = this.authenticate(request);
-    if (!context) { send(401, { error: 'actor_authentication_required' }); return true; }
-    if (path === '/__opencraft_actors/me' && request.method === 'GET') {
-      send(200, { actor: this.store.get(context.actorId), expiresAt: context.expiresAt }); return true;
-    }
-    if (!this.manages(request, context)) { send(403, { error: 'actor_management_denied' }); return true; }
-    if (request.method === 'GET' && path === '/__opencraft_actors/actors') { send(200, { actors: this.store.list() }); return true; }
-    if (request.method === 'GET' && path === '/__opencraft_actors/audit') { send(200, { events: this.store.audit() }); return true; }
+    if (!context) return send(401, { error: 'actor_authentication_required' });
+    if (path === '/__opencraft_actors/me' && exchange.method === 'GET')
+      return send(200, { actor: this.store.get(context.actorId), expiresAt: context.expiresAt });
+    if (!this.manages(request, context)) return send(403, { error: 'actor_management_denied' });
+    if (exchange.method === 'GET' && path === '/__opencraft_actors/actors') return send(200, { actors: this.store.list() });
+    if (exchange.method === 'GET' && path === '/__opencraft_actors/audit') return send(200, { events: this.store.audit() });
     const fields: Record<string, readonly string[]> = {
       '/__opencraft_actors/sessions': ['displayName'],
       '/__opencraft_actors/credentials': ['actorId', 'expiresAt'],
@@ -100,48 +100,41 @@ export class ActorAccess {
       '/__opencraft_actors/grants': ['actorId', 'resource', 'action', 'enabled'],
       '/__opencraft_actors/state': ['actorId', 'enabled'],
     };
-    if (request.method !== 'POST' || !fields[path]) { send(404, { error: 'missing' }); return true; }
-    const origin = request.headers.origin;
+    if (exchange.method !== 'POST' || !fields[path]) return send(404, { error: 'missing' });
+    const origin = exchange.headers.origin;
     const trustedOrigin = this.options.trustedOrigin?.(request);
-    const validOrigin = typeof origin === 'string' && (['http:', 'https:'].some(s => origin === s + '//' + request.headers.host) || origin === trustedOrigin);
-    if (request.headers['content-type']?.split(';')[0] !== 'application/json'
-      || (context.credentialId === null && !validOrigin)) {
-      send(403, { error: 'same_origin_json_required' }); return true;
-    }
+    const validOrigin = typeof origin === 'string' && (['http:', 'https:'].some(s => origin === s + '//' + exchange.headers.host) || origin === trustedOrigin);
+    if (exchange.headers['content-type']?.split(';')[0] !== 'application/json'
+      || (context.credentialId === null && !validOrigin)) return send(403, { error: 'same_origin_json_required' });
     try {
-      const chunks: Buffer[] = [];
-      let size = 0;
-      for await (const chunk of request) {
-        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-        size += bytes.byteLength;
-        if (size > 16_384) { send(413, { error: 'too_large' }); return true; }
-        chunks.push(bytes);
-      }
+      const bytes = await exchange.readBody(16_384);
       // Request-body IO is an authorization boundary: expiry, disable and grants may have changed.
-      if (!this.authenticate(request) || !this.manages(request, context)) { send(403, { error: 'actor_management_denied' }); return true; }
-      const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      if (!this.authenticate(request) || !this.manages(request, context)) return send(403, { error: 'actor_management_denied' });
+      const value = JSON.parse(decodeUtf8(bytes));
       const allowed = fields[path]!;
       if (!value || typeof value !== 'object' || Array.isArray(value)
         || Object.keys(value).length !== allowed.length || Object.keys(value).some(k => !allowed.includes(k))) throw new Error('Invalid actor operation');
       // With an owner Worker, the same authority is rechecked under its writer lock before commit.
       const writes = this.#writes, authorize = () => !!this.authenticate(request) && this.manages(request, context);
-      if (path === '/__opencraft_actors/sessions') send(201, { actor: writes ? await writes.createSession(authorize, value.displayName, context.actorId)
+      if (path === '/__opencraft_actors/sessions') return send(201, { actor: writes ? await writes.createSession(authorize, value.displayName, context.actorId)
         : this.store.createSession(value.displayName, context.actorId) });
-      else if (path === '/__opencraft_actors/credentials') send(201, writes ? await writes.issueCredential(authorize, value.actorId, value.expiresAt, context.actorId)
+      if (path === '/__opencraft_actors/credentials') return send(201, writes ? await writes.issueCredential(authorize, value.actorId, value.expiresAt, context.actorId)
         : this.store.issueCredential(value.actorId, value.expiresAt, context.actorId));
-      else if (path === '/__opencraft_actors/credentials/revoke') {
+      if (path === '/__opencraft_actors/credentials/revoke') {
         if (writes) await writes.revokeCredential(authorize, value.credentialId, context.actorId); else this.store.revokeCredential(value.credentialId, context.actorId);
-        send(200, { ok: true });
-      } else if (path === '/__opencraft_actors/grants') {
+        return send(200, { ok: true });
+      }
+      if (path === '/__opencraft_actors/grants') {
         if (writes) await writes.setGrant(authorize, value.actorId, value.resource, value.action, value.enabled, context.actorId);
         else this.store.setGrant(value.actorId, value.resource, value.action, value.enabled, context.actorId);
-        send(200, { ok: true });
-      } else if (path === '/__opencraft_actors/state') {
-        if (value.actorId === context.actorId && value.enabled === false) { send(409, { error: 'cannot_disable_own_actor' }); return true; }
-        if (writes) await writes.setEnabled(authorize, value.actorId, value.enabled, context.actorId); else this.store.setEnabled(value.actorId, value.enabled, context.actorId);
-        send(200, { ok: true });
+        return send(200, { ok: true });
       }
-    } catch { send(400, { error: 'invalid_actor_operation' }); }
-    return true;
+      // '/__opencraft_actors/state' is the last route of `fields`.
+      if (value.actorId === context.actorId && value.enabled === false) return send(409, { error: 'cannot_disable_own_actor' });
+      if (writes) await writes.setEnabled(authorize, value.actorId, value.enabled, context.actorId); else this.store.setEnabled(value.actorId, value.enabled, context.actorId);
+      return send(200, { ok: true });
+    } catch (error) {
+      return error instanceof HttpBodyTooLarge ? send(413, { error: 'too_large' }) : send(400, { error: 'invalid_actor_operation' });
+    }
   }
 }

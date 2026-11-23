@@ -1,8 +1,13 @@
 # Standard root Hands profile: OPENCRAFT_HANDS_ROOT=1. Other roles keep OPENCRAFT_UID:GID.
 # The common mount is essential: publishing sockets across separate binds is EXDEV.
+# The Hands workspace agent itself runs as root, so its private run directory (at the
+# fixed path the Gateway's endpoint relays name) is a root-owned tmpfs; a client-owned
+# one fails startup and is never re-owned.
 services:
   hands:
     user: "0:0"
+    tmpfs: !override
+      - /run/opencraft-agent:uid=0,gid=0,mode=0700,size=16m
     cap_drop: [ALL]
     cap_add: [SYS_ADMIN, SETUID, SETGID, SYS_CHROOT, DAC_OVERRIDE, CHOWN, FOWNER, KILL]
     environment:
@@ -18,6 +23,7 @@ services:
       OPENCRAFT_HANDS_EXECUTION_SOCKET: /run/opencraft-hands/${OPENCRAFT_HANDS_SERVER_NAME:-server}/exec-owner.sock
       OPENCRAFT_HANDS_EXECUTION_TOKEN: /run/opencraft-hands/${OPENCRAFT_HANDS_SERVER_NAME:-server}/exec-owner.token
       HOME: /run/opencraft-hands/${OPENCRAFT_HANDS_SERVER_NAME:-server}
+      OPENCRAFT_AGENT_RUN_DIR: /run/opencraft-agent
     volumes:
       - type: bind
         source: ${OPENCRAFT_HOST_HANDS_ROOT_DIR:?Set common root/client IPC parent}
