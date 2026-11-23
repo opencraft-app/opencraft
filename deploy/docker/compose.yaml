@@ -35,7 +35,11 @@ x-workspace-volume: &workspace-volume
   bind:
     create_host_path: false
 
-x-hands-volume: &hands-volume
+# The shared execution directory (sockets, tokens, CLI launchers, browser profile).
+# Mounted explicitly into Gateway, Brain and Hands so a separate host execution
+# directory (OPENCRAFT_HOST_EXECUTION_DIR, e.g. a root Hands client directory) is the
+# same directory in all three, not only when it happens to lie under the data mount.
+x-execution-volume: &execution-volume
   type: bind
   source: ${OPENCRAFT_HOST_EXECUTION_DIR:-${OPENCRAFT_HOST_DATA_DIR}/execution}
   target: ${OPENCRAFT_EXECUTION_DIR:-${OPENCRAFT_DATA_DIR}/execution}
@@ -150,6 +154,7 @@ services:
         target: /run/opencraft-link
       - *git-volume
       - *data-volume
+      - *execution-volume
       - *workspace-volume
       - *log-volume
       - type: bind
@@ -199,7 +204,7 @@ services:
         source: hands-link
         target: /run/opencraft-link
       - *git-volume
-      - *hands-volume
+      - *execution-volume
       - *workspace-volume
       - *log-volume
       - type: bind
@@ -249,6 +254,7 @@ services:
         target: /run/opencraft-links/hands
       - *git-volume
       - *data-volume
+      - *execution-volume
       - *workspace-volume
       - *log-volume
       - type: bind
