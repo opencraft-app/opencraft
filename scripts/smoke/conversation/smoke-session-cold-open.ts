@@ -218,7 +218,10 @@ try {
       assert.equal(await cached.page.locator('.thread-user-message time').getAttribute('datetime'), '2023-11-14T22:13:20.000Z', 'Date paints before initialization completes');
       assert.match(await cached.page.locator(clockSelector).first().innerText(), /54/, 'Completed clock paints with cached text');
       await assertDateDisclosure(cached.page);
-      assert.equal(await cached.page.locator('.thread-agent-activity button').count(), 0, 'No expandable tool bodies restored from display cache');
+      // The cache keeps each work region's header (its disclosure fetches the
+      // body on request) but never a tool body itself.
+      assert.equal(await cached.page.locator('.thread-agent-activity [data-content-mounted]').count(), 0, 'No tool bodies restored from display cache');
+      assert.equal(await cached.page.locator('.thread-agent-activity button[aria-expanded="true"]').count(), 0, 'Retained work regions paint collapsed');
       assert.equal(requests.slice(requestStart).includes('thread/resume'), false, 'Cached paint cannot resume or authorize execution');
       assert.equal(await cached.page.locator('.conversation-recovery-cold-stage').count(), 0);
       const editor = cached.page.locator('[contenteditable="true"]').first();
