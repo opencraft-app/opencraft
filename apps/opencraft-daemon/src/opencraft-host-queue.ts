@@ -2,11 +2,13 @@ import { InputDeliveryStore } from "./input-delivery-store.js";
 import { inputExecutionEnded, type InputDeliveryReceipt } from "@opencraft/appserver-protocol";
 import { ExecutionLeaseStore, type ExecutionSubmission } from "./execution-lease-store.js";
 import { OpenCraftHostStateDatabase } from "./opencraft-host-state-database.js";
-import type { DatabaseOutcome } from "@opencraft/sqlite-node";
+import type { SqlDatabase } from "@opencraft/sql";
+import { nodeSqlDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { sqlPort, type SqlConnection } from "./sql-connection.js";
 
 export type QueueState = "queued" | "dispatching" | "steering" | "unknown" | "delivered" | "discarded" | "closed";
 
@@ -51,16 +53,14 @@ function fromRow(row: Record<string, unknown>): HostQueuedSubmission {
   };
 }
 
-export class OpenCraftHostQueue {
-  private readonly db: DatabaseSync;
+/** Per-thread input queue over the SQL port. Borrows the Host state owner's connection (the WorkspaceHost's in
+ * Node, the workspace Durable Object's SQL elsewhere); never migrates or closes it. */
+export class SqlHostQueue {
+  protected readonly db: SqlDatabase;
   readonly deliveries: InputDeliveryStore;
-  private readonly owner: OpenCraftHostStateDatabase | null;
-  readonly outcome: DatabaseOutcome | undefined;
 
-  constructor(dataDirectory: string, database?: DatabaseSync, options: {recoverPending?: boolean} = {}) {
-    this.owner = database === undefined ? new OpenCraftHostStateDatabase(dataDirectory) : null;
-    this.db = database ?? this.owner!.database;
-    this.outcome = this.owner?.outcome;
+  constructor(database: SqlDatabase, options: {recoverPending?: boolean} = {}) {
+    this.db = database;
     this.deliveries = new InputDeliveryStore(this.db);
     if (options.recoverPending !== false) this.atomic(() => {
     for (const row of this.db.prepare("SELECT thread_id,client_id FROM opencraft_host_queue WHERE state='dispatching'").all())
@@ -69,14 +69,7 @@ export class OpenCraftHostQueue {
     });
   }
 
-  close(): void { this.owner?.close(); }
-
-  private atomic<T>(write: () => T): T {
-    const ownsTransaction=!this.db.isTransaction;
-    if (ownsTransaction) this.db.exec('BEGIN IMMEDIATE');
-    try { const result=write(); if (ownsTransaction) this.db.exec('COMMIT'); return result; }
-    catch(error) { if (ownsTransaction) this.db.exec('ROLLBACK'); throw error; }
-  }
+  private atomic<T>(write: () => T): T { return this.db.transaction(write); }
 
 
   private project(row: Record<string, unknown>): HostQueuedSubmission {
@@ -179,12 +172,10 @@ export class OpenCraftHostQueue {
     if (ids.length !== queued.length || new Set(ids).size !== ids.length || queued.some(row => !ids.includes(row.id))) {
       throw new Error("Queue order must contain each queued item exactly once");
     }
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
+    this.atomic(() => {
       const update = this.db.prepare("UPDATE opencraft_host_queue SET position=?,updated_at_ms=? WHERE thread_id=? AND id=? AND state='queued'");
       for (const [index, id] of ids.entries()) update.run(index + 1, Date.now(), threadId, id);
-      this.db.exec("COMMIT");
-    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
+    });
   }
 
   claim(threadId: string, id: string, targetTurnId: string | null): HostQueuedSubmission | null {
@@ -254,6 +245,23 @@ export class OpenCraftHostQueue {
     return Number(this.db.prepare("UPDATE opencraft_host_queue SET state='discarded',updated_at_ms=? WHERE thread_id=? AND state IN ('queued','dispatching','steering','unknown','closed')")
       .run(Date.now(), threadId).changes);
   }
+}
+
+/** Node owner: borrows the WorkspaceHost's Host state connection, or opens `opencraft-host-state.sqlite` itself when
+ * none is lent, and imports a legacy native queue file once. */
+export class OpenCraftHostQueue extends SqlHostQueue {
+  private readonly owner: OpenCraftHostStateDatabase | null;
+  readonly outcome: DatabaseOutcome | undefined;
+
+  constructor(dataDirectory: string, database?: SqlConnection, options: {recoverPending?: boolean} = {}) {
+    const owner = database === undefined ? new OpenCraftHostStateDatabase(dataDirectory) : null;
+    try { super(owner ? owner.sql : sqlPort(database!), options); }
+    catch (error) { owner?.close(); throw error; }
+    this.owner = owner;
+    this.outcome = owner?.outcome;
+  }
+
+  close(): void { this.owner?.close(); }
 
   migrateNativeQueue(nativeDirectory: string): number {
     const path = join(nativeDirectory, "queue_1.sqlite");
@@ -266,8 +274,7 @@ export class OpenCraftHostQueue {
       const hasSteering = columns.includes("steering_turn_id");
       const rows = native.prepare(`SELECT id,thread_id,payload_json,queue_order,created_at_ms${hasSteering ? ",steering_turn_id" : ""} FROM queued_items ORDER BY thread_id,queue_order`).all();
       if (rows.length === 0) return 0;
-      this.db.exec("BEGIN IMMEDIATE");
-      try {
+      this.db.transaction(() => {
         const insert = this.db.prepare("INSERT OR IGNORE INTO opencraft_host_queue(id,thread_id,client_id,input_json,position,created_at_ms,updated_at_ms,state,target_turn_id,paused_reason) VALUES(?,?,?,?,?,?,?,?,?,?)");
         for (const row of rows) {
           const payload = JSON.parse(requiredText(row.payload_json, "native queue payload")) as { UserInput?: { content?: unknown; client_id?: unknown } };
@@ -279,21 +286,18 @@ export class OpenCraftHostQueue {
           insert.run(requiredText(row.id, "native queue id"), requiredText(row.thread_id, "native thread id"), clientId,
             JSON.stringify(content), Number(row.queue_order), Number(row.created_at_ms), Date.now(), state, targetTurnId,
             targetTurnId ? "steer-delivery-unconfirmed" : null);
-          const imported = this.row(String(row.thread_id), String(row.id));
+          const imported = this.find(String(row.thread_id), String(row.id));
           if (!imported || imported.clientUserMessageId !== clientId || JSON.stringify(imported.input) !== JSON.stringify(content)) {
             throw new Error("Native queue migration conflict; refusing to start Codex");
           }
         }
-        this.db.exec("COMMIT");
-      } catch (error) { this.db.exec("ROLLBACK"); throw error; }
-      native.exec("BEGIN IMMEDIATE");
-      try {
+      });
+      nodeSqlDatabase(native).transaction(() => {
         const remove = native.prepare("DELETE FROM queued_items WHERE id=? AND payload_json=?");
         for (const row of rows) {
           if (remove.run(row.id as string, row.payload_json as string).changes !== 1) throw new Error("Native queue changed during migration");
         }
-        native.exec("COMMIT");
-      } catch (error) { native.exec("ROLLBACK"); throw error; }
+      });
       return rows.length;
     } finally { native.close(); }
   }

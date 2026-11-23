@@ -11,7 +11,9 @@ import { OpenCraftHostStateDatabase } from "./opencraft-host-state-database.js";
 import { ProvisionalThreads } from "./provisional-threads.js";
 
 /** WorkspaceHost-owned Codex Host state (workspace-host-split.md §4.1 WH rows). Each store keeps its existing
- * SQLite owner, file name, migrations and thread placement; only who opens and closes it changes. */
+ * SQLite owner, file name, migrations and thread placement; only who opens and closes it changes. The Node owners
+ * open node:sqlite and lend the domain stores the runtime-neutral `SqlDatabase` port (`Sql*` classes), which a
+ * per-workspace Durable Object can lend over its own SQL instead. */
 export interface CodexWorkspaceStores {
   /** `opencraft-host-state.sqlite`: queue, execution leases, thread catalog and its sync state. */
   readonly hostState: OpenCraftHostStateDatabase;
@@ -57,9 +59,9 @@ export function openCodexWorkspaceHost(identity: WorkspaceIdentity, options: Cod
   }, ({ identity: { root }, own }) => {
     const hostState = own("opencraft-host-state", "state", new OpenCraftHostStateDatabase(root), store => store.close());
     const provisionalThreads = own("thread-creation-lifecycle", "state", new ProvisionalThreads(root), store => store.close());
-    new ExecutionLeaseStore(hostState.database).suspend();
+    new ExecutionLeaseStore(hostState.sql).suspend();
     // The queue borrows the host-state connection; its close only releases what it owns itself.
-    const queue = own("opencraft-host-queue", "state", new OpenCraftHostQueue(root, hostState.database), store => store.close());
+    const queue = own("opencraft-host-queue", "state", new OpenCraftHostQueue(root, hostState.sql), store => store.close());
     const migratedNativeQueue = options.migrateNativeQueueFrom ? queue.migrateNativeQueue(options.migrateNativeQueueFrom) : 0;
     const schedules = own("conversation-schedules", "dispatch",
       new ConversationSchedules(root, options.schedules, now, options.diagnostic, options.schedulesChanged, undefined,

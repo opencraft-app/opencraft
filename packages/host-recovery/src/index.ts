@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { openManagedDatabase, createSchemaValidator } from "@opencraft/sqlite-node";
+import type { ScopedSqlDatabase } from "@opencraft/sql";
+import { openManagedDatabase, createSchemaValidator, nodeSqlDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import type { TurnRecoveryNotice } from "@opencraft/appserver-protocol";
 
 const schema = `CREATE TABLE interrupted_turns (thread_id TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;`;
+/** Published chain (`host-recovery`); the SQL text is checksummed and must never change. */
+export const INTERRUPTED_TURN_RECOVERY_MIGRATIONS = [{ version: 1, name: "interrupted-turn-recovery", sql: schema }] as const;
 export const RECOVERY_LIMIT = 3;
 export const RECOVERY_PROMPT = "Continue the task interrupted by a service restart. Check the existing results before repeating an interrupted command.";
 /** Positive evidence that no execution was accepted, unlike an unknown send. */
@@ -26,26 +29,21 @@ export interface TurnRecoveryPort {
 }
 
 /** One writer under the engine owner's existing lease; survives process death.
- * Tracking is opt-in at a proven native start, never a scan of failed history. */
-export class InterruptedTurnRecovery {
-  private readonly managed;
-  readonly outcome;
+ * Tracking is opt-in at a proven native start, never a scan of failed history.
+ * Runtime-neutral domain over the SQL port; the opening owner lends the migrated connection. */
+export class SqlInterruptedTurnRecovery {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
   private flight: Promise<void> | null = null;
   private closing: Promise<void> | null = null;
   private readonly dispatching = new Set<string>();
-  constructor(directory: string, private readonly port: TurnRecoveryPort, private readonly delayMs = 500, private readonly admissionOpen: () => boolean = () => true) {
-    this.managed = openManagedDatabase({ schemaId: "host-recovery", path: join(directory, "interrupted-turn-recovery.sqlite"),
-      migrations: [{ version: 1, name: "interrupted-turn-recovery", sql: schema }], legacyPolicy: "reject-unknown", validateSchema: createSchemaValidator(schema) });
-    this.outcome = this.managed.outcome;
-  }
+  constructor(private readonly storage: ScopedSqlDatabase, private readonly port: TurnRecoveryPort, private readonly delayMs = 500, private readonly admissionOpen: () => boolean = () => true) {}
   private get(threadId: string): RecoveryTurn | null {
-    const row = this.managed.database.prepare("SELECT value FROM interrupted_turns WHERE thread_id=?").get(threadId) as { value: string } | undefined;
+    const row = this.storage.database.prepare("SELECT value FROM interrupted_turns WHERE thread_id=?").get(threadId) as { value: string } | undefined;
     return row ? JSON.parse(row.value) : null;
   }
   private put(turn: RecoveryTurn): void {
-    this.managed.database.prepare("INSERT INTO interrupted_turns VALUES (?,?) ON CONFLICT(thread_id) DO UPDATE SET value=excluded.value")
+    this.storage.database.prepare("INSERT INTO interrupted_turns VALUES (?,?) ON CONFLICT(thread_id) DO UPDATE SET value=excluded.value")
       .run(turn.threadId, JSON.stringify(turn));
     this.port.changed(turn.threadId, this.notice(turn.threadId));
   }
@@ -88,12 +86,12 @@ export class InterruptedTurnRecovery {
   /** Read-only lifecycle proof; no change to execution or recovery policy. */
   pendingThreadIds(): string[] { return [...new Set(this.pending().map(row => row.threadId))]; }
   handoffObservation() {
-    const rows = this.managed.database.prepare("SELECT value FROM interrupted_turns").all().map(row => JSON.parse(String(row.value)));
+    const rows = this.storage.database.prepare("SELECT value FROM interrupted_turns").all().map(row => JSON.parse(String(row.value)));
     if (rows.some(row => !row || typeof row.threadId !== "string" || !["running", "interrupted", "preparing", "dispatching", "complete", "handled", "exhausted", "unconfirmed"].includes(row.state))) throw new Error("Invalid recovery custody");
     return { flights: this.flight ? 1 : 0, unfinished: rows.filter(row => !["complete", "handled"].includes(row.state)).length };
   }
   private pending(): RecoveryTurn[] {
-    return (this.managed.database.prepare("SELECT value FROM interrupted_turns").all() as { value: string }[])
+    return (this.storage.database.prepare("SELECT value FROM interrupted_turns").all() as { value: string }[])
       .map(row => JSON.parse(row.value) as RecoveryTurn).filter(row => ["running", "interrupted", "preparing", "dispatching"].includes(row.state));
   }
   wake(): void {
@@ -102,7 +100,7 @@ export class InterruptedTurnRecovery {
       this.timer = null;
       void this.recover().catch(() => this.wake());
     }, this.delayMs);
-    this.timer.unref();
+    (this.timer as { unref?: () => void }).unref?.();
   }
   recover(): Promise<void> {
     if (this.closed || !this.admissionOpen()) return Promise.resolve();
@@ -153,9 +151,20 @@ export class InterruptedTurnRecovery {
   }
   private async dispose(): Promise<void> {
     this.closed = true; if (this.timer) clearTimeout(this.timer);
-    await this.flight?.catch(() => undefined); this.managed.database.close();
+    await this.flight?.catch(() => undefined); this.storage.close();
   }
 }
 
-export { ProviderTurnRetry, type ProviderRetry, type ProviderRetryPort } from "./provider-retry.js";
+/** Node owner: opens `interrupted-turn-recovery.sqlite` under the Host directory and lends it to the domain. */
+export class InterruptedTurnRecovery extends SqlInterruptedTurnRecovery {
+  readonly outcome: DatabaseOutcome;
+  constructor(directory: string, port: TurnRecoveryPort, delayMs?: number, admissionOpen?: () => boolean) {
+    const managed = openManagedDatabase({ schemaId: "host-recovery", path: join(directory, "interrupted-turn-recovery.sqlite"),
+      migrations: INTERRUPTED_TURN_RECOVERY_MIGRATIONS, legacyPolicy: "reject-unknown", validateSchema: createSchemaValidator(schema) });
+    super({ database: nodeSqlDatabase(managed.database), close: () => managed.database.close() }, port, delayMs, admissionOpen);
+    this.outcome = managed.outcome;
+  }
+}
+
+export { ProviderTurnRetry, SqlProviderTurnRetry, PROVIDER_TURN_RETRY_MIGRATIONS, type ProviderRetry, type ProviderRetryPort } from "./provider-retry.js";
 export { codexProviderFailure, pooledRetryAt, providerRetryDecision, PROVIDER_RETRY_LIMIT, type ProviderFailure } from "./provider-retry-policy.js";

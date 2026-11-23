@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@opencraft/appserver-protocol": "0.1.0",
+    "@opencraft/sql": "0.1.0",
     "@opencraft/sqlite-node": "0.1.0",
     "@opencraft/workspace-host": "0.1.0"
   }

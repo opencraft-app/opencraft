@@ -1,4 +1,5 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqlDatabase } from "@opencraft/sql";
+import { sqlPort, type SqlConnection } from "./sql-connection.js";
 import type { InputDeliveryReceipt } from "@opencraft/appserver-protocol";
 
 /** Additive v17. Existing queue rows remain the unique message/content owner. */
@@ -36,7 +37,8 @@ FROM opencraft_host_queue;
 `;
 
 export class InputDeliveryStore {
-  constructor(private readonly db: DatabaseSync) {}
+  private readonly db: SqlDatabase;
+  constructor(database: SqlConnection) { this.db = sqlPort(database); }
 
   register(threadId: string, clientId: string): void {
     this.db
@@ -89,9 +91,7 @@ export class InputDeliveryStore {
     )
       return false;
     // First terminal observation is immutable. Later stale frames never resurrect it.
-    const ownsTransaction = !this.db.isTransaction;
-    if (ownsTransaction) this.db.exec("BEGIN IMMEDIATE");
-    try {
+    return this.db.transaction(() => {
       const changed =
         this.db
           .prepare(
@@ -104,12 +104,8 @@ export class InputDeliveryStore {
         WHERE thread_id=? AND target_turn_id=? AND state IN ('dispatching','steering','unknown')`,
         )
         .run(Date.now(), threadId, turnId);
-      if (ownsTransaction) this.db.exec("COMMIT");
       return changed;
-    } catch (error) {
-      if (ownsTransaction) this.db.exec("ROLLBACK");
-      throw error;
-    }
+    });
   }
 
   receipt(

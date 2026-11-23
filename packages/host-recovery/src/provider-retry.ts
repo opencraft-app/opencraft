@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { openManagedDatabase, createSchemaValidator } from "@opencraft/sqlite-node";
+import type { ScopedSqlDatabase } from "@opencraft/sql";
+import { openManagedDatabase, createSchemaValidator, nodeSqlDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import type { TurnRecoveryNotice } from "@opencraft/appserver-protocol";
 import { PROVIDER_RETRY_LIMIT, providerRetryDecision, type ProviderFailure } from "./provider-retry-policy.js";
 
 const schema = "CREATE TABLE provider_retries (thread_id TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;";
+/** Published chain (`provider-retry`); the SQL text is checksummed and must never change. */
+export const PROVIDER_TURN_RETRY_MIGRATIONS = [{ version: 1, name: "provider-turn-retry", sql: schema }] as const;
 export interface ProviderRetry {
   threadId: string; rootTurnId: string; turnId: string; attempts: number;
   state: "waiting" | "preparing" | "dispatching" | "running" | "complete" | "handled" | "exhausted" | "unconfirmed";
@@ -16,25 +19,20 @@ export interface ProviderRetryPort {
   continue(turn: Readonly<ProviderRetry>, current: () => boolean, admit: () => boolean): Promise<string | null>;
   changed(threadId: string): void;
 }
-/** Engine-owned durable queue. It continues accepted failed turns; it never owns user prompts. */
-export class ProviderTurnRetry {
-  private readonly managed;
-  readonly outcome;
+/** Engine-owned durable queue. It continues accepted failed turns; it never owns user prompts.
+ * Runtime-neutral domain over the SQL port; the opening owner lends the migrated connection. */
+export class SqlProviderTurnRetry {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private flight: Promise<void> | null = null;
   private closed = false;
   private closing: Promise<void> | null = null;
-  constructor(directory: string, private readonly port: ProviderRetryPort, private readonly now = Date.now, private readonly random = Math.random, private readonly admissionOpen = () => true) {
-    this.managed = openManagedDatabase({ schemaId: "provider-retry", path: join(directory, "provider-turn-retry.sqlite"),
-      migrations: [{ version: 1, name: "provider-turn-retry", sql: schema }], legacyPolicy: "reject-unknown", validateSchema: createSchemaValidator(schema) });
-    this.outcome = this.managed.outcome;
-  }
+  constructor(private readonly storage: ScopedSqlDatabase, private readonly port: ProviderRetryPort, private readonly now = Date.now, private readonly random = Math.random, private readonly admissionOpen = () => true) {}
   snapshot(threadId: string): ProviderRetry | null {
-    const row = this.managed.database.prepare("SELECT value FROM provider_retries WHERE thread_id=?").get(threadId) as { value: string } | undefined;
+    const row = this.storage.database.prepare("SELECT value FROM provider_retries WHERE thread_id=?").get(threadId) as { value: string } | undefined;
     return row ? JSON.parse(row.value) : null;
   }
   private put(row: ProviderRetry): void {
-    this.managed.database.prepare("INSERT INTO provider_retries VALUES (?,?) ON CONFLICT(thread_id) DO UPDATE SET value=excluded.value").run(row.threadId, JSON.stringify(row));
+    this.storage.database.prepare("INSERT INTO provider_retries VALUES (?,?) ON CONFLICT(thread_id) DO UPDATE SET value=excluded.value").run(row.threadId, JSON.stringify(row));
     this.port.changed(row.threadId);
   }
   notice(threadId: string): TurnRecoveryNotice | null {
@@ -45,7 +43,7 @@ export class ProviderTurnRetry {
       sourceKind: "system", reason: "provider-failure", ...(row.state === "waiting" ? { retryAt: row.retryAt } : {}) };
   }
   pendingThreadIds(): string[] {
-    return (this.managed.database.prepare("SELECT thread_id FROM provider_retries WHERE json_extract(value,'$.state') IN ('waiting','preparing','dispatching','running')").all() as { thread_id: string }[]).map(row => row.thread_id);
+    return (this.storage.database.prepare("SELECT thread_id FROM provider_retries WHERE json_extract(value,'$.state') IN ('waiting','preparing','dispatching','running')").all() as { thread_id: string }[]).map(row => row.thread_id);
   }
   /** Only current native starts can acknowledge our owned dispatch. */
   started(threadId: string, turnId: string): void {
@@ -85,7 +83,7 @@ export class ProviderTurnRetry {
     if (!this.admissionOpen()) delay = Math.max(1000, delay);
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => { this.timer = null; void this.recover(); }, delay);
-    this.timer.unref();
+    (this.timer as { unref?: () => void }).unref?.();
   }
   recover(): Promise<void> {
     if (this.closed) return Promise.resolve();
@@ -148,7 +146,18 @@ export class ProviderTurnRetry {
       if (this.timer) clearTimeout(this.timer);
       this.timer = null;
       await this.flight;
-      this.managed.database.close();
+      this.storage.close();
     })();
+  }
+}
+
+/** Node owner: opens `provider-turn-retry.sqlite` under the Host directory and lends it to the domain. */
+export class ProviderTurnRetry extends SqlProviderTurnRetry {
+  readonly outcome: DatabaseOutcome;
+  constructor(directory: string, port: ProviderRetryPort, now?: () => number, random?: () => number, admissionOpen?: () => boolean) {
+    const managed = openManagedDatabase({ schemaId: "provider-retry", path: join(directory, "provider-turn-retry.sqlite"),
+      migrations: PROVIDER_TURN_RETRY_MIGRATIONS, legacyPolicy: "reject-unknown", validateSchema: createSchemaValidator(schema) });
+    super({ database: nodeSqlDatabase(managed.database), close: () => managed.database.close() }, port, now, random, admissionOpen);
+    this.outcome = managed.outcome;
   }
 }

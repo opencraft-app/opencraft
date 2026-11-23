@@ -92,34 +92,31 @@
       "existsSync": 1
     },
     "apps/opencraft-daemon/src/execution-lease-store.ts": {
-      "DatabaseSync": 1,
       "readFileSync": 2,
-      "SQL statement": 29
+      "SQL statement": 26
     },
     "apps/opencraft-daemon/src/input-delivery-store.ts": {
-      "DatabaseSync": 1,
-      "SQL statement": 11
+      "SQL statement": 8
     },
     "apps/opencraft-daemon/src/native-empty-creation.ts": {
       "lstatSync": 1,
       "readFileSync": 1
     },
     "apps/opencraft-daemon/src/opencraft-host-queue.ts": {
-      "DatabaseSync": 3,
+      "DatabaseSync": 1,
       "existsSync": 1,
-      "SQL statement": 44
+      "SQL statement": 32
     },
     "apps/opencraft-daemon/src/opencraft-host-state-database.ts": {
       "DatabaseSync": 2,
-      "SQL statement": 7
+      "SQL statement": 4
     },
     "apps/opencraft-daemon/src/opencraft-message-attachments.ts": {
       "DatabaseSync": 1,
       "SQL statement": 7
     },
     "apps/opencraft-daemon/src/opencraft-message-senders.ts": {
-      "DatabaseSync": 2,
-      "SQL statement": 10
+      "SQL statement": 7
     },
     "apps/opencraft-daemon/src/owned-database-path.ts": {
       "lstatSync": 1
@@ -276,7 +273,7 @@
       "SQL statement": 3
     },
     "packages/host-schedules/src/index.ts": {
-      "SQL statement": 12
+      "SQL statement": 9
     },
     "packages/mcp-apps/src/store.ts": {
       "mkdirSync": 1,

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { openManagedDatabase, createSchemaValidator } from "@opencraft/sqlite-node";
+import type { ScopedSqlDatabase } from "@opencraft/sql";
+import { openManagedDatabase, createSchemaValidator, nodeSqlDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import type { ConversationSchedule, ConversationScheduleRun, ConversationScheduleView, ConversationScheduleSummary, OpenCraftPermissionProfile } from "@opencraft/appserver-protocol";
 import { nextCalendarRun, nextIntervalRun, validScheduleCalendar, validScheduleWindow } from "@opencraft/appserver-protocol";
 import { boundedWakeTimer, timeoutWakeClock, type OwnerWakeTimer, type OwnerWakeTimerFactory } from "@opencraft/workspace-host";
@@ -21,6 +22,8 @@ CREATE TABLE schedules (thread_id TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
 CREATE TABLE schedule_runs (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, value TEXT NOT NULL) STRICT;
 CREATE INDEX schedule_runs_thread ON schedule_runs(thread_id);
 `;
+/** Published chain (`host-schedules`); the SQL text is checksummed and must never change. */
+export const CONVERSATION_SCHEDULE_MIGRATIONS = [{ version: 1, name: "conversation-schedules", sql: schema }] as const;
 const unfinished = new Set(["waiting", "submitting", "running", "unknown"]);
 const MAX_FLIGHTS = 4;
 /** While the owner's admission is fenced nothing announces its reopening except start(); due work re-checks at the
@@ -38,9 +41,10 @@ function object(value: unknown): Record<string, unknown> { return value && typeo
  * moment, so a stale or early wake-up dispatches nothing. start() first catches up whatever durable state already
  * shows as due or unfinished.
  */
-export class ConversationSchedules {
-  private readonly managed;
-  readonly outcome;
+/** Runtime-neutral domain over the SQL port. The opening owner (Node file below, or a Durable Object's SQL) lends
+ * the migrated connection; `close()` ends this store's lease after in-flight work settles. */
+export class SqlConversationSchedules {
+  private readonly storage: ScopedSqlDatabase;
   private readonly timer: OwnerWakeTimer;
   private started = false;
   private readonly pending = new Set<Promise<void>>();
@@ -57,19 +61,17 @@ export class ConversationSchedules {
   private readonly observations = new Map<string, ScheduleExecutionEvent>();
   private readonly unsubscribe: (() => void) | undefined;
 
-  constructor(directory: string, private readonly port: ScheduleExecutionPort,
+  constructor(storage: ScopedSqlDatabase, private readonly port: ScheduleExecutionPort,
     private readonly now = Date.now, private readonly diagnostic: (event: { event: string; scheduleId?: string }) => void = () => {},
     private readonly changed: () => void = () => {},
     private readonly admissionOpen: () => boolean = () => true,
     wakeTimer: OwnerWakeTimerFactory = wake => boundedWakeTimer(timeoutWakeClock(now), wake)) {
-    this.managed = openManagedDatabase({ schemaId: "host-schedules", path: join(directory, "conversation-schedules.sqlite"), legacyPolicy: "reject-unknown",
-      validateSchema: createSchemaValidator(schema), migrations: [{ version: 1, name: "conversation-schedules", sql: schema }] });
-    this.outcome = this.managed.outcome;
+    this.storage = storage;
     this.summarySignature = JSON.stringify(this.list());
     this.unsubscribe = port.subscribe?.(event => this.executionChanged(event));
     this.timer = wakeTimer(() => { void this.tick(); });
   }
-  private get db() { return this.managed.database; }
+  private get db() { return this.storage.database; }
   private plans(): ConversationSchedule[] {
     return this.db.prepare("SELECT value FROM schedules").all().map(row => JSON.parse(String(row.value)) as ConversationSchedule);
   }
@@ -90,10 +92,9 @@ export class ConversationSchedules {
     this.publishChanged();
   }
   private transaction<T>(fn: () => T): T {
-    this.db.exec("BEGIN IMMEDIATE"); this.inTransaction = true;
+    this.inTransaction = true;
     let result: T;
-    try { result = fn(); this.db.exec("COMMIT"); }
-    catch (error) { this.db.exec("ROLLBACK"); throw error; }
+    try { result = this.db.transaction(fn); }
     finally { this.inTransaction = false; }
     this.publishChanged(); return result;
   }
@@ -354,7 +355,22 @@ export class ConversationSchedules {
       this.unsubscribe?.();
       this.observations.clear();
       await Promise.all([...this.pending, ...this.flights.values()]);
-      this.db.close();
+      this.storage.close();
     })();
+  }
+}
+
+/** Node owner: opens `conversation-schedules.sqlite` under the Host directory with the managed lifecycle and
+ * lends it to the runtime-neutral domain. */
+export class ConversationSchedules extends SqlConversationSchedules {
+  readonly outcome: DatabaseOutcome;
+  constructor(directory: string, port: ScheduleExecutionPort, now?: () => number,
+    diagnostic?: (event: { event: string; scheduleId?: string }) => void, changed?: () => void,
+    admissionOpen?: () => boolean, wakeTimer?: OwnerWakeTimerFactory) {
+    const managed = openManagedDatabase({ schemaId: "host-schedules", path: join(directory, "conversation-schedules.sqlite"), legacyPolicy: "reject-unknown",
+      validateSchema: createSchemaValidator(schema), migrations: CONVERSATION_SCHEDULE_MIGRATIONS });
+    super({ database: nodeSqlDatabase(managed.database), close: () => managed.database.close() },
+      port, now, diagnostic, changed, admissionOpen, wakeTimer);
+    this.outcome = managed.outcome;
   }
 }

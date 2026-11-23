@@ -470,7 +470,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private schedules: ConversationSchedules | null = null;
   private hostState: OpenCraftHostStateDatabase | null = null;
   private provisionalThreads: ProvisionalThreads | null = null;
-  private get executionLeases(): ExecutionLeaseStore | null { return this.hostState ? new ExecutionLeaseStore(this.hostState.database) : null; }
+  private get executionLeases(): ExecutionLeaseStore | null { return this.hostState ? new ExecutionLeaseStore(this.hostState.sql) : null; }
   private async reconcileExecutionLeases(): Promise<void> {
     const store = this.executionLeases;
     for (const threadId of store?.unsettledThreads() ?? []) {
