@@ -176,7 +176,7 @@
 - workerd 候选（同一参数，Miniflare 本地，开发容器）：
   - `@noble/hashes` 2.4.0（MIT，纯 JS，`argon2idAsync`）：单次验证中位数约 170 ms（未知用户名约 167 ms，新建哈希约 168 ms；Node 原生约 26 ms），结果与 Node 原生逐字节一致；工作内存为一块约 19 MiB 的 `Uint32Array`（Node 中测得峰值增量约 20 MiB，两路并发约 40 MiB，远低于 128 MB）；进入 worker bundle 的哈希相关代码约 32 KB（未压缩，含 PHC 解析）。
   - `hash-wasm` 4.12.0（MIT，WebAssembly）：在 workerd 中运行即失败：`WebAssembly.compile(): Wasm code generation disallowed by embedder`——它在运行时从内嵌字节编译 Wasm，Workers 只允许上传时预编译的 Wasm 模块，需要改造打包方式才能使用；其 ESM 源约 266 KB。
-  - 按“纯 JS 单次验证不超过 1 s 即优先纯 JS”的规则选用 `@noble/hashes`（`password-hash-portable`）。`argon2idAsync` 约每 10 ms 让出一次，所在 DO 仍需付出约 0.17 s CPU／次。
+  - 按“纯 JS 单次验证不超过 1 s 即优先纯 JS”的规则选用 `@noble/hashes`（`password-hash-portable`）。`argon2idAsync` 约每 10 ms 让出一次，所在 DO 仍需付出约 0.17 s CPU／次（Miniflare 读数）；真实 Cloudflare 上 Workers Logs 计量为 0.3–0.9 s CPU／次（`cf:rehearsal`，见[可选 Cloudflare 部署 §7.4](cloudflare-deployment.md#74-argon2id-登录的-cpu-结论)）。因此正式登录入口必须在哈希前做按来源与账号的速率限制和并发上限，并评估把哈希移到无状态 Worker；结论与依据只在该节维护。
 - 交叉验证：`tests/identity/login-entry-workerd.test.ts` 中 Node 建的 PHC 记录在 workerd 验证通过、workerd 建的记录在 Node 验证通过，错误密码拒绝；当前参数记录不被重写；workerd 拒绝 scrypt 记录。升级、并发改密与解析上限见 `tests/identity/local-account-plugin.test.ts`。
 - Cloudflare 限制（官方文档，2026-11 读取）：Workers 每请求 CPU，Free 10 ms，Paid 默认 30 s、可配置到 5 min；Durable Object 每个传入请求／WebSocket 消息把可用 CPU 重置为 30 s；每 isolate 内存 128 MB，含 JS 堆与 WebAssembly。结论：Paid 计划 CPU 余量约 170 倍，内存余量充足；**Free 计划仍无法运行**（单次验证超出 10 ms 约 17 倍）。
 

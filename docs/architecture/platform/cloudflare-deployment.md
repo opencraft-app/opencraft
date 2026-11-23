@@ -2,7 +2,7 @@
 
 [Architecture index](../README.md) · [存储端口](storage-ports.md) · [执行沙盒](../execution/execution-sandbox.md) · [Docker 三角色部署](../../../deploy/docker/README.md)
 
-状态：目标设计。只有存储端口的 Cloudflare 适配器已在本地 workerd 中通过一致性测试（见[存储端口第 6 节](storage-ports.md#6-cloudflare-适配器第-5-阶段本地-workerd-验证)），`InstallationCore`（见第 5 节）与 `RelayHub`（见第 6 节）各有一个仅限测试的本地 workerd 原型；本页不代表任何 Cloudflare 组件已可部署。Node 自托管（Docker／systemd／Electron）始终是一等公民；Cloudflare 是部署装配选项之一，不替换 Node 路径。
+状态：目标设计。Cloudflare Containers 的平台能力已做真实探测（2026-11-23，结论见[工作区拆分 §3.6](workspace-host-split.md#36-部署形态统一建模)），`sandbox-cloudflare` provider 尚未实现。只有存储端口的 Cloudflare 适配器已在本地 workerd 中通过一致性测试（见[存储端口第 6 节](storage-ports.md#6-cloudflare-适配器第-5-阶段本地-workerd-验证)），`InstallationCore`（见第 5 节）与 `RelayHub`（见第 6 节）各有一个仅限测试的本地 workerd 原型；本页不代表任何 Cloudflare 组件已可部署。Node 自托管（Docker／systemd／Electron）始终是一等公民；Cloudflare 是部署装配选项之一，不替换 Node 路径。
 
 ## 1. 现状约束
 
@@ -11,7 +11,7 @@
 - **Gateway 不是无状态的**：Codex Host 层状态（queue、schedules、中断恢复、tasks、token usage）由 Gateway 进程内的 `CodexEngineAdapter` 写入 `$DATA/codex/`。
 - 账号 Core（`apps/codex-core` 的 split core 与 `packages/account-pool-host`）持有账号池、OAuth 刷新、模型代理与计量，是部署级单写者。
 - 沙盒内的 Codex `exec-server`、文件、终端与浏览器 owner 全部经 stdio 传输，沙盒不需要入站端口。
-- Cloudflare Sandbox SDK **不兼容 E2B API**；接入方式是实现 `@opencraft/sandbox` 端口的新后端，而不是复用 E2B SDK。`sandbox-cloudflare` 作为 `@opencraft/sandbox/providers` 的一个 provider 注册，复用 `@opencraft/sandbox/broker`（只需提供启动 broker 进程的双工通道），持久工作区通过可选 `PersistentWorkspaceProvider` 能力接入；该 provider 尚未实现。
+- Cloudflare Sandbox SDK **不兼容 E2B API**；接入方式是实现 `@opencraft/sandbox` 端口的新后端，而不是复用 E2B SDK。`sandbox-cloudflare` 作为 `@opencraft/sandbox/providers` 的一个 provider 注册，由 WorkspaceHost DO 持有容器，经 `ctx.container.exec` 启动并承载 `@opencraft/sandbox/broker`，命名端点优先容器原始 TCP；工作区内容以 Git 为真源，容器快照只是可选加速能力（[工作区拆分 §3.7](workspace-host-split.md#37-工作区持久化与空闲设计2026-11-23-用户决定未实现)）。该 provider 尚未实现，前置项见工作区拆分 §7。
 
 ## 2. 目标拓扑
 
@@ -22,7 +22,7 @@
 | `RelayHub` | 每 installation 一个 DO | 隧道与流预算，替代 Redis 租约与节点间转发（本地原型见第 6 节） |
 | `AccountCore` | 每部署一个 DO | 账号池、加密凭据、OAuth 刷新单写者、选号与亲和、计量与策略 |
 | `WorkspaceHost` | 每工作区一个 DO | Codex Host 状态（queue、schedules 以 DO alarm 实现、中断恢复、tasks、token usage）；工作区容器生命周期与连接 |
-| 工作区容器 | 每工作区一个 Container，由 `WorkspaceHost` 持有 | Brain 与 Hands 同处：`codex app-server`、Pi、DSH、`exec-server`、终端、文件、浏览器；独立 `CODEX_HOME`；`/workspace` 经 R2 持久化 |
+| 工作区容器 | 每工作区一个 Container，由 `WorkspaceHost` 持有 | Brain 与 Hands 同处：`codex app-server`、Pi、DSH、`exec-server`、终端、文件、浏览器；独立 `CODEX_HOME`；容器磁盘是缓存，工作区内容以 Git 为真源，可选容器快照加速恢复；默认空闲 15 分钟休眠 |
 
 ### 2.1 模型请求与凭据
 
@@ -37,7 +37,8 @@
 - 镜像沿用已发布 Hands 镜像（按 digest 固定），追加 Brain 运行时；不在容器启动时下载工具。
 - Brain 与执行用户使用不同 UID；凭据不进入容器文件系统。
 - 容器回收或重启时，引擎进程终止；恢复沿用[中断 Turn 恢复](../execution/interrupted-turn-recovery.md)，由 `WorkspaceHost` 持有的 Host 状态驱动，不重放未确认输入。
-- `CODEX_HOME` 与 `/workspace` 的持久化语义（R2 FUSE 挂载、目录备份或容器快照）需在第 5 阶段 PoC 中确定，并替换当前依赖自托管 E2B volume API 与 NFS 的持久工作区校验。
+- 持久化语义已决定（2026-11-23）且与 provider 无关：Git 是工作区内容的真源，容器磁盘（含 `CODEX_HOME`）随 `destroy()`／崩溃丢失，是可重建缓存；`snapshotContainer` 作为 `captured` 快照能力只用于加速恢复（平台 beta、30 天 TTL、Worker API 不可删），不作兜底；未提交改动可能随化身丢失。契约与对账规则见[工作区拆分 §3.7](workspace-host-split.md#37-工作区持久化与空闲设计2026-11-23-用户决定未实现)。
+- 空闲：WorkspaceHost 判定空闲后停止容器（默认 15 分钟，可配置常驻）；容器 inactivity timeout 只作兜底，且每次 DO 构造都要重设。
 
 ## 3. 前置工作
 
@@ -47,16 +48,16 @@
 
 | 项 | 需确认 |
 | --- | --- |
-| 进程 stdin | `container.exec()` 能否在进程运行期间持续写入 stdin；否则 broker 改为容器内服务 |
+| 进程 stdin | **已在真实 Cloudflare 回答（2026-11-23）**：`ctx.container.exec` 流式 stdin 有真实背压，PTY 与退出码可用；broker 可直接由 exec 承载，不需要容器内服务 |
 | 镜像 | Hands＋Brain 镜像是否在 20 GB 上限内；是否允许任意基础镜像；架构限制 |
 | 浏览器 | Chromium 沙盒在容器隔离模型下是否可用 |
-| 生命周期 | 能否确认实例已销毁；能否读取实际生效 CPU／内存；休眠、重启与最长运行时间语义 |
-| 持久化 | R2 FUSE／备份／快照用于 Git 工作区时的性能与一致性 |
+| 生命周期 | **已探测**：`monitor()` 报告崩溃与退出码、不自动重启；`destroy()` 100–930 ms；自定义 4 vCPU／8 GiB 被接受，容器内 `pids.max`／nofile 不受限（由 agent 设置）；DO 驱逐与代码部署后可重连同一容器；inactivity timeout 生效（单样本早于设定）。最长运行时间未测 |
+| 持久化 | **已决定**：Git 为真源，`snapshotContainer` 为可选加速（2.4 s 捕获、498 ms 恢复）；R2 FUSE 不采用为工作区真源 |
 | SQL 语义 | **已在本地 workerd（`workerd@1.20260730.1`）回答**：`SELECT changes()` 返回语句直接修改的行数，与 Node 一致；游标 `rowsWritten` 含索引与触发器写入（带索引和审计触发器的表上，修改两行的 UPDATE 为 6），不能用于 CAS。嵌套 `transactionSync` 是 savepoint：内层抛错只回滚内层，外层抛错丢弃全部。多语句 `exec` 依次执行全部语句。`sqlite_master` 与 `PRAGMA foreign_keys`（值为 1）可读。`BEGIN`／`SAVEPOINT`／`COMMIT` 文本被拒绝。BLOB 以 `ArrayBuffer` 返回；`bigint` 不能绑定，范围外 INTEGER 读取时静默取整。`SQL_CONFORMANCE_CASES` 全部通过。2026-11-23 已在真实 Cloudflare 上以相同探针复核，结果一致（见第 7 节） |
-| 网络 | 出站限制到边缘 Worker；Gateway 到容器的连接方式 |
-| 成本 | 冷启动时间、容器常驻与 DO 时长成本 |
+| 网络 | **已探测**：`enableInternet:false`＋`interceptAllOutboundHttp` 时 HTTP 全部交给 Worker entrypoint（可带每工作区 props），HTTPS 失败；HTTPS 拦截需容器信任平台 CA（未测）。WH DO 到容器：exec 中继或原始 TCP，WebSocket 无背压不采用 |
+| 成本 | **已探测**：冷启动中位约 0.6 s（部署后首次 3.9 s）；4 vCPU／8 GiB／20 GB 运行约 0.11–0.37 美元／小时，空闲常驻约 75 美元／月，休眠不计费 |
 
-单实例资源上限为 4 vCPU／12 GiB／20 GB 磁盘，满足当前默认 4 vCPU／8 GiB 契约。
+单实例资源上限为 4 vCPU／12 GiB／20 GB 磁盘，满足当前默认 4 vCPU／8 GiB 契约（自定义实例类型实测被接受）。仍待验证：镜像大小与架构、浏览器沙盒、HTTPS 出站拦截。
 
 ## 5. InstallationCore 原型状态
 
