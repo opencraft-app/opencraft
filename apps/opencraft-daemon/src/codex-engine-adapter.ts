@@ -1,4 +1,5 @@
 import { ensureNativeCreationIndex } from "./native-empty-thread-index.js";
+import { collaborationQueueGuard, type CodexBridgeOwners } from "./codex-bridge-owners.js";
 import { prepareHistoryImages } from "./history-image-resources.js";
 import { readInputCompletion } from "./input-completion.js";
 import { CodexAccountOperationError, classifyAccountFailure, logAccountFailure } from "@opencraft/account-pool-host";
@@ -3677,7 +3678,7 @@ export class CodexEngineAdapter implements DuplexTransport {
    * Stage attachments for a Thread this Host does not execute (a bridge Thread):
    * the same model-readable locator as local Threads, recorded for display.
    */
-  async prepareExternalInput(threadId: string, clientId: string | undefined, input: readonly unknown[], context?: TransportSubmissionContext): Promise<unknown[]> {
+  private async prepareExternalInput(threadId: string, clientId: string | undefined, input: readonly unknown[], context?: TransportSubmissionContext): Promise<unknown[]> {
     // Attribution is recorded before anything is staged, exactly as for this Host's own Threads.
     if (context && (clientId || context.sender)) {
       if (!this.identity) {
@@ -3689,7 +3690,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     return prepared.input;
   }
   /** A bridge Thread's live notification with the sender recorded by prepareExternalInput. */
-  projectExternalNotification(message: RpcRecord): RpcRecord {
+  private projectExternalNotification(message: RpcRecord): RpcRecord {
     return this.messageSenders ? projectThreadMessageNotification(this.projectSender, message) as RpcRecord : message;
   }
   /** The trusted submission lookup for collection, which names bridge Threads by their native session. */
@@ -3699,7 +3700,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
   private externalThreadIdentities?: { toNative(threadId: string): string | undefined; toPublic?(nativeId: string): string | undefined };
   /** The provider bridge's public↔native Thread identities, for Host duties it forwards here. */
-  bindExternalThreadIdentities(identities: { toNative(threadId: string): string | undefined; toPublic?(nativeId: string): string | undefined }): void { this.externalThreadIdentities = identities; }
+  private bindExternalThreadIdentities(identities: { toNative(threadId: string): string | undefined; toPublic?(nativeId: string): string | undefined }): void { this.externalThreadIdentities = identities; }
   /** Who submitted an input, for usage attribution: the trusted owner's record, else the submitting actor. */
   private usageIdentity(recordThreadId: string, publicThreadId: string, inputId: string, mode: "start" | "steer", context: TransportSubmissionContext): UsageSubmission {
     const actor=context.actorContext ? this.options.tokenUsage?.actor(context.actorContext) : null;
@@ -3709,11 +3710,11 @@ export class CodexEngineAdapter implements DuplexTransport {
       sourceKind:trusted?.sourceKind === "system" ? "system" : actor?.kind === "human" ? "human":actor?.kind === "session" ? "system":trusted?.sourceKind??"unknown",submittedAt:Date.now()};
   }
   /** A bridge Thread's turn notification, with native session and turn identities, for usage collection. */
-  observeExternalUsage(method: string, params: RpcRecord): void {
+  private observeExternalUsage(method: string, params: RpcRecord): void {
     try { this.tokenUsage?.notification(method, params); } catch { this.diagnostic({event:"token-usage-partial",category:"notification"}); }
   }
   /** A bridge Thread's input is about to be submitted: record who submitted it, under its native session. */
-  async beginExternalUsage(nativeThreadId: string, publicThreadId: string, inputId: string, mode: "start" | "steer", context: TransportSubmissionContext): Promise<string | undefined> {
+  private async beginExternalUsage(nativeThreadId: string, publicThreadId: string, inputId: string, mode: "start" | "steer", context: TransportSubmissionContext): Promise<string | undefined> {
     const usage=this.tokenUsage;
     if(!usage||!nativeThreadId||!inputId)return undefined;
     try {
@@ -3723,61 +3724,21 @@ export class CodexEngineAdapter implements DuplexTransport {
     } catch { this.diagnostic({event:"token-usage-partial",category:"submission"}); return undefined; }
   }
   /** Its outcome: accepted into a native turn (and admitted to it), rejected, or unknown. */
-  settleExternalUsage(attemptId: string, outcome: "accepted" | "rejected" | "unknown", nativeThreadId: string, inputId: string, nativeTurnId?: string): void {
+  private settleExternalUsage(attemptId: string, outcome: "accepted" | "rejected" | "unknown", nativeThreadId: string, inputId: string, nativeTurnId?: string): void {
     try {
       this.tokenUsage?.attemptOutcome(attemptId,outcome,outcome==="accepted"?nativeTurnId??null:null);
       if(outcome==="accepted"&&nativeTurnId)this.tokenUsage?.admission({threadId:nativeThreadId,turnId:nativeTurnId},inputId);
     } catch { this.diagnostic({event:"token-usage-partial",category:"acceptance"}); }
   }
-  /**
-   * A bridge Thread's queue request, checked as this Host checks its own queue: Actor
-   * input only through its trusted admission and immutable, a person's delete of Actor
-   * input becomes a collaboration cancel, ordinary input is authorized before it is
-   * queued. Returns a reply this Host answers itself, or null to forward the request.
-   * The Engine Host dispatches queued input on its own, so authorization is checked
-   * when input is queued or steered rather than again at dispatch.
-   */
-  async guardExternalQueue(threadId: string, method: string, params: RpcRecord, context: TransportSubmissionContext,
-    find: (by: { queuedSubmissionId: string } | { clientUserMessageId: string }) => Promise<{ id: string; clientUserMessageId: string; state: string; targetTurnId: string | null } | null>): Promise<{ result: RpcRecord } | null> {
-    const actorRequest = context.collaborationRequestId;
-    const selected = string(params.queuedSubmissionId) ? await find({ queuedSubmissionId: string(params.queuedSubmissionId) }) : null;
-    const clientId = selected?.clientUserMessageId ?? string(params.clientUserMessageId);
-    const actorInput = clientId.startsWith('actor-input:');
-    if (selected && actorInput && method === 'thread/queue/delete' && !actorRequest && context.actorContext && this.options.collaboration) {
-      await this.options.collaboration.command(context.actorContext, { action: 'cancel', requestId: clientId.slice('actor-input:'.length) });
-      return { result: { deleted: true } };
-    }
-    if (actorInput && clientId !== `actor-input:${actorRequest}`) throw new OpenCraftQueueRpcError(-32600, 'Actor input requires its trusted admission');
-    if (actorInput && method === 'thread/queue/update') throw new OpenCraftQueueRpcError(-32600, 'Actor messages are immutable');
-    if (method === 'thread/queue/collaborationReceipt') {
-      if (!actorRequest) throw new OpenCraftQueueRpcError(-32600, 'Trusted Actor admission required');
-      const row = await find({ clientUserMessageId: `actor-input:${actorRequest}` });
-      return { result: { receipt: row ? { id: row.id, state: row.state, targetTurnId: row.targetTurnId } : null } };
-    }
-    if (method === 'thread/queue/add') {
-      if (actorInput) {
-        const mode = this.options.collaborationInput?.mode(clientId);
-        if (!mode) throw new OpenCraftQueueRpcError(-32600, 'Actor request unavailable');
-        if (mode === 'queue' && !this.options.collaborationInput?.authorize(threadId, clientId, mode)) throw new OpenCraftQueueRpcError(-32600, 'Actor execution authorization changed');
-      } else if (context.actorContext && this.options.collaboration) {
-        context.resourceOwner?.assertCurrent();
-        this.options.collaboration.authorize(context.actorContext, threadId, clientId, Array.isArray(params.input) ? params.input : []);
-      }
-    }
-    if (method === 'thread/queue/steer' && actorInput
-      && !this.options.collaborationInput?.authorize(threadId, clientId, 'steer', string(params.expectedTurnId) || undefined))
-      throw new OpenCraftQueueRpcError(-32600, 'Actor execution authorization changed');
-    return null;
-  }
   /** Whether this Host can record verified senders for a bridge Thread's input. */
-  get externalSenderAttribution(): boolean { return !!this.identity; }
+  private get externalSenderAttribution(): boolean { return !!this.identity; }
   /**
    * Let the bridge adopt one of this Host's Threads. Only a Thread with no turn,
    * queued or unknown input, goal, retry, recovery, title job, active schedule,
    * pending approval or admission in flight is released; this Host then stops
    * observing it. Nothing is executed or discarded.
    */
-  async releaseForAdoption(threadId: string): Promise<boolean> {
+  private async releaseForAdoption(threadId: string): Promise<boolean> {
     // A pass-through to Core keeps no thread state here, so this Host cannot vouch that a Thread is idle.
     if (!threadId || this.closeOperation || this.coreBridge) return false;
     return this.withThreadOperation(threadId, async () => {
@@ -3790,9 +3751,32 @@ export class CodexEngineAdapter implements DuplexTransport {
     });
   }
   /** Title generation for a bridge Thread, observed by its native identity. */
-  observeExternalTitle(method: string, params: RpcRecord, result: unknown): void { this.threadTitles?.observeResult(method, params, result); }
+  private observeExternalTitle(method: string, params: RpcRecord, result: unknown): void { this.threadTitles?.observeResult(method, params, result); }
+  /**
+   * The duties this Host performs for provider bridge Threads while it runs beside
+   * the bridge: it holds the attachment, sender, title and usage records they share
+   * with its own Threads. Collaboration queue checks come from the shared guard.
+   */
+  bridgeOwners(): CodexBridgeOwners {
+    return {
+      prepareInput: (threadId, clientId, input, context) => this.prepareExternalInput(threadId, clientId, input, context),
+      projectHistory: (method, params, result) => this.projectExternalHistory(method, params, result),
+      projectNotification: (message) => this.projectExternalNotification(message),
+      observeTitle: (method, params, result) => this.observeExternalTitle(method, params, result),
+      // The Host opens its sender storage when it connects, after a bridge is assembled.
+      senderAttribution: () => this.externalSenderAttribution,
+      usage: {
+        notification: (method, params) => this.observeExternalUsage(method, params),
+        begin: (nativeThreadId, publicThreadId, inputId, mode, context) => this.beginExternalUsage(nativeThreadId, publicThreadId, inputId, mode, context),
+        settle: (attemptId, outcome, nativeThreadId, inputId, nativeTurnId) => this.settleExternalUsage(attemptId, outcome, nativeThreadId, inputId, nativeTurnId),
+      },
+      queueGuard: collaborationQueueGuard(this.options),
+      releaseForAdoption: (threadId) => this.releaseForAdoption(threadId),
+      bindThreadIdentities: (identities) => this.bindExternalThreadIdentities(identities),
+    };
+  }
   /** Attachments recorded by prepareExternalInput, projected onto that Thread's history. */
-  projectExternalHistory(method: string, params: RpcRecord, result: unknown): unknown {
+  private projectExternalHistory(method: string, params: RpcRecord, result: unknown): unknown {
     const attached = this.messageAttachments ? projectThreadAttachmentResult(this.messageAttachments, method, params, result) : result;
     // Senders recorded by prepareExternalInput, as on this Host's own history.
     return this.messageSenders

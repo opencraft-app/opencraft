@@ -1,4 +1,5 @@
 import { startCodexBridgeStack, startCodexEngineHost, type CodexBridgeStack } from "./codex-bridge-stack.js";
+import { bridgeOwnerPolicy, bridgeOwnersOf } from "./codex-bridge-owners.js";
 import { AssistantThreadCommands } from '@opencraft/access-control/assistant-thread-commands';
 import { ThreadAccessStore } from '@opencraft/access-control/thread-access';
 import { createThreadOrchestrationExecution } from '@opencraft/access-control/thread-orchestration-execution';
@@ -283,18 +284,16 @@ export async function startOpenCraftDaemon(options: {
         });
         codexAgents.add(codexAgent);
         if (options.codexAgentBridge && !options.codexCoreEndpoint) throw Error("Bridge requires existing Core endpoint");
+        // The local Host holds the records bridge Threads share with its own (attachments, senders, titles, usage).
+        const owners = options.codexAgentBridge ? bridgeOwnersOf(codexAgent) : undefined;
         const routing: DuplexTransport = options.codexAgentBridge ? new CodexProviderBridge(codexAgent, options.codexAgentBridge, {
           admissionPaused: () => codexAdmissionPaused(options.codexDataDirectory),
           adoptExisting: options.codexAgentBridgeAdoptExisting === true,
           // With the daemon's own bridge stack, Codex runs only through the bridge.
           newThreads: options.codexBridgeStack !== undefined || options.codexEngineHost !== undefined,
-          ...(codexAgent instanceof CodexEngineAdapter ? {
-            prepareInput: (threadId, clientId, input, context) => codexAgent.prepareExternalInput(threadId, clientId, input, context),
-            projectHistory: (method, params, result) => codexAgent.projectExternalHistory(method, params, result),
-            observeTitle: (method, params, result) => codexAgent.observeExternalTitle(method, params, result),
-            releaseForAdoption: threadId => codexAgent.releaseForAdoption(threadId),
-          } : {}),
+          ...(owners ? bridgeOwnerPolicy(owners) : {}),
         }) : codexAgent;
+        if (owners && routing instanceof CodexProviderBridge) owners.bindThreadIdentities(routing.threadIdentities());
         if (!ownsHostState) return routing;
         // With Core, Host services read native Codex over their own connection to Core's AppServer.
         const reader = options.codexCoreEndpoint ? new CodexNativeReader(options.codexCoreEndpoint, options.authToken) : undefined;

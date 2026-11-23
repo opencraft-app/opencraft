@@ -1,3 +1,4 @@
+import { bridgeOwnerPolicy, bridgeOwnersOf } from './codex-bridge-owners.js';
 import { lstat,readFile } from 'node:fs/promises';
 import { CodexProviderBridge } from './codex-provider-bridge.js';
 import type { BridgeGatewayOptions } from '@opencraft/agent-bridge-host/gateway';
@@ -31,28 +32,15 @@ export interface BridgeExecutionAdmissionPort {
 /** Keep signing and the bridge consumer adjacent; legacy traffic stays untouched. */
 export { codexAdmissionPaused } from './codex-maintenance.js';
 export function createServerCodexBridge(legacy:DuplexTransport,options:BridgeGatewayOptions|undefined,admission:BridgeExecutionAdmissionPort,policy:ConstructorParameters<typeof CodexProviderBridge>[2]={}):DuplexTransport {
-  // A local Codex Host stages bridge attachments exactly as it does its own.
-  const host=legacy as Partial<{prepareExternalInput:NonNullable<typeof policy>['prepareInput'];projectExternalHistory:NonNullable<typeof policy>['projectHistory'];observeExternalTitle:NonNullable<typeof policy>['observeTitle']}>;
-  const attachments=typeof host.prepareExternalInput==='function'&&typeof host.projectExternalHistory==='function'&&typeof host.observeExternalTitle==='function'
-    ?{prepareInput:host.prepareExternalInput.bind(legacy),projectHistory:host.projectExternalHistory.bind(legacy),observeTitle:host.observeExternalTitle.bind(legacy),
-      ...(typeof (legacy as {projectExternalNotification?:unknown}).projectExternalNotification==='function'
-        ?{projectNotification:(legacy as unknown as {projectExternalNotification:(frame:Record<string,any>)=>Record<string,any>}).projectExternalNotification.bind(legacy)}:{}),
-      ...(typeof (legacy as {beginExternalUsage?:unknown}).beginExternalUsage==='function'?{usage:{
-        notification:(method:string,params:Record<string,unknown>)=>(legacy as any).observeExternalUsage(method,params),
-        begin:(...args:Parameters<NonNullable<NonNullable<typeof policy>['usage']>['begin']>)=>(legacy as any).beginExternalUsage(...args),
-        settle:(...args:Parameters<NonNullable<NonNullable<typeof policy>['usage']>['settle']>)=>(legacy as any).settleExternalUsage(...args),
-      }}:{}),
-      // The Host opens its sender storage when it connects, after this bridge is assembled.
-      senderAttribution:()=>(legacy as {externalSenderAttribution?:boolean}).externalSenderAttribution===true,
-      ...(typeof (legacy as {guardExternalQueue?:unknown}).guardExternalQueue==='function'?{queueGuard:(legacy as unknown as {guardExternalQueue:NonNullable<NonNullable<typeof policy>['queueGuard']>}).guardExternalQueue.bind(legacy)}:{}),
-      ...(typeof (legacy as {releaseForAdoption?:unknown}).releaseForAdoption==='function'?{releaseForAdoption:(legacy as unknown as {releaseForAdoption:(id:string)=>Promise<boolean>}).releaseForAdoption.bind(legacy)}:{})}:{};
+  // The local Codex Host beside the bridge holds the records bridge Threads share with its own.
+  const owners=bridgeOwnersOf(legacy);
   // When the bridge owns every new Thread, its implicit identity is assigned here, before
   // admission, so an implicit creation is prepared exactly as an explicit one.
   const ownsNewThreads=!!(policy.newThreads||policy.exclusive||policy.adoptExisting);
   if(!options)return legacy;
-  const bridge=new CodexProviderBridge(legacy,options,{...attachments,...policy});
-  // Host duties forwarded to the local Host (desktop) read a bridge Thread by its native session.
-  (legacy as {bindExternalThreadIdentities?:(identities:ReturnType<CodexProviderBridge['threadIdentities']>)=>void}).bindExternalThreadIdentities?.(bridge.threadIdentities());
+  const bridge=new CodexProviderBridge(legacy,options,{...(owners?bridgeOwnerPolicy(owners):{}),...policy});
+  // Duties the owner performs by native session (desktop attach, usage) map bridge Threads back.
+  owners?.bindThreadIdentities(bridge.threadIdentities());
   return new BridgeExecutionAdmissionTransport(bridge,admission,ownsNewThreads);
 }
 

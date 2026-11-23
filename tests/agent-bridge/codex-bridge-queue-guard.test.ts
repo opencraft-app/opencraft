@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter.js";
+import { collaborationQueueGuard } from "../../apps/opencraft-daemon/src/codex-bridge-owners.js";
 
 type Row = { id: string; clientUserMessageId: string; state: string; targetTurnId: string | null };
 
-// The guard reads only the Host's collaboration options, so it is exercised without a running Host.
+// The guard is built from the collaboration owners alone, so it runs without a local Host.
 function guard(rows: Row[], options: { mode?: "queue" | "steer" | null; allowed?: boolean } = {}) {
   const calls: unknown[] = [];
   const host = {
@@ -34,15 +34,9 @@ function guard(rows: Row[], options: { mode?: "queue" | "steer" | null; allowed?
         ? row.id === by.queuedSubmissionId
         : row.clientUserMessageId === by.clientUserMessageId,
     ) ?? null;
+  const check = collaborationQueueGuard(host.options as never);
   const run = (method: string, params: Record<string, unknown>, context: Record<string, unknown> = {}) =>
-    CodexEngineAdapter.prototype.guardExternalQueue.call(
-      host as never,
-      "bridge:codex:t",
-      method,
-      params,
-      { sender: null, ...context } as never,
-      find,
-    );
+    check("bridge:codex:t", method, params, { sender: null, ...context } as never, find);
   return { run, calls };
 }
 

@@ -416,7 +416,7 @@ try {
     const orchestrator = (
       await c.request("thread/start", { model: "gpt-test", sandbox: "danger-full-access", approvalPolicy: "never" })
     ).thread.id;
-    const spawnCommand = `opencraft thread spawn --prompt CHILD-HELLO --idempotency-key drill-spawn-${randomBytes(4).toString("hex")} --json`;
+    const spawnCommand = `opencraft thread spawn --prompt CHILD-HELLO --title Drill-child --idempotency-key drill-spawn-${randomBytes(4).toString("hex")} --json`;
     const spawned = await ask(
       c,
       orchestrator,

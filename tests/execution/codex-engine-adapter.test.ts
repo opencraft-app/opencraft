@@ -620,7 +620,7 @@ test("Codex desktop authorization reads the engine Thread and retires logical Cl
   assert.equal(credential.target.serverId, "backend-server");
   assert.equal(credential.instanceId, "backend-machine");
   // A bridge Thread is read by its native session and bound under its public identity.
-  adapter.bindExternalThreadIdentities({ toNative: id => id === "bridge:codex:public" ? "desktop-thread" : undefined });
+  adapter.bridgeOwners().bindThreadIdentities({ toNative: id => id === "bridge:codex:public" ? "desktop-thread" : undefined, toPublic: () => undefined });
   const bridged = (await request("bridge-grant", OPENCRAFT_DESKTOP_ATTACH, { threadId: "bridge:codex:public" })).result as any;
   assert.equal(bridged.target.conversationId, "bridge:codex:public");
   await initializeClient(adapter, frames, "client-b");
