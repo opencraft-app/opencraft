@@ -1,0 +1,79 @@
+name: Server release
+
+# The server packages of an App release, built and smoke-tested from the
+# release commit: the headless Linux archive and the container image. Publishing
+# is the caller's: App release attaches the archive to the GitHub release and
+# pushes the tested image (see scripts/release/publish-container-release.sh).
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  headless:
+    # The same runner image as the PR build of this archive (build-matrix linux-headless).
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - run: npm ci --no-audit --no-fund
+      - uses: ./.github/actions/owned-electron
+        with:
+          run-id: ${{ vars.OPENCRAFT_ELECTRON_ARTIFACT_RUN_ID }}
+          target: linux-x64
+          kind: browser
+      - run: npm run matrix:build -- headless-linux-amd64-tar
+      - run: npm run smoke:headless:linux
+      - name: Record the tested archive's digest
+        run: |
+          version="$(node scripts/release/product-version.mjs check)"
+          archive="release/OpenCraft-server-$version-linux-amd64.tar.gz"
+          sha256sum -- "$archive" > "$archive.sha256"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: opencraft-server-headless-${{ github.sha }}
+          path: |
+            release/OpenCraft-server-*-linux-amd64.tar.gz
+            release/OpenCraft-server-*-linux-amd64.tar.gz.sha256
+          retention-days: 30
+          if-no-files-found: error
+
+  container:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - run: npm ci --no-audit --no-fund
+      - uses: ./.github/actions/owned-electron
+        with:
+          run-id: ${{ vars.OPENCRAFT_ELECTRON_ARTIFACT_RUN_ID }}
+          target: linux-x64
+          kind: browser
+      - name: Build the release image
+        run: bash scripts/ci/build-container.sh amd64
+      - run: node scripts/smoke/server/smoke-container.mjs
+      - name: Export the tested image
+        run: |
+          mkdir -p "$RUNNER_TEMP/server-image"
+          docker save opencraft:local | gzip -1 > "$RUNNER_TEMP/server-image/opencraft-server-amd64.tar.gz"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: opencraft-server-image-${{ github.sha }}
+          path: ${{ runner.temp }}/server-image/opencraft-server-amd64.tar.gz
+          compression-level: 0
+          retention-days: 30
+          if-no-files-found: error

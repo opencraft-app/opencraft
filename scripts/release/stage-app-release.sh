@@ -31,6 +31,9 @@ test "$(cut -d ' ' -f 1 "${apks[0]}.sha256")" = "$apk_digest"
 # Likewise for the unsigned IPA that the iOS job checked for no signature.
 ipa=inputs/ios/OpenCraft-ios-unsigned.ipa
 test "$(cut -d ' ' -f 1 "$ipa.sha256")" = "$(sha256sum -- "$ipa" | cut -d ' ' -f 1)"
+# And for the headless server archive the server release smoke-tested.
+server="inputs/server/OpenCraft-server-$version-linux-amd64.tar.gz"
+test "$(cut -d ' ' -f 1 "$server.sha256")" = "$(sha256sum -- "$server" | cut -d ' ' -f 1)"
 
 mkdir candidate
 prefix="OpenCraft-${tag#v}"
@@ -45,6 +48,7 @@ mv "inputs/desktop/desktop-windows-x64/OpenCraft-Setup-$version-x64.exe" \
   "candidate/OpenCraft-Setup-${tag#v}-x64.exe"
 mv "${apks[0]}" "candidate/$prefix-android-arm64.apk"
 mv "$ipa" "candidate/$prefix-ios-unsigned.ipa"
+mv "$server" "candidate/OpenCraft-server-${tag#v}-linux-amd64.tar.gz"
 
 (cd candidate && sha256sum -- * > SHA256SUMS.txt)
 

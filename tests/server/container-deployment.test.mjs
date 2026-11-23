@@ -177,20 +177,27 @@ test('adopted legacy deployments render the existing browser, execution and thre
 
 test('custom container candidates carry pinned bases, source identity and a verified owned runtime input', async () => {
   const root = new URL('../..', import.meta.url);
-  const [dockerfile, workflow] = await Promise.all([
+  const [dockerfile, workflow, build, license] = await Promise.all([
     readFile(new URL('deploy/docker/Dockerfile.owned-electron', root), 'utf8'),
     readFile(new URL('.github/workflows/container.yml', root), 'utf8'),
+    readFile(new URL('scripts/ci/build-container.sh', root), 'utf8'),
+    readFile(new URL('LICENSE', root), 'utf8'),
   ]);
   assert.match(dockerfile, /node:26\.7\.0-bookworm-slim@sha256:[a-f0-9]{64}/u);
   assert.match(dockerfile, /debian:bookworm-slim@sha256:[a-f0-9]{64}/u);
   for (const label of ['org.opencontainers.image.source', 'org.opencontainers.image.revision', 'org.opencontainers.image.licenses'])
     assert.match(dockerfile, new RegExp(label.replaceAll('.', '\\.'), 'u'));
+  // The image declares the repository's own license (LICENSE: MIT No Attribution).
+  assert.match(license, /^MIT No Attribution\n/u);
+  for (const [, declared] of dockerfile.matchAll(/org\.opencontainers\.image\.licenses="([^"]+)"/gu)) assert.equal(declared, 'MIT-0');
   assert.match(workflow, /architecture: amd64/u);
   assert.match(workflow, /target: linux-x64/u);
   assert.match(workflow, /kind: browser/u);
-  assert.match(workflow, /--build-context "owned-electron=\$OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION"/u);
+  // CI and the server release build through one script.
+  assert.match(workflow, /run: bash scripts\/ci\/build-container\.sh "\$\{\{ matrix\.architecture \}\}"/u);
+  assert.match(build, /--build-context "owned-electron=\$OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION"/u);
   for (const argument of ['OPENCRAFT_BUILD_ID', 'OPENCRAFT_SOURCE_REVISION', 'SOURCE_DATE_EPOCH'])
-    assert.match(workflow, new RegExp(`--build-arg "${argument}=`, 'u'));
+    assert.match(build, new RegExp(`--build-arg "${argument}=`, 'u'));
   const installIndex = workflow.indexOf('npm ci --no-audit --no-fund');
   const testIndex = workflow.indexOf('node --import tsx --test tests/server/container-deployment.test.mjs');
   assert.ok(installIndex >= 0 && testIndex > installIndex, 'install dependencies before the container regressions');

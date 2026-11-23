@@ -6,7 +6,14 @@ import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 const sha = 'a'.repeat(40), digest = `sha256:${'b'.repeat(64)}`;
 const workflow = await readFile(new URL('../../.github/workflows/container.yml', import.meta.url), 'utf8');
-test('publication is main-only, dependent on both architectures, with isolated write permissions', () => {
+test('build, distribution and promotion cover the same architectures', () => {
+  const architectures = section => [...section.matchAll(/- architecture: (\w+)/g)].map(match => match[1]).sort();
+  const [build, distribute, promote] = workflow.split(/\n  (?:distribute|promote):/);
+  assert.ok(architectures(build).length > 0);
+  assert.deepEqual(architectures(distribute), architectures(build));
+  assert.deepEqual(promote.match(/ARCHITECTURES: (.+)/)?.[1].trim().split(/\s+/).sort(), architectures(build));
+});
+test('publication is main-only, dependent on every built architecture, with isolated write permissions', () => {
   const [build, distribute, promote] = workflow.split(/\n  (?:distribute|promote):/);
   assert.doesNotMatch(build, /packages: write/);
   assert.match(build, /docker save opencraft:local/);
@@ -35,7 +42,7 @@ case "$*" in
   *'--format {{.Architecture}}') echo amd64;;
   *'org.opencontainers.image.revision'*) echo "$GITHUB_SHA";;
   *'--format {{index .RepoDigests 0}}') echo 'ghcr.io/opencraft-app/opencraft@${digest}';;
-  *'--raw') echo '{"manifests":[{"platform":{"os":"linux","architecture":"amd64"}},{"platform":{"os":"linux","architecture":"arm64"}}]}';;
+  *'--raw') printf '{"manifests":[%s]}\n' "$(for a in \${INDEX_ARCHITECTURES:-$ARCHITECTURES}; do printf '{"platform":{"os":"linux","architecture":"%s"}},' "$a"; done | sed 's/,$//')";;
   *'imagetools inspect '*':sha-'*)
     case "\${EXISTING:-missing}" in
       missing) echo 'manifest unknown' >&2; exit 1;;
@@ -54,13 +61,21 @@ esac
     encoding: 'utf8', env: { ...process.env, PATH: `${dir}:${process.env.PATH}`,
       COMMAND_LOG: log, GH_TOKEN: 'test-only', GITHUB_ACTOR: 'test', GITHUB_SHA: sha,
       GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1', GITHUB_STEP_SUMMARY: join(dir, 'summary'),
-      REMOTE_SHA: sha, ARCH: 'amd64', ...env },
+      REMOTE_SHA: sha, ARCH: 'amd64', ARCHITECTURES: 'amd64 arm64', ...env },
   });
   return { ...result, commands: await readFile(log, 'utf8') };
 }
 test('validated digests become SHA and edge references', async t => {
   const r = await simulate(t); assert.equal(r.status, 0, r.stderr);
   assert.match(r.commands, /create --tag .*:sha-/); assert.match(r.commands, /create --tag .*:edge/);
+});
+test('a single-architecture run publishes its SHA and edge', async t => {
+  const r = await simulate(t, { ARCHITECTURES: 'amd64' }); assert.equal(r.status, 0, r.stderr);
+  assert.match(r.commands, /create --tag .*:sha-/); assert.match(r.commands, /create --tag .*:edge/);
+});
+test('an index missing a built architecture fails closed', async t => {
+  const r = await simulate(t, { INDEX_ARCHITECTURES: 'amd64' }); assert.notEqual(r.status, 0);
+  assert.doesNotMatch(r.commands, /create --tag .*:(sha-|edge)/);
 });
 test('old main run cannot move edge backwards', async t => {
   const r = await simulate(t, { REMOTE_SHA: 'c'.repeat(40) }); assert.equal(r.status, 0, r.stderr);

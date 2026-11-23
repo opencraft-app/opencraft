@@ -6,8 +6,13 @@ DOCKER_CONFIG=$(mktemp -d)
 trap 'rm -rf "$DOCKER_CONFIG"' EXIT
 printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 unset GH_TOKEN
+# The architectures the workflow built and distributed, e.g. "amd64 arm64".
+read -r -a architectures <<<"${ARCHITECTURES:?ARCHITECTURES required}"
+(( ${#architectures[@]} ))
+for arch in "${architectures[@]}"; do [[ "$arch" =~ ^(amd64|arm64)$ ]]; done
+expected_platforms="$(printf 'linux/%s\n' "${architectures[@]}" | sort | paste -sd, -)"
 sources=()
-for arch in amd64 arm64; do
+for arch in "${architectures[@]}"; do
   candidate="$image:run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${arch}"
   digest=$(docker buildx imagetools inspect "$candidate" --format '{{.Manifest.Digest}}')
   [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
@@ -17,11 +22,11 @@ done
 index="$image:run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 docker buildx imagetools create --tag "$index" "${sources[@]}"
 docker buildx imagetools inspect "$index" --raw > /tmp/container-index.json
-node --input-type=module -e '
+EXPECTED_PLATFORMS="$expected_platforms" node --input-type=module -e '
 import fs from "node:fs";
 const m=JSON.parse(fs.readFileSync("/tmp/container-index.json"));
-const p=m.manifests.map(x=>x.platform.os+"/"+x.platform.architecture).sort();
-if(JSON.stringify(p)!==JSON.stringify(["linux/amd64","linux/arm64"]))throw Error("Invalid platform index");'
+const p=m.manifests.map(x=>x.platform.os+"/"+x.platform.architecture).sort().join(",");
+if(p!==process.env.EXPECTED_PLATFORMS)throw Error("Invalid platform index");'
 digest=$(docker buildx imagetools inspect "$index" --format '{{.Manifest.Digest}}')
 [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
 # Fail closed on registry errors other than an explicitly absent SHA tag.

@@ -11,7 +11,7 @@ const read = (path) => readFileSync(join(root, path), "utf8");
 
 test("one workflow releases every platform for a beta or a stable tag", () => {
   const release = read(".github/workflows/app-release.yml");
-  for (const called of ["macos-universal-release", "android-release-apk", "ios-testflight", "ios-unsigned-ipa"]) {
+  for (const called of ["macos-universal-release", "android-release-apk", "ios-testflight", "ios-unsigned-ipa", "server-release"]) {
     assert.match(release, new RegExp(`uses: \\./\\.github/workflows/${called}\\.yml`, "u"), called);
   }
   // The tag must name the product version; a stable tag needs its notes.
@@ -21,12 +21,19 @@ test("one workflow releases every platform for a beta or a stable tag", () => {
   assert.match(release, /performance:\n {4}needs: tag\n {4}if: needs\.tag\.outputs\.prerelease == 'false'\n {4}uses: \.\/\.github\/workflows\/performance\.yml/u);
   assert.match(
     release,
-    /candidate:\n {4}needs: \[tag, linux, windows, macos, android, ios_testflight, ios_unsigned, performance\]\n[^\n]*\n {4}if: \$\{\{ !cancelled\(\) && !failure\(\) \}\}/u,
+    /candidate:\n {4}needs: \[tag, linux, windows, macos, android, ios_testflight, ios_unsigned, server, performance\]\n[^\n]*\n {4}if: \$\{\{ !cancelled\(\) && !failure\(\) \}\}/u,
   );
   assert.match(
     release,
-    /publish:\n {4}needs: \[candidate, ios_testflight\]\n {4}if: \$\{\{ !cancelled\(\) && !failure\(\) && inputs\.publish \}\}/u,
+    /publish:\n {4}needs: \[candidate, ios_testflight, container\]\n {4}if: \$\{\{ !cancelled\(\) && !failure\(\) && inputs\.publish \}\}/u,
   );
+  // The tested server image is pushed, with its own write scope, before the release appears.
+  const container = release.split("\n  container:\n")[1]?.split("\n\n  ")[0] ?? "";
+  assert.match(container, /^ {4}needs: candidate\n {4}if: \$\{\{ !cancelled\(\) && !failure\(\) && inputs\.publish \}\}/u);
+  assert.match(container, /packages: write/u);
+  assert.match(container, /run: bash scripts\/release\/publish-container-release\.sh "\$TAG"/u);
+  assert.doesNotMatch(release.split("\n  container:\n")[0], /packages: write/u, "only the container job can write packages");
+  assert.match(release, /SERVER_IMAGE: \$\{\{ needs\.container\.outputs\.image \}\}/u);
   assert.match(release, /name: opencraft-ios-unsigned-\$\{\{ github\.sha \}\}/u);
   assert.match(release, /name: opencraft-android-release-\$\{\{ github\.sha \}\}/u);
   assert.match(release, /TESTFLIGHT_NUMBER: \$\{\{ needs\.ios_testflight\.outputs\.number \}\}/u);
@@ -84,6 +91,9 @@ function releaseFixture(t, tag, { changelog = "# Changelog\n" } = {}) {
   const record = (path, value = digest(path)) => put(`${path}.sha256`, `${value}  release/${path.split("/").at(-1)}\n`);
   record(apk);
   record(ipa);
+  const server = `inputs/server/OpenCraft-server-${version}-linux-amd64.tar.gz`;
+  put(server, "server");
+  record(server);
 
   const bin = join(directory, "bin");
   mkdirSync(bin);
@@ -123,15 +133,16 @@ function releaseFixture(t, tag, { changelog = "# Changelog\n" } = {}) {
     };
     return { status: result.status, gh: read("gh.log"), notes: read("notes.md") };
   };
-  return { directory, apk, ipa, digest, record, stage: () => run("stage-app-release.sh"), publish };
+  return { directory, apk, ipa, server, digest, record, stage: () => run("stage-app-release.sh"), publish };
 }
 
-const build = { TESTFLIGHT_VERSION: "0.2.0", TESTFLIGHT_NUMBER: "7" };
+const image = `ghcr.io/opencraft-app/opencraft-server@sha256:${"a".repeat(64)}`;
+const build = { TESTFLIGHT_VERSION: "0.2.0", TESTFLIGHT_NUMBER: "7", SERVER_IMAGE: image };
 
 test("staging binds every input to its recorded digest before moving anything", (t) => {
   const fixture = releaseFixture(t, "v0.2.0-beta.3");
   const wrong = "0".repeat(64);
-  for (const path of [fixture.apk, fixture.ipa]) {
+  for (const path of [fixture.apk, fixture.ipa, fixture.server]) {
     fixture.record(path, wrong);
     assert.notEqual(fixture.stage().status, 0, `${path}: a digest mismatch must stop staging`);
     assert.throws(() => readdirSync(join(fixture.directory, "candidate")), /ENOENT/u, "nothing is staged");
@@ -149,6 +160,7 @@ test("staging binds every input to its recorded digest before moving anything", 
     "OpenCraft-0.2.0-beta.3-universal.dmg",
     "OpenCraft-0.2.0-beta.3-win-x64.zip",
     "OpenCraft-Setup-0.2.0-beta.3-x64.exe",
+    "OpenCraft-server-0.2.0-beta.3-linux-amd64.tar.gz",
     "SHA256SUMS.txt",
     "macos-universal-smoke.json",
   ]);
@@ -169,6 +181,9 @@ test("a beta is published as a pre-release naming the uploaded TestFlight build"
     {},
     { ...build, TESTFLIGHT_NUMBER: "0" },
     { ...build, TESTFLIGHT_PUBLIC_LINK: "https://example.com/join/abc" },
+    { ...build, SERVER_IMAGE: undefined },
+    { ...build, SERVER_IMAGE: "ghcr.io/opencraft-app/opencraft@sha256:" + "a".repeat(64) },
+    { ...build, SERVER_IMAGE: "ghcr.io/opencraft-app/opencraft-server:latest" },
   ]) {
     const result = fixture.publish(invalid);
     assert.notEqual(result.status, 0, JSON.stringify(invalid));
@@ -179,6 +194,10 @@ test("a beta is published as a pre-release naming the uploaded TestFlight build"
   assert.match(linked.notes, /^OpenCraft v0\.2\.0-beta\.3 from commit/u);
   assert.match(linked.notes, /\[TestFlight build 0\.2\.0 \(7\)\]\(https:\/\/testflight\.apple\.com\/join\/AbC123\)/u);
   assert.match(linked.notes, /iOS unsigned IPA is for signing with your own Apple ID/u);
+  assert.ok(
+    linked.notes.includes(`container image \`ghcr.io/opencraft-app/opencraft-server:0.2.0-beta.3\` (linux/amd64), pinned as \`${image}\``),
+    linked.notes,
+  );
   assert.match(fixture.publish(build).notes, /- iOS: TestFlight build 0\.2\.0 \(7\); it appears/u);
 });
 

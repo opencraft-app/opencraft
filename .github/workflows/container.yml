@@ -38,15 +38,7 @@ jobs:
           target: linux-x64
           kind: browser
       - name: Build identified container candidate
-        run: |
-          source_date_epoch="$(git show -s --format=%ct HEAD)"
-          docker buildx build -f deploy/docker/Dockerfile.owned-electron \
-            --build-context "owned-electron=$OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION" \
-            --platform "linux/${{ matrix.architecture }}" \
-            --build-arg "OPENCRAFT_BUILD_ID=github-${GITHUB_SHA}" \
-            --build-arg "OPENCRAFT_SOURCE_REVISION=${GITHUB_SHA}" \
-            --build-arg "SOURCE_DATE_EPOCH=${source_date_epoch}" \
-            --target runtime --tag opencraft:local --load .
+        run: bash scripts/ci/build-container.sh "${{ matrix.architecture }}"
       - run: node --test tests/tooling/container-publication.test.mjs
       - run: node scripts/smoke/server/smoke-container.mjs
       - name: Export the tested image (main only)
@@ -67,14 +59,14 @@ jobs:
     permissions:
       contents: read
       packages: write
+    # Exactly the architectures docker-compose builds; arm64 waits for an
+    # owned linux-arm64 browser artifact.
     strategy:
       fail-fast: false
       matrix:
         include:
           - architecture: amd64
             runner: ubuntu-24.04
-          - architecture: arm64
-            runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
@@ -112,4 +104,5 @@ jobs:
       - name: Publish multi-architecture references
         env:
           GH_TOKEN: ${{ github.token }}
+          ARCHITECTURES: amd64
         run: bash scripts/ci/promote-container.sh

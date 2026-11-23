@@ -3,8 +3,9 @@ name: App release
 # The only publisher of OpenCraft releases. One tag names the product version
 # (scripts/release/product-version.mjs): vX.Y.Z-beta.N publishes a GitHub
 # pre-release, vX.Y.Z a stable release with its CHANGELOG section. Desktop
-# packages, the production-signed Android APK and the unsigned iOS IPA share the
-# tag and manifest, and the same commit is uploaded to TestFlight.
+# packages, the production-signed Android APK, the unsigned iOS IPA and the
+# headless server archive share the tag and manifest; the same commit is
+# uploaded to TestFlight and its server image to ghcr.io/opencraft-app/opencraft-server.
 on:
   workflow_dispatch:
     inputs:
@@ -97,6 +98,11 @@ jobs:
     needs: tag
     uses: ./.github/workflows/ios-unsigned-ipa.yml
 
+  # The headless Linux archive and the container image, built and smoke-tested.
+  server:
+    needs: tag
+    uses: ./.github/workflows/server-release.yml
+
   # Stable releases are gated on the browser performance suite; betas are not.
   performance:
     needs: tag
@@ -168,7 +174,7 @@ jobs:
           retention-days: 14
 
   candidate:
-    needs: [tag, linux, windows, macos, android, ios_testflight, ios_unsigned, performance]
+    needs: [tag, linux, windows, macos, android, ios_testflight, ios_unsigned, server, performance]
     # The performance job is skipped for betas; every other need must succeed.
     if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-latest
@@ -193,6 +199,10 @@ jobs:
         with:
           name: opencraft-ios-unsigned-${{ github.sha }}
           path: inputs/ios
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: opencraft-server-headless-${{ github.sha }}
+          path: inputs/server
       - name: Stage and verify the release candidate
         env:
           TAG: ${{ inputs.tag }}
@@ -204,8 +214,36 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
+  # The tested image goes to its public package before the release appears,
+  # so a published release always names an image that exists.
+  container:
+    needs: candidate
+    if: ${{ !cancelled() && !failure() && inputs.publish }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: opencraft-server-image-${{ github.sha }}
+          path: ${{ runner.temp }}/server-image
+      - name: Publish the tested server image
+        id: push
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          IMAGE_ARCHIVE: ${{ runner.temp }}/server-image/opencraft-server-amd64.tar.gz
+        run: bash scripts/release/publish-container-release.sh "$TAG"
+
   publish:
-    needs: [candidate, ios_testflight]
+    needs: [candidate, ios_testflight, container]
     if: ${{ !cancelled() && !failure() && inputs.publish }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -228,4 +266,5 @@ jobs:
           TESTFLIGHT_VERSION: ${{ needs.ios_testflight.outputs.version }}
           TESTFLIGHT_NUMBER: ${{ needs.ios_testflight.outputs.number }}
           TESTFLIGHT_PUBLIC_LINK: ${{ vars.OPENCRAFT_TESTFLIGHT_PUBLIC_LINK }}
+          SERVER_IMAGE: ${{ needs.container.outputs.image }}
         run: bash scripts/release/publish-app-release.sh "$TAG"

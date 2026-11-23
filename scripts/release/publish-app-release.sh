@@ -19,6 +19,9 @@ python3 "$kit" manifest-verify "${release_kind[@]}" --tag "$tag" --manifest "can
 # the repository has configured one.
 [[ "${TESTFLIGHT_VERSION:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "${TESTFLIGHT_NUMBER:-}" =~ ^[1-9][0-9]{0,3}$ ]]
 testflight="TestFlight build $TESTFLIGHT_VERSION ($TESTFLIGHT_NUMBER)"
+# The release pushed its tested server image before publishing (publish-container-release.sh).
+[[ "${SERVER_IMAGE:-}" =~ ^ghcr\.io/opencraft-app/opencraft-server@sha256:[a-f0-9]{64}$ ]]
+image_name="${SERVER_IMAGE%@*}"
 if [[ -n "${TESTFLIGHT_PUBLIC_LINK:-}" ]]; then
   [[ "$TESTFLIGHT_PUBLIC_LINK" =~ ^https://testflight\.apple\.com/join/[A-Za-z0-9]+$ ]]
   testflight="[$testflight]($TESTFLIGHT_PUBLIC_LINK)"
@@ -41,6 +44,7 @@ OpenCraft $tag from commit $commit ([build and verification]($RUN_URL)).
 - Android arm64 APK is signed with the OpenCraft production key.
 - iOS: $testflight; it appears once Apple finishes processing and beta review.
 - iOS unsigned IPA is for signing with your own Apple ID (AltStore, SideStore).
+- Server: the headless Linux x64 archive, and the container image \`$image_name:${tag#v}\` (linux/amd64), pinned as \`$SERVER_IMAGE\`.
 
 The release manifest identifies the source and every published asset.
 EOF
