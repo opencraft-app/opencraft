@@ -475,7 +475,7 @@ Sidebar pending/running/Goal/review/error/unread activities share the single tra
 
 ### Account model defaults authority
 
-Personal Composer model/effort/service-tier defaults are account data, separate from installation UI preferences. The client contract is `AccountModelDefaultsPort` (`@opencraft/workbench-runtime`): `read`/`write` per verified account scope and Host, with revision CAS and record format 1 (`{revision, selection}`). A registered `PlatformAccountContribution.modelDefaults` is the authority for its product account. Without an account contribution, the Web uses the core authority of the server's own logins (`AccountModelDefaultsSource`), so local accounts, OIDC and other verified identity sources work without a product plugin.
+Personal Composer model/effort/service-tier defaults are account data, separate from installation UI preferences. The client contract is `AccountModelDefaultsPort` (`@opencraft/workbench-runtime`): `read`/`write` per verified account scope and Host, with revision CAS and record format 1 (`{revision, selection}`). A registered `PlatformAccountContribution.modelDefaults` is the authority for its product account. Unless an account contribution provides its own `modelDefaults` port, the Web uses the core authority of the server's own logins (`AccountModelDefaultsSource`), so local accounts, OIDC and other verified identity sources work without a product plugin.
 
 Headless serves that core authority at `/__opencraft_model_defaults`:
 

@@ -8,19 +8,20 @@ const noSubscribe = () => () => {};
 
 /**
  * Account data stays in memory and on its authenticated server, never browser persistence.
- * A registered account contribution is the authority; `core` (the server's own logins)
- * applies only while no account contribution is registered.
+ * An account contribution that provides `modelDefaults` is the authority; otherwise `core`
+ * (the server's own logins) applies, also beside a contribution without that port.
  */
 export function useAccountModelDefaults(accounts: PlatformAccountContributionRegistry, hostId: string, enabled: boolean,
   core: AccountModelDefaultsSource | null = null) {
   const contribution = useSyncExternalStore(accounts.subscribe, accounts.getSnapshot).contribution;
-  const source = contribution ? null : core;
-  const subscribe = contribution?.subscribe ?? source?.subscribe ?? noSubscribe;
-  const getScope = useCallback(() => contribution ? contribution.getSnapshot().readStateScope ?? null : source?.getScope() ?? null, [contribution, source]);
+  const owned = contribution?.modelDefaults ? contribution : null;
+  const source = owned ? null : core;
+  const subscribe = owned?.subscribe ?? source?.subscribe ?? noSubscribe;
+  const getScope = useCallback(() => owned ? owned.getSnapshot().readStateScope ?? null : source?.getScope() ?? null, [owned, source]);
   const scope = useSyncExternalStore(subscribe, getScope);
-  const getPhase = useCallback(() => contribution ? contribution.getSnapshot().phase : source ? "authenticated" : "anonymous", [contribution, source]);
+  const getPhase = useCallback(() => owned ? owned.getSnapshot().phase : source ? "authenticated" : "anonymous", [owned, source]);
   const phase = useSyncExternalStore(subscribe, getPhase);
-  const port = contribution ? contribution.modelDefaults : source?.port;
+  const port = owned ? owned.modelDefaults : source?.port;
   const client = useQueryClient();
   const owner = useMemo(() => ({ controller: new AbortController() }), [contribution, source, scope, port]);
   const queue = useRef<Promise<void>>(Promise.resolve());
@@ -29,7 +30,7 @@ export function useAccountModelDefaults(accounts: PlatformAccountContributionReg
     if (owner.controller.signal.aborted) owner.controller = new AbortController();
     return () => { owner.controller.abort(); };
   }, [owner]);
-  const keyFor = useCallback((host: string) => ["account-model-defaults", contribution?.id ?? source?.id, scope, host] as const, [contribution, source, scope]);
+  const keyFor = useCallback((host: string) => ["account-model-defaults", owned?.id ?? source?.id, scope, host] as const, [owned, source, scope]);
   const current = useCallback(() => !owner.controller.signal.aborted && accounts.getSnapshot().contribution === contribution
     && scope !== null && getScope() === scope, [accounts, contribution, owner, getScope, scope]);
   const query = useQuery({

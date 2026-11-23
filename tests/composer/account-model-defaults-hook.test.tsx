@@ -139,7 +139,8 @@ test("without an account contribution the core login port remembers and reads ba
     await other.unmount();
   }
 
-  // Signed-out visitors keep installation memory; a product account contribution keeps its own authority.
+  // Signed-out visitors keep installation memory. A product account contribution without its own
+  // model defaults port still uses the core login port; one with a port keeps its own authority.
   assert.equal(await ServerAccountModelDefaults.discover(fetcherFor(null)), undefined);
   const accounts = new PlatformAccountContributionRegistry();
   accounts
@@ -164,8 +165,49 @@ test("without an account contribution the core login port remembers and reads ba
   const product = await mount(accounts, source);
   try {
     const hook = await product.settle((value) => !value.isPending);
-    assert.equal(hook.authoritative, false);
+    assert.equal(hook.authoritative, true, "a contribution without modelDefaults falls back to the core port");
   } finally {
     await product.unmount();
+  }
+  const owned = new PlatformAccountContributionRegistry();
+  const reads: string[] = [];
+  owned
+    .createAdapter()
+    .prepare({} as never, {
+      id: "product.account.owned",
+      viewId: "product.account.owned.view",
+      refresh: async () => undefined,
+      subscribe: () => () => undefined,
+      getSnapshot: () => ({
+        revision: 1,
+        phase: "authenticated",
+        readStateScope: "product-scope",
+        name: null,
+        avatarUrl: null,
+        planLabel: null,
+        usageRemainingPercent: null,
+        error: null,
+      }),
+      modelDefaults: {
+        async read(scope: string, host: string) {
+          reads.push(scope + "|" + host);
+          return { revision: 0, selection: null };
+        },
+        async write() {
+          throw Error("not used");
+        },
+      },
+    })
+    .commit();
+  const productOwned = await mount(owned, source);
+  try {
+    const hook = await productOwned.settle((value) => !value.isPending);
+    assert.equal(hook.authoritative, true);
+    assert.ok(
+      reads.length > 0 && reads.every((entry) => entry.startsWith("product-scope|")),
+      "the product port stays the authority",
+    );
+  } finally {
+    await productOwned.unmount();
   }
 });

@@ -128,7 +128,7 @@ export interface AppServerHostCatalog {
   readonly extensionManager: ExtensionManager;
   readonly platformViewRenderers: PlatformViewRendererRegistry;
   readonly platformAccounts: PlatformAccountContributionRegistry;
-  /** Core login authority for personal model defaults; used only without an account contribution. */
+  /** Core login authority for personal model defaults; used unless the account contribution provides its own port. */
   readonly accountModelDefaults: import("@opencraft/workbench-runtime").AccountModelDefaultsSource | null;
   readonly threadAttention: BrowserThreadAttention;
   readonly applicationBranding: ApplicationBrandingRegistry;
@@ -451,7 +451,7 @@ export interface WebWorkbenchApplicationBase {
   readonly extensionSettings: ExtensionSettingsStore;
   readonly platformViewRenderers: PlatformViewRendererRegistry;
   readonly platformAccounts: PlatformAccountContributionRegistry;
-  /** Core login authority for personal model defaults; used only without an account contribution. */
+  /** Core login authority for personal model defaults; used unless the account contribution provides its own port. */
   readonly accountModelDefaults: import("@opencraft/workbench-runtime").AccountModelDefaultsSource | null;
   readonly applicationBranding: ApplicationBrandingRegistry;
   readonly channelSearch: ChannelSearchRegistry;
