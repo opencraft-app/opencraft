@@ -30,7 +30,7 @@ import { createAssetsStorage } from "../../plugins/assets/src/server/storage.js"
 import { openAssetConfigurations } from "../../plugins/assets/src/server/worker.js";
 import { openHeadlessAssetsStorage } from "../../apps/headless-server/src/headless-assets-storage.js";
 import { createHostEnvironmentLaunch } from "../../apps/headless-server/src/host-environment-launch.ts";
-import { validateEnvironmentDelivery } from "../../apps/headless-server/src/headless-identity.mjs";
+import { environmentLaunchOwner } from "../../apps/headless-server/src/headless-identity.mjs";
 import { sealedEnvironmentIssuerKey } from "@opencraft/execution-environment/environment-launch-owner";
 import { unissuableEnvironmentIssuer } from "../../scripts/server-deployment/environment-issuer.mjs";
 
@@ -352,15 +352,22 @@ test("the vault owner refuses wrong-project, forged and cross-Thread contexts", 
 
 test("one ENV owner: two owners or an issuer that did not start are refused at startup", async (t) => {
   const port = { issuer: "a".repeat(44), seal: async () => "" };
-  assert.equal(validateEnvironmentDelivery(undefined, undefined), false);
-  assert.equal(validateEnvironmentDelivery("vault-owner", { providers: [] }), true);
-  assert.throws(() => validateEnvironmentDelivery("vault-owner", { executionEnvironment: {} }), {
-    message: "Execution ENV cannot have two owners",
-  });
-  assert.throws(() => validateEnvironmentDelivery("vault-owner", { environmentLaunch: port }), {
-    message: "Execution ENV cannot have two owners",
-  });
-  assert.throws(() => validateEnvironmentDelivery("synchronous", undefined));
+  assert.equal(environmentLaunchOwner(undefined, undefined), null);
+  assert.equal(environmentLaunchOwner(undefined, { executionEnvironment: {} }), null);
+  // Delivery does not name the owner: core's Worker unless the identity
+  // composition supplies the port; the earlier spelling means the same.
+  for (const delivery of ["opaque", "vault-owner"]) {
+    assert.equal(environmentLaunchOwner(delivery, { providers: [] }), "core");
+    assert.equal(environmentLaunchOwner(delivery, { environmentLaunch: port }), "identity");
+    assert.throws(() => environmentLaunchOwner(delivery, { executionEnvironment: {} }), {
+      message: "Execution ENV cannot have two owners",
+    });
+    assert.throws(() => environmentLaunchOwner(delivery, { executionEnvironment: {}, environmentLaunch: port }), {
+      message: "Execution ENV cannot have two owners",
+    });
+  }
+  assert.equal(environmentLaunchOwner(undefined, { environmentLaunch: port }), "identity");
+  assert.throws(() => environmentLaunchOwner("synchronous", undefined));
   const f = await durable(t);
   // Without durable admission the vault owner would have to trust the relay.
   await assert.rejects(createAssetsStorage(f.directory, [], undefined, undefined, { environmentLaunch: true }), {

@@ -14,6 +14,10 @@ import { networkInterfaces } from 'node:os';
 import { WebSocket, WebSocketServer } from 'ws';
 import { once } from 'node:events';
 import { Worker } from 'node:worker_threads';
+import { generateKeyPairSync } from 'node:crypto';
+import { publishEnvironmentIssuer } from '@opencraft/execution-environment/environment-launch-owner';
+import { deploymentPaths } from '../../scripts/container-deployment/paths.mjs';
+import { executionHostIssuer } from '../../scripts/container-deployment/execution-hosts.mjs';
 
 async function fixture(t) {
   const runtime = fileURLToPath(new URL('../../.runtime/', import.meta.url));
@@ -165,7 +169,7 @@ test('core ENV delivery has one owner and fails at startup without execution adm
   // Gateway that would not publish it is refused before the vault owner starts.
   await assert.rejects(startHeadlessServer({ ...f.options, engines: ['dsh', 'pi'], defaultEngine: 'dsh', environmentDelivery: 'vault-owner',
     engineHostDescriptor: join(f.root, 'engine-host.json') }), /requires a published issuer/);
-  await assert.rejects(startHeadlessServer({ ...f.options, environmentIssuer: { publish: join(f.root, 'issuer.json') } }), /requires core environment delivery/);
+  await assert.rejects(startHeadlessServer({ ...f.options, environmentIssuer: { publish: join(f.root, 'issuer.json') } }), /requires environment delivery/);
   assert.equal(f.starts(), 0);
   // Deployment configuration: unset changes nothing; set values are validated.
   const parse = env => parseHeadlessArguments(['--data-dir', f.options.dataDirectory], env);
@@ -173,8 +177,10 @@ test('core ENV delivery has one owner and fails at startup without execution adm
   assert.deepEqual(parse({ OPENCRAFT_ENVIRONMENT_DELIVERY: '' }).environmentDelivery, undefined);
   const configured = parse({ OPENCRAFT_ENVIRONMENT_DELIVERY: 'vault-owner', OPENCRAFT_ENVIRONMENT_ISSUER_FILE: '/run/issuer.json',
     OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION: '2026-11' });
-  assert.equal(configured.environmentDelivery, 'vault-owner');
+  // The earlier spelling stays accepted with the same meaning.
+  assert.equal(configured.environmentDelivery, 'opaque');
   assert.deepEqual(configured.environmentIssuer, { publish: '/run/issuer.json', generation: '2026-11' });
+  assert.equal(parse({ OPENCRAFT_ENVIRONMENT_DELIVERY: 'opaque' }).environmentDelivery, 'opaque');
   for (const env of [{ OPENCRAFT_ENVIRONMENT_DELIVERY: 'sync' }, { OPENCRAFT_ENVIRONMENT_ISSUER_FILE: '/run/issuer.json' },
     { OPENCRAFT_ENVIRONMENT_DELIVERY: 'vault-owner', OPENCRAFT_ENVIRONMENT_ISSUER_FILE: 'relative.json' },
     { OPENCRAFT_ENVIRONMENT_DELIVERY: 'vault-owner', OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION: 'a b' }])
@@ -218,6 +224,53 @@ test('an identity-owned vault port brings its own admission and metadata; missin
   t.after(() => app.close());
   assert.equal((await fetch(app.url + '/__opencraft_actors/me')).status, 200);
   assert.deepEqual(calls, [], 'no metadata is written before a Host request');
+});
+
+test('with ENV delivery an identity-owned vault is the only owner, publishes the issuer Brain pins, and never runs beside core', async t => {
+  const f = await fixture(t);
+  const principal = { provider: 'fixture-directory', subject: 'opaque-human-id', displayName: 'Fixture Human', expiresAt: Date.now() + 60_000 };
+  const metadata = Object.fromEntries(['admit', 'project', 'bind', 'bindCreator', 'rememberProjects'].map(method => [method, async () => null]));
+  const x25519 = () => generateKeyPairSync('x25519').publicKey.export({ type: 'spki', format: 'der' }).toString('base64url');
+  const issuer = x25519();
+  const port = { issuer, seal: async () => { throw Error('not sealed in this test'); }, admission: async () => null, metadata };
+  const env = { OPENCRAFT_DATA_DIR: f.options.dataDirectory, OPENCRAFT_WORKSPACE_DIR: join(f.root, 'work') };
+  const paths = deploymentPaths({ ...env, OPENCRAFT_ENVIRONMENT_DELIVERY: 'opaque' });
+  const contexts = [];
+  let closed = 0;
+  // The composition publishes like its vault Worker does (createAssetsStorage's
+  // environmentIssuer.publish), at the path and generation core hands it.
+  const identity = (launch, publishKey = launch?.issuer) => async context => {
+    contexts.push(context.environmentIssuer);
+    if (publishKey && context.environmentIssuer?.publish) await publishEnvironmentIssuer(context.environmentIssuer.publish, publishKey);
+    return { assistantEnvironmentConfigurationManaged: true, providers: [{ authenticate: () => principal }],
+      environmentLaunch: launch, close() { closed++; } };
+  };
+  const options = { ...f.options, accessMemberProviders: [principal.provider], environmentDelivery: 'opaque',
+    environmentIssuer: { publish: paths.environmentIssuerFile, generation: '2026-11' } };
+  // Never two owners: the synchronous runtime beside delivery, or beside the port.
+  await assert.rejects(startHeadlessServer(options, { createIdentity: async () => ({ providers: [], executionEnvironment: { close() {} },
+    close() { closed++; } }) }), /two owners/);
+  await assert.rejects(startHeadlessServer(options, { createIdentity: async () => ({ ...(await identity(port)({})),
+    executionEnvironment: { close() {} } }) }), /identity adapter/);
+  // An independent engine host needs the publication before any owner starts.
+  contexts.length = 0;
+  await assert.rejects(startHeadlessServer({ ...options, environmentIssuer: undefined, engines: ['dsh', 'pi'], defaultEngine: 'dsh',
+    engineHostDescriptor: join(f.root, 'engine-host.json') }, { createIdentity: identity(port) }), /requires a published issuer/);
+  assert.deepEqual(contexts, []);
+  // A publication that is missing or names another key is refused: no silent fallback.
+  await assert.rejects(startHeadlessServer(options, { createIdentity: identity(port, null) }), /identity vault owner to publish its issuer/);
+  await assert.rejects(startHeadlessServer(options, { createIdentity: identity(port, x25519()) }), /identity vault owner to publish its issuer/);
+  assert.equal(closed, 4);
+  assert.equal(f.starts(), 0);
+  // Delivery on with the port: the port is the only owner, core opens no vault Worker.
+  const app = await startHeadlessServer(options, { createIdentity: identity(port) });
+  t.after(() => app.close());
+  assert.equal((await fetch(app.url + '/__opencraft_actors/me')).status, 200);
+  assert.deepEqual(contexts.at(-1), { publish: paths.environmentIssuerFile, generation: '2026-11' });
+  assert.ok(Object.isFrozen(contexts.at(-1)));
+  await assert.rejects(stat(join(f.options.dataDirectory, 'employee-git-vault.sqlite')), { code: 'ENOENT' }, 'core opens no vault Worker');
+  // Brain pins exactly the key the identity owner published.
+  assert.equal(await executionHostIssuer(paths, () => {}), issuer);
 });
 
 test('an identity vault port wires Codex ENV and Git delivery or startup fails closed', async t => {

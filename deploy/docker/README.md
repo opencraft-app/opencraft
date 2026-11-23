@@ -335,10 +335,13 @@ them is a deployment decision outside this option.
 
 ## Optional account ENV delivery
 
-With `OPENCRAFT_ENVIRONMENT_DELIVERY=vault-owner` (Assets context only), DSH,
-Pi and Codex receive account ENV as opaque capsules from the Gateway's vault owner instead
-of running without it. Set it for Brain and Gateway alike (Compose passes it to
-both). The vault owner keeps its issuer key sealed in the vault,
+With `OPENCRAFT_ENVIRONMENT_DELIVERY=opaque` (Assets context only; the earlier
+value `vault-owner` means the same), DSH, Pi and Codex receive account ENV as
+opaque capsules from the Gateway's vault owner instead of running without it.
+The setting turns on delivery and pinning; it does not choose the vault owner.
+The Gateway uses its identity composition's vault owner when the composition
+supplies one, otherwise core's own vault Worker, never both. Set the same value
+on both services in either case (compose passes it to both). The vault owner keeps its issuer key sealed in the vault,
 so the key survives Gateway restarts and updates, and publishes the public key
 to `$OPENCRAFT_DATA_DIR/run/environment-issuer.json` (owner-only file, rewritten
 only when the key changes). Brain's workspace agent starts before the Gateway, so
@@ -359,7 +362,9 @@ agent then watches the publication:
   Brain incarnation), like any other critical child failure. The Gateway
   picks up the new DSH and Pi descriptors at its next health observation.
 - Rotation is explicit: change `OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION` and
-  recreate the Gateway. It seals a new key and publishes it; Brain relaunches DSH,
+  recreate the Gateway. Its vault owner (core's Worker, or the identity
+  composition's, which receives the same generation) seals a new key and
+  publishes it; Brain relaunches DSH,
   Pi and the Codex AppServer. Until then they hold the previous key and
   deliveries fail closed. A Gateway restart or update keeps the key and
   relaunches nothing. AppServer replacements (this one and a Hands rebinding)
@@ -394,7 +399,7 @@ The `proxy` service runs `--accounts-only`: it owns accounts and models but no
 Codex runtime, so it is not the receiver that opens Codex ENV launch capsules.
 Codex Threads run on Brain's own AppServer, and that AppServer is the receiver:
 
-- With `OPENCRAFT_ENVIRONMENT_DELIVERY=vault-owner` (see
+- With `OPENCRAFT_ENVIRONMENT_DELIVERY=opaque` (see
   [Optional account ENV delivery](#optional-account-env-delivery)) Brain starts it
   with `--environment-launch-config`. Its health, which the Gateway reads through
   the `codex-control` workspace endpoint, then reports the receiver; human Codex

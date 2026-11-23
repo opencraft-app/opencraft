@@ -1,4 +1,4 @@
-# Install only with ENV delivery (OPENCRAFT_ENVIRONMENT_DELIVERY=vault-owner) as
+# Install only with ENV delivery (OPENCRAFT_ENVIRONMENT_DELIVERY=opaque) as
 # /etc/systemd/system/opencraft-codex-appserver.service.d/environment.conf.
 # The owner-only (0600) launch file comes from
 # opencraft-codex-appserver-environment.json.example: it names the vault

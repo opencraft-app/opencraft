@@ -46,12 +46,20 @@ async function peer(directory: string) {
     });
   } };
 }
+// The owner is detached from the test, so wait for it to be gone before removing the directory it still writes into.
+async function stopOwner(pid: number) {
+  try { process.kill(pid, 'SIGTERM'); } catch { return; }
+  for (const deadline = Date.now() + 5000; Date.now() < deadline; await new Promise(resolve => setTimeout(resolve, 25))) {
+    try { process.kill(pid, 0); } catch { return; }
+  }
+  try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
+}
 async function stopPeer(child: ChildProcess) { if (child.exitCode !== null || child.signalCode !== null) return; const exited = once(child, 'exit'); child.kill('SIGKILL'); await exited; }
 
 test('real Host process restart preserves shell PID, environment, detached output, resize and explicit termination', { skip: process.platform === 'win32' }, async t => {
   const directory = await mkdtemp(join(tmpdir(), 'pty-host-restart-')), location = await terminalOwnerLocation(directory);
   const first = await peer(directory); let second: Awaited<ReturnType<typeof peer>> | undefined, pid: number | undefined;
-  t.after(async () => { await stopPeer(first.child); if (second) await stopPeer(second.child); if (pid) process.kill(pid, 'SIGTERM'); await rm(directory, { recursive: true, force: true }); await rm(join(location.endpoint, '..'), { recursive: true, force: true }); });
+  t.after(async () => { await stopPeer(first.child); if (second) await stopPeer(second.child); if (pid) await stopOwner(pid); await rm(directory, { recursive: true, force: true }); await rm(join(location.endpoint, '..'), { recursive: true, force: true }); });
   await first.call('process/spawn', spawnParams('kept'));
   pid = await ownerPid(location.endpoint);
   assert.notEqual(pid, first.child.pid);
