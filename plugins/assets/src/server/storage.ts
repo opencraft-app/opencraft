@@ -6,6 +6,22 @@ import { WorkspaceBudgetStore, type WorkspaceBudgetRole, type WorkspaceBudgetOut
 import type { SandboxIdentity, SandboxResources } from "@opencraft/sandbox";
 import { parseGitExecutionLocator, type GitExecutionResolver } from "@opencraft/execution-environment/git-execution";
 import { EmployeeGitVaultStore, GitVaultError } from "@opencraft/execution-environment/employee-git-vault-store";
+import {
+  EnvironmentLaunchOwner,
+  environmentTerminalRecords,
+} from "@opencraft/execution-environment/environment-launch-owner";
+import type { EnvironmentAccountResolver } from "@opencraft/execution-environment/environment-account";
+import { PersonalGitSealOwner } from "@opencraft/execution-environment/personal-git-seal";
+import type { GitGrantScope } from "@opencraft/execution-environment/personal-git-protocol";
+import {
+  EnvironmentMetadata,
+  type EnvironmentExecutionScope,
+  type EnvironmentScopeRequest,
+} from "@opencraft/execution-environment/environment-metadata";
+import type {
+  AnyEnvironmentLaunchContext,
+  EnvironmentLaunchTarget,
+} from "@opencraft/execution-environment/environment-delivery";
 import { PLATFORM_ASSET_SCOPE } from "../contract.js";
 import { SandboxConfigurations, SandboxConfigurationError } from "./configurations.js";
 import { GitConnections, type GitConnectionProvider } from "./git-connections.js";
@@ -17,10 +33,82 @@ export async function createAssetsStorage(
   providers: readonly GitConnectionProvider[] = [githubConnectionProvider()],
   execution?: GitExecutionResolver,
   createWorkspaces?: CreateAssetWorkspaceExecutionOwner,
+  /** Issue opaque execution ENV capsules from this sole vault owner, which
+   * then also owns the non-secret ENV metadata (bindings, creators, catalog). */
+  options: {
+    environmentLaunch?: boolean;
+    /** Trusted composition only: the vault partition an admitted owner's ENV
+     * and creator provenance use. Without it, the canonical Actor partition. */
+    environmentAccounts?: EnvironmentAccountResolver;
+  } = {},
 ) {
+  // ENV for a launch needs the durable admission this owner reads itself.
+  if (options.environmentLaunch && !execution) throw new Error("Environment delivery requires execution admission");
+  if (
+    options.environmentAccounts !== undefined &&
+    (!options.environmentLaunch ||
+      typeof options.environmentAccounts?.forActor !== "function" ||
+      typeof options.environmentAccounts.forLogin !== "function")
+  )
+    throw new Error("Environment account mapping requires the vault owner");
   const vault = await EmployeeGitVaultStore.open(directory);
   let workspaces: AssetWorkspaceExecutionOwner | undefined;
+  let environment: EnvironmentLaunchOwner | undefined;
+  let gitSeal: PersonalGitSealOwner | undefined;
+  // Retire the issuer key before the admission reader and the vault close.
+  const release = async () => {
+    environment?.close();
+    gitSeal?.close();
+    try {
+      await workspaces?.close();
+    } finally {
+      try {
+        execution?.close();
+      } finally {
+        vault.close();
+      }
+    }
+  };
   try {
+    environment =
+      options.environmentLaunch && execution
+        ? new EnvironmentLaunchOwner(
+            vault,
+            (input) => execution.resolve(input),
+            // Terminal launches are admitted under the current Actor epoch.
+            execution.actor
+              ? { terminal: environmentTerminalRecords(vault, (account) => execution.actor!(account)) }
+              : {},
+            options.environmentAccounts ? { accounts: options.environmentAccounts } : {},
+          )
+        : undefined;
+    // The same owner serves `PersonalGitSealPort`: Main awaits a grant and never
+    // holds the vault key. A scope is sealed only while it is this owner's own
+    // durable admission (an active Turn, or a Codex pending reservation).
+    gitSeal = environment
+      ? new PersonalGitSealOwner(vault, (scope) => {
+          const locator = { hostId: scope.hostId, threadId: scope.threadId, inputId: scope.inputId };
+          for (const read of [execution!.resolve, execution!.reserve])
+            try {
+              const admitted = read?.call(execution, locator)?.scope;
+              if (admitted) return admitted;
+            } catch {
+              /* Not admissible through this record; the next one may hold it. */
+            }
+          return null;
+        })
+      : undefined;
+        // Issuer and metadata share one mapping, so a Thread's creator and its
+    // values name the same partition.
+    const metadata = environment ? new EnvironmentMetadata(vault, options.environmentAccounts) : undefined;
+    // Metadata runs FIFO with every other vault write; nothing it returns is a value.
+    const metadataCall = <T>(operation: (owner: EnvironmentMetadata) => T): T => {
+      try {
+        return operation(metadata!);
+      } catch {
+        throw new SandboxConfigurationError("environment_unavailable", 503);
+      }
+    };
     const configurations = new SandboxConfigurations(vault);
     const workspaceCatalog = new InstalledWorkspaceCatalog(configurations);
     const workspaceBudget = new WorkspaceBudgetStore(vault, () => {
@@ -96,7 +184,23 @@ export async function createAssetsStorage(
       },
     });
     return {
-      concurrentReads: execution ? ["executionGitGrant", "executionGitReservation"] : [],
+      concurrentReads: execution
+        ? [
+            "executionGitGrant",
+            "executionGitReservation",
+            // Metadata reads see committed bindings; a Gateway forwards a Thread
+            // only after its binding committed, so later reads observe it.
+            ...(environment
+              ? [
+                  "executionEnvironmentLaunch",
+                  "personalGitSeal",
+                  "environmentMetadataAdmit",
+                  "environmentMetadataProject",
+                  ...(execution.actor ? ["executionEnvironmentActor"] : []),
+                ]
+              : []),
+          ]
+        : [],
       ready: {
         outcome: vault.outcome,
         workspaceExecution: workspaces !== undefined && workspaces.workspaceExecution !== false,
@@ -104,6 +208,8 @@ export async function createAssetsStorage(
         botBackends: workspaces?.botExecution === true ? [...(workspaces.botBackends ?? [])] : [],
         gitHosts: providers.map((p) => p.host),
         gitAuthority: execution ? vault.personalGitAuthority("actor") : null,
+        environmentIssuer: environment?.issuer ?? null,
+        environmentTerminal: !!environment && !!execution?.actor,
       },
       methods: {
         ...Object.fromEntries(
@@ -212,6 +318,48 @@ export async function createAssetsStorage(
             throw new SandboxConfigurationError("execution_unavailable", 503);
           }
         },
+        // Returns only an opaque capsule for one execution process. There is no
+        // method that returns decrypted ENV values to the caller of this Worker.
+        ...(environment
+          ? {
+              executionEnvironmentLaunch: (target: EnvironmentLaunchTarget, context: AnyEnvironmentLaunchContext) => {
+                try {
+                  return environment!.seal(target, context);
+                } catch {
+                  throw new SandboxConfigurationError("execution_unavailable", 503);
+                }
+              },
+              // Returns only the opaque grant; the key never leaves this Worker.
+              personalGitSeal: (scope: GitGrantScope) => {
+                try {
+                  return gitSeal!.seal(scope);
+                } catch {
+                  throw new SandboxConfigurationError("execution_unavailable", 503);
+                }
+              },
+              // The epoch a terminal reservation records; no value, no Project.
+              ...(execution?.actor
+                ? {
+                    executionEnvironmentActor: (account: string) => {
+                      try {
+                        return execution!.actor!(account);
+                      } catch {
+                        throw new SandboxConfigurationError("execution_unavailable", 503);
+                      }
+                    },
+                  }
+                : {}),
+              environmentMetadataAdmit: (request: EnvironmentScopeRequest) => metadataCall((m) => m.admit(request)),
+              environmentMetadataProject: (hostId: string, threadId: string) =>
+                metadataCall((m) => m.project(hostId, threadId)),
+              environmentMetadataBind: (hostId: string, threadId: string, projectId: string | null) =>
+                metadataCall((m) => m.bind(hostId, threadId, projectId)),
+              environmentMetadataBindCreator: (scope: EnvironmentExecutionScope, threadId: string) =>
+                metadataCall((m) => m.bindCreator(scope, threadId)),
+              environmentMetadataRememberProjects: (hostId: string, projects: readonly { id: string; name: string }[]) =>
+                metadataCall((m) => m.rememberProjects(hostId, projects)),
+            }
+          : {}),
         gitSnapshot: (access: AssetAdmission) => run(access, () => git.snapshot(access.scope)),
         gitUpdate: (access: AssetAdmission, input: unknown) =>
           run(access, (check) => git.update(access.scope, input, check)),
@@ -224,28 +372,10 @@ export async function createAssetsStorage(
             configurations.update(access.scope, input, access.allowCustomEndpoints, access.canManagePlatform),
           ),
       },
-      close: async () => {
-        try {
-          await workspaces?.close();
-        } finally {
-          try {
-            execution?.close();
-          } finally {
-            vault.close();
-          }
-        }
-      },
+      close: release,
     };
   } catch (error) {
-    try {
-      await workspaces?.close();
-    } finally {
-      try {
-        execution?.close();
-      } finally {
-        vault.close();
-      }
-    }
+    await release();
     throw error;
   }
 }

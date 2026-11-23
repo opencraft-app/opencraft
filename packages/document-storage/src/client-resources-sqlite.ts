@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import { openManagedDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
+import { openManagedDatabase, type BorrowedDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import { REMOTE_RESOURCE_LIMIT, resourceKey, validateResourceRecord,
   type ClientResourceKey, type ClientResourceRecord, type ClientResourcePersistence } from "./client-resources.js";
 
@@ -10,13 +10,21 @@ const BASELINE = `CREATE TABLE client_resources (
 CREATE INDEX client_resources_remote ON client_resources(authority, saved_at);`;
 
 /** Separate fixed Main-owned database. Neither preferences nor Host/extension authority. */
+/** Open the retired standalone file; only the desktop client storage importer reads it now. */
+export function openClientResourcesDatabase(path: string): BorrowedDatabase {
+  return openManagedDatabase({ schemaId: "client-resources-sqlite", path,
+    migrations: [{ version: 1, name: "client-resources", sql: BASELINE }] });
+}
+
 export class SqliteClientResources implements ClientResourcePersistence {
   private readonly database: DatabaseSync;
+  private readonly owned: boolean;
   readonly outcome: DatabaseOutcome;
-  constructor(path: string) {
-    const managed = openManagedDatabase({ schemaId: "client-resources-sqlite", path,
-      migrations: [{ version: 1, name: "client-resources", sql: BASELINE }] });
+  /** A path opens a standalone database; a borrowed connection belongs to its lender. */
+  constructor(source: string | BorrowedDatabase) {
+    const managed = typeof source === "string" ? openClientResourcesDatabase(source) : source;
     this.database = managed.database;
+    this.owned = typeof source === "string";
     this.outcome = managed.outcome;
   }
   async read(key: ClientResourceKey): Promise<ClientResourceRecord | null> {
@@ -63,5 +71,5 @@ export class SqliteClientResources implements ClientResourcePersistence {
     resourceKey({ namespace, name, id: "namespace", authority: "local" });
     this.database.prepare("DELETE FROM client_resources WHERE namespace=? AND authority='local' AND json_extract(identity,'$[1]')=?").run(namespace, name);
   }
-  close() { this.database.close(); }
+  close() { if (this.owned) this.database.close(); }
 }

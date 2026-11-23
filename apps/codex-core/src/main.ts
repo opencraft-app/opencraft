@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { personalSubscriptionRoute, personalSubscriptionTarget } from "./personal-subscription-route.js";
 import { timingSafeEqual } from "node:crypto";
 import { chmod, mkdir, stat, unlink } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -28,12 +29,13 @@ export interface CodexCoreOptions extends CodexAccountServiceOptions {
 
 /** Execution and account ownership lives here, never in a daemon connection. */
 export async function startCodexCore(options: CodexCoreOptions) {
-  if (process.platform === "win32") throw new Error("Codex core requires Unix sockets");
   if (![options.endpoint, options.runtimeDirectory, options.dataDirectory, options.nativeCodexHomeDirectory].every(isAbsolute)) {
     throw new Error("Codex core paths must be absolute");
   }
   if (options.authToken.length < 32) throw new Error("Codex core requires a private daemon token (at least 32 characters)");
+  // Split Core (accounts and proxy; the AppServer runs native Codex) works with named pipes on Windows.
   if (options.appServerEndpoint || options.accountsOnly) return startSplitCodexCore(options);
+  if (process.platform === "win32") throw new Error("The combined Codex core requires Unix sockets; use the split AppServer");
   const nativeSocket = join(dirname(options.endpoint), "native.sock");
   if (nativeSocket === options.endpoint) throw new Error("Codex core control endpoint must differ from native.sock");
   const releaseWriter = await acquireCodexWriter(options.dataDirectory);
@@ -57,10 +59,11 @@ export async function startCodexCore(options: CodexCoreOptions) {
       reply(503, { error: "Codex core is unavailable" }); return;
     }
     if (req.method === "GET" && req.url === "/health") { reply(200, health); return; }
-    if(/^\/personal\/[a-f0-9]{64}\/v1\/(responses|models)$/.test(req.url??'')) {
+    const personalRoute=personalSubscriptionRoute(req.url);
+    if(personalRoute) {
       try {
         const setting=accounts!.launch().args.find(arg=>arg.startsWith('chatgpt_base_url='))!;
-        const target=new URL(req.url!,JSON.parse(setting.slice(setting.indexOf('=')+1)));
+        const target=personalSubscriptionTarget(JSON.parse(setting.slice(setting.indexOf('=')+1)),personalRoute);
         const headers=new Headers({'authorization':'Bearer '+String(req.headers['x-opencraft-subscription-token']??'')});
         if(req.headers['content-type'])headers.set('content-type',req.headers['content-type']);
         const result=await fetch(target,{method:req.method,headers,...(req.method==='GET'?{}:{body:Readable.toWeb(req),duplex:'half'})} as RequestInit);

@@ -11,6 +11,39 @@ on:
         description: Marketing version for check_build (defaults to the current app version)
         required: false
         type: string
+      check_availability:
+        description: Wait for and require external TestFlight availability after uploading
+        type: boolean
+        default: true
+  # The app release uploads its build here. Beta review can take hours, so a
+  # release does not wait for external availability.
+  workflow_call:
+    inputs:
+      check_availability:
+        type: boolean
+        default: false
+    outputs:
+      version:
+        description: Marketing version of the uploaded build
+        value: ${{ jobs.build.outputs.version }}
+      number:
+        description: Build number of the uploaded build
+        value: ${{ jobs.build.outputs.number }}
+    secrets:
+      ASC_API_KEY_ID:
+        required: true
+      ASC_API_ISSUER_ID:
+        required: true
+      ASC_API_PRIVATE_KEY_BASE64:
+        required: true
+      APPLE_TEAM_ID:
+        required: true
+      IOS_CERTIFICATE_P12_BASE64:
+        required: true
+      IOS_CERTIFICATE_PASSWORD:
+        required: true
+      IOS_PROVISIONING_PROFILE_BASE64:
+        required: true
 
 permissions:
   contents: read
@@ -21,7 +54,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.repository == 'opencraft-app/opencraft' && github.ref == 'refs/heads/main' && inputs.check_build == ''
+    if: github.repository == 'opencraft-app/opencraft' && github.ref == 'refs/heads/main' && !inputs.check_build
     runs-on: macos-26
     timeout-minutes: 70
     environment: ios-testflight
@@ -173,7 +206,8 @@ jobs:
     needs: build
     if: >-
       !cancelled() && github.repository == 'opencraft-app/opencraft' &&
-      github.ref == 'refs/heads/main' && (inputs.check_build != '' || needs.build.result == 'success')
+      github.ref == 'refs/heads/main' &&
+      (inputs.check_build || (inputs.check_availability && needs.build.result == 'success'))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: ios-testflight
@@ -191,7 +225,7 @@ jobs:
           ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
           ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
           ASC_API_PRIVATE_KEY_BASE64: ${{ secrets.ASC_API_PRIVATE_KEY_BASE64 }}
-          IOS_VERSION: ${{ inputs.check_build != '' && inputs.check_version || needs.build.outputs.version }}
+          IOS_VERSION: ${{ inputs.check_build && inputs.check_version || needs.build.outputs.version }}
           IOS_BUILD_NUMBER: ${{ inputs.check_build || needs.build.outputs.number }}
           OPENCRAFT_TESTFLIGHT_GROUP: ${{ vars.OPENCRAFT_TESTFLIGHT_GROUP }}
           TESTFLIGHT_STATUS_FILE: ${{ runner.temp }}/testflight-status.json

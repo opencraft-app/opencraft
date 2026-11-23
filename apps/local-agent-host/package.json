@@ -31,7 +31,8 @@
     "./ordinary-workspace-compute": "./src/ordinary-workspace-compute.ts",
     "./sandbox-conversation-binding": "./src/sandbox-conversation-binding.ts",
     "./sandbox-browser-owner": "./src/sandbox-browser-owner.ts",
-    "./sandbox-process-service": "./src/sandbox-process-service.ts"
+    "./sandbox-process-service": "./src/sandbox-process-service.ts",
+    "./ordinary-workspace-selection": "./src/ordinary-workspace-selection.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -66,7 +67,8 @@
     "@opencraft/agent-bridge-host": "0.1.0",
     "@opencraft/access-control": "0.1.0",
     "@opencraft/observability-contract": "0.1.0",
-    "@opencraft/execution-environment": "0.1.0"
+    "@opencraft/execution-environment": "0.1.0",
+    "@opencraft/agent-bridge-protocol": "0.1.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

@@ -1,0 +1,231 @@
+name: App release
+
+# The only publisher of OpenCraft releases. One tag names the product version
+# (scripts/release/product-version.mjs): vX.Y.Z-beta.N publishes a GitHub
+# pre-release, vX.Y.Z a stable release with its CHANGELOG section. Desktop
+# packages, the production-signed Android APK and the unsigned iOS IPA share the
+# tag and manifest, and the same commit is uploaded to TestFlight.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to create at this commit, vX.Y.Z-beta.N (pre-release) or vX.Y.Z (stable)
+        required: true
+        type: string
+      publish:
+        description: Publish the GitHub release (otherwise only build and verify the packages)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: app-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    if: github.repository == 'opencraft-app/opencraft' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      prerelease: ${{ steps.match.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Match the tag to this checkout's product version
+        id: match
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          node scripts/release/product-version.mjs check "$TAG"
+          node scripts/release/android-version-code.mjs "$TAG"
+          if [[ "$TAG" == *-beta.* ]]; then
+            echo prerelease=true >> "$GITHUB_OUTPUT"
+          else
+            # A stable release publishes its committed notes; require them now.
+            python3 .github/secure-release/v1/secure_release.py changelog \
+              --tag "$TAG" --changelog CHANGELOG.md --notes "$RUNNER_TEMP/release-notes.md"
+            echo prerelease=false >> "$GITHUB_OUTPUT"
+          fi
+          node --test tests/tooling/android-release.test.mjs tests/tooling/product-version.test.mjs
+
+  macos:
+    needs: tag
+    uses: ./.github/workflows/macos-universal-release.yml
+    # GitHub requires named forwarding for environment secrets in reusable
+    # workflows. The called macos-release jobs resolve the environment values.
+    secrets:
+      MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+  android:
+    needs: tag
+    uses: ./.github/workflows/android-release-apk.yml
+    with:
+      tag: ${{ inputs.tag }}
+    # Named forwarding, as for macOS; the called job resolves android-release values.
+    secrets:
+      ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+      ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+      ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+
+  ios_testflight:
+    needs: tag
+    uses: ./.github/workflows/ios-testflight.yml
+    # Named forwarding, as for macOS; the called job resolves ios-testflight values.
+    secrets:
+      ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+      ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+      ASC_API_PRIVATE_KEY_BASE64: ${{ secrets.ASC_API_PRIVATE_KEY_BASE64 }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+      IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+      IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+
+  ios_unsigned:
+    needs: tag
+    uses: ./.github/workflows/ios-unsigned-ipa.yml
+
+  # Stable releases are gated on the browser performance suite; betas are not.
+  performance:
+    needs: tag
+    if: needs.tag.outputs.prerelease == 'false'
+    uses: ./.github/workflows/performance.yml
+    with:
+      evidence_name: performance-${{ inputs.tag }}-${{ github.run_attempt }}
+
+  linux:
+    needs: tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          # Release packages must not depend on a cache a pull request could write.
+          package-manager-cache: false
+      - run: npm ci --no-audit --no-fund
+      - uses: ./.github/actions/owned-electron
+        with:
+          run-id: ${{ vars.OPENCRAFT_ELECTRON_ARTIFACT_RUN_ID }}
+          target: linux-x64
+          kind: desktop
+      - run: npm run package:electron:linux:x64:appimage
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-linux-x64
+          path: apps/desktop/release/*.AppImage
+          if-no-files-found: error
+          retention-days: 14
+
+  windows:
+    needs: tag
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      OPENCRAFT_ELECTRON_STOCK_DESKTOP: '1'
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Run npm scripts with Git Bash on Windows
+        # Package scripts set variables POSIX-style (NAME=value command),
+        # which cmd.exe, npm's default Windows script shell, cannot run.
+        run: echo 'npm_config_script_shell=C:/Program Files/Git/bin/bash.exe' >> "$GITHUB_ENV"
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build:electron:release
+      - name: Package with stock Electron
+        run: npm run package:win:x64 --workspace @opencraft/desktop
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-windows-x64
+          path: |
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  candidate:
+    needs: [tag, linux, windows, macos, android, ios_testflight, ios_unsigned, performance]
+    # The performance job is skipped for betas; every other need must succeed.
+    if: ${{ !cancelled() && !failure() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: desktop-*
+          path: inputs/desktop
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: opencraft-macos-universal-${{ github.sha }}
+          path: inputs/macos
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: opencraft-android-release-${{ github.sha }}
+          path: inputs/android
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: opencraft-ios-unsigned-${{ github.sha }}
+          path: inputs/ios
+      - name: Stage and verify the release candidate
+        env:
+          TAG: ${{ inputs.tag }}
+        run: bash scripts/release/stage-app-release.sh "$TAG"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: app-release-${{ github.sha }}
+          path: candidate/
+          retention-days: 30
+          if-no-files-found: error
+
+  publish:
+    needs: [candidate, ios_testflight]
+    if: ${{ !cancelled() && !failure() && inputs.publish }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: app-release-${{ github.sha }}
+          path: candidate
+      - name: Publish the verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TESTFLIGHT_VERSION: ${{ needs.ios_testflight.outputs.version }}
+          TESTFLIGHT_NUMBER: ${{ needs.ios_testflight.outputs.number }}
+          TESTFLIGHT_PUBLIC_LINK: ${{ vars.OPENCRAFT_TESTFLIGHT_PUBLIC_LINK }}
+        run: bash scripts/release/publish-app-release.sh "$TAG"

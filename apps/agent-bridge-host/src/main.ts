@@ -2,13 +2,16 @@ import { hostExecutionCli } from '@opencraft/session-capabilities/execution-cli'
 import { readFile, lstat } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { systemdSandboxBackend } from '@opencraft/sandbox-node';
+import { nodeSandboxBackends } from '@opencraft/sandbox-node/runtime';
 import { BridgeHost } from './host.js';
 import { attachGateway } from './server.js';
 // Explicit opt-in executable. No imports from existing engine composition.
 const path = process.argv[2];
 if (!path || !isAbsolute(path)) throw Error('Supply an absolute private Host configuration path');
 const config = JSON.parse(await readFile(path, 'utf8'));
-if (config.backend !== 'linux-systemd' || !isAbsolute(config.database)) throw Error('Explicit supported backend and database required');
+// The backend is always explicit; there is no fallback to another one.
+const BACKENDS = ['linux-systemd', 'host-process', 'hands-unix'];
+if (!BACKENDS.includes(config.backend) || !isAbsolute(config.database)) throw Error('Explicit supported backend and database required');
 if(config.automation && (!config.automation.hostId||!config.automation.environment||Object.keys(config.automation).some(key=>!['hostId','environment'].includes(key))))throw Error('Explicit automation Host and environment identities required');
 let executionCli;
 let launcherEndpoint:string;
@@ -20,7 +23,7 @@ if(config.cli) {
   if(key.length!==32)throw Error('Invalid CLI signing key');
   executionCli=hostExecutionCli({directory:config.cli.directory,endpoint:config.cli.endpoint,key,launcherEndpoint:()=>launcherEndpoint});
 }
-const host = await BridgeHost.open({ automation:config.automation, executionCli, path: config.database, policy: config.policy, backend: systemdSandboxBackend(config.backendOptions) });
+const host = await BridgeHost.open({ automation:config.automation, executionCli, path: config.database, policy: config.policy, backend: config.backend === 'linux-systemd' ? systemdSandboxBackend(config.backendOptions) : await nodeSandboxBackends[config.backend]!(config.backendOptions) });
 if (config.generations !== undefined) {
   if (!Array.isArray(config.generations) || config.generations.length > 16) throw Error('Invalid generation list');
   for (const generation of config.generations) await host.add(generation);
@@ -37,7 +40,11 @@ let closing = false;
 const close = async () => {
   if (closing) return; closing = true;
   try { await gateway.close(); await host.close(); process.exitCode = 0; }
-  catch { process.stderr.write('Bridge Host cleanup unconfirmed\n'); process.exitCode = 1; }
+  catch (error) {
+    const reasons = error instanceof AggregateError ? error.errors : [error];
+    process.stderr.write(`Bridge Host cleanup unconfirmed: ${reasons.map(reason => reason instanceof Error ? reason.message : String(reason)).join('; ').slice(0, 500)}\n`);
+    process.exitCode = 1;
+  }
 };
 process.on('SIGTERM', () => void close());
 process.on('SIGINT', () => void close());

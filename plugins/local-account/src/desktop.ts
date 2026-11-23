@@ -29,11 +29,12 @@ import { LocalAccountApplication } from './application.js';
 /** Methods `desktop-account-owner.worker.ts` serves on the owner connection. */
 type DesktopAccountOwner = { upgradeLocalPassword: ReturnType<typeof localAccountPasswordUpgrade> };
 
-/** Native Main owns these stores and the private browser proof. No renderer supplies identity. */
+/** The desktop daemon owns these stores and serves the account routes (`storageRole: 'owner'`);
+ * Electron Main forwards those routes and installs the browser proof as a cookie. No renderer supplies identity. */
 export async function createDesktopAccountHost(directory: string, renderLogin: (nonce: string) => string, options: { openRemote?: (origin: string) => Promise<void>; storageRole?: 'owner' | 'borrower'; assetsStorage?: Parameters<typeof openHumanAssets>[0]['openStorage'] } = {}) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   // The owner Worker holds the writer lock and commits login-time password upgrades
-  // (compare-and-set SQL off Main); a borrower (the Daemon) never upgrades.
+  // (compare-and-set SQL off the owning thread); a borrower never upgrades.
   const owned = options.storageRole === 'borrower' ? null
     : await openServerCoreOwner<DesktopAccountOwner>(directory, { entry: ownerEntry(import.meta.url, 'desktop-account-owner') });
   const storage = owned ?? borrowServerDatabase(directory);
@@ -95,7 +96,8 @@ export async function createDesktopAccountHost(directory: string, renderLogin: (
       },
       setOrigin(origin: string) {
         const url = new URL(origin);
-        if (configuration.origin || url.origin !== origin || url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw new Error('Desktop account origin requires its private loopback listener');
+        if (url.origin !== origin || url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw new Error('Desktop account origin requires its private loopback listener');
+        // The daemon outlives Main; a restarted Main serves the renderer on a new loopback port.
         configuration.origin = origin;
       },
       async handle(request: IncomingMessage, response: ServerResponse) {

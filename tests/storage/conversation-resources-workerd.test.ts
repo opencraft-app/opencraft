@@ -1,5 +1,5 @@
 // Conversation resource rows on Durable Object SQL (Miniflare, no Cloudflare
-// account): the published Server migrations including 0022_conversation_resources
+// account): the published Server migrations including 0023_conversation_resources
 // run unchanged, the runtime-neutral domain gives the same results as the Node
 // owner, an older Server contract upgrades across a restart keeping its rows,
 // and a tampered checksum is refused. See workspace-host-split.md §4.1.
@@ -14,7 +14,7 @@ import { openServerDatabase, SERVER_MIGRATIONS } from "@opencraft/storage-node/s
 import { conversationResourceMethods } from "@opencraft/storage-node/server-conversation-resources";
 
 const COMPATIBILITY_DATE = "2026-07-30";
-const RESOURCES_VERSION = SERVER_MIGRATIONS.findIndex((migration) => migration.name === "0022_conversation_resources") + 1;
+const RESOURCES_VERSION = SERVER_MIGRATIONS.findIndex((migration) => migration.name === "0023_conversation_resources") + 1;
 let directory: string;
 let script: string;
 let sequence = 0;

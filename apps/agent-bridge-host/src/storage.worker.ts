@@ -2,11 +2,15 @@ import { parentPort, workerData, isMainThread } from 'node:worker_threads';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
-import { openManagedDatabase, acquireProcessWriter, sqliteTransaction } from '@opencraft/sqlite-node';
+import { openManagedDatabase, acquireProcessWriter, sqliteTransaction, nodeSqlDatabase } from '@opencraft/sqlite-node';
 import { projectToAppServer, assemble, createAssemblerState, type AssemblerState, type CanonicalInputState } from '@opencraft/agent-bridge-assembler';
-import { parseThreadDeltaParams } from '@opencraft/agent-bridge-protocol';
+import { BRIDGE_THREAD_NOTIFICATIONS, parseThreadDeltaParams } from '@opencraft/agent-bridge-protocol';
+import { ThreadQueueStore } from '@opencraft/thread-queue';
 import { migrations } from './migrations.js';
 import type { Receipt, Generation, OutboxEvent } from './types.js';
+/** Commands that bring a Thread route into existence, and that end its native session. */
+const CREATES: readonly string[] = ['session/create', 'session/fork', 'session/adopt'];
+const ENDS: readonly string[] = ['session/close', 'session/delete'];
 if (isMainThread) throw Error('Bridge SQL must run in a Worker');
 mkdirSync(dirname(workerData.path), { recursive: true, mode: 0o700 });
 const release = acquireProcessWriter(`${workerData.path}.writer`);
@@ -29,6 +33,11 @@ if (workerData.role === 'host') tx(() => {
   run("UPDATE commands SET state='unknown' WHERE state='dispatching'");
   run("UPDATE automation_scripts SET state='unknown' WHERE state IN ('admitted','running')");
 });
+// Queued follow-up input of bridge Threads, keyed by Host route. Inputs left
+// mid-dispatch by the previous process become unknown, as commands do.
+const queue = workerData.role === 'host' ? new ThreadQueueStore(nodeSqlDatabase(db)) : null;
+const QUEUE_METHODS = new Set(['add', 'list', 'find', 'findByClientId', 'firstAwaitingAdmission', 'update', 'delete', 'reorder', 'claim', 'settle',
+  'requestRetry', 'resumeRequestedRetry', 'discardUnknown', 'discardThread', 'recordInput', 'finishTurn', 'receipt', 'pendingThreads', 'maintenanceCounts', 'interruptExecution']);
 const receipt = (id: string): Receipt | null => {
   const row = get('SELECT * FROM commands WHERE id=?', id);
   return row ? { commandId: row.id, digest: row.digest, epoch: row.epoch, route: row.route, generation: row.generation, method: row.method, state: row.state,
@@ -67,6 +76,36 @@ const operations: Record<string, (args: any) => any> = {
     run("UPDATE automation_scripts SET state=?,result=? WHERE key=? AND state IN ('admitted','running')",state,JSON.stringify(result??null),key);
   },
   ready: () => outcome,
+  queue: ({ method, args }: any) => {
+    require(queue !== null && typeof method === 'string' && QUEUE_METHODS.has(method) && Array.isArray(args), 'Unsupported queue operation');
+    return (queue as any)[method](...args);
+  },
+  // A route on an older generation that could move to the current one: nothing open, in custody or waiting.
+  migration: ({ route }: any) => {
+    const binding = get('SELECT generation FROM routes WHERE route=?', route);
+    const native = get('SELECT native_id,restorable FROM native_sessions WHERE route=?', route);
+    return { generation: binding?.generation ?? null, current: meta('current'), nativeId: native?.restorable === 1 ? native.native_id : null, busy: busy(route) };
+  },
+  rebindRoute: ({ route, from, to }: any) => tx(() => {
+    require(get('SELECT generation FROM routes WHERE route=?', route)?.generation === from, 'Route moved meanwhile');
+    require(get('SELECT 1 FROM generations WHERE id=? AND retired=0', to), 'Generation unavailable');
+    require(!busy(route), 'Route became busy');
+    run('UPDATE routes SET generation=? WHERE route=?', to, route);
+  }),
+  // A generation nothing is bound to any more, and whose events are acknowledged, is retired.
+  retireUnused: ({ id }: any) => tx(() => {
+    if (meta('current') === id || get('SELECT 1 FROM routes WHERE generation=?', id) || get('SELECT 1 FROM outbox WHERE generation=?', id)) return false;
+    run('UPDATE generations SET retired=1 WHERE id=?', id);
+    return true;
+  }),
+  // Idle for queue dispatch: no turn open in the assembled state and no turn command in custody.
+  routeIdle: ({ route }: any) => !get("SELECT 1 FROM commands WHERE route=? AND method IN ('turn/start','turn/steer') AND state IN ('registered','dispatching','unknown')", route)
+    && Object.keys(checkpoint(route).openTurns).length === 0,
+  queueChanged: ({ route }: any) => tx(() => {
+    const binding = get('SELECT generation FROM routes WHERE route=?', route);
+    require(binding, 'Queue Thread has no route');
+    run('INSERT INTO outbox(route,generation,payload) VALUES (?,?,?)', route, binding.generation, JSON.stringify({ method: 'thread/queue/changed', params: { threadId: route } }));
+  }),
   snapshot: () => ({ epoch: Number(meta('epoch')), current: meta('current'), ack: Number(meta('ack')),
     generations: all('SELECT * FROM generations').map(row => ({ ...row, config: JSON.parse(row.config) })), routes: all('SELECT * FROM routes'), nativeSessions: all('SELECT * FROM native_sessions'), interactions: all('SELECT * FROM interactions') }),
   add: (config: Generation) => tx(() => {
@@ -82,9 +121,9 @@ const operations: Record<string, (args: any) => any> = {
   admit: ({ command, digest, route, maxSpoolBytes }: any) => tx(() => {
     const old = receipt(command.commandId);
     if (old) { require(old.digest === digest, 'commandId reused with different input'); return { receipt: old, fresh: false }; }
-    require(!['session/create','turn/start','turn/steer'].includes(command.method) || Number(get('SELECT coalesce(sum(length(CAST(payload AS BLOB))),0) AS bytes FROM outbox').bytes) < maxSpoolBytes, 'Spool full; new admissions stopped');
+    require(![...CREATES,'turn/start','turn/steer'].includes(command.method) || Number(get('SELECT coalesce(sum(length(CAST(payload AS BLOB))),0) AS bytes FROM outbox').bytes) < maxSpoolBytes, 'Spool full; new admissions stopped');
     let binding = get('SELECT generation FROM routes WHERE route=?', route);
-    if (binding && command.method === 'session/create') {
+    if (binding && CREATES.includes(command.method)) {
       // A rejected first create left only a route binding, no native session,
       // outbox or accepted command. Allow that Thread identity to retry rather
       // than bricking it; any accepted/unsettled command or native fact still
@@ -96,7 +135,7 @@ const operations: Record<string, (args: any) => any> = {
     }
     if (!binding) {
       require(!get('SELECT 1 FROM released_routes WHERE route=?', route), 'Thread is permanently closed');
-      require(command.method === 'session/create', 'Thread must be explicitly created');
+      require(CREATES.includes(command.method), 'Thread must be explicitly created');
       const generation = meta('current');
       require(get('SELECT 1 FROM generations WHERE id=? AND retired=0', generation), 'No active generation');
       run('INSERT INTO routes VALUES (?,?)', route, generation); binding = { generation };
@@ -125,7 +164,7 @@ const operations: Record<string, (args: any) => any> = {
     if (receipt(id)?.state !== 'dispatching') return receipt(id);
     run('UPDATE commands SET state=?,response=? WHERE id=?', state, response ? JSON.stringify(response) : null, id);
     const row = receipt(id)!;
-    if (state === 'accepted' && ['interaction/resolve', 'session/close', 'turn/stop'].includes(row.method)) {
+    if (state === 'accepted' && ['interaction/resolve', ...ENDS, 'turn/stop'].includes(row.method)) {
       const retiring = row.method === 'interaction/resolve' ? all('SELECT * FROM interactions WHERE route=? AND id=?', row.route, interactionId) : all('SELECT * FROM interactions WHERE route=?', row.route);
       for (const interaction of retiring) {
         run('DELETE FROM interactions WHERE route=? AND id=?', row.route, interaction.id);
@@ -157,6 +196,10 @@ const operations: Record<string, (args: any) => any> = {
       const result = assemble(state, parsed.params!.deltas, { threadId: route, clockSeed: now - state.seq });
       run('INSERT INTO checkpoints VALUES (?,?,?) ON CONFLICT(route) DO UPDATE SET state=excluded.state,at_ms=excluded.at_ms', route, JSON.stringify(result.state), result.events.at(-1)?.atMs ?? now);
       for (const event of result.events) run('INSERT INTO outbox(route,generation,payload) VALUES (?,?,?)', route, generation, JSON.stringify({ kind: 'canonical', event }));
+    } else if (method === 'thread/notification') {
+      // Only allow-listed thread metadata; stored as the native method for the gateway to publish.
+      require(typeof params.method === 'string' && BRIDGE_THREAD_NOTIFICATIONS.has(params.method) && params.params && typeof params.params === 'object' && !Array.isArray(params.params), 'Invalid thread notification');
+      run('INSERT INTO outbox(route,generation,payload) VALUES (?,?,?)', route, generation, JSON.stringify({ method: params.method, params: { ...params.params, threadId: route } }));
     } else {
       require(['thread/identity', 'interaction/request', 'interaction/resolved', 'provider/recovery'].includes(method), 'Unsupported callback');
       if (method === 'interaction/request') {
@@ -183,7 +226,7 @@ const operations: Record<string, (args: any) => any> = {
   }),
   abandon: ({ route, id }: any) => tx(() => {
     const row = get('SELECT method,state,route FROM commands WHERE id=?', id);
-    require(row && row.state === 'rejected' && row.method === 'session/create' && row.route === route,
+    require(row && row.state === 'rejected' && CREATES.includes(row.method) && row.route === route,
       'Only a rejected create can abandon its route');
     require(!get('SELECT 1 FROM native_sessions WHERE route=?', route), 'Native session retains the route');
     require(!get('SELECT 1 FROM commands WHERE route=? AND id<>?', route), 'Other command custody retains the route');
@@ -193,7 +236,7 @@ const operations: Record<string, (args: any) => any> = {
   }),
   releaseRoute: ({ route }: any) => tx(() => {
     require(!busy(route), 'Thread still has work or unknown custody');
-    require(get("SELECT 1 FROM commands WHERE route=? AND method='session/close' AND state='accepted'", route), 'Native close required');
+    require(get("SELECT 1 FROM commands WHERE route=? AND method IN ('session/close','session/delete') AND state='accepted'", route), 'Native close required');
     require(!get('SELECT 1 FROM outbox WHERE route=?', route), 'Thread events remain unacknowledged');
     run('INSERT INTO released_routes SELECT route,generation FROM routes WHERE route=?', route);
     run('DELETE FROM routes WHERE route=?', route);
@@ -233,7 +276,8 @@ parentPort!.on('message', ({ id, op, args }) => {
     const value = operations[op]!(args);
     parentPort!.postMessage({ id, value });
   } catch (error) {
-    if (!(error instanceof Refusal)) { failed = true; try { db.close(); } finally { release(); } }
+    // Report the original failure: closing an already closed database must not replace it.
+    if (!(error instanceof Refusal)) { failed = true; try { if (db.isOpen) db.close(); } catch { /* keep the original */ } try { release(); } catch { /* keep the original */ } }
     parentPort!.postMessage({ id, error: error instanceof Error ? error.message : 'Storage failure', fatal: failed });
   }
 });

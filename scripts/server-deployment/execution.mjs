@@ -12,6 +12,8 @@ import { attachDshHost, readPrivateJson } from '../../apps/headless-server/src/s
 import { browserRuntimeIdentity } from '../../apps/headless-server/src/browser-runtime-identity.mjs';
 import { withGatewayUpdateIntent } from './gateway-update-intent.mjs';
 import { linuxProcessIdentity, sameProcess } from './runtime-equivalence.mjs';
+import { advancedStores, observeDatabases, observeRelease, readStorageRecord, retainReleases, schemaAdvancedError,
+  storageVersionsFromHealth, writeStorageRecord } from './storage-versions.mjs';
 
 const exec = promisify(execFile);
 const daemonPayloadFiles = ['gateway.mjs', 'daemon.cjs', 'dsh-capability-plugin.mjs'];
@@ -170,6 +172,17 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
   const url = new URL(healthUrl);
   if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || url.username || url.password) throw new Error('Execution health must use loopback HTTP');
   const pinsPath = `${link}.pins.json`;
+  const storagePath = `${link}.storage-versions.json`;
+  // Storage versions reported by the running release, if its health matches the pointed release.
+  async function runningStorage(root) {
+    try {
+      const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+      const response = await fetch(url, { signal: AbortSignal.timeout(statusTimeoutMs) });
+      const health = await response.json();
+      if (!response.ok || health?.ok !== true || health.version !== manifest.version || health.buildId !== manifest.opencraftWeb?.buildId) return null;
+      return storageVersionsFromHealth(health);
+    } catch { return null; }
+  }
   async function dshHealth() {
     if (!dshDescriptor) return null;
     const descriptor = await readPrivateJson(dshDescriptor);
@@ -229,7 +242,7 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
     const [wanted, actual] = await Promise.all([computeExecutionHash(root, identity), computeExecutionHash(runtime, identity)]);
     return !!wanted && wanted === actual;
   }
-  async function ready(release, before, dshBefore = null, engineBefore = null) {
+  async function ready(release, before, dshBefore = null, engineBefore = null, observe = () => {}) {
     const deadline = Date.now() + timeout;
     let attempts = 0; let stage = 'health-unreachable'; let lastReason = stage;
     while (Date.now() < deadline) {
@@ -241,6 +254,8 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
         lastReason = !response.ok ? `health-http-${response.status}` : !health.ok ? 'dependency-unavailable'
           : profile === 'headless' && health.profile !== 'headless' ? 'profile-mismatch' : 'release-identity-mismatch';
         if (response.ok && health.ok && (profile !== 'headless' || health.profile === 'headless') && health.version === release.version && health.buildId === release.buildId) {
+          // The candidate has opened (and migrated) its stores even if a later check fails.
+          observe(health);
           stage = 'runtime-payload-mismatch';
           if (!await runningPayloadMatches(release.releaseRoot, health))
             throw new Error('Execution runtime payload does not match selected release');
@@ -348,35 +363,60 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
       try { oldRoot = resolve(link, '..', await readlink(link)); } catch (error) { if (error.code !== 'ENOENT') throw error; }
       // Automatic recovery must be compatible before any candidate can be activated.
       if ((dshDescriptor || engineDescriptor) && oldRoot && oldRoot !== release.releaseRoot) await inspect({ releaseRoot: oldRoot });
-      const before = await coreHealth(coreEndpoint, tokenPath);
-      const dshBefore = await dshHealth();
-      const engineBefore = await engineHealth();
-      await validate(before);
-      await prepareAccess(release);
-      await pin([...(await pinnedRoots()), ...(oldRoot ? [oldRoot] : []), release.releaseRoot]);
-      // A different backend payload needs a fresh process. A web-only release
-      // may switch the pointer while the running gateway reports the current
-      // release identity from that same pointer.
-      // Normalize the union so a partially rewritten bundle still compares
-      // equal when only its embedded web identity differs.
-      const comparisonIdentity = [...new Set([...(oldRoot ? await releaseIdentity(oldRoot) : []),
-        ...await releaseIdentity(release.releaseRoot)])];
-      const previousRuntimeHash = oldRoot ? await computeExecutionHash(oldRoot, comparisonIdentity) : null;
-      const runtimeHash = await computeExecutionHash(release.releaseRoot, comparisonIdentity);
-      const runtimeChanged = previousRuntimeHash !== runtimeHash;
-      const restartGateway = () => withGatewayUpdateIntent(link, release, restart);
-      // Startup also reconciles a pointer changed by an interrupted update.
+      // Databases never migrate backwards. Refuse to switch to a release that
+      // reported older store versions than the databases now have, before any
+      // pointer change or restart: that backend would fail with newer-schema.
+      let storage = await readStorageRecord(storagePath);
+      if (oldRoot) storage = observeRelease(storage, oldRoot, await runningStorage(oldRoot));
       if (oldRoot !== release.releaseRoot) {
-        await point(release.releaseRoot);
-        if (!runtimeChanged) {
-          try { await retainRuntime(release, await ready(release, before, dshBefore, engineBefore)); return; }
-          catch { await restartGateway(); }
-        } else await restartGateway();
-      } else {
-        try { await retainRuntime(release, await ready(release, before, dshBefore, engineBefore)); return; }
-        catch { await restartGateway(); }
+        const advanced = advancedStores(storage, release.releaseRoot);
+        if (advanced.length) { await writeStorageRecord(storagePath, storage); throw schemaAdvancedError(advanced, storagePath); }
       }
-      await retainRuntime(release, await ready(release, before, dshBefore, engineBefore), true);
+      let candidate = null;
+      const observe = health => {
+        const versions = storageVersionsFromHealth(health);
+        if (versions) { candidate = { ...candidate, ...versions }; storage = observeDatabases(storage, versions); }
+      };
+      let switched = false;
+      try {
+        await switchExecution(release, oldRoot, observe);
+        switched = true;
+      } finally {
+        if (switched) storage = observeRelease(storage, release.releaseRoot, candidate);
+        try { await writeStorageRecord(storagePath, retainReleases(storage, await pinnedRoots())); }
+        catch (error) { if (switched) throw error; }
+      }
     },
   };
+  async function switchExecution(release, oldRoot, observe) {
+    const before = await coreHealth(coreEndpoint, tokenPath);
+    const dshBefore = await dshHealth();
+    const engineBefore = await engineHealth();
+    await validate(before);
+    await prepareAccess(release);
+    await pin([...(await pinnedRoots()), ...(oldRoot ? [oldRoot] : []), release.releaseRoot]);
+    // A different backend payload needs a fresh process. A web-only release
+    // may switch the pointer while the running gateway reports the current
+    // release identity from that same pointer.
+    // Normalize the union so a partially rewritten bundle still compares
+    // equal when only its embedded web identity differs.
+    const comparisonIdentity = [...new Set([...(oldRoot ? await releaseIdentity(oldRoot) : []),
+      ...await releaseIdentity(release.releaseRoot)])];
+    const previousRuntimeHash = oldRoot ? await computeExecutionHash(oldRoot, comparisonIdentity) : null;
+    const runtimeHash = await computeExecutionHash(release.releaseRoot, comparisonIdentity);
+    const runtimeChanged = previousRuntimeHash !== runtimeHash;
+    const restartGateway = () => withGatewayUpdateIntent(link, release, restart);
+    // Startup also reconciles a pointer changed by an interrupted update.
+    if (oldRoot !== release.releaseRoot) {
+      await point(release.releaseRoot);
+      if (!runtimeChanged) {
+        try { await retainRuntime(release, await ready(release, before, dshBefore, engineBefore, observe)); return; }
+        catch { await restartGateway(); }
+      } else await restartGateway();
+    } else {
+      try { await retainRuntime(release, await ready(release, before, dshBefore, engineBefore, observe)); return; }
+      catch { await restartGateway(); }
+    }
+    await retainRuntime(release, await ready(release, before, dshBefore, engineBefore, observe), true);
+  }
 }

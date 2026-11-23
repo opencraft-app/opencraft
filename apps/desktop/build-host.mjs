@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { buildTerminalOwnerRuntime } from '../../scripts/packaging/package-terminal-runtime.mjs';
 import { buildDshCapabilityPlugin } from '../../scripts/packaging/package-dsh-capability-runtime.mjs';
+import { DESKTOP_ABSENT_SIBLINGS, verifySiblingFiles } from '../../scripts/packaging/verify-sibling-files.mjs';
 
 const appRoot = dirname(fileURLToPath(import.meta.url));
 const root = resolve(appRoot, "../..");
@@ -52,6 +53,11 @@ export async function bundleDesktopHost({ environment = process.env, outdir = re
   await buildTranscriptCacheRuntime(outdir);
   await buildServerSpacesRuntime(outdir);
   await buildOwnerWorkers(outdir);
+  // The Server core owner Worker serves orchestration on its own connection; a
+  // file-backed Collaboration inside it starts this Worker beside the bundle.
+  await build({ entryPoints: [resolve(root, "packages/access-control/src/orchestration-runtime.worker.ts")],
+    outfile: resolve(outdir, "orchestration-runtime-worker.mjs"), bundle: true, platform: "node", format: "esm",
+    nodePaths: [resolve(root, "node_modules")] });
   await buildTerminalOwnerRuntime(outdir);
   await buildDshCapabilityPlugin(resolve(appRoot, 'build/dsh-capability-plugin.mjs'));
   const [mainEntry, preloadEntry, identityEntry] = resolveDesktopProductEntries(environment);
@@ -71,6 +77,8 @@ export async function bundleDesktopHost({ environment = process.env, outdir = re
   const preload = await build({ ...shared, entryPoints: [resolve(appRoot, "src/preload.ts")], outfile: resolve(outdir, "preload.cjs") });
   const mainSha256 = createHash("sha256").update(await readFile(resolve(outdir, "main.cjs"))).digest("hex");
   await writeFile(manifestPath, JSON.stringify({ ...identities, mainSha256 }, null, 2) + "\n");
+  // Main and Preload start Workers from beside themselves; each must be built here.
+  await verifySiblingFiles(outdir, { optional: DESKTOP_ABSENT_SIBLINGS });
   return { main, preload };
 }
 

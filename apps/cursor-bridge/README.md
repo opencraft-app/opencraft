@@ -73,7 +73,7 @@ npm run build --workspace @opencraft/cursor-bridge
 node --import tsx scripts/smoke/agent-bridge/p5-cursor-host.ts <cheapest-available-sdk-model-id>
 ```
 
-See [validation](VALIDATION.md) and [CLI/hook feasibility](../../design/agent-bridge/p5-cursor-cli-feasibility.md).
+See [Design decisions and known limits](#design-decisions-and-known-limits) and [CLI/hook feasibility](../../design/agent-bridge/p5-cursor-cli-feasibility.md).
 
 ## Source and license boundary
 
@@ -90,3 +90,33 @@ Anysphere copyright, subject to [Cursor Terms](https://cursor.com/terms-of-servi
 It is called through the published API, remains unmodified and external, and
 retains its notices in the dependency. No SDK source is patched, relicensed or
 vendored into the generated bridge bundle.
+
+## Design decisions and known limits
+
+Carried over from the retired validation ledgers; evidence runs and review logs live in Git history.
+
+### P5: Self-introduced decisions
+
+1. A standalone app avoids shared ACP/P6 changes. The published SDK is fixed at
+   1.0.32 and external; its proprietary terms are preserved. The upstream runner,
+   history writer and approval retry loop are independently replaced, not copied.
+2. Only native-inject is declared. Revert is a definitive rejection with a plain
+   explanation. No platform next-turn queue, implicit interrupt or retry loop.
+3. P5 requires explicit full permission mode, shell tools, model, workspace and
+   private stateDirectory. The SDK sandbox is disabled for full mode; the Host
+   backend owns containment. No history/resume/usage/CLI/reasoning claim.
+4. SDK runtime/storage run in a Worker, whose digest is checked by the main
+   artifact. The public JsonlLocalAgentStore keeps vendor storage off network loops.
+5. Attachments are bounded base64 inputs converted to generated private local
+   paths (64 KiB encoded total, 16 files), not rich SDK attachments. Stop removes
+   them before waiting for a possibly hanging SDK send/cancel.
+6. One unresolved steer, a 30s deadline and unknown fencing prevent replay.
+   Confirmed Stop permits a new explicit turn; uncertain Stop stays fenced. Missing credentials fail
+   before creating an agent and link to API Keys and bridge launch configuration.
+7. Suite execution removes only exported BASH_FUNC_* environment entries: existing
+   fixtures pass all process.env into the strict sandbox validator. No source,
+   dependency, sandbox policy or baseline is changed to bypass that validation.
+
+8. Once native Stop is confirmed, Worker termination owns local close completion.
+   SDK disposal is best effort; failed Worker termination stays retryable. Failed
+   attachment disposal retains session custody and refuses reuse until cleaned.

@@ -5,6 +5,8 @@ import { createHostFileSystem } from '../../apps/headless-server/src/host-filesy
 import { LocalAttachmentStagingService } from '@opencraft/local-agent-host/attachments/local-staging';
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { ExecutionEnvironmentRuntime } from "@opencraft/execution-environment";
+import { createRemoteEnvironmentLaunch } from '@opencraft/execution-environment/remote-environment-launch';
+import { openExecutionAdmission } from '@opencraft/execution-environment/execution-admission';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -59,6 +61,14 @@ export async function startIndependentEngineHost(options) {
   // explicitly select Assets; legacy products retain their existing ENV owner.
   const executionContext=options.executionContext??'legacy';
   if(!['assets','legacy'].includes(executionContext))throw Error('Invalid execution context');
+  // Opaque ENV delivery: the issuer key is pinned by this process's own trusted
+  // configuration, never by the Gateway. It needs the Assets execution attachment.
+  const gitWorkerFile=options.gitWorkerFile??fileURLToPath(new URL('../runtime/personal-git-worker.mjs',import.meta.url));
+  const environmentIssuer=options.environmentIssuer;
+  const admissionWorkerFile=options.admissionWorkerFile??join(dirname(gitWorkerFile),'execution-admission-worker.mjs');
+  if(environmentIssuer!==undefined&&(executionContext!=='assets'||typeof environmentIssuer!=='string'
+    ||!/^[A-Za-z0-9_-]{1,256}$/u.test(environmentIssuer)||typeof admissionWorkerFile!=='string'||!isAbsolute(admissionWorkerFile)))
+    throw Error('Environment delivery requires the native execution attachment');
   await mkdir(dataDirectory, { recursive: true, mode: 0o700 });
   // Acquired before loading catalogs, schedules or sessions. Never share the Pi writer.
   const releaseKernel = await acquireLock(join(dataDirectory, 'pi-writer.lock')).catch(error => { throw new Error('Pi writer already being held or unavailable', { cause: error }); });
@@ -68,7 +78,7 @@ export async function startIndependentEngineHost(options) {
   const runtime = { entrySha256: createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex'), node: process.version, nodeAbi: process.versions.modules, sourceRevision:process.env.OPENCRAFT_OBSERVE_SOURCE_REVISION ?? null, buildId:process.env.OPENCRAFT_OBSERVE_BUILD_ID ?? null, configSha256:createHash('sha256').update(JSON.stringify(options)).digest('hex') };
   const bootId = await bootIdentity();
   const handoff = new PiOwnerHandoff(dataDirectory, runtime, inspectOwnerCgroup, { credentialsExternal: !!process.env.OPENCRAFT_PROXY_CALLER_FILE });
-  let host, pi, server, closed, executionEnvironment, executionGit;
+  let host, pi, server, closed, executionEnvironment, executionGit, executionAdmission, executionLaunch;
   const artifactFiles=options.fileSystemOwner?createHostFileSystem(options.fileSystemOwner):null;
   const artifactInputs=new LocalAttachmentStagingService(join(dataDirectory,"agent","attachments"),join(dataDirectory,"artifacts"));
   const temporary = `${descriptorPath}.${randomUUID()}.tmp`,
@@ -84,18 +94,34 @@ export async function startIndependentEngineHost(options) {
     const capabilities = new RemoteSessionCapabilities(dataDirectory, scope);
     if(executionContext==='assets')executionGit=createRemoteHumanGitExecution({
       directory:dataDirectory,runtimeDirectory:humanGitRuntimeDirectory(join(dataDirectory,'git-runtime'),'pi'),
-      workerFile:options.gitWorkerFile??fileURLToPath(new URL('../runtime/personal-git-worker.mjs',import.meta.url)),
+      workerFile:gitWorkerFile,
       capabilities,inspect:async grant=>{
         if(!pi?.ownsThread(grant.scope.threadId))return false;
         return (await observeNativeExecutionProcess(process.pid)).incarnation===grant.native.incarnation;
       },
     });
     else executionEnvironment=await ExecutionEnvironmentRuntime.open(dataDirectory,{create:true});
+    // This process owns the receiver key; the Gateway relays only a capsule. The
+    // expected context is this owner's durable admission, read in a Worker, and
+    // must name a Pi Thread of this live process.
+    if(environmentIssuer!==undefined) {
+      executionAdmission=openExecutionAdmission({workerFile:admissionWorkerFile,directory:dataDirectory});
+      executionLaunch=createRemoteEnvironmentLaunch({purpose:'pi',instance:scope,issuer:environmentIssuer,capabilities,
+        admission:async input=>{
+          const owned=await executionAdmission.resolve(input);
+          if(owned&&(!pi?.ownsThread(owned.scope.threadId)
+            ||(await observeNativeExecutionProcess(process.pid)).incarnation!==owned.native.incarnation))
+            throw Error('environment_launch_unavailable');
+          return owned;
+        },
+      });
+    }
+    const retireExecution=async()=>{executionLaunch?.close();await executionAdmission?.close();await executionGit?.close();};
     pi = new PiEngine({
       prepareAttachmentInput:(threadId,input)=>artifactInputs.prepareInput(input,threadId,artifactFiles?(artifact,owner,signal)=>artifactFiles.prepareArtifact(artifact,owner,signal):undefined),
       ...(await createPiModelConfiguration(new ModelConfigurationRepository(fileStateDocumentStore(join(dataDirectory, 'models'))), modelCredentials.credentials, fileStateDocumentStore(join(dataDirectory, 'pi')), modelCredentials.caller)),
       modelPolicyPath: join(dataDirectory, "model-usage-policy.sqlite"),
-      executionEnvironment, executionGit, admission: handoff, dataDirectory, directory: join(dataDirectory, 'pi'),
+      executionEnvironment, executionGit, ...(executionLaunch ? { executionLaunch } : {}), admission: handoff, dataDirectory, directory: join(dataDirectory, 'pi'),
       attachmentDirectory: join(dataDirectory, 'agent', 'attachments'),
       cwd: runtimeDirectory,
       sessionCapabilities: capabilities,
@@ -224,7 +250,7 @@ export async function startIndependentEngineHost(options) {
     });
     if(executionGit) {
       const closeHost=host.close.bind(host);
-      host.close=async()=>{try {await closeHost();} finally {await executionGit.close();}};
+      host.close=async()=>{try {await closeHost();} finally {await retireExecution();}};
     }
     runtime.machineId = machine.machineId;
     handoff.attach(pi, host, remotes, remoteInputCustody);
@@ -263,6 +289,7 @@ export async function startIndependentEngineHost(options) {
           if (!handoff.released) await host.close();
           await rm(descriptorPath, { force: true });
           await artifactInputs.close(); artifactFiles?.close();
+          executionLaunch?.close(); await executionAdmission?.close();
           await executionGit?.close(); executionEnvironment?.close(); await release(); await releaseKernel();
         })());
       },
@@ -274,6 +301,7 @@ export async function startIndependentEngineHost(options) {
     else await pi?.close();
     await rm(temporary, { force: true });
     await artifactInputs.close(); artifactFiles?.close();
+    executionLaunch?.close(); await executionAdmission?.close();
     await executionGit?.close(); executionEnvironment?.close(); await release(); await releaseKernel();
     throw error;
   }

@@ -233,7 +233,10 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
         retire(candidate);
         if (execution) {
           try { await execution.apply(persisted.current); }
-          catch (rollbackError) { throw new Error(`${error.message}; execution rollback failed (${rollbackError.code === 'EXECUTION_READINESS_FAILED' ? rollbackError.reason : 'execution-rollback-error'}); inspect the execution service`); }
+          catch (rollbackError) {
+            if (rollbackError.code === 'EXECUTION_SCHEMA_ADVANCED') throw new Error(`${error.message}; execution rollback failed (schema-advanced). ${rollbackError.message}`);
+            throw new Error(`${error.message}; execution rollback failed (${rollbackError.code === 'EXECUTION_READINESS_FAILED' ? rollbackError.reason : 'execution-rollback-error'}); inspect the execution service`);
+          }
         }
         throw error;
       }

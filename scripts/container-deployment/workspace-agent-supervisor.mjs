@@ -76,9 +76,14 @@ export function createWorkspaceAgentSupervisor({
     })();
   }
 
-  function start(name, command, args = [], { env = process.env, cwd, critical = true, processGroup = false } = {}) {
+  /** `identity` ({ uid, gid }) runs the child under that numeric identity (validated
+   * by the role's composition); `owner` ({ role }) is passed to `spawnProcess` as its
+   * fourth argument so a spawn wrapper can select policy by stable role. */
+  function start(name, command, args = [], { env = process.env, cwd, critical = true, processGroup = false, identity, owner } = {}) {
     if (stopping) throw new Error('Workspace agent is stopping');
-    const child = spawnProcess(command, args, { cwd, env, stdio: 'inherit', shell: false, detached: processGroup });
+    const options = { cwd, env, stdio: 'inherit', shell: false, ...(processGroup ? { detached: true } : {}),
+      ...(identity ? { uid: identity.uid, gid: identity.gid } : {}) };
+    const child = spawnProcess(command, args, options, owner);
     const record = {
       name, critical, process: child, pid: child.pid, replacing: false,
       signal(value) {

@@ -8,7 +8,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { headlessWebHostDefinitions } from '../packaging/package-headless-linux.mjs';
+import { headlessWebBuildEnvironment } from '../packaging/headless-web-build.mjs';
 import { packageWebServer } from '../packaging/package-web-server.mjs';
 
 // Installation may synchronously inventory/decompress/verify a large payload.
@@ -103,7 +103,7 @@ export async function updateLocalServer({ version, archive, buildId, tree, manif
     if ((await promisify(execFile)('git', ['status', '--porcelain'], { cwd: repository })).stdout.trim()) revision += '-dirty';
     const executionProfile = initial.execution?.profile || 'daemon';
     if (!['daemon', 'headless'].includes(executionProfile)) throw new Error('Unsupported installed execution profile');
-    const profileEnvironment = executionProfile === 'headless' ? { OPENCRAFT_HEADLESS_SERVER_BUILD: 'true', VITE_HYPERNODE_PLUGIN: 'disabled', VITE_APPSERVER_HOSTS_JSON: JSON.stringify(headlessWebHostDefinitions()) } : {};
+    const profileEnvironment = executionProfile === 'headless' ? headlessWebBuildEnvironment() : {};
     await promisify(execFile)('npm', ['run', 'build:web:release'], { cwd: repository, env: { ...process.env, ...profileEnvironment, OPENCRAFT_SOURCE_REVISION: revision }, maxBuffer: 32 * 1024 * 1024 });
     packed = await packageWebServer({ version, output, execution: initial.execution?.enabled === true, executionProfile });
   }

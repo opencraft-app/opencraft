@@ -43,6 +43,16 @@ close both the Web server and the Host and release the claim. The runner uses
 `node --import tsx` so the tsx CLI signal relay cannot force termination before
 asynchronous cleanup finishes; repeated stop signals join the same cleanup.
 
+Packaging entry points (`package-headless-linux`, `package-web-server`,
+`package-relay`, `package-container`, `package-electron-desktop` and
+`package-macos-preview`) first run `scripts/packaging/workspace-links.mjs`. Every
+workspace package named by the root manifest must be installed in
+`node_modules` as a link that resolves into this checkout; a missing link, a
+copied directory or a link into another checkout stops the build before it can
+bundle the wrong sources. Run `npm ci` in the checkout to repair it, or
+`node scripts/packaging/workspace-links.mjs` to check without packaging.
+Third-party dependencies are not checked.
+
 ## Repository-owned Electron source fork
 
 [`vendor/electron`](../../vendor/electron/README.md) owns the fixed Electron source
@@ -56,8 +66,8 @@ fallback. The one explicit exception: until macOS and Windows have native build
 runners, their desktop packages may use stock Electron at the fork's upstream
 version when `OPENCRAFT_ELECTRON_STOCK_DESKTOP=1` is set (the fork's patches
 serve the Linux server browser runtime, which the desktop app does not call).
-The "Desktop pre-release" workflow builds Linux with the fork and macOS/Windows
-this way, unsigned, from one commit and publishes a GitHub pre-release.
+The "App release" workflow builds Linux with the fork and macOS/Windows
+this way from one commit and publishes the GitHub release.
 Every desktop package also ships the native Codex pinned in `runtime/codex`:
 `scripts/packaging/stage-codex-runtime.mjs` installs the target's official
 platform package (`npm ci --os --cpu`, so a target can be staged from another
@@ -342,11 +352,26 @@ and downloadable Actions artifact after this subtree reaches the standalone
 GitHub mirror; the nested workflow does not run downstream. The local
 requirements and install command are in `apps/mobile/README.md`.
 
-The public Android release target uses the public Expo configuration (the legacy
-development identifier remains `dev.opencraft.workbench`). It requires a
+The public Android release target builds the published application ID
+`app.opencraft`, the same identifier as the iOS TestFlight app; development-key
+builds keep `dev.opencraft.workbench` as a separate installation. It requires a
 repository-external production keystore, verifies the package ID and APK
 signature against that keystore, and writes both the APK and filing values.
-It never falls back to the internal development key. Private the downstream product release IDs,
+It never falls back to the internal development key. `OPENCRAFT_ANDROID_VERSION_CODE`
+overrides the `app.json` versionCode and the APK's version is verified after the
+build. `.github/workflows/app-release.yml` calls
+`.github/workflows/android-release-apk.yml`, which signs with the `android-release`
+Environment's key and derives the versionCode from the release tag, so every GitHub
+release carries `OpenCraft-<version>-android-arm64.apk` in its manifest.
+The same release uploads its commit to TestFlight through
+`.github/workflows/ios-testflight.yml`, without waiting for beta review, and
+attaches `OpenCraft-<version>-ios-unsigned.ipa` from
+`.github/workflows/ios-unsigned-ipa.yml` for people who sign it themselves. Both Android
+workflows restore Gradle distributions and resolved dependencies keyed by the
+lockfile, so a dependency download outage does not fail a warm build. The
+release job runs only on main, and GitHub scopes pull request caches to their
+own merge ref, so it restores only what main runs saved; build outputs are
+never cached. Private the downstream product release IDs,
 edition selection and original artifact names belong to the explicit downstream
 `products/<product>` build commands; public APK/IPA commands do not select that product.
 `OPENCRAFT_NATIVE_ARTIFACT_NAME` is an optional trusted filename prefix, defaulting
@@ -362,16 +387,47 @@ assembles arm64 on `macos-15` and x64 on `macos-15-intel`. Both jobs explicitly 
 official Electron at the same pinned upstream version via
 `OPENCRAFT_ELECTRON_STOCK_DESKTOP=1`. The workflow merges both native apps,
 then signs, notarizes and packages the result in the `macos-release` Environment.
-Manual runs from `main` produce Actions artifacts. The
-[`Desktop pre-release`](../../.github/workflows/desktop-prerelease.yml) workflow
-calls the same macOS job and stages its output alongside the Linux AppImage and
-Windows installer/ZIP from that commit. Dispatch from `main` with a new
-`vX.Y.Z-beta.N` tag matching the desktop package's native version. The default
-`publish=false` stages a candidate artifact. Use `publish=true` to publish that
-run's verified candidate. The publisher checks the manifest, uploads to a
-draft, verifies the downloaded bytes, then publishes the draft and checks the
+Manual runs from `main` produce Actions artifacts.
+
+### App release
+
+OpenCraft has one product version, held identically by the root, desktop,
+mobile (`package.json` and `app.json`) and web-server manifests and the lockfile.
+`node scripts/release/product-version.mjs check` verifies it and
+`set X.Y.Z` changes every source together. The
+[`App release`](../../.github/workflows/app-release.yml) workflow is the only
+release publisher; the repository no longer publishes to public npm. Dispatch it
+from `main` with a new tag naming the product version: `vX.Y.Z-beta.N` publishes
+a GitHub pre-release, `vX.Y.Z` a stable release that requires its `## vX.Y.Z`
+section in `CHANGELOG.md`, passes the performance gate, opens its notes with that
+section and becomes the latest release. Each release calls the macOS, Android,
+TestFlight and unsigned iOS jobs and stages their output alongside the Linux
+AppImage and Windows installer/ZIP from that commit into `release-manifest.json`.
+The default `publish=false` stages a candidate artifact. Use `publish=true` to
+publish that run's verified candidate. The publisher checks the manifest, uploads
+to a draft, verifies the downloaded bytes, then publishes the draft and checks the
 public assets again. Rerun failed publication jobs on the original run to reuse
-its staged artifacts. The stable npm release keeps its own stable tag contract.
+its staged artifacts.
+
+### Developer self-test
+
+Self-testing uses three layers, from fastest to closest to a release:
+
+1. From source: `npm run dev:web`, `npm run dev:electron` and `npm run dev:expo`
+   (Expo Go) run the current checkout.
+2. Any branch: dispatch the [`Dev build`](../../.github/workflows/dev-build.yml)
+   workflow on the branch (`desktop` and `mobile` select the platforms). It
+   builds every app from one commit as Actions artifacts named
+   `opencraft-dev-<platform>-<sha>` (Android: `opencraft-android-internal-<sha>`,
+   iOS: `opencraft-ios-unsigned-<sha>`) with build ID
+   `dev-<run>-<sha>`. It uses no secret, tag, release or store: the Android APK
+   is the development-key `dev.opencraft.workbench`, macOS is the ad-hoc signed
+   `OpenCraft Preview` (`app.opencraft.desktop.preview`), so both install beside
+   the published apps; Linux, Windows and iOS are unsigned. The run summary lists
+   each platform's result and install notes.
+3. Betas: `vX.Y.Z-beta.N` from App release. Every release uploads to TestFlight;
+   testers in an App Store Connect internal group can install it without beta
+   review, while external testers wait for it.
 
 A lightweight credential check in the `macos-release` Environment runs before
 either native build. Client distribution runs only from `main`.
@@ -486,6 +542,13 @@ and test override; Agent/HyperNode flags can override activation. Static/Vite
 pages without injection retain their old defaults. The downstream product excludes the
 built-in Agent and HyperNode plugins; Electron Host ownership is unchanged.
 These settings views do not bundle an execution engine.
+A headless server Web release takes its build variables from
+`headlessWebBuildEnvironment()` in `scripts/packaging/headless-web-build.mjs`.
+`buildHeadlessWeb({ script })` runs a release script with them and then checks
+the result with `assertHeadlessWebRelease`; an installation that wraps
+`createWorkbenchWebConfig` passes `buildHeadlessWeb({ viteConfig })` instead and
+gets the same Web build steps and check. Installations use these helpers rather
+than copying the variables.
 Host definitions may use root-relative WebSocket paths such as `/appserver` and
 `/codex-appserver`. The browser resolves them against its current HTTP or HTTPS
 origin, so one Web build works behind both authenticated entry points.
@@ -523,7 +586,8 @@ than a native patch marker.
 Build on a native Linux amd64 machine with the checked-in Node version and
 installed dependencies. Set `OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION` to the
 verified owned Linux browser distribution before invoking the package command.
-`release/OpenCraft-server-0.1.0-linux-amd64.tar.gz`
+`release/OpenCraft-server-<version>-linux-amd64.tar.gz` (`<version>` is the product version,
+`node scripts/release/product-version.mjs check`)
 must pass `npm run smoke:headless:linux` for both DSH and Codex initialization
 before distribution. GitHub's portable
 matrix produces and smoke-tests this archive as an Actions artifact; a PR build
@@ -537,7 +601,7 @@ successful Codex process start alone does not prove the Web Codex entry was
 included. Do not copy an existing generic `dist` into a headless archive.
 
 ```sh
-tar -xzf OpenCraft-server-0.1.0-linux-amd64.tar.gz
+tar -xzf OpenCraft-server-<version>-linux-amd64.tar.gz
 ./opencraft-server/bin/opencraft-server --port 10000 --data-dir /private/opencraft-data
 ```
 
@@ -569,9 +633,9 @@ checksum mismatch and unsafe archive entries. It never
 stops an existing preview or copies account data automatically.
 
 ```sh
-sha256sum release/OpenCraft-server-0.1.0-linux-amd64.tar.gz
+sha256sum release/OpenCraft-server-<version>-linux-amd64.tar.gz
 sudo ./scripts/packaging/install-headless-linux.sh \
-  --archive release/OpenCraft-server-0.1.0-linux-amd64.tar.gz \
+  --archive release/OpenCraft-server-<version>-linux-amd64.tar.gz \
   --sha256 '<verified 64-character digest>' \
   --port 80 \
   --state-name opencraft-server \
@@ -660,6 +724,15 @@ rtk proxy shasum -a 256 "$signed_dmg_path" "$signed_zip_path"
 - 启动包内真正的 `Contents/MacOS/OpenCraft`，清除 `ELECTRON_RUN_AS_NODE`，使用全新 user-data-dir、模型存储目录和空闲调试端口。仅隔离 user-data-dir 不会隔离默认的 `~/.opencraft` 模型配置。
 - 在该签名进程中验证首页、相关导航与本次修改。不得复用旧源码预览的结果冒充包体验证，不登录或发送付费请求来做默认烟测。
 - 输出说明分别列出：源码/dirty 状态、buildId、App/DMG 签名、公证/Gatekeeper、完整性、启动/功能验证、未通过门禁，以及是否安装或发布。一次能启动不等于完整分发资格。
+
+### 交付约束
+
+- “重新打包/签名”默认包含重新构建与本地验收，不包含覆盖 `/Applications`、终止用户实例或上传发布。先核对分支、未提交改动与目标架构；使用新的独立输出目录，保留旧包，记录 buildId 和实际包含的源码状态。
+- 分发包与 ad-hoc 预览包分开。实时检查 `security find-identity -v -p codesigning`，选择有效 Developer ID 并强制签名；不可凭记忆写死身份。签名身份、公证凭据和公证结果是三件事，环境变量为空不能证明钥匙串里没有凭据。
+- `.app` 签名不代表 DMG 已签名；最终 DMG 必须单独验证。签名/公证完成后再生成最终 ZIP、DMG 和 blockmap；封包后若修改或重签制品，须重建受影响的归档、blockmap 与校验和。
+- 交付分别核验 App 深度/严格签名、DMG 签名及镜像校验、ZIP 完整性、Gatekeeper/公证状态和隔离启动。`Unnotarized Developer ID` 必须明确报告，不能称为已公证或 Gatekeeper 就绪。
+- 隔离启动同时隔离 `--user-data-dir` 与 `OPENCRAFT_MODEL_STORAGE_DIRECTORY`，清除 Main 的 `ELECTRON_RUN_AS_NODE`；不复制真实凭据、不付费推理。核对包内 Renderer/Daemon/DSH 构建身份，避免验证了旧窗口。
+- 保留未通过的质量门禁，不以签名或能启动替代完整功能验收。
 
 ## Linux browser smoke prerequisites
 
@@ -910,3 +983,12 @@ The workflow launches the final AppImage under Xvfb, checks the renderer and
 desktop preload, and uploads the AppImage and SHA-256 checksum as
 `OpenCraft-AppImage-linux-x64-<commit>`. Download that Actions artifact for the
 tested commit. An Actions build does not publish a GitHub Release.
+
+## 本机预览注意事项
+
+- Linux 测试工具链只有一份：GitHub CI 与 Claude Code 云端会话（`.claude/hooks/session-start.sh`）都调用 `scripts/ci/setup-toolchain.sh`，使用 `.nvmrc` 的 Node、测试所需系统包、`npm ci` 与同一套测试隔离。新增系统依赖只改该脚本，不在 workflow 里另写 apt 步骤。
+- Renderer 重建后旧窗口不会热更新；关闭旧预览并用新构建、隔离 profile 和新调试端口重启。
+- Electron Main 必须由仓库 `start` 入口启动；不得用 `node dist-host/main.cjs`，也不得让父环境的 `ELECTRON_RUN_AS_NODE=1` 进入 Main。该变量只属于明确以 Electron 二进制承载 Node bundle 的 Daemon/工具子进程。若 `require("electron")` 返回二进制路径字符串、`app` 为 `undefined` 或模块找不到，先检查实际可执行文件、参数和 `ELECTRON_RUN_AS_NODE`，再用同一 Electron 二进制的最小正常 Main 对照；这类结果本身不能证明 Electron 版本回归或缓存损坏。
+- `opencraft://` 是全机 scheme。发起系统浏览器登录前确认 LaunchServices 实际指向本次预览；浏览器打开不等于回调已进入当前窗口。不得为排查批量注销其他预览或读取回调 code/token。
+- 桌面 daemon 的输出写入 `<userData>/runtime/opencraft-daemon.log`（权限 0600，每次拉起前超过 5 MB 时保留一份 `.1`）。daemon 未就绪时主进程报错会给出该路径；先看这里，不要猜测。Unix socket 路径受系统长度上限约束，预览 profile 应使用 `/tmp/opencraft-electron-preview-XXXXXX` 这类短路径。
+- 已知问题：daemon 由 Electron 主进程拉起，会继承 Chromium 未设置 close-on-exec 的少量描述符（两个 socket、一对管道、V8 快照文件；开启 `--remote-debugging-port` 时还有该端口的监听 socket）。主进程退出后该调试端口仍被 daemon 占用，换端口或结束 daemon 即可。彻底关闭需原生启动器，尚未实施。

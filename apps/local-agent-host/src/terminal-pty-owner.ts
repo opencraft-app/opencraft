@@ -6,10 +6,16 @@ import lockfile from 'proper-lockfile';
 import { timingSafeEqual } from 'node:crypto';
 import { HostProcessService, TerminalCapacityError, type PreparedProcessIdentity } from './process-service.js';
 import { readOwnerFrames, sendOwnerFrame, TERMINAL_OWNER_PROTOCOL } from './terminal-owner-wire.js';
+import { createTerminalEnvironmentLaunch, type TerminalEnvironmentLaunch } from './terminal-environment-launch.js';
 
 /** Independent PTY owner. Losing every Host connection never closes a PTY. */
 export async function startTerminalPtyOwner(directory: string, endpoint: string, options: {
   token?: string; prepare?: (method: string, params: unknown, identity: PreparedProcessIdentity) => Promise<PreparedProcessIdentity>;
+  /** Called once no Host has been attached and no PTY has been running for `idleMs`; nothing remains to own. */
+  onIdle?: () => void; idleMs?: number;
+  /** Accept delivered ENV: a Host that declares its pinned issuer on attach
+   * launches through a capsule opened here, under this owner's reservation. */
+  environmentLaunch?: boolean;
 } = {}) {
   const release = await lockfile.lock(directory, { realpath: true, stale: 30_000, update: 5000, retries: 0 });
   let admission: Awaited<ReturnType<typeof openTerminalAdmission>>;
@@ -17,13 +23,21 @@ export async function startTerminalPtyOwner(directory: string, endpoint: string,
   const incarnation = randomBytes(32).toString('hex');
   let admissionFailed = false;
   const processes = new HostProcessService(), peers = new Set<Socket>(), admittedPeers = new Set<Socket>();
+  const launches = new Set<TerminalEnvironmentLaunch>();
+  let attachments = 0;
   const server = createServer(socket => {
     if (peers.size >= 32) { socket.destroy(); return; }
     peers.add(socket);
     const timer = setTimeout(() => socket.destroy(), 5000); timer.unref();
     let admitted = false;
+    // One receiver per attachment; it dies with the attachment and releases
+    // every reservation it still holds (nothing was launched for those).
+    let launch: TerminalEnvironmentLaunch | undefined;
     socket.on('error', () => {});
-    socket.once('close', () => { clearTimeout(timer); peers.delete(socket); admittedPeers.delete(socket); });
+    socket.once('close', () => {
+      clearTimeout(timer); peers.delete(socket); admittedPeers.delete(socket); idleCheck();
+      if (launch) { launches.delete(launch); void launch.close(); }
+    });
     let requests = 0;
     readOwnerFrames(socket, message => {
       if (!admitted) {
@@ -36,8 +50,18 @@ export async function startTerminalPtyOwner(directory: string, endpoint: string,
         if (message?.type !== 'attach' || message.protocol !== TERMINAL_OWNER_PROTOCOL) {
           sendOwnerFrame(socket, { type: 'incompatible' }); socket.end(); return;
         }
-        admitted = true; admittedPeers.add(socket); clearTimeout(timer);
-        sendOwnerFrame(socket, { type: 'attached', protocol: TERMINAL_OWNER_PROTOCOL, pid: process.pid, terminalAdmission: 1 }); return;
+        // The issuer comes from the attaching Host's trusted composition over
+        // this token-authenticated socket, never from a process request.
+        if (message.environmentIssuer !== undefined && options.environmentLaunch) {
+          try {
+            launch = createTerminalEnvironmentLaunch({ journal: admission, incarnation, issuer: message.environmentIssuer,
+              instance: `terminal:${incarnation}:${++attachments}` });
+            launches.add(launch);
+          } catch { sendOwnerFrame(socket, { type: 'incompatible' }); socket.end(); return; }
+        }
+        admitted = true; admittedPeers.add(socket); clearTimeout(timer); idleCheck();
+        sendOwnerFrame(socket, { type: 'attached', protocol: TERMINAL_OWNER_PROTOCOL, pid: process.pid, terminalAdmission: 1,
+          ...(launch ? { environmentLaunch: 1 } : {}) }); return;
       }
       if (!Number.isSafeInteger(message?.id) || message.id < 1 || typeof message.method !== 'string' || !message.method.startsWith('process/')
         || !message.identity || typeof message.identity.quotaOwner !== 'string') { socket.destroy(); return; }
@@ -48,7 +72,27 @@ export async function startTerminalPtyOwner(directory: string, endpoint: string,
           // the authenticated owner socket, never the product's process adapter.
           // Actual local spawns still pass that adapter before any reservation.
           const quotaControl = message.method.startsWith('process/quota');
-          const identity = !quotaControl && options.prepare ? await options.prepare(message.method, message.params, message.identity) : message.identity;
+          if (message.method === 'process/environmentReserve' || message.method === 'process/environmentAbandon') {
+            if (!launch || typeof message.identity.quotaOwner !== 'string' || message.identity.quotaOwner.length > 512
+              || message.identity.lifecycleAuthority === true) throw Error('Delivered terminal environment unavailable');
+            const result = message.method === 'process/environmentReserve'
+              ? await launch.reserve(message.identity, message.params) : (await launch.abandon(message.params), {});
+            sendOwnerFrame(socket, { id: message.id, result }); return;
+          }
+          // An attachment that pinned an issuer launches only through a capsule.
+          const delivered = message.method === 'process/spawn' && (!!launch || message.identity.launch !== undefined);
+          let identity: PreparedProcessIdentity, token: string | undefined, physical = false;
+          if (delivered) {
+            if (!launch) throw Error('Delivered terminal environment required');
+            try {
+              if (message.identity.launch === undefined || message.identity.lifecycleAuthority === true)
+                throw Error('Delivered terminal environment required');
+              const opened = await launch.open(message.identity, message.params);
+              identity = options.prepare ? await options.prepare(message.method, message.params, opened) : opened;
+              token = await launch.launched(message.params, identity.quotaOwner);
+            } catch (error) { await launch.abandon(message.params).catch(() => {}); throw error; }
+            if (socket.destroyed) { await admission.release(token); return; }
+          } else identity = !quotaControl && options.prepare ? await options.prepare(message.method, message.params, message.identity) : message.identity;
           if (socket.destroyed) return;
           if (identity.lifecycleAuthority === true && message.method.startsWith('process/quota')) {
             const p = message.params;
@@ -61,8 +105,7 @@ export async function startTerminalPtyOwner(directory: string, endpoint: string,
             sendOwnerFrame(socket, { id: message.id, result }); return;
           }
           if (message.method.startsWith('process/quota')) throw Error('Private terminal admission required');
-          let token: string | undefined, physical = false;
-          if (message.method === 'process/spawn') {
+          if (message.method === 'process/spawn' && !delivered) {
             token = await admission.reserve('local', identity.quotaOwner, incarnation, message.params?.processHandle);
             // A disconnected requester cannot authorize a later physical spawn.
             if (socket.destroyed) { await admission.release(token); return; }
@@ -84,17 +127,30 @@ export async function startTerminalPtyOwner(directory: string, endpoint: string,
       })();
     });
   });
+  // Running PTYs survive every Host disconnect; with none left and no Host attached, the
+  // owner leaves too instead of outliving the app (exited replay goes with it).
+  let idleTimer: ReturnType<typeof setTimeout> | undefined, stopping = false;
+  const idleCheck = () => {
+    if (!options.onIdle || stopping) return;
+    if (admittedPeers.size || processes.runningCount) { clearTimeout(idleTimer); idleTimer = undefined; return; }
+    idleTimer ??= setTimeout(() => {
+      idleTimer = undefined;
+      if (!stopping && !admittedPeers.size && !processes.runningCount) options.onIdle!();
+    }, options.idleMs ?? 60_000);
+  };
   processes.subscribe((method, params) => {
     for (const peer of admittedPeers) if (!peer.destroyed) sendOwnerFrame(peer, { method, params });
+    if (method === 'process/exited') idleCheck();
   });
   try {
     await unlink(endpoint).catch(error => { if (error.code !== 'ENOENT') throw error; });
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(endpoint, () => { server.removeListener('error', reject); resolve(); }); });
     if (process.platform !== 'win32') await chmod(endpoint, 0o600);
   } catch (error) { processes.close(); await admission.close(); await release(); throw error; }
-  let stopping = false;
+  idleCheck();
   return async () => {
-    if (stopping) return; stopping = true;
+    if (stopping) return; stopping = true; clearTimeout(idleTimer);
+    await Promise.allSettled([...launches].map(launch => launch.close())); launches.clear();
     await processes.shutdown(); for (const peer of peers) peer.destroy();
     await new Promise<void>(resolve => server.close(() => resolve()));
     await unlink(endpoint).catch(() => {});
@@ -103,7 +159,10 @@ export async function startTerminalPtyOwner(directory: string, endpoint: string,
 }
 
 if (process.argv[2] === '--terminal-pty-owner') {
-  startTerminalPtyOwner(process.argv[3]!, process.argv[4]!).then(stop => {
-    for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { void stop().then(() => process.exit(0), () => process.exit(1)); });
+  let stopOwner: (() => Promise<void>) | undefined;
+  const exit = () => { void stopOwner?.().then(() => process.exit(0), () => process.exit(1)); };
+  startTerminalPtyOwner(process.argv[3]!, process.argv[4]!, { onIdle: exit }).then(stop => {
+    stopOwner = stop;
+    for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, exit);
   }).catch(() => { process.exitCode = 1; });
 }

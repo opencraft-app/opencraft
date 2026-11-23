@@ -6,8 +6,12 @@ import { execFileSync } from 'node:child_process';
 import { join, resolve, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { packageHeadlessLinux, buildHeadlessBundle } from './package-headless-linux.mjs';
+import { SOURCE_FALLBACK_SIBLINGS, verifySiblingFiles } from './verify-sibling-files.mjs';
+import { buildCodexBridgeRuntime } from './package-web-server.mjs';
+import { verifyWorkspaceLinks } from './workspace-links.mjs';
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+verifyWorkspaceLinks(repository);
 const output = resolve(process.argv[2] ?? '/out');
 await mkdir(output, { recursive: true });
 console.log('Building the verified Headless tree and native runtimes');
@@ -35,6 +39,8 @@ for (const [source, target, format] of [
 ]) await build({ entryPoints: [join(repository, source)], outfile: join(root, 'runtime', target),
   bundle: true, platform: 'node', format, target: 'node26',
   ...(format === 'esm' ? { banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } } : {}) });
+// The Gateway's own Codex Engine Host and provider; native commands still run in Hands via the AppServer.
+await buildCodexBridgeRuntime(join(root, 'runtime/codex-bridge'), { nodePty: '../node_modules/node-pty/lib/index.js' });
 // Trusted distribution assembly must also ship its process/worker sidecars.
 if (process.env.OPENCRAFT_CONTAINER_GATEWAY_BUILD_SCRIPT)
   execFileSync(process.execPath, [resolve(repository, process.env.OPENCRAFT_CONTAINER_GATEWAY_BUILD_SCRIPT), join(root, 'runtime/container-gateway.mjs')], { cwd: repository, env: process.env, stdio: 'inherit' });
@@ -59,6 +65,8 @@ async function inventory(directory) {
   }
 }
 await inventory(root);
+// Every file a container bundle starts from beside itself must have been built beside it.
+await verifySiblingFiles(join(root, 'runtime'), { nested: ['codex-bridge'], optional: SOURCE_FALLBACK_SIBLINGS });
 await writeFile(join(root, 'manifest.json'), JSON.stringify({ ...manifest, delivery: 'docker-compose-owners',
   files: [...files, ...manifest.files.filter(file => file.link)].sort((a, b) => a.path.localeCompare(b.path)) }, null, 2) + '\n');
 console.log('Container owner payload ready');

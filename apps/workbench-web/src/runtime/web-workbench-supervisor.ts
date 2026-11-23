@@ -109,7 +109,7 @@ import { openClientExtensionPersistence } from "./client-extension-persistence";
 import { changesComposerCapabilities, invalidateComposerCapabilities } from "./composer-capabilities-query";
 import { openConnectorConfigurationStore } from "./connector-configuration-store";
 import { connectorProviderAdapter } from "./connector-contributions";
-import { connectElectronAppHost } from "./electron-app-host";
+import { connectRecoveringElectronAppHost } from "./electron-app-host";
 import { environmentSourceAdapter } from "./environment-directory/contribution-adapter";
 import { HostMachineIdentityObserver } from "./host-machine-identity";
 import { openHostProfiles } from "./host-profile-bootstrap";
@@ -257,7 +257,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     const bootstrapDefinitions = parseWebHostDefinitions(
       platform === "web" ? deployment.hosts : import.meta.env.VITE_APPSERVER_HOSTS_JSON as string | undefined,
     );
-    const electronAppHost = platform === "electron" ? connectElectronAppHost() : null;
+    const electronAppHost = platform === "electron" ? connectRecoveringElectronAppHost() : null;
     if (electronAppHost !== null) startupRollback.push(() => electronAppHost.close());
     const localDocumentStores = new Set<ClientLocalDocuments>();
     const flushLocalDocuments = () => Promise.all([...localDocumentStores].map(store => store.flush())).then(() => undefined);
@@ -782,6 +782,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       extensionSettings,
       platformViewRenderers,
       platformAccounts,
+      accountModelDefaults: options.accountModelDefaults ?? null,
       applicationBranding,
       threadBadges,
     channelSearch,
@@ -1319,6 +1320,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     extensionSettings,
     platformViewRenderers,
     platformAccounts,
+    accountModelDefaults: options.accountModelDefaults ?? null,
     applicationBranding,
     threadBadges,
     channelSearch,

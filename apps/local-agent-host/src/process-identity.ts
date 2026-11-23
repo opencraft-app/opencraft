@@ -14,6 +14,9 @@ export interface PreparedProcessIdentity {
   quotaOwner: string;
   scope?: EnvironmentExecutionScope;
   env?: Record<string, string>;
+  /** Delivered ENV: the relayed `{context, capsule}` reply, opened only by the
+   * terminal owner under its own reservation. Never contains a value. */
+  launch?: { readonly context: unknown; readonly capsule: string };
   /** Private owner IPC; never accepted from a public process request. */
   lifecycleAuthority?: boolean;
 }

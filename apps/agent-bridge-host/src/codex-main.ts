@@ -9,7 +9,8 @@ async function main() {
 const path = process.argv[2];
 if (!path || !isAbsolute(path)) throw Error('Absolute private Core attachment configuration required');
 const metadata = await lstat(path);
-if (!metadata.isFile() || metadata.size > 65536 || metadata.mode & 0o077 || process.getuid && metadata.uid !== process.getuid()) throw Error('Private owned Core attachment configuration required');
+// Windows has no POSIX modes or owners on files; the stack keeps this file in the user's private profile.
+if (!metadata.isFile() || metadata.size > 65536 || (process.platform !== 'win32' && (metadata.mode & 0o077 || process.getuid && metadata.uid !== process.getuid()))) throw Error('Private owned Core attachment configuration required');
 const config = JSON.parse(await readFile(path, 'utf8'));
 if (!isAbsolute(config.endpoint) || typeof config.token !== 'string') throw Error('Invalid Core attachment configuration');
 let runtime: CodexBridgeRuntime;

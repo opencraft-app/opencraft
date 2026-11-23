@@ -6,6 +6,7 @@ import { mkdir, writeFile, copyFile } from 'node:fs/promises';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { verifyWorkspaceLinks } from './workspace-links.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 export async function packageRelay({ output = join(root, 'dist/relay'), relayEntry = join(root, 'apps/relay-server/src/main.ts') } = {}) {
   output = resolve(output);
@@ -28,5 +29,6 @@ export async function packageRelay({ output = join(root, 'dist/relay'), relayEnt
   return { output, revision, buildId };
 }
 if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
+  verifyWorkspaceLinks();
   await packageRelay({ output: process.argv[2] });
 }

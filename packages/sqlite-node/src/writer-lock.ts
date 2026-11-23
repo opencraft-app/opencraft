@@ -21,7 +21,8 @@ function readOwner(path: string): Owner | null {
   try {
     fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
     const info = fstatSync(fd);
-    if (!info.isFile() || info.size > 4096 || (info.mode & 0o077)) throw Error('Invalid writer owner file');
+    // Windows reports no POSIX modes (0o666); the user's profile protects the file there.
+    if (!info.isFile() || info.size > 4096 || (process.platform !== 'win32' && (info.mode & 0o077))) throw Error('Invalid writer owner file');
     const owner = JSON.parse(readFileSync(fd, 'utf8')) as Owner;
     if (owner.version !== 1 || !Number.isSafeInteger(owner.pid) || owner.pid < 1 || typeof owner.boot !== 'string'
       || typeof owner.start !== 'string' || typeof owner.claim !== 'string' || typeof owner.released !== 'boolean') throw Error('Invalid writer owner identity');
@@ -35,7 +36,8 @@ function saveOwner(path: string, owner: Owner) {
     const fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
     try { writeFileSync(fd, JSON.stringify(owner)); fsyncSync(fd); } finally { closeSync(fd); }
     renameSync(temporary, path);
-    const directory = openSync(dirname(path), constants.O_RDONLY); try { fsyncSync(directory); } finally { closeSync(directory); }
+    // Windows cannot open or fsync a directory; NTFS journals the rename itself.
+    if (process.platform !== 'win32') { const directory = openSync(dirname(path), constants.O_RDONLY); try { fsyncSync(directory); } finally { closeSync(directory); } }
   } finally { try { unlinkSync(temporary); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; } }
 }
 
@@ -55,7 +57,9 @@ export function acquireProcessWriter(path: string): () => void {
     try { const fd = openSync(path, constants.O_RDWR | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600); closeSync(fd); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
     const info = lstatSync(path);
-    if (!info.isFile() || (info.mode & 0o077) || (process.getuid && info.uid !== process.getuid())) throw Error('Writer lock must be a private regular file');
+    // Windows has no POSIX modes or owners (files report 0o666); its ACLs and the user's profile protect the lock.
+    const posixPrivate = process.platform === 'win32' || (!(info.mode & 0o077) && !(process.getuid && info.uid !== process.getuid()));
+    if (!info.isFile() || !posixPrivate) throw Error('Writer lock must be a private regular file');
     database = new DatabaseSync(path);
     database.exec('PRAGMA busy_timeout=0; BEGIN EXCLUSIVE');
     const previous = readOwner(ownerPath);

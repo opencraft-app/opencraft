@@ -36,6 +36,8 @@ export class BridgeGateway {
     }
     return response.json();
   }
+  /** Inputs the Host holds (queued, unknown, in flight), for maintenance draining. */
+  maintenance(): Promise<{ queued: number; unknown: number; inFlight: number }> { return this.rpc('/maintenance'); }
   async open(): Promise<void> {
     const snapshot = await this.rpc('/snapshot');
     for (const row of snapshot.routes) { const route = JSON.parse(row.route); if (route[0] === this.options.serverId) this.pinned.add(route[1]); }
@@ -56,6 +58,8 @@ export class BridgeGateway {
   }
   reserve(threadId: string): void { this.pinned.add(threadId); }
   owns(threadId: string): boolean { return this.pinned.has(threadId); }
+  /** Native session of a bridge Thread, once its identity has been pulled. */
+  nativeThread(threadId: string): string | undefined { return this.routes.get(threadId); }
   publicThread(nativeId: string): string | undefined { return [...this.routes].find(([, native]) => native === nativeId)?.[0]; }
   private consume(row: OutboxEvent, publish: boolean): void {
     const [serverId, threadId] = JSON.parse(row.route);
@@ -169,6 +173,12 @@ export class BridgeGateway {
       ...(typeof row.itemId === 'string' ? { itemId: items?.get(row.itemId) ?? row.itemId } : {}),
       ...(Array.isArray(row.data) ? { data: row.data.map(entry) } : {}),
     };
+  }
+  /** Host-owned queue of a bridge Thread; changes arrive as thread/queue/changed events. */
+  async queue(threadId: string, method: string, params: Record<string, unknown>): Promise<unknown> {
+    const result = await this.rpc('/queue', { serverId: this.options.serverId, threadId, method, params });
+    await this.pull();
+    return result;
   }
   async observe(threadId: string, params: Record<string, unknown>): Promise<unknown> {
     const result = await this.rpc('/observe', { serverId: this.options.serverId, threadId, method: 'history/read', params });

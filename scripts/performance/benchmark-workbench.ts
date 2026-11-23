@@ -97,7 +97,7 @@ try {
           await page.waitForFunction(() => { const m = (window as any).loadingBenchmark?.metrics; return m?.paintedMs != null && m?.readyMs != null; }, undefined, { timeout: 20_000 });
           await page.getByText('Question 11', { exact: true }).waitFor();
           const value = await page.evaluate(() => ({ ...(window as any).loadingBenchmark.metrics }));
-          assert.equal(value.frameCount, 10, "five latest turns retain their user and assistant frames"); assert.equal(historyReads - readsBefore, 1, 'cold history keeps its one native read');
+          assert.equal(value.frameCount, 20, "the ten-turn initial read window retains each user and assistant frame"); assert.equal(historyReads - readsBefore, 1, 'cold history keeps its one native read');
           if (n) measured.push({ firstPaintMs: value.paintedMs, readyMs: value.readyMs });
           await page.getByRole('button', { name: 'Close conversation', exact: true }).click();
           const warmBefore = historyReads;

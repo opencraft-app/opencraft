@@ -113,6 +113,18 @@
     "vite": "^8.3.8"
   },
   "exports": {
-    "./i18n/locales/*": "./src/i18n/locales/*"
+    "./i18n/locales/*": "./src/i18n/locales/*",
+    "./appearance-theme": "./src/appearance-theme.ts",
+    "./components/application-brand": "./src/components/application-brand.tsx",
+    "./runtime/application-branding": "./src/runtime/application-branding.ts",
+    "./runtime/host-thread-catalog": "./src/runtime/host-thread-catalog.ts",
+    "./runtime/indexeddb-extension-persistence": "./src/runtime/indexeddb-extension-persistence.ts",
+    "./runtime/local-account-preferences": "./src/runtime/local-account-preferences.ts",
+    "./runtime/server-installed-extensions": "./src/runtime/server-installed-extensions.ts",
+    "./runtime/server-product-extensions": "./src/runtime/server-product-extensions.ts",
+    "./runtime/thread-catalog-updates": "./src/runtime/thread-catalog-updates.ts",
+    "./runtime/trusted-renderer-host": "./src/runtime/trusted-renderer-host.ts",
+    "./runtime/workbench-navigation": "./src/runtime/workbench-navigation.ts",
+    "./runtime/workbench-navigation-transaction": "./src/runtime/workbench-navigation-transaction.ts"
   }
 }

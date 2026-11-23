@@ -323,6 +323,11 @@ jobs:
       - run: npm run test:identity
         if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
         timeout-minutes: 10
+      # The macOS release workflow runs this before signing; running it here
+      # catches release-workflow drift in the pull request instead of at release.
+      - run: npm run test:macos-release
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
+        timeout-minutes: 5
       - run: npm run test:extensions
         if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
         timeout-minutes: 10

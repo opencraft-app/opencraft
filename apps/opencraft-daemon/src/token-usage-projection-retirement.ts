@@ -100,9 +100,10 @@ export async function retireLegacyTokenProjection(options:{directory:string;nati
     const temporary=archivePath+".partial-"+process.pid;
     async function* records(){yield stringify(header)+"\n";for(const table of LEGACY_PROJECTION_TABLES)for(const row of statement(db,table,options.serverId).iterate(options.serverId))yield stringify({table,row})+"\n";}
     await pipeline(Readable.from(records()),createGzip(),createWriteStream(temporary,{flags:"wx",mode:0o600}));
-    const fd=openSync(temporary,"r");try{fsyncSync(fd);}finally{closeSync(fd);}
+    // Flushing needs write access on Windows.
+    const fd=openSync(temporary,"r+");try{fsyncSync(fd);}finally{closeSync(fd);}
     await readArchive(temporary);await rename(temporary,archivePath);
-    const directoryFd=openSync(dirname(archivePath),"r");try{fsyncSync(directoryFd);}finally{closeSync(directoryFd);}
+    if(process.platform!=="win32"){const directoryFd=openSync(dirname(archivePath),"r");try{fsyncSync(directoryFd);}finally{closeSync(directoryFd);}}
     const sha256=await archiveHash(archivePath);
     db.exec("BEGIN IMMEDIATE");
     try{

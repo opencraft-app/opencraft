@@ -15,6 +15,50 @@ strict identity validation and leave the full context intact for other providers
 An ordinary Web conversation with no IM tools must still be able to prepare its
 catalog when execution provenance is present.
 
+## Core-resolved execution context
+
+Providers that need to know which Host runs a session or which human owns the
+current run read `CapabilitySession.context`; they must not parse `serverId`,
+open core SQLite stores or query `execution_submissions` / `execution_leases`
+themselves. Trusted Host composition installs one resolver with
+`SessionCapabilities.resolveContext()`. `SessionCapabilities` discards any
+`context` a caller, transport or token supplies and attaches only the resolver's
+answer, frozen:
+
+| Field | Source in the Headless Host | Present when |
+|---|---|---|
+| `host.id` / `host.engine` | Conversation routing (`serverForHost`) or the registered remote execution authority | The server owns this thread |
+| `actor.id` / `generation` / `bindings` | Collaboration execution authority (owner Worker) or the remote native authority, then the Actor projection | An admitted human Actor is still current for this input/turn |
+| `lease` (`inputId`, `executionId`, `generation`, `turnId`, `incarnation`) | Human Git execution handoff (owner Worker plus native incarnation check) | The lease is active, belongs to the same Actor generation and matches any supplied execution identity |
+
+Each part is omitted, never defaulted, when core cannot verify it: unknown
+route, bot or unowned runs, revoked or expired authority, pending or ended
+leases, or an installation without the lease owner. Resolution runs no SQL on
+the network thread. `refresh` resolves context for the provider refresh and the
+synchronous catalog of the same execution (ignoring `callId`); every `call`
+resolves it again, so providers authorize invocations against current state.
+Credentials and resource ownership key on the Actor; `bindings` lists its
+verified login identities for providers that map to an external account.
+
+## Personal Git status provider
+
+When the Headless Host has a human Git execution owner, it registers
+`opencraft.git-status`, which contributes one read-only tool,
+`git_identity_status`, with no arguments. It is listed and callable only when
+core resolved the run's Host (`local-codex` or `opencraft-server`), a verified
+Actor and an active lease; otherwise it is absent and calls fail closed. The
+provider asks the owner about that exact lease input. The owner re-verifies the
+sealed grant against current Actor authority and native liveness, and the
+provider rejects an answer for a different Actor, execution or lease generation.
+
+The result is `{ available, hosts: [{ host, bound, transport, signing,
+username }] }`: per configured Git host, whether the person has a credential
+bound, whether it authenticates over `ssh` or `https`, whether commits are
+signed, and the bound username. Tokens, keys, sealed grants and the account key
+never leave the owner. The tool reports binding state only; it does not run a
+Git command or probe the remote. Ordinary `git` commands in the run use the
+identity through the existing execution environment.
+
 ## Protocol and lifecycle
 
 The Streamable HTTP MCP outlet uses the pinned MCP SDK on a dedicated loopback

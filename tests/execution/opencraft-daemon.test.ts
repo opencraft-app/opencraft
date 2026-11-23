@@ -24,7 +24,7 @@ import { seedLegacyHostStorage, seedNewerHostStorage } from "../support/local-ag
 import { OpenCraftDaemonClientManager } from "../../apps/desktop/src/daemon-client.js";
 import { readDaemonMachineIdentity } from "../../apps/opencraft-daemon/src/machine-identity.js";
 import { startOpenCraftDaemonServer } from "../../apps/opencraft-daemon/src/server.js";
-import { isDaemonEndpointUnavailable } from "../../apps/desktop/src/daemon-client.js";
+import { daemonLogPath, isDaemonEndpointUnavailable, openDaemonLog } from "../../apps/desktop/src/daemon-client.js";
 
 class TestTransport implements DuplexTransport {
   readonly sent: string[] = [];
@@ -313,6 +313,39 @@ test("lazy Host can retry after engine startup failure with reopened storage", a
   } finally { appHost?.close(); await daemon?.close(); process.chdir(cwd); await rm(directory, { recursive: true, force: true }); }
 });
 
+test("a Codex bridge stack that cannot start leaves the daemon serving and only Codex unavailable", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oc-daemon-bridge-down-"));
+  const cwd = process.cwd();
+  let daemon: Awaited<ReturnType<typeof startOpenCraftDaemon>> | undefined;
+  let appHost: MessagePortAppHostClient | undefined;
+  try {
+    const endpoint = join(directory, "daemon.sock"), token = "x".repeat(48);
+    // A program directory without the bridge programs: the stack fails to start.
+    daemon = await startOpenCraftDaemon({ endpoint, runtimeDirectory: cwd, authToken: token, dshExecutable: "unused",
+      dataDirectory: join(directory, "data"), codexExecutable: "unused", codexDataDirectory: join(directory, "codex"),
+      nativeCodexHomeDirectory: join(directory, "native"), codexBridgeStack: { programs: join(directory, "no-programs") } });
+    // The daemon answers Main without waiting on Codex.
+    const channel = await openDaemonChannel(endpoint, token, "bridge-down-renderer");
+    const listeners = new Set<(event: MessageEvent<unknown>) => void>();
+    const stop = channel.subscribeMessage(value => {
+      const message = value as DaemonServerMessage;
+      if (message.type === "app-host/message") for (const listener of listeners) listener({ data: message.payload } as MessageEvent<unknown>);
+    });
+    appHost = new MessagePortAppHostClient({ postMessage: message => channel.send({ type: "app-host/message", payload: message }),
+      addEventListener: (_type, listener) => { listeners.add(listener); }, removeEventListener: (_type, listener) => { listeners.delete(listener); },
+      start() {}, close() { stop(); channel.close(); } }, "bridge-down-renderer");
+    await appHost.waitUntilReady();
+    // Each Codex connection retries the stack and reports why Codex is unavailable.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const transport = appHost.createTransport("local-codex");
+      const client = new JsonRpcAppServerClient({ hostId: "local-codex", transport });
+      try {
+        await assert.rejects((async () => { await transport.connect(); await client.request("thread/list", {}); })(), /Codex is unavailable/);
+      } finally { await client.close(); }
+    }
+  } finally { appHost?.close(); await daemon?.close(); process.chdir(cwd); await rm(directory, { recursive: true, force: true }); }
+});
+
 test("explicit core mode fails closed without creating embedded Host stores or spawning an engine", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oc-daemon-core-unavailable-"));
   const dataDirectory = join(directory, "must-not-be-created");
@@ -347,6 +380,148 @@ test("daemon wire keeps the old five-name projection and exposes complete scoped
     const manager=await OpenCraftDaemonClientManager.open({endpoint,tokenPath,tokenMode:"existing",daemonEntry:"unused",executable:process.execPath,runtimeDirectory:root,dataDirectory:root,dshExecutable:"unused",codexExecutable:"unused",codexDataDirectory:join(root,"codex"),nativeCodexHomeDirectory:join(root,"native")});
     const connection=await manager.connectAppHost("new-client");assert.deepEqual(connection.storage,storage);connection.close();
   }finally{await server.close();await appHost.close();await rm(root,{recursive:true,force:true});}
+});
+
+test("the desktop daemon owns and fences the Server database; another process can only borrow it", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oc-daemon-server-owner-"));
+  const cwd = process.cwd();
+  let daemon: Awaited<ReturnType<typeof startOpenCraftDaemon>> | undefined;
+  const { createDesktopAccountHost } = await import("../../plugins/local-account/src/desktop.js");
+  try {
+    const humanAccountDirectory = join(directory, "human-account");
+    daemon = await startOpenCraftDaemon({ endpoint: join(directory, "daemon.sock"), runtimeDirectory: cwd, authToken: "synthetic-" + "x".repeat(48),
+      dshExecutable: "unused", dataDirectory: join(directory, "data"), codexExecutable: "unused", codexDataDirectory: join(directory, "codex"),
+      nativeCodexHomeDirectory: join(directory, "native"), humanAccountDirectory });
+    // The daemon migrated and initialized the installation before listening.
+    await stat(join(humanAccountDirectory, "opencraft-server.sqlite"));
+    // The previous arrangement, Main opening it as owner, now meets the daemon's fence.
+    await assert.rejects(createDesktopAccountHost(humanAccountDirectory, () => ""));
+    const main = await createDesktopAccountHost(humanAccountDirectory, () => "", { storageRole: "borrower" });
+    try {
+      const token = main.createNativeSession();
+      assert.ok(main.authenticateSession(token), "Main's native session is accepted against the daemon-owned database");
+    } finally { await main.close(); }
+  } finally { await daemon?.close(); process.chdir(cwd); await rm(directory, { recursive: true, force: true }); }
+});
+
+test("Main forwards account routes to the daemon-owned account service and opens its remote windows", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oc-daemon-account-"));
+  const cwd = process.cwd();
+  let daemon: Awaited<ReturnType<typeof startOpenCraftDaemon>> | undefined;
+  const { createWorkbenchStaticServer } = await import("../../apps/headless-server/src/serve-workbench-static.mjs");
+  const { createAccountRouteProxy } = await import("../../apps/desktop/src/account-route-proxy.js");
+  let staticServer: Awaited<ReturnType<typeof createWorkbenchStaticServer>> | undefined;
+  try {
+    const token = "synthetic-" + "x".repeat(48), endpoint = join(directory, "daemon.sock"), tokenPath = join(directory, "token");
+    await writeFile(tokenPath, token);
+    const options = { endpoint, runtimeDirectory: cwd, authToken: token, dshExecutable: "unused", dataDirectory: join(directory, "data"),
+      codexExecutable: "unused", codexDataDirectory: join(directory, "codex"), nativeCodexHomeDirectory: join(directory, "native"),
+      humanAccountDirectory: join(directory, "human-account") };
+    daemon = await startOpenCraftDaemon(options);
+    const manager = await OpenCraftDaemonClientManager.open({ ...options, tokenPath, tokenMode: "existing", daemonEntry: "unused", executable: process.execPath });
+    // Main's side: the renderer server forwards account routes to the attached daemon endpoint.
+    const renderer = join(directory, "renderer"); await mkdir(renderer); await writeFile(join(renderer, "index.html"), "<!doctype html>");
+    let endpointForMain: string | null = null;
+    staticServer = await createWorkbenchStaticServer({ root: renderer, accountService: createAccountRouteProxy(() => endpointForMain) });
+    const origin = `http://127.0.0.1:${(await staticServer.listen({ host: "127.0.0.1", port: 0 })).port}`;
+    const opened: string[] = [];
+    const attachment = await manager.attachAccount(origin, async remote => { opened.push(remote); });
+    endpointForMain = attachment.endpoint;
+    assert.equal(attachment.endpoint, join(directory, "opencraft-account.sock"));
+    assert.equal((await stat(attachment.endpoint)).mode & 0o777, 0o600);
+
+    const owner = `oc_desktop_owner=${attachment.browserProof}; oc_human=${attachment.sessionToken}`;
+    const status = await (await fetch(origin + "/__opencraft_account/status", { headers: { cookie: owner } })).json() as { native: boolean; actor: unknown };
+    assert.equal(status.native, true);
+    assert.ok(status.actor, "the native session issued by the daemon signs Main's window in");
+    assert.equal((await (await fetch(origin + "/__opencraft_account/status")).json() as { native: boolean }).native, false);
+
+    const connect = await fetch(origin + "/__opencraft_account/connect", { method: "POST",
+      headers: { cookie: owner, origin, "content-type": "application/json" }, body: JSON.stringify({ origin: "https://remote.example/" }) });
+    assert.equal(connect.status, 200);
+    assert.deepEqual(opened, ["https://remote.example"]);
+
+    // The account routes answer only for the origin Main attached.
+    const { request: httpRequest } = await import("node:http");
+    const foreignStatus = await new Promise<number>((resolve, reject) => {
+      const probe = httpRequest(origin + "/__opencraft_account/status", { headers: { host: "127.0.0.1:1" } }, reply => { reply.resume(); resolve(reply.statusCode ?? 0); });
+      probe.once("error", reject); probe.end();
+    });
+    assert.equal(foreignStatus, 404, "a foreign Host is not served, as before the move");
+
+    let closed = false;
+    attachment.subscribeClose(() => { closed = true; });
+    await daemon.close(); daemon = undefined;
+    for (let i = 0; i < 50 && !closed; i++) await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(closed, true, "Main learns that the daemon went away and must reattach");
+    assert.equal((await fetch(origin + "/__opencraft_account/status")).status, 503);
+  } finally {
+    await staticServer?.close(); await daemon?.close(); process.chdir(cwd); await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("the daemon log is private and keeps one previous generation once large", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-daemon-log-"));
+  try {
+    const runtime = join(root, "runtime");
+    let log = await openDaemonLog(runtime); await log.write("first\n"); await log.close();
+    assert.equal((await stat(daemonLogPath(runtime))).mode & 0o777, 0o600);
+    await writeFile(daemonLogPath(runtime), "x".repeat(5 * 1024 * 1024 + 1));
+    log = await openDaemonLog(runtime); await log.write("second\n"); await log.close();
+    assert.equal(await readFile(daemonLogPath(runtime), "utf8"), "second\n");
+    assert.equal((await stat(daemonLogPath(runtime) + ".1")).size, 5 * 1024 * 1024 + 1);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("a daemon that fails to start leaves its output in the log the error names", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-daemon-fail-"));
+  try {
+    const entry = join(root, "failing-daemon.cjs");
+    await writeFile(entry, 'process.stderr.write("synthetic daemon startup failure\\n"); process.exit(1);');
+    const runtimeDirectory = join(root, "runtime"), tokenPath = join(root, "token");
+    await writeFile(tokenPath, "synthetic-" + "x".repeat(48));
+    const manager = await OpenCraftDaemonClientManager.open({ endpoint: join(root, "daemon.sock"), tokenPath, tokenMode: "existing", daemonEntry: entry,
+      executable: process.execPath, runtimeDirectory, dataDirectory: join(root, "data"), dshExecutable: "unused", codexExecutable: "unused",
+      codexDataDirectory: join(root, "codex"), nativeCodexHomeDirectory: join(root, "native") });
+    await assert.rejects(manager.ensureStarted(), error => error instanceof Error && error.message.includes(daemonLogPath(runtimeDirectory)));
+    assert.match(await readFile(daemonLogPath(runtimeDirectory), "utf8"), /synthetic daemon startup failure/u);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("a daemon left by another build is stopped and a compatible daemon is adopted", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-daemon-build-")), endpoint = join(root, "daemon.sock"), token = "synthetic-" + "x".repeat(48);
+  const tokenPath = join(root, "token"); await writeFile(tokenPath, token);
+  const appHost = new AppHostServer({ createTransport: () => new TestTransport() });
+  const { createServer } = await import("node:net");
+  let shutdownRequests = 0;
+  let replacement: Awaited<ReturnType<typeof startOpenCraftDaemonServer>> | undefined;
+  const sockets = new Set<import("node:net").Socket>();
+  // An older daemon: authenticates the same token but reports another build.
+  const old = createServer(socket => {
+    sockets.add(socket);
+    const channel = new DaemonJsonLineChannel(socket);
+    channel.subscribeMessage(value => {
+      const message = value as { type?: string };
+      if (message.type === "daemon/hello") channel.send({ type: "daemon/ready", protocolVersion: OPENCRAFT_DAEMON_PROTOCOL_VERSION, buildId: "older-build", pid: 1 });
+      if (message.type === "daemon/shutdown") {
+        shutdownRequests++;
+        channel.send({ type: "daemon/shutting-down" });
+        for (const open of sockets) open.destroy();
+        old.close(() => { void startOpenCraftDaemonServer({ endpoint, authToken: token, appHost }).then(server => { replacement = server; }); });
+      }
+    });
+  });
+  await new Promise<void>(resolve => old.listen(endpoint, resolve));
+  try {
+    const manager = await OpenCraftDaemonClientManager.open({ endpoint, tokenPath, tokenMode: "existing", daemonEntry: "unused", executable: process.execPath,
+      runtimeDirectory: root, dataDirectory: root, dshExecutable: "unused", codexExecutable: "unused", codexDataDirectory: join(root, "codex"),
+      nativeCodexHomeDirectory: join(root, "native") });
+    await manager.ensureStarted();
+    assert.equal(shutdownRequests, 1);
+    const connection = await manager.connectAppHost("after-replacement"); connection.close();
+  } finally {
+    await replacement?.close(); await appHost.close(); old.close(); await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("closing a daemon JSON line channel destroys its socket instead of only half-closing", () => {

@@ -121,7 +121,7 @@ Hermes 保留现有 AppServer 桥及下游链路，外围只做兼容验证；�
 
 Host 是发行与撤销 owner：创建 reservation → 原生 execution 与领域准入绑定 → 原子发布 descriptor → 才允许写。每个执行 scope 使用单独文件，不能在持久 agent 进程全局覆盖一个 env 给并发 Turn 共享；通过引擎工具执行上下文注入或隔离 launcher namespace，旧 scope 到期即失效。压缩后 `opencraft context` 重新发现，重连用同 binding，退出/Stop/授权撤销/账号切换注销；启动失败回收。签名验证/发行从 SessionCapabilityMcp 类提取为 transport-neutral 服务，旧 MCP transport 并存消费；仅编排相关的 thread_* 注入及 thread_cli 发现工具在替代验收后下线，其它平台 MCP transport 和工具保持原样；不能只改 env 但仍依赖 MCP 初始化发凭据。
 
-Codex 首轮在 native 创建前仅预留一个无 descriptor、无权限的执行 CLI namespace，并安装对应环境；Server 执行准入后 Host 才原子发布凭据、一次性绑定该 namespace。已知未 materialize 的首轮消费创建时设置，不通过 resume 捕获，不替换 native ID，也不退休原生会话；已有 rollout 继续走共享 resume/retirement。平台 MCP 使用未绑定的内存 reservation，准入后绑定，不能恢复编排 MCP 注入或增加网络主线程 SQLite 路径。实际证据和 history contract 选择见 [P7a 首轮记录](../../apps/agent-bridge-host/VALIDATION-P7a.md#first-turn-lifecycle-repair--2026-11-11)。
+Codex 首轮在 native 创建前仅预留一个无 descriptor、无权限的执行 CLI namespace，并安装对应环境；Server 执行准入后 Host 才原子发布凭据、一次性绑定该 namespace。已知未 materialize 的首轮消费创建时设置，不通过 resume 捕获，不替换 native ID，也不退休原生会话；已有 rollout 继续走共享 resume/retirement。平台 MCP 使用未绑定的内存 reservation，准入后绑定，不能恢复编排 MCP 注入或增加网络主线程 SQLite 路径。history contract 选择见 [P7a 决策](../../apps/agent-bridge-host/README.md#design-decisions-and-known-limits)。
 
 命令仅覆盖这三项工作所需通信和 automation，全部有 --help、--json、分页和有界输出：
 
@@ -151,19 +151,19 @@ automation 不能持久保存短期 Thread bearer：保存 human 授权的可撤
 | --- | --- | --- |
 | P1a | bridge/schema、纯组装器、现有 AppServer 输出投影、一致性与脱敏回放；无运行切换 | fixture 全矩阵、乱序/重复、写后 EOF 结算正确；既有客户端输出契约与 steer 必要扩展兼容，记录 schema 版本 |
 | P1b | 独立 Host、sandbox、命令账本/outbox、generation；依赖 P1a | fake provider 长任务中重启网关，PID/Turn 不变，事件补齐；Host 崩溃发送窗口保持 unknown；存储锁下心跳正常 |
-| P2a | Codex bridge + codex-core/账号池；依赖 P1b | 真实账号最便宜可用模型建一线程读临时文件，长工具中发一次 steer；留原生证据、不重复文件副作用；网关重启继续、账号池路径不变；现有 Web/Electron/Expo 经 AppServer 查看新旧线程，发送/工具/steer 状态及重连无重复，草稿焦点连续；2026-11-11 续验：指定读文件/工具中 steer/网关重启/单次副作用真实任务通过；客户端仍未验（[证据](../../apps/agent-bridge-host/VALIDATION-LIVE-RESUME.md)） |
+| P2a | Codex bridge + codex-core/账号池；依赖 P1b | 真实账号最便宜可用模型建一线程读临时文件，长工具中发一次 steer；留原生证据、不重复文件副作用；网关重启继续、账号池路径不变；现有 Web/Electron/Expo 经 AppServer 查看新旧线程，发送/工具/steer 状态及重连无重复，草稿焦点连续；2026-11-11 续验：指定读文件/工具中 steer/网关重启/单次副作用真实任务通过；客户端仍未验 |
 | P2c | Claude SDK bridge；依赖 P1b | 最小真实任务+输入流 steer/收尾竞态，UUID 可用则核验，否则只 admission；旧 ACP Claude 仍可用 |
 | P2d | Pi bridge；依赖 P1b | 最便宜模型一次最小任务+工具间 steer、重复文本、结束前未消费；原生 owner 与 session 无双写 |
 | P3 | 通用 ACP bridge；依赖 P1b | 本机一个通用 ACP fixture + Copilot/Amp 各一次最小真实任务；实际 initialize 录制；Copilot 无原生声明时界面无真 steer 假标签 |
 | P3c | ACP resume/history、model/list、客户端 fs/terminal/elicitation 与 Host 实机收尾；依赖 P3 | 真实 Copilot/Amp 经 Host 完成最小任务、一次 steer、close→resume 与 history；Web 仅核对现有 steering 组件不出现 native 假标签 |
 | P3b | DSH ACP 伴生插件；依赖 P3 | 最便宜模型真实任务中 messageId admission→claimed；插件 absent/未 ready、撤回与 claimed 竞态、未消费清理；旧原生 DSH 保留 |
-| P4 | CodeBuddy 用户 adapter 移植；依赖 P3；[实现与验收记录](../../packages/agent-bridge-acp/VALIDATION.md) | 确定性双回执、slash 拒绝和 unknown 不重放已覆盖；最便宜模型工具中 steer 的真实双回执：未验（外部阻塞），不视为全验收；2026-11-11 续验：未验，session/new 重试一次仍为 HTTP 500（[证据](../../apps/agent-bridge-host/VALIDATION-LIVE-RESUME.md)） |
-| P5 | Cursor SDK 用户 steer 移植；依赖 P3；[实现与验收记录](../../apps/cursor-bridge/VALIDATION.md) | complete_delivered 只记 SDK 交付；revert 明确未插入、不自动 followup；缺 key 指引、取消清理、unknown 不重放；CLI/hook 结论与真实任务证据单列 |
+| P4 | CodeBuddy 用户 adapter 移植；依赖 P3；[决策与已知限制](../../packages/agent-bridge-acp/README.md#design-decisions-and-known-limits) | 确定性双回执、slash 拒绝和 unknown 不重放已覆盖；最便宜模型工具中 steer 的真实双回执：未验（外部阻塞），不视为全验收；2026-11-11 续验：未验，session/new 重试一次仍为 HTTP 500 |
+| P5 | Cursor SDK 用户 steer 移植；依赖 P3；[决策与已知限制](../../apps/cursor-bridge/README.md#design-decisions-and-known-limits) | complete_delivered 只记 SDK 交付；revert 明确未插入、不自动 followup；缺 key 指引、取消清理、unknown 不重放；CLI/hook 结论与真实任务证据单列 |
 | P6 | AGY hook/IPC/轨迹读取；依赖 P3；[实现与验收](p6-agy.md) | AGY 1.5.5 Flash Low 经 Host 工具中 steer，hook→新原始 user 行（idx 3 ≥ floor 1 且 > baseline 2）；同文本 unknown、schema/插件缺失拒绝、SQLite Worker 已验证；无模型理解或生产隔离声明 |
-| P7a | CLI credential 中立化与主动发行、稳定入口、限定的 thread 通信与状态查询命令；依赖 P2a；[首轮修复与验证](../../apps/agent-bridge-host/VALIDATION-P7a.md#first-turn-lifecycle-repair--2026-11-11) | 修复前 PR #233 曾因 no rollout found 未验；修复后 Codex 首轮真实 spawn/native tell/wait/output 已通过；确定性权限/撤销/旧路径回归通过。其它 provider、queue follow-up 及生产装配仍待验。原退出条件： 所有本机 agent 各执行 context 和一次有界 spawn/tell/wait/output 链，权限拒绝与撤销有效；网关重启同 key 不双 spawn；仅编排 thread_* 与 thread_cli 注入退出，其它 MCP 工具回归通过 |
-| P7b | 项目 automation + CLI；依赖 P7a；[实现与验收记录](../../apps/agent-bridge-host/VALIDATION-P7b.md) | 确定性 timezone/DST、重启单次、失败暂停、unknown 与对账、旧 schedule 冲突拒绝已覆盖；真实 script 完成，once/cron 原生接纳后因 429 失败；跨 owner 导入未实现，完整退出条件待补；2026-11-11 续验：once/cron 各一次真实调度和模型输出通过；生产装配/CLI 注入仍未验（[证据](../../apps/agent-bridge-host/VALIDATION-LIVE-RESUME.md)） |
+| P7a | CLI credential 中立化与主动发行、稳定入口、限定的 thread 通信与状态查询命令；依赖 P2a；[决策与已知限制](../../apps/agent-bridge-host/README.md#design-decisions-and-known-limits) | 修复前 PR #233 曾因 no rollout found 未验；修复后 Codex 首轮真实 spawn/native tell/wait/output 已通过；确定性权限/撤销/旧路径回归通过。其它 provider、queue follow-up 及生产装配仍待验。原退出条件： 所有本机 agent 各执行 context 和一次有界 spawn/tell/wait/output 链，权限拒绝与撤销有效；网关重启同 key 不双 spawn；仅编排 thread_* 与 thread_cli 注入退出，其它 MCP 工具回归通过 |
+| P7b | 项目 automation + CLI；依赖 P7a；[决策与已知限制](../../apps/agent-bridge-host/README.md#design-decisions-and-known-limits) | 确定性 timezone/DST、重启单次、失败暂停、unknown 与对账、旧 schedule 冲突拒绝已覆盖；真实 script 完成，once/cron 原生接纳后因 429 失败；跨 owner 导入未实现，完整退出条件待补；2026-11-11 续验：once/cron 各一次真实调度和模型输出通过；生产装配/CLI 注入仍未验 |
 | P9 | Hermes 现有桥兼容回归；依赖 P2a | 旧桥契约录制/替身与现有客户端读取和发送回执一致；旧桥与下游不变。缺真实本机环境则如实登记，不声称真实产品验收 |
-| P8 | 切新默认和有条件移除旧 DSH owner/编排 MCP 注入；依赖 P2a/P2c/P2d、P3/P3b、P4–P7/P9 全验收 | 对本机 agent 配置逐条映射和冒烟，子线程/automation 真实闭环；旧活动代排空且可读历史；Hermes 和其它平台 MCP 保留；下线清单用户确认 |
+| P8 | 切新默认和有条件移除旧 DSH owner/编排 MCP 注入；依赖 P2a/P2c/P2d、P3/P3b、P4–P7/P9 全验收；内置 Codex 退休旧路径前须完成 [Codex 能力对照清单](codex-parity.md) | 对本机 agent 配置逐条映射和冒烟，子线程/automation 真实闭环；旧活动代排空且可读历史；Hermes 和其它平台 MCP 保留；下线清单用户确认 |
 
 P3b 的 DSH ACP 伴生插件、真实 messageId admission→claimed 录制、确定性负例及独立审查裁决见 [p3b-dsh.md](p3b-dsh.md)；旧原生 DSH 路径与默认引擎不变。
 

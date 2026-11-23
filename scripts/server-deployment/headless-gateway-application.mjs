@@ -60,6 +60,13 @@ export function applyExecutionProfile(argv, manifest) {
   }
   return result;
 }
+/** The release's Codex bridge programs, unless the operator chose the legacy path or an external bridge. */
+export async function codexBridgePrograms(releaseRoot, options, environment = process.env, location = 'execution/codex-bridge') {
+  if (environment.OPENCRAFT_CODEX_BRIDGE === '0' || options.codexAgentBridgeFile || options.codexBridgePrograms) return options.codexBridgePrograms;
+  const directory = join(releaseRoot, location);
+  try { await stat(join(directory, 'engine-host.mjs')); return directory; }
+  catch (error) { if (error.code === 'ENOENT') return undefined; throw error; }
+}
 export async function runHeadlessGateway({ parseArguments = parseHeadlessArguments, startServer = startHeadlessServer } = {}) {
   const releaseRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
   const manifest = JSON.parse(await readFile(join(releaseRoot, 'package.json'), 'utf8'));
@@ -83,7 +90,11 @@ export async function runHeadlessGateway({ parseArguments = parseHeadlessArgumen
   const dshDescriptor = process.env.OPENCRAFT_DSH_HOST_DESCRIPTOR;
   const engineHostDescriptor = process.env.OPENCRAFT_ENGINE_HOST_DESCRIPTOR;
   if (engineHostDescriptor && manifest.opencraftExecution.independentEngineHost !== 1) throw new Error('Release cannot attach an independent execution Host');
-  const app = await startServer({ ...options, ...(engineHostDescriptor ? {engineHostDescriptor} : {}), root: releaseRoot, webRoot: join(releaseRoot, 'web'),
+  const bridgePrograms = await codexBridgePrograms(releaseRoot, options);
+  // The release builds the personal Git Worker into runtime/, as the engine and DSH Hosts expect;
+  // the gateway bundle lives in execution/ and would otherwise look beside itself.
+  const app = await startServer({ gitWorkerFile: join(releaseRoot, 'runtime/personal-git-worker.mjs'),
+    ...options, ...(engineHostDescriptor ? {engineHostDescriptor} : {}), root: releaseRoot, webRoot: join(releaseRoot, 'web'),
     ...(dshDescriptor ? {
       startAgentHost: async agentOptions => {
         return attachDshHost(dshDescriptor, agentOptions.dataDirectory, agentOptions.machineIdentity.machineId);
@@ -96,6 +107,9 @@ export async function runHeadlessGateway({ parseArguments = parseHeadlessArgumen
     dshCapabilityPlugin: join(releaseRoot, 'execution/dsh-capability-plugin.mjs'),
     codexExecutable: required('OPENCRAFT_CODEX_EXECUTABLE'),
     codexCoreEndpoint: endpoint, codexCoreAuthToken: token,
+    // Codex runs through the server's own Engine Host by default; OPENCRAFT_CODEX_BRIDGE=0 returns to
+    // the legacy path (bridge-created conversations wait until it is enabled again).
+    ...(bridgePrograms ? { codexBridgePrograms: bridgePrograms } : {}),
     getExecutionHealth: async () => {
       const current = await readCurrentReleaseManifest(releaseRoot);
       const observed = await observeExecutionHealth({ version: typeof current.version === 'string' ? current.version : null,

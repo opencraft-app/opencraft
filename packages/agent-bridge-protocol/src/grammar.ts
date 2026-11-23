@@ -42,7 +42,17 @@ export interface TokenUsage {
 
 /** Terminal item shapes; the projection maps these onto existing ThreadItem kinds. */
 export type ItemShape =
-  | { readonly kind: "userMessage"; readonly text: string; readonly clientId?: string | null }
+  | {
+      readonly kind: "userMessage";
+      readonly text: string;
+      readonly clientId?: string | null;
+      /**
+       * The input parts as the provider recorded them (AppServer `UserInput`:
+       * text with its elements, images, mentions), bounded to 64 KiB. Without
+       * it the projection shows `text` alone.
+       */
+      readonly content?: readonly Readonly<Record<string, unknown>>[];
+    }
   | { readonly kind: "agentMessage"; readonly text: string }
   | { readonly kind: "reasoning"; readonly text: string }
   | { readonly kind: "plan"; readonly text: string }
@@ -81,10 +91,20 @@ export interface TurnMainRunDelta extends DeltaBase {
   readonly state: "idle" | "running";
 }
 
+/** Why a turn failed, as the provider reported it (AppServer `TurnError` shape). */
+export interface TurnFailure {
+  readonly message: string;
+  /** Provider-specific classification, opaque to the bridge (Codex: `codexErrorInfo`). */
+  readonly codexErrorInfo?: unknown;
+  readonly additionalDetails?: string | null;
+}
+
 export interface TurnCloseDelta extends DeltaBase {
   readonly op: "turn.close";
   readonly nativeTurnId: string;
   readonly status: TurnStatus;
+  /** Only with status failed; optional, bounded to 16 KiB. */
+  readonly error?: TurnFailure;
 }
 
 export interface ItemOpenDelta extends DeltaBase {

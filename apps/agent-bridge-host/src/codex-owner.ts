@@ -1,7 +1,7 @@
 import { refreshCodexExecutionConfiguration } from "@opencraft/codex-execution";
 import WebSocket from 'ws';
 import { isDeepStrictEqual } from 'node:util';
-import { CodexCoreControlClient } from '@opencraft/account-pool-host';
+import { CodexCoreControlClient, openCodexNativeSocket } from '@opencraft/account-pool-host';
 import { codexDeclaration } from './codex-declaration.js';
 import { CodexBridgeError, type CodexOwnerPort } from './codex.js';
 
@@ -23,7 +23,7 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     const control = new CodexCoreControlClient(this.endpoint, this.token);
     const [health, auth] = await Promise.all([control.health(), control.brokerAuth()]);
     this.brokerAuth = auth;
-    this.socket = new WebSocket(`ws+unix://${health.nativeSocket}:/`, { maxPayload: 1_048_576, handshakeTimeout: 5000 });
+    this.socket = openCodexNativeSocket(health.nativeSocket, { maxPayload: 1_048_576, handshakeTimeout: 5000 });
     const socket = this.socket;
     socket.on('message', data => {
       let frame: unknown;
@@ -70,7 +70,8 @@ export class CodexOwnerConnection implements CodexOwnerPort {
         this.initialConfigurations.delete(threadId);
       } catch(error) {
         current();
-        if(!(error instanceof CodexBridgeError)||error.nativeReason!=='unmaterialized')throw error;
+        // Native cannot list turns yet: no first message is recorded, as when it is unmaterialized.
+        if(!(error instanceof CodexBridgeError)||!['unmaterialized','turns-unavailable'].includes(error.nativeReason??''))throw error;
         if(this.initialConfigurations.get(threadId)===initial) {
           const mcp=sessionMcp??{enabled:false,url:'http://127.0.0.1:1/mcp'};
           const installed=initial['shell_environment_policy.set']??{};
@@ -122,9 +123,16 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     const stale = pending.method === 'turn/steer' && (/^no active turn to steer[.!]?$/i.test(message) || /^expected active turn id\b/i.test(message));
     const unmaterialized=pending.method==='thread/read'&&pending.includeTurns===true&&typeof pending.threadId==='string'&&error?.code===-32600
       &&message===`thread ${pending.threadId} is not materialized yet; includeTurns is unavailable before first user message`;
+    // Early in a new session native can also report its turn listing as not supported yet
+    // (-32601); the history is not readable yet, but this is no evidence the session is new.
+    // On Windows the new session's rollout file can exist before its first line is written.
+    // Its metadata is unreadable then too, whether or not turns were asked for.
+    const turnsUnavailable=!unmaterialized&&pending.method==='thread/read'&&(
+      pending.includeTurns===true&&error?.code===-32601&&message==='list_turns is not supported yet'
+      ||error?.code===-32603&&/^failed to read thread: thread-store internal error: failed to read session metadata [^\n]+: rollout at [^\n]+ is empty$/.test(message));
     const kind=stale?'stale-target':[-32600,-32601,-32602].includes(error?.code??0)?'explicit-reject':'unknown-outcome';
     if(kind==='explicit-reject'&&pending.initial&&!pending.observedTurn&&typeof pending.threadId==='string')this.initialConfigurations.set(pending.threadId,pending.initial);
-    pending.reject(new CodexBridgeError(stale ? 'stale-target' : [-32600, -32601, -32602].includes(error?.code ?? 0) ? 'explicit-reject' : 'unknown-outcome', stale ? 'Target turn is no longer active' : 'Native request refused; query its outcome',unmaterialized?'unmaterialized':undefined));
+    pending.reject(new CodexBridgeError(stale ? 'stale-target' : [-32600, -32601, -32602].includes(error?.code ?? 0) ? 'explicit-reject' : 'unknown-outcome', stale ? 'Target turn is no longer active' : 'Native request refused; query its outcome',unmaterialized?'unmaterialized':turnsUnavailable?'turns-unavailable':undefined));
   }
   private write(value: unknown): void {
     if (this.failed || this.socket?.readyState !== WebSocket.OPEN) throw new CodexBridgeError('unknown-outcome', 'Core connection unavailable');

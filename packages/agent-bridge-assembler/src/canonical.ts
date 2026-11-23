@@ -5,7 +5,7 @@
  * them into existing AppServer notifications.
  */
 
-import type { DeliveryMethod, ItemShape, TextChannel, TokenUsage, TurnStatus } from "@opencraft/agent-bridge-protocol";
+import type { DeliveryMethod, ItemShape, TextChannel, TokenUsage, TurnFailure, TurnStatus } from "@opencraft/agent-bridge-protocol";
 
 export interface EventMeta {
   /** Monotonic sequence within one assembly run. */
@@ -92,7 +92,7 @@ export interface CanonicalInputState {
 export type CanonicalEventBody =
   | { readonly kind: "turn.started"; readonly threadId: string; readonly turnId: string; readonly nativeTurnId: string }
   | { readonly kind: "turn.mainRun"; readonly threadId: string; readonly turnId: string; readonly state: "idle" | "running" }
-  | { readonly kind: "turn.completed"; readonly threadId: string; readonly turnId: string; readonly status: TurnStatus; readonly startedAtMs: number }
+  | { readonly kind: "turn.completed"; readonly threadId: string; readonly turnId: string; readonly status: TurnStatus; readonly startedAtMs: number; readonly error?: TurnFailure }
   | { readonly kind: "item.started"; readonly threadId: string; readonly turnId: string | null; readonly item: CanonicalItem }
   | { readonly kind: "item.completed"; readonly threadId: string; readonly turnId: string | null; readonly item: CanonicalItem }
   | { readonly kind: "agentMessage.delta"; readonly threadId: string; readonly turnId: string; readonly itemId: string; readonly channel: TextChannel; readonly delta: string }

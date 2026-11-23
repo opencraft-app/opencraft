@@ -8,7 +8,8 @@
     "./server": "./src/server.ts",
     "./sqlite": "./src/sqlite.ts",
     "./agent": "./src/agent.ts",
-    "./conversation-overview": "./src/conversation-overview-model.ts"
+    "./conversation-overview": "./src/conversation-overview-model.ts",
+    "./ai-follow-up-model": "./src/ai-follow-up-model.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

@@ -15,6 +15,13 @@
     "src/remote-human-git-execution.ts",
     "src/workspaces/native-routing.ts",
     "src/workspaces/execution-service.ts",
-    "src/workspaces/bot-client.ts"
+    "src/workspaces/bot-client.ts",
+    "src/host-environment-launch.ts",
+    "src/environment-metadata-transport.ts",
+    "src/environment-admission-handoff.ts",
+    "src/capability-execution-context.ts",
+    "src/git-status-capability.ts",
+    "src/execution-admission.worker.ts",
+    "src/account-model-defaults-http.ts"
   ]
 }

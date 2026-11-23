@@ -886,7 +886,10 @@ Gateway initialization reads only native facts needed by unsettled execution lea
 
 Trusted Headless identity adapters may return `capabilityProviders` backed by
 `SessionCapabilities`. Capability execution context is supplied by native Host
-adapters, never tool arguments. `AuthenticatedMcpProvider` obtains an opaque
+adapters, never tool arguments. Host, verified human Actor and active lease are
+resolved by core into `CapabilitySession.context`
+([session capabilities](session-capabilities.md#core-resolved-execution-context));
+providers do not read execution stores themselves. `AuthenticatedMcpProvider` obtains an opaque
 account/revision and the current immutable execution identity from the product
 resolver; it sends the service token only in the upstream HTTP Authorization
 header. Native configuration contains only a loopback endpoint and a signed
@@ -1053,10 +1056,8 @@ image prompt support. Existing engine compositions do not select this path.
 
 The bridge contract, command parameters, permission-mode mapping, dialect
 extension point and failure boundaries are documented in the
-[ACP bridge README](../../../packages/agent-bridge-acp/README.md). Real Copilot/Amp
-initialize recordings and minimal-task evidence live under
-`design/agent-bridge/recordings/p3/`; deterministic fixtures cover the paths a
-single real task cannot trigger.
+[ACP bridge README](../../../packages/agent-bridge-acp/README.md). Deterministic
+fixtures cover the paths a single real task cannot trigger.
 
 ## Pi bridge owner (P2d, opt-in)
 
@@ -1083,8 +1084,8 @@ model-context evidence. An input still queued at a turn boundary is reported as
 the AppServer PTY worker for its own sessions and uses the ordinary coding
 tools; the existing engine's PTY path is unchanged. Real local acceptance and
 the explicit gaps (no real unconsumed-race reproduction; no real-model Host
-round trip) are recorded in
-[`plugins/pi-bridge/VALIDATION.md`](../../../plugins/pi-bridge/VALIDATION.md).
+round trip) are listed in the
+[Pi bridge README](../../../plugins/pi-bridge/README.md#design-decisions-and-known-limits).
 
 ## DSH consumer receipt persistence
 

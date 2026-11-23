@@ -1,12 +1,15 @@
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
+  renameSync,
+  rmSync,
   rmdirSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { stable } from "../../domain/values.mjs";
 
@@ -19,12 +22,43 @@ export class MemoryFileTransaction {
     Object.assign(this, { store, committed, markCommit, forgetCommit, fault });
     this.lock = join(store.root, ".write-lock");
   }
+  /**
+   * The lock directory appears with its owner already inside: the owner is
+   * written into a private directory that is then renamed into place, so a
+   * process killed while claiming never leaves a lock without an owner.
+   */
   claim() {
-    mkdirSync(this.lock, { mode: 0o700 });
-    writeFileSync(join(this.lock, "owner.json"), stable({ pid: process.pid }), {
-      mode: 0o600,
-    });
+    const staged = `${this.lock}.${process.pid}.${randomUUID()}`;
+    mkdirSync(staged, { mode: 0o700 });
+    try {
+      writeFileSync(join(staged, "owner.json"), stable({ pid: process.pid }), {
+        mode: 0o600,
+      });
+      renameSync(staged, this.lock);
+    } catch (error) {
+      rmSync(staged, { recursive: true, force: true });
+      // Renaming onto an existing lock directory reports it as taken.
+      if (error.code === "ENOTEMPTY" || error.code === "EEXIST" || error.code === "EPERM")
+        throw Object.assign(new Error("Memory root lock is held"), { code: "EEXIST" });
+      throw error;
+    }
     this.held = true;
+    this.sweepStaged();
+  }
+  /** Staging directories of claimers that died before renaming theirs into place. */
+  sweepStaged() {
+    const prefix = `${basename(this.lock)}.`;
+    for (const name of readdirSync(dirname(this.lock))) {
+      if (!name.startsWith(prefix)) continue;
+      const pid = Number(name.slice(prefix.length).split(".")[0]);
+      if (!Number.isSafeInteger(pid) || pid < 1 || pid === process.pid) continue;
+      try {
+        process.kill(pid, 0);
+      } catch (error) {
+        if (error.code === "ESRCH")
+          rmSync(join(dirname(this.lock), name), { recursive: true, force: true });
+      }
+    }
   }
   acquire() {
     const until = Date.now() + 250;

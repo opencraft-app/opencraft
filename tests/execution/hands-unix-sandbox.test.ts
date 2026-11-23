@@ -33,6 +33,12 @@ test("Hands validates equivalent cgroup v2 and v1 resource controllers", async t
     writeFile(join(root, "pids/pids.max"), "4096\n"),
   ]);
   await verifyHandsCgroup(resources, root);
+  // A host that mounts the v1 CPU controller on its own (no cpu,cpuacct join).
+  await rm(join(root, "cpu,cpuacct"), { recursive: true });
+  await mkdir(join(root, "cpu"));
+  await writeFile(join(root, "cpu/cpu.cfs_quota_us"), "400000\n");
+  await writeFile(join(root, "cpu/cpu.cfs_period_us"), "100000\n");
+  await verifyHandsCgroup(resources, root);
   await writeFile(join(root, "pids/pids.max"), "max\n");
   await assert.rejects(verifyHandsCgroup(resources, root), /does not enforce/);
 });

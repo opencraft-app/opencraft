@@ -106,3 +106,18 @@ test('compiled independent Assets owner boots with packaged Workers and no TypeS
  `],{env,timeout:30000});
  assert.match(result.stdout,/compiled-assets-owner-ready/);
 });
+
+
+test('opaque ENV delivery pins the issuer through the engine host configuration and needs the Assets attachment',async t=>{
+ const {EnvironmentLaunchIssuer}=await import('@opencraft/execution-environment/environment-delivery');
+ const {fileURLToPath}=await import('node:url');
+ const issuer=new EnvironmentLaunchIssuer();t.after(()=>issuer.close());
+ const admissionWorkerFile=fileURLToPath(new URL('../../apps/headless-server/src/execution-admission.worker.ts',import.meta.url));
+ const f=await fixture(t,{executionContext:'assets',environmentIssuer:issuer.key,admissionWorkerFile});
+ assert.equal((await (await f.attach()).getIdentity()).pid,process.pid);
+ await f.host.close();
+ for(const overrides of [{executionContext:'legacy',environmentIssuer:issuer.key,admissionWorkerFile},
+  {executionContext:'assets',environmentIssuer:'not a key',admissionWorkerFile},
+  {executionContext:'assets',environmentIssuer:issuer.key,admissionWorkerFile:'relative.mjs'}])
+  await assert.rejects(startIndependentEngineHost({...f.options,...overrides}),/requires the native execution attachment/);
+});

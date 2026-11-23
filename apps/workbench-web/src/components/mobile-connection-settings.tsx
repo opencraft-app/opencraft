@@ -25,7 +25,7 @@ export function MobileConnectionSettings({ onProvisionHost }: { onProvisionHost(
   return <>
     <SettingsPageHeader title={intl.formatMessage(mobileConnectionMessages.title)} description={intl.formatMessage(mobileConnectionMessages.description)} />
     <form onSubmit={event => { event.preventDefault(); void save(); }}>
-      <SettingsGroup><SettingsRow label={intl.formatMessage(mobileConnectionMessages.address)} htmlFor="mobile-server-address" layout="stacked" controlWidth="wide">
+      <SettingsGroup><SettingsRow label={intl.formatMessage(mobileConnectionMessages.address)} description={intl.formatMessage(mobileConnectionMessages.addressHint)} htmlFor="mobile-server-address" layout="stacked" controlWidth="wide">
         <SettingsTextInput id="mobile-server-address" type="url" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} required
           disabled={pending} value={url} onChange={event => setUrl(event.target.value)} />
       </SettingsRow></SettingsGroup>

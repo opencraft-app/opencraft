@@ -5,7 +5,11 @@
   "type": "module",
   "exports": {
     ".": "./src/server.ts",
-    "./application": "./src/application.ts"
+    "./application": "./src/application.ts",
+    "./authentication": "./src/authentication.ts",
+    "./cluster-port": "./src/cluster-port.ts",
+    "./redis": "./src/redis.ts",
+    "./session-store": "./src/session-store.ts"
   },
   "dependencies": {
     "@opencraft/identity-core": "*",

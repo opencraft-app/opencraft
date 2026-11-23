@@ -6,12 +6,15 @@ import type { Socket } from "node:net";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { removeStaleSocket } from "./native-process.js";
+import { isNamedPipe } from "@opencraft/account-pool-host";
 
 /** Authenticated local control only. Closing drains accepted account mutations. */
 export async function startControlServer(endpoint: string, token: string,
   handle: (request: IncomingMessage) => Promise<{ status: number; value: unknown } | Response>) {
-  await mkdir(dirname(endpoint), { recursive: true, mode: 0o700 });
-  if (((await stat(dirname(endpoint))).mode & 0o077) !== 0) throw new Error("Codex socket directory must be private");
+  if (!isNamedPipe(endpoint)) {
+    await mkdir(dirname(endpoint), { recursive: true, mode: 0o700 });
+    if (((await stat(dirname(endpoint))).mode & 0o077) !== 0) throw new Error("Codex socket directory must be private");
+  }
   await removeStaleSocket(endpoint);
   let closing = false;
   const active = new Set<Promise<void>>();
@@ -61,7 +64,7 @@ export async function startControlServer(endpoint: string, token: string,
     server.once("error", reject);
     server.listen(endpoint, () => { server.off("error", reject); resolve(); });
   });
-  try { await chmod(endpoint, 0o600); }
+  try { if (!isNamedPipe(endpoint)) await chmod(endpoint, 0o600); }
   catch (error) { await new Promise<void>(resolve => server.close(() => resolve())); await unlink(endpoint); throw error; }
   return { async close() {
     closing = true;

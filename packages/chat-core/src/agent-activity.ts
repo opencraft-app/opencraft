@@ -551,10 +551,14 @@ export function createAssistantTurnPresentationPlan(frame: AssistantTimelineFram
       disableCollapse: false, preventAutoCollapse: false,
       summary: { commandCount: 0, patchCount: 0, reasoningCount: 0, subagentCount: 0, toolCount: 0 },
     };
-    // A display projection can now retain inert activity rows, not just the
-    // old header descriptor. Preserve those rows and their stable group keys.
+    // A display projection retains inert activity rows, not just the old
+    // header descriptor: tool previews, and reasoning or commentary text.
+    // Preserve those rows and their stable group keys when they are the
+    // region's whole body. A partial body (e.g. uncached commands) stays a
+    // placeholder that fetches on request rather than hiding the rest.
     const body = existing >= 0 ? slots[existing] : undefined;
-    if (body?.type === "agent-activity" && body.blocks.some(block => "displayPreview" in block && block.displayPreview)) {
+    if (body?.type === "agent-activity" && (body.blocks.some(block => "displayPreview" in block && block.displayPreview)
+      || (body.blocks.length > 0 && body.collapsedItemCount >= region.count))) {
       slots[existing] = { ...body, workedDurationMs: region.durationMs, collapsedItemCount: region.count };
     } else if (existing >= 0) slots[existing] = retained;
     else {

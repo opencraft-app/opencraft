@@ -43,6 +43,49 @@ Headless 通过可信服务端 composition 创建身份适配器；受管站点�
 `packageRelay` 的编译期入口参数不是 HTTP/浏览器可安装插件接口。
 企业身份 已迁往下游；本边界仍不等于下游产品客户端私有目录已经全部迁出。
 
+### Headless 运行时插件装配
+
+`startHeadlessServer(options, { runtimePlugins })` 是核心持有的显式开关，未提供时请求
+管线、健康输出与关闭顺序不变。核心在实例准入（`InstanceAccess`）与登录会话就绪后、
+监听打开前调用 `@opencraft/runtime-plugin-host`，以同一准入 owner 提供
+`authenticate`/`admissionStatus`；没有实例准入时跳过加载并报告 `admission_unavailable`。
+插件路由挂在核心准入与全部核心处理器之后，核心 `/__opencraft_*` 命名空间自动列入
+保护集，下游只追加自己的 `protectedPaths` 并可提供 `packageSource` 字节来源。
+单个插件失败只被跳过；健康输出只含 ID、版本与固定原因码。关闭时先停止监听并排空
+已接受的插件请求，再关闭插件，之后才关闭身份、composition 与存储 owner。字段见
+[runtime-plugin-host README](../../../packages/runtime-plugin-host/README.md#headless-server-composition)。
+
+### Headless 服务端扩展装配
+
+通信扩展（`CommunicationExtension`）与 Assistant Host 扩展是进程级的可信服务端扩展。
+`startHeadlessServer(options, { extensions })` 与 `startContainerGateway({ extensions })`
+以组合字段显式选择它们，不依赖“先 import 某模块再启动”的副作用顺序：
+
+```js
+await startHeadlessServer(options, {
+  extensions: {
+    communication: { module: new URL("./communication.mjs", import.meta.url) },
+    assistantHost: { module: "/opt/opencraft/assistant-host.mjs" },
+  },
+});
+```
+
+- `module` 只接受 `file:` URL（`URL` 或字符串）或绝对路径；相对路径、包名、
+  `https:`/`data:` 与未知键在任何 import 之前拒绝。容器网关在联系部署 owner 之前做同样的形状校验。
+- 通信模块必须具名导出 `communicationExtension`，Assistant Host 模块必须具名导出
+  `assistantHostExtension`。存储 Worker 按同一 URL 重新导入通信模块，因此不接受内存对象。
+- 核心在创建任何资源（数据目录、存储 owner、监听）之前导入并校验模块：对象形状、
+  未知成员、非函数回调、分组创建选项和非 `file:` 的 `entryURL` 均使启动失败。
+- 安装点固定为打开服务器存储 owner 之前，顺序为 communication、assistantHost；
+  编排存储 Worker 与 Collaboration 的存储 Worker 都在安装之后创建。后一项冲突时，
+  已安装的前一项回滚。两个存储 owner 正常关闭后才释放；关闭失败时保持安装直到进程退出，
+  与写锁语义一致。
+- 冲突明确失败：同一进程中已由组合或 import 安装了同类扩展（无论是否同一对象），
+  组合安装都拒绝；组合安装期间，`installCommunicationExtension` /
+  `installAssistantHostExtension` 也拒绝重装或替换。
+- 未提供 `extensions` 时启动行为不变。原有全局安装函数保留为兼容路径：重复安装同一对象
+  仍为幂等，安装不同对象仍报错。新的装配应使用组合字段。
+
 > 状态：R3 已落地 Trusted V1 内核；生态与 Restricted Channel 仍为 Proposed\
 > 架构修订：R3（Extension-first 商业 Workbench）\
 > 适用平台：Vite Web、Electron、Expo iOS/iPadOS、Expo Web\

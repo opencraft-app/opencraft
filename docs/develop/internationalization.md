@@ -67,3 +67,7 @@ Before claiming a client or feature complete, exercise its actual entry point in
 the advertised locales, including loading/error/empty states and a language switch
 while work is in progress. Report browser simulation and physical-device testing
 separately.
+
+## 贡献约束
+
+OpenCraft 所有自有客户端及内置插件的用户界面遵循[全项目国际化约束](internationalization.md)与[locale authority](../architecture/platform/presentation-and-input.md#internationalization-authority)。新增或调整的可见/无障碍文案必须消费既有应用 IntlRuntime/IntlPort 和稳定 ID、英文 defaultMessage，包含动态状态、空态、错误和通知；不得把文案写死后依赖英文回退。用户内容/实体身份/协议/诊断不翻译。现有全项目检查与显式存量清单不表示所有旧界面已完成迁移，不为新增硬编码扩增 baseline。运行 check:i18n/test:i18n，并验证相关入口切语言保留草稿/焦点/选区；不要添加全局翻译器或重挂载编辑器。各客户端支持语言和原生 provider 接线以实际实现为准。

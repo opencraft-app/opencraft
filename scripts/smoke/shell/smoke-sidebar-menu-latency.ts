@@ -237,12 +237,18 @@ try {
       assert.ok(targetId, 'group disclosure identifies its controlled list');
       const target = page.locator('.sidebar-activity-group__items').first();
       assert.equal(await target.getAttribute('id'), targetId);
+      // The sidebar is an accordion: the first group may start either open or
+      // closed. Enter toggles it, and a second Enter restores the original state.
+      const initiallyExpanded = await button.getAttribute('aria-expanded') === 'true';
+      const expectExpanded = async (expanded: boolean) => {
+        assert.equal(await button.getAttribute('aria-expanded'), String(expanded));
+        assert.equal(await target.getAttribute('hidden'), expanded ? null : '');
+      };
+      await expectExpanded(initiallyExpanded);
       await button.focus(); await button.press('Enter');
-      assert.equal(await button.getAttribute('aria-expanded'), 'false');
-      assert.equal(await target.getAttribute('hidden'), '');
+      await expectExpanded(!initiallyExpanded);
       await button.press('Enter');
-      assert.equal(await button.getAttribute('aria-expanded'), 'true');
-      assert.equal(await target.getAttribute('hidden'), null);
+      await expectExpanded(initiallyExpanded);
       assert.equal(await button.getAttribute('aria-controls'), targetId, 'expansion retains the original target identity');
     };
     await checkDisclosure();

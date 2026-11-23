@@ -1,7 +1,7 @@
 {
   "name": "@opencraft/desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "OpenCraft desktop workbench",
   "author": {
     "name": "OpenCraft",
@@ -168,6 +168,13 @@
       {
         "from": "../opencraft-daemon/dist/main.cjs",
         "to": "runtime/opencraft-daemon.cjs"
+      },
+      {
+        "from": "../opencraft-daemon/dist/codex-bridge",
+        "to": "runtime/codex-bridge",
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "../workbench-web/dist-electron",

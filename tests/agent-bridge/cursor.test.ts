@@ -44,7 +44,8 @@ async function setup(t: any, timeout = 80, messages: SDKMessage[] = [], badAttac
   const params = { threadId: "thread", expectedTurnId: started.nativeTurnId, inputId: "input-1", clientRequestId: "client-1", input: { text: "steer" } };
   return { bridge, root, runs, sends, deltas, params, control };
 }
-async function until(predicate: () => boolean) { for (let n=0;n<1000;n++) { if (predicate()) return; await tick(); } assert.fail("condition timed out"); }
+// Bounded by time, not by event-loop turns: attachment files are real disk IO, slower on a busy machine.
+async function until(predicate: () => boolean, timeoutMs = 5000) { const deadline = Date.now() + timeoutMs; while (Date.now() < deadline) { if (predicate()) return; await tick(); } assert.fail("condition timed out"); }
 
 
 test("Cursor complete_delivered is SDK admission only through the assembler", async (t) => {

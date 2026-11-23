@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { SOURCE_FALLBACK_SIBLINGS, verifySiblingFiles } from './verify-sibling-files.mjs';
 import { buildAssetsRuntime } from './package-assets-runtime.mjs';
 import { buildServerSpacesRuntime } from './package-server-spaces-runtime.mjs';
 import { buildOwnerWorkers } from './owner-workers.mjs';
@@ -23,13 +24,21 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { copyAllServerRuntime } from "./package-mcp-app-runtime.mjs";
 import { copySshRuntime } from "./package-ssh-runtime.mjs";
-import { assertHeadlessWebRelease } from "../../apps/headless-server/src/headless-web-release.mjs";
+import { buildHeadlessWeb } from "./headless-web-build.mjs";
 import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
 import { buildDshCapabilityPlugin } from './package-dsh-capability-runtime.mjs';
 import { buildConversationCli } from './build-conversation-cli.mjs';
 import { splitProductPluginPacks } from '../../apps/headless-server/src/web-deployment/product-plugin-packs.mjs';
+import { productVersion } from '../release/product-version.mjs';
+import { verifyWorkspaceLinks } from './workspace-links.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+
+// The archive carries the product version, so consumers ask for its path here
+// instead of spelling a version that goes stale at the next release.
+export function headlessArchivePath(architecture = "amd64") {
+  return join(repositoryRoot, "release", `OpenCraft-server-${productVersion(repositoryRoot)}-linux-${architecture}.tar.gz`);
+}
 
 export function assertHeadlessBuildHost(platform = process.platform, arch = process.arch, architecture = 'amd64') {
   const expected = architecture === 'amd64' ? 'x64' : architecture === 'arm64' ? 'arm64' : null;
@@ -38,16 +47,7 @@ export function assertHeadlessBuildHost(platform = process.platform, arch = proc
   }
 }
 
-export function headlessWebHostDefinitions() {
-  return [{
-    hostId: "opencraft-server",
-    label: "Server",
-    kind: "durable",
-    executionLocation: "This server",
-    url: "/appserver",
-    workspaceBrowseRoots: ["/"],
-  }];
-}
+export { headlessWebHostDefinitions } from "./headless-web-build.mjs";
 
 export async function buildHeadlessBundle(output, { headlessEntry = join(repositoryRoot, "apps/headless-server/src/headless-server.mjs"), additionalGitRuntimeEntries = [], assistantEntry = join(repositoryRoot,'apps/personal-assistant/src/runtime/assistant-server.mjs') } = {}) {
   await mkdir(dirname(output), { recursive: true });
@@ -58,6 +58,8 @@ export async function buildHeadlessBundle(output, { headlessEntry = join(reposit
   await build({entryPoints:[fileURLToPath(new URL('../../packages/web-push-node/src/store.worker.ts',import.meta.url))],outfile:join(dirname(output),'push-storage-worker.mjs'),bundle:true,platform:'node',format:'esm',target:'node26',logLevel:'warning',banner:{js:"import { createRequire } from 'node:module'; const require=createRequire(import.meta.url);"}});
   await buildOwnerWorkers(dirname(output));
   await buildServerSpacesRuntime(dirname(output));
+  // The bundle's Codex bridge gateway keeps its receipt inbox in the Engine Host storage worker.
+  await build({entryPoints:[join(repositoryRoot,'apps/agent-bridge-host/src/storage.worker.ts')],outfile:join(dirname(output),'storage.worker.mjs'),bundle:true,platform:'node',format:'esm',target:'node26',logLevel:'warning',banner:{js:"import { createRequire } from 'node:module'; const require=createRequire(import.meta.url);"}});
   await buildDshRoutingRuntime(dirname(output));
   await buildConnectedAgentHistoryRuntime(dirname(output));
   await build({entryPoints:[join(repositoryRoot,'scripts/server-deployment/dsh-consumer-receipts.worker.ts')],outfile:join(dirname(output),'dsh-consumer-receipts-worker.mjs'),bundle:true,platform:'node',format:'esm',target:'node26',logLevel:'warning',banner:{js:"import { createRequire } from 'node:module'; const require=createRequire(import.meta.url);"}});
@@ -175,18 +177,10 @@ export async function packageHeadlessLinux(composition = {}) {
   const require = createRequire(import.meta.url);
   if (typeof require("node-pty").spawn !== "function") throw new Error("Linux node-pty is unavailable");
   await run("npm", ["ci", "--prefix", join(repositoryRoot, "runtime/codex"), "--workspaces=false", "--omit=dev", "--no-audit", "--no-fund"]);
-  await run("npm", ["run", process.env.OPENCRAFT_CONTAINER_WEB_SCRIPT || "build:web:release"], {
-    env: {
-      OPENCRAFT_HEADLESS_SERVER_BUILD: "true",
-      VITE_HYPERNODE_PLUGIN: "disabled",
-      VITE_APPSERVER_HOSTS_JSON: JSON.stringify(headlessWebHostDefinitions()),
-    },
-  });
-  await assertHeadlessWebRelease(join(repositoryRoot, "apps/workbench-web/dist"));
+  await buildHeadlessWeb({ script: process.env.OPENCRAFT_CONTAINER_WEB_SCRIPT || "build:web:release" });
 
-  const version = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8")).version;
-  const output = outputOverride
-    ?? join(repositoryRoot, "release", `OpenCraft-server-${version}-linux-${architecture}.tar.gz`);
+  const version = productVersion(repositoryRoot);
+  const output = outputOverride ?? headlessArchivePath(architecture);
   // stageInto: lay the tree out at <stageInto>/opencraft-server and return that
   // directory instead of an archive. The container build copies the tree into
   // its image, so compressing it only to extract it again cost about 75s.
@@ -205,6 +199,10 @@ export async function packageHeadlessLinux(composition = {}) {
     await buildConversationCli(join(stage, 'runtime/opencraft-cli.mjs'));
     await writeFile(join(stage, 'bin/opencraft'), '#!/bin/sh\nexec "$(dirname "$0")/node" "$(dirname "$0")/../runtime/opencraft-cli.mjs" "$@"\n', { mode: 0o755 });
     await buildHumanAccountBundle(join(stage, 'runtime/human-account.mjs'));
+    // Engine sandboxes run commands through this runner, started from beside the server bundle.
+    await build({ entryPoints: [join(repositoryRoot, 'scripts/server-deployment/sandbox-command.mjs')], outfile: join(stage, 'runtime/sandbox-command.mjs'),
+      bundle: true, platform: 'node', format: 'esm', target: 'node26', logLevel: 'warning',
+      banner: { js: "import { createRequire } from 'node:module'; const require=createRequire(import.meta.url);" } });
     await build({ entryPoints: [join(repositoryRoot, 'scripts/packaging/codex-account-reference.ts')], outfile: join(stage, 'runtime/codex-account-reference.mjs'),
       bundle: true, platform: 'node', format: 'esm', target: 'node26' });
     // Optional native installation assets; startup never installs services.
@@ -217,6 +215,8 @@ export async function packageHeadlessLinux(composition = {}) {
     if (productPlugins) await chmod(join(stage, 'runtime/product-plugins/inventory.json'), 0o444);
     await copyRuntimeModules(stage);
     if (composition.includeBrowser !== false) await packageBrowserRuntime(join(stage, 'runtime/browser'));
+    // Every file a runtime bundle starts from beside itself must have been built beside it.
+    await verifySiblingFiles(join(stage, 'runtime'), { nested: ['codex-bridge'], optional: SOURCE_FALLBACK_SIBLINGS });
     const versionInfo = JSON.parse(await readFile(join(stage, "web/version.json"), "utf8"));
     const files = await inventory(stage);
     await writeFile(join(stage, "manifest.json"), `${JSON.stringify({
@@ -243,6 +243,7 @@ export async function packageHeadlessLinux(composition = {}) {
 const isMain = process.argv[1] != null
   && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url));
 if (isMain) {
+  verifyWorkspaceLinks();
   packageHeadlessLinux().then((path) => process.stdout.write(`${path}\n`)).catch((error) => {
     console.error(error);
     process.exitCode = 1;

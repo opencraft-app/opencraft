@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "workload": {
     "version": 3,
-    "sha256": "87a35e1f9d630b373e0ecc4f204484be27014142932ece6fd9927084d9c3e133",
+    "sha256": "bf47308623c2c4270048e4a320cdd78a3baa739d1076f7c7fb38ded708026231",
     "scenarios": {
       "catalog-desktop": [
         "firstPaintMs",
@@ -110,6 +110,23 @@
       "navigationBrowser": "156.0.8078.4",
       "browser": "156.0.8078.4",
       "retainedPriorScenarioBaseline": "7d3becb3fc4d96f26c835eed9d291c8efe3b893f2a2d4d3e08555c7c08edd05a"
+    },
+    "workloadRevalidation": {
+      "timestamp": "2026-11-23T01:01:30.349Z",
+      "sourceRevision": "7b439265bb8e874ca41347eeafed69741de8497e",
+      "dirty": false,
+      "node": "v26.7.0",
+      "platform": "linux",
+      "arch": "x64",
+      "cpu": "Intel(R) Xeon(R) Processor",
+      "cpuCount": 4,
+      "browser": "153.0.8010.12",
+      "priorWorkloadSha256": "87a35e1f9d630b373e0ecc4f204484be27014142932ece6fd9927084d9c3e133",
+      "reason": "Behavior assertions followed the product: retained work regions, preview preservation, display-cache block shape, accordion sidebar, ten-turn initial read window. Numeric budgets are unchanged; this candidate passed all 40 comparisons against them. The cold-open clock is now read in one layout snapshot (#499), which changes only how the existing assertion is measured. The workload identity now also covers the catalog smoke and is computed by report.mjs workloadIdentity(); the committed baseline is checked against it in tests.",
+      "sha256History": [
+        "8944516fcedcf07d81ab0953a8a28dd719e539b9a0b240ad501acd6cafd71452",
+        "af6e5e3e00e0076dd7def14615ce776dff9354b069447053b0642d1c3a389bb8"
+      ]
     }
   },
   "scenarios": {

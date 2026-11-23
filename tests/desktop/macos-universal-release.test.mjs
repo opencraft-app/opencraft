@@ -85,15 +85,17 @@ test("macOS release workflow isolates signing secrets from native build jobs", a
   assert.match(workflow, /--config\.mac\.identity="\$builder_identity"/u);
   assert.match(workflow, /workflow_call:/u);
   assert.doesNotMatch(workflow, /contents: write/u);
-  const prerelease = await readFile(new URL("../../.github/workflows/desktop-prerelease.yml", import.meta.url), "utf8");
+  const prerelease = await readFile(new URL("../../.github/workflows/app-release.yml", import.meta.url), "utf8");
   assert.match(prerelease, /uses: \.\/\.github\/workflows\/macos-universal-release\.yml/u);
   const signingCredentialNames = ["MACOS_CERTIFICATE_P12_BASE64", "MACOS_CERTIFICATE_PASSWORD", "APPLE_ID", "APPLE_APP_SPECIFIC_PASSWORD", "APPLE_TEAM_ID"];
   for (const name of signingCredentialNames) {
     assert.ok(workflow.includes(`      ${name}:\n        required: true`));
     assert.ok(prerelease.includes(`      ${name}: \${{ secrets.${name} }}`));
   }
-  assert.match(prerelease, /candidate:\n    needs: \[linux, windows, macos\]/u);
-  assert.match(prerelease, /publish:\n    needs: candidate/u);
+  // Staging waits for the signed macOS build; the other platforms' jobs are
+  // owned by their own release tests.
+  assert.match(prerelease, /candidate:\n    needs: \[[^\]\n]*\bmacos\b[^\]\n]*\]/u);
+  assert.match(prerelease, /publish:\n    needs: (?:candidate|\[[^\]\n]*\bcandidate\b[^\]\n]*\])\n/u);
 });
 
 test("signing fails before filesystem or Apple access when credentials are absent", async () => {

@@ -12,6 +12,7 @@ import { readDshHostIdentity } from '../../apps/headless-server/src/server-deplo
 import { readEngineHostIdentity } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
 import { readHandsIncarnation, watchHandsIncarnation } from './hands-incarnation.mjs';
 import { codexCoreArguments, waitForProxy } from './proxy-core.mjs';
+import { handsOwnerSpawnOptions } from './hands-owner-privileges.mjs';
 
 /** Roles are composition: which owners this agent supervises. They contain no provider
  * branch; a container (static Compose service today, a provisioned workspace later)
@@ -144,24 +145,48 @@ export const brainRole = {
   },
 };
 
+/**
+ * Owner processes of the `hands` and `browser` roles. `role` is the stable identity a
+ * composition uses for per-owner policy (for example dropping privileges for the
+ * browser); `name` is the agent component and endpoint; entry paths are packaging
+ * details and may change.
+ */
+export const HANDS_OWNER_PROCESSES = Object.freeze([
+  Object.freeze({ role: 'browser', name: 'browser', entry: 'browser/owner.cjs', args: Object.freeze([]) }),
+  Object.freeze({ role: 'execution', name: 'exec', entry: 'hands-execution-owner.mjs', args: Object.freeze([]) }),
+  Object.freeze({ role: 'terminal', name: 'terminal', entry: 'hands-terminal-owner.mjs', args: Object.freeze(['--hands-terminal-owner']) }),
+  Object.freeze({ role: 'files', name: 'files', entry: 'hands-files-owner.mjs', args: Object.freeze([]) }),
+]);
+const handsOwner = role => HANDS_OWNER_PROCESSES.find(owner => owner.role === role);
+
+/** Starts one Hands owner, under its dropped identity when the composition's validated
+ * `ownerPrivileges` names its role (see hands-owner-privileges.mjs). */
+function startHandsOwner(agent, { paths, root, env, ownerPrivileges = {} }, owner) {
+  const options = handsOwnerSpawnOptions({ cwd: paths.runtimeDirectory, env }, ownerPrivileges[owner.role]);
+  return agent.start(owner.name, node(root), [runtime(root, owner.entry), ...owner.args], {
+    cwd: options.cwd, env: options.env, owner: { role: owner.role },
+    ...(options.uid !== undefined ? { identity: { uid: options.uid, gid: options.gid } } : {}),
+  });
+}
+
 /** Hands: fixed Codex exec-server owner, terminal owner (holds the PTYs; Host/Gateway
  * disconnects never end them) and the resident filesystem owner. */
 export const handsRole = {
   name: 'hands',
-  async start(agent, { paths, root, env, startServices = async () => [] }) {
+  async start(agent, context) {
+    const { paths, env, startServices = async () => [] } = context;
     const services = await startServices(() => void agent.stop(1, 'composition service failed'));
     agent.defer(() => Promise.all(services.map(service => service.close())));
     const owners = [
-      ['exec', 'hands-execution-owner.mjs', [], env.OPENCRAFT_HANDS_EXECUTION_SOCKET],
-      ['terminal', 'hands-terminal-owner.mjs', ['--hands-terminal-owner'], paths.terminalEndpoint],
-      ['files', 'hands-files-owner.mjs', [], paths.fileSystemEndpoint],
+      [handsOwner('execution'), env.OPENCRAFT_HANDS_EXECUTION_SOCKET],
+      [handsOwner('terminal'), paths.terminalEndpoint],
+      [handsOwner('files'), paths.fileSystemEndpoint],
     ];
-    if (!owners[0][3]?.startsWith('/')) throw new Error('Set OPENCRAFT_HANDS_EXECUTION_SOCKET to an absolute path');
-    for (const [name, entry, argv] of owners)
-      agent.start(name, node(root), [runtime(root, entry), ...argv], { cwd: paths.runtimeDirectory, env });
-    await agent.waitUntil(() => Promise.all(owners.map(([, , , socket]) => isSocket(socket))), { attempts: 120, description: 'Hands owners' });
+    if (!owners[0][1]?.startsWith('/')) throw new Error('Set OPENCRAFT_HANDS_EXECUTION_SOCKET to an absolute path');
+    for (const [owner] of owners) startHandsOwner(agent, context, owner);
+    await agent.waitUntil(() => Promise.all(owners.map(([, socket]) => isSocket(socket))), { attempts: 120, description: 'Hands owners' });
     const tokens = { terminal: paths.terminalToken, files: paths.fileSystemToken };
-    for (const [name, , , socket] of owners)
+    for (const [{ name }, socket] of owners)
       await agent.publishEndpoint(name, socket, tokens[name] ? async () => ({ token: await readPrivateToken(tokens[name]) }) : undefined);
     return {};
   },
@@ -170,11 +195,14 @@ export const handsRole = {
 /** Optional remote browser owner. */
 export const browserRole = {
   name: 'browser',
-  async start(agent, { paths, root, env }) {
+  async start(agent, context) {
+    const { env, ownerPrivileges = {} } = context;
     const data = env.OPENCRAFT_BROWSER_DATA_DIR;
     if (!data || !data.startsWith('/')) throw new Error('Set OPENCRAFT_BROWSER_DATA_DIR to an absolute path');
-    await privateDirectory(data, 'Hands data directory must be private and owned by this user');
-    agent.start('browser', node(root), [runtime(root, 'browser/owner.cjs')], { cwd: paths.runtimeDirectory, env });
+    // A dropped browser keeps the declared directory it was validated against; the
+    // supervisor never creates or re-owns it.
+    if (!ownerPrivileges.browser) await privateDirectory(data, 'Hands data directory must be private and owned by this user');
+    startHandsOwner(agent, context, handsOwner('browser'));
     const socket = join(data, 'owner.sock');
     await agent.waitUntil(() => isSocket(socket), { attempts: 120, description: 'Browser owner' });
     await agent.publishEndpoint('browser', socket);

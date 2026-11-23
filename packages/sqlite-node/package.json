@@ -3,7 +3,10 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts",
+    "./writer-lock": "./src/writer-lock.ts"
+  },
   "scripts": { "typecheck": "tsc --noEmit" },
   "dependencies": { "@opencraft/sql": "0.1.0" }
 }

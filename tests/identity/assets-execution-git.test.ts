@@ -275,6 +275,33 @@ test("handoff is not an HTTP action; Actor revocation and unknown/rejected input
   assert.equal(credential.status, "expired");
 });
 
+test("status reports the run Actor's non-secret Git binding only while its lease is live", async (t) => {
+  const f = await fixture(t),
+    handoff = await f.assets.executionGitGrant(f.locator);
+  assert.ok(handoff);
+  const status = await f.execution.status(f.locator);
+  assert.ok(status);
+  assert.equal(status.account, f.scope);
+  assert.equal(status.executionId, handoff.scope.executionId);
+  assert.equal(status.leaseGeneration, handoff.scope.leaseGeneration);
+  assert.deepEqual(status.hosts.map((row) => row.host), [...f.assets.gitHosts]);
+  const github = status.hosts.find((row) => row.host === "github.com");
+  assert.ok(github?.bound);
+  assert.equal(github.signing, true);
+  assert.equal(github.username, "fixture");
+  assert.ok(github.transport === "ssh" || github.transport === "https");
+  const text = JSON.stringify(status);
+  assert.ok(!text.includes("synthetic-github-api-token"));
+  assert.ok(!text.includes("PRIVATE KEY"));
+  assert.ok(!/v[23]\./u.test(text), "the sealed grant stays inside the owner");
+  await assert.rejects(f.execution.status({ ...f.locator, inputId: "not-original" }));
+  f.setLive(false);
+  await assert.rejects(f.execution.status(f.locator), /unavailable/);
+  f.setLive(true);
+  f.actors.setEnabled(f.actorId, false, "fixture");
+  await assert.rejects(f.execution.status(f.locator));
+});
+
 test('deep Unicode deployment paths retain canonical broker discovery and real signed Git with bounded sockets', async t => {
   const {dirname} = await import('node:path');
   const {stat, readdir} = await import('node:fs/promises');

@@ -135,9 +135,15 @@
     },
     {
       "version": 23,
-      "name": "0022_conversation_resources",
+      "name": "0022_account_model_defaults",
+      "checksum": "b8fbb390148befa70dd79952679caee55f7cc6ceca45b5264015b625582d60e6",
+      "snapshotChecksum": "d645b4e24d9e0480810d224ef34f0acc47b7309cfb8c6055d085fffc1e0f7cdd"
+    },
+    {
+      "version": 24,
+      "name": "0023_conversation_resources",
       "checksum": "df9c88ffea4c88af2ed097f5f2c1a494c075992da1331e20abb991ade72ac8c7",
-      "snapshotChecksum": "cc3e306f72879bff52d552a62dfe156ad47631366c046916ee80b4cde2393cbf"
+      "snapshotChecksum": "b22eb827097d956f8a819f52e8ef5562988d13b7146776e240e2370244afdc4b"
     }
   ],
   "alternates": [
@@ -323,7 +329,12 @@
         },
         {
           "version": 23,
-          "name": "converge_0022_conversation_resources",
+          "name": "converge_0022_account_model_defaults",
+          "checksum": "b8fbb390148befa70dd79952679caee55f7cc6ceca45b5264015b625582d60e6"
+        },
+        {
+          "version": 24,
+          "name": "converge_0023_conversation_resources",
           "checksum": "df9c88ffea4c88af2ed097f5f2c1a494c075992da1331e20abb991ade72ac8c7"
         }
       ]

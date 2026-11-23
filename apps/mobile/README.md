@@ -59,7 +59,7 @@ consumes core through published packages.
 |---|---|---|
 | iPhone 体验当前代码 | Expo Go 临时预览，依赖持续运行的 Metro | [真机快速体验](#iphone-真机快速体验) |
 | Android 内测安装 | `dev.opencraft.workbench`，开发签名 APK | [Android 内测 APK](#android-internal-apk) |
-| Android 正式包与资料 | 公开默认 `dev.opencraft.workbench`；下游产品自行声明正式包名，分别生成签名与包资料 | [Android 正式 APK](#android-release-apk) |
+| Android 正式包与资料 | 正式签名包为 `app.opencraft`（与 iOS TestFlight 相同）；下游产品自行声明正式包名，分别生成签名与包资料 | [Android 正式 APK](#android-release-apk) |
 | iOS 可安装测试包 | 公开默认 `dev.opencraft.workbench`；产品包由显式产品配置声明 | [iOS IPA](#ios-site-shell-and-simulator) |
 
 Expo Go 链接、Android APK 和 iOS IPA 是不同交付物。每次交付都从当前
@@ -121,8 +121,13 @@ APPLE_TEAM_ID=YOUR_TEAM_ID npm run build:expo:ios:ipa
 
 The shared script prebuilds iOS, archives a Release build and exports
 `apps/mobile/release/OpenCraft-ios-internal.ipa` with a SHA-256 file.
-`OPENCRAFT_IOS_EXPORT_METHOD` accepts `development` (default) or `ad-hoc`;
-ad-hoc installation needs registered device UDIDs and a matching profile.
+`OPENCRAFT_IOS_EXPORT_METHOD` accepts `development` (default), `ad-hoc` or
+`unsigned`; ad-hoc installation needs registered device UDIDs and a matching
+profile. `unsigned` needs no Apple team: it archives without signing and writes
+`OpenCraft-ios-unsigned.ipa` with the default `app.json` identity, for people
+who sign it with their own Apple ID in AltStore or SideStore. The
+[iOS unsigned IPA workflow](../../.github/workflows/ios-unsigned-ipa.yml) builds
+and checks it (no signature, no provisioning profile) from any branch.
 `OPENCRAFT_IOS_RELEASE=1` requires a clean checkout without a generated `ios/`
 project. `OPENCRAFT_NATIVE_ARTIFACT_NAME` changes the output prefix for an
 explicit product build. Product Bundle IDs, schemes, icons, permission copy
@@ -149,6 +154,15 @@ the base64-encoded PEM recipient certificate for the IPA archive. Back up its
 private key outside GitHub. Recover the IPA with
 `openssl cms -decrypt -binary -inform DER -in ARCHIVE.ipa.cms -recip CERT.pem -inkey KEY.pem -out ARCHIVE.ipa`,
 then verify `IPA-SHA256SUMS.txt` in the archive directory.
+
+The workflow is also callable. A call uploads the build and returns its
+version and number without waiting for Beta App Review (`check_availability`
+defaults to `false` there), while a manual dispatch still waits by default.
+`App release` calls it for every release, so each release commit is
+uploaded to TestFlight, and attaches `OpenCraft-<version>-ios-unsigned.ipa`
+from the unsigned workflow. The release notes name the uploaded build; set the
+repository variable `OPENCRAFT_TESTFLIGHT_PUBLIC_LINK`
+(`https://testflight.apple.com/join/...`) to link the public beta there.
 
 The status job checks Apple processing, export compliance, Beta App Review and
 membership of the build in the target external group. Configure
@@ -216,7 +230,9 @@ Metro; using the Workbench still requires a reachable configured Host.
 
 ## Android release APK
 
-公开默认构建使用 `dev.opencraft.workbench`。下游产品可通过显式 Expo 产品配置
+正式密钥构建使用发布包名 `app.opencraft`，与 iOS TestFlight 的 Bundle ID 一致；
+开发密钥内测包与 Expo Go 保持 `dev.opencraft.workbench`，两者在同一设备上是互不覆盖的独立应用。
+下游产品可通过显式 Expo 产品配置
 提供自己的包名、显示名称和图标；产物文件名前缀由
 `OPENCRAFT_NATIVE_ARTIFACT_NAME` 指定，默认是 `OpenCraft`。
 正式签名 PKCS12 密钥库和密码文件必须保存在仓库外，并由负责人安全备份；
@@ -235,34 +251,63 @@ npm --prefix apps/mobile run build:android:release
 每个包的签名资料从其实际 APK 读取。
 
 构建会重新生成忽略的 `android/` 工程，将 release variant 改为正式签名，
-校验 APK 的包名和签名证书。产物位于 `apps/mobile/release/`：
+校验 APK 的包名、版本和签名证书。设置 `OPENCRAFT_ANDROID_VERSION_CODE` 时使用该
+versionCode，否则沿用 `app.json` 的值。产物位于 `apps/mobile/release/`：
 
-- `OpenCraft-dev.opencraft.workbench-android-release.apk`：默认可安装包，旁边有 SHA-256 文件。
-- `OpenCraft-dev.opencraft.workbench-filing.txt`：包名、**签名证书 MD5**、**APK 文件 MD5**、Base64 公钥。
-- `OpenCraft-dev.opencraft.workbench-public-key.pem` 和 `-signing-cert.der`：可交接的公钥与公开证书，均不包含私钥。
+- `OpenCraft-app.opencraft-android-release.apk`：默认可安装包，旁边有 SHA-256 文件。
+- `OpenCraft-app.opencraft-filing.txt`：包名、**签名证书 MD5**、**APK 文件 MD5**、Base64 公钥。
+- `OpenCraft-app.opencraft-public-key.pem` 和 `-signing-cert.der`：可交接的公钥与公开证书，均不包含私钥。
 
 产品构建的文件名使用产品前缀和实际包名。
+
+### GitHub Release
+
+`App release` 工作流在同一 tag（beta 或正式版）下同时发布桌面包和
+`OpenCraft-<版本>-android-arm64.apk`。APK 由
+`.github/workflows/android-release-apk.yml` 使用 `android-release` Environment 的
+`ANDROID_RELEASE_KEYSTORE_BASE64`（PKCS12 的 Base64）、
+`ANDROID_RELEASE_KEYSTORE_PASSWORD` 和 `ANDROID_RELEASE_KEY_ALIAS` 构建；缺少任一项时
+整个发布失败，不回退开发密钥。首次配置在可信电脑上运行（需要 JDK 的 `keytool`、
+`openssl` 和有仓库管理权限的 `gh`）：
+
+```bash
+bash scripts/release/provision-android-signing.sh ~/opencraft-android-signing
+```
+
+目录不存在时，脚本在仓库外生成 PKCS12 密钥与随机密码；目录已含
+`opencraft-release.p12` 与 `password.txt` 时直接上传这把密钥。Environment 不存在时，
+脚本创建它并只允许 main 部署；已存在时只读取、不修改配置，若已有密钥、允许 main 以外的
+分支或标签、或策略无法完整读取，就在生成密钥和写入 secret 之前停止。确认部署策略恰好只有
+main 后才写入三个 secret。随后立即
+备份该目录：后续 `app.opencraft` 版本都必须用这把密钥签名。versionCode 由 tag 推导
+（`scripts/release/android-version-code.mjs`：`X*1000000 + Y*10000 + Z*100`，beta N 加 N，
+正式版加 99），保证后续版本可覆盖安装。手动的 `Android internal APK` 工作流只产出
+使用 Expo 开发密钥的 Actions 构件，仅限内测，不进入 Release。
+
+只需要签名 APK、不发布桌面版时，从 main 手动运行 `Android release APK` 工作流并填写
+版本 tag（如 `v0.1.0-beta.7`，基础版本须等于 `app.json` 的 `version`）；产物是
+`opencraft-android-release-<commit>` Actions 构件，不创建 tag 或 Release。
 
 备案表若只写“MD5”，先确认要求的是签名证书还是 APK 文件；两者不同。
 更换密钥或重新构建 APK 后，应重新从新产物读取这些值，不沿用旧资料。
 在有 Android 设备时安装新包验证：
 
 ```bash
-adb install -r apps/mobile/release/OpenCraft-dev.opencraft.workbench-android-release.apk
+adb install -r apps/mobile/release/OpenCraft-app.opencraft-android-release.apk
 ```
 
 需要在局域网提供临时下载链接时，让服务在持续运行的终端中启动：
 
 ```bash
 python3 apps/mobile/scripts/serve-android-release-apk.py \
-  --apk apps/mobile/release/OpenCraft-dev.opencraft.workbench-android-release.apk \
+  --apk apps/mobile/release/OpenCraft-app.opencraft-android-release.apk \
   --bind 0.0.0.0 --port 8765
 ```
 
 提供产品包时将 `--apk` 指向对应 APK。下载路径为所选文件的文件名。
 
 用 `hostname -I` 找到可达的局域网 IP，将
-`http://<局域网 IP>:8765/OpenCraft-dev.opencraft.workbench-android-release.apk` 发给测试者。
+`http://<局域网 IP>:8765/OpenCraft-app.opencraft-android-release.apk` 发给测试者。
 先用 `curl -I` 检查 HTTP 200 和文件长度，再下载核对 SHA-256。
 服务只开放这一个 APK 路径；签名密钥和密码不得放进下载目录。
 关闭终端或服务器进程后，链接即失效。该流程不执行上架或公开发布。

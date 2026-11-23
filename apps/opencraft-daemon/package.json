@@ -37,7 +37,8 @@
     "@opencraft/sandbox-e2b": "0.1.0",
     "@opencraft/observability-contract": "0.1.0",
     "@opencraft/access-control": "0.1.0",
-    "@opencraft/execution-environment": "0.1.0"
+    "@opencraft/execution-environment": "0.1.0",
+    "@opencraft/thread-queue": "0.1.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
@@ -50,6 +51,11 @@
     "./workspace-queued-context": "./src/workspace-queued-context.ts",
     "./assistant-environments": "./src/assistant-environments.ts",
     "./bridge-execution-admission": "./src/bridge-execution-admission.ts",
+    "./codex-bridge-stack": "./src/codex-bridge-stack.ts",
+    "./codex-bridge-host": "./src/codex-bridge-host.ts",
+    "./codex-bridge-conversation-tools": "./src/codex-bridge-conversation-tools.ts",
+    "./codex-host-services": "./src/codex-host-services.ts",
+    "./codex-native-reader": "./src/codex-native-reader.ts",
     "./appserver-identity-overlay": "./src/appserver-identity-overlay.ts",
     "./token-usage-query-transport": "./src/token-usage-query-transport.ts",
     "./token-usage-query-service": "./src/token-usage-query-service.ts",
@@ -68,6 +74,7 @@
     "./host-file-downloads": "./src/host-file-downloads.ts",
     "./owned-database-path": "./src/owned-database-path.ts",
     "./codex-native-core-transport": "./src/codex-native-core-transport.ts",
-    "./workspace-execution-transport": "./src/workspace-execution-transport.ts"
+    "./workspace-execution-transport": "./src/workspace-execution-transport.ts",
+    "./opencraft-host-state-database": "./src/opencraft-host-state-database.ts"
   }
 }

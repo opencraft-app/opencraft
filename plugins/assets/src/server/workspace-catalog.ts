@@ -27,12 +27,21 @@ const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(va
  * configurations. This is an admission catalog, not an allocator or public API.
  * Git refs/base generations remain owned by the authorized Git source resolver. */
 export class InstalledWorkspaceCatalog {
-  constructor(private readonly configurations: SandboxConfigurations) {}
+  constructor(
+    private readonly configurations: SandboxConfigurations,
+    /** Compiled identity adapter only; not a scope selector in request data.
+     * Allows an existing authenticated Human partition to retain its AAD and
+     * immutable NFS/Git domains. The default remains canonical Actor scopes. */
+    private readonly identity?: { isHumanScope(scope: string): boolean },
+  ) {}
   private assert(context: WorkspaceCatalogContext) {
     if (
       !context ||
       typeof context.scope !== "string" ||
-      !/^actor:human:\/\/[^/]+\/[^/]+$/u.test(context.scope) ||
+      context.scope.startsWith("platform:") ||
+      !(this.identity
+        ? this.identity.isHumanScope(context.scope)
+        : /^actor:human:\/\/[^/]+\/[^/]+$/u.test(context.scope)) ||
       context.scope.length > 512 ||
       /[\x00-\x1f\x7f]/u.test(context.scope) ||
       !context.current()

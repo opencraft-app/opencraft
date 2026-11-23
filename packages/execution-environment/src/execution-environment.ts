@@ -1,39 +1,50 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { PersonalGitEnvironment, type PersonalGitGrant } from './personal-git.js';
+import { validPersonalGitSealPort, type PersonalGitSealPort } from './personal-git-seal.js';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { TransportSubmissionContext } from '@opencraft/appserver-client/transport';
-import { EmployeeGitVaultStore, GitVaultError } from './employee-git-vault-store.js';
+import { EmployeeGitVaultStore } from './employee-git-vault-store.js';
 import { AccountEnvironment, EnvironmentError, validateEnvironmentName } from './account-environment.js';
 
 export const EXECUTION_ENVIRONMENT_FIELD = '__opencraftEnvironment';
 // Compatibility exports consume one operation-effects model. An ENV snapshot is
 // configuration material, never evidence of participation or a live native Turn.
 export { requiresEnvironmentAuthority, requiresCurrentEnvironmentAuthority } from './execution-request-policy.js';
-export interface EnvironmentExecutionScope {
-  readonly account: string | null; readonly hostId: string; readonly threadId: string | null; readonly projectId: string | null;
-  readonly inputId?: string; readonly executionId?: string; readonly leaseGeneration?: number;
-}
-const PLATFORM = 'platform:environment';
-const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+import {EnvironmentMetadata,environmentProjectId,environmentScopeRequest,type EnvironmentExecutionScope} from './environment-metadata.js';
+export {EnvironmentMetadata,environmentProjectId,environmentScopeRequest,environmentThreadProject} from './environment-metadata.js';
+export type {EnvironmentExecutionScope,EnvironmentScopeRequest,EnvironmentMetadataPort} from './environment-metadata.js';
 export {executionEnvironmentOwner,ExecutionEnvironmentSnapshot} from "./execution-snapshot.js";
 import {executionEnvironmentOwner,ExecutionEnvironmentSnapshot} from "./execution-snapshot.js";
-export const environmentProjectId = (hostId: string, projectId: string) => 'project-' + digest([hostId, projectId]);
-const namespace = (kind: string, hostId: string, id = '') => `document-env-${kind}-${digest([hostId, id])}`;
+const grantBearing = (scope: EnvironmentExecutionScope) => !!(scope.account && scope.threadId && scope.inputId && scope.executionId);
 const text = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 512 && !/[\0\r\n]/u.test(value);
 
 /** Trusted Node owner port. Storage and signed scope reuse the credential vault;
  * no browser frame can select another person's account or supply clear values. */
 export class ExecutionEnvironmentRuntime {
   private readonly environment: AccountEnvironment;
+  private readonly metadata: EnvironmentMetadata;
   private readonly git: PersonalGitEnvironment | undefined;
   private readonly disposers = new Set<() => void>();
   private readonly consumed = new Map<string, number>();
   private readonly snapshots = new Set<WeakRef<ExecutionEnvironmentSnapshot>>();
-  constructor(readonly directory: string, private readonly vault: EmployeeGitVaultStore, private readonly ownsVault = false, gitMode: 'execution' | 'issuer' = 'execution') {
+  private readonly gitSeal: PersonalGitSealPort | undefined;
+  private closed = false;
+  constructor(readonly directory: string, private readonly vault: EmployeeGitVaultStore, private readonly ownsVault = false, gitMode: 'execution' | 'issuer' | 'disabled' = 'execution',
+    /** `gitSeal`: a separate vault owner signs personal Git grants. The vault key
+     * is then never used here for grants, and they are issued only by `prepare`. */
+    options: { gitSeal?: PersonalGitSealPort } = {}) {
+    if (options.gitSeal !== undefined && !validPersonalGitSealPort(options.gitSeal)) throw Error('personal_git_issuer_unavailable');
     this.environment = new AccountEnvironment(vault);
-    this.git = PersonalGitEnvironment.fromEnvironment(directory, { authority: vault.personalGitAuthority(), seal: scope => vault.sealPersonalGitGrant(scope) }, gitMode);
+    this.metadata = new EnvironmentMetadata(vault);
+    this.gitSeal = options.gitSeal;
+    const seal = options.gitSeal;
+    // Compiled ENV delivery may borrow the sole vault without constructing a
+    // second Git bridge. Existing execution/issuer callers remain unchanged.
+    this.git = gitMode === 'disabled' ? undefined : PersonalGitEnvironment.fromEnvironment(directory, seal
+      ? { authority: seal.authority, seal: scope => seal.seal(scope) }
+      : { authority: vault.personalGitAuthority(), seal: scope => vault.sealPersonalGitGrant(scope) }, gitMode);
   }
   static async open(directory: string, options?: { create?: boolean }): Promise<ExecutionEnvironmentRuntime | undefined> {
     // Independent execution owners can boot before the identity gateway. They
@@ -44,86 +55,19 @@ export class ExecutionEnvironmentRuntime {
     catch (error) { vault.close(); throw error; }
   }
   onClose(dispose: () => void) { this.disposers.add(dispose); }
-  close() { void this.git?.close().catch(() => {}); for (const dispose of this.disposers) dispose(); this.disposers.clear(); if (this.ownsVault) this.vault.close(); }
-  project(hostId: string, threadId: string): string | null {
-    const value = this.vault.readDocument(PLATFORM, namespace('thread', hostId, threadId)).document as { projectId?: unknown } | null;
-    return value && text(value.projectId) ? value.projectId : null;
-  }
-  bind(hostId: string, threadId: string, projectId: string | null) {
-    if (!text(hostId) || !text(threadId) || projectId !== null && !text(projectId)) throw new EnvironmentError('invalid');
-    const key = namespace('thread', hostId, threadId), current = this.vault.readDocument(PLATFORM, key);
-    if ((current.document as { projectId?: unknown } | null)?.projectId === projectId) return;
-    try { this.vault.writeDocument(PLATFORM, key, current.revision, { projectId }); }
-    catch (error) { if (!(error instanceof GitVaultError) || error.code !== 'conflict') throw error; }
-  }
-  rememberCreation(scope: EnvironmentExecutionScope, threadId: string) {
-    if (!text(threadId) || !text(scope.hostId) || scope.account !== null && !text(scope.account) || scope.projectId !== null && !text(scope.projectId)) throw new EnvironmentError('invalid');
-    const key = namespace('origin', scope.hostId, threadId), prior = this.vault.readDocument(PLATFORM, key);
-    if (prior.document !== null) throw new EnvironmentError('conflict', 409);
-    this.vault.writeDocument(PLATFORM, key, prior.revision, { ...scope, threadId });
-    this.bindCreator(scope, threadId);
-  }
-  creation(hostId: string, threadId: string): EnvironmentExecutionScope | null {
-    const value = this.vault.readDocument(PLATFORM, namespace('origin', hostId, threadId)).document as EnvironmentExecutionScope | null;
-    if (!value) return null;
-    if (value.hostId !== hostId || value.threadId !== threadId || value.account !== null && !text(value.account) || value.projectId !== null && !text(value.projectId)) throw new EnvironmentError('unavailable');
-    return Object.freeze({ ...value });
-  }
-  /** Immutable credential identity, established only by a successful creation.
-   * Reads/resumes and later submissions must never claim an existing thread. */
-  bindCreator(scope: EnvironmentExecutionScope, threadId: string): void {
-    if (!text(threadId) || !text(scope.hostId) || scope.account !== null && !text(scope.account)) throw new EnvironmentError('invalid');
-    const key = namespace('credential-owner', scope.hostId, threadId);
-    const current = this.vault.readDocument(PLATFORM, key);
-    if (current.document !== null) {
-      if (this.creator(scope.hostId, threadId)?.account !== scope.account) throw new EnvironmentError('conflict', 409);
-      return;
-    }
-    this.vault.writeDocument(PLATFORM, key, current.revision, { account: scope.account });
-  }
-  creator(hostId: string, threadId: string): { account: string | null } | null {
-    const { document } = this.vault.readDocument(PLATFORM, namespace('credential-owner', hostId, threadId));
-    if (document === null) return null;
-    const account = (document as { account?: unknown }).account;
-    if (account !== null && !text(account)) throw new EnvironmentError('unavailable', 503);
-    return { account };
-  }
-  private admittedScope(scope: EnvironmentExecutionScope): EnvironmentExecutionScope {
-    const creator = scope.threadId ? this.creator(scope.hostId, scope.threadId) : null;
-    // Legacy threads retain their admitted execution provenance; a read or
-    // continuation is never evidence of who originally created them.
-    if (!creator) return scope;
-    // Creation provenance is immutable metadata, not a participant grant or
-    // permission to borrow the creator's credentials. Ingress/ThreadAccess
-    // authorize participation; each admitted input retains its own account.
-    if (scope.account === null && creator.account !== null) throw new EnvironmentError('unavailable', 403);
-    return Object.freeze({ ...scope });
-  }
-  rememberProjects(hostId: string, projects: readonly { id: string; name: string }[]) {
-    if (!text(hostId) || projects.length > 1000 || projects.some(p => !text(p.id) || !text(p.name))) throw new EnvironmentError('invalid');
-    const key = namespace('catalog', hostId), current = this.vault.readDocument(PLATFORM, key);
-    const prior = Array.isArray(current.document) ? current.document as { id: string; name: string }[] : [];
-    const merged = [...new Map([...prior, ...projects].map(p => [p.id, { id: p.id, name: p.name }])).values()].slice(-1000);
-    if (JSON.stringify(prior) !== JSON.stringify(merged)) {
-      try { this.vault.writeDocument(PLATFORM, key, current.revision, merged); }
-      catch (error) { if (!(error instanceof GitVaultError) || error.code !== 'conflict') throw error; }
-    }
-  }
-  projects(hostIds = ['local-codex', 'opencraft-server']): { id: string; name: string }[] {
-    return hostIds.flatMap(hostId => {
-      const value = this.vault.readDocument(PLATFORM, namespace('catalog', hostId)).document;
-      return Array.isArray(value) ? value.map(p => ({ id: environmentProjectId(hostId, p.id), name: p.name })) : [];
-    });
-  }
+  close() { this.closed = true; void this.git?.close().catch(() => {}); for (const dispose of this.disposers) dispose(); this.disposers.clear(); if (this.ownsVault) this.vault.close(); }
+  // Non-secret metadata shares its implementation with the vault-owner Worker.
+  project(hostId: string, threadId: string): string | null { return this.metadata.project(hostId, threadId); }
+  bind(hostId: string, threadId: string, projectId: string | null) { this.metadata.bind(hostId, threadId, projectId); }
+  rememberCreation(scope: EnvironmentExecutionScope, threadId: string) { this.metadata.rememberCreation(scope, threadId); }
+  creation(hostId: string, threadId: string): EnvironmentExecutionScope | null { return this.metadata.creation(hostId, threadId); }
+  bindCreator(scope: EnvironmentExecutionScope, threadId: string): void { this.metadata.bindCreator(scope, threadId); }
+  creator(hostId: string, threadId: string): { account: string | null } | null { return this.metadata.creator(hostId, threadId); }
+  private admittedScope(scope: EnvironmentExecutionScope): EnvironmentExecutionScope { return this.metadata.admitted(scope); }
+  rememberProjects(hostId: string, projects: readonly { id: string; name: string }[]) { this.metadata.rememberProjects(hostId, projects); }
+  projects(hostIds?: string[]): { id: string; name: string }[] { return this.metadata.projects(hostIds); }
   scope(context: TransportSubmissionContext, hostId: string, params: Record<string, unknown>): EnvironmentExecutionScope {
-    context.resourceOwner?.assertCurrent();
-    const principal = context.executionPrincipal;
-    if (principal && (!text(principal.provider) || !text(principal.subject) || !Number.isFinite(context.validUntil) || context.validUntil! <= Date.now())) throw new EnvironmentError('unavailable', 401);
-    const threadId = text(params.threadId) ? params.threadId : null;
-    const bound = threadId ? this.project(hostId, threadId) : null;
-    if (threadId && params.projectId != null && bound !== null && params.projectId !== bound) throw new EnvironmentError('invalid');
-    return this.admittedScope(Object.freeze({ account: principal ? `${principal.provider}:${principal.subject}` : null, hostId, threadId,
-      projectId: threadId ? bound : text(params.projectId) ? params.projectId : null }));
+    return this.metadata.admit(environmentScopeRequest(context, hostId, params));
   }
   seal(scope: EnvironmentExecutionScope, method: string, processHandle?: unknown): string {
     return this.vault.sealExecutionContext({ version: 1, scope, method, processHandle: processHandle ?? null, expires: Date.now() + 60_000, nonce: randomUUID() });
@@ -183,10 +127,28 @@ export class ExecutionEnvironmentRuntime {
     // Cold catalog/resume work has no active admission. It may receive an empty
     // environment, never the bound account's values.
     if (scope.account !== null) scope = this.admittedScope(scope);
+    // A separate vault owner signs asynchronously; there is no synchronous fallback.
+    if (this.gitSeal && this.git && grantBearing(scope)) throw Error('personal_git_async_issuer_required');
+    return this.build(scope, () => this.git?.grant(scope, options));
+  }
+  /** Asynchronous snapshot. With a separate vault owner (`gitSeal`) the grant is
+   * issued after admission and before the caller launches anything; admission
+   * is checked again after the await. Without one it is `snapshot`. */
+  async prepare(scope: EnvironmentExecutionScope, options?: { creation?: boolean }): Promise<ExecutionEnvironmentSnapshot> {
+    if (!this.gitSeal || !this.git) return this.snapshot(scope, options);
+    if (this.closed) throw new EnvironmentError('unavailable', 403);
+    if (scope.account !== null) scope = this.admittedScope(scope);
+    const admitted = JSON.stringify(scope);
+    const grant = await this.git.issue(scope, options);
+    if (this.closed || (scope.account !== null && JSON.stringify(this.admittedScope(scope)) !== admitted))
+      throw new EnvironmentError('unavailable', 403);
+    return this.build(scope, () => grant);
+  }
+  private build(scope: EnvironmentExecutionScope, grant: () => PersonalGitGrant | undefined): ExecutionEnvironmentSnapshot {
     const variables = scope.account ? this.environment.launchEnvironment(scope.account, {
       projectId: scope.projectId === null ? null : environmentProjectId(scope.hostId, scope.projectId),
     }, {}) : {};
-    const snapshot = new ExecutionEnvironmentSnapshot(scope, variables as Record<string, string>, this.git?.grant(scope, options), !!this.git && !!scope.account && (!scope.inputId || !scope.executionId));
+    const snapshot = new ExecutionEnvironmentSnapshot(scope, variables as Record<string, string>, grant(), !!this.git && !!scope.account && (!scope.inputId || !scope.executionId));
     for (const reference of this.snapshots) if (!reference.deref()) this.snapshots.delete(reference);
     this.snapshots.add(new WeakRef(snapshot));
     return snapshot;

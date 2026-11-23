@@ -148,6 +148,61 @@ test('missing or malformed identity fails before execution and rollback releases
   assert.equal((await fetch(app.url)).status, 200);
 });
 
+test('core ENV delivery has one owner and fails at startup without execution admission', async t => {
+  const f = await fixture(t);
+  await assert.rejects(startHeadlessServer({ ...f.options, environmentDelivery: 'synchronous' }), /Invalid environment delivery/);
+  let closed = 0;
+  await assert.rejects(startHeadlessServer({ ...f.options, environmentDelivery: 'vault-owner' },
+    { createIdentity: async () => ({ providers: [], executionEnvironment: { close() {} }, close() { closed++; } }) }), /two owners/);
+  assert.equal(closed, 1);
+  // The vault Worker starts its issuer, but no Human execution admission exists.
+  await assert.rejects(startHeadlessServer({ ...f.options, environmentDelivery: 'vault-owner' }), /requires execution admission/);
+  // Pi inside Main cannot host a receiver; it is refused instead of running without ENV.
+  for (const engines of [['pi'], ['dsh', 'pi']])
+    await assert.rejects(startHeadlessServer({ ...f.options, engines, defaultEngine: engines[0], environmentDelivery: 'vault-owner' }),
+      /independent Pi engine host/);
+  assert.equal(f.starts(), 0);
+  const app = await startHeadlessServer(f.options); t.after(() => app.close());
+  assert.equal((await fetch(app.url)).status, 200);
+});
+
+test('an identity-owned vault port brings its own admission and metadata; missing parts fail at startup', async t => {
+  const f = await fixture(t);
+  const principal = { provider: 'fixture-directory', subject: 'opaque-human-id', displayName: 'Fixture Human', expiresAt: Date.now() + 60_000 };
+  const calls = [];
+  const metadata = Object.fromEntries(['admit', 'project', 'bind', 'bindCreator', 'rememberProjects']
+    .map(method => [method, async () => { calls.push(method); return null; }]));
+  const port = { issuer: 'a'.repeat(43), seal: async () => { throw Error('not sealed in this test'); } };
+  let closed = 0;
+  const identity = environmentLaunch => async () => ({ assistantEnvironmentConfigurationManaged: true,
+    providers: [{ authenticate: () => principal }], environmentLaunch, close() { closed++; } });
+  const options = { ...f.options, accessMemberProviders: [principal.provider] };
+  // An admission without its metadata port would lose new Threads' Project ENV.
+  await assert.rejects(startHeadlessServer(options, { createIdentity: identity({ ...port, admission: async () => null }) }),
+    /identity adapter/);
+  // Core does not own this vault's admission: a port without one has no handoff.
+  await assert.rejects(startHeadlessServer(options, { createIdentity: identity({ ...port, metadata }) }),
+    /requires execution admission/);
+  // Live Actor checks need Human instance authority.
+  await assert.rejects(startHeadlessServer(f.options, { createIdentity: identity({ ...port, admission: async () => null, metadata }) }),
+    /Human instance authority/);
+  // Never beside the synchronous runtime.
+  await assert.rejects(startHeadlessServer(options, { createIdentity: async () => ({ ...(await identity({ ...port, admission: async () => null, metadata })()),
+    executionEnvironment: { close() {} } }) }), /identity adapter/);
+  // Where core owns the Actor/lease handoff, a second admission source is refused.
+  const humanAuthConfig = join(f.root, 'human-auth.json');
+  await writeFile(humanAuthConfig, JSON.stringify({ origin: 'http://127.0.0.1', local: true, oidc: [] }), { mode: 0o600 });
+  await assert.rejects(startHeadlessServer({ ...f.options, humanAuthConfig, accessControl: true },
+    { createIdentity: async () => ({ ...(await identity({ ...port, admission: async () => null, metadata })()),
+      assistantEnvironmentConfigurationManaged: false }) }), /admission cannot have two owners/);
+  assert.equal(closed, 5);
+  assert.equal(f.starts(), 0);
+  const app = await startHeadlessServer(options, { createIdentity: identity({ ...port, admission: async () => null, metadata }) });
+  t.after(() => app.close());
+  assert.equal((await fetch(app.url + '/__opencraft_actors/me')).status, 200);
+  assert.deepEqual(calls, [], 'no metadata is written before a Host request');
+});
+
 test('public listener accepts explicit membership protection without requiring an anonymous-access acknowledgement', async t => {
   const f = await fixture(t);
   await assert.rejects(startHeadlessServer({ ...f.options, host: '0.0.0.0' }), /unauthenticated-public/);
@@ -287,4 +342,45 @@ test('an explicitly anonymous native installation declares no personal Git autho
  const machineId=(await readFile(join(f.options.dataDirectory,'machine-id'),'utf8')).trim();
  const remote=new RemoteSessionCapabilities(f.options.dataDirectory,`server:${machineId}:pi`);
  assert.deepEqual(await remote.hostGit('pi_synthetic',{inputId:'unowned-input'}),{mode:'anonymous'});
+});
+
+test('personal model defaults follow the signed-in Actor and instance admission on a real Headless server', { timeout: 60_000 }, async t => {
+  const f = await fixture(t);
+  const probe = await startHeadlessServer(f.options); await probe.close();
+  const proof = randomBytes(32).toString('base64url');
+  const proofPath = join(f.root, 'setup-token'), configPath = join(f.root, 'human-auth.json');
+  await writeFile(proofPath, JSON.stringify({ token: proof }), { mode: 0o600 });
+  await writeFile(configPath, JSON.stringify({ origin: probe.url, local: true, oidc: [], setupTokenFile: proofPath }), { mode: 0o600 });
+  const app = await startHeadlessServer({ ...f.options, port: Number(new URL(probe.url).port), humanAuthConfig: configPath }); t.after(() => app.close());
+  const path = app.url + '/__opencraft_model_defaults';
+  const json = { origin: app.url, 'content-type': 'application/json' };
+  assert.equal((await fetch(path)).status, 401);
+  const setup = await fetch(app.url + '/__opencraft_account/setup', { method: 'POST', headers: json,
+    body: JSON.stringify({ proof, mode: 'web', username: 'owner', password: 'Fixture-account-password-42' }) });
+  assert.equal(setup.status, 200, await setup.text());
+  const owner = setup.headers.get('set-cookie')?.split(';')[0];
+  const ownerId = (await fetch(app.url + '/__opencraft_account/status', { headers: { cookie: owner } }).then(r => r.json())).actor.id;
+  assert.deepEqual(await fetch(path, { headers: { cookie: owner } }).then(r => r.json()), { actorId: ownerId });
+  const selection = { model: 'provider/model', effort: 'high' };
+  const saved = await fetch(path, { method: 'POST', headers: { ...json, cookie: owner },
+    body: JSON.stringify({ hostId: 'opencraft-server', revision: 0, selection, expectedActorId: ownerId }) });
+  assert.equal(saved.status, 200, await saved.clone().text());
+  const query = new URLSearchParams({ hostId: 'opencraft-server', expectedActorId: ownerId });
+  assert.deepEqual(await fetch(path + '?' + query, { headers: { cookie: owner } }).then(r => r.json()), { actorId: ownerId, revision: 1, selection });
+
+  // An invited member reads only their own empty record; revoking membership refuses them.
+  const invitation = await fetch(app.url + '/__opencraft_account/invitations', { method: 'POST', headers: { ...json, cookie: owner }, body: '{}' }).then(r => r.json());
+  const accepted = await fetch(app.url + '/__opencraft_account/accept', { method: 'POST', headers: json,
+    body: JSON.stringify({ code: invitation.code, username: 'member', password: 'Fixture-member-password-42' }) });
+  assert.equal(accepted.status, 201, await accepted.clone().text());
+  const member = accepted.headers.get('set-cookie')?.split(';')[0];
+  const memberId = (await fetch(path, { headers: { cookie: member } }).then(r => r.json())).actorId;
+  assert.notEqual(memberId, ownerId);
+  assert.equal((await fetch(path + '?' + query, { headers: { cookie: member } })).status, 409);
+  assert.deepEqual(await fetch(path + '?' + new URLSearchParams({ hostId: 'opencraft-server', expectedActorId: memberId }), { headers: { cookie: member } }).then(r => r.json()),
+    { actorId: memberId, revision: 0, selection: null });
+  const revoked = await fetch(app.url + '/__opencraft_account/members', { method: 'POST', headers: { ...json, cookie: owner },
+    body: JSON.stringify({ actorId: memberId, role: 'member', enabled: false }) });
+  assert.equal(revoked.status, 200, await revoked.clone().text());
+  assert.equal((await fetch(path, { headers: { cookie: member } })).status, 403);
 });

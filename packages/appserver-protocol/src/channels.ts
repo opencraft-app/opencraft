@@ -20,6 +20,23 @@ export interface ChannelActor {
   avatar?: ChannelIdentityAvatar;
 }
 
+/** A localizable message: stable ID plus English defaultMessage. Installations
+ * supply translations through their own locale catalogs. */
+export interface ChannelMessageDescriptor { id: string; defaultMessage: string }
+
+/** An installation-declared choice offered when a person creates a group, for
+ * example whether to also create a linked group in a connected provider.
+ * Presentation only: the server validates submitted values against its own
+ * declaration and never treats defaultSelected as consent. */
+export interface ChannelGroupCreateOption {
+  /** Stable wire key: lowercase letters, digits and hyphens, starting with a letter. */
+  id: string;
+  label: ChannelMessageDescriptor;
+  description?: ChannelMessageDescriptor;
+  /** Initial checkbox state in the creation form. */
+  defaultSelected: boolean;
+}
+
 export interface ChannelSummary {
   id: string;
   title: string;
@@ -240,7 +257,8 @@ export interface ChannelsMethodMap {
   "opencraft/crew/desk": { params: { botId: string; actorId?: string }; result: CrewDesk };
   "opencraft/crew/work/inbox": { params: Record<string, never>; result: { items: CrewInboxItem[] } };
   "opencraft/channels/group/create": {
-    params: { title: string; memberActorIds: string[]; clientRequestId: string };
+    /** options keys must be declared ChannelGroupCreateOption IDs; omitted options are false. */
+    params: { title: string; memberActorIds: string[]; clientRequestId: string; options?: Record<string, boolean> };
     result: ChannelSummary;
   };
   "opencraft/channels/group/member/set": {

@@ -261,3 +261,11 @@ test('live projection renews an unclaimed durable automation input and excludes 
   await f.worker.automation('settle',{key:claim.run.key,state:'completed'},f.now());
   assert.equal((await f.worker.automation('projection',{},f.now())).length,0);
 });
+
+test('a scheduled run titles its conversation from the first line of its prompt', async () => {
+  const { automationThreadTitle } = await import('../../packages/access-control/src/thread-orchestration-broker');
+  assert.equal(automationThreadTitle('\n  Summarize the release notes  \nthen post them'), 'Summarize the release notes');
+  assert.equal(automationThreadTitle('tab\there'), 'tab here');
+  assert.equal(automationThreadTitle('x'.repeat(200)).length, 80);
+  assert.equal(automationThreadTitle('  \n\t\n'), 'Scheduled task');
+});

@@ -17,6 +17,8 @@ after a received result must not reconnect/replay the completed call.
 - [x] Assign a server-generated identity to each admitted MCP invocation while
   preserving the original execution context. JSON-RPC IDs are client-local and
   must not become effect-receipt identities across clients. They grant no authority.
+- [x] Attach a core-resolved `context` (Host, verified human Actor, active lease)
+  to every provider session; caller-supplied values are discarded.
 - [ ] Verify cancellation and effect receipts across every harness integration.
 
 See [browser migration](../../docs/architecture/browser/automation-migration.md).

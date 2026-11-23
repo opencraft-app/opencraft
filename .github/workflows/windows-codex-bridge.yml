@@ -1,0 +1,79 @@
+name: windows-codex-bridge
+
+# The desktop's Codex bridge stack on a real Windows machine: named pipes, the
+# token-guarded loopback native listener, children stopping through stdin, and
+# one conversation through native codex.exe, run on Electron's own Node as the
+# packaged daemon does (scripts/smoke/execution/run-codex-bridge-stack-drill.mjs).
+# A local stand-in model answers; no account, secret or external service is used.
+# Wine is not a substitute: Windows conclusions come from this job.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/windows-codex-bridge.yml
+      - apps/agent-bridge-host/src/**
+      - apps/codex-core/src/**
+      - apps/opencraft-daemon/src/codex-*
+      - packages/account-pool-host/src/**
+      - packages/sqlite-node/src/**
+      - runtime/codex/**
+      - scripts/packaging/stage-codex-runtime.mjs
+      - scripts/smoke/execution/*codex-bridge*
+      - tests/fixtures/bridge-stack-core.ts
+      - tests/fixtures/fake-responses-model.mjs
+  pull_request:
+    paths:
+      - .github/workflows/windows-codex-bridge.yml
+      - apps/agent-bridge-host/src/**
+      - apps/codex-core/src/**
+      - apps/opencraft-daemon/src/codex-*
+      - packages/account-pool-host/src/**
+      - packages/sqlite-node/src/**
+      - runtime/codex/**
+      - scripts/packaging/stage-codex-runtime.mjs
+      - scripts/smoke/execution/*codex-bridge*
+      - tests/fixtures/bridge-stack-core.ts
+      - tests/fixtures/fake-responses-model.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-codex-bridge-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drill:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Run npm scripts with Git Bash on Windows
+        # Package scripts set variables POSIX-style (NAME=value command), which cmd.exe cannot run.
+        run: echo 'npm_config_script_shell=C:/Program Files/Git/bin/bash.exe' >> "$GITHUB_ENV"
+      - id: dependencies
+        run: npm ci --no-audit --no-fund
+      - id: daemon
+        run: npm run build --workspace @opencraft/opencraft-daemon
+      # The drill opens the Engine Host and account stores, so it covers the SQLite writer
+      # lock and recovery on Windows. The full SQLite suite is not Windows-ready yet
+      # (directory fsync, POSIX permission assertions), see design/agent-bridge/codex-parity.md.
+      - name: Codex bridge stack drill
+        timeout-minutes: 15
+        run: node scripts/smoke/execution/run-codex-bridge-stack-drill.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: codex-bridge-drill
+          path: .local/codex-bridge-drill/*/result.txt
+          if-no-files-found: ignore
+          retention-days: 7

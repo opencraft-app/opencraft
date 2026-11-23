@@ -3,6 +3,7 @@ import { createExecutionPorts } from "../src/runtime/execution-ports.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { RunPolicy } from "../src/domain/run-policy.mjs";
 import { Runner } from "../src/runner.mjs";
@@ -152,9 +153,18 @@ test("real Pi execution timeout blocks work and leaves cancellation with the nat
 });
 
 test("a reception that ignores cancellation times out, releases its lane and cannot commit a late proposal", async (t) => {
+  let runner, release;
+  // Register before profileFor's deletion hook: an active runner may recreate
+  // profile files during rm, and a failed deletion can skip its close hook.
+  t.after(async () => {
+    const profilePresent = existsSync(profile.path);
+    const closing = runner?.close();
+    release?.({ kind: "reply", text: "fixture closed" });
+    await closing;
+    assert.ok(profilePresent, "runner must stop before its profile is removed");
+  });
   const profile = profileFor(t, { runPolicy: { modelTimeoutMs: 40 } });
-  let release;
-  const runner = await Runner.open(profile, {
+  runner = await Runner.open(profile, {
     receptionModel: {
       async decide(input) {
         if (input.text === "hang")
@@ -165,7 +175,6 @@ test("a reception that ignores cancellation times out, releases its lane and can
       },
     },
   });
-  t.after(() => runner.close());
   runner.app.reception.accept("hanging", { text: "hang" });
   await until(() => runner.app.reception.turn("hanging").status === "blocked");
   release({ kind: "delegate", goal: "late unwanted job" });
@@ -528,15 +537,12 @@ test("waiting for the user's answer does not keep the previous active-run timeou
 });
 
 test("native quota failure retains the provider detail instead of showing only model_error", async (t) => {
-  const { createModels, fauxProvider, fauxAssistantMessage } = await import(
-    "@earendil-works/pi-ai"
-  );
-  const { PiExecutionAdapter } = await import(
-    "../src/adapters/pi/pi-execution-adapter.mjs"
-  );
-  const { LocalArtifactStore } = await import(
-    "../src/adapters/filesystem/artifact-store.mjs"
-  );
+  const { createModels, fauxProvider, fauxAssistantMessage } =
+    await import("@earendil-works/pi-ai");
+  const { PiExecutionAdapter } =
+    await import("../src/adapters/pi/pi-execution-adapter.mjs");
+  const { LocalArtifactStore } =
+    await import("../src/adapters/filesystem/artifact-store.mjs");
   const { app, profile } = domain(t),
     models = createModels(),
     faux = fauxProvider({ tokensPerSecond: 100000 });
@@ -573,9 +579,8 @@ test("native quota failure retains the provider detail instead of showing only m
 });
 
 test("memory learning releases its slot on an uncooperative verification timeout and keeps the saved proposal", async () => {
-  const { MemoryLearningCoordinator } = await import(
-    "../src/runtime/memory-learning-coordinator.mjs"
-  );
+  const { MemoryLearningCoordinator } =
+    await import("../src/runtime/memory-learning-coordinator.mjs");
   let failed,
     proposed = 0;
   const job = {

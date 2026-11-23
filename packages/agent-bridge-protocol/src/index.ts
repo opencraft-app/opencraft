@@ -5,3 +5,4 @@ export * from "./capabilities";
 export * from "./grammar";
 export * from "./validation";
 export * from "./recording";
+export * from "./providers";

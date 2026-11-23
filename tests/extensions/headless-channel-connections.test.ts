@@ -7,7 +7,7 @@ import { openServerDatabase } from "@opencraft/storage-node/server";
 import { ActorStore } from "../../packages/access-control/src/actors";
 import { Collaboration } from "../../packages/access-control/src/collaboration";
 import { ImChannelService } from "../../apps/headless-server/src/im-channel-service.mjs";
-import { createChannelSyncDependencies } from "../../apps/headless-server/src/im-plugins.mjs";
+import { channelSyncContext, createChannelSyncDependencies } from "../../apps/headless-server/src/im-plugins.mjs";
 import { startHeadlessServer } from "../../apps/headless-server/src/headless-server.mjs";
 import type { ChannelSyncTransport, ChannelArrival } from "../../plugins/im/src/channel-sync";
 
@@ -376,6 +376,29 @@ test("trusted composition supports legacy and plural factories without invoking 
   );
 });
 
+test("channel sync factories receive the validated relay connection file only when configured", async () => {
+  const collaboration = {};
+  const seen: unknown[] = [];
+  const composition = {
+    createChannelSyncs: async (value: unknown) => {
+      seen.push(value);
+      return [];
+    },
+  };
+  await createChannelSyncDependencies(composition, channelSyncContext({ collaboration, relayConnectFile: "/private/relay.json" }));
+  await createChannelSyncDependencies(composition, channelSyncContext({ collaboration, relayConnectFile: undefined }));
+  const [configured, unset] = seen as Record<string, unknown>[];
+  assert.equal(configured.collaboration, collaboration);
+  assert.equal(configured.relayConnectFile, "/private/relay.json");
+  assert.ok(Object.isFrozen(configured));
+  assert.throws(() => {
+    configured.relayConnectFile = "/other.json";
+  }, TypeError);
+  assert.equal(unset.collaboration, collaboration);
+  assert.equal("relayConnectFile" in unset, false);
+  assert.deepEqual(Object.keys(unset), ["collaboration"]);
+});
+
 test("legacy single-transport composition retains its connection and personal notification port", async (t) => {
   const f = await fixture(t),
     a = adapter("alpha");
@@ -393,6 +416,30 @@ test("legacy single-transport composition retains its connection and personal no
       .map((row) => row.id),
     ["legacy"],
   );
+});
+
+test("channel.link reaches only the single configured transport's link and takes no client fields", async (t) => {
+  const f = await fixture(t),
+    a = adapter("alpha");
+  const linked: string[] = [];
+  a.transport.link = async (context) => {
+    linked.push(context.actorId);
+    return { code: "fixture-proof" };
+  };
+  const service = await f.open([a.transport]);
+  assert.deepEqual(await service.operation(f.actor, { action: "channel.link" }), { code: "fixture-proof" });
+  assert.deepEqual(linked, [f.actor.actorId]);
+  await assert.rejects(service.operation(f.actor, { action: "channel.link", id: "alpha" }), /invalid_operation/);
+  assert.deepEqual(linked, [f.actor.actorId]);
+});
+
+test("channel.link is unavailable without a link-capable single transport", async (t) => {
+  for (const transports of [[adapter("alpha").transport], [adapter("alpha").transport, adapter("beta").transport]]) {
+    const f = await fixture(t);
+    const service = await f.open(transports);
+    await assert.rejects(service.operation(f.actor, { action: "channel.link" }), /invalid_operation/);
+    await service.close();
+  }
 });
 
 test("a provider can recheck the captured notification lease after asynchronous preparation", async (t) => {

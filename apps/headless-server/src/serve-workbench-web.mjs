@@ -772,6 +772,7 @@ export async function createWorkbenchWebServer({
   modelPolicyService = null,
   assetsService = null,
   identityService = null,
+  runtimePluginService = null,
   localAccess = null,
   accessService = null,
   actorService = null,
@@ -780,6 +781,7 @@ export async function createWorkbenchWebServer({
   actorCollaborationService = null,
   turnPushService = null,
   serverInformationService = null,
+  accountModelDefaultsService = null,
   authService = null,
   accountService = null,
   observability = null,
@@ -796,6 +798,7 @@ export async function createWorkbenchWebServer({
   if (instanceId !== null && (typeof instanceId !== 'string' || !/^[A-Za-z0-9._-]{1,128}$/u.test(instanceId))) throw new Error('Invalid instance storage identity');
   if (assetVersion !== null && (typeof assetVersion !== 'string' || !assetVersion || assetVersion.length > 128)) throw new Error('Invalid asset version');
   if (identityService !== null && (!identityService || ["admissionStatus", "connectionContext", "handle"].some(method => typeof identityService[method] !== "function"))) throw new Error("Invalid request identity service");
+  if (runtimePluginService !== null && typeof runtimePluginService?.handle !== "function") throw new Error("Invalid runtime plugin service");
   if (!["loopback", "trusted-internal"].includes(desktopAccess)) throw new Error("Invalid desktop access policy");
   if (desktopService !== null && desktopAccess === "loopback" && !loopbackOnly) throw new Error("Local desktop requires a loopback-only gateway");
   const staticRoot = await realpath(resolve(root || join(repositoryRoot, "apps/workbench-web/dist")));
@@ -902,6 +905,11 @@ export async function createWorkbenchWebServer({
       }
       if (url.pathname === '/__opencraft_server_information') {
         if (serverInformationService && await serverInformationService(request, response)) return;
+        sendJson(response, 404, { error: 'missing' }); return;
+      }
+      // Personal model defaults verify the signed-in human Actor and its admission themselves.
+      if (url.pathname === '/__opencraft_model_defaults') {
+        if (accountModelDefaultsService && await accountModelDefaultsService(request, response)) return;
         sendJson(response, 404, { error: 'missing' }); return;
       }
       if ((url.pathname === '/__opencraft_push' || url.pathname === '/__opencraft_notifications')) {
@@ -1082,6 +1090,9 @@ export async function createWorkbenchWebServer({
             : { ok: false, error: "WebSocket upgrade required" });
         return;
       }
+      // Operator-selected runtime plugins only see requests that passed instance
+      // admission above and no core handler claimed; the host re-checks admission.
+      if (runtimePluginService?.handle(request, response)) return;
       // Unregistered API routes cannot fall through to the SPA or a static file.
       const refreshPlugins = url.pathname === '/__opencraft_plugin_catalog' || url.pathname === '/' || url.pathname === '/index.html'
         || (request.headers.accept || '').includes('text/html');

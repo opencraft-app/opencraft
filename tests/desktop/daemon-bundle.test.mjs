@@ -33,6 +33,15 @@ test("the desktop daemon loads only built-ins and shipped modules at startup", a
   assert.deepEqual(unexpected, [], "move these imports behind the feature that needs them");
   const bundledEsbuild = Object.keys(result.metafile.inputs).filter((file) => file.includes("node_modules/esbuild/"));
   assert.deepEqual(bundledEsbuild, [], "the esbuild JavaScript API cannot run from a bundle");
+  // The daemon hosts the desktop account service: the Assets async owner is bundled, while the
+  // vault itself is opened only by its Worker, which the daemon build places beside it.
+  const inputs = Object.keys(result.metafile.inputs).map((file) => file.replace(/^(\.\.\/)+/u, ""));
+  for (const file of ["errors.ts", "worker.ts", "http.ts"])
+    assert.ok(inputs.includes("plugins/assets/src/server/" + file), "Default Assets async owner must be bundled");
+  assert.ok(!inputs.some((file) => /plugins\/assets\/src\/server\/(?:assets-configuration\.worker|configurations)/u.test(file)),
+    "the daemon must not open or decrypt the Assets vault on its main thread");
+  // source-contract: the daemon build ships the Assets vault Worker beside the bundle
+  assert.match(await readFile(join(daemonDirectory, "build.mjs"), "utf8"), /buildAssetsRuntime\(/u);
 });
 
 // Workers the daemon starts by URL (server spaces, storage, transcript cache,
@@ -47,6 +56,8 @@ test("the desktop package copies every daemon worker beside the daemon", async (
   assert.deepEqual(resources, [
     { from: "../opencraft-daemon/dist", to: "runtime", filter: ["*.mjs", "schema.sql"] },
     { from: "../opencraft-daemon/dist/main.cjs", to: "runtime/opencraft-daemon.cjs" },
+    // The Codex bridge stack's programs and their workers, launched by the daemon.
+    { from: "../opencraft-daemon/dist/codex-bridge", to: "runtime/codex-bridge", filter: ["**/*"] },
   ]);
 });
 

@@ -147,5 +147,37 @@ PI_BRIDGE_AGENT_DIR="$HOME/.pi/agent" \
 The opt-in smoke uses one minimal task on the cheapest available Pi model and
 requires local Pi credentials. It is not a CI gate. Deterministic tests cover
 tool-interleaved steer, duplicate text with distinct native ids, the
-end-before-consumption race and one-writer lock contention. See
-[VALIDATION.md](VALIDATION.md) for the recorded run and evidence tier.
+end-before-consumption race and one-writer lock contention. Known
+gaps are listed under [Design decisions and known limits](#design-decisions-and-known-limits).
+
+## Design decisions and known limits
+
+Carried over from the retired validation ledgers; evidence runs and review logs live in Git history.
+
+### P2d: Gaps and honest limits
+
+- The real accepted-but-unconsumed race did not trigger. Four real attempts
+  (the two-steer task plus three immediate no-tool steers) all saw the steer
+  placed before the boundary. The deterministic mapper/bridge tests cover the
+  race (`Pi turn ended before steer was consumed`); this run does not claim a
+  real reproduction.
+- The real smoke drives the bridge process directly. `pi-host.test.ts` proves
+  the Host launches/handshakes/creates/closes the artifact, rejects stale and
+  missing-session commands, rebinds after a bad create, and keeps one native
+  writer; it does not run a real model through the Host. Host durability and
+  restart are P1b's tested scope.
+- A genuinely ambiguous command outcome still becomes Host `unknown` custody
+  and is not auto-reconciled or replayed. Native evidence can resolve the input
+  facets (and does so in both orders), but the Host command row is a separate
+  P1b/P2 concern; a future explicit reconcile operation must clear it before
+  release. This batch intentionally does not auto-resolve unknown custody.
+- Bridge restart does not auto-resume pending native work in this batch; a
+  later provider recovery pass must reconcile it. A live second writer is
+  refused by the native lock.
+- The design text spells the steer boundary as Pi RPC
+  `streamingBehavior="steer"`; the existing OpenCraft Pi owner has no RPC
+  session. The bridge uses the owner's native inbox `mode:"steer"` path instead
+  of spawning a second Pi writer. This is an intentional deviation with the
+  same same-turn boundary and no second transcript.
+- New Threads are opt-in only. Existing Pi Threads remain on the current engine;
+  this batch does not change engine defaults or migrate them.

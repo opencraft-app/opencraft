@@ -41,6 +41,11 @@
       "DatabaseSync": 1,
       "SQL statement": 6
     },
+    "apps/desktop/src/desktop-client-import.ts": {
+      "DatabaseSync": 3,
+      "existsSync": 1,
+      "SQL statement": 5
+    },
     "apps/desktop/src/sqlite-debug-reader.ts": {
       "DatabaseSync": 2,
       "SQL statement": 8,
@@ -95,9 +100,6 @@
       "readFileSync": 2,
       "SQL statement": 26
     },
-    "apps/opencraft-daemon/src/input-delivery-store.ts": {
-      "SQL statement": 8
-    },
     "apps/opencraft-daemon/src/native-empty-creation.ts": {
       "lstatSync": 1,
       "readFileSync": 1
@@ -105,7 +107,7 @@
     "apps/opencraft-daemon/src/opencraft-host-queue.ts": {
       "DatabaseSync": 1,
       "existsSync": 1,
-      "SQL statement": 32
+      "SQL statement": 5
     },
     "apps/opencraft-daemon/src/opencraft-host-state-database.ts": {
       "DatabaseSync": 2,
@@ -333,6 +335,10 @@
       "unlinkSync": 2,
       "writeFileSync": 1
     },
+    "packages/sqlite-node/src/retire.ts": {
+      "DatabaseSync": 3,
+      "SQL statement": 3
+    },
     "packages/sqlite-node/src/writer-lock.ts": {
       "closeSync": 4,
       "DatabaseSync": 2,
@@ -352,6 +358,12 @@
     },
     "packages/storage-node/src/server/repository.ts": {
       "existsSync": 2
+    },
+    "packages/thread-queue/src/delivery-store.ts": {
+      "SQL statement": 8
+    },
+    "packages/thread-queue/src/queue-store.ts": {
+      "SQL statement": 27
     },
     "plugins/im/src/post-receipts.ts": {
       "SQL statement": 4

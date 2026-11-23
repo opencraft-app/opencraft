@@ -5,6 +5,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { chmod, unlink } from 'node:fs/promises';
 import WebSocket, { WebSocketServer } from 'ws';
+import { isNamedPipe, openCodexNativeSocket } from '@opencraft/account-pool-host';
 import { removeStaleSocket } from './native-process.js';
 import { ExecutionPreparationError, reportExecutionPreparationFailure } from './execution-preparation.js';
 import { projectNativeModelCatalog } from './native-model-catalog.js';
@@ -69,7 +70,7 @@ class CallbackLane {
     this.releasePublication = publication.subscribe(() => {
       for (const [id,message] of this.heldStarts) if (this.ready && publication.allowed(id)) { this.heldStarts.delete(id); send(this.client,message); }
     });
-    this.upstream = new WebSocket(`ws+unix://${target}:/`,{handshakeTimeout:5000});
+    this.upstream = openCodexNativeSocket(target,{handshakeTimeout:5000});
     this.opened = new Promise((resolve,reject) => { this.upstream.once('open',resolve);this.upstream.once('error',reject);this.upstream.once('close',()=>reject(new Error('Native callback owner closed'))); });
     void this.opened.catch(()=>this.close());
     this.upstream.on('message',frame=>{
@@ -377,6 +378,7 @@ export async function startOrchestrationCallbackRelay(endpoint: string,target: s
     if (laneId===null) socket.once('close',()=>lane?.close());
   });
   await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(endpoint,()=>{server.off('error',reject);resolve();});});
-  await chmod(endpoint,0o600);
+  // A named pipe has no file mode; its default ACL admits only the owner and administrators.
+  if (!isNamedPipe(endpoint)) await chmod(endpoint,0o600);
   return {incarnation,get pendingMutations(){return [...owners.values()].reduce((count,owner)=>count+owner.receipts.size,0);},get pendingCallbacks(){return [...lanes.values()].reduce((count,lane)=>count+lane.pendingCallbacks,0);},async close(){for(const lane of lanes.values())lane.close();websockets.close();await new Promise<void>(resolve=>server.close(()=>resolve()));await unlink(endpoint).catch(()=>{});}};
 }

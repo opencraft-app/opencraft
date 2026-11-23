@@ -1,4 +1,4 @@
-import { DEFAULT_SANDBOX_RESOURCES, SandboxCreationFault, SandboxFault, type Sandbox, type SandboxBackend, type SandboxCommand, type SandboxEnvironment, type SandboxPoolPolicy, type SandboxReceipt, type SandboxResources } from "./contract.js";
+import { DEFAULT_SANDBOX_RESOURCES, FULL_SANDBOX_ENFORCEMENT, SandboxCreationFault, SandboxFault, type Sandbox, type SandboxBackend, type SandboxCommand, type SandboxEnvironment, type SandboxPoolPolicy, type SandboxReceipt, type SandboxResources } from "./contract.js";
 export * from "./contract.js";
 export * from "./endpoint.js";
 export * from "./uri.js";
@@ -9,6 +9,11 @@ const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 function budget(input: SandboxResources) {
   if (!input || !dimensions.every(k => positive(input[k]))) throw fault("SANDBOX_POLICY", "Sandbox budgets must be positive safe integers");
   return Object.freeze({ cpuMillis: input.cpuMillis, memoryBytes: input.memoryBytes });
+}
+function enforcement(input: SandboxEnvironment["enforcement"]) {
+  if (input === undefined) return FULL_SANDBOX_ENFORCEMENT;
+  if (!input || !["enforced", "unenforced"].includes(input.resources) || !["complete", "best-effort"].includes(input.containment)) throw Error();
+  return Object.freeze({ resources: input.resources, containment: input.containment });
 }
 function command(input: SandboxCommand) {
   if (!input || !input.env || !Array.isArray(input.command)) throw fault("SANDBOX_POLICY", "Invalid sandbox command");
@@ -46,10 +51,12 @@ export interface SandboxPool {
 /** Provider-neutral admission and lifetime. Linux and remote providers implement the same port. */
 export async function createSandboxPool(input: SandboxPoolPolicy, backend: SandboxBackend): Promise<SandboxPool> {
   if (!/^[a-z0-9][a-z0-9-]{0,31}$/u.test(input.id) || !/^[a-z0-9][a-z0-9-]{0,63}$/u.test(backend.id)
-    || input.queueLimit !== undefined && (!Number.isSafeInteger(input.queueLimit) || input.queueLimit < 0)) throw fault("SANDBOX_POLICY", "Invalid sandbox pool policy");
+    || input.queueLimit !== undefined && (!Number.isSafeInteger(input.queueLimit) || input.queueLimit < 0)
+    || input.accept !== undefined && (!input.accept || typeof input.accept !== "object" || Array.isArray(input.accept)
+      || Object.entries(input.accept).some(([k, v]) => !["unenforcedResources", "bestEffortContainment"].includes(k) || typeof v !== "boolean"))) throw fault("SANDBOX_POLICY", "Invalid sandbox pool policy");
   const capacity = budget(input.capacity), defaults = budget({ ...DEFAULT_SANDBOX_RESOURCES, ...input.defaults });
   if (dimensions.some(k => defaults[k] > capacity[k])) throw fault("SANDBOX_POLICY", "Default sandbox exceeds the provider pool budget");
-  const policy = Object.freeze({ ...input, capacity, defaults });
+  const policy = Object.freeze({ ...input, capacity, defaults, ...(input.accept ? { accept: Object.freeze({ ...input.accept }) } : {}) });
   const queued: Request[] = [], active = new Set<Sandbox>(), starting = new Map<Request, Promise<void>>();
   const used = { cpuMillis: 0, memoryBytes: 0 };
   let closed = false, closing: Promise<void> | undefined, uncertain = false;
@@ -83,9 +90,10 @@ export async function createSandboxPool(input: SandboxPoolPolicy, backend: Sandb
       else { uncertain = true; request.reject(new SandboxCreationFault("unknown", identity)); }
       return;
     }
-    let effective: Readonly<SandboxResources>;
+    let effective: Readonly<SandboxResources>, guarantee: ReturnType<typeof enforcement>;
     try {
       effective = budget(environment.resources);
+      guarantee = enforcement(environment.enforcement);
       if (environment.receipt !== undefined && !validReceipt(environment.receipt, backend.id)
         || request.receipt && environment.receipt?.instanceId !== request.receipt.instanceId) throw Error();
       if (typeof environment.capabilities?.terminal !== "boolean" || environment.processLimits && (!positive(environment.processLimits.tasks) || !positive(environment.processLimits.fileDescriptorsPerProcess))) throw Error();
@@ -97,7 +105,7 @@ export async function createSandboxPool(input: SandboxPoolPolicy, backend: Sandb
     let ended = false, cleanup: Promise<void> | undefined;
     const executions = new Set<Promise<unknown>>();
     const sandbox: Sandbox = {
-      identity, resources: effective, capabilities: Object.freeze({ terminal: environment.capabilities.terminal }),
+      identity, resources: effective, enforcement: guarantee, capabilities: Object.freeze({ terminal: environment.capabilities.terminal }),
       ...(environment.receipt ? { receipt: Object.freeze({ backend: environment.receipt.backend, instanceId: environment.receipt.instanceId }) } : {}),
       ...(environment.processLimits ? { processLimits: Object.freeze({ tasks: environment.processLimits.tasks, fileDescriptorsPerProcess: environment.processLimits.fileDescriptorsPerProcess }) } : {}),
       async spawn(raw, onOutput) {
@@ -124,8 +132,13 @@ export async function createSandboxPool(input: SandboxPoolPolicy, backend: Sandb
     };
     active.add(sandbox);
     const mismatch = dimensions.some(k => effective[k] !== request.resources[k]);
-    if (closed || request.controller.signal.aborted || mismatch) {
-      try { await sandbox.close(); request.reject(fault(mismatch ? "SANDBOX_POLICY" : "SANDBOX_CLOSED", mismatch ? "Sandbox effective resources differ from the request" : "Sandbox creation was cancelled")); }
+    // A weaker guarantee is admitted only where the pool policy explicitly accepts it.
+    const weaker = guarantee.resources === "unenforced" && policy.accept?.unenforcedResources !== true
+      || guarantee.containment === "best-effort" && policy.accept?.bestEffortContainment !== true;
+    if (closed || request.controller.signal.aborted || mismatch || weaker) {
+      const reason = mismatch ? "Sandbox effective resources differ from the request"
+        : weaker ? "Sandbox backend guarantees less than this pool accepts" : "Sandbox creation was cancelled";
+      try { await sandbox.close(); request.reject(fault(mismatch || weaker ? "SANDBOX_POLICY" : "SANDBOX_CLOSED", reason)); }
       catch { uncertain = true; request.reject(fault("SANDBOX_CLEANUP", "Late sandbox cleanup is unverified; capacity retained")); }
     } else request.resolve(sandbox);
   };

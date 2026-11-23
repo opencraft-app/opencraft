@@ -2,6 +2,7 @@ import { readFile, mkdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseHeadlessArguments, startHeadlessServer } from '../../apps/headless-server/src/headless-application.mjs';
+import { validateHeadlessExtensions } from '../../apps/headless-server/src/headless-extensions.mjs';
 import { attachDshHost, readDshHostIdentity } from '../../apps/headless-server/src/server-deployment/dsh-host-client.mjs';
 import { readEngineHostIdentity } from '../../apps/headless-server/src/server-deployment/engine-host-client.mjs';
 import { observeExecutionHealth } from '../server-deployment/headless-gateway-application.mjs';
@@ -9,6 +10,8 @@ import { deploymentPaths, readPrivateToken } from './paths.mjs';
 import { openGatewayWorkspace } from './gateway-workspace.mjs';
 
 export async function startContainerGateway(composition = {}) {
+  // Malformed composition fails before any deployment owner is contacted.
+  validateHeadlessExtensions(composition.extensions);
   // This delivery attaches existing owners. It never starts an execution engine.
   const paths = deploymentPaths();
   // AccountCore (§5) is the only owner still reached through the shared run directory.
@@ -23,6 +26,9 @@ export async function startContainerGateway(composition = {}) {
   if (!home.startsWith('/')) throw new Error('Gateway home must be absolute');
   await mkdir(home, { recursive: true, mode: 0o700 });
   process.env.HOME = home;
+  // Codex stays on the workspace's own AppServer (Brain, reached through its endpoint) rather
+  // than the Gateway Engine Host: the bridge provider finds native Codex through the account
+  // Core, which here owns accounts only. OPENCRAFT_CODEX_BRIDGE has no effect in this delivery.
   // Brain and Hands owners are workspace endpoints, reached through the configured
   // provider; a missing or unready workspace fails startup like a missing owner did.
   const workspace = await openGatewayWorkspace({ dataDirectory: paths.dataDirectory });

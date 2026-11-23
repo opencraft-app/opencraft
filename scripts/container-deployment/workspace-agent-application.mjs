@@ -26,8 +26,11 @@ export async function serveAgentLink(agent, paths, env = process.env, { limits =
  * a Gateway restart never ends its children. Roles select which owners it runs; provider
  * differences stay in that composition. Any critical child failure ends the agent: the
  * container restarts with a new incarnation and upstream interrupted-turn recovery applies. */
+/** `ownerPrivileges` is a policy already validated by the composition (see
+ * hands-owner-privileges.mjs); `spawnOwner(command, args, options, { role })` replaces
+ * `child_process.spawn` for every child and receives each Hands owner's stable role. */
 export async function startWorkspaceAgent({ roles, startServices, env = process.env, signals = process,
-  root = resolve(dirname(fileURLToPath(import.meta.url)), '..') } = {}) {
+  root = resolve(dirname(fileURLToPath(import.meta.url)), '..'), ownerPrivileges, spawnOwner } = {}) {
   if (process.platform !== 'linux' || !['x64', 'arm64'].includes(process.arch))
     throw new Error('The native execution bundle requires matching Linux arm64 or amd64');
   // No roles: a bare workspace environment (control endpoint and provider link only).
@@ -35,13 +38,14 @@ export async function startWorkspaceAgent({ roles, startServices, env = process.
     throw new Error(`Select workspace agent roles from: ${Object.keys(WORKSPACE_AGENT_ROLES).join(', ')}`);
   const paths = deploymentPaths(env);
   await prepareAgentRunDirectory(paths.agentRunDirectory);
-  const agent = createWorkspaceAgentSupervisor({ runDirectory: paths.agentRunDirectory, incarnation: await createAgentIncarnation(), roles });
+  const agent = createWorkspaceAgentSupervisor({ runDirectory: paths.agentRunDirectory, incarnation: await createAgentIncarnation(), roles,
+    ...(spawnOwner ? { spawnProcess: spawnOwner } : {}) });
   const interrupt = () => void agent.stop(0, 'signal');
   signals.once('SIGINT', interrupt); signals.once('SIGTERM', interrupt);
   try {
     await agent.serveControl();
     const started = [];
-    for (const role of roles) started.push(await WORKSPACE_AGENT_ROLES[role].start(agent, { paths, root, env, startServices }));
+    for (const role of roles) started.push(await WORKSPACE_AGENT_ROLES[role].start(agent, { paths, root, env, startServices, ownerPrivileges }));
     agent.markReady();
     // The link opens only after every role is ready, so an attached Host sees a complete agent.
     await serveAgentLink(agent, paths, env);

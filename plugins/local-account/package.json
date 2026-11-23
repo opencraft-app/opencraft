@@ -10,6 +10,7 @@
     "./client": "./src/client.tsx",
     "./client-scope": "./src/client-scope.ts",
     "./connections": "./src/connections.ts",
+    "./login-page": "./src/login-page.ts",
     "./assets-server": "./src/assets-server.ts",
     "./password-hash": "./src/password-hash.ts",
     "./password-hash-node": "./src/password-hash-node.ts",

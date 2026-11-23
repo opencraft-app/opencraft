@@ -19,7 +19,9 @@ export async function startHandsTerminal(paths, { verify = true } = {}) {
   catch (error) { if (error.code !== 'EEXIST') throw error; }
   const token = await readPrivateToken(paths.terminalToken);
   const roots = await Promise.all([paths.runtimeDirectory, paths.codexProjectlessDirectory].map(path => realpath(path)));
-  return startTerminalPtyOwner(paths.terminalDirectory, paths.terminalEndpoint, { token, prepare: async (method, params, identity) => {
+  // A Host that pins an ENV issuer on attach launches through capsules opened
+  // here under this owner's reservation; other Hosts are unchanged.
+  return startTerminalPtyOwner(paths.terminalDirectory, paths.terminalEndpoint, { token, environmentLaunch: true, prepare: async (method, params, identity) => {
     if (method === 'process/threadScopes' && identity?.lifecycleAuthority === true) return identity;
     if (method === 'process/releaseThread' && identity?.lifecycleAuthority === true
       && typeof identity.scope?.hostId === 'string' && typeof identity.scope?.threadId === 'string') return identity;

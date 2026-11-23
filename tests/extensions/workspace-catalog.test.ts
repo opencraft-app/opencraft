@@ -4,6 +4,10 @@ import { mkdtemp, writeFile, chmod, symlink, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openAssetConfigurations, type AssetAdmission } from "@opencraft/plugin-assets/server";
+import { createAssetsStorage } from "@opencraft/plugin-assets/server/storage";
+import { InstalledWorkspaceCatalog } from "@opencraft/plugin-assets/server/workspace-catalog";
+import { ManagedNfsLibraries } from "@opencraft/plugin-assets/server/libraries";
+import { createHash } from "node:crypto";
 const resources = { cpuMillis: 4000, memoryBytes: 8 * 1024 ** 3 };
 const key = "synthetic-workspace-bootstrap-key";
 function access(admin = false): AssetAdmission {
@@ -187,6 +191,68 @@ test("legacy installation IDs outside the logical workspace contract remain edit
         templateId: "_legacy-template",
       }),
     );
+  } finally {
+    await owner.close();
+  }
+});
+
+test("a compiled Human identity adapter preserves a legacy library domain without weakening the default catalog or platform boundary", async (t) => {
+  const f = await delivery(t);
+  let adapter: InstalledWorkspaceCatalog | undefined,
+    expectedDomain="",
+    active = true;
+  const scope = "legacy-human:original-user";
+  const owner = await createAssetsStorage(f.directory, [], undefined, (context) => {
+    context.configurations.adoptInstallation(f.config, key);
+    const record = context.configurations.installedRuntime()!.records[0]!;
+    expectedDomain="scope-"+createHash("sha256").update(JSON.stringify([scope,"shared",record.credential.id,record.credential.generation])).digest("hex");
+    new ManagedNfsLibraries(context.vault).register(
+      {
+        id: "shared",
+        name: "Shared",
+        kind: "nfs",
+        managedBy: "e2b",
+        mountPath: "/shared",
+        credentialId: record.credential.id,
+        credentialGeneration: record.credential.generation,
+        volumeId: "fixture-volume",
+        environmentIds: [record.environment.id],
+        templateIds: [record.environment.templateId],
+        verifiedAt: "2026-11-22T00:00:00Z",
+      },
+      0,
+    );
+    adapter = new InstalledWorkspaceCatalog(context.configurations, {
+      isHumanScope: (value) => value === scope || value.startsWith("platform:"),
+    });
+    assert.throws(() => context.catalog.snapshot({ scope, current: () => true }));
+    return { methods: {}, async close() {} };
+  });
+  try {
+    assert.ok(adapter);
+    const context = { scope, current: () => active },
+      target = adapter.snapshot(context).environments[0]!.target;
+    const environment = adapter.resolveEnvironment(context, target),
+      source = adapter.resolveLibrary(context, environment, {
+        version: 1,
+        kind: "library-reference",
+        libraryId: "shared",
+        relativePath: "docs",
+      });
+    assert.equal(source.authorizationDomain,expectedDomain);
+    assert.throws(() => adapter!.snapshot({ scope: "platform:assistant-environments", current: () => true }));
+    assert.throws(() => adapter!.snapshot({ scope: "legacy-human:someone-else", current: () => true }));
+    const raw = { ...access(), scope };
+    await assert.rejects(owner.methods.workspaceCatalog(raw));
+    const runtime = adapter.runtime(context, environment);
+    assert.equal(await runtime.readSecret(), key);
+    const secret = owner.methods.snapshot({ ...access(true), scope });
+    assert.ok(!JSON.stringify(await secret).includes(key));
+    // The domain retains the exact selected legacy scope; it is not rebound to
+    // a new Actor partition merely because a compiled adapter was installed.
+    assert.equal(adapter.resolveLibrary(context,environment,{version:1,kind:"library-reference",libraryId:"shared",relativePath:"other"}).authorizationDomain,expectedDomain);
+    active = false;
+    await assert.rejects(runtime.readSecret());
   } finally {
     await owner.close();
   }

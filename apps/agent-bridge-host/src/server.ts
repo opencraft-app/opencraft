@@ -34,6 +34,7 @@ export async function attachGateway(host: BridgeHost, token: string, port = 0): 
           case '/events': result = await host.events(Number(url.searchParams.get('cursor') ?? 0)); break;
           case '/thread': result = await host.threadState(identifier(url.searchParams.get('serverId')), identifier(url.searchParams.get('threadId'))); break;
           case '/snapshot': result = await host.snapshot(); break;
+          case '/maintenance': result = await host.maintenance(); break;
           default: response.writeHead(404).end(); return;
         }
       } else if (request.method === 'POST') {
@@ -46,6 +47,7 @@ export async function attachGateway(host: BridgeHost, token: string, port = 0): 
           case '/script/run': result=await host.script(body);break;
           case '/command': result = await host.accept(body); break;
           case '/observe': result = await host.observe(body); break;
+          case '/queue': result = await host.queueRequest(body); break;
           case '/ack': result = await host.ack(Number(body.cursor)); break;
           case '/generation/add': result = await host.add(body as unknown as Generation); break;
           case '/generation/activate': result = await host.activate(identifier(body.id), typeof body.expected === 'string' ? body.expected : ''); break;
@@ -58,6 +60,8 @@ export async function attachGateway(host: BridgeHost, token: string, port = 0): 
     } catch (error) {
       const refusal = error as Error & { code?: number; kind?: string };
       const typed = typeof refusal.code === 'number' && typeof refusal.kind === 'string';
+      // The caller only learns to query custody; the operator sees why.
+      if (!typed) process.stderr.write(`host-request-refused:${request.url}:${String(refusal?.message ?? refusal).slice(0, 300)}\n`);
       response.writeHead(409, { 'content-type': 'application/json' }).end(JSON.stringify(typed
         ? { error: refusal.message, code: refusal.code, kind: refusal.kind }
         : { error: 'Host request refused; query the original commandId for custody' }));

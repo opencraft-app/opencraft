@@ -2,7 +2,8 @@ import type { Socket } from "node:net";
 
 export const OPENCRAFT_DAEMON_PROTOCOL_VERSION = 1 as const;
 // v3 requires native Human proof when account admission is configured.
-export const OPENCRAFT_DAEMON_BUILD_ID = "opencraft-daemon-v3" as const;
+// v4 moves the desktop account service into the daemon (account/attach).
+export const OPENCRAFT_DAEMON_BUILD_ID = "opencraft-daemon-v4" as const;
 export const MAX_DAEMON_FRAME_BYTES = 64 * 1024 * 1024;
 
 export interface DaemonStorageSummary {
@@ -27,7 +28,10 @@ export type DaemonClientMessage =
       readonly humanSession?: string;
     }
   | { readonly type: "app-host/message"; readonly payload: unknown }
-  | { readonly type: "daemon/shutdown" };
+  | { readonly type: "daemon/shutdown" }
+  /** Native Main serves the renderer at `origin` and forwards account routes to the daemon. */
+  | { readonly type: "account/attach"; readonly origin: string }
+  | { readonly type: "account/open-remote-result"; readonly id: string; readonly ok: boolean };
 
 export type DaemonServerMessage =
   | {
@@ -45,7 +49,11 @@ export type DaemonServerMessage =
       readonly code: string;
       readonly message: string;
     }
-  | { readonly type: "daemon/shutting-down" };
+  | { readonly type: "daemon/shutting-down" }
+  /** Private proof and native session for Main's cookies, and the account route endpoint. */
+  | { readonly type: "account/attached"; readonly browserProof: string; readonly sessionToken: string; readonly endpoint: string }
+  /** The account service asks native Main to open a remote server window. */
+  | { readonly type: "account/open-remote"; readonly id: string; readonly origin: string };
 
 export function isDaemonClientHello(value: unknown): value is Extract<DaemonClientMessage, { type: "daemon/hello" }> {
   if (typeof value !== "object" || value === null) return false;

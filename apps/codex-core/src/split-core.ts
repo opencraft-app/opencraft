@@ -1,8 +1,9 @@
 import { ACCOUNT_CORE_STATE_MAX_BYTES } from "./account-core-limits.mjs";
+import { personalSubscriptionRoute, personalSubscriptionTarget } from "./personal-subscription-route.js";
 import { realpath } from "node:fs/promises";
 import { Readable } from 'node:stream';
 import { dirname, isAbsolute, join } from "node:path";
-import { accountFailure, classifyAccountFailure, logAccountFailure, acquireCodexWriter, CODEX_CORE_PROTOCOL_VERSION, CodexAccountService, CodexCoreControlClient } from "@opencraft/account-pool-host";
+import { accountFailure, classifyAccountFailure, logAccountFailure, acquireCodexWriter, CODEX_CORE_PROTOCOL_VERSION, CodexAccountService, CodexCoreControlClient, codexNativeSocket } from "@opencraft/account-pool-host";
 import type { CodexCoreOptions } from "./main.js";
 import { readControlJson, startControlServer } from "./control-server.js";
 import { AccountCoreOwner, type AccountOwnerExpectation } from "./account-owner.js";
@@ -88,12 +89,13 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
           });
         } catch { return { status: 409, value: { error: "Account Core handoff rejected" } }; }
       }
-      if(/^\/personal\/[a-f0-9]{64}\/v1\/(responses|models)$/.test(request.url??'')) {
+      const personalRoute=personalSubscriptionRoute(request.url);
+      if(personalRoute) {
         if(!owner.isOpen()||!accounts)return new Response(null,{status:503});
         const headers=new Headers();
         headers.set('authorization','Bearer '+String(request.headers['x-opencraft-subscription-token']??''));
         if(request.headers['content-type'])headers.set('content-type',request.headers['content-type']);
-        return fetch(`http://127.0.0.1:${options.proxyPort}${request.url}`,{method:request.method,headers,
+        return fetch(personalSubscriptionTarget(`http://127.0.0.1:${options.proxyPort}`,personalRoute),{method:request.method,headers,
           ...(request.method==='GET'?{}:{body:Readable.toWeb(request),duplex:'half'})} as RequestInit);
       }
       if (request.method === "GET" && request.url === "/launch") {
@@ -145,6 +147,6 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
     });
     // A listening account plane can bootstrap the runtime before health becomes ready.
     return { endpoint: options.endpoint, health: { protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid,
-      codexPid: 0, nativeSocket: options.appServerEndpoint ? join(dirname(options.appServerEndpoint), "native.sock") : "" }, close };
+      codexPid: 0, nativeSocket: options.appServerEndpoint ? codexNativeSocket(options.appServerEndpoint) : "" }, close };
   } catch (error) { await close(); throw error; }
 }

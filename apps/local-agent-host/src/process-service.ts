@@ -41,6 +41,12 @@ export class HostProcessService {
   private readonly sessions = new Map<string, Session>();
   private readonly listeners = new Set<(method: string, params: unknown) => void>();
   private closed = false;
+  /** PTYs whose process is still running; exited sessions only keep replay. */
+  get runningCount(): number {
+    let running = 0;
+    for (const session of this.sessions.values()) if (session.phase === "running") running++;
+    return running;
+  }
   subscribe(listener: (method: string, params: unknown) => void) {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };

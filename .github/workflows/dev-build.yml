@@ -1,0 +1,159 @@
+name: Dev build
+
+# Self-test builds of any branch: every app from one commit, as Actions
+# artifacts. No tag, release, signing secret or store upload. The Android APK
+# uses the development key and dev.opencraft.workbench and macOS builds the
+# ad-hoc signed Preview app, so both install beside the published apps; Linux,
+# Windows and the iOS IPA are unsigned. Releases are the App release workflow's job.
+on:
+  workflow_dispatch:
+    inputs:
+      desktop:
+        description: Build Linux, Windows and macOS (Apple Silicon Preview) desktop packages
+        type: boolean
+        default: true
+      mobile:
+        description: Build the Android development APK and the unsigned iOS IPA
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: dev-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  OPENCRAFT_BUILD_ID: dev-${{ github.run_number }}-${{ github.sha }}
+  OPENCRAFT_SOURCE_REVISION: ${{ github.sha }}
+
+jobs:
+  linux:
+    if: inputs.desktop
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - uses: ./.github/actions/owned-electron
+        with:
+          run-id: ${{ vars.OPENCRAFT_ELECTRON_ARTIFACT_RUN_ID }}
+          target: linux-x64
+          kind: desktop
+      - run: npm run package:electron:linux:x64:appimage
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: opencraft-dev-linux-x64-${{ github.sha }}
+          path: apps/desktop/release/*.AppImage
+          if-no-files-found: error
+          retention-days: 14
+
+  windows:
+    if: inputs.desktop
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      OPENCRAFT_ELECTRON_STOCK_DESKTOP: '1'
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Run npm scripts with Git Bash on Windows
+        # Package scripts set variables POSIX-style (NAME=value command),
+        # which cmd.exe, npm's default Windows script shell, cannot run.
+        run: echo 'npm_config_script_shell=C:/Program Files/Git/bin/bash.exe' >> "$GITHUB_ENV"
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build:electron:release
+      - name: Package with stock Electron
+        run: npm run package:win:x64 --workspace @opencraft/desktop
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: opencraft-dev-windows-x64-${{ github.sha }}
+          path: |
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  macos:
+    if: inputs.desktop
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: test "$(uname -m)" = arm64
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build:electron:release
+      # The ad-hoc signed Preview app (app.opencraft.desktop.preview) opens on
+      # Apple Silicon and installs beside the published OpenCraft.
+      - name: Package the macOS Preview app
+        env:
+          OPENCRAFT_ELECTRON_STOCK_DESKTOP: '1'
+        run: npm run package:mac:arm64:preview --workspace @opencraft/desktop
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: opencraft-dev-macos-arm64-${{ github.sha }}
+          path: apps/desktop/release/preview/OpenCraft-Preview-*-mac-arm64.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  android:
+    if: inputs.mobile
+    uses: ./.github/workflows/android-internal-apk.yml
+
+  ios:
+    if: inputs.mobile
+    uses: ./.github/workflows/ios-unsigned-ipa.yml
+
+  summary:
+    needs: [linux, windows, macos, android, ios]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Describe the self-test build
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          {
+            echo "## OpenCraft dev build $OPENCRAFT_BUILD_ID"
+            echo
+            echo "Branch \`$REF_NAME\` at \`$OPENCRAFT_SOURCE_REVISION\`. Download the artifacts from [this run]($RUN_URL)."
+            echo
+            echo '| Platform | Result |'
+            echo '|---|---|'
+            jq -r 'to_entries[] | "| \(.key) | \(.value.result) |"' <<<"$RESULTS"
+            echo
+            cat <<'NOTES'
+          - Android: the development app `dev.opencraft.workbench`, installs beside the published app.
+          - macOS: OpenCraft Preview, ad-hoc signed and separate from OpenCraft; open it with right-click > Open the first time.
+          - Windows: unsigned; SmartScreen asks before the first launch.
+          - iOS: unsigned; sign it with your own Apple ID (AltStore, SideStore), or use the TestFlight internal group.
+          NOTES
+          } >> "$GITHUB_STEP_SUMMARY"
+          # The run fails when any selected platform failed.
+          jq -e 'all(.[]; .result == "success" or .result == "skipped")' <<<"$RESULTS" >/dev/null

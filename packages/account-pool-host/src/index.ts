@@ -22,3 +22,11 @@ export * from "./model-gateway-http.js";
 export * from "./model-gateway-connection.js";
 
 export * from "./account-diagnostics.js";
+export {
+  codexNativeListenArgs,
+  codexNativeListener,
+  codexNativeSocket,
+  isNamedPipe,
+  openCodexNativeSocket,
+  rememberCodexNativeToken,
+} from "./codex-native-endpoint.js";

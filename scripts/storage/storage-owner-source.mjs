@@ -45,7 +45,8 @@ export function assertOwnerCoverage(root, stores, directories = ['apps', 'packag
   const known = new Map(stores.map(store => [store.id, store.owner]));
   function scan(relative) {
     for (const entry of readdirSync(join(root, relative), { withFileTypes: true })) {
-      if (['node_modules', 'dist', 'build', '.runtime', '.git', 'tests', '__tests__'].includes(entry.name)) continue;
+      // Build output (dist, dist-host, dist-electron, ...) is ignored by Git and never an owner.
+      if (['node_modules', 'dist', 'build', '.runtime', '.git', 'tests', '__tests__'].includes(entry.name) || entry.name.startsWith('dist-')) continue;
       const path = relative + '/' + entry.name;
       if (entry.isDirectory()) { scan(path); continue; }
       if (!/\.(ts|mjs)$/.test(entry.name) || path.startsWith('packages/storage-node/src/server/') || path === 'packages/sqlite-node/src/lifecycle.ts') continue;

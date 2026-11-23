@@ -70,8 +70,8 @@ to select linted files, including lazy plugins supplied by a trusted factory.
 ## Formal release performance regression gate
 
 `npm run gate:performance` runs the repeatable browser suite independently of
-ordinary builds and deployment. Only `.github/workflows/release.yml` invokes it
-automatically, in preflight before packaging/publication. Daily server deployment
+ordinary builds and deployment. Only `.github/workflows/app-release.yml` invokes it
+automatically, for stable `vX.Y.Z` releases, before staging and publication. Daily server deployment
 and normal PR/build workflows do not invoke this suite. Existing startup resource
 budgets still run as part of release builds; `check:startup:cache` retains its
 existing separate owner and gate.
@@ -182,6 +182,11 @@ error annotation naming the scenario, metric, quantile, baseline, actual,
 percentage/millisecond change and budget; a measurement or behavior failure also
 emits an error and blocks publication. The baseline is never updated by release
 CI. Daily deployment and normal build gates remain outside this full suite.
+`.github/workflows/performance.yml` owns the suite's CI job: the stable App
+release calls it before staging, and it also runs nightly on `main` (and on
+manual dispatch) with the same retained evidence. A behavior check or workload
+that drifts with the product therefore fails within a day instead of at the
+next stable release.
 
 ## Shared portrait and footer correction (2026-11-16)
 

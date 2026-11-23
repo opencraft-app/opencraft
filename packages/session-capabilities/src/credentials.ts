@@ -66,3 +66,10 @@ export function hostGitToken(key: Buffer, source: {serverId:string;threadId:stri
  const payload=Buffer.from(JSON.stringify(['host-git',source.serverId,source.threadId,parseHostGitSource(source.source)])).toString('base64url');
  return payload+'.'+createHmac('sha256',key).update(payload).digest('base64url');
 }
+/** Separate same-UID audience for an opaque ENV capsule request. Possessing a
+ * Git handoff token never requests ENV, and this token never reads Git. */
+export function hostEnvironmentToken(key: Buffer, source: {serverId:string;threadId:string;source:HostGitSource}):string {
+ if(key.length!==32||[source.serverId,source.threadId].some(v=>typeof v!=='string'||!v||v.length>512||/[\x00-\x1f\x7f]/u.test(v)))throw Error('environment_launch_unavailable');
+ const payload=Buffer.from(JSON.stringify(['host-environment',source.serverId,source.threadId,parseHostGitSource(source.source)])).toString('base64url');
+ return payload+'.'+createHmac('sha256',key).update(payload).digest('base64url');
+}

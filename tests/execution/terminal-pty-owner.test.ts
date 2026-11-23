@@ -185,3 +185,26 @@ test('owner shutdown drains background session jobs before releasing its writer'
   try {const raw=await readFile(`/proc/${pid}/stat`,'utf8');assert.match(raw.slice(raw.lastIndexOf(')')+2),/^[ZX] /);}
   catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
 });
+
+test('the owner leaves once no Host is attached and no PTY runs, but never while a PTY runs', { skip: process.platform === 'win32' }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'pty-owner-idle-')), location = await terminalOwnerLocation(directory);
+  let idle = 0;
+  const stop = await startTerminalPtyOwner(location.directory, location.endpoint, { idleMs: 200, onIdle: () => { idle++; } });
+  let service = new DurableHostProcessService(directory);
+  t.after(async () => { service.close(); await stop(); await rm(directory, { recursive: true, force: true }); await rm(join(location.endpoint, '..'), { recursive: true, force: true }); });
+  await service.dispatch('process/spawn', spawnParams('idle', ['/bin/sh', '-c', 'printf READY; read line']));
+  const attach = async () => await service.dispatch('process/attach', { processHandle: 'idle', afterSequence: 0 }) as any;
+  await until(attach, snap => decode(snap).includes('READY'));
+  // Host gone, PTY still running: the owner stays.
+  service.close();
+  await new Promise(resolve => setTimeout(resolve, 600));
+  assert.equal(idle, 0);
+  service = new DurableHostProcessService(directory);
+  await service.dispatch('process/kill', { processHandle: 'idle' });
+  await until(attach, snap => snap.phase === 'exited');
+  // A Host still attached keeps it as well.
+  await new Promise(resolve => setTimeout(resolve, 600));
+  assert.equal(idle, 0);
+  service.close();
+  await until(async () => idle, count => count === 1);
+});

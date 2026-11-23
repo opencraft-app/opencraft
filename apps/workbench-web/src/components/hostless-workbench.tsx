@@ -13,7 +13,7 @@ import { ApplicationRouteMotion, useApplicationDesktopBackdrop } from "./applica
 import { ScheduledTaskCatalogContext, type ScheduledTaskCatalog } from "../runtime/scheduled-task-catalog-context";
 import { useIntl } from "@opencraft/i18n/react";
 import { mobileContainer, reloadMobileWorkbench } from "../runtime/mobile-container";
-import { mobileConnectionMessages } from "./mobile-connection-messages";
+import { MobileWorkbenchWelcome } from "./mobile-workbench-welcome";
 import { groupWorkInMachines } from "../runtime/work-in-presentation";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { PlatformViewHost } from "@opencraft/extension-react";
@@ -60,7 +60,6 @@ import {
 } from "./app-shell-route-regions";
 import { Sidebar } from "./sidebar";
 import { ApplicationsSidebarFrame } from "./applications-sidebar";
-import { Button } from "./ui/button";
 import { useResponsiveSidebarDock } from "./use-responsive-sidebar-dock";
 import { usePersistedSidebarWidth } from "./use-persisted-sidebar-width";
 
@@ -433,21 +432,19 @@ export function HostlessWorkbench({
                 {extensionProjection.activeViewNode}
               </RouteViewStack>
             ) : (
-              <div className={!mobileContainer() && !extensionProjection.emptyWorkbenchNode ? "web-first-use-stage" : "hostless-workbench__empty-stage"}>
-                {extensionProjection.emptyWorkbenchNode ?? <section className={mobileContainer() ? "hostless-empty-view" : "web-first-use-view"}>
-                  {mobileContainer() ? <>
-                    <h1>{intl.formatMessage(mobileConnectionMessages.title)}</h1>
-                    <p>{intl.formatMessage(mobileConnectionMessages.description)}</p>
-                    <div className="hostless-empty-view__connection-actions">
-                      <Button variant="primary" onClick={() => openSettings("mobile-connection")}>{intl.formatMessage(mobileConnectionMessages.title)}</Button>
-                      <Button variant="secondary" onClick={() => openSettings()}>{intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}</Button>
-                    </div>
-                  </> : <>
+              <div className={extensionProjection.emptyWorkbenchNode ? "hostless-workbench__empty-stage" : "web-first-use-stage"}>
+                {extensionProjection.emptyWorkbenchNode ?? (mobileContainer() ? (
+                  <MobileWorkbenchWelcome
+                    onConnect={() => openSettings("mobile-connection")}
+                    onExplore={() => openSettings("appearance")}
+                  />
+                ) : (
+                  <section className="web-first-use-view">
                     <WelcomeChoices localStartCommand="npm run dev:local" onConnectServer={async (origin, signal) => {
                       if (!signal.aborted) window.location.assign(origin);
                     }} />
-                  </>}
-                </section>}
+                  </section>
+                ))}
               </div>
             )}
             </ApplicationRouteMotion>

@@ -1,4 +1,5 @@
 import { DesktopServerConnections } from './desktop-server-connections.js';
+import { codexBridgeStackEnabled } from './codex-bridge-default.js';
 import { CONNECT_DESKTOP_SERVER, isDesktopServerConnectMessage } from '@opencraft/app-host-protocol/desktop-server';
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
@@ -34,13 +35,22 @@ import { SqliteClientResources } from "@opencraft/document-storage/client-resour
 import { createDesktopClientResourcePort } from "./client-resource-port.js";
 import { DesktopConnectorConfigurationStore } from "./connector-configuration-store.js";
 import { SqliteDocumentStore as DesktopExtensionDataStore } from "@opencraft/document-storage/sqlite";
+import type { BorrowedDatabase } from "@opencraft/sqlite-node";
+import { openDesktopClientStorage } from "./desktop-client-import.js";
+import { createAccountRouteProxy } from "./account-route-proxy.js";
 import { registerExtensionDataIpc } from "./extension-data-ipc.js";
 import { workbenchWindowMetrics } from "@opencraft/workbench-runtime/window-metrics";
 import { browserMetadataKeys as browserMetadataIdentity, normalizeBrowserMetadata } from "@opencraft/workbench-runtime/browser-metadata-identity";
-import { resolveCodexExecutable } from "./codex-executable.js";
+import { resolveCodexLaunch } from "./codex-executable.js";
+
+/** The bundled Codex is the builtin source; record where the started Codex actually came from. */
+function codexLaunchOptions(launch: Awaited<ReturnType<typeof resolveCodexLaunch>>) {
+  if (app.isPackaged && launch.source !== "builtin" && launch.source !== "explicit") {
+    console.warn(`[opencraft codex] The bundled Codex is unavailable; starting a ${launch.source} Codex instead`);
+  }
+  return { codexExecutable: launch.executable, codexExecutableSource: launch.source };
+}
 import { remoteServerOrigin } from '@opencraft/plugin-local-account/connections';
-import { createDesktopAccountHost } from '@opencraft/plugin-local-account/desktop';
-import { humanLoginPage } from '@opencraft/headless-server/human-login-page';
 
 import {
   BrowserWindow,
@@ -65,6 +75,7 @@ import {
 } from "@opencraft/headless-server/serve-workbench-static";
 import {
   OpenCraftDaemonClientManager,
+  type DesktopAccountAttachment,
   type OpenCraftDaemonAppHostConnection,
 } from "./daemon-client.js";
 
@@ -91,11 +102,12 @@ let browserGuests: ReturnType<typeof installBrowserGuests> | null = null;
 let browserPermissions!: BrowserPermissionPolicy;
 let tray: Tray | null = null;
 let loopbackHost: WorkbenchStaticServer | null = null;
-let localAccountHost: Awaited<ReturnType<typeof createDesktopAccountHost>> | null = null;
+let accountAttachment: DesktopAccountAttachment | null = null;
 let rendererOrigin: string | null = null;
 let daemonManager: OpenCraftDaemonClientManager | null = null;
 const daemonBridges = new Set<{ close(): void }>();
 let sqliteDebugReader!: SqliteDebugReader;
+let desktopClientStorage!: BorrowedDatabase;
 let uiPreferences!: DesktopUiPreferenceStore;
 let clientResourceStore: SqliteClientResources | undefined;
 const desktopLocale = createDesktopLocaleRuntime();
@@ -119,9 +131,9 @@ ipcMain.on(CONNECT_DESKTOP_SERVER, (event, value: unknown) => {
   void desktopServers.connect(value, event.ports[0]!);
 });
 let connectorConfiguration: DesktopConnectorConfigurationStore | null = null;
-const connectorStore = () => connectorConfiguration ??= new DesktopConnectorConfigurationStore(join(desktopPaths.userDataDirectory, "opencraft-connectors.sqlite"));
+const connectorStore = () => connectorConfiguration ??= new DesktopConnectorConfigurationStore(desktopClientStorage);
 let extensionData: DesktopExtensionDataStore | null = null;
-registerExtensionDataIpc(() => extensionData ??= new DesktopExtensionDataStore(join(desktopPaths.userDataDirectory, "opencraft-extensions.sqlite")), trustedLoginCaller);
+registerExtensionDataIpc(() => extensionData ??= new DesktopExtensionDataStore(desktopClientStorage), trustedLoginCaller);
 let desktopProductSession: DesktopProductSession | null = null;
 let desktopProductReady = false;
 const pendingProductUrls: string[] = [];
@@ -168,7 +180,9 @@ async function initializeDesktopProfile(paths: DesktopDirectoryPlan): Promise<vo
     return { allow: result.response === 1, remember: result.checkboxChecked };
   });
   sqliteDebugReader = new SqliteDebugReader(paths.dshDataDirectory);
-  uiPreferences = new DesktopUiPreferenceStore(join(paths.userDataDirectory, "opencraft-ui.sqlite"));
+  // One client-role database; earlier standalone files are merged into it on first start.
+  desktopClientStorage = openDesktopClientStorage(paths.userDataDirectory);
+  uiPreferences = new DesktopUiPreferenceStore(desktopClientStorage);
   // The product may register the login callback during activation.
   await registerDesktopBundle().catch(error => console.error("[opencraft protocol] LaunchServices registration failed:", error));
   desktopProductSession = activateDesktopProduct(createDesktopProduct, {
@@ -285,7 +299,7 @@ ipcMain.handle("opencraft:ui-preference-load", (event, key: unknown) => {
   return uiPreferences.load(key);
 });
 function clientResources() {
-  return clientResourceStore ??= new SqliteClientResources(join(desktopPaths.userDataDirectory, "opencraft-client-resources.sqlite"));
+  return clientResourceStore ??= new SqliteClientResources(desktopClientStorage);
 }
 const clientResourcePort = createDesktopClientResourcePort(clientResources);
 ipcMain.handle("opencraft:client-resource-read", (event, key) => {
@@ -575,24 +589,52 @@ async function openRemoteWindow(input: string, primary = false): Promise<void> {
 
 async function ensureLoopbackHost(): Promise<string> {
   if (rendererOrigin !== null) return rendererOrigin;
-  localAccountHost = await createDesktopAccountHost(join(desktopPaths.userDataDirectory, 'human-account'), humanLoginPage, { openRemote: origin => openRemoteWindow(origin) });
+  // The daemon owns the Server database and the account service; Main serves the
+  // renderer, forwards account routes to the daemon and holds the cookies.
+  if (!daemonManager) throw new Error('OpenCraft Daemon is not configured');
+  await daemonManager.ensureStarted();
   try {
     loopbackHost = await createWorkbenchStaticServer({
       root: rendererRoot(),
-      accountService: localAccountHost,
+      accountService: createAccountRouteProxy(() => accountAttachment?.endpoint ?? null),
     });
     const address = await loopbackHost.listen({ host: "127.0.0.1", port: 0 });
     rendererOrigin = `http://127.0.0.1:${address.port}`;
-    localAccountHost.setOrigin(rendererOrigin);
-    await session.defaultSession.cookies.set({ url: rendererOrigin, name: 'oc_desktop_owner', value: localAccountHost.browserProof,
-      httpOnly: true, sameSite: 'strict', path: '/' });
-    await session.defaultSession.cookies.set({ url: rendererOrigin, name: 'oc_human', value: localAccountHost.browserSessionToken,
-      httpOnly: true, sameSite: 'lax', path: '/' });
+    await attachDesktopAccount(rendererOrigin);
     return rendererOrigin;
   } catch (error) {
-    await loopbackHost?.close().catch(() => {}); loopbackHost = null;
-    await localAccountHost.close(); localAccountHost = null; rendererOrigin = null;
+    accountAttachment?.close(); accountAttachment = null;
+    await loopbackHost?.close().catch(() => {}); loopbackHost = null; rendererOrigin = null;
     throw error;
+  }
+}
+
+/** Attach to the daemon's account service and install its proof and session as cookies. */
+async function attachDesktopAccount(origin: string): Promise<void> {
+  if (!daemonManager) throw new Error('OpenCraft Daemon is not configured');
+  const attachment = await daemonManager.attachAccount(origin, remote => openRemoteWindow(remote));
+  try {
+    await session.defaultSession.cookies.set({ url: origin, name: 'oc_desktop_owner', value: attachment.browserProof,
+      httpOnly: true, sameSite: 'strict', path: '/' });
+    await session.defaultSession.cookies.set({ url: origin, name: 'oc_human', value: attachment.sessionToken,
+      httpOnly: true, sameSite: 'lax', path: '/' });
+  } catch (error) { attachment.close(); throw error; }
+  accountAttachment?.close();
+  accountAttachment = attachment;
+  // A restarted daemon issues a new browser proof; reattach and refresh the cookies.
+  attachment.subscribeClose(() => {
+    if (accountAttachment !== attachment) return;
+    accountAttachment = null;
+    void reattachDesktopAccount(origin);
+  });
+}
+
+async function reattachDesktopAccount(origin: string): Promise<void> {
+  for (let attempt = 0; !lifecycle.quitting && rendererOrigin === origin && accountAttachment === null; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, Math.min(5_000, 250 * 2 ** attempt)));
+    if (lifecycle.quitting || rendererOrigin !== origin || accountAttachment !== null) return;
+    try { await attachDesktopAccount(origin); return; }
+    catch (error) { console.error("[opencraft account] reattach failed", error instanceof Error ? error.message : String(error)); }
   }
 }
 
@@ -743,6 +785,7 @@ const lifecycle = new DesktopLifecycle({
     clientResourceStore?.close();
     connectorConfiguration?.close();
     extensionData?.close();
+    desktopClientStorage.database.close();
     const productErrors: unknown[] = [];
     try { desktopProductSession?.dispose(); } catch (error) { productErrors.push(error); }
     desktopProductSession = null;
@@ -755,9 +798,10 @@ const lifecycle = new DesktopLifecycle({
     daemonManager = null;
     loopbackHost = null;
     rendererOrigin = null;
+    const attachment = accountAttachment;
+    accountAttachment = null;
+    attachment?.close();
     const results = await Promise.allSettled([daemon?.shutdown(), loopback?.close()]);
-    try { await localAccountHost?.close(); } catch (error) { productErrors.push(error); }
-    localAccountHost = null;
     // Private storage writes are persisted in the background; finish them before exit.
     for (const storage of [productStorage, speechPreferences, browserMetadata]) {
       try { await storage?.flush(); } catch (error) { productErrors.push(error); }
@@ -825,16 +869,24 @@ async function bootstrap(): Promise<void> {
     },
     modelStorageDirectory: process.env.OPENCRAFT_MODEL_STORAGE_DIRECTORY?.trim() || desktopPaths.productHomeDirectory,
     skillsDirectory: process.env.OPENCRAFT_SKILLS_DIRECTORY?.trim() || join(desktopPaths.productHomeDirectory, "skills"),
-    codexExecutable: await resolveCodexExecutable({
+    ...codexLaunchOptions(await resolveCodexLaunch({
       explicit: process.env.OPENCRAFT_CODEX_EXECUTABLE,
       bundled: app.isPackaged
         ? join(process.resourcesPath, `runtime/codex-${process.arch}/bin`, process.platform === "win32" ? "codex.exe" : "codex")
         : null,
       path: process.env.PATH,
       homeDirectory: homedir(),
-    }),
+    })),
     codexDataDirectory: desktopPaths.codexDataDirectory,
     nativeCodexHomeDirectory: process.env.CODEX_HOME?.trim() || join(homedir(), ".codex"),
+    // Codex through the daemon's bridge stack: default on macOS/Linux (`OPENCRAFT_CODEX_BRIDGE=0`
+    // returns to the legacy adapter), opt-in on Windows until verified on real machines.
+    ...(codexBridgeStackEnabled(process.platform, process.env.OPENCRAFT_CODEX_BRIDGE) ? {
+      codexBridgeStack: app.isPackaged
+        ? join(process.resourcesPath, "runtime/codex-bridge")
+        // Source runs only: drills substitute a programs copy whose Core talks to a local model.
+        : process.env.OPENCRAFT_CODEX_BRIDGE_PROGRAMS?.trim() || join(app.getAppPath(), "../opencraft-daemon/dist/codex-bridge"),
+    } : {}),
     executable: process.execPath,
   });
   let localeOverride: unknown;

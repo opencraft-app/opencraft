@@ -54,4 +54,4 @@ hook 能力。补查约 10 分钟，未修改全局配置：本机用户 hooks �
 SDK 活动 Run.steer 提供 complete_delivered / revert_to_followup 的逐条结果；CLI 的
 已验证接口没有暴露这份契约。本轮只将 complete_delivered 记为 SDK 交付，不以本地
 recordUserMessage 或模型回答证明上下文。revert 明确 rejected，告诉用户未插入当前轮，
-不自动排入下一轮。[最终 SDK 验收](../../apps/cursor-bridge/VALIDATION.md)单独记录。
+不自动排入下一轮。SDK 契约的决策见 [Cursor bridge](../../apps/cursor-bridge/README.md#design-decisions-and-known-limits)。

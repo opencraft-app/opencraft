@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a96d0769-7b5b-4929-b27c-6ea37c43a321",
+  "id": "f936baea-a34f-47fa-92c5-af77b0020aba",
   "prevId": "8a91bd79-52dd-4676-80ac-de5069f2c708",
   "tables": {
     "access_audit": {
@@ -124,6 +124,71 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
+    },
+    "account_model_defaults": {
+      "name": "account_model_defaults",
+      "columns": {
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "host_id": {
+          "name": "host_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "format": {
+          "name": "format",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "selection": {
+          "name": "selection",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "account_model_defaults_actor_id_host_id_pk": {
+          "columns": [
+            "actor_id",
+            "host_id"
+          ],
+          "name": "account_model_defaults_actor_id_host_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "account_model_defaults_revision": {
+          "name": "account_model_defaults_revision",
+          "value": "revision > 0"
+        }
+      }
     },
     "account_setup": {
       "name": "account_setup",
@@ -3305,102 +3370,6 @@
         "creation_receipt_state": {
           "name": "creation_receipt_state",
           "value": "(\n    (state = 'claimed' AND thread_id IS NULL) OR\n    (state IN ('created', 'submitted', 'first_rejected') AND thread_id IS NOT NULL) OR\n    (state = 'rejected' AND thread_id IS NULL)\n  ) AND (\n    (state = 'rejected' AND rejection_status IS NOT NULL AND rejection_code IS NOT NULL) OR\n    (state <> 'rejected' AND rejection_status IS NULL AND rejection_code IS NULL)\n  )"
-        }
-      }
-    },
-    "conversation_resource_imports": {
-      "name": "conversation_resource_imports",
-      "columns": {
-        "source": {
-          "name": "source",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "sha256": {
-          "name": "sha256",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "rows": {
-          "name": "rows",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "imported_at": {
-          "name": "imported_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "conversation_resources": {
-      "name": "conversation_resources",
-      "columns": {
-        "host_id": {
-          "name": "host_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "generation": {
-          "name": "generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "pending": {
-          "name": "pending",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "conversation_resources_host_id_thread_id_pk": {
-          "columns": [
-            "host_id",
-            "thread_id"
-          ],
-          "name": "conversation_resources_host_id_thread_id_pk"
-        }
-      },
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "conversation_resource_row": {
-          "name": "conversation_resource_row",
-          "value": "length(host_id) BETWEEN 1 AND 1024\n    AND length(thread_id) BETWEEN 1 AND 1024\n    AND state IN ('active', 'archived', 'deleted')\n    AND generation >= 1\n    AND json_valid(pending) AND json_type(pending) = 'array'"
         }
       }
     },

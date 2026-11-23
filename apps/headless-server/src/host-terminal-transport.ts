@@ -7,33 +7,79 @@ import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 import { OPENCRAFT_METHOD_ACCESS_EXTENSION } from '@opencraft/appserver-protocol';
 import type { DuplexTransport, TransportSubmissionContext } from '@opencraft/appserver-client';
 import type { EnvironmentExecutionScope, ExecutionEnvironmentRuntime } from '@opencraft/execution-environment';
+import type { EnvironmentLaunchContextV2, EnvironmentLaunchTarget } from '@opencraft/execution-environment/environment-delivery';
 
 export const HOST_TERMINAL_METHODS = ['process/spawn', 'process/attach', 'process/list', 'process/writeStdin', 'process/resizePty', 'process/kill'] as const;
 const methods = new Set<string>(HOST_TERMINAL_METHODS);
 const object = (value: unknown): Record<string, any> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {};
 export type HostTerminalScope = EnvironmentExecutionScope & { readonly actorId?: string };
 
-/** One private Hands client per Host. Engine switching never changes the PTY owner. */
-export function createHandsTerminalService(options: { directory: string; endpoint: string; tokenFile: string; environment?: ExecutionEnvironmentRuntime }) {
+/** The vault owner's port for terminal launches: the Actor epoch a reservation
+ * is admitted under, and an opaque capsule sealed for the terminal owner's
+ * receiver. Nothing either returns contains a value. */
+export interface HostTerminalEnvironmentLaunch {
+  readonly issuer: string;
+  seal(target: EnvironmentLaunchTarget, context: EnvironmentLaunchContextV2): Promise<string>;
+  terminalActor(account: string): Promise<{ account: string; actorGeneration: number; membershipRevision: number } | null>;
+}
+const requestedEnvironment = (raw: unknown) => {
+  const requested = object(raw).env, env: Record<string, string> = {};
+  if (requested != null && (typeof requested !== 'object' || Array.isArray(requested))) throw new Error('Invalid terminal environment');
+  for (const [key, value] of Object.entries(object(requested))) {
+    validateEnvironmentName(key);
+    if (value !== null && typeof value !== 'string') throw new Error('Invalid terminal environment');
+    if (typeof value === 'string') env[key] = value;
+  }
+  return env;
+};
+
+/** One private Hands client per Host. Engine switching never changes the PTY owner.
+ * With `environmentLaunch` the terminal owner is the ENV receiver: prepare
+ * reserves there, has the vault owner seal for that reservation and forwards
+ * only the capsule. Without it the synchronous path is unchanged. */
+export function createHandsTerminalService(options: { directory: string; endpoint: string; tokenFile: string;
+  environment?: ExecutionEnvironmentRuntime; environmentLaunch?: HostTerminalEnvironmentLaunch }) {
+  const delivery = options.environmentLaunch;
+  if (delivery && options.environment) throw new Error('One terminal ENV owner per installation');
   return new DurableHostProcessService(options.directory, undefined, {
     endpoint: options.endpoint, tokenFile: options.tokenFile,
-    prepare(method, raw, scope): PreparedProcessIdentity {
+    ...(delivery ? { environmentIssuer: delivery.issuer } : {}),
+    async prepare(method, raw, scope, { service, assertCurrent }): Promise<PreparedProcessIdentity> {
       if (!scope?.account) throw new Error('Terminal principal missing');
       const actor = (scope as HostTerminalScope).actorId ?? scope.account;
       const identity: PreparedProcessIdentity = { scope,
         owner: terminalResourceOwnerId(actor, scope.hostId), quotaOwner: terminalResourceOwnerId(actor, scope.hostId) };
       if (method !== 'process/spawn') return identity;
-      const env = { ...(options.environment?.snapshot(scope).overlay() ?? {}) };
-      const requested = object(raw).env;
-      if (requested != null && (typeof requested !== 'object' || Array.isArray(requested))) throw new Error('Invalid terminal environment');
-      for (const [key, value] of Object.entries(object(object(raw).env))) {
-        validateEnvironmentName(key);
-        if (Object.hasOwn(env, key)) throw new Error('Managed terminal environment cannot be overridden');
-        if (value !== null && typeof value !== 'string') throw new Error('Invalid terminal environment');
-        if (typeof value === 'string') env[key] = value;
+      if (!delivery) {
+        const env = { ...(options.environment?.snapshot(scope).overlay() ?? {}) };
+        for (const [key, value] of Object.entries(requestedEnvironment(raw))) {
+          if (Object.hasOwn(env, key)) throw new Error('Managed terminal environment cannot be overridden');
+          env[key] = value;
+        }
+        identity.env = env;
+        return identity;
       }
-      identity.env = env;
-      return identity;
+      // Requested names are checked against delivered names by the owner, which
+      // alone holds them. Main never holds a value.
+      const requested = requestedEnvironment(raw);
+      const processHandle = object(raw).processHandle;
+      if (scope.hostId !== 'local-codex' && scope.hostId !== 'opencraft-server') throw new Error('environment_launch_unavailable');
+      const epoch = await delivery.terminalActor(scope.account);
+      if (!epoch || epoch.account !== scope.account) throw new Error('environment_launch_unavailable');
+      assertCurrent?.();
+      const reserved = object(await service.reserveEnvironmentLaunch(identity, processHandle, {
+        account: epoch.account, actorGeneration: epoch.actorGeneration, membershipRevision: epoch.membershipRevision,
+        hostId: scope.hostId, threadId: scope.threadId ?? null }));
+      try {
+        assertCurrent?.();
+        const context = { version: 2 as const, admission: reserved.admission };
+        const capsule = await delivery.seal(reserved.target, context);
+        assertCurrent?.();
+        return { ...identity, env: requested, launch: { context, capsule } };
+      } catch (error) {
+        await service.abandonEnvironmentLaunch(identity, processHandle).catch(() => {});
+        throw error;
+      }
     },
   });
 }

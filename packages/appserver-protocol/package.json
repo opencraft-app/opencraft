@@ -24,7 +24,9 @@
     "./input-completion": "./src/input-completion.mjs",
     "./server-spaces": "./src/server-spaces.ts",
     "./channels": "./src/channels.ts",
-    "./channel-images": "./src/channel-images.ts"
+    "./channel-images": "./src/channel-images.ts",
+    "./forwarded-record": "./src/forwarded-record.ts",
+    "./tasks": "./src/tasks.ts"
   },
   "dependencies": {
     "@opencraft/document-storage": "0.1.0",

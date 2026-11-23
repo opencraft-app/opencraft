@@ -7,6 +7,18 @@ import type {
   GitExecutionReservation,
 } from "@opencraft/execution-environment/git-execution";
 import type { GitConnectionsSnapshot } from "../git/contract.js";
+import type {
+  AnyEnvironmentLaunchContext,
+  EnvironmentLaunchTarget,
+} from "@opencraft/execution-environment/environment-delivery";
+import type { EnvironmentActorEpoch } from "@opencraft/execution-environment/git-execution";
+import type {
+  EnvironmentExecutionScope,
+  EnvironmentMetadataPort,
+  EnvironmentScopeRequest,
+} from "@opencraft/execution-environment/environment-metadata";
+import type { PersonalGitSealPort } from "@opencraft/execution-environment/personal-git-seal";
+import type { GitGrantScope } from "@opencraft/execution-environment/personal-git-protocol";
 import { WorkerOwner, ownerEntry } from "@opencraft/worker-owner";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import type { SandboxConfigurationsSnapshot } from "../contract.js";
@@ -46,6 +58,14 @@ export interface AssetStoragePort extends AssetConfigurationPort, WorkspaceBudge
   ): Promise<boolean>;
   executionGitReservation(locator: GitExecutionLocator): Promise<GitExecutionReservation | null>;
   executionGitGrant(locator: GitExecutionLocator): Promise<GitExecutionHandoff | null>;
+  executionEnvironmentLaunch(target: EnvironmentLaunchTarget, context: AnyEnvironmentLaunchContext): Promise<string>;
+  executionEnvironmentActor(account: string): Promise<EnvironmentActorEpoch | null>;
+  personalGitSeal(scope: GitGrantScope): Promise<string>;
+  environmentMetadataAdmit(request: EnvironmentScopeRequest): Promise<EnvironmentExecutionScope>;
+  environmentMetadataProject(hostId: string, threadId: string): Promise<string | null>;
+  environmentMetadataBind(hostId: string, threadId: string, projectId: string | null): Promise<void>;
+  environmentMetadataBindCreator(scope: EnvironmentExecutionScope, threadId: string): Promise<void>;
+  environmentMetadataRememberProjects(hostId: string, projects: readonly { id: string; name: string }[]): Promise<void>;
   gitSnapshot(access: AssetAdmission): Promise<GitConnectionsSnapshot>;
   gitUpdate(access: AssetAdmission, input: unknown): Promise<GitConnectionsSnapshot>;
 }
@@ -53,6 +73,9 @@ interface Ready {
   outcome: DatabaseOutcome;
   gitHosts: readonly string[];
   gitAuthority: string | null;
+  environmentIssuer?: string | null;
+  /** The issuer also admits Hands terminal launches (Actor epoch reader). */
+  environmentTerminal?: boolean;
   workspaceExecution: boolean;
   botExecution?: boolean;
   botBackends?: readonly string[];
@@ -66,6 +89,8 @@ export async function openAssetConfigurations(
     installationFile?: string;
     workspaceMachineId?: string;
     terminalOwner?: { directory: string; endpoint: string; tokenFile: string };
+    /** This Worker also issues opaque execution ENV capsules (core vault owner). */
+    environmentLaunch?: boolean;
   } = {},
 ) {
   const { owner, ready } = await WorkerOwner.open<AssetStoragePort, Ready>(
@@ -76,6 +101,7 @@ export async function openAssetConfigurations(
         directory,
         ...(options.terminalOwner === undefined ? {} : { terminalOwner: options.terminalOwner }),
         ...(options.workspaceMachineId === undefined ? {} : { workspaceMachineId: options.workspaceMachineId }),
+        ...(options.environmentLaunch ? { environmentLaunch: true } : {}),
       },
       errors: [SandboxConfigurationError],
       maxPending: 128,
@@ -84,9 +110,16 @@ export async function openAssetConfigurations(
   if (
     options.installationFile !== undefined ||
     options.workspaceMachineId !== undefined ||
-    options.terminalOwner !== undefined
+    options.terminalOwner !== undefined ||
+    options.environmentLaunch
   ) {
     try {
+      // A requested issuer that the Worker did not start is a startup failure.
+      if (
+        options.environmentLaunch &&
+        (typeof ready.environmentIssuer !== "string" || typeof ready.gitAuthority !== "string")
+      )
+        throw new SandboxConfigurationError("unavailable", 503);
       if (
         (options.workspaceMachineId !== undefined || options.terminalOwner !== undefined) &&
         ready.workspaceExecution !== true
@@ -110,6 +143,41 @@ export async function openAssetConfigurations(
     workspaceExecution: ready.workspaceExecution === true,
     botExecution: ready.botExecution === true,
     botBackends: botBackends(ready),
+    /** Vault-owner port for `/host-environment`: only routing metadata goes in
+     * and only an opaque capsule comes back to this thread. */
+    environmentLaunch:
+      typeof ready.environmentIssuer === "string"
+        ? Object.freeze({
+            issuer: ready.environmentIssuer,
+            seal: (target: EnvironmentLaunchTarget, context: AnyEnvironmentLaunchContext) =>
+              owner.call.executionEnvironmentLaunch(target, context),
+            // Terminal admission: the Actor epoch a reservation is written under.
+            ...(ready.environmentTerminal === true
+              ? { terminalActor: (account: string) => owner.call.executionEnvironmentActor(account) }
+              : {}),
+          })
+        : undefined,
+    /** The same owner signs personal Git grants: only a grant scope goes in and
+     * only the opaque grant comes back. Present exactly when ENV delivery is. */
+    personalGitSeal:
+      typeof ready.environmentIssuer === "string" && typeof ready.gitAuthority === "string"
+        ? Object.freeze<PersonalGitSealPort>({
+            authority: ready.gitAuthority,
+            seal: (scope) => owner.call.personalGitSeal(scope),
+          })
+        : undefined,
+    /** The same owner's FIFO port for non-secret ENV metadata. Main awaits it;
+     * there is no synchronous vault read to fall back to. */
+    environmentMetadata:
+      typeof ready.environmentIssuer === "string"
+        ? Object.freeze<EnvironmentMetadataPort>({
+            admit: (request) => owner.call.environmentMetadataAdmit(request),
+            project: (hostId, threadId) => owner.call.environmentMetadataProject(hostId, threadId),
+            bind: (hostId, threadId, projectId) => owner.call.environmentMetadataBind(hostId, threadId, projectId),
+            bindCreator: (scope, threadId) => owner.call.environmentMetadataBindCreator(scope, threadId),
+            rememberProjects: (hostId, projects) => owner.call.environmentMetadataRememberProjects(hostId, projects),
+          })
+        : undefined,
     close: () => owner.close(),
   };
 }

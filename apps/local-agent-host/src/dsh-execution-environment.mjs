@@ -1,6 +1,7 @@
 /** The generation routing/checkpoint owner supplies the only native→logical
  * resolver. Both shell facts and persistent terminals consume that same port. */
-export function registerDshExecutionEnvironment(ctx, resolveLogicalThreadId, runtime, git) {
+export function registerDshExecutionEnvironment(ctx, resolveLogicalThreadId, runtime, git, launch) {
+  if (runtime && launch) throw Error('Execution ENV cannot have two owners');
   const environment = nativeId => {
     const threadId = resolveLogicalThreadId(nativeId);
     if (!runtime || !threadId) return {};
@@ -25,15 +26,27 @@ export function registerDshExecutionEnvironment(ctx, resolveLogicalThreadId, run
   };
   const identity = Object.freeze({ resolve: nativeId => resolveLogicalThreadId(nativeId), environment,
     async prepare(execution) {
-      if(!git)return {};
+      if(!git&&!launch)return {};
       execution.signal?.throwIfAborted();
       const original=nativeTurn(execution.agent);
-      const snapshot=await git.prepare({hostId:'opencraft-server',threadId:original.threadId,
-        turnId:`dsh-turn-${original.threadId}-${original.turn}`});
-      execution.signal?.throwIfAborted();
-      if(JSON.stringify(nativeTurn(execution.agent))!==JSON.stringify(original))throw Error('git_execution_unavailable');
-      snapshot.apply(process.env);
-      return Object.freeze(snapshot.overlay());
+      const current=()=>{
+        execution.signal?.throwIfAborted();
+        if(JSON.stringify(nativeTurn(execution.agent))!==JSON.stringify(original))throw Error('git_execution_unavailable');
+      };
+      const locator={hostId:'opencraft-server',threadId:original.threadId,turnId:`dsh-turn-${original.threadId}-${original.turn}`};
+      // Personal ENV is one-shot launch configuration for this exact Turn; Git
+      // keeps its own per-command broker authorization. Neither is a fallback.
+      const [environment,snapshot]=await Promise.all([launch?.prepare(locator,current),git?.prepare(locator)]);
+      current();
+      const overlay={};
+      for(const part of [environment,snapshot]) if(part) {
+        part.apply(process.env);
+        for(const [name,value] of Object.entries(part.overlay())) {
+          if(Object.hasOwn(overlay,name))throw Error('environment_launch_unavailable');
+          overlay[name]=value;
+        }
+      }
+      return Object.freeze(overlay);
     },
   });
   ctx.provide("opencraftExecutionThread", identity);

@@ -327,6 +327,20 @@ test("reload retains an active Turn's input, progress and partial answer as stat
   assert.equal(await createConversationDisplayContinuity({ namespace: "account", storage: local }).load("host", "thread"), null);
 });
 
+test("reloaded work regions keep their cached reasoning rows instead of an empty placeholder", async () => {
+  const local = storage();
+  await createConversationDisplayContinuity({ namespace: "account", storage: local }).observe(activeTimeline());
+  const cached = (await createConversationDisplayContinuity({ namespace: "account", storage: local }).load("host", "thread"))!;
+  const activity = createTimelineTurnPresentationPlan(groupTimelineFramesByTurn(cached)[0]!, undefined, { isMostRecentTurn: true })
+    .assistant!.slots.find(slot => slot.type === "agent-activity");
+  assert.ok(activity?.type === "agent-activity");
+  assert.notEqual(activity.contentAvailable, false, "the cached rows are the region's body; opening it must not wait for a fetch");
+  assert.ok(activity.blocks.some(block => block.type === "reasoning" && block.summary === "Checking the result"));
+  const opened = resolveAgentActivityLayout(activity, false);
+  assert.ok(opened.showToggle && !opened.isCollapsed);
+  assert.ok(opened.visibleUnits.some(unit => unit.type !== "worked-for"), "expanding shows the cached reasoning");
+});
+
 test("streaming updates coalesce behind slow persistence and retain the newest received text", async () => {
   const local = storage();
   const writes: string[] = [];

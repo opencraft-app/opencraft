@@ -1,5 +1,6 @@
 import { personalGitSocketPaths, removePersonalGitSocketDirectory } from './personal-git-sockets.js';
 import { readyGitBroker, validGitGrantScope, type GitGrantScope } from './personal-git-protocol.js';
+import { personalGitGrantFields } from './personal-git-seal.js';
 import { randomBytes } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join } from 'node:path';
@@ -7,6 +8,9 @@ import { Worker } from 'node:worker_threads';
 import type { EnvironmentExecutionScope } from './execution-environment.js';
 
 export interface PersonalGitScope extends EnvironmentExecutionScope { readonly inputId?: string; readonly executionId?: string; readonly leaseGeneration?: number; readonly actorGeneration?:number;readonly membershipRevision?:number }
+/** A synchronous in-process issuer, or the asynchronous vault-owner port
+ * (`PersonalGitSealPort`), whose grants are issued only through `issue`. */
+export interface PersonalGitIssuer { readonly authority: string; seal(scope: GitGrantScope): string | Promise<string> }
 export interface PersonalGitGrant {
   readonly ready: Promise<void>;
   readonly environment: Readonly<Record<string, string>>;
@@ -27,7 +31,7 @@ export class PersonalGitEnvironment {
   private readonly ready: Promise<void>;
   private rejectReady!: (error: Error) => void;
   private readonly pending = new Map<string, { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>();
-  constructor(directory: string, private readonly runtime: string, private readonly workerFile: string, private readonly hosts: readonly string[], private readonly issuer?: { authority: string; seal(scope: GitGrantScope): string }, private readonly mode: 'execution' | 'issuer' | 'status' = issuer ? 'execution' : 'status', private readonly executionOptions:{accountMode?:'principal'|'actor';authorize?:(scope:GitGrantScope)=>Promise<boolean>}={}) {
+  constructor(directory: string, private readonly runtime: string, private readonly workerFile: string, private readonly hosts: readonly string[], private readonly issuer?: PersonalGitIssuer, private readonly mode: 'execution' | 'issuer' | 'status' = issuer ? 'execution' : 'status', private readonly executionOptions:{accountMode?:'principal'|'actor';authorize?:(scope:GitGrantScope)=>Promise<boolean>}={}) {
     const accountMode=executionOptions.accountMode??'principal';
     if(accountMode==='actor'&&!executionOptions.authorize)throw Error('personal_git_live_authority_required');
     if (![directory, runtime, workerFile].every(isAbsolute) || !hosts.length || hosts.some(h => !/^[a-z0-9.-]{1,253}$/u.test(h))) throw Error('Invalid personal Git deployment');
@@ -80,6 +84,22 @@ export class PersonalGitEnvironment {
     const id = scope.threadId && scope.inputId ? JSON.stringify([scope.account, scope.hostId, scope.threadId, scope.inputId, scope.executionId, scope.leaseGeneration,scope.actorGeneration,scope.membershipRevision]) : null;
     if (id && this.grants.has(id)) return this.grants.get(id)!;
     const capability = this.issuer.seal(scope as GitGrantScope);
+    // An asynchronous vault owner is never answered synchronously: no fallback.
+    if (typeof capability !== 'string') { void Promise.resolve(capability).catch(() => {}); throw Error('personal_git_async_issuer_required'); }
+    return this.grantSealed(scope,capability,this.issuer.authority);
+  }
+  /** Asynchronous issuance for a separate vault owner. The caller has already
+   * admitted `scope`; only its grant fields cross the port, and the bridge is
+   * rechecked after the await so a grant never outlives its owner. */
+  async issue(scope: PersonalGitScope, _options?: { creation?: boolean }): Promise<PersonalGitGrant | undefined> {
+    if (!scope.account || !scope.threadId || !scope.inputId || !scope.executionId) return undefined;
+    if (!this.issuer) throw Error('personal_git_issuer_unavailable');
+    if (this.unavailable || this.closed) throw Error('personal_git_bridge_unavailable');
+    const id = JSON.stringify([scope.account, scope.hostId, scope.threadId, scope.inputId, scope.executionId, scope.leaseGeneration,scope.actorGeneration,scope.membershipRevision]);
+    const cached = this.grants.get(id); if (cached) return cached;
+    if (!validGitGrantScope(scope)) throw Error('personal_git_execution_unavailable');
+    const capability = await this.issuer.seal(personalGitGrantFields(scope));
+    if (this.unavailable || this.closed) throw Error('personal_git_bridge_unavailable');
     return this.grantSealed(scope,capability,this.issuer.authority);
   }
   /** Trusted asynchronous issuer supplies an opaque attestation, never its key.
@@ -129,7 +149,18 @@ export class PersonalGitEnvironment {
       this.worker!.postMessage({ type: 'status', id, scope });
     }));
   }
-  static fromEnvironment(directory: string, issuer?: { authority: string; seal(scope: GitGrantScope): string }, mode?: 'execution' | 'issuer' | 'status'): PersonalGitEnvironment | undefined {
+  /** Binding metadata for the account a sealed grant names, checked against the
+   * same live authority as a command. Never returns credential material. */
+  grantStatus(capability: string, threadId: string): Promise<unknown> {
+    if (this.mode !== 'execution' || this.unavailable || this.closed || !this.worker) return Promise.reject(Error('personal_git_bridge_unavailable'));
+    const id = randomBytes(16).toString('hex');
+    return this.ready.then(() => new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { this.pending.delete(id); reject(Error('personal_git_bridge_unavailable')); }, 5000);
+      this.pending.set(id, { resolve, reject, timer });
+      this.worker!.postMessage({ type: 'grant-status', id, capability, threadId });
+    }));
+  }
+  static fromEnvironment(directory: string, issuer?: PersonalGitIssuer, mode?: 'execution' | 'issuer' | 'status'): PersonalGitEnvironment | undefined {
     const runtime = process.env.OPENCRAFT_GIT_RUNTIME_DIRECTORY;
     if (!runtime) return undefined;
     const workerFile = process.env.OPENCRAFT_GIT_WORKER_FILE || join(dirname(process.argv[1]!), 'personal-git-worker.mjs');

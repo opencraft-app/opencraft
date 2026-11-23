@@ -76,7 +76,10 @@ function toThreadItem(item: CanonicalItem): ThreadItem {
         type: "userMessage",
         id: item.itemId,
         clientId: shape.clientId ?? null,
-        content: [{ type: "text", text: shape.text, text_elements: [] }],
+        // The provider's own parts keep display elements (hidden locators) and mentions.
+        content: shape.content
+          ? (shape.content as unknown as Extract<ThreadItem, { type: "userMessage" }>["content"])
+          : [{ type: "text", text: shape.text, text_elements: [] }],
       };
     case "agentMessage":
       return {
@@ -149,6 +152,7 @@ function makeTurn(
   status: Turn["status"],
   startedAtMs: number,
   completedAtMs: number | null,
+  failure?: { message: string; codexErrorInfo?: unknown; additionalDetails?: string | null },
 ): Turn {
   return {
     id,
@@ -157,7 +161,15 @@ function makeTurn(
     // make appserver-session replace (and erase) the turn's streamed items.
     itemsView: "summary",
     status,
-    error: null,
+    // The provider's classification is passed on as reported.
+    error: failure
+      ? ({
+          message: failure.message,
+          codexErrorInfo: failure.codexErrorInfo ?? null,
+          additionalDetails: failure.additionalDetails ?? null,
+          misalignment: null,
+        } as Turn["error"])
+      : null,
     startedAt: Math.floor(startedAtMs / 1000),
     completedAt: completedAtMs === null ? null : Math.floor(completedAtMs / 1000),
     durationMs: null,
@@ -225,7 +237,7 @@ export function projectToAppServer(
       case "turn.completed": {
         const params: TurnCompletedNotification = {
           threadId: event.threadId,
-          turn: makeTurn(event.turnId, event.status, event.startedAtMs, event.atMs),
+          turn: makeTurn(event.turnId, event.status, event.startedAtMs, event.atMs, event.error),
         };
         out.push({ method: "turn/completed", params });
         break;

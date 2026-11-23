@@ -54,6 +54,12 @@
     "./sandbox": {
       "types": "./src/runtime/sandbox-environment-provider.d.mts",
       "import": "./src/runtime/sandbox-environment-provider.mjs"
-    }
+    },
+    "./adapters/filesystem/attachment-store": "./src/adapters/filesystem/attachment-store.mjs",
+    "./adapters/local/bot-profile": "./src/adapters/local/bot-profile.mjs",
+    "./runtime/host-extension": "./src/runtime/host-extension.mjs",
+    "./runtime/assistant-server": "./src/runtime/assistant-server.mjs",
+    "./runtime/local-runner": "./src/runtime/local-runner.mjs",
+    "./store": "./src/store.mjs"
   }
 }
