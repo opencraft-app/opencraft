@@ -185,7 +185,7 @@ test('core ENV delivery has one owner and fails at startup without execution adm
     { OPENCRAFT_ENVIRONMENT_DELIVERY: 'vault-owner', OPENCRAFT_ENVIRONMENT_ISSUER_FILE: 'relative.json' },
     { OPENCRAFT_ENVIRONMENT_DELIVERY: 'vault-owner', OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION: 'a b' }])
     assert.throws(() => parse(env), JSON.stringify(env));
-  const app = await startHeadlessServer(f.options); t.after(() => app.close());
+  const app = await startHeadlessServer(f.options); f.own(() => app.close());
   assert.equal((await fetch(app.url)).status, 200);
 });
 
@@ -221,7 +221,7 @@ test('an identity-owned vault port brings its own admission and metadata; missin
   assert.equal(closed, 5);
   assert.equal(f.starts(), 0);
   const app = await startHeadlessServer(options, { createIdentity: identity({ ...port, admission: async () => null, metadata }) });
-  t.after(() => app.close());
+  f.own(() => app.close());
   assert.equal((await fetch(app.url + '/__opencraft_actors/me')).status, 200);
   assert.deepEqual(calls, [], 'no metadata is written before a Host request');
 });
@@ -264,7 +264,7 @@ test('with ENV delivery an identity-owned vault is the only owner, publishes the
   assert.equal(f.starts(), 0);
   // Delivery on with the port: the port is the only owner, core opens no vault Worker.
   const app = await startHeadlessServer(options, { createIdentity: identity(port) });
-  t.after(() => app.close());
+  f.own(() => app.close());
   assert.equal((await fetch(app.url + '/__opencraft_actors/me')).status, 200);
   assert.deepEqual(contexts.at(-1), { publish: paths.environmentIssuerFile, generation: '2026-11' });
   assert.ok(Object.isFrozen(contexts.at(-1)));
@@ -315,7 +315,7 @@ test('an identity vault port wires Codex ENV and Git delivery or startup fails c
   // complete port starts and nothing is sealed or granted before a request.
   const dataDirectory = join(f.root, 'identity-vault-data');
   const app = await startHeadlessServer({ ...split, dataDirectory }, { createIdentity: identity({ ...port, ...codex, git }) });
-  t.after(() => app.close());
+  f.own(() => app.close());
   assert.equal((await fetch(app.url + '/__opencraft_actors/me')).status, 200);
   assert.deepEqual(calls, []);
   await assert.rejects(stat(join(dataDirectory, 'employee-git-vault.sqlite')), { code: 'ENOENT' },
@@ -470,7 +470,7 @@ test('personal model defaults follow the signed-in Actor and instance admission 
   const proofPath = join(f.root, 'setup-token'), configPath = join(f.root, 'human-auth.json');
   await writeFile(proofPath, JSON.stringify({ token: proof }), { mode: 0o600 });
   await writeFile(configPath, JSON.stringify({ origin: probe.url, local: true, oidc: [], setupTokenFile: proofPath }), { mode: 0o600 });
-  const app = await startHeadlessServer({ ...f.options, port: Number(new URL(probe.url).port), humanAuthConfig: configPath }); t.after(() => app.close());
+  const app = await startHeadlessServer({ ...f.options, port: Number(new URL(probe.url).port), humanAuthConfig: configPath }); f.own(() => app.close());
   const path = app.url + '/__opencraft_model_defaults';
   const json = { origin: app.url, 'content-type': 'application/json' };
   assert.equal((await fetch(path)).status, 401);
