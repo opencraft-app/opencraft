@@ -89,6 +89,10 @@ builds remain opt-in under the existing CI policy.
 
 ## Open a pull request
 
+Keep it short. Say plainly what changed, not how you got there: a title anyone
+can read at a glance, and a body that lists the changes in a sentence or two
+each. The same goes for commit messages. Details belong in the diff.
+
 Explain the problem and resulting behavior, affected platforms, checks actually
 run and any unverified path. For an API change, identify the public versus trusted
 product boundary, compatibility with API V1 consumers, and activation, cancellation,
