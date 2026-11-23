@@ -760,3 +760,30 @@ export const conversationCreationReceipts = sqliteTable("conversation_creation_r
     (state <> 'rejected' AND rejection_status IS NULL AND rejection_code IS NULL)
   )`)),
 ]);
+
+// The Headless conversation resource lifecycle (formerly conversation-resources.json):
+// one row per (Host, Thread) lifecycle observation and the cleanup owners still pending.
+export const conversationResources = sqliteTable("conversation_resources", {
+  hostId: text("host_id").notNull(),
+  threadId: text("thread_id").notNull(),
+  state: text("state").notNull(),
+  generation: integer("generation").notNull(),
+  // JSON array of resource owner names whose cleanup has not been acknowledged.
+  pending: text("pending").notNull(),
+}, table => [
+  primaryKey({ columns: [table.hostId, table.threadId] }),
+  check("conversation_resource_row", sql.raw(`length(host_id) BETWEEN 1 AND 1024
+    AND length(thread_id) BETWEEN 1 AND 1024
+    AND state IN ('active', 'archived', 'deleted')
+    AND generation >= 1
+    AND json_valid(pending) AND json_type(pending) = 'array'`)),
+]);
+
+// One receipt per retired legacy journal: the bytes imported (or their absence) are
+// fixed, so a restart never re-imports and a later legacy write is a conflict.
+export const conversationResourceImports = sqliteTable("conversation_resource_imports", {
+  source: text("source").primaryKey(),
+  sha256: text("sha256").notNull(),
+  rows: integer("rows").notNull(),
+  importedAt: integer("imported_at").notNull(),
+});

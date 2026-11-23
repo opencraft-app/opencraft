@@ -5,12 +5,16 @@ import type { ServerDatabase } from "./index.js";
 import { installedServerMigrationComposition, type ServerDataContract } from "./migration-composition.js";
 
 import type { CreationReceiptMethods } from "./conversation-creation-receipts.js";
+import type { ConversationResourceMethods } from "./conversation-resources.js";
 export type { CreationReceipt, CreationReceiptMethods } from "./conversation-creation-receipts.js";
+export type { ConversationResourceMethods, ConversationResourceRow } from "./conversation-resources.js";
+
+type CoreMethods = CreationReceiptMethods & ConversationResourceMethods;
 
 /** The Server installation as a network process holds it. */
 export interface ServerCoreStorage<T = object> extends ServerDatabase {
   /** Async ports of the domain services that run in the owner Worker. */
-  readonly call: OwnerCalls<T & CreationReceiptMethods>;
+  readonly call: OwnerCalls<T & CoreMethods>;
   /**
    * Reports, once, that the owner Worker was lost (crash, exit or a fatal
    * error). Every pending and later call already rejects; projections built
@@ -41,7 +45,7 @@ export async function openServerCoreOwner<T = object>(
   const unavailable = new Set<(error: Error) => void>();
   let lost: Error | undefined;
   const { owner, ready } = await WorkerOwner.open<
-    T & CreationReceiptMethods,
+    T & CoreMethods,
     { outcome: DatabaseOutcome; contract: ServerDataContract }
   >(entry, {
     name: "Server storage",

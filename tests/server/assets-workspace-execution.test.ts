@@ -1162,13 +1162,14 @@ for (const withLifecycle of [false, true])
       },
     });
     if (withLifecycle) {
-      lifecycle = await ConversationResourceLifecycle.open(
-        join(directory, "resources.json"),
+      // The Headless composition's owners and ordering; durability is covered by the lifecycle suite.
+      lifecycle = new ConversationResourceLifecycle(
+        null,
         {
           browser: (row) => browser.releaseThread(row.hostId, row.threadId),
           workspace: (row) => workspace.releaseConversation(row),
         },
-        { dependencies: { workspace: ["browser"] }, replayOwners: ["browser", "workspace"] },
+        { dependencies: { workspace: ["browser"] } },
       );
       browser.conversationLifecycle = lifecycle;
     }

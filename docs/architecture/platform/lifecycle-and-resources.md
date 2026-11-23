@@ -459,8 +459,13 @@ logical client ID; an archive notification followed by an unarchive cannot be
 undone by the earlier archive RPC's late acknowledgement.
 
 `ConversationResourceLifecycle` keeps a durable **cleanup projection**, not a
-second conversation catalog, in `conversation-resources.json` under the existing
-single-writer server data directory. The engine remains archive/history authority.
+second conversation catalog, in the Server core SQL database (InstallationCore,
+table `conversation_resources`). The owner Worker commits each change before the
+network thread installs it and runs owners; the network thread never touches
+SQLite. On first open the owner imports the retired `conversation-resources.json`
+once, records its SHA-256 in `conversation_resource_imports` and leaves the file
+unchanged as a backup; a journal that is corrupt, names an unknown owner, or
+differs from the imported bytes refuses startup. The engine remains archive/history authority.
 The projection fences resource allocation before invoking registered owners,
 retains failed owners for retry, and replays pending work after restart. A new
 lifecycle generation wins over old cleanup acknowledgements. Unarchive waits for

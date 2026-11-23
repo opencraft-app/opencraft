@@ -132,6 +132,12 @@
       "name": "0021_known_ken_ellis",
       "checksum": "8c2f92eda4ee57da5ad8374441885d0ac6505f02f6373d9417a6fb68c0f66b53",
       "snapshotChecksum": "198368b47fbb78ea2db8953ac880a144a7a1512f27a9e4869a88eaac6e799a5f"
+    },
+    {
+      "version": 23,
+      "name": "0022_conversation_resources",
+      "checksum": "df9c88ffea4c88af2ed097f5f2c1a494c075992da1331e20abb991ade72ac8c7",
+      "snapshotChecksum": "cc3e306f72879bff52d552a62dfe156ad47631366c046916ee80b4cde2393cbf"
     }
   ],
   "alternates": [
@@ -314,6 +320,11 @@
           "version": 22,
           "name": "converge_0021_known_ken_ellis",
           "checksum": "8c2f92eda4ee57da5ad8374441885d0ac6505f02f6373d9417a6fb68c0f66b53"
+        },
+        {
+          "version": 23,
+          "name": "converge_0022_conversation_resources",
+          "checksum": "df9c88ffea4c88af2ed097f5f2c1a494c075992da1331e20abb991ade72ac8c7"
         }
       ]
     }

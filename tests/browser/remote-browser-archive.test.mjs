@@ -16,7 +16,8 @@ test('browser ownership resolves canonical and pre-binding draft scopes', () => 
 test('archive closes all humans native pages, retains checkpoints, and fences recreation until unarchive', async () => {
   const dir=await mkdtemp(join(tmpdir(),'archive-browser-')); const closed=[];
   const service = new RemoteBrowserService({root:dir,dataDirectory:dir,ownerConnector:null});
-  const lifecycle = await ConversationResourceLifecycle.open(join(dir,'resources.json'), {browser:row=>service.releaseThread(row.hostId,row.threadId)});
+  // Durability is covered by tests/server/conversation-resource-lifecycle.test.mjs; this exercises the browser owner.
+  const lifecycle = new ConversationResourceLifecycle(null, {browser:row=>service.releaseThread(row.hostId,row.threadId)});
   service.conversationLifecycle=lifecycle;
   service.start=async()=>{}; service.request=async(id,method)=>{if(method==='close')closed.push(id);};
   try {

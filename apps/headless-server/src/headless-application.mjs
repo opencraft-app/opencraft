@@ -943,7 +943,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       }
       return service;
     };
-    conversationResources = await ConversationResourceLifecycle.open(join(dataDirectory, 'conversation-resources.json'), {
+    conversationResources = await ConversationResourceLifecycle.open(serverStorage, {
       terminal: async row => {
         if (options.terminalOwner) {
           if (!remoteBrowser) throw Error('Resource bindings are starting');

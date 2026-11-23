@@ -264,6 +264,13 @@ Generation Router 只在 systemd 完整发布装配中运行，用于 Codex 引�
 | `message_senders`、`message_sender_origins`、`ioa_*`、`codex_bot_*` | 待定 | SQL | 与主体协作、Bot 房间相关；若 Bot 跨工作区，应进入 IC，否则留 WH |
 | `token-usage.sqlite` | 待定 | SQL | 4.2 |
 | `tasks.sqlite` | IC | SQL | 跨会话业务记录 |
+| 会话资源生命周期（原 `conversation-resources.json`） | IC | SQL（服务器核心表 `conversation_resources`，迁移 v23） | 决定见下 |
+| Git broker 账本（旧 PID 来源 broker 的 `ownerStateFile` JSON） | 暂不迁移 | —（保留原 JSON） | 暂不迁移：服务端 broker 当前无生产装配，保留供下一代使用；见下 |
+
+**会话资源生命周期与 Git broker 账本的归属（2026-11-23 决定）。** 本表原未列出二者；[存储端口](storage-ports.md#32-statedocumentstore) 只写了"并入 SQL 核心"，[Gateway 拆分](gateway-split.md) 曾暂列为 WH。决定与理由：
+
+- **会话资源生命周期归 IC。** 每行以 `(hostId, threadId)` 为键，同一 Gateway 的全部 Host（本机 Codex、Pi、DSH、SSH 等）共用一份投影；它是资源**准入**的栅栏（`assertActive`），不是资源本身。注册的 owner 中 `workspace` 释放的是 Assets 工作区分配（IC 的分配账本，见 gateway-split §2.3），且依赖 `browser` 先释放；若记录放在每工作区 WH 库内，回收该工作区就会回收记录自身的存储，"清理未确认前保持栅栏"无法成立。终端、浏览器、工作区的**释放动作**仍由 WH／容器执行，IC 只保存代次与待确认 owner。Node 上表由服务器核心 owner Worker 写入（已在 Worker，不增加主线程同步 IO），网络线程持有已提交行投影；DO 上同一领域代码在 InstallationCore DO 的 SQL 上运行（tests/storage/conversation-resources-workerd.test.ts）。
+- **Git broker 账本暂不迁移。** 服务端 `GitIdentityBroker`／`GitBrokerOwner` 当前无生产装配，保留原 JSON 实现供下一代使用，不迁移也不退役。其内容是 broker 进程自己的围栏交接与未确认职责，唯一写入者是 broker 进程，将来迁移时也不能并入 IC 或 AC 的库，只能是独立库；而新增库一经发布就是不可删除的迁移，因此在下一代确定其装配之前不发布。目标拓扑中 Git 校验移入 `workspace-agent`、凭据由 WH 签发（§8.3 决定 6）。
 
 WorkspaceHost 的 SQL 库是**一个**按工作区的库，合并今天分散的 `opencraft-host-state`、`thread-creations`、`interrupted-turn-recovery`、`conversation-schedules`（各自迁移账本保留为同库内的独立 schema id，或在合并迁移中显式导入；不能改写已发布迁移）。这让 DO 上一个 DO 对应一个 SQL 库成立。合并与否也可以推迟：第 2 步只要求"按工作区根目录"，不要求合库。
 

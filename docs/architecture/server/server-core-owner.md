@@ -107,6 +107,8 @@
 
 **身份写入（已实施）**：Headless 的登录会话、身份绑定与 Actor 管理写入（`IdentityWrites`，`@opencraft/access-control/identity-writes`）在所有者 Worker 的连接上提交；网络线程的读取仍走权限投影与 WAL 读，WAL 下读不等待写锁。每个写入在提交后由网络线程重新发布同连接上的全部权限投影并通知观察者，因此 await 之后的读取可见写入。需要本进程注册状态的校验（本地账号版本、资源授权方）先在网络线程完成，Worker 只执行已校验的写入；Actor 管理写入的授权（调用方当前的管理权限）可能在 Worker 排队期间被撤销或过期，因此 Worker 先取得写锁，再经提交栅栏（`commit-fence`，SharedArrayBuffer + Atomics）请网络线程用原请求重新判定，获准后才写入并提交，拒绝或超时即回滚；写锁期间其他连接无法提交权限变化，排在前面的写入的回复也先于栅栏请求到达网络线程。网络线程注册了 Worker 无法执行的注册钩子（预留解析、注册监听）时，登录仍在本线程写入，语义不变。成员管理写入（实例成员接口与账号管理的 `setMember`）同样经提交栅栏在 Worker 提交。认证时的旧名迁移（`bindLegacyAlias`）只在确有启用的旧名时才开写事务，不再为每个请求取写锁。尚在网络线程的写入：部署操作员引导（启动时）、账号初始化、邀请与本地账号创建（低频流程）。
 
+**会话资源生命周期（已实施，2026-11-23）**：Headless 的 `ConversationResourceLifecycle` 不再写 `conversation-resources.json`。`serveServerCoreOwner` 为每个 owner Worker 注册 `openConversationResources`／`putConversationResources`（`@opencraft/storage-node/server-conversation-resources`，只依赖 `SqlDatabase`），表 `conversation_resources` 与导入回执 `conversation_resource_imports` 由服务器迁移 v23 建立。打开生命周期时 Worker 在一个事务内导入旧 JSON（只读，记录 SHA-256；缺失记为 `absent`），校验 pending owner 名后返回全部已提交行；之后每次变更是一次 `putConversationResources` 事务（代次只增，旧代次写入整体回滚），回复到达后网络线程才安装投影并调用资源 owner，所以依赖提交的释放动作不会先于提交。写入失败或 owner Worker 丢失（`onUnavailable`）使生命周期失效：所有绑定会话的 `assertActive` 拒绝，不以旧投影放行。旧文件内容在导入后变化、JSON 损坏或部分写入、记录不合法时打开失败（Headless 拒绝启动，与旧实现读到损坏日志时一致），不导入任何行。
+
 **独立库的同一模式**：不在服务器核心库里的存储按同样方式拥有自己的 Worker。IM 渠道库（`@opencraft/plugin-im/switchboard`）的渠道配置、发送者绑定、路由版本和显式回复锚点（只含路由字段，不含正文）作为投影留在网络线程，供每条消息的同步检查使用；每个写入在 Worker 提交后连同变化的投影一起返回再生效；消息正文和会话绑定走异步端口。同一消息的去重仍在网络线程同步登记，持久重复检查移入端点准入队列；身份验证码先读出待绑定主体、在网络线程校验，再由 Worker 仅在验证码未变时绑定。
 
 下游消费者：`access-control` 的同步类仍保留并在 Worker 内使用；对外新增的是异步门面。实施前需核对下游产品插件是否直接构造这些类，若有则在对应阶段提供异步门面并更新下游。
