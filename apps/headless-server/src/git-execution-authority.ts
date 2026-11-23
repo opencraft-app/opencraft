@@ -41,6 +41,24 @@ export class GitExecutionAuthority {
     const current = this.resolvePhase(scope, "pending");
     return current ? { ...current, turnId: null } : null;
   }
+  /** The Human Actor that owns this exact execution in `phase`, with the
+   * same lease, Actor and member checks as `resolve`/`reserve` (Actor mode
+   * only). `null` when it is not an admitted Human execution in that phase. */
+  sessionOwner(scope: GitExecutionQuery, phase: "active" | "pending") {
+    if (this.accountMode !== "actor") throw Error("git_authority_store_unavailable");
+    const current = this.resolvePhase(scope, phase);
+    if (!current) return null;
+    return {
+      actorId: current.account.slice("actor:".length),
+      actorGeneration: current.actorGeneration!,
+      membershipRevision: current.membershipRevision!,
+      inputId: current.inputId,
+      executionId: current.executionId,
+      leaseGeneration: current.generation,
+      turnId: current.turnId,
+      incarnation: current.incarnation,
+    };
+  }
   private resolvePhase(
     scope: GitExecutionQuery | undefined,
     phase: "active" | "pending",

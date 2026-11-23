@@ -28,7 +28,8 @@
     "./server/storage": "./src/server/storage.ts",
     "./server/workspace-budget": "./src/server/workspace-budget.ts",
     "./server/workspace-catalog": "./src/server/workspace-catalog.ts",
-    "./server/workspace-owner": "./src/server/workspace-owner.ts"
+    "./server/workspace-owner": "./src/server/workspace-owner.ts",
+    "./server/personal-mcp": "./src/server/personal-mcp.ts"
   },
   "dependencies": {
     "@opencraft/design-system-web": "0.1.0",
@@ -44,6 +45,7 @@
     "@opencraft/appserver-client": "0.1.0",
     "@opencraft/sandbox": "0.1.0",
     "@opencraft/chat-core": "0.1.0",
-    "@opencraft/appserver-protocol": "0.1.0"
+    "@opencraft/appserver-protocol": "0.1.0",
+    "@opencraft/session-capabilities": "0.1.0"
   }
 }

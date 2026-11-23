@@ -6,6 +6,7 @@
   "exports": {
     "./assets-execution-records": "./src/assets-execution-records.ts",
     "./human-login-page": "./src/human-login-page.ts",
+    "./personal-mcp-provider": "./src/personal-mcp-provider.ts",
     "./serve-workbench-static": "./src/serve-workbench-static.mjs",
     "./codex-workspace-hooks": "./src/codex-workspace-hooks.mjs",
     "./git-execution-authority": "./src/git-execution-authority.ts",

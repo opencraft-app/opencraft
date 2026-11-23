@@ -59,6 +59,42 @@ never leave the owner. The tool reports binding state only; it does not run a
 Git command or probe the remote. Ordinary `git` commands in the run use the
 identity through the existing execution environment.
 
+## Personal MCP tokens
+
+A composition that owns its vault Worker can offer a third-party MCP service
+that each person reaches with their own token, from configuration only:
+`{ id, prefix, endpoint, service, tokenPattern }` (`PersonalMcpService`).
+
+- Worker: `createPersonalMcpOwner({ vault, services, sessions, actors })`
+  (`@opencraft/plugin-assets/server/personal-mcp`), passed to
+  `createAssetsStorage` as `personalMcp: (vault) => ...`, which adds its
+  `personalMcp*` methods and closes it before the execution records and the
+  vault. `sessions` and `actors` come from `createHeadlessExecutionRecords`.
+  The token is stored, replaced and deleted (`personalMcpTokenState`,
+  `personalMcpTokenReplace` with a revision) in the `actor:<actorId>`
+  partition only under the caller's Human proof (`WorkspaceActorAdmission`),
+  rechecked against committed Actor and member records before the write. The
+  MCP SDK, the token and the upstream network stay in this Worker
+  (`AuthenticatedMcpProvider` runs there); Main only sees catalogs and results
+  with reflected tokens redacted, token presence and revisions, and generic
+  error codes.
+- Session owner: `sessions.owner(locator, phase)` is the same lease, Actor and
+  member check as Git execution admission (`GitExecutionAuthority`), so a
+  composition never reads `execution_submissions` / `execution_leases` itself.
+  Discovery accepts an admitted pending input or an active Turn; a call needs
+  the active Turn. An execution without Actor provenance, another person's
+  proof, another Thread or input, and an ended or replaced execution are
+  refused. Every request, response chunk and status read rechecks the proof,
+  the session owner and the token revision, and a change cancels the
+  operation; uncertain calls are never replayed.
+- Main: `createPersonalMcpProvider({ service, port, authorize })`
+  (`@opencraft/headless-server/personal-mcp-provider`) is the session
+  capability. It locates the run from core's `CapabilitySession.context`
+  (Host and Actor), asks the Worker's session reader for the owner, requires
+  it to be the Actor core resolved, and sends that Actor's proof from
+  `authorize` (for example `admitResource` of the workspace execution
+  service). A person with no token has an empty catalog.
+
 ## Protocol and lifecycle
 
 The Streamable HTTP MCP outlet uses the pinned MCP SDK on a dedicated loopback

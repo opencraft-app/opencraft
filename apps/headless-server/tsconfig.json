@@ -24,6 +24,7 @@
     "src/execution-admission.worker.ts",
     "src/account-model-defaults-http.ts",
     "src/environment-launch-admission.ts",
-    "src/codex-environment-launch.ts"
+    "src/codex-environment-launch.ts",
+    "src/personal-mcp-provider.ts"
   ]
 }
