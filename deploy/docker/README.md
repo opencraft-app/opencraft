@@ -288,9 +288,13 @@ access to them is a deployment decision outside this option.
 
 ## Optional account ENV delivery
 
-With `OPENCRAFT_ENVIRONMENT_DELIVERY=vault-owner` (Assets context only), DSH,
-Pi and Codex receive account ENV as opaque capsules from the Gateway's vault owner instead
-of running without it. The vault owner keeps its issuer key sealed in the vault,
+With `OPENCRAFT_ENVIRONMENT_DELIVERY=opaque` (Assets context only; the earlier
+value `vault-owner` means the same), DSH, Pi and Codex receive account ENV as
+opaque capsules from the Gateway's vault owner instead of running without it.
+The setting turns on delivery and pinning; it does not choose the vault owner.
+The Gateway uses its identity composition's vault owner when the composition
+supplies one, otherwise core's own vault Worker, never both. Set the same value
+on both services in either case (compose passes it to both). The vault owner keeps its issuer key sealed in the vault,
 so the key survives Gateway restarts and updates, and publishes the public key
 to `$OPENCRAFT_DATA_DIR/run/environment-issuer.json` (owner-only file, rewritten
 only when the key changes). Brain starts before the Gateway, so it pins that
@@ -306,7 +310,9 @@ shipped in the image and the data directory). It then watches the file:
   configurations and starts them again. Running DSH, Pi and Codex turns end
   with that relaunch.
 - Rotation is explicit: change `OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION` and
-  recreate the Gateway. It seals a new key and publishes it; Brain relaunches DSH,
+  recreate the Gateway. Its vault owner (core's Worker, or the identity
+  composition's, which receives the same generation) seals a new key and
+  publishes it; Brain relaunches DSH,
   Pi and the Codex AppServer. Until then they hold the previous key and
   deliveries fail closed. A Gateway restart or update keeps the key and
   relaunches nothing.

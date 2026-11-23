@@ -3,6 +3,7 @@ import {openWorkspaceExecutionService} from './workspaces/execution-service.js';
 import {openHeadlessAssetsStorage} from './headless-assets-storage.js';
 import {humanGitRuntimeDirectory,createHumanGitExecution} from './human-git-execution.js';
 import { openHumanAssets } from '@opencraft/plugin-local-account/assets-server';
+import { readPublishedEnvironmentIssuer } from '@opencraft/execution-environment/environment-issuer-publication';
 import {workspaceTurnOutputContext} from './workspace-turn-output-context.mjs';
 import { restoreWorkspaceQueuedContext } from '@opencraft/opencraft-daemon/workspace-queued-context';
 import { HostWorkspaceCatalogTransport } from './host-workspace-catalog-transport.ts';
@@ -134,7 +135,7 @@ import { IdentityWrites } from '@opencraft/access-control/identity-writes';
 import { createCommitFenceBuffer } from '@opencraft/access-control/commit-fence';
 import { humanLoginPage } from './human-login-page.ts';
 import { connectRelay, loadRelayConnection } from '@opencraft/plugin-relay-connect/server';
-import { validateHeadlessIdentity, validateEnvironmentDelivery, environmentDeliveryOptions } from "./headless-identity.mjs";
+import { validateHeadlessIdentity, environmentLaunchOwner, environmentDeliveryOptions } from "./headless-identity.mjs";
 import { startHeadlessRuntimePlugins, validateRuntimePluginOptions } from "./runtime-plugins.mjs";
 import { installHeadlessExtensions, loadHeadlessExtensions, validateHeadlessExtensions } from "./headless-extensions.mjs";
 import { createHubController } from '@opencraft/hub-network/controller';
@@ -526,23 +527,38 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     modelPolicy = new ModelPolicyStore(modelPolicyPath);
     // Identity adapters can bind their own credentials to this stable Human authority.
     actorStore = new ActorStore(serverStorage);
+    // ENV delivery is a deployment setting independent of the vault owner:
+    // whichever owner serves it publishes its issuer for the supervisor of
+    // independent engine hosts, so this is refused before any owner starts.
+    const environmentDelivered = environmentLaunchOwner(options.environmentDelivery, undefined) !== null;
+    if (options.environmentIssuer !== undefined && !environmentDelivered) throw new Error('The ENV issuer requires environment delivery');
+    if (environmentDelivered && options.engineHostDescriptor && !options.environmentIssuer?.publish)
+      throw new Error('Environment delivery to an independent engine host requires a published issuer');
     if (composition.createIdentity) {
+      // With delivery, an identity composition that owns its vault receives the
+      // same publication path and rotation generation core's Worker would.
       identity = await composition.createIdentity({ dataDirectory, membership, relayConfiguration, workspaceExecution,
         hubAuthority: hubController.node?.store.state.authority ?? null,
         resolveIdentity: request => instanceAccess?.authenticate(request) ?? null,
-        getInstanceAccess: () => instanceAccess, machineIdentity, actors: actorStore, sshIngressEnabled: !!ingressConfiguration });
+        getInstanceAccess: () => instanceAccess, machineIdentity, actors: actorStore, sshIngressEnabled: !!ingressConfiguration,
+        ...(environmentDelivered ? { environmentIssuer: Object.freeze({ ...options.environmentIssuer }) } : {}) });
       validateHeadlessIdentity(identity);
       if (identity?.codexWorkspaceRouting !== undefined)
         validateCodexWorkspaceHooks(identity.codexWorkspaceRouting);
       for (const provider of identity?.capabilityProviders ?? []) capabilities.register(provider);
     }
-    // One installation has one ENV owner; configuring two fails here.
-    const coreEnvironmentLaunch = validateEnvironmentDelivery(options.environmentDelivery, identity);
-    if (options.environmentIssuer !== undefined && !coreEnvironmentLaunch) throw new Error('The ENV issuer requires core environment delivery');
-    // An independent engine host pins the core issuer only from its supervisor,
-    // which reads the key this vault owner publishes; never from this Gateway.
-    if (coreEnvironmentLaunch && options.engineHostDescriptor && !options.environmentIssuer?.publish)
-      throw new Error('Environment delivery to an independent engine host requires a published issuer');
+    // One installation has one ENV owner; configuring two fails here. An
+    // identity composition's `environmentLaunch` is the owner; otherwise, with
+    // delivery, core's assets vault Worker is. Never both, never a fallback.
+    const environmentOwner = environmentLaunchOwner(options.environmentDelivery, identity);
+    const coreEnvironmentLaunch = environmentOwner === 'core';
+    // An independent engine host pins the issuer only from its supervisor,
+    // which reads the key the vault owner publishes; never from this Gateway.
+    // The identity owner publishes it itself; a publication that is missing or
+    // names another key would leave every delivery failing, so it is refused.
+    if (environmentOwner === 'identity' && environmentDelivered && options.environmentIssuer?.publish !== undefined
+      && await readPublishedEnvironmentIssuer(options.environmentIssuer.publish).catch(() => null) !== identity.environmentLaunch.issuer)
+      throw new Error('Environment delivery requires the identity vault owner to publish its issuer');
     workspaceRouting = identity?.codexWorkspaceRouting;
     if (workspaceExecution && workspaceRouting && (typeof workspaceRouting.createCodexWorkspaceHooks !== 'function'
       || typeof workspaceRouting.readCatalog !== 'function'))

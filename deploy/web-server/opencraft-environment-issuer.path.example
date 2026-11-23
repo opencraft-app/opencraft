@@ -1,4 +1,4 @@
-# Install only with ENV delivery (OPENCRAFT_ENVIRONMENT_DELIVERY=vault-owner).
+# Install only with ENV delivery (OPENCRAFT_ENVIRONMENT_DELIVERY=opaque).
 # The vault owner rewrites this file only when its issuer key changes (first
 # enablement or explicit rotation), so a restarted gateway relaunches nothing.
 [Unit]

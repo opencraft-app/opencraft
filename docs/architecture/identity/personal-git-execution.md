@@ -31,7 +31,7 @@ a failed preflight rejects before dispatch rather than pretending input was sent
 An installation with a separate vault owner signs grants there instead:
 `PersonalGitSealPort` (`{ authority, seal(scope): Promise<string> }`, subpath
 `personal-git-seal`) is served by the core vault-owner Worker
-(`environmentDelivery: 'vault-owner'`) or supplied by an identity composition
+(`environmentDelivery: 'opaque'` without an identity port) or supplied by an identity composition
 as `ExecutionEnvironmentRuntime`'s `gitSeal` option. The owner seals only its own
 durable admission and the caller rechecks after the await; grants are
 byte-compatible with in-process ones. See
