@@ -79,8 +79,7 @@ test("viewport observer owns only the scrollport, initializes once, coalesces an
     owner.scrollElementRef.current = scrollport;
     const release = owner.observeViewportGeometry(() => changes++);
     assert.equal(changes, 1, "initial update does not wait for observer delivery");
-    assert.equal(properties.get("--thread-reading-clip-left"), "0px");
-    assert.equal(properties.get("--thread-reading-clip-right"), "0px");
+    assert.equal(properties.size, 0, "geometry observation without a dock publishes no styles");
     assert.deepEqual([...observed], [scrollport], "content ancestors must never join the viewport observer");
     callback!([], {} as ResizeObserver);
     callback!([], {} as ResizeObserver);

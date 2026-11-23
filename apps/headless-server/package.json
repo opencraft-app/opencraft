@@ -12,6 +12,7 @@
     "./git-execution-authority": "./src/git-execution-authority.ts",
     "./git-identity-signer": "./src/git-identity-signer.ts",
     "./host-filesystem": "./src/host-filesystem.ts",
+    "./host-filesystem-plugin-source": "./src/host-filesystem-plugin-source.mjs",
     "./host-filesystem-transport": "./src/host-filesystem-transport.ts",
     "./host-terminal-transport": "./src/host-terminal-transport.ts",
     "./host-workspace-catalog-transport": "./src/host-workspace-catalog-transport.ts",

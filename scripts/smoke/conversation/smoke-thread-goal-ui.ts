@@ -366,10 +366,10 @@ try {
       const goalSummary=adaptive.locator('.thread-goal__summary');
       await adaptive.locator('.thread-goal__label').filter({hasText:language==='zh-CN'?'正在推进目标':'Pursuing goal'}).waitFor();
       const target=adaptive.locator('.thread-goal__target');
-      const motion=await target.evaluate(el=>({count:el.getAnimations().length,duration:el.getAnimations()[0]?.effect?.getTiming().duration,mask:getComputedStyle(el).maskPosition}));
+      const motion=await target.evaluate(el=>({count:el.getAnimations().length,duration:el.getAnimations()[0]?.effect?.getTiming().duration,opacity:getComputedStyle(el).opacity}));
       assert.equal(motion.count,1,'an active Goal must visibly animate in the Composer');
       assert.equal(motion.duration,3200,'reuse the quiet sidebar cadence');
-      await adaptive.waitForFunction(previous=>getComputedStyle(document.querySelector('.thread-goal__target')!).maskPosition!==previous,motion.mask);
+      await adaptive.waitForFunction(previous=>getComputedStyle(document.querySelector('.thread-goal__target')!).opacity!==previous,motion.opacity);
       const rail=adaptive.locator('.opencraft-composer-attached-rail');
       const geometry=await rail.evaluate((el:HTMLElement) => {
         const row=el.querySelector('.thread-goal')!; const r=row.getBoundingClientRect(); const editor=el.nextElementSibling!.getBoundingClientRect();
@@ -413,7 +413,7 @@ try {
       images.push(await target.screenshot({path:`${output}/goal-motion-${touch?'touch':'mouse'}-${phase}.png`}));
     }
     assert.deepEqual(phases[0],phases[1]);assert.equal(phases[0].transform,'none');
-    assert.ok(!images[0].equals(images[1]),'Goal shimmer must alter actual pixels');
+    assert.ok(!images[0].equals(images[1]),'Goal opacity must alter actual pixels');
     await target.evaluate(el=>el.getAnimations()[0]!.play());
     for(const attribute of ['inert','aria-hidden']) {
       await adaptive.locator('.thread-goal').evaluate((el,attribute)=>el.setAttribute(attribute,attribute==='inert'?'':'true'),attribute);

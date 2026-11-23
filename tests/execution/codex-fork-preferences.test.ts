@@ -5,7 +5,8 @@ import { ExecutionEnvironmentSnapshot } from "@opencraft/execution-environment";
 function fixture(source: Record<string, unknown>) {
   const writes: any[] = [], reads: any[] = [];
   const adapter: any = Object.create(CodexEngineAdapter.prototype);
-  Object.assign(adapter, { environmentCreations: new Map(), options: { kind: "remote", transport: { async send(wire: string) { writes.push(JSON.parse(wire)); } } },
+  Object.assign(adapter, { environmentCreations: new Map(), environmentLaunchCreations: new Map(), sessionMcpCreations: new Map(), options: { kind: "remote", transport: { async send(wire: string) { writes.push(JSON.parse(wire)); } } },
+    executionBlocked() { return false; },
     async requestPhysical(method: string, params: unknown) { reads.push({ method, params }); return source; } });
   return { adapter, writes, reads };
 }
@@ -39,4 +40,12 @@ test("fork replaces the source environment with its own creator snapshot, includ
     assert.equal(JSON.stringify(f.writes).includes('synthetic-parent'), false);
     assert.equal(JSON.stringify(f.writes).includes('synthetic-forged'), false);
   }
+});
+
+test("fork metadata resume retains its trusted original request context", async () => {
+ const f=fixture({model:"parent"}),context={sender:null,actorContext:{actorId:"human://fixture"}};
+ f.adapter.pending=new Map([["fork",{nativeAdmission:{context:()=>context}}]]);f.adapter.internalRequests=new Map();
+ f.adapter.requestPhysical=async (...args:unknown[])=>{assert.strictEqual(args[6],context);return {model:"parent"};};
+ await f.adapter.writePhysical({id:"fork",method:"thread/fork",params:{threadId:"parent",workspaceFork:{kind:"side-chat",intentId:"intent"}}});
+ assert.equal(Object.hasOwn(f.writes[0].params,"workspaceFork"),false);
 });

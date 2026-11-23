@@ -1,0 +1,12 @@
+# Portable-bundle layer. The bundle's compose.yaml and compose.role-images.yaml are
+# exported unchanged from deploy/docker, so a portable site runs the same deployment
+# model as a source deployment: the same four services, static-docker link volumes,
+# private agent and Gateway tmpfs, proxy and environment. This file adds only what a
+# portable site selects. deploy.py renders, in order: compose.yaml,
+# compose.role-images.yaml, this file, then compose.root-hands.yaml and
+# compose.personal-git.yaml when site.env enables them.
+name: ${COMPOSE_PROJECT_NAME:?Set a unique deployment name}
+services:
+  gateway:
+    # compose.yaml's command with an explicit listener, port and access control on.
+    command: ["--host", "${OPENCRAFT_BIND_HOST:-127.0.0.1}", "--port", "${OPENCRAFT_PORT:?Set Gateway port}", "--data-dir", "${OPENCRAFT_DATA_DIR}", "--access-control", "--engines", "dsh,pi", "--default-engine", "pi"]

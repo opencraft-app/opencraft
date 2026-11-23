@@ -6,6 +6,36 @@ and PID visibility preserve the existing split-owner protocols; this is a truste
 single-tenant deployment, not a multi-tenant isolation boundary. Hands retains the
 Chromium sandbox capabilities; do not use privileged mode or disable its sandbox.
 
+## One deployment model
+
+A bundle runs the same Compose model as a source deployment
+([container README](../README.md)): `compose.yaml` and `compose.role-images.yaml`
+are exported byte for byte from `deploy/docker/`, never from a template, so the
+four services, the static-docker link volumes (`<project>_brain-link`,
+`<project>_hands-link`), the private workspace agent tmpfs (`/run/opencraft-agent`
+in Brain and Hands), the Gateway's private tmpfs (`/run/opencraft-gateway`), the
+proxy service and every environment variable are those of the release. Only
+`compose.portable.yaml` is portable-specific, and it may only name the project and
+set the Gateway listener (`OPENCRAFT_BIND_HOST`, `OPENCRAFT_PORT`, access control
+on). `deploy.py` renders, in order:
+
+```text
+compose.yaml + compose.role-images.yaml + compose.portable.yaml
+  [+ compose.root-hands.yaml if OPENCRAFT_HANDS_ROOT=1]
+  [+ compose.personal-git.yaml if OPENCRAFT_PERSONAL_GIT=1]
+```
+
+The Gateway reaches Brain and Hands only through `static-docker://brain
+static-docker://hands` and their named endpoints (Codex, Pi, DSH, terminal, files,
+browser); it reads no Brain/Hands socket or descriptor from the shared directories.
+Compose 2.24 is required for `build: !reset` in the role-images layer, and 2.24.4
+for root Hands (`tmpfs: !override` replaces the client-owned agent tmpfs with a
+root-owned one; an older Compose would keep both). `deploy.py` reads
+`docker compose version` and refuses an older Compose before rendering, and it
+rejects any rendering that does not have exactly one 0700 agent tmpfs owned by
+each workspace container's user. Tests render a bundle against `deploy/docker` and
+run this preflight on the result, so the two cannot drift silently.
+
 ## Export / deploy
 
 From a clean committed fork, export either a completed CSIGHub four-image upload
@@ -23,11 +53,16 @@ options the bundle is built from this directory only.
 Only immutable `repository@sha256:...` refs are accepted; no checkout, local image ID,
 Electron path or build context is needed on the destination. Transfer the bundle,
 copy `site.env.example` to `site.env`, and edit the project name, host directories,
-ports and numeric UID/GID. UID/GID must match the images; formal builds default to 1000:1000. To change the runtime identity, build
+ports, numeric UID/GID and the Brain and Hands budgets. UID/GID must match the images; formal builds default to 1000:1000. To change the runtime identity, build
 all four images with the selected UID/GID. Container paths are stable; host paths
-may live on any disk. All roles explicitly share the execution volume even when
-it is outside the state directory. Hands owns browser, execution, terminal **and
-files**; no extra host file-service unit, docker-exec supervisor or mounted code.
+may live on any disk. Gateway, Brain and Hands explicitly mount the same execution
+directory even when it is outside the state directory (`init` creates its mount
+point inside the state directory privately). Hands owns browser, execution,
+terminal **and files**; no extra host file-service unit, docker-exec supervisor or
+mounted code. `OPENCRAFT_BRAIN_CPUS`/`OPENCRAFT_BRAIN_MEMORY_BYTES` and
+`OPENCRAFT_HANDS_CPUS`/`OPENCRAFT_HANDS_MEMORY_BYTES` are both the enforced
+container limits and the budgets the Gateway requests through static-docker;
+preflight rejects any disagreement.
 
 ```sh
 # Authenticate to your registry interactively; never commit credentials.
@@ -35,10 +70,20 @@ docker login YOUR_REGISTRY
 python3 deploy.py config    # inspect resolved config; no mutation
 python3 deploy.py init      # create missing directories, never recursively chown old data
 python3 deploy.py pull
-python3 deploy.py check     # image/UID/mount/file-service checks
+python3 deploy.py check     # Compose version, model, image/UID/mount/file-service checks
 python3 deploy.py up        # --no-build, wait for all four healthchecks, functional verification
 python3 deploy.py verify
 ```
+
+`check` also refuses a rendering that leaves the deployment model: a missing or
+shared agent tmpfs, a link volume that is not a 0700 tmpfs owned by the client
+identity or that another service mounts, a Gateway without
+`OPENCRAFT_WORKSPACE_ENVIRONMENTS`, a Brain not on the proxy service, a budget that
+differs from its limit, and retired variables such as
+`OPENCRAFT_BROWSER_OWNER_SOCKET` (in `site.env` or the rendering). `verify` runs the
+files RPC from Hands, from Brain through the shared execution directory and from
+the Gateway through its `files` endpoint, checks both links and that `/health`
+reports `local-codex` ready, and that an unauthenticated request is rejected.
 
 Default Gateway binds loopback only, with access control enabled. Put your existing
 TLS reverse proxy / corporate authentication integration in front; never expose an
@@ -52,6 +97,16 @@ checks do not prove an authenticated model turn.
 No model requests are made by this drill. Do not copy production state to test hosts.
 
 ## Migration, restart, rollback
+
+**Upgrading a bundle exported before the workspace-agent model.** Older bundles
+carried their own `compose.yaml` without link volumes or agent tmpfs and configured
+the Gateway with `OPENCRAFT_BROWSER_OWNER_SOCKET`; a current Gateway image does not
+start under it. Export a new bundle for the new release, keep your `site.env`,
+delete `OPENCRAFT_BROWSER_OWNER_SOCKET`, add `OPENCRAFT_BRAIN_CPUS` and
+`OPENCRAFT_BRAIN_MEMORY_BYTES` (the defaults are 4 CPUs and 8 GiB; Brain is now
+limited like Hands), then run `init`, `check` and `up`. `init` only adds the new
+mount-point directories; it changes no existing ownership. Rolling back means the
+old bundle together with its old images.
 
 For an empty-machine drill, use an independent project, directories and ports.
 `stop` stops only this project and preserves data. No cleanup/prune/down-volume
@@ -105,7 +160,7 @@ image plus a root override. The core Hands entry selects root mode only when it
 runs as UID 0 and then requires the `OPENCRAFT_ROOT_HANDS_*` contract this profile
 sets; UID 0 without it fails at startup, and the generic `workspace-agent.mjs`
 entry refuses the Hands and browser roles as UID 0. Root mode is the same Hands
-workspace agent: it runs as root with a root-owned private run directory (the
+workspace agent (and needs Compose 2.24.4 or later, see above): it runs as root with a root-owned private run directory (the
 profile replaces the `/run/opencraft-agent` tmpfs, the fixed path the Gateway's
 endpoint relays name, with a root-owned one), supervises every owner as a critical
 child, and serves its named endpoints to the nonroot Gateway over its link, whose

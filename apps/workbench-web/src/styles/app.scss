@@ -3537,22 +3537,19 @@ svg[data-sidebar-toggle-icon-state] {
 
   &[data-has-footer] {
     // Desktop keeps the lower reading strip quiet. Touch layouts deliberately
-    // let history pass behind and below the floating glass composer. Scope paint
-    // only: footer reservation, native scrolling and keyboard geometry are shared.
-    // No density attribute yet means no clipping during capability bootstrap.
+    // let history pass behind and below the floating glass composer.
     :root[data-ui-density="compact"] & > .thread-scroll {
       isolation: isolate;
-      clip-path: polygon(
-        0 0, 100% 0, 100% 100%,
-        calc(100% - var(--thread-reading-clip-right, 0px)) 100%,
-        calc(100% - var(--thread-reading-clip-right, 0px)) calc(100% - var(--thread-reading-bottom-inset, 0px)),
-        var(--thread-reading-clip-left, 0px) calc(100% - var(--thread-reading-bottom-inset, 0px)),
-        var(--thread-reading-clip-left, 0px) 100%, 0 100%
-      );
+      // Keep the visible area rectangular and give the native scrollbar a full
+      // track within it. A clip on the old, taller scrollport cuts off its thumb.
+      --thread-reading-viewport-inset: var(--thread-reading-bottom-inset, 0px);
+      height: calc(100% - var(--thread-reading-viewport-inset));
     }
     > .thread-scroll > .thread-scroll-surface::after {
       content: "";
-      flex: 0 0 var(--thread-footer-height, 0px);
+      // The viewport already excludes this part of the dock. Subtract it from
+      // the flow reservation too, so the transcript keeps its reading position.
+      flex: 0 0 max(0px, var(--thread-footer-height, 0px) - var(--thread-reading-viewport-inset));
       margin-block-start: auto;
     }
     > .thread-scroll-footer {
@@ -3574,6 +3571,7 @@ svg[data-sidebar-toggle-icon-state] {
     - var(--thread-wide-block-inline-shift, 0px) * 2
   );
   --thread-scroll-padding-bottom: 0px;
+  --thread-reading-viewport-inset: 0px;
   --thread-sticky-header-top: calc(var(--spacing) * 8);
 
   position: relative;
@@ -3589,7 +3587,7 @@ svg[data-sidebar-toggle-icon-state] {
   // `contain` only handles chaining and still permits the rubber-band motion
   // that visibly carries the sticky Composer by roughly one text line.
   overscroll-behavior: none;
-  scroll-padding-block-end: var(--thread-scroll-padding-bottom);
+  scroll-padding-block-end: max(0px, var(--thread-scroll-padding-bottom) - var(--thread-reading-viewport-inset));
   container-name: thread-content;
   container-type: inline-size;
 

@@ -967,7 +967,7 @@ export function Conversation({
       const element = scrollRef.current;
       if (element === null || readOnlyTurnIds === undefined) return null;
       const viewport = element.getBoundingClientRect();
-      const bottom = viewport.bottom - viewportOwner.getFooterHeight();
+      const bottom = viewport.bottom - viewportOwner.getFooterHeight() + viewportOwner.getReadingViewportInsetPx();
       for (const turn of entries) {
         if (!readOnlyTurnIds.has(turn.turnId)) continue;
         const row = viewportOwner.turnElementsRef.current.get(turn.turnKey);

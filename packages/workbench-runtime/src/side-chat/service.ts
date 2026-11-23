@@ -211,7 +211,7 @@ export class SideChatService extends Service {
         || runtime.resources.threads.supportsSideChat?.(parent.threadId) === false) throw new Error("This host does not support recoverable side chats");
       const { SIDE_CHAT_INSTRUCTIONS, SIDE_CHAT_BOUNDARY } = await import("./policy");
       if (!current()) throw new Error("Side chat creation was cancelled");
-      const child = await runtime.resources.threads.fork({ threadId: parent.threadId, cwd, ephemeral: false, excludeTurns: true, deferGoalContinuation: true, developerInstructions: SIDE_CHAT_INSTRUCTIONS }, { deduplicate: false, ownership: { kind: 'side-chat', owner: parent } });
+      const child = await runtime.resources.threads.fork({ threadId: parent.threadId, workspaceFork: { kind: "side-chat", intentId: id }, cwd, ephemeral: false, excludeTurns: true, deferGoalContinuation: true, developerInstructions: SIDE_CHAT_INSTRUCTIONS }, { deduplicate: false, ownership: { kind: 'side-chat', owner: parent } });
       childId = child.id;
       this.creatingChildren.set(id, { id, parent, key: createConversationKey(parent.hostId, child.id) });
       this.publish();

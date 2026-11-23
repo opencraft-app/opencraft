@@ -3,7 +3,7 @@ import type { WorkspaceExecutionSelection } from "@opencraft/sandbox-node/worksp
 import type { SandboxWorkspaceFiles } from './sandbox-workspace-files.js';
 import type { SandboxProcessService } from './sandbox-process-service.js';
 import { OrdinaryWorkspaceCompute, type WorkspaceAllocation } from './ordinary-workspace-compute.js';
-import { OrdinaryWorkspaceStore, type WorkspaceAuthority, type WorkspaceLease } from './ordinary-workspace-store.js';
+import { OrdinaryWorkspaceStore, type WorkspaceAuthority, type WorkspaceLease, type WorkspaceBinding } from './ordinary-workspace-store.js';
 import { ordinaryWorkspaceCwd, encodeWorkspaceSelection, type ResolvedWorkspaceSelection } from './ordinary-workspace-selection.js';
 
 export interface OrdinaryExecutionBinding {
@@ -19,6 +19,8 @@ export interface OrdinaryExecutionBinding {
   registerExecutionEnvironment?(request: (method: string, params: Record<string, unknown>) => Promise<unknown>): Promise<void>;
   executionSelection?(): Promise<WorkspaceExecutionSelection>;
   bindThread?(threadId: string): Promise<void>;
+  forThread?(threadId: string): Promise<OrdinaryExecutionBinding>;
+  closeThread?(threadId: string): Promise<void>;
   executionFields(): Promise<{ cwd: string; runtimeWorkspaceRoots: string[]; environments: { environmentId: string; cwd: string }[] }>;
   close(): Promise<void>;
 }
@@ -50,9 +52,12 @@ export interface OrdinaryRestoreOptions extends Omit<OrdinaryCreationOptions, 'i
 /** Host lifecycle composition. Product admission and the private Native route must
  * be installed by the deployment; constructing this class does not expose a UI
  * capability. Close this owner before closing its journal. No automatic replay. */
+export type WorkspaceRetainedCleanup = (input: {authority:WorkspaceAuthority; binding:WorkspaceBinding;
+  deletePrivateVolume:boolean; selection:ResolvedWorkspaceSelection; authorize():Promise<void>}) => Promise<void>;
 export interface OrdinaryThreadLifecycle {
   hostId: string; threadId: string; generation: number; state: 'active'|'archived'|'deleted';
 }
+type BindingEntry = { binding: OrdinaryExecutionBinding; authorize(): Promise<void>; retire(): Promise<void> };
 type LifecycleEntry = {row: OrdinaryThreadLifecycle; pending: boolean; managed: boolean; ready: boolean; work: Promise<{managed:boolean}>};
 export class OrdinaryConversationOwner {
   private readonly compute: OrdinaryWorkspaceCompute;
@@ -62,7 +67,8 @@ export class OrdinaryConversationOwner {
   private active = new Set<() => Promise<void>>();
   private cleanupFailed = false;
   private restoring = new Set<string>();
-  private bindings = new Map<string, { binding: OrdinaryExecutionBinding; authorize(): Promise<void>; retire(): Promise<void> }>();
+  private bindings = new Map<string, BindingEntry>();
+  private workspaceBindings = new Map<string, BindingEntry>();
   private lifecycles = new Map<string, LifecycleEntry>();
   private pendingThreads = new Map<string, Set<Promise<unknown>>>();
   private assertThreadActive(hostId: string, threadId: string) {
@@ -84,15 +90,25 @@ export class OrdinaryConversationOwner {
     if (prior && (row.generation < prior.row.generation || row.generation === prior.row.generation && row.state !== prior.row.state
       || prior.row.state === 'deleted' && row.state !== 'deleted')) return Promise.reject(Error('Stale workspace lifecycle'));
     if (prior && row.generation === prior.row.generation) {
-      if (prior.pending || prior.managed) return prior.work;
-      // A late positive Native receipt may have arrived after the first cleanup
-      // observation. Recheck committed idle proof; never replay physical close.
-      const rows = this.store.lifecycleForThread(row.hostId,row.threadId);
-      if (!rows.length) return Promise.resolve({managed:false});
-      if (rows.some(r => r.phase !== 'idle')) return Promise.reject(Error('Workspace cleanup requires reconciliation'));
-      prior.managed = true; prior.ready = true; prior.work = Promise.resolve({managed:true}); return prior.work;
+      if (prior.pending || prior.ready || prior.managed && !this.cleanupRetained) return prior.work;
+      if (!prior.managed) {
+        // A late positive Native receipt may have arrived after the first cleanup
+        // observation. Recheck committed idle proof; never replay physical close.
+        const rows = this.store.lifecycleForThread(row.hostId,row.threadId);
+        if (!rows.length) return Promise.resolve({managed:false});
+        if (rows.some(r => r.phase !== 'idle')) return Promise.reject(Error('Workspace cleanup requires reconciliation'));
+        prior.managed = true; prior.ready = true; prior.work = Promise.resolve({managed:true}); return prior.work;
+      }
+      // A deployment-supplied exact-receipt reconciler may safely inspect a
+      // previous unknown outcome. Published close promises remain memoized;
+      // this path never blindly issues a second provider deletion.
     }
     if (!prior && this.lifecycles.size >= 100000) return Promise.reject(Error('Too many workspace lifecycle scopes'));
+    // The member/fork ledger is durable across restarts. Persist the committed
+    // Gateway event before any asynchronous teardown so a sibling cannot be
+    // mistaken for an independent workspace after a process restart.
+    try { this.store.recordMemberLifecycle(row.hostId, row.threadId, row.state, row.generation); }
+    catch (error) { return Promise.reject(error); }
     const entry: LifecycleEntry = {row:snapshot,pending:true,managed:false,ready:false,work:undefined!};
     this.lifecycles.set(key,entry); // Fence before any await or teardown.
     const matches = (bindingKey: string) => {const value = JSON.parse(bindingKey);return value[1] === snapshot.hostId && value[2] === snapshot.threadId;};
@@ -102,12 +118,67 @@ export class OrdinaryConversationOwner {
       if (prior) await prior.work.catch(()=>{});
       await Promise.allSettled([...this.pendingThreads].filter(([k])=>matches(k)).flatMap(([,pending])=>[...pending]));
       const owned = [...this.bindings].filter(([k])=>matches(k)).map(([,value])=>value);
-      entry.managed = owned.length > 0;
+      const member = this.store.lifecycleWorkspace(snapshot.hostId, snapshot.threadId);
+      entry.managed = owned.length > 0 || !!member;
+      if (snapshot.state === 'active') {
+        if (member && this.store.memberArchived(snapshot.hostId, snapshot.threadId)) throw Error('Stale workspace lifecycle');
+        entry.ready = entry.managed; return {managed:entry.managed};
+      }
+      const workspaceKey = member && this.key(member.authority, member.binding.workspaceId);
+      const workspace = workspaceKey && this.workspaceBindings.get(workspaceKey);
+      if (member && !this.store.canRetireArchivedWorkspace(member.authority, member.binding.workspaceId)) {
+        // Only the member's thread resources may close while another member
+        // remains active; the underlying compute lease must stay untouched.
+        if (workspace) {
+          if (!workspace.binding.closeThread) throw Error('Shared workspace cleanup requires reconciliation');
+          await workspace.binding.closeThread(snapshot.threadId);
+          this.bindings.delete(this.key(member.authority, snapshot.threadId));
+        } else if (member.binding.phase !== 'idle') {
+          throw Error('Retained shared workspace requires reconciliation');
+        }
+        if (!this.store.hasActiveMembers(member.authority, member.binding.workspaceId))
+          throw Error('Shared workspace fork requires reconciliation');
+        entry.ready = true;
+        return {managed:true};
+      }
+      // A sibling may own the live binding even when this particular member
+      // never had an in-process view (for example, after a late fork receipt).
+      if (workspace && !owned.includes(workspace)) owned.push(workspace);
       const outcomes = await Promise.allSettled(owned.map(value=>value.retire()));
       if (outcomes.some(r=>r.status === 'rejected')) throw Error('Workspace cleanup unconfirmed');
       const rows = this.store.lifecycleForThread(snapshot.hostId,snapshot.threadId);
       entry.managed ||= rows.length > 0;
-      if (rows.some(r=>r.phase !== 'idle')) throw Error('Retained workspace requires reconciliation');
+      if (member) {
+        const {authority, binding: original} = member;
+        const authorize = async () => {
+          if (this.closed || !this.store.canRetireArchivedWorkspace(authority, original.workspaceId))
+            throw Error('Workspace cleanup authority changed');
+        };
+        let retained = this.store.read(authority, original.workspaceId);
+        if (retained.phase !== 'idle') {
+          if (!this.cleanupRetained) throw Error('Retained workspace requires reconciliation');
+          await authorize();
+          const selection=this.store.resolvedSelection(authority,original.workspaceId);
+          await this.cleanupRetained({authority,binding:retained,selection,deletePrivateVolume:false,authorize});
+          await this.compute.reconcileAbsent({authority,workspaceId:original.workspaceId,authorize,inspect:async()=> 'absent'});
+          retained = this.store.read(authority, original.workspaceId);
+        }
+        if (snapshot.state === 'deleted' && retained.privateVolumeId && this.cleanupRetained
+          && this.store.allMembersDeleted(authority,original.workspaceId)) {
+          const intent = this.store.beginPrivateVolumeDeletion(authority,original.workspaceId);
+          if (intent.state !== 'deleted') {
+            const authorizeDeletion = async () => {
+              await authorize();
+              if (!this.store.allMembersDeleted(authority,original.workspaceId)) throw Error('Workspace deletion authority changed');
+              this.store.beginPrivateVolumeDeletion(authority,original.workspaceId);
+            };
+            const selection=this.store.resolvedSelection(authority,original.workspaceId);
+            await this.cleanupRetained({authority,binding:retained,selection,deletePrivateVolume:true,authorize:authorizeDeletion});
+            await authorizeDeletion();
+            this.store.confirmPrivateVolumeDeleted(authority,original.workspaceId,intent.volumeId);
+          }
+        }
+      } else if (rows.some(r=>r.phase !== 'idle')) throw Error('Retained workspace requires reconciliation');
       entry.ready = entry.managed;
       return {managed:entry.managed};
     })().finally(()=>{entry.pending = false;});
@@ -118,27 +189,80 @@ export class OrdinaryConversationOwner {
   async bindingFor(authority: WorkspaceAuthority, threadId: string): Promise<OrdinaryExecutionBinding> {
     this.assertThreadActive(authority.hostId, threadId);
     const key = this.key(authority, threadId), current = this.bindings.get(key);
+    if (current) this.store.assertMemberActive(authority, threadId);
     if (!current) throw Error('Ordinary execution binding unavailable');
     await current.authorize();
+    this.assertThreadActive(authority.hostId, threadId);
+    this.store.assertMemberActive(authority, threadId);
     if (this.bindings.get(key) !== current) throw Error('Ordinary execution binding expired');
+    const view = current.binding.forThread ? await current.binding.forThread(threadId) : current.binding;
+    this.assertThreadActive(authority.hostId, threadId);
+    this.store.assertMemberActive(authority, threadId);
+    if (this.bindings.get(key) !== current) throw Error('Ordinary execution binding expired');
+    return view;
+  }
+  /** Root binding for workspace-owned artifacts; caller must still authorize the member. */
+  async workspaceBindingFor(authority: WorkspaceAuthority, threadId: string): Promise<OrdinaryExecutionBinding> {
+    await this.bindingFor(authority, threadId);
+    const current = this.bindings.get(this.key(authority, threadId));
+    if (!current) throw Error('Ordinary execution binding expired');
     return current.binding;
   }
-  constructor(private readonly store: OrdinaryWorkspaceStore) { this.compute = new OrdinaryWorkspaceCompute(store); }
+  constructor(private readonly store: OrdinaryWorkspaceStore, private readonly cleanupRetained?: WorkspaceRetainedCleanup) {
+    this.compute = new OrdinaryWorkspaceCompute(store);
+  }
+
+  /** The dispatch intent is durable before Native is called. A lost reply is
+   * uncertain and may only be settled by a later positive receipt. */
+  fork(options: { authority: WorkspaceAuthority; parentThreadId: string; intentId: string;
+    authorize(): Promise<void>;
+    nativeFork(parentThreadId: string, fields: Awaited<ReturnType<OrdinaryExecutionBinding['executionFields']>>, binding: OrdinaryExecutionBinding): Promise<unknown>;
+  }): Promise<{workspaceId:string;threadId:string}> {
+    const authority = {...options.authority}, parent = options.parentThreadId, intentId = options.intentId;
+    const operation = (async () => {
+      await options.authorize();
+      const root = await this.workspaceBindingFor(authority, parent);
+      if (!root.forThread || !root.closeThread) throw Error('Shared workspace binding unavailable');
+      const view = await this.bindingFor(authority, parent);
+      const fields = await view.executionFields();
+      await options.authorize();
+      if (await this.workspaceBindingFor(authority, parent) !== root) throw Error('Ordinary execution binding expired');
+      const intent = this.store.beginThreadFork(authority, parent, intentId);
+      if (intent.threadId) return {workspaceId:intent.lease.workspaceId,threadId:intent.threadId};
+      const response = await options.nativeFork(parent, fields, view);
+      const threadId = (response as {thread?:{id?:unknown}} | null)?.thread?.id;
+      if (typeof threadId !== 'string' || !threadId) throw Error('Native fork receipt missing');
+      // Persist positive evidence even if permission changed during dispatch.
+      this.store.confirmThreadForked(authority, intent.lease, intentId, threadId);
+      await options.authorize();
+      if (await this.workspaceBindingFor(authority, parent) !== root) throw Error('Ordinary execution binding expired');
+      this.store.assertMemberActive(authority, threadId);
+      await root.forThread(threadId);
+      const entry = this.workspaceBindings.get(this.key(authority, intent.lease.workspaceId));
+      if (!entry || entry.binding !== root) throw Error('Ordinary execution binding expired');
+      this.bindings.set(this.key(authority, threadId), entry);
+      return {workspaceId:intent.lease.workspaceId,threadId};
+    })();
+    this.pending.add(operation);
+    this.trackThread(authority, parent, operation);
+    void operation.then(() => this.pending.delete(operation), () => this.pending.delete(operation));
+    return operation;
+  }
 
   start(options: OrdinaryCreationOptions): Promise<{ workspaceId: string; threadId: string }> {
     // Copy before the first await: later mutation of a request cannot change identity.
     const authority = { ...options.authority }, intentId = options.intentId;
-    let executionLost = false, knownThreadId: string | undefined;
+    let executionLost = false, published = false, knownThreadId: string | undefined;
     const snapshot = encodeWorkspaceSelection(options.selection).json;
     const selection = () => JSON.parse(snapshot) as ResolvedWorkspaceSelection;
     const authorize = async () => {
       if (this.closed) throw Error('Ordinary conversation owner closed');
       if (executionLost) throw Error('Ordinary execution transport lost');
-      if (knownThreadId) this.assertThreadActive(authority.hostId, knownThreadId);
+      if (knownThreadId && !published) this.assertThreadActive(authority.hostId, knownThreadId);
       await options.authorize(selection());
       if (this.closed) throw Error('Ordinary conversation owner closed');
       if (executionLost) throw Error('Ordinary execution transport lost');
-      if (knownThreadId) this.assertThreadActive(authority.hostId, knownThreadId);
+      if (knownThreadId && !published) this.assertThreadActive(authority.hostId, knownThreadId);
     };
     // The operation is assigned before the first authorization await can resume.
     let operation!: Promise<{workspaceId:string;threadId:string}>;
@@ -147,13 +271,15 @@ export class OrdinaryConversationOwner {
       const admitted = this.store.admitResolved(authority, intentId, selection());
       // A successful duplicate returns its receipt, not another thread/start.
       // Restoring execution for that existing thread is a separate operation.
-      if (admitted.threadId) { this.assertThreadActive(authority.hostId, admitted.threadId); return { workspaceId: admitted.workspaceId, threadId: admitted.threadId }; }
+      if (admitted.threadId) { this.assertThreadActive(authority.hostId, admitted.threadId); this.store.assertMemberActive(authority, admitted.threadId); return { workspaceId: admitted.workspaceId, threadId: admitted.threadId }; }
       let allocation: WorkspaceAllocation | undefined, binding: OrdinaryExecutionBinding | undefined;
-      let cleanup: Promise<void> | undefined, bindingKey: string | undefined, published = false;
+      let cleanup: Promise<void> | undefined, bindingKey: string | undefined;
       const retire = () => cleanup ??= (async () => {
         // Bridge/process teardown precedes releasing compute, but a bridge error
         // must not prevent attempting exact-instance deletion.
-        if (bindingKey) this.bindings.delete(bindingKey);
+        for (const [key, value] of this.bindings) if (value.retire === retire) this.bindings.delete(key);
+        const workspaceKey = this.key(authority, admitted.workspaceId);
+        if (this.workspaceBindings.get(workspaceKey)?.retire === retire) this.workspaceBindings.delete(workspaceKey);
         let failed = false;
         try { await binding?.close(); } catch { failed = true; }
         try { await allocation?.close(); } catch { failed = true; }
@@ -188,7 +314,9 @@ export class OrdinaryConversationOwner {
         await binding.bindThread?.(threadId);
         await authorize();
         bindingKey = this.key(authority, threadId);
-        this.bindings.set(bindingKey, { binding, authorize, retire });
+        const current = { binding, authorize, retire };
+        this.bindings.set(bindingKey, current);
+        this.workspaceBindings.set(this.key(authority, admitted.workspaceId), current);
         this.active.add(retire); published = true;
         return { workspaceId: admitted.workspaceId, threadId };
       } catch (error) {
@@ -211,29 +339,56 @@ export class OrdinaryConversationOwner {
       if (this.closed) throw Error('Ordinary conversation owner closed');
       const row = this.store.forThread(authority, threadId);
       if (!row) throw Error('Ordinary workspace binding not found');
-      let executionLost = false;
+      this.store.assertMemberActive(authority, threadId);
+      let executionLost = false, published = false;
       const snapshot = encodeWorkspaceSelection(this.store.resolvedSelection(authority, row.workspaceId)).json;
       const selection = () => JSON.parse(snapshot) as ResolvedWorkspaceSelection;
       const authorize = async () => {
         if (this.closed) throw Error('Ordinary conversation owner closed');
         if (executionLost) throw Error('Ordinary execution transport lost');
-        this.assertThreadActive(authority.hostId, threadId);
+        if (!published) this.assertThreadActive(authority.hostId, threadId);
         await options.authorize(selection());
         if (this.closed) throw Error('Ordinary conversation owner closed');
         if (executionLost) throw Error('Ordinary execution transport lost');
-        this.assertThreadActive(authority.hostId, threadId);
+        if (!published) this.assertThreadActive(authority.hostId, threadId);
       };
       await authorize();
       if (this.bindings.has(key)) {
         await this.bindingFor(authority, threadId);
         return { workspaceId: row.workspaceId, threadId };
       }
-      if (this.restoring.has(key)) throw Error('Ordinary workspace restore already pending');
-      this.restoring.add(key);
+      const workspaceKey = this.key(authority, row.workspaceId);
+      const shared = this.workspaceBindings.get(workspaceKey);
+      if (shared) {
+        if (!shared.binding.forThread || !shared.binding.closeThread) throw Error('Shared workspace binding unavailable');
+        if (this.restoring.has(key)) throw Error('Ordinary workspace restore already pending');
+        this.restoring.add(key);
+        let opened = false;
+        try {
+          await shared.authorize();
+          const view = await shared.binding.forThread(threadId);
+          opened = true;
+          const response = await options.nativeResume(threadId, await view.executionFields(), view);
+          if ((response as { thread?: { id?: unknown } } | null)?.thread?.id !== threadId)
+            throw Error('Native resume receipt conflict');
+          await authorize();
+          if (this.workspaceBindings.get(workspaceKey) !== shared) throw Error('Ordinary execution binding expired');
+          this.store.assertMemberActive(authority, threadId);
+          this.bindings.set(key, shared);
+          return { workspaceId: row.workspaceId, threadId };
+        } catch (cause) {
+          if (opened) try { await shared.binding.closeThread(threadId); }
+          catch { this.cleanupFailed = true; throw new AggregateError([cause], 'Shared thread cleanup unconfirmed'); }
+          throw cause;
+        } finally { this.restoring.delete(key); }
+      }
+      if (this.restoring.has(workspaceKey)) throw Error('Ordinary workspace restore already pending');
+      this.restoring.add(workspaceKey);
       let allocation: WorkspaceAllocation | undefined, binding: OrdinaryExecutionBinding | undefined;
-      let cleanup: Promise<void> | undefined, published = false;
+      let cleanup: Promise<void> | undefined;
       const retire = () => cleanup ??= (async () => {
-        this.bindings.delete(key);
+        for (const [boundKey, value] of this.bindings) if (value.retire === retire) this.bindings.delete(boundKey);
+        if (this.workspaceBindings.get(workspaceKey)?.retire === retire) this.workspaceBindings.delete(workspaceKey);
         let failed = false;
         try { await binding?.close(); } catch { failed = true; }
         try { await allocation?.close(); } catch { failed = true; }
@@ -263,13 +418,15 @@ export class OrdinaryConversationOwner {
         await authorize();
         await binding.bindThread?.(threadId);
         await authorize();
-        this.bindings.set(key, { binding, authorize, retire });
+        const current = { binding, authorize, retire };
+        this.bindings.set(key, current);
+        this.workspaceBindings.set(workspaceKey, current);
         this.active.add(retire); published = true;
         return { workspaceId: row.workspaceId, threadId };
       } catch (error) {
         try { await retire(); } catch { throw new AggregateError([error], 'Ordinary restore failed; cleanup unconfirmed'); }
         throw error;
-      } finally { this.restoring.delete(key); }
+      } finally { this.restoring.delete(workspaceKey); }
     })();
     this.pending.add(operation);
     this.trackThread(authority, threadId, operation);

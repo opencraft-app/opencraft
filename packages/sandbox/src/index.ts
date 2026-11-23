@@ -1,4 +1,4 @@
-import { DEFAULT_SANDBOX_RESOURCES, FULL_SANDBOX_ENFORCEMENT, SandboxCreationFault, SandboxFault, type Sandbox, type SandboxBackend, type SandboxCommand, type SandboxEnvironment, type SandboxPoolPolicy, type SandboxReceipt, type SandboxResources } from "./contract.js";
+import { DEFAULT_SANDBOX_RESOURCES, FULL_SANDBOX_ENFORCEMENT, SandboxCreationFault, SandboxFault, type Sandbox, type SandboxBackend, type SandboxCommand, type SandboxEnvironment, type SandboxLoss, type SandboxPoolPolicy, type SandboxReceipt, type SandboxResources } from "./contract.js";
 export * from "./contract.js";
 export * from "./endpoint.js";
 export * from "./uri.js";
@@ -33,6 +33,10 @@ function command(input: SandboxCommand) {
   return { command: [...input.command], cwd: input.cwd, env: { ...input.env }, ...(input.terminal ? { terminal: { ...input.terminal } } : {}),
     ...(input.attached ? { attached: true as const } : {}) };
 }
+/** A provider's loss report, normalized; a malformed report or a rejection is a plain stop. */
+const lossOf = (loss: SandboxLoss | undefined): SandboxLoss => Object.freeze({
+  reason: loss && ["exited", "crashed", "stopped"].includes(loss.reason) ? loss.reason : "stopped",
+  ...(loss && Number.isSafeInteger(loss.code) ? { code: loss.code } : {}) });
 const validReceipt = (value: SandboxReceipt | undefined, backend: string) => !!value && value.backend === backend
   && typeof value.instanceId === "string" && value.instanceId.length > 0 && value.instanceId.length <= 256 && !value.instanceId.includes("\0");
 interface Request {
@@ -107,6 +111,7 @@ export async function createSandboxPool(input: SandboxPoolPolicy, backend: Sandb
     const sandbox: Sandbox = {
       identity, resources: effective, enforcement: guarantee, capabilities: Object.freeze({ terminal: environment.capabilities.terminal }),
       ...(environment.receipt ? { receipt: Object.freeze({ backend: environment.receipt.backend, instanceId: environment.receipt.instanceId }) } : {}),
+      ...(environment.lost ? { lost: Promise.resolve(environment.lost).then(lossOf, () => lossOf(undefined)) } : {}),
       ...(environment.processLimits ? { processLimits: Object.freeze({ tasks: environment.processLimits.tasks, fileDescriptorsPerProcess: environment.processLimits.fileDescriptorsPerProcess }) } : {}),
       async spawn(raw, onOutput) {
         if (closed || ended) throw fault("SANDBOX_CLOSED", "Sandbox is closed");

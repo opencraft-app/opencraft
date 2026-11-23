@@ -156,6 +156,27 @@ Logical `workspacePlacement` and the private grant are removed before Native.
 Legacy template IDs that cannot satisfy the logical target contract remain
 editable in Assets but are not advertised as executable workspace choices.
 
+### Shared side-chat forks
+
+A plain `thread/fork` of a remote Thread is still refused. A side chat sends a
+private `workspaceFork: {kind: "side-chat", intentId}` intent; the Gateway turns
+it into a Worker `fork` preparation and strips the field before Native. The
+journal (schema 6) records the pending fork before dispatch and adds the child
+as a member of the parent's workspace only on the positive Native receipt. A
+lost reply is never replayed: placement pages fence classification while a fork
+has no receipt, and a late receipt still commits membership. Placement pages
+list members, so their cursor encodes both workspace and Thread.
+
+Members share one compute lease and private volume. Each member gets a
+thread-scoped view with its own process service and authorization; archiving a
+member closes only that view while another member is active. Compute retires
+when no member is active, and the private volume is deleted only after every
+member is deleted. An optional deployment `cleanupRetained` adapter can remove
+retained compute or the private volume by exact receipt; without it, retained
+non-idle compute still requires reconciliation. Member lifecycle and volume
+deletion receipts are durable, and an already published schema-6 journal with
+missing membership tables is refused rather than recreated.
+
 The physical routing tests exercise Worker preparation, actual private ticket
 consumption, Core policy, receipt barriers, duplicate suppression, source-aware
 placement and scoped files. Providers and Native replies in those tests remain

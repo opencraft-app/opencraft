@@ -224,3 +224,81 @@ test('Native admission receives the prepared private binding and exact durable l
  await next.restore(options);
  assert.deepEqual(generations, [1, 2]);
 });
+
+
+test('archiving a parent cannot retire compute shared with an active child', async t => {
+ const f=fixture(t),first=await f.owner.start(f.options);
+ const fork=f.store.beginThreadFork(authority,'thread','fork');
+ f.store.confirmThreadForked(authority,fork.lease,'fork','child');
+ await assert.rejects(f.owner.applyThreadLifecycle({hostId:authority.hostId,threadId:'thread',state:'archived',generation:1}), /Shared workspace cleanup requires reconciliation/);
+ assert.equal(f.store.hasActiveMembers(authority,first.workspaceId),true);
+ assert.equal(f.store.read(authority,first.workspaceId).phase,'live');
+ assert.equal(f.events.filter(event=>event==='kill').length,0);
+ await assert.rejects(f.owner.bindingFor(authority,'thread'),/retired|archived/);
+});
+
+test('active lifecycle observation never retires a workspace', async t => {
+ const f=fixture(t),first=await f.owner.start(f.options);
+ assert.deepEqual(await f.owner.applyThreadLifecycle({hostId:authority.hostId,threadId:'thread',state:'active',generation:1}),{managed:true});
+ assert.equal(f.store.read(authority,first.workspaceId).phase,'live');
+ assert.equal(f.events.filter(event=>event==='kill').length,0);
+ await f.owner.bindingFor(authority,'thread');
+});
+
+
+test('shared member restore reuses one allocation and archive closes only its view', async t => {
+ const f=fixture(t),prepare=f.options.prepare,views=new Map<string,{closed:boolean}>();
+ f.options.prepare=async (...args)=>{
+  const root=await prepare(...args);
+  return {...root,async forThread(threadId:string){
+   let state=views.get(threadId);if(!state||state.closed){state={closed:false};views.set(threadId,state);}
+   const viewState=state;
+   return {...root,isCurrent:()=>!viewState.closed,async close(){viewState.closed=true;}};
+  },async closeThread(threadId:string){const state=views.get(threadId);if(state)state.closed=true;}};
+ };
+ const started=await f.owner.start(f.options),parent=await f.owner.bindingFor(authority,'thread');
+ const fork=f.store.beginThreadFork(authority,'thread','side');f.store.confirmThreadForked(authority,fork.lease,'side','child');
+ const restored=await f.owner.restore({...restoreOptions(f),threadId:'child',async nativeResume(id){return {thread:{id}}}});
+ assert.equal(restored.workspaceId,started.workspaceId);assert.equal(f.events.filter(x=>x==='allocate').length,1);
+ const child=await f.owner.bindingFor(authority,'child');assert.notEqual(parent,child);
+ assert.deepEqual(await f.owner.applyThreadLifecycle({hostId:authority.hostId,threadId:'thread',state:'archived',generation:1}),{managed:true});
+ assert.equal(parent.isCurrent?.(),false);assert.equal(child.isCurrent?.(),true);
+ assert.equal(f.store.read(authority,started.workspaceId).phase,'live');assert.equal(f.events.filter(x=>x==='kill').length,0);
+ await f.owner.bindingFor(authority,'child');
+ assert.deepEqual(await f.owner.applyThreadLifecycle({hostId:authority.hostId,threadId:'child',state:'archived',generation:1}),{managed:true});
+ assert.equal(f.events.filter(x=>x==='kill').length,1);assert.equal(f.store.read(authority,started.workspaceId).phase,'idle');
+});
+
+
+test('private volume deletion waits for every archived member and survives a failed receipt', async t => {
+ const f=fixture(t),first=await f.owner.start(f.options),fork=f.store.beginThreadFork(authority,'thread','side');
+ f.store.confirmThreadForked(authority,fork.lease,'side','child');await f.owner.close();
+ let calls=0,fail=true;
+ const owner=new OrdinaryConversationOwner(f.store,async input=>{
+  assert.equal(input.deletePrivateVolume,true);assert.equal(input.binding.workspaceId,first.workspaceId);
+  await input.authorize();calls++;if(fail)throw Error('synthetic unknown');
+ });
+ t.after(()=>owner.close());
+ for(const id of ['thread','child'])await owner.applyThreadLifecycle({hostId:authority.hostId,threadId:id,state:'archived',generation:1});
+ await owner.applyThreadLifecycle({hostId:authority.hostId,threadId:'thread',state:'deleted',generation:2});
+ assert.equal(calls,0);
+ await assert.rejects(owner.applyThreadLifecycle({hostId:authority.hostId,threadId:'child',state:'deleted',generation:2}),/synthetic unknown/);
+ assert.equal(calls,1);assert.throws(()=>f.store.beginCreate(authority,first.workspaceId),/reconciliation/);
+ const restarted=new OrdinaryConversationOwner(f.store,async input=>{assert.equal(input.deletePrivateVolume,true);await input.authorize();calls++;});
+ t.after(()=>restarted.close());fail=false;
+ await restarted.applyThreadLifecycle({hostId:authority.hostId,threadId:'child',state:'deleted',generation:2});
+ assert.equal(calls,2);assert.equal(f.store.beginPrivateVolumeDeletion(authority,first.workspaceId).state,'deleted');
+});
+
+
+test('the same lifecycle generation can reconcile an uncertain private deletion', async t => {
+ const f=fixture(t),first=await f.owner.start(f.options);await f.owner.close();
+ let calls=0;
+ const owner=new OrdinaryConversationOwner(f.store,async input=>{await input.authorize();if(++calls===1)throw Error('synthetic unknown');});
+ t.after(()=>owner.close());
+ await owner.applyThreadLifecycle({hostId:authority.hostId,threadId:'thread',state:'archived',generation:1});
+ const deletion={hostId:authority.hostId,threadId:'thread',state:'deleted' as const,generation:2};
+ await assert.rejects(owner.applyThreadLifecycle(deletion),/synthetic unknown/);
+ await owner.applyThreadLifecycle(deletion);
+ assert.equal(calls,2);assert.equal(f.store.beginPrivateVolumeDeletion(authority,first.workspaceId).state,'deleted');
+});

@@ -15,6 +15,7 @@ import type {
 import { withWorkspaceBudget } from "@opencraft/plugin-assets/server/workspace-budget";
 import type { HeadlessSandboxProviders } from "../sandbox-providers.js";
 import { OrdinaryWorkspaceStore, type WorkspaceLease } from "@opencraft/local-agent-host/ordinary-workspace-store";
+import type { WorkspaceRetainedCleanup } from "@opencraft/local-agent-host/ordinary-conversation-owner";
 import {
   InstalledOrdinaryConversationRuntime,
   type OrdinaryRuntimeAdmission,
@@ -29,7 +30,9 @@ import type {
 
 type Fields = { cwd: string; runtimeWorkspaceRoots: string[]; environments: { environmentId: string; cwd: string }[] };
 export type WorkspacePreparation =
-  { kind: "start"; intentId: string; environment: unknown; source?: unknown } | { kind: "restore"; threadId: string };
+  { kind: "start"; intentId: string; environment: unknown; source?: unknown }
+  | { kind: "restore"; threadId: string }
+  | { kind: "fork"; parentThreadId: string; intentId: string };
 export type WorkspacePreparationStatus =
   | { state: "preparing" }
   | { state: "native-ready"; fields: Fields; selection: WorkspaceExecutionSelection }
@@ -71,8 +74,9 @@ function deferred<T>() {
 const validId = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0 && value.length <= 512 && !/[\x00-\x1f\x7f]/u.test(value);
 interface Attempt {
-  kind: "start" | "restore";
+  kind: "start" | "restore" | "fork";
   expectedThreadId?: string;
+  forkIntentId?: string;
   lease?: WorkspaceLease;
   active: boolean;
   published: boolean;
@@ -95,6 +99,8 @@ export async function createWorkspaceExecutionOwner(
     catalog?: InstalledWorkspaceCatalog;
     catalogContext?: (access: WorkspaceActorAdmission) => WorkspaceCatalogContext;
     terminalOwner?: { directory: string; endpoint: string; tokenFile: string };
+    /** Compiled trusted deployment adapter; never Worker data or an RPC. */
+    cleanupRetained?: WorkspaceRetainedCleanup;
     runtime?: (
       store: OrdinaryWorkspaceStore,
       context: AssetWorkspaceOwnerContext,
@@ -129,6 +135,7 @@ export async function createWorkspaceExecutionOwner(
         new InstalledOrdinaryWorkspaceSources(catalog, new PublishedOrdinaryGitSources(context.vault)),
         {
           terminalAdmission,
+          ...(options.cleanupRetained ? { cleanupRetained: options.cleanupRetained } : {}),
           allocator: new InstalledOrdinarySandboxAllocator(catalog, {
             providers: options.providers,
             wrap: (backend) =>
@@ -198,7 +205,7 @@ export async function createWorkspaceExecutionOwner(
       // Cancellation retains existing receipt correlations. A late start still
       // persists its positive Native identity, then the owner refuses publication.
       for (const state of attempts.values())
-        if (state.kind === "restore" && state.expectedThreadId === row.threadId && !state.published) {
+        if ((state.kind === "restore" || state.kind === "fork") && state.expectedThreadId === row.threadId && !state.published) {
           state.active = false;
           state.native.reject(Error("Workspace lifecycle changed"));
         }
@@ -284,9 +291,10 @@ export async function createWorkspaceExecutionOwner(
         (request.kind === "start"
           ? !validId(request.intentId) ||
             Object.keys(request).some((k) => !["kind", "intentId", "environment", "source"].includes(k))
-          : request.kind !== "restore" ||
-            !validId(request.threadId) ||
-            Object.keys(request).some((k) => !["kind", "threadId"].includes(k)))
+          : request.kind === "restore"
+            ? !validId(request.threadId) || Object.keys(request).some((k) => !["kind", "threadId"].includes(k))
+            : request.kind !== "fork" || !validId(request.parentThreadId) || !validId(request.intentId)
+              || Object.keys(request).some((k) => !["kind", "parentThreadId", "intentId"].includes(k)))
       )
         throw Error("Workspace preparation unavailable");
       // A compiled identity projection can still deny this Actor (for example
@@ -299,6 +307,7 @@ export async function createWorkspaceExecutionOwner(
       const state: Attempt = {
         kind: request.kind,
         ...(request.kind === "restore" ? { expectedThreadId: request.threadId } : {}),
+        ...(request.kind === "fork" ? { expectedThreadId: request.parentThreadId, forkIntentId: request.intentId } : {}),
         active: true,
         published: false,
         receipted: false,
@@ -334,6 +343,9 @@ export async function createWorkspaceExecutionOwner(
               source: structuredClone(request.source ?? { kind: "empty" }),
               nativeStart: nativeReady,
             })
+          : request.kind === "fork"
+            ? owned.fork({ admission: admitted, parentThreadId: request.parentThreadId, intentId: request.intentId,
+                nativeFork: (_parent, fields, binding) => nativeReady(fields, binding) })
           : (async () => {
               const receipt = await owned.restore({
                 admission: admitted,
@@ -386,13 +398,17 @@ export async function createWorkspaceExecutionOwner(
         const threadId = (reply.result as { thread?: { id?: unknown } } | null)?.thread?.id;
         if (!validId(threadId) || (state.kind === "restore" && threadId !== state.expectedThreadId))
           throw Error("Native workspace identity mismatch");
-        state.receipted = true;
         if (state.kind === "start" && !state.active)
           journal.confirmThreadStarted(
             { principalId: state.access.actorId, hostId: "local-codex" },
             state.lease,
             threadId,
           );
+        if (state.kind === "fork" && !state.active) {
+          if (!state.forkIntentId) throw Error("Native fork intent unavailable");
+          journal.confirmThreadForked({ principalId: state.access.actorId, hostId: "local-codex" }, state.lease, state.forkIntentId, threadId);
+        }
+        state.receipted = true;
         state.native.resolve(reply.result);
       } else {
         state.receipted = true;
@@ -412,7 +428,7 @@ export async function createWorkspaceExecutionOwner(
     },
     async workspaceForget(token) {
       const state = lookup(token);
-      if (state.kind === "start" && state.lease && !state.receipted)
+      if ((state.kind === "start" || state.kind === "fork") && state.lease && !state.receipted)
         throw Error("Native workspace receipt remains unresolved");
       if (!["complete", "failed"].includes(state.status.state)) throw Error("Workspace preparation is unsettled");
       attempts.delete(token);
@@ -454,8 +470,13 @@ export async function createWorkspaceExecutionOwner(
     },
     async workspacePlacementPage(after = "") {
       if (closed) throw Error("Workspace owner closed");
+      // A dispatched fork without a receipt may already have created a Native
+      // child. Do not classify unknown children as local until reconciliation.
+      if (journal.hasPendingForks("local-codex")) throw Error("Workspace fork requires reconciliation");
       const items = journal.placementPage("local-codex", after, 256);
-      return { items, next: items.length === 256 ? items[items.length - 1]!.workspaceId : null };
+      const last = items.at(-1);
+      return { items, next: items.length === 256 && last
+        ? last.workspaceId + "." + Buffer.from(last.threadId, "utf8").toString("hex") : null };
     },
   };
   return {

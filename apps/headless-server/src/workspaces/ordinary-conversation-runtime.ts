@@ -9,6 +9,7 @@ import {
   OrdinaryConversationOwner,
   type OrdinaryCreationOptions,
   type OrdinaryExecutionBinding,
+  type WorkspaceRetainedCleanup,
 } from "@opencraft/local-agent-host/ordinary-conversation-owner";
 import { OrdinaryWorkspaceStore, type WorkspaceAuthority } from "@opencraft/local-agent-host/ordinary-workspace-store";
 import {
@@ -75,6 +76,7 @@ export class InstalledOrdinaryConversationRuntime {
       /** Provider-selecting allocator; it also owns persistent-workspace inspection and mount checks. */
       allocator: OrdinaryAllocator;
       terminalAdmission?: TerminalAdmissionPort;
+      cleanupRetained?: WorkspaceRetainedCleanup;
       bind?: (options: Parameters<typeof createSandboxConversationBinding>[0]) => Promise<OrdinaryExecutionBinding>;
       /** Trusted deployment policy for the preinstalled Hands browser runtime. */
       browser?: {
@@ -82,7 +84,7 @@ export class InstalledOrdinaryConversationRuntime {
       };
     },
   ) {
-    this.owner = new OrdinaryConversationOwner(store);
+    this.owner = new OrdinaryConversationOwner(store, dependencies.cleanupRetained);
     this.allocator = dependencies.allocator;
   }
   private admission(input: OrdinaryRuntimeAdmission): OrdinaryRuntimeAdmission {
@@ -330,6 +332,19 @@ export class InstalledOrdinaryConversationRuntime {
       });
     });
   }
+  fork(input: {
+    admission: OrdinaryRuntimeAdmission;
+    parentThreadId: string;
+    intentId: string;
+    nativeFork: Parameters<OrdinaryConversationOwner["fork"]>[0]["nativeFork"];
+  }) {
+    return this.track(async () => {
+      const admission = this.admission(input.admission);
+      await admission.authorize();
+      return this.owner.fork({ authority: admission.authority, parentThreadId: input.parentThreadId,
+        intentId: input.intentId, authorize: () => admission.authorize(), nativeFork: input.nativeFork });
+    });
+  }
   restore(input: {
     admission: OrdinaryRuntimeAdmission;
     threadId: string;
@@ -394,7 +409,8 @@ export class InstalledOrdinaryConversationRuntime {
     return this.track(async () => {
       const admission = this.admission(input);
       const binding = await this.bindingFor(admission, threadId);
-      const transfer = this.artifactTransfers.get(binding);
+      const root = await this.owner.workspaceBindingFor(admission.authority, threadId);
+      const transfer = this.artifactTransfers.get(root);
       if (!transfer) throw Error("Workspace attachment transfer unavailable");
       const delivered = await transfer(artifact, signal, body);
       if ((await this.bindingFor(admission, threadId)) !== binding) throw Error("Workspace attachment binding retired");
@@ -405,7 +421,8 @@ export class InstalledOrdinaryConversationRuntime {
     return this.track(async () => {
       const admission = this.admission(input);
       const binding = await this.bindingFor(admission, threadId);
-      const createReader = this.artifactReaders.get(binding);
+      const root = await this.owner.workspaceBindingFor(admission.authority, threadId);
+      const createReader = this.artifactReaders.get(root);
       if (!createReader) throw Error("Workspace artifact reader unavailable");
       const authorize = async () => {
         if ((await this.bindingFor(admission, threadId)) !== binding) throw Error("Workspace output binding retired");

@@ -331,6 +331,7 @@ interface SharedCodexRoutingOptions {
   /** Same private receipt barrier for restored workspaces; never mark a restored
    * binding live merely because its compute instance has started. */
   readonly finalizeNativeResume?: SharedCodexRoutingOptions['finalizeNativeCreation'];
+  readonly finalizeNativeFork?: SharedCodexRoutingOptions['finalizeNativeCreation'];
   /** Trusted host-wide journal classification; only owned sandbox resumes bypass
    * provisional reply caching. Normal local empty conversations stay unchanged. */
   readonly prepareWorkspaceArtifact?: (artifact: Artifact, threadId: string, context?: TransportSubmissionContext, signal?: AbortSignal) => Promise<Artifact | null>;
@@ -1805,7 +1806,8 @@ export class CodexEngineAdapter implements DuplexTransport {
           return context;
         } });
         const finalizeWorkspaceReceipt = message.method === 'thread/start' ? this.options.finalizeNativeCreation
-          : message.method === 'thread/resume' ? this.options.finalizeNativeResume : undefined;
+          : message.method === 'thread/resume' ? this.options.finalizeNativeResume
+          : message.method === 'thread/fork' ? this.options.finalizeNativeFork : undefined;
         if (finalizeWorkspaceReceipt) {
           const workspaceParams = structuredClone(params);
           pending.finalizeWorkspaceReceipt = async reply => {
@@ -3440,7 +3442,8 @@ export class CodexEngineAdapter implements DuplexTransport {
         return submissionContext;
       }});
       const finalize = method === 'thread/start' ? this.options.finalizeNativeCreation
-        : method === 'thread/resume' ? this.options.finalizeNativeResume : undefined;
+        : method === 'thread/resume' ? this.options.finalizeNativeResume
+        : method === 'thread/fork' ? this.options.finalizeNativeFork : undefined;
       if (finalize) {
         const workspaceParams = structuredClone(params);
         internal.finalizeWorkspaceReceipt = async reply => {
@@ -4938,7 +4941,12 @@ export class CodexEngineAdapter implements DuplexTransport {
       // Copy only execution choices; credentials and tool configuration retain
       // their own lifecycle. A path fork ignores threadId, so do not read it.
       if (string(params.threadId) && !string(params.path)) {
-        const source = record(await this.requestPhysical("thread/resume", { threadId: params.threadId, excludeTurns: true }));
+        // The nested metadata resume must retain the same admitted Actor as
+        // the fork. An unowned internal resume cannot select a remote workspace.
+        const pending = this.pending?.get(String(message.id)) ?? this.internalRequests?.get(String(message.id));
+        const forkContext = pending?.nativeAdmission?.context();
+        const source = record(await this.requestPhysical("thread/resume", { threadId: params.threadId, excludeTurns: true },
+          30_000, undefined, undefined, admit, forkContext));
         const inherited: RpcRecord = {};
         for (const key of ["model", "modelProvider", "serviceTier"])
           if (!Object.hasOwn(params, key) && source[key] !== undefined) inherited[key] = source[key];
@@ -5022,6 +5030,12 @@ export class CodexEngineAdapter implements DuplexTransport {
         this.executionLeases.begin(string(params.threadId), inputId, this.nativeCore?.executionIncarnation);
       }
       if (message.method === "turn/start") this.provisionalThreads?.attempted(string(record(message.params).threadId), string(record(message.params).clientUserMessageId));
+      // The private workspace extension is consumed by a decorated route or by
+      // Core. Other Native transports must never receive the extra wire field.
+      if (message.method === "thread/fork" && (this.options.kind === "remote" || !this.options.decorateNativeTransport)) {
+        const { workspaceFork: _workspaceFork, ...nativeParams } = record(message.params);
+        message = { ...message, params: nativeParams };
+      }
       if (this.options.kind === "remote") {
         return await this.options.transport.send(JSON.stringify(message)).catch(() => {
           this.rejectInternalRequests(new Error("Remote delivery outcome is unknown"));

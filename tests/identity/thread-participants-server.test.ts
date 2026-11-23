@@ -225,12 +225,20 @@ test("each change is announced only after its commit, in the order the writes we
   f.send("one", "m3", "dave");
   assert.deepEqual(seen, [], "nothing is announced synchronously");
   await f.settled();
-  assert.deepEqual(seen, [
-    ["one", 1, 1],
-    ["one", 2, 2],
-    ["two", 1, 1],
-    ["one", 3, 3],
-  ]);
+  // Writes are pipelined to the storage Worker, so a later write of the same
+  // Thread may already be committed when an earlier one is announced; the
+  // announced revision is never ahead of the committed one.
+  assert.deepEqual(
+    seen.map(([threadId, revision]) => [threadId, revision]),
+    [
+      ["one", 1],
+      ["one", 2],
+      ["two", 1],
+      ["one", 3],
+    ],
+  );
+  for (const [threadId, revision, stored] of seen)
+    assert.ok(stored >= revision, `${threadId} revision ${revision} was announced before its commit (${stored})`);
   assert.deepEqual(
     f.notifications.slice(0, 2),
     [

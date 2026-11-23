@@ -2,22 +2,48 @@ import importlib.util
 import os
 import tempfile
 import unittest
+from copy import deepcopy
 from pathlib import Path
 spec = importlib.util.spec_from_file_location('deploy', Path(__file__).resolve().parents[1] / 'deploy/docker/deploy/deploy.py')
 deploy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(deploy)
 
+def bind(source, target, **extra):
+    return dict({'type': 'bind', 'source': source, 'target': target, 'bind': {'create_host_path': False}}, **extra)
+
 def fixture(root='/srv/one'):
-    env = {'OPENCRAFT_HANDS_CPUS': '2', 'OPENCRAFT_HANDS_MEMORY_BYTES': '4294967296', 'OPENCRAFT_DATA_DIR': '/var/lib/opencraft', 'OPENCRAFT_WORKSPACE_DIR': '/workspace',
-           'OPENCRAFT_EXECUTION_DIR': '/var/lib/opencraft/execution', 'OPENCRAFT_LOG_DIR': '/var/log/opencraft', 'OPENCRAFT_PROXY_PORT': '46071'}
+    # Mirrors `docker compose config` of compose.yaml + compose.role-images.yaml + compose.portable.yaml.
+    base = {'OPENCRAFT_DATA_DIR': '/var/lib/opencraft', 'OPENCRAFT_WORKSPACE_DIR': '/workspace',
+            'OPENCRAFT_EXECUTION_DIR': '/var/lib/opencraft/execution', 'OPENCRAFT_LOG_DIR': '/var/log/opencraft'}
+    budget = {'OPENCRAFT_HANDS_CPUS': '2', 'OPENCRAFT_HANDS_MEMORY_BYTES': '4294967296'}
+    agent = {'OPENCRAFT_AGENT_RUN_DIR': '/run/opencraft-agent', 'OPENCRAFT_AGENT_LINK_DIR': '/run/opencraft-link'}
+    env = {'gateway': dict(base, **budget, OPENCRAFT_BRAIN_CPUS='2', OPENCRAFT_BRAIN_MEMORY_BYTES='4294967296',
+                           OPENCRAFT_WORKSPACE_ENVIRONMENTS='static-docker://brain static-docker://hands',
+                           OPENCRAFT_WORKSPACE_LINK_ROOT='/run/opencraft-links', OPENCRAFT_GATEWAY_RUN_DIR='/run/opencraft-gateway',
+                           OPENCRAFT_AGENT_RUN_DIR='/run/opencraft-agent'),
+           'brain': dict(base, **budget, **agent, OPENCRAFT_PROXY_MODE='external', OPENCRAFT_PROXY_PORT='46071'),
+           'hands': dict(base, **budget, **agent),
+           'proxy': dict(base, OPENCRAFT_PROXY_PORT='46071')}
+    mounts = {'DATA': bind(root + '/state', '/var/lib/opencraft'), 'EXECUTION': bind(root + '/execution', '/var/lib/opencraft/execution'),
+              'WORKSPACE': bind(root + '/workspace', '/workspace')}
     services = {}
     for index, role in enumerate(deploy.ROLES):
         services[role] = {'user': '994:990', 'platform': 'linux/amd64', 'network_mode': 'host',
-            'image': 'registry.example/team/app@sha256:' + str(index)*64, 'environment': env.copy(),
-            'volumes': [{'type': 'bind', 'source': root + '/' + key.lower(), 'target': env['OPENCRAFT_'+key+'_DIR'],
-                         'bind': {'create_host_path': False}} for key in ('WORKSPACE', 'EXECUTION')]}
-    services['gateway']['command'] = ['--port', '11080', '--access-control']
-    return {'services': services}, {'images': {role: value['image'] for role, value in services.items()}}
+            'image': 'registry.example/team/app@sha256:' + str(index)*64, 'environment': env[role],
+            'volumes': [dict(mounts[key]) for key in deploy.SHARED[role]]}
+    for role in ('brain', 'hands'):
+        services[role].update(tmpfs=['/run/opencraft-agent:uid=994,gid=990,mode=0700,size=16m'], cpus=2, mem_limit='4294967296')
+        services[role]['volumes'].append({'type': 'volume', 'source': role + '-link', 'target': '/run/opencraft-link'})
+        services['gateway']['volumes'].append({'type': 'volume', 'source': role + '-link', 'target': '/run/opencraft-links/' + role})
+    services['gateway'].update(tmpfs=['/run/opencraft-gateway:uid=994,gid=990,mode=0700,size=1m'],
+        command=['--host', '127.0.0.1', '--port', '11080', '--access-control'],
+        healthcheck={'test': ['CMD', 'node', '-e', "fetch('http://127.0.0.1:11080/health')"]})
+    link = {'driver': 'local', 'driver_opts': {'type': 'tmpfs', 'device': 'tmpfs', 'o': 'uid=994,gid=990,mode=0700,size=1m'}}
+    config = {'services': services, 'volumes': {'brain-link': deepcopy(link), 'hands-link': deepcopy(link)}}
+    return config, {'images': {role: value['image'] for role, value in services.items()}}
+
+def mount(service, target):
+    return next(v for v in service['volumes'] if v['target'] == target)
 
 class Safety(unittest.TestCase):
     def test_personal_git_is_configurable_but_never_half_enabled(self):
@@ -45,9 +71,7 @@ class Safety(unittest.TestCase):
     def test_environment_delivery_is_one_gateway_and_brain_decision(self):
         from copy import deepcopy
         def state(config):
-            for role in ('gateway', 'brain'):
-                config['services'][role]['volumes'].append({'type':'bind','source':'/srv/one/state','target':'/var/lib/opencraft','bind':{'create_host_path':False}})
-            return config
+            return config  # Gateway and Brain already share the state mount.
         config, release = fixture()
         deploy.validate(config, release)
         for gateway, brain in [('opaque', 'opaque'), ('vault-owner', 'opaque'), ('opaque', 'vault-owner')]:
@@ -69,8 +93,8 @@ class Safety(unittest.TestCase):
                              (enabled, lambda s:s['brain']['environment'].update(OPENCRAFT_EXECUTION_CONTEXT='legacy')),
                              (enabled, lambda s:s['gateway']['environment'].update(OPENCRAFT_ENVIRONMENT_ISSUER_FILE='/elsewhere/issuer.json')),
                              (enabled, lambda s:s['gateway']['environment'].update(OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION='a b')),
-                             (enabled, lambda s:s['brain']['volumes'][-1].update(source='/srv/other/state')),
-                             (enabled, lambda s:s['brain']['volumes'].pop()),
+                             (enabled, lambda s:mount(s['brain'], '/var/lib/opencraft').update(source='/srv/other/state')),
+                             (enabled, lambda s:s['brain']['volumes'].remove(mount(s['brain'], '/var/lib/opencraft'))),
                              (config, lambda s:s['gateway']['environment'].update(OPENCRAFT_ENVIRONMENT_DELIVERY='opaque')),
                              (config, lambda s:s['gateway']['environment'].update(OPENCRAFT_ENVIRONMENT_ISSUER_GENERATION='2'))]:
             changed = deepcopy(base); mutate(changed['services'])
@@ -86,9 +110,12 @@ class Safety(unittest.TestCase):
                 with patch.object(deploy,'ROOT',root),patch.object(deploy,'run') as run:
                     deploy.compose('config')
                     args=run.call_args[0][0]
+                    for name in deploy.COMPOSE_FILES:
+                        self.assertIn(str(root/name), args)
                     for name in ('compose.root-hands.yaml','compose.personal-git.yaml'):
                         self.assertEqual(str(root/name) in args,name in names)
-            for flags in ['OPENCRAFT_PERSONAL_GIT=yes\n', 'OPENCRAFT_PERSONAL_GIT=1\nOPENCRAFT_PERSONAL_GIT=0\n']:
+            for flags in ['OPENCRAFT_PERSONAL_GIT=yes\n', 'OPENCRAFT_PERSONAL_GIT=1\nOPENCRAFT_PERSONAL_GIT=0\n',
+                          'OPENCRAFT_BROWSER_OWNER_SOCKET=/var/lib/opencraft/execution/owner.sock\n']:
                 site.write_text(flags)
                 with patch.object(deploy,'ROOT',root),patch.object(deploy,'run') as run:
                     with self.assertRaises(ValueError):deploy.compose('config')
@@ -126,7 +153,8 @@ class Safety(unittest.TestCase):
     def test_root_hands_preserves_clients_and_private_directory_owners(self):
         from copy import deepcopy
         config, release = fixture(); hands = config['services']['hands']; env = hands['environment']
-        hands.update(user='0:0', cap_drop=['ALL'], cap_add=['SYS_ADMIN','SETUID','SETGID','SYS_CHROOT','DAC_OVERRIDE','CHOWN','FOWNER','KILL'])
+        hands.update(user='0:0', cap_drop=['ALL'], cap_add=['SYS_ADMIN','SETUID','SETGID','SYS_CHROOT','DAC_OVERRIDE','CHOWN','FOWNER','KILL'],
+                     tmpfs=['/run/opencraft-agent:uid=0,gid=0,mode=0700,size=16m'])
         env.update(OPENCRAFT_HANDS_CLIENT_UID='994', OPENCRAFT_HANDS_CLIENT_GID='990',
                    OPENCRAFT_HANDS_CLIENT_DIRECTORY=env['OPENCRAFT_EXECUTION_DIR'],
                    OPENCRAFT_ROOT_HANDS_SERVER_DIRECTORY='/run/hands/server',
@@ -145,12 +173,57 @@ class Safety(unittest.TestCase):
                        lambda s:s['hands']['environment'].update(OPENCRAFT_HANDS_BROWSER_NAME='../elsewhere'),
                        lambda s:s['hands']['environment'].update(OPENCRAFT_ROOT_HANDS_CLIENT_DIRECTORY='/elsewhere/client'),
                        lambda s:s['hands'].update(cap_add=['SYS_ADMIN']),
+                       # An old Compose merges the root tmpfs with the client one instead of replacing it.
+                       lambda s:s['hands']['tmpfs'].append('/run/opencraft-agent:uid=994,gid=990,mode=0700,size=16m'),
+                       lambda s:s['hands'].update(tmpfs=['/run/opencraft-agent:uid=994,gid=990,mode=0700,size=16m']),
                        lambda s:s['hands']['volumes'].append({'type':'bind','source':'/other','target':'/run/hands/execution','bind':{'create_host_path':False}})]:
             changed=deepcopy(config);mutate(changed['services'])
             with self.assertRaises(ValueError):deploy.validate(changed,release)
         args=deploy.probe_args(hands)
         self.assertIn('DAC_OVERRIDE', args)
         for cap in ['CHOWN','SYS_ADMIN','SETUID']:self.assertNotIn(cap,args)
+
+    def test_workspace_model_links_tmpfs_budgets_and_retired_variables(self):
+        config, release = fixture()
+        identity, _, _ = deploy.validate(config, release)
+        plan = deploy.directory_plan(config['services'], identity)
+        # The separate execution directory's mount point inside the state mount is created privately.
+        self.assertEqual(plan['/srv/one/state/execution'], (994, 990))
+        self.assertEqual(plan['/srv/one/execution'], (994, 990))
+        for mutate in [
+            lambda c: c['services']['brain'].pop('tmpfs'),
+            lambda c: c['services']['brain'].update(tmpfs=['/run/opencraft-agent:uid=994,gid=990,mode=0755,size=16m']),
+            lambda c: c['services']['hands']['volumes'].append(bind('/srv/one/run', '/run/opencraft-agent')),
+            lambda c: c['services']['hands']['environment'].pop('OPENCRAFT_AGENT_LINK_DIR'),
+            lambda c: c['services']['proxy']['volumes'].append({'type': 'volume', 'source': 'hands-link', 'target': '/run/opencraft-link'}),
+            lambda c: c['services']['brain']['volumes'].append({'type': 'volume', 'source': 'hands-link', 'target': '/run/x'}),
+            lambda c: c['services']['gateway']['volumes'].pop(),
+            lambda c: c['services']['gateway'].pop('tmpfs'),
+            lambda c: c['services']['proxy'].update(tmpfs=['/run/opencraft-agent:uid=994,gid=990,mode=0700']),
+            lambda c: c['volumes']['brain-link']['driver_opts'].update(type='none', device='/srv/one/link'),
+            lambda c: c['volumes']['hands-link']['driver_opts'].update(o='uid=0,gid=0,mode=0700'),
+            lambda c: c['services']['gateway']['environment'].update(OPENCRAFT_WORKSPACE_ENVIRONMENTS='static-docker://brain'),
+            lambda c: c['services']['gateway']['environment'].update(OPENCRAFT_BROWSER_OWNER_SOCKET='/var/lib/opencraft/execution/browser/owner.sock'),
+            lambda c: c['services']['brain']['environment'].update(OPENCRAFT_PROXY_MODE='embedded'),
+            lambda c: c['services']['brain']['environment'].update(OPENCRAFT_PROXY_PORT='45071'),
+            lambda c: c['services']['brain'].update(cpus=4),
+            lambda c: c['services']['hands'].update(mem_limit='8589934592'),
+            lambda c: c['services']['gateway']['environment'].pop('OPENCRAFT_BRAIN_MEMORY_BYTES'),
+            lambda c: c['services']['gateway'].update(healthcheck={'test': ["fetch('http://127.0.0.1:10000/health')"]}),
+            lambda c: c['services']['gateway']['volumes'].remove(mount(c['services']['gateway'], '/var/lib/opencraft/execution')),
+            lambda c: mount(c['services']['proxy'], '/var/lib/opencraft').update(source='/srv/other/state'),
+        ]:
+            changed = deepcopy(config); mutate(changed)
+            with self.assertRaises(ValueError): deploy.validate(changed, release)
+
+    def test_compose_version_gates_reset_and_root_hands_override(self):
+        nonroot, root = {}, {'OPENCRAFT_HANDS_ROOT': '1'}
+        self.assertEqual(deploy.compose_version_check('v2.24.0\n', nonroot), (2, 24, 0))
+        self.assertEqual(deploy.compose_version_check('5.7.1', root), (5, 7, 1))
+        self.assertEqual(deploy.compose_version_check('2.24.4-desktop.1', root), (2, 24, 4))
+        for version, settings in [('2.23.3', nonroot), ('2.24.3', root), ('1.29.2', nonroot), ('unknown', nonroot)]:
+            with self.assertRaises(ValueError): deploy.compose_version_check(version, settings)
+        with self.assertRaisesRegex(ValueError, 'OPENCRAFT_HANDS_ROOT=1'): deploy.compose_version_check('2.24.1', root)
 
     def test_bad_contracts(self):
         for mutate in (
@@ -181,4 +254,5 @@ class Safety(unittest.TestCase):
             with self.assertRaises(ValueError): deploy.ensure_directory(str(alias / 'child'), identity, create=True)
             self.assertFalse((path / 'child').exists())
 
-unittest.main()
+if __name__ == "__main__":
+    unittest.main()

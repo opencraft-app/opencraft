@@ -101,6 +101,11 @@ export interface SandboxBrokerChannel {
   write(frame: string): Promise<void>;
   /** Settles when the provider observes the broker process end (either way). */
   readonly ended: Promise<unknown>;
+  /** Optional: release the transport once this process failed and will never use it
+   * again (end the broker's control input so it kills its session; a provider whose
+   * handle loss does not end the guest process must stop it here, without signalling a
+   * process that already exited). Called at most once; never throws. */
+  dispose?(): void;
 }
 /** Provider port: upload/launch the broker and stream its stdout as text chunks.
  * Broker stderr is diagnostic only and must not be delivered. */
@@ -168,6 +173,7 @@ export async function startBrokerProcess(options: SandboxBrokerOptions): Promise
   });
   void ready.catch(() => {});
   void exited.catch(() => {});
+  let channel: SandboxBrokerChannel | undefined;
   const failure = (reason?: unknown) => {
     if (broken || finished) return;
     broken = true;
@@ -176,6 +182,9 @@ export async function startBrokerProcess(options: SandboxBrokerOptions): Promise
     const error = fault("SANDBOX_START", label + " execution transport failed", cause);
     rejectStart(error);
     rejectExit(error);
+    try {
+      channel?.dispose?.();
+    } catch {}
     // Do not reconnect or replay process input. The caller still owns close()/capacity.
     // An attached relay ends alone: losing its control stream EOFs the guest broker,
     // which kills its process group; environment close reclaims anything left.
@@ -229,12 +238,13 @@ export async function startBrokerProcess(options: SandboxBrokerOptions): Promise
     }
     if (buffer.length > 512 * 1024) failure(Error(label + " broker frame exceeds its budget"));
   };
-  let channel: SandboxBrokerChannel;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     // Broker receives argv/cwd/payload environment privately through stdin, not launcher argv.
-    channel = await options.launch(accept);
-    void channel.ended.then(() => {
+    const launched = (channel = await options.launch(accept));
+    // Launch completed after a failure (e.g. the start timer): release it now.
+    if (broken) launched.dispose?.();
+    void launched.ended.then(() => {
       if (!finished)
         failure(
           Error(
@@ -248,7 +258,7 @@ export async function startBrokerProcess(options: SandboxBrokerOptions): Promise
     );
     const input = encodeBrokerFrame({ type: "start", command: wireCommand });
     if (encoder.encode(input).byteLength > 384 * 1024) throw Error(label + " start frame exceeds its budget");
-    await channel.write(input);
+    await launched.write(input);
     await ready;
   } catch (error) {
     failure(error);
@@ -265,7 +275,7 @@ export async function startBrokerProcess(options: SandboxBrokerOptions): Promise
   const sendFrame = async (value: unknown, reconcileEofExit = false) => {
     if (broken || finished) throw fault("SANDBOX_CLOSED", label + " process is closed");
     try {
-      await channel.write(encodeBrokerFrame(value));
+      await channel!.write(encodeBrokerFrame(value));
     } catch (error) {
       // A transport can reject EOF after a short-lived broker has exited while
       // its final stdout frame is still in flight. Only that framed exit is

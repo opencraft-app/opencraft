@@ -5,11 +5,11 @@ import { dirname, isAbsolute } from 'node:path';
 import type { Socket } from 'node:net';
 
 export const workspaceGrantField = '__opencraftWorkspaceGrant';
-export type WorkspaceExecutionMethod = 'thread/start' | 'thread/resume' | 'turn/start';
+export type WorkspaceExecutionMethod = 'thread/start' | 'thread/resume' | 'thread/fork' | 'turn/start';
 export type WorkspaceExecutionSelection = { kind: 'local' } | { kind: 'bound'; workspaceId: string;
   generation: number; environmentId: string; cwd: string; execServerUrl: string };
 export const isWorkspaceExecutionMethod = (value: unknown): value is WorkspaceExecutionMethod =>
-  value === 'thread/start' || value === 'thread/resume' || value === 'turn/start';
+  value === 'thread/start' || value === 'thread/resume' || value === 'thread/fork' || value === 'turn/start';
 const unavailable = () => new Error('Workspace execution authority unavailable');
 const limit = 64 * 1024;
 function fingerprint(method: WorkspaceExecutionMethod, params: Record<string, unknown>): string {

@@ -49,8 +49,11 @@ test("composer occlusion excludes floating file summaries, includes visible atta
   assert.equal(occlusion(), 180);
   const bottomInset = () => Number.parseFloat(scroll.style.getPropertyValue("--thread-reading-bottom-inset"));
   assert.equal(bottomInset(), 32, "16px dock gap plus the actual 16px lower arc");
-  assert.equal(scroll.style.getPropertyValue("--thread-reading-clip-left"), "16px");
-  assert.equal(scroll.style.getPropertyValue("--thread-reading-clip-right"), "16px", "both native gutter strips stay outside the content clip");
+  assert.equal(footer.style.inset, "auto 16px 0 16px", "the dock aligns with both native scrollbar gutters");
+  const fullPadding = owner.getFooterScrollPaddingPx();
+  scroll.style.setProperty("--thread-reading-viewport-inset", "32px");
+  assert.equal(owner.getFooterScrollPaddingPx(), fullPadding - 32, "an inset viewport has less remaining overlay padding");
+  scroll.style.removeProperty("--thread-reading-viewport-inset");
   assert.equal(f.constructions(), 1, "reuse a single footer observer");
   assert.deepEqual(f.observed, new Set([footer, rail, editor]));
   footerHeight += 36; f.emit([footer, footerHeight]);
@@ -68,12 +71,12 @@ test("composer occlusion excludes floating file summaries, includes visible atta
   f.emit([editor, 164]);
   assert.equal(bottomInset(), 44, "density uses actual editor radius without changing footer height");
   scroll.dataset.retainedPreviewScale = "0.5";
-  scroll.getBoundingClientRect = () => rect(0, 450);
+  footer.getBoundingClientRect = () => rect((900 - footerHeight) / 2, footerHeight / 2);
   editor.getBoundingClientRect = () => rect(360, 82);
   f.emit([editor, 164]);
   assert.equal(bottomInset(), 44, "retained preview transforms do not scale the CSS cutoff twice");
   delete scroll.dataset.retainedPreviewScale;
-  scroll.getBoundingClientRect = () => rect(0, 900);
+  footer.getBoundingClientRect = () => rect(900 - footerHeight, footerHeight);
   editor.getBoundingClientRect = () => editorVisible ? rect(720, 164) : rect(0, 0, 0);
   railHeight = 0; f.emit([rail, 0]);
   assert.equal(occlusion(), 180, "an empty rail's zero rect is not a viewport-wide mask");
@@ -87,7 +90,7 @@ test("composer occlusion excludes floating file summaries, includes visible atta
   owner.attachFooterElement(null);
   assert.equal(f.observed.size, 0);
   assert.equal(scroll.style.getPropertyValue("--thread-composer-occlusion-height"), "");
-  for(const name of ["--thread-reading-bottom-inset","--thread-reading-clip-left","--thread-reading-clip-right"])assert.equal(scroll.style.getPropertyValue(name), "");
+  assert.equal(scroll.style.getPropertyValue("--thread-reading-bottom-inset"), "");
 });
 
 test("height observation retains the root measurement, refreshes painted dependencies and fences disposal", t => {
