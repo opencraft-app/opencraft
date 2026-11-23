@@ -31,7 +31,6 @@
     "./identity-writes": "./src/identity-writes.ts",
     "./local-account-upgrade-owner": "./src/local-account-upgrade-owner.ts",
     "./commit-fence": "./src/commit-fence.ts",
-    "./communication-extension": "./src/communication-extension.ts",
     "./native-channels": "./src/native-channels.ts",
     "./personal-assistants": "./src/personal-assistants.ts"
   },

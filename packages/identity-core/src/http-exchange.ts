@@ -49,7 +49,8 @@ export interface HttpExchangeResponse {
 export type HttpExchangeHandler = (request: HttpExchangeRequest) => Promise<HttpExchangeResponse | null>;
 
 export class HttpBodyTooLarge extends Error {
-  constructor(readonly limit: number) { super(`Request body exceeds ${limit} bytes`); this.name = "HttpBodyTooLarge"; }
+  readonly limit: number;
+  constructor(limit: number) { super(`Request body exceeds ${limit} bytes`); this.name = "HttpBodyTooLarge"; this.limit = limit; }
 }
 
 /**

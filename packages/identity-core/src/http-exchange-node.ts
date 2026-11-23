@@ -3,7 +3,8 @@
 // earlier `set-cookie` precedes the handler's content headers), then
 // `writeHead(status)` and `end(body)`; Node adds Date/Connection/framing.
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { HttpBodyTooLarge, HttpExchangeAborted, type HttpExchangeHandler, type HttpExchangeRequest, type HttpExchangeResponse } from "./http-exchange.js";
+// Value imports go through the package export so plain `node` (type stripping, no specifier rewriting) can load this entry.
+import { HttpBodyTooLarge, HttpExchangeAborted, type HttpExchangeHandler, type HttpExchangeRequest, type HttpExchangeResponse } from "@opencraft/identity-core/http-exchange";
 
 interface NodeExchange {
   readonly request: HttpExchangeRequest;

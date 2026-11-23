@@ -3,7 +3,8 @@
 // Workers). The composition supplies the client address from its trusted edge
 // (for example Cloudflare's `CF-Connecting-IP`); the adapter never trusts a
 // request header for it on its own.
-import { HttpBodyTooLarge, type HttpExchangeHandler, type HttpExchangeRequest, type HttpExchangeResponse } from "./http-exchange.js";
+// Value imports go through the package export so plain `node` (type stripping, no specifier rewriting) can load this entry.
+import { HttpBodyTooLarge, type HttpExchangeHandler, type HttpExchangeRequest, type HttpExchangeResponse } from "@opencraft/identity-core/http-exchange";
 import type { IdentityRequest } from "./identity-request.js";
 
 export interface FetchExchangeOptions {
