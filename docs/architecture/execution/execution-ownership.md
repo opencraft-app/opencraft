@@ -1028,7 +1028,8 @@ Its sandbox generations, command custody, Worker-owned SQLite checkpoints and
 ordered outbox survive gateway attachment loss. The separate gateway inbox
 commits the existing P1a AppServer projection and cursor before acknowledging
 Host events. Native mutations with unknown outcomes are never replayed.
-Existing engine compositions do not import or select this path. See the
+The desktop runs builtin Codex through this Host by default (the daemon's Codex
+bridge stack); other engine compositions do not select it. See the
 [Host contract and local acceptance](../../../apps/agent-bridge-host/README.md) for the
 private attachment, generation draining and conservative Host-crash boundaries.
 

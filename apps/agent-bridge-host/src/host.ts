@@ -110,6 +110,13 @@ export class BridgeHost {
     return this.generations.get(id)?.provider.capabilities.adoption === true;
   }
   private generations = new Map<string, Generation>();
+  /**
+   * Generations every route has moved away from whose outbox still held
+   * unacknowledged events at that moment. They are retired once an
+   * acknowledgement drains them. Not durable: after a Host restart their
+   * provider is never started again, so only the storage row stays.
+   */
+  private readonly draining = new Set<string>();
   readonly incarnation = randomUUID();
   readonly queue: HostQueue;
   private constructor(private options: HostOptions) {
@@ -506,19 +513,17 @@ export class BridgeHost {
         return;
       }
       this.rebinding.delete(route);
-      if (await this.storage.call<boolean>("retireUnused", { id: from }).catch(() => false)) {
-        const retired = this.peers.get(from);
-        this.peers.delete(from);
-        this.generations.delete(from);
-        if (retired) await (await retired.catch(() => undefined))?.close().catch(() => undefined);
-      }
+      if (!(await this.retireUnused(from))) this.draining.add(from);
     })()
       .catch((error) => {
         process.stderr.write(
           `host-migration-skipped:${error instanceof Error ? error.message.slice(0, 200) : "unknown"}\n`,
         );
       })
-      .finally(() => this.migrations.delete(route));
+      .finally(() => {
+        this.migrations.delete(route);
+        return this.drain();
+      });
     this.migrations.set(route, operation);
     return operation;
   }
@@ -867,8 +872,24 @@ export class BridgeHost {
   events(cursor: number, limit = 256): Promise<any> {
     return this.storage.call("events", { cursor, limit });
   }
-  ack(cursor: number): Promise<void> {
-    return this.storage.call("ack", { cursor });
+  async ack(cursor: number): Promise<void> {
+    await this.storage.call("ack", { cursor });
+    await this.drain();
+  }
+  /** Retries draining generations; a migration in flight may still hand its route back to one. */
+  private async drain(): Promise<void> {
+    if (this.migrations.size || this.closing) return;
+    for (const id of [...this.draining]) await this.retireUnused(id);
+  }
+  /** Retires a non-current generation nothing is bound to and whose events are acknowledged. */
+  private async retireUnused(id: string): Promise<boolean> {
+    if (!(await this.storage.call<boolean>("retireUnused", { id }).catch(() => false))) return false;
+    const retired = this.peers.get(id);
+    this.peers.delete(id);
+    this.generations.delete(id);
+    this.draining.delete(id);
+    if (retired) await (await retired.catch(() => undefined))?.close().catch(() => undefined);
+    return true;
   }
   releaseThread(serverId: string, threadId: string): Promise<void> {
     return this.storage.call("releaseRoute", { route: routeKey(serverId, threadId) });
@@ -878,6 +899,7 @@ export class BridgeHost {
     const peer = this.peers.get(id);
     if (peer) await (await peer).close();
     this.generations.delete(id);
+    this.draining.delete(id);
   }
   async close(): Promise<void> {
     this.closing = true;
